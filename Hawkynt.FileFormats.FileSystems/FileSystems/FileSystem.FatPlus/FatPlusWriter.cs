@@ -35,7 +35,7 @@ namespace FileSystem.FatPlus;
 /// </remarks>
 public sealed class FatPlusWriter {
 
-  private readonly List<(string Name, byte[]? Data, long ExtendedSize, long Size, Func<Stream>? Opener)> _files = [];
+  private readonly List<(string Name, byte[]? Data, long ExtendedSize, long Size, Func<Stream>? Opener, DateTime? ModTime)> _files = [];
 
   /// <summary>
   /// Adds a file to the image.
@@ -46,14 +46,14 @@ public sealed class FatPlusWriter {
   /// 38-bit FAT+ extended-size field. When negative or unset, defaults to
   /// <c>data.Length</c>. Use a value &gt; 4 GiB to exercise the upper
   /// 6 bits of NTRes for size-encoding tests.</param>
-  public void AddFile(string name, byte[] data, long extendedSize = -1) {
+  public void AddFile(string name, byte[] data, long extendedSize = -1, DateTime? modTime = null) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     var size = extendedSize < 0 ? data.Length : extendedSize;
     if (size < 0 || size >= 1L << 38)
       throw new ArgumentOutOfRangeException(nameof(extendedSize),
         "FAT+ extended size must fit in 38 bits (0 .. 256 GiB − 1).");
-    this._files.Add((name, data, size, data.LongLength, null));
+    this._files.Add((name, data, size, data.LongLength, null, modTime));
   }
 
   /// <summary>
@@ -62,13 +62,13 @@ public sealed class FatPlusWriter {
   /// it before a byte is read, so a payload past what a byte[] holds is placed
   /// like any other.
   /// </summary>
-  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? modTime = null) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(openStream);
     if (size < 0 || size >= 1L << 38)
       throw new ArgumentOutOfRangeException(nameof(size),
         "FAT+ extended size must fit in 38 bits (0 .. 256 GiB - 1).");
-    this._files.Add((name, null, size, size, openStream));
+    this._files.Add((name, null, size, size, openStream, modTime));
   }
 
   /// <summary>
@@ -255,11 +255,11 @@ public sealed class FatPlusWriter {
 
   private FatWriter NewInnerWriter() {
     var inner = new FatWriter();
-    foreach (var (name, data, _, size, opener) in this._files)
+    foreach (var (name, data, _, size, opener, modTime) in this._files)
       if (opener == null)
-        inner.AddFile(name, data!);
+        inner.AddFile(name, data!, modTime);
       else
-        inner.AddStreamingFile(name, size, opener);
+        inner.AddStreamingFile(name, size, opener, modTime);
     return inner;
   }
 

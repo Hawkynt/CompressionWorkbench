@@ -598,53 +598,226 @@ formatsCmd.SetAction((ParseResult _) => {
   return 0;
 });
 
-// ── optimize ─────────────────────────────────────────────────────────
+// ── compression / representation maintenance ─────────────────────────
 
-var optimizeInputArg = new Argument<FileInfo>("input") { Description = "Archive to optimize" };
+var optimizeInputArg = new Argument<FileInfo>("input") { Description = "Encoded file to recompress" };
 var optimizeOutputArg = new Argument<FileInfo?>("output") {
-  Description = "Optimized output (same format); optional with --search-blocks",
+  Description = "Recompressed output (same format); optional with --search-blocks",
   Arity = ArgumentArity.ZeroOrOne,
 };
 var searchBlocksOpt = new Option<bool>("--search-blocks", "--best") {
-  Description = "Instead of same-format re-encode, find the best building block for this data",
+  Description = "Instead of same-format recompression, find the best building block for the raw bytes",
 };
 var applyOpt = new Option<FileInfo?>("--apply") {
   Description = "With --search-blocks: write the winning block's compressed output to this path",
 };
 
-var optimizeCmd = new Command("optimize", "Re-encode with optimal compression (Zopfli for Deflate, Best for LZMA)") {
-  optimizeInputArg, optimizeOutputArg, passwordOpt, searchBlocksOpt, applyOpt
+var optimizeCmd = new Command("compress", "Re-encode the same decoded payload with the format's strongest supported compression.") {
+  optimizeInputArg, optimizeOutputArg, searchBlocksOpt, applyOpt
 };
+// Compatibility only: optimize used to mix recompression, archive rebuilding and
+// layout work. It now means compression optimization and nothing else.
+optimizeCmd.Aliases.Add("optimize");
 optimizeCmd.Aliases.Add("opt");
 optimizeCmd.SetAction((ParseResult ctx) => {
   var input = ctx.GetValue(optimizeInputArg)!;
   var output = ctx.GetValue(optimizeOutputArg);
-  var password = ctx.GetValue(passwordOpt);
 
   if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
 
-  // --search-blocks / --best: cross-block auto-selection on the raw bytes.
-  if (ctx.GetValue(searchBlocksOpt)) {
-    var apply = ctx.GetValue(applyOpt);
-    return RunBestFit(input, apply);
-  }
+  if (ctx.GetValue(searchBlocksOpt))
+    return RunBestFit(input, ctx.GetValue(applyOpt));
 
   if (output is null) {
     Console.Error.WriteLine("An output path is required (or use --search-blocks to report the best building block).");
     return 1;
   }
 
+  FormatRegistration.EnsureInitialized();
   var format = FormatDetector.Detect(input.FullName);
-  Console.Write($"Optimizing {input.Name} ({format})...");
-  var sw = Stopwatch.StartNew();
-  var (origSize, optSize, count) = ArchiveOperations.Optimize(input.FullName, output.FullName, password);
-  sw.Stop();
+  var descriptor = FormatRegistry.GetById(format.ToString());
+  if (descriptor is not ICompressionOptimizable optimizable) {
+    Console.Error.WriteLine($"{format} does not declare compression optimization.");
+    return 1;
+  }
 
-  var saving = origSize > 0 ? (1.0 - (double)optSize / origSize) * 100 : 0;
-  Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
-  Console.WriteLine($"  Original:  {FormatSize(origSize)}");
-  Console.WriteLine($"  Optimized: {FormatSize(optSize)} ({saving:F1}% smaller, {count} entries)");
-  return 0;
+  var destination = Path.GetFullPath(output.FullName);
+  var source = Path.GetFullPath(input.FullName);
+  var inPlace = string.Equals(source, destination, StringComparison.OrdinalIgnoreCase);
+  var staged = inPlace ? source + $".compress.tmp.{Guid.NewGuid():N}" : destination;
+
+  try {
+    Console.Write($"Compressing {input.Name} ({format})...");
+    var sw = Stopwatch.StartNew();
+    using (var src = File.OpenRead(source))
+    using (var dst = new FileStream(staged, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+      optimizable.OptimizeCompression(src, dst);
+
+    if (descriptor is IStreamFormatOperations streamOps) {
+      using var original = File.OpenRead(source);
+      using var rewritten = File.OpenRead(staged);
+      var originalHash = HashDecodedStream(original, streamOps);
+      var rewrittenHash = HashDecodedStream(rewritten, streamOps);
+      if (!originalHash.AsSpan().SequenceEqual(rewrittenHash))
+        throw new InvalidOperationException("Compression optimization changed the decoded payload.");
+    }
+
+    if (inPlace)
+      AtomicFileWriter.ReplaceTarget(staged, source);
+
+    sw.Stop();
+    var originalSize = input.Length;
+    var resultSize = new FileInfo(inPlace ? source : staged).Length;
+    var saving = originalSize > 0 ? (1.0 - (double)resultSize / originalSize) * 100 : 0;
+    Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+    Console.WriteLine($"  Original: {FormatSize(originalSize)}");
+    Console.WriteLine($"  Compressed: {FormatSize(resultSize)} ({saving:F1}% smaller)");
+    return 0;
+  } catch (Exception ex) {
+    if (inPlace) AtomicFileWriter.TryDelete(staged);
+    Console.Error.WriteLine($" FAILED: {ex.Message}");
+    return 1;
+  }
+});
+
+var canonicalizeInputArg = new Argument<FileInfo>("input") { Description = "Container to canonicalize" };
+var canonicalizeOutputArg = new Argument<FileInfo>("output") { Description = "Canonicalized output (same format)" };
+var canonicalizeCmd = new Command("canonicalize",
+  "Normalize non-semantic representation details while preserving the complete logical contents.") {
+  canonicalizeInputArg, canonicalizeOutputArg
+};
+canonicalizeCmd.SetAction((ParseResult ctx) => {
+  var input = ctx.GetValue(canonicalizeInputArg)!;
+  var output = ctx.GetValue(canonicalizeOutputArg)!;
+  if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
+  if (string.Equals(Path.GetFullPath(input.FullName), Path.GetFullPath(output.FullName), StringComparison.OrdinalIgnoreCase)) {
+    Console.Error.WriteLine("Canonicalize output must differ from the input path.");
+    return 1;
+  }
+
+  FormatRegistration.EnsureInitialized();
+  var format = FormatDetector.Detect(input.FullName);
+  var descriptor = FormatRegistry.GetById(format.ToString());
+  if (descriptor is not IArchiveCanonicalizable canonicalizable) {
+    Console.Error.WriteLine($"{format} does not declare canonicalization.");
+    return 1;
+  }
+
+  try {
+    var archiveOps = descriptor as IArchiveFormatOperations;
+    var streamOps = descriptor as IStreamFormatOperations;
+
+    AtomicFileWriter.WriteAtomic(output.FullName, staged => {
+      SemanticPreservationManifest? beforeManifest = null;
+      byte[]? beforeDecodedHash = null;
+
+      using var src = File.OpenRead(input.FullName);
+      if (archiveOps != null)
+        beforeManifest = SemanticPreservationManifest.Capture(src, archiveOps);
+      else if (streamOps != null)
+        beforeDecodedHash = HashDecodedStream(src, streamOps);
+      else
+        throw new NotSupportedException($"{format} exposes canonicalization but no semantic verifier.");
+
+      src.Position = 0;
+      canonicalizable.Canonicalize(src, staged);
+      staged.Flush(flushToDisk: true);
+      staged.Position = 0;
+
+      if (beforeManifest != null)
+        beforeManifest.VerifyEquivalent(SemanticPreservationManifest.Capture(staged, archiveOps!));
+      else if (beforeDecodedHash != null && streamOps != null) {
+        var afterDecodedHash = HashDecodedStream(staged, streamOps);
+        if (!beforeDecodedHash.AsSpan().SequenceEqual(afterDecodedHash))
+          throw new InvalidOperationException("Canonicalization changed the decoded payload.");
+      }
+    });
+
+    Console.WriteLine($"Canonicalized {input.Name} -> {output.FullName}");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"Canonicalize failed: {ex.Message}");
+    return 1;
+  }
+});
+
+var repackInputArg = new Argument<FileInfo>("input") { Description = "Container to rebuild" };
+var repackOutputArg = new Argument<FileInfo>("output") { Description = "Repacked output (same format)" };
+var repackCmd = new Command("repack",
+  "Rebuild the container and verify that its complete logical entry model is unchanged.") {
+  repackInputArg, repackOutputArg
+};
+repackCmd.SetAction((ParseResult ctx) => {
+  var input = ctx.GetValue(repackInputArg)!;
+  var output = ctx.GetValue(repackOutputArg)!;
+  if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
+  if (string.Equals(Path.GetFullPath(input.FullName), Path.GetFullPath(output.FullName), StringComparison.OrdinalIgnoreCase)) {
+    Console.Error.WriteLine("Repack output must differ from the input path.");
+    return 1;
+  }
+
+  FormatRegistration.EnsureInitialized();
+  var format = FormatDetector.Detect(input.FullName);
+  var descriptor = FormatRegistry.GetById(format.ToString());
+  if (descriptor is not IArchiveRepackable repackable) {
+    Console.Error.WriteLine($"{format} does not declare repacking.");
+    return 1;
+  }
+
+  try {
+    AtomicFileWriter.WriteAtomic(output.FullName, staged => {
+      using var src = File.OpenRead(input.FullName);
+      repackable.Repack(src, staged);
+    });
+    Console.WriteLine($"Repacked {input.Name} -> {output.FullName}");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"Repack failed: {ex.Message}");
+    return 1;
+  }
+});
+
+var sortDirectoryImageArg = new Argument<FileInfo>("image") { Description = "Filesystem image whose directory records should be sorted" };
+var sortDirectoryCmd = new Command("sort-directory",
+  "Sort directory entries by name without moving file extents or changing allocation chains.") {
+  sortDirectoryImageArg
+};
+sortDirectoryCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(sortDirectoryImageArg)!;
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+
+  FormatRegistration.EnsureInitialized();
+  var format = FormatDetector.Detect(image.FullName);
+  var descriptor = FormatRegistry.GetById(format.ToString());
+  var operations = FormatRegistry.GetArchiveOps(format.ToString());
+  if (descriptor is not IFilesystemDirectoryOrderer orderer || operations == null) {
+    Console.Error.WriteLine($"{format} does not declare directory ordering.");
+    return 1;
+  }
+
+  var staged = image.FullName + $".sort-directory.tmp.{Guid.NewGuid():N}";
+  try {
+    File.Copy(image.FullName, staged, overwrite: true);
+    SemanticPreservationManifest before;
+    using (var source = File.OpenRead(image.FullName))
+      before = SemanticPreservationManifest.Capture(source, operations);
+
+    using (var work = File.Open(staged, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+      orderer.SortDirectoryEntries(work);
+
+    SemanticPreservationManifest after;
+    using (var rewritten = File.OpenRead(staged))
+      after = SemanticPreservationManifest.Capture(rewritten, operations);
+    before.VerifyEquivalent(after);
+
+    AtomicFileWriter.ReplaceTarget(staged, image.FullName);
+    Console.WriteLine($"Sorted directory entries in {image.FullName}");
+    return 0;
+  } catch (Exception ex) {
+    AtomicFileWriter.TryDelete(staged);
+    Console.Error.WriteLine($"Directory sort failed: {ex.Message}");
+    return 1;
+  }
 });
 
 // ── bestfit ──────────────────────────────────────────────────────────
@@ -1355,9 +1528,9 @@ var defragCmd = new Command("defragment", """
     cwb defragment *.img --mode pack-start --stride 2
     cwb defragment images/ --mode pack-end --recursive
 
-  Only descriptors that implement IArchiveDefragmentable accept this command.
-  Currently: FAT12 / FAT16 / FAT32 (all four modes), other R/W filesystems
-  (pack-start only via the default-impl fallback).
+  Only filesystem descriptors that implement both IArchiveDefragmentable and
+  IFilesystemExtentMap accept this command. Archive rebuilds belong to repack,
+  not defragmentation.
   """) {
   defragImageArg, defragModeOpt, defragHoleSizeOpt, defragHoleAtOpt, defragStrideOpt, defragBatchOpt, defragRecursiveOpt
 };
@@ -1394,13 +1567,13 @@ defragCmd.SetAction((ParseResult ctx) => {
     try {
       var format = FormatDetector.Detect(file);
       var ops = FormatRegistry.GetById(format.ToString());
-      if (ops is not IArchiveDefragmentable defragmentable) {
+      if (ops is not IArchiveDefragmentable defragmentable || ops is not IFilesystemExtentMap) {
         if (files.Count > 1) {
-          Console.Error.WriteLine($"  SKIP {Path.GetFileName(file)}: {format} does not support defragmentation.");
+          Console.Error.WriteLine($"  SKIP {Path.GetFileName(file)}: {format} does not expose filesystem extent defragmentation.");
           totalFail++;
           continue;
         }
-        Console.Error.WriteLine($"{format} does not support defragmentation.");
+        Console.Error.WriteLine($"{format} does not expose filesystem extent defragmentation.");
         return 1;
       }
 
@@ -1624,7 +1797,7 @@ shrinkCmd.SetAction((ParseResult ctx) => {
       } else {
         sw.Stop();
         Console.WriteLine(" skipped");
-        Console.Error.WriteLine($"  VHD descriptor does not support defragmentation.");
+        Console.Error.WriteLine($"  VHD descriptor does not expose filesystem extent defragmentation.");
         return 1;
       }
     } else {
@@ -1757,10 +1930,11 @@ var compactMinimalOpt = new Option<bool>("--minimal") {
 var compactCmd = new Command("compact", """
   Make the container as small as possible while keeping its contents identical.
 
-  Standard (default): defragment → optimize → shrink, in place.
-    - defragment  consolidate live data so it is contiguous
-    - optimize    re-encode the payload with the best methods (where re-encodable)
-    - shrink      truncate the freed tail / step down to the smallest canonical size
+  Standard (default): run only the explicitly declared size-reduction stages:
+    - defragment  consolidate filesystem extents when a real extent map exists
+    - compress    re-encode the same decoded payload with stronger compression
+    - repack      rebuild a container with semantic-preservation verification
+    - shrink      truncate/step down the outer container where supported
 
   --minimal: replace the trio with a single minimal-geometry rebuild — re-create
   the container at the smallest geometry the format allows. Smaller than the
@@ -1769,7 +1943,7 @@ var compactCmd = new Command("compact", """
   Examples:
     cwb compact disk.img             Smallest STANDARD image holding the data
     cwb compact disk.img --minimal   Bare-minimum geometry (tiny, non-standard)
-    cwb compact bundle.zip           Defrag + re-encode + trim a ZIP
+    cwb compact bundle.zip           Repack + shrink a ZIP when supported
 
   Contents are always preserved byte-for-byte.
   """) { compactImageArg, compactMinimalOpt };
@@ -1803,33 +1977,32 @@ compactCmd.SetAction((ParseResult ctx) => {
   }
 });
 
-// ── reconfigure ─────────────────────────────────────────────────────────────
+// ── allocation geometry ─────────────────────────────────────────────────────
 
-var reconfigureFileArg = new Argument<string>("file") { Description = "Filesystem image or archive to reconfigure" };
+var reconfigureFileArg = new Argument<string>("file") { Description = "Filesystem image whose allocation geometry should change" };
 var reconfigureSetOpt = new Option<string[]>("--set") {
   Description = "Geometry/option to change as KEY=VALUE (repeatable). Keys/values match the format's options "
     + "schema, e.g. --set ClusterSize=\"2 KB\" --set MftRecordSize=\"2 KB\". Bare KEY = true. "
     + "Later --set for the same KEY overrides earlier ones."
 };
 
-var reconfigureCmd = new Command("reconfigure", """
-  Change an existing container's geometry/options after creation — without losing data.
+var reconfigureCmd = new Command("geometry", """
+  Change allocation geometry after creation without conflating it with compression,
+  repacking, directory sorting, or extent defragmentation.
 
-  Extracts the contents and re-creates the container with the supplied options
-  (e.g. FAT cluster size or root entries, NTFS MFT record size, image size).
-  The rebuild is verified to list back the exact same files before the original
-  is replaced; on any failure the original is left untouched.
-
-  Options are forwarded verbatim to the writer; unknown keys are ignored. Run
-  'cwb create --help' or the format's docs for the available knobs.
+  Only descriptors implementing ILayoutOptimizable accept this command. Requested
+  parameters are applied through RebuildStreaming, then the complete logical model
+  is verified before the staged image replaces the original.
 
   Examples:
-    cwb reconfigure disk.img --set ClusterSize="2 KB"
-    cwb reconfigure disk.img --set ClusterSize="4 KB" --set RootEntries=512
-    cwb reconfigure disk.ntfs --set MftRecordSize="2 KB" --set ClusterSize="8 KB"
+    cwb geometry disk.img --set ClusterSize="2 KB"
+    cwb geometry disk.img --set ClusterSize="4 KB" --set RootEntries=512
+    cwb geometry disk.ntfs --set MftRecordSize="2 KB" --set ClusterSize="8 KB"
 
-  Contents are always preserved byte-for-byte.
+  The legacy 'reconfigure' spelling remains as an alias.
   """) { reconfigureFileArg, reconfigureSetOpt };
+reconfigureCmd.Aliases.Add("reconfigure");
+reconfigureCmd.Aliases.Add("change-allocation-geometry");
 reconfigureCmd.SetAction((ParseResult ctx) => {
   var fileArg = ctx.GetValue(reconfigureFileArg)!;
   var setPairs = ctx.GetValue(reconfigureSetOpt) ?? [];
@@ -1857,7 +2030,7 @@ reconfigureCmd.SetAction((ParseResult ctx) => {
 
   FormatRegistration.EnsureInitialized();
   var formatId = FormatDetector.Detect(fileArg).ToString();
-  Console.WriteLine($"Reconfiguring {Path.GetFileName(fileArg)} ({formatId})...");
+  Console.WriteLine($"Changing allocation geometry for {Path.GetFileName(fileArg)} ({formatId})...");
   var sw = Stopwatch.StartNew();
 
   try {
@@ -2668,6 +2841,10 @@ var root = new RootCommand("""
     cwb extract archive.rar -o output/        Extract RAR to output/
     cwb list archive.tar.gz                   List contents
     cwb convert in.zip out.7z -m lzma         Convert ZIP → 7z with LZMA
+    cwb compress data.gz data.best.gz          Recompress decoded payload only
+    cwb canonicalize in.zip canonical.zip      Normalize representation only
+    cwb repack in.zip rebuilt.zip              Verified semantic-preserving rebuild
+    cwb sort-directory disk.img                Sort directory records, not extents
     cwb create app.7z files --sfx             Create self-extracting 7z
     cwb test archive.zip                      Verify integrity
     cwb defragment disk.img --mode pack-end   Repack files at end of image
@@ -2689,12 +2866,20 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, optimizeCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, scrambleCmd, placeCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
+  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, optimizeCmd, canonicalizeCmd, repackCmd, sortDirectoryCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, scrambleCmd, placeCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
 };
 
 return root.Parse(args).Invoke();
 
 // ── Utility functions ────────────────────────────────────────────────
+
+static byte[] HashDecodedStream(Stream encoded, IStreamFormatOperations operations) {
+  encoded.Position = 0;
+  using var decoded = RebuildVerb.CreateScratchStream();
+  operations.Decompress(encoded, decoded);
+  decoded.Position = 0;
+  return System.Security.Cryptography.SHA256.HashData(decoded);
+}
 
 static string FormatSize(long bytes) => bytes switch {
   < 1024 => $"{bytes} B",

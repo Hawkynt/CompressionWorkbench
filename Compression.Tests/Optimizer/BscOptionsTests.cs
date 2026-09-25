@@ -84,7 +84,8 @@ public class BscOptionsTests {
     var descriptor = new BscFormatDescriptor();
     var schema = (IFormatOptionsSchema)descriptor;
 
-    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.True);
+    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.False);
+    Assert.That(descriptor, Is.Not.InstanceOf<ICompressionOptimizable>());
     Assert.That(descriptor.Methods.Single().SupportsOptimize, Is.True);
 
     var blockSize = schema.OptionsSchema.Single(option => option.Key == "BlockSize");

@@ -19,7 +19,32 @@ namespace FileFormat.FirmwareHex;
 /// </list>
 /// </summary>
 public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
-    IArchiveModifiable, IArchiveDefragmentable {
+    IArchiveModifiable, IArchiveDefragmentable, ISyntheticEntryNames, IArchiveSemanticMetadataProvider {
+
+  /// <inheritdoc />
+  public IReadOnlySet<string> SyntheticEntryNames { get; } =
+    new HashSet<string>(["metadata.ini"], StringComparer.OrdinalIgnoreCase);
+
+  /// <inheritdoc />
+  public IReadOnlyDictionary<string, string> CaptureSemanticMetadata(Stream archive) {
+    var image = ReadImage(archive);
+    var result = new SortedDictionary<string, string>(StringComparer.Ordinal) {
+      ["base-address"] = image.BaseAddress.ToString("X8", CultureInfo.InvariantCulture),
+      ["start-address"] = image.StartAddress?.ToString("X8", CultureInfo.InvariantCulture) ?? "",
+      ["start-segment"] = image.StartSegmentAddress is { } segmented
+        ? $"{segmented.CodeSegment:X4}:{segmented.InstructionPointer:X4}"
+        : "",
+      ["segment-count"] = image.Segments.Count.ToString(CultureInfo.InvariantCulture),
+    };
+    for (var i = 0; i < image.Segments.Count; ++i) {
+      var (address, data) = image.Segments[i];
+      result[$"segment-{i:D6}-address"] = address.ToString("X8", CultureInfo.InvariantCulture);
+      result[$"segment-{i:D6}-length"] = data.Length.ToString(CultureInfo.InvariantCulture);
+      result[$"segment-{i:D6}-sha256"] =
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data));
+    }
+    return result;
+  }
 
   /// <summary>
   /// Gets the id.
@@ -136,10 +161,12 @@ public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormat
   // place, and the rendered metadata now preserves sparse address runs and the
   // distinction between type-03 CS:IP and type-05 linear start records.
 
-  private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {
+  private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream)
+    => FirmwareHexCommon.BuildEntries(ReadImage(stream));
+
+  private static FirmwareImage ReadImage(Stream stream) {
+    if (stream.CanSeek) stream.Position = 0;
     using var reader = new StreamReader(stream, Encoding.ASCII, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-    var text = reader.ReadToEnd();
-    var image = IntelHexReader.Read(text);
-    return FirmwareHexCommon.BuildEntries(image);
+    return IntelHexReader.Read(reader.ReadToEnd());
   }
 }

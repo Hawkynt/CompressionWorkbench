@@ -9,7 +9,7 @@ namespace FileFormat.Gzip;
 /// <summary>
 /// Describes gzip format.
 /// </summary>
-public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatValidator, IFormatOptionsSchema {
+public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, ICompressionOptimizable, IFormatValidator, IFormatOptionsSchema {
   /// <summary>
   /// Gets the id.
   /// </summary>

@@ -23,8 +23,7 @@ public sealed class CompressFormatDescriptor : IFormatDescriptor, IStreamFormatO
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -44,7 +43,7 @@ public sealed class CompressFormatDescriptor : IFormatDescriptor, IStreamFormatO
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzw", "LZW", SupportsOptimize: true)];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzw", "LZW")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>

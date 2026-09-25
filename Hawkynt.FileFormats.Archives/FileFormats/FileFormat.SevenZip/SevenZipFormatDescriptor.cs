@@ -15,7 +15,7 @@ namespace FileFormat.SevenZip;
 ///   <item><description><c>https://en.wikipedia.org/wiki/7z</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
+public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveRepackable, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -331,7 +331,7 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       encryptHeaders: options.EncryptFilenames);
 
     foreach (var i in inputs)
-      if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
+      if (i.IsDirectory) w.AddDirectory(i.ArchiveName, i.LastModified);
 
     var fileEntryIndex = 0;
     var blockDescs = new List<SevenZipWriter.BlockDescriptor>();
@@ -339,7 +339,11 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       var indices = new int[block.Files.Count];
       for (var j = 0; j < block.Files.Count; j++) {
         var (input, data) = block.Files[j];
-        w.AddEntry(new SevenZipEntry { Name = input.ArchiveName, Size = data.Length }, data);
+        w.AddEntry(new SevenZipEntry {
+          Name = input.ArchiveName,
+          Size = data.Length,
+          LastWriteTime = input.LastModified,
+        }, data);
         indices[j] = fileEntryIndex++;
       }
       if (needsMultiCodec) {

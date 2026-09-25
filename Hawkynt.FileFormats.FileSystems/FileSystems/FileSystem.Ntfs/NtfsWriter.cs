@@ -140,7 +140,7 @@ public sealed class NtfsWriter {
   // Size of the $UpCase data stream: 65 536 UTF-16 code units = 128 KiB.
   private const int UpCaseBytes = 65536 * 2;
 
-  private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
+  private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener, DateTime? ModTime)> _files = [];
 
   /// <summary>
   /// Streaming-allocations side-effect: when non-null, every non-resident
@@ -198,6 +198,7 @@ public sealed class NtfsWriter {
     // buffered by the streaming wrapper before Build runs.
     public long? StreamingSize;
     public Func<Stream>? StreamOpener;
+    public DateTime? ModTime;
     public long EffectiveLength => this.StreamingSize ?? (long)(this.Data?.Length ?? 0);
 
     // Directory children, in insertion order (re-sorted by name when the $I30
@@ -277,10 +278,10 @@ public sealed class NtfsWriter {
   }
 
   /// <summary>Adds a file to the NTFS image.</summary>
-  public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data, DateTime? modTime = null) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    this._files.Add((name, data, null, null));
+    this._files.Add((name, data, null, null, modTime));
   }
 
   /// <summary>
@@ -293,11 +294,11 @@ public sealed class NtfsWriter {
   /// remain resident and are buffered up-front (the size-clamped bounded
   /// read still satisfies the isolation contract).
   /// </summary>
-  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? modTime = null) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(openStream);
     if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
-    this._files.Add((name, System.Array.Empty<byte>(), size, openStream));
+    this._files.Add((name, System.Array.Empty<byte>(), size, openStream, modTime));
   }
 
   /// <summary>
@@ -974,7 +975,8 @@ public sealed class NtfsWriter {
           residentData: residentBytes,
           nonResidentRuns: null,
           dataSize: residentBytes.Length,
-          sizeHintInFileName: residentBytes.Length);
+          sizeHintInFileName: residentBytes.Length,
+          modTime: node.ModTime);
       } else if (node.Compressed) {
         // LZNT1-compressed $DATA: sparse-run layout + the 0x0001 compressed flag.
         WriteMftRecord(
@@ -987,7 +989,8 @@ public sealed class NtfsWriter {
           dataSize: effLen,
           sizeHintInFileName: effLen,
           compressedRuns: node.CompressedRuns,
-          compressedAllocatedClusters: node.AllocatedClusters);
+          compressedAllocatedClusters: node.AllocatedClusters,
+          modTime: node.ModTime);
 
         // Copy the compressed real-cluster bytes into the reserved real runs in
         // run order (sparse runs hold no bytes).
@@ -1010,7 +1013,8 @@ public sealed class NtfsWriter {
           residentData: null,
           nonResidentRuns: [(node.StartCluster, node.ClusterCount)],
           dataSize: effLen,
-          sizeHintInFileName: effLen);
+          sizeHintInFileName: effLen,
+          modTime: node.ModTime);
 
         if (node.StreamOpener != null) {
           // Non-resident streaming entry — record its allocation; the
@@ -1140,7 +1144,7 @@ public sealed class NtfsWriter {
     var nodes = new List<TreeNode>();
     var nextRecord = (uint)MftReservedRecords;
 
-    foreach (var (rawName, data, streamingSize, opener) in this._files) {
+    foreach (var (rawName, data, streamingSize, opener, modTime) in this._files) {
       var segments = rawName.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
       if (segments.Length == 0) continue;
 
@@ -1169,6 +1173,7 @@ public sealed class NtfsWriter {
         existing.Data = data;
         existing.StreamingSize = streamingSize;
         existing.StreamOpener = opener;
+        existing.ModTime = modTime;
         continue;
       }
 
@@ -1180,6 +1185,7 @@ public sealed class NtfsWriter {
         Data = data,
         StreamingSize = streamingSize,
         StreamOpener = opener,
+        ModTime = modTime,
       };
       dir.Children.Add(fileNode);
       dir.ChildByName[leaf] = fileNode;
@@ -1387,7 +1393,8 @@ public sealed class NtfsWriter {
     List<(int Cluster, int Count, bool Sparse)>? compressedRuns = null,
     long compressedAllocatedClusters = 0,
     SparseNamedStream? sparseNamedStream = null,
-    (string Name, byte[] Data)[]? namedIndexRoots = null) {
+    (string Name, byte[] Data)[]? namedIndexRoots = null,
+    DateTime? modTime = null) {
 
     var recordOffset = mftBaseOffset + (int)recordNum * this._mftRecordSize;
     if (recordOffset + this._mftRecordSize > disk.Length) return;
@@ -1417,10 +1424,10 @@ public sealed class NtfsWriter {
     var pos = attrStart;
 
     // 0x10 $STANDARD_INFORMATION — mandatory, always first.
-    pos = WriteStandardInformationAttr(record, pos, isDirectory, this._version.StandardInformationLength());
+    pos = WriteStandardInformationAttr(record, pos, isDirectory, this._version.StandardInformationLength(), modTime);
 
     // 0x30 $FILE_NAME — mandatory for every record including system files.
-    pos = this.WriteFileNameAttr(record, pos, fileName, parentRecord, sizeHintInFileName, isDirectory);
+    pos = this.WriteFileNameAttr(record, pos, fileName, parentRecord, sizeHintInFileName, isDirectory, modTime);
 
     // Caller-supplied extra resident attributes ($VOLUME_NAME/$VOLUME_INFORMATION for $Volume, etc.)
     if (extraAttrs != null) {
@@ -1536,7 +1543,15 @@ public sealed class NtfsWriter {
   /// value that agrees with an empty <c>$Secure</c> — a driver resolves it to no
   /// descriptor rather than to one that is not there.
   /// </remarks>
-  internal static int WriteStandardInformationAttr(byte[] record, int pos, bool isDirectory, int valueLen) {
+  private static long ToFileTimeUtc(DateTime? value) {
+    if (value is not { } timestamp)
+      return DateTime.UtcNow.ToFileTimeUtc();
+    if (timestamp.Kind == DateTimeKind.Unspecified)
+      timestamp = DateTime.SpecifyKind(timestamp, DateTimeKind.Utc);
+    return timestamp.ToUniversalTime().ToFileTimeUtc();
+  }
+
+  internal static int WriteStandardInformationAttr(byte[] record, int pos, bool isDirectory, int valueLen, DateTime? modTime = null) {
     var attrLen = (24 + valueLen + 7) & ~7;
 
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos), 0x10);
@@ -1547,7 +1562,7 @@ public sealed class NtfsWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 20), 24);
 
     var v = pos + 24;
-    var now = DateTime.UtcNow.ToFileTimeUtc();
+    var now = ToFileTimeUtc(modTime);
     BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v), now);
     BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v + 8), now);
     BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v + 16), now);
@@ -1577,7 +1592,7 @@ public sealed class NtfsWriter {
     => recordNumber is >= 2 and <= 11 ? (ushort)recordNumber : (ushort)1;
 
   private int WriteFileNameAttr(byte[] record, int pos, string fileName, uint parentRecord,
-    long allocatedAndRealSize, bool isDirectory) {
+    long allocatedAndRealSize, bool isDirectory, DateTime? modTime = null) {
     var nameBytes = Encoding.Unicode.GetBytes(fileName);
     var nameChars = fileName.Length;
     var valueLen = 66 + nameChars * 2;
@@ -1598,7 +1613,7 @@ public sealed class NtfsWriter {
     BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v),
       (long)parentRecord | ((long)SequenceOf(parentRecord) << 48));
 
-    var now = DateTime.UtcNow.ToFileTimeUtc();
+    var now = ToFileTimeUtc(modTime);
     for (var t = 0; t < 4; t++)
       BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v + 8 + t * 8), now);
 

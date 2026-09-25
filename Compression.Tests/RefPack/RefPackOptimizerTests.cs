@@ -125,7 +125,7 @@ public sealed class RefPackOptimizerTests {
   }
 
   [Test, Category("RoundTrip")]
-  public void ArchiveOperations_Optimize_ReencodesQfsThroughSchemaSearch() {
+  public void ArchiveOperations_OptimizeCompression_ReencodesQfsThroughExplicitCapability() {
     var descriptor = new RefPackFormatDescriptor();
     var data = RepeatedDistantBlock();
     var weak = Compress(descriptor, data, "1024", "16", quick: true);
@@ -137,7 +137,7 @@ public sealed class RefPackOptimizerTests {
       var outputPath = Path.Combine(directory, "optimized.qfs");
       File.WriteAllBytes(inputPath, weak);
 
-      var (originalSize, optimizedSize, entriesOptimized) = ArchiveOperations.Optimize(inputPath, outputPath, password: null);
+      var (originalSize, optimizedSize, entriesOptimized) = ArchiveOperations.OptimizeCompression(inputPath, outputPath, password: null);
       var optimized = File.ReadAllBytes(outputPath);
 
       Assert.Multiple(() => {

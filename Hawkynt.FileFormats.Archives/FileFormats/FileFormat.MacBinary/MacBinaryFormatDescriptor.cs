@@ -6,7 +6,7 @@ namespace FileFormat.MacBinary;
 /// <summary>
 /// Describes mac binary format.
 /// </summary>
-public sealed class MacBinaryFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
+public sealed class MacBinaryFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IArchiveCanonicalizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -23,8 +23,7 @@ public sealed class MacBinaryFormatDescriptor : IFormatDescriptor, IStreamFormat
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -44,7 +43,7 @@ public sealed class MacBinaryFormatDescriptor : IFormatDescriptor, IStreamFormat
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("macbinary", "MacBinary", SupportsOptimize: true)];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("macbinary", "MacBinary")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -65,6 +64,11 @@ public sealed class MacBinaryFormatDescriptor : IFormatDescriptor, IStreamFormat
     var data = MacBinaryReader.ReadDataFork(input);
     output.Write(data);
   }
+  /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+  public void Canonicalize(Stream input, Stream output) => MacBinaryOptimizer.Optimize(input, output);
+
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>

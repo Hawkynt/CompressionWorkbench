@@ -44,7 +44,7 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsOptimize |
+    FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.

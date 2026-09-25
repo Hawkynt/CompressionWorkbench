@@ -7,7 +7,7 @@ namespace FileFormat.Lzham;
 /// <summary>
 /// Describes lzham format.
 /// </summary>
-public sealed class LzhamFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class LzhamFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, ICompressionOptimizable, IFormatOptionsSchema {
   /// <summary>
   /// Gets the id.
   /// </summary>

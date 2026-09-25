@@ -116,7 +116,7 @@ public sealed class SevenZipWriter : IDisposable {
   /// Adds a directory entry.
   /// </summary>
   /// <param name="name">The directory name.</param>
-  public void AddDirectory(string name) {
+  public void AddDirectory(string name, DateTime? lastWriteTime = null) {
     if (this._finished)
       throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
 
@@ -124,6 +124,7 @@ public sealed class SevenZipWriter : IDisposable {
       Name = name,
       IsDirectory = true,
       Size = 0,
+      LastWriteTime = lastWriteTime,
     };
     this._entries.Add((entry, []));
   }

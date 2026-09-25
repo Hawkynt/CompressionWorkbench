@@ -7,7 +7,7 @@ namespace FileFormat.PackBits;
 /// <summary>
 /// Describes pack bits format.
 /// </summary>
-public sealed class PackBitsFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class PackBitsFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, ICompressionOptimizable, IFormatOptionsSchema {
   /// <summary>
   /// Gets the id.
   /// </summary>

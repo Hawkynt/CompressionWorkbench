@@ -23,8 +23,7 @@ public sealed class SqueezeFormatDescriptor : IFormatDescriptor, IStreamFormatOp
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>

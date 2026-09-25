@@ -6,7 +6,7 @@ namespace FileFormat.Szdd;
 /// <summary>
 /// Describes szdd format.
 /// </summary>
-public sealed class SzddFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
+public sealed class SzddFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

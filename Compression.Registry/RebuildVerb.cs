@@ -34,11 +34,22 @@ public static class RebuildVerb {
     cancellationToken.ThrowIfCancellationRequested();
     input.Position = 0;
     var sourceEntries = ops.List(input, null);
-    var sourceNames = LiveNameList(sourceEntries);
+
+    var effectiveSyntheticNames = StructuralFloor(ops);
+    if (syntheticNames != null)
+      effectiveSyntheticNames.UnionWith(syntheticNames);
+
+    var sourceNames = sourceEntries
+      .Where(entry => !entry.IsDirectory && !effectiveSyntheticNames.Contains(entry.Name))
+      .Select(entry => entry.Name)
+      .OrderBy(name => name, StringComparer.Ordinal)
+      .ToList();
     var sourceFileCount = sourceNames.Count;
+    input.Position = 0;
+    var sourceManifest = SemanticPreservationManifest.Capture(input, ops, ignoredNames: effectiveSyntheticNames);
     var sourceLength = Math.Max(1L, input.Length);
     var liveEntries = sourceEntries
-      .Where(e => !e.IsDirectory && (syntheticNames == null || !syntheticNames.Contains(e.Name)))
+      .Where(e => !e.IsDirectory && !effectiveSyntheticNames.Contains(e.Name))
       .ToArray();
     var totalLogical = Math.Max(1L, liveEntries.Sum(e => Math.Max(0L, e.OriginalSize)));
     var sourceLayout = BuildSourceLayout(input, ops, sourceEntries);
@@ -62,7 +73,7 @@ public static class RebuildVerb {
           Directory.CreateDirectory(target);
           continue;
         }
-        if (syntheticNames != null && syntheticNames.Contains(entry.Name))
+        if (effectiveSyntheticNames.Contains(entry.Name))
           continue;
 
         ++liveIndex;
@@ -107,14 +118,25 @@ public static class RebuildVerb {
 
       cancellationToken.ThrowIfCancellationRequested();
 
+      var sourceMetadata = sourceEntries
+        .Where(entry => !effectiveSyntheticNames.Contains(entry.Name))
+        .GroupBy(entry => entry.Name.TrimEnd('/'), StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
       var inputs = new List<ArchiveInputInfo>();
-      foreach (var dir in Directory.GetDirectories(tmpDir, "*", SearchOption.AllDirectories)) {
-        var rel = Path.GetRelativePath(tmpDir, dir).Replace('\\', '/');
-        inputs.Add(new ArchiveInputInfo("", rel + "/", true));
+      foreach (var directory in sourceEntries.Where(entry => entry.IsDirectory && !effectiveSyntheticNames.Contains(entry.Name))) {
+        var name = directory.Name.Replace('\\', '/');
+        if (!name.EndsWith('/')) name += "/";
+        inputs.Add(new ArchiveInputInfo("", name, true) {
+          LastModified = directory.LastModified,
+        });
       }
       foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
         var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
-        inputs.Add(new ArchiveInputInfo(file, rel, false));
+        sourceMetadata.TryGetValue(rel, out var metadata);
+        inputs.Add(new ArchiveInputInfo(file, rel, false) {
+          LastModified = metadata?.LastModified,
+        });
       }
 
       var visualSize = Math.Max(sourceLength, totalLogical);
@@ -149,16 +171,13 @@ public static class RebuildVerb {
         "Verifying rebuilt container before commit"));
 
       output.Position = 0;
-      List<string> rebuiltNames;
       try {
-        rebuiltNames = LiveNameList(ops.List(output, null));
-      } catch (Exception ex) {
+        var rebuiltManifest = SemanticPreservationManifest.Capture(output, ops, ignoredNames: effectiveSyntheticNames);
+        sourceManifest.VerifyEquivalent(rebuiltManifest);
+      } catch (Exception ex) when (ex is not OperationCanceledException) {
         throw new InvalidOperationException(
-          $"Rebuilt image could not be listed back ({ex.GetType().Name}: {ex.Message}); refusing a lossy rebuild.", ex);
+          $"Rebuilt image failed semantic-preservation verification ({ex.GetType().Name}: {ex.Message}); refusing a lossy rebuild.", ex);
       }
-      if (!rebuiltNames.SequenceEqual(sourceNames, StringComparer.Ordinal))
-        throw new InvalidOperationException(
-          $"Rebuild changed the entry set ({sourceFileCount} → {rebuiltNames.Count}); refusing a non-identity-preserving rebuild.");
 
       cancellationToken.ThrowIfCancellationRequested();
       var finalLength = Math.Max(1L, output.Length);

@@ -45,12 +45,12 @@ public sealed class ApfsWriter {
   private string _volumeName = "untitled";
 
   /// <summary>A file's payload: held inline, or opened on demand when it is too large to hold.</summary>
-  private readonly record struct FileEntry(string Name, long Size, byte[]? Data, Func<Stream>? Opener);
+  private readonly record struct FileEntry(string Name, long Size, byte[]? Data, Func<Stream>? Opener, DateTime? ModTime);
 
   /// <summary>Adds a file to be included in the volume image.</summary>
-  public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data, DateTime? modTime = null) {
     ArgumentNullException.ThrowIfNull(data);
-    this._files.Add(new FileEntry(name, data.LongLength, data, null));
+    this._files.Add(new FileEntry(name, data.LongLength, data, null, modTime));
   }
 
   /// <summary>
@@ -59,11 +59,11 @@ public sealed class ApfsWriter {
   /// it before a single byte is read, so a file larger than a byte[] can carry is
   /// placed like any other.
   /// </summary>
-  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? modTime = null) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(openStream);
     ArgumentOutOfRangeException.ThrowIfNegative(size);
-    this._files.Add(new FileEntry(name, size, null, openStream));
+    this._files.Add(new FileEntry(name, size, null, openStream, modTime));
   }
 
   /// <summary>
@@ -1370,7 +1370,7 @@ public sealed class ApfsWriter {
         BuildInodeKey(node.Ino),
         BuildInodeValue(node.Ino, parentId: node.ParentIno, size: size,
           isDir: node.IsDir, nchildren: node.IsDir ? (uint)node.ChildCount : 1u,
-          name: node.Name)));
+          name: node.Name, modTime: node.Payload?.ModTime)));
 
       // Every file that has a data stream needs a record counting who shares it.
       // A driver looks this up before it will open the file, and treats its absence
@@ -1425,8 +1425,8 @@ public sealed class ApfsWriter {
   // Value helpers.
 
   private static byte[] BuildInodeValue(ulong ino, ulong parentId, long size, bool isDir, uint nchildren,
-      ulong internalFlags = 0, string name = "")
-    => ApfsInodeRecord.BuildValue(ino, parentId, size, isDir, nchildren, internalFlags, name);
+      ulong internalFlags = 0, string name = "", DateTime? modTime = null)
+    => ApfsInodeRecord.BuildValue(ino, parentId, size, isDir, nchildren, internalFlags, name, modTime);
 
 
   private static byte[] BuildDrecValue(ulong fileId, bool isDir) {

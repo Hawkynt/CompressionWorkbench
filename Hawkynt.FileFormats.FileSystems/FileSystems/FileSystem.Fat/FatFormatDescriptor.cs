@@ -14,7 +14,7 @@ namespace FileSystem.Fat;
 ///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/fat</c> — mainline kernel implementation</description></item>
 /// </list>
 /// </summary>
-public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemPlaceable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemPlaceable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemDirectoryOrderer {
 
   // The optimization adapters are keyed on this descriptor's runtime type, so the
   // registration has to have run before any instance can be looked up. Doing it from
@@ -1243,5 +1243,9 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
     return total;
   }
+
+
+  /// <inheritdoc />
+  public void SortDirectoryEntries(Stream image) => FatDirectoryOrderer.Sort(image);
 
 }

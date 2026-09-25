@@ -4,7 +4,7 @@ using Compression.Lib;
 namespace Compression.Tests.Operations;
 
 /// <summary>
-/// Verifies the composite <c>compact</c> verb (defrag → optimize → shrink) and
+/// Verifies the composite <c>compact</c> verb (defrag → compress → repack → shrink) and
 /// its <c>--minimal</c> geometry rebuild: contents are preserved byte-for-byte,
 /// the standard pass never grows the container, and the minimal pass on a fixed
 /// 1.44&#160;MB FAT floppy collapses the image well below the standard pass by
@@ -71,7 +71,11 @@ public class CompactOperationTests {
 
     var result = CompactOperation.Compact(img, new CompactOperation.CompactOptions { Minimal = false });
 
-    Assert.That(result.NewSize, Is.LessThanOrEqualTo(before), "standard compact must never grow the image");
+    Assert.Multiple(() => {
+      Assert.That(result.NewSize, Is.LessThanOrEqualTo(before), "standard compact must never grow the image");
+      Assert.That(result.StepsRun, Does.Not.Contain("optimize"),
+        "compact must be composed from explicit maintenance capabilities, not a generic optimize stage");
+    });
     var got = ReadAll(img);
     Assert.That(got["README.TXT"], Is.EqualTo(payload), "file content must survive compaction byte-for-byte");
   }

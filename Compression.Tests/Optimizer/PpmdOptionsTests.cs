@@ -55,7 +55,8 @@ public class PpmdOptionsTests {
       Assert.That(option.AllowedValues, Has.Count.EqualTo(31));
       Assert.That(option.AllowedValues, Does.Contain("2"));
       Assert.That(option.AllowedValues, Does.Contain("32"));
-      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.True);
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.False);
+      Assert.That(descriptor, Is.Not.InstanceOf<ICompressionOptimizable>());
       Assert.That(descriptor.Methods.Single().SupportsOptimize, Is.True);
     });
   }

@@ -9,8 +9,8 @@ namespace Compression.Tests.Operations;
 /// Verifies the <c>reconfigure</c> verb: changing an existing container's
 /// geometry/options after creation (FAT cluster size, NTFS MFT record size)
 /// actually takes effect on disk while the live contents round-trip
-/// byte-for-byte. A non-creatable / non-schema format is rejected, and a failed
-/// rebuild leaves the original untouched.
+/// byte-for-byte. Formats without the explicit <see cref="ILayoutOptimizable"/>
+/// capability are rejected even when they are otherwise creatable.
 /// </summary>
 [TestFixture]
 public class ReconfigureOperationTests {
@@ -110,8 +110,8 @@ public class ReconfigureOperationTests {
 
   [Test]
   public void Reconfigure_Ntfs_ChangesMftRecordSize_AndPreservesContents() {
-    if (FormatRegistry.GetArchiveOps("Ntfs") is not Compression.Registry.IArchiveCreatable) {
-      Assert.Ignore("NTFS create path unavailable in this build.");
+    if (FormatRegistry.GetById("Ntfs") is not ILayoutOptimizable) {
+      Assert.Ignore("NTFS layout-optimization path unavailable in this build.");
       return;
     }
 
@@ -166,10 +166,26 @@ public class ReconfigureOperationTests {
   }
 
   [Test]
-  public void Reconfigure_NonCreatableFormat_Throws() {
-    // A plain text file is not a creatable container format.
+  public void Reconfigure_NonLayoutFormat_Throws() {
+    // A plain text file is not a layout-optimizable container format.
     var notAnImage = MakeSourceFile("notes.txt", "hello"u8.ToArray());
     Assert.That(() => ReconfigureOperation.Reconfigure(notAnImage,
+        new Dictionary<string, string> { ["ClusterSize"] = "2 KB" }),
+      Throws.InstanceOf<NotSupportedException>());
+  }
+
+  [Test]
+  public void Reconfigure_CreatableArchiveWithoutLayoutCapability_Throws() {
+    var zip = CreateImage(FormatDetector.Format.Zip, ".zip",
+      new Dictionary<string, string>(),
+      ("payload.bin", "payload"u8.ToArray()));
+
+    Assert.That(FormatRegistry.GetArchiveOps("Zip"), Is.InstanceOf<IArchiveCreatable>(),
+      "precondition: ZIP is creatable");
+    Assert.That(FormatRegistry.GetById("Zip"), Is.Not.InstanceOf<ILayoutOptimizable>(),
+      "precondition: ZIP must not masquerade as an allocation-geometry optimizer");
+
+    Assert.That(() => ReconfigureOperation.Reconfigure(zip,
         new Dictionary<string, string> { ["ClusterSize"] = "2 KB" }),
       Throws.InstanceOf<NotSupportedException>());
   }

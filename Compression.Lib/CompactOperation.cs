@@ -1,11 +1,11 @@
 using Compression.Registry;
-using F = Compression.Lib.FormatDetector.Format;
 
 namespace Compression.Lib;
 
 /// <summary>
-/// Composite maintenance verb: defragment, optimize and shrink. Every stage is
-/// optional and selected from the descriptor's real capabilities.
+/// Composite maintenance verb: defragment extents, recompress payloads, repack
+/// containers, then shrink. Every stage is selected only from an explicit
+/// capability interface; "optimize" is not used as an umbrella capability.
 /// </summary>
 public static class CompactOperation {
   public sealed record CompactResult(long OriginalSize, long NewSize, IReadOnlyList<string> StepsRun, bool Minimal);
@@ -35,16 +35,18 @@ public static class CompactOperation {
     var steps = new List<string>();
 
     if (options.Minimal) {
-      if (ops is IArchiveCreatable && ops is IFormatOptionsSchema schema
+      if (descriptor is ILayoutOptimizable layout
+          && descriptor is IFormatOptionsSchema schema
+          && ops != null
           && SelectMinimalGeometry(schema) is { Count: > 0 } minimal) {
-        TryMinimalRebuild(path, format, minimal, options.Password, log);
+        TryMinimalRebuild(path, layout, ops, minimal, options.Password, log);
         steps.Add("minimal-geometry rebuild");
         return new CompactResult(originalSize, new FileInfo(path).Length, steps, Minimal: true);
       }
-      log($"compact: '{formatId}' exposes no minimal-geometry knobs — running standard compact instead.");
+      log($"compact: '{formatId}' exposes no explicit layout capability with minimal-geometry knobs — running standard compact instead.");
     }
 
-    if (ops is IArchiveDefragmentable defragmentable) {
+    if (descriptor is IFilesystemExtentMap && ops is IArchiveDefragmentable defragmentable) {
       try {
         using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
         defragmentable.Defragment(stream, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
@@ -55,52 +57,50 @@ public static class CompactOperation {
       }
     }
 
-    if (formatId is "DoubleSpace" or "DriveSpace" or "DriveSpace3") {
-      if (descriptor != null) {
-        try {
-          var r = CvfOptimizer.Optimize(path, descriptor);
-          steps.Add("optimize");
-          log($"optimize: re-encoded via {r.MethodUsed}.");
-        } catch (Exception ex) {
-          log($"optimize: skipped ({ex.GetType().Name}: {ex.Message}).");
+    if (descriptor is ICompressionOptimizable compression) {
+      var tempOut = path + ".compact-compress.tmp";
+      try {
+        var before = new FileInfo(path).Length;
+        using (var input = File.OpenRead(path))
+        using (var output = new FileStream(tempOut, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+          compression.OptimizeCompression(input, output);
+
+        var candidate = new FileInfo(tempOut).Length;
+        if (candidate > 0 && candidate < before) {
+          VerifyCompressionCandidate(path, tempOut, descriptor, ops, options.Password);
+          AtomicFileWriter.ReplaceTarget(tempOut, path);
+          steps.Add("compress");
+          log($"compress: {before:N0} → {candidate:N0} bytes.");
+        } else {
+          log("compress: no smaller representation.");
         }
-      }
-    } else if (descriptor?.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize) == true
-               && ops is IArchiveCreatable creator
-               && ops is IFormatOptionsSchema archiveSchema
-               && archiveSchema.OptionsSchema.Count > 0
-               && format != F.Zip
-               && !FormatDetector.IsStreamFormat(format)
-               && !FormatDetector.GetTarCompression(format).HasValue) {
-      // Multi-entry containers with their own finite creation schema (EWF,
-      // SquashFS, etc.) need the archive optimizer, not the stream optimizer.
-      // It searches the declared axes and accepts only verified same-format
-      // rebuilds smaller than the source; otherwise it copies through unchanged.
-      var tempOut = path + ".compact-arcopt.tmp";
-      try {
-        var r = ArchiveCompressionOptimizer.Optimize(path, tempOut, ops, creator, archiveSchema);
-        File.Move(tempOut, path, overwrite: true);
-        steps.Add("optimize");
-        log(r.OptimizedSize < r.OriginalSize
-          ? $"optimize: {r.OriginalSize:N0} → {r.OptimizedSize:N0} bytes across {r.Probes} parameter probe(s)."
-          : $"optimize: no smaller verified representation after {r.Probes} parameter probe(s).");
       } catch (Exception ex) {
-        log($"optimize: skipped ({ex.GetType().Name}: {ex.Message}).");
+        log($"compress: skipped ({ex.GetType().Name}: {ex.Message}).");
       } finally {
-        if (File.Exists(tempOut)) try { File.Delete(tempOut); } catch { }
+        AtomicFileWriter.TryDelete(tempOut);
       }
-    } else if (format == F.Zip || FormatDetector.IsStreamFormat(format)
-               || FormatDetector.GetTarCompression(format).HasValue) {
-      var tempOut = path + ".compact-opt.tmp";
+    }
+
+    if (descriptor is IArchiveRepackable repackable) {
+      var tempOut = path + ".compact-repack.tmp";
       try {
-        var r = ArchiveOperations.Optimize(path, tempOut, options.Password);
-        File.Move(tempOut, path, overwrite: true);
-        steps.Add("optimize");
-        log($"optimize: re-encoded {r.EntriesOptimized} entr(ies).");
+        var before = new FileInfo(path).Length;
+        using (var input = File.OpenRead(path))
+        using (var output = new FileStream(tempOut, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+          repackable.Repack(input, output);
+
+        var candidate = new FileInfo(tempOut).Length;
+        if (candidate > 0 && candidate < before) {
+          AtomicFileWriter.ReplaceTarget(tempOut, path);
+          steps.Add("repack");
+          log($"repack: {before:N0} → {candidate:N0} bytes.");
+        } else {
+          log("repack: no smaller verified representation.");
+        }
       } catch (Exception ex) {
-        log($"optimize: skipped ({ex.GetType().Name}: {ex.Message}).");
+        log($"repack: skipped ({ex.GetType().Name}: {ex.Message}).");
       } finally {
-        if (File.Exists(tempOut)) try { File.Delete(tempOut); } catch { }
+        AtomicFileWriter.TryDelete(tempOut);
       }
     }
 
@@ -129,42 +129,80 @@ public static class CompactOperation {
     return new CompactResult(originalSize, new FileInfo(path).Length, steps, Minimal: false);
   }
 
-  private static void TryMinimalRebuild(string path, F format,
-      IReadOnlyDictionary<string, string> minimalGeometry, string? password, Action<string> log) {
-    var sourceEntryCount = SafeFileCount(path, password);
-    var tempDir = Path.Combine(Path.GetTempPath(), "cwb_compact_" + Guid.NewGuid().ToString("N")[..8]);
-    var tempOut = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!,
-      Path.GetFileNameWithoutExtension(path) + ".compact-min" + Path.GetExtension(path));
-    try {
-      Directory.CreateDirectory(tempDir);
-      ArchiveOperations.Extract(path, tempDir, password, files: null);
-      var inputs = ArchiveOperations.EnumerateTempInputs(tempDir);
-      ArchiveOperations.Create(tempOut, inputs,
-        new CompressionOptions { Password = password }, format, minimalGeometry);
+  private static void TryMinimalRebuild(
+      string path,
+      ILayoutOptimizable layout,
+      IArchiveFormatOperations operations,
+      IReadOnlyDictionary<string, string> minimalGeometry,
+      string? password,
+      Action<string> log) {
+    SemanticPreservationManifest before;
+    using (var source = File.OpenRead(path))
+      before = SemanticPreservationManifest.Capture(source, operations, password);
 
-      var rebuiltCount = SafeFileCount(tempOut, password);
+    var tempOut = path + $".compact-min.tmp.{Guid.NewGuid():N}";
+    try {
+      using (var source = File.OpenRead(path))
+      using (var target = new FileStream(tempOut, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+        layout.RebuildStreaming(source, target, new LayoutRebuildOptions {
+          Parameters = minimalGeometry,
+        });
+
+      SemanticPreservationManifest after;
+      using (var candidate = File.OpenRead(tempOut))
+        after = SemanticPreservationManifest.Capture(candidate, operations, password);
+      before.VerifyEquivalent(after);
+
       var rebuiltLen = new FileInfo(tempOut).Length;
       var originalLen = new FileInfo(path).Length;
-      if (rebuiltCount < sourceEntryCount) {
-        log($"minimal rebuild: aborted — rebuilt image lists {rebuiltCount} file(s) vs {sourceEntryCount}; keeping original.");
-        return;
-      }
       if (rebuiltLen >= originalLen) {
         log($"minimal rebuild: produced no reduction ({rebuiltLen:N0} ≥ {originalLen:N0} bytes); keeping original.");
         return;
       }
-      File.Move(tempOut, path, overwrite: true);
+
+      AtomicFileWriter.ReplaceTarget(tempOut, path);
       log($"minimal rebuild: re-created at minimal geometry — {originalLen:N0} → {rebuiltLen:N0} bytes "
           + $"({string.Join(", ", minimalGeometry.Select(kv => $"{kv.Key}={kv.Value}"))}).");
     } finally {
-      if (Directory.Exists(tempDir)) try { Directory.Delete(tempDir, recursive: true); } catch { }
-      if (File.Exists(tempOut)) try { File.Delete(tempOut); } catch { }
+      AtomicFileWriter.TryDelete(tempOut);
     }
   }
 
-  private static int SafeFileCount(string path, string? password) {
-    try { return ArchiveOperations.List(path, password).Count(e => !e.IsDirectory); }
-    catch { return 0; }
+  private static void VerifyCompressionCandidate(
+      string sourcePath,
+      string candidatePath,
+      IFormatDescriptor descriptor,
+      IArchiveFormatOperations? operations,
+      string? password) {
+    if (descriptor is IStreamFormatOperations streamOperations) {
+      using var source = File.OpenRead(sourcePath);
+      using var candidate = File.OpenRead(candidatePath);
+      var before = HashDecoded(source, streamOperations);
+      var after = HashDecoded(candidate, streamOperations);
+      if (!before.AsSpan().SequenceEqual(after))
+        throw new InvalidOperationException("Compression changed the decoded payload.");
+      return;
+    }
+
+    if (operations == null)
+      throw new NotSupportedException(
+        "Compression candidate cannot be verified: the format exposes neither stream nor archive semantics.");
+
+    SemanticPreservationManifest beforeManifest;
+    using (var source = File.OpenRead(sourcePath))
+      beforeManifest = SemanticPreservationManifest.Capture(source, operations, password);
+    SemanticPreservationManifest afterManifest;
+    using (var candidate = File.OpenRead(candidatePath))
+      afterManifest = SemanticPreservationManifest.Capture(candidate, operations, password);
+    beforeManifest.VerifyEquivalent(afterManifest);
+  }
+
+  private static byte[] HashDecoded(Stream encoded, IStreamFormatOperations operations) {
+    using var decoded = RebuildVerb.CreateScratchStream();
+    encoded.Position = 0;
+    operations.Decompress(encoded, decoded);
+    decoded.Position = 0;
+    return System.Security.Cryptography.SHA256.HashData(decoded);
   }
 
   private static Dictionary<string, string> SelectMinimalGeometry(IFormatOptionsSchema schema) {

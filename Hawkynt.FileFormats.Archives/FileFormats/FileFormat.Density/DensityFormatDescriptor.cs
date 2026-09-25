@@ -5,7 +5,7 @@ namespace FileFormat.Density;
 /// <summary>
 /// Describes density format.
 /// </summary>
-public sealed class DensityFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class DensityFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, ICompressionOptimizable, IFormatOptionsSchema {
   /// <summary>
   /// Gets the id.
   /// </summary>

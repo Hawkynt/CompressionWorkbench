@@ -7,7 +7,7 @@ namespace FileFormat.Snappy;
 /// <summary>
 /// Describes snappy format.
 /// </summary>
-public sealed class SnappyFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class SnappyFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, ICompressionOptimizable, IFormatOptionsSchema {
   /// <summary>
   /// Gets the id.
   /// </summary>

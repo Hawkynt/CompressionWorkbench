@@ -34,7 +34,7 @@ public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>

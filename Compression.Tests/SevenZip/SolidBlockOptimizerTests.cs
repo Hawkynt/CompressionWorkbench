@@ -1,3 +1,4 @@
+using Compression.Registry;
 using FileFormat.SevenZip;
 
 namespace Compression.Tests.SevenZip;
@@ -50,6 +51,32 @@ public class SolidBlockOptimizerTests {
     }
     ms.Position = 0;
     return ms;
+  }
+
+  [Category("RoundTrip")]
+  [Test]
+  public void Optimize_PreservesEmptyDirectoriesAndEntryTimestamps() {
+    var descriptor = new SevenZipFormatDescriptor();
+    var timestamp = new DateTime(2024, 5, 6, 7, 8, 10, DateTimeKind.Utc);
+    using var source = new MemoryStream();
+    using (var writer = new SevenZipWriter(source, SevenZipCodec.Lzma2, leaveOpen: true)) {
+      writer.AddDirectory("empty/", timestamp);
+      writer.AddEntry(new SevenZipEntry { Name = "alpha.txt", LastWriteTime = timestamp },
+        Enumerable.Repeat((byte)'A', 4096).ToArray());
+      writer.AddEntry(new SevenZipEntry { Name = "beta.txt", LastWriteTime = timestamp },
+        Enumerable.Repeat((byte)'B', 4096).ToArray());
+      writer.Finish();
+    }
+
+    source.Position = 0;
+    var before = SemanticPreservationManifest.Capture(source, descriptor);
+    source.Position = 0;
+
+    var result = SolidBlockOptimizer.Optimize(source, maxTrials: 5);
+
+    using var optimized = new MemoryStream(result.Data, writable: false);
+    var after = SemanticPreservationManifest.Capture(optimized, descriptor);
+    before.VerifyEquivalent(after);
   }
 
   [Category("HappyPath")]

@@ -491,8 +491,8 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       ? new NtfsWriter(generateShortNames: generateShortNames)
       : new NtfsWriter(label, generateShortNames);
     ApplyWriterOptions(w, specific);
-    foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
+    foreach (var input in inputs.Where(input => !input.IsDirectory))
+      w.AddFile(Path.GetFileName(input.ArchiveName), input.ReadContent(), input.LastModified);
 
     var totalSize     = ParseImageSizeBytes(specific?.GetValueOrDefault("ImageSize"));
     var clusterSize   = FilesystemSchemaPresets.ParseSize(specific?.GetValueOrDefault("ClusterSize"));
@@ -553,7 +553,7 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ApplyWriterOptions(w, specific);
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
-      w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream, input.LastModified);
     }
     var totalSize     = ParseImageSizeBytes(specific?.GetValueOrDefault("ImageSize"));
     var clusterSize   = FilesystemSchemaPresets.ParseSize(specific?.GetValueOrDefault("ClusterSize"));
@@ -755,7 +755,9 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         info.ArchiveName, size, false,
         () => info.InMemoryContent is { } bytes
           ? new MemoryStream(bytes, writable: false)
-          : File.OpenRead(info.FullPath)));
+          : File.OpenRead(info.FullPath)) {
+        LastModified = info.LastModified,
+      });
     }
     return result;
   }

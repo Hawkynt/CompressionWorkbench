@@ -45,9 +45,10 @@ Toolbar-driven analysis tools accessible via File > Analyze:
 Scanning runs in either quick or deep mode.
 
 ### Maintenance
-The surface behind the Maintenance menu, mirroring the `cwb` verbs of the same
-names: optimize, shrink, defragment, purge and wipe, with a live block map that
-bins 10³–10⁵ blocks and shows the read/write head. Double-clicking a tile opens
+The surface behind the Maintenance menu exposes separate operations for
+compression, canonicalization, repacking, directory-entry sorting, extent
+defragmentation, allocation-geometry changes, shrinking, purging and wiping.
+The live block map bins 10³–10⁵ blocks and shows the read/write head. Double-clicking a tile opens
 its contents. The verbs and what each is allowed to mean are defined in
 [`docs/ARCHIVE-MODEL.md`](../docs/ARCHIVE-MODEL.md).
 

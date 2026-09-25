@@ -25,7 +25,9 @@ public class BcacheFsIntegrationTests {
       Assert.That(d.Capabilities.HasFlag(FormatCapabilities.SupportsDirectories), Is.True);
       Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
         "bcachefs has a genuine in-place metadata/data allocator and no longer uses the rebuild fallback");
-      Assert.That(d.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.True);
+      Assert.That(d.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.False);
+      Assert.That(d, Is.InstanceOf<ILayoutOptimizable>());
+      Assert.That(d, Is.Not.InstanceOf<ICompressionOptimizable>());
     });
   }
 

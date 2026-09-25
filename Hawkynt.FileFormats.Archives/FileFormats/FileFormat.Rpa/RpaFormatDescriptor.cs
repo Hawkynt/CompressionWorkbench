@@ -15,7 +15,7 @@ namespace FileFormat.Rpa;
 ///   <item><description><c>https://www.renpy.org/</c> — Ren'Py project home</description></item>
 /// </list>
 /// </summary>
-public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IWipeEmpty {
+public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IWipeEmpty, ISyntheticEntryNames {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
@@ -39,6 +39,10 @@ public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       yield return new DefragBlockInfo(r.IndexOffset, idxLen, DefragBlockKind.MetadataReserved, FileName: "Pickle Index");
     }
   }
+
+  /// <inheritdoc />
+  public IReadOnlySet<string> SyntheticEntryNames { get; } =
+    new HashSet<string>(["FULL.rpa", "metadata.ini"], StringComparer.OrdinalIgnoreCase);
 
   /// <summary>
   /// Gets the id.

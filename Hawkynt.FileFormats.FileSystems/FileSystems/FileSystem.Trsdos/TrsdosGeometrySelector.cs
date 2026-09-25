@@ -4,10 +4,10 @@ namespace FileSystem.Trsdos;
 /// <summary>
 /// Picks the smallest TRSDOS / LDOS geometry whose data area fits the
 /// supplied file set with ≤ 5 % wasted slack. The TRS-80 line shipped
-/// only a handful of canonical disk geometries; the optimiser walks
+/// only a handful of canonical disk geometries; the geometry selector walks
 /// them in ascending capacity order.
 /// </summary>
-public static class TrsdosOptimizer {
+public static class TrsdosGeometrySelector {
 
   /// <summary>One disk preset.</summary>
   public readonly record struct TrsdosGeometry(string Density, int Tracks, int SectorsPerTrack) {

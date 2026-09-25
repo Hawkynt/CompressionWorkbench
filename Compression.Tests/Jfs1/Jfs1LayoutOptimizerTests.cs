@@ -6,7 +6,7 @@ namespace Compression.Tests.Jfs1;
 
 /// <summary>
 /// JFS1 Create now auto-selects the slack-minimising block size when unset
-/// (previously it always defaulted to 4096). These tests pin that the optimiser
+/// (previously it always defaulted to 4096). These tests pin that the shared layout selector
 /// picks a less-slack size than the default for a small-file set, that the
 /// created image round-trips, and that a pinned block size is honoured.
 /// </summary>
@@ -40,14 +40,15 @@ public class Jfs1LayoutOptimizerTests {
   }
 
   [Test, Category("Spec")]
-  public void Optimizer_SmallFiles_PicksLessSlackThanDefault() {
+  public void LayoutSelector_SmallFiles_PicksLessSlackThanDefault() {
     // Sub-block files: the 4096 default wastes nearly a full block each; the
-    // optimiser must pick a size with no more slack than the default.
+    // shared layout selector must pick a size with no more slack than the default.
     var sizes = new long[] { 500, 900, 1300, 700 };
-    var picked = Jfs1Optimizer.Find(sizes).BlockSize;
+    var picked = Compression.Core.Layout.LayoutOptimizerAdapter.SelectAllocationUnit(
+      [1024, 2048, 4096], sizes, fixedOverhead: block => 3L * block);
     Assert.That(picked, Is.AnyOf(1024, 2048, 4096));
     Assert.That(SlackOf(sizes, picked), Is.LessThanOrEqualTo(SlackOf(sizes, 4096)),
-      "the optimiser must never pick a block size with more slack than the 4 KiB default");
+      "the layout selector must never pick a block size with more slack than the 4 KiB default");
   }
 
   [Test, Category("Spec")]

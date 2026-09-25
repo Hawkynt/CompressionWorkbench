@@ -82,7 +82,10 @@ internal sealed class MainViewModel : ViewModelBase {
   // resolves its target via ResolveMaintenanceTarget — so the verbs work on a
   // standalone archive file, the currently-open archive, OR an archive entry
   // nested inside the open archive (materialised + written back via Replace).
-  public ICommand OptimizeEntryCommand { get; }
+  public ICommand CompressEntryCommand { get; }
+  public ICommand CanonicalizeEntryCommand { get; }
+  public ICommand RepackEntryCommand { get; }
+  public ICommand SortDirectoryEntryCommand { get; }
   public ICommand ShrinkEntryCommand { get; }
   public ICommand DefragmentEntryCommand { get; }
   public ICommand PurgeEntryCommand { get; }
@@ -142,7 +145,10 @@ internal sealed class MainViewModel : ViewModelBase {
     AnalyzeFileCommand = new RelayCommand(_ => ShowAnalyzeFile());
     BenchmarkCommand = new RelayCommand(_ => ShowBenchmark());
     FileAssociationsCommand = new RelayCommand(_ => ShowFileAssociations());
-    OptimizeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Optimize), _ => CanMaintain(Views.MaintenanceVerb.Optimize));
+    CompressEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Compress), _ => CanMaintain(Views.MaintenanceVerb.Compress));
+    CanonicalizeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Canonicalize), _ => CanMaintain(Views.MaintenanceVerb.Canonicalize));
+    RepackEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Repack), _ => CanMaintain(Views.MaintenanceVerb.Repack));
+    SortDirectoryEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.SortDirectory), _ => CanMaintain(Views.MaintenanceVerb.SortDirectory));
     ShrinkEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Shrink), _ => CanMaintain(Views.MaintenanceVerb.Shrink));
     DefragmentEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Defragment), _ => CanMaintain(Views.MaintenanceVerb.Defragment));
     PurgeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Purge), _ => CanMaintain(Views.MaintenanceVerb.Purge));
@@ -317,7 +323,7 @@ internal sealed class MainViewModel : ViewModelBase {
         var probeName = IsBrowsingOsFolder ? e.Path : e.Name;
         if (!string.IsNullOrEmpty(probeName)) {
           var f = FormatDetector.DetectByExtension(probeName);
-          if (f != FormatDetector.Format.Unknown && !FormatDetector.IsStreamFormat(f)) {
+          if (f != FormatDetector.Format.Unknown) {
             // OS-browser candidate must actually exist on disk.
             if (!IsBrowsingOsFolder || File.Exists(e.Path)) {
               formatId = f.ToString();
@@ -346,16 +352,24 @@ internal sealed class MainViewModel : ViewModelBase {
   /// </summary>
   private bool CanMaintain(Views.MaintenanceVerb verb) {
     if (!TryResolveMaintenanceTarget(out var formatId, out _)) return false;
-    var ops = FormatRegistry.GetArchiveOps(formatId);
-    if (ops == null) return false;
+    var descriptor = FormatRegistry.GetById(formatId);
+    if (descriptor == null) return false;
     return verb switch {
-      Views.MaintenanceVerb.Optimize => ops is IArchiveCreatable or IFileInternalChunkMover,
-      Views.MaintenanceVerb.Shrink => ops is IArchiveShrinkable || formatId is "Fat" or "Ext" or "Ext1" or "Vhd",
-      Views.MaintenanceVerb.Defragment => ops is IArchiveDefragmentable,
-      Views.MaintenanceVerb.Purge => ops is IArchiveModifiable,
-      Views.MaintenanceVerb.WipeEmpty => ops is IWipeEmpty or IFilesystemExtentMap or IArchiveLayoutMap,
-      Views.MaintenanceVerb.Compact => ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable,
-      Views.MaintenanceVerb.Scramble => ops is IFilesystemScrambleable,
+      Views.MaintenanceVerb.Compress => descriptor is ICompressionOptimizable,
+      Views.MaintenanceVerb.Canonicalize => descriptor is IArchiveCanonicalizable,
+      Views.MaintenanceVerb.Repack => descriptor is IArchiveRepackable,
+      Views.MaintenanceVerb.SortDirectory => descriptor is IFilesystemDirectoryOrderer,
+      Views.MaintenanceVerb.Shrink => descriptor is IArchiveShrinkable,
+      Views.MaintenanceVerb.Defragment =>
+        descriptor is IArchiveDefragmentable && descriptor is IFilesystemExtentMap,
+      Views.MaintenanceVerb.Purge => descriptor is IArchiveModifiable,
+      Views.MaintenanceVerb.WipeEmpty => descriptor is IWipeEmpty or IFilesystemExtentMap or IArchiveLayoutMap,
+      Views.MaintenanceVerb.Compact =>
+        descriptor is IArchiveShrinkable
+        || descriptor is ICompressionOptimizable
+        || descriptor is IArchiveRepackable
+        || descriptor is IArchiveDefragmentable && descriptor is IFilesystemExtentMap,
+      Views.MaintenanceVerb.Scramble => descriptor is IFilesystemScrambleable,
       _ => false,
     };
   }
@@ -431,16 +445,16 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   /// <summary>
-  /// True when the resolved maintenance target's descriptor can be re-created
-  /// (<see cref="IArchiveCreatable"/>) and publishes a tunable options schema
-  /// (<see cref="IFormatOptionsSchema"/>) with at least one knob — the
-  /// preconditions for offering an after-creation geometry/options change.
+  /// True when the resolved maintenance target explicitly implements
+  /// <see cref="ILayoutOptimizable"/> and publishes a tunable
+  /// <see cref="IFormatOptionsSchema"/> with at least one knob. Creation support
+  /// alone does not imply that after-creation geometry changes are safe.
   /// </summary>
   private bool CanReconfigure() {
     if (!TryResolveMaintenanceTarget(out var formatId, out _)) return false;
-    var ops = FormatRegistry.GetArchiveOps(formatId);
-    return ops is IArchiveCreatable
-        && ops is IFormatOptionsSchema schema
+    var descriptor = FormatRegistry.GetById(formatId);
+    return descriptor is ILayoutOptimizable
+        && descriptor is IFormatOptionsSchema schema
         && schema.OptionsSchema.Count > 0;
   }
 

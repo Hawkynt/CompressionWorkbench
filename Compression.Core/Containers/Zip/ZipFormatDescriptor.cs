@@ -15,7 +15,7 @@ namespace FileFormat.Zip;
 ///   <item><description>Info-ZIP zip/unzip — long-standing open reference implementations</description></item>
 /// </list>
 /// </summary>
-public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
+public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IArchiveRepackable, ICompressionOptimizable, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -76,6 +76,48 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       output.Write(buf, 0, read);
       remaining -= read;
     }
+  }
+
+  /// <summary>
+  /// Re-encodes every ZIP payload with the strongest Deflate encoder while
+  /// preserving entry names, empty directories, timestamps, and decoded bytes.
+  /// Encrypted archives are rejected because this capability has no password
+  /// parameter and must never silently strip encryption.
+  /// </summary>
+  public void OptimizeCompression(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (ReferenceEquals(input, output))
+      throw new ArgumentException("ZIP compression optimization requires distinct input and output streams.", nameof(output));
+    if (!input.CanRead || !input.CanSeek)
+      throw new ArgumentException("ZIP compression optimization requires a readable, seekable input.", nameof(input));
+    if (!output.CanWrite || !output.CanSeek)
+      throw new ArgumentException("ZIP compression optimization requires a writable, seekable output.", nameof(output));
+
+    input.Position = 0;
+    var reader = new ZipReader(input, leaveOpen: true);
+    if (reader.Entries.Any(entry => entry.IsEncrypted))
+      throw new NotSupportedException("Encrypted ZIP compression optimization requires an explicit password-aware path.");
+
+    output.Position = 0;
+    output.SetLength(0);
+    using var writer = new ZipWriter(
+      output,
+      leaveOpen: true,
+      compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Maximum);
+
+    foreach (var entry in reader.Entries) {
+      if (entry.IsDirectory) {
+        writer.AddDirectory(entry.FileName, entry.LastModified);
+        continue;
+      }
+
+      var data = reader.ExtractEntry(entry);
+      writer.AddEntry(entry.FileName, data, ZipCompressionMethod.Deflate, entry.LastModified);
+    }
+
+    writer.Finish();
+    output.Flush();
   }
 
   /// <summary>Rebuild-based defrag: extracts every entry then re-creates the archive in listing order.</summary>
@@ -296,14 +338,14 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       w.Bzip2BlockSize = ZipOptionsResolver.ResolveBzip2BlockSize(options.DictSize);
 
     foreach (var i in inputs) {
-      if (i.IsDirectory) { w.AddDirectory(i.ArchiveName); continue; }
+      if (i.IsDirectory) { w.AddDirectory(i.ArchiveName, i.LastModified); continue; }
       // ReadContent() transparently handles both on-disk inputs and the
       // in-memory variant fed by the small-image ConvertArchive pipeline.
       var data = i.ReadContent();
       var entryMethod = options.IncompressiblePaths != null && options.IncompressiblePaths.Contains(i.FullPath)
         ? ZipCompressionMethod.Store
         : zipMethod;
-      w.AddEntry(i.ArchiveName, data, entryMethod);
+      w.AddEntry(i.ArchiveName, data, entryMethod, i.LastModified);
     }
     w.Finish();
   }
@@ -360,14 +402,14 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         using var mixed = new ZipWriter(target, leaveOpen: true,
           compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Default);
         foreach (var input in materialised) {
-          if (input.IsDirectory) { mixed.AddDirectory(input.Name); continue; }
+          if (input.IsDirectory) { mixed.AddDirectory(input.Name, input.LastModified); continue; }
           using var src = input.OpenStream();
           if (input.Size > Array.MaxLength) {
-            mixed.AddStreamingStoredEntry(input.Name, input.Size, src);
+            mixed.AddStreamingStoredEntry(input.Name, input.Size, src, input.LastModified);
           } else {
             using var ms = new MemoryStream();
             src.CopyTo(ms);
-            mixed.AddEntry(input.Name, ms.ToArray(), zipMethod);
+            mixed.AddEntry(input.Name, ms.ToArray(), zipMethod, input.LastModified);
           }
         }
         mixed.Finish();
@@ -381,13 +423,17 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var buffered = new List<ArchiveInputInfo>();
       foreach (var input in materialised) {
         if (input.IsDirectory) {
-          buffered.Add(new ArchiveInputInfo(input.Name, input.Name, IsDirectory: true));
+          buffered.Add(new ArchiveInputInfo(input.Name, input.Name, IsDirectory: true) {
+            LastModified = input.LastModified,
+          });
           continue;
         }
         using var src = input.OpenStream();
         using var ms = new MemoryStream();
         src.CopyTo(ms);
-        buffered.Add(ArchiveInputInfo.InMemory(input.Name, ms.ToArray()));
+        buffered.Add(ArchiveInputInfo.InMemory(input.Name, ms.ToArray()) with {
+          LastModified = input.LastModified,
+        });
       }
       this.Create(target, buffered, options);
       return;
@@ -396,9 +442,9 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new ZipWriter(target, leaveOpen: true,
       compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Default);
     foreach (var input in inputs) {
-      if (input.IsDirectory) { w.AddDirectory(input.Name); continue; }
+      if (input.IsDirectory) { w.AddDirectory(input.Name, input.LastModified); continue; }
       using var src = input.OpenStream();
-      w.AddStreamingStoredEntry(input.Name, input.Size, src);
+      w.AddStreamingStoredEntry(input.Name, input.Size, src, input.LastModified);
     }
     w.Finish();
   }

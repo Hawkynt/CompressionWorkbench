@@ -7,7 +7,7 @@ namespace Compression.Registry;
 /// Auto-generated descriptor for compound tar formats (tar.gz, tar.bz2, etc.).
 /// Wraps tar archive operations with a stream compression layer via the registry.
 /// </summary>
-public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
+public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveRepackable, ICompressionOptimizable, IArchiveSemanticMetadataProvider, IFormatOptionsSchema {
 
   /// <summary>
   /// Inherits the inner TAR descriptor's schema and adds a <c>CompressionLevel</c>
@@ -55,6 +55,76 @@ public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("tar", _displayName)];
   public string? TarCompressionFormatId => _streamFormatId;
+
+  /// <inheritdoc />
+  public void Repack(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (ReferenceEquals(input, output))
+      throw new ArgumentException("Compound TAR repack requires distinct input and output streams.", nameof(output));
+
+    var streamOps = FormatRegistry.GetStreamOps(this._streamFormatId)
+      ?? throw new NotSupportedException($"Outer stream format '{this._streamFormatId}' is not registered.");
+    var tarDescriptor = FormatRegistry.GetById("Tar");
+    if (tarDescriptor is not IArchiveRepackable tarRepack)
+      throw new NotSupportedException("The registered TAR descriptor does not support semantic-preserving repack.");
+
+    using var decoded = RebuildVerb.CreateScratchStream();
+    input.Position = 0;
+    streamOps.Decompress(input, decoded);
+
+    using var repackedTar = RebuildVerb.CreateScratchStream();
+    decoded.Position = 0;
+    tarRepack.Repack(decoded, repackedTar);
+
+    output.Position = 0;
+    output.SetLength(0);
+    repackedTar.Position = 0;
+    streamOps.Compress(repackedTar, output);
+    output.Flush();
+    output.Position = 0;
+  }
+
+  /// <inheritdoc />
+  public IReadOnlyDictionary<string, string> CaptureSemanticMetadata(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+
+    var streamOps = FormatRegistry.GetStreamOps(this._streamFormatId)
+      ?? throw new NotSupportedException($"Outer stream format '{this._streamFormatId}' is not registered.");
+    var tarDescriptor = FormatRegistry.GetById("Tar");
+    if (tarDescriptor is not IArchiveSemanticMetadataProvider tarMetadata)
+      throw new NotSupportedException("The registered TAR descriptor does not expose semantic metadata.");
+
+    using var decoded = RebuildVerb.CreateScratchStream();
+    archive.Position = 0;
+    streamOps.Decompress(archive, decoded);
+    decoded.Position = 0;
+    return new Dictionary<string, string>(
+      tarMetadata.CaptureSemanticMetadata(decoded),
+      StringComparer.Ordinal);
+  }
+
+  /// <summary>
+  /// Recompresses only the outer stream layer. The decoded TAR byte stream is
+  /// preserved exactly; no TAR header, entry ordering, padding or metadata is
+  /// rebuilt by this operation.
+  /// </summary>
+  public void OptimizeCompression(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (ReferenceEquals(input, output))
+      throw new ArgumentException(
+        "Compound TAR compression optimization requires distinct input and output streams.",
+        nameof(output));
+
+    var streamDescriptor = FormatRegistry.GetById(this._streamFormatId)
+      ?? throw new NotSupportedException($"Outer stream format '{this._streamFormatId}' is not registered.");
+    if (streamDescriptor is not ICompressionOptimizable compression)
+      throw new NotSupportedException(
+        $"Outer stream format '{this._streamFormatId}' does not implement {nameof(ICompressionOptimizable)}.");
+
+    compression.OptimizeCompression(input, output);
+  }
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var streamOps = FormatRegistry.GetStreamOps(_streamFormatId)!;

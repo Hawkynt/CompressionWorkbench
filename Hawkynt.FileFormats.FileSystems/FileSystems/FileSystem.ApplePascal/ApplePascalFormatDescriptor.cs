@@ -142,9 +142,9 @@ public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFor
     var vsizeLabel = options.GetOption("VolumeSize", "Auto");
     int volumeBlocks;
     if (vsizeLabel.Equals("Auto", StringComparison.OrdinalIgnoreCase)) {
-      // Auto: optimizer picks size from the actual file payload.
+      // Auto: geometry selector picks size from the actual file payload.
       var sizes = inputs.Where(i => !i.IsDirectory).Select(i => (long)i.ReadContent().Length).ToList();
-      volumeBlocks = ApplePascalOptimizer.Find(sizes).VolumeBlocks;
+      volumeBlocks = ApplePascalGeometrySelector.Find(sizes).VolumeBlocks;
     } else {
       volumeBlocks = int.TryParse(vsizeLabel, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 280;
     }

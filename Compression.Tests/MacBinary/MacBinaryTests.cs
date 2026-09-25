@@ -148,11 +148,13 @@ public class MacBinaryTests {
   }
 
   [Test, Category("Spec")]
-  public void Descriptor_AdvertisesOptimizer() {
+  public void Descriptor_AdvertisesCanonicalization_NotCompressionOptimization() {
     var descriptor = new MacBinaryFormatDescriptor();
     Assert.Multiple(() => {
-      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.True);
-      Assert.That(descriptor.Methods.Single().SupportsOptimize, Is.True);
+      Assert.That(descriptor, Is.InstanceOf<IArchiveCanonicalizable>());
+      Assert.That(descriptor, Is.Not.InstanceOf<ICompressionOptimizable>());
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.False);
+      Assert.That(descriptor.Methods.Single().SupportsOptimize, Is.False);
     });
   }
 

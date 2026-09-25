@@ -41,7 +41,8 @@ public class BcmOptionsTests {
   public void Bcm_ExposesBlockSizeOption() {
     var descriptor = new BcmFormatDescriptor();
 
-    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.True);
+    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.False);
+    Assert.That(descriptor, Is.Not.InstanceOf<ICompressionOptimizable>());
     Assert.That(descriptor, Is.InstanceOf<IFormatOptionsSchema>());
 
     var option = descriptor.OptionsSchema.Single(option => option.Key == "BlockSize");
