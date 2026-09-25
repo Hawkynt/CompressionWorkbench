@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:Compression.UI.Controls"
-        Title="Maintenance — Optimize / Shrink / Defragment / Purge / Wipe" Width="900" Height="780"
+        Title="Maintenance — Compress / Canonicalize / Repack / Sort / Defragment / Geometry" Width="900" Height="780"
         MinWidth="720" MinHeight="560"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip">
 
@@ -23,7 +23,7 @@
         <Button x:Name="BrowseBtn" DockPanel.Dock="Right" Padding="12,2" Margin="4,0,0,0"
                 Content="Browse..." Click="OnBrowse" />
         <TextBox x:Name="ImagePathBox" VerticalContentAlignment="Center"
-                 IsReadOnly="True" Text="Select a filesystem image to defragment..."
+                 IsReadOnly="True" Text="Select a filesystem image, archive, or encoded stream..."
                  Foreground="Gray" />
       </DockPanel>
     </GroupBox>
@@ -42,7 +42,7 @@
         </Grid.RowDefinitions>
         <TextBlock Grid.Row="0" Grid.Column="0" Text="Format:" FontWeight="SemiBold" />
         <TextBlock Grid.Row="0" Grid.Column="1" x:Name="FormatLbl" Text="—" />
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="Defrag support:" FontWeight="SemiBold" />
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="Maintenance support:" FontWeight="SemiBold" />
         <TextBlock Grid.Row="1" Grid.Column="1" x:Name="SupportLbl" Text="—" />
         <TextBlock Grid.Row="2" Grid.Column="0" Text="Image size:" FontWeight="SemiBold" />
         <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SizeLbl" Text="—" />
@@ -336,7 +336,7 @@
                   ToolTip="Compact rebuilds at the smallest geometry the format allows (e.g. a 1.44 MB FAT floppy → a few KB). Contents preserved, but the result may not be a standard mountable image." />
         <Button x:Name="CompactBtn" Content="Compact" Width="100" Padding="4" Margin="0,0,8,0"
                 Click="OnCompact" IsEnabled="False"
-                ToolTip="Defragment + optimize + shrink in one pass — the smallest valid container that still holds the same contents. Tick 'Minimal geometry' for the bare-minimum (non-standard) rebuild." />
+                ToolTip="Run the explicitly supported size-reduction stages: defragment extents, compress, repack, then shrink. Tick 'Minimal geometry' for an allocation-geometry rebuild." />
         <Button x:Name="PurgeBtn" Content="Purge" Width="100" Padding="4" Margin="0,0,8,0"
                 Click="OnPurge" IsEnabled="False"
                 ToolTip="Erase ALL live data, leaving a valid empty container. Distinct from Wipe Empty (which only zeros dead space)." />
@@ -345,7 +345,7 @@
                 ToolTip="Zero-fill all unused space: free clusters, cluster-tip slack, dead bytes. Forensic cleanliness tool." />
         <Button x:Name="ShrinkBtn" Content="Shrink" Width="100" Padding="4"
                 Click="OnShrink" IsEnabled="False"
-                ToolTip="Defragment + truncate trailing free space to minimize image size." />
+                ToolTip="Reduce the outer stored footprint without treating compression, repacking, or geometry changes as the same operation." />
       </StackPanel>
     </WrapPanel>
   </Grid>
