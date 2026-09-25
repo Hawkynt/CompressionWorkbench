@@ -7,7 +7,7 @@ namespace Compression.Registry;
 /// Auto-generated descriptor for compound tar formats (tar.gz, tar.bz2, etc.).
 /// Wraps tar archive operations with a stream compression layer via the registry.
 /// </summary>
-public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
+public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveRepackable, IFormatOptionsSchema {
 
   /// <summary>
   /// Inherits the inner TAR descriptor's schema and adds a <c>CompressionLevel</c>
