@@ -997,7 +997,8 @@ Reorders carried RealAudio audio packets into the codec's coded-frame byte order
 Implements `IEquatable<AdxInfo>`.
 
 | Member | Signature | Summary |
-| --- | --- | --- || `AdxInfo` | `AdxInfo(byte EncodingType, int BlockSize, int BitDepth, int Channels, int SampleRate, int TotalSamples, int HighpassFrequency, int Version, byte Flags, int DataOffset, int? LoopStartSample = null, int? LoopEndSample = null)` |  |
+| --- | --- | --- |
+| `AdxInfo` | `AdxInfo(byte EncodingType, int BlockSize, int BitDepth, int Channels, int SampleRate, int TotalSamples, int HighpassFrequency, int Version, byte Flags, int DataOffset, int? LoopStartSample = null, int? LoopEndSample = null)` |  |
 | `BitDepth` | `int BitDepth { get; init; }` |  |
 | `BlockSize` | `int BlockSize { get; init; }` |  |
 | `Channels` | `int Channels { get; init; }` |  |
@@ -1997,6 +1998,7 @@ Implements `IEquatable<Mp3FrameHeader>`.
 | `Parse` | `static Mp3FrameHeader Parse(ReadOnlySpan<byte> header4)` | Parses a 4-byte MP3 frame header. Throws `InvalidDataException` if the syncword is absent or reserved bit patterns are present. |
 
 #### `Mp3StreamInfo`
+
 Stream-level metadata extracted from an MP3 stream's first valid frame header (and Xing/Info VBR header, if present). `DurationSamples` is estimated from frame count when a VBR header is found, otherwise from byte size / average bitrate; pass -1 when unknown. `Bitrate` is in bit/s, as in every other codec's stream info, not the kbit/s the frame header table holds.
 
 Implements `IEquatable<Mp3StreamInfo>`.
@@ -2996,6 +2998,7 @@ Parses a ProTracker / SoundTracker MOD into the shared `TrackerSong` model and r
 #### `S3mModule`
 
 Parses a Scream Tracker 3 (S3M) module into the shared `TrackerSong` model and renders it. Handles the packed pattern stream, PCM (type 1) instruments with their C2SPD, the channel-settings table (muted/disabled channels), default 0x3/0xC panning and the optional 32-byte pan section.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DecodeSamples` | `static IReadOnlyList<ValueTuple<short[], int>?> DecodeSamples(byte[] blob)` | Decoded mono samples (1-based instrument index → 16-bit PCM and C2SPD), or null. |
@@ -3813,7 +3816,7 @@ The memory and I/O abstraction the `Cpu` core talks to. Every memory fetch, read
 
 ### Namespace `Compression.Registry`
 
-[`AlgorithmFamily`](#algorithmfamily) · [`ApeTagReader`](#apetagreader) · [`ApeTagReader.ApeTag`](#apetagreaderapetag) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveFormatOperationsExtensions`](#archiveformatoperationsextensions) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveMutationOptions`](#archivemutationoptions) · [`ArchiveSemanticManifest`](#archivesemanticmanifest) · [`ArchiveSemanticManifest.Entry`](#archivesemanticmanifestentry) · [`ArchiveShrinker`](#archiveshrinker) · [`ArchiveSparseExtent`](#archivesparseextent) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemAllocationMapCompleter`](#filesystemallocationmapcompleter) · [`FilesystemCompressionParameter`](#filesystemcompressionparameter) · [`FilesystemCompressionProfile`](#filesystemcompressionprofile) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemOptimization`](#filesystemoptimization) · [`FilesystemOptimizationAdapters`](#filesystemoptimizationadapters) · [`FilesystemOptimizationAdapters.HardLinkDeduplicator`](#filesystemoptimizationadaptershardlinkdeduplicator) · [`FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`](#filesystemoptimizationadapterssymboliclinkdeduplicator) · [`FilesystemOptimizationExtensions`](#filesystemoptimizationextensions) · [`FilesystemOptimizationFeatures`](#filesystemoptimizationfeatures) · [`FilesystemOptimizationOptions`](#filesystemoptimizationoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FilesystemSourceRole`](#filesystemsourcerole) · [`FilesystemStreamSet`](#filesystemstreamset) · [`FilesystemStreamSource`](#filesystemstreamsource) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatDetectionSignature`](#formatdetectionsignature) · [`FormatHeaderMatch`](#formatheadermatch) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKeys`](#formatoptionkeys) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`HardLinkDeduplicationSemantics`](#hardlinkdeduplicationsemantics) · [`IArchiveCanonicalizable`](#iarchivecanonicalizable) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveRepackable`](#iarchiverepackable) · [`IArchiveSemanticMetadataProvider`](#iarchivesemanticmetadataprovider) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`ICompressionOptimizable`](#icompressionoptimizable) · [`IContainerRemuxable`](#icontainerremuxable) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDirectoryOrderer`](#ifilesystemdirectoryorderer) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtendedAttributeReader`](#ifilesystemextendedattributereader) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatDetectionSource`](#iformatdetectionsource) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IMultiStreamFilesystemDriverProvider`](#imultistreamfilesystemdriverprovider) · [`IMultiStreamFilesystemDriverReadinessProvider`](#imultistreamfilesystemdriverreadinessprovider) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`IStreamFormatOperations`](#istreamformatoperations) · [`ISymbolicLinkDeduplicationLayout`](#isymboliclinkdeduplicationlayout) · [`ISyntheticEntryNames`](#isyntheticentrynames) · [`IWipeEmpty`](#iwipeempty) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`MutableRebuildFilesystemSession`](#mutablerebuildfilesystemsession) · [`MutableRebuildFilesystemSession.RebuildImage`](#mutablerebuildfilesystemsessionrebuildimage) · [`MutableRebuildFilesystemSession.ValidateImage`](#mutablerebuildfilesystemsessionvalidateimage) · [`OptimizationCapabilities`](#optimizationcapabilities) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawDiskShrinkRebuilder`](#rawdiskshrinkrebuilder) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildFilesystemEntry`](#rebuildfilesystementry) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult) · [`WholeImageRebuildCommitter`](#wholeimagerebuildcommitter)
+[`AlgorithmFamily`](#algorithmfamily) · [`ApeTagReader`](#apetagreader) · [`ApeTagReader.ApeTag`](#apetagreaderapetag) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveFormatOperationsExtensions`](#archiveformatoperationsextensions) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveMutationOptions`](#archivemutationoptions) · [`ArchiveSemanticManifest`](#archivesemanticmanifest) · [`ArchiveSemanticManifest.Entry`](#archivesemanticmanifestentry) · [`ArchiveShrinker`](#archiveshrinker) · [`ArchiveSparseExtent`](#archivesparseextent) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragContentGuard.DefragContentEntry`](#defragcontentguarddefragcontententry) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemAllocationMapCompleter`](#filesystemallocationmapcompleter) · [`FilesystemBlockMoverAttribute`](#filesystemblockmoverattribute) · [`FilesystemCompressionParameter`](#filesystemcompressionparameter) · [`FilesystemCompressionProfile`](#filesystemcompressionprofile) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemOptimization`](#filesystemoptimization) · [`FilesystemOptimizationAdapters`](#filesystemoptimizationadapters) · [`FilesystemOptimizationAdapters.HardLinkDeduplicator`](#filesystemoptimizationadaptershardlinkdeduplicator) · [`FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`](#filesystemoptimizationadapterssymboliclinkdeduplicator) · [`FilesystemOptimizationExtensions`](#filesystemoptimizationextensions) · [`FilesystemOptimizationFeatures`](#filesystemoptimizationfeatures) · [`FilesystemOptimizationOptions`](#filesystemoptimizationoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FilesystemSourceRole`](#filesystemsourcerole) · [`FilesystemStreamSet`](#filesystemstreamset) · [`FilesystemStreamSource`](#filesystemstreamsource) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatDetectionSignature`](#formatdetectionsignature) · [`FormatHeaderMatch`](#formatheadermatch) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKeys`](#formatoptionkeys) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`HardLinkDeduplicationSemantics`](#hardlinkdeduplicationsemantics) · [`IArchiveCanonicalizable`](#iarchivecanonicalizable) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveRepackable`](#iarchiverepackable) · [`IArchiveSemanticMetadataProvider`](#iarchivesemanticmetadataprovider) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`ICompressionOptimizable`](#icompressionoptimizable) · [`IContainerRemuxable`](#icontainerremuxable) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDirectoryOrderer`](#ifilesystemdirectoryorderer) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtendedAttributeReader`](#ifilesystemextendedattributereader) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatDetectionSource`](#iformatdetectionsource) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IMultiStreamFilesystemDriverProvider`](#imultistreamfilesystemdriverprovider) · [`IMultiStreamFilesystemDriverReadinessProvider`](#imultistreamfilesystemdriverreadinessprovider) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`IStreamFormatOperations`](#istreamformatoperations) · [`ISymbolicLinkDeduplicationLayout`](#isymboliclinkdeduplicationlayout) · [`ISyntheticEntryNames`](#isyntheticentrynames) · [`IWipeEmpty`](#iwipeempty) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`LegacyOptimizeEffect`](#legacyoptimizeeffect) · [`MagicSignature`](#magicsignature) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`MutableRebuildFilesystemSession`](#mutablerebuildfilesystemsession) · [`MutableRebuildFilesystemSession.RebuildImage`](#mutablerebuildfilesystemsessionrebuildimage) · [`MutableRebuildFilesystemSession.ValidateImage`](#mutablerebuildfilesystemsessionvalidateimage) · [`OptimizationCapabilities`](#optimizationcapabilities) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawDiskShrinkRebuilder`](#rawdiskshrinkrebuilder) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildFilesystemEntry`](#rebuildfilesystementry) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult) · [`WholeImageRebuildCommitter`](#wholeimagerebuildcommitter)
 
 #### `AlgorithmFamily`
 
@@ -3994,6 +3997,7 @@ Implements `IEquatable<ArchiveSparseExtent>`.
 | `Offset` | `long Offset { get; init; }` |  |
 
 #### `AudioEncodedStream`
+
 Container-neutral encoded audio stream.
 
 Implements `IEquatable<AudioEncodedStream>`.
@@ -4153,7 +4157,7 @@ Central registry for compression building blocks (algorithm primitives). Populat
 
 Auto-generated descriptor for compound tar formats (tar.gz, tar.bz2, etc.). Wraps tar archive operations with a stream compression layer via the registry.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4174,6 +4178,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`,
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry by first decompressing the outer stream (gzip / bzip2 / xz / zstd / etc.) and delegating to the inner TAR descriptor's own bounded `OpenEntry`. The decompressed TAR isn't seekable in general, so we materialise it into a `MemoryStream` once and let TAR's positional decoder produce the per-entry bounded view over that buffer. The returned stream is bounded to the inner entry's logical size — any block padding past the entry is unreachable. |
+| `OptimizeCompression` | `void OptimizeCompression(Stream input, Stream output)` |  |
 
 #### `DefragBlockClass`
 
@@ -4220,7 +4225,32 @@ Runs an in-place defragmentation and keeps its result only if every file still r
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `RunOrRebuild` | `static void RunOrRebuild(Stream archive, Func<Stream, IEnumerable<ValueTuple<string, byte[]>>> readEntries, Action inPlace, Action rebuild)` | Convenience overload for the common reader shape used by filesystem descriptors. The tuple name is the stable path; the payload remains the byte-level part of the identity. |
+| `RunOrRebuild` | `static void RunOrRebuild(Stream archive, Func<Stream, IReadOnlyList<DefragContentEntry>> readEntries, Action inPlace, Action rebuild)` | The identity-preserving form of `RunOrRebuild`. Callers should prefer this overload whenever their reader exposes paths or directory entries. |
 | `RunOrRebuild` | `static void RunOrRebuild(Stream archive, Func<Stream, IReadOnlyList<byte[]>> readContents, Action inPlace, Action rebuild)` | Snapshots `archive`, runs `inPlace`, and verifies the contents. On any mismatch — or any exception — the snapshot is restored and `rebuild` runs instead. |
+
+#### `DefragContentGuard.DefragContentEntry`
+
+A verified directory entry. Unlike a payload-only snapshot this keeps the name and directory bit, so an in-place pass cannot silently swap two equal-sized files or move a file to a different directory.
+
+Implements `IEquatable<DefragContentEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefragContentEntry` | `DefragContentEntry(string Path, bool IsDirectory, byte[] Payload, long? Length = null, ulong NativeAttributes = 0, DateTimeOffset? Created = null, DateTimeOffset? Modified = null, DateTimeOffset? Accessed = null, DateTimeOffset? Changed = null, uint LinkCount = 1, string LinkIdentity = null, string SymbolicLinkTarget = null, IReadOnlyList<ValueTuple<long, long>> SparseExtents = null)` | A verified directory entry. Unlike a payload-only snapshot this keeps the name and directory bit, so an in-place pass cannot silently swap two equal-sized files or move a file to a different directory. |
+| `Accessed` | `DateTimeOffset? Accessed { get; init; }` |  |
+| `Changed` | `DateTimeOffset? Changed { get; init; }` |  |
+| `Created` | `DateTimeOffset? Created { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `Length` | `long? Length { get; init; }` |  |
+| `LinkCount` | `uint LinkCount { get; init; }` |  |
+| `LinkIdentity` | `string LinkIdentity { get; init; }` |  |
+| `Modified` | `DateTimeOffset? Modified { get; init; }` |  |
+| `NativeAttributes` | `ulong NativeAttributes { get; init; }` |  |
+| `Path` | `string Path { get; init; }` |  |
+| `Payload` | `byte[] Payload { get; init; }` |  |
+| `SparseExtents` | `IReadOnlyList<ValueTuple<long, long>> SparseExtents { get; init; }` |  |
+| `SymbolicLinkTarget` | `string SymbolicLinkTarget { get; init; }` |  |
 
 #### `DefragMode`
 
@@ -4250,7 +4280,7 @@ Implements `IEquatable<DefragOptions>`.
 | `ImageEnd` | `long ImageEnd { get; init; }` | Byte offset just past the last sector available for live data. -1 = auto-detect from the image's physical size. Required for `ConsolidateAtEnd` — must be set explicitly or auto-detected. |
 | `InterleaveStride` | `int InterleaveStride { get; init; }` | Block interleave factor. 1 = contiguous (default), 2 = every-other-block, N = place each file's Kth block at (start + K*stride). Free blocks between the scattered fragments are left available for other files' interleaved blocks, round-robin style. Useful for optimizing sequential read throughput on spinning media (interleave matches rotational latency) and for testing FS robustness with fragmented layouts. Range: 1-256. |
 | `LayoutTemplate` | `LayoutTemplate LayoutTemplate { get; init; }` | Optional layout template that overrides `Mode` / `MetadataZonePlacement` with a fine-grained per-zone plan. When set, the planner uses `LayoutTemplateResolver` to assign files to byte ranges; `Mode` is interpreted as the fallback strategy for files outside all zones (per the template's leftover strategy). When `null` (default), the planner uses the classic mode/profile/metadata-zone pipeline. |
-| `MetadataPlacement` | `MetadataPlacementProfile MetadataPlacement { get; init; }` | Optional metadata placement profile for file-internal optimizers. When non-null, optimizers that support `IFileInternalChunkMover` use these rules to decide where metadata chunks land relative to the primary data payload. When null, each optimizer uses its format-specific default placement. |
+| `MetadataPlacement` | `MetadataPlacementProfile MetadataPlacement { get; init; }` | Optional metadata placement profile for file-internal canonicalizers. When non-null, canonicalizers that support `IFileInternalChunkMover` use these rules to decide where metadata chunks land relative to the primary data payload. When null, each optimizer uses its format-specific default placement. |
 | `MetadataZonePlacement` | `MetadataZone MetadataZonePlacement { get; init; }` | Controls where filesystem metadata and directory extents are placed during defragmentation. Default: `Unchanged` (metadata stays where it is). Only affects planner-driven defragmentation of filesystem images; ignored for archive optimization and file-internal layout. |
 | `Mode` | `DefragMode Mode { get; init; }` | Defragmentation strategy. Default: `ConsolidateAtStart`. |
 | `OnProgress` | `Action<DefragProgressEvent> OnProgress { get; init; }` | Optional progress callback. When non-null, the defragmenter emits snapshots and incremental read/write-head updates that can drive the maintenance block map. Staged archive rebuilds use the same contract as native block movers. |
@@ -4310,6 +4340,17 @@ Completes a decoded filesystem layout so that every byte of the image is account
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Complete` | `static IReadOnlyList<DefragBlockInfo> Complete(long imageLength, IEnumerable<DefragBlockInfo> decoded, IEnumerable<ValueTuple<long, long>> provenFree)` | Produces a complete map covering `[0, imageLength)` from the decoded extents and the ranges the allocator proves free. |
+
+#### `FilesystemBlockMoverAttribute`
+
+Associates a format descriptor with the concrete physical extent mover it deliberately exposes when the mover is kept as a separate helper object.
+
+Inherits `Attribute`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemBlockMoverAttribute` | `FilesystemBlockMoverAttribute(Type moverType)` | Associates a format descriptor with the concrete physical extent mover it deliberately exposes when the mover is kept as a separate helper object. |
+| `MoverType` | `Type MoverType { get; }` | The concrete mover type exposed by the descriptor. |
 
 #### `FilesystemCompressionParameter`
 
@@ -4562,6 +4603,7 @@ Shared implementation behind filesystem optimize and option-aware shrink. Candid
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `GetCompressionParameters` | `static IReadOnlyList<FilesystemCompressionParameter> GetCompressionParameters(object descriptor)` | Returns the explicitly registered compression parameters for the descriptor's writer. This reports writer-backed compression axes only; allocation geometry is deliberately a separate concern. |
 | `GetHardLinkDeduplicationSemantics` | `static HardLinkDeduplicationSemantics GetHardLinkDeduplicationSemantics(object descriptor)` | Returns the exact hard-link-style semantics implemented by this writer. Native `HardLinks` wins when present; otherwise a registered read-only shared-data backend can expose the same user option without pretending that the underlying filesystem has native hard links. |
 | `GetSupportedFeatures` | `static FilesystemOptimizationFeatures GetSupportedFeatures(object descriptor)` | Returns only transforms the current repository writer can actually perform. |
 | `Optimize` | `static void Optimize(ILayoutOptimizable layout, Stream input, Stream output, FilesystemOptimizationOptions options = null)` | Rebuilds a layout with the requested transforms and parameter search, emitting the input unchanged when no verified candidate is smaller. |
@@ -4735,7 +4777,7 @@ Flags describing what operations a format supports. Write capability is a four-l
 | `SupportsMultipleEntries` | `32` |  |
 | `SupportsDirectories` | `64` |  |
 | `CanRemux` | `128` | Can rebuild an existing container while preserving already encoded payloads. This is independent of `CanCreate` and `CanModify` and is backed by `IContainerRemuxable`. |
-| `SupportsOptimize` | `256` |  |
+| `SupportsOptimize` | `256` | Legacy stream-compression hint retained for compatibility with existing method-selection surfaces. Maintenance discovery must use `ICompressionOptimizable` instead. Non-stream containers and filesystems must not set this flag. |
 | `CanCompoundWithTar` | `512` |  |
 | `CanModify` | `1024` | R/W: can add/replace/remove entries in an existing archive/image. The implementation may edit in place or relayout/rebuild. Implies `CanCreate` for normal writable formats. |
 
@@ -4852,7 +4894,7 @@ Implements `IEquatable<FormatMethodInfo>`.
 | `FormatMethodInfo` | `FormatMethodInfo(string Name, string DisplayName, bool SupportsOptimize = false)` | Describes a compression method available within a format. |
 | `DisplayName` | `string DisplayName { get; init; }` | Human-readable name (e.g. "Deflate", "LZMA"). |
 | `Name` | `string Name { get; init; }` | Internal method name (e.g. "deflate", "lzma"). |
-| `SupportsOptimize` | `bool SupportsOptimize { get; init; }` | Whether "method+" optimization is available. |
+| `SupportsOptimize` | `bool SupportsOptimize { get; init; }` | Whether compression-specific "method+" parameter optimization is available. This is not a generic maintenance capability. |
 
 #### `FormatOptionDescriptor`
 
@@ -4993,7 +5035,8 @@ Opt-in capability: the descriptor can enumerate the real byte-level layout of an
 
 Implements `IWipeEmpty`.
 
-| Member | Signature | Summary || --- | --- | --- |
+| Member | Signature | Summary |
+| --- | --- | --- |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the actual byte layout of `archive`. Coverage may be sparse only where omitted bytes are proven unused; callers fill those gaps with `Free`. The stream's position may be modified during enumeration but the caller owns the lifetime — implementations must not dispose `archive`. |
 
 #### `IArchiveModifiable`
@@ -5025,6 +5068,7 @@ Opt-in capability for rebuilding a container from the same logical entries. Repa
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Repack` | `void Repack(Stream input, Stream output)` | Rebuilds `input` into `output` while preserving the logical entry set and contents. |
+| `Repack` | `void Repack(Stream input, Stream output, string password)` | Password-aware repack. The same password is used to read the source and to protect the rebuilt target. Formats with different source/target password semantics can override this overload. |
 
 #### `IArchiveSemanticMetadataProvider`
 
@@ -5142,7 +5186,8 @@ Opt-in capability for changing only the compression representation of live paylo
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `OptimizeCompression` | `void OptimizeCompression(Stream input, Stream output)` | Re-encodes `input` into `output` using the format's best supported compression choices. |
+| `OptimizeCompression` | `void OptimizeCompression(Stream input, Stream output)` |  |
+| `OptimizeCompression` | `void OptimizeCompression(Stream input, Stream output, string password)` | Re-encodes `input` into `output` using the format's best supported compression choices. |
 
 #### `IContainerRemuxable`
 
@@ -5160,8 +5205,10 @@ Implements `IArchiveCanonicalizable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Optimize` | `void Optimize(Stream file)` | Performs the canonical optimization for the format (e.g., MP4 fast-start, JPEG EXIF-first). The stream must be readable, writable, and seekable. If the file is already in the optimal layout, this is a no-op. |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` | Performs optimization with an optional metadata placement profile that controls where metadata chunks land relative to the data payload. The default implementation ignores the profile and delegates to `Optimize`. |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file)` | Canonicalizes the file in place (for example MP4 fast-start or metadata chunk ordering). The stream must be readable, writable, and seekable. If the file is already canonical, this is a no-op. |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file, MetadataPlacementProfile profile)` | Canonicalizes the file in place using an optional metadata placement profile. The default ignores the profile. |
+| `Optimize` | `void Optimize(Stream file)` | Legacy spelling retained for source compatibility. |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` | Legacy spelling retained for source compatibility. |
 
 #### `IFileInternalLayoutMap`
 
@@ -5559,6 +5606,16 @@ What a format can be asked to reclaim beyond re-laying its data out.
 | `Sparse` | `1` | Runs of zeros can be recorded as absent rather than allocated. |
 | `HardLinks` | `2` | Identical files can share one copy under several names. |
 
+#### `LegacyOptimizeEffect`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `Compress` | `1` |  |
+| `Canonicalize` | `2` |  |
+| `Repack` | `3` |  |
+| `Ambiguous` | `4` |  |
+
 #### `MagicSignature`
 
 A magic-byte signature for format identification.
@@ -5707,9 +5764,14 @@ Central capability discovery for operations that used to be presented under the 
 | `CanChangeAllocationGeometry` | `static bool CanChangeAllocationGeometry(IFormatDescriptor descriptor)` |  |
 | `CanCompress` | `static bool CanCompress(IFormatDescriptor descriptor)` |  |
 | `CanDefragmentExtents` | `static bool CanDefragmentExtents(IFormatDescriptor descriptor)` |  |
+| `CanLegacyOptimizeUnambiguously` | `static bool CanLegacyOptimizeUnambiguously(IFormatDescriptor descriptor)` |  |
 | `CanRepack` | `static bool CanRepack(IFormatDescriptor descriptor)` |  |
 | `CanSortDirectoryEntries` | `static bool CanSortDirectoryEntries(IFormatDescriptor descriptor)` |  |
 | `GetAllocationGeometryOptions` | `static IReadOnlyList<FormatOptionDescriptor> GetAllocationGeometryOptions(IFormatDescriptor descriptor)` | Gets only the writer options whose effect is allocation geometry. Creation metadata, compatibility constraints and compression parameters are deliberately excluded even when the same descriptor exposes them. |
+| `GetFilesystemBlockMoverType` | `static Type GetFilesystemBlockMoverType(IFormatDescriptor descriptor)` | Resolves the explicit physical-move capability for a format. A descriptor either implements `IFilesystemBlockMover` itself or names the concrete composed mover with `FilesystemBlockMoverAttribute`. No class-name or namespace convention is treated as a capability. |
+| `HasConcreteExtentDefragmenter` | `static bool HasConcreteExtentDefragmenter(IFormatDescriptor descriptor)` | True when the descriptor supplies its own defragment implementation rather than inheriting the generic extract/rebuild default from `IArchiveDefragmentable`. |
+| `HasFilesystemBlockMover` | `static bool HasFilesystemBlockMover(IFormatDescriptor descriptor)` |  |
+| `ResolveLegacyOptimizeEffect` | `static LegacyOptimizeEffect ResolveLegacyOptimizeEffect(IFormatDescriptor descriptor)` | Resolves the former umbrella `Optimize` verb to exactly one explicit rewrite effect. Overlapping capabilities are intentionally ambiguous. |
 
 #### `PartitionBlockDevice`
 
@@ -5826,8 +5888,8 @@ Generic, round-trip-verified extract → re-create engine shared by maintenance 
 | `CreateScratchStream` | `static FileStream CreateScratchStream()` | A writable scratch stream not bounded by byte[] / MemoryStream size. |
 | `EditViaRebuild` | `static void EditViaRebuild(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, Action<string> mutate)` | Rebuild-based edit used by the generic modifier. Mutation and validation happen off to the side; the original is overwritten only after a valid staged result exists. |
 | `PurgeViaModifier` | `static void PurgeViaModifier(Stream archive, IArchiveFormatOperations ops, IArchiveModifiable modifier)` | Transactional purge for a mutable container. The modifier operates on a staged copy and the caller's stream is replaced only after the result lists successfully with every original live entry gone. |
-| `RebuildInPlace` | `static void RebuildInPlace(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null)` | Rebuilds into a scratch file, verifies it, and only then replaces the caller-supplied stream. Cancellation is honoured until commit starts; once commit begins it runs to completion so a cancellation cannot leave the original half-overwritten. |
-| `RebuildToStream` | `static int RebuildToStream(Stream input, Stream output, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, IReadOnlySet<string> syntheticNames = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null, FormatCreateOptions createOptions = null)` | Extracts every live entry, re-creates the container in `output`, verifies the exact live-name multiset, and reports block-map/read/write-head progress suitable for the maintenance UI. |
+| `RebuildInPlace` | `static void RebuildInPlace(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null, IReadOnlySet<string> semanticExcludedNames = null)` | Rebuilds into a scratch file, verifies it, and only then replaces the caller-supplied stream. Cancellation is honoured until commit starts; once commit begins it runs to completion so a cancellation cannot leave the original half-overwritten. |
+| `RebuildToStream` | `static int RebuildToStream(Stream input, Stream output, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, IReadOnlySet<string> syntheticNames = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null, FormatCreateOptions createOptions = null, IReadOnlySet<string> semanticExcludedNames = null, string password = null)` | Extracts every live entry, re-creates the container in `output`, verifies the exact live-name multiset, and reports block-map/read/write-head progress suitable for the maintenance UI. |
 
 #### `ScrambleOptions`
 
@@ -5993,6 +6055,7 @@ Genuine Stacker 4 (SD-4, cluster header `0x0081`) per-cluster codec, byte-compat
 #### `DefragSortField`
 
 File-metadata fields the layout-template sorter can order files by. Mirrors the fields available on `IFilterFileContext`.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
 | `Name` | `0` | File name (final path segment), ordinal compare. |
@@ -6991,7 +7054,8 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
 | `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  || `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
 | `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
@@ -7854,13 +7918,13 @@ Implements `IArchiveCanonicalizable`, `IArchiveCreatable`, `IArchiveFormatOperat
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file, MetadataPlacementProfile profile)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a fresh AVI by genuinely remuxing an AVI input, or by muxing the descriptor's extracted `metadata.ini`, frame entries and PCM audio track. |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Optimize` | `void Optimize(Stream file)` |  |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 
 #### `AviLayoutMap`
 
@@ -7879,8 +7943,8 @@ Implements `IArchiveCanonicalizable`, `IFileInternalChunkMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AviOptimizer` | `AviOptimizer()` |  |
-| `Optimize` | `void Optimize(Stream file)` |  |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file, MetadataPlacementProfile profile)` |  |
 
 #### `AviReader`
 
@@ -7990,7 +8054,8 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. || `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
@@ -8989,7 +9054,8 @@ Exposes an Electronic Arts SCHl audio stream as a pseudo-archive of `FULL.eam`, 
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
 
-| Member | Signature | Summary || --- | --- | --- |
+| Member | Signature | Summary |
+| --- | --- | --- |
 | `EaSchlFormatDescriptor` | `EaSchlFormatDescriptor()` |  |
 | `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
@@ -9988,7 +10054,8 @@ Implements `IEquatable<ParsedSnd>`.
 | `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
 | `CompressionId` | `short CompressionId { get; init; }` |  |
 | `Encode` | `byte Encode { get; init; }` |  |
-| `Format` | `int Format { get; init; }` |  || `NumChannels` | `int NumChannels { get; init; }` |  |
+| `Format` | `int Format { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
 | `NumFrames` | `uint NumFrames { get; init; }` |  |
 | `SampleData` | `byte[] SampleData { get; init; }` |  |
 | `SampleRate` | `int SampleRate { get; init; }` |  |
@@ -10034,8 +10101,8 @@ Implements `IArchiveCanonicalizable`, `IFileInternalChunkMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MkvCuesFrontOptimizer` | `MkvCuesFrontOptimizer()` |  |
-| `Optimize` | `void Optimize(Stream file)` |  |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file, MetadataPlacementProfile profile)` |  |
 
 #### `MkvDemuxer`
 
@@ -10127,13 +10194,13 @@ Implements `IArchiveCanonicalizable`, `IArchiveFormatOperations`, `IArchiveInMem
 | `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` | Gets the encoded audio codecs this writer can carry without re-encoding. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file, MetadataPlacementProfile profile)` |  |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
-| `Optimize` | `void Optimize(Stream file)` |  |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 | `SupportedMuxCodecsFor` | `IReadOnlyList<string> SupportedMuxCodecsFor(FormatCreateOptions options)` | The codecs the stated profile permits. |
 | `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` | Exposes the single supported audio track as encoded packets. Multi-audio-track files remain available through the archive/demux surface because `AudioEncodedStream` represents one logical encoded stream and silently choosing one track would lose information. |
 
@@ -10400,6 +10467,8 @@ Implements `IArchiveCanonicalizable`, `IArchiveCreatable`, `IArchiveDefragmentab
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file, MetadataPlacementProfile profile)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
@@ -10407,8 +10476,6 @@ Implements `IArchiveCanonicalizable`, `IArchiveCreatable`, `IArchiveDefragmentab
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Optimize` | `void Optimize(Stream file)` |  |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 
 #### `Mp3LayoutMap`
 
@@ -10505,8 +10572,8 @@ Implements `IArchiveCanonicalizable`, `IFileInternalChunkMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Mp4FastStart` | `Mp4FastStart()` |  |
-| `Optimize` | `void Optimize(Stream file)` |  |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file, MetadataPlacementProfile profile)` |  |
 | `PatchChunkOffsets` | `static void PatchChunkOffsets(byte[] data, int start, int end, long delta)` | Recursively patches stco and co64 atoms inside moov. Walks the atom tree looking for compound containers and leaf offset tables. |
 | `WalkTopLevelAtoms` | `static List<AtomInfo> WalkTopLevelAtoms(Stream file)` | Walks top-level atoms in the stream and returns their positions. |
 
@@ -10549,14 +10616,14 @@ Implements `IArchiveCanonicalizable`, `IArchiveFormatOperations`, `IArchiveInMem
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
 | `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file)` | Performs the optimize operation. |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file, MetadataPlacementProfile profile)` | Performs the optimize operation. |
 | `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` | Enumerates the chunks. |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
-| `Optimize` | `void Optimize(Stream file)` | Performs the optimize operation. |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` | Performs the optimize operation. |
 
 #### `Mp4LayoutMap`
 
@@ -10987,7 +11054,8 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. || `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
 | `Description` | `string Description { get; }` | Gets the description. |
 | `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
@@ -11986,7 +12054,8 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
 | `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. || `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
@@ -12539,6 +12608,8 @@ Implements `IArchiveCanonicalizable`, `IArchiveCreatable`, `IArchiveDefragmentab
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file, MetadataPlacementProfile profile)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
@@ -12546,8 +12617,6 @@ Implements `IArchiveCanonicalizable`, `IArchiveCreatable`, `IArchiveDefragmentab
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Optimize` | `void Optimize(Stream file)` |  |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 
 #### `WavLayoutMap`
 
@@ -12566,8 +12635,8 @@ Implements `IArchiveCanonicalizable`, `IFileInternalChunkMover`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WavOptimizer` | `WavOptimizer()` |  |
-| `Optimize` | `void Optimize(Stream file)` |  |
-| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file)` |  |
+| `CanonicalizeInPlace` | `void CanonicalizeInPlace(Stream file, MetadataPlacementProfile profile)` |  |
 
 #### `WavReader`
 
@@ -12986,6 +13055,7 @@ Implements `IEquatable<Song>`.
 Exposes a Microsoft XACT Wave Bank (`.xwb`) as a pseudo-archive: `FULL.xwb` (the byte-exact bank), a `metadata.ini` summary, and one playable WAV per decodable entry (`samples/NNN_<name>.wav`, names taken from ENTRYNAMES when present, Kind `Sample`). PCM (8/16-bit) and MS-ADPCM entries decode; XMA entries decode best-effort (graceful fallback); WMA entries are skipped with a metadata note. Read-only — rebuilding a bank requires the full XACT toolchain.
 
 Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `XwbFormatDescriptor` | `XwbFormatDescriptor()` |  |
@@ -13984,7 +14054,8 @@ Implements `ISetupTemplate`.
 | `Stereo16SetupDataTemplate` | `Stereo16SetupDataTemplate()` |  |
 | `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
 | `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. || `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
 | `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
 | `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
 | `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
@@ -14983,7 +15054,8 @@ Implements `IStaticCodeBook`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. || `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
 | `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
 | `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
 | `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
@@ -15982,6 +16054,7 @@ Implements `IStaticCodeBook`.
 #### `Page5_1`
 
 Represents a page 5 1.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
@@ -16981,7 +17054,8 @@ Implements `IStaticCodeBook`.
 | `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
 | `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
 | `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. || `Quant` | `int Quant { get; }` | Gets the quant. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
 
@@ -17980,7 +18054,8 @@ Implements `IStaticCodeBook`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. || `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
 | `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
 | `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
 | `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
@@ -18979,7 +19054,8 @@ Represents a page 5 0.
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
-| --- | --- | --- || `Page5_0` | `Page5_0()` |  |
+| --- | --- | --- |
+| `Page5_0` | `Page5_0()` |  |
 | `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
 | `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
 | `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
@@ -19978,6 +20054,7 @@ Implements `IStaticCodeBook`.
 | `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
 Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
@@ -20977,7 +21054,8 @@ Implements `IStaticCodeBook`.
 | --- | --- | --- |
 | `Page7_2` | `Page7_2()` |  |
 | `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
-| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. || `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
 | `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
 | `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
 | `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
@@ -21977,6 +22055,7 @@ Implements `IStaticCodeBook`.
 [`Chapter7Long`](#chapter7long) · [`Chapter7Short`](#chapter7short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page8_0`](#page8_0) · [`Page8_1`](#page8_1) · [`Page9_0`](#page9_0) · [`Page9_1`](#page9_1) · [`Page9_2`](#page9_2)
 
 #### `Chapter7Long`
+
 Represents a chapter 7 long.
 
 Implements `IStaticCodeBook`.
@@ -22976,6 +23055,7 @@ Implements `IStaticCodeBook`.
 | `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
 | `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
 | `Quant` | `int Quant { get; }` | Gets the quant. |
+
 #### `Page5_0`
 
 Represents a page 5 0.
@@ -23974,7 +24054,8 @@ Implements `IStaticCodeBook`.
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
 | `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
-| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. || `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
 | `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
 | `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
 | `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
@@ -24974,6 +25055,7 @@ Implements `IStaticCodeBook`.
 | `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
 | `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
 | `Quant` | `int Quant { get; }` | Gets the quant. |
+
 #### `Line2048X27Class2`
 
 Represents a line 2048 x 27 class 2.
