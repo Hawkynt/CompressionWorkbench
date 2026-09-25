@@ -6,7 +6,7 @@ namespace FileFormat.Bsc;
 /// <summary>
 /// Describes bsc format.
 /// </summary>
-public sealed class BscFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class BscFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

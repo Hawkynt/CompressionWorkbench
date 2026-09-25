@@ -34,6 +34,7 @@ namespace FileSystem.Mfs1;
 /// <para>Distinct from <c>FileSystem.Mfs</c>, which targets the Macintosh File
 /// System with a strong <c>0xD2D7</c> magic.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(Mfs1BlockMover))]
 public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
@@ -313,7 +314,7 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // The in-place pass is kept only if every payload still reads back: it can
     // refuse partway, and a rebuild is the honest answer when it does.
     DefragContentGuard.RunOrRebuild(archive,
-      readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+      readEntries: stream => ReadEntries(stream),
       inPlace: () => this.DefragmentWithPlanner(archive, options),
       rebuild: () => DefragRebuilder.Rebuild(archive, options,
         readEntries: stream => ReadEntries(stream),

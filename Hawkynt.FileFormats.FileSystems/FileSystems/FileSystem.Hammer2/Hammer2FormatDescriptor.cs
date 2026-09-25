@@ -45,6 +45,7 @@ namespace FileSystem.Hammer2;
 /// checks again, from the block holding the blockref outwards, and stamping the
 /// headers once the pass is over.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(Hammer2BlockMover))]
 public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap {
 
   /// <summary>
@@ -118,7 +119,7 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: ReadPayloadsForGuard,
+        readEntries: ReadEntriesForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;
@@ -132,15 +133,16 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     RebuildVerb.RebuildInPlace(archive, this, this);
   }
 
-  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
-  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+  /// <summary>Every file's semantic identity, as the guard compares it before and after.</summary>
+  private static IReadOnlyList<DefragContentGuard.DefragContentEntry> ReadEntriesForGuard(Stream stream) {
     stream.Position = 0;
     using var reader = new Hammer2Reader(stream);
-    var contents = new List<byte[]>();
+    var contents = new List<DefragContentGuard.DefragContentEntry>();
     foreach (var file in reader.EnumerateFiles()) {
       using var buffer = new MemoryStream();
       reader.ExtractTo(file, buffer);
-      contents.Add(buffer.ToArray());
+      contents.Add(new DefragContentGuard.DefragContentEntry(
+        file.Path, false, buffer.ToArray(), Length: file.Size));
     }
 
     return contents;

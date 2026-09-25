@@ -29,6 +29,7 @@ namespace FileSystem.Efs;
 /// dirents). Reader recurses from inode 2 (root) and surfaces each entry at
 /// its full path.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(EfsBlockMover))]
 public sealed class EfsFormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
@@ -99,7 +100,7 @@ public sealed class EfsFormatDescriptor :
     new("BlockSize", "Block size", FormatOptionKind.Enum, "512", AllowedValues: ["512"],
       Description: "EFS basic-block size in bytes (always 512 per IRIX spec)."),
     new("CylinderGroupSize", "Cylinder group size (BB)", FormatOptionKind.Integer, "32",
-      Description: "Cylinder group size in 512-byte basic blocks."),
+      Description: "Cylinder group size in 512-byte basic blocks.", IsAllocationGeometry: true),
     FilesystemSchemaPresets.VolumeLabel(6),
   ];
 

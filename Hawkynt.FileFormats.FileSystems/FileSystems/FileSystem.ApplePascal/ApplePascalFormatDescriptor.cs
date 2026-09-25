@@ -26,7 +26,7 @@ namespace FileSystem.ApplePascal;
 /// </list>
 /// </summary>
 public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemDirectoryOrderer {
 
   /// <summary>
   /// Gets the id.
@@ -101,7 +101,8 @@ public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFor
       Kind: FormatOptionKind.Enum,
       Default: "Auto",
       AllowedValues: ["Auto", "280", "560", "1024", "1600", "2048"],
-      Description: "Total volume size in 512-byte blocks. Pascal convention: multiples of 8 (8-block allocation tiles). 280 = 140 KB SS floppy, 560 = 280 KB DS floppy."),
+      Description: "Total volume size in 512-byte blocks. Pascal convention: multiples of 8 (8-block allocation tiles). 280 = 140 KB SS floppy, 560 = 280 KB DS floppy.",
+      IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "VolumeName",
       DisplayName: "Volume name",
@@ -144,7 +145,7 @@ public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFor
     if (vsizeLabel.Equals("Auto", StringComparison.OrdinalIgnoreCase)) {
       // Auto: optimizer picks size from the actual file payload.
       var sizes = inputs.Where(i => !i.IsDirectory).Select(i => (long)i.ReadContent().Length).ToList();
-      volumeBlocks = ApplePascalOptimizer.Find(sizes).VolumeBlocks;
+      volumeBlocks = ApplePascalGeometrySelector.Find(sizes).VolumeBlocks;
     } else {
       volumeBlocks = int.TryParse(vsizeLabel, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 280;
     }
@@ -299,4 +300,34 @@ public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFor
     var extents = ApplePascalExtentMap.Enumerate(image);
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, lookup);
   }
+
+  /// <inheritdoc />
+  public int AllocationBlockSize => ApplePascalReader.BlockSize;
+
+  /// <inheritdoc />
+  public bool RepointsRunsIndependently => true;
+
+  /// <inheritdoc />
+  public bool SupportsHeldRuns => true;
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    => new ApplePascalBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(
+      Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    var mover = new ApplePascalBlockMover();
+    mover.Init(image);
+    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  }
+
+  /// <inheritdoc />
+  public void SortDirectoryEntries(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var mover = new ApplePascalBlockMover();
+    mover.Init(image);
+    mover.SortDirectory(image);
+  }
+
 }

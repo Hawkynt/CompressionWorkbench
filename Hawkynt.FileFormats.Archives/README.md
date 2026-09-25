@@ -24,7 +24,7 @@ The package bundles the archive-domain `FileFormat.*` assemblies and takes `Hawk
 
 - Compression-stream readers and writers for modern and historical formats, including the encodings (BinHex, MacBinary, uuencode/base64, yEnc).
 - Archive enumeration, extraction, test, fresh creation and — for most containers — add/replace/remove on an existing archive.
-- Maintenance verbs on the same surface: defragment, shrink, wipe unused space, optimize layout, reorder metadata.
+- Maintenance capabilities are separated by effect: compress, canonicalize, repack, sort directory entries, defragment extents, change allocation geometry, shrink and wipe unused space.
 - Software-package and installer inspection without executing the package or installer.
 - Office, OpenDocument, e-book, mail and web bundles exposed through the same archive surface.
 - Game, engine, console, Amiga and vintage archives beside the mainstream ZIP / TAR / 7z / RAR / CAB families.
@@ -39,13 +39,13 @@ The package bundles the archive-domain `FileFormat.*` assemblies and takes `Hawk
 | **WORM** | Read plus create a fresh archive; no edit of an existing one. |
 | **R/W** | Read plus add / replace / remove on an existing archive. The edit may be byte-preserving in place or a verified extract → edit → re-create rebuild; both keep the result valid. |
 
-Column legend: **Id** is the registry identifier (`FormatRegistry.GetById`, `cwb formats`). **Test** — the descriptor verifies checksums/structure (`CanTest`). **Maintenance** — the verbs the descriptor implements: `defrag` (`IArchiveDefragmentable`), `shrink` (`IArchiveShrinkable`), `wipe` (`IWipeEmpty` / `IArchiveLayoutMap`), `optimize` (`ILayoutOptimizable` or `SupportsOptimize`), `reorder` (`IFileInternalChunkMover`, moving container metadata such as MP4 `moov` or Matroska `Cues` in place). For media containers **Demux** is per-track extraction, **Mux** is building a container from elementary streams, **Remux / edit** is in-place relayout or editing. **Notes** name the deliberate subset or the naming quirk worth knowing; formats that do not preserve arbitrary entry names say so there.
+Column legend: **Id** is the registry identifier (`FormatRegistry.GetById`, `cwb formats`). **Test** — the descriptor verifies checksums/structure (`CanTest`). **Maintenance** — effect-specific capabilities: compression optimization (`ICompressionOptimizable`), canonicalization (`IArchiveCanonicalizable`), repack (`IArchiveRepackable`), directory ordering (`IFilesystemDirectoryOrderer`), extent defragmentation (`IFilesystemBlockMover` + `IArchiveDefragmentable`), allocation-geometry changes (`ILayoutOptimizable` plus a schema option tagged `IsAllocationGeometry`), plus `shrink` and `wipe`. For media containers **Demux** is per-track extraction, **Mux** is building a container from elementary streams, **Remux / edit** is in-place relayout or editing. **Notes** name the deliberate subset or the naming quirk worth knowing; formats that do not preserve arbitrary entry names say so there.
 
 Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is derived from the descriptor's `Capabilities` and the interfaces its operations object implements; `Compression.Tests.Operations.ArchivesReadmeStateTests` fails when a cell disagrees with the built registry, so the table cannot drift from the code.
 
 ### 🧵 Compression streams and encodings
 
-| Format | Id | Extensions | Compress | Decompress | Optimize | Notes | Reference |
+| Format | Id | Extensions | Compress | Decompress | Optimize compression | Notes | Reference |
 | --- | --- | --- | :---: | :---: | :---: | --- | --- |
 | aPLib | `ApLib` | `.aplib` | ✅ | ✅ | ✅ | Standard 24-byte AP32 wrapper around a bare aPLib stream; older self-framed streams still read | [ibsensoftware.com](https://ibsensoftware.com/products_aPLib.html) |
 | BALZ | `Balz` | `.balz` | ✅ | ✅ | ✅ | Flexible look-ahead parser; optimal mode keeps the greedy stream when it is smaller | [sourceforge.net](https://sourceforge.net/projects/balz/) |
@@ -74,7 +74,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [LZMA (.lzma)](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm) | `Lzma` | `.lzma` | ✅ | ✅ | ✅ |  | [7-zip.org](https://www.7-zip.org/sdk.html) |
 | [lzop](https://en.wikipedia.org/wiki/Lzop) | `Lzop` | `.lzo` | ✅ | ✅ | ✅ |  | [lzop.org](https://www.lzop.org/) |
 | [LZS](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Stac) | `Lzs` | `.lzs` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc2395) |
-| [MacBinary](https://en.wikipedia.org/wiki/MacBinary) | `MacBinary` | `.bin` `.macbin` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1740) |
+| [MacBinary](https://en.wikipedia.org/wiki/MacBinary) | `MacBinary` | `.bin` `.macbin` | ✅ | ✅ | — | Canonicalization is exposed separately from compression optimization | [RFC](https://www.rfc-editor.org/rfc/rfc1740) |
 | MCM | `Mcm` | `.mcm` | ✅ | ✅ | ✅ | Optimizer searches Legacy plus reduced Turbo/Fast/Mid/High/Max managed profiles | [GitHub](https://github.com/mathieuchartier/mcm) |
 | [PackBits](https://en.wikipedia.org/wiki/PackBits) | `PackBits` | `.packbits` | ✅ | ✅ | ✅ |  | [developer.apple.com](https://developer.apple.com/library/archive/documentation/mac/pdf/MoreMacintoshToolbox.pdf) |
 | [PAQ8](https://en.wikipedia.org/wiki/PAQ) | `Paq8` | `.paq8l` `.paq8` | ✅ | ✅ | ✅ |  | [mattmahoney.net](https://mattmahoney.net/dc/paq.html) |
@@ -101,61 +101,61 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 
 | Format | Id | Extensions | State | Test | Maintenance | Notes | Reference |
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
-| [ACE](https://en.wikipedia.org/wiki/ACE_(compressed_file_format)) | `Ace` | `.ace` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/droe/acefile) |
+| [ACE](https://en.wikipedia.org/wiki/ACE_(compressed_file_format)) | `Ace` | `.ace` | R/W | ✅ | wipe |  | [GitHub](https://github.com/droe/acefile) |
 | [afio](https://en.wikipedia.org/wiki/Afio) | `Afio` | `.afio` | WORM | ✅ | — | Writes stored members only; the per-file gzip extension is read but not written | [GitHub](https://github.com/kholtman/afio) |
-| [ALZip](https://en.wikipedia.org/wiki/ALZip) | `AlZip` | `.alz` | R/W | ✅ | defrag · wipe |  | [kippler.com](http://www.kippler.com/win/unalz/) |
-| AMPK (Amiga Pack) | `Ampk` | `.ampk` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/AmiPack) |
-| [AR](https://en.wikipedia.org/wiki/Ar_(Unix)) | `Ar` | `.a` `.ar` `.deb` | R/W | ✅ | defrag · wipe |  | [freebsd.org](https://www.freebsd.org/cgi/man.cgi?query=ar&sektion=5) |
-| [ARC](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Arc` | `.arc` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/hyc/arc) |
-| [ARJ](https://en.wikipedia.org/wiki/ARJ) | `Arj` | `.arj` | R/W | ✅ | defrag · wipe |  | [arj.sourceforge.net](https://arj.sourceforge.net) |
-| [Binary II](https://en.wikipedia.org/wiki/Binary_II) | `BinaryII` | `.bny` `.bqy` | R/W | ✅ | defrag · wipe |  | [mirrors.apple2.org.za](https://mirrors.apple2.org.za/ground.icaen.uiowa.edu/MiscInfo/Binary2/bin2.specs) |
-| [CAB](https://en.wikipedia.org/wiki/Cabinet_(file_format)) | `Cab` | `.cab` | R/W | ✅ | defrag · wipe |  | [cabextract.org.uk](https://www.cabextract.org.uk/libmspack/) |
-| [CB7](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cb7` | `.cb7` | R/W | ✅ | defrag · wipe | 7z-backed comic book archive | [7-zip.org](https://www.7-zip.org/7z.html) |
-| [CBR](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cbr` | `.cbr` | R/W | ✅ | defrag · wipe | RAR-backed comic book archive | [rarlab.com](https://www.rarlab.com/technote.htm) |
-| [CBZ](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cbz` | `.cbz` | R/W | ✅ | defrag · wipe | ZIP-backed comic book archive | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
-| [CHM](https://en.wikipedia.org/wiki/Microsoft_Compiled_HTML_Help) | `Chm` | `.chm` | R/W | ✅ | defrag · wipe |  | [cabextract.org.uk](https://www.cabextract.org.uk/libmspack/) |
-| [Compact Pro](https://en.wikipedia.org/wiki/Compact_Pro) | `CompactPro` | `.cpt` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/MacPaw/XADMaster) |
-| [CPIO](https://en.wikipedia.org/wiki/Cpio) | `Cpio` | `.cpio` | R/W | ✅ | defrag · wipe | Reads and writes all four header variants — binary (both byte orders), `odc`, `newc` and `crc`, the last with its payload checksum verified; the `Format` option picks one and edits keep the archive's own | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html) |
+| [ALZip](https://en.wikipedia.org/wiki/ALZip) | `AlZip` | `.alz` | R/W | ✅ | wipe |  | [kippler.com](http://www.kippler.com/win/unalz/) |
+| AMPK (Amiga Pack) | `Ampk` | `.ampk` | R/W | ✅ | wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/AmiPack) |
+| [AR](https://en.wikipedia.org/wiki/Ar_(Unix)) | `Ar` | `.a` `.ar` `.deb` | R/W | ✅ | wipe |  | [freebsd.org](https://www.freebsd.org/cgi/man.cgi?query=ar&sektion=5) |
+| [ARC](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Arc` | `.arc` | R/W | ✅ | wipe |  | [GitHub](https://github.com/hyc/arc) |
+| [ARJ](https://en.wikipedia.org/wiki/ARJ) | `Arj` | `.arj` | R/W | ✅ | wipe |  | [arj.sourceforge.net](https://arj.sourceforge.net) |
+| [Binary II](https://en.wikipedia.org/wiki/Binary_II) | `BinaryII` | `.bny` `.bqy` | R/W | ✅ | wipe |  | [mirrors.apple2.org.za](https://mirrors.apple2.org.za/ground.icaen.uiowa.edu/MiscInfo/Binary2/bin2.specs) |
+| [CAB](https://en.wikipedia.org/wiki/Cabinet_(file_format)) | `Cab` | `.cab` | R/W | ✅ | wipe |  | [cabextract.org.uk](https://www.cabextract.org.uk/libmspack/) |
+| [CB7](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cb7` | `.cb7` | R/W | ✅ | wipe | 7z-backed comic book archive | [7-zip.org](https://www.7-zip.org/7z.html) |
+| [CBR](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cbr` | `.cbr` | R/W | ✅ | wipe | RAR-backed comic book archive | [rarlab.com](https://www.rarlab.com/technote.htm) |
+| [CBZ](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cbz` | `.cbz` | R/W | ✅ | wipe | ZIP-backed comic book archive | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
+| [CHM](https://en.wikipedia.org/wiki/Microsoft_Compiled_HTML_Help) | `Chm` | `.chm` | R/W | ✅ | wipe |  | [cabextract.org.uk](https://www.cabextract.org.uk/libmspack/) |
+| [Compact Pro](https://en.wikipedia.org/wiki/Compact_Pro) | `CompactPro` | `.cpt` | R/W | ✅ | wipe |  | [GitHub](https://github.com/MacPaw/XADMaster) |
+| [CPIO](https://en.wikipedia.org/wiki/Cpio) | `Cpio` | `.cpio` | R/W | ✅ | wipe | Reads and writes all four header variants — binary (both byte orders), `odc`, `newc` and `crc`, the last with its payload checksum verified; the `Format` option picks one and edits keep the archive's own | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html) |
 | [DAR (Disk ARchive)](https://en.wikipedia.org/wiki/Dar_(disk_archiver)) | `Dar` | `.dar` | R | ✅ | — |  | [dar.linux.free.fr](http://dar.linux.free.fr) |
-| DCS (Amiga) | `Dcs` | `.dcs` | WORM | ✅ | defrag | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
+| DCS (Amiga) | `Dcs` | `.dcs` | WORM | ✅ | — | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
 | [DiskDoubler](https://en.wikipedia.org/wiki/DiskDoubler) | `DiskDoubler` | `.dd` `.sea` | WORM | — | wipe | Single-fork compressor: one payload per file | [GitHub](https://github.com/MacPaw/XADMaster) |
-| [DMS](https://en.wikipedia.org/wiki/Disk_Masher_System) | `Dms` | `.dms` | WORM | ✅ | defrag |  | [GitHub](https://github.com/markrabjohn/xDMS) |
-| [EGG (ALZip)](https://en.wikipedia.org/wiki/EGG_(file_format)) | `Egg` | `.egg` | WORM | ✅ | defrag |  | [GitHub](https://github.com/alkegi/docs/blob/master/egg.md) |
+| [DMS](https://en.wikipedia.org/wiki/Disk_Masher_System) | `Dms` | `.dms` | WORM | ✅ | — |  | [GitHub](https://github.com/markrabjohn/xDMS) |
+| [EGG (ALZip)](https://en.wikipedia.org/wiki/EGG_(file_format)) | `Egg` | `.egg` | WORM | ✅ | compress · repack |  | [GitHub](https://github.com/alkegi/docs/blob/master/egg.md) |
 | [ESD](https://en.wikipedia.org/wiki/Windows_Imaging_Format) | `Esd` | `.esd` | WORM | ✅ | wipe | Solid LZMS WIM; created images carry a metadata resource but entries re-list as resources | [Microsoft Learn](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview) |
-| [FreeArc](https://en.wikipedia.org/wiki/FreeArc) | `FreeArc` | `.arc` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/Bulat-Ziganshin/FA) |
-| HA | `Ha` | `.ha` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/HA) |
-| [IFF CDAF](https://en.wikipedia.org/wiki/Interchange_File_Format) | `IffCdaf` | `.cdaf` | R/W | ✅ | defrag · wipe |  | [Aminet](https://aminet.net) |
-| [LBR](https://en.wikipedia.org/wiki/LBR_(file_format)) | `Lbr` | `.lbr` | R/W | ✅ | defrag · wipe |  | [gaby.de](http://www.gaby.de/cpm/manuals/archive/lbr.txt) |
-| LhF (LhFloppy) | `LhF` | `.lhf` | R/W | ✅ | defrag · wipe | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
-| [lrzip](https://en.wikipedia.org/wiki/Rzip#lrzip) | `Lrzip` | `.lrz` | WORM | ✅ | defrag | LZMA-wrapped subtype only; other lrzip subtypes are rejected; single data member | [GitHub](https://github.com/ckolivas/lrzip) |
-| Lynx (Commodore) | `Lynx` | `.lnx` | R/W | ✅ | defrag · shrink · wipe | Stored entries only | [Archive Team](http://fileformats.archiveteam.org/wiki/Lynx_(Commodore_64)) |
-| [LHA / LZH](https://en.wikipedia.org/wiki/LHA_(file_format)) | `Lzh` | `.lzh` `.lha` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/jca02266/lha) |
-| [LZX (Amiga)](https://en.wikipedia.org/wiki/LZX) | `LzxAmiga` | `.lzx` | R/W | ✅ | defrag · wipe |  | [Aminet](https://aminet.net) |
+| [FreeArc](https://en.wikipedia.org/wiki/FreeArc) | `FreeArc` | `.arc` | R/W | ✅ | wipe |  | [GitHub](https://github.com/Bulat-Ziganshin/FA) |
+| HA | `Ha` | `.ha` | R/W | ✅ | wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/HA) |
+| [IFF CDAF](https://en.wikipedia.org/wiki/Interchange_File_Format) | `IffCdaf` | `.cdaf` | R/W | ✅ | wipe |  | [Aminet](https://aminet.net) |
+| [LBR](https://en.wikipedia.org/wiki/LBR_(file_format)) | `Lbr` | `.lbr` | R/W | ✅ | wipe |  | [gaby.de](http://www.gaby.de/cpm/manuals/archive/lbr.txt) |
+| LhF (LhFloppy) | `LhF` | `.lhf` | R/W | ✅ | wipe | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
+| [lrzip](https://en.wikipedia.org/wiki/Rzip#lrzip) | `Lrzip` | `.lrz` | WORM | ✅ | — | LZMA-wrapped subtype only; other lrzip subtypes are rejected; single data member | [GitHub](https://github.com/ckolivas/lrzip) |
+| Lynx (Commodore) | `Lynx` | `.lnx` | R/W | ✅ | shrink · wipe | Stored entries only | [Archive Team](http://fileformats.archiveteam.org/wiki/Lynx_(Commodore_64)) |
+| [LHA / LZH](https://en.wikipedia.org/wiki/LHA_(file_format)) | `Lzh` | `.lzh` `.lha` | R/W | ✅ | wipe |  | [GitHub](https://github.com/jca02266/lha) |
+| [LZX (Amiga)](https://en.wikipedia.org/wiki/LZX) | `LzxAmiga` | `.lzx` | R/W | ✅ | wipe |  | [Aminet](https://aminet.net) |
 | [mtree](https://man.freebsd.org/cgi/man.cgi?query=mtree&sektion=5) | `Mtree` | `.mtree` | WORM | ✅ | — | Filesystem metadata manifest; does not embed file bodies, so CWB does not dereference `contents=` host paths | [FreeBSD mtree(5)](https://man.freebsd.org/cgi/man.cgi?query=mtree&sektion=5) |
-| [NuFX / ShrinkIt](https://en.wikipedia.org/wiki/ShrinkIt) | `NuFx` | `.shk` `.sdk` `.bxy` | R/W | ✅ | defrag · shrink · wipe |  | [nulib.com](https://nulib.com/library/FTN.e08002.htm) |
-| PackDisk (Amiga) | `PackDisk` | `.pdsk` | WORM | ✅ | defrag | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
-| PackIt | `PackIt` | `.pit` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/MacPaw/XADMaster) |
+| [NuFX / ShrinkIt](https://en.wikipedia.org/wiki/ShrinkIt) | `NuFx` | `.shk` `.sdk` `.bxy` | R/W | ✅ | shrink · wipe |  | [nulib.com](https://nulib.com/library/FTN.e08002.htm) |
+| PackDisk (Amiga) | `PackDisk` | `.pdsk` | WORM | ✅ | — | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
+| PackIt | `PackIt` | `.pit` | R/W | ✅ | wipe |  | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [RAR](https://en.wikipedia.org/wiki/RAR_(file_format)) | `Rar` | `.rar` | R/W | ✅ | wipe | v1–v5 readers; creation and edits emit RAR4/RAR5 without claiming WinRAR encoder parity | [rarlab.com](https://www.rarlab.com/technote.htm) |
-| [7z](https://en.wikipedia.org/wiki/7z) | `SevenZip` | `.7z` | R/W | ✅ | defrag · wipe |  | [7-zip.org](https://www.7-zip.org/7z.html) |
-| [SHAR](https://en.wikipedia.org/wiki/Shar) | `Shar` | `.shar` `.sh` | R/W | ✅ | defrag | Add appends in place; Remove re-emits the script from the survivors | [gnu.org](https://www.gnu.org/software/sharutils/) |
-| [Spark (RISC OS)](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Spark` | `.spk` `.spark` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Spark) |
+| [7z](https://en.wikipedia.org/wiki/7z) | `SevenZip` | `.7z` | R/W | ✅ | compress · repack · wipe |  | [7-zip.org](https://www.7-zip.org/7z.html) |
+| [SHAR](https://en.wikipedia.org/wiki/Shar) | `Shar` | `.shar` `.sh` | R/W | ✅ | — | Add appends in place; Remove re-emits the script from the survivors | [gnu.org](https://www.gnu.org/software/sharutils/) |
+| [Spark (RISC OS)](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Spark` | `.spk` `.spark` | R/W | ✅ | wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Spark) |
 | [Split File (.001)](https://en.wikipedia.org/wiki/File_spanning) | `SplitFile` | `.001` | WORM | ✅ | — |  | [Wikipedia](https://en.wikipedia.org/wiki/File_spanning) |
-| [SQX](https://en.wikipedia.org/wiki/SQX) | `Sqx` | `.sqx` | R/W | ✅ | defrag · wipe |  | [encode.su](https://encode.su/threads/1290-SQX-(by-SpeedProject)) |
-| [StuffIt](https://en.wikipedia.org/wiki/StuffIt) | `StuffIt` | `.sit` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/MacPaw/XADMaster) |
+| [SQX](https://en.wikipedia.org/wiki/SQX) | `Sqx` | `.sqx` | R/W | ✅ | wipe |  | [encode.su](https://encode.su/threads/1290-SQX-(by-SpeedProject)) |
+| [StuffIt](https://en.wikipedia.org/wiki/StuffIt) | `StuffIt` | `.sit` | R/W | ✅ | wipe |  | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [StuffIt X](https://en.wikipedia.org/wiki/StuffIt) | `StuffItX` | `.sitx` | WORM | ✅ | wipe | Writer emits the envelope shell only; the proprietary element catalog is not synthesised | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [Split WIM (.swm)](https://en.wikipedia.org/wiki/Windows_Imaging_Format) | `Swm` | `.swm` `.swm2` `.swm3` `.swm4` … | R | ✅ | wipe |  | [Microsoft Learn](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview) |
-| [T64 (Commodore tape image)](https://en.wikipedia.org/wiki/T64_(file_format)) | `T64` | `.t64` | R/W | ✅ | defrag · wipe |  | [vice-emu.sourceforge.net](https://vice-emu.sourceforge.io/) |
-| [TAR](https://en.wikipedia.org/wiki/Tar_(computing)) | `Tar` | `.tar` | R/W | ✅ | defrag · shrink · wipe |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html) |
-| UHARC | `Uharc` | `.uha` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/UHARC) |
+| [T64 (Commodore tape image)](https://en.wikipedia.org/wiki/T64_(file_format)) | `T64` | `.t64` | R/W | ✅ | defragment extents · wipe |  | [vice-emu.sourceforge.net](https://vice-emu.sourceforge.io/) |
+| [TAR](https://en.wikipedia.org/wiki/Tar_(computing)) | `Tar` | `.tar` | R/W | ✅ | shrink · wipe |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html) |
+| UHARC | `Uharc` | `.uha` | R/W | ✅ | wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/UHARC) |
 | [WIM](https://en.wikipedia.org/wiki/Windows_Imaging_Format) | `Wim` | `.wim` `.swm` `.esd` | WORM | ✅ | wipe | LZX / XPRESS / LZMS paths; kept create-only because an append edit would break the checksum chain | [wimlib.net](https://wimlib.net/) |
-| Wrapster | `Wrapster` |  | WORM | ✅ | defrag · wipe | MP3-wrapper archive carrying one member; stays WORM by design | [Archive Team](http://fileformats.archiveteam.org/wiki/Wrapster) |
-| [XAR](https://en.wikipedia.org/wiki/Xar_(archiver)) | `Xar` | `.xar` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/mackyle/xar) |
-| xDisk / GDC (Amiga) | `xDisk` | `.xdsk` `.gdc` | WORM | ✅ | defrag | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
-| xMash (Amiga) | `xMash` | `.xmsh` | WORM | ✅ | defrag | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
+| Wrapster | `Wrapster` |  | WORM | ✅ | wipe | MP3-wrapper archive carrying one member; stays WORM by design | [Archive Team](http://fileformats.archiveteam.org/wiki/Wrapster) |
+| [XAR](https://en.wikipedia.org/wiki/Xar_(archiver)) | `Xar` | `.xar` | R/W | ✅ | wipe |  | [GitHub](https://github.com/mackyle/xar) |
+| xDisk / GDC (Amiga) | `xDisk` | `.xdsk` `.gdc` | WORM | ✅ | — | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
+| xMash (Amiga) | `xMash` | `.xmsh` | WORM | ✅ | — | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
 | ZAP (Amiga) | `Zap` | `.zap` | WORM | ✅ | wipe | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net/) |
-| [ZIP](https://en.wikipedia.org/wiki/ZIP_(file_format)) | `Zip` | `.zip` `.zipx` | R/W | ✅ | defrag · shrink · wipe · optimize | Store, Deflate, Deflate64, Shrink, Reduce, Implode, BZip2, LZMA, PPMd, Zstd, AES | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
-| [ZOO](https://en.wikipedia.org/wiki/Zoo_(file_format)) | `Zoo` | `.zoo` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/ZOO) |
-| [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `Zpaq` | `.zpaq` | R/W | ✅ | defrag | Reader covers the stored/simple models; ZPAQL virtual-machine execution is not implemented | [mattmahoney.net](http://mattmahoney.net/dc/zpaq.html) |
+| [ZIP](https://en.wikipedia.org/wiki/ZIP_(file_format)) | `Zip` | `.zip` `.zipx` | R/W | ✅ | compress · repack · shrink · wipe | Store, Deflate, Deflate64, Shrink, Reduce, Implode, BZip2, LZMA, PPMd, Zstd, AES | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
+| [ZOO](https://en.wikipedia.org/wiki/Zoo_(file_format)) | `Zoo` | `.zoo` | R/W | ✅ | wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/ZOO) |
+| [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `Zpaq` | `.zpaq` | R/W | ✅ | — | Reader covers the stored/simple models; ZPAQL virtual-machine execution is not implemented | [mattmahoney.net](http://mattmahoney.net/dc/zpaq.html) |
 
 ### 🧬 Structured data and registry
 
@@ -175,35 +175,35 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 
 | Format | Id | Extensions | State | Test | Maintenance | Notes | Reference |
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
-| [Android App Bundle / split APK](https://en.wikipedia.org/wiki/Android_App_Bundle) | `AndroidBundle` | `.aab` `.apks` | R/W | ✅ | defrag · wipe |  | [developer.android.com](https://developer.android.com/guide/app-bundle) |
+| [Android App Bundle / split APK](https://en.wikipedia.org/wiki/Android_App_Bundle) | `AndroidBundle` | `.aab` `.apks` | R/W | ✅ | wipe |  | [developer.android.com](https://developer.android.com/guide/app-bundle) |
 | Android OTA payload | `AndroidOta` |  | WORM | ✅ | — | Create emits a whole-image payload; it re-lists as payload blobs, not files | [source.android.com](https://source.android.com/docs/core/ota) |
-| [APK](https://en.wikipedia.org/wiki/Apk_(file_format)) | `Apk` | `.apk` | R/W | ✅ | defrag · wipe |  | [developer.android.com](https://developer.android.com/guide/components/fundamentals) |
+| [APK](https://en.wikipedia.org/wiki/Apk_(file_format)) | `Apk` | `.apk` | R/W | ✅ | wipe |  | [developer.android.com](https://developer.android.com/guide/components/fundamentals) |
 | [APK native libraries](https://en.wikipedia.org/wiki/Apk_(file_format)) | `ApkNativeLibs` |  | WORM | ✅ | wipe | Pseudo-archive over lib/<abi>/*.so | [developer.android.com](https://developer.android.com/ndk/guides/abis) |
 | [AppImage](https://en.wikipedia.org/wiki/AppImage) | `AppImage` | `.AppImage` `.appimage` | WORM | ✅ | — | ELF stub plus appended SquashFS; creation delegates to the SquashFS writer | [GitHub](https://github.com/AppImage/AppImageSpec) |
-| [APPX](https://en.wikipedia.org/wiki/Appx) | `Appx` | `.appx` `.msix` | R/W | ✅ | defrag · wipe |  | [Microsoft Learn](https://learn.microsoft.com/en-us/windows/msix/) |
+| [APPX](https://en.wikipedia.org/wiki/Appx) | `Appx` | `.appx` `.msix` | R/W | ✅ | wipe |  | [Microsoft Learn](https://learn.microsoft.com/en-us/windows/msix/) |
 | [Android resources.arsc](https://en.wikipedia.org/wiki/Apk_(file_format)) | `Arsc` | `.arsc` | R | ✅ | — |  | [android.googlesource.com](https://android.googlesource.com/platform/frameworks/base/+/master/libs/androidfw/include/androidfw/ResourceTypes.h) |
 | Electron asar | `Asar` | `.asar` | WORM | ✅ | — | JSON header plus concatenated payload | [GitHub](https://github.com/electron/asar) |
 | BitRock InstallBuilder | `BitRock` |  | R | ✅ | — | Metakit VFS with LZMA payloads | [installbuilder.com](https://installbuilder.com) |
-| [Rust crate](https://en.wikipedia.org/wiki/Cargo_(software)) | `Crate` | `.crate` | WORM | ✅ | — | tar.gz with the crate directory layout | [doc.rust-lang.org](https://doc.rust-lang.org/cargo/reference/registries.html#publish) |
-| [CRX](https://en.wikipedia.org/wiki/Google_Chrome#Extensions) | `Crx` | `.crx` | WORM | ✅ | defrag · wipe | CRX3 envelope creation is unsigned and not browser-trusted | [chromium.googlesource.com](https://chromium.googlesource.com/chromium/src/+/main/components/crx_file/) |
-| [Debian .deb](https://en.wikipedia.org/wiki/Deb_(file_format)) | `Deb` | `.deb` | R/W | ✅ | defrag · wipe |  | [debian.org](https://www.debian.org/doc/debian-policy/) |
-| [EAR](https://en.wikipedia.org/wiki/EAR_(file_format)) | `Ear` | `.ear` | R/W | ✅ | defrag · wipe |  | [jakarta.ee](https://jakarta.ee/specifications/platform/) |
+| [Rust crate](https://en.wikipedia.org/wiki/Cargo_(software)) | `Crate` | `.crate` | WORM | ✅ | compress | tar.gz with the crate directory layout | [doc.rust-lang.org](https://doc.rust-lang.org/cargo/reference/registries.html#publish) |
+| [CRX](https://en.wikipedia.org/wiki/Google_Chrome#Extensions) | `Crx` | `.crx` | WORM | ✅ | wipe | CRX3 envelope creation is unsigned and not browser-trusted | [chromium.googlesource.com](https://chromium.googlesource.com/chromium/src/+/main/components/crx_file/) |
+| [Debian .deb](https://en.wikipedia.org/wiki/Deb_(file_format)) | `Deb` | `.deb` | R/W | ✅ | wipe |  | [debian.org](https://www.debian.org/doc/debian-policy/) |
+| [EAR](https://en.wikipedia.org/wiki/EAR_(file_format)) | `Ear` | `.ear` | R/W | ✅ | wipe |  | [jakarta.ee](https://jakarta.ee/specifications/platform/) |
 | [Ruby gem](https://en.wikipedia.org/wiki/RubyGems) | `Gem` | `.gem` | WORM | ✅ | — | TAR with gzip-compressed metadata and data members | [docs.ruby-lang.org](https://docs.ruby-lang.org/en/3.0/Gem/Format.html) |
 | [Inno Setup](https://en.wikipedia.org/wiki/Inno_Setup) | `InnoSetup` |  | WORM | ✅ | — | Extraction plus signature/container output, not an installer compiler; some versions expose no per-file extraction | [sourceforge.net](https://sourceforge.net/projects/innounp/) |
-| [IPA](https://en.wikipedia.org/wiki/.ipa) | `Ipa` | `.ipa` | R/W | ✅ | defrag · wipe |  | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
-| [JAR](https://en.wikipedia.org/wiki/JAR_(file_format)) | `Jar` | `.jar` | R/W | ✅ | defrag · wipe |  | [docs.oracle.com](https://docs.oracle.com/en-us/javase/8/docs/technotes/guides/jar/jar.html) |
+| [IPA](https://en.wikipedia.org/wiki/.ipa) | `Ipa` | `.ipa` | R/W | ✅ | wipe |  | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
+| [JAR](https://en.wikipedia.org/wiki/JAR_(file_format)) | `Jar` | `.jar` | R/W | ✅ | wipe |  | [docs.oracle.com](https://docs.oracle.com/en-us/javase/8/docs/technotes/guides/jar/jar.html) |
 | [MSI](https://en.wikipedia.org/wiki/Windows_Installer) | `Msi` | `.msi` `.msp` `.mst` | R/W | ✅ | wipe | CFB envelope; a functional Installer database is not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/) |
-| [MSIX](https://en.wikipedia.org/wiki/MSIX) | `Msix` | `.msix` `.msixbundle` | R/W | ✅ | defrag · wipe | Unsigned fresh package output | [Microsoft Learn](https://learn.microsoft.com/en-us/windows/msix/) |
-| [NSIS](https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System) | `Nsis` |  | WORM | ✅ | defrag | Extraction plus overlay-oriented output, not an installer compiler; some versions expose no per-file extraction | [nsis.sourceforge.io](https://nsis.sourceforge.io/Docs/) |
-| [NuGet .nupkg](https://en.wikipedia.org/wiki/NuGet) | `NuPkg` | `.nupkg` | R/W | ✅ | defrag · wipe |  | [Microsoft Learn](https://learn.microsoft.com/nuget/reference/nuspec) |
+| [MSIX](https://en.wikipedia.org/wiki/MSIX) | `Msix` | `.msix` `.msixbundle` | R/W | ✅ | wipe | Unsigned fresh package output | [Microsoft Learn](https://learn.microsoft.com/en-us/windows/msix/) |
+| [NSIS](https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System) | `Nsis` |  | WORM | ✅ | — | Extraction plus overlay-oriented output, not an installer compiler; some versions expose no per-file extraction | [nsis.sourceforge.io](https://nsis.sourceforge.io/Docs/) |
+| [NuGet .nupkg](https://en.wikipedia.org/wiki/NuGet) | `NuPkg` | `.nupkg` | R/W | ✅ | wipe |  | [Microsoft Learn](https://learn.microsoft.com/nuget/reference/nuspec) |
 | [OVA](https://en.wikipedia.org/wiki/Open_Virtualization_Format) | `Ova` | `.ova` | WORM | ✅ | — | Stays WORM: the manifest must cover every member | [dmtf.org](https://www.dmtf.org/standards/ovf) |
 | [Pack200](https://en.wikipedia.org/wiki/Pack200) | `Pack200` | `.pack` | R | ✅ | — |  | [docs.oracle.com](https://docs.oracle.com/javase/8/docs/technotes/guides/pack200/pack-spec.html) |
 | [PyInstaller onefile](https://en.wikipedia.org/wiki/PyInstaller) | `PyInstaller` |  | R | ✅ | — | CArchive TOC plus PYZ modules; Linux builds are detected as ELF first | [GitHub](https://github.com/pyinstaller/pyinstaller) |
-| [RPM](https://en.wikipedia.org/wiki/RPM_Package_Manager) | `Rpm` | `.rpm` | WORM | ✅ | defrag · wipe |  | [GitHub](https://github.com/rpm-software-management/rpm) |
+| [RPM](https://en.wikipedia.org/wiki/RPM_Package_Manager) | `Rpm` | `.rpm` | WORM | ✅ | wipe |  | [GitHub](https://github.com/rpm-software-management/rpm) |
 | [Snap](https://en.wikipedia.org/wiki/Snap_(software)) | `Snap` | `.snap` | WORM | ✅ | — | SquashFS package | [snapcraft.io](https://snapcraft.io/docs) |
-| [WAR](https://en.wikipedia.org/wiki/WAR_(file_format)) | `War` | `.war` | R/W | ✅ | defrag · wipe |  | [jakarta.ee](https://jakarta.ee/specifications/servlet/) |
+| [WAR](https://en.wikipedia.org/wiki/WAR_(file_format)) | `War` | `.war` | R/W | ✅ | wipe |  | [jakarta.ee](https://jakarta.ee/specifications/servlet/) |
 | [Python wheel](https://en.wikipedia.org/wiki/Wheel_(software)) | `Wheel` | `.whl` | WORM | ✅ | wipe | ZIP plus dist-info | [peps.python.org](https://peps.python.org/pep-0427/) |
-| [XPI](https://en.wikipedia.org/wiki/XPInstall) | `Xpi` | `.xpi` | R/W | ✅ | defrag · wipe |  | [extensionworkshop.com](https://extensionworkshop.com/) |
+| [XPI](https://en.wikipedia.org/wiki/XPInstall) | `Xpi` | `.xpi` | R/W | ✅ | wipe |  | [extensionworkshop.com](https://extensionworkshop.com/) |
 
 ### 📄 Documents, e-books, mail and web bundles
 
@@ -211,89 +211,89 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
 | [Adobe Illustrator](https://en.wikipedia.org/wiki/Adobe_Illustrator_Artwork) | `Ai` |  | R | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Adobe_Illustrator) |
 | [DOC](https://en.wikipedia.org/wiki/Doc_(computing)) | `Doc` | `.doc` | R/W | ✅ | wipe | CFB envelope; Word document streams are not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/) |
-| [DOCX](https://en.wikipedia.org/wiki/Office_Open_XML) | `Docx` | `.docx` | R/W | ✅ | defrag · wipe |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-376/) |
+| [DOCX](https://en.wikipedia.org/wiki/Office_Open_XML) | `Docx` | `.docx` | R/W | ✅ | wipe |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-376/) |
 | [EML](https://en.wikipedia.org/wiki/Email#Message_format) | `Eml` | `.eml` | R/W | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc5322) |
-| [EPUB](https://en.wikipedia.org/wiki/EPUB) | `Epub` | `.epub` | R/W | ✅ | defrag · wipe |  | [w3.org](https://www.w3.org/TR/epub-33/) |
+| [EPUB](https://en.wikipedia.org/wiki/EPUB) | `Epub` | `.epub` | R/W | ✅ | wipe |  | [w3.org](https://www.w3.org/TR/epub-33/) |
 | [FB2](https://en.wikipedia.org/wiki/FictionBook) | `Fb2` | `.fb2` | R | ✅ | — |  | [GitHub](https://github.com/gribuser/fb2) |
 | [FLA](https://en.wikipedia.org/wiki/Adobe_Animate) | `Fla` |  | R | ✅ | wipe | ZIP-based XFL document | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/) |
-| [KMZ](https://en.wikipedia.org/wiki/Keyhole_Markup_Language) | `Kmz` | `.kmz` | R/W | ✅ | defrag · wipe |  | [developers.google.com](https://developers.google.com/kml/documentation) |
+| [KMZ](https://en.wikipedia.org/wiki/Keyhole_Markup_Language) | `Kmz` | `.kmz` | R/W | ✅ | wipe |  | [developers.google.com](https://developers.google.com/kml/documentation) |
 | [LIT (Microsoft Reader)](https://en.wikipedia.org/wiki/Microsoft_Reader) | `Lit` | `.lit` | R | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Microsoft_Reader) |
-| [MAFF](https://en.wikipedia.org/wiki/Mozilla_Archive_Format) | `Maff` | `.maff` | R/W | ✅ | defrag · wipe |  | [maf.mozdev.org](http://maf.mozdev.org/maff-specification.html) |
+| [MAFF](https://en.wikipedia.org/wiki/Mozilla_Archive_Format) | `Maff` | `.maff` | R/W | ✅ | wipe |  | [maf.mozdev.org](http://maf.mozdev.org/maff-specification.html) |
 | [mbox (Unix mailbox)](https://en.wikipedia.org/wiki/Mbox) | `Mbox` | `.mbox` `.mbx` | R/W | ✅ | — | Entries are message_NN.eml | [RFC](https://www.rfc-editor.org/rfc/rfc4155) |
 | [MOBI / AZW](https://en.wikipedia.org/wiki/Mobipocket) | `Mobi` | `.mobi` `.prc` `.azw` `.azw3` | R | ✅ | — |  | [wiki.mobileread.com](https://wiki.mobileread.com/wiki/MOBI) |
 | [MSG](https://en.wikipedia.org/wiki/MSG_(file_format)) | `Msg` | `.msg` | R/W | ✅ | wipe | CFB envelope; MAPI properties are not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxmsg/) |
-| [ODP](https://en.wikipedia.org/wiki/OpenDocument) | `Odp` | `.odp` | R/W | ✅ | defrag · wipe |  | [libreoffice.org](https://www.libreoffice.org) |
-| [ODS](https://en.wikipedia.org/wiki/OpenDocument) | `Ods` | `.ods` | R/W | ✅ | defrag · wipe |  | [libreoffice.org](https://www.libreoffice.org) |
-| [ODT](https://en.wikipedia.org/wiki/OpenDocument) | `Odt` | `.odt` | R/W | ✅ | defrag · wipe |  | [libreoffice.org](https://www.libreoffice.org) |
+| [ODP](https://en.wikipedia.org/wiki/OpenDocument) | `Odp` | `.odp` | R/W | ✅ | wipe |  | [libreoffice.org](https://www.libreoffice.org) |
+| [ODS](https://en.wikipedia.org/wiki/OpenDocument) | `Ods` | `.ods` | R/W | ✅ | wipe |  | [libreoffice.org](https://www.libreoffice.org) |
+| [ODT](https://en.wikipedia.org/wiki/OpenDocument) | `Odt` | `.odt` | R/W | ✅ | wipe |  | [libreoffice.org](https://www.libreoffice.org) |
 | [Microsoft OneNote](https://en.wikipedia.org/wiki/Microsoft_OneNote) | `OneNote` | `.one` `.onetoc2` | R | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-onestore/) |
 | [PDF](https://en.wikipedia.org/wiki/PDF) | `Pdf` | `.pdf` | R/W | ✅ | wipe | Image extraction and file-attachment surface, not a page renderer or editor | [ISO](https://www.iso.org/standard/75839.html) |
 | [PPT](https://en.wikipedia.org/wiki/Microsoft_PowerPoint) | `Ppt` | `.ppt` | R/W | ✅ | wipe | CFB envelope; presentation streams are not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-ppt/6be79dde-33c1-4c1b-8ccc-4b2301c08662) |
-| [PPTX](https://en.wikipedia.org/wiki/Office_Open_XML) | `Pptx` | `.pptx` | R/W | ✅ | defrag · wipe |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-376/) |
+| [PPTX](https://en.wikipedia.org/wiki/Office_Open_XML) | `Pptx` | `.pptx` | R/W | ✅ | wipe |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-376/) |
 | [PST / OST](https://en.wikipedia.org/wiki/Personal_Storage_Table) | `Pst` | `.pst` `.ost` | R | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/141923d5-15ab-4ef1-a524-6dce75aae546) |
 | [Sketch](https://en.wikipedia.org/wiki/Sketch) | `Sketch` |  | R | ✅ | wipe |  | [developer.sketch.com](https://developer.sketch.com/file-format/) |
 | [Thumbs.db](https://en.wikipedia.org/wiki/Windows_thumbnail_cache) | `ThumbsDb` | `.db` | R/W | ✅ | wipe | CFB envelope; catalog streams are not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/53989ce4-7b05-4f8d-829b-d08d6148375b) |
-| [TNEF (winmail.dat)](https://en.wikipedia.org/wiki/Transport_Neutral_Encapsulation_Format) | `Tnef` | `.dat` `.tnef` | R/W | ✅ | defrag |  | [GitHub](https://github.com/Yeraze/ytnef) |
-| [VSDX](https://en.wikipedia.org/wiki/Microsoft_Visio) | `Vsdx` | `.vsdx` `.vstx` `.vssx` `.vsdm` … | R/W | ✅ | defrag · wipe |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-376/) |
+| [TNEF (winmail.dat)](https://en.wikipedia.org/wiki/Transport_Neutral_Encapsulation_Format) | `Tnef` | `.dat` `.tnef` | R/W | ✅ | — |  | [GitHub](https://github.com/Yeraze/ytnef) |
+| [VSDX](https://en.wikipedia.org/wiki/Microsoft_Visio) | `Vsdx` | `.vsdx` `.vstx` `.vssx` `.vsdm` … | R/W | ✅ | wipe |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-376/) |
 | WACZ | `Wacz` | `.wacz` | WORM | ✅ | wipe | ZIP around WARC plus package metadata | [specs.webrecorder.net](https://specs.webrecorder.net/wacz/1.1.1/) |
-| [WARC](https://en.wikipedia.org/wiki/WARC_(file_format)) | `Warc` | `.warc` | WORM | ✅ | defrag · wipe | Entries are listed as "resource: name"; create emits resource records | [iipc.github.io](https://iipc.github.io/warc-specifications/) |
+| [WARC](https://en.wikipedia.org/wiki/WARC_(file_format)) | `Warc` | `.warc` | WORM | ✅ | wipe | Entries are listed as "resource: name"; create emits resource records | [iipc.github.io](https://iipc.github.io/warc-specifications/) |
 | Web Bundle | `Wbn` | `.wbn` | WORM | ✅ | — | Minimal CBOR walk; create collapses inputs into one bundle | [datatracker.ietf.org](https://datatracker.ietf.org/doc/draft-ietf-wpack-bundled-responses/) |
 | [WordPerfect](https://en.wikipedia.org/wiki/WordPerfect) | `WordPerfect` | `.wpd` `.wp` `.wp5` `.wp6` … | R | ✅ | — |  | [sourceforge.net](https://sourceforge.net/projects/libwpd/) |
 | [XLS](https://en.wikipedia.org/wiki/Microsoft_Excel#File_formats) | `Xls` | `.xls` | R/W | ✅ | wipe | CFB envelope; workbook streams are not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-xls/cd03cb5f-ca02-4934-a391-bb674cb8aa06) |
-| [XLSX](https://en.wikipedia.org/wiki/Office_Open_XML) | `Xlsx` | `.xlsx` | R/W | ✅ | defrag · wipe |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-376/) |
-| [XPS / OpenXPS](https://en.wikipedia.org/wiki/Open_XML_Paper_Specification) | `Xps` | `.xps` `.oxps` | R/W | ✅ | defrag · wipe |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-388/) |
+| [XLSX](https://en.wikipedia.org/wiki/Office_Open_XML) | `Xlsx` | `.xlsx` | R/W | ✅ | wipe |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-376/) |
+| [XPS / OpenXPS](https://en.wikipedia.org/wiki/Open_XML_Paper_Specification) | `Xps` | `.xps` `.oxps` | R/W | ✅ | wipe |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-388/) |
 
 ### 🎮 Game, engine and console archives
 
 | Format | Id | Extensions | State | Test | Maintenance | Notes | Reference |
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
-| Sega AFS | `Afs` | `.afs` | R/W | ✅ | defrag · wipe | Alignment and metadata block paths | [GitHub](https://github.com/MaikelChan/AFSPacker) |
-| Square Enix AKB | `Akb` | `.akb` | WORM | ✅ | defrag · wipe | Entries are entry_NNN.bin | [GitHub](https://github.com/vgmstream/vgmstream) |
-| CRI AWB / AFS2 | `Awb` | `.awb` `.acb` | WORM | ✅ | defrag · wipe | Entries are cue_NNNNN.bin | [GitHub](https://github.com/vgmstream/vgmstream) |
-| Bethesda BA2 | `Ba2` | `.ba2` | R/W | ✅ | defrag · wipe | BTDX GNRL scope | [en.uesp.net](https://en.uesp.net/wiki/Skyrim_Mod:File_Formats/BA2) |
-| EA / Westwood BIG | `Big` | `.big` | R/W | ✅ | defrag · wipe |  | [MultimediaWiki](https://wiki.multimedia.cx/index.php/Electronic_Arts_Formats) |
-| Bethesda BSA | `Bsa` | `.bsa` | R/W | ✅ | defrag · wipe |  | [en.uesp.net](https://en.uesp.net/wiki/Skyrim_Mod:File_Formats/BSA) |
-| [Bloodlines DZIP](https://en.wikipedia.org/wiki/Vampire:_The_Masquerade_%E2%80%93Bloodlines) | `Dzip` | `.dzip` | R/W | ✅ | defrag · wipe |  | — |
+| Sega AFS | `Afs` | `.afs` | R/W | ✅ | wipe | Alignment and metadata block paths | [GitHub](https://github.com/MaikelChan/AFSPacker) |
+| Square Enix AKB | `Akb` | `.akb` | WORM | ✅ | wipe | Entries are entry_NNN.bin | [GitHub](https://github.com/vgmstream/vgmstream) |
+| CRI AWB / AFS2 | `Awb` | `.awb` `.acb` | WORM | ✅ | wipe | Entries are cue_NNNNN.bin | [GitHub](https://github.com/vgmstream/vgmstream) |
+| Bethesda BA2 | `Ba2` | `.ba2` | R/W | ✅ | wipe | BTDX GNRL scope | [en.uesp.net](https://en.uesp.net/wiki/Skyrim_Mod:File_Formats/BA2) |
+| EA / Westwood BIG | `Big` | `.big` | R/W | ✅ | wipe |  | [MultimediaWiki](https://wiki.multimedia.cx/index.php/Electronic_Arts_Formats) |
+| Bethesda BSA | `Bsa` | `.bsa` | R/W | ✅ | wipe |  | [en.uesp.net](https://en.uesp.net/wiki/Skyrim_Mod:File_Formats/BSA) |
+| [Bloodlines DZIP](https://en.wikipedia.org/wiki/Vampire:_The_Masquerade_%E2%80%93Bloodlines) | `Dzip` | `.dzip` | R/W | ✅ | wipe |  | — |
 | [GameMaker data.win](https://en.wikipedia.org/wiki/GameMaker) | `GameMaker` | `.win` `.unx` `.ios` | WORM | ✅ | — | Entries are chunks/<TAG>.bin | [GitHub](https://github.com/UnderminersTeam/UndertaleModTool) |
-| Nintendo 3DS GAR | `Gar` | `.gar` | R/W | ✅ | defrag · wipe |  | [3dbrew.org](https://www.3dbrew.org/wiki/GAR) |
+| Nintendo 3DS GAR | `Gar` | `.gar` | R/W | ✅ | wipe |  | [3dbrew.org](https://www.3dbrew.org/wiki/GAR) |
 | [Game Boy ROM](https://en.wikipedia.org/wiki/Game_Boy) | `Gb` | `.gb` `.gbc` | R | ✅ | — |  | [gbdev.io](https://gbdev.io/pandocs/The_Cartridge_Header.html) |
-| LucasArts GOB | `Gob` | `.gob` `.goo` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/luciusDXL/TheForceEngine) |
-| Godot PCK | `GodotPck` | `.pck` | R/W | ✅ | defrag · wipe |  | [docs.godotengine.org](https://docs.godotengine.org/en/stable/contributing/development/file_formats/pck.html) |
-| Build engine GRP | `Grp` | `.grp` | R/W | ✅ | defrag · wipe |  | [moddingwiki.shikadi.net](https://moddingwiki.shikadi.net/wiki/GRP_Format) |
-| Descent HOG | `Hog` | `.hog` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/dxx-rebirth/dxx-rebirth) |
-| [Total Annihilation HPI](https://en.wikipedia.org/wiki/Total_Annihilation) | `Hpi` | `.hpi` `.ufo` `.ccx` `.gp3` | R/W | ✅ | defrag · wipe | Unencrypted / zlib subset | [units.tauniverse.com](https://units.tauniverse.com/tutorials/tadesign/tutorials/hpi.htm) |
-| LucasArts LFD | `Lfd` | `.lfd` | WORM | ✅ | defrag · wipe | Entries are DATA.<stem> and RMAP.resource | [GitHub](https://github.com/MikeG621/LfdReader) |
+| LucasArts GOB | `Gob` | `.gob` `.goo` | R/W | ✅ | wipe |  | [GitHub](https://github.com/luciusDXL/TheForceEngine) |
+| Godot PCK | `GodotPck` | `.pck` | R/W | ✅ | wipe |  | [docs.godotengine.org](https://docs.godotengine.org/en/stable/contributing/development/file_formats/pck.html) |
+| Build engine GRP | `Grp` | `.grp` | R/W | ✅ | wipe |  | [moddingwiki.shikadi.net](https://moddingwiki.shikadi.net/wiki/GRP_Format) |
+| Descent HOG | `Hog` | `.hog` | R/W | ✅ | wipe |  | [GitHub](https://github.com/dxx-rebirth/dxx-rebirth) |
+| [Total Annihilation HPI](https://en.wikipedia.org/wiki/Total_Annihilation) | `Hpi` | `.hpi` `.ufo` `.ccx` `.gp3` | R/W | ✅ | wipe | Unencrypted / zlib subset | [units.tauniverse.com](https://units.tauniverse.com/tutorials/tadesign/tutorials/hpi.htm) |
+| LucasArts LFD | `Lfd` | `.lfd` | WORM | ✅ | wipe | Entries are DATA.<stem> and RMAP.resource | [GitHub](https://github.com/MikeG621/LfdReader) |
 | Minecraft region (MCA) | `Mca` | `.mca` `.mcr` | R | ✅ | — |  | [minecraft.wiki](https://minecraft.wiki/w/Region_file_format) |
-| Cyan Mohawk | `Mhk` | `.mhk` | WORM | ✅ | defrag · wipe | Entries are typed tDAT_NNNN names | [GitHub](https://github.com/scummvm/scummvm) |
-| Westwood MIX | `Mix` | `.mix` | WORM | ✅ | defrag · wipe | Hash-keyed names; hex names are synthesised where the original is absent | [GitHub](https://github.com/OpenRA/OpenRA) |
-| [Blizzard MPQ](https://en.wikipedia.org/wiki/MPQ) | `Mpq` | `.mpq` | R/W | ✅ | defrag · wipe |  | [zezula.net](http://www.zezula.net/en/mpq/main.html) |
-| Nintendo NARC | `Narc` | `.narc` `.carc` | R/W | ✅ | defrag · wipe |  | [problemkaputt.de](https://problemkaputt.de/gbatek.htm) |
-| [Nintendo DS ROM](https://en.wikipedia.org/wiki/Nintendo_DS) | `Nds` | `.nds` | R/W | ✅ | defrag · wipe | NitroFS-oriented output, not ARM boot-code synthesis | [problemkaputt.de](https://problemkaputt.de/gbatek.htm) |
+| Cyan Mohawk | `Mhk` | `.mhk` | WORM | ✅ | wipe | Entries are typed tDAT_NNNN names | [GitHub](https://github.com/scummvm/scummvm) |
+| Westwood MIX | `Mix` | `.mix` | WORM | ✅ | wipe | Hash-keyed names; hex names are synthesised where the original is absent | [GitHub](https://github.com/OpenRA/OpenRA) |
+| [Blizzard MPQ](https://en.wikipedia.org/wiki/MPQ) | `Mpq` | `.mpq` | R/W | ✅ | wipe |  | [zezula.net](http://www.zezula.net/en/mpq/main.html) |
+| Nintendo NARC | `Narc` | `.narc` `.carc` | R/W | ✅ | wipe |  | [problemkaputt.de](https://problemkaputt.de/gbatek.htm) |
+| [Nintendo DS ROM](https://en.wikipedia.org/wiki/Nintendo_DS) | `Nds` | `.nds` | R/W | ✅ | wipe | NitroFS-oriented output, not ARM boot-code synthesis | [problemkaputt.de](https://problemkaputt.de/gbatek.htm) |
 | [NES ROM](https://en.wikipedia.org/wiki/INES) | `Nes` | `.nes` | R | ✅ | — |  | [nesdev.org](https://www.nesdev.org/wiki/INES) |
-| NScripter NSA | `Nsa` | `.nsa` | R/W | ✅ | defrag · wipe |  | [nscripter.com](https://www.nscripter.com/) |
-| [Quake PAK](https://en.wikipedia.org/wiki/PAK_(file_format)) | `Pak` | `.pak` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/id-Software/Quake) |
-| PSP PBP | `Pbp` | `.pbp` | WORM | ✅ | defrag · wipe | Fixed EBOOT section names only | [psdevwiki.com](https://www.psdevwiki.com/psp/PBP) |
-| Nintendo Switch PFS0 / NSP | `Pfs0` | `.nsp` `.pfs0` | R/W | ✅ | defrag · wipe |  | [switchbrew.org](https://switchbrew.org/wiki/NCA#PFS0) |
-| Sony PSARC | `Psarc` | `.psarc` | R/W | ✅ | defrag · wipe | zlib block path; encrypted and LZMA variants are rejected; names stored lower-case | [psdevwiki.com](https://www.psdevwiki.com/ps3/PlayStation_archive_(PSARC)) |
+| NScripter NSA | `Nsa` | `.nsa` | R/W | ✅ | wipe |  | [nscripter.com](https://www.nscripter.com/) |
+| [Quake PAK](https://en.wikipedia.org/wiki/PAK_(file_format)) | `Pak` | `.pak` | R/W | ✅ | wipe |  | [GitHub](https://github.com/id-Software/Quake) |
+| PSP PBP | `Pbp` | `.pbp` | WORM | ✅ | wipe | Fixed EBOOT section names only | [psdevwiki.com](https://www.psdevwiki.com/psp/PBP) |
+| Nintendo Switch PFS0 / NSP | `Pfs0` | `.nsp` `.pfs0` | R/W | ✅ | wipe |  | [switchbrew.org](https://switchbrew.org/wiki/NCA#PFS0) |
+| Sony PSARC | `Psarc` | `.psarc` | R/W | ✅ | wipe | zlib block path; encrypted and LZMA variants are rejected; names stored lower-case | [psdevwiki.com](https://www.psdevwiki.com/ps3/PlayStation_archive_(PSARC)) |
 | [Portable Sound Format](https://en.wikipedia.org/wiki/Portable_Sound_Format) | `Psf` | `.psf` `.psf2` `.minipsf` `.minipsf2` … | WORM | ✅ | — |  | [web.archive.org](https://web.archive.org/web/20060212232218/http://wiki.neillcorlett.com/PSFFormat) |
-| Nintendo RARC | `Rarc` | `.arc` `.rarc` | WORM | ✅ | defrag · wipe | Entries are typed tDAT_NNNN names | [wiki.cloudmodding.com](https://wiki.cloudmodding.com/zgcn/ARC) |
-| RPG Maker RGSSAD | `Rgss` | `.rgssad` `.rgss2a` `.rgss3a` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/morkt/GARbro) |
-| Ren'Py RPA | `Rpa` | `.rpa` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/renpy/renpy) |
-| NScripter SAR | `Sar` | `.sar` | R/W | ✅ | defrag · wipe | Uncompressed NSA family | [nscripter.com](https://www.nscripter.com/) |
-| Nintendo SARC | `Sarc` | `.sarc` `.pack` `.bars` | R/W | ✅ | defrag · wipe | Endian-aware reader; hash-sorted writer | [zeldamods.org](https://zeldamods.org/wiki/SARC) |
+| Nintendo RARC | `Rarc` | `.arc` `.rarc` | WORM | ✅ | wipe | Entries are typed tDAT_NNNN names | [wiki.cloudmodding.com](https://wiki.cloudmodding.com/zgcn/ARC) |
+| RPG Maker RGSSAD | `Rgss` | `.rgssad` `.rgss2a` `.rgss3a` | R/W | ✅ | wipe |  | [GitHub](https://github.com/morkt/GARbro) |
+| Ren'Py RPA | `Rpa` | `.rpa` | R/W | ✅ | wipe |  | [GitHub](https://github.com/renpy/renpy) |
+| NScripter SAR | `Sar` | `.sar` | R/W | ✅ | wipe | Uncompressed NSA family | [nscripter.com](https://www.nscripter.com/) |
+| Nintendo SARC | `Sarc` | `.sarc` `.pack` `.bars` | R/W | ✅ | wipe | Endian-aware reader; hash-sorted writer | [zeldamods.org](https://zeldamods.org/wiki/SARC) |
 | BioWare SFAR | `Sfar` | `.sfar` | WORM | ✅ | wipe | LZX-compressed payload extraction is limited | [GitHub](https://github.com/ME3Tweaks/LegendaryExplorer) |
-| Sir-Tech SLF | `Slf` | `.slf` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/ja2-stracciatella/ja2-stracciatella) |
+| Sir-Tech SLF | `Slf` | `.slf` | R/W | ✅ | wipe |  | [GitHub](https://github.com/ja2-stracciatella/ja2-stracciatella) |
 | [SNES ROM](https://en.wikipedia.org/wiki/Super_Nintendo_Entertainment_System) | `Snes` | `.sfc` `.smc` `.fig` `.swc` | R | ✅ | — |  | [snes.nesdev.org](https://snes.nesdev.org/wiki/ROM_header) |
 | Mass Effect TFC | `Tfc` | `.tfc` | WORM | ✅ | — | Entries are bundle_NNNNN.bin | [GitHub](https://github.com/ME3Tweaks/LegendaryExplorer) |
-| Nintendo U8 | `U8` | `.u8` `.arc` | R/W | ✅ | defrag · wipe |  | [wiibrew.org](https://wiibrew.org/wiki/U8_archive) |
+| Nintendo U8 | `U8` | `.u8` `.arc` | R/W | ✅ | wipe |  | [wiibrew.org](https://wiibrew.org/wiki/U8_archive) |
 | Unreal UMX | `Umx` | `.umx` | WORM | ✅ | wipe | Header/package shell output only; the export table is not encoded | [wiki.beyondunreal.com](https://wiki.beyondunreal.com/Legacy:Package_File_Format) |
-| Unity asset bundle | `UnityBundle` | `.bundle` `.unity3d` `.assetbundle` | R/W | ✅ | defrag · optimize | BlocksInfo-at-end bundles edit in place by appending tail blocks; other layouts rebuild | [docs.unity3d.com](https://docs.unity3d.com/Manual/AssetBundlesIntro.html) |
-| Unreal .pak | `UnrealPak` | `.pak` | WORM | ✅ | defrag |  | [GitHub](https://github.com/panzi/u4pak) |
-| Valve VPK | `Vpk` | `.vpk` | R/W | ✅ | defrag · wipe |  | [developer.valvesoftware.com](https://developer.valvesoftware.com/wiki/VPK) |
-| Volition VPP v1 | `Vpp` | `.vpp` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/gibbed/Gibbed.Volition) |
-| Volition VPP v2 | `VppV2` | `.vpp_pc` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/gibbed/Gibbed.Volition) |
-| [Doom WAD](https://en.wikipedia.org/wiki/Doom_WAD) | `Wad` | `.wad` | R/W | ✅ | defrag · wipe | Lump names are 8 characters | [doomwiki.org](https://doomwiki.org/wiki/WAD) |
-| Quake / Half-Life WAD2/WAD3 | `Wad2` | `.wad` | R/W | ✅ | defrag · wipe |  | [developer.valvesoftware.com](https://developer.valvesoftware.com/wiki/WAD) |
-| YukaScript YPF | `Ypf` | `.ypf` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/morkt/GARbro) |
+| Unity asset bundle | `UnityBundle` | `.bundle` `.unity3d` `.assetbundle` | R/W | ✅ | compress · repack | BlocksInfo-at-end bundles edit in place by appending tail blocks; other layouts rebuild | [docs.unity3d.com](https://docs.unity3d.com/Manual/AssetBundlesIntro.html) |
+| Unreal .pak | `UnrealPak` | `.pak` | WORM | ✅ | — |  | [GitHub](https://github.com/panzi/u4pak) |
+| Valve VPK | `Vpk` | `.vpk` | R/W | ✅ | wipe |  | [developer.valvesoftware.com](https://developer.valvesoftware.com/wiki/VPK) |
+| Volition VPP v1 | `Vpp` | `.vpp` | R/W | ✅ | wipe |  | [GitHub](https://github.com/gibbed/Gibbed.Volition) |
+| Volition VPP v2 | `VppV2` | `.vpp_pc` | R/W | ✅ | wipe |  | [GitHub](https://github.com/gibbed/Gibbed.Volition) |
+| [Doom WAD](https://en.wikipedia.org/wiki/Doom_WAD) | `Wad` | `.wad` | R/W | ✅ | wipe | Lump names are 8 characters | [doomwiki.org](https://doomwiki.org/wiki/WAD) |
+| Quake / Half-Life WAD2/WAD3 | `Wad2` | `.wad` | R/W | ✅ | wipe |  | [developer.valvesoftware.com](https://developer.valvesoftware.com/wiki/WAD) |
+| YukaScript YPF | `Ypf` | `.ypf` | R/W | ✅ | wipe |  | [GitHub](https://github.com/morkt/GARbro) |
 | [ZX Spectrum snapshot / tape](https://en.wikipedia.org/wiki/ZX_Spectrum_software) | `ZxSnapshot` | `.sna` `.z80` `.tap` `.tzx` | R | ✅ | — |  | [sinclair.wiki.zxnet.co.uk](https://sinclair.wiki.zxnet.co.uk/wiki/TAP_format) |
 
 ### 💾 Backup and disk-image containers
@@ -327,8 +327,8 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [DOS MZ executable](https://en.wikipedia.org/wiki/DOS_MZ_executable) | `Mz` | `.exe` `.com` `.ovl` `.bin` | R | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format) |
 | [.NET assembly](https://en.wikipedia.org/wiki/.NET_assembly) | `NetAssembly` |  | R | ✅ | — |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-335/) |
 | [WebAssembly module](https://en.wikipedia.org/wiki/WebAssembly) | `Wasm` | `.wasm` | R | ✅ | — |  | [webassembly.github.io](https://webassembly.github.io/spec/core/binary/index.html) |
-| [Windows ICO/CUR](https://en.wikipedia.org/wiki/ICO_(file_format)) | `Ico` | `.ico` | R/W | ✅ | defrag |  | [Microsoft Learn](https://learn.microsoft.com/en-us/previous-versions/ms997538(v=msdn.10)) |
-| [Windows CUR cursor](https://en.wikipedia.org/wiki/ICO_(file_format)) | `Cur` | `.cur` | WORM | ✅ | defrag |  | [Microsoft Learn](https://learn.microsoft.com/en-us/previous-versions/ms997538(v=msdn.10)) |
+| [Windows ICO/CUR](https://en.wikipedia.org/wiki/ICO_(file_format)) | `Ico` | `.ico` | R/W | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/en-us/previous-versions/ms997538(v=msdn.10)) |
+| [Windows CUR cursor](https://en.wikipedia.org/wiki/ICO_(file_format)) | `Cur` | `.cur` | WORM | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/en-us/previous-versions/ms997538(v=msdn.10)) |
 | [ANI (animated cursor)](https://en.wikipedia.org/wiki/ANI_(file_format)) | `Ani` | `.ani` | WORM | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/menurc/about-cursors) |
 | [TTC](https://en.wikipedia.org/wiki/TrueType#TrueType_Collection) | `Ttc` | `.ttc` | WORM | ✅ | — | Inputs must be .ttf/.otf fonts | [Microsoft Learn](https://learn.microsoft.com/en-us/typography/opentype/spec/) |
 | [OTC](https://en.wikipedia.org/wiki/OpenType) | `Otc` | `.otc` | R | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/en-us/typography/opentype/spec/) |
@@ -375,7 +375,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [SQLite 3 Database](https://en.wikipedia.org/wiki/SQLite) | `Sqlite` | `.sqlite` `.sqlite3` `.db3` | R | ✅ | — |  | [sqlite.org](https://www.sqlite.org/fileformat2.html) |
 | [STL (stereolithography)](https://en.wikipedia.org/wiki/STL_(file_format)) | `Stl` | `.stl` | R | ✅ | — |  | [fabbers.com](https://www.fabbers.com/tech/STL_Format) |
 | [Autodesk 3DS](https://en.wikipedia.org/wiki/.3ds) | `Tds` | `.3ds` | R | ✅ | — |  | [paulbourke.net](http://paulbourke.net/dataformats/3ds/) |
-| [TFRecord](https://en.wikipedia.org/wiki/TensorFlow) | `TfRecord` | `.tfrecord` `.tfrecords` | WORM | ✅ | defrag · wipe | Entries are record_NNNNN.bin | [tensorflow.org](https://www.tensorflow.org/tutorials/load_data/tfrecord) |
+| [TFRecord](https://en.wikipedia.org/wiki/TensorFlow) | `TfRecord` | `.tfrecord` `.tfrecords` | WORM | ✅ | wipe | Entries are record_NNNNN.bin | [tensorflow.org](https://www.tensorflow.org/tutorials/load_data/tfrecord) |
 | [Zarr array metadata](https://en.wikipedia.org/wiki/Zarr_(data_format)) | `Zarr` |  | R | ✅ | — |  | [zarr-specs.readthedocs.io](https://zarr-specs.readthedocs.io/) |
 
 ### 🎞️ Media containers
@@ -528,13 +528,17 @@ A descriptor advertises what it can do twice, and the two must agree: a `FormatC
 | `IArchiveDefragmentable` | defrag |
 | `IArchiveShrinkable` | shrink |
 | `IWipeEmpty` / `IArchiveLayoutMap` | wipe (zero proven-dead gaps; the layout map also feeds the block-map preview) |
-| `ILayoutOptimizable` | optimize |
-| `IFileInternalLayoutMap` / `IFileInternalChunkMover` | reorder container metadata in place |
+| `ICompressionOptimizable` | recompress live payloads with better compression choices |
+| `IArchiveCanonicalizable` | canonicalize headers / padding / metadata placement |
+| `IArchiveRepackable` | rebuild the same logical entries without implying recompression |
+| `IFilesystemDirectoryOrderer` | sort directory entries |
+| `IFilesystemBlockMover` + `IArchiveDefragmentable` | defragment physical extents |
+| `ILayoutOptimizable` | change allocation geometry |
 | `IStreamFormatOperations` | single-stream compress / decompress with `FormatCreateOptions` tunables |
 
 `CanModify` is withheld from create-only formats whose checksum chain an append would break (WIM, split WIM) and from writers that reject an arbitrary edited member set (Wrapster, OVA), even though the rebuild machinery could run; `WriteCapabilityHonestyTests` enforces that every `CanModify` claimant implements `IArchiveModifiable`, and `ArchiveModifyRoundTripTests` proves the edit round-trips.
 
-The full model — tiers, archive vs. pseudo-archive, the five maintenance verbs and the composite `compact`, the block-map display contract and the streaming paths — is specified in [`docs/ARCHIVE-MODEL.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/ARCHIVE-MODEL.md). How the verbs are provided without bespoke per-format code, and the rule that decides when `CanModify` may be advertised, are in [`docs/MAINTENANCE-MECHANISMS.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/MAINTENANCE-MECHANISMS.md). Per-verb coverage of the filesystem descriptors is the support matrix of [`Hawkynt.FileFormats.FileSystems/README.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/README.md); for the archive descriptors it is the Maintenance column above.
+The full model — tiers, archive vs. pseudo-archive, the separated maintenance capabilities and the composite `compact`, the block-map display contract and the streaming paths — is specified in [`docs/ARCHIVE-MODEL.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/ARCHIVE-MODEL.md). How the verbs are provided without bespoke per-format code, and the rule that decides when `CanModify` may be advertised, are in [`docs/MAINTENANCE-MECHANISMS.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/MAINTENANCE-MECHANISMS.md). Per-verb coverage of the filesystem descriptors is the support matrix of [`Hawkynt.FileFormats.FileSystems/README.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/README.md); for the archive descriptors it is the Maintenance column above.
 
 ### On-disk derivations
 
@@ -548,7 +552,7 @@ Use it when a .NET process needs to enumerate, extract, test, create, edit or in
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 2552 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
+Every public and protected member of all 2563 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
 
 <!-- API:END -->
 

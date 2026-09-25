@@ -10,22 +10,34 @@ using Compression.UI.Controls;
 namespace Compression.UI.Views;
 
 /// <summary>
-/// The five canonical maintenance verbs from <c>docs/ARCHIVE-MODEL.md</c>.
+/// The six separated optimization/maintenance verbs from <c>docs/ARCHIVE-MODEL.md</c>.
 /// Used to pre-focus the matching action when the maintenance window is
 /// opened from a specific context-menu entry.
 /// </summary>
 public enum MaintenanceVerb {
-  /// <summary>Find + apply the best layout / re-encode payload (size preserved where possible).</summary>
+  /// <summary>Re-encode live payloads with better compression choices.</summary>
+  Compress,
+  /// <summary>Rewrite format-defined canonical ordering/padding without recompressing by implication.</summary>
+  Canonicalize,
+  /// <summary>Rebuild the same logical entries without implying compression optimization.</summary>
+  Repack,
+  /// <summary>Reorder filesystem directory entries without moving payload extents merely for ordering.</summary>
+  SortDirectoryEntries,
+  /// <summary>Move physical allocation extents to reduce fragmentation.</summary>
+  DefragmentExtents,
+  /// <summary>Change allocation-unit or related filesystem geometry while preserving contents.</summary>
+  ChangeAllocationGeometry,
+  /// <summary>Legacy compatibility verb; new UI does not expose this ambiguous operation.</summary>
   Optimize,
   /// <summary>Keep the parameter set; minimise stored footprint.</summary>
   Shrink,
-  /// <summary>Re-order entries/extents so files are contiguous; size preserved.</summary>
+  /// <summary>Legacy generic defragment verb; new UI exposes physical extent defragmentation explicitly.</summary>
   Defragment,
   /// <summary>Erase all live data, leaving a valid empty container.</summary>
   Purge,
   /// <summary>Overwrite only unused space (free clusters, slack, deleted entries); size preserved.</summary>
   WipeEmpty,
-  /// <summary>Composite defrag → optimize → shrink: smallest valid container holding the same contents.</summary>
+  /// <summary>Composite defrag → compress → shrink: smallest valid container holding the same contents.</summary>
   Compact,
   /// <summary>
   /// Scatter every allocation block across the volume — fragmentation on
@@ -41,8 +53,8 @@ public enum MaintenanceVerb {
 /// the toolbar entry. Shows the detected format + capability, lets the user
 /// pick one of four layout strategies (mirroring the CLI's
 /// <c>cwb defragment --mode</c> options), and runs the descriptor's
-/// optimize / shrink / defragment / purge / wipe paths through the matching
-/// capability interface.
+/// compression / canonicalization / repack / directory-ordering / defragment /
+/// geometry / shrink / purge / wipe paths through their matching capabilities.
 /// </summary>
 public partial class DefragmentWindow : Window {
 
@@ -54,22 +66,21 @@ public partial class DefragmentWindow : Window {
   private string? _imagePath;
   private IArchiveDefragmentable? _defragmentable;
   private IArchiveFormatOperations? _archiveOps;
-  // Detected format id (e.g. "Zip", "DoubleSpace", "DriveSpace3"). Used by
-  // OnRunArchiveOptimize to special-case CVF formats through CvfOptimizer,
-  // which honours the per-cluster shrink-or-store fallback inside the writer
-  // instead of trying every method id at the container level.
+  // Detected format id (e.g. "Zip", "DoubleSpace", "DriveSpace3"). The legacy
+  // Optimize compatibility path still uses it for CVF-specific dispatch, while
+  // new UI actions dispatch through the explicit capability selected by the user.
   private string? _formatId;
   private bool _isArchiveMode;
   private bool _isFileInternalMode;
-  private bool _isSevenZipFormat;
   private IFileInternalChunkMover? _chunkMover;
   private int _fileRowCount;
   private string _filesSortDescription = "listing order";
   private LayoutTemplate? _selectedLayoutProfile;
 
   /// <summary>
-  /// Path of the image last successfully mutated by this window (defrag,
-  /// shrink, wipe-empty, or archive repack). Stays null while the window
+  /// Path of the image last successfully mutated by this window (for example
+  /// compression, canonicalization, repack, directory ordering, defrag, shrink,
+  /// or wipe-empty). Stays null while the window
   /// only previews. Hosts subscribe to <see cref="ArchiveMutated"/> to
   /// refresh their explorer/views when the mutation lands.
   /// </summary>
@@ -165,8 +176,10 @@ public partial class DefragmentWindow : Window {
   /// We deliberately do <em>not</em> auto-run: maintenance ops mutate the image
   /// in place, so the user confirms by clicking.
   /// </summary>
-  public DefragmentWindow(string preselectedImage, MaintenanceVerb verb) : this(preselectedImage) {
+  public DefragmentWindow(string preselectedImage, MaintenanceVerb verb) : this() {
     this._requestedVerb = verb;
+    if (!string.IsNullOrEmpty(preselectedImage) && File.Exists(preselectedImage))
+      LoadImage(preselectedImage);
     ApplyRequestedVerb();
   }
 
@@ -178,6 +191,12 @@ public partial class DefragmentWindow : Window {
   private void ApplyRequestedVerb() {
     if (this._requestedVerb is not { } verb) return;
     Title = verb switch {
+      MaintenanceVerb.Compress => "Compress",
+      MaintenanceVerb.Canonicalize => "Canonicalize",
+      MaintenanceVerb.Repack => "Repack",
+      MaintenanceVerb.SortDirectoryEntries => "Sort directory entries",
+      MaintenanceVerb.DefragmentExtents => "Defragment extents",
+      MaintenanceVerb.ChangeAllocationGeometry => "Change allocation geometry",
       MaintenanceVerb.Optimize => "Optimize",
       MaintenanceVerb.Shrink => "Shrink",
       MaintenanceVerb.Defragment => "Defragment",
@@ -193,7 +212,7 @@ public partial class DefragmentWindow : Window {
       MaintenanceVerb.WipeEmpty => WipeEmptyBtn,
       MaintenanceVerb.Compact => CompactBtn,
       MaintenanceVerb.Scramble => ScrambleBtn,
-      _ => RunBtn, // Optimize + Defragment both live on the morphing Run button.
+      _ => RunBtn, // capability-specific actions share the morphing Run button.
     };
     if (target is { IsEnabled: true }) {
       target.IsDefault = true;
@@ -214,7 +233,6 @@ public partial class DefragmentWindow : Window {
     this._imagePath = path;
     this._isArchiveMode = false;
     this._isFileInternalMode = false;
-    this._isSevenZipFormat = false;
     this._archiveOps = null;
     this._chunkMover = null;
     this._formatId = null;
@@ -226,8 +244,12 @@ public partial class DefragmentWindow : Window {
     FormatLbl.Text = format.ToString();
     this._formatId = format.ToString();
 
-    var ops = FormatRegistry.GetArchiveOps(format.ToString());
-    this._defragmentable = ops as IArchiveDefragmentable;
+    var formatId = format.ToString();
+    var descriptor = FormatRegistry.GetById(formatId);
+    var ops = FormatRegistry.GetArchiveOps(formatId);
+    this._defragmentable = OptimizationCapabilities.CanDefragmentExtents(descriptor)
+      ? ops as IArchiveDefragmentable
+      : null;
 
     // Determine whether this is an archive with layout-map support.
     var isArchiveLayout = ops is IArchiveLayoutMap;
@@ -235,7 +257,6 @@ public partial class DefragmentWindow : Window {
 
     // File-internal layout (MP4 atoms, RIFF chunks, etc.)
     var isFileInternalLayout = ops is IFileInternalLayoutMap;
-    var isFileInternalOptimizable = ops is IFileInternalChunkMover;
 
     if (this._defragmentable != null) {
       // FS defrag path (existing)
@@ -252,31 +273,20 @@ public partial class DefragmentWindow : Window {
       this._isFileInternalMode = true;
       this._archiveOps = ops;
       this._chunkMover = ops as IFileInternalChunkMover;
-      if (isFileInternalOptimizable) {
-        SupportLbl.Text = "File-internal layout optimization (e.g. MP4 fast-start).";
-        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
-        RunBtn.IsEnabled = true;
-      } else {
-        SupportLbl.Text = "File-internal layout viewable but optimization not supported (read-only).";
-        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkOrange;
-        RunBtn.IsEnabled = false;
-      }
-      RunBtn.Content = "Optimize";
+      SupportLbl.Text = "File-internal layout view. Choose an explicit Maintenance action supported by this format.";
+      SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
+      RunBtn.IsEnabled = false;
+      RunBtn.Content = "Run";
     } else if (isArchiveLayout || isArchiveCreatable) {
-      // Archive optimization path (new)
+      // Generic archive preview. Compression, canonicalization and repacking are
+      // intentionally not inferred from creatability; the caller must select an
+      // explicit capability-specific Maintenance action.
       this._isArchiveMode = true;
-      this._isSevenZipFormat = format.ToString() == "SevenZip";
       this._archiveOps = ops;
-      if (isArchiveCreatable) {
-        SupportLbl.Text = "Archive optimization (extract + repack with optimal settings).";
-        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
-        RunBtn.IsEnabled = true;
-      } else {
-        SupportLbl.Text = "Archive layout viewable but format does not support creation (read-only).";
-        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkOrange;
-        RunBtn.IsEnabled = false;
-      }
-      RunBtn.Content = "Optimize";
+      SupportLbl.Text = "Archive layout view. Choose Compress, Canonicalize, or Repack when that capability is available.";
+      SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
+      RunBtn.IsEnabled = false;
+      RunBtn.Content = "Run";
     } else {
       SupportLbl.Text = "Not supported by this format.";
       SupportLbl.Foreground = System.Windows.Media.Brushes.OrangeRed;
@@ -290,8 +300,6 @@ public partial class DefragmentWindow : Window {
       FsModesGroup.Visibility = showFsModes ? Visibility.Visible : Visibility.Collapsed;
     if (ArchiveRepackGroup != null)
       ArchiveRepackGroup.Visibility = (this._isArchiveMode || this._isFileInternalMode) ? Visibility.Visible : Visibility.Collapsed;
-    if (SmartSolidRepackCheck != null)
-      SmartSolidRepackCheck.Visibility = this._isSevenZipFormat ? Visibility.Visible : Visibility.Collapsed;
     if (MetadataPlacementPanel != null)
       MetadataPlacementPanel.Visibility = this._isFileInternalMode ? Visibility.Visible : Visibility.Collapsed;
 
@@ -313,13 +321,12 @@ public partial class DefragmentWindow : Window {
     if (PurgeBtn != null)
       PurgeBtn.IsEnabled = ops is IArchiveModifiable;
 
-    // Enable Compact (defrag + optimize + shrink) whenever at least one of its
-    // constituent steps applies. The "Minimal geometry" checkbox unlocks the
-    // smallest-geometry rebuild for formats whose creation exposes size knobs.
+    // Compact composes only the non-geometry maintenance stages. Allocation
+    // geometry is deliberately exposed through its own command.
     if (CompactBtn != null)
-      CompactBtn.IsEnabled = ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable;
-    if (MinimalGeometryCheck != null)
-      MinimalGeometryCheck.IsEnabled = ops is IArchiveCreatable and IFormatOptionsSchema;
+      CompactBtn.IsEnabled = OptimizationCapabilities.CanDefragmentExtents(descriptor)
+        || OptimizationCapabilities.CanCompress(descriptor)
+        || ops is IArchiveShrinkable;
 
     // Scramble is only offered by descriptors that can scatter a volume in
     // place. There is no fallback to fall back to: a rebuild would pack the
@@ -334,8 +341,12 @@ public partial class DefragmentWindow : Window {
     SizeLbl.Text = $"{FormatSize(fi.Length)} ({fi.Length:N0} bytes)";
 
     // Pre-populate the block map with the current state so the user can see
-    // what they're about to defragment/optimize.
+    // what they're about to defragment/compress.
     PreviewBlockMap(path, ops);
+
+    // Re-apply capability-specific enablement after every reload. The generic
+    // loader intentionally knows nothing about the separated optimization axes.
+    RefreshExplicitCapabilityPresentation();
 
     // Re-apply the requested-verb focus now that button-enabled state is known.
     ApplyRequestedVerb();
@@ -1064,7 +1075,7 @@ public partial class DefragmentWindow : Window {
     if (this._imagePath == null) return;
 
     if (this._isFileInternalMode) {
-      OnRunFileInternalOptimize();
+      OnRunFileInternalCanonicalize();
       return;
     }
 
@@ -1173,11 +1184,6 @@ public partial class DefragmentWindow : Window {
   /// Refreshes the block chart after completion to show the new layout.
   /// </summary>
   private void OnRunArchiveOptimize() {
-    if (this._isSevenZipFormat && SmartSolidRepackCheck?.IsChecked == true) {
-      OnRunSmartSolidRepack();
-      return;
-    }
-
     var path = this._imagePath!;
     var ops = this._archiveOps;
     var formatId = this._formatId;
@@ -1304,87 +1310,11 @@ public partial class DefragmentWindow : Window {
   }
 
   /// <summary>
-  /// Runs the 7z smart solid-block optimizer: tries multiple file grouping
-  /// strategies and picks the one that produces the smallest archive.
-  /// Shows per-strategy progress in the output log.
-  /// </summary>
-  private void OnRunSmartSolidRepack() {
-    var path = this._imagePath!;
-    var ops = this._archiveOps;
-
-    Append($"=== {DateTime.Now:HH:mm:ss}  Smart solid-block repack: {Path.GetFileName(path)} ===");
-
-    RunBtn.IsEnabled = false;
-    Progress.IsIndeterminate = false;
-    Progress.Value = 0;
-
-    Task.Run(() => {
-      var sw = Stopwatch.StartNew();
-      Exception? err = null;
-      var origSize = new FileInfo(path).Length;
-      FileFormat.SevenZip.SolidBlockOptimizer.OptimizeResult? optimizeResult = null;
-
-      try {
-        using var fs = File.OpenRead(path);
-        optimizeResult = FileFormat.SevenZip.SolidBlockOptimizer.Optimize(fs, maxTrials: 5,
-          onProgress: (index, total, name) => {
-            Dispatcher.BeginInvoke(() => {
-              Progress.Value = (double)index / total * 100;
-              Append($"  Trying strategy {index + 1}/{total}: {name}...");
-            });
-          });
-      } catch (Exception ex) {
-        err = ex;
-      }
-      sw.Stop();
-
-      Dispatcher.Invoke(() => {
-        Progress.Value = 100;
-        RunBtn.IsEnabled = true;
-        BlockMap.ReadHead = -1;
-        BlockMap.WriteHead = -1;
-
-        if (err != null) {
-          Append($"FAILED ({sw.ElapsedMilliseconds} ms): {err.GetType().Name}: {err.Message}");
-        } else if (optimizeResult != null) {
-          // Report all trial results
-          foreach (var trial in optimizeResult.Trials)
-            Append($"    {trial.StrategyName}: {FormatSize(trial.OutputSize)} ({trial.Elapsed.TotalMilliseconds:F0} ms)");
-
-          var newSize = (long)optimizeResult.Data.Length;
-          var delta = newSize - origSize;
-          var pct = origSize > 0 ? (double)delta / origSize * 100 : 0;
-          Append($"  Winner: {optimizeResult.WinningStrategy}");
-          Append($"OK ({sw.ElapsedMilliseconds} ms)");
-          Append($"Archive size: {origSize:N0} -> {newSize:N0} bytes ({delta:+#,#;-#,#;0}, {pct:+0.0;-0.0;0.0}%)");
-
-          // Write the winning archive if it's smaller. Use atomic rename so
-          // a crash mid-write can't corrupt the source archive.
-          if (newSize < origSize) {
-            try {
-              Compression.Lib.AtomicFileWriter.WriteAllBytesAtomic(path, optimizeResult.Data);
-              Append("Optimized archive written.");
-            } catch (Exception writeEx) {
-              Append($"WARNING: Could not write optimized archive: {writeEx.Message}");
-            }
-          } else {
-            Append("No strategy improved on the original size; archive unchanged.");
-          }
-        }
-        Append("");
-
-        // Refresh the block chart to show the new layout.
-        PreviewBlockMap(path, ops, wasMutated: err == null);
-      });
-    });
-  }
-
-  /// <summary>
   /// Runs the file-internal optimization path: calls
   /// <see cref="IFileInternalChunkMover.Optimize"/> to rearrange internal
   /// chunks (e.g. MP4 fast-start). Refreshes the block chart after completion.
   /// </summary>
-  private void OnRunFileInternalOptimize() {
+  private void OnRunFileInternalCanonicalize() {
     var path = this._imagePath!;
     var chunkMover = this._chunkMover;
     var ops = this._archiveOps;
@@ -1406,7 +1336,7 @@ public partial class DefragmentWindow : Window {
 
       try {
         using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
-        chunkMover.Optimize(stream, placementProfile);
+        chunkMover.CanonicalizeInPlace(stream, placementProfile);
       } catch (Exception ex) {
         err = ex;
       }
@@ -1851,27 +1781,16 @@ public partial class DefragmentWindow : Window {
   }
 
   /// <summary>
-  /// Runs the composite <c>compact</c> verb (defrag → optimize → shrink) via
-  /// <see cref="Compression.Lib.CompactOperation"/>. When "Minimal geometry" is
-  /// ticked, the trio is replaced by a minimal-geometry rebuild — smaller, but
-  /// the result may no longer be a standard/mountable image.
+  /// Runs the composite <c>compact</c> verb (defrag → compress → shrink) via
+  /// <see cref="Compression.Lib.CompactOperation"/>. Allocation geometry is a
+  /// separate explicit maintenance action and is never changed here.
   /// </summary>
   private void OnCompact(object sender, RoutedEventArgs e) {
     if (this._imagePath == null) return;
     var path = this._imagePath;
-    var minimal = MinimalGeometryCheck?.IsChecked == true;
     var formatStr = FormatLbl.Text;
 
-    if (minimal) {
-      var confirm = MessageBox.Show(this,
-        "Minimal geometry rebuilds the container at the smallest size the format allows "
-        + "(e.g. a 1.44 MB FAT floppy collapses to a few KB).\n\n"
-        + "Contents are preserved, but the result may no longer be a standard, mountable image. Continue?",
-        "Compact — minimal geometry", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-      if (confirm != MessageBoxResult.Yes) return;
-    }
-
-    Append($"=== {DateTime.Now:HH:mm:ss}  Compacting {Path.GetFileName(path)}{(minimal ? " (minimal geometry)" : "")} ===");
+    Append($"=== {DateTime.Now:HH:mm:ss}  Compacting {Path.GetFileName(path)} ===");
     CompactBtn.IsEnabled = false;
     RunBtn.IsEnabled = false;
     ShrinkBtn.IsEnabled = false;
@@ -1886,7 +1805,6 @@ public partial class DefragmentWindow : Window {
       try {
         result = Compression.Lib.CompactOperation.Compact(path,
           new Compression.Lib.CompactOperation.CompactOptions {
-            Minimal = minimal,
             Log = line => Dispatcher.BeginInvoke(() => Append("  " + line)),
           });
       } catch (Exception ex) {

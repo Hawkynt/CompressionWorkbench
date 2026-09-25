@@ -56,6 +56,19 @@ public class Ext1WriterTests {
   }
 
   [Test, Category("HappyPath")]
+  public void Writer_PreservesExplicitLastModifiedToWholeSecond() {
+    var expected = new DateTime(2024, 5, 6, 7, 8, 9, DateTimeKind.Utc);
+    var w = new Ext1Writer();
+    w.AddFile("stamp.bin", "x"u8.ToArray(), expected);
+
+    using var ms = new MemoryStream(w.Build());
+    using var reader = new Ext1Reader(ms);
+    var entry = reader.Entries.Single(e => e.Name == "stamp.bin");
+
+    Assert.That(entry.LastModified, Is.EqualTo(expected));
+  }
+
+  [Test, Category("HappyPath")]
   public void Writer_SuperblockMagicIs0xEF51() {
     var img = BuildImageWithFiles(("a.txt", "x"u8.ToArray()));
     var magic = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(1080, 2));

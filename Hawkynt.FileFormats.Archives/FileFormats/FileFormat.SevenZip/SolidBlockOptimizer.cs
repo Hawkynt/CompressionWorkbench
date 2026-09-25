@@ -73,45 +73,67 @@ public static class SolidBlockOptimizer {
     maxTrials = Math.Clamp(maxTrials, 1, Strategies.Count);
     cancellationToken.ThrowIfCancellationRequested();
 
-    // Step 1: Extract all entries. The callback is deliberately emitted before
-    // and after each file so even a multi-gigabyte regroup has visible read-head
-    // progress rather than a frozen indeterminate spinner.
+    // The untouched input is always a candidate. If this reader/writer pair
+    // cannot reproduce the source's codec/filter/encryption/header profile,
+    // regrouping is declined rather than silently changing archive semantics.
+    if (archive.Length > Array.MaxLength)
+      throw new NotSupportedException("7z solid regrouping currently requires an archive that fits in one managed array.");
     archive.Position = 0;
-    var reader = new SevenZipReader(archive, leaveOpen: true);
-    var fileEntries = reader.Entries.Where(e => !e.IsDirectory).ToArray();
-    var totalBytes = Math.Max(1L, fileEntries.Sum(e => Math.Max(0L, e.Size)));
+    var original = new byte[checked((int)archive.Length)];
+    archive.ReadExactly(original);
+
+    archive.Position = 0;
+    using var reader = new SevenZipReader(archive, leaveOpen: true);
+    if (!reader.CanSafelyRegroupDefaultLzma2)
+      return OriginalOnly(original);
+
+    var fileEntries = reader.Entries.Where(static e => !e.IsDirectory).ToArray();
+    var directories = reader.Entries
+      .Where(static e => e.IsDirectory)
+      .Select(CloneMetadata)
+      .ToArray();
+    var totalBytes = Math.Max(1L, fileEntries.Sum(static e => Math.Max(0L, e.Size)));
     long extractedBytes = 0;
     var entries = new List<(string Name, byte[] Data, SevenZipEntry Meta)>();
+    var emptyEntries = new List<SevenZipEntry>();
+    var sourceManifestItems = new List<(SevenZipEntry Meta, byte[] Data)>();
+
     for (var i = 0; i < reader.Entries.Count; i++) {
       cancellationToken.ThrowIfCancellationRequested();
-      var e = reader.Entries[i];
-      if (e.IsDirectory) continue;
+      var source = reader.Entries[i];
+      var meta = CloneMetadata(source);
+      if (source.IsDirectory) {
+        sourceManifestItems.Add((meta, []));
+        continue;
+      }
 
       onDetailedProgress?.Invoke(new DetailedProgress(
-        "extracting", entries.Count, fileEntries.Length, e.Name, extractedBytes, totalBytes));
+        "extracting", sourceManifestItems.Count(static e => !e.Meta.IsDirectory),
+        fileEntries.Length, source.Name, extractedBytes, totalBytes));
       var data = reader.Extract(i);
       extractedBytes += data.LongLength;
-      entries.Add((e.Name, data, e));
+      sourceManifestItems.Add((meta, data));
+      if (data.Length == 0)
+        emptyEntries.Add(meta);
+      else
+        entries.Add((source.Name, data, meta));
       onDetailedProgress?.Invoke(new DetailedProgress(
-        "extracting", entries.Count, fileEntries.Length, e.Name, extractedBytes, totalBytes));
+        "extracting", sourceManifestItems.Count(static e => !e.Meta.IsDirectory),
+        fileEntries.Length, source.Name, extractedBytes, totalBytes));
     }
-    cancellationToken.ThrowIfCancellationRequested();
 
-    // Trivial case: 0 or 1 files cannot benefit from regrouping.
-    if (entries.Count <= 1) {
-      archive.Position = 0;
-      var original = new byte[archive.Length];
-      archive.ReadExactly(original);
-      return new OptimizeResult {
-        Data = original,
-        WinningStrategy = "original",
-        Trials = [new TrialResult { StrategyName = "original", OutputSize = original.Length, Elapsed = TimeSpan.Zero }],
-      };
-    }
+    cancellationToken.ThrowIfCancellationRequested();
+    var sourceManifest = SemanticManifest.Create(sourceManifestItems);
+
+    // Zero or one non-empty file cannot benefit from changing solid grouping.
+    if (entries.Count <= 1)
+      return OriginalOnly(original);
 
     // Step 2: Run each strategy (up to maxTrials).
     var strategies = Strategies.Take(maxTrials).ToList();
-    var trials = new List<(string Name, byte[] Output, TimeSpan Elapsed)>();
+    var trials = new List<(string Name, byte[] Output, TimeSpan Elapsed)> {
+      ("original", original, TimeSpan.Zero),
+    };
 
     for (var i = 0; i < strategies.Count; i++) {
       cancellationToken.ThrowIfCancellationRequested();
@@ -124,11 +146,12 @@ public static class SolidBlockOptimizer {
       try {
         var groups = grouper(entries);
         cancellationToken.ThrowIfCancellationRequested();
-        var output = BuildArchive(entries, groups, cancellationToken,
+        var output = BuildArchive(entries, emptyEntries, directories, groups, cancellationToken,
           (current, total, entryName) => onDetailedProgress?.Invoke(new DetailedProgress(
             "building", current, total, entryName, current, total)));
         sw.Stop();
-        trials.Add((name, output, sw.Elapsed));
+        if (output.Length < original.Length && IsSemanticallyIdentical(output, sourceManifest))
+          trials.Add((name, output, sw.Elapsed));
         onDetailedProgress?.Invoke(new DetailedProgress(
           "strategy", i + 1, strategies.Count, name, i + 1, strategies.Count));
       } catch (OperationCanceledException) {
@@ -142,17 +165,6 @@ public static class SolidBlockOptimizer {
     }
 
     cancellationToken.ThrowIfCancellationRequested();
-    if (trials.Count == 0) {
-      archive.Position = 0;
-      var original = new byte[archive.Length];
-      archive.ReadExactly(original);
-      return new OptimizeResult {
-        Data = original,
-        WinningStrategy = "original",
-        Trials = [],
-      };
-    }
-
     // Step 3: Pick the smallest.
     var sorted = trials.OrderBy(t => t.Output.Length).ToList();
     var winner = sorted[0];
@@ -319,19 +331,21 @@ public static class SolidBlockOptimizer {
 
   // ── Archive builder ────────────────────────────────────────────────
 
-  /// <summary>
-  /// Builds a 7z archive from the given entries with the specified block grouping.
-  /// Each group becomes one solid block. Cancellation is checked between target
-  /// entries and immediately before/after the potentially expensive solid encode.
-  /// </summary>
   private static byte[] BuildArchive(
       IReadOnlyList<(string Name, byte[] Data, SevenZipEntry Meta)> entries,
+      IReadOnlyList<SevenZipEntry> emptyEntries,
+      IReadOnlyList<SevenZipEntry> directories,
       IReadOnlyList<int[]> groups,
       CancellationToken cancellationToken,
       Action<int, int, string?>? onProgress) {
 
     using var ms = new MemoryStream();
-    var writer = new SevenZipWriter(ms, SevenZipCodec.Lzma2, leaveOpen: true);
+    using var writer = new SevenZipWriter(ms, SevenZipCodec.Lzma2, leaveOpen: true, dictionarySize: 1 << 23);
+
+    foreach (var directory in directories) {
+      cancellationToken.ThrowIfCancellationRequested();
+      writer.AddDirectory(directory);
+    }
 
     var entryIndexMap = new int[entries.Count];
     var addOrder = 0;
@@ -340,26 +354,107 @@ public static class SolidBlockOptimizer {
         cancellationToken.ThrowIfCancellationRequested();
         var (name, data, meta) = entries[idx];
         onProgress?.Invoke(addOrder, entries.Count, name);
-        writer.AddEntry(new SevenZipEntry {
-          Name = name,
-          LastWriteTime = meta.LastWriteTime,
-          CreationTime = meta.CreationTime,
-          Attributes = meta.Attributes,
-        }, data);
+        writer.AddEntry(CloneMetadata(meta), data);
         entryIndexMap[idx] = addOrder++;
         onProgress?.Invoke(addOrder, entries.Count, name);
       }
 
-    var blockDescs = new List<SevenZipWriter.BlockDescriptor>();
-    foreach (var group in groups) {
+    foreach (var empty in emptyEntries) {
+      cancellationToken.ThrowIfCancellationRequested();
+      writer.AddEntry(CloneMetadata(empty), ReadOnlySpan<byte>.Empty);
+    }
+
+    var blockDescs = new List<SevenZipWriter.BlockDescriptor>(groups.Count);
+    foreach (var group in groups)
       blockDescs.Add(new SevenZipWriter.BlockDescriptor {
         EntryIndices = group.Select(idx => entryIndexMap[idx]).ToArray(),
       });
-    }
 
     cancellationToken.ThrowIfCancellationRequested();
     writer.FinishWithBlocks(blockDescs);
     cancellationToken.ThrowIfCancellationRequested();
     return ms.ToArray();
   }
+
+  private static SevenZipEntry CloneMetadata(SevenZipEntry source) => new() {
+    Name = source.Name,
+    Size = source.Size,
+    IsDirectory = source.IsDirectory,
+    LastWriteTime = source.LastWriteTime,
+    CreationTime = source.CreationTime,
+    CompressedSize = source.CompressedSize,
+    Method = source.Method,
+    Crc = source.Crc,
+    Attributes = source.Attributes,
+    IsEncrypted = source.IsEncrypted,
+  };
+
+  private static OptimizeResult OriginalOnly(byte[] original) => new() {
+    Data = original,
+    WinningStrategy = "original",
+    Trials = [new TrialResult {
+      StrategyName = "original",
+      OutputSize = original.LongLength,
+      Elapsed = TimeSpan.Zero,
+    }],
+  };
+
+  private static bool IsSemanticallyIdentical(byte[] candidate, SemanticManifest source) {
+    try {
+      using var stream = new MemoryStream(candidate, writable: false);
+      using var reader = new SevenZipReader(stream);
+      var items = new List<(SevenZipEntry Meta, byte[] Data)>(reader.Entries.Count);
+      for (var i = 0; i < reader.Entries.Count; ++i) {
+        var entry = CloneMetadata(reader.Entries[i]);
+        items.Add((entry, entry.IsDirectory ? [] : reader.Extract(i)));
+      }
+      return source.Matches(SemanticManifest.Create(items));
+    } catch {
+      return false;
+    }
+  }
+
+  private sealed class SemanticManifest {
+    private readonly SemanticEntry[] _entries;
+
+    private SemanticManifest(SemanticEntry[] entries) => this._entries = entries;
+
+    public static SemanticManifest Create(IEnumerable<(SevenZipEntry Meta, byte[] Data)> items) {
+      var entries = items.Select(static item => {
+        var meta = item.Meta;
+        var hash = meta.IsDirectory
+          ? ""
+          : Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(item.Data));
+        return new SemanticEntry(
+          meta.Name,
+          meta.IsDirectory,
+          item.Data.LongLength,
+          hash,
+          meta.LastWriteTime,
+          meta.CreationTime,
+          meta.Attributes,
+          meta.IsEncrypted,
+          meta.Method ?? "");
+      }).OrderBy(static e => e.Name, StringComparer.Ordinal)
+        .ThenBy(static e => e.IsDirectory)
+        .ThenBy(static e => e.Length)
+        .ThenBy(static e => e.Hash, StringComparer.Ordinal)
+        .ToArray();
+      return new SemanticManifest(entries);
+    }
+
+    public bool Matches(SemanticManifest other)
+      => this._entries.SequenceEqual(other._entries);
+  }
+
+  private sealed record SemanticEntry(
+    string Name,
+    bool IsDirectory,
+    long Length,
+    string Hash,
+    DateTime? LastWriteTime,
+    DateTime? CreationTime,
+    uint? Attributes,
+    bool IsEncrypted,
+    string Method);
 }

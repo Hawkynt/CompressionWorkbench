@@ -41,6 +41,7 @@ namespace FileSystem.FatPlus;
 /// fallback. Defragment goes through the standard
 /// <see cref="DefragRebuilder"/> rebuild path.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(FileSystem.Fat.FatBlockMover))]
 public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 

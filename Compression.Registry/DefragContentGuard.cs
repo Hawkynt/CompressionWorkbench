@@ -18,6 +18,26 @@ namespace Compression.Registry;
 public static class DefragContentGuard {
 
   /// <summary>
+  /// A verified directory entry.  Unlike a payload-only snapshot this keeps
+  /// the name and directory bit, so an in-place pass cannot silently swap two
+  /// equal-sized files or move a file to a different directory.
+  /// </summary>
+  public sealed record DefragContentEntry(
+      string Path,
+      bool IsDirectory,
+      byte[] Payload,
+      long? Length = null,
+      ulong NativeAttributes = 0,
+      DateTimeOffset? Created = null,
+      DateTimeOffset? Modified = null,
+      DateTimeOffset? Accessed = null,
+      DateTimeOffset? Changed = null,
+      uint LinkCount = 1,
+      string? LinkIdentity = null,
+      string? SymbolicLinkTarget = null,
+      IReadOnlyList<(long Offset, long Length)>? SparseExtents = null);
+
+  /// <summary>
   /// Snapshots <paramref name="archive" />, runs <paramref name="inPlace" />,
   /// and verifies the contents. On any mismatch — or any exception — the
   /// snapshot is restored and <paramref name="rebuild" /> runs instead.
@@ -31,8 +51,51 @@ public static class DefragContentGuard {
       Func<Stream, IReadOnlyList<byte[]>> readContents,
       Action inPlace,
       Action rebuild) {
+    RunOrRebuildCore(archive, readContents, SameContents, inPlace, rebuild);
+  }
+
+  /// <summary>
+  /// The identity-preserving form of <see cref="RunOrRebuild(Stream, Func{Stream,
+  /// IReadOnlyList{byte[]}}, Action, Action)"/>.  Callers should prefer this
+  /// overload whenever their reader exposes paths or directory entries.
+  /// </summary>
+  public static void RunOrRebuild(
+      Stream archive,
+      Func<Stream, IReadOnlyList<DefragContentEntry>> readEntries,
+      Action inPlace,
+      Action rebuild) {
+    RunOrRebuildCore(archive, readEntries, SameEntries, inPlace, rebuild);
+  }
+
+  /// <summary>
+  /// Convenience overload for the common reader shape used by filesystem
+  /// descriptors. The tuple name is the stable path; the payload remains the
+  /// byte-level part of the identity.
+  /// </summary>
+  public static void RunOrRebuild(
+      Stream archive,
+      Func<Stream, IEnumerable<(string Path, byte[] Data)>> readEntries,
+      Action inPlace,
+      Action rebuild) {
+    ArgumentNullException.ThrowIfNull(readEntries);
+    RunOrRebuildCore(
+      archive,
+      stream => readEntries(stream)
+        .Select(e => new DefragContentEntry(e.Path, false, e.Data))
+        .ToList(),
+      SameEntries,
+      inPlace,
+      rebuild);
+  }
+
+  private static void RunOrRebuildCore<T>(
+      Stream archive,
+      Func<Stream, IReadOnlyList<T>> readSnapshot,
+      Func<IReadOnlyList<T>, IReadOnlyList<T>, bool> sameSnapshot,
+      Action inPlace,
+      Action rebuild) {
     ArgumentNullException.ThrowIfNull(archive);
-    ArgumentNullException.ThrowIfNull(readContents);
+    ArgumentNullException.ThrowIfNull(readSnapshot);
     ArgumentNullException.ThrowIfNull(inPlace);
     ArgumentNullException.ThrowIfNull(rebuild);
 
@@ -40,10 +103,10 @@ public static class DefragContentGuard {
     using var snapshot = new MemoryStream();
     archive.CopyTo(snapshot);
 
-    IReadOnlyList<byte[]> before;
+    IReadOnlyList<T> before;
     try {
       archive.Position = 0;
-      before = readContents(archive);
+      before = readSnapshot(archive);
     } catch {
       // An image we cannot read before the pass gives nothing to compare
       // against, so the pass is not worth attempting.
@@ -57,7 +120,7 @@ public static class DefragContentGuard {
       archive.Position = 0;
       inPlace();
       archive.Position = 0;
-      kept = SameContents(before, readContents(archive));
+      kept = sameSnapshot(before, readSnapshot(archive));
     } catch {
       kept = false;
     }
@@ -96,6 +159,35 @@ public static class DefragContentGuard {
       counts[key] = n - 1;
     }
     return true;
+  }
+
+  private static bool SameEntries(IReadOnlyList<DefragContentEntry> before,
+      IReadOnlyList<DefragContentEntry> after) {
+    if (before.Count != after.Count) return false;
+
+    static string Key(DefragContentEntry e) {
+      var sparse = e.SparseExtents is null
+        ? ""
+        : string.Join(';', e.SparseExtents.Select(x => $"{x.Offset}:{x.Length}"));
+      return string.Join('\u001f',
+        e.Path,
+        e.IsDirectory ? 'D' : 'F',
+        e.Length ?? e.Payload.LongLength,
+        e.NativeAttributes,
+        e.Created?.UtcTicks,
+        e.Modified?.UtcTicks,
+        e.Accessed?.UtcTicks,
+        e.Changed?.UtcTicks,
+        e.LinkCount,
+        e.LinkIdentity,
+        e.SymbolicLinkTarget,
+        sparse,
+        Digest(e.Payload));
+    }
+
+    var expected = before.Select(Key).OrderBy(k => k, StringComparer.Ordinal).ToArray();
+    var actual = after.Select(Key).OrderBy(k => k, StringComparer.Ordinal).ToArray();
+    return expected.SequenceEqual(actual, StringComparer.Ordinal);
   }
 
   private static string Digest(byte[] data)

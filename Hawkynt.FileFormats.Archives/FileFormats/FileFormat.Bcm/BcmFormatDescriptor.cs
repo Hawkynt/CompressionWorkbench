@@ -6,7 +6,7 @@ namespace FileFormat.Bcm;
 /// <summary>
 /// Describes bcm format.
 /// </summary>
-public sealed class BcmFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class BcmFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   private const int KiB = 1024;
 
   /// <summary>

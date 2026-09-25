@@ -61,7 +61,7 @@ internal static class ApfsInodeRecord {
   /// <param name="nchildren">Children for a directory, or link count for a file.</param>
   /// <param name="internalFlags">Flags the filesystem keeps for itself.</param>
   internal static byte[] BuildValue(ulong ino, ulong parentId, long size, bool isDir, uint nchildren,
-      ulong internalFlags = 0, string name = "") {
+      ulong internalFlags = 0, string name = "", DateTime? lastModified = null) {
     var nameBytes = System.Text.Encoding.UTF8.GetBytes(name);
     var nameSize = nameBytes.Length + 1;              // the nul is part of it
     var fieldCount = 1 + (isDir ? 0 : 1);             // the name, and a file's data stream
@@ -70,7 +70,7 @@ internal static class ApfsInodeRecord {
 
     BinaryPrimitives.WriteUInt64LittleEndian(v, parentId);
     BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(8), ino); // private_id = own inode number
-    var nowNs = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000UL;
+    var nowNs = (ulong)new DateTimeOffset((lastModified ?? DateTime.UtcNow).ToUniversalTime()).ToUnixTimeMilliseconds() * 1_000_000UL;
     BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(16), nowNs); // create_time
     BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(24), nowNs); // mod_time
     BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(32), nowNs); // change_time

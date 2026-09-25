@@ -6,7 +6,7 @@ namespace FileFormat.Zling;
 /// <summary>
 /// Describes zling format.
 /// </summary>
-public sealed class ZlingFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class ZlingFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

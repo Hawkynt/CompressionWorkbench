@@ -15,7 +15,13 @@ namespace FileFormat.Rpa;
 ///   <item><description><c>https://www.renpy.org/</c> — Ren'Py project home</description></item>
 /// </list>
 /// </summary>
-public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IWipeEmpty {
+public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IWipeEmpty, ISyntheticEntryNames {
+
+  private static readonly IReadOnlySet<string> SyntheticNames =
+    new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "FULL.rpa", "metadata.ini" };
+
+  /// <inheritdoc />
+  public IReadOnlySet<string> SyntheticEntryNames => SyntheticNames;
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {

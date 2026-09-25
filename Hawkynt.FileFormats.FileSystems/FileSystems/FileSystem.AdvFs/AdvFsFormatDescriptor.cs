@@ -39,6 +39,7 @@ namespace FileSystem.AdvFs;
 ///   <item><description>Wikipedia "Advanced File System"</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(AdvFsBlockMover))]
 public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable, IArchiveShrinkable, IArchiveModifiable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

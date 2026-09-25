@@ -19,6 +19,7 @@ namespace FileSystem.LittleFs;
 ///   <item><description><c>https://github.com/littlefs-project/littlefs/blob/master/DESIGN.md</c> — design document (metadata pairs, CTZ skip-lists)</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(LittleFsBlockMover))]
 public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
@@ -346,7 +347,7 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: ReadPayloadsForGuard,
+        readEntries: ReadEntriesForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;
@@ -360,11 +361,14 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     RebuildVerb.RebuildInPlace(archive, this, this);
   }
 
-  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
-  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+  /// <summary>Every file's semantic identity, as the guard compares it before and after.</summary>
+  private static IReadOnlyList<DefragContentGuard.DefragContentEntry> ReadEntriesForGuard(Stream stream) {
     stream.Position = 0;
     using var reader = new LittleFsReader(stream);
-    return reader.Files.Select(reader.ReadFile).ToList();
+    return reader.Files
+      .Select(file => new DefragContentGuard.DefragContentEntry(
+        file.Path, false, reader.ReadFile(file), Length: file.Size))
+      .ToList();
   }
 
   /// <summary>Plans the new layout, moves the blocks, then threads the skip-lists.</summary>

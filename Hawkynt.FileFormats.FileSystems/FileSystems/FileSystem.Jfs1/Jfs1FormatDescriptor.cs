@@ -10,7 +10,7 @@ namespace FileSystem.Jfs1;
 /// OS/2 original IBM JFS1 format descriptor — distinct from
 /// <c>FileSystem.Jfs</c> which targets the Linux JFS2 derivative. WORM
 /// writer + reader with real nested subdirectories, defrag/purge/conversion,
-/// fileset optimizer, and an options schema (BlockSize / AggregateBlockSize /
+/// creation/layout geometry selection, and an options schema (BlockSize / AggregateBlockSize /
 /// VolumeLabel).
 ///
 /// References:
@@ -28,6 +28,7 @@ namespace FileSystem.Jfs1;
 /// <para><b>Hierarchy</b>: real — directories nest via writer-emitted dirent
 /// chains (4-byte LE inode + 1-byte nlen + name) anchored from inode 2.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(Jfs1BlockMover))]
 public sealed class Jfs1FormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
@@ -92,10 +93,10 @@ public sealed class Jfs1FormatDescriptor :
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("BlockSize", "Block size", FormatOptionKind.Enum, "4096",
       AllowedValues: ["1024", "2048", "4096"],
-      Description: "JFS1 block size in bytes (IBM OS/2 spec allows 1024/2048/4096)."),
+      Description: "JFS1 block size in bytes (IBM OS/2 spec allows 1024/2048/4096).", IsAllocationGeometry: true),
     new("AggregateBlockSize", "Aggregate block size", FormatOptionKind.Enum, "4096",
       AllowedValues: ["1024", "2048", "4096"],
-      Description: "Aggregate block size for the dmap chain (usually equals BlockSize)."),
+      Description: "Aggregate block size for the dmap chain (usually equals BlockSize).", IsAllocationGeometry: true),
     FilesystemSchemaPresets.VolumeLabel(16),
   ];
 

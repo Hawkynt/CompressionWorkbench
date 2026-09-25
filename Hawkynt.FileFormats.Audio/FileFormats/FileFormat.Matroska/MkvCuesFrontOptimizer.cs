@@ -16,10 +16,10 @@ public sealed class MkvCuesFrontOptimizer : IFileInternalChunkMover {
   private const ulong Id_Cluster = 0x1F43B675;
 
   /// <inheritdoc />
-  public void Optimize(Stream file) => Optimize(file, null);
+  public void CanonicalizeInPlace(Stream file) => CanonicalizeInPlace(file, null);
 
   /// <inheritdoc />
-  public void Optimize(Stream file, Compression.Registry.MetadataPlacementProfile? profile) {
+  public void CanonicalizeInPlace(Stream file, Compression.Registry.MetadataPlacementProfile? profile) {
     ArgumentNullException.ThrowIfNull(file);
     if (!file.CanRead || !file.CanWrite || !file.CanSeek)
       throw new ArgumentException("Stream must be readable, writable, and seekable.", nameof(file));

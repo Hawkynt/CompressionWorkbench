@@ -26,6 +26,7 @@ namespace FileSystem.AmigaPfs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Professional_File_System</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(AmigaPfsBlockMover))]
 public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
@@ -232,7 +233,7 @@ public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     // The in-place pass is kept only if every payload still reads back: it can
     // refuse partway, and a rebuild is the honest answer when it does.
     DefragContentGuard.RunOrRebuild(archive,
-      readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+      readEntries: stream => ReadEntries(stream),
       inPlace: () => this.DefragmentWithPlanner(archive, options),
       rebuild: () => DefragRebuilder.Rebuild(archive, options,
         readEntries: stream => ReadEntries(stream).ToList(),

@@ -30,4 +30,7 @@ public sealed class SevenZipEntry {
 
   /// <summary>Gets or sets the Windows file attributes.</summary>
   public uint? Attributes { get; set; }
+
+  /// <summary>Gets whether the entry's packed stream is protected by 7z AES.</summary>
+  public bool IsEncrypted { get; set; }
 }

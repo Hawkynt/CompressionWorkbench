@@ -44,7 +44,10 @@ public class Jfs1LayoutOptimizerTests {
     // Sub-block files: the 4096 default wastes nearly a full block each; the
     // optimiser must pick a size with no more slack than the default.
     var sizes = new long[] { 500, 900, 1300, 700 };
-    var picked = Jfs1Optimizer.Find(sizes).BlockSize;
+    var picked = Compression.Core.Layout.LayoutOptimizerAdapter.SelectAllocationUnit(
+      [1024, 2048, 4096],
+      sizes,
+      fixedOverhead: blockSize => 3L * blockSize);
     Assert.That(picked, Is.AnyOf(1024, 2048, 4096));
     Assert.That(SlackOf(sizes, picked), Is.LessThanOrEqualTo(SlackOf(sizes, 4096)),
       "the optimiser must never pick a block size with more slack than the 4 KiB default");

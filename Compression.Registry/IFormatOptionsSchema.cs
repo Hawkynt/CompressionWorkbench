@@ -67,6 +67,9 @@ public enum FormatOptionKind {
 /// options (e.g. "Journal" only visible when "Version" is ext3/ext4).</param>
 /// <param name="IsOptimizationAxis">Whether the generic compression optimizer may vary this option.
 /// Set to <see langword="false"/> for caller constraints such as <see cref="FormatOptionKeys.TargetCompatibility"/>.</param>
+/// <param name="IsAllocationGeometry">Whether this option changes allocation geometry rather than
+/// payload encoding, metadata, compatibility, or another creation concern. Only options marked
+/// here are surfaced by the <c>Change allocation geometry</c> maintenance action.</param>
 public sealed record FormatOptionDescriptor(
     string Key,
     string DisplayName,
@@ -75,4 +78,5 @@ public sealed record FormatOptionDescriptor(
     IReadOnlyList<string>? AllowedValues = null,
     string? Description = null,
     string? DependsOn = null,
-    bool IsOptimizationAxis = true);
+    bool IsOptimizationAxis = true,
+    bool IsAllocationGeometry = false);

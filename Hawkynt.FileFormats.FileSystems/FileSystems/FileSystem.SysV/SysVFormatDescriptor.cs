@@ -45,6 +45,7 @@ namespace FileSystem.SysV;
 /// WSL2 kernel ships without it).
 /// </para>
 /// </remarks>
+[FilesystemBlockMover(typeof(SysVBlockMover))]
 public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
   /// <summary>
   /// s5fs geometry (1024-byte blocks, 64-byte inodes, single-group layout) is
@@ -281,7 +282,7 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // The in-place pass is kept only if every payload still reads back: it can
     // refuse partway, and a rebuild is the honest answer when it does.
     DefragContentGuard.RunOrRebuild(archive,
-      readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+      readEntries: stream => ReadEntries(stream),
       inPlace: () => this.DefragmentWithPlanner(archive, options),
       rebuild: () => DefragRebuilder.Rebuild(archive, options,
         readEntries: stream => ReadEntries(stream),

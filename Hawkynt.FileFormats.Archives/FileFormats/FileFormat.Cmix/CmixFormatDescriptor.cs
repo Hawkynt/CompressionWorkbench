@@ -6,7 +6,7 @@ namespace FileFormat.Cmix;
 /// <summary>
 /// Describes cmix format.
 /// </summary>
-public sealed class CmixFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class CmixFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

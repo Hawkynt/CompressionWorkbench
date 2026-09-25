@@ -6,19 +6,41 @@ namespace Compression.Registry;
 /// so the file remains valid. Examples: moving MP4 moov atom before mdat,
 /// relocating JPEG EXIF to the front, compacting ID3v2 padding.
 /// </summary>
-public interface IFileInternalChunkMover {
+public interface IFileInternalChunkMover : IArchiveCanonicalizable {
   /// <summary>
-  /// Performs the canonical optimization for the format (e.g., MP4 fast-start,
-  /// JPEG EXIF-first). The stream must be readable, writable, and seekable.
-  /// If the file is already in the optimal layout, this is a no-op.
+  /// Canonicalizes the file in place (for example MP4 fast-start or metadata
+  /// chunk ordering). The stream must be readable, writable, and seekable.
+  /// If the file is already canonical, this is a no-op.
   /// </summary>
-  void Optimize(Stream file);
+  void CanonicalizeInPlace(Stream file);
 
   /// <summary>
-  /// Performs optimization with an optional metadata placement profile that
-  /// controls where metadata chunks land relative to the data payload.
-  /// The default implementation ignores the profile and delegates to
-  /// <see cref="Optimize(Stream)"/>.
+  /// Canonicalizes the file in place using an optional metadata placement
+  /// profile. The default ignores the profile.
   /// </summary>
-  void Optimize(Stream file, MetadataPlacementProfile? profile) => Optimize(file);
+  void CanonicalizeInPlace(Stream file, MetadataPlacementProfile? profile)
+    => CanonicalizeInPlace(file);
+
+  /// <summary>Legacy spelling retained for source compatibility.</summary>
+  void Optimize(Stream file) => CanonicalizeInPlace(file);
+
+  /// <summary>Legacy spelling retained for source compatibility.</summary>
+  void Optimize(Stream file, MetadataPlacementProfile? profile)
+    => CanonicalizeInPlace(file, profile);
+
+  /// <inheritdoc />
+  void IArchiveCanonicalizable.Canonicalize(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanRead || !output.CanWrite || !output.CanSeek)
+      throw new ArgumentException("Canonicalization target must be readable, writable, and seekable.", nameof(output));
+
+    if (input.CanSeek) input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    input.CopyTo(output);
+    output.Position = 0;
+    CanonicalizeInPlace(output);
+    output.Position = 0;
+  }
 }

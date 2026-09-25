@@ -18,6 +18,7 @@ namespace FileSystem.MinixV2;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Minix_file_system</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(MinixV2BlockMover))]
 public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
   /// <summary>
   /// Minix v2 geometry (1024-byte blocks, 64-byte inodes) is fixed, but the
@@ -224,7 +225,7 @@ public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     // The in-place pass is kept only if every payload still reads back: it can
     // refuse partway, and a rebuild is the honest answer when it does.
     DefragContentGuard.RunOrRebuild(archive,
-      readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+      readEntries: stream => ReadEntries(stream),
       inPlace: () => this.DefragmentWithPlanner(archive, options),
       rebuild: () => DefragRebuilder.Rebuild(archive, options,
         readEntries: stream => ReadEntries(stream),

@@ -508,7 +508,7 @@ Writer for tightly packed Flattened Device Tree Blob (FDT v17) images.
 
 EnCase Expert Witness Format (EWF/E01) descriptor. The mutable archive surface is the forensic image's logical `media.raw` payload; parsed section payloads remain available as read-only diagnostic entries. Existing physical EVF images can therefore be replaced, purged, canonicalized, compressed and shrunk without pretending their internal sections are user files.
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCanonicalizable`, `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -528,6 +528,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
 | `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` | Performs the analyze layout operation. |
+| `Canonicalize` | `void Canonicalize(Stream input, Stream output)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a single-segment .E01 image wrapping the supplied input(s) as raw media. EWF is a media-wrapper format, so file inputs are concatenated into one contiguous raw image (the common case is a single disk-image input). The produced image is accepted by libewf's `ewfverify`. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
@@ -536,6 +537,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Performs the open entry operation. |
+| `OptimizeCompression` | `void OptimizeCompression(Stream input, Stream output)` |  |
 | `Purge` | `void Purge(Stream archive)` | Removes every entry from the target container. |
 | `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Rebuilds the container into the target stream using the supplied layout options. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
@@ -660,6 +662,8 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a fresh Intel HEX file: the single payload input becomes the data records, and a `metadata.ini` alongside it -- the one this descriptor's own reader renders -- supplies the sparse segment map and start-address form that a flat binary cannot carry. |
+| `Defragment` | `void Defragment(Stream archive)` | Canonically rebuilds the record stream while preserving the sparse address map. `metadata.ini` is fed back into the writer because it carries that map, but its rendered counters are representation details and are therefore excluded from semantic equality. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Purge` | `void Purge(Stream archive)` | Removes all programmed bytes and start-address state while leaving the canonical valid empty Intel HEX document (the EOF record). This overrides the generic pseudo-archive purge because `firmware.bin` is a rendered view that also exists as a zero-length view of an empty image. |
@@ -2587,8 +2591,8 @@ Creates minimal Apple File System (APFS) container images per Apple's "Apple Fil
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ApfsWriter` | `ApfsWriter()` |  |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to be included in the volume image. |
-| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a file whose bytes are produced on demand. `size` must match what `openStream` yields; the layout is settled from it before a single byte is read, so a file larger than a byte[] can carry is placed like any other. |
+| `AddFile` | `void AddFile(string name, byte[] data, DateTime? lastModified = null)` | Adds a file to be included in the volume image. |
+| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? lastModified = null)` | Adds a file whose bytes are produced on demand. `size` must match what `openStream` yields; the layout is settled from it before a single byte is read, so a file larger than a byte[] can carry is placed like any other. |
 | `BuildTo` | `void BuildTo(Stream output)` | Writes the volume to `output`: the metadata prefix, then the declared length, then each file's bytes at its allocated offset. Free space costs nothing, so a volume past the in-memory limit is producible. |
 | `Build` | `byte[] Build()` | Builds and returns the complete APFS image. |
 | `SetMinImageSize` | `void SetMinImageSize(long bytes)` | Overrides the minimum image size (default 512 MB = `MIN_APFS_IMAGE_SIZE`). Useful for tests that need smaller round-trip images. |
@@ -2715,7 +2719,7 @@ Builds a fresh Apple DOS 3.3 `.dsk` / `.do` disk image (143 360 bytes) from scra
 
 ### Namespace `FileSystem.ApplePascal`
 
-[`ApplePascalBlockMover`](#applepascalblockmover) · [`ApplePascalEntry`](#applepascalentry) · [`ApplePascalExtentMap`](#applepascalextentmap) · [`ApplePascalFormatDescriptor`](#applepascalformatdescriptor) · [`ApplePascalInPlaceModifier`](#applepascalinplacemodifier) · [`ApplePascalOptimizer`](#applepascaloptimizer) · [`ApplePascalOptimizer.ApplePascalGeometry`](#applepascaloptimizerapplepascalgeometry) · [`ApplePascalReader`](#applepascalreader) · [`ApplePascalWriter`](#applepascalwriter)
+[`ApplePascalBlockMover`](#applepascalblockmover) · [`ApplePascalEntry`](#applepascalentry) · [`ApplePascalExtentMap`](#applepascalextentmap) · [`ApplePascalFormatDescriptor`](#applepascalformatdescriptor) · [`ApplePascalGeometrySelector`](#applepascalgeometryselector) · [`ApplePascalGeometrySelector.ApplePascalGeometry`](#applepascalgeometryselectorapplepascalgeometry) · [`ApplePascalInPlaceModifier`](#applepascalinplacemodifier) · [`ApplePascalReader`](#applepascalreader) · [`ApplePascalWriter`](#applepascalwriter)
 
 #### `ApplePascalBlockMover`
 
@@ -2762,11 +2766,12 @@ Walks an Apple Pascal volume and emits the on-disk byte layout: boot blocks (0..
 
 Descriptor for Apple UCSD Pascal disk volumes (Apple II, Apple III, Lisa Pascal — late 1970s / early 1980s). Volume directory header is at fixed disk block 2 (file offset 0x400); files are stored as contiguous block extents with at most 77 directory entries. Flat-only by spec. Apple Pascal does not support subdirectories — its 26-byte directory entry has no parent-pointer or nested-volume indirection. Writer / reader treat all inputs as living at the volume root; a leaf-name-only round trip is the maximum possible. This is honest and documented in the writer's xmldoc.Spec. Apple Pascal Operating System Reference Manual (1980). References: Apple Pascal Operating System Reference Manual (Apple Computer, 1980) — the original vendor spec for the UCSD-Pascal volume layout`https://github.com/fadden/CiderPress2` — CiderPress II, maintained implementation covering Apple Pascal volumes`https://en.wikipedia.org/wiki/UCSD_Pascal` — Wikipedia overview of the UCSD p-System family
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemDirectoryOrderer`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ApplePascalFormatDescriptor` | `ApplePascalFormatDescriptor()` |  |
+| `AllocationBlockSize` | `int AllocationBlockSize { get; }` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -2779,6 +2784,8 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Gets the options schema. |
+| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` |  |
+| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing Apple Pascal image. Routed through `AddFile`: the volume directory at blocks 2-5 is mutated in place, the new file's contiguous extent is allocated from the gap between existing entries' extents, and the new 26-byte entry lands at the tail of the live region. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
@@ -2787,20 +2794,13 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing Apple Pascal image. Routed through `RemoveFile`: the dirent is located in the volume directory, the data extent is zero-wiped, the trailing dirents are shifted up to keep the live region packed, and the volume header's file count is decremented. |
+| `SortDirectoryEntries` | `void SortDirectoryEntries(Stream image)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
 
-#### `ApplePascalInPlaceModifier`
-
-In-place modifier for Apple UCSD Pascal disk volumes. Performs `Add`, `Replace`, and `Remove` against an existing image without rebuilding the entire volume. The companion `ApplePascalWriter` still serves the WORM "build a fresh image from a file list" path; this class handles the "mutate an existing image" path that `IArchiveModifiable` exposes. Spec source. Apple Pascal Operating System Reference Manual (1979/1980). 512-byte blocks, volume directory at blocks 2-5 (file offset 0x400), 26-byte fixed entries packed back-to-back after the 26-byte volume header, hard cap of 77 file entries (78 × 26 = 2028 bytes fits inside the 4-block 2048-byte directory region).Layout reminders (little-endian throughout):Blocks 0-1: boot blocks (1024 bytes total) — untouched by the modifier.Blocks 2-5: volume directory (2048 bytes). First 26 bytes = volume header; next 77 × 26 = 2002 bytes = file entries.Volume header: `firstBlock=0` at +0, `nextBlock` at +2 (= first file's start block, conventionally 6), entry type = 0 at +4, name length at +6, name at +7..+13, total blocks at +14, file count at +16, first to access (cached) at +18, last-mod date at +20, reserved at +24.File entry: start block at +0, end block (exclusive) at +2, file kind at +4, name length at +6, name at +7..+21, bytes-in-last-block at +22, date at +24.File data: blocks 6.. — every file occupies a single contiguous extent `[startBlock, endBlock)`.Scope match with WORM: the modifier respects the same 77-entry cap and the 8-block-tile rounding for the underlying volume size. The flat directory is the only directory — Apple Pascal has no subdirectories by spec.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream image, string name, byte[] data, int kind = 0)` | Adds a single file to the existing image. If a file with the same name already exists, it is removed first (its extent zero-wiped and its directory entry shifted out) so the new entry replaces it cleanly. The new file's contiguous extent is allocated by scanning every live directory entry to derive the occupied-block map; the first free run of the required size at or after block 6 is chosen. |
-| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file from the existing image. Zero-wipes the file's contiguous extent, shifts the trailing directory entries up to keep the live region packed (Apple Pascal walks entries 0..fileCount and stops — holes would orphan everything after), and decrements the file count. |
-| `ReplaceFileIfFits` | `static bool ReplaceFileIfFits(Stream image, string name, byte[] data)` | Replaces the data of an existing file in place when the new payload fits inside the file's currently allocated extent. Returns false when the file is missing or the new payload exceeds the existing extent — the caller can fall back to `RemoveFile` + `AddFile` in that case. The directory entry's `bytesInLastBlock` field is updated so the reader reports the new logical size correctly. |
-
-#### `ApplePascalOptimizer`
+#### `ApplePascalGeometrySelector`
 
 Picks the smallest Apple Pascal volume size (in 512-byte blocks, rounded to a multiple of 8 per Pascal convention) that fits a given fileset. Block size is always 512 (spec-mandated for Apple Pascal volumes); only the volume total varies.
 
@@ -2808,7 +2808,7 @@ Picks the smallest Apple Pascal volume size (in 512-byte blocks, rounded to a mu
 | --- | --- | --- |
 | `Find` | `static ApplePascalGeometry Find(IReadOnlyList<long> fileSizes)` | Performs the find operation. |
 
-#### `ApplePascalOptimizer.ApplePascalGeometry`
+#### `ApplePascalGeometrySelector.ApplePascalGeometry`
 
 Represents an apple pascal geometry.
 
@@ -2819,6 +2819,16 @@ Implements `IEquatable<ApplePascalGeometry>`.
 | `ApplePascalGeometry` | `ApplePascalGeometry(int BlockSize, int VolumeBlocks)` | Represents an apple pascal geometry. |
 | `BlockSize` | `int BlockSize { get; init; }` |  |
 | `VolumeBlocks` | `int VolumeBlocks { get; init; }` |  |
+
+#### `ApplePascalInPlaceModifier`
+
+In-place modifier for Apple UCSD Pascal disk volumes. Performs `Add`, `Replace`, and `Remove` against an existing image without rebuilding the entire volume. The companion `ApplePascalWriter` still serves the WORM "build a fresh image from a file list" path; this class handles the "mutate an existing image" path that `IArchiveModifiable` exposes. Spec source. Apple Pascal Operating System Reference Manual (1979/1980). 512-byte blocks, volume directory at blocks 2-5 (file offset 0x400), 26-byte fixed entries packed back-to-back after the 26-byte volume header, hard cap of 77 file entries (78 × 26 = 2028 bytes fits inside the 4-block 2048-byte directory region).Layout reminders (little-endian throughout):Blocks 0-1: boot blocks (1024 bytes total) — untouched by the modifier.Blocks 2-5: volume directory (2048 bytes). First 26 bytes = volume header; next 77 × 26 = 2002 bytes = file entries.Volume header: `firstBlock=0` at +0, `nextBlock` at +2 (= first file's start block, conventionally 6), entry type = 0 at +4, name length at +6, name at +7..+13, total blocks at +14, file count at +16, first to access (cached) at +18, last-mod date at +20, reserved at +24.File entry: start block at +0, end block (exclusive) at +2, file kind at +4, name length at +6, name at +7..+21, bytes-in-last-block at +22, date at +24.File data: blocks 6.. — every file occupies a single contiguous extent `[startBlock, endBlock)`.Scope match with WORM: the modifier respects the same 77-entry cap and the 8-block-tile rounding for the underlying volume size. The flat directory is the only directory — Apple Pascal has no subdirectories by spec.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddFile` | `static void AddFile(Stream image, string name, byte[] data, int kind = 0)` | Adds a single file to the existing image. If a file with the same name already exists, it is removed first (its extent zero-wiped and its directory entry shifted out) so the new entry replaces it cleanly. The new file's contiguous extent is allocated by scanning every live directory entry to derive the occupied-block map; the first free run of the required size at or after block 6 is chosen. |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file from the existing image. Zero-wipes the file's contiguous extent, shifts the trailing directory entries up to keep the live region packed (Apple Pascal walks entries 0..fileCount and stops — holes would orphan everything after), and decrements the file count. |
+| `ReplaceFileIfFits` | `static bool ReplaceFileIfFits(Stream image, string name, byte[] data)` | Replaces the data of an existing file in place when the new payload fits inside the file's currently allocated extent. Returns false when the file is missing or the new payload exceeds the existing extent — the caller can fall back to `RemoveFile` + `AddFile` in that case. The directory entry's `bytesInLastBlock` field is updated so the reader reports the new logical size correctly. |
 
 #### `ApplePascalReader`
 
@@ -4123,7 +4133,7 @@ Represents a single inode entry discovered while walking a CramFS image.
 
 Offline R/W descriptor for Linux CramFS images. The Linux filesystem is intentionally read-only when mounted, but the workbench can create and edit an existing image by verified rebuild and can perform physical layout moves where the compressed-block metadata can be repointed safely. References: `https://docs.kernel.org/filesystems/cramfs.html` — Linux kernel cramfs documentation`https://github.com/torvalds/linux/tree/master/fs/cramfs` — mainline implementation (its README documents the on-disk layout)`https://en.wikipedia.org/wiki/Cramfs` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `ICompressionOptimizable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4188,7 +4198,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileSystem.Cromemco`
 
-[`CromemcoBlockMover`](#cromemcoblockmover) · [`CromemcoEntry`](#cromemcoentry) · [`CromemcoExtentMap`](#cromemcoextentmap) · [`CromemcoFormatDescriptor`](#cromemcoformatdescriptor) · [`CromemcoModifier`](#cromemcomodifier) · [`CromemcoOptimizer`](#cromemcooptimizer) · [`CromemcoOptimizer.CromemcoGeometry`](#cromemcooptimizercromemcogeometry) · [`CromemcoReader`](#cromemcoreader) · [`CromemcoWriter`](#cromemcowriter)
+[`CromemcoBlockMover`](#cromemcoblockmover) · [`CromemcoEntry`](#cromemcoentry) · [`CromemcoExtentMap`](#cromemcoextentmap) · [`CromemcoFormatDescriptor`](#cromemcoformatdescriptor) · [`CromemcoGeometrySelector`](#cromemcogeometryselector) · [`CromemcoGeometrySelector.CromemcoGeometry`](#cromemcogeometryselectorcromemcogeometry) · [`CromemcoModifier`](#cromemcomodifier) · [`CromemcoReader`](#cromemcoreader) · [`CromemcoWriter`](#cromemcowriter)
 
 #### `CromemcoBlockMover`
 
@@ -4258,26 +4268,16 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries in place: marks the directory entry deleted (user code 0xE5) and wipes the data run. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every byte in the image not claimed by the boot block, the directory area, or a live file's contiguous sector run. Cluster-tip wiping (slack between the file's real size and its rounded-up sector allocation) is honoured when `wipeClusterTips` is true, using the directory entry's record count. |
 
-#### `CromemcoModifier`
+#### `CromemcoGeometrySelector`
 
-In-place modifier for Cromemco RDOS volumes. Performs add / remove with strict O(touched bytes) I/O — only the 2 KB directory area (sectors 2..17, where the 32-byte entries live) and the affected file's contiguous data run are read or written. The rest of the image is untouched, so existing files' data bytes stay byte-identical at their original offsets and a same-size update never changes the image length. RDOS is extent-based with no allocation bitmap: each file is a single contiguous run of 128-byte sectors described by (start block, record count) in its directory entry. Free space is whatever no live entry claims. This modifier therefore reconstructs the in-use sector ranges from the directory to find a free contiguous run for new data, and allocates contiguously so the reader's contiguous extraction keeps working.Directory entry (32 bytes, from file offset 0x100): user code @0 (0xE5 = deleted, 0x00 = live/empty), name @1..8, ext @9..11, start block u16 LE @0x0C, records u16 LE @0x0E, bytes-in-last-sector @0x10.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream image, string name, byte[] data)` | Adds a file. Allocates the lowest contiguous free sector run, writes the data there, and fills a free directory slot. Throws on a full directory or no contiguous free run. |
-| `IsCromemco` | `static bool IsCromemco(Stream image)` | True if the stream is a recognised Cromemco RDOS volume. |
-| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file: marks its directory entry deleted (user code 0xE5), optionally wipes the data run. Returns true if found. |
-
-#### `CromemcoOptimizer`
-
-Picks the smallest Cromemco RDOS geometry whose data area fits a supplied file set with ≤ 5 % wasted slack. The Cromemco RDOS line shipped a small handful of well-defined disk geometries; the optimiser walks them in ascending capacity order and returns the first that fits.
+Picks the smallest Cromemco RDOS geometry whose data area fits a supplied file set with ≤ 5 % wasted slack. The Cromemco RDOS line shipped a small handful of well-defined disk geometries; the selector walks them in ascending capacity order and returns the first that fits.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Geometries` | `static readonly IReadOnlyList<CromemcoGeometry> Geometries` | Canonical Cromemco RDOS geometries, in ascending capacity order. |
 | `Find` | `static CromemcoGeometry Find(IReadOnlyList<long> fileSizes)` | Returns the smallest geometry whose data area holds `fileSizes` with at most 5 % slack. Sums each file rounded up to the 128-byte sector boundary (since the writer always allocates whole sectors). Falls back to the largest geometry when nothing fits cleanly. |
 
-#### `CromemcoOptimizer.CromemcoGeometry`
+#### `CromemcoGeometrySelector.CromemcoGeometry`
 
 One disk preset: density label + track count + sectors/track.
 
@@ -4292,6 +4292,16 @@ Implements `IEquatable<CromemcoGeometry>`.
 | `SectorsPerTrack` | `int SectorsPerTrack { get; init; }` |  |
 | `TotalBytes` | `int TotalBytes { get; }` | Total image bytes. |
 | `Tracks` | `int Tracks { get; init; }` |  |
+
+#### `CromemcoModifier`
+
+In-place modifier for Cromemco RDOS volumes. Performs add / remove with strict O(touched bytes) I/O — only the 2 KB directory area (sectors 2..17, where the 32-byte entries live) and the affected file's contiguous data run are read or written. The rest of the image is untouched, so existing files' data bytes stay byte-identical at their original offsets and a same-size update never changes the image length. RDOS is extent-based with no allocation bitmap: each file is a single contiguous run of 128-byte sectors described by (start block, record count) in its directory entry. Free space is whatever no live entry claims. This modifier therefore reconstructs the in-use sector ranges from the directory to find a free contiguous run for new data, and allocates contiguously so the reader's contiguous extraction keeps working.Directory entry (32 bytes, from file offset 0x100): user code @0 (0xE5 = deleted, 0x00 = live/empty), name @1..8, ext @9..11, start block u16 LE @0x0C, records u16 LE @0x0E, bytes-in-last-sector @0x10.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddFile` | `static void AddFile(Stream image, string name, byte[] data)` | Adds a file. Allocates the lowest contiguous free sector run, writes the data there, and fills a free directory slot. Throws on a full directory or no contiguous free run. |
+| `IsCromemco` | `static bool IsCromemco(Stream image)` | True if the stream is a recognised Cromemco RDOS volume. |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file: marks its directory entry deleted (user code 0xE5), optionally wipes the data run. Returns true if found. |
 
 #### `CromemcoReader`
 
@@ -5017,7 +5027,7 @@ Walks a DoubleSpace/DriveSpace CVF image and yields the actual on-disk byte layo
 
 References: `https://github.com/sandsmark/dmsdos` — dmsdos, the GPL Linux CVF driver whose source + `doc/dmsdos.doc` are the de-facto MDBPB/MDFAT/BitFAT on-disk specificationMicrosoft MS-DOS 6 documentation (DoubleSpace chapter) — original vendor description of the compressed volume file`https://en.wikipedia.org/wiki/DriveSpace` — Wikipedia article covering DoubleSpace and its successors
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `ICompressionOptimizable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5093,7 +5103,7 @@ Builds a spec-compliant Microsoft DoubleSpace / DriveSpace Compressed Volume Fil
 
 References: `https://github.com/sandsmark/dmsdos` — dmsdos, the GPL Linux CVF driver whose source + `doc/dmsdos.doc` are the de-facto on-disk specification (incl. the JM-0-0 cluster codec)Microsoft MS-DOS 6.22 documentation (DriveSpace chapter) — original vendor description`https://en.wikipedia.org/wiki/DriveSpace` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `ICompressionOptimizable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5301,7 +5311,7 @@ One file entry inside a DriveSpace 3 CVF. Names with characters or lengths outsi
 
 Descriptor for Microsoft DriveSpace 3 CVF (Windows 95 Plus! Pack, 1995). Distinguished from DoubleSpace/DriveSpace 2 by the `MS_DSP3` MDBPB signature at file offset 3 and the `DVR3` CvfSignature at offset 36. The compression algorithm changed from DS LZ77 (DOS 6.x) to MS LZH (LZ77 + canonical Huffman). Read/write/modify/defrag are delegated to the shared DoubleSpace infrastructure (`DoubleSpaceWriter` routed through `DriveSpace3`, `DoubleSpaceReader` with MS LZH dispatch, `DoubleSpaceExtentMap`, `DoubleSpaceBlockMover`) — the on-disk MDBPB+MDFAT+BitFAT layout is byte-compatible across the whole CVF family; only the OEM bytes and inner-cluster codec differ. This brings DriveSpace 3 to full parity with DoubleSpace/DriveSpace 6.22 for defrag, wipe-empty, modify, extent map and block mover. Shares the `.cvf` extension with DoubleSpace; FormatDetector disambiguates by magic. References: `https://github.com/sandsmark/dmsdos` — dmsdos, the GPL Linux CVF driver whose source + `doc/dmsdos.doc` are the de-facto DriveSpace 3 on-disk specification (5-byte MDFAT, MS LZH codecs)Microsoft Plus! for Windows 95 documentation (DriveSpace 3) — original vendor description`https://en.wikipedia.org/wiki/DriveSpace` — Wikipedia overview of the CVF family
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `ICompressionOptimizable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5472,7 +5482,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileSystem.Efs`
 
-[`EfsBlockMover`](#efsblockmover) · [`EfsEntry`](#efsentry) · [`EfsFormatDescriptor`](#efsformatdescriptor) · [`EfsInPlaceModifier`](#efsinplacemodifier) · [`EfsOptimalParameters`](#efsoptimalparameters) · [`EfsOptimizer`](#efsoptimizer) · [`EfsReader`](#efsreader) · [`EfsWriter`](#efswriter)
+[`EfsBlockMover`](#efsblockmover) · [`EfsEntry`](#efsentry) · [`EfsFormatDescriptor`](#efsformatdescriptor) · [`EfsInPlaceModifier`](#efsinplacemodifier) · [`EfsReader`](#efsreader) · [`EfsWriter`](#efswriter)
 
 #### `EfsBlockMover`
 
@@ -5545,27 +5555,6 @@ TRUE in-place R/W modifier for the SGI EFS images this project emits. Performs O
 | `AddFile` | `static void AddFile(Stream image, string name, byte[] data)` | Adds a regular file to the root directory in-place. |
 | `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes a named regular file from the root directory in-place. |
 | `Replace` | `static bool Replace(Stream image, string name, byte[] data)` | Replaces a named regular file's data in-place. |
-
-#### `EfsOptimalParameters`
-
-Optimal EFS layout parameters as picked by `Find`.
-
-Implements `IEquatable<EfsOptimalParameters>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `EfsOptimalParameters` | `EfsOptimalParameters(int BlockSize, int CylinderGroupSize, long EstimatedImageBytes)` | Optimal EFS layout parameters as picked by `Find`. |
-| `BlockSize` | `int BlockSize { get; init; }` | Selected basic-block size in bytes (always 512 for EFS). |
-| `CylinderGroupSize` | `int CylinderGroupSize { get; init; }` | Cylinder-group size in basic blocks. |
-| `EstimatedImageBytes` | `long EstimatedImageBytes { get; init; }` | Predicted on-disk image size for the input set. |
-
-#### `EfsOptimizer`
-
-Fileset-driven optimizer for EFS. The basic-block size is fixed at 512 (per the IRIX spec), so the optimizer's only real lever is the cylinder-group size — bigger groups for big filesets (fewer groups, less metadata), smaller groups for tiny filesets (better locality). The image-size sanity guard (≤ 2× sum of files) and the slack guard (≤ 5%) are applied at the blocks-per-file level since EFS' allocation unit is one basic block.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Find` | `static EfsOptimalParameters Find(IReadOnlyList<long> fileSizes)` | Picks an EFS layout for `fileSizes`. Empty input collapses to the minimum image (one inode block + one directory block). |
 
 #### `EfsReader`
 
@@ -5755,7 +5744,7 @@ Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `
 
 References: `https://learn.microsoft.com/en-us/windows/win32/fileio/exfat-specification` — Microsoft's official exFAT file system specification`https://github.com/torvalds/linux/tree/master/fs/exfat` — mainline kernel implementation`https://en.wikipedia.org/wiki/ExFAT` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemDirectoryOrderer`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5785,6 +5774,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files from an existing exFAT image with full secure wipe (cluster bytes, FAT chain, allocation bitmap bits, directory entry set). Uses `ExFatModifier` for O(touched bytes) random-access I/O — no forensic recovery of the removed content is possible from the resulting bytes. |
+| `SortDirectoryEntries` | `void SortDirectoryEntries(Stream image)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the exFAT image: free clusters, cluster-tip slack (the bytes between a file's real size and the end of its last allocated cluster), and any gaps outside the reserved/FAT/heap-used regions. Driven by the generic `UnusedSpaceWiper` over the exFAT extent map, with a directory-entry-based file-size lookup for cluster-tip precision. |
 
@@ -6393,7 +6383,7 @@ Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `
 
 References: `https://download.microsoft.com/download/1/6/1/161ba512-40e2-4cc9-843a-923143f3456c/fatgen103.doc` — Microsoft "FAT32 File System Specification" (FATGEN 1.03), the canonical FAT12/16/32 spec`https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system` — Wikipedia's detailed on-disk reference incl. vendor variants`https://github.com/torvalds/linux/tree/master/fs/fat` — mainline kernel implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFilesystemPlaceable`, `IFilesystemScrambleable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemDirectoryOrderer`, `IFilesystemExtentMap`, `IFilesystemPlaceable`, `IFilesystemScrambleable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -6428,6 +6418,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files from an existing FAT image with full secure wipe (cluster bytes, cluster-tip slack, directory entries, FAT chain entries). No forensic recovery of the removed content is possible from the resulting bytes. |
 | `Scramble` | `void Scramble(Stream archive, ScrambleOptions options)` | Scatters every cluster of every file and subdirectory across the volume's whole cluster heap, dealt from `Seed`. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Performs the shrink operation. |
+| `SortDirectoryEntries` | `void SortDirectoryEntries(Stream image)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the FAT image: free clusters, cluster-tip slack, and optionally deleted directory entries. Uses the generic `UnusedSpaceWiper` driven by the FAT extent map plus a directory-entry-based file-size lookup for cluster-tip precision. |
 
@@ -6743,7 +6734,7 @@ Builds Microsoft Xbox / Xbox 360 FATX filesystem images from scratch per the rev
 
 ### Namespace `FileSystem.Gemdos`
 
-[`GemdosBpb`](#gemdosbpb) · [`GemdosExtentMap`](#gemdosextentmap) · [`GemdosFormatDescriptor`](#gemdosformatdescriptor) · [`GemdosInPlaceModifier`](#gemdosinplacemodifier) · [`GemdosOptimizer`](#gemdosoptimizer) · [`GemdosOptimizer.GemdosGeometry`](#gemdosoptimizergemdosgeometry) · [`GemdosReader`](#gemdosreader) · [`GemdosWriter`](#gemdoswriter)
+[`GemdosBpb`](#gemdosbpb) · [`GemdosExtentMap`](#gemdosextentmap) · [`GemdosFormatDescriptor`](#gemdosformatdescriptor) · [`GemdosInPlaceModifier`](#gemdosinplacemodifier) · [`GemdosReader`](#gemdosreader) · [`GemdosWriter`](#gemdoswriter)
 
 #### `GemdosBpb`
 
@@ -6819,28 +6810,6 @@ In-place modifier for Atari ST GEMDOS disk images. GEMDOS is FAT12 with a single
 | `AddFiles` | `static void AddFiles(Stream archive, IReadOnlyList<ValueTuple<string, byte[]>> inputs)` | Adds — or replaces by name — files in an existing GEMDOS image. The common case is a genuine in-place FAT edit via `FatModifier` (GEMDOS is byte-for-byte FAT12 below the jump byte, which FAT geometry parsing ignores) — existing files, clusters and the boot sector stay byte-identical. Structural cases (nested target, full root, no free clusters) fall back to a re-pack from the existing file list; the outer sector count is preserved. |
 | `RemoveFiles` | `static void RemoveFiles(Stream archive, IReadOnlyList<string> names)` | Removes the named entries from an existing GEMDOS image. All bytes of the entry's data clusters, cluster-tip slack, directory entry and FAT chain entries are zeroed via `FatRemover`. The 0x60 jump byte is preserved in the resulting image. |
 
-#### `GemdosOptimizer`
-
-Fileset-driven sector / cluster geometry picker for GEMDOS images. Returns the smallest BytesPerSector × SectorsPerCluster combination whose total slack waste is ≤ 5% of the total file payload, tiebreaking toward the bigger cluster (better FAT-table efficiency). The TotalSectors result is the smallest standard Atari size (360 KB / 720 KB / 1.44 MB / 2.88 MB) that fits all files plus reserved + FAT + root-directory overhead.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Find` | `static GemdosGeometry Find(IReadOnlyList<long> fileSizes)` | Picks the smallest GEMDOS geometry whose total slack waste is ≤ 5% of the total file payload, tiebreaking toward bigger clusters. Always returns 512-byte sectors because all Atari TOS releases support 512 B/sector and it's the most compatible across emulators and real hardware. |
-
-#### `GemdosOptimizer.GemdosGeometry`
-
-Result of a geometry pick. Pass these straight into `Build`.
-
-Implements `IEquatable<GemdosGeometry>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `GemdosGeometry` | `GemdosGeometry(int BytesPerSector, int SectorsPerCluster, int TotalSectors, int RootEntries)` | Result of a geometry pick. Pass these straight into `Build`. |
-| `BytesPerSector` | `int BytesPerSector { get; init; }` |  |
-| `RootEntries` | `int RootEntries { get; init; }` |  |
-| `SectorsPerCluster` | `int SectorsPerCluster { get; init; }` |  |
-| `TotalSectors` | `int TotalSectors { get; init; }` |  |
-
 #### `GemdosReader`
 
 Reads GEMDOS (Atari ST FAT12) images. The on-disk layout is exactly FAT12 except for the jump byte at offset 0 (0x60 BRA.S vs MS-DOS's 0xEB). This reader patches the jump byte to 0xEB in an in-memory copy and then defers to `FatReader` for all parsing — same FAT chains, same root directory, same 8.3 dirent layout.
@@ -6866,7 +6835,7 @@ Builds Atari ST GEMDOS disk images by delegating to `FatWriter` (which emits a s
 
 ### Namespace `FileSystem.Gfs1`
 
-[`Gfs1BlockMover`](#gfs1blockmover) · [`Gfs1Entry`](#gfs1entry) · [`Gfs1FormatDescriptor`](#gfs1formatdescriptor) · [`Gfs1OptimalParameters`](#gfs1optimalparameters) · [`Gfs1Optimizer`](#gfs1optimizer) · [`Gfs1Reader`](#gfs1reader) · [`Gfs1Writer`](#gfs1writer)
+[`Gfs1BlockMover`](#gfs1blockmover) · [`Gfs1Entry`](#gfs1entry) · [`Gfs1FormatDescriptor`](#gfs1formatdescriptor) · [`Gfs1Reader`](#gfs1reader) · [`Gfs1Writer`](#gfs1writer)
 
 #### `Gfs1BlockMover`
 
@@ -6929,27 +6898,6 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
-
-#### `Gfs1OptimalParameters`
-
-Optimal GFS1 layout as picked by `Find`.
-
-Implements `IEquatable<Gfs1OptimalParameters>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Gfs1OptimalParameters` | `Gfs1OptimalParameters(int BlockSize, int JournalCount, long EstimatedImageBytes)` | Optimal GFS1 layout as picked by `Find`. |
-| `BlockSize` | `int BlockSize { get; init; }` |  |
-| `EstimatedImageBytes` | `long EstimatedImageBytes { get; init; }` |  |
-| `JournalCount` | `int JournalCount { get; init; }` |  |
-
-#### `Gfs1Optimizer`
-
-Fileset-driven optimizer for GFS1. The block size is fixed at 4096 (per Sistina GFS spec — all metadata I/O is page-sized). The optimizer trades journal count: bigger filesets → more journals (each journal is ~128 MB so this materially impacts image size); empty filesets get a single journal.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Find` | `static Gfs1OptimalParameters Find(IReadOnlyList<long> fileSizes)` | Performs the find operation. |
 
 #### `Gfs1Reader`
 
@@ -7929,7 +7877,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileSystem.Htfs`
 
-[`HtfsBlockMover`](#htfsblockmover) · [`HtfsEntry`](#htfsentry) · [`HtfsFormatDescriptor`](#htfsformatdescriptor) · [`HtfsOptimalParameters`](#htfsoptimalparameters) · [`HtfsOptimizer`](#htfsoptimizer) · [`HtfsReader`](#htfsreader) · [`HtfsWriter`](#htfswriter)
+[`HtfsBlockMover`](#htfsblockmover) · [`HtfsEntry`](#htfsentry) · [`HtfsFormatDescriptor`](#htfsformatdescriptor) · [`HtfsReader`](#htfsreader) · [`HtfsWriter`](#htfswriter)
 
 #### `HtfsBlockMover`
 
@@ -7963,7 +7911,7 @@ Implements `IEquatable<HtfsEntry>`.
 
 #### `HtfsFormatDescriptor`
 
-SCO HTFS (High Throughput File System) — S5-derived FS introduced in SCO OpenServer 5. Now exposes a WORM writer + reader with real nested subdirectories, defrag/purge/conversion, fileset optimizer, and an options schema (BlockSize / InodeCount / VolumeLabel). References: SCO OpenServer 5 Development System documentation, `sys/fs/htfs/htfs_fs.h` — the vendor header defining the on-disk structures (no stable public URL)`https://en.wikipedia.org/wiki/SCO_OpenServer` — Wikipedia overview of the host OS
+SCO HTFS (High Throughput File System) — S5-derived FS introduced in SCO OpenServer 5. Now exposes a WORM writer + reader with real nested subdirectories, defrag/purge/conversion, creation/layout geometry selection, and an options schema (BlockSize / InodeCount / VolumeLabel). References: SCO OpenServer 5 Development System documentation, `sys/fs/htfs/htfs_fs.h` — the vendor header defining the on-disk structures (no stable public URL)`https://en.wikipedia.org/wiki/SCO_OpenServer` — Wikipedia overview of the host OS
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
@@ -7993,27 +7941,6 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
 
-#### `HtfsOptimalParameters`
-
-Optimal HTFS layout as picked by `Find`.
-
-Implements `IEquatable<HtfsOptimalParameters>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `HtfsOptimalParameters` | `HtfsOptimalParameters(int BlockSize, int InodeCount, long EstimatedImageBytes)` | Optimal HTFS layout as picked by `Find`. |
-| `BlockSize` | `int BlockSize { get; init; }` |  |
-| `EstimatedImageBytes` | `long EstimatedImageBytes { get; init; }` |  |
-| `InodeCount` | `int InodeCount { get; init; }` |  |
-
-#### `HtfsOptimizer`
-
-Fileset-driven optimizer for HTFS. Picks the smallest 512/1024/2048 block size where total wasted slack is ≤ 5% AND the estimated image size is ≤ 2× the sum of file sizes. Tiebreaks toward larger blocks (fewer inodes, less indirect-pointer overhead).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Find` | `static HtfsOptimalParameters Find(IReadOnlyList<long> fileSizes)` | Performs the find operation. |
-
 #### `HtfsReader`
 
 Read-side companion to `HtfsWriter`. Walks the SB at sector 1, the inode array immediately after, and every directory body to surface the file tree at full nested paths.
@@ -8040,7 +7967,7 @@ Minimal but spec-keyed writer for SCO HTFS (High Throughput File System). Emits 
 
 ### Namespace `FileSystem.Human68k`
 
-[`Human68kBlockMover`](#human68kblockmover) · [`Human68kEntry`](#human68kentry) · [`Human68kExtentMap`](#human68kextentmap) · [`Human68kFormatDescriptor`](#human68kformatdescriptor) · [`Human68kModifier`](#human68kmodifier) · [`Human68kOptimizer`](#human68koptimizer) · [`Human68kOptimizer.Human68kLayout`](#human68koptimizerhuman68klayout) · [`Human68kReader`](#human68kreader) · [`Human68kWriter`](#human68kwriter)
+[`Human68kBlockMover`](#human68kblockmover) · [`Human68kEntry`](#human68kentry) · [`Human68kExtentMap`](#human68kextentmap) · [`Human68kFormatDescriptor`](#human68kformatdescriptor) · [`Human68kGeometrySelector`](#human68kgeometryselector) · [`Human68kGeometrySelector.Human68kLayout`](#human68kgeometryselectorhuman68klayout) · [`Human68kModifier`](#human68kmodifier) · [`Human68kReader`](#human68kreader) · [`Human68kWriter`](#human68kwriter)
 
 #### `Human68kBlockMover`
 
@@ -8112,17 +8039,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries in place: frees the FAT chain, wipes the clusters, and marks the dirent deleted (0xE5). |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all bytes not claimed by the boot sector, the FAT, the root directory, or a live file's cluster run. Cluster-tip wiping uses the directory entry's file size when `wipeClusterTips` is true. |
 
-#### `Human68kModifier`
-
-In-place modifier for Sharp X68000 Human68k (FAT12) disk images. Performs add / remove with strict O(touched bytes) I/O — only the FAT sector(s) covering the touched cluster chain, the affected root-directory entry, and the file's data clusters are read or written. Existing files' data bytes stay byte-identical at their original cluster offsets, and a same-size update never changes the image length. The companion `Human68kReader` surfaces only the first contiguous cluster-aligned run of a file, so this modifier allocates contiguous cluster runs (and chains them in the FAT) — the data is therefore both reader-faithful and FAT-correct.Returns `false` from `TryAddFile` when the disk has no contiguous free run / no free directory slot, so the caller can fall back to a growing rebuild for those genuinely-unsupported cases.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `IsHuman68k` | `static bool IsHuman68k(Stream image)` | True if the stream parses as a Human68k FAT12 volume. |
-| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file in place: frees its FAT chain, optionally wipes the cluster data, and marks the directory entry deleted (0xE5). Returns true if found. |
-| `TryAddFile` | `static bool TryAddFile(Stream image, string name, byte[] data)` | Attempts a genuine in-place add. Returns false (image untouched) when there is no free directory slot or no contiguous free cluster run. |
-
-#### `Human68kOptimizer`
+#### `Human68kGeometrySelector`
 
 Picks the smallest sectors-per-cluster value for a Human68k disk that fits the supplied file set with ≤ 5 % wasted slack. Sector size is fixed at 512 B; the candidate values are powers of two between 1 and 16 SPC.
 
@@ -8130,7 +8047,7 @@ Picks the smallest sectors-per-cluster value for a Human68k disk that fits the s
 | --- | --- | --- |
 | `Find` | `static Human68kLayout Find(IReadOnlyList<long> fileSizes)` | Returns the smallest sectors-per-cluster whose total cluster footprint for `fileSizes` is within 5 % of the cluster-aligned payload size; falls back to SPC=1 if no candidate satisfies the slack threshold. The total sector count is set to fit metadata + clusters with a 1-sector boot, 1-FAT, 32-entry root. |
 
-#### `Human68kOptimizer.Human68kLayout`
+#### `Human68kGeometrySelector.Human68kLayout`
 
 One layout preset.
 
@@ -8144,6 +8061,16 @@ Implements `IEquatable<Human68kLayout>`.
 | `SectorsPerCluster` | `int SectorsPerCluster { get; init; }` |  |
 | `TotalBytes` | `int TotalBytes { get; }` | Total raw image size. |
 | `TotalSectors` | `int TotalSectors { get; init; }` |  |
+
+#### `Human68kModifier`
+
+In-place modifier for Sharp X68000 Human68k (FAT12) disk images. Performs add / remove with strict O(touched bytes) I/O — only the FAT sector(s) covering the touched cluster chain, the affected root-directory entry, and the file's data clusters are read or written. Existing files' data bytes stay byte-identical at their original cluster offsets, and a same-size update never changes the image length. The companion `Human68kReader` surfaces only the first contiguous cluster-aligned run of a file, so this modifier allocates contiguous cluster runs (and chains them in the FAT) — the data is therefore both reader-faithful and FAT-correct.Returns `false` from `TryAddFile` when the disk has no contiguous free run / no free directory slot, so the caller can fall back to a growing rebuild for those genuinely-unsupported cases.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsHuman68k` | `static bool IsHuman68k(Stream image)` | True if the stream parses as a Human68k FAT12 volume. |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file in place: frees its FAT chain, optionally wipes the cluster data, and marks the directory entry deleted (0xE5). Returns true if found. |
+| `TryAddFile` | `static bool TryAddFile(Stream image, string name, byte[] data)` | Attempts a genuine in-place add. Returns false (image untouched) when there is no free directory slot or no contiguous free cluster run. |
 
 #### `Human68kReader`
 
@@ -8538,7 +8465,7 @@ Writes a minimal IBM Journaled File System (JFS1) aggregate image with a single 
 
 ### Namespace `FileSystem.Jfs1`
 
-[`Jfs1BlockMover`](#jfs1blockmover) · [`Jfs1Entry`](#jfs1entry) · [`Jfs1FormatDescriptor`](#jfs1formatdescriptor) · [`Jfs1InPlaceModifier`](#jfs1inplacemodifier) · [`Jfs1OptimalParameters`](#jfs1optimalparameters) · [`Jfs1Optimizer`](#jfs1optimizer) · [`Jfs1Reader`](#jfs1reader) · [`Jfs1Writer`](#jfs1writer)
+[`Jfs1BlockMover`](#jfs1blockmover) · [`Jfs1Entry`](#jfs1entry) · [`Jfs1FormatDescriptor`](#jfs1formatdescriptor) · [`Jfs1InPlaceModifier`](#jfs1inplacemodifier) · [`Jfs1Reader`](#jfs1reader) · [`Jfs1Writer`](#jfs1writer)
 
 #### `Jfs1BlockMover`
 
@@ -8572,7 +8499,7 @@ Implements `IEquatable<Jfs1Entry>`.
 
 #### `Jfs1FormatDescriptor`
 
-OS/2 original IBM JFS1 format descriptor — distinct from `FileSystem.Jfs` which targets the Linux JFS2 derivative. WORM writer + reader with real nested subdirectories, defrag/purge/conversion, fileset optimizer, and an options schema (BlockSize / AggregateBlockSize / VolumeLabel). References: IBM "JFS for OS/2 Warp Server for e-business" documentation (1999-2000) — the original vendor documentation of the pre-Linux JFS1 (no stable public URL)`https://jfs.sourceforge.net/` — the open-sourced JFS project, useful for contrasting the later JFS2-derived layout`https://en.wikipedia.org/wiki/JFS_(file_system)` — Wikipedia overview of the JFS family
+OS/2 original IBM JFS1 format descriptor — distinct from `FileSystem.Jfs` which targets the Linux JFS2 derivative. WORM writer + reader with real nested subdirectories, defrag/purge/conversion, creation/layout geometry selection, and an options schema (BlockSize / AggregateBlockSize / VolumeLabel). References: IBM "JFS for OS/2 Warp Server for e-business" documentation (1999-2000) — the original vendor documentation of the pre-Linux JFS1 (no stable public URL)`https://jfs.sourceforge.net/` — the open-sourced JFS project, useful for contrasting the later JFS2-derived layout`https://en.wikipedia.org/wiki/JFS_(file_system)` — Wikipedia overview of the JFS family
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
@@ -8611,27 +8538,6 @@ TRUE in-place R/W modifier for the OS/2 JFS1 images this project emits. Performs
 | `AddFile` | `static void AddFile(Stream image, string name, byte[] data)` | Adds a regular file to the root directory in-place. |
 | `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes a named regular file from the root directory in-place. |
 | `Replace` | `static bool Replace(Stream image, string name, byte[] data)` | Replaces a named regular file's data in-place. |
-
-#### `Jfs1OptimalParameters`
-
-Optimal JFS1 layout as picked by `Find`.
-
-Implements `IEquatable<Jfs1OptimalParameters>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Jfs1OptimalParameters` | `Jfs1OptimalParameters(int BlockSize, int AggregateBlockSize, long EstimatedImageBytes)` | Optimal JFS1 layout as picked by `Find`. |
-| `AggregateBlockSize` | `int AggregateBlockSize { get; init; }` |  |
-| `BlockSize` | `int BlockSize { get; init; }` |  |
-| `EstimatedImageBytes` | `long EstimatedImageBytes { get; init; }` |  |
-
-#### `Jfs1Optimizer`
-
-Fileset-driven optimizer for OS/2 JFS1. Picks the smallest block size where total wasted slack is ≤ 5% AND the estimated image size is ≤ 2× the sum of file sizes. Tiebreaks toward larger blocks (fewer dinodes per content byte, smaller dmap chain).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Find` | `static Jfs1OptimalParameters Find(IReadOnlyList<long> fileSizes)` | Performs the find operation. |
 
 #### `Jfs1Reader`
 
@@ -9786,7 +9692,7 @@ Creates MSA (Magic Shadow Archiver) disk images from raw ST disk data. Uses RLE 
 
 ### Namespace `FileSystem.Nilfs1`
 
-[`Nilfs1BlockMover`](#nilfs1blockmover) · [`Nilfs1Entry`](#nilfs1entry) · [`Nilfs1ExtentMap`](#nilfs1extentmap) · [`Nilfs1FormatDescriptor`](#nilfs1formatdescriptor) · [`Nilfs1InPlaceModifier`](#nilfs1inplacemodifier) · [`Nilfs1Optimizer`](#nilfs1optimizer) · [`Nilfs1Optimizer.Nilfs1Geometry`](#nilfs1optimizernilfs1geometry) · [`Nilfs1Reader`](#nilfs1reader) · [`Nilfs1Writer`](#nilfs1writer)
+[`Nilfs1BlockMover`](#nilfs1blockmover) · [`Nilfs1Entry`](#nilfs1entry) · [`Nilfs1ExtentMap`](#nilfs1extentmap) · [`Nilfs1FormatDescriptor`](#nilfs1formatdescriptor) · [`Nilfs1InPlaceModifier`](#nilfs1inplacemodifier) · [`Nilfs1Reader`](#nilfs1reader) · [`Nilfs1Writer`](#nilfs1writer)
 
 #### `Nilfs1BlockMover`
 
@@ -9868,26 +9774,6 @@ True in-place modifier for NILFS v1 images emitted by `Nilfs1Writer`. Implements
 | `Add` | `static void Add(Stream image, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends a new logical segment carrying fresh dirent + data blocks for each input file and bumps `s_last_cno`. Existing segments stay byte-identical at their original offsets; only the 8-byte checkpoint-number field changes. Inputs whose name already exists are effectively replaced (the higher cno wins on read). |
 | `Remove` | `static void Remove(Stream image, string[] entryNames)` | Appends a new logical segment containing a tombstone dirent for each named entry and bumps `s_last_cno`. Old data blocks stay byte-identical; the reader's tombstone-aware merge drops the entry from the listing. |
 | `Replace` | `static void Replace(Stream image, string name, byte[] newData)` | Appends a new logical segment carrying a fresh data block for the named file and bumps `s_last_cno`. Old data blocks stay byte-identical at their original offsets; the reader's highest-cno-per-name merge surfaces the new content. |
-
-#### `Nilfs1Optimizer`
-
-Picks NILFS v1 superblock parameters for a given fileset. Returns the smallest BlockSize whose total slack waste is ≤ 5%, tiebreaking toward bigger blocks (less FAT-style overhead in the segment). SegmentSize is always 8 × BlockSize because our minimal writer emits one full segment.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Find` | `static Nilfs1Geometry Find(IReadOnlyList<long> fileSizes)` | Performs the find operation. |
-
-#### `Nilfs1Optimizer.Nilfs1Geometry`
-
-Represents a nilfs 1 geometry.
-
-Implements `IEquatable<Nilfs1Geometry>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Nilfs1Geometry` | `Nilfs1Geometry(int BlockSize, int SegmentSize)` | Represents a nilfs 1 geometry. |
-| `BlockSize` | `int BlockSize { get; init; }` |  |
-| `SegmentSize` | `int SegmentSize { get; init; }` |  |
 
 #### `Nilfs1Reader`
 
@@ -10290,7 +10176,7 @@ Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `
 
 Descriptor for Microsoft NTFS volume images ("NTFS " boot-sector OEM magic; $MFT-based metadata) with create, in-place modify and defragment support. References: `https://flatcap.github.io/linux-ntfs/ntfs/` — Linux-NTFS project on-disk structure documentation — the de-facto public NTFS spec`https://github.com/tuxera/ntfs-3g` — maintained open-source implementation`https://learn.microsoft.com/en-us/windows-server/storage/file-server/ntfs-overview` — Microsoft's NTFS overview`https://en.wikipedia.org/wiki/NTFS` — Wikipedia article
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `ICompressionOptimizable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10418,8 +10304,8 @@ Builds spec-compliant NTFS filesystem images. All reserved system MFT records (0
 | --- | --- | --- |
 | `NtfsWriter` | `NtfsWriter(string volumeLabel = "", bool generateShortNames = true)` | Creates a new NTFS writer. The volume label is stored in $Volume's $VOLUME_NAME attribute. |
 | `DeclaredVolumeBytes` | `long DeclaredVolumeBytes { get; }` | Declared volume size in bytes of the most recent build. |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the NTFS image. |
-| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a streaming file: `size` drives MFT-record + cluster sizing in pass 1; bytes are pulled from `openStream` in pass 2 of `BuildToStreaming`. Files larger than the resident threshold (~700 bytes) get a single-run non-resident $DATA whose clusters are filled from the source via 64 KB chunks; smaller files remain resident and are buffered up-front (the size-clamped bounded read still satisfies the isolation contract). |
+| `AddFile` | `void AddFile(string name, byte[] data, DateTime? lastModified = null)` | Adds a file to the NTFS image. |
+| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? lastModified = null)` | Adds a streaming file: `size` drives MFT-record + cluster sizing in pass 1; bytes are pulled from `openStream` in pass 2 of `BuildToStreaming`. Files larger than the resident threshold (~700 bytes) get a single-run non-resident $DATA whose clusters are filled from the source via 64 KB chunks; smaller files remain resident and are buffered up-front (the size-clamped bounded read still satisfies the isolation contract). |
 | `BuildAutoSized` | `byte[] BuildAutoSized(int requestedClusterSize = 0, int requestedMftRecordSize = 0)` | Builds the image with the cluster size and MFT record size chosen by `FilesystemLayoutOptimizer` to minimise file slack + MFT-zone reservation + per-file MFT-record waste, and the volume sized to exactly hold the files plus structural overhead. |
 | `BuildToStreamingAutoSized` | `void BuildToStreamingAutoSized(Stream output)` | Two-pass streaming Build with auto-sized geometry. |
 | `BuildToStreaming` | `void BuildToStreaming(Stream output, long totalSize)` | Two-pass streaming Build: pass 1 derives MFT-record + cluster geometry from the declared sizes of `AddStreamingFile` entries; pass 2 emits all reserved system MFT records (0..15) + the per-user MFT records (with $DATA attributes pointing at single-run non-resident allocations for files > ResidentThreshold), then streams each non-resident entry's bytes from its factory into its allocated cluster run via 64 KB chunks. Cluster tail past each entry's exact `Size` stays sparse-zero (the in-memory disk byte[] was zero-initialised and the per-entry stream copy never reads past the entry's logical size). |
@@ -11461,7 +11347,7 @@ Writer for Microware OS-9 RBF (Random-Block-File) disk images. Emits a 35-track 
 
 ### Namespace `FileSystem.Pc98`
 
-[`Pc98BlockMover`](#pc98blockmover) · [`Pc98Entry`](#pc98entry) · [`Pc98ExtentMap`](#pc98extentmap) · [`Pc98FormatDescriptor`](#pc98formatdescriptor) · [`Pc98Modifier`](#pc98modifier) · [`Pc98Optimizer`](#pc98optimizer) · [`Pc98Optimizer.Pc98Layout`](#pc98optimizerpc98layout) · [`Pc98Reader`](#pc98reader) · [`Pc98Writer`](#pc98writer)
+[`Pc98BlockMover`](#pc98blockmover) · [`Pc98Entry`](#pc98entry) · [`Pc98ExtentMap`](#pc98extentmap) · [`Pc98FormatDescriptor`](#pc98formatdescriptor) · [`Pc98GeometrySelector`](#pc98geometryselector) · [`Pc98GeometrySelector.Pc98Layout`](#pc98geometryselectorpc98layout) · [`Pc98Modifier`](#pc98modifier) · [`Pc98Reader`](#pc98reader) · [`Pc98Writer`](#pc98writer)
 
 #### `Pc98BlockMover`
 
@@ -11533,17 +11419,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries in place: frees the FAT chain, wipes the clusters, and marks the dirent deleted (0xE5). |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all bytes not claimed by the IPL block, the FAT, the root directory, or a live file's cluster run. Cluster-tip wiping uses the directory entry's file size when `wipeClusterTips` is true. |
 
-#### `Pc98Modifier`
-
-In-place modifier for NEC PC-98 DOS (FAT12) disk images. Performs add / remove with strict O(touched bytes) I/O — only the FAT sector(s) covering the touched cluster chain, the affected root-directory entry, and the file's data clusters are read or written. Existing files' data bytes stay byte-identical at their original cluster offsets, and a same-size update never changes the image length. PC-98 prepends a 512-byte IPL block ("NECIPL" + BPB at offset 0x80) to an otherwise-standard FAT12 layout; every FAT/root/data offset is shifted by one IPL sector. The `Pc98Reader` surfaces only the first contiguous cluster-aligned run of a file, so this modifier allocates contiguous cluster runs (and chains them in the FAT) — the data is therefore both reader-faithful and FAT-correct.Returns `false` from `TryAddFile` when the disk has no contiguous free run / no free directory slot, so the caller can fall back to a growing rebuild.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `IsPc98` | `static bool IsPc98(Stream image)` | True if the stream parses as a PC-98 FAT12 volume. |
-| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file in place: frees its FAT chain, optionally wipes the cluster data, and marks the dirent deleted (0xE5). |
-| `TryAddFile` | `static bool TryAddFile(Stream image, string name, byte[] data)` | Attempts a genuine in-place add. Returns false (image untouched) when there is no free directory slot or no contiguous free cluster run. |
-
-#### `Pc98Optimizer`
+#### `Pc98GeometrySelector`
 
 Picks the smallest sectors-per-cluster value for a PC-98 disk that fits the supplied file set with ≤ 5 % wasted slack. Sector size is fixed at 512 B by default.
 
@@ -11551,7 +11427,7 @@ Picks the smallest sectors-per-cluster value for a PC-98 disk that fits the supp
 | --- | --- | --- |
 | `Find` | `static Pc98Layout Find(IReadOnlyList<long> fileSizes)` | Returns the smallest sectors-per-cluster whose cluster-aligned footprint is within 5 % of the payload size; falls back to SPC=1 if no candidate satisfies the slack threshold. TotalSectors is sized to fit IPL block + 1 reserved + 1 FAT + 32-entry root + clusters. |
 
-#### `Pc98Optimizer.Pc98Layout`
+#### `Pc98GeometrySelector.Pc98Layout`
 
 One layout preset.
 
@@ -11565,6 +11441,16 @@ Implements `IEquatable<Pc98Layout>`.
 | `SectorsPerCluster` | `int SectorsPerCluster { get; init; }` |  |
 | `TotalBytes` | `int TotalBytes { get; }` | Total raw image size. |
 | `TotalSectors` | `int TotalSectors { get; init; }` |  |
+
+#### `Pc98Modifier`
+
+In-place modifier for NEC PC-98 DOS (FAT12) disk images. Performs add / remove with strict O(touched bytes) I/O — only the FAT sector(s) covering the touched cluster chain, the affected root-directory entry, and the file's data clusters are read or written. Existing files' data bytes stay byte-identical at their original cluster offsets, and a same-size update never changes the image length. PC-98 prepends a 512-byte IPL block ("NECIPL" + BPB at offset 0x80) to an otherwise-standard FAT12 layout; every FAT/root/data offset is shifted by one IPL sector. The `Pc98Reader` surfaces only the first contiguous cluster-aligned run of a file, so this modifier allocates contiguous cluster runs (and chains them in the FAT) — the data is therefore both reader-faithful and FAT-correct.Returns `false` from `TryAddFile` when the disk has no contiguous free run / no free directory slot, so the caller can fall back to a growing rebuild.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsPc98` | `static bool IsPc98(Stream image)` | True if the stream parses as a PC-98 FAT12 volume. |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file in place: frees its FAT chain, optionally wipes the cluster data, and marks the dirent deleted (0xE5). |
+| `TryAddFile` | `static bool TryAddFile(Stream image, string name, byte[] data)` | Attempts a genuine in-place add. Returns false (image untouched) when there is no free directory slot or no contiguous free cluster run. |
 
 #### `Pc98Reader`
 
@@ -12859,7 +12745,7 @@ Represents a stacker entry.
 
 Descriptor for the Stacker STACVOL compressed volume (Stac Electronics, MS-DOS) — the historical predecessor of Microsoft's DoubleSpace (DOS 6.0) and DriveSpace (DOS 6.22 / Win 95). A STACVOL wraps a compressed inner FAT12 volume behind an ASCII banner and a Stacker Control Block (BPB); clusters are STORED verbatim or Stac-LZS compressed (RFC 1967/2395). Detection is by the ASCII "STACKER" banner at file offset 0. Existing-image add/replace/remove is implemented by a flavor-preserving rebuild: genuine STACVOL images remain genuine STACVOL images and Extended images remain Extended. Under the repository's capability contract this is R/W even though it is not a byte-local mutation. References: `https://github.com/sandsmark/dmsdos` — dmsdos driver — the de-facto public documentation of the STACVOL layout and cluster compression`https://www.rfc-editor.org/rfc/rfc1967` — LZS-DCP (the Stac LZS algorithm)`https://www.rfc-editor.org/rfc/rfc2395` — LZS in IPsec — independent description of the same algorithm`https://en.wikipedia.org/wiki/Stac_Electronics` — Wikipedia article
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13378,7 +13264,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 ### Namespace `FileSystem.Ti99`
 
-[`Ti99BlockMover`](#ti99blockmover) · [`Ti99Entry`](#ti99entry) · [`Ti99ExtentMap`](#ti99extentmap) · [`Ti99FormatDescriptor`](#ti99formatdescriptor) · [`Ti99Modifier`](#ti99modifier) · [`Ti99Optimizer`](#ti99optimizer) · [`Ti99Optimizer.Ti99Geometry`](#ti99optimizerti99geometry) · [`Ti99Reader`](#ti99reader) · [`Ti99Writer`](#ti99writer)
+[`Ti99BlockMover`](#ti99blockmover) · [`Ti99Entry`](#ti99entry) · [`Ti99ExtentMap`](#ti99extentmap) · [`Ti99FormatDescriptor`](#ti99formatdescriptor) · [`Ti99Modifier`](#ti99modifier) · [`Ti99Reader`](#ti99reader) · [`Ti99Writer`](#ti99writer)
 
 #### `Ti99BlockMover`
 
@@ -13460,28 +13346,6 @@ In-place modifier for TI-99/4A DSR sector-dump (.dsk) images. Performs add / rem
 | `AddFile` | `static void AddFile(Stream image, string name, byte[] data)` | Adds a file to the existing sector-dump image. Allocates one FDR sector plus a contiguous data run from the bitmap, writes the FDR + data, records the FDR pointer in the FDIR, and marks the new sectors used. |
 | `IsSectorDump` | `static bool IsSectorDump(Stream image)` | True if the stream looks like a parseable TI-99 sector dump (not a TIFiles wrapper, which has no allocation map to mutate). |
 | `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file. Frees the file's data sectors and its FDR sector in the bitmap, optionally wipes them, and clears the FDIR pointer slot. Returns true if the file was found and removed. |
-
-#### `Ti99Optimizer`
-
-Picks the smallest standard TI-99 disk geometry that fits a given fileset. Standard geometries: 35 or 40 tracks × 9 or 18 sectors-per-track × 1 or 2 sides = 256-byte sectors throughout. TIFiles mode is single-file so most knobs don't apply; for SectorDump the optimizer iterates the eight standard combinations and returns the smallest that holds payload + FDR + VIB + FDIR overhead.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Find` | `static Ti99Geometry Find(IReadOnlyList<long> fileSizes)` | Picks the smallest geometry that fits payload + 2 (VIB+FDIR) + 1 sector per file (FDR). |
-
-#### `Ti99Optimizer.Ti99Geometry`
-
-Represents a ti 99 geometry.
-
-Implements `IEquatable<Ti99Geometry>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Ti99Geometry` | `Ti99Geometry(int Tracks, int SectorsPerTrack, int Sides, int TotalSectors)` | Represents a ti 99 geometry. |
-| `SectorsPerTrack` | `int SectorsPerTrack { get; init; }` |  |
-| `Sides` | `int Sides { get; init; }` |  |
-| `TotalSectors` | `int TotalSectors { get; init; }` |  |
-| `Tracks` | `int Tracks { get; init; }` |  |
 
 #### `Ti99Reader`
 
@@ -13633,7 +13497,7 @@ Creates TR-DOS (.TRD) ZX Spectrum disk images.
 
 ### Namespace `FileSystem.Trsdos`
 
-[`TrsdosBlockMover`](#trsdosblockmover) · [`TrsdosEntry`](#trsdosentry) · [`TrsdosExtentMap`](#trsdosextentmap) · [`TrsdosFormatDescriptor`](#trsdosformatdescriptor) · [`TrsdosModifier`](#trsdosmodifier) · [`TrsdosOptimizer`](#trsdosoptimizer) · [`TrsdosOptimizer.TrsdosGeometry`](#trsdosoptimizertrsdosgeometry) · [`TrsdosReader`](#trsdosreader) · [`TrsdosWriter`](#trsdoswriter)
+[`TrsdosBlockMover`](#trsdosblockmover) · [`TrsdosEntry`](#trsdosentry) · [`TrsdosExtentMap`](#trsdosextentmap) · [`TrsdosFormatDescriptor`](#trsdosformatdescriptor) · [`TrsdosGeometrySelector`](#trsdosgeometryselector) · [`TrsdosGeometrySelector.TrsdosGeometry`](#trsdosgeometryselectortrsdosgeometry) · [`TrsdosModifier`](#trsdosmodifier) · [`TrsdosReader`](#trsdosreader) · [`TrsdosWriter`](#trsdoswriter)
 
 #### `TrsdosBlockMover`
 
@@ -13706,26 +13570,16 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries in place: frees their granules in the GAT, wipes the data, and clears the directory records. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all sectors not claimed by track 17 (directory metadata) or by a live file's contiguous sector run. Cluster-tip wiping (trailing slack inside the file's last sector) honours the directory's EOF byte count when `wipeClusterTips` is true. |
 
-#### `TrsdosModifier`
+#### `TrsdosGeometrySelector`
 
-In-place modifier for TRSDOS / LDOS disk images. Performs add / remove with strict O(touched bytes) I/O — only the GAT (track 17 sector 0, holding the granule bitmap + signature), the affected directory record (one 32-byte slot in track 17 sectors 2..N), and the file's contiguous granule-aligned data run are read or written. Existing files' data bytes stay byte-identical at their original offsets, and a same-size update never changes the image length. The companion `TrsdosWriter` rebuilds an image from scratch; this is the "I have an existing image, mutate it" path.Layout reminders (256-byte sectors, 5 sectors per granule, Model III/4): Track 17 is the directory track. Sector 0 = GAT (signature 0xFE @0xCD, disk name @0xD0..0xD7, date @0xD8..0xDF; bytes 0..0xCC = granule bitmap).Sectors 2..N of track 17 hold 32-byte directory records: attribute @0, name @5..12, ext @13..15, first granule @24, sector count LE @28..29, EOF byte-count low @27 + high @30.File data lives at (firstGranule × 5) × 256, contiguous for the sector count.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream image, string name, byte[] data)` | Adds a file to the existing image. Allocates a contiguous granule run from the GAT, writes the data, fills a free directory record, and marks the granules used. |
-| `IsTrsdos` | `static bool IsTrsdos(Stream image)` | True if the stream is a parseable TRSDOS image (GAT signature found). |
-| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file: frees its granules in the GAT, optionally wipes the data run, and clears the directory record. Returns true if found. |
-
-#### `TrsdosOptimizer`
-
-Picks the smallest TRSDOS / LDOS geometry whose data area fits the supplied file set with ≤ 5 % wasted slack. The TRS-80 line shipped only a handful of canonical disk geometries; the optimiser walks them in ascending capacity order.
+Picks the smallest TRSDOS / LDOS geometry whose data area fits the supplied file set with ≤ 5 % wasted slack. The TRS-80 line shipped only a handful of canonical disk geometries; the selector walks them in ascending capacity order.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Geometries` | `static readonly IReadOnlyList<TrsdosGeometry> Geometries` | Canonical TRSDOS / LDOS geometries in ascending data-capacity order. |
 | `Find` | `static TrsdosGeometry Find(IReadOnlyList<long> fileSizes)` | Returns the smallest geometry whose data area holds `fileSizes` with ≤ 5 % slack. Falls back to the largest geometry if nothing fits cleanly. |
 
-#### `TrsdosOptimizer.TrsdosGeometry`
+#### `TrsdosGeometrySelector.TrsdosGeometry`
 
 One disk preset.
 
@@ -13741,6 +13595,16 @@ Implements `IEquatable<TrsdosGeometry>`.
 | `SectorsPerTrack` | `int SectorsPerTrack { get; init; }` |  |
 | `TotalBytes` | `int TotalBytes { get; }` | Total image size in bytes. |
 | `Tracks` | `int Tracks { get; init; }` |  |
+
+#### `TrsdosModifier`
+
+In-place modifier for TRSDOS / LDOS disk images. Performs add / remove with strict O(touched bytes) I/O — only the GAT (track 17 sector 0, holding the granule bitmap + signature), the affected directory record (one 32-byte slot in track 17 sectors 2..N), and the file's contiguous granule-aligned data run are read or written. Existing files' data bytes stay byte-identical at their original offsets, and a same-size update never changes the image length. The companion `TrsdosWriter` rebuilds an image from scratch; this is the "I have an existing image, mutate it" path.Layout reminders (256-byte sectors, 5 sectors per granule, Model III/4): Track 17 is the directory track. Sector 0 = GAT (signature 0xFE @0xCD, disk name @0xD0..0xD7, date @0xD8..0xDF; bytes 0..0xCC = granule bitmap).Sectors 2..N of track 17 hold 32-byte directory records: attribute @0, name @5..12, ext @13..15, first granule @24, sector count LE @28..29, EOF byte-count low @27 + high @30.File data lives at (firstGranule × 5) × 256, contiguous for the sector count.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddFile` | `static void AddFile(Stream image, string name, byte[] data)` | Adds a file to the existing image. Allocates a contiguous granule run from the GAT, writes the data, fills a free directory record, and marks the granules used. |
+| `IsTrsdos` | `static bool IsTrsdos(Stream image)` | True if the stream is a parseable TRSDOS image (GAT signature found). |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file: frees its granules in the GAT, optionally wipes the data run, and clears the directory record. Returns true if found. |
 
 #### `TrsdosReader`
 

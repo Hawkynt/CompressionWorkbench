@@ -90,10 +90,10 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => Mp3LayoutMap.Enumerate(file);
 
   /// <inheritdoc />
-  public void Optimize(Stream file) => Mp3Optimizer.Optimize(file);
+  public void CanonicalizeInPlace(Stream file) => Mp3Optimizer.Optimize(file);
 
   /// <inheritdoc />
-  public void Optimize(Stream file, MetadataPlacementProfile? profile) => Mp3Optimizer.Optimize(file, profile);
+  public void CanonicalizeInPlace(Stream file, MetadataPlacementProfile? profile) => Mp3Optimizer.Optimize(file, profile);
 
   /// <summary>
   /// Lists the entries in the supplied container.

@@ -22,7 +22,9 @@ public sealed class UnityBundleFormatDescriptor :
     IArchiveCreatable,
     IArchiveModifiable,
     IArchiveDefragmentable,
-    IFormatOptionsSchema {
+    IFormatOptionsSchema,
+    ICompressionOptimizable,
+    IArchiveRepackable {
 
   /// <summary>
   /// Gets the id.
@@ -41,8 +43,7 @@ public sealed class UnityBundleFormatDescriptor :
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
-    FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -219,6 +220,24 @@ public sealed class UnityBundleFormatDescriptor :
   public void Defragment(Stream archive) {
     EnsureRebuildableUnityFs(archive);
     RebuildVerb.RebuildInPlace(archive, this, this);
+  }
+
+  /// <inheritdoc />
+  public void OptimizeCompression(Stream input, Stream output) {
+    EnsureRebuildableUnityFs(input);
+    RebuildVerb.RebuildToStream(
+      input,
+      output,
+      this,
+      this,
+      createOptions: new FormatCreateOptions("auto") {
+        Optimize = true,
+        Level = 9,
+        ForceCompress = true,
+        FormatSpecific = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+          ["BlocksInfoCompression"] = "lz4hc",
+        },
+      });
   }
 
   private static void EnsureRebuildableUnityFs(Stream archive) {

@@ -6,7 +6,7 @@ namespace FileFormat.Bzip2;
 /// <summary>
 /// Describes bzip 2 format.
 /// </summary>
-public sealed class Bzip2FormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatValidator, IFormatOptionsSchema {
+public sealed class Bzip2FormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatValidator, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

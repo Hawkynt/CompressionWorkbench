@@ -7,7 +7,7 @@ namespace FileFormat.Lzip;
 /// <summary>
 /// Describes lzip format.
 /// </summary>
-public sealed class LzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class LzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

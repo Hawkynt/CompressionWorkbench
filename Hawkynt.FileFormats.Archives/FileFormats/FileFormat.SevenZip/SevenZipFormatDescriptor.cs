@@ -15,7 +15,7 @@ namespace FileFormat.SevenZip;
 ///   <item><description><c>https://en.wikipedia.org/wiki/7z</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
+public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema, ICompressionOptimizable, IArchiveRepackable, IArchiveSemanticMetadataProvider {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -214,8 +214,12 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SevenZipReader(stream, password: password);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Size, e.CompressedSize,
-      string.IsNullOrEmpty(e.Method) ? "7z" : e.Method, e.IsDirectory, false, e.LastWriteTime)).ToList();
+    return r.Entries.Select((e, i) => new ArchiveEntryInfo(
+      i, e.Name, e.Size, e.CompressedSize,
+      string.IsNullOrEmpty(e.Method) ? "7z" : e.Method,
+      e.IsDirectory, e.IsEncrypted, e.LastWriteTime,
+      CreationTime: e.CreationTime,
+      Attributes: e.Attributes)).ToList();
   }
 
   /// <summary>
@@ -331,7 +335,13 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       encryptHeaders: options.EncryptFilenames);
 
     foreach (var i in inputs)
-      if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
+      if (i.IsDirectory)
+        w.AddDirectory(new SevenZipEntry {
+          Name = i.ArchiveName,
+          LastWriteTime = i.LastModified,
+          CreationTime = i.CreationTime,
+          Attributes = i.Attributes,
+        });
 
     var fileEntryIndex = 0;
     var blockDescs = new List<SevenZipWriter.BlockDescriptor>();
@@ -339,7 +349,13 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       var indices = new int[block.Files.Count];
       for (var j = 0; j < block.Files.Count; j++) {
         var (input, data) = block.Files[j];
-        w.AddEntry(new SevenZipEntry { Name = input.ArchiveName, Size = data.Length }, data);
+        w.AddEntry(new SevenZipEntry {
+          Name = input.ArchiveName,
+          Size = data.Length,
+          LastWriteTime = input.LastModified,
+          CreationTime = input.CreationTime,
+          Attributes = input.Attributes,
+        }, data);
         indices[j] = fileEntryIndex++;
       }
       if (needsMultiCodec) {
@@ -483,4 +499,27 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
         Level = ValidationLevel.Integrity, Issues = issues };
     }
   }
+
+  /// <inheritdoc />
+  public void OptimizeCompression(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    var result = SolidBlockOptimizer.Optimize(input);
+    output.Position = 0;
+    output.SetLength(0);
+    output.Write(result.Data);
+    output.Position = 0;
+  }
+
+  /// <inheritdoc />
+  public IReadOnlyDictionary<string, string> GetContainerSemanticFlags(Stream archive, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    archive.Position = 0;
+    using var reader = new SevenZipReader(archive, leaveOpen: true, password: password);
+    return new Dictionary<string, string>(StringComparer.Ordinal) {
+      ["7z.header-mode"] = reader.IsHeaderEncoded ? "encoded" : "plain",
+      ["7z.data-encryption"] = reader.HasEncryptedEntries ? "aes" : "none",
+    };
+  }
+
 }

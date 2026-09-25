@@ -188,9 +188,9 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       // a stream factory rather than read into a byte[].
       var name = Path.GetFileName(info.ArchiveName);
       if (info.InMemoryContent is { } bytes)
-        w.AddFile(name, bytes);
+        w.AddFile(name, bytes, info.LastModified);
       else
-        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath), info.LastModified);
     }
     // BuildTo keeps free space sparse and streams file data into place, so the
     // volume is not bounded by what a byte[] can hold.
@@ -263,14 +263,17 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   private const long PlannerImageCap = 1024L * 1024 * 1024;
 
-  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
-  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+  /// <summary>Every entry's semantic identity, as the guard compares them before and after.</summary>
+  private static IReadOnlyList<DefragContentGuard.DefragContentEntry> ReadEntriesForGuard(Stream stream) {
     stream.Position = 0;
     var reader = new ApfsReader(stream);
-    return reader.Entries
-      .Where(e => !e.IsDirectory && !e.IsSymlink && e.Size > 0)
-      .Select(reader.Extract)
-      .ToList();
+    return reader.Entries.Select(e => new DefragContentGuard.DefragContentEntry(
+      e.Name,
+      e.IsDirectory,
+      e.IsDirectory || e.IsSymlink || e.Size == 0 ? Array.Empty<byte>() : reader.Extract(e),
+      Length: e.Size,
+      Modified: e.LastModified is { } t ? new DateTimeOffset(t) : null,
+      SymbolicLinkTarget: e.LinkTarget)).ToList();
   }
 
   /// <summary>Plans the new layout and moves the extents into it, repointing as it goes.</summary>
@@ -326,7 +329,7 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: ReadPayloadsForGuard,
+        readEntries: ReadEntriesForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) {

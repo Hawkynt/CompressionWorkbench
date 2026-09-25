@@ -81,7 +81,7 @@ public class CompressionOptimizerTests {
   }
 
   [Test, Category("RoundTrip")]
-  public void ArchiveOperations_Optimize_RoutesStreamFormatThroughSchemaSearch() {
+  public void ArchiveOperations_Compress_RoutesStreamFormatThroughSchemaSearch() {
     var d = new ZstdFormatDescriptor();
     var data = CompressibleSample();
     var dir = Path.Combine(Path.GetTempPath(), $"cwb_opt_{Guid.NewGuid():N}");
@@ -97,10 +97,10 @@ public class CompressionOptimizerTests {
         File.WriteAllBytes(inPath, outMs.ToArray());
       }
       var outPath = Path.Combine(dir, "out.zst");
-      var (orig, optimized, _) = ArchiveOperations.Optimize(inPath, outPath, null);
+      var (orig, optimized, _) = ArchiveOperations.Compress(inPath, outPath, null);
 
       Assert.That(optimized, Is.LessThanOrEqualTo(orig),
-        "optimize must not grow a weakly-compressed stream");
+        "compress optimization must not grow a weakly-compressed stream");
       Assert.That(Decompress(d, File.ReadAllBytes(outPath)), Is.EqualTo(data),
         "optimized .zst still decompresses to the original data");
     } finally {

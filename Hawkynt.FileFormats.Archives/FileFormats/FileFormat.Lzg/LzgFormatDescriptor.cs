@@ -7,7 +7,7 @@ namespace FileFormat.Lzg;
 /// <summary>
 /// Describes LZG format.
 /// </summary>
-public sealed class LzgFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class LzgFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

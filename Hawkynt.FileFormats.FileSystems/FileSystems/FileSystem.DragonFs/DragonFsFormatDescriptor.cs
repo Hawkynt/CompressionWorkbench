@@ -19,6 +19,7 @@ namespace FileSystem.DragonFs;
 ///   <item><description><c>https://libdragon.dev</c> — official Libdragon documentation site</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(DragonFsBlockMover))]
 public sealed class DragonFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   /// <summary>
   /// Gets the id.
@@ -160,7 +161,7 @@ public sealed class DragonFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     // The in-place pass is kept only if every payload still reads back: it can
     // refuse partway, and a rebuild is the honest answer when it does.
     DefragContentGuard.RunOrRebuild(archive,
-      readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+      readEntries: stream => ReadEntries(stream),
       inPlace: () => this.DefragmentWithPlanner(archive, options),
       rebuild: () => DefragRebuilder.Rebuild(archive, options,
         readEntries: stream => ReadEntries(stream),

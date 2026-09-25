@@ -20,6 +20,7 @@ namespace FileSystem.Bfs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Be_File_System</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(BfsBlockMover))]
 public sealed class BfsFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
@@ -272,7 +273,7 @@ public sealed class BfsFormatDescriptor
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+      readEntries: stream => ReadEntries(stream),
         inPlace: () => { this.DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;

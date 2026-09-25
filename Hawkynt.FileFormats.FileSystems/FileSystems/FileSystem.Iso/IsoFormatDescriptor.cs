@@ -316,11 +316,14 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
-  /// <summary>Every file's bytes, for the guard to compare across the pass.</summary>
-  private static IReadOnlyList<byte[]> ReadEntriesForGuard(Stream stream) {
+  /// <summary>Every entry's semantic identity, for the guard to compare across the pass.</summary>
+  private static IReadOnlyList<DefragContentGuard.DefragContentEntry> ReadEntriesForGuard(Stream stream) {
     stream.Position = 0;
     var reader = new IsoReader(stream);
-    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+    return reader.Entries.Select(e => new DefragContentGuard.DefragContentEntry(
+      e.Name, e.IsDirectory, e.IsDirectory ? Array.Empty<byte>() : reader.Extract(e),
+      Length: e.Size,
+      Modified: e.LastModified is { } t ? new DateTimeOffset(t) : null)).ToList();
   }
 
   /// <summary>
@@ -350,7 +353,7 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: stream => ReadEntriesForGuard(stream),
+        readEntries: ReadEntriesForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;

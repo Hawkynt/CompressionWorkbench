@@ -77,19 +77,22 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand AnalyzeFileCommand { get; }
   public ICommand BenchmarkCommand { get; }
   public ICommand FileAssociationsCommand { get; }
-  // The five canonical maintenance verbs (docs/ARCHIVE-MODEL.md). Each is gated
+  // The six separated optimization/maintenance verbs (docs/ARCHIVE-MODEL.md). Each is gated
   // by the target descriptor implementing the matching capability interface and
   // resolves its target via ResolveMaintenanceTarget — so the verbs work on a
   // standalone archive file, the currently-open archive, OR an archive entry
   // nested inside the open archive (materialised + written back via Replace).
-  public ICommand OptimizeEntryCommand { get; }
+  public ICommand CompressEntryCommand { get; }
+  public ICommand CanonicalizeEntryCommand { get; }
+  public ICommand RepackEntryCommand { get; }
+  public ICommand SortDirectoryEntriesCommand { get; }
+  public ICommand DefragmentExtentsEntryCommand { get; }
+  public ICommand ChangeAllocationGeometryEntryCommand { get; }
   public ICommand ShrinkEntryCommand { get; }
-  public ICommand DefragmentEntryCommand { get; }
   public ICommand PurgeEntryCommand { get; }
   public ICommand WipeEntryCommand { get; }
   public ICommand CompactEntryCommand { get; }
   public ICommand ScrambleEntryCommand { get; }
-  public ICommand ReconfigureEntryCommand { get; }
   public ICommand DeleteSelectedCommand { get; }
 
   // True after a successful in-archive delete on a format whose container leaves
@@ -142,14 +145,17 @@ internal sealed class MainViewModel : ViewModelBase {
     AnalyzeFileCommand = new RelayCommand(_ => ShowAnalyzeFile());
     BenchmarkCommand = new RelayCommand(_ => ShowBenchmark());
     FileAssociationsCommand = new RelayCommand(_ => ShowFileAssociations());
-    OptimizeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Optimize), _ => CanMaintain(Views.MaintenanceVerb.Optimize));
+    CompressEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Compress), _ => CanMaintain(Views.MaintenanceVerb.Compress));
+    CanonicalizeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Canonicalize), _ => CanMaintain(Views.MaintenanceVerb.Canonicalize));
+    RepackEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Repack), _ => CanMaintain(Views.MaintenanceVerb.Repack));
+    SortDirectoryEntriesCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.SortDirectoryEntries), _ => CanMaintain(Views.MaintenanceVerb.SortDirectoryEntries));
+    DefragmentExtentsEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.DefragmentExtents), _ => CanMaintain(Views.MaintenanceVerb.DefragmentExtents));
+    ChangeAllocationGeometryEntryCommand = new RelayCommand(_ => Reconfigure(), _ => CanReconfigure());
     ShrinkEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Shrink), _ => CanMaintain(Views.MaintenanceVerb.Shrink));
-    DefragmentEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Defragment), _ => CanMaintain(Views.MaintenanceVerb.Defragment));
     PurgeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Purge), _ => CanMaintain(Views.MaintenanceVerb.Purge));
     WipeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.WipeEmpty), _ => CanMaintain(Views.MaintenanceVerb.WipeEmpty));
     CompactEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Compact), _ => CanMaintain(Views.MaintenanceVerb.Compact));
     ScrambleEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Scramble), _ => CanMaintain(Views.MaintenanceVerb.Scramble));
-    ReconfigureEntryCommand = new RelayCommand(_ => Reconfigure(), _ => CanReconfigure());
     DeleteSelectedCommand = new RelayCommand(_ => DeleteSelectedEntries(), _ => CanDeleteSelected);
   }
 
@@ -346,15 +352,22 @@ internal sealed class MainViewModel : ViewModelBase {
   /// </summary>
   private bool CanMaintain(Views.MaintenanceVerb verb) {
     if (!TryResolveMaintenanceTarget(out var formatId, out _)) return false;
-    var ops = FormatRegistry.GetArchiveOps(formatId);
-    if (ops == null) return false;
+    var descriptor = FormatRegistry.GetById(formatId);
+    if (descriptor == null) return false;
+    var ops = descriptor as IArchiveFormatOperations;
     return verb switch {
-      Views.MaintenanceVerb.Optimize => ops is IArchiveCreatable or IFileInternalChunkMover,
+      Views.MaintenanceVerb.Compress => OptimizationCapabilities.CanCompress(descriptor),
+      Views.MaintenanceVerb.Canonicalize => OptimizationCapabilities.CanCanonicalize(descriptor),
+      Views.MaintenanceVerb.Repack => OptimizationCapabilities.CanRepack(descriptor),
+      Views.MaintenanceVerb.SortDirectoryEntries => OptimizationCapabilities.CanSortDirectoryEntries(descriptor),
+      Views.MaintenanceVerb.DefragmentExtents => OptimizationCapabilities.CanDefragmentExtents(descriptor),
+      Views.MaintenanceVerb.ChangeAllocationGeometry => OptimizationCapabilities.CanChangeAllocationGeometry(descriptor),
       Views.MaintenanceVerb.Shrink => ops is IArchiveShrinkable || formatId is "Fat" or "Ext" or "Ext1" or "Vhd",
-      Views.MaintenanceVerb.Defragment => ops is IArchiveDefragmentable,
       Views.MaintenanceVerb.Purge => ops is IArchiveModifiable,
       Views.MaintenanceVerb.WipeEmpty => ops is IWipeEmpty or IFilesystemExtentMap or IArchiveLayoutMap,
-      Views.MaintenanceVerb.Compact => ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable,
+      Views.MaintenanceVerb.Compact => OptimizationCapabilities.CanDefragmentExtents(descriptor)
+        || OptimizationCapabilities.CanCompress(descriptor)
+        || ops is IArchiveShrinkable,
       Views.MaintenanceVerb.Scramble => ops is IFilesystemScrambleable,
       _ => false,
     };
@@ -431,24 +444,21 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   /// <summary>
-  /// True when the resolved maintenance target's descriptor can be re-created
-  /// (<see cref="IArchiveCreatable"/>) and publishes a tunable options schema
-  /// (<see cref="IFormatOptionsSchema"/>) with at least one knob — the
-  /// preconditions for offering an after-creation geometry/options change.
+  /// True when the resolved maintenance target exposes at least one option
+  /// explicitly classified as allocation geometry. Compression, metadata and
+  /// compatibility knobs do not make this action appear.
   /// </summary>
   private bool CanReconfigure() {
     if (!TryResolveMaintenanceTarget(out var formatId, out _)) return false;
-    var ops = FormatRegistry.GetArchiveOps(formatId);
-    return ops is IArchiveCreatable
-        && ops is IFormatOptionsSchema schema
-        && schema.OptionsSchema.Count > 0;
+    var descriptor = FormatRegistry.GetById(formatId);
+    return OptimizationCapabilities.CanChangeAllocationGeometry(descriptor);
   }
 
   /// <summary>
-  /// Opens the format's schema-driven options dialog pre-populated with the
-  /// current format's knobs and, on OK, re-creates the container in place with
-  /// the chosen geometry/options via
+  /// Opens a schema-driven dialog containing only allocation-geometry knobs and,
+  /// on OK, re-creates the container in place via
   /// <see cref="ReconfigureOperation.Reconfigure(string, IReadOnlyDictionary{string, string}, string?)"/>.
+  /// Compression, metadata and compatibility options are deliberately absent.
   /// Contents are preserved byte-for-byte; on any failure the original is left
   /// untouched. For a nested archive entry inside the open archive, the result
   /// is written back into the host when the host is <see cref="IArchiveModifiable"/>.
@@ -456,6 +466,13 @@ internal sealed class MainViewModel : ViewModelBase {
   private void Reconfigure() {
     if (!TryResolveMaintenanceTarget(out var formatId, out var entry)) return;
     if (!Enum.TryParse<FormatDetector.Format>(formatId, out var format)) return;
+
+    var descriptor = FormatRegistry.GetById(formatId);
+    var geometryOptions = OptimizationCapabilities.GetAllocationGeometryOptions(descriptor);
+    if (geometryOptions.Count == 0) {
+      StatusText = $"'{format}' exposes no allocation-geometry options.";
+      return;
+    }
 
     string targetPath;
     Action? cleanup = null;
@@ -498,16 +515,18 @@ internal sealed class MainViewModel : ViewModelBase {
       targetPath = ArchivePath;
     }
 
-    var optsDlg = new CreateOptionsWindow(format) { Owner = Application.Current.MainWindow };
-    optsDlg.Title = "Reconfigure — Geometry / Options";
-    var ok = optsDlg.ShowDialog() == true;
-    if (!ok) { cleanup?.Invoke(); return; }
+    var optsDlg = new Views.TargetOptionsDialog(geometryOptions, descriptor?.DisplayName ?? format.ToString()) {
+      Owner = Application.Current.MainWindow,
+      Title = "Change allocation geometry",
+    };
+    if (optsDlg.ShowDialog() != true) {
+      cleanup?.Invoke();
+      return;
+    }
 
-    var newOptions = optsDlg.Options.FormatSpecificOptions.Count > 0
-      ? optsDlg.Options.FormatSpecificOptions.ToDictionary(o => o.Key, o => o.CurrentValue)
-      : new Dictionary<string, string>();
+    var newOptions = optsDlg.Result;
     if (newOptions.Count == 0) {
-      StatusText = $"'{format}' exposes no reconfigurable options.";
+      StatusText = $"'{format}' exposes no selected allocation-geometry options.";
       cleanup?.Invoke();
       return;
     }
@@ -515,7 +534,7 @@ internal sealed class MainViewModel : ViewModelBase {
     try {
       var result = ReconfigureOperation.Reconfigure(targetPath, newOptions);
       writeBack?.Invoke();
-      StatusText = $"Reconfigured {Path.GetFileName(targetPath)}: "
+      StatusText = $"Changed allocation geometry for {Path.GetFileName(targetPath)}: "
         + $"{result.FileCount} file(s) preserved, {result.OriginalSize:N0} → {result.NewSize:N0} bytes.";
 
       if (writeBack != null && HasArchive)
@@ -525,9 +544,9 @@ internal sealed class MainViewModel : ViewModelBase {
       else if (IsBrowsingOsFolder)
         RefreshVisibleEntries();
     } catch (Exception ex) {
-      StatusText = $"Reconfigure failed: {ex.Message}";
-      MessageBox.Show($"Reconfigure failed: {ex.Message}\n\nThe original file was left untouched.",
-        "Reconfigure", MessageBoxButton.OK, MessageBoxImage.Warning);
+      StatusText = $"Allocation geometry change failed: {ex.Message}";
+      MessageBox.Show($"Allocation geometry change failed: {ex.Message}\n\nThe original file was left untouched.",
+        "Change allocation geometry", MessageBoxButton.OK, MessageBoxImage.Warning);
     } finally {
       cleanup?.Invoke();
     }

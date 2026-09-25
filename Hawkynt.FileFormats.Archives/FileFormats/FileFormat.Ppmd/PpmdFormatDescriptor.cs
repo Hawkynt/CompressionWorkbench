@@ -8,7 +8,7 @@ namespace FileFormat.Ppmd;
 /// <summary>
 /// Describes ppmd format.
 /// </summary>
-public sealed class PpmdFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class PpmdFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

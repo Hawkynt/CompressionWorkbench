@@ -6,7 +6,7 @@ namespace FileFormat.Balz;
 /// <summary>
 /// Describes balz format.
 /// </summary>
-public sealed class BalzFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
+public sealed class BalzFormatDescriptor : IFormatDescriptor, IStreamFormatOperations , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

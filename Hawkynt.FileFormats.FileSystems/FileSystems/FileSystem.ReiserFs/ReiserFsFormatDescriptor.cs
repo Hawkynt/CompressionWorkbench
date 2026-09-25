@@ -16,6 +16,7 @@ namespace FileSystem.ReiserFs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/ReiserFS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(ReiserFsBlockMover))]
 public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
@@ -257,7 +258,7 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       // can refuse partway — a file small enough to live entirely in a DIRECT
       // item has no run of its own — and a rebuild is the honest answer then.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+        readEntries: stream => ReadEntries(stream),
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;

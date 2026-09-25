@@ -9,7 +9,7 @@ namespace FileSystem.Htfs;
 /// <summary>
 /// SCO HTFS (High Throughput File System) — S5-derived FS introduced in SCO
 /// OpenServer 5. Now exposes a WORM writer + reader with real nested
-/// subdirectories, defrag/purge/conversion, fileset optimizer, and an options
+/// subdirectories, defrag/purge/conversion, creation/layout geometry selection, and an options
 /// schema (BlockSize / InodeCount / VolumeLabel).
 ///
 /// References:
@@ -25,6 +25,7 @@ namespace FileSystem.Htfs;
 /// <para><b>Hierarchy</b>: real — directories nest via the writer's inode +
 /// 16-byte dirent chain (single-block dirs cap one BB of entries each).</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(HtfsBlockMover))]
 public sealed class HtfsFormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
@@ -90,9 +91,9 @@ public sealed class HtfsFormatDescriptor :
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("BlockSize", "Block size", FormatOptionKind.Enum, "512",
       AllowedValues: ["512", "1024", "2048"],
-      Description: "Block size in bytes (S5-style HTFS supports 512/1024/2048)."),
+      Description: "Block size in bytes (S5-style HTFS supports 512/1024/2048).", IsAllocationGeometry: true),
     new("InodeCount", "Inode count", FormatOptionKind.Integer, "64",
-      Description: "Reserved inode slots in the inode array (default 64; cap 256)."),
+      Description: "Reserved inode slots in the inode array (default 64; cap 256).", IsAllocationGeometry: true),
     FilesystemSchemaPresets.VolumeLabel(16),
   ];
 
@@ -139,7 +140,7 @@ public sealed class HtfsFormatDescriptor :
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new HtfsWriter();
     w.SetVolumeLabel(options.GetOption("VolumeLabel", "WORM"));
-    // NOTE: the block-size auto-optimiser is intentionally NOT wired here. The
+    // NOTE: automatic block-size selection is intentionally NOT wired here. The
     // HTFS reader's block-size detection only recovers 512-byte images, so a
     // non-512 default would not round-trip — see HtfsReader.DetectBlockSize. The
     // BlockSize knob therefore stays an explicit, caller-pinned choice only.

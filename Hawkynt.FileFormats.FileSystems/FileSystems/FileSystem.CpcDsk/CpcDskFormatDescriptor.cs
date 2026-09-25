@@ -31,7 +31,7 @@ public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       Default: "40",
       AllowedValues: ["40", "80"],
       Description: "Number of cylinders per side. 40 = standard CPC 3\" / PCW 720 KB " +
-        "side; 80 = double-stepped 3.5\" floppy."),
+        "side; 80 = double-stepped 3.5\" floppy.", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "Sides",
       DisplayName: "Sides",
@@ -39,7 +39,7 @@ public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       Default: "1",
       AllowedValues: ["1", "2"],
       Description: "Number of magnetic surfaces. 1 = single-sided (CPC default); " +
-        "2 = double-sided (PCW / DSDD)."),
+        "2 = double-sided (PCW / DSDD).", IsAllocationGeometry: true),
   ];
 
   /// <summary>

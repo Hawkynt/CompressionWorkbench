@@ -19,7 +19,8 @@ namespace FileSystem.SquashFs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/SquashFS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
-public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+[FilesystemBlockMover(typeof(SquashFsBlockMover))]
+public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable, ICompressionOptimizable {
 
   // The optimization adapters are keyed on this descriptor's runtime type, so the
   // registration has to have run before any instance can be looked up. Doing it from
@@ -39,7 +40,8 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     FilesystemSchemaPresets.PowerOfTwoSize(
       key: "BlockSize", displayName: "Data block size",
       min: 4096, max: 1048576, defaultLabel: "128 KB",
-      description: "Compressed data block size. SquashFS allows powers of two from 4 KB to 1 MB; larger blocks compress better but waste more on small files."),
+      description: "Compressed data block size. SquashFS allows powers of two from 4 KB to 1 MB; larger blocks compress better but waste more on small files.",
+      isAllocationGeometry: false),
   ];
 
   /// <summary>
@@ -63,8 +65,7 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories |
-    FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>

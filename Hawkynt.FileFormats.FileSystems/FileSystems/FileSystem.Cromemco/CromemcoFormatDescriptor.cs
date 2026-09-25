@@ -27,6 +27,7 @@ namespace FileSystem.Cromemco;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Cromemco</c> — Wikipedia overview of the machines</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(CromemcoBlockMover))]
 public sealed class CromemcoFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
   IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
@@ -101,14 +102,14 @@ public sealed class CromemcoFormatDescriptor :
       Kind: FormatOptionKind.Enum,
       Default: "Auto",
       AllowedValues: ["Auto", "Single", "Double"],
-      Description: "Single density = 18 sectors/track. Double density = 26 sectors/track (System Three)."),
+      Description: "Single density = 18 sectors/track. Double density = 26 sectors/track (System Three).", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "Tracks",
       DisplayName: "Tracks",
       Kind: FormatOptionKind.Enum,
       Default: "Auto",
       AllowedValues: ["Auto", "35", "77"],
-      Description: "35 tracks = original Cromemco Z2 floppy. 77 tracks = System Three drives."),
+      Description: "35 tracks = original Cromemco Z2 floppy. 77 tracks = System Three drives.", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "SectorSize",
       DisplayName: "Sector size",
@@ -154,9 +155,9 @@ public sealed class CromemcoFormatDescriptor :
     var density = options?.GetOption("Density", "Auto") ?? "Auto";
     var tracksStr = options?.GetOption("Tracks", "Auto") ?? "Auto";
 
-    // Auto picks the smallest geometry that fits via CromemcoOptimizer.
+    // Auto selects the smallest creation geometry that fits via CromemcoGeometrySelector.
     var fileSizes = inputs.Where(i => !i.IsDirectory).Select(i => (long)i.ReadContent().Length).ToList();
-    var auto = CromemcoOptimizer.Find(fileSizes);
+    var auto = CromemcoGeometrySelector.Find(fileSizes);
 
     var tracks = tracksStr == "Auto" || !int.TryParse(tracksStr, out var t) ? auto.Tracks : t;
     var spt = density switch {

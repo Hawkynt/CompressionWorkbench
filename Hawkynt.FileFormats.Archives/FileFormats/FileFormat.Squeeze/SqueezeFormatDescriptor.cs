@@ -6,7 +6,7 @@ namespace FileFormat.Squeeze;
 /// <summary>
 /// Describes squeeze format.
 /// </summary>
-public sealed class SqueezeFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class SqueezeFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

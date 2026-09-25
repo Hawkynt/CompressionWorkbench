@@ -6,7 +6,7 @@ namespace FileFormat.Lzop;
 /// <summary>
 /// Describes lzop format.
 /// </summary>
-public sealed class LzopFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
+public sealed class LzopFormatDescriptor : IFormatDescriptor, IStreamFormatOperations , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

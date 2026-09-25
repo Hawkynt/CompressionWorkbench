@@ -224,10 +224,10 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => WavLayoutMap.Enumerate(file);
 
   /// <inheritdoc />
-  public void Optimize(Stream file) => _optimizer.Optimize(file);
+  public void CanonicalizeInPlace(Stream file) => _optimizer.CanonicalizeInPlace(file);
 
   /// <inheritdoc />
-  public void Optimize(Stream file, MetadataPlacementProfile? profile) => _optimizer.Optimize(file, profile);
+  public void CanonicalizeInPlace(Stream file, MetadataPlacementProfile? profile) => _optimizer.CanonicalizeInPlace(file, profile);
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream, out WavReader.ParsedWav parsed) {
     using var ms = new MemoryStream();

@@ -15,7 +15,7 @@ namespace FileFormat.Zip;
 ///   <item><description>Info-ZIP zip/unzip — long-standing open reference implementations</description></item>
 /// </list>
 /// </summary>
-public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
+public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema, ICompressionOptimizable, IArchiveRepackable {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -117,8 +117,7 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories |
-    FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
   /// <summary>
   /// Adds (or replaces by name) files inside an existing ZIP archive. Uses
@@ -296,14 +295,14 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       w.Bzip2BlockSize = ZipOptionsResolver.ResolveBzip2BlockSize(options.DictSize);
 
     foreach (var i in inputs) {
-      if (i.IsDirectory) { w.AddDirectory(i.ArchiveName); continue; }
+      if (i.IsDirectory) { w.AddDirectory(i.ArchiveName, i.LastModified); continue; }
       // ReadContent() transparently handles both on-disk inputs and the
       // in-memory variant fed by the small-image ConvertArchive pipeline.
       var data = i.ReadContent();
       var entryMethod = options.IncompressiblePaths != null && options.IncompressiblePaths.Contains(i.FullPath)
         ? ZipCompressionMethod.Store
         : zipMethod;
-      w.AddEntry(i.ArchiveName, data, entryMethod);
+      w.AddEntry(i.ArchiveName, data, entryMethod, i.LastModified);
     }
     w.Finish();
   }
@@ -561,4 +560,38 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         Level = ValidationLevel.Integrity, Issues = issues };
     }
   }
+
+  /// <inheritdoc />
+  public void OptimizeCompression(Stream input, Stream output)
+    => OptimizeCompression(input, output, password: null);
+
+  /// <inheritdoc />
+  public void OptimizeCompression(Stream input, Stream output, string? password) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
+    using var reader = new ZipReader(input, leaveOpen: true, password: password);
+    var writer = new ZipWriter(
+      output,
+      leaveOpen: true,
+      compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Maximum,
+      password: password);
+
+    foreach (var entry in reader.Entries) {
+      if (entry.IsDirectory) {
+        writer.AddDirectory(entry.FileName, entry.LastModified);
+        continue;
+      }
+
+      var data = reader.ExtractEntry(entry);
+      writer.AddEntry(
+        entry.FileName,
+        data,
+        ZipCompressionMethod.Deflate,
+        entry.LastModified);
+    }
+
+    writer.Finish();
+  }
+
 }

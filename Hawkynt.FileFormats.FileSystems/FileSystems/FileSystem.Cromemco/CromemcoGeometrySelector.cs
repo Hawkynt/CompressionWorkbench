@@ -5,10 +5,10 @@ namespace FileSystem.Cromemco;
 /// Picks the smallest Cromemco RDOS geometry whose data area fits a
 /// supplied file set with ≤ 5 % wasted slack. The Cromemco RDOS line
 /// shipped a small handful of well-defined disk geometries; the
-/// optimiser walks them in ascending capacity order and returns the
+/// selector walks them in ascending capacity order and returns the
 /// first that fits.
 /// </summary>
-public static class CromemcoOptimizer {
+public static class CromemcoGeometrySelector {
 
   /// <summary>One disk preset: density label + track count + sectors/track.</summary>
   public readonly record struct CromemcoGeometry(string Density, int Tracks, int SectorsPerTrack) {

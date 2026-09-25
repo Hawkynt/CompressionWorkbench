@@ -24,7 +24,9 @@ public sealed class EggFormatDescriptor :
   IArchiveFormatOperations,
   IArchiveCreatable,
   IArchiveModifiable,
-  IArchiveDefragmentable {
+  IArchiveDefragmentable,
+  ICompressionOptimizable,
+  IArchiveRepackable {
 
   /// <summary>
   /// Gets the id.
@@ -161,6 +163,19 @@ public sealed class EggFormatDescriptor :
       writer.AddEntry(input.ArchiveName, input.ReadContent(), method, level);
     }
   }
+
+  /// <inheritdoc />
+  public void OptimizeCompression(Stream input, Stream output)
+    => RebuildVerb.RebuildToStream(
+      input,
+      output,
+      this,
+      this,
+      createOptions: new FormatCreateOptions("deflate") {
+        Optimize = true,
+        Level = 9,
+        ForceCompress = true,
+      });
 
   private static EggCompressionMethod ResolveMethod(string? methodName) {
     if (string.IsNullOrWhiteSpace(methodName) || methodName.Equals("auto", StringComparison.OrdinalIgnoreCase))

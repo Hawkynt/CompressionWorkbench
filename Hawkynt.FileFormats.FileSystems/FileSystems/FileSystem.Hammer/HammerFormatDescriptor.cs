@@ -26,6 +26,7 @@ namespace FileSystem.Hammer;
 ///   <item><description><c>https://www.dragonflybsd.org/hammer/</c></description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(HammerBlockMover))]
 public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
 
   /// <summary>
@@ -321,7 +322,7 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     // taken, because the freemap is not rewritten here — and a rebuild is the
     // honest answer when it does.
     DefragContentGuard.RunOrRebuild(archive,
-      readContents: stream => ReadFileEntries(stream).Select(e => e.Data).ToList(),
+      readEntries: stream => ReadFileEntries(stream),
       inPlace: () => DefragmentWithPlanner(archive, options),
       rebuild: () => DefragRebuilder.Rebuild(archive, options,
         readEntries: stream => ReadFileEntries(stream).ToList(),

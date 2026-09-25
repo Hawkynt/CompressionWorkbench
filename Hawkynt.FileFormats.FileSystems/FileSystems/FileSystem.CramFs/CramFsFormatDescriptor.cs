@@ -17,7 +17,8 @@ namespace FileSystem.CramFs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Cramfs</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
+[FilesystemBlockMover(typeof(CramFsBlockMover))]
+public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable, ICompressionOptimizable {
 
   // The optimization adapters are keyed on this descriptor's runtime type, so the
   // registration has to have run before any instance can be looked up. Doing it from
@@ -228,7 +229,7 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     // The in-place pass is kept only if every payload still reads back: it can
     // refuse partway, and a rebuild is the honest answer when it does.
     DefragContentGuard.RunOrRebuild(archive,
-      readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+      readEntries: stream => ReadEntries(stream),
       inPlace: () => this.DefragmentWithPlanner(archive, options),
       rebuild: () => DefragRebuilder.Rebuild(archive, options,
         readEntries: stream => ReadEntries(stream),

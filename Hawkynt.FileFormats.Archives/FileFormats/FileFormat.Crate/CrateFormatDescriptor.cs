@@ -28,7 +28,7 @@ namespace FileFormat.Crate;
 /// alongside every crate file.
 /// </para>
 /// </remarks>
-public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, ICompressionOptimizable {
   /// <inheritdoc/>
   public string Id => "Crate";
 
@@ -226,6 +226,24 @@ public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
         return $"{pkgName}-{pkgVer}";
     }
     return "crate-0.0.0";
+  }
+
+  /// <inheritdoc/>
+  public void OptimizeCompression(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
+    using var tar = new MemoryStream();
+    using (var gzip = new GZipStream(input, CompressionMode.Decompress, leaveOpen: true))
+      gzip.CopyTo(tar);
+
+    tar.Position = 0;
+    using var optimized = new FileFormat.Gzip.GzipStream(
+      output,
+      Compression.Core.Streams.CompressionStreamMode.Compress,
+      Compression.Core.Deflate.DeflateCompressionLevel.Maximum,
+      leaveOpen: true);
+    tar.CopyTo(optimized);
   }
 
   /// <inheritdoc/>

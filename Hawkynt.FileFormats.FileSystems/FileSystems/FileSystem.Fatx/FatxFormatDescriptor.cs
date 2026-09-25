@@ -19,6 +19,7 @@ namespace FileSystem.Fatx;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system</c> — Wikipedia's FAT reference, which covers the FATX variant</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(FatxBlockMover))]
 public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemPlaceable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   /// <summary>
@@ -435,7 +436,7 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // a rebuild is the honest answer when it does, rather than the exception
     // this used to hand the caller.
     DefragContentGuard.RunOrRebuild(archive,
-      readContents: stream => ReadFileEntries(stream).Select(e => e.Data).ToList(),
+      readEntries: stream => ReadFileEntries(stream),
       inPlace: () => this.DefragmentWithPlanner(archive, options),
       rebuild: () => DefragRebuilder.Rebuild(archive, options,
         readEntries: stream => ReadFileEntries(stream),

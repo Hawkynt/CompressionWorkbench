@@ -27,6 +27,7 @@ namespace FileSystem.ZxScl;
 /// over one of those finds nothing to move and says so, instead of writing the
 /// whole container out again to arrive at the same bytes.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(ZxSclBlockMover))]
 public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   // Upper bound: max payload (40 tracks x 16 sectors x 256 bytes x 4 layers) + magic/headers/CRC.

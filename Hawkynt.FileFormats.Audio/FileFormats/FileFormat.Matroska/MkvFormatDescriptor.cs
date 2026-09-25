@@ -258,10 +258,10 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => MkvLayoutMap.Enumerate(file);
 
   /// <inheritdoc />
-  public void Optimize(Stream file) => _optimizer.Optimize(file);
+  public void CanonicalizeInPlace(Stream file) => _optimizer.CanonicalizeInPlace(file);
 
   /// <inheritdoc />
-  public void Optimize(Stream file, MetadataPlacementProfile? profile) => _optimizer.Optimize(file, profile);
+  public void CanonicalizeInPlace(Stream file, MetadataPlacementProfile? profile) => _optimizer.CanonicalizeInPlace(file, profile);
 
   /// <summary>Maximum number of individual frame entries per video track.</summary>
   private const int MaxFrameEntries = 100_000;

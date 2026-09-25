@@ -38,7 +38,8 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     new FormatOptionDescriptor(
       Key: "BlockSize", DisplayName: "Block Size (bytes)", Kind: FormatOptionKind.Integer, Default: "1024",
       AllowedValues: ["1024", "2048", "4096"],
-      Description: "ext1 block size (s_log_block_size). The 4 MiB image footprint is constant; larger blocks mean fewer total blocks."),
+      Description: "ext1 block size (s_log_block_size). The 4 MiB image footprint is constant; larger blocks mean fewer total blocks.",
+      IsAllocationGeometry: true),
   ];
 
   /// <summary>
@@ -308,9 +309,9 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       // handed over as a stream factory rather than read into a byte[].
       var name = Path.GetFileName(info.ArchiveName);
       if (info.InMemoryContent is { } bytes)
-        w.AddFile(name, bytes);
+        w.AddFile(name, bytes, info.LastModified);
       else
-        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath), info.LastModified);
     }
     var blockSize = options.GetOptionInt("BlockSize", 1024);
     // Sized to the payload rather than to the canonical 4 MiB footprint, which

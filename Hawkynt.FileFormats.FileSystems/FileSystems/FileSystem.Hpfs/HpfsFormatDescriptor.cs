@@ -26,6 +26,7 @@ namespace FileSystem.Hpfs;
 /// throw <see cref="NotSupportedException"/> / <see cref="InvalidOperationException"/>
 /// respectively; callers can fall back to a rebuild path in those cases.
 /// </remarks>
+[FilesystemBlockMover(typeof(HpfsBlockMover))]
 public sealed class HpfsFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
@@ -264,7 +265,7 @@ public sealed class HpfsFormatDescriptor
       // can refuse partway — a file allocated through the B-tree has no entry
       // to repoint — and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: stream => ReadFileEntries(stream).Select(e => e.Data).ToList(),
+        readEntries: stream => ReadFileEntries(stream),
         inPlace: () => DefragmentWithPlanner(archive, options),
         rebuild: () => DefragRebuilder.Rebuild(archive, options,
           readEntries: stream => ReadFileEntries(stream).ToList(),

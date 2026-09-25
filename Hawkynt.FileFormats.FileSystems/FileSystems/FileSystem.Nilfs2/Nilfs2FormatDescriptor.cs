@@ -36,6 +36,7 @@ namespace FileSystem.Nilfs2;
 ///   <item><description><c>https://en.wikipedia.org/wiki/NILFS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(Nilfs2BlockMover))]
 public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
@@ -53,7 +54,7 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("BlockSize", "Block size", FormatOptionKind.Enum, "0",
       AllowedValues: ["0", "1024", "2048", "4096", "8192", "16384", "32768", "65536"],
-      Description: "NILFS2 block size in bytes (0 = auto-optimise for least padding slack; spec allows 1024..65536)."),
+      Description: "NILFS2 block size in bytes (0 = auto-optimise for least padding slack; spec allows 1024..65536).", IsAllocationGeometry: true),
     new("VolumeLabel", "Volume label", FormatOptionKind.String, "",
       Description: "Up to 16 ASCII characters written into the superblock volume-label slot."),
   ];

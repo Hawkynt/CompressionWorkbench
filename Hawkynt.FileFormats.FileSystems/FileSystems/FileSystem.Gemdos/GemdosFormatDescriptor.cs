@@ -34,6 +34,7 @@ namespace FileSystem.Gemdos;
 ///   <item><description><c>https://en.wikipedia.org/wiki/GEMDOS</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(FileSystem.Fat.FatBlockMover))]
 public sealed class GemdosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
@@ -110,28 +111,28 @@ public sealed class GemdosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       Kind: FormatOptionKind.Enum,
       Default: "512",
       AllowedValues: ["256", "512", "1024"],
-      Description: "Atari TOS accepts 256 / 512 / 1024 bytes per sector. 512 is universal across emulators and real hardware."),
+      Description: "Atari TOS accepts 256 / 512 / 1024 bytes per sector. 512 is universal across emulators and real hardware.", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "SectorsPerCluster",
       DisplayName: "Sectors per cluster",
       Kind: FormatOptionKind.Enum,
       Default: "2",
       AllowedValues: ["1", "2", "4"],
-      Description: "Allocation unit size in sectors. Two-sector clusters are the GEMDOS default for floppy media."),
+      Description: "Allocation unit size in sectors. Two-sector clusters are the GEMDOS default for floppy media.", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "TotalSectors",
       DisplayName: "Image size",
       Kind: FormatOptionKind.Enum,
       Default: "1440",
       AllowedValues: ["720", "1440", "2880", "5760"],
-      Description: "Total sectors. 720 = 360 KB SS DD, 1440 = 720 KB DS DD, 2880 = 1.44 MB DS HD, 5760 = 2.88 MB DS ED."),
+      Description: "Total sectors. 720 = 360 KB SS DD, 1440 = 720 KB DS DD, 2880 = 1.44 MB DS HD, 5760 = 2.88 MB DS ED.", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "RootEntries",
       DisplayName: "Root directory entries",
       Kind: FormatOptionKind.Enum,
       Default: "112",
       AllowedValues: ["64", "112", "224"],
-      Description: "Maximum directory entries in the root directory (FAT12 root is a fixed-size region)."),
+      Description: "Maximum directory entries in the root directory (FAT12 root is a fixed-size region).", IsAllocationGeometry: true),
     FilesystemSchemaPresets.VolumeLabel(maxChars: 11),
   ];
 

@@ -29,33 +29,105 @@ public partial class DefragmentWindow {
     this._rebuildProgressHooked = true;
 
     // Replace only the main Run dispatch. Shrink/Purge/Wipe/Compact keep their
-    // existing handlers; rebuild-backed Defrag/Optimize now share this richer UI.
+    // existing handlers; separated maintenance verbs share this richer UI.
+    // The ambiguous Optimize route remains compatibility-only.
     RunBtn.Click -= OnRun;
     RunBtn.Click += OnRunWithBlockProgress;
     InsertMaintenanceCancelButton();
 
-    // The original loader sees IArchiveDefragmentable before archive-repack
-    // support. When the caller explicitly asked for Optimize, correct that
-    // ambiguity here so ZIP/7z can expose their repack UI instead of looking like
-    // filesystem-only defraggers.
+    RefreshExplicitCapabilityPresentation();
+
+    // Legacy compatibility for callers that still request the old umbrella verb.
+    // It is deliberately fail-closed: only a descriptor with exactly one of
+    // Compress / Canonicalize / Repack may pass through this route.
     if (this._requestedVerb == MaintenanceVerb.Optimize && this._formatId is { Length: > 0 } id) {
       var descriptor = FormatRegistry.GetById(id);
       var ops = FormatRegistry.GetArchiveOps(id);
-      if (descriptor?.Category is FormatCategory.Archive or FormatCategory.CompoundTar
-          && ops is IArchiveCreatable) {
-        this._isArchiveMode = true;
+      var supported = OptimizationCapabilities.CanLegacyOptimizeUnambiguously(descriptor);
+
+      if (supported && ops is IFileInternalChunkMover chunkMover) {
+        this._isFileInternalMode = true;
         this._archiveOps = ops;
-        this._isSevenZipFormat = string.Equals(id, "SevenZip", StringComparison.Ordinal);
+        this._chunkMover = chunkMover;
         FsModesGroup.Visibility = Visibility.Collapsed;
         ArchiveRepackGroup.Visibility = Visibility.Visible;
-        SmartSolidRepackCheck.Visibility = this._isSevenZipFormat ? Visibility.Visible : Visibility.Collapsed;
+        MetadataPlacementPanel.Visibility = Visibility.Visible;
         RunBtn.Content = "Optimize";
         RunBtn.IsEnabled = true;
-        SupportLbl.Text = "Archive re-layout/repack with live staged-target visualization.";
+        SupportLbl.Text = "Legacy compatibility: routes to this format's single canonicalization capability.";
+        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
+      } else if (supported && descriptor?.Category is FormatCategory.Archive or FormatCategory.CompoundTar) {
+        this._isArchiveMode = true;
+        this._archiveOps = ops;
+        FsModesGroup.Visibility = Visibility.Collapsed;
+        ArchiveRepackGroup.Visibility = Visibility.Visible;
+        RunBtn.Content = "Optimize";
+        RunBtn.IsEnabled = true;
+        SupportLbl.Text = "Legacy compatibility: routes to this format's single explicit rewrite capability.";
         SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
         if (LayoutStatusLbl != null)
           LayoutStatusLbl.Text = "Source + staged-target address spaces share the chart for progress; offsets are projected, not physical equivalence.";
+      } else {
+        RunBtn.Content = "Optimize";
+        RunBtn.IsEnabled = false;
+        SupportLbl.Text = "Legacy Optimize is unavailable: choose Compress, Canonicalize, or Repack explicitly.";
+        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkOrange;
       }
+    }
+  }
+
+
+  private void RefreshExplicitCapabilityPresentation() {
+    if (this._requestedVerb is
+        MaintenanceVerb.Compress or
+        MaintenanceVerb.Canonicalize or
+        MaintenanceVerb.Repack or
+        MaintenanceVerb.SortDirectoryEntries or
+        MaintenanceVerb.DefragmentExtents
+        && this._formatId is { Length: > 0 } capabilityId) {
+      var descriptor = FormatRegistry.GetById(capabilityId);
+      var verb = this._requestedVerb.Value;
+      var supported = verb switch {
+        MaintenanceVerb.Compress => OptimizationCapabilities.CanCompress(descriptor),
+        MaintenanceVerb.Canonicalize => OptimizationCapabilities.CanCanonicalize(descriptor),
+        MaintenanceVerb.Repack => OptimizationCapabilities.CanRepack(descriptor),
+        MaintenanceVerb.SortDirectoryEntries => OptimizationCapabilities.CanSortDirectoryEntries(descriptor),
+        MaintenanceVerb.DefragmentExtents => OptimizationCapabilities.CanDefragmentExtents(descriptor),
+        _ => false,
+      };
+
+      RunBtn.Content = verb switch {
+        MaintenanceVerb.Compress => "Compress",
+        MaintenanceVerb.Canonicalize => "Canonicalize",
+        MaintenanceVerb.Repack => "Repack",
+        MaintenanceVerb.SortDirectoryEntries => "Sort directory entries",
+        MaintenanceVerb.DefragmentExtents => "Defragment extents",
+        _ => "Run",
+      };
+      RunBtn.IsEnabled = supported;
+      FsModesGroup.Visibility = verb == MaintenanceVerb.DefragmentExtents
+        ? Visibility.Visible
+        : Visibility.Collapsed;
+      ArchiveRepackGroup.Visibility = verb is MaintenanceVerb.Compress or MaintenanceVerb.Repack
+        ? Visibility.Visible
+        : Visibility.Collapsed;
+      MetadataPlacementPanel.Visibility = verb == MaintenanceVerb.Canonicalize
+        && descriptor is IFileInternalChunkMover
+        ? Visibility.Visible
+        : Visibility.Collapsed;
+      SupportLbl.Text = supported
+        ? verb switch {
+          MaintenanceVerb.Compress => "Compression re-encoding only; allocation geometry is unchanged.",
+          MaintenanceVerb.Canonicalize => "Format-defined canonical rewrite; not reported as compression optimization.",
+          MaintenanceVerb.Repack => "Verified extract + recreate of the same logical entries.",
+          MaintenanceVerb.SortDirectoryEntries => "Directory-table ordering only.",
+          MaintenanceVerb.DefragmentExtents => "Physical extent movement through an explicit block mover.",
+          _ => "Supported.",
+        }
+        : $"This format does not expose the {verb} capability.";
+      SupportLbl.Foreground = supported
+        ? System.Windows.Media.Brushes.DarkGreen
+        : System.Windows.Media.Brushes.DarkOrange;
     }
   }
 
@@ -149,8 +221,32 @@ public partial class DefragmentWindow {
   private void OnRunWithBlockProgress(object sender, RoutedEventArgs e) {
     if (this._imagePath == null || this._maintenanceCancellation != null) return;
 
-    if (this._isFileInternalMode) {
-      OnRunFileInternalOptimize();
+    switch (this._requestedVerb) {
+      case MaintenanceVerb.Compress:
+        RunSeparatedRewrite(
+          "Compress",
+          (input, output) => ArchiveOperations.Compress(input, output, password: null));
+        return;
+      case MaintenanceVerb.Canonicalize:
+        RunSeparatedRewrite(
+          "Canonicalize",
+          (input, output) => ArchiveOperations.Canonicalize(input, output));
+        return;
+      case MaintenanceVerb.Repack:
+        RunSeparatedRewrite(
+          "Repack",
+          (input, output) => ArchiveOperations.Repack(input, output));
+        return;
+      case MaintenanceVerb.SortDirectoryEntries:
+        RunDirectoryOrdering();
+        return;
+      case MaintenanceVerb.DefragmentExtents:
+        RunDefragWithBlockProgress();
+        return;
+    }
+
+    if (this._requestedVerb == MaintenanceVerb.Optimize && this._isFileInternalMode) {
+      OnRunFileInternalCanonicalize();
       return;
     }
 
@@ -162,14 +258,97 @@ public partial class DefragmentWindow {
       : null;
     var explicitlyOptimizingArchive = this._requestedVerb == MaintenanceVerb.Optimize
       && descriptor?.Category is FormatCategory.Archive or FormatCategory.CompoundTar
-      && ops is IArchiveCreatable;
+      && OptimizationCapabilities.CanLegacyOptimizeUnambiguously(descriptor);
 
-    if (this._isArchiveMode || explicitlyOptimizingArchive) {
+    if (explicitlyOptimizingArchive) {
       RunArchiveOptimizeWithBlockProgress(ops);
       return;
     }
 
+    // A generic maintenance window may still preview archives, but it must not
+    // infer an optimization verb from "creatable". Only a real extent-defrag
+    // target can use the generic Run fallback.
     RunDefragWithBlockProgress();
+  }
+
+  private void RunSeparatedRewrite(
+      string operation,
+      Func<string, string, (long OriginalSize, long NewSize, int Entries)> rewrite) {
+    if (this._imagePath == null) return;
+
+    var path = this._imagePath;
+    var tempOut = path + ".maintenance.tmp";
+    AtomicFileWriter.TryDelete(tempOut);
+    var cancellationToken = BeginMaintenanceOperation(operation, staged: true);
+    Append($"=== {DateTime.Now:HH:mm:ss}  {operation}: {Path.GetFileName(path)} ===");
+
+    Task.Run(() => {
+      Exception? error = null;
+      (long OriginalSize, long NewSize, int Entries) result = default;
+      try {
+        result = rewrite(path, tempOut);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Dispatcher.Invoke(() => {
+          this._maintenanceCommitStarted = true;
+          if (this._maintenanceCancelButton != null)
+            this._maintenanceCancelButton.IsEnabled = false;
+        });
+
+        File.Move(tempOut, path, overwrite: true);
+      } catch (Exception ex) {
+        error = ex;
+      } finally {
+        AtomicFileWriter.TryDelete(tempOut);
+      }
+
+      Dispatcher.Invoke(() => {
+        if (error is OperationCanceledException) {
+          Append("Cancelled — staged target discarded; original unchanged.");
+        } else if (error != null) {
+          Append($"FAILED: {error.GetType().Name}: {error.Message}");
+        } else {
+          Append($"OK — {result.Entries:N0} entr{(result.Entries == 1 ? "y" : "ies")}; "
+            + $"{result.OriginalSize:N0} -> {result.NewSize:N0} bytes.");
+          NotifyMutated(path);
+        }
+        Append("");
+        EndMaintenanceOperation();
+      });
+    });
+  }
+
+  private void RunDirectoryOrdering() {
+    if (this._imagePath == null || this._formatId is not { Length: > 0 } formatId)
+      return;
+    if (FormatRegistry.GetById(formatId) is not IFilesystemDirectoryOrderer orderer)
+      return;
+
+    var path = this._imagePath;
+    _ = BeginMaintenanceOperation("Sort directory entries", staged: false);
+    Append($"=== {DateTime.Now:HH:mm:ss}  Sorting directory entries: {Path.GetFileName(path)} ===");
+
+    Task.Run(() => {
+      Exception? error = null;
+      try {
+        using var image = File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        orderer.SortDirectoryEntries(image);
+        image.Flush(flushToDisk: true);
+      } catch (Exception ex) {
+        error = ex;
+      }
+
+      Dispatcher.Invoke(() => {
+        if (error != null) {
+          Append($"FAILED: {error.GetType().Name}: {error.Message}");
+        } else {
+          Append("OK — directory entries reordered.");
+          NotifyMutated(path);
+        }
+        Append("");
+        EndMaintenanceOperation();
+      });
+    });
   }
 
   private void RunDefragWithBlockProgress() {
@@ -272,11 +451,6 @@ public partial class DefragmentWindow {
 
   private void RunArchiveOptimizeWithBlockProgress(IArchiveFormatOperations? ops) {
     if (this._imagePath == null || ops == null) return;
-    if (this._isSevenZipFormat && SmartSolidRepackCheck?.IsChecked == true) {
-      RunSmartSevenZipWithBlockProgress(ops);
-      return;
-    }
-
     var path = this._imagePath;
     var formatId = this._formatId;
     if (formatId is "DoubleSpace" or "DriveSpace" or "DriveSpace3") {
@@ -361,111 +535,6 @@ public partial class DefragmentWindow {
           Append($"OK ({sw.ElapsedMilliseconds} ms) — {entriesOptimized} entries re-encoded");
           Append($"Archive size: {originalSize:N0} -> {newSize:N0} bytes (Δ {delta:+#,#;-#,#;0}, {pct:+0.0;-0.0;0.0}%)");
           NotifyMutated(path);
-        }
-        Append("");
-        EndMaintenanceOperation();
-      });
-    });
-  }
-
-  private void RunSmartSevenZipWithBlockProgress(IArchiveFormatOperations ops) {
-    if (this._imagePath == null) return;
-    var path = this._imagePath;
-    var originalSize = new FileInfo(path).Length;
-    var cancellationToken = BeginMaintenanceOperation("7z solid-block re-group", staged: true);
-    SetStagedArchiveMap(path, ops, originalSize);
-
-    Append($"=== {DateTime.Now:HH:mm:ss}  Smart solid-block repack: {Path.GetFileName(path)} ===");
-    Append("All candidate layouts are staged. Cancel discards them and leaves the current 7z untouched.");
-    Progress.IsIndeterminate = false;
-    Progress.Value = 0;
-
-    Task.Run(() => {
-      var sw = Stopwatch.StartNew();
-      Exception? error = null;
-      var cancelled = false;
-      FileFormat.SevenZip.SolidBlockOptimizer.OptimizeResult? result = null;
-
-      try {
-        using var fs = File.OpenRead(path);
-        result = FileFormat.SevenZip.SolidBlockOptimizer.Optimize(
-          fs,
-          maxTrials: 5,
-          onProgress: (index, total, name) => Dispatcher.BeginInvoke(() =>
-            Append($"  Trying strategy {index + 1}/{total}: {name}...")),
-          onDetailedProgress: detail => Dispatcher.BeginInvoke(() => {
-            var displaySize = Math.Max(1L, BlockMap.ImageSize > 0 ? BlockMap.ImageSize : originalSize);
-            double fraction;
-            switch (detail.Phase) {
-              case "extracting":
-                fraction = 0.30 * detail.BytesDone / Math.Max(1.0, detail.BytesTotal);
-                BlockMap.ReadHead = Math.Clamp((long)(detail.BytesDone / Math.Max(1.0, detail.BytesTotal) * displaySize), 0, displaySize - 1);
-                BlockMap.WriteHead = -1;
-                break;
-              case "strategy":
-                fraction = 0.30 + 0.10 * detail.Current / Math.Max(1.0, detail.Total);
-                BlockMap.ReadHead = -1;
-                break;
-              case "building":
-                fraction = 0.40 + 0.55 * detail.Current / Math.Max(1.0, detail.Total);
-                BlockMap.ReadHead = -1;
-                BlockMap.WriteHead = Math.Clamp((long)(detail.Current / Math.Max(1.0, detail.Total) * displaySize), 0, displaySize - 1);
-                break;
-              default:
-                fraction = 0;
-                break;
-            }
-            Progress.Value = Math.Clamp(fraction, 0, 0.95) * 100;
-            if (LayoutStatusLbl != null)
-              LayoutStatusLbl.Text = detail.Phase switch {
-                "extracting" => $"Reading source entry: {detail.Name}",
-                "strategy" => $"Planning solid grouping: {detail.Name}",
-                "building" => $"Building staged solid candidate: {detail.Name}",
-                _ => "Staged 7z regrouping",
-              };
-          }),
-          cancellationToken: cancellationToken);
-      } catch (OperationCanceledException) {
-        cancelled = true;
-      } catch (Exception ex) {
-        error = ex;
-      }
-      sw.Stop();
-
-      Dispatcher.Invoke(() => {
-        BlockMap.ReadHead = -1;
-        BlockMap.WriteHead = -1;
-        Progress.Value = 100;
-
-        if (cancelled) {
-          Append($"CANCELLED ({sw.ElapsedMilliseconds} ms) — candidate regroup discarded; existing 7z unchanged.");
-        } else if (error != null) {
-          Append($"FAILED ({sw.ElapsedMilliseconds} ms): {error.GetType().Name}: {error.Message}");
-        } else if (result != null) {
-          foreach (var trial in result.Trials)
-            Append($"    {trial.StrategyName}: {FormatSize(trial.OutputSize)} ({trial.Elapsed.TotalMilliseconds:F0} ms)");
-
-          var newSize = (long)result.Data.Length;
-          var delta = newSize - originalSize;
-          var pct = originalSize > 0 ? (double)delta / originalSize * 100 : 0;
-          Append($"  Winner: {result.WinningStrategy}");
-          Append($"Archive size: {originalSize:N0} -> {newSize:N0} bytes ({delta:+#,#;-#,#;0}, {pct:+0.0;-0.0;0.0}%)");
-
-          if (newSize < originalSize) {
-            this._maintenanceCommitStarted = true;
-            if (this._maintenanceCancelButton != null) this._maintenanceCancelButton.IsEnabled = false;
-            if (LayoutStatusLbl != null)
-              LayoutStatusLbl.Text = "Winning staged layout selected — committing; cancellation disabled.";
-            try {
-              AtomicFileWriter.WriteAllBytesAtomic(path, result.Data);
-              Append("Optimized archive written.");
-              NotifyMutated(path);
-            } catch (Exception writeError) {
-              Append($"FAILED while committing winner: {writeError.Message}");
-            }
-          } else {
-            Append("No strategy improved on the original size; archive unchanged.");
-          }
         }
         Append("");
         EndMaintenanceOperation();

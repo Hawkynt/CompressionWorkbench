@@ -6,7 +6,7 @@ namespace FileFormat.Rzip;
 /// <summary>
 /// Describes rzip format.
 /// </summary>
-public sealed class RzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class RzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

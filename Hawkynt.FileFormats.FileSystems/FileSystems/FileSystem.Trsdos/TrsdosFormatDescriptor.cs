@@ -27,6 +27,7 @@ namespace FileSystem.Trsdos;
 ///   <item><description><c>https://en.wikipedia.org/wiki/TRSDOS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(TrsdosBlockMover))]
 public sealed class TrsdosFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
   IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
@@ -102,14 +103,14 @@ public sealed class TrsdosFormatDescriptor :
       Kind: FormatOptionKind.Enum,
       Default: "Auto",
       AllowedValues: ["Auto", "Single", "Double"],
-      Description: "Single density = 10 sectors/track. Double density = 18 sectors/track."),
+      Description: "Single density = 10 sectors/track. Double density = 18 sectors/track.", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "Tracks",
       DisplayName: "Tracks",
       Kind: FormatOptionKind.Enum,
       Default: "Auto",
       AllowedValues: ["Auto", "35", "40", "80"],
-      Description: "35 = Model I 5.25\" SD. 40 = Model III/4 DD. 80 = Model 4 high-density."),
+      Description: "35 = Model I 5.25\" SD. 40 = Model III/4 DD. 80 = Model 4 high-density.", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "DiskName",
       DisplayName: "Disk name",
@@ -194,9 +195,9 @@ public sealed class TrsdosFormatDescriptor :
     var diskName = options?.GetOption("DiskName", "WORM") ?? "WORM";
     var date = options?.GetOption("Date", "01/01/26") ?? "01/01/26";
 
-    // Auto: pick smallest geometry that fits via TrsdosOptimizer.
+    // Auto: select the smallest creation geometry that fits via TrsdosGeometrySelector.
     var fileSizes = inputs.Where(i => !i.IsDirectory).Select(i => (long)i.ReadContent().Length).ToList();
-    var auto = TrsdosOptimizer.Find(fileSizes);
+    var auto = TrsdosGeometrySelector.Find(fileSizes);
 
     var tracks = tracksStr == "Auto" || !int.TryParse(tracksStr, out var t) ? auto.Tracks : t;
     var spt = density switch {

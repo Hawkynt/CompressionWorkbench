@@ -166,6 +166,21 @@ public class ReconfigureOperationTests {
   }
 
   [Test]
+  public void Reconfigure_Fat_RejectsMetadataOption() {
+    var img = CreateImage(FormatDetector.Format.Fat, ".img",
+      new Dictionary<string, string> { ["ImageSize"] = "1.44 MB (3.5\" HD)" },
+      ("DATA.BIN", "payload"u8.ToArray()));
+    var before = File.ReadAllBytes(img);
+
+    Assert.That(() => ReconfigureOperation.Reconfigure(img,
+        new Dictionary<string, string> { ["VolumeLabel"] = "NOTGEOMETRY" }),
+      Throws.ArgumentException.With.Message.Contains("not allocation geometry"));
+
+    Assert.That(File.ReadAllBytes(img), Is.EqualTo(before),
+      "a rejected non-geometry option must not mutate the image");
+  }
+
+  [Test]
   public void Reconfigure_NonCreatableFormat_Throws() {
     // A plain text file is not a creatable container format.
     var notAnImage = MakeSourceFile("notes.txt", "hello"u8.ToArray());

@@ -21,6 +21,7 @@ namespace FileSystem.SmartFs;
 ///   <item><description>Apache NuttX SmartFS documentation — logical sectors are powers of two from 256 through 32768 bytes.</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(SmartFsBlockMover))]
 public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable,
     IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap {
@@ -292,7 +293,7 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     if (archive.CanSeek && archive.Length <= MaxBufferedImageBytes) {
       var planned = false;
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: ReadPayloadsForGuard,
+        readEntries: ReadEntriesForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;
@@ -305,12 +306,14 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       buildImage: files => BuildImage(files, sectorSize));
   }
 
-  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+  private static IReadOnlyList<DefragContentGuard.DefragContentEntry> ReadEntriesForGuard(Stream stream) {
     stream.Position = 0;
     using var reader = new SmartFsReader(stream);
     return reader.Entries
-      .Where(e => !e.IsDirectory && !IsSynthetic(e.Name))
-      .Select(reader.Extract)
+      .Where(e => !IsSynthetic(e.Name))
+      .Select(e => new DefragContentGuard.DefragContentEntry(
+        e.Name, e.IsDirectory, e.IsDirectory ? Array.Empty<byte>() : reader.Extract(e),
+        Length: e.Size))
       .ToList();
   }
 

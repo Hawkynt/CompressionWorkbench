@@ -6,7 +6,7 @@ namespace FileFormat.Csc;
 /// <summary>
 /// Describes csc format.
 /// </summary>
-public sealed class CscFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class CscFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   private const int DefaultLevel = 4;
   private const int MinDictionarySize = 32 * 1024;
   private const int MaxDictionarySize = 64 * 1024;

@@ -8,7 +8,7 @@ namespace FileFormat.Lz4;
 /// <summary>
 /// Describes lz 4 format.
 /// </summary>
-public sealed class Lz4FormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class Lz4FormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

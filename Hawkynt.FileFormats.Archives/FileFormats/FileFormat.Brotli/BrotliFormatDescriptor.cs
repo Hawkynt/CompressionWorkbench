@@ -7,7 +7,7 @@ namespace FileFormat.Brotli;
 /// <summary>
 /// Describes brotli format.
 /// </summary>
-public sealed class BrotliFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class BrotliFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

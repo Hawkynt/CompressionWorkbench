@@ -1,10 +1,11 @@
 # Maintenance mechanisms and write capability
 
-How the maintenance verbs are provided, and what a read-write claim is allowed
-to mean. The verbs themselves — optimize, shrink, defrag, purge, wipe and the
-`compact` composite — are defined once in [`ARCHIVE-MODEL.md`](ARCHIVE-MODEL.md)
-&rarr; *The five maintenance verbs*, together with the interface that unlocks
-each. This page is the half that does not fit a table: why so few formats need
+How maintenance operations are provided, and what a read-write claim is allowed
+to mean. Compression, canonicalization, repacking, directory ordering, physical
+extent defragmentation and allocation-geometry changes are separate capabilities;
+`shrink`, `purge`, `wipe` and the `compact` composite remain independent
+maintenance operations. The taxonomy and the interface that unlocks each action
+are defined once in [`ARCHIVE-MODEL.md`](ARCHIVE-MODEL.md). This page is the half that does not fit a table: why so few formats need
 bespoke code for any of it, and the rule that decides when `CanModify` may be
 advertised.
 
@@ -21,6 +22,9 @@ extract → re-create engine (`Compression.Registry.RebuildVerb`):
   grows, never throws, never corrupts (emits the original unchanged if the rebuild
   isn't smaller or fails).
 - **`IArchiveDefragmentable.Defragment`** — default verified in-place rebuild.
+  This is a rebuild primitive, not by itself the user-facing **Defragment extents**
+  capability; that action additionally requires `IFilesystemBlockMover` so it
+  can actually move allocation extents.
 - **`IArchiveModifiable.Add` / `Remove`** — default verified extract→edit→re-create;
   `Remove(all)` is the **purge** verb. Two things the purge has to know about the
   container it is emptying, because neither is a defect of the verb:
@@ -70,9 +74,11 @@ does, because packing vacates space as it sweeps forward while sorting an owner 
 place has nothing spare. What it buys is cost: about a third of the bytes, because it
 touches only the blocks that are actually out of order.
 
-A filesystem descriptor therefore gains shrink / defrag / purge by simply declaring
-the interface (it already implements `IArchiveFormatOperations` + `IArchiveCreatable`).
-Bespoke in-place implementations still override the default for efficiency. Coverage
+A filesystem descriptor therefore gains shrink / rebuild-defrag / purge by declaring
+the corresponding interface (it already implements `IArchiveFormatOperations` +
+`IArchiveCreatable`). The UI exposes **Defragment extents** only when the descriptor
+also exposes `IFilesystemBlockMover`; a rebuild-only defragmenter is not presented as
+a physical extent mover. Bespoke in-place implementations still override defaults for efficiency. Coverage
 is guarded by the registry-parametrised `Generic{Shrink,Defrag,Purge}RoundTripTests`
 under `Compression.Tests/Operations/`. For every creatable claimant they build the
 same conservative one-payload probe, invoke the advertised verb, and identify that
@@ -92,17 +98,16 @@ only way a format leaves the suite entirely is by declaring, through
 undeclared create refusal fails.
 
 - **`ILayoutOptimizable`** carries the same kind of default — a verified rebuild
-  honouring `LayoutRebuildOptions` geometry — guarded by
-  `GenericLayoutOptimizableTests`. Creatable claimants must successfully analyse and
-  rebuild the standard probe, with byte-identical payloads afterwards. That default
-  needs a creator to write the new volume with, so declaring the interface is not by
-  itself a re-lay: a descriptor may implement it purely to publish its geometry
-  analysis, as ReFS does. The Layout column of the support matrix reports the rebuild
-  rather than the interface, and is the count of how far this reaches.
+  honouring `LayoutRebuildOptions` — guarded by `GenericLayoutOptimizableTests`.
+  It is a transport/mechanism, not sufficient evidence for the **Change allocation
+  geometry** action: some descriptors use it while their only writer knobs are labels,
+  compatibility or compression. A writer option belongs to that action only when its
+  `FormatOptionDescriptor` sets `IsAllocationGeometry=true`.
 - **`reconfigure`** (`Compression.Lib.ReconfigureOperation`, `cwb reconfigure --set
-  Key=Value`, and the UI *Maintenance → Reconfigure* entry) re-applies geometry/options
-  to an *existing* image (e.g. NTFS MFT-record size, cluster size, FAT root entries)
-  via the verified rebuild — contents preserved, only geometry changes.
+  Key=Value`, and the UI **Change allocation geometry** entry) accepts only those tagged
+  geometry keys on an *existing* image (e.g. NTFS MFT-record size, cluster size, FAT
+  root entries). Metadata, compression and compatibility keys are rejected before any
+  output is written; the verified rebuild preserves the logical contents.
 - **NTFS per-file compression**: the `Compression` create option (`Off`/`LZNT1`)
   stores files in a compressed `$DATA` attribute; small files stay resident in the MFT.
 - **Creation-option schemas** (`IFormatOptionsSchema`) now cover **75 of 89** creatable
@@ -187,10 +192,12 @@ there is no coverage matrix on this page.
 
 - **Filesystems and disk-image containers** — the support matrix in
   [`Hawkynt.FileFormats.FileSystems/README.md`](../Hawkynt.FileFormats.FileSystems/README.md).
-  Its Compact, Defrag, Wipe, Shrink, Layout and Purge columns are rendered from
-  the descriptors by `Compression.Tests/Documentation/FilesystemSupportMatrix.cs`
-  and re-derived on every build, so a cell that stops matching the code fails
-  rather than misleading a reader.
+  Its Compact, Compress, Canonicalize, Repack, Sort directory entries,
+  Defragment extents, Change allocation geometry, Wipe, Shrink and Purge columns
+  are rendered from the descriptors by
+  `Compression.Tests/Documentation/FilesystemSupportMatrix.cs` and re-derived
+  on every build, so a cell that stops matching the code fails rather than
+  misleading a reader.
 - **Archives** — the *Maintenance* column of
   [`Hawkynt.FileFormats.Archives/README.md`](../Hawkynt.FileFormats.Archives/README.md).
 - **Whatever is loaded right now** — `cwb formats`, which answers from the live

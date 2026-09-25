@@ -6,7 +6,7 @@ namespace FileFormat.Compress;
 /// <summary>
 /// Describes compress format.
 /// </summary>
-public sealed class CompressFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
+public sealed class CompressFormatDescriptor : IFormatDescriptor, IStreamFormatOperations , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

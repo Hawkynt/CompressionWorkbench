@@ -39,6 +39,7 @@ namespace FileSystem.Ocfs2;
 ///   <item><description><c>https://en.wikipedia.org/wiki/OCFS2</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(Ocfs2BlockMover))]
 public sealed class Ocfs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty,
@@ -286,7 +287,7 @@ public sealed class Ocfs2FormatDescriptor
       // can refuse partway — a file whose extents hang off an interior tree has
       // no record here to repoint — and a rebuild is the honest answer then.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: stream => ReadFileEntries(stream).Select(e => e.Data).ToList(),
+        readEntries: stream => ReadFileEntries(stream),
         inPlace: () => DefragmentWithPlanner(archive, options),
         rebuild: () => DefragRebuilder.Rebuild(archive, options,
           readEntries: stream => ReadFileEntries(stream).ToList(),

@@ -7,7 +7,7 @@ namespace Compression.Registry;
 /// Auto-generated descriptor for compound tar formats (tar.gz, tar.bz2, etc.).
 /// Wraps tar archive operations with a stream compression layer via the registry.
 /// </summary>
-public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
+public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema, ICompressionOptimizable {
 
   /// <summary>
   /// Inherits the inner TAR descriptor's schema and adds a <c>CompressionLevel</c>
@@ -121,6 +121,19 @@ public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOpe
     using var memoryStream = new MemoryStream();
     s.CopyTo(memoryStream);
     return memoryStream.ToArray();
+  }
+
+  /// <inheritdoc />
+  public void OptimizeCompression(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
+    var outerDescriptor = FormatRegistry.GetById(_streamFormatId);
+    if (outerDescriptor is not ICompressionOptimizable compression)
+      throw new NotSupportedException(
+        $"Compound format {_id} requires outer codec '{_streamFormatId}' to expose {nameof(ICompressionOptimizable)}.");
+
+    compression.OptimizeCompression(input, output);
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {

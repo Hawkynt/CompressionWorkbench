@@ -18,7 +18,7 @@ namespace FileSystem.Ntfs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/NTFS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
-public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable, ICompressionOptimizable {
 
   // The optimization adapters are keyed on this descriptor's runtime type, so the
   // registration has to have run before any instance can be looked up. Doing it from
@@ -491,8 +491,10 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       ? new NtfsWriter(generateShortNames: generateShortNames)
       : new NtfsWriter(label, generateShortNames);
     ApplyWriterOptions(w, specific);
-    foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      w.AddFile(input.ArchiveName, input.ReadContent(), input.LastModified);
+    }
 
     var totalSize     = ParseImageSizeBytes(specific?.GetValueOrDefault("ImageSize"));
     var clusterSize   = FilesystemSchemaPresets.ParseSize(specific?.GetValueOrDefault("ClusterSize"));

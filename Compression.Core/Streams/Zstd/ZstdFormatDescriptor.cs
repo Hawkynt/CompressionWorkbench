@@ -6,7 +6,7 @@ namespace FileFormat.Zstd;
 /// <summary>
 /// Describes zstd format.
 /// </summary>
-public sealed class ZstdFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class ZstdFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema, ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -114,6 +114,7 @@ public sealed class ZstdFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
       compressionLevel: 9, leaveOpen: true);
     input.CopyTo(cs);
   }
+
   /// <summary>
   /// Performs the wrap decompress operation.
   /// </summary>

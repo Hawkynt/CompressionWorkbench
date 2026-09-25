@@ -1,3 +1,4 @@
+using Compression.Registry;
 using F = Compression.Lib.FormatDetector.Format;
 
 namespace Compression.Lib;
@@ -657,7 +658,7 @@ public static class ArchiveOperations {
     return $"bitstream transfer ({src} Deflate → ZIP)";
   }
 
-  // ── Optimize ──────────────────────────────────────────────────────
+  // ── Compression optimization ─────────────────────────────────────
 
   /// <summary>
   /// Optimizes an archive by re-encoding with the best available encoder
@@ -670,108 +671,96 @@ public static class ArchiveOperations {
   /// crash during recompression never leaves a partial archive in place.
   /// </remarks>
   /// <returns>(originalSize, optimizedSize, entriesOptimized)</returns>
-  public static (long OriginalSize, long OptimizedSize, int EntriesOptimized) Optimize(
+  public static (long OriginalSize, long OptimizedSize, int EntriesOptimized) Compress(
       string inputPath, string outputPath, string? password) {
     var format = FormatDetector.Detect(inputPath);
+    FormatRegistration.EnsureInitialized();
+    var descriptor = FormatRegistry.GetById(format.ToString());
+    if (descriptor is not ICompressionOptimizable compression)
+      throw new NotSupportedException($"{format} does not expose {nameof(ICompressionOptimizable)}.");
+
     var originalSize = new FileInfo(inputPath).Length;
-    var entries = 0;
-
-    // ── ZIP: re-encode each Deflate entry with Zopfli ────────────────
-    if (format == F.Zip) {
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => entries = OptimizeZip(inputPath, outFs, password));
-      return (originalSize, new FileInfo(outputPath).Length, entries);
+    var entries = 1;
+    if (descriptor is IArchiveFormatOperations archiveOps) {
+      using var listStream = File.OpenRead(inputPath);
+      entries = archiveOps.List(listStream, password).Count(static entry => !entry.IsDirectory);
     }
 
-    // ── Gzip: re-encode Deflate with Maximum level ───────────────────
-    if (format == F.Gzip) {
-      var data = DecompressFile(inputPath, F.Gzip);
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-        using var gs = new FileFormat.Gzip.GzipStream(outFs,
-          Compression.Core.Streams.CompressionStreamMode.Compress,
-          Compression.Core.Deflate.DeflateCompressionLevel.Maximum,
-          leaveOpen: true);
-        gs.Write(data);
-      });
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── Zlib: re-encode Deflate with Maximum level ───────────────────
-    if (format == F.Zlib) {
-      var data = File.ReadAllBytes(inputPath);
-      var decompressed = FileFormat.Zlib.ZlibStream.Decompress(data.AsSpan());
-      var recompressed = FileFormat.Zlib.ZlibStream.Compress(decompressed.AsSpan(),
-        Compression.Core.Deflate.DeflateCompressionLevel.Maximum);
-      AtomicFileWriter.WriteAllBytesAtomic(outputPath, recompressed);
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── MacBinary: canonicalize the wrapper without dropping Mac-specific payloads ──
-    if (format == F.MacBinary) {
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-        using var inFs = File.OpenRead(inputPath);
-        FileFormat.MacBinary.MacBinaryOptimizer.Optimize(inFs, outFs);
-      });
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── Compound tar: re-encode outer compression with best level ────
-    var comp = FormatDetector.GetTarCompression(format);
-    if (comp.HasValue) {
-      // Decompress to raw tar, recompress with best settings
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-        using var inFs = File.OpenRead(inputPath);
-        using var rawTar = new MemoryStream();
-        DecompressStreamPair(inFs, rawTar, comp.Value);
-        rawTar.Position = 0;
-        CompressStreamPairOptimal(rawTar, outFs, comp.Value);
-      });
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── Other stream formats: decompress + recompress with best ──────
-    if (FormatDetector.IsStreamFormat(format)) {
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-        using var inFs = File.OpenRead(inputPath);
-        using var raw = new MemoryStream();
-        DecompressStreamPair(inFs, raw, format);
-        raw.Position = 0;
-        CompressStreamPairOptimal(raw, outFs, format);
-      });
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── Unsupported: fall back to copy ───────────────────────────────
-    // Use temp+rename so a crash mid-copy doesn't leave a truncated target.
     AtomicFileWriter.WriteAtomic(outputPath, outFs => {
       using var inFs = File.OpenRead(inputPath);
-      inFs.CopyTo(outFs);
+      compression.OptimizeCompression(inFs, outFs, password);
     });
-    return (originalSize, originalSize, 0);
+    return (originalSize, new FileInfo(outputPath).Length, entries);
   }
 
-  private static int OptimizeZip(string inputPath, Stream outFs, string? password) {
-    using var inFs = File.OpenRead(inputPath);
-    var r = new FileFormat.Zip.ZipReader(inFs, leaveOpen: true, password: password);
-    var w = new FileFormat.Zip.ZipWriter(outFs, leaveOpen: true,
-      compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Maximum,
-      password: password);
+  /// <summary>
+  /// Legacy compatibility entry point. New callers should select a concrete
+  /// capability and call <see cref="Compress"/>, <see cref="Canonicalize"/>,
+  /// or <see cref="Repack"/> instead of treating unrelated rewrites as one verb.
+  /// </summary>
+  public static (long OriginalSize, long OptimizedSize, int EntriesOptimized) Optimize(
+      string inputPath, string outputPath, string? password) {
+    FormatRegistration.EnsureInitialized();
+    var format = FormatDetector.Detect(inputPath);
+    var descriptor = FormatRegistry.GetById(format.ToString());
 
-    var optimized = 0;
-    foreach (var entry in r.Entries) {
-      if (entry.IsDirectory) {
-        w.AddDirectory(entry.FileName, entry.LastModified);
-        continue;
-      }
+    return OptimizationCapabilities.ResolveLegacyOptimizeEffect(descriptor) switch {
+      LegacyOptimizeEffect.Compress => Compress(inputPath, outputPath, password),
+      LegacyOptimizeEffect.Canonicalize => Canonicalize(inputPath, outputPath),
+      LegacyOptimizeEffect.Repack => Repack(inputPath, outputPath, password),
+      LegacyOptimizeEffect.None => throw new NotSupportedException(
+        $"{format} exposes no legacy Optimize-compatible rewrite. Use the explicit maintenance capabilities."),
+      LegacyOptimizeEffect.Ambiguous => throw new NotSupportedException(
+        $"{format} exposes multiple rewrite effects; legacy Optimize is ambiguous. "
+        + "Call Compress, Canonicalize, or Repack explicitly."),
+      _ => throw new InvalidOperationException("Unknown legacy Optimize resolution."),
+    };
+  }
 
-      // For Deflate entries: decompress and re-encode with Zopfli (Maximum)
-      // For other methods: decompress and re-encode with Deflate Maximum
-      var data = r.ExtractEntry(entry);
-      w.AddEntry(entry.FileName, data, FileFormat.Zip.ZipCompressionMethod.Deflate, entry.LastModified);
-      ++optimized;
-    }
+  /// <summary>Writes the canonical representation exposed by the format descriptor.</summary>
+  public static (long OriginalSize, long CanonicalSize, int EntriesCanonicalized) Canonicalize(
+      string inputPath, string outputPath) {
+    FormatRegistration.EnsureInitialized();
+    var format = FormatDetector.Detect(inputPath);
+    var descriptor = FormatRegistry.GetById(format.ToString());
+    if (descriptor is not IArchiveCanonicalizable canonicalizable)
+      throw new NotSupportedException($"{format} does not expose {nameof(IArchiveCanonicalizable)}.");
 
-    w.Finish();
-    return optimized;
+    var originalSize = new FileInfo(inputPath).Length;
+    AtomicFileWriter.WriteAtomic(outputPath, outFs => {
+      using var inFs = File.OpenRead(inputPath);
+      canonicalizable.Canonicalize(inFs, outFs);
+    });
+    return (originalSize, new FileInfo(outputPath).Length, 1);
+  }
+
+  /// <summary>Rebuilds an archive without implying compression optimization.</summary>
+  public static (long OriginalSize, long RepackedSize, int EntriesRepacked) Repack(
+      string inputPath, string outputPath)
+    => Repack(inputPath, outputPath, password: null);
+
+  /// <summary>
+  /// Password-aware repack. The supplied password is used for both source access
+  /// and the rebuilt target unless the descriptor overrides that behavior.
+  /// </summary>
+  public static (long OriginalSize, long RepackedSize, int EntriesRepacked) Repack(
+      string inputPath, string outputPath, string? password) {
+    FormatRegistration.EnsureInitialized();
+    var format = FormatDetector.Detect(inputPath);
+    var descriptor = FormatRegistry.GetById(format.ToString());
+    if (descriptor is not IArchiveRepackable repackable
+        || descriptor is not IArchiveFormatOperations ops)
+      throw new NotSupportedException($"{format} does not expose {nameof(IArchiveRepackable)}.");
+
+    var originalSize = new FileInfo(inputPath).Length;
+    var entries = 0;
+    AtomicFileWriter.WriteAtomic(outputPath, outFs => {
+      using var inFs = File.OpenRead(inputPath);
+      entries = ops.List(inFs, password).Count(static e => !e.IsDirectory);
+      inFs.Position = 0;
+      repackable.Repack(inFs, outFs, password);
+    });
+    return (originalSize, new FileInfo(outputPath).Length, entries);
   }
 
   // ── Stream compression dispatch (registry-only) ─────────────────

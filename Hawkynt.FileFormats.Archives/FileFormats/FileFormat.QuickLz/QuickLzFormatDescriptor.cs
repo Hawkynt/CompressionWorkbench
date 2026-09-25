@@ -8,7 +8,7 @@ namespace FileFormat.QuickLz;
 /// <summary>
 /// Describes quick lz format.
 /// </summary>
-public sealed class QuickLzFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class QuickLzFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

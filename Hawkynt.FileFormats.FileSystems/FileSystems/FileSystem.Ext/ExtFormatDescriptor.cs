@@ -64,7 +64,7 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Description: "ext filesystem revision. ext3 adds journaling; ext4 adds extents + large file support."),
     new FormatOptionDescriptor(
       Key: "BlockSize", DisplayName: "Block Size (bytes)", Kind: FormatOptionKind.Integer, Default: "4096",
-      AllowedValues: ["1024", "2048", "4096"]),
+      AllowedValues: ["1024", "2048", "4096"], IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "Journal", DisplayName: "Enable Journal", Kind: FormatOptionKind.Boolean, Default: "true",
       DependsOn: "Version=ext3|ext4",
@@ -73,7 +73,7 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Key: "VolumeLabel", DisplayName: "Volume Label", Kind: FormatOptionKind.String, Default: ""),
     new FormatOptionDescriptor(
       Key: "InodeSize", DisplayName: "Inode Size (bytes)", Kind: FormatOptionKind.Integer, Default: "256",
-      AllowedValues: ["128", "256"]),
+      AllowedValues: ["128", "256"], IsAllocationGeometry: true),
   ];
 
   /// <summary>

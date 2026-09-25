@@ -14,7 +14,7 @@ namespace FileSystem.ExFat;
 ///   <item><description><c>https://en.wikipedia.org/wiki/ExFAT</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemDirectoryOrderer {
 
   // The optimization adapters are keyed on this descriptor's runtime type, so the
   // registration has to have run before any instance can be looked up. Doing it from
@@ -69,7 +69,7 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       Kind: FormatOptionKind.Enum,
       Default: "Auto (fit to files)",
       AllowedValues: ["Auto (fit to files)", "32 MB", "128 MB", "256 MB", "512 MB", "1 GB", "2 GB", "4 GB", "16 GB", "32 GB", "128 GB"],
-      Description: "Total image capacity. Auto sizes the image to exactly hold the files (recommended)."),
+      Description: "Total image capacity. Auto sizes the image to exactly hold the files (recommended).", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "VolumeLabel",
       DisplayName: "Volume label",
@@ -83,7 +83,7 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       Default: "Auto",
       AllowedValues: ["Auto", "4 KB", "8 KB", "16 KB", "32 KB", "64 KB", "128 KB"],
       Description: "Allocation unit size. Auto picks the size that minimises slack + FAT overhead " +
-        "for the files being stored. Larger clusters reduce FAT overhead but waste more space per file."),
+        "for the files being stored. Larger clusters reduce FAT overhead but waste more space per file.", IsAllocationGeometry: true),
   ];
 
   /// <summary>
@@ -115,6 +115,9 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+
+  /// <inheritdoc />
+  public void SortDirectoryEntries(Stream image) => ExFatDirectoryOrderer.Sort(image);
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 

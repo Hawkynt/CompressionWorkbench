@@ -21,7 +21,10 @@ public static class RebuildVerb {
       IReadOnlyDictionary<string, string>? formatSpecific = null,
       IReadOnlySet<string>? syntheticNames = null,
       Action<DefragProgressEvent>? onProgress = null,
-      CancellationToken cancellationToken = default) {
+      CancellationToken cancellationToken = default,
+      FormatCreateOptions? createOptions = null,
+      IReadOnlySet<string>? semanticExcludedNames = null,
+      string? password = null) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(ops);
@@ -32,13 +35,41 @@ public static class RebuildVerb {
       throw new ArgumentException("Rebuild output must be writable and seekable.", nameof(output));
 
     cancellationToken.ThrowIfCancellationRequested();
+
+    IReadOnlySet<string>? effectiveSyntheticNames = syntheticNames;
+    if (ops is ISyntheticEntryNames declaredSynthetic) {
+      if (effectiveSyntheticNames is null) {
+        effectiveSyntheticNames = declaredSynthetic.SyntheticEntryNames;
+      } else {
+        var merged = new HashSet<string>(effectiveSyntheticNames, StringComparer.OrdinalIgnoreCase);
+        merged.UnionWith(declaredSynthetic.SyntheticEntryNames);
+        effectiveSyntheticNames = merged;
+      }
+    }
+
+    IReadOnlySet<string>? manifestExcludedNames = effectiveSyntheticNames;
+    if (semanticExcludedNames is { Count: > 0 }) {
+      var merged = manifestExcludedNames is null
+        ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        : new HashSet<string>(manifestExcludedNames, StringComparer.OrdinalIgnoreCase);
+      merged.UnionWith(semanticExcludedNames);
+      manifestExcludedNames = merged;
+    }
+
     input.Position = 0;
-    var sourceEntries = ops.List(input, null);
+    var sourceEntries = ops.List(input, password);
+    input.Position = 0;
+    var sourceManifest = ArchiveSemanticManifest.Capture(
+      input, ops, password, cancellationToken, manifestExcludedNames);
     var sourceNames = LiveNameList(sourceEntries);
+    var sourceByName = sourceEntries
+      .Where(e => effectiveSyntheticNames is null || !effectiveSyntheticNames.Contains(e.Name))
+      .GroupBy(static e => SemanticKey(e.Name), StringComparer.Ordinal)
+      .ToDictionary(static g => g.Key, static g => g.First(), StringComparer.Ordinal);
     var sourceFileCount = sourceNames.Count;
     var sourceLength = Math.Max(1L, input.Length);
     var liveEntries = sourceEntries
-      .Where(e => !e.IsDirectory && (syntheticNames == null || !syntheticNames.Contains(e.Name)))
+      .Where(e => !e.IsDirectory && (effectiveSyntheticNames == null || !effectiveSyntheticNames.Contains(e.Name)))
       .ToArray();
     var totalLogical = Math.Max(1L, liveEntries.Sum(e => Math.Max(0L, e.OriginalSize)));
     var sourceLayout = BuildSourceLayout(input, ops, sourceEntries);
@@ -62,7 +93,7 @@ public static class RebuildVerb {
           Directory.CreateDirectory(target);
           continue;
         }
-        if (syntheticNames != null && syntheticNames.Contains(entry.Name))
+        if (effectiveSyntheticNames != null && effectiveSyntheticNames.Contains(entry.Name))
           continue;
 
         ++liveIndex;
@@ -77,7 +108,7 @@ public static class RebuildVerb {
           $"Reading {liveIndex:N0}/{liveEntries.Length:N0}: {entry.Name}"));
 
         input.Position = 0;
-        using var src = ops.OpenEntry(input, entry.Name, null);
+        using var src = ops.OpenEntry(input, entry.Name, password);
         using var dst = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024,
           FileOptions.SequentialScan);
         var buffer = new byte[64 * 1024];
@@ -110,11 +141,22 @@ public static class RebuildVerb {
       var inputs = new List<ArchiveInputInfo>();
       foreach (var dir in Directory.GetDirectories(tmpDir, "*", SearchOption.AllDirectories)) {
         var rel = Path.GetRelativePath(tmpDir, dir).Replace('\\', '/');
-        inputs.Add(new ArchiveInputInfo("", rel + "/", true));
+        if (!sourceByName.TryGetValue(SemanticKey(rel), out var source) || !source.IsDirectory)
+          continue;
+        inputs.Add(new ArchiveInputInfo(
+          "", rel + "/", true,
+          LastModified: source.LastModified,
+          CreationTime: source.CreationTime,
+          Attributes: source.Attributes));
       }
       foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
         var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
-        inputs.Add(new ArchiveInputInfo(file, rel, false));
+        sourceByName.TryGetValue(SemanticKey(rel), out var source);
+        inputs.Add(new ArchiveInputInfo(
+          file, rel, false,
+          LastModified: source?.LastModified,
+          CreationTime: source?.CreationTime,
+          Attributes: source?.Attributes));
       }
 
       var visualSize = Math.Max(sourceLength, totalLogical);
@@ -123,11 +165,11 @@ public static class RebuildVerb {
         "writing", 0.45, -1, 0, visualSize, targetLayout,
         "Building staged target — original container is still unchanged"));
 
-      // FormatSpecific is a mutable, case-insensitive map; the caller hands in a read-only view,
-      // so copy it and keep the comparer the default initializer uses.
-      var options = new FormatCreateOptions {
-        FormatSpecific = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-      };
+      // Start from the caller's complete create options when supplied, then let
+      // the legacy formatSpecific bag override individual schema keys. This keeps
+      // MethodName/Level/Optimize/ForceCompress intact for explicit compression
+      // capabilities without changing existing rebuild callers.
+      var options = createOptions?.Copy() ?? new FormatCreateOptions();
       if (formatSpecific != null)
         foreach (var pair in formatSpecific)
           options.FormatSpecific[pair.Key] = pair.Value;
@@ -151,7 +193,7 @@ public static class RebuildVerb {
       output.Position = 0;
       List<string> rebuiltNames;
       try {
-        rebuiltNames = LiveNameList(ops.List(output, null));
+        rebuiltNames = LiveNameList(ops.List(output, password));
       } catch (Exception ex) {
         throw new InvalidOperationException(
           $"Rebuilt image could not be listed back ({ex.GetType().Name}: {ex.Message}); refusing a lossy rebuild.", ex);
@@ -159,6 +201,11 @@ public static class RebuildVerb {
       if (!rebuiltNames.SequenceEqual(sourceNames, StringComparer.Ordinal))
         throw new InvalidOperationException(
           $"Rebuild changed the entry set ({sourceFileCount} → {rebuiltNames.Count}); refusing a non-identity-preserving rebuild.");
+
+      output.Position = 0;
+      var rebuiltManifest = ArchiveSemanticManifest.Capture(
+        output, ops, password, cancellationToken, manifestExcludedNames);
+      sourceManifest.RequireEquivalentTo(rebuiltManifest);
 
       cancellationToken.ThrowIfCancellationRequested();
       var finalLength = Math.Max(1L, output.Length);
@@ -185,11 +232,13 @@ public static class RebuildVerb {
       IArchiveCreatable creator,
       IReadOnlyDictionary<string, string>? formatSpecific = null,
       Action<DefragProgressEvent>? onProgress = null,
-      CancellationToken cancellationToken = default) {
+      CancellationToken cancellationToken = default,
+      IReadOnlySet<string>? semanticExcludedNames = null) {
     ArgumentNullException.ThrowIfNull(archive);
     using var rebuilt = CreateScratchStream();
     RebuildToStream(archive, rebuilt, ops, creator, formatSpecific,
-      onProgress: onProgress, cancellationToken: cancellationToken);
+      onProgress: onProgress, cancellationToken: cancellationToken,
+      semanticExcludedNames: semanticExcludedNames);
 
     // Point of no return. Do not inspect cancellation again after announcing
     // commit; callers disable Cancel for this phase.
@@ -392,6 +441,9 @@ public static class RebuildVerb {
     }
     return result;
   }
+
+  private static string SemanticKey(string name)
+    => name.Replace('\\', '/').TrimEnd('/');
 
   private static List<string> LiveNameList(IEnumerable<ArchiveEntryInfo> entries)
     => entries.Where(e => !e.IsDirectory).Select(e => e.Name)

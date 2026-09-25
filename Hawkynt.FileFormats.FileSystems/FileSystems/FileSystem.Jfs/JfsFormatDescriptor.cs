@@ -44,6 +44,7 @@ namespace FileSystem.Jfs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/JFS_(file_system)</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(JfsBlockMover))]
 public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
                                           IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable,
                                           IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
@@ -274,7 +275,7 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+        readEntries: stream => ReadEntries(stream),
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;
