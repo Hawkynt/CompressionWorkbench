@@ -23,8 +23,6 @@ public enum MaintenanceVerb {
   Repack,
   /// <summary>Sort directory records by name without moving file allocation.</summary>
   SortDirectory,
-  /// <summary>Legacy/file-internal optimization surface.</summary>
-  Optimize,
   /// <summary>Keep the parameter set; minimise stored footprint.</summary>
   Shrink,
   /// <summary>Re-order entries/extents so files are contiguous; size preserved.</summary>
@@ -191,7 +189,6 @@ public partial class DefragmentWindow : Window {
       MaintenanceVerb.Canonicalize => "Canonicalize",
       MaintenanceVerb.Repack => "Repack",
       MaintenanceVerb.SortDirectory => "Sort directory entries",
-      MaintenanceVerb.Optimize => "Optimize",
       MaintenanceVerb.Shrink => "Shrink",
       MaintenanceVerb.Defragment => "Defragment",
       MaintenanceVerb.Purge => "Purge",
@@ -223,7 +220,7 @@ public partial class DefragmentWindow : Window {
       MaintenanceVerb.WipeEmpty => WipeEmptyBtn,
       MaintenanceVerb.Compact => CompactBtn,
       MaintenanceVerb.Scramble => ScrambleBtn,
-      _ => RunBtn, // Optimize + Defragment both live on the morphing Run button.
+      _ => RunBtn, // Defragment and the primary maintenance action use the morphing Run button.
     };
     if (target is { IsEnabled: true }) {
       target.IsDefault = true;
@@ -287,30 +284,33 @@ public partial class DefragmentWindow : Window {
       this._archiveOps = ops;
       this._chunkMover = ops as IFileInternalChunkMover;
       if (isFileInternalOptimizable) {
-        SupportLbl.Text = "File-internal layout optimization (e.g. MP4 fast-start).";
+        SupportLbl.Text = "File-internal relayout (e.g. MP4 fast-start).";
         SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
         RunBtn.IsEnabled = true;
       } else {
-        SupportLbl.Text = "File-internal layout viewable but optimization not supported (read-only).";
+        SupportLbl.Text = "File-internal layout viewable but relayout is not supported (read-only).";
         SupportLbl.Foreground = System.Windows.Media.Brushes.DarkOrange;
         RunBtn.IsEnabled = false;
       }
-      RunBtn.Content = "Optimize";
+      RunBtn.Content = "Relayout";
     } else if (isArchiveLayout || isArchiveCreatable) {
-      // Archive optimization path (new)
-      this._isArchiveMode = true;
+      // Archive repack is an explicit capability. Merely being creatable is not
+      // enough: creation may discard representation-level or extended semantics.
+      this._isArchiveMode = ops is IArchiveRepackable;
       this._isSevenZipFormat = format.ToString() == "SevenZip";
       this._archiveOps = ops;
-      if (isArchiveCreatable) {
-        SupportLbl.Text = "Archive optimization (extract + repack with optimal settings).";
+      if (ops is IArchiveRepackable) {
+        SupportLbl.Text = "Archive repack (verified semantic-preservation rebuild).";
         SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
         RunBtn.IsEnabled = true;
       } else {
-        SupportLbl.Text = "Archive layout viewable but format does not support creation (read-only).";
+        SupportLbl.Text = isArchiveLayout
+          ? "Archive layout viewable; repack capability is not declared."
+          : "Archive creation is supported, but repack semantics are not declared.";
         SupportLbl.Foreground = System.Windows.Media.Brushes.DarkOrange;
         RunBtn.IsEnabled = false;
       }
-      RunBtn.Content = "Optimize";
+      RunBtn.Content = "Repack";
     } else {
       SupportLbl.Text = "Not supported by this format.";
       SupportLbl.Foreground = System.Windows.Media.Brushes.OrangeRed;
@@ -368,7 +368,7 @@ public partial class DefragmentWindow : Window {
     SizeLbl.Text = $"{FormatSize(fi.Length)} ({fi.Length:N0} bytes)";
 
     // Pre-populate the block map with the current state so the user can see
-    // what they're about to defragment/optimize.
+    // what they're about to defragment, repack, or relayout.
     PreviewBlockMap(path, ops);
 
     // Re-apply the requested-verb focus now that button-enabled state is known.
@@ -1253,7 +1253,8 @@ public partial class DefragmentWindow : Window {
     }
 
     if (this._isArchiveMode) {
-      OnRunArchiveOptimize();
+      RunMaintenanceTransform("Repack", (capability, input, output) =>
+        ((IArchiveRepackable)capability).Repack(input, output));
       return;
     }
 
