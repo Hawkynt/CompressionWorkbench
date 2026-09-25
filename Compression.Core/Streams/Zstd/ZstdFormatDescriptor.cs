@@ -115,13 +115,6 @@ public sealed class ZstdFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
     input.CopyTo(cs);
   }
 
-  /// <inheritdoc />
-  public void OptimizeCompression(Stream input, Stream output) {
-    using var raw = new MemoryStream();
-    Decompress(input, raw);
-    raw.Position = 0;
-    CompressOptimal(raw, output);
-  }
   /// <summary>
   /// Performs the wrap decompress operation.
   /// </summary>
