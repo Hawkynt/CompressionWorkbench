@@ -83,8 +83,28 @@ public static class OptimizationCapabilities {
   public static bool HasFilesystemBlockMover(IFormatDescriptor? descriptor)
     => GetFilesystemBlockMoverType(descriptor) is not null;
 
+  /// <summary>
+  /// True when the descriptor supplies its own defragment implementation rather
+  /// than inheriting the generic extract/rebuild default from
+  /// <see cref="IArchiveDefragmentable"/>.
+  /// </summary>
+  public static bool HasConcreteExtentDefragmenter(IFormatDescriptor? descriptor) {
+    if (descriptor is not IArchiveDefragmentable)
+      return false;
+
+    var type = descriptor.GetType();
+    var simple = type.GetMethod(nameof(IArchiveDefragmentable.Defragment), [typeof(Stream)]);
+    var configured = type.GetMethod(
+      nameof(IArchiveDefragmentable.Defragment),
+      [typeof(Stream), typeof(DefragOptions)]);
+
+    return simple?.DeclaringType == type || configured?.DeclaringType == type;
+  }
+
   public static bool CanDefragmentExtents(IFormatDescriptor? descriptor)
-    => descriptor is IArchiveDefragmentable && HasFilesystemBlockMover(descriptor);
+    => descriptor is IArchiveDefragmentable
+       && HasFilesystemBlockMover(descriptor)
+       && HasConcreteExtentDefragmenter(descriptor);
 
   /// <summary>
   /// Gets only the writer options whose effect is allocation geometry.
