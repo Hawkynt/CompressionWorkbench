@@ -704,12 +704,39 @@ canonicalizeCmd.SetAction((ParseResult ctx) => {
   }
 
   try {
-    using var src = File.OpenRead(input.FullName);
-    using var dst = new FileStream(output.FullName, FileMode.Create, FileAccess.ReadWrite, FileShare.None);
-    canonicalizable.Canonicalize(src, dst);
+    var archiveOps = descriptor as IArchiveFormatOperations;
+    var streamOps = descriptor as IStreamFormatOperations;
+    SemanticPreservationManifest? beforeManifest = null;
+    byte[]? beforeDecodedHash = null;
+
+    using (var src = File.OpenRead(input.FullName)) {
+      if (archiveOps != null)
+        beforeManifest = SemanticPreservationManifest.Capture(src, archiveOps);
+      else if (streamOps != null)
+        beforeDecodedHash = HashDecodedStream(src, streamOps);
+      else
+        throw new NotSupportedException($"{format} exposes canonicalization but no semantic verifier.");
+
+      src.Position = 0;
+      using var dst = new FileStream(output.FullName, FileMode.Create, FileAccess.ReadWrite, FileShare.None);
+      canonicalizable.Canonicalize(src, dst);
+      dst.Flush(flushToDisk: true);
+    }
+
+    using (var rewritten = File.OpenRead(output.FullName)) {
+      if (beforeManifest != null)
+        beforeManifest.VerifyEquivalent(SemanticPreservationManifest.Capture(rewritten, archiveOps!));
+      else if (beforeDecodedHash != null && streamOps != null) {
+        var afterDecodedHash = HashDecodedStream(rewritten, streamOps);
+        if (!beforeDecodedHash.AsSpan().SequenceEqual(afterDecodedHash))
+          throw new InvalidOperationException("Canonicalization changed the decoded payload.");
+      }
+    }
+
     Console.WriteLine($"Canonicalized {input.Name} -> {output.FullName}");
     return 0;
   } catch (Exception ex) {
+    AtomicFileWriter.TryDelete(output.FullName);
     Console.Error.WriteLine($"Canonicalize failed: {ex.Message}");
     return 1;
   }
