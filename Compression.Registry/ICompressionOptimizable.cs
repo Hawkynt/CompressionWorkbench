@@ -14,6 +14,14 @@ public interface ICompressionOptimizable {
   /// Re-encodes <paramref name="input"/> into <paramref name="output"/> using
   /// the format's best supported compression choices.
   /// </summary>
+  /// <summary>
+  /// Password-aware compression rewrite. The default forwards to the
+  /// password-agnostic overload so existing stream/filesystem implementations
+  /// stay source-compatible; encrypted containers can override this overload.
+  /// </summary>
+  void OptimizeCompression(Stream input, Stream output, string? password)
+    => OptimizeCompression(input, output);
+
   void OptimizeCompression(Stream input, Stream output) {
     if (this is IStreamFormatOperations streamOperations) {
       using var raw = new MemoryStream();
