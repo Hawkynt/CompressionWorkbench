@@ -271,9 +271,9 @@ public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Performs the optimize operation.
   /// </summary>
-  public void Optimize(Stream file) => this._fastStart.Optimize(file);
+  public void CanonicalizeInPlace(Stream file) => _fastStart.CanonicalizeInPlace(file);
   /// <summary>
   /// Performs the optimize operation.
   /// </summary>
-  public void Optimize(Stream file, MetadataPlacementProfile? profile) => this._fastStart.Optimize(file, profile);
+  public void CanonicalizeInPlace(Stream file, MetadataPlacementProfile? profile) => _fastStart.CanonicalizeInPlace(file, profile);
 }
