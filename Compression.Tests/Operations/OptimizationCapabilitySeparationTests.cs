@@ -274,6 +274,24 @@ public sealed class OptimizationCapabilitySeparationTests {
   }
 
   [Test, Category("Architecture")]
+  public void ExplicitBlockMovers_AreWiredToConcreteDefragmenters() {
+    FormatRegistration.EnsureInitialized();
+
+    var offenders = FormatRegistry.All
+      .Where(static descriptor => descriptor is IArchiveDefragmentable)
+      .Where(OptimizationCapabilities.HasFilesystemBlockMover)
+      .Where(static descriptor => !OptimizationCapabilities.HasConcreteExtentDefragmenter(descriptor))
+      .Select(static descriptor => descriptor.Id)
+      .OrderBy(static id => id, StringComparer.Ordinal)
+      .ToArray();
+
+    Assert.That(offenders, Is.Empty,
+      "A declared filesystem block mover must be wired to a concrete descriptor defragmenter; "
+      + "the generic rebuild default is not physical extent defragmentation: "
+      + string.Join(", ", offenders));
+  }
+
+  [Test, Category("Architecture")]
   public void FilesystemCoverage_UsesExplicitComposedBlockMover() {
     FormatRegistration.EnsureInitialized();
 
