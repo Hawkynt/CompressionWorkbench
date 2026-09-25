@@ -34,29 +34,6 @@ public partial class DefragmentWindow {
     RunBtn.Click += OnRunWithBlockProgress;
     InsertMaintenanceCancelButton();
 
-    // The original loader sees IArchiveDefragmentable before archive-repack
-    // support. When the caller explicitly asked for Optimize, correct that
-    // ambiguity here so ZIP/7z can expose their repack UI instead of looking like
-    // filesystem-only defraggers.
-    if (this._requestedVerb == MaintenanceVerb.Optimize && this._formatId is { Length: > 0 } id) {
-      var descriptor = FormatRegistry.GetById(id);
-      var ops = FormatRegistry.GetArchiveOps(id);
-      if (descriptor?.Category is FormatCategory.Archive or FormatCategory.CompoundTar
-          && ops is IArchiveCreatable) {
-        this._isArchiveMode = true;
-        this._archiveOps = ops;
-        this._isSevenZipFormat = string.Equals(id, "SevenZip", StringComparison.Ordinal);
-        FsModesGroup.Visibility = Visibility.Collapsed;
-        ArchiveRepackGroup.Visibility = Visibility.Visible;
-        SmartSolidRepackCheck.Visibility = this._isSevenZipFormat ? Visibility.Visible : Visibility.Collapsed;
-        RunBtn.Content = "Optimize";
-        RunBtn.IsEnabled = true;
-        SupportLbl.Text = "Archive re-layout/repack with live staged-target visualization.";
-        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
-        if (LayoutStatusLbl != null)
-          LayoutStatusLbl.Text = "Source + staged-target address spaces share the chart for progress; offsets are projected, not physical equivalence.";
-      }
-    }
   }
 
   protected override void OnClosing(CancelEventArgs e) {
@@ -157,15 +134,9 @@ public partial class DefragmentWindow {
     var ops = this._formatId is { Length: > 0 } id
       ? FormatRegistry.GetArchiveOps(id)
       : this._archiveOps;
-    var descriptor = this._formatId is { Length: > 0 } formatId
-      ? FormatRegistry.GetById(formatId)
-      : null;
-    var explicitlyOptimizingArchive = this._requestedVerb == MaintenanceVerb.Optimize
-      && descriptor?.Category is FormatCategory.Archive or FormatCategory.CompoundTar
-      && ops is IArchiveCreatable;
 
-    if (this._isArchiveMode || explicitlyOptimizingArchive) {
-      RunArchiveOptimizeWithBlockProgress(ops);
+    if (this._isArchiveMode) {
+      RunArchiveRepackWithBlockProgress(ops);
       return;
     }
 
@@ -270,25 +241,22 @@ public partial class DefragmentWindow {
       && type.GetMethod(nameof(IArchiveDefragmentable.Defragment), [typeof(Stream), typeof(DefragOptions)]) == null;
   }
 
-  private void RunArchiveOptimizeWithBlockProgress(IArchiveFormatOperations? ops) {
-    if (this._imagePath == null || ops == null) return;
+  private void RunArchiveRepackWithBlockProgress(IArchiveFormatOperations? ops) {
+    if (this._imagePath == null || ops is not IArchiveRepackable repackable) return;
 
     var path = this._imagePath;
-    var formatId = this._formatId;
-    if (formatId is "DoubleSpace" or "DriveSpace" or "DriveSpace3") {
-      // CVF has a dedicated per-cluster optimizer. Keep that implementation;
-      // its writer already chooses compress/store per cluster.
-      OnRunCvfOptimize(path, formatId);
+    if (this._isSevenZipFormat && SmartSolidRepackCheck?.IsChecked == true) {
+      RunSmartSevenZipWithBlockProgress(ops);
       return;
     }
 
     var originalSize = new FileInfo(path).Length;
-    var tempOut = path + ".opt.tmp";
+    var tempOut = path + ".repack.tmp";
     AtomicFileWriter.TryDelete(tempOut);
-    var cancellationToken = BeginMaintenanceOperation("Archive optimize / repack", staged: true);
+    var cancellationToken = BeginMaintenanceOperation("Archive repack", staged: true);
     SetStagedArchiveMap(path, ops, originalSize);
 
-    Append($"=== {DateTime.Now:HH:mm:ss}  Optimizing {Path.GetFileName(path)} ===");
+    Append($"=== {DateTime.Now:HH:mm:ss}  Repacking {Path.GetFileName(path)} ===");
     Append("Staged rebuild: green head = projected source consumption; orange head = staged-target bytes written.");
     Progress.IsIndeterminate = false;
     Progress.Value = 0;
@@ -301,7 +269,13 @@ public partial class DefragmentWindow {
       var entriesOptimized = 0;
 
       try {
-        var worker = Task.Run(() => ArchiveOperations.Optimize(path, tempOut, password: null));
+        var worker = Task.Run(() => {
+          using var input = File.OpenRead(path);
+          using var output = new FileStream(tempOut, FileMode.Create, FileAccess.ReadWrite, FileShare.Read);
+          repackable.Repack(input, output);
+          output.Flush(flushToDisk: true);
+          return output.Length;
+        });
         while (!worker.Wait(100)) {
           var stagedBytes = FindStagedOutputLength(tempOut);
           var fraction = originalSize > 0
@@ -314,14 +288,14 @@ public partial class DefragmentWindow {
             BlockMap.WriteHead = stagedBytes > 0 ? Math.Clamp(stagedBytes, 0, displaySize - 1) : -1;
             if (LayoutStatusLbl != null)
               LayoutStatusLbl.Text = cancellationToken.IsCancellationRequested
-                ? "Cancellation pending — current codec unit will finish, then the staged target is discarded."
-                : $"Rebuilding staged target — {FormatSize(stagedBytes)} written; original unchanged.";
+                ? "Cancellation pending — current rebuild unit will finish, then the staged target is discarded."
+                : $"Repacking staged target — {FormatSize(stagedBytes)} written; original unchanged.";
           });
         }
 
-        var result = worker.GetAwaiter().GetResult();
-        newSize = result.OptimizedSize;
-        entriesOptimized = result.EntriesOptimized;
+        newSize = worker.GetAwaiter().GetResult();
+        using (var listed = File.OpenRead(path))
+          entriesOptimized = ops.List(listed, null).Count(entry => !entry.IsDirectory);
         if (cancellationToken.IsCancellationRequested) {
           cancelled = true;
         } else {
@@ -354,7 +328,7 @@ public partial class DefragmentWindow {
         } else {
           var delta = newSize - originalSize;
           var pct = originalSize > 0 ? (double)delta / originalSize * 100 : 0;
-          Append($"OK ({sw.ElapsedMilliseconds} ms) — {entriesOptimized} entries re-encoded");
+          Append($"OK ({sw.ElapsedMilliseconds} ms) — {entriesOptimized} entries repacked");
           Append($"Archive size: {originalSize:N0} -> {newSize:N0} bytes (Δ {delta:+#,#;-#,#;0}, {pct:+0.0;-0.0;0.0}%)");
           NotifyMutated(path);
         }
