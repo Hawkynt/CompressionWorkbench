@@ -154,8 +154,8 @@ public sealed record class DefragOptions {
   public LayoutProfile Profile { get; init; } = LayoutProfile.Performance;
 
   /// <summary>
-  /// Optional metadata placement profile for file-internal optimizers.
-  /// When non-null, optimizers that support <see cref="IFileInternalChunkMover"/>
+  /// Optional metadata placement profile for file-internal canonicalizers.
+  /// When non-null, canonicalizers that support <see cref="IFileInternalChunkMover"/>
   /// use these rules to decide where metadata chunks land relative to the
   /// primary data payload. When null, each optimizer uses its format-specific
   /// default placement.
