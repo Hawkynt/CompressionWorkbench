@@ -106,8 +106,8 @@ public sealed class PngFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => PngLayoutMap.Enumerate(file);
 
   /// <inheritdoc />
-  public void Optimize(Stream file) => PngOptimizer.Optimize(file);
+  public void CanonicalizeInPlace(Stream file) => PngOptimizer.Optimize(file);
 
   /// <inheritdoc />
-  public void Optimize(Stream file, MetadataPlacementProfile? profile) => PngOptimizer.Optimize(file, profile);
+  public void CanonicalizeInPlace(Stream file, MetadataPlacementProfile? profile) => PngOptimizer.Optimize(file, profile);
 }
