@@ -223,7 +223,7 @@ public class Mp4FastStartTests {
     using var stream = new MemoryStream(file);
 
     var fastStart = new Mp4FastStart();
-    fastStart.Optimize(stream);
+    fastStart.CanonicalizeInPlace(stream);
 
     // Re-walk atoms — moov should now be before mdat.
     stream.Position = 0;
@@ -243,7 +243,7 @@ public class Mp4FastStartTests {
     using var stream = new MemoryStream(file);
 
     var fastStart = new Mp4FastStart();
-    fastStart.Optimize(stream);
+    fastStart.CanonicalizeInPlace(stream);
 
     // Read moov size from the optimized file.
     stream.Position = 0;
@@ -272,7 +272,7 @@ public class Mp4FastStartTests {
     using var stream = new MemoryStream(file);
 
     var fastStart = new Mp4FastStart();
-    fastStart.Optimize(stream);
+    fastStart.CanonicalizeInPlace(stream);
 
     // File length should be unchanged.
     Assert.That(stream.Length, Is.EqualTo(originalLength), "File length should not change");
@@ -301,7 +301,7 @@ public class Mp4FastStartTests {
     using var stream = new MemoryStream(file);
 
     var fastStart = new Mp4FastStart();
-    fastStart.Optimize(stream);
+    fastStart.CanonicalizeInPlace(stream);
 
     Assert.That(stream.ToArray(), Is.EqualTo(original), "File should not be modified when moov is already before mdat");
   }
@@ -321,7 +321,7 @@ public class Mp4FastStartTests {
 
     // Optimize.
     using var stream = new MemoryStream(file);
-    new Mp4FastStart().Optimize(stream);
+    new Mp4FastStart().CanonicalizeInPlace(stream);
 
     // Extract mdat payload from the optimized file.
     stream.Position = 0;
@@ -375,7 +375,7 @@ public class Mp4FastStartTests {
     var file = BuildMoovAtEndWithCo64(out var originalOffset);
     using var stream = new MemoryStream(file);
 
-    new Mp4FastStart().Optimize(stream);
+    new Mp4FastStart().CanonicalizeInPlace(stream);
 
     stream.Position = 0;
     var atoms = Mp4FastStart.WalkTopLevelAtoms(stream);
