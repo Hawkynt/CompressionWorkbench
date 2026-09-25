@@ -45,10 +45,10 @@ public enum MaintenanceVerb {
 /// User-initiated maintenance pass over a filesystem image or archive — the
 /// single surface behind the explorer's <em>Maintenance</em> context menu and
 /// the toolbar entry. Shows the detected format + capability, lets the user
-/// pick one of four layout strategies (mirroring the CLI's
-/// <c>cwb defragment --mode</c> options), and runs the descriptor's
-/// optimize / shrink / defragment / purge / wipe paths through the matching
-/// capability interface.
+/// pick one of four filesystem extent strategies (mirroring the CLI's
+/// <c>cwb defragment --mode</c> options), and runs compression, repack,
+/// canonicalization, directory sorting, defragmentation, shrink, purge and wipe
+/// only through their explicit capability interfaces.
 /// </summary>
 public partial class DefragmentWindow : Window {
 
@@ -255,7 +255,8 @@ public partial class DefragmentWindow : Window {
     var ops = FormatRegistry.GetArchiveOps(format.ToString());
     this._formatDescriptor = descriptor;
     this._archiveOps = ops;
-    this._defragmentable = descriptor as IArchiveDefragmentable;
+    var hasFilesystemExtents = descriptor is IFilesystemExtentMap;
+    this._defragmentable = hasFilesystemExtents ? descriptor as IArchiveDefragmentable : null;
 
     // Determine whether this is an archive with layout-map support.
     var isArchiveLayout = ops is IArchiveLayoutMap;
@@ -344,13 +345,18 @@ public partial class DefragmentWindow : Window {
     if (PurgeBtn != null)
       PurgeBtn.IsEnabled = ops is IArchiveModifiable;
 
-    // Enable Compact (defrag + optimize + shrink) whenever at least one of its
-    // constituent steps applies. The "Minimal geometry" checkbox unlocks the
-    // smallest-geometry rebuild for formats whose creation exposes size knobs.
+    // Compact composes only explicit maintenance capabilities. Legacy archive
+    // IArchiveDefragmentable implementations that merely rebuild are deliberately
+    // not treated as extent defragmentation here.
+    var canExtentDefrag = hasFilesystemExtents && descriptor is IArchiveDefragmentable;
+    var canCompact = canExtentDefrag
+      || descriptor is ICompressionOptimizable
+      || descriptor is IArchiveRepackable
+      || ops is IArchiveShrinkable;
     if (CompactBtn != null)
-      CompactBtn.IsEnabled = ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable;
+      CompactBtn.IsEnabled = canCompact;
     if (MinimalGeometryCheck != null)
-      MinimalGeometryCheck.IsEnabled = ops is IArchiveCreatable and IFormatOptionsSchema;
+      MinimalGeometryCheck.IsEnabled = descriptor is ILayoutOptimizable and IFormatOptionsSchema;
 
     // Scramble is only offered by descriptors that can scatter a volume in
     // place. There is no fallback to fall back to: a rebuild would pack the
