@@ -40,6 +40,20 @@ public class MaintenanceCapabilityArchitectureTests {
     Assert.Multiple(() => {
       Assert.That(FormatRegistry.GetById("Zip"), Is.InstanceOf<IArchiveRepackable>());
       Assert.That(FormatRegistry.GetById("SevenZip"), Is.InstanceOf<IArchiveRepackable>());
+      Assert.That(FormatRegistry.GetById("Tar"), Is.InstanceOf<IArchiveRepackable>());
+      Assert.That(FormatRegistry.GetById("TarGz"), Is.InstanceOf<IArchiveRepackable>());
+      Assert.That(FormatRegistry.GetById("TarGz"), Is.InstanceOf<ICompressionOptimizable>(),
+        "compound TAR compression must remain distinct from repacking");
+    });
+  }
+
+  [Test]
+  public void DirectoryOrderingCapability_IsExplicitForFilesystemFormats() {
+    Assert.Multiple(() => {
+      Assert.That(FormatRegistry.GetById("Fat"), Is.InstanceOf<IFilesystemDirectoryOrderer>());
+      Assert.That(FormatRegistry.GetById("ExFat"), Is.InstanceOf<IFilesystemDirectoryOrderer>());
+      Assert.That(FormatRegistry.GetById("Fatx"), Is.InstanceOf<IFilesystemDirectoryOrderer>());
+      Assert.That(FormatRegistry.GetById("Zip"), Is.Not.InstanceOf<IFilesystemDirectoryOrderer>());
     });
   }
 }
