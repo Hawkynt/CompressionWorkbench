@@ -12,7 +12,7 @@ public interface IFileInternalChunkMover : IArchiveCanonicalizable {
   /// chunk ordering). The stream must be readable, writable, and seekable.
   /// If the file is already canonical, this is a no-op.
   /// </summary>
-  void CanonicalizeInPlace(Stream file) => Optimize(file);
+  void CanonicalizeInPlace(Stream file);
 
   /// <summary>
   /// Canonicalizes the file in place using an optional metadata placement
@@ -21,14 +21,8 @@ public interface IFileInternalChunkMover : IArchiveCanonicalizable {
   void CanonicalizeInPlace(Stream file, MetadataPlacementProfile? profile)
     => CanonicalizeInPlace(file);
 
-  /// <summary>
-  /// Legacy spelling retained for source compatibility. Existing movers may
-  /// continue implementing this member while canonical callers dispatch through
-  /// <see cref="CanonicalizeInPlace(Stream)"/>.
-  /// </summary>
-  void Optimize(Stream file) =>
-    throw new NotSupportedException(
-      $"{GetType().Name} must implement {nameof(CanonicalizeInPlace)} or the legacy {nameof(Optimize)} method.");
+  /// <summary>Legacy spelling retained for source compatibility.</summary>
+  void Optimize(Stream file) => CanonicalizeInPlace(file);
 
   /// <summary>Legacy spelling retained for source compatibility.</summary>
   void Optimize(Stream file, MetadataPlacementProfile? profile)
