@@ -605,9 +605,6 @@ var compressOutputArg = new Argument<FileInfo>("output") { Description = "Recomp
 var compressCmd = new Command("compress", "Re-encode live payloads using the format's explicit compression optimizer") {
   compressInputArg, compressOutputArg, passwordOpt
 };
-// Compatibility aliases: the old CLI optimize command was documented as compression.
-compressCmd.Aliases.Add("optimize");
-compressCmd.Aliases.Add("opt");
 compressCmd.SetAction((ParseResult ctx) => {
   var input = ctx.GetValue(compressInputArg)!;
   var output = ctx.GetValue(compressOutputArg)!;
@@ -627,6 +624,55 @@ compressCmd.SetAction((ParseResult ctx) => {
     Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
     Console.WriteLine($"  Original:   {FormatSize(originalSize)}");
     Console.WriteLine($"  Compressed: {FormatSize(compressedSize)} ({saving:F1}% smaller, {count} entries)");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"FAILED: {ex.GetType().Name}: {ex.Message}");
+    return 1;
+  }
+});
+
+var optimizeInputArg = new Argument<FileInfo>("input") { Description = "Container or stream to rewrite through the legacy Optimize compatibility route" };
+var optimizeOutputArg = new Argument<FileInfo>("output") { Description = "Rewritten output in the same format" };
+var optimizeCmd = new Command("optimize", """
+  Legacy compatibility command for the former umbrella Optimize operation.
+
+  The command succeeds only when the detected format exposes exactly one of:
+    - Compress
+    - Canonicalize
+    - Repack
+
+  If more than one rewrite effect is available, the command fails rather than
+  guessing. Prefer the explicit command that describes the intended effect.
+  """) {
+  optimizeInputArg, optimizeOutputArg, passwordOpt
+};
+optimizeCmd.Aliases.Add("opt");
+optimizeCmd.SetAction((ParseResult ctx) => {
+  var input = ctx.GetValue(optimizeInputArg)!;
+  var output = ctx.GetValue(optimizeOutputArg)!;
+  var password = ctx.GetValue(passwordOpt);
+
+  if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
+
+  try {
+    var format = FormatDetector.Detect(input.FullName);
+    FormatRegistration.EnsureInitialized();
+    var descriptor = FormatRegistry.GetById(format.ToString());
+    if (!OptimizationCapabilities.CanLegacyOptimizeUnambiguously(descriptor)) {
+      Console.Error.WriteLine(
+        $"{format}: legacy Optimize is unavailable or ambiguous. "
+        + "Choose compress, canonicalize, or repack explicitly.");
+      return 1;
+    }
+
+    Console.Write($"Optimizing {input.Name} ({format}) through its single explicit rewrite capability...");
+    var sw = Stopwatch.StartNew();
+    var (originalSize, rewrittenSize, count) =
+      ArchiveOperations.Optimize(input.FullName, output.FullName, password);
+    sw.Stop();
+
+    Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+    Console.WriteLine($"  {FormatSize(originalSize)} -> {FormatSize(rewrittenSize)} ({count} entr{(count == 1 ? "y" : "ies")})");
     return 0;
   } catch (Exception ex) {
     Console.Error.WriteLine($"FAILED: {ex.GetType().Name}: {ex.Message}");
@@ -2759,7 +2805,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, compressCmd, canonicalizeCmd, repackCmd, sortDirectoryCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, scrambleCmd, placeCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
+  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, compressCmd, optimizeCmd, canonicalizeCmd, repackCmd, sortDirectoryCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, scrambleCmd, placeCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
 };
 
 return root.Parse(args).Invoke();
