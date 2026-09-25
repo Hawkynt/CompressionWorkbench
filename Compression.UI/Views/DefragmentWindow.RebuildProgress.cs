@@ -29,7 +29,7 @@ public partial class DefragmentWindow {
     this._rebuildProgressHooked = true;
 
     // Replace only the main Run dispatch. Shrink/Purge/Wipe/Compact keep their
-    // existing handlers; rebuild-backed Defrag/Optimize now share this richer UI.
+    // existing handlers; rebuild-backed maintenance actions now share this richer UI.
     RunBtn.Click -= OnRun;
     RunBtn.Click += OnRunWithBlockProgress;
     InsertMaintenanceCancelButton();
@@ -148,7 +148,7 @@ public partial class DefragmentWindow {
     }
 
     if (this._isFileInternalMode) {
-      OnRunFileInternalOptimize();
+      OnRunFileInternalRelayout();
       return;
     }
 
@@ -283,7 +283,7 @@ public partial class DefragmentWindow {
       Exception? error = null;
       var cancelled = false;
       long newSize = originalSize;
-      var entriesOptimized = 0;
+      var entriesRepacked = 0;
 
       try {
         var worker = Task.Run(() => {
@@ -312,7 +312,7 @@ public partial class DefragmentWindow {
 
         newSize = worker.GetAwaiter().GetResult();
         using (var listed = File.OpenRead(path))
-          entriesOptimized = ops.List(listed, null).Count(entry => !entry.IsDirectory);
+          entriesRepacked = ops.List(listed, null).Count(entry => !entry.IsDirectory);
         if (cancellationToken.IsCancellationRequested) {
           cancelled = true;
         } else {
@@ -345,7 +345,7 @@ public partial class DefragmentWindow {
         } else {
           var delta = newSize - originalSize;
           var pct = originalSize > 0 ? (double)delta / originalSize * 100 : 0;
-          Append($"OK ({sw.ElapsedMilliseconds} ms) — {entriesOptimized} entries repacked");
+          Append($"OK ({sw.ElapsedMilliseconds} ms) — {entriesRepacked} entries repacked");
           Append($"Archive size: {originalSize:N0} -> {newSize:N0} bytes (Δ {delta:+#,#;-#,#;0}, {pct:+0.0;-0.0;0.0}%)");
           NotifyMutated(path);
         }
