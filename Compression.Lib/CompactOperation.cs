@@ -46,7 +46,7 @@ public static class CompactOperation {
       log($"compact: '{formatId}' exposes no explicit layout capability with minimal-geometry knobs — running standard compact instead.");
     }
 
-    if (ops is IArchiveDefragmentable defragmentable) {
+    if (descriptor is IFilesystemExtentMap && ops is IArchiveDefragmentable defragmentable) {
       try {
         using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
         defragmentable.Defragment(stream, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
