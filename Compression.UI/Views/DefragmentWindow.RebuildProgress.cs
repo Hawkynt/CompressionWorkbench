@@ -126,14 +126,31 @@ public partial class DefragmentWindow {
   private void OnRunWithBlockProgress(object sender, RoutedEventArgs e) {
     if (this._imagePath == null || this._maintenanceCancellation != null) return;
 
+    var ops = this._formatId is { Length: > 0 } id
+      ? FormatRegistry.GetArchiveOps(id)
+      : this._archiveOps;
+
+    switch (this._requestedVerb) {
+      case MaintenanceVerb.SortDirectory:
+        RunDirectorySort();
+        return;
+      case MaintenanceVerb.Repack:
+        RunArchiveRepackWithBlockProgress(ops);
+        return;
+      case MaintenanceVerb.Compress:
+        RunMaintenanceTransform("Compress", (capability, input, output) =>
+          ((ICompressionOptimizable)capability).OptimizeCompression(input, output), onlyIfSmaller: true);
+        return;
+      case MaintenanceVerb.Canonicalize:
+        RunMaintenanceTransform("Canonicalize", (capability, input, output) =>
+          ((IArchiveCanonicalizable)capability).Canonicalize(input, output));
+        return;
+    }
+
     if (this._isFileInternalMode) {
       OnRunFileInternalOptimize();
       return;
     }
-
-    var ops = this._formatId is { Length: > 0 } id
-      ? FormatRegistry.GetArchiveOps(id)
-      : this._archiveOps;
 
     if (this._isArchiveMode) {
       RunArchiveRepackWithBlockProgress(ops);
