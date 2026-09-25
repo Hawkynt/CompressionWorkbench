@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Compression.Registry;
 using FileSystem.Fatx;
 
@@ -86,6 +87,51 @@ public class FatxDirectoryOrdererTests {
     image.Position = 0;
     Assert.That(descriptor.List(image, null).Select(entry => entry.Name),
       Does.Contain("bravo.txt"));
+  }
+
+  [Test, Category("Regression")]
+  public void SortDirectoryEntries_MalformedChildLeavesWholeImageUntouched() {
+    var descriptor = new FatxFormatDescriptor();
+    using var image = new MemoryStream();
+
+    descriptor.Create(image, [
+      ArchiveInputInfo.InMemory("zeta.txt", "zeta"u8.ToArray()),
+      ArchiveInputInfo.InMemory("a-dir/child.bin", "child"u8.ToArray()),
+    ], new FormatCreateOptions());
+
+    image.Position = 0;
+    uint childDirectoryCluster;
+    using (var reader = new FatxReader(image))
+      childDirectoryCluster = reader.Entries.Single(entry => entry.Name == "a-dir").FirstCluster;
+
+    var bytes = image.ToArray();
+    var clusterSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0x08)) * 512;
+    var childOffset = ComputeDataRegionStart(bytes)
+      + (long)(childDirectoryCluster - 1) * clusterSize;
+    bytes[checked((int)childOffset)] = 43; // impossible FATX name length (> 42)
+
+    image.SetLength(0);
+    image.Write(bytes);
+    var before = image.ToArray();
+
+    image.Position = 0;
+    Assert.That(
+      () => ((IFilesystemDirectoryOrderer)descriptor).SortDirectoryEntries(image),
+      Throws.TypeOf<InvalidDataException>());
+
+    Assert.That(image.ToArray(), Is.EqualTo(before),
+      "planning must reject malformed descendants before rewriting any parent directory");
+  }
+
+  private static long ComputeDataRegionStart(byte[] image) {
+    var sectorsPerCluster = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(0x08));
+    var clusterSize = checked((int)sectorsPerCluster * 512);
+    var postSuperblockBytes = (long)image.Length - 0x1000;
+    var clusterCount = Math.Max(1L, postSuperblockBytes / clusterSize);
+    var entryBytes = clusterCount < 0xFFF4 ? 2 : 4;
+    var fatRaw = (clusterCount + 2) * entryBytes;
+    var fatRounded = (fatRaw + 0xFFF) & ~0xFFFL;
+    return 0x1000 + fatRounded;
   }
 
   private static SnapshotResult Snapshot(MemoryStream image) {
