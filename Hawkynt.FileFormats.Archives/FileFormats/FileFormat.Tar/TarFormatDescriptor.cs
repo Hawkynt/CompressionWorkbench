@@ -15,7 +15,7 @@ namespace FileFormat.Tar;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Tar_(computing)</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IArchiveRepackable, IFormatOptionsSchema {
+public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IArchiveRepackable, IArchiveSemanticMetadataProvider, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -256,11 +256,125 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var entries = new List<ArchiveEntryInfo>();
     var i = 0;
     while (r.GetNextEntry() is { } e) {
-      entries.Add(new(i++, e.Name, e.Size, e.Size, "tar", e.IsDirectory, false, e.ModifiedTime.DateTime));
+      var isSymlink = e.TypeFlag == TarConstants.TypeSymLink;
+      var kind = TarKind(e.TypeFlag);
+      entries.Add(new(
+        i++,
+        e.Name,
+        e.Size,
+        e.Size,
+        "tar",
+        e.IsDirectory,
+        false,
+        e.ModifiedTime.DateTime,
+        Kind: kind,
+        IsSymlink: isSymlink,
+        LinkTarget: isSymlink ? e.LinkName : null));
       r.Skip();
     }
     return entries;
   }
+
+  /// <inheritdoc />
+  public void Repack(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (ReferenceEquals(input, output))
+      throw new ArgumentException("TAR repack requires distinct input and output streams.", nameof(output));
+    if (!input.CanRead || !input.CanSeek)
+      throw new ArgumentException("TAR repack requires a readable, seekable input.", nameof(input));
+    if (!output.CanWrite || !output.CanSeek)
+      throw new ArgumentException("TAR repack requires a writable, seekable output.", nameof(output));
+
+    input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+
+    var reader = new TarReader(input, leaveOpen: true);
+    using var writer = new TarWriter(output, leaveOpen: true, format: TarHeaderFormat.Pax, blockingFactor: 1);
+
+    while (reader.GetNextEntry() is { } entry) {
+      var copy = CloneEntry(entry);
+      if (EntryCarriesPayload(entry)) {
+        using var payload = reader.GetEntryStream();
+        writer.AddStreamingEntry(copy, entry.Size, payload);
+      } else {
+        reader.Skip();
+        writer.AddEntry(copy, []);
+      }
+    }
+
+    writer.Finish();
+    output.Flush();
+    output.Position = 0;
+  }
+
+  /// <inheritdoc />
+  public IReadOnlyDictionary<string, string> CaptureSemanticMetadata(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!archive.CanRead || !archive.CanSeek)
+      throw new ArgumentException("TAR semantic metadata capture requires a readable, seekable stream.", nameof(archive));
+
+    archive.Position = 0;
+    var reader = new TarReader(archive, leaveOpen: true);
+    var result = new SortedDictionary<string, string>(StringComparer.Ordinal);
+    var index = 0;
+
+    while (reader.GetNextEntry() is { } entry) {
+      var prefix = $"{index:D8}:{entry.Name}";
+      result[$"{prefix}:type"] = entry.TypeFlag.ToString(System.Globalization.CultureInfo.InvariantCulture);
+      result[$"{prefix}:mode"] = entry.Mode.ToString(System.Globalization.CultureInfo.InvariantCulture);
+      result[$"{prefix}:uid"] = entry.Uid.ToString(System.Globalization.CultureInfo.InvariantCulture);
+      result[$"{prefix}:gid"] = entry.Gid.ToString(System.Globalization.CultureInfo.InvariantCulture);
+      result[$"{prefix}:uname"] = entry.UserName;
+      result[$"{prefix}:gname"] = entry.GroupName;
+      result[$"{prefix}:link"] = entry.LinkName;
+      if (entry.TypeFlag == TarConstants.TypeGnuMultiVolume) {
+        result[$"{prefix}:offset"] = entry.Offset.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        result[$"{prefix}:real-size"] = entry.RealSize.ToString(System.Globalization.CultureInfo.InvariantCulture);
+      }
+      reader.Skip();
+      ++index;
+    }
+
+    archive.Position = 0;
+    return result;
+  }
+
+  private static TarEntry CloneEntry(TarEntry entry) => new() {
+    Name = entry.Name,
+    Size = entry.Size,
+    TypeFlag = entry.TypeFlag,
+    Mode = entry.Mode,
+    Uid = entry.Uid,
+    Gid = entry.Gid,
+    ModifiedTime = entry.ModifiedTime,
+    LinkName = entry.LinkName,
+    UserName = entry.UserName,
+    GroupName = entry.GroupName,
+    RealSize = entry.RealSize,
+    Offset = entry.Offset,
+  };
+
+  private static bool EntryCarriesPayload(TarEntry entry)
+    => entry.Size > 0
+       && entry.TypeFlag is TarConstants.TypeRegular
+         or TarConstants.TypeRegularAlt
+         or TarConstants.TypeGnuMultiVolume
+         or TarConstants.TypeGnuSparse;
+
+  private static string TarKind(byte typeFlag) => typeFlag switch {
+    TarConstants.TypeRegular or TarConstants.TypeRegularAlt => "file",
+    TarConstants.TypeHardLink => "hardlink",
+    TarConstants.TypeSymLink => "symlink",
+    TarConstants.TypeCharDevice => "char-device",
+    TarConstants.TypeBlockDevice => "block-device",
+    TarConstants.TypeDirectory => "directory",
+    TarConstants.TypeFifo => "fifo",
+    TarConstants.TypeGnuMultiVolume => "multi-volume",
+    TarConstants.TypeGnuSparse => "sparse",
+    _ => $"type-{typeFlag:X2}",
+  };
 
   /// <summary>
   /// Decodes the supplied input.
