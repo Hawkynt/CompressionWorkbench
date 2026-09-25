@@ -563,14 +563,35 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <inheritdoc />
   public void OptimizeCompression(Stream input, Stream output)
-    => RebuildVerb.RebuildToStream(
-      input,
+    => OptimizeCompression(input, output, password: null);
+
+  /// <inheritdoc />
+  public void OptimizeCompression(Stream input, Stream output, string? password) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
+    using var reader = new ZipReader(input, leaveOpen: true, password: password);
+    var writer = new ZipWriter(
       output,
-      this,
-      this,
-      new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-        ["Method"] = "deflate",
-        ["Level"] = "9",
-      });
+      leaveOpen: true,
+      compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Maximum,
+      password: password);
+
+    foreach (var entry in reader.Entries) {
+      if (entry.IsDirectory) {
+        writer.AddDirectory(entry.FileName, entry.LastModified);
+        continue;
+      }
+
+      var data = reader.ExtractEntry(entry);
+      writer.AddEntry(
+        entry.FileName,
+        data,
+        ZipCompressionMethod.Deflate,
+        entry.LastModified);
+    }
+
+    writer.Finish();
+  }
 
 }
