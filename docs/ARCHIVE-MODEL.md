@@ -115,86 +115,58 @@ rather than implying a gate that does not exist. Two cases:
 
 ---
 
-## 3. The five maintenance verbs
+## 3. Explicit maintenance operations
 
-All five share one **invariant: live logical content is preserved byte-identical,
-the result stays valid (and stays tool-/driver-readable where a checker exists),
-and the outer container size is *not increased*.** Each verb says whether it may
-*decrease* the outer size.
+Maintenance is capability-driven. A descriptor must opt into the exact operation
+it can perform; create support, a geometry selector, or a generic "optimize"
+flag never implies another maintenance capability.
 
-| Verb         | What it does                                                                                                   | Outer size            | Interface that unlocks it |
-|--------------|----------------------------------------------------------------------------------------------------------------|-----------------------|---------------------------|
-| **optimize** | Find and apply the **best parameter set** for the data (cluster/block/inode size, FAT bits, geometry, alignment). Does not change which files exist or their bytes. | Preserved if possible | `ILayoutOptimizable` (+ `IFormatOptionsSchema` to declare the tunables) |
-| **shrink**   | **Keep the parameter set**; reduce the *stored* footprint by re-encoding payloads with better methods/levels and/or dropping trailing free space / stepping to the smallest canonical container size that still fits. | Preserved, or reduced to the smallest size that holds the content | `IArchiveShrinkable` (+ `IFormatOptionsSchema` for method/level) |
-| **defrag**   | **Re-order** the things inside so each file/extent is contiguous (consolidate at start/end, fill holes, carve a region), or merely so each reads forwards (ascending order — weaker, and about a third of the bytes). | Preserved              | `IArchiveDefragmentable`; true in-place moves via `IFilesystemBlockMover` |
-| **purge**    | **Erase all live data** from within the container — empty the filesystem / drop every entry — leaving a valid empty container. | Preserved              | `IArchiveModifiable.Remove(all)` or an empty `IArchiveCreatable.Create` *(no dedicated `IArchivePurgeable` yet — see Naming note)* |
-| **wipe**     | Overwrite **only unused space** — free clusters/sectors, cluster-tip slack, deleted directory entries, inter-entry padding, dead trailer bytes. Live data untouched. | Preserved              | `IWipeEmpty` (`WipeUnusedSpace(wipeClusterTips, wipeDeletedEntries)`) |
-| **scramble** | **Scatter** every allocation block of every owner across the whole data area, dealt from a seed — fragmentation on purpose, so *defrag* has something real to work against. Content preserved exactly; only where it lives changes. The volume's own structures stay put. | Preserved              | `IFilesystemScrambleable` (needs a mover that can relink a scattered owner) |
-| **place**    | **Put** one named owner at one chosen offset, relocating whatever is in the way first. Contiguous where the volume allows it; split around a reserved table or a bad block, and still ascending across the split. Content preserved exactly. | Preserved              | `IFilesystemPlaceable` (needs a mover that can relink a split owner) |
-| **compact**  | **Composite**: run *defrag → optimize → shrink* in one pass to produce the smallest valid container that still holds the same contents. With `--minimal`, replace the trio with a single **minimal-geometry rebuild**. | Reduced | Any of `IArchiveDefragmentable` / `IArchiveCreatable` / `IArchiveShrinkable`; `--minimal` also needs `IArchiveCreatable` + `IFormatOptionsSchema` geometry knobs |
+Except for destructive verbs such as purge/wipe and deliberately layout-changing
+operations such as defrag/sort/geometry, live logical content must remain
+semantically identical. Staged rebuilds are verified before commit.
 
-**optimize vs. shrink:** *optimize* searches the parameter space (e.g. pick the
-cluster size that wastes the least slack) and re-tunes the layout; *shrink* holds
-the layout parameters fixed and squeezes the bytes (recompress / drop trailing
-slack / step to a smaller standard disc size). Run optimize to choose *how* the
-container is shaped; run shrink to make *that* shape as small as it goes.
+| Operation | What it does | Interface that unlocks it |
+|-----------|--------------|---------------------------|
+| **compress** | Re-encode the same decoded payload with stronger compression. It does not mean repack or geometry changes. | `ICompressionOptimizable` |
+| **canonicalize** | Normalize non-semantic representation details into one canonical encoding. | `IArchiveCanonicalizable` |
+| **repack** | Rebuild a container while preserving the complete logical entry model. | `IArchiveRepackable` |
+| **sort directory entries** | Reorder directory records by name without moving file extents/allocation chains. | `IFilesystemDirectoryOrderer` |
+| **defragment extents** | Move/rebuild allocation extents so file data becomes contiguous or follows the selected placement strategy. | `IArchiveDefragmentable`; true in-place moves via `IFilesystemBlockMover` |
+| **change allocation geometry** | Change cluster/block/inode/allocation geometry through a verified layout rebuild. | `ILayoutOptimizable` (+ `IFormatOptionsSchema` for user-selectable knobs) |
+| **shrink** | Keep the chosen logical representation/geometry constraints and reduce the stored outer footprint where possible. | `IArchiveShrinkable` |
+| **purge** | Erase all live data while leaving a valid empty container. | currently `IArchiveModifiable.Remove(all)` / format-specific emptying |
+| **wipe** | Overwrite unused/slack/deleted storage while leaving live data intact. | `IWipeEmpty` |
+| **scramble** | Scatter allocation blocks deliberately to create a fragmented test fixture. | `IFilesystemScrambleable` |
+| **place** | Put one named owner at a chosen physical offset, moving conflicts when supported. | `IFilesystemPlaceable` |
+| **compact** | Composite size-reduction workflow: defragment → compress → repack → shrink, running only explicitly declared stages. | composition of the interfaces above |
 
-**purge vs. wipe:** *purge* removes the **live** data (you end up with an empty
-container); *wipe* removes only the **dead** data (you keep every live file, but
-no recoverable remnants survive in the gaps).
+The old umbrella meaning of **optimize** is retired. The CLI keeps `optimize`
+only as a compatibility alias for **compress**; it must never infer repacking,
+directory sorting, defragmentation, or allocation-geometry changes.
 
 ### compact — the one-click composite
 
-**compact** chains the three size-affecting verbs so the user gets "make this as
-small as possible while keeping the contents" in a single action:
+`compact` is intentionally a composition, not a capability of its own:
 
-1. **defrag** — consolidate live data so it is contiguous;
-2. **optimize** — re-encode the payload with the best methods (where the format
-   is re-encodable: ZIP, gzip/zlib, compound tar, the CVF family, …);
-3. **shrink** — truncate the freed tail / step down to the smallest canonical
-   size that still fits.
+1. **defragment** when `IArchiveDefragmentable` is present;
+2. **compress** when `ICompressionOptimizable` is present, committing only a
+   smaller verified representation;
+3. **repack** when `IArchiveRepackable` is present, committing only a smaller
+   semantically equivalent representation;
+4. **shrink** when `IArchiveShrinkable` is present.
 
-Contents are preserved byte-for-byte. The default compact yields the smallest
-**standard, still-valid** container.
+`compact --minimal` is different: it requests the smallest declared geometry
+through `ILayoutOptimizable.RebuildStreaming`. A creatable format without
+`ILayoutOptimizable` is not eligible, because creation support alone does not
+prove that changing allocation geometry preserves all filesystem semantics.
 
-**`--minimal` (opt-in).** Replaces the trio with a single **minimal-geometry
-rebuild**: the contents are extracted and the container is re-created at the
-smallest geometry the format allows — auto-fit image size, smallest allocation
-unit, and a root directory / metadata area sized to exactly the entries present.
-This is driven generically: `CompactOperation` selects the minimal value for each
-geometry knob the descriptor's `IFormatOptionsSchema` declares (image size →
-auto-fit, cluster/block → smallest, root/inode count → smallest) and sets a
-universal `MinimalGeometry=true` create flag that writers honour by dropping
-their free-space headroom. A 1.44 MB FAT floppy holding a few KB collapses to a
-few KB — but the result is **no longer a standard, mountable floppy** (the FAT
-table and root directory are crippled to the minimum). The rebuild only swaps in
-the new image when it both round-trips (lists every entry) and is actually
-smaller; otherwise the original is left untouched.
-
-Compact is surfaced as `cwb compact <file> [--minimal]` and as the explorer's
-**Maintenance → Compact** entry (with a *Minimal geometry* checkbox). It is not a
-new interface — it composes the existing capability interfaces, so any format
-that implements at least one of defrag/optimize/shrink gets a compact action.
-
-### Naming note / current divergences (to be reconciled)
-
-The canonical verb set is **optimize · shrink · defrag · purge · wipe**, and
-`IWipeEmpty` backs **wipe** (this is the established name across the code and UI —
-the "clean" alias is retired). Two items still diverge:
-
-- A dedicated **purge (empty-all)** verb has no interface yet; it is realised by
-  `IArchiveModifiable.Remove` over all entries (or a fresh empty `Create`). A
-  future `IArchivePurgeable` could formalise it.
-- `IArchiveShrinkable`'s current implementation focuses on the *container-size*
-  step-down; the *re-encode-payload-with-better-methods* half of **shrink** is
-  presently driven by the compression optimizer + `IFormatOptionsSchema`.
-
----
+**purge vs. wipe:** purge removes the **live** data and leaves an empty valid
+container; wipe keeps live data and overwrites only dead/free/slack regions.
 
 ## 4. Declaring tunable options — `IFormatOptionsSchema`
 
-For *optimize* and *shrink* (and creation) to expose method/level/parameter
-choices in the Convert dialog and the CLI's `--opt key=value`, the descriptor
+For creation, compression/shrink policies, and allocation-geometry changes to
+expose method/level/parameter choices in schema-driven dialogs and CLI options, the descriptor
 implements **`IFormatOptionsSchema`**, returning a list of
 `FormatOptionDescriptor`:
 
@@ -217,7 +189,7 @@ another's value. The dialog/CLI collect values into
 
 ## 5. Block-based layout & display contract
 
-The Defragment/Optimize window draws a **block map** of the real on-disk layout so
+The maintenance window draws a **block map** of the real on-disk layout so
 the user sees the actual fragmentation/free/metadata picture *before* acting. A
 descriptor feeds that map by enumerating `DefragBlockInfo` runs:
 
@@ -257,7 +229,7 @@ RAM. The streaming contracts:
   logical size (slack/padding/neighbours are unreachable). The default
   implementation buffers to memory and calls `Create`; FAT/ext/ZIP-store override
   it. Peak memory is the chunk buffer + the format's own metadata tables.
-- **Optimize / structural rebuild:** `ILayoutOptimizable` —
+- **Allocation-geometry rebuild:** `ILayoutOptimizable` —
   `AnalyzeLayout` reads only the superblock/BPB (never the whole image);
   `ApplyMetadata` patches a handful of bytes in place (label/serial/geometry);
   `RebuildStreaming(source, target, options)` does cluster/block-size/FAT-type
@@ -285,15 +257,19 @@ buffer), but is bounded by RAM; override them to handle multi-GB/TB images.
 | `IArchiveInMemoryExtract`  | temp-free single-entry extraction (nested-archive descent) |
 | `IArchiveCreatable`        | Create (WORM); override `CreateFromStreams` for OOM-free creation |
 | `IArchiveModifiable`       | Add / Replace / Remove + **purge** (Remove-all). Advertise `CanModify` (R/W) when the format is a mutable container with a working modify — in place **or** relayout/rebuild (see §1); withhold it from read-only-by-design / create-only formats. |
+| `ICompressionOptimizable`  | **compress** decoded-equivalent data with stronger encoding |
+| `IArchiveCanonicalizable`   | **canonicalize** non-semantic representation details |
+| `IArchiveRepackable`        | **repack** through a verified semantic-preserving rebuild |
+| `IFilesystemDirectoryOrderer` | **sort directory entries** without moving file extents |
 | `IArchiveDefragmentable`   | **defrag** (with optional `DefragOptions` modes) |
 | `IFilesystemBlockMover`    | true in-place defrag (extent moves, no rebuild) |
 | `IFilesystemScrambleable`  | **scramble** (seeded scatter; no rebuild fallback, refuses instead) |
 | `IFilesystemPlaceable`     | **place** (one owner at one offset; no rebuild fallback, refuses instead) |
 | `IArchiveShrinkable`       | **shrink** (smallest canonical size / tight-pack) |
-| `ILayoutOptimizable`       | **optimize** (parameter retune, in-place or streaming) |
+| `ILayoutOptimizable`       | **change allocation geometry** (parameter retune/rebuild) |
 | `IWipeEmpty`               | **wipe** (zero unused/slack/deleted) |
-| `IFormatOptionsSchema`     | per-format Method/Level/… choices in the create + optimize/shrink dialogs |
-| `IFilesystemExtentMap` / `IArchiveLayoutMap` | the block-map preview in the Defrag/Optimize window |
+| `IFormatOptionsSchema`     | per-format Method/Level/geometry choices for schema-driven operations |
+| `IFilesystemExtentMap` / `IArchiveLayoutMap` | the block-map preview in the maintenance window |
 | `IStreamFormatOperations`  | single-stream (de)compression with level/dictionary options |
 
 How each verb is provided — the verified rebuild engine most formats inherit it
