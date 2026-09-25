@@ -375,6 +375,8 @@ public partial class DefragmentWindow {
 
       try {
         using var fs = File.OpenRead(path);
+        var sourceManifest = SemanticPreservationManifest.Capture(fs, ops);
+        fs.Position = 0;
         result = FileFormat.SevenZip.SolidBlockOptimizer.Optimize(
           fs,
           maxTrials: 5,
@@ -412,6 +414,11 @@ public partial class DefragmentWindow {
               };
           }),
           cancellationToken: cancellationToken);
+
+        if (result != null) {
+          using var candidate = new MemoryStream(result.Data, writable: false);
+          sourceManifest.VerifyEquivalent(SemanticPreservationManifest.Capture(candidate, ops));
+        }
       } catch (OperationCanceledException) {
         cancelled = true;
       } catch (Exception ex) {
@@ -445,7 +452,7 @@ public partial class DefragmentWindow {
               LayoutStatusLbl.Text = "Winning staged layout selected — committing; cancellation disabled.";
             try {
               AtomicFileWriter.WriteAllBytesAtomic(path, result.Data);
-              Append("Optimized archive written.");
+              Append("Repacked archive written.");
               NotifyMutated(path);
             } catch (Exception writeError) {
               Append($"FAILED while committing winner: {writeError.Message}");
