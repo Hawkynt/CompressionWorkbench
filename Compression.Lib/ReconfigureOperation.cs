@@ -8,14 +8,13 @@ namespace Compression.Lib;
 /// (e.g. FAT cluster size or root-directory entries, NTFS MFT record size,
 /// image size) <em>after</em> creation, without losing any data.
 ///
-/// <para>Reconfigure is a verified extract → re-create round-trip. The contents
-/// are extracted to a temp tree and the container is re-created with the
-/// caller-supplied options threaded straight into the writer's
-/// <see cref="FormatCreateOptions.FormatSpecific"/> bag. The rebuilt image is
-/// listed back and its live-entry multiset compared against the source; the swap
-/// onto the original path only happens when the round-trip is identity-preserving.
-/// On any failure — unsupported format, a writer that drops/renames entries, an
-/// I/O error — the original file is left byte-for-byte untouched.</para>
+/// <para>Reconfigure is an <see cref="ILayoutOptimizable"/> operation. The
+/// descriptor receives the requested parameters through
+/// <see cref="LayoutRebuildOptions.Parameters"/> and writes a staged target.
+/// The staged image is compared against a full
+/// <see cref="SemanticPreservationManifest"/> before the atomic swap. Merely
+/// being creatable is deliberately insufficient: create support does not imply
+/// that after-creation geometry changes preserve every filesystem semantic.</para>
 ///
 /// <para>Unlike <see cref="CompactOperation"/>'s minimal-geometry rebuild,
 /// reconfigure does <b>not</b> require the result to be smaller: changing the
@@ -57,62 +56,42 @@ public static class ReconfigureOperation {
     var originalSize = new FileInfo(path).Length;
     var format = FormatDetector.Detect(path);
     var formatId = format.ToString();
+    var descriptor = FormatRegistry.GetById(formatId);
     var ops = FormatRegistry.GetArchiveOps(formatId);
 
-    if (ops is not IArchiveCreatable)
+    if (descriptor is not ILayoutOptimizable layout)
       throw new NotSupportedException(
-        $"Format {formatId} cannot be reconfigured — it does not support re-creation.");
+        $"Format {formatId} cannot change allocation geometry — it does not implement ILayoutOptimizable.");
+    if (ops == null)
+      throw new NotSupportedException(
+        $"Format {formatId} cannot verify a geometry rebuild — archive/filesystem operations are unavailable.");
 
-    // Snapshot the source's live entry multiset BEFORE touching anything, so we
-    // can verify the rebuild preserved exactly the same set of files.
-    var sourceNames = LiveNames(path, password);
+    SemanticPreservationManifest sourceManifest;
+    using (var source = File.OpenRead(path))
+      sourceManifest = SemanticPreservationManifest.Capture(source, ops, password);
 
-    var tempDir = Path.Combine(Path.GetTempPath(), "cwb_reconfig_" + Guid.NewGuid().ToString("N")[..8]);
-    // Keep the original extension so the rebuilt image still content/extension-
-    // detects as the same format when we re-list it for the verification step
-    // (weak-magic formats like FAT lean on the extension).
     var tempOut = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!,
-      Path.GetFileNameWithoutExtension(path) + ".reconfig-" + Guid.NewGuid().ToString("N")[..6]
-        + Path.GetExtension(path));
+      Path.GetFileName(path) + $".reconfigure.tmp.{Guid.NewGuid():N}");
     try {
-      Directory.CreateDirectory(tempDir);
-      ArchiveOperations.Extract(path, tempDir, password, files: null);
-      var inputs = ArchiveOperations.EnumerateTempInputs(tempDir);
-
-      ArchiveOperations.Create(tempOut, inputs,
-        new CompressionOptions { Password = password },
-        format, newOptions);
-
-      // Identity guard (mirrors RebuildVerb): the rebuilt image must list back
-      // the EXACT same set of live entry names. Anything else means the
-      // round-trip isn't faithful, so refuse the swap and keep the original.
-      List<string> rebuiltNames;
-      try {
-        rebuiltNames = LiveNames(tempOut, password);
-      } catch (Exception ex) {
-        throw new InvalidOperationException(
-          $"Reconfigured image could not be listed back ({ex.GetType().Name}: {ex.Message}); "
-          + "refusing a lossy rebuild — original left untouched.", ex);
+      using (var source = File.OpenRead(path))
+      using (var target = new FileStream(tempOut, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None)) {
+        layout.RebuildStreaming(source, target, new LayoutRebuildOptions {
+          Parameters = newOptions,
+        });
+        target.Flush(flushToDisk: true);
       }
-      if (!rebuiltNames.SequenceEqual(sourceNames, StringComparer.Ordinal))
-        throw new InvalidOperationException(
-          $"Reconfigure changed the entry set ({sourceNames.Count} → {rebuiltNames.Count}); "
-          + "refusing a non-identity-preserving rebuild — original left untouched.");
+
+      SemanticPreservationManifest rebuiltManifest;
+      using (var rebuilt = File.OpenRead(tempOut))
+        rebuiltManifest = SemanticPreservationManifest.Capture(rebuilt, ops, password);
+      sourceManifest.VerifyEquivalent(rebuiltManifest);
 
       var newSize = new FileInfo(tempOut).Length;
-      File.Move(tempOut, path, overwrite: true);
-      return new ReconfigureResult(originalSize, newSize, newOptions, rebuiltNames.Count);
+      AtomicFileWriter.ReplaceTarget(tempOut, path);
+      return new ReconfigureResult(originalSize, newSize, newOptions, rebuiltManifest.EntryCount);
     } finally {
-      if (Directory.Exists(tempDir)) try { Directory.Delete(tempDir, recursive: true); } catch { /* best effort */ }
-      if (File.Exists(tempOut)) try { File.Delete(tempOut); } catch { /* best effort */ }
+      AtomicFileWriter.TryDelete(tempOut);
     }
   }
 
-  /// <summary>The sorted multiset of live (non-directory) entry names a container lists.</summary>
-  private static List<string> LiveNames(string path, string? password)
-    => ArchiveOperations.List(path, password)
-      .Where(e => !e.IsDirectory)
-      .Select(e => e.Name)
-      .OrderBy(n => n, StringComparer.Ordinal)
-      .ToList();
 }
