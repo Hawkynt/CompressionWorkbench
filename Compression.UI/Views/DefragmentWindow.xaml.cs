@@ -10,7 +10,7 @@ using Compression.UI.Controls;
 namespace Compression.UI.Views;
 
 /// <summary>
-/// The five canonical maintenance verbs from <c>docs/ARCHIVE-MODEL.md</c>.
+/// Explicit maintenance actions from <c>docs/ARCHIVE-MODEL.md</c>.
 /// Used to pre-focus the matching action when the maintenance window is
 /// opened from a specific context-menu entry.
 /// </summary>
@@ -296,7 +296,7 @@ public partial class DefragmentWindow : Window {
     } else if (isArchiveLayout || isArchiveCreatable) {
       // Archive repack is an explicit capability. Merely being creatable is not
       // enough: creation may discard representation-level or extended semantics.
-      this._isArchiveMode = ops is IArchiveRepackable;
+      this._isArchiveMode = true;
       this._isSevenZipFormat = format.ToString() == "SevenZip";
       this._archiveOps = ops;
       if (ops is IArchiveRepackable) {
