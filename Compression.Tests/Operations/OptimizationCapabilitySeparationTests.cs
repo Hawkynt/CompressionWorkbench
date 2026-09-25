@@ -178,6 +178,18 @@ public sealed class OptimizationCapabilitySeparationTests {
   }
 
   [Test, Category("Architecture")]
+  public void LegacyOptimize_IsAvailableOnlyForExactlyOneRewriteEffect() {
+    Assert.Multiple(() => {
+      Assert.That(OptimizationCapabilities.CanLegacyOptimizeUnambiguously(new ZstdFormatDescriptor()), Is.True,
+        "a compression-only stream can preserve the old Optimize spelling");
+      Assert.That(OptimizationCapabilities.CanLegacyOptimizeUnambiguously(new MacBinaryFormatDescriptor()), Is.True,
+        "a canonicalization-only format can preserve the old Optimize spelling");
+      Assert.That(OptimizationCapabilities.CanLegacyOptimizeUnambiguously(new ZipFormatDescriptor()), Is.False,
+        "ZIP exposes both compression and repack, so legacy Optimize must not guess");
+    });
+  }
+
+  [Test, Category("Architecture")]
   public void LegacyStreamOptimizeClaims_HaveExplicitCompressionCapability() {
     FormatRegistration.EnsureInitialized();
 
