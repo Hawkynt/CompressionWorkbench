@@ -690,6 +690,10 @@ canonicalizeCmd.SetAction((ParseResult ctx) => {
   var input = ctx.GetValue(canonicalizeInputArg)!;
   var output = ctx.GetValue(canonicalizeOutputArg)!;
   if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
+  if (string.Equals(Path.GetFullPath(input.FullName), Path.GetFullPath(output.FullName), StringComparison.OrdinalIgnoreCase)) {
+    Console.Error.WriteLine("Canonicalize output must differ from the input path.");
+    return 1;
+  }
 
   FormatRegistration.EnsureInitialized();
   var format = FormatDetector.Detect(input.FullName);
@@ -721,6 +725,10 @@ repackCmd.SetAction((ParseResult ctx) => {
   var input = ctx.GetValue(repackInputArg)!;
   var output = ctx.GetValue(repackOutputArg)!;
   if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
+  if (string.Equals(Path.GetFullPath(input.FullName), Path.GetFullPath(output.FullName), StringComparison.OrdinalIgnoreCase)) {
+    Console.Error.WriteLine("Repack output must differ from the input path.");
+    return 1;
+  }
 
   FormatRegistration.EnsureInitialized();
   var format = FormatDetector.Detect(input.FullName);
@@ -2837,6 +2845,14 @@ var root = new RootCommand("""
 return root.Parse(args).Invoke();
 
 // ── Utility functions ────────────────────────────────────────────────
+
+static byte[] HashDecodedStream(Stream encoded, IStreamFormatOperations operations) {
+  encoded.Position = 0;
+  using var decoded = RebuildVerb.CreateScratchStream();
+  operations.Decompress(encoded, decoded);
+  decoded.Position = 0;
+  return System.Security.Cryptography.SHA256.HashData(decoded);
+}
 
 static string FormatSize(long bytes) => bytes switch {
   < 1024 => $"{bytes} B",
