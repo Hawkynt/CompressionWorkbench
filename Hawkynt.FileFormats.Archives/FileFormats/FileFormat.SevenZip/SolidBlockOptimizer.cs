@@ -79,6 +79,7 @@ public static class SolidBlockOptimizer {
     archive.Position = 0;
     var reader = new SevenZipReader(archive, leaveOpen: true);
     var fileEntries = reader.Entries.Where(e => !e.IsDirectory).ToArray();
+    var directoryEntries = reader.Entries.Where(e => e.IsDirectory).ToArray();
     var totalBytes = Math.Max(1L, fileEntries.Sum(e => Math.Max(0L, e.Size)));
     long extractedBytes = 0;
     var entries = new List<(string Name, byte[] Data, SevenZipEntry Meta)>();
@@ -124,7 +125,7 @@ public static class SolidBlockOptimizer {
       try {
         var groups = grouper(entries);
         cancellationToken.ThrowIfCancellationRequested();
-        var output = BuildArchive(entries, groups, cancellationToken,
+        var output = BuildArchive(entries, directoryEntries, groups, cancellationToken,
           (current, total, entryName) => onDetailedProgress?.Invoke(new DetailedProgress(
             "building", current, total, entryName, current, total)));
         sw.Stop();
@@ -326,12 +327,18 @@ public static class SolidBlockOptimizer {
   /// </summary>
   private static byte[] BuildArchive(
       IReadOnlyList<(string Name, byte[] Data, SevenZipEntry Meta)> entries,
+      IReadOnlyList<SevenZipEntry> directories,
       IReadOnlyList<int[]> groups,
       CancellationToken cancellationToken,
       Action<int, int, string?>? onProgress) {
 
     using var ms = new MemoryStream();
     var writer = new SevenZipWriter(ms, SevenZipCodec.Lzma2, leaveOpen: true);
+
+    foreach (var directory in directories) {
+      cancellationToken.ThrowIfCancellationRequested();
+      writer.AddDirectory(directory.Name, directory.LastWriteTime);
+    }
 
     var entryIndexMap = new int[entries.Count];
     var addOrder = 0;
