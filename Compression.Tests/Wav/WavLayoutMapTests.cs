@@ -140,7 +140,7 @@ public class WavLayoutMapTests {
     using var ms = BuildTestWav(includeMetadata: false);
     var originalLength = ms.Length;
 
-    new WavOptimizer().Optimize(ms);
+    new WavOptimizer().CanonicalizeInPlace(ms);
 
     Assert.That(ms.Length, Is.EqualTo(originalLength),
       "Already-optimal WAV should not change");
