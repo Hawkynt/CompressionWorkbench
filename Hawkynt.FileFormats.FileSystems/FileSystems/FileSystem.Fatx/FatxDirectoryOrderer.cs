@@ -5,8 +5,9 @@ namespace FileSystem.Fatx;
 
 /// <summary>
 /// Reorders FATX directory records in place without changing allocation chains
-/// or file payloads. Whole 64-byte records move as opaque units, preserving all
-/// attributes, timestamps, first-cluster values and sizes byte-for-byte.
+/// or file payloads. The complete directory tree is validated and planned
+/// before the first write, so malformed descendants cannot leave a partially
+/// sorted image.
 /// </summary>
 internal static class FatxDirectoryOrderer {
   private const byte EndMarker = 0xFF;
@@ -22,16 +23,23 @@ internal static class FatxDirectoryOrderer {
 
     image.Position = 0;
     using var reader = new FatxReader(image);
+    var plans = new List<DirectoryPlan>();
     var visited = new HashSet<uint>();
-    SortDirectory(image, reader, reader.RootDirCluster, visited);
+
+    BuildPlan(image, reader, reader.RootDirCluster, visited, plans);
+
+    foreach (var plan in plans)
+      ApplyPlan(image, plan);
+
     image.Flush();
   }
 
-  private static void SortDirectory(
+  private static void BuildPlan(
       Stream image,
       FatxReader reader,
       uint startCluster,
-      HashSet<uint> visitedDirectories) {
+      HashSet<uint> visitedDirectories,
+      List<DirectoryPlan> plans) {
     if (startCluster < 1 || reader.IsEoc(startCluster) || !visitedDirectories.Add(startCluster))
       return;
 
@@ -95,26 +103,38 @@ internal static class FatxDirectoryOrderer {
     if (recordsNeeded > slotOffsets.Count)
       throw new InvalidDataException("FATX directory scan lost record slots while sorting.");
 
-    var index = 0;
-    foreach (var record in live)
-      WriteRecord(image, slotOffsets[index++], record.Bytes);
-    foreach (var record in deleted)
-      WriteRecord(image, slotOffsets[index++], record);
+    var terminatorOffset = TryGetSlotOffset(
+      image.Length,
+      reader,
+      startCluster,
+      recordsNeeded,
+      out var nextSlot)
+      ? nextSlot
+      : (long?)null;
 
-    // If live records moved over deleted slots, every old live slot after the
-    // compacted prefix must become an end marker. Filling whole records with
-    // 0xFF matches the writer's canonical unused-slot representation.
-    for (; index < slotOffsets.Count; ++index)
-      WriteUnusedRecord(image, slotOffsets[index]);
-
-    // Preserve a terminator even for a directory that originally filled one
-    // cluster and continued into another. The first physical slot immediately
-    // after the compacted records is the canonical end when one is available.
-    if (TryGetNextSlotOffset(image, reader, startCluster, recordsNeeded, out var terminatorOffset))
-      WriteUnusedRecord(image, terminatorOffset);
+    plans.Add(new DirectoryPlan(
+      slotOffsets,
+      live.Select(static record => record.Bytes).ToArray(),
+      deleted,
+      terminatorOffset));
 
     foreach (var child in childClusters.Distinct())
-      SortDirectory(image, reader, child, visitedDirectories);
+      BuildPlan(image, reader, child, visitedDirectories, plans);
+  }
+
+  private static void ApplyPlan(Stream image, DirectoryPlan plan) {
+    var index = 0;
+
+    foreach (var record in plan.LiveRecords)
+      WriteRecord(image, plan.SlotOffsets[index++], record);
+    foreach (var record in plan.DeletedRecords)
+      WriteRecord(image, plan.SlotOffsets[index++], record);
+
+    for (; index < plan.SlotOffsets.Count; ++index)
+      WriteUnusedRecord(image, plan.SlotOffsets[index]);
+
+    if (plan.TerminatorOffset is { } terminatorOffset)
+      WriteUnusedRecord(image, terminatorOffset);
   }
 
   private static byte[] ReadRecord(Stream image, long offset) {
@@ -135,13 +155,13 @@ internal static class FatxDirectoryOrderer {
     WriteRecord(image, offset, unused);
   }
 
-  private static bool TryGetNextSlotOffset(
-      Stream image,
+  private static bool TryGetSlotOffset(
+      long imageLength,
       FatxReader reader,
       uint startCluster,
-      int occupiedSlots,
+      int slotIndex,
       out long offset) {
-    var remaining = occupiedSlots;
+    var remaining = slotIndex;
     var cluster = startCluster;
     var seen = new HashSet<uint>();
 
@@ -149,7 +169,7 @@ internal static class FatxDirectoryOrderer {
       var slots = reader.ClusterSize / FatxReader.DirRecordSize;
       if (remaining < slots) {
         offset = reader.ClusterOffset(cluster) + (long)remaining * FatxReader.DirRecordSize;
-        return offset >= 0 && offset + FatxReader.DirRecordSize <= image.Length;
+        return offset >= 0 && offset + FatxReader.DirRecordSize <= imageLength;
       }
 
       remaining -= slots;
@@ -161,4 +181,10 @@ internal static class FatxDirectoryOrderer {
   }
 
   private sealed record Record(string Name, byte[] Bytes);
+
+  private sealed record DirectoryPlan(
+    IReadOnlyList<long> SlotOffsets,
+    IReadOnlyList<byte[]> LiveRecords,
+    IReadOnlyList<byte[]> DeletedRecords,
+    long? TerminatorOffset);
 }
