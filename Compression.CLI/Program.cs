@@ -1738,20 +1738,13 @@ shrinkCmd.SetAction((ParseResult ctx) => {
       Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
       Console.WriteLine($"  {FormatSize(result.OriginalSize)} -> {FormatSize(result.NewSize)} ({result.BlocksFreed} blocks freed)");
     } else if (formatId == "Vhd") {
-      // Without --compact, defragment the inner FS via the VHD descriptor
-      var desc = FormatRegistry.GetById("Vhd");
-      if (desc is IArchiveDefragmentable defrag) {
-        using var stream = File.Open(imageArg, FileMode.Open, FileAccess.ReadWrite);
-        defrag.Defragment(stream);
-        sw.Stop();
-        Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
-        Console.WriteLine($"  Inner FS defragmented. Use --compact to also remove sparse blocks.");
-      } else {
-        sw.Stop();
-        Console.WriteLine(" skipped");
-        Console.Error.WriteLine($"  VHD descriptor does not support defragmentation.");
-        return 1;
-      }
+      sw.Stop();
+      Console.WriteLine(" skipped");
+      Console.Error.WriteLine(
+        "  VHD shrink without --compact would only defragment extents, which is a separate operation. "
+        + "Use 'cwb defragment-extents <image>' for physical defragmentation or 'cwb shrink <image> --compact' "
+        + "to compact the VHD container.");
+      return 1;
     } else {
       sw.Stop();
       Console.WriteLine(" skipped");
