@@ -148,10 +148,10 @@ or namespace conventions are never treated as capabilities.
 
 The CLI follows the same taxonomy: `cwb compress`, `cwb canonicalize`,
 `cwb repack`, `cwb sort-directory`, `cwb defragment`, and
-`cwb reconfigure`. The historical `cwb optimize` spelling is only a
-compatibility alias for **Compress**. The legacy library-level
-`ArchiveOperations.Optimize` is fail-closed and is usable only when exactly one
-of **Compress / Canonicalize / Repack** applies; overlapping rewrite
+`cwb reconfigure`. The historical `cwb optimize` spelling is a
+fail-closed compatibility command: it is usable only when exactly one of
+**Compress / Canonicalize / Repack** applies. The library-level
+`ArchiveOperations.Optimize` follows the same rule; overlapping rewrite
 capabilities must be selected explicitly.
 
 **purge vs. wipe:** *purge* removes the **live** data (you end up with an empty
@@ -234,8 +234,9 @@ dispose the stream.
 exposes **`IFilesystemBlockMover`**: either the descriptor implements it directly
 or it explicitly declares a composed mover via `FilesystemBlockMoverAttribute`.
 `MoveExtent` does the raw byte copy and `UpdateAllocationAfterMove` patches the allocation metadata (FAT chain, dir
-start-cluster, bitmap bits) so the file stays reachable. Without it, defrag falls
-back to a rebuild.
+start-cluster, bitmap bits) so the file stays reachable. Without an explicitly
+exposed mover, **Defragment extents** is unavailable; rebuild-only relayout remains
+a separate implementation detail and is never reported as physical defragmentation.
 
 ---
 
