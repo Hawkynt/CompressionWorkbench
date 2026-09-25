@@ -5,13 +5,8 @@ namespace Compression.Registry;
 /// the ambiguous "Optimize" label.
 /// </summary>
 public static class OptimizationCapabilities {
-  public static bool CanCompress(IFormatDescriptor? descriptor) {
-    if (descriptor is ICompressionOptimizable)
-      return true;
-
-    return descriptor?.TarCompressionFormatId is { Length: > 0 } outerFormatId
-      && FormatRegistry.GetById(outerFormatId) is ICompressionOptimizable;
-  }
+  public static bool CanCompress(IFormatDescriptor? descriptor)
+    => descriptor is ICompressionOptimizable;
 
   public static bool CanCanonicalize(IFormatDescriptor? descriptor)
     => descriptor is IArchiveCanonicalizable;
