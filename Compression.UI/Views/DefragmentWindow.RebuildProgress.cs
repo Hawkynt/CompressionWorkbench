@@ -246,7 +246,7 @@ public partial class DefragmentWindow {
     }
 
     if (this._requestedVerb == MaintenanceVerb.Optimize && this._isFileInternalMode) {
-      OnRunFileInternalOptimize();
+      OnRunFileInternalCanonicalize();
       return;
     }
 
