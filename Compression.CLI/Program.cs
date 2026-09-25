@@ -706,10 +706,12 @@ canonicalizeCmd.SetAction((ParseResult ctx) => {
   try {
     var archiveOps = descriptor as IArchiveFormatOperations;
     var streamOps = descriptor as IStreamFormatOperations;
-    SemanticPreservationManifest? beforeManifest = null;
-    byte[]? beforeDecodedHash = null;
 
-    using (var src = File.OpenRead(input.FullName)) {
+    AtomicFileWriter.WriteAtomic(output.FullName, staged => {
+      SemanticPreservationManifest? beforeManifest = null;
+      byte[]? beforeDecodedHash = null;
+
+      using var src = File.OpenRead(input.FullName);
       if (archiveOps != null)
         beforeManifest = SemanticPreservationManifest.Capture(src, archiveOps);
       else if (streamOps != null)
@@ -718,25 +720,22 @@ canonicalizeCmd.SetAction((ParseResult ctx) => {
         throw new NotSupportedException($"{format} exposes canonicalization but no semantic verifier.");
 
       src.Position = 0;
-      using var dst = new FileStream(output.FullName, FileMode.Create, FileAccess.ReadWrite, FileShare.None);
-      canonicalizable.Canonicalize(src, dst);
-      dst.Flush(flushToDisk: true);
-    }
+      canonicalizable.Canonicalize(src, staged);
+      staged.Flush(flushToDisk: true);
+      staged.Position = 0;
 
-    using (var rewritten = File.OpenRead(output.FullName)) {
       if (beforeManifest != null)
-        beforeManifest.VerifyEquivalent(SemanticPreservationManifest.Capture(rewritten, archiveOps!));
+        beforeManifest.VerifyEquivalent(SemanticPreservationManifest.Capture(staged, archiveOps!));
       else if (beforeDecodedHash != null && streamOps != null) {
-        var afterDecodedHash = HashDecodedStream(rewritten, streamOps);
+        var afterDecodedHash = HashDecodedStream(staged, streamOps);
         if (!beforeDecodedHash.AsSpan().SequenceEqual(afterDecodedHash))
           throw new InvalidOperationException("Canonicalization changed the decoded payload.");
       }
-    }
+    });
 
     Console.WriteLine($"Canonicalized {input.Name} -> {output.FullName}");
     return 0;
   } catch (Exception ex) {
-    AtomicFileWriter.TryDelete(output.FullName);
     Console.Error.WriteLine($"Canonicalize failed: {ex.Message}");
     return 1;
   }
@@ -766,9 +765,10 @@ repackCmd.SetAction((ParseResult ctx) => {
   }
 
   try {
-    using var src = File.OpenRead(input.FullName);
-    using var dst = new FileStream(output.FullName, FileMode.Create, FileAccess.ReadWrite, FileShare.None);
-    repackable.Repack(src, dst);
+    AtomicFileWriter.WriteAtomic(output.FullName, staged => {
+      using var src = File.OpenRead(input.FullName);
+      repackable.Repack(src, staged);
+    });
     Console.WriteLine($"Repacked {input.Name} -> {output.FullName}");
     return 0;
   } catch (Exception ex) {
