@@ -133,8 +133,8 @@ var levelOpt = new Option<int?>("--level", "-l") { Description = "Level 0-9. Def
 var encryptHeadersOpt = new Option<bool>("--encrypt-headers", "-eh") { Description = "Encrypt file names and headers (7z, RAR5). Requires --password" };
 var zipEncryptionOpt = new Option<string?>("--zip-encryption") { Description = "ZIP encryption method: aes256 (default, strong) or zipcrypto (weak, legacy compatible)" };
 var sfxOpt = new Option<bool>("--sfx") { Description = "Create a self-extracting archive (console stub, no runtime needed)" };
-var sfxUiOpt = new Option<bool>("--sfx-ui") { Description = "Create a self-extracting archive (GUI stub with folder picker, Windows only)" };
-var sfxTargetOpt = new Option<string?>("--sfx-target") { Description = "SFX target platform: win-x64, win-x86, win-arm64, linux-x64, linux-arm64, osx-x64, osx-arm64" };
+var sfxUiOpt = new Option<bool>("--sfx-ui") { Description = "Create a self-extracting archive (GUI stub with folder picker; Windows and Linux)" };
+var sfxTargetOpt = new Option<string?>("--sfx-target") { Description = "SFX target platform, or a comma-separated list for one file that runs on all of them: " + string.Join(", ", SfxBuilder.SupportedTargets) };
 
 var createCmd = new Command("create", """
   Create a new archive. Format detected from extension (.zip, .7z, .tar.gz, etc.).
@@ -220,21 +220,50 @@ createCmd.SetAction((ParseResult ctx) => {
     Console.WriteLine($"  {autoStored} file(s) auto-stored as incompressible (use --force-compress to override)");
   Console.WriteLine($"Archive size: {FormatSize(new FileInfo(archive.FullName).Length)}");
 
+  if (makeSfx && makeSfxUi) {
+    Console.Error.WriteLine("--sfx and --sfx-ui are alternatives; pass one.");
+    return 1;
+  }
+
   // Wrap into SFX if requested
   if (makeSfx || makeSfxUi) {
     var stubType = makeSfxUi ? SfxBuilder.StubType.Ui : SfxBuilder.StubType.Cli;
     var sfxPath = Path.ChangeExtension(archive.FullName, ".exe");
+
+    var targets = (sfxTarget ?? "")
+      .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+      .ToArray();
+
+    var unknown = targets.Where(t => !SfxBuilder.SupportedTargets.Contains(t)).ToArray();
+    if (unknown.Length > 0) {
+      Console.Error.WriteLine($"Unknown --sfx-target value(s): {string.Join(", ", unknown)}");
+      Console.Error.WriteLine($"Supported: {string.Join(", ", SfxBuilder.SupportedTargets)}");
+      return 1;
+    }
+
     try {
       Console.Write($"Creating SFX ({stubType})...");
-      SfxBuilder.WrapExisting(archive.FullName, sfxPath, stubType, sfxTarget);
-      Console.WriteLine($" done");
+
+      if (targets.Length > 1)
+        // One file for several operating systems: a PE to Windows and a shell script to everything
+        // else, which is why a Windows target has to be among them.
+        SfxBuilder.CreateUniversal(archive.FullName, sfxPath, stubType, targets);
+      else
+        SfxBuilder.WrapExisting(archive.FullName, sfxPath, stubType, targets.FirstOrDefault());
+
+      Console.WriteLine(" done");
       Console.WriteLine($"SFX size: {FormatSize(new FileInfo(sfxPath).Length)}");
+      if (targets.Length > 1)
+        Console.WriteLine($"Runs on: {string.Join(", ", targets)} (on POSIX invoke as: sh {Path.GetFileName(sfxPath)})");
+
       // Delete the intermediate archive, keep only the .exe
       File.Delete(archive.FullName);
     }
     catch (Exception ex) {
       Console.Error.WriteLine($"\nSFX creation failed: {ex.Message}");
-      Console.Error.WriteLine("The archive was still created successfully.");
+      Console.Error.WriteLine("The archive was created, but not wrapped.");
+      // The artefact the user asked for does not exist, so this is a failure.
+      return 1;
     }
   }
 

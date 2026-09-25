@@ -47,23 +47,37 @@ $legacyStubsDir = Join-Path (Join-Path $root "Compression.CLI") "stubs"
 
 foreach ($rid in $targetRids) {
     foreach ($proj in $projects) {
-        # Skip UI stub for non-Windows targets (WPF is Windows-only)
-        if ($proj.Name -eq "Compression.Sfx.Ui" -and -not $rid.StartsWith("win")) {
-            Write-Host "  Skipping $($proj.Name) for $rid (Windows-only)" -ForegroundColor DarkGray
+        # The GUI stub is NativeForms now, with a backend for win, linux and osx alike. Only
+        # musl RIDs are skipped: no NativeForms backend targets them.
+        if ($proj.Name -eq "Compression.Sfx.Ui" -and $rid.Contains("musl")) {
+            Write-Host "  Skipping $($proj.Name) for $rid (no GUI backend)" -ForegroundColor DarkGray
             continue
         }
 
         $projPath = Join-Path (Join-Path $root $proj.Dir) "$($proj.Name).csproj"
         Write-Host "Publishing $($proj.Name) for $rid..." -ForegroundColor Cyan
-        dotnet publish $projPath -r $rid -c $Configuration -p:ExcludeStubs=true --nologo -v quiet
+        # Universal tier: one stub per RID covering every archive format. Carved per-format stubs
+        # are a CI concern; a dev build wants one stub that reads anything.
+        dotnet publish $projPath -r $rid -c $Configuration -p:ExcludeStubs=true -p:SfxTier=Universal --nologo -v quiet
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Failed to publish $($proj.Name) for $rid"
             continue
         }
 
         # Copy published stub to stubs/{rid}/ directory for easy discovery
-        $tfm = if ($proj.Name -eq "Compression.Sfx.Ui") { "net10.0-windows" } else { "net10.0" }
-        $pubDir = Join-Path (Join-Path (Join-Path (Join-Path (Join-Path (Join-Path $root $proj.Dir) "bin") $Configuration) $tfm) $rid) "publish"
+        # Both stubs target net10.0 since the GUI left WPF; AOT inserts a platform segment.
+        $tfm = "net10.0"
+        $projRoot = Join-Path $root $proj.Dir
+        $pubDir = $null
+        foreach ($platform in @("", "x64", "arm64")) {
+            $bin = if ($platform -eq "") { Join-Path $projRoot "bin" } else { Join-Path (Join-Path $projRoot "bin") $platform }
+            $candidate = Join-Path (Join-Path (Join-Path $bin $Configuration) $tfm) (Join-Path $rid "publish")
+            if (Test-Path $candidate) { $pubDir = $candidate; break }
+        }
+        if (-not $pubDir) {
+            Write-Warning "No publish output found for $($proj.Name) / $rid"
+            continue
+        }
         $exeName = if ($rid.StartsWith("win")) {
             if ($proj.Name -eq "Compression.Sfx.Cli") { "sfx-cli.exe" } else { "sfx-ui.exe" }
         } else {

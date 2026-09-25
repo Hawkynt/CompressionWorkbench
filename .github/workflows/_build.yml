@@ -47,7 +47,103 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
+  # NativeAOT cannot cross-compile, so each runtime is built on its own runner rather than
+  # cross-published from one Windows host the way the rest of this workflow does.
+  sfx-stubs-universal:
+    name: sfx ${{ matrix.rid }} ${{ matrix.kind }} universal
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [cli, ui]
+        include:
+          - { rid: win-x64,    os: windows-latest }
+          - { rid: win-arm64,  os: windows-11-arm }
+          - { rid: linux-x64,  os: ubuntu-latest }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm }
+          - { rid: osx-x64,    os: macos-13 }
+          - { rid: osx-arm64,  os: macos-latest }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: preview
+      - name: Install the native toolchain AOT links against
+        if: startsWith(matrix.os, 'ubuntu')
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - name: Publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          proj=$([ "${{ matrix.kind }}" = cli ] && echo Compression.Sfx.Cli || echo Compression.Sfx.Ui)
+          ext=$([ "${{ startsWith(matrix.rid, 'win') }}" = true ] && echo .exe || echo "")
+          dest="sfx-staging/${{ matrix.rid }}"
+          mkdir -p "$dest"
+          # ExcludeStubs stops Compression.Lib embedding previously-built stubs into the stub being
+          # built, which would grow it without bound.
+          dotnet publish "$proj/$proj.csproj" -r ${{ matrix.rid }} -c Release             -p:ExcludeStubs=true -p:SfxTier=Universal -p:Version=${{ inputs.version }} --nologo -o out
+          cp "out/sfx-${{ matrix.kind }}$ext" "$dest/sfx-${{ matrix.kind }}-universal$ext"
+          ls -l "$dest"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sfx-stub-${{ matrix.rid }}-${{ matrix.kind }}-universal
+          path: sfx-staging
+          if-no-files-found: error
+
+  # Carved stubs carry one format each and are five to twelve times smaller than the universal one,
+  # so the formats people actually ship as SFX get the small stub. Anything not listed here still
+  # works: SfxBuilder falls back to the universal stub.
+  sfx-stubs-carved:
+    name: sfx ${{ matrix.rid }} ${{ matrix.kind }} ${{ matrix.format }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [cli, ui]
+        format: [Zip, SevenZip, Tar, Rar, Cab, TarGz, TarXz, TarZst]
+        include:
+          - { rid: win-x64,    os: windows-latest }
+          - { rid: win-arm64,  os: windows-11-arm }
+          - { rid: linux-x64,  os: ubuntu-latest }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm }
+          - { rid: osx-x64,    os: macos-13 }
+          - { rid: osx-arm64,  os: macos-latest }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: preview
+      - name: Install the native toolchain AOT links against
+        if: startsWith(matrix.os, 'ubuntu')
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - name: Publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          proj=$([ "${{ matrix.kind }}" = cli ] && echo Compression.Sfx.Cli || echo Compression.Sfx.Ui)
+          ext=$([ "${{ startsWith(matrix.rid, 'win') }}" = true ] && echo .exe || echo "")
+          suffix=$(echo "${{ matrix.format }}" | tr '[:upper:]' '[:lower:]')
+          dest="sfx-staging/${{ matrix.rid }}"
+          mkdir -p "$dest"
+          dotnet publish "$proj/$proj.csproj" -r ${{ matrix.rid }} -c Release             -p:ExcludeStubs=true -p:SfxTier=Carved -p:SfxFormat=${{ matrix.format }}             -p:Version=${{ inputs.version }} --nologo -o out
+          cp "out/sfx-${{ matrix.kind }}$ext" "$dest/sfx-${{ matrix.kind }}-$suffix$ext"
+          ls -l "$dest"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sfx-stub-${{ matrix.rid }}-${{ matrix.kind }}-${{ matrix.format }}
+          path: sfx-staging
+          if-no-files-found: error
+
   build:
+    needs: [sfx-stubs-universal, sfx-stubs-carved]
     runs-on: windows-latest
     timeout-minutes: 60
     permissions:
@@ -131,75 +227,21 @@ jobs:
       - name: Build solution
         run: dotnet build CompressionWorkbench.slnx --configuration Release --no-restore -p:Version=${{ inputs.version }}
 
-      - name: Publish SFX stubs into Compression.Lib/stubs
-        shell: pwsh
+      - name: Collect SFX stubs into Compression.Lib/stubs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sfx-stub-*
+          merge-multiple: true
+          path: Compression.Lib/stubs
+
+      - name: Report the stub inventory
+        shell: bash
         run: |
-          # Collect every RID failure instead of aborting on the first one.
-          $PSNativeCommandUseErrorActionPreference = $false
+          # Every stub embeds into cwb and the shell, so a size regression is worth seeing in the
+          # log rather than discovering in a release.
+          find Compression.Lib/stubs -type f -exec ls -l {} + | sort -k9
+          echo "total: $(du -sh Compression.Lib/stubs | cut -f1)"
 
-          $rids       = @("win-x64", "win-x86", "win-arm64", "linux-x64", "linux-arm64")
-          $stagingDir = "sfx-staging"
-          $stubsDir   = "Compression.Lib/stubs"
-          $failures   = @()
-
-          # Phase 1: publish all stubs to a staging directory. ExcludeStubs
-          # prevents Compression.Lib from embedding previously-built stubs
-          # during this publish step, which would push the assembly over the
-          # Roslyn PE size limit.
-          foreach ($rid in $rids) {
-            $dest = "$stagingDir/$rid"
-            New-Item -ItemType Directory -Path $dest -Force | Out-Null
-
-            Write-Host "::group::Publishing SFX CLI stub for $rid"
-            dotnet publish Compression.Sfx.Cli/Compression.Sfx.Cli.csproj -r $rid -c Release -p:ExcludeStubs=true -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }} --nologo
-            $cliExit = $LASTEXITCODE
-            Write-Host "::endgroup::"
-            $exeName = if ($rid.StartsWith("win")) { "sfx-cli.exe" } else { "sfx-cli" }
-            $src = "Compression.Sfx.Cli/bin/Release/net10.0/$rid/publish/$exeName"
-            if ($cliExit -eq 0 -and (Test-Path $src)) {
-              Copy-Item $src $dest -Force
-              Write-Host "  -> $dest/$exeName" -ForegroundColor Green
-            } else {
-              $failures += "Sfx.Cli/$rid (exit=$cliExit, missing=$src)"
-              Write-Host "  -> FAILED (exit=$cliExit) for $rid" -ForegroundColor Red
-            }
-
-            if ($rid.StartsWith("win")) {
-              Write-Host "::group::Publishing SFX UI stub for $rid"
-              dotnet publish Compression.Sfx.Ui/Compression.Sfx.Ui.csproj -r $rid -c Release -p:ExcludeStubs=true -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }} --nologo
-              $uiExit = $LASTEXITCODE
-              Write-Host "::endgroup::"
-              $src = "Compression.Sfx.Ui/bin/Release/net10.0-windows/$rid/publish/sfx-ui.exe"
-              if ($uiExit -eq 0 -and (Test-Path $src)) {
-                Copy-Item $src $dest -Force
-                Write-Host "  -> $dest/sfx-ui.exe" -ForegroundColor Green
-              } else {
-                $failures += "Sfx.Ui/$rid (exit=$uiExit, missing=$src)"
-                Write-Host "  -> FAILED (exit=$uiExit) for $rid" -ForegroundColor Red
-              }
-            }
-          }
-
-          # Phase 2: stage into Compression.Lib/stubs/ for embedding.
-          if (Test-Path $stagingDir) {
-            New-Item -ItemType Directory -Path $stubsDir -Force | Out-Null
-            Copy-Item "$stagingDir/*" $stubsDir -Recurse -Force
-            Remove-Item $stagingDir -Recurse -Force
-            Write-Host "Stubs staged into $stubsDir" -ForegroundColor Green
-          }
-
-          if ($failures.Count -gt 0) {
-            Write-Host ""
-            Write-Host "=== SFX publish failures ===" -ForegroundColor Red
-            $failures | ForEach-Object { Write-Host "  * $_" -ForegroundColor Red }
-            exit 1
-          }
-
-      # EnableSingleFileBundle=false disables the post-build SingleFileBundle.targets
-      # that fires on `dotnet build`. When called from `dotnet publish`, the post-
-      # build target deletes runtimeconfig.json after Build, then the publish step's
-      # own PublishSingleFile bundling can't find it. Letting publish handle the
-      # single-file bundling natively avoids the conflict.
       - name: Publish CLI (win-x64)
         run: dotnet publish Compression.CLI/Compression.CLI.csproj -r win-x64 -c Release --self-contained --nologo -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }}
 

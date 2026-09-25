@@ -1,23 +1,28 @@
 using System.Runtime.InteropServices;
+using Compression.Registry;
 
 namespace Compression.Lib;
 
 /// <summary>
 /// Creates self-extracting archives by concatenating a stub executable with archive data.
-/// Layout: [stub.exe][archive data][8-byte archive offset (int64 LE)][4-byte magic "SFX!"]
+/// Layout is defined once by <see cref="SfxTrailer"/>, which the stubs also read.
 /// </summary>
 public static class SfxBuilder {
-
-  private static readonly byte[] Magic = [(byte)'S', (byte)'F', (byte)'X', (byte)'!'];
 
   public enum StubType { Cli, Ui }
 
   /// <summary>
-  /// Known runtime identifiers for cross-platform stub publishing.
+  /// Runtimes a stub is actually published for.
   /// </summary>
+  /// <remarks>
+  /// This is the shipped set, not a wish list. The stubs are NativeAOT binaries so that a
+  /// self-extractor needs nothing installed, and that rules two entries out of the old list:
+  /// NativeAOT has no x86 target at all, and no musl stubs are built. Advertising a target whose
+  /// stub can never exist only turns a clear "unsupported" into a confusing "file not found".
+  /// </remarks>
   public static readonly string[] SupportedTargets = [
-    "win-x64", "win-x86", "win-arm64",
-    "linux-x64", "linux-arm64", "linux-musl-x64", "linux-musl-arm64",
+    "win-x64", "win-arm64",
+    "linux-x64", "linux-arm64",
     "osx-x64", "osx-arm64",
   ];
 
@@ -25,7 +30,7 @@ public static class SfxBuilder {
   /// Creates a self-extracting archive by combining a stub with an archive file.
   /// </summary>
   public static void Create(string archivePath, string outputExePath, StubType stubType, string? targetRid = null) {
-    var stubPath = FindStub(stubType, targetRid);
+    var stubPath = FindStub(stubType, targetRid, DetectFormatId(archivePath));
     using var output = File.Create(outputExePath);
 
     // 1. Copy stub
@@ -39,17 +44,60 @@ public static class SfxBuilder {
       archive.CopyTo(output);
 
     // 3. Write trailer: [8-byte offset][4-byte magic]
-    Span<byte> trailer = stackalloc byte[12];
-    BitConverter.TryWriteBytes(trailer, archiveOffset);
-    Magic.CopyTo(trailer[8..]);
-    output.Write(trailer);
+    SfxTrailer.Write(output, archiveOffset);
+  }
+
+  /// <summary>
+  /// The format id of an archive, for choosing a carved stub. Null when it cannot be identified,
+  /// which simply means the universal stub gets used.
+  /// </summary>
+  private static string? DetectFormatId(string archivePath) {
+    try {
+      var format = FormatDetector.Detect(archivePath);
+      return format == FormatDetector.Format.Unknown ? null : format.ToString();
+    } catch {
+      // Detection is an optimisation here, never a requirement.
+      return null;
+    }
+  }
+
+  /// <summary>
+  /// Creates one self-extracting archive that runs on several operating systems: a Windows
+  /// executable and a POSIX shell script at the same time.
+  /// </summary>
+  /// <param name="archivePath">The archive to embed.</param>
+  /// <param name="outputExePath">File to create.</param>
+  /// <param name="stubType">Console or GUI stub.</param>
+  /// <param name="targetRids">
+  /// Runtimes to bundle. Exactly one Windows runtime is required, because the file's outward shape
+  /// is a PE; the rest are selected at run time by <c>uname</c>.
+  /// </param>
+  /// <exception cref="ArgumentException">No Windows runtime was listed.</exception>
+  public static void CreateUniversal(
+    string archivePath, string outputExePath, StubType stubType, IReadOnlyList<string> targetRids) {
+    ArgumentNullException.ThrowIfNull(targetRids);
+
+    var windowsRid = targetRids.FirstOrDefault(r => r.StartsWith("win", StringComparison.Ordinal))
+      ?? throw new ArgumentException(
+        "A multi-OS self-extractor needs a Windows runtime: the container is a PE file.", nameof(targetRids));
+
+    var formatId = DetectFormatId(archivePath);
+    var windowsStub = File.ReadAllBytes(FindStub(stubType, windowsRid, formatId));
+
+    var posix = targetRids
+      .Where(r => !r.StartsWith("win", StringComparison.Ordinal))
+      .Select(r => new SfxPolyglot.TargetStub(r, File.ReadAllBytes(FindStub(stubType, r, formatId))))
+      .ToList();
+
+    using var archive = File.OpenRead(archivePath);
+    SfxPolyglot.Write(outputExePath, windowsStub, posix, archive);
   }
 
   /// <summary>
   /// Creates a self-extracting archive from an in-memory archive stream.
   /// </summary>
   public static void Create(Stream archiveData, string outputExePath, StubType stubType, string? targetRid = null) {
-    var stubPath = FindStub(stubType, targetRid);
+    var stubPath = FindStub(stubType, targetRid, formatId: null);
     using var output = File.Create(outputExePath);
 
     // 1. Copy stub
@@ -62,10 +110,7 @@ public static class SfxBuilder {
     archiveData.CopyTo(output);
 
     // 3. Write trailer
-    Span<byte> trailer = stackalloc byte[12];
-    BitConverter.TryWriteBytes(trailer, archiveOffset);
-    Magic.CopyTo(trailer[8..]);
-    output.Write(trailer);
+    SfxTrailer.Write(output, archiveOffset);
   }
 
   /// <summary>
@@ -82,10 +127,7 @@ public static class SfxBuilder {
     using (var archive = File.OpenRead(archivePath))
       archive.CopyTo(output);
 
-    Span<byte> trailer = stackalloc byte[12];
-    BitConverter.TryWriteBytes(trailer, archiveOffset);
-    Magic.CopyTo(trailer[8..]);
-    output.Write(trailer);
+    SfxTrailer.Write(output, archiveOffset);
   }
 
   /// <summary>
@@ -100,26 +142,15 @@ public static class SfxBuilder {
   /// </summary>
   public static (long Offset, long Length, FormatDetector.Format Format)? ReadTrailer(string sfxPath) {
     using var fs = File.OpenRead(sfxPath);
-    if (fs.Length < 12) return null;
+    if (!SfxTrailer.TryRead(fs, out var location)) return null;
 
-    fs.Seek(-12, SeekOrigin.End);
-    Span<byte> trailer = stackalloc byte[12];
-    fs.ReadExactly(trailer);
-
-    if (trailer[8] != Magic[0] || trailer[9] != Magic[1] || trailer[10] != Magic[2] || trailer[11] != Magic[3])
-      return null;
-
-    var offset = BitConverter.ToInt64(trailer[..8]);
-    var length = fs.Length - 12 - offset;
-    if (offset < 0 || offset >= fs.Length - 12 || length <= 0)
-      return null;
-
-    fs.Seek(offset, SeekOrigin.Begin);
-    var header = new byte[(int)Math.Min(512, length)];
+    // The trailer deliberately records no format, so it is sniffed from the payload every time.
+    fs.Seek(location.Offset, SeekOrigin.Begin);
+    var header = new byte[(int)Math.Min(512, location.Length)];
     var read = fs.Read(header, 0, header.Length);
     var format = FormatDetector.DetectByMagic(header.AsSpan(0, read));
 
-    return (offset, length, format);
+    return (location.Offset, location.Length, format);
   }
 
   /// <summary>
@@ -176,19 +207,49 @@ public static class SfxBuilder {
   /// 1. Embedded resource in Compression.Lib assembly (CI/published builds)
   /// 2. File system: stubs/{rid}/, repo build output, exe directory (dev builds)
   /// </summary>
-  private static string FindStub(StubType stubType, string? targetRid = null) {
+  private static string FindStub(StubType stubType, string? targetRid = null, string? formatId = null) {
     var rid = targetRid ?? CurrentRid();
     var stubName = stubType == StubType.Cli ? "sfx-cli" : "sfx-ui";
-    var stubExeName = rid.StartsWith("win") ? $"{stubName}.exe" : stubName;
+    var suffix = rid.StartsWith("win") ? ".exe" : "";
 
-    // 1. Try embedded resource first (populated by CI or publish-sfx-stubs.ps1)
-    var resourcePath = TryExtractEmbeddedStub(rid, stubExeName);
-    if (resourcePath != null)
-      return resourcePath;
+    // A stub carved for this one format is a twentieth the size of the universal one, so it is
+    // preferred whenever the matrix happens to have published it. Falling back is not a failure:
+    // the universal stub reads every archive format there is.
+    foreach (var name in CandidateStubNames(stubName, formatId)) {
+      var stubExeName = name + suffix;
 
-    // 2. File system fallback (development builds)
+      var resourcePath = TryExtractEmbeddedStub(rid, stubExeName);
+      if (resourcePath != null)
+        return resourcePath;
+
+      if (FindStubOnDisk(stubType, rid, stubExeName) is { } onDisk)
+        return onDisk;
+    }
+
+    var fallbackName = stubName + suffix;
+    var projectFolderName = stubType == StubType.Cli ? "Compression.Sfx.Cli" : "Compression.Sfx.Ui";
+    throw new FileNotFoundException(
+      $"SFX stub '{fallbackName}' not found for target '{rid}'. " +
+      $"Publish the stub first: dotnet publish {projectFolderName} -r {rid} -c Release -p:SfxTier=Universal");
+  }
+
+  /// <summary>
+  /// Stub names to try, best first: the one carved for this format, then the universal one, then
+  /// the unsuffixed legacy name so an older stubs directory still works.
+  /// </summary>
+  private static IEnumerable<string> CandidateStubNames(string stubName, string? formatId) {
+    if (!string.IsNullOrEmpty(formatId))
+      yield return $"{stubName}-{formatId.ToLowerInvariant()}";
+
+    yield return $"{stubName}-universal";
+    yield return stubName;
+  }
+
+  private static string? FindStubOnDisk(StubType stubType, string rid, string stubExeName) {
+
     var projectFolder = stubType == StubType.Cli ? "Compression.Sfx.Cli" : "Compression.Sfx.Ui";
-    var tfms = stubType == StubType.Ui ? new[] { "net10.0-windows", "net10.0" } : new[] { "net10.0" };
+    // Both stubs target net10.0 since the GUI moved off WPF; AOT adds a platform segment to the path.
+    var tfms = new[] { "net10.0" };
 
     var exeDir = Path.GetDirectoryName(Environment.ProcessPath) ?? ".";
     var candidates = new List<string>();
@@ -200,30 +261,27 @@ public static class SfxBuilder {
       candidates.Add(Path.Combine(repoRoot, "Compression.CLI", "stubs", rid, stubExeName));
       candidates.Add(Path.Combine(repoRoot, "Compression.Lib", "stubs", rid, stubExeName));
 
-      foreach (var config in new[] { "Release", "Debug" }) {
-        foreach (var tfm in tfms) {
-          candidates.Add(Path.Combine(repoRoot, projectFolder, "bin", config, tfm, rid, "publish", stubExeName));
-        }
-      }
-
-      foreach (var config in new[] { "Release", "Debug" }) {
-        foreach (var tfm in tfms) {
-          candidates.Add(Path.Combine(repoRoot, projectFolder, "bin", config, tfm, stubExeName));
+      foreach (var platform in new[] { "", "x64", "arm64" }) {
+        foreach (var config in new[] { "Release", "Debug" }) {
+          foreach (var tfm in tfms) {
+            var bin = platform.Length == 0
+              ? Path.Combine(repoRoot, projectFolder, "bin", config, tfm)
+              : Path.Combine(repoRoot, projectFolder, "bin", platform, config, tfm);
+            candidates.Add(Path.Combine(bin, rid, "publish", stubExeName));
+            candidates.Add(Path.Combine(bin, rid, stubExeName));
+            candidates.Add(Path.Combine(bin, stubExeName));
+          }
         }
       }
     }
 
     candidates.Add(Path.Combine(exeDir, stubExeName));
 
-    foreach (var candidate in candidates) {
+    foreach (var candidate in candidates)
       if (File.Exists(candidate))
         return Path.GetFullPath(candidate);
-    }
 
-    throw new FileNotFoundException(
-      $"SFX stub '{stubExeName}' not found for target '{rid}'. " +
-      $"Publish the stub first: dotnet publish {projectFolder} -r {rid} -c Release"
-    );
+    return null;
   }
 
   /// <summary>
