@@ -323,14 +323,16 @@ public partial class DefragmentWindow : Window {
     if (ArchiveRepackGroup != null)
       ArchiveRepackGroup.Visibility = (this._isArchiveMode || this._isFileInternalMode) ? Visibility.Visible : Visibility.Collapsed;
     if (SmartSolidRepackCheck != null)
-      SmartSolidRepackCheck.Visibility = Visibility.Collapsed;
+      SmartSolidRepackCheck.Visibility =
+        this._isArchiveMode && this._isSevenZipFormat && descriptor is IArchiveRepackable
+          ? Visibility.Visible
+          : Visibility.Collapsed;
     if (MetadataPlacementPanel != null)
       MetadataPlacementPanel.Visibility = this._isFileInternalMode ? Visibility.Visible : Visibility.Collapsed;
 
-    // Enable Shrink button for formats that support it: the dedicated helpers
-    // (Fat/Ext/Vhd) plus any descriptor exposing the canonical IArchiveShrinkable.
-    var formatStr = format.ToString();
-    var supportsShrink = formatStr is "Fat" or "Ext" or "Ext1" or "Vhd" || ops is IArchiveShrinkable;
+    // Shrink is exposed only by the explicit capability; format IDs are not
+    // a second source of truth.
+    var supportsShrink = descriptor is IArchiveShrinkable;
     if (ShrinkBtn != null)
       ShrinkBtn.IsEnabled = supportsShrink;
 
