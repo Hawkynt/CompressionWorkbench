@@ -287,11 +287,21 @@ public sealed class GlbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         if (!reader.Read())
           throw new JsonException("Missing bufferView property value.");
 
-        if (isOffset && reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var parsedOffset))
-          offset = parsedOffset;
-        else if (isLength && reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var parsedLength))
-          length = parsedLength;
-        else
+        if (isOffset) {
+          if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var parsedOffset))
+            offset = parsedOffset;
+          else {
+            offset = -1;
+            SkipValue(ref reader);
+          }
+        } else if (isLength) {
+          if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var parsedLength))
+            length = parsedLength;
+          else {
+            length = -1;
+            SkipValue(ref reader);
+          }
+        } else
           SkipValue(ref reader);
       }
 
