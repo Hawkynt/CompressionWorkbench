@@ -10,6 +10,7 @@ using FileFormat.Numpy;
 using FileFormat.Pcap;
 using FileFormat.Pcapng;
 using FileFormat.Jp2;
+using FileFormat.Jxl;
 using FileFormat.Psb;
 using FileFormat.Psd;
 using FileFormat.Sup;
@@ -91,6 +92,7 @@ public sealed class NativeSpanArchiveInputTests {
       BuildPsdCase(LargePayloadSize),
       BuildPsbCase(LargePayloadSize),
       BuildJp2Case(LargePayloadSize),
+      BuildJxlCase(LargePayloadSize),
     }) {
       var directory = Path.Combine(Path.GetTempPath(), $"cwb-span-range-{Guid.NewGuid():N}");
       try {
@@ -98,7 +100,9 @@ public sealed class NativeSpanArchiveInputTests {
         var warmCase = testCase.Name switch {
           "PSD" => BuildPsdCase(257),
           "PSB" => BuildPsbCase(257),
-          _ => BuildJp2Case(257),
+          "JP2" => BuildJp2Case(257),
+          "JXL" => BuildJxlCase(257),
+          _ => throw new InvalidOperationException($"Unknown source-range test case: {testCase.Name}"),
         };
         warmCase.Operations.ExtractSpan(
           warmCase.Image, warmDirectory, null, [warmCase.PayloadEntry]);
@@ -187,6 +191,7 @@ public sealed class NativeSpanArchiveInputTests {
     BuildPsdCase(payloadSize),
     BuildPsbCase(payloadSize),
     BuildJp2Case(payloadSize),
+    BuildJxlCase(payloadSize),
     BuildMzCase(payloadSize),
     BuildUImageCase(payloadSize),
     BuildUefiFvCase(payloadSize),
@@ -441,6 +446,34 @@ public sealed class NativeSpanArchiveInputTests {
       "JP2", new Jp2FormatDescriptor(), image, "codestream.j2c", payload);
   }
 
+  private static SpanCase BuildJxlCase(int payloadSize) {
+    var payload = Pattern(payloadSize, 0xA4);
+    var firstLength = payload.Length / 2;
+    var secondLength = payload.Length - firstLength;
+
+    using var output = new MemoryStream();
+    output.Write([0x00, 0x00, 0x00, 0x0C, 0x4A, 0x58, 0x4C, 0x20, 0x0D, 0x0A, 0x87, 0x0A]);
+
+    using (var firstBody = new MemoryStream()) {
+      Span<byte> index = stackalloc byte[4];
+      BinaryPrimitives.WriteUInt32BigEndian(index, 0);
+      firstBody.Write(index);
+      firstBody.Write(payload.AsSpan(0, firstLength));
+      WriteIsoBox(output, "jxlp", firstBody.GetBuffer().AsSpan(0, (int)firstBody.Length));
+    }
+
+    using (var secondBody = new MemoryStream()) {
+      Span<byte> index = stackalloc byte[4];
+      BinaryPrimitives.WriteUInt32BigEndian(index, 0x80000001);
+      secondBody.Write(index);
+      secondBody.Write(payload.AsSpan(firstLength, secondLength));
+      WriteIsoBox(output, "jxlp", secondBody.GetBuffer().AsSpan(0, (int)secondBody.Length));
+    }
+
+    return new SpanCase(
+      "JXL", new JxlFormatDescriptor(), output.ToArray(), "codestream.jxl", payload);
+  }
+
   private static SpanCase BuildMzCase(int payloadSize) {
     const int headerLength = 32;
     var imageLength = headerLength + payloadSize;
@@ -549,6 +582,17 @@ public sealed class NativeSpanArchiveInputTests {
     for (var i = 0; i < result.Length; ++i)
       result[i] = (byte)(seed + i * 17);
     return result;
+  }
+
+  private static void WriteIsoBox(Stream output, string type, ReadOnlySpan<byte> body) {
+    if (type.Length != 4)
+      throw new ArgumentException("ISO box type must be exactly four characters.", nameof(type));
+
+    Span<byte> header = stackalloc byte[8];
+    BinaryPrimitives.WriteUInt32BigEndian(header[..4], checked((uint)(8 + body.Length)));
+    Encoding.ASCII.GetBytes(type, header[4..8]);
+    output.Write(header);
+    output.Write(body);
   }
 
   private static void WriteSupSegment(
