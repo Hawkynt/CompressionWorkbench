@@ -248,7 +248,7 @@ public sealed class DngFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // This isn't a standalone TIFF — just a metadata dump a triage tool can read.
     using var ms = new MemoryStream();
     ms.WriteByte(isBigEndian ? (byte)'M' : (byte)'I');
-    ms.WriteByte(reader.IsBigEndian ? (byte)'M' : (byte)'I');
+    ms.WriteByte(isBigEndian ? (byte)'M' : (byte)'I');
     Span<byte> w = stackalloc byte[4];
     System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(w, (ushort)exifIfd.Entries.Count);
     ms.Write(w.Slice(0, 2));
