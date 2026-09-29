@@ -80,10 +80,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Hawkynt.NativeForms" Version="1.0.0.219" />
-    <PackageReference Include="Hawkynt.NativeForms.Backends.Windows" Version="1.0.0.62"
+    <PackageReference Include="Hawkynt.NativeForms" Version="1.0.0.227" />
+    <PackageReference Include="Hawkynt.NativeForms.Backends.Windows" Version="1.0.0.63"
                       Condition="$(RuntimeIdentifier.StartsWith('win'))" />
-    <PackageReference Include="Hawkynt.NativeForms.Backends.Gtk" Version="1.0.0.71"
+    <PackageReference Include="Hawkynt.NativeForms.Backends.Gtk" Version="1.0.0.73"
                       Condition="$(RuntimeIdentifier.StartsWith('linux'))" />
     <PackageReference Include="Hawkynt.NativeForms.Backends.macOS" Version="1.0.0.92"
                       Condition="$(RuntimeIdentifier.StartsWith('osx'))" />
