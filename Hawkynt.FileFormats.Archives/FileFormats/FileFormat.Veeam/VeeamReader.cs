@@ -152,13 +152,16 @@ public sealed class VeeamReader : IDisposable {
     // Surface the recovered OibSummary XML as a separate entry too — it's
     // the verbatim Veeam-emitted trailer and is far more useful to a
     // downstream forensics consumer than the .ini summary alone.
-    if (this.OibSummary?.RawXml is { Length: > 0 } rawXml) {
-      var xmlBytes = Encoding.UTF8.GetBytes(rawXml);
+    if (this.OibSummary is { XmlLength: > 0 } oibSummary) {
+      // The parsed string is only a best-effort view. Copy from the original
+      // container so extraction preserves the exact bytes, including any
+      // non-UTF-8 payload bytes accepted by the replacement-fallback decoder.
+      var xmlBytes = _data.AsSpan(checked((int)oibSummary.XmlOffset), oibSummary.XmlLength).ToArray();
       _entries.Add(new VeeamEntry {
         Name = "OibSummary.xml",
         Size = xmlBytes.Length,
         IsDirectory = false,
-        Offset = this.OibSummary.XmlOffset,
+        Offset = oibSummary.XmlOffset,
         Data = xmlBytes,
       });
     }
