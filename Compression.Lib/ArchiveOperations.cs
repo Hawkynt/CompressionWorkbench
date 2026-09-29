@@ -405,6 +405,23 @@ public static class ArchiveOperations {
   }
 
   /// <summary>
+  /// Gives entries new paths inside an existing archive or filesystem image, through the format's
+  /// <see cref="Compression.Registry.IArchiveModifiable.Rename(Stream, IReadOnlyList{Compression.Registry.ArchiveRename}, Compression.Registry.ArchiveMutationOptions)"/>.
+  /// </summary>
+  /// <exception cref="NotSupportedException">The format cannot be modified.</exception>
+  public static void Rename(string archivePath, IReadOnlyList<Compression.Registry.ArchiveRename> renames,
+                            CompressionOptions? opts = null) {
+    ArgumentNullException.ThrowIfNull(renames);
+    var format = FormatDetector.Detect(archivePath);
+    FormatRegistration.EnsureInitialized();
+    if (Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString()) is not Compression.Registry.IArchiveModifiable modifier)
+      throw new NotSupportedException($"{format} archives cannot be modified, so their entries cannot be renamed.");
+
+    using var fs = File.Open(archivePath, FileMode.Open, FileAccess.ReadWrite);
+    modifier.Rename(fs, renames, new Compression.Registry.ArchiveMutationOptions { Password = opts?.Password });
+  }
+
+  /// <summary>
   /// Replaces an existing entry with the contents of <paramref name="newSourcePath"/>.
   /// Sugar for <see cref="Remove"/> followed by <see cref="Add"/>; uses the
   /// modifier path when available so the operation is O(touched bytes) on the

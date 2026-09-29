@@ -74,4 +74,32 @@ public interface IArchiveModifiable : IArchivePurgeable {
     ArgumentNullException.ThrowIfNull(options);
     this.Remove(archive, entryNames);
   }
+
+  /// <summary>
+  /// Gives entries new paths within an existing instance. A folder is renamed with everything
+  /// beneath it; the renames apply in order, and none may land on a path that is already taken.
+  ///
+  /// <para><b>Default implementation</b>: a verified extract → move → re-create edit through
+  /// <see cref="RebuildVerb.EditViaRebuild"/>, as Add and Remove do. Formats whose directory can be
+  /// rewritten in place override it.</para>
+  /// </summary>
+  void Rename(Stream archive, IReadOnlyList<ArchiveRename> renames) {
+    if (this is not IArchiveFormatOperations ops || this is not IArchiveCreatable creator)
+      throw new System.NotSupportedException(
+        "The default Rename requires the descriptor to also implement IArchiveFormatOperations + IArchiveCreatable.");
+    ArgumentNullException.ThrowIfNull(renames);
+    RebuildVerb.EditViaRebuild(archive, ops, creator, tmpDir => RebuildVerb.MoveEntries(tmpDir, renames));
+  }
+
+  /// <summary>Renames entries while supplying operation-scoped credentials.</summary>
+  /// <remarks>The default delegates to the legacy overload, as Add and Remove do.</remarks>
+  void Rename(Stream archive, IReadOnlyList<ArchiveRename> renames, ArchiveMutationOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    this.Rename(archive, renames);
+  }
 }
+
+/// <summary>One entry, or one folder with everything beneath it, moved to a new path in the same instance.</summary>
+/// <param name="From">The current entry path, <c>/</c>-separated; a trailing <c>/</c> is optional for a folder.</param>
+/// <param name="To">The new entry path.</param>
+public readonly record struct ArchiveRename(string From, string To);
