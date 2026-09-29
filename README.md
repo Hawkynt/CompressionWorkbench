@@ -318,7 +318,7 @@ work from the bytes outward instead of stopping at "unsupported".
 ### 🖥️ Compression.NativeUI — browser, analyser and heatmap
 
 The archive browser is the conventional half, laid out like a file manager: a folder tree that
-treats the open archive as one more folder, a breadcrumb bar that doubles as an address bar
+treats the open archive as one more folder, a preview pane beside the list, a breadcrumb bar that doubles as an address bar
 (paths may run into an archive), Back / Forward history, in-place rename (F2) on disk and inside
 modifiable archives, cut / copy / paste between folders and archives in any direction; file list with name, size, compressed
 size, ratio, method and modified columns; open / extract / create / test flows; text, hex and

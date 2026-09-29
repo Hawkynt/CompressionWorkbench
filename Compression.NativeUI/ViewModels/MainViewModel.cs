@@ -305,6 +305,43 @@ internal sealed class MainViewModel : ViewModelBase {
     }
   }
 
+  /// <summary>The largest entry the preview pane reads for a glance; the preview window has no such limit.</summary>
+  internal const long PreviewPaneLimit = 32L * 1024 * 1024;
+
+  /// <summary>
+  /// The bytes the preview pane shows for <paramref name="entry"/>, or null and the caption to show
+  /// instead: a folder, an encrypted entry, one too large to read for a glance, one that cannot be
+  /// read. Safe to call off the UI thread; it changes nothing.
+  /// </summary>
+  internal (byte[]? Data, string Caption) ReadForPreview(ArchiveEntryViewModel entry) {
+    if (entry.IsParentEntry) return (null, "");
+    if (entry.IsDirectory) return (null, $"{entry.Name}{Environment.NewLine}Folder");
+    if (entry.IsEncrypted) return (null, $"{entry.Name}{Environment.NewLine}Encrypted");
+
+    var browsingDisk = IsBrowsingOsFolder;
+    var size = browsingDisk ? SafeLength(entry.Path) : entry.OriginalSize;
+    if (size > PreviewPaneLimit)
+      return (null, $"{entry.Name}{Environment.NewLine}Too large to preview ({FormatSize(size)})");
+
+    try {
+      var data = browsingDisk
+        ? File.ReadAllBytes(entry.Path)
+        : ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: null);
+      return (data, entry.Name);
+    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
+                                   or NotSupportedException or InvalidOperationException or ArgumentException) {
+      return (null, $"{entry.Name}{Environment.NewLine}Cannot be read: {ex.Message}");
+    }
+
+    static long SafeLength(string path) {
+      try {
+        return new FileInfo(path).Length;
+      } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) {
+        return 0;
+      }
+    }
+  }
+
   private ArchiveEntryViewModel? SingleSelection() {
     var selected = SelectedEntries.Where(e => !e.IsParentEntry).Take(2).ToList();
     return selected.Count == 1 ? selected[0] : null;

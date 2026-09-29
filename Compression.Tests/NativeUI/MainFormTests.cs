@@ -478,6 +478,38 @@ public sealed class MainFormTests {
     }));
   }
 
+  // ── preview pane ────────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenThePreviewPane_WhenToggledFromTheMenu_ThenItHidesAndReturns() {
+    WithShell(shell => {
+      var toggle = Field<MenuStrip>(shell, "_menu").Items.Cast<ToolStripItem>().SelectMany(MenuItems)
+        .Single(i => i.Text == "&Preview Pane");
+      Assert.That(shell.PreviewPaneVisible, Is.True, "a file manager opens with its preview showing");
+      Assert.That(toggle.ShortcutKeys, Is.EqualTo(Keys.Alt | Keys.P));
+
+      toggle.PerformClick();
+      Assert.That((shell.PreviewPaneVisible, toggle.Checked), Is.EqualTo((false, false)));
+
+      toggle.PerformClick();
+      Assert.That((shell.PreviewPaneVisible, toggle.Checked), Is.EqualTo((true, true)));
+    });
+  }
+
+  [Test]
+  public void GivenAFolderSelected_WhenThePaneRefreshes_ThenItSaysFolderWithoutReadingAnything() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.Folder(root));
+      var list = Field<ListView>(shell, "_entries");
+
+      list.Items.Cast<ListViewItem>().First(i => i.Text == "sub").Selected = true;
+
+      var pane = Field<Compression.NativeUI.Controls.PreviewPane>(shell, "_preview");
+      Assert.That(pane.Caption, Does.StartWith("sub").And.EndWith("Folder"));
+    }));
+  }
+
   // ── clipboard ───────────────────────────────────────────────────────────────────────────────
 
   [Test]
