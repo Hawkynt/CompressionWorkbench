@@ -1,0 +1,99 @@
+name: _sfx-stubs
+
+# Builds the self-extracting stubs, one runner per runtime, and proves each console stub actually
+# extracts an archive on the operating system it was built for.
+#
+# NativeAOT cannot cross-compile, so every runtime needs its own host. Release and nightly build
+# every carved format; pull requests that touch SFX code build a representative subset, so a
+# broken stub is caught before it lands rather than in the first nightly after it.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: '0.0.0-ci'
+      ref:
+        type: string
+        default: ''
+      tiers:
+        description: JSON list of tiers to build — "Universal" and/or carved format names
+        type: string
+        default: '["Universal","Zip","SevenZip","Tar","Rar","Cab","TarGz","TarXz","TarZst"]'
+      upload:
+        description: Upload the stubs as artifacts for the release build to embed
+        type: boolean
+        default: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  stub:
+    name: sfx ${{ matrix.target.rid }} ${{ matrix.kind }} ${{ matrix.tier }}
+    runs-on: ${{ matrix.target.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [cli, ui]
+        tier: ${{ fromJSON(inputs.tiers) }}
+        target:
+          - { rid: win-x64,     os: windows-latest }
+          - { rid: win-arm64,   os: windows-11-arm }
+          - { rid: linux-x64,   os: ubuntu-latest }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm }
+          - { rid: osx-x64,     os: macos-13 }
+          - { rid: osx-arm64,   os: macos-latest }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: preview
+
+      - name: Install the native toolchain AOT links against
+        if: startsWith(matrix.target.os, 'ubuntu')
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          proj=$([ "${{ matrix.kind }}" = cli ] && echo Compression.Sfx.Cli || echo Compression.Sfx.Ui)
+          ext=$([ "${{ startsWith(matrix.target.rid, 'win') }}" = true ] && echo .exe || echo "")
+          tier="${{ matrix.tier }}"
+          if [ "$tier" = Universal ]; then
+            props="-p:SfxTier=Universal"; suffix=universal
+          else
+            props="-p:SfxTier=Carved -p:SfxFormat=$tier"; suffix=$(echo "$tier" | tr '[:upper:]' '[:lower:]')
+          fi
+          # ExcludeStubs stops Compression.Lib embedding earlier stubs into the one being built.
+          dotnet publish "$proj/$proj.csproj" -r ${{ matrix.target.rid }} -c Release -p:ExcludeStubs=true \
+            $props -p:Version=${{ inputs.version }} --nologo -o out
+          dest="sfx-staging/${{ matrix.target.rid }}"
+          mkdir -p "$dest"
+          cp "out/sfx-${{ matrix.kind }}$ext" "$dest/sfx-${{ matrix.kind }}-$suffix$ext"
+          echo "STUB=$dest/sfx-${{ matrix.kind }}-$suffix$ext" >> "$GITHUB_ENV"
+          ls -l "$dest"
+
+      # The console stub is run for real on the system it targets. This is the only place the
+      # Linux and macOS stubs are ever executed before a release, so it is the check that matters.
+      - name: Extract a real archive with the stub
+        if: matrix.kind == 'cli'
+        shell: bash
+        run: |
+          set -euo pipefail
+          py=$(command -v python3 || command -v python)
+          tier="${{ matrix.tier }}"
+          "$py" .github/workflows/scripts/sfx-smoke.py "$STUB" "$tier"
+
+      - uses: actions/upload-artifact@v4
+        if: inputs.upload
+        with:
+          name: sfx-stub-${{ matrix.target.rid }}-${{ matrix.kind }}-${{ matrix.tier }}
+          path: sfx-staging
+          if-no-files-found: error

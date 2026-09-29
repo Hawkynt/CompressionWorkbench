@@ -21,6 +21,38 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
+  # The SFX stubs are NativeAOT and build one runner per OS, so they are expensive. Only a pull
+  # request that touches their code pays for them — but that one must, because otherwise the Linux
+  # and macOS stubs would first run in the nightly after the change had already landed.
+  sfx-changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      touched: ${{ steps.diff.outputs.touched }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        shell: bash
+        run: |
+          base="origin/${{ github.base_ref }}"
+          if git diff --name-only "$base"...HEAD | grep -qE '^(Compression\.Sfx\.|Compression\.Lib/Sfx|Compression\.Registry/(SfxTrailer|SubStream|CompoundTarDescriptor)|\.github/workflows/(_sfx-stubs\.yml|scripts/sfx-smoke\.py))'; then
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "touched=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  sfx-stubs:
+    needs: sfx-changes
+    if: needs.sfx-changes.outputs.touched == 'true'
+    uses: ./.github/workflows/_sfx-stubs.yml
+    with:
+      # The universal stub plus one carved archive and one carved compound tar: every code path the
+      # full release matrix exercises, at a sixth of its cost.
+      tiers: '["Universal","Zip","TarGz"]'
+      upload: false
+
   test:
     name: ${{ matrix.os }}
     strategy:
