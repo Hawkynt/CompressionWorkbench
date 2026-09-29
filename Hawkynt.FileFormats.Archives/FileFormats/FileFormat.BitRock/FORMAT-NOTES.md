@@ -42,7 +42,7 @@ is no guesswork / "filler" heuristic):
 - **Page** = `[1-byte cid][data]`:
   - `cid 0` — stored (raw bytes)
   - `cid 1` — raw DEFLATE, no zlib wrapper (`inflate` with `windowBits = -15`)
-  - `cid 2` — bzip2
+  - `cid 2` — bzip2 stream (Cookfs documents zlib and bz2 as configurable page codecs)
 - **Footer** (last 16 bytes of the content region, ending exactly at the VFS start):
   `idxsize` (BE int32) · `numpages` (BE int32) · 1 byte · `"CFS0002"`.
 - Immediately before the footer: a per-page **16-byte MD5** table, then the per-page
@@ -84,3 +84,9 @@ byte-exact and checksum-gated (spot-checked PE / XML / PNG / ZIP members).
 - `BitRockContentScanner.cs` — reconstructs cookfs content, scans for the gzip-tar
   members, extracts each with the shared Gzip + Tar building blocks straight to disk.
 - `BitRockReader.cs` / `BitRockFormatDescriptor.cs` — detection, VFS locate, and List/Extract.
+
+The page codec mapping is backed by the Cookfs paper presented at Tcl/Tk 2010 and observed page
+identifiers in InstallBuilder samples. The `bzip2` path uses this repository's managed BZip2 stream;
+no third-party implementation was copied. Creating an installable BitRock package remains
+unsupported: it requires the vendor's platform-specific executable stub and matching Tcl/Metakit
+runtime, which cannot be synthesized from archive entries alone while preserving installer behavior.

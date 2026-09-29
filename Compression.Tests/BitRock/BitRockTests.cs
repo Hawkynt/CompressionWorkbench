@@ -1,5 +1,7 @@
 using System.IO.Compression;
 using System.Text;
+using Compression.Core.Streams;
+using FileFormat.Bzip2;
 using FileFormat.BitRock;
 using FileFormat.Tar;
 
@@ -78,14 +80,24 @@ public sealed class BitRockTests {
 
   /// <summary>Wraps <paramref name="content"/> in a cookfs (CFS0002) page archive split into
   /// <paramref name="pageBytes"/>-byte stored pages — the container BitRock stores the payload in.</summary>
-  private static byte[] BuildCookfs(byte[] content, int pageBytes) {
+  private static byte[] BuildCookfs(byte[] content, int pageBytes, byte compressionId = 0) {
     using var ms = new MemoryStream();
     var sizes = new List<int>();
     for (var off = 0; off < content.Length; off += pageBytes) {
       var n = Math.Min(pageBytes, content.Length - off);
-      ms.WriteByte(0);                            // cid 0 = stored
-      ms.Write(content, off, n);
-      sizes.Add(1 + n);
+      var page = content.AsSpan(off, n);
+      if (compressionId == 2) {
+        using var compressed = new MemoryStream();
+        using (var encoder = new Bzip2Stream(compressed, CompressionStreamMode.Compress, leaveOpen: true))
+          encoder.Write(page);
+        ms.WriteByte(2);
+        ms.Write(compressed.GetBuffer(), 0, checked((int)compressed.Length));
+        sizes.Add(1 + checked((int)compressed.Length));
+      } else {
+        ms.WriteByte(0);                          // cid 0 = stored
+        ms.Write(page);
+        sizes.Add(1 + n);
+      }
     }
     var numpages = sizes.Count;
     ms.Write(new byte[numpages * 16]);            // per-page MD5/CRC table (unused by the reader)
@@ -105,10 +117,10 @@ public sealed class BitRockTests {
 
   /// <summary>Builds a minimal BitRock installer whose content region is a cookfs archive of
   /// <paramref name="content"/> (footer ending exactly at the Metakit VFS start).</summary>
-  private static byte[] BuildCookfsInstaller(byte[] vfs, byte[] content, int pageBytes = 100) {
+  private static byte[] BuildCookfsInstaller(byte[] vfs, byte[] content, int pageBytes = 100, byte compressionId = 0) {
     using var ms = new MemoryStream();
     ms.Write(new byte[64]);                       // stub placeholder
-    ms.Write(BuildCookfs(content, pageBytes));    // cookfs archive (content region)
+    ms.Write(BuildCookfs(content, pageBytes, compressionId)); // cookfs archive (content region)
     var vfsLen = vfs.Length;
     ms.Write(vfs);                                // Metakit VFS (cookfs end offset == here)
     Span<byte> tr = stackalloc byte[16];
@@ -153,6 +165,22 @@ public sealed class BitRockTests {
     Assert.That(tmp, Is.Not.Null, "cookfs archive not found");
     try {
       Assert.That(File.ReadAllBytes(tmp!), Is.EqualTo(content), "reconstructed cookfs content is not byte-exact");
+    } finally {
+      File.Delete(tmp!);
+    }
+  }
+
+  [Test]
+  public void Cookfs_Reconstructs_Bzip2_Pages_ByteExact() {
+    var content = new byte[4096];
+    new Random(54321).NextBytes(content);
+    var file = BuildCookfsInstaller(MinimalVfs(), content, pageBytes: 257, compressionId: 2);
+    using var stream = new MemoryStream(file);
+    var reader = BitRockReader.Open(stream);
+    var tmp = BitRockContentScanner.ReconstructContent(stream, reader.VfsStart);
+    Assert.That(tmp, Is.Not.Null);
+    try {
+      Assert.That(File.ReadAllBytes(tmp!), Is.EqualTo(content));
     } finally {
       File.Delete(tmp!);
     }
