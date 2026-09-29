@@ -159,10 +159,38 @@ public class ArscTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Capabilities_DoesNotIncludeCanCreate() {
+  public void Create_CopiesSingleTableByteForByte() {
+    var data = BuildArscWithStringPool(7);
+    using var output = new MemoryStream();
+    new ArscFormatDescriptor().Create(output, [ArchiveInputInfo.InMemory("resources.arsc", data)], new FormatCreateOptions { MethodName = "stored" });
+    Assert.That(output.ToArray(), Is.EqualTo(data));
+  }
+
+  [Test, Category("HappyPath")]
+  public void CreateFromStreams_CopiesSingleTableByteForByte() {
+    var data = BuildArscWithStringPool(7);
+    using var output = new MemoryStream();
+    new ArscFormatDescriptor().CreateFromStreams(output,
+      [new Compression.Registry.Streaming.StreamingArchiveInput("resources.arsc", data.Length, false, () => new MemoryStream(data, writable: false))],
+      new FormatCreateOptions());
+    Assert.That(output.ToArray(), Is.EqualTo(data));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void Create_RejectsMultipleFilesAndUnsupportedMethod() {
     var d = new ArscFormatDescriptor();
-    Assert.That(d.Capabilities & FormatCapabilities.CanCreate, Is.EqualTo((FormatCapabilities)0));
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+    var data = BuildMinimalArsc();
+    Assert.Throws<InvalidDataException>(() => d.Create(new MemoryStream(),
+      [ArchiveInputInfo.InMemory("a.arsc", data), ArchiveInputInfo.InMemory("b.arsc", data)], new FormatCreateOptions()));
+    Assert.Throws<NotSupportedException>(() => d.Create(new MemoryStream(),
+      [ArchiveInputInfo.InMemory("a.arsc", data)], new FormatCreateOptions { MethodName = "deflate" }));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Capabilities_IncludeCanCreate() {
+    var d = new ArscFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.True);
@@ -181,8 +209,8 @@ public class ArscTests {
     Assert.That(d.MagicSignatures[0].Bytes, Is.EqualTo(new byte[] { 0x03, 0x00, 0x0C, 0x00 }));
     Assert.That(d.MagicSignatures[0].Offset, Is.EqualTo(0));
     Assert.That(d.Methods, Has.Count.EqualTo(1));
-    Assert.That(d.Methods[0].Name, Is.EqualTo("arsc"));
-    Assert.That(d.Methods[0].DisplayName, Is.EqualTo("ARSC"));
+    Assert.That(d.Methods[0].Name, Is.EqualTo("stored"));
+    Assert.That(d.Methods[0].DisplayName, Is.EqualTo("Stored"));
     Assert.That(d.Family, Is.EqualTo(AlgorithmFamily.Archive));
   }
 }
