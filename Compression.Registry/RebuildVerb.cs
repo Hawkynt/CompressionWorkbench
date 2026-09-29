@@ -217,6 +217,39 @@ public static class RebuildVerb {
   /// happen off to the side; the original is overwritten only after a valid
   /// staged result exists.
   /// </summary>
+  /// <summary>
+  /// Deletes, from an extracted tree, exactly the entries named: a file by its full entry path, a
+  /// folder with everything beneath it. Names match case-insensitively and with either separator.
+  /// </summary>
+  /// <remarks>
+  /// A file is not matched by its name alone. That used to be accepted as well, so removing the
+  /// top-level <c>readme.txt</c> also deleted <c>docs/readme.txt</c> and every other file that
+  /// happened to share the name.
+  /// </remarks>
+  public static void DeleteNamedEntries(string extractedRoot, IEnumerable<string> entryNames) {
+    ArgumentNullException.ThrowIfNull(extractedRoot);
+    var root = Path.GetFullPath(extractedRoot);
+    var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var name in entryNames ?? []) {
+      var normalized = (name ?? "").Replace('\\', '/').Trim('/');
+      if (normalized.Length > 0) names.Add(normalized);
+    }
+
+    if (names.Count == 0) return;
+
+    // Deepest first, so a folder named for removal is judged after its files, and deleting it
+    // cannot pull a path out from under a later iteration.
+    foreach (var dir in Directory.GetDirectories(root, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length))
+      if (names.Contains(RelativeEntryName(root, dir)))
+        Directory.Delete(dir, recursive: true);
+
+    foreach (var file in Directory.GetFiles(root, "*", SearchOption.AllDirectories))
+      if (names.Contains(RelativeEntryName(root, file)))
+        File.Delete(file);
+
+    static string RelativeEntryName(string root, string path) => Path.GetRelativePath(root, path).Replace('\\', '/');
+  }
+
   public static void EditViaRebuild(Stream archive, IArchiveFormatOperations ops,
       IArchiveCreatable creator, Action<string> mutate) {
     ArgumentNullException.ThrowIfNull(archive);
