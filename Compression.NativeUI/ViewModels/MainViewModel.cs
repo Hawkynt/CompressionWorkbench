@@ -123,6 +123,7 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand CopyCommand { get; }
   public ICommand CutCommand { get; }
   public ICommand PasteCommand { get; }
+  public ICommand NewFolderCommand { get; }
 
   // The shell's own clipboard. The desktop clipboard carries only text across every backend, so
   // files copied here paste here — between folders, archives and the two, in any direction.
@@ -223,6 +224,9 @@ internal sealed class MainViewModel : ViewModelBase {
     CopyCommand = new RelayCommand(_ => PutSelectionOnClipboard(cut: false), _ => CanCopySelection());
     CutCommand = new RelayCommand(_ => PutSelectionOnClipboard(cut: true), _ => CanCopySelection() && CanChangeHere());
     PasteCommand = new AsyncRelayCommand(_ => PasteAsync(), _ => HasClipboard && CanChangeHere());
+    // On disk only: several writers - zip's among them - keep files, not bare folders, so an empty
+    // folder made inside an archive would vanish on the next rebuild.
+    NewFolderCommand = new RelayCommand(_ => CreateNewFolder(), _ => _osBrowserPath is not null);
     RenameCommand = new RelayCommand(
       _ => { if (SingleSelection() is { } entry) RenameRequested?.Invoke(this, entry); },
       _ => SingleSelection() is { } entry && CanRename(entry));
@@ -248,6 +252,34 @@ internal sealed class MainViewModel : ViewModelBase {
   /// <see cref="HasPendingFragmentation"/> is raised so the user can run Defragment
   /// to compact freed slots.
   /// </summary>
+  /// <summary>
+  /// Makes a folder called "New folder" - or "New folder (2)" and so on when that is taken - in the
+  /// folder being browsed, and asks the view to let the user name it straight away. Returns its name,
+  /// or null when it could not be made (the reason is in the status line).
+  /// </summary>
+  internal string? CreateNewFolder() {
+    if (_osBrowserPath is not { } parent) return null;
+
+    try {
+      var taken = new HashSet<string>(Directory.EnumerateFileSystemEntries(parent).Select(Path.GetFileName)!, StringComparer.OrdinalIgnoreCase);
+      var name = Transfer.FreeName("New folder", taken);
+      Directory.CreateDirectory(Path.Combine(parent, name));
+      RefreshVisibleEntries();
+      StatusText = $"Created {name}.";
+
+      if (Entries.FirstOrDefault(e => e.Name == name) is { } created) {
+        SelectedEntries.Clear();
+        SelectedEntries.Add(created);
+        RenameRequested?.Invoke(this, created);
+      }
+
+      return name;
+    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      StatusText = $"Could not create a folder: {ex.Message}";
+      return null;
+    }
+  }
+
   private bool CanCopySelection() => CurrentLocation is not null && SelectedEntries.Any(e => !e.IsParentEntry);
 
   /// <summary>
