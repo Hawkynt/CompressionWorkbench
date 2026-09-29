@@ -1,9 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
+using Compression.Lib;
 using Compression.Mounting;
+using Compression.NativeUI;
+using Compression.NativeUI.Navigation;
 using Compression.NativeUI.ViewModels;
 using Compression.NativeUI.Views;
 using Hawkynt.NativeForms;
@@ -95,10 +100,17 @@ public sealed class MainFormTests {
   [Test]
   public void GivenTheShell_WhenItIsBuilt_ThenEveryExpectedRegionIsPresentExactlyOnce() {
     WithShell(shell => {
-      foreach (var name in new[] { "_menu", "_toolbar", "_breadcrumbBar", "_entries", "_status", "_dropOverlay" }) {
+      foreach (var name in new[] { "_menu", "_toolbar", "_breadcrumbBar", "_split", "_status", "_dropOverlay" }) {
         var control = Field<Control>(shell, name);
         Assert.That(shell.Controls.Cast<Control>().Count(c => ReferenceEquals(c, control)), Is.EqualTo(1),
           $"{name} should appear exactly once in the form's controls");
+      }
+
+      // The two panes live inside the split, once each, not on the form.
+      foreach (var name in new[] { "_tree", "_entries" }) {
+        var control = Field<Control>(shell, name);
+        Assert.That(Descendants(shell).Count(c => ReferenceEquals(c, control)), Is.EqualTo(1),
+          $"{name} should appear exactly once below the form");
       }
     });
   }
@@ -292,6 +304,144 @@ public sealed class MainFormTests {
       Assert.That(disabled, Is.Not.Null, "with no selection, some entry commands should be unavailable");
       Assert.DoesNotThrow(() => disabled!.PerformClick());
     });
+  }
+
+  // ── navigation pane ─────────────────────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// A scratch folder holding a sub-folder and a zip with folders inside it, with the settings file
+  /// redirected there so opening the archive does not touch the real profile.
+  /// </summary>
+  private static void WithScratch(Action<string, string> body) {
+    var root = Path.Combine(Path.GetTempPath(), "cwb-tree-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(Path.Combine(root, "sub"));
+    UserSettings.PathOverride = Path.Combine(root, "settings.json");
+    FormatRegistration.EnsureInitialized();
+
+    var zip = Path.Combine(root, "bundle.zip");
+    using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create)) {
+      archive.CreateEntry("docs/guide/intro.txt");
+      archive.CreateEntry("top.txt");
+    }
+
+    try {
+      body(root, zip);
+    } finally {
+      UserSettings.PathOverride = null;
+      try { Directory.Delete(root, recursive: true); } catch { }
+    }
+  }
+
+  private static Location? SelectedPlace(MainForm shell)
+    => Field<TreeView>(shell, "_tree").SelectedNode?.Tag as Location;
+
+  [Test]
+  public void GivenTheShell_WhenItIsBuilt_ThenTheTreeStartsAtTheFilesystemRoots() {
+    WithShell(shell => {
+      var roots = Field<TreeView>(shell, "_tree").Nodes.Cast<TreeNode>().ToList();
+
+      Assert.That(roots, Is.Not.Empty);
+      Assert.That(roots.All(n => n.Tag is Location { IsInArchive: false }), Is.True,
+        "every root is a host folder the shell can go to");
+      Assert.That(roots.Any(n => n.Tag is Location l && Directory.Exists(l.HostPath) && Path.GetPathRoot(l.HostPath) == l.HostPath), Is.True,
+        "at least one root is a drive or /");
+    });
+  }
+
+  [Test]
+  public void GivenAHostFolder_WhenTheShellGoesThere_ThenTheTreeFollowsToThatFolder() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      var sub = Path.Combine(root, "sub");
+
+      model.NavigateTo(Location.Folder(sub));
+
+      Assert.That(SelectedPlace(shell), Is.EqualTo(Location.Folder(sub)),
+        "the tree expands down to wherever the shell went, however it got there");
+    }));
+  }
+
+  [Test]
+  public void GivenAHiddenFolder_WhenTheShellGoesThere_ThenTheTreeShowsItAnyway() {
+    WithScratch((root, _) => WithShell(shell => {
+      var hidden = Path.Combine(root, ".cache", "inner");
+      Directory.CreateDirectory(hidden);
+
+      Field<MainViewModel>(shell, "_model").NavigateTo(Location.Folder(hidden));
+
+      Assert.That(SelectedPlace(shell), Is.EqualTo(Location.Folder(hidden)),
+        "the listing leaves hidden folders out, but not the one the user is standing in");
+    }));
+  }
+
+  [Test]
+  public void GivenAFolderInsideAnArchive_WhenTheShellGoesThere_ThenTheTreeShowsTheArchiveAsAFolder() {
+    WithScratch((root, zip) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      var target = Location.InArchive(zip, "docs/guide/");
+
+      model.NavigateTo(target);
+
+      Assert.That(SelectedPlace(shell), Is.EqualTo(target));
+      var archiveNode = Field<TreeView>(shell, "_tree").SelectedNode!.Parent!.Parent!;
+      Assert.That(archiveNode.Text, Is.EqualTo("bundle.zip"));
+    }));
+  }
+
+  [Test]
+  public void GivenATreeNode_WhenTheUserSelectsIt_ThenTheShellGoesThere() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.Folder(root));
+      var tree = Field<TreeView>(shell, "_tree");
+      var here = tree.SelectedNode!;
+      here.Expand();
+      var sub = here.Nodes.Cast<TreeNode>().Single(n => n.Text == "sub");
+
+      tree.SelectedNode = sub;
+
+      Assert.That(model.CurrentLocation, Is.EqualTo(Location.Folder(Path.Combine(root, "sub"))));
+      Assert.That(model.BackCommand.CanExecute(null), Is.True, "a tree click is a visit like any other");
+    }));
+  }
+
+  [Test]
+  public void GivenTheShellFollowedByTheTree_WhenItArrives_ThenTheArrivalIsRecordedOnce() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.Folder(root));
+      model.NavigateTo(Location.Folder(Path.Combine(root, "sub")));
+
+      model.BackCommand.Execute(null);
+
+      Assert.That(model.CurrentLocation, Is.EqualTo(Location.Folder(root)),
+        "the tree moving to match must not itself count as a second navigation");
+
+      Assert.That(model.ForwardCommand.CanExecute(null), Is.True);
+    }));
+  }
+
+  [Test]
+  public void GivenTheBackAndForwardItems_WhenTheMenuIsBuilt_ThenTheyUseTheUsualKeys() {
+    WithShell(shell => {
+      var items = Field<MenuStrip>(shell, "_menu").Items.Cast<ToolStripItem>().SelectMany(MenuItems).ToList();
+
+      Assert.That(items.Single(i => i.Text == "&Back").ShortcutKeys, Is.EqualTo(Keys.Alt | Keys.Left));
+      Assert.That(items.Single(i => i.Text == "&Forward").ShortcutKeys, Is.EqualTo(Keys.Alt | Keys.Right));
+    });
+  }
+
+  [Test]
+  public void GivenTheAddressBar_WhenOpenedForEditing_ThenItHoldsTheRealPath() {
+    WithScratch((_, zip) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.InArchive(zip, "docs/"));
+      var bar = Field<Breadcrumb>(shell, "_breadcrumb");
+
+      Assert.That(bar.Editable, Is.True);
+      Assert.That(bar.PathComposer!(), Is.EqualTo(zip + Path.DirectorySeparatorChar + "docs/"),
+        "the archive's own separator is kept, so the typed path resolves back to the same place");
+    }));
   }
 
   private static (ContextMenuStrip Menu, RecordingPopup Popup, int ClosedCount) OpenEntryMenu(MainForm shell) {

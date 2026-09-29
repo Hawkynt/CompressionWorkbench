@@ -1,6 +1,7 @@
 using System.Drawing;
 using Compression.Lib;
 using Compression.Mounting;
+using Compression.NativeUI.Navigation;
 using Compression.NativeUI.Theming;
 using Compression.NativeUI.ViewModels;
 using Compression.Registry;
@@ -31,7 +32,28 @@ internal sealed class MainForm : Form {
     View = ListViewView.Details,
     FullRowSelect = true,
     MultiSelect = true,
+    Dock = DockStyle.Fill,
   };
+
+  // Folder tree on the left, contents on the right. The tree keeps its width when the window is
+  // resized, as a navigation pane does; the contents take the rest.
+  private readonly SplitContainer _split = new() {
+    FixedPanel = FixedPanel.Panel1,
+    SplitterDistance = 220,
+    Panel1MinSize = 120,
+    Panel2MinSize = 200,
+  };
+  private readonly TreeView _tree = new() {
+    Dock = DockStyle.Fill,
+    ShowLines = true,
+    ShowRootLines = true,
+    ShowPlusMinus = true,
+  };
+  private readonly FolderSource _folders;
+
+  // Set while the tree is being moved to match a navigation that happened elsewhere, so selecting
+  // the node there does not navigate a second time.
+  private bool _syncingTree;
   private readonly DropOverlay _dropOverlay = new() { Visible = false };
   private readonly StatusStrip _status = new();
   private readonly ToolStripStatusLabel _statusText = new();
@@ -49,6 +71,12 @@ internal sealed class MainForm : Form {
     this._mountBackends = mountBackends.ToArray();
     this._mountLauncher = mountLauncher;
 
+    // Only the archive the user is actually in appears as a folder in the tree. A nested archive is
+    // a temporary extraction whose host path means nothing to them, so it is not grafted on anywhere.
+    this._folders = new(
+      folder => this._model.ArchiveSubfolders(folder),
+      () => this._model.HasArchive && !this._model.IsNestedArchive ? this._model.ArchivePath : null);
+
     this.Text = this._model.Title;
     this.ClientSize = new(900, 600);
     this.MinimumSize = new(600, 400);
@@ -65,10 +93,14 @@ internal sealed class MainForm : Form {
     this.BuildToolbar();
     this.BuildBreadcrumbBar();
     this.BuildEntryList();
+    this.BuildNavigationTree();
     this.BuildStatusBar();
 
-    // Added in one place, in z-order: the drop overlay sits above the list it covers.
-    this.Controls.AddRange(this._menu, this._toolbar, this._breadcrumbBar, this._entries, this._dropOverlay, this._status);
+    this._split.Panel1.Controls.Add(this._tree);
+    this._split.Panel2.Controls.Add(this._entries);
+
+    // Added in one place, in z-order: the drop overlay sits above the panes it covers.
+    this.Controls.AddRange(this._menu, this._toolbar, this._breadcrumbBar, this._split, this._dropOverlay, this._status);
 
     this.DragOver += this.OnDragOver;
     this.DragLeave += (_, _) => this.SetDropOverlay(visible: false, "");
@@ -103,6 +135,8 @@ internal sealed class MainForm : Form {
         Item("Extract &Selected...", IconKeys.ExtractSelected, Keys.None, this._model.ExtractSelectedCommand),
         Item("&Test Integrity", IconKeys.Test, Keys.Control | Keys.T, this._model.TestCommand),
         new ToolStripSeparator(),
+        Item("&Back", IconKeys.Back, Keys.Alt | Keys.Left, this._model.BackCommand),
+        Item("&Forward", IconKeys.Forward, Keys.Alt | Keys.Right, this._model.ForwardCommand),
         Item("Go &Up", IconKeys.NavigateUp, Keys.Back, this._model.NavigateUpCommand),
         Item("&Delete", IconKeys.Remove, Keys.Delete, this._model.DeleteSelectedCommand),
         new ToolStripSeparator(),
@@ -169,6 +203,8 @@ internal sealed class MainForm : Form {
       Button("Add", IconKeys.Add, "Add files to archive", this._model.AddFilesCommand),
       Button("Test", IconKeys.Test, "Test integrity (Ctrl+T)", this._model.TestCommand),
       new ToolStripSeparator(),
+      Button("Back", IconKeys.Back, "Back (Alt+Left)", this._model.BackCommand),
+      Button("Forward", IconKeys.Forward, "Forward (Alt+Right)", this._model.ForwardCommand),
       Button("Up", IconKeys.NavigateUp, "Go up (Backspace)", this._model.NavigateUpCommand),
       new ToolStripSeparator(),
       Button("Analyze", IconKeys.Analyze, "Analyze binary file", this._model.AnalyzeFileCommand),
@@ -185,10 +221,125 @@ internal sealed class MainForm : Form {
     }
   }
 
+  private void BuildNavigationTree() {
+    this._tree.ImageList = this._icons;
+    foreach (var root in this._folders.Roots())
+      this._tree.Nodes.Add(this.MakeTreeNode(root));
+
+    this._tree.AfterSelect += (_, e) => {
+      if (this._syncingTree || e.Node?.Tag is not Location target) return;
+      this._model.NavigateTo(target);
+    };
+
+    this._model.LocationChanged += (_, where) => this.RevealInTree(where);
+  }
+
+  private TreeNode MakeTreeNode(FolderNode folder) {
+    var isArchive = folder.Location is { IsInArchive: true, ArchiveFolder: "" };
+    var node = new TreeNode(folder.Label) {
+      Tag = folder.Location,
+      ImageKey = isArchive ? IconKeys.Open : IconKeys.Folder,
+      SelectedImageKey = isArchive ? IconKeys.Open : IconKeys.Folder,
+    };
+    node.SetChildLoader(n => this._folders.Children((Location)n.Tag!).Select(this.MakeTreeNode));
+    return node;
+  }
+
+  /// <summary>
+  /// Moves the tree to <paramref name="where"/>, however the shell got there — a double-click, a
+  /// crumb, Back, a typed address — expanding each folder on the way down.
+  /// </summary>
+  private void RevealInTree(Location where) {
+    if (this._model.IsNestedArchive) return;
+
+    var chain = ChainFromRoot(where);
+    var node = this._tree.Nodes.Cast<TreeNode>()
+      .Where(n => n.Tag is Location root && chain.Contains(root))
+      .MaxBy(n => chain.IndexOf((Location)n.Tag!));
+    if (node is null) return;
+
+    foreach (var step in chain.Skip(chain.IndexOf((Location)node.Tag!) + 1)) {
+      node.Expand();
+      var next = FindChild(node, step);
+
+      // A folder listed before the archive was opened, or before a folder appeared on disk, is out
+      // of date: reload it once rather than stopping short.
+      if (next is null) {
+        this.ReloadChildren(node);
+        next = FindChild(node, step);
+      }
+
+      // Still missing means the listing leaves it out on purpose — a hidden folder, typically. The
+      // user went there anyway, so it is shown, as Explorer shows a hidden folder you are inside.
+      if (next is null) {
+        next = this.MakeTreeNode(new(LabelOf(step), step));
+        node.Nodes.Add(next);
+      }
+
+      node = next;
+    }
+
+    this._syncingTree = true;
+    try {
+      this._tree.SelectedNode = node;
+      node.EnsureVisible();
+    } finally {
+      this._syncingTree = false;
+    }
+
+    static TreeNode? FindChild(TreeNode parent, Location step)
+      => parent.Nodes.Cast<TreeNode>().FirstOrDefault(c => c.Tag is Location l && l == step);
+
+    static string LabelOf(Location place) => place.ArchiveFolder switch {
+      null or "" => Path.GetFileName(Path.TrimEndingDirectorySeparator(place.HostPath)),
+      var folder => folder.TrimEnd('/')[(folder.TrimEnd('/').LastIndexOf('/') + 1)..],
+    };
+  }
+
+  private void ReloadChildren(TreeNode node) {
+    node.Nodes.Clear();
+    foreach (var child in this._folders.Children((Location)node.Tag!))
+      node.Nodes.Add(this.MakeTreeNode(child));
+  }
+
+  /// <summary>Every place from a filesystem root down to <paramref name="where"/>.</summary>
+  private static List<Location> ChainFromRoot(Location where) {
+    var hostFolder = where.IsInArchive ? Path.GetDirectoryName(where.HostPath) ?? "" : where.HostPath;
+    var chain = HostPathSegments.Split(hostFolder).Select(s => Navigation.Location.Folder(s.Path)).ToList();
+    if (!where.IsInArchive) return chain;
+
+    chain.Add(Navigation.Location.InArchive(where.HostPath, ""));
+    var accumulated = "";
+    foreach (var part in (where.ArchiveFolder ?? "").TrimEnd('/').Split('/', StringSplitOptions.RemoveEmptyEntries)) {
+      accumulated += part + "/";
+      chain.Add(Navigation.Location.InArchive(where.HostPath, accumulated));
+    }
+
+    return chain;
+  }
+
   private void BuildBreadcrumbBar() {
     this._formatLabel.Font = new(DefaultTheme.Instance.DefaultFont.Family, 9f, FontStyle.Bold);
     this._breadcrumb.ItemClicked += (_, e) => {
-      if (e.Item.Tag is string folderPath) this._model.NavigateToBreadcrumbCommand.Execute(folderPath);
+      if (e.Item.Tag is Location target) this._model.NavigateToBreadcrumbCommand.Execute(target);
+      else if (e.Item.Tag is string folderPath) this._model.NavigateToBreadcrumbCommand.Execute(folderPath);
+    };
+
+    // An address bar as well as a trail: click the empty space, type or paste a path — one that runs
+    // into an archive included — and Enter goes there. The edit field opens on the real path rather
+    // than on the captions joined together, which would mix the host's separator with the archive's.
+    this._breadcrumb.Editable = true;
+    this._breadcrumb.PathComposer = () => this._model.CurrentLocation?.ToString() ?? "";
+    this._breadcrumb.PathEntered += (_, e) => this._model.NavigateToAddress(e.Path);
+    this._breadcrumb.AutoCompleteSource = this._folders.Complete;
+
+    // Each crumb's chevron lists the folders beneath it, so a sibling is one click away.
+    this._breadcrumb.SubItemsProvider = item => [
+      .. (item?.Tag is Location parent ? this._folders.Children(parent) : this._folders.Roots())
+        .Select(folder => new BreadcrumbItem(folder.Label) { Tag = folder.Location }),
+    ];
+    this._breadcrumb.SubItemSelected += (_, e) => {
+      if (e.Item.Tag is Location target) this._model.NavigateTo(target);
     };
 
     this._breadcrumbBar.BackColor = DefaultTheme.Instance.ControlBackground;
@@ -289,9 +440,9 @@ internal sealed class MainForm : Form {
       y += BreadcrumbHeight;
     }
 
-    var listHeight = Math.Max(60, this.ClientSize.Height - y - StatusHeight);
-    this._entries.Bounds = new(0, y, width, listHeight);
-    this._dropOverlay.Bounds = this._entries.Bounds;
+    var paneHeight = Math.Max(60, this.ClientSize.Height - y - StatusHeight);
+    this._split.Bounds = new(0, y, width, paneHeight);
+    this._dropOverlay.Bounds = this._split.Bounds;
     this._status.Bounds = new(0, this.ClientSize.Height - StatusHeight, width, StatusHeight);
   }
 
@@ -316,7 +467,7 @@ internal sealed class MainForm : Form {
   private void RefreshBreadcrumbs() {
     this._breadcrumb.Items.Clear();
     foreach (var segment in this._model.Breadcrumbs)
-      this._breadcrumb.Items.Add(new BreadcrumbItem(segment.Label) { Tag = segment.FolderPath });
+      this._breadcrumb.Items.Add(new BreadcrumbItem(segment.Label) { Tag = (object?)segment.Target ?? segment.FolderPath });
   }
 
   private void RefreshEntries() {

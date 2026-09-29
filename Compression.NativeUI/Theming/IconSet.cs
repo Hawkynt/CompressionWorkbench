@@ -22,6 +22,8 @@ internal static class IconKeys {
   public const string Properties = "Properties";
   public const string Analyze = "Analyze";
   public const string NavigateUp = "NavigateUp";
+  public const string Back = "Back";
+  public const string Forward = "Forward";
   public const string Exit = "Exit";
   public const string About = "About";
   public const string Save = "Save";
@@ -153,6 +155,15 @@ internal static class IconSet {
 
     [IconKeys.NavigateUp] = [
       Fill(Blue, Poly(8, 2, 14, 8, 11, 8, 11, 14, 5, 14, 5, 8, 2, 8)),
+    ],
+
+    // The up arrow turned on its side, so the three navigation buttons read as one set.
+    [IconKeys.Back] = [
+      Fill(Blue, Poly(2, 8, 8, 2, 8, 5, 14, 5, 14, 11, 8, 11, 8, 14)),
+    ],
+
+    [IconKeys.Forward] = [
+      Fill(Blue, Poly(14, 8, 8, 2, 8, 5, 2, 5, 2, 11, 8, 11, 8, 14)),
     ],
 
     [IconKeys.Exit] = [
