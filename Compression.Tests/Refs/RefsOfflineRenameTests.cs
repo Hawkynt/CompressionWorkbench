@@ -57,6 +57,19 @@ public sealed class RefsOfflineRenameTests {
     Assert.That(image, Is.EqualTo(original));
   }
 
+  [Test, Category("ErrorHandling")]
+  public void AmbiguousCaseSensitiveSource_RefusesBeforeChangingImage() {
+    var image = new RefsSyntheticVolume()
+      .WithFile("alpha.bin", [1])
+      .WithFile("ALPHA.bin", [2])
+      .Build();
+    var original = image.ToArray();
+    using var stream = new MemoryStream(image, writable: true);
+
+    Assert.Throws<NotSupportedException>(() => new RefsFormatDescriptor().Rename(stream, "alpha.bin", "renamed.bin"));
+    Assert.That(image, Is.EqualTo(original));
+  }
+
   [Test, Category("HappyPath")]
   public void CaseOnlyRename_ChangesKeyWithoutReallocatingData() {
     var image = new RefsSyntheticVolume().WithFile("alpha.bin", [1, 2, 3]).Build();

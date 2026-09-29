@@ -85,8 +85,12 @@ internal static class RefsOfflineModifier {
 
     var metadata = RefsMetadataReader.Open(image);
     var files = new RefsNamespaceReader(metadata).ReadAll();
-    var original = files.FirstOrDefault(file => string.Equals(file.Path, source, StringComparison.OrdinalIgnoreCase))
-      ?? throw new FileNotFoundException($"ReFS entry '{source}' was not found.", source);
+    var matches = files.Where(file => string.Equals(file.Path, source, StringComparison.OrdinalIgnoreCase)).ToArray();
+    if (matches.Length == 0)
+      throw new FileNotFoundException($"ReFS entry '{source}' was not found.", source);
+    if (matches.Length != 1)
+      throw new NotSupportedException($"ReFS source '{source}' is ambiguous under case-insensitive lookup.");
+    var original = matches[0];
     if (string.Equals(original.Path, destination, StringComparison.Ordinal)) return;
     if (files.Any(file => !ReferenceEquals(file, original)
         && string.Equals(file.Path, destination, StringComparison.OrdinalIgnoreCase)))
