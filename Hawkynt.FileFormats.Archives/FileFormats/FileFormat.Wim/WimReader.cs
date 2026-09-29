@@ -21,6 +21,7 @@ namespace FileFormat.Wim;
 /// </remarks>
 public sealed class WimReader : IDisposable {
   private readonly Stream _stream;
+  private readonly IReadOnlyList<Stream> _additionalParts;
   private readonly WimHeader _header;
   private readonly IReadOnlyList<WimResourceEntry> _resourceTable;
   private bool _disposed;
@@ -37,10 +38,15 @@ public sealed class WimReader : IDisposable {
   /// <param name="stream">A seekable stream positioned at the start of the WIM data.</param>
   /// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> is null.</exception>
   /// <exception cref="InvalidDataException">Thrown when the WIM data is malformed.</exception>
-  public WimReader(Stream stream) {
+  public WimReader(Stream stream) : this(stream, []) { }
+
+  /// <summary>Opens the first part of a split WIM and the remaining parts in part-number order.</summary>
+  public WimReader(Stream stream, IReadOnlyList<Stream> additionalParts) {
     ArgumentNullException.ThrowIfNull(stream);
+    ArgumentNullException.ThrowIfNull(additionalParts);
 
     this._stream = stream;
+    this._additionalParts = additionalParts;
     this._header = WimHeader.Read(stream);
     this._resourceTable = this.ReadResourceTable();
   }
@@ -232,10 +238,13 @@ public sealed class WimReader : IDisposable {
       var flags          = (uint)(sizeAndFlags >> 56);
       var offset         = BinaryPrimitives.ReadInt64LittleEndian(buf[8..]);
       var originalSize   = BinaryPrimitives.ReadInt64LittleEndian(buf[16..]);
-      // Bytes 24-25: part number, 26-29: ref count, 30-49: SHA-1 hash
+      // Bytes 24-25: owning part number, 26-29: ref count, 30-49: SHA-1 hash
+      var partNumber = BinaryPrimitives.ReadUInt16LittleEndian(buf[24..]);
       var hash = buf[30..50].ToArray();
 
-      entries.Add(new WimResourceEntry(compressedSize, originalSize, offset, flags, hash));
+      if (partNumber == 0)
+        partNumber = 1;
+      entries.Add(new WimResourceEntry(compressedSize, originalSize, offset, flags, hash) { PartNumber = partNumber });
     }
 
     return entries;
@@ -274,12 +283,17 @@ public sealed class WimReader : IDisposable {
     if (entry.OriginalSize == 0)
       return [];
 
-    this._stream.Seek(entry.Offset, SeekOrigin.Begin);
+    var source = entry.PartNumber == 1
+      ? this._stream
+      : entry.PartNumber - 2 < this._additionalParts.Count
+        ? this._additionalParts[entry.PartNumber - 2]
+        : throw new InvalidDataException($"WIM resource is in missing part {entry.PartNumber}.");
+    source.Seek(entry.Offset, SeekOrigin.Begin);
 
     if (!entry.IsCompressed) {
       // Uncompressed: read directly.
       var raw = new byte[entry.OriginalSize];
-      this._stream.ReadExactly(raw);
+      source.ReadExactly(raw);
       return raw;
     }
 
@@ -296,7 +310,7 @@ public sealed class WimReader : IDisposable {
 
     if (chunkTableBytes > 0) {
       var chunkTableBuf = new byte[chunkTableBytes];
-      this._stream.ReadExactly(chunkTableBuf);
+      source.ReadExactly(chunkTableBuf);
 
       // Read cumulative offsets (relative to end of chunk table = start of chunk data).
       var offsets = new long[chunkCount - 1];
@@ -332,7 +346,7 @@ public sealed class WimReader : IDisposable {
         ThrowInvalidChunkSize(i);
 
       var compBuf = new byte[compSize];
-      this._stream.ReadExactly(compBuf);
+      source.ReadExactly(compBuf);
 
       // If compressed size equals the uncompressed chunk size, the chunk is stored raw.
       byte[] decompressed;

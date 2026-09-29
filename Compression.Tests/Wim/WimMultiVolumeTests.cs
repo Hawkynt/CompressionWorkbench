@@ -38,9 +38,8 @@ public class WimMultiVolumeTests {
 
     Assert.That(volumes.Length, Is.GreaterThan(1));
 
-    var streams = volumes.Select(v => (Stream)new MemoryStream(v)).ToArray();
-    using var cs = new ConcatenatedStream(streams);
-    using var reader = new WimReader(cs);
+    var streams = volumes.Select(v => new MemoryStream(v)).ToArray();
+    using var reader = new WimReader(streams[0], streams.Skip(1).Cast<Stream>().ToArray());
 
     Assert.That(reader.Resources.Count(r => !r.IsMetadata), Is.EqualTo(2));
     Assert.That(reader.ReadResource(0), Is.EqualTo(data1));

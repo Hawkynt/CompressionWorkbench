@@ -1,5 +1,4 @@
-using System.Buffers.Binary;
-using System.Text;
+using Compression.Registry;
 using FileFormat.Swm;
 using FileFormat.Wim;
 
@@ -8,66 +7,104 @@ namespace Compression.Tests.Swm;
 [TestFixture]
 public class SwmTests {
 
-  /// <summary>
-  /// Builds a WIM byte stream and patches the part_number / total_parts fields in the
-  /// header so it looks like one volume of an N-part SWM set. The resulting bytes
-  /// still parse as a regular WIM (the data layout is unchanged), which matches what
-  /// the SWM reader expects on disk.
-  /// </summary>
-  private static byte[] BuildSwmVolume(IReadOnlyList<byte[]> resources, ushort partNumber, ushort totalParts) {
-    using var ms = new MemoryStream();
-    var writer = new WimWriter(ms, WimConstants.CompressionNone);
-    writer.Write(resources);
-    var bytes = ms.ToArray();
-    // Header layout: part_number @ 40, total_parts @ 42 (uint16 LE).
-    BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(40), partNumber);
-    BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(42), totalParts);
-    return bytes;
-  }
-
   [Test, Category("HappyPath")]
-  public void Descriptor_Properties() {
-    var d = new SwmFormatDescriptor();
-    Assert.That(d.Id, Is.EqualTo("Swm"));
-    Assert.That(d.Extensions, Contains.Item(".swm"));
-    Assert.That(d.Extensions, Contains.Item(".swm2"));
-    Assert.That(d.MagicSignatures, Is.Empty);
+  public void Descriptor_Properties_AdvertiseCreationAndEveryWimMethod() {
+    var descriptor = new SwmFormatDescriptor();
+    Assert.That(descriptor.Id, Is.EqualTo("Swm"));
+    Assert.That(descriptor.Extensions, Contains.Item(".swm"));
+    Assert.That(descriptor.Extensions, Contains.Item(".swm2"));
+    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    Assert.That(descriptor.Methods.Select(method => method.Name), Is.EquivalentTo(
+      ["xpress", "xpress-huffman", "lzx", "lzms", "none"]));
   }
 
-  [Test, Category("HappyPath")]
-  public void List_EmitsMetadataIniWithPartInfo() {
-    var data = BuildSwmVolume([Encoding.UTF8.GetBytes("vol1 payload")], partNumber: 1, totalParts: 3);
-    using var ms = new MemoryStream(data);
-    var entries = new SwmFormatDescriptor().List(ms, null);
-    var meta = entries.First(e => e.Name == "metadata.ini");
-    Assert.That(meta.OriginalSize, Is.GreaterThan(0));
-  }
+  [TestCase(WimConstants.CompressionNone)]
+  [TestCase(WimConstants.CompressionXpress)]
+  [TestCase(WimConstants.CompressionXpressHuffman)]
+  [TestCase(WimConstants.CompressionLzx)]
+  [TestCase(WimConstants.CompressionLzms)]
+  [Category("End2End"), Category("RoundTrip")]
+  public void WriterSplit_Reader_RoundTripsNamedFilesAndCompression(uint compression) {
+    var first = new byte[12_000];
+    var second = new byte[9_000];
+    var repetitive = Enumerable.Repeat((byte)0x63, 64_000).ToArray();
+    new Random(0x51A7).NextBytes(first);
+    new Random(0xBEEF).NextBytes(second);
+    var volumes = WimWriter.CreateSplit(3_000,
+      [("folder/first.bin", first), ("second.bin", second), ("repetitive.bin", repetitive), ("empty.txt", [])], compression);
 
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Extract_WritesMetadataReferencingTotalParts() {
-    var data = BuildSwmVolume([Encoding.UTF8.GetBytes("vol1 payload")], partNumber: 1, totalParts: 3);
-    var tmp = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-    Directory.CreateDirectory(tmp);
+    Assert.That(volumes.Length, Is.GreaterThan(1));
+    var readers = volumes.Select(volume => new MemoryStream(volume)).ToArray();
     try {
-      using var ms = new MemoryStream(data);
-      new SwmFormatDescriptor().Extract(ms, tmp, null, null);
-      var metaPath = Path.Combine(tmp, "metadata.ini");
-      Assert.That(File.Exists(metaPath), Is.True);
-      var metaText = File.ReadAllText(metaPath);
-      Assert.That(metaText, Does.Contain("total_parts = 3"));
-      Assert.That(metaText, Does.Contain("part_number = 1"));
-      Assert.That(metaText, Does.Contain("note = full extraction requires all 3 sibling files"));
+      var firstHeader = WimHeader.Read(readers[0]);
+      Assert.That(firstHeader.PartNumber, Is.EqualTo(1));
+      Assert.That(firstHeader.TotalParts, Is.EqualTo(volumes.Length));
+      Assert.That((firstHeader.WimFlags & WimConstants.FlagSpanned) != 0, Is.True);
+      readers[0].Position = 0;
+      var resourceStreams = readers.Skip(1).Cast<Stream>().ToArray();
+      using var reader = new WimReader(readers[0], resourceStreams);
+      var named = reader.GetNamedFiles();
+      Assert.That(named.Select(file => file.FileName), Is.EquivalentTo(
+        ["folder/first.bin", "second.bin", "repetitive.bin", "empty.txt"]));
+      Assert.That(reader.ReadResource(named.Single(file => file.FileName == "folder/first.bin").ResourceIndex), Is.EqualTo(first));
+      Assert.That(reader.ReadResource(named.Single(file => file.FileName == "second.bin").ResourceIndex), Is.EqualTo(second));
+      Assert.That(reader.ReadResource(named.Single(file => file.FileName == "repetitive.bin").ResourceIndex), Is.EqualTo(repetitive));
+      Assert.That(named.Single(file => file.FileName == "empty.txt").ResourceIndex, Is.EqualTo(-1));
     } finally {
-      Directory.Delete(tmp, recursive: true);
+      foreach (var reader in readers)
+        reader.Dispose();
     }
+  }
+
+  [Test, Category("End2End"), Category("RoundTrip")]
+  public void Descriptor_Extract_LoadsAllSiblingParts() {
+    var files = new[] {
+      ("first.txt", Enumerable.Repeat((byte)'A', 10_000).ToArray()),
+      ("second.txt", Enumerable.Repeat((byte)'B', 10_000).ToArray()),
+    };
+    var volumes = WimWriter.CreateSplit(3_000, files, WimConstants.CompressionNone);
+    var directory = Path.Combine(Path.GetTempPath(), "swm_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(directory);
+    try {
+      for (var index = 0; index < volumes.Length; ++index)
+        File.WriteAllBytes(Path.Combine(directory, index == 0 ? "image.swm" : $"image{index + 1}.swm"), volumes[index]);
+      var output = Path.Combine(directory, "out");
+      using var input = File.OpenRead(Path.Combine(directory, "image.swm"));
+      new SwmFormatDescriptor().Extract(input, output, null, null);
+      Assert.That(File.ReadAllBytes(Path.Combine(output, "first.txt")), Is.EqualTo(files[0].Item2));
+      Assert.That(File.ReadAllBytes(Path.Combine(output, "second.txt")), Is.EqualTo(files[1].Item2));
+    } finally {
+      Directory.Delete(directory, recursive: true);
+    }
+  }
+
+  [Test, Category("EdgeCase")]
+  public void CreateSplit_RejectsImpossiblePartSize() {
+    Assert.That(() => WimWriter.CreateSplit(WimConstants.HeaderSize - 1, [new byte[] { 1 }]),
+      Throws.TypeOf<ArgumentOutOfRangeException>());
+  }
+
+  [TestCase("xpress")]
+  [TestCase("xpress-huffman")]
+  [TestCase("lzx")]
+  [TestCase("lzms")]
+  [TestCase("none")]
+  [Category("End2End"), Category("RoundTrip")]
+  public void Descriptor_Create_AcceptsEveryAdvertisedMethod(string method) {
+    using var output = new MemoryStream();
+    var input = ArchiveInputInfo.InMemory("payload.bin", Enumerable.Repeat((byte)0x72, 32_000).ToArray());
+    new SwmFormatDescriptor().Create(output, [input], new FormatCreateOptions(method));
+    output.Position = 0;
+    using var reader = new WimReader(output);
+    var file = reader.GetNamedFiles().Single();
+    Assert.That(reader.ReadResource(file.ResourceIndex), Is.EqualTo(input.InMemoryContent));
   }
 
   [Test, Category("EdgeCase")]
   public void List_NonWimInput_Throws() {
     var data = new byte[64];
     data[0] = (byte)'N'; data[1] = (byte)'O'; data[2] = (byte)'P'; data[3] = (byte)'E';
-    using var ms = new MemoryStream(data);
-    Assert.That(() => new SwmFormatDescriptor().List(ms, null),
-      Throws.InstanceOf<InvalidDataException>());
+    using var stream = new MemoryStream(data);
+    Assert.That(() => new SwmFormatDescriptor().List(stream, null), Throws.InstanceOf<InvalidDataException>());
   }
 }

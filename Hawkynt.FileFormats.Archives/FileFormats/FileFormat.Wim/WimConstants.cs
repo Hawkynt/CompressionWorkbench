@@ -87,6 +87,9 @@ public static class WimConstants {
   /// </summary>
   public const uint FlagRpFix = 0x00000080u;
 
+  /// <summary>Flag bit indicating that a WIM is one part of a multi-part set.</summary>
+  public const uint FlagSpanned = 0x00000008u;
+
   /// <summary>Flag bit indicating the WIM uses XPRESS compression.</summary>
   public const uint FlagXpressCompression = 0x00020000u;
 
