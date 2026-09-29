@@ -75,13 +75,13 @@ jobs:
           echo "## CompressionWorkbench v$V" > RELEASE_NOTES.md
           cat >> RELEASE_NOTES.md <<'EOF'
 
-          Self-contained **Windows UI** (WPF, the full workstation), **Linux UI**
-          (NativeForms/GTK — currently the mounting workflow only), **Windows CLI**
-          (`cwb.exe`) and **Linux CLI** (`cwb`) builds, plus the version-locked
-          `Hawkynt.*` NuGet packages (Compression.Core / FileFormats.Audio /
-          Archives / FileSystems).
+          Self-contained **Windows UI**, **Linux UI**, **Windows CLI** (`cwb.exe`) and
+          **Linux CLI** (`cwb`) builds, plus the version-locked `Hawkynt.*` NuGet packages
+          (Compression.Core / FileFormats.Audio / Archives / FileSystems).
 
-          The Linux downloads ship without the POSIX execute bit; `chmod +x` them.
+          Both UI builds are the same NativeForms shell over the Win32 and GTK backends.
+          The Linux UI needs GTK 3 present, and the Linux downloads ship without the POSIX
+          execute bit — `chmod +x` them.
           EOF
           echo >> RELEASE_NOTES.md
           cat CHANGES.md >> RELEASE_NOTES.md

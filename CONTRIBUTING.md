@@ -13,7 +13,7 @@ deliberately stricter than the archive API, are in
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (pinned via `global.json`)
-- Windows for the WPF UI (`Compression.UI`) and Shell extension (`Compression.Shell`)
+- Windows for the Shell extension (`Compression.Shell`); the UI (`Compression.NativeUI`) builds and runs on both Windows and Linux
 - Any OS for the CLI, core library, and tests
 
 ---
@@ -154,10 +154,10 @@ dotnet publish Compression.CLI -c Release --self-contained -r win-x64 -o publish
 
 Replace `win-x64` with `linux-x64` or `osx-arm64` for other platforms.
 
-### WPF UI (Windows only)
+### Desktop shell
 
 ```bash
-dotnet publish Compression.UI -c Release --self-contained -r win-x64 -o publish/ui -p:DebugType=none -p:GenerateDocumentationFile=false
+dotnet publish Compression.NativeUI -c Release --self-contained -r win-x64 -o publish/ui -p:DebugType=none -p:GenerateDocumentationFile=false
 ```
 
 ---
