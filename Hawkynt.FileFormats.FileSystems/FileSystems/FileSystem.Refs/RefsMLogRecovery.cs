@@ -76,8 +76,12 @@ internal static class RefsMLogRecovery {
 
       var current = ordered[i].Record;
       var previous = ordered[i - 1].Record;
-      if (!ShouldRequireImmediatePredecessor(current.Lsn, previous.Lsn)) continue;
-      if (current.PreviousLsn != previous.Lsn)
+      if (current.PreviousLsn != 0 && CompareLsn(current.PreviousLsn, current.Lsn) >= 0)
+        throw new InvalidDataException($"ReFS MLog LSN 0x{current.Lsn:X} points to a nonpreceding LSN.");
+      var requiresImmediate = ShouldRequireImmediatePredecessor(current.Lsn, previous.Lsn);
+      var refersToMissingLiveRecord = current.PreviousLsn != 0
+        && (oldestRequiredLsn == 0 || CompareLsn(current.PreviousLsn, oldestRequiredLsn) >= 0);
+      if (current.PreviousLsn != previous.Lsn && (requiresImmediate || refersToMissingLiveRecord))
         throw new InvalidDataException(
           $"ReFS MLog live chain is broken at LSN 0x{current.Lsn:X}: previous is 0x{current.PreviousLsn:X}, expected 0x{previous.Lsn:X}.");
     }
@@ -114,17 +118,40 @@ internal static class RefsMLogRecovery {
 /// delegated to an explicit target so unknown redo grammars remain fail-closed.
 /// </summary>
 internal static class RefsMLogRestarter {
-  public static int Replay(Stream image, RefsMetadataReader metadata, IRefsRedoTarget target) {
+  public static int Replay(
+      Stream image,
+      RefsMetadataReader metadata,
+      IRefsRedoTarget target,
+      ulong minimumLsn = 0) {
     ArgumentNullException.ThrowIfNull(target);
     var recovery = RefsMLogRecovery.Analyze(image, metadata, out _);
+    return ReplaySelected(recovery, target, minimumLsn);
+  }
+
+  internal static int ReplaySelected(
+      IReadOnlyList<RefsMLogRecoveryRecord> recovery,
+      IRefsRedoTarget target,
+      ulong minimumLsn = 0) {
+    ArgumentNullException.ThrowIfNull(recovery);
+    ArgumentNullException.ThrowIfNull(target);
+    var pending = recovery
+      .Where(item => minimumLsn == 0 || RefsMLogRecovery.CompareLsn(item.Record.Lsn, minimumLsn) >= 0)
+      .SelectMany(item => item.Record.RedoRecords.Select(redo => (item.Record.Lsn, Redo: redo)))
+      .ToArray();
+
+    // An unsupported opcode or payload in a later log block must be found
+    // before a preceding block changes the target. The target validates the
+    // version-specific payload grammar; the framing layer validates opcodes.
+    foreach (var (lsn, redo) in pending) {
+      if (!Enum.IsDefined(redo.Opcode) || redo.Opcode == RefsRedoOpcode.ReservedUnhandled)
+        throw new NotSupportedException($"ReFS redo opcode 0x{(uint)redo.Opcode:X2} cannot be replayed.");
+      target.Preflight(lsn, redo);
+    }
+
     var applied = 0;
-    foreach (var item in recovery) {
-      foreach (var redo in item.Record.RedoRecords) {
-        if (redo.Opcode == RefsRedoOpcode.ReservedUnhandled)
-          throw new NotSupportedException("ReFS redo opcode 0x17 is explicitly unsupported by the native format.");
-        target.Apply(item.Record.Lsn, redo);
-        ++applied;
-      }
+    foreach (var (lsn, redo) in pending) {
+      target.Apply(lsn, redo);
+      ++applied;
     }
     return applied;
   }
