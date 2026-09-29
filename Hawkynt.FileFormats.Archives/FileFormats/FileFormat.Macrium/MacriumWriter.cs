@@ -58,6 +58,9 @@ public sealed class MacriumWriter {
   /// <summary>Optional zstd compression of data blocks (and metadata blocks). Default off for round-trip predictability.</summary>
   public bool CompressDataBlocks { get; init; }
 
+  /// <summary>Zstandard effort used for data and JSON metadata blocks (1–9).</summary>
+  public int CompressionLevel { get; init; } = 3;
+
   /// <summary>Optional AES-CBC encryption of data blocks. Default off.</summary>
   public bool EncryptDataBlocks { get; init; }
 
@@ -90,6 +93,8 @@ public sealed class MacriumWriter {
   public byte[] Build(ReadOnlySpan<byte> diskImage) {
     if (this.BlockSize <= 0 || this.BlockSize % 512 != 0)
       throw new InvalidOperationException("BlockSize must be a positive multiple of 512.");
+    if (this.CompressionLevel is < 1 or > 9)
+      throw new InvalidOperationException("CompressionLevel must be between 1 and 9.");
     if (this.EncryptDataBlocks && string.IsNullOrEmpty(this.Password))
       throw new InvalidOperationException("Password is required when EncryptDataBlocks is true.");
 
@@ -137,7 +142,7 @@ public sealed class MacriumWriter {
 
       var payload = (byte[])rawBytes.ToArray();
       if (this.CompressDataBlocks)
-        payload = CompressZstd(payload);
+        payload = CompressZstd(payload, this.CompressionLevel);
       if (this.EncryptDataBlocks) {
         var iv = MacriumCrypto.DeriveBlockIv(derivedKey!, imageIdBytes, this.DiskNumber, this.PartitionNumber, blockIndex);
         payload = MacriumCrypto.EncryptBlock(payload, aesKey!, iv);
@@ -185,7 +190,8 @@ public sealed class MacriumWriter {
       blockCount: totalBlocks,
       hmac: hmac);
     var jsonBytes = Encoding.UTF8.GetBytes(jsonText);
-    WriteMetadataBlock(ms, "$JSON", jsonBytes, compressed: true, encrypted: false, last: false);
+    WriteMetadataBlock(ms, "$JSON", jsonBytes, compressed: true, encrypted: false, last: false,
+      compressionLevel: this.CompressionLevel);
 
     // ─── $AUXDATA terminal block of the root chain ────────────────────────
     WriteMetadataBlock(ms, "$AUXDATA", [], compressed: false, encrypted: false, last: true);
@@ -207,10 +213,10 @@ public sealed class MacriumWriter {
     return bytes;
   }
 
-  private static byte[] CompressZstd(byte[] raw) {
+  private static byte[] CompressZstd(byte[] raw, int compressionLevel) {
     using var input = new MemoryStream(raw, writable: false);
     using var output = new MemoryStream();
-    using (var zs = new ZstdStream(output, CompressionStreamMode.Compress, leaveOpen: true))
+    using (var zs = new ZstdStream(output, CompressionStreamMode.Compress, compressionLevel, leaveOpen: true))
       input.CopyTo(zs);
     return output.ToArray();
   }
@@ -221,13 +227,14 @@ public sealed class MacriumWriter {
       ReadOnlySpan<byte> payload,
       bool compressed,
       bool encrypted,
-      bool last) {
+      bool last,
+      int compressionLevel = 3) {
 
     // Compress for metadata-side blocks when caller asked. Encryption of
     // metadata blocks is supported by the spec but not exercised here.
     var bodyBytes = payload.ToArray();
     if (compressed)
-      bodyBytes = CompressZstd(bodyBytes);
+      bodyBytes = CompressZstd(bodyBytes, compressionLevel);
 
     // 32-byte header: name(8) + length(4 LE) + md5(16) + flags(1) + pad(3).
     Span<byte> header = stackalloc byte[32];
@@ -295,7 +302,11 @@ public sealed class MacriumWriter {
     // _compression — track what the writer actually applied to data blocks
     // so the reader's $INDEX walk knows whether to invoke zstd-decompress.
     if (this.CompressDataBlocks)
-      sb.Append("\"_compression\":{\"compression_level\":\"medium\",\"compression_method\":\"zstd\"},");
+      sb.Append("\"_compression\":{\"compression_level\":\"").Append(this.CompressionLevel switch {
+        <= 2 => "low",
+        >= 7 => "high",
+        _ => "medium",
+      }).Append("\",\"compression_method\":\"zstd\"},");
     else
       sb.Append("\"_compression\":{\"compression_level\":\"none\",\"compression_method\":\"none\"},");
 

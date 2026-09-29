@@ -258,6 +258,70 @@ public class MacriumRwTests {
     Assert.That(recovered, Is.EqualTo(disk));
   }
 
+  [Test, Category("HappyPath")]
+  public void Descriptor_Create_HonorsCompressionAndDiskMetadataOptions() {
+    var descriptor = new MacriumFormatDescriptor();
+    var disk = DeterministicDisk(8192, seed: 42);
+    using var image = new MemoryStream();
+    descriptor.Create(image, [ArchiveInputInfo.InMemory("disk.raw", disk)], new FormatCreateOptions {
+      FormatSpecific = new Dictionary<string, string> {
+        ["Compression"] = "High",
+        ["BlockSize"] = "4096",
+        ["DiskNumber"] = "2",
+        ["PartitionNumber"] = "3",
+        ["ReservedSectorsLength"] = "512",
+      },
+    });
+
+    image.Position = 0;
+    using var reader = new MacriumReader(image);
+    Assert.That(reader.SectorReconstructionAvailable, Is.True);
+    Assert.That(reader.Entries.First(e => e.Name == "disk-image.raw").Data, Is.EqualTo(disk));
+    var json = Encoding.UTF8.GetString(reader.Entries.First(e => e.Name == "metadata.json").Data);
+    Assert.That(json, Does.Contain("\"compression_level\":\"high\""));
+    Assert.That(json, Does.Contain("\"block_size\":4096"));
+    Assert.That(json, Does.Contain("\"disk_number\":2"));
+    Assert.That(json, Does.Contain("\"partition_number\":3"));
+    Assert.That(json, Does.Contain("\"reserved_sectors_length\":512"));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_Create_NoneCompressionOptionDisablesZstd() {
+    var descriptor = new MacriumFormatDescriptor();
+    using var image = new MemoryStream();
+    descriptor.Create(image, [ArchiveInputInfo.InMemory("disk.raw", DeterministicDisk(4096))], new FormatCreateOptions {
+      FormatSpecific = new Dictionary<string, string> { ["Compression"] = "None" },
+    });
+
+    image.Position = 0;
+    using var reader = new MacriumReader(image);
+    var json = Encoding.UTF8.GetString(reader.Entries.First(e => e.Name == "metadata.json").Data);
+    Assert.That(json, Does.Contain("\"compression_method\":\"none\""));
+    Assert.That(reader.SectorReconstructionAvailable, Is.True);
+  }
+
+  [TestCase("aes-128-cbc", MacriumAesType.Aes128)]
+  [TestCase("aes-192-cbc", MacriumAesType.Aes192)]
+  [TestCase("aes-256-cbc", MacriumAesType.Aes256)]
+  public void Descriptor_Create_HonorsEncryptionMethodChoices(string method, MacriumAesType aesType) {
+    var descriptor = new MacriumFormatDescriptor();
+    var disk = DeterministicDisk(1024, seed: (int)aesType);
+    using var image = new MemoryStream();
+    descriptor.Create(image, [ArchiveInputInfo.InMemory("disk.raw", disk)], new FormatCreateOptions {
+      Password = "reflect-test",
+      MethodName = method,
+      FormatSpecific = new Dictionary<string, string> { ["Pbkdf2Iterations"] = "1000" },
+    });
+
+    image.Position = 0;
+    using var reader = new MacriumReader(image, "reflect-test");
+    Assert.That(reader.IsEncrypted, Is.True);
+    Assert.That(reader.SectorReconstructionAvailable, Is.True);
+    Assert.That(reader.Entries.First(e => e.Name == "disk-image.raw").Data, Is.EqualTo(disk));
+    var json = Encoding.UTF8.GetString(reader.Entries.First(e => e.Name == "metadata.json").Data);
+    Assert.That(json, Does.Contain($"\"aes_type\":\"aes-{(int)aesType * 8}\""));
+  }
+
   // ---- Crypto unit tests --------------------------------------------------
 
   [Test, Category("HappyPath")]
