@@ -2,13 +2,17 @@
 using System.Buffers.Binary;
 using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.WordPerfect;
 
 /// <summary>
 /// WordPerfect documents (.wpd and friends). All versions share the 4-byte
-/// prefix <c>FF 57 50 43</c> ("\xFFWPC"). Read-only descriptor surfacing the
+/// prefix <c>FF 57 50 43</c> ("\xFFWPC"). The document is retained as an
+/// opaque single-file payload; creation accepts exactly one existing WordPerfect
+/// document and copies it byte-for-byte, since this is not an archive codec.
+/// The descriptor surfaces the
 /// header plus the prefix and document areas carved out by the header's
 /// document-area pointer. Prefix packet structure and document text are not
 /// parsed.
@@ -19,7 +23,7 @@ namespace FileFormat.WordPerfect;
 ///   <item><description><c>https://en.wikipedia.org/wiki/WordPerfect</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class WordPerfectFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class WordPerfectFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -36,7 +40,7 @@ public sealed class WordPerfectFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
@@ -111,6 +115,65 @@ public sealed class WordPerfectFormatDescriptor : IFormatDescriptor, IArchiveFor
       WriteFile(outputDir, "document_area.bin", view.DocumentArea);
   }
 
+  /// <summary>
+  /// Writes one existing WordPerfect document unchanged. WordPerfect's native
+  /// document format has no generic multi-file archive or compression method.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    if (!output.CanWrite)
+      throw new ArgumentException("Output stream must be writable.", nameof(output));
+    if (options.MethodName is not (null or "stored"))
+      throw new NotSupportedException($"WordPerfect creation method '{options.MethodName}' is not supported. The only method is 'stored'.");
+    if (options.Password is not null)
+      throw new NotSupportedException("WordPerfect encryption is not supported for creation.");
+    var files = inputs.Where(static input => !input.IsDirectory).ToArray();
+    if (files.Length != 1 || inputs.Any(static input => input.IsDirectory))
+      throw new ArgumentException("A WordPerfect document is one file; creation requires exactly one document input.", nameof(inputs));
+
+    var bytes = files[0].ReadContent();
+    ValidateDocument(bytes);
+    output.Write(bytes);
+  }
+
+  /// <summary>Streaming creation preserves the input document without buffering the whole file.</summary>
+  public void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    if (!target.CanWrite)
+      throw new ArgumentException("Output stream must be writable.", nameof(target));
+    if (options.MethodName is not (null or "stored"))
+      throw new NotSupportedException($"WordPerfect creation method '{options.MethodName}' is not supported. The only method is 'stored'.");
+    if (options.Password is not null)
+      throw new NotSupportedException("WordPerfect encryption is not supported for creation.");
+    using var iterator = inputs.GetEnumerator();
+    if (!iterator.MoveNext() || iterator.Current.IsDirectory)
+      throw new ArgumentException("A WordPerfect document is one file; creation requires exactly one document input.", nameof(inputs));
+    var documentInput = iterator.Current;
+    if (iterator.MoveNext())
+      throw new ArgumentException("A WordPerfect document is one file; creation requires exactly one document input.", nameof(inputs));
+    using var input = documentInput.OpenStream();
+    Span<byte> header = stackalloc byte[16];
+    input.ReadExactly(header);
+    ValidateHeader(header);
+    target.Write(header);
+    input.CopyTo(target);
+  }
+
+  private static void ValidateDocument(ReadOnlySpan<byte> bytes) {
+    if (bytes.Length < 16)
+      throw new InvalidDataException("WordPerfect input is shorter than its 16-byte header.");
+    ValidateHeader(bytes[..16]);
+  }
+
+  private static void ValidateHeader(ReadOnlySpan<byte> header) {
+    if (header.Length < 16 || !header[..4].SequenceEqual([0xFF, 0x57, 0x50, 0x43]))
+      throw new InvalidDataException("Input is not a WordPerfect document (missing \\xFFWPC magic).");
+  }
+
   private static WpView BuildView(Stream stream) {
     stream.Position = 0;
     using var ms = new MemoryStream();
@@ -118,9 +181,7 @@ public sealed class WordPerfectFormatDescriptor : IFormatDescriptor, IArchiveFor
     var full = ms.ToArray();
 
     // Magic + 16-byte header required.
-    if (full.Length < 16
-        || full[0] != 0xFF || full[1] != 0x57 || full[2] != 0x50 || full[3] != 0x43)
-      throw new InvalidDataException("Not a WordPerfect file (missing \\xFFWPC magic).");
+    ValidateDocument(full);
 
     var header = full.AsSpan(0, 16).ToArray();
     var documentAreaOffset = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(4, 4));
