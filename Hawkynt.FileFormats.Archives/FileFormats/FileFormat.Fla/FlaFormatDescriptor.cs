@@ -10,8 +10,9 @@ namespace FileFormat.Fla;
 /// Adobe Flash / Animate .fla source file. Two runtime variants are supported:
 /// the classic pre-CS4 OLE2 Compound File variant (CFB), and the CS5+ XFL
 /// variant which is a plain ZIP container. Detection is by the first bytes.
-/// Both are surfaced read-only: CFB streams become <c>streams/{name}.bin</c>,
-/// ZIP entries are listed flatly by their path inside the archive.
+/// Both are surfaced as archives: CFB streams become <c>streams/{name}.bin</c>,
+/// while ZIP/XFL members retain their paths. Creation writes ZIP/XFL documents;
+/// the legacy CFB variant remains read-only.
 /// Uses compound extension <c>.fla</c> with empty magic to avoid conflicting
 /// with DOC/ZIP descriptors that own the generic magics.
 ///
@@ -22,7 +23,7 @@ namespace FileFormat.Fla;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Adobe_Animate</c> — application background</description></item>
 /// </list>
 /// </summary>
-public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
@@ -55,7 +56,7 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -76,7 +77,7 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate"), new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -104,6 +105,26 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     } catch {
       entries = [];
     }
+    if (entries.Count > 0 && Detect(entries[0].Data) == Variant.Xfl) {
+      var result = new List<ArchiveEntryInfo> {
+        new(0, "FULL.fla", entries[0].Data.LongLength, entries[0].Data.LongLength, "stored", false, false, null),
+        new(1, "metadata.ini", entries[1].Data.LongLength, entries[1].Data.LongLength, "stored", false, false, null),
+      };
+      try {
+        using var zipStream = new MemoryStream(entries[0].Data, writable: false);
+        using var reader = new FileFormat.Zip.ZipReader(zipStream);
+        result.AddRange(reader.Entries.Select((entry, i) => new ArchiveEntryInfo(
+          i + 2, entry.FileName, entry.UncompressedSize, entry.CompressedSize,
+          entry.CompressionMethod switch {
+            FileFormat.Zip.ZipCompressionMethod.Store => "stored",
+            FileFormat.Zip.ZipCompressionMethod.Deflate => "deflate",
+            _ => entry.CompressionMethod.ToString(),
+          }, entry.IsDirectory, entry.IsEncrypted, entry.LastModified)));
+        return result;
+      } catch {
+        // Retain the opaque-file view for damaged or unsupported ZIP variants.
+      }
+    }
     return entries.Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
@@ -126,7 +147,81 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         continue;
       WriteFile(outputDir, e.Name, e.Data);
     }
+    if (entries.Count > 0 && Detect(entries[0].Data) == Variant.Xfl) {
+      using var source = new MemoryStream(entries[0].Data, writable: false);
+      using var archive = new ZipArchive(source, ZipArchiveMode.Read);
+      foreach (var entry in archive.Entries) {
+        if (string.IsNullOrEmpty(entry.Name) && entry.FullName.EndsWith('/')) continue;
+        if (files != null && files.Length > 0 && !MatchesFilter(entry.FullName, files)) continue;
+        var safeName = entry.FullName.Replace('\\', '/').TrimStart('/');
+        if (safeName.Contains("..", StringComparison.Ordinal)) safeName = Path.GetFileName(safeName);
+        var path = Path.Combine(outputDir, safeName.Replace('/', Path.DirectorySeparatorChar));
+        if (File.Exists(path)) File.SetLastWriteTimeUtc(path, entry.LastWriteTime.UtcDateTime);
+      }
+    }
   }
+
+  /// <summary>Creates a ZIP-based XFL FLA from its project files.</summary>
+  /// <remarks>
+  /// The OLE2 variant is intentionally read-only: its container can be written, but the
+  /// legacy Flash document streams and their interrelationships are not reconstructible
+  /// from a flat list of files. ZIP entry data and paths are preserved for XFL projects.
+  /// </remarks>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    if (!output.CanWrite)
+      throw new ArgumentException("The output stream must be writable.", nameof(output));
+    if (options.Password is not null)
+      throw new NotSupportedException("Encrypted FLA entries are not supported.");
+
+    var method = options.MethodName?.Trim().ToLowerInvariant();
+    var compression = method switch {
+      null or "" or "deflate" => GetDeflateLevel(options.Level),
+      "stored" when options.Level is null => CompressionLevel.NoCompression,
+      "stored" => throw new ArgumentException("The compression level only applies to DEFLATE entries.", nameof(options)),
+      _ => throw new NotSupportedException($"FLA compression method '{options.MethodName}' is not supported."),
+    };
+
+    if (!inputs.Any(i => !i.IsDirectory && string.Equals(
+          i.ArchiveName.Replace('\\', '/').TrimStart('/'), "DOMDocument.xml", StringComparison.OrdinalIgnoreCase)))
+      throw new InvalidDataException("A compressed XFL FLA must contain a root DOMDocument.xml project document.");
+
+    using var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var name = input.ArchiveName.Replace('\\', '/').TrimStart('/');
+      if (string.IsNullOrWhiteSpace(name))
+        continue;
+      var entry = archive.CreateEntry(name, compression);
+      entry.LastWriteTime = GetInputTimestamp(input);
+      using var target = entry.Open();
+      var bytes = input.ReadContent();
+      target.Write(bytes);
+    }
+  }
+
+  private static readonly DateTimeOffset ZipEpoch = new(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+  private static DateTimeOffset GetInputTimestamp(ArchiveInputInfo input) {
+    if (input.InMemoryContent is null && File.Exists(input.FullPath)) {
+      var timestamp = new DateTimeOffset(File.GetLastWriteTime(input.FullPath));
+      if (timestamp < ZipEpoch) return ZipEpoch;
+      if (timestamp > new DateTimeOffset(2107, 12, 31, 23, 59, 58, TimeSpan.Zero))
+        return new DateTimeOffset(2107, 12, 31, 23, 59, 58, TimeSpan.Zero);
+      return timestamp;
+    }
+    return ZipEpoch;
+  }
+
+  // System.IO.Compression exposes effort tiers rather than every numeric deflate level.
+  private static CompressionLevel GetDeflateLevel(int? level) => level switch {
+    null or >= 4 and <= 6 => CompressionLevel.Optimal,
+    >= 0 and <= 3 => CompressionLevel.Fastest,
+    >= 7 and <= 9 => CompressionLevel.SmallestSize,
+    _ => throw new ArgumentOutOfRangeException(nameof(level), level, "FLA compression level must be between 0 and 9."),
+  };
 
   private static List<(string Name, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
