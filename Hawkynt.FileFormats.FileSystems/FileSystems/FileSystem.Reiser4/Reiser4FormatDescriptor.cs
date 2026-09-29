@@ -59,7 +59,8 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -100,7 +101,7 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Reiser4 filesystem image — master + format40 superblock surface only.";
+  public string Description => "Reiser4 filesystem image — native single-leaf file profile with streaming create, rebuild mutation, defrag and wipe.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -273,6 +274,65 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     w.BlockCount = Math.Max(requested, Reiser4Writer.EstimateBlockCount(sizes));
 
     w.Write(output);
+  }
+
+  /// <summary>
+  /// Creates the supported native single-leaf profile from input streams. Each source
+  /// is consumed once into a temporary file, then copied in bounded chunks by
+  /// <see cref="Reiser4Writer"/>; no complete file is staged in memory. Directory
+  /// inputs are currently ignored because this writer emits root-level regular files only.
+  /// </summary>
+  public void CreateFromStreams(Stream target,
+      IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs,
+      FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var writer = new Reiser4Writer();
+    var staged = new List<string>();
+    var sizes = new List<long>();
+    try {
+      foreach (var input in inputs) {
+        if (input.IsDirectory) continue;
+        if (input.Size < 0) throw new ArgumentOutOfRangeException(nameof(inputs), "Input sizes must be non-negative.");
+        var path = Path.Combine(Path.GetTempPath(), "cwb-reiser4-" + Guid.NewGuid().ToString("N"));
+        staged.Add(path);
+        using (var spool = new FileStream(path, FileMode.CreateNew, FileAccess.Write,
+                 FileShare.Read | FileShare.Delete, 64 * 1024, FileOptions.SequentialScan)) {
+          using var source = input.OpenStream();
+          var buffer = new byte[64 * 1024];
+          var remaining = input.Size;
+          while (remaining > 0) {
+            var read = source.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
+            if (read == 0)
+              throw new EndOfStreamException($"Reiser4: '{input.Name}' ended before its declared {input.Size:N0}-byte size.");
+            spool.Write(buffer, 0, read);
+            remaining -= read;
+          }
+          spool.Flush();
+        }
+        sizes.Add(input.Size);
+        var capturedPath = path;
+        writer.AddStreamingFile(input.Name, input.Size, () => new FileStream(capturedPath,
+          FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 64 * 1024,
+          FileOptions.SequentialScan));
+      }
+
+      var label = options?.GetOption("VolumeLabel", "") ?? "";
+      if (string.IsNullOrEmpty(label) && !string.IsNullOrEmpty(options?.Password))
+        label = options.Password;
+      if (!string.IsNullOrEmpty(label)) writer.Label = label;
+
+      var requestedBytes = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
+      var requestedBlocks = requestedBytes > 0
+        ? (ulong)Math.Max(1, requestedBytes / Reiser4Writer.BlockSize)
+        : 0UL;
+      writer.BlockCount = Math.Max(requestedBlocks, Reiser4Writer.EstimateBlockCount(sizes));
+      writer.Write(target);
+    } finally {
+      foreach (var path in staged) {
+        try { File.Delete(path); } catch { /* best-effort cleanup of staging data */ }
+      }
+    }
   }
 
   /// <summary>

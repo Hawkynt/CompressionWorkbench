@@ -88,4 +88,47 @@ public sealed class Reiser4NativeTreeTests {
       try { Directory.Delete(output, recursive: true); } catch { /* best effort */ }
     }
   }
+
+  [Test, Category("RoundTrip")]
+  public void Descriptor_CreateFromStreams_EmitsNativeTreeWithoutBufferingWholeInput() {
+    var payload = Payload(2 * 1024 * 1024 + 37, 5);
+    var openCount = 0;
+    var descriptor = new Reiser4FormatDescriptor();
+    using var image = new MemoryStream();
+
+    descriptor.CreateFromStreams(image, [new Compression.Registry.Streaming.StreamingArchiveInput(
+      "streamed.bin", payload.LongLength, false, () => {
+        ++openCount;
+        return new MemoryStream(payload, writable: false);
+      })], new FormatCreateOptions());
+
+    image.Position = 0;
+    using var reader = new Reiser4Reader(image);
+    Assert.Multiple(() => {
+      Assert.That(openCount, Is.EqualTo(1));
+      Assert.That(reader.Entries.Select(static entry => entry.Name), Does.Contain("streamed.bin"));
+      Assert.That(reader.Extract(reader.Entries.Single()), Is.EqualTo(payload));
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+    });
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Descriptor_DefaultMutation_RebuildsAndRemainsReadable() {
+    var original = Payload(5_123, 6);
+    var added = Payload(8_765, 7);
+    var descriptor = new Reiser4FormatDescriptor();
+    using var image = new MemoryStream(BuildWithoutLegacyDirectory(("original.bin", original)));
+
+    ((IArchiveModifiable)descriptor).Add(image,
+      [ArchiveInputInfo.InMemory("added.bin", added)]);
+
+    image.Position = 0;
+    using var reader = new Reiser4Reader(image);
+    Assert.Multiple(() => {
+      Assert.That(reader.Entries.Select(static entry => entry.Name),
+        Is.EquivalentTo(new[] { "original.bin", "added.bin" }));
+      Assert.That(reader.Extract(reader.Entries.Single(static entry => entry.Name == "original.bin")), Is.EqualTo(original));
+      Assert.That(reader.Extract(reader.Entries.Single(static entry => entry.Name == "added.bin")), Is.EqualTo(added));
+    });
+  }
 }
