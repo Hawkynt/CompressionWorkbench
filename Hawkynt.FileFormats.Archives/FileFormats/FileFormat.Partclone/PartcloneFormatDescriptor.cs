@@ -7,7 +7,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Partclone;
 
 /// <summary>
-/// Read-only descriptor for partclone — the Clonezilla backup format that
+/// Descriptor for partclone — the Clonezilla backup format that
 /// captures only allocated filesystem blocks alongside a per-block usage
 /// bitmap. Listing surfaces the reconstructed disk image plus a
 /// <c>metadata.ini</c> describing the source FS; extraction either writes the
@@ -23,7 +23,7 @@ namespace FileFormat.Partclone;
 ///   <item><description><c>https://clonezilla.org</c> — Clonezilla — primary consumer of partclone images</description></item>
 /// </list>
 /// </summary>
-public sealed class PartcloneFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class PartcloneFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -41,7 +41,7 @@ public sealed class PartcloneFormatDescriptor : IFormatDescriptor, IArchiveForma
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -91,10 +91,12 @@ public sealed class PartcloneFormatDescriptor : IFormatDescriptor, IArchiveForma
     var virtualSize = checked((long)(info.TotalBlocks * info.BlockSize));
     var physicalSize = checked((long)(info.UsedBlocks * info.BlockSize));
     var metaLen = BuildMetadataBytes(info).LongLength;
+    var bitmapLen = reader.ReadAllocationMap().LongLength;
 
     return [
       new ArchiveEntryInfo(0, "metadata.ini", metaLen, metaLen, "stored", false, false, null),
-      new ArchiveEntryInfo(1, "image.img",    virtualSize, physicalSize, "stored", false, false, null),
+      new ArchiveEntryInfo(1, "allocation.map", bitmapLen, bitmapLen, "stored", false, false, null),
+      new ArchiveEntryInfo(2, "image.img",    virtualSize, physicalSize, "stored", false, false, null),
     ];
   }
 
@@ -107,10 +109,14 @@ public sealed class PartcloneFormatDescriptor : IFormatDescriptor, IArchiveForma
     var info = reader.Info;
 
     var emitMeta = files == null || files.Length == 0 || MatchesFilter("metadata.ini", files);
+    var emitMap = files == null || files.Length == 0 || MatchesFilter("allocation.map", files);
     var emitImg  = files == null || files.Length == 0 || MatchesFilter("image.img", files);
 
     if (emitMeta)
       WriteFile(outputDir, "metadata.ini", BuildMetadataBytes(info));
+
+    if (emitMap)
+      WriteFile(outputDir, "allocation.map", reader.ReadAllocationMap());
 
     if (emitImg) {
       Directory.CreateDirectory(outputDir);
@@ -118,6 +124,20 @@ public sealed class PartcloneFormatDescriptor : IFormatDescriptor, IArchiveForma
       using var fs = File.Create(imgPath);
       reader.StreamDiskTo(fs);
     }
+  }
+
+  /// <summary>Creates a Partclone v2 image from <c>image.img</c>, <c>metadata.ini</c>, and optionally <c>allocation.map</c>.</summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var files = inputs.Where(static i => !i.IsDirectory).ToDictionary(static i => Path.GetFileName(i.ArchiveName.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase);
+    if (!files.TryGetValue("image.img", out var image) || !files.TryGetValue("metadata.ini", out var metadata))
+      throw new InvalidDataException("Partclone creation requires image.img and metadata.ini inputs.");
+    var map = files.TryGetValue("allocation.map", out var allocation) ? allocation.ReadContent() : [];
+    using var disk = image.InMemoryContent is { } content
+      ? new MemoryStream(content, writable: false)
+      : File.OpenRead(image.FullPath);
+    PartcloneWriter.Write(output, disk, metadata.ReadContent(), map, options.FormatSpecific);
   }
 
   private static byte[] BuildMetadataBytes(PartcloneReader.PartcloneImage info) {
@@ -129,11 +149,14 @@ public sealed class PartcloneFormatDescriptor : IFormatDescriptor, IArchiveForma
     sb.Append(CultureInfo.InvariantCulture, $"block_size = {info.BlockSize}\n");
     sb.Append(CultureInfo.InvariantCulture, $"total_blocks = {info.TotalBlocks}\n");
     sb.Append(CultureInfo.InvariantCulture, $"used_blocks = {info.UsedBlocks}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"superblock_used_blocks = {info.SuperBlockUsedBlocks}\n");
     sb.Append(CultureInfo.InvariantCulture, $"device_size = {info.DeviceSize}\n");
     sb.Append(CultureInfo.InvariantCulture, $"bitmap_mode = {info.BitmapMode}\n");
     sb.Append(CultureInfo.InvariantCulture, $"checksum_mode = {info.ChecksumMode}\n");
     sb.Append(CultureInfo.InvariantCulture, $"checksum_size = {info.ChecksumSize}\n");
     sb.Append(CultureInfo.InvariantCulture, $"blocks_per_checksum = {info.BlocksPerChecksum}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"cpu_bits = {info.CpuBits}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"reseed_checksum = {info.ReseedChecksum}\n");
     sb.Append(CultureInfo.InvariantCulture, $"bitmap_offset = {info.BitmapOffset}\n");
     sb.Append(CultureInfo.InvariantCulture, $"data_offset = {info.DataOffset}\n");
     return Encoding.UTF8.GetBytes(sb.ToString());

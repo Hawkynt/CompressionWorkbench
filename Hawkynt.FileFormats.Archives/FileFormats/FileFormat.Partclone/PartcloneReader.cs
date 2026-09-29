@@ -99,11 +99,14 @@ public sealed class PartcloneReader {
     ulong DeviceSize,
     ulong TotalBlocks,
     ulong UsedBlocks,
+    ulong SuperBlockUsedBlocks,
     uint BlockSize,
     ushort ImageVersion,
+    ushort CpuBits,
     ushort ChecksumMode,
     ushort ChecksumSize,
     uint BlocksPerChecksum,
+    byte ReseedChecksum,
     byte BitmapMode,
     long BitmapOffset,
     long DataOffset);
@@ -179,6 +182,9 @@ public sealed class PartcloneReader {
     }
   }
 
+  /// <summary>Returns the serialized allocation map as stored in the image.</summary>
+  public byte[] ReadAllocationMap() => this.ReadBitmap();
+
   private void WriteDiskInto(byte[] disk) {
     var bitmap = ReadBitmap();
     var blockSize = (int)_info.BlockSize;
@@ -253,7 +259,7 @@ public sealed class PartcloneReader {
     var deviceSize = BinaryPrimitives.ReadUInt64LittleEndian(fsInfo[15..]);
     var totalBlock = BinaryPrimitives.ReadUInt64LittleEndian(fsInfo[23..]);
     var usedBlocks = BinaryPrimitives.ReadUInt64LittleEndian(fsInfo[31..]);
-    // superBlockUsedBlocks at fsInfo[39..47] — not used here.
+    var superBlockUsedBlocks = BinaryPrimitives.ReadUInt64LittleEndian(fsInfo[39..]);
     var blockSize = BinaryPrimitives.ReadUInt32LittleEndian(fsInfo[47..]);
 
     if (blockSize == 0)
@@ -268,10 +274,11 @@ public sealed class PartcloneReader {
     Span<byte> opts = stackalloc byte[22];
     _stream.ReadExactly(opts);
     var imageVersion = BinaryPrimitives.ReadUInt16LittleEndian(opts[4..]);
-    // cpu_bits at opts[6..8]
+    var cpuBits = BinaryPrimitives.ReadUInt16LittleEndian(opts[6..]);
     var checksumMode = BinaryPrimitives.ReadUInt16LittleEndian(opts[8..]);
     var checksumSize = BinaryPrimitives.ReadUInt16LittleEndian(opts[10..]);
     var blocksPerChecksum = BinaryPrimitives.ReadUInt32LittleEndian(opts[12..]);
+    var reseedChecksum = opts[16];
     var bitmapMode = opts[17];
     // crc at opts[18..22] — not validated here.
 
@@ -291,11 +298,14 @@ public sealed class PartcloneReader {
       DeviceSize: deviceSize,
       TotalBlocks: totalBlock,
       UsedBlocks: usedBlocks,
+      SuperBlockUsedBlocks: superBlockUsedBlocks,
       BlockSize: blockSize,
       ImageVersion: imageVersion,
+      CpuBits: cpuBits,
       ChecksumMode: checksumMode,
       ChecksumSize: checksumSize,
       BlocksPerChecksum: blocksPerChecksum,
+      ReseedChecksum: reseedChecksum,
       BitmapMode: bitmapMode,
       BitmapOffset: bitmapOffset,
       DataOffset: dataOffset);

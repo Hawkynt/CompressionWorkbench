@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Registry;
 using FileFormat.Partclone;
 
 namespace Compression.Tests.Partclone;
@@ -248,11 +249,12 @@ public class PartcloneTests {
       used: [true, false, true, false]);
     using var ms = new MemoryStream(data);
     var entries = new PartcloneFormatDescriptor().List(ms, null);
-    Assert.That(entries, Has.Count.EqualTo(2));
+    Assert.That(entries, Has.Count.EqualTo(3));
     Assert.That(entries[0].Name, Is.EqualTo("metadata.ini"));
-    Assert.That(entries[1].Name, Is.EqualTo("image.img"));
-    Assert.That(entries[1].OriginalSize, Is.EqualTo(64));   // 4 blocks × 16 bytes
-    Assert.That(entries[1].CompressedSize, Is.EqualTo(32)); // 2 used × 16 bytes
+    Assert.That(entries[1].Name, Is.EqualTo("allocation.map"));
+    Assert.That(entries[2].Name, Is.EqualTo("image.img"));
+    Assert.That(entries[2].OriginalSize, Is.EqualTo(64));   // 4 blocks × 16 bytes
+    Assert.That(entries[2].CompressedSize, Is.EqualTo(32)); // 2 used × 16 bytes
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
@@ -269,6 +271,7 @@ public class PartcloneTests {
       var imgPath = Path.Combine(tmp, "image.img");
       Assert.That(File.Exists(metaPath), Is.True);
       Assert.That(File.Exists(imgPath), Is.True);
+      Assert.That(File.Exists(Path.Combine(tmp, "allocation.map")), Is.True);
 
       var meta = File.ReadAllText(metaPath);
       Assert.That(meta, Does.Contain("[partclone]"));
@@ -311,5 +314,47 @@ public class PartcloneTests {
     var sig = d.MagicSignatures[0];
     Assert.That(sig.Offset, Is.EqualTo(0));
     Assert.That(sig.Bytes.SequenceEqual(PartcloneReader.Magic), Is.True);
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Descriptor_Create_RoundTripsRawImageAndPreservesAllocatedZeroBlocks() {
+    var raw = new byte[5 * 8];
+    raw.AsSpan(8, 8).Fill(0x5A);
+    raw.AsSpan(32, 8).Fill(0xC3);
+    // Block 0 is allocated despite containing only zeroes; this distinction
+    // cannot be recovered from the raw image alone, so carry the original map.
+    byte[] map = [0b0001_0111];
+    var metadata = Encoding.UTF8.GetBytes("[partclone]\nptc_version = 2.91\nfs = ext4\nblock_size = 8\ntotal_blocks = 5\nused_blocks = 3\ndevice_size = 40\nbitmap_mode = 1\nchecksum_mode = 1\nchecksum_size = 4\nblocks_per_checksum = 2\n");
+    var inputs = new[] {
+      ArchiveInputInfo.InMemory("image.img", raw),
+      ArchiveInputInfo.InMemory("metadata.ini", metadata),
+      ArchiveInputInfo.InMemory("allocation.map", map),
+    };
+    using var encoded = new MemoryStream();
+    new PartcloneFormatDescriptor().Create(encoded, inputs, new FormatCreateOptions());
+
+    encoded.Position = 0;
+    var reader = new PartcloneReader(encoded);
+    Assert.That(reader.Info.FsType, Is.EqualTo("ext4"));
+    Assert.That(reader.Info.ChecksumMode, Is.EqualTo((ushort)1));
+    Assert.That(reader.Info.BlocksPerChecksum, Is.EqualTo(2U));
+    Assert.That(reader.ReadAllocationMap(), Is.EqualTo(map));
+    Assert.That(reader.ReconstructDisk(), Is.EqualTo(raw));
+
+    foreach (var checksum in new[] { (Mode: "0", Size: "0"), (Mode: "2", Size: "8") }) {
+      using var variant = new MemoryStream();
+      var variantOptions = new FormatCreateOptions {
+        FormatSpecific = new() {
+          ["ChecksumMode"] = checksum.Mode,
+          ["ChecksumSize"] = checksum.Size,
+          ["BlocksPerChecksum"] = checksum.Mode == "0" ? "0" : "2",
+        },
+      };
+      new PartcloneFormatDescriptor().Create(variant, inputs, variantOptions);
+      variant.Position = 0;
+      var variantReader = new PartcloneReader(variant);
+      Assert.That(variantReader.Info.ChecksumMode, Is.EqualTo(ushort.Parse(checksum.Mode)));
+      Assert.That(variantReader.ReconstructDisk(), Is.EqualTo(raw));
+    }
   }
 }
