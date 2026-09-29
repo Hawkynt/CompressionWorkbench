@@ -94,6 +94,7 @@ internal static class PyInstallerWriter {
     WriteUInt32BigEndian(output, tocLength);
     WriteUInt32BigEndian(output, checked((uint)pythonVersion));
     Span<byte> library = stackalloc byte[64];
+    library.Clear();
     Encoding.ASCII.GetBytes(libraryName, library);
     output.Write(library);
   }
