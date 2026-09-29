@@ -19,6 +19,10 @@ backends, so Windows and Linux run the same code rather than two frontends drift
   folders between host folders and archive folders in any direction; nothing is overwritten — a
   taken name gets a number — and a cut removes its sources only after every copy has landed.
   New Folder (Ctrl+Shift+N) works in folders on disk and opens the new name for editing.
+- **Thumbnails** — View → Thumbnails (Ctrl+Shift+2; Details is Ctrl+Shift+6) shows large icons, and
+  every entry any image decoder can read gets its picture shrunk into its icon, decoded in the
+  background — on disk and inside archives alike. Entries over 16 MB and beyond the first 500 of a
+  folder keep their icon.
 - **Preview pane** — beside the list (Alt+P toggles it): the selected entry as a picture when any
   of the image decoders reads it, as the start of its text when it reads as text, otherwise its name.
   Entries larger than 32 MB are not read for a glance.
