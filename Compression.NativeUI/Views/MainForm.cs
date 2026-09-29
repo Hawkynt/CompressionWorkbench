@@ -139,6 +139,8 @@ internal sealed class MainForm : Form {
         Item("&Forward", IconKeys.Forward, Keys.Alt | Keys.Right, this._model.ForwardCommand),
         Item("Go &Up", IconKeys.NavigateUp, Keys.Back, this._model.NavigateUpCommand),
         Item("&Delete", IconKeys.Remove, Keys.Delete, this._model.DeleteSelectedCommand),
+        // F2 belongs to the list, which starts editing the focused name itself; shown, not claimed.
+        Item("Rena&me", IconKeys.Rename, Keys.None, this._model.RenameCommand, "F2"),
         new ToolStripSeparator(),
         Item("&View as Text", IconKeys.ViewText, Keys.None, this._model.ViewAsTextCommand, "Enter"),
         Item("View as &Hex", IconKeys.ViewHex, Keys.None, this._model.ViewAsHexCommand),
@@ -348,9 +350,10 @@ internal sealed class MainForm : Form {
 
   private void BuildEntryList() {
     this._entries.SmallImageList = this._icons;
+    // The icon sits in the name column, as in every file manager: the column an item's own text
+    // occupies is the one label editing edits, so a separate icon column made renaming edit nothing.
     this._entries.Columns.AddRange([
-      new ColumnHeader("", 24),
-      new ColumnHeader("Name", 280),
+      new ColumnHeader("Name", 300),
       new ColumnHeader("Original", 90) { TextAlign = ContentAlignment.MiddleRight },
       new ColumnHeader("Compressed", 90) { TextAlign = ContentAlignment.MiddleRight },
       new ColumnHeader("Ratio", 60) { TextAlign = ContentAlignment.MiddleRight },
@@ -364,6 +367,26 @@ internal sealed class MainForm : Form {
         if (item.Tag is ArchiveEntryViewModel entry) this._model.SelectedEntries.Add(entry);
 
       CommandManager.InvalidateRequerySuggested();
+    };
+
+    this._entries.LabelEdit = true;
+    this._entries.BeforeLabelEdit += (_, e) => {
+      if (this.EntryAt(e.Item) is not { } entry || !this._model.CanRename(entry)) e.CancelEdit = true;
+    };
+    this._entries.AfterLabelEdit += (_, e) => {
+      // A null label is an edit the user abandoned with Escape.
+      if (e.Label is not null && this.EntryAt(e.Item) is { } entry) this._model.Rename(entry, e.Label);
+
+      // The list is rebuilt from the model either way, so the row never takes the typed text as is:
+      // a refused name must not stay on screen, and an accepted one is already there, re-sorted.
+      e.CancelEdit = true;
+    };
+    this._model.RenameRequested += (_, entry) => {
+      for (var i = 0; i < this._entries.Items.Count; ++i)
+        if (ReferenceEquals(this._entries.Items[i].Tag, entry)) {
+          this._entries.BeginEdit(i);
+          return;
+        }
     };
 
     this._entries.ItemActivate += (_, _) => this.ActivateSelectedEntry();
@@ -405,6 +428,7 @@ internal sealed class MainForm : Form {
       this.Item("&Extract Selected...", IconKeys.ExtractSelected, Keys.None, this._model.ExtractSelectedCommand),
       this.Item("Extract &All...", IconKeys.Extract, Keys.None, this._model.ExtractAllCommand),
       this.Item("&Delete", IconKeys.Remove, Keys.None, this._model.DeleteSelectedCommand, "Del"),
+      this.Item("Rena&me", IconKeys.Rename, Keys.None, this._model.RenameCommand, "F2"),
       new ToolStripSeparator(),
       this.Item("&Add Files...", IconKeys.Add, Keys.None, this._model.AddFilesCommand),
       new ToolStripSeparator(),
@@ -474,8 +498,7 @@ internal sealed class MainForm : Form {
     this._entries.Items.Clear();
 
     foreach (var entry in this.SortedEntries())
-      this._entries.Items.Add(new ListViewItem("", [
-        entry.Name,
+      this._entries.Items.Add(new ListViewItem(entry.Name, [
         entry.OriginalSizeText,
         entry.CompressedSizeText,
         entry.RatioText,
@@ -512,7 +535,7 @@ internal sealed class MainForm : Form {
   }
 
   private void SortBy(int columnIndex) {
-    if (columnIndex <= 0 || columnIndex >= this._entries.Columns.Count) return;
+    if (columnIndex < 0 || columnIndex >= this._entries.Columns.Count) return;
 
     var header = this._entries.Columns[columnIndex].Text;
     if (this._sortColumn == header) this._sortDescending = !this._sortDescending;
@@ -523,6 +546,9 @@ internal sealed class MainForm : Form {
 
     this.RefreshEntries();
   }
+
+  private ArchiveEntryViewModel? EntryAt(int index)
+    => index >= 0 && index < this._entries.Items.Count ? this._entries.Items[index].Tag as ArchiveEntryViewModel : null;
 
   private void ActivateSelectedEntry() {
     if (this._entries.SelectedItem?.Tag is not ArchiveEntryViewModel entry) return;

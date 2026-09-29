@@ -431,6 +431,53 @@ public sealed class MainFormTests {
     });
   }
 
+  // ── rename ──────────────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenTheEntryList_WhenBuilt_ThenTheEditableTextOfEachRowIsItsName() {
+    WithScratch((root, _) => WithShell(shell => {
+      Field<MainViewModel>(shell, "_model").NavigateTo(Location.Folder(root));
+      var list = Field<ListView>(shell, "_entries");
+
+      Assert.Multiple(() => {
+        Assert.That(list.LabelEdit, Is.True);
+        Assert.That(list.Columns[0].Text, Is.EqualTo("Name"), "label editing edits the first column");
+        Assert.That(list.Items.Cast<ListViewItem>().Select(i => i.Text), Does.Contain("sub"));
+      });
+    }));
+  }
+
+  [Test]
+  public void GivenTheRenameItems_WhenTheMenusAreBuilt_ThenF2IsShownButLeftToTheList() {
+    WithShell(shell => {
+      var items = Field<MenuStrip>(shell, "_menu").Items.Cast<ToolStripItem>().SelectMany(MenuItems)
+        .Concat(Field<ContextMenuStrip>(shell, "_entryMenu").Items.Cast<ToolStripItem>().SelectMany(MenuItems))
+        .Where(i => i.Text == "Rena&me")
+        .ToList();
+
+      Assert.That(items, Has.Count.EqualTo(2));
+      Assert.That(items.All(i => i.ShortcutKeyDisplayString == "F2" && i.ShortcutKeys == Keys.None), Is.True,
+        "the list starts editing on F2 itself; an accelerator would take the key away from it");
+    });
+  }
+
+  [Test]
+  public void GivenASelectedEntry_WhenRenameIsInvoked_ThenTheListStartsEditingThatRow() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.Folder(root));
+      var list = Field<ListView>(shell, "_entries");
+      var row = list.Items.Cast<ListViewItem>().First(i => i.Text == "sub");
+      model.SelectedEntries.Add((ArchiveEntryViewModel)row.Tag!);
+
+      model.RenameCommand.Execute(null);
+
+      var editor = list.Controls.OfType<TextBox>().SingleOrDefault();
+      Assert.That(editor, Is.Not.Null.And.Property(nameof(Control.Visible)).True);
+      Assert.That(editor!.Text, Is.EqualTo("sub"));
+    }));
+  }
+
   [Test]
   public void GivenTheAddressBar_WhenOpenedForEditing_ThenItHoldsTheRealPath() {
     WithScratch((_, zip) => WithShell(shell => {
