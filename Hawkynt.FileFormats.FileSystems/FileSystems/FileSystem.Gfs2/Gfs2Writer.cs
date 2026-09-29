@@ -138,7 +138,7 @@ public sealed partial class Gfs2Writer {
   private readonly SortedSet<long> _usedBlocks = [];
 
   // Caller files and the layout each one gets.
-  private readonly List<(string Name, FilePayload Payload)> _files = [];
+  private readonly List<(string Name, FilePayload Payload, Gfs2InodeMetadata? Metadata)> _files = [];
   private readonly List<FilePlan> _filePlans = [];
   private readonly DeferredPayloads _payloads = new();
   private DirectoryPlan? _rootPlan;
@@ -167,6 +167,7 @@ public sealed partial class Gfs2Writer {
   private sealed class FilePlan {
     public required string Name;
     public required FilePayload Payload;
+    public Gfs2InodeMetadata? Metadata;
     public required ulong FormalIno;
     public long Dinode;
     public ushort Height;
@@ -180,17 +181,29 @@ public sealed partial class Gfs2Writer {
   /// directories. Bodies up to <c>BlockSize - 232</c> are stuffed in the dinode;
   /// longer ones get a metadata tree of indirect blocks.
   /// </summary>
-  public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data, Gfs2InodeMetadata? metadata = null) {
     ArgumentException.ThrowIfNullOrEmpty(name);
     ArgumentNullException.ThrowIfNull(data);
-    this._files.Add((name, FilePayload.FromBytes(data)));
+    ValidateFileMetadata(metadata);
+    this._files.Add((name, FilePayload.FromBytes(data), metadata));
   }
 
   /// <summary>Adds a file whose bytes are pulled from <paramref name="openStream" /> as the volume is written.</summary>
-  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream, Gfs2InodeMetadata? metadata = null) {
     ArgumentException.ThrowIfNullOrEmpty(name);
     ArgumentNullException.ThrowIfNull(openStream);
-    this._files.Add((name, FilePayload.FromStream(size, openStream)));
+    ValidateFileMetadata(metadata);
+    this._files.Add((name, FilePayload.FromStream(size, openStream), metadata));
+  }
+
+  private static void ValidateFileMetadata(Gfs2InodeMetadata? metadata) {
+    if (metadata is null) return;
+    if ((metadata.Mode & 0xF000) != SIfReg)
+      throw new ArgumentException("Metadata supplied for a GFS2 file must have a regular-file mode.", nameof(metadata));
+    if (metadata.AccessTimeNanoseconds >= 1_000_000_000 ||
+        metadata.ModificationTimeNanoseconds >= 1_000_000_000 ||
+        metadata.ChangeTimeNanoseconds >= 1_000_000_000)
+      throw new ArgumentOutOfRangeException(nameof(metadata), "GFS2 timestamp nanoseconds must be less than one billion.");
   }
 
   /// <summary>
@@ -415,7 +428,7 @@ public sealed partial class Gfs2Writer {
     this._rootPlan = root;
     var directories = new Dictionary<string, DirectoryPlan>(StringComparer.Ordinal) { [""] = root };
 
-    foreach (var (rawPath, payload) in this._files) {
+    foreach (var (rawPath, payload, metadata) in this._files) {
       var parts = SplitPath(rawPath);
       var parent = root;
       var directoryPath = "";
@@ -448,6 +461,7 @@ public sealed partial class Gfs2Writer {
       var plan = new FilePlan {
         Name = leaf,
         Payload = payload,
+        Metadata = metadata,
         FormalIno = this._nextFreeFormalIno++,
         Dinode = this.AllocBlock(),
       };
@@ -796,10 +810,10 @@ public sealed partial class Gfs2Writer {
     foreach (var level in plan.Levels) blocks += level.Count;
 
     this.WriteDinode(
-      block: plan.Dinode, formalIno: plan.FormalIno, mode: SIfReg | 0x1A4 /* 0644 */,
+      block: plan.Dinode, formalIno: plan.FormalIno, mode: plan.Metadata?.Mode ?? (SIfReg | 0x1A4 /* 0644 */),
       nlink: 1, size: (ulong)size, blocks: (ulong)blocks, flags: 0,
       payloadFormat: 0, height: plan.Height, entries: 0,
-      goalMeta: (ulong)plan.Dinode, goalData: (ulong)plan.Dinode);
+      goalMeta: (ulong)plan.Dinode, goalData: (ulong)plan.Dinode, metadata: plan.Metadata);
 
     if (plan.Height == 0) {
       // Stuffed: the body lives in the dinode past its 232-byte header.
@@ -1044,32 +1058,35 @@ public sealed partial class Gfs2Writer {
   private void WriteDinode(long block, ulong formalIno, uint mode, uint nlink,
                            ulong size, ulong blocks, uint flags, uint payloadFormat,
                            ushort height, uint entries,
-                           ulong goalMeta, ulong goalData) {
+                           ulong goalMeta, ulong goalData, Gfs2InodeMetadata? metadata = null) {
     var o = block * BlockSize;
     WriteMetaHeader(o, MtDinode, FmtDinode);
     WriteInum(o + 24, formalIno, (ulong)block);                             // di_num
     BinaryPrimitives.WriteUInt32BigEndian(Span(o + 40, 4), mode);           // di_mode
-    BinaryPrimitives.WriteUInt32BigEndian(Span(o + 44, 4), 0u);             // di_uid (root)
-    BinaryPrimitives.WriteUInt32BigEndian(Span(o + 48, 4), 0u);             // di_gid (root)
+    BinaryPrimitives.WriteUInt32BigEndian(Span(o + 44, 4), metadata?.UserId ?? 0u); // di_uid
+    BinaryPrimitives.WriteUInt32BigEndian(Span(o + 48, 4), metadata?.GroupId ?? 0u); // di_gid
     BinaryPrimitives.WriteUInt32BigEndian(Span(o + 52, 4), nlink);          // di_nlink
     BinaryPrimitives.WriteUInt64BigEndian(Span(o + 56, 8), size);           // di_size
     BinaryPrimitives.WriteUInt64BigEndian(Span(o + 64, 8), blocks);         // di_blocks
-    BinaryPrimitives.WriteUInt64BigEndian(Span(o + 72, 8), this._baseTime); // di_atime
-    BinaryPrimitives.WriteUInt64BigEndian(Span(o + 80, 8), this._baseTime); // di_mtime
-    BinaryPrimitives.WriteUInt64BigEndian(Span(o + 88, 8), this._baseTime); // di_ctime
+    BinaryPrimitives.WriteUInt64BigEndian(Span(o + 72, 8), metadata?.AccessTimeSeconds ?? this._baseTime); // di_atime
+    BinaryPrimitives.WriteUInt64BigEndian(Span(o + 80, 8), metadata?.ModificationTimeSeconds ?? this._baseTime); // di_mtime
+    BinaryPrimitives.WriteUInt64BigEndian(Span(o + 88, 8), metadata?.ChangeTimeSeconds ?? this._baseTime); // di_ctime
     // di_major/minor @96/100 zero.
     BinaryPrimitives.WriteUInt64BigEndian(Span(o + 104, 8), goalMeta);      // di_goal_meta
     BinaryPrimitives.WriteUInt64BigEndian(Span(o + 112, 8), goalData);      // di_goal_data
     // di_generation @120 zero.
-    BinaryPrimitives.WriteUInt32BigEndian(Span(o + 128, 4), flags);         // di_flags
+    BinaryPrimitives.WriteUInt32BigEndian(Span(o + 128, 4), metadata?.Flags ?? flags); // di_flags
     BinaryPrimitives.WriteUInt32BigEndian(Span(o + 132, 4), payloadFormat); // di_payload_format
     // __pad1 @136
     BinaryPrimitives.WriteUInt16BigEndian(Span(o + 138, 2), height);        // di_height
     // __pad2 @140, __pad3 @144
     BinaryPrimitives.WriteUInt16BigEndian(Span(o + 146, 2), 0);             // di_depth
     BinaryPrimitives.WriteUInt32BigEndian(Span(o + 148, 4), entries);       // di_entries
-    // __pad4 @152 (gfs2_inum, zero); di_eattr and the *_nsec/reserved tail stay
-    // zero — there are no extended attributes and timestamps carry no nanoseconds.
+    // __pad4 @152 (gfs2_inum, zero); di_eattr @168 is zero. Extended attributes
+    // are not currently copied between volumes.
+    BinaryPrimitives.WriteUInt32BigEndian(Span(o + 176, 4), metadata?.AccessTimeNanoseconds ?? 0); // di_atime_nsec
+    BinaryPrimitives.WriteUInt32BigEndian(Span(o + 180, 4), metadata?.ModificationTimeNanoseconds ?? 0); // di_mtime_nsec
+    BinaryPrimitives.WriteUInt32BigEndian(Span(o + 184, 4), metadata?.ChangeTimeNanoseconds ?? 0); // di_ctime_nsec
 
     this.MarkDinode(block);
   }

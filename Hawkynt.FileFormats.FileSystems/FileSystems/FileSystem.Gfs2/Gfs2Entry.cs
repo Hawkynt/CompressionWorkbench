@@ -24,6 +24,9 @@ public sealed class Gfs2Entry {
   /// </summary>
   public DateTime? LastModified { get; init; }
 
+  /// <summary>Inode attributes read from the entry's dinode.</summary>
+  public Gfs2InodeMetadata? Metadata { get; init; }
+
   /// <summary>Block address of the dinode (gfs2_dinode) that backs this entry.</summary>
   internal ulong InodeBlock { get; init; }
 

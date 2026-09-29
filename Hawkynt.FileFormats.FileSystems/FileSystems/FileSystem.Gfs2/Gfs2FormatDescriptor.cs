@@ -213,6 +213,17 @@ public sealed class Gfs2FormatDescriptor
     ArgumentNullException.ThrowIfNull(output);
 
     var lockTable = options?.GetOption("LockTable", "") ?? "";
+    byte[]? uuid = null;
+    var uuidHex = options?.GetOption("Uuid", "");
+    if (!string.IsNullOrWhiteSpace(uuidHex)) {
+      try {
+        uuid = Convert.FromHexString(uuidHex);
+      } catch (FormatException ex) {
+        throw new ArgumentException("GFS2 UUID must be 32 hexadecimal characters.", nameof(options), ex);
+      }
+      if (uuid.Length != 16)
+        throw new ArgumentException("GFS2 UUID must be 32 hexadecimal characters.", nameof(options));
+    }
     var sizes = new List<long>();
     var files = new List<(string Name, ArchiveInputInfo Input)>();
     if (inputs != null)
@@ -226,7 +237,7 @@ public sealed class Gfs2FormatDescriptor
     // The requested size is a floor: the volume has to be at least large enough
     // for the payload's dinodes, data blocks and indirect blocks.
     var size = Math.Max(ParseSizeOption(options), Gfs2Writer.EstimateSize(sizes));
-    var writer = new Gfs2Writer(size, lockTable: lockTable);
+    var writer = new Gfs2Writer(size, uuid: uuid, lockTable: lockTable);
     foreach (var (name, input) in files) {
       if (input.InMemoryContent is { } bytes) {
         writer.AddFile(name, bytes);
@@ -263,7 +274,11 @@ public sealed class Gfs2FormatDescriptor
     return Math.Max(bytes, 16L * 1024 * 1024);
   }
 
-  private readonly record struct EditProfile(long ImageSize, string LockTable);
+  private sealed record EditProfile(
+    long ImageSize,
+    string LockTable,
+    byte[] Uuid,
+    IReadOnlyDictionary<string, Gfs2InodeMetadata> EntryMetadata);
 
   private static EditProfile ReadEditProfile(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
@@ -273,28 +288,43 @@ public sealed class Gfs2FormatDescriptor
     using var reader = new Gfs2Reader(archive);
     if (!reader.SuperblockValid)
       throw new InvalidDataException("GFS2 mutation requires a valid superblock.");
-    var profile = new EditProfile(archive.Length, reader.LockTable);
+    var profile = new EditProfile(
+      archive.Length,
+      reader.LockTable,
+      reader.Uuid,
+      reader.Entries.Where(static entry => entry.Metadata is not null)
+        .ToDictionary(static entry => entry.Name, static entry => entry.Metadata!, StringComparer.Ordinal));
     archive.Position = 0;
     return profile;
   }
 
   private static byte[] BuildEditedImage(IReadOnlyList<(string Name, byte[] Data)> files, EditProfile profile) {
     var size = Math.Max(profile.ImageSize, Gfs2Writer.EstimateSize(files.Select(f => f.Data.LongLength)));
-    var writer = new Gfs2Writer(size, lockTable: profile.LockTable);
+    var writer = new Gfs2Writer(size, uuid: profile.Uuid, lockTable: profile.LockTable);
     foreach (var (name, data) in files)
-      writer.AddFile(name, data);
+      writer.AddFile(name, data, profile.EntryMetadata.GetValueOrDefault(name));
     return writer.Build();
   }
 
-  private sealed class PreservingCreator(Gfs2FormatDescriptor descriptor, EditProfile profile) : IArchiveCreatable {
+  private sealed class PreservingCreator(EditProfile profile) : IArchiveCreatable {
     public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-      var preserved = new FormatCreateOptions {
-        FormatSpecific = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-          ["size"] = profile.ImageSize.ToString(CultureInfo.InvariantCulture),
-          ["LockTable"] = profile.LockTable,
-        },
-      };
-      descriptor.Create(output, inputs, preserved);
+      var files = inputs.Where(static input => !input.IsDirectory).ToArray();
+      var sizes = files.Select(static input => input.InMemoryContent?.LongLength ?? new FileInfo(input.FullPath).Length);
+      var writer = new Gfs2Writer(
+        Math.Max(profile.ImageSize, Gfs2Writer.EstimateSize(sizes)),
+        uuid: profile.Uuid,
+        lockTable: profile.LockTable);
+      foreach (var input in files) {
+        var size = input.InMemoryContent?.LongLength ?? new FileInfo(input.FullPath).Length;
+        var metadata = profile.EntryMetadata.GetValueOrDefault(input.ArchiveName);
+        if (input.InMemoryContent is { } bytes)
+          writer.AddFile(input.ArchiveName, bytes, metadata);
+        else {
+          var path = input.FullPath;
+          writer.AddStreamingFile(input.ArchiveName, size, () => File.OpenRead(path), metadata);
+        }
+      }
+      writer.Build(output);
     }
   }
 
@@ -308,7 +338,7 @@ public sealed class Gfs2FormatDescriptor
     ArgumentNullException.ThrowIfNull(inputs);
     var profile = ReadEditProfile(archive);
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.AddLargeVolume(archive, inputs, this, new PreservingCreator(this, profile), SyntheticEntries);
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, new PreservingCreator(profile), SyntheticEntries);
       return;
     }
     ModifyRebuilder.Add(archive, inputs, ReadEntries,
@@ -323,7 +353,7 @@ public sealed class Gfs2FormatDescriptor
     ArgumentNullException.ThrowIfNull(entryNames);
     var profile = ReadEditProfile(archive);
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, new PreservingCreator(this, profile), SyntheticEntries);
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, new PreservingCreator(profile), SyntheticEntries);
       return;
     }
     ModifyRebuilder.Remove(archive, entryNames, ReadEntries,
@@ -345,6 +375,7 @@ public sealed class Gfs2FormatDescriptor
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
+    var editProfile = ReadEditProfile(archive);
 
     // Moving what is out of place beats writing the volume out again: a file's
     // out-of-line bytes are addressed by eight-byte tree pointers, so a move is
@@ -383,10 +414,14 @@ public sealed class Gfs2FormatDescriptor
         },
         finishWrite: () => {
           try {
-            writer = new Gfs2Writer(Gfs2Writer.EstimateSize(spill.ConvertAll(e => e.Size)));
+            writer = new Gfs2Writer(
+              Math.Max(editProfile.ImageSize, Gfs2Writer.EstimateSize(spill.ConvertAll(e => e.Size))),
+              uuid: editProfile.Uuid,
+              lockTable: editProfile.LockTable);
             foreach (var (name, path, size) in spill) {
               var captured = path;
-              writer.AddStreamingFile(name, size, () => File.OpenRead(captured));
+              writer.AddStreamingFile(name, size, () => File.OpenRead(captured),
+                editProfile.EntryMetadata.GetValueOrDefault(name));
             }
             writer.Build(target!);
           } finally {

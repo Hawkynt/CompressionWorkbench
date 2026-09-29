@@ -108,4 +108,31 @@ public class Gfs2ModifyTests {
     });
     Assert.That(Read(image, "REAL.BIN"), Is.EqualTo(payload));
   }
+
+  [Test, Category("Regression")]
+  public void Add_PreservesUserDinodeAttributesAndVolumeUuid() {
+    var uuid = Enumerable.Range(0, 16).Select(static value => (byte)value).ToArray();
+    var metadata = new Gfs2InodeMetadata(
+      0x81A0, 1201, 2202, 0,
+      1_700_000_001, 123_456_789,
+      1_700_000_002, 234_567_890,
+      1_700_000_003, 345_678_901);
+    var writer = new Gfs2Writer(ImageSize, uuid, lockTable: LockTable);
+    var contents = Payload(5, 600);
+    writer.AddFile("ATTR.BIN", contents, metadata);
+    using var image = new MemoryStream();
+    writer.Build(image);
+
+    ((IArchiveModifiable)new Gfs2FormatDescriptor()).Add(image,
+      [ArchiveInputInfo.InMemory("NEW.BIN", [1, 2, 3])]);
+
+    image.Position = 0;
+    using var reader = new Gfs2Reader(image);
+    var actual = reader.Entries.Single(static entry => entry.Name == "ATTR.BIN").Metadata;
+    Assert.Multiple(() => {
+      Assert.That(reader.Uuid, Is.EqualTo(uuid));
+      Assert.That(actual, Is.EqualTo(metadata));
+      Assert.That(reader.Extract(reader.Entries.Single(static entry => entry.Name == "ATTR.BIN")), Is.EqualTo(contents));
+    });
+  }
 }
