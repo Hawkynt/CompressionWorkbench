@@ -29,6 +29,36 @@ public sealed class RefsMLogReplayTests {
     Assert.That(target.Preflighted, Is.EqualTo(new ulong[] { 1, 2 }));
   }
 
+  [Test, Category("ErrorHandling")]
+  public void InvalidLastLiveChecksum_RefusesRecoveryInsteadOfReplayingPrefix() {
+    var records = new[] {
+      LogRecord(1, RefsRedoOpcode.UpdateRow),
+      LogRecord(2, RefsRedoOpcode.InsertRow),
+    };
+
+    Assert.Throws<InvalidDataException>(() => RefsMLogRecovery.SelectVerifiedForReplay(
+      records, 0, item => item.Record.Lsn != 2));
+  }
+
+  [Test, Category("HappyPath")]
+  public void InvalidStaleChecksum_DoesNotEnterCheckpointRecoveryWindow() {
+    var records = new[] {
+      LogRecord(1, RefsRedoOpcode.UpdateRow),
+      LogRecord(2, RefsRedoOpcode.InsertRow),
+    };
+    var checkedLsns = new List<ulong>();
+
+    var selected = RefsMLogRecovery.SelectVerifiedForReplay(records, 2, item => {
+      checkedLsns.Add(item.Record.Lsn);
+      return item.Record.Lsn == 2;
+    });
+
+    Assert.Multiple(() => {
+      Assert.That(checkedLsns, Is.EqualTo(new ulong[] { 2 }));
+      Assert.That(selected.Select(item => item.Record.Lsn), Is.EqualTo(new ulong[] { 2 }));
+    });
+  }
+
   [Test, Category("HappyPath")]
   public void ReplaySelected_AppliesOnlyRequestedRecoveryWindowInOrder() {
     var target = new RecordingTarget();

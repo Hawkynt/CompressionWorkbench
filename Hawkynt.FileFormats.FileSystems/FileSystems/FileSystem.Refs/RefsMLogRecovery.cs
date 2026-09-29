@@ -51,13 +51,34 @@ internal static class RefsMLogRecovery {
       return [];
     }
 
-    var checksum = RefsMLogChecksum.Detect(candidates.Select(c => c.Bytes));
-    checksumKind = checksum.Kind;
-    var verified = candidates.Where(c => checksum.Verify(c.Bytes)).ToList();
-    if (verified.Count == 0) return [];
-
     var oldest = ReadOldestRequiredLsn(image, metadata);
-    return SelectForReplay(verified, oldest);
+    var live = candidates
+      .Where(c => oldest == 0 || CompareLsn(c.Record.Lsn, oldest) >= 0)
+      .ToArray();
+    if (live.Length == 0) {
+      checksumKind = default;
+      return [];
+    }
+
+    var checksum = RefsMLogChecksum.Detect(live.Select(c => c.Bytes));
+    checksumKind = checksum.Kind;
+    return SelectVerifiedForReplay(live, oldest, c => checksum.Verify(c.Bytes));
+  }
+
+  internal static IReadOnlyList<RefsMLogRecoveryRecord> SelectVerifiedForReplay(
+      IEnumerable<RefsMLogRecoveryRecord> candidates,
+      ulong oldestRequiredLsn,
+      Func<RefsMLogRecoveryRecord, bool> verify) {
+    ArgumentNullException.ThrowIfNull(candidates);
+    ArgumentNullException.ThrowIfNull(verify);
+    var live = candidates
+      .Where(c => oldestRequiredLsn == 0 || CompareLsn(c.Record.Lsn, oldestRequiredLsn) >= 0)
+      .ToArray();
+    foreach (var candidate in live)
+      if (!verify(candidate))
+        throw new InvalidDataException(
+          $"ReFS MLog live record LSN 0x{candidate.Record.Lsn:X} failed its XOR-fold checksum.");
+    return SelectForReplay(live, oldestRequiredLsn);
   }
 
   internal static IReadOnlyList<RefsMLogRecoveryRecord> SelectForReplay(
