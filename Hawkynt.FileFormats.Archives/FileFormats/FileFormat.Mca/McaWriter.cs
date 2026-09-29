@@ -41,7 +41,7 @@ public static partial class McaWriter {
       var payload = method switch {
         "gzip" => Compress(raw, true, level),
         "zlib" => Compress(raw, false, level),
-        "lz4" => Lz4BlockCompressor.Compress(raw, level >= 9 ? Lz4CompressionLevel.Max : level >= 5 ? Lz4CompressionLevel.Hc : Lz4CompressionLevel.Fast),
+        "lz4" => McaLz4BlockStream.Compress(raw, level >= 9 ? Lz4CompressionLevel.Max : level >= 5 ? Lz4CompressionLevel.Hc : Lz4CompressionLevel.Fast),
         _ => raw,
       };
       var timestampText = options.GetOption($"Timestamp.{x}.{z}", options.GetOption("Timestamp", "0"));

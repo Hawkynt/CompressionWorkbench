@@ -1,7 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.IO.Compression;
-using Compression.Core.Dictionary.Lz4;
 
 namespace FileFormat.Mca;
 
@@ -12,7 +11,7 @@ namespace FileFormat.Mca;
 /// Layout: 4 KiB location table (1024×uint32 BE: high 3 bytes = 4 KiB-sector offset,
 /// low byte = sector count) + 4 KiB timestamp table (1024×uint32 BE) + padded
 /// payload area. Each chunk: 4-byte BE length + 1-byte compression type (1 = gzip,
-/// 2 = zlib, 3 = uncompressed, 4 = raw LZ4) + <c>length-1</c> payload bytes.
+/// 2 = zlib, 3 = uncompressed, 4 = LZ4-Java block stream) + <c>length-1</c> payload bytes.
 /// </para>
 /// </summary>
 public sealed class McaReader {
@@ -91,21 +90,7 @@ public sealed class McaReader {
         output.Write(compressed);
         break;
       case 4: {
-        // MCA stores a raw LZ4 block without its uncompressed size. Grow the
-        // destination until the block decodes without an output-buffer overflow.
-        var size = Math.Max(256, compressed.Length * 4);
-        const int maxSize = 256 * 1024 * 1024;
-        while (true) {
-          var buffer = new byte[size];
-          try {
-            var written = Lz4BlockDecompressor.Decompress(compressed, buffer);
-            output.Write(buffer.AsSpan(0, written));
-            break;
-          } catch (InvalidDataException e) when (e.Message.Contains("output buffer overflow", StringComparison.Ordinal)) {
-            if (size >= maxSize) throw new InvalidDataException("MCA LZ4 chunk exceeds the 256 MiB safety limit.", e);
-            size = Math.Min(size * 2, maxSize);
-          }
-        }
+        output.Write(McaLz4BlockStream.Decompress(compressed));
         break;
       }
       default:

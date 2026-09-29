@@ -87,7 +87,27 @@ public class McaTests {
     Assert.That(reader.Chunks[0].CompressionType, Is.EqualTo(compressionType));
     Assert.That(reader.Chunks[0].Timestamp, Is.EqualTo(123456789));
     Assert.That(reader.ExtractChunkNbt(reader.Chunks[0]), Is.EqualTo(payload));
+    if (method == "lz4")
+      Assert.That(output.ToArray().AsSpan(8197, 8).ToArray(), Is.EqualTo("LZ4Block"u8.ToArray()));
     Assert.That(output.Length % 4096, Is.Zero);
+  }
+
+  [Test]
+  public void Lz4UsesLz4JavaBlockStreamEndMarker() {
+    var bytes = McaLz4BlockStream.Compress(ReadOnlySpan<byte>.Empty, Compression.Core.Dictionary.Lz4.Lz4CompressionLevel.Fast);
+    Assert.That(bytes, Is.EqualTo(new byte[] {
+      0x4C, 0x5A, 0x34, 0x42, 0x6C, 0x6F, 0x63, 0x6B, 0x16,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    }));
+    Assert.That(McaLz4BlockStream.Decompress(bytes), Is.Empty);
+
+    var repeated = Enumerable.Repeat((byte)0x5A, 4096).ToArray();
+    var compressed = McaLz4BlockStream.Compress(repeated, Compression.Core.Dictionary.Lz4.Lz4CompressionLevel.Fast);
+    Assert.That(compressed.AsSpan(0, 8).ToArray(), Is.EqualTo("LZ4Block"u8.ToArray()));
+    Assert.That(compressed[8] & 0xF0, Is.EqualTo(0x20));
+    Assert.That(McaLz4BlockStream.Decompress(compressed), Is.EqualTo(repeated));
+    compressed[17] ^= 1;
+    Assert.Throws<InvalidDataException>(() => McaLz4BlockStream.Decompress(compressed));
   }
 
   [Test]
