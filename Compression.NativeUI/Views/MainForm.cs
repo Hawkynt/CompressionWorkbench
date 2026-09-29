@@ -16,7 +16,7 @@ namespace Compression.NativeUI.Views;
 /// <see cref="MainViewModel"/>. Browses archives and the host filesystem alike, and is the entry
 /// point to every other window.
 /// </summary>
-internal sealed class MainForm : Form {
+internal sealed partial class MainForm : Form {
   private const int MenuHeight = 26;
   private const int ToolbarHeight = 30;
   private const int BreadcrumbHeight = 26;
@@ -158,7 +158,6 @@ internal sealed class MainForm : Form {
         Item("&Back", IconKeys.Back, Keys.Alt | Keys.Left, this._model.BackCommand),
         Item("&Forward", IconKeys.Forward, Keys.Alt | Keys.Right, this._model.ForwardCommand),
         Item("Go &Up", IconKeys.NavigateUp, Keys.Back, this._model.NavigateUpCommand),
-        this.PreviewPaneToggle(),
         Item("&Delete", IconKeys.Remove, Keys.Delete, this._model.DeleteSelectedCommand),
         // F2 belongs to the list, which starts editing the focused name itself; shown, not claimed.
         Item("Rena&me", IconKeys.Rename, Keys.None, this._model.RenameCommand, "F2"),
@@ -174,6 +173,11 @@ internal sealed class MainForm : Form {
         new ToolStripSeparator(),
         Item("&Properties", IconKeys.Properties, Keys.Alt | Keys.Enter, this._model.PropertiesCommand),
         Item("A&nalyze Entry...", IconKeys.Analyze, Keys.None, this._model.AnalyzeCommand),
+      ]),
+      Menu("&View", [
+        this.PreviewPaneToggle(),
+        new ToolStripSeparator(),
+        .. this.ViewModeItems(),
       ]),
       Menu("&Tools", [
         Item("&Benchmark...", IconKeys.Test, Keys.None, this._model.BenchmarkCommand),
@@ -215,6 +219,25 @@ internal sealed class MainForm : Form {
     command.CanExecuteChanged += (_, _) => item.Enabled = command.CanExecute(null);
     item.Enabled = command.CanExecute(null);
     return item;
+  }
+
+  /// <summary>Details and Thumbnails, on the keys Explorer uses for them.</summary>
+  private ToolStripMenuItem[] ViewModeItems() {
+    var details = new ToolStripMenuItem("&Details") { ShortcutKeys = Keys.Control | Keys.Shift | Keys.D6, Checked = true };
+    var thumbnails = new ToolStripMenuItem("&Thumbnails") {
+      Image = Images.Icon(IconKeys.ViewImage),
+      ShortcutKeys = Keys.Control | Keys.Shift | Keys.D2,
+    };
+
+    details.Click += (_, _) => Choose(thumbnailsOn: false);
+    thumbnails.Click += (_, _) => Choose(thumbnailsOn: true);
+    return [details, thumbnails];
+
+    void Choose(bool thumbnailsOn) {
+      this.ShowThumbnails(thumbnailsOn);
+      details.Checked = !thumbnailsOn;
+      thumbnails.Checked = thumbnailsOn;
+    }
   }
 
   private ToolStripMenuItem PreviewPaneToggle() {
@@ -564,8 +587,10 @@ internal sealed class MainForm : Form {
         entry.LastModifiedText,
       ]) {
         Tag = entry,
-        ImageKey = entry.IconKey,
+        ImageKey = this.ImageKeyFor(entry),
       });
+
+    this.StartThumbnails();
   }
 
   /// <summary>

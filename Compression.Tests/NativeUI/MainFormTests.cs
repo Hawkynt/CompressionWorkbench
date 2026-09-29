@@ -524,6 +524,30 @@ public sealed class MainFormTests {
     }));
   }
 
+  [Test]
+  public void GivenTheViewMenu_WhenThumbnailsAreChosen_ThenTheListShowsLargeIconsAndDetailsBringsTheColumnsBack() {
+    WithScratch((root, _) => WithShell(shell => {
+      Field<MainViewModel>(shell, "_model").NavigateTo(Location.Folder(root));
+      var items = Field<MenuStrip>(shell, "_menu").Items.Cast<ToolStripItem>().SelectMany(MenuItems).ToList();
+      var details = items.Single(i => i.Text == "&Details");
+      var thumbnails = items.Single(i => i.Text == "&Thumbnails");
+      var list = Field<ListView>(shell, "_entries");
+
+      thumbnails.PerformClick();
+      Assert.Multiple(() => {
+        Assert.That(list.View, Is.EqualTo(ListViewView.LargeIcon));
+        Assert.That(list.LargeImageList, Is.Not.Null);
+        Assert.That((details.Checked, thumbnails.Checked), Is.EqualTo((false, true)));
+        Assert.That(list.Items.Cast<ListViewItem>().Single(i => i.Text == "sub").ImageKey, Is.EqualTo("Folder"),
+          "an entry without a picture keeps its icon, at the large size");
+      });
+
+      details.PerformClick();
+      Assert.That(list.View, Is.EqualTo(ListViewView.Details));
+      Assert.That((details.Checked, thumbnails.Checked), Is.EqualTo((true, false)));
+    }));
+  }
+
   // ── clipboard ───────────────────────────────────────────────────────────────────────────────
 
   [Test]
