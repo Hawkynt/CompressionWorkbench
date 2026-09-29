@@ -487,19 +487,29 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   /// <summary>
-  /// Rereads the open archive after an edit and stays in the folder the user is in — a plain
-  /// <see cref="Open(string)"/> would drop them at the root and forget where `..` leads.
+  /// Rereads the open archive after something changed it — an edit, a defragment, a reconfigure —
+  /// and stays where the user is. A plain <see cref="Open(string)"/> would drop them at the root,
+  /// forget where <c>..</c> leads, and, inside a nested archive, clear the chain back to the archives
+  /// it came from. The folder is kept only while something is still in it.
   /// </summary>
-  private void ReloadArchiveInPlace() {
+  internal void ReloadArchiveInPlace() {
+    if (!HasArchive) return;
+
     var folder = CurrentFolder;
     var exitTo = _priorOsBrowserPath;
+    var nested = IsNestedArchive;
     AsOneArrival(() => {
-      Open(ArchivePath);
+      Open(ArchivePath, fromNestedDescent: nested);
       _priorOsBrowserPath = exitTo;
-      CurrentFolder = folder;
+      CurrentFolder = StillHasEntries(folder) ? folder : "";
       RefreshVisibleEntries();
       return true;
     });
+
+    bool StillHasEntries(string candidate) {
+      var prefix = Location.NormalizeArchiveFolder(candidate);
+      return prefix.Length == 0 || _allEntries.Any(e => e.Path.StartsWith(prefix, StringComparison.Ordinal));
+    }
   }
 
   private void DeleteSelectedEntries() {
@@ -602,7 +612,7 @@ internal sealed class MainViewModel : ViewModelBase {
       StatusText = $"Deleted {names.Count} entry(ies). Free space available — defragment to compact.";
       // Reload so the EntryList reflects the new on-disk state. The modifier
       // mutated the file in place; List() re-reads the directory.
-      Open(ArchivePath);
+      ReloadArchiveInPlace();
       // Open() resets HasPendingFragmentation; re-raise it so the banner survives
       // the reload triggered by our own delete.
       HasPendingFragmentation = true;
@@ -749,9 +759,9 @@ internal sealed class MainViewModel : ViewModelBase {
     dlg.ArchiveMutated += mutated => {
       writeBack?.Invoke();
       if (writeBack != null && HasArchive)
-        Open(ArchivePath); // nested write-back → re-list the host
+        ReloadArchiveInPlace(); // nested write-back → re-list the host
       else if (HasArchive && string.Equals(mutated, ArchivePath, StringComparison.OrdinalIgnoreCase))
-        Open(ArchivePath);
+        ReloadArchiveInPlace();
       else if (IsBrowsingOsFolder)
         RefreshVisibleEntries();
     };
@@ -848,9 +858,9 @@ internal sealed class MainViewModel : ViewModelBase {
         + $"{result.FileCount} file(s) preserved, {result.OriginalSize:N0} → {result.NewSize:N0} bytes.";
 
       if (writeBack != null && HasArchive)
-        Open(ArchivePath);
+        ReloadArchiveInPlace();
       else if (HasArchive && string.Equals(targetPath, ArchivePath, StringComparison.OrdinalIgnoreCase))
-        Open(ArchivePath);
+        ReloadArchiveInPlace();
       else if (IsBrowsingOsFolder)
         RefreshVisibleEntries();
     } catch (Exception ex) {

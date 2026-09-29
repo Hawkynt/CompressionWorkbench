@@ -750,7 +750,7 @@ internal sealed partial class MainForm : Form {
     // Re-list whenever the maintenance window mutates the archive we have open.
     window.ArchiveMutated += path => {
       if (this._model.HasArchive && string.Equals(path, this._model.ArchivePath, StringComparison.OrdinalIgnoreCase))
-        this._model.Open(this._model.ArchivePath);
+        this._model.ReloadArchiveInPlace();
     };
 
     window.Show();
