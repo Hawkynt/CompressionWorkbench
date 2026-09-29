@@ -161,6 +161,42 @@ public sealed class StructuredPseudoArchiveTests {
     Assert.That(entries.Any(e => e.Name == "objects/%401/D" && e.Kind == "decimal"), Is.True);
   }
 
+  [Test]
+  public void Nrbf_CreatesStandardNrbfAndRoundTripsNamesDirectoriesAndBinaryData() {
+    var descriptor = new NrbfFormatDescriptor();
+    byte[] expected = [0x00, 0x01, 0x7f, 0x80, 0xff, 0x0a];
+    using var encoded = new MemoryStream();
+    descriptor.Create(encoded, [
+      ArchiveInputInfo.InMemory("dir/file.bin", expected),
+      new ArchiveInputInfo("empty", "empty", IsDirectory: true),
+      ArchiveInputInfo.InMemory("zero.bin", Array.Empty<byte>()),
+    ], new FormatCreateOptions());
+
+    var bytes = encoded.ToArray();
+    Assert.That(bytes[0], Is.EqualTo(0));
+    encoded.Position = 0;
+    var entries = descriptor.List(encoded, null);
+    Assert.Multiple(() => {
+      Assert.That(entries.Any(e => e.Name == "empty" && e.IsDirectory), Is.True);
+      Assert.That(entries.Any(e => e.Name == "dir" && e.IsDirectory), Is.True);
+      Assert.That(entries.Any(e => e.Name == "dir/file.bin" && !e.IsDirectory), Is.True);
+      Assert.That(entries.Any(e => e.Name == "zero.bin" && e.Size == 0), Is.True);
+    });
+    encoded.Position = 0;
+    using var extracted = new MemoryStream();
+    descriptor.ExtractEntry(encoded, "dir/file.bin", extracted, null);
+    Assert.That(extracted.ToArray(), Is.EqualTo(expected));
+  }
+
+  [Test]
+  public void Nrbf_RejectsUnsupportedEncryptionOptions() {
+    var descriptor = new NrbfFormatDescriptor();
+    using var output = new MemoryStream();
+    Assert.That(
+      () => descriptor.Create(output, [], new FormatCreateOptions { Password = "secret" }),
+      Throws.ArgumentException);
+  }
+
   [TestCaseSource(nameof(CreatableDescriptors))]
   public void CreatableStructuredFormats_RoundTripArbitraryBytes(object descriptorObject) {
     var creator = (IArchiveCreatable)descriptorObject;
@@ -185,5 +221,6 @@ public sealed class StructuredPseudoArchiveTests {
     yield return new RegFormatDescriptor();
     yield return new PickleFormatDescriptor();
     yield return new StorableFormatDescriptor();
+    yield return new NrbfFormatDescriptor();
   }
 }

@@ -289,9 +289,9 @@ public sealed class StructuredPseudoArchiveReferenceVectorTests {
   // ------------------------------------------------------------------------------------------ NRBF
 
   /// <summary>
-  /// MS-NRBF is read-only here, so only the reading direction exists. The vectors come from the
-  /// producer that defined the format — .NET Framework's <c>BinaryFormatter</c>, still present in
-  /// Windows PowerShell 5.1 — and are walked as records; no type is ever activated.
+  /// The read vectors come from .NET Framework's <c>BinaryFormatter</c>, still present in Windows
+  /// PowerShell 5.1, and are walked as records; no type is ever activated. Creation writes the
+  /// repository's inert archive envelope as a standard NRBF object array.
   /// </summary>
   [Test]
   public void Nrbf_ReadsWhatBinaryFormatterWrote() {

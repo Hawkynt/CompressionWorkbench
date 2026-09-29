@@ -1,9 +1,11 @@
 #pragma warning disable CS1591
+using System.Text;
 using FileFormat.Structured;
 
 namespace FileFormat.Nrbf;
 
 internal sealed partial class NrbfReader {
+  private const string ArchiveMarker = "Hawkynt.CompressionWorkbench.NrbfArchive/1";
   private readonly byte[] _data;
   private readonly Dictionary<int, StructuredNode> _objects = [];
   private readonly Dictionary<int, ClassMetadata> _metadata = [];
@@ -33,6 +35,9 @@ internal sealed partial class NrbfReader {
     if (!ended) throw new InvalidDataException("NRBF stream ended without MessageEnd.");
     if (this._position != this._data.Length) throw new InvalidDataException("NRBF stream contains trailing bytes after MessageEnd.");
 
+    if (this._objects.TryGetValue(this._rootId, out var root) && TryReadArchiveEnvelope(root, out var archive))
+      return archive;
+
     var graph = StructuredNode.Object("nrbf-graph");
     graph.Add("$root", StructuredNode.Text(StructuredNodeKind.Reference, $"@{this._rootId}", "object-reference"));
     if (this._libraries.Count > 0) {
@@ -45,6 +50,51 @@ internal sealed partial class NrbfReader {
     foreach (var item in this._objects.OrderBy(x => x.Key)) objects.Add($"@{item.Key}", item.Value);
     graph.Add("objects", objects);
     return graph;
+  }
+
+  private static bool TryReadArchiveEnvelope(StructuredNode root, out StructuredNode archive) {
+    archive = null!;
+    if (root.Kind != StructuredNodeKind.Array || root.Items.Count == 0
+        || root.Items[0].Kind != StructuredNodeKind.String
+        || Encoding.UTF8.GetString(root.Items[0].Data) != ArchiveMarker)
+      return false;
+    if ((root.Items.Count - 1) % 3 != 0)
+      throw new InvalidDataException("Malformed NRBF archive envelope.");
+
+    archive = StructuredNode.Object("archive");
+    for (var i = 1; i < root.Items.Count; i += 3) {
+      if (root.Items[i].Kind != StructuredNodeKind.String || root.Items[i + 1].Kind != StructuredNodeKind.String
+          || root.Items[i + 2].Kind != StructuredNodeKind.String)
+        throw new InvalidDataException("Malformed NRBF archive envelope entry.");
+      var name = Encoding.UTF8.GetString(root.Items[i].Data);
+      var kind = Encoding.UTF8.GetString(root.Items[i + 1].Data);
+      var encodedData = Encoding.UTF8.GetString(root.Items[i + 2].Data);
+      if (kind is not ("D" or "F")) throw new InvalidDataException("Malformed NRBF archive entry kind.");
+      var parts = name.Split('/');
+      if (parts.Length == 0 || parts.Any(x => x.Length == 0 || x is "." or ".."))
+        throw new InvalidDataException("Malformed path in NRBF archive envelope.");
+      var parent = archive;
+      for (var j = 0; j < parts.Length - 1; ++j) {
+        var next = parent.Members.FirstOrDefault(x => x.Key == parts[j]).Value;
+        if (next is null) {
+          next = StructuredNode.Object("directory");
+          parent.Add(parts[j], next);
+        }
+        if (next.Kind != StructuredNodeKind.Object) throw new InvalidDataException("Conflicting paths in NRBF archive envelope.");
+        parent = next;
+      }
+      if (kind == "D") {
+        if (parent.Members.Any(x => x.Key == parts[^1])) throw new InvalidDataException("Duplicate paths in NRBF archive envelope.");
+        parent.Add(parts[^1], StructuredNode.Object("directory"));
+      } else {
+        byte[] data;
+        try { data = Convert.FromBase64String(encodedData); }
+        catch (FormatException ex) { throw new InvalidDataException("Malformed file data in NRBF archive envelope.", ex); }
+        if (parent.Members.Any(x => x.Key == parts[^1])) throw new InvalidDataException("Duplicate paths in NRBF archive envelope.");
+        parent.Add(parts[^1], StructuredNode.Binary(data, "file"));
+      }
+    }
+    return true;
   }
 
   private StructuredNode ReadRecordValue(int depth) {
