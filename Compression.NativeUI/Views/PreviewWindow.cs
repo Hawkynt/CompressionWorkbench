@@ -54,7 +54,7 @@ internal sealed class PreviewWindow : Form {
   private bool _autoWidth = true;
   private bool _loaded;
 
-  private DecodedImage? _decoded;
+  private DecodedPicture? _decoded;
   private IImage[]? _frames;
   private int _frameIndex;
   private bool _isPlaying;
@@ -182,10 +182,12 @@ internal sealed class PreviewWindow : Form {
 
     // Sniff for a known image signature BEFORE rendering: multi-megabyte image bytes become
     // millions of characters in the text/hex pipeline and lock up the UI thread.
-    if (!hex && this.TryRenderAsImage(data)) {
+    if (!hex && this.TryRenderAsImage(data, entryName)) {
       this._imageMode1 = true;
       this._imageMode.Visible = true;
       this._imageMode.Checked = true;
+      if (this._decoded is { } picture)
+        this._sizeInfo.Text = $"{picture.FormatName}  {picture.Width}x{picture.Height}  ·  {FormatSize(data.Length)}";
       return;
     }
 
@@ -335,50 +337,26 @@ internal sealed class PreviewWindow : Form {
   }
 
   /// <summary>
-  /// Decodes the bytes through NativeForms' image decoder (PNG, JPEG, GIF, BMP, ICO, CUR, PCX and
-  /// ANI), materialising every frame so animation and manual stepping both work.
+  /// Decodes the bytes as a picture and shows them. Two tiers: NativeForms for the formats whose
+  /// animation and frame timing it returns, then the image package's several hundred readers for
+  /// everything else, one frame at a time.
   /// </summary>
-  private bool TryRenderAsImage(byte[] data) {
-    if (!IsKnownImageSignature(data)) return false;
+  private bool TryRenderAsImage(byte[] data, string? entryName) {
+    if (!PreviewImageDecoder.TryDecode(data, entryName, out var picture)) return false;
 
-    try {
-      var decoded = ImageDecoder.Decode(data);
-      if (decoded.Frames.Count == 0) return false;
+    this._picture.Image = null;
+    this._decoded = picture;
+    this._frames = [.. picture.Frames.Select(f => Images.FromArgb(picture.Width, picture.Height, f))];
+    this._frameIndex = 0;
+    this.UpdateFrameDisplay();
 
-      var frames = new IImage[decoded.Frames.Count];
-      for (var i = 0; i < frames.Length; ++i)
-        frames[i] = Images.FromArgb(decoded.Width, decoded.Height, decoded.Frames[i].Argb);
+    var multiFrame = this._frames.Length > 1;
+    this.SetFrameNavVisible(multiFrame);
+    if (picture.IsAnimated) this.StartAnimation();
 
-      this._decoded = decoded;
-      this._frames = frames;
-      this._frameIndex = 0;
-      this.UpdateFrameDisplay();
-
-      var multiFrame = frames.Length > 1;
-      this.SetFrameNavVisible(multiFrame);
-      if (multiFrame && decoded.IsAnimated) this.StartAnimation();
-
-      this._picture.Visible = true;
-      this._rows.Visible = false;
-      return true;
-    } catch {
-      // Codec error (corrupt JPEG, unsupported subformat) — fall through to text/hex.
-      this._picture.Image = null;
-      this._frames = null;
-      this._decoded = null;
-      return false;
-    }
-  }
-
-  private static bool IsKnownImageSignature(ReadOnlySpan<byte> data) {
-    if (data.Length < 4) return false;
-    ReadOnlySpan<byte> pngMagic = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-    if (data.Length >= 8 && data[..8].SequenceEqual(pngMagic)) return true;
-    if (data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) return true;
-    if (data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x38) return true;
-    if (data[0] == 0x42 && data[1] == 0x4D) return true;
-    // ICO (type 1) and CUR (type 2) both start with a zero reserved word.
-    return data[0] == 0x00 && data[1] == 0x00 && data[3] == 0x00 && data[2] is 0x01 or 0x02;
+    this._picture.Visible = true;
+    this._rows.Visible = false;
+    return true;
   }
 
   private void SetFrameNavVisible(bool visible) {
@@ -399,10 +377,11 @@ internal sealed class PreviewWindow : Form {
   }
 
   private int CurrentDelayMs() {
-    if (this._decoded is not { } decoded || this._frameIndex >= decoded.Frames.Count) return 100;
-    var delay = decoded.Frames[this._frameIndex].DelayMilliseconds;
-    // Encoders that write 0/1/2 hundredths mean "as fast as possible"; browsers floor that at
-    // ~100 ms to avoid burning CPU, and so do we.
+    if (this._decoded is not { } decoded || this._frameIndex >= decoded.DelaysMilliseconds.Count) return 100;
+
+    // Encoders that write 0, 1 or 2 hundredths mean "as fast as possible"; browsers floor that at
+    // about 100 ms to avoid burning CPU, and so do we.
+    var delay = decoded.DelaysMilliseconds[this._frameIndex];
     return delay < 30 ? 100 : delay;
   }
 
