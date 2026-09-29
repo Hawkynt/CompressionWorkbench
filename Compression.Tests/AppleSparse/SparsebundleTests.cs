@@ -24,22 +24,16 @@ public class SparsebundleTests {
       Assert.That(desc.Category, Is.EqualTo(FormatCategory.Archive));
       Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
       Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
-      // No CanCreate / CanModify: directory-output not modelled by the
-      // stream-based archive contract. Description must spell out the deferred
-      // promotion path so future work is grounded.
-      Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
+      Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
       Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
       Assert.That(desc, Is.Not.InstanceOf<IArchiveModifiable>());
     });
   }
 
   [Test, Category("EquivalenceClass")]
-  public void Descriptor_Description_DocumentsHonestDirectoryConstraint() {
+  public void Descriptor_Description_DocumentsTarTransport() {
     var desc = new SparsebundleFormatDescriptor();
-    Assert.That(desc.Description, Does.Contain("R-only"));
-    Assert.That(desc.Description, Does.Contain("directory"));
-    Assert.That(desc.Description, Does.Contain("Sparseimage"),
-      "Description must point callers at the companion R/W Sparseimage descriptor.");
+    Assert.That(desc.Description, Does.Contain("TAR transport"));
   }
 
   // ── Plist parsing ──────────────────────────────────────────────────
@@ -187,6 +181,85 @@ public class SparsebundleTests {
       Assert.That(File.ReadAllBytes(diskImg), Is.EqualTo(bandData));
     } finally {
       if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
+    }
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Descriptor_CreateAndExtract_RawDisk_PreservesBytesAndSparseBands() {
+    var disk = new byte[4096];
+    new Random(42).NextBytes(disk.AsSpan(1024, 1024));
+    using var archive = new MemoryStream();
+    var desc = new SparsebundleFormatDescriptor();
+    desc.Create(archive, [ArchiveInputInfo.InMemory("disk.img", disk)], new FormatCreateOptions {
+      FormatSpecific = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["BandSize"] = "1024" },
+    });
+    archive.Position = 0;
+    var entries = desc.List(archive, null);
+    Assert.That(entries.Any(e => e.Name == "bands/1"), Is.True);
+
+    archive.Position = 0;
+    var output = Path.Combine(Path.GetTempPath(), "cwb_sb_tar_" + Guid.NewGuid().ToString("N"));
+    try {
+      desc.Extract(archive, output, null, null);
+      Assert.That(File.ReadAllBytes(Path.Combine(output, "bands", "1")), Is.EqualTo(disk.AsSpan(1024, 1024).ToArray()));
+      Assert.That(File.Exists(Path.Combine(output, "Info.bckup")), Is.True);
+      Assert.That(File.Exists(Path.Combine(output, "token")), Is.True);
+      Assert.That(new SparsebundleReader(output).ExtractDisk(), Is.EqualTo(disk));
+    } finally {
+      if (Directory.Exists(output)) Directory.Delete(output, true);
+    }
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Descriptor_Create_BundleMembers_PreservesMetadataAndBandBytes() {
+    var plist = Encoding.UTF8.GetBytes(BuildPlist(512, 777));
+    var backup = "backup-metadata"u8.ToArray();
+    var band = RandomBytes(512, seed: 73);
+    using var archive = new MemoryStream();
+    var desc = new SparsebundleFormatDescriptor();
+    desc.Create(archive, [
+      ArchiveInputInfo.InMemory("Info.plist", plist),
+      ArchiveInputInfo.InMemory("Info.bckup", backup),
+      ArchiveInputInfo.InMemory("token", Array.Empty<byte>()),
+      ArchiveInputInfo.InMemory("bands/a", band),
+      ArchiveInputInfo.InMemory("com.apple.TimeMachine.MachineID.plist", "machine"u8.ToArray()),
+    ], new FormatCreateOptions());
+
+    archive.Position = 0;
+    var output = Path.Combine(Path.GetTempPath(), "cwb_sb_members_" + Guid.NewGuid().ToString("N"));
+    try {
+      desc.Extract(archive, output, null, null);
+      Assert.Multiple(() => {
+        Assert.That(File.ReadAllBytes(Path.Combine(output, "Info.plist")), Is.EqualTo(plist));
+        Assert.That(File.ReadAllBytes(Path.Combine(output, "Info.bckup")), Is.EqualTo(backup));
+        Assert.That(File.ReadAllBytes(Path.Combine(output, "bands", "a")), Is.EqualTo(band));
+        Assert.That(File.ReadAllBytes(Path.Combine(output, "com.apple.TimeMachine.MachineID.plist")), Is.EqualTo("machine"u8.ToArray()));
+      });
+    } finally {
+      if (Directory.Exists(output)) Directory.Delete(output, true);
+    }
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Descriptor_Create_FromPlistAndDisk_RebuildsBandsAndKeepsPlist() {
+    var disk = RandomBytes(2048, seed: 91);
+    var plist = Encoding.UTF8.GetBytes(BuildPlist(1024, disk.Length));
+    using var archive = new MemoryStream();
+    var desc = new SparsebundleFormatDescriptor();
+    desc.Create(archive, [
+      ArchiveInputInfo.InMemory("Info.plist", plist),
+      ArchiveInputInfo.InMemory("Info.bckup", plist),
+      ArchiveInputInfo.InMemory("disk.img", disk),
+    ], new FormatCreateOptions());
+
+    archive.Position = 0;
+    var output = Path.Combine(Path.GetTempPath(), "cwb_sb_rebuild_" + Guid.NewGuid().ToString("N"));
+    try {
+      desc.Extract(archive, output, null, null);
+      Assert.That(File.ReadAllBytes(Path.Combine(output, "Info.plist")), Is.EqualTo(plist));
+      Assert.That(new SparsebundleReader(output).ExtractDisk(), Is.EqualTo(disk));
+    } finally {
+      if (Directory.Exists(output)) Directory.Delete(output, true);
     }
   }
 

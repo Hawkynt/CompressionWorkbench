@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Registry;
+using FileFormat.Tar;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.AppleSparse;
@@ -36,13 +37,17 @@ namespace FileFormat.AppleSparse;
 ///     (zero bytes when bands are absent).
 ///   </description></item>
 /// </list>
-/// <para>
-/// Read-only descriptor. No WORM <c>Create</c> support — synthesising a
-/// sparsebundle requires a directory output target which isn't part of the
-/// stream-based archive contract.
-/// </para>
+/// <para>Stream creation uses a TAR transport of the bundle members. Creating
+/// from <c>disk.img</c> synthesizes the standard plist/token/bands members;
+/// supplying bundle members instead preserves their contents verbatim.</para>
 /// </remarks>
-public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
+
+  /// <inheritdoc />
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+    new("BandSize", "Band size", FormatOptionKind.Integer, "8388608",
+      Description: "Sparsebundle band size in bytes; Apple hdiutil defaults to 8 MiB."),
+  ];
 
   /// <summary>
   /// Gets the id.
@@ -61,7 +66,7 @@ public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFo
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -97,17 +102,7 @@ public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFo
   /// Gets the description.
   /// </summary>
   public string Description =>
-    "Apple sparsebundle (Time Machine / hdiutil bundle disk image). " +
-    "R-only by design: sparsebundle is a directory layout " +
-    "(Info.plist + Info.bckup + token + bands/<hex>) and the IArchiveModifiable " +
-    "surface operates over a single seekable Stream — there is no on-disk byte " +
-    "range to patch in place. Promotion to in-place R/W would require either " +
-    "(a) a directory-target sibling interface (IDirectoryArchiveModifiable) so " +
-    "the modifier can mutate individual band files alongside Info.plist, or " +
-    "(b) a virtual TAR-of-directory façade that the modifier rewrites back to " +
-    "disk on flush. The companion single-file Sparseimage descriptor is already " +
-    "R/W via band rewrite at fixed offsets — callers needing in-place R/W on " +
-    "Apple sparse imagery should use that.";
+    "Apple sparsebundle (Time Machine / hdiutil bundle disk image). Stream creation uses a TAR transport containing the bundle directory entries.";
 
   // ── IArchiveFormatOperations ──────────────────────────────────────
 
@@ -116,6 +111,8 @@ public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFo
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);
+    if (IsTarTransport(stream))
+      return new TarFormatDescriptor().List(stream, password);
     var reader = TryOpenReader(stream);
     if (reader == null) {
       // Detection-only fallback: parse stream as plist and surface metadata
@@ -149,6 +146,11 @@ public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFo
     ArgumentNullException.ThrowIfNull(stream);
     ArgumentNullException.ThrowIfNull(outputDir);
 
+    if (IsTarTransport(stream)) {
+      new TarFormatDescriptor().Extract(stream, outputDir, password, files);
+      return;
+    }
+
     var reader = TryOpenReader(stream);
     if (reader == null) {
       // Detection-only fallback: copy the plist itself
@@ -179,6 +181,143 @@ public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFo
       WriteFile(outputDir, "Info.plist", File.ReadAllBytes(infoPath));
     if (files == null || MatchesFilter("disk.img", files))
       WriteFile(outputDir, "disk.img", reader.ExtractDisk());
+  }
+
+  /// <summary>Creates a TAR transport of a sparsebundle directory.</summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+
+    var bandSize = options.GetOptionInt("BandSize", 8 * 1024 * 1024);
+    if (bandSize <= 0 || bandSize > 1 << 30)
+      throw new ArgumentOutOfRangeException(nameof(options), "BandSize must be between 1 byte and 1 GiB.");
+
+    var disk = inputs.FirstOrDefault(i => !i.IsDirectory &&
+      Path.GetFileName(i.ArchiveName).Equals("disk.img", StringComparison.OrdinalIgnoreCase));
+    // Explicit bundle members take precedence when there is no virtual disk
+    // entry. This preserves every supplied band and metadata byte verbatim.
+    var hasBundleMembers = inputs.Any(i => !i.IsDirectory &&
+      (i.ArchiveName.Equals("Info.plist", StringComparison.OrdinalIgnoreCase) ||
+       i.ArchiveName.StartsWith("bands/", StringComparison.OrdinalIgnoreCase)));
+    using var writer = new TarWriter(output, leaveOpen: true, format: TarHeaderFormat.Pax);
+    if (hasBundleMembers && disk == null) {
+      foreach (var input in inputs) {
+        var name = NormalizeBundlePath(input.ArchiveName);
+        if (input.IsDirectory) {
+          writer.AddEntry(new TarEntry { Name = name.TrimEnd('/') + "/", TypeFlag = (byte)'5' });
+          continue;
+        }
+        var bytes = input.ReadContent();
+        writer.AddEntry(new TarEntry { Name = name, Size = bytes.Length }, bytes);
+      }
+      writer.Finish();
+      return;
+    }
+
+    if (disk == null)
+      disk = inputs.FirstOrDefault(i => !i.IsDirectory);
+    var data = disk?.ReadContent() ?? [];
+    var preservedNames = new HashSet<string>(StringComparer.Ordinal);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) {
+        var directoryName = NormalizeBundlePath(input.ArchiveName);
+        writer.AddEntry(new TarEntry { Name = directoryName.TrimEnd('/') + "/", TypeFlag = (byte)'5' });
+        continue;
+      }
+      var name = NormalizeBundlePath(input.ArchiveName);
+      if (Path.GetFileName(name).Equals("disk.img", StringComparison.OrdinalIgnoreCase) ||
+          name.StartsWith("bands/", StringComparison.OrdinalIgnoreCase))
+        continue;
+      var bytes = input.ReadContent();
+      if (name.Equals("Info.plist", StringComparison.OrdinalIgnoreCase)) {
+        var dict = InfoPlistParser.ParseTopLevelDict(bytes);
+        if (!options.HasOption("BandSize")) {
+          var existing = InfoPlistParser.GetInt64(dict, "band-size", bandSize);
+          if (existing is > 0 and <= 1L << 30) bandSize = (int)existing;
+        } else {
+          bytes = UpdatePlistBandSize(bytes, bandSize);
+        }
+      } else if (name.Equals("Info.bckup", StringComparison.OrdinalIgnoreCase) && options.HasOption("BandSize")) {
+        bytes = UpdatePlistBandSize(bytes, bandSize);
+      }
+      writer.AddEntry(new TarEntry { Name = name, Size = bytes.Length }, bytes);
+      preservedNames.Add(name);
+    }
+    if (!preservedNames.Contains("Info.plist")) {
+      var plist = BuildInfoPlist(data.LongLength, bandSize);
+      writer.AddEntry(new TarEntry { Name = "Info.plist", Size = plist.Length }, plist);
+    }
+    if (!preservedNames.Contains("Info.bckup")) {
+      var plist = BuildInfoPlist(data.LongLength, bandSize);
+      writer.AddEntry(new TarEntry { Name = "Info.bckup", Size = plist.Length }, plist);
+    }
+    if (!preservedNames.Contains("token"))
+      writer.AddEntry(new TarEntry { Name = "token", Size = 0 }, ReadOnlySpan<byte>.Empty);
+    if (!inputs.Any(i => i.IsDirectory && NormalizeBundlePath(i.ArchiveName).TrimEnd('/').Equals("bands", StringComparison.Ordinal)))
+      writer.AddEntry(new TarEntry { Name = "bands/", TypeFlag = (byte)'5' });
+    for (var offset = 0L; offset < data.LongLength; offset += bandSize) {
+      var length = (int)Math.Min(bandSize, data.LongLength - offset);
+      var band = data.AsSpan((int)offset, length);
+      if (IsAllZero(band)) continue;
+      var name = "bands/" + (offset / bandSize).ToString("x", System.Globalization.CultureInfo.InvariantCulture);
+      writer.AddEntry(new TarEntry { Name = name, Size = length }, band);
+    }
+    writer.Finish();
+  }
+
+  private static string NormalizeBundlePath(string path) {
+    ArgumentException.ThrowIfNullOrWhiteSpace(path);
+    var normalized = path.Replace('\\', '/').TrimStart('/');
+    if (normalized.Split('/').Any(part => part is ".." or "."))
+      throw new InvalidDataException($"Invalid sparsebundle member path: {path}");
+    return normalized;
+  }
+
+  private static bool IsTarTransport(Stream stream) {
+    if (!stream.CanSeek || stream.Length < 265) return false;
+    var position = stream.Position;
+    try {
+      stream.Position = 257;
+      Span<byte> magic = stackalloc byte[5];
+      return stream.Read(magic) == magic.Length && magic.SequenceEqual("ustar"u8);
+    } finally {
+      stream.Position = position;
+    }
+  }
+
+  private static byte[] BuildInfoPlist(long size, int bandSize) => System.Text.Encoding.UTF8.GetBytes($"""
+    <?xml version="1.0" encoding="UTF-8"?>
+    <plist version="1.0"><dict>
+    <key>band-size</key><integer>{bandSize}</integer>
+    <key>bundle-backingstore-version</key><integer>1</integer>
+    <key>diskimage-bundle-type</key><string>com.apple.diskimage.sparsebundle</string>
+    <key>size</key><integer>{size}</integer>
+    </dict></plist>
+    """);
+
+  private static byte[] UpdatePlistBandSize(byte[] xml, int bandSize) {
+    var settings = new System.Xml.XmlReaderSettings {
+      DtdProcessing = System.Xml.DtdProcessing.Ignore,
+      XmlResolver = null,
+    };
+    using var text = new StringReader(System.Text.Encoding.UTF8.GetString(xml));
+    using var reader = System.Xml.XmlReader.Create(text, settings);
+    var document = System.Xml.Linq.XDocument.Load(reader);
+    var elements = document.Root?.Element("dict")?.Elements().ToList()
+      ?? throw new InvalidDataException("Sparsebundle Info.plist has no top-level dictionary.");
+    for (var i = 0; i + 1 < elements.Count; ++i) {
+      if (elements[i].Name.LocalName != "key" || elements[i].Value != "band-size") continue;
+      elements[i + 1].ReplaceWith(new System.Xml.Linq.XElement(elements[i + 1].Name, bandSize));
+      return System.Text.Encoding.UTF8.GetBytes(document.ToString(System.Xml.Linq.SaveOptions.DisableFormatting));
+    }
+    throw new InvalidDataException("Sparsebundle Info.plist has no band-size key.");
+  }
+
+  private static bool IsAllZero(ReadOnlySpan<byte> data) {
+    foreach (var value in data)
+      if (value != 0) return false;
+    return true;
   }
 
   // ── Private helpers ────────────────────────────────────────────────
