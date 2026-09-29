@@ -102,87 +102,157 @@ public sealed class DngFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
 
-  private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    var blob = ms.ToArray();
-    var reader = new DngReader(blob);
+  private sealed record EntryLayout(
+      string Name,
+      string Kind,
+      IReadOnlyList<DngReader.SourceRange> Ranges,
+      byte[]? Generated = null) {
 
-    var entries = new List<(string, string, byte[])> {
-      ("FULL.dng", "Container", blob),
+    public int Size => this.Generated?.Length ?? DngReader.GetTotalLength(this.Ranges);
+  }
+
+  private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
+    using var memory = new MemoryStream();
+    stream.CopyTo(memory);
+    var blob = memory.ToArray();
+
+    return BuildLayout(blob)
+      .Select(entry => (
+        entry.Name,
+        entry.Kind,
+        entry.Generated ?? MaterializeRanges(blob, entry.Ranges)))
+      .ToList();
+  }
+
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) =>
+    BuildLayout(archive).Select((entry, index) => new ArchiveEntryInfo(
+      Index: index,
+      Name: entry.Name,
+      OriginalSize: entry.Size,
+      CompressedSize: entry.Size,
+      Method: "stored",
+      IsDirectory: false,
+      IsEncrypted: false,
+      LastModified: null,
+      Kind: entry.Kind)).ToList();
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    foreach (var entry in BuildLayout(archive)) {
+      if (files is { Length: > 0 } && !FormatHelpers.MatchesFilter(entry.Name, files))
+        continue;
+
+      if (entry.Generated is { } generated) {
+        FormatHelpers.WriteFile(outputDir, entry.Name, generated);
+        continue;
+      }
+
+      using var output = FormatHelpers.CreateEntryFile(outputDir, entry.Name);
+      foreach (var range in entry.Ranges)
+        output.Write(archive.Slice(range.Offset, range.Length));
+    }
+  }
+
+  private static List<EntryLayout> BuildLayout(ReadOnlySpan<byte> blob) {
+    var reader = DngReader.ReadLayout(blob);
+    var entries = new List<EntryLayout> {
+      new("FULL.dng", "Container", [new DngReader.SourceRange(0, blob.Length)]),
     };
 
-    // IFD0 thumbnail: if it has JPEG interchange tags, dump as thumbnail.jpg; otherwise
-    // if it has strip offsets and compression == 1 (uncompressed), skip (raw pixel dump
-    // without dims is of little value). Compression == 6/7 (OldJPEG/JPEG) → strip bytes
-    // form a JPEG.
     if (reader.TopLevelIfds.Count > 0) {
       var ifd0 = reader.TopLevelIfds[0];
-      var jpeg = reader.ReadEmbeddedJpeg(ifd0);
-      if (jpeg.Length > 0) {
-        entries.Add(("thumbnail.jpg", "Frame", jpeg));
+      var jpegRanges = DngReader.GetEmbeddedJpegRanges(blob, ifd0);
+      if (DngReader.GetTotalLength(jpegRanges) > 0) {
+        entries.Add(new EntryLayout("thumbnail.jpg", "Frame", jpegRanges));
       } else {
-        var comp = ifd0.Entries.FirstOrDefault(e => e.Tag == DngReader.TagCompression);
-        if (comp != null && (comp.ValueOrOffset == 6 || comp.ValueOrOffset == 7)) {
-          var strip = reader.ReadStripBytes(ifd0);
-          if (strip.Length > 0) entries.Add(("thumbnail.jpg", "Frame", strip));
+        var compression = ifd0.Entries.FirstOrDefault(
+          static entry => entry.Tag == DngReader.TagCompression);
+        if (compression != null && compression.ValueOrOffset is 6 or 7) {
+          var stripRanges = DngReader.GetStripRanges(blob, reader, ifd0);
+          if (DngReader.GetTotalLength(stripRanges) > 0)
+            entries.Add(new EntryLayout("thumbnail.jpg", "Frame", stripRanges));
         }
       }
     }
 
-    // SubIFDs: embedded JPEG previews, raw sensor data, or other metadata IFDs.
-    var previewIdx = 0;
-    var rawIdx = 0;
-    foreach (var sub in reader.SubIfds) {
-      if (DngReader.IsJpegPreviewIfd(sub)) {
-        var jpeg = reader.ReadEmbeddedJpeg(sub);
-        if (jpeg.Length > 0) {
-          entries.Add(($"preview_{previewIdx:D2}.jpg", "Frame", jpeg));
-          previewIdx++;
+    var previewIndex = 0;
+    var rawIndex = 0;
+    foreach (var subIfd in reader.SubIfds) {
+      if (DngReader.IsJpegPreviewIfd(subIfd)) {
+        var jpegRanges = DngReader.GetEmbeddedJpegRanges(blob, subIfd);
+        if (DngReader.GetTotalLength(jpegRanges) > 0) {
+          entries.Add(new EntryLayout($"preview_{previewIndex:D2}.jpg", "Frame", jpegRanges));
+          ++previewIndex;
           continue;
         }
       }
-      // JPEG-compressed strips (OldJPEG / JPEG).
-      var comp = sub.Entries.FirstOrDefault(e => e.Tag == DngReader.TagCompression);
-      var isJpegStrip = comp != null && (comp.ValueOrOffset == 6 || comp.ValueOrOffset == 7);
-      var strip = reader.ReadStripBytes(sub);
-      if (strip.Length == 0) continue;
+
+      var compression = subIfd.Entries.FirstOrDefault(
+        static entry => entry.Tag == DngReader.TagCompression);
+      var isJpegStrip = compression != null && compression.ValueOrOffset is 6 or 7;
+      var stripRanges = DngReader.GetStripRanges(blob, reader, subIfd);
+      if (DngReader.GetTotalLength(stripRanges) == 0)
+        continue;
+
       if (isJpegStrip) {
-        entries.Add(($"preview_{previewIdx:D2}.jpg", "Frame", strip));
-        previewIdx++;
+        entries.Add(new EntryLayout($"preview_{previewIndex:D2}.jpg", "Frame", stripRanges));
+        ++previewIndex;
       } else {
-        entries.Add(($"raw_sensor_{rawIdx:D2}.bin", "Frame", strip));
-        rawIdx++;
+        entries.Add(new EntryLayout($"raw_sensor_{rawIndex:D2}.bin", "Frame", stripRanges));
+        ++rawIndex;
       }
     }
 
-    // EXIF sub-IFD.
     if (reader.ExifIfd != null) {
-      entries.Add(("metadata/exif.bin", "Tag", SerializeExif(reader)));
-      var makerNote = reader.ExifIfd.Entries.FirstOrDefault(e => e.Tag == DngReader.TagMakerNote);
+      entries.Add(new EntryLayout(
+        "metadata/exif.bin",
+        "Tag",
+        [],
+        SerializeExif(reader.IsBigEndian, reader.ExifIfd)));
+
+      var makerNote = reader.ExifIfd.Entries.FirstOrDefault(
+        static entry => entry.Tag == DngReader.TagMakerNote);
       if (makerNote != null && makerNote.Count > 0) {
-        var bytes = makerNote.Count <= 4
-          ? InlineMakerNoteBytes(makerNote, reader.IsBigEndian)
-          : reader.ReadBytesAt(makerNote.ValueOrOffset, makerNote.Count);
-        if (bytes.Length > 0)
-          entries.Add(("metadata/makernote.bin", "Tag", bytes));
+        if (makerNote.Count <= 4) {
+          entries.Add(new EntryLayout(
+            "metadata/makernote.bin",
+            "Tag",
+            [],
+            InlineMakerNoteBytes(makerNote, reader.IsBigEndian)));
+        } else if (DngReader.GetExternalValueRange(blob, makerNote) is { } makerNoteRange) {
+          entries.Add(new EntryLayout(
+            "metadata/makernote.bin",
+            "Tag",
+            [makerNoteRange]));
+        }
       }
     }
 
     return entries;
   }
 
-  private static byte[] SerializeExif(DngReader reader) {
-    if (reader.ExifIfd == null) return Array.Empty<byte>();
+  private static byte[] MaterializeRanges(
+      ReadOnlySpan<byte> source, IReadOnlyList<DngReader.SourceRange> ranges) {
+    var result = new byte[DngReader.GetTotalLength(ranges)];
+    var destinationOffset = 0;
+    foreach (var range in ranges) {
+      source.Slice(range.Offset, range.Length).CopyTo(result.AsSpan(destinationOffset));
+      destinationOffset += range.Length;
+    }
+    return result;
+  }
+
+  private static byte[] SerializeExif(bool isBigEndian, DngReader.Ifd? exifIfd) {
+    if (exifIfd == null) return Array.Empty<byte>();
     // Emit a small synthetic blob: byte-order + entry count + each entry's raw 12 bytes.
     // This isn't a standalone TIFF — just a metadata dump a triage tool can read.
     using var ms = new MemoryStream();
-    ms.WriteByte(reader.IsBigEndian ? (byte)'M' : (byte)'I');
+    ms.WriteByte(isBigEndian ? (byte)'M' : (byte)'I');
     ms.WriteByte(reader.IsBigEndian ? (byte)'M' : (byte)'I');
     Span<byte> w = stackalloc byte[4];
-    System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(w, (ushort)reader.ExifIfd.Entries.Count);
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(w, (ushort)exifIfd.Entries.Count);
     ms.Write(w.Slice(0, 2));
-    foreach (var e in reader.ExifIfd.Entries) {
+    foreach (var e in exifIfd.Entries) {
       System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(w, e.Tag); ms.Write(w.Slice(0, 2));
       System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(w, e.Type); ms.Write(w.Slice(0, 2));
       System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(w, e.Count); ms.Write(w);
