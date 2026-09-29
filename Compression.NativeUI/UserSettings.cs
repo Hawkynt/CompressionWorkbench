@@ -12,7 +12,13 @@ namespace Compression.NativeUI;
 internal sealed class UserSettings {
   public string? LastFolder { get; set; }
 
-  private static string SettingsPath => Path.Combine(
+  /// <summary>
+  /// Redirects the settings file. For tests: opening an archive records its folder, and without
+  /// this a test run overwrites the developer's own last-used folder.
+  /// </summary>
+  internal static string? PathOverride { get; set; }
+
+  private static string SettingsPath => PathOverride ?? Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
     "CompressionWorkbench", "settings.json");
 
