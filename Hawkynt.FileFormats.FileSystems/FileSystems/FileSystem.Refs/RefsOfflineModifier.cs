@@ -40,9 +40,8 @@ internal static class RefsOfflineModifier {
         throw new ArgumentException("ReFS entry path must not be empty.", nameof(inputs));
 
       var metadata = RefsMetadataReader.Open(image);
-      var existing = new RefsNamespaceReader(metadata).ReadAll().FirstOrDefault(f =>
-        !f.IsDirectory && string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase));
-      if (existing == null)
+      var existing = RefsNamespaceLookup.FindUnique(new RefsNamespaceReader(metadata).ReadAll(), path);
+      if (existing == null || existing.IsDirectory)
         throw new NotSupportedException(
           $"ReFS offline R/W currently replaces existing regular files; creating the new namespace entry '{path}' " +
           "is withheld until all file-identity/security/link fields are proven for the active ReFS profile.");
@@ -66,9 +65,10 @@ internal static class RefsOfflineModifier {
   private static void ReplaceExisting(Stream image, string path, byte[] data) {
     var metadata = RefsMetadataReader.Open(image);
     var files = new RefsNamespaceReader(metadata).ReadAll();
-    var file = files.FirstOrDefault(f =>
-      !f.IsDirectory && string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase))
+    var file = RefsNamespaceLookup.FindUnique(files, path)
       ?? throw new FileNotFoundException($"ReFS file '{path}' is no longer reachable.", path);
+    if (file.IsDirectory)
+      throw new InvalidOperationException($"ReFS path '{path}' names a directory, not a writable file.");
     if (file.Extents.Any(e => e.IsSparse || e.Flags == 0x1C00D0 || (e.Flags & 0x04) != 0))
       throw new NotSupportedException(
         $"ReFS file '{path}' uses sparse/integrity/shared allocation semantics outside the offline CRUD profile.");
@@ -155,7 +155,7 @@ internal static class RefsOfflineModifier {
   private static void RemoveOne(Stream image, string path) {
     var metadata = RefsMetadataReader.Open(image);
     var files = new RefsNamespaceReader(metadata).ReadAll();
-    var file = files.FirstOrDefault(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase))
+    var file = RefsNamespaceLookup.FindUnique(files, path)
       ?? throw new FileNotFoundException($"ReFS entry '{path}' was not found.", path);
 
     if (file.IsDirectory && files.Any(f =>

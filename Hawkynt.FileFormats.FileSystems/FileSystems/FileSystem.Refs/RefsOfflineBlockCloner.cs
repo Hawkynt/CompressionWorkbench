@@ -246,7 +246,7 @@ public static class RefsOfflineBlockCloner {
       IEnumerable<RefsFileRecord> files,
       string path,
       string parameterName) {
-    var file = files.FirstOrDefault(item => string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase))
+    var file = RefsNamespaceLookup.FindUnique(files, path)
       ?? throw new FileNotFoundException($"ReFS file '{path}' was not found.", path);
     if (file.IsDirectory)
       throw new ArgumentException($"ReFS path '{path}' names a directory.", parameterName);
