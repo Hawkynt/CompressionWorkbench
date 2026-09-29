@@ -3,6 +3,7 @@ using System.Text;
 using Compression.Registry;
 using FileFormat.AppleSingle;
 using FileFormat.Ffu;
+using FileFormat.Glb;
 using FileFormat.Hdf4;
 using FileFormat.Mbox;
 using FileFormat.Mz;
@@ -93,6 +94,7 @@ public sealed class NativeSpanArchiveInputTests {
       BuildPsbCase(LargePayloadSize),
       BuildJp2Case(LargePayloadSize),
       BuildJxlCase(LargePayloadSize),
+      BuildGlbCase(LargePayloadSize),
     }) {
       var directory = Path.Combine(Path.GetTempPath(), $"cwb-span-range-{Guid.NewGuid():N}");
       try {
@@ -102,6 +104,7 @@ public sealed class NativeSpanArchiveInputTests {
           "PSB" => BuildPsbCase(257),
           "JP2" => BuildJp2Case(257),
           "JXL" => BuildJxlCase(257),
+          "GLB" => BuildGlbCase(257),
           _ => throw new InvalidOperationException($"Unknown source-range test case: {testCase.Name}"),
         };
         warmCase.Operations.ExtractSpan(
@@ -192,6 +195,7 @@ public sealed class NativeSpanArchiveInputTests {
     BuildPsbCase(payloadSize),
     BuildJp2Case(payloadSize),
     BuildJxlCase(payloadSize),
+    BuildGlbCase(payloadSize),
     BuildMzCase(payloadSize),
     BuildUImageCase(payloadSize),
     BuildUefiFvCase(payloadSize),
@@ -472,6 +476,41 @@ public sealed class NativeSpanArchiveInputTests {
 
     return new SpanCase(
       "JXL", new JxlFormatDescriptor(), output.ToArray(), "codestream.jxl", payload);
+  }
+
+  private static SpanCase BuildGlbCase(int payloadSize) {
+    var payload = Pattern(payloadSize, 0xA5);
+    if (payload.Length > 0)
+      payload[^1] = 0x7F;
+
+    var jsonText =
+      $"{{\"asset\":{{\"version\":\"2.0\"}},\"buffers\":[{{\"byteLength\":{payload.Length}}}]," +
+      $"\"bufferViews\":[{{\"buffer\":0,\"byteOffset\":0,\"byteLength\":{payload.Length}}}]," +
+      "\"images\":[{\"bufferView\":0,\"mimeType\":\"image/png\",\"name\":\"Span Image\"}]}";
+    var json = Encoding.UTF8.GetBytes(jsonText);
+    var jsonPadding = (4 - (json.Length & 3)) & 3;
+    var binPadding = (4 - (payload.Length & 3)) & 3;
+    var totalLength = checked(12 + 8 + json.Length + jsonPadding + 8 + payload.Length + binPadding);
+
+    using var output = new MemoryStream(totalLength);
+    output.Write("glTF"u8);
+    WriteUInt32LittleEndian(output, 2);
+    WriteUInt32LittleEndian(output, (uint)totalLength);
+
+    WriteUInt32LittleEndian(output, checked((uint)(json.Length + jsonPadding)));
+    output.Write("JSON"u8);
+    output.Write(json);
+    for (var i = 0; i < jsonPadding; ++i)
+      output.WriteByte(0x20);
+
+    WriteUInt32LittleEndian(output, checked((uint)(payload.Length + binPadding)));
+    output.Write([0x42, 0x49, 0x4E, 0x00]);
+    output.Write(payload);
+    for (var i = 0; i < binPadding; ++i)
+      output.WriteByte(0x00);
+
+    return new SpanCase(
+      "GLB", new GlbFormatDescriptor(), output.ToArray(), "images/Span_Image.png", payload);
   }
 
   private static SpanCase BuildMzCase(int payloadSize) {
