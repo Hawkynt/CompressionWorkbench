@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Arsc;
@@ -19,7 +20,7 @@ namespace FileFormat.Arsc;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Apk_(file_format)</c> — background (resources.arsc inside APKs)</description></item>
 /// </list>
 /// </summary>
-public sealed class ArscFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class ArscFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   /// <summary>
   /// Gets the id.
@@ -38,7 +39,7 @@ public sealed class ArscFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -60,7 +61,7 @@ public sealed class ArscFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("arsc", "ARSC")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -72,7 +73,57 @@ public sealed class ArscFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Android compiled resource table (read-only pseudo-archive)";
+  public string Description => "Android compiled resource table (byte-preserving single-file archive)";
+
+  /// <summary>
+  /// Creates an ARSC output from exactly one input file. ARSC has no container-level
+  /// compression: the resource table itself is emitted verbatim so all Android
+  /// chunk data and metadata remain intact.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    ValidateCreateOptions(options);
+    if (inputs.Count != 1 || inputs[0].IsDirectory)
+      throw new InvalidDataException("An ARSC table consists of exactly one file.");
+
+    var data = inputs[0].ReadContent();
+    output.Write(data);
+  }
+
+  /// <summary>Streams a single input resource table without buffering the complete file.</summary>
+  public void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    ValidateCreateOptions(options);
+
+    var materializedInputs = inputs.ToArray();
+    if (materializedInputs.Length != 1)
+      throw new InvalidDataException("An ARSC table consists of exactly one file.");
+    var input = materializedInputs[0];
+    if (input.IsDirectory)
+      throw new InvalidDataException("An ARSC table cannot contain a directory.");
+    using (var source = input.OpenStream()) {
+      var buffer = new byte[64 * 1024];
+      long copied = 0;
+      int read;
+      while ((read = source.Read(buffer, 0, buffer.Length)) != 0) {
+        target.Write(buffer, 0, read);
+        copied += read;
+      }
+      if (copied != input.Size)
+        throw new InvalidDataException("The ARSC input size did not match its declared size.");
+    }
+  }
+
+  private static void ValidateCreateOptions(FormatCreateOptions options) {
+    if (!string.IsNullOrWhiteSpace(options.MethodName)
+        && !options.MethodName.Equals("stored", StringComparison.OrdinalIgnoreCase)
+        && !options.MethodName.Equals("arsc", StringComparison.OrdinalIgnoreCase))
+      throw new NotSupportedException($"ARSC creation method '{options.MethodName}' is not supported.");
+  }
 
   /// <summary>
   /// Lists the entries in the supplied container.
