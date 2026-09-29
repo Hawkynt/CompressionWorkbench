@@ -5,17 +5,19 @@ name: Build artifacts
 #   * SFX stubs must be embedded into Compression.Lib before the final Lib
 #     build, and staging is cleaner on one host.
 #   * Compression.UI requires Windows at publish time anyway.
-#   * Linux CLI can still be published from a Windows host via --runtime linux-x64.
+#   * Linux CLI and the Linux NativeUI can still be published from a Windows host
+#     via --runtime linux-x64.
 #
 # Inputs:
 #   version       full X.Y.Z.BUILD baked into artifact names
 #   release-kind  "release" | "nightly" (stub/kind unused here, kept for symmetry)
 #   ref           git ref to build (defaults to caller ref)
 #
-# Produces one artifact `CompressionWorkbench-<version>` containing three zips:
+# Produces one artifact `CompressionWorkbench-<version>` containing four zips:
 #   * CompressionWorkbench-CLI-win-x64-<version>.zip
 #   * CompressionWorkbench-CLI-linux-x64-<version>.zip
-#   * CompressionWorkbench-UI-win-x64-<version>.zip
+#   * CompressionWorkbench-UI-win-x64-<version>.zip       (WPF, full workstation)
+#   * CompressionWorkbench-UI-linux-x64-<version>.zip     (NativeUI/GTK, mounting only)
 on:
   workflow_call:
     inputs:
@@ -208,6 +210,14 @@ jobs:
       - name: Publish UI (win-x64)
         run: dotnet publish Compression.UI/Compression.UI.csproj -r win-x64 -c Release --self-contained --nologo -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }}
 
+      # Compression.NativeUI is the cross-platform NativeForms frontend (Win32 + GTK
+      # backends). It targets plain net10.0, so the Linux binary publishes from this
+      # Windows host like the Linux CLI does. PublishSingleFile lives on the command
+      # line rather than in the csproj because it needs a RuntimeIdentifier, and the
+      # project must stay RID-agnostic for `dotnet run` on either OS.
+      - name: Publish UI (linux-x64)
+        run: dotnet publish Compression.NativeUI/Compression.NativeUI.csproj -r linux-x64 -c Release --self-contained --nologo -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=${{ inputs.version }}
+
       - name: Package CLI (win-x64)
         shell: pwsh
         run: |
@@ -241,6 +251,16 @@ jobs:
 
           Compress-Archive -Path "$stageDir/*" -DestinationPath "CompressionWorkbench-UI-win-x64-$v.zip"
 
+      # Same single-binary shape as the Linux CLI zip. Compress-Archive drops the
+      # POSIX execute bit, so the download needs `chmod +x` exactly as cwb does.
+      - name: Package UI (linux-x64)
+        shell: pwsh
+        run: |
+          $v = "${{ inputs.version }}"
+          $src = "Compression.NativeUI/bin/Release/net10.0/linux-x64/publish/Compression.NativeUI"
+          if (!(Test-Path $src)) { throw "Linux NativeUI publish output is missing: $src" }
+          Compress-Archive -Path $src -DestinationPath "CompressionWorkbench-UI-linux-x64-$v.zip"
+
       - uses: actions/upload-artifact@v4
         with:
           name: CompressionWorkbench-${{ inputs.version }}
@@ -248,6 +268,7 @@ jobs:
             CompressionWorkbench-CLI-win-x64-${{ inputs.version }}.zip
             CompressionWorkbench-CLI-linux-x64-${{ inputs.version }}.zip
             CompressionWorkbench-UI-win-x64-${{ inputs.version }}.zip
+            CompressionWorkbench-UI-linux-x64-${{ inputs.version }}.zip
 
       # NuGet packages. PackageId for each comes from $(MSBuildProjectName)
       # which equals the .csproj filename — overriding -p:PackageId at the
