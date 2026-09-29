@@ -177,6 +177,16 @@ public class RefsTests {
       RefsMLogRecovery.SelectForReplay(records, 0x00000002_00000010UL));
   }
 
+  [Test, Category("ErrorHandling")]
+  public void MLogRecovery_RejectsMissingFirstLivePredecessor() {
+    var records = new[] {
+      RecoveryRecord(0x00000002_00000012UL, 0x00000002_00000011UL),
+    };
+
+    Assert.Throws<InvalidDataException>(() =>
+      RefsMLogRecovery.SelectForReplay(records, 0x00000002_00000011UL));
+  }
+
   [Test, Category("HappyPath")]
   public void MLogRecovery_AllowsCircularGenerationBoundary() {
     var records = new[] {

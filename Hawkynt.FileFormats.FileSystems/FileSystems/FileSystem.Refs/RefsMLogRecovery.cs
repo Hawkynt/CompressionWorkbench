@@ -91,6 +91,16 @@ internal static class RefsMLogRecovery {
       .ThenBy(r => LsnIndex(r.Record.Lsn))
       .ToList();
 
+    if (ordered.Count > 0) {
+      var first = ordered[0].Record;
+      if (first.PreviousLsn != 0 && CompareLsn(first.PreviousLsn, first.Lsn) >= 0)
+        throw new InvalidDataException($"ReFS MLog LSN 0x{first.Lsn:X} points to a nonpreceding LSN.");
+      if (first.PreviousLsn != 0
+          && (oldestRequiredLsn == 0 || CompareLsn(first.PreviousLsn, oldestRequiredLsn) >= 0))
+        throw new InvalidDataException(
+          $"ReFS MLog first live LSN 0x{first.Lsn:X} references missing live predecessor 0x{first.PreviousLsn:X}.");
+    }
+
     for (var i = 1; i < ordered.Count; ++i) {
       if (ordered[i - 1].Record.Lsn == ordered[i].Record.Lsn)
         throw new InvalidDataException($"ReFS MLog contains duplicate live LSN 0x{ordered[i].Record.Lsn:X}.");
