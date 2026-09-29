@@ -99,6 +99,74 @@ public class FlaTests {
     }
   }
 
+  [TestCase(null, null)]
+  [TestCase("stored", null)]
+  [TestCase("deflate", 0)]
+  [TestCase("deflate", 1)]
+  [TestCase("deflate", 2)]
+  [TestCase("deflate", 3)]
+  [TestCase("deflate", 4)]
+  [TestCase("deflate", 5)]
+  [TestCase("deflate", 6)]
+  [TestCase("deflate", 7)]
+  [TestCase("deflate", 8)]
+  [TestCase("deflate", 9)]
+  public void Create_XflRoundTripsEverySupportedMethodAndLevel(string? method, int? level) {
+    var descriptor = new FlaFormatDescriptor();
+    var timestamp = new DateTime(2022, 4, 5, 6, 7, 8, DateTimeKind.Utc);
+    var root = Path.Combine(Path.GetTempPath(), "fla_create_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try {
+      var documentPath = Path.Combine(root, "DOMDocument.xml");
+      var assetPath = Path.Combine(root, "asset.bin");
+      File.WriteAllText(documentPath, "<DOMDocument/>", Encoding.UTF8);
+      File.WriteAllBytes(assetPath, [0, 1, 2, 3, 0xFE, 0xFF]);
+      File.SetLastWriteTimeUtc(documentPath, timestamp);
+      File.SetLastWriteTimeUtc(assetPath, timestamp);
+      var inputs = new[] {
+        ArchiveInputInfo.FromFile(new FileInfo(documentPath)),
+        ArchiveInputInfo.FromFile(new FileInfo(assetPath), "bin/asset.bin"),
+      };
+      using var archive = new MemoryStream();
+      descriptor.Create(archive, inputs, new FormatCreateOptions(method) { Level = level });
+      var bytes = archive.ToArray();
+      Assert.That(bytes.AsSpan(0, 4).ToArray(), Is.EqualTo(new byte[] { 0x50, 0x4B, 0x03, 0x04 }));
+
+      archive.Position = 0;
+      var listed = descriptor.List(archive, null);
+      Assert.That(listed.Select(e => e.Name), Does.Contain("DOMDocument.xml"));
+      Assert.That(listed.Select(e => e.Name), Does.Contain("bin/asset.bin"));
+      Assert.That(listed.Single(e => e.Name == "bin/asset.bin").Method,
+        Is.EqualTo(string.Equals(method, "stored", StringComparison.OrdinalIgnoreCase) ? "stored" : "deflate"));
+      Assert.That(listed.Single(e => e.Name == "bin/asset.bin").LastModified, Is.EqualTo(File.GetLastWriteTime(assetPath)));
+
+      var extracted = Path.Combine(root, "out");
+      archive.Position = 0;
+      descriptor.Extract(archive, extracted, null, null);
+      Assert.That(File.ReadAllBytes(Path.Combine(extracted, "bin", "asset.bin")), Is.EqualTo(new byte[] { 0, 1, 2, 3, 0xFE, 0xFF }));
+      Assert.That(File.GetLastWriteTimeUtc(Path.Combine(extracted, "bin", "asset.bin")), Is.EqualTo(timestamp));
+    } finally {
+      Directory.Delete(root, recursive: true);
+    }
+  }
+
+  [Test]
+  public void Create_RejectsProjectsWithoutRootDocument() {
+    using var output = new MemoryStream();
+    var inputs = new[] { ArchiveInputInfo.InMemory("LIBRARY/symbol.xml", "<symbol/>"u8) };
+    Assert.Throws<InvalidDataException>(() => new FlaFormatDescriptor().Create(output, inputs, new FormatCreateOptions()));
+  }
+
+  [Test]
+  public void Create_RejectsUnsupportedParameters() {
+    var inputs = new[] { ArchiveInputInfo.InMemory("DOMDocument.xml", "<DOMDocument/>"u8) };
+    Assert.Throws<NotSupportedException>(() => new FlaFormatDescriptor().Create(new MemoryStream(), inputs, new FormatCreateOptions("bzip2")));
+    Assert.Throws<NotSupportedException>(() => new FlaFormatDescriptor().Create(new MemoryStream(), inputs, new FormatCreateOptions { Password = "secret" }));
+    Assert.Throws<ArgumentOutOfRangeException>(() => new FlaFormatDescriptor().Create(new MemoryStream(), inputs, new FormatCreateOptions("deflate") { Level = 10 }));
+    Assert.Throws<ArgumentOutOfRangeException>(() => new FlaFormatDescriptor().Create(new MemoryStream(), inputs, new FormatCreateOptions("deflate") { Level = -1 }));
+    Assert.Throws<ArgumentException>(() => new FlaFormatDescriptor().Create(new MemoryStream(), inputs, new FormatCreateOptions("stored") { Level = 1 }));
+  }
+
   [Test]
   public void Descriptor_UsesCompoundExtensionOnly() {
     var d = new FlaFormatDescriptor();
