@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pst;
@@ -11,11 +12,12 @@ namespace FileFormat.Pst;
 /// Microsoft Outlook personal storage (<c>.pst</c> / <c>.ost</c>). The archive
 /// view surfaces: <c>FULL.pst</c> (passthrough), <c>metadata.ini</c>
 /// (format=ansi|unicode, version, file size, header CRC, root BBT/NBT offsets)
-/// and <c>header.bin</c> (raw 512-byte container header).
+/// and <c>header.bin</c> (raw 512-byte ANSI or 564-byte Unicode header).
 /// <para>
-/// Scope cut: this descriptor does NOT enumerate the B-tree of node/block pages
-/// or extract folders/messages — that's a non-trivial reverse-engineering effort
-/// (MS-PST spec, LTP layer, PC/TC tables). Structural surfacing only.
+/// This is an opaque, byte-preserving container view: the NDB/LTP tree is not
+/// unpacked into folders and messages. Creation accepts one existing,
+/// header-validated PST/OST image and copies it without changing its internal compression,
+/// encryption, or metadata. A PST cannot be synthesized from loose files here.
 /// </para>
 ///
 /// References:
@@ -25,8 +27,9 @@ namespace FileFormat.Pst;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Personal_Storage_Table</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class PstFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
-  private const int HeaderSize = 512;
+public sealed class PstFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+  private const int AnsiHeaderSize = 512;
+  private const int UnicodeHeaderSize = 564;
 
   /// <summary>
   /// Gets the id.
@@ -44,7 +47,7 @@ public sealed class PstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -80,16 +83,17 @@ public sealed class PstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Outlook PST/OST mailbox; header surfacing only (no message enumeration).";
+  public string Description => "Outlook PST/OST mailbox; byte-preserving opaque container with header metadata.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    var header = ReadHeader(stream);
     var entries = new List<ArchiveEntryInfo> {
       new(0, "FULL.pst", stream.Length, stream.Length, "stored", false, false, null, "Container"),
     };
-    foreach (var e in BuildSynthetic(stream))
+    foreach (var e in BuildSynthetic(stream, header))
       entries.Add(new ArchiveEntryInfo(
         entries.Count, e.Name, e.Data.Length, e.Data.Length,
         "stored", false, false, null, e.Kind));
@@ -100,6 +104,7 @@ public sealed class PstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    var header = ReadHeader(stream);
     // Stream FULL.pst directly — never buffer the whole file.
     if (files == null || files.Length == 0 || MatchesFilter("FULL.pst", files)) {
       stream.Seek(0, SeekOrigin.Begin);
@@ -109,7 +114,7 @@ public sealed class PstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       using var outStream = File.Create(fullPath);
       stream.CopyTo(outStream);
     }
-    foreach (var e in BuildSynthetic(stream)) {
+    foreach (var e in BuildSynthetic(stream, header)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, e.Data);
     }
@@ -126,12 +131,13 @@ public sealed class PstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
+    var header = ReadHeader(archive);
     if (string.Equals(entryName, "FULL.pst", StringComparison.OrdinalIgnoreCase)) {
       return new Compression.Registry.Streaming.BoundedEntryStream(
         new Compression.Registry.Streaming.ReadOnlyStreamSlice(archive, 0, archive.Length),
         archive.Length, leaveOpen: false);
     }
-    foreach (var e in BuildSynthetic(archive)) {
+    foreach (var e in BuildSynthetic(archive, header)) {
       if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
       return new Compression.Registry.Streaming.BoundedEntryStream(
         new MemoryStream(e.Data, writable: false), e.Data.Length, leaveOpen: false);
@@ -148,64 +154,179 @@ public sealed class PstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
-  // Reads ONLY the first 512 bytes of the stream. Never materializes FULL.pst.
-  private static IReadOnlyList<(string Name, byte[] Data, string Kind)> BuildSynthetic(Stream stream) {
-    stream.Seek(0, SeekOrigin.Begin);
-    var header = new byte[HeaderSize];
+  /// <summary>
+  /// Re-emits one existing PST/OST image exactly as supplied. This preserves
+  /// every Outlook property, page, free map, compression bit, and opaque field;
+  /// no PST writer is implied by this operation.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    using var input = OpenSingleImage(inputs);
+    _ = ReadHeader(input);
+    input.Position = 0;
+    input.CopyTo(output);
+  }
+
+  /// <summary>Streaming variant suitable for large Outlook data files.</summary>
+  public void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(inputs);
+    using var input = OpenSingleImage(inputs);
+    if (input.CanSeek) {
+      _ = ReadHeader(input);
+      input.Position = 0;
+    } else {
+      var headerBytes = ReadHeaderBytes(input);
+      _ = ParseHeader(headerBytes);
+      target.Write(headerBytes);
+    }
+    input.CopyTo(target);
+  }
+
+  private static Stream OpenSingleImage(IReadOnlyList<ArchiveInputInfo> inputs) {
+    var files = inputs.Where(static i => !i.IsDirectory)
+      .Where(static i => !IsSyntheticName(i.ArchiveName))
+      .ToArray();
+    if (files.Length != 1 || !IsPstName(files[0].ArchiveName))
+      throw new NotSupportedException("PST/OST creation requires exactly one existing .pst or .ost image (synthetic metadata entries are ignored).");
+    var input = files[0];
+    return input.InMemoryContent is { } bytes
+      ? new MemoryStream(bytes, writable: false)
+      : File.OpenRead(input.FullPath);
+  }
+
+  private static Stream OpenSingleImage(IEnumerable<StreamingArchiveInput> inputs) {
+    var files = inputs.Where(static i => !i.IsDirectory)
+      .Where(static i => !IsSyntheticName(i.Name))
+      .ToArray();
+    if (files.Length != 1 || !IsPstName(files[0].Name))
+      throw new NotSupportedException("PST/OST creation requires exactly one existing .pst or .ost image (synthetic metadata entries are ignored).");
+    return files[0].OpenStream();
+  }
+
+  private static bool IsSyntheticName(string name) {
+    var leaf = Path.GetFileName(name);
+    return leaf.Equals("metadata.ini", StringComparison.OrdinalIgnoreCase)
+      || leaf.Equals("header.bin", StringComparison.OrdinalIgnoreCase);
+  }
+
+  private static bool IsPstName(string name) {
+    var extension = Path.GetExtension(name);
+    return extension.Equals(".pst", StringComparison.OrdinalIgnoreCase)
+      || extension.Equals(".ost", StringComparison.OrdinalIgnoreCase);
+  }
+
+  private sealed record PstHeader(
+    byte[] Bytes, bool IsUnicode, ushort Version, ushort ClientVersion, uint CrcPartial,
+    ulong FileEof, ulong AMapLast, ulong AMapFree, ulong PMapFree,
+    ulong NbtBid, ulong NbtOffset, ulong BbtBid, ulong BbtOffset,
+    byte CryptMethod, uint? CrcFull
+  );
+
+  private static PstHeader ReadHeader(Stream stream) {
+    ArgumentNullException.ThrowIfNull(stream);
+    if (!stream.CanRead || !stream.CanSeek)
+      throw new ArgumentException("PST/OST input must be readable and seekable.", nameof(stream));
+    var originalPosition = stream.Position;
+    try {
+      stream.Position = 0;
+      return ParseHeader(ReadHeaderBytes(stream));
+    } finally {
+      stream.Position = originalPosition;
+    }
+  }
+
+  private static byte[] ReadHeaderBytes(Stream stream) {
+    Span<byte> prefix = stackalloc byte[14];
+    ReadFully(stream, prefix);
+    ValidatePrefix(prefix);
+    var version = BinaryPrimitives.ReadUInt16LittleEndian(prefix[10..]);
+    var headerSize = version >= 23 ? UnicodeHeaderSize : AnsiHeaderSize;
+    if (stream.CanSeek && stream.Length < headerSize)
+      throw new InvalidDataException($"Truncated PST/OST header: expected {headerSize} bytes.");
+    var header = new byte[headerSize];
+    prefix.CopyTo(header);
+    ReadFully(stream, header.AsSpan(prefix.Length));
+    return header;
+  }
+
+  private static void ValidatePrefix(ReadOnlySpan<byte> prefix) {
+    if (!prefix[..4].SequenceEqual(new byte[] { 0x21, 0x42, 0x44, 0x4E }))
+      throw new InvalidDataException("Not a PST/OST file: the !BDN signature is missing.");
+    if (BinaryPrimitives.ReadUInt16LittleEndian(prefix[8..]) != 0x4D53)
+      throw new InvalidDataException("Not a PST/OST file: the client signature is invalid.");
+    var version = BinaryPrimitives.ReadUInt16LittleEndian(prefix[10..]);
+    if (version < 23 && version is not (14 or 15))
+      throw new InvalidDataException($"Unsupported PST/OST file version {version}.");
+  }
+
+  private static PstHeader ParseHeader(byte[] header) {
+    var version = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(10));
+    var isUnicode = version >= 23;
+    var sentinelOffset = isUnicode ? 512 : 460;
+    if (header[sentinelOffset] != 0x80)
+      throw new InvalidDataException("Invalid PST/OST header sentinel.");
+    var cryptMethod = header[sentinelOffset + 1];
+    if (cryptMethod is not (0x00 or 0x01 or 0x02 or 0x10))
+      throw new InvalidDataException($"Unsupported PST/OST crypt method 0x{cryptMethod:X2}.");
+
+    var rootOffset = isUnicode ? 180 : 164;
+    ulong ReadRootValue(int offset, bool wide) => wide
+      ? BinaryPrimitives.ReadUInt64LittleEndian(header.AsSpan(rootOffset + offset))
+      : BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(rootOffset + offset));
+
+    var nbtBid = ReadRootValue(isUnicode ? 36 : 20, isUnicode);
+    var nbtOffset = ReadRootValue(isUnicode ? 44 : 24, isUnicode);
+    var bbtBid = ReadRootValue(isUnicode ? 52 : 28, isUnicode);
+    var bbtOffset = ReadRootValue(isUnicode ? 60 : 32, isUnicode);
+    return new PstHeader(
+      header, isUnicode, version, BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(12)),
+      BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(4)),
+      ReadRootValue(4, isUnicode), ReadRootValue(isUnicode ? 12 : 8, isUnicode),
+      ReadRootValue(isUnicode ? 20 : 12, isUnicode), ReadRootValue(isUnicode ? 28 : 16, isUnicode),
+      nbtBid, nbtOffset, bbtBid, bbtOffset, cryptMethod,
+      isUnicode ? BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(524)) : null
+    );
+  }
+
+  private static void ReadFully(Stream stream, Span<byte> destination) {
     var read = 0;
-    while (read < HeaderSize) {
-      var n = stream.Read(header, read, HeaderSize - read);
+    while (read < destination.Length) {
+      var n = stream.Read(destination[read..]);
       if (n <= 0) break;
       read += n;
     }
-    if (read < HeaderSize) return [];
+    if (read != destination.Length)
+      throw new EndOfStreamException("Truncated PST/OST header.");
+  }
 
-    var span = header.AsSpan();
-    // MS-PST header: magic "!BDN" at offset 0.
-    if (span[0] != 0x21 || span[1] != 0x42 || span[2] != 0x44 || span[3] != 0x4E) return [];
-
-    // PST/OST header field layout (common prefix):
-    //   [0..4)   dwMagic = "!BDN"
-    //   [4..8)   dwCRCPartial
-    //   [8..10)  wMagicClient
-    //   [10..12) wVer        — 0x0E/0x0F = ANSI (32-bit), 0x15/0x17 = Unicode (64-bit)
-    //   [12..14) wVerClient
-    // Unicode: root struct at offset 180 (u64 fields).
-    // ANSI: root struct at offset 172 (u32 fields).
-    var crc = BinaryPrimitives.ReadUInt32LittleEndian(span[4..]);
-    var wVer = BinaryPrimitives.ReadUInt16LittleEndian(span[10..]);
-    var wVerClient = BinaryPrimitives.ReadUInt16LittleEndian(span[12..]);
-    var isUnicode = wVer >= 0x15;
-
-    ulong rootNbt = 0, rootBbt = 0;
-    if (isUnicode) {
-      const int rootOff = 180;
-      if (HeaderSize >= rootOff + 32) {
-        rootBbt = BinaryPrimitives.ReadUInt64LittleEndian(span[(rootOff + 16)..]);
-        rootNbt = BinaryPrimitives.ReadUInt64LittleEndian(span[(rootOff + 24)..]);
-      }
-    } else {
-      const int rootOff = 172;
-      if (HeaderSize >= rootOff + 24) {
-        rootBbt = BinaryPrimitives.ReadUInt32LittleEndian(span[(rootOff + 16)..]);
-        rootNbt = BinaryPrimitives.ReadUInt32LittleEndian(span[(rootOff + 20)..]);
-      }
-    }
-
+  private static IReadOnlyList<(string Name, byte[] Data, string Kind)> BuildSynthetic(Stream stream, PstHeader header) {
     var fileSize = stream.Length;
     var ini = new StringBuilder();
     ini.AppendLine("; Outlook PST/OST header");
-    ini.Append("format=").AppendLine(isUnicode ? "unicode" : "ansi");
-    ini.Append("version=").AppendLine(wVer.ToString(CultureInfo.InvariantCulture));
-    ini.Append("version_client=").AppendLine(wVerClient.ToString(CultureInfo.InvariantCulture));
+    ini.AppendLine("storage_format=PST/OST shared PFF");
+    ini.AppendLine("parse_status=header-only");
+    ini.Append("format=").AppendLine(header.IsUnicode ? "unicode" : "ansi");
+    ini.Append("version=").AppendLine(header.Version.ToString(CultureInfo.InvariantCulture));
+    ini.Append("version_client=").AppendLine(header.ClientVersion.ToString(CultureInfo.InvariantCulture));
     ini.Append("file_size=").AppendLine(fileSize.ToString(CultureInfo.InvariantCulture));
-    ini.Append("header_crc=0x").AppendLine(crc.ToString("X8", CultureInfo.InvariantCulture));
-    ini.Append("root_nbt_offset=").AppendLine(rootNbt.ToString(CultureInfo.InvariantCulture));
-    ini.Append("root_bbt_offset=").AppendLine(rootBbt.ToString(CultureInfo.InvariantCulture));
+    ini.Append("header_crc_partial=0x").AppendLine(header.CrcPartial.ToString("X8", CultureInfo.InvariantCulture));
+    if (header.CrcFull is { } crcFull)
+      ini.Append("header_crc_full=0x").AppendLine(crcFull.ToString("X8", CultureInfo.InvariantCulture));
+    ini.Append("file_eof=").AppendLine(header.FileEof.ToString(CultureInfo.InvariantCulture));
+    ini.Append("amap_last_offset=").AppendLine(header.AMapLast.ToString(CultureInfo.InvariantCulture));
+    ini.Append("amap_free_bytes=").AppendLine(header.AMapFree.ToString(CultureInfo.InvariantCulture));
+    ini.Append("pmap_free_bytes=").AppendLine(header.PMapFree.ToString(CultureInfo.InvariantCulture));
+    ini.Append("root_nbt_bid=0x").AppendLine(header.NbtBid.ToString("X", CultureInfo.InvariantCulture));
+    ini.Append("root_nbt_offset=").AppendLine(header.NbtOffset.ToString(CultureInfo.InvariantCulture));
+    ini.Append("root_bbt_bid=0x").AppendLine(header.BbtBid.ToString("X", CultureInfo.InvariantCulture));
+    ini.Append("root_bbt_offset=").AppendLine(header.BbtOffset.ToString(CultureInfo.InvariantCulture));
+    ini.Append("crypt_method=0x").AppendLine(header.CryptMethod.ToString("X2", CultureInfo.InvariantCulture));
 
     return [
       ("metadata.ini", Encoding.UTF8.GetBytes(ini.ToString()), "Tag"),
-      ("header.bin", header, "Track"),
+      ("header.bin", header.Bytes, "Track"),
     ];
   }
 }
