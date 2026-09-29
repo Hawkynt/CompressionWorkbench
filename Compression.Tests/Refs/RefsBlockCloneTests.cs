@@ -308,6 +308,31 @@ public sealed class RefsBlockCloneTests {
     });
   }
 
+  [Test, Category("HappyPath")]
+  public void ReplacingExistingFile_FromDiskInputStreamsIntoReservedClusters() {
+    var original = Pattern(0x21, 2 * ClusterSize);
+    var replacement = Pattern(0xA1, 3 * ClusterSize + 37);
+    var image = new RefsSyntheticVolume()
+      .WithFile("alpha.bin", original)
+      .Build();
+    var inputPath = Path.Combine(Path.GetTempPath(), "refs-input-" + Guid.NewGuid().ToString("N"));
+    try {
+      File.WriteAllBytes(inputPath, replacement);
+      using (var stream = new MemoryStream(image, writable: true))
+        RefsOfflineModifier.Add(stream, [ArchiveInputInfo.FromFile(new FileInfo(inputPath), "alpha.bin")]);
+
+      var probe = new RefsImageProbe(image);
+      var checkpoint = probe.ActiveCheckpoint();
+      var file = probe.ReadFiles(checkpoint)["alpha.bin"];
+      Assert.Multiple(() => {
+        Assert.That(file.Size, Is.EqualTo(replacement.Length));
+        Assert.That(probe.ReadFileContent(file), Is.EqualTo(replacement));
+      });
+    } finally {
+      try { File.Delete(inputPath); } catch { /* ignore cleanup errors */ }
+    }
+  }
+
   [Test, Category("ErrorHandling")]
   public void Clone_RefusesUnequalLogicalSizes() {
     var image = new RefsSyntheticVolume()
