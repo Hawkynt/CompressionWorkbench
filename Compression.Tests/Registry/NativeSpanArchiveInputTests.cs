@@ -683,7 +683,9 @@ public sealed class NativeSpanArchiveInputTests {
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(position + 8, 4), stripByteCountsOffset);
 
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(stripOffsetsOffset, 4), payloadOffset);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(stripOffsetsOffset + 4, 4), secondPayloadOffset);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+      image.AsSpan(stripOffsetsOffset + 4, 4),
+      checked((uint)secondPayloadOffset));
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(stripByteCountsOffset, 4), (uint)firstLength);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(stripByteCountsOffset + 4, 4), (uint)secondLength);
 
