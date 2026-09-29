@@ -120,6 +120,17 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand DeleteSelectedCommand { get; }
   /// <summary>Asks the view to start editing the selected entry's name; see <see cref="RenameRequested"/>.</summary>
   public ICommand RenameCommand { get; }
+  public ICommand CopyCommand { get; }
+  public ICommand CutCommand { get; }
+  public ICommand PasteCommand { get; }
+
+  // The shell's own clipboard. The desktop clipboard carries only text across every backend, so
+  // files copied here paste here — between folders, archives and the two, in any direction.
+  private IReadOnlyList<TransferItem>? _clipboardItems;
+  private bool _clipboardIsCut;
+
+  /// <summary>True while something copied or cut is waiting to be pasted.</summary>
+  public bool HasClipboard => _clipboardItems is { Count: > 0 };
 
   /// <summary>
   /// Raised by <see cref="RenameCommand"/>. Typing the new name is the view's business — in place,
@@ -209,6 +220,9 @@ internal sealed class MainViewModel : ViewModelBase {
     ScrambleEntryCommand = new RelayCommand(_ => OpenMaintenance(MaintenanceVerb.Scramble), _ => CanMaintain(MaintenanceVerb.Scramble));
     ReconfigureEntryCommand = new RelayCommand(_ => Reconfigure(), _ => CanReconfigure());
     DeleteSelectedCommand = new RelayCommand(_ => DeleteSelectedEntries(), _ => CanDeleteSelected);
+    CopyCommand = new RelayCommand(_ => PutSelectionOnClipboard(cut: false), _ => CanCopySelection());
+    CutCommand = new RelayCommand(_ => PutSelectionOnClipboard(cut: true), _ => CanCopySelection() && CanChangeHere());
+    PasteCommand = new AsyncRelayCommand(_ => PasteAsync(), _ => HasClipboard && CanChangeHere());
     RenameCommand = new RelayCommand(
       _ => { if (SingleSelection() is { } entry) RenameRequested?.Invoke(this, entry); },
       _ => SingleSelection() is { } entry && CanRename(entry));
@@ -234,6 +248,63 @@ internal sealed class MainViewModel : ViewModelBase {
   /// <see cref="HasPendingFragmentation"/> is raised so the user can run Defragment
   /// to compact freed slots.
   /// </summary>
+  private bool CanCopySelection() => CurrentLocation is not null && SelectedEntries.Any(e => !e.IsParentEntry);
+
+  /// <summary>
+  /// Whether what is shown here may be changed. A nested archive is a temporary extraction: taking
+  /// from it is fine, but cutting from or pasting into it would edit a copy nobody sees.
+  /// </summary>
+  private bool CanChangeHere() => CurrentLocation is not null && !IsNestedArchive;
+
+  private void PutSelectionOnClipboard(bool cut) {
+    if (CurrentLocation is not { } here) return;
+
+    _clipboardItems = [.. SelectedEntries.Where(e => !e.IsParentEntry).Select(e => new TransferItem(here, e.Name, e.IsDirectory))];
+    _clipboardIsCut = cut;
+    StatusText = $"{(cut ? "Cut" : "Copied")} {_clipboardItems.Count} item(s). Paste to put {(_clipboardItems.Count == 1 ? "it" : "them")} somewhere.";
+    OnPropertyChanged(nameof(HasClipboard));
+    CommandManager.InvalidateRequerySuggested();
+  }
+
+  /// <summary>
+  /// Pastes what was copied or cut into the folder the shell is showing. Returns the reason when it
+  /// cannot, having touched nothing; a cut is consumed once it has been pasted.
+  /// </summary>
+  internal async Task<string?> PasteAsync() {
+    if (_clipboardItems is not { Count: > 0 } items || CurrentLocation is not { } target) return "Nothing to paste.";
+    if (!CanChangeHere()) return Fail("Nothing can be pasted inside a nested archive.");
+
+    var move = _clipboardIsCut;
+    if (Transfer.WhyNot(items, target, move) is { } refusal) return Fail(refusal);
+
+    IsBusy = true;
+    StatusText = $"{(move ? "Moving" : "Copying")} {items.Count} item(s)...";
+    try {
+      var result = await Task.Run(() => Transfer.Run(items, target, move));
+      if (move) {
+        _clipboardItems = null;
+        OnPropertyChanged(nameof(HasClipboard));
+      }
+
+      if (target.IsInArchive) ReloadArchiveInPlace();
+      else RefreshVisibleEntries();
+
+      StatusText = $"{(move ? "Moved" : "Copied")} {result.Created.Count} item(s) to {target}.";
+      return null;
+    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException
+                                   or InvalidOperationException or ArgumentException or InvalidDataException) {
+      return Fail($"Paste failed: {ex.Message}");
+    } finally {
+      IsBusy = false;
+      CommandManager.InvalidateRequerySuggested();
+    }
+
+    string Fail(string reason) {
+      StatusText = reason;
+      return reason;
+    }
+  }
+
   private ArchiveEntryViewModel? SingleSelection() {
     var selected = SelectedEntries.Where(e => !e.IsParentEntry).Take(2).ToList();
     return selected.Count == 1 ? selected[0] : null;

@@ -17,7 +17,9 @@ backends, so Windows and Linux run the same code rather than two frontends drift
   filesystem images whose driver renames in place (FAT, ext, Minix, the Commodore disk images,
   RomFS). It is lossless there — a ZIP is copied with only its names changed, an image has one
   directory entry changed — and it is not offered for formats that could only rename by
-  re-creating themselves. Names Windows or POSIX would refuse are caught before anything is touched.
+  re-creating themselves. Names Windows or POSIX would refuse are caught before anything is touched. Cut, copy and paste (Ctrl+X / C / V in the list or the tree) move files and
+  folders between host folders and archive folders in any direction; nothing is overwritten — a
+  taken name gets a number — and a cut removes its sources only after every copy has landed.
 - **Preview** — the selected entry as a picture, as text, or as a hex dump, with an optional
   statistics side panel. Multi-frame images get playback controls.
 - **Properties** — sizes, ratio, method and dates, plus byte statistics for a file or a child count

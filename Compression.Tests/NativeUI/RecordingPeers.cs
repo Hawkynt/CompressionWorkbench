@@ -93,10 +93,10 @@ internal class RecordingControlPeer : IControlPeer, ICanvasPeer, IContainerPeer 
     return true;
   }
 
-  public bool RaiseKeyDown(Keys keys) {
+  public bool RaiseKeyDown(Keys keys, KeyModifiers modifiers = KeyModifiers.None) {
     if (this.KeyDown is not { } handler) return false;
 
-    handler(this, new(keys, KeyModifiers.None));
+    handler(this, new(keys, modifiers));
     return true;
   }
 }

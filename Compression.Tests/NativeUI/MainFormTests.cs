@@ -478,6 +478,34 @@ public sealed class MainFormTests {
     }));
   }
 
+  // ── clipboard ───────────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenASelectedEntry_WhenCtrlCIsPressedInTheList_ThenItIsOnTheClipboard() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.Folder(root));
+      model.SelectedEntries.Add(model.Entries.First(e => e.Name == "sub"));
+
+      PeerOf(Field<Control>(shell, "_entries")).RaiseKeyDown(Keys.C, KeyModifiers.Control);
+
+      Assert.That(model.HasClipboard, Is.True);
+    }));
+  }
+
+  [Test]
+  public void GivenTheClipboardItems_WhenTheMenusAreBuilt_ThenTheirKeysAreShownButLeftToTheFileViews() {
+    WithShell(shell => {
+      var items = Field<MenuStrip>(shell, "_menu").Items.Cast<ToolStripItem>().SelectMany(MenuItems)
+        .Where(i => i.Text is "Cu&t" or "&Copy" or "&Paste")
+        .ToList();
+
+      Assert.That(items.Select(i => i.ShortcutKeyDisplayString), Is.EquivalentTo(new[] { "Ctrl+X", "Ctrl+C", "Ctrl+V" }));
+      Assert.That(items.All(i => i.ShortcutKeys == Keys.None), Is.True,
+        "registered on the menu, Ctrl+V would paste files while a name is being typed");
+    });
+  }
+
   [Test]
   public void GivenTheAddressBar_WhenOpenedForEditing_ThenItHoldsTheRealPath() {
     WithScratch((_, zip) => WithShell(shell => {
