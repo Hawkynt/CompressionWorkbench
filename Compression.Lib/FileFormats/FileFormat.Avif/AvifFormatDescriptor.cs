@@ -100,26 +100,76 @@ public sealed class AvifFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
 
-  private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    var blob = ms.ToArray();
-    var reader = new HeifReader(blob);
+  private sealed record EntryLayout(
+      string Name,
+      string Kind,
+      IReadOnlyList<HeifReader.SourceRange> Ranges,
+      byte[]? Generated = null) {
 
-    if (!reader.MatchesAnyBrand(HeifReader.AvifBrands))
+    public int Size => this.Generated?.Length ?? HeifReader.GetTotalLength(this.Ranges);
+  }
+
+  private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
+    using var memory = new MemoryStream();
+    stream.CopyTo(memory);
+    var blob = memory.ToArray();
+
+    return BuildLayout(blob)
+      .Select(entry => (
+        entry.Name,
+        entry.Kind,
+        entry.Generated ?? MaterializeRanges(blob, entry.Ranges)))
+      .ToList();
+  }
+
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) =>
+    BuildLayout(archive).Select((entry, index) => new ArchiveEntryInfo(
+      Index: index,
+      Name: entry.Name,
+      OriginalSize: entry.Size,
+      CompressedSize: entry.Size,
+      Method: "stored",
+      IsDirectory: false,
+      IsEncrypted: false,
+      LastModified: null,
+      Kind: entry.Kind)).ToList();
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    foreach (var entry in BuildLayout(archive)) {
+      if (files is { Length: > 0 } && !FormatHelpers.MatchesFilter(entry.Name, files))
+        continue;
+
+      if (entry.Generated is { } generated) {
+        FormatHelpers.WriteFile(outputDir, entry.Name, generated);
+        continue;
+      }
+
+      using var output = FormatHelpers.CreateEntryFile(outputDir, entry.Name);
+      foreach (var range in entry.Ranges)
+        output.Write(archive.Slice(range.Offset, range.Length));
+    }
+  }
+
+  private static List<EntryLayout> BuildLayout(ReadOnlySpan<byte> blob) {
+    var reader = HeifReader.ReadLayout(blob);
+    if (!HeifReader.MatchesAnyBrand(reader, HeifReader.AvifBrands))
       throw new InvalidDataException($"AVIF: ftyp brand {reader.MajorBrand} not accepted.");
 
-    var entries = new List<(string, string, byte[])> {
-      ("FULL.avif", "Container", blob),
+    var entries = new List<EntryLayout> {
+      new("FULL.avif", "Container", [new HeifReader.SourceRange(0, blob.Length)]),
     };
 
     var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "FULL.avif" };
     foreach (var item in reader.Items) {
-      var data = reader.ReadItem(item.Id);
-      if (data.Length == 0 && item.Type != "grid") continue;
+      IReadOnlyList<HeifReader.SourceRange> ranges =
+        HeifReader.GetItemRanges(reader, item.Id, blob.Length);
+      var sourceLength = HeifReader.GetTotalLength(ranges);
+      if (sourceLength == 0 && item.Type != "grid")
+        continue;
 
       var isPrimary = item.Id == reader.PrimaryItemId;
-      var ext = item.Type switch {
+      var extension = item.Type switch {
         "av01" => ".av1",
         "Exif" => ".bin",
         "mime" => ".bin",
@@ -129,21 +179,41 @@ public sealed class AvifFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       var stem = item.Type == "Exif" ? "metadata/exif"
                : item.Type == "mime" ? $"metadata/{Sanitize(item.Name ?? item.ContentType ?? $"item_{item.Id}")}"
                : $"item_{item.Id:D3}_{Sanitize(item.Type)}";
-      var name = stem + ext;
-      if (isPrimary && item.Type != "Exif" && item.Type != "mime") name = "primary_" + name;
+      var name = stem + extension;
+      if (isPrimary && item.Type != "Exif" && item.Type != "mime")
+        name = "primary_" + name;
       name = Unique(name, used);
 
-      var payload = item.Type switch {
-        "Exif" => data.Length > 4 ? data.AsSpan(4).ToArray() : data,
-        "grid" => Encoding.UTF8.GetBytes($"grid: {data.Length} bytes\n"),
-        _ => data,
-      };
       var kind = item.Type == "Exif" || item.Type == "mime" ? "Tag"
                : item.Type == "grid" ? "Chunk"
                : "Frame";
-      entries.Add((name, kind, payload));
+
+      byte[]? generated = null;
+      switch (item.Type) {
+        case "grid":
+          generated = Encoding.UTF8.GetBytes($"grid: {sourceLength} bytes\n");
+          ranges = [];
+          break;
+        case "Exif" when sourceLength > 4:
+          ranges = HeifReader.SkipPrefix(ranges, 4);
+          break;
+      }
+
+      entries.Add(new EntryLayout(name, kind, ranges, generated));
     }
+
     return entries;
+  }
+
+  private static byte[] MaterializeRanges(
+      ReadOnlySpan<byte> source, IReadOnlyList<HeifReader.SourceRange> ranges) {
+    var result = new byte[HeifReader.GetTotalLength(ranges)];
+    var destinationOffset = 0;
+    foreach (var range in ranges) {
+      source.Slice(range.Offset, range.Length).CopyTo(result.AsSpan(destinationOffset));
+      destinationOffset += range.Length;
+    }
+    return result;
   }
 
   private static string Sanitize(string s) {
