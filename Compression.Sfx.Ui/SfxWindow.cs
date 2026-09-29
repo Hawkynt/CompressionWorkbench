@@ -80,13 +80,13 @@ internal sealed class SfxWindow : Form {
 
       using (container)
       using (payload) {
-        if (SfxFormatResolver.Resolve(payload) is null) {
+        if (SfxFormatResolver.Resolve(payload) is not { } extractor) {
           this.ShowError("Cannot identify the embedded archive format.");
           return;
         }
-      }
 
-      this._formatLabel.Text = $"Self-Extracting Archive ({SfxFormatResolver.FormatName})";
+        this._formatLabel.Text = $"Self-Extracting Archive ({extractor.FormatName})";
+      }
     } catch (Exception ex) {
       this.ShowError($"Error: {ex.Message}");
     }
@@ -102,11 +102,11 @@ internal sealed class SfxWindow : Form {
 
     using (container)
     using (payload) {
-      var operations = SfxFormatResolver.Resolve(payload)
+      var extractor = SfxFormatResolver.Resolve(payload)
         ?? throw new InvalidOperationException("Cannot identify the embedded archive format.");
 
       Directory.CreateDirectory(outputDirectory);
-      operations.Extract(payload, outputDirectory, password: null, files: null);
+      extractor.Extract(payload, outputDirectory);
     }
   }
 

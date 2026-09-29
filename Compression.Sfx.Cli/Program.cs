@@ -21,18 +21,18 @@ try {
 
 using (container)
 using (payload) {
-  var operations = SfxFormatResolver.Resolve(payload);
-  if (operations is null) {
+  var extractor = SfxFormatResolver.Resolve(payload);
+  if (extractor is null) {
     Console.Error.WriteLine("Cannot identify the embedded archive format.");
     return 1;
   }
 
-  Console.WriteLine($"Self-extracting archive ({SfxFormatResolver.FormatName})");
+  Console.WriteLine($"Self-extracting archive ({extractor.FormatName})");
   Console.WriteLine($"Extracting to: {destination}");
 
   try {
     Directory.CreateDirectory(destination);
-    operations.Extract(payload, destination, password: null, files: null);
+    extractor.Extract(payload, destination);
   } catch (Exception ex) {
     Console.Error.WriteLine($"Extraction failed: {ex.Message}");
     return 1;

@@ -41,6 +41,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The universal SFX stub's format resolution, compiled from the stub's own source so the tests
+         exercise exactly what ships. The carved branch and the stub's registration host are not
+         linked: the test project already has the full registry through Compression.Lib. -->
+    <Compile Include="..\Compression.Sfx.Shared\SfxFormatResolver.cs" Link="Sfx\Shared\SfxFormatResolver.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Hawkynt.FileFormats.Images requires System.IO.Hashing 10.0.3+. -->
     <PackageReference Include="System.IO.Hashing" Version="10.0.3" />
   </ItemGroup>
