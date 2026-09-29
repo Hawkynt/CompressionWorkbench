@@ -62,14 +62,7 @@ public interface IArchiveModifiable : IArchivePurgeable {
     if (this is not IArchiveFormatOperations ops || this is not IArchiveCreatable creator)
       throw new System.NotSupportedException(
         "The default Remove requires the descriptor to also implement IArchiveFormatOperations + IArchiveCreatable.");
-    var skip = new HashSet<string>(entryNames ?? [], System.StringComparer.OrdinalIgnoreCase);
-    RebuildVerb.EditViaRebuild(archive, ops, creator, tmpDir => {
-      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
-        var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
-        if (skip.Contains(rel) || skip.Contains(Path.GetFileName(rel)))
-          File.Delete(file);
-      }
-    });
+    RebuildVerb.EditViaRebuild(archive, ops, creator, tmpDir => RebuildVerb.DeleteNamedEntries(tmpDir, entryNames ?? []));
   }
 
   /// <summary>Removes entries while supplying operation-scoped credentials.</summary>

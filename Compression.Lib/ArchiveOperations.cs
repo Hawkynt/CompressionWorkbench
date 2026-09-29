@@ -452,17 +452,11 @@ public static class ArchiveOperations {
   /// <inheritdoc cref="AddViaRebuild" />
   private static void RemoveViaRebuild(string archivePath, string[] entryNames,
                                        CompressionOptions opts, F format) {
-    var skip = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
     var tempDir = Path.Combine(Path.GetTempPath(), "cwb_rm_" + Guid.NewGuid().ToString("N")[..8]);
     try {
       Directory.CreateDirectory(tempDir);
       Extract(archivePath, tempDir, password: opts.Password, files: null);
-
-      foreach (var path in Directory.GetFiles(tempDir, "*", SearchOption.AllDirectories)) {
-        var rel = Path.GetRelativePath(tempDir, path).Replace('\\', '/');
-        if (skip.Contains(rel) || skip.Contains(Path.GetFileName(rel)))
-          File.Delete(path);
-      }
+      Compression.Registry.RebuildVerb.DeleteNamedEntries(tempDir, entryNames);
 
       Create(archivePath, EnumerateTempInputs(tempDir), opts, format);
     }
