@@ -15,7 +15,9 @@ backends, so Windows and Linux run the same code rather than two frontends drift
   that exits an archive into the host filesystem; auto-descent into nested formats; drag in and
   drag out. Rename in place (F2, or Rename in the menus) works on disk and inside any archive or
   image whose format can be modified; names Windows or POSIX would refuse are caught before
-  anything is touched.
+  anything is touched. Cut, copy and paste (Ctrl+X / C / V in the list or the tree) move files and
+  folders between host folders and archive folders in any direction; nothing is overwritten — a
+  taken name gets a number — and a cut removes its sources only after every copy has landed.
 - **Preview** — the selected entry as a picture, as text, or as a hex dump, with an optional
   statistics side panel. Multi-frame images get playback controls.
 - **Properties** — sizes, ratio, method and dates, plus byte statistics for a file or a child count

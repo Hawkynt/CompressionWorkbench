@@ -28,7 +28,7 @@ internal sealed class MainForm : Form {
   private readonly Panel _breadcrumbBar = new();
   private readonly Label _formatLabel = new() { ForeColor = Color.FromArgb(0x44, 0x66, 0xAA) };
   private readonly Breadcrumb _breadcrumb = new() { TrimOnClick = true };
-  private readonly ListView _entries = new() {
+  private readonly KeyedListView _entries = new() {
     View = ListViewView.Details,
     FullRowSelect = true,
     MultiSelect = true,
@@ -43,7 +43,7 @@ internal sealed class MainForm : Form {
     Panel1MinSize = 120,
     Panel2MinSize = 200,
   };
-  private readonly TreeView _tree = new() {
+  private readonly KeyedTreeView _tree = new() {
     Dock = DockStyle.Fill,
     ShowLines = true,
     ShowRootLines = true,
@@ -141,6 +141,11 @@ internal sealed class MainForm : Form {
         Item("&Delete", IconKeys.Remove, Keys.Delete, this._model.DeleteSelectedCommand),
         // F2 belongs to the list, which starts editing the focused name itself; shown, not claimed.
         Item("Rena&me", IconKeys.Rename, Keys.None, this._model.RenameCommand, "F2"),
+        // The clipboard keys are shown, not claimed, for the same reason: registered here they would
+        // also fire while the address bar or a name is being edited, and paste files into a text box.
+        Item("Cu&t", IconKeys.Cut, Keys.None, this._model.CutCommand, "Ctrl+X"),
+        Item("&Copy", IconKeys.Copy, Keys.None, this._model.CopyCommand, "Ctrl+C"),
+        Item("&Paste", IconKeys.Paste, Keys.None, this._model.PasteCommand, "Ctrl+V"),
         new ToolStripSeparator(),
         Item("&View as Text", IconKeys.ViewText, Keys.None, this._model.ViewAsTextCommand, "Enter"),
         Item("View as &Hex", IconKeys.ViewHex, Keys.None, this._model.ViewAsHexCommand),
@@ -389,6 +394,9 @@ internal sealed class MainForm : Form {
         }
     };
 
+    this._entries.KeyDown += (_, e) => this.OnClipboardKey(e);
+    this._tree.KeyDown += (_, e) => this.OnClipboardKey(e);
+
     this._entries.ItemActivate += (_, _) => this.ActivateSelectedEntry();
     this._entries.MouseDoubleClick += (_, _) => this.ActivateSelectedEntry();
     this._entries.ColumnClick += (_, e) => this.SortBy(e.Column);
@@ -429,6 +437,10 @@ internal sealed class MainForm : Form {
       this.Item("Extract &All...", IconKeys.Extract, Keys.None, this._model.ExtractAllCommand),
       this.Item("&Delete", IconKeys.Remove, Keys.None, this._model.DeleteSelectedCommand, "Del"),
       this.Item("Rena&me", IconKeys.Rename, Keys.None, this._model.RenameCommand, "F2"),
+      new ToolStripSeparator(),
+      this.Item("Cu&t", IconKeys.Cut, Keys.None, this._model.CutCommand, "Ctrl+X"),
+      this.Item("&Copy", IconKeys.Copy, Keys.None, this._model.CopyCommand, "Ctrl+C"),
+      this.Item("&Paste", IconKeys.Paste, Keys.None, this._model.PasteCommand, "Ctrl+V"),
       new ToolStripSeparator(),
       this.Item("&Add Files...", IconKeys.Add, Keys.None, this._model.AddFilesCommand),
       new ToolStripSeparator(),
@@ -545,6 +557,22 @@ internal sealed class MainForm : Form {
     }
 
     this.RefreshEntries();
+  }
+
+  /// <summary>Ctrl+C, Ctrl+X and Ctrl+V where files are shown — the list and the tree, not a text box.</summary>
+  private void OnClipboardKey(KeyEventArgs e) {
+    if (!e.Control || e.Alt || e.Shift) return;
+
+    var command = e.KeyCode switch {
+      Keys.C => this._model.CopyCommand,
+      Keys.X => this._model.CutCommand,
+      Keys.V => this._model.PasteCommand,
+      _ => null,
+    };
+    if (command is null) return;
+
+    if (command.CanExecute(null)) command.Execute(null);
+    e.Handled = true;
   }
 
   private ArchiveEntryViewModel? EntryAt(int index)
