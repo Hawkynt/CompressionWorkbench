@@ -12,6 +12,7 @@ namespace FileFormat.Mca;
 /// <list type="bullet">
 ///   <item><description><c>https://minecraft.wiki/w/Region_file_format</c> — Minecraft Wiki — region/Anvil file layout (locations, timestamps, per-chunk compressed NBT)</description></item>
 ///   <item><description><c>https://github.com/PaperMC/SectorTool/blob/master/SPECIFICATION.MD</c> — PaperMC — region sectors, timestamp semantics, compression ids, and external chunk files</description></item>
+///   <item><description><c>https://wikivg.booky.dev/Map_Format</c> — Minecraft protocol documentation — LZ4-Java block stream used by compression id 4</description></item>
 ///   <item><description>No official Mojang specification — the layout is community-documented</description></item>
 /// </list>
 /// </summary>
