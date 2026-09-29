@@ -68,9 +68,11 @@ if (OperatingSystem.IsWindows()) {
 var launcher = new RegistryMountLauncher(new FilesystemMountLauncher(new MountBackendRegistry(backends)));
 var shell = new MainForm(backends, launcher);
 
-// A file argument is a file association opening that file; otherwise restore the browser where it
-// was left, walking up to the deepest surviving ancestor if that folder is gone.
+// A file argument is a file association opening that file, and a folder argument opens the browser
+// there; otherwise restore the browser where it was left, walking up to the deepest surviving
+// ancestor if that folder is gone.
 if (args is [var startupFile, ..] && File.Exists(startupFile)) shell.OpenArchive(startupFile);
+else if (args is [var startupFolder, ..] && Directory.Exists(startupFolder)) shell.OpenFolder(startupFolder);
 else shell.StartInOsBrowserAtLastFolder();
 
 Application.Run(shell);

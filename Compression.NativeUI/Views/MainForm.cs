@@ -134,6 +134,9 @@ internal sealed partial class MainForm : Form {
   /// <summary>Opens <paramref name="path"/> as an archive.</summary>
   public void OpenArchive(string path) => this._model.Open(path);
 
+  /// <summary>Browses the folder at <paramref name="path"/>, which may be relative to the working directory.</summary>
+  public void OpenFolder(string path) => this._model.NavigateTo(Navigation.Location.Folder(Path.GetFullPath(path)));
+
   /// <summary>Starts in filesystem-browser mode at the folder last used.</summary>
   public void StartInOsBrowserAtLastFolder() => this._model.StartInOsBrowserAtLastFolder();
 
