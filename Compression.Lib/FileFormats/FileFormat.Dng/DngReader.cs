@@ -66,6 +66,14 @@ public sealed class DngReader {
   /// </summary>
   public sealed record Entry(ushort Tag, ushort Type, uint Count, uint ValueOrOffset);
 
+  internal readonly record struct SourceRange(int Offset, int Length);
+  internal sealed record StructuralLayout(
+    bool IsBigEndian,
+    IReadOnlyList<Ifd> TopLevelIfds,
+    IReadOnlyList<Ifd> SubIfds,
+    Ifd? ExifIfd,
+    int DngVersionLength);
+
   /// <summary>
   /// Gets a value indicating whether is big endian.
   /// </summary>
@@ -90,6 +98,209 @@ public sealed class DngReader {
   public int DngVersionLength { get; }
 
   private readonly byte[] _data;
+
+  internal static StructuralLayout ReadLayout(ReadOnlySpan<byte> data) {
+    if (data.Length < 8)
+      throw new InvalidDataException("TIFF: too small.");
+
+    var isBigEndian = data[0] == 'M' && data[1] == 'M';
+    if (!isBigEndian && !(data[0] == 'I' && data[1] == 'I'))
+      throw new InvalidDataException("TIFF: bad byte-order mark.");
+    if (ReadUInt16Layout(data, 2, isBigEndian) != 42)
+      throw new InvalidDataException("TIFF: bad magic (need 42).");
+
+    var topLevelIfds = new List<Ifd>();
+    var ifdOffset = (long)ReadUInt32Layout(data, 4, isBigEndian);
+    var guard = 0;
+    while (ifdOffset != 0 && guard++ < 32) {
+      if (ifdOffset < 0 || ifdOffset + 2 > data.Length)
+        break;
+
+      var ifd = ReadIfdLayout(data, isBigEndian, ifdOffset);
+      topLevelIfds.Add(ifd);
+
+      var afterEntries = ifdOffset + 2 + ifd.Entries.Count * 12L;
+      if (afterEntries < 0 || afterEntries + 4 > data.Length)
+        break;
+      ifdOffset = ReadUInt32Layout(data, (int)afterEntries, isBigEndian);
+    }
+
+    var subIfds = new List<Ifd>();
+    foreach (var ifd in topLevelIfds) {
+      var sub = ifd.Entries.FirstOrDefault(static entry => entry.Tag == TagSubIFDs);
+      if (sub == null)
+        continue;
+
+      foreach (var offset in ReadValuesAsUInt32Layout(data, isBigEndian, sub))
+        if (offset != 0 && offset + 2 <= data.Length)
+          subIfds.Add(ReadIfdLayout(data, isBigEndian, offset));
+    }
+
+    Ifd? exifIfd = null;
+    var exifEntry = topLevelIfds.FirstOrDefault()?.Entries
+      .FirstOrDefault(static entry => entry.Tag == TagExifIfd);
+    if (exifEntry != null && exifEntry.ValueOrOffset != 0
+        && exifEntry.ValueOrOffset + 2 <= data.Length)
+      exifIfd = ReadIfdLayout(data, isBigEndian, exifEntry.ValueOrOffset);
+
+    var dngTag = topLevelIfds.FirstOrDefault()?.Entries
+      .FirstOrDefault(static entry => entry.Tag == TagDngVersion);
+
+    return new StructuralLayout(
+      isBigEndian,
+      topLevelIfds,
+      subIfds,
+      exifIfd,
+      dngTag != null ? checked((int)dngTag.Count) : 0);
+  }
+
+  internal static IReadOnlyList<SourceRange> GetStripRanges(
+      ReadOnlySpan<byte> data, StructuralLayout layout, Ifd ifd) {
+    var offsetsEntry = ifd.Entries.FirstOrDefault(static entry => entry.Tag == TagStripOffsets);
+    var sizesEntry = ifd.Entries.FirstOrDefault(static entry => entry.Tag == TagStripByteCounts);
+    if (offsetsEntry == null || sizesEntry == null)
+      return [];
+
+    var offsets = ReadValuesAsUInt32Layout(data, layout.IsBigEndian, offsetsEntry);
+    var sizes = ReadValuesAsUInt32Layout(data, layout.IsBigEndian, sizesEntry);
+    if (offsets.Count == 0 || offsets.Count != sizes.Count)
+      return [];
+
+    var ranges = new List<SourceRange>(offsets.Count);
+    for (var index = 0; index < offsets.Count; ++index) {
+      var offset = (long)offsets[index];
+      var length = (long)sizes[index];
+      if (offset < 0 || length <= 0 || offset > data.Length
+          || length > data.Length - offset
+          || offset > int.MaxValue || length > int.MaxValue)
+        continue;
+
+      ranges.Add(new SourceRange((int)offset, (int)length));
+    }
+
+    return ranges;
+  }
+
+  internal static IReadOnlyList<SourceRange> GetEmbeddedJpegRanges(
+      ReadOnlySpan<byte> data, Ifd ifd) {
+    var offsetEntry = ifd.Entries.FirstOrDefault(static entry => entry.Tag == TagJpegInterchangeFormat);
+    var lengthEntry = ifd.Entries.FirstOrDefault(static entry => entry.Tag == TagJpegInterchangeFormatLength);
+    if (offsetEntry == null || lengthEntry == null)
+      return [];
+
+    var offset = (long)offsetEntry.ValueOrOffset;
+    var length = (long)lengthEntry.ValueOrOffset;
+    if (offset < 0 || length <= 0 || offset > data.Length
+        || length > data.Length - offset
+        || offset > int.MaxValue || length > int.MaxValue)
+      return [];
+
+    return [new SourceRange((int)offset, (int)length)];
+  }
+
+  internal static SourceRange? GetExternalValueRange(
+      ReadOnlySpan<byte> data, Entry entry) {
+    if (entry.Count <= 4)
+      return null;
+
+    var offset = (long)entry.ValueOrOffset;
+    var length = (long)entry.Count;
+    if (offset < 0 || length <= 0 || offset > data.Length
+        || length > data.Length - offset
+        || offset > int.MaxValue || length > int.MaxValue)
+      return null;
+
+    return new SourceRange((int)offset, (int)length);
+  }
+
+  internal static int GetTotalLength(IReadOnlyList<SourceRange> ranges) {
+    var total = 0;
+    foreach (var range in ranges)
+      total = checked(total + range.Length);
+    return total;
+  }
+
+  private static Ifd ReadIfdLayout(ReadOnlySpan<byte> data, bool isBigEndian, long offset) {
+    if (offset < 0 || offset > int.MaxValue || offset + 2 > data.Length)
+      return new Ifd(offset, []);
+
+    var count = ReadUInt16Layout(data, (int)offset, isBigEndian);
+    var entries = new List<Entry>(count);
+    var position = checked((int)offset + 2);
+    for (var index = 0; index < count; ++index, position += 12) {
+      if (position + 12 > data.Length)
+        break;
+
+      entries.Add(new Entry(
+        ReadUInt16Layout(data, position, isBigEndian),
+        ReadUInt16Layout(data, position + 2, isBigEndian),
+        ReadUInt32Layout(data, position + 4, isBigEndian),
+        ReadUInt32Layout(data, position + 8, isBigEndian)));
+    }
+
+    return new Ifd(offset, entries);
+  }
+
+  private static IReadOnlyList<uint> ReadValuesAsUInt32Layout(
+      ReadOnlySpan<byte> data, bool isBigEndian, Entry entry) {
+    var typeSize = entry.Type switch { 1 => 1, 3 => 2, 4 => 4, _ => 0 };
+    if (typeSize == 0 || entry.Count > int.MaxValue)
+      return [];
+
+    var count = (int)entry.Count;
+    var total = checked(typeSize * count);
+    if (total <= 4)
+      return ReadInlineValuesLayout(entry, typeSize, isBigEndian);
+
+    var start = (long)entry.ValueOrOffset;
+    if (start < 0 || start > data.Length || total > data.Length - start || start > int.MaxValue)
+      return [];
+
+    var result = new uint[count];
+    var offset = (int)start;
+    for (var index = 0; index < count; ++index) {
+      result[index] = typeSize switch {
+        1 => data[offset + index],
+        2 => ReadUInt16Layout(data, offset + index * 2, isBigEndian),
+        4 => ReadUInt32Layout(data, offset + index * 4, isBigEndian),
+        _ => 0,
+      };
+    }
+
+    return result;
+  }
+
+  private static uint[] ReadInlineValuesLayout(Entry entry, int typeSize, bool isBigEndian) {
+    Span<byte> bytes = stackalloc byte[4];
+    if (isBigEndian)
+      BinaryPrimitives.WriteUInt32BigEndian(bytes, entry.ValueOrOffset);
+    else
+      BinaryPrimitives.WriteUInt32LittleEndian(bytes, entry.ValueOrOffset);
+
+    var result = new uint[entry.Count];
+    for (var index = 0; index < entry.Count; ++index) {
+      result[index] = typeSize switch {
+        1 => bytes[index],
+        2 => isBigEndian
+          ? BinaryPrimitives.ReadUInt16BigEndian(bytes[(index * 2)..])
+          : BinaryPrimitives.ReadUInt16LittleEndian(bytes[(index * 2)..]),
+        4 => entry.ValueOrOffset,
+        _ => 0,
+      };
+    }
+
+    return result;
+  }
+
+  private static ushort ReadUInt16Layout(ReadOnlySpan<byte> data, int position, bool isBigEndian) =>
+    isBigEndian
+      ? BinaryPrimitives.ReadUInt16BigEndian(data[position..])
+      : BinaryPrimitives.ReadUInt16LittleEndian(data[position..]);
+
+  private static uint ReadUInt32Layout(ReadOnlySpan<byte> data, int position, bool isBigEndian) =>
+    isBigEndian
+      ? BinaryPrimitives.ReadUInt32BigEndian(data[position..])
+      : BinaryPrimitives.ReadUInt32LittleEndian(data[position..]);
 
   /// <summary>
   /// Initializes a new instance of <see cref="DngReader"/>.
