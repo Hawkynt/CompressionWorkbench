@@ -188,15 +188,14 @@ public class Pack200Tests {
 
   [Category("HappyPath")]
   [Test]
-  public void Descriptor_Extract_WritesManifest() {
+  public void Descriptor_DoesNotAdvertiseOrFakeExtraction() {
     var tmp = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
     Directory.CreateDirectory(tmp);
     try {
       var d = new Pack200FormatDescriptor();
-      d.Extract(new MemoryStream(BuildMinimalSegment()), tmp, null, null);
-      var classes = File.ReadAllText(Path.Combine(tmp, "classes.txt"));
-      Assert.That(classes, Does.Contain("Hello"));
-      Assert.That(File.Exists(Path.Combine(tmp, "pack200-info.txt")), Is.True);
+      Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanExtract), Is.False);
+      Assert.Throws<NotSupportedException>(() => d.Extract(new MemoryStream(BuildMinimalSegment()), tmp, null, null));
+      Assert.That(Directory.GetFiles(tmp), Is.Empty);
     } finally {
       Directory.Delete(tmp, true);
     }

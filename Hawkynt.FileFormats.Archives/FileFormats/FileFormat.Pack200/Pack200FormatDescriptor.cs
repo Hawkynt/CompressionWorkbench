@@ -1,7 +1,5 @@
 #pragma warning disable CS1591
-using System.Text;
 using Compression.Registry;
-using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pack200;
 
@@ -17,12 +15,10 @@ namespace FileFormat.Pack200;
 /// </list>
 /// </summary>
 /// <remarks>
-/// The archive is presented as a read-only collection whose entries are the classes
-/// it defines. Listing recovers each class's internal name by decoding the archive
-/// header and constant-pool/class bands; extraction writes a manifest of those names
-/// together with the decoded header summary. Full <c>.class</c> byte reconstruction
-/// (method/code/bytecode bands) is out of scope and is reported honestly rather than
-/// fabricated.
+/// The archive is presented as a read-only class-name listing. Listing recovers each
+/// class's internal name from a subset of Pack200 bands. Full <c>.class</c> reconstruction
+/// and archive creation are not implemented, so extraction is deliberately not advertised
+/// or simulated by writing summary text in place of class files.
 /// </remarks>
 public sealed class Pack200FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
@@ -42,8 +38,8 @@ public sealed class Pack200FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -104,34 +100,9 @@ public sealed class Pack200FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   /// <summary>
-  /// Decodes the supplied input.
+  /// Pack200 class-file reconstruction is not implemented.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var seg = new Pack200Reader().Read(stream);
-
-    // Header summary — honest report of what was and was not decoded.
-    var info = new StringBuilder();
-    info.Append("Pack200 (JSR-200) archive\n");
-    info.Append($"archive-version: {seg.MajVersion}.{seg.MinVersion}\n");
-    info.Append($"options: 0x{seg.Options:X}\n");
-    info.Append($"default-class-version: {seg.DefaultClassMajVersion}.{seg.DefaultClassMinVersion}\n");
-    info.Append($"utf8-count: {seg.Utf8Count}\n");
-    info.Append($"class-pool-count: {seg.ClassPoolCount}\n");
-    info.Append($"class-count: {seg.ClassCount}\n");
-    info.Append($"resource-file-count: {seg.ResourceFileCount}\n");
-    info.Append($"decode-status: {seg.Status}\n");
-    if (seg.StatusNote != null)
-      info.Append($"decode-note: {seg.StatusNote}\n");
-    info.Append("note: class enumeration only; full .class byte reconstruction is not implemented.\n");
-
-    if (files == null || MatchesFilter("pack200-info.txt", files))
-      WriteFile(outputDir, "pack200-info.txt", Encoding.UTF8.GetBytes(info.ToString()));
-
-    // Manifest of the class internal names this archive defines.
-    var manifest = new StringBuilder();
-    foreach (var name in seg.ClassNames)
-      manifest.Append(name).Append('\n');
-    if (files == null || MatchesFilter("classes.txt", files))
-      WriteFile(outputDir, "classes.txt", Encoding.UTF8.GetBytes(manifest.ToString()));
+    throw new NotSupportedException("Pack200 extraction requires full class-file reconstruction, which this descriptor does not implement.");
   }
 }
