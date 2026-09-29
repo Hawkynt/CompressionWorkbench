@@ -167,6 +167,7 @@ internal sealed class MainForm : Form {
         Item("Cu&t", IconKeys.Cut, Keys.None, this._model.CutCommand, "Ctrl+X"),
         Item("&Copy", IconKeys.Copy, Keys.None, this._model.CopyCommand, "Ctrl+C"),
         Item("&Paste", IconKeys.Paste, Keys.None, this._model.PasteCommand, "Ctrl+V"),
+        Item("New &Folder", IconKeys.Folder, Keys.Control | Keys.Shift | Keys.N, this._model.NewFolderCommand),
         new ToolStripSeparator(),
         Item("&View as Text", IconKeys.ViewText, Keys.None, this._model.ViewAsTextCommand, "Enter"),
         Item("View as &Hex", IconKeys.ViewHex, Keys.None, this._model.ViewAsHexCommand),

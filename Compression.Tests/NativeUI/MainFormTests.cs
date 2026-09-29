@@ -478,6 +478,20 @@ public sealed class MainFormTests {
     }));
   }
 
+  [Test]
+  public void GivenAFolderOnDisk_WhenANewFolderIsMade_ThenTheListOpensItsNameForEditing() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.Folder(root));
+
+      model.NewFolderCommand.Execute(null);
+
+      var editor = Field<ListView>(shell, "_entries").Controls.OfType<TextBox>().SingleOrDefault();
+      Assert.That(editor?.Visible, Is.True);
+      Assert.That(editor!.Text, Is.EqualTo("New folder"));
+    }));
+  }
+
   // ── preview pane ────────────────────────────────────────────────────────────────────────────
 
   [Test]
