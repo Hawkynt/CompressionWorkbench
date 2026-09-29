@@ -85,6 +85,33 @@ public class WordPerfectTests {
     }
   }
 
+  [Test, Category("HappyPath")]
+  public void Create_StoredRoundTripsDocumentAndMetadataBytes() {
+    var original = BuildWp6Document(docOffset: 0x50, totalSize: 0x100);
+    var desc = new FileFormat.WordPerfect.WordPerfectFormatDescriptor();
+    using var output = new MemoryStream();
+    desc.Create(output, [Compression.Registry.ArchiveInputInfo.InMemory("source.wpd", original)], new Compression.Registry.FormatCreateOptions("stored"));
+
+    Assert.That(output.ToArray(), Is.EqualTo(original));
+    output.Position = 0;
+    var outDir = Path.Combine(Path.GetTempPath(), "wp_create_" + Guid.NewGuid().ToString("N"));
+    try {
+      desc.Extract(output, outDir, null, ["FULL.wpd"]);
+      Assert.That(File.ReadAllBytes(Path.Combine(outDir, "FULL.wpd")), Is.EqualTo(original));
+    } finally {
+      if (Directory.Exists(outDir)) Directory.Delete(outDir, true);
+    }
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void Create_RejectsUnsupportedMethodAndMultipleDocuments() {
+    var desc = new FileFormat.WordPerfect.WordPerfectFormatDescriptor();
+    var input = Compression.Registry.ArchiveInputInfo.InMemory("one.wpd", BuildWp6Document());
+    using var output = new MemoryStream();
+    Assert.Throws<NotSupportedException>(() => desc.Create(output, [input], new Compression.Registry.FormatCreateOptions("deflate")));
+    Assert.Throws<ArgumentException>(() => desc.Create(output, [input, input], new Compression.Registry.FormatCreateOptions("stored")));
+  }
+
   [Test, Category("ErrorHandling")]
   public void List_BadMagic_DoesNotThrow() {
     using var ms = new MemoryStream(new byte[64]);
