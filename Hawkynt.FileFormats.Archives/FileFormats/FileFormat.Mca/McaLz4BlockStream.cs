@@ -25,7 +25,7 @@ internal static class McaLz4BlockStream {
       var block = source.Slice(offset, Math.Min(BlockSize, source.Length - offset));
       var compressed = Lz4BlockCompressor.Compress(block, level);
       var isRaw = compressed.Length >= block.Length;
-      var payload = isRaw ? block : compressed.AsSpan();
+      ReadOnlySpan<byte> payload = isRaw ? block : compressed;
       Magic.CopyTo(header);
       header[8] = (byte)((isRaw ? RawMethod : CompressedMethod) | CompressionLevel);
       BinaryPrimitives.WriteInt32LittleEndian(header[9..], payload.Length);
