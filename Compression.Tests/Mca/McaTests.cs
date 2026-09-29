@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
 using FileFormat.Mca;
+using Compression.Registry;
 
 namespace Compression.Tests.Mca;
 
@@ -68,5 +69,31 @@ public class McaTests {
     var entries = new McaFormatDescriptor().List(ms, null);
     Assert.That(entries, Has.Count.EqualTo(1));
     Assert.That(entries[0].Name, Is.EqualTo("chunk_0_0.nbt"));
+  }
+
+  [TestCase("gzip", 1)]
+  [TestCase("zlib", 2)]
+  [TestCase("stored", 3)]
+  [TestCase("lz4", 4)]
+  public void WriterRoundTripsAllCompressionMethodsAndTimestamp(string method, byte compressionType) {
+    byte[] payload = [0x0A, 0x00, 0x00, 0x00];
+    using var output = new MemoryStream();
+    var options = new FormatCreateOptions(method) { Level = 8 };
+    options.FormatSpecific["Timestamp.3.7"] = "123456789";
+    new McaFormatDescriptor().Create(output, [ArchiveInputInfo.InMemory("chunk_3_7.nbt", payload)], options);
+
+    var reader = new McaReader(output.ToArray());
+    Assert.That(reader.Chunks, Has.Count.EqualTo(1));
+    Assert.That(reader.Chunks[0].CompressionType, Is.EqualTo(compressionType));
+    Assert.That(reader.Chunks[0].Timestamp, Is.EqualTo(123456789));
+    Assert.That(reader.ExtractChunkNbt(reader.Chunks[0]), Is.EqualTo(payload));
+    Assert.That(output.Length % 4096, Is.Zero);
+  }
+
+  [Test]
+  public void WriterRejectsInvalidChunkCoordinates() {
+    using var output = new MemoryStream();
+    Assert.Throws<InvalidDataException>(() => new McaFormatDescriptor().Create(output,
+      [ArchiveInputInfo.InMemory("chunk_32_0.nbt", [0])], new FormatCreateOptions("zlib")));
   }
 }

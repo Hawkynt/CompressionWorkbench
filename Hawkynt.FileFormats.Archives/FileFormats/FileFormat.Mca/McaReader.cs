@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.IO.Compression;
+using Compression.Core.Dictionary.Lz4;
 
 namespace FileFormat.Mca;
 
@@ -18,7 +19,7 @@ public sealed class McaReader {
   /// <summary>
   /// Represents a chunk entry.
   /// </summary>
-  public sealed record ChunkEntry(int RegionX, int RegionZ, long OffsetBytes, int LengthBytes, byte CompressionType);
+  public sealed record ChunkEntry(int RegionX, int RegionZ, long OffsetBytes, int LengthBytes, byte CompressionType, uint Timestamp);
 
   private readonly byte[] _data;
   private readonly List<ChunkEntry> _chunks = [];
@@ -33,24 +34,30 @@ public sealed class McaReader {
   /// </summary>
   public McaReader(byte[] data) {
     this._data = data;
-    if (data.Length < 8192) return;
+    if (data.Length < 8192) throw new InvalidDataException("An MCA region must contain its complete 8 KiB header.");
 
     for (var i = 0; i < 1024; ++i) {
       var entry = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(i * 4));
       var sectorOffset = (int)(entry >> 8);
       var sectorCount = (byte)(entry & 0xFF);
-      if (sectorOffset == 0 || sectorCount == 0) continue;
+      if (sectorOffset == 0 && sectorCount == 0) continue;
+      if (sectorOffset < 2 || sectorCount == 0)
+        throw new InvalidDataException($"Invalid MCA location entry for chunk {i}.");
 
       var byteOffset = (long)sectorOffset * 4096;
-      if (byteOffset + 5 > data.Length) continue;
+      if (byteOffset + 5 > data.Length || byteOffset + (long)sectorCount * 4096 > data.Length)
+        throw new InvalidDataException($"MCA chunk {i} points outside the region file.");
       var chunkLen = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan((int)byteOffset));
+      if (chunkLen < 1 || chunkLen > (long)sectorCount * 4096 - 4)
+        throw new InvalidDataException($"Invalid MCA chunk length for chunk {i}.");
       var compressionType = data[(int)byteOffset + 4];
       this._chunks.Add(new ChunkEntry(
         RegionX: i & 31,
         RegionZ: (i >> 5) & 31,
         OffsetBytes: byteOffset,
         LengthBytes: chunkLen,
-        CompressionType: compressionType));
+        CompressionType: compressionType,
+        Timestamp: BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(4096 + i * 4))));
     }
   }
 
@@ -61,13 +68,15 @@ public sealed class McaReader {
   public byte[] ExtractChunkNbt(ChunkEntry chunk) {
     var payloadOffset = (int)chunk.OffsetBytes + 5;
     var payloadLength = chunk.LengthBytes - 1;
-    if (payloadOffset + payloadLength > this._data.Length)
+    if (payloadLength < 0 || payloadOffset + payloadLength > this._data.Length)
       throw new InvalidDataException($"Chunk payload at {chunk.OffsetBytes:X} truncated.");
 
     var compressed = this._data.AsSpan(payloadOffset, payloadLength);
+    if ((chunk.CompressionType & 0x80) != 0)
+      throw new NotSupportedException($"Chunk {chunk.RegionX},{chunk.RegionZ} uses an external .mcc payload, which is not embedded in this region file.");
     using var input = new MemoryStream(compressed.ToArray());
     using var output = new MemoryStream();
-    switch (chunk.CompressionType) {
+    switch (chunk.CompressionType & 0x7F) {
       case 1: {
         using var gz = new GZipStream(input, CompressionMode.Decompress);
         gz.CopyTo(output);
@@ -79,9 +88,26 @@ public sealed class McaReader {
         break;
       }
       case 3:
-        compressed.ToArray().CopyTo(output.GetBuffer(), 0);
-        output.SetLength(compressed.Length);
+        output.Write(compressed);
         break;
+      case 4: {
+        // MCA stores a raw LZ4 block without its uncompressed size. Grow the
+        // destination until the block decodes without an output-buffer overflow.
+        var size = Math.Max(256, compressed.Length * 4);
+        const int maxSize = 256 * 1024 * 1024;
+        while (true) {
+          var buffer = new byte[size];
+          try {
+            var written = Lz4BlockDecompressor.Decompress(compressed, buffer);
+            output.Write(buffer.AsSpan(0, written));
+            break;
+          } catch (InvalidDataException e) when (e.Message.Contains("output buffer overflow", StringComparison.Ordinal)) {
+            if (size >= maxSize) throw new InvalidDataException("MCA LZ4 chunk exceeds the 256 MiB safety limit.", e);
+            size = Math.Min(size * 2, maxSize);
+          }
+        }
+        break;
+      }
       default:
         throw new NotSupportedException(
           $"Unknown MCA chunk compression type {chunk.CompressionType}.");

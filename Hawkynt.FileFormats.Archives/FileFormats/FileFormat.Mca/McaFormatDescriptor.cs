@@ -11,10 +11,11 @@ namespace FileFormat.Mca;
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://minecraft.wiki/w/Region_file_format</c> — Minecraft Wiki — region/Anvil file layout (locations, timestamps, per-chunk compressed NBT)</description></item>
+///   <item><description><c>https://github.com/PaperMC/SectorTool/blob/master/SPECIFICATION.MD</c> — PaperMC — region sectors, timestamp semantics, compression ids, and external chunk files</description></item>
 ///   <item><description>No official Mojang specification — the layout is community-documented</description></item>
 /// </list>
 /// </summary>
-public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -31,7 +32,7 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -54,7 +55,9 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate/Gzip")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("gzip", "Gzip"), new("zlib", "Zlib"), new("stored", "Stored"), new("lz4", "LZ4")
+  ];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -68,6 +71,10 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public string Description => "Minecraft region: per-chunk NBT payloads addressable by (X,Z) coordinate.";
 
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+    new("Timestamp", "Default chunk timestamp", FormatOptionKind.Integer, "0", Description: "Unsigned Unix timestamp in seconds; may be overridden per chunk with Timestamp.X.Z."),
+  ];
+
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
@@ -79,12 +86,12 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       entries.Add(new ArchiveEntryInfo(
         Index: i,
         Name: $"chunk_{c.RegionX}_{c.RegionZ}.nbt",
-        OriginalSize: c.LengthBytes,
-        CompressedSize: c.LengthBytes,
-        Method: c.CompressionType switch { 1 => "gzip", 2 => "zlib", _ => "stored" },
+        OriginalSize: GetUncompressedSize(reader, c),
+        CompressedSize: c.LengthBytes - 1,
+        Method: (c.CompressionType & 0x7F) switch { 1 => "gzip", 2 => "zlib", 3 => "stored", 4 => "lz4", _ => "unknown" },
         IsDirectory: false,
         IsEncrypted: false,
-        LastModified: null));
+        LastModified: DateTime.UnixEpoch.AddSeconds(c.Timestamp)));
     }
     return entries;
   }
@@ -98,12 +105,10 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var name = $"chunk_{c.RegionX}_{c.RegionZ}.nbt";
       if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(name, files))
         continue;
-      try {
-        var data = reader.ExtractChunkNbt(c);
-        FormatHelpers.WriteFile(outputDir, name, data);
-      } catch (NotSupportedException) {
-        // Unknown compression type — skip quietly; metadata still listed the entry.
-      }
+      var data = reader.ExtractChunkNbt(c);
+      FormatHelpers.WriteFile(outputDir, name, data);
+      if (c.Timestamp != 0)
+        File.SetLastWriteTimeUtc(Path.Combine(outputDir, name), DateTime.UnixEpoch.AddSeconds(c.Timestamp));
     }
   }
 
@@ -122,9 +127,7 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var c in reader.Chunks) {
       var name = $"chunk_{c.RegionX}_{c.RegionZ}.nbt";
       if (!string.Equals(name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-      byte[] bytes;
-      try { bytes = reader.ExtractChunkNbt(c); }
-      catch (NotSupportedException) { bytes = System.Array.Empty<byte>(); }
+      var bytes = reader.ExtractChunkNbt(c);
       return new Compression.Registry.Streaming.BoundedEntryStream(
         new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
     }
@@ -144,5 +147,13 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     return new McaReader(ms.ToArray());
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    => McaWriter.Write(output, inputs, options);
+
+  private static long GetUncompressedSize(McaReader reader, McaReader.ChunkEntry chunk) {
+    try { return reader.ExtractChunkNbt(chunk).LongLength; }
+    catch (NotSupportedException) { return -1; }
   }
 }
