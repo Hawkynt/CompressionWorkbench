@@ -261,6 +261,30 @@ public sealed class TransferTests {
   public void GivenNothing_WhenPasted_ThenItIsRefused()
     => Assert.That(Transfer.WhyNot([], this.Disk(), move: false), Is.Not.Null);
 
+  // ── what a drag does by default ─────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenADragWithinOneVolume_WhenAskedWhatItDoes_ThenItMoves()
+    => Assert.That(Transfer.MovesByDefault([Item(this.Disk(), "file.txt")], this.Disk("target")), Is.True);
+
+  [Test]
+  public void GivenADragWithinOneArchive_WhenAskedWhatItDoes_ThenItMoves()
+    => Assert.That(Transfer.MovesByDefault([Item(Location.InArchive(this._a, ""), "readme.txt")], Location.InArchive(this._a, "docs/")), Is.True);
+
+  [Test]
+  public void GivenADragBetweenAnArchiveAndTheDisk_WhenAskedWhatItDoes_ThenItCopiesEitherWay() {
+    Assert.That(Transfer.MovesByDefault([Item(Location.InArchive(this._a, ""), "readme.txt")], this.Disk("target")), Is.False);
+    Assert.That(Transfer.MovesByDefault([Item(this.Disk(), "file.txt")], Location.InArchive(this._a, "")), Is.False);
+  }
+
+  [Test]
+  public void GivenADragBetweenTwoArchives_WhenAskedWhatItDoes_ThenItCopies()
+    => Assert.That(Transfer.MovesByDefault([Item(Location.InArchive(this._a, ""), "readme.txt")], Location.InArchive(this._b, "")), Is.False);
+
+  [Test]
+  public void GivenNothingDragged_WhenAskedWhatItDoes_ThenItDoesNotMove()
+    => Assert.That(Transfer.MovesByDefault([], this.Disk()), Is.False);
+
   // ── numbering ───────────────────────────────────────────────────────────────────────────────
 
   [TestCase("report.txt", new string[0], "report.txt")]

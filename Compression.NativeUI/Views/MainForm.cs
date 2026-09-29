@@ -112,6 +112,7 @@ internal sealed partial class MainForm : Form {
     this.BuildBreadcrumbBar();
     this.BuildEntryList();
     this.BuildNavigationTree();
+    this.WireDragAndDrop();
     this.BuildStatusBar();
 
     this._split.Panel1.Controls.Add(this._tree);

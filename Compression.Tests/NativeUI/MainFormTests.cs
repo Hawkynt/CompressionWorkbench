@@ -8,6 +8,7 @@ using System.Reflection;
 using Compression.Lib;
 using Compression.Mounting;
 using Compression.NativeUI;
+using Compression.NativeUI.Editing;
 using Compression.NativeUI.Navigation;
 using Compression.NativeUI.ViewModels;
 using Compression.NativeUI.Views;
@@ -546,6 +547,56 @@ public sealed class MainFormTests {
       Assert.That(list.View, Is.EqualTo(ListViewView.Details));
       Assert.That((details.Checked, thumbnails.Checked), Is.EqualTo((true, false)));
     }));
+  }
+
+  // ── drag and drop ───────────────────────────────────────────────────────────────────────────
+
+  private static DragDropEffects EffectOf(MainForm shell, object data, Location? target)
+    => (DragDropEffects)typeof(MainForm).GetMethod("EffectFor", Private)!.Invoke(shell, [data, target])!;
+
+  [Test]
+  public void GivenEntriesDraggedWithinTheDisk_WhenOverAnotherFolder_ThenTheyWouldMove() {
+    WithScratch((root, _) => WithShell(shell => {
+      var items = new[] { new TransferItem(Location.Folder(root), "bundle.zip", false) };
+
+      Assert.That(EffectOf(shell, new ShellDragData(items), Location.Folder(Path.Combine(root, "sub"))), Is.EqualTo(DragDropEffects.Move));
+    }));
+  }
+
+  [Test]
+  public void GivenEntriesDraggedOverTheFolderTheyAreIn_WhenAsked_ThenNothingIsOffered() {
+    WithScratch((root, _) => WithShell(shell => {
+      var items = new[] { new TransferItem(Location.Folder(root), "bundle.zip", false) };
+
+      Assert.That(EffectOf(shell, new ShellDragData(items), Location.Folder(root)), Is.EqualTo(DragDropEffects.None));
+    }));
+  }
+
+  [Test]
+  public void GivenFilesFromOutside_WhenOverAFolder_ThenTheyWouldBeCopiedNotMoved() {
+    WithScratch((root, zip) => WithShell(shell => {
+      Assert.That(EffectOf(shell, new[] { zip }, Location.Folder(Path.Combine(root, "sub"))), Is.EqualTo(DragDropEffects.Copy),
+        "the application they came from still expects them");
+      Assert.That(EffectOf(shell, new[] { Path.Combine(root, "missing.txt") }, Location.Folder(Path.Combine(root, "sub"))), Is.EqualTo(DragDropEffects.None));
+    }));
+  }
+
+  [Test]
+  public void GivenAFolderDraggedIntoItself_WhenAsked_ThenNothingIsOffered() {
+    WithScratch((root, _) => WithShell(shell => {
+      Directory.CreateDirectory(Path.Combine(root, "sub", "inner"));
+      var items = new[] { new TransferItem(Location.Folder(root), "sub", true) };
+
+      Assert.That(EffectOf(shell, new ShellDragData(items), Location.Folder(Path.Combine(root, "sub", "inner"))), Is.EqualTo(DragDropEffects.None));
+    }));
+  }
+
+  [Test]
+  public void GivenTheShell_WhenBuilt_ThenTheListAndTheTreeTakeDrops() {
+    WithShell(shell => {
+      Assert.That(Field<Control>(shell, "_entries").AllowDrop, Is.True);
+      Assert.That(Field<Control>(shell, "_tree").AllowDrop, Is.True);
+    });
   }
 
   // ── clipboard ───────────────────────────────────────────────────────────────────────────────

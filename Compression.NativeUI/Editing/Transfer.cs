@@ -61,6 +61,16 @@ internal static class Transfer {
     return null;
   }
 
+  /// <summary>
+  /// Whether a drag of <paramref name="items"/> onto <paramref name="target"/> moves by default, as
+  /// file managers decide it: within one disk volume, or within one archive, it moves; anywhere
+  /// else it copies, because the source would otherwise vanish from a place the user is not looking.
+  /// </summary>
+  public static bool MovesByDefault(IReadOnlyList<TransferItem> items, Location target)
+    => items.Count > 0 && items.All(item => item.From.IsInArchive
+      ? target.IsInArchive && string.Equals(item.From.HostPath, target.HostPath, StringComparison.OrdinalIgnoreCase)
+      : !target.IsInArchive && SameVolume(item.HostPath, target.HostPath));
+
   /// <summary>Copies, or with <paramref name="move"/> moves, <paramref name="items"/> into <paramref name="target"/>.</summary>
   /// <exception cref="InvalidOperationException">The transfer is refused; see <see cref="WhyNot"/>.</exception>
   public static TransferResult Run(IReadOnlyList<TransferItem> items, Location target, bool move) {

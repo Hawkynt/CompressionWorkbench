@@ -289,9 +289,9 @@ internal sealed class MainViewModel : ViewModelBase {
   private bool CanChangeHere() => CurrentLocation is not null && !IsNestedArchive;
 
   private void PutSelectionOnClipboard(bool cut) {
-    if (CurrentLocation is not { } here) return;
+    if (CurrentLocation is null) return;
 
-    _clipboardItems = [.. SelectedEntries.Where(e => !e.IsParentEntry).Select(e => new TransferItem(here, e.Name, e.IsDirectory))];
+    _clipboardItems = SelectionAsTransferItems();
     _clipboardIsCut = cut;
     StatusText = $"{(cut ? "Cut" : "Copied")} {_clipboardItems.Count} item(s). Paste to put {(_clipboardItems.Count == 1 ? "it" : "them")} somewhere.";
     OnPropertyChanged(nameof(HasClipboard));
@@ -304,28 +304,58 @@ internal sealed class MainViewModel : ViewModelBase {
   /// </summary>
   internal async Task<string?> PasteAsync() {
     if (_clipboardItems is not { Count: > 0 } items || CurrentLocation is not { } target) return "Nothing to paste.";
-    if (!CanChangeHere()) return Fail("Nothing can be pasted inside a nested archive.");
 
     var move = _clipboardIsCut;
-    if (Transfer.WhyNot(items, target, move) is { } refusal) return Fail(refusal);
+    var error = await TransferAsync(items, target, move);
+    if (error is null && move) {
+      _clipboardItems = null;
+      OnPropertyChanged(nameof(HasClipboard));
+    }
+
+    return error;
+  }
+
+  /// <summary>The selected entries, as things that can be copied or moved from where the shell is.</summary>
+  internal IReadOnlyList<TransferItem> SelectionAsTransferItems()
+    => CurrentLocation is { } here
+      ? [.. SelectedEntries.Where(e => !e.IsParentEntry).Select(e => new TransferItem(here, e.Name, e.IsDirectory))]
+      : [];
+
+  /// <summary>
+  /// Why <paramref name="items"/> cannot go to <paramref name="target"/>, or null when they can — the
+  /// transfer's own rules, plus the shell's: nothing changes inside a nested archive's temporary copy.
+  /// </summary>
+  internal string? WhyNotTransfer(IReadOnlyList<TransferItem> items, Location target, bool move) {
+    if (IsNestedCopy(target)) return "Nothing can be put inside a nested archive.";
+    if (move && items.Any(i => IsNestedCopy(i.From))) return "Nothing can be moved out of a nested archive.";
+    return Transfer.WhyNot(items, target, move);
+  }
+
+  private bool IsNestedCopy(Location place)
+    => IsNestedArchive && place.IsInArchive && string.Equals(place.HostPath, ArchivePath, StringComparison.OrdinalIgnoreCase);
+
+  /// <summary>
+  /// Copies or moves <paramref name="items"/> into <paramref name="target"/> — a paste, or a drop on a
+  /// folder in the list or the tree — then shows the result. Returns the reason on failure, having
+  /// touched nothing when the transfer was refused.
+  /// </summary>
+  internal async Task<string?> TransferAsync(IReadOnlyList<TransferItem> items, Location target, bool move) {
+    if (WhyNotTransfer(items, target, move) is { } refusal) return Fail(refusal);
 
     IsBusy = true;
     StatusText = $"{(move ? "Moving" : "Copying")} {items.Count} item(s)...";
     try {
       var result = await Task.Run(() => Transfer.Run(items, target, move));
-      if (move) {
-        _clipboardItems = null;
-        OnPropertyChanged(nameof(HasClipboard));
-      }
 
-      if (target.IsInArchive) ReloadArchiveInPlace();
+      // What the list shows may have changed from either end: what arrived, or what left.
+      if (HasArchive && !IsBrowsingOsFolder) ReloadArchiveInPlace();
       else RefreshVisibleEntries();
 
       StatusText = $"{(move ? "Moved" : "Copied")} {result.Created.Count} item(s) to {target}.";
       return null;
     } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException
                                    or InvalidOperationException or ArgumentException or InvalidDataException) {
-      return Fail($"Paste failed: {ex.Message}");
+      return Fail($"{(move ? "Move" : "Copy")} failed: {ex.Message}");
     } finally {
       IsBusy = false;
       CommandManager.InvalidateRequerySuggested();
