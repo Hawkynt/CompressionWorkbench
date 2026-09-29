@@ -20,6 +20,9 @@ backends, so Windows and Linux run the same code rather than two frontends drift
   re-creating themselves. Names Windows or POSIX would refuse are caught before anything is touched. Cut, copy and paste (Ctrl+X / C / V in the list or the tree) move files and
   folders between host folders and archive folders in any direction; nothing is overwritten — a
   taken name gets a number — and a cut removes its sources only after every copy has landed.
+- **Preview pane** — beside the list (Alt+P toggles it): the selected entry as a picture when any
+  of the image decoders reads it, as the start of its text when it reads as text, otherwise its name.
+  Entries larger than 32 MB are not read for a glance.
 - **Preview** — the selected entry as a picture, as text, or as a hex dump, with an optional
   statistics side panel. Multi-frame images get playback controls.
 - **Properties** — sizes, ratio, method and dates, plus byte statistics for a file or a child count

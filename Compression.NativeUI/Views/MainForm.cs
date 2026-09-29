@@ -1,6 +1,7 @@
 using System.Drawing;
 using Compression.Lib;
 using Compression.Mounting;
+using Compression.NativeUI.Controls;
 using Compression.NativeUI.Navigation;
 using Compression.NativeUI.Theming;
 using Compression.NativeUI.ViewModels;
@@ -51,6 +52,22 @@ internal sealed class MainForm : Form {
   };
   private readonly FolderSource _folders;
 
+  // Contents on the left, the preview pane on the right; the pane keeps its width, as the tree does.
+  private readonly SplitContainer _contentSplit = new() {
+    Dock = DockStyle.Fill,
+    FixedPanel = FixedPanel.Panel2,
+    Panel1MinSize = 200,
+    Panel2MinSize = 120,
+  };
+  private readonly PreviewPane _preview = new() { Dock = DockStyle.Fill };
+
+  // Bumped for every selection change, so a slow read for an entry the user has already moved past
+  // does not overwrite the preview of the one they moved to.
+  private int _previewGeneration;
+  private bool _previewSized;
+  private const int PreviewPaneWidth = 280;
+  private const int TreePaneWidth = 230;
+
   // Set while the tree is being moved to match a navigation that happened elsewhere, so selecting
   // the node there does not navigate a second time.
   private bool _syncingTree;
@@ -78,8 +95,9 @@ internal sealed class MainForm : Form {
       () => this._model.HasArchive && !this._model.IsNestedArchive ? this._model.ArchivePath : null);
 
     this.Text = this._model.Title;
-    this.ClientSize = new(900, 600);
-    this.MinimumSize = new(600, 400);
+    // Wide enough for three panes — tree, list and preview — with the list columns readable.
+    this.ClientSize = new(1180, 680);
+    this.MinimumSize = new(700, 420);
     this.StartPosition = FormStartPosition.CenterScreen;
     this.AllowDrop = true;
 
@@ -97,7 +115,9 @@ internal sealed class MainForm : Form {
     this.BuildStatusBar();
 
     this._split.Panel1.Controls.Add(this._tree);
-    this._split.Panel2.Controls.Add(this._entries);
+    this._split.Panel2.Controls.Add(this._contentSplit);
+    this._contentSplit.Panel1.Controls.Add(this._entries);
+    this._contentSplit.Panel2.Controls.Add(this._preview);
 
     // Added in one place, in z-order: the drop overlay sits above the panes it covers.
     this.Controls.AddRange(this._menu, this._toolbar, this._breadcrumbBar, this._split, this._dropOverlay, this._status);
@@ -138,6 +158,7 @@ internal sealed class MainForm : Form {
         Item("&Back", IconKeys.Back, Keys.Alt | Keys.Left, this._model.BackCommand),
         Item("&Forward", IconKeys.Forward, Keys.Alt | Keys.Right, this._model.ForwardCommand),
         Item("Go &Up", IconKeys.NavigateUp, Keys.Back, this._model.NavigateUpCommand),
+        this.PreviewPaneToggle(),
         Item("&Delete", IconKeys.Remove, Keys.Delete, this._model.DeleteSelectedCommand),
         // F2 belongs to the list, which starts editing the focused name itself; shown, not claimed.
         Item("Rena&me", IconKeys.Rename, Keys.None, this._model.RenameCommand, "F2"),
@@ -192,6 +213,19 @@ internal sealed class MainForm : Form {
     };
     command.CanExecuteChanged += (_, _) => item.Enabled = command.CanExecute(null);
     item.Enabled = command.CanExecute(null);
+    return item;
+  }
+
+  private ToolStripMenuItem PreviewPaneToggle() {
+    var item = new ToolStripMenuItem("&Preview Pane") {
+      Image = Images.Icon(IconKeys.Preview),
+      ShortcutKeys = Keys.Alt | Keys.P,
+      Checked = true,
+    };
+    item.Click += (_, _) => {
+      this.PreviewPaneVisible = !this.PreviewPaneVisible;
+      item.Checked = this.PreviewPaneVisible;
+    };
     return item;
   }
 
@@ -358,7 +392,7 @@ internal sealed class MainForm : Form {
     // The icon sits in the name column, as in every file manager: the column an item's own text
     // occupies is the one label editing edits, so a separate icon column made renaming edit nothing.
     this._entries.Columns.AddRange([
-      new ColumnHeader("Name", 300),
+      new ColumnHeader("Name", 250),
       new ColumnHeader("Original", 90) { TextAlign = ContentAlignment.MiddleRight },
       new ColumnHeader("Compressed", 90) { TextAlign = ContentAlignment.MiddleRight },
       new ColumnHeader("Ratio", 60) { TextAlign = ContentAlignment.MiddleRight },
@@ -372,6 +406,7 @@ internal sealed class MainForm : Form {
         if (item.Tag is ArchiveEntryViewModel entry) this._model.SelectedEntries.Add(entry);
 
       CommandManager.InvalidateRequerySuggested();
+      this.RefreshPreview();
     };
 
     this._entries.LabelEdit = true;
@@ -478,6 +513,16 @@ internal sealed class MainForm : Form {
 
     var paneHeight = Math.Max(60, this.ClientSize.Height - y - StatusHeight);
     this._split.Bounds = new(0, y, width, paneHeight);
+
+    // The tree and the preview open at fixed widths, once; from then on the list takes whatever the
+    // window gains, and a width the user dragged to is theirs. Set before the split has a size, a
+    // distance is clamped to the minimum, which is why this waits for the first real layout.
+    if (!this._previewSized && width > 0) {
+      this._previewSized = true;
+      this._split.SplitterDistance = TreePaneWidth;
+      var contentWidth = width - this._split.SplitterDistance - this._split.SplitterWidth;
+      this._contentSplit.SplitterDistance = Math.Max(this._contentSplit.Panel1MinSize, contentWidth - PreviewPaneWidth);
+    }
     this._dropOverlay.Bounds = this._split.Bounds;
     this._status.Bounds = new(0, this.ClientSize.Height - StatusHeight, width, StatusHeight);
   }
@@ -557,6 +602,45 @@ internal sealed class MainForm : Form {
     }
 
     this.RefreshEntries();
+  }
+
+  /// <summary>Whether the preview pane is shown.</summary>
+  internal bool PreviewPaneVisible {
+    get => !this._contentSplit.Panel2Collapsed;
+    set {
+      this._contentSplit.Panel2Collapsed = !value;
+      this.RefreshPreview();
+    }
+  }
+
+  /// <summary>
+  /// Shows the single selected entry in the preview pane. The bytes are read off the UI thread; a
+  /// result that arrives after the selection has moved on is dropped.
+  /// </summary>
+  private void RefreshPreview() {
+    var generation = ++this._previewGeneration;
+    if (!this.PreviewPaneVisible) return;
+
+    var selected = this._model.SelectedEntries.Where(e => !e.IsParentEntry).Take(2).ToList();
+    if (selected.Count != 1) {
+      this._preview.ShowCaption(selected.Count == 0 ? PreviewPane.NothingSelected : $"{this._model.SelectedEntries.Count(e => !e.IsParentEntry)} items selected");
+      return;
+    }
+
+    var entry = selected[0];
+    this._preview.ShowCaption(entry.Name);
+    if (entry.IsDirectory) {
+      this._preview.ShowCaption(this._model.ReadForPreview(entry).Caption);
+      return;
+    }
+
+    Task.Run(() => this._model.ReadForPreview(entry)).ContinueWith(read => this.BeginInvoke(() => {
+      if (generation != this._previewGeneration || read.IsFaulted) return;
+
+      var (data, caption) = read.Result;
+      if (data is null) this._preview.ShowCaption(caption);
+      else this._preview.ShowContent(caption, data);
+    }), TaskScheduler.Default);
   }
 
   /// <summary>Ctrl+C, Ctrl+X and Ctrl+V where files are shown — the list and the tree, not a text box.</summary>
