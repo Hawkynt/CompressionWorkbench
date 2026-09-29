@@ -24,6 +24,7 @@ internal static class IconKeys {
   public const string NavigateUp = "NavigateUp";
   public const string Back = "Back";
   public const string Forward = "Forward";
+  public const string Rename = "Rename";
   public const string Exit = "Exit";
   public const string About = "About";
   public const string Save = "Save";
@@ -164,6 +165,14 @@ internal static class IconSet {
 
     [IconKeys.Forward] = [
       Fill(Blue, Poly(14, 8, 8, 2, 8, 5, 2, 5, 2, 11, 8, 11, 8, 14)),
+    ],
+
+    // A text field with the caret in it: the name is being typed.
+    [IconKeys.Rename] = [
+      Fill(Slate, Rect(1, 5, 15, 11)),
+      Fill(White, Rect(2, 6, 14, 10)),
+      Fill(PageText, Rect(3, 7.5, 8, 8.5)),
+      Fill(DarkSlate, Rect(10, 3, 11, 13), Rect(8.5, 3, 12.5, 4), Rect(8.5, 12, 12.5, 13)),
     ],
 
     [IconKeys.Exit] = [
