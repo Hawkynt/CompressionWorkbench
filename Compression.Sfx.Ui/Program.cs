@@ -20,7 +20,7 @@ BackendRegistry.Register(new Hawkynt.NativeForms.Backends.Windows.Win32Backend()
 BackendRegistry.Register(new Hawkynt.NativeForms.Backends.Gtk.GtkBackend());
 #endif
 #if BACKEND_MACOS
-BackendRegistry.Register(new Hawkynt.NativeForms.Backends.MacOS.MacOSBackend());
+BackendRegistry.Register(new Hawkynt.NativeForms.Backends.MacOS.CocoaBackend());
 #endif
 
 Application.Run(new SfxWindow());
