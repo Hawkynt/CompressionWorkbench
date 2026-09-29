@@ -7,6 +7,7 @@ using System.Reflection;
 using Compression.Analysis.Statistics;
 using Compression.Core.Layout;
 using Compression.NativeUI.Controls;
+using Compression.NativeUI.Theming;
 using Compression.Registry;
 using Hawkynt.NativeForms;
 using Hawkynt.NativeForms.Drawing;
@@ -112,6 +113,43 @@ public sealed class OwnerDrawnControlTests {
       Assert.That(graphics.Counts.GetValueOrDefault("DrawImage"), Is.Zero, "no box should be drawn");
       Assert.That(graphics.DistinctColors, Is.EqualTo(1), "just the ground");
       Assert.That(100.0 * graphics.PaintedPixels / (240 * 24), Is.GreaterThan(99.0));
+    });
+  }
+
+  /// <summary>
+  /// The legend's swatches are sampled from the same palette the bar paints with, so a change to
+  /// one shows up in the other. This checks they still agree at the ends of the ramp.
+  /// </summary>
+  [Test]
+  public void GivenTheEntropyLegend_WhenItPaints_ThenItsSwatchesComeFromTheBarsPalette() {
+    var control = new EntropyLegendControl();
+    var graphics = Paint(control, control.PreferredWidth, 20);
+
+    Assert.Multiple(() => {
+      Assert.That(graphics.Counts.GetValueOrDefault("FillRoundedRectangle"), Is.EqualTo(5),
+        "one swatch per entropy band");
+      Assert.That(graphics.Counts.GetValueOrDefault("DrawText"), Is.EqualTo(5),
+        "each swatch is labelled");
+    });
+
+    // The plain and random ends of the ramp have to be present as actual pixels.
+    var painted = graphics.Pixels.Select(Color.FromArgb).ToHashSet();
+    Assert.Multiple(() => {
+      Assert.That(painted, Does.Contain(EntropyPalette.ToColor(0.0)), "the plaintext swatch");
+      Assert.That(painted, Does.Contain(EntropyPalette.ToColor(8.0)), "the random/encrypted swatch");
+    });
+  }
+
+  [Test]
+  public void GivenTheEntropyLegend_WhenItIsNarrowerThanItNeeds_ThenItClipsInsteadOfOverflowing() {
+    var control = new EntropyLegendControl();
+    var graphics = Paint(control, 60, 20);
+
+    Assert.Multiple(() => {
+      Assert.That(graphics.Counts.GetValueOrDefault("FillRoundedRectangle"), Is.LessThan(5),
+        "a 60px strip cannot show all five bands");
+      Assert.That(graphics.Counts.GetValueOrDefault("FillRoundedRectangle"), Is.GreaterThan(0),
+        "but it should still show what fits");
     });
   }
 

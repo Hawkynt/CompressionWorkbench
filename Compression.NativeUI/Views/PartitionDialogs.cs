@@ -179,7 +179,14 @@ internal sealed class FormatPartitionDialog : Form {
     this.AcceptButton = this._ok;
     this.CancelButton = this._cancel;
 
-    this.Controls.AddRange(this._heading, new Label { Text = "Filesystem:", Bounds = new(12, 70, 90, 20) },
+    this.Controls.AddRange(
+      this._heading,
+      new Label {
+        Text = "Only filesystems whose descriptors implement IArchiveCreatable are listed.",
+        ForeColor = Color.DimGray,
+        Bounds = new(12, 36, 420, 20),
+      },
+      new Label { Text = "Filesystem:", Bounds = new(12, 70, 90, 20) },
       this._filesystem, this._ok, this._cancel);
 
     this._heading.Bounds = new(12, 12, 436, 44);

@@ -286,7 +286,7 @@ internal sealed class FileAssociationsWindow : Form {
         key.SetValue("", "Extract here (CWB)");
         key.SetValue("Icon", $"\"{exePath}\",0");
         using var command = key.CreateSubKey("command");
-        command?.SetValue("", $"\"{exePath}\" --extract-here \"%1\"");
+        command?.SetValue("", $"\"{exePath}\" {ShellVerbs.ExtractHere} \"%1\"");
       }
     }
   }
@@ -299,7 +299,7 @@ internal sealed class FileAssociationsWindow : Form {
           zipKey.SetValue("", "Add to ZIP archive (CWB)");
           zipKey.SetValue("Icon", $"\"{exePath}\",0");
           using var command = zipKey.CreateSubKey("command");
-          command?.SetValue("", $"\"{exePath}\" --create-zip \"%1\"");
+          command?.SetValue("", $"\"{exePath}\" {ShellVerbs.CreateZip} \"%1\"");
         }
       }
 
@@ -308,7 +308,7 @@ internal sealed class FileAssociationsWindow : Form {
       sevenZipKey.SetValue("", "Add to 7z archive (CWB)");
       sevenZipKey.SetValue("Icon", $"\"{exePath}\",0");
       using var sevenZipCommand = sevenZipKey.CreateSubKey("command");
-      sevenZipCommand?.SetValue("", $"\"{exePath}\" --create-7z \"%1\"");
+      sevenZipCommand?.SetValue("", $"\"{exePath}\" {ShellVerbs.Create7z} \"%1\"");
     }
   }
 

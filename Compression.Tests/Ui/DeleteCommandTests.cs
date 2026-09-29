@@ -5,8 +5,8 @@ namespace Compression.Tests.Ui;
 
 /// <summary>
 /// Exercises the pure-logic predicate that backs <c>DeleteSelectedCommand.CanExecute</c>
-/// in <c>Compression.UI.ViewModels.MainViewModel</c>. The predicate lives in
-/// <see cref="DeleteCapability.Evaluate"/> so it's testable without spinning up WPF —
+/// in <c>Compression.NativeUI.ViewModels.MainViewModel</c>. The predicate lives in
+/// <see cref="DeleteCapability.Evaluate"/> so it's testable without a shell at all —
 /// the view-model just dispatches based on the returned <see cref="DeleteMode"/>.
 /// <para>
 /// The three cases the explorer Delete menu must handle:
