@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.IO.Compression;
 using System.Text;
+using Compression.Registry;
 using FileFormat.Fla;
 
 namespace Compression.Tests.Fla;

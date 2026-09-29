@@ -16374,9 +16374,9 @@ One Header-Data Unit extracted from a FITS file.
 
 #### `FlaFormatDescriptor`
 
-Adobe Flash / Animate .fla source file. Two runtime variants are supported: the classic pre-CS4 OLE2 Compound File variant (CFB), and the CS5+ XFL variant which is a plain ZIP container. Detection is by the first bytes. Both are surfaced read-only: CFB streams become `streams/{name}.bin`, ZIP entries are listed flatly by their path inside the archive. Uses compound extension `.fla` with empty magic to avoid conflicting with DOC/ZIP descriptors that own the generic magics. References: Adobe "Flash Professional XFL" format documentation (CS5-era) — the ZIP-based variant`https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/` — [MS-CFB] — Compound File Binary (the pre-CS4 OLE2 variant's container)`https://en.wikipedia.org/wiki/Adobe_Animate` — application background
+Adobe Flash / Animate .fla source file. Two runtime variants are supported: the classic pre-CS4 OLE2 Compound File variant (CFB), and the CS5+ XFL variant which is a plain ZIP container. Detection is by the first bytes. Both are surfaced as archives: CFB streams become `streams/{name}.bin`, while ZIP/XFL members retain their paths. Creation writes ZIP/XFL documents; the legacy CFB variant remains read-only. Uses compound extension `.fla` with empty magic to avoid conflicting with DOC/ZIP descriptors that own the generic magics. References: Adobe "Flash Professional XFL" format documentation (CS5-era) — the ZIP-based variant`https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/` — [MS-CFB] — Compound File Binary (the pre-CS4 OLE2 variant's container)`https://en.wikipedia.org/wiki/Adobe_Animate` — application background
 
-Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -16393,6 +16393,7 @@ Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`,
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a ZIP-based XFL FLA from its project files. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
