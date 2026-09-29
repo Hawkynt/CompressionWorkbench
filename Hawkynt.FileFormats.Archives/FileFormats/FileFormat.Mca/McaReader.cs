@@ -12,7 +12,7 @@ namespace FileFormat.Mca;
 /// Layout: 4 KiB location table (1024×uint32 BE: high 3 bytes = 4 KiB-sector offset,
 /// low byte = sector count) + 4 KiB timestamp table (1024×uint32 BE) + padded
 /// payload area. Each chunk: 4-byte BE length + 1-byte compression type (1 = gzip,
-/// 2 = zlib, 3 = uncompressed) + <c>length-1</c> bytes of compressed NBT.
+/// 2 = zlib, 3 = uncompressed, 4 = raw LZ4) + <c>length-1</c> payload bytes.
 /// </para>
 /// </summary>
 public sealed class McaReader {
@@ -63,7 +63,7 @@ public sealed class McaReader {
 
   /// <summary>
   /// Decompresses and returns the NBT payload for a chunk. Throws when the chunk's
-  /// compression type is unknown (only 1/2/3 are defined).
+  /// compression type is unknown or the chunk uses an external <c>.mcc</c> payload.
   /// </summary>
   public byte[] ExtractChunkNbt(ChunkEntry chunk) {
     var payloadOffset = (int)chunk.OffsetBytes + 5;

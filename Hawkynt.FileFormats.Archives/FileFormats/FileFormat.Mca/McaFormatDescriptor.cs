@@ -107,8 +107,7 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         continue;
       var data = reader.ExtractChunkNbt(c);
       FormatHelpers.WriteFile(outputDir, name, data);
-      if (c.Timestamp != 0)
-        File.SetLastWriteTimeUtc(Path.Combine(outputDir, name), DateTime.UnixEpoch.AddSeconds(c.Timestamp));
+      File.SetLastWriteTimeUtc(Path.Combine(outputDir, name), DateTime.UnixEpoch.AddSeconds(c.Timestamp));
     }
   }
 

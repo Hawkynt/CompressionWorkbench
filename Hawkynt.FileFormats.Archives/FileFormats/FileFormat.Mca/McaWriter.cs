@@ -30,7 +30,7 @@ public static partial class McaWriter {
     var occupied = new HashSet<int>();
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
-      var match = ChunkNameRegex().Match(Path.GetFileName(input.ArchiveName.Replace('\\', '/')));
+      var match = ChunkNameRegex().Match(Path.GetFileName(input.ArchiveName.Replace('\\', '/')) ?? string.Empty);
       if (!match.Success ||
           !int.TryParse(match.Groups["x"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var x) || x is < 0 or > 31 ||
           !int.TryParse(match.Groups["z"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var z) || z is < 0 or > 31)
