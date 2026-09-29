@@ -18,19 +18,23 @@ public static class PartcloneWriter {
       throw new ArgumentException("Partclone creation requires a writable output and readable, seekable disk image.");
 
     var values = ParseMetadata(metadata);
-    string Get(string key, string fallback) {
+    string? GetOverride(string key) {
       var optionKey = key switch {
         "fs" => "Fs",
         "block_size" => "BlockSize",
         "checksum_mode" => "ChecksumMode",
+        "checksum_size" => "ChecksumSize",
         "blocks_per_checksum" => "BlocksPerChecksum",
         "bitmap_mode" => "BitmapMode",
+        "cpu_bits" => "CpuBits",
+        "reseed_checksum" => "ReseedChecksum",
         _ => key,
       };
       if (overrides is not null && (overrides.TryGetValue(optionKey, out var value) || overrides.TryGetValue(key, out value)))
         return value;
-      return values.TryGetValue(key, out var metadataValue) ? metadataValue : fallback;
+      return null;
     }
+    string Get(string key, string fallback) => GetOverride(key) ?? (values.TryGetValue(key, out var value) ? value : fallback);
     uint ParseUInt(string key, uint fallback) => uint.TryParse(Get(key, fallback.ToString(CultureInfo.InvariantCulture)), NumberStyles.Integer,
       CultureInfo.InvariantCulture, out var value) ? value : fallback;
     ushort ParseUShort(string key, ushort fallback) => ushort.TryParse(Get(key, fallback.ToString(CultureInfo.InvariantCulture)), NumberStyles.Integer,
@@ -49,12 +53,26 @@ public static class PartcloneWriter {
     if ((ulong)disk.Length != virtualLength) throw new InvalidDataException("Raw image length does not match total_blocks × block_size.");
     deviceSize = deviceSize == 0 ? virtualLength : deviceSize;
 
+    var sourceBitmapMode = byte.TryParse(values.GetValueOrDefault("bitmap_mode", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var sourceBm)
+      ? sourceBm : (byte)1;
     var bitmapMode = byte.TryParse(Get("bitmap_mode", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var bm) ? bm : (byte)1;
     if (bitmapMode is not (PartcloneReader.BmBit or PartcloneReader.BmByte))
       throw new NotSupportedException($"Partclone bitmap mode {bitmapMode} cannot represent sparse allocation.");
     var mapLength = bitmapMode == PartcloneReader.BmBit ? checked((int)((totalBlocks + 7) / 8)) : checked((int)totalBlocks);
-    var map = allocationMap.IsEmpty ? new byte[mapLength] : allocationMap.ToArray();
-    if (map.Length != mapLength) throw new InvalidDataException("allocation.map length does not match the selected bitmap mode and total_blocks.");
+    var map = new byte[mapLength];
+    if (!allocationMap.IsEmpty) {
+      var sourceLength = sourceBitmapMode switch {
+        PartcloneReader.BmBit => checked((int)((totalBlocks + 7) / 8)),
+        PartcloneReader.BmByte => checked((int)totalBlocks),
+        _ => throw new NotSupportedException($"Source bitmap mode {sourceBitmapMode} cannot be rewritten."),
+      };
+      if (allocationMap.Length != sourceLength)
+        throw new InvalidDataException("allocation.map length does not match the bitmap mode in metadata.ini and total_blocks.");
+      if (sourceBitmapMode == bitmapMode) map = allocationMap.ToArray();
+      else
+        for (ulong index = 0; index < totalBlocks; ++index)
+          if (IsUsed(allocationMap, sourceBitmapMode, index)) SetUsed(map, bitmapMode, index);
+    }
 
     var usedBlocks = 0UL;
     if (allocationMap.IsEmpty) {
@@ -71,9 +89,17 @@ public static class PartcloneWriter {
       for (ulong index = 0; index < totalBlocks; ++index)
         if (IsUsed(map, bitmapMode, index)) ++usedBlocks;
 
+    var sourceChecksumMode = ushort.TryParse(values.GetValueOrDefault("checksum_mode", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var sourceChecksum)
+      ? sourceChecksum : (ushort)1;
     var checksumMode = ParseUShort("checksum_mode", 1);
-    var checksumSize = ParseUShort("checksum_size", checksumMode switch { 0 => (ushort)0, 2 => (ushort)8, _ => (ushort)4 });
-    var blocksPerChecksum = ParseUInt("blocks_per_checksum", checksumMode == 0 ? 0 : 256);
+    var checksumSizeDefault = checksumMode == sourceChecksumMode && values.TryGetValue("checksum_size", out var sourceSize)
+      ? ushort.Parse(sourceSize, CultureInfo.InvariantCulture)
+      : checksumMode switch { 0 => (ushort)0, 2 => (ushort)8, _ => (ushort)4 };
+    var checksumSize = ParseUShort("checksum_size", checksumSizeDefault);
+    var blocksPerChecksumDefault = checksumMode == sourceChecksumMode && values.TryGetValue("blocks_per_checksum", out var sourceStrip)
+      ? uint.Parse(sourceStrip, CultureInfo.InvariantCulture)
+      : checksumMode == 0 ? 0U : 256U;
+    var blocksPerChecksum = ParseUInt("blocks_per_checksum", blocksPerChecksumDefault);
     var reseedChecksum = byte.TryParse(Get("reseed_checksum", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var reseedValue)
       ? reseedValue : (byte)1;
     if (checksumMode is not (0 or 1 or 2)) throw new NotSupportedException("Partclone checksum modes 0 (none), 1 (CRC32), and 2 (XXH64) are supported.");
