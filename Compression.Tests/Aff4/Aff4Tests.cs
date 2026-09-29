@@ -1,5 +1,7 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
+using Compression.Registry;
 using FileFormat.Aff4;
 
 namespace Compression.Tests.Aff4;
@@ -98,5 +100,68 @@ public class Aff4Tests {
     } finally {
       Directory.Delete(dir, recursive: true);
     }
+  }
+
+  [TestCase("deflate")]
+  [TestCase("stored")]
+  [Category("HappyPath")]
+  public void Create_ProducesAff4LZipSegmentsAndRoundTrips(string method) {
+    var d = new Aff4FormatDescriptor();
+    var payload = Encoding.UTF8.GetBytes(new string('A', 4096) + "AFF4 payload");
+    var inputs = new[] {
+      ArchiveInputInfo.InMemory("evidence/note.txt", payload),
+      ArchiveInputInfo.InMemory("empty.bin", ReadOnlySpan<byte>.Empty),
+      new ArchiveInputInfo("folder", "evidence/empty", IsDirectory: true),
+    };
+    using var archive = new MemoryStream();
+    d.Create(archive, inputs, new FormatCreateOptions(method) {
+      FormatSpecific = new(StringComparer.OrdinalIgnoreCase) { ["Level"] = "9" },
+    });
+    archive.Position = 0;
+
+    using (var zip = new ZipArchive(archive, ZipArchiveMode.Read, leaveOpen: true)) {
+      Assert.That(ReadEntry(zip, "version.txt"), Does.Contain("major=2\nminor=1"));
+      var turtle = ReadEntry(zip, "information.turtle");
+      Assert.That(turtle, Does.Contain("aff4:FileImage, aff4:Image, aff4:ZipSegment"));
+      Assert.That(turtle, Does.Contain("aff4:originalPathName \"/evidence/note.txt\""));
+      Assert.That(turtle, Does.Contain("aff4:SHA256"));
+      var streamEntry = zip.Entries.Single(e => e.FullName.StartsWith("aff4://", StringComparison.Ordinal));
+      Assert.That(streamEntry.CompressedLength == streamEntry.Length, Is.EqualTo(method == "stored" || payload.Length == 0));
+      using var segment = streamEntry.Open();
+      using var actual = new MemoryStream();
+      segment.CopyTo(actual);
+      Assert.That(actual.ToArray(), Is.EqualTo(payload));
+      var expectedHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(turtle))).ToLowerInvariant();
+      Assert.That(ReadEntry(zip, "information.turtle.hashes"), Does.Contain(expectedHash));
+    }
+
+    archive.Position = 0;
+    var listed = d.List(archive, null);
+    Assert.That(listed.Any(e => e.Name == "evidence/note.txt"), Is.True);
+    Assert.That(listed.Any(e => e.Name == "evidence/empty" && e.IsDirectory), Is.True);
+    var dir = Path.Combine(Path.GetTempPath(), "aff4_create_" + Guid.NewGuid().ToString("N"));
+    try {
+      archive.Position = 0;
+      d.Extract(archive, dir, null, ["evidence/note.txt"]);
+      Assert.That(File.ReadAllBytes(Path.Combine(dir, "evidence", "note.txt")), Is.EqualTo(payload));
+    } finally {
+      if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+    }
+  }
+
+  [Test]
+  public void Create_RejectsUnsupportedMethodsAndEncryption() {
+    var d = new Aff4FormatDescriptor();
+    var inputs = new[] { ArchiveInputInfo.InMemory("x", [1, 2, 3]) };
+    Assert.Throws<ArgumentException>(() => d.Create(new MemoryStream(), inputs, new FormatCreateOptions("snappy")));
+    Assert.Throws<NotSupportedException>(() => d.Create(new MemoryStream(), inputs, new FormatCreateOptions { Password = "secret" }));
+    Assert.Throws<ArgumentException>(() => d.Create(new MemoryStream(), inputs,
+      new FormatCreateOptions { FormatSpecific = new(StringComparer.OrdinalIgnoreCase) { ["Level"] = "invalid" } }));
+  }
+
+  private static string ReadEntry(ZipArchive zip, string name) {
+    using var source = zip.GetEntry(name)!.Open();
+    using var reader = new StreamReader(source, Encoding.UTF8);
+    return reader.ReadToEnd();
   }
 }
