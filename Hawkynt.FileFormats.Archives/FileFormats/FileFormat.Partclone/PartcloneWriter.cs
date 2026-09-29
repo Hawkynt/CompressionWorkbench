@@ -56,26 +56,37 @@ public static class PartcloneWriter {
     var sourceBitmapMode = byte.TryParse(values.GetValueOrDefault("bitmap_mode", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var sourceBm)
       ? sourceBm : (byte)1;
     var bitmapMode = byte.TryParse(Get("bitmap_mode", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var bm) ? bm : (byte)1;
-    if (bitmapMode is not (PartcloneReader.BmBit or PartcloneReader.BmByte))
-      throw new NotSupportedException($"Partclone bitmap mode {bitmapMode} cannot represent sparse allocation.");
-    var mapLength = bitmapMode == PartcloneReader.BmBit ? checked((int)((totalBlocks + 7) / 8)) : checked((int)totalBlocks);
+    if (bitmapMode is not (PartcloneReader.BmNone or PartcloneReader.BmBit or PartcloneReader.BmByte))
+      throw new NotSupportedException($"Partclone bitmap mode {bitmapMode} is not supported.");
+    var mapLength = bitmapMode switch {
+      PartcloneReader.BmNone => 0,
+      PartcloneReader.BmBit => checked((int)((totalBlocks + 7) / 8)),
+      _ => checked((int)totalBlocks),
+    };
     var map = new byte[mapLength];
     if (!allocationMap.IsEmpty) {
       var sourceLength = sourceBitmapMode switch {
+        PartcloneReader.BmNone => 0,
         PartcloneReader.BmBit => checked((int)((totalBlocks + 7) / 8)),
         PartcloneReader.BmByte => checked((int)totalBlocks),
         _ => throw new NotSupportedException($"Source bitmap mode {sourceBitmapMode} cannot be rewritten."),
       };
       if (allocationMap.Length != sourceLength)
         throw new InvalidDataException("allocation.map length does not match the bitmap mode in metadata.ini and total_blocks.");
-      if (sourceBitmapMode == bitmapMode) map = allocationMap.ToArray();
+      if (bitmapMode == PartcloneReader.BmNone) {
+        // Every block is represented without a serialized allocation map.
+      } else if (sourceBitmapMode == PartcloneReader.BmNone) {
+        for (ulong index = 0; index < totalBlocks; ++index) SetUsed(map, bitmapMode, index);
+      } else if (sourceBitmapMode == bitmapMode) map = allocationMap.ToArray();
       else
         for (ulong index = 0; index < totalBlocks; ++index)
           if (IsUsed(allocationMap, sourceBitmapMode, index)) SetUsed(map, bitmapMode, index);
     }
 
-    var usedBlocks = 0UL;
-    if (allocationMap.IsEmpty) {
+    var usedBlocks = bitmapMode == PartcloneReader.BmNone || sourceBitmapMode == PartcloneReader.BmNone ? totalBlocks : 0UL;
+    if (bitmapMode != PartcloneReader.BmNone && allocationMap.IsEmpty && sourceBitmapMode == PartcloneReader.BmNone) {
+      for (ulong index = 0; index < totalBlocks; ++index) SetUsed(map, bitmapMode, index);
+    } else if (bitmapMode != PartcloneReader.BmNone && allocationMap.IsEmpty) {
       var block = new byte[blockSize];
       for (ulong index = 0; index < totalBlocks; ++index) {
         ReadExactly(disk, block);
@@ -85,7 +96,7 @@ public static class PartcloneWriter {
         ++usedBlocks;
       }
       disk.Position = 0;
-    } else
+    } else if (bitmapMode != PartcloneReader.BmNone && sourceBitmapMode != PartcloneReader.BmNone)
       for (ulong index = 0; index < totalBlocks; ++index)
         if (IsUsed(map, bitmapMode, index)) ++usedBlocks;
 
@@ -184,9 +195,11 @@ public static class PartcloneWriter {
   private static ulong ParseUInt64(string value) => ulong.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result)
     ? result : throw new InvalidDataException($"Invalid Partclone integer value: {value}");
 
-  private static bool IsUsed(ReadOnlySpan<byte> map, byte mode, ulong index) => mode == PartcloneReader.BmBit
-    ? (map[checked((int)(index / 8))] & (1 << (int)(index % 8))) != 0
-    : map[checked((int)index)] != 0;
+  private static bool IsUsed(ReadOnlySpan<byte> map, byte mode, ulong index) => mode switch {
+    PartcloneReader.BmNone => true,
+    PartcloneReader.BmBit => (map[checked((int)(index / 8))] & (1 << (int)(index % 8))) != 0,
+    _ => map[checked((int)index)] != 0,
+  };
 
   private static void SetUsed(Span<byte> map, byte mode, ulong index) {
     if (mode == PartcloneReader.BmBit) map[checked((int)(index / 8))] |= (byte)(1 << (int)(index % 8));

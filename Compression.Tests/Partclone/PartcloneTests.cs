@@ -367,5 +367,16 @@ public class PartcloneTests {
     Assert.That(byteBitmapReader.Info.BitmapMode, Is.EqualTo(PartcloneReader.BmByte));
     Assert.That(byteBitmapReader.ReadAllocationMap(), Is.EqualTo(new byte[] { 1, 1, 1, 0, 1 }));
     Assert.That(byteBitmapReader.ReconstructDisk(), Is.EqualTo(raw));
+
+    using var noBitmapImage = new MemoryStream();
+    var noBitmapOptions = new FormatCreateOptions {
+      FormatSpecific = new() { ["BitmapMode"] = "0" },
+    };
+    new PartcloneFormatDescriptor().Create(noBitmapImage, inputs, noBitmapOptions);
+    noBitmapImage.Position = 0;
+    var noBitmapReader = new PartcloneReader(noBitmapImage);
+    Assert.That(noBitmapReader.Info.BitmapMode, Is.EqualTo(PartcloneReader.BmNone));
+    Assert.That(noBitmapReader.Info.UsedBlocks, Is.EqualTo(5UL));
+    Assert.That(noBitmapReader.ReconstructDisk(), Is.EqualTo(raw));
   }
 }
