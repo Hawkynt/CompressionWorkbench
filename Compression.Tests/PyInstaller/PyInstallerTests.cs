@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Text;
 using Compression.Lib;
+using Compression.Registry;
 using FileFormat.PyInstaller;
 
 namespace Compression.Tests.PyInstaller;
@@ -274,6 +275,66 @@ public class PyInstallerTests {
     } finally {
       if (Directory.Exists(outDir)) Directory.Delete(outDir, true);
     }
+  }
+
+  [Category("HappyPath")]
+  [TestCase(0)]
+  [TestCase(1)]
+  [TestCase(5)]
+  [TestCase(9)]
+  public void Create_ZlibRoundTripsAtSupportedLevels(int level) {
+    var payload = Encoding.UTF8.GetBytes(string.Concat(Enumerable.Repeat("PyInstaller CArchive payload ", 64)));
+    var output = new MemoryStream();
+    var descriptor = new PyInstallerFormatDescriptor();
+    descriptor.Create(output, [ArchiveInputInfo.InMemory("assets/readme.txt", payload)], new Compression.Registry.FormatCreateOptions("zlib") {
+      Level = level,
+      FormatSpecific = new(StringComparer.OrdinalIgnoreCase) {
+        ["PythonVersion"] = "312",
+        ["PythonLibraryName"] = "libpython3.12.so",
+        ["TypeCode"] = "b",
+      },
+    });
+
+    output.Position = 0;
+    var reader = new PyInstallerReader(output);
+    var entry = reader.ReadToc().Single();
+    Assert.Multiple(() => {
+      Assert.That(reader.PythonVersion, Is.EqualTo(312));
+      Assert.That(reader.PythonLibraryName, Is.EqualTo("libpython3.12.so"));
+      Assert.That(entry.Name, Is.EqualTo("assets/readme.txt"));
+      Assert.That(entry.TypeCode, Is.EqualTo('b'));
+      Assert.That(entry.IsCompressed, Is.True);
+      Assert.That(reader.GetData(entry), Is.EqualTo(payload));
+    });
+  }
+
+  [Category("HappyPath")]
+  [Test]
+  public void Create_StoredRoundTripsAndSetsTypeCode() {
+    var payload = new byte[] { 0, 1, 2, 3, 255 };
+    var output = new MemoryStream();
+    new PyInstallerFormatDescriptor().Create(output, [ArchiveInputInfo.InMemory("payload.bin", payload)], new Compression.Registry.FormatCreateOptions("stored") {
+      FormatSpecific = new(StringComparer.OrdinalIgnoreCase) { ["TypeCode"] = "x" },
+    });
+
+    output.Position = 0;
+    var reader = new PyInstallerReader(output);
+    var entry = reader.ReadToc().Single();
+    Assert.Multiple(() => {
+      Assert.That(entry.IsCompressed, Is.False);
+      Assert.That(entry.TypeCode, Is.EqualTo('x'));
+      Assert.That(reader.GetData(entry), Is.EqualTo(payload));
+    });
+  }
+
+  [Category("Exceptional")]
+  [Test]
+  public void Create_RejectsUnsafeEntryNames() {
+    var output = new MemoryStream();
+    Assert.Throws<ArgumentException>(() => new PyInstallerFormatDescriptor().Create(
+      output,
+      [ArchiveInputInfo.InMemory("../escape.txt", new byte[] { 1, 2, 3 })],
+      new Compression.Registry.FormatCreateOptions("stored")));
   }
 
   [Category("Exceptional")]
