@@ -18,7 +18,6 @@ internal static class McaLz4BlockStream {
 
   public static byte[] Compress(ReadOnlySpan<byte> source, Lz4CompressionLevel level) {
     using var output = new MemoryStream();
-    output.Write(Magic);
     var offset = 0;
     Span<byte> header = stackalloc byte[HeaderSize];
     while (offset < source.Length) {
