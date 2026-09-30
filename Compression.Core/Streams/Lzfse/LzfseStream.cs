@@ -37,7 +37,7 @@ public static class LzfseStream {
     Span<byte> header = stackalloc byte[12];
 
     while (true) {
-      var bytesRead = ReadFully(input, rawBuffer, 0, rawBuffer.Length);
+      var bytesRead = input.ReadAtLeast(rawBuffer, rawBuffer.Length, throwOnEndOfStream: false);
       if (bytesRead == 0)
         break;
 
@@ -85,7 +85,7 @@ public static class LzfseStream {
     byte[] history = [];
 
     while (true) {
-      var bytesRead = ReadFully(input, magicBuf);
+      var bytesRead = input.ReadAtLeast(magicBuf, magicBuf.Length, throwOnEndOfStream: false);
       if (bytesRead == 0)
         break;
       if (bytesRead < 4)
@@ -138,28 +138,6 @@ public static class LzfseStream {
     if (value > int.MaxValue)
       throw new InvalidDataException($"LZFSE {field} length {value} exceeds the managed buffer limit.");
     return checked((int)value);
-  }
-
-  private static int ReadFully(Stream source, Span<byte> buffer) {
-    var totalRead = 0;
-    while (totalRead < buffer.Length) {
-      var n = source.Read(buffer[totalRead..]);
-      if (n == 0)
-        break;
-      totalRead += n;
-    }
-    return totalRead;
-  }
-
-  private static int ReadFully(Stream source, byte[] buffer, int offset, int count) {
-    var totalRead = 0;
-    while (totalRead < count) {
-      var n = source.Read(buffer, offset + totalRead, count - totalRead);
-      if (n == 0)
-        break;
-      totalRead += n;
-    }
-    return totalRead;
   }
 
   private static void CopyExactly(Stream source, Stream destination, int count, ref byte[] history) {

@@ -69,7 +69,7 @@ public sealed class CsoWriter {
     for (var i = 0; i < blockCount; ++i) {
       Array.Clear(slab);
       var logicalLength = checked((int)Math.Min(blockSize64, uncompressedSize - consumed));
-      ReadExact(uncompressedInput, slab.AsSpan(0, logicalLength));
+      uncompressedInput.ReadExactly(slab.AsSpan(0, logicalLength));
       consumed += checked((uint)logicalLength);
 
       var offset = CheckedIndexOffset(output.Position);
@@ -168,15 +168,5 @@ public sealed class CsoWriter {
       throw new InvalidOperationException(
         "CSO/ZSO output exceeds the 31-bit byte-offset range of an align=0 index.");
     return checked((uint)position);
-  }
-
-  private static void ReadExact(Stream input, Span<byte> destination) {
-    var read = 0;
-    while (read < destination.Length) {
-      var count = input.Read(destination[read..]);
-      if (count <= 0)
-        throw new EndOfStreamException("Uncompressed CSO/ZSO input ended before uncompressed_size.");
-      read += count;
-    }
   }
 }

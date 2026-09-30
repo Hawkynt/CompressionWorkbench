@@ -39,7 +39,7 @@ public sealed class PckReader {
 
     var buf4 = new byte[4];
     stream.Position = 0;
-    ReadExact(stream, buf4);
+    stream.ReadExactly(buf4);
 
     if (buf4[0] != 'G' || buf4[1] != 'D' || buf4[2] != 'P' || buf4[3] != 'C')
       throw new InvalidDataException("Not a valid Godot PCK file: bad magic.");
@@ -90,7 +90,7 @@ public sealed class PckReader {
     for (var i = 0u; i < fileCount; i++) {
       var pathLen = ReadUInt32LE(stream);
       var pathBytes = new byte[pathLen];
-      ReadExact(stream, pathBytes);
+      stream.ReadExactly(pathBytes);
       var path = Encoding.UTF8.GetString(pathBytes).TrimEnd('\0');
 
       // Path is padded to 4-byte boundary (the path_length field already includes any padding
@@ -101,7 +101,7 @@ public sealed class PckReader {
       var offset = (long)ReadUInt64LE(stream) + filesBase;
       var size   = (long)ReadUInt64LE(stream);
       var md5    = new byte[16];
-      ReadExact(stream, md5);
+      stream.ReadExactly(md5);
 
       // Godot 4.x adds a uint32 flags field per entry
       if (PackVersion >= 2)
@@ -118,7 +118,7 @@ public sealed class PckReader {
     ArgumentNullException.ThrowIfNull(entry);
     _stream.Position = entry.Offset;
     var data = new byte[entry.Size];
-    ReadExact(_stream, data);
+    _stream.ReadExactly(data);
     return data;
   }
 
@@ -126,22 +126,13 @@ public sealed class PckReader {
 
   private static uint ReadUInt32LE(Stream s) {
     var b = new byte[4];
-    ReadExact(s, b);
+    s.ReadExactly(b);
     return BinaryPrimitives.ReadUInt32LittleEndian(b);
   }
 
   private static ulong ReadUInt64LE(Stream s) {
     var b = new byte[8];
-    ReadExact(s, b);
+    s.ReadExactly(b);
     return BinaryPrimitives.ReadUInt64LittleEndian(b);
-  }
-
-  private static void ReadExact(Stream s, byte[] buf) {
-    var total = 0;
-    while (total < buf.Length) {
-      var n = s.Read(buf, total, buf.Length - total);
-      if (n == 0) throw new EndOfStreamException("Unexpected end of PCK stream.");
-      total += n;
-    }
   }
 }

@@ -45,7 +45,7 @@ public sealed class FileCarver {
     while (windowStart < length) {
       stream.Position = windowStart;
       var toRead = (int)Math.Min(buffer.Length, length - windowStart);
-      var read = ReadExactlyOrEof(stream, buffer, 0, toRead);
+      var read = stream.ReadAtLeast(buffer.AsSpan(0, toRead), toRead, throwOnEndOfStream: false);
       if (read <= 0) break;
 
       var span = buffer.AsSpan(0, read);
@@ -149,7 +149,7 @@ public sealed class FileCarver {
     if (windowSize <= 0) return null;
     var buf = new byte[windowSize];
     stream.Position = offset;
-    var read = ReadExactlyOrEof(stream, buf, 0, windowSize);
+    var read = stream.ReadAtLeast(buf.AsSpan(0, windowSize), windowSize, throwOnEndOfStream: false);
     if (read <= 0) return null;
     // PayloadLengthProbe expects offset relative to the buffer start.
     return PayloadLengthProbe.TryProbe(buf.AsSpan(0, read), 0, formatId);
@@ -176,16 +176,6 @@ public sealed class FileCarver {
     }
     if (total < length) Array.Resize(ref buf, total);
     return buf;
-  }
-
-  private static int ReadExactlyOrEof(Stream stream, byte[] buf, int offset, int count) {
-    var total = 0;
-    while (total < count) {
-      var r = stream.Read(buf, offset + total, count - total);
-      if (r <= 0) break;
-      total += r;
-    }
-    return total;
   }
 
   private static List<CarvedFile> DeduplicateOverlapping(List<CarvedFile> raw) {

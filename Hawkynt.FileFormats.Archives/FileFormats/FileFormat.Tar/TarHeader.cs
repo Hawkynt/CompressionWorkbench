@@ -38,7 +38,7 @@ internal static class TarHeader {
   /// <returns>The parsed entry, or <see langword="null"/> if the block is all zeros.</returns>
   internal static TarEntry? ReadHeader(Stream stream, out bool isEndOfArchive) {
     var header = new byte[TarConstants.BlockSize];
-    var bytesRead = ReadExact(stream, header, TarConstants.BlockSize);
+    var bytesRead = stream.ReadAtLeast(header.AsSpan(0, TarConstants.BlockSize), TarConstants.BlockSize, throwOnEndOfStream: false);
 
     if (bytesRead < TarConstants.BlockSize) {
       isEndOfArchive = true;
@@ -297,17 +297,5 @@ internal static class TarHeader {
     }
 
     return true;
-  }
-
-  private static int ReadExact(Stream stream, byte[] buffer, int count) {
-    var totalRead = 0;
-    while (totalRead < count) {
-      var read = stream.Read(buffer, totalRead, count - totalRead);
-      if (read == 0)
-        break;
-      totalRead += read;
-    }
-
-    return totalRead;
   }
 }

@@ -154,11 +154,11 @@ public sealed class ArscReader {
     if (chunk.HeaderSize < minHeader) return false;
 
     Span<byte> idBuf = stackalloc byte[4];
-    if (!ReadExact(stream, idBuf)) return false;
+    if (!TryReadExact(stream, idBuf)) return false;
     var packageId = (uint)(idBuf[0] | (idBuf[1] << 8) | (idBuf[2] << 16) | (idBuf[3] << 24));
 
     var nameBuf = new byte[ArscConstants.PackageNameLengthBytes];
-    if (!ReadExact(stream, nameBuf)) return false;
+    if (!TryReadExact(stream, nameBuf)) return false;
     var name = DecodeUtf16Name(nameBuf);
 
     var headerEnd = chunkStart + chunk.HeaderSize;
@@ -187,15 +187,8 @@ public sealed class ArscReader {
     return true;
   }
 
-  private static bool ReadExact(Stream stream, Span<byte> buf) {
-    var read = 0;
-    while (read < buf.Length) {
-      var n = stream.Read(buf[read..]);
-      if (n <= 0) return false;
-      read += n;
-    }
-    return true;
-  }
+  private static bool TryReadExact(Stream stream, Span<byte> buf) =>
+    stream.ReadAtLeast(buf, buf.Length, throwOnEndOfStream: false) == buf.Length;
 
   private static string DecodeUtf16Name(byte[] raw) {
     var decoded = Encoding.Unicode.GetString(raw);

@@ -46,7 +46,7 @@ internal sealed class NssNativeScanner {
     var old = this._image.Position;
     try {
       this._image.Position = offset;
-      ReadExactly(this._image, result);
+      this._image.ReadExactly(result);
       return result;
     } finally {
       this._image.Position = old;
@@ -215,17 +215,6 @@ internal sealed class NssNativeScanner {
   private static string DecodeName(ReadOnlySpan<byte> bytes)
     => Encoding.Unicode.GetString(bytes).TrimEnd('\0');
 
-  private static bool TryReadExactly(Stream source, Span<byte> destination) {
-    var done = 0;
-    while (done < destination.Length) {
-      var read = source.Read(destination[done..]);
-      if (read == 0) return false;
-      done += read;
-    }
-    return true;
-  }
-
-  private static void ReadExactly(Stream source, Span<byte> destination) {
-    if (!TryReadExactly(source, destination)) throw new EndOfStreamException();
-  }
+  private static bool TryReadExactly(Stream source, Span<byte> destination) =>
+    source.ReadAtLeast(destination, destination.Length, throwOnEndOfStream: false) == destination.Length;
 }

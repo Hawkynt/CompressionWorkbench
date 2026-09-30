@@ -21,7 +21,7 @@ public sealed class MacBinaryReader {
         return false;
 
       var header = new byte[MacBinaryConstants.HeaderSize];
-      if (ReadExact(input, header) < MacBinaryConstants.HeaderSize)
+      if (input.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) < MacBinaryConstants.HeaderSize)
         return false;
 
       // Byte 0 must be 0 (old version number).
@@ -66,7 +66,7 @@ public sealed class MacBinaryReader {
   /// <returns>The parsed <see cref="MacBinaryHeader"/>.</returns>
   public static MacBinaryHeader ReadHeader(Stream input) {
     var header = new byte[MacBinaryConstants.HeaderSize];
-    if (ReadExact(input, header) < MacBinaryConstants.HeaderSize)
+    if (input.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) < MacBinaryConstants.HeaderSize)
       throw new InvalidDataException("Stream too short for MacBinary header.");
 
     if (header[0] != 0)
@@ -162,7 +162,7 @@ public sealed class MacBinaryReader {
     input.Position = MacBinaryConstants.HeaderSize + secondaryHeaderPadded;
 
     var data = new byte[header.DataForkLength];
-    if (header.DataForkLength > 0 && ReadExact(input, data) < data.Length)
+    if (header.DataForkLength > 0 && input.ReadAtLeast(data, data.Length, throwOnEndOfStream: false) < data.Length)
       throw new InvalidDataException("Stream too short for data fork.");
 
     return data;
@@ -181,7 +181,7 @@ public sealed class MacBinaryReader {
     input.Position = MacBinaryConstants.HeaderSize + secondaryHeaderPadded + dataForkPadded;
 
     var resource = new byte[header.ResourceForkLength];
-    if (header.ResourceForkLength > 0 && ReadExact(input, resource) < resource.Length)
+    if (header.ResourceForkLength > 0 && input.ReadAtLeast(resource, resource.Length, throwOnEndOfStream: false) < resource.Length)
       throw new InvalidDataException("Stream too short for resource fork.");
 
     return resource;
@@ -204,20 +204,6 @@ public sealed class MacBinaryReader {
   /// </summary>
   private static ushort ReadUInt16BigEndian(byte[] data, int offset) =>
     (ushort)(data[offset] << 8 | data[offset + 1]);
-
-  /// <summary>
-  /// Reads exactly <paramref name="buffer"/>.Length bytes from the stream.
-  /// </summary>
-  private static int ReadExact(Stream stream, byte[] buffer) {
-    var totalRead = 0;
-    while (totalRead < buffer.Length) {
-      var bytesRead = stream.Read(buffer, totalRead, buffer.Length - totalRead);
-      if (bytesRead == 0)
-        break;
-      totalRead += bytesRead;
-    }
-    return totalRead;
-  }
 
   /// <summary>
   /// Computes CRC-CCITT (polynomial 0x1021, initial value 0) over the given data.

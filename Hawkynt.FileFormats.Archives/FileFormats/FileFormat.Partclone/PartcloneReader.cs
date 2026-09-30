@@ -166,7 +166,7 @@ public sealed class PartcloneReader {
     var usedSinceChecksum = 0UL;
     for (ulong i = 0; i < _info.TotalBlocks; i++) {
       if (IsBlockUsed(bitmap, i)) {
-        ReadExactly(_stream, blockBuffer, 0, blockSize);
+        _stream.ReadExactly(blockBuffer, 0, blockSize);
         output.Write(blockBuffer, 0, blockSize);
         usedSinceChecksum++;
         if (ShouldSkipChecksum(usedSinceChecksum)) {
@@ -187,7 +187,7 @@ public sealed class PartcloneReader {
     var outOffset = 0;
     for (ulong i = 0; i < _info.TotalBlocks; i++) {
       if (IsBlockUsed(bitmap, i)) {
-        ReadExactly(_stream, disk, outOffset, blockSize);
+        _stream.ReadExactly(disk, outOffset, blockSize);
         usedSinceChecksum++;
         if (ShouldSkipChecksum(usedSinceChecksum)) {
           SkipChecksum();
@@ -219,7 +219,7 @@ public sealed class PartcloneReader {
     };
     if (len == 0) return [];
     var buf = new byte[len];
-    ReadExactly(_stream, buf, 0, len);
+    _stream.ReadExactly(buf, 0, len);
     return buf;
   }
 
@@ -236,7 +236,7 @@ public sealed class PartcloneReader {
 
     // image_head_v2: magic[15] + ptc_version[14] + endianess[2] = 31 bytes.
     Span<byte> head = stackalloc byte[31];
-    ReadExactly(_stream, head);
+    _stream.ReadExactly(head);
     if (!head[..MagicSize].SequenceEqual(Magic))
       throw new InvalidDataException("Partclone: invalid magic (expected ASCII 'partclone-image' at offset 0).");
 
@@ -248,7 +248,7 @@ public sealed class PartcloneReader {
 
     // file_system_info_v2: fs[15] + 4 × u64 + u32 = 51 bytes
     Span<byte> fsInfo = stackalloc byte[51];
-    ReadExactly(_stream, fsInfo);
+    _stream.ReadExactly(fsInfo);
     var fsType = ReadAsciiTrim(fsInfo[..FsMagicSize]);
     var deviceSize = BinaryPrimitives.ReadUInt64LittleEndian(fsInfo[15..]);
     var totalBlock = BinaryPrimitives.ReadUInt64LittleEndian(fsInfo[23..]);
@@ -266,7 +266,7 @@ public sealed class PartcloneReader {
     //                 + blocks_per_checksum(4) + reseed_checksum(1)
     //                 + bitmap_mode(1) + crc(4) = 22 bytes.
     Span<byte> opts = stackalloc byte[22];
-    ReadExactly(_stream, opts);
+    _stream.ReadExactly(opts);
     var imageVersion = BinaryPrimitives.ReadUInt16LittleEndian(opts[4..]);
     // cpu_bits at opts[6..8]
     var checksumMode = BinaryPrimitives.ReadUInt16LittleEndian(opts[8..]);
@@ -310,27 +310,5 @@ public sealed class PartcloneReader {
       if (b >= 0x20 && b < 0x7F) sb.Append((char)b);
     }
     return sb.ToString();
-  }
-
-  private static void ReadExactly(Stream s, Span<byte> dst) {
-    var read = 0;
-    while (read < dst.Length) {
-      var n = s.Read(dst[read..]);
-      if (n <= 0)
-        throw new EndOfStreamException(
-          $"Partclone: unexpected EOF (wanted {dst.Length} bytes, got {read}).");
-      read += n;
-    }
-  }
-
-  private static void ReadExactly(Stream s, byte[] buf, int offset, int count) {
-    var read = 0;
-    while (read < count) {
-      var n = s.Read(buf, offset + read, count - read);
-      if (n <= 0)
-        throw new EndOfStreamException(
-          $"Partclone: unexpected EOF (wanted {count} bytes, got {read}).");
-      read += n;
-    }
   }
 }

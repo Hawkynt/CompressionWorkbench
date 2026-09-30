@@ -30,7 +30,7 @@ public sealed class XarReader {
 
   private void ReadHeader() {
     Span<byte> hdr = stackalloc byte[28];
-    ReadExact(_stream, hdr);
+    _stream.ReadExactly(hdr);
 
     // Magic: "xar!" (0x78617221)
     if (hdr[0] != 0x78 || hdr[1] != 0x61 || hdr[2] != 0x72 || hdr[3] != 0x21)
@@ -47,7 +47,7 @@ public sealed class XarReader {
 
     // Read compressed TOC
     var compressedToc = new byte[tocCompressedSize];
-    ReadExact(_stream, compressedToc);
+    _stream.ReadExactly(compressedToc);
 
     _heapStart = headerSize + tocCompressedSize;
 
@@ -132,7 +132,7 @@ public sealed class XarReader {
 
     _stream.Position = _heapStart + entry.HeapOffset;
     var compressedData = new byte[entry.CompressedSize];
-    ReadExact(_stream, compressedData);
+    _stream.ReadExactly(compressedData);
 
     return entry.Method switch {
       "zlib" => DecompressZlib(compressedData, (int)entry.OriginalSize),
@@ -170,13 +170,4 @@ public sealed class XarReader {
 
   private static long ParseLong(string? s) =>
     long.TryParse(s, out var v) ? v : 0;
-
-  private static void ReadExact(Stream s, Span<byte> buffer) {
-    var total = 0;
-    while (total < buffer.Length) {
-      var read = s.Read(buffer[total..]);
-      if (read == 0) throw new EndOfStreamException("Unexpected end of XAR stream.");
-      total += read;
-    }
-  }
 }

@@ -262,7 +262,7 @@ public sealed class DmsWriter : IDisposable {
 
     // Re-read the header to patch it.
     Span<byte> buf = stackalloc byte[DmsConstants.FileHeaderSize];
-    ReadFully(this._stream, buf);
+    this._stream.ReadExactly(buf);
 
     // Patch From/To.
     BinaryPrimitives.WriteUInt16BigEndian(buf[20..], this._firstTrack);
@@ -281,16 +281,6 @@ public sealed class DmsWriter : IDisposable {
     this._stream.Write(buf);
 
     this._stream.Position = currentPos;
-  }
-
-  private static void ReadFully(Stream stream, Span<byte> buffer) {
-    var offset = 0;
-    while (offset < buffer.Length) {
-      var read = stream.Read(buffer[offset..]);
-      if (read == 0)
-        throw new EndOfStreamException("Unexpected end of stream while patching DMS header.");
-      offset += read;
-    }
   }
 
   // ── IDisposable ──────────────────────────────────────────────────────────

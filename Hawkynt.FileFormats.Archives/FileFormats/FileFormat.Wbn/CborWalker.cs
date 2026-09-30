@@ -43,19 +43,19 @@ public static class CborWalker {
       }
       case 25: {
         Span<byte> buf = stackalloc byte[2];
-        if (!ReadExact(s, buf)) return false;
+        if (!TryReadExact(s, buf)) return false;
         header = new Header(major, BinaryPrimitives.ReadUInt16BigEndian(buf), IsIndefinite: false);
         return true;
       }
       case 26: {
         Span<byte> buf = stackalloc byte[4];
-        if (!ReadExact(s, buf)) return false;
+        if (!TryReadExact(s, buf)) return false;
         header = new Header(major, BinaryPrimitives.ReadUInt32BigEndian(buf), IsIndefinite: false);
         return true;
       }
       case 27: {
         Span<byte> buf = stackalloc byte[8];
-        if (!ReadExact(s, buf)) return false;
+        if (!TryReadExact(s, buf)) return false;
         header = new Header(major, BinaryPrimitives.ReadUInt64BigEndian(buf), IsIndefinite: false);
         return true;
       }
@@ -239,13 +239,6 @@ public static class CborWalker {
     return true;
   }
 
-  private static bool ReadExact(Stream s, Span<byte> buf) {
-    var read = 0;
-    while (read < buf.Length) {
-      var n = s.Read(buf[read..]);
-      if (n <= 0) return false;
-      read += n;
-    }
-    return true;
-  }
+  private static bool TryReadExact(Stream s, Span<byte> buf) =>
+    s.ReadAtLeast(buf, buf.Length, throwOnEndOfStream: false) == buf.Length;
 }

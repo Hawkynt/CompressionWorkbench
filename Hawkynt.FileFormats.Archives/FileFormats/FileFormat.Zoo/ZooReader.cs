@@ -34,7 +34,7 @@ public sealed class ZooReader : IDisposable {
 
     this._stream.Position = entry.DataOffset;
     var compressed = new byte[entry.CompressedSize];
-    ReadFully(this._stream, compressed);
+    this._stream.ReadExactly(compressed);
 
     byte[] data = entry.CompressionMethod switch {
       ZooCompressionMethod.Store => compressed,
@@ -65,7 +65,7 @@ public sealed class ZooReader : IDisposable {
 
     this._stream.Position = 20;
     Span<byte> core = stackalloc byte[14];
-    ReadFully(this._stream, core);
+    this._stream.ReadExactly(core);
     var magic = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(core);
     if (magic != ZooConstants.Magic)
       throw new InvalidDataException($"Invalid Zoo magic: 0x{magic:X8}.");
@@ -108,17 +108,4 @@ public sealed class ZooReader : IDisposable {
       bitOrder: BitOrder.LsbFirst);
     return decoder.Decode((int)originalSize);
   }
-
-  private static void ReadFully(Stream stream, Span<byte> buffer) {
-    var offset = 0;
-    while (offset < buffer.Length) {
-      var read = stream.Read(buffer[offset..]);
-      if (read == 0)
-        throw new EndOfStreamException("Unexpected end of Zoo archive data.");
-      offset += read;
-    }
-  }
-
-  private static void ReadFully(Stream stream, byte[] buffer)
-    => ReadFully(stream, buffer.AsSpan());
 }

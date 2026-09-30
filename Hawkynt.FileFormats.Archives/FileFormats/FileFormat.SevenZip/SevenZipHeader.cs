@@ -39,7 +39,7 @@ internal sealed class SevenZipHeader {
   /// <returns>The parsed header.</returns>
   public static SevenZipHeader Read(Stream stream) {
     var headerBytes = new byte[SevenZipConstants.SignatureHeaderSize];
-    ReadExact(stream, headerBytes, 0, headerBytes.Length);
+    stream.ReadExactly(headerBytes);
 
     // Verify signature
     if (!headerBytes.AsSpan().StartsWith(SevenZipConstants.Signature))
@@ -91,15 +91,5 @@ internal sealed class SevenZipHeader {
     BitConverter.TryWriteBytes(headerBytes.AsSpan(8), startCrc);
 
     stream.Write(headerBytes, 0, headerBytes.Length);
-  }
-
-  private static void ReadExact(Stream stream, byte[] buffer, int offset, int count) {
-    var totalRead = 0;
-    while (totalRead < count) {
-      var read = stream.Read(buffer, offset + totalRead, count - totalRead);
-      if (read == 0)
-        throw new EndOfStreamException("Unexpected end of 7z stream.");
-      totalRead += read;
-    }
   }
 }

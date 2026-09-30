@@ -141,7 +141,7 @@ public sealed class NrgReader : IDisposable {
     if (stream.Length >= 12) {
       stream.Position = stream.Length - 12;
       Span<byte> footer = stackalloc byte[12];
-      if (ReadExactly(stream, footer) && footer[..4].SequenceEqual("NER5"u8)) {
+      if (TryReadExactly(stream, footer) && footer[..4].SequenceEqual("NER5"u8)) {
         var offset = BinaryPrimitives.ReadUInt64BigEndian(footer[4..]);
         var footerOffset = stream.Length - 12;
         if (offset <= (ulong)footerOffset)
@@ -152,7 +152,7 @@ public sealed class NrgReader : IDisposable {
     if (stream.Length >= 8) {
       stream.Position = stream.Length - 8;
       Span<byte> footer = stackalloc byte[8];
-      if (ReadExactly(stream, footer) && footer[..4].SequenceEqual("NERO"u8)) {
+      if (TryReadExactly(stream, footer) && footer[..4].SequenceEqual("NERO"u8)) {
         var offset = BinaryPrimitives.ReadUInt32BigEndian(footer[4..]);
         var footerOffset = stream.Length - 8;
         if (offset <= footerOffset)
@@ -178,7 +178,7 @@ public sealed class NrgReader : IDisposable {
 
     while (position <= footer.FooterOffset - header.Length) {
       stream.Position = position;
-      if (!ReadExactly(stream, header))
+      if (!TryReadExactly(stream, header))
         break;
 
       var payloadLength = BinaryPrimitives.ReadUInt32BigEndian(header[4..]);
@@ -200,7 +200,7 @@ public sealed class NrgReader : IDisposable {
       } else if (header[..4].SequenceEqual("CDTX"u8) && payloadLength <= MaxCdTextBytes) {
         cdText = new byte[checked((int)payloadLength)];
         stream.Position = payloadStart;
-        if (!ReadExactly(stream, cdText))
+        if (!TryReadExactly(stream, cdText))
           cdText = Array.Empty<byte>();
       }
 
@@ -256,7 +256,7 @@ public sealed class NrgReader : IDisposable {
     Span<byte> record = stackalloc byte[recordSize];
     for (var entryIndex = 0; entryIndex < count; ++entryIndex) {
       stream.Position = payloadStart + (long)entryIndex * recordSize;
-      if (!ReadExactly(stream, record))
+      if (!TryReadExactly(stream, record))
         break;
 
       var rawTrack = record[1];
@@ -301,7 +301,7 @@ public sealed class NrgReader : IDisposable {
 
     Span<byte> header = stackalloc byte[headerSize];
     stream.Position = payloadStart;
-    if (!ReadExactly(stream, header))
+    if (!TryReadExactly(stream, header))
       return null;
 
     var firstTrack = header[20] is >= 1 and <= 99 ? header[20] : fallbackFirstTrack;
@@ -317,7 +317,7 @@ public sealed class NrgReader : IDisposable {
     var record = new byte[recordSize];
     for (var recordIndex = 0; recordIndex < recordCount; ++recordIndex) {
       stream.Position = payloadStart + headerSize + (long)recordIndex * recordSize;
-      if (!ReadExactly(stream, record))
+      if (!TryReadExactly(stream, record))
         break;
 
       var span = record.AsSpan();
@@ -392,7 +392,7 @@ public sealed class NrgReader : IDisposable {
     var record = new byte[recordSize];
     for (var recordIndex = 0; recordIndex < recordCount; ++recordIndex) {
       stream.Position = payloadStart + (long)recordIndex * recordSize;
-      if (!ReadExactly(stream, record))
+      if (!TryReadExactly(stream, record))
         break;
 
       var span = record.AsSpan();
@@ -550,7 +550,7 @@ public sealed class NrgReader : IDisposable {
 
     Span<byte> signature = stackalloc byte[6];
     stream.Position = pvdPosition;
-    return ReadExactly(stream, signature) &&
+    return TryReadExactly(stream, signature) &&
            signature[0] == 1 && signature[1..].SequenceEqual("CD001"u8);
   }
 
@@ -706,7 +706,7 @@ public sealed class NrgReader : IDisposable {
       throw new InvalidDataException("NRG raw-track entry exceeds its descriptor bounds.");
     var result = new byte[size];
     this._stream.Position = track.DataOffset;
-    if (!ReadExactly(this._stream, result))
+    if (!TryReadExactly(this._stream, result))
       throw new InvalidDataException("NRG track is truncated.");
     return result;
   }
@@ -753,7 +753,7 @@ public sealed class NrgReader : IDisposable {
 
     stream.Position = dataStart;
     var buffer = new byte[Iso9660SectorSize];
-    return ReadExactly(stream, buffer) ? buffer : null;
+    return TryReadExactly(stream, buffer) ? buffer : null;
   }
 
   private static bool TryNormalizeIsoLba(NrgTrackInfo track, int isoLba, out long relativeLba) {
@@ -777,16 +777,8 @@ public sealed class NrgReader : IDisposable {
     }
   }
 
-  private static bool ReadExactly(Stream stream, Span<byte> buffer) {
-    var offset = 0;
-    while (offset < buffer.Length) {
-      var read = stream.Read(buffer[offset..]);
-      if (read == 0)
-        return false;
-      offset += read;
-    }
-    return true;
-  }
+  private static bool TryReadExactly(Stream stream, Span<byte> buffer) =>
+    stream.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false) == buffer.Length;
 
   private static string? ReadAsciiField(ReadOnlySpan<byte> field) {
     var length = field.IndexOf((byte)0);

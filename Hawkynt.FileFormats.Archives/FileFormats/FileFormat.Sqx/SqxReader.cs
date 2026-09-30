@@ -50,7 +50,7 @@ public sealed class SqxReader : IDisposable {
 
     this._stream.Position = entry.DataOffset;
     var compressed = new byte[entry.CompressedSize];
-    ReadFully(this._stream, compressed);
+    this._stream.ReadExactly(compressed);
 
     if (entry.IsEncrypted) {
       var key = SqxWriter.DeriveKey(this._password!);
@@ -78,7 +78,7 @@ public sealed class SqxReader : IDisposable {
 
       this._stream.Position = entry.DataOffset;
       var compressed = new byte[entry.CompressedSize];
-      ReadFully(this._stream, compressed);
+      this._stream.ReadExactly(compressed);
 
       if (entry.IsEncrypted) {
         var key = SqxWriter.DeriveKey(this._password!);
@@ -118,7 +118,7 @@ public sealed class SqxReader : IDisposable {
     // Read all archive data up to recovery block
     this._stream.Position = 0;
     var archiveData = new byte[this._recoveryDataSize];
-    ReadFully(this._stream, archiveData);
+    this._stream.ReadExactly(archiveData);
 
     var computedFdCrc = Crc32.Compute(archiveData);
     if (computedFdCrc != this._recoveryFdCrc) return false;
@@ -328,15 +328,6 @@ public sealed class SqxReader : IDisposable {
     }
     catch {
       return DateTime.MinValue;
-    }
-  }
-
-  private static void ReadFully(Stream stream, byte[] buffer) {
-    var totalRead = 0;
-    while (totalRead < buffer.Length) {
-      var read = stream.Read(buffer, totalRead, buffer.Length - totalRead);
-      if (read == 0) throw new EndOfStreamException("Unexpected end of SQX data.");
-      totalRead += read;
     }
   }
 

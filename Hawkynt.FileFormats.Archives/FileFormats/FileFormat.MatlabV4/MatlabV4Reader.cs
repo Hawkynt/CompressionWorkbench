@@ -37,7 +37,7 @@ public sealed class MatlabV4Reader {
     stream.Seek(0, SeekOrigin.Begin);
 
     var firstHeader = new byte[MatlabV4Constants.RecordHeaderSize];
-    if (!ReadFull(stream, firstHeader)) throw new InvalidDataException("MAT v4 file truncated within first record header.");
+    if (!TryReadExact(stream, firstHeader)) throw new InvalidDataException("MAT v4 file truncated within first record header.");
 
     var detectedLE = TryDecodeMopt(firstHeader.AsSpan(0, 4), littleEndian: true, out var leMachine, out var leO, out var leP, out var leT);
     var detectedBE = TryDecodeMopt(firstHeader.AsSpan(0, 4), littleEndian: false, out var beMachine, out var beO, out var beP, out var beT);
@@ -70,7 +70,7 @@ public sealed class MatlabV4Reader {
     while (stream.Position + MatlabV4Constants.RecordHeaderSize <= stream.Length) {
       var recordStart = stream.Position;
       var header = new byte[MatlabV4Constants.RecordHeaderSize];
-      if (!ReadFull(stream, header)) {
+      if (!TryReadExact(stream, header)) {
         status = "partial";
         break;
       }
@@ -96,7 +96,7 @@ public sealed class MatlabV4Reader {
       }
 
       var nameBytes = new byte[nameLength];
-      if (!ReadFull(stream, nameBytes)) {
+      if (!TryReadExact(stream, nameBytes)) {
         status = "partial";
         break;
       }
@@ -181,15 +181,8 @@ public sealed class MatlabV4Reader {
   private static uint ReadUInt32(ReadOnlySpan<byte> bytes, bool littleEndian)
     => littleEndian ? BinaryPrimitives.ReadUInt32LittleEndian(bytes) : BinaryPrimitives.ReadUInt32BigEndian(bytes);
 
-  private static bool ReadFull(Stream stream, byte[] buffer) {
-    var read = 0;
-    while (read < buffer.Length) {
-      var n = stream.Read(buffer, read, buffer.Length - read);
-      if (n <= 0) return false;
-      read += n;
-    }
-    return true;
-  }
+  private static bool TryReadExact(Stream stream, byte[] buffer) =>
+    stream.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false) == buffer.Length;
 
   private static long SkipBytes(Stream stream, long count) {
     if (count <= 0) return 0;
