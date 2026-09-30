@@ -422,10 +422,130 @@ public sealed class WimWriter {
   /// <returns>An array of byte arrays, one per volume.</returns>
   public static byte[][] CreateSplit(long maxVolumeSize,
       IReadOnlyList<byte[]> resources,
-      uint compressionType = WimConstants.CompressionXpress) {
-    using var ms = new MemoryStream();
-    var writer = new WimWriter(ms, compressionType);
-    writer.Write(resources);
-    return Compression.Core.Streams.VolumeHelper.SplitIntoVolumes(ms.ToArray(), maxVolumeSize);
+      uint compressionType = WimConstants.CompressionXpress) =>
+    CreateSplit(maxVolumeSize,
+      resources.Select((data, index) => ($"resource_{index.ToString(CultureInfo.InvariantCulture)}", data)).ToList(),
+      compressionType);
+
+  /// <summary>
+  /// Creates a split WIM set (<c>.swm</c>, <c>2.swm</c>, …) in the layout <c>wimlib-imagex split</c>
+  /// and DISM produce: every part has its own header (same GUID, part number, part count and the
+  /// spanned flag), the resources stored in it, a lookup table listing only those resources, and
+  /// a copy of the XML data. Image metadata stays in part 1, and no resource is cut across parts.
+  /// </summary>
+  /// <param name="maxVolumeSize">
+  /// Target part size in bytes. Resources are packed in order and a new part starts when the next
+  /// one would not fit; a single resource larger than the target gets a part of its own, which
+  /// then exceeds it, as with <c>wimlib-imagex split</c>.
+  /// </param>
+  public static byte[][] CreateSplit(long maxVolumeSize,
+      IReadOnlyList<(string Name, byte[] Data)> files,
+      uint compressionType = WimConstants.CompressionXpress,
+      int chunkSize = WimConstants.DefaultChunkSize) {
+    ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxVolumeSize);
+    ArgumentNullException.ThrowIfNull(files);
+
+    using var original = new MemoryStream();
+    new WimWriter(original, compressionType, chunkSize).Write(files);
+    original.Position = 0;
+    using var reader = new WimReader(original);
+    var header = reader.Header;
+    var resources = reader.Resources;
+    var table = ReadRange(original, header.OffsetTableResource!);
+    var xml = ReadRange(original, header.XmlDataResource!);
+    const int row = WimConstants.LookupTableEntrySize;
+
+    // Assign resources to parts: metadata to part 1, data in table order.
+    long PartOverhead(int entries) => WimConstants.HeaderSize + (long)entries * row + xml.Length;
+    var parts = new List<List<int>> { new() };
+    long partPayload = 0;
+    for (var i = 0; i < resources.Count; ++i)
+      if (resources[i].IsMetadata) {
+        parts[0].Add(i);
+        partPayload += resources[i].CompressedSize;
+      }
+    for (var i = 0; i < resources.Count; ++i) {
+      if (resources[i].IsMetadata) continue;
+      var current = parts[^1];
+      var size = resources[i].CompressedSize;
+      if (current.Count > 0 && PartOverhead(current.Count + 1) + partPayload + size > maxVolumeSize) {
+        if (parts.Count == ushort.MaxValue)
+          throw new InvalidOperationException("A split WIM cannot have more than 65,535 parts.");
+        parts.Add(current = []);
+        partPayload = 0;
+      }
+      current.Add(i);
+      partPayload += size;
+    }
+
+    var total = checked((ushort)parts.Count);
+    var result = new byte[parts.Count][];
+    for (var p = 0; p < parts.Count; ++p) {
+      var partNumber = (ushort)(p + 1);
+      using var part = new MemoryStream();
+      part.SetLength(WimConstants.HeaderSize);
+      part.Position = WimConstants.HeaderSize;
+
+      // Data before metadata, as in the unsplit image, so a part reads front to back.
+      var order = parts[p].Where(i => !resources[i].IsMetadata).Concat(parts[p].Where(i => resources[i].IsMetadata)).ToList();
+      var partTable = new byte[order.Count * row];
+      WimResourceEntry? bootMetadata = null;
+      for (var k = 0; k < order.Count; ++k) {
+        var resource = resources[order[k]];
+        var offset = part.Position;
+        original.Position = resource.Offset;
+        CopyExactly(original, part, resource.CompressedSize);
+        var entry = partTable.AsSpan(k * row, row);
+        table.AsSpan(order[k] * row, row).CopyTo(entry);
+        BinaryPrimitives.WriteInt64LittleEndian(entry[8..], offset);
+        BinaryPrimitives.WriteUInt16LittleEndian(entry[24..], partNumber);
+        if (header.BootMetadataResource is { } boot && boot.Offset == resource.Offset)
+          bootMetadata = boot with { Offset = offset };
+      }
+
+      var tableOffset = part.Position;
+      part.Write(partTable);
+      var xmlOffset = part.Position;
+      part.Write(xml);
+
+      var partHeader = new WimHeader {
+        Version = header.Version,
+        WimFlags = total > 1 ? header.WimFlags | WimConstants.FlagSpanned : header.WimFlags,
+        CompressionType = header.CompressionType,
+        // WimHeader.Read reports 0 as the default chunk size; an uncompressed image must keep 0,
+        // which wimlib insists on.
+        ChunkSize = header.CompressionType == WimConstants.CompressionNone ? 0 : header.ChunkSize,
+        Guid = header.Guid,
+        PartNumber = partNumber,
+        TotalParts = total,
+        ImageCount = header.ImageCount,
+        OffsetTableResource = new WimResourceEntry(partTable.Length, partTable.Length, tableOffset, WimConstants.ResourceFlagMetadata),
+        XmlDataResource = header.XmlDataResource! with { Offset = xmlOffset },
+        BootMetadataResource = bootMetadata,
+        BootIndex = bootMetadata is null ? 0 : header.BootIndex,
+        IntegrityTableResource = null,
+      };
+      part.Position = 0;
+      partHeader.Write(part);
+      result[p] = part.ToArray();
+    }
+    return result;
+  }
+
+  private static byte[] ReadRange(Stream source, WimResourceEntry range) {
+    var bytes = new byte[checked((int)range.CompressedSize)];
+    source.Position = range.Offset;
+    source.ReadExactly(bytes);
+    return bytes;
+  }
+
+  private static void CopyExactly(Stream source, Stream target, long count) {
+    var buffer = new byte[64 * 1024];
+    while (count > 0) {
+      var take = (int)Math.Min(buffer.Length, count);
+      source.ReadExactly(buffer.AsSpan(0, take));
+      target.Write(buffer, 0, take);
+      count -= take;
+    }
   }
 }

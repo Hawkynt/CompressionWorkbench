@@ -19,6 +19,8 @@ public sealed record WimResourceEntry(
   long Offset,
   uint Flags,
   byte[]? Hash = null) {
+  /// <summary>Gets the 1-based part number that owns this resource's bytes.</summary>
+  public ushort PartNumber { get; init; } = 1;
   /// <summary>
   /// Gets a value indicating whether the resource is stored in compressed form.
   /// </summary>

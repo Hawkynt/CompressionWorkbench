@@ -28745,7 +28745,7 @@ Provides static methods for reading and writing SWF (Adobe Flash) files.
 
 Descriptor for a Split WIM (.swm / .swmN) volume — a WIM file that has been chopped into N pieces for size-limited media (DVD, FAT32, etc.). References: `https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview` — Microsoft's WIM/ESD overview (DISM `/Split-Image` produces .swm sets)Microsoft "Windows Imaging File Format (WIM)" whitepaper — defines `part_number`/`total_parts` in the shared header`https://wimlib.net` — open-source implementation with full split-WIM support
 
-Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -28762,6 +28762,8 @@ Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`,
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options = null)` | Creates a genuine multi-part SWM set; resources remain whole across volume boundaries. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -31630,6 +31632,7 @@ Constants for the Windows Imaging (WIM) file format.
 | `FlagLzmsCompression` | `const uint FlagLzmsCompression` | Flag bit indicating the WIM uses LZMS compression. |
 | `FlagLzxCompression` | `const uint FlagLzxCompression` | Flag bit indicating the WIM uses LZX compression. |
 | `FlagRpFix` | `const uint FlagRpFix` | Flag bit indicating reparse-point path fixups have been applied. Set on every image written here: with no reparse points there is nothing left to fix, which is the state the bit describes. |
+| `FlagSpanned` | `const uint FlagSpanned` | Flag bit indicating that a WIM is one part of a multi-part set. |
 | `FlagXpressCompression` | `const uint FlagXpressCompression` | Flag bit indicating the WIM uses XPRESS compression. |
 | `FlagXpressHuffmanCompression` | `const uint FlagXpressHuffmanCompression` | Flag bit indicating the WIM uses the second XPRESS arrangement, which differs from the first in chunk size rather than in encoding. |
 | `HashLength` | `const int HashLength` | Length of the SHA-1 hash identifying a resource. |
@@ -31709,6 +31712,7 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WimReader` | `WimReader(Stream stream)` | Opens a WIM file from a seekable stream. |
+| `WimReader` | `WimReader(Stream stream, IReadOnlyList<Stream> additionalParts)` | Opens part 1 of a split WIM together with its other parts, in any order. Every part of a split set carries its own lookup table listing only the resources stored in that part, so `Resources` is the union of all parts' tables. |
 | `Header` | `WimHeader Header { get; }` | Gets the parsed WIM file header. |
 | `Resources` | `IReadOnlyList<WimResourceEntry> Resources { get; }` | Gets the list of resource entries from the resource table. |
 | `Dispose` | `void Dispose()` | Releases all resources used by this `WimReader`. Does not close the underlying stream. |
@@ -31744,6 +31748,7 @@ Implements `IEquatable<WimResourceEntry>`.
 | `IsMetadata` | `bool IsMetadata { get; }` | Gets a value indicating whether the resource is a metadata resource. |
 | `Offset` | `long Offset { get; init; }` | Absolute byte offset of the resource within the WIM file. |
 | `OriginalSize` | `long OriginalSize { get; init; }` | Uncompressed size of the resource data in bytes. |
+| `PartNumber` | `ushort PartNumber { get; init; }` | Gets the 1-based part number that owns this resource's bytes. |
 
 #### `WimWriter`
 
@@ -31752,6 +31757,7 @@ Writes a WIM (Windows Imaging) file to a stream.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WimWriter` | `WimWriter(Stream output, uint compressionType = 1, int chunkSize = 32768)` | Initializes a new `WimWriter`. |
+| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IReadOnlyList<ValueTuple<string, byte[]>> files, uint compressionType = 1, int chunkSize = 32768)` | Creates a split WIM set (`.swm`, `2.swm`, …) in the layout `wimlib-imagex split` and DISM produce: every part has its own header (same GUID, part number, part count and the spanned flag), the resources stored in it, a lookup table listing only those resources, and a copy of the XML data. Image metadata stays in part 1, and no resource is cut across parts. |
 | `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IReadOnlyList<byte[]> resources, uint compressionType = 1)` | Creates a WIM file split into multiple volumes. |
 | `Write` | `void Write(IReadOnlyList<ValueTuple<string, byte[]>> files)` | Writes a complete WIM file holding one image of the given named files. |
 | `Write` | `void Write(IReadOnlyList<byte[]> resources)` | Writes a complete WIM file holding the given resources, naming them `resource_0`, `resource_1` and so on. |

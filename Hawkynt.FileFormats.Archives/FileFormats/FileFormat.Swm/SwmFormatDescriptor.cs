@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using Compression.Registry;
 using FileFormat.Wim;
 using static Compression.Registry.FormatHelpers;
@@ -20,9 +19,11 @@ namespace FileFormat.Swm;
 /// <remarks>
 /// <para>
 /// On disk every volume is a self-describing WIM: same <c>"MSWIM\0\0\0"</c> magic at
-/// offset 0, but the header carries non-default values for <c>part_number</c> and
-/// <c>total_parts</c>. The first volume holds the resource lookup table; subsequent
-/// volumes hold the spilled resource bodies. The naming convention is
+/// offset 0, the same GUID, <c>part_number</c>/<c>total_parts</c> in the header and the
+/// spanned flag. Each part carries its own lookup table listing only the resources
+/// stored in it, plus a copy of the XML data; the image metadata lives in part 1, and
+/// no resource is cut across parts (checked against <c>wimlib-imagex split</c>). The
+/// naming convention is
 /// <c>name.swm</c>, <c>name2.swm</c>, <c>name3.swm</c>, … (or, less commonly,
 /// <c>name.swm</c>, <c>name.swm2</c>, <c>name.swm3</c>, …).
 /// </para>
@@ -31,7 +32,7 @@ namespace FileFormat.Swm;
 /// ESD — declaring a magic signature here would shadow the regular WIM descriptor.
 /// </para>
 /// </remarks>
-public sealed class SwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+public sealed class SwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
@@ -46,6 +47,7 @@ public sealed class SwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       yield break;
     }
     foreach (var res in r.Resources) {
+      if (res.PartNumber != 1) continue;
       if (res.CompressedSize <= 0 || res.Offset < 0) continue;
       var kind = res.IsMetadata ? DefragBlockKind.MetadataReserved : DefragBlockKind.Used;
       var label = res.IsMetadata ? "Metadata Resource" : "Data Resource";
@@ -64,7 +66,7 @@ public sealed class SwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <inheritdoc/>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
   /// <inheritdoc/>
@@ -88,7 +90,13 @@ public sealed class SwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <inheritdoc/>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("wim", "WIM (split)")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("xpress", "XPRESS"),
+    new("xpress-huffman", "XPRESS Huffman"),
+    new("lzx", "LZX"),
+    new("lzms", "LZMS"),
+    new("none", "Uncompressed"),
+  ];
 
   /// <inheritdoc/>
   public string? TarCompressionFormatId => null;
@@ -101,17 +109,49 @@ public sealed class SwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     "Split Windows Imaging Format — WIM volume of an N-part .swm/.swmN set.";
 
   /// <inheritdoc/>
+  /// <remarks>
+  /// Names and sizes come from the image metadata in part 1, so listing needs neither the sibling
+  /// parts nor any decompression. A later part on its own lists as a single <c>metadata.ini</c>
+  /// naming the set it belongs to.
+  /// </remarks>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var entries = BuildEntries(stream);
-    return entries.Select((e, i) => new ArchiveEntryInfo(
-      Index: i,
-      Name: e.Name,
-      OriginalSize: e.Data.Length,
-      CompressedSize: e.Data.Length,
-      Method: e.Method,
-      IsDirectory: false,
-      IsEncrypted: false,
-      LastModified: null)).ToList();
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) stream.Position = 0;
+    var header = WimHeader.Read(stream);
+    if (header.PartNumber != 1) {
+      var info = PartInfo(header);
+      return [new ArchiveEntryInfo(0, "metadata.ini", info.Length, info.Length, "Store", false, false, null)];
+    }
+    // Sizes live in each part's lookup table, so the siblings are consulted when present; a file
+    // whose part is missing lists with an unknown (-1) size instead of failing the listing.
+    var siblings = OpenSiblingParts(stream, header, requireAll: false);
+    try {
+      stream.Position = 0;
+      using var reader = new WimReader(stream, siblings);
+      var complete = siblings.Count + 1 == header.TotalParts;
+      var method = header.CompressionType == WimConstants.CompressionNone ? "Store" : "Compressed";
+      return reader.GetNamedFiles().Select((file, i) => new ArchiveEntryInfo(
+        Index: i,
+        Name: file.FileName,
+        OriginalSize: file.ResourceIndex < 0 && !complete ? -1 : file.FileSize,
+        CompressedSize: file.ResourceIndex < 0 ? (complete ? 0 : -1) : reader.Resources[file.ResourceIndex].CompressedSize,
+        Method: method,
+        IsDirectory: false,
+        IsEncrypted: false,
+        LastModified: null)).ToList();
+    } finally {
+      foreach (var part in siblings) part.Dispose();
+    }
+  }
+
+  private static byte[] PartInfo(WimHeader header) {
+    var sb = new System.Text.StringBuilder();
+    sb.Append("[swm]\n");
+    sb.Append(CultureInfo.InvariantCulture, $"part_number = {header.PartNumber}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"total_parts = {header.TotalParts}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"guid = {header.Guid}\n");
+    sb.Append("note = open part 1 of the set to list or extract its files\n");
+    return System.Text.Encoding.UTF8.GetBytes(sb.ToString());
   }
 
   /// <inheritdoc/>
@@ -155,146 +195,134 @@ public sealed class SwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Materialises the entries this descriptor exposes for one SWM volume:
-  /// a <c>metadata.ini</c> with the volume-number / sibling-discovery summary
-  /// plus whichever resources can be decoded from this single piece. Resources
-  /// whose bodies live in another volume cannot be assembled here.
+  /// Materialises the named image files from the first SWM part and its siblings.
   /// </summary>
   private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {
-    WimHeader header;
-    var resources = new List<WimResourceEntry>();
-    var localResources = new List<(int Index, byte[] Data)>();
-    var spilled = 0;
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) stream.Position = 0;
+    var header = WimHeader.Read(stream);
+    if (header.TotalParts == 0 || header.PartNumber == 0 || header.PartNumber > header.TotalParts)
+      throw new InvalidDataException("The WIM split-part numbering is invalid.");
+    if (header.PartNumber != 1)
+      return [("metadata.ini", PartInfo(header), "Store")];
 
-    var reader = new WimReader(stream);
-    header = reader.Header;
-    resources = [.. reader.Resources];
+    stream.Position = 0;
+    var ownedParts = OpenSiblingParts(stream, header, requireAll: true);
+    try {
+      using var reader = new WimReader(stream, ownedParts);
+      var named = reader.GetNamedFiles();
+      if (named.Count > 0)
+        return named.Select(file => (
+          file.FileName,
+          file.ResourceIndex < 0 ? [] : reader.ReadResource(file.ResourceIndex),
+          header.CompressionType == WimConstants.CompressionNone ? "Store" : "Compressed"
+        )).ToList();
 
-    if (header.TotalParts <= 1) {
-      // Not actually split — fall back to plain WIM behaviour but emit metadata so
-      // callers see the misnamed-extension case.
-      for (var i = 0; i < resources.Count; ++i) {
-        if (resources[i].IsMetadata)
-          continue;
-        try {
-          localResources.Add((i, reader.ReadResource(i)));
-        } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or EndOfStreamException) {
-          // skip — likely a malformed entry
-          _ = ex;
-        }
-      }
+      return reader.Resources
+        .Select((resource, index) => (resource, index))
+        .Where(item => !item.resource.IsMetadata)
+        .Select(item => ($"resource_{item.index}", reader.ReadResource(item.index),
+          item.resource.IsCompressed ? "Compressed" : "Store"))
+        .ToList();
+    } finally {
+      foreach (var part in ownedParts)
+        part.Dispose();
+    }
+  }
+
+  private static IReadOnlyList<Stream> OpenSiblingParts(Stream stream, WimHeader header, bool requireAll) {
+    if (header.TotalParts <= 1)
+      return [];
+    if (stream is not FileStream file || string.IsNullOrEmpty(file.Name))
+      return requireAll
+        ? throw new InvalidDataException($"This split WIM has {header.TotalParts} parts; the others are found beside part 1 on disk, and this stream is not a file.")
+        : [];
+
+    var currentPath = Path.GetFullPath(file.Name);
+    var directory = Path.GetDirectoryName(currentPath)!;
+    var fileName = Path.GetFileName(currentPath);
+    string baseStem;
+    var extension = Path.GetExtension(fileName);
+    var extensionNumbered = extension.StartsWith(".swm", StringComparison.OrdinalIgnoreCase)
+        && extension.Length > 4
+        && int.TryParse(extension.AsSpan(4), NumberStyles.None, CultureInfo.InvariantCulture, out _);
+    // Siblings take the first part's extension casing: IMAGE.SWM pairs with IMAGE2.SWM, which
+    // matters on case-sensitive file systems.
+    var swm = extension[..Math.Min(4, extension.Length)];
+    if (extensionNumbered) {
+      baseStem = fileName[..^extension.Length];
     } else {
-      for (var i = 0; i < resources.Count; ++i) {
-        if (resources[i].IsMetadata)
-          continue;
-        try {
-          localResources.Add((i, reader.ReadResource(i)));
-        } catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException) {
-          // Resource body lives in a sibling volume.
-          ++spilled;
-          _ = ex;
+      baseStem = Path.GetFileNameWithoutExtension(fileName);
+      if (header.PartNumber > 1)
+        while (baseStem.Length > 0 && char.IsDigit(baseStem[^1]))
+          baseStem = baseStem[..^1];
+    }
+
+    var paths = new string[header.TotalParts];
+    paths[0] = currentPath;
+    for (var part = 2; part <= header.TotalParts; ++part) {
+      var conventional = Path.Combine(directory, baseStem + part.ToString(CultureInfo.InvariantCulture) + swm);
+      var extended = Path.Combine(directory, baseStem + swm + part.ToString(CultureInfo.InvariantCulture));
+      paths[part - 1] = extensionNumbered
+        ? File.Exists(extended) ? extended : conventional
+        : File.Exists(conventional) ? conventional : extended;
+    }
+
+    var streams = new List<Stream>(header.TotalParts - 1);
+    try {
+      for (var part = 2; part <= header.TotalParts; ++part) {
+        var path = paths[part - 1];
+        if (!File.Exists(path)) {
+          if (!requireAll) continue;
+          throw new InvalidDataException($"Split WIM part {part} is missing: {Path.GetFileName(path)}.");
         }
+        var sibling = File.OpenRead(path);
+        var siblingHeader = WimHeader.Read(sibling);
+        if (siblingHeader.PartNumber != part || siblingHeader.TotalParts != header.TotalParts
+            || siblingHeader.Guid != header.Guid) {
+          sibling.Dispose();
+          if (!requireAll) continue;
+          throw new InvalidDataException($"File {Path.GetFileName(path)} is not part {part} of this split WIM.");
+        }
+        streams.Add(sibling);
       }
+      return streams;
+    } catch {
+      foreach (var part in streams)
+        part.Dispose();
+      throw;
     }
-
-    var siblings = TryDiscoverSiblings(stream, header.TotalParts, header.PartNumber);
-
-    var result = new List<(string, byte[], string)> {
-      ("metadata.ini", BuildMetadata(header, resources.Count, localResources.Count, spilled, siblings), "Tag"),
-    };
-
-    foreach (var (idx, data) in localResources)
-      result.Add(($"resource_{idx:D4}.bin", data, "Payload"));
-
-    return result;
   }
 
-  /// <summary>
-  /// Best-effort sibling discovery: if the stream is backed by a <see cref="FileStream"/>
-  /// we walk the surrounding directory looking for files matching either of the SWM
-  /// naming conventions (<c>name.swm</c> + <c>nameN.swm</c> or <c>name.swm</c> +
-  /// <c>name.swmN</c>). Returns an empty list if the stream isn't a file or no siblings
-  /// can be found.
-  /// </summary>
-  private static IReadOnlyList<string> TryDiscoverSiblings(Stream stream, ushort totalParts, ushort partNumber) {
-    if (stream is not FileStream fs || string.IsNullOrEmpty(fs.Name) || totalParts <= 1)
-      return [];
-
-    var path = fs.Name;
-    var dir = Path.GetDirectoryName(path);
-    if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
-      return [];
-
-    var ext = Path.GetExtension(path);
-    var stem = Path.GetFileNameWithoutExtension(path);
-    if (string.IsNullOrEmpty(ext))
-      return [];
-
-    var found = new List<string>();
-    var thisName = Path.GetFileName(path);
-
-    // Pattern A: name.swm + name2.swm + name3.swm + ...
-    // Strip a possible trailing digit from the stem to recover the base name.
-    var baseStem = stem;
-    if (partNumber > 1)
-      while (baseStem.Length > 0 && char.IsDigit(baseStem[^1]))
-        baseStem = baseStem[..^1];
-    for (var p = 1; p <= totalParts; ++p) {
-      var candidate = p == 1
-        ? Path.Combine(dir, baseStem + ".swm")
-        : Path.Combine(dir, baseStem + p.ToString(CultureInfo.InvariantCulture) + ".swm");
-      if (File.Exists(candidate) && !candidate.Equals(path, StringComparison.OrdinalIgnoreCase)
-          && !Path.GetFileName(candidate).Equals(thisName, StringComparison.OrdinalIgnoreCase))
-        found.Add(Path.GetFileName(candidate));
-    }
-
-    // Pattern B: name.swm + name.swm2 + name.swm3 + ...
-    for (var p = 2; p <= totalParts; ++p) {
-      var candidate = Path.Combine(dir, stem + ".swm" + p.ToString(CultureInfo.InvariantCulture));
-      if (File.Exists(candidate) && !candidate.Equals(path, StringComparison.OrdinalIgnoreCase))
-        found.Add(Path.GetFileName(candidate));
-    }
-
-    return found;
-  }
-
-  private static byte[] BuildMetadata(
-    WimHeader header,
-    int totalResources,
-    int decoded,
-    int spilled,
-    IReadOnlyList<string> siblings) {
-
-    var sb = new StringBuilder();
-    sb.AppendLine("[swm]");
-    sb.Append("part_number = ").Append(header.PartNumber.ToString(CultureInfo.InvariantCulture)).AppendLine();
-    sb.Append("total_parts = ").Append(header.TotalParts.ToString(CultureInfo.InvariantCulture)).AppendLine();
-    sb.Append("compression_type = ").Append(CompressionName(header.CompressionType)).AppendLine();
-    sb.Append("resource_count_in_table = ").Append(totalResources.ToString(CultureInfo.InvariantCulture)).AppendLine();
-    sb.Append("decoded_in_this_volume = ").Append(decoded.ToString(CultureInfo.InvariantCulture)).AppendLine();
-    sb.Append("spilled_to_siblings = ").Append(spilled.ToString(CultureInfo.InvariantCulture)).AppendLine();
-    sb.Append("note = full extraction requires all ")
-      .Append(header.TotalParts.ToString(CultureInfo.InvariantCulture))
-      .AppendLine(" sibling files");
-    if (siblings.Count > 0) {
-      sb.AppendLine();
-      sb.AppendLine("[siblings_discovered]");
-      for (var i = 0; i < siblings.Count; ++i) {
-        sb.Append("file_")
-          .Append(i.ToString(CultureInfo.InvariantCulture))
-          .Append(" = ")
-          .AppendLine(siblings[i]);
-      }
-    }
-    return Encoding.UTF8.GetBytes(sb.ToString());
-  }
-
-  private static string CompressionName(uint type) => type switch {
-    WimConstants.CompressionNone => "none",
-    WimConstants.CompressionXpress => "xpress",
-    WimConstants.CompressionLzx => "lzx",
-    WimConstants.CompressionLzms => "lzms",
-    WimConstants.CompressionXpressHuffman => "xpress-huffman",
-    _ => $"unknown(0x{type:X8})",
+  private static uint CompressionType(FormatCreateOptions options) => options.MethodName?.ToLowerInvariant() switch {
+    null or "xpress" or "wim" => WimConstants.CompressionXpress,
+    "xpress-huffman" or "xpresshuffman" => WimConstants.CompressionXpressHuffman,
+    "lzx" => WimConstants.CompressionLzx,
+    "lzms" => WimConstants.CompressionLzms,
+    "none" or "store" => WimConstants.CompressionNone,
+    var method => throw new NotSupportedException($"Unsupported Split WIM compression method: {method}.")
   };
+
+  /// <inheritdoc />
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    var chunkSize = options.GetOptionInt("chunk-size", WimConstants.DefaultChunkSize);
+    new WimWriter(output, CompressionType(options), chunkSize)
+      .Write(FormatHelpers.FilesOnly(inputs).ToList());
+  }
+
+  /// <summary>Creates a genuine multi-part SWM set; resources remain whole across volume boundaries.</summary>
+  public static byte[][] CreateSplit(
+      long maxVolumeSize,
+      IReadOnlyList<ArchiveInputInfo> inputs,
+      FormatCreateOptions? options = null) {
+    ArgumentNullException.ThrowIfNull(inputs);
+    options ??= new FormatCreateOptions();
+    var chunkSize = options.GetOptionInt("chunk-size", WimConstants.DefaultChunkSize);
+    return WimWriter.CreateSplit(maxVolumeSize, FormatHelpers.FilesOnly(inputs).ToList(),
+      CompressionType(options), chunkSize);
+  }
+
 }
