@@ -308,10 +308,13 @@ public sealed class RefsBlockCloneTests {
     });
   }
 
-  [Test, Category("HappyPath")]
-  public void ReplacingExistingFile_FromDiskInputStreamsIntoReservedClusters() {
+  [TestCase(1, TestName = "GivenOneByteDiskInput_WhenReplacing_ThenTheFileHoldsExactlyThatByte")]
+  [TestCase(ClusterSize, TestName = "GivenExactlyOneClusterDiskInput_WhenReplacing_ThenNoSlackClusterIsAllocated")]
+  [TestCase(3 * ClusterSize + 37, TestName = "GivenPartialTailClusterDiskInput_WhenReplacing_ThenTheTailIsZeroPadded")]
+  [Category("BoundaryCase")]
+  public void ReplacingExistingFile_FromDiskInputStreamsIntoReservedClusters(int replacementLength) {
     var original = Pattern(0x21, 2 * ClusterSize);
-    var replacement = Pattern(0xA1, 3 * ClusterSize + 37);
+    var replacement = Pattern(0xA1, replacementLength);
     var image = new RefsSyntheticVolume()
       .WithFile("alpha.bin", original)
       .Build();
@@ -326,6 +329,7 @@ public sealed class RefsBlockCloneTests {
       var file = probe.ReadFiles(checkpoint)["alpha.bin"];
       Assert.Multiple(() => {
         Assert.That(file.Size, Is.EqualTo(replacement.Length));
+        Assert.That(file.AllocatedSize, Is.EqualTo((ulong)((replacement.Length + ClusterSize - 1L) / ClusterSize * ClusterSize)));
         Assert.That(probe.ReadFileContent(file), Is.EqualTo(replacement));
       });
     } finally {
