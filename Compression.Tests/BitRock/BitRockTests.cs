@@ -80,19 +80,18 @@ public sealed class BitRockTests {
 
   /// <summary>Wraps <paramref name="content"/> in a cookfs (CFS0002) page archive split into
   /// <paramref name="pageBytes"/>-byte stored pages — the container BitRock stores the payload in.</summary>
-  private static byte[] BuildCookfs(byte[] content, int pageBytes, byte compressionId = 0) {
+  private static byte[] BuildCookfs(byte[] content, int pageBytes, byte compressionId = 0,
+      Func<byte[], byte[]>? bzip2Page = null) {
     using var ms = new MemoryStream();
     var sizes = new List<int>();
     for (var off = 0; off < content.Length; off += pageBytes) {
       var n = Math.Min(pageBytes, content.Length - off);
       var page = content.AsSpan(off, n);
       if (compressionId == 2) {
-        using var compressed = new MemoryStream();
-        using (var encoder = new Bzip2Stream(compressed, CompressionStreamMode.Compress, leaveOpen: true))
-          encoder.Write(page);
+        var body = (bzip2Page ?? Bzip2PageAsCookfsWritesIt)(page.ToArray());
         ms.WriteByte(2);
-        ms.Write(compressed.GetBuffer(), 0, checked((int)compressed.Length));
-        sizes.Add(1 + checked((int)compressed.Length));
+        ms.Write(body);
+        sizes.Add(1 + body.Length);
       } else {
         ms.WriteByte(0);                          // cid 0 = stored
         ms.Write(page);
@@ -115,12 +114,31 @@ public sealed class BitRockTests {
     return ms.ToArray();
   }
 
+  private static byte[] Bzip2Only(byte[] data) {
+    using var compressed = new MemoryStream();
+    using (var encoder = new Bzip2Stream(compressed, CompressionStreamMode.Compress, leaveOpen: true))
+      encoder.Write(data);
+    return compressed.ToArray();
+  }
+
+  /// <summary>cookfs 1.x writes a bzip2 page as its uncompressed size (big-endian u32) followed by
+  /// the bzip2 stream (<c>CookfsWritePageBz2</c> in the BSD-licensed cookfs 1.4 sources).</summary>
+  private static byte[] Bzip2PageAsCookfsWritesIt(byte[] data) => WithSizePrefix((uint)data.Length, Bzip2Only(data));
+
+  private static byte[] WithSizePrefix(uint size, byte[] body) {
+    var page = new byte[4 + body.Length];
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(page, size);
+    body.CopyTo(page, 4);
+    return page;
+  }
+
   /// <summary>Builds a minimal BitRock installer whose content region is a cookfs archive of
   /// <paramref name="content"/> (footer ending exactly at the Metakit VFS start).</summary>
-  private static byte[] BuildCookfsInstaller(byte[] vfs, byte[] content, int pageBytes = 100, byte compressionId = 0) {
+  private static byte[] BuildCookfsInstaller(byte[] vfs, byte[] content, int pageBytes = 100, byte compressionId = 0,
+      Func<byte[], byte[]>? bzip2Page = null) {
     using var ms = new MemoryStream();
     ms.Write(new byte[64]);                       // stub placeholder
-    ms.Write(BuildCookfs(content, pageBytes, compressionId)); // cookfs archive (content region)
+    ms.Write(BuildCookfs(content, pageBytes, compressionId, bzip2Page)); // cookfs archive (content region)
     var vfsLen = vfs.Length;
     ms.Write(vfs);                                // Metakit VFS (cookfs end offset == here)
     Span<byte> tr = stackalloc byte[16];
@@ -170,11 +188,13 @@ public sealed class BitRockTests {
     }
   }
 
-  [Test]
-  public void Cookfs_Reconstructs_Bzip2_Pages_ByteExact() {
-    var content = new byte[4096];
+  [TestCase(4096, 257)]
+  [TestCase(1, 100)]
+  [TestCase(300, 300)]
+  public void GivenBzip2PagesWithSizePrefix_WhenReconstructed_ThenContentIsByteExact(int length, int pageBytes) {
+    var content = new byte[length];
     new Random(54321).NextBytes(content);
-    var file = BuildCookfsInstaller(MinimalVfs(), content, pageBytes: 257, compressionId: 2);
+    var file = BuildCookfsInstaller(MinimalVfs(), content, pageBytes, compressionId: 2);
     using var stream = new MemoryStream(file);
     var reader = BitRockReader.Open(stream);
     var tmp = BitRockContentScanner.ReconstructContent(stream, reader.VfsStart);
@@ -185,6 +205,28 @@ public sealed class BitRockTests {
       File.Delete(tmp!);
     }
   }
+
+  private static void AssertReconstructionRejected(Func<byte[], byte[]> bzip2Page) {
+    var content = new byte[600];
+    new Random(7).NextBytes(content);
+    var file = BuildCookfsInstaller(MinimalVfs(), content, pageBytes: 200, compressionId: 2, bzip2Page: bzip2Page);
+    using var stream = new MemoryStream(file);
+    var reader = BitRockReader.Open(stream);
+    Assert.Throws<InvalidDataException>(() => BitRockContentScanner.ReconstructContent(stream, reader.VfsStart));
+  }
+
+  [Test]
+  public void GivenBzip2PageWithoutSizePrefix_WhenReconstructed_ThenItIsRejected()
+    => AssertReconstructionRejected(Bzip2Only);
+
+  [Test]
+  public void GivenBzip2PageShorterThanItsSizePrefix_WhenReconstructed_ThenItIsRejected()
+    => AssertReconstructionRejected(_ => [0x00, 0x00, 0x01]);
+
+  [TestCase(-1)]
+  [TestCase(+1)]
+  public void GivenBzip2PageWhosePrefixDisagreesWithTheStream_WhenReconstructed_ThenItIsRejected(int delta)
+    => AssertReconstructionRejected(data => WithSizePrefix((uint)(data.Length + delta), Bzip2Only(data)));
 
   [Test]
   public void Scanner_Finds_And_Extracts_Payload_Component() {
