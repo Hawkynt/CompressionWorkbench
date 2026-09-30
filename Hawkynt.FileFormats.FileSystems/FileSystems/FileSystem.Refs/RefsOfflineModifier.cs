@@ -46,7 +46,14 @@ internal static class RefsOfflineModifier {
           $"ReFS offline R/W currently replaces existing regular files; creating the new namespace entry '{path}' " +
           "is withheld until all file-identity/security/link fields are proven for the active ReFS profile.");
 
-      ReplaceExisting(image, path, input.ReadContent());
+      // Existing-file replacement only needs a known input length and a
+      // forward read. Keep file-backed inputs on disk instead of materializing
+      // the entire replacement in a second byte array (large volume images can
+      // contain files much larger than the process working set).
+      using var content = OpenContent(input);
+      if (!content.CanRead || !content.CanSeek)
+        throw new IOException($"ReFS replacement input '{path}' must be readable and seekable so its allocation can be reserved first.");
+      ReplaceExisting(image, path, content, content.Length);
     }
   }
 
@@ -157,7 +164,12 @@ internal static class RefsOfflineModifier {
       throw new ArgumentException("ReFS destination must have a valid filename of at most 255 UTF-16 units.", nameof(name));
   }
 
-  private static void ReplaceExisting(Stream image, string path, byte[] data) {
+  private static Stream OpenContent(ArchiveInputInfo input)
+    => input.InMemoryContent is { } memory
+      ? new MemoryStream(memory, writable: false)
+      : new FileStream(input.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 128 * 1024, FileOptions.SequentialScan);
+
+  private static void ReplaceExisting(Stream image, string path, Stream data, long dataLength) {
     var metadata = RefsMetadataReader.Open(image);
     var files = new RefsNamespaceReader(metadata).ReadAll();
     var file = RefsNamespaceLookup.FindUnique(files, path)
@@ -173,7 +185,8 @@ internal static class RefsOfflineModifier {
     var location = writable.ResolveStorage(path);
 
     var clusterSize = metadata.ClusterSize;
-    var blocks = checked((data.LongLength + clusterSize - 1) / clusterSize);
+    if (dataLength < 0) throw new ArgumentOutOfRangeException(nameof(dataLength));
+    var blocks = dataLength / clusterSize + (dataLength % clusterSize == 0 ? 0 : 1);
     if (blocks > int.MaxValue)
       throw new NotSupportedException("ReFS replacement exceeds the supported allocation-run size.");
 
@@ -184,7 +197,7 @@ internal static class RefsOfflineModifier {
     var extents = RefsStreamLayoutEditor.BuildExtents(metadata, targetOffsets);
     var allocatedBytes = checked((long)targets.Length * clusterSize);
     var replacementFile = file with {
-      Size = data.LongLength,
+      Size = dataLength,
       AllocatedSize = allocatedBytes,
     };
     var replacementValue = RefsStreamLayoutEditor.BuildUpdatedValue(
@@ -205,7 +218,7 @@ internal static class RefsOfflineModifier {
         throw new InvalidDataException("ReFS short directory entry is too small for size/allocation fields.");
       shortEntryValue = shortEntry.Value.ToArray();
       BinaryPrimitives.WriteUInt64LittleEndian(shortEntryValue.AsSpan(0x30, 8), checked((ulong)allocatedBytes));
-      BinaryPrimitives.WriteUInt64LittleEndian(shortEntryValue.AsSpan(0x38, 8), checked((ulong)data.LongLength));
+      BinaryPrimitives.WriteUInt64LittleEndian(shortEntryValue.AsSpan(0x38, 8), checked((ulong)dataLength));
       if (shortEntryValue.Length >= 0x20)
         BinaryPrimitives.WriteUInt64LittleEndian(shortEntryValue.AsSpan(0x18, 8), checked((ulong)DateTime.UtcNow.ToFileTimeUtc()));
       if (!RefsPageEditor.CanReplaceValue(graph, shortEntry, shortEntryValue.Length))
@@ -223,7 +236,7 @@ internal static class RefsOfflineModifier {
         allocator.SetAllocated(targets, allocated: true);
         image.Flush();
         newClaimed = true;
-        WriteData(image, data, targets, clusterSize);
+        WriteData(image, data, dataLength, targets, clusterSize);
         image.Flush();
       }
 
@@ -398,19 +411,21 @@ internal static class RefsOfflineModifier {
     throw new InvalidDataException($"No ReFS allocator tier covers PLCN 0x{physicalLcn:X}.");
   }
 
-  private static void WriteData(Stream image, byte[] data, IReadOnlyList<ulong> targets, int clusterSize) {
-    var cursor = 0;
+  private static void WriteData(Stream image, Stream data, long dataLength, IReadOnlyList<ulong> targets, int clusterSize) {
+    var remaining = dataLength;
     var buffer = new byte[clusterSize];
     foreach (var lcn in targets) {
       buffer.AsSpan().Clear();
-      var take = Math.Min(clusterSize, data.Length - cursor);
-      if (take > 0) data.AsSpan(cursor, take).CopyTo(buffer);
+      var take = checked((int)Math.Min(clusterSize, remaining));
+      if (take > 0) data.ReadExactly(buffer.AsSpan(0, take));
       image.Position = checked((long)lcn * clusterSize);
       image.Write(buffer);
-      cursor += take;
+      remaining -= take;
     }
-    if (cursor != data.Length)
+    if (remaining != 0)
       throw new IOException("ReFS replacement allocation did not receive every source byte.");
+    if (data.ReadByte() != -1)
+      throw new IOException("ReFS replacement input grew while it was being read; the partial allocation was not published.");
   }
 
   private static void ReleaseOldData(Stream image, RefsFileRecord file) {

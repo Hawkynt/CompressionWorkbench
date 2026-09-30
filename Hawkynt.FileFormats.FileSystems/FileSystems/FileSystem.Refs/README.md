@@ -25,6 +25,8 @@ The implementation is intentionally not structured as a one-off defragmenter. Pa
 
 The offline editor can rename an existing regular file within its current parent directory. It retains the directory value, file identity and backing stream rows, replacing only the filename key through immutable B+ pages and an alternate checkpoint. Directory renames are refused because the rows that link a directory object back to its name are not decoded yet; cross-directory moves and mounted writes remain unsupported. The rename is verified against synthetic volumes only — no external ReFS reader has yet accepted a renamed image.
 
+Offline replacement of existing regular files accepts the repository's in-memory inputs and streams disk-backed inputs into allocator-reserved clusters. Replacement contents are no longer duplicated into a whole-file byte array; the source must expose a stable length and remain readable for the duration of the operation.
+
 ## Placement model
 
 ReFS has more than one address space and more than one allocation-ownership domain, so metadata cannot be treated as anonymous raw extents.

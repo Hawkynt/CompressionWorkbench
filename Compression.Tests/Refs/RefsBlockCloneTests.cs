@@ -308,6 +308,35 @@ public sealed class RefsBlockCloneTests {
     });
   }
 
+  [TestCase(1, TestName = "GivenOneByteDiskInput_WhenReplacing_ThenTheFileHoldsExactlyThatByte")]
+  [TestCase(ClusterSize, TestName = "GivenExactlyOneClusterDiskInput_WhenReplacing_ThenNoSlackClusterIsAllocated")]
+  [TestCase(3 * ClusterSize + 37, TestName = "GivenPartialTailClusterDiskInput_WhenReplacing_ThenTheTailIsZeroPadded")]
+  [Category("BoundaryCase")]
+  public void ReplacingExistingFile_FromDiskInputStreamsIntoReservedClusters(int replacementLength) {
+    var original = Pattern(0x21, 2 * ClusterSize);
+    var replacement = Pattern(0xA1, replacementLength);
+    var image = new RefsSyntheticVolume()
+      .WithFile("alpha.bin", original)
+      .Build();
+    var inputPath = Path.Combine(Path.GetTempPath(), "refs-input-" + Guid.NewGuid().ToString("N"));
+    try {
+      File.WriteAllBytes(inputPath, replacement);
+      using (var stream = new MemoryStream(image, writable: true))
+        RefsOfflineModifier.Add(stream, [ArchiveInputInfo.FromFile(new FileInfo(inputPath), "alpha.bin")]);
+
+      var probe = new RefsImageProbe(image);
+      var checkpoint = probe.ActiveCheckpoint();
+      var file = probe.ReadFiles(checkpoint)["alpha.bin"];
+      Assert.Multiple(() => {
+        Assert.That(file.Size, Is.EqualTo(replacement.Length));
+        Assert.That(file.AllocatedSize, Is.EqualTo((ulong)((replacement.Length + ClusterSize - 1L) / ClusterSize * ClusterSize)));
+        Assert.That(probe.ReadFileContent(file), Is.EqualTo(replacement));
+      });
+    } finally {
+      try { File.Delete(inputPath); } catch { /* ignore cleanup errors */ }
+    }
+  }
+
   [Test, Category("ErrorHandling")]
   public void Clone_RefusesUnequalLogicalSizes() {
     var image = new RefsSyntheticVolume()
