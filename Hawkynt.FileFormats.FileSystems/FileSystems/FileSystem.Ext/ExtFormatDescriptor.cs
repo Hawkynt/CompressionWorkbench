@@ -172,35 +172,34 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
-  /// Mode-aware ext2/3/4 defragmentor. Supports planner-driven in-place path
-  /// (using <see cref="DefragPlanner"/> + <see cref="ExtBlockMover"/>) and the
-  /// legacy rebuild path (using <see cref="DefragRebuilder"/>).
+  /// Mode-aware ext2/3/4 defragmentor: planner-driven and in place
+  /// (<see cref="DefragPlanner"/> + <see cref="ExtBlockMover"/>). Anything the planner
+  /// cannot lay out in place is refused before a byte moves.
   /// </summary>
+  /// <remarks>
+  /// There is no rebuild fallback. Writing the volume afresh produced an ext2 volume
+  /// of a different size with a new UUID and no label, journal, owners, modes, times,
+  /// symlinks, hard links or extended attributes — a defragmentation that loses all
+  /// of that is not one.
+  /// </remarks>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
-    // Reading the layout of a multi-gigabyte volume means walking every block
-    // pointer of every file — hundreds of thousands per file at a kilobyte a
-    // block — before the planner sees its first extent, and the planner then
-    // refuses a volume that fragmented anyway. Past this size the rebuild is
-    // both the faster route and the one that finishes.
-    if (archive.Length <= MaxPlannerVolumeBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
-           or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
-      try {
-        DefragmentWithPlanner(archive, options);
-        return;
-      } catch (Exception planFailure) {
-        // A silent fallback looks exactly like a successful in-place
-        // defragmentation from outside, so the reason is reported.
-        options.OnProgress?.Invoke(new DefragProgressEvent(
-          "fallback", 0, -1, -1, archive.Length, null,
-          $"In-place planning declined ({planFailure.GetType().Name}: " +
-          $"{FirstLine(planFailure.Message)}); rebuilding instead"));
-        archive.Position = 0;
-      }
+    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder
+      | DefragFeature.MetadataZone, "ext");
+    try {
+      DefragmentWithPlanner(archive, options);
+    } catch (InvalidOperationException planFailure) when (IsPlanningRefusal(planFailure)) {
+      throw new NotSupportedException($"ext: the volume cannot be laid out in place ({planFailure.Message}); it was left unchanged.",
+        planFailure);
     }
-    DefragmentWithRebuild(archive, options);
   }
+
+  /// <summary>
+  /// Whether the planner or executor refused the layout before moving anything.
+  /// </summary>
+  private static bool IsPlanningRefusal(InvalidOperationException ex)
+    => ex.Message.StartsWith("Defragmentation", StringComparison.Ordinal)
+       || ex.Message.StartsWith("Carved hole", StringComparison.Ordinal);
 
   private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
     archive.Position = 0;
@@ -211,7 +210,12 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // a few gigabytes at a kilobyte each is millions of them, and materialising
     // that list took longer than the rebuild it was meant to avoid. The planner
     // refuses anything near this many anyway, so stop counting there.
-    var extents = ExtExtentMap.Enumerate(archive).Take(MaxPlannerExtents + 1).ToList();
+    // A file's pointer blocks travel with it, so a packed file comes out contiguous
+    // the way e2fsck counts it. Relocating the groups' own tables is the exception:
+    // that needs room to stage a whole inode table, and a plan that also carries
+    // every block map along leaves none — there the maps stay where they are.
+    var pinBlockMaps = options.MetadataZonePlacement != MetadataZone.Unchanged;
+    var extents = ExtExtentMap.Enumerate(archive, pinBlockMaps).Take(MaxPlannerExtents + 1).ToList();
     options.OnProgress?.Invoke(new DefragProgressEvent("scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
 
     // Each group's bitmaps and inode table are located by that group's
@@ -236,38 +240,6 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>Extents past which the planner refuses; see <see cref="Compression.Core.Layout.DefragPlanner" />.</summary>
   private const int MaxPlannerExtents = 65536;
 
-  /// <summary>Volume size past which reading the layout costs more than a rebuild.</summary>
-  private const long MaxPlannerVolumeBytes = 512L * 1024 * 1024;
-
-  /// <summary>
-  /// Rebuild fallback for when the planner refuses. The volume is laid out
-  /// straight into the stream: a byte[] tops out at two gigabytes, so building
-  /// the image in memory threw on exactly the volumes that reach this path.
-  /// </summary>
-  private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
-    ExtWriter? writer = null;
-    Stream? target = null;
-    var spill = new List<string>();
-    try {
-      DefragRebuilder.RebuildStreaming(archive, options,
-        readEntries: stream => {
-          var r = new ExtReader(stream);
-          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-        },
-        beginWrite: s => { writer = new ExtWriter(); target = s; },
-        writeEntry: (name, data) => {
-          var path = Path.GetTempFileName();
-          spill.Add(path);
-          File.WriteAllBytes(path, data);
-          writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
-        },
-        finishWrite: () => writer!.BuildToStreamingAutoSized(
-          target!, ExtWriter.ExtVersion.Ext2, journal: false, volumeLabel: null!, inodeSize: 128));
-    } finally {
-      foreach (var path in spill)
-        try { File.Delete(path); } catch { /* scratch file already gone */ }
-    }
-  }
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -627,10 +599,5 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
            FileOptions.DeleteOnClose);
 
 
-  /// <summary>The first line of a message, for a one-line progress note.</summary>
-  private static string FirstLine(string message) {
-    var end = message.IndexOf('\n');
-    return end < 0 ? message : message[..end].TrimEnd('\r');
-  }
 
 }
