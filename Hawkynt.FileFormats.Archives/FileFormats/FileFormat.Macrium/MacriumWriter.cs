@@ -301,14 +301,13 @@ public sealed class MacriumWriter {
 
     // _compression — track what the writer actually applied to data blocks
     // so the reader's $INDEX walk knows whether to invoke zstd-decompress.
+    // The vendor schema knows exactly three tiers (none/medium/high) and one
+    // method (zstd), so uncompressed output carries the level alone.
     if (this.CompressDataBlocks)
-      sb.Append("\"_compression\":{\"compression_level\":\"").Append(this.CompressionLevel switch {
-        <= 2 => "low",
-        >= 7 => "high",
-        _ => "medium",
-      }).Append("\",\"compression_method\":\"zstd\"},");
+      sb.Append("\"_compression\":{\"compression_level\":\"").Append(this.CompressionLevel >= 7 ? "high" : "medium")
+        .Append("\",\"compression_method\":\"zstd\"},");
     else
-      sb.Append("\"_compression\":{\"compression_level\":\"none\",\"compression_method\":\"none\"},");
+      sb.Append("\"_compression\":{\"compression_level\":\"none\"},");
 
     // _encryption block — present and enabled when password supplied.
     sb.Append("\"_encryption\":{");
@@ -323,7 +322,7 @@ public sealed class MacriumWriter {
       sb.Append("\"key_derivation\":\"pbkdf2\",");
       sb.Append("\"key_iterations\":").Append(this.Pbkdf2Iterations.ToString(System.Globalization.CultureInfo.InvariantCulture));
     } else {
-      sb.Append("\"enable\":false,\"key_iterations\":0");
+      sb.Append("\"aes_type\":\"none\",\"enable\":false,\"hmac\":\"\",\"key_iterations\":0");
     }
     sb.Append("},");
 
@@ -341,19 +340,35 @@ public sealed class MacriumWriter {
     sb.Append("\"increment_number\":0,");
     sb.Append("\"index_file_position\":").Append(indexFilePosition.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
     sb.Append("\"json_version\":1,");
+    sb.Append("\"merged_files\":[],");
     sb.Append("\"netbios_name\":\"compression-workbench\",");
     sb.Append("\"split_file\":false");
     sb.Append("},");
 
     // disks[0]._header / partitions[0]._header — minimum required by spec.
     sb.Append("\"disks\":[{");
+    sb.Append("\"_geometry\":{");
+    sb.Append("\"bytes_per_sector\":").Append(SectorSize.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
+    sb.Append("\"disk_size\":").Append(diskImage.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    sb.Append("},");
     sb.Append("\"_header\":{");
-    sb.Append("\"disk_format\":\"raw\",");
+    sb.Append("\"disk_format\":\"").Append(IsGptDisk(diskImage) ? "gpt" : "mbr").Append("\",");
     sb.Append("\"disk_number\":").Append(this.DiskNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
     sb.Append("\"disk_signature\":\"00000000-0000-0000-0000-000000000000\",");
     sb.Append("\"imaged_partition_count\":1");
     sb.Append("},");
     sb.Append("\"partitions\":[{");
+    // The data blocks start right after $TRACK0, so that is where the
+    // partition sits on the reconstructed disk. Sectors, per the schema.
+    var startSector = reservedLen / SectorSize;
+    var partitionSectors = (partitionByteSize + SectorSize - 1) / SectorSize;
+    sb.Append("\"_file_system\":{\"lcn0_offset\":0,\"reserved_sectors_byte_length\":0},");
+    sb.Append("\"_geometry\":{");
+    sb.Append("\"boot_sector_offset\":0,");
+    sb.Append("\"end\":").Append((startSector + Math.Max(partitionSectors, 1) - 1).ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
+    sb.Append("\"length\":").Append(partitionByteSize.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
+    sb.Append("\"start\":").Append(startSector.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    sb.Append("},");
     sb.Append("\"_header\":{");
     sb.Append("\"block_count\":").Append(blockCount.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
     sb.Append("\"block_size\":").Append(this.BlockSize.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
@@ -375,6 +390,12 @@ public sealed class MacriumWriter {
     sb.Append('}');
     return sb.ToString();
   }
+
+  private const int SectorSize = 512;
+
+  /// <summary>A GPT disk carries the "EFI PART" header signature in LBA 1; anything else is recorded as MBR, the schema's only other disk format.</summary>
+  private static bool IsGptDisk(ReadOnlySpan<byte> disk)
+    => disk.Length >= 2 * SectorSize && disk.Slice(SectorSize, 8).SequenceEqual("EFI PART"u8);
 
   /// <summary>Per-block index element exactly as the spec describes (struct DataBlockIndexElement: int64 file_position + uint8[16] md5_hash + uint32 block_length + uint16 file_number = 30 bytes packed).</summary>
   internal sealed class DataBlockIndexElement {

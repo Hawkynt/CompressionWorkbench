@@ -296,7 +296,8 @@ public class MacriumRwTests {
     image.Position = 0;
     using var reader = new MacriumReader(image);
     var json = Encoding.UTF8.GetString(reader.Entries.First(e => e.Name == "metadata.json").Data);
-    Assert.That(json, Does.Contain("\"compression_method\":\"none\""));
+    Assert.That(json, Does.Contain("\"compression_level\":\"none\""));
+    Assert.That(json, Does.Not.Contain("compression_method"), "The vendor schema allows only zstd as a method; stored output names no method.");
     Assert.That(reader.SectorReconstructionAvailable, Is.True);
   }
 

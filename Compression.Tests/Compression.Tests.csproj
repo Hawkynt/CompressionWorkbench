@@ -75,6 +75,9 @@
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Macrium's MIT-licensed Reflect X metadata schema, the oracle for the writer's $JSON block.
+         Provenance in Macrium/VendorSchema/THIRD-PARTY-NOTICE.MacriumSchema.txt. -->
+    <EmbeddedResource Include="Macrium\VendorSchema\required_schema.json" LogicalName="MacriumVendor.required_schema.json" />
   </ItemGroup>
 
 </Project>
