@@ -2,9 +2,12 @@ using System.Buffers.Binary;
 using System.Text;
 using Compression.Registry;
 using FileFormat.AppleSingle;
+using FileFormat.Avif;
+using FileFormat.Dng;
 using FileFormat.Ffu;
 using FileFormat.Glb;
 using FileFormat.Hdf4;
+using FileFormat.Heif;
 using FileFormat.Mbox;
 using FileFormat.Mz;
 using FileFormat.Numpy;
@@ -95,6 +98,9 @@ public sealed class NativeSpanArchiveInputTests {
       BuildJp2Case(LargePayloadSize),
       BuildJxlCase(LargePayloadSize),
       BuildGlbCase(LargePayloadSize),
+      BuildHeifCase(LargePayloadSize),
+      BuildAvifCase(LargePayloadSize),
+      BuildDngCase(LargePayloadSize),
     }) {
       var directory = Path.Combine(Path.GetTempPath(), $"cwb-span-range-{Guid.NewGuid():N}");
       try {
@@ -105,6 +111,9 @@ public sealed class NativeSpanArchiveInputTests {
           "JP2" => BuildJp2Case(257),
           "JXL" => BuildJxlCase(257),
           "GLB" => BuildGlbCase(257),
+          "HEIF" => BuildHeifCase(257),
+          "AVIF" => BuildAvifCase(257),
+          "DNG" => BuildDngCase(257),
           _ => throw new InvalidOperationException($"Unknown source-range test case: {testCase.Name}"),
         };
         warmCase.Operations.ExtractSpan(
@@ -196,6 +205,9 @@ public sealed class NativeSpanArchiveInputTests {
     BuildJp2Case(payloadSize),
     BuildJxlCase(payloadSize),
     BuildGlbCase(payloadSize),
+    BuildHeifCase(payloadSize),
+    BuildAvifCase(payloadSize),
+    BuildDngCase(payloadSize),
     BuildMzCase(payloadSize),
     BuildUImageCase(payloadSize),
     BuildUefiFvCase(payloadSize),
@@ -513,6 +525,178 @@ public sealed class NativeSpanArchiveInputTests {
       "GLB", new GlbFormatDescriptor(), output.ToArray(), "images/Span_Image.png", payload);
   }
 
+  private static SpanCase BuildHeifCase(int payloadSize) =>
+    BuildHeifLikeCase(
+      payloadSize,
+      "heic",
+      "hvc1",
+      "HEIF",
+      new HeifFormatDescriptor(),
+      "primary_item_001_hvc1.hevc",
+      0xA6);
+
+  private static SpanCase BuildAvifCase(int payloadSize) =>
+    BuildHeifLikeCase(
+      payloadSize,
+      "avif",
+      "av01",
+      "AVIF",
+      new AvifFormatDescriptor(),
+      "primary_item_001_av01.av1",
+      0xA7);
+
+  private static SpanCase BuildHeifLikeCase(
+      int payloadSize,
+      string brand,
+      string itemType,
+      string caseName,
+      IArchiveFormatOperations descriptor,
+      string payloadEntry,
+      byte seed) {
+    var payload = Pattern(payloadSize, seed);
+    var firstLength = payload.Length / 2;
+    var secondLength = payload.Length - firstLength;
+    const int gapLength = 7;
+
+    var infeBody = new byte[13];
+    infeBody[0] = 2;
+    BinaryPrimitives.WriteUInt16BigEndian(infeBody.AsSpan(4, 2), 1);
+    Encoding.ASCII.GetBytes(itemType).CopyTo(infeBody.AsSpan(8, 4));
+    var infe = BuildIsoBoxBytes("infe", infeBody);
+
+    var iinfBody = new byte[6 + infe.Length];
+    BinaryPrimitives.WriteUInt16BigEndian(iinfBody.AsSpan(4, 2), 1);
+    infe.CopyTo(iinfBody.AsSpan(6));
+    var iinf = BuildIsoBoxBytes("iinf", iinfBody);
+
+    var pitmBody = new byte[6];
+    BinaryPrimitives.WriteUInt16BigEndian(pitmBody.AsSpan(4, 2), 1);
+    var pitm = BuildIsoBoxBytes("pitm", pitmBody);
+
+    var ilocBody = new byte[32];
+    ilocBody[0] = 1;
+    ilocBody[4] = 0x44;
+    BinaryPrimitives.WriteUInt16BigEndian(ilocBody.AsSpan(6, 2), 1);
+    BinaryPrimitives.WriteUInt16BigEndian(ilocBody.AsSpan(8, 2), 1);
+    BinaryPrimitives.WriteUInt16BigEndian(ilocBody.AsSpan(14, 2), 2);
+    BinaryPrimitives.WriteUInt32BigEndian(ilocBody.AsSpan(20, 4), (uint)firstLength);
+    BinaryPrimitives.WriteUInt32BigEndian(ilocBody.AsSpan(28, 4), (uint)secondLength);
+
+    var ftypBody = new byte[16];
+    Encoding.ASCII.GetBytes(brand).CopyTo(ftypBody.AsSpan(0, 4));
+    Encoding.ASCII.GetBytes(brand).CopyTo(ftypBody.AsSpan(8, 4));
+    "mif1"u8.CopyTo(ftypBody.AsSpan(12, 4));
+    var ftyp = BuildIsoBoxBytes("ftyp", ftypBody);
+
+    byte[] BuildMeta() {
+      var iloc = BuildIsoBoxBytes("iloc", ilocBody);
+      using var body = new MemoryStream();
+      body.Write(new byte[4]);
+      body.Write(pitm);
+      body.Write(iinf);
+      body.Write(iloc);
+      return BuildIsoBoxBytes("meta", body.GetBuffer().AsSpan(0, (int)body.Length));
+    }
+
+    var meta = BuildMeta();
+    var mdatBodyStart = ftyp.Length + meta.Length + 8;
+    BinaryPrimitives.WriteUInt32BigEndian(ilocBody.AsSpan(16, 4), (uint)mdatBodyStart);
+    BinaryPrimitives.WriteUInt32BigEndian(
+      ilocBody.AsSpan(24, 4),
+      checked((uint)(mdatBodyStart + firstLength + gapLength)));
+    meta = BuildMeta();
+
+    var mdatBody = new byte[payload.Length + gapLength];
+    payload.AsSpan(0, firstLength).CopyTo(mdatBody);
+    for (var i = 0; i < gapLength; ++i)
+      mdatBody[firstLength + i] = 0xEE;
+    payload.AsSpan(firstLength, secondLength)
+      .CopyTo(mdatBody.AsSpan(firstLength + gapLength));
+    var mdat = BuildIsoBoxBytes("mdat", mdatBody);
+
+    var image = new byte[ftyp.Length + meta.Length + mdat.Length];
+    var position = 0;
+    ftyp.CopyTo(image.AsSpan(position)); position += ftyp.Length;
+    meta.CopyTo(image.AsSpan(position)); position += meta.Length;
+    mdat.CopyTo(image.AsSpan(position));
+
+    return new SpanCase(caseName, descriptor, image, payloadEntry, payload);
+  }
+
+  private static SpanCase BuildDngCase(int payloadSize) {
+    var payload = Pattern(payloadSize, 0xA9);
+    var firstLength = payload.Length / 2;
+    var secondLength = payload.Length - firstLength;
+
+    const int ifd0Offset = 8;
+    const int ifd0Size = 2 + 2 * 12 + 4;
+    const int subIfdOffset = ifd0Offset + ifd0Size;
+    const int subIfdSize = 2 + 3 * 12 + 4;
+    const int stripOffsetsOffset = subIfdOffset + subIfdSize;
+    const int stripByteCountsOffset = stripOffsetsOffset + 8;
+    const int payloadOffset = stripByteCountsOffset + 8;
+    const int gapLength = 5;
+
+    var secondPayloadOffset = payloadOffset + firstLength + gapLength;
+    var image = new byte[secondPayloadOffset + secondLength];
+
+    image[0] = (byte)'I';
+    image[1] = (byte)'I';
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(2, 2), 42);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(4, 4), ifd0Offset);
+
+    var position = ifd0Offset;
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(position, 2), 2);
+    position += 2;
+
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(position, 2), DngReader.TagDngVersion);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(position + 2, 2), 1);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(position + 4, 4), 4);
+    image[position + 8] = 1;
+    image[position + 9] = 7;
+    position += 12;
+
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(position, 2), DngReader.TagSubIFDs);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(position + 2, 2), 4);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(position + 4, 4), 1);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(position + 8, 4), subIfdOffset);
+
+    position = subIfdOffset;
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(position, 2), 3);
+    position += 2;
+
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(position, 2), DngReader.TagCompression);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(position + 2, 2), 3);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(position + 4, 4), 1);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(position + 8, 2), 1);
+    position += 12;
+
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(position, 2), DngReader.TagStripOffsets);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(position + 2, 2), 4);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(position + 4, 4), 2);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(position + 8, 4), stripOffsetsOffset);
+    position += 12;
+
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(position, 2), DngReader.TagStripByteCounts);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(position + 2, 2), 4);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(position + 4, 4), 2);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(position + 8, 4), stripByteCountsOffset);
+
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(stripOffsetsOffset, 4), payloadOffset);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+      image.AsSpan(stripOffsetsOffset + 4, 4),
+      checked((uint)secondPayloadOffset));
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(stripByteCountsOffset, 4), (uint)firstLength);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(stripByteCountsOffset + 4, 4), (uint)secondLength);
+
+    payload.AsSpan(0, firstLength).CopyTo(image.AsSpan(payloadOffset));
+    image.AsSpan(payloadOffset + firstLength, gapLength).Fill(0xDD);
+    payload.AsSpan(firstLength, secondLength).CopyTo(image.AsSpan(secondPayloadOffset));
+
+    return new SpanCase(
+      "DNG", new DngFormatDescriptor(), image, "raw_sensor_00.bin", payload);
+  }
+
   private static SpanCase BuildMzCase(int payloadSize) {
     const int headerLength = 32;
     var imageLength = headerLength + payloadSize;
@@ -621,6 +805,12 @@ public sealed class NativeSpanArchiveInputTests {
     for (var i = 0; i < result.Length; ++i)
       result[i] = (byte)(seed + i * 17);
     return result;
+  }
+
+  private static byte[] BuildIsoBoxBytes(string type, ReadOnlySpan<byte> body) {
+    using var output = new MemoryStream();
+    WriteIsoBox(output, type, body);
+    return output.ToArray();
   }
 
   private static void WriteIsoBox(Stream output, string type, ReadOnlySpan<byte> body) {
