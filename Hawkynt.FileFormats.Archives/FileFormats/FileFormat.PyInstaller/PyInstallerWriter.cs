@@ -6,7 +6,20 @@ using Compression.Registry;
 namespace FileFormat.PyInstaller;
 
 /// <summary>Writes the documented PyInstaller CArchive container (the PKG payload).</summary>
+/// <remarks>
+/// Every offset in the TOC and the cookie is relative to where the archive starts, so the
+/// PKG can be written after whatever the stream already holds — a bootloader, for a onefile
+/// executable — without seeking.
+/// </remarks>
 internal static class PyInstallerWriter {
+
+  /// <summary>Fixed part of a TOC entry: four big-endian uint32 fields, the compression flag and the type code.</summary>
+  private const int TocEntryHeaderLength = 18;
+
+  /// <summary><c>zlib.compress(b"")</c>: a zlib header, an empty final stored block and the Adler-32 of nothing.</summary>
+  /// <remarks>.NET's <see cref="ZLibStream" /> writes no bytes at all when nothing was written to it, which
+  /// no zlib decoder accepts; PyInstaller's reader fails such an entry with "incomplete or truncated stream".</remarks>
+  private static readonly byte[] EmptyZlibStream = [0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01];
 
   private sealed record EncodedEntry(string Name, byte TypeCode, byte[] Data, int UncompressedLength);
 
@@ -17,22 +30,19 @@ internal static class PyInstallerWriter {
     string pythonLibraryName,
     char typeCode,
     bool compress,
-    int? level
+    int? level,
+    char separator = '/'
   ) {
     if (level is < 0 or > 9)
       throw new ArgumentOutOfRangeException(nameof(level), "Compression level must be between 0 and 9.");
-    if (!output.CanSeek)
-      throw new ArgumentException("Writing a PyInstaller CArchive requires a seekable output stream.", nameof(output));
 
-    output.SetLength(0);
-    output.Position = 0;
     var encoded = new List<EncodedEntry>(inputs.Count);
     foreach (var input in inputs) {
-      var name = NormalizeEntryName(input.ArchiveName);
+      var name = NormalizeEntryName(input.ArchiveName, separator);
       var nameBytes = Encoding.UTF8.GetBytes(name);
       if (nameBytes.Contains((byte)0))
         throw new ArgumentException($"CArchive entry name '{input.ArchiveName}' contains a NUL character.", nameof(inputs));
-      if (nameBytes.Length > int.MaxValue - 18)
+      if (nameBytes.Length > int.MaxValue - TocEntryHeaderLength - 16)
         throw new ArgumentException("CArchive entry name is too long.", nameof(inputs));
 
       var source = input.ReadContent();
@@ -40,16 +50,22 @@ internal static class PyInstallerWriter {
       encoded.Add(new EncodedEntry(name, (byte)typeCode, data, source.Length));
     }
 
+    long written = 0;
     var positions = new uint[encoded.Count];
-    foreach (var (entry, index) in encoded.Select((entry, index) => (entry, index))) {
-      positions[index] = CheckedUInt32(output.Position, "CArchive data offset");
-      output.Write(entry.Data);
+    for (var index = 0; index < encoded.Count; ++index) {
+      positions[index] = CheckedUInt32(written, "CArchive data offset");
+      output.Write(encoded[index].Data);
+      written += encoded[index].Data.Length;
     }
 
-    var tocOffset = CheckedUInt32(output.Position, "CArchive TOC offset");
-    foreach (var (entry, index) in encoded.Select((entry, index) => (entry, index))) {
+    var tocOffset = CheckedUInt32(written, "CArchive TOC offset");
+    for (var index = 0; index < encoded.Count; ++index) {
+      var entry = encoded[index];
       var name = Encoding.UTF8.GetBytes(entry.Name);
-      var entryLength = checked(18 + name.Length + 1);
+      // The name is NUL-terminated and then NUL-padded so every TOC entry is a
+      // multiple of 16 bytes: the bootloader reads the TOC in place and faults on
+      // strict-alignment targets (armhf) otherwise. PyInstaller's writer pads the same way.
+      var entryLength = checked((TocEntryHeaderLength + name.Length + 1 + 15) & ~15);
       WriteUInt32BigEndian(output, checked((uint)entryLength));
       WriteUInt32BigEndian(output, positions[index]);
       WriteUInt32BigEndian(output, CheckedUInt32(entry.Data.Length, "CArchive entry length"));
@@ -57,22 +73,30 @@ internal static class PyInstallerWriter {
       output.WriteByte(compress ? (byte)1 : (byte)0);
       output.WriteByte(entry.TypeCode);
       output.Write(name);
-      output.WriteByte(0);
+      output.Write(new byte[entryLength - TocEntryHeaderLength - name.Length]);
+      written += entryLength;
     }
 
-    var tocLength = output.Position - tocOffset;
-    WriteCookie(output, tocOffset, CheckedUInt32(tocLength, "CArchive TOC length"), pythonVersion, pythonLibraryName);
+    var tocLength = CheckedUInt32(written - tocOffset, "CArchive TOC length");
+    WriteCookie(output, written, tocOffset, tocLength, pythonVersion, pythonLibraryName);
   }
 
-  private static string NormalizeEntryName(string name) {
+  /// <summary>
+  /// A relative name with the separator the target bootloader expects: PyInstaller's
+  /// writer stores backslashes for Windows ("the bootloader works only with back
+  /// slashes") and forward slashes everywhere else.
+  /// </summary>
+  private static string NormalizeEntryName(string name, char separator) {
     ArgumentException.ThrowIfNullOrWhiteSpace(name);
     var normalized = name.Replace('\\', '/').TrimStart('/');
     if (normalized.Length == 0 || normalized.Split('/').Any(part => part is "" or "." or ".."))
       throw new ArgumentException($"'{name}' is not a safe relative CArchive entry name.", nameof(name));
-    return normalized;
+    return separator == '/' ? normalized : normalized.Replace('/', separator);
   }
 
   private static byte[] Compress(byte[] data, int? level) {
+    if (data.Length == 0)
+      return [.. EmptyZlibStream];
     using var output = new MemoryStream();
     var compressionLevel = level switch {
       0 => CompressionLevel.NoCompression,
@@ -85,8 +109,7 @@ internal static class PyInstallerWriter {
     return output.ToArray();
   }
 
-  private static void WriteCookie(Stream output, uint tocOffset, uint tocLength, int pythonVersion, string libraryName) {
-    var archiveLength = output.Position;
+  private static void WriteCookie(Stream output, long archiveLength, uint tocOffset, uint tocLength, int pythonVersion, string libraryName) {
     var packageLength = checked(archiveLength + PyInstallerReader.CookieSize);
     output.Write(PyInstallerReader.MagicCookie);
     WriteUInt32BigEndian(output, CheckedUInt32(packageLength, "CArchive package length"));

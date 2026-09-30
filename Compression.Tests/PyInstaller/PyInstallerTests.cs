@@ -327,6 +327,101 @@ public class PyInstallerTests {
     });
   }
 
+  [TestCase("o", TestName = "GivenTheOptionTypeCode_WhenCreating_ThenItIsRefused")]
+  [TestCase("s", TestName = "GivenTheScriptTypeCode_WhenCreating_ThenItIsRefused")]
+  [TestCase("z", TestName = "GivenThePyzTypeCode_WhenCreating_ThenItIsRefused")]
+  [TestCase("", TestName = "GivenAnEmptyTypeCode_WhenCreating_ThenItIsRefused")]
+  [Category("Exceptional")]
+  public void Create_RefusesTypeCodesThatDoNotMeanRawBytes(string typeCode)
+    => Assert.Throws<ArgumentException>(() => new PyInstallerFormatDescriptor().Create(new MemoryStream(),
+      [ArchiveInputInfo.InMemory("a.bin", new byte[] { 1 })],
+      new Compression.Registry.FormatCreateOptions("stored") { FormatSpecific = new(StringComparer.OrdinalIgnoreCase) { ["TypeCode"] = typeCode } }));
+
+  [Category("BoundaryCase")]
+  [TestCase(63, true, TestName = "GivenA63ByteLibraryName_WhenCreating_ThenItFitsTheCookieWithItsTerminator")]
+  [TestCase(64, false, TestName = "GivenA64ByteLibraryName_WhenCreating_ThenItIsRefusedForLackOfATerminator")]
+  public void Create_LibraryNameLengthBoundary(int length, bool accepted) {
+    var options = new Compression.Registry.FormatCreateOptions("stored") {
+      FormatSpecific = new(StringComparer.OrdinalIgnoreCase) { ["PythonLibraryName"] = new string('l', length) },
+    };
+    Action create = () => new PyInstallerFormatDescriptor().Create(new MemoryStream(), [ArchiveInputInfo.InMemory("a.bin", new byte[] { 1 })], options);
+    if (accepted) Assert.DoesNotThrow(create);
+    else Assert.Throws<ArgumentException>(create);
+  }
+
+  [Category("EquivalenceClass")]
+  [Test]
+  public void GivenNoLibraryName_WhenCreating_ThenTheCookieNamesTheVersionsWindowsLibrary() {
+    var output = new MemoryStream();
+    new PyInstallerFormatDescriptor().Create(output, [ArchiveInputInfo.InMemory("a.bin", new byte[] { 1 })],
+      new Compression.Registry.FormatCreateOptions("stored") { FormatSpecific = new(StringComparer.OrdinalIgnoreCase) { ["PythonVersion"] = "312" } });
+    output.Position = 0;
+    Assert.That(new PyInstallerReader(output).PythonLibraryName, Is.EqualTo("python312.dll"));
+  }
+
+  [Category("BoundaryCase")]
+  [TestCase("a", TestName = "GivenAOneByteName_WhenWritingTheToc_ThenTheEntryIsPaddedTo32")]
+  [TestCase("exactly13.bin", TestName = "GivenANameThatFillsTheEntry_WhenWritingTheToc_ThenNoPaddingIsAdded")]
+  [TestCase("fourteen-b.bin", TestName = "GivenANameOneByteTooLong_WhenWritingTheToc_ThenTheEntryGrowsTo48")]
+  public void Create_AlignsEveryTocEntryTo16Bytes(string name) {
+    var output = new MemoryStream();
+    new PyInstallerFormatDescriptor().Create(output, [ArchiveInputInfo.InMemory(name, new byte[] { 7 })],
+      new Compression.Registry.FormatCreateOptions("stored"));
+    var bytes = output.ToArray();
+    var cookie = bytes.AsSpan(bytes.Length - 88);
+    var tocOffset = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(cookie[12..]);
+    var tocLength = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(cookie[16..]);
+    var entryLength = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(tocOffset));
+    Assert.Multiple(() => {
+      Assert.That(entryLength % 16, Is.Zero);
+      Assert.That(entryLength, Is.EqualTo(tocLength));
+      Assert.That(entryLength, Is.EqualTo((18 + name.Length + 1 + 15) / 16 * 16));
+    });
+  }
+
+  [Category("EquivalenceClass")]
+  [TestCase("posix", "lib/data.bin", TestName = "GivenAPosixTarget_WhenCreating_ThenNestedNamesUseForwardSlashes")]
+  [TestCase("windows", "lib\\data.bin", TestName = "GivenAWindowsTarget_WhenCreating_ThenNestedNamesUseBackslashes")]
+  public void Create_UsesTheTargetBootloadersSeparator(string targetOs, string expectedName) {
+    var output = new MemoryStream();
+    new PyInstallerFormatDescriptor().Create(output, [ArchiveInputInfo.InMemory("lib/data.bin", new byte[] { 1 })],
+      new Compression.Registry.FormatCreateOptions("stored") { FormatSpecific = new(StringComparer.OrdinalIgnoreCase) { ["TargetOs"] = targetOs } });
+    output.Position = 0;
+    Assert.That(new PyInstallerReader(output).ReadToc().Single().Name, Is.EqualTo(expectedName));
+  }
+
+  [Category("HappyPath")]
+  [Test]
+  public void GivenAStreamThatAlreadyHoldsABootloader_WhenCreating_ThenThePkgIsAppendedWithRelativeOffsets() {
+    var stub = Enumerable.Repeat((byte)0xCC, 5000).ToArray();
+    var payload = Encoding.ASCII.GetBytes("appended after the stub");
+    var output = new MemoryStream();
+    output.Write(stub);
+    new PyInstallerFormatDescriptor().Create(output, [ArchiveInputInfo.InMemory("a.txt", payload)],
+      new Compression.Registry.FormatCreateOptions("zlib"));
+
+    Assert.That(output.ToArray().AsSpan(0, stub.Length).SequenceEqual(stub), Is.True, "the stub must be left alone");
+    output.Position = 0;
+    var reader = new PyInstallerReader(output);
+    Assert.That(reader.GetData(reader.ReadToc().Single()), Is.EqualTo(payload));
+  }
+
+  [Category("BoundaryCase")]
+  [Test]
+  public void GivenAnEmptyFile_WhenCompressing_ThenTheEntryIsAValidZlibStream() {
+    var output = new MemoryStream();
+    new PyInstallerFormatDescriptor().Create(output, [ArchiveInputInfo.InMemory("empty.bin", [])],
+      new Compression.Registry.FormatCreateOptions("zlib"));
+    output.Position = 0;
+    var reader = new PyInstallerReader(output);
+    var entry = reader.ReadToc().Single();
+    Assert.Multiple(() => {
+      Assert.That(entry.IsCompressed, Is.True);
+      Assert.That(entry.CompressedLength, Is.GreaterThan(0u), "zero bytes is not a zlib stream");
+      Assert.That(reader.GetData(entry), Is.Empty);
+    });
+  }
+
   [Category("Exceptional")]
   [Test]
   public void Create_RejectsUnsafeEntryNames() {
