@@ -5,7 +5,7 @@ using FileFormat.Structured;
 namespace FileFormat.Nrbf;
 
 internal sealed partial class NrbfReader {
-  private const string ArchiveMarker = "Hawkynt.CompressionWorkbench.NrbfArchive/1";
+  private const string ArchiveMarker = NrbfWriter.Marker;
   private readonly byte[] _data;
   private readonly Dictionary<int, StructuredNode> _objects = [];
   private readonly Dictionary<int, ClassMetadata> _metadata = [];
@@ -35,7 +35,7 @@ internal sealed partial class NrbfReader {
     if (!ended) throw new InvalidDataException("NRBF stream ended without MessageEnd.");
     if (this._position != this._data.Length) throw new InvalidDataException("NRBF stream contains trailing bytes after MessageEnd.");
 
-    if (this._objects.TryGetValue(this._rootId, out var root) && TryReadArchiveEnvelope(root, out var archive))
+    if (this._objects.TryGetValue(this._rootId, out var root) && this.TryReadArchiveEnvelope(root, out var archive))
       return archive;
 
     var graph = StructuredNode.Object("nrbf-graph");
@@ -52,49 +52,60 @@ internal sealed partial class NrbfReader {
     return graph;
   }
 
-  private static bool TryReadArchiveEnvelope(StructuredNode root, out StructuredNode archive) {
+  /// <summary>
+  /// Projects the archive envelope <see cref="NrbfWriter" /> emits — an <c>object[]</c> holding
+  /// the marker string and then, per entry, its path and either a <c>byte[]</c> (a file) or
+  /// <c>null</c> (a directory) — as a file tree. BinaryFormatter writes each <c>byte[]</c> after
+  /// the array and leaves a MemberReference in its slot, so references are resolved first.
+  /// Anything that does not have exactly that shape is not an envelope and stays a plain graph,
+  /// so a malformed or look-alike stream is still listed rather than refused.
+  /// </summary>
+  private bool TryReadArchiveEnvelope(StructuredNode root, out StructuredNode archive) {
     archive = null!;
-    if (root.Kind != StructuredNodeKind.Array || root.Items.Count == 0
-        || root.Items[0].Kind != StructuredNodeKind.String
-        || Encoding.UTF8.GetString(root.Items[0].Data) != ArchiveMarker)
+    if (root.Kind != StructuredNodeKind.Array || root.Items.Count == 0 || (root.Items.Count - 1) % 2 != 0)
       return false;
-    if ((root.Items.Count - 1) % 3 != 0)
-      throw new InvalidDataException("Malformed NRBF archive envelope.");
+    if (this.Resolve(root.Items[0]) is not { Kind: StructuredNodeKind.String } marker
+        || Encoding.UTF8.GetString(marker.Data) != ArchiveMarker)
+      return false;
 
-    archive = StructuredNode.Object("archive");
-    for (var i = 1; i < root.Items.Count; i += 3) {
-      if (root.Items[i].Kind != StructuredNodeKind.String || root.Items[i + 1].Kind != StructuredNodeKind.String
-          || root.Items[i + 2].Kind != StructuredNodeKind.String)
-        throw new InvalidDataException("Malformed NRBF archive envelope entry.");
-      var name = Encoding.UTF8.GetString(root.Items[i].Data);
-      var kind = Encoding.UTF8.GetString(root.Items[i + 1].Data);
-      var encodedData = Encoding.UTF8.GetString(root.Items[i + 2].Data);
-      if (kind is not ("D" or "F")) throw new InvalidDataException("Malformed NRBF archive entry kind.");
-      var parts = name.Split('/');
-      if (parts.Length == 0 || parts.Any(x => x.Length == 0 || x is "." or ".."))
-        throw new InvalidDataException("Malformed path in NRBF archive envelope.");
-      var parent = archive;
+    var result = StructuredNode.Object("archive");
+    for (var i = 1; i < root.Items.Count; i += 2) {
+      if (this.Resolve(root.Items[i]) is not { Kind: StructuredNodeKind.String } nameNode)
+        return false;
+      var content = this.Resolve(root.Items[i + 1]);
+      var isDirectory = content is null || content.Kind == StructuredNodeKind.Null;
+      if (!isDirectory && content!.Kind != StructuredNodeKind.Binary)
+        return false;
+
+      var parts = Encoding.UTF8.GetString(nameNode.Data).Split('/');
+      if (parts.Any(x => x.Length == 0 || x is "." or ".."))
+        return false;
+      var parent = result;
       for (var j = 0; j < parts.Length - 1; ++j) {
         var next = parent.Members.FirstOrDefault(x => x.Key == parts[j]).Value;
         if (next is null) {
           next = StructuredNode.Object("directory");
           parent.Add(parts[j], next);
         }
-        if (next.Kind != StructuredNodeKind.Object) throw new InvalidDataException("Conflicting paths in NRBF archive envelope.");
+        if (next.Kind != StructuredNodeKind.Object) return false;
         parent = next;
       }
-      if (kind == "D") {
-        if (parent.Members.Any(x => x.Key == parts[^1])) throw new InvalidDataException("Duplicate paths in NRBF archive envelope.");
-        parent.Add(parts[^1], StructuredNode.Object("directory"));
-      } else {
-        byte[] data;
-        try { data = Convert.FromBase64String(encodedData); }
-        catch (FormatException ex) { throw new InvalidDataException("Malformed file data in NRBF archive envelope.", ex); }
-        if (parent.Members.Any(x => x.Key == parts[^1])) throw new InvalidDataException("Duplicate paths in NRBF archive envelope.");
-        parent.Add(parts[^1], StructuredNode.Binary(data, "file"));
-      }
+      if (parent.Members.Any(x => x.Key == parts[^1])) return false;
+      parent.Add(parts[^1], isDirectory ? StructuredNode.Object("directory") : StructuredNode.Binary(content!.Data, "file"));
     }
+
+    archive = result;
     return true;
+  }
+
+  /// <summary>Follows a MemberReference to the object it names; any other node is itself.</summary>
+  private StructuredNode? Resolve(StructuredNode node) {
+    if (node.Kind != StructuredNodeKind.Reference) return node;
+    var text = Encoding.UTF8.GetString(node.Data);
+    return text.StartsWith('@') && int.TryParse(text.AsSpan(1), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var id)
+           && this._objects.TryGetValue(id, out var target)
+      ? target
+      : null;
   }
 
   private StructuredNode ReadRecordValue(int depth) {
@@ -191,8 +202,16 @@ internal sealed partial class NrbfReader {
 
   private StructuredNode ReadSinglePrimitiveArray() {
     var objectId = ReadInt32();
-    var count = ReadCount();
+    // The item-count safety limit is for arrays that become one node per item. A
+    // byte[] becomes a single blob, bounded by the stream itself rather than a count.
+    var count = ReadCount(max: int.MaxValue);
     var primitive = ReadByte();
+    if (primitive == 2) {
+      var blob = StructuredNode.Binary(ReadBytes(count), "primitive-array:byte");
+      StoreObject(objectId, blob);
+      return blob;
+    }
+    if (count > 1_000_000) throw new InvalidDataException($"NRBF count {count} is outside the supported safety range 0..1000000.");
     var result = StructuredNode.Array($"primitive-array:{PrimitiveName(primitive)}");
     StoreObject(objectId, result);
     for (var i = 0; i < count; ++i) result.Items.Add(ReadPrimitive(primitive));
