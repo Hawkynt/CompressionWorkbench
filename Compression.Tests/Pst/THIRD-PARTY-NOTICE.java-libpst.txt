@@ -1,0 +1,10 @@
+PstTests.cs embeds the first 564 bytes (the MS-PST HEADER) of two test files from java-libpst:
+
+  src/test/resources/dist-list.pst
+  src/test/resources/example-2013.ost
+
+Source:  https://github.com/rjohnsondev/java-libpst (branch develop)
+License: Apache License, Version 2.0 - https://www.apache.org/licenses/LICENSE-2.0
+
+Only these header bytes are used, as reference vectors for the header parser; no java-libpst code
+is included.
