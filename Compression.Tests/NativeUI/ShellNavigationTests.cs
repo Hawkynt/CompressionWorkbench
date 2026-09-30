@@ -99,6 +99,26 @@ public sealed class ShellNavigationTests {
     Assert.That(opened, Is.Zero, "a folder change inside an open archive must not reread the whole listing");
   }
 
+  // ── listing order ───────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenAnArchiveStoringFilesBeforeFolders_WhenListed_ThenFoldersComeFirstAndEachGroupIsByName() {
+    var mixed = Path.Combine(this._root, "mixed.zip");
+    using (var zip = ZipFile.Open(mixed, ZipArchiveMode.Create)) {
+      zip.CreateEntry("zeta.txt");
+      zip.CreateEntry("Beta/one.txt");
+      zip.CreateEntry("alpha.txt");
+      zip.CreateEntry("alpha/");
+      zip.CreateEntry("Gamma.txt");
+    }
+
+    this._model.Open(mixed);
+
+    Assert.That(this._model.Entries.Where(e => !e.IsParentEntry).Select(e => e.Name),
+      Is.EqualTo(new[] { "alpha", "Beta", "alpha.txt", "Gamma.txt", "zeta.txt" }),
+      "the same order a folder on disk is listed in: folders, then files, each ignoring case");
+  }
+
   // ── breadcrumbs ─────────────────────────────────────────────────────────────────────────────
 
   [Test]

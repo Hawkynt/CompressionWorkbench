@@ -1267,6 +1267,7 @@ internal sealed class MainViewModel : ViewModelBase {
     // Collect immediate children, deduplicating folders
     // Key: normalized folder name with trailing slash, or file name
     var seen = new HashSet<string>(StringComparer.Ordinal);
+    var children = new List<ArchiveEntryViewModel>();
 
     foreach (var e in _allEntries) {
       if (!e.Path.StartsWith(prefix, StringComparison.Ordinal)) continue;
@@ -1278,19 +1279,19 @@ internal sealed class MainViewModel : ViewModelBase {
       if (slashIdx < 0 && !e.IsDirectory) {
         // Direct file child
         if (seen.Add(remainder))
-          Entries.Add(e);
+          children.Add(e);
       }
       else if (slashIdx < 0 && e.IsDirectory) {
         // Directory entry without trailing slash — treat as folder
         var key = remainder + "/";
         if (seen.Add(key))
-          Entries.Add(e);
+          children.Add(e);
       }
       else if (slashIdx == remainder.Length - 1) {
         // Direct directory child (path ends with /)
         var key = remainder; // already has trailing /
         if (seen.Add(key))
-          Entries.Add(e);
+          children.Add(e);
       }
       else {
         // Deeper entry — show the immediate subfolder as a virtual directory
@@ -1305,7 +1306,7 @@ internal sealed class MainViewModel : ViewModelBase {
             origSum += x.OriginalSize;
             if (x.CompressedSize >= 0) { compSum += x.CompressedSize; hasComp = true; }
           }
-          Entries.Add(new ArchiveEntryViewModel {
+          children.Add(new ArchiveEntryViewModel {
             Name = subDir.TrimEnd('/'),
             Path = dirPrefix,
             OriginalSize = origSum,
@@ -1315,6 +1316,12 @@ internal sealed class MainViewModel : ViewModelBase {
         }
       }
     }
+
+    // Listed as a folder on disk is: folders first, then files, each by name ignoring case - not in
+    // whatever order the archive happens to store them. The sort is stable, so names equal but for
+    // case keep their stored order.
+    foreach (var child in children.OrderBy(c => !c.IsDirectory).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
+      Entries.Add(child);
   }
 
   private void NavigateInto(ArchiveEntryViewModel? entry) {
