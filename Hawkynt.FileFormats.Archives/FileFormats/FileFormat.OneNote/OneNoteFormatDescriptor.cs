@@ -8,9 +8,10 @@ namespace FileFormat.OneNote;
 
 /// <summary>
 /// Microsoft OneNote section (<c>.one</c> / <c>.onetoc2</c>) read-only pseudo-archive.
-/// Detection only — surfaces a <c>FULL.one</c> passthrough plus a <c>metadata.ini</c>
-/// summary identifying the variant (2007 vs 2010+). MS-ONESTORE revision-based packed
-/// object streams are not decoded.
+/// It surfaces the original file, a parsed fixed-header summary, and bounded raw copies of
+/// the root file-node list and transaction-log fragment when their references validate.
+/// The revision/object graph itself is not decoded, and nothing is written: a byte copy of an
+/// existing file is not a OneNote writer, so creation is not offered.
 ///
 /// References:
 /// <list type="bullet">
@@ -55,6 +56,7 @@ public sealed class OneNoteFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(OneNoteDetector.Guid2010Plus, Offset: 0, Confidence: 0.95),
+    new(OneNoteDetector.GuidTableOfContents, Offset: 0, Confidence: 0.95),
     new(OneNoteDetector.Guid2007, Offset: 0, Confidence: 0.95),
   ];
   /// <summary>
@@ -72,7 +74,7 @@ public sealed class OneNoteFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Microsoft OneNote section (read-only pseudo-archive)";
+  public string Description => "Microsoft OneNote section/TOC revision store (fixed-header and first root-fragment checks; bounded raw-region extraction)";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -81,10 +83,15 @@ public sealed class OneNoteFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     ArgumentNullException.ThrowIfNull(stream);
     var fileSize = stream.Length;
     var meta = BuildMetadataIni(stream);
-    return [
-      new ArchiveEntryInfo(0, "FULL.one", fileSize, -1, "Stored", false, false, null),
-      new ArchiveEntryInfo(1, "metadata.ini", meta.Length, -1, "Stored", false, false, null),
-    ];
+    var entries = new List<ArchiveEntryInfo> {
+      new(0, FullEntryName(stream), fileSize, -1, "Stored", false, false, null),
+    };
+    if (TryGetInspectableHeader(stream, out var header)) {
+      entries.Add(new(entries.Count, "root_file_node_list.bin", header.RootFileNodeListLength, -1, "Stored", false, false, null));
+      entries.Add(new(entries.Count, "transaction_log_fragment.bin", header.TransactionLogLength, -1, "Stored", false, false, null));
+    }
+    entries.Add(new(entries.Count, "metadata.ini", meta.Length, -1, "Stored", false, false, null));
+    return entries;
   }
 
   /// <summary>
@@ -94,13 +101,15 @@ public sealed class OneNoteFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     ArgumentNullException.ThrowIfNull(stream);
     ArgumentNullException.ThrowIfNull(outputDir);
 
-    if (files == null || files.Length == 0 || MatchesFilter("FULL.one", files)) {
-      stream.Seek(0, SeekOrigin.Begin);
-      var fullPath = Path.Combine(outputDir, "FULL.one");
-      var dir = Path.GetDirectoryName(fullPath);
-      if (dir != null) Directory.CreateDirectory(dir);
-      using var outStream = File.Create(fullPath);
-      stream.CopyTo(outStream);
+    var fullName = FullEntryName(stream);
+    if (files == null || files.Length == 0 || MatchesFilter(fullName, files))
+      WriteRange(stream, outputDir, fullName, 0, stream.Length);
+
+    if (TryGetInspectableHeader(stream, out var header)) {
+      if (files == null || files.Length == 0 || MatchesFilter("root_file_node_list.bin", files))
+        WriteRange(stream, outputDir, "root_file_node_list.bin", (long)header.RootFileNodeListOffset, header.RootFileNodeListLength);
+      if (files == null || files.Length == 0 || MatchesFilter("transaction_log_fragment.bin", files))
+        WriteRange(stream, outputDir, "transaction_log_fragment.bin", (long)header.TransactionLogOffset, header.TransactionLogLength);
     }
 
     if (files == null || files.Length == 0 || MatchesFilter("metadata.ini", files))
@@ -117,10 +126,20 @@ public sealed class OneNoteFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
-    if (string.Equals(entryName, "FULL.one", StringComparison.OrdinalIgnoreCase)) {
+    if (string.Equals(entryName, FullEntryName(archive), StringComparison.OrdinalIgnoreCase)) {
       return new Compression.Registry.Streaming.BoundedEntryStream(
         new Compression.Registry.Streaming.ReadOnlyStreamSlice(archive, 0, archive.Length),
         archive.Length, leaveOpen: false);
+    }
+    if (TryGetInspectableHeader(archive, out var header)) {
+      var range = entryName.Equals("root_file_node_list.bin", StringComparison.OrdinalIgnoreCase)
+        ? ((long)header.RootFileNodeListOffset, (long)header.RootFileNodeListLength)
+        : entryName.Equals("transaction_log_fragment.bin", StringComparison.OrdinalIgnoreCase)
+          ? ((long)header.TransactionLogOffset, (long)header.TransactionLogLength)
+          : ((long)-1, (long)0);
+      if (range.Item1 >= 0)
+        return new Compression.Registry.Streaming.BoundedEntryStream(
+          new Compression.Registry.Streaming.ReadOnlyStreamSlice(archive, range.Item1, range.Item2), range.Item2, leaveOpen: false);
     }
     if (string.Equals(entryName, "metadata.ini", StringComparison.OrdinalIgnoreCase)) {
       var meta = BuildMetadataIni(archive);
@@ -164,8 +183,61 @@ public sealed class OneNoteFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     sb.Append("magic_guid = ").AppendLine(FormatHexBytes(guidBytes));
     sb.Append("variant = ").AppendLine(VariantName(variant));
     sb.Append("file_size = ").AppendLine(fileSize.ToString(CultureInfo.InvariantCulture));
+    var fileType = OneNoteDetector.DetectFileType(stream);
+    sb.Append("file_type = ").AppendLine(fileType switch {
+      OneNoteFileType.Section => "section (.one)",
+      OneNoteFileType.TableOfContents => "table of contents (.onetoc2)",
+      _ => "legacy or unrecognized",
+    });
+    if (OneNoteHeader.TryRead(stream, out var header)) {
+      sb.Append("header_status = ").AppendLine(header.HasValidReferences(fileSize) ? "validated" : "invalid references or length");
+      sb.Append("guid_file = ").AppendLine(header.FileId.ToString("D"));
+      sb.Append("guid_ancestor = ").AppendLine(header.AncestorId.ToString("D"));
+      sb.Append("guid_file_format = ").AppendLine(header.FileFormatId.ToString("D"));
+      sb.Append("file_name_crc32 = 0x").AppendLine(header.NameCrc.ToString("X8", CultureInfo.InvariantCulture));
+      sb.Append("last_writer_version = ").AppendLine(header.LastWriterVersion.ToString(CultureInfo.InvariantCulture));
+      sb.Append("oldest_writer_version = ").AppendLine(header.OldestWriterVersion.ToString(CultureInfo.InvariantCulture));
+      sb.Append("newest_writer_version = ").AppendLine(header.NewestWriterVersion.ToString(CultureInfo.InvariantCulture));
+      sb.Append("oldest_reader_version = ").AppendLine(header.OldestReaderVersion.ToString(CultureInfo.InvariantCulture));
+      sb.Append("expected_file_size = ").AppendLine(header.ExpectedFileLength.ToString(CultureInfo.InvariantCulture));
+      sb.Append("guid_file_version = ").AppendLine(header.FileVersionId.ToString("D"));
+      sb.Append("file_version_generation = ").AppendLine(header.FileVersionGeneration.ToString(CultureInfo.InvariantCulture));
+      sb.Append("root_file_node_list_offset = ").AppendLine(header.RootFileNodeListOffset.ToString(CultureInfo.InvariantCulture));
+      sb.Append("root_file_node_list_length = ").AppendLine(header.RootFileNodeListLength.ToString(CultureInfo.InvariantCulture));
+      sb.Append("transaction_log_offset = ").AppendLine(header.TransactionLogOffset.ToString(CultureInfo.InvariantCulture));
+      sb.Append("transaction_log_length = ").AppendLine(header.TransactionLogLength.ToString(CultureInfo.InvariantCulture));
+      if (header.HasValidReferences(fileSize) && OneNoteFileNodeListFragment.TryRead(stream, header.RootFileNodeListOffset, header.RootFileNodeListLength, out var fragment)) {
+        sb.Append("root_file_node_list_id = ").AppendLine(fragment.FileNodeListId.ToString(CultureInfo.InvariantCulture));
+        sb.Append("root_file_node_list_sequence = ").AppendLine(fragment.Sequence.ToString(CultureInfo.InvariantCulture));
+      sb.Append("root_file_node_fragment_node_count = ").AppendLine(fragment.FileNodeCount.ToString(CultureInfo.InvariantCulture));
+        sb.Append("root_file_node_list_has_next_fragment = ").AppendLine(fragment.HasNextFragment.ToString(CultureInfo.InvariantCulture).ToLowerInvariant());
+      } else
+        sb.AppendLine("root_file_node_list_status = malformed");
+    }
     sb.AppendLine("parse_status = partial");
     return Encoding.UTF8.GetBytes(sb.ToString());
+  }
+
+  private static bool TryGetInspectableHeader(Stream stream, out OneNoteHeader header)
+    => OneNoteHeader.TryRead(stream, out header) && header.HasValidReferences(stream.Length);
+
+  private static string FullEntryName(Stream stream)
+    => OneNoteDetector.DetectFileType(stream) == OneNoteFileType.TableOfContents ? "FULL.onetoc2" : "FULL.one";
+
+  private static void WriteRange(Stream source, string outputDir, string name, long offset, long length) {
+    source.Position = offset;
+    var path = Path.Combine(outputDir, name);
+    var dir = Path.GetDirectoryName(path);
+    if (dir != null) Directory.CreateDirectory(dir);
+    using var target = File.Create(path);
+    var remaining = length;
+    var buffer = new byte[64 * 1024];
+    while (remaining > 0) {
+      var read = source.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
+      if (read == 0) throw new EndOfStreamException("OneNote region ended before its declared length.");
+      target.Write(buffer, 0, read);
+      remaining -= read;
+    }
   }
 
   private static string FormatHexBytes(byte[] bytes) {

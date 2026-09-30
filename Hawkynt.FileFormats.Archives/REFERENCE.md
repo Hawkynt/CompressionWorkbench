@@ -23175,7 +23175,7 @@ Implements `IEquatable<OmaHeader>`.
 
 ### Namespace `FileFormat.OneNote`
 
-[`OneNoteDetector`](#onenotedetector) · [`OneNoteFormatDescriptor`](#onenoteformatdescriptor) · [`OneNoteVariant`](#onenotevariant)
+[`OneNoteDetector`](#onenotedetector) · [`OneNoteFileType`](#onenotefiletype) · [`OneNoteFormatDescriptor`](#onenoteformatdescriptor) · [`OneNoteVariant`](#onenotevariant)
 
 #### `OneNoteDetector`
 
@@ -23183,11 +23183,22 @@ Represents an one note detector.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `DetectFileType` | `static OneNoteFileType DetectFileType(Stream stream)` | Detects the .one or .onetoc2 file type from the leading GUID. |
 | `Detect` | `static OneNoteVariant Detect(Stream stream)` | Performs the detect operation. |
+
+#### `OneNoteFileType`
+
+Identifies the revision-store file type declared by its header.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Unknown` | `0` | The header does not identify a supported OneNote revision store. |
+| `Section` | `1` | A notebook section (`.one`) file. |
+| `TableOfContents` | `2` | A notebook table-of-contents (`.onetoc2`) file. |
 
 #### `OneNoteFormatDescriptor`
 
-Microsoft OneNote section (`.one` / `.onetoc2`) read-only pseudo-archive. Detection only — surfaces a `FULL.one` passthrough plus a `metadata.ini` summary identifying the variant (2007 vs 2010+). MS-ONESTORE revision-based packed object streams are not decoded. References: `https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-onestore/` — [MS-ONESTORE] OneNote Revision Store File Format — Microsoft Open Specifications`https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-one/` — [MS-ONE] OneNote section data structures
+Microsoft OneNote section (`.one` / `.onetoc2`) read-only pseudo-archive. It surfaces the original file, a parsed fixed-header summary, and bounded raw copies of the root file-node list and transaction-log fragment when their references validate. The revision/object graph itself is not decoded, and nothing is written: a byte copy of an existing file is not a OneNote writer, so creation is not offered. References: `https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-onestore/` — [MS-ONESTORE] OneNote Revision Store File Format — Microsoft Open Specifications`https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-one/` — [MS-ONE] OneNote section data structures
 
 Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
