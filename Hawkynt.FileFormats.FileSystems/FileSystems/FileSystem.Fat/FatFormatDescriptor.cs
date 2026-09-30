@@ -1033,139 +1033,89 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   };
 
   /// <summary>
-  /// Adds (or replaces by name) files in an existing FAT image. The common case is a
-  /// genuine in-place edit via <see cref="FatModifier"/>: free clusters are allocated
-  /// from the FAT, the data is written into them, the cluster chain is linked in every
-  /// FAT copy and a directory entry is inserted — existing files, their clusters and the
-  /// boot sector stay byte-identical and the image keeps its length. Structural cases the
-  /// in-place path does not handle (nested sub-directory targets, a full root directory,
-  /// insufficient free space) fall back to the verified <see cref="FatWriter"/> rebuild.
+  /// Adds (or replaces by path) files in an existing FAT image, genuinely in place
+  /// through <see cref="FatModifier"/>: missing folders are created, a chained folder
+  /// grows by a cluster when it is full, and every existing entry — its attributes,
+  /// times, short-name alias and clusters — and the boot sector (label, serial, OEM
+  /// name, geometry) stay byte-identical. All inputs are applied to a working copy
+  /// and committed together.
   /// </summary>
-  /// <summary>
-  /// Largest image the in-place editors can work on. FatModifier and FatRemover
-  /// mutate a byte[] copy of the whole volume, which a FAT32 image is under no
-  /// obligation to fit in. Past this, the edit is applied by a streaming rebuild
-  /// instead -- correct, just not in-place.
-  /// </summary>
-  private const long MaxBufferedImageBytes = 1L << 31;
-
-  /// <summary>
-  /// Applies an edit by reading every surviving entry out of <paramref name="archive" />
-  /// and writing a fresh volume of the same declared size back over it. Used when the
-  /// image is too large to buffer; memory scales with the content, not the volume.
-  /// </summary>
-  private static void RebuildInPlaceStreaming(
-      Stream archive,
-      IReadOnlyList<(string Name, byte[] Data, DateTime? Mtime)> additions,
-      ISet<string>? drop) {
-    var totalSectors = (int)Math.Min(int.MaxValue, archive.Length / 512);
-    var combined = new FatWriter();
-
-    archive.Position = 0;
-    var reader = new FatReader(archive, leaveOpen: true);
-    foreach (var entry in reader.Entries.Where(e => !e.IsDirectory)) {
-      if (drop != null && (drop.Contains(entry.Name) || drop.Contains(Path.GetFileName(entry.Name))))
-        continue;
-      combined.AddFile(entry.Name, reader.Extract(entry));
-    }
-    foreach (var (name, data, mtime) in additions)
-      combined.AddFile(name, data, mtime);
-
-    // The new volume is laid out in scratch first. Truncating the archive and
-    // building straight into it destroyed the volume whenever the build
-    // refused — a file that does not fit used to cost the caller everything
-    // that was already on the disk.
-    var scratch = Path.GetTempFileName();
-    try {
-      using (var staged = File.Open(scratch, FileMode.Open, FileAccess.ReadWrite))
-        combined.BuildTo(staged, totalSectors);
-
-      using (var staged = File.OpenRead(scratch)) {
-        archive.Position = 0;
-        archive.SetLength(staged.Length);
-        staged.CopyTo(archive);
-        archive.Flush();
-      }
-    } finally {
-      try { File.Delete(scratch); } catch { /* scratch file already gone */ }
-    }
-  }
-
-  /// <summary>
-  /// Adds the supplied entry to the target container.
-  /// </summary>
+  /// <remarks>
+  /// There is deliberately no rebuild fallback. Writing the volume afresh gave it a
+  /// new serial and the label "NO NAME", cleared every hidden/system/read-only bit,
+  /// restamped every file with the current time and dropped empty folders. A volume
+  /// that has no room is reported as full (<see cref="IOException"/>) and one too
+  /// large to hold in memory is refused (<see cref="NotSupportedException"/>); either
+  /// way it is left as it was.
+  /// </remarks>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    var items0 = inputs.Where(i => !i.IsDirectory)
-      .Select(i => (Name: i.ArchiveName, Data: i.ReadContent(),
-                    Mtime: i.InMemoryContent != null ? (DateTime?)null : File.GetLastWriteTime(i.FullPath)))
-      .ToList();
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
-      RebuildInPlaceStreaming(archive, items0, drop: null);
-      return;
-    }
-
-    archive.Position = 0;
-    using var ms = new MemoryStream();
-    archive.CopyTo(ms);
-    var original = ms.ToArray();
-
     var items = inputs.Where(i => !i.IsDirectory)
       .Select(i => (Name: i.ArchiveName, Data: i.ReadContent(),
                     Mtime: i.InMemoryContent != null ? (DateTime?)null : File.GetLastWriteTime(i.FullPath)))
       .ToList();
-
-    // Try the genuine in-place edit on a copy; commit only if every input succeeds so a
-    // structural limit leaves the source untouched and the rebuild path takes over.
-    var work = (byte[])original.Clone();
-    var inPlace = true;
-    try {
-      foreach (var (name, data, mtime) in items)
-        FatModifier.AddFile(work, name, data, mtime);
-    } catch (Exception ex) when (ex is NotSupportedException or IOException
-                                 or InvalidDataException or InvalidOperationException) {
-      inPlace = false;
-    }
-    if (inPlace) {
-      archive.Position = 0;
-      archive.Write(work, 0, work.Length);
-      archive.SetLength(work.Length);
-      return;
-    }
-
-    // Fallback: verified rebuild from the untouched original.
-    var reader = new FatReader(new MemoryStream(original, writable: false));
-    var combined = new FatWriter();
-    foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
-      combined.AddFile(entry.Name, reader.Extract(entry));
+    var work = LoadForInPlaceEdit(archive);
     foreach (var (name, data, mtime) in items)
-      combined.AddFile(name, data, mtime);
-    var totalSectors = (int)(original.Length / 512);
-    var rebuilt = combined.Build(totalSectors: totalSectors);
-    archive.Position = 0;
-    archive.Write(rebuilt);
-    archive.SetLength(rebuilt.Length);
+      FatModifier.AddFile(work, name, data, mtime);
+    Commit(archive, work);
   }
 
   /// <summary>
-  /// Removes files from an existing FAT image with full secure wipe (cluster bytes,
-  /// cluster-tip slack, directory entries, FAT chain entries). No forensic recovery
-  /// of the removed content is possible from the resulting bytes.
+  /// Removes files — or folders with everything in them — from an existing FAT image
+  /// with full secure wipe (cluster bytes, cluster-tip slack, directory entries, FAT
+  /// chain entries). All names are applied to a working copy and committed together.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
-      RebuildInPlaceStreaming(archive, [], new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase));
-      return;
-    }
+    var work = LoadForInPlaceEdit(archive);
+    foreach (var name in ExpandFolders(work, entryNames))
+      FatRemover.Remove(work, name);
+    Commit(archive, work);
+  }
 
+  /// <summary>
+  /// The in-place editors walk the volume as one array; a volume that does not fit
+  /// one is refused rather than rebuilt.
+  /// </summary>
+  private static byte[] LoadForInPlaceEdit(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (archive.Length > Array.MaxLength)
+      throw new NotSupportedException(
+        $"FAT: in-place editing holds the volume in memory; a {archive.Length:N0}-byte volume is larger than that allows, "
+        + "and rebuilding it instead would drop its label, serial, attributes and times.");
     archive.Position = 0;
-    using var ms = new MemoryStream();
-    archive.CopyTo(ms);
-    var image = ms.ToArray();
-    foreach (var name in entryNames)
-      FatRemover.Remove(image, name);
+    var work = new byte[archive.Length];
+    archive.ReadExactly(work);
+    return work;
+  }
+
+  private static void Commit(Stream archive, byte[] work) {
     archive.Position = 0;
-    archive.Write(image);
-    archive.SetLength(image.Length);
+    archive.Write(work, 0, work.Length);
+    archive.SetLength(work.Length);
+  }
+
+  /// <summary>
+  /// Replaces every name that is a folder by everything beneath it, deepest first,
+  /// followed by the folder itself.
+  /// </summary>
+  private static List<string> ExpandFolders(byte[] image, string[] entryNames) {
+    var result = new List<string>();
+    List<(string Name, bool IsDirectory)>? listing = null;
+    foreach (var raw in entryNames ?? []) {
+      var name = raw.Replace('\\', '/').Trim('/');
+      listing ??= new FatReader(new MemoryStream(image, false)).Entries
+        .Select(e => (e.Name.Replace('\\', '/').Trim('/'), e.IsDirectory)).ToList();
+      if (!listing.Any(e => e.IsDirectory && string.Equals(e.Item1, name, StringComparison.OrdinalIgnoreCase))) {
+        result.Add(name);
+        continue;
+      }
+      result.AddRange(listing
+        .Where(e => e.Item1.StartsWith(name + "/", StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(e => e.Item1.Count(c => c == '/'))
+        .ThenBy(e => e.IsDirectory)
+        .Select(e => e.Item1));
+      result.Add(name);
+    }
+    return result;
   }
 
   /// <summary>
