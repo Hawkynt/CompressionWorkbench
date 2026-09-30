@@ -155,7 +155,57 @@ public class FlaTests {
   public void Create_RejectsProjectsWithoutRootDocument() {
     using var output = new MemoryStream();
     var inputs = new[] { ArchiveInputInfo.InMemory("LIBRARY/symbol.xml", "<symbol/>"u8) };
-    Assert.Throws<InvalidDataException>(() => new FlaFormatDescriptor().Create(output, inputs, new FormatCreateOptions()));
+    Assert.Throws<ArgumentException>(() => new FlaFormatDescriptor().Create(output, inputs, new FormatCreateOptions()));
+  }
+
+  [TestCase(null)]
+  [TestCase("deflate")]
+  [TestCase("stored")]
+  public void Create_GivenProjectWithoutMimetype_WhenWritten_ThenStoredMimetypeIsFirstMember(string? method) {
+    var inputs = new[] {
+      ArchiveInputInfo.InMemory("LIBRARY/symbol.xml", "<symbol/>"u8),
+      ArchiveInputInfo.InMemory("DOMDocument.xml", "<DOMDocument/>"u8),
+    };
+    using var output = new MemoryStream();
+    new FlaFormatDescriptor().Create(output, inputs, new FormatCreateOptions(method));
+
+    output.Position = 0;
+    using var zip = new ZipArchive(output, ZipArchiveMode.Read);
+    Assert.That(zip.Entries[0].FullName, Is.EqualTo("mimetype"));
+    Assert.That(zip.Entries[0].CompressedLength, Is.EqualTo(25), "mimetype must be stored");
+    using (var s = zip.Entries[0].Open())
+    using (var r = new StreamReader(s))
+      Assert.That(r.ReadToEnd(), Is.EqualTo("application/vnd.adobe.xfl"));
+    // Raw local header: name 'mimetype' at offset 30, method 0 (stored).
+    var bytes = output.ToArray();
+    Assert.That(Encoding.ASCII.GetString(bytes, 30, 8), Is.EqualTo("mimetype"));
+    Assert.That(BitConverter.ToUInt16(bytes, 8), Is.Zero);
+    Assert.That(zip.Entries.Select(e => e.FullName), Is.EqualTo(new[] { "mimetype", "LIBRARY/symbol.xml", "DOMDocument.xml" }));
+  }
+
+  [Test]
+  public void Create_GivenMatchingMimetypeInput_WhenWritten_ThenItIsNotDuplicated() {
+    var inputs = new[] {
+      ArchiveInputInfo.InMemory("DOMDocument.xml", "<DOMDocument/>"u8),
+      ArchiveInputInfo.InMemory("mimetype", "application/vnd.adobe.xfl"u8),
+    };
+    using var output = new MemoryStream();
+    new FlaFormatDescriptor().Create(output, inputs, new FormatCreateOptions());
+    output.Position = 0;
+    using var zip = new ZipArchive(output, ZipArchiveMode.Read);
+    Assert.That(zip.Entries.Count(e => e.FullName == "mimetype"), Is.EqualTo(1));
+    Assert.That(zip.Entries[0].FullName, Is.EqualTo("mimetype"));
+  }
+
+  [TestCase("application/zip")]
+  [TestCase("application/vnd.adobe.xfl\n")]
+  [TestCase("")]
+  public void Create_GivenForeignMimetypeInput_WhenWritten_ThenRefused(string content) {
+    var inputs = new[] {
+      ArchiveInputInfo.InMemory("DOMDocument.xml", "<DOMDocument/>"u8),
+      ArchiveInputInfo.InMemory("mimetype", Encoding.ASCII.GetBytes(content)),
+    };
+    Assert.Throws<ArgumentException>(() => new FlaFormatDescriptor().Create(new MemoryStream(), inputs, new FormatCreateOptions()));
   }
 
   [Test]

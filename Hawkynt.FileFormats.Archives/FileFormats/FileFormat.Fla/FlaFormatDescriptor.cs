@@ -21,6 +21,8 @@ namespace FileFormat.Fla;
 ///   <item><description>Adobe "Flash Professional XFL" format documentation (CS5-era) — the ZIP-based variant</description></item>
 ///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/</c> — [MS-CFB] — Compound File Binary (the pre-CS4 OLE2 variant's container)</description></item>
 ///   <item><description><c>https://en.wikipedia.org/wiki/Adobe_Animate</c> — application background</description></item>
+///   <item><description><c>https://blogs.adobe.com/digitalmedia/2010/05/the_xfl_file_format_explained/</c> — Adobe — a compressed FLA is the zipped XFL folder</description></item>
+///   <item><description><c>http://justsolve.archiveteam.org/wiki/FLA</c> and real CS5.5 listings — the leading stored 25-byte <c>mimetype</c> member (<c>application/vnd.adobe.xfl</c>); community-documented, not in an Adobe specification</description></item>
 /// </list>
 /// </summary>
 public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
@@ -186,13 +188,26 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     if (!inputs.Any(i => !i.IsDirectory && string.Equals(
           i.ArchiveName.Replace('\\', '/').TrimStart('/'), "DOMDocument.xml", StringComparison.OrdinalIgnoreCase)))
-      throw new InvalidDataException("A compressed XFL FLA must contain a root DOMDocument.xml project document.");
+      throw new ArgumentException("A compressed XFL FLA must contain a root DOMDocument.xml project document.", nameof(inputs));
+
+    var suppliedMimetype = inputs.FirstOrDefault(i => !i.IsDirectory && IsRootMimetype(i.ArchiveName));
+    if (suppliedMimetype != null
+        && !suppliedMimetype.ReadContent().AsSpan().SequenceEqual(XflMimetype))
+      throw new ArgumentException($"An XFL 'mimetype' entry must contain exactly '{Encoding.ASCII.GetString(XflMimetype)}'.", nameof(inputs));
 
     using var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
+
+    // Like other Adobe UCF packages (and EPUB's OCF), a compressed FLA starts with an uncompressed
+    // 'mimetype' member naming the package type, so it is written first and stored.
+    var mimetypeEntry = archive.CreateEntry(MimetypeName, CompressionLevel.NoCompression);
+    mimetypeEntry.LastWriteTime = suppliedMimetype is null ? ZipEpoch : GetInputTimestamp(suppliedMimetype);
+    using (var target = mimetypeEntry.Open())
+      target.Write(XflMimetype);
+
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
       var name = input.ArchiveName.Replace('\\', '/').TrimStart('/');
-      if (string.IsNullOrWhiteSpace(name))
+      if (string.IsNullOrWhiteSpace(name) || IsRootMimetype(name))
         continue;
       var entry = archive.CreateEntry(name, compression);
       entry.LastWriteTime = GetInputTimestamp(input);
@@ -203,6 +218,14 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   private static readonly DateTimeOffset ZipEpoch = new(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+  private const string MimetypeName = "mimetype";
+
+  // 25 bytes, no line terminator: the size real CS5.5+ FLA listings show for this member.
+  private static ReadOnlySpan<byte> XflMimetype => "application/vnd.adobe.xfl"u8;
+
+  private static bool IsRootMimetype(string archiveName)
+    => string.Equals(archiveName.Replace('\\', '/').TrimStart('/'), MimetypeName, StringComparison.Ordinal);
 
   private static DateTimeOffset GetInputTimestamp(ArchiveInputInfo input) {
     if (input.InMemoryContent is null && File.Exists(input.FullPath)) {
