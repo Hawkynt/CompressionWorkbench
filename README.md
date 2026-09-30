@@ -116,7 +116,7 @@ application.
 <!-- branch-screenshots:start -->
 ## 🖼️ Screenshots
 
-These screenshots are generated from the current branch by the real application on every non-main push. They are committed back to the branch so the README shows the UI that branch actually builds, rather than a manually curated image from some older revision.
+These screenshots are generated from the current branch by the real WPF application on every non-main push. They are committed back to the branch so the README shows the UI that branch actually builds, rather than a manually curated image from some older revision.
 
 | Archive browser | Binary analysis | Maintenance |
 | :--: | :--: | :--: |
