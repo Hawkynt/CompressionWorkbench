@@ -269,7 +269,7 @@ public sealed class RefsFormatDescriptor :
     => RefsOfflineModifier.Remove(archive, entryNames);
 
   /// <summary>
-  /// Renames an existing ReFS file or directory within the same parent directory
+  /// Renames an existing ReFS regular file within the same parent directory
   /// on an unmounted image, preserving its existing metadata and data allocation.
   /// </summary>
   public void Rename(Stream image, string sourcePath, string destinationPath)

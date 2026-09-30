@@ -23,7 +23,7 @@ The implementation is intentionally not structured as a one-off defragmenter. Pa
 - `RefsPlacementManager` — ReFS-specific multi-pass placement policy (metadata zones, defrag and interleave).
 - `RefsMutationModel` — explicit `OfflineQuiescent` versus future `NativeCow` transaction boundary.
 
-The offline editor can rename an existing file or directory within its current parent directory. It retains the directory value, file identity and backing stream rows, replacing only the filename key through immutable B+ pages and an alternate checkpoint. Cross-directory moves and mounted writes remain unsupported.
+The offline editor can rename an existing regular file within its current parent directory. It retains the directory value, file identity and backing stream rows, replacing only the filename key through immutable B+ pages and an alternate checkpoint. Directory renames are refused because the rows that link a directory object back to its name are not decoded yet; cross-directory moves and mounted writes remain unsupported. The rename is verified against synthetic volumes only — no external ReFS reader has yet accepted a renamed image.
 
 ## Placement model
 

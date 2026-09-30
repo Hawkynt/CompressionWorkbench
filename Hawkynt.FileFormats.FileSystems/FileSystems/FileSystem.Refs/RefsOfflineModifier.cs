@@ -64,7 +64,7 @@ internal static class RefsOfflineModifier {
   }
 
   /// <summary>
-  /// Renames one live entry inside its current directory on an unmounted image.
+  /// Renames one live regular file inside its current directory on an unmounted image.
   /// The directory value and any backing data row are preserved byte-for-byte;
   /// only the type-0x30 filename key changes in a replacement CoW tree.
   /// </summary>
@@ -91,6 +91,14 @@ internal static class RefsOfflineModifier {
     if (matches.Length != 1)
       throw new NotSupportedException($"ReFS source '{source}' is ambiguous under case-insensitive lookup.");
     var original = matches[0];
+    // A directory is referenced by more than its filename row: its own object
+    // and any ID-to-name link the parent keeps for it would still carry the old
+    // name. None of those rows is decoded or proven yet, so a directory rename
+    // is refused rather than left half-applied.
+    if (original.IsDirectory)
+      throw new NotSupportedException(
+        $"ReFS offline rename is limited to regular files; renaming the directory '{source}' is withheld " +
+        "until its directory-link rows are proven for the active ReFS profile.");
     if (string.Equals(original.Path, destination, StringComparison.Ordinal)) return;
     if (files.Any(file => !ReferenceEquals(file, original)
         && string.Equals(file.Path, destination, StringComparison.OrdinalIgnoreCase)))

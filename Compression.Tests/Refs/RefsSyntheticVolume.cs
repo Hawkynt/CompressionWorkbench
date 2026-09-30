@@ -10,11 +10,14 @@ namespace Compression.Tests.Refs;
 /// <param name="Fragments">Number of on-disk extents the stream is split into.</param>
 /// <param name="Resident">Emit a type-0x30/flags-0x01 holder without any decodable
 /// extent table, which the namespace reader reports as a resident stream.</param>
+/// <param name="Directory">Emit a directory-attributed type-0x30 row whose child
+/// object is not published, so the namespace sees an empty directory.</param>
 internal sealed record RefsSyntheticFile(
   string Name,
   byte[] Content,
   int Fragments = 1,
-  bool Resident = false);
+  bool Resident = false,
+  bool Directory = false);
 
 /// <summary>
 /// Builds a byte-exact, structurally valid unmounted ReFS 3.14 image.
@@ -87,6 +90,11 @@ internal sealed class RefsSyntheticVolume {
     return this;
   }
 
+  public RefsSyntheticVolume WithDirectoryEntry(string name) {
+    this._files.Add(new RefsSyntheticFile(name, [], 1, Directory: true));
+    return this;
+  }
+
   /// <summary>
   /// Pre-creates an all-zero Block Refcount row covering <paramref name="startVirtualLcn"/>.
   /// Without it root #6 is empty and the first clone must materialise the row;
@@ -110,7 +118,7 @@ internal sealed class RefsSyntheticVolume {
 
     foreach (var file in this._files) {
       fileIds[file.Name] = nextFileId++;
-      if (file.Resident) {
+      if (file.Resident || file.Directory) {
         fileClusters[file.Name] = [];
         fileExtents[file.Name] = [];
         continue;
@@ -433,6 +441,11 @@ internal sealed class RefsSyntheticVolume {
         continue;
       }
 
+      if (file.Directory) {
+        rows.Add(new Row(NameKey(file.Name, 0x02), DirectoryRecordValue(fileId)));
+        continue;
+      }
+
       rows.Add(new Row(NameKey(file.Name, 0x02), FileRecordValue(fileId, size, allocated)));
       rows.Add(new Row(BackingKey(fileId), BackingValue(size, allocated, fileExtents[file.Name])));
     }
@@ -457,6 +470,18 @@ internal sealed class RefsSyntheticVolume {
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(0x30, 8), allocated);
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(0x38, 8), size);
     BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(0x40, 4), 0x20);
+    return value;
+  }
+
+  // A directory row carries the child directory's own OID at +0x08. The OID is
+  // deliberately absent from the Object Table, so the reader lists the entry
+  // without descending into it.
+  private static byte[] DirectoryRecordValue(ulong fileId) {
+    var value = new byte[0x48];
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(0x00, 8), fileId);
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(0x08, 8), 0x7000 + fileId);
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(0x18, 8), 0x01D0_0000_0000_0000UL);
+    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(0x40, 4), 0x10000000);
     return value;
   }
 

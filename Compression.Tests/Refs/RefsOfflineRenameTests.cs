@@ -80,4 +80,101 @@ public sealed class RefsOfflineRenameTests {
     var metadata = RefsMetadataReader.Open(stream);
     Assert.That(new RefsNamespaceReader(metadata).ReadAll().Single().Path, Is.EqualTo("ALPHA.bin"));
   }
+  [Test, Category("ErrorHandling")]
+  public void GivenDirectoryEntry_WhenRenamed_ThenRefusesBeforeChangingImage() {
+    var image = new RefsSyntheticVolume()
+      .WithDirectoryEntry("folder")
+      .WithFile("alpha.bin", [1, 2, 3])
+      .Build();
+    var original = image.ToArray();
+    using var stream = new MemoryStream(image, writable: true);
+
+    Assert.Throws<NotSupportedException>(() => new RefsFormatDescriptor().Rename(stream, "folder", "renamed"));
+    Assert.That(image, Is.EqualTo(original));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenMissingSource_WhenRenamed_ThenThrowsFileNotFoundWithoutChangingImage() {
+    var image = new RefsSyntheticVolume().WithFile("alpha.bin", [1]).Build();
+    var original = image.ToArray();
+    using var stream = new MemoryStream(image, writable: true);
+
+    Assert.Throws<FileNotFoundException>(() => new RefsFormatDescriptor().Rename(stream, "missing.bin", "renamed.bin"));
+    Assert.That(image, Is.EqualTo(original));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenDestinationInOtherDirectory_WhenRenamed_ThenRefusesCrossDirectoryMove() {
+    var image = new RefsSyntheticVolume().WithFile("alpha.bin", [1]).Build();
+    var original = image.ToArray();
+    using var stream = new MemoryStream(image, writable: true);
+
+    Assert.Throws<NotSupportedException>(() => new RefsFormatDescriptor().Rename(stream, "alpha.bin", "sub/alpha.bin"));
+    Assert.That(image, Is.EqualTo(original));
+  }
+
+  [TestCase("")]
+  [TestCase(".")]
+  [TestCase("..")]
+  [TestCase("trailing.")]
+  [TestCase("trailing ")]
+  [TestCase("a:b")]
+  [TestCase("a*b")]
+  [TestCase("a?b")]
+  [TestCase("a\"b")]
+  [TestCase("a<b")]
+  [TestCase("a>b")]
+  [TestCase("a|b")]
+  [TestCase("tab	name")]
+  [Category("ErrorHandling")]
+  public void GivenInvalidDestinationName_WhenRenamed_ThenThrowsArgumentWithoutChangingImage(string name) {
+    var image = new RefsSyntheticVolume().WithFile("alpha.bin", [1]).Build();
+    var original = image.ToArray();
+    using var stream = new MemoryStream(image, writable: true);
+
+    Assert.Throws<ArgumentException>(() => new RefsFormatDescriptor().Rename(stream, "alpha.bin", name));
+    Assert.That(image, Is.EqualTo(original));
+  }
+
+  [Test, Category("Boundary")]
+  public void GivenDestinationOf255Units_WhenRenamed_ThenAcceptsIt() {
+    var name = new string('n', 251) + ".bin";
+    var image = new RefsSyntheticVolume().WithFile("alpha.bin", [4, 5, 6]).Build();
+    using var stream = new MemoryStream(image, writable: true);
+
+    new RefsFormatDescriptor().Rename(stream, "alpha.bin", name);
+
+    var files = new RefsNamespaceReader(RefsMetadataReader.Open(stream)).ReadAll();
+    Assert.That(files.Single().Path, Is.EqualTo(name));
+  }
+
+  [Test, Category("Boundary")]
+  public void GivenDestinationOf256Units_WhenRenamed_ThenRefusesWithoutChangingImage() {
+    var name = new string('n', 252) + ".bin";
+    var image = new RefsSyntheticVolume().WithFile("alpha.bin", [4, 5, 6]).Build();
+    var original = image.ToArray();
+    using var stream = new MemoryStream(image, writable: true);
+
+    Assert.Throws<ArgumentException>(() => new RefsFormatDescriptor().Rename(stream, "alpha.bin", name));
+    Assert.That(image, Is.EqualTo(original));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void GivenIdenticalSourceAndDestination_WhenRenamed_ThenLeavesImageUntouched() {
+    var image = new RefsSyntheticVolume().WithFile("alpha.bin", [1]).Build();
+    var original = image.ToArray();
+    using var stream = new MemoryStream(image, writable: true);
+
+    new RefsFormatDescriptor().Rename(stream, "alpha.bin", "alpha.bin");
+
+    Assert.That(image, Is.EqualTo(original));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenReadOnlyStream_WhenRenamed_ThenRefuses() {
+    var image = new RefsSyntheticVolume().WithFile("alpha.bin", [1]).Build();
+    using var stream = new MemoryStream(image, writable: false);
+
+    Assert.Throws<ArgumentException>(() => new RefsFormatDescriptor().Rename(stream, "alpha.bin", "beta.bin"));
+  }
 }
