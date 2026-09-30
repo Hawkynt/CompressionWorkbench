@@ -133,10 +133,9 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Genuine in-place ext shrink: trims trailing free blocks via
   /// <see cref="ExtInPlaceShrinker"/> (updating bitmap / descriptors / superblock /
-  /// backups / checksums; every surviving block stays byte-identical). Falls back to
-  /// the <see cref="IArchiveShrinkable"/> default (verified rebuild / copy-through)
-  /// when the in-place path declines — e.g. a target that would need genuine block
-  /// relocation or block-group removal.
+  /// backups / checksums; every surviving block stays byte-identical). When the
+  /// in-place path declines — e.g. a target that would need a whole block group
+  /// removed — the volume is copied through unchanged.
   /// </summary>
   public void Shrink(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
@@ -162,7 +161,13 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       // not an ext image we can parse in place; fall through
     }
 
-    ((IArchiveShrinkable)this).ShrinkDefault(input, output);
+    // Nothing could be trimmed in place. The volume is handed back as it is rather
+    // than rebuilt: a rebuilt volume is smaller only by dropping the journal,
+    // features, label, UUID and every file's mode, owner, times and links.
+    input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    input.CopyTo(output);
   }
 
   /// <summary>
