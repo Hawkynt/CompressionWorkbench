@@ -113,6 +113,9 @@ public sealed class Gfs2Reader : IDisposable {
   /// </summary>
   public string UuidHex { get; private set; } = "";
 
+  /// <summary>Raw 16-byte volume UUID.</summary>
+  public byte[] Uuid { get; private set; } = new byte[16];
+
   /// <summary>
   /// Gets the entries.
   /// </summary>
@@ -187,8 +190,10 @@ public sealed class Gfs2Reader : IDisposable {
     this.LockProto = ReadCString(sb.Slice(96, 64));
     this.LockTable = ReadCString(sb.Slice(160, 64));
 
-    if (sb.Length >= 256 + 16)
-      this.UuidHex = Convert.ToHexString(sb.Slice(256, 16));
+    if (sb.Length >= 256 + 16) {
+      sb.Slice(256, 16).CopyTo(this.Uuid);
+      this.UuidHex = Convert.ToHexString(this.Uuid);
+    }
 
     // Walk the root inode and every nested stuffed/ExHash directory. Errors are
     // non-fatal — we still surface the superblock metadata.
@@ -432,6 +437,7 @@ public sealed class Gfs2Reader : IDisposable {
         FormalIno = formalIno,
         IsDirectory = isDirectory,
         LastModified = TryGetTime(dirMtimeBe),
+        Metadata = this.ReadInodeMetadata(noAddr),
       };
       // For regular files, also try to read di_size from the target dinode.
       if (!entry.IsDirectory && this.TryReadDinodeSize(noAddr, out var size, out var mtime)) {
@@ -442,6 +448,7 @@ public sealed class Gfs2Reader : IDisposable {
           IsDirectory = false,
           Size = (long)size,
           LastModified = TryGetTime(mtime) ?? entry.LastModified,
+          Metadata = entry.Metadata,
         };
       }
       this._entries.Add(entry);
@@ -451,6 +458,27 @@ public sealed class Gfs2Reader : IDisposable {
 
       off += recLen;
     }
+  }
+
+  private Gfs2InodeMetadata? ReadInodeMetadata(ulong block) {
+    var bytes = this.Block((long)block);
+    if (bytes.Length < DinodeHeaderSize ||
+        BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(0, 4)) != MetaMagic ||
+        BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(4, 4)) != MetaTypeDinode)
+      return null;
+
+    var inode = bytes.AsSpan();
+    return new Gfs2InodeMetadata(
+      BinaryPrimitives.ReadUInt32BigEndian(inode.Slice(40, 4)),
+      BinaryPrimitives.ReadUInt32BigEndian(inode.Slice(44, 4)),
+      BinaryPrimitives.ReadUInt32BigEndian(inode.Slice(48, 4)),
+      BinaryPrimitives.ReadUInt32BigEndian(inode.Slice(128, 4)),
+      BinaryPrimitives.ReadUInt64BigEndian(inode.Slice(72, 8)),
+      BinaryPrimitives.ReadUInt32BigEndian(inode.Slice(176, 4)),
+      BinaryPrimitives.ReadUInt64BigEndian(inode.Slice(80, 8)),
+      BinaryPrimitives.ReadUInt32BigEndian(inode.Slice(180, 4)),
+      BinaryPrimitives.ReadUInt64BigEndian(inode.Slice(88, 8)),
+      BinaryPrimitives.ReadUInt32BigEndian(inode.Slice(184, 4)));
   }
 
   private bool TryReadDinodeSize(ulong block, out ulong size, out ulong mtimeBe) {

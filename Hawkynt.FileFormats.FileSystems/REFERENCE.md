@@ -6980,7 +6980,7 @@ Minimal but spec-keyed writer for Sistina GFS (the pre-GFS2 distributed filesyst
 
 ### Namespace `FileSystem.Gfs2`
 
-[`Gfs2BlockMover`](#gfs2blockmover) · [`Gfs2Entry`](#gfs2entry) · [`Gfs2ExtentMap`](#gfs2extentmap) · [`Gfs2FormatDescriptor`](#gfs2formatdescriptor) · [`Gfs2Reader`](#gfs2reader) · [`Gfs2Writer`](#gfs2writer)
+[`Gfs2BlockMover`](#gfs2blockmover) · [`Gfs2Entry`](#gfs2entry) · [`Gfs2ExtentMap`](#gfs2extentmap) · [`Gfs2FormatDescriptor`](#gfs2formatdescriptor) · [`Gfs2InodeMetadata`](#gfs2inodemetadata) · [`Gfs2Reader`](#gfs2reader) · [`Gfs2Writer`](#gfs2writer)
 
 #### `Gfs2BlockMover`
 
@@ -7009,6 +7009,7 @@ One entry in a GFS2 image. Read-only: we surface the superblock, root/master dir
 | `Gfs2Entry` | `Gfs2Entry()` |  |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Gets a value indicating whether is directory. |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Gets or sets the last modified. |
+| `Metadata` | `Gfs2InodeMetadata Metadata { get; init; }` | Inode attributes read from the entry's dinode. |
 | `Name` | `string Name { get; init; }` | Gets or sets the name. |
 | `Size` | `long Size { get; init; }` | Gets or sets the size. |
 
@@ -7053,6 +7054,26 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes regular files with the same geometry/lock-table preservation as `Add`. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zero-fills every block the resource-group bitmaps report as free — which is where a removed file's bytes stay until something else claims them. |
 
+#### `Gfs2InodeMetadata`
+
+POSIX inode attributes stored directly in a GFS2 dinode.
+
+Implements `IEquatable<Gfs2InodeMetadata>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Gfs2InodeMetadata` | `Gfs2InodeMetadata(uint Mode, uint UserId, uint GroupId, uint Flags, ulong AccessTimeSeconds, uint AccessTimeNanoseconds, ulong ModificationTimeSeconds, uint ModificationTimeNanoseconds, ulong ChangeTimeSeconds, uint ChangeTimeNanoseconds)` | POSIX inode attributes stored directly in a GFS2 dinode. |
+| `AccessTimeNanoseconds` | `uint AccessTimeNanoseconds { get; init; }` |  |
+| `AccessTimeSeconds` | `ulong AccessTimeSeconds { get; init; }` |  |
+| `ChangeTimeNanoseconds` | `uint ChangeTimeNanoseconds { get; init; }` |  |
+| `ChangeTimeSeconds` | `ulong ChangeTimeSeconds { get; init; }` |  |
+| `Flags` | `uint Flags { get; init; }` |  |
+| `GroupId` | `uint GroupId { get; init; }` |  |
+| `Mode` | `uint Mode { get; init; }` |  |
+| `ModificationTimeNanoseconds` | `uint ModificationTimeNanoseconds { get; init; }` |  |
+| `ModificationTimeSeconds` | `ulong ModificationTimeSeconds { get; init; }` |  |
+| `UserId` | `uint UserId { get; init; }` |  |
+
 #### `Gfs2Reader`
 
 Read-only GFS2 (Global File System 2) image walker. Mainline Linux since 2.6.19; Red Hat cluster filesystem. Big-endian on-disk. What we parse: Superblock at byte offset 65536 (= sector 128 × 512 B). Magic `mh_magic = 0x01161970` at the start of the gfs2_meta_header.Block size from `sb_bsize`, root + master inum from `sb_root_dir` / `sb_master_dir`.Root and nested stuffed or ExHash directories, including journal-data-backed hash tables, leaf blocks and overflow chains.Regular files stored inline or through the multi-level indirect tree named by `di_height`. What we deliberately skip (multi-week effort each): Journal recovery and cluster lock manager stateExtended attributes References: Linux kernel `fs/gfs2/` — primary on-disk definition`include/uapi/linux/gfs2_ondisk.h` — magic constants & struct layoutRed Hat Cluster Suite / Resilient Storage Add-On docs
@@ -7082,6 +7103,7 @@ Implements `IDisposable`.
 | `SuperblockRaw` | `byte[] SuperblockRaw { get; }` | Raw superblock bytes (1024 bytes captured from offset 65536), for diagnostics. |
 | `SuperblockValid` | `bool SuperblockValid { get; }` | Gets a value indicating whether superblock valid. |
 | `UuidHex` | `string UuidHex { get; }` | Gets or sets the uuid hex. |
+| `Uuid` | `byte[] Uuid { get; }` | Raw 16-byte volume UUID. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `EnumerateDataExtents` | `IEnumerable<ValueTuple<long, long, long>> EnumerateDataExtents(Gfs2Entry entry)` | Where on disk `entry`'s bytes actually sit, as runs of whole blocks, along with the byte offset of the first pointer that names each run. |
 | `ExtractTo` | `long ExtractTo(Gfs2Entry entry, Stream destination)` | Writes `entry`'s content into `destination`. A body up to `blocksize - 232` is stuffed in the dinode; a longer one hangs off a metadata tree whose depth di_height gives — the dinode's own pointer area at the top, then `di_height - 1` levels of indirect blocks. Returns the number of bytes written. |
@@ -7094,8 +7116,9 @@ Clean-room GFS2 (Global File System 2) image writer producing a minimal, standal
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Gfs2Writer` | `Gfs2Writer(long sizeBytes = 33554432, byte[] uuid = null, DateTime? timestamp = null, string lockTable = null)` | Creates a writer for an image of the given total size in bytes. The size is rounded down to a whole number of 4096-byte blocks; the minimum that yields a clean volume (journal + system inodes + slack) is 32 MB. |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a regular file. Forward slashes and backslashes delimit nested native directories. Bodies up to `BlockSize - 232` are stuffed in the dinode; longer ones get a metadata tree of indirect blocks. |
-| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a file whose bytes are pulled from `openStream` as the volume is written. |
+| `PreservableFileFlags` | `const uint PreservableFileFlags` | The `di_flags` bits a regular file may carry through this writer: DIRECTIO (0x10), IMMUTABLE (0x20), APPENDONLY (0x40), NOATIME (0x80) and SYNC (0x100) from `gfs2_ondisk.h`. They are access policy only. Every other bit either changes the on-disk layout (JDATA stores `bsize - 24` bytes per data block behind a meta header, EA_INDIRECT names an extended-attribute tree this writer does not emit), belongs to directories (EXHASH, TOPDIR, INHERIT_*) or to system inodes, or records a transient state (TRUNC_IN_PROG); writing it on a plainly laid-out file would describe a volume that is not there. |
+| `AddFile` | `void AddFile(string name, byte[] data, Gfs2InodeMetadata metadata = null)` | Adds a regular file. Forward slashes and backslashes delimit nested native directories. Bodies up to `BlockSize - 232` are stuffed in the dinode; longer ones get a metadata tree of indirect blocks. |
+| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream, Gfs2InodeMetadata metadata = null)` | Adds a file whose bytes are pulled from `openStream` as the volume is written. |
 | `Build` | `byte[] Build()` | Builds the image and returns the raw bytes. |
 | `Build` | `void Build(Stream output)` | Builds the image and writes it to `output`. |
 | `EstimateSize` | `static long EstimateSize(IEnumerable<long> fileSizes)` | Smallest volume that holds `fileSizes`: the fixed metadata layout, every file's dinode, its data blocks and the indirect blocks above them, plus room for the resource-group bitmaps. Rounded up to a megabyte. |
