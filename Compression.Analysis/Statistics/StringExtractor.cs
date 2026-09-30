@@ -31,18 +31,16 @@ public static class StringExtractor {
         printableCount++;
       }
       else if (start >= 0) {
-        // Check if we can bridge: look ahead up to bridgeGap bytes for another printable
+        // data[i] is the first non-printable byte; bridge when a printable byte follows
+        // within bridgeGap bytes (so the gap is at most bridgeGap bytes wide).
         var canBridge = false;
         if (bridgeGap > 0 && i < data.Length) {
-          var lookAhead = Math.Min(bridgeGap, data.Length - i);
-          for (var j = 0; j < lookAhead; j++) {
+          var lookAhead = Math.Min(bridgeGap, data.Length - 1 - i);
+          for (var j = 1; j <= lookAhead; j++) {
             if (data[i + j] >= 0x20 && data[i + j] < 0x7F) {
               canBridge = true;
-              // Bridge the gap with '.' placeholders
-              for (var k = 0; k <= j; k++)
-                sb.Append(data[i + k] >= 0x20 && data[i + k] < 0x7F ? (char)data[i + k] : '.');
-              printableCount++; // count the resumed printable char
-              i += j; // loop increment will add 1
+              sb.Append('.', j); // one placeholder per gap byte
+              i += j - 1; // the loop increment lands on the printable byte
               break;
             }
           }
@@ -119,18 +117,17 @@ public static class StringExtractor {
         }
       }
       else if (start >= 0) {
-        // Bridge gap logic (single-byte only)
+        // Bridge gap logic: data[i] is the first gap byte; bridge when a printable byte
+        // or a multi-byte lead follows within bridgeGap bytes.
         var canBridge = false;
         if (bridgeGap > 0 && i < data.Length) {
-          var lookAhead = Math.Min(bridgeGap, data.Length - i);
-          for (var j = 0; j < lookAhead; j++) {
+          var lookAhead = Math.Min(bridgeGap, data.Length - 1 - i);
+          for (var j = 1; j <= lookAhead; j++) {
             var lb = data[i + j];
             if ((lb >= 0x20 && lb < 0x7F) || lb >= 0xC2) {
               canBridge = true;
-              for (var k = 0; k <= j; k++)
-                sb.Append(data[i + k] >= 0x20 && data[i + k] < 0x7F ? (char)data[i + k] : '.');
-              charCount++;
-              i += j; // loop will add 1
+              sb.Append('.', j); // one placeholder per gap byte
+              i += j - 1; // the loop increment lands on the resumed character
               break;
             }
           }

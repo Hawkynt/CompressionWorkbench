@@ -79,4 +79,44 @@ public class StringSearchTests {
     Assert.That(results.Count, Is.GreaterThanOrEqualTo(1));
     Assert.That(results[0].Text, Does.Contain("caf"));
   }
+
+  [Test, Category("HappyPath")]
+  public void Given_OneNonPrintableByteBetweenRuns_When_ExtractAsciiWithBridgeGapOne_Then_RunsJoinWithADot() {
+    var results = StringExtractor.ExtractAsciiStrings("abc\0def"u8.ToArray(), 6, bridgeGap: 1);
+
+    Assert.That(results, Has.Count.EqualTo(1));
+    Assert.That(results[0].Text, Is.EqualTo("abc.def"));
+    Assert.That(results[0].Offset, Is.EqualTo(0));
+    Assert.That(results[0].Length, Is.EqualTo(7));
+  }
+
+  [Test, Category("Boundary")]
+  public void Given_GapAsWideAsBridgeGap_When_ExtractAscii_Then_RunsJoin() {
+    var results = StringExtractor.ExtractAsciiStrings("abc\0\u0001def"u8.ToArray(), 6, bridgeGap: 2);
+
+    Assert.That(results.Select(r => r.Text), Is.EqualTo(new[] { "abc..def" }));
+  }
+
+  [Test, Category("Boundary")]
+  public void Given_GapWiderThanBridgeGap_When_ExtractAscii_Then_RunsStaySeparate() {
+    var results = StringExtractor.ExtractAsciiStrings("abc\0\0def"u8.ToArray(), 3, bridgeGap: 1);
+
+    Assert.That(results.Select(r => r.Text), Is.EqualTo(new[] { "abc", "def" }));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void Given_TrailingNonPrintableByte_When_ExtractAsciiWithBridgeGap_Then_RunEndsBeforeIt() {
+    var results = StringExtractor.ExtractAsciiStrings("abcd\0"u8.ToArray(), 4, bridgeGap: 1);
+
+    Assert.That(results, Has.Count.EqualTo(1));
+    Assert.That(results[0].Text, Is.EqualTo("abcd"));
+    Assert.That(results[0].Length, Is.EqualTo(4));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Given_OneNonPrintableByteBeforeAMultiByteChar_When_ExtractUtf8WithBridgeGapOne_Then_RunsJoin() {
+    var results = StringExtractor.ExtractUtf8Strings(Encoding.UTF8.GetBytes("abc\0d\u00E9f"), 6, bridgeGap: 1);
+
+    Assert.That(results.Select(r => r.Text), Is.EqualTo(new[] { "abc.d\u00E9f" }));
+  }
 }
