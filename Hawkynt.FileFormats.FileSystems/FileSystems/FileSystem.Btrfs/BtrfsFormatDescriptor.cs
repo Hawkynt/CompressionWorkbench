@@ -12,7 +12,7 @@ namespace FileSystem.Btrfs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Btrfs</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -78,12 +78,6 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
-  /// Mode-aware Btrfs defragmentor via read-extract-rebuild dispatch through
-  /// <see cref="DefragRebuilder"/>. All four <see cref="DefragMode"/> values supported.
-  /// Image size preserved by writing back through BtrfsWriter.WriteTo into a
-  /// MemoryStream sized to the original.
-  /// </summary>
-  /// <summary>
   /// Largest image the in-place pass is offered for. Its guard holds a copy of
   /// the image to compare payloads across the pass.
   /// </summary>
@@ -142,71 +136,25 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   /// <summary>
-  /// Performs the defragment operation.
+  /// Defragments in place: the planner moves data extents, repoints their extent
+  /// items and settles the extent tree; the pass is kept only if every file reads
+  /// back unchanged. Anything else is refused and the volume left as it was — the
+  /// rebuild that used to stand behind every refusal wrote a new volume at another
+  /// size with new UUIDs, no label, no subvolumes and without compressed extents.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
-    // Moving what is out of place beats writing the image out again. This
-    // writer keeps logical and physical the same, so a move is the extent
-    // item's disk_bytenr and the checksum over the leaf holding it — a tree
-    // block's checksum covers itself and nothing else, so no chain follows.
-    //
-    // The checksum tree is left empty by the writer, so there are no per-block
-    // data sums keyed by the address that changes. The extent tree's items are
-    // keyed by it, though, so a layout that would put them out of order is
-    // refused by the guard below rather than written down.
-    if (archive.CanSeek && archive.Length <= PlannerImageCap) {
-      var planned = false;
-      // The in-place pass is kept only if every payload still reads back: it
-      // can refuse partway, and a rebuild is the honest answer when it does.
-      DefragContentGuard.RunOrRebuild(archive,
-        readContents: ReadPayloadsForGuard,
-        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
-        rebuild: () => planned = false);
-      if (planned) return;
-      archive.Position = 0;
-    }
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
-
-    // A volume too large to materialise goes through the streaming rebuilder;
-    // the buffered path's buildImage returns a byte[] of the whole image.
-    // Every mode streams above the cap: end-pack and carve-hole order their
-    // entries from scratch inside the rebuilder, so none of them falls back
-    // to a buffered rebuild the volume is too large for.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
-      BtrfsWriter? streamWriter = null;
-      Stream? target = null;
-      DefragRebuilder.RebuildStreaming(archive, options,
-        readEntries: stream => {
-          var r = new BtrfsReader(stream);
-          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
-        },
-        beginWrite: s2 => { streamWriter = new BtrfsWriter(); target = s2; },
-        // AddStreamingFile, not AddFile: an inline payload is materialised inside
-        // the image buffer, which is precisely what a multi-gigabyte volume cannot
-        // afford. As a stream it is placed by seek instead.
-        writeEntry: (name, data) => streamWriter!.AddStreamingFile(
-          name, data.LongLength, () => new MemoryStream(data, writable: false)),
-        finishWrite: () => streamWriter!.BuildToStreaming(target!));
-      return;
-    }
-
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new BtrfsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new BtrfsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        using var ms = new MemoryStream();
-        w.WriteTo(ms);
-        return ms.ToArray();
-      });
+    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder, "Btrfs");
+    if (!archive.CanSeek || archive.Length > PlannerImageCap)
+      throw new NotSupportedException(
+        $"Btrfs: in-place defragmentation checks the result against a snapshot held in memory; volumes over {PlannerImageCap:N0} bytes are refused.");
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: ReadPayloadsForGuard,
+      inPlace: () => DefragmentWithPlanner(archive, options),
+      rebuild: () => throw new NotSupportedException("Btrfs: the volume cannot be laid out in place; it was left unchanged."));
   }
 
-  /// <summary>Largest volume a defrag will rebuild through a byte[].</summary>
-  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
 
   // WORM-minimal writer constraints: a single leaf node holds ≤64 file
   // tuples (INODE_ITEM + DIR_INDEX + inline EXTENT_DATA). No chunk tree is
@@ -241,14 +189,14 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// Gets the category.
   /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  // R/W: a mutable filesystem. Add/Remove produce a valid modified image; the
-  // implementation re-packs the volume, so existing data may move — acceptable for
-  // a conceptually read-write container. See FormatCapabilities.cs (WORM vs R/W).
+  // Not R/W: the in-place adder assumes this package's own layout and corrupts
+  // volumes made by mkfs.btrfs, and removal existed only as a rebuild that drops the
+  // label, UUID, owners, modes, times, links and xattrs. See FormatCapabilities.cs.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   /// <summary>
@@ -417,43 +365,7 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     w.BuildToStreaming(output);
   }
 
-  /// <summary>
-  /// Add/replace via <see cref="BtrfsModifier.AddOrReplace"/>. Small inline files
-  /// targeting the root directory are inserted with genuine copy-on-write in place
-  /// (new FS/extent/root tree blocks for the changed path only; existing data
-  /// extents and untouched nodes stay byte-identical at their offsets; the result
-  /// passes <c>btrfs check</c>). Unhandled shapes fall back to the verified rebuild.
-  /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    // The in-place modifier reads the volume into an array to walk its
-    // structures, which a volume past two gigabytes does not fit in. Above that
-    // the edit is applied by unpacking and relaying the volume out instead.
-    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
-      return;
-    }
 
-    var toAdd = inputs
-      .Where(i => !i.IsDirectory)
-      .Select(i => (i.ArchiveName, i.ReadContent()))
-      .ToList();
-    BtrfsModifier.AddOrReplace(archive, toAdd);
-  }
-
-  /// <summary>
-  /// Rebuild-style remove (see <see cref="BtrfsModifier"/>). The removed file's
-  /// data does not survive into the rebuilt image because the new writer emits
-  /// a fresh superblock, chunk tree, and fs-tree leaf.
-  /// </summary>
-  public void Remove(Stream archive, string[] entryNames) {
-    // See Add: past two gigabytes the volume cannot be walked in memory.
-    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
-      return;
-    }
-
-    BtrfsModifier.Remove(archive, entryNames);
-  }
 
   /// <summary>
   /// Zeros all unused space in a Btrfs image. The WORM writer stores every

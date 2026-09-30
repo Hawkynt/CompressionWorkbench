@@ -15,7 +15,7 @@ namespace FileSystem.Xfs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/XFS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
-public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   /// <summary>
   /// XFS geometry (block size, inode size, AG layout) is fixed at the
@@ -64,10 +64,6 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  /// <summary>
-  /// Mode-aware XFS defragmentor via read-extract-rebuild dispatch through
-  /// <see cref="DefragRebuilder"/>. All four <see cref="DefragMode"/> values supported.
-  /// </summary>
   /// <summary>
   /// Largest volume the in-place pass is offered for. Its guard holds a copy of
   /// the image to compare payloads across the pass.
@@ -119,59 +115,25 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Performs the defragment operation.
+  /// Defragments in place: the planner moves file extents and the allocation groups'
+  /// free-space btrees are rewritten from the result; the pass is kept only if every
+  /// file reads back unchanged. Anything else is refused and the volume left as it
+  /// was — the rebuild that used to stand behind every refusal wrote a new volume
+  /// with a fixed UUID, no label, zero timestamps and no owners, links or xattrs.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
-    // Moving what is out of place beats writing the volume out again. A file's
-    // extent record names the block it starts at, and the free space each
-    // allocation group records — twice, once by position and once by length,
-    // with the totals in its header — is written again from the layout the
-    // pass finished with.
-    //
-    // A file in more than one piece, or one whose extents have grown into a
-    // b-tree, is more than the mover takes; the guard falls back to the
-    // rebuild for those rather than leaving a volume half-repointed.
-    if (archive.CanSeek && archive.Length <= PlannerImageCap) {
-      var planned = false;
-      // The in-place pass is kept only if every payload still reads back: it
-      // can refuse partway, and a rebuild is the honest answer when it does.
-      DefragContentGuard.RunOrRebuild(archive,
-        readContents: ReadPayloadsForGuard,
-        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
-        rebuild: () => planned = false);
-      if (planned) return;
-      archive.Position = 0;
-    }
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
-
-    // Buffering the rebuilt image would cap the volume at what a byte[] can
-    // hold, so the packing modes stream: each entry is spilled to scratch and
-    // the writer pulls it back while laying out the extents.
-    // Every mode streams: end-pack and carve-hole order their entries from
-    // scratch inside the rebuilder, so none of them has to fall back to the
-    // buffered path that a volume past two gigabytes cannot use.
-    {
-      XfsWriter? writer = null;
-      Stream? target = null;
-      var spill = new List<string>();
-      try {
-        DefragRebuilder.RebuildStreaming(archive, options,
-          readEntries: ReadEntries,
-          beginWrite: s => { writer = new XfsWriter(); target = s; },
-          writeEntry: (name, data) => {
-            var path = Path.GetTempFileName();
-            spill.Add(path);
-            File.WriteAllBytes(path, data);
-            writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
-          },
-          finishWrite: () => writer!.WriteTo(target!));
-      } finally {
-        foreach (var path in spill)
-          try { File.Delete(path); } catch { /* scratch file already gone */ }
-      }
-    }
+    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder, "XFS");
+    if (!archive.CanSeek || archive.Length > PlannerImageCap)
+      throw new NotSupportedException(
+        $"XFS: in-place defragmentation checks the result against a snapshot held in memory; volumes over {PlannerImageCap:N0} bytes are refused.");
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: ReadPayloadsForGuard,
+      inPlace: () => DefragmentWithPlanner(archive, options),
+      rebuild: () => throw new NotSupportedException("XFS: the volume cannot be laid out in place; it was left unchanged."));
   }
+
 
   // WORM write constraints — XFS has no inherent ceiling; real mkfs.xfs minimum ≈ 16 MB.
   /// <summary>
@@ -243,14 +205,14 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the category.
   /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  // R/W: a mutable filesystem. Add/Remove produce a valid modified image; the
-  // implementation re-packs the volume, so existing data may move — acceptable for
-  // a conceptually read-write container. See FormatCapabilities.cs (WORM vs R/W).
+  // Not R/W: the in-place adder assumes this package's own layout and corrupts
+  // volumes made by mkfs.xfs, and removal existed only as a rebuild that drops the
+  // label, UUID, owners, modes, times, links and xattrs. See FormatCapabilities.cs.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
@@ -410,76 +372,5 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     w.BuildToStreaming(output);
   }
 
-  /// <summary>
-  /// Adds (or replaces by name) files into an existing XFS image via a genuine
-  /// in-place edit (<see cref="XfsInPlaceAdder"/>): a free inode slot is claimed
-  /// from the inobt — growing a fresh 64-inode chunk when every chunk is full —
-  /// a data extent is carved from the AGF bnobt/cntbt free space (best-fit across
-  /// a multi-record, fragmented free map), the file bytes and inode core + BMBT
-  /// extent are written, the directory entry is inserted (short-form, or after
-  /// promoting the directory to single-block / leaf form, or into an existing
-  /// block/leaf directory), the free counters are decremented and CRC-32C is
-  /// recomputed on every touched v5 metadata block. Nested sub-directory targets
-  /// are resolved (intermediate directories are created in place when absent) and
-  /// replace-by-name frees the prior inode + extent first. Existing files, their
-  /// inodes and data blocks stay byte-identical at their original offsets (no
-  /// re-pack). The few cases the in-place path still cannot satisfy — directories
-  /// large enough to need node-form (da-btree) indexing or a larger directory
-  /// block size, a multi-level free-space/inode btree, or content that no longer
-  /// fits AG 0 — fall back to the verified <see cref="XfsModifier"/> rebuild.
-  /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    // The in-place modifier walks the volume in memory, which a volume past two
-    // gigabytes does not fit in. Above that the edit unpacks and relays it out.
-    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
-      return;
-    }
 
-    var toAdd = inputs
-      .Where(i => !i.IsDirectory)
-      .Select(i => (Name: i.ArchiveName, Data: i.ReadContent()))
-      .ToList();
-
-    archive.Position = 0;
-    using var ms = new MemoryStream();
-    archive.CopyTo(ms);
-    var original = ms.ToArray();
-
-    // Genuine in-place on a working copy; commit only if every input succeeds so
-    // a structural limit leaves the source untouched for the rebuild fallback.
-    var work = (byte[])original.Clone();
-    var inPlace = true;
-    try {
-      foreach (var (name, data) in toAdd)
-        XfsInPlaceAdder.AddFile(work, name, data);
-    } catch (Exception ex) when (ex is NotSupportedException or IOException or InvalidDataException) {
-      inPlace = false;
-    }
-    if (inPlace) {
-      archive.Position = 0;
-      archive.Write(work, 0, work.Length);
-      archive.SetLength(work.Length);
-      return;
-    }
-
-    // Fallback: verified rebuild over the old bytes.
-    archive.Position = 0;
-    XfsModifier.AddOrReplace(archive, toAdd);
-  }
-
-  /// <summary>
-  /// Rebuild-style remove (see <see cref="XfsModifier"/>). The removed file's
-  /// data does not survive into the rebuilt image because the new writer emits
-  /// a fresh superblock, AGF/AGI, and inode table.
-  /// </summary>
-  public void Remove(Stream archive, string[] entryNames) {
-    // See Add: past two gigabytes the volume cannot be walked in memory.
-    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
-      return;
-    }
-
-    XfsModifier.Remove(archive, entryNames);
-  }
 }

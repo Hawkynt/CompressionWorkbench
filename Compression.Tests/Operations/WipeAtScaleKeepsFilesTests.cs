@@ -69,7 +69,10 @@ public class WipeAtScaleKeepsFilesTests {
     using var image = new MemoryStream();
     ((IArchiveCreatable)ops).Create(image, inputs, new FormatCreateOptions());
 
-    // Churn it. A freshly created volume is the case the maps handle.
+    // Churn it. A freshly created volume is the case the maps handle. A format
+    // that is not editable cannot be churned through the public surface.
+    if (ops is not IArchiveModifiable)
+      Assert.Ignore($"{formatId} is not editable, so it cannot be churned before the wipe.");
     var doomed = expected.Keys.Where(k => k.StartsWith('F')).Where((_, n) => n % 3 == 1).ToArray();
     image.Position = 0;
     ((IArchiveModifiable)ops).Remove(image, doomed);
