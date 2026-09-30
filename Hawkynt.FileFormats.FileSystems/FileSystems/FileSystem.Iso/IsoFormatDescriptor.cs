@@ -15,7 +15,7 @@ namespace FileSystem.Iso;
 ///   <item><description><c>https://en.wikipedia.org/wiki/ISO_9660</c> — Wikipedia overview (incl. Joliet / Rock Ridge extensions)</description></item>
 /// </list>
 /// </summary>
-public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 

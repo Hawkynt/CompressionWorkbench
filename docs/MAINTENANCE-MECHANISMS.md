@@ -19,8 +19,11 @@ extract → re-create engine (`Compression.Registry.RebuildVerb`):
 
 - **`IArchiveShrinkable.Shrink`** — default rebuild (auto-fit / tight-pack); never
   grows, never throws, never corrupts (emits the original unchanged if the rebuild
-  isn't smaller or fails).
-- **`IArchiveDefragmentable.Defragment`** — default verified in-place rebuild.
+  isn't smaller or fails). Filesystems with metadata the rebuild cannot carry
+  (ext, FAT, NTFS, …) override it with an in-place trimmer or do not offer it.
+- **`IArchiveDefragmentable.Defragment`** — default verified in-place rebuild, for
+  containers whose rebuild is lossless. The major filesystems defragment in place
+  through the planner and refuse what it cannot lay out.
 - **`IArchiveModifiable.Add` / `Remove`** — default verified extract→edit→re-create;
   `Remove(all)` is the **purge** verb. Two things the purge has to know about the
   container it is emptying, because neither is a defect of the verb:
@@ -129,56 +132,85 @@ Write capability is the four-level scale of `Compression.Registry.FormatCapabili
 [`ARCHIVE-MODEL.md`](ARCHIVE-MODEL.md) &rarr; *Read / WORM / Read-Write model*.
 What follows is the part that decides which level a descriptor may claim.
 
-**R/W means a working modify on an existing container — the edit may be byte-preserving
-in place OR may relayout / re-pack the container (moving existing data).** Both are honest
-R/W for a *conceptually read-write* format; an edit that has to move data is still R/W, not a
-"fake". The maintenance verbs (add / remove / purge / defragment / shrink) are realised either
-by a format-specific modifier or by the verified extract → re-create rebuild (`RebuildVerb` /
-`ModifyRebuilder`, or the default `IArchiveModifiable` members).
+**R/W means a working modify on an existing container that keeps everything the format
+carries.** The edit may be byte-preserving in place or may relayout the container (moving
+existing data) — but a relayout is honest R/W only when it is *lossless*: names, contents,
+directories (empty ones too), owners, modes/attributes, timestamps, symlinks and hard links,
+extended attributes, the volume label / serial / UUID, the compression choice and the volume's
+size. A rebuild that quietly drops any of that is WORM pretending to be R/W, and a self
+round-trip cannot see it — our own writer never produced those things in the first place.
 
-> **`CanModify` is advertised when the workbench has a proven existing-instance edit path.**
-> An operating system mounting a filesystem read-only does not make an offline image editor
-> WORM: CramFS, SquashFS and EROFS remain read-only when mounted by Linux while their supported
-> workbench profiles are R/W by verified rebuild. `CanModify` is withheld when no such edit path
-> exists, not merely because the native mount policy is immutable.
+> **`CanModify` is advertised only when the existing-instance edit path is proven lossless
+> against a container the real tools made.** An operating system mounting a filesystem
+> read-only does not make an offline image editor WORM, but neither does having a rebuild make
+> it R/W. Where a case cannot be done without loss the verb refuses with
+> `NotSupportedException` and leaves the container byte for byte as it was — the same answer
+> the maintenance window and the CLI already treat as "this format does not do that".
+
+The same rule applies to the maintenance verbs. **Defragment** keeps the image size and every
+byte and attribute of every file; a layout the in-place planner cannot reach is refused
+(`DefragPlanner.PlanOrRefuse`, `DefragContentGuard` with a refusing fallback), and a layout
+option the format would otherwise ignore — interleave, metadata placement, a layout template,
+a mode it does not implement — is refused up front by `DefragSupport.Require` rather than
+silently dropped. **Shrink** trims in place or is not advertised. **Wipe** zeroes only what the
+layout map proves free; every map reports every allocated byte (a directory index, a named
+stream, a continuation area, a boot image, data past the volume) or reserves what its
+allocation bitmap marks in use and nothing claimed.
 
 `Compression.Tests.Operations.WriteCapabilityHonestyTests` enforces the deterministic half:
-every `CanModify` claimant's ops must implement `IArchiveModifiable` (a real modify path —
-no unbacked flag). `FilesystemWriteRoundTripTests` then exercises create → add/replace → remove
-across every filesystem that claims R/W, and the per-format mutation suites cover the rest;
-the generic purge contract independently proves that a claimant advertising
-`IArchivePurgeable` can actually remove the planted live files and leave a valid container.
+every `CanModify` claimant's ops must implement `IArchiveModifiable`. The evidence half is
+`Compression.Tests.Maintenance.MaintenancePreservesRealVolumesTests`: it formats reference
+volumes with `mkfs.*`, fills them through the kernel driver (libguestfs), runs every verb and
+compares a manifest read back through the same driver — names, types, modes, owners, sizes,
+times, link targets and counts, xattrs, digests, label, UUID, and DOS attributes via `mattrib`
+— and runs the reference checker. Its table is the evidence matrix below.
+
+### Evidence matrix (reference volumes made by the real tools)
+
+`P` = in place, nothing else changed, reference checker clean. `R` = refused, image
+untouched. Wipe and shrink are in place; defrag keeps the image size.
+
+| Format (tool) | add root | add nested | remove root | remove nested | pack start / end / fill | carve | ascending | interleave | metadata front | wipe | shrink | checker |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ext4, ext2 (`mkfs.ext*`) | P | P | P | P | P | P | P | R | P | P | P | `e2fsck -fn` |
+| FAT16, FAT32 (`mkfs.vfat` + `mtools`) | P | P | P | P | P | P | P | P (FAT16) / R (FAT32: move budget) | P | P | P | `fsck.vfat -n` |
+| NTFS (`mkfs.ntfs`) | P | P | P | P | P | P | P | R | P | P | P | `ntfsfix -n` |
+| exFAT (`mkfs.exfat`) | P | R | P | R | P | P | R | R | P | P | not offered | `fsck.exfat -n` |
+| ISO 9660 + RR + Joliet (`xorriso`) | P | R | P | R | P | R when it does not fit | R | R | R | P | not offered | kernel mount, `xorriso` |
+| 7z (`7z a -snl`) | P (metadata-preserving rewrite when the in-place adder declines) | P | P | P | — (not offered) | — | — | — | — | P | — | `7z t` |
+
+Demoted (no `CanModify`, no shrink): **XFS**, **Btrfs** (the in-place adders corrupt volumes
+made by `mkfs.xfs` / `mkfs.btrfs`; removal only ever existed as a rebuild with a new UUID, no
+label, zero timestamps), **SquashFS** (every edit converted the compression to gzip and dropped
+owners, modes, times, symlinks and xattrs). Their in-place defrag stays, guarded, and refuses
+otherwise. **ZIP, 7z, TAR** no longer offer defragment: an archive has no free-space layout, and
+the repack kept only names and bytes.
 
 ### R/W realisation per format
 
-- **Byte-preserving in place** (existing data stays put): FAT12/16/32 (`FatModifier`), GEMDOS,
-  GS/OS, exFAT, ext, HFS/HFS+, APFS, F2FS, JFS, UFS, UDF, the log-structured
-  JFFS2/YAFFS2/UBIFS/NILFS2, the CVF family, the retro disk formats; PS1 memory-card
-  deletion (which marks directory records deleted while retaining recoverable save blocks);
-  the in-place archive editors (ZIP family, TAR, AR, CPIO, XAR, LZH/LHA, ARJ, ZOO, PDF);
-  byte-identity append (Ghost); the sector-image editors (BIN/CUE, CDI, MDF, NRG, CSO); and
-  the disk-image containers that delegate to a R/W inner filesystem (QCOW2/VHD/VHDX/VMDK/VDI).
-- **Relayout / re-pack** (valid result, existing data may move): **NTFS, XFS, Btrfs, ReiserFS,
-  GFS2, MFS-1, Stacker, CramFS, SquashFS, EROFS** and PS1 memory-card add/replace/defrag
-  (the supported image is rebuilt or re-packed and verified), plus **7-Zip, CAB, RAR**
-  (the solid streams are rewritten via the extract → re-create rebuild; RAR re-emits a valid
-  RAR5 via `RarWriter` and recomputes every CRC — so the cross-referencing-checksum concern
-  of an append-style edit does not apply). GFS2 preserves the existing image-size floor and
-  lock-table value across CRUD; Stacker preserves Genuine vs Extended layout; MFS-1 preserves
-  the outer sector count.
+- **In place, verified against the real tools' volumes** (see the matrix): ext2/3/4, FAT12/16/32,
+  NTFS, exFAT (root directory), ISO 9660 (root directory).
+- **In place, checked with the reference checker on a fresh `mkfs.hfsplus` volume only**
+  (there is no HFS+ kernel driver to fill one with): HFS+ — root folder of a single-leaf
+  catalog; anything else refused.
+- **In place, verified against our own writer's output only** (not yet against the real tools'
+  volumes): GEMDOS, GS/OS, HFS, APFS, F2FS, JFS, UFS, UDF, JFFS2/YAFFS2/UBIFS/NILFS2, the CVF
+  family, the retro disk formats, PS1 memory cards, and the in-place archive editors (ZIP family,
+  TAR, AR, CPIO, XAR, LZH/LHA, ARJ, ZOO, PDF), the sector-image editors and the disk-image
+  containers that delegate to an inner filesystem.
+- **Relayout / re-pack, not yet re-verified for losslessness**: ReiserFS, GFS2, MFS-1, Stacker,
+  CramFS, EROFS, CAB, RAR, and every descriptor relying on the default `IArchiveModifiable`
+  rebuild. `RebuildVerb.EditViaRebuild` round-trips names and bytes through a temporary folder
+  and keeps nothing else, so a format whose container carries more than that is a demotion
+  candidate until shown otherwise.
 
 ### Stays WORM (create-only)
 
 - **Wim**, **Swm** — checksum-record archives kept create-only: there is no in-place
   editor, and an append-style edit would corrupt the cross-referencing checksum chain
-  (see `ChecksumRecordArchiveReadOnlyContractTests`). Sqx and Ace belong to the same
-  family but do carry an existing-instance editor — the verified extract → edit →
-  re-create rebuild — and so advertise R/W; the checksum chain is re-derived rather
-  than appended to.
-- **Wrapster**, **Ova** remain create-only because their public writer profile does not
-  provide an arbitrary existing-instance member edit that satisfies the generic CRUD
-  contract. A rebuild by itself is not a reason to withhold R/W; absence of a proven
-  edit path is.
+  (see `ChecksumRecordArchiveReadOnlyContractTests`).
+- **Wrapster**, **Ova** — the public writer profile provides no existing-instance member edit.
+- **XFS**, **Btrfs**, **SquashFS** — see above.
 
 ## Where the per-format coverage lives
 

@@ -70,6 +70,14 @@ public class MaintenancePreservesRealVolumesTests {
       // on 4 KiB clusters; the defragmenter refuses before moving anything.
       ["fat32"] = (() => new FileSystem.Fat.FatFormatDescriptor(),
         new Dictionary<string, Outcome>(FatExpectations()) { ["defrag_interleave"] = Outcome.Refuse }),
+      ["exfat"] = (() => new FileSystem.ExFat.ExFatFormatDescriptor(), new() {
+        ["add_root"] = Outcome.Preserve, ["add_nested"] = Outcome.Refuse,
+        ["remove_root"] = Outcome.Preserve, ["remove_nested"] = Outcome.Refuse,
+        ["defrag_start"] = Outcome.Preserve, ["defrag_end"] = Outcome.Preserve, ["defrag_fill"] = Outcome.Preserve,
+        ["defrag_carve"] = Outcome.Preserve, ["defrag_ascending"] = Outcome.Refuse,
+        ["defrag_interleave"] = Outcome.Refuse, ["defrag_metadata_front"] = Outcome.Preserve,
+        ["wipe"] = Outcome.Preserve, ["shrink"] = Outcome.Preserve,
+      }),
       ["ntfs"] =(() => new FileSystem.Ntfs.NtfsFormatDescriptor(), new() {
         ["add_root"] = Outcome.Preserve, ["add_nested"] = Outcome.Preserve,
         ["remove_root"] = Outcome.Preserve, ["remove_nested"] = Outcome.Preserve,
