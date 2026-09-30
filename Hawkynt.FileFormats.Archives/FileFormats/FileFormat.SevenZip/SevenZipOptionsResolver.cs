@@ -24,18 +24,7 @@ internal static class SevenZipOptionsResolver {
     return optimize ? 1 << 26 : 1 << 23;
   }
 
-  public static int NormalizeDictSize(int size) {
-    if (size <= 4096) return 4096;
-    if (size >= 1 << 30) return 1 << 30; // the cap; 2^31 below would overflow
-    var bits = 31 - int.LeadingZeroCount(size);
-    var pow2 = 1 << bits;
-    var pow2Next = 1 << (bits + 1);
-    var threeHalf = 3 << (bits - 1);
-    var best = pow2Next;
-    if (pow2 >= size) best = pow2;
-    if (threeHalf >= size && threeHalf < best) best = threeHalf;
-    return Math.Min(best, 1 << 30);
-  }
+  public static int NormalizeDictSize(int size) => Compression.Core.Dictionary.Lzma.LzmaDictionarySize.Normalize(size);
 
   public static int ResolvePpmdOrder(int? wordSize, int defaultOrder = 6) {
     if (wordSize.HasValue) return Math.Clamp(wordSize.Value, 2, 32);

@@ -56,18 +56,7 @@ internal static class ZipOptionsResolver {
   }
 
   /// <summary>Snaps a dict size to the nearest valid LZMA value (2^n or 3×2^(n-1)).</summary>
-  public static int NormalizeDictSize(int size) {
-    if (size <= 4096) return 4096;
-    var bits = 31 - int.LeadingZeroCount(size);
-    var pow2 = 1 << bits;
-    var pow2Next = 1 << (bits + 1);
-    var threeHalf = 3 << (bits - 1);
-    var best = pow2Next;
-    if (pow2 >= size) best = pow2;
-    if (threeHalf >= size && threeHalf < best) best = threeHalf;
-    if (pow2Next < best) best = pow2Next;
-    return Math.Min(best, 1 << 30);
-  }
+  public static int NormalizeDictSize(int size) => Compression.Core.Dictionary.Lzma.LzmaDictionarySize.Normalize(size);
 
   public static LzmaCompressionLevel ResolveLzmaLevel(int? level, bool optimize) {
     if (level.HasValue) return level.Value switch {
