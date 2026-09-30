@@ -637,6 +637,10 @@ public static class DefragPlanner {
   /// </summary>
   private static long FindPrevSlot(long endAt, long length, long minStart, int clusterSize,
                                     IReadOnlyList<(long Start, long End)> forbidden) {
+    // AlignDownFrom clamps at minStart instead of going under it, so a file that
+    // no longer fits below endAt would otherwise be handed minStart — the slot the
+    // previous file was just given — and two owners would share one destination.
+    if (endAt - length < minStart) return -1;
     var candidate = AlignDownFrom(endAt - length, minStart, clusterSize);
     while (candidate >= minStart) {
       long? dropTo = null;
