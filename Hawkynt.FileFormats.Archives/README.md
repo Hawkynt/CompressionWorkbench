@@ -220,7 +220,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [LIT (Microsoft Reader)](https://en.wikipedia.org/wiki/Microsoft_Reader) | `Lit` | `.lit` | R | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Microsoft_Reader) |
 | [MAFF](https://en.wikipedia.org/wiki/Mozilla_Archive_Format) | `Maff` | `.maff` | R/W | ✅ | defrag · wipe |  | [maf.mozdev.org](http://maf.mozdev.org/maff-specification.html) |
 | [mbox (Unix mailbox)](https://en.wikipedia.org/wiki/Mbox) | `Mbox` | `.mbox` `.mbx` | R/W | ✅ | — | Entries are message_NN.eml | [RFC](https://www.rfc-editor.org/rfc/rfc4155) |
-| [MOBI / AZW](https://en.wikipedia.org/wiki/Mobipocket) | `Mobi` | `.mobi` `.prc` `.azw` `.azw3` | R | ✅ | — |  | [wiki.mobileread.com](https://wiki.mobileread.com/wiki/MOBI) |
+| [MOBI / AZW](https://en.wikipedia.org/wiki/Mobipocket) | `Mobi` | `.mobi` `.prc` `.azw` `.azw3` | WORM | ✅ | — | Creates MOBI 7 books from one UTF-8 HTML document (stored or PalmDOC), accepted by KindleUnpack; reads stored and PalmDOC text with trailing entries; HUFF/CDIC and DRM text stay raw records | [wiki.mobileread.com](https://wiki.mobileread.com/wiki/MOBI) |
 | [MSG](https://en.wikipedia.org/wiki/MSG_(file_format)) | `Msg` | `.msg` | R/W | ✅ | wipe | CFB envelope; MAPI properties are not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxmsg/) |
 | [ODP](https://en.wikipedia.org/wiki/OpenDocument) | `Odp` | `.odp` | R/W | ✅ | defrag · wipe |  | [libreoffice.org](https://www.libreoffice.org) |
 | [ODS](https://en.wikipedia.org/wiki/OpenDocument) | `Ods` | `.ods` | R/W | ✅ | defrag · wipe |  | [libreoffice.org](https://www.libreoffice.org) |
