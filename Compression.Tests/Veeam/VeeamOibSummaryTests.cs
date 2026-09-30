@@ -181,6 +181,27 @@ public class VeeamOibSummaryTests {
       "Reader must surface the raw XML island as its own entry when present.");
   }
 
+  [Test, Category("BoundaryCase")]
+  public void Reader_PreservesExactOibSummaryBytes_WhenTextDecodingUsesFallback() {
+    // A malformed byte inside an XML comment is replaced in RawXml by the
+    // UTF-8 decoder. The separately extracted metadata entry must still be
+    // the exact byte range from the backup file, rather than a re-encoding.
+    var image = BuildWithTrailer("<OibSummary><!--x--><Backup JobName=\"raw\" /></OibSummary>");
+    var xmlOffset = image.AsSpan().LastIndexOf(OibSummaryParser.OpenTag);
+    var commentMarker = Encoding.ASCII.GetBytes("<!--x-->");
+    var markerOffset = image.AsSpan(xmlOffset).IndexOf(commentMarker);
+    Assert.That(markerOffset, Is.GreaterThanOrEqualTo(0));
+    image[xmlOffset + markerOffset + 4] = 0xFF;
+
+    using var ms = new MemoryStream(image);
+    using var reader = new VeeamReader(ms, VeeamFileType.Full);
+    Assert.That(reader.OibSummary, Is.Not.Null);
+    Assert.That(reader.OibSummary!.RawXml, Does.Contain("\uFFFD"));
+    var extracted = reader.Entries.Single(e => e.Name == "OibSummary.xml").Data;
+    Assert.That(extracted, Is.EqualTo(image.AsSpan((int)reader.OibSummary.XmlOffset, reader.OibSummary.XmlLength).ToArray()));
+    Assert.That(extracted, Does.Contain((byte)0xFF));
+  }
+
   [Test, Category("HappyPath")]
   public void Reader_OmitsOibSummaryXmlEntry_WhenTrailerAbsent() {
     // No OibSummary in the synthetic data → no separate XML entry, Stage 0 fallback.
