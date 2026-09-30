@@ -20723,13 +20723,13 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.Mca`
 
-[`McaFormatDescriptor`](#mcaformatdescriptor) · [`McaReader`](#mcareader) · [`McaReader.ChunkEntry`](#mcareaderchunkentry)
+[`McaFormatDescriptor`](#mcaformatdescriptor) · [`McaReader`](#mcareader) · [`McaReader.ChunkEntry`](#mcareaderchunkentry) · [`McaWriter`](#mcawriter)
 
 #### `McaFormatDescriptor`
 
-Surfaces a Minecraft region file (`.mca`) as an archive of per-chunk decompressed NBT payloads. Each entry is named `chunk_X_Z.nbt` by its in-region coordinates (0–31 in each axis). Unused chunk slots are skipped. References: `https://minecraft.wiki/w/Region_file_format` — Minecraft Wiki — region/Anvil file layout (locations, timestamps, per-chunk compressed NBT)No official Mojang specification — the layout is community-documented
+Surfaces a Minecraft region file (`.mca`) as an archive of per-chunk decompressed NBT payloads. Each entry is named `chunk_X_Z.nbt` by its in-region coordinates (0–31 in each axis). Unused chunk slots are skipped. References: `https://minecraft.wiki/w/Region_file_format` — Minecraft Wiki — region/Anvil file layout (locations, timestamps, per-chunk compressed NBT)`https://github.com/PaperMC/SectorTool/blob/master/SPECIFICATION.MD` — PaperMC — region sectors, timestamp semantics, compression ids, and external chunk files`https://wikivg.booky.dev/Map_Format` — Minecraft protocol documentation — LZ4-Java block stream used by compression id 4No official Mojang specification — the layout is community-documented
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -20745,7 +20745,9 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Creation options: the default chunk timestamp, overridable per chunk. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a region from `chunk_X_Z.nbt` inputs; any other name is refused with `ArgumentException`. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -20753,13 +20755,14 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 #### `McaReader`
 
-Minecraft region file format (`.mca` / `.mcr`). A region holds up to 32×32 = 1024 chunks in a single 8 KiB header + per-chunk compressed NBT payloads. Layout: 4 KiB location table (1024×uint32 BE: high 3 bytes = 4 KiB-sector offset, low byte = sector count) + 4 KiB timestamp table (1024×uint32 BE) + padded payload area. Each chunk: 4-byte BE length + 1-byte compression type (1 = gzip, 2 = zlib, 3 = uncompressed) + `length-1` bytes of compressed NBT.
+Minecraft region file format (`.mca` / `.mcr`). A region holds up to 32×32 = 1024 chunks in a single 8 KiB header + per-chunk compressed NBT payloads. Layout: 4 KiB location table (1024×uint32 BE: high 3 bytes = 4 KiB-sector offset, low byte = sector count) + 4 KiB timestamp table (1024×uint32 BE) + padded payload area. Each chunk: 4-byte BE length + 1-byte compression type (1 = gzip, 2 = zlib, 3 = uncompressed, 4 = LZ4-Java block stream) + `length-1` payload bytes.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `McaReader` | `McaReader(byte[] data)` | Initializes a new instance of `McaReader`. |
+| `McaReader` | `McaReader(byte[] data, bool strict = true)` | Initializes a new instance of `McaReader`. |
 | `Chunks` | `IReadOnlyList<ChunkEntry> Chunks { get; }` | Gets the chunks. |
-| `ExtractChunkNbt` | `byte[] ExtractChunkNbt(ChunkEntry chunk)` | Decompresses and returns the NBT payload for a chunk. Throws when the chunk's compression type is unknown (only 1/2/3 are defined). |
+| `Problems` | `IReadOnlyList<string> Problems { get; }` | Structural defects skipped by a lenient parse; always empty after a strict parse, which throws on the first one instead. |
+| `ExtractChunkNbt` | `byte[] ExtractChunkNbt(ChunkEntry chunk)` | Decompresses and returns the NBT payload for a chunk. Throws when the chunk's compression type is unknown or the chunk uses an external `.mcc` payload. |
 
 #### `McaReader.ChunkEntry`
 
@@ -20769,12 +20772,21 @@ Implements `IEquatable<ChunkEntry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ChunkEntry` | `ChunkEntry(int RegionX, int RegionZ, long OffsetBytes, int LengthBytes, byte CompressionType)` | Represents a chunk entry. |
+| `ChunkEntry` | `ChunkEntry(int RegionX, int RegionZ, long OffsetBytes, int LengthBytes, byte CompressionType, uint Timestamp)` | Represents a chunk entry. |
 | `CompressionType` | `byte CompressionType { get; init; }` |  |
 | `LengthBytes` | `int LengthBytes { get; init; }` |  |
 | `OffsetBytes` | `long OffsetBytes { get; init; }` |  |
 | `RegionX` | `int RegionX { get; init; }` |  |
 | `RegionZ` | `int RegionZ { get; init; }` |  |
+| `Timestamp` | `uint Timestamp { get; init; }` |  |
+
+#### `McaWriter`
+
+Clean-room writer for Minecraft Anvil region containers.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static void Write(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 
 ### Namespace `FileFormat.Mcm`
 

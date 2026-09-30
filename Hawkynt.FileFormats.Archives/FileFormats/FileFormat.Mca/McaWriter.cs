@@ -34,9 +34,9 @@ public static partial class McaWriter {
       if (!match.Success ||
           !int.TryParse(match.Groups["x"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var x) || x is < 0 or > 31 ||
           !int.TryParse(match.Groups["z"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var z) || z is < 0 or > 31)
-        throw new InvalidDataException($"MCA entry name '{input.ArchiveName}' must be chunk_X_Z.nbt with X and Z in 0..31.");
+        throw new ArgumentException($"MCA entry name '{input.ArchiveName}' must be chunk_X_Z.nbt with X and Z in 0..31.", nameof(inputs));
       var index = z * 32 + x;
-      if (!occupied.Add(index)) throw new InvalidDataException($"Duplicate MCA chunk coordinate ({x},{z}).");
+      if (!occupied.Add(index)) throw new ArgumentException($"Duplicate MCA chunk coordinate ({x},{z}).", nameof(inputs));
       var raw = input.ReadContent();
       var payload = method switch {
         "gzip" => Compress(raw, true, level),
@@ -61,7 +61,7 @@ public static partial class McaWriter {
       if (sector > 0xFFFFFF) throw new InvalidDataException("MCA region exceeds the 24-bit sector-offset limit.");
       var length = checked(chunk.Payload.Length + 1);
       var sectors = checked((length + 4 + 4095) / 4096);
-      if (sectors is < 1 or > 255) throw new InvalidDataException("MCA chunk exceeds the 255-sector allocation limit.");
+      if (sectors is < 1 or > 255) throw new ArgumentException($"MCA chunk ({chunk.X},{chunk.Z}) exceeds the 255-sector in-region limit; external .mcc chunks are not written.", nameof(inputs));
       BinaryPrimitives.WriteInt32BigEndian(header, length);
       header[4] = chunk.Compression;
       region.Write(header);

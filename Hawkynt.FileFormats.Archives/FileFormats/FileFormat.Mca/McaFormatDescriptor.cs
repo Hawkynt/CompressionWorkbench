@@ -72,6 +72,7 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public string Description => "Minecraft region: per-chunk NBT payloads addressable by (X,Z) coordinate.";
 
+  /// <summary>Creation options: the default chunk timestamp, overridable per chunk.</summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("Timestamp", "Default chunk timestamp", FormatOptionKind.Integer, "0", Description: "Unsigned Unix timestamp in seconds; may be overridden per chunk with Timestamp.X.Z."),
   ];
@@ -79,9 +80,14 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
+  /// <remarks>
+  /// Never throws on a damaged region: malformed location entries are skipped and reported in a
+  /// synthetic <c>metadata.ini</c> entry (<c>parse_status=partial</c>). Extraction stays strict, so
+  /// an integrity test still reports the damage.
+  /// </remarks>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var reader = OpenReader(stream);
-    var entries = new List<ArchiveEntryInfo>(reader.Chunks.Count);
+    var reader = OpenReader(stream, strict: false);
+    var entries = new List<ArchiveEntryInfo>(reader.Chunks.Count + 1);
     for (var i = 0; i < reader.Chunks.Count; ++i) {
       var c = reader.Chunks[i];
       entries.Add(new ArchiveEntryInfo(
@@ -94,7 +100,24 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         IsEncrypted: false,
         LastModified: DateTime.UnixEpoch.AddSeconds(c.Timestamp)));
     }
+    if (reader.Problems.Count > 0) {
+      var metadata = BuildMetadata(reader);
+      entries.Add(new ArchiveEntryInfo(entries.Count, MetadataName, metadata.Length, metadata.Length,
+        "stored", IsDirectory: false, IsEncrypted: false, LastModified: null));
+    }
     return entries;
+  }
+
+  private const string MetadataName = "metadata.ini";
+
+  private static byte[] BuildMetadata(McaReader reader) {
+    var sb = new System.Text.StringBuilder();
+    sb.Append("[mca]\n");
+    sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"chunk_count={reader.Chunks.Count}\n");
+    sb.Append("parse_status=partial\n");
+    for (var i = 0; i < reader.Problems.Count; ++i)
+      sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"problem{i + 1}={reader.Problems[i]}\n");
+    return System.Text.Encoding.UTF8.GetBytes(sb.ToString());
   }
 
   /// <summary>
@@ -123,7 +146,12 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
-    var reader = OpenReader(archive);
+    var reader = OpenReader(archive, strict: false);
+    if (reader.Problems.Count > 0 && string.Equals(entryName, MetadataName, StringComparison.OrdinalIgnoreCase)) {
+      var metadata = BuildMetadata(reader);
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(metadata, writable: false), metadata.Length, leaveOpen: false);
+    }
     foreach (var c in reader.Chunks) {
       var name = $"chunk_{c.RegionX}_{c.RegionZ}.nbt";
       if (!string.Equals(name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
@@ -143,17 +171,20 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
-  private static McaReader OpenReader(Stream stream) {
+  private static McaReader OpenReader(Stream stream, bool strict = true) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
-    return new McaReader(ms.ToArray());
+    return new McaReader(ms.ToArray(), strict);
   }
 
+  /// <summary>Writes a region from <c>chunk_X_Z.nbt</c> inputs; any other name is refused with <see cref="ArgumentException"/>.</summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
     => McaWriter.Write(output, inputs, options);
 
   private static long GetUncompressedSize(McaReader reader, McaReader.ChunkEntry chunk) {
+    if (chunk.CompressionType == 3) return chunk.LengthBytes - 1;
+    // Listing must not fail on one damaged or foreign chunk; extraction reports it.
     try { return reader.ExtractChunkNbt(chunk).LongLength; }
-    catch (NotSupportedException) { return -1; }
+    catch (Exception ex) when (ex is NotSupportedException or InvalidDataException) { return -1; }
   }
 }

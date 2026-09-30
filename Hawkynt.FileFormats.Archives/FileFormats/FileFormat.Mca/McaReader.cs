@@ -22,6 +22,7 @@ public sealed class McaReader {
 
   private readonly byte[] _data;
   private readonly List<ChunkEntry> _chunks = [];
+  private readonly List<string> _problems = [];
 
   /// <summary>
   /// Gets the chunks.
@@ -29,26 +30,49 @@ public sealed class McaReader {
   public IReadOnlyList<ChunkEntry> Chunks => this._chunks;
 
   /// <summary>
+  /// Structural defects skipped by a lenient parse; always empty after a strict parse, which throws
+  /// on the first one instead.
+  /// </summary>
+  public IReadOnlyList<string> Problems => this._problems;
+
+  /// <summary>
   /// Initializes a new instance of <see cref="McaReader"/>.
   /// </summary>
-  public McaReader(byte[] data) {
+  /// <param name="data">The complete region file.</param>
+  /// <param name="strict">
+  /// <see langword="true"/> throws <see cref="InvalidDataException"/> on the first malformed
+  /// header or location entry; <see langword="false"/> skips it and records it in
+  /// <see cref="Problems"/> so a damaged region can still be listed.
+  /// </param>
+  public McaReader(byte[] data, bool strict = true) {
     this._data = data;
-    if (data.Length < 8192) throw new InvalidDataException("An MCA region must contain its complete 8 KiB header.");
+    if (data.Length < 8192) {
+      this.Reject(strict, $"An MCA region must contain its complete 8 KiB header; got {data.Length} bytes.");
+      return;
+    }
 
     for (var i = 0; i < 1024; ++i) {
       var entry = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(i * 4));
       var sectorOffset = (int)(entry >> 8);
       var sectorCount = (byte)(entry & 0xFF);
       if (sectorOffset == 0 && sectorCount == 0) continue;
-      if (sectorOffset < 2 || sectorCount == 0)
-        throw new InvalidDataException($"Invalid MCA location entry for chunk {i}.");
+      if (sectorOffset < 2 || sectorCount == 0) {
+        this.Reject(strict, $"Invalid MCA location entry for chunk {i} (sector {sectorOffset}, count {sectorCount}).");
+        continue;
+      }
 
+      // The payload must lie inside the file and inside its own sector allocation. The allocation
+      // itself may run past the end of an unpadded file, which Minecraft tolerates on read.
       var byteOffset = (long)sectorOffset * 4096;
-      if (byteOffset + 5 > data.Length || byteOffset + (long)sectorCount * 4096 > data.Length)
-        throw new InvalidDataException($"MCA chunk {i} points outside the region file.");
+      if (byteOffset + 5 > data.Length) {
+        this.Reject(strict, $"MCA chunk {i} points outside the region file.");
+        continue;
+      }
       var chunkLen = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan((int)byteOffset));
-      if (chunkLen < 1 || chunkLen > (long)sectorCount * 4096 - 4)
-        throw new InvalidDataException($"Invalid MCA chunk length for chunk {i}.");
+      if (chunkLen < 1 || chunkLen > (long)sectorCount * 4096 - 4 || byteOffset + 4 + chunkLen > data.Length) {
+        this.Reject(strict, $"Invalid MCA chunk length {chunkLen} for chunk {i}.");
+        continue;
+      }
       var compressionType = data[(int)byteOffset + 4];
       this._chunks.Add(new ChunkEntry(
         RegionX: i & 31,
@@ -58,6 +82,11 @@ public sealed class McaReader {
         CompressionType: compressionType,
         Timestamp: BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(4096 + i * 4))));
     }
+  }
+
+  private void Reject(bool strict, string problem) {
+    if (strict) throw new InvalidDataException(problem);
+    this._problems.Add(problem);
   }
 
   /// <summary>

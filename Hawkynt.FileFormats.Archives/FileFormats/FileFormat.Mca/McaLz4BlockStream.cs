@@ -11,6 +11,9 @@ internal static class McaLz4BlockStream {
   private const int BlockSize = 1 << 16;
   private const int CompressionLevel = 6;
   private const uint ChecksumSeed = 0x9747B28C;
+  // lz4-java hands the stream a java.util.zip.Checksum view of XXH32 whose getValue() keeps only the
+  // low 28 bits (StreamingXXHash32.asChecksum), so the stored checksum never has its top nibble set.
+  private const uint ChecksumMask = 0x0FFFFFFF;
   private const int HeaderSize = 21;
   private const int MaxDecodedSize = 256 * 1024 * 1024;
   private const byte RawMethod = 0x10;
@@ -29,7 +32,7 @@ internal static class McaLz4BlockStream {
       header[8] = (byte)((isRaw ? RawMethod : CompressedMethod) | CompressionLevel);
       BinaryPrimitives.WriteInt32LittleEndian(header[9..], payload.Length);
       BinaryPrimitives.WriteInt32LittleEndian(header[13..], block.Length);
-      BinaryPrimitives.WriteUInt32LittleEndian(header[17..], XxHash32.Compute(block, ChecksumSeed));
+      BinaryPrimitives.WriteUInt32LittleEndian(header[17..], Checksum(block));
       output.Write(header);
       output.Write(payload);
       offset += block.Length;
@@ -77,11 +80,13 @@ internal static class McaLz4BlockStream {
         CompressedMethod => Lz4BlockDecompressor.Decompress(payload, uncompressedLength),
         _ => throw new InvalidDataException("Unsupported LZ4-Java block method."),
       };
-      if (XxHash32.Compute(decoded, ChecksumSeed) != checksum)
+      if (Checksum(decoded) != checksum)
         throw new InvalidDataException("LZ4-Java block checksum mismatch in MCA chunk.");
       output.Write(decoded);
     }
   }
+
+  private static uint Checksum(ReadOnlySpan<byte> block) => XxHash32.Compute(block, ChecksumSeed) & ChecksumMask;
 
   private static void WriteEndMarker(Stream output, Span<byte> header) {
     Magic.CopyTo(header);
