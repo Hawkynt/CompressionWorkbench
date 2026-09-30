@@ -302,7 +302,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
 | [Acronis True Image .tib](https://en.wikipedia.org/wiki/Acronis_True_Image) | `AcronisTib` | `.tib` | R/W | — | — | FileMeta chain and InputItem attribute streams decoded from reverse-engineered evidence | [GitHub](https://github.com/dennisss/acronis-tib) |
 | [Acronis .tibx](https://en.wikipedia.org/wiki/Acronis_Tibx) | `AcronisTibx` | `.tibx` | R | ✅ | — | Page-frame walk plus LSM sub-header; record-stream decode is bounded | [acronis.com](https://www.acronis.com) |
-| [AFF4](https://en.wikipedia.org/wiki/Advanced_Forensic_Format) | `Aff4` |  | R | ✅ | — |  | [GitHub](https://github.com/aff4/Standard) |
+| [AFF4](https://en.wikipedia.org/wiki/Advanced_Forensic_Format) | `Aff4` |  | WORM | ✅ | — | Creates AFF4-L 2.1 logical volumes with ZipSegment (stored or deflate) streams, SHA-256 stream and metadata hashes; the Turtle graph is validated with rdflib, but no AFF4-L 2.1 reader was available to confirm acceptance, and ZIP64 records are written only where sizes need them | [GitHub](https://github.com/aff4/Standard) |
 | AOMEI Backupper .adi/.afi | `Aomei` | `.adi` `.afi` | R/W | ✅ | — | BIFH/BIFT and BR header/index structures; no vendor byte-compat claim for own output | [aomeitech.com](https://www.aomeitech.com) |
 | [Microsoft NTBackup (MTF)](https://en.wikipedia.org/wiki/NTBackup) | `Bkf` | `.bkf` | R/W | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Microsoft_Tape_Format) |
 | EaseUS Todo Backup .pbd | `EaseUsPbd` | `.pbd` | R | ✅ | — | Chunk-stream extraction path | [easeus.com](https://www.easeus.com) |

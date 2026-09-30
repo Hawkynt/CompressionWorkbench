@@ -147,9 +147,13 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
     var turtle = BuildTurtle(volume, members, folders);
     var turtleHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(turtle))).ToLowerInvariant();
+    var volumeArn = $"aff4://{volume:D}";
     using var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true, Encoding.UTF8);
+    // AFF4 Standard v1.0 section 5.4: the volume ARN goes in container.description, which must
+    // be the first member, and is recommended in the ZIP comment as well.
+    zip.Comment = volumeArn;
+    AddZipText(zip, "container.description", volumeArn, CompressionLevel.NoCompression);
     AddZipText(zip, "version.txt", "major=2\nminor=1\ntool=CompressionWorkbench\n", CompressionLevel.NoCompression);
-    AddZipText(zip, "container.description", $"AFF4-L ZIP volume {volume:D}\n", CompressionLevel.NoCompression);
     foreach (var member in members) {
       var entry = zip.CreateEntry(member.Urn, compression);
       entry.LastWriteTime = member.Modified;
@@ -157,8 +161,10 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       target.Write(member.Data);
     }
     AddZipText(zip, "information.turtle", turtle, CompressionLevel.NoCompression);
+    // AFF4-L section 10.1's example writes the subject as ":/information.turtle", which is not
+    // valid Turtle (a prefixed local name cannot start with "/"); the full IRI names the same thing.
     AddZipText(zip, "information.turtle.hashes",
-      $"@prefix : <aff4://{volume:D}> .\n@prefix aff4: <http://aff4.org/Schema#> .\n\n:/information.turtle aff4:hash \"{turtleHash}\"^^aff4:SHA256 .\n",
+      $"@prefix : <{volumeArn}> .\n@prefix aff4: <http://aff4.org/Schema#> .\n\n<{volumeArn}/information.turtle> aff4:hash \"{turtleHash}\"^^aff4:SHA256 .\n",
       CompressionLevel.NoCompression);
   }
 
@@ -185,19 +191,57 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       .Append(": a aff4:ZipVolume .\n\n");
     foreach (var member in members) {
       var leaf = member.Name[(member.Name.LastIndexOf('/') + 1)..];
-      sb.Append('<').Append(member.Urn).Append("> a aff4:FileImage, aff4:Image, aff4:ZipSegment ;\n")
-        .Append("  aff4:fileName ").Append(TurtleString(leaf)).Append(" ;\n")
-        .Append("  aff4:originalPathName ").Append(TurtleString("/" + member.Name)).Append(" ;\n")
+      sb.Append('<').Append(member.Urn).Append("> a aff4:FileImage, aff4:Image, aff4:ZipSegment ;\n");
+      AppendNames(sb, leaf, "/" + member.Name);
+      sb
         .Append("  aff4:size \"").Append(member.Data.LongLength.ToString(CultureInfo.InvariantCulture)).Append("\"^^xsd:long ;\n")
         .Append("  aff4:lastWritten ").Append(TurtleString(member.Modified.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture))).Append("^^xsd:dateTime ;\n")
         .Append("  aff4:hash ").Append(TurtleString(member.Sha256)).Append("^^aff4:SHA256 .\n\n");
     }
+    // AFF4-L section 1.1 deprecates path-based ARNs: folders get GUID ARNs like files.
     foreach (var folder in folders.OrderBy(x => x, StringComparer.Ordinal)) {
       var leaf = folder[(folder.LastIndexOf('/') + 1)..];
-      sb.Append("<aff4://").Append(volume.ToString("D")).Append('/').Append(Uri.EscapeDataString(folder)).Append("> a aff4:Folder ;\n")
-        .Append("  aff4:fileName ").Append(TurtleString(leaf)).Append(" ;\n")
-        .Append("  aff4:originalPathName ").Append(TurtleString("/" + folder)).Append(" .\n\n");
+      sb.Append("<aff4://").Append(Guid.NewGuid().ToString("D")).Append("> a aff4:Folder ;\n");
+      AppendNames(sb, leaf, "/" + folder);
+      sb.Length -= 3; // turn the trailing " ;\n" into the statement end
+      sb.Append(" .\n\n");
     }
+    return sb.ToString();
+  }
+
+  /// <summary>
+  /// AFF4-L section 5: a name with a control character (or one that is not valid UTF-16, hence not
+  /// valid UTF-8) is stored %XX-escaped in aff4:fileName / aff4:originalPathName, with the raw
+  /// bytes base64-encoded in the ...Raw property.
+  /// </summary>
+  private static void AppendNames(StringBuilder sb, string leaf, string path) {
+    foreach (var (property, value) in new[] { ("fileName", leaf), ("originalPathName", path) }) {
+      if (NeedsNameEscaping(value)) {
+        var raw = Encoding.UTF8.GetBytes(value);
+        sb.Append("  aff4:").Append(property).Append(' ').Append(TurtleString(EscapeName(raw))).Append(" ;\n");
+        sb.Append("  aff4:").Append(property).Append("Raw \"").Append(Convert.ToBase64String(raw)).Append("\"^^xsd:base64Binary ;\n");
+      } else
+        sb.Append("  aff4:").Append(property).Append(' ').Append(TurtleString(value)).Append(" ;\n");
+    }
+  }
+
+  private static bool NeedsNameEscaping(string value) {
+    for (var i = 0; i < value.Length; ++i) {
+      var c = value[i];
+      if (c < 0x20) return true;
+      if (char.IsHighSurrogate(c) && (i + 1 >= value.Length || !char.IsLowSurrogate(value[i + 1]))) return true;
+      if (char.IsLowSurrogate(c) && (i == 0 || !char.IsHighSurrogate(value[i - 1]))) return true;
+      if (char.IsHighSurrogate(c)) ++i;
+    }
+    return false;
+  }
+
+  // Bytes 0x00-0x1F, 0x25 ('%') and 0x80-0xFF become %XX (uppercase hex).
+  private static string EscapeName(byte[] raw) {
+    var sb = new StringBuilder(raw.Length);
+    foreach (var b in raw)
+      if (b < 0x20 || b == 0x25 || b >= 0x80) sb.Append('%').Append(b.ToString("X2", CultureInfo.InvariantCulture));
+      else sb.Append((char)b);
     return sb.ToString();
   }
 
@@ -324,13 +368,8 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (Match match in Regex.Matches(turtle,
       "<(?<urn>aff4://[^>]+)>\\s+a\\s+aff4:FileImage\\b(?<body>.*?)(?:\\.\\s*(?:\\r?\\n|$))",
       RegexOptions.Singleline | RegexOptions.CultureInvariant)) {
-      var path = Regex.Match(match.Groups["body"].Value,
-        "aff4:originalPathName\\s+\"(?<path>(?:\\\\.|[^\"\\\\])*)\"",
-        RegexOptions.CultureInvariant);
-      if (!path.Success) continue;
-      var logical = path.Groups["path"].Value.Replace("\\\\\"", "\"").Replace("\\\\\\\\", "\\\\");
-      logical = logical.TrimStart('/');
-      if (logical.Length > 0) result[match.Groups["urn"].Value] = logical;
+      var logical = LogicalPath(match.Groups["body"].Value);
+      if (logical is { Length: > 0 }) result[match.Groups["urn"].Value] = logical;
     }
     return result;
   }
@@ -341,14 +380,45 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (Match match in Regex.Matches(turtle,
       "<(?<urn>aff4://[^>]+)>\\s+a\\s+aff4:Folder\\b(?<body>.*?)(?:\\.\\s*(?:\\r?\\n|$))",
       RegexOptions.Singleline | RegexOptions.CultureInvariant)) {
-      var path = Regex.Match(match.Groups["body"].Value,
-        "aff4:originalPathName\\s+\"(?<path>(?:\\\\.|[^\"\\\\])*)\"",
-        RegexOptions.CultureInvariant);
-      if (!path.Success) continue;
-      var logical = path.Groups["path"].Value.Replace("\\\\\"", "\"").Replace("\\\\\\\\", "\\\\").TrimStart('/');
-      if (logical.Length > 0) result.Add(logical);
+      var logical = LogicalPath(match.Groups["body"].Value);
+      if (logical is { Length: > 0 }) result.Add(logical);
     }
     return result;
+  }
+
+  /// <summary>
+  /// The logical path of a FileImage or Folder: aff4:originalPathNameRaw (base64) when present,
+  /// else aff4:originalPathName, else the AFF4 v1.1 / pyaff4 aff4:originalFileName. Windows
+  /// separators become '/'.
+  /// </summary>
+  private static string? LogicalPath(string body) {
+    var raw = Regex.Match(body, "aff4:originalPathNameRaw\\s+\"(?<b64>[A-Za-z0-9+/=\\s]*)\"", RegexOptions.CultureInvariant);
+    string? path = null;
+    if (raw.Success) {
+      try { path = Encoding.UTF8.GetString(Convert.FromBase64String(raw.Groups["b64"].Value)); } catch (FormatException) { path = null; }
+    }
+    if (path == null) {
+      var named = Regex.Match(body, "aff4:(?:originalPathName|originalFileName)\\s+\"(?<path>(?:\\\\.|[^\"\\\\])*)\"", RegexOptions.CultureInvariant);
+      if (!named.Success) return null;
+      path = TurtleUnescape(named.Groups["path"].Value);
+    }
+    path = path.Replace('\\', '/').TrimStart('/');
+    return path.Split('/').Any(part => part is ".." or ".") ? Path.GetFileName(path) : path;
+  }
+
+  // Turtle string escapes; any other backslash is kept, since producers write Windows paths such
+  // as "\GovDocs\000\000785.html" unescaped.
+  private static string TurtleUnescape(string value) {
+    var sb = new StringBuilder(value.Length);
+    for (var i = 0; i < value.Length; ++i) {
+      if (value[i] != '\\' || i + 1 >= value.Length) { sb.Append(value[i]); continue; }
+      var next = value[i + 1];
+      var mapped = next switch { '"' => '"', '\\' => '\\', 'n' => '\n', 'r' => '\r', 't' => '\t', '\'' => '\'', _ => '\0' };
+      if (mapped == '\0') { sb.Append('\\'); continue; }
+      sb.Append(mapped);
+      ++i;
+    }
+    return sb.ToString();
   }
 
   private static Dictionary<string, DateTimeOffset> ParseLogicalModified(string? turtle) {

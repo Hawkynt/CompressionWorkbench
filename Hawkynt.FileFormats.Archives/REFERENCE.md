@@ -8133,9 +8133,9 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 #### `Aff4FormatDescriptor`
 
-AFF4 (Advanced Forensic Format 4) container. An AFF4 volume is a ZIP (typically ZIP64) holding an RDF metadata graph in `information.turtle`, a `version.txt` marker, an optional `container.description`, and image data streams under `aff4://<uuid>/` paths split into bevy/chunk segments named with zero-padded indices (e.g. `00000000`, `00000000.index`). This descriptor delegates ZIP enumeration / extraction to the platform ZIP reader and surfaces every ZIP member as a first-class entry, alongside a verbatim `FULL.aff4` and a `metadata.ini` that distills the Turtle graph (stored image size, chunk size, compression method) when present. Read-only; the Turtle RDF is exposed raw — no full graph reasoning is performed. Detection is extension-driven (`.aff4`) so it does not steal generic ZIPs; malformed input degrades to FULL + partial metadata without throwing. References: `https://github.com/aff4/Standard` — AFF4 standard specification documents`https://github.com/aff4/pyaff4` — pyaff4 — canonical reference implementationCohen, Garfinkel & Schatz, "Extending the Advanced Forensic Format to accommodate multiple data sources, logical evidence, arbitrary information and forensic workflow" (DFRWS 2009) — the defining AFF4 paper
+AFF4 (Advanced Forensic Format 4) container. An AFF4 volume is a ZIP (typically ZIP64) holding an RDF metadata graph in `information.turtle`, a `version.txt` marker, an optional `container.description`, and image data streams under `aff4://<uuid>/` paths split into bevy/chunk segments named with zero-padded indices (e.g. `00000000`, `00000000.index`). This descriptor reads ZIP members and AFF4-L logical file names, and creates ZIP-backed AFF4-L ZipSegment streams using Stored or Deflate. Extraction also offers a verbatim `FULL.aff4` and `metadata.ini` distilled from the Turtle graph. Detection is extension-driven (`.aff4`) so it does not steal generic ZIPs; malformed input degrades to FULL + partial metadata without throwing. References: `https://github.com/aff4/Standard` — AFF4 standard specification documents`inprogress/AFF4-L-StandardSpecification-v1.0.md` — AFF4-L v1.0 (ZipSegment streams, metadata and hashes)`https://github.com/aff4/pyaff4` — pyaff4 — canonical reference implementationCohen, Garfinkel & Schatz, "Extending the Advanced Forensic Format to accommodate multiple data sources, logical evidence, arbitrary information and forensic workflow" (DFRWS 2009) — the defining AFF4 paper
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8151,7 +8151,9 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Options supported when writing an AFF4-L ZIP volume. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a standards-based AFF4-L volume using ZIP-backed data streams. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
