@@ -77,23 +77,14 @@ public sealed class Ktx2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var file = ReadAll(stream);
-    var entries = Ktx2Decomposer.Decompose(file);
-    return entries.Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Data.LongLength, e.Data.LongLength, "stored", false, false, null, e.Kind)).ToList();
-  }
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    => ((IArchiveFormatOperations)this).ListSpan(ReadAll(stream), password);
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var file = ReadAll(stream);
-    foreach (var e in Ktx2Decomposer.Decompose(file)) {
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, e.Data);
-    }
-  }
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    => ((IArchiveFormatOperations)this).ExtractSpan(ReadAll(stream), outputDir, password, files);
 
   List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
     var layout = Ktx2Decomposer.DecomposeLayout(archive);

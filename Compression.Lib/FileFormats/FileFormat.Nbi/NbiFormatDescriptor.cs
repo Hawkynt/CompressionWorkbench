@@ -84,56 +84,14 @@ public sealed class NbiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var data = ReadAll(stream);
-    var r = new NbiReader(data);
-    var entries = new List<ArchiveEntryInfo> {
-      new(0, "FULL.nbi", data.Length, data.Length, "Stored", false, false, null, Kind: "Track"),
-      new(1, "metadata.ini", 0, 0, "Stored", false, false, null, Kind: "Tag"),
-    };
-    var idx = 2;
-    if (r.IsValid && r.PayloadLength > 0)
-      entries.Add(new ArchiveEntryInfo(idx++, "payload.bin", r.PayloadLength, r.PayloadLength,
-        "Stored", false, false, null, Kind: "Track"));
-    if (r.IsValid && r.SegmentsComplete)
-      for (var i = 0; i < r.Segments.Count; ++i) {
-        var seg = r.Segments[i];
-        entries.Add(new ArchiveEntryInfo(idx++, SegmentName(i), seg.ImageLength, seg.ImageLength,
-          "Stored", false, false, null, Kind: "Track"));
-      }
-    return entries;
-  }
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    => ((IArchiveFormatOperations)this).ListSpan(ReadAll(stream), password);
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var data = ReadAll(stream);
-    var r = new NbiReader(data);
-
-    if (Wants(files, "FULL.nbi"))
-      WriteFile(outputDir, "FULL.nbi", data);
-
-    if (Wants(files, "metadata.ini"))
-      WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(BuildMetadata(r, data.Length)));
-
-    if (r.IsValid && r.PayloadLength > 0 && Wants(files, "payload.bin")) {
-      var payload = new byte[r.PayloadLength];
-      Array.Copy(data, NbiReader.HeaderSectorSize, payload, 0, payload.Length);
-      WriteFile(outputDir, "payload.bin", payload);
-    }
-
-    if (r.IsValid && r.SegmentsComplete)
-      for (var i = 0; i < r.Segments.Count; ++i) {
-        var seg = r.Segments[i];
-        var name = SegmentName(i);
-        if (!Wants(files, name))
-          continue;
-        var slice = new byte[seg.ImageLength];
-        Array.Copy(data, seg.DataOffset, slice, 0, slice.Length);
-        WriteFile(outputDir, name, slice);
-      }
-  }
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    => ((IArchiveFormatOperations)this).ExtractSpan(ReadAll(stream), outputDir, password, files);
 
   List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
     var r = new NbiReader(archive);
