@@ -3,6 +3,7 @@ using System.Buffers;
 using System.Text;
 using Compression.Core.Checksums;
 using Compression.Core.Deflate;
+using Compression.Registry;
 
 namespace FileFormat.Zip;
 
@@ -160,6 +161,29 @@ public static class ZipModifier {
     zip.Position = offset;
     zip.ReadExactly(tail);
     return tail;
+  }
+
+  /// <summary>
+  /// Adds or replaces (by name) every file input in <paramref name="inputs"/>, streaming
+  /// on-disk files instead of loading them and stamping them with their last-write time.
+  /// Directory inputs are skipped, as are file inputs rejected by <paramref name="include"/>.
+  /// </summary>
+  public static void AddOrReplace(Stream zip, IReadOnlyList<ArchiveInputInfo> inputs, Func<string, bool>? include = null) {
+    ArgumentNullException.ThrowIfNull(zip);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var input in inputs) {
+      if (input.IsDirectory || (include != null && !include(input.ArchiveName)))
+        continue;
+
+      RemoveFile(zip, input.ArchiveName, wipeData: true);
+      if (input.InMemoryContent is { } content) {
+        using var source = new MemoryStream(content, writable: false);
+        AddFile(zip, input.ArchiveName, source);
+      } else {
+        using var source = new FileStream(input.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferSize, FileOptions.SequentialScan);
+        AddFile(zip, input.ArchiveName, source, File.GetLastWriteTime(input.FullPath));
+      }
+    }
   }
 
   private const int CopyBufferSize = 1 << 20;

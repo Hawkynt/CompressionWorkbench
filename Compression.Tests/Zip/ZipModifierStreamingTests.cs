@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Registry;
 using FileFormat.Zip;
 using SysZipArchive = System.IO.Compression.ZipArchive;
 using SysZipArchiveMode = System.IO.Compression.ZipArchiveMode;
@@ -203,6 +204,70 @@ public class ZipModifierStreamingTests {
 
     Assert.That(zip.ToArray(), Is.EqualTo(before));
     Assert.That(OracleEntry(zip, "kept.txt").Content, Is.EqualTo(Compressible(1_000)));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void DescriptorAdd_GivenExistingEntryOfSameName_WhenAdded_ThenReplacedNotDuplicated() {
+    using var zip = SeedZip();
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "second version"u8.ToArray());
+
+      ((IArchiveModifiable)new ZipFormatDescriptor()).Add(zip, [new ArchiveInputInfo(tmp, "seed.txt", false)]);
+
+      zip.Position = 0;
+      using var check = new SysZipArchive(zip, SysZipArchiveMode.Read, leaveOpen: true);
+      Assert.That(check.Entries.Count(e => e.FullName == "seed.txt"), Is.EqualTo(1));
+      Assert.That(Encoding.ASCII.GetString(ReadAll(check.GetEntry("seed.txt")!)), Is.EqualTo("second version"));
+    } finally { File.Delete(tmp); }
+  }
+
+  // ── Descriptor path ────────────────────────────────────────────────
+
+  [Test, Category("RoundTrip")]
+  public void DescriptorAdd_GivenOnDiskFile_WhenAdded_ThenItsLastWriteTimeIsKept() {
+    using var zip = SeedZip();
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, Compressible(2_000));
+      File.SetLastWriteTime(tmp, new DateTime(2021, 7, 4, 10, 20, 33));
+
+      ((IArchiveModifiable)new ZipFormatDescriptor()).Add(zip, [new ArchiveInputInfo(tmp, "dated.txt", false)]);
+
+      var entry = OracleEntry(zip, "dated.txt");
+      Assert.That(entry.LastWrite, Is.EqualTo(new DateTime(2021, 7, 4, 10, 20, 32)));
+      Assert.That(entry.Content, Is.EqualTo(Compressible(2_000)));
+    } finally { File.Delete(tmp); }
+  }
+
+  [Test, Category("RoundTrip")]
+  public void DescriptorAdd_GivenInMemoryInput_WhenAdded_ThenContentIsTakenFromMemory() {
+    using var zip = SeedZip();
+
+    ((IArchiveModifiable)new ZipFormatDescriptor()).Add(zip,
+      [ArchiveInputInfo.InMemory("mem.txt", "from memory"u8)]);
+
+    Assert.That(Encoding.ASCII.GetString(OracleEntry(zip, "mem.txt").Content), Is.EqualTo("from memory"));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void DescriptorAdd_GivenDirectoryInput_WhenAdded_ThenItIsSkipped() {
+    using var zip = SeedZip();
+    var before = zip.ToArray();
+
+    ((IArchiveModifiable)new ZipFormatDescriptor()).Add(zip,
+      [new ArchiveInputInfo(Path.GetTempPath(), "somedir", IsDirectory: true)]);
+
+    Assert.That(zip.ToArray(), Is.EqualTo(before));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void DescriptorAdd_GivenMissingFile_WhenAdded_ThenThrowsFileNotFound() {
+    using var zip = SeedZip();
+    var missing = Path.Combine(Path.GetTempPath(), $"cwb_missing_{Guid.NewGuid():N}.txt");
+
+    Assert.Throws<FileNotFoundException>(() =>
+      ((IArchiveModifiable)new ZipFormatDescriptor()).Add(zip, [new ArchiveInputInfo(missing, "m.txt", false)]));
   }
 
   // ── Streaming and ZIP64 reservation ────────────────────────────────
