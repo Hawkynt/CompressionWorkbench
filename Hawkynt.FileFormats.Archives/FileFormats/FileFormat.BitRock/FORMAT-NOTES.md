@@ -42,7 +42,9 @@ is no guesswork / "filler" heuristic):
 - **Page** = `[1-byte cid][data]`:
   - `cid 0` — stored (raw bytes)
   - `cid 1` — raw DEFLATE, no zlib wrapper (`inflate` with `windowBits = -15`)
-  - `cid 2` — bzip2
+  - `cid 2` — bzip2: `[u32 BE uncompressed size][bzip2 stream]`. The CFS0002 index records only
+    the stored page size, and libbz2's buffer-to-buffer decoder needs the output size up front, so
+    the page carries it; the decoded length must equal the prefix
 - **Footer** (last 16 bytes of the content region, ending exactly at the VFS start):
   `idxsize` (BE int32) · `numpages` (BE int32) · 1 byte · `"CFS0002"`.
 - Immediately before the footer: a per-page **16-byte MD5** table, then the per-page
@@ -84,3 +86,11 @@ byte-exact and checksum-gated (spot-checked PE / XML / PNG / ZIP members).
 - `BitRockContentScanner.cs` — reconstructs cookfs content, scans for the gzip-tar
   members, extracts each with the shared Gzip + Tar building blocks straight to disk.
 - `BitRockReader.cs` / `BitRockFormatDescriptor.cs` — detection, VFS locate, and List/Extract.
+
+The page codec ids and the bzip2 page layout follow the BSD-licensed cookfs 1.x sources
+(`generic/pagesCompr.c`, `CookfsReadPageBz2` / `CookfsWritePageBz2`, tag v1.4.0 of
+github.com/chpock/cookfs), the CFS0002 generation BitRock embeds. No InstallBuilder sample with
+bzip2 pages is in the corpus, so that path is pinned by synthetic fixtures built to that layout.
+The `bzip2` path uses this repository's managed BZip2 stream; no third-party code was copied. Creating an installable BitRock package remains
+unsupported: it requires the vendor's platform-specific executable stub and matching Tcl/Metakit
+runtime, which cannot be synthesized from archive entries alone while preserving installer behavior.
