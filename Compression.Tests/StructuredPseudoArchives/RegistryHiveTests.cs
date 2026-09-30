@@ -32,6 +32,14 @@ public sealed class RegistryHiveTests {
   }
 
   [Test]
+  public void Creg_GivenAValueOnTheRootKey_WhenCreating_ThenItIsRefusedAsUnsupported() {
+    using var output = new MemoryStream();
+    Assert.That(
+      () => new CregFormatDescriptor().Create(output, [ArchiveInputInfo.InMemory("RootValue", new byte[] { 1 })], new FormatCreateOptions()),
+      Throws.TypeOf<NotSupportedException>());
+  }
+
+  [Test]
   public void Creg_CreateRejectsValuesLargerThanTheFormatLengthField() {
     var descriptor = new CregFormatDescriptor();
     var inputs = new[] { ArchiveInputInfo.InMemory("Key/Value", new byte[ushort.MaxValue + 1]) };

@@ -16,6 +16,7 @@ internal static class CregWriter {
   private const uint NoOffset = uint.MaxValue;
   private const ushort NoEntry = ushort.MaxValue;
   private const int MaximumKeys = 1_000_000;
+  private const int FreeRecordMinimum = 20;
 
   public static void Write(Stream output, StructuredNode root) {
     ArgumentNullException.ThrowIfNull(output);
@@ -28,13 +29,16 @@ internal static class CregWriter {
     var rootKey = new KeyRecord(string.Empty, null, []);
     AddChildren(rootKey, root, keys, 0);
     if (rootKey.Values.Count != 0)
-      throw new InvalidDataException("CREG cannot represent value entries directly on the unnamed root key.");
+      throw new NotSupportedException("CREG cannot represent value entries directly on the unnamed root key: its hierarchy entry has no key-name record to hold them. Put files under a key (a folder).");
     if (keys.Count > MaximumKeys)
       throw new InvalidDataException($"CREG hive exceeds the {MaximumKeys:N0}-key safety limit.");
 
     var blocks = BuildDataBlocks(keys);
     var hierarchyCount = checked(keys.Count + 1);
-    var navigationSize = checked(NavigationHeaderSize + hierarchyCount * HierarchyEntrySize);
+    var navigationUsed = checked(NavigationHeaderSize + hierarchyCount * HierarchyEntrySize);
+    // Windows sizes the RGKN area in whole 4 KiB pages, as it does every RGDB block, and
+    // libcreg reads hierarchy entries only from inside a page-sized area.
+    var navigationSize = checked((navigationUsed + 4095) & ~4095);
     var dataOffset = checked(FileHeaderSize + navigationSize);
     long fileSize = dataOffset;
     foreach (var block in blocks) fileSize += block.Length;
@@ -67,6 +71,7 @@ internal static class CregWriter {
     WriteHierarchy(writer, rootKey, hierarchy);
     foreach (var key in keys)
       WriteHierarchy(writer, key, hierarchy);
+    writer.Write(new byte[navigationSize - navigationUsed]);
 
     foreach (var block in blocks)
       writer.Write(block);
@@ -132,6 +137,8 @@ internal static class CregWriter {
       key.EntryIndex = checked((ushort)current.Count);
       key.BlockIndex = checked((ushort)blocks.Count);
       WriteU16(record, 4, key.EntryIndex);
+      // Real hives carry the owning block's number beside the entry index.
+      WriteU16(record, 6, key.BlockIndex);
       current.Add(record);
       used = checked(used + record.Length);
     }
@@ -178,7 +185,13 @@ internal static class CregWriter {
   private static byte[] BuildDataBlock(List<byte[]> records, int index) {
     var usedSize = DataBlockHeaderSize;
     foreach (var record in records) usedSize = checked(usedSize + record.Length);
+    // The slack after the last key is not left as zeros: a reader walks records
+    // until the block ends, so Windows closes the block with one free record
+    // (index and block 0xffff, used size 0xffffffff) spanning the rest. That
+    // record needs its 20-byte header, so a tail shorter than that costs a page.
     var blockSize = checked((usedSize + 4095) & ~4095);
+    if (blockSize != usedSize && blockSize - usedSize < FreeRecordMinimum)
+      blockSize = checked(blockSize + 4096);
     var block = new byte[blockSize];
     "RGDB"u8.CopyTo(block);
     WriteU32(block, 4, checked((uint)blockSize));
@@ -191,6 +204,12 @@ internal static class CregWriter {
     foreach (var record in records) {
       record.CopyTo(block, cursor);
       cursor += record.Length;
+    }
+    if (cursor < blockSize) {
+      WriteU32(block, cursor, checked((uint)(blockSize - cursor)));
+      WriteU16(block, cursor + 4, NoEntry);
+      WriteU16(block, cursor + 6, NoEntry);
+      WriteU32(block, cursor + 8, NoOffset);
     }
     return block;
   }
