@@ -405,6 +405,110 @@ public static class ArchiveOperations {
   }
 
   /// <summary>
+  /// Whether <paramref name="archivePath"/> can have its entries renamed without anything else
+  /// changing: its format renames losslessly (<see cref="Compression.Registry.IArchiveRenamable"/>),
+  /// or it is a filesystem image whose driver renames in place. A format that could only rename by
+  /// re-creating itself is not renamable.
+  /// </summary>
+  public static bool CanRename(string archivePath) {
+    try {
+      var format = FormatDetector.Detect(archivePath);
+      FormatRegistration.EnsureInitialized();
+      var id = format.ToString();
+      if (Compression.Registry.FormatRegistry.GetArchiveOps(id) is Compression.Registry.IArchiveRenamable) return true;
+      if (Compression.Registry.FormatRegistry.GetById(id) is null) return false;
+
+      using var image = File.OpenRead(archivePath);
+      return RenamesInPlace(Compression.Registry.FormatRegistry.ProbeFilesystem(id, image));
+    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
+                                   or NotSupportedException or KeyNotFoundException or ArgumentException) {
+      return false;
+    }
+  }
+
+  /// <summary>
+  /// Gives entries new paths inside an archive or filesystem image, changing nothing else.
+  /// An archive is copied with the new names into a temporary file beside it, which then replaces it
+  /// in one step, so an interrupted rename leaves the original intact. A filesystem image is renamed
+  /// in place by its driver, the way the operating system would.
+  /// </summary>
+  /// <exception cref="NotSupportedException">The format cannot rename losslessly; see <see cref="CanRename"/>.</exception>
+  public static void Rename(string archivePath, IReadOnlyList<Compression.Registry.ArchiveRename> renames,
+                            CompressionOptions? opts = null) {
+    ArgumentNullException.ThrowIfNull(renames);
+    var format = FormatDetector.Detect(archivePath);
+    FormatRegistration.EnsureInitialized();
+    var id = format.ToString();
+
+    if (Compression.Registry.FormatRegistry.GetArchiveOps(id) is Compression.Registry.IArchiveRenamable renamable) {
+      var full = Path.GetFullPath(archivePath);
+      var temporary = Path.Combine(Path.GetDirectoryName(full)!, "." + Path.GetFileName(full) + ".cwb-rename-" + Guid.NewGuid().ToString("N")[..8]);
+      try {
+        using (var source = File.OpenRead(full))
+        using (var destination = new FileStream(temporary, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None)) {
+          renamable.Rename(source, destination, renames);
+          destination.Flush(flushToDisk: true);
+        }
+
+        File.Move(temporary, full, overwrite: true);
+      } finally {
+        if (File.Exists(temporary)) File.Delete(temporary);
+      }
+
+      return;
+    }
+
+    if (Compression.Registry.FormatRegistry.GetById(id) is not null) {
+      using var image = File.Open(archivePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+      if (RenamesInPlace(Compression.Registry.FormatRegistry.ProbeFilesystem(id, image))) {
+        image.Position = 0;
+        RenameInFilesystem(id, image, renames);
+        return;
+      }
+    }
+
+    throw new NotSupportedException($"{format} cannot rename its entries without re-creating itself, so renaming is not offered.");
+  }
+
+  private static bool RenamesInPlace(Compression.Registry.FilesystemDriverProfile profile)
+    => profile.CanMountWritable && profile.Capabilities.HasFlag(Compression.Registry.FilesystemDriverCapabilities.Rename);
+
+  /// <summary>Renames through the image's own filesystem driver: one directory entry changes per rename.</summary>
+  private static void RenameInFilesystem(string id, Stream image, IReadOnlyList<Compression.Registry.ArchiveRename> renames) {
+    using var session = Compression.Registry.FormatRegistry.OpenFilesystem(id, image, new Compression.Registry.FilesystemOpenOptions(ReadOnly: false));
+    foreach (var (fromName, toName) in renames) {
+      var from = Split(fromName);
+      var to = Split(toName);
+      var fromParent = Resolve(session, from[..^1], fromName);
+      var toParent = Resolve(session, to[..^1], toName);
+      if (session.Lookup(fromParent, from[^1]) is null)
+        throw new FileNotFoundException($"No entry named '{fromName}'.", fromName);
+
+      var caseOnly = fromParent == toParent && string.Equals(from[^1], to[^1], StringComparison.OrdinalIgnoreCase);
+      if (!caseOnly && session.Lookup(toParent, to[^1]) is not null)
+        throw new IOException($"'{toName}' already exists.");
+
+      session.Rename(fromParent, from[^1], toParent, to[^1], replace: false);
+    }
+
+    session.Flush();
+
+    static string[] Split(string path) {
+      var parts = path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+      if (parts.Length == 0 || parts.Any(p => p is "." or ".."))
+        throw new ArgumentException($"'{path}' is not a valid entry path.", nameof(path));
+      return parts;
+    }
+
+    static Compression.Registry.FilesystemNodeId Resolve(Compression.Registry.IFilesystemSession session, string[] folders, string path) {
+      var node = session.RootNodeId;
+      foreach (var folder in folders)
+        node = session.Lookup(node, folder) ?? throw new FileNotFoundException($"No folder on the way to '{path}'.", path);
+      return node;
+    }
+  }
+
+  /// <summary>
   /// Replaces an existing entry with the contents of <paramref name="newSourcePath"/>.
   /// Sugar for <see cref="Remove"/> followed by <see cref="Add"/>; uses the
   /// modifier path when available so the operation is O(touched bytes) on the

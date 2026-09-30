@@ -81,7 +81,7 @@ internal static class ZipEndOfCentralDirectory {
       writer.Write(commentBytes);
   }
 
-  private static long FindEocd(Stream stream) {
+  internal static long FindEocd(Stream stream) {
     // EOCD is at most 65535 + 22 bytes from the end
     var searchLen = Math.Min(stream.Length, 65557);
     var searchStart = stream.Length - searchLen;

@@ -13,7 +13,11 @@ backends, so Windows and Linux run the same code rather than two frontends drift
   (Alt+Left / Alt+Right) retrace host folders and archive folders alike. File list with name, size,
   compressed size, ratio, method and modified columns; open, extract, create, test; `..` navigation
   that exits an archive into the host filesystem; auto-descent into nested formats; drag in and
-  drag out.
+  drag out. Rename in place (F2, or Rename in the menus) works on disk, inside ZIP archives and inside
+  filesystem images whose driver renames in place (FAT, ext, Minix, the Commodore disk images,
+  RomFS). It is lossless there — a ZIP is copied with only its names changed, an image has one
+  directory entry changed — and it is not offered for formats that could only rename by
+  re-creating themselves. Names Windows or POSIX would refuse are caught before anything is touched.
 - **Preview** — the selected entry as a picture, as text, or as a hex dump, with an optional
   statistics side panel. Multi-frame images get playback controls.
 - **Properties** — sizes, ratio, method and dates, plus byte statistics for a file or a child count

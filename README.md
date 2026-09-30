@@ -319,7 +319,8 @@ work from the bytes outward instead of stopping at "unsupported".
 
 The archive browser is the conventional half, laid out like a file manager: a folder tree that
 treats the open archive as one more folder, a breadcrumb bar that doubles as an address bar
-(paths may run into an archive), Back / Forward history; file list with name, size, compressed
+(paths may run into an archive), Back / Forward history, lossless in-place rename (F2) on disk,
+in ZIPs and in filesystem images; file list with name, size, compressed
 size, ratio, method and modified columns; open / extract / create / test flows; text, hex and
 image preview;
 properties with compression-ratio visualization; benchmark tooling; and Explorer context-menu

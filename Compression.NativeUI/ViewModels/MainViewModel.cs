@@ -1,3 +1,4 @@
+using Compression.NativeUI.Editing;
 using Compression.NativeUI.Navigation;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -117,6 +118,14 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand ScrambleEntryCommand { get; }
   public ICommand ReconfigureEntryCommand { get; }
   public ICommand DeleteSelectedCommand { get; }
+  /// <summary>Asks the view to start editing the selected entry's name; see <see cref="RenameRequested"/>.</summary>
+  public ICommand RenameCommand { get; }
+
+  /// <summary>
+  /// Raised by <see cref="RenameCommand"/>. Typing the new name is the view's business — in place,
+  /// in the list — so the view-model only says which entry, and <see cref="Rename"/> does the rest.
+  /// </summary>
+  public event EventHandler<ArchiveEntryViewModel>? RenameRequested;
 
   // True after a successful in-archive delete on a format whose container leaves
   // freed slots behind. The Defragment menu / status hint surfaces this so the
@@ -200,6 +209,9 @@ internal sealed class MainViewModel : ViewModelBase {
     ScrambleEntryCommand = new RelayCommand(_ => OpenMaintenance(MaintenanceVerb.Scramble), _ => CanMaintain(MaintenanceVerb.Scramble));
     ReconfigureEntryCommand = new RelayCommand(_ => Reconfigure(), _ => CanReconfigure());
     DeleteSelectedCommand = new RelayCommand(_ => DeleteSelectedEntries(), _ => CanDeleteSelected);
+    RenameCommand = new RelayCommand(
+      _ => { if (SingleSelection() is { } entry) RenameRequested?.Invoke(this, entry); },
+      _ => SingleSelection() is { } entry && CanRename(entry));
   }
 
   /// <summary>
@@ -222,6 +234,134 @@ internal sealed class MainViewModel : ViewModelBase {
   /// <see cref="HasPendingFragmentation"/> is raised so the user can run Defragment
   /// to compact freed slots.
   /// </summary>
+  private ArchiveEntryViewModel? SingleSelection() {
+    var selected = SelectedEntries.Where(e => !e.IsParentEntry).Take(2).ToList();
+    return selected.Count == 1 ? selected[0] : null;
+  }
+
+  /// <summary>
+  /// Whether <paramref name="entry"/> can be given a new name where the shell is: any file or folder
+  /// on disk, and an entry of an archive whose format can be modified.
+  /// </summary>
+  /// <remarks>
+  /// Two archive cases are refused outright. A nested archive is a temporary extraction, so renaming
+  /// inside it would change a copy nobody sees. An encrypted one would be rebuilt without its
+  /// password, which the rebuild does not have.
+  /// </remarks>
+  internal bool CanRename(ArchiveEntryViewModel entry) {
+    if (entry.IsParentEntry) return false;
+    if (IsBrowsingOsFolder) return true;
+    if (!HasArchive || IsNestedArchive) return false;
+
+    return ArchiveRenamesLosslessly();
+  }
+
+  // Whether the open archive can rename losslessly is a property of the file, and finding out may
+  // probe it; the answer is kept for as long as the same file, unchanged, stays open.
+  private (string Path, DateTime Stamp, bool Answer)? _renameSupport;
+
+  private bool ArchiveRenamesLosslessly() {
+    var stamp = File.Exists(ArchivePath) ? File.GetLastWriteTimeUtc(ArchivePath) : default;
+    if (_renameSupport is { } known && known.Path == ArchivePath && known.Stamp == stamp) return known.Answer;
+
+    var answer = ArchiveOperations.CanRename(ArchivePath);
+    _renameSupport = (ArchivePath, stamp, answer);
+    return answer;
+  }
+
+  /// <summary>
+  /// Gives <paramref name="entry"/> the name <paramref name="typed"/>, on disk or inside the open
+  /// archive. Completes with null on success — including when the name did not change — or the
+  /// reason it could not be done, which is also shown in the status line. An archive is rewritten
+  /// off the UI thread.
+  /// </summary>
+  internal async Task<string?> RenameAsync(ArchiveEntryViewModel entry, string typed) {
+    var error = await RenameCoreAsync(entry, typed);
+    if (error is not null) StatusText = error;
+    return error;
+  }
+
+  private async Task<string?> RenameCoreAsync(ArchiveEntryViewModel entry, string typed) {
+    if (!CanRename(entry)) return $"{entry.Name} cannot be renamed here.";
+
+    var (name, invalid) = EntryName.Validate(typed);
+    if (invalid is not null) return invalid;
+    if (name == entry.Name) return null;
+
+    // Two names differing only in case cannot both exist on Windows or macOS, and would not
+    // survive extraction there even inside an archive, so a clash is judged without regard to case.
+    var caseOnly = string.Equals(name, entry.Name, StringComparison.OrdinalIgnoreCase);
+    if (!caseOnly && Entries.Any(e => !e.IsParentEntry && string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase)))
+      return $"\"{name}\" already exists here.";
+
+    try {
+      IsBusy = true;
+      StatusText = $"Renaming {entry.Name}...";
+      if (IsBrowsingOsFolder) {
+        RenameOnDisk(entry, name!, caseOnly);
+        RefreshVisibleEntries();
+      } else {
+        var archive = ArchivePath;
+        var rename = new ArchiveRename(entry.Path, Location.NormalizeArchiveFolder(CurrentFolder) + name);
+        await Task.Run(() => ArchiveOperations.Rename(archive, [rename]));
+        ReloadArchiveInPlace();
+      }
+    } catch (Exception ex) {
+      // Whatever went wrong - a refused name, a locked file, a codec failing on a damaged archive -
+      // the archive is intact (it is replaced only once the renamed copy is complete) and the user
+      // is told, rather than the failure escaping an event handler.
+      return $"Could not rename {entry.Name}: {ex.Message}";
+    } finally {
+      IsBusy = false;
+    }
+
+    StatusText = $"Renamed {entry.Name} to {name}.";
+    return null;
+  }
+
+  private static void RenameOnDisk(ArchiveEntryViewModel entry, string name, bool caseOnly) {
+    var source = entry.Path;
+    var target = Path.Combine(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(source))!, name);
+    var isFolder = Directory.Exists(source);
+
+    if (!caseOnly) {
+      Move(source, target);
+      return;
+    }
+
+    // Not every platform moves a file onto a name that differs only in case; go through a free
+    // one, and put it back if the second step fails rather than leaving it under the interim name.
+    var interim = source + ".cwb-rename-" + Guid.NewGuid().ToString("N")[..8];
+    Move(source, interim);
+    try {
+      Move(interim, target);
+    } catch {
+      Move(interim, source);
+      throw;
+    }
+
+    void Move(string from, string to) {
+      if (isFolder) Directory.Move(from, to);
+      else File.Move(from, to);
+    }
+  }
+
+  /// <summary>
+  /// Rereads the open archive after an edit and stays in the folder the user is in — a plain
+  /// <see cref="Open(string)"/> would drop them at the root and forget where `..` leads.
+  /// </summary>
+  private void ReloadArchiveInPlace() {
+    var folder = CurrentFolder;
+    var exitTo = _priorOsBrowserPath;
+    AsOneArrival(() => {
+      Open(ArchivePath);
+      _priorOsBrowserPath = exitTo;
+      CurrentFolder = folder;
+      RefreshVisibleEntries();
+      return true;
+    });
+  }
+
   private void DeleteSelectedEntries() {
     var selected = SelectedEntries.Where(e => !e.IsParentEntry).ToList();
     if (selected.Count == 0) return;
