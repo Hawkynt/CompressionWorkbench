@@ -131,4 +131,43 @@ public sealed class ShellClipboardTests {
     Assert.That(this._model.StatusText, Is.EqualTo(error));
     Assert.That(Directory.GetDirectories(Path.Combine(this._root, "outer", "inner")), Is.Empty);
   }
+
+  // ── files for dragging out to the desktop ───────────────────────────────────────────────────
+
+  [Test]
+  public void GivenFilesOnDisk_WhenDraggedOut_ThenTheirOwnPathsTravel() {
+    this._model.NavigateTo(Location.Folder(this._root));
+    this.Select("file.txt", "target");
+
+    Assert.That(this._model.FilesForDragOut([.. this._model.SelectedEntries]),
+      Is.EquivalentTo(new[] { Path.Combine(this._root, "file.txt"), Path.Combine(this._root, "target") }));
+  }
+
+  [Test]
+  public void GivenAnArchiveEntry_WhenDraggedOut_ThenAnExtractedCopyTravels() {
+    this._model.NavigateTo(Location.InArchive(this._zip, "docs/"));
+    this.Select("readme.txt");
+
+    var files = this._model.FilesForDragOut([.. this._model.SelectedEntries]);
+
+    Assert.That(files, Has.Length.EqualTo(1));
+    Assert.That(File.ReadAllText(files![0]), Is.EqualTo("readme"));
+    Assert.That(Path.GetFileName(files[0]), Is.EqualTo("readme.txt"), "the desktop receives it under its own name");
+  }
+
+  [TestCase(MainViewModel.DragOutExtractLimit, false)]
+  [TestCase(MainViewModel.DragOutExtractLimit + 1, true)]
+  public void GivenAnArchiveSelectionAtTheExtractLimit_WhenDraggedOut_ThenOnlyALargerOneStaysInside(long size, bool stays) {
+    this._model.NavigateTo(Location.InArchive(this._zip, "docs/"));
+    var claimed = new ArchiveEntryViewModel { Name = "readme.txt", Path = "docs/readme.txt", OriginalSize = size };
+
+    Assert.That(this._model.FilesForDragOut([claimed]) is null, Is.EqualTo(stays));
+  }
+
+  [Test]
+  public void GivenNothingButTheParentRow_WhenDraggedOut_ThenNothingTravels() {
+    this._model.NavigateTo(Location.InArchive(this._zip, "docs/"));
+
+    Assert.That(this._model.FilesForDragOut([this._model.Entries.Single(e => e.IsParentEntry)]), Is.Null);
+  }
 }

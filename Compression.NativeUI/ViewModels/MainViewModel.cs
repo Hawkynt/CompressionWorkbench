@@ -1409,6 +1409,49 @@ internal sealed class MainViewModel : ViewModelBase {
   /// so dropped folders look right in the target.
   /// </para>
   /// </summary>
+  /// <summary>
+  /// The most an archive drag extracts up front so the desktop can receive real files. The files
+  /// must exist before the drag leaves the window, and a larger selection would freeze the shell
+  /// while it unpacks; above this the drag stays within the shell.
+  /// </summary>
+  internal const long DragOutExtractLimit = 256L * 1024 * 1024;
+
+  /// <summary>
+  /// Real files for <paramref name="selection"/> that another application can take: the paths
+  /// themselves on disk, an extracted copy for archive entries — or null when the selection cannot
+  /// leave the shell (nothing selected, or an archive selection above <see cref="DragOutExtractLimit"/>).
+  /// </summary>
+  internal string[]? FilesForDragOut(IReadOnlyList<ArchiveEntryViewModel> selection) {
+    var picked = selection.Where(e => !e.IsParentEntry).ToList();
+    if (picked.Count == 0) return null;
+
+    if (IsBrowsingOsFolder)
+      return [.. picked.Select(e => e.Path).Where(p => File.Exists(p) || Directory.Exists(p))];
+
+    if (!HasArchive || picked.Any(e => e.IsEncrypted)) return null;
+
+    long total = 0;
+    foreach (var entry in picked) {
+      if (!entry.IsDirectory) {
+        total += Math.Max(0, entry.OriginalSize);
+        continue;
+      }
+
+      var prefix = entry.Path.EndsWith('/') ? entry.Path : entry.Path + "/";
+      total += _allEntries.Where(e => !e.IsDirectory && e.Path.StartsWith(prefix, StringComparison.Ordinal)).Sum(e => Math.Max(0, e.OriginalSize));
+    }
+
+    if (total > DragOutExtractLimit) return null;
+
+    try {
+      var files = MaterializeForDragOut(picked);
+      return files.Length > 0 ? files : null;
+    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException) {
+      StatusText = $"Could not prepare the drag: {ex.Message}";
+      return null;
+    }
+  }
+
   internal string[] MaterializeForDragOut(IReadOnlyList<ArchiveEntryViewModel> selection) {
     if (selection.Count == 0 || !HasArchive) return [];
 

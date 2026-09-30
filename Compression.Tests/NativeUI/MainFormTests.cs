@@ -592,6 +592,20 @@ public sealed class MainFormTests {
   }
 
   [Test]
+  public void GivenTheShellsOwnFileListDrag_WhenOverAnotherFolderOfTheSameArchive_ThenItStillMoves() {
+    WithScratch((root, zip) => WithShell(shell => {
+      var items = new[] { new TransferItem(Location.InArchive(zip, ""), "top.txt", false) };
+      var files = new[] { Path.Combine(root, "sub") };   // stands in for the extracted copies
+      typeof(MainForm).GetField("_outgoingDrag", Private)!.SetValue(shell, ((string[] Files, System.Collections.Generic.IReadOnlyList<TransferItem> Items)?)(files, items));
+
+      Assert.That(EffectOf(shell, files, Location.InArchive(zip, "docs/")), Is.EqualTo(DragDropEffects.Move),
+        "inside the window the extracted files still mean the entries they came from");
+      Assert.That(EffectOf(shell, new[] { Path.Combine(root, "sub") }, Location.InArchive(zip, "docs/")), Is.EqualTo(DragDropEffects.Copy),
+        "an equal list from somewhere else is not the shell's own drag");
+    }));
+  }
+
+  [Test]
   public void GivenTheShell_WhenBuilt_ThenTheListAndTheTreeTakeDrops() {
     WithShell(shell => {
       Assert.That(Field<Control>(shell, "_entries").AllowDrop, Is.True);

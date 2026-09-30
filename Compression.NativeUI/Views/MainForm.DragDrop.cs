@@ -15,12 +15,16 @@ internal sealed record ShellDragData(IReadOnlyList<TransferItem> Items);
 /// folder row, or into another folder's list. Files dropped from the desktop go the same way.
 /// </summary>
 internal sealed partial class MainForm {
+  /// <summary>
+  /// The drag the shell itself started, as files for the desktop and as entries for its own panes.
+  /// NativeForms hands a drag to the operating system when it leaves the window, and only a list of
+  /// real files can travel there; inside the window the same list still has to mean "these entries,
+  /// from where they are", or a drag within an archive would copy extracted files instead of moving.
+  /// </summary>
+  private (string[] Files, IReadOnlyList<TransferItem> Items)? _outgoingDrag;
+
   private void WireDragAndDrop() {
-    this._entries.ItemDrag += (_, _) => {
-      var items = this._model.SelectionAsTransferItems();
-      if (items.Count > 0)
-        this._entries.DoDragDrop(new ShellDragData(items), DragDropEffects.Copy | DragDropEffects.Move);
-    };
+    this._entries.ItemDrag += (_, _) => this.StartDrag();
 
     this._entries.AllowDrop = true;
     this._entries.DragEnter += (_, e) => this.Answer(e, this.ListDropTarget(e));
@@ -31,6 +35,20 @@ internal sealed partial class MainForm {
     this._tree.DragEnter += (_, e) => this.Answer(e, this.TreeDropTarget(e));
     this._tree.DragOver += (_, e) => this.Answer(e, this.TreeDropTarget(e));
     this._tree.DragDrop += (_, e) => this.Drop(e, this.TreeDropTarget(e));
+  }
+
+  private void StartDrag() {
+    var items = this._model.SelectionAsTransferItems();
+    if (items.Count == 0) return;
+
+    // Files the desktop can take when there are any; otherwise the drag stays within the shell.
+    if (this._model.FilesForDragOut([.. this._model.SelectedEntries]) is not { Length: > 0 } files) {
+      this._entries.DoDragDrop(new ShellDragData(items), DragDropEffects.Copy | DragDropEffects.Move);
+      return;
+    }
+
+    this._outgoingDrag = (files, items);
+    this._entries.DoDragDrop(files, DragDropEffects.Copy | DragDropEffects.Move, _ => this._outgoingDrag = null);
   }
 
   /// <summary>
@@ -65,8 +83,9 @@ internal sealed partial class MainForm {
   /// The entries a drag carries: the shell's own, or files dropped from outside — whichever of
   /// those still exist.
   /// </summary>
-  private static IReadOnlyList<TransferItem>? ItemsOf(object data) => data switch {
+  private IReadOnlyList<TransferItem>? ItemsOf(object data) => data switch {
     ShellDragData shell => shell.Items,
+    string[] files when this.IsOwnDrag(files) => this._outgoingDrag!.Value.Items,
     string[] paths => [
       .. paths
         .Where(p => File.Exists(p) || Directory.Exists(p))
@@ -86,11 +105,13 @@ internal sealed partial class MainForm {
     if (target is null || ItemsOf(data) is not { Count: > 0 } items) return DragDropEffects.None;
     if (items.All(i => i.From == target)) return DragDropEffects.None;
 
-    var move = data is ShellDragData && Transfer.MovesByDefault(items, target);
+    var move = (data is ShellDragData || (data is string[] files && this.IsOwnDrag(files))) && Transfer.MovesByDefault(items, target);
     return this._model.WhyNotTransfer(items, target, move) is null
       ? move ? DragDropEffects.Move : DragDropEffects.Copy
       : DragDropEffects.None;
   }
+
+  private bool IsOwnDrag(string[] files) => this._outgoingDrag is { } own && ReferenceEquals(own.Files, files);
 
   private void Answer(DragEventArgs e, Location? target) => e.Effect = this.EffectFor(e.Data, target) & e.AllowedEffect;
 
