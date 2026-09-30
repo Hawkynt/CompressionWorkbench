@@ -233,7 +233,8 @@ internal static class ZipRawDirectory {
 
   private static void WriteEnd(Stream zip, long directoryOffset, long directorySize, int count, byte[] comment) {
     using var writer = new BinaryWriter(zip, Encoding.Latin1, leaveOpen: true);
-    var zip64 = directoryOffset > uint.MaxValue || directorySize > uint.MaxValue || count > ushort.MaxValue;
+    // The all-ones values are the ZIP64 sentinels (APPNOTE.TXT 4.4.19-4.4.24).
+    var zip64 = directoryOffset >= uint.MaxValue || directorySize >= uint.MaxValue || count >= ushort.MaxValue;
     if (zip64) {
       var zip64Offset = zip.Position;
       writer.Write(ZipConstants.Zip64EndOfCentralDirectorySignature);

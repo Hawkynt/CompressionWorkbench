@@ -49,13 +49,17 @@ public sealed class ZipEntry {
   /// <summary>Gets whether this entry is a directory.</summary>
   public bool IsDirectory => FileName.EndsWith('/');
 
-  /// <summary>Gets whether the entry sizes require ZIP64 fields in the local header.</summary>
+  /// <summary>
+  /// Gets whether the entry sizes require ZIP64 fields in the local header. 0xFFFFFFFF
+  /// itself is the ZIP64 sentinel (APPNOTE.TXT 4.4.8/4.4.9), so a size of exactly that
+  /// value cannot be stored in the 32-bit field either.
+  /// </summary>
   internal bool NeedsZip64Sizes =>
-    CompressedSize > uint.MaxValue ||
-    UncompressedSize > uint.MaxValue;
+    CompressedSize >= uint.MaxValue ||
+    UncompressedSize >= uint.MaxValue;
 
   /// <summary>Gets whether the local-header offset requires ZIP64 in the central directory.</summary>
-  internal bool NeedsZip64Offset => LocalHeaderOffset > uint.MaxValue;
+  internal bool NeedsZip64Offset => LocalHeaderOffset >= uint.MaxValue;
 
   /// <summary>Gets whether any part of this entry requires ZIP64 extensions.</summary>
   internal bool IsZip64 => NeedsZip64Sizes || NeedsZip64Offset;
