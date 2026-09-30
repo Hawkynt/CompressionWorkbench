@@ -161,6 +161,96 @@ public sealed class StructuredPseudoArchiveTests {
     Assert.That(entries.Any(e => e.Name == "objects/%401/D" && e.Kind == "decimal"), Is.True);
   }
 
+  [Test]
+  public void Nrbf_CreatesStandardNrbfAndRoundTripsNamesDirectoriesAndBinaryData() {
+    var descriptor = new NrbfFormatDescriptor();
+    byte[] expected = [0x00, 0x01, 0x7f, 0x80, 0xff, 0x0a];
+    using var encoded = new MemoryStream();
+    descriptor.Create(encoded, [
+      ArchiveInputInfo.InMemory("dir/file.bin", expected),
+      new ArchiveInputInfo("empty", "empty", IsDirectory: true),
+      ArchiveInputInfo.InMemory("zero.bin", Array.Empty<byte>()),
+    ], new FormatCreateOptions());
+
+    var bytes = encoded.ToArray();
+    Assert.That(bytes[0], Is.EqualTo(0));
+    encoded.Position = 0;
+    var entries = descriptor.List(encoded, null);
+    Assert.Multiple(() => {
+      Assert.That(entries.Any(e => e.Name == "empty" && e.IsDirectory), Is.True);
+      Assert.That(entries.Any(e => e.Name == "dir" && e.IsDirectory), Is.True);
+      Assert.That(entries.Any(e => e.Name == "dir/file.bin" && !e.IsDirectory), Is.True);
+      Assert.That(entries.Any(e => e.Name == "zero.bin" && e.OriginalSize == 0), Is.True);
+    });
+    encoded.Position = 0;
+    using var extracted = new MemoryStream();
+    descriptor.ExtractEntry(encoded, "dir/file.bin", extracted, null);
+    Assert.That(extracted.ToArray(), Is.EqualTo(expected));
+  }
+
+  /// <summary>An object[] that starts with our marker but does not have the envelope's shape.</summary>
+  private static byte[] LookAlikeEnvelope(params byte[][] items) {
+    using var ms = new MemoryStream();
+    using var w = new BinaryWriter(ms);
+    w.Write((byte)0); w.Write(1); w.Write(-1); w.Write(1); w.Write(0);
+    w.Write((byte)16); w.Write(1); w.Write(1 + items.Length);
+    w.Write((byte)6); w.Write(2); w.Write("Hawkynt.CompressionWorkbench.NrbfArchive/1");
+    foreach (var item in items) w.Write(item);
+    w.Write((byte)11);
+    return ms.ToArray();
+  }
+
+  private static byte[] StringRecord(int id, string value) {
+    using var ms = new MemoryStream();
+    using var w = new BinaryWriter(ms);
+    w.Write((byte)6); w.Write(id); w.Write(value);
+    return ms.ToArray();
+  }
+
+  [TestCase(TestName = "GivenAMarkerWithAPathButNoContentSlot_WhenListing_ThenTheGraphIsListedInstead")]
+  [Category("Exceptional")]
+  public void Nrbf_LookAlikeWithOddItemCount_IsListedAsAGraph() {
+    var bytes = LookAlikeEnvelope(StringRecord(3, "orphan.bin"));
+    var entries = new NrbfFormatDescriptor().List(new MemoryStream(bytes), null);
+    Assert.Multiple(() => {
+      Assert.That(entries.Any(e => e.Name.StartsWith("objects/", StringComparison.Ordinal)), Is.True);
+      Assert.That(entries.Any(e => e.Name == "orphan.bin"), Is.False);
+    });
+  }
+
+  [TestCase("../escape.bin", TestName = "GivenATraversingPath_WhenListing_ThenTheEnvelopeIsNotProjected")]
+  [TestCase("a//b.bin", TestName = "GivenAnEmptyPathSegment_WhenListing_ThenTheEnvelopeIsNotProjected")]
+  [Category("Exceptional")]
+  public void Nrbf_LookAlikeWithUnsafePath_IsListedAsAGraph(string path) {
+    // A path, then a string where a byte[] or null belongs: not an envelope on two counts.
+    var bytes = LookAlikeEnvelope(StringRecord(3, path), [10]);
+    var entries = new NrbfFormatDescriptor().List(new MemoryStream(bytes), null);
+    Assert.That(entries.Any(e => e.Name.Contains("escape", StringComparison.Ordinal) && !e.Name.StartsWith("objects/", StringComparison.Ordinal)), Is.False);
+  }
+
+  [Test, Category("BoundaryCase")]
+  public void Nrbf_ByteArrayLargerThanTheItemLimit_ReadsAsOneBlob() {
+    // 1,000,001 bytes: one past the per-item safety limit that guards node-per-item arrays.
+    var payload = new byte[1_000_001];
+    payload[^1] = 0x5a;
+    var descriptor = new NrbfFormatDescriptor();
+    using var encoded = new MemoryStream();
+    descriptor.Create(encoded, [ArchiveInputInfo.InMemory("big.bin", payload)], new FormatCreateOptions());
+    encoded.Position = 0;
+    using var extracted = new MemoryStream();
+    descriptor.ExtractEntry(encoded, "big.bin", extracted, null);
+    Assert.That(extracted.ToArray(), Is.EqualTo(payload));
+  }
+
+  [Test]
+  public void Nrbf_RejectsUnsupportedEncryptionOptions() {
+    var descriptor = new NrbfFormatDescriptor();
+    using var output = new MemoryStream();
+    Assert.That(
+      () => descriptor.Create(output, [], new FormatCreateOptions { Password = "secret" }),
+      Throws.ArgumentException);
+  }
+
   [TestCaseSource(nameof(CreatableDescriptors))]
   public void CreatableStructuredFormats_RoundTripArbitraryBytes(object descriptorObject) {
     var creator = (IArchiveCreatable)descriptorObject;
@@ -185,5 +275,6 @@ public sealed class StructuredPseudoArchiveTests {
     yield return new RegFormatDescriptor();
     yield return new PickleFormatDescriptor();
     yield return new StorableFormatDescriptor();
+    yield return new NrbfFormatDescriptor();
   }
 }

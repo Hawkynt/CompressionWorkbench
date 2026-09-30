@@ -37,3 +37,12 @@ $table['count'] = [int]7
 Write-Vector 'nrbf-hashtable.nrbf' $table
 
 Write-Vector 'nrbf-object-array.nrbf' ([object[]]@('first', [int]42, [bool]$true, $null, [double]1.5))
+
+# The archive envelope our NRBF writer emits, for the writer-parity inputs every structured format
+# encodes (dir/file.bin, dir/long.bin, top.bin): the marker, then each path followed by its bytes.
+$envelope = [object[]]@(
+  'Hawkynt.CompressionWorkbench.NrbfArchive/1',
+  'dir/file.bin', [byte[]](0x00, 0x01, 0x7f, 0x80, 0xff, 0x0a),
+  'dir/long.bin', [byte[]](0..63),
+  'top.bin', [byte[]](0xde, 0xad, 0xbe, 0xef))
+Write-Vector 'nrbf-archive.nrbf' $envelope

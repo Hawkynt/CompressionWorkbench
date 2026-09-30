@@ -44,6 +44,7 @@ is present and rejects our bytes fails the build.
 | `storable-nested.storable` | Perl 5.38.2, Storable 3.32, `nstore` | both |
 | `storable-document.storable` | Perl 5.38.2, Storable 3.32, `nstore` | theirs → ours |
 | `nrbf-string.nrbf`, `nrbf-hashtable.nrbf`, `nrbf-object-array.nrbf` | .NET Framework `BinaryFormatter` via Windows PowerShell 5.1 | theirs → ours |
+| `nrbf-archive.nrbf` | .NET Framework `BinaryFormatter` via Windows PowerShell 5.1 | both |
 | `windows9x-user.dat.gz` | Windows 95/98/Me, via [log2timeline/dfwinreg](https://github.com/log2timeline/dfwinreg) | theirs → ours |
 | `windows-nt-ntuser.dat.gz` | Windows NT family, via log2timeline/dfwinreg | theirs → ours |
 
@@ -63,9 +64,11 @@ checkout. Two of them are XML and JSON and would otherwise look like ordinary te
   third party's rendering of that same envelope — `xml-archive-elementtree.xml`, which differs from
   our own output in all three of those respects — so the reader cannot quietly learn its sibling
   writer's dialect. That a real parser reads what we write is checked live, in the advisory tier.
-- **CREG, REGF and NRBF** have no writer at all, so the question does not arise. They are read-only
-  because nothing third-party writes a CREG hive, `reg.exe save` needs a privilege CI will not
-  have, and .NET removed `BinaryFormatter` after .NET 5.
+- **CREG and REGF** have no writer at all, so the question does not arise. They are read-only
+  because nothing third-party writes a CREG hive and `reg.exe save` needs a privilege CI will not
+  have. NRBF does have one: `nrbf-archive.nrbf` is `BinaryFormatter`'s own serialization of the
+  `object[]` our writer emits for the parity inputs, and on Windows the advisory tier also has
+  `BinaryFormatter` deserialize our output and serialize it back to the same bytes.
 
 ## Why these particular payloads
 

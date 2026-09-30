@@ -5,11 +5,11 @@ using FileFormat.Structured;
 namespace FileFormat.Nrbf;
 
 /// <summary>MS-NRBF / legacy BinaryFormatter object graphs inspected without BinaryFormatter or type activation.</summary>
-public sealed class NrbfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class NrbfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable {
   public string Id => "Nrbf";
   public string DisplayName => ".NET BinaryFormatter / NRBF object graph";
   public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities => FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+  public FormatCapabilities Capabilities => FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".nrbf";
   public IReadOnlyList<string> Extensions => [".nrbf"];
@@ -23,4 +23,7 @@ public sealed class NrbfFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public List<ArchiveEntryInfo> List(Stream stream, string? password) => StructuredArchive.List(stream, NrbfReader.Read);
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) => StructuredArchive.Extract(stream, outputDir, files, NrbfReader.Read);
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) => StructuredArchive.ExtractEntry(input, entryName, output, NrbfReader.Read);
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    => NrbfWriter.Write(output, inputs, options);
 }

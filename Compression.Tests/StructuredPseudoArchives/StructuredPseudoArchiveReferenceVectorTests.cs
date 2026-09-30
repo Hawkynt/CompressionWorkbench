@@ -289,9 +289,34 @@ public sealed class StructuredPseudoArchiveReferenceVectorTests {
   // ------------------------------------------------------------------------------------------ NRBF
 
   /// <summary>
-  /// MS-NRBF is read-only here, so only the reading direction exists. The vectors come from the
-  /// producer that defined the format — .NET Framework's <c>BinaryFormatter</c>, still present in
-  /// Windows PowerShell 5.1 — and are walked as records; no type is ever activated.
+  /// Our writer emits one <c>object[]</c> — a marker, then each path followed by its
+  /// <c>byte[]</c> — exactly as <c>BinaryFormatter.Serialize</c> lays that array out: inline
+  /// strings, MemberReferences for the byte arrays, the arrays themselves afterwards.
+  /// <c>nrbf-archive.nrbf</c> is BinaryFormatter's serialization of that array for the three
+  /// writer-parity inputs; our bytes must equal it.
+  /// </summary>
+  [Test]
+  public void Nrbf_CreateMatchesBinaryFormatterBytes() {
+    var reference = ReferenceVectorFixture.Load("nrbf-archive.nrbf");
+    Assert.That(ReferenceVectorFixture.Hex(ReferenceVectorFixture.Create(new NrbfFormatDescriptor())),
+      Is.EqualTo(ReferenceVectorFixture.Hex(reference)),
+      "our NRBF writer no longer agrees byte for byte with BinaryFormatter");
+  }
+
+  [Test]
+  public void Nrbf_ReadsTheArchiveEnvelopeBinaryFormatterWrote() {
+    var descriptor = new NrbfFormatDescriptor();
+    var archive = ReferenceVectorFixture.Load("nrbf-archive.nrbf");
+    Assert.Multiple(() => {
+      Assert.That(ReferenceVectorFixture.Extract(descriptor, archive, "dir/file.bin"), Is.EqualTo(ReferenceVectorFixture.FileBin));
+      Assert.That(ReferenceVectorFixture.Extract(descriptor, archive, "dir/long.bin"), Is.EqualTo(ReferenceVectorFixture.LongBin));
+      Assert.That(ReferenceVectorFixture.Extract(descriptor, archive, "top.bin"), Is.EqualTo(ReferenceVectorFixture.TopBin));
+    });
+  }
+
+  /// <summary>
+  /// The other read vectors are arbitrary BinaryFormatter graphs, walked as records; no type is
+  /// ever activated.
   /// </summary>
   [Test]
   public void Nrbf_ReadsWhatBinaryFormatterWrote() {
