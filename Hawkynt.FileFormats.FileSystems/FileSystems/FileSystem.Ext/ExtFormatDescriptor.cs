@@ -448,47 +448,68 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Adds (or replaces by name) files inside an existing ext2/3/4 image. Uses
-  /// <see cref="ExtModifier"/> for true O(touched bytes) random-access I/O —
-  /// only the superblock, BGD entry, block + inode bitmaps, the affected inode
-  /// slot, the root dir block, and the file's data blocks are read or written.
+  /// Adds (or replaces by path) files inside an existing ext2/3/4 image, genuinely in
+  /// place through <see cref="ExtModifier"/>: only the superblock, the touched group
+  /// descriptors and bitmaps, the new inode, the parent directory's blocks and the
+  /// file's own blocks are written. Missing folders are created.
   /// </summary>
+  /// <remarks>
+  /// A case the in-place editor cannot express — adding to a hashed (htree) folder,
+  /// a folder whose block map it cannot grow — is refused as
+  /// <see cref="NotSupportedException"/>. There is deliberately no rebuild fallback:
+  /// re-creating the volume dropped its label, UUID, journal and features, and every
+  /// file's mode, owner, times, links and extended attributes.
+  /// </remarks>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    var files = FormatHelpers.FilesOnly(inputs).ToList();
-    // Genuine in-place add (no whole-image re-pack): touches only the affected
-    // metadata + data blocks. Cases the in-place writer cannot handle yet (htree
-    // directory growth, nested target paths, very fragmented extent layouts) throw
-    // InPlaceUnsupportedException; for those we fall back to a read-then-rebuild so
-    // the modify still yields a valid result.
-    var rebuild = new List<(string Name, byte[] Data)>();
-    foreach (var (name, data) in files) {
+    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs)) {
       try {
-        // Replace-by-name semantics — drop any prior entry with the same name first.
-        ExtModifier.RemoveFile(archive, name, wipeData: true);
         ExtModifier.AddFile(archive, name, data);
-      } catch (ExtModifier.InPlaceUnsupportedException) {
-        rebuild.Add((name, data));
+      } catch (ExtModifier.InPlaceUnsupportedException ex) {
+        throw new NotSupportedException($"ext: '{name}' cannot be added in place ({ex.Message}).", ex);
       }
     }
-    if (rebuild.Count > 0)
-      ExtModifier.Mutate(archive, rebuild, System.Array.Empty<string>());
   }
 
   /// <summary>
-  /// Securely removes files from an existing ext2/3/4 image. Uses
-  /// <see cref="ExtModifier"/> for O(touched bytes) random-access I/O — file
-  /// data blocks are wiped during removal so no forensic trace remains.
+  /// Securely removes files — or folders with everything in them — from an existing
+  /// ext2/3/4 image, in place. Data blocks are wiped so no forensic trace remains; a
+  /// file with further hard links only loses the name.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    // The in-place remover targets the root directory. Nested-path targets (which the
-    // in-place adder also routes through the rebuild) are deleted via the verified
-    // extract→re-create rebuild so they don't silently no-op.
-    var flat = entryNames.Where(n => !n.Contains('/') && !n.Contains('\\')).ToArray();
-    var nested = entryNames.Where(n => n.Contains('/') || n.Contains('\\')).ToArray();
-    foreach (var name in flat)
-      ExtModifier.RemoveFile(archive, name, wipeData: true);
-    if (nested.Length > 0)
-      ExtModifier.Mutate(archive, [], nested);
+    foreach (var name in ExpandFolders(archive, entryNames)) {
+      bool removed;
+      try {
+        removed = ExtModifier.RemoveFile(archive, name, wipeData: true);
+      } catch (ExtModifier.InPlaceUnsupportedException ex) {
+        throw new NotSupportedException($"ext: '{name}' cannot be removed in place ({ex.Message}).", ex);
+      }
+      if (!removed) throw new FileNotFoundException($"ext: '{name}' does not exist.", name);
+    }
+  }
+
+  /// <summary>
+  /// Replaces every name that is a folder by everything beneath it, deepest first,
+  /// followed by the folder itself.
+  /// </summary>
+  private static List<string> ExpandFolders(Stream archive, string[] entryNames) {
+    var result = new List<string>();
+    List<(string Name, bool IsDirectory)>? listing = null;
+    foreach (var raw in entryNames ?? []) {
+      var name = raw.Replace('\\', '/').Trim('/');
+      if (listing == null) {
+        archive.Position = 0;
+        listing = new ExtReader(archive, leaveOpen: true).Entries
+          .Select(e => (e.Name.Replace('\\', '/').Trim('/'), e.IsDirectory)).ToList();
+      }
+      if (!listing.Any(e => e.IsDirectory && e.Item1 == name)) { result.Add(name); continue; }
+      result.AddRange(listing
+        .Where(e => e.Item1.StartsWith(name + "/", StringComparison.Ordinal))
+        .OrderByDescending(e => e.Item1.Count(c => c == '/'))
+        .ThenBy(e => e.IsDirectory)
+        .Select(e => e.Item1));
+      result.Add(name);
+    }
+    return result;
   }
 
   // ── ILayoutOptimizable ────────────────────────────────────────────────
