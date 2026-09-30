@@ -191,20 +191,8 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(options);
     DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder
       | DefragFeature.MetadataZone, "ext");
-    try {
-      DefragmentWithPlanner(archive, options);
-    } catch (InvalidOperationException planFailure) when (IsPlanningRefusal(planFailure)) {
-      throw new NotSupportedException($"ext: the volume cannot be laid out in place ({planFailure.Message}); it was left unchanged.",
-        planFailure);
-    }
+    DefragmentWithPlanner(archive, options);
   }
-
-  /// <summary>
-  /// Whether the planner or executor refused the layout before moving anything.
-  /// </summary>
-  private static bool IsPlanningRefusal(InvalidOperationException ex)
-    => ex.Message.StartsWith("Defragmentation", StringComparison.Ordinal)
-       || ex.Message.StartsWith("Carved hole", StringComparison.Ordinal);
 
   private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
     archive.Position = 0;
@@ -225,9 +213,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     // Each group's bitmaps and inode table are located by that group's
     // descriptor, so a metadata placement can gather them where it wants.
-    var moves = DefragPlanner.Plan(extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+    var moves = DefragPlanner.PlanOrRefuse("ext", () => DefragPlanner.Plan(extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
       options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
-      metadataZone: options.MetadataZonePlacement, movableMetadata: mover.RelocatableMetadata);
+      metadataZone: options.MetadataZonePlacement, movableMetadata: mover.RelocatableMetadata,
+      allowMemoryStaging: false));   // the mover does not take runs held outside the volume
     if (moves.Count == 0) {
       options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
       return;

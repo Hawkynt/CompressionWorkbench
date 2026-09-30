@@ -240,11 +240,10 @@ public class FatInterleaveDefragTests {
   }
 
   [Test, Category("HappyPath")]
-  public void StrideTooLarge_GracefullyFallsBackToRebuild() {
-    // When the interleaved layout exceeds the image's capacity, the
-    // descriptor's planner-driven path throws internally and the rebuild
-    // fallback takes over. The end result: files are intact (contiguous
-    // layout, not interleaved), no data loss.
+  public void StrideTooLarge_IsRefusedAndLeavesTheVolumeUntouched() {
+    // When the interleaved layout exceeds the image's capacity the planner
+    // cannot place it; the defragmenter refuses before moving anything rather
+    // than rebuilding the volume contiguously behind the caller's back.
     var w = new FatWriter();
     w.AddFile("HUGE.BIN", new byte[2048]); // 4 clusters
     var image = w.Build(totalSectors: 40); // Very small image
@@ -252,22 +251,18 @@ public class FatInterleaveDefragTests {
     using var small = new MemoryStream();
     small.Write(image);
     small.SetLength(image.Length);
-
-    var before = ExtractAll(small);
+    var bytes = small.ToArray();
 
     // stride=256 on 4 clusters needs index 768 — way beyond this tiny image.
-    // Operation should complete (via rebuild fallback) without data loss.
-    Assert.DoesNotThrow(() =>
+    Assert.Throws<NotSupportedException>(() =>
       new FatFormatDescriptor().Defragment(small, new DefragOptions {
         Mode = DefragMode.ConsolidateAtStart,
         Profile = LayoutProfile.Performance,
         InterleaveStride = 256,
       }));
-
-    var after = ExtractAll(small);
-    Assert.That(after["HUGE.BIN"], Is.EqualTo(before["HUGE.BIN"]),
-      "File data must survive the fallback rebuild");
+    Assert.That(small.ToArray(), Is.EqualTo(bytes));
   }
+
 
   [Test, Category("HappyPath")]
   public void Stride2_FragmentedImage_PreservesAllFiles() {

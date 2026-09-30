@@ -336,10 +336,11 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // backup — so that, and not the file's length, is what bounds a layout.
     var volumeEnd = mover.VolumeEndByte > 0 ? Math.Min(mover.VolumeEndByte, archive.Length) : archive.Length;
 
-    var moves = DefragPlanner.Plan(extents, dataOrigin, volumeEnd, mover.ClusterSize,
+    var moves = DefragPlanner.PlanOrRefuse("NTFS", () => DefragPlanner.Plan(extents, dataOrigin, volumeEnd, mover.ClusterSize,
       options.Profile, options.Mode, interleaveStride: options.InterleaveStride,
       holeSize: options.HoleSize, holeAt: options.HoleAt, metadataZone: options.MetadataZonePlacement,
-      layoutTemplate: options.LayoutTemplate, movableMetadata: mover.RelocatableMetadata);
+      layoutTemplate: options.LayoutTemplate, movableMetadata: mover.RelocatableMetadata,
+      allowMemoryStaging: false));   // the mover does not take runs held outside the volume
     if (moves.Count == 0) {
       options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
       return;

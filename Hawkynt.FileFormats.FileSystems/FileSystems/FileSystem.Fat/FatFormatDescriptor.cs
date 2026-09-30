@@ -128,10 +128,31 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public IReadOnlyList<long> CanonicalSizes => [737280, 1474560, 2949120];
   /// <summary>
-  /// Performs the shrink operation.
+  /// Shrinks in place: files are packed towards the start by the in-place
+  /// defragmenter and the unused tail is trimmed by <see cref="FatInPlaceShrinker"/>,
+  /// keeping the FAT type, label, serial, attributes and times.
   /// </summary>
-  public void Shrink(Stream input, Stream output) =>
-    Compression.Registry.ArchiveShrinker.ShrinkViaRebuild(input, output, this, this, this.CanonicalSizes);
+  /// <remarks>
+  /// A standard floppy size is left as it is: stepping down to a smaller floppy
+  /// means another BPB geometry (media byte, sectors per track, root entries, FAT
+  /// size), which cannot be reached without formatting afresh — the rebuild that
+  /// used to do it dropped the label, serial, attributes, timestamps and empty folders.
+  /// </remarks>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    input.CopyTo(output);
+    if (this.CanonicalSizes.Contains(output.Length)) return;
+    try {
+      this.Defragment(output, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+    } catch (NotSupportedException) {
+      // Not laid out in place; the trim below takes whatever tail is already free.
+    }
+    FatInPlaceShrinker.ShrinkToFit(output);
+  }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
@@ -159,31 +180,22 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
-  /// Mode-aware FAT defragmentor. Supports both a planner-driven in-place path
-  /// (using <see cref="DefragPlanner"/> + <see cref="FatBlockMover"/>) and the
-  /// legacy rebuild path (using <see cref="DefragRebuilder"/>).
-  ///
-  /// <para>The planner-driven path is used for <see cref="DefragMode.ConsolidateAtStart"/>,
-  /// <see cref="DefragMode.ConsolidateAtEnd"/>, <see cref="DefragMode.FillHolesLazy"/>,
-  /// and <see cref="DefragMode.CarveHole"/>. Falls back to the rebuild path on
-  /// error.</para>
+  /// Mode-aware FAT defragmentor, planner-driven and in place
+  /// (<see cref="DefragPlanner"/> + <see cref="FatBlockMover"/>): packing at either
+  /// end, lazy hole filling, a carved hole, ascending order, block interleave and
+  /// metadata placement. A request the planner cannot lay out in place is refused
+  /// before anything moves.
   /// </summary>
+  /// <remarks>
+  /// There used to be a silent rebuild behind every failure: the call returned as if
+  /// it had defragmented, and the volume came back with a new serial, the label "NO
+  /// NAME", no attributes, fresh timestamps and no empty folders.
+  /// </remarks>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
-
-    // Try the planner-driven path for supported modes.
-    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole or DefragMode.AscendingOrder) {
-      try {
-        DefragmentWithPlanner(archive, options);
-        return;
-      } catch {
-        // Fall back to rebuild path on any error.
-        archive.Position = 0;
-      }
-    }
-
-    // Legacy rebuild path (fallback).
-    DefragmentWithRebuild(archive, options);
+    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder
+      | DefragFeature.Interleave | DefragFeature.MetadataZone, "FAT");
+    DefragmentWithPlanner(archive, options);
   }
 
   // ── Planner-driven defrag path ─────────────────────────────────────────
@@ -237,7 +249,7 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var profile = options.Profile;
     // Quick profile: per-file consolidation only.
     // Performance profile: full zone-based rearrangement.
-    var moves = DefragPlanner.Plan(
+    var moves = DefragPlanner.PlanOrRefuse("FAT", () => DefragPlanner.Plan(
       extents,
       mover.FirstDataByte,
       imageSize,
@@ -255,7 +267,7 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       // This descriptor runs its own move loop; it does understand runs held
       // outside the volume, so the planner may reach for that when a full
       // volume leaves nowhere on disk to park one.
-      allowMemoryStaging: mover.SupportsHeldRuns);
+      allowMemoryStaging: mover.SupportsHeldRuns));
 
     if (moves.Count == 0) {
       // Already defragmented — emit complete event.
@@ -670,91 +682,6 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       moves, $"'{options.FileName}' placed at {options.TargetOffset:N0} — {moves.Count} move(s) executed");
   }
 
-  // ── Legacy rebuild path ────────────────────────────────────────────────
-
-  private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
-    archive.Position = 0;
-    var originalLength = archive.Length;
-    var reader = new FatReader(archive);
-    var files = reader.Entries.Where(e => !e.IsDirectory)
-                              .Select(e => (Name: e.Name, Data: reader.Extract(e)))
-                              .ToList();
-    var totalSectors = (int)(originalLength / 512);
-
-    switch (options.Mode) {
-      case DefragMode.ConsolidateAtStart:
-      case DefragMode.FillHolesLazy:
-      // Packing satisfies the ascending goal — every owner ends up in one run,
-      // which reads forwards — so a rebuild is a correct answer for it, merely
-      // a far more expensive one than the in-place pass that was asked for.
-      case DefragMode.AscendingOrder: {
-        // FAT's writer is always start-packed; both modes converge to the same layout.
-        var w = new FatWriter();
-        foreach (var (name, data) in files) w.AddFile(name, data);
-        WriteVolume(archive, w, totalSectors);
-        break;
-      }
-      case DefragMode.ConsolidateAtEnd: {
-        var w = new FatWriter();
-        foreach (var (name, data) in files.OrderByDescending(f => f.Data.Length))
-          w.AddFile(name, data);
-        WriteVolume(archive, w, totalSectors);
-        break;
-      }
-      case DefragMode.CarveHole: {
-        if (options.HoleSize <= 0)
-          throw new ArgumentException("HoleSize must be positive for CarveHole.", nameof(options));
-        var totalLive = files.Sum(f => (long)f.Data.Length);
-        if (totalLive + options.HoleSize > originalLength)
-          throw new ArgumentException(
-            $"Image is too small for the carved hole: live {totalLive} + hole {options.HoleSize} > image {originalLength}.",
-            nameof(options));
-        // Pack at start; trailing free space then includes the requested hole.
-        var w = new FatWriter();
-        foreach (var (name, data) in files) w.AddFile(name, data);
-        WriteVolume(archive, w, totalSectors);
-        break;
-      }
-      default:
-        throw new NotSupportedException($"Unsupported defrag mode: {options.Mode}");
-    }
-  }
-
-  /// <summary>
-  /// Writes a freshly laid-out volume over <paramref name="archive" />. The
-  /// build goes straight to the stream: a byte[] cannot hold more than two
-  /// gigabytes, so building the image in memory first made this fallback throw
-  /// on exactly the volumes that most need it.
-  /// </summary>
-  private static void WriteVolume(Stream archive, FatWriter writer, int totalSectors) {
-    var scratch = Path.GetTempFileName();
-    try {
-      using (var staged = File.Open(scratch, FileMode.Open, FileAccess.ReadWrite)) {
-        try {
-          staged.SetLength(0);
-          writer.BuildTo(staged, totalSectors: totalSectors);
-        } catch (InvalidOperationException) {
-          // The same files that fit the old volume can need one cluster more
-          // once the metadata is laid out afresh — a different cluster size or
-          // FAT length shifts the first data sector. A defragmentation must
-          // never fail for that reason, so the volume is sized to its contents.
-          staged.Position = 0;
-          staged.SetLength(0);
-          writer.BuildToStreaming(staged, requestedTotalSectors: totalSectors);
-        }
-      }
-
-      using (var staged = File.OpenRead(scratch)) {
-        archive.Position = 0;
-        archive.SetLength(staged.Length);
-        staged.CopyTo(archive);
-        archive.Flush();
-      }
-    } finally {
-      try { File.Delete(scratch); } catch { /* scratch file already gone */ }
-    }
-  }
-
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -768,8 +695,8 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // R/W: add/remove edit the FAT, clusters and directory in place (FatModifier /
-  // FatRemover); existing files and the boot sector stay byte-identical. A verified
-  // rebuild is only a structural-edge-case fallback. See FormatCapabilities.cs.
+  // FatRemover); existing files and the boot sector stay byte-identical. There is no
+  // rebuild fallback. See FormatCapabilities.cs.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>

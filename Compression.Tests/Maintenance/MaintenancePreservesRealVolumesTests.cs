@@ -65,6 +65,11 @@ public class MaintenancePreservesRealVolumesTests {
     new(StringComparer.OrdinalIgnoreCase) {
       ["ext4"] = (() => new FileSystem.Ext.ExtFormatDescriptor(), ExtExpectations()),
       ["ext2"] = (() => new FileSystem.Ext.ExtFormatDescriptor(), ExtExpectations()),
+      ["fat16"] = (() => new FileSystem.Fat.FatFormatDescriptor(), FatExpectations()),
+      // Interleaving a 3 MB file cluster by cluster exceeds the planner's move budget
+      // on 4 KiB clusters; the defragmenter refuses before moving anything.
+      ["fat32"] = (() => new FileSystem.Fat.FatFormatDescriptor(),
+        new Dictionary<string, Outcome>(FatExpectations()) { ["defrag_interleave"] = Outcome.Refuse }),
       ["ntfs"] =(() => new FileSystem.Ntfs.NtfsFormatDescriptor(), new() {
         ["add_root"] = Outcome.Preserve, ["add_nested"] = Outcome.Preserve,
         ["remove_root"] = Outcome.Preserve, ["remove_nested"] = Outcome.Preserve,
@@ -81,6 +86,15 @@ public class MaintenancePreservesRealVolumesTests {
     ["defrag_start"] = Outcome.Preserve, ["defrag_end"] = Outcome.Preserve, ["defrag_fill"] = Outcome.Preserve,
     ["defrag_carve"] = Outcome.Preserve, ["defrag_ascending"] = Outcome.Preserve,
     ["defrag_interleave"] = Outcome.Refuse, ["defrag_metadata_front"] = Outcome.Preserve,
+    ["wipe"] = Outcome.Preserve, ["shrink"] = Outcome.Preserve,
+  };
+
+  private static Dictionary<string, Outcome> FatExpectations() => new() {
+    ["add_root"] = Outcome.Preserve, ["add_nested"] = Outcome.Preserve,
+    ["remove_root"] = Outcome.Preserve, ["remove_nested"] = Outcome.Preserve,
+    ["defrag_start"] = Outcome.Preserve, ["defrag_end"] = Outcome.Preserve, ["defrag_fill"] = Outcome.Preserve,
+    ["defrag_carve"] = Outcome.Preserve, ["defrag_ascending"] = Outcome.Preserve,
+    ["defrag_interleave"] = Outcome.Preserve, ["defrag_metadata_front"] = Outcome.Preserve,
     ["wipe"] = Outcome.Preserve, ["shrink"] = Outcome.Preserve,
   };
 

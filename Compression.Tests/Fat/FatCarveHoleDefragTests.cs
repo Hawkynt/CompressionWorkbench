@@ -171,20 +171,21 @@ public class FatCarveHoleDefragTests {
   }
 
   [Test, Category("ErrorPath")]
-  public void CarveHole_HoleTooLarge_ThrowsOrFallsBack() {
-    // Request a hole larger than the image — should either throw
-    // InvalidOperationException from the planner or fall back to rebuild
-    // which throws ArgumentException.
+  public void CarveHole_HoleTooLarge_IsRefusedAndLeavesTheVolumeUntouched() {
+    // A hole larger than the image cannot be carved; the defragmenter says so
+    // before moving anything instead of rebuilding the volume.
     using var ms = BuildImageWith5Files();
     var imageSize = ms.Length;
+    var before = ms.ToArray();
 
-    Assert.Throws<ArgumentException>(() => {
+    Assert.Throws<NotSupportedException>(() => {
       new FatFormatDescriptor().Defragment(ms, new DefragOptions {
         Mode = DefragMode.CarveHole,
         HoleSize = imageSize * 2, // way too large
         HoleAt = 0,
       });
     });
+    Assert.That(ms.ToArray(), Is.EqualTo(before));
   }
 
   [Test, Category("HappyPath")]

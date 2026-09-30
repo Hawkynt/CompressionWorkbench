@@ -116,6 +116,23 @@ public static class DefragPlanner {
       imageSize, extents);
 
   /// <summary>
+  /// Runs <paramref name="plan" /> and turns a planner refusal into the answer a
+  /// caller treats as "this volume does not lay out that way":
+  /// <see cref="NotSupportedException" />. Nothing has moved when the planner refuses,
+  /// so the volume is untouched — which is what lets an in-place defragmenter refuse
+  /// instead of falling back to rebuilding the volume.
+  /// </summary>
+  public static IReadOnlyList<ClusterMove> PlanOrRefuse(string format, Func<IReadOnlyList<ClusterMove>> plan) {
+    ArgumentNullException.ThrowIfNull(plan);
+    try {
+      return plan();
+    } catch (InvalidOperationException refusal) {
+      throw new NotSupportedException(
+        $"{format}: the volume cannot be laid out in place ({refusal.Message}); it was left unchanged.", refusal);
+    }
+  }
+
+  /// <summary>
   /// Checks that a plan can be executed without destroying data: every move has
   /// to land inside the image, and no two destinations may overlap. A plan that
   /// breaks either rule is refused rather than run — the caller falls back to a
