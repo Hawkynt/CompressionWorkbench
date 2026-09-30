@@ -229,6 +229,76 @@ public sealed class TransferTests {
     Assert.That(Directory.GetDirectories(this._root, Transfer.StagingPrefix + "*"), Is.Empty);
   }
 
+  // ── files from other applications ───────────────────────────────────────────────────────────
+
+  private static IncomingFile Incoming(string path, string text)
+    => new(path, () => new MemoryStream(System.Text.Encoding.UTF8.GetBytes(text)));
+
+  [Test]
+  public void GivenAnAttachmentFromAnotherApplication_WhenReceivedIntoAFolder_ThenItArrivesStagedBesideItAndRenamedIntoPlace() {
+    var target = Path.Combine(this._disk, "target");
+
+    var staged = this.WatchStaging(() => Transfer.Receive([Incoming("invoice.pdf", "pdf bytes")], this.Disk("target")));
+
+    Assert.Multiple(() => {
+      Assert.That(File.ReadAllText(Path.Combine(target, "invoice.pdf")), Is.EqualTo("pdf bytes"));
+      Assert.That(staged.Select(Path.GetDirectoryName), Is.All.EqualTo(target));
+      Assert.That(Directory.GetFileSystemEntries(target).Select(Path.GetFileName), Is.EqualTo(new[] { "invoice.pdf" }),
+        "no staging folder is left behind");
+    });
+  }
+
+  [Test]
+  public void GivenADroppedFolderOfVirtualFiles_WhenReceived_ThenItKeepsItsShapeAndIsRenamedAsAWholeWhenTaken() {
+    Directory.CreateDirectory(Path.Combine(this._disk, "target", "mail"));
+
+    var result = Transfer.Receive([
+      new IncomingFile("mail", null),
+      Incoming("mail/body.txt", "hello"),
+      Incoming("mail/att/a.bin", "a"),
+    ], this.Disk("target"));
+
+    Assert.That(result.Created, Is.EqualTo(new[] { "mail (2)" }));
+    Assert.That(File.ReadAllText(Path.Combine(this._disk, "target", "mail (2)", "att", "a.bin")), Is.EqualTo("a"));
+  }
+
+  [Test]
+  public void GivenVirtualFiles_WhenReceivedIntoAnArchiveFolder_ThenTheArchiveHoldsThem() {
+    Transfer.Receive([Incoming("note.txt", "note"), Incoming("readme.txt", "clash")], Location.InArchive(this._a, "docs/"));
+
+    var contents = ZipContents(this._a);
+    Assert.That(contents["docs/note.txt"], Is.EqualTo("note"));
+    Assert.That(contents["docs/readme (2).txt"], Is.EqualTo("clash"));
+    Assert.That(contents["docs/readme.txt"], Is.EqualTo("a readme"), "nothing is replaced");
+  }
+
+  [TestCase("")]
+  [TestCase("../escape.txt")]
+  [TestCase("a/../../b.txt")]
+  [TestCase("a//b.txt")]
+  public void GivenAVirtualFileNameThatCannotBeWritten_WhenReceived_ThenTheWholeDropIsRefused(string path) {
+    var files = new[] { Incoming("fine.txt", "x"), Incoming(path, "y") };
+
+    Assert.That(Transfer.WhyNot(files, this.Disk("target")), Is.Not.Null);
+    Assert.Throws<InvalidOperationException>(() => Transfer.Receive(files, this.Disk("target")));
+    Assert.That(Directory.GetFileSystemEntries(Path.Combine(this._disk, "target")), Is.Empty);
+  }
+
+  [Test]
+  public void GivenAnAbsoluteVirtualFileName_WhenChecked_ThenItIsRefused()
+    => Assert.That(Transfer.WhyNot([Incoming(Path.Combine(this._root, "abs.txt"), "x")], this.Disk("target")), Is.Not.Null);
+
+  // ── opening one entry as a stream ───────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenAnArchiveEntry_WhenOpenedAsAStream_ThenItsBytesAreReadAndTheArchiveIsReleasedOnDispose() {
+    using (var stream = ArchiveOperations.OpenEntry(this._a, "docs/guide/intro.txt"))
+    using (var reader = new StreamReader(stream))
+      Assert.That(reader.ReadToEnd(), Is.EqualTo("intro"));
+
+    Assert.DoesNotThrow(() => File.Move(this._a, this._a + ".moved"), "the archive file must not stay locked after the stream is disposed");
+  }
+
   // ── what is refused before anything is touched ──────────────────────────────────────────────
 
   [Test]

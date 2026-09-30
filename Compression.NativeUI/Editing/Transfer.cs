@@ -16,6 +16,16 @@ internal sealed record TransferItem(Location From, string Name, bool IsFolder) {
   public string HostPath => Path.Combine(From.HostPath, Name);
 }
 
+/// <summary>
+/// A file arriving from outside the shell with no path of its own — an attachment dragged out of a
+/// mail client, say. Its content is read once, while it is written to where it is going.
+/// </summary>
+/// <param name="RelativePath">Its name, <c>/</c>-separated when it sits in a dropped folder.</param>
+/// <param name="Open">Opens its content; null for a folder.</param>
+internal sealed record IncomingFile(string RelativePath, Func<Stream>? Open) {
+  public bool IsFolder => this.Open is null;
+}
+
 /// <summary>What a transfer did: the names it created in the target, in order.</summary>
 internal sealed record TransferResult(IReadOnlyList<string> Created);
 
@@ -70,6 +80,90 @@ internal static class Transfer {
     => items.Count > 0 && items.All(item => item.From.IsInArchive
       ? target.IsInArchive && string.Equals(item.From.HostPath, target.HostPath, StringComparison.OrdinalIgnoreCase)
       : !target.IsInArchive && SameVolume(item.HostPath, target.HostPath));
+
+  /// <summary>Why <paramref name="files"/> cannot be received into <paramref name="target"/>, or null when they can.</summary>
+  public static string? WhyNot(IReadOnlyList<IncomingFile> files, Location target) {
+    if (files.Count == 0) return "Nothing to receive.";
+    if (files.FirstOrDefault(f => !IsSafeRelative(f.RelativePath)) is { } bad) return $"\"{bad.RelativePath}\" is not a name that can be written.";
+
+    if (target.IsInArchive) {
+      if (!File.Exists(target.HostPath)) return $"No longer exists: {target.HostPath}";
+      if (!IsModifiable(target.HostPath)) return $"{Path.GetFileName(target.HostPath)} cannot be modified.";
+    } else if (!Directory.Exists(target.HostPath)) {
+      return $"No longer exists: {target.HostPath}";
+    }
+
+    return null;
+  }
+
+  /// <summary>
+  /// Writes <paramref name="files"/> — content from another application — into <paramref name="target"/>,
+  /// staged beside it and renamed into place. A dropped folder keeps its shape; a top-level name
+  /// that is taken gets a number, as everywhere else.
+  /// </summary>
+  public static TransferResult Receive(IReadOnlyList<IncomingFile> files, Location target) {
+    if (WhyNot(files, target) is { } refusal) throw new InvalidOperationException(refusal);
+
+    var folder = target.IsInArchive ? Path.GetDirectoryName(Path.GetFullPath(target.HostPath))! : target.HostPath;
+    var taken = new HashSet<string>(
+      target.IsInArchive ? ChildNames(target.HostPath, target.ArchiveFolder ?? "") : Directory.EnumerateFileSystemEntries(folder).Select(p => Path.GetFileName(p)),
+      StringComparer.OrdinalIgnoreCase);
+
+    using var staging = new Staging(folder);
+    var root = staging.NewPath();
+    Directory.CreateDirectory(root);
+
+    // One free name per top-level entry, so a dropped folder is renamed as a whole.
+    var renamed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    var created = new List<string>();
+    foreach (var file in files) {
+      var parts = Normalize(file.RelativePath).Split('/');
+      if (!renamed.TryGetValue(parts[0], out var top)) {
+        top = FreeName(parts[0], taken);
+        renamed[parts[0]] = top;
+        created.Add(top);
+      }
+
+      var staged = Path.Combine([root, top, .. parts[1..]]);
+      if (file.IsFolder) {
+        Directory.CreateDirectory(staged);
+        continue;
+      }
+
+      Directory.CreateDirectory(Path.GetDirectoryName(staged)!);
+      using var source = file.Open!();
+      using var destination = new FileStream(staged, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16);
+      source.CopyTo(destination);
+    }
+
+    if (target.IsInArchive) {
+      var prefix = target.ArchiveFolder ?? "";
+      var inputs = new List<ArchiveInput>();
+      foreach (var top in created) {
+        var staged = Path.Combine(root, top);
+        if (Directory.Exists(staged)) CollectFolder(staged, prefix + top, inputs);
+        else inputs.Add(new ArchiveInput(staged, prefix + top));
+      }
+
+      ArchiveOperations.Add(target.HostPath, inputs);
+    } else {
+      foreach (var top in created) {
+        var staged = Path.Combine(root, top);
+        MoveOnDisk(staged, Path.Combine(folder, top), Directory.Exists(staged));
+      }
+    }
+
+    return new(created);
+
+    static string Normalize(string path) => path.Replace('\\', '/').Trim('/');
+  }
+
+  private static bool IsSafeRelative(string path) {
+    var normalized = (path ?? "").Replace('\\', '/').Trim('/');
+    return normalized.Length > 0
+      && !Path.IsPathRooted(path)
+      && normalized.Split('/').All(part => part is not ("" or "." or "..") && part.IndexOfAny(Path.GetInvalidFileNameChars()) < 0);
+  }
 
   /// <summary>Copies, or with <paramref name="move"/> moves, <paramref name="items"/> into <paramref name="target"/>.</summary>
   /// <exception cref="InvalidOperationException">The transfer is refused; see <see cref="WhyNot"/>.</exception>
