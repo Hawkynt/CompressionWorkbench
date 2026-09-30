@@ -122,6 +122,26 @@ public class TarHeaderTests {
     Assert.That(System.Text.Encoding.ASCII.GetString(bytes, 512, 512), Does.Contain($" path={name}\n"));
   }
 
+  [Category("RoundTrip")]
+  [Test]
+  public void Given_GnuSymlinkWithLongNameAndLongTarget_When_RoundTripped_Then_OneEntryWithBoth() {
+    var name = "dir/" + new string('a', 120);
+    var target = "target/" + new string('b', 130);
+    using var archive = new MemoryStream();
+    using (var writer = new TarWriter(archive, leaveOpen: true, TarHeaderFormat.Gnu))
+      writer.AddEntry(new TarEntry { Name = name, LinkName = target, TypeFlag = TarConstants.TypeSymLink }, ReadOnlySpan<byte>.Empty);
+    archive.Position = 0;
+
+    using var reader = new TarReader(archive);
+    var entry = reader.GetNextEntry();
+
+    Assert.That(entry, Is.Not.Null);
+    Assert.That(entry!.TypeFlag, Is.EqualTo(TarConstants.TypeSymLink));
+    Assert.That(entry.Name, Is.EqualTo(name));
+    Assert.That(entry.LinkName, Is.EqualTo(target));
+    Assert.That(reader.GetNextEntry(), Is.Null);
+  }
+
   [Category("EdgeCase")]
   [Test]
   public void Given_NameLongerThanTheFieldWithNoSlash_When_RoundTripped_Then_FullNameSurvives() {

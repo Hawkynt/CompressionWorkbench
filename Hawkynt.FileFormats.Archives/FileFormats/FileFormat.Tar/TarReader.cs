@@ -50,52 +50,39 @@ public sealed class TarReader : IDisposable {
       return null;
     }
 
-    // Handle GNU long name extension
-    if (entry.TypeFlag == TarConstants.TypeGnuLongName) {
-      var longName = ReadEntryDataAsString(entry.Size);
+    // GNU long-name ('L') / long-link ('K') blocks and a PAX extended header ('x') each
+    // describe the header that follows them, and they can be chained: GNU tar writes 'L'
+    // then 'K' for a symlink whose name and target are both long.
+    string? longName = null;
+    string? longLink = null;
+    Dictionary<string, string>? paxAttributes = null;
+    while (true) {
+      string what;
+      if (entry.TypeFlag == TarConstants.TypeGnuLongName) {
+        longName = ReadEntryDataAsString(entry.Size);
+        what = "GNU long name block";
+      } else if (entry.TypeFlag == TarConstants.TypeGnuLongLink) {
+        longLink = ReadEntryDataAsString(entry.Size);
+        what = "GNU long link block";
+      } else if (entry.TypeFlag == TarConstants.TypePaxHeader) {
+        paxAttributes = ParsePaxAttributes(ReadEntryDataBytes(entry.Size));
+        what = "PAX extended header";
+      } else
+        break;
+
       SkipPadding(entry.Size);
-
-      // Read the next header and apply the long name
-      var actualEntry = TarHeader.ReadHeader(this._stream, out _);
-      if (actualEntry == null)
-        throw new InvalidDataException("Expected entry header after GNU long name block.");
-
-      actualEntry.Name = longName;
-      entry = actualEntry;
+      entry = TarHeader.ReadHeader(this._stream, out _)
+        ?? throw new InvalidDataException($"Expected entry header after {what}.");
     }
-    // Handle GNU long link extension
-    else if (entry.TypeFlag == TarConstants.TypeGnuLongLink) {
-      var longLink = ReadEntryDataAsString(entry.Size);
-      SkipPadding(entry.Size);
 
-      // Read the next header and apply the long link
-      var actualEntry = TarHeader.ReadHeader(this._stream, out _);
-      if (actualEntry == null)
-        throw new InvalidDataException("Expected entry header after GNU long link block.");
+    if (longName != null) entry.Name = longName;
+    if (longLink != null) entry.LinkName = longLink;
+    if (paxAttributes != null) ApplyPaxAttributes(entry, paxAttributes);
 
-      actualEntry.LinkName = longLink;
-      entry = actualEntry;
-    }
-    // Handle GNU multi-volume continuation
-    else if (entry.TypeFlag == TarConstants.TypeGnuMultiVolume) {
-      // Type 'M' entries have their data in this volume — expose them as regular files
-      // with offset/realsize metadata so callers can reassemble the original file.
+    // Type 'M' entries have their data in this volume — expose them as regular files
+    // with offset/realsize metadata so callers can reassemble the original file.
+    if (entry.TypeFlag == TarConstants.TypeGnuMultiVolume)
       entry.TypeFlag = TarConstants.TypeRegular;
-    }
-    // Handle PAX extended header
-    else if (entry.TypeFlag == TarConstants.TypePaxHeader) {
-      var paxData = ReadEntryDataBytes(entry.Size);
-      SkipPadding(entry.Size);
-      var attributes = ParsePaxAttributes(paxData);
-
-      // Read the next header and override fields
-      var actualEntry = TarHeader.ReadHeader(this._stream, out _);
-      if (actualEntry == null)
-        throw new InvalidDataException("Expected entry header after PAX extended header.");
-
-      ApplyPaxAttributes(actualEntry, attributes);
-      entry = actualEntry;
-    }
 
     this._currentEntry = entry;
     this._remainingEntryBytes = entry.Size;
