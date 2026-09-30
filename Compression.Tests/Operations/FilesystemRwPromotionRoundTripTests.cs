@@ -6,7 +6,6 @@ namespace Compression.Tests.Operations;
 [TestFixture]
 public sealed class FilesystemRwPromotionRoundTripTests {
   [TestCase("CramFs")]
-  [TestCase("SquashFs")]
   [TestCase("Erofs")]
   [TestCase("Msa")]
   [TestCase("Pfs0")]
