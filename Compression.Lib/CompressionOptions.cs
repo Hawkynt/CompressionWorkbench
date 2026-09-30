@@ -60,6 +60,7 @@ public sealed class CompressionOptions {
   /// </summary>
   public static int NormalizeDictSize(int size) {
     if (size <= 4096) return 4096;
+    if (size >= 1 << 30) return 1 << 30; // the cap; 2^31 below would overflow
     // Find the two candidate sizes: 2^n and 3×2^(n-1)
     var bits = 31 - int.LeadingZeroCount(size);
     var pow2 = 1 << bits;             // e.g. for 5MB → 4MB
@@ -70,7 +71,6 @@ public sealed class CompressionOptions {
     var best = pow2Next; // worst case
     if (pow2 >= size) best = pow2;
     if (threeHalf >= size && threeHalf < best) best = threeHalf;
-    if (pow2Next < best) best = pow2Next;
 
     return Math.Min(best, 1 << 30); // cap at 1GB
   }
