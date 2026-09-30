@@ -1,3 +1,4 @@
+using Compression.NativeUI.Navigation;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Compression.Lib;
@@ -40,6 +41,30 @@ internal sealed class MainViewModel : ViewModelBase {
   // and on app exit.
   private readonly List<string> _nestedTempFiles = [];
 
+  // Back/Forward. Fed from the one place every navigation ends, RefreshVisibleEntries, rather
+  // than from each of the half-dozen routes that get there.
+  private readonly NavigationHistory _history = new();
+  private Location? _lastReported;
+
+  // Some navigations pass through a place on the way somewhere else: opening an archive lands on its
+  // root before the target folder is set. Those stops are not arrivals, and recording them would
+  // make Back step to a root the user never chose to visit.
+  private int _arrivalsSuppressed;
+
+  /// <summary>Raised whenever the shell arrives somewhere new, however it got there.</summary>
+  public event EventHandler<Location>? LocationChanged;
+
+  /// <summary>Where the shell is now: a host folder, a folder inside the open archive, or nowhere yet.</summary>
+  public Location? CurrentLocation => _osBrowserPath is not null
+    ? Location.Folder(_osBrowserPath)
+    : HasArchive ? Location.InArchive(ArchivePath, CurrentFolder) : null;
+
+  /// <summary>
+  /// True inside an archive that was itself opened from inside another. Its file is a temporary
+  /// extraction, so its host path means nothing to the user and is not offered as a breadcrumb.
+  /// </summary>
+  public bool IsNestedArchive => _archiveStack.Count > 0;
+
   public ObservableCollection<ArchiveEntryViewModel> Entries { get; } = [];
   public ObservableCollection<ArchiveEntryViewModel> SelectedEntries { get; } = [];
   public ObservableCollection<BreadcrumbSegment> Breadcrumbs { get; } = [];
@@ -67,6 +92,8 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand NavigateUpCommand { get; }
   public ICommand NavigateIntoCommand { get; }
   public ICommand NavigateToBreadcrumbCommand { get; }
+  public ICommand BackCommand { get; }
+  public ICommand ForwardCommand { get; }
   public ICommand ViewAsTextCommand { get; }
   public ICommand ViewAsHexCommand { get; }
   public ICommand ViewAsImageCommand { get; }
@@ -144,7 +171,13 @@ internal sealed class MainViewModel : ViewModelBase {
     // NavigateUp is always available — at archive root it transitions to OS-browser mode.
     NavigateUpCommand = new RelayCommand(_ => NavigateUp(), _ => HasArchive || _osBrowserPath is not null);
     NavigateIntoCommand = new RelayCommand(p => NavigateInto(p as ArchiveEntryViewModel));
-    NavigateToBreadcrumbCommand = new RelayCommand(p => NavigateToBreadcrumb(p as string));
+    NavigateToBreadcrumbCommand = new RelayCommand(p => {
+      if (p is Location target) NavigateTo(target);
+      else NavigateToBreadcrumb(p as string);
+    });
+    // A dead entry is simply stepped over: the history has already moved past it.
+    BackCommand = new RelayCommand(_ => { if (_history.Back() is { } target) NavigateTo(target); }, _ => _history.CanGoBack);
+    ForwardCommand = new RelayCommand(_ => { if (_history.Forward() is { } target) NavigateTo(target); }, _ => _history.CanGoForward);
     ViewAsTextCommand = new RelayCommand(_ => ViewSelectedAs(hex: false), _ => HasArchive && HasSelectedFile);
     ViewAsHexCommand = new RelayCommand(_ => ViewSelectedAs(hex: true), _ => HasArchive && HasSelectedFile);
     ViewAsImageCommand = new RelayCommand(_ => ViewSelectedAsImage(), _ => (HasArchive || IsBrowsingOsFolder) && HasSelectedFile);
@@ -653,6 +686,102 @@ internal sealed class MainViewModel : ViewModelBase {
   private readonly List<ArchiveEntryViewModel> _allEntries = [];
 
   private void RefreshVisibleEntries() {
+    RefreshVisibleEntriesCore();
+    ReportLocation();
+  }
+
+  /// <summary>Records and announces an arrival, once per distinct place.</summary>
+  private void ReportLocation() {
+    if (_arrivalsSuppressed > 0) return;
+    if (CurrentLocation is not { } now || now == _lastReported) return;
+
+    _lastReported = now;
+    _history.Visit(now);
+    OnPropertyChanged(nameof(IsNestedArchive));
+    LocationChanged?.Invoke(this, now);
+    CommandManager.InvalidateRequerySuggested();
+  }
+
+  /// <summary>Runs a navigation that passes through other places, reporting only where it ends.</summary>
+  private T AsOneArrival<T>(Func<T> navigation) {
+    ++_arrivalsSuppressed;
+    try {
+      return navigation();
+    } finally {
+      --_arrivalsSuppressed;
+      ReportLocation();
+    }
+  }
+
+  /// <summary>
+  /// Goes to <paramref name="target"/>, opening its archive first when it lies inside one.
+  /// Returns false, and says why in the status line, when the place no longer exists.
+  /// </summary>
+  internal bool NavigateTo(Location target) => AsOneArrival(() => NavigateToCore(target));
+
+  private bool NavigateToCore(Location target) {
+    if (!target.IsInArchive) {
+      if (!Directory.Exists(target.HostPath)) {
+        StatusText = $"No longer exists: {target.HostPath}";
+        return false;
+      }
+
+      _archiveStack.Clear();
+      _osBrowserPath = target.HostPath;
+      CurrentFolder = "";
+      RefreshVisibleEntries();
+      OnPropertyChanged(nameof(IsBrowsingOsFolder));
+      return true;
+    }
+
+    if (!File.Exists(target.HostPath)) {
+      StatusText = $"No longer exists: {target.HostPath}";
+      return false;
+    }
+
+    // Already open and being browsed: only the folder changes, so the listing is not reread.
+    var alreadyOpen = _osBrowserPath is null && HasArchive
+      && string.Equals(ArchivePath, target.HostPath, StringComparison.OrdinalIgnoreCase);
+    if (!alreadyOpen) {
+      Open(target.HostPath);
+      if (!string.Equals(ArchivePath, target.HostPath, StringComparison.OrdinalIgnoreCase)) return false;
+    }
+
+    CurrentFolder = target.ArchiveFolder ?? "";
+    RefreshVisibleEntries();
+    return true;
+  }
+
+  /// <summary>Goes wherever a typed address leads; see <see cref="AddressResolver"/>.</summary>
+  internal bool NavigateToAddress(string typed) {
+    if (AddressResolver.Resolve(typed) is { } target) return NavigateTo(target);
+
+    StatusText = $"Not found: {typed.Trim()}";
+    return false;
+  }
+
+  /// <summary>
+  /// The immediate subfolders of <paramref name="folder"/> inside the open archive, including the
+  /// ones that exist only because deeper entries sit under them - many archives record no folder
+  /// entries at all.
+  /// </summary>
+  internal IReadOnlyList<string> ArchiveSubfolders(string folder) {
+    var prefix = Location.NormalizeArchiveFolder(folder);
+    var children = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var entry in _allEntries) {
+      if (!entry.Path.StartsWith(prefix, StringComparison.Ordinal)) continue;
+
+      var remainder = entry.Path[prefix.Length..].TrimStart('/');
+      var slash = remainder.IndexOf('/');
+      if (slash > 0) children.Add(remainder[..slash]);
+      else if (slash < 0 && entry.IsDirectory && remainder.Length > 0) children.Add(remainder);
+    }
+
+    return [.. children];
+  }
+
+  private void RefreshVisibleEntriesCore() {
     Entries.Clear();
 
     // OS-browser mode: list filesystem children instead of archive entries.
@@ -798,10 +927,14 @@ internal sealed class MainViewModel : ViewModelBase {
     // (we're in a nested archive descended via TryEnterAsNestedArchive).
     if (_archiveStack.Count > 0) {
       var (parentPath, parentFolder, _) = _archiveStack.Pop();
-      // Re-open the parent — fromNestedDescent: true so the stack survives.
-      Open(parentPath, fromNestedDescent: true);
-      CurrentFolder = parentFolder;
-      RefreshVisibleEntries();
+      // Re-open the parent — fromNestedDescent: true so the stack survives — and land in the folder
+      // the descent started from, as one step rather than via the parent's root.
+      AsOneArrival(() => {
+        Open(parentPath, fromNestedDescent: true);
+        CurrentFolder = parentFolder;
+        RefreshVisibleEntries();
+        return true;
+      });
       return;
     }
 
@@ -902,29 +1035,27 @@ internal sealed class MainViewModel : ViewModelBase {
   private void RefreshBreadcrumbs() {
     Breadcrumbs.Clear();
 
-    // OS-browser mode: surface the FS path as breadcrumb segments. Each segment
-    // is clickable → navigates back up to that level. (Click handler is the same
-    // NavigateToBreadcrumbCommand; in OS mode we route to OS-folder navigation.)
-    if (_osBrowserPath is not null) {
-      var parts = _osBrowserPath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-      var accumulated = "";
-      for (var i = 0; i < parts.Length; i++) {
-        accumulated = i == 0 ? parts[i] + Path.DirectorySeparatorChar : Path.Combine(accumulated, parts[i]);
-        Breadcrumbs.Add(new BreadcrumbSegment { Label = parts[i], FolderPath = accumulated });
-      }
-      return;
-    }
+    // Host folders first - for a folder being browsed, or the folder an archive lives in - each an
+    // absolute path, so every crumb leads somewhere on every platform.
+    var hostFolder = _osBrowserPath ?? (HasArchive && !IsNestedArchive ? Path.GetDirectoryName(ArchivePath) : null);
+    if (!string.IsNullOrEmpty(hostFolder))
+      foreach (var segment in HostPathSegments.Split(hostFolder))
+        Breadcrumbs.Add(new BreadcrumbSegment { Label = segment.Label, FolderPath = segment.Path, Target = Location.Folder(segment.Path) });
 
-    // Root segment
-    Breadcrumbs.Add(new BreadcrumbSegment { Label = Path.GetFileName(ArchivePath), FolderPath = "" });
+    if (_osBrowserPath is not null || !HasArchive) return;
 
-    if (!string.IsNullOrEmpty(CurrentFolder)) {
-      var parts = CurrentFolder.TrimEnd('/').Split('/');
-      var accumulated = "";
-      foreach (var part in parts) {
-        accumulated += part + "/";
-        Breadcrumbs.Add(new BreadcrumbSegment { Label = part, FolderPath = accumulated });
-      }
+    Breadcrumbs.Add(new BreadcrumbSegment {
+      Label = Path.GetFileName(ArchivePath), FolderPath = "", Target = Location.InArchive(ArchivePath, ""),
+    });
+
+    if (string.IsNullOrEmpty(CurrentFolder)) return;
+
+    var accumulated = "";
+    foreach (var part in CurrentFolder.TrimEnd('/').Split('/')) {
+      accumulated += part + "/";
+      Breadcrumbs.Add(new BreadcrumbSegment {
+        Label = part, FolderPath = accumulated, Target = Location.InArchive(ArchivePath, accumulated),
+      });
     }
   }
 
@@ -1689,4 +1820,6 @@ internal sealed class MainViewModel : ViewModelBase {
 internal sealed class BreadcrumbSegment {
   public string Label { get; init; } = "";
   public string FolderPath { get; init; } = "";
+  /// <summary>Where clicking this crumb goes.</summary>
+  public Location? Target { get; init; }
 }

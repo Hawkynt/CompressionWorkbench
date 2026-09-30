@@ -5,9 +5,15 @@ backends, so Windows and Linux run the same code rather than two frontends drift
 
 ## Screens
 
-- **Archive browser** — the main window. File list with name, size, compressed size, ratio, method
-  and modified columns; open, extract, create, test; `..` navigation that exits an archive into the
-  host filesystem; auto-descent into nested formats; drag in and drag out.
+- **Archive browser** — the main window, laid out like a file manager. A folder tree on the left
+  shows the drives (or `/`) and home, with the open archive grafted in as a folder beside the file it
+  lives in; it follows every navigation, however it happened. The breadcrumb bar is also an address
+  bar: click its empty space to type or paste a path — one that runs into an archive included —
+  with folder completion, and each crumb's chevron lists its subfolders. Back and Forward
+  (Alt+Left / Alt+Right) retrace host folders and archive folders alike. File list with name, size,
+  compressed size, ratio, method and modified columns; open, extract, create, test; `..` navigation
+  that exits an archive into the host filesystem; auto-descent into nested formats; drag in and
+  drag out.
 - **Preview** — the selected entry as a picture, as text, or as a hex dump, with an optional
   statistics side panel. Multi-frame images get playback controls.
 - **Properties** — sizes, ratio, method and dates, plus byte statistics for a file or a child count
