@@ -34,6 +34,34 @@ public static class GptParser {
        && data.Slice(HeaderOffset, 8).SequenceEqual(Signature);
 
   /// <summary>
+  /// Checks that LBA 1 holds a GPT header that is internally consistent, not merely the
+  /// "EFI PART" signature: the header size lies in [92, 512], the header's own CRC32 matches
+  /// (computed with the CRC field zeroed, UEFI 2.10 §5.3.2), it names itself as LBA 1 and its
+  /// partition entries are 128 x 2^n bytes each, as the specification requires.
+  /// </summary>
+  /// <param name="data">At least the first 1024 bytes of the image.</param>
+  public static bool HasValidHeader(ReadOnlySpan<byte> data) {
+    if (!IsGpt(data)) return false;
+
+    var header = data.Slice(HeaderOffset, Math.Min(SectorSize, data.Length - HeaderOffset));
+    var headerSize = BinaryPrimitives.ReadUInt32LittleEndian(header[12..]);
+    if (headerSize < MinHeaderSize || headerSize > SectorSize || headerSize > header.Length) return false;
+
+    Span<byte> copy = stackalloc byte[(int)headerSize];
+    header[..(int)headerSize].CopyTo(copy);
+    var storedCrc = BinaryPrimitives.ReadUInt32LittleEndian(copy[16..]);
+    copy.Slice(16, 4).Clear();
+    if (Compression.Core.Checksums.Crc32.Compute(copy) != storedCrc) return false;
+
+    var myLba = BinaryPrimitives.ReadUInt64LittleEndian(header[24..]);
+    var entrySize = BinaryPrimitives.ReadUInt32LittleEndian(header[84..]);
+    var entryCount = BinaryPrimitives.ReadUInt32LittleEndian(header[80..]);
+    return myLba == 1
+           && entrySize >= MinEntrySize && (entrySize & (entrySize - 1)) == 0
+           && entryCount is > 0 and <= 65536;
+  }
+
+  /// <summary>
   /// Parses all partitions from a GPT disk image.
   /// </summary>
   /// <param name="diskData">The full disk image as a readable stream.</param>
