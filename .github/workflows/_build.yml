@@ -69,6 +69,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
           fetch-depth: 0
+      - uses: ./.github/actions/nativeforms-source
 
       # FileFormat.PngCrushAdapters has sibling-conditional ProjectReferences
       # to ..\..\PNGCrushCS\FileFormat.{Png,Apng,Jpeg,...}. Solution build

@@ -8,11 +8,10 @@
     <NoWarn>CS1591</NoWarn>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Hawkynt.NativeForms" Version="1.0.0.227" />
-    <PackageReference Include="Hawkynt.NativeForms.Backends.Windows" Version="1.0.0.63" />
-    <PackageReference Include="Hawkynt.NativeForms.Backends.Gtk" Version="1.0.0.73" />
+  <!-- NativeForms from a source checkout when there is one, else from nuget.org. -->
+  <Import Project="..\build\NativeForms.props" />
 
+  <ItemGroup>
     <!--
       The preview window decodes through this package, which carries readers for several hundred
       image formats. It is aliased because it also ships FileFormat.Dng.DngReader and

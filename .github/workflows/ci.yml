@@ -65,6 +65,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0                          # version.pl needs full history
+      - uses: ./.github/actions/nativeforms-source
 
       # FileFormat.PngCrushAdapters has sibling-conditional ProjectReferences
       # to ..\..\PNGCrushCS\FileFormat.{Png,Apng,Jpeg,...}. Without the sibling
