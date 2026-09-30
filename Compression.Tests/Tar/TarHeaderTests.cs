@@ -83,4 +83,17 @@ public class TarHeaderTests {
     // Plus two zero blocks for end-of-archive = 1536 + 1024 = 2560
     Assert.That(archive.Length, Is.EqualTo(2560));
   }
+
+  [Category("EdgeCase")]
+  [Test]
+  public void Given_NameLongerThanTheFieldWithNoSlash_When_RoundTripped_Then_FullNameSurvives() {
+    var name = new string('\u00E9', 80) + ".bin"; // 164 UTF-8 bytes, no '/' to split at
+    using var archive = new MemoryStream();
+    using (var writer = new TarWriter(archive, leaveOpen: true))
+      writer.AddEntry(new TarEntry { Name = name }, "x"u8);
+    archive.Position = 0;
+
+    using var reader = new TarReader(archive);
+    Assert.That(reader.GetNextEntry()?.Name, Is.EqualTo(name));
+  }
 }
