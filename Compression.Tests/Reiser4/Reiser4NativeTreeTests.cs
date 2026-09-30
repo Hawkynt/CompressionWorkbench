@@ -131,4 +131,60 @@ public sealed class Reiser4NativeTreeTests {
       Assert.That(reader.Extract(reader.Entries.Single(static entry => entry.Name == "added.bin")), Is.EqualTo(added));
     });
   }
+  [TestCase("sub/inner.dat", TestName = "GivenANestedName_WhenAddingToTheWriter_ThenItIsRefused")]
+  [TestCase("sub\\inner.dat", TestName = "GivenABackslashNestedName_WhenAddingToTheWriter_ThenItIsRefused")]
+  [TestCase(".", TestName = "GivenTheDotName_WhenAddingToTheWriter_ThenItIsRefused")]
+  [TestCase("..", TestName = "GivenTheDotDotName_WhenAddingToTheWriter_ThenItIsRefused")]
+  [Category("Exceptional")]
+  public void Writer_RefusesNamesTheRootDirectoryCannotHold(string name) {
+    var writer = new Reiser4Writer();
+    Assert.Multiple(() => {
+      Assert.That(() => writer.AddFile(name, [1]), Throws.TypeOf<NotSupportedException>());
+      Assert.That(() => writer.AddStreamingFile(name, 1, () => new MemoryStream([1])), Throws.TypeOf<NotSupportedException>());
+      Assert.That(new Reiser4FormatDescriptor().CanAccept(ArchiveInputInfo.InMemory(name, [1]), out var reason), Is.False);
+    });
+  }
+
+  [Test, Category("Exceptional")]
+  public void GivenTheSameNameTwice_WhenAddingToTheWriter_ThenTheSecondIsRefused() {
+    var writer = new Reiser4Writer();
+    writer.AddFile("twice.bin", [1]);
+    Assert.That(() => writer.AddFile("twice.bin", [2]), Throws.ArgumentException);
+  }
+
+  [Test, Category("EquivalenceClass")]
+  public void GivenADirectoryInput_WhenAskingTheConstraints_ThenItIsRefusedWithAReason() {
+    var accepted = new Reiser4FormatDescriptor().CanAccept(new ArchiveInputInfo("sub", "sub", IsDirectory: true), out var reason);
+    Assert.Multiple(() => {
+      Assert.That(accepted, Is.False);
+      Assert.That(reason, Does.Contain("root directory"));
+    });
+  }
+
+  [TestCase("plain.bin", TestName = "GivenARootLevelName_WhenAskingTheConstraints_ThenItIsAccepted")]
+  [TestCase("a-name-longer-than-twenty-three-characters.bin", TestName = "GivenAHashedLengthRootLevelName_WhenAskingTheConstraints_ThenItIsAccepted")]
+  [Category("EquivalenceClass")]
+  public void RootLevelNames_AreAccepted(string name)
+    => Assert.That(new Reiser4FormatDescriptor().CanAccept(ArchiveInputInfo.InMemory(name, [1]), out _), Is.True);
+
+  [Test, Category("RoundTrip")]
+  public void GivenFiles_WhenWriting_ThenExtentsSitInTheTwigAndNotInTheLeaf() {
+    var image = BuildWithoutLegacyDirectory(("body.bin", Payload(9_000, 3)));
+    static (byte Level, ushort[] Plugins) Node(byte[] image, int block) {
+      var node = image.AsSpan(block * Reiser4Writer.BlockSize, Reiser4Writer.BlockSize);
+      var count = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(node[2..]);
+      var plugins = new ushort[count];
+      for (var i = 0; i < count; ++i)
+        plugins[i] = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(node[(Reiser4Writer.BlockSize - (i + 1) * 38 + 36)..]);
+      return (node[26], plugins);
+    }
+    var twig = Node(image, 23);
+    var leaf = Node(image, 24);
+    Assert.Multiple(() => {
+      Assert.That(twig.Level, Is.EqualTo(2));
+      Assert.That(twig.Plugins, Is.EqualTo(new ushort[] { 3, 5 }), "twig: the leaf pointer, then the extent");
+      Assert.That(leaf.Level, Is.EqualTo(1));
+      Assert.That(leaf.Plugins, Does.Not.Contain((ushort)5), "a leaf never holds an extent");
+    });
+  }
 }

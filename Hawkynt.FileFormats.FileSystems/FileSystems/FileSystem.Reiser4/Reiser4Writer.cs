@@ -227,16 +227,37 @@ public sealed class Reiser4Writer {
 
   /// <summary>Adds a regular file to the payload area.</summary>
   public void AddFile(string name, byte[] data) {
-    ArgumentException.ThrowIfNullOrEmpty(name);
+    ValidateName(name);
     ArgumentNullException.ThrowIfNull(data);
     this._files.Add((name, FilePayload.FromBytes(data)));
   }
 
   /// <summary>Adds a file whose bytes are pulled from <paramref name="openStream" /> as the image is written.</summary>
   public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
-    ArgumentException.ThrowIfNullOrEmpty(name);
+    ValidateName(name);
     ArgumentNullException.ThrowIfNull(openStream);
     this._files.Add((name, FilePayload.FromStream(size, openStream)));
+  }
+
+  /// <summary>
+  /// Why <paramref name="name" /> cannot be a root-directory entry of this profile,
+  /// or <see langword="null" /> when it can. A slash would be written into a single
+  /// directory entry's name (reiser4 has no such entry), "." and ".." are the
+  /// directory's own entries, and a NUL ends the name early.
+  /// </summary>
+  internal static string? RejectName(string? name) => name switch {
+    null or "" => "an entry needs a name",
+    "." or ".." => $"'{name}' is reserved for the directory's own entries",
+    _ when name.AsSpan().IndexOfAny('/', '\\') >= 0 => $"'{name}' is nested; this writer only builds the root directory",
+    _ when name.Contains('\0') => $"'{name}' contains a NUL character",
+    _ => null,
+  };
+
+  private void ValidateName(string name) {
+    if (RejectName(name) is { } reason)
+      throw new NotSupportedException("Reiser4: " + reason + ".");
+    if (this._files.Any(f => f.Name.Equals(name, StringComparison.Ordinal)))
+      throw new ArgumentException($"Reiser4: '{name}' is already in the root directory.", nameof(name));
   }
 
   /// <summary>

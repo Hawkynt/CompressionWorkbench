@@ -461,8 +461,11 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// Performs the can accept operation.
   /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
-    reason = null;
-    return true;
+    ArgumentNullException.ThrowIfNull(input);
+    reason = input.IsDirectory
+      ? "this Reiser4 profile writes regular files in the root directory only"
+      : Reiser4Writer.RejectName(input.ArchiveName);
+    return reason is null;
   }
   /// <summary>
   /// Gets the max total archive size.
@@ -476,7 +479,7 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// Gets the accepted inputs description.
   /// </summary>
   public string AcceptedInputsDescription =>
-    "Reiser4 image; files are stored in the workbench-layout payload area past the reserved blocks.";
+    "Reiser4 image; regular files in the root directory, named by the native tree (no sub-directories).";
 
   // Bounded read — must NOT pull multi-GB images into memory when the carver
   // runs us speculatively. Master SB is at 65536, format40 SB at 65536+blocksize
