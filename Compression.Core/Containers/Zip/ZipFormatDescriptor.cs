@@ -15,7 +15,7 @@ namespace FileFormat.Zip;
 ///   <item><description>Info-ZIP zip/unzip — long-standing open reference implementations</description></item>
 /// </list>
 /// </summary>
-public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
+public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveRenamable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -131,6 +131,17 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       ZipModifier.RemoveFile(archive, name, wipeData: true);
       ZipModifier.AddFile(archive, name, data);
     }
+  }
+
+  /// <summary>
+  /// Renames entries by copying the archive with new names in the directory and local headers.
+  /// Entry data, data descriptors, extra fields, timestamps, attributes, the host that made each
+  /// entry and every comment are copied byte for byte; nothing is decoded or recompressed.
+  /// </summary>
+  public void Rename(Stream source, Stream destination, IReadOnlyList<ArchiveRename> renames) {
+    var (records, _, _) = ZipRawDirectory.Read(source);
+    var map = ArchiveRenames.Resolve(renames, [.. records.Select(r => r.Name)]);
+    ZipRawDirectory.CopyRenamed(source, destination, name => map.TryGetValue(name, out var renamed) ? renamed : null);
   }
 
   /// <summary>

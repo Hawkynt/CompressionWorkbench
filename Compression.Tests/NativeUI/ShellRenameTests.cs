@@ -54,6 +54,8 @@ public sealed class ShellRenameTests {
     try { Directory.Delete(this._root, recursive: true); } catch { }
   }
 
+  private string? Rename(ArchiveEntryViewModel entry, string typed) => this._model.RenameAsync(entry, typed).GetAwaiter().GetResult();
+
   private ArchiveEntryViewModel Entry(string name) => this._model.Entries.Single(e => e.Name == name);
 
   private string[] Names() => [.. this._model.Entries.Where(e => !e.IsParentEntry).Select(e => e.Name).Order(StringComparer.Ordinal)];
@@ -75,7 +77,7 @@ public sealed class ShellRenameTests {
   public void GivenAFileOnDisk_WhenRenamed_ThenItMovesAndTheListShowsTheNewName() {
     this._model.NavigateTo(Location.Folder(this._root));
 
-    Assert.That(this._model.Rename(this.Entry("file.txt"), "renamed.txt"), Is.Null);
+    Assert.That(this.Rename(this.Entry("file.txt"), "renamed.txt"), Is.Null);
 
     Assert.Multiple(() => {
       Assert.That(File.ReadAllText(Path.Combine(this._root, "renamed.txt")), Is.EqualTo("content"));
@@ -88,7 +90,7 @@ public sealed class ShellRenameTests {
   public void GivenAFolderOnDisk_WhenRenamed_ThenItsContentsGoWithIt() {
     this._model.NavigateTo(Location.Folder(this._root));
 
-    Assert.That(this._model.Rename(this.Entry("folder"), "moved"), Is.Null);
+    Assert.That(this.Rename(this.Entry("folder"), "moved"), Is.Null);
 
     Assert.That(File.ReadAllText(Path.Combine(this._root, "moved", "inside.txt")), Is.EqualTo("inside"));
   }
@@ -97,7 +99,7 @@ public sealed class ShellRenameTests {
   public void GivenAFileOnDisk_WhenOnlyItsCaseChanges_ThenTheNewCaseIsKept() {
     this._model.NavigateTo(Location.Folder(this._root));
 
-    Assert.That(this._model.Rename(this.Entry("file.txt"), "FILE.txt"), Is.Null);
+    Assert.That(this.Rename(this.Entry("file.txt"), "FILE.txt"), Is.Null);
 
     Assert.That(Directory.GetFiles(this._root).Select(Path.GetFileName), Does.Contain("FILE.txt").And.Not.Contain("file.txt"));
   }
@@ -106,7 +108,7 @@ public sealed class ShellRenameTests {
   public void GivenANameTakenBySibling_WhenRenamedOnto_ThenNothingIsOverwrittenAndTheReasonIsShown() {
     this._model.NavigateTo(Location.Folder(this._root));
 
-    var error = this._model.Rename(this.Entry("file.txt"), "OTHER.txt");
+    var error = this.Rename(this.Entry("file.txt"), "OTHER.txt");
 
     Assert.Multiple(() => {
       Assert.That(error, Does.Contain("already exists"));
@@ -122,7 +124,7 @@ public sealed class ShellRenameTests {
   public void GivenAnInvalidName_WhenRenamed_ThenItIsRefusedAndTheFileStays(string typed) {
     this._model.NavigateTo(Location.Folder(this._root));
 
-    Assert.That(this._model.Rename(this.Entry("file.txt"), typed), Is.Not.Null);
+    Assert.That(this.Rename(this.Entry("file.txt"), typed), Is.Not.Null);
     Assert.That(File.Exists(Path.Combine(this._root, "file.txt")), Is.True);
   }
 
@@ -131,7 +133,7 @@ public sealed class ShellRenameTests {
     this._model.NavigateTo(Location.Folder(this._root));
     var before = File.GetLastWriteTimeUtc(Path.Combine(this._root, "file.txt"));
 
-    Assert.That(this._model.Rename(this.Entry("file.txt"), " file.txt "), Is.Null);
+    Assert.That(this.Rename(this.Entry("file.txt"), " file.txt "), Is.Null);
     Assert.That(File.GetLastWriteTimeUtc(Path.Combine(this._root, "file.txt")), Is.EqualTo(before));
   }
 
@@ -141,7 +143,7 @@ public sealed class ShellRenameTests {
   public void GivenAFileInAnArchiveFolder_WhenRenamed_ThenTheArchiveHoldsItUnderTheNewNameAndTheShellStaysThere() {
     this._model.NavigateTo(Location.InArchive(this._zip, "docs/"));
 
-    Assert.That(this._model.Rename(this.Entry("readme.txt"), "README.md"), Is.Null);
+    Assert.That(this.Rename(this.Entry("readme.txt"), "README.md"), Is.Null);
 
     Assert.Multiple(() => {
       Assert.That(this.ZipEntries(), Is.EqualTo(new[] { "docs/README.md", "docs/guide/intro.txt", "docs/notes.txt", "top.txt" }));
@@ -156,7 +158,7 @@ public sealed class ShellRenameTests {
   public void GivenAFolderInAnArchive_WhenRenamed_ThenEverythingBeneathItFollows() {
     this._model.NavigateTo(Location.InArchive(this._zip, "docs/"));
 
-    Assert.That(this._model.Rename(this.Entry("guide"), "manual"), Is.Null);
+    Assert.That(this.Rename(this.Entry("guide"), "manual"), Is.Null);
 
     Assert.That(this.ZipEntries(), Does.Contain("docs/manual/intro.txt").And.Not.Contain("docs/guide/intro.txt"));
   }
@@ -166,7 +168,7 @@ public sealed class ShellRenameTests {
     this._model.NavigateTo(Location.Folder(this._root));
     this._model.NavigateTo(Location.InArchive(this._zip, "docs/"));
 
-    this._model.Rename(this.Entry("notes.txt"), "notes.md");
+    this.Rename(this.Entry("notes.txt"), "notes.md");
     this._model.BackCommand.Execute(null);
 
     Assert.That(this._model.CurrentLocation, Is.EqualTo(Location.Folder(this._root)),
@@ -178,7 +180,7 @@ public sealed class ShellRenameTests {
     this._model.NavigateTo(Location.InArchive(this._zip, "docs/"));
     var before = File.ReadAllBytes(this._zip);
 
-    Assert.That(this._model.Rename(this.Entry("readme.txt"), "notes.txt"), Does.Contain("already exists"));
+    Assert.That(this.Rename(this.Entry("readme.txt"), "notes.txt"), Does.Contain("already exists"));
     Assert.That(File.ReadAllBytes(this._zip), Is.EqualTo(before));
   }
 

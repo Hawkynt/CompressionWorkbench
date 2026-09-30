@@ -251,23 +251,37 @@ internal sealed class MainViewModel : ViewModelBase {
   internal bool CanRename(ArchiveEntryViewModel entry) {
     if (entry.IsParentEntry) return false;
     if (IsBrowsingOsFolder) return true;
-    if (!HasArchive || IsNestedArchive || _allEntries.Any(e => e.IsEncrypted)) return false;
+    if (!HasArchive || IsNestedArchive) return false;
 
-    return Compression.Lib.DeleteCapability.Evaluate(false, ArchivePath, 1) == Compression.Lib.DeleteMode.ModifiableArchive;
+    return ArchiveRenamesLosslessly();
+  }
+
+  // Whether the open archive can rename losslessly is a property of the file, and finding out may
+  // probe it; the answer is kept for as long as the same file, unchanged, stays open.
+  private (string Path, DateTime Stamp, bool Answer)? _renameSupport;
+
+  private bool ArchiveRenamesLosslessly() {
+    var stamp = File.Exists(ArchivePath) ? File.GetLastWriteTimeUtc(ArchivePath) : default;
+    if (_renameSupport is { } known && known.Path == ArchivePath && known.Stamp == stamp) return known.Answer;
+
+    var answer = ArchiveOperations.CanRename(ArchivePath);
+    _renameSupport = (ArchivePath, stamp, answer);
+    return answer;
   }
 
   /// <summary>
   /// Gives <paramref name="entry"/> the name <paramref name="typed"/>, on disk or inside the open
-  /// archive. Returns null on success — including when the name did not change — or the reason it
-  /// could not be done, which is also shown in the status line.
+  /// archive. Completes with null on success — including when the name did not change — or the
+  /// reason it could not be done, which is also shown in the status line. An archive is rewritten
+  /// off the UI thread.
   /// </summary>
-  internal string? Rename(ArchiveEntryViewModel entry, string typed) {
-    var error = RenameCore(entry, typed);
+  internal async Task<string?> RenameAsync(ArchiveEntryViewModel entry, string typed) {
+    var error = await RenameCoreAsync(entry, typed);
     if (error is not null) StatusText = error;
     return error;
   }
 
-  private string? RenameCore(ArchiveEntryViewModel entry, string typed) {
+  private async Task<string?> RenameCoreAsync(ArchiveEntryViewModel entry, string typed) {
     if (!CanRename(entry)) return $"{entry.Name} cannot be renamed here.";
 
     var (name, invalid) = EntryName.Validate(typed);
@@ -282,16 +296,20 @@ internal sealed class MainViewModel : ViewModelBase {
 
     try {
       IsBusy = true;
+      StatusText = $"Renaming {entry.Name}...";
       if (IsBrowsingOsFolder) {
         RenameOnDisk(entry, name!, caseOnly);
         RefreshVisibleEntries();
       } else {
-        var folder = Location.NormalizeArchiveFolder(CurrentFolder);
-        ArchiveOperations.Rename(ArchivePath, [new ArchiveRename(entry.Path, folder + name)]);
+        var archive = ArchivePath;
+        var rename = new ArchiveRename(entry.Path, Location.NormalizeArchiveFolder(CurrentFolder) + name);
+        await Task.Run(() => ArchiveOperations.Rename(archive, [rename]));
         ReloadArchiveInPlace();
       }
-    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException
-                                   or InvalidOperationException or ArgumentException or InvalidDataException) {
+    } catch (Exception ex) {
+      // Whatever went wrong - a refused name, a locked file, a codec failing on a damaged archive -
+      // the archive is intact (it is replaced only once the renamed copy is complete) and the user
+      // is told, rather than the failure escaping an event handler.
       return $"Could not rename {entry.Name}: {ex.Message}";
     } finally {
       IsBusy = false;
@@ -306,14 +324,21 @@ internal sealed class MainViewModel : ViewModelBase {
     var target = Path.Combine(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(source))!, name);
     var isFolder = Directory.Exists(source);
 
-    if (caseOnly) {
-      // Not every platform moves a file onto a name that differs only in case; go through a free one.
-      var interim = source + ".cwb-rename-" + Guid.NewGuid().ToString("N")[..8];
-      Move(source, interim);
-      source = interim;
+    if (!caseOnly) {
+      Move(source, target);
+      return;
     }
 
-    Move(source, target);
+    // Not every platform moves a file onto a name that differs only in case; go through a free
+    // one, and put it back if the second step fails rather than leaving it under the interim name.
+    var interim = source + ".cwb-rename-" + Guid.NewGuid().ToString("N")[..8];
+    Move(source, interim);
+    try {
+      Move(interim, target);
+    } catch {
+      Move(interim, source);
+      throw;
+    }
 
     void Move(string from, string to) {
       if (isFolder) Directory.Move(from, to);

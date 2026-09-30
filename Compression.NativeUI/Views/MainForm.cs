@@ -375,7 +375,7 @@ internal sealed class MainForm : Form {
     };
     this._entries.AfterLabelEdit += (_, e) => {
       // A null label is an edit the user abandoned with Escape.
-      if (e.Label is not null && this.EntryAt(e.Item) is { } entry) this._model.Rename(entry, e.Label);
+      if (e.Label is not null && this.EntryAt(e.Item) is { } entry) _ = this._model.RenameAsync(entry, e.Label);
 
       // The list is rebuilt from the model either way, so the row never takes the typed text as is:
       // a refused name must not stay on screen, and an accepted one is already there, re-sorted.
