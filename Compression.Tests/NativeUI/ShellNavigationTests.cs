@@ -118,6 +118,15 @@ public sealed class ShellNavigationTests {
   }
 
   [Test]
+  public void GivenABrowsedHostFolder_WhenAnArchiveInItIsOpened_ThenTheArchiveJoinsTheTrail() {
+    this._model.NavigateTo(Location.Folder(this.A));
+
+    this._model.Open(this._zip);
+
+    Assert.That(this._model.Breadcrumbs.Select(c => c.Label).TakeLast(2), Is.EqualTo(new[] { "a", "bundle.zip" }));
+  }
+
+  [Test]
   public void GivenAHostFolder_WhenBreadcrumbsAreBuilt_ThenEveryCrumbIsAnAbsolutePathThatExists() {
     this._model.NavigateTo(Location.Folder(this.B));
 

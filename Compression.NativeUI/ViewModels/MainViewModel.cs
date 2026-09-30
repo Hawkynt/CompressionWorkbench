@@ -1070,9 +1070,10 @@ internal sealed class MainViewModel : ViewModelBase {
 
       ArchivePath = path;
       Format = format.ToString();
-      CurrentFolder = "";
-      // Re-entering archive mode: clear the OS-browser breadcrumb.
+      // Leave folder browsing before setting the folder: that setter rebuilds the breadcrumbs, and
+      // while a host folder is still being browsed the trail ends at the host path.
       _osBrowserPath = null;
+      CurrentFolder = "";
       OnPropertyChanged(nameof(IsBrowsingOsFolder));
 
       _allEntries.Clear();
