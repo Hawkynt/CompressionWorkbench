@@ -128,6 +128,39 @@ public sealed class MainFormTests {
     });
   }
 
+  // ── ribbon size ─────────────────────────────────────────────────────────────────────────────
+
+  /// <summary>The breadcrumb bar when it is shown, else the panes: whatever sits directly under the ribbon.</summary>
+  private static Control FirstBelowRibbon(MainForm shell)
+    => Field<Control>(shell, "_breadcrumbBar") is { Visible: true } bar ? bar : Field<Control>(shell, "_split");
+
+  [Test]
+  public void GivenTheShell_WhenLaidOut_ThenTheRibbonIsAsTallAsItsItemsNeedAndWhatFollowsSitsRightUnderIt() {
+    WithShell(shell => {
+      var ribbon = Field<Ribbon>(shell, "_ribbon");
+      shell.PerformLayout();
+
+      Assert.That(ribbon.Height, Is.EqualTo(ribbon.NaturalHeight), "a fixed height fits one display scaling and squeezes the rows on another");
+      Assert.That(FirstBelowRibbon(shell).Top, Is.EqualTo(ribbon.Top + ribbon.Height));
+    });
+  }
+
+  [Test]
+  public void GivenTheRibbonIsMinimized_WhenLaidOut_ThenItKeepsToItsTabStripAndNothingSitsUnderIt() {
+    WithShell(shell => {
+      var ribbon = Field<Ribbon>(shell, "_ribbon");
+
+      ribbon.Minimized = true;
+      shell.PerformLayout();
+
+      Assert.That(ribbon.Height, Is.EqualTo(ribbon.TabStripHeight), "a minimized ribbon stretched back to full height covers the breadcrumb bar");
+      Assert.That(FirstBelowRibbon(shell).Top, Is.EqualTo(ribbon.Top + ribbon.Height));
+
+      ribbon.Minimized = false;
+      Assert.That(ribbon.Height, Is.EqualTo(ribbon.NaturalHeight), "restoring brings the full height back");
+    });
+  }
+
   // ── accelerators ────────────────────────────────────────────────────────────────────────────
 
   [Test]

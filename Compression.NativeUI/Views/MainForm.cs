@@ -18,7 +18,6 @@ namespace Compression.NativeUI.Views;
 /// </summary>
 internal sealed partial class MainForm : Form {
   // The ribbon's full height: its tab strip over one row of groups.
-  private const int RibbonHeight = 124;
   private const int BreadcrumbHeight = 26;
   private const int StatusHeight = 24;
 
@@ -438,9 +437,10 @@ internal sealed partial class MainForm : Form {
   private void LayoutChildren() {
     var width = this.ClientSize.Width;
 
-    // A minimized ribbon folds down to its tab strip; the panes take the space it gives back.
-    var ribbonHeight = this._ribbon.Minimized ? this._ribbon.TabStripHeight : RibbonHeight;
-    this._ribbon.Bounds = new(0, 0, width, RibbonHeight);
+    // As tall as its items need at the current font and display scaling; a minimized ribbon folds
+    // down to its tab strip and the panes take the space it gives back.
+    var ribbonHeight = this._ribbon.Minimized ? this._ribbon.TabStripHeight : this._ribbon.NaturalHeight;
+    this._ribbon.Bounds = new(0, 0, width, ribbonHeight);
 
     var y = ribbonHeight;
     var breadcrumbVisible = this._breadcrumbBar.Visible;
