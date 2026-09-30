@@ -82,6 +82,9 @@ public sealed class MacriumWriter {
   /// <summary>Partition number to advertise in <c>$JSON.disks[0].partitions[0]._header.partition_number</c>. Default = 1.</summary>
   public int PartitionNumber { get; init; } = 1;
 
+  /// <summary>Backup payload kind recorded in root metadata.</summary>
+  public string BackupFormat { get; init; } = "partition";
+
   /// <summary>Total bytes copied verbatim into <c>$TRACK0</c>. Capped at 1 MB per spec.</summary>
   public int ReservedSectorsLength { get; init; }
 
@@ -95,6 +98,9 @@ public sealed class MacriumWriter {
       throw new InvalidOperationException("BlockSize must be a positive multiple of 512.");
     if (this.CompressionLevel is < 1 or > 9)
       throw new InvalidOperationException("CompressionLevel must be between 1 and 9.");
+    if (!this.BackupFormat.Equals("partition", StringComparison.OrdinalIgnoreCase)
+        && !this.BackupFormat.Equals("file_and_folder", StringComparison.OrdinalIgnoreCase))
+      throw new InvalidOperationException("BackupFormat must be 'partition' or 'file_and_folder'.");
     if (this.EncryptDataBlocks && string.IsNullOrEmpty(this.Password))
       throw new InvalidOperationException("Password is required when EncryptDataBlocks is true.");
 
@@ -170,11 +176,10 @@ public sealed class MacriumWriter {
     WriteMetadataBlock(ms, "$TRACK0", track0, compressed: false, encrypted: false, last: false);
 
     // ─── $INDEX (terminal of the disk chain in our minimum-format emission) ─
-    // Layout (DataBlockIndex variant — no Reserved-Sectors-Index for non-FAT):
-    //   uint32 index_count
-    //   DataBlockIndexElement[index_count]
+    // Layout: ReservedSectorsIndex followed by DataBlockIndex. The writer
+    // emits an empty reserved-sector array for this raw partition image.
     // Each element = int64 file_position + 16-byte md5 + uint32 block_length + uint16 file_number = 30 bytes.
-    var indexBuf = SerializeIndex(indexElements);
+    var indexBuf = SerializeIndex([], indexElements);
     WriteMetadataBlock(ms, "$INDEX", indexBuf, compressed: false, encrypted: false, last: true);
 
     // ── 4) Root metadata chain at footer offset ───────────────────────────
@@ -263,24 +268,36 @@ public sealed class MacriumWriter {
     output.Write(bodyBytes);
   }
 
-  private static byte[] SerializeIndex(IReadOnlyList<DataBlockIndexElement> elements) {
-    // uint32 index_count + N × (int64 + md5[16] + uint32 + uint16) = 4 + N*30 bytes.
-    var size = 4 + elements.Count * 30;
+  private static byte[] SerializeIndex(
+      IReadOnlyList<DataBlockIndexElement> reservedSectorElements,
+      IReadOnlyList<DataBlockIndexElement> dataElements) {
+    // $INDEX contains two arrays in order: reserved-sector blocks, then
+    // ordinary partition data blocks. Each array is uint32 count + N × 30 bytes.
+    var size = checked(8 + (reservedSectorElements.Count + dataElements.Count) * 30);
     var buf = new byte[size];
     var span = buf.AsSpan();
-    BinaryPrimitives.WriteUInt32LittleEndian(span[..4], (uint)elements.Count);
-    var offset = 4;
+    var offset = 0;
+    WriteIndexArray(span, ref offset, reservedSectorElements);
+    WriteIndexArray(span, ref offset, dataElements);
+    return buf;
+  }
+
+  private static void WriteIndexArray(
+      Span<byte> destination,
+      ref int offset,
+      IReadOnlyList<DataBlockIndexElement> elements) {
+    BinaryPrimitives.WriteUInt32LittleEndian(destination.Slice(offset, 4), (uint)elements.Count);
+    offset += 4;
     foreach (var e in elements) {
-      BinaryPrimitives.WriteInt64LittleEndian(span.Slice(offset, 8), e.FilePosition);
+      BinaryPrimitives.WriteInt64LittleEndian(destination.Slice(offset, 8), e.FilePosition);
       offset += 8;
-      e.Md5Hash.CopyTo(span.Slice(offset, 16));
+      e.Md5Hash.CopyTo(destination.Slice(offset, 16));
       offset += 16;
-      BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(offset, 4), e.BlockLength);
+      BinaryPrimitives.WriteUInt32LittleEndian(destination.Slice(offset, 4), e.BlockLength);
       offset += 4;
-      BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(offset, 2), e.FileNumber);
+      BinaryPrimitives.WriteUInt16LittleEndian(destination.Slice(offset, 2), e.FileNumber);
       offset += 2;
     }
-    return buf;
   }
 
   private string BuildJson(
@@ -328,7 +345,10 @@ public sealed class MacriumWriter {
 
     // _header — navigational fields used by readers.
     sb.Append("\"_header\":{");
-    sb.Append("\"backup_format\":\"partition\",");
+    var backupFormat = this.BackupFormat.Equals("partition", StringComparison.OrdinalIgnoreCase)
+      ? "partition"
+      : "file_and_folder";
+    sb.Append("\"backup_format\":\"").Append(backupFormat).Append("\",");
     sb.Append("\"backup_guid\":\"00000000-0000-0000-0000-000000000000\",");
     sb.Append("\"backup_time\":").Append(backupTime.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
     sb.Append("\"backup_type\":\"full\",");

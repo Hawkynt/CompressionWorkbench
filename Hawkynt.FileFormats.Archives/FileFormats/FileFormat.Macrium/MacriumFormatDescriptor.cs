@@ -89,6 +89,7 @@ public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     new("DiskNumber", "Disk number", FormatOptionKind.Integer, "0", null, "Disk number recorded in Macrium metadata."),
     new("PartitionNumber", "Partition number", FormatOptionKind.Integer, "1", null, "Partition number recorded in Macrium metadata."),
     new("Pbkdf2Iterations", "Password derivation iterations", FormatOptionKind.Integer, "600000", null, "PBKDF2-HMAC-SHA256 iterations used when a password is supplied."),
+    new("BackupFormat", "Backup payload kind", FormatOptionKind.Enum, "partition", ["partition", "file_and_folder"], "Reflect X uses the same container layout for disk images and file/folder backup virtual disks."),
   ];
 
   /// <summary>The synthetic entry name under which Macrium Reflect X exposes the reconstructed disk-image payload.</summary>
@@ -390,6 +391,7 @@ public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       ReservedSectorsLength = options.GetOptionInt("ReservedSectorsLength", 0),
       DiskNumber = options.GetOptionInt("DiskNumber", 0),
       PartitionNumber = options.GetOptionInt("PartitionNumber", 1),
+      BackupFormat = options.GetOption("BackupFormat", "partition"),
       Pbkdf2Iterations = options.GetOptionInt("Pbkdf2Iterations",
         options.GetOptionInt("pbkdf2_iterations", MacriumCrypto.DefaultPbkdf2Iterations)),
     };

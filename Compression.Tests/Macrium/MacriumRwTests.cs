@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -85,6 +86,12 @@ public class MacriumRwTests {
     Assert.That(names, Does.Contain("$JSON"));
     Assert.That(names, Does.Contain("$AUXDATA"));
     Assert.That(r.Blocks.Last().IsLast, Is.True);
+    var indexBlock = r.Blocks.First(b => b.Name == "$INDEX");
+    var index = image.AsSpan((int)indexBlock.PayloadOffset, (int)indexBlock.PayloadLength);
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(index), Is.Zero,
+      "$INDEX starts with the empty reserved-sector array for this writer's non-FAT image.");
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(index[4..]), Is.EqualTo(1),
+      "$INDEX then stores the ordinary data-block count.");
   }
 
   // ---- Plain (no zstd, no AES) round-trip --------------------------------
@@ -270,6 +277,7 @@ public class MacriumRwTests {
         ["DiskNumber"] = "2",
         ["PartitionNumber"] = "3",
         ["ReservedSectorsLength"] = "512",
+        ["BackupFormat"] = "file_and_folder",
       },
     });
 
@@ -283,6 +291,7 @@ public class MacriumRwTests {
     Assert.That(json, Does.Contain("\"disk_number\":2"));
     Assert.That(json, Does.Contain("\"partition_number\":3"));
     Assert.That(json, Does.Contain("\"reserved_sectors_length\":512"));
+    Assert.That(json, Does.Contain("\"backup_format\":\"file_and_folder\""));
   }
 
   [Test, Category("HappyPath")]
@@ -493,5 +502,22 @@ public class MacriumRwTests {
   public void Writer_RejectsInvalidBlockSize() {
     var w = new MacriumWriter { BlockSize = 1000 }; // not a multiple of 512
     Assert.That(() => w.Build([1, 2, 3]), Throws.InstanceOf<InvalidOperationException>());
+  }
+
+  [Test, Category("ExceptionalCase")]
+  public void Reader_RejectsDataBlockChecksumMismatch() {
+    var disk = DeterministicDisk(1024);
+    var image = WriteReflectX(disk, compress: false);
+    using var imageStream = new MemoryStream(image);
+    using var reader = new MacriumReader(imageStream);
+    var indexBlock = reader.Blocks.First(b => b.Name == "$INDEX");
+    var index = image.AsSpan((int)indexBlock.PayloadOffset, (int)indexBlock.PayloadLength);
+    var blockOffset = BinaryPrimitives.ReadInt64LittleEndian(index.Slice(8, 8));
+    image[(int)blockOffset] ^= 0x80;
+
+    using var corruptedStream = new MemoryStream(image);
+    using var corruptedReader = new MacriumReader(corruptedStream);
+    Assert.That(corruptedReader.SectorReconstructionAvailable, Is.False);
+    Assert.That(corruptedReader.SectorReconstructionStatus, Is.EqualTo("data-block-0-checksum-mismatch"));
   }
 }

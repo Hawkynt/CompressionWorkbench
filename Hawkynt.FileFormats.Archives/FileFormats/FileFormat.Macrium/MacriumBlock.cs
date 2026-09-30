@@ -10,7 +10,7 @@ namespace FileFormat.Macrium;
 /// <list type="bullet">
 ///   <item><description>Bytes 0..7: ASCII <c>block_name</c> (e.g. <c>"$JSON   "</c>, <c>"$INDEX  "</c>).</description></item>
 ///   <item><description>Bytes 8..11: <c>uint32</c> little-endian payload length.</description></item>
-///   <item><description>Bytes 12..27: 16-byte MD5 hash of the (decompressed / decrypted) payload.</description></item>
+///   <item><description>Bytes 12..27: 16-byte MD5 hash of the on-disk payload bytes.</description></item>
 ///   <item><description>Byte 28: flags — bit 0 = <c>last_block</c>, bit 1 = <c>compression</c>, bit 2 = <c>encryption</c>, bits 3..7 reserved.</description></item>
 ///   <item><description>Bytes 29..31: padding for 32-byte header alignment.</description></item>
 /// </list>
@@ -28,7 +28,7 @@ public sealed class MacriumBlock {
   /// <summary>Payload length in bytes, as declared in the block header.</summary>
   public long PayloadLength { get; init; }
 
-  /// <summary>16-byte MD5 hash of the payload (decompressed / decrypted form, per spec).</summary>
+  /// <summary>16-byte MD5 hash of the payload bytes as stored in the file.</summary>
   public byte[] Md5Hash { get; init; } = [];
 
   /// <summary>Raw flags byte from the header.</summary>
