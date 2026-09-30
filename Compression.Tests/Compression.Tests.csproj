@@ -71,6 +71,10 @@
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- OneNote sections from the Apache Tika test corpus; see OneNote/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
+      <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>
