@@ -714,42 +714,71 @@ internal sealed class MainViewModel : ViewModelBase {
     var confirm = MessageBox.Show(summary, "Confirm Delete",
                                   MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
     if (confirm != DialogResult.Yes) return;
-    if (BeginChange(TimeSpan.FromSeconds(10)) is { } busy) {
-      StatusText = busy;
-      return;
+
+    _ = DeleteAndReportAsync();
+
+    async Task DeleteAndReportAsync() {
+      // A rewritten archive is worth a dialog; a file that would not go on disk is named in the
+      // status line, next to the ones that did.
+      if (await DeleteAsync(selected) is { } error && mode == Compression.Lib.DeleteMode.ModifiableArchive)
+        MessageBox.Show(error, "Delete", MessageBoxButtons.OK, MessageBoxIcon.Error);
     }
+  }
+
+  /// <summary>
+  /// Deletes <paramref name="selection"/> — already confirmed — from disk or from the open archive.
+  /// The files are removed and the archive rewritten off the UI thread. Completes with null on
+  /// success or the reason it failed, which is also shown in the status line.
+  /// </summary>
+  internal async Task<string?> DeleteAsync(IReadOnlyList<ArchiveEntryViewModel> selection) {
+    var selected = selection.Where(e => !e.IsParentEntry).ToList();
+    if (selected.Count == 0) return null;
+
+    var mode = Compression.Lib.DeleteCapability.Evaluate(IsBrowsingOsFolder, ArchivePath, selected.Count);
+    if (mode is not (Compression.Lib.DeleteMode.RealFs or Compression.Lib.DeleteMode.ModifiableArchive))
+      return StatusText = "Entries of this format cannot be removed in place.";
+    if (BeginChange(TimeSpan.FromSeconds(10)) is { } busy) return StatusText = busy;
 
     try {
-      DeleteConfirmed(selected, mode);
+      IsBusy = true;
+      return mode == Compression.Lib.DeleteMode.RealFs
+        ? await DeleteOnDiskAsync(selected)
+        : await DeleteInArchiveAsync(selected);
     } finally {
+      IsBusy = false;
       EndChange();
       if (CurrentLocation is { } here) RaiseChanged([here]);
     }
   }
 
-  private void DeleteConfirmed(List<ArchiveEntryViewModel> selected, Compression.Lib.DeleteMode mode) {
-    if (mode == Compression.Lib.DeleteMode.RealFs) {
-      var failed = 0;
-      foreach (var entry in selected) {
-        var path = entry.Path;
+  private async Task<string?> DeleteOnDiskAsync(List<ArchiveEntryViewModel> selected) {
+    StatusText = $"Deleting {selected.Count} item(s)...";
+    var targets = selected.Select(e => (e.Name, e.Path)).ToList();
+    var failures = await Task.Run(() => {
+      var failed = new List<string>();
+      foreach (var (name, path) in targets) {
         try {
           if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
           else if (File.Exists(path)) File.Delete(path);
         } catch (Exception ex) {
-          failed++;
-          StatusText = $"Failed to delete {entry.Name}: {ex.Message}";
+          failed.Add($"{name}: {ex.Message}");
         }
       }
-      RefreshVisibleEntries();
-      StatusText = failed == 0
-        ? $"Deleted {selected.Count} item(s)."
-        : $"Deleted {selected.Count - failed} of {selected.Count} item(s) ({failed} failed).";
-      return;
+      return failed;
+    });
+
+    RefreshVisibleEntries();
+    if (failures.Count == 0) {
+      StatusText = $"Deleted {selected.Count} item(s).";
+      return null;
     }
 
-    // ModifiableArchive — collect entry names (recurse into directories so the
-    // modifier sees every file). The trailing slash on directories matches how
-    // ArchiveEntry.Name is stored in _allEntries.
+    return StatusText = $"Deleted {selected.Count - failures.Count} of {selected.Count} item(s); {string.Join("; ", failures)}";
+  }
+
+  private async Task<string?> DeleteInArchiveAsync(List<ArchiveEntryViewModel> selected) {
+    // Every entry beneath a folder goes too, so the modifier sees each one; folders carry the
+    // trailing slash their entries are stored under.
     var names = new List<string>();
     foreach (var entry in selected) {
       if (entry.IsDirectory) {
@@ -762,27 +791,23 @@ internal sealed class MainViewModel : ViewModelBase {
         names.Add(entry.Path);
       }
     }
-    if (names.Count == 0) return;
 
+    var archive = ArchivePath;
     try {
-      IsBusy = true;
       StatusText = $"Deleting {names.Count} entry(ies) from archive...";
-      ArchiveOperations.Remove(ArchivePath, [.. names]);
-      HasPendingFragmentation = true;
-      StatusText = $"Deleted {names.Count} entry(ies). Free space available — defragment to compact.";
-      // Reload so the EntryList reflects the new on-disk state. The modifier
-      // mutated the file in place; List() re-reads the directory.
-      ReloadArchiveInPlace();
-      // Open() resets HasPendingFragmentation; re-raise it so the banner survives
-      // the reload triggered by our own delete.
-      HasPendingFragmentation = true;
+      await Task.Run(() => ArchiveOperations.Remove(archive, [.. names]));
     } catch (Exception ex) {
-      StatusText = $"Delete failed: {ex.Message}";
-      MessageBox.Show($"Delete failed:\n\n{ex.GetType().Name}: {ex.Message}",
-                      "Delete", MessageBoxButtons.OK, MessageBoxIcon.Error);
-    } finally {
-      IsBusy = false;
+      // Whatever stopped it - a locked file, a codec failing on a damaged archive - the user is
+      // told instead of the failure escaping a fire-and-forget command.
+      return StatusText = $"Delete failed: {ex.Message}";
     }
+
+    // The modifier changed the file in place; reread it. The reload clears the fragmentation hint,
+    // which this delete has just made true.
+    ReloadArchiveInPlace();
+    HasPendingFragmentation = true;
+    StatusText = $"Deleted {names.Count} entry(ies). Free space available — defragment to compact.";
+    return null;
   }
 
   /// <summary>
