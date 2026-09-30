@@ -677,6 +677,31 @@ public class FatWriterTests {
     Assert.That(label, Is.EqualTo("MYVOLUME"), "Volume label should appear in boot sector");
   }
 
+  [Test, Category("Spec")]
+  public void VolumeLabel_AlsoWrittenAsTheFirstRootEntry() {
+    // FAT keeps the label twice: in the boot sector and as an ATTR_VOLUME_ID entry at the head of the
+    // root directory. fsck.vfat reports a boot-sector-only label as inconsistent and removes it.
+    var w = new FileSystem.Fat.FatWriter();
+    w.AddFile("f.txt", new byte[1]);
+    var disk = w.Build(volumeLabel: "MYVOLUME");
+
+    var rootOffset = (1 + 2 * 9) * 512; // reserved + two 9-sector FATs on a 1.44 MB floppy
+    Assert.That(System.Text.Encoding.ASCII.GetString(disk.AsSpan(rootOffset, 11)), Is.EqualTo("MYVOLUME   "));
+    Assert.That(disk[rootOffset + 11], Is.EqualTo(0x08), "ATTR_VOLUME_ID");
+    using var ms = new MemoryStream(disk);
+    Assert.That(new FileSystem.Fat.FatReader(ms).Entries.Select(e => e.Name), Is.EqualTo(new[] { "f.txt" }).Or.EqualTo(new[] { "F.TXT" }),
+      "the label entry is not a file");
+  }
+
+  [Test, Category("Spec")]
+  public void NoVolumeLabel_WritesNoLabelEntry() {
+    var w = new FileSystem.Fat.FatWriter();
+    w.AddFile("f.txt", new byte[1]);
+    var disk = w.Build();
+
+    Assert.That(disk[(1 + 2 * 9) * 512 + 11], Is.Not.EqualTo(0x08), "an unlabelled volume carries no label entry, as mkfs writes it");
+  }
+
   [Test, Category("RoundTrip")]
   public void BuildAutoSized_SmallFileCount_StaysFat12() {
     // A handful of short-named files must not be bumped up unnecessarily.
