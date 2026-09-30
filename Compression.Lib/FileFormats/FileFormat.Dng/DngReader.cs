@@ -99,6 +99,8 @@ public sealed class DngReader {
 
   private readonly byte[] _data;
 
+  private StructuralLayout Layout { get; }
+
   internal static StructuralLayout ReadLayout(ReadOnlySpan<byte> data) {
     if (data.Length < 8)
       throw new InvalidDataException("TIFF: too small.");
@@ -151,7 +153,7 @@ public sealed class DngReader {
       topLevelIfds,
       subIfds,
       exifIfd,
-      dngTag != null ? checked((int)dngTag.Count) : 0);
+      dngTag != null ? (int)Math.Min(dngTag.Count, int.MaxValue) : 0);
   }
 
   internal static IReadOnlyList<SourceRange> GetStripRanges(
@@ -167,6 +169,7 @@ public sealed class DngReader {
       return [];
 
     var ranges = new List<SourceRange>(offsets.Count);
+    var total = 0L;
     for (var index = 0; index < offsets.Count; ++index) {
       var offset = (long)offsets[index];
       var length = (long)sizes[index];
@@ -175,6 +178,11 @@ public sealed class DngReader {
           || offset > int.MaxValue || length > int.MaxValue)
         continue;
 
+      // Strips may repeat source bytes; a payload that could not fit one array
+      // is unreadable rather than a reason for the listing to throw.
+      total += length;
+      if (total > Array.MaxLength)
+        return [];
       ranges.Add(new SourceRange((int)offset, (int)length));
     }
 
@@ -248,7 +256,7 @@ public sealed class DngReader {
       return [];
 
     var count = (int)entry.Count;
-    var total = checked(typeSize * count);
+    var total = (long)typeSize * count;
     if (total <= 4)
       return ReadInlineValuesLayout(entry, typeSize, isBigEndian);
 
@@ -308,119 +316,19 @@ public sealed class DngReader {
   public DngReader(byte[] data) {
     this._data = data;
     this.Raw = data;
-    if (data.Length < 8) throw new InvalidDataException("TIFF: too small.");
-    this.IsBigEndian = data[0] == 'M' && data[1] == 'M';
-    if (!this.IsBigEndian && !(data[0] == 'I' && data[1] == 'I'))
-      throw new InvalidDataException("TIFF: bad byte-order mark.");
-    var magic = ReadUInt16(data, 2);
-    if (magic != 42) throw new InvalidDataException("TIFF: bad magic (need 42).");
-
-    var ifds = new List<Ifd>();
-    var ifd0Offset = (long)ReadUInt32(data, 4);
-    var guard = 0;
-    while (ifd0Offset != 0 && guard++ < 32) {
-      if (ifd0Offset + 2 > data.Length) break;
-      var ifd = ReadIfd(ifd0Offset);
-      ifds.Add(ifd);
-      // Next IFD offset lives immediately after the entry array.
-      var afterEntries = ifd0Offset + 2 + ifd.Entries.Count * 12L;
-      if (afterEntries + 4 > data.Length) break;
-      ifd0Offset = ReadUInt32(data, (int)afterEntries);
-    }
-    this.TopLevelIfds = ifds;
-
-    // Walk SubIFD chains.
-    var subList = new List<Ifd>();
-    foreach (var ifd in ifds) {
-      var sub = ifd.Entries.FirstOrDefault(e => e.Tag == TagSubIFDs);
-      if (sub == null) continue;
-      foreach (var off in ReadValuesAsUInt32(sub))
-        if (off != 0 && off + 2 <= data.Length)
-          subList.Add(ReadIfd(off));
-    }
-    this.SubIfds = subList;
-
-    // Optional EXIF sub-IFD.
-    var exifEntry = ifds.FirstOrDefault()?.Entries.FirstOrDefault(e => e.Tag == TagExifIfd);
-    if (exifEntry != null && exifEntry.ValueOrOffset != 0 && exifEntry.ValueOrOffset + 2 <= data.Length)
-      this.ExifIfd = ReadIfd(exifEntry.ValueOrOffset);
-
-    var dngTag = ifds.FirstOrDefault()?.Entries.FirstOrDefault(e => e.Tag == TagDngVersion);
-    this.DngVersionLength = dngTag != null ? (int)dngTag.Count : 0;
-  }
-
-  private Ifd ReadIfd(long offset) {
-    var count = ReadUInt16(this._data, (int)offset);
-    var entries = new List<Entry>(count);
-    var p = (int)offset + 2;
-    for (var i = 0; i < count; i++, p += 12) {
-      if (p + 12 > this._data.Length) break;
-      entries.Add(new Entry(
-        Tag: ReadUInt16(this._data, p),
-        Type: ReadUInt16(this._data, p + 2),
-        Count: ReadUInt32(this._data, p + 4),
-        ValueOrOffset: ReadUInt32(this._data, p + 8)));
-    }
-    return new Ifd(offset, entries);
+    // One IFD walker serves both paths; the owning reader is its layout.
+    var layout = this.Layout = ReadLayout(data);
+    this.IsBigEndian = layout.IsBigEndian;
+    this.TopLevelIfds = layout.TopLevelIfds;
+    this.SubIfds = layout.SubIfds;
+    this.ExifIfd = layout.ExifIfd;
+    this.DngVersionLength = layout.DngVersionLength;
   }
 
   /// <summary>
   /// Reads the values as u int 32 from the supplied input.
   /// </summary>
-  public IReadOnlyList<uint> ReadValuesAsUInt32(Entry e) {
-    // TIFF types: 1=BYTE, 3=SHORT (2), 4=LONG (4), 5=RATIONAL (8).
-    var tsize = e.Type switch { 1 => 1, 3 => 2, 4 => 4, _ => 0 };
-    if (tsize == 0) return Array.Empty<uint>();
-    var total = tsize * (int)e.Count;
-    int start;
-    if (total <= 4) {
-      // Inline in the entry — the 4 value bytes have already been read as LE/BE by ReadUInt32.
-      // Re-derive their location: ValueOrOffset occupies offset +8 of the entry, but we need
-      // byte-accurate access because SHORT+SHORT packs two values into 4 bytes.
-      // Reconstruct by finding this entry's byte position.
-      return ReadInlineValues(e, tsize);
-    }
-    start = (int)e.ValueOrOffset;
-    if (start + total > this._data.Length) return Array.Empty<uint>();
-    var result = new uint[e.Count];
-    for (var i = 0; i < e.Count; i++) {
-      result[i] = tsize switch {
-        1 => this._data[start + i],
-        2 => ReadUInt16(this._data, start + i * 2),
-        4 => ReadUInt32(this._data, start + i * 4),
-        _ => 0,
-      };
-    }
-    return result;
-  }
-
-  private uint[] ReadInlineValues(Entry e, int tsize) {
-    // Reconstitute inline bytes from ValueOrOffset in the file's byte order.
-    Span<byte> buf = stackalloc byte[4];
-    if (this.IsBigEndian) {
-      buf[0] = (byte)(e.ValueOrOffset >> 24);
-      buf[1] = (byte)(e.ValueOrOffset >> 16);
-      buf[2] = (byte)(e.ValueOrOffset >> 8);
-      buf[3] = (byte)e.ValueOrOffset;
-    } else {
-      buf[0] = (byte)e.ValueOrOffset;
-      buf[1] = (byte)(e.ValueOrOffset >> 8);
-      buf[2] = (byte)(e.ValueOrOffset >> 16);
-      buf[3] = (byte)(e.ValueOrOffset >> 24);
-    }
-    var result = new uint[e.Count];
-    for (var i = 0; i < e.Count; i++) {
-      result[i] = tsize switch {
-        1 => buf[i],
-        2 => (uint)(this.IsBigEndian
-          ? (buf[i * 2] << 8) | buf[i * 2 + 1]
-          : buf[i * 2] | (buf[i * 2 + 1] << 8)),
-        4 => e.ValueOrOffset,
-        _ => 0,
-      };
-    }
-    return result;
-  }
+  public IReadOnlyList<uint> ReadValuesAsUInt32(Entry e) => ReadValuesAsUInt32Layout(this._data, this.IsBigEndian, e);
 
   /// <summary>
   /// Reads the bytes at from the supplied input.
@@ -437,26 +345,19 @@ public sealed class DngReader {
   /// JPEG-in-strip previews and raw sensor data — the caller picks which by inspecting
   /// <c>Compression</c> / <c>PhotometricInterpretation</c>.
   /// </summary>
-  public byte[] ReadStripBytes(Ifd ifd) {
-    var offsetsEntry = ifd.Entries.FirstOrDefault(e => e.Tag == TagStripOffsets);
-    var sizesEntry = ifd.Entries.FirstOrDefault(e => e.Tag == TagStripByteCounts);
-    if (offsetsEntry == null || sizesEntry == null) return Array.Empty<byte>();
-    var offsets = ReadValuesAsUInt32(offsetsEntry);
-    var sizes = ReadValuesAsUInt32(sizesEntry);
-    if (offsets.Count == 0 || offsets.Count != sizes.Count) return Array.Empty<byte>();
-    using var ms = new MemoryStream();
-    for (var i = 0; i < offsets.Count; i++)
-      ms.Write(ReadBytesAt(offsets[i], sizes[i]));
-    return ms.ToArray();
-  }
+  public byte[] ReadStripBytes(Ifd ifd) => this.Materialize(GetStripRanges(this._data, this.Layout, ifd));
 
   /// <summary>Extracts an embedded JPEG preview using tags 0x0201/0x0202, or empty if absent.</summary>
-  public byte[] ReadEmbeddedJpeg(Ifd ifd) {
-    var jifOff = ifd.Entries.FirstOrDefault(e => e.Tag == TagJpegInterchangeFormat);
-    var jifLen = ifd.Entries.FirstOrDefault(e => e.Tag == TagJpegInterchangeFormatLength);
-    if (jifOff == null || jifLen == null) return Array.Empty<byte>();
-    // Length < 4 could hit inline; but these tags always point at the file.
-    return ReadBytesAt(jifOff.ValueOrOffset, jifLen.ValueOrOffset);
+  public byte[] ReadEmbeddedJpeg(Ifd ifd) => this.Materialize(GetEmbeddedJpegRanges(this._data, ifd));
+
+  private byte[] Materialize(IReadOnlyList<SourceRange> ranges) {
+    var result = new byte[GetTotalLength(ranges)];
+    var written = 0;
+    foreach (var range in ranges) {
+      this._data.AsSpan(range.Offset, range.Length).CopyTo(result.AsSpan(written));
+      written += range.Length;
+    }
+    return result;
   }
 
   /// <summary>Returns true when this IFD looks like an embedded JPEG preview.</summary>
@@ -471,14 +372,4 @@ public sealed class DngReader {
     var p = photo.ValueOrOffset;
     return p == 32803 || p == 34892;
   }
-
-  // ----- byte-order helpers -----
-
-  private ushort ReadUInt16(byte[] d, int pos) => this.IsBigEndian
-    ? BinaryPrimitives.ReadUInt16BigEndian(d.AsSpan(pos))
-    : BinaryPrimitives.ReadUInt16LittleEndian(d.AsSpan(pos));
-
-  private uint ReadUInt32(byte[] d, int pos) => this.IsBigEndian
-    ? BinaryPrimitives.ReadUInt32BigEndian(d.AsSpan(pos))
-    : BinaryPrimitives.ReadUInt32LittleEndian(d.AsSpan(pos));
 }
