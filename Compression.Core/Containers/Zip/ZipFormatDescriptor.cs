@@ -15,7 +15,7 @@ namespace FileFormat.Zip;
 ///   <item><description>Info-ZIP zip/unzip — long-standing open reference implementations</description></item>
 /// </list>
 /// </summary>
-public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveRenamable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
+public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveRenamable, IArchiveCreatable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -78,26 +78,10 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  /// <summary>Rebuild-based defrag: extracts every entry then re-creates the archive in listing order.</summary>
-  public void Defragment(Stream archive)
-    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+  // Not IArchiveDefragmentable: an archive has no free-space layout to defragment,
+  // and the repack that stood in for it kept only names and bytes — Zip timestamps,
+  // attributes/modes, owners, comments, links and methods were reset or dropped.
 
-  /// <summary>Rebuild-based defrag: extracts every entry then re-creates the archive per the requested mode.</summary>
-  public void Defragment(Stream archive, DefragOptions options) {
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new ZipReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FileName, r.ExtractEntry(e)));
-      },
-      buildImage: files => {
-        using var ms = new MemoryStream();
-        using (var w = new ZipWriter(ms, leaveOpen: true)) {
-          foreach (var (n, d) in files) w.AddEntry(n, d);
-          w.Finish();
-        }
-        return ms.ToArray();
-      });
-  }
 
   /// <summary>
   /// Gets the id.

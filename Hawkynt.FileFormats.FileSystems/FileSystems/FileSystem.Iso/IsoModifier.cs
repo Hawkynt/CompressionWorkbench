@@ -43,13 +43,41 @@ public static class IsoModifier {
     if (!image.CanSeek || !image.CanRead || !image.CanWrite)
       throw new ArgumentException("Image stream must be readable, writable, and seekable.", nameof(image));
 
-    // Replace semantics: if a record with the same identifier already exists, drop it first.
-    RemoveFile(image, name, wipeData: true);
-
     var pvd = ReadSector(image, PvdLba);
     var rootLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(pvd.AsSpan(156 + 2));
     var rootLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(pvd.AsSpan(156 + 10));
     var volumeSpace = (int)BinaryPrimitives.ReadUInt32LittleEndian(pvd.AsSpan(80));
+
+    // New data goes right after the volume space. Anything already stored in the
+    // sectors it will occupy (a hybrid disc's partitions, an appended session)
+    // would be overwritten; zero padding past the volume space is fine.
+    var sectorsNeeded = data.Length == 0 ? 1 : (data.Length + SectorSize - 1) / SectorSize;
+    var tailStart = (long)volumeSpace * SectorSize;
+    var tailBytes = (int)Math.Max(0, Math.Min((long)sectorsNeeded * SectorSize, image.Length - tailStart));
+    if (tailBytes > 0) {
+      var following = new byte[tailBytes];
+      image.Position = tailStart;
+      image.ReadExactly(following);
+      if (following.AsSpan().ContainsAnyExcept((byte)0))
+        throw new NotSupportedException(
+          "ISO9660: the image carries data right after its volume space; appending a file would overwrite it.");
+    }
+
+    // Joliet must be able to take the mirrored entry, or the two trees would
+    // describe different volumes. Checked before anything is written.
+    var jolietLba = FindJolietSvdLba(image);
+    if (jolietLba >= 0) {
+      var svdCheck = ReadSector(image, jolietLba);
+      var jl = (int)BinaryPrimitives.ReadUInt32LittleEndian(svdCheck.AsSpan(156 + 2));
+      var jn = (int)BinaryPrimitives.ReadUInt32LittleEndian(svdCheck.AsSpan(156 + 10));
+      var jr = 33 + BuildJolietIdentifier(name).Length;
+      if ((jr & 1) != 0) jr++;
+      if (FindFreeRootSlot(image, jl, jn, jr) is null && FindEntry(image, rootLba, rootLen, name) is null)
+        throw new IOException("ISO9660: the Joliet root directory has no free slot for the mirrored entry.");
+    }
+
+    // Replace semantics: if a record with the same identifier already exists, drop it first.
+    RemoveFile(image, name, wipeData: true);
 
     var identifier = BuildIsoIdentifier(name);
     var recLen = 33 + identifier.Length;
@@ -57,7 +85,7 @@ public static class IsoModifier {
 
     // Allocate file data sectors at the tail of the image.
     var fileLba = volumeSpace;
-    var fileSectorCount = data.Length == 0 ? 1 : (data.Length + SectorSize - 1) / SectorSize;
+    var fileSectorCount = sectorsNeeded;
     var newVolumeSpace = volumeSpace + fileSectorCount;
 
     // Find a free slot inside the existing root directory extent.
@@ -83,7 +111,7 @@ public static class IsoModifier {
     // Mirror the new record into the Joliet tree (if present) so both trees
     // describe the same file-data extent. The Joliet record carries the long,
     // mixed-case name as UCS-2BE.
-    var svdLba = FindJolietSvdLba(image);
+    var svdLba = jolietLba;
     if (svdLba >= 0) {
       var svd = ReadSector(image, svdLba);
       var jRootLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(svd.AsSpan(156 + 2));

@@ -81,7 +81,7 @@ public class FatShrinkDefragTests {
     // FatWriter defaults to a 1.44MB floppy. File ~1.3MB leaves ~140KB free;
     // request a 500KB hole — too big.
     var ms = BuildImageWithFiles(("A.TXT", new byte[1_300_000]));
-    Assert.Throws<ArgumentException>(() =>
+    Assert.Throws<NotSupportedException>(() =>
       new FatFormatDescriptor().Defragment(ms,
         new DefragOptions { Mode = DefragMode.CarveHole, HoleSize = 500_000 }));
   }

@@ -32,114 +32,207 @@ public static class NtfsExtentMap {
   /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
-    if (image.Length < 512) yield break;
+    if (image.Length < 512) return [];
 
     // Read just the boot sector (first 512 bytes) — never load the whole image.
     var boot = new byte[512];
     image.Position = 0;
     image.ReadExactly(boot);
 
-    if (boot[0] != 0xEB || boot[1] != 0x52 || boot[2] != 0x90) yield break;
-    if (Encoding.ASCII.GetString(boot, 3, 8) != "NTFS    ") yield break;
-    if (boot[510] != 0x55 || boot[511] != 0xAA) yield break;
+    if (boot[0] != 0xEB || boot[1] != 0x52 || boot[2] != 0x90) return [];
+    if (Encoding.ASCII.GetString(boot, 3, 8) != "NTFS    ") return [];
+    if (boot[510] != 0x55 || boot[511] != 0xAA) return [];
 
     var bytesPerSector = (int)BinaryPrimitives.ReadUInt16LittleEndian(boot.AsSpan(11));
     if (bytesPerSector == 0) bytesPerSector = 512;
     int sectorsPerCluster = boot[13];
     if (sectorsPerCluster == 0) sectorsPerCluster = 8;
     var clusterSize = bytesPerSector * sectorsPerCluster;
+    var totalSectors = BinaryPrimitives.ReadInt64LittleEndian(boot.AsSpan(40));
     var mftCluster = BinaryPrimitives.ReadInt64LittleEndian(boot.AsSpan(48));
     var clustersPerRecord = (sbyte)boot[64];
     var mftRecordSize = clustersPerRecord < 0
       ? 1 << (-clustersPerRecord)
       : clustersPerRecord * clusterSize;
-    if (mftRecordSize <= 0 || mftRecordSize > 65536) yield break;
+    if (mftRecordSize <= 0 || mftRecordSize > 65536) return [];
 
-    // Boot sector + reserved sectors before $MFT.
     var mftOffset = mftCluster * clusterSize;
-    if (mftOffset <= 0 || mftOffset >= image.Length) yield break;
-    yield return new DefragBlockInfo(0, Math.Min(clusterSize, image.Length),
-      DefragBlockKind.MetadataReserved, FileName: "NTFS boot sector");
+    if (mftOffset <= 0 || mftOffset >= image.Length) return [];
 
-    // All subsequent MFT reads flow through this cache so a fragmented MFT
-    // doesn't fault us into reading random sectors twice.
-    using var cache = new SectorCache(image);
-    var recordBuf = ArrayPool<byte>.Shared.Rent(mftRecordSize);
-    try {
+    var result = new List<DefragBlockInfo> {
+      new(0, Math.Min(clusterSize, image.Length), DefragBlockKind.MetadataReserved, FileName: "NTFS boot sector"),
+    };
+    List<DataRun>? bitmapRuns = null;
+    long bitmapBytes = 0;
 
-      // Read record 0 ($MFT) to discover the MFT extent and record count.
-      var rec0 = ReadRecord(cache, mftOffset, mftRecordSize, recordBuf);
-      if (rec0 == null) yield break;
+    // All MFT reads flow through this cache so a fragmented MFT doesn't fault us
+    // into reading random sectors twice.
+    using (var cache = new SectorCache(image)) {
+      var recordBuf = ArrayPool<byte>.Shared.Rent(mftRecordSize);
+      try {
+        // Read record 0 ($MFT) to discover the MFT extent and record count.
+        var rec0 = ReadRecord(cache, mftOffset, mftRecordSize, recordBuf);
+        if (rec0 == null) return [];
 
-      var maxRecords = Reserved;
-      long totalMftBytes = 0;
-      if (!rec0.IsResident && rec0.DataRuns is { Count: > 0 }) {
-        foreach (var run in rec0.DataRuns) totalMftBytes += run.ClusterCount * clusterSize;
-        var bounded = (int)(totalMftBytes / mftRecordSize);
-        if (bounded > maxRecords) maxRecords = bounded;
-
-        // Yield every $MFT data run as MetadataReserved (the MFT itself).
-        foreach (var run in rec0.DataRuns) {
-          var off = run.Lcn * clusterSize;
-          var len = run.ClusterCount * clusterSize;
-          if (off + len > image.Length) len = Math.Max(0, image.Length - off);
-          if (len > 0)
-            yield return new DefragBlockInfo(off, len, DefragBlockKind.MetadataReserved,
-              FileName: "$MFT");
+        var maxRecords = Reserved;
+        if (!rec0.IsResident && rec0.DataRuns is { Count: > 0 }) {
+          long totalMftBytes = 0;
+          foreach (var run in rec0.DataRuns) totalMftBytes += run.ClusterCount * clusterSize;
+          var bounded = (int)(totalMftBytes / mftRecordSize);
+          if (bounded > maxRecords) maxRecords = bounded;
+        } else if (rec0.DataSize > 0) {
+          var bounded = (int)(rec0.DataSize / mftRecordSize);
+          if (bounded > maxRecords) maxRecords = bounded;
         }
-      } else if (rec0.DataSize > 0) {
-        var bounded = (int)(rec0.DataSize / mftRecordSize);
-        if (bounded > maxRecords) maxRecords = bounded;
+        var mftAreaSize = image.Length - mftOffset;
+        var maxFromImage = (int)(mftAreaSize / mftRecordSize);
+        if (maxRecords > maxFromImage) maxRecords = maxFromImage;
+
+        // Record 0 is the MFT itself: its $DATA runs are the table, and every other
+        // non-resident attribute it carries ($MFT:$BITMAP) is metadata too.
+        EmitRecord(result, rec0, 0, image.Length, clusterSize);
+
+        for (var i = 1; i < maxRecords; i++) {
+          var recOff = mftOffset + (long)i * mftRecordSize;
+          if (recOff + mftRecordSize > image.Length) break;
+          var rec = ReadRecord(cache, recOff, mftRecordSize, recordBuf);
+          if (rec == null) continue;
+          if (i == 6 && !rec.IsResident && rec.DataRuns is { Count: > 0 }) {
+            bitmapRuns = rec.DataRuns;
+            bitmapBytes = rec.DataSize;
+          }
+          EmitRecord(result, rec, i, image.Length, clusterSize);
+        }
+      } finally {
+        ArrayPool<byte>.Shared.Return(recordBuf);
       }
-      var mftAreaSize = image.Length - mftOffset;
-      var maxFromImage = (int)(mftAreaSize / mftRecordSize);
-      if (maxRecords > maxFromImage) maxRecords = maxFromImage;
+    }
 
-      // Iterate MFT records 1..N, classifying each.
-      for (var i = 1; i < maxRecords; i++) {
-        var recOff = mftOffset + (long)i * mftRecordSize;
-        if (recOff + mftRecordSize > image.Length) break;
-        var rec = ReadRecord(cache, recOff, mftRecordSize, recordBuf);
-        if (rec == null) continue;
+    // Fail closed. An attribute this walk does not decode — a run moved into an
+    // extension record it could not read, a stream type a later NTFS added — still
+    // has its clusters marked in $Bitmap. Whatever the volume says is allocated and
+    // nothing above claimed is reported as reserved, so a consumer that treats gaps
+    // as free space never zeroes, or moves a file over, bytes the volume is using.
+    if (bitmapRuns != null)
+      AddUnclaimedAllocated(image, result, bitmapRuns, bitmapBytes, clusterSize);
 
-        // Records 1-15 are reserved system files: $MFTMirr, $LogFile, $Volume,
-        // $AttrDef, root ., $Bitmap, $Boot, $BadClus, $Secure, $UpCase, $Extend
-        // and 4 more reserved slots. Flag their data as MetadataReserved.
-        var isSystem = i < Reserved;
-        var label = isSystem ? SystemFileName(i, rec.FileName) : (rec.FileName ?? $"mft#{i}");
-        var kind = isSystem ? DefragBlockKind.MetadataReserved : DefragBlockKind.Used;
+    // The copy of the boot sector sits in the last sector of the partition, outside
+    // the cluster range the volume describes, and nothing in the MFT points at it.
+    // Everything from the end of the last whole cluster onwards is kept as it is.
+    var volumeEnd = totalSectors > 0
+      ? Math.Min(image.Length, totalSectors / sectorsPerCluster * clusterSize)
+      : image.Length;
+    if (volumeEnd < image.Length)
+      result.Add(new DefragBlockInfo(volumeEnd, image.Length - volumeEnd, DefragBlockKind.MetadataReserved,
+        FileName: "NTFS backup boot sector"));
+    return result;
+  }
 
-        if (rec.IsResident) {
-          // Resident data lives inside the MFT record itself — we already
-          // covered the MFT extent above. No new region to emit.
-          continue;
+  /// <summary>
+  /// Emits every non-resident attribute of one MFT record. A regular file's unnamed
+  /// <c>$DATA</c> is the only thing the block mover relinks, so it alone is reported
+  /// as the file's own data; directory indexes, named streams, attribute lists,
+  /// reparse data and every system file are reserved metadata.
+  /// </summary>
+  private static void EmitRecord(List<DefragBlockInfo> result, Rec rec, int recordNumber, long imageLength,
+      int clusterSize) {
+    var isSystem = recordNumber < Reserved;
+    var label = isSystem ? SystemFileName(recordNumber, rec.FileName) : (rec.FileName ?? $"mft#{recordNumber}");
+    foreach (var attr in rec.NonResident) {
+      var isFileData = attr.Type == 0x80 && string.IsNullOrEmpty(attr.Name);
+      var kind = isFileData && !isSystem && !rec.IsExtension ? DefragBlockKind.Used : DefragBlockKind.MetadataReserved;
+      var name = isFileData ? label : $"{label}:{AttributeLabel(attr.Type, attr.Name)}";
+      long? runStart = null;
+      long runLen = 0;
+      foreach (var run in attr.Runs) {
+        if (run.Sparse) continue;             // a hole occupies no cluster
+        var off = run.Lcn * clusterSize;
+        var len = run.ClusterCount * clusterSize;
+        if (off < 0 || off >= imageLength) continue;
+        if (off + len > imageLength) len = imageLength - off;
+        if (len <= 0) continue;
+        if (runStart is { } rs && rs + runLen == off) {
+          runLen += len;
+        } else {
+          if (runStart is { } prev)
+            result.Add(new DefragBlockInfo(prev, runLen, kind, FileName: name));
+          runStart = off;
+          runLen = len;
         }
+      }
+      if (runStart is { } finalOff)
+        result.Add(new DefragBlockInfo(finalOff, runLen, kind, FileName: name));
+    }
+  }
 
-        if (rec.DataRuns == null || rec.DataRuns.Count == 0) continue;
+  private static string AttributeLabel(uint type, string? name) {
+    var typeName = type switch {
+      0x20 => "$ATTRIBUTE_LIST", 0x80 => "$DATA", 0xA0 => "$INDEX_ALLOCATION", 0xB0 => "$BITMAP",
+      0xC0 => "$REPARSE_POINT", 0xD0 => "$EA_INFORMATION", 0xE0 => "$EA", 0x100 => "$LOGGED_UTILITY_STREAM",
+      _ => $"0x{type:X}",
+    };
+    return string.IsNullOrEmpty(name) ? typeName : $"{typeName}:{name}";
+  }
 
-        // Coalesce adjacent runs for compact emission.
-        long? runStart = null;
-        long runLen = 0;
-        foreach (var run in rec.DataRuns) {
-          var off = run.Lcn * clusterSize;
-          var len = run.ClusterCount * clusterSize;
-          if (off + len > image.Length) len = Math.Max(0, image.Length - off);
-          if (len <= 0) continue;
-          if (runStart is { } rs && rs + runLen == off) {
-            runLen += len;
-          } else {
-            if (runStart is { } prev)
-              yield return new DefragBlockInfo(prev, runLen, kind, FileName: label);
-            runStart = off;
-            runLen = len;
+  /// <summary>
+  /// Adds a reserved region for every run of clusters <c>$Bitmap</c> marks as in use
+  /// that no emitted extent covers.
+  /// </summary>
+  private static void AddUnclaimedAllocated(Stream image, List<DefragBlockInfo> result, List<DataRun> bitmapRuns,
+      long bitmapBytes, int clusterSize) {
+    var claimed = result.Select(e => (Start: e.Offset, End: e.Offset + e.Length)).OrderBy(r => r.Start).ToList();
+    var extra = new List<DefragBlockInfo>();
+    var buffer = new byte[64 * 1024];
+    long bitmapPos = 0;          // byte index into the bitmap stream
+    long unclaimedStart = -1;    // first cluster of the open unclaimed run
+    var claimIndex = 0;
+    var finished = false;
+
+    void Close(long endCluster) {
+      if (unclaimedStart < 0) return;
+      var off = unclaimedStart * clusterSize;
+      var len = Math.Min(image.Length, endCluster * clusterSize) - off;
+      if (len > 0)
+        extra.Add(new DefragBlockInfo(off, len, DefragBlockKind.MetadataReserved, FileName: "allocated (unattributed)"));
+      unclaimedStart = -1;
+    }
+
+    bool IsClaimed(long byteOffset) {
+      while (claimIndex < claimed.Count && claimed[claimIndex].End <= byteOffset) ++claimIndex;
+      for (var j = claimIndex; j < claimed.Count && claimed[j].Start <= byteOffset; ++j)
+        if (claimed[j].End > byteOffset) return true;
+      return false;
+    }
+
+    foreach (var run in bitmapRuns) {
+      if (finished) break;
+      var runBytes = run.ClusterCount * clusterSize;
+      if (run.Sparse) { bitmapPos += runBytes; continue; }
+      for (long done = 0; done < runBytes && bitmapPos < bitmapBytes && !finished;) {
+        var chunk = (int)Math.Min(buffer.Length, Math.Min(runBytes - done, bitmapBytes - bitmapPos));
+        var src = run.Lcn * clusterSize + done;
+        if (src < 0 || src + chunk > image.Length) { finished = true; break; }
+        image.Position = src;
+        image.ReadExactly(buffer, 0, chunk);
+        for (var b = 0; b < chunk && !finished; ++b) {
+          var bits = buffer[b];
+          for (var bit = 0; bit < 8; ++bit) {
+            var cluster = (bitmapPos + b) * 8 + bit;
+            var offset = cluster * clusterSize;
+            if (offset >= image.Length) { Close(cluster); finished = true; break; }
+            if ((bits & (1 << bit)) != 0 && !IsClaimed(offset)) {
+              if (unclaimedStart < 0) unclaimedStart = cluster;
+            } else {
+              Close(cluster);
+            }
           }
         }
-        if (runStart is { } finalOff)
-          yield return new DefragBlockInfo(finalOff, runLen, kind, FileName: label);
+        done += chunk;
+        bitmapPos += chunk;
       }
-    } finally {
-      ArrayPool<byte>.Shared.Return(recordBuf);
     }
+    Close(bitmapPos * 8);
+    result.AddRange(extra);
   }
 
   /// <summary>
@@ -180,11 +273,16 @@ public static class NtfsExtentMap {
     public bool IsResident;
     public long DataSize;
     public List<DataRun>? DataRuns;
+    public bool IsExtension;
+    public List<NonResidentAttr> NonResident { get; } = [];
   }
+
+  private sealed record NonResidentAttr(uint Type, string? Name, List<DataRun> Runs);
 
   private sealed class DataRun {
     public long Lcn;
     public long ClusterCount;
+    public bool Sparse;
   }
 
   /// <summary>
@@ -207,7 +305,11 @@ public static class NtfsExtentMap {
     var firstAttrOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
     var usedSize = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24));
 
-    var rec = new Rec();
+    var rec = new Rec {
+      // An extension record carries attributes its base record's $ATTRIBUTE_LIST
+      // moved out; it is not a file of its own.
+      IsExtension = (BinaryPrimitives.ReadInt64LittleEndian(record.AsSpan(32)) & 0x0000FFFFFFFFFFFF) != 0,
+    };
     var attrPos = (int)firstAttrOffset;
     while (attrPos + 4 <= usedSize && attrPos + 4 <= record.Length) {
       var attrType = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(attrPos));
@@ -231,6 +333,11 @@ public static class NtfsExtentMap {
         case 0x80: // $DATA
           if (string.IsNullOrEmpty(attrName)) ParseDataAttr(record, attrPos, nonResident, rec);
           break;
+      }
+      if (nonResident != 0 && attrPos + 34 <= record.Length) {
+        var runsOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 32));
+        rec.NonResident.Add(new NonResidentAttr(attrType, attrName,
+          ParseDataRuns(record, attrPos + runsOffset, Math.Min(record.Length, attrPos + (int)attrLen))));
       }
 
       attrPos += (int)attrLen;
@@ -273,20 +380,20 @@ public static class NtfsExtentMap {
       rec.DataSize = BinaryPrimitives.ReadInt64LittleEndian(record.AsSpan(attrPos + 48));
     if (attrPos + 34 <= record.Length) {
       var dataRunsOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 32));
-      rec.DataRuns = ParseDataRuns(record, attrPos + dataRunsOffset);
+      rec.DataRuns = ParseDataRuns(record, attrPos + dataRunsOffset, record.Length);
     }
   }
 
-  private static List<DataRun> ParseDataRuns(byte[] record, int offset) {
+  private static List<DataRun> ParseDataRuns(byte[] record, int offset, int limit) {
     var runs = new List<DataRun>();
     long previousLcn = 0;
-    while (offset < record.Length) {
+    while (offset < limit) {
       var header = record[offset];
       if (header == 0) break;
       var lengthBytes = header & 0x0F;
       var offsetBytes = (header >> 4) & 0x0F;
       offset++;
-      if (offset + lengthBytes + offsetBytes > record.Length) break;
+      if (offset + lengthBytes + offsetBytes > limit) break;
 
       long length = 0;
       for (var i = 0; i < lengthBytes; i++)
@@ -302,6 +409,12 @@ public static class NtfsExtentMap {
             clusterOffset |= (long)0xFF << (i * 8);
         }
         offset += offsetBytes;
+      }
+      // A run with no offset field is a hole (sparse or compressed tail): it
+      // occupies no cluster and does not move the running LCN.
+      if (offsetBytes == 0) {
+        runs.Add(new DataRun { Lcn = -1, ClusterCount = length, Sparse = true });
+        continue;
       }
       var lcn = previousLcn + clusterOffset;
       runs.Add(new DataRun { Lcn = lcn, ClusterCount = length });

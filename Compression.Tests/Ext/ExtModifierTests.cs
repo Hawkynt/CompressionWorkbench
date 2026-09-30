@@ -114,10 +114,10 @@ public class ExtModifierTests {
   }
 
   [Test, Category("ErrorHandling")]
-  public void AddFile_DuplicateName_Throws() {
+  public void AddFile_ExistingDirectoryName_Throws() {
     using var ms = BuildEmptyImage();
-    ExtModifier.AddFile(ms, "dup.txt", "first"u8.ToArray());
-    Assert.Throws<IOException>(() => ExtModifier.AddFile(ms, "dup.txt", "second"u8.ToArray()));
+    ExtModifier.AddFile(ms, "dir/inner.txt", "first"u8.ToArray());
+    Assert.Throws<IOException>(() => ExtModifier.AddFile(ms, "dir", "second"u8.ToArray()));
   }
 
   [Test, Category("RoundTrip")]

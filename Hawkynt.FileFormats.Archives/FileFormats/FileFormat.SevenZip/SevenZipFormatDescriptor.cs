@@ -15,7 +15,7 @@ namespace FileFormat.SevenZip;
 ///   <item><description><c>https://en.wikipedia.org/wiki/7z</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
+public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -62,15 +62,16 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
         archive.Position = 0;
     }
 
-    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
-      foreach (var input in inputs) {
-        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName)) continue;
-        var dest = Path.Combine(tmpDir, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
-        var destDir = Path.GetDirectoryName(dest);
-        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
-        File.WriteAllBytes(dest, input.ReadContent());
-      }
-    });
+    // Same-name updates and archive profiles the in-place adder does not take
+    // (an encoded header, BCJ2/AES folders) are rewritten with every entry's own
+    // times, attributes (Unix modes and links included) and directories kept.
+    var additions = inputs.Where(i => !i.IsDirectory && !string.IsNullOrEmpty(i.ArchiveName))
+      .Select(i => (Entry: new SevenZipEntry {
+        Name = i.ArchiveName.Replace('\\', '/'),
+        LastWriteTime = i.InMemoryContent == null && File.Exists(i.FullPath) ? File.GetLastWriteTimeUtc(i.FullPath) : DateTime.UtcNow,
+      }, Data: i.ReadContent()))
+      .ToList();
+    RebuildPreservingMetadata(archive, _ => true, additions);
   }
 
   /// <summary>
@@ -95,42 +96,63 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
         archive.Position = 0;
     }
 
-    var skip = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
-    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
-      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
-        var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
-        if (skip.Contains(rel) || skip.Contains(Path.GetFileName(rel)))
-          File.Delete(file);
-      }
-    });
+    // Removing part of a solid folder means compressing it again; the archive is
+    // rewritten with every surviving entry's own times, attributes and directories.
+    // A name matches its exact path, or everything beneath it for a folder.
+    var names = entryNames.Select(n => n.Replace('\\', '/').Trim('/')).Where(n => n.Length > 0).ToArray();
+    RebuildPreservingMetadata(archive,
+      e => !names.Any(n => string.Equals(e.Name, n, StringComparison.OrdinalIgnoreCase)
+                           || e.Name.StartsWith(n + "/", StringComparison.OrdinalIgnoreCase)),
+      []);
   }
 
-  /// <summary>Rebuild-based defrag: extracts then re-creates the 7z archive in listing order.</summary>
-  public void Defragment(Stream archive)
-    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+  /// <summary>
+  /// Rewrites the archive keeping every entry <paramref name="keep" /> accepts —
+  /// with its own modification and creation time and attributes, directories and
+  /// empty files included — and appending <paramref name="additions" /> (which
+  /// replace entries of the same name). The result is checked before it replaces
+  /// the original.
+  /// </summary>
+  private static void RebuildPreservingMetadata(Stream archive, Func<SevenZipEntry, bool> keep,
+      IReadOnlyList<(SevenZipEntry Entry, byte[] Data)> additions) {
+    archive.Position = 0;
+    var reader = new SevenZipReader(archive);
+    var replaced = additions.Select(a => a.Entry.Name).ToHashSet(StringComparer.Ordinal);
+    using var staged = new MemoryStream();
+    var expected = new List<string>();
+    var writer = new SevenZipWriter(staged, SevenZipCodec.Lzma2, leaveOpen: true);
+    for (var i = 0; i < reader.Entries.Count; i++) {
+      var e = reader.Entries[i];
+      if (!keep(e) || replaced.Contains(e.Name)) continue;
+      var copy = new SevenZipEntry {
+        Name = e.Name, LastWriteTime = e.LastWriteTime, CreationTime = e.CreationTime, Attributes = e.Attributes,
+      };
+      if (e.IsDirectory) writer.AddDirectory(copy);
+      else writer.AddEntry(copy, reader.Extract(i));
+      expected.Add(e.Name);
+    }
+    foreach (var (entry, data) in additions) {
+      writer.AddEntry(entry, data);
+      expected.Add(entry.Name);
+    }
+    writer.Finish();
 
-  /// <summary>Rebuild-based defrag: extracts then re-creates the 7z archive per the requested mode.</summary>
-  public void Defragment(Stream archive, DefragOptions options) {
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new SevenZipReader(stream);
-        var list = new List<(string, byte[])>();
-        for (var i = 0; i < r.Entries.Count; ++i) {
-          var e = r.Entries[i];
-          if (e.IsDirectory) continue;
-          list.Add((e.Name, r.Extract(i)));
-        }
-        return list;
-      },
-      buildImage: files => {
-        using var ms = new MemoryStream();
-        var w = new SevenZipWriter(ms, SevenZipCodec.Lzma2);
-        foreach (var (n, d) in files)
-          w.AddEntry(new SevenZipEntry { Name = n, Size = d.Length }, d);
-        w.Finish();
-        return ms.ToArray();
-      });
+    staged.Position = 0;
+    var check = new SevenZipReader(staged).Entries.Select(e => e.Name).OrderBy(n => n, StringComparer.Ordinal);
+    if (!check.SequenceEqual(expected.OrderBy(n => n, StringComparer.Ordinal), StringComparer.Ordinal))
+      throw new InvalidOperationException("7z: the rewritten archive does not list the expected entries; the original was kept.");
+
+    archive.Position = 0;
+    staged.Position = 0;
+    staged.CopyTo(archive);
+    archive.SetLength(staged.Length);
+    archive.Flush();
   }
+
+  // Not IArchiveDefragmentable: an archive has no free-space layout to defragment,
+  // and the repack that stood in for it kept only names and bytes — 7z timestamps,
+  // attributes/modes, owners, comments, links and methods were reset or dropped.
+
 
 
   /// <inheritdoc />

@@ -61,8 +61,16 @@ public class BtrfsPlannedDefragTests {
     using var image = Volume(out var files, out var work);
     try {
       var size = image.Length;
+      var before = image.ToArray();
       image.Position = 0;
-      new BtrfsFormatDescriptor().Defragment(image, new DefragOptions { Mode = mode });
+      try {
+        new BtrfsFormatDescriptor().Defragment(image, new DefragOptions { Mode = mode });
+      } catch (NotSupportedException) {
+        // A layout the in-place mover cannot reach (end-packing would put the
+        // extent tree's keys out of order) is refused, and nothing may change.
+        Assert.That(image.ToArray(), Is.EqualTo(before), "a refused defragmentation changed the image");
+        return;
+      }
       Assert.That(image.Length, Is.EqualTo(size), "an image keeps its size");
 
       var read = ReadBack(image);
@@ -89,7 +97,7 @@ public class BtrfsPlannedDefragTests {
       var path = Path.Combine(work, "ADDED.BIN");
       File.WriteAllBytes(path, added);
       image.Position = 0;
-      new BtrfsFormatDescriptor().Add(image, [new ArchiveInputInfo(path, "ADDED.BIN", false)]);
+      BtrfsModifier.AddOrReplace(image, [("ADDED.BIN", added)]);
 
       var read = ReadBack(image);
       Assert.That(read.Keys, Does.Contain("ADDED.BIN"));

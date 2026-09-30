@@ -83,8 +83,16 @@ public class FatModifierTests {
   }
 
   [Test]
-  public void Add_NestedPath_ThrowsForRebuildFallback() {
+  public void Add_NestedPath_CreatesTheFoldersInPlace() {
     var image = BuildImageWith(("ROOT.TXT", new byte[1]));
-    Assert.Throws<NotSupportedException>(() => FatModifier.AddFile(image, "sub/dir/file.txt", new byte[] { 1 }));
+    var length = image.Length;
+    FatModifier.AddFile(image, "sub/dir/file.txt", new byte[] { 7, 8, 9 });
+
+    Assert.That(image.Length, Is.EqualTo(length));
+    var reader = new FatReader(new MemoryStream(image));
+    Assert.That(reader.Entries.Any(e => e.IsDirectory && e.Name == "sub/dir"), Is.True);
+    var file = reader.Entries.Single(e => e.Name == "sub/dir/file.txt");
+    Assert.That(reader.Extract(file), Is.EqualTo(new byte[] { 7, 8, 9 }));
+    Assert.That(reader.Entries.Any(e => e.Name == "ROOT.TXT"), Is.True);
   }
 }

@@ -12,7 +12,7 @@ namespace FileSystem.HfsPlus;
 ///   <item><description><c>https://en.wikipedia.org/wiki/HFS_Plus</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -132,38 +132,48 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Adds (or replaces by name) files inside an existing HFS+ image via
   /// <see cref="HfsPlusModifier.AddFile"/>. The modifier mutates the catalog
-  /// leaf, allocation bitmap, and volume header in place; on leaf overflow it
-  /// transparently falls back to a writer-driven rebuild so the call always
-  /// succeeds.
+  /// leaf, allocation bitmap, and volume header in place; what it cannot express is
+  /// refused.
   /// </summary>
+  /// <remarks>
+  /// Only the root folder of a single-leaf catalog is edited in place. A path into a
+  /// folder is refused rather than flattened to its leaf name, and so is a volume the
+  /// in-place editor cannot handle — there is no rebuild behind it any more.
+  /// </remarks>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    // The in-place modifier reads the volume into an array to walk its
-    // structures, which a volume past two gigabytes does not fit in. Above that
-    // the edit is applied by unpacking and relaying the volume out instead.
-    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
-      return;
-    }
-
+    RequireInPlaceSize(archive);
+    foreach (var input in inputs.Where(i => !i.IsDirectory))
+      if (input.ArchiveName.Replace('\\', '/').Trim('/').Contains('/'))
+        throw new NotSupportedException(
+          $"HFS+: '{input.ArchiveName}' is inside a folder; only the root folder is edited in place.");
     foreach (var (name, data) in FlatFiles(inputs))
       HfsPlusModifier.AddFile(archive, name, data);
   }
 
   /// <summary>
+  /// The in-place editor holds the volume in memory; larger volumes are refused
+  /// rather than unpacked and written out again without their metadata.
+  /// </summary>
+  private static void RequireInPlaceSize(Stream archive) {
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive))
+      throw new NotSupportedException(
+        $"HFS+: in-place editing holds the volume in memory; a {archive.Length:N0}-byte volume is refused.");
+  }
+
+  /// <summary>
   /// Removes the named entries from an existing HFS+ image via
   /// <see cref="HfsPlusModifier.RemoveFile"/>. File data blocks are wiped and
-  /// the catalog records are excised from the leaf node; missing names are
-  /// silently ignored.
+  /// the catalog records are excised from the leaf node; a missing name is reported.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    // See Add: past two gigabytes the volume cannot be walked in memory.
-    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
-      return;
+    RequireInPlaceSize(archive);
+    foreach (var raw in entryNames ?? []) {
+      var name = raw.Replace('\\', '/').Trim('/');
+      if (name.Contains('/'))
+        throw new NotSupportedException($"HFS+: '{raw}' is inside a folder; only the root folder is edited in place.");
+      if (!HfsPlusModifier.RemoveFile(archive, name, wipeData: true))
+        throw new FileNotFoundException($"HFS+: '{raw}' is not in the root folder.", raw);
     }
-
-    foreach (var name in entryNames)
-      HfsPlusModifier.RemoveFile(archive, name, wipeData: true);
   }
   /// <summary>
   /// Gets the default extension.
@@ -373,75 +383,26 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
-  /// Mode-aware HFS+ defragmentor via read-extract-rebuild dispatch through
-  /// <see cref="DefragRebuilder"/>. The writer always emits a contiguous,
-  /// start-packed allocation block layout, so all four <see cref="DefragMode"/>
-  /// values converge on a clean repack.
+  /// Defragments in place: the planner moves data-fork runs and the mover repoints
+  /// the extent descriptor that names each one; the pass is kept only if every file
+  /// reads back unchanged. Anything else is refused and the volume left as it was —
+  /// the rebuild that used to follow renamed the volume "Untitled", dropped the
+  /// journal, permissions, Finder info and resource forks, and restamped every date.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
-
-    // Moving what is out of place beats writing the volume out again: a fork's
-    // extent descriptors say where each of its runs sits, so a move is the copy
-    // plus the four bytes of the descriptor that named it.
-    //
-    // This was tried once and pulled back out: the mover rewrote a fork's first
-    // descriptor whichever run had moved, so a file in more than one piece kept
-    // its length and lost its contents. It repoints the descriptor that moved
-    // now.
-    // The guard below snapshots the image to compare payloads across the pass,
-    // so it is only offered where a snapshot fits; a volume past the cap takes
-    // the streaming path.
-    if (archive.CanSeek && archive.Length <= MaxBufferedImageBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
-        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
-      var planned = false;
-      // The in-place pass is kept only if every payload still reads back: it
-      // can refuse partway, and a rebuild is the honest answer when it does.
-      DefragContentGuard.RunOrRebuild(archive,
-        readContents: stream => ReadPayloadsForGuard(stream),
-        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
-        rebuild: () => planned = false);
-      if (planned) return;
-      archive.Position = 0;
-    }
-
-    // A volume too large to materialise goes through the streaming rebuilder;
-    // buildImage returns a byte[] of the whole volume, which Build refuses to
-    // produce once it passes the array limit.
-    // Every mode streams above the cap: end-pack and carve-hole order their
-    // entries from scratch inside the rebuilder, so none of them falls back
-    // to a buffered rebuild the volume is too large for.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
-      HfsPlusWriter? streamWriter = null;
-      Stream? target = null;
-      DefragRebuilder.RebuildStreaming(archive, options,
-        readEntries: stream => {
-          var r = new HfsPlusReader(stream, leaveOpen: true);
-          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FullPath, r.Extract(e))).ToList();
-        },
-        beginWrite: s2 => { streamWriter = new HfsPlusWriter(); target = s2; },
-        // As a stream factory, not inline: an inline payload is materialised
-        // inside the volume buffer, which is what a large volume cannot afford.
-        writeEntry: (name, data) => streamWriter!.AddStreamingFile(
-          name, data.LongLength, () => new MemoryStream(data, writable: false)),
-        finishWrite: () => streamWriter!.BuildToStreamingAutoSized(target!));
-      return;
-    }
-
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new HfsPlusReader(stream, leaveOpen: true);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FullPath, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new HfsPlusWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole, "HFS+");
+    if (!archive.CanSeek || archive.Length > MaxBufferedImageBytes)
+      throw new NotSupportedException(
+        $"HFS+: in-place defragmentation checks the result against a snapshot held in memory; volumes over {MaxBufferedImageBytes:N0} bytes are refused.");
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: stream => ReadPayloadsForGuard(stream),
+      inPlace: () => DefragmentWithPlanner(archive, options),
+      rebuild: () => throw new NotSupportedException("HFS+: the volume cannot be laid out in place; it was left unchanged."));
   }
 
-  /// <summary>Largest volume a defrag will rebuild through a byte[].</summary>
+
+  /// <summary>Largest volume the in-place defragmentation snapshots.</summary>
   private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
 }

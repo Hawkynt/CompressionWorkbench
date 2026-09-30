@@ -133,10 +133,9 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Genuine in-place ext shrink: trims trailing free blocks via
   /// <see cref="ExtInPlaceShrinker"/> (updating bitmap / descriptors / superblock /
-  /// backups / checksums; every surviving block stays byte-identical). Falls back to
-  /// the <see cref="IArchiveShrinkable"/> default (verified rebuild / copy-through)
-  /// when the in-place path declines — e.g. a target that would need genuine block
-  /// relocation or block-group removal.
+  /// backups / checksums; every surviving block stays byte-identical). When the
+  /// in-place path declines — e.g. a target that would need a whole block group
+  /// removed — the volume is copied through unchanged.
   /// </summary>
   public void Shrink(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
@@ -162,7 +161,13 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       // not an ext image we can parse in place; fall through
     }
 
-    ((IArchiveShrinkable)this).ShrinkDefault(input, output);
+    // Nothing could be trimmed in place. The volume is handed back as it is rather
+    // than rebuilt: a rebuilt volume is smaller only by dropping the journal,
+    // features, label, UUID and every file's mode, owner, times and links.
+    input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    input.CopyTo(output);
   }
 
   /// <summary>
@@ -172,34 +177,21 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
-  /// Mode-aware ext2/3/4 defragmentor. Supports planner-driven in-place path
-  /// (using <see cref="DefragPlanner"/> + <see cref="ExtBlockMover"/>) and the
-  /// legacy rebuild path (using <see cref="DefragRebuilder"/>).
+  /// Mode-aware ext2/3/4 defragmentor: planner-driven and in place
+  /// (<see cref="DefragPlanner"/> + <see cref="ExtBlockMover"/>). Anything the planner
+  /// cannot lay out in place is refused before a byte moves.
   /// </summary>
+  /// <remarks>
+  /// There is no rebuild fallback. Writing the volume afresh produced an ext2 volume
+  /// of a different size with a new UUID and no label, journal, owners, modes, times,
+  /// symlinks, hard links or extended attributes — a defragmentation that loses all
+  /// of that is not one.
+  /// </remarks>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
-    // Reading the layout of a multi-gigabyte volume means walking every block
-    // pointer of every file — hundreds of thousands per file at a kilobyte a
-    // block — before the planner sees its first extent, and the planner then
-    // refuses a volume that fragmented anyway. Past this size the rebuild is
-    // both the faster route and the one that finishes.
-    if (archive.Length <= MaxPlannerVolumeBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
-           or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
-      try {
-        DefragmentWithPlanner(archive, options);
-        return;
-      } catch (Exception planFailure) {
-        // A silent fallback looks exactly like a successful in-place
-        // defragmentation from outside, so the reason is reported.
-        options.OnProgress?.Invoke(new DefragProgressEvent(
-          "fallback", 0, -1, -1, archive.Length, null,
-          $"In-place planning declined ({planFailure.GetType().Name}: " +
-          $"{FirstLine(planFailure.Message)}); rebuilding instead"));
-        archive.Position = 0;
-      }
-    }
-    DefragmentWithRebuild(archive, options);
+    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder
+      | DefragFeature.MetadataZone, "ext");
+    DefragmentWithPlanner(archive, options);
   }
 
   private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
@@ -211,14 +203,20 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // a few gigabytes at a kilobyte each is millions of them, and materialising
     // that list took longer than the rebuild it was meant to avoid. The planner
     // refuses anything near this many anyway, so stop counting there.
-    var extents = ExtExtentMap.Enumerate(archive).Take(MaxPlannerExtents + 1).ToList();
+    // A file's pointer blocks travel with it, so a packed file comes out contiguous
+    // the way e2fsck counts it. Relocating the groups' own tables is the exception:
+    // that needs room to stage a whole inode table, and a plan that also carries
+    // every block map along leaves none — there the maps stay where they are.
+    var pinBlockMaps = options.MetadataZonePlacement != MetadataZone.Unchanged;
+    var extents = ExtExtentMap.Enumerate(archive, pinBlockMaps).Take(MaxPlannerExtents + 1).ToList();
     options.OnProgress?.Invoke(new DefragProgressEvent("scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
 
     // Each group's bitmaps and inode table are located by that group's
     // descriptor, so a metadata placement can gather them where it wants.
-    var moves = DefragPlanner.Plan(extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
+    var moves = DefragPlanner.PlanOrRefuse("ext", () => DefragPlanner.Plan(extents, mover.FirstDataByte, archive.Length, mover.BlockSize,
       options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt,
-      metadataZone: options.MetadataZonePlacement, movableMetadata: mover.RelocatableMetadata);
+      metadataZone: options.MetadataZonePlacement, movableMetadata: mover.RelocatableMetadata,
+      allowMemoryStaging: false));   // the mover does not take runs held outside the volume
     if (moves.Count == 0) {
       options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
       return;
@@ -236,38 +234,6 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>Extents past which the planner refuses; see <see cref="Compression.Core.Layout.DefragPlanner" />.</summary>
   private const int MaxPlannerExtents = 65536;
 
-  /// <summary>Volume size past which reading the layout costs more than a rebuild.</summary>
-  private const long MaxPlannerVolumeBytes = 512L * 1024 * 1024;
-
-  /// <summary>
-  /// Rebuild fallback for when the planner refuses. The volume is laid out
-  /// straight into the stream: a byte[] tops out at two gigabytes, so building
-  /// the image in memory threw on exactly the volumes that reach this path.
-  /// </summary>
-  private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
-    ExtWriter? writer = null;
-    Stream? target = null;
-    var spill = new List<string>();
-    try {
-      DefragRebuilder.RebuildStreaming(archive, options,
-        readEntries: stream => {
-          var r = new ExtReader(stream);
-          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-        },
-        beginWrite: s => { writer = new ExtWriter(); target = s; },
-        writeEntry: (name, data) => {
-          var path = Path.GetTempFileName();
-          spill.Add(path);
-          File.WriteAllBytes(path, data);
-          writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
-        },
-        finishWrite: () => writer!.BuildToStreamingAutoSized(
-          target!, ExtWriter.ExtVersion.Ext2, journal: false, volumeLabel: null!, inodeSize: 128));
-    } finally {
-      foreach (var path in spill)
-        try { File.Delete(path); } catch { /* scratch file already gone */ }
-    }
-  }
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -448,47 +414,68 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Adds (or replaces by name) files inside an existing ext2/3/4 image. Uses
-  /// <see cref="ExtModifier"/> for true O(touched bytes) random-access I/O —
-  /// only the superblock, BGD entry, block + inode bitmaps, the affected inode
-  /// slot, the root dir block, and the file's data blocks are read or written.
+  /// Adds (or replaces by path) files inside an existing ext2/3/4 image, genuinely in
+  /// place through <see cref="ExtModifier"/>: only the superblock, the touched group
+  /// descriptors and bitmaps, the new inode, the parent directory's blocks and the
+  /// file's own blocks are written. Missing folders are created.
   /// </summary>
+  /// <remarks>
+  /// A case the in-place editor cannot express — adding to a hashed (htree) folder,
+  /// a folder whose block map it cannot grow — is refused as
+  /// <see cref="NotSupportedException"/>. There is deliberately no rebuild fallback:
+  /// re-creating the volume dropped its label, UUID, journal and features, and every
+  /// file's mode, owner, times, links and extended attributes.
+  /// </remarks>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    var files = FormatHelpers.FilesOnly(inputs).ToList();
-    // Genuine in-place add (no whole-image re-pack): touches only the affected
-    // metadata + data blocks. Cases the in-place writer cannot handle yet (htree
-    // directory growth, nested target paths, very fragmented extent layouts) throw
-    // InPlaceUnsupportedException; for those we fall back to a read-then-rebuild so
-    // the modify still yields a valid result.
-    var rebuild = new List<(string Name, byte[] Data)>();
-    foreach (var (name, data) in files) {
+    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs)) {
       try {
-        // Replace-by-name semantics — drop any prior entry with the same name first.
-        ExtModifier.RemoveFile(archive, name, wipeData: true);
         ExtModifier.AddFile(archive, name, data);
-      } catch (ExtModifier.InPlaceUnsupportedException) {
-        rebuild.Add((name, data));
+      } catch (ExtModifier.InPlaceUnsupportedException ex) {
+        throw new NotSupportedException($"ext: '{name}' cannot be added in place ({ex.Message}).", ex);
       }
     }
-    if (rebuild.Count > 0)
-      ExtModifier.Mutate(archive, rebuild, System.Array.Empty<string>());
   }
 
   /// <summary>
-  /// Securely removes files from an existing ext2/3/4 image. Uses
-  /// <see cref="ExtModifier"/> for O(touched bytes) random-access I/O — file
-  /// data blocks are wiped during removal so no forensic trace remains.
+  /// Securely removes files — or folders with everything in them — from an existing
+  /// ext2/3/4 image, in place. Data blocks are wiped so no forensic trace remains; a
+  /// file with further hard links only loses the name.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    // The in-place remover targets the root directory. Nested-path targets (which the
-    // in-place adder also routes through the rebuild) are deleted via the verified
-    // extract→re-create rebuild so they don't silently no-op.
-    var flat = entryNames.Where(n => !n.Contains('/') && !n.Contains('\\')).ToArray();
-    var nested = entryNames.Where(n => n.Contains('/') || n.Contains('\\')).ToArray();
-    foreach (var name in flat)
-      ExtModifier.RemoveFile(archive, name, wipeData: true);
-    if (nested.Length > 0)
-      ExtModifier.Mutate(archive, [], nested);
+    foreach (var name in ExpandFolders(archive, entryNames)) {
+      bool removed;
+      try {
+        removed = ExtModifier.RemoveFile(archive, name, wipeData: true);
+      } catch (ExtModifier.InPlaceUnsupportedException ex) {
+        throw new NotSupportedException($"ext: '{name}' cannot be removed in place ({ex.Message}).", ex);
+      }
+      if (!removed) throw new FileNotFoundException($"ext: '{name}' does not exist.", name);
+    }
+  }
+
+  /// <summary>
+  /// Replaces every name that is a folder by everything beneath it, deepest first,
+  /// followed by the folder itself.
+  /// </summary>
+  private static List<string> ExpandFolders(Stream archive, string[] entryNames) {
+    var result = new List<string>();
+    List<(string Name, bool IsDirectory)>? listing = null;
+    foreach (var raw in entryNames ?? []) {
+      var name = raw.Replace('\\', '/').Trim('/');
+      if (listing == null) {
+        archive.Position = 0;
+        listing = new ExtReader(archive, leaveOpen: true).Entries
+          .Select(e => (e.Name.Replace('\\', '/').Trim('/'), e.IsDirectory)).ToList();
+      }
+      if (!listing.Any(e => e.IsDirectory && e.Item1 == name)) { result.Add(name); continue; }
+      result.AddRange(listing
+        .Where(e => e.Item1.StartsWith(name + "/", StringComparison.Ordinal))
+        .OrderByDescending(e => e.Item1.Count(c => c == '/'))
+        .ThenBy(e => e.IsDirectory)
+        .Select(e => e.Item1));
+      result.Add(name);
+    }
+    return result;
   }
 
   // ── ILayoutOptimizable ────────────────────────────────────────────────
@@ -606,10 +593,5 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
            FileOptions.DeleteOnClose);
 
 
-  /// <summary>The first line of a message, for a one-line progress note.</summary>
-  private static string FirstLine(string message) {
-    var end = message.IndexOf('\n');
-    return end < 0 ? message : message[..end].TrimEnd('\r');
-  }
 
 }

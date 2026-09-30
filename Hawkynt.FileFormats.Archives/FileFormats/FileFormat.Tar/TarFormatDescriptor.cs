@@ -15,7 +15,7 @@ namespace FileFormat.Tar;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Tar_(computing)</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
+public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -27,34 +27,10 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Description: "TAR header format. ustar = POSIX, gnu = GNU extensions for long names, pax = extended headers."),
   ];
 
-  /// <summary>Rebuild-based defrag: extracts then re-creates the TAR archive in listing order.</summary>
-  public void Defragment(Stream archive)
-    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+  // Not IArchiveDefragmentable: an archive has no free-space layout to defragment,
+  // and the repack that stood in for it kept only names and bytes — TAR timestamps,
+  // attributes/modes, owners, comments, links and methods were reset or dropped.
 
-  /// <summary>Rebuild-based defrag: extracts then re-creates the TAR archive per the requested mode.</summary>
-  public void Defragment(Stream archive, DefragOptions options) {
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new TarReader(stream);
-        var list = new List<(string, byte[])>();
-        while (r.GetNextEntry() is { } e) {
-          if (e.IsDirectory) { r.Skip(); continue; }
-          using var es = r.GetEntryStream();
-          var data = new byte[e.Size];
-          es.ReadExactly(data);
-          list.Add((e.Name, data));
-        }
-        return list;
-      },
-      buildImage: files => {
-        using var ms = new MemoryStream();
-        var w = new TarWriter(ms);
-        foreach (var (n, d) in files)
-          w.AddEntry(new TarEntry { Name = n, Size = d.Length }, d);
-        w.Finish();
-        return ms.ToArray();
-      });
-  }
 
 
   /// <inheritdoc />

@@ -30,7 +30,11 @@ namespace Compression.Registry;
 /// This distinction is especially important for read-only-on-mount filesystem formats such as
 /// SquashFS, CramFS and EROFS: the native filesystem driver may intentionally forbid mounted
 /// writes while an offline image editor can still support complete, deterministic mutation by
-/// relayout/rebuild. <see cref="CanModify"/> reports the latter capability.
+/// relayout/rebuild. <see cref="CanModify"/> reports the latter capability — but only when the
+/// relayout keeps everything the format carries (names, contents, owners, modes, times, links,
+/// extended attributes, compression, volume identity). A rebuild that quietly drops any of it
+/// is WORM pretending to be R/W, and the format must not set <see cref="CanModify"/>; SquashFS
+/// was demoted for exactly that reason.
 /// </para>
 /// </summary>
 [Flags]

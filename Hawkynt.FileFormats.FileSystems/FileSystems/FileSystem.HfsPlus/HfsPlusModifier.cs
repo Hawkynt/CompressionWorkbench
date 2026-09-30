@@ -47,8 +47,13 @@ public static class HfsPlusModifier {
     // with two records sharing the same key.
     RemoveFile(image, name, wipeData: true);
 
+    // A catalog shape or free-space layout the in-place path does not handle is
+    // refused. The rebuild that used to follow flattened the folder tree to leaf
+    // names and dropped the volume name, journal, dates, permissions, Finder info
+    // and resource forks.
     if (!TryAddInPlace(image, name, data))
-      RebuildAdd(image, name, data);
+      throw new NotSupportedException(
+        $"HFS+: '{name}' cannot be added in place (catalog spans more than one leaf, or no contiguous free run).");
   }
 
   /// <summary>
@@ -191,23 +196,6 @@ public static class HfsPlusModifier {
     return true;
   }
 
-  private static void RebuildAdd(Stream image, string name, byte[] data) {
-    image.Position = 0;
-    using var r = new HfsPlusReader(image, leaveOpen: true);
-    var existing = new List<(string Name, byte[] Data)>();
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
-      existing.Add((e.Name, r.Extract(e)));
-    }
-    existing.Add((name, data));
-    var w = new HfsPlusWriter();
-    foreach (var (n, d) in existing) w.AddFile(n, d);
-    var rebuilt = w.Build();
-    image.Position = 0;
-    image.Write(rebuilt);
-    image.SetLength(rebuilt.Length);
-  }
 
   // ── Volume context ───────────────────────────────────────────────────────
 

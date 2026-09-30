@@ -101,7 +101,10 @@ public static class ExFatExtentMap {
         if (isMeta)
           yield return new DefragBlockInfo(off, len, DefragBlockKind.MetadataReserved, FileName: name);
         else if (isDir)
-          yield return new DefragBlockInfo(off, len, DefragBlockKind.Used,
+          // Reserved, not movable: a folder's clusters are what every lookup below
+          // it walks, and relinking the files it holds after it moved would read
+          // the folder where it used to be.
+          yield return new DefragBlockInfo(off, len, DefragBlockKind.MetadataReserved,
             FileName: $"dir:{name}",
             Classification: DefragBlockClass.Directory);
         else

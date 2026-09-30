@@ -43,13 +43,20 @@ public static class ExtExtentMap {
   /// Returns the decoded layout completed against the allocation bitmap, so
   /// every byte of the image is either named, proven free, or reserved.
   /// </summary>
-  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) => Enumerate(image, pinBlockMaps: false);
+
+  /// <summary>
+  /// As <see cref="Enumerate(Stream)" />; with <paramref name="pinBlockMaps" /> a
+  /// classic block map's pointer blocks are reported as reserved metadata instead of
+  /// as part of their file, so a layout keeps them where they are.
+  /// </summary>
+  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image, bool pinBlockMaps) {
     ArgumentNullException.ThrowIfNull(image);
     if (!image.CanRead || !image.CanSeek)
       throw new ArgumentException("ext extent enumeration requires a readable, seekable stream.", nameof(image));
     if (image.Length <= 0) return [];
 
-    var decoded = EnumerateDecoded(image).ToList();
+    var decoded = EnumerateDecoded(image, pinBlockMaps).ToList();
     if (decoded.Count == 0) return [];
 
     var position = image.Position;
@@ -80,7 +87,7 @@ public static class ExtExtentMap {
   /// the directory tree from inode 2 and emits one extent per contiguous
   /// data-block run per file.
   /// </summary>
-  private static IEnumerable<DefragBlockInfo> EnumerateDecoded(Stream image) {
+  private static IEnumerable<DefragBlockInfo> EnumerateDecoded(Stream image, bool pinBlockMaps) {
     if (image.Length < SuperblockOffset + 264) yield break;
 
     // Read just the superblock (1 KB at offset 1024).
@@ -164,7 +171,7 @@ public static class ExtExtentMap {
     // Emit each directory's data blocks as MetadataReserved.
     foreach (var (inode, name) in directoryInodes) {
       var dirSize = DirSizeFromInodeStream(cache, blockSize, inodeSize, inodesPerGroup, bgInodeTable, inode);
-      foreach (var ext in EnumerateFileExtentsStream(cache, blockSize, inodeSize, featureIncompat,
+      foreach (var ext in EnumerateFileExtentsStream(pinBlockMaps, cache, blockSize, inodeSize, featureIncompat,
                  inodesPerGroup, bgInodeTable, inode, dirSize, name)) {
         yield return ext with { Kind = DefragBlockKind.MetadataReserved };
       }
@@ -173,7 +180,7 @@ public static class ExtExtentMap {
     // For each file, walk the extent tree / block pointers and emit
     // contiguous-run extents.
     foreach (var (inode, name, size) in files) {
-      foreach (var ext in EnumerateFileExtentsStream(cache, blockSize, inodeSize, featureIncompat,
+      foreach (var ext in EnumerateFileExtentsStream(pinBlockMaps, cache, blockSize, inodeSize, featureIncompat,
                  inodesPerGroup, bgInodeTable, inode, size, name)) {
         yield return ext;
       }
@@ -186,7 +193,7 @@ public static class ExtExtentMap {
       var journalInode = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(224));
       if (journalInode == 0) journalInode = 8;
       var journalSize = DirSizeFromInodeStream(cache, blockSize, inodeSize, inodesPerGroup, bgInodeTable, journalInode);
-      foreach (var ext in EnumerateFileExtentsStream(cache, blockSize, inodeSize, featureIncompat,
+      foreach (var ext in EnumerateFileExtentsStream(pinBlockMaps, cache, blockSize, inodeSize, featureIncompat,
                  inodesPerGroup, bgInodeTable, journalInode, journalSize, "ext journal")) {
         yield return ext with { Kind = DefragBlockKind.MetadataReserved };
       }
@@ -351,7 +358,10 @@ public static class ExtExtentMap {
               directoryInodes.Add((ino, full));
               WalkDirStream(cache, blockSize, inodeSize, featureIncompat, inodesPerGroup, bgInodeTable,
                 ino, full, files, directoryInodes, seen);
-            } else {
+            } else if (OwnsBlocks(inoData, blockSize) && seen.Add(ino)) {
+              // A second name for an inode already listed (a hard link) owns nothing
+              // of its own: listing its blocks again hands the planner two owners of
+              // one run, and it moves the data twice.
               files.Add((ino, full, size));
             }
           }
@@ -362,10 +372,30 @@ public static class ExtExtentMap {
   }
 
   /// <summary>
+  /// Whether an inode's i_block area maps blocks. A fast symlink keeps its target
+  /// text there, a device node its device number, an inline-data inode its bytes;
+  /// reading any of those as block pointers invents extents terabytes past the end
+  /// of the volume.
+  /// </summary>
+  private static bool OwnsBlocks(byte[] inode, int blockSize) {
+    var type = BinaryPrimitives.ReadUInt16LittleEndian(inode) & 0xF000;
+    var flags = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(32));
+    if ((flags & 0x10000000) != 0) return false;                     // EXT4_INLINE_DATA_FL
+    if (type == 0x8000) return true;                                 // regular file
+    if (type != 0xA000) return false;                                // device, fifo, socket
+    // A symlink is slow when it has data blocks beyond its extended-attribute block
+    // (i_blocks counts 512-byte sectors, the EA block included).
+    var sectors = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(28));
+    var eaSectors = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(104)) != 0 ? (uint)(blockSize / 512) : 0u;
+    return sectors > eaSectors;
+  }
+
+
+  /// <summary>
   /// Yields one <see cref="DefragBlockInfo"/> per contiguous block-pointer or
   /// extent run for the named file. Coalesces adjacent block numbers.
   /// </summary>
-  private static List<DefragBlockInfo> EnumerateFileExtentsStream(SectorCache cache, int blockSize, int inodeSize,
+  private static List<DefragBlockInfo> EnumerateFileExtentsStream(bool pinBlockMaps, SectorCache cache, int blockSize, int inodeSize,
       uint featureIncompat, uint inodesPerGroup, uint[] bgInodeTable,
       uint inodeNum, long size, string name) {
     var result = new List<DefragBlockInfo>();
@@ -390,21 +420,28 @@ public static class ExtExtentMap {
     // The pointer blocks of the classic block map are part of the file's
     // footprint. Leaving them out marks them free, so a wipe zeroes the map and
     // a defrag relocates data on top of it -- either way the file past its
-    // twelfth block is gone.
+    // twelfth block is gone. They belong to the file and are listed in its
+    // logical order (mke2fs puts each one just ahead of the blocks it maps), so a
+    // defragmentation carries them along and the file comes out contiguous the
+    // way e2fsck counts it, instead of leaving its map stranded where it was.
     for (var level = 1; level <= 3 && remaining > 0; ++level) {
       var ind = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(84 + level * 4));
       if (ind == 0) continue;
       result.AddRange(coalesce.Flush());
-      result.Add(new DefragBlockInfo((long)ind * blockSize, blockSize,
-        DefragBlockKind.MetadataReserved, FileName: $"{name} (block map)"));
-      result.AddRange(WalkIndirectMaterialisedStream(cache, blockSize, ind, coalesce, level, ref remaining, result));
+      result.Add(BlockMapExtent(pinBlockMaps, (long)ind * blockSize, blockSize, name));
+      result.AddRange(WalkIndirectMaterialisedStream(pinBlockMaps, cache, blockSize, ind, coalesce, level, ref remaining, result));
     }
     result.AddRange(coalesce.Flush());
     return result;
   }
 
   /// <param name="pointerBlocks">Collects the pointer blocks met on the way down, which belong to the file as much as its data does.</param>
-  private static List<DefragBlockInfo> WalkIndirectMaterialisedStream(SectorCache cache, int blockSize, uint blockNum,
+  private static DefragBlockInfo BlockMapExtent(bool pinned, long offset, int length, string name)
+    => pinned
+      ? new DefragBlockInfo(offset, length, DefragBlockKind.MetadataReserved, FileName: name + " (block map)")
+      : new DefragBlockInfo(offset, length, DefragBlockKind.Used, FileName: name);
+
+  private static List<DefragBlockInfo> WalkIndirectMaterialisedStream(bool pinBlockMaps, SectorCache cache, int blockSize, uint blockNum,
       RunBuilder coalesce, int level, ref long remaining, List<DefragBlockInfo> pointerBlocks) {
     var emitted = new List<DefragBlockInfo>();
     if (blockNum == 0 || remaining <= 0) return emitted;
@@ -421,9 +458,9 @@ public static class ExtExtentMap {
         local -= blockSize;
       } else {
         emitted.AddRange(coalesce.Flush());
-        pointerBlocks.Add(new DefragBlockInfo((long)ptr * blockSize, blockSize,
-          DefragBlockKind.MetadataReserved, FileName: coalesce.Name + " (block map)"));
-        emitted.AddRange(WalkIndirectMaterialisedStream(cache, blockSize, ptr, coalesce, level - 1, ref local, pointerBlocks));
+        // In logical order, ahead of the blocks it maps (see the caller).
+        emitted.Add(BlockMapExtent(pinBlockMaps, (long)ptr * blockSize, blockSize, coalesce.Name));
+        emitted.AddRange(WalkIndirectMaterialisedStream(pinBlockMaps, cache, blockSize, ptr, coalesce, level - 1, ref local, pointerBlocks));
       }
     }
     remaining = local;

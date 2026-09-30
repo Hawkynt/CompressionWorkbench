@@ -129,6 +129,19 @@ public sealed class SevenZipWriter : IDisposable {
   }
 
   /// <summary>
+  /// Adds a directory entry carrying its own times and attributes.
+  /// </summary>
+  /// <param name="entry">The directory's metadata; its name and times are kept.</param>
+  public void AddDirectory(SevenZipEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (this._finished)
+      throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
+    entry.IsDirectory = true;
+    entry.Size = 0;
+    this._entries.Add((entry, []));
+  }
+
+  /// <summary>
   /// Finalizes the archive by compressing all data and writing the header.
   /// All entries are compressed as a single solid block.
   /// </summary>

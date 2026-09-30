@@ -5,27 +5,30 @@ using System.Text;
 namespace FileSystem.Ntfs;
 
 /// <summary>
-/// Secure-remove implementation for NTFS images. Finds the named file in the MFT
-/// (records 16+), zeros every cluster referenced by its $DATA attribute (including
-/// resident-value bytes for small files), clears the corresponding index entry in
-/// the root directory's $INDEX_ROOT, and zeros the entire 1024-byte MFT record.
-/// After the operation no bytes of the original filename or content remain
-/// recoverable from the image.
-/// <para>
-/// Root-directory-only for now; nested-directory removal is a follow-up. The
-/// reader skips records whose "FILE" signature is missing, so zeroing the whole
-/// record is sufficient to hide the file from enumeration and extraction.
-/// </para>
+/// Secure-remove implementation for NTFS images. Resolves the path through the
+/// directory indexes, removes the entry from its parent's index, zeros and releases
+/// every cluster the record's non-resident attributes own (data, named streams,
+/// index blocks), and zeros the MFT record. After the operation no bytes of the
+/// original filename or content remain recoverable from the image.
 /// </summary>
 public static class NtfsRemover {
   private const int MftRecordSize = 1024;
   private const int FirstUserRecord = 16;
 
   /// <summary>
-  /// Removes <paramref name="fileName"/> from the in-memory NTFS image. Throws
-  /// <see cref="FileNotFoundException"/> if no MFT record matches. The image is
+  /// Removes the file at <paramref name="fileName"/> — a path from the root, separated
+  /// by <c>/</c> or <c>\</c> — from the in-memory NTFS image. Throws
+  /// <see cref="FileNotFoundException"/> when no such file exists. The image is
   /// modified in place.
   /// </summary>
+  /// <remarks>
+  /// The file is found by walking the directory indexes from the root, not by
+  /// searching the MFT for a record whose name matches: a leaf name is not unique,
+  /// and matching on it removed the first <c>readme.txt</c> anywhere on the volume
+  /// whichever folder was meant. A record that carries more than one name (a hard
+  /// link) is refused rather than half-removed, and so is a directory that still
+  /// has entries.
+  /// </remarks>
   public static void Remove(byte[] image, string fileName) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(fileName);
@@ -47,71 +50,89 @@ public static class NtfsRemover {
     if (mftOffset + mftRecordSize > image.Length)
       throw new InvalidDataException("NTFS: MFT offset out of range.");
 
-    // --- Scan MFT records starting at record 16 for matching $FILE_NAME ---
-    // The MFT is NOT necessarily one contiguous extent: an in-place add grows it
-    // with a (possibly non-contiguous) cluster run when the reserved zone fills, so
-    // record N lives wherever $MFT:$DATA's VCN→LCN mapping places it — never assume
-    // mftOffset + N * recordSize. Bound the scan to the MFT's real allocated extent
-    // (falling back to a whole-image bound for a degenerate/unreadable MFT).
-    var slotCount = NtfsInPlaceAdder.MftRecordSlotCount(image);
-    var maxRecords = slotCount > FirstUserRecord
-      ? slotCount
-      : (int)((image.Length - mftOffset) / mftRecordSize);
-    var matchRecord = -1;
-
-    for (var i = FirstUserRecord; i < maxRecords; ++i) {
-      var recordOffset = (int)NtfsInPlaceAdder.MftRecordByteOffset(image, i);
-      if (recordOffset < 0 || recordOffset + mftRecordSize > image.Length) continue;
-
-      var span = image.AsSpan(recordOffset, mftRecordSize);
-      if (span[0] != (byte)'F' || span[1] != (byte)'I' || span[2] != (byte)'L' || span[3] != (byte)'E')
-        continue;
-
-      // Parse attributes against a fixup-applied copy; we search for $FILE_NAME.
-      var recordCopy = span.ToArray();
-      ApplyFixup(recordCopy);
-
-      var flags = BinaryPrimitives.ReadUInt16LittleEndian(recordCopy.AsSpan(22));
-      if ((flags & 0x01) == 0) continue; // not in use
-
-      var found = TryMatchFileName(recordCopy, fileName);
-      if (!found) continue;
-
-      matchRecord = i;
-      break;
+    // --- Resolve the path through the directory indexes ---
+    var parts = fileName.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+    if (parts.Length == 0) throw new FileNotFoundException($"File '{fileName}' not found in NTFS image.");
+    uint parent = RootRecord;
+    for (var i = 0; i < parts.Length - 1; ++i) {
+      parent = NtfsInPlaceAdder.FindChildInIndex(image, parent, parts[i]);
+      if (parent == 0) throw new FileNotFoundException($"File '{fileName}' not found in NTFS image.");
     }
-
-    if (matchRecord < 0)
+    var matchRecord = (int)NtfsInPlaceAdder.FindChildInIndex(image, parent, parts[^1]);
+    if (matchRecord < FirstUserRecord)
       throw new FileNotFoundException($"File '{fileName}' not found in NTFS image.");
 
-    // --- Zero the file data (clusters or resident value) BEFORE wiping the MFT record. ---
     var recordOffsetFinal = (int)NtfsInPlaceAdder.MftRecordByteOffset(image, matchRecord);
+    if (recordOffsetFinal < 0 || recordOffsetFinal + mftRecordSize > image.Length)
+      throw new InvalidDataException($"NTFS: record {matchRecord} lies outside the image.");
     var matchCopy = image.AsSpan(recordOffsetFinal, mftRecordSize).ToArray();
     ApplyFixup(matchCopy);
-    ZeroDataAttribute(image, matchCopy, clusterSize);
+    var flags = BinaryPrimitives.ReadUInt16LittleEndian(matchCopy.AsSpan(22));
+    if ((flags & 0x01) == 0 || matchCopy[0] != (byte)'F')
+      throw new InvalidDataException($"NTFS: the index names record {matchRecord} for '{fileName}', which is not in use.");
+    if (LinkCount(matchCopy) > 1)
+      throw new NotSupportedException(
+        $"NTFS: '{fileName}' is one of several hard links to the same record; removing one name in place is not supported.");
+    if ((flags & 0x02) != 0 && NtfsInPlaceAdder.HasIndexEntries(image, (uint)matchRecord))
+      throw new IOException($"NTFS: directory '{fileName}' is not empty.");
 
-    // --- Free the file's data clusters in $Bitmap and its record bit in $MFT:$BITMAP so the
-    //     space is reusable and the volume can shrink. Best-effort — the wipe already happened. ---
-    TryFreeDataClustersInBitmap(image, matchCopy, clusterSize, mftOffset, mftRecordSize);
+    // --- Unlink first: until the index entry is gone nothing has been destroyed. ---
+    if (!NtfsInPlaceAdder.RemoveIndexEntry(image, parent, (uint)matchRecord))
+      throw new InvalidDataException($"NTFS: '{fileName}' is not in its parent directory's index.");
+
+    // --- Zero and release every non-resident attribute the record owns: the data,
+    //     named streams, a directory's index blocks. ---
+    ZeroNonResidentAttributes(image, matchCopy, clusterSize);
+    TryFreeAllClustersInBitmap(image, matchCopy, clusterSize, mftOffset, mftRecordSize);
     TryClearMftBitmapBit(image, mftOffset, mftRecordSize, (uint)matchRecord);
-
-    // --- Genuinely delete this record's directory index entry. The parent directory
-    //     is taken from the file's own $FILE_NAME (root for top-level files). The
-    //     index is rebuilt and re-USA-fixed via the shared adder machinery so it stays
-    //     consistent on real mkfs.ntfs / Windows directories (which use a different
-    //     update-sequence-array layout than our own writer). ---
-    var parent = ParentRecord(matchCopy);
-    if (!NtfsInPlaceAdder.RemoveIndexEntry(image, parent, (uint)matchRecord) && parent != 5)
-      NtfsInPlaceAdder.RemoveIndexEntry(image, 5, (uint)matchRecord); // fall back to root
 
     // --- Zero the entire MFT record. Reader skips records without "FILE" signature. ---
     image.AsSpan(recordOffsetFinal, mftRecordSize).Clear();
   }
 
-  // Clears the $Bitmap bits for the non-resident $DATA clusters of the removed file, so
-  // the space is genuinely freed (reusable by a later in-place add). $Bitmap is record 6's
-  // unnamed non-resident $DATA; its first run LCN gives the bitmap's byte offset.
-  private static void TryFreeDataClustersInBitmap(byte[] image, byte[] record, int clusterSize,
+  private const uint RootRecord = 5;
+
+  /// <summary>
+  /// The number of names the record is known by. A DOS 8.3 alias (namespace 2) is a
+  /// second spelling of the Win32 name beside it, not another link.
+  /// </summary>
+  private static int LinkCount(byte[] record) {
+    var count = 0;
+    var first = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
+    var used = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24));
+    var pos = (int)first;
+    while (pos + 16 <= used && pos + 16 <= record.Length) {
+      var t = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(pos));
+      if (t == 0xFFFFFFFF) break;
+      var len = (int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(pos + 4));
+      if (len < 16 || pos + len > record.Length) break;
+      if (t == 0x30 && record[pos + 8] == 0) {
+        var v = pos + BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(pos + 20));
+        if (v + 66 <= record.Length && record[v + 65] != 2) ++count;
+      }
+      pos += len;
+    }
+    return count;
+  }
+
+  // Zeros the clusters of every non-resident attribute in the record.
+  private static void ZeroNonResidentAttributes(byte[] image, byte[] record, int clusterSize) {
+    var first = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
+    var used = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24));
+    var pos = (int)first;
+    while (pos + 16 <= used && pos + 16 <= record.Length) {
+      var t = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(pos));
+      if (t == 0xFFFFFFFF) break;
+      var len = (int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(pos + 4));
+      if (len < 16 || pos + len > record.Length) break;
+      if (record[pos + 8] != 0)
+        ZeroClustersFromDataRuns(image, record, pos + BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(pos + 32)), clusterSize);
+      pos += len;
+    }
+  }
+
+  // Releases in $Bitmap the clusters of every non-resident attribute in the record.
+  private static void TryFreeAllClustersInBitmap(byte[] image, byte[] record, int clusterSize,
       long mftOffset, int mftRecordSize) {
     try {
       var bmOffset = BitmapByteOffset(image, mftOffset, mftRecordSize, clusterSize);
@@ -124,10 +145,9 @@ public static class NtfsRemover {
         if (t == 0xFFFFFFFF) break;
         var len = (int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(pos + 4));
         if (len < 16) break;
-        if (t == 0x80 && record[pos + 9] == 0 && record[pos + 8] != 0) {
+        if (record[pos + 8] != 0) {
           var runsOff = pos + BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(pos + 32));
           FreeRunsInBitmap(image, record, runsOff, clusterSize, bmOffset);
-          return;
         }
         pos += len;
       }
@@ -150,6 +170,7 @@ public static class NtfsRemover {
       if (offsetBytes > 0 && (record[offset + offsetBytes - 1] & 0x80) != 0)
         for (var i = offsetBytes; i < 8; ++i) delta |= (long)0xFF << (i * 8);
       offset += offsetBytes;
+      if (offsetBytes == 0) continue;          // a hole owns no cluster
       prevLcn += delta;
       if (length <= 0 || prevLcn < 0) continue;
       for (long c = prevLcn; c < prevLcn + length; ++c) {
@@ -238,99 +259,6 @@ public static class NtfsRemover {
     }
   }
 
-  // Reads the parent-directory MFT record number from a (fixup-applied) record's
-  // $FILE_NAME attribute. The parent reference is the low 48 bits of the 64-bit
-  // file reference at the start of the $FILE_NAME value. Defaults to root (5).
-  private static uint ParentRecord(byte[] record) {
-    var firstAttrOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
-    var usedSize = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24));
-    var attrPos = (int)firstAttrOffset;
-    while (attrPos + 16 <= usedSize && attrPos + 16 <= record.Length) {
-      var attrType = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(attrPos));
-      if (attrType == 0xFFFFFFFF) break;
-      var attrLen = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(attrPos + 4));
-      if (attrLen < 16 || attrPos + attrLen > record.Length) break;
-      if (attrType == 0x30) {
-        var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 20));
-        var dataStart = attrPos + valueOffset;
-        if (dataStart + 8 <= record.Length) {
-          var parentRef = BinaryPrimitives.ReadInt64LittleEndian(record.AsSpan(dataStart));
-          return (uint)(parentRef & 0x0000FFFFFFFFFFFF);
-        }
-      }
-      attrPos += (int)attrLen;
-    }
-    return 5;
-  }
-
-  private static bool TryMatchFileName(byte[] record, string target) {
-    var firstAttrOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
-    var usedSize = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24));
-
-    var attrPos = (int)firstAttrOffset;
-    while (attrPos + 16 <= usedSize && attrPos + 16 <= record.Length) {
-      var attrType = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(attrPos));
-      if (attrType == 0xFFFFFFFF) break;
-
-      var attrLen = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(attrPos + 4));
-      if (attrLen < 16 || attrPos + attrLen > record.Length) break;
-
-      if (attrType == 0x30) {
-        // $FILE_NAME — always resident in our writer.
-        var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 20));
-        var dataStart = attrPos + valueOffset;
-        if (dataStart + 66 <= record.Length) {
-          var nameLength = record[dataStart + 64];
-          if (dataStart + 66 + nameLength * 2 <= record.Length) {
-            var name = Encoding.Unicode.GetString(record, dataStart + 66, nameLength * 2);
-            if (string.Equals(name, target, StringComparison.OrdinalIgnoreCase))
-              return true;
-          }
-        }
-      }
-
-      attrPos += (int)attrLen;
-    }
-
-    return false;
-  }
-
-  /// <summary>
-  /// Locates the default $DATA attribute (type 0x80, unnamed) in the fixup-applied
-  /// record and zeros its content on disk: either the resident value bytes inside
-  /// the MFT record in the image, or every cluster referenced by its data runs.
-  /// </summary>
-  private static void ZeroDataAttribute(byte[] image, byte[] record, int clusterSize) {
-    var firstAttrOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
-    var usedSize = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24));
-
-    var attrPos = (int)firstAttrOffset;
-    while (attrPos + 16 <= usedSize && attrPos + 16 <= record.Length) {
-      var attrType = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(attrPos));
-      if (attrType == 0xFFFFFFFF) break;
-
-      var attrLen = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(attrPos + 4));
-      if (attrLen < 16 || attrPos + attrLen > record.Length) break;
-
-      if (attrType != 0x80) { attrPos += (int)attrLen; continue; }
-
-      var nameLen = record[attrPos + 9];
-      if (nameLen != 0) { attrPos += (int)attrLen; continue; } // named stream (ADS) — skip for default $DATA
-
-      var nonResident = record[attrPos + 8];
-      if (nonResident != 0) {
-        // Non-resident: decode data runs and zero each cluster range in the image.
-        // (Resident $DATA lives inside the MFT record; the caller zeros the whole
-        //  1024-byte record afterwards, which wipes resident bytes by construction.)
-        var dataRunsOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 32));
-        var runsStart = attrPos + dataRunsOffset;
-        ZeroClustersFromDataRuns(image, record, runsStart, clusterSize);
-      }
-
-      return; // only handle the first default $DATA
-    }
-  }
-
   private static void ZeroClustersFromDataRuns(byte[] image, byte[] record, int offset, int clusterSize) {
     long previousLcn = 0;
 
@@ -360,6 +288,7 @@ public static class NtfsRemover {
         offset += offsetBytes;
       }
 
+      if (offsetBytes == 0) continue;          // a hole owns no cluster
       var lcn = previousLcn + clusterOffset;
       previousLcn = lcn;
 

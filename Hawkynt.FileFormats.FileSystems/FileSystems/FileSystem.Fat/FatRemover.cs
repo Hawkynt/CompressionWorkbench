@@ -29,7 +29,7 @@ public static class FatRemover {
     if (string.IsNullOrEmpty(filePath)) throw new ArgumentException("Empty path.", nameof(filePath));
 
     var fs = ParseBootSector(image);
-    var segments = filePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+    var segments = filePath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
     if (segments.Length == 0) throw new ArgumentException("Empty path.", nameof(filePath));
 
     // Walk each non-leaf segment: find its directory entry, descend into its
@@ -51,9 +51,8 @@ public static class FatRemover {
     var leaf = FindEntry(image, dir, leafName);
     if (leaf.EntryImageOffset < 0)
       throw new FileNotFoundException($"File '{filePath}' not found in FAT image.");
-    if ((leaf.Attr & 0x10) != 0)
-      throw new InvalidOperationException(
-        $"'{filePath}' is a directory; directory removal is not yet implemented.");
+    if ((leaf.Attr & 0x10) != 0 && !IsEmptyDirectory(image, fs, leaf.FirstCluster))
+      throw new IOException($"FAT: folder '{filePath}' is not empty.");
 
     // FAT has no native link count. Optimized read-only images may deliberately
     // cross-link identical files, and damaged legacy images can contain accidental
@@ -105,6 +104,38 @@ public static class FatRemover {
         }
       }
     }
+  }
+
+  /// <summary>
+  /// The entry at <paramref name="filePath" />, or null when it does not exist.
+  /// </summary>
+  internal static (int FirstCluster, byte Attr)? Lookup(byte[] image, string filePath) {
+    var fs = ParseBootSector(image);
+    var segments = filePath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+    if (segments.Length == 0) return null;
+    var dir = OpenRootDir(image, fs);
+    for (var i = 0; i < segments.Length; ++i) {
+      var match = FindEntry(image, dir, segments[i]);
+      if (match.EntryImageOffset < 0) return null;
+      if (i == segments.Length - 1) return (match.FirstCluster, match.Attr);
+      if ((match.Attr & 0x10) == 0) return null;
+      dir = OpenSubDir(image, fs, match.FirstCluster);
+    }
+    return null;
+  }
+
+  /// <summary>Whether a folder holds nothing but "." and "..".</summary>
+  private static bool IsEmptyDirectory(byte[] image, FatGeom fs, int firstCluster) {
+    var dir = OpenSubDir(image, fs, firstCluster);
+    for (var i = 0; i < dir.SlotCount; ++i) {
+      var off = dir.SlotImageOffset(i);
+      var first = image[off];
+      if (first == 0x00) break;
+      if (first == 0xE5 || (image[off + 11] & 0x3F) == 0x0F) continue;
+      if (first == (byte)'.' && (image[off + 1] == (byte)' ' || image[off + 1] == (byte)'.')) continue;
+      return false;
+    }
+    return true;
   }
 
   // ── Boot sector + directory geometry ─────────────────────────────────────
@@ -289,11 +320,14 @@ public static class FatRemover {
       var shortName = DecodeShortName(image.AsSpan(off, 11));
       var isDirectory = (attr & 0x10) != 0;
 
-      if (off != excludedEntryOffset && firstCluster >= 2)
+      // "." and ".." name the folder itself and its parent, not storage of their
+      // own; counting them kept a removed folder's own cluster "referenced".
+      var isDotEntry = shortName is "." or "..";
+      if (off != excludedEntryOffset && firstCluster >= 2 && !isDotEntry)
         foreach (var cluster in WalkChain(image, firstCluster, fs))
           referenced.Add(cluster);
 
-      if (isDirectory && shortName is not "." and not ".." && firstCluster >= 2
+      if (isDirectory && !isDotEntry && off != excludedEntryOffset && firstCluster >= 2
           && visitedDirectories.Add(firstCluster))
         ScanDirectoryReferences(image, fs, OpenSubDir(image, fs, firstCluster),
           excludedEntryOffset, referenced, visitedDirectories);

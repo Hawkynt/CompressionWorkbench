@@ -1357,7 +1357,7 @@ public class ExternalFsInteropTests {
   private static byte[] DataC => "ccccc-charlie-xxx"u8.ToArray();
   private static byte[] DataD => "ddddd-delta-added"u8.ToArray();
 
-  // ── ext4 mutation — uses existing ExtRemover in-place + rebuild for add/replace ──
+  // ── ext4 mutation — in-place replace, add and remove ──
 
   [Test]
   public void Ext_MutateThenValidate() {
@@ -1381,10 +1381,9 @@ public class ExternalFsInteropTests {
     // Step 3: mutate — replace b.txt, delete a.txt, add d.txt
     {
       using var fs = File.Open(imgPath, FileMode.Open, FileAccess.ReadWrite);
-      ExtModifier.Mutate(
-        fs,
-        replacements: [("b.txt", DataBNew), ("d.txt", DataD)],
-        deletions: ["a.txt"]);
+      ExtModifier.AddFile(fs, "b.txt", DataBNew);   // replaces in place
+      ExtModifier.AddFile(fs, "d.txt", DataD);
+      Assert.That(ExtModifier.RemoveFile(fs, "a.txt"), Is.True);
     }
 
     // Step 4: re-validate

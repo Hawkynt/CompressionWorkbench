@@ -116,6 +116,23 @@ public static class DefragPlanner {
       imageSize, extents);
 
   /// <summary>
+  /// Runs <paramref name="plan" /> and turns a planner refusal into the answer a
+  /// caller treats as "this volume does not lay out that way":
+  /// <see cref="NotSupportedException" />. Nothing has moved when the planner refuses,
+  /// so the volume is untouched — which is what lets an in-place defragmenter refuse
+  /// instead of falling back to rebuilding the volume.
+  /// </summary>
+  public static IReadOnlyList<ClusterMove> PlanOrRefuse(string format, Func<IReadOnlyList<ClusterMove>> plan) {
+    ArgumentNullException.ThrowIfNull(plan);
+    try {
+      return plan();
+    } catch (InvalidOperationException refusal) {
+      throw new NotSupportedException(
+        $"{format}: the volume cannot be laid out in place ({refusal.Message}); it was left unchanged.", refusal);
+    }
+  }
+
+  /// <summary>
   /// Checks that a plan can be executed without destroying data: every move has
   /// to land inside the image, and no two destinations may overlap. A plan that
   /// breaks either rule is refused rather than run — the caller falls back to a
@@ -637,6 +654,10 @@ public static class DefragPlanner {
   /// </summary>
   private static long FindPrevSlot(long endAt, long length, long minStart, int clusterSize,
                                     IReadOnlyList<(long Start, long End)> forbidden) {
+    // AlignDownFrom clamps at minStart instead of going under it, so a file that
+    // no longer fits below endAt would otherwise be handed minStart — the slot the
+    // previous file was just given — and two owners would share one destination.
+    if (endAt - length < minStart) return -1;
     var candidate = AlignDownFrom(endAt - length, minStart, clusterSize);
     while (candidate >= minStart) {
       long? dropTo = null;

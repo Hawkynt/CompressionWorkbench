@@ -32,7 +32,6 @@ public class ModifyRebuilderTests {
   [TestCase("DoubleSpace")]
   [TestCase("DriveSpace")]
   [TestCase("MinixFs")]
-  [TestCase("SquashFs")]
   [TestCase("CramFs")]
   [TestCase("RomFs")]
   [TestCase("T64")]

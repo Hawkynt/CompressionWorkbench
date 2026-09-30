@@ -15,7 +15,7 @@ namespace FileSystem.Iso;
 ///   <item><description><c>https://en.wikipedia.org/wiki/ISO_9660</c> — Wikipedia overview (incl. Joliet / Rock Ridge extensions)</description></item>
 /// </list>
 /// </summary>
-public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -274,7 +274,19 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// the ISO 9660 8.3 d-characters identifier set; ';1' versions are added
   /// automatically by the modifier.
   /// </summary>
+  /// <remarks>
+  /// Only the root directory is edited in place. A path into a folder is refused
+  /// (<see cref="NotSupportedException"/>) rather than flattened into a mangled root
+  /// name, and so is an image the in-place editor would damage — one carrying data
+  /// past the volume space, or a Joliet tree with no room for the mirrored entry.
+  /// </remarks>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(inputs);
+    var items = inputs.Where(i => !i.IsDirectory && !string.IsNullOrEmpty(i.ArchiveName)).ToList();
+    foreach (var item in items)
+      if (item.ArchiveName.Replace('\\', '/').Trim('/').Contains('/'))
+        throw new NotSupportedException(
+          $"ISO 9660: '{item.ArchiveName}' is inside a folder; only the root directory is edited in place.");
     foreach (var (name, data) in FilesOnly(inputs))
       IsoModifier.AddFile(archive, name, data);
   }
@@ -324,75 +336,31 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Mode-aware ISO 9660 defragmentor via read-extract-rebuild dispatch through
-  /// <see cref="DefragRebuilder"/>. All four <see cref="DefragMode"/> values supported;
-  /// image is repacked with files reordered per mode.
+  /// ISO 9660 defragmentor: the planner moves each file's single extent in place
+  /// and repoints its directory record, and the pass is kept only if every file
+  /// reads back unchanged. Anything else is refused and the image left as it was.
   /// </summary>
+  /// <remarks>
+  /// The rebuild that used to stand behind every refusal wrote a new image with the
+  /// volume ID "CDROM", fresh dates, no Rock Ridge (modes, owners, symlinks), no El
+  /// Torito boot record and no empty folders, at another size.
+  /// </remarks>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
+    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole, "ISO 9660");
+    if (!archive.CanSeek || archive.Length > MaxBufferedImageBytes)
+      throw new NotSupportedException(
+        $"ISO 9660: in-place defragmentation checks the result against a snapshot held in memory; images over {MaxBufferedImageBytes:N0} bytes are refused.");
 
-    // Moving what is out of place beats writing the image out again: a file is
-    // one contiguous extent by the standard, and its directory record names the
-    // sector it starts at, so a move is the copy plus that field.
-    //
-    // This was tried once and pulled back out, because the mover walked the
-    // directory from the root for every move and the cost grew with the square
-    // of the move count — a half-megabyte image had not finished planning after
-    // ten minutes. The records are located once now.
-    // The guard below snapshots the image to compare payloads across the pass,
-    // so it is only offered where a snapshot fits; a volume past the cap takes
-    // the streaming path.
-    if (archive.CanSeek && archive.Length <= MaxBufferedImageBytes
-        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
-        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
-      var planned = false;
-      // The in-place pass is kept only if every payload still reads back: it
-      // can refuse partway, and a rebuild is the honest answer when it does.
-      DefragContentGuard.RunOrRebuild(archive,
-        readContents: stream => ReadEntriesForGuard(stream),
-        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
-        rebuild: () => planned = false);
-      if (planned) return;
-      archive.Position = 0;
-    }
-
-    // An image too large to materialise goes through the streaming rebuilder;
-    // buildImage returns a byte[] of the whole image, which Build refuses to
-    // produce once it passes the array limit.
-    // Every mode streams above the cap: end-pack and carve-hole order their
-    // entries from scratch inside the rebuilder, so none of them falls back
-    // to a buffered rebuild the volume is too large for.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
-      IsoWriter? streamWriter = null;
-      Stream? target = null;
-      DefragRebuilder.RebuildStreaming(archive, options,
-        readEntries: stream => {
-          var r = new IsoReader(stream);
-          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
-        },
-        beginWrite: s2 => { streamWriter = new IsoWriter(); target = s2; },
-        // As a stream factory, not inline: an inline payload is materialised
-        // inside the image buffer, which is what a large image cannot afford.
-        writeEntry: (name, data) => streamWriter!.AddStreamingFile(
-          name, data.LongLength, () => new MemoryStream(data, writable: false)),
-        finishWrite: () => streamWriter!.BuildToStreaming(target!));
-      return;
-    }
-
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new IsoReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new IsoWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: stream => ReadEntriesForGuard(stream),
+      inPlace: () => DefragmentWithPlanner(archive, options),
+      rebuild: () => throw new NotSupportedException(
+        "ISO 9660: the image cannot be laid out in place; it was left unchanged."));
   }
 
-  /// <summary>Largest image a defrag will rebuild through a byte[].</summary>
+  /// <summary>Largest image the in-place defragmentation snapshots.</summary>
   private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
 
   /// <summary>
@@ -402,8 +370,31 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// sectors are zero-wiped. Names match case-insensitively after stripping
   /// any ';N' version suffix (ISO 9660 stores uppercase IDs).
   /// </summary>
+  /// <summary>
+  /// Removes every file in place. Files inside folders cannot be removed in place,
+  /// so an image holding any is refused rather than rebuilt: the rebuild dropped the
+  /// volume ID, dates, Rock Ridge attributes and the El Torito boot record.
+  /// </summary>
+  public void Purge(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    archive.Position = 0;
+    var files = this.List(archive, null).Where(e => !e.IsDirectory).Select(e => e.Name.Replace('\\', '/').Trim('/')).ToArray();
+    if (files.Any(n => n.Contains('/')))
+      throw new NotSupportedException("ISO 9660: files inside folders cannot be removed in place; the image was left unchanged.");
+    this.Remove(archive, files);
+  }
+
+  /// <remarks>
+  /// Only the root directory is edited in place: a path into a folder is refused and
+  /// a name that is not there is reported, rather than either passing silently.
+  /// </remarks>
   public void Remove(Stream archive, string[] entryNames) {
-    foreach (var name in entryNames)
-      IsoModifier.RemoveFile(archive, name, wipeData: true);
+    foreach (var raw in entryNames ?? []) {
+      var name = raw.Replace('\\', '/').Trim('/');
+      if (name.Contains('/'))
+        throw new NotSupportedException($"ISO 9660: '{raw}' is inside a folder; only the root directory is edited in place.");
+      if (!IsoModifier.RemoveFile(archive, name, wipeData: true))
+        throw new FileNotFoundException($"ISO 9660: '{raw}' is not in the root directory.", raw);
+    }
   }
 }

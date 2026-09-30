@@ -92,43 +92,24 @@ public class SquashFsTests {
   // ── Modify / Defragment / ExtentMap tests ────────────────────────────
 
   [Test, Category("HappyPath")]
-  public void Descriptor_ImplementsModifiable() {
+  public void Descriptor_IsDefragmentableButNotModifiable() {
     var desc = new SquashFsFormatDescriptor();
-    Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveModifiable>());
+    Assert.That(desc, Is.Not.InstanceOf<Compression.Registry.IArchiveModifiable>());
     Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveDefragmentable>());
     Assert.That(desc, Is.InstanceOf<Compression.Registry.IFilesystemExtentMap>());
-    // Linux mounts SquashFS read-only, but this API reports offline image-editor
-    // semantics. Add/Remove rebuild and verify a new valid image, so existing
-    // instances are genuinely modifiable at the workbench surface — the case
-    // FormatCapabilities.cs names SquashFS in.
+    // SquashFS is read-only by design: images are created, not edited. Editing
+    // existed only as a rebuild that lost compression, owners, modes, times,
+    // symlinks and xattrs, so it is not advertised.
     Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
-    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True);
+    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.False);
   }
 
-  [Test, Category("RoundTrip")]
-  public void AddRemove_RoundTrips() {
-    using var ms = new MemoryStream();
-    using (var w = new SquashFsWriter(ms, leaveOpen: true))
-      w.AddFile("keep.txt", "keep"u8.ToArray());
-
-    var tmp = Path.GetTempFileName();
-    try {
-      File.WriteAllBytes(tmp, "added"u8.ToArray());
-      var desc = new SquashFsFormatDescriptor();
-      ((Compression.Registry.IArchiveModifiable)desc).Add(ms,
-        [new Compression.Registry.ArchiveInputInfo(tmp, "new.txt", false)]);
-
-      ms.Position = 0;
-      var r = new SquashFsReader(ms, leaveOpen: true);
-      Assert.That(r.Entries.Any(e => e.FullPath.Contains("keep.txt")), Is.True);
-      Assert.That(r.Entries.Any(e => e.FullPath.Contains("new.txt")), Is.True);
-
-      ((Compression.Registry.IArchiveModifiable)desc).Remove(ms, ["keep.txt"]);
-      ms.Position = 0;
-      var r2 = new SquashFsReader(ms, leaveOpen: true);
-      Assert.That(r2.Entries.Any(e => !e.IsDirectory && e.FullPath.Contains("keep.txt")), Is.False);
-      Assert.That(r2.Entries.Any(e => e.FullPath.Contains("new.txt")), Is.True);
-    } finally { File.Delete(tmp); }
+  [Test]
+  public void IsNotModifiable_BecauseEveryEditWasALossyRebuild() {
+    // The only edit path re-created the image: gzip instead of the original
+    // compression, uid 0, fixed modes, fresh times, and no symlinks or xattrs.
+    var desc = new SquashFsFormatDescriptor();
+    Assert.That(desc, Is.Not.InstanceOf<Compression.Registry.IArchiveModifiable>());
   }
 
   [Test, Category("RoundTrip")]

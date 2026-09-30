@@ -34,6 +34,7 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
   private int _mftRecordSize;
   private long _mftOffset;
   private int _maxRecords;
+  private List<DataRun> _mftRuns = [];
 
   private const int FirstUserRecord = 16;
 
@@ -49,6 +50,7 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
         ApplyFixup(rec0);
         var dataRuns = FindDefaultDataRuns(rec0);
         if (dataRuns != null) {
+          _mftRuns = dataRuns;
           long totalMftBytes = 0;
           foreach (var run in dataRuns) totalMftBytes += run.ClusterCount * _clusterSize;
           var bounded = (int)(totalMftBytes / _mftRecordSize);
@@ -81,6 +83,7 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
         ApplyFixup(rec0);
         var dataRuns = FindDefaultDataRuns(rec0);
         if (dataRuns != null) {
+          _mftRuns = dataRuns;
           long totalMftBytes = 0;
           foreach (var run in dataRuns) totalMftBytes += run.ClusterCount * _clusterSize;
           var bounded = (int)(totalMftBytes / _mftRecordSize);
@@ -179,13 +182,21 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
     var newLcn = newOffset / _clusterSize;
     var clusterCount = (length + _clusterSize - 1) / _clusterSize;
 
-    // 1. Find the MFT record for the file (streamed via cache).
-    var recordIndex = FindMftRecordStream(cache, fileName);
+    // 1. Find the MFT record whose data runs hold the moved clusters. The record is
+    //    found by the run's address, not by the file's name: a leaf name is not
+    //    unique on a volume, and patching the first record that answers to it
+    //    repointed some other folder's file of the same name.
+    var recordIndex = FindRecordOwningCluster(cache, oldLcn);
     if (recordIndex < 0)
-      throw new InvalidOperationException($"NTFS: MFT record for '{fileName}' not found.");
+      throw new InvalidOperationException($"NTFS: no MFT record owns cluster {oldLcn} ('{fileName}').");
 
     // Locate $Bitmap once (also via cache).
     var bitmapRuns = LoadBitmapRunsStream(cache);
+
+    // Before anything is written, make sure the record can take the new runs: a
+    // refusal after the bitmap was touched would leave clusters marked in use
+    // that nothing owns.
+    PatchMftDataRunsStream(image, cache, recordIndex, oldLcn, newLcn, clusterCount, commit: false);
 
     // Step 1: Set new cluster bits in $Bitmap (RMW per byte).
     if (bitmapRuns != null && bitmapRuns.Count > 0)
@@ -198,10 +209,72 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
     image.Flush();
     cache.InvalidateAll(); // MFT record changed.
 
-    // Step 3: Clear old cluster bits in $Bitmap.
-    if (bitmapRuns != null && bitmapRuns.Count > 0)
-      MutateBitmapBitsStream(image, bitmapRuns, oldLcn, clusterCount, setBits: false);
+    // Step 3: Clear the old cluster bits in $Bitmap — only those the move vacated.
+    //    A run shifted by less than its own length lands partly on itself, and
+    //    clearing its whole old range would mark live clusters free.
+    if (bitmapRuns != null && bitmapRuns.Count > 0) {
+      var oldEnd = oldLcn + clusterCount;
+      var newEnd = newLcn + clusterCount;
+      if (newEnd <= oldLcn || newLcn >= oldEnd) {
+        MutateBitmapBitsStream(image, bitmapRuns, oldLcn, clusterCount, setBits: false);
+      } else if (newLcn > oldLcn) {
+        MutateBitmapBitsStream(image, bitmapRuns, oldLcn, newLcn - oldLcn, setBits: false);
+      } else if (newLcn < oldLcn) {
+        MutateBitmapBitsStream(image, bitmapRuns, newEnd, oldEnd - newEnd, setBits: false);
+      }
+    }
     image.Flush();
+  }
+
+  /// <inheritdoc />
+  /// <remarks>
+  /// Each call finds the owning record by the moved run's cluster address and rewrites
+  /// that run alone, so a fragmented file is simply several calls.
+  /// </remarks>
+  public bool RepointsRunsIndependently => true;
+
+  /// <summary>
+  /// Byte offset of MFT record <paramref name="index" />, through the $MFT's own data
+  /// runs: an MFT that grew is not one contiguous extent.
+  /// </summary>
+  private long RecordOffset(int index) {
+    var vcnByte = (long)index * _mftRecordSize;
+    long vcnStart = 0;
+    foreach (var run in _mftRuns) {
+      var runBytes = run.ClusterCount * _clusterSize;
+      if (!run.Sparse && vcnByte < vcnStart + runBytes)
+        return run.Lcn * _clusterSize + (vcnByte - vcnStart);
+      vcnStart += runBytes;
+    }
+    return _mftOffset + vcnByte;
+  }
+
+  /// <summary>
+  /// The base record whose unnamed $DATA runs include <paramref name="lcn" />, or -1.
+  /// </summary>
+  private int FindRecordOwningCluster(SectorCache cache, long lcn) {
+    var recordBuf = ArrayPool<byte>.Shared.Rent(_mftRecordSize);
+    try {
+      for (var i = FirstUserRecord; i < _maxRecords; i++) {
+        var recordOffset = RecordOffset(i);
+        if (recordOffset < 0 || recordOffset + _mftRecordSize > cache.Length) continue;
+        cache.Read(recordOffset, recordBuf.AsSpan(0, _mftRecordSize));
+        if (recordBuf[0] != 'F' || recordBuf[1] != 'I' || recordBuf[2] != 'L' || recordBuf[3] != 'E')
+          continue;
+        var record = recordBuf.AsSpan(0, _mftRecordSize).ToArray();
+        ApplyFixup(record);
+        var flags = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(22));
+        if ((flags & 0x01) == 0) continue;
+        var runs = FindDefaultDataRuns(record);
+        if (runs == null) continue;
+        foreach (var run in runs)
+          if (!run.Sparse && lcn >= run.Lcn && lcn < run.Lcn + run.ClusterCount)
+            return i;
+      }
+      return -1;
+    } finally {
+      ArrayPool<byte>.Shared.Return(recordBuf);
+    }
   }
 
   // ── IFilesystemMetadataMover ──────────────────────────────────────────
@@ -274,7 +347,12 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
     // The MFT's own record travels with it, so the copy to patch is the one at
     // the destination. Everything below then reads records through it.
     var movingMft = recordIndex == 0;
-    if (movingMft) _mftOffset = newOffset;
+    if (movingMft) {
+      _mftOffset = newOffset;
+      // Records are located through the $MFT's runs; they now describe the copy.
+      PatchRuns(_mftRuns, oldLcn, newLcn, clusterCount);
+      MergeAdjacentRuns(_mftRuns);
+    }
 
     using (var cache = new SectorCache(image)) {
       PatchMftDataRunsStream(image, cache, recordIndex, oldLcn, newLcn, clusterCount);
@@ -434,8 +512,8 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
   /// is a single-record targeted write.
   /// </summary>
   private void PatchMftDataRunsStream(Stream image, SectorCache cache, int recordIndex,
-      long oldLcn, long newLcn, long clusterCount) {
-    var recordOffset = _mftOffset + (long)recordIndex * _mftRecordSize;
+      long oldLcn, long newLcn, long clusterCount, bool commit = true) {
+    var recordOffset = RecordOffset(recordIndex);
     var record = new byte[_mftRecordSize];
     cache.Read(recordOffset, record);
     ApplyFixup(record);
@@ -460,23 +538,34 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
         // Decode existing data runs.
         var runs = DecodeDataRuns(record, runsStart);
 
-        // Patch the run(s) covering the moved cluster range.
+        // Patch the run(s) covering the moved cluster range, then join runs that
+        // now sit end to end — that is what defragmenting a file amounts to.
         PatchRuns(runs, oldLcn, newLcn, clusterCount);
+        MergeAdjacentRuns(runs);
 
         // Re-encode the data runs.
         var newRunBytes = EncodeDataRuns(runs);
-        var oldRunBytes = MeasureDataRunsBytes(record, runsStart);
 
-        // Check if the new encoding fits in the same space.
-        if (newRunBytes.Length > oldRunBytes) {
-          // Check slack: space between end of this attribute and the next.
-          var slack = attrLen - dataRunsOffset - oldRunBytes;
-          if (newRunBytes.Length - oldRunBytes > slack)
+        // The encoding can grow (a run split in two, a longer delta). The attribute
+        // takes what it needs from the record's free tail, moving the attributes
+        // after it along; a record with no room left cannot take the move.
+        var room = attrLen - dataRunsOffset;
+        if (newRunBytes.Length > room) {
+          var grow = ((dataRunsOffset + newRunBytes.Length + 7) & ~7) - attrLen;
+          var allocated = (int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(28));
+          if (usedSize + grow > Math.Min(allocated, record.Length))
             throw new NotSupportedException(
-              $"NTFS: re-encoded data runs are {newRunBytes.Length - oldRunBytes} bytes longer " +
-              $"than original ({oldRunBytes} -> {newRunBytes.Length}) with only {slack} bytes slack. " +
-              "Rebuild fallback required.");
+              $"NTFS: the re-encoded data runs need {grow} more bytes than MFT record {recordIndex} has free.");
+          var tail = attrPos + attrLen;
+          Array.Copy(record, tail, record, tail + grow, usedSize - tail);
+          Array.Clear(record, tail, grow);
+          attrLen += grow;
+          BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(attrPos + 4), (uint)attrLen);
+          BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(24), (uint)(usedSize + grow));
         }
+
+        // A trial run stops here: the edit fits, and nothing has been written yet.
+        if (!commit) return;
 
         // Write the new data runs into the record.
         // First, clear the old data run area up to the end of the attribute.
@@ -503,6 +592,7 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
 
     for (var i = 0; i < runs.Count; i++) {
       var run = runs[i];
+      if (run.Sparse) continue;
       var runEnd = run.Lcn + run.ClusterCount;
 
       // No overlap with this run.
@@ -623,6 +713,18 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
   private sealed class DataRun {
     public long Lcn;
     public long ClusterCount;
+    public bool Sparse;
+  }
+
+  /// <summary>Joins consecutive runs whose clusters follow on from each other.</summary>
+  private static void MergeAdjacentRuns(List<DataRun> runs) {
+    for (var i = runs.Count - 1; i > 0; i--) {
+      var a = runs[i - 1];
+      var b = runs[i];
+      if (a.Sparse || b.Sparse || a.Lcn + a.ClusterCount != b.Lcn) continue;
+      runs[i - 1] = new DataRun { Lcn = a.Lcn, ClusterCount = a.ClusterCount + b.ClusterCount };
+      runs.RemoveAt(i);
+    }
   }
 
   private static List<DataRun> DecodeDataRuns(byte[] record, int offset) {
@@ -653,6 +755,11 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
         offset += offsetBytes;
       }
 
+      // No offset field: a hole. It occupies no cluster and leaves the running LCN alone.
+      if (offsetBytes == 0) {
+        runs.Add(new DataRun { Lcn = -1, ClusterCount = length, Sparse = true });
+        continue;
+      }
       var lcn = previousLcn + clusterOffset;
       runs.Add(new DataRun { Lcn = lcn, ClusterCount = length });
       previousLcn = lcn;
@@ -683,6 +790,12 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
     long prevLcn = 0;
 
     foreach (var run in runs) {
+      if (run.Sparse) {
+        var holeBytes = GetUnsignedFieldBytes(run.ClusterCount);
+        ms.WriteByte((byte)holeBytes);
+        WriteField(ms, run.ClusterCount, holeBytes);
+        continue;
+      }
       var delta = run.Lcn - prevLcn;
       var lengthBytes = GetUnsignedFieldBytes(run.ClusterCount);
       var offsetBytes = GetSignedFieldBytes(delta);

@@ -1,12 +1,13 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Registry;
 
 namespace FileSystem.Fat;
 
 /// <summary>
-/// Shrinks a FAT filesystem image by defragmenting (consolidate at start) and then
-/// truncating trailing free space. Updates the BPB total-sectors field and shrinks
-/// the FAT to match the reduced cluster count.
+/// Shrinks a FAT filesystem image in place by defragmenting (consolidate at start)
+/// and then trimming the unused tail through <see cref="FatInPlaceShrinker"/>. The
+/// FAT type, label, serial, attributes and timestamps are kept.
 /// </summary>
 public static class FatShrinkHelper {
 
@@ -30,8 +31,8 @@ public static class FatShrinkHelper {
   public sealed record ClusterSizeStats(int ClusterSize, long TotalSlack, long TotalAllocated, double SlackPercent);
 
   /// <summary>
-  /// Defragments (consolidate at start) then truncates trailing free space from a FAT image.
-  /// Updates the BPB total_sectors and FAT size fields to reflect the new geometry.
+  /// Defragments (consolidate at start, in place) then trims trailing free space from a
+  /// FAT image, never below the cluster count its FAT type requires.
   /// </summary>
   /// <param name="image">Readable/writable/seekable stream containing the FAT image.</param>
   /// <returns>Shrink result with before/after sizes.</returns>
@@ -40,81 +41,16 @@ public static class FatShrinkHelper {
     ArgumentNullException.ThrowIfNull(image);
     var originalSize = image.Length;
 
-    // Step 1: Defragment — pack all files at start
-    new FatFormatDescriptor().Defragment(image);
-
-    // Step 2: Read the image to find the last used cluster
-    image.Position = 0;
-    using var ms = new MemoryStream();
-    image.CopyTo(ms);
-    var data = ms.ToArray();
-
-    if (data.Length < 512)
-      throw new InvalidDataException("FAT: image too small.");
-
-    // Parse BPB
-    var bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(11));
-    if (bytesPerSector is 0 or > 4096) bytesPerSector = 512;
-    var sectorsPerCluster = data[13];
-    if (sectorsPerCluster == 0) sectorsPerCluster = 1;
-    var reservedSectors = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(14));
-    var fatCount = data[16];
-    if (fatCount == 0) fatCount = 2;
-    var rootEntryCount = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(17));
-    var totalSectors = (int)BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(19));
-    if (totalSectors == 0) totalSectors = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(32));
-    var fatSize = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(22));
-    if (fatSize == 0) fatSize = (ushort)BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(36));
-
-    var rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
-    var firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
-    var totalDataClusters = (totalSectors - firstDataSector) / sectorsPerCluster;
-    var fatType = totalDataClusters < 4085 ? 12 : totalDataClusters < 65525 ? 16 : 32;
-
-    // Find the last used cluster by scanning the FAT
-    var fatOffset = reservedSectors * bytesPerSector;
-    var lastUsedCluster = 1; // clusters 0,1 are reserved
-    for (var c = 2; c < totalDataClusters + 2; c++) {
-      var val = ReadFatEntry(data, fatOffset, c, fatType);
-      if (val != 0) // any non-zero entry means cluster is in use or reserved
-        lastUsedCluster = c;
+    // Pack all files at the start, in place; a layout the planner cannot reach in
+    // place is simply not packed further (nothing is rebuilt).
+    try {
+      new FatFormatDescriptor().Defragment(image, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+    } catch (NotSupportedException) {
+      // The trim below still takes whatever tail is free.
     }
 
-    // The last used data byte offset
-    var lastUsedDataEnd = firstDataSector + (long)(lastUsedCluster - 2 + 1) * sectorsPerCluster;
-    // Add metadata padding: 1 extra cluster of headroom
-    lastUsedDataEnd += sectorsPerCluster;
-
-    // Round up to sector boundary
-    var newTotalSectors = (int)Math.Min(totalSectors, lastUsedDataEnd);
-    // Must be at least firstDataSector + 1 cluster
-    newTotalSectors = Math.Max(newTotalSectors, firstDataSector + sectorsPerCluster);
-    // Don't grow
-    if (newTotalSectors >= totalSectors)
-      return new ShrinkResult(originalSize, originalSize, false);
-
-    var newLength = (long)newTotalSectors * bytesPerSector;
-
-    // Step 3: Update BPB total_sectors
-    image.Position = 0;
-    var bpb = new byte[512];
-    image.ReadExactly(bpb);
-
-    if (fatType != 32 && newTotalSectors < 65536) {
-      BinaryPrimitives.WriteUInt16LittleEndian(bpb.AsSpan(19), (ushort)newTotalSectors);
-      BinaryPrimitives.WriteUInt32LittleEndian(bpb.AsSpan(32), 0u);
-    } else {
-      BinaryPrimitives.WriteUInt16LittleEndian(bpb.AsSpan(19), 0);
-      BinaryPrimitives.WriteUInt32LittleEndian(bpb.AsSpan(32), (uint)newTotalSectors);
-    }
-
-    image.Position = 0;
-    image.Write(bpb);
-
-    // Step 4: Truncate
-    image.SetLength(newLength);
-
-    return new ShrinkResult(originalSize, newLength, true);
+    var newLength = FatInPlaceShrinker.ShrinkToFit(image);
+    return new ShrinkResult(originalSize, newLength, newLength < originalSize);
   }
 
   /// <summary>

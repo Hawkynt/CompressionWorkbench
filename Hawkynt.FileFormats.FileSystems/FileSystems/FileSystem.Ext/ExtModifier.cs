@@ -18,9 +18,12 @@ namespace FileSystem.Ext;
 ///   ext4 inode-resident extent leaves (when the inode carries the EXTENTS flag and
 ///   the volume advertises the EXTENTS feature). Block allocation, i_blocks/i_size,
 ///   group-descriptor + superblock free counts all maintained.</item>
-///   <item><b>Bigger directories</b> — when the root directory's blocks are full a
-///   new linear directory block is appended (i_size and the dir's block map grow).
-///   htree (EXT4_INDEX) directories are detected and routed to the rebuild fallback.</item>
+///   <item><b>Any directory</b> — paths are resolved from the root, missing folders
+///   are created, and a full linear directory grows by a block. Entries are looked up
+///   and removed in hashed (htree) directories too; adding to one is refused, because
+///   the entry would have to be filed under a name hash this editor does not compute.</item>
+///   <item><b>Links</b> — removing one name of a hard-linked file only drops a link;
+///   a shared extended-attribute block only loses a reference.</item>
 ///   <item><b>Multiple block groups</b> — allocation scans every group with free
 ///   space; the right group's descriptor + bitmaps (and, when <c>metadata_csum</c>
 ///   / <c>uninit_bg</c> is set, their checksums and the INODE/BLOCK_UNINIT flags +
@@ -79,144 +82,103 @@ public static class ExtModifier {
     public long BgdOffset(uint group) => BgdtOffset + (long)group * DescSize;
   }
 
-  // ── Rebuild-style API (atomic batch mutate via read-then-rebuild) ──────────
-
   /// <summary>
-  /// Performs the mutate operation.
-  /// </summary>
-  public static void Mutate(
-      Stream archive,
-      IReadOnlyList<(string Name, byte[] Data)> replacements,
-      IReadOnlyCollection<string> deletions) {
-    archive.Position = 0;
-    var reader = new ExtReader(archive);
-
-    var delSet = new HashSet<string>(deletions, StringComparer.Ordinal);
-    var replaceMap = replacements.ToDictionary(r => r.Name, r => r.Data, StringComparer.Ordinal);
-
-    var final = new List<(string Name, byte[] Data)>();
-    foreach (var entry in reader.Entries) {
-      if (entry.IsDirectory) continue;
-      if (delSet.Contains(entry.Name)) continue;
-      if (replaceMap.TryGetValue(entry.Name, out var newData)) {
-        final.Add((entry.Name, newData));
-        replaceMap.Remove(entry.Name);
-      } else {
-        final.Add((entry.Name, reader.Extract(entry)));
-      }
-    }
-    foreach (var (name, data) in replaceMap)
-      final.Add((name, data));
-
-    var w = new ExtWriter();
-    foreach (var (name, data) in final)
-      w.AddFile(name, data);
-    var rebuilt = w.Build();
-    archive.Position = 0;
-    archive.Write(rebuilt);
-    archive.SetLength(rebuilt.Length);
-  }
-
-  // ── In-flight API ───────────────────────────────────────────────────────
-
-  /// <summary>
-  /// Thrown when a case genuinely cannot be handled in place (e.g. htree
-  /// directory growth, or a nested target path). Callers may fall back to a
-  /// rebuild on this.
+  /// Thrown when a case genuinely cannot be handled in place (for example an htree
+  /// directory that would need a new hashed entry). Nothing has been written when
+  /// it is thrown.
   /// </summary>
   public sealed class InPlaceUnsupportedException(string message) : IOException(message);
 
   /// <summary>
-  /// Adds (or fails if an entry of the same name already exists) a file inside an
-  /// existing ext2/3/4 image, genuinely in place.
+  /// Adds a file at <paramref name="path" /> (separated by <c>/</c> or <c>\</c>) to
+  /// an existing ext2/3/4 image, genuinely in place. Missing folders on the way are
+  /// created. An existing regular file of the same name is replaced: the new
+  /// content gets its own inode, the directory entry is repointed at it, and only
+  /// then is the old inode released — so a replace that cannot be completed leaves
+  /// the old file as it was.
   /// </summary>
-  public static void AddFile(Stream image, string name, byte[] data) {
+  public static void AddFile(Stream image, string path, byte[] data) {
     ArgumentNullException.ThrowIfNull(image);
-    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(path);
     ArgumentNullException.ThrowIfNull(data);
-    if (string.IsNullOrEmpty(name)) throw new ArgumentException("name is empty", nameof(name));
-    if (name.Contains('/') || name.Contains('\\'))
-      throw new InPlaceUnsupportedException($"ext in-place add only targets the root directory; '{name}' is nested.");
+    var parts = SplitPath(path);
+    if (parts.Length == 0) throw new ArgumentException("name is empty", nameof(path));
+    var name = parts[^1];
 
     var geom = ReadGeometry(image);
+    // Everything that could refuse is checked before anything is written.
+    var parentInodeNum = ResolveExisting(image, geom, parts[..^1], out var missing);
+    EnsureWritableDirectory(image, geom, parentInodeNum);
+    foreach (var folder in missing)
+      parentInodeNum = MakeDirectory(image, geom, parentInodeNum, folder);
 
-    // Locate root dir and ensure name is unique; find a slot (possibly grow dir).
-    var rootInode = ReadInode(image, geom, RootInode);
-    var rootFlags = BinaryPrimitives.ReadUInt32LittleEndian(rootInode.AsSpan(32, 4));
-    if ((rootFlags & 0x1000) != 0)
-      throw new InPlaceUnsupportedException("ext: htree (EXT4_INDEX) root directory; in-place add unsupported.");
-    var dirUsesExtents = (rootFlags & 0x80000) != 0;
-    var rootBlocks = dirUsesExtents ? ReadExtentDirBlocks(image, geom, rootInode) : ReadInodeDirectBlockList(rootInode);
-    if (rootBlocks.Count == 0)
-      throw new IOException("ext: root directory has no data block.");
+    var parentInode = ReadInode(image, geom, parentInodeNum);
+    var dirBlocks = DirectoryBlocks(image, geom, parentInode);
+    if (dirBlocks.Count == 0)
+      throw new IOException("ext: directory has no data block.");
 
-    // Uniqueness check across all root dir blocks.
-    foreach (var b in rootBlocks) {
+    // An entry of the same name: a regular file is replaced, anything else refused.
+    uint replacedInode = 0;
+    int replaceBlock = -1, replaceOffset = -1;
+    byte[]? replaceBytes = null;
+    foreach (var b in dirBlocks) {
       var bb = ReadBlock(image, geom, b);
-      if (FindEntry(bb, name, out _, out _, out _))
-        throw new IOException($"ext: entry '{name}' already exists; remove it first to replace.");
+      if (!FindEntry(bb, name, out var off, out _, out var ino)) continue;
+      var existing = ReadInode(image, geom, ino);
+      var mode = BinaryPrimitives.ReadUInt16LittleEndian(existing.AsSpan(0, 2));
+      if ((mode & 0xF000) != InodeModeRegular)
+        throw new IOException($"ext: '{path}' already exists and is not a regular file.");
+      replacedInode = ino; replaceBlock = b; replaceOffset = off; replaceBytes = bb;
+      break;
     }
 
     var blocksNeeded = data.Length == 0 ? 0 : (data.Length + geom.BlockSize - 1) / geom.BlockSize;
-
-    // Decide mapping mode for the new inode.
     var useExtents = geom.HasExtentsFeature;
-    // Inode-resident extent leaf holds 4 extents (after 12-byte header in the 60-byte
-    // i_block area). Each extent maps up to 32768 blocks, so one leaf covers huge files.
-    // We only allocate contiguous-or-fragmented runs; if extents can't describe the
-    // layout within the inode (>4 fragments) we fall back to a deeper structure or rebuild.
 
     // ── Allocate inode + data + metadata blocks across groups ──
     var alloc = new Allocator(image, geom);
     var newInodeNum = alloc.AllocateInode()
       ?? throw new IOException("ext: no free inodes available.");
 
-    var dataBlocks = new List<uint>(blocksNeeded);
+    List<uint> dataBlocks;
+    byte[] iblockArea;
+    uint extraInodeBlocks;
     try {
-      for (var i = 0; i < blocksNeeded; ++i)
-        dataBlocks.Add(alloc.AllocateBlock() ?? throw new IOException("ext: not enough free blocks for file."));
+      dataBlocks = alloc.AllocateBlocks(blocksNeeded)
+        ?? throw new IOException("ext: not enough free blocks for file.");
+      iblockArea = useExtents
+        ? BuildExtentMapping(image, alloc, geom, newInodeNum, dataBlocks, out extraInodeBlocks)
+        : BuildIndirectMapping(image, alloc, geom, dataBlocks, out extraInodeBlocks);
     } catch {
       alloc.Rollback();
       throw;
     }
 
-    // Build the block map (extents or indirect) and any needed metadata blocks.
-    byte[] iblockArea;            // 60 bytes for inode i_block[0..14]
-    uint extraInodeBlocks;        // metadata blocks (indirect / extent-index) charged to i_blocks
-    try {
-      if (useExtents)
-        iblockArea = BuildExtentMapping(alloc, geom, dataBlocks, out extraInodeBlocks);
-      else
-        iblockArea = BuildIndirectMapping(image, alloc, geom, dataBlocks, out extraInodeBlocks);
-    } catch {
-      alloc.Rollback();
-      throw;
-    }
-
-    // ── Find / grow a directory slot for the new entry ──
-    // When metadata_csum is set, linear dir blocks reserve the last 12 bytes for a
-    // dir_entry_tail; the usable region for records is [0 .. blockSize-12).
+    // ── Find / grow a directory slot for the new entry (not needed for a replace) ──
     var dirTailReserved = geom.HasMetadataCsum ? 12 : 0;
-    var newEntrySize = ComputeDirEntrySize(name);
-    int targetDirBlock; byte[] targetDirBytes; int insertOffset; bool grewDir = false;
+    var targetDirBlock = -1; byte[] targetDirBytes = null!; var insertOffset = -1; var grewDir = false;
     uint dirExtraBlock = 0;
-    {
-      targetDirBlock = -1; targetDirBytes = null!; insertOffset = -1;
-      foreach (var b in rootBlocks) {
+    if (replacedInode == 0) {
+      var newEntrySize = ComputeDirEntrySize(name);
+      foreach (var b in dirBlocks) {
         var bb = ReadBlock(image, geom, b);
         if (TrySplitLastEntryForAppend(bb, newEntrySize, out var off, dirTailReserved)) {
           targetDirBlock = b; targetDirBytes = bb; insertOffset = off; break;
         }
       }
       if (targetDirBlock < 0) {
-        // Grow: append a new directory block (linear).
-        var maxDirBlocks = dirUsesExtents ? 32768 : MaxDirectBlocks; // extent leaf maps up to 32768 blocks
-        if (rootBlocks.Count >= maxDirBlocks) {
+        var dirUsesExtents = (BinaryPrimitives.ReadUInt32LittleEndian(parentInode.AsSpan(32, 4)) & 0x80000) != 0;
+        var maxDirBlocks = dirUsesExtents ? 32768 : MaxDirectBlocks;
+        if (dirBlocks.Count >= maxDirBlocks) {
           alloc.Rollback();
-          throw new InPlaceUnsupportedException("ext: root directory needs deeper structure to grow; in-place add unsupported.");
+          throw new InPlaceUnsupportedException("ext: the directory needs a deeper block map to grow; in-place add unsupported.");
         }
         var nb = alloc.AllocateBlock();
-        if (nb == null) { alloc.Rollback(); throw new IOException("ext: no free block to grow root directory."); }
+        if (nb == null) { alloc.Rollback(); throw new IOException("ext: no free block to grow the directory."); }
+        if (dirUsesExtents && !CanGrowExtentDirectory(parentInode, nb.Value)) {
+          alloc.Rollback();
+          throw new InPlaceUnsupportedException("ext: extent directory leaf full; in-place add unsupported.");
+        }
         dirExtraBlock = nb.Value;
         targetDirBlock = (int)dirExtraBlock;
         targetDirBytes = new byte[geom.BlockSize];
@@ -236,109 +198,524 @@ public static class ExtModifier {
     }
 
     // ── Build + write the new inode ──
-    var inodeBytes = new byte[geom.InodeSize];
-    var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-    var sectorsPerBlock = (ulong)(geom.BlockSize / 512);
-    BinaryPrimitives.WriteUInt16LittleEndian(inodeBytes.AsSpan(0, 2), DefaultMode);
-    BinaryPrimitives.WriteUInt32LittleEndian(inodeBytes.AsSpan(4, 4), (uint)data.Length);
-    BinaryPrimitives.WriteUInt32LittleEndian(inodeBytes.AsSpan(8, 4), now);
-    BinaryPrimitives.WriteUInt32LittleEndian(inodeBytes.AsSpan(12, 4), now);
-    BinaryPrimitives.WriteUInt32LittleEndian(inodeBytes.AsSpan(16, 4), now);
-    BinaryPrimitives.WriteUInt16LittleEndian(inodeBytes.AsSpan(26, 2), 1); // links
-    var totalSectors = (ulong)(dataBlocks.Count + (int)extraInodeBlocks) * sectorsPerBlock;
-    BinaryPrimitives.WriteUInt32LittleEndian(inodeBytes.AsSpan(28, 4), (uint)totalSectors); // i_blocks_lo
-    uint flags = 0;
-    if (useExtents) flags |= 0x80000; // EXTENTS_FL
-    BinaryPrimitives.WriteUInt32LittleEndian(inodeBytes.AsSpan(32, 4), flags);
-    // i_block area (60 bytes at offset 40).
-    iblockArea.CopyTo(inodeBytes.AsSpan(40, 60));
-    // extra_isize for 256-byte inodes (i_extra_isize @ 128).
-    if (geom.InodeSize > 128)
-      BinaryPrimitives.WriteUInt16LittleEndian(inodeBytes.AsSpan(128, 2), 32);
-    WriteInode(image, geom, newInodeNum, inodeBytes);
+    WriteInode(image, geom, newInodeNum, BuildInode(geom, DefaultMode, (uint)data.Length, 1,
+      (ulong)(dataBlocks.Count + (int)extraInodeBlocks), useExtents ? 0x80000u : 0u, iblockArea));
 
-    // ── Splice the new dirent into the directory block ──
-    WriteRev1DirEntry(targetDirBytes, insertOffset, newInodeNum, name, FileTypeRegular,
-      isLast: true, blockEnd: targetDirBytes.Length);
-    WriteDirBlock(image, geom, targetDirBlock, targetDirBytes, RootInode, isDtreeTail: true);
-
-    // If we grew the directory, append the new block to the root inode's map and bump i_size.
-    if (grewDir) {
-      if (dirUsesExtents)
-        GrowExtentDirectory(image, geom, rootInode, rootBlocks, dirExtraBlock);
-      else
-        GrowRootDirectory(image, geom, rootInode, rootBlocks, dirExtraBlock);
+    if (replacedInode != 0) {
+      // Repoint the existing entry, then let the old inode go.
+      BinaryPrimitives.WriteUInt32LittleEndian(replaceBytes!.AsSpan(replaceOffset, 4), newInodeNum);
+      WriteDirBlock(image, geom, replaceBlock, replaceBytes!, parentInodeNum, isDtreeTail: true);
+      DropLink(image, geom, alloc, replacedInode, wipeData: true);
+    } else {
+      WriteRev1DirEntry(targetDirBytes, insertOffset, newInodeNum, name, FileTypeRegular,
+        isLast: true, blockEnd: targetDirBytes.Length);
+      WriteDirBlock(image, geom, targetDirBlock, targetDirBytes, parentInodeNum, isDtreeTail: true);
+      if (grewDir) {
+        parentInode = ReadInode(image, geom, parentInodeNum);
+        if ((BinaryPrimitives.ReadUInt32LittleEndian(parentInode.AsSpan(32, 4)) & 0x80000) != 0)
+          GrowExtentDirectory(image, geom, parentInodeNum, parentInode, dirExtraBlock);
+        else
+          GrowDirectDirectory(image, geom, parentInodeNum, parentInode, dirBlocks, dirExtraBlock);
+      }
     }
 
-    // ── Persist allocator state (bitmaps + counts + checksums) ──
     alloc.Commit();
-
-    // ── Recompute inode checksum for the new inode (metadata_csum). ──
     if (geom.HasMetadataCsum) {
       WriteInodeChecksum(image, geom, newInodeNum);
-      // Root inode may have changed (grow); refresh its checksum too.
-      WriteInodeChecksum(image, geom, RootInode);
+      WriteInodeChecksum(image, geom, parentInodeNum);
     }
   }
 
   /// <summary>
-  /// Removes the named entry from an existing ext image, in place. Returns false
-  /// if no entry with that name exists in the root directory.
+  /// Removes the entry at <paramref name="path" /> from an existing ext image, in
+  /// place. Returns false when no such entry exists. A directory must be empty;
+  /// a file with further hard links only loses this name.
   /// </summary>
-  public static bool RemoveFile(Stream image, string name, bool wipeData = true) {
+  public static bool RemoveFile(Stream image, string path, bool wipeData = true) {
     ArgumentNullException.ThrowIfNull(image);
-    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(path);
+    var parts = SplitPath(path);
+    if (parts.Length == 0) return false;
 
     var geom = ReadGeometry(image);
-    var rootInode = ReadInode(image, geom, RootInode);
-    var rootFlags = BinaryPrimitives.ReadUInt32LittleEndian(rootInode.AsSpan(32, 4));
-    if ((rootFlags & 0x1000) != 0) return false; // htree dir: unsupported in-place remove
-    var rootBlocks = (rootFlags & 0x80000) != 0
-      ? ReadExtentDirBlocks(image, geom, rootInode)
-      : ReadInodeDirectBlockList(rootInode);
-    if (rootBlocks.Count == 0) return false;
+    var parentInodeNum = ResolveExisting(image, geom, parts[..^1], out var missing);
+    if (missing.Length != 0) return false;
+    var parentInode = ReadInode(image, geom, parentInodeNum);
+    EnsureReadableDirectory(parentInode);
 
-    // Find the entry across all root dir blocks.
     int hitBlock = -1; byte[] hitBytes = null!; int entryOffset = -1, prevOffset = -1; uint inodeNum = 0;
-    foreach (var b in rootBlocks) {
+    foreach (var b in DirectoryBlocks(image, geom, parentInode)) {
       var bb = ReadBlock(image, geom, b);
-      if (FindEntry(bb, name, out entryOffset, out prevOffset, out inodeNum)) {
+      if (FindEntry(bb, parts[^1], out entryOffset, out prevOffset, out inodeNum)) {
         hitBlock = b; hitBytes = bb; break;
       }
     }
     if (hitBlock < 0) return false;
 
     var inodeBytes = ReadInode(image, geom, inodeNum);
-    var inodeMode = BinaryPrimitives.ReadUInt16LittleEndian(inodeBytes.AsSpan(0, 2));
-    if ((inodeMode & InodeModeDir) != 0) return false; // refuse to remove directories.
+    var mode = BinaryPrimitives.ReadUInt16LittleEndian(inodeBytes.AsSpan(0, 2));
+    var isDir = (mode & 0xF000) == InodeModeDir;
+    if (isDir && !IsEmptyDirectory(image, geom, inodeBytes))
+      throw new IOException($"ext: directory '{path}' is not empty.");
 
-    var fileSize = BinaryPrimitives.ReadUInt32LittleEndian(inodeBytes.AsSpan(4, 4));
-    var flags = BinaryPrimitives.ReadUInt32LittleEndian(inodeBytes.AsSpan(32, 4));
     var alloc = new Allocator(image, geom);
+    SpliceOutDirEntry(hitBytes, entryOffset, prevOffset);
+    WriteDirBlock(image, geom, hitBlock, hitBytes, parentInodeNum, isDtreeTail: true);
 
-    // Collect every data + metadata block this inode owns, free + (optionally) wipe.
-    var owned = new List<uint>();
-    if ((flags & 0x80000) != 0)
-      CollectExtentBlocks(image, geom, inodeBytes, owned);
+    if (isDir) {
+      FreeInodeAndBlocks(image, geom, alloc, inodeNum, inodeBytes, wipeData);
+      alloc.CountDirectory(inodeNum, -1);
+      // The removed folder's ".." no longer counts as a link to the parent.
+      parentInode = ReadInode(image, geom, parentInodeNum);
+      var links = BinaryPrimitives.ReadUInt16LittleEndian(parentInode.AsSpan(26, 2));
+      if (links > 2) BinaryPrimitives.WriteUInt16LittleEndian(parentInode.AsSpan(26, 2), (ushort)(links - 1));
+      WriteInode(image, geom, parentInodeNum, parentInode);
+    } else {
+      DropLink(image, geom, alloc, inodeNum, wipeData);
+    }
+
+    alloc.Commit();
+    if (geom.HasMetadataCsum) WriteInodeChecksum(image, geom, parentInodeNum);
+    return true;
+  }
+
+  // ── Relocation (used by ExtBlockMover) ────────────────────────────────────
+
+  /// <summary>
+  /// Repoints the file at <paramref name="path" /> after its blocks
+  /// [<paramref name="oldFirst" />, +<paramref name="count" />) were copied to
+  /// <paramref name="newFirst" />: every pointer or extent naming them is rewritten,
+  /// the new blocks are claimed and the vacated ones released in their groups'
+  /// bitmaps, and every checksum covering what changed is recomputed.
+  /// </summary>
+  /// <exception cref="InvalidOperationException">The path does not name a file
+  /// that maps the run, or an extent only partly covered by the run would have to
+  /// be split. Nothing has been written.</exception>
+  internal static void RepointDataRun(Stream image, string path, uint oldFirst, uint newFirst, int count, bool releaseOld) {
+    if (count <= 0 || oldFirst == newFirst) return;
+    var geom = ReadGeometry(image);
+    var inodeNum = ResolvePathInode(image, geom, path)
+      ?? throw new InvalidOperationException($"ext: '{path}' does not name a file on the volume.");
+    var inode = ReadInode(image, geom, inodeNum);
+    var flags = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(32, 4));
+    var writes = new List<(uint Block, byte[] Bytes, bool ExtentNode)>();
+    bool changed;
+    if ((flags & 0x80000) != 0 && geom.HasExtentsFeature)
+      changed = PatchExtentNode(image, geom, inode.AsSpan(40, 60), oldFirst, newFirst, count, writes);
     else
-      CollectIndirectBlocks(image, geom, inodeBytes, fileSize, owned);
+      changed = PatchPointerMap(image, geom, inode, oldFirst, newFirst, count, writes);
+    if (!changed)
+      throw new InvalidOperationException($"ext: '{path}' does not map blocks {oldFirst}..{oldFirst + count - 1}.");
 
+    var alloc = new Allocator(image, geom);
+    for (var i = 0u; i < count; i++) alloc.MarkUsed(newFirst + i);
+
+    var generation = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(100, 4));
+    foreach (var (block, bytes, extentNode) in writes) {
+      if (extentNode && geom.HasMetadataCsum) StampExtentTail(geom, inodeNum, generation, bytes);
+      WriteBlock(image, geom, (int)block, bytes);
+    }
+    WriteInode(image, geom, inodeNum, inode);
+    if (geom.HasMetadataCsum) WriteInodeChecksum(image, geom, inodeNum);
+
+    if (releaseOld) {
+      var newEnd = newFirst + (uint)count;
+      for (var i = 0u; i < count; i++) {
+        var b = oldFirst + i;
+        if (b >= newFirst && b < newEnd) continue;   // the run landed partly on itself
+        alloc.FreeBlock(b);
+      }
+    }
+    alloc.Commit();
+  }
+
+  /// <summary>The inode a path names, or null.</summary>
+  private static uint? ResolvePathInode(Stream image, Geometry geom, string path) {
+    var parts = SplitPath(path);
+    if (parts.Length == 0) return null;
+    uint parent;
+    try {
+      parent = ResolveExisting(image, geom, parts[..^1], out var missing);
+      if (missing.Length != 0) return null;
+    } catch (IOException) {
+      return null;
+    }
+    foreach (var b in DirectoryBlocks(image, geom, ReadInode(image, geom, parent)))
+      if (FindEntry(ReadBlock(image, geom, b), parts[^1], out _, out _, out var ino))
+        return ino;
+    return null;
+  }
+
+  /// <summary>
+  /// Rewrites the extents of one extent-tree node that fall inside the moved run;
+  /// child nodes are read, patched and queued for writing. The node passed in is
+  /// patched in place.
+  /// </summary>
+  private static bool PatchExtentNode(Stream image, Geometry geom, Span<byte> node, uint oldFirst, uint newFirst,
+      int count, List<(uint Block, byte[] Bytes, bool ExtentNode)> writes) {
+    if (BinaryPrimitives.ReadUInt16LittleEndian(node) != ExtentMagic) return false;
+    var entries = BinaryPrimitives.ReadUInt16LittleEndian(node[2..]);
+    var depth = BinaryPrimitives.ReadUInt16LittleEndian(node[6..]);
+    var oldEnd = (long)oldFirst + count;
+    var changed = false;
+    for (var i = 0; i < entries; i++) {
+      var off = 12 + i * 12;
+      if (off + 12 > node.Length) break;
+      if (depth == 0) {
+        var len = BinaryPrimitives.ReadUInt16LittleEndian(node[(off + 4)..]);
+        if (len > 32768) len -= 32768;          // uninitialised extent: same blocks
+        var start = ((long)BinaryPrimitives.ReadUInt16LittleEndian(node[(off + 6)..]) << 32)
+                    | BinaryPrimitives.ReadUInt32LittleEndian(node[(off + 8)..]);
+        var end = start + len;
+        if (end <= oldFirst || start >= oldEnd) continue;
+        if (start < oldFirst || end > oldEnd)
+          throw new InvalidOperationException(
+            $"ext: the move covers only part of an extent ({start}..{end - 1}); splitting it in place is unsupported.");
+        var moved = newFirst + (start - oldFirst);
+        BinaryPrimitives.WriteUInt16LittleEndian(node[(off + 6)..], (ushort)(moved >> 32));
+        BinaryPrimitives.WriteUInt32LittleEndian(node[(off + 8)..], (uint)(moved & 0xFFFFFFFF));
+        changed = true;
+      } else {
+        var leaf = ((long)BinaryPrimitives.ReadUInt16LittleEndian(node[(off + 8)..]) << 32)
+                   | BinaryPrimitives.ReadUInt32LittleEndian(node[(off + 4)..]);
+        if (leaf <= 0 || leaf >= geom.BlocksCount) continue;
+        var child = ReadBlock(image, geom, (int)leaf);
+        if (PatchExtentNode(image, geom, child, oldFirst, newFirst, count, writes)) {
+          writes.Add(((uint)leaf, child, true));
+          changed = true;
+        }
+      }
+    }
+    return changed;
+  }
+
+  /// <summary>
+  /// Rewrites every pointer that names a block inside the moved run — data pointers
+  /// and pointers to the file's own indirect blocks alike, since a file's block map
+  /// moves with it. Pointer blocks are read where they are now (a moved one has
+  /// already been copied to its new home) and queued for writing when they change;
+  /// the inode is patched in place.
+  /// </summary>
+  private static bool PatchPointerMap(Stream image, Geometry geom, byte[] inode, uint oldFirst, uint newFirst, int count,
+      List<(uint Block, byte[] Bytes, bool ExtentNode)> writes) {
+    var oldEnd = oldFirst + (uint)count;
+    uint Translate(uint b) => b >= oldFirst && b < oldEnd ? newFirst + (b - oldFirst) : b;
+    var changed = false;
+    for (var i = 0; i < 12; i++) {
+      var ptr = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(40 + i * 4, 4));
+      if (ptr == 0 || Translate(ptr) == ptr) continue;
+      BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(40 + i * 4, 4), Translate(ptr));
+      changed = true;
+    }
+    for (var level = 1; level <= 3; level++) {
+      var field = 84 + level * 4;
+      var ptr = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(field, 4));
+      if (ptr == 0 || ptr >= geom.BlocksCount) continue;
+      var moved = Translate(ptr);
+      if (moved != ptr) {
+        BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(field, 4), moved);
+        changed = true;
+      }
+      changed |= PatchIndirect(image, geom, moved, level, Translate, writes);
+    }
+    return changed;
+  }
+
+  private static bool PatchIndirect(Stream image, Geometry geom, uint block, int level, Func<uint, uint> translate,
+      List<(uint Block, byte[] Bytes, bool ExtentNode)> writes) {
+    var buf = ReadBlock(image, geom, (int)block);
+    var changed = false;
+    var own = false;
+    for (var i = 0; i < geom.BlockSize / 4; i++) {
+      var ptr = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(i * 4, 4));
+      if (ptr == 0 || ptr >= geom.BlocksCount) continue;
+      var moved = translate(ptr);
+      if (moved != ptr) {
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(i * 4, 4), moved);
+        own = true;
+      }
+      if (level > 1) changed |= PatchIndirect(image, geom, moved, level - 1, translate, writes);
+    }
+    if (own) writes.Add((block, buf, false));
+    return changed || own;
+  }
+
+  /// <summary>
+  /// The checksum of an extent-tree block (<c>ext4_extent_tail</c>): crc32c seeded
+  /// with the owning inode, over the node up to its eh_max entries.
+  /// </summary>
+  private static void StampExtentTail(Geometry geom, uint inodeNum, uint generation, byte[] node) {
+    var max = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(4, 2));
+    var tailOff = 12 + 12 * max;
+    if (tailOff + 4 > node.Length) return;
+    var idxLe = new byte[4];
+    BinaryPrimitives.WriteUInt32LittleEndian(idxLe, inodeNum);
+    var genLe = new byte[4];
+    BinaryPrimitives.WriteUInt32LittleEndian(genLe, generation);
+    var seed = Crc32c(Crc32c(geom.CsumSeed, idxLe), genLe);
+    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(tailOff, 4), Crc32c(seed, node.AsSpan(0, tailOff)));
+  }
+
+  /// <summary>
+  /// Repoints a group's block bitmap (field 0), inode bitmap (4) or inode table (8)
+  /// after it was copied to <paramref name="newBlock" />: the descriptor field is
+  /// rewritten in the primary table and every backup, each copy's checksum is
+  /// recomputed, the new blocks are claimed and the vacated ones released.
+  /// </summary>
+  internal static void RepointGroupMetadata(Stream image, int fieldOffset, uint group, uint oldBlock, uint newBlock,
+      uint blocks, Func<uint, bool> isLive) {
+    var geom = ReadGeometry(image);
+    var alloc = new Allocator(image, geom);
+    alloc.SetDescriptorField(group, fieldOffset, newBlock);
+    for (var i = 0u; i < blocks; i++) alloc.MarkUsed(newBlock + i);
+    for (var i = 0u; i < blocks; i++) {
+      var b = oldBlock + i;
+      if (b >= newBlock && b < newBlock + blocks) continue;
+      if (!isLive(b)) alloc.FreeBlock(b);
+    }
+    alloc.Commit();
+  }
+
+  // ── Paths and directories ─────────────────────────────────────────────────
+
+  private static string[] SplitPath(string path)
+    => path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+  /// <summary>
+  /// Walks <paramref name="folders" /> from the root as far as they exist; returns
+  /// the deepest existing folder's inode and, in <paramref name="missing" />, the
+  /// folders below it that do not exist yet.
+  /// </summary>
+  private static uint ResolveExisting(Stream image, Geometry geom, string[] folders, out string[] missing) {
+    var current = RootInode;
+    for (var i = 0; i < folders.Length; ++i) {
+      var dir = ReadInode(image, geom, current);
+      EnsureReadableDirectory(dir);
+      uint found = 0;
+      foreach (var b in DirectoryBlocks(image, geom, dir)) {
+        if (FindEntry(ReadBlock(image, geom, b), folders[i], out _, out _, out var ino)) { found = ino; break; }
+      }
+      if (found == 0) { missing = folders[i..]; return current; }
+      var child = ReadInode(image, geom, found);
+      if ((BinaryPrimitives.ReadUInt16LittleEndian(child.AsSpan(0, 2)) & 0xF000) != InodeModeDir)
+        throw new IOException($"ext: '{string.Join('/', folders[..(i + 1)])}' is not a directory.");
+      current = found;
+    }
+    missing = [];
+    return current;
+  }
+
+  private static void EnsureReadableDirectory(byte[] dir) {
+    if ((BinaryPrimitives.ReadUInt16LittleEndian(dir.AsSpan(0, 2)) & 0xF000) != InodeModeDir)
+      throw new IOException("ext: not a directory.");
+    if ((BinaryPrimitives.ReadUInt32LittleEndian(dir.AsSpan(32, 4)) & 0x10000000) != 0)
+      throw new InPlaceUnsupportedException("ext: the directory keeps its entries inline in the inode; in-place edit unsupported.");
+  }
+
+  /// <summary>
+  /// A directory a new entry can be linked into: not hashed (an htree needs the
+  /// entry filed under its name hash, which this editor does not compute).
+  /// </summary>
+  private static void EnsureWritableDirectory(Stream image, Geometry geom, uint dirInode) {
+    var dir = ReadInode(image, geom, dirInode);
+    EnsureReadableDirectory(dir);
+    if ((BinaryPrimitives.ReadUInt32LittleEndian(dir.AsSpan(32, 4)) & 0x1000) != 0)
+      throw new InPlaceUnsupportedException("ext: hashed (htree) directory; adding an entry in place is unsupported.");
+    _ = DirectoryBlocks(image, geom, dir);   // refuses block maps it cannot walk
+  }
+
+  /// <summary>Every data block of a directory, in logical order.</summary>
+  private static List<int> DirectoryBlocks(Stream image, Geometry geom, byte[] dir) {
+    var flags = BinaryPrimitives.ReadUInt32LittleEndian(dir.AsSpan(32, 4));
+    if ((flags & 0x80000) != 0) return ReadExtentDirBlocks(image, geom, dir);
+    var size = BinaryPrimitives.ReadUInt32LittleEndian(dir.AsSpan(4, 4));
+    var owned = new List<uint>();
+    var count = (int)((size + (uint)geom.BlockSize - 1) / (uint)geom.BlockSize);
+    var list = new List<int>(count);
+    for (var i = 0; i < 12 && list.Count < count; i++) {
+      var b = BinaryPrimitives.ReadUInt32LittleEndian(dir.AsSpan(40 + i * 4, 4));
+      if (b == 0) break;
+      list.Add((int)b);
+    }
+    var ind = BinaryPrimitives.ReadUInt32LittleEndian(dir.AsSpan(88, 4));
+    if (list.Count < count && ind != 0) {
+      var buf = ReadBlock(image, geom, (int)ind);
+      for (var i = 0; i < geom.BlockSize / 4 && list.Count < count; i++) {
+        var b = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(i * 4, 4));
+        if (b == 0) break;
+        list.Add((int)b);
+      }
+    }
+    if (list.Count < count)
+      throw new InPlaceUnsupportedException("ext: directory maps its blocks through double indirection; in-place edit unsupported.");
+    return list;
+  }
+
+  private static bool IsEmptyDirectory(Stream image, Geometry geom, byte[] dir) {
+    foreach (var b in DirectoryBlocks(image, geom, dir)) {
+      var block = ReadBlock(image, geom, b);
+      var off = 0;
+      while (off + 8 <= block.Length) {
+        var ino = BinaryPrimitives.ReadUInt32LittleEndian(block.AsSpan(off, 4));
+        var recLen = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(off + 4, 2));
+        var nameLen = block[off + 6];
+        if (recLen < 8) break;
+        if (ino != 0) {
+          var isDot = nameLen == 1 && block[off + 8] == (byte)'.';
+          var isDotDot = nameLen == 2 && block[off + 8] == (byte)'.' && block[off + 9] == (byte)'.';
+          if (!isDot && !isDotDot) return false;
+        }
+        off += recLen;
+      }
+    }
+    return true;
+  }
+
+  /// <summary>
+  /// Creates an empty folder <paramref name="name" /> in <paramref name="parentInode" />:
+  /// a directory inode with one block holding "." and "..", an entry in the parent,
+  /// and the parent's link count and the group's directory count raised.
+  /// </summary>
+  private static uint MakeDirectory(Stream image, Geometry geom, uint parentInode, string name) {
+    EnsureWritableDirectory(image, geom, parentInode);
+    var parent = ReadInode(image, geom, parentInode);
+    var parentBlocks = DirectoryBlocks(image, geom, parent);
+    var tail = geom.HasMetadataCsum ? 12 : 0;
+    var entrySize = ComputeDirEntrySize(name);
+    int slotBlock = -1; byte[] slotBytes = null!; var slotOffset = -1;
+    foreach (var b in parentBlocks) {
+      var bb = ReadBlock(image, geom, b);
+      if (TrySplitLastEntryForAppend(bb, entrySize, out var off, tail)) { slotBlock = b; slotBytes = bb; slotOffset = off; break; }
+    }
+    if (slotBlock < 0)
+      throw new InPlaceUnsupportedException("ext: no room for a new folder entry without growing the directory.");
+
+    var alloc = new Allocator(image, geom);
+    var inode = alloc.AllocateInode() ?? throw new IOException("ext: no free inodes available.");
+    var blocks = alloc.AllocateBlocks(1);
+    if (blocks == null) { alloc.Rollback(); throw new IOException("ext: no free block for a new folder."); }
+    var block = blocks[0];
+    var useExtents = geom.HasExtentsFeature;
+    var area = useExtents
+      ? BuildExtentMapping(image, alloc, geom, inode, blocks, out var extra)
+      : BuildIndirectMapping(image, alloc, geom, blocks, out extra);
+
+    var content = new byte[geom.BlockSize];
+    WriteRev1DirEntry(content, 0, inode, ".", 2, isLast: false, blockEnd: content.Length);
+    WriteRev1DirEntry(content, 12, parentInode, "..", 2, isLast: true, blockEnd: content.Length);
+    WriteInode(image, geom, inode, BuildInode(geom, (ushort)(InodeModeDir | 0x1ED), (uint)geom.BlockSize, 2,
+      1 + extra, useExtents ? 0x80000u : 0u, area));
+    WriteDirBlock(image, geom, (int)block, content, inode, isDtreeTail: true);
+
+    WriteRev1DirEntry(slotBytes, slotOffset, inode, name, 2, isLast: true, blockEnd: slotBytes.Length);
+    WriteDirBlock(image, geom, slotBlock, slotBytes, parentInode, isDtreeTail: true);
+
+    parent = ReadInode(image, geom, parentInode);
+    var links = BinaryPrimitives.ReadUInt16LittleEndian(parent.AsSpan(26, 2));
+    BinaryPrimitives.WriteUInt16LittleEndian(parent.AsSpan(26, 2), (ushort)(links + 1));
+    WriteInode(image, geom, parentInode, parent);
+
+    alloc.CountDirectory(inode, +1);
+    alloc.Commit();
+    if (geom.HasMetadataCsum) {
+      WriteInodeChecksum(image, geom, inode);
+      WriteInodeChecksum(image, geom, parentInode);
+    }
+    return inode;
+  }
+
+  /// <summary>A fresh inode image: mode, size, link count, block usage, flags and block map; times are now.</summary>
+  private static byte[] BuildInode(Geometry geom, ushort mode, uint size, ushort links, ulong blocks, uint flags, byte[] iblockArea) {
+    var inodeBytes = new byte[geom.InodeSize];
+    var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    BinaryPrimitives.WriteUInt16LittleEndian(inodeBytes.AsSpan(0, 2), mode);
+    BinaryPrimitives.WriteUInt32LittleEndian(inodeBytes.AsSpan(4, 4), size);
+    BinaryPrimitives.WriteUInt32LittleEndian(inodeBytes.AsSpan(8, 4), now);
+    BinaryPrimitives.WriteUInt32LittleEndian(inodeBytes.AsSpan(12, 4), now);
+    BinaryPrimitives.WriteUInt32LittleEndian(inodeBytes.AsSpan(16, 4), now);
+    BinaryPrimitives.WriteUInt16LittleEndian(inodeBytes.AsSpan(26, 2), links);
+    BinaryPrimitives.WriteUInt32LittleEndian(inodeBytes.AsSpan(28, 4), (uint)(blocks * (ulong)(geom.BlockSize / 512)));
+    BinaryPrimitives.WriteUInt32LittleEndian(inodeBytes.AsSpan(32, 4), flags);
+    iblockArea.CopyTo(inodeBytes.AsSpan(40, 60));
+    if (geom.InodeSize > 128)
+      BinaryPrimitives.WriteUInt16LittleEndian(inodeBytes.AsSpan(128, 2), 32);
+    return inodeBytes;
+  }
+
+  /// <summary>
+  /// Takes one link away from <paramref name="inodeNum" />: the inode survives with
+  /// its remaining names, or, at the last link, it and everything it owns are freed.
+  /// </summary>
+  private static void DropLink(Stream image, Geometry geom, Allocator alloc, uint inodeNum, bool wipeData) {
+    var inodeBytes = ReadInode(image, geom, inodeNum);
+    var links = BinaryPrimitives.ReadUInt16LittleEndian(inodeBytes.AsSpan(26, 2));
+    if (links > 1) {
+      BinaryPrimitives.WriteUInt16LittleEndian(inodeBytes.AsSpan(26, 2), (ushort)(links - 1));
+      BinaryPrimitives.WriteUInt32LittleEndian(inodeBytes.AsSpan(12, 4), (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+      WriteInode(image, geom, inodeNum, inodeBytes);
+      if (geom.HasMetadataCsum) WriteInodeChecksum(image, geom, inodeNum);
+      return;
+    }
+    FreeInodeAndBlocks(image, geom, alloc, inodeNum, inodeBytes, wipeData);
+  }
+
+  /// <summary>
+  /// Releases an inode and every block it owns — data, block-map blocks and its
+  /// extended-attribute block (shared ones only lose a reference).
+  /// </summary>
+  private static void FreeInodeAndBlocks(Stream image, Geometry geom, Allocator alloc, uint inodeNum, byte[] inodeBytes, bool wipeData) {
+    var mode = BinaryPrimitives.ReadUInt16LittleEndian(inodeBytes.AsSpan(0, 2));
+    var fileSize = BinaryPrimitives.ReadUInt32LittleEndian(inodeBytes.AsSpan(4, 4));
+    var iBlocks = BinaryPrimitives.ReadUInt32LittleEndian(inodeBytes.AsSpan(28, 4));
+    var flags = BinaryPrimitives.ReadUInt32LittleEndian(inodeBytes.AsSpan(32, 4));
+    var type = mode & 0xF000;
+    var fileAcl = BinaryPrimitives.ReadUInt32LittleEndian(inodeBytes.AsSpan(104, 4));
+
+    // Only regular files, directories and symlinks whose target is not stored in
+    // the inode own blocks; device numbers, fast symlink targets and inline data
+    // live in i_block itself and must not be read as block pointers.
+    var ownsBlocks = type is 0x8000 or InodeModeDir || (type == 0xA000 && iBlocks != 0 && fileSize >= 60);
+    if ((flags & 0x10000000) != 0) ownsBlocks = false;
+    var owned = new List<uint>();
+    if (ownsBlocks) {
+      if ((flags & 0x80000) != 0) CollectExtentBlocks(image, geom, inodeBytes, owned);
+      else CollectIndirectBlocks(image, geom, inodeBytes, fileSize, owned);
+    }
     foreach (var ptr in owned) {
       if (ptr < geom.FirstDataBlock || ptr >= geom.BlocksCount) continue;
       alloc.FreeBlock(ptr);
       if (wipeData) WriteBlock(image, geom, (int)ptr, new byte[geom.BlockSize]);
     }
+    if (fileAcl != 0 && fileAcl >= geom.FirstDataBlock && fileAcl < geom.BlocksCount)
+      ReleaseXattrBlock(image, geom, alloc, fileAcl, wipeData);
 
     alloc.FreeInode(inodeNum);
     WriteInode(image, geom, inodeNum, new byte[geom.InodeSize]);
     if (geom.HasMetadataCsum) WriteInodeChecksum(image, geom, inodeNum);
+  }
 
-    // Splice dirent out of its block.
-    SpliceOutDirEntry(hitBytes, entryOffset, prevOffset);
-    WriteDirBlock(image, geom, hitBlock, hitBytes, RootInode, isDtreeTail: true);
-
-    alloc.Commit();
-    return true;
+  /// <summary>
+  /// Drops one reference to an extended-attribute block; the last reference frees it.
+  /// </summary>
+  private static void ReleaseXattrBlock(Stream image, Geometry geom, Allocator alloc, uint block, bool wipeData) {
+    var buf = ReadBlock(image, geom, (int)block);
+    if (BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(0, 4)) != 0xEA020000) return;  // not an xattr block
+    var refs = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(4, 4));
+    if (refs > 1) {
+      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(4, 4), refs - 1);
+      if (geom.HasMetadataCsum) {
+        // h_checksum @ 0x10 = crc32c(fs seed, le64 block number, block with the field zeroed).
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x10, 4), 0);
+        var blockLe = new byte[8];
+        BinaryPrimitives.WriteUInt64LittleEndian(blockLe, block);
+        var crc = Crc32c(Crc32c(geom.CsumSeed, blockLe), buf);
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0x10, 4), crc);
+      }
+      WriteBlock(image, geom, (int)block, buf);
+      return;
+    }
+    alloc.FreeBlock(block);
+    if (wipeData) WriteBlock(image, geom, (int)block, new byte[geom.BlockSize]);
   }
 
   // ── Geometry / superblock ────────────────────────────────────────────────
@@ -585,6 +962,76 @@ public static class ExtModifier {
       return null;
     }
 
+    /// <summary>
+    /// Allocates <paramref name="count" /> blocks, as one contiguous run inside a
+    /// group when there is one, else wherever free blocks are. Null when the volume
+    /// has fewer free blocks than asked for.
+    /// </summary>
+    public List<uint>? AllocateBlocks(int count) {
+      var result = new List<uint>(count);
+      if (count == 0) return result;
+      for (uint group = 0; group < _g.GroupCount; group++) {
+        var bm = BlockBitmap(group);
+        var groupStart = (ulong)_g.FirstDataBlock + (ulong)group * _g.BlocksPerGroup;
+        var maxInGroup = (int)Math.Min((ulong)_g.BlocksPerGroup, (ulong)_g.BlocksCount - groupStart);
+        var run = 0;
+        for (var bit = 0; bit < maxInGroup; bit++) {
+          if ((bm[bit / 8] & (1 << (bit % 8))) != 0) { run = 0; continue; }
+          if (++run < count) continue;
+          var first = bit - count + 1;
+          for (var b = first; b <= bit; b++) {
+            bm[b / 8] |= (byte)(1 << (b % 8));
+            result.Add((uint)(groupStart + (ulong)b));
+          }
+          _blockDelta[group] = _blockDelta.GetValueOrDefault(group) - count;
+          _sbFreeBlocksDelta -= count;
+          return result;
+        }
+      }
+      for (var i = 0; i < count; i++) {
+        var b = this.AllocateBlock();
+        if (b == null) return null;
+        result.Add(b.Value);
+      }
+      return result;
+    }
+
+    /// <summary>Marks a specific block in use (a no-op when it already is).</summary>
+    public void MarkUsed(uint block) {
+      var group = (uint)(((ulong)block - _g.FirstDataBlock) / _g.BlocksPerGroup);
+      if (block < _g.FirstDataBlock || group >= _g.GroupCount) return;
+      var groupStart = (ulong)_g.FirstDataBlock + (ulong)group * _g.BlocksPerGroup;
+      var bit = (int)((ulong)block - groupStart);
+      var bm = BlockBitmap(group);
+      if ((bm[bit / 8] & (1 << (bit % 8))) != 0) return;
+      bm[bit / 8] |= (byte)(1 << (bit % 8));
+      _blockDelta[group] = _blockDelta.GetValueOrDefault(group) - 1;
+      _sbFreeBlocksDelta--;
+    }
+
+    private readonly List<(uint Group, int Field, uint Value)> _fieldUpdates = [];
+
+    /// <summary>
+    /// Points a group's block bitmap (0), inode bitmap (4) or inode table (8) at
+    /// <paramref name="value" />, in the primary descriptor now and in every backup
+    /// table on commit.
+    /// </summary>
+    public void SetDescriptorField(uint group, int field, uint value) {
+      var desc = Desc(group);
+      BinaryPrimitives.WriteUInt32LittleEndian(desc.AsSpan(field, 4), value);
+      if (_g.DescSize >= 64) BinaryPrimitives.WriteUInt32LittleEndian(desc.AsSpan(0x20 + field, 4), 0);
+      _fieldUpdates.Add((group, field, value));
+      _descTouched.Add(group);
+    }
+
+    private readonly HashSet<uint> _descTouched = [];
+
+    /// <summary>Records a directory created (+1) or removed (-1) in the inode's group.</summary>
+    public void CountDirectory(uint inode, int delta) {
+      var group = (inode - 1) / _g.InodesPerGroup;
+      _dirDelta[group] = _dirDelta.GetValueOrDefault(group) + delta;
+    }
+
     public void FreeBlock(uint block) {
       var group = (uint)(((ulong)block - _g.FirstDataBlock) / _g.BlocksPerGroup);
       if (group >= _g.GroupCount) return;
@@ -655,6 +1102,7 @@ public static class ExtModifier {
       foreach (var k in _blockDelta.Keys) allGroups.Add(k);
       foreach (var k in _inodeDelta.Keys) allGroups.Add(k);
       foreach (var k in _dirDelta.Keys) allGroups.Add(k);
+      foreach (var k in _descTouched) allGroups.Add(k);
 
       foreach (var group in allGroups) {
         var desc = Desc(group);
@@ -662,6 +1110,14 @@ public static class ExtModifier {
         var fi = BgdFreeInodes(desc, _g.DescSize);
         SetBgdFreeBlocks(desc, _g.DescSize, (uint)((int)fb + _blockDelta.GetValueOrDefault(group)));
         SetBgdFreeInodes(desc, _g.DescSize, (uint)((int)fi + _inodeDelta.GetValueOrDefault(group)));
+        if (_dirDelta.TryGetValue(group, out var dirs) && dirs != 0) {
+          // bg_used_dirs_count_lo @ 0x10, _hi @ 0x30 on 64-byte descriptors.
+          uint used = BinaryPrimitives.ReadUInt16LittleEndian(desc.AsSpan(0x10, 2));
+          if (_g.DescSize >= 64) used |= (uint)BinaryPrimitives.ReadUInt16LittleEndian(desc.AsSpan(0x30, 2)) << 16;
+          used = (uint)Math.Max(0, (long)used + dirs);
+          BinaryPrimitives.WriteUInt16LittleEndian(desc.AsSpan(0x10, 2), (ushort)used);
+          if (_g.DescSize >= 64) BinaryPrimitives.WriteUInt16LittleEndian(desc.AsSpan(0x30, 2), (ushort)(used >> 16));
+        }
 
         var flags = BgdFlags(desc);
         if (_blockBitmaps.ContainsKey(group)) flags &= unchecked((ushort)~BgBlockUninit);
@@ -693,7 +1149,31 @@ public static class ExtModifier {
         WriteBgd(_image, _g, group, desc);
       }
 
-      // 3) Superblock free counts (+ 64bit hi halves) and superblock checksum.
+      // 3) A moved bitmap or inode table is recorded in every backup descriptor table
+      //    too; fsck falls back to them, so they must say the same.
+      if (_fieldUpdates.Count > 0) {
+        var gdtBlocks = (_g.GroupCount * (uint)_g.DescSize + (uint)_g.BlockSize - 1) / (uint)_g.BlockSize;
+        for (uint backup = 1; backup < _g.GroupCount; backup++) {
+          if (!HasSuperBackup(backup) && (_g.FeatureRoCompat & 0x1) != 0) continue;
+          var tableStart = ((long)_g.FirstDataBlock + (long)backup * _g.BlocksPerGroup + 1) * _g.BlockSize;
+          foreach (var group in _fieldUpdates.Select(u => u.Group).Distinct()) {
+            var at = tableStart + (long)group * _g.DescSize;
+            if (at + _g.DescSize > _image.Length || (long)group * _g.DescSize >= gdtBlocks * _g.BlockSize) continue;
+            var copy = new byte[_g.DescSize];
+            _image.Position = at;
+            _image.ReadExactly(copy);
+            foreach (var (g2, field, value) in _fieldUpdates.Where(u => u.Group == group)) {
+              BinaryPrimitives.WriteUInt32LittleEndian(copy.AsSpan(field, 4), value);
+              if (_g.DescSize >= 64) BinaryPrimitives.WriteUInt32LittleEndian(copy.AsSpan(0x20 + field, 4), 0);
+            }
+            WriteGroupDescChecksum(copy, group);
+            _image.Position = at;
+            _image.Write(copy, 0, _g.DescSize);
+          }
+        }
+      }
+
+      // 4) Superblock free counts (+ 64bit hi halves) and superblock checksum.
       ApplySuperblockDeltas();
     }
 
@@ -772,25 +1252,19 @@ public static class ExtModifier {
   // ── File block mapping ────────────────────────────────────────────────────
 
   /// <summary>
-  /// Builds an inode-resident ext4 extent leaf for the given data blocks,
-  /// coalescing contiguous runs into extents. Returns the 60-byte i_block area.
-  /// Falls back to throwing if the layout needs more than 4 extents (the
-  /// inode-resident leaf capacity) so the caller can rebuild instead.
+  /// Builds the ext4 extent map for the given data blocks, coalescing contiguous
+  /// runs. Up to four extents live in the inode itself; more go into one leaf block
+  /// the inode indexes (depth 1), which holds as many as fit a block. Returns the
+  /// 60-byte i_block area.
   /// </summary>
-  private static byte[] BuildExtentMapping(Allocator alloc, Geometry geom, List<uint> dataBlocks, out uint extraInodeBlocks) {
+  private static byte[] BuildExtentMapping(Stream image, Allocator alloc, Geometry geom, uint inodeNum,
+      List<uint> dataBlocks, out uint extraInodeBlocks) {
     extraInodeBlocks = 0;
     var area = new byte[60];
-    // ext4_extent_header: eh_magic(0), eh_entries(2), eh_max(4), eh_depth(6), eh_generation(8).
     BinaryPrimitives.WriteUInt16LittleEndian(area.AsSpan(0, 2), ExtentMagic);
-    BinaryPrimitives.WriteUInt16LittleEndian(area.AsSpan(4, 2), 4); // eh_max (inode-resident leaf holds 4)
-    BinaryPrimitives.WriteUInt16LittleEndian(area.AsSpan(6, 2), 0); // eh_depth = 0 (leaf)
+    BinaryPrimitives.WriteUInt16LittleEndian(area.AsSpan(4, 2), 4);   // eh_max (inode-resident)
+    if (dataBlocks.Count == 0) return area;
 
-    if (dataBlocks.Count == 0) {
-      BinaryPrimitives.WriteUInt16LittleEndian(area.AsSpan(2, 2), 0);
-      return area;
-    }
-
-    // Coalesce into runs.
     var runs = new List<(uint start, uint len)>();
     uint runStart = dataBlocks[0], runLen = 1;
     for (var i = 1; i < dataBlocks.Count; i++) {
@@ -799,20 +1273,53 @@ public static class ExtModifier {
     }
     runs.Add((runStart, runLen));
 
-    if (runs.Count > 4)
-      throw new InPlaceUnsupportedException($"ext: file maps to {runs.Count} extents; inode-resident leaf holds 4. Rebuild required.");
-
-    BinaryPrimitives.WriteUInt16LittleEndian(area.AsSpan(2, 2), (ushort)runs.Count); // eh_entries
-    uint logical = 0;
-    for (var i = 0; i < runs.Count; i++) {
-      var (start, len) = runs[i];
-      var off = 12 + i * 12;
-      BinaryPrimitives.WriteUInt32LittleEndian(area.AsSpan(off, 4), logical);       // ee_block
-      BinaryPrimitives.WriteUInt16LittleEndian(area.AsSpan(off + 4, 2), (ushort)len); // ee_len
-      BinaryPrimitives.WriteUInt16LittleEndian(area.AsSpan(off + 6, 2), (ushort)((ulong)start >> 32)); // ee_start_hi (0 for <16TiB)
-      BinaryPrimitives.WriteUInt32LittleEndian(area.AsSpan(off + 8, 4), start);      // ee_start_lo
-      logical += len;
+    static void WriteExtents(Span<byte> node, List<(uint start, uint len)> runs) {
+      uint logical = 0;
+      for (var i = 0; i < runs.Count; i++) {
+        var (start, len) = runs[i];
+        var off = 12 + i * 12;
+        BinaryPrimitives.WriteUInt32LittleEndian(node.Slice(off, 4), logical);
+        BinaryPrimitives.WriteUInt16LittleEndian(node.Slice(off + 4, 2), (ushort)len);
+        BinaryPrimitives.WriteUInt16LittleEndian(node.Slice(off + 6, 2), 0);
+        BinaryPrimitives.WriteUInt32LittleEndian(node.Slice(off + 8, 4), start);
+        logical += len;
+      }
     }
+
+    if (runs.Count <= 4) {
+      BinaryPrimitives.WriteUInt16LittleEndian(area.AsSpan(2, 2), (ushort)runs.Count);
+      WriteExtents(area, runs);
+      return area;
+    }
+
+    var leafMax = (geom.BlockSize - 12 - (geom.HasMetadataCsum ? 4 : 0)) / 12;
+    if (runs.Count > leafMax)
+      throw new InPlaceUnsupportedException($"ext: file maps to {runs.Count} extents; one index level holds {leafMax}.");
+    var leafBlock = alloc.AllocateBlock() ?? throw new IOException("ext: no free block for the extent leaf.");
+    extraInodeBlocks = 1;
+
+    var leaf = new byte[geom.BlockSize];
+    BinaryPrimitives.WriteUInt16LittleEndian(leaf.AsSpan(0, 2), ExtentMagic);
+    BinaryPrimitives.WriteUInt16LittleEndian(leaf.AsSpan(2, 2), (ushort)runs.Count);
+    BinaryPrimitives.WriteUInt16LittleEndian(leaf.AsSpan(4, 2), (ushort)leafMax);
+    BinaryPrimitives.WriteUInt16LittleEndian(leaf.AsSpan(6, 2), 0);
+    WriteExtents(leaf, runs);
+    if (geom.HasMetadataCsum) {
+      // ext4_extent_tail after eh_max entries: crc32c(inode seed, node up to the tail).
+      var idxLe = new byte[4];
+      BinaryPrimitives.WriteUInt32LittleEndian(idxLe, inodeNum);
+      var seed = Crc32c(Crc32c(geom.CsumSeed, idxLe), new byte[4]);   // generation 0
+      var tailOff = 12 + 12 * leafMax;
+      BinaryPrimitives.WriteUInt32LittleEndian(leaf.AsSpan(tailOff, 4), Crc32c(seed, leaf.AsSpan(0, tailOff)));
+    }
+    WriteBlock(image, geom, (int)leafBlock, leaf);
+
+    // The inode holds one index entry pointing at the leaf.
+    BinaryPrimitives.WriteUInt16LittleEndian(area.AsSpan(2, 2), 1);
+    BinaryPrimitives.WriteUInt16LittleEndian(area.AsSpan(6, 2), 1);   // eh_depth = 1
+    BinaryPrimitives.WriteUInt32LittleEndian(area.AsSpan(12, 4), 0);  // ei_block
+    BinaryPrimitives.WriteUInt32LittleEndian(area.AsSpan(16, 4), leafBlock); // ei_leaf_lo
+    BinaryPrimitives.WriteUInt16LittleEndian(area.AsSpan(20, 2), 0);  // ei_leaf_hi
     return area;
   }
 
@@ -970,17 +1477,6 @@ public static class ExtModifier {
     image.Write(data);
   }
 
-  private static List<int> ReadInodeDirectBlockList(byte[] inode) {
-    // Only direct blocks (linear dir blocks live in the first 12 pointers for our purposes).
-    var list = new List<int>();
-    for (var i = 0; i < 12; i++) {
-      var b = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(40 + i * 4, 4));
-      if (b == 0) break;
-      list.Add((int)b);
-    }
-    return list;
-  }
-
   /// <summary>
   /// Returns the physical data blocks of an extent-mapped directory inode in
   /// logical order. Only inode-resident leaf extents (depth 0) are walked; a
@@ -1005,11 +1501,27 @@ public static class ExtModifier {
   }
 
   /// <summary>
-  /// Appends one block to an inode-resident extent-mapped directory: extends the
-  /// last extent if the new block is contiguous, otherwise adds a new extent (max
-  /// 4 inode-resident). Bumps i_size + i_blocks and rewrites the inode.
+  /// Whether an inode-resident extent-mapped directory can take <paramref name="newBlock" />:
+  /// either it extends the last extent or a leaf slot is free.
   /// </summary>
-  private static void GrowExtentDirectory(Stream image, Geometry geom, byte[] inode, List<int> existingBlocks, uint newBlock) {
+  private static bool CanGrowExtentDirectory(byte[] inode, uint newBlock) {
+    var entries = BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(42, 2));
+    var max = BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(44, 2));
+    if (entries > 0) {
+      var off = 40 + 12 + (entries - 1) * 12;
+      var eeLen = BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(off + 4, 2)) & 0x7FFF;
+      var eeStart = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(off + 8, 4));
+      if (eeStart + (uint)eeLen == newBlock && eeLen < 32768) return true;
+    }
+    return entries < max;
+  }
+
+  /// <summary>
+  /// Appends one block to an inode-resident extent-mapped directory: extends the
+  /// last extent if the new block is contiguous, otherwise adds a new extent. Bumps
+  /// i_size + i_blocks and rewrites the inode.
+  /// </summary>
+  private static void GrowExtentDirectory(Stream image, Geometry geom, uint dirInodeNum, byte[] inode, uint newBlock) {
     var entries = BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(42, 2));
     var lastLogical = 0u;
     var appended = false;
@@ -1020,39 +1532,35 @@ public static class ExtModifier {
       var eeStart = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(off + 8, 4));
       lastLogical = eeBlock + (uint)eeLen;
       if (eeStart + (uint)eeLen == newBlock && eeLen < 32768) {
-        // Contiguous → extend the last extent.
         BinaryPrimitives.WriteUInt16LittleEndian(inode.AsSpan(off + 4, 2), (ushort)(eeLen + 1));
         appended = true;
       }
     }
     if (!appended) {
-      var max = BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(44, 2));
-      if (entries >= max)
-        throw new InPlaceUnsupportedException("ext: extent directory leaf full; in-place add unsupported.");
       var off = 40 + 12 + entries * 12;
-      BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(off, 4), lastLogical);  // ee_block
-      BinaryPrimitives.WriteUInt16LittleEndian(inode.AsSpan(off + 4, 2), 1);        // ee_len
-      BinaryPrimitives.WriteUInt16LittleEndian(inode.AsSpan(off + 6, 2), 0);        // ee_start_hi
-      BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(off + 8, 4), newBlock); // ee_start_lo
-      BinaryPrimitives.WriteUInt16LittleEndian(inode.AsSpan(42, 2), (ushort)(entries + 1)); // eh_entries
+      BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(off, 4), lastLogical);
+      BinaryPrimitives.WriteUInt16LittleEndian(inode.AsSpan(off + 4, 2), 1);
+      BinaryPrimitives.WriteUInt16LittleEndian(inode.AsSpan(off + 6, 2), 0);
+      BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(off + 8, 4), newBlock);
+      BinaryPrimitives.WriteUInt16LittleEndian(inode.AsSpan(42, 2), (ushort)(entries + 1));
     }
+    BumpDirectorySize(geom, inode);
+    WriteInode(image, geom, dirInodeNum, inode);
+  }
+
+  private static void GrowDirectDirectory(Stream image, Geometry geom, uint dirInodeNum, byte[] inode, List<int> existingBlocks, uint newBlock) {
+    var slot = existingBlocks.Count;
+    if (slot >= 12) throw new InPlaceUnsupportedException("ext: directory growth through indirect blocks is unsupported.");
+    BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(40 + slot * 4, 4), newBlock);
+    BumpDirectorySize(geom, inode);
+    WriteInode(image, geom, dirInodeNum, inode);
+  }
+
+  private static void BumpDirectorySize(Geometry geom, byte[] inode) {
     var size = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(4, 4));
     BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(4, 4), size + (uint)geom.BlockSize);
     var sectors = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(28, 4));
     BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(28, 4), sectors + (uint)(geom.BlockSize / 512));
-    WriteInode(image, geom, RootInode, inode);
-  }
-
-  private static void GrowRootDirectory(Stream image, Geometry geom, byte[] rootInode, List<int> existingBlocks, uint newBlock) {
-    // Append newBlock to the first free direct slot, bump i_size by one block.
-    var slot = existingBlocks.Count;
-    if (slot >= 12) throw new InPlaceUnsupportedException("ext: root dir indirect growth unsupported.");
-    BinaryPrimitives.WriteUInt32LittleEndian(rootInode.AsSpan(40 + slot * 4, 4), newBlock);
-    var size = BinaryPrimitives.ReadUInt32LittleEndian(rootInode.AsSpan(4, 4));
-    BinaryPrimitives.WriteUInt32LittleEndian(rootInode.AsSpan(4, 4), size + (uint)geom.BlockSize);
-    var sectors = BinaryPrimitives.ReadUInt32LittleEndian(rootInode.AsSpan(28, 4));
-    BinaryPrimitives.WriteUInt32LittleEndian(rootInode.AsSpan(28, 4), sectors + (uint)(geom.BlockSize / 512));
-    WriteInode(image, geom, RootInode, rootInode);
   }
 
   // ── Inode checksum (metadata_csum) ────────────────────────────────────────
