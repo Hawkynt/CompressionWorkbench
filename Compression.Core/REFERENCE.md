@@ -9340,7 +9340,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing ZIP archive. Uses `ZipModifier` for true O(touched bytes) random-access I/O — only the central directory, the EOCD, and the appended file's local file header + compressed data are read or written. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing ZIP archive. Uses `ZipModifier` for true O(touched bytes) random-access I/O — only the central directory, the EOCD, and the appended file's local file header + compressed data are read or written. On-disk inputs are streamed (no size limit) and keep their last-write time. |
 | `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Large-file-safe streaming variant of `Create` for the STORE method. STORE entries are uncompressed, so the local header can be written with the pre-known `Size` up front and the payload copied in 64 KB chunks while the CRC is computed incrementally and patched back into the header — peak memory is the copy buffer regardless of entry size. Output is byte-identical to `Create` with `Method=store`. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a ZIP archive from `inputs`. Honors all of `FormatCreateOptions`: method, level, dict-size, threads, password, encryption mode, and incompressibility hints. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts every entry then re-creates the archive in listing order. |
@@ -9372,7 +9372,9 @@ Random-access in-place modifier for ZIP archives. Reads and writes only the cent
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `AddFile` | `static void AddFile(Stream zip, string name, Stream data, DateTime? lastModified = null)` | Adds a file to an existing ZIP archive, streaming `data` from its current position to its end through Deflate straight into the archive. Memory use is bounded by the copy buffer, not by the file size, so files larger than 2 GiB are fine. If an entry with the same name already exists the caller should `RemoveFile` it first; this method just appends. |
 | `AddFile` | `static void AddFile(Stream zip, string name, byte[] data, DateTime? lastModified = null)` | Adds a file to an existing ZIP archive, encoding it with Deflate. If an entry with the same name already exists the caller should `RemoveFile` it first; this method just appends. |
+| `AddOrReplace` | `static void AddOrReplace(Stream zip, IReadOnlyList<ArchiveInputInfo> inputs, Func<string, bool> include = null)` | Adds or replaces (by name) every file input in `inputs`, streaming on-disk files instead of loading them and stamping them with their last-write time. Directory inputs are skipped, as are file inputs rejected by `include`. |
 | `RemoveFile` | `static bool RemoveFile(Stream zip, string name, bool wipeData = true)` | Removes a named entry from a ZIP archive. Returns true if found and removed. When `wipeData` is true (default) the orphan LFH+data bytes are zeroed; otherwise they remain readable in-place but are no longer referenced by any CD entry. |
 
 #### `ZipReader`

@@ -32690,7 +32690,7 @@ Inherits `ZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchi
 | --- | --- | --- |
 | `ModifiableZipContainerFormatDescriptor` | `protected ModifiableZipContainerFormatDescriptor()` |  |
 | `Capabilities` | `override FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. On-disk inputs are streamed and keep their last-write time. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
 
 #### `WipeableZipContainerFormatDescriptor`
