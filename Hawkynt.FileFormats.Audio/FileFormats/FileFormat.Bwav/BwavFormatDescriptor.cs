@@ -152,7 +152,7 @@ public sealed class BwavFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var dir = Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/') ?? "";
-    if (dir == "" && (name == "full.bwav" || name.EndsWith(".wav"))) { reason = null; return true; }
+    if (dir == "" && (name == "full.bwav" || name.EndsWith(".wav", StringComparison.Ordinal))) { reason = null; return true; }
     reason = $"not a BWAV-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }

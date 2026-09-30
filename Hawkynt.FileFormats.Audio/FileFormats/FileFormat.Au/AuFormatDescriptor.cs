@@ -121,7 +121,7 @@ public sealed class AuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     if (name is "full.au" or "full.snd" or "metadata.ini" ||
-        name.EndsWith(".wav")) {
+        name.EndsWith(".wav", StringComparison.Ordinal)) {
       reason = null; return true;
     }
     reason = $"not a .au-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";

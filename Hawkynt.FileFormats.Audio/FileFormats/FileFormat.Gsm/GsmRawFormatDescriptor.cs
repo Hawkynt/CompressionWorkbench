@@ -157,7 +157,7 @@ public sealed class GsmRawFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
-    if (name == "full.gsm" || name.EndsWith(".wav") || name == "metadata.ini") {
+    if (name == "full.gsm" || name.EndsWith(".wav", StringComparison.Ordinal) || name == "metadata.ini") {
       reason = null;
       return true;
     }

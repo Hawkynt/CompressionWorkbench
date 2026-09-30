@@ -383,7 +383,7 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
       if (fileName == "full.mp3") {
         fullAudioPayload = data;
-      } else if (fileName.StartsWith("cover") && IsKnownImageExtension(fileName)) {
+      } else if (fileName.StartsWith("cover", StringComparison.Ordinal) && IsKnownImageExtension(fileName)) {
         coverBytes = data;
       } else if (fileName == "metadata.ini") {
         // Only the root metadata.ini feeds the canonical tag; id3v1/ and id3v2/ subfolders
@@ -417,8 +417,8 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   private static bool IsKnownImageExtension(string fileName)
-    => fileName.EndsWith(".jpg") || fileName.EndsWith(".jpeg") || fileName.EndsWith(".png") ||
-       fileName.EndsWith(".gif") || fileName.EndsWith(".webp");
+    => fileName.EndsWith(".jpg", StringComparison.Ordinal) || fileName.EndsWith(".jpeg", StringComparison.Ordinal) || fileName.EndsWith(".png", StringComparison.Ordinal) ||
+       fileName.EndsWith(".gif", StringComparison.Ordinal) || fileName.EndsWith(".webp", StringComparison.Ordinal);
 
   private static void ParseIni(byte[] data, Dictionary<string, string> frames) {
     var text = Encoding.UTF8.GetString(data);
@@ -462,9 +462,9 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (name == "metadata.ini" || name == "lyrics.txt" || name == "full.mp3") {
         reason = null; return true;
       }
-      if (name.StartsWith("cover") &&
-          (name.EndsWith(".jpg") || name.EndsWith(".jpeg") || name.EndsWith(".png") ||
-           name.EndsWith(".gif") || name.EndsWith(".webp"))) {
+      if (name.StartsWith("cover", StringComparison.Ordinal) &&
+          (name.EndsWith(".jpg", StringComparison.Ordinal) || name.EndsWith(".jpeg", StringComparison.Ordinal) || name.EndsWith(".png", StringComparison.Ordinal) ||
+           name.EndsWith(".gif", StringComparison.Ordinal) || name.EndsWith(".webp", StringComparison.Ordinal))) {
         reason = null; return true;
       }
     }

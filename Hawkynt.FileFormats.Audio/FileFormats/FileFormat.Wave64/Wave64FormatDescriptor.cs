@@ -195,8 +195,8 @@ public sealed class Wave64FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     var dir = System.IO.Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
 
     if (dir == "" && name.Equals("full.w64", StringComparison.Ordinal)) { reason = null; return true; }
-    if (dir == "" && name.EndsWith(".wav")) { reason = null; return true; }
-    if (dir == "metadata" && name.EndsWith(".bin")) { reason = null; return true; }
+    if (dir == "" && name.EndsWith(".wav", StringComparison.Ordinal)) { reason = null; return true; }
+    if (dir == "metadata" && name.EndsWith(".bin", StringComparison.Ordinal)) { reason = null; return true; }
     reason = $"not a Wave64-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }

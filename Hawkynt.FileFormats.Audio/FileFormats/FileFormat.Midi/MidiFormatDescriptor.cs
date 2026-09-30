@@ -236,7 +236,7 @@ public sealed class MidiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     if (name is "full.mid" or "metadata.ini" or "lyrics.txt" ||
-        (name.StartsWith("track_") && name.EndsWith(".mid"))) {
+        (name.StartsWith("track_", StringComparison.Ordinal) && name.EndsWith(".mid", StringComparison.Ordinal))) {
       reason = null; return true;
     }
     reason = $"not a MIDI-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";

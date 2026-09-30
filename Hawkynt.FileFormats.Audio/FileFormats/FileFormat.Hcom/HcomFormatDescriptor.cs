@@ -296,7 +296,7 @@ public sealed class HcomFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
-    if (name == "full.hcom" || name.EndsWith(".wav")) { reason = null; return true; }
+    if (name == "full.hcom" || name.EndsWith(".wav", StringComparison.Ordinal)) { reason = null; return true; }
     reason = $"not an HCOM-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }

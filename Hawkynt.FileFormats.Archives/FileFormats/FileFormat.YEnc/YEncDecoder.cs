@@ -14,7 +14,7 @@ public static class YEncDecoder {
 
     // Find =ybegin header
     while ((line = reader.ReadLine()) != null) {
-      if (line.StartsWith("=ybegin ")) {
+      if (line.StartsWith("=ybegin ", StringComparison.Ordinal)) {
         filename = ExtractParam(line, "name") ?? "unknown";
         var sizeStr = ExtractParam(line, "size");
         if (sizeStr != null) long.TryParse(sizeStr, out size);
@@ -24,7 +24,7 @@ public static class YEncDecoder {
 
     // Skip =ypart if present
     var nextLine = reader.ReadLine();
-    if (nextLine != null && nextLine.StartsWith("=ypart "))
+    if (nextLine != null && nextLine.StartsWith("=ypart ", StringComparison.Ordinal))
       nextLine = null; // skip, read next in loop
 
     using var output = new MemoryStream();
@@ -41,12 +41,12 @@ public static class YEncDecoder {
       }
     }
 
-    if (startLine != null && !startLine.StartsWith("=y"))
+    if (startLine != null && !startLine.StartsWith("=y", StringComparison.Ordinal))
       ProcessLine(startLine);
 
     uint trailCrc = 0;
     while ((line = reader.ReadLine()) != null) {
-      if (line.StartsWith("=yend")) {
+      if (line.StartsWith("=yend", StringComparison.Ordinal)) {
         var crcStr = ExtractParam(line, "crc32");
         if (crcStr != null) {
           // CRC32 is often hex

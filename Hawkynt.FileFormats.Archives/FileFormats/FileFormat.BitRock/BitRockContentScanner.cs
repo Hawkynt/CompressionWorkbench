@@ -228,8 +228,8 @@ public static class BitRockContentScanner {
 
     var name = Encoding.Latin1.GetString(scratch[..len]);
     var lower = name.ToLowerInvariant();
-    if (!(lower.EndsWith(".tar") || lower.EndsWith(".tar.gz") || lower.EndsWith(".tgz")
-          || lower.EndsWith(".zip") || lower.EndsWith(".cpio")))
+    if (!(lower.EndsWith(".tar", StringComparison.Ordinal) || lower.EndsWith(".tar.gz", StringComparison.Ordinal) || lower.EndsWith(".tgz", StringComparison.Ordinal)
+          || lower.EndsWith(".zip", StringComparison.Ordinal) || lower.EndsWith(".cpio", StringComparison.Ordinal)))
       return null;
     return name;
 

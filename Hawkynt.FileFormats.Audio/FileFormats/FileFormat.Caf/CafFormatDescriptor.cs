@@ -195,11 +195,11 @@ public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var directory = Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
-    if (directory.Length == 0 && (name == "full.caf" || name.EndsWith(".wav"))) {
+    if (directory.Length == 0 && (name == "full.caf" || name.EndsWith(".wav", StringComparison.Ordinal))) {
       reason = null;
       return true;
     }
-    if (directory == "metadata" && name.EndsWith(".bin")) {
+    if (directory == "metadata" && name.EndsWith(".bin", StringComparison.Ordinal)) {
       reason = null;
       return true;
     }

@@ -146,7 +146,7 @@ public sealed class SphereFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
-    if (name is "full.sph" or "metadata.ini" || name.EndsWith(".wav")) {
+    if (name is "full.sph" or "metadata.ini" || name.EndsWith(".wav", StringComparison.Ordinal)) {
       reason = null; return true;
     }
     reason = $"not a SPHERE-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
@@ -188,7 +188,7 @@ public sealed class SphereFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     if (coding.Contains("shorten") || coding.Contains("wavpack"))
       return (null, 0);
 
-    if (coding.StartsWith("ulaw") || coding.StartsWith("mu-law") || coding == "alaw") {
+    if (coding.StartsWith("ulaw", StringComparison.Ordinal) || coding.StartsWith("mu-law", StringComparison.Ordinal) || coding == "alaw") {
       if (coding == "alaw") {
         var aDecoded = Codec.ALaw.ALawCodec.Decode(p.SampleData);
         return (ShortsToLePcm(aDecoded), 16);
@@ -197,7 +197,7 @@ public sealed class SphereFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       return (ShortsToLePcm(decoded), 16);
     }
 
-    if (!coding.StartsWith("pcm"))
+    if (!coding.StartsWith("pcm", StringComparison.Ordinal))
       return (null, 0);
 
     switch (p.SampleNBytes) {

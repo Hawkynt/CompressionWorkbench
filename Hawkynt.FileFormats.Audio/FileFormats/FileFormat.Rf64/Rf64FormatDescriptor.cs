@@ -156,8 +156,8 @@ public sealed class Rf64FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var dir = System.IO.Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
 
     if (dir == "" && name.Equals("full.rf64", StringComparison.Ordinal)) { reason = null; return true; }
-    if (dir == "" && name.EndsWith(".wav")) { reason = null; return true; }
-    if (dir == "metadata" && name.EndsWith(".bin")) { reason = null; return true; }
+    if (dir == "" && name.EndsWith(".wav", StringComparison.Ordinal)) { reason = null; return true; }
+    if (dir == "metadata" && name.EndsWith(".bin", StringComparison.Ordinal)) { reason = null; return true; }
     reason = $"not an RF64-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }

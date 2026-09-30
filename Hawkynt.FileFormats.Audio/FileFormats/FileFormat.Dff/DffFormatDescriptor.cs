@@ -260,7 +260,7 @@ public sealed class DffFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var dir = Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
 
-    if (dir == "" && (name == "full.dff" || name.EndsWith(".dsd"))) { reason = null; return true; }
+    if (dir == "" && (name == "full.dff" || name.EndsWith(".dsd", StringComparison.Ordinal))) { reason = null; return true; }
     reason = $"not a DSDIFF-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }

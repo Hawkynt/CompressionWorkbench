@@ -170,7 +170,7 @@ public sealed class Svx8FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
-    if (name == "full.8svx" || name.EndsWith(".wav")) { reason = null; return true; }
+    if (name == "full.8svx" || name.EndsWith(".wav", StringComparison.Ordinal)) { reason = null; return true; }
     reason = $"not an 8SVX-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }

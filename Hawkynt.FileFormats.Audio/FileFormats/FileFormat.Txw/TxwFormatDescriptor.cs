@@ -252,7 +252,7 @@ public sealed class TxwFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
-    if (name == "full.txw" || name.EndsWith(".wav")) { reason = null; return true; }
+    if (name == "full.txw" || name.EndsWith(".wav", StringComparison.Ordinal)) { reason = null; return true; }
     reason = $"not a TXW-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }
