@@ -348,48 +348,19 @@ internal sealed class RefsMLogWriter {
 }
 
 internal interface IRefsRedoTarget {
+  /// <summary>Checks the complete opcode payload without changing the target.</summary>
+  void Preflight(ulong lsn, RefsRedoRecord record);
   void Apply(ulong lsn, RefsRedoRecord record);
 }
 
 /// <summary>
-/// Two-pass-friendly redo enumerator. Analysis is performed by validation and
-/// LSN ordering; the target then receives redo records in durable order. Unknown
-/// opcode semantics belong to the target and must fail closed there.
+/// Compatibility entry point for the checkpoint-bounded, preflighted restarter.
 /// </summary>
 internal static class RefsMLogReplayer {
   public static int Replay(
       Stream image,
       RefsMetadataReader metadata,
       IRefsRedoTarget target,
-      ulong minimumLsn = 0) {
-    ArgumentNullException.ThrowIfNull(image);
-    ArgumentNullException.ThrowIfNull(metadata);
-    ArgumentNullException.ThrowIfNull(target);
-    if (!RefsMLogReader.TryOpen(image, metadata, out var state)) return 0;
-
-    var blocks = new List<(RefsMLogDataRecord Record, byte[] Bytes)>();
-    foreach (var offset in RefsMLogCodec.EnumerateDataBlockOffsets(state.ActiveControl, metadata.ClusterSize)) {
-      if (offset < 0 || offset > image.Length - RefsMLogCodec.LogBlockSize) continue;
-      var bytes = new byte[RefsMLogCodec.LogBlockSize];
-      image.Position = offset;
-      image.ReadExactly(bytes);
-      if (RefsMLogCodec.TryParseDataRecord(bytes, out var record)
-          && record.FormatMagic == state.ActiveControl.FormatMagic
-          && record.Lsn >= minimumLsn)
-        blocks.Add((record, bytes));
-    }
-    if (blocks.Count == 0) return 0;
-
-    var checksum = RefsMLogChecksum.Detect(blocks.Select(b => b.Bytes));
-    var applied = 0;
-    foreach (var item in blocks.OrderBy(b => b.Record.Lsn)) {
-      if (!checksum.Verify(item.Bytes))
-        throw new InvalidDataException($"ReFS MLog record LSN 0x{item.Record.Lsn:X} failed its XOR-fold checksum.");
-      foreach (var redo in item.Record.RedoRecords) {
-        target.Apply(item.Record.Lsn, redo);
-        ++applied;
-      }
-    }
-    return applied;
-  }
+      ulong minimumLsn = 0)
+    => RefsMLogRestarter.Replay(image, metadata, target, minimumLsn);
 }

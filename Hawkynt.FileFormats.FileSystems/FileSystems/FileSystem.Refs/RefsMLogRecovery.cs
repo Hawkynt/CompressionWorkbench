@@ -51,13 +51,34 @@ internal static class RefsMLogRecovery {
       return [];
     }
 
-    var checksum = RefsMLogChecksum.Detect(candidates.Select(c => c.Bytes));
-    checksumKind = checksum.Kind;
-    var verified = candidates.Where(c => checksum.Verify(c.Bytes)).ToList();
-    if (verified.Count == 0) return [];
-
     var oldest = ReadOldestRequiredLsn(image, metadata);
-    return SelectForReplay(verified, oldest);
+    var live = candidates
+      .Where(c => oldest == 0 || CompareLsn(c.Record.Lsn, oldest) >= 0)
+      .ToArray();
+    if (live.Length == 0) {
+      checksumKind = default;
+      return [];
+    }
+
+    var checksum = RefsMLogChecksum.Detect(live.Select(c => c.Bytes));
+    checksumKind = checksum.Kind;
+    return SelectVerifiedForReplay(live, oldest, c => checksum.Verify(c.Bytes));
+  }
+
+  internal static IReadOnlyList<RefsMLogRecoveryRecord> SelectVerifiedForReplay(
+      IEnumerable<RefsMLogRecoveryRecord> candidates,
+      ulong oldestRequiredLsn,
+      Func<RefsMLogRecoveryRecord, bool> verify) {
+    ArgumentNullException.ThrowIfNull(candidates);
+    ArgumentNullException.ThrowIfNull(verify);
+    var live = candidates
+      .Where(c => oldestRequiredLsn == 0 || CompareLsn(c.Record.Lsn, oldestRequiredLsn) >= 0)
+      .ToArray();
+    foreach (var candidate in live)
+      if (!verify(candidate))
+        throw new InvalidDataException(
+          $"ReFS MLog live record LSN 0x{candidate.Record.Lsn:X} failed its XOR-fold checksum.");
+    return SelectForReplay(live, oldestRequiredLsn);
   }
 
   internal static IReadOnlyList<RefsMLogRecoveryRecord> SelectForReplay(
@@ -70,14 +91,28 @@ internal static class RefsMLogRecovery {
       .ThenBy(r => LsnIndex(r.Record.Lsn))
       .ToList();
 
+    if (ordered.Count > 0) {
+      var first = ordered[0].Record;
+      if (first.PreviousLsn != 0 && CompareLsn(first.PreviousLsn, first.Lsn) >= 0)
+        throw new InvalidDataException($"ReFS MLog LSN 0x{first.Lsn:X} points to a nonpreceding LSN.");
+      if (first.PreviousLsn != 0
+          && (oldestRequiredLsn == 0 || CompareLsn(first.PreviousLsn, oldestRequiredLsn) >= 0))
+        throw new InvalidDataException(
+          $"ReFS MLog first live LSN 0x{first.Lsn:X} references missing live predecessor 0x{first.PreviousLsn:X}.");
+    }
+
     for (var i = 1; i < ordered.Count; ++i) {
       if (ordered[i - 1].Record.Lsn == ordered[i].Record.Lsn)
         throw new InvalidDataException($"ReFS MLog contains duplicate live LSN 0x{ordered[i].Record.Lsn:X}.");
 
       var current = ordered[i].Record;
       var previous = ordered[i - 1].Record;
-      if (!ShouldRequireImmediatePredecessor(current.Lsn, previous.Lsn)) continue;
-      if (current.PreviousLsn != previous.Lsn)
+      if (current.PreviousLsn != 0 && CompareLsn(current.PreviousLsn, current.Lsn) >= 0)
+        throw new InvalidDataException($"ReFS MLog LSN 0x{current.Lsn:X} points to a nonpreceding LSN.");
+      var requiresImmediate = ShouldRequireImmediatePredecessor(current.Lsn, previous.Lsn);
+      var refersToMissingLiveRecord = current.PreviousLsn != 0
+        && (oldestRequiredLsn == 0 || CompareLsn(current.PreviousLsn, oldestRequiredLsn) >= 0);
+      if (current.PreviousLsn != previous.Lsn && (requiresImmediate || refersToMissingLiveRecord))
         throw new InvalidDataException(
           $"ReFS MLog live chain is broken at LSN 0x{current.Lsn:X}: previous is 0x{current.PreviousLsn:X}, expected 0x{previous.Lsn:X}.");
     }
@@ -114,17 +149,40 @@ internal static class RefsMLogRecovery {
 /// delegated to an explicit target so unknown redo grammars remain fail-closed.
 /// </summary>
 internal static class RefsMLogRestarter {
-  public static int Replay(Stream image, RefsMetadataReader metadata, IRefsRedoTarget target) {
+  public static int Replay(
+      Stream image,
+      RefsMetadataReader metadata,
+      IRefsRedoTarget target,
+      ulong minimumLsn = 0) {
     ArgumentNullException.ThrowIfNull(target);
     var recovery = RefsMLogRecovery.Analyze(image, metadata, out _);
+    return ReplaySelected(recovery, target, minimumLsn);
+  }
+
+  internal static int ReplaySelected(
+      IReadOnlyList<RefsMLogRecoveryRecord> recovery,
+      IRefsRedoTarget target,
+      ulong minimumLsn = 0) {
+    ArgumentNullException.ThrowIfNull(recovery);
+    ArgumentNullException.ThrowIfNull(target);
+    var pending = recovery
+      .Where(item => minimumLsn == 0 || RefsMLogRecovery.CompareLsn(item.Record.Lsn, minimumLsn) >= 0)
+      .SelectMany(item => item.Record.RedoRecords.Select(redo => (item.Record.Lsn, Redo: redo)))
+      .ToArray();
+
+    // An unsupported opcode or payload in a later log block must be found
+    // before a preceding block changes the target. The target validates the
+    // version-specific payload grammar; the framing layer validates opcodes.
+    foreach (var (lsn, redo) in pending) {
+      if (!Enum.IsDefined(redo.Opcode) || redo.Opcode == RefsRedoOpcode.ReservedUnhandled)
+        throw new NotSupportedException($"ReFS redo opcode 0x{(uint)redo.Opcode:X2} cannot be replayed.");
+      target.Preflight(lsn, redo);
+    }
+
     var applied = 0;
-    foreach (var item in recovery) {
-      foreach (var redo in item.Record.RedoRecords) {
-        if (redo.Opcode == RefsRedoOpcode.ReservedUnhandled)
-          throw new NotSupportedException("ReFS redo opcode 0x17 is explicitly unsupported by the native format.");
-        target.Apply(item.Record.Lsn, redo);
-        ++applied;
-      }
+    foreach (var (lsn, redo) in pending) {
+      target.Apply(lsn, redo);
+      ++applied;
     }
     return applied;
   }
