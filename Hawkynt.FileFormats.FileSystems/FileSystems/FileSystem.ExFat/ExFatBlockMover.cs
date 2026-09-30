@@ -111,6 +111,9 @@ public sealed class ExFatBlockMover : IFilesystemBlockMover, IFilesystemMetadata
     var newFirstCluster = OffsetToCluster(newOffset);
 
     using var cache = new SectorCache(image);
+    var entry = FindEntrySetStream(image, cache, fileName, oldFirstCluster)
+      ?? throw new InvalidOperationException(
+        $"exFAT: no directory entry for '{fileName}' starts at cluster {oldFirstCluster}; nothing was moved.");
 
     // Step 1: Allocate new FAT chain.
     for (var i = 0; i < clusterCount; i++) {
@@ -122,7 +125,7 @@ public sealed class ExFatBlockMover : IFilesystemBlockMover, IFilesystemMetadata
 
     // Step 2: Patch directory entry — find Stream Extension by old FirstCluster
     // + name match, write new FirstCluster (32-byte rewrite + checksum).
-    PatchDirectoryEntriesStream(image, cache, fileName, oldFirstCluster, newFirstCluster);
+    PatchEntrySetStream(image, cache, entry, newFirstCluster, contiguous: true);
     image.Flush();
 
     // Step 3: Free old FAT entries.
@@ -305,18 +308,20 @@ public sealed class ExFatBlockMover : IFilesystemBlockMover, IFilesystemMetadata
     }
     if (oldClusters[0] == newClusters[0] && oldClusters.SequenceEqual(newClusters)) return;
 
-    // The dirent carries a flag saying whether the file is contiguous, and the
-    // writer sets it. A relink that leaves a file scattered would have to clear
-    // it and prove the chain instead; until that is written, an owner that does
-    // not end up as one run is refused so the caller rebuilds the volume rather
-    // than committing a layout the entry no longer describes.
-    for (var i = 1; i < newClusters.Length; ++i)
-      if (newClusters[i] != newClusters[i - 1] + 1)
-        throw new NotSupportedException(
-          $"exFAT: '{fileName}' would end up in {newClusters.Length} scattered clusters, " +
-          "which its directory entry cannot describe; rebuild the volume instead.");
+    // The stream extension says whether the file is one contiguous run
+    // (NoFatChain) or follows the FAT. A result that is contiguous keeps the flag;
+    // a scattered one clears it, and the chain written below is what it follows.
+    var contiguous = true;
+    for (var i = 1; i < newClusters.Length && contiguous; ++i)
+      contiguous = newClusters[i] == newClusters[i - 1] + 1;
 
     using var cache = new SectorCache(image);
+
+    // Find the entry before anything is written: a file whose entry cannot be
+    // found must not have its chain moved out from under it.
+    var entry = FindEntrySetStream(image, cache, fileName, oldClusters[0])
+      ?? throw new InvalidOperationException(
+        $"exFAT: no directory entry for '{fileName}' starts at cluster {oldClusters[0]}; nothing was moved.");
 
     // The new chain, in the file's own order.
     for (var i = 0; i < newClusters.Length; ++i) {
@@ -326,7 +331,7 @@ public sealed class ExFatBlockMover : IFilesystemBlockMover, IFilesystemMetadata
     }
     image.Flush();
 
-    PatchDirectoryEntriesStream(image, cache, fileName, oldClusters[0], newClusters[0]);
+    PatchEntrySetStream(image, cache, entry, newClusters[0], contiguous);
     image.Flush();
 
     // Old clusters are free again — except where this or another file now sits.
@@ -418,75 +423,139 @@ public sealed class ExFatBlockMover : IFilesystemBlockMover, IFilesystemMetadata
     }
   }
 
-  /// <summary>
-  /// Walks the root dir from disk, finds the entry-set whose Stream Extension
-  /// matches <paramref name="oldFirst"/> + name, patches the FirstCluster
-  /// field, recomputes the entry-set checksum, and writes the 32-byte primary
-  /// entry back (single-sector targeted write — atomic on most hardware).
-  /// </summary>
-  private void PatchDirectoryEntriesStream(Stream image, SectorCache cache, string fileName,
-      uint oldFirst, uint newFirst) {
-    var clusterBuf = ArrayPool<byte>.Shared.Rent(_clusterSize);
-    try {
-      var cluster = _rootCluster;
-      var seen = new HashSet<uint>();
-      while (cluster >= 2 && cluster <= _clusterCount + 1 && cluster < 0xFFFFFFF8 && seen.Add(cluster)) {
-        var off = _clusterHeapOffset + (long)(cluster - 2) * _clusterSize;
-        if (off + _clusterSize > image.Length) return;
-        image.Position = off;
-        image.ReadExactly(clusterBuf, 0, _clusterSize);
-        for (var i = 0; i < _clusterSize; i += 32) {
-          if (clusterBuf[i] == 0x00) return;
-          if (clusterBuf[i] != 0x85) continue;
-          var secCount = clusterBuf[i + 1];
-          var streamStart = i + 32;
-          if (streamStart + 32 > _clusterSize || clusterBuf[streamStart] != 0xC0) continue;
-          var firstCluster = BinaryPrimitives.ReadUInt32LittleEndian(clusterBuf.AsSpan(streamStart + 20));
-          if (firstCluster != oldFirst) { i += secCount * 32; continue; }
+  /// <summary>Where one file's directory entry set sits on disk.</summary>
+  private sealed record EntrySetLocation(long Offset, int Length);
 
-          // Confirm name match — secondaries follow the stream entry.
-          var nameLength = clusterBuf[streamStart + 3];
-          var nameEntries = (nameLength + 14) / 15;
+  /// <summary>
+  /// Finds the entry set of the file named <paramref name="fileName" /> (its full
+  /// path or leaf; "*" matches any) whose data starts at <paramref name="firstCluster" />,
+  /// searching the root and every folder below it.
+  /// </summary>
+  private EntrySetLocation? FindEntrySetStream(Stream image, SectorCache cache, string fileName, uint firstCluster) {
+    var wanted = fileName.Replace('\\', '/').Trim('/');
+    var leaf = wanted[(wanted.LastIndexOf('/') + 1)..];
+    var pending = new Stack<(uint First, bool NoFatChain, long Length, string Path)>();
+    pending.Push((_rootCluster, false, long.MaxValue, ""));
+    var seenDirs = new HashSet<uint>();
+    EntrySetLocation? byLeaf = null;
+    while (pending.Count > 0) {
+      var (dirFirst, noFatChain, dirLength, dirPath) = pending.Pop();
+      if (!seenDirs.Add(dirFirst)) continue;
+      var bytes = ReadDirectoryStream(image, cache, dirFirst, noFatChain, dirLength);
+      for (var i = 0; i + 32 <= bytes.Length; i += 32) {
+        if (bytes[i] == 0x00) break;
+        if (bytes[i] != 0x85) continue;
+        var secCount = bytes[i + 1];
+        var streamStart = i + 32;
+        if (streamStart + 32 > bytes.Length || bytes[streamStart] != 0xC0) continue;
+        var attributes = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(i + 4));
+        var first = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(streamStart + 20));
+        var length = (long)BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(streamStart + 24));
+        var flags = bytes[streamStart + 1];
+        var entryPath = dirPath.Length == 0 ? ReadEntryName(bytes, streamStart) : dirPath + "/" + ReadEntryName(bytes, streamStart);
+        if ((attributes & 0x10) != 0) {
+          if (first >= 2) pending.Push((first, (flags & 0x02) != 0, length, entryPath));
+          i += secCount * 32;
+          continue;
+        }
+        if (first == firstCluster) {
+          var nameLength = bytes[streamStart + 3];
           var sb = new StringBuilder();
-          for (var n = 0; n < nameEntries; n++) {
+          for (var n = 0; n < (nameLength + 14) / 15; n++) {
             var nPos = streamStart + 32 + n * 32;
-            if (nPos + 32 > _clusterSize || clusterBuf[nPos] != 0xC1) break;
+            if (nPos + 32 > bytes.Length || bytes[nPos] != 0xC1) break;
             var chars = Math.Min(15, nameLength - n * 15);
             for (var c = 0; c < chars; c++) {
-              var ch = (char)BinaryPrimitives.ReadUInt16LittleEndian(clusterBuf.AsSpan(nPos + 2 + c * 2));
+              var ch = (char)BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(nPos + 2 + c * 2));
               if (ch == 0) break;
               sb.Append(ch);
             }
           }
-          if (!sb.ToString().Equals(fileName, StringComparison.OrdinalIgnoreCase) &&
-              !fileName.Equals("*", StringComparison.Ordinal)) {
-            i += secCount * 32;
-            continue;
+          var exact = entryPath.Equals(wanted, StringComparison.OrdinalIgnoreCase);
+          if (exact || sb.ToString().Equals(leaf, StringComparison.OrdinalIgnoreCase) || fileName == "*") {
+            var setBytes = (1 + secCount) * 32;
+            var offset = DirectoryByteOffset(cache, dirFirst, noFatChain, dirLength, i);
+            // Patching an entry set in place needs it inside one cluster.
+            if (offset >= 0 && DirectoryByteOffset(cache, dirFirst, noFatChain, dirLength, i + setBytes - 1) == offset + setBytes - 1) {
+              var found = new EntrySetLocation(offset, setBytes);
+              if (exact) return found;
+              byLeaf ??= found;
+            }
           }
-
-          // Patch FirstCluster + recompute entry-set checksum.
-          BinaryPrimitives.WriteUInt32LittleEndian(clusterBuf.AsSpan(streamStart + 20), newFirst);
-          var setBytes = (1 + secCount) * 32;
-          ushort checksum = 0;
-          for (var j = 0; j < setBytes; j++) {
-            if (j == 2 || j == 3) continue; // skip checksum field itself
-            checksum = (ushort)((((checksum & 1) != 0 ? 0x8000 : 0) + (checksum >> 1) + clusterBuf[i + j]) & 0xFFFF);
-          }
-          BinaryPrimitives.WriteUInt16LittleEndian(clusterBuf.AsSpan(i + 2), checksum);
-
-          // Write the full entry-set back. Each entry is 32 bytes; total set
-          // is (1 + secCount) × 32 bytes. May span sectors but typically not.
-          image.Position = off + i;
-          image.Write(clusterBuf, i, setBytes);
-          // Invalidate cache for this range so subsequent reads see the new bytes.
-          cache.Invalidate(off + i, setBytes);
-          return;
         }
-        cluster = ReadFatStream(cache, _fatOffset, cluster);
+        i += secCount * 32;
       }
-    } finally {
-      ArrayPool<byte>.Shared.Return(clusterBuf);
     }
+    return byLeaf;
+  }
+
+  private static string ReadEntryName(byte[] bytes, int streamStart) {
+    var nameLength = bytes[streamStart + 3];
+    var sb = new StringBuilder();
+    for (var n = 0; n < (nameLength + 14) / 15; n++) {
+      var nPos = streamStart + 32 + n * 32;
+      if (nPos + 32 > bytes.Length || bytes[nPos] != 0xC1) break;
+      var chars = Math.Min(15, nameLength - n * 15);
+      for (var c = 0; c < chars; c++) {
+        var ch = (char)BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(nPos + 2 + c * 2));
+        if (ch == 0) break;
+        sb.Append(ch);
+      }
+    }
+    return sb.ToString();
+  }
+
+  /// <summary>The clusters of a directory, in order.</summary>
+  private List<uint> DirectoryClusters(SectorCache cache, uint first, bool noFatChain, long length) {
+    var clusters = new List<uint>();
+    if (noFatChain) {
+      var count = Math.Min((length + _clusterSize - 1) / _clusterSize, (long)_clusterCount + 2 - first);
+      for (var k = 0L; k < count; k++) clusters.Add(first + (uint)k);
+      return clusters;
+    }
+    var seen = new HashSet<uint>();
+    for (var c = first; c >= 2 && c <= _clusterCount + 1 && c < 0xFFFFFFF8 && seen.Add(c); c = ReadFatStream(cache, _fatOffset, c))
+      clusters.Add(c);
+    return clusters;
+  }
+
+  private byte[] ReadDirectoryStream(Stream image, SectorCache cache, uint first, bool noFatChain, long length) {
+    var clusters = DirectoryClusters(cache, first, noFatChain, length);
+    var bytes = new byte[clusters.Count * _clusterSize];
+    for (var k = 0; k < clusters.Count; k++) {
+      var off = _clusterHeapOffset + (long)(clusters[k] - 2) * _clusterSize;
+      if (off + _clusterSize > image.Length) break;
+      cache.Read(off, bytes.AsSpan(k * _clusterSize, _clusterSize));
+    }
+    return bytes;
+  }
+
+  private long DirectoryByteOffset(SectorCache cache, uint first, bool noFatChain, long length, int index) {
+    var clusters = DirectoryClusters(cache, first, noFatChain, length);
+    var k = index / _clusterSize;
+    if (k >= clusters.Count) return -1;
+    return _clusterHeapOffset + (long)(clusters[k] - 2) * _clusterSize + index % _clusterSize;
+  }
+
+  /// <summary>
+  /// Points an entry set at <paramref name="newFirst" />, sets or clears NoFatChain
+  /// for a contiguous or scattered result, and recomputes the entry-set checksum.
+  /// </summary>
+  private static void PatchEntrySetStream(Stream image, SectorCache cache, EntrySetLocation entry, uint newFirst, bool contiguous) {
+    var set = new byte[entry.Length];
+    image.Position = entry.Offset;
+    image.ReadExactly(set);
+    BinaryPrimitives.WriteUInt32LittleEndian(set.AsSpan(32 + 20), newFirst);
+    set[32 + 1] = contiguous ? (byte)(set[32 + 1] | 0x02) : (byte)(set[32 + 1] & ~0x02);
+    ushort checksum = 0;
+    for (var j = 0; j < set.Length; j++) {
+      if (j == 2 || j == 3) continue; // the checksum field itself
+      checksum = (ushort)((((checksum & 1) != 0 ? 0x8000 : 0) + (checksum >> 1) + set[j]) & 0xFFFF);
+    }
+    BinaryPrimitives.WriteUInt16LittleEndian(set.AsSpan(2), checksum);
+    image.Position = entry.Offset;
+    image.Write(set);
+    cache.Invalidate(entry.Offset, set.Length);
   }
 
   /// <summary>
