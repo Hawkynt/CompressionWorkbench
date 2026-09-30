@@ -17,15 +17,13 @@ namespace Compression.NativeUI.Views;
 /// point to every other window.
 /// </summary>
 internal sealed partial class MainForm : Form {
-  private const int MenuHeight = 26;
-  private const int ToolbarHeight = 30;
+  // The ribbon's full height: its tab strip over one row of groups.
+  private const int RibbonHeight = 124;
   private const int BreadcrumbHeight = 26;
   private const int StatusHeight = 24;
 
   private readonly MainViewModel _model = new();
 
-  private readonly MenuStrip _menu = new();
-  private readonly ToolStrip _toolbar = new();
   private readonly Panel _breadcrumbBar = new();
   private readonly Label _formatLabel = new() { ForeColor = Color.FromArgb(0x44, 0x66, 0xAA) };
   private readonly Breadcrumb _breadcrumb = new() { TrimOnClick = true };
@@ -107,8 +105,7 @@ internal sealed partial class MainForm : Form {
     this._model.Entries.CollectionChanged += (_, _) => this.RefreshEntries();
     this._model.Breadcrumbs.CollectionChanged += (_, _) => this.RefreshBreadcrumbs();
 
-    this.BuildMenu();
-    this.BuildToolbar();
+    this.BuildRibbon();
     this.BuildBreadcrumbBar();
     this.BuildEntryList();
     this.BuildNavigationTree();
@@ -121,7 +118,7 @@ internal sealed partial class MainForm : Form {
     this._contentSplit.Panel2.Controls.Add(this._preview);
 
     // Added in one place, in z-order: the drop overlay sits above the panes it covers.
-    this.Controls.AddRange(this._menu, this._toolbar, this._breadcrumbBar, this._split, this._dropOverlay, this._status);
+    this.Controls.AddRange(this._ribbon, this._breadcrumbBar, this._split, this._dropOverlay, this._status);
 
     this.DragOver += this.OnDragOver;
     this.DragLeave += (_, _) => this.SetDropOverlay(visible: false, "");
@@ -143,70 +140,6 @@ internal sealed partial class MainForm : Form {
 
   // ── Construction ────────────────────────────────────────────────────────────────────────────
 
-  private void BuildMenu() {
-    this._menu.Items.AddRange([
-      Menu("&File", [
-        Item("&Open...", IconKeys.Open, Keys.Control | Keys.O, this._model.OpenCommand),
-        Item("&Create...", IconKeys.Create, Keys.Control | Keys.N, this._model.CreateCommand),
-        Item("&Add Files...", IconKeys.Add, Keys.None, this._model.AddFilesCommand),
-        new ToolStripSeparator(),
-        Item("Anal&yze File...", IconKeys.Analyze, Keys.None, this._model.AnalyzeFileCommand),
-        new ToolStripSeparator(),
-        Action("E&xit", IconKeys.Exit, this.Close),
-      ]),
-      Menu("&Actions", [
-        Item("Extract &All...", IconKeys.Extract, Keys.Control | Keys.E, this._model.ExtractAllCommand),
-        Item("Extract &Selected...", IconKeys.ExtractSelected, Keys.None, this._model.ExtractSelectedCommand),
-        Item("&Test Integrity", IconKeys.Test, Keys.Control | Keys.T, this._model.TestCommand),
-        new ToolStripSeparator(),
-        Item("&Back", IconKeys.Back, Keys.Alt | Keys.Left, this._model.BackCommand),
-        Item("&Forward", IconKeys.Forward, Keys.Alt | Keys.Right, this._model.ForwardCommand),
-        Item("Go &Up", IconKeys.NavigateUp, Keys.Back, this._model.NavigateUpCommand),
-        Item("&Delete", IconKeys.Remove, Keys.Delete, this._model.DeleteSelectedCommand),
-        // F2 belongs to the list, which starts editing the focused name itself; shown, not claimed.
-        Item("Rena&me", IconKeys.Rename, Keys.None, this._model.RenameCommand, "F2"),
-        // The clipboard keys are shown, not claimed, for the same reason: registered here they would
-        // also fire while the address bar or a name is being edited, and paste files into a text box.
-        Item("Cu&t", IconKeys.Cut, Keys.None, this._model.CutCommand, "Ctrl+X"),
-        Item("&Copy", IconKeys.Copy, Keys.None, this._model.CopyCommand, "Ctrl+C"),
-        Item("&Paste", IconKeys.Paste, Keys.None, this._model.PasteCommand, "Ctrl+V"),
-        Item("New &Folder", IconKeys.Folder, Keys.Control | Keys.Shift | Keys.N, this._model.NewFolderCommand),
-        new ToolStripSeparator(),
-        Item("&View as Text", IconKeys.ViewText, Keys.None, this._model.ViewAsTextCommand, "Enter"),
-        Item("View as &Hex", IconKeys.ViewHex, Keys.None, this._model.ViewAsHexCommand),
-        new ToolStripSeparator(),
-        Item("&Properties", IconKeys.Properties, Keys.Alt | Keys.Enter, this._model.PropertiesCommand),
-        Item("A&nalyze Entry...", IconKeys.Analyze, Keys.None, this._model.AnalyzeCommand),
-      ]),
-      Menu("&View", [
-        this.PreviewPaneToggle(),
-        new ToolStripSeparator(),
-        .. this.ViewModeItems(),
-      ]),
-      Menu("&Tools", [
-        Item("&Benchmark...", IconKeys.Test, Keys.None, this._model.BenchmarkCommand),
-        new ToolStripSeparator(),
-        Action("&Reverse Engineer Format...", IconKeys.Analyze, () => new ReverseEngineerWindow().Show()),
-        new ToolStripSeparator(),
-        Action("&Maintenance (Optimize / Shrink / Defragment / Purge / Wipe)...", IconKeys.Defragment, this.OpenMaintenance),
-        Action("Convert &Archive...", IconKeys.Create, () => _ = this.ConvertArchiveAsync()),
-        Action("&Partition Editor...", IconKeys.Create, this.OpenPartitionEditor),
-        Action("&Mount Image...", IconKeys.Open, this.OpenMountWindow),
-        new ToolStripSeparator(),
-        Item("&File Associations...", IconKeys.Properties, Keys.None, this._model.FileAssociationsCommand),
-      ]),
-      Menu("&Help", [
-        Action("&About", IconKeys.About, () => new AboutWindow().ShowDialog(this)),
-      ]),
-    ]);
-  }
-
-  private static ToolStripMenuItem Menu(string text, ToolStripItem[] children) {
-    var item = new ToolStripMenuItem(text);
-    item.DropDownItems.AddRange(children);
-    return item;
-  }
-
   /// <summary>
   /// A menu item bound to a command. <paramref name="displayShortcut"/> only labels the item — it
   /// is for keys another control already owns, where registering a second global handler would take
@@ -225,69 +158,10 @@ internal sealed partial class MainForm : Form {
     return item;
   }
 
-  /// <summary>Details and Thumbnails, on the keys Explorer uses for them.</summary>
-  private ToolStripMenuItem[] ViewModeItems() {
-    var details = new ToolStripMenuItem("&Details") { ShortcutKeys = Keys.Control | Keys.Shift | Keys.D6, Checked = true };
-    var thumbnails = new ToolStripMenuItem("&Thumbnails") {
-      Image = Images.Icon(IconKeys.ViewImage),
-      ShortcutKeys = Keys.Control | Keys.Shift | Keys.D2,
-    };
-
-    details.Click += (_, _) => Choose(thumbnailsOn: false);
-    thumbnails.Click += (_, _) => Choose(thumbnailsOn: true);
-    return [details, thumbnails];
-
-    void Choose(bool thumbnailsOn) {
-      this.ShowThumbnails(thumbnailsOn);
-      details.Checked = !thumbnailsOn;
-      thumbnails.Checked = thumbnailsOn;
-    }
-  }
-
-  private ToolStripMenuItem PreviewPaneToggle() {
-    var item = new ToolStripMenuItem("&Preview Pane") {
-      Image = Images.Icon(IconKeys.Preview),
-      ShortcutKeys = Keys.Alt | Keys.P,
-      Checked = true,
-    };
-    item.Click += (_, _) => {
-      this.PreviewPaneVisible = !this.PreviewPaneVisible;
-      item.Checked = this.PreviewPaneVisible;
-    };
-    return item;
-  }
-
   private static ToolStripMenuItem Action(string text, string iconKey, Action action) {
     var item = new ToolStripMenuItem(text) { Image = Images.Icon(iconKey) };
     item.Click += (_, _) => action();
     return item;
-  }
-
-  private void BuildToolbar() {
-    this._toolbar.Items.AddRange([
-      Button("Open", IconKeys.Open, "Open archive (Ctrl+O)", this._model.OpenCommand),
-      Button("Create", IconKeys.Create, "Create archive (Ctrl+N)", this._model.CreateCommand),
-      new ToolStripSeparator(),
-      Button("Extract", IconKeys.Extract, "Extract all (Ctrl+E)", this._model.ExtractAllCommand),
-      Button("Add", IconKeys.Add, "Add files to archive", this._model.AddFilesCommand),
-      Button("Test", IconKeys.Test, "Test integrity (Ctrl+T)", this._model.TestCommand),
-      new ToolStripSeparator(),
-      Button("Back", IconKeys.Back, "Back (Alt+Left)", this._model.BackCommand),
-      Button("Forward", IconKeys.Forward, "Forward (Alt+Right)", this._model.ForwardCommand),
-      Button("Up", IconKeys.NavigateUp, "Go up (Backspace)", this._model.NavigateUpCommand),
-      new ToolStripSeparator(),
-      Button("Analyze", IconKeys.Analyze, "Analyze binary file", this._model.AnalyzeFileCommand),
-    ]);
-
-    static ToolStripButton Button(string text, string iconKey, string tip, ICommand command) {
-      var button = new ToolStripButton(text) { Image = Images.Icon(iconKey), ToolTipText = tip };
-      button.Click += (_, _) => {
-        if (command.CanExecute(null)) command.Execute(null);
-      };
-      command.CanExecuteChanged += (_, _) => button.Enabled = command.CanExecute(null);
-      button.Enabled = command.CanExecute(null);
-      return button;
-    }
   }
 
   private void BuildNavigationTree() {
@@ -527,10 +401,11 @@ internal sealed partial class MainForm : Form {
   private void LayoutChildren() {
     var width = this.ClientSize.Width;
 
-    this._menu.Bounds = new(0, 0, width, MenuHeight);
-    this._toolbar.Bounds = new(0, MenuHeight, width, ToolbarHeight);
+    // A minimized ribbon folds down to its tab strip; the panes take the space it gives back.
+    var ribbonHeight = this._ribbon.Minimized ? this._ribbon.TabStripHeight : RibbonHeight;
+    this._ribbon.Bounds = new(0, 0, width, RibbonHeight);
 
-    var y = MenuHeight + ToolbarHeight;
+    var y = ribbonHeight;
     var breadcrumbVisible = this._breadcrumbBar.Visible;
     if (breadcrumbVisible) {
       this._breadcrumbBar.Bounds = new(0, y, width, BreadcrumbHeight);

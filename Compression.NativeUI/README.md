@@ -5,6 +5,11 @@ backends, so Windows and Linux run the same code rather than two frontends drift
 
 ## Screens
 
+- **Ribbon** — the commands live in an Office-style ribbon instead of a menu bar: a Quick Access
+  Toolbar (Back, Forward, Up, Refresh), File, Home (clipboard, organize, open, selection), View
+  (navigation and preview panes, Details / Thumbnails), Tools (analysis, maintenance, partitions,
+  mounting, benchmark), and an Archive Tools tab that appears only inside an archive (extract, add,
+  test, and the maintenance verbs). Every shortcut works form-wide from the ribbon.
 - **Archive browser** — the main window, laid out like a file manager. A folder tree on the left
   shows the drives (or `/`) and home, with the open archive grafted in as a folder beside the file it
   lives in; it follows every navigation, however it happened. The breadcrumb bar is also an address

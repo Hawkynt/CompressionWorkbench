@@ -28,6 +28,10 @@ internal static class IconKeys {
   public const string Cut = "Cut";
   public const string Copy = "Copy";
   public const string Paste = "Paste";
+  public const string Refresh = "Refresh";
+  public const string SelectAll = "SelectAll";
+  public const string SelectNone = "SelectNone";
+  public const string SelectInvert = "SelectInvert";
   public const string Exit = "Exit";
   public const string About = "About";
   public const string Save = "Save";
@@ -168,6 +172,31 @@ internal static class IconSet {
 
     [IconKeys.Forward] = [
       Fill(Blue, Poly(14, 8, 8, 2, 8, 5, 2, 5, 2, 11, 8, 11, 8, 14)),
+    ],
+
+    // Two arrows chasing each other round: reread.
+    [IconKeys.Refresh] = [
+      Fill(Green, Poly(8, 2, 13, 4.5, 11.6, 5.8, 13.5, 8, 11.5, 8, 10.4, 6.8, 8, 5.2, 5.6, 6.8, 4.6, 8.5, 2.5, 8, 3.8, 5.2)),
+      Fill(Green, Poly(8, 14, 3, 11.5, 4.4, 10.2, 2.5, 8, 4.5, 8, 5.6, 9.2, 8, 10.8, 10.4, 9.2, 11.4, 7.5, 13.5, 8, 12.2, 10.8)),
+    ],
+
+    // Rows, every one ticked.
+    [IconKeys.SelectAll] = [
+      Fill(Blue, Rect(2, 2, 14, 5), Rect(2, 6.5, 14, 9.5), Rect(2, 11, 14, 14)),
+      Fill(White, Rect(3, 3, 5, 4), Rect(3, 7.5, 5, 8.5), Rect(3, 12, 5, 13)),
+    ],
+
+    // Rows, none ticked.
+    [IconKeys.SelectNone] = [
+      Fill(PageEdge, Rect(2, 2, 14, 5), Rect(2, 6.5, 14, 9.5), Rect(2, 11, 14, 14)),
+      Fill(PageBody, Rect(2.8, 2.8, 13.2, 4.2), Rect(2.8, 7.3, 13.2, 8.7), Rect(2.8, 11.8, 13.2, 13.2)),
+    ],
+
+    // Rows, alternately ticked.
+    [IconKeys.SelectInvert] = [
+      Fill(Blue, Rect(2, 2, 14, 5), Rect(2, 11, 14, 14)),
+      Fill(PageEdge, Rect(2, 6.5, 14, 9.5)),
+      Fill(PageBody, Rect(2.8, 7.3, 13.2, 8.7)),
     ],
 
     // Two pages, one over the other.

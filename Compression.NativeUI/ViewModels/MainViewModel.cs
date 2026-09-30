@@ -124,6 +124,8 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand CutCommand { get; }
   public ICommand PasteCommand { get; }
   public ICommand NewFolderCommand { get; }
+  /// <summary>Rereads the folder or archive on show, staying where the user is.</summary>
+  public ICommand RefreshCommand { get; }
 
   // The shell's own clipboard. The desktop clipboard carries only text across every backend, so
   // files copied here paste here — between folders, archives and the two, in any direction.
@@ -226,6 +228,10 @@ internal sealed class MainViewModel : ViewModelBase {
     PasteCommand = new AsyncRelayCommand(_ => PasteAsync(), _ => HasClipboard && CanChangeHere());
     // On disk only: several writers - zip's among them - keep files, not bare folders, so an empty
     // folder made inside an archive would vanish on the next rebuild.
+    RefreshCommand = new RelayCommand(_ => {
+      if (HasArchive && !IsBrowsingOsFolder) ReloadArchiveInPlace();
+      else RefreshVisibleEntries();
+    }, _ => CurrentLocation is not null);
     NewFolderCommand = new RelayCommand(_ => CreateNewFolder(), _ => _osBrowserPath is not null);
     RenameCommand = new RelayCommand(
       _ => { if (SingleSelection() is { } entry) RenameRequested?.Invoke(this, entry); },

@@ -72,6 +72,18 @@ public sealed class MainFormTests {
     }
   }
 
+  /// <summary>Every item of the shell's ribbon: the Quick Access Toolbar and every tab, contextual ones included.</summary>
+  private static IEnumerable<RibbonItem> RibbonItems(MainForm shell) {
+    var ribbon = Field<Ribbon>(shell, "_ribbon");
+    foreach (var item in ribbon.QuickAccessItems) yield return item;
+    foreach (var tab in ribbon.Tabs)
+      foreach (var group in tab.Groups)
+        foreach (var item in group.Items)
+          if (item is RibbonItem ribbonItem) yield return ribbonItem;
+  }
+
+  private static RibbonItem RibbonItemNamed(MainForm shell, string text) => RibbonItems(shell).Single(i => i.Text == text);
+
   private static IEnumerable<ToolStripMenuItem> MenuItems(ToolStripItem item) {
     if (item is not ToolStripMenuItem menuItem) yield break;
 
@@ -101,7 +113,7 @@ public sealed class MainFormTests {
   [Test]
   public void GivenTheShell_WhenItIsBuilt_ThenEveryExpectedRegionIsPresentExactlyOnce() {
     WithShell(shell => {
-      foreach (var name in new[] { "_menu", "_toolbar", "_breadcrumbBar", "_split", "_status", "_dropOverlay" }) {
+      foreach (var name in new[] { "_ribbon", "_breadcrumbBar", "_split", "_status", "_dropOverlay" }) {
         var control = Field<Control>(shell, name);
         Assert.That(shell.Controls.Cast<Control>().Count(c => ReferenceEquals(c, control)), Is.EqualTo(1),
           $"{name} should appear exactly once in the form's controls");
@@ -119,11 +131,9 @@ public sealed class MainFormTests {
   // ── accelerators ────────────────────────────────────────────────────────────────────────────
 
   [Test]
-  public void GivenTheMenuBar_WhenAcceleratorsAreCollected_ThenNoKeyIsClaimedTwice() {
+  public void GivenTheRibbon_WhenShortcutsAreCollected_ThenNoKeyIsClaimedTwice() {
     WithShell(shell => {
-      var claims = Field<MenuStrip>(shell, "_menu").Items
-        .Cast<ToolStripItem>()
-        .SelectMany(MenuItems)
+      var claims = RibbonItems(shell)
         .Where(i => i.ShortcutKeys != Keys.None)
         .GroupBy(i => i.ShortcutKeys)
         .Where(g => g.Count() > 1)
@@ -140,35 +150,33 @@ public sealed class MainFormTests {
   /// key away from the list, where it does the thing the user expects.
   /// </summary>
   [Test]
-  public void GivenViewAsText_WhenTheMenuIsBuilt_ThenEnterIsShownButNotRegistered() {
+  public void GivenViewAsText_WhenTheRibbonIsBuilt_ThenEnterIsShownButNotRegistered() {
     WithShell(shell => {
-      var item = Field<MenuStrip>(shell, "_menu").Items
-        .Cast<ToolStripItem>()
-        .SelectMany(MenuItems)
-        .Single(i => i.Text.Replace("&", "") == "View as Text");
+      var item = RibbonItemNamed(shell, "View as Text");
 
       Assert.Multiple(() => {
         Assert.That(item.ShortcutKeys, Is.EqualTo(Keys.None), "Enter belongs to the entry list");
-        Assert.That(item.ShortcutKeyDisplayString, Is.EqualTo("Enter"), "but it is still advertised");
+        Assert.That(item.ToolTipText, Does.Contain("Enter"), "but it is still advertised");
       });
     });
   }
 
-  [TestCase("Go Up", Keys.Back)]
+  [TestCase("Up", Keys.Back)]
+  [TestCase("Back", Keys.Alt | Keys.Left)]
+  [TestCase("Forward", Keys.Alt | Keys.Right)]
+  [TestCase("Refresh", Keys.F5)]
   [TestCase("Delete", Keys.Delete)]
-  [TestCase("Open...", Keys.Control | Keys.O)]
-  [TestCase("Create...", Keys.Control | Keys.N)]
-  [TestCase("Extract All...", Keys.Control | Keys.E)]
-  [TestCase("Test Integrity", Keys.Control | Keys.T)]
+  [TestCase("Open", Keys.Control | Keys.O)]
+  [TestCase("Create", Keys.Control | Keys.N)]
+  [TestCase("Extract All", Keys.Control | Keys.E)]
+  [TestCase("Test", Keys.Control | Keys.T)]
   [TestCase("Properties", Keys.Alt | Keys.Enter)]
-  public void GivenAnAction_WhenTheMenuIsBuilt_ThenItCarriesItsAccelerator(string label, Keys expected) {
+  [TestCase("New Folder", Keys.Control | Keys.Shift | Keys.N)]
+  [TestCase("Select All", Keys.Control | Keys.A)]
+  [TestCase("Preview Pane", Keys.Alt | Keys.P)]
+  public void GivenACommand_WhenTheRibbonIsBuilt_ThenItCarriesItsShortcut(string label, Keys expected) {
     WithShell(shell => {
-      var item = Field<MenuStrip>(shell, "_menu").Items
-        .Cast<ToolStripItem>()
-        .SelectMany(MenuItems)
-        .Single(i => i.Text.Replace("&", "") == label);
-
-      Assert.That(item.ShortcutKeys, Is.EqualTo(expected));
+      Assert.That(RibbonItemNamed(shell, label).ShortcutKeys, Is.EqualTo(expected));
     });
   }
 
@@ -186,7 +194,7 @@ public sealed class MainFormTests {
         .Select(i => $"{i.Text} -> {i.ShortcutKeys}")
         .ToList();
 
-      Assert.That(duplicated, Is.Empty, "the menu bar owns these keys; the context menu shows them");
+      Assert.That(duplicated, Is.Empty, "the ribbon owns these keys; the context menu shows them");
     });
   }
 
@@ -422,16 +430,6 @@ public sealed class MainFormTests {
     }));
   }
 
-  [Test]
-  public void GivenTheBackAndForwardItems_WhenTheMenuIsBuilt_ThenTheyUseTheUsualKeys() {
-    WithShell(shell => {
-      var items = Field<MenuStrip>(shell, "_menu").Items.Cast<ToolStripItem>().SelectMany(MenuItems).ToList();
-
-      Assert.That(items.Single(i => i.Text == "&Back").ShortcutKeys, Is.EqualTo(Keys.Alt | Keys.Left));
-      Assert.That(items.Single(i => i.Text == "&Forward").ShortcutKeys, Is.EqualTo(Keys.Alt | Keys.Right));
-    });
-  }
-
   // ── rename ──────────────────────────────────────────────────────────────────────────────────
 
   [Test]
@@ -449,16 +447,15 @@ public sealed class MainFormTests {
   }
 
   [Test]
-  public void GivenTheRenameItems_WhenTheMenusAreBuilt_ThenF2IsShownButLeftToTheList() {
+  public void GivenTheRenameCommands_WhenBuilt_ThenF2IsShownButLeftToTheList() {
     WithShell(shell => {
-      var items = Field<MenuStrip>(shell, "_menu").Items.Cast<ToolStripItem>().SelectMany(MenuItems)
-        .Concat(Field<ContextMenuStrip>(shell, "_entryMenu").Items.Cast<ToolStripItem>().SelectMany(MenuItems))
-        .Where(i => i.Text == "Rena&me")
-        .ToList();
+      var ribbon = RibbonItemNamed(shell, "Rename");
+      var menu = Field<ContextMenuStrip>(shell, "_entryMenu").Items.Cast<ToolStripItem>().SelectMany(MenuItems).Single(i => i.Text == "Rena&me");
 
-      Assert.That(items, Has.Count.EqualTo(2));
-      Assert.That(items.All(i => i.ShortcutKeyDisplayString == "F2" && i.ShortcutKeys == Keys.None), Is.True,
-        "the list starts editing on F2 itself; an accelerator would take the key away from it");
+      Assert.That((ribbon.ShortcutKeys, menu.ShortcutKeys), Is.EqualTo((Keys.None, Keys.None)),
+        "the list starts editing on F2 itself; a shortcut would take the key away from it");
+      Assert.That(ribbon.ToolTipText, Does.Contain("F2"));
+      Assert.That(menu.ShortcutKeyDisplayString, Is.EqualTo("F2"));
     });
   }
 
@@ -496,12 +493,10 @@ public sealed class MainFormTests {
   // ── preview pane ────────────────────────────────────────────────────────────────────────────
 
   [Test]
-  public void GivenThePreviewPane_WhenToggledFromTheMenu_ThenItHidesAndReturns() {
+  public void GivenThePreviewPane_WhenToggledFromTheRibbon_ThenItHidesAndReturns() {
     WithShell(shell => {
-      var toggle = Field<MenuStrip>(shell, "_menu").Items.Cast<ToolStripItem>().SelectMany(MenuItems)
-        .Single(i => i.Text == "&Preview Pane");
+      var toggle = (RibbonToggleButton)RibbonItemNamed(shell, "Preview Pane");
       Assert.That(shell.PreviewPaneVisible, Is.True, "a file manager opens with its preview showing");
-      Assert.That(toggle.ShortcutKeys, Is.EqualTo(Keys.Alt | Keys.P));
 
       toggle.PerformClick();
       Assert.That((shell.PreviewPaneVisible, toggle.Checked), Is.EqualTo((false, false)));
@@ -526,12 +521,11 @@ public sealed class MainFormTests {
   }
 
   [Test]
-  public void GivenTheViewMenu_WhenThumbnailsAreChosen_ThenTheListShowsLargeIconsAndDetailsBringsTheColumnsBack() {
+  public void GivenTheViewTab_WhenThumbnailsAreChosen_ThenTheListShowsLargeIconsAndDetailsBringsTheColumnsBack() {
     WithScratch((root, _) => WithShell(shell => {
       Field<MainViewModel>(shell, "_model").NavigateTo(Location.Folder(root));
-      var items = Field<MenuStrip>(shell, "_menu").Items.Cast<ToolStripItem>().SelectMany(MenuItems).ToList();
-      var details = items.Single(i => i.Text == "&Details");
-      var thumbnails = items.Single(i => i.Text == "&Thumbnails");
+      var details = (RibbonToggleButton)RibbonItemNamed(shell, "Details");
+      var thumbnails = (RibbonToggleButton)RibbonItemNamed(shell, "Thumbnails");
       var list = Field<ListView>(shell, "_entries");
 
       thumbnails.PerformClick();
@@ -546,6 +540,107 @@ public sealed class MainFormTests {
       details.PerformClick();
       Assert.That(list.View, Is.EqualTo(ListViewView.Details));
       Assert.That((details.Checked, thumbnails.Checked), Is.EqualTo((true, false)));
+
+      details.PerformClick();
+      Assert.That((list.View, details.Checked, thumbnails.Checked), Is.EqualTo((ListViewView.Details, true, false)),
+        "clicking the layout already chosen keeps it, as a radio button does");
+    }));
+  }
+
+  // ── ribbon ──────────────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenTheShell_WhenBuilt_ThenEveryCommandOfTheOldMenuBarIsOnTheRibbon() {
+    WithShell(shell => {
+      var labels = RibbonItems(shell).Select(i => i.Text).ToHashSet();
+      string[] expected = [
+        "Open", "Create", "Convert", "File Associations", "About", "Exit",
+        "Paste", "Cut", "Copy", "New Folder", "Rename", "Delete", "Properties", "View as Text", "View as Hex",
+        "Navigation Pane", "Preview Pane", "Details", "Thumbnails",
+        "Analyze File", "Analyze Entry", "Reverse Engineer", "Maintenance", "Partitions", "Mount", "Benchmark",
+        "Extract All", "Extract Selected", "Add Files", "Test",
+        "Back", "Forward", "Up", "Refresh",
+      ];
+
+      Assert.That(expected.Where(e => !labels.Contains(e)), Is.Empty, "a command the menu bar had must not be lost");
+    });
+  }
+
+  [Test]
+  public void GivenTheArchiveToolsTab_WhenTheShellMovesInAndOutOfAnArchive_ThenItAppearsOnlyInside() {
+    WithScratch((root, zip) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      var tools = Field<RibbonContextualTabGroup>(shell, "_archiveTools");
+
+      model.NavigateTo(Location.Folder(root));
+      Assert.That(tools.Visible, Is.False, "a folder on disk is not an archive");
+
+      model.NavigateTo(Location.InArchive(zip, "docs/"));
+      Assert.That(tools.Visible, Is.True);
+
+      model.NavigateTo(Location.Folder(root));
+      Assert.That(tools.Visible, Is.False);
+    }));
+  }
+
+  [Test]
+  public void GivenTheNavigationPaneToggle_WhenSwitchedOff_ThenTheTreeFoldsAwayAndReturns() {
+    WithShell(shell => {
+      var toggle = (RibbonToggleButton)RibbonItemNamed(shell, "Navigation Pane");
+      var split = Field<SplitContainer>(shell, "_split");
+
+      toggle.PerformClick();
+      Assert.That(split.Panel1Collapsed, Is.True);
+
+      toggle.PerformClick();
+      Assert.That(split.Panel1Collapsed, Is.False);
+    });
+  }
+
+  [Test]
+  public void GivenAFolder_WhenSelectAllNoneAndInvertAreUsed_ThenTheSelectionFollowsButTheParentRowIsNeverPicked() {
+    WithScratch((root, _) => WithShell(shell => {
+      Field<MainViewModel>(shell, "_model").NavigateTo(Location.Folder(root));
+      var list = Field<ListView>(shell, "_entries");
+      var selectable = list.Items.Cast<ListViewItem>().Count(i => i.Text != "..");
+
+      RibbonItemNamed(shell, "Select All").PerformClick();
+      Assert.That(list.SelectedItems.Count(), Is.EqualTo(selectable));
+      Assert.That(list.Items.Cast<ListViewItem>().Single(i => i.Text == "..").Selected, Is.False);
+
+      RibbonItemNamed(shell, "Invert Selection").PerformClick();
+      Assert.That(list.SelectedItems.Count(), Is.Zero);
+
+      RibbonItemNamed(shell, "Invert Selection").PerformClick();
+      RibbonItemNamed(shell, "Select None").PerformClick();
+      Assert.That(list.SelectedItems.Count(), Is.Zero);
+    }));
+  }
+
+  [Test]
+  public void GivenAFileAddedBehindTheShellsBack_WhenRefreshIsPressed_ThenItAppears() {
+    WithScratch((root, _) => WithShell(shell => {
+      Field<MainViewModel>(shell, "_model").NavigateTo(Location.Folder(root));
+      File.WriteAllText(Path.Combine(root, "late.txt"), "late");
+
+      RibbonItemNamed(shell, "Refresh").PerformClick();
+
+      Assert.That(Field<ListView>(shell, "_entries").Items.Cast<ListViewItem>().Select(i => i.Text), Does.Contain("late.txt"));
+    }));
+  }
+
+  [Test]
+  public void GivenTheListHasFocus_WhenF5IsPressed_ThenTheRibbonsRefreshRunsWithNoMenuBarInvolved() {
+    WithScratch((root, _) => WithShell(shell => {
+      Field<MainViewModel>(shell, "_model").NavigateTo(Location.Folder(root));
+      var list = Field<ListView>(shell, "_entries");
+      list.Focus();
+      File.WriteAllText(Path.Combine(root, "late.txt"), "late");
+
+      PeerOf(list).RaiseKeyDown(Keys.F5);
+
+      Assert.That(list.Items.Cast<ListViewItem>().Select(i => i.Text), Does.Contain("late.txt"),
+        "the key reaches the ribbon through the form's shortcut chain");
     }));
   }
 
@@ -642,15 +737,14 @@ public sealed class MainFormTests {
   }
 
   [Test]
-  public void GivenTheClipboardItems_WhenTheMenusAreBuilt_ThenTheirKeysAreShownButLeftToTheFileViews() {
+  public void GivenTheClipboardCommands_WhenTheRibbonIsBuilt_ThenTheirKeysAreShownButLeftToTheFileViews() {
     WithShell(shell => {
-      var items = Field<MenuStrip>(shell, "_menu").Items.Cast<ToolStripItem>().SelectMany(MenuItems)
-        .Where(i => i.Text is "Cu&t" or "&Copy" or "&Paste")
-        .ToList();
+      var items = RibbonItems(shell).Where(i => i.Text is "Cut" or "Copy" or "Paste").ToList();
 
-      Assert.That(items.Select(i => i.ShortcutKeyDisplayString), Is.EquivalentTo(new[] { "Ctrl+X", "Ctrl+C", "Ctrl+V" }));
+      Assert.That(items, Has.Count.EqualTo(3));
+      Assert.That(items.Select(i => i.ToolTipText), Is.EquivalentTo(new[] { "Cut (Ctrl+X)", "Copy (Ctrl+C)", "Paste (Ctrl+V)" }));
       Assert.That(items.All(i => i.ShortcutKeys == Keys.None), Is.True,
-        "registered on the menu, Ctrl+V would paste files while a name is being typed");
+        "registered on the ribbon, Ctrl+V would paste files while a name is being typed");
     });
   }
 
