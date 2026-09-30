@@ -712,7 +712,35 @@ public static partial class FormatDetector {
         return overlay;
     }
 
+    if (byMagic == Format.Unknown && IsBarePyInstallerArchive(path))
+      return Format.PyInstaller;
+
     return byMagic;
+  }
+
+  /// <summary>
+  /// A bare PyInstaller CArchive (the PKG PyInstaller builds before appending it to a
+  /// bootloader) has no leading magic: it ends in the 88-byte cookie, whose package length
+  /// then covers the whole file and whose TOC ends exactly where the cookie starts.
+  /// </summary>
+  private static bool IsBarePyInstallerArchive(string path) {
+    const int cookieLength = 88;
+    try {
+      using var fs = File.OpenRead(path);
+      if (fs.Length < cookieLength || fs.Length > uint.MaxValue) return false;
+      Span<byte> cookie = stackalloc byte[cookieLength];
+      fs.Seek(-cookieLength, SeekOrigin.End);
+      fs.ReadExactly(cookie);
+      if (!cookie[..8].SequenceEqual(PyInstallerCookie)) return false;
+      var packageLength = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(cookie[8..]);
+      var tocOffset = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(cookie[12..]);
+      var tocLength = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(cookie[16..]);
+      return packageLength == fs.Length && (long)tocOffset + tocLength == fs.Length - cookieLength;
+    } catch (IOException) {
+      return false;
+    } catch (UnauthorizedAccessException) {
+      return false;
+    }
   }
 
   /// <summary>
