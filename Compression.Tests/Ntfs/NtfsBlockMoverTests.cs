@@ -179,8 +179,8 @@ public class NtfsBlockMoverTests {
   }
 
   [Test, Category("RoundTrip")]
-  public void Defragment_Rebuild_PreservesAllFiles() {
-    // Use the rebuild fallback (CarveHole mode always uses rebuild).
+  public void Defragment_CarveHole_PreservesAllFiles() {
+    // CarveHole runs through the planner and the in-place mover like every other mode.
     var payloadA = new byte[2048];
     for (var i = 0; i < payloadA.Length; i++) payloadA[i] = (byte)(i % 200);
     var payloadB = new byte[8192];
@@ -228,19 +228,21 @@ public class NtfsBlockMoverTests {
   }
 
   [Test, Category("EdgeCase")]
-  public void UpdateAllocation_ResidentFile_NoOpNoCrash() {
-    // Resident files have no data runs. UpdateAllocation should not crash.
+  public void UpdateAllocation_ForClustersNoFileOwns_RefusesWithoutTouchingTheVolume() {
+    // Resident files have no data runs, so no record owns the clusters named here.
+    // Patching nothing while flipping bitmap bits would mark live clusters free;
+    // the mover must refuse before it writes anything.
     var payload = "small"u8.ToArray(); // < 700 bytes = resident
     var disk = BuildImageSized(4 * 1024 * 1024, ("tiny.txt", payload));
+    var before = (byte[])disk.Clone();
 
     using var ms = new MemoryStream(disk);
     var mover = new FileSystem.Ntfs.NtfsBlockMover();
     mover.Init(disk);
 
-    // Try to "move" something for a file that has no non-resident data.
-    // This should silently succeed (no data runs to patch).
-    Assert.DoesNotThrow(() =>
+    Assert.Throws<InvalidOperationException>(() =>
       mover.UpdateAllocationAfterMove(ms, "tiny.txt", 0, 4096, 4096));
+    Assert.That(ms.ToArray(), Is.EqualTo(before));
   }
 
   [Test, Category("HappyPath")]

@@ -266,8 +266,13 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       // buffering the volume failed (too long for a MemoryStream); fall through
     }
 
-    // Default behaviour: verified rebuild that never grows/corrupts, else copy-through.
-    ((IArchiveShrinkable)this).ShrinkDefault(input, output);
+    // Nothing could be trimmed in place. The volume is handed back as it is rather
+    // than rebuilt: a rebuilt volume would be smaller only by dropping the label,
+    // serial number, security descriptors, streams and timestamps of its files.
+    input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    input.CopyTo(output);
   }
 
   /// <summary>
@@ -277,29 +282,22 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
-  /// Mode-aware NTFS defragmentor. Supports planner-driven in-place path
-  /// (using <see cref="DefragPlanner"/> + <see cref="NtfsBlockMover"/>) and the
-  /// legacy rebuild path (using <see cref="DefragRebuilder"/>). Falls back to
-  /// rebuild when the planner path throws (e.g. data-run re-encoding changes
-  /// byte length with no slack space).
+  /// Mode-aware NTFS defragmentor: planner-driven and in place (<see cref="DefragPlanner"/>
+  /// + <see cref="NtfsBlockMover"/>) for the packing modes, a carved hole, ascending order,
+  /// a metadata placement and layout templates. Block interleave is refused before a byte moves.
   /// </summary>
+  /// <remarks>
+  /// There is no rebuild fallback. Writing the volume afresh keeps its size but drops the
+  /// label, serial number, security descriptors, alternate data streams, reparse points,
+  /// timestamps and attributes — a defragmentation that loses metadata is not one.
+  /// </remarks>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
-    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy) {
-      try {
-        DefragmentWithPlanner(archive, options);
-        return;
-      } catch (Exception planFailure) {
-        // A silent fallback looks exactly like a successful in-place
-        // defragmentation from outside, so the reason is reported.
-        options.OnProgress?.Invoke(new DefragProgressEvent(
-          "fallback", 0, -1, -1, archive.Length, null,
-          $"In-place planning declined ({planFailure.GetType().Name}: " +
-          $"{FirstLine(planFailure.Message)}); rebuilding instead"));
-        archive.Position = 0;
-      }
-    }
-    DefragmentWithRebuild(archive, options);
+    // Interleaving deals a file's clusters out one by one, and a run list with a run
+    // per cluster outgrows the file's MFT record long before the file is large.
+    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder
+      | DefragFeature.MetadataZone | DefragFeature.LayoutTemplate, "NTFS");
+    DefragmentWithPlanner(archive, options);
   }
 
   private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
@@ -339,8 +337,9 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var volumeEnd = mover.VolumeEndByte > 0 ? Math.Min(mover.VolumeEndByte, archive.Length) : archive.Length;
 
     var moves = DefragPlanner.Plan(extents, dataOrigin, volumeEnd, mover.ClusterSize,
-      options.Profile, options.Mode, metadataZone: options.MetadataZonePlacement,
-      movableMetadata: mover.RelocatableMetadata);
+      options.Profile, options.Mode, interleaveStride: options.InterleaveStride,
+      holeSize: options.HoleSize, holeAt: options.HoleAt, metadataZone: options.MetadataZonePlacement,
+      layoutTemplate: options.LayoutTemplate, movableMetadata: mover.RelocatableMetadata);
     if (moves.Count == 0) {
       options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
       return;
@@ -358,35 +357,6 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
-  /// <summary>
-  /// Rebuild fallback for when the planner refuses. The volume is laid out
-  /// straight into the stream: a byte[] tops out at two gigabytes, so building
-  /// the image in memory threw on exactly the volumes that reach this path.
-  /// </summary>
-  private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
-    var totalSize = archive.Length;
-    NtfsWriter? writer = null;
-    Stream? target = null;
-    var spill = new List<string>();
-    try {
-      DefragRebuilder.RebuildStreaming(archive, options,
-        readEntries: stream => {
-          var r = new NtfsReader(stream);
-          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-        },
-        beginWrite: s => { writer = new NtfsWriter(); target = s; },
-        writeEntry: (name, data) => {
-          var path = Path.GetTempFileName();
-          spill.Add(path);
-          File.WriteAllBytes(path, data);
-          writer!.AddStreamingFile(name, data.LongLength, () => File.OpenRead(path));
-        },
-        finishWrite: () => writer!.BuildToStreaming(target!, totalSize));
-    } finally {
-      foreach (var path in spill)
-        try { File.Delete(path); } catch { /* scratch file already gone */ }
-    }
-  }
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -742,11 +712,5 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return total;
   }
 
-
-  /// <summary>The first line of a message, for a one-line progress note.</summary>
-  private static string FirstLine(string message) {
-    var end = message.IndexOf('\n');
-    return end < 0 ? message : message[..end].TrimEnd('\r');
-  }
 
 }
