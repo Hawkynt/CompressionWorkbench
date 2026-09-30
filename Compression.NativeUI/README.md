@@ -18,6 +18,8 @@ backends, so Windows and Linux run the same code rather than two frontends drift
   anything is touched. Cut, copy and paste (Ctrl+X / C / V in the list or the tree) move files and
   folders between host folders and archive folders in any direction; nothing is overwritten — a
   taken name gets a number — and a cut removes its sources only after every copy has landed.
+  Whatever arrives in a folder is written beside its destination under a staging name and renamed
+  into place when complete, so extraction never detours through a temp folder on another volume.
   New Folder (Ctrl+Shift+N) works in folders on disk and opens the new name for editing.
 - **Thumbnails** — View → Thumbnails (Ctrl+Shift+2; Details is Ctrl+Shift+6) shows large icons, and
   every entry any image decoder can read gets its picture shrunk into its icon, decoded in the

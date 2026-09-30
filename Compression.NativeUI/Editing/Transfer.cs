@@ -81,16 +81,22 @@ internal static class Transfer {
     var created = new List<string>();
     var taken = new HashSet<string>(Directory.EnumerateFileSystemEntries(folder).Select(Path.GetFileName)!, StringComparer.OrdinalIgnoreCase);
 
-    using var staging = new Staging();
+    // Everything written here is written beside its destination, under a staging name, and renamed
+    // into place once complete: an interrupted transfer never leaves a truncated file under the real
+    // name, and nothing is first unpacked onto some other volume only to be copied across.
+    using var staging = new Staging(folder);
     foreach (var item in items) {
       var name = FreeName(item.Name, taken);
       var target = Path.Combine(folder, name);
 
       if (!item.From.IsInArchive && move && SameVolume(item.HostPath, target)) {
         MoveOnDisk(item.HostPath, target, item.IsFolder);
+      } else if (item.From.IsInArchive) {
+        MoveOnDisk(staging.Materialize(item), target, item.IsFolder);
       } else {
-        var source = item.From.IsInArchive ? staging.Materialize(item) : item.HostPath;
-        CopyOnDisk(source, target, item.IsFolder);
+        var partial = staging.NewPath();
+        CopyOnDisk(item.HostPath, partial, item.IsFolder);
+        MoveOnDisk(partial, target, item.IsFolder);
       }
 
       created.Add(name);
@@ -126,7 +132,8 @@ internal static class Transfer {
     var rest = items.Except(sameArchive).ToList();
     if (rest.Count == 0) return new(created);
 
-    using var staging = new Staging();
+    // Entries on their way into the archive are staged beside it, on the volume it is written to.
+    using var staging = new Staging(Path.GetDirectoryName(Path.GetFullPath(archive))!);
     var inputs = new List<ArchiveInput>();
     foreach (var item in rest) {
       var name = FreeName(item.Name, taken);
@@ -246,15 +253,38 @@ internal static class Transfer {
       File.Copy(file, Path.Combine(target, Path.GetRelativePath(source, file)));
   }
 
-  /// <summary>A scratch folder that archive entries are extracted into on their way somewhere else.</summary>
-  private sealed class Staging : IDisposable {
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "cwb-transfer-" + Guid.NewGuid().ToString("N")[..8]);
+  /// <summary>The prefix of the hidden staging folders a transfer creates beside its destination.</summary>
+  internal const string StagingPrefix = ".cwb-transfer-";
+
+  /// <summary>Raised with each staging folder as it is created; lets tests see where staging happens.</summary>
+  internal static event Action<string>? StagingCreated;
+
+  /// <summary>
+  /// A hidden scratch folder beside a transfer's destination, on the same volume, so that what is
+  /// staged there reaches its final name by a rename rather than a second copy.
+  /// </summary>
+  private sealed class Staging(string beside) : IDisposable {
+    private readonly string _root = Path.Combine(beside, StagingPrefix + Guid.NewGuid().ToString("N")[..8]);
+
+    /// <summary>A fresh, unused path inside the staging folder, created on first use.</summary>
+    public string NewPath() {
+      this.EnsureRoot();
+      return Path.Combine(this._root, Guid.NewGuid().ToString("N")[..8]);
+    }
+
+    private void EnsureRoot() {
+      if (Directory.Exists(this._root)) return;
+
+      var info = Directory.CreateDirectory(this._root);
+      if (OperatingSystem.IsWindows()) info.Attributes |= FileAttributes.Hidden;
+      StagingCreated?.Invoke(this._root);
+    }
 
     /// <summary>Extracts <paramref name="item"/> — a folder with everything beneath it — and returns where it landed.</summary>
     public string Materialize(TransferItem item) {
       var archive = item.From.HostPath;
       var entries = item.IsFolder ? [.. Descendants(archive, item.EntryPath)] : new[] { item.EntryPath };
-      var into = Path.Combine(this._root, Guid.NewGuid().ToString("N")[..8]);
+      var into = this.NewPath();
       Directory.CreateDirectory(into);
       ArchiveOperations.Extract(archive, into, password: null, files: [.. entries.Where(e => !e.EndsWith('/'))]);
 
