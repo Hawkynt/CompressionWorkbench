@@ -24441,13 +24441,13 @@ Minimal Thrift compact protocol decoder/encoder for walking the Parquet FileMeta
 
 ### Namespace `FileFormat.Partclone`
 
-[`PartcloneFormatDescriptor`](#partcloneformatdescriptor) · [`PartcloneReader`](#partclonereader) · [`PartcloneReader.PartcloneImage`](#partclonereaderpartcloneimage)
+[`PartcloneFormatDescriptor`](#partcloneformatdescriptor) · [`PartcloneReader`](#partclonereader) · [`PartcloneReader.PartcloneImage`](#partclonereaderpartcloneimage) · [`PartcloneWriter`](#partclonewriter)
 
 #### `PartcloneFormatDescriptor`
 
-Read-only descriptor for partclone — the Clonezilla backup format that captures only allocated filesystem blocks alongside a per-block usage bitmap. Listing surfaces the reconstructed disk image plus a `metadata.ini` describing the source FS; extraction either writes the raw `image.img` or, when the inner filesystem can be identified, delegates to the matching descriptor so the user gets the original files. Compressed partclone streams (LZ4/zstd) are not handled here — they're a shell-pipe responsibility upstream of this format. References: `https://partclone.org` — official partclone site`https://github.com/Thomas-Tsai/partclone` — canonical source — the image header is defined in src/partclone.h`https://clonezilla.org` — Clonezilla — primary consumer of partclone images
+Descriptor for partclone — the Clonezilla backup format that captures only allocated filesystem blocks alongside a per-block usage bitmap. Listing surfaces the reconstructed partition as `image.img`, the serialized `allocation.map` and a `metadata.ini` describing the source FS; opening the files inside `image.img` is left to the matching file-system descriptor. Compressed partclone streams (LZ4/zstd) are not handled here — they're a shell-pipe responsibility upstream of this format. References: `https://partclone.org` — official partclone site`https://github.com/Thomas-Tsai/partclone/blob/master/IMAGE_FORMATS.md` — partclone — image format 0001/0002 layout`https://github.com/Thomas-Tsai/partclone` — canonical source (GPL, used as specification and as the partclone.chkimg/restore oracle only)`https://clonezilla.org` — Clonezilla — primary consumer of partclone images
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -24464,51 +24464,74 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a partclone 0002 image from `image.img` plus, optionally, the `metadata.ini` and `allocation.map` an extraction produced. Without the map, only non-zero blocks are stored. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts the requested entries. Header, bitmap and data checksums are verified, so a damaged image throws `InvalidDataException` (after writing `metadata.ini` if asked). |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists `metadata.ini`, `allocation.map` and the reconstructed `image.img`. |
 
 #### `PartcloneReader`
 
-Reader for partclone images — the file-system-aware backup format used by Clonezilla. Walks `image_head` + `file_system_info` + `image_options` + bitmap to reconstruct the original raw disk/partition image one block at a time, pulling block-sized chunks from the data stream for blocks the bitmap marks as used and emitting zeros for unused blocks.
+Reader for partclone image format 0002 — the file-system-aware backup format used by Clonezilla. Walks the image descriptor and bitmap to reconstruct the original raw partition one block at a time: used blocks come from the data stream, unused blocks are zeros. Header, bitmap and data-strip checksums are verified.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PartcloneReader` | `PartcloneReader(Stream stream)` | Initializes a new instance of `PartcloneReader`. |
-| `BmBit` | `const int BmBit` | Defines the bm bit constant value. |
-| `BmByte` | `const int BmByte` | Defines the bm byte constant value. |
-| `BmNone` | `const int BmNone` | Defines the bm none constant value. |
-| `EndianMagic` | `const ushort EndianMagic` | Defines the endian magic constant value. |
-| `FsMagicSize` | `const int FsMagicSize` | Defines the fs magic size constant value. |
-| `MagicSize` | `const int MagicSize` | Defines the magic size constant value. |
-| `Magic` | `static readonly byte[] Magic` | Provides the magic value. |
-| `VersionSizeV2` | `const int VersionSizeV2` | Defines the version size v 2 constant value. |
-| `Info` | `PartcloneImage Info { get; }` | Gets the info. |
-| `LooksLikePartclone` | `static bool LooksLikePartclone(ReadOnlySpan<byte> head)` | Cheap signature check used by descriptors that want to peek before instantiating the full reader. |
-| `ReconstructDisk` | `byte[] ReconstructDisk()` | Reconstructs the raw disk image by walking the bitmap and copying `block_size` bytes from the data stream for each used block. Unused blocks become zeros. Result length is `totalblock * block_size`. |
-| `StreamDiskTo` | `void StreamDiskTo(Stream output)` | Streams the reconstructed disk into `output` without materializing the whole thing in memory. Used blocks are copied from the data stream; unused blocks are written as zeros. |
+| `PartcloneReader` | `PartcloneReader(Stream stream)` | Parses and validates the image descriptor. |
+| `BmBit` | `const byte BmBit` |  |
+| `BmByte` | `const byte BmByte` |  |
+| `BmNone` | `const byte BmNone` | Bitmap modes (partclone `bitmap_mode_t`). |
+| `CsCrc32` | `const ushort CsCrc32` |  |
+| `CsNone` | `const ushort CsNone` | On-disk checksum modes (partclone `checksum_mode_enum`). These are not the numbers the `-a` option takes (0/1/2), and IMAGE_FORMATS.md still shows the option numbers; images written by partclone 0.3.27 carry 0x20 for CRC32. |
+| `CsXxh128` | `const ushort CsXxh128` |  |
+| `CsXxh64` | `const ushort CsXxh64` |  |
+| `EndianMagic` | `const ushort EndianMagic` |  |
+| `FeatureSize` | `const int FeatureSize` |  |
+| `FsFieldSize` | `const int FsFieldSize` |  |
+| `HeaderCrcOffset` | `const int HeaderCrcOffset` |  |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `MagicFieldSize` | `const int MagicFieldSize` |  |
+| `MagicSize` | `const int MagicSize` |  |
+| `Magic` | `static readonly byte[] Magic` | The 15 printable magic bytes; the on-disk field is 16 bytes with a trailing NUL. |
+| `VersionSizeV2` | `const int VersionSizeV2` |  |
+| `Info` | `PartcloneImage Info { get; }` |  |
+| `LooksLikePartclone` | `static bool LooksLikePartclone(ReadOnlySpan<byte> head)` | Cheap signature check for descriptors that peek before instantiating the reader. |
+| `PartcloneCrc32` | `static uint PartcloneCrc32(ReadOnlySpan<byte> data)` | partclone's CRC-32 of `data`: reflected IEEE polynomial, register seeded with 0xFFFFFFFF and stored without the final inversion, i.e. the bitwise complement of the usual CRC-32. |
+| `ReadAllocationMap` | `byte[] ReadAllocationMap()` | Returns the allocation map exactly as serialized in the image (bit or byte form). |
+| `ReconstructDisk` | `byte[] ReconstructDisk()` | Reconstructs the whole raw partition in memory. |
+| `StreamDiskTo` | `void StreamDiskTo(Stream output)` | Streams the reconstructed partition into `output`, verifying the bitmap CRC and every strip checksum on the way. |
 
 #### `PartcloneReader.PartcloneImage`
 
-Represents a partclone image.
+Represents a partclone image descriptor.
 
 Implements `IEquatable<PartcloneImage>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PartcloneImage` | `PartcloneImage(string PtcVersion, string FsType, ulong DeviceSize, ulong TotalBlocks, ulong UsedBlocks, uint BlockSize, ushort ImageVersion, ushort ChecksumMode, ushort ChecksumSize, uint BlocksPerChecksum, byte BitmapMode, long BitmapOffset, long DataOffset)` | Represents a partclone image. |
+| `PartcloneImage` | `PartcloneImage(string PtcVersion, string FsType, ulong DeviceSize, ulong TotalBlocks, ulong UsedBlocks, ulong SuperBlockUsedBlocks, uint BlockSize, ushort ImageVersion, ushort CpuBits, ushort ChecksumMode, ushort ChecksumSize, uint BlocksPerChecksum, byte ReseedChecksum, byte BitmapMode, long BitmapOffset, long DataOffset)` | Represents a partclone image descriptor. |
 | `BitmapMode` | `byte BitmapMode { get; init; }` |  |
 | `BitmapOffset` | `long BitmapOffset { get; init; }` |  |
 | `BlockSize` | `uint BlockSize { get; init; }` |  |
 | `BlocksPerChecksum` | `uint BlocksPerChecksum { get; init; }` |  |
 | `ChecksumMode` | `ushort ChecksumMode { get; init; }` |  |
 | `ChecksumSize` | `ushort ChecksumSize { get; init; }` |  |
+| `CpuBits` | `ushort CpuBits { get; init; }` |  |
 | `DataOffset` | `long DataOffset { get; init; }` |  |
 | `DeviceSize` | `ulong DeviceSize { get; init; }` |  |
 | `FsType` | `string FsType { get; init; }` |  |
 | `ImageVersion` | `ushort ImageVersion { get; init; }` |  |
 | `PtcVersion` | `string PtcVersion { get; init; }` |  |
+| `ReseedChecksum` | `byte ReseedChecksum { get; init; }` |  |
+| `SuperBlockUsedBlocks` | `ulong SuperBlockUsedBlocks { get; init; }` |  |
 | `TotalBlocks` | `ulong TotalBlocks { get; init; }` |  |
 | `UsedBlocks` | `ulong UsedBlocks { get; init; }` |  |
+
+#### `PartcloneWriter`
+
+Writes partclone image format 0002 from a raw partition image, in the layout documented on `PartcloneReader`. Output is accepted by partclone 0.3.27's `partclone.chkimg` and restored byte-identically by `partclone.restore`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultPtcVersion` | `const string DefaultPtcVersion` | The partclone release whose on-disk output this writer reproduces. |
+| `Write` | `static void Write(Stream output, Stream disk, ReadOnlySpan<byte> metadata, ReadOnlySpan<byte> allocationMap, IReadOnlyDictionary<string, string> overrides = null)` | Writes an image of `disk`. |
 
 ### Namespace `FileFormat.Pbp`
 

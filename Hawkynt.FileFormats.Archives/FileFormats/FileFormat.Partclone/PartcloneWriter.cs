@@ -6,217 +6,235 @@ using Compression.Core.Checksums;
 
 namespace FileFormat.Partclone;
 
-/// <summary>Creates Partclone 0002 images from a raw disk image and its metadata.</summary>
+/// <summary>
+/// Writes partclone image format 0002 from a raw partition image, in the layout documented on
+/// <see cref="PartcloneReader"/>. Output is accepted by partclone 0.3.27's
+/// <c>partclone.chkimg</c> and restored byte-identically by <c>partclone.restore</c>.
+/// </summary>
 public static class PartcloneWriter {
   private static readonly UTF8Encoding Utf8 = new(false);
 
+  /// <summary>The partclone release whose on-disk output this writer reproduces.</summary>
+  public const string DefaultPtcVersion = "0.3.27";
+
+  // partclone's default copy buffer; with no -k it checksums one buffer's worth of blocks.
+  private const int DefaultBufferSize = 1 << 20;
+  private const uint MaxBlockSize = 64u << 20;
+
+  /// <summary>
+  /// Writes an image of <paramref name="disk"/>.
+  /// </summary>
+  /// <param name="output">Destination.</param>
+  /// <param name="disk">Raw partition, readable and seekable, exactly <c>total_blocks × block_size</c> long.</param>
+  /// <param name="metadata">A <c>metadata.ini</c> as extracted from a partclone image; may be empty.</param>
+  /// <param name="allocationMap">
+  /// The serialized allocation map as extracted (bit or byte form, per <c>bitmap_mode</c> in the
+  /// metadata, else inferred from its length). Empty derives the map from the non-zero blocks, which
+  /// cannot tell an allocated all-zero block from a free one.
+  /// </param>
+  /// <param name="overrides">Option overrides: Fs, BlockSize, BitmapMode (none/bit/byte), ChecksumMode (none/crc32), BlocksPerChecksum, ReseedChecksum.</param>
   public static void Write(Stream output, Stream disk, ReadOnlySpan<byte> metadata, ReadOnlySpan<byte> allocationMap,
     IReadOnlyDictionary<string, string>? overrides = null) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(disk);
-    if (!output.CanWrite || !disk.CanRead || !disk.CanSeek)
-      throw new ArgumentException("Partclone creation requires a writable output and readable, seekable disk image.");
+    if (!output.CanWrite) throw new ArgumentException("Partclone output must be writable.", nameof(output));
+    if (!disk.CanRead || !disk.CanSeek) throw new ArgumentException("Partclone input must be readable and seekable.", nameof(disk));
 
-    var values = ParseMetadata(metadata);
-    string? GetOverride(string key) {
-      var optionKey = key switch {
-        "fs" => "Fs",
-        "block_size" => "BlockSize",
-        "checksum_mode" => "ChecksumMode",
-        "checksum_size" => "ChecksumSize",
-        "blocks_per_checksum" => "BlocksPerChecksum",
-        "bitmap_mode" => "BitmapMode",
-        "cpu_bits" => "CpuBits",
-        "reseed_checksum" => "ReseedChecksum",
-        _ => key,
-      };
-      if (overrides is not null && (overrides.TryGetValue(optionKey, out var value) || overrides.TryGetValue(key, out value)))
-        return value;
-      return null;
-    }
-    string Get(string key, string fallback) => GetOverride(key) ?? (values.TryGetValue(key, out var value) ? value : fallback);
-    uint ParseUInt(string key, uint fallback) => uint.TryParse(Get(key, fallback.ToString(CultureInfo.InvariantCulture)), NumberStyles.Integer,
-      CultureInfo.InvariantCulture, out var value) ? value : fallback;
-    ushort ParseUShort(string key, ushort fallback) => ushort.TryParse(Get(key, fallback.ToString(CultureInfo.InvariantCulture)), NumberStyles.Integer,
-      CultureInfo.InvariantCulture, out var value) ? value : fallback;
+    var meta = ParseMetadata(metadata);
+    string? Option(string optionKey, string metaKey)
+      => overrides is not null && overrides.TryGetValue(optionKey, out var o) ? o
+        : meta.TryGetValue(metaKey, out var m) ? m : null;
 
-    var blockSize = ParseUInt("block_size", 4096);
-    if (blockSize is 0 or > int.MaxValue) throw new ArgumentOutOfRangeException(nameof(metadata), "block_size must be between 1 and Int32.MaxValue.");
-    var totalBlocks = ParseUInt64(Get("total_blocks", "0"));
-    var deviceSize = ParseUInt64(Get("device_size", "0"));
+    var blockSize = ParseUInt32(Option("BlockSize", "block_size") ?? "4096", "block_size");
+    if (blockSize is 0 or > MaxBlockSize)
+      throw new ArgumentException($"Partclone block_size must be 1..{MaxBlockSize}.", nameof(metadata));
+
+    var totalBlocks = meta.TryGetValue("total_blocks", out var tb) ? ParseUInt64(tb, "total_blocks") : 0UL;
     if (totalBlocks == 0) {
-      if (disk.Length % blockSize != 0) throw new InvalidDataException("Raw image length is not a multiple of block_size.");
-      totalBlocks = (ulong)(disk.Length / blockSize);
+      if (disk.Length == 0 || disk.Length % blockSize != 0)
+        throw new ArgumentException("Raw image length must be a non-zero multiple of block_size.", nameof(disk));
+      totalBlocks = (ulong)disk.Length / blockSize;
     }
-    if (totalBlocks > int.MaxValue) throw new NotSupportedException("Partclone bitmap exceeds the current in-memory map limit.");
-    var virtualLength = checked(totalBlocks * blockSize);
-    if ((ulong)disk.Length != virtualLength) throw new InvalidDataException("Raw image length does not match total_blocks × block_size.");
-    deviceSize = deviceSize == 0 ? virtualLength : deviceSize;
+    if ((ulong)disk.Length != checked(totalBlocks * blockSize))
+      throw new ArgumentException($"Raw image is {disk.Length} bytes; metadata declares {totalBlocks} × {blockSize}.", nameof(disk));
+    if (totalBlocks > int.MaxValue)
+      throw new NotSupportedException("Partclone images beyond 2^31 blocks are not supported.");
 
-    var sourceBitmapMode = byte.TryParse(values.GetValueOrDefault("bitmap_mode", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var sourceBm)
-      ? sourceBm : (byte)1;
-    var bitmapMode = byte.TryParse(Get("bitmap_mode", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var bm) ? bm : (byte)1;
-    if (bitmapMode is not (PartcloneReader.BmNone or PartcloneReader.BmBit or PartcloneReader.BmByte))
-      throw new NotSupportedException($"Partclone bitmap mode {bitmapMode} is not supported.");
-    var mapLength = bitmapMode switch {
-      PartcloneReader.BmNone => 0,
-      PartcloneReader.BmBit => checked((int)((totalBlocks + 7) / 8)),
-      _ => checked((int)totalBlocks),
-    };
-    var map = new byte[mapLength];
-    if (!allocationMap.IsEmpty) {
-      var sourceLength = sourceBitmapMode switch {
-        PartcloneReader.BmNone => 0,
-        PartcloneReader.BmBit => checked((int)((totalBlocks + 7) / 8)),
-        PartcloneReader.BmByte => checked((int)totalBlocks),
-        _ => throw new NotSupportedException($"Source bitmap mode {sourceBitmapMode} cannot be rewritten."),
-      };
-      if (allocationMap.Length != sourceLength)
-        throw new InvalidDataException("allocation.map length does not match the bitmap mode in metadata.ini and total_blocks.");
-      if (bitmapMode == PartcloneReader.BmNone) {
-        // Every block is represented without a serialized allocation map.
-      } else if (sourceBitmapMode == PartcloneReader.BmNone) {
-        for (ulong index = 0; index < totalBlocks; ++index) SetUsed(map, bitmapMode, index);
-      } else if (sourceBitmapMode == bitmapMode) map = allocationMap.ToArray();
-      else
-        for (ulong index = 0; index < totalBlocks; ++index)
-          if (IsUsed(allocationMap, sourceBitmapMode, index)) SetUsed(map, bitmapMode, index);
+    var bitmapMode = ParseBitmapMode(Option("BitmapMode", "bitmap_mode") ?? "1");
+    // partclone writes a CRC after a 0002 byte map but reads one back expecting the 0001 "BiTmAgIc"
+    // trailer, so no partclone release can restore such an image; it only ever writes bit maps.
+    if (bitmapMode == PartcloneReader.BmByte)
+      throw new NotSupportedException("Partclone 0002 images with a byte map cannot be restored by partclone; use the bit map.");
+    var bits = BuildUsageBits(disk, allocationMap, meta, totalBlocks, blockSize, bitmapMode);
+    var usedBlocks = bitmapMode == PartcloneReader.BmNone ? totalBlocks : CountBits(bits, totalBlocks);
+
+    var checksumMode = ParseChecksumMode(Option("ChecksumMode", "checksum_mode") ?? "crc32");
+    // XXH64 strips are read, but not written: the partclone builds available as a reference
+    // (Debian/Ubuntu) are compiled without xxhash, so such output could not be verified.
+    if (checksumMode == PartcloneReader.CsXxh64)
+      throw new NotSupportedException("Writing XXH64 partclone checksums is not supported; use crc32 or none.");
+    var checksumSize = checksumMode == PartcloneReader.CsNone ? (ushort)0 : (ushort)4;
+    var defaultStrip = blockSize < DefaultBufferSize ? (uint)(DefaultBufferSize / blockSize) : 1u;
+    var blocksPerChecksum = checksumMode == PartcloneReader.CsNone
+      ? 0u
+      : ParseUInt32(Option("BlocksPerChecksum", "blocks_per_checksum") ?? defaultStrip.ToString(CultureInfo.InvariantCulture), "blocks_per_checksum");
+    if (checksumMode != PartcloneReader.CsNone && blocksPerChecksum == 0) blocksPerChecksum = defaultStrip;
+    var reseed = ParseUInt32(Option("ReseedChecksum", "reseed_checksum") ?? "1", "reseed_checksum") != 0;
+
+    var fs = Option("Fs", "fs") ?? "raw";
+    var ptcVersion = meta.GetValueOrDefault("ptc_version", DefaultPtcVersion);
+    var deviceSize = meta.TryGetValue("device_size", out var ds) ? ParseUInt64(ds, "device_size") : totalBlocks * blockSize;
+    var superBlockUsed = meta.TryGetValue("superblock_used_blocks", out var su) ? ParseUInt64(su, "superblock_used_blocks") : usedBlocks;
+    var cpuBits = ParseUInt16(meta.GetValueOrDefault("cpu_bits", "64"), "cpu_bits");
+
+    // Image descriptor.
+    Span<byte> h = stackalloc byte[PartcloneReader.HeaderSize];
+    h.Clear();
+    PartcloneReader.Magic.CopyTo(h);
+    WriteAscii(h.Slice(PartcloneReader.MagicFieldSize, PartcloneReader.VersionSizeV2), ptcVersion, "ptc_version");
+    "0002"u8.CopyTo(h[30..]);
+    BinaryPrimitives.WriteUInt16LittleEndian(h[34..], PartcloneReader.EndianMagic);
+    WriteAscii(h.Slice(36, PartcloneReader.FsFieldSize - 1), fs, "fs");
+    BinaryPrimitives.WriteUInt64LittleEndian(h[52..], deviceSize);
+    BinaryPrimitives.WriteUInt64LittleEndian(h[60..], totalBlocks);
+    BinaryPrimitives.WriteUInt64LittleEndian(h[68..], superBlockUsed);
+    BinaryPrimitives.WriteUInt64LittleEndian(h[76..], usedBlocks);
+    BinaryPrimitives.WriteUInt32LittleEndian(h[84..], blockSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(h[88..], PartcloneReader.FeatureSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(h[92..], 2);
+    BinaryPrimitives.WriteUInt16LittleEndian(h[94..], cpuBits);
+    BinaryPrimitives.WriteUInt16LittleEndian(h[96..], checksumMode);
+    BinaryPrimitives.WriteUInt16LittleEndian(h[98..], checksumSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(h[100..], blocksPerChecksum);
+    h[104] = reseed ? (byte)1 : (byte)0;
+    h[105] = bitmapMode;
+    BinaryPrimitives.WriteUInt32LittleEndian(h[PartcloneReader.HeaderCrcOffset..], PartcloneReader.PartcloneCrc32(h[..PartcloneReader.HeaderCrcOffset]));
+    output.Write(h);
+
+    // Bit map, then its CRC.
+    if (bitmapMode == PartcloneReader.BmBit) {
+      output.Write(bits);
+      WriteUInt32(output, PartcloneReader.PartcloneCrc32(bits));
     }
 
-    var usedBlocks = bitmapMode == PartcloneReader.BmNone || sourceBitmapMode == PartcloneReader.BmNone ? totalBlocks : 0UL;
-    if (bitmapMode != PartcloneReader.BmNone && allocationMap.IsEmpty && sourceBitmapMode == PartcloneReader.BmNone) {
-      for (ulong index = 0; index < totalBlocks; ++index) SetUsed(map, bitmapMode, index);
-    } else if (bitmapMode != PartcloneReader.BmNone && allocationMap.IsEmpty) {
-      var block = new byte[blockSize];
-      for (ulong index = 0; index < totalBlocks; ++index) {
-        ReadExactly(disk, block);
-        var used = block.AsSpan().IndexOfAnyExcept((byte)0) >= 0;
-        if (!used) continue;
-        SetUsed(map, bitmapMode, index);
-        ++usedBlocks;
-      }
-      disk.Position = 0;
-    } else if (bitmapMode != PartcloneReader.BmNone && sourceBitmapMode != PartcloneReader.BmNone)
-      for (ulong index = 0; index < totalBlocks; ++index)
-        if (IsUsed(map, bitmapMode, index)) ++usedBlocks;
-
-    var sourceChecksumMode = ushort.TryParse(values.GetValueOrDefault("checksum_mode", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var sourceChecksum)
-      ? sourceChecksum : (ushort)1;
-    var checksumMode = ParseUShort("checksum_mode", 1);
-    var checksumSizeDefault = checksumMode == sourceChecksumMode && values.TryGetValue("checksum_size", out var sourceSize)
-      ? ushort.Parse(sourceSize, CultureInfo.InvariantCulture)
-      : checksumMode switch { 0 => (ushort)0, 2 => (ushort)8, _ => (ushort)4 };
-    var checksumSize = ParseUShort("checksum_size", checksumSizeDefault);
-    var blocksPerChecksumDefault = checksumMode == sourceChecksumMode && values.TryGetValue("blocks_per_checksum", out var sourceStrip)
-      ? uint.Parse(sourceStrip, CultureInfo.InvariantCulture)
-      : checksumMode == 0 ? 0U : 256U;
-    var blocksPerChecksum = ParseUInt("blocks_per_checksum", blocksPerChecksumDefault);
-    var reseedChecksum = byte.TryParse(Get("reseed_checksum", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var reseedValue)
-      ? reseedValue : (byte)1;
-    if (checksumMode is not (0 or 1 or 2)) throw new NotSupportedException("Partclone checksum modes 0 (none), 1 (CRC32), and 2 (XXH64) are supported.");
-    if ((checksumMode == 0 && (checksumSize != 0 || blocksPerChecksum != 0)) ||
-        (checksumMode == 1 && (checksumSize != 4 || blocksPerChecksum == 0)) ||
-        (checksumMode == 2 && (checksumSize != 8 || blocksPerChecksum == 0)))
-      throw new InvalidDataException("Invalid Partclone checksum size/strip configuration.");
-    if (checksumMode == 0) reseedChecksum = 1;
-
-    Span<byte> head = stackalloc byte[31];
-    head.Clear();
-    PartcloneReader.Magic.CopyTo(head);
-    Encoding.ASCII.GetBytes(Get("ptc_version", "0.3.37").AsSpan(0, Math.Min(14, Get("ptc_version", "0.3.37").Length)), head[15..29]);
-    BinaryPrimitives.WriteUInt16LittleEndian(head[29..], PartcloneReader.EndianMagic);
-    output.Write(head);
-
-    Span<byte> fsInfo = stackalloc byte[51];
-    fsInfo.Clear();
-    var fsBytes = Encoding.ASCII.GetBytes(Get("fs", "raw"));
-    fsBytes.AsSpan(0, Math.Min(fsBytes.Length, 15)).CopyTo(fsInfo);
-    BinaryPrimitives.WriteUInt64LittleEndian(fsInfo[15..], deviceSize);
-    BinaryPrimitives.WriteUInt64LittleEndian(fsInfo[23..], totalBlocks);
-    BinaryPrimitives.WriteUInt64LittleEndian(fsInfo[31..], usedBlocks);
-    BinaryPrimitives.WriteUInt64LittleEndian(fsInfo[39..], ParseUInt64(Get("superblock_used_blocks", usedBlocks.ToString(CultureInfo.InvariantCulture))));
-    BinaryPrimitives.WriteUInt32LittleEndian(fsInfo[47..], blockSize);
-    output.Write(fsInfo);
-
-    Span<byte> options = stackalloc byte[22];
-    options.Clear();
-    BinaryPrimitives.WriteUInt32LittleEndian(options, 22);
-    BinaryPrimitives.WriteUInt16LittleEndian(options[4..], 2);
-    BinaryPrimitives.WriteUInt16LittleEndian(options[6..], ParseUShort("cpu_bits", 64));
-    BinaryPrimitives.WriteUInt16LittleEndian(options[8..], checksumMode);
-    BinaryPrimitives.WriteUInt16LittleEndian(options[10..], checksumSize);
-    BinaryPrimitives.WriteUInt32LittleEndian(options[12..], blocksPerChecksum);
-    options[16] = reseedChecksum;
-    options[17] = bitmapMode;
-    BinaryPrimitives.WriteUInt32LittleEndian(options[18..], Crc32(options[..18]));
-    output.Write(options);
-
-    output.Write(map);
-    if (checksumMode == 1) WriteUInt32(output, Crc32(map));
-    else if (checksumMode == 2) WriteUInt64(output, XxHash64.Compute(map));
-
+    // Used blocks in strips of blocks_per_checksum, each followed by its checksum; a final
+    // partial strip gets one too.
     disk.Position = 0;
-    var buffer = new byte[blockSize];
-    var inStrip = 0U;
-    var writtenBlocks = 0UL;
-    var crcState = 0xFFFFFFFFU;
-    var xxHash = new XxHash64();
-    for (ulong index = 0; index < totalBlocks; ++index) {
-      ReadExactly(disk, buffer);
-      if (!IsUsed(map, bitmapMode, index)) continue;
-      output.Write(buffer);
-      if (checksumMode == 0) continue;
-      if (checksumMode == 1) crcState = UpdateCrc32(crcState, buffer);
-      else xxHash.Update(buffer);
-      ++inStrip;
-      ++writtenBlocks;
-      if (inStrip < blocksPerChecksum && writtenBlocks < usedBlocks) continue;
-      if (checksumMode == 1) WriteUInt32(output, ~crcState);
-      else WriteUInt64(output, xxHash.Value);
-      inStrip = 0;
-      if (reseedChecksum != 0) {
-        crcState = 0xFFFFFFFFU;
-        xxHash = new XxHash64();
-      }
+    var block = new byte[blockSize];
+    var crc = new Crc32();
+    var inStrip = 0u;
+    for (ulong i = 0; i < totalBlocks; ++i) {
+      disk.ReadExactly(block);
+      if (bitmapMode != PartcloneReader.BmNone && (bits[(int)(i >> 3)] & (1 << (int)(i & 7))) == 0) continue;
+      output.Write(block);
+      if (checksumMode == PartcloneReader.CsNone) continue;
+      crc.Update(block);
+      if (++inStrip < blocksPerChecksum) continue;
+      WriteChecksum();
     }
+    if (inStrip > 0) WriteChecksum();
+
+    void WriteChecksum() {
+      WriteUInt32(output, ~crc.Value);
+      inStrip = 0;
+      if (reseed) crc.Reset();
+    }
+  }
+
+  private static byte[] BuildUsageBits(Stream disk, ReadOnlySpan<byte> allocationMap, Dictionary<string, string> meta,
+      ulong totalBlocks, uint blockSize, byte targetMode) {
+    var bits = new byte[(totalBlocks + 7) / 8];
+    if (targetMode == PartcloneReader.BmNone) return bits;
+
+    if (!allocationMap.IsEmpty) {
+      var bitLength = (int)((totalBlocks + 7) / 8);
+      byte sourceMode;
+      if (meta.TryGetValue("bitmap_mode", out var declared))
+        sourceMode = ParseBitmapMode(declared);
+      else if (allocationMap.Length == bitLength) sourceMode = PartcloneReader.BmBit;
+      else if ((ulong)allocationMap.Length == totalBlocks) sourceMode = PartcloneReader.BmByte;
+      else throw new ArgumentException("allocation.map length matches neither a bit nor a byte map of total_blocks.");
+
+      switch (sourceMode) {
+        case PartcloneReader.BmBit when allocationMap.Length == bitLength:
+          allocationMap.CopyTo(bits);
+          // Bits past total_blocks are not blocks; never let them count.
+          if (totalBlocks % 8 != 0) bits[^1] &= (byte)((1 << (int)(totalBlocks % 8)) - 1);
+          return bits;
+        case PartcloneReader.BmByte when (ulong)allocationMap.Length == totalBlocks:
+          for (var i = 0; i < allocationMap.Length; ++i)
+            if (allocationMap[i] != 0) bits[i >> 3] |= (byte)(1 << (i & 7));
+          return bits;
+        case PartcloneReader.BmNone:
+          break; // the source had no map; fall through to "every block used"
+        default:
+          throw new ArgumentException($"allocation.map length {allocationMap.Length} does not match bitmap_mode {sourceMode} for {totalBlocks} blocks.");
+      }
+      for (ulong i = 0; i < totalBlocks; ++i) bits[i >> 3] |= (byte)(1 << (int)(i & 7));
+      return bits;
+    }
+
+    var block = new byte[blockSize];
+    disk.Position = 0;
+    for (ulong i = 0; i < totalBlocks; ++i) {
+      disk.ReadExactly(block);
+      if (block.AsSpan().IndexOfAnyExcept((byte)0) >= 0) bits[i >> 3] |= (byte)(1 << (int)(i & 7));
+    }
+    return bits;
+  }
+
+  private static ulong CountBits(byte[] bits, ulong totalBlocks) {
+    ulong count = 0;
+    for (ulong i = 0; i < totalBlocks; ++i)
+      if ((bits[i >> 3] & (1 << (int)(i & 7))) != 0) ++count;
+    return count;
+  }
+
+  // Accepts partclone's -a numbers (0/1/2), the on-disk enum values (0/32/48) that metadata.ini
+  // carries, and the names.
+  private static ushort ParseChecksumMode(string value) => value.Trim().ToLowerInvariant() switch {
+    "0" or "none" => PartcloneReader.CsNone,
+    "1" or "32" or "crc32" => PartcloneReader.CsCrc32,
+    "2" or "48" or "xxh64" => PartcloneReader.CsXxh64,
+    var other => throw new NotSupportedException($"Partclone checksum mode '{other}' is not supported; use none, crc32 or xxh64."),
+  };
+
+  private static byte ParseBitmapMode(string value) => value.Trim().ToLowerInvariant() switch {
+    "0" or "none" => PartcloneReader.BmNone,
+    "1" or "bit" => PartcloneReader.BmBit,
+    "8" or "byte" => PartcloneReader.BmByte,
+    var other => throw new ArgumentException($"Partclone bitmap mode '{other}' is not one of 0 (none), 1 (bit), 8 (byte)."),
+  };
+
+  private static void WriteAscii(Span<byte> field, string value, string name) {
+    var bytes = Encoding.ASCII.GetBytes(value);
+    if (bytes.Length > field.Length)
+      throw new ArgumentException($"Partclone {name} '{value}' exceeds {field.Length} bytes.");
+    bytes.CopyTo(field);
   }
 
   private static Dictionary<string, string> ParseMetadata(ReadOnlySpan<byte> bytes) {
     var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     foreach (var line in Utf8.GetString(bytes).Split('\n')) {
       var text = line.Trim();
-      if (text.Length == 0 || text[0] is '#' or '[') continue;
+      if (text.Length == 0 || text[0] is '#' or ';' or '[') continue;
       var separator = text.IndexOf('=');
       if (separator > 0) result[text[..separator].Trim()] = text[(separator + 1)..].Trim();
     }
     return result;
   }
 
-  private static ulong ParseUInt64(string value) => ulong.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result)
-    ? result : throw new InvalidDataException($"Invalid Partclone integer value: {value}");
+  private static ulong ParseUInt64(string value, string name)
+    => ulong.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var r) ? r
+      : throw new ArgumentException($"Partclone {name} '{value}' is not an unsigned integer.");
 
-  private static bool IsUsed(ReadOnlySpan<byte> map, byte mode, ulong index) => mode switch {
-    PartcloneReader.BmNone => true,
-    PartcloneReader.BmBit => (map[checked((int)(index / 8))] & (1 << (int)(index % 8))) != 0,
-    _ => map[checked((int)index)] != 0,
-  };
+  private static uint ParseUInt32(string value, string name)
+    => uint.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var r) ? r
+      : throw new ArgumentException($"Partclone {name} '{value}' is not an unsigned integer.");
 
-  private static void SetUsed(Span<byte> map, byte mode, ulong index) {
-    if (mode == PartcloneReader.BmBit) map[checked((int)(index / 8))] |= (byte)(1 << (int)(index % 8));
-    else map[checked((int)index)] = 1;
-  }
-
-  private static uint Crc32(ReadOnlySpan<byte> data) {
-    return ~UpdateCrc32(0xFFFFFFFFU, data);
-  }
-
-  private static uint UpdateCrc32(uint crc, ReadOnlySpan<byte> data) {
-    foreach (var value in data) {
-      crc ^= value;
-      for (var bit = 0; bit < 8; ++bit) crc = (crc >> 1) ^ ((crc & 1) != 0 ? 0xEDB88320U : 0U);
-    }
-    return crc;
-  }
+  private static ushort ParseUInt16(string value, string name)
+    => ushort.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var r) ? r
+      : throw new ArgumentException($"Partclone {name} '{value}' is not an unsigned 16-bit integer.");
 
   private static void WriteUInt32(Stream stream, uint value) {
     Span<byte> bytes = stackalloc byte[4];
@@ -224,18 +242,4 @@ public static class PartcloneWriter {
     stream.Write(bytes);
   }
 
-  private static void WriteUInt64(Stream stream, ulong value) {
-    Span<byte> bytes = stackalloc byte[8];
-    BinaryPrimitives.WriteUInt64LittleEndian(bytes, value);
-    stream.Write(bytes);
-  }
-
-  private static void ReadExactly(Stream stream, Span<byte> buffer) {
-    var count = 0;
-    while (count < buffer.Length) {
-      var read = stream.Read(buffer[count..]);
-      if (read == 0) throw new EndOfStreamException("Raw Partclone input ended before its declared size.");
-      count += read;
-    }
-  }
 }

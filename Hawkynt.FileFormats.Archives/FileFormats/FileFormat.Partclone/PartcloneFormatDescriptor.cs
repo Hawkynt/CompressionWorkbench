@@ -9,17 +9,17 @@ namespace FileFormat.Partclone;
 /// <summary>
 /// Descriptor for partclone — the Clonezilla backup format that
 /// captures only allocated filesystem blocks alongside a per-block usage
-/// bitmap. Listing surfaces the reconstructed disk image plus a
-/// <c>metadata.ini</c> describing the source FS; extraction either writes the
-/// raw <c>image.img</c> or, when the inner filesystem can be identified,
-/// delegates to the matching descriptor so the user gets the original files.
-/// Compressed partclone streams (LZ4/zstd) are not handled here — they're a
+/// bitmap. Listing surfaces the reconstructed partition as <c>image.img</c>,
+/// the serialized <c>allocation.map</c> and a <c>metadata.ini</c> describing
+/// the source FS; opening the files inside <c>image.img</c> is left to the
+/// matching file-system descriptor. Compressed partclone streams (LZ4/zstd) are not handled here — they're a
 /// shell-pipe responsibility upstream of this format.
 ///
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://partclone.org</c> — official partclone site</description></item>
-///   <item><description><c>https://github.com/Thomas-Tsai/partclone</c> — canonical source — the image header is defined in src/partclone.h</description></item>
+///   <item><description><c>https://github.com/Thomas-Tsai/partclone/blob/master/IMAGE_FORMATS.md</c> — partclone — image format 0001/0002 layout</description></item>
+///   <item><description><c>https://github.com/Thomas-Tsai/partclone</c> — canonical source (GPL, used as specification and as the partclone.chkimg/restore oracle only)</description></item>
 ///   <item><description><c>https://clonezilla.org</c> — Clonezilla — primary consumer of partclone images</description></item>
 /// </list>
 /// </summary>
@@ -60,7 +60,7 @@ public sealed class PartcloneFormatDescriptor : IFormatDescriptor, IArchiveForma
   /// Gets the magic signatures.
   /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // ASCII "partclone-image" at offset 0 — 15-byte unterminated literal.
+    // ASCII "partclone-image" at offset 0 (the 16-byte field ends in a NUL).
     new(PartcloneReader.Magic, Offset: 0, Confidence: 0.98),
   ];
   /// <summary>
@@ -82,35 +82,58 @@ public sealed class PartcloneFormatDescriptor : IFormatDescriptor, IArchiveForma
     "Clonezilla / partclone filesystem-aware backup image — bitmap + only used blocks.";
 
   /// <summary>
-  /// Lists the entries in the supplied container.
+  /// Lists <c>metadata.ini</c>, <c>allocation.map</c> and the reconstructed <c>image.img</c>.
   /// </summary>
+  /// <remarks>
+  /// Never throws for a damaged or unsupported image: it then lists only a <c>metadata.ini</c>
+  /// carrying <c>parse_status=partial</c> and the reason.
+  /// </remarks>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     stream.Position = 0;
-    var reader = new PartcloneReader(stream);
+    PartcloneReader reader;
+    try {
+      reader = new PartcloneReader(stream);
+    } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or EndOfStreamException) {
+      var partial = BuildFailureMetadata(ex);
+      return [new ArchiveEntryInfo(0, "metadata.ini", partial.Length, partial.Length, "stored", false, false, null)];
+    }
     var info = reader.Info;
     var virtualSize = checked((long)(info.TotalBlocks * info.BlockSize));
     var physicalSize = checked((long)(info.UsedBlocks * info.BlockSize));
     var metaLen = BuildMetadataBytes(info).LongLength;
-    var bitmapLen = reader.ReadAllocationMap().LongLength;
+    var bitmapLen = info.BitmapMode switch {
+      PartcloneReader.BmBit => (long)((info.TotalBlocks + 7) / 8),
+      PartcloneReader.BmByte => (long)info.TotalBlocks,
+      _ => 0L,
+    };
 
     return [
       new ArchiveEntryInfo(0, "metadata.ini", metaLen, metaLen, "stored", false, false, null),
       new ArchiveEntryInfo(1, "allocation.map", bitmapLen, bitmapLen, "stored", false, false, null),
-      new ArchiveEntryInfo(2, "image.img",    virtualSize, physicalSize, "stored", false, false, null),
+      new ArchiveEntryInfo(2, "image.img", virtualSize, physicalSize, "stored", false, false, null),
     ];
   }
 
   /// <summary>
-  /// Decodes the supplied input.
+  /// Extracts the requested entries. Header, bitmap and data checksums are verified, so a damaged
+  /// image throws <see cref="InvalidDataException"/> (after writing <c>metadata.ini</c> if asked).
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     stream.Position = 0;
-    var reader = new PartcloneReader(stream);
-    var info = reader.Info;
+    var all = files == null || files.Length == 0;
+    var emitMeta = all || MatchesFilter("metadata.ini", files!);
+    var emitMap = all || MatchesFilter("allocation.map", files!);
+    var emitImg = all || MatchesFilter("image.img", files!);
 
-    var emitMeta = files == null || files.Length == 0 || MatchesFilter("metadata.ini", files);
-    var emitMap = files == null || files.Length == 0 || MatchesFilter("allocation.map", files);
-    var emitImg  = files == null || files.Length == 0 || MatchesFilter("image.img", files);
+    PartcloneReader reader;
+    try {
+      reader = new PartcloneReader(stream);
+    } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or EndOfStreamException) {
+      if (emitMeta) WriteFile(outputDir, "metadata.ini", BuildFailureMetadata(ex));
+      if (emitMap || emitImg) throw;
+      return;
+    }
+    var info = reader.Info;
 
     if (emitMeta)
       WriteFile(outputDir, "metadata.ini", BuildMetadataBytes(info));
@@ -126,18 +149,39 @@ public sealed class PartcloneFormatDescriptor : IFormatDescriptor, IArchiveForma
     }
   }
 
-  /// <summary>Creates a Partclone v2 image from <c>image.img</c>, <c>metadata.ini</c>, and optionally <c>allocation.map</c>.</summary>
+  /// <summary>
+  /// Creates a partclone 0002 image from <c>image.img</c> plus, optionally, the <c>metadata.ini</c> and
+  /// <c>allocation.map</c> an extraction produced. Without the map, only non-zero blocks are stored.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
-    var files = inputs.Where(static i => !i.IsDirectory).ToDictionary(static i => Path.GetFileName(i.ArchiveName.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase);
-    if (!files.TryGetValue("image.img", out var image) || !files.TryGetValue("metadata.ini", out var metadata))
-      throw new InvalidDataException("Partclone creation requires image.img and metadata.ini inputs.");
+    ArgumentNullException.ThrowIfNull(options);
+    var files = new Dictionary<string, ArchiveInputInfo>(StringComparer.OrdinalIgnoreCase);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var name = Path.GetFileName(input.ArchiveName.Replace('\\', '/'));
+      if (name is not ("image.img" or "metadata.ini" or "allocation.map"))
+        throw new ArgumentException($"Partclone images hold one partition: expected image.img with optional metadata.ini and allocation.map, got '{input.ArchiveName}'.", nameof(inputs));
+      if (!files.TryAdd(name, input))
+        throw new ArgumentException($"Duplicate partclone input '{name}'.", nameof(inputs));
+    }
+    if (!files.TryGetValue("image.img", out var image))
+      throw new ArgumentException("Partclone creation requires an image.img input.", nameof(inputs));
+    var metadata = files.TryGetValue("metadata.ini", out var m) ? m.ReadContent() : [];
     var map = files.TryGetValue("allocation.map", out var allocation) ? allocation.ReadContent() : [];
-    using var disk = image.InMemoryContent is { } content
+    using Stream disk = image.InMemoryContent is { } content
       ? new MemoryStream(content, writable: false)
       : File.OpenRead(image.FullPath);
-    PartcloneWriter.Write(output, disk, metadata.ReadContent(), map, options.FormatSpecific);
+    PartcloneWriter.Write(output, disk, metadata, map, options.FormatSpecific);
+  }
+
+  private static byte[] BuildFailureMetadata(Exception ex) {
+    var sb = new StringBuilder();
+    sb.Append("[partclone]\n");
+    sb.Append("parse_status = partial\n");
+    sb.Append("error = ").Append(ex.Message.Replace('\n', ' ')).Append('\n');
+    return Encoding.UTF8.GetBytes(sb.ToString());
   }
 
   private static byte[] BuildMetadataBytes(PartcloneReader.PartcloneImage info) {
