@@ -3409,7 +3409,7 @@ Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `
 
 References: `https://btrfs.readthedocs.io/en/latest/dev/On-disk-format.html` — official btrfs on-disk format documentation (superblock, chunk/root/fs trees)`https://github.com/torvalds/linux/tree/master/fs/btrfs` — mainline kernel implementation`https://en.wikipedia.org/wiki/Btrfs` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveWriteConstraints`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3429,19 +3429,17 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Gets the options schema. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Add/replace via `AddOrReplace`. Small inline files targeting the root directory are inserted with genuine copy-on-write in place (new FS/extent/root tree blocks for the changed path only; existing data extents and untouched nodes stay byte-identical at their offsets; the result passes `btrfs check`). Unhandled shapes fall back to the verified rebuild. |
 | `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming creation. Pass 1 plans the chunk/extent/inode layout from each input's pre-known size; pass 2 emits all metadata (with CRC-32C) plus inline file data, then streams each regular (non-inline) file's bytes into its DATA-chunk extent via 64 KB chunks — file bytes never travel through a writer-held `byte[]`. Btrfs data extents carry no checksum (the inode is NODATASUM and the CSUM_TREE is empty), so post-filling the extent bytes after the metadata CRCs are stamped is sound and the output is byte-identical to `Create` for the same inputs. Files smaller than one sector are stored inline in the FS-tree leaf, so their (bounded) bytes are read up front and treated like a classic `AddFile`. Non-seekable targets fall back to the buffering base implementation. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Defragments in place: the planner moves data extents, repoints their extent items and settles the extent tree; the pass is kept only if every file reads back unchanged. Anything else is refused and the volume left as it was — the rebuild that used to stand behind every refusal wrote a new volume at another size with new UUIDs, no label, no subvolumes and without compressed extents. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the superblock + chunk tree + root tree + fs-tree leaf and yields the actual on-disk byte layout. Targets the WORM writer profile (single fs-tree leaf, mostly inline EXTENT_DATA): inline extents surface as MetadataReserved tiles (file content lives inside the metadata leaf), regular extents surface as Used runs after logical→physical translation through the chunk map. Multi-leaf b-trees are not walked here — the WORM writer doesn't produce them. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Rebuild-style remove (see `BtrfsModifier`). The removed file's data does not survive into the rebuilt image because the new writer emits a fresh superblock, chunk tree, and fs-tree leaf. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
 
@@ -5755,7 +5753,7 @@ Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `
 
 References: `https://learn.microsoft.com/en-us/windows/win32/fileio/exfat-specification` — Microsoft's official exFAT file system specification`https://github.com/torvalds/linux/tree/master/fs/exfat` — mainline kernel implementation`https://en.wikipedia.org/wiki/ExFAT` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5777,7 +5775,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming creation: pre-known per-input sizes drive the cluster geometry in pass 1; pass 2 emits the boot region, FAT, allocation bitmap, up-case table and directory tree with empty file clusters, then streams each input's bytes from its `OpenStream` factory into the pre-allocated cluster run via 64 KB chunks. Cluster tails past each entry's exact `Size` stay sparse-zero. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware exFAT defragmentor. Supports planner-driven in-place path and falls back to legacy rebuild path. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware exFAT defragmentor, planner-driven and in place. A layout the planner cannot reach in place is refused before anything moves. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the VBR + FAT + cluster heap and yields the actual on-disk layout — VBR/backup VBR + FAT region as MetadataReserved, allocation bitmap + up-case table as MetadataReserved, every file's cluster-chain run (or the contiguous range when `NoFatChain` is set) as Used, and the un-owned cluster gaps as Free. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -5839,20 +5837,22 @@ Builds exFAT filesystem images that Windows 10+ actually mounts. Default layout:
 
 #### `ExtBlockMover`
 
-In-place ext2/3/4 block mover. Moves block-aligned extents within an ext image and patches inode block pointers, block bitmap, and group descriptor free counts. Streaming: the image is never loaded whole. Reads go through a `SectorCache`; metadata updates (inode block pointers, bitmap bits) are targeted single-region writes with `Flush` barriers between steps so a crash mid-update leaves the image in an fsck-recoverable state. Scope: single-cylinder-group profile (matches what `ExtWriter` emits). Multi-group ext4 (required for 50 TB volumes created elsewhere) needs additional work — walk the BGD table for the target block's group rather than assuming group 0.
+In-place ext2/3/4 block mover. Moves block-aligned runs within an ext image and repoints the owning inode's block map, the block bitmaps of whichever groups the blocks live in, and — where the volume carries them — every checksum that covers what changed (inode, extent-tree block, bitmap, group descriptor, superblock).
 
 Implements `IFilesystemBlockMover`, `IFilesystemMetadataMover`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ExtBlockMover` | `ExtBlockMover()` |  |
+| `AllocationBlockSize` | `int AllocationBlockSize { get; }` |  |
 | `BlockSize` | `int BlockSize { get; }` | Gets the block size. |
 | `FirstDataByte` | `long FirstDataByte { get; }` | Gets the first data byte. |
 | `RelocatableMetadata` | `IReadOnlySet<string> RelocatableMetadata { get; }` | Each group's block bitmap, inode bitmap and inode table. All three are located by fields in that group's descriptor, so moving one is a matter of writing the new block number there — which is how a real resize2fs shifts them about. The superblock, the descriptor table and their backups are pinned: their positions are computed from the geometry, not recorded. |
-| `Init` | `void Init(Stream image)` | Streaming init — reads only the superblock + first BGD (~2 KB total). |
+| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` |  |
+| `Init` | `void Init(Stream image)` | Streaming init — reads only the superblock. |
 | `Init` | `void Init(byte[] image)` | Initialises the mover from a byte buffer (legacy callers). |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` |  |
 | `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` |  |
 
@@ -5887,6 +5887,7 @@ Walks an ext2/3/4 image and yields its actual on-disk byte layout — per-file e
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream image)` | Returns the decoded layout completed against the allocation bitmap, so every byte of the image is either named, proven free, or reserved. |
+| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream image, bool pinBlockMaps)` | As `Enumerate`; with `pinBlockMaps` a classic block map's pointer blocks are reported as reserved metadata instead of as part of their file, so a layout keeps them where they are. |
 
 #### `ExtFilesystemDriverAdapter`
 
@@ -5927,12 +5928,12 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Tunables surfaced by the Convert Archive dialog / CLI for ext creation — revision (ext2/3/4), block size, optional journal toggle (gated on the revision selector via DependsOn), volume label, and inode size. The Journal knob is hidden in the UI for ext2 (which has no journal); for ext3/ext4 it defaults to enabled to match mkfs.ext{3,4} convention. |
 | `ReclaimSupport` | `LayoutReclaim ReclaimSupport { get; }` | ext records an absent block as a zero pointer, so runs of zeros need not be allocated at all; and it counts the directory entries naming an inode, so identical files can share one copy under several names. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing ext2/3/4 image. Uses `ExtModifier` for true O(touched bytes) random-access I/O — only the superblock, BGD entry, block + inode bitmaps, the affected inode slot, the root dir block, and the file's data blocks are read or written. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by path) files inside an existing ext2/3/4 image, genuinely in place through `ExtModifier`: only the superblock, the touched group descriptors and bitmaps, the new inode, the parent directory's blocks and the file's own blocks are written. Missing folders are created. |
 | `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` |  |
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming creation: pre-known per-input sizes drive ext block group sizing in pass 1; pass 2 emits superblock + BGD + bitmaps + inode table + directory blocks with file data blocks left zero, then streams each input's bytes from its `OpenStream` factory into its first allocated block via 64 KB chunks. Block tail past each entry's exact `Size` stays sparse-zero. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware ext2/3/4 defragmentor. Supports planner-driven in-place path (using `DefragPlanner` + `ExtBlockMover`) and the legacy rebuild path (using `DefragRebuilder`). |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware ext2/3/4 defragmentor: planner-driven and in place (`DefragPlanner` + `ExtBlockMover`). Anything the planner cannot lay out in place is refused before a byte moves. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the superblock + BGD table + inode tree and yields the actual on-disk byte layout — every metadata region (SB, BGDT, block + inode bitmaps, inode tables) plus one extent per contiguous block run per file (coalesced for direct/indirect pointers; native ext4 extent runs surface as-is). Used by the defragment window's block-map preview. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -5941,8 +5942,8 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `PatchInPlace` | `void PatchInPlace(Stream image, LayoutPatch patch)` |  |
 | `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` |  |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Securely removes files from an existing ext2/3/4 image. Uses `ExtModifier` for O(touched bytes) random-access I/O — file data blocks are wiped during removal so no forensic trace remains. |
-| `Shrink` | `void Shrink(Stream input, Stream output)` | Genuine in-place ext shrink: trims trailing free blocks via `ExtInPlaceShrinker` (updating bitmap / descriptors / superblock / backups / checksums; every surviving block stays byte-identical). Falls back to the `IArchiveShrinkable` default (verified rebuild / copy-through) when the in-place path declines — e.g. a target that would need genuine block relocation or block-group removal. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Securely removes files — or folders with everything in them — from an existing ext2/3/4 image, in place. Data blocks are wiped so no forensic trace remains; a file with further hard links only loses the name. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Genuine in-place ext shrink: trims trailing free blocks via `ExtInPlaceShrinker` (updating bitmap / descriptors / superblock / backups / checksums; every surviving block stays byte-identical). When the in-place path declines — e.g. a target that would need a whole block group removed — the volume is copied through unchanged. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the ext2/3/4 image: free blocks, block-tip slack (the bytes between a file's real size and the end of its last allocated block), and any gaps outside the metadata regions. Driven by the generic `UnusedSpaceWiper` over the ext extent map, with an inode-size-based file-size lookup for block-tip precision. |
 
@@ -5972,23 +5973,22 @@ Implements `IEquatable<ShrinkResult>`.
 
 #### `ExtModifier`
 
-In-place ext2/3/4 modifier. Performs O(touched bytes) random-access I/O against an ext image: only the superblock, the relevant block-group descriptors, the block + inode bitmaps of the touched groups, the affected inode slots, the root directory's data blocks (plus any newly-grown directory block), and the file's own data/metadata blocks are read and written. Genuine in-place coverage (no whole-image re-pack):Large files — ext2/3 single + double + triple indirect blocks; ext4 inode-resident extent leaves (when the inode carries the EXTENTS flag and the volume advertises the EXTENTS feature). Block allocation, i_blocks/i_size, group-descriptor + superblock free counts all maintained.Bigger directories — when the root directory's blocks are full a new linear directory block is appended (i_size and the dir's block map grow). htree (EXT4_INDEX) directories are detected and routed to the rebuild fallback.Multiple block groups — allocation scans every group with free space; the right group's descriptor + bitmaps (and, when `metadata_csum` / `uninit_bg` is set, their checksums and the INODE/BLOCK_UNINIT flags + `itable_unused`) are updated.Checksums — when `metadata_csum` is set: crc32c bitmap, inode, group-descriptor and superblock checksums are recomputed; when the older `gdt_csum` (uninit_bg) is set the crc16 group-descriptor checksum is used.
+In-place ext2/3/4 modifier. Performs O(touched bytes) random-access I/O against an ext image: only the superblock, the relevant block-group descriptors, the block + inode bitmaps of the touched groups, the affected inode slots, the root directory's data blocks (plus any newly-grown directory block), and the file's own data/metadata blocks are read and written. Genuine in-place coverage (no whole-image re-pack):Large files — ext2/3 single + double + triple indirect blocks; ext4 inode-resident extent leaves (when the inode carries the EXTENTS flag and the volume advertises the EXTENTS feature). Block allocation, i_blocks/i_size, group-descriptor + superblock free counts all maintained.Any directory — paths are resolved from the root, missing folders are created, and a full linear directory grows by a block. Entries are looked up and removed in hashed (htree) directories too; adding to one is refused, because the entry would have to be filed under a name hash this editor does not compute.Links — removing one name of a hard-linked file only drops a link; a shared extended-attribute block only loses a reference.Multiple block groups — allocation scans every group with free space; the right group's descriptor + bitmaps (and, when `metadata_csum` / `uninit_bg` is set, their checksums and the INODE/BLOCK_UNINIT flags + `itable_unused`) are updated.Checksums — when `metadata_csum` is set: crc32c bitmap, inode, group-descriptor and superblock checksums are recomputed; when the older `gdt_csum` (uninit_bg) is set the crc16 group-descriptor checksum is used.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream image, string name, byte[] data)` | Adds (or fails if an entry of the same name already exists) a file inside an existing ext2/3/4 image, genuinely in place. |
-| `Mutate` | `static void Mutate(Stream archive, IReadOnlyList<ValueTuple<string, byte[]>> replacements, IReadOnlyCollection<string> deletions)` | Performs the mutate operation. |
-| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named entry from an existing ext image, in place. Returns false if no entry with that name exists in the root directory. |
+| `AddFile` | `static void AddFile(Stream image, string path, byte[] data)` | Adds a file at `path` (separated by `/` or `\`) to an existing ext2/3/4 image, genuinely in place. Missing folders on the way are created. An existing regular file of the same name is replaced: the new content gets its own inode, the directory entry is repointed at it, and only then is the old inode released — so a replace that cannot be completed leaves the old file as it was. |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string path, bool wipeData = true)` | Removes the entry at `path` from an existing ext image, in place. Returns false when no such entry exists. A directory must be empty; a file with further hard links only loses this name. |
 
 #### `ExtModifier.InPlaceUnsupportedException`
 
-Thrown when a case genuinely cannot be handled in place (e.g. htree directory growth, or a nested target path). Callers may fall back to a rebuild on this.
+Thrown when a case genuinely cannot be handled in place (for example an htree directory that would need a new hashed entry). Nothing has been written when it is thrown.
 
 Inherits `IOException`. Implements `ISerializable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `InPlaceUnsupportedException` | `InPlaceUnsupportedException(string message)` | Thrown when a case genuinely cannot be handled in place (e.g. htree directory growth, or a nested target path). Callers may fall back to a rebuild on this. |
+| `InPlaceUnsupportedException` | `InPlaceUnsupportedException(string message)` | Thrown when a case genuinely cannot be handled in place (for example an htree directory that would need a new hashed entry). Nothing has been written when it is thrown. |
 
 #### `ExtReader`
 
@@ -6014,11 +6014,11 @@ Secure-remove implementation for ext2 images produced by `ExtWriter`. Finds the 
 
 #### `ExtShrinkHelper`
 
-Shrinks an ext2/3/4 filesystem image by defragmenting (consolidate at start) and then truncating trailing free blocks. Updates the superblock s_blocks_count and the BGD free-block count to reflect the reduced geometry.
+Shrinks an ext2/3/4 filesystem image in place: files are packed towards the start by the in-place defragmenter, then trailing free blocks are trimmed by `ExtInPlaceShrinker`, which updates the bitmaps, descriptors, superblock, backups and checksums. Every surviving block, inode and directory entry stays as it was.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Shrink` | `static ShrinkResult Shrink(Stream image)` | Shrinks an ext2/3/4 image by extracting all files, then rebuilding with a minimal total-blocks count, and finally updating the superblock metadata. This is simpler and more reliable than defrag-then-truncate because the ExtWriter always produces a tightly-packed image. |
+| `Shrink` | `static ShrinkResult Shrink(Stream image)` | Shrinks the ext image in `image` to the smallest size the in-place path can reach. |
 
 #### `ExtShrinkHelper.ShrinkResult`
 
@@ -6300,7 +6300,7 @@ Builds spec-compliant F2FS filesystem images that are accepted by Linux `fsck.f2
 
 ### Namespace `FileSystem.Fat`
 
-[`FatBlockMover`](#fatblockmover) · [`FatChainStream`](#fatchainstream) · [`FatEntry`](#fatentry) · [`FatExtentMap`](#fatextentmap) · [`FatFilesystemDriverAdapter`](#fatfilesystemdriveradapter) · [`FatFormatDescriptor`](#fatformatdescriptor) · [`FatModifier`](#fatmodifier) · [`FatReader`](#fatreader) · [`FatRemover`](#fatremover) · [`FatShrinkHelper`](#fatshrinkhelper) · [`FatShrinkHelper.ClusterHintResult`](#fatshrinkhelperclusterhintresult) · [`FatShrinkHelper.ClusterSizeStats`](#fatshrinkhelperclustersizestats) · [`FatShrinkHelper.ShrinkResult`](#fatshrinkhelpershrinkresult) · [`FatWriter`](#fatwriter)
+[`FatBlockMover`](#fatblockmover) · [`FatChainStream`](#fatchainstream) · [`FatEntry`](#fatentry) · [`FatExtentMap`](#fatextentmap) · [`FatFilesystemDriverAdapter`](#fatfilesystemdriveradapter) · [`FatFormatDescriptor`](#fatformatdescriptor) · [`FatInPlaceShrinker`](#fatinplaceshrinker) · [`FatModifier`](#fatmodifier) · [`FatReader`](#fatreader) · [`FatRemover`](#fatremover) · [`FatShrinkHelper`](#fatshrinkhelper) · [`FatShrinkHelper.ClusterHintResult`](#fatshrinkhelperclusterhintresult) · [`FatShrinkHelper.ClusterSizeStats`](#fatshrinkhelperclustersizestats) · [`FatShrinkHelper.ShrinkResult`](#fatshrinkhelpershrinkresult) · [`FatWriter`](#fatwriter)
 
 #### `FatBlockMover`
 
@@ -6412,12 +6412,12 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Tunable knobs the Convert Archive dialog / CLI exposes for FAT creation: FAT variant, image size, volume label, cluster size, root-entry count, long-filename and TFAT/FAT+ toggles. The richer upstream schema covers every BPB field the writer actually honours, including the legacy DMF 16-entry root and the Windows-style force-LFN-for-every-entry switch. Forced variants validate against the cluster-count minimum (FAT16 ≥ 4085, FAT32 ≥ 65525) and throw if the chosen geometry can't satisfy them. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by path) files in an existing FAT image, genuinely in place through `FatModifier`: missing folders are created, a chained folder grows by a cluster when it is full, and every existing entry — its attributes, times, short-name alias and clusters — and the boot sector (label, serial, OEM name, geometry) stay byte-identical. All inputs are applied to a working copy and committed together. |
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming Create: pre-known per-input sizes drive the FAT geometry choice in pass 1, then pass 2 streams each input's bytes from its `OpenStream` factory straight into the pre-allocated cluster run. Peak memory is bounded by the cluster size + a 64 KB copy buffer — independent of total file size. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `DefragmentInPlace` | `void DefragmentInPlace(Stream archive, DefragOptions options)` | Lays the volume out again in place, with no rebuild behind it. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuilds `archive` in place so every file occupies a contiguous cluster run. Outer byte size is preserved — writes to the same stream at the same length. Equivalent to `Defragment` with `ConsolidateAtStart`. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware FAT defragmentor. Supports both a planner-driven in-place path (using `DefragPlanner` + `FatBlockMover`) and the legacy rebuild path (using `DefragRebuilder`). The planner-driven path is used for `ConsolidateAtStart`, `ConsolidateAtEnd`, `FillHolesLazy`, and `CarveHole`. Falls back to the rebuild path on error. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware FAT defragmentor, planner-driven and in place (`DefragPlanner` + `FatBlockMover`): packing at either end, lazy hole filling, a carved hole, ascending order, block interleave and metadata placement. A request the planner cannot lay out in place is refused before anything moves. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the boot sector + FAT chains and emits the actual on-disk layout as `DefragBlockInfo`s — one per cluster-chain run per file, plus the reserved region (boot/FAT/root dir) and the free-cluster set. Used by the defragment window's block-map preview to show the real fragmented layout before defrag runs. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. Buffers the bounded `OpenEntry` stream into a fresh byte array — never reads past the entry's logical size. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -6425,19 +6425,27 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single FAT entry as a forward-only stream that walks its cluster chain one cluster at a time, wrapped in a `BoundedEntryStream` sized to the entry's logical size. Reads past `entry.Size` return 0 — the cluster-tail slack is physically unreachable through this view. |
 | `PlaceFileAt` | `void PlaceFileAt(Stream archive, PlacementOptions options)` | Puts one named file or subdirectory at one chosen cluster, relocating every cluster in the way first. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files from an existing FAT image with full secure wipe (cluster bytes, cluster-tip slack, directory entries, FAT chain entries). No forensic recovery of the removed content is possible from the resulting bytes. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files — or folders with everything in them — from an existing FAT image with full secure wipe (cluster bytes, cluster-tip slack, directory entries, FAT chain entries). All names are applied to a working copy and committed together. |
 | `Scramble` | `void Scramble(Stream archive, ScrambleOptions options)` | Scatters every cluster of every file and subdirectory across the volume's whole cluster heap, dealt from `Seed`. |
-| `Shrink` | `void Shrink(Stream input, Stream output)` | Performs the shrink operation. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Shrinks in place: files are packed towards the start by the in-place defragmenter and the unused tail is trimmed by `FatInPlaceShrinker`, keeping the FAT type, label, serial, attributes and times. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the FAT image: free clusters, cluster-tip slack, and optionally deleted directory entries. Uses the generic `UnusedSpaceWiper` driven by the FAT extent map plus a directory-entry-based file-size lookup for cluster-tip precision. |
 
-#### `FatModifier`
+#### `FatInPlaceShrinker`
 
-Genuine in-place add for FAT12/16/32 images — the inverse of `FatRemover`. Allocates free clusters from the FAT, writes the file data into them (zeroing the trailing cluster-tip slack), links the cluster chain in every FAT copy, and inserts a directory entry (VFAT/LFN + 8.3, encoded by `BuildDirentSlots` so the bytes are identical to a freshly-built image) into the first free run of root-directory slots. Existing files, their data clusters and the boot sector stay byte-identical at their original offsets; the image keeps its length. Replace-by-name: an existing entry of the same name is removed first (`Remove`) so the new bytes win. Cases the in-place path does not handle — nested sub-directory targets, a full root directory, or insufficient free clusters — throw so the caller can fall back to the verified rebuild.
+Trims the unused tail off a FAT12/16/32 volume in place: the boot sector's total sector count (and FAT32's backup boot sector and FSInfo free count) are rewritten and the image is cut after the last cluster still in use. Nothing else moves — every directory entry, attribute, timestamp, the label, the serial and the OEM name stay exactly as they were.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(byte[] image, string name, byte[] data, DateTime? modTime = null, bool forceLfn = false)` | Adds (or replaces by name) `name` in the root directory of the in-memory FAT image. Throws `NotSupportedException` for nested paths and `IOException` when the volume or root directory is full — the signal for the caller to use the rebuild path. |
+| `ShrinkToFit` | `static long ShrinkToFit(Stream image)` | Shrinks `image` to the smallest size that keeps every cluster in use and the FAT type unchanged. Returns the new length (the old one when nothing could be trimmed). |
+
+#### `FatModifier`
+
+Genuine in-place add for FAT12/16/32 images — the inverse of `FatRemover`. Allocates free clusters from the FAT, writes the file data into them (zeroing the trailing cluster-tip slack), links the cluster chain in every FAT copy, and inserts a directory entry (VFAT/LFN + 8.3, encoded by `BuildDirentSlots` so the bytes are identical to a freshly-built image) into the target folder — creating missing folders and growing a chained folder by a cluster when it is full. Existing files, their attributes, times and data clusters and the boot sector stay byte-identical at their original offsets; the image keeps its length. Replace-by-path: an existing entry of the same name is removed first (`Remove`) so the new bytes win. A volume or a fixed FAT12/16 root directory with no room throws `IOException`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddFile` | `static void AddFile(byte[] image, string name, byte[] data, DateTime? modTime = null, bool forceLfn = false)` | Adds (or replaces by path) `name` — a path separated by `/` or `\` — in the in-memory FAT image. Missing folders are created, and a folder stored as a cluster chain grows by a cluster when its slots run out. Throws `IOException` when the volume, or FAT12/16's fixed root directory, has no room. |
 
 #### `FatReader`
 
@@ -6463,12 +6471,12 @@ Secure-remove implementation for FAT12/16/32 images. Resolves a path that may in
 
 #### `FatShrinkHelper`
 
-Shrinks a FAT filesystem image by defragmenting (consolidate at start) and then truncating trailing free space. Updates the BPB total-sectors field and shrinks the FAT to match the reduced cluster count.
+Shrinks a FAT filesystem image in place by defragmenting (consolidate at start) and then trimming the unused tail through `FatInPlaceShrinker`. The FAT type, label, serial, attributes and timestamps are kept.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AnalyzeClusterSizes` | `static ClusterHintResult AnalyzeClusterSizes(Stream image)` | Analyzes a FAT image and computes slack waste at various cluster sizes. Returns a recommendation for the cluster size that minimizes slack. |
-| `Shrink` | `static ShrinkResult Shrink(Stream image)` | Defragments (consolidate at start) then truncates trailing free space from a FAT image. Updates the BPB total_sectors and FAT size fields to reflect the new geometry. |
+| `Shrink` | `static ShrinkResult Shrink(Stream image)` | Defragments (consolidate at start, in place) then trims trailing free space from a FAT image, never below the cluster count its FAT type requires. |
 
 #### `FatShrinkHelper.ClusterHintResult`
 
@@ -7793,7 +7801,7 @@ Walks an HFS+ (or HFSX) image and yields the actual on-disk byte layout — the 
 
 References: `https://developer.apple.com/library/archive/technotes/tn/tn1150.html` — Apple Technical Note TN1150 "HFS Plus Volume Format", the canonical spec (incl. HFSX and the journal)`https://github.com/torvalds/linux/tree/master/fs/hfsplus` — Linux kernel implementation`https://en.wikipedia.org/wiki/HFS_Plus` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7811,18 +7819,18 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | HFS+ creation knobs: HFSX case-sensitivity toggle, journal enable + journal-size selector, volume name and allocation block size. The block size dropdown offers Auto (slack + table-overhead minimisation) plus the power-of-two sizes 4 KB … 64 KB that the writer supports; the journal-size knob is gated on Journal=true via DependsOn. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing HFS+ image via `AddFile`. The modifier mutates the catalog leaf, allocation bitmap, and volume header in place; on leaf overflow it transparently falls back to a writer-driven rebuild so the call always succeeds. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing HFS+ image via `AddFile`. The modifier mutates the catalog leaf, allocation bitmap, and volume header in place; what it cannot express is refused. |
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming creation: pre-known per-input sizes drive allocation-block geometry + catalog B-tree planning in pass 1; pass 2 emits the volume header + allocation bitmap + extents B-tree + catalog B-tree (with file records pointing at single-extent allocations) + the alternate volume header, then streams each input's bytes from its `OpenStream` factory into its allocated extent run via 64 KB chunks. Block tail past each entry's exact `Size` stays sparse-zero. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware HFS+ defragmentor via read-extract-rebuild dispatch through `DefragRebuilder`. The writer always emits a contiguous, start-packed allocation block layout, so all four `DefragMode` values converge on a clean repack. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Defragments in place: the planner moves data-fork runs and the mover repoints the extent descriptor that names each one; the pass is kept only if every file reads back unchanged. Anything else is refused and the volume left as it was — the rebuild that used to follow renamed the volume "Untitled", dropped the journal, permissions, Finder info and resource forks, and restamped every date. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the HFS+ catalog B-tree leaf chain and yields the actual on-disk byte layout — reserved boot region + volume header + allocation file + catalog file as `MetadataReserved`, every file record's first data-fork extent (`HFSPlusForkData.extents[0]`) as `Used`. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing HFS+ image via `RemoveFile`. File data blocks are wiped and the catalog records are excised from the leaf node; missing names are silently ignored. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing HFS+ image via `RemoveFile`. File data blocks are wiped and the catalog records are excised from the leaf node; a missing name is reported. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the HFS+ image: free allocation blocks, gaps between files and the block-tip slack between a file's logical size and the end of its last allocated block. The catalog extent map clamps each file's first-fork run to its logical byte length, so trailing slack inside the final block presents as a free gap that the generic `UnusedSpaceWiper` zero-fills. The size lookup is keyed by the reader's full path, matching the extent map's FileName. |
 
@@ -8265,7 +8273,7 @@ Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `
 
 Format descriptor for ISO 9660 optical disc images. References: `https://ecma-international.org/publications-and-standards/standards/ecma-119/` — ECMA-119 (the freely available equivalent of ISO 9660), the defining standard`https://github.com/torvalds/linux/tree/master/fs/isofs` — Linux kernel implementation`https://en.wikipedia.org/wiki/ISO_9660` — Wikipedia overview (incl. Joliet / Rock Ridge extensions)
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8287,14 +8295,15 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming creation: the pre-known per-input sizes drive the ISO 9660 path table + directory + file-extent layout in pass 1 (identical to `Create`, which flattens to leaf filenames); pass 2 streams each file's bytes from its `OpenStream` factory into its data extent via 64 KB chunks — no file is ever buffered as a `byte[]`. Output is byte-identical to `Create` for the same inputs (the ECMA-119 volume/record timestamps are sampled once per `Build`). Falls back to a buffered build when the target stream is not seekable. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware ISO 9660 defragmentor via read-extract-rebuild dispatch through `DefragRebuilder`. All four `DefragMode` values supported; image is repacked with files reordered per mode. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | ISO 9660 defragmentor: the planner moves each file's single extent in place and repoints its directory record, and the pass is kept only if every file reads back unchanged. Anything else is refused and the image left as it was. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the 32 KiB system area, the volume descriptor sequence, the path tables, and the directory tree, and yields each file's contiguous extent (LBA, length) as a single Used run — ECMA-119 mandates contiguous allocation per file. Directories surface as MetadataReserved. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single ISO 9660 file entry as a bounded read-only `Stream`. ISO 9660 stores file data in contiguous extents — the reader's extract returns those bytes verbatim; they are wrapped in a `BoundedEntryStream` sized to the entry's logical size. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing ISO 9660 image. Uses `IsoModifier` for O(touched bytes) random-access I/O — the directory record is shifted out of its sector and the file's data sectors are zero-wiped. Names match case-insensitively after stripping any ';N' version suffix (ISO 9660 stores uppercase IDs). |
+| `Purge` | `void Purge(Stream archive)` | Removes the named entries from an existing ISO 9660 image. Uses `IsoModifier` for O(touched bytes) random-access I/O — the directory record is shifted out of its sector and the file's data sectors are zero-wiped. Names match case-insensitively after stripping any ';N' version suffix (ISO 9660 stores uppercase IDs). |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the ISO 9660 image: the unused remainder of the system area, free sectors and the sector-tip slack at the tail of each file's last 2048-byte sector. ECMA-119 stores every file contiguously and pads its final sector with zeros — the bytes between the file's logical length and the sector boundary are the cluster tip. The extent map clamps each Used run to the file's logical length, so the tip presents as a free gap that the generic `UnusedSpaceWiper` zero-fills. The size lookup is keyed by the reader's full path, matching the extent FileName. |
 
@@ -10264,6 +10273,7 @@ Implements `IFilesystemBlockMover`, `IFilesystemMetadataMover`.
 | `ClusterSize` | `int ClusterSize { get; }` | Bytes per cluster. |
 | `FirstDataByte` | `long FirstDataByte { get; }` | Byte offset past all known metadata regions. For NTFS, the boot sector, MFT, and system file data are all marked MetadataReserved by the extent map. User data can safely be placed at or after this offset. Computed from the MFT location + its extent size as a conservative lower bound. The actual usable origin should be derived from the extent map (see `DefragmentWithPlanner`). |
 | `RelocatableMetadata` | `IReadOnlySet<string> RelocatableMetadata { get; }` | The system files whose clusters are described by data runs in their own MFT record: $MFT, $MFTMirr, $LogFile, $AttrDef, $Bitmap, $UpCase, and record 9 under either of the two names it carries — $Quota on NTFS 1.2, $Secure from 3.0. Moving one is the same edit an ordinary file gets, because the run list is the whole of what says where it lives. $Boot is pinned: the boot sector is what everything else is found through, and nothing points at it. $Volume and the root directory occupy no clusters of their own — both are resident inside their records — so there is nothing of theirs to move. |
+| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` |  |
 | `VolumeEndByte` | `long VolumeEndByte { get; }` | The last byte a file may occupy: the end of the volume, not the end of the file holding it. |
 | `Init` | `void Init(Stream image)` | Stream-based initialisation. Reads only the 512-byte boot sector and the first MFT record (typically 1 KB) — used by the streaming code paths so multi-TB images don't have to be loaded into memory. |
 | `Init` | `void Init(byte[] image)` | Initialises the mover by parsing the NTFS boot sector fields. |
@@ -10331,18 +10341,18 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | NTFS creation knobs surfaced by the Convert Archive dialog / CLI: image size (Auto + fixed presets), volume label (capped at 32 chars to match $VOLUME_NAME), cluster size, MFT record size, the 8.3 short-name toggle and the NTFS version — which selects every version-sensitive structure in the image (record header layout, metadata file set, $AttrDef table, $STANDARD_INFORMATION shape), not only the $VOLUME_INFORMATION stamp. Cluster + MFT record size cooperate via `BuildAutoSized` when both are on Auto. The MFT reserve % knob (stash) is not honoured by the upstream writer yet — see Build()'s constant MFT zone — so it's not published here. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by path) files in an existing NTFS image, genuinely in place via `NtfsInPlaceAdder`: a free MFT record slot is claimed, a spec-shaped FILE record is written, data clusters are allocated from $Bitmap, missing folders are created and each entry is linked into its parent's $I30 index with every existing entry kept as it was. Existing files, their records and clusters stay byte-identical. |
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming creation: pre-known per-input sizes drive MFT-record + cluster geometry in pass 1; pass 2 emits all reserved system MFT records + per-user MFT records (with single-run non-resident $DATA for large files), then streams each non-resident entry's bytes from its `OpenStream` factory into its allocated cluster run via 64 KB chunks. Cluster tail past each entry's exact `Size` stays sparse-zero. Resident files (≤ 700 bytes) buffer their bounded source bytes inline in the MFT record — the bound itself caps anything past `Size`. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware NTFS defragmentor. Supports planner-driven in-place path (using `DefragPlanner` + `NtfsBlockMover`) and the legacy rebuild path (using `DefragRebuilder`). Falls back to rebuild when the planner path throws (e.g. data-run re-encoding changes byte length with no slack space). |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware NTFS defragmentor: planner-driven and in place (`DefragPlanner` + `NtfsBlockMover`) for the packing modes, a carved hole, ascending order, a metadata placement and layout templates. Block interleave is refused before a byte moves. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the boot sector + $MFT + each MFT record's $DATA attribute and yields one extent per data run. Records 0-15 (the reserved system files: $MFT, $MFTMirr, $LogFile, $Volume, $AttrDef, root, $Bitmap, $Boot, $BadClus, $Secure, $UpCase, $Extend) surface as MetadataReserved; regular files surface as Used. Adjacent runs are coalesced. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files from an existing NTFS image with full secure wipe (cluster bytes for non-resident data, MFT record, and root-dir index entry). No forensic recovery of the removed content is possible from the resulting bytes. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files — or folders with everything in them — from an existing NTFS image with a full secure wipe (cluster bytes, MFT record and index entry). All names are applied to a working copy and committed together. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Genuine in-place NTFS shrink: relocates only the clusters above the auto-fit boundary into free space below it via `NtfsInPlaceShrinker`, trims $Bitmap/$Boot, and emits the smaller image. Falls back to the `IArchiveShrinkable` default (verified rebuild / copy-through) when the in-place path cannot handle the image (e.g. a compressed stream would need relocation). |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Performs the wipe unused space operation. |
@@ -10399,11 +10409,11 @@ Implements `IDisposable`.
 
 #### `NtfsRemover`
 
-Secure-remove implementation for NTFS images. Finds the named file in the MFT (records 16+), zeros every cluster referenced by its $DATA attribute (including resident-value bytes for small files), clears the corresponding index entry in the root directory's $INDEX_ROOT, and zeros the entire 1024-byte MFT record. After the operation no bytes of the original filename or content remain recoverable from the image. Root-directory-only for now; nested-directory removal is a follow-up. The reader skips records whose "FILE" signature is missing, so zeroing the whole record is sufficient to hide the file from enumeration and extraction.
+Secure-remove implementation for NTFS images. Resolves the path through the directory indexes, removes the entry from its parent's index, zeros and releases every cluster the record's non-resident attributes own (data, named streams, index blocks), and zeros the MFT record. After the operation no bytes of the original filename or content remain recoverable from the image.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Remove` | `static void Remove(byte[] image, string fileName)` | Removes `fileName` from the in-memory NTFS image. Throws `FileNotFoundException` if no MFT record matches. The image is modified in place. |
+| `Remove` | `static void Remove(byte[] image, string fileName)` | Removes the file at `fileName` — a path from the root, separated by `/` or `\` — from the in-memory NTFS image. Throws `FileNotFoundException` when no such file exists. The image is modified in place. |
 
 #### `NtfsVersion`
 
@@ -14903,7 +14913,7 @@ Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `
 
 R/W descriptor for SGI XFS filesystem images ("XFSB" superblock magic) at `mkfs.xfs`-faithful defaults. References: `https://mirrors.edge.kernel.org/pub/linux/utils/fs/xfs/docs/xfs_filesystem_structure.pdf` — "XFS Algorithms & Data Structures" — the on-disk specification`https://github.com/torvalds/linux/tree/master/fs/xfs` — Linux reference implementation`https://en.wikipedia.org/wiki/XFS` — Wikipedia article
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveWriteConstraints`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14924,19 +14934,17 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` | Gets the min total archive size. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | XFS geometry (block size, inode size, AG layout) is fixed at the `mkfs.xfs`-faithful defaults the writer emits, so the only honoured tunable is the volume label stored in the superblock `sb_fname[12]` field (ASCII, truncated to 12 bytes). |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files into an existing XFS image via a genuine in-place edit (`XfsInPlaceAdder`): a free inode slot is claimed from the inobt — growing a fresh 64-inode chunk when every chunk is full — a data extent is carved from the AGF bnobt/cntbt free space (best-fit across a multi-record, fragmented free map), the file bytes and inode core + BMBT extent are written, the directory entry is inserted (short-form, or after promoting the directory to single-block / leaf form, or into an existing block/leaf directory), the free counters are decremented and CRC-32C is recomputed on every touched v5 metadata block. Nested sub-directory targets are resolved (intermediate directories are created in place when absent) and replace-by-name frees the prior inode + extent first. Existing files, their inodes and data blocks stay byte-identical at their original offsets (no re-pack). The few cases the in-place path still cannot satisfy — directories large enough to need node-form (da-btree) indexing or a larger directory block size, a multi-level free-space/inode btree, or content that no longer fits AG 0 — fall back to the verified `XfsModifier` rebuild. |
 | `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming creation. Pass 1 plans the AG / inode / data-extent geometry from each input's pre-known size; pass 2 emits all metadata (with CRC-32C), then streams each file's bytes into its data extent via 64 KB chunks — file bytes never travel through a writer-held `byte[]`. XFS stores every regular file as a data extent (no inline file form) and file data carries no CRC (only metadata/dir blocks are checksummed), so the streamed output is byte-identical to `Create` for the same inputs. Non-seekable targets fall back to the buffering base implementation. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Defragments in place: the planner moves file extents and the allocation groups' free-space btrees are rewritten from the result; the pass is kept only if every file reads back unchanged. Anything else is refused and the volume left as it was — the rebuild that used to stand behind every refusal wrote a new volume with a fixed UUID, no label, zero timestamps and no owners, links or xattrs. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Walks the per-AG superblock + AGF/AGI/AGFL + bnobt/cntbt/inobt headers (yielded as MetadataReserved tiles) and the root inode's directory listing, then yields each child file's BMBT_REC packed-128-bit extents as Used runs (with adjacent runs coalesced). Inline (`local` fork-format) inodes surface as MetadataReserved — the file content lives inside the inode itself. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Rebuild-style remove (see `XfsModifier`). The removed file's data does not survive into the rebuilt image because the new writer emits a fresh superblock, AGF/AGI, and inode table. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in an XFS image: free blocks and the cluster-tip slack at the tail of each file's last data block. The XFS extent map emits each file's data as a `Used` run clipped to the file's logical size. The remainder of the file's last block (from the logical size to the block boundary) is therefore not covered by any live extent and surfaces as a free gap, which the generic wiper scrubs — that is the cluster tip. A directory-entry size lookup (keyed by the same file name the extent map uses) is supplied so any extent reported block-aligned is still trimmed precisely. |
 
