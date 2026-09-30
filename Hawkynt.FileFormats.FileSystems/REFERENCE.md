@@ -12030,6 +12030,7 @@ Implements `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifi
 | `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` | Opens a filesystem session over the image. |
 | `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` | Probes the image and reports the filesystem driver profile. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes regular files or empty directories from an unmounted ReFS image. Namespace deletion is published through immutable B+ replacement pages and the alternate CHKP. |
+| `Rename` | `void Rename(Stream image, string sourcePath, string destinationPath)` | Renames an existing ReFS regular file within the same parent directory on an unmounted image, preserving its existing metadata and data allocation. |
 
 #### `RefsOfflineBlockCloner`
 
