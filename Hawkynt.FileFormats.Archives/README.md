@@ -225,7 +225,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [ODP](https://en.wikipedia.org/wiki/OpenDocument) | `Odp` | `.odp` | R/W | ✅ | defrag · wipe |  | [libreoffice.org](https://www.libreoffice.org) |
 | [ODS](https://en.wikipedia.org/wiki/OpenDocument) | `Ods` | `.ods` | R/W | ✅ | defrag · wipe |  | [libreoffice.org](https://www.libreoffice.org) |
 | [ODT](https://en.wikipedia.org/wiki/OpenDocument) | `Odt` | `.odt` | R/W | ✅ | defrag · wipe |  | [libreoffice.org](https://www.libreoffice.org) |
-| [Microsoft OneNote](https://en.wikipedia.org/wiki/Microsoft_OneNote) | `OneNote` | `.one` `.onetoc2` | R | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-onestore/) |
+| [Microsoft OneNote](https://en.wikipedia.org/wiki/Microsoft_OneNote) | `OneNote` | `.one` `.onetoc2` | R | ✅ | — | Validates the MS-ONESTORE header and first root file-node fragment; exposes the root list and transaction-log fragment raw; object graph not decoded | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-onestore/) |
 | [PDF](https://en.wikipedia.org/wiki/PDF) | `Pdf` | `.pdf` | R/W | ✅ | wipe | Image extraction and file-attachment surface, not a page renderer or editor | [ISO](https://www.iso.org/standard/75839.html) |
 | [PPT](https://en.wikipedia.org/wiki/Microsoft_PowerPoint) | `Ppt` | `.ppt` | R/W | ✅ | wipe | CFB envelope; presentation streams are not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-ppt/6be79dde-33c1-4c1b-8ccc-4b2301c08662) |
 | [PPTX](https://en.wikipedia.org/wiki/Office_Open_XML) | `Pptx` | `.pptx` | R/W | ✅ | defrag · wipe |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-376/) |
@@ -262,7 +262,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Descent HOG | `Hog` | `.hog` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/dxx-rebirth/dxx-rebirth) |
 | [Total Annihilation HPI](https://en.wikipedia.org/wiki/Total_Annihilation) | `Hpi` | `.hpi` `.ufo` `.ccx` `.gp3` | R/W | ✅ | defrag · wipe | Unencrypted / zlib subset | [units.tauniverse.com](https://units.tauniverse.com/tutorials/tadesign/tutorials/hpi.htm) |
 | LucasArts LFD | `Lfd` | `.lfd` | WORM | ✅ | defrag · wipe | Entries are DATA.<stem> and RMAP.resource | [GitHub](https://github.com/MikeG621/LfdReader) |
-| Minecraft region (MCA) | `Mca` | `.mca` `.mcr` | WORM | ✅ | — | Chunks are `chunk_X_Z.nbt`; gzip, zlib, stored and raw LZ4 creation | [minecraft.wiki](https://minecraft.wiki/w/Region_file_format) |
+| Minecraft region (MCA) | `Mca` | `.mca` `.mcr` | WORM | ✅ | — | Chunks are `chunk_X_Z.nbt`; gzip, zlib, stored and LZ4-Java block-stream creation; oversized (external `.mcc`) chunks are listed but not written or extracted | [minecraft.wiki](https://minecraft.wiki/w/Region_file_format) |
 | Cyan Mohawk | `Mhk` | `.mhk` | WORM | ✅ | defrag · wipe | Entries are typed tDAT_NNNN names | [GitHub](https://github.com/scummvm/scummvm) |
 | Westwood MIX | `Mix` | `.mix` | WORM | ✅ | defrag · wipe | Hash-keyed names; hex names are synthesised where the original is absent | [GitHub](https://github.com/OpenRA/OpenRA) |
 | [Blizzard MPQ](https://en.wikipedia.org/wiki/MPQ) | `Mpq` | `.mpq` | R/W | ✅ | defrag · wipe |  | [zezula.net](http://www.zezula.net/en/mpq/main.html) |
