@@ -72,9 +72,11 @@ internal static class ZipCentralDirectoryEntry {
     if (entry.CompressionMethod == ZipCompressionMethod.Implode)
       flags |= (ushort)(entry.GeneralPurposeFlags & 0x0006);
 
-    var needUncompressed64 = entry.UncompressedSize > uint.MaxValue;
-    var needCompressed64 = entry.CompressedSize > uint.MaxValue;
-    var needOffset64 = entry.LocalHeaderOffset > uint.MaxValue;
+    // 0xFFFFFFFF is the ZIP64 sentinel (APPNOTE.TXT 4.4.8/4.4.9/4.4.16), so a value of
+    // exactly that size already needs the 64-bit field.
+    var needUncompressed64 = entry.UncompressedSize >= uint.MaxValue;
+    var needCompressed64 = entry.CompressedSize >= uint.MaxValue;
+    var needOffset64 = entry.LocalHeaderOffset >= uint.MaxValue;
 
     var compSize = needCompressed64 ? ZipConstants.Zip64Sentinel32 : (uint)entry.CompressedSize;
     var uncompSize = needUncompressed64 ? ZipConstants.Zip64Sentinel32 : (uint)entry.UncompressedSize;

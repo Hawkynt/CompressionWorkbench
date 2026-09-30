@@ -63,13 +63,9 @@ public sealed class AndroidBundleFormatDescriptor : IFormatDescriptor, IArchiveF
   /// are read or written; pre-existing entries stay byte-identical. The synthetic
   /// <c>metadata.ini</c> extraction artifact is a derived view and is skipped.
   /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    foreach (var (name, data) in FilesOnly(inputs)) {
-      if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
-      ZipModifier.RemoveFile(archive, name, wipeData: true);
-      ZipModifier.AddFile(archive, name, data);
-    }
-  }
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ZipModifier.AddOrReplace(archive, inputs,
+      name => !string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase));
 
   /// <summary>
   /// Removes named entries via <see cref="ZipModifier"/>. The synthetic

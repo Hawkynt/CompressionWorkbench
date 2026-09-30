@@ -59,13 +59,9 @@ public sealed class MsixFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// editing a signed package invalidates its <c>AppxSignature.p7x</c>; re-signing
   /// is out of scope.
   /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    foreach (var (name, data) in FilesOnly(inputs)) {
-      if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
-      ZipModifier.RemoveFile(archive, name, wipeData: true);
-      ZipModifier.AddFile(archive, name, data);
-    }
-  }
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ZipModifier.AddOrReplace(archive, inputs,
+      name => !string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase));
 
   /// <summary>
   /// Removes named entries via <see cref="ZipModifier"/>. The synthetic

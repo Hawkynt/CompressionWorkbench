@@ -236,14 +236,11 @@ public abstract class ModifiableZipContainerFormatDescriptor : ZipContainerForma
   /// <see cref="FileFormat.Zip.ZipModifier"/> for true random-access I/O — only
   /// the central directory, EOCD, and the appended file's local file header +
   /// compressed data are read or written. Pre-existing entry LFH + payload
-  /// bytes at original offsets remain byte-identical.
+  /// bytes at original offsets remain byte-identical. On-disk inputs are
+  /// streamed and keep their last-write time.
   /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    foreach (var (name, data) in FilesOnly(inputs)) {
-      FileFormat.Zip.ZipModifier.RemoveFile(archive, name, wipeData: true);
-      FileFormat.Zip.ZipModifier.AddFile(archive, name, data);
-    }
-  }
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => FileFormat.Zip.ZipModifier.AddOrReplace(archive, inputs);
 
   /// <summary>Removes named entries; uses <see cref="FileFormat.Zip.ZipModifier"/>.</summary>
   public void Remove(Stream archive, string[] entryNames) {

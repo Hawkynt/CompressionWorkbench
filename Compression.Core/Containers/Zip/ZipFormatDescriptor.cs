@@ -124,14 +124,11 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Adds (or replaces by name) files inside an existing ZIP archive. Uses
   /// <see cref="ZipModifier"/> for true O(touched bytes) random-access I/O —
   /// only the central directory, the EOCD, and the appended file's local
-  /// file header + compressed data are read or written.
+  /// file header + compressed data are read or written. On-disk inputs are
+  /// streamed (no size limit) and keep their last-write time.
   /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    foreach (var (name, data) in FilesOnly(inputs)) {
-      ZipModifier.RemoveFile(archive, name, wipeData: true);
-      ZipModifier.AddFile(archive, name, data);
-    }
-  }
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ZipModifier.AddOrReplace(archive, inputs);
 
   /// <summary>
   /// Renames entries by copying the archive with new names in the directory and local headers.
