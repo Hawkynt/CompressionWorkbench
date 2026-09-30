@@ -836,11 +836,13 @@ internal sealed class MainViewModel : ViewModelBase {
     if (SelectedEntries.Count == 1) {
       var e = SelectedEntries[0];
       if (!e.IsDirectory && !e.IsParentEntry) {
-        // OS-browser entries hold the absolute path; in-archive entries hold
-        // the in-archive name. Either way the extension drives detection.
+        // A file on disk is judged by its content (cached, since this runs on every requery); an
+        // entry inside an archive has no bytes at hand, so its name decides.
         var probeName = IsBrowsingOsFolder ? e.Path : e.Name;
         if (!string.IsNullOrEmpty(probeName)) {
-          var f = FormatDetector.DetectByExtension(probeName);
+          var f = IsBrowsingOsFolder && File.Exists(e.Path)
+            ? FormatDetector.DetectCached(e.Path)
+            : FormatDetector.DetectByExtension(probeName);
           if (f != FormatDetector.Format.Unknown && !FormatDetector.IsStreamFormat(f)) {
             // OS-browser candidate must actually exist on disk.
             if (!IsBrowsingOsFolder || File.Exists(e.Path)) {
@@ -1062,9 +1064,26 @@ internal sealed class MainViewModel : ViewModelBase {
   private bool CanAddFiles
     => !string.IsNullOrEmpty(ArchivePath)
        && Compression.Lib.FormatRegistration.IsReady
-       && FormatDetector.DetectByExtension(ArchivePath) is var f
-       && f != FormatDetector.Format.Unknown
-       && !FormatDetector.IsStreamFormat(f);
+       && _openFormat != FormatDetector.Format.Unknown
+       && !FormatDetector.IsStreamFormat(_openFormat)
+       && OpenArchiveTakesAdditions();
+
+  /// <summary>
+  /// Whether the open archive's format can take new files at all. ZIP / 7z / RAR don't implement
+  /// IArchiveCreatable themselves — their create path is a switch inside ArchiveOperations — so the
+  /// CanCreate / CanModify capability flags count as evidence too.
+  /// </summary>
+  private bool OpenArchiveTakesAdditions() {
+    var ops = Compression.Registry.FormatRegistry.GetArchiveOps(_openFormat.ToString());
+    var caps = (ops as Compression.Registry.IFormatDescriptor)?.Capabilities ?? 0;
+    return ops is Compression.Registry.IArchiveCreatable or Compression.Registry.IArchiveModifiable
+           || caps.HasFlag(Compression.Registry.FormatCapabilities.CanCreate)
+           || caps.HasFlag(Compression.Registry.FormatCapabilities.CanModify);
+  }
+
+  // What the open archive is, as Open detected it from its content: a .img holding a partition
+  // table is a partitioned disk, not the FAT image its extension suggests.
+  private FormatDetector.Format _openFormat;
 
   public void Open(string path) => Open(path, fromNestedDescent: false);
 
@@ -1094,6 +1113,7 @@ internal sealed class MainViewModel : ViewModelBase {
       }
 
       ArchivePath = path;
+      _openFormat = format;
       Format = format.ToString();
       // Leave folder browsing before setting the folder: that setter rebuilds the breadcrumbs, and
       // while a host folder is still being browsed the trail ends at the host path.
@@ -1999,22 +2019,13 @@ internal sealed class MainViewModel : ViewModelBase {
   internal (bool Allowed, string? Message) EvaluateDropAgainstCurrentArchive(string[] files) {
     if (!HasArchive) return (true, "Drop archive to open");
 
-    var format = FormatDetector.DetectByExtension(ArchivePath);
+    var format = _openFormat;
     if (format == FormatDetector.Format.Unknown) return (true, "Drop to add files to archive");
 
     Compression.Lib.FormatRegistration.EnsureInitialized();
     var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
-    // Block the drop only when the descriptor is genuinely read-only. ZIP / 7z /
-    // RAR don't implement IArchiveCreatable themselves — their create path is a
-    // hardcoded switch inside ArchiveOperations — so we also accept the
-    // CanCreate / CanModify capability flags as evidence of write capability.
-    var caps = (ops as Compression.Registry.IFormatDescriptor)?.Capabilities ?? 0;
-    if (ops is not Compression.Registry.IArchiveCreatable &&
-        ops is not Compression.Registry.IArchiveModifiable &&
-        !caps.HasFlag(Compression.Registry.FormatCapabilities.CanCreate) &&
-        !caps.HasFlag(Compression.Registry.FormatCapabilities.CanModify)) {
+    if (!OpenArchiveTakesAdditions())
       return (false, "This archive format is read-only (can't add files)");
-    }
 
     // Per-file + cumulative-size check via optional constraints.
     if (ops is Compression.Registry.IArchiveWriteConstraints constraints) {
@@ -2045,7 +2056,7 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   private void AddFilesToArchiveImpl(string[] paths) {
-    var format = FormatDetector.DetectByExtension(ArchivePath);
+    var format = _openFormat;
     if (format == FormatDetector.Format.Unknown || FormatDetector.IsStreamFormat(format)) {
       MessageBox.Show("Cannot add files to this archive format.", "Add Files",
         MessageBoxButtons.OK, MessageBoxIcon.Warning);
