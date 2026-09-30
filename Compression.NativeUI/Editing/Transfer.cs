@@ -64,6 +64,8 @@ internal static class Transfer {
     foreach (var item in items) {
       if (item.IsFolder && Contains(item, target))
         return $"{item.Name} cannot be put inside itself.";
+      if (!item.IsFolder && !item.From.IsInArchive && target.IsInArchive && SamePath(item.HostPath, target.HostPath))
+        return $"{item.Name} cannot be put inside itself.";
       if (move && item.From.IsInArchive && !IsModifiable(item.From.HostPath))
         return $"{item.Name} cannot be moved out of {Path.GetFileName(item.From.HostPath)}, which cannot be modified.";
     }
@@ -78,7 +80,7 @@ internal static class Transfer {
   /// </summary>
   public static bool MovesByDefault(IReadOnlyList<TransferItem> items, Location target)
     => items.Count > 0 && items.All(item => item.From.IsInArchive
-      ? target.IsInArchive && string.Equals(item.From.HostPath, target.HostPath, StringComparison.OrdinalIgnoreCase)
+      ? target.IsInArchive && SamePath(item.From.HostPath, target.HostPath)
       : !target.IsInArchive && SameVolume(item.HostPath, target.HostPath));
 
   /// <summary>Why <paramref name="files"/> cannot be received into <paramref name="target"/>, or null when they can.</summary>
@@ -146,6 +148,7 @@ internal static class Transfer {
       }
 
       ArchiveOperations.Add(target.HostPath, inputs);
+      VerifyArrived(target.HostPath, inputs);
     } else {
       foreach (var top in created) {
         var staged = Path.Combine(root, top);
@@ -193,8 +196,8 @@ internal static class Transfer {
       var name = FreeName(item.Name, taken);
       var target = Path.Combine(folder, name);
 
-      if (!item.From.IsInArchive && move && SameVolume(item.HostPath, target)) {
-        MoveOnDisk(item.HostPath, target, item.IsFolder);
+      if (!item.From.IsInArchive && move && SameVolume(item.HostPath, target) && TryMoveOnDisk(item.HostPath, target, item.IsFolder)) {
+        // Renamed in place.
       } else if (item.From.IsInArchive) {
         MoveOnDisk(staging.Materialize(item), target, item.IsFolder);
       } else {
@@ -220,7 +223,7 @@ internal static class Transfer {
 
     // Within one archive a move is a rename: nothing is extracted and nothing re-added.
     var sameArchive = move
-      ? items.Where(i => i.From.IsInArchive && string.Equals(i.From.HostPath, archive, StringComparison.OrdinalIgnoreCase)).ToList()
+      ? items.Where(i => i.From.IsInArchive && SamePath(i.From.HostPath, archive)).ToList()
       : [];
     if (sameArchive.Count > 0) {
       var renames = new List<ArchiveRename>();
@@ -248,6 +251,11 @@ internal static class Transfer {
     }
 
     ArchiveOperations.Add(archive, inputs);
+
+    // A format that keeps files but not bare folders (zip's modifier among them) accepts an empty
+    // folder without complaint and stores nothing. Removing a moved source on the strength of Add
+    // returning would lose it, so the archive is read back first.
+    VerifyArrived(archive, inputs);
     if (move) RemoveSources(rest);
     return new(created);
   }
@@ -273,15 +281,15 @@ internal static class Transfer {
   /// <summary>Whether <paramref name="target"/> is <paramref name="folder"/> itself or somewhere beneath it.</summary>
   private static bool Contains(TransferItem folder, Location target) {
     if (folder.From.IsInArchive) {
-      if (!target.IsInArchive || !string.Equals(folder.From.HostPath, target.HostPath, StringComparison.OrdinalIgnoreCase))
+      if (!target.IsInArchive || !SamePath(folder.From.HostPath, target.HostPath))
         return false;
-      return (target.ArchiveFolder ?? "").StartsWith(folder.EntryPath + "/", StringComparison.OrdinalIgnoreCase);
+      // Entry names inside an archive are case-sensitive.
+      return (target.ArchiveFolder ?? "").StartsWith(folder.EntryPath + "/", StringComparison.Ordinal);
     }
 
     var inside = Path.TrimEndingDirectorySeparator(folder.HostPath);
     var where = Path.TrimEndingDirectorySeparator(target.HostPath);
-    return string.Equals(where, inside, StringComparison.OrdinalIgnoreCase)
-      || where.StartsWith(inside + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    return SamePath(where, inside) || where.StartsWith(inside + Path.DirectorySeparatorChar, PathComparison);
   }
 
   private static bool IsModifiable(string archivePath)
@@ -292,7 +300,7 @@ internal static class Transfer {
     var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var entry in ArchiveOperations.List(archive, password: null)) {
       var path = entry.Name.Replace('\\', '/');
-      if (!path.StartsWith(folder, StringComparison.OrdinalIgnoreCase)) continue;
+      if (!path.StartsWith(folder, StringComparison.Ordinal)) continue;
 
       var rest = path[folder.Length..].TrimStart('/');
       var slash = rest.IndexOf('/');
@@ -309,6 +317,30 @@ internal static class Transfer {
       sink.Add(new ArchiveInput("", entryFolder + "/" + Path.GetRelativePath(source, dir).Replace('\\', '/') + "/"));
     foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
       sink.Add(new ArchiveInput(file, entryFolder + "/" + Path.GetRelativePath(source, file).Replace('\\', '/')));
+  }
+
+  /// <summary>
+  /// Reads <paramref name="archive"/> back and throws when anything in <paramref name="inputs"/> is
+  /// not in it: a file under its exact name, a folder either as a folder entry or through something
+  /// stored beneath it.
+  /// </summary>
+  private static void VerifyArrived(string archive, IReadOnlyList<ArchiveInput> inputs) {
+    var stored = ArchiveOperations.List(archive, password: null).Select(e => e.Name.Replace('\\', '/').TrimStart('/')).ToList();
+    var names = new HashSet<string>(stored.Select(n => n.TrimEnd('/')), StringComparer.Ordinal);
+
+    var missing = inputs
+      .Select(i => (Name: i.EntryName.Replace('\\', '/').Trim('/'), i.IsDirectory))
+      .Where(i => i.Name.Length > 0)
+      .Where(i => i.IsDirectory
+        ? !names.Contains(i.Name) && !stored.Any(n => n.StartsWith(i.Name + "/", StringComparison.Ordinal))
+        : !names.Contains(i.Name))
+      .Select(i => i.Name)
+      .ToList();
+
+    if (missing.Count > 0)
+      throw new IOException(
+        $"{Path.GetFileName(archive)} did not keep {string.Join(", ", missing.Take(5))}{(missing.Count > 5 ? $" and {missing.Count - 5} more" : "")}" +
+        " — this format stores no empty folders. Nothing was removed from where it came from.");
   }
 
   private static void RemoveSources(IEnumerable<TransferItem> items) {
@@ -331,13 +363,34 @@ internal static class Transfer {
     var prefix = folder.TrimEnd('/') + "/";
     return ArchiveOperations.List(archive, password: null)
       .Select(e => e.Name.Replace('\\', '/'))
-      .Where(n => n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && n.Length > prefix.Length);
+      .Where(n => n.StartsWith(prefix, StringComparison.Ordinal) && n.Length > prefix.Length);
   }
 
   private static bool Exists(string path, bool folder) => folder ? Directory.Exists(path) : File.Exists(path);
 
   private static bool SameVolume(string a, string b)
-    => string.Equals(Path.GetPathRoot(Path.GetFullPath(a)), Path.GetPathRoot(Path.GetFullPath(b)), StringComparison.OrdinalIgnoreCase);
+    => string.Equals(Path.GetPathRoot(Path.GetFullPath(a)), Path.GetPathRoot(Path.GetFullPath(b)), PathComparison);
+
+  /// <summary>How host paths compare here: without regard to case on Windows and macOS, exactly elsewhere.</summary>
+  internal static StringComparison PathComparison { get; } =
+    OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+  internal static bool SamePath(string a, string b)
+    => string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)), PathComparison);
+
+  /// <summary>
+  /// Moves by renaming when the file system allows it. Two folders under one root can still lie on
+  /// different volumes — a mount point on Linux, a junction on Windows — and there the rename fails;
+  /// returning false lets the caller copy and remove instead.
+  /// </summary>
+  private static bool TryMoveOnDisk(string source, string target, bool folder) {
+    try {
+      MoveOnDisk(source, target, folder);
+      return true;
+    } catch (IOException) when (!File.Exists(target) && !Directory.Exists(target) && Exists(source, folder)) {
+      return false;
+    }
+  }
 
   private static void MoveOnDisk(string source, string target, bool folder) {
     if (folder) Directory.Move(source, target);
@@ -379,6 +432,8 @@ internal static class Transfer {
     private void EnsureRoot() {
       if (Directory.Exists(this._root)) return;
 
+      SweepAbandoned(Path.GetDirectoryName(this._root)!);
+
       var info = Directory.CreateDirectory(this._root);
       if (OperatingSystem.IsWindows()) info.Attributes |= FileAttributes.Hidden;
       StagingCreated?.Invoke(this._root);
@@ -396,6 +451,20 @@ internal static class Transfer {
       if (item.IsFolder) Directory.CreateDirectory(landed);
       else if (!File.Exists(landed)) throw new IOException($"{item.Name} could not be read from {Path.GetFileName(archive)}.");
       return landed;
+    }
+
+    /// <summary>
+    /// Deletes staging folders a crashed or killed transfer left behind in <paramref name="folder"/>.
+    /// Only ones older than a day: a younger one may belong to a transfer still running elsewhere.
+    /// </summary>
+    private static void SweepAbandoned(string folder) {
+      try {
+        foreach (var stale in Directory.EnumerateDirectories(folder, StagingPrefix + "*"))
+          if (DateTime.UtcNow - Directory.GetLastWriteTimeUtc(stale) > TimeSpan.FromDays(1))
+            Directory.Delete(stale, recursive: true);
+      } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+        // A sweep that cannot finish leaves the leftovers for the next one.
+      }
     }
 
     public void Dispose() {

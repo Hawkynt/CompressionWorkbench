@@ -355,6 +355,56 @@ public sealed class TransferTests {
   public void GivenNothingDragged_WhenAskedWhatItDoes_ThenItDoesNotMove()
     => Assert.That(Transfer.MovesByDefault([], this.Disk()), Is.False);
 
+  // ── what the audit found ────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenAnEmptyFolder_WhenMovedIntoAZipThatStoresNoBareFolders_ThenItIsRefusedAfterTheFactAndTheSourceStays() {
+    var empty = Path.Combine(this._disk, "empty");
+    Directory.CreateDirectory(empty);
+
+    var failure = Assert.Throws<IOException>(() => Transfer.Run([Item(this.Disk(), "empty", folder: true)], Location.InArchive(this._b, ""), move: true));
+
+    Assert.That(failure!.Message, Does.Contain("empty"));
+    Assert.That(Directory.Exists(empty), Is.True, "a move whose copy did not arrive must not remove the source");
+  }
+
+  [Test]
+  public void GivenTheArchiveItself_WhenPastedIntoItself_ThenItIsRefused()
+    => Assert.That(Transfer.WhyNot([Item(Location.Folder(this._root), "b.zip")], Location.InArchive(this._b, ""), move: true),
+      Does.Contain("inside itself"));
+
+  [Test]
+  public void GivenArchiveFoldersDifferingOnlyInCase_WhenOneIsMovedOut_ThenTheOtherStaysInTheArchive() {
+    var zip = Zip("cases.zip", ("docs/a.txt", "lower"), ("DOCS/b.txt", "upper"));
+
+    Transfer.Run([Item(Location.InArchive(zip, ""), "docs", folder: true)], this.Disk("target"), move: true);
+
+    Assert.That(ZipContents(zip), Is.EquivalentTo(new Dictionary<string, string> { ["DOCS/b.txt"] = "upper" }),
+      "entry names are case-sensitive: moving docs must not sweep up DOCS");
+    Assert.That(File.ReadAllText(Path.Combine(this._disk, "target", "docs", "a.txt")), Is.EqualTo("lower"));
+  }
+
+  [Test]
+  public void GivenAbandonedStagingFolders_WhenANewTransferStagesThere_ThenOnlyTheStaleOnesAreSwept() {
+    var target = Path.Combine(this._disk, "target");
+    var stale = Directory.CreateDirectory(Path.Combine(target, Transfer.StagingPrefix + "old"));
+    var fresh = Directory.CreateDirectory(Path.Combine(target, Transfer.StagingPrefix + "new"));
+    stale.LastWriteTimeUtc = DateTime.UtcNow.AddDays(-2);
+
+    Transfer.Run([Item(this.Disk(), "file.txt")], this.Disk("target"), move: false);
+
+    Assert.That(Directory.Exists(stale.FullName), Is.False, "a crash leftover older than a day is swept");
+    Assert.That(Directory.Exists(fresh.FullName), Is.True, "a young one may belong to a transfer still running");
+  }
+
+  [Test]
+  public void GivenTheHostPlatform_WhenPathsAreCompared_ThenCaseCountsOnlyWhereTheFileSystemIgnoresIt() {
+    var ignoresCase = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
+
+    Assert.That(Transfer.SamePath(Path.Combine(this._root, "A"), Path.Combine(this._root, "a")), Is.EqualTo(ignoresCase));
+    Assert.That(Transfer.SamePath(Path.Combine(this._root, "a") + Path.DirectorySeparatorChar, Path.Combine(this._root, "a")), Is.True);
+  }
+
   // ── numbering ───────────────────────────────────────────────────────────────────────────────
 
   [TestCase("report.txt", new string[0], "report.txt")]
