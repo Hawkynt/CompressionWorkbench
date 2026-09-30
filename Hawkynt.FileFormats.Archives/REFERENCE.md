@@ -13072,11 +13072,11 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 ### Namespace `FileFormat.Dar`
 
-[`DarFormatDescriptor`](#darformatdescriptor)
+[`DarFormatDescriptor`](#darformatdescriptor) · [`DarSliceHeader`](#darsliceheader)
 
 #### `DarFormatDescriptor`
 
-DAR (Disk ARchive) slice — the libdar on-disk container. A slice begins with a slice header carrying the magic number `0x00 0x00 0x00 0x7E` (libdar's `SAUV_MAGIC_NUMBER`, stored big-endian) followed by the archive's internal label and a one-byte format/version flag. The terminal slice ends with a catalogue (the file tree) plus a trailing terminator that records the catalogue's start offset, letting a reader seek directly to the file listing. Honest scope: this descriptor surfaces a verbatim `FULL.dar`, a `metadata.ini` (slice magic validity, detected archive label, header flag, and — when locatable — the catalogue region offset/length read from the trailing terminator) and, when the catalogue region can be bounded, a structural `catalogue.bin` entry covering it. Full per-member enumeration requires decoding libdar's compressed catalogue tree and is deferred (documented via `member_enumeration=deferred` in the metadata). Detection is extension-driven (`.dar`) because the slice magic is too weak to claim generic files. Read-only; malformed input degrades to FULL + partial metadata without throwing. References: `http://dar.linux.free.fr` — official DAR site — libdar archive-structure notes`https://github.com/Edrusb/DAR` — canonical DAR/libdar source`https://en.wikipedia.org/wiki/Dar_(disk_archiver)` — background
+DAR (Disk ARchive) slice. Every slice file of a DAR archive starts with a slice header (see `DarSliceHeader`): big-endian magic 123, a 10-byte internal name shared by all slices of the archive, a last-slice flag and an extension that since archive format 8 is a TLV list carrying the slicing scheme and the data name. Format-8 slices also end in a one-byte trailer repeating the last-slice answer, which is the only place it lives when the header flag is `'E'` (every slice of a multi-slice archive). Honest scope: this descriptor surfaces a verbatim `FULL.dar` and a `metadata.ini` describing the slice header and trailer. The archive header, catalogue and member data live in the concatenated slice payloads, possibly compressed and encrypted, and are not decoded (`member_enumeration=deferred`). Detection is extension-driven (`.dar`) because a four-byte magic of 123 is too weak to claim generic files. Read-only; malformed input degrades to FULL + partial metadata without throwing.Verified against slices written by dar 2.8.6: single-slice, `-s` and `-S`/`-s` sets are checked in under `Compression.Tests/Dar/ReferenceVectors`. References: `https://darbinding.sourceforge.net/specs/dar3.html` — DAR format description (slice header, infinint)`https://dar.sourceforge.io/doc/Notes.html` — dar internals notes (TLV slice header, slice trailer)`https://en.wikipedia.org/wiki/Dar_(disk_archiver)` — background
 
 Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
@@ -13097,6 +13097,36 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `DarSliceHeader`
+
+The slice-level header every DAR slice file starts with, plus the one-byte slice trailer archive format 8 (dar 2.4.0) added.
+
+Implements `IEquatable<DarSliceHeader>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DarSliceHeader` | `DarSliceHeader(uint Magic, byte[] InternalName, char Flag, char Extension, int? HeaderLength, ulong? SliceSize, ulong? FirstSliceSize, byte[] DataName, IReadOnlyList<ushort> UnknownTlvTypes, char? Trailer, string Problem)` | The slice-level header every DAR slice file starts with, plus the one-byte slice trailer archive format 8 (dar 2.4.0) added. |
+| `FixedLength` | `const int FixedLength` | The fixed part of the header: magic, internal name, flag and extension. |
+| `NameLength` | `const int NameLength` | Length of the internal name and of the data name. |
+| `SliceMagic` | `const uint SliceMagic` | The value every DAR slice starts with, big-endian. |
+| `TlvDataName` | `const ushort TlvDataName` | TLV type carrying the data name. |
+| `TlvFirstSliceSize` | `const ushort TlvFirstSliceSize` | TLV type carrying the size of the first slice. |
+| `TlvSliceSize` | `const ushort TlvSliceSize` | TLV type carrying the size of every slice but the first. |
+| `DataName` | `byte[] DataName { get; init; }` | The 10-byte data name, when recorded. |
+| `Extension` | `char Extension { get; init; }` | The extension flag: `'N'`, `'S'` or `'T'`. |
+| `FirstSliceSize` | `ulong? FirstSliceSize { get; init; }` | Size of the first slice, when recorded apart from the others. |
+| `Flag` | `char Flag { get; init; }` | The header's last-slice flag: `'T'`, `'N'` or `'E'`. |
+| `HeaderLength` | `int? HeaderLength { get; init; }` | Bytes the header occupies, extension included; `null` when unreadable. |
+| `InternalName` | `byte[] InternalName { get; init; }` | The 10-byte identifier every slice of one archive shares. |
+| `IsLastSlice` | `bool? IsLastSlice { get; }` | Whether this is the last slice of its archive; `null` when the header defers to a trailer that is missing or unreadable. |
+| `IsValid` | `bool IsValid { get; }` | Whether the header was read to its end without a contradiction. |
+| `Magic` | `uint Magic { get; init; }` | The leading big-endian magic. |
+| `Problem` | `string Problem { get; init; }` | The first contradiction found, or `null`. |
+| `SliceSize` | `ulong? SliceSize { get; init; }` | Size of every slice but the first, when recorded. |
+| `Trailer` | `char? Trailer { get; init; }` | The slice trailer, when the file ends in `'T'` or `'N'`. |
+| `UnknownTlvTypes` | `IReadOnlyList<ushort> UnknownTlvTypes { get; init; }` | TLV types this reader skipped. |
+| `Parse` | `static DarSliceHeader Parse(ReadOnlySpan<byte> head, int lastByte)` | Reads the header from `head` (the first bytes of the slice) and the trailer from `lastByte` (the file's final byte, or -1 when the file is empty). Never throws on malformed input: the first contradiction is reported in `Problem`. |
 
 ### Namespace `FileFormat.Dbm`
 
