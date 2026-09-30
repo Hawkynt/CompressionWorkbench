@@ -1487,6 +1487,61 @@ public static class ArchiveOperations {
   }
 
   /// <summary>
+  /// Opens a single entry for reading without extracting the archive: the entry's bytes are
+  /// decoded as they are read, so a consumer can stream them straight to where they are going.
+  /// The archive file stays open until the returned stream is disposed.
+  /// </summary>
+  /// <remarks>
+  /// Formats with a native per-entry reader decode in place; the rest use the registry's
+  /// fallback, which spools the one entry through a temporary folder. A format that is not an
+  /// archive at all is answered from <see cref="ExtractEntry"/>.
+  /// </remarks>
+  public static Stream OpenEntry(string archivePath, string entryPath, string? password = null) {
+    ArgumentException.ThrowIfNullOrWhiteSpace(entryPath);
+    var format = FormatDetector.Detect(archivePath);
+    FormatRegistration.EnsureInitialized();
+    if (Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString()) is not { } ops)
+      return new MemoryStream(ExtractEntry(archivePath, entryPath, password), writable: false);
+
+    var archive = File.OpenRead(archivePath);
+    try {
+      return new EntryOwningStream(ops.OpenEntry(archive, entryPath, password), archive);
+    } catch {
+      archive.Dispose();
+      throw;
+    }
+  }
+
+  /// <summary>An entry stream that also owns the archive file it reads from.</summary>
+  private sealed class EntryOwningStream(Stream entry, Stream archive) : Stream {
+    public override bool CanRead => entry.CanRead;
+    public override bool CanSeek => entry.CanSeek;
+    public override bool CanWrite => false;
+    public override long Length => entry.Length;
+
+    public override long Position {
+      get => entry.Position;
+      set => entry.Position = value;
+    }
+
+    public override int Read(byte[] buffer, int offset, int count) => entry.Read(buffer, offset, count);
+    public override int Read(Span<byte> buffer) => entry.Read(buffer);
+    public override long Seek(long offset, SeekOrigin origin) => entry.Seek(offset, origin);
+    public override void Flush() { }
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+    protected override void Dispose(bool disposing) {
+      if (disposing) {
+        entry.Dispose();
+        archive.Dispose();
+      }
+
+      base.Dispose(disposing);
+    }
+  }
+
+  /// <summary>
   /// Extracts a single entry from an archive and returns its contents as a byte array.
   /// </summary>
   public static byte[] ExtractEntry(string archivePath, string entryPath, string? password) {
