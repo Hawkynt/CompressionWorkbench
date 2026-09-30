@@ -47,7 +47,9 @@ public static class DeleteCapability {
     if (string.IsNullOrEmpty(archivePath)) return DeleteMode.None;
 
     FormatRegistration.EnsureInitialized();
-    var format = FormatDetector.DetectByExtension(archivePath);
+    // By content, not by name: a ".bin" or extension-less file holding an ext4 volume must
+    // offer the ext4 modifier, not whatever the extension map would have guessed.
+    var format = FormatDetector.DetectCached(archivePath);
     if (format == FormatDetector.Format.Unknown) return DeleteMode.None;
     if (FormatDetector.IsStreamFormat(format)) return DeleteMode.ReadOnlyArchive;
 
