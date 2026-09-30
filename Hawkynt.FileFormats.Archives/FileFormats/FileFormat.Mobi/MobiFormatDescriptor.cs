@@ -7,15 +7,8 @@ namespace FileFormat.Mobi;
 
 /// <summary>
 /// Amazon Mobipocket eBook (<c>.mobi</c> / <c>.prc</c> / <c>.azw</c>). The archive
-/// view surfaces: <c>FULL.mobi</c>, <c>metadata.ini</c> (EXTH + PalmDB title),
-/// <c>cover.*</c> if an EXTH cover record is present, and per-record raw bodies
-/// under <c>records/</c>.
-/// <para>
-/// Scope cut: PalmDOC (LZ77-variant) text decompression is deferred — for now the
-/// "book content" entries are exposed as raw compressed records rather than
-/// decoded HTML. Metadata + cover, which is what most triage use cases want,
-/// works fully.
-/// </para>
+/// view surfaces the original container, parsed metadata and cover, raw PalmDB
+/// records, and decoded PalmDOC text when its compression type is supported.
 ///
 /// References:
 /// <list type="bullet">
@@ -24,7 +17,7 @@ namespace FileFormat.Mobi;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Mobipocket</c> — Wikipedia</description></item>
 /// </list>
 /// </summary>
-public sealed class MobiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class MobiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -41,7 +34,7 @@ public sealed class MobiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -67,7 +60,17 @@ public sealed class MobiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("palmdoc", "PalmDOC")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("palmdoc", "PalmDOC"), new("stored", "Stored")];
+  /// <summary>Format-specific creation options.</summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+    new("title", "Book title", FormatOptionKind.String, "", Description: "Title stored in the Palm database and EXTH metadata."),
+    new("author", "Author", FormatOptionKind.String, "", Description: "EXTH author metadata."),
+    new("publisher", "Publisher", FormatOptionKind.String, "", Description: "EXTH publisher metadata."),
+    new("description", "Description", FormatOptionKind.String, "", Description: "EXTH description metadata."),
+    new("isbn", "ISBN", FormatOptionKind.String, "", Description: "EXTH ISBN metadata."),
+    new("subject", "Subject", FormatOptionKind.String, "", Description: "EXTH subject metadata."),
+    new("language", "Language locale", FormatOptionKind.Integer, "1033", Description: "Palm/MOBI locale code; 1033 is English (United States)."),
+  ];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -79,7 +82,23 @@ public sealed class MobiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Amazon MOBI eBook; EXTH metadata + cover + raw PalmDB records.";
+  public string Description => "Amazon MOBI 7 eBook; creates UTF-8 HTML books with stored or PalmDOC text and preserves original containers, metadata, and raw records when reading.";
+
+  /// <summary>Creates a simple MOBI 7 book from one HTML input.</summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    if (!output.CanWrite)
+      throw new ArgumentException("Output stream must be writable.", nameof(output));
+    if (options.Password != null || options.EncryptFilenames || options.EncryptionMethod != null)
+      throw new NotSupportedException("This MOBI writer does not implement encryption.");
+    if (inputs.Count != 1 || inputs[0].IsDirectory)
+      throw new ArgumentException("MOBI creation requires exactly one HTML document input.", nameof(inputs));
+    var input = inputs[0];
+    var content = input.ReadContent();
+    MobiWriter.Write(output, content, input.ArchiveName, options);
+  }
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -150,9 +169,20 @@ public sealed class MobiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var recordOffsets = new int[numRecords + 1];
     for (var i = 0; i < numRecords; ++i) {
       if (78 + i * 8 + 4 > blob.Length) break;
-      recordOffsets[i] = (int)BinaryPrimitives.ReadUInt32BigEndian(blob.AsSpan(78 + i * 8));
+      var offset = BinaryPrimitives.ReadUInt32BigEndian(blob.AsSpan(78 + i * 8));
+      if (offset > blob.Length) return entries;
+      recordOffsets[i] = (int)offset;
     }
     recordOffsets[numRecords] = blob.Length;
+
+    // Expose every payload record verbatim so record-level data and proprietary
+    // extensions remain recoverable even when this reader cannot interpret them.
+    for (var i = 0; i < numRecords; ++i) {
+      var start = recordOffsets[i];
+      var end = recordOffsets[i + 1];
+      if (start < 0 || end < start || end > blob.Length) return entries;
+      entries.Add(($"records/{i:D4}.bin", "Record", blob.AsSpan(start, end - start).ToArray()));
+    }
 
     // Record 0 holds the PalmDOC header + MOBI header + EXTH.
     if (numRecords > 0) {
@@ -165,26 +195,73 @@ public sealed class MobiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       ini.Append("db_name=").AppendLine(dbName);
       ini.Append("records=").AppendLine(numRecords.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
-      // MOBI header starts at +16 (after PalmDOC header). Expect "MOBI" magic at +0 of it.
-      if (r0.Length >= 20 && r0[16] == 'M' && r0[17] == 'O' && r0[18] == 'B' && r0[19] == 'I') {
-        var mobiHeaderLen = BinaryPrimitives.ReadInt32BigEndian(r0[20..]);
-        var textEncoding = BinaryPrimitives.ReadInt32BigEndian(r0[(16 + 28)..]);
-        ini.Append("text_encoding=").AppendLine(textEncoding switch {
-          1252 => "Windows-1252",
-          65001 => "UTF-8",
-          _ => textEncoding.ToString(System.Globalization.CultureInfo.InvariantCulture),
-        });
+      // The MOBI header follows the 16-byte PalmDOC header. Field offsets below are from the start
+      // of record 0, as the MobileRead MOBI page tabulates them.
+      var hasMobiHeader = r0.Length >= 24 && r0[16..20].SequenceEqual("MOBI"u8);
+      var mobiHeaderLen = hasMobiHeader ? BinaryPrimitives.ReadUInt32BigEndian(r0[20..]) : 0u;
+      var mobiHeaderEnd = hasMobiHeader ? Math.Min((long)r0.Length, 16L + mobiHeaderLen) : 0L;
+      bool HasField(int offset) => offset + 4 <= mobiHeaderEnd;
 
-        // EXTH follows MOBI header if the EXTH flag bit 6 of mobiHeader[+128] is set.
-        var exthFlagOff = 16 + 128;
-        if (r0.Length >= exthFlagOff + 4) {
-          var exthFlag = BinaryPrimitives.ReadUInt32BigEndian(r0[exthFlagOff..]);
-          if ((exthFlag & 0x40) != 0) {
-            var exthStart = 16 + mobiHeaderLen;
-            if (exthStart + 12 <= r0.Length &&
-                r0[exthStart] == 'E' && r0[exthStart + 1] == 'X' && r0[exthStart + 2] == 'T' && r0[exthStart + 3] == 'H') {
-              ParseExth(r0[exthStart..], ini, entries, blob, recordOffsets);
+      // Extra record data flags (0xF0) only exist in headers long enough to hold them (228 or more).
+      var extraDataFlags = HasField(ExtraDataFlagsOffset) && mobiHeaderLen >= 0xE4
+        ? (ushort)BinaryPrimitives.ReadUInt32BigEndian(r0[ExtraDataFlagsOffset..])
+        : (ushort)0;
+
+      if (r0.Length >= 16) {
+        var compression = BinaryPrimitives.ReadUInt16BigEndian(r0);
+        var textLength = BinaryPrimitives.ReadUInt32BigEndian(r0[4..]);
+        var textRecordCount = BinaryPrimitives.ReadUInt16BigEndian(r0[8..]);
+        var encryption = BinaryPrimitives.ReadUInt16BigEndian(r0[12..]);
+        ini.Append("compression=").AppendLine(compression.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        ini.Append("text_length=").AppendLine(textLength.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        ini.Append("text_records=").AppendLine(textRecordCount.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        ini.Append("encryption=").AppendLine(encryption.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (extraDataFlags != 0)
+          ini.Append("extra_data_flags=0x").AppendLine(extraDataFlags.ToString("X4", System.Globalization.CultureInfo.InvariantCulture));
+        if (encryption == 0 && textLength <= int.MaxValue && textRecordCount > 0 && textRecordCount < numRecords) {
+          try {
+            var textRecords = new byte[textRecordCount][];
+            for (var i = 0; i < textRecordCount; ++i) {
+              var start = recordOffsets[i + 1];
+              var end = recordOffsets[i + 2];
+              if (end < start || end > blob.Length) throw new InvalidDataException("Invalid PalmDB text record offsets.");
+              textRecords[i] = blob.AsSpan(start, end - start).ToArray();
             }
+            var text = PalmDocCodec.DecodeRecords(textRecords, compression, (int)textLength, extraDataFlags);
+            entries.Add(("book.html", "BookText", text));
+          } catch (NotSupportedException) {
+            // Keep the raw records available for HUFF/CDIC or DRM-protected books.
+          } catch (InvalidDataException) {
+            // Malformed text streams do not invalidate access to intact raw records.
+          }
+        }
+      }
+
+      if (hasMobiHeader) {
+        if (HasField(TextEncodingOffset)) {
+          var textEncoding = BinaryPrimitives.ReadUInt32BigEndian(r0[TextEncodingOffset..]);
+          ini.Append("text_encoding=").AppendLine(textEncoding switch {
+            1252 => "Windows-1252",
+            65001 => "UTF-8",
+            _ => textEncoding.ToString(System.Globalization.CultureInfo.InvariantCulture),
+          });
+        }
+        if (HasField(FullNameLengthOffset)) {
+          var nameOffset = BinaryPrimitives.ReadUInt32BigEndian(r0[FullNameOffsetOffset..]);
+          var nameLength = BinaryPrimitives.ReadUInt32BigEndian(r0[FullNameLengthOffset..]);
+          if (nameOffset <= (uint)r0.Length && nameLength <= (uint)r0.Length - nameOffset)
+            AppendString(ini, "full_name", r0.Slice((int)nameOffset, (int)nameLength));
+        }
+        if (HasField(LocaleOffset))
+          ini.Append("language_locale=").AppendLine(BinaryPrimitives.ReadUInt32BigEndian(r0[LocaleOffset..]).ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        // An EXTH block follows the MOBI header when bit 6 of the EXTH flags is set.
+        if (HasField(ExthFlagsOffset) && (BinaryPrimitives.ReadUInt32BigEndian(r0[ExthFlagsOffset..]) & 0x40) != 0) {
+          var exthStart = 16L + mobiHeaderLen;
+          if (exthStart + 12 <= r0.Length) {
+            var exthIndex = (int)exthStart;
+            if (r0[exthIndex..(exthIndex + 4)].SequenceEqual("EXTH"u8))
+              ParseExth(r0[exthIndex..], ini, entries, blob, recordOffsets);
           }
         }
       }
@@ -193,6 +270,14 @@ public sealed class MobiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
     return entries;
   }
+
+  // MOBI header fields, as offsets from the start of record 0 (MobileRead "MOBI Header" table).
+  private const int TextEncodingOffset = 0x1C;
+  private const int FullNameOffsetOffset = 0x54;
+  private const int FullNameLengthOffset = 0x58;
+  private const int LocaleOffset = 0x5C;
+  private const int ExthFlagsOffset = 0x80;
+  private const int ExtraDataFlagsOffset = 0xF0;
 
   // EXTH: "EXTH" + header-len (4 BE) + record-count (4 BE) + N × (type:4 BE + length:4 BE + data).
   private static void ParseExth(ReadOnlySpan<byte> exth, StringBuilder ini,
@@ -205,7 +290,7 @@ public sealed class MobiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     for (var i = 0; i < recordCount && pos + 8 <= exth.Length; ++i) {
       var type = BinaryPrimitives.ReadInt32BigEndian(exth[pos..]);
       var len = BinaryPrimitives.ReadInt32BigEndian(exth[(pos + 4)..]);
-      if (len < 8 || pos + len > exth.Length) break;
+      if (len < 8 || len > exth.Length - pos) break;
       var data = exth.Slice(pos + 8, len - 8);
 
       switch (type) {

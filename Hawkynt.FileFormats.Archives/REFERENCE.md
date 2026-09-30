@@ -21112,9 +21112,9 @@ Computes the 32-bit Westwood "classic" file ID used by Tiberian Dawn / Red Alert
 
 #### `MobiFormatDescriptor`
 
-Amazon Mobipocket eBook (`.mobi` / `.prc` / `.azw`). The archive view surfaces: `FULL.mobi`, `metadata.ini` (EXTH + PalmDB title), `cover.*` if an EXTH cover record is present, and per-record raw bodies under `records/`. Scope cut: PalmDOC (LZ77-variant) text decompression is deferred — for now the "book content" entries are exposed as raw compressed records rather than decoded HTML. Metadata + cover, which is what most triage use cases want, works fully. References: `https://wiki.mobileread.com/wiki/MOBI` — MobileRead wiki — de-facto MOBI/EXTH format documentation`https://github.com/kovidgoyal/calibre` — Calibre — maintained implementation`https://en.wikipedia.org/wiki/Mobipocket` — Wikipedia
+Amazon Mobipocket eBook (`.mobi` / `.prc` / `.azw`). The archive view surfaces the original container, parsed metadata and cover, raw PalmDB records, and decoded PalmDOC text when its compression type is supported. References: `https://wiki.mobileread.com/wiki/MOBI` — MobileRead wiki — de-facto MOBI/EXTH format documentation`https://github.com/kovidgoyal/calibre` — Calibre — maintained implementation`https://en.wikipedia.org/wiki/Mobipocket` — Wikipedia
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -21130,7 +21130,9 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Format-specific creation options. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a simple MOBI 7 book from one HTML input. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |

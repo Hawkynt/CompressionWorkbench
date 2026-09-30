@@ -67,6 +67,10 @@
                       Exclude="StructuredPseudoArchives\ReferenceVectors\*.py;StructuredPseudoArchives\ReferenceVectors\*.pl;StructuredPseudoArchives\ReferenceVectors\*.ps1;StructuredPseudoArchives\ReferenceVectors\README.md">
       <LogicalName>ReferenceVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
+      <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>
