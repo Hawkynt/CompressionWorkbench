@@ -55,8 +55,9 @@ internal sealed class RefsWritableNamespace {
         if (row.Key.Length < 4 || BinaryPrimitives.ReadUInt16LittleEndian(row.Key) != 0x30) continue;
         var name = DecodeName(row.Key.AsSpan(4));
         if (name.Equals(parts[partIndex], StringComparison.OrdinalIgnoreCase)) {
+          if (match != null)
+            throw new NotSupportedException($"ReFS path '{path}' is ambiguous at '{parts[partIndex]}' under case-insensitive lookup.");
           match = row;
-          break;
         }
       }
       if (match == null)
