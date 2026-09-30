@@ -25494,9 +25494,9 @@ Implements `IEquatable<PyInstallerEntry>`.
 
 #### `PyInstallerFormatDescriptor`
 
-Read-only descriptor for the PyInstaller CArchive appended to a "onefile" executable. Detection is by the trailing MEI cookie (see `FormatDetector.DetectInstaller`); listing/extraction is delegated to `PyInstallerReader`. References: `https://github.com/pyinstaller/pyinstaller` — canonical implementation (bootloader sources define the MEI cookie and CArchive TOC)`https://pyinstaller.org/en/stable/advanced-topics.html` — official docs on the CArchive / ZlibArchive layout and the bootstrap process
+Descriptor for PyInstaller CArchive files and the archive appended to a "onefile" executable. Detection is by the trailing MEI cookie (see `FormatDetector.DetectInstaller`); listing/extraction is delegated to `PyInstallerReader`. References: `https://github.com/pyinstaller/pyinstaller` — canonical implementation (bootloader sources define the MEI cookie and CArchive TOC)`https://pyinstaller.org/en/stable/advanced-topics.html` — official docs on the CArchive / ZlibArchive layout and the bootstrap process
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -25512,7 +25512,9 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Gets the format-specific options understood by the CArchive writer. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a bare PyInstaller CArchive payload. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 

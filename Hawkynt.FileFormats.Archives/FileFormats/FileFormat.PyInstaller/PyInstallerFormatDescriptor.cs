@@ -7,8 +7,8 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.PyInstaller;
 
 /// <summary>
-/// Read-only descriptor for the PyInstaller CArchive appended to a "onefile"
-/// executable. Detection is by the trailing MEI cookie (see
+/// Descriptor for PyInstaller CArchive files and the archive appended to a
+/// "onefile" executable. Detection is by the trailing MEI cookie (see
 /// <c>FormatDetector.DetectInstaller</c>); listing/extraction is delegated to
 /// <see cref="PyInstallerReader"/>.
 ///
@@ -18,7 +18,7 @@ namespace FileFormat.PyInstaller;
 ///   <item><description><c>https://pyinstaller.org/en/stable/advanced-topics.html</c> — official docs on the CArchive / ZlibArchive layout and the bootstrap process</description></item>
 /// </list>
 /// </summary>
-public sealed class PyInstallerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class PyInstallerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
 
   /// <summary>
   /// Gets the id.
@@ -36,12 +36,12 @@ public sealed class PyInstallerFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
-  public string DefaultExtension => ".exe";
+  public string DefaultExtension => ".pkg";
 
   // The MEI cookie sits near EOF (after the PE image), so detection is handled by
   // the installer scan rather than a start-of-file magic or a shared ".exe"
@@ -61,7 +61,7 @@ public sealed class PyInstallerFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("pyinstaller", "PyInstaller CArchive")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("zlib", "Zlib"), new("stored", "Stored")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -73,7 +73,59 @@ public sealed class PyInstallerFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "PyInstaller onefile executable archive";
+  public string Description => "PyInstaller CArchive payload (onefile archive component; does not include a bootloader executable)";
+
+  /// <summary>Gets the format-specific options understood by the CArchive writer.</summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+    new("PythonVersion", "Python version", FormatOptionKind.Integer, "313", Description: "Python version encoded in the CArchive cookie (for example 313 for Python 3.13)."),
+    new("PythonLibraryName", "Python library name", FormatOptionKind.String, "", Description: "Python shared-library name the bootloader loads (cookie field, under 64 ASCII bytes); empty means python<version>.dll, e.g. python313.dll. PyInstaller's reader refuses an archive without one."),
+    new("TypeCode", "Entry type code", FormatOptionKind.Enum, "x", ["x", "b"], "CArchive type code for every input entry: x = data file, b = binary (shared library). Other codes mark marshalled code, options or nested archives and are refused."),
+    new("Compress", "Compress entries", FormatOptionKind.Boolean, "true", Description: "Apply zlib compression to every input entry; use Method=stored to override this."),
+    new("TargetOs", "Target bootloader", FormatOptionKind.Enum, "posix", ["posix", "windows"], "Path separator in entry names: the Windows bootloader only understands backslashes, the Linux and macOS ones forward slashes."),
+  ];
+
+  /// <summary>Creates a bare PyInstaller CArchive payload.</summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    if (!output.CanWrite)
+      throw new ArgumentException("Output stream must be writable.", nameof(output));
+    var version = options.GetOptionInt("PythonVersion", 313);
+    if (version < 0)
+      throw new ArgumentOutOfRangeException(nameof(options), "PythonVersion must be non-negative.");
+
+    // The bootloader loads this library and PyInstaller's own reader refuses an
+    // archive whose cookie leaves it empty, so there is always a name.
+    var libraryName = options.GetOption("PythonLibraryName", string.Empty);
+    if (string.IsNullOrEmpty(libraryName))
+      libraryName = string.Create(CultureInfo.InvariantCulture, $"python{version}.dll");
+    if (libraryName.Length >= 64 || libraryName.Any(c => c is '\0' or > '\x7f'))
+      throw new ArgumentException("PythonLibraryName must be ASCII and shorter than 64 bytes.", nameof(options));
+
+    // Only the two codes that mean "these are the file's bytes" are offered: the
+    // rest tell the bootloader to unmarshal code, apply an option, or open a
+    // nested archive, which arbitrary input bytes are not.
+    var typeCodeText = options.GetOption("TypeCode", "x");
+    if (typeCodeText is not ("x" or "b"))
+      throw new ArgumentException($"TypeCode '{typeCodeText}' is not supported; use x (data) or b (binary).", nameof(options));
+
+    var compress = !string.Equals(options.MethodName, "stored", StringComparison.OrdinalIgnoreCase)
+      && options.GetOptionBool("Compress", true);
+    if (options.MethodName is { Length: > 0 } method &&
+        !method.Equals("zlib", StringComparison.OrdinalIgnoreCase) &&
+        !method.Equals("deflate", StringComparison.OrdinalIgnoreCase) &&
+        !method.Equals("stored", StringComparison.OrdinalIgnoreCase))
+      throw new NotSupportedException($"Unsupported PyInstaller CArchive method '{method}'. Use zlib or stored.");
+
+    var separator = options.GetOption("TargetOs", "posix").ToLowerInvariant() switch {
+      "posix" => '/',
+      "windows" => '\\',
+      var other => throw new ArgumentException($"TargetOs '{other}' is not supported; use posix or windows.", nameof(options)),
+    };
+
+    PyInstallerWriter.Create(output, inputs.Where(input => !input.IsDirectory).ToArray(), version, libraryName, typeCodeText[0], compress, options.Level, separator);
+  }
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -199,10 +251,12 @@ public sealed class PyInstallerFormatDescriptor : IFormatDescriptor, IArchiveFor
     sb.AppendLine("  \"packer\": \"pyinstaller\",");
     sb.AppendLine("  \"container\": \"onefile-carchive\",");
     sb.AppendLine("  \"capabilityLevel\": \"PayloadDecompressed\",");
+    sb.AppendLine("  \"canCreateCArchivePayload\": true,");
     sb.AppendLine("  \"canRebuildExecutable\": false,");
     sb.Append(CultureInfo.InvariantCulture, $"  \"pythonVersion\": {reader.PythonVersion},\n");
     sb.AppendLine("  \"warnings\": [");
-    sb.AppendLine("    \"PyInstaller onefile extraction reconstructs bundled archive entries; it does not rebuild the original source project or a runnable unpacked executable.\"");
+    sb.AppendLine("    \"Creation emits a bare CArchive payload (.pkg); a matching platform bootloader is required to produce a runnable onefile executable.\",");
+    sb.AppendLine("    \"Extracted archive entry bytes are preserved; CArchive timestamps, permissions, and per-entry type codes are not represented by the generic archive input API.\"");
     sb.AppendLine("  ],");
     sb.AppendLine("  \"outputs\": [");
     sb.AppendLine("    \"metadata.json\",");
