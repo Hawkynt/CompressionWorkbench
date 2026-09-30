@@ -45,7 +45,7 @@ public sealed class Mp4FastStart : IFileInternalChunkMover {
     // Read moov bytes into memory.
     var moovBytes = new byte[moov.Size];
     file.Position = moov.Offset;
-    ReadExactly(file, moovBytes, 0, moovBytes.Length);
+    file.ReadExactly(moovBytes);
 
     // Patch stco/co64 offsets inside moov: add moov.Size to every offset
     // because mdat will be shifted forward by moov.Size bytes.
@@ -176,19 +176,10 @@ public sealed class Mp4FastStart : IFileInternalChunkMover {
       var readPos = srcOffset + remaining - chunk;
       var writePos = readPos + delta;
       file.Position = readPos;
-      ReadExactly(file, buffer, 0, chunk);
+      file.ReadExactly(buffer, 0, chunk);
       file.Position = writePos;
       file.Write(buffer, 0, chunk);
       remaining -= chunk;
-    }
-  }
-
-  private static void ReadExactly(Stream stream, byte[] buffer, int offset, int count) {
-    var totalRead = 0;
-    while (totalRead < count) {
-      var read = stream.Read(buffer, offset + totalRead, count - totalRead);
-      if (read == 0) throw new EndOfStreamException("Unexpected end of stream while reading MP4 data.");
-      totalRead += read;
     }
   }
 

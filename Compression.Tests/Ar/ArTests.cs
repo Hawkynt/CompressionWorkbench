@@ -181,4 +181,17 @@ public class ArTests {
     Assert.That(result[0].Name, Is.EqualTo("empty.txt"));
     Assert.That(result[0].Data, Is.Empty);
   }
+
+  [Test, Category("EdgeCase")]
+  public void Given_MtimeBeyondTheDateRange_When_Read_Then_EntryIsListedWithTheEpoch() {
+    // 999999999999 s is past year 9999, which DateTimeOffset cannot represent.
+    var header = "a.txt/          " + "999999999999" + "0     " + "0     " + "100644  " + "1         " + "`\n";
+    var archive = System.Text.Encoding.ASCII.GetBytes("!<arch>\n" + header + "x\n");
+
+    using var reader = new ArReader(new MemoryStream(archive));
+
+    Assert.That(reader.Entries, Has.Count.EqualTo(1));
+    Assert.That(reader.Entries[0].Name, Is.EqualTo("a.txt"));
+    Assert.That(reader.Entries[0].ModifiedTime, Is.EqualTo(DateTimeOffset.UnixEpoch));
+  }
 }

@@ -940,7 +940,7 @@ public sealed class WinUpackFallbackExecutablePackerHandler : MinorExecutablePac
     var sections = PackerScanner.GetPeSections(image);
     var hasLiteral = image.IndexOf("Upack"u8) >= 0 || image.IndexOf("By Dwing"u8) >= 0;
     var hasSection = sections.Any(s => s.Name.Contains("Upack", StringComparison.OrdinalIgnoreCase));
-    var hasPs = sections.Count > 0 && sections[0].Name.StartsWith("PS");
+    var hasPs = sections.Count > 0 && sections[0].Name.StartsWith("PS", StringComparison.Ordinal);
     if (hasLiteral || hasSection || hasPs) return new(true, this.Id, 0.85, []);
     return new(false, this.Id, 0, []);
   }

@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using Codec.Nes2a03;
 using Codec.Pcm;
@@ -179,7 +180,7 @@ public sealed class NsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // (expansion chip, runaway program, malformed data) degrades silently to header/program.
     var rendered = TryRenderNesm(blob);
     if (rendered is { } wav) {
-      sb.AppendLine($"rendered_duration={RenderSeconds:0.#}s");
+      sb.AppendLine(CultureInfo.InvariantCulture, $"rendered_duration={RenderSeconds:0.#}s");
       sb.AppendLine($"rendered_sample_rate={OutputSampleRate}");
       sb.AppendLine($"rendered_song={startSong}");
       sb.AppendLine($"rendered_region={DescribeRegion(palNtscFlags)}");

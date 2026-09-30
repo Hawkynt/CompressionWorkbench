@@ -25,7 +25,7 @@ public sealed class ChmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new ChmReader(stream);
-        return r.Entries.Where(e => e.Size > 0 && !e.Path.StartsWith("::")).Select(e => (e.Path, r.Extract(e)));
+        return r.Entries.Where(e => e.Size > 0 && !e.Path.StartsWith("::", StringComparison.Ordinal)).Select(e => (e.Path, r.Extract(e)));
       },
       buildImage: files => {
         var w = new ChmWriter();
@@ -120,7 +120,7 @@ public sealed class ChmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var r = new ChmReader(stream);
     foreach (var e in r.Entries) {
       if (e.Size == 0) continue;
-      if (e.Path.StartsWith("::")) continue; // skip internal entries
+      if (e.Path.StartsWith("::", StringComparison.Ordinal)) continue; // skip internal entries
       if (files != null && !MatchesFilter(e.Path, files)) continue;
       try {
         WriteFile(outputDir, e.Path.TrimStart('/'), r.Extract(e));

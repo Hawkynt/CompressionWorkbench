@@ -144,13 +144,6 @@ internal sealed class ParallelsGuestDiskStream : Stream {
     return new ParallelsGuestDiskStream(source, bat, blockSizeSectors, imageSizeSectors);
   }
 
-  private static bool TryReadExact(Stream stream, Span<byte> buffer) {
-    var read = 0;
-    while (read < buffer.Length) {
-      var n = stream.Read(buffer[read..]);
-      if (n <= 0) return false;
-      read += n;
-    }
-    return true;
-  }
+  private static bool TryReadExact(Stream stream, Span<byte> buffer) =>
+    stream.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false) == buffer.Length;
 }

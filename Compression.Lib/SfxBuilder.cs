@@ -210,7 +210,7 @@ public static class SfxBuilder {
   private static string FindStub(StubType stubType, string? targetRid = null, string? formatId = null) {
     var rid = targetRid ?? CurrentRid();
     var stubName = stubType == StubType.Cli ? "sfx-cli" : "sfx-ui";
-    var suffix = rid.StartsWith("win") ? ".exe" : "";
+    var suffix = rid.StartsWith("win", StringComparison.Ordinal) ? ".exe" : "";
 
     // A stub carved for this one format is a twentieth the size of the universal one, so it is
     // preferred whenever the matrix happens to have published it. Falling back is not a failure:

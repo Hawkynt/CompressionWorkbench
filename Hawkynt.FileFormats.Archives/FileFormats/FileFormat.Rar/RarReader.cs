@@ -165,7 +165,7 @@ public sealed class RarReader : IDisposable {
         throw new InvalidDataException($"Entry '{entry.Name}' is encrypted but has no IV.");
 
       var encryptedData = new byte[dataSize];
-      ReadExact(this._stream, encryptedData, 0, encryptedData.Length);
+      this._stream.ReadExactly(encryptedData);
       var decryptedData = DecryptData(encryptedData, fileHeader.EncryptionIv);
 
       // Decrypted data may have AES padding bytes; trim to unpacked compressed size
@@ -230,7 +230,7 @@ public sealed class RarReader : IDisposable {
 
     this._stream.Position = detail.DataOffset;
     var compressed = new byte[detail.DataSize];
-    ReadExact(this._stream, compressed, 0, compressed.Length);
+    this._stream.ReadExactly(compressed);
 
     // Decrypt if encrypted
     if (detail.Salt != null) {
@@ -438,7 +438,7 @@ public sealed class RarReader : IDisposable {
         }
 
         var fileBuf = new byte[remaining];
-        ReadExact(this._stream, fileBuf, 0, remaining);
+        this._stream.ReadExactly(fileBuf, 0, remaining);
 
         var packSize = (long)BinaryPrimitives.ReadUInt32LittleEndian(fileBuf);
         var unpSize = (long)BinaryPrimitives.ReadUInt32LittleEndian(fileBuf.AsSpan(4));
@@ -524,7 +524,7 @@ public sealed class RarReader : IDisposable {
         // For headers with ADD_SIZE, read the additional data size
         if ((headFlags & RarConstants.Rar4FlagAddSize) != 0 && remaining >= 4) {
           var addSizeBuf = new byte[4];
-          ReadExact(this._stream, addSizeBuf, 0, 4);
+          this._stream.ReadExactly(addSizeBuf, 0, 4);
           addSize = BinaryPrimitives.ReadUInt32LittleEndian(addSizeBuf);
           remaining -= 4;
         }
@@ -545,15 +545,6 @@ public sealed class RarReader : IDisposable {
       totalRead += read;
     }
     return true;
-  }
-
-  private static void ReadExact(Stream stream, byte[] buffer, int offset, int count) {
-    var totalRead = 0;
-    while (totalRead < count) {
-      var read = stream.Read(buffer, offset + totalRead, count - totalRead);
-      if (read == 0) throw new EndOfStreamException();
-      totalRead += read;
-    }
   }
 
   private void ReadFileEntry(RarHeader header) {

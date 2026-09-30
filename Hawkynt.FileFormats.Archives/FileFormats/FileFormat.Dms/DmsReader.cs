@@ -43,7 +43,7 @@ public sealed class DmsReader : IDisposable {
       ThrowInvalid("Stream is too short to be a DMS archive.");
 
     Span<byte> headerBuf = stackalloc byte[DmsConstants.FileHeaderSize];
-    ReadFully(this._stream, headerBuf);
+    this._stream.ReadExactly(headerBuf);
 
     // Verify magic.
     var magic = BinaryPrimitives.ReadUInt32BigEndian(headerBuf);
@@ -138,7 +138,7 @@ public sealed class DmsReader : IDisposable {
 
     this._stream.Position = track.DataOffset;
     var compressed = new byte[track.CompressedSize];
-    ReadFully(this._stream, compressed);
+    this._stream.ReadExactly(compressed);
 
     // Verify compressed data CRC.
     var compCrc = ComputeCrc16(compressed);
@@ -275,16 +275,6 @@ public sealed class DmsReader : IDisposable {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-
-  private static void ReadFully(Stream stream, Span<byte> buffer) {
-    var offset = 0;
-    while (offset < buffer.Length) {
-      var read = stream.Read(buffer[offset..]);
-      if (read == 0)
-        throw new EndOfStreamException("Unexpected end of DMS archive data.");
-      offset += read;
-    }
-  }
 
   private static void ThrowInvalid(string message) =>
     throw new InvalidDataException(message);

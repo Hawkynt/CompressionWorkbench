@@ -305,4 +305,15 @@ public class WarcTests {
     Assert.That(all[1].Entry.TargetUri, Is.EqualTo("https://example.com/b.bin"));
     Assert.That(all[1].Payload, Is.EqualTo(p2));
   }
+
+  private static byte[] RecordDeclaring(string contentLength)
+    => Encoding.ASCII.GetBytes($"WARC/1.1\r\nWARC-Type: resource\r\nContent-Length: {contentLength}\r\n\r\nabc\r\n\r\n");
+
+  [Test, Category("Exceptional")]
+  public void Given_NegativeContentLength_When_Read_Then_InvalidDataException()
+    => Assert.Throws<InvalidDataException>(() => ReadAll(RecordDeclaring("-1")));
+
+  [Test, Category("Exceptional")]
+  public void Given_ContentLengthBeyondTheStream_When_Read_Then_InvalidDataExceptionWithoutAllocatingIt()
+    => Assert.Throws<InvalidDataException>(() => ReadAll(RecordDeclaring("1000000000000")));
 }

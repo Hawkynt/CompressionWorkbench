@@ -122,7 +122,7 @@ public sealed class AiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var dir = Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
-    if (dir == "" && (name.EndsWith(".aif") || name.EndsWith(".aiff") || name.EndsWith(".aifc") || name.EndsWith(".wav"))) {
+    if (dir == "" && (name.EndsWith(".aif", StringComparison.Ordinal) || name.EndsWith(".aiff", StringComparison.Ordinal) || name.EndsWith(".aifc", StringComparison.Ordinal) || name.EndsWith(".wav", StringComparison.Ordinal))) {
       reason = null; return true;
     }
     if (dir == "metadata") { reason = null; return true; }

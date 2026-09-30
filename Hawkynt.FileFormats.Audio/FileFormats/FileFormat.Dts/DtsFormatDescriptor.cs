@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Globalization;
 using System.Text;
 using Codec.Dts;
 using Codec.Pcm;
@@ -230,7 +231,7 @@ public sealed class DtsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     var duration = first.SampleRate > 0 ? (double)totalSamples / first.SampleRate : 0;
     info.AppendLine($"frames={frames}");
-    info.AppendLine($"duration_seconds={duration:0.###}");
+    info.AppendLine(CultureInfo.InvariantCulture, $"duration_seconds={duration:0.###}");
     info.AppendLine($"dts_hd_present={(hasDtsHd ? "yes" : "no")}");
     return info.ToString();
   }

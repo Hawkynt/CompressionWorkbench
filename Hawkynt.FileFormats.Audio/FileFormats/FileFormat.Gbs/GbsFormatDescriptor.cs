@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using Codec.GameBoyApu;
 using Codec.Pcm;
@@ -140,8 +141,8 @@ public sealed class GbsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var song = firstSong < 1 ? 0 : firstSong - 1;
     var rendered = TryRender(blob, song);
     if (rendered is { } r) {
-      sb.AppendLine($"rendered_duration={RenderSeconds:0.#}s");
-      sb.AppendLine($"rendered_rate={r.FrameRateHz:0.##}Hz");
+      sb.AppendLine(CultureInfo.InvariantCulture, $"rendered_duration={RenderSeconds:0.#}s");
+      sb.AppendLine(CultureInfo.InvariantCulture, $"rendered_rate={r.FrameRateHz:0.##}Hz");
       sb.AppendLine($"rendered_channels=stereo");
       sb.AppendLine($"rendered_sample_rate={OutputSampleRate}");
     }

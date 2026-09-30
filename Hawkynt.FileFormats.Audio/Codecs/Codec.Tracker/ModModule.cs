@@ -210,9 +210,9 @@ public static class ModModule {
     }
     // xCHN (e.g. 2CHN..9CHN) and xxCH (e.g. 16CH, 32CH).
     if (sig.Length == 4) {
-      if (sig.EndsWith("CHN") && char.IsDigit(sig[0]))
+      if (sig.EndsWith("CHN", StringComparison.Ordinal) && char.IsDigit(sig[0]))
         return sig[0] - '0';
-      if (sig.EndsWith("CH") && char.IsDigit(sig[0]) && char.IsDigit(sig[1]))
+      if (sig.EndsWith("CH", StringComparison.Ordinal) && char.IsDigit(sig[0]) && char.IsDigit(sig[1]))
         return (sig[0] - '0') * 10 + (sig[1] - '0');
     }
     return 4; // SoundTracker / unknown → 4 channels

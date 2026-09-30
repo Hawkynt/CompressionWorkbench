@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using Codec.Pcm;
 using Codec.TrackerXmIt;
@@ -240,7 +241,7 @@ public sealed class XmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     if (songWav != null) {
       info.AppendLine($"rendered_sample_rate={TrackerRender.OutputSampleRate}");
       info.AppendLine($"rendered_channels={TrackerRender.OutputChannels}");
-      info.AppendLine($"rendered_duration={renderedSeconds:0.##}s");
+      info.AppendLine(CultureInfo.InvariantCulture, $"rendered_duration={renderedSeconds:0.##}s");
     }
     info.AppendLine($"rendered_status={renderNote}");
     entries.Insert(1, ("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));

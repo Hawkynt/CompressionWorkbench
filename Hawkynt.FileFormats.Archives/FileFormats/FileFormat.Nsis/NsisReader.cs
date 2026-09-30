@@ -68,7 +68,7 @@ public sealed class NsisReader : IDisposable {
 
     // Read the NSIS first-header (28 bytes)
     Span<byte> hdr = stackalloc byte[NsisConstants.FirstHeaderSize];
-    ReadExact(stream, hdr);
+    stream.ReadExactly(hdr);
 
     // Validate signature at offset 4 within the first-header
     if (!hdr.Slice(NsisConstants.SignatureOffset, NsisConstants.SignatureLength)
@@ -115,14 +115,14 @@ public sealed class NsisReader : IDisposable {
 
     // Read 4-byte length prefix
     Span<byte> lenBuf = stackalloc byte[4];
-    ReadExact(_stream, lenBuf);
+    _stream.ReadExactly(lenBuf);
     var word = BinaryPrimitives.ReadUInt32LittleEndian(lenBuf);
 
     var stored = (word & NsisConstants.UncompressedFlag) != 0;
     var  compressedSize = (int)(word & ~NsisConstants.UncompressedFlag);
 
     var compressedData = new byte[compressedSize];
-    ReadExact(_stream, compressedData);
+    _stream.ReadExactly(compressedData);
 
     return stored ? compressedData : DecompressBlock(compressedData);
   }
@@ -329,7 +329,7 @@ public sealed class NsisReader : IDisposable {
     var lenBufArr = new byte[4];
 
     for (var i = 0; i < targetIndex; ++i) {
-      ReadExact(_stream, lenBufArr);
+      _stream.ReadExactly(lenBufArr);
       var word = BinaryPrimitives.ReadUInt32LittleEndian(lenBufArr);
       var  size = (int)(word & ~NsisConstants.UncompressedFlag);
       _stream.Position += size;
@@ -371,7 +371,7 @@ public sealed class NsisReader : IDisposable {
   private static byte[] DecompressZlibStream(Stream s) {
     // Skip 2-byte zlib header
     Span<byte> skip = stackalloc byte[NsisConstants.ZlibHeaderSize];
-    ReadExact(s, skip);
+    s.ReadExactly(skip);
     var decompressor = new DeflateDecompressor(s);
     return decompressor.DecompressAll();
   }
@@ -397,7 +397,7 @@ public sealed class NsisReader : IDisposable {
   private static byte[] DecompressLzmaStream(Stream s) {
     // NSIS LZMA sub-header: 5-byte properties + 8-byte uncompressed size (LE int64)
     Span<byte> lzmaHdr = stackalloc byte[NsisConstants.LzmaHeaderSize];
-    ReadExact(s, lzmaHdr);
+    s.ReadExactly(lzmaHdr);
 
     var props = lzmaHdr[..NsisConstants.LzmaPropSize].ToArray();
     var uncompressedSize = BinaryPrimitives.ReadInt64LittleEndian(lzmaHdr[NsisConstants.LzmaPropSize..]);
@@ -410,25 +410,8 @@ public sealed class NsisReader : IDisposable {
   // Low-level I/O helpers
   // -------------------------------------------------------------------------
 
-  private static void ReadExact(Stream s, Span<byte> buf) {
-    var total = 0;
-    while (total < buf.Length) {
-      var n = s.Read(buf[total..]);
-      if (n == 0)
-        throw new EndOfStreamException($"Unexpected end of stream while reading {buf.Length} bytes.");
-      total += n;
-    }
-  }
-
-  private static bool TryReadExact(Stream s, Span<byte> buf) {
-    var total = 0;
-    while (total < buf.Length) {
-      var n = s.Read(buf[total..]);
-      if (n == 0) return false;
-      total += n;
-    }
-    return true;
-  }
+  private static bool TryReadExact(Stream s, Span<byte> buf) =>
+    s.ReadAtLeast(buf, buf.Length, throwOnEndOfStream: false) == buf.Length;
 
   private static byte[] ReadAllBytes(Stream s) {
     using var ms = new MemoryStream();

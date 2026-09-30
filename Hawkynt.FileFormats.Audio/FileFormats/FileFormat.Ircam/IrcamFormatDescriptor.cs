@@ -145,7 +145,7 @@ public sealed class IrcamFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
-    if (name is "full.sf" or "metadata.ini" || name.EndsWith(".wav")) {
+    if (name is "full.sf" or "metadata.ini" || name.EndsWith(".wav", StringComparison.Ordinal)) {
       reason = null; return true;
     }
     reason = $"not an IRCAM-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";

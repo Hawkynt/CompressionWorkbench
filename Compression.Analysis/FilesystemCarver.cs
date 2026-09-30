@@ -87,7 +87,7 @@ public sealed class FilesystemCarver {
     while (windowStart < length && results.Count < this.Options.MaxHits) {
       stream.Position = windowStart;
       var toRead = (int)Math.Min(buffer.Length, length - windowStart);
-      var read = ReadExactlyOrEof(stream, buffer, 0, toRead);
+      var read = stream.ReadAtLeast(buffer.AsSpan(0, toRead), toRead, throwOnEndOfStream: false);
       if (read <= 0) break;
 
       var scanResults = SignatureScanner.Scan(
@@ -142,7 +142,7 @@ public sealed class FilesystemCarver {
 
     var prefix = new byte[prefixLength];
     stream.Position = offset;
-    var read = ReadExactlyOrEof(stream, prefix, 0, prefixLength);
+    var read = stream.ReadAtLeast(prefix.AsSpan(0, prefixLength), prefixLength, throwOnEndOfStream: false);
     if (read <= 0) return result;
     var span = prefix.AsSpan(0, read);
 
@@ -306,16 +306,6 @@ public sealed class FilesystemCarver {
       if ((span[offset + i] & mask[i]) != (pattern[i] & mask[i]))
         return false;
     return true;
-  }
-
-  private static int ReadExactlyOrEof(Stream stream, byte[] buffer, int offset, int count) {
-    var total = 0;
-    while (total < count) {
-      var read = stream.Read(buffer, offset + total, count - total);
-      if (read <= 0) break;
-      total += read;
-    }
-    return total;
   }
 }
 

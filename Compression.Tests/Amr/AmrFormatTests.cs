@@ -100,6 +100,14 @@ public class AmrFormatTests {
     Assert.That(text, Does.Contain("encode/mux/demux enabled"));
   }
 
+  [Test, SetCulture("de-DE")]
+  public void Given_CultureWithDecimalComma_When_MetadataExtracted_Then_DurationUsesADecimalPoint() {
+    var output = new MemoryStream();
+    new AmrFormatDescriptor().ExtractEntry(new MemoryStream(NbFile(5)), "metadata.ini", output, null);
+    var text = Encoding.UTF8.GetString(output.ToArray());
+    Assert.That(text, Does.Contain("duration_seconds=0.1" + Environment.NewLine)); // 5 frames x 20 ms
+  }
+
   [Test]
   public void Malformed_UnknownHeader_SurfacesFullAndNote() {
     var blob = "#!AMR??garbage"u8.ToArray();

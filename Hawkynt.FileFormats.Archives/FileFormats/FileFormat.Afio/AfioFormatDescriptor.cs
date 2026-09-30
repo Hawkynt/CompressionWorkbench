@@ -218,13 +218,6 @@ public sealed class AfioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return Convert.ToInt64(slice, 8);
   }
 
-  private static bool TryReadExact(Stream stream, Span<byte> buffer) {
-    var read = 0;
-    while (read < buffer.Length) {
-      var n = stream.Read(buffer[read..]);
-      if (n <= 0) return read == buffer.Length;
-      read += n;
-    }
-    return true;
-  }
+  private static bool TryReadExact(Stream stream, Span<byte> buffer) =>
+    stream.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false) == buffer.Length;
 }

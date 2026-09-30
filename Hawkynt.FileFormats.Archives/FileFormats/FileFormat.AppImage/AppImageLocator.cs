@@ -44,7 +44,7 @@ internal static class AppImageLocator {
 
     stream.Position = 0;
     Span<byte> ident = stackalloc byte[16];
-    ReadExact(stream, ident);
+    stream.ReadExactly(ident);
 
     if (ident[0] != 0x7F || ident[1] != (byte)'E' || ident[2] != (byte)'L' || ident[3] != (byte)'F')
       throw new InvalidDataException("Not an ELF file, cannot be an AppImage.");
@@ -69,7 +69,7 @@ internal static class AppImageLocator {
 
     stream.Position = 0;
     var hdr = new byte[headerLen];
-    ReadExact(stream, hdr);
+    stream.ReadExactly(hdr);
 
     var machine = ReadU16(hdr, 0x12, le);
     long phoff, shoff;
@@ -100,7 +100,7 @@ internal static class AppImageLocator {
       if (shoff + tableLen <= fileLength) {
         stream.Position = shoff;
         var table = new byte[tableLen];
-        ReadExact(stream, table);
+        stream.ReadExactly(table);
         for (var i = 0; i < shnum; i++) {
           var rowOff = i * shentsize;
           var shType = ReadU32(table, rowOff + 4, le);
@@ -168,17 +168,6 @@ internal static class AppImageLocator {
     243 => "riscv",
     _ => $"em_{m}",
   };
-
-  private static void ReadExact(Stream s, Span<byte> buf) {
-    var total = 0;
-    while (total < buf.Length) {
-      var n = s.Read(buf[total..]);
-      if (n <= 0) throw new EndOfStreamException("Unexpected EOF while reading ELF header.");
-      total += n;
-    }
-  }
-
-  private static void ReadExact(Stream s, byte[] buf) => ReadExact(s, buf.AsSpan());
 
   private static ushort ReadU16(ReadOnlySpan<byte> b, int o, bool le) =>
     le ? BinaryPrimitives.ReadUInt16LittleEndian(b[o..])

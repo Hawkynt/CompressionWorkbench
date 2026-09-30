@@ -26,6 +26,7 @@ internal static class SevenZipOptionsResolver {
 
   public static int NormalizeDictSize(int size) {
     if (size <= 4096) return 4096;
+    if (size >= 1 << 30) return 1 << 30; // the cap; 2^31 below would overflow
     var bits = 31 - int.LeadingZeroCount(size);
     var pow2 = 1 << bits;
     var pow2Next = 1 << (bits + 1);
@@ -33,7 +34,6 @@ internal static class SevenZipOptionsResolver {
     var best = pow2Next;
     if (pow2 >= size) best = pow2;
     if (threeHalf >= size && threeHalf < best) best = threeHalf;
-    if (pow2Next < best) best = pow2Next;
     return Math.Min(best, 1 << 30);
   }
 

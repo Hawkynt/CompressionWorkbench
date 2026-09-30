@@ -153,7 +153,7 @@ public sealed class BfstmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var dir = Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
-    if (dir == "" && (name == "full.bfstm" || name.EndsWith(".wav"))) { reason = null; return true; }
+    if (dir == "" && (name == "full.bfstm" || name.EndsWith(".wav", StringComparison.Ordinal))) { reason = null; return true; }
     reason = $"not a BFSTM-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }

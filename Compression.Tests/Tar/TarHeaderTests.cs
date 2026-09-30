@@ -83,4 +83,75 @@ public class TarHeaderTests {
     // Plus two zero blocks for end-of-archive = 1536 + 1024 = 2560
     Assert.That(archive.Length, Is.EqualTo(2560));
   }
+
+  // The ustar size field holds 11 octal digits: 0x1FFFFFFFF (8 GiB - 1) is the largest size it
+  // can carry; anything larger needs a PAX "size" record. The payload source is empty, so the
+  // write stops with EndOfStreamException right after the headers, which are what is checked.
+  private static byte[] HeadersFor(TarEntry entry, long size, TarHeaderFormat format = TarHeaderFormat.Ustar) {
+    using var output = new MemoryStream();
+    var writer = new TarWriter(output, leaveOpen: true, format);
+    Assert.Throws<EndOfStreamException>(() => writer.AddStreamingEntry(entry, size, Stream.Null));
+    return output.ToArray();
+  }
+
+  [Category("Boundary")]
+  [Test]
+  public void Given_SizeThatFitsElevenOctalDigits_When_HeaderWritten_Then_NoPaxHeaderAndSizeInField() {
+    var bytes = HeadersFor(new TarEntry { Name = "big.bin" }, 0x1FFFFFFFFL);
+
+    Assert.That(bytes[156], Is.EqualTo(TarConstants.TypeRegular));
+    Assert.That(TarHeader.ParseOctalLong(bytes.AsSpan(124, 12)), Is.EqualTo(0x1FFFFFFFFL));
+  }
+
+  [Category("Boundary")]
+  [Test]
+  public void Given_SizeOneAboveElevenOctalDigits_When_HeaderWritten_Then_PaxSizeRecordCarriesIt() {
+    var bytes = HeadersFor(new TarEntry { Name = "big.bin" }, 0x200000000L);
+
+    Assert.That(bytes[156], Is.EqualTo(TarConstants.TypePaxHeader));
+    Assert.That(System.Text.Encoding.ASCII.GetString(bytes, 512, 512), Does.Contain(" size=8589934592\n"));
+  }
+
+  [Category("EdgeCase")]
+  [Test]
+  public void Given_GnuFormatLongNameAndPaxSize_When_HeaderWritten_Then_PaxHeaderAlsoCarriesThePath() {
+    var name = new string('n', 150) + ".bin";
+    var bytes = HeadersFor(new TarEntry { Name = name }, 0x200000000L, TarHeaderFormat.Gnu);
+
+    Assert.That(bytes[156], Is.EqualTo(TarConstants.TypePaxHeader));
+    Assert.That(System.Text.Encoding.ASCII.GetString(bytes, 512, 512), Does.Contain($" path={name}\n"));
+  }
+
+  [Category("RoundTrip")]
+  [Test]
+  public void Given_GnuSymlinkWithLongNameAndLongTarget_When_RoundTripped_Then_OneEntryWithBoth() {
+    var name = "dir/" + new string('a', 120);
+    var target = "target/" + new string('b', 130);
+    using var archive = new MemoryStream();
+    using (var writer = new TarWriter(archive, leaveOpen: true, TarHeaderFormat.Gnu))
+      writer.AddEntry(new TarEntry { Name = name, LinkName = target, TypeFlag = TarConstants.TypeSymLink }, ReadOnlySpan<byte>.Empty);
+    archive.Position = 0;
+
+    using var reader = new TarReader(archive);
+    var entry = reader.GetNextEntry();
+
+    Assert.That(entry, Is.Not.Null);
+    Assert.That(entry!.TypeFlag, Is.EqualTo(TarConstants.TypeSymLink));
+    Assert.That(entry.Name, Is.EqualTo(name));
+    Assert.That(entry.LinkName, Is.EqualTo(target));
+    Assert.That(reader.GetNextEntry(), Is.Null);
+  }
+
+  [Category("EdgeCase")]
+  [Test]
+  public void Given_NameLongerThanTheFieldWithNoSlash_When_RoundTripped_Then_FullNameSurvives() {
+    var name = new string('\u00E9', 80) + ".bin"; // 164 UTF-8 bytes, no '/' to split at
+    using var archive = new MemoryStream();
+    using (var writer = new TarWriter(archive, leaveOpen: true))
+      writer.AddEntry(new TarEntry { Name = name }, "x"u8);
+    archive.Position = 0;
+
+    using var reader = new TarReader(archive);
+    Assert.That(reader.GetNextEntry()?.Name, Is.EqualTo(name));
+  }
 }

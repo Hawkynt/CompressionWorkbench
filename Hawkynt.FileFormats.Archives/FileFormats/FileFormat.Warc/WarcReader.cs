@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace FileFormat.Warc;
@@ -75,8 +76,13 @@ public sealed class WarcReader : IDisposable {
       Date = headers.TryGetValue("WARC-Date", out var date) ? date : null,
       ContentType = headers.TryGetValue("Content-Type", out var ct) ? ct : null,
       ContentLength = headers.TryGetValue("Content-Length", out var cl) &&
-                      long.TryParse(cl, out var len) ? len : 0,
+                      long.TryParse(cl, NumberStyles.Integer, CultureInfo.InvariantCulture, out var len) ? len : 0,
     };
+
+    var available = this._stream.CanSeek ? this._stream.Length - this._stream.Position : Array.MaxLength;
+    if (entry.ContentLength < 0 || entry.ContentLength > Math.Min(available, Array.MaxLength))
+      throw new InvalidDataException(
+        $"WARC Content-Length {entry.ContentLength} does not fit the {available} bytes left in the stream.");
 
     // Record payload offset and read payload
     entry.PayloadOffset = this._stream.CanSeek ? this._stream.Position : -1L;

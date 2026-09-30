@@ -84,7 +84,7 @@ internal static class EcryptfsCodec {
     try {
       Span<byte> fixedHeader = stackalloc byte[FixedHeaderSize];
       stream.Position = 0;
-      ReadExactly(stream, fixedHeader);
+      stream.ReadExactly(fixedHeader);
 
       var extentSize = BinaryPrimitives.ReadUInt32BigEndian(fixedHeader[20..24]);
       var headerExtentCount = BinaryPrimitives.ReadUInt16BigEndian(fixedHeader[24..26]);
@@ -99,7 +99,7 @@ internal static class EcryptfsCodec {
 
       var metadata = new byte[metadataSize];
       stream.Position = 0;
-      ReadExactly(stream, metadata);
+      stream.ReadExactly(metadata);
       var header = ParseHeader(metadata);
       if (stream.Length < header.CanonicalLength)
         throw new InvalidDataException("Truncated eCryptfs ciphertext extents.");
@@ -137,7 +137,7 @@ internal static class EcryptfsCodec {
         aes.Key = fileKey;
 
         while (remaining > 0) {
-          ReadExactly(input, encrypted);
+          input.ReadExactly(encrypted);
           var iv = DeriveExtentIv(rootIv, extentIndex++);
           using var transform = aes.CreateDecryptor(aes.Key, iv);
           var plaintext = transform.TransformFinalBlock(encrypted, 0, encrypted.Length);
@@ -541,15 +541,4 @@ internal static class EcryptfsCodec {
       remaining -= read;
     }
   }
-
-  private static void ReadExactly(Stream stream, Span<byte> buffer) {
-    var total = 0;
-    while (total < buffer.Length) {
-      var read = stream.Read(buffer[total..]);
-      if (read <= 0) throw new EndOfStreamException("Unexpected end of eCryptfs stream.");
-      total += read;
-    }
-  }
-
-  private static void ReadExactly(Stream stream, byte[] buffer) => ReadExactly(stream, buffer.AsSpan());
 }

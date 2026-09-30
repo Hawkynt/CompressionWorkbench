@@ -51,7 +51,7 @@ internal static class CsoImage {
 
     stream.Position = 0;
     Span<byte> header = stackalloc byte[CsoWriter.HeaderSize];
-    ReadExact(stream, header);
+    stream.ReadExactly(header);
 
     var magic = Encoding.ASCII.GetString(header[..4]);
     var headerSize = BinaryPrimitives.ReadUInt32LittleEndian(header[4..8]);
@@ -89,7 +89,7 @@ internal static class CsoImage {
 
     var indexBytes = new byte[indexBytesLength];
     stream.Position = CsoWriter.HeaderSize;
-    ReadExact(stream, indexBytes);
+    stream.ReadExactly(indexBytes);
     var index = new uint[indexCount];
     for (var i = 0; i < index.Length; ++i)
       index[i] = BinaryPrimitives.ReadUInt32LittleEndian(indexBytes.AsSpan(i * sizeof(uint), sizeof(uint)));
@@ -159,7 +159,7 @@ internal static class CsoImage {
       throw new InvalidDataException($"CSO/ZSO block {blockIndex} is too large to decode.");
     var encoded = new byte[(int)length];
     stream.Position = offset;
-    ReadExact(stream, encoded);
+    stream.ReadExactly(encoded);
 
     var blockSize = checked((int)layout.BlockSize);
     switch (encoding) {
@@ -206,16 +206,6 @@ internal static class CsoImage {
       throw new InvalidDataException(
         $"DEFLATE block {blockIndex} decoded to {written} bytes, expected block_size {expectedSize}.");
     return output;
-  }
-
-  internal static void ReadExact(Stream stream, Span<byte> destination) {
-    var read = 0;
-    while (read < destination.Length) {
-      var count = stream.Read(destination[read..]);
-      if (count <= 0)
-        throw new EndOfStreamException("Unexpected end of CSO/ZSO stream.");
-      read += count;
-    }
   }
 
   private sealed class LogicalStream(

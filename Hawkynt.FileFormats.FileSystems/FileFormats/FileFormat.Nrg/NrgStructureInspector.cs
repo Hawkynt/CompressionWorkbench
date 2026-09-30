@@ -25,7 +25,7 @@ internal static class NrgStructureInspector {
       Span<byte> header = stackalloc byte[8];
       while (position <= footerOffset - header.Length) {
         stream.Position = position;
-        if (!ReadExactly(stream, header))
+        if (!TryReadExactly(stream, header))
           break;
 
         var payloadLength = BinaryPrimitives.ReadUInt32BigEndian(header[4..]);
@@ -92,7 +92,7 @@ internal static class NrgStructureInspector {
     if (stream.Length >= 12) {
       stream.Position = stream.Length - 12;
       Span<byte> footer = stackalloc byte[12];
-      if (ReadExactly(stream, footer) && footer[..4].SequenceEqual("NER5"u8)) {
+      if (TryReadExactly(stream, footer) && footer[..4].SequenceEqual("NER5"u8)) {
         var offset = BinaryPrimitives.ReadUInt64BigEndian(footer[4..]);
         footerOffset = stream.Length - 12;
         if (offset <= (ulong)footerOffset) {
@@ -105,7 +105,7 @@ internal static class NrgStructureInspector {
     if (stream.Length >= 8) {
       stream.Position = stream.Length - 8;
       Span<byte> footer = stackalloc byte[8];
-      if (ReadExactly(stream, footer) && footer[..4].SequenceEqual("NERO"u8)) {
+      if (TryReadExactly(stream, footer) && footer[..4].SequenceEqual("NERO"u8)) {
         var offset = BinaryPrimitives.ReadUInt32BigEndian(footer[4..]);
         footerOffset = stream.Length - 8;
         if (offset <= footerOffset) {
@@ -118,14 +118,6 @@ internal static class NrgStructureInspector {
     return false;
   }
 
-  private static bool ReadExactly(Stream stream, Span<byte> buffer) {
-    var offset = 0;
-    while (offset < buffer.Length) {
-      var read = stream.Read(buffer[offset..]);
-      if (read == 0)
-        return false;
-      offset += read;
-    }
-    return true;
-  }
+  private static bool TryReadExactly(Stream stream, Span<byte> buffer) =>
+    stream.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false) == buffer.Length;
 }

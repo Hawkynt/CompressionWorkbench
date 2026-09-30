@@ -47,7 +47,7 @@ public sealed class SfarReader : IDisposable {
 
     Span<byte> header = stackalloc byte[SfarConstants.HeaderSize];
     stream.Position = 0;
-    ReadExact(stream, header);
+    stream.ReadExactly(header);
 
     var magic = BinaryPrimitives.ReadUInt32LittleEndian(header[..4]);
     if (magic != SfarConstants.Magic)
@@ -103,7 +103,7 @@ public sealed class SfarReader : IDisposable {
 
       this._stream.Position = blockOffset;
       var raw = new byte[onDiskSize];
-      ReadExact(this._stream, raw);
+      this._stream.ReadExactly(raw);
 
       if (stored || !this._isLzxCompressed) {
         if (raw.Length != remaining)
@@ -135,7 +135,7 @@ public sealed class SfarReader : IDisposable {
     var buf = new byte[SfarConstants.EntrySize];
     var list = new List<RawEntry>(count);
     for (var i = 0; i < count; ++i) {
-      ReadExact(stream, buf);
+      stream.ReadExactly(buf);
       var hash = buf.AsSpan(0, 16).ToArray();
       var blockTableIndex = BinaryPrimitives.ReadInt32LittleEndian(buf.AsSpan(16, 4));
       var size = ReadFiveByteLittleEndian(buf.AsSpan(20, 5));
@@ -243,7 +243,7 @@ public sealed class SfarReader : IDisposable {
       var onDisk = stored ? remaining : declared;
       stream.Position = blockOffset;
       var raw2 = new byte[onDisk];
-      ReadExact(stream, raw2);
+      stream.ReadExactly(raw2);
 
       if (raw2.Length != remaining) return null;
       Buffer.BlockCopy(raw2, 0, output, written, remaining);
@@ -277,16 +277,6 @@ public sealed class SfarReader : IDisposable {
       });
     }
     return list;
-  }
-
-  private static void ReadExact(Stream stream, Span<byte> buffer) {
-    var total = 0;
-    while (total < buffer.Length) {
-      var read = stream.Read(buffer[total..]);
-      if (read == 0)
-        throw new EndOfStreamException("Unexpected end of SFAR stream.");
-      total += read;
-    }
   }
 
   private static void ThrowLzxNotSupported() =>

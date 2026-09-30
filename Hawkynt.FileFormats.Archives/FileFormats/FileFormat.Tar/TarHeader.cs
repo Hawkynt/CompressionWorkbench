@@ -38,7 +38,7 @@ internal static class TarHeader {
   /// <returns>The parsed entry, or <see langword="null"/> if the block is all zeros.</returns>
   internal static TarEntry? ReadHeader(Stream stream, out bool isEndOfArchive) {
     var header = new byte[TarConstants.BlockSize];
-    var bytesRead = ReadExact(stream, header, TarConstants.BlockSize);
+    var bytesRead = stream.ReadAtLeast(header.AsSpan(0, TarConstants.BlockSize), TarConstants.BlockSize, throwOnEndOfStream: false);
 
     if (bytesRead < TarConstants.BlockSize) {
       isEndOfArchive = true;
@@ -264,9 +264,9 @@ internal static class TarHeader {
     if (string.IsNullOrEmpty(value))
       return;
 
-    var byteCount = Encoding.UTF8.GetByteCount(value);
-    var len = Math.Min(byteCount, dest.Length);
-    Encoding.UTF8.GetBytes(value.AsSpan(), dest[..len]);
+    // A value longer than the field is cut at a character boundary; the full value then
+    // travels in a PAX record or a GNU long-name block written ahead of this header.
+    System.Text.Unicode.Utf8.FromUtf16(value, dest, out _, out _);
   }
 
   private static void SplitName(string fullName, out string prefix, out string name) {
@@ -297,17 +297,5 @@ internal static class TarHeader {
     }
 
     return true;
-  }
-
-  private static int ReadExact(Stream stream, byte[] buffer, int count) {
-    var totalRead = 0;
-    while (totalRead < count) {
-      var read = stream.Read(buffer, totalRead, count - totalRead);
-      if (read == 0)
-        break;
-      totalRead += read;
-    }
-
-    return totalRead;
   }
 }

@@ -157,7 +157,7 @@ public sealed class OggOpusReader {
 
   private void FillFromNextPage() {
     Span<byte> header = stackalloc byte[27];
-    if (!ReadExact(this._stream, header)) { this._eof = true; return; }
+    if (!TryReadExact(this._stream, header)) { this._eof = true; return; }
     if (!header[..4].SequenceEqual(OggS))
       throw new InvalidDataException("Not an Ogg stream: missing 'OggS' capture pattern.");
 
@@ -168,12 +168,12 @@ public sealed class OggOpusReader {
 
     var segmentCount = header[26];
     Span<byte> segments = stackalloc byte[segmentCount];
-    if (segmentCount > 0 && !ReadExact(this._stream, segments)) { this._eof = true; return; }
+    if (segmentCount > 0 && !TryReadExact(this._stream, segments)) { this._eof = true; return; }
 
     var totalBody = 0;
     for (var i = 0; i < segmentCount; i++) totalBody += segments[i];
     var body = new byte[totalBody];
-    if (totalBody > 0 && !ReadExact(this._stream, body)) { this._eof = true; return; }
+    if (totalBody > 0 && !TryReadExact(this._stream, body)) { this._eof = true; return; }
 
     var cursor = 0;
     for (var i = 0; i < segmentCount; i++) {
@@ -187,13 +187,6 @@ public sealed class OggOpusReader {
     }
   }
 
-  private static bool ReadExact(Stream stream, Span<byte> buf) {
-    var total = 0;
-    while (total < buf.Length) {
-      var n = stream.Read(buf[total..]);
-      if (n <= 0) return false;
-      total += n;
-    }
-    return true;
-  }
+  private static bool TryReadExact(Stream stream, Span<byte> buf) =>
+    stream.ReadAtLeast(buf, buf.Length, throwOnEndOfStream: false) == buf.Length;
 }

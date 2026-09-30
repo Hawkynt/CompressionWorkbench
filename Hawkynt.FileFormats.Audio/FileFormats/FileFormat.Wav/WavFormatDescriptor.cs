@@ -212,8 +212,8 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var name = System.IO.Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var dir = System.IO.Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
 
-    if (dir == "" && name.EndsWith(".wav")) { reason = null; return true; }
-    if (dir == "metadata" && name.EndsWith(".bin")) { reason = null; return true; }
+    if (dir == "" && name.EndsWith(".wav", StringComparison.Ordinal)) { reason = null; return true; }
+    if (dir == "metadata" && name.EndsWith(".bin", StringComparison.Ordinal)) { reason = null; return true; }
     reason = $"not a WAV-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }

@@ -159,7 +159,7 @@ public abstract class G711FormatDescriptorBase : IFormatDescriptor, IArchiveForm
   /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
-    if (name == ("full" + this.DefaultExtension) || name.EndsWith(".wav") || name == "metadata.ini") {
+    if (name == ("full" + this.DefaultExtension) || name.EndsWith(".wav", StringComparison.Ordinal) || name == "metadata.ini") {
       reason = null;
       return true;
     }

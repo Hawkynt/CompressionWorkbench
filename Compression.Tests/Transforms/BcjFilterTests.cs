@@ -85,6 +85,44 @@ public class BcjFilterTests {
     Assert.That(encoded[4], Is.EqualTo(0xE8));
   }
 
+  [Category("Boundary")]
+  [Test]
+  public void Given_CallOpcodeWithOnlyThreeOperandBytesLeft_When_EncodeX86_Then_ItIsLeftUnchanged() {
+    // An E8 needs four operand bytes; the fourth-to-last byte of a buffer has only three.
+    byte[] data = [0x90, 0xE8, 0x01, 0x02, 0x03];
+
+    Assert.That(BcjFilter.EncodeX86(data), Is.EqualTo(data));
+    Assert.That(BcjFilter.DecodeX86(data), Is.EqualTo(data));
+  }
+
+  [Category("Boundary")]
+  [Test]
+  public void Given_CallWhoseOperandCrossesA32ByteWindow_When_EncodeX86_Then_OperandBytesAreNotReadAsOpcodes() {
+    // The CALL at 30 owns bytes 31..34; the E8 at 33 is operand data and must not be converted.
+    var data = new byte[100];
+    data[30] = 0xE8;
+    data[33] = 0xE8;
+    var expected = (byte[])data.Clone();
+    expected[31] = 0x23; // 0x00E80000 + 30 + 5 = 0x00E80023
+    expected[33] = 0xE8;
+
+    var encoded = BcjFilter.EncodeX86(data);
+
+    Assert.That(encoded, Is.EqualTo(expected));
+    Assert.That(BcjFilter.DecodeX86(encoded), Is.EqualTo(data));
+  }
+
+  [Category("RoundTrip")]
+  [Test]
+  public void Given_ManyShortRandomBuffers_When_X86RoundTripped_Then_EachIsRestored() {
+    var random = new Random(1234);
+    for (var n = 0; n < 5000; ++n) {
+      var data = new byte[random.Next(1, 200)];
+      random.NextBytes(data);
+      Assert.That(BcjFilter.DecodeX86(BcjFilter.EncodeX86(data)), Is.EqualTo(data), $"buffer {n}");
+    }
+  }
+
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]

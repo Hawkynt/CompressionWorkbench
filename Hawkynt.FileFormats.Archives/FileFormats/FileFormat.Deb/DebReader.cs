@@ -41,7 +41,7 @@ public sealed class DebReader : IDisposable {
       throw new InvalidDataException("Not a valid .deb file: missing debian-binary member.");
 
     var versionText = System.Text.Encoding.ASCII.GetString(versionMember.Data).TrimEnd();
-    if (!versionText.StartsWith("2."))
+    if (!versionText.StartsWith("2.", StringComparison.Ordinal))
       throw new InvalidDataException($"Unsupported .deb format version: {versionText}");
   }
 
@@ -107,16 +107,16 @@ public sealed class DebReader : IDisposable {
   private static Stream DecompressByExtension(string memberName, Stream compressed) {
     var decompressed = new MemoryStream();
 
-    if (memberName.EndsWith(".gz")) {
+    if (memberName.EndsWith(".gz", StringComparison.Ordinal)) {
       using var gz = new GzipStream(compressed, CompressionStreamMode.Decompress, leaveOpen: true);
       gz.CopyTo(decompressed);
-    } else if (memberName.EndsWith(".xz")) {
+    } else if (memberName.EndsWith(".xz", StringComparison.Ordinal)) {
       using var xz = new XzStream(compressed, CompressionStreamMode.Decompress, leaveOpen: true);
       xz.CopyTo(decompressed);
-    } else if (memberName.EndsWith(".zst")) {
+    } else if (memberName.EndsWith(".zst", StringComparison.Ordinal)) {
       using var zst = new ZstdStream(compressed, CompressionStreamMode.Decompress, leaveOpen: true);
       zst.CopyTo(decompressed);
-    } else if (memberName.EndsWith(".bz2")) {
+    } else if (memberName.EndsWith(".bz2", StringComparison.Ordinal)) {
       using var bz = new FileFormat.Bzip2.Bzip2Stream(
         compressed, CompressionStreamMode.Decompress, leaveOpen: true);
       bz.CopyTo(decompressed);

@@ -114,7 +114,7 @@ public sealed class HaReader : IDisposable {
 
     this._stream.Position = entry.DataOffset;
     var compressed = new byte[entry.CompressedSize];
-    ReadFully(this._stream, compressed);
+    this._stream.ReadExactly(compressed);
 
     byte[] data;
     switch (entry.Method) {
@@ -145,16 +145,6 @@ public sealed class HaReader : IDisposable {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-
-  private static void ReadFully(Stream stream, byte[] buffer) {
-    var offset = 0;
-    while (offset < buffer.Length) {
-      var read = stream.Read(buffer, offset, buffer.Length - offset);
-      if (read == 0)
-        throw new EndOfStreamException("Unexpected end of Ha archive data.");
-      offset += read;
-    }
-  }
 
   private static void ThrowInvalidArchive(string message) =>
     throw new InvalidDataException(message);

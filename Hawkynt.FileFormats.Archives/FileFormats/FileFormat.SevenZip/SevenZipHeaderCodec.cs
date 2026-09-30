@@ -248,7 +248,7 @@ internal static class SevenZipHeaderCodec {
 
       var codecIdSize = flags & 0x0F;
       coder.CodecId = new byte[codecIdSize];
-      ReadExact(stream, coder.CodecId, 0, codecIdSize);
+      stream.ReadExactly(coder.CodecId, 0, codecIdSize);
 
       if ((flags & 0x10) != 0) {
         coder.NumInStreams = (int)SevenZipVarInt.Read(stream);
@@ -258,7 +258,7 @@ internal static class SevenZipHeaderCodec {
       if ((flags & 0x20) != 0) {
         var propsSize = (int)SevenZipVarInt.Read(stream);
         coder.Properties = new byte[propsSize];
-        ReadExact(stream, coder.Properties, 0, propsSize);
+        stream.ReadExactly(coder.Properties, 0, propsSize);
       }
 
       folder.Coders.Add(coder);
@@ -608,7 +608,7 @@ internal static class SevenZipHeaderCodec {
     for (var i = 0; i < files.Count; ++i) {
       if (defined[i]) {
         var buf = new byte[8];
-        ReadExact(stream, buf, 0, 8);
+        stream.ReadExactly(buf, 0, 8);
         var fileTime = BitConverter.ToInt64(buf, 0);
         setter(files[i], DateTime.FromFileTimeUtc(fileTime));
       }
@@ -625,7 +625,7 @@ internal static class SevenZipHeaderCodec {
     for (var i = 0; i < files.Count; ++i) {
       if (defined[i]) {
         var buf = new byte[4];
-        ReadExact(stream, buf, 0, 4);
+        stream.ReadExactly(buf, 0, 4);
         files[i].Attributes = BitConverter.ToUInt32(buf, 0);
       }
     }
@@ -759,10 +759,10 @@ internal static class SevenZipHeaderCodec {
     var packedData = new byte[packedSize];
     if (archiveStream != null) {
       archiveStream.Position = SevenZipConstants.SignatureHeaderSize + packInfo.PackPos;
-      ReadExact(archiveStream, packedData, 0, (int)packedSize);
+      archiveStream.ReadExactly(packedData, 0, (int)packedSize);
     }
     else {
-      ReadExact(stream, packedData, 0, (int)packedSize);
+      stream.ReadExactly(packedData, 0, (int)packedSize);
     }
 
     // Find compression and AES coders
@@ -848,7 +848,7 @@ internal static class SevenZipHeaderCodec {
     for (var i = 0; i < count; ++i) {
       if (defined[i]) {
         var buf = new byte[4];
-        ReadExact(stream, buf, 0, 4);
+        stream.ReadExactly(buf, 0, 4);
         crcs[i] = BitConverter.ToUInt32(buf, 0);
       }
     }
@@ -859,7 +859,7 @@ internal static class SevenZipHeaderCodec {
     for (var i = 0; i < folders.Count; ++i) {
       if (defined[i]) {
         var buf = new byte[4];
-        ReadExact(stream, buf, 0, 4);
+        stream.ReadExactly(buf, 0, 4);
         folders[i].UnpackCrc = BitConverter.ToUInt32(buf, 0);
       }
     }
@@ -958,16 +958,6 @@ internal static class SevenZipHeaderCodec {
     if (b < 0)
       throw new EndOfStreamException("Unexpected end of 7z stream.");
     return (byte)b;
-  }
-
-  private static void ReadExact(Stream stream, byte[] buffer, int offset, int count) {
-    var totalRead = 0;
-    while (totalRead < count) {
-      var read = stream.Read(buffer, offset + totalRead, count - totalRead);
-      if (read == 0)
-        throw new EndOfStreamException("Unexpected end of 7z stream.");
-      totalRead += read;
-    }
   }
 
   private static void SkipData(Stream stream) {

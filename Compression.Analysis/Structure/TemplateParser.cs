@@ -17,13 +17,13 @@ public static partial class TemplateParser {
       var line = lines[i].Trim();
 
       // Skip empty lines and comments
-      if (string.IsNullOrEmpty(line) || line.StartsWith("//")) {
+      if (string.IsNullOrEmpty(line) || line.StartsWith("//", StringComparison.Ordinal)) {
         i++;
         continue;
       }
 
       // Parse struct definition
-      if (line.StartsWith("struct ")) {
+      if (line.StartsWith("struct ", StringComparison.Ordinal)) {
         var (sd, nextLine) = ParseStruct(lines, i);
         structs.Add(sd);
         i = nextLine;
@@ -52,13 +52,13 @@ public static partial class TemplateParser {
 
     while (i < lines.Length) {
       var line = lines[i].Trim();
-      if (string.IsNullOrEmpty(line) || line.StartsWith("//")) {
+      if (string.IsNullOrEmpty(line) || line.StartsWith("//", StringComparison.Ordinal)) {
         i++;
         continue;
       }
 
       // End of struct
-      if (line.StartsWith("}")) {
+      if (line.StartsWith("}", StringComparison.Ordinal)) {
         i++;
         break;
       }
@@ -68,8 +68,8 @@ public static partial class TemplateParser {
       foreach (var seg in segments) {
         var trimmed = seg.Trim();
         if (string.IsNullOrEmpty(trimmed)) continue;
-        if (trimmed.StartsWith("//")) break; // rest of line is comment
-        if (trimmed.StartsWith("}")) break;
+        if (trimmed.StartsWith("//", StringComparison.Ordinal)) break; // rest of line is comment
+        if (trimmed.StartsWith("}", StringComparison.Ordinal)) break;
         fields.Add(ParseField(trimmed, i + 1));
       }
       i++;

@@ -117,7 +117,7 @@ public sealed class ElfReader {
           break;
         }
         default:
-          if (name.StartsWith(".note")) {
+          if (name.StartsWith(".note", StringComparison.Ordinal)) {
             var suffix = name.Length > 5 ? name[5..].TrimStart('.') : "note";
             if (string.IsNullOrEmpty(suffix)) suffix = "note";
             entries.Add(new Entry($"notes/{SanitizeName(suffix)}.bin", bytes));

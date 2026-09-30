@@ -226,9 +226,9 @@ public static class CompactOperation {
         System.Globalization.CultureInfo.InvariantCulture, out var number)) return 0;
     var rest = value[i..].TrimStart().ToUpperInvariant();
     long multiplier = rest switch {
-      var r when r.StartsWith("KB") || r.StartsWith("K") => 1024L,
-      var r when r.StartsWith("MB") || r.StartsWith("M") => 1024L * 1024,
-      var r when r.StartsWith("GB") || r.StartsWith("G") => 1024L * 1024 * 1024,
+      var r when r.StartsWith("KB", StringComparison.Ordinal) || r.StartsWith("K", StringComparison.Ordinal) => 1024L,
+      var r when r.StartsWith("MB", StringComparison.Ordinal) || r.StartsWith("M", StringComparison.Ordinal) => 1024L * 1024,
+      var r when r.StartsWith("GB", StringComparison.Ordinal) || r.StartsWith("G", StringComparison.Ordinal) => 1024L * 1024 * 1024,
       var r when r.StartsWith('B') || r.Length == 0 => 1L,
       _ => 0L,
     };

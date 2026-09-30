@@ -47,7 +47,7 @@ public static class SevenZipLayoutMap {
       var nextHeaderPos = SevenZipConstants.SignatureHeaderSize + sigHeader.NextHeaderOffset;
       archive.Position = nextHeaderPos;
       var nextHeaderData = new byte[sigHeader.NextHeaderSize];
-      ReadExact(archive, nextHeaderData);
+      archive.ReadExactly(nextHeaderData);
       using var headerStream = new MemoryStream(nextHeaderData);
       (packInfo, folders, subStreams, fileInfos) =
         SevenZipHeaderCodec.ReadHeader(headerStream, null, archiveStream: archive);
@@ -145,14 +145,5 @@ public static class SevenZipLayoutMap {
       if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecCopy)) return DefragBlockClass.Frozen;
     }
     return DefragBlockClass.Normal;
-  }
-
-  private static void ReadExact(Stream stream, byte[] buffer) {
-    var total = 0;
-    while (total < buffer.Length) {
-      var read = stream.Read(buffer, total, buffer.Length - total);
-      if (read == 0) throw new EndOfStreamException();
-      total += read;
-    }
   }
 }

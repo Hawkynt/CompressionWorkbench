@@ -148,7 +148,7 @@ public sealed class SndrFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
-    if (name == "full.sndr" || name.EndsWith(".wav")) { reason = null; return true; }
+    if (name == "full.sndr" || name.EndsWith(".wav", StringComparison.Ordinal)) { reason = null; return true; }
     reason = $"not a Sounder-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }

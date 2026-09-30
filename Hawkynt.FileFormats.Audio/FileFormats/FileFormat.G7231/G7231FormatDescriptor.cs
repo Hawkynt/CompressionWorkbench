@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using Codec.G7231;
 using Codec.Pcm;
@@ -131,7 +132,7 @@ public sealed class G7231FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     meta.AppendLine($"frames_active={active}");
     meta.AppendLine($"frames_sid={sid}");
     meta.AppendLine($"frames_untransmitted={untransmitted}");
-    meta.AppendLine($"duration_seconds={durationSeconds:0.###}");
+    meta.AppendLine(CultureInfo.InvariantCulture, $"duration_seconds={durationSeconds:0.###}");
     meta.AppendLine("note=headerless raw stream; mono 8000 Hz assumed per the G.723.1 default.");
     meta.AppendLine("note=decode-only; G.723.1 has no encoder.");
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(meta.ToString())));

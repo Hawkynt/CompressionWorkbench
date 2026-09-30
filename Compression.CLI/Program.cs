@@ -2850,7 +2850,7 @@ static bool IsSystemDrive(string device) {
   // Windows: refuse PhysicalDrive0 (typically the system disk)
   if (d.Contains("physicaldrive0")) return true;
   // Windows: refuse C:\ paths
-  if (d.StartsWith("c:") || d.StartsWith(@"\\.\c:")) return true;
+  if (d.StartsWith("c:", StringComparison.Ordinal) || d.StartsWith(@"\\.\c:")) return true;
   // Linux: refuse the root or boot devices
   if (d == "/dev/sda" || d == "/dev/nvme0n1" || d == "/dev/vda") return true;
   // Mount points

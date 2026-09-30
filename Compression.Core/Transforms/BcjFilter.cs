@@ -49,8 +49,13 @@ public static class BcjFilter {
   }
 
   private static void TransformX86(byte[] result, int startOffset, bool encode) {
-    var limit = result.Length - 4;
+    // Last position whose opcode still has all four operand bytes inside the buffer.
+    var limit = result.Length - 5;
     var i = 0;
+    // First position that may hold an opcode: a converted CALL/JMP owns the next four bytes,
+    // and that ownership must carry across the 32-byte SIMD windows exactly as it does in
+    // the scalar loop, or encode and decode disagree on which bytes are opcodes.
+    var next = 0;
 
     if (Vector256.IsHardwareAccelerated && limit >= 32) {
       var e8 = Vector256.Create((byte)0xE8);
@@ -69,12 +74,13 @@ public static class BcjFilter {
           continue;
         }
 
-        // Process matches within this 32-byte window
+        // Process matches within this 32-byte window, lowest position first
         while (mask != 0) {
           var offset = BitOperations.TrailingZeroCount(mask);
+          mask &= mask - 1;
           var pos = i + offset;
-          if (pos > limit)
-            break;
+          if (pos < next)
+            continue; // operand byte of the previous CALL/JMP
 
           var addr = BinaryPrimitives.ReadInt32LittleEndian(result.AsSpan(pos + 1));
           if (encode)
@@ -83,12 +89,7 @@ public static class BcjFilter {
             addr -= startOffset + pos + 5;
 
           BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(pos + 1), addr);
-
-          // Clear this bit and the next 4 bits (skip the address bytes)
-          // We need to skip to pos+5, clear bits up to offset+4
-          var clearEnd = Math.Min(offset + 5, 32);
-          for (var b = offset; b < clearEnd; ++b)
-            mask &= ~(1u << b);
+          next = pos + 5;
         }
 
         i += 32;
@@ -96,6 +97,7 @@ public static class BcjFilter {
     }
 
     // Scalar tail
+    i = Math.Max(i, next);
     while (i <= limit)
       if (result[i] == 0xE8 || result[i] == 0xE9) {
         var addr = BinaryPrimitives.ReadInt32LittleEndian(result.AsSpan(i + 1));

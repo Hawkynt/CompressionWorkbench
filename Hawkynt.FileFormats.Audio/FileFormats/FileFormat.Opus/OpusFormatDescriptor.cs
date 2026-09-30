@@ -112,7 +112,7 @@ public sealed class OpusFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
-    if (name is "full.opus" || name.EndsWith(".wav")) {
+    if (name is "full.opus" || name.EndsWith(".wav", StringComparison.Ordinal)) {
       reason = null;
       return true;
     }

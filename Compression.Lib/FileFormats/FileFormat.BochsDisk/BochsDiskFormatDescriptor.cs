@@ -232,15 +232,8 @@ public sealed class BochsDiskFormatDescriptor : IFormatDescriptor, IArchiveForma
     return Encoding.ASCII.GetString(span[..end]).Trim();
   }
 
-  private static bool TryReadExact(Stream stream, Span<byte> buffer) {
-    var read = 0;
-    while (read < buffer.Length) {
-      var n = stream.Read(buffer[read..]);
-      if (n <= 0) return false;
-      read += n;
-    }
-    return true;
-  }
+  private static bool TryReadExact(Stream stream, Span<byte> buffer) =>
+    stream.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false) == buffer.Length;
 
   private static long SafeLength(Stream s) => s.CanSeek ? s.Length : 0;
 

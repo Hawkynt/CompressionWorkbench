@@ -83,7 +83,7 @@ public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         throw new InvalidDataException("CSO/ZSO whole-image synthetic entry is too large for buffered extraction.");
       stream.Position = 0;
       var bytes = new byte[(int)layout.FullSize];
-      CsoImage.ReadExact(stream, bytes);
+      stream.ReadExactly(bytes);
       WriteFile(outputDir, fullName, bytes);
     }
 

@@ -96,23 +96,14 @@ public sealed class AsarReader : IDisposable {
 
   private static uint ReadUInt32(Stream s) {
     Span<byte> buf = stackalloc byte[4];
-    ReadExactly(s, buf);
+    s.ReadExactly(buf);
     return BinaryPrimitives.ReadUInt32LittleEndian(buf);
   }
 
   private static byte[] ReadExactly(Stream s, int count) {
     var buf = new byte[count];
-    ReadExactly(s, buf);
+    s.ReadExactly(buf);
     return buf;
-  }
-
-  private static void ReadExactly(Stream s, Span<byte> buf) {
-    var total = 0;
-    while (total < buf.Length) {
-      var read = s.Read(buf[total..]);
-      if (read <= 0) throw new EndOfStreamException("Asar: unexpected end of stream.");
-      total += read;
-    }
   }
 
   /// <summary>

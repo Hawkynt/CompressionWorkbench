@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace FileFormat.Tar;
@@ -141,10 +142,15 @@ public sealed class TarWriter : IDisposable {
       if (linkNeedsExt) paxAttrs["linkpath"] = entry.LinkName;
     }
 
-    if (entry.Size > 0x1FFFFFFFFFL)
-      paxAttrs["size"] = entry.Size.ToString();
+    // The ustar size field holds 11 octal digits, so 0x1FFFFFFFF (8 GiB - 1) is its maximum.
+    if (entry.Size > 0x1FFFFFFFFL)
+      paxAttrs["size"] = entry.Size.ToString(CultureInfo.InvariantCulture);
 
     if (paxAttrs.Count > 0) {
+      // A PAX header written for the size must carry the long names too: the GNU
+      // long-name blocks below are only emitted when no PAX header is.
+      if (nameNeedsExt) paxAttrs.TryAdd("path", entry.Name);
+      if (linkNeedsExt) paxAttrs.TryAdd("linkpath", entry.LinkName);
       WritePaxHeader(paxAttrs);
     } else {
       if (nameNeedsExt) WriteGnuLongName(entry.Name);

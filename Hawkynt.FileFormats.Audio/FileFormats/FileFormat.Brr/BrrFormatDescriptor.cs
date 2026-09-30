@@ -141,7 +141,7 @@ public sealed class BrrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
-    if (name is "full.brr" or "metadata.ini" || name.EndsWith(".wav")) {
+    if (name is "full.brr" or "metadata.ini" || name.EndsWith(".wav", StringComparison.Ordinal)) {
       reason = null;
       return true;
     }

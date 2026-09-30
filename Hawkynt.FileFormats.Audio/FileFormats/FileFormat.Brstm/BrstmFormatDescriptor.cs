@@ -156,7 +156,7 @@ public sealed class BrstmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var dir = Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
-    if (dir == "" && (name == "full.brstm" || name.EndsWith(".wav"))) { reason = null; return true; }
+    if (dir == "" && (name == "full.brstm" || name.EndsWith(".wav", StringComparison.Ordinal))) { reason = null; return true; }
     reason = $"not a BRSTM-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }

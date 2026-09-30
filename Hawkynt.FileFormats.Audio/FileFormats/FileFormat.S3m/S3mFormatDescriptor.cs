@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using Codec.Pcm;
 using Codec.Tracker;
@@ -202,7 +203,7 @@ public sealed class S3mFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     info.AppendLine($"num_instruments={numInstruments}");
     info.AppendLine($"instruments_with_data={instrumentsWithData}");
     if (rendered is { } r) {
-      info.AppendLine($"rendered_duration={r.Seconds:0.###}s");
+      info.AppendLine(CultureInfo.InvariantCulture, $"rendered_duration={r.Seconds:0.###}s");
       info.AppendLine($"rendered_sample_rate={OutputSampleRate}");
       info.AppendLine($"rendered_channels=2");
       info.AppendLine($"rendered_bits=16");

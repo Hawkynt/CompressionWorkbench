@@ -73,7 +73,7 @@ public sealed class ArjReader : IDisposable {
 
     var rawData = new byte[entry.CompressedSize];
     if (entry.CompressedSize > 0)
-      ReadExact(this._stream, rawData);
+      this._stream.ReadExactly(rawData);
 
     // Degarble if the entry is encrypted
     var isGarbled = (entry.Flags & ArjConstants.FlagGarbled) != 0;
@@ -177,7 +177,7 @@ public sealed class ArjReader : IDisposable {
 
     // Read the header body (basicHeaderSize bytes).
     var headerBytes = new byte[basicHeaderSize];
-    ReadExact(this._stream, headerBytes);
+    this._stream.ReadExactly(headerBytes);
 
     // --- CRC-32 of the header body (4 bytes, LE) ---
     using var binReader = new BinaryReader(this._stream, Encoding.UTF8, leaveOpen: true);
@@ -295,16 +295,6 @@ public sealed class ArjReader : IDisposable {
 
   private static ushort ReadUInt16Le(ReadOnlySpan<byte> data, int offset) =>
     (ushort)(data[offset] | (data[offset + 1] << 8));
-
-  private static void ReadExact(Stream stream, byte[] buffer) {
-    var total = 0;
-    while (total < buffer.Length) {
-      var read = stream.Read(buffer, total, buffer.Length - total);
-      if (read == 0)
-        throw new EndOfStreamException("Unexpected end of ARJ archive stream.");
-      total += read;
-    }
-  }
 
   // -------------------------------------------------------------------------
   // IDisposable

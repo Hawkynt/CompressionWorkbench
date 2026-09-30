@@ -109,8 +109,8 @@ public sealed class VocFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var dir = Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
 
     if (dir == "" && name == "full.voc") { reason = null; return true; }
-    if (dir == "" && name.EndsWith(".wav")) { reason = null; return true; }
-    if (dir == "metadata" && (name.EndsWith(".txt") || name.EndsWith(".bin"))) { reason = null; return true; }
+    if (dir == "" && name.EndsWith(".wav", StringComparison.Ordinal)) { reason = null; return true; }
+    if (dir == "metadata" && (name.EndsWith(".txt", StringComparison.Ordinal) || name.EndsWith(".bin", StringComparison.Ordinal))) { reason = null; return true; }
     reason = $"not a VOC-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }

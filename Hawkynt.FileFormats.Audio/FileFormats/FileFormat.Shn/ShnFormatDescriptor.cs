@@ -155,7 +155,7 @@ public sealed class ShnFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var dir = Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
 
-    if (dir == "" && (name == "full.shn" || name.EndsWith(".wav") || name == "metadata.ini")) {
+    if (dir == "" && (name == "full.shn" || name.EndsWith(".wav", StringComparison.Ordinal) || name == "metadata.ini")) {
       reason = null;
       return true;
     }

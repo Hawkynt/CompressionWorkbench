@@ -145,7 +145,7 @@ public sealed class AndroidOtaFormatDescriptor : IFormatDescriptor, IArchiveForm
     var fullSize = stream.Length;
 
     Span<byte> header = stackalloc byte[24];
-    ReadExact(stream, header);
+    stream.ReadExactly(header);
     if (header[0] != (byte)'C' || header[1] != (byte)'r' || header[2] != (byte)'A' || header[3] != (byte)'U')
       throw new InvalidDataException("Not an Android OTA payload (missing CrAU magic).");
 
@@ -195,16 +195,7 @@ public sealed class AndroidOtaFormatDescriptor : IFormatDescriptor, IArchiveForm
       throw new InvalidDataException("Android OTA region too large to extract in one allocation.");
     stream.Position = offset;
     var buf = new byte[(int)size];
-    ReadExact(stream, buf);
+    stream.ReadExactly(buf);
     return buf;
-  }
-
-  private static void ReadExact(Stream stream, Span<byte> buffer) {
-    var read = 0;
-    while (read < buffer.Length) {
-      var n = stream.Read(buffer[read..]);
-      if (n <= 0) throw new EndOfStreamException("Unexpected end of Android OTA stream.");
-      read += n;
-    }
   }
 }
