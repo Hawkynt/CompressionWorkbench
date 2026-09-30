@@ -15,7 +15,7 @@ namespace FileFormat.SevenZip;
 ///   <item><description><c>https://en.wikipedia.org/wiki/7z</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
+public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -105,32 +105,10 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     });
   }
 
-  /// <summary>Rebuild-based defrag: extracts then re-creates the 7z archive in listing order.</summary>
-  public void Defragment(Stream archive)
-    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+  // Not IArchiveDefragmentable: an archive has no free-space layout to defragment,
+  // and the repack that stood in for it kept only names and bytes — 7z timestamps,
+  // attributes/modes, owners, comments, links and methods were reset or dropped.
 
-  /// <summary>Rebuild-based defrag: extracts then re-creates the 7z archive per the requested mode.</summary>
-  public void Defragment(Stream archive, DefragOptions options) {
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new SevenZipReader(stream);
-        var list = new List<(string, byte[])>();
-        for (var i = 0; i < r.Entries.Count; ++i) {
-          var e = r.Entries[i];
-          if (e.IsDirectory) continue;
-          list.Add((e.Name, r.Extract(i)));
-        }
-        return list;
-      },
-      buildImage: files => {
-        using var ms = new MemoryStream();
-        var w = new SevenZipWriter(ms, SevenZipCodec.Lzma2);
-        foreach (var (n, d) in files)
-          w.AddEntry(new SevenZipEntry { Name = n, Size = d.Length }, d);
-        w.Finish();
-        return ms.ToArray();
-      });
-  }
 
 
   /// <inheritdoc />
