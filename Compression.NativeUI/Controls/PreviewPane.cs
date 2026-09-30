@@ -5,6 +5,9 @@ using Hawkynt.NativeForms.Drawing;
 
 namespace Compression.NativeUI.Controls;
 
+/// <summary>A preview worked out and ready to show: the picture's first frame, or the text, or just a caption.</summary>
+internal sealed record PreparedPreview(PreviewKind Kind, string Caption, int Width, int Height, int[]? Pixels, string? Text);
+
 /// <summary>What the preview pane is showing.</summary>
 internal enum PreviewKind {
   /// <summary>A caption only: nothing selected, a folder, or bytes that are neither picture nor text.</summary>
@@ -61,23 +64,43 @@ internal sealed class PreviewPane : Panel {
   }
 
   /// <summary>Shows <paramref name="data"/>, the contents of <paramref name="name"/>, as well as it can.</summary>
-  public void ShowContent(string name, byte[] data) {
-    if (PreviewImageDecoder.TryDecode(data, name, out var picture) && picture.Frames.Count > 0) {
-      this.Kind = PreviewKind.Image;
-      this._text.Visible = false;
-      this._picture.Image = Images.FromArgb(picture.Width, picture.Height, picture.Frames[0]);
-      this._picture.Visible = true;
-      this._caption.Text = $"{name}{Environment.NewLine}{picture.Width} × {picture.Height}";
-    } else if (AsText(data, TextExcerptChars) is { } text) {
-      this.Kind = PreviewKind.Text;
-      this._picture.Image = null;
-      this._picture.Visible = false;
-      this._text.Text = text;
-      this._text.Visible = true;
-      this._caption.Text = name;
-    } else {
-      this.ShowCaption($"{name}{Environment.NewLine}No preview");
-      return;
+  public void ShowContent(string name, byte[] data) => this.Show(Prepare(name, data));
+
+  /// <summary>
+  /// Works out what to show for <paramref name="data"/> — decodes the picture, sniffs the text —
+  /// without touching the control, so it can run off the UI thread; <see cref="Show"/> then only
+  /// puts the result on screen.
+  /// </summary>
+  internal static PreparedPreview Prepare(string name, byte[] data) {
+    if (PreviewImageDecoder.TryDecode(data, name, out var picture) && picture.Frames.Count > 0)
+      return new(PreviewKind.Image, $"{name}{Environment.NewLine}{picture.Width} × {picture.Height}", picture.Width, picture.Height, picture.Frames[0].ToArray(), null);
+
+    return AsText(data, TextExcerptChars) is { } text
+      ? new(PreviewKind.Text, name, 0, 0, null, text)
+      : new(PreviewKind.None, $"{name}{Environment.NewLine}No preview", 0, 0, null, null);
+  }
+
+  /// <summary>Puts a <see cref="Prepare">prepared</see> preview on screen.</summary>
+  public void Show(PreparedPreview prepared) {
+    switch (prepared.Kind) {
+      case PreviewKind.Image:
+        this.Kind = PreviewKind.Image;
+        this._text.Visible = false;
+        this._picture.Image = Images.FromArgb(prepared.Width, prepared.Height, prepared.Pixels!);
+        this._picture.Visible = true;
+        this._caption.Text = prepared.Caption;
+        break;
+      case PreviewKind.Text:
+        this.Kind = PreviewKind.Text;
+        this._picture.Image = null;
+        this._picture.Visible = false;
+        this._text.Text = prepared.Text!;
+        this._text.Visible = true;
+        this._caption.Text = prepared.Caption;
+        break;
+      default:
+        this.ShowCaption(prepared.Caption);
+        return;
     }
 
     this.LayoutChildren();

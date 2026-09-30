@@ -239,6 +239,42 @@ internal sealed partial class MainForm : Form {
     };
   }
 
+  /// <summary>The folder a tree node stands for, as something to copy or move: its parent and its name.</summary>
+  private static Editing.TransferItem? TreeNodeAsItem(Location node) {
+    if (!node.IsInArchive) {
+      var path = Path.TrimEndingDirectorySeparator(node.HostPath);
+      return Path.GetDirectoryName(path) is { } parent
+        ? new(Navigation.Location.Folder(parent), Path.GetFileName(path), IsFolder: true)
+        : null; // a drive or the root
+    }
+
+    var folder = (node.ArchiveFolder ?? "").TrimEnd('/');
+    if (folder.Length == 0)
+      return Path.GetDirectoryName(node.HostPath) is { } holder
+        ? new(Navigation.Location.Folder(holder), Path.GetFileName(node.HostPath), IsFolder: false)
+        : null;
+
+    var slash = folder.LastIndexOf('/');
+    return new(Navigation.Location.InArchive(node.HostPath, slash < 0 ? "" : folder[..(slash + 1)]), folder[(slash + 1)..], IsFolder: true);
+  }
+
+  /// <summary>
+  /// Rereads the tree nodes of the places a change touched, so a renamed, moved, created or deleted
+  /// folder does not linger in the tree. Only nodes that have been expanded carry children to reread.
+  /// </summary>
+  private void ReloadTreeNodes(IReadOnlyList<Location> places) {
+    foreach (var node in Walk(this._tree.Nodes.Cast<TreeNode>()))
+      if (node.Tag is Location at && places.Contains(at) && node.Nodes.Count > 0)
+        this.ReloadChildren(node);
+
+    static IEnumerable<TreeNode> Walk(IEnumerable<TreeNode> nodes) {
+      foreach (var node in nodes.ToList()) {
+        yield return node;
+        foreach (var child in Walk(node.Nodes.Cast<TreeNode>())) yield return child;
+      }
+    }
+  }
+
   private void ReloadChildren(TreeNode node) {
     node.Nodes.Clear();
     foreach (var child in this._folders.Children((Location)node.Tag!))
@@ -332,7 +368,8 @@ internal sealed partial class MainForm : Form {
     };
 
     this._entries.KeyDown += (_, e) => this.OnClipboardKey(e);
-    this._tree.KeyDown += (_, e) => this.OnClipboardKey(e);
+    this._tree.KeyDown += (_, e) => this.OnClipboardKey(e, fromTree: true);
+    this._model.Changed += (_, places) => this.ReloadTreeNodes(places);
 
     this._entries.ItemActivate += (_, _) => this.ActivateSelectedEntry();
     this._entries.MouseDoubleClick += (_, _) => this.ActivateSelectedEntry();
@@ -539,18 +576,61 @@ internal sealed partial class MainForm : Form {
       return;
     }
 
-    Task.Run(() => this._model.ReadForPreview(entry)).ContinueWith(read => this.BeginInvoke(() => {
-      if (generation != this._previewGeneration || read.IsFaulted) return;
+    this.QueuePreview(entry, this._model.CapturePreviewSource(), generation);
+  }
 
-      var (data, caption) = read.Result;
-      if (data is null) this._preview.ShowCaption(caption);
-      else this._preview.ShowContent(caption, data);
-    }), TaskScheduler.Default);
+  // One preview read at a time, newest request wins: holding an arrow key used to queue a read and a
+  // decode per row passed, each up to the preview limit, all running at once.
+  private readonly object _previewLock = new();
+  private (ArchiveEntryViewModel Entry, PreviewSource Source, int Generation)? _previewPending;
+  private bool _previewRunning;
+
+  private void QueuePreview(ArchiveEntryViewModel entry, PreviewSource source, int generation) {
+    lock (this._previewLock) {
+      this._previewPending = (entry, source, generation);
+      if (this._previewRunning) return;
+      this._previewRunning = true;
+    }
+
+    Task.Run(this.RunPreviews);
+  }
+
+  private void RunPreviews() {
+    while (true) {
+      (ArchiveEntryViewModel Entry, PreviewSource Source, int Generation) job;
+      lock (this._previewLock) {
+        if (this._previewPending is not { } next) {
+          this._previewRunning = false;
+          return;
+        }
+
+        job = next;
+        this._previewPending = null;
+      }
+
+      if (job.Generation != Volatile.Read(ref this._previewGeneration)) continue;
+
+      var (data, caption) = this._model.ReadForPreview(job.Entry, job.Source);
+      var prepared = data is null ? null : PreviewPane.Prepare(caption, data);
+      this.BeginInvoke(() => {
+        if (job.Generation != this._previewGeneration) return;
+        if (prepared is null) this._preview.ShowCaption(caption);
+        else this._preview.Show(prepared);
+      });
+    }
   }
 
   /// <summary>Ctrl+C, Ctrl+X and Ctrl+V where files are shown — the list and the tree, not a text box.</summary>
-  private void OnClipboardKey(KeyEventArgs e) {
+  private void OnClipboardKey(KeyEventArgs e, bool fromTree = false) {
     if (!e.Control || e.Alt || e.Shift) return;
+
+    // In the tree, copy and cut take the folder the tree has selected, not the list's selection.
+    if (fromTree && e.KeyCode is Keys.C or Keys.X) {
+      if (this._tree.SelectedNode?.Tag is Location node && TreeNodeAsItem(node) is { } item)
+        this._model.PutOnClipboard([item], cut: e.KeyCode == Keys.X);
+      e.Handled = true;
+      return;
+    }
 
     var command = e.KeyCode switch {
       Keys.C => this._model.CopyCommand,

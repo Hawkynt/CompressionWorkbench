@@ -133,6 +133,62 @@ public sealed class ShellClipboardTests {
     Assert.That(Directory.GetDirectories(Path.Combine(this._root, "outer", "inner")), Is.Empty);
   }
 
+  // ── one change at a time ────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenAChangeIsRunning_WhenAnotherTransferIsAsked_ThenItIsRefusedAndNothingIsTouched() {
+    this._model.NavigateTo(Location.Folder(this._root));
+    var begin = typeof(MainViewModel).GetMethod("BeginChange", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+    var end = typeof(MainViewModel).GetMethod("EndChange", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+    Assert.That(begin.Invoke(this._model, [TimeSpan.Zero]), Is.Null, "the first change is granted");
+
+    try {
+      var items = new[] { new TransferItem(Location.Folder(this._root), "file.txt", false) };
+      Assert.Multiple(() => {
+        Assert.That(this._model.WhyNotTransfer(items, Location.Folder(Path.Combine(this._root, "target")), move: false), Does.Contain("still running"));
+        Assert.That(this._model.TryBeginBackgroundRead(), Is.False, "background reads stay away while a change runs");
+        Assert.That(this._model.PasteCommand.CanExecute(null), Is.False);
+      });
+      Assert.That(File.Exists(Path.Combine(this._root, "target", "file.txt")), Is.False);
+    } finally {
+      end.Invoke(this._model, []);
+    }
+
+    Assert.That(this._model.TryBeginBackgroundRead(), Is.True, "reads resume once the change is over");
+    this._model.EndBackgroundRead();
+  }
+
+  [Test]
+  public void GivenACompletedTransfer_WhenItFinishes_ThenTheChangedPlacesAreAnnounced() {
+    this._model.NavigateTo(Location.Folder(this._root));
+    IReadOnlyList<Location>? announced = null;
+    this._model.Changed += (_, places) => announced = places;
+    this.Select("file.txt");
+    this._model.CutCommand.Execute(null);
+    var target = Location.Folder(Path.Combine(this._root, "target"));
+    this._model.NavigateTo(target);
+
+    this._model.PasteAsync().GetAwaiter().GetResult();
+
+    Assert.That(announced, Is.EquivalentTo(new[] { target, Location.Folder(this._root) }), "a move changes both ends");
+  }
+
+  [Test]
+  public void GivenAFolderInsideAnArchiveThatNoLongerExists_WhenNavigatedTo_ThenTheShellSaysSo() {
+    Assert.That(this._model.NavigateTo(Location.InArchive(this._zip, "gone/")), Is.False);
+    Assert.That(this._model.StatusText, Does.StartWith("No longer exists"));
+  }
+
+  [Test]
+  public void GivenAListing_WhenItIsShown_ThenListenersHearOneResetRatherThanOneEventPerRow() {
+    var events = 0;
+    this._model.Entries.CollectionChanged += (_, _) => ++events;
+
+    this._model.NavigateTo(Location.Folder(this._root));
+
+    Assert.That(events, Is.EqualTo(1));
+  }
+
   // ── what a drag carries to other applications ───────────────────────────────────────────────
 
   [Test]

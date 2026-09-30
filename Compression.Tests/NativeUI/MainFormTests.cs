@@ -644,6 +644,37 @@ public sealed class MainFormTests {
     }));
   }
 
+  // ── views stay fresh ────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenAnExpandedTreeNode_WhenANewFolderIsMadeThere_ThenTheTreeShowsIt() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.Folder(root));
+      var tree = Field<TreeView>(shell, "_tree");
+      var node = tree.SelectedNode!;
+      node.Expand();
+      Assume.That(node.Nodes.Count, Is.GreaterThan(0), "the scratch folder has a sub-folder, so the node has children to reread");
+
+      model.CreateNewFolder();
+
+      Assert.That(node.Nodes.Cast<TreeNode>().Select(n => n.Text), Does.Contain("New folder"));
+    }));
+  }
+
+  [Test]
+  public void GivenTheTreeHasFocus_WhenCtrlCIsPressed_ThenTheTreesFolderIsOnTheClipboardNotTheListsSelection() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.Folder(Path.Combine(root, "sub")));
+
+      PeerOf(Field<Control>(shell, "_tree")).RaiseKeyDown(Keys.C, KeyModifiers.Control);
+
+      var clipboard = (IReadOnlyList<TransferItem>)typeof(MainViewModel).GetField("_clipboardItems", Private)!.GetValue(model)!;
+      Assert.That(clipboard, Is.EqualTo(new[] { new TransferItem(Location.Folder(root), "sub", true) }));
+    }));
+  }
+
   // ── drag and drop ───────────────────────────────────────────────────────────────────────────
 
   private static DragDropEffects EffectOf(MainForm shell, object data, Location? target)

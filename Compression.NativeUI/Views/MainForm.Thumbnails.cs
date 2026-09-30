@@ -14,7 +14,9 @@ internal sealed partial class MainForm {
   internal const int ThumbnailsPerFolder = 500;
 
   private ImageList? _thumbnails;
-  private readonly Dictionary<ArchiveEntryViewModel, string> _thumbnailKeys = [];
+  // Keyed by entry path, not by the entry object: a reread of the same folder makes new entry
+  // objects, and keying by object decoded every picture again and grew the image list each time.
+  private readonly Dictionary<string, string> _thumbnailKeys = [];
   private object? _thumbnailFolder;
   private int _thumbnailGeneration;
 
@@ -29,7 +31,7 @@ internal sealed partial class MainForm {
 
   /// <summary>The image key an entry is drawn with in the current view.</summary>
   private string ImageKeyFor(ArchiveEntryViewModel entry)
-    => this.ThumbnailsShown && this._thumbnailKeys.TryGetValue(entry, out var key) ? key : entry.IconKey;
+    => this.ThumbnailsShown && this._thumbnailKeys.TryGetValue(entry.Path, out var key) ? key : entry.IconKey;
 
   /// <summary>
   /// Starts decoding thumbnails for the entries on show, one at a time off the UI thread. A newer
@@ -49,17 +51,20 @@ internal sealed partial class MainForm {
     }
 
     var pending = this._model.Entries
-      .Where(e => !e.IsDirectory && !e.IsParentEntry && !e.IsEncrypted && !this._thumbnailKeys.ContainsKey(e))
+      .Where(e => !e.IsDirectory && !e.IsParentEntry && !e.IsEncrypted && !this._thumbnailKeys.ContainsKey(e.Path))
       .Where(e => this._model.IsBrowsingOsFolder || e.OriginalSize <= ThumbnailSourceLimit)
       .Take(ThumbnailsPerFolder)
       .ToList();
     if (pending.Count == 0) return;
 
+    // Where to read from is decided now, on the UI thread; by the time the decoder reaches an entry
+    // the shell may be showing somewhere else.
+    var source = this._model.CapturePreviewSource();
     Task.Run(() => {
       foreach (var entry in pending) {
-        if (generation != this._thumbnailGeneration) return;
+        if (generation != Volatile.Read(ref this._thumbnailGeneration)) return;
 
-        var pixels = this.DecodeThumbnail(entry);
+        var pixels = this.DecodeThumbnail(entry, source);
         if (pixels is null) continue;
 
         this.BeginInvoke(() => this.AddThumbnail(generation, entry, pixels));
@@ -67,17 +72,17 @@ internal sealed partial class MainForm {
     });
   }
 
-  private int[]? DecodeThumbnail(ArchiveEntryViewModel entry) {
+  private int[]? DecodeThumbnail(ArchiveEntryViewModel entry, PreviewSource source) {
     try {
-      if (this._model.IsBrowsingOsFolder && new FileInfo(entry.Path).Length > ThumbnailSourceLimit) return null;
+      if (source.BrowsingDisk && new FileInfo(entry.Path).Length > ThumbnailSourceLimit) return null;
 
-      var (data, _) = this._model.ReadForPreview(entry);
+      var (data, _) = this._model.ReadForPreview(entry, source);
       if (data is null || !PreviewImageDecoder.TryDecode(data, entry.Name, out var picture) || picture.Frames.Count == 0)
         return null;
 
       return Thumbnail.Fit(picture.Frames[0], picture.Width, picture.Height);
-    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
-                                   or NotSupportedException or ArgumentException or InvalidOperationException) {
+    } catch (Exception) {
+      // A picture that cannot be decoded keeps its icon; a thumbnail is never worth an error.
       return null;
     }
   }
@@ -87,7 +92,7 @@ internal sealed partial class MainForm {
 
     var key = "thumb:" + this._thumbnailKeys.Count;
     list.Add(key, pixels);
-    this._thumbnailKeys[entry] = key;
+    this._thumbnailKeys[entry.Path] = key;
 
     foreach (var item in this._entries.Items)
       if (ReferenceEquals(item.Tag, entry)) {

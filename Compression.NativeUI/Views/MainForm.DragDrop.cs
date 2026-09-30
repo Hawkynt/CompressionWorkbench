@@ -49,7 +49,12 @@ internal sealed partial class MainForm {
     }
 
     this._outgoingDrag = (payload, items);
-    this._entries.DoDragDrop(payload, DragDropEffects.Copy | DragDropEffects.Move, _ => this._outgoingDrag = null);
+    this._entries.DoDragDrop(payload, DragDropEffects.Copy | DragDropEffects.Move, effect => {
+      this._outgoingDrag = null;
+
+      // A target that moved the files took them from here; show what is left.
+      if (effect == DragDropEffects.Move) this._model.RefreshCommand.Execute(null);
+    });
   }
 
   /// <summary>

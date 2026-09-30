@@ -9,6 +9,9 @@ using Hawkynt.NativeForms;
 
 namespace Compression.NativeUI.ViewModels;
 
+/// <summary>Where the entries on show are read from: the disk, or the archive at a path.</summary>
+internal readonly record struct PreviewSource(bool BrowsingDisk, string ArchivePath);
+
 internal sealed class MainViewModel : ViewModelBase {
   private string _archivePath = "";
   private string _format = "";
@@ -66,7 +69,7 @@ internal sealed class MainViewModel : ViewModelBase {
   /// </summary>
   public bool IsNestedArchive => _archiveStack.Count > 0;
 
-  public ObservableCollection<ArchiveEntryViewModel> Entries { get; } = [];
+  public EntryCollection Entries { get; } = [];
   public ObservableCollection<ArchiveEntryViewModel> SelectedEntries { get; } = [];
   public ObservableCollection<BreadcrumbSegment> Breadcrumbs { get; } = [];
 
@@ -265,6 +268,10 @@ internal sealed class MainViewModel : ViewModelBase {
   /// </summary>
   internal string? CreateNewFolder() {
     if (_osBrowserPath is not { } parent) return null;
+    if (IsChanging) {
+      StatusText = "Another change is still running.";
+      return null;
+    }
 
     try {
       var taken = new HashSet<string>(Directory.EnumerateFileSystemEntries(parent).Select(Path.GetFileName)!, StringComparer.OrdinalIgnoreCase);
@@ -272,6 +279,7 @@ internal sealed class MainViewModel : ViewModelBase {
       Directory.CreateDirectory(Path.Combine(parent, name));
       RefreshVisibleEntries();
       StatusText = $"Created {name}.";
+      if (CurrentLocation is { } here) RaiseChanged([here]);
 
       if (Entries.FirstOrDefault(e => e.Name == name) is { } created) {
         SelectedEntries.Clear();
@@ -286,22 +294,99 @@ internal sealed class MainViewModel : ViewModelBase {
     }
   }
 
-  private bool CanCopySelection() => CurrentLocation is not null && SelectedEntries.Any(e => !e.IsParentEntry);
+  private bool CanCopySelection()
+    => CurrentLocation is not null
+       && SelectedEntries.Any(e => !e.IsParentEntry)
+       && !SelectedEntries.Any(e => e.IsEncrypted);
 
   /// <summary>
   /// Whether what is shown here may be changed. A nested archive is a temporary extraction: taking
   /// from it is fine, but cutting from or pasting into it would edit a copy nobody sees.
   /// </summary>
-  private bool CanChangeHere() => CurrentLocation is not null && !IsNestedArchive;
+  private bool CanChangeHere()
+    => CurrentLocation is not null && !IsNestedArchive && !IsChanging
+       && (IsBrowsingOsFolder || ArchiveIsModifiable());
+
+  // Whether the open archive accepts changes is a property of its format; asked once per archive.
+  private (string Path, bool Answer)? _modifiable;
+
+  private bool ArchiveIsModifiable() {
+    if (_modifiable is { } known && known.Path == ArchivePath) return known.Answer;
+
+    var answer = DeleteCapability.Evaluate(false, ArchivePath, 1) == DeleteMode.ModifiableArchive;
+    _modifiable = (ArchivePath, answer);
+    return answer;
+  }
+
+  // ── one change at a time ────────────────────────────────────────────────────────────────────
+  //
+  // A transfer, a drop, a delete, a rename: each rewrites a folder or an archive, and two of them at
+  // once can both pick the same free name and have the second overwrite the first. Background reads
+  // (preview, thumbnails) hold the archive open for reading, which makes an exclusive write fail
+  // with "in use"; a change therefore waits for them to finish and turns new ones away meanwhile.
+
+  private readonly object _activity = new();
+  private int _backgroundReads;
+
+  /// <summary>True while a change to a folder or an archive is running.</summary>
+  public bool IsChanging { get; private set; }
+
+  /// <summary>Registers a background read; false while a change is running, and the read should skip.</summary>
+  internal bool TryBeginBackgroundRead() {
+    lock (_activity) {
+      if (IsChanging) return false;
+      ++_backgroundReads;
+      return true;
+    }
+  }
+
+  internal void EndBackgroundRead() {
+    lock (_activity) --_backgroundReads;
+  }
+
+  /// <summary>
+  /// Claims the right to change something, waiting (up to <paramref name="patience"/>) for background
+  /// reads to finish. Returns the reason when another change is already running.
+  /// </summary>
+  private string? BeginChange(TimeSpan patience) {
+    lock (_activity) {
+      if (IsChanging) return "Another change is still running.";
+      IsChanging = true;
+    }
+
+    var until = DateTime.UtcNow + patience;
+    while (Volatile.Read(ref _backgroundReads) > 0 && DateTime.UtcNow < until)
+      Thread.Sleep(15);
+
+    CommandManager.InvalidateRequerySuggested();
+    return null;
+  }
+
+  private void EndChange() {
+    lock (_activity) IsChanging = false;
+    CommandManager.InvalidateRequerySuggested();
+  }
+
+  /// <summary>Raised after a change, with the places whose contents it altered, so views can reread them.</summary>
+  public event EventHandler<IReadOnlyList<Location>>? Changed;
+
+  private void RaiseChanged(IEnumerable<Location> places)
+    => Changed?.Invoke(this, [.. places.Distinct()]);
+
+  /// <summary>Puts <paramref name="items"/> on the clipboard, as copy or cut — from the list or from the tree.</summary>
+  internal void PutOnClipboard(IReadOnlyList<TransferItem> items, bool cut) {
+    if (items.Count == 0) return;
+
+    _clipboardItems = items;
+    _clipboardIsCut = cut;
+    StatusText = $"{(cut ? "Cut" : "Copied")} {items.Count} item(s). Paste to put {(items.Count == 1 ? "it" : "them")} somewhere.";
+    OnPropertyChanged(nameof(HasClipboard));
+    CommandManager.InvalidateRequerySuggested();
+  }
 
   private void PutSelectionOnClipboard(bool cut) {
     if (CurrentLocation is null) return;
-
-    _clipboardItems = SelectionAsTransferItems();
-    _clipboardIsCut = cut;
-    StatusText = $"{(cut ? "Cut" : "Copied")} {_clipboardItems.Count} item(s). Paste to put {(_clipboardItems.Count == 1 ? "it" : "them")} somewhere.";
-    OnPropertyChanged(nameof(HasClipboard));
-    CommandManager.InvalidateRequerySuggested();
+    PutOnClipboard(SelectionAsTransferItems(), cut);
   }
 
   /// <summary>
@@ -332,10 +417,18 @@ internal sealed class MainViewModel : ViewModelBase {
   /// transfer's own rules, plus the shell's: nothing changes inside a nested archive's temporary copy.
   /// </summary>
   internal string? WhyNotTransfer(IReadOnlyList<TransferItem> items, Location target, bool move) {
+    if (IsChanging) return "Another change is still running.";
     if (IsNestedCopy(target)) return "Nothing can be put inside a nested archive.";
+    if (items.FirstOrDefault(IsEncryptedHere) is { } locked)
+      return $"{locked.Name} is encrypted, and the shell has no password to read it with.";
     if (move && items.Any(i => IsNestedCopy(i.From))) return "Nothing can be moved out of a nested archive.";
     return Transfer.WhyNot(items, target, move);
   }
+
+  /// <summary>Whether <paramref name="item"/> lies in the open archive and is, or holds, an encrypted entry.</summary>
+  private bool IsEncryptedHere(TransferItem item)
+    => item.From.IsInArchive && HasArchive && Transfer.SamePath(item.From.HostPath, ArchivePath)
+       && _allEntries.Any(e => e.IsEncrypted && (e.Path.TrimEnd('/') == item.EntryPath || e.Path.StartsWith(item.EntryPath + "/", StringComparison.Ordinal)));
 
   private bool IsNestedCopy(Location place)
     => IsNestedArchive && place.IsInArchive && string.Equals(place.HostPath, ArchivePath, StringComparison.OrdinalIgnoreCase);
@@ -347,6 +440,7 @@ internal sealed class MainViewModel : ViewModelBase {
   /// </summary>
   internal async Task<string?> TransferAsync(IReadOnlyList<TransferItem> items, Location target, bool move) {
     if (WhyNotTransfer(items, target, move) is { } refusal) return Fail(refusal);
+    if (BeginChange(TimeSpan.FromSeconds(10)) is { } busy) return Fail(busy);
 
     IsBusy = true;
     StatusText = $"{(move ? "Moving" : "Copying")} {items.Count} item(s)...";
@@ -358,13 +452,16 @@ internal sealed class MainViewModel : ViewModelBase {
       else RefreshVisibleEntries();
 
       StatusText = $"{(move ? "Moved" : "Copied")} {result.Created.Count} item(s) to {target}.";
+      RaiseChanged(move ? [target, .. items.Select(i => i.From)] : [target]);
       return null;
-    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException
-                                   or InvalidOperationException or ArgumentException or InvalidDataException) {
+    } catch (Exception ex) {
+      // Whatever failed - the file system, a refused name, a codec on a damaged archive - sources are
+      // removed only after every copy has landed and been read back, so the user is told and
+      // nothing is lost; the failure must not escape a fire-and-forget drop or an async handler.
       return Fail($"{(move ? "Move" : "Copy")} failed: {ex.Message}");
     } finally {
       IsBusy = false;
-      CommandManager.InvalidateRequerySuggested();
+      EndChange();
     }
 
     string Fail(string reason) {
@@ -381,24 +478,38 @@ internal sealed class MainViewModel : ViewModelBase {
   /// instead: a folder, an encrypted entry, one too large to read for a glance, one that cannot be
   /// read. Safe to call off the UI thread; it changes nothing.
   /// </summary>
-  internal (byte[]? Data, string Caption) ReadForPreview(ArchiveEntryViewModel entry) {
+  internal (byte[]? Data, string Caption) ReadForPreview(ArchiveEntryViewModel entry)
+    => ReadForPreview(entry, CapturePreviewSource());
+
+  /// <summary>Where entries are read from right now — captured on the UI thread for a background read.</summary>
+  internal PreviewSource CapturePreviewSource() => new(IsBrowsingOsFolder, ArchivePath);
+
+  /// <summary>
+  /// <see cref="ReadForPreview(ArchiveEntryViewModel)"/> against a source captured earlier, so a read
+  /// that runs after the user has moved on reads from where the entry was, not from where the shell
+  /// is now. Registers as a background read: while a change is running it reads nothing.
+  /// </summary>
+  internal (byte[]? Data, string Caption) ReadForPreview(ArchiveEntryViewModel entry, PreviewSource source) {
     if (entry.IsParentEntry) return (null, "");
     if (entry.IsDirectory) return (null, $"{entry.Name}{Environment.NewLine}Folder");
     if (entry.IsEncrypted) return (null, $"{entry.Name}{Environment.NewLine}Encrypted");
 
-    var browsingDisk = IsBrowsingOsFolder;
-    var size = browsingDisk ? SafeLength(entry.Path) : entry.OriginalSize;
+    var size = source.BrowsingDisk ? SafeLength(entry.Path) : entry.OriginalSize;
     if (size > PreviewPaneLimit)
       return (null, $"{entry.Name}{Environment.NewLine}Too large to preview ({FormatSize(size)})");
 
+    if (!TryBeginBackgroundRead()) return (null, $"{entry.Name}{Environment.NewLine}Waiting for a change to finish");
     try {
-      var data = browsingDisk
+      var data = source.BrowsingDisk
         ? File.ReadAllBytes(entry.Path)
-        : ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: null);
+        : ArchiveOperations.ExtractEntry(source.ArchivePath, entry.Path, password: null);
       return (data, entry.Name);
-    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
-                                   or NotSupportedException or InvalidOperationException or ArgumentException) {
+    } catch (Exception ex) {
+      // A preview is a glance: whatever stopped the read - a locked file, a damaged entry, a codec
+      // throwing on bytes it did not expect - it is named in the pane and nothing else happens.
       return (null, $"{entry.Name}{Environment.NewLine}Cannot be read: {ex.Message}");
+    } finally {
+      EndBackgroundRead();
     }
 
     static long SafeLength(string path) {
@@ -603,7 +714,20 @@ internal sealed class MainViewModel : ViewModelBase {
     var confirm = MessageBox.Show(summary, "Confirm Delete",
                                   MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
     if (confirm != DialogResult.Yes) return;
+    if (BeginChange(TimeSpan.FromSeconds(10)) is { } busy) {
+      StatusText = busy;
+      return;
+    }
 
+    try {
+      DeleteConfirmed(selected, mode);
+    } finally {
+      EndChange();
+      if (CurrentLocation is { } here) RaiseChanged([here]);
+    }
+  }
+
+  private void DeleteConfirmed(List<ArchiveEntryViewModel> selected, Compression.Lib.DeleteMode mode) {
     if (mode == Compression.Lib.DeleteMode.RealFs) {
       var failed = 0;
       foreach (var entry in selected) {
@@ -1073,6 +1197,13 @@ internal sealed class MainViewModel : ViewModelBase {
       if (!string.Equals(ArchivePath, target.HostPath, StringComparison.OrdinalIgnoreCase)) return false;
     }
 
+    var folder = Location.NormalizeArchiveFolder(target.ArchiveFolder ?? "");
+    if (folder.Length > 0 && !_allEntries.Any(e => e.Path.StartsWith(folder, StringComparison.Ordinal))) {
+      StatusText = $"No longer exists: {target}";
+      RefreshVisibleEntries();
+      return false;
+    }
+
     CurrentFolder = target.ArchiveFolder ?? "";
     RefreshVisibleEntries();
     return true;
@@ -1108,6 +1239,9 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   private void RefreshVisibleEntriesCore() {
+    // One notification for the whole listing: a per-row notification had every listener - the file
+    // list, the thumbnail decoder - start over once per entry.
+    using var batch = Entries.Defer();
     Entries.Clear();
 
     // OS-browser mode: list filesystem children instead of archive entries.
@@ -1456,6 +1590,7 @@ internal sealed class MainViewModel : ViewModelBase {
   /// </summary>
   internal string? ReceiveDropped(IReadOnlyList<IncomingFile> files, Location target) {
     if (WhyNotReceive(files, target) is { } refusal) return Fail(refusal);
+    if (BeginChange(TimeSpan.FromSeconds(2)) is { } busy) return Fail(busy);
 
     try {
       IsBusy = true;
@@ -1464,12 +1599,13 @@ internal sealed class MainViewModel : ViewModelBase {
       else RefreshVisibleEntries();
 
       StatusText = $"Received {result.Created.Count} item(s) into {target}.";
+      RaiseChanged([target]);
       return null;
-    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException
-                                   or InvalidOperationException or ArgumentException or InvalidDataException) {
+    } catch (Exception ex) {
       return Fail($"Receiving the drop failed: {ex.Message}");
     } finally {
       IsBusy = false;
+      EndChange();
     }
 
     string Fail(string reason) {
