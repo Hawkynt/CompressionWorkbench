@@ -146,4 +146,33 @@ public class AcronisTibxWriterTests {
     Assert.That(reader.PageTypeCounts.GetValueOrDefault(AcronisTibxPageType.LsmLeaf), Is.EqualTo(0));
     Assert.That(reader.PageTypeCounts.GetValueOrDefault(AcronisTibxPageType.Ci), Is.EqualTo(1));
   }
+
+  [Test, Category("BoundaryValue")]
+  public void Build_RejectsContentThatWouldHaveBeenTruncated() {
+    var content = new byte[AcronisTibxWriter.MaximumFileContentLength + 1];
+    Assert.That(
+      () => AcronisTibxWriter.Build([new AcronisTibxWriter.FileSpec("large.bin", content)]),
+      Throws.TypeOf<NotSupportedException>());
+  }
+
+  [Test, Category("BoundaryValue")]
+  public void Build_AcceptsMaximumSinglePageContentWithoutTruncation() {
+    var content = Enumerable.Range(0, AcronisTibxWriter.MaximumFileContentLength).Select(i => (byte)i).ToArray();
+    var bytes = AcronisTibxWriter.Build([new AcronisTibxWriter.FileSpec("max.bin", content)]);
+    var dataPage = bytes.AsSpan(PageSize * 2, PageSize);
+    var writtenLength = BinaryPrimitives.ReadUInt32BigEndian(dataPage[0x10..]);
+    var contentMatches = dataPage.Slice(0x14, content.Length).SequenceEqual(content);
+
+    Assert.Multiple(() => {
+      Assert.That(writtenLength, Is.EqualTo(content.Length));
+      Assert.That(contentMatches, Is.True);
+    });
+  }
+
+  [Test, Category("BoundaryValue")]
+  public void Build_RejectsMalformedArchiveUuidInsteadOfReplacingIt() {
+    Assert.That(
+      () => AcronisTibxWriter.Build([], new byte[15]),
+      Throws.ArgumentException);
+  }
 }
