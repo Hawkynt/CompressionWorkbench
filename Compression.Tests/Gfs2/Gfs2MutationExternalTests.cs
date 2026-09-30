@@ -91,4 +91,45 @@ public class Gfs2MutationExternalTests {
       Assert.That(reader.Extract(reader.Entries.Single()), Is.EqualTo(replacement));
     });
   }
+  [Test, Category("HappyPath")]
+  public void AttributedFile_SurvivesRebuild_AndGfs2EditDecodesItsDinode() {
+    RequireGfs2Utils();
+    if (!FsInteropToolbox.WslHasTool("gfs2_edit"))
+      Assert.Ignore("gfs2_edit not found in WSL. Install with `sudo apt install -y gfs2-utils`.");
+    var path = Path.Combine(this._tmpDir, "attributed.gfs2");
+    var metadata = new Gfs2InodeMetadata(0x81A0, 1201, 2202, 0x20 | 0x80,
+      1_700_000_001, 111_111_111, 1_700_000_002, 222_222_222, 1_700_000_003, 333_333_333);
+    var writer = new Gfs2Writer(64L * 1024 * 1024, lockTable: "cluster:attrs");
+    writer.AddFile("ATTR.BIN", Payload(4, 12_000), metadata);
+    using (var image = File.Create(path))
+      writer.Build(image);
+    AssertFsckClean(path);
+
+    using (var image = File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+      ((IArchiveModifiable)new Gfs2FormatDescriptor()).Add(image, [ArchiveInputInfo.InMemory("NEW.BIN", [1, 2, 3])]);
+    AssertFsckClean(path);
+
+    ulong block;
+    using (var read = File.OpenRead(path))
+    using (var reader = new Gfs2Reader(read))
+      block = reader.Entries.Single(e => e.Name == "ATTR.BIN").InodeBlock;
+    var dump = FsInteropToolbox.RunWsl($"gfs2_edit -p {block} {FsInteropToolbox.WinToWsl(path)}");
+    Assert.That(dump.ExitCode, Is.EqualTo(0), dump.StdErr);
+    // gfs2_edit prints one "name  value" line per dinode field; it does not
+    // print the *_nsec tail, which the internal reader tests cover.
+    string Field(string name) {
+      var match = System.Text.RegularExpressions.Regex.Match(dump.StdOut, $@"^\s*{name}\s+(\S+)", System.Text.RegularExpressions.RegexOptions.Multiline);
+      Assert.That(match.Success, Is.True, $"gfs2_edit did not print {name}:\n{dump.StdOut}");
+      return match.Groups[1].Value;
+    }
+    Assert.Multiple(() => {
+      Assert.That(Field("di_mode"), Does.StartWith("0100640"));
+      Assert.That(Field("di_uid"), Is.EqualTo("1201"));
+      Assert.That(Field("di_gid"), Is.EqualTo("2202"));
+      Assert.That(Field("di_atime"), Is.EqualTo("1700000001"));
+      Assert.That(Field("di_mtime"), Is.EqualTo("1700000002"));
+      Assert.That(Field("di_ctime"), Is.EqualTo("1700000003"));
+      Assert.That(Field("di_flags"), Does.StartWith("0x000000A0"));
+    });
+  }
 }

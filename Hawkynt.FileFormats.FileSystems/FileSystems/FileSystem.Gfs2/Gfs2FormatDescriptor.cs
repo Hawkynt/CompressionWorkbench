@@ -292,10 +292,29 @@ public sealed class Gfs2FormatDescriptor
       archive.Length,
       reader.LockTable,
       reader.Uuid,
-      reader.Entries.Where(static entry => entry.Metadata is not null)
-        .ToDictionary(static entry => entry.Name, static entry => entry.Metadata!, StringComparer.Ordinal));
+      PreservableFileMetadata(reader.Entries));
     archive.Position = 0;
     return profile;
+  }
+
+  /// <summary>
+  /// Collects the dinode attributes a rebuild carries over. Only regular files
+  /// qualify (a directory's mode would be refused by the file writer), the first
+  /// entry wins if a damaged volume repeats a name, and <c>di_flags</c> is
+  /// narrowed to the policy bits: the rebuilt file is laid out plainly, so a
+  /// source JDATA or EA_INDIRECT bit would misdescribe it.
+  /// </summary>
+  private static Dictionary<string, Gfs2InodeMetadata> PreservableFileMetadata(IEnumerable<Gfs2Entry> entries) {
+    var result = new Dictionary<string, Gfs2InodeMetadata>(StringComparer.Ordinal);
+    foreach (var entry in entries) {
+      if (entry.IsDirectory || entry.Metadata is not { } metadata || (metadata.Mode & 0xF000) != 0x8000)
+        continue;
+      if (metadata.AccessTimeNanoseconds >= 1_000_000_000 || metadata.ModificationTimeNanoseconds >= 1_000_000_000
+          || metadata.ChangeTimeNanoseconds >= 1_000_000_000)
+        metadata = metadata with { AccessTimeNanoseconds = 0, ModificationTimeNanoseconds = 0, ChangeTimeNanoseconds = 0 };
+      result.TryAdd(entry.Name, metadata with { Flags = metadata.Flags & Gfs2Writer.PreservableFileFlags });
+    }
+    return result;
   }
 
   private static byte[] BuildEditedImage(IReadOnlyList<(string Name, byte[] Data)> files, EditProfile profile) {

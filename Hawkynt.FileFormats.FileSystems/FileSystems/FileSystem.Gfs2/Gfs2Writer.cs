@@ -61,6 +61,19 @@ public sealed partial class Gfs2Writer {
   private const uint DifJData = 0x00000001;
   private const uint DifSystem = 0x00000200;
 
+  /// <summary>
+  /// The <c>di_flags</c> bits a regular file may carry through this writer:
+  /// DIRECTIO (0x10), IMMUTABLE (0x20), APPENDONLY (0x40), NOATIME (0x80) and
+  /// SYNC (0x100) from <c>gfs2_ondisk.h</c>. They are access policy only. Every
+  /// other bit either changes the on-disk layout (JDATA stores
+  /// <c>bsize - 24</c> bytes per data block behind a meta header, EA_INDIRECT
+  /// names an extended-attribute tree this writer does not emit), belongs to
+  /// directories (EXHASH, TOPDIR, INHERIT_*) or to system inodes, or records a
+  /// transient state (TRUNC_IN_PROG); writing it on a plainly laid-out file
+  /// would describe a volume that is not there.
+  /// </summary>
+  public const uint PreservableFileFlags = 0x00000010 | 0x00000020 | 0x00000040 | 0x00000080 | 0x00000100;
+
   // Directory entry de_type (matches DT_*) values.
   private const ushort DtDir = 4, DtRegular = 8;
 
@@ -200,6 +213,10 @@ public sealed partial class Gfs2Writer {
     if (metadata is null) return;
     if ((metadata.Mode & 0xF000) != SIfReg)
       throw new ArgumentException("Metadata supplied for a GFS2 file must have a regular-file mode.", nameof(metadata));
+    if ((metadata.Flags & ~PreservableFileFlags) != 0)
+      throw new ArgumentException(
+        $"GFS2 file flags 0x{metadata.Flags & ~PreservableFileFlags:X8} change the dinode layout or do not apply to a regular file.",
+        nameof(metadata));
     if (metadata.AccessTimeNanoseconds >= 1_000_000_000 ||
         metadata.ModificationTimeNanoseconds >= 1_000_000_000 ||
         metadata.ChangeTimeNanoseconds >= 1_000_000_000)
