@@ -15,7 +15,7 @@ list.
 
 | Type | Description |
 |------|-------------|
-| `FormatDetector` | Identifies formats by extension and magic bytes, with dedicated PE/SFX, LZMA and tar-at-257 handling |
+| `FormatDetector` | Identifies formats by extension and magic bytes, with dedicated PE/SFX, LZMA and tar-at-257 handling. For generic disk-image names (`.img`, `.raw`, `.dd`, `.bin`, `.iso`, …) and extensionless files the content decides: partition table, filesystem or optical image (see `ARCHITECTURE.md`). `DetectByContent(Stream)` for entries without a file, `DetectCached(path)` for repeated UI queries |
 | `FormatRegistration` | Source-generated registration of every descriptor, building block and filesystem driver sidecar |
 | `ArchiveOperations` | Unified List/Extract/Create/Convert/Resize dispatched through `FormatRegistry` |
 | `ArchiveReader` / `ArchiveWriter` | Streaming read and write APIs with bounded per-entry buffering |

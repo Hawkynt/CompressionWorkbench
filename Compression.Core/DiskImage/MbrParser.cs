@@ -30,6 +30,46 @@ public static class MbrParser {
        && BinaryPrimitives.ReadUInt16LittleEndian(data[510..]) == BootSignature;
 
   /// <summary>
+  /// Checks whether sector 0 holds a partition table that is actually usable, rather than
+  /// merely ending in the 0x55AA boot signature — which every FAT, NTFS and exFAT volume boot
+  /// record does as well.
+  /// </summary>
+  /// <remarks>
+  /// Rules, after the UEFI specification's description of the legacy MBR (UEFI 2.10, §5.2.1):
+  /// every one of the four entries carries a boot indicator of 0x00 or 0x80; an entry with
+  /// partition type 0x00 is unused; a used entry starts at LBA 1 or later, spans at least one
+  /// sector and starts inside the image; used entries do not overlap; and at least one entry is
+  /// used. An entry may run past the end of the image (a truncated dump, or the 0xFFFFFFFF
+  /// length of a protective MBR) as long as it starts inside it.
+  /// </remarks>
+  /// <param name="sector0">At least the first 512 bytes of the image.</param>
+  /// <param name="diskLength">Length of the whole image in bytes.</param>
+  public static bool HasValidPartitionTable(ReadOnlySpan<byte> sector0, long diskLength) {
+    if (!IsMbr(sector0)) return false;
+
+    Span<(ulong Start, ulong End)> used = stackalloc (ulong, ulong)[4];
+    var count = 0;
+    for (var i = 0; i < 4; ++i) {
+      var raw = sector0.Slice(PartitionTableOffset + i * EntrySize, EntrySize);
+      if (raw[0] is not (0x00 or 0x80)) return false;
+
+      var entry = ParseEntry(raw);
+      if (entry.Type == 0x00) continue;
+      if (entry.LbaStart == 0 || entry.SectorCount == 0) return false;
+
+      var start = (ulong)entry.LbaStart * SectorSize;
+      if (start >= (ulong)diskLength) return false;
+
+      var end = start + (ulong)entry.SectorCount * SectorSize;
+      for (var j = 0; j < count; ++j)
+        if (start < used[j].End && used[j].Start < end)
+          return false;
+      used[count++] = (start, end);
+    }
+    return count > 0;
+  }
+
+  /// <summary>
   /// Parses all partitions from an MBR, including extended/logical partitions.
   /// </summary>
   /// <param name="diskData">The full disk image as a readable stream.</param>

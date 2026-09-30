@@ -3566,6 +3566,7 @@ Parses GPT (GUID Partition Table) headers and partition entries. GPT header is a
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `HasValidHeader` | `static bool HasValidHeader(ReadOnlySpan<byte> data)` | Checks that LBA 1 holds a GPT header that is internally consistent, not merely the "EFI PART" signature: the header size lies in [92, 512], the header's own CRC32 matches (computed with the CRC field zeroed, UEFI 2.10 §5.3.2), it names itself as LBA 1 and its partition entries are 128 x 2^n bytes each, as the specification requires. |
 | `IsGpt` | `static bool IsGpt(ReadOnlySpan<byte> data)` | Checks whether the given data contains a valid GPT header at LBA 1. |
 | `Parse` | `static List<PartitionEntry> Parse(Stream diskData)` | Parses all partitions from a GPT disk image. |
 
@@ -3598,6 +3599,7 @@ Parses MBR (Master Boot Record) partition tables, including extended/logical par
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `HasValidPartitionTable` | `static bool HasValidPartitionTable(ReadOnlySpan<byte> sector0, long diskLength)` | Checks whether sector 0 holds a partition table that is actually usable, rather than merely ending in the 0x55AA boot signature — which every FAT, NTFS and exFAT volume boot record does as well. |
 | `IsMbr` | `static bool IsMbr(ReadOnlySpan<byte> data)` | Checks whether the given data starts with a valid MBR. |
 | `ParsePrimary` | `static List<PartitionEntry> ParsePrimary(ReadOnlySpan<byte> mbr)` | Parses the 4 primary partition entries from an MBR without following extended chains. Operates on a 512-byte buffer (no stream needed). |
 | `Parse` | `static List<PartitionEntry> Parse(Stream diskData)` | Parses all partitions from an MBR, including extended/logical partitions. |
@@ -3787,6 +3789,7 @@ Partition-aware archive surface for raw disk image streams (VHD/VHDX/VMDK/Qcow2/
 | --- | --- | --- |
 | `Extract` | `static bool Extract(Stream disk, string outputDir, string password, string[] files)` | Extracts entries across every partition into per-partition subdirectories of `outputDir`. Returns `true` if a partition table was detected and handled; `false` if no partition table was found (caller falls through to the unpartitioned path). |
 | `List` | `static List<ArchiveEntryInfo> List(Stream disk, string password)` | Lists entries across every partition. Returns `null` if no partition table is present so the caller can fall through to the unpartitioned path. |
+| `MakePartitionPrefix` | `static string MakePartitionPrefix(PartitionEntry part)` | The directory name a partition is listed under: `Partition{N}_{TypeName}`, with N one-based and the type name reduced to letters, digits, '-' and '_'. |
 | `TryAdd` | `static bool TryAdd(Stream disk, IReadOnlyList<ArchiveInputInfo> inputs)` | Partition-aware `Add`. Returns `true` when a partition table was present and at least one input was dispatched through the partition-aware path; `false` when no partition table exists so the caller can fall through to the existing single-FS path. |
 | `TryRemove` | `static bool TryRemove(Stream disk, string[] entryNames)` | Partition-aware `Remove`. Returns `true` when a partition table was present and at least one entry was removed; `false` if no partition table was detected. Entry name shapes: `Partition<N>_<Type>/<inner>` deletes an inner-FS file; `Partition<N>_<Type>` or `Partition<N>_<Type>.raw` deletes the whole partition. |
 

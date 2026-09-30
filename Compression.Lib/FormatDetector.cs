@@ -202,6 +202,16 @@ public static partial class FormatDetector {
 
     // Special cases not handled by registry
     var singleExt = Path.GetExtension(lower);
+
+    // A generic disk-image name (".img", ".raw", ".dd", ".bin", ".iso", …) says nothing about
+    // what is inside: a partitioned whole disk, a bare filesystem, an optical image. Ask the
+    // bytes first; an extension claimant only gets the file when the content proves nothing.
+    if (GenericDiskImageExtensions.Contains(singleExt)) {
+      var byContent = DetectDiskImageByContent(path, includeSuperblocks: true);
+      if (byContent != Format.Unknown)
+        return byContent;
+    }
+
     if (singleExt == ".exe") 
       return DetectInstaller(path);
 
@@ -211,19 +221,22 @@ public static partial class FormatDetector {
     if (lower.EndsWith(".sz_") || lower.EndsWith("._"))
       return Format.Szdd;
 
-    // Generic disk-image extension claimed by many filesystems. The extension
-    // carries no information here, so ask the content first — otherwise every
-    // ext4/btrfs/ISO/NTFS image named ".img" is reported as FAT and routed to
-    // the FAT reader, which rejects it. Only when the content says nothing do we
-    // fall back to FAT as the most common writable target; that fallback is what
-    // keeps Create working and stops the registry's first-claim-wins map from
-    // routing ".img" to a niche read-only descriptor (Bfs, alphabetically).
-    // Other ambiguous extensions (.bin, .dd, .raw) are NOT special-cased: .bin
-    // belongs to BinCue (CD images), .dd is dd-image (raw), .raw is generic —
-    // those correctly resolve via the registry to specific descriptors.
+    // ".img" is claimed by a dozen filesystems and the content has already been asked above.
+    // What is left: a claimant whose only signature is too weak for that probe (BFS, JFFS2),
+    // a FAT volume with an unusual boot sector, or nothing — and bytes that prove nothing are not claimed, so noise stays Unknown
+    // instead of being handed to the FAT reader. A path with no content yet (a Create target,
+    // or an empty file) still resolves to FAT, the common writable target; that is what stops
+    // the registry's first-claim-wins map from routing ".img" to a niche read-only descriptor.
     if (singleExt == ".img") {
-      var img = DetectByMagicFromFile(path);
-      return img != Format.Unknown ? img : Format.Fat;
+      if (!File.Exists(path) || new FileInfo(path).Length == 0)
+        return Format.Fat;
+      var claimed = FormatDetector._extToFormats!.TryGetValue(singleExt, out var imgClaimants)
+        ? ResolveSharedExtension(path, imgClaimants)
+        : Format.Unknown;
+      if (claimed != Format.Unknown) return claimed;
+      // A FAT volume whose boot sector the strict probe rejects — no 0x55AA, or a 68000 branch
+      // instead of an x86 jump, as on Atari ST floppies — still carries a coherent BPB.
+      return HasPlausibleFatBpb(ReadHeader(path)) ? Format.Fat : Format.Unknown;
     }
 
     // The ".wad" extension is shared by Doom WADs (IWAD/PWAD magic, the "Wad"
@@ -698,6 +711,12 @@ public static partial class FormatDetector {
     var byExt = DetectByExtension(path);
     if (byExt != Format.Unknown) return byExt;
 
+    // No extension, or one nobody claims: a disk image named "sda", "disk" or "backup.001" is
+    // still recognisable by its partition table or its optical volume descriptors. Superblock
+    // signatures are left to the confidence-ranked magic scan below, which already covers them.
+    var disk = DetectDiskImageByContent(path, includeSuperblocks: false);
+    if (disk != Format.Unknown) return disk;
+
     var byMagic = DetectByMagicFromFile(path);
 
     // A bare host executable may only be the bootloader of what the file really is. On Windows a
@@ -750,6 +769,12 @@ public static partial class FormatDetector {
     // The read-side claimant cannot create, so this is a shared extension whose first claimant is
     // read-only. Take the first one that can write instead.
     var singleExt = Path.GetExtension(path.ToLowerInvariant());
+
+    // An existing ".img" whose content is a partitioned disk, or proves nothing, is being
+    // overwritten: FAT stays the target, as for a new file, rather than the first claimant.
+    if (singleExt == ".img")
+      return Format.Fat;
+
     if (!string.IsNullOrEmpty(singleExt)
         && FormatDetector._extToFormats!.TryGetValue(singleExt, out var claimants))
       foreach (var candidate in claimants)
