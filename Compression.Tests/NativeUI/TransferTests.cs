@@ -173,6 +173,62 @@ public sealed class TransferTests {
     }));
   }
 
+  // ── where the bytes are staged ──────────────────────────────────────────────────────────────
+
+  private List<string> WatchStaging(Action transfer) {
+    var seen = new List<string>();
+    void Record(string path) => seen.Add(path);
+    Transfer.StagingCreated += Record;
+    try {
+      transfer();
+    } finally {
+      Transfer.StagingCreated -= Record;
+    }
+
+    return seen;
+  }
+
+  [Test]
+  public void GivenArchiveEntriesPastedIntoAFolder_WhenExtracted_ThenTheyAreStagedInsideThatFolderAndNothingIsLeftBehind() {
+    var target = Path.Combine(this._disk, "target");
+
+    var staged = this.WatchStaging(() =>
+      Transfer.Run([Item(Location.InArchive(this._a, ""), "docs", folder: true)], this.Disk("target"), move: false));
+
+    Assert.Multiple(() => {
+      Assert.That(staged, Is.Not.Empty);
+      Assert.That(staged.Select(Path.GetDirectoryName), Is.All.EqualTo(target),
+        "extraction lands on the destination's own volume and reaches its name by a rename");
+      Assert.That(Directory.GetDirectories(target, Transfer.StagingPrefix + "*"), Is.Empty);
+      Assert.That(File.ReadAllText(Path.Combine(target, "docs", "guide", "intro.txt")), Is.EqualTo("intro"));
+    });
+  }
+
+  [Test]
+  public void GivenAFileCopiedOnDisk_WhenCopied_ThenItIsWrittenUnderAStagingNameBesideTheTargetFirst() {
+    var target = Path.Combine(this._disk, "target");
+
+    var staged = this.WatchStaging(() => Transfer.Run([Item(this.Disk(), "file.txt")], this.Disk("target"), move: false));
+
+    Assert.That(staged.Select(Path.GetDirectoryName), Is.EqualTo(new[] { target }));
+    Assert.That(File.ReadAllText(Path.Combine(target, "file.txt")), Is.EqualTo("disk file"));
+    Assert.That(Directory.GetFileSystemEntries(target).Select(Path.GetFileName), Is.EqualTo(new[] { "file.txt" }));
+  }
+
+  [Test]
+  public void GivenAFileMovedWithinOneVolume_WhenMoved_ThenNothingIsStaged()
+    => Assert.That(this.WatchStaging(() => Transfer.Run([Item(this.Disk(), "file.txt")], this.Disk("target"), move: true)), Is.Empty,
+      "a rename needs no copy at all");
+
+  [Test]
+  public void GivenFilesCopiedIntoAnArchive_WhenAdded_ThenTheyAreStagedBesideTheArchive() {
+    var staged = this.WatchStaging(() =>
+      Transfer.Run([Item(Location.InArchive(this._a, ""), "docs", folder: true)], Location.InArchive(this._b, ""), move: false));
+
+    Assert.That(staged.Select(Path.GetDirectoryName), Is.All.EqualTo(Path.GetDirectoryName(this._b)));
+    Assert.That(Directory.GetDirectories(this._root, Transfer.StagingPrefix + "*"), Is.Empty);
+  }
+
   // ── what is refused before anything is touched ──────────────────────────────────────────────
 
   [Test]
