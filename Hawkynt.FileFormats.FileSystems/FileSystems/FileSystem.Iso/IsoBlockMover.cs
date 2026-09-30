@@ -55,7 +55,7 @@ public sealed class IsoBlockMover : IFilesystemBlockMover {
   /// image the planning pass had not finished after ten minutes — which is why
   /// this mover was written and then not used.
   /// </remarks>
-  private readonly Dictionary<int, long> _recordOfExtent = [];
+  private readonly Dictionary<int, List<long>> _recordOfExtent = [];
 
   /// <summary>Reads the directory once and notes where every record is.</summary>
   public void Init(Stream image) {
@@ -63,16 +63,69 @@ public sealed class IsoBlockMover : IFilesystemBlockMover {
     this._recordOfExtent.Clear();
 
     using var cache = new SectorCache(image);
-    var pvdOffset = (long)PvdLba * SectorSize;
-    if (pvdOffset + SectorSize > image.Length) return;
+    var sector = new byte[SectorSize];
+    // Every tree names each file: the primary ECMA-119 tree and, when present,
+    // the Joliet tree. A move has to repoint all of them, or one tree keeps
+    // pointing at where the file used to be.
+    for (var lba = PvdLba; lba < PvdLba + 64; lba++) {
+      var off = (long)lba * SectorSize;
+      if (off + SectorSize > image.Length) break;
+      cache.Read(off, sector);
+      if (sector[1] != 'C' || sector[2] != 'D' || sector[3] != '0' || sector[4] != '0' || sector[5] != '1') break;
+      if (sector[0] == 0xFF) break;
+      if (sector[0] is not (1 or 2)) continue;
+      var rootLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(sector.AsSpan(156 + 2));
+      var rootLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(sector.AsSpan(156 + 10));
+      foreach (var (extent, at) in Records(image, cache, rootLba, rootLength, new HashSet<int>())) {
+        if (!this._recordOfExtent.TryGetValue(extent, out var list))
+          this._recordOfExtent[extent] = list = [];
+        if (!list.Contains(at)) list.Add(at);
+      }
+    }
+  }
 
-    var pvd = new byte[SectorSize];
-    cache.Read(pvdOffset, pvd);
-    var rootLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(pvd.AsSpan(156 + 2));
-    var rootLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(pvd.AsSpan(156 + 10));
+  /// <summary>
+  /// Every file record in the tree rooted at <paramref name="rootLba" />, found by
+  /// walking into every folder. Folder records themselves are not listed: moving a
+  /// folder would also mean rewriting its "." and its children's "..", and the path
+  /// tables, which this mover does not do — the layout map keeps folders in place.
+  /// </summary>
+  private static IEnumerable<(int Extent, long At)> Records(Stream image, SectorCache cache,
+      int rootLba, int rootLength, HashSet<int> visited) {
+    if (!visited.Add(rootLba)) yield break;
+    var rootOffset = (long)rootLba * SectorSize;
+    var end = Math.Min(rootOffset + rootLength, image.Length);
+    var sector = new byte[SectorSize];
+    var folders = new List<(int Lba, int Length)>();
 
-    foreach (var (extent, at) in Records(image, cache, rootLba, rootLength))
-      this._recordOfExtent[extent] = at;
+    for (var sectorOffset = rootOffset; sectorOffset < end; sectorOffset += SectorSize) {
+      var inSector = (int)Math.Min(SectorSize, end - sectorOffset);
+      cache.Read(sectorOffset, sector.AsSpan(0, inSector));
+
+      var pos = 0;
+      while (pos < inSector) {
+        var recordLength = sector[pos];
+        if (recordLength == 0) break;                        // padding to the sector end
+        if (recordLength < 33 || pos + recordLength > inSector) break;
+
+        var extent = (int)BinaryPrimitives.ReadUInt32LittleEndian(sector.AsSpan(pos + 2));
+        var dataLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(sector.AsSpan(pos + 10));
+        var isFolder = (sector[pos + 25] & 2) != 0;
+        var nameLength = sector[pos + 32];
+        if (nameLength > 0 && nameLength <= recordLength - 33) {
+          var first = sector[pos + 33];
+          // "." and ".." name the directory itself and its parent.
+          if (!(nameLength == 1 && (first == 0 || first == 1))) {
+            if (isFolder) folders.Add((extent, dataLength));
+            else yield return (extent, sectorOffset + pos);
+          }
+        }
+        pos += recordLength;
+      }
+    }
+    foreach (var (lba, length) in folders)
+      foreach (var record in Records(image, cache, lba, length, visited))
+        yield return record;
   }
 
   /// <summary>Every directory record, as the extent it names and where it sits.</summary>
@@ -137,19 +190,22 @@ public sealed class IsoBlockMover : IFilesystemBlockMover {
     var newLba = (int)(newOffset / SectorSize);
     if (oldLba == newLba) return;
 
-    if (!this._recordOfExtent.Remove(oldLba, out var recordOffset))
+    if (!this._recordOfExtent.Remove(oldLba, out var recordOffsets))
       throw new InvalidOperationException(
         $"ISO 9660: no directory record names sector {oldLba}, so '{fileName}' cannot be repointed.");
 
-    // The extent is recorded twice, once each way round, as the standard asks.
+    // The extent is recorded twice, once each way round, as the standard asks —
+    // and in every tree that names the file.
     Span<byte> patch = stackalloc byte[8];
     BinaryPrimitives.WriteUInt32LittleEndian(patch, (uint)newLba);
     BinaryPrimitives.WriteUInt32BigEndian(patch[4..], (uint)newLba);
-    image.Position = recordOffset + 2;
-    image.Write(patch);
+    foreach (var recordOffset in recordOffsets) {
+      image.Position = recordOffset + 2;
+      image.Write(patch);
+    }
     image.Flush();
 
-    this._recordOfExtent[newLba] = recordOffset;
+    this._recordOfExtent[newLba] = recordOffsets;
   }
 
   /// <summary>

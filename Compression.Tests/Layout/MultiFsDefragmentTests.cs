@@ -89,10 +89,12 @@ public class MultiFsDefragmentTests {
 
     // ISO image is small (mostly metadata + 100-byte file), but valid CarveHole
     // sizing is checked by the helper. Ask for a hole bigger than the entire
-    // image — must throw.
-    Assert.Throws<ArgumentException>(() =>
+    // image — must be refused, and nothing may change.
+    var before = ms.ToArray();
+    Assert.Throws<NotSupportedException>(() =>
       new FileSystem.Iso.IsoFormatDescriptor().Defragment(ms,
         new DefragOptions { Mode = DefragMode.CarveHole, HoleSize = ms.Length * 2 }));
+    Assert.That(ms.ToArray(), Is.EqualTo(before));
   }
 
   // ── ext2/3/4 ─────────────────────────────────────────────────────────
