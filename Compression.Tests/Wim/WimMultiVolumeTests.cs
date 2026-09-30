@@ -38,12 +38,15 @@ public class WimMultiVolumeTests {
 
     Assert.That(volumes.Length, Is.GreaterThan(1));
 
+    // Each part lists only its own resources, so the combined table runs part by part; the data
+    // resources keep their relative order.
     var streams = volumes.Select(v => new MemoryStream(v)).ToArray();
     using var reader = new WimReader(streams[0], streams.Skip(1).Cast<Stream>().ToArray());
 
-    Assert.That(reader.Resources.Count(r => !r.IsMetadata), Is.EqualTo(2));
-    Assert.That(reader.ReadResource(0), Is.EqualTo(data1));
-    Assert.That(reader.ReadResource(1), Is.EqualTo(data2));
+    var data = reader.Resources.Select((r, i) => (r, i)).Where(x => !x.r.IsMetadata).Select(x => x.i).ToArray();
+    Assert.That(data, Has.Length.EqualTo(2));
+    Assert.That(reader.ReadResource(data[0]), Is.EqualTo(data1));
+    Assert.That(reader.ReadResource(data[1]), Is.EqualTo(data2));
   }
 
   private static byte[] CreateTestWim() {

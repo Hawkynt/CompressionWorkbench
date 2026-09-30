@@ -20,8 +20,7 @@ namespace FileFormat.Wim;
 /// </para>
 /// </remarks>
 public sealed class WimReader : IDisposable {
-  private readonly Stream _stream;
-  private readonly IReadOnlyList<Stream> _additionalParts;
+  private readonly Dictionary<ushort, Stream> _parts = [];
   private readonly WimHeader _header;
   private readonly IReadOnlyList<WimResourceEntry> _resourceTable;
   private bool _disposed;
@@ -40,15 +39,38 @@ public sealed class WimReader : IDisposable {
   /// <exception cref="InvalidDataException">Thrown when the WIM data is malformed.</exception>
   public WimReader(Stream stream) : this(stream, []) { }
 
-  /// <summary>Opens the first part of a split WIM and the remaining parts in part-number order.</summary>
+  /// <summary>
+  /// Opens part 1 of a split WIM together with its other parts, in any order. Every part of a
+  /// split set carries its own lookup table listing only the resources stored in that part, so
+  /// <see cref="Resources"/> is the union of all parts' tables.
+  /// </summary>
+  /// <exception cref="InvalidDataException">
+  /// A part belongs to another set (GUID or part count differ), is duplicated, or a table entry
+  /// names a part other than the one it was read from.
+  /// </exception>
   public WimReader(Stream stream, IReadOnlyList<Stream> additionalParts) {
     ArgumentNullException.ThrowIfNull(stream);
     ArgumentNullException.ThrowIfNull(additionalParts);
 
-    this._stream = stream;
-    this._additionalParts = additionalParts;
     this._header = WimHeader.Read(stream);
-    this._resourceTable = this.ReadResourceTable();
+    var table = new List<WimResourceEntry>();
+    this.AddPart(stream, this._header, table);
+    foreach (var part in additionalParts) {
+      ArgumentNullException.ThrowIfNull(part);
+      part.Seek(0, SeekOrigin.Begin);
+      var header = WimHeader.Read(part);
+      if (header.Guid != this._header.Guid || header.TotalParts != this._header.TotalParts)
+        throw new InvalidDataException($"WIM part {header.PartNumber} belongs to a different split set.");
+      this.AddPart(part, header, table);
+    }
+    this._resourceTable = table;
+  }
+
+  private void AddPart(Stream stream, WimHeader header, List<WimResourceEntry> table) {
+    var number = header.PartNumber == 0 ? (ushort)1 : header.PartNumber;
+    if (!this._parts.TryAdd(number, stream))
+      throw new InvalidDataException($"WIM part {number} was supplied twice.");
+    table.AddRange(ReadResourceTable(stream, header, number));
   }
 
   /// <summary>
@@ -217,12 +239,12 @@ public sealed class WimReader : IDisposable {
   // Resource table reading
   // -------------------------------------------------------------------------
 
-  private List<WimResourceEntry> ReadResourceTable() {
-    var tableInfo = this._header.OffsetTableResource;
+  private static List<WimResourceEntry> ReadResourceTable(Stream stream, WimHeader header, ushort partNumberOfStream) {
+    var tableInfo = header.OffsetTableResource;
     if (tableInfo is null)
       return [];
 
-    this._stream.Seek(tableInfo.Offset, SeekOrigin.Begin);
+    stream.Seek(tableInfo.Offset, SeekOrigin.Begin);
 
     var tableSize  = tableInfo.CompressedSize; // offset table is always stored uncompressed
     var entryCount = (int)(tableSize / WimConstants.LookupTableEntrySize);
@@ -230,7 +252,7 @@ public sealed class WimReader : IDisposable {
 
     Span<byte> buf = stackalloc byte[WimConstants.LookupTableEntrySize];
     for (var i = 0; i < entryCount; ++i) {
-      this._stream.ReadExactly(buf);
+      stream.ReadExactly(buf);
 
       // RESHDR_DISK_SHORT: packed size+flags (8), offset (8), original size (8)
       var sizeAndFlags   = BinaryPrimitives.ReadUInt64LittleEndian(buf);
@@ -243,7 +265,10 @@ public sealed class WimReader : IDisposable {
       var hash = buf[30..50].ToArray();
 
       if (partNumber == 0)
-        partNumber = 1;
+        partNumber = partNumberOfStream;
+      else if (partNumber != partNumberOfStream)
+        throw new InvalidDataException(
+          $"WIM part {partNumberOfStream} lists a resource as stored in part {partNumber}.");
       entries.Add(new WimResourceEntry(compressedSize, originalSize, offset, flags, hash) { PartNumber = partNumber });
     }
 
@@ -283,11 +308,8 @@ public sealed class WimReader : IDisposable {
     if (entry.OriginalSize == 0)
       return [];
 
-    var source = entry.PartNumber == 1
-      ? this._stream
-      : entry.PartNumber - 2 < this._additionalParts.Count
-        ? this._additionalParts[entry.PartNumber - 2]
-        : throw new InvalidDataException($"WIM resource is in missing part {entry.PartNumber}.");
+    if (!this._parts.TryGetValue(entry.PartNumber, out var source))
+      throw new InvalidDataException($"WIM resource is in missing part {entry.PartNumber}.");
     source.Seek(entry.Offset, SeekOrigin.Begin);
 
     if (!entry.IsCompressed) {

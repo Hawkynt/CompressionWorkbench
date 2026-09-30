@@ -427,103 +427,116 @@ public sealed class WimWriter {
       resources.Select((data, index) => ($"resource_{index.ToString(CultureInfo.InvariantCulture)}", data)).ToList(),
       compressionType);
 
-  /// <summary>Creates a standards-shaped split WIM set, keeping each resource whole in one part.</summary>
+  /// <summary>
+  /// Creates a split WIM set (<c>.swm</c>, <c>2.swm</c>, …) in the layout <c>wimlib-imagex split</c>
+  /// and DISM produce: every part has its own header (same GUID, part number, part count and the
+  /// spanned flag), the resources stored in it, a lookup table listing only those resources, and
+  /// a copy of the XML data. Image metadata stays in part 1, and no resource is cut across parts.
+  /// </summary>
+  /// <param name="maxVolumeSize">
+  /// Target part size in bytes. Resources are packed in order and a new part starts when the next
+  /// one would not fit; a single resource larger than the target gets a part of its own, which
+  /// then exceeds it, as with <c>wimlib-imagex split</c>.
+  /// </param>
   public static byte[][] CreateSplit(long maxVolumeSize,
       IReadOnlyList<(string Name, byte[] Data)> files,
       uint compressionType = WimConstants.CompressionXpress,
       int chunkSize = WimConstants.DefaultChunkSize) {
-    if (maxVolumeSize < WimConstants.HeaderSize)
-      throw new ArgumentOutOfRangeException(nameof(maxVolumeSize), "A WIM part must fit its fixed header.");
+    ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxVolumeSize);
     ArgumentNullException.ThrowIfNull(files);
 
     using var original = new MemoryStream();
     new WimWriter(original, compressionType, chunkSize).Write(files);
     original.Position = 0;
-    var header = WimHeader.Read(original);
     using var reader = new WimReader(original);
+    var header = reader.Header;
     var resources = reader.Resources;
-    var table = new byte[checked((int)header.OffsetTableResource!.CompressedSize)];
-    original.Position = header.OffsetTableResource.Offset;
-    original.ReadExactly(table);
-    var xml = new byte[checked((int)header.XmlDataResource!.CompressedSize)];
-    original.Position = header.XmlDataResource.Offset;
-    original.ReadExactly(xml);
+    var table = ReadRange(original, header.OffsetTableResource!);
+    var xml = ReadRange(original, header.XmlDataResource!);
+    const int row = WimConstants.LookupTableEntrySize;
 
-    // The image metadata and all directory metadata stay in part one; data resources
-    // are packed whole, since the WIM resource format cannot split one resource.
-    var metadataBytes = resources.Where(resource => resource.IsMetadata).Sum(resource => resource.CompressedSize);
-    var firstFixedSize = (long)WimConstants.HeaderSize + table.Length + xml.Length + metadataBytes;
-    var placements = new List<(int ResourceIndex, ushort Part)>();
-    var partSizes = new List<long> { firstFixedSize };
-    foreach (var (resource, index) in resources.Select((r, i) => (r, i))) {
-      if (resource.IsMetadata) {
-        placements.Add((index, 1));
-        continue;
+    // Assign resources to parts: metadata to part 1, data in table order.
+    long PartOverhead(int entries) => WimConstants.HeaderSize + (long)entries * row + xml.Length;
+    var parts = new List<List<int>> { new() };
+    long partPayload = 0;
+    for (var i = 0; i < resources.Count; ++i)
+      if (resources[i].IsMetadata) {
+        parts[0].Add(i);
+        partPayload += resources[i].CompressedSize;
       }
-
-      var firstCapacity = Math.Max(0, maxVolumeSize - partSizes[0]);
-      if (resource.CompressedSize <= firstCapacity) {
-        placements.Add((index, 1));
-        partSizes[0] += resource.CompressedSize;
-        continue;
+    for (var i = 0; i < resources.Count; ++i) {
+      if (resources[i].IsMetadata) continue;
+      var current = parts[^1];
+      var size = resources[i].CompressedSize;
+      if (current.Count > 0 && PartOverhead(current.Count + 1) + partPayload + size > maxVolumeSize) {
+        if (parts.Count == ushort.MaxValue)
+          throw new InvalidOperationException("A split WIM cannot have more than 65,535 parts.");
+        parts.Add(current = []);
+        partPayload = 0;
       }
-
-      var current = partSizes.Count - 1;
-      if (current == 0 || resource.CompressedSize > maxVolumeSize - partSizes[current]) {
-        partSizes.Add(WimConstants.HeaderSize);
-        if (partSizes.Count > ushort.MaxValue)
-          throw new InvalidDataException("A split WIM cannot contain more than 65,535 parts.");
-        current = partSizes.Count - 1;
-      }
-      placements.Add((index, checked((ushort)(current + 1))));
-      partSizes[current] += resource.CompressedSize;
+      current.Add(i);
+      partPayload += size;
     }
 
-    var parts = Enumerable.Range(0, partSizes.Count).Select(_ => new MemoryStream()).ToArray();
-    foreach (var part in parts) {
+    var total = checked((ushort)parts.Count);
+    var result = new byte[parts.Count][];
+    for (var p = 0; p < parts.Count; ++p) {
+      var partNumber = (ushort)(p + 1);
+      using var part = new MemoryStream();
       part.SetLength(WimConstants.HeaderSize);
       part.Position = WimConstants.HeaderSize;
-    }
-    var rewrittenTable = (byte[])table.Clone();
-    foreach (var (resourceIndex, part) in placements) {
-      var resource = resources[resourceIndex];
-      var output = parts[part - 1];
-      var newOffset = output.Position;
-      original.Position = resource.Offset;
-      CopyExactly(original, output, resource.CompressedSize);
-      var row = rewrittenTable.AsSpan(resourceIndex * WimConstants.LookupTableEntrySize);
-      BinaryPrimitives.WriteInt64LittleEndian(row[8..], newOffset);
-      BinaryPrimitives.WriteUInt16LittleEndian(row[24..], part);
-    }
 
-    parts[0].Write(rewrittenTable);
-    var newTableOffset = parts[0].Position - rewrittenTable.Length;
-    var newXmlOffset = parts[0].Position;
-    parts[0].Write(xml);
+      // Data before metadata, as in the unsplit image, so a part reads front to back.
+      var order = parts[p].Where(i => !resources[i].IsMetadata).Concat(parts[p].Where(i => resources[i].IsMetadata)).ToList();
+      var partTable = new byte[order.Count * row];
+      WimResourceEntry? bootMetadata = null;
+      for (var k = 0; k < order.Count; ++k) {
+        var resource = resources[order[k]];
+        var offset = part.Position;
+        original.Position = resource.Offset;
+        CopyExactly(original, part, resource.CompressedSize);
+        var entry = partTable.AsSpan(k * row, row);
+        table.AsSpan(order[k] * row, row).CopyTo(entry);
+        BinaryPrimitives.WriteInt64LittleEndian(entry[8..], offset);
+        BinaryPrimitives.WriteUInt16LittleEndian(entry[24..], partNumber);
+        if (header.BootMetadataResource is { } boot && boot.Offset == resource.Offset)
+          bootMetadata = boot with { Offset = offset };
+      }
 
-    var result = new byte[parts.Length][];
-    for (var i = 0; i < parts.Length; ++i) {
+      var tableOffset = part.Position;
+      part.Write(partTable);
+      var xmlOffset = part.Position;
+      part.Write(xml);
+
       var partHeader = new WimHeader {
         Version = header.Version,
-        WimFlags = parts.Length > 1 ? header.WimFlags | WimConstants.FlagSpanned : header.WimFlags,
+        WimFlags = total > 1 ? header.WimFlags | WimConstants.FlagSpanned : header.WimFlags,
         CompressionType = header.CompressionType,
-        ChunkSize = header.ChunkSize,
+        // WimHeader.Read reports 0 as the default chunk size; an uncompressed image must keep 0,
+        // which wimlib insists on.
+        ChunkSize = header.CompressionType == WimConstants.CompressionNone ? 0 : header.ChunkSize,
         Guid = header.Guid,
-        PartNumber = checked((ushort)(i + 1)),
-        TotalParts = checked((ushort)parts.Length),
+        PartNumber = partNumber,
+        TotalParts = total,
         ImageCount = header.ImageCount,
-        OffsetTableResource = i == 0 ? header.OffsetTableResource! with { Offset = newTableOffset } : null,
-        XmlDataResource = i == 0 ? header.XmlDataResource! with { Offset = newXmlOffset } : null,
-        BootMetadataResource = i == 0 ? header.BootMetadataResource : null,
-        BootIndex = i == 0 ? header.BootIndex : 0,
-        IntegrityTableResource = i == 0 ? header.IntegrityTableResource : null,
+        OffsetTableResource = new WimResourceEntry(partTable.Length, partTable.Length, tableOffset, WimConstants.ResourceFlagMetadata),
+        XmlDataResource = header.XmlDataResource! with { Offset = xmlOffset },
+        BootMetadataResource = bootMetadata,
+        BootIndex = bootMetadata is null ? 0 : header.BootIndex,
+        IntegrityTableResource = null,
       };
-      parts[i].Position = 0;
-      partHeader.Write(parts[i]);
-      result[i] = parts[i].ToArray();
-      parts[i].Dispose();
+      part.Position = 0;
+      partHeader.Write(part);
+      result[p] = part.ToArray();
     }
     return result;
+  }
+
+  private static byte[] ReadRange(Stream source, WimResourceEntry range) {
+    var bytes = new byte[checked((int)range.CompressedSize)];
+    source.Position = range.Offset;
+    source.ReadExactly(bytes);
+    return bytes;
   }
 
   private static void CopyExactly(Stream source, Stream target, long count) {
