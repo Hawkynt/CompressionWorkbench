@@ -68,3 +68,9 @@ dotnet run --project Compression.NativeUI/Compression.NativeUI.csproj
 ```
 
 The GTK backend needs GTK 3 present (`libgtk-3-0` on Debian and Ubuntu).
+
+NativeForms is taken from source when a working copy sits next to this repository
+(`../NativeForms`), and from nuget.org otherwise — NativeForms main is usually ahead of its last
+stable package. Point elsewhere with `-p:NativeFormsSource=<path>`, or force the packages with
+`-p:NativeFormsFromSource=false`. CI clones the commit pinned in `build/NativeForms.ref` into that
+sibling position; bumping NativeForms is a one-line change to that file.

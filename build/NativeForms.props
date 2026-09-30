@@ -1,0 +1,37 @@
+<Project>
+
+  <!--
+    NativeForms, from source when a checkout is at hand and from nuget.org otherwise.
+
+    NativeForms moves faster than its stable releases: work lands on its main branch weeks before a
+    package carries it. When a NativeForms working copy is available the shell builds against it
+    directly, so it can use what main already has. Without one it falls back to the last published
+    packages, exactly as before.
+
+      NativeFormsSource      the checkout to build from. Defaults to a sibling working copy,
+                             ../NativeForms next to this repository. CI clones the commit pinned in
+                             build/NativeForms.ref and sets this (see .github/actions/nativeforms-source).
+      NativeFormsFromSource  forced true/false to override the detection, e.g.
+                             -p:NativeFormsFromSource=false to build against the packages.
+
+    The checkout stays outside this repository on purpose: a copy inside it would be scanned by the
+    source audits and linted by the package-README check as if it were ours.
+  -->
+  <PropertyGroup>
+    <NativeFormsSource Condition="'$(NativeFormsSource)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\NativeForms'))</NativeFormsSource>
+    <NativeFormsFromSource Condition="'$(NativeFormsFromSource)' == '' and Exists('$(NativeFormsSource)\NativeForms.Core\NativeForms.Core.csproj')">true</NativeFormsFromSource>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(NativeFormsFromSource)' == 'true'">
+    <ProjectReference Include="$(NativeFormsSource)\NativeForms.Core\NativeForms.Core.csproj" />
+    <ProjectReference Include="$(NativeFormsSource)\NativeForms.Backends.Windows\NativeForms.Backends.Windows.csproj" />
+    <ProjectReference Include="$(NativeFormsSource)\NativeForms.Backends.Gtk\NativeForms.Backends.Gtk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(NativeFormsFromSource)' != 'true'">
+    <PackageReference Include="Hawkynt.NativeForms" Version="1.0.0.227" />
+    <PackageReference Include="Hawkynt.NativeForms.Backends.Windows" Version="1.0.0.63" />
+    <PackageReference Include="Hawkynt.NativeForms.Backends.Gtk" Version="1.0.0.73" />
+  </ItemGroup>
+
+</Project>

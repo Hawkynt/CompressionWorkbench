@@ -1,0 +1,21 @@
+name: NativeForms from source
+description: >-
+  Clones NativeForms at the commit pinned in build/NativeForms.ref as a sibling of the workspace,
+  ../NativeForms, where build/NativeForms.props looks for it - the same arrangement as the PNGCrushCS
+  sibling. Pinning keeps a NativeForms change from altering a CompressionWorkbench build that did not
+  ask for it; bumping the ref is an ordinary, reviewable commit.
+
+runs:
+  using: composite
+  steps:
+    - name: Clone NativeForms at the pinned commit
+      shell: bash
+      run: |
+        set -euo pipefail
+        ref=$(tr -d '[:space:]' < build/NativeForms.ref)
+        dir="$GITHUB_WORKSPACE/../NativeForms"
+        rm -rf "$dir"
+        git init -q "$dir"
+        git -C "$dir" fetch -q --depth 1 https://github.com/Hawkynt/NativeForms.git "$ref"
+        git -C "$dir" checkout -q FETCH_HEAD
+        echo "NativeForms $(git -C "$dir" log -1 --format='%h %s')"
