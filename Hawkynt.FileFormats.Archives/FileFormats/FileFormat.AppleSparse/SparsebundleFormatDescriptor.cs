@@ -286,15 +286,27 @@ public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFo
     }
   }
 
-  private static byte[] BuildInfoPlist(long size, int bandSize) => System.Text.Encoding.UTF8.GetBytes($"""
+  /// <summary>The Info.plist hdiutil writes for a new sparsebundle: the same keys, in the same order, under Apple's plist DOCTYPE.</summary>
+  private static byte[] BuildInfoPlist(long size, int bandSize) => System.Text.Encoding.UTF8.GetBytes(string.Create(
+    System.Globalization.CultureInfo.InvariantCulture, $"""
     <?xml version="1.0" encoding="UTF-8"?>
-    <plist version="1.0"><dict>
-    <key>band-size</key><integer>{bandSize}</integer>
-    <key>bundle-backingstore-version</key><integer>1</integer>
-    <key>diskimage-bundle-type</key><string>com.apple.diskimage.sparsebundle</string>
-    <key>size</key><integer>{size}</integer>
-    </dict></plist>
-    """);
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+    	<key>CFBundleInfoDictionaryVersion</key>
+    	<string>6.0</string>
+    	<key>band-size</key>
+    	<integer>{bandSize}</integer>
+    	<key>bundle-backingstore-version</key>
+    	<integer>1</integer>
+    	<key>diskimage-bundle-type</key>
+    	<string>com.apple.diskimage.sparsebundle</string>
+    	<key>size</key>
+    	<integer>{size}</integer>
+    </dict>
+    </plist>
+
+    """).ReplaceLineEndings("\n"));
 
   private static byte[] UpdatePlistBandSize(byte[] xml, int bandSize) {
     var settings = new System.Xml.XmlReaderSettings {

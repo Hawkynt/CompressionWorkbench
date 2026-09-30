@@ -240,6 +240,63 @@ public class SparsebundleTests {
     }
   }
 
+  private static Dictionary<string, byte[]> CreateMembers(byte[] disk, int bandSize) {
+    using var archive = new MemoryStream();
+    new SparsebundleFormatDescriptor().Create(archive, [ArchiveInputInfo.InMemory("disk.img", disk)], new FormatCreateOptions {
+      FormatSpecific = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["BandSize"] = bandSize.ToString(CultureInfo.InvariantCulture) },
+    });
+    var output = Path.Combine(Path.GetTempPath(), "cwb_sb_members_" + Guid.NewGuid().ToString("N"));
+    try {
+      archive.Position = 0;
+      new SparsebundleFormatDescriptor().Extract(archive, output, null, null);
+      return Directory.EnumerateFiles(output, "*", SearchOption.AllDirectories)
+        .ToDictionary(f => Path.GetRelativePath(output, f).Replace('\\', '/'), File.ReadAllBytes, StringComparer.Ordinal);
+    } finally {
+      if (Directory.Exists(output)) Directory.Delete(output, true);
+    }
+  }
+
+  [Test, Category("EquivalenceClass")]
+  public void GivenARawDisk_WhenCreating_ThenInfoPlistCarriesTheKeysHdiutilWrites() {
+    var members = CreateMembers(RandomBytes(3000, seed: 5), 1024);
+    var plist = Encoding.UTF8.GetString(members["Info.plist"]);
+    Assert.Multiple(() => {
+      Assert.That(plist, Does.Contain("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\""));
+      foreach (var key in new[] { "CFBundleInfoDictionaryVersion", "band-size", "bundle-backingstore-version", "diskimage-bundle-type", "size" })
+        Assert.That(plist, Does.Contain($"<key>{key}</key>"), key);
+      Assert.That(plist, Does.Contain("<integer>1024</integer>"));
+      Assert.That(plist, Does.Contain("<integer>3000</integer>"));
+      Assert.That(members["Info.bckup"], Is.EqualTo(members["Info.plist"]), "Info.bckup is the backup copy of Info.plist");
+      Assert.That(members["token"], Is.Empty);
+    });
+  }
+
+  [TestCase(4096, 1024, new[] { "bands/0", "bands/1", "bands/2", "bands/3" }, TestName = "GivenADiskOfWholeBands_WhenCreating_ThenEveryBandIsFull")]
+  [TestCase(3000, 1024, new[] { "bands/0", "bands/1", "bands/2" }, TestName = "GivenAPartialLastBand_WhenCreating_ThenTheLastBandIsShort")]
+  [TestCase(17 * 1024, 1024, new[] { "bands/0", "bands/10" }, TestName = "GivenSeventeenBands_WhenCreating_ThenBandNamesAreLowercaseHex")]
+  [Category("BoundaryCase")]
+  public void Create_SplitsTheDiskIntoHexNamedBands(int diskSize, int bandSize, string[] mustExist) {
+    var disk = RandomBytes(diskSize, seed: diskSize);
+    var members = CreateMembers(disk, bandSize);
+    Assert.Multiple(() => {
+      foreach (var band in mustExist) Assert.That(members.ContainsKey(band), Is.True, band);
+      var last = "bands/" + ((diskSize - 1) / bandSize).ToString("x", CultureInfo.InvariantCulture);
+      Assert.That(members[last].Length, Is.EqualTo(diskSize - (diskSize - 1) / bandSize * bandSize));
+    });
+  }
+
+  [Test, Category("BoundaryCase")]
+  public void GivenAnAllZeroDisk_WhenCreating_ThenNoBandIsStored() {
+    var members = CreateMembers(new byte[4096], 1024);
+    Assert.That(members.Keys.Where(k => k.StartsWith("bands/", StringComparison.Ordinal)), Is.Empty);
+  }
+
+  [TestCase(0, TestName = "GivenABandSizeOfZero_WhenCreating_ThenItIsRejected")]
+  [TestCase(-1, TestName = "GivenANegativeBandSize_WhenCreating_ThenItIsRejected")]
+  [Category("Exceptional")]
+  public void Create_RejectsNonPositiveBandSizes(int bandSize)
+    => Assert.That(() => CreateMembers(new byte[16], bandSize), Throws.TypeOf<ArgumentOutOfRangeException>());
+
   [Test, Category("RoundTrip")]
   public void Descriptor_Create_FromPlistAndDisk_RebuildsBandsAndKeepsPlist() {
     var disk = RandomBytes(2048, seed: 91);
