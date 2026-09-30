@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace FileFormat.YEnc;
 
 /// <summary>
@@ -7,7 +9,8 @@ public static class YEncDecoder {
 
   /// <summary>Decodes yEnc-encoded data.</summary>
   public static (string FileName, long Size, uint Crc32, byte[] Data) Decode(Stream input) {
-    using var reader = new StreamReader(input, leaveOpen: true);
+    // yEnc is raw 8-bit: Latin-1 maps every byte to the char of the same value.
+    using var reader = new StreamReader(input, Encoding.Latin1, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
     string? line;
     string filename = "unknown";
     long size = 0;
@@ -15,7 +18,7 @@ public static class YEncDecoder {
     // Find =ybegin header
     while ((line = reader.ReadLine()) != null) {
       if (line.StartsWith("=ybegin ", StringComparison.Ordinal)) {
-        filename = ExtractParam(line, "name") ?? "unknown";
+        filename = DecodeName(ExtractParam(line, "name")) ?? "unknown";
         var sizeStr = ExtractParam(line, "size");
         if (sizeStr != null) long.TryParse(sizeStr, out size);
         break;
@@ -62,6 +65,17 @@ public static class YEncDecoder {
 
     var data = output.ToArray();
     return (filename, size, trailCrc, data);
+  }
+
+  /// <summary>Header names are UTF-8 in practice; keep the Latin-1 reading when they are not valid UTF-8.</summary>
+  private static string? DecodeName(string? latin1) {
+    if (latin1 == null) return null;
+    try {
+      return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
+        .GetString(Encoding.Latin1.GetBytes(latin1));
+    } catch (DecoderFallbackException) {
+      return latin1;
+    }
   }
 
   private static string? ExtractParam(string line, string param) {

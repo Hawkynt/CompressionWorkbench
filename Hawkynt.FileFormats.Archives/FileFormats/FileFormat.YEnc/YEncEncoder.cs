@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace FileFormat.YEnc;
 
 /// <summary>
@@ -8,9 +10,10 @@ public static class YEncEncoder {
   /// <summary>Encodes binary data as yEnc.</summary>
   public static void Encode(Stream output, string filename, byte[] data) {
     var crc = Compression.Core.Checksums.Crc32.Compute(data);
-    using var writer = new StreamWriter(output, leaveOpen: true);
+    // yEnc is raw 8-bit: Latin-1 writes every char below 256 as the byte of the same value.
+    using var writer = new StreamWriter(output, Encoding.Latin1, leaveOpen: true);
     writer.NewLine = "\r\n";
-    writer.WriteLine($"=ybegin line=128 size={data.Length} name={filename}");
+    writer.WriteLine($"=ybegin line=128 size={data.Length} name={Encoding.Latin1.GetString(Encoding.UTF8.GetBytes(filename))}");
 
     var col = 0;
     for (var i = 0; i < data.Length; i++) {
