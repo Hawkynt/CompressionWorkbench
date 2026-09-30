@@ -34,8 +34,8 @@ public static class ZipModifier {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
 
-    var (cdOffset, _, count, comment) = ZipEndOfCentralDirectory.Read(zip);
-    var entries = ReadCdEntries(zip, cdOffset, count);
+    // Existing entries keep their directory records byte for byte; only the new one is serialised.
+    var (records, cdOffset, comment) = ZipRawDirectory.Read(zip);
 
     // Compress the new file with Deflate (matches the writer's default).
     var crc = Crc32.Compute(data);
@@ -68,16 +68,9 @@ public static class ZipModifier {
       ZipLocalFileHeader.Write(lfhWriter, newEntry);
       lfhWriter.Write(payload);
     }
-    entries.Add(newEntry);
 
     // Rewrite the central directory + EOCD at the new tail position.
-    var newCdOffset = zip.Position;
-    using (var cdWriter = new BinaryWriter(zip, Encoding.Latin1, leaveOpen: true)) {
-      foreach (var e in entries)
-        ZipCentralDirectoryEntry.Write(cdWriter, e);
-      var newCdSize = zip.Position - newCdOffset;
-      ZipEndOfCentralDirectory.Write(cdWriter, newCdOffset, newCdSize, entries.Count, comment);
-    }
+    ZipRawDirectory.Write(zip, records, [newEntry], comment);
     zip.SetLength(zip.Position);
   }
 
@@ -91,40 +84,29 @@ public static class ZipModifier {
     ArgumentNullException.ThrowIfNull(zip);
     ArgumentNullException.ThrowIfNull(name);
 
-    var (cdOffset, _, count, comment) = ZipEndOfCentralDirectory.Read(zip);
-    var entries = ReadCdEntries(zip, cdOffset, count);
-
-    var keep = new List<ZipEntry>(entries.Count);
-    var dropped = new List<ZipEntry>();
-    foreach (var e in entries) {
-      if (e.FileName.Equals(name, StringComparison.OrdinalIgnoreCase))
-        dropped.Add(e);
-      else
-        keep.Add(e);
-    }
+    // Names match exactly. ZIP names are case-sensitive, and an archive may hold "A.txt" and
+    // "a.txt" side by side; matching without regard to case removed both.
+    var (records, cdOffset, comment) = ZipRawDirectory.Read(zip);
+    var dropped = records.Where(r => r.Name == name).ToList();
     if (dropped.Count == 0) return false;
 
-    // Wipe orphan LFH + payload bytes in place. The LFH itself has variable
-    // length (filename + extra field), so we re-read it to know its full size.
+    // Wipe orphan LFH + payload + data descriptor bytes in place. The LFH has variable length
+    // (filename + extra field), so it is re-read to know its full size.
     if (wipeData) {
       foreach (var d in dropped) {
         var lfhLen = ReadLfhLength(zip, d.LocalHeaderOffset);
         if (lfhLen <= 0) continue;
-        var totalToWipe = lfhLen + d.CompressedSize;
+        var descriptor = (d.Flags & ZipConstants.FlagDataDescriptor) != 0 ? (d.HasZip64Sizes ? 24 : 16) : 0;
+        var totalToWipe = Math.Min(lfhLen + d.CompressedSize + descriptor, cdOffset - d.LocalHeaderOffset);
         zip.Position = d.LocalHeaderOffset;
         WriteZeros(zip, totalToWipe);
       }
     }
 
-    // Rewrite CD + EOCD at the original CD offset; LFHs of kept entries stay
-    // exactly where they were so their LocalHeaderOffset values remain valid.
+    // Rewrite CD + EOCD at the original CD offset; LFHs of kept entries stay exactly where they
+    // were, and their directory records are written back byte for byte.
     zip.Position = cdOffset;
-    using (var cdWriter = new BinaryWriter(zip, Encoding.Latin1, leaveOpen: true)) {
-      foreach (var e in keep)
-        ZipCentralDirectoryEntry.Write(cdWriter, e);
-      var newCdSize = zip.Position - cdOffset;
-      ZipEndOfCentralDirectory.Write(cdWriter, cdOffset, newCdSize, keep.Count, comment);
-    }
+    ZipRawDirectory.Write(zip, [.. records.Except(dropped)], [], comment);
     zip.SetLength(zip.Position);
     return true;
   }
