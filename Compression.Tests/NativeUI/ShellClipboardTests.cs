@@ -7,6 +7,7 @@ using Compression.Lib;
 using Compression.NativeUI;
 using Compression.NativeUI.Navigation;
 using Compression.NativeUI.ViewModels;
+using Compression.NativeUI.Editing;
 using NUnit.Framework;
 
 namespace Compression.Tests.NativeUI;
@@ -132,42 +133,78 @@ public sealed class ShellClipboardTests {
     Assert.That(Directory.GetDirectories(Path.Combine(this._root, "outer", "inner")), Is.Empty);
   }
 
-  // ── files for dragging out to the desktop ───────────────────────────────────────────────────
+  // ── what a drag carries to other applications ───────────────────────────────────────────────
 
   [Test]
   public void GivenFilesOnDisk_WhenDraggedOut_ThenTheirOwnPathsTravel() {
     this._model.NavigateTo(Location.Folder(this._root));
     this.Select("file.txt", "target");
 
-    Assert.That(this._model.FilesForDragOut([.. this._model.SelectedEntries]),
+    Assert.That(this._model.DragPayload([.. this._model.SelectedEntries]),
       Is.EquivalentTo(new[] { Path.Combine(this._root, "file.txt"), Path.Combine(this._root, "target") }));
   }
 
   [Test]
-  public void GivenAnArchiveEntry_WhenDraggedOut_ThenAnExtractedCopyTravels() {
+  public void GivenAnArchiveEntry_WhenDraggedOut_ThenItTravelsAsAFileReadOnlyWhenAsked() {
     this._model.NavigateTo(Location.InArchive(this._zip, "docs/"));
     this.Select("readme.txt");
 
-    var files = this._model.FilesForDragOut([.. this._model.SelectedEntries]);
+    var payload = this._model.DragPayload([.. this._model.SelectedEntries]) as Hawkynt.NativeForms.VirtualFile[];
 
-    Assert.That(files, Has.Length.EqualTo(1));
-    Assert.That(File.ReadAllText(files![0]), Is.EqualTo("readme"));
-    Assert.That(Path.GetFileName(files[0]), Is.EqualTo("readme.txt"), "the desktop receives it under its own name");
+    Assert.That(payload, Has.Length.EqualTo(1));
+    Assert.That(payload![0].RelativePath, Is.EqualTo("readme.txt"));
+    Assert.That(payload[0].Length, Is.EqualTo(6));
+    using var reader = new StreamReader(payload[0].OpenRead());
+    Assert.That(reader.ReadToEnd(), Is.EqualTo("readme"));
   }
 
-  [TestCase(MainViewModel.DragOutExtractLimit, false)]
-  [TestCase(MainViewModel.DragOutExtractLimit + 1, true)]
-  public void GivenAnArchiveSelectionAtTheExtractLimit_WhenDraggedOut_ThenOnlyALargerOneStaysInside(long size, bool stays) {
-    this._model.NavigateTo(Location.InArchive(this._zip, "docs/"));
-    var claimed = new ArchiveEntryViewModel { Name = "readme.txt", Path = "docs/readme.txt", OriginalSize = size };
+  [Test]
+  public void GivenAnArchiveFolder_WhenDraggedOut_ThenEverythingBeneathItTravelsUnderTheFolderName() {
+    using (var zip = ZipFile.Open(this._zip, ZipArchiveMode.Update)) {
+      using var writer = new StreamWriter(zip.CreateEntry("docs/deep/inner.txt").Open());
+      writer.Write("inner");
+    }
 
-    Assert.That(this._model.FilesForDragOut([claimed]) is null, Is.EqualTo(stays));
+    this._model.NavigateTo(Location.InArchive(this._zip, ""));
+    this.Select("docs");
+
+    var payload = (Hawkynt.NativeForms.VirtualFile[])this._model.DragPayload([.. this._model.SelectedEntries])!;
+
+    Assert.That(payload.Where(f => !f.IsDirectory).Select(f => f.RelativePath),
+      Is.EquivalentTo(new[] { "docs/readme.txt", "docs/deep/inner.txt" }));
+    Assert.That(payload.Any(f => f.IsDirectory && f.RelativePath == "docs"), Is.True);
   }
 
   [Test]
   public void GivenNothingButTheParentRow_WhenDraggedOut_ThenNothingTravels() {
     this._model.NavigateTo(Location.InArchive(this._zip, "docs/"));
 
-    Assert.That(this._model.FilesForDragOut([this._model.Entries.Single(e => e.IsParentEntry)]), Is.Null);
+    Assert.That(this._model.DragPayload([this._model.Entries.Single(e => e.IsParentEntry)]), Is.Null);
+  }
+
+  // ── files dropped from other applications ───────────────────────────────────────────────────
+
+  [Test]
+  public void GivenAMailAttachmentDropped_WhenReceivedIntoAnArchiveFolder_ThenTheArchiveHoldsItAndTheListShowsIt() {
+    this._model.NavigateTo(Location.InArchive(this._zip, "docs/"));
+
+    var error = this._model.ReceiveDropped(
+      [new IncomingFile("invoice.pdf", () => new MemoryStream("pdf"u8.ToArray()))], Location.InArchive(this._zip, "docs/"));
+
+    Assert.That(error, Is.Null);
+    Assert.That(this.ZipNames(), Does.Contain("docs/invoice.pdf"));
+    Assert.That(this._model.Entries.Select(e => e.Name), Does.Contain("invoice.pdf"));
+    Assert.That(this._model.CurrentLocation, Is.EqualTo(Location.InArchive(this._zip, "docs/")));
+  }
+
+  [Test]
+  public void GivenADropWithAnUnwritableName_WhenReceived_ThenTheReasonIsShownAndNothingIsWritten() {
+    this._model.NavigateTo(Location.Folder(this._root));
+
+    var error = this._model.ReceiveDropped([new IncomingFile("../outside.txt", () => new MemoryStream())], Location.Folder(this._root));
+
+    Assert.That(error, Is.Not.Null);
+    Assert.That(this._model.StatusText, Is.EqualTo(error));
+    Assert.That(File.Exists(Path.Combine(Path.GetDirectoryName(this._root)!, "outside.txt")), Is.False);
   }
 }

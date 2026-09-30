@@ -1399,108 +1399,76 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   /// <summary>
-  /// Extracts the given selection to a per-session staging folder and returns the
-  /// top-level paths for <see cref="DataFormats.FileDrop"/>. Called by the entry-list
-  /// drag-out handler when the user drags archive entries to Explorer.
-  /// <para>
-  /// Files stay in <see cref="_dragOutStagingRoot"/> (under %TEMP%) until the archive
-  /// is closed or the process exits — copies Windows may make for the drop target are
-  /// independent. Nested directory selections preserve their in-archive relative paths
-  /// so dropped folders look right in the target.
-  /// </para>
+  /// What a drag of <paramref name="selection"/> carries to other applications, or null when it can
+  /// only move within the shell. Files on disk travel as their paths. Archive entries travel as
+  /// <see cref="VirtualFile"/>s whose content is decoded only when the drop target asks for it, so
+  /// nothing is extracted up front and the bytes are written straight to the destination — a folder
+  /// travels with every entry beneath it.
   /// </summary>
-  /// <summary>
-  /// The most an archive drag extracts up front so the desktop can receive real files. The files
-  /// must exist before the drag leaves the window, and a larger selection would freeze the shell
-  /// while it unpacks; above this the drag stays within the shell.
-  /// </summary>
-  internal const long DragOutExtractLimit = 256L * 1024 * 1024;
-
-  /// <summary>
-  /// Real files for <paramref name="selection"/> that another application can take: the paths
-  /// themselves on disk, an extracted copy for archive entries — or null when the selection cannot
-  /// leave the shell (nothing selected, or an archive selection above <see cref="DragOutExtractLimit"/>).
-  /// </summary>
-  internal string[]? FilesForDragOut(IReadOnlyList<ArchiveEntryViewModel> selection) {
+  internal object? DragPayload(IReadOnlyList<ArchiveEntryViewModel> selection) {
     var picked = selection.Where(e => !e.IsParentEntry).ToList();
     if (picked.Count == 0) return null;
 
-    if (IsBrowsingOsFolder)
-      return [.. picked.Select(e => e.Path).Where(p => File.Exists(p) || Directory.Exists(p))];
+    if (IsBrowsingOsFolder) {
+      string[] paths = [.. picked.Select(e => e.Path).Where(p => File.Exists(p) || Directory.Exists(p))];
+      return paths.Length > 0 ? paths : null;
+    }
 
     if (!HasArchive || picked.Any(e => e.IsEncrypted)) return null;
 
-    long total = 0;
+    var archive = ArchivePath;
+    var files = new List<VirtualFile>();
     foreach (var entry in picked) {
       if (!entry.IsDirectory) {
-        total += Math.Max(0, entry.OriginalSize);
+        files.Add(Lazy(entry.Name, entry));
         continue;
       }
 
+      files.Add(VirtualFile.Directory(entry.Name));
       var prefix = entry.Path.EndsWith('/') ? entry.Path : entry.Path + "/";
-      total += _allEntries.Where(e => !e.IsDirectory && e.Path.StartsWith(prefix, StringComparison.Ordinal)).Sum(e => Math.Max(0, e.OriginalSize));
+      foreach (var inner in _allEntries.Where(e => e.Path.StartsWith(prefix, StringComparison.Ordinal) && e.Path.Length > prefix.Length)) {
+        var relative = entry.Name + "/" + inner.Path[prefix.Length..].TrimEnd('/');
+        files.Add(inner.IsDirectory ? VirtualFile.Directory(relative) : Lazy(relative, inner));
+      }
     }
 
-    if (total > DragOutExtractLimit) return null;
+    return files.Count > 0 ? files.ToArray() : null;
+
+    VirtualFile Lazy(string relative, ArchiveEntryViewModel entry)
+      => new(relative, () => ArchiveOperations.OpenEntry(archive, entry.Path), entry.OriginalSize >= 0 ? entry.OriginalSize : null,
+        entry.LastModified?.ToUniversalTime());
+  }
+
+  /// <summary>Why dropped <paramref name="files"/> cannot be received into <paramref name="target"/>, or null.</summary>
+  internal string? WhyNotReceive(IReadOnlyList<IncomingFile> files, Location target)
+    => IsNestedCopy(target) ? "Nothing can be put inside a nested archive." : Transfer.WhyNot(files, target);
+
+  /// <summary>
+  /// Receives files another application dropped with no path of their own — mail attachments and
+  /// the like — into <paramref name="target"/>. Runs while the drop is being handled, because the
+  /// content can only be read then. Returns the reason on failure.
+  /// </summary>
+  internal string? ReceiveDropped(IReadOnlyList<IncomingFile> files, Location target) {
+    if (WhyNotReceive(files, target) is { } refusal) return Fail(refusal);
 
     try {
-      var files = MaterializeForDragOut(picked);
-      return files.Length > 0 ? files : null;
-    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException) {
-      StatusText = $"Could not prepare the drag: {ex.Message}";
+      IsBusy = true;
+      var result = Transfer.Receive(files, target);
+      if (HasArchive && !IsBrowsingOsFolder) ReloadArchiveInPlace();
+      else RefreshVisibleEntries();
+
+      StatusText = $"Received {result.Created.Count} item(s) into {target}.";
       return null;
+    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException
+                                   or InvalidOperationException or ArgumentException or InvalidDataException) {
+      return Fail($"Receiving the drop failed: {ex.Message}");
+    } finally {
+      IsBusy = false;
     }
-  }
 
-  internal string[] MaterializeForDragOut(IReadOnlyList<ArchiveEntryViewModel> selection) {
-    if (selection.Count == 0 || !HasArchive) return [];
-
-    // Expand directory selections to all contained files, same as ExtractSelected does.
-    var filePaths = new List<string>();
-    foreach (var entry in selection) {
-      if (entry.IsParentEntry) continue;
-      if (entry.IsDirectory) {
-        var dirPrefix = entry.Path.EndsWith('/') ? entry.Path : entry.Path + "/";
-        foreach (var e in _allEntries)
-          if (!e.IsDirectory && e.Path.StartsWith(dirPrefix, StringComparison.Ordinal))
-            filePaths.Add(e.Path);
-      } else {
-        filePaths.Add(entry.Path);
-      }
-    }
-    var files = filePaths.Distinct().ToArray();
-    if (files.Length == 0) return [];
-
-    // Ensure a clean staging dir per drag gesture; previous drag's contents are left in
-    // place (the user may still be completing that drop), but the session-level directory
-    // is reused so repeated drags don't leak unbounded temp folders.
-    var stagingDir = Path.Combine(this.DragOutStagingRoot, Guid.NewGuid().ToString("N")[..8]);
-    Directory.CreateDirectory(stagingDir);
-    ArchiveOperations.Extract(ArchivePath, stagingDir, password: null, files: files);
-
-    // For each dragged top-level entry (not the expanded directory contents), surface
-    // its path under the staging dir. Explorer copies directories recursively.
-    var topLevel = new List<string>();
-    foreach (var entry in selection.Where(e => !e.IsParentEntry)) {
-      var candidate = Path.Combine(stagingDir, entry.Path.Replace('/', Path.DirectorySeparatorChar));
-      if (entry.IsDirectory) {
-        if (Directory.Exists(candidate)) topLevel.Add(candidate);
-      } else if (File.Exists(candidate)) {
-        topLevel.Add(candidate);
-      }
-    }
-    return topLevel.ToArray();
-  }
-
-  private string? _dragOutStagingRoot;
-  private string DragOutStagingRoot {
-    get {
-      if (this._dragOutStagingRoot == null || !Directory.Exists(this._dragOutStagingRoot)) {
-        this._dragOutStagingRoot = Path.Combine(Path.GetTempPath(),
-          "cwb-drag-" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(this._dragOutStagingRoot);
-      }
-      return this._dragOutStagingRoot;
+    string Fail(string reason) {
+      StatusText = reason;
+      return reason;
     }
   }
 

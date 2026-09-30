@@ -25,8 +25,12 @@ backends, so Windows and Linux run the same code rather than two frontends drift
   New Folder (Ctrl+Shift+N) works in folders on disk and opens the new name for editing.
   Rows drag onto a folder in the tree or a folder row in the list: within one disk volume or one
   archive that moves them, anywhere else it copies; files dropped from the desktop copy the same way.
-  Rows dragged out of the window arrive in Explorer, Nautilus or Finder as ordinary files; archive
-  entries are extracted first, up to 256 MB per drag.
+  Rows dragged out of the window arrive in Explorer, Nautilus or Finder as ordinary files. Archive
+  entries are not extracted up front: they are decoded only when the target asks and written straight
+  into the destination — on Linux and macOS under a temporary name in that folder, renamed when
+  complete; on Windows Explorer pulls the stream into the destination itself. Attachments dragged
+  from mail clients and other applications that have no file on disk are received the same way,
+  written beside the destination and renamed into place, or added to the open archive.
 - **Thumbnails** — View → Thumbnails (Ctrl+Shift+2; Details is Ctrl+Shift+6) shows large icons, and
   every entry any image decoder can read gets its picture shrunk into its icon, decoded in the
   background — on disk and inside archives alike. Entries over 16 MB and beyond the first 500 of a

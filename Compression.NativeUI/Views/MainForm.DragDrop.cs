@@ -21,7 +21,7 @@ internal sealed partial class MainForm {
   /// real files can travel there; inside the window the same list still has to mean "these entries,
   /// from where they are", or a drag within an archive would copy extracted files instead of moving.
   /// </summary>
-  private (string[] Files, IReadOnlyList<TransferItem> Items)? _outgoingDrag;
+  private (object Payload, IReadOnlyList<TransferItem> Items)? _outgoingDrag;
 
   private void WireDragAndDrop() {
     this._entries.ItemDrag += (_, _) => this.StartDrag();
@@ -41,14 +41,15 @@ internal sealed partial class MainForm {
     var items = this._model.SelectionAsTransferItems();
     if (items.Count == 0) return;
 
-    // Files the desktop can take when there are any; otherwise the drag stays within the shell.
-    if (this._model.FilesForDragOut([.. this._model.SelectedEntries]) is not { Length: > 0 } files) {
+    // Paths or on-demand files the desktop can take when there are any; otherwise the drag stays
+    // within the shell.
+    if (this._model.DragPayload([.. this._model.SelectedEntries]) is not { } payload) {
       this._entries.DoDragDrop(new ShellDragData(items), DragDropEffects.Copy | DragDropEffects.Move);
       return;
     }
 
-    this._outgoingDrag = (files, items);
-    this._entries.DoDragDrop(files, DragDropEffects.Copy | DragDropEffects.Move, _ => this._outgoingDrag = null);
+    this._outgoingDrag = (payload, items);
+    this._entries.DoDragDrop(payload, DragDropEffects.Copy | DragDropEffects.Move, _ => this._outgoingDrag = null);
   }
 
   /// <summary>
@@ -85,7 +86,7 @@ internal sealed partial class MainForm {
   /// </summary>
   private IReadOnlyList<TransferItem>? ItemsOf(object data) => data switch {
     ShellDragData shell => shell.Items,
-    string[] files when this.IsOwnDrag(files) => this._outgoingDrag!.Value.Items,
+    _ when this.IsOwnDrag(data) => this._outgoingDrag!.Value.Items,
     string[] paths => [
       .. paths
         .Where(p => File.Exists(p) || Directory.Exists(p))
@@ -102,21 +103,38 @@ internal sealed partial class MainForm {
   /// drop that would change nothing, or that the transfer refuses, is not offered.
   /// </summary>
   private DragDropEffects EffectFor(object data, Location? target) {
-    if (target is null || ItemsOf(data) is not { Count: > 0 } items) return DragDropEffects.None;
+    if (target is null) return DragDropEffects.None;
+    if (data is VirtualFile[] incoming && !this.IsOwnDrag(data))
+      return this._model.WhyNotReceive(Incoming(incoming), target) is null ? DragDropEffects.Copy : DragDropEffects.None;
+    if (this.ItemsOf(data) is not { Count: > 0 } items) return DragDropEffects.None;
     if (items.All(i => i.From == target)) return DragDropEffects.None;
 
-    var move = (data is ShellDragData || (data is string[] files && this.IsOwnDrag(files))) && Transfer.MovesByDefault(items, target);
+    var move = (data is ShellDragData || this.IsOwnDrag(data)) && Transfer.MovesByDefault(items, target);
     return this._model.WhyNotTransfer(items, target, move) is null
       ? move ? DragDropEffects.Move : DragDropEffects.Copy
       : DragDropEffects.None;
   }
 
-  private bool IsOwnDrag(string[] files) => this._outgoingDrag is { } own && ReferenceEquals(own.Files, files);
+  private bool IsOwnDrag(object data) => this._outgoingDrag is { } own && ReferenceEquals(own.Payload, data);
+
+  /// <summary>Files dropped from another application, as the transfer knows them.</summary>
+  private static IncomingFile[] Incoming(VirtualFile[] files)
+    => [.. files.Select(f => new IncomingFile(f.RelativePath, f.IsDirectory ? null : f.OpenRead))];
 
   private void Answer(DragEventArgs e, Location? target) => e.Effect = this.EffectFor(e.Data, target) & e.AllowedEffect;
 
   private void Drop(DragEventArgs e, Location? target) {
-    if (target is null || ItemsOf(e.Data) is not { Count: > 0 } items) return;
+    if (target is null) return;
+
+    // Content from another application with no path of its own is readable only while this
+    // handler runs, so it is received here and now rather than in the background.
+    if (e.Data is VirtualFile[] incoming && !this.IsOwnDrag(e.Data)) {
+      if ((this.EffectFor(e.Data, target) & e.AllowedEffect) != DragDropEffects.None)
+        this._model.ReceiveDropped(Incoming(incoming), target);
+      return;
+    }
+
+    if (this.ItemsOf(e.Data) is not { Count: > 0 } items) return;
 
     var effect = this.EffectFor(e.Data, target) & e.AllowedEffect;
     if (effect == DragDropEffects.None) return;

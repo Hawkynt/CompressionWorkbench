@@ -596,12 +596,25 @@ public sealed class MainFormTests {
     WithScratch((root, zip) => WithShell(shell => {
       var items = new[] { new TransferItem(Location.InArchive(zip, ""), "top.txt", false) };
       var files = new[] { Path.Combine(root, "sub") };   // stands in for the extracted copies
-      typeof(MainForm).GetField("_outgoingDrag", Private)!.SetValue(shell, ((string[] Files, System.Collections.Generic.IReadOnlyList<TransferItem> Items)?)(files, items));
+      typeof(MainForm).GetField("_outgoingDrag", Private)!.SetValue(shell, ((object Payload, System.Collections.Generic.IReadOnlyList<TransferItem> Items)?)(files, items));
 
       Assert.That(EffectOf(shell, files, Location.InArchive(zip, "docs/")), Is.EqualTo(DragDropEffects.Move),
         "inside the window the extracted files still mean the entries they came from");
       Assert.That(EffectOf(shell, new[] { Path.Combine(root, "sub") }, Location.InArchive(zip, "docs/")), Is.EqualTo(DragDropEffects.Copy),
         "an equal list from somewhere else is not the shell's own drag");
+    }));
+  }
+
+  [Test]
+  public void GivenFilesWithNoPathFromAnotherApplication_WhenOverAFolder_ThenTheyWouldBeCopiedIn() {
+    WithScratch((root, zip) => WithShell(shell => {
+      var attachment = new[] { new VirtualFile("invoice.pdf", () => new MemoryStream()) };
+
+      Assert.Multiple(() => {
+        Assert.That(EffectOf(shell, attachment, Location.Folder(Path.Combine(root, "sub"))), Is.EqualTo(DragDropEffects.Copy));
+        Assert.That(EffectOf(shell, attachment, Location.InArchive(zip, "docs/")), Is.EqualTo(DragDropEffects.Copy));
+        Assert.That(EffectOf(shell, attachment, Location.Folder(Path.Combine(root, "gone"))), Is.EqualTo(DragDropEffects.None));
+      });
     }));
   }
 
