@@ -26,6 +26,9 @@ public sealed class HfsPlusReader : IDisposable {
   // Catalog file extent (first extent only for simplicity).
   private readonly uint _catalogStartBlock;
   private readonly uint _catalogBlockCount;
+  private readonly uint _extentsStartBlock;
+  private readonly uint _extentsBlockCount;
+  private Dictionary<uint, List<(uint StartBlock, uint Count, uint FileStart)>>? _overflow;
 
   private const int VolumeHeaderOffset = 1024;
   private const int VolumeHeaderSize = 512;
@@ -72,6 +75,10 @@ public sealed class HfsPlusReader : IDisposable {
     // First extent: startBlock at offset 272+16=288, blockCount at 272+20=292.
     _catalogStartBlock = BinaryPrimitives.ReadUInt32BigEndian(vh[288..]);
     _catalogBlockCount = BinaryPrimitives.ReadUInt32BigEndian(vh[292..]);
+
+    // The extents overflow file's first extent (ForkData at 192, extents at +16).
+    _extentsStartBlock = BinaryPrimitives.ReadUInt32BigEndian(vh[208..]);
+    _extentsBlockCount = BinaryPrimitives.ReadUInt32BigEndian(vh[212..]);
 
     // Parse catalog B-tree.
     var entries = new List<HfsPlusEntry>();
@@ -279,6 +286,20 @@ public sealed class HfsPlusReader : IDisposable {
     // extents[0] starts 16 bytes into the ForkData struct (after logicalSize+clumpSize+totalBlocks).
     var startBlock = BinaryPrimitives.ReadUInt32BigEndian(nd[(dataOffset + dataForkOffset + 16)..]);
     var blockCount = BinaryPrimitives.ReadUInt32BigEndian(nd[(dataOffset + dataForkOffset + 20)..]);
+    var forkTotalBlocks = BinaryPrimitives.ReadUInt32BigEndian(nd[(dataOffset + dataForkOffset + 12)..]);
+    var extents = new List<(uint StartBlock, uint BlockCount)>(8);
+    uint covered = 0;
+    for (var k = 0; k < 8; k++) {
+      var at = dataOffset + dataForkOffset + 16 + k * 8;
+      var s0 = BinaryPrimitives.ReadUInt32BigEndian(nd[at..]);
+      var c0 = BinaryPrimitives.ReadUInt32BigEndian(nd[(at + 4)..]);
+      if (c0 == 0) break;
+      extents.Add((s0, c0));
+      covered += c0;
+    }
+    if (covered < forkTotalBlocks)
+      foreach (var (s1, c1, _) in OverflowExtents(cnid).Where(e => e.FileStart >= covered).OrderBy(e => e.FileStart))
+        extents.Add((s1, c1));
 
     var parentPath = dirPaths.GetValueOrDefault(parentCnid, "");
     var fullPath = parentPath.Length > 0 ? parentPath + "/" + name : name;
@@ -298,7 +319,60 @@ public sealed class HfsPlusReader : IDisposable {
       LastModified = modDate,
       FirstBlock = startBlock,
       BlockCount = blockCount,
+      Extents = extents,
     });
+  }
+
+  /// <summary>
+  /// The data-fork extents the extents overflow B-tree records for
+  /// <paramref name="cnid" />, each with the fork block it starts at (TN1150:
+  /// key = keyLength u16, forkType u8, pad u8, fileID u32, startBlock u32; record =
+  /// eight extent descriptors).
+  /// </summary>
+  private List<(uint StartBlock, uint Count, uint FileStart)> OverflowExtents(uint cnid) {
+    _overflow ??= ReadOverflow();
+    return _overflow.TryGetValue(cnid, out var list) ? list : [];
+  }
+
+  private Dictionary<uint, List<(uint StartBlock, uint Count, uint FileStart)>> ReadOverflow() {
+    var result = new Dictionary<uint, List<(uint, uint, uint)>>();
+    if (_extentsStartBlock == 0 || _extentsBlockCount == 0) return result;
+    var fileOffset = (long)_extentsStartBlock * _blockSize;
+    if (fileOffset + 512 > _data.Length) return result;
+    var header = _data.Read(fileOffset, (int)Math.Min(512, _data.Length - fileOffset)).AsSpan();
+    if ((sbyte)header[8] != 1) return result;
+    var firstLeaf = BinaryPrimitives.ReadUInt32BigEndian(header[(14 + 10)..]);
+    var nodeSize = BinaryPrimitives.ReadUInt16BigEndian(header[(14 + 18)..]);
+    if (nodeSize == 0) return result;
+    var fileBytes = (long)_extentsBlockCount * _blockSize;
+    var visited = new HashSet<uint>();
+    for (var node = firstLeaf; node != 0 && visited.Add(node);) {
+      if ((long)(node + 1) * nodeSize > fileBytes) break;
+      var nodeOffset = fileOffset + (long)node * nodeSize;
+      if (nodeOffset + nodeSize > _data.Length) break;
+      var nd = _data.Read(nodeOffset, nodeSize).AsSpan();
+      if ((sbyte)nd[8] != -1) break;
+      var records = BinaryPrimitives.ReadUInt16BigEndian(nd[10..]);
+      for (var i = 0; i < records; i++) {
+        var recOffset = BinaryPrimitives.ReadUInt16BigEndian(nd[(nodeSize - 2 * (i + 1))..]);
+        if (recOffset + 12 + 64 > nodeSize) continue;
+        var keyLength = BinaryPrimitives.ReadUInt16BigEndian(nd[recOffset..]);
+        if (keyLength < 10 || nd[recOffset + 2] != 0) continue;   // data fork only
+        var fileId = BinaryPrimitives.ReadUInt32BigEndian(nd[(recOffset + 4)..]);
+        var forkStart = BinaryPrimitives.ReadUInt32BigEndian(nd[(recOffset + 8)..]);
+        var data = recOffset + 2 + keyLength;
+        if (!result.TryGetValue(fileId, out var list)) result[fileId] = list = [];
+        for (var k = 0; k < 8 && data + k * 8 + 8 <= nodeSize; k++) {
+          var start = BinaryPrimitives.ReadUInt32BigEndian(nd[(data + k * 8)..]);
+          var count = BinaryPrimitives.ReadUInt32BigEndian(nd[(data + k * 8 + 4)..]);
+          if (count == 0) break;
+          list.Add((start, count, forkStart));
+          forkStart += count;
+        }
+      }
+      node = BinaryPrimitives.ReadUInt32BigEndian(nd);
+    }
+    return result;
   }
 
   // Reads a small data fork (a symlink target) as UTF-8 text from its first extent.
@@ -323,17 +397,22 @@ public sealed class HfsPlusReader : IDisposable {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory || entry.Size == 0) return [];
 
-    var offset = (long)entry.FirstBlock * _blockSize;
-    var length = (int)Math.Min(entry.Size, (long)entry.BlockCount * _blockSize);
-    length = (int)Math.Min(length, entry.Size);
-
-    if (offset + length > _data.Length)
-      length = (int)Math.Max(0, _data.Length - offset);
-    if (length <= 0) return [];
-
+    // A fork is up to eight extents in the catalog record plus any the overflow
+    // file adds. Reading only the first returned zeros for the rest of every
+    // fragmented file.
+    var extents = entry.Extents.Count > 0 ? entry.Extents : [(entry.FirstBlock, entry.BlockCount)];
     var result = new byte[entry.Size];
-    var toCopy = (int)Math.Min(length, entry.Size);
-    _data.Read(offset, toCopy).CopyTo(result, 0);
+    long done = 0;
+    foreach (var (start, count) in extents) {
+      if (done >= entry.Size) break;
+      var offset = (long)start * _blockSize;
+      var length = Math.Min(entry.Size - done, (long)count * _blockSize);
+      if (offset >= _data.Length) break;
+      length = Math.Min(length, _data.Length - offset);
+      if (length <= 0) break;
+      _data.Read(offset, (int)length).CopyTo(result, (int)done);
+      done += length;
+    }
     return result;
   }
 

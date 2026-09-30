@@ -34,4 +34,10 @@ public sealed class HfsPlusEntry {
 
   /// <summary>The number of allocation blocks in the data fork.</summary>
   internal uint BlockCount { get; init; }
+
+  /// <summary>
+  /// Every extent of the data fork in logical order: the eight the catalog record
+  /// holds, then any the extents overflow file adds.
+  /// </summary>
+  internal IReadOnlyList<(uint StartBlock, uint BlockCount)> Extents { get; init; } = [];
 }

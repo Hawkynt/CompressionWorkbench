@@ -31,6 +31,62 @@ public static class HfsPlusExtentMap {
   /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
+    var extents = EnumerateCore(image).ToList();
+    if (extents.Count == 0) return extents;
+    AddUnclaimedAllocated(image, extents);
+    return extents;
+  }
+
+  /// <summary>
+  /// Fail closed: every allocation block the allocation file marks in use that no
+  /// extent above claims — overflow extents, attribute-file forks, anything a later
+  /// HFS+ added — is reported as reserved, so a wipe or a layout never treats it as
+  /// free.
+  /// </summary>
+  private static void AddUnclaimedAllocated(Stream image, List<DefragBlockInfo> extents) {
+    var vh = new byte[VolumeHeaderSize];
+    image.Position = VolumeHeaderOffset;
+    image.ReadExactly(vh);
+    var blockSize = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(40, 4));
+    var totalBlocks = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(44, 4));
+    var allocStart = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(112 + 16, 4));
+    var allocCount = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(112 + 20, 4));
+    var bitmapBytes = (totalBlocks + 7) / 8;
+    if (blockSize == 0 || allocCount == 0 || (long)allocCount * blockSize < bitmapBytes) return;
+    var bitmapOffset = (long)allocStart * blockSize;
+    if (bitmapOffset + bitmapBytes > image.Length) return;
+    var bitmap = new byte[bitmapBytes];
+    image.Position = bitmapOffset;
+    image.ReadExactly(bitmap);
+
+    var claimed = extents.Select(e => (Start: e.Offset, End: e.Offset + e.Length)).OrderBy(r => r.Start).ToList();
+    var index = 0;
+    bool IsClaimed(long offset) {
+      while (index < claimed.Count && claimed[index].End <= offset) ++index;
+      for (var j = index; j < claimed.Count && claimed[j].Start <= offset; ++j)
+        if (claimed[j].End > offset) return true;
+      return false;
+    }
+
+    var extra = new List<DefragBlockInfo>();
+    long runStart = -1;
+    for (long block = 0; block <= totalBlocks; block++) {
+      var allocated = block < totalBlocks && (bitmap[block >> 3] & (0x80 >> (int)(block & 7))) != 0;  // MSB first
+      var offset = block * blockSize;
+      if (allocated && !IsClaimed(offset)) {
+        if (runStart < 0) runStart = block;
+      } else if (runStart >= 0) {
+        var start = runStart * blockSize;
+        var end = Math.Min(image.Length, offset);
+        if (end > start)
+          extra.Add(new DefragBlockInfo(start, end - start, DefragBlockKind.MetadataReserved, FileName: "allocated (unattributed)"));
+        runStart = -1;
+      }
+    }
+    extents.AddRange(extra);
+  }
+
+  private static IEnumerable<DefragBlockInfo> EnumerateCore(Stream image) {
     if (image.Length < VolumeHeaderOffset + VolumeHeaderSize) yield break;
 
     // Read just the 512-byte volume header via the cache (so subsequent
@@ -161,21 +217,44 @@ public static class HfsPlusExtentMap {
             dirPaths[cnid] = fullPath;
             break;
           }
-          case 2: { // File — emit extents[0] as Used.
+          case 2: { // File — every extent of both forks.
             if (dataOffset + 248 > nd.Length) break;
-            const int dataForkOffset = 88;
-            var logicalSize = (long)BinaryPrimitives.ReadUInt64BigEndian(nd.AsSpan(dataOffset + dataForkOffset, 8));
-            var startBlock = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(dataOffset + dataForkOffset + 16, 4));
-            var blockCount = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(dataOffset + dataForkOffset + 20, 4));
-            if (blockCount == 0 || startBlock == 0) break;
             var parentPath = dirPaths.GetValueOrDefault(parentCnid, "");
             var fullPath = parentPath.Length > 0 ? parentPath + "/" + name : name;
-            var fileOff = (long)startBlock * blockSize;
-            var fileLen = Math.Min(logicalSize, (long)blockCount * blockSize);
-            if (fileLen <= 0) fileLen = (long)blockCount * blockSize;
-            if (fileOff + fileLen > image.Length) fileLen = Math.Max(0, image.Length - fileOff);
-            if (fileLen > 0)
-              yield return new DefragBlockInfo(fileOff, fileLen, DefragBlockKind.Used, fullPath);
+
+            // Data fork: each of the eight extent descriptors in the record is the
+            // file's own (the mover repoints the descriptor that names a moved run);
+            // runs past the eighth live in the overflow file and are left to the
+            // allocation-bitmap sweep, which pins them.
+            const int dataForkOffset = 88;
+            var remaining = (long)BinaryPrimitives.ReadUInt64BigEndian(nd.AsSpan(dataOffset + dataForkOffset, 8));
+            for (var k = 0; k < 8; k++) {
+              var at = dataOffset + dataForkOffset + 16 + k * 8;
+              var startBlock = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(at, 4));
+              var blockCount = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(at + 4, 4));
+              if (blockCount == 0) break;
+              var runOff = (long)startBlock * blockSize;
+              var runBytes = (long)blockCount * blockSize;
+              var used = Math.Min(Math.Max(remaining, 1), runBytes);
+              if (runOff + used > image.Length) used = Math.Max(0, image.Length - runOff);
+              if (used > 0 && startBlock != 0)
+                yield return new DefragBlockInfo(runOff, used, DefragBlockKind.Used, fullPath);
+              remaining -= runBytes;
+            }
+
+            // Resource fork: not repointed by the mover, so reserved where it lies.
+            const int resourceForkOffset = 168;
+            for (var k = 0; k < 8; k++) {
+              var at = dataOffset + resourceForkOffset + 16 + k * 8;
+              var startBlock = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(at, 4));
+              var blockCount = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(at + 4, 4));
+              if (blockCount == 0) break;
+              var runOff = (long)startBlock * blockSize;
+              var runBytes = Math.Min((long)blockCount * blockSize, image.Length - runOff);
+              if (runBytes > 0 && startBlock != 0)
+                yield return new DefragBlockInfo(runOff, runBytes, DefragBlockKind.MetadataReserved,
+                  FileName: fullPath + " (resource fork)");
+            }
             break;
           }
         }
