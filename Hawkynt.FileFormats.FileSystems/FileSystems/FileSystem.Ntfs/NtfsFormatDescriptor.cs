@@ -243,7 +243,7 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // reachable for volumes that fit in one. Larger ones go straight to the rebuild
     // path below, which streams both halves.
     try {
-      if (!input.CanSeek || input.Length > MaxBufferedImageBytes)
+      if (!input.CanSeek || input.Length > Array.MaxLength)
         throw new NotSupportedException("volume too large for the in-place shrinker");
 
       input.Position = 0;
@@ -620,131 +620,86 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <summary>
-  /// Adds (or replaces by name) files into the root directory of an existing NTFS image.
-  /// The common case is a genuine in-place edit via <see cref="NtfsInPlaceAdder"/>: a free
-  /// MFT record slot is claimed, a spec-shaped FILE record (resident or non-resident $DATA)
-  /// is written, data clusters are allocated from $Bitmap, the $MFT:$BITMAP bit is set, and
-  /// a collation-sorted entry is inserted into the root $INDEX_ROOT — existing files, their
-  /// records and clusters stay byte-identical (no re-pack). ntfs-3g (ntfsls/ntfscat/ntfsfix)
-  /// accepts the result. Cases not yet handled in place — the MFT being full (needs a
-  /// reserved contiguous MFT zone + non-contiguous-MFT reader support), the root index
-  /// spilling out of the resident $INDEX_ROOT, or nested sub-directory targets — fall back
-  /// to the verified <see cref="NtfsWriter"/> rebuild.
+  /// Adds (or replaces by path) files in an existing NTFS image, genuinely in place via
+  /// <see cref="NtfsInPlaceAdder"/>: a free MFT record slot is claimed, a spec-shaped FILE
+  /// record is written, data clusters are allocated from $Bitmap, missing folders are
+  /// created and each entry is linked into its parent's $I30 index with every existing
+  /// entry kept as it was. Existing files, their records and clusters stay byte-identical.
   /// </summary>
-  /// <summary>
-  /// Largest volume the in-place editors can work on. NtfsModifier and NtfsRemover
-  /// mutate a byte[] copy of the whole volume; past this the edit is applied by a
-  /// streaming rebuild instead -- correct, just not in-place.
-  /// </summary>
-  private const long MaxBufferedImageBytes = 1L << 31;
-
-  /// <summary>
-  /// Applies an edit by reading every surviving entry out of <paramref name="archive" />
-  /// and writing a fresh volume of the same declared size back over it. Memory scales
-  /// with the content, not with the volume.
-  /// </summary>
-  private static void RebuildInPlaceStreaming(
-      Stream archive,
-      IReadOnlyList<(string Name, byte[] Data)> additions,
-      ISet<string>? drop) {
-    var declaredBytes = archive.Length;
-    var combined = new NtfsWriter();
-
-    archive.Position = 0;
-    var reader = new NtfsReader(archive, leaveOpen: true);
-    foreach (var entry in reader.Entries.Where(e => !e.IsDirectory)) {
-      if (drop != null && (drop.Contains(entry.Name) || drop.Contains(Path.GetFileName(entry.Name))))
-        continue;
-      combined.AddFile(entry.Name, reader.Extract(entry));
-    }
-    foreach (var (name, data) in additions)
-      combined.AddFile(name, data);
-
-    // Every entry is materialised above, so the source is no longer needed.
-    archive.Position = 0;
-    archive.SetLength(0);
-    combined.BuildTo(archive, declaredBytes);
-  }
-
-  /// <summary>
-  /// Adds the supplied entry to the target container.
-  /// </summary>
+  /// <remarks>
+  /// All inputs are applied to a working copy and committed together, so a case the
+  /// in-place editor cannot express leaves the volume untouched and is reported as
+  /// <see cref="NotSupportedException"/>. There is deliberately no rebuild fallback: a
+  /// volume written afresh by <see cref="NtfsWriter"/> loses the label, serial number,
+  /// security descriptors, alternate data streams, reparse points, timestamps and
+  /// attributes of everything already on it.
+  /// </remarks>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    // The in-place modifier walks the volume in memory, which a volume past two
-    // gigabytes does not fit in. Above that the edit unpacks and relays it out.
-    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
-      return;
-    }
-
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
-      RebuildInPlaceStreaming(archive, FormatHelpers.FilesOnly(inputs).ToList(), drop: null);
-      return;
-    }
-
-    archive.Position = 0;
-    using var ms = new MemoryStream();
-    archive.CopyTo(ms);
-    var original = ms.ToArray();
-    var items = FormatHelpers.FilesOnly(inputs).ToList();
-
-    // Genuine in-place on a working copy; commit only if every input succeeds so a
-    // structural limit leaves the source untouched for the rebuild fallback.
-    var work = (byte[])original.Clone();
-    var inPlace = true;
+    var work = LoadForInPlaceEdit(archive);
     try {
-      foreach (var (name, data) in items)
+      foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
         NtfsInPlaceAdder.AddFile(work, name, data);
-    } catch (Exception ex) when (ex is NotSupportedException or IOException or InvalidDataException) {
-      inPlace = false;
+    } catch (Exception ex) when (ex is IOException or InvalidDataException) {
+      throw new NotSupportedException($"NTFS: the files cannot be added in place ({ex.Message}); the volume was left unchanged.", ex);
     }
-    if (inPlace) {
-      archive.Position = 0;
-      archive.Write(work, 0, work.Length);
-      archive.SetLength(work.Length);
-      return;
-    }
-
-    // Fallback: verified rebuild from the untouched original.
-    var reader = new NtfsReader(new MemoryStream(original, false));
-    var combined = new NtfsWriter();
-    foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
-      combined.AddFile(entry.Name, reader.Extract(entry));
-    foreach (var (name, data) in items)
-      combined.AddFile(name, data);
-    var rebuilt = combined.Build(original.Length);
-    archive.Position = 0;
-    archive.Write(rebuilt);
-    archive.SetLength(rebuilt.Length);
+    Commit(archive, work);
   }
 
   /// <summary>
-  /// Removes files from an existing NTFS image with full secure wipe (cluster bytes
-  /// for non-resident data, MFT record, and root-dir index entry). No forensic
-  /// recovery of the removed content is possible from the resulting bytes.
+  /// Removes files — or folders with everything in them — from an existing NTFS image
+  /// with a full secure wipe (cluster bytes, MFT record and index entry). All names are
+  /// applied to a working copy and committed together.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    // See Add: past two gigabytes the volume cannot be walked in memory.
-    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
-      return;
-    }
-
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
-      RebuildInPlaceStreaming(archive, [], new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase));
-      return;
-    }
-
-    archive.Position = 0;
-    using var ms = new MemoryStream();
-    archive.CopyTo(ms);
-    var image = ms.ToArray();
-    foreach (var name in entryNames)
-      NtfsRemover.Remove(image, name);
-    archive.Position = 0;
-    archive.Write(image);
-    archive.SetLength(image.Length);
+    var work = LoadForInPlaceEdit(archive);
+    foreach (var name in ExpandFolders(work, entryNames))
+      NtfsRemover.Remove(work, name);
+    Commit(archive, work);
   }
+
+  /// <summary>
+  /// The in-place editors walk the volume as one array. A volume that does not fit one
+  /// is refused rather than rebuilt, for the reasons given on <see cref="Add(Stream, IReadOnlyList{ArchiveInputInfo})"/>.
+  /// </summary>
+  private static byte[] LoadForInPlaceEdit(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (archive.Length > Array.MaxLength)
+      throw new NotSupportedException(
+        $"NTFS: in-place editing holds the volume in memory; a {archive.Length:N0}-byte volume is larger than that allows, "
+        + "and rebuilding it instead would drop its metadata.");
+    archive.Position = 0;
+    var work = new byte[archive.Length];
+    archive.ReadExactly(work);
+    return work;
+  }
+
+  private static void Commit(Stream archive, byte[] work) {
+    archive.Position = 0;
+    archive.Write(work, 0, work.Length);
+    archive.SetLength(work.Length);
+  }
+
+  /// <summary>
+  /// Replaces every name that is a folder by everything beneath it, deepest first,
+  /// followed by the folder itself.
+  /// </summary>
+  private static IEnumerable<string> ExpandFolders(byte[] image, string[] entryNames) {
+    List<(string Name, bool IsDirectory)>? listing = null;
+    foreach (var raw in entryNames ?? []) {
+      var name = raw.Replace('\\', '/').Trim('/');
+      listing ??= new NtfsReader(new MemoryStream(image, false)).Entries
+        .Select(e => (e.Name.Replace('\\', '/'), e.IsDirectory)).ToList();
+      var isFolder = listing.Any(e => e.IsDirectory && string.Equals(e.Item1, name, StringComparison.OrdinalIgnoreCase));
+      if (!isFolder) { yield return name; continue; }
+      foreach (var child in listing
+                 .Where(e => e.Item1.StartsWith(name + "/", StringComparison.OrdinalIgnoreCase))
+                 .OrderByDescending(e => e.Item1.Count(c => c == '/'))
+                 .ThenBy(e => e.IsDirectory))
+        yield return child.Item1;
+      yield return name;
+    }
+  }
+
   /// <summary>
   /// Turns buffered inputs into streaming ones. Only a length is needed to lay a
   /// volume out; reading each input into a byte[] first caps the volume at what
