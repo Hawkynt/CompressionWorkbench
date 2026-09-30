@@ -186,14 +186,21 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         image.Position = 0;
         using var reader = new NtfsReader(image);
         var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        var ambiguous = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in reader.Entries) {
           if (entry.IsDirectory) continue;
           // The extent map keys regular files by their leaf $FILE_NAME; the
           // reader surfaces the full path. Re-key to the leaf to line them up.
           var leaf = entry.Name.Contains('/') ? entry.Name[(entry.Name.LastIndexOf('/') + 1)..] : entry.Name;
-          if (usedExtentCount.GetValueOrDefault(leaf) == 1)
-            sizeMap[leaf] = entry.Size;
+          // Two files sharing a leaf in different folders cannot be told apart by
+          // that key: the size of a small resident one would be applied to the
+          // run of a large one and the tip wipe would cut into live data. Neither
+          // gets a tip wipe.
+          if (!sizeMap.TryAdd(leaf, entry.Size)) ambiguous.Add(leaf);
         }
+        foreach (var leaf in ambiguous) sizeMap.Remove(leaf);
+        foreach (var leaf in sizeMap.Keys.ToList())
+          if (usedExtentCount.GetValueOrDefault(leaf) != 1) sizeMap.Remove(leaf);
         fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
       } catch {
         fileSizeLookup = null;
