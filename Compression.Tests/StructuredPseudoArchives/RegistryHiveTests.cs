@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Registry;
 using FileFormat.Creg;
 using FileFormat.Regf;
 
@@ -7,6 +8,69 @@ namespace Compression.Tests.StructuredPseudoArchives;
 
 [TestFixture]
 public sealed class RegistryHiveTests {
+  [Test]
+  public void Creg_CreatesAndReopensNestedBinaryValues() {
+    var descriptor = new CregFormatDescriptor();
+    var inputs = new ArchiveInputInfo[] {
+      new("Software", "Software", IsDirectory: true),
+      ArchiveInputInfo.InMemory("Software/Acme/Blob", new byte[] { 0, 1, 0x7f, 0x80, 0xff }),
+      ArchiveInputInfo.InMemory("Software/Acme/Empty", ReadOnlySpan<byte>.Empty),
+    };
+    using var output = new MemoryStream();
+
+    descriptor.Create(output, inputs, new FormatCreateOptions(Method: "creg"));
+    var bytes = output.ToArray();
+    var entries = ReferenceVectorFixture.List(descriptor, bytes);
+
+    Assert.Multiple(() => {
+      Assert.That(entries.Any(e => e.IsDirectory && e.Name == "Software/Acme"), Is.True);
+      Assert.That(entries.Any(e => e.Name == "Software/Acme/Blob" && e.Kind == "REG_BINARY" && e.OriginalSize == 5), Is.True);
+      Assert.That(ReferenceVectorFixture.Extract(descriptor, bytes, "Software/Acme/Blob"), Is.EqualTo(new byte[] { 0, 1, 0x7f, 0x80, 0xff }));
+      Assert.That(ReferenceVectorFixture.Extract(descriptor, bytes, "Software/Acme/Empty"), Is.Empty);
+      Assert.That(bytes.AsSpan(0, 4).SequenceEqual("CREG"u8), Is.True);
+    });
+  }
+
+  [Test]
+  public void Creg_GivenAValueOnTheRootKey_WhenCreating_ThenItIsRefusedAsUnsupported() {
+    using var output = new MemoryStream();
+    Assert.That(
+      () => new CregFormatDescriptor().Create(output, [ArchiveInputInfo.InMemory("RootValue", new byte[] { 1 })], new FormatCreateOptions()),
+      Throws.TypeOf<NotSupportedException>());
+  }
+
+  [Test]
+  public void Creg_CreateRejectsValuesLargerThanTheFormatLengthField() {
+    var descriptor = new CregFormatDescriptor();
+    var inputs = new[] { ArchiveInputInfo.InMemory("Key/Value", new byte[ushort.MaxValue + 1]) };
+    using var output = new MemoryStream();
+
+    Assert.That(
+      () => descriptor.Create(output, inputs, new FormatCreateOptions()),
+      Throws.TypeOf<InvalidDataException>().With.Message.Contains("16-bit data limit"));
+  }
+
+  [Test]
+  public void Creg_CreateUsesMultipleDataBlocksAndTheFullValueLengthRange() {
+    var descriptor = new CregFormatDescriptor();
+    var largestValue = Enumerable.Range(0, ushort.MaxValue).Select(x => (byte)x).ToArray();
+    var inputs = new[] {
+      ArchiveInputInfo.InMemory("First/Largest", largestValue),
+      ArchiveInputInfo.InMemory("Second/Small", new byte[] { 0xa5 }),
+    };
+    using var output = new MemoryStream();
+
+    descriptor.Create(output, inputs, new FormatCreateOptions());
+    var bytes = output.ToArray();
+    var blockCount = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(16));
+
+    Assert.Multiple(() => {
+      Assert.That(blockCount, Is.EqualTo(2));
+      Assert.That(ReferenceVectorFixture.Extract(descriptor, bytes, "First/Largest"), Is.EqualTo(largestValue));
+      Assert.That(ReferenceVectorFixture.Extract(descriptor, bytes, "Second/Small"), Is.EqualTo(new byte[] { 0xa5 }));
+    });
+  }
+
   [Test]
   public void Creg_ParsesWindows9xKeyAndTypedValue() {
     var descriptor = new CregFormatDescriptor();

@@ -5,11 +5,11 @@ using FileFormat.Structured;
 namespace FileFormat.Creg;
 
 /// <summary>Windows 95/98/Me binary CREG registry hives exposed as keys/folders and values/files.</summary>
-public sealed class CregFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class CregFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable {
   public string Id => "Creg";
   public string DisplayName => "Windows 9x Registry hive (CREG)";
   public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities => FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+  public FormatCapabilities Capabilities => FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".dat";
   public IReadOnlyList<string> Extensions => [".dat", ".dao", ".pol"];
@@ -23,4 +23,13 @@ public sealed class CregFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public List<ArchiveEntryInfo> List(Stream stream, string? password) => StructuredArchive.List(stream, CregCodec.Read);
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) => StructuredArchive.Extract(stream, outputDir, files, CregCodec.Read);
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) => StructuredArchive.ExtractEntry(input, entryName, output, CregCodec.Read);
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Password is not null)
+      throw new NotSupportedException("CREG hives do not support encryption.");
+    if (options.MethodName is { } method && !method.Equals("creg", StringComparison.OrdinalIgnoreCase))
+      throw new NotSupportedException($"CREG does not support the '{method}' method.");
+    CregWriter.Write(output, StructuredArchive.FromInputs(inputs));
+  }
 }
