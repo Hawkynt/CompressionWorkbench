@@ -135,7 +135,7 @@ public static class PartitionedDiskLister {
   /// <summary>
   /// Extracts one partition window (inner-FS aware) into <c>{outputDir}/{prefix}</c>,
   /// honouring the optional <paramref name="files"/> filter and falling back to a
-  /// raw <c>raw.bin</c> dump when no inner filesystem is recognised.
+  /// raw <c>{prefix}.raw</c> dump, named as List reports it, when no inner filesystem is recognised.
   /// </summary>
   private static void ExtractWindow(Stream disk, long startOffset, long size, string prefix,
       string outputDir, string? password, string[]? files) {
@@ -158,14 +158,20 @@ public static class PartitionedDiskLister {
       }
     }
 
-    // Unrecognised FS or read failure — dump the partition bytes raw.
-    Directory.CreateDirectory(partOut);
-    using var raw = File.Create(Path.Combine(partOut, "raw.bin"));
+    // Unrecognised FS or read failure — dump the partition bytes raw, under the same
+    // "{prefix}.raw" name List reports, so extracting a listed entry finds its file.
+    var rawPath = Path.Combine(outputDir, prefix.Replace('/', Path.DirectorySeparatorChar) + ".raw");
+    Directory.CreateDirectory(Path.GetDirectoryName(rawPath)!);
+    using var raw = File.Create(rawPath);
     window.Position = 0;
     window.CopyTo(raw);
   }
 
-  private static string MakePartitionPrefix(PartitionEntry part) {
+  /// <summary>
+  /// The directory name a partition is listed under: <c>Partition{N}_{TypeName}</c>, with N
+  /// one-based and the type name reduced to letters, digits, '-' and '_'.
+  /// </summary>
+  public static string MakePartitionPrefix(PartitionEntry part) {
     var safeName = string.Concat(part.TypeName.Select(c =>
       char.IsLetterOrDigit(c) || c == '-' || c == '_' ? c : '_'));
     if (string.IsNullOrEmpty(safeName)) safeName = "raw";
