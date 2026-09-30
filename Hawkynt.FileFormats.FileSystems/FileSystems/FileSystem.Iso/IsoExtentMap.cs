@@ -50,6 +50,7 @@ public static class IsoExtentMap {
     var sectorBuf = new byte[SectorSize];
     byte[]? pvdSector = null;
     byte[]? jolietSector = null;
+    byte[]? bootRecordSector = null;
     for (var sector = 16; sector < 256; sector++) {
       var off = (long)sector * SectorSize;
       if (off + SectorSize > image.Length) break;
@@ -62,6 +63,7 @@ public static class IsoExtentMap {
       vdSectors.Add(sector);
       var type = sectorBuf[0];
       if (type == 0xFF) break; // VDST terminator
+      if (type == 0 && bootRecordSector == null) bootRecordSector = (byte[])sectorBuf.Clone();
       if (type == 1 && pvdOffset < 0) {
         pvdOffset = (int)off;
         pvdSector = (byte[])sectorBuf.Clone();
@@ -108,6 +110,91 @@ public static class IsoExtentMap {
     var rootLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(pvdSector.AsSpan(156 + 10));
     foreach (var ext in WalkDirectory(image, cache, rootLba, rootLen, "", joliet: false, isRoot: true))
       yield return ext;
+
+    // El Torito: the boot catalog and every boot image it names are referenced
+    // from nowhere in the directory tree, and a wipe or a move that treated them
+    // as free space left the disc unbootable.
+    if (bootRecordSector != null)
+      foreach (var ext in ElToritoExtents(cache, bootRecordSector, image.Length))
+        yield return ext;
+
+    // Past the volume space an image may carry more (a hybrid disc's partitions,
+    // an appended session). None of it is ours to call free.
+    var volumeBlocks = BinaryPrimitives.ReadUInt32LittleEndian(pvdSector.AsSpan(80));
+    var logicalBlock = BinaryPrimitives.ReadUInt16LittleEndian(pvdSector.AsSpan(128));
+    if (logicalBlock == 0) logicalBlock = SectorSize;
+    var volumeEnd = (long)volumeBlocks * logicalBlock;
+    if (volumeEnd > 0 && volumeEnd < image.Length && HoldsData(cache, volumeEnd, image.Length))
+      yield return new DefragBlockInfo(volumeEnd, image.Length - volumeEnd, DefragBlockKind.MetadataReserved,
+        FileName: "beyond the ISO9660 volume space");
+  }
+
+  /// <summary>Whether any byte in [<paramref name="from" />, <paramref name="to" />) is non-zero.</summary>
+  private static bool HoldsData(SectorCache cache, long from, long to) {
+    var buffer = new byte[64 * 1024];
+    for (var at = from; at < to; at += buffer.Length) {
+      var n = (int)Math.Min(buffer.Length, to - at);
+      cache.Read(at, buffer.AsSpan(0, n));
+      if (buffer.AsSpan(0, n).ContainsAnyExcept((byte)0)) return true;
+    }
+    return false;
+  }
+
+  /// <summary>
+  /// The El Torito boot catalog named by the boot record, and each boot image its
+  /// valid entries point at (sector counts are in 512-byte virtual sectors).
+  /// </summary>
+  private static IEnumerable<DefragBlockInfo> ElToritoExtents(SectorCache cache, byte[] bootRecord, long imageLength) {
+    var id = Encoding.ASCII.GetString(bootRecord, 7, 23);
+    if (!id.StartsWith("EL TORITO SPECIFICATION", StringComparison.Ordinal)) yield break;
+    var catalogLba = BinaryPrimitives.ReadUInt32LittleEndian(bootRecord.AsSpan(0x47));
+    var catalogOff = (long)catalogLba * SectorSize;
+    if (catalogLba == 0 || catalogOff + SectorSize > imageLength) yield break;
+    yield return new DefragBlockInfo(catalogOff, SectorSize, DefragBlockKind.MetadataReserved,
+      FileName: "El Torito boot catalog");
+    var catalog = new byte[SectorSize];
+    cache.Read(catalogOff, catalog);
+    for (var e = 32; e + 32 <= SectorSize; e += 32) {
+      var indicator = catalog[e];
+      if (indicator is not (0x88 or 0x00)) continue;   // bootable / non-bootable entries
+      var count = BinaryPrimitives.ReadUInt16LittleEndian(catalog.AsSpan(e + 6));
+      var lba = BinaryPrimitives.ReadUInt32LittleEndian(catalog.AsSpan(e + 8));
+      if (lba == 0) continue;
+      var off = (long)lba * SectorSize;
+      var len = Math.Max(1, (long)count) * 512;
+      if (off >= imageLength) continue;
+      yield return new DefragBlockInfo(off, Math.Min(len, imageLength - off), DefragBlockKind.MetadataReserved,
+        FileName: "El Torito boot image");
+    }
+  }
+
+  /// <summary>
+  /// The Rock Ridge / SUSP continuation areas ("CE" entries) a directory record's
+  /// system use field points at. They hold the long name, permissions, owners,
+  /// times and link targets of the entry, live in sectors no directory extent
+  /// covers, and zeroing them made every Rock Ridge attribute vanish.
+  /// </summary>
+  private static void CollectContinuationAreas(byte[] dir, int pos, int recLen, int nameLen, long imageLength,
+      List<DefragBlockInfo> into) {
+    var su = pos + 33 + nameLen + ((nameLen & 1) == 0 ? 1 : 0);
+    var end = pos + recLen;
+    while (su + 4 <= end) {
+      var len = dir[su + 2];
+      if (len < 4 || su + len > end) break;
+      if (dir[su] == (byte)'C' && dir[su + 1] == (byte)'E' && len >= 28) {
+        var block = BinaryPrimitives.ReadUInt32LittleEndian(dir.AsSpan(su + 4));
+        var offset = BinaryPrimitives.ReadUInt32LittleEndian(dir.AsSpan(su + 12));
+        var length = BinaryPrimitives.ReadUInt32LittleEndian(dir.AsSpan(su + 20));
+        var start = (long)block * SectorSize;
+        if (block != 0 && start < imageLength) {
+          // The whole sector is claimed: other entries' continuations share it.
+          var sectors = ((long)offset + length + SectorSize - 1) / SectorSize;
+          into.Add(new DefragBlockInfo(start, Math.Min(Math.Max(1, sectors) * SectorSize, imageLength - start),
+            DefragBlockKind.MetadataReserved, FileName: "Rock Ridge continuation area"));
+        }
+      }
+      su += len;
+    }
   }
 
   private static IEnumerable<DefragBlockInfo> PathTableExtents(byte[] descSector, string label) {
@@ -138,11 +225,13 @@ public static class IsoExtentMap {
   /// to one directory's bytes plus the LRU cache.
   /// </summary>
   private static IEnumerable<DefragBlockInfo> WalkDirectory(Stream image, SectorCache cache,
-      int lba, int length, string basePath, bool joliet, bool isRoot) {
-    // The directory itself is a contiguous extent (LBA, length) — yield as Used+Directory
-    // so the block visualiser tints it gold instead of treating it as gray metadata.
+      int lba, int length, string basePath, bool joliet, bool isRoot, HashSet<long>? owned = null) {
+    owned ??= [];
+    // The directory itself is a contiguous extent (LBA, length). It is reserved, not
+    // movable: repointing a folder means rewriting its "." record, every child's
+    // "..", the parent's record and both path tables, which the mover does not do.
     yield return new DefragBlockInfo((long)lba * SectorSize, length,
-      DefragBlockKind.Used,
+      DefragBlockKind.MetadataReserved,
       FileName: isRoot ? "ISO9660 root dir" : $"dir:{basePath}",
       Classification: DefragBlockClass.Directory);
 
@@ -161,6 +250,7 @@ public static class IsoExtentMap {
       // don't disturb iteration if any caller materialises the IEnumerable lazily.
       var subdirs = new List<(int lba, int len, string path)>();
       var files = new List<(long byteOff, int len, string name)>();
+      var continuations = new List<DefragBlockInfo>();
 
       var pos = 0;
       var end = toRead;
@@ -178,6 +268,8 @@ public static class IsoExtentMap {
         var flags = dirBytes[pos + 25];
         var nameLen = dirBytes[pos + 32];
         var isDir = (flags & 2) != 0;
+
+        if (!joliet) CollectContinuationAreas(dirBytes, pos, recLen, nameLen, image.Length, continuations);
 
         // Skip . and ..
         if (nameLen == 1 && (dirBytes[pos + 33] == 0 || dirBytes[pos + 33] == 1)) {
@@ -214,13 +306,22 @@ public static class IsoExtentMap {
         pos += recLen;
       }
 
-      // Emit collected files for this directory.
-      foreach (var (byteOff, len, name) in files)
-        yield return new DefragBlockInfo(byteOff, len, DefragBlockKind.Used, name);
+      // Emit collected files for this directory. Both trees name the same file
+      // extents; only the primary tree reports them as owners, since two owners of
+      // one run would have the planner move the bytes twice.
+      // Several records may name one extent (a hard link, or a mastering tool that
+      // stored identical files once); the first name owns it, and the mover
+      // repoints every record that names the extent when it moves.
+      if (!joliet)
+        foreach (var (byteOff, len, name) in files)
+          if (owned.Add(byteOff))
+            yield return new DefragBlockInfo(byteOff, len, DefragBlockKind.Used, name);
+      foreach (var area in continuations.DistinctBy(a => a.Offset))
+        yield return area;
 
       // Recurse into subdirectories (their extents are yielded inside).
       foreach (var (sublba, sublen, subpath) in subdirs) {
-        foreach (var ext in WalkDirectory(image, cache, sublba, sublen, subpath, joliet, isRoot: false))
+        foreach (var ext in WalkDirectory(image, cache, sublba, sublen, subpath, joliet, isRoot: false, owned))
           yield return ext;
       }
     } finally {

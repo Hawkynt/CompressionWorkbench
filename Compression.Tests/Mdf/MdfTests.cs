@@ -242,7 +242,7 @@ public class MdfTests {
   }
 
   [Test, Category("RoundTrip")]
-  public void Wipe_RawMode1_ZerosUnusedPayloadWithoutChangingTrackLength() {
+  public void Wipe_RawMode1_KeepsDataPastTheVolumeSpaceAndTheTrackLength() {
     var cooked = BuildIso("KEEP.BIN", "keep"u8.ToArray(), headroomSectors: 3);
     var raw = ToRawMode1(cooked);
     using var image = new MemoryStream(raw, writable: true);
@@ -257,9 +257,12 @@ public class MdfTests {
     Span<byte> free = stackalloc byte[CookedSectorSize];
     MdfInPlaceModifier.ReadSector(image, freeLba, free, geometry);
     var freedSector = free.ToArray();
+    // Past the volume space an image may carry an appended partition (a hybrid
+    // disc's EFI image) that nothing in the ISO tree points at; it is not provably
+    // free, so the wipe leaves it alone.
     Assert.Multiple(() => {
-      Assert.That(wiped, Is.GreaterThan(0));
-      Assert.That(freedSector, Is.All.Zero);
+      Assert.That(wiped, Is.Zero);
+      Assert.That(freedSector, Is.All.EqualTo((byte)0xA5));
       Assert.That(image.Length, Is.EqualTo(beforeLength));
       Assert.That(ExtractFile(image, "KEEP.BIN"), Is.EqualTo("keep"u8.ToArray()));
     });
