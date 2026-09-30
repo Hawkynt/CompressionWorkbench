@@ -223,6 +223,31 @@ public static class CscStream {
 
   // ── Range Coder ──────────────────────────────────────────────────────────
 
+  /// <summary>
+  /// Returns the last code value of the bit-0 sub-interval of [<paramref name="low"/>, <paramref name="high"/>],
+  /// so bit 0 owns [low, mid] and bit 1 owns [mid + 1, high]. Both halves must stay non-empty
+  /// (low &lt;= mid &lt; high), the invariant of a carryless binary arithmetic coder
+  /// (x1 &lt;= xmid &lt; x2 in Mahoney's paq/lpaq coders, "Data Compression Explained", arithmetic coding).
+  /// </summary>
+  /// <remarks>
+  /// Normalisation only shifts while the top bytes agree, so the interval can shrink to as
+  /// little as two values (e.g. 0x00FFFFFF..0x01000000). There range * prob / ProbMax truncates
+  /// to 0 and low + 0 - 1 lands one below low: bit 0 then owned an empty interval, the encoder
+  /// wrapped high below low and the decoder read a 1 instead, desynchronising the stream.
+  /// The lower clamp restores the invariant; the initial full interval (range overflows to 0,
+  /// mid wraps to 0xFFFFFFFF, caught by the upper clamp) keeps its historic split. Streams that
+  /// never collapse this far are byte-identical to before. One that did collapse and coded a 1
+  /// there used to give bit 1 the whole interval and now gives it [low + 1, high], so such an
+  /// older stream is not readable by this decoder; it could not have held a 0 at that point.
+  /// </remarks>
+  private static uint Split(uint low, uint high, uint prob) {
+    var range = high - low + 1;
+    var mid = low + (uint)((ulong)range * prob / ProbMax) - 1;
+    if (mid >= high) mid = high - 1;
+    if (mid < low) mid = low;
+    return mid;
+  }
+
   private sealed class RangeEncoder {
     private uint _low;
     private uint _high = 0xFFFFFFFFu;
@@ -231,9 +256,7 @@ public static class CscStream {
     public RangeEncoder(Stream output) => _out = output;
 
     public void EncodeBit(int bit, ref uint prob) {
-      var range = _high - _low + 1;
-      var mid = _low + (uint)((ulong)range * prob / ProbMax) - 1;
-      if (mid >= _high) mid = _high - 1;
+      var mid = Split(_low, _high, prob);
 
       if (bit == 0) {
         _high = mid;
@@ -275,9 +298,7 @@ public static class CscStream {
     }
 
     public int DecodeBit(ref uint prob) {
-      var range = _high - _low + 1;
-      var mid = _low + (uint)((ulong)range * prob / ProbMax) - 1;
-      if (mid >= _high) mid = _high - 1;
+      var mid = Split(_low, _high, prob);
 
       int bit;
       if (_code <= mid) {
