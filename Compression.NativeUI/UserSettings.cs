@@ -18,14 +18,22 @@ internal sealed class UserSettings {
   /// </summary>
   internal static string? PathOverride { get; set; }
 
-  private static string SettingsPath => PathOverride ?? Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-    "CompressionWorkbench", "settings.json");
+  private static string? SettingsPath => PathOverride ?? SettingsPathUnder(
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create));
+
+  /// <summary>
+  /// The settings file inside <paramref name="dataFolder"/>, or null when that is not an absolute
+  /// path. .NET reports an empty path for a data folder the platform does not have - on Linux,
+  /// <c>~/.local/share</c> on a fresh profile - and combining it gave a relative path, which wrote
+  /// the settings into whatever folder the shell had been started from.
+  /// </summary>
+  internal static string? SettingsPathUnder(string dataFolder)
+    => Path.IsPathRooted(dataFolder) ? Path.Combine(dataFolder, "CompressionWorkbench", "settings.json") : null;
 
   public static UserSettings Load() {
     try {
       var path = SettingsPath;
-      if (!File.Exists(path)) return new();
+      if (path is null || !File.Exists(path)) return new();
       var json = File.ReadAllText(path);
       return JsonSerializer.Deserialize<UserSettings>(json) ?? new UserSettings();
     } catch {
@@ -36,7 +44,7 @@ internal sealed class UserSettings {
 
   public void Save() {
     try {
-      var path = SettingsPath;
+      if (SettingsPath is not { } path) return;
       Directory.CreateDirectory(Path.GetDirectoryName(path)!);
       var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
       File.WriteAllText(path, json);

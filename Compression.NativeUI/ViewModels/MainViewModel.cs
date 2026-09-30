@@ -9,6 +9,9 @@ using Hawkynt.NativeForms;
 
 namespace Compression.NativeUI.ViewModels;
 
+/// <summary>Where the entries on show are read from: the disk, or the archive at a path.</summary>
+internal readonly record struct PreviewSource(bool BrowsingDisk, string ArchivePath);
+
 internal sealed class MainViewModel : ViewModelBase {
   private string _archivePath = "";
   private string _format = "";
@@ -66,7 +69,7 @@ internal sealed class MainViewModel : ViewModelBase {
   /// </summary>
   public bool IsNestedArchive => _archiveStack.Count > 0;
 
-  public ObservableCollection<ArchiveEntryViewModel> Entries { get; } = [];
+  public EntryCollection Entries { get; } = [];
   public ObservableCollection<ArchiveEntryViewModel> SelectedEntries { get; } = [];
   public ObservableCollection<BreadcrumbSegment> Breadcrumbs { get; } = [];
 
@@ -120,6 +123,20 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand DeleteSelectedCommand { get; }
   /// <summary>Asks the view to start editing the selected entry's name; see <see cref="RenameRequested"/>.</summary>
   public ICommand RenameCommand { get; }
+  public ICommand CopyCommand { get; }
+  public ICommand CutCommand { get; }
+  public ICommand PasteCommand { get; }
+  public ICommand NewFolderCommand { get; }
+  /// <summary>Rereads the folder or archive on show, staying where the user is.</summary>
+  public ICommand RefreshCommand { get; }
+
+  // The shell's own clipboard. The desktop clipboard carries only text across every backend, so
+  // files copied here paste here — between folders, archives and the two, in any direction.
+  private IReadOnlyList<TransferItem>? _clipboardItems;
+  private bool _clipboardIsCut;
+
+  /// <summary>True while something copied or cut is waiting to be pasted.</summary>
+  public bool HasClipboard => _clipboardItems is { Count: > 0 };
 
   /// <summary>
   /// Raised by <see cref="RenameCommand"/>. Typing the new name is the view's business — in place,
@@ -209,6 +226,16 @@ internal sealed class MainViewModel : ViewModelBase {
     ScrambleEntryCommand = new RelayCommand(_ => OpenMaintenance(MaintenanceVerb.Scramble), _ => CanMaintain(MaintenanceVerb.Scramble));
     ReconfigureEntryCommand = new RelayCommand(_ => Reconfigure(), _ => CanReconfigure());
     DeleteSelectedCommand = new RelayCommand(_ => DeleteSelectedEntries(), _ => CanDeleteSelected);
+    CopyCommand = new RelayCommand(_ => PutSelectionOnClipboard(cut: false), _ => CanCopySelection());
+    CutCommand = new RelayCommand(_ => PutSelectionOnClipboard(cut: true), _ => CanCopySelection() && CanChangeHere());
+    PasteCommand = new AsyncRelayCommand(_ => PasteAsync(), _ => HasClipboard && CanChangeHere());
+    // On disk only: several writers - zip's among them - keep files, not bare folders, so an empty
+    // folder made inside an archive would vanish on the next rebuild.
+    RefreshCommand = new RelayCommand(_ => {
+      if (HasArchive && !IsBrowsingOsFolder) ReloadArchiveInPlace();
+      else RefreshVisibleEntries();
+    }, _ => CurrentLocation is not null);
+    NewFolderCommand = new RelayCommand(_ => CreateNewFolder(), _ => _osBrowserPath is not null);
     RenameCommand = new RelayCommand(
       _ => { if (SingleSelection() is { } entry) RenameRequested?.Invoke(this, entry); },
       _ => SingleSelection() is { } entry && CanRename(entry));
@@ -234,6 +261,266 @@ internal sealed class MainViewModel : ViewModelBase {
   /// <see cref="HasPendingFragmentation"/> is raised so the user can run Defragment
   /// to compact freed slots.
   /// </summary>
+  /// <summary>
+  /// Makes a folder called "New folder" - or "New folder (2)" and so on when that is taken - in the
+  /// folder being browsed, and asks the view to let the user name it straight away. Returns its name,
+  /// or null when it could not be made (the reason is in the status line).
+  /// </summary>
+  internal string? CreateNewFolder() {
+    if (_osBrowserPath is not { } parent) return null;
+    if (IsChanging) {
+      StatusText = "Another change is still running.";
+      return null;
+    }
+
+    try {
+      var taken = new HashSet<string>(Directory.EnumerateFileSystemEntries(parent).Select(Path.GetFileName)!, StringComparer.OrdinalIgnoreCase);
+      var name = Transfer.FreeName("New folder", taken);
+      Directory.CreateDirectory(Path.Combine(parent, name));
+      RefreshVisibleEntries();
+      StatusText = $"Created {name}.";
+      if (CurrentLocation is { } here) RaiseChanged([here]);
+
+      if (Entries.FirstOrDefault(e => e.Name == name) is { } created) {
+        SelectedEntries.Clear();
+        SelectedEntries.Add(created);
+        RenameRequested?.Invoke(this, created);
+      }
+
+      return name;
+    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+      StatusText = $"Could not create a folder: {ex.Message}";
+      return null;
+    }
+  }
+
+  private bool CanCopySelection()
+    => CurrentLocation is not null
+       && SelectedEntries.Any(e => !e.IsParentEntry)
+       && !SelectedEntries.Any(e => e.IsEncrypted);
+
+  /// <summary>
+  /// Whether what is shown here may be changed. A nested archive is a temporary extraction: taking
+  /// from it is fine, but cutting from or pasting into it would edit a copy nobody sees.
+  /// </summary>
+  private bool CanChangeHere()
+    => CurrentLocation is not null && !IsNestedArchive && !IsChanging
+       && (IsBrowsingOsFolder || ArchiveIsModifiable());
+
+  // Whether the open archive accepts changes is a property of its format; asked once per archive.
+  private (string Path, bool Answer)? _modifiable;
+
+  private bool ArchiveIsModifiable() {
+    if (_modifiable is { } known && known.Path == ArchivePath) return known.Answer;
+
+    var answer = DeleteCapability.Evaluate(false, ArchivePath, 1) == DeleteMode.ModifiableArchive;
+    _modifiable = (ArchivePath, answer);
+    return answer;
+  }
+
+  // ── one change at a time ────────────────────────────────────────────────────────────────────
+  //
+  // A transfer, a drop, a delete, a rename: each rewrites a folder or an archive, and two of them at
+  // once can both pick the same free name and have the second overwrite the first. Background reads
+  // (preview, thumbnails) hold the archive open for reading, which makes an exclusive write fail
+  // with "in use"; a change therefore waits for them to finish and turns new ones away meanwhile.
+
+  private readonly object _activity = new();
+  private int _backgroundReads;
+
+  /// <summary>True while a change to a folder or an archive is running.</summary>
+  public bool IsChanging { get; private set; }
+
+  /// <summary>Registers a background read; false while a change is running, and the read should skip.</summary>
+  internal bool TryBeginBackgroundRead() {
+    lock (_activity) {
+      if (IsChanging) return false;
+      ++_backgroundReads;
+      return true;
+    }
+  }
+
+  internal void EndBackgroundRead() {
+    lock (_activity) --_backgroundReads;
+  }
+
+  /// <summary>
+  /// Claims the right to change something, waiting (up to <paramref name="patience"/>) for background
+  /// reads to finish. Returns the reason when another change is already running.
+  /// </summary>
+  private string? BeginChange(TimeSpan patience) {
+    lock (_activity) {
+      if (IsChanging) return "Another change is still running.";
+      IsChanging = true;
+    }
+
+    var until = DateTime.UtcNow + patience;
+    while (Volatile.Read(ref _backgroundReads) > 0 && DateTime.UtcNow < until)
+      Thread.Sleep(15);
+
+    CommandManager.InvalidateRequerySuggested();
+    return null;
+  }
+
+  private void EndChange() {
+    lock (_activity) IsChanging = false;
+    CommandManager.InvalidateRequerySuggested();
+  }
+
+  /// <summary>Raised after a change, with the places whose contents it altered, so views can reread them.</summary>
+  public event EventHandler<IReadOnlyList<Location>>? Changed;
+
+  private void RaiseChanged(IEnumerable<Location> places)
+    => Changed?.Invoke(this, [.. places.Distinct()]);
+
+  /// <summary>Puts <paramref name="items"/> on the clipboard, as copy or cut — from the list or from the tree.</summary>
+  internal void PutOnClipboard(IReadOnlyList<TransferItem> items, bool cut) {
+    if (items.Count == 0) return;
+
+    _clipboardItems = items;
+    _clipboardIsCut = cut;
+    StatusText = $"{(cut ? "Cut" : "Copied")} {items.Count} item(s). Paste to put {(items.Count == 1 ? "it" : "them")} somewhere.";
+    OnPropertyChanged(nameof(HasClipboard));
+    CommandManager.InvalidateRequerySuggested();
+  }
+
+  private void PutSelectionOnClipboard(bool cut) {
+    if (CurrentLocation is null) return;
+    PutOnClipboard(SelectionAsTransferItems(), cut);
+  }
+
+  /// <summary>
+  /// Pastes what was copied or cut into the folder the shell is showing. Returns the reason when it
+  /// cannot, having touched nothing; a cut is consumed once it has been pasted.
+  /// </summary>
+  internal async Task<string?> PasteAsync() {
+    if (_clipboardItems is not { Count: > 0 } items || CurrentLocation is not { } target) return "Nothing to paste.";
+
+    var move = _clipboardIsCut;
+    var error = await TransferAsync(items, target, move);
+    if (error is null && move) {
+      _clipboardItems = null;
+      OnPropertyChanged(nameof(HasClipboard));
+    }
+
+    return error;
+  }
+
+  /// <summary>The selected entries, as things that can be copied or moved from where the shell is.</summary>
+  internal IReadOnlyList<TransferItem> SelectionAsTransferItems()
+    => CurrentLocation is { } here
+      ? [.. SelectedEntries.Where(e => !e.IsParentEntry).Select(e => new TransferItem(here, e.Name, e.IsDirectory))]
+      : [];
+
+  /// <summary>
+  /// Why <paramref name="items"/> cannot go to <paramref name="target"/>, or null when they can — the
+  /// transfer's own rules, plus the shell's: nothing changes inside a nested archive's temporary copy.
+  /// </summary>
+  internal string? WhyNotTransfer(IReadOnlyList<TransferItem> items, Location target, bool move) {
+    if (IsChanging) return "Another change is still running.";
+    if (IsNestedCopy(target)) return "Nothing can be put inside a nested archive.";
+    if (items.FirstOrDefault(IsEncryptedHere) is { } locked)
+      return $"{locked.Name} is encrypted, and the shell has no password to read it with.";
+    if (move && items.Any(i => IsNestedCopy(i.From))) return "Nothing can be moved out of a nested archive.";
+    return Transfer.WhyNot(items, target, move);
+  }
+
+  /// <summary>Whether <paramref name="item"/> lies in the open archive and is, or holds, an encrypted entry.</summary>
+  private bool IsEncryptedHere(TransferItem item)
+    => item.From.IsInArchive && HasArchive && Transfer.SamePath(item.From.HostPath, ArchivePath)
+       && _allEntries.Any(e => e.IsEncrypted && (e.Path.TrimEnd('/') == item.EntryPath || e.Path.StartsWith(item.EntryPath + "/", StringComparison.Ordinal)));
+
+  private bool IsNestedCopy(Location place)
+    => IsNestedArchive && place.IsInArchive && string.Equals(place.HostPath, ArchivePath, StringComparison.OrdinalIgnoreCase);
+
+  /// <summary>
+  /// Copies or moves <paramref name="items"/> into <paramref name="target"/> — a paste, or a drop on a
+  /// folder in the list or the tree — then shows the result. Returns the reason on failure, having
+  /// touched nothing when the transfer was refused.
+  /// </summary>
+  internal async Task<string?> TransferAsync(IReadOnlyList<TransferItem> items, Location target, bool move) {
+    if (WhyNotTransfer(items, target, move) is { } refusal) return Fail(refusal);
+    if (BeginChange(TimeSpan.FromSeconds(10)) is { } busy) return Fail(busy);
+
+    IsBusy = true;
+    StatusText = $"{(move ? "Moving" : "Copying")} {items.Count} item(s)...";
+    try {
+      var result = await Task.Run(() => Transfer.Run(items, target, move));
+
+      // What the list shows may have changed from either end: what arrived, or what left.
+      if (HasArchive && !IsBrowsingOsFolder) ReloadArchiveInPlace();
+      else RefreshVisibleEntries();
+
+      StatusText = $"{(move ? "Moved" : "Copied")} {result.Created.Count} item(s) to {target}.";
+      RaiseChanged(move ? [target, .. items.Select(i => i.From)] : [target]);
+      return null;
+    } catch (Exception ex) {
+      // Whatever failed - the file system, a refused name, a codec on a damaged archive - sources are
+      // removed only after every copy has landed and been read back, so the user is told and
+      // nothing is lost; the failure must not escape a fire-and-forget drop or an async handler.
+      return Fail($"{(move ? "Move" : "Copy")} failed: {ex.Message}");
+    } finally {
+      IsBusy = false;
+      EndChange();
+    }
+
+    string Fail(string reason) {
+      StatusText = reason;
+      return reason;
+    }
+  }
+
+  /// <summary>The largest entry the preview pane reads for a glance; the preview window has no such limit.</summary>
+  internal const long PreviewPaneLimit = 32L * 1024 * 1024;
+
+  /// <summary>
+  /// The bytes the preview pane shows for <paramref name="entry"/>, or null and the caption to show
+  /// instead: a folder, an encrypted entry, one too large to read for a glance, one that cannot be
+  /// read. Safe to call off the UI thread; it changes nothing.
+  /// </summary>
+  internal (byte[]? Data, string Caption) ReadForPreview(ArchiveEntryViewModel entry)
+    => ReadForPreview(entry, CapturePreviewSource());
+
+  /// <summary>Where entries are read from right now — captured on the UI thread for a background read.</summary>
+  internal PreviewSource CapturePreviewSource() => new(IsBrowsingOsFolder, ArchivePath);
+
+  /// <summary>
+  /// <see cref="ReadForPreview(ArchiveEntryViewModel)"/> against a source captured earlier, so a read
+  /// that runs after the user has moved on reads from where the entry was, not from where the shell
+  /// is now. Registers as a background read: while a change is running it reads nothing.
+  /// </summary>
+  internal (byte[]? Data, string Caption) ReadForPreview(ArchiveEntryViewModel entry, PreviewSource source) {
+    if (entry.IsParentEntry) return (null, "");
+    if (entry.IsDirectory) return (null, $"{entry.Name}{Environment.NewLine}Folder");
+    if (entry.IsEncrypted) return (null, $"{entry.Name}{Environment.NewLine}Encrypted");
+
+    var size = source.BrowsingDisk ? SafeLength(entry.Path) : entry.OriginalSize;
+    if (size > PreviewPaneLimit)
+      return (null, $"{entry.Name}{Environment.NewLine}Too large to preview ({FormatSize(size)})");
+
+    if (!TryBeginBackgroundRead()) return (null, $"{entry.Name}{Environment.NewLine}Waiting for a change to finish");
+    try {
+      var data = source.BrowsingDisk
+        ? File.ReadAllBytes(entry.Path)
+        : ArchiveOperations.ExtractEntry(source.ArchivePath, entry.Path, password: null);
+      return (data, entry.Name);
+    } catch (Exception ex) {
+      // A preview is a glance: whatever stopped the read - a locked file, a damaged entry, a codec
+      // throwing on bytes it did not expect - it is named in the pane and nothing else happens.
+      return (null, $"{entry.Name}{Environment.NewLine}Cannot be read: {ex.Message}");
+    } finally {
+      EndBackgroundRead();
+    }
+
+    static long SafeLength(string path) {
+      try {
+        return new FileInfo(path).Length;
+      } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) {
+        return 0;
+      }
+    }
+  }
+
   private ArchiveEntryViewModel? SingleSelection() {
     var selected = SelectedEntries.Where(e => !e.IsParentEntry).Take(2).ToList();
     return selected.Count == 1 ? selected[0] : null;
@@ -347,19 +634,29 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   /// <summary>
-  /// Rereads the open archive after an edit and stays in the folder the user is in — a plain
-  /// <see cref="Open(string)"/> would drop them at the root and forget where `..` leads.
+  /// Rereads the open archive after something changed it — an edit, a defragment, a reconfigure —
+  /// and stays where the user is. A plain <see cref="Open(string)"/> would drop them at the root,
+  /// forget where <c>..</c> leads, and, inside a nested archive, clear the chain back to the archives
+  /// it came from. The folder is kept only while something is still in it.
   /// </summary>
-  private void ReloadArchiveInPlace() {
+  internal void ReloadArchiveInPlace() {
+    if (!HasArchive) return;
+
     var folder = CurrentFolder;
     var exitTo = _priorOsBrowserPath;
+    var nested = IsNestedArchive;
     AsOneArrival(() => {
-      Open(ArchivePath);
+      Open(ArchivePath, fromNestedDescent: nested);
       _priorOsBrowserPath = exitTo;
-      CurrentFolder = folder;
+      CurrentFolder = StillHasEntries(folder) ? folder : "";
       RefreshVisibleEntries();
       return true;
     });
+
+    bool StillHasEntries(string candidate) {
+      var prefix = Location.NormalizeArchiveFolder(candidate);
+      return prefix.Length == 0 || _allEntries.Any(e => e.Path.StartsWith(prefix, StringComparison.Ordinal));
+    }
   }
 
   private void DeleteSelectedEntries() {
@@ -418,28 +715,70 @@ internal sealed class MainViewModel : ViewModelBase {
                                   MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
     if (confirm != DialogResult.Yes) return;
 
-    if (mode == Compression.Lib.DeleteMode.RealFs) {
-      var failed = 0;
-      foreach (var entry in selected) {
-        var path = entry.Path;
+    _ = DeleteAndReportAsync();
+
+    async Task DeleteAndReportAsync() {
+      // A rewritten archive is worth a dialog; a file that would not go on disk is named in the
+      // status line, next to the ones that did.
+      if (await DeleteAsync(selected) is { } error && mode == Compression.Lib.DeleteMode.ModifiableArchive)
+        MessageBox.Show(error, "Delete", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    }
+  }
+
+  /// <summary>
+  /// Deletes <paramref name="selection"/> — already confirmed — from disk or from the open archive.
+  /// The files are removed and the archive rewritten off the UI thread. Completes with null on
+  /// success or the reason it failed, which is also shown in the status line.
+  /// </summary>
+  internal async Task<string?> DeleteAsync(IReadOnlyList<ArchiveEntryViewModel> selection) {
+    var selected = selection.Where(e => !e.IsParentEntry).ToList();
+    if (selected.Count == 0) return null;
+
+    var mode = Compression.Lib.DeleteCapability.Evaluate(IsBrowsingOsFolder, ArchivePath, selected.Count);
+    if (mode is not (Compression.Lib.DeleteMode.RealFs or Compression.Lib.DeleteMode.ModifiableArchive))
+      return StatusText = "Entries of this format cannot be removed in place.";
+    if (BeginChange(TimeSpan.FromSeconds(10)) is { } busy) return StatusText = busy;
+
+    try {
+      IsBusy = true;
+      return mode == Compression.Lib.DeleteMode.RealFs
+        ? await DeleteOnDiskAsync(selected)
+        : await DeleteInArchiveAsync(selected);
+    } finally {
+      IsBusy = false;
+      EndChange();
+      if (CurrentLocation is { } here) RaiseChanged([here]);
+    }
+  }
+
+  private async Task<string?> DeleteOnDiskAsync(List<ArchiveEntryViewModel> selected) {
+    StatusText = $"Deleting {selected.Count} item(s)...";
+    var targets = selected.Select(e => (e.Name, e.Path)).ToList();
+    var failures = await Task.Run(() => {
+      var failed = new List<string>();
+      foreach (var (name, path) in targets) {
         try {
           if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
           else if (File.Exists(path)) File.Delete(path);
         } catch (Exception ex) {
-          failed++;
-          StatusText = $"Failed to delete {entry.Name}: {ex.Message}";
+          failed.Add($"{name}: {ex.Message}");
         }
       }
-      RefreshVisibleEntries();
-      StatusText = failed == 0
-        ? $"Deleted {selected.Count} item(s)."
-        : $"Deleted {selected.Count - failed} of {selected.Count} item(s) ({failed} failed).";
-      return;
+      return failed;
+    });
+
+    RefreshVisibleEntries();
+    if (failures.Count == 0) {
+      StatusText = $"Deleted {selected.Count} item(s).";
+      return null;
     }
 
-    // ModifiableArchive — collect entry names (recurse into directories so the
-    // modifier sees every file). The trailing slash on directories matches how
-    // ArchiveEntry.Name is stored in _allEntries.
+    return StatusText = $"Deleted {selected.Count - failures.Count} of {selected.Count} item(s); {string.Join("; ", failures)}";
+  }
+
+  private async Task<string?> DeleteInArchiveAsync(List<ArchiveEntryViewModel> selected) {
+    // Every entry beneath a folder goes too, so the modifier sees each one; folders carry the
+    // trailing slash their entries are stored under.
     var names = new List<string>();
     foreach (var entry in selected) {
       if (entry.IsDirectory) {
@@ -452,27 +791,23 @@ internal sealed class MainViewModel : ViewModelBase {
         names.Add(entry.Path);
       }
     }
-    if (names.Count == 0) return;
 
+    var archive = ArchivePath;
     try {
-      IsBusy = true;
       StatusText = $"Deleting {names.Count} entry(ies) from archive...";
-      ArchiveOperations.Remove(ArchivePath, [.. names]);
-      HasPendingFragmentation = true;
-      StatusText = $"Deleted {names.Count} entry(ies). Free space available — defragment to compact.";
-      // Reload so the EntryList reflects the new on-disk state. The modifier
-      // mutated the file in place; List() re-reads the directory.
-      Open(ArchivePath);
-      // Open() resets HasPendingFragmentation; re-raise it so the banner survives
-      // the reload triggered by our own delete.
-      HasPendingFragmentation = true;
+      await Task.Run(() => ArchiveOperations.Remove(archive, [.. names]));
     } catch (Exception ex) {
-      StatusText = $"Delete failed: {ex.Message}";
-      MessageBox.Show($"Delete failed:\n\n{ex.GetType().Name}: {ex.Message}",
-                      "Delete", MessageBoxButtons.OK, MessageBoxIcon.Error);
-    } finally {
-      IsBusy = false;
+      // Whatever stopped it - a locked file, a codec failing on a damaged archive - the user is
+      // told instead of the failure escaping a fire-and-forget command.
+      return StatusText = $"Delete failed: {ex.Message}";
     }
+
+    // The modifier changed the file in place; reread it. The reload clears the fragmentation hint,
+    // which this delete has just made true.
+    ReloadArchiveInPlace();
+    HasPendingFragmentation = true;
+    StatusText = $"Deleted {names.Count} entry(ies). Free space available — defragment to compact.";
+    return null;
   }
 
   /// <summary>
@@ -609,9 +944,9 @@ internal sealed class MainViewModel : ViewModelBase {
     dlg.ArchiveMutated += mutated => {
       writeBack?.Invoke();
       if (writeBack != null && HasArchive)
-        Open(ArchivePath); // nested write-back → re-list the host
+        ReloadArchiveInPlace(); // nested write-back → re-list the host
       else if (HasArchive && string.Equals(mutated, ArchivePath, StringComparison.OrdinalIgnoreCase))
-        Open(ArchivePath);
+        ReloadArchiveInPlace();
       else if (IsBrowsingOsFolder)
         RefreshVisibleEntries();
     };
@@ -708,9 +1043,9 @@ internal sealed class MainViewModel : ViewModelBase {
         + $"{result.FileCount} file(s) preserved, {result.OriginalSize:N0} → {result.NewSize:N0} bytes.";
 
       if (writeBack != null && HasArchive)
-        Open(ArchivePath);
+        ReloadArchiveInPlace();
       else if (HasArchive && string.Equals(targetPath, ArchivePath, StringComparison.OrdinalIgnoreCase))
-        Open(ArchivePath);
+        ReloadArchiveInPlace();
       else if (IsBrowsingOsFolder)
         RefreshVisibleEntries();
     } catch (Exception ex) {
@@ -760,9 +1095,10 @@ internal sealed class MainViewModel : ViewModelBase {
 
       ArchivePath = path;
       Format = format.ToString();
-      CurrentFolder = "";
-      // Re-entering archive mode: clear the OS-browser breadcrumb.
+      // Leave folder browsing before setting the folder: that setter rebuilds the breadcrumbs, and
+      // while a host folder is still being browsed the trail ends at the host path.
       _osBrowserPath = null;
+      CurrentFolder = "";
       OnPropertyChanged(nameof(IsBrowsingOsFolder));
 
       _allEntries.Clear();
@@ -887,6 +1223,13 @@ internal sealed class MainViewModel : ViewModelBase {
       if (!string.Equals(ArchivePath, target.HostPath, StringComparison.OrdinalIgnoreCase)) return false;
     }
 
+    var folder = Location.NormalizeArchiveFolder(target.ArchiveFolder ?? "");
+    if (folder.Length > 0 && !_allEntries.Any(e => e.Path.StartsWith(folder, StringComparison.Ordinal))) {
+      StatusText = $"No longer exists: {target}";
+      RefreshVisibleEntries();
+      return false;
+    }
+
     CurrentFolder = target.ArchiveFolder ?? "";
     RefreshVisibleEntries();
     return true;
@@ -922,6 +1265,9 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   private void RefreshVisibleEntriesCore() {
+    // One notification for the whole listing: a per-row notification had every listener - the file
+    // list, the thumbnail decoder - start over once per entry.
+    using var batch = Entries.Defer();
     Entries.Clear();
 
     // OS-browser mode: list filesystem children instead of archive entries.
@@ -946,6 +1292,7 @@ internal sealed class MainViewModel : ViewModelBase {
     // Collect immediate children, deduplicating folders
     // Key: normalized folder name with trailing slash, or file name
     var seen = new HashSet<string>(StringComparer.Ordinal);
+    var children = new List<ArchiveEntryViewModel>();
 
     foreach (var e in _allEntries) {
       if (!e.Path.StartsWith(prefix, StringComparison.Ordinal)) continue;
@@ -957,19 +1304,19 @@ internal sealed class MainViewModel : ViewModelBase {
       if (slashIdx < 0 && !e.IsDirectory) {
         // Direct file child
         if (seen.Add(remainder))
-          Entries.Add(e);
+          children.Add(e);
       }
       else if (slashIdx < 0 && e.IsDirectory) {
         // Directory entry without trailing slash — treat as folder
         var key = remainder + "/";
         if (seen.Add(key))
-          Entries.Add(e);
+          children.Add(e);
       }
       else if (slashIdx == remainder.Length - 1) {
         // Direct directory child (path ends with /)
         var key = remainder; // already has trailing /
         if (seen.Add(key))
-          Entries.Add(e);
+          children.Add(e);
       }
       else {
         // Deeper entry — show the immediate subfolder as a virtual directory
@@ -984,7 +1331,7 @@ internal sealed class MainViewModel : ViewModelBase {
             origSum += x.OriginalSize;
             if (x.CompressedSize >= 0) { compSum += x.CompressedSize; hasComp = true; }
           }
-          Entries.Add(new ArchiveEntryViewModel {
+          children.Add(new ArchiveEntryViewModel {
             Name = subDir.TrimEnd('/'),
             Path = dirPrefix,
             OriginalSize = origSum,
@@ -994,6 +1341,12 @@ internal sealed class MainViewModel : ViewModelBase {
         }
       }
     }
+
+    // Listed as a folder on disk is: folders first, then files, each by name ignoring case - not in
+    // whatever order the archive happens to store them. The sort is stable, so names equal but for
+    // case keep their stored order.
+    foreach (var child in children.OrderBy(c => !c.IsDirectory).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
+      Entries.Add(child);
   }
 
   private void NavigateInto(ArchiveEntryViewModel? entry) {
@@ -1219,65 +1572,78 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   /// <summary>
-  /// Extracts the given selection to a per-session staging folder and returns the
-  /// top-level paths for <see cref="DataFormats.FileDrop"/>. Called by the entry-list
-  /// drag-out handler when the user drags archive entries to Explorer.
-  /// <para>
-  /// Files stay in <see cref="_dragOutStagingRoot"/> (under %TEMP%) until the archive
-  /// is closed or the process exits — copies Windows may make for the drop target are
-  /// independent. Nested directory selections preserve their in-archive relative paths
-  /// so dropped folders look right in the target.
-  /// </para>
+  /// What a drag of <paramref name="selection"/> carries to other applications, or null when it can
+  /// only move within the shell. Files on disk travel as their paths. Archive entries travel as
+  /// <see cref="VirtualFile"/>s whose content is decoded only when the drop target asks for it, so
+  /// nothing is extracted up front and the bytes are written straight to the destination — a folder
+  /// travels with every entry beneath it.
   /// </summary>
-  internal string[] MaterializeForDragOut(IReadOnlyList<ArchiveEntryViewModel> selection) {
-    if (selection.Count == 0 || !HasArchive) return [];
+  internal object? DragPayload(IReadOnlyList<ArchiveEntryViewModel> selection) {
+    var picked = selection.Where(e => !e.IsParentEntry).ToList();
+    if (picked.Count == 0) return null;
 
-    // Expand directory selections to all contained files, same as ExtractSelected does.
-    var filePaths = new List<string>();
-    foreach (var entry in selection) {
-      if (entry.IsParentEntry) continue;
-      if (entry.IsDirectory) {
-        var dirPrefix = entry.Path.EndsWith('/') ? entry.Path : entry.Path + "/";
-        foreach (var e in _allEntries)
-          if (!e.IsDirectory && e.Path.StartsWith(dirPrefix, StringComparison.Ordinal))
-            filePaths.Add(e.Path);
-      } else {
-        filePaths.Add(entry.Path);
+    if (IsBrowsingOsFolder) {
+      string[] paths = [.. picked.Select(e => e.Path).Where(p => File.Exists(p) || Directory.Exists(p))];
+      return paths.Length > 0 ? paths : null;
+    }
+
+    if (!HasArchive || picked.Any(e => e.IsEncrypted)) return null;
+
+    var archive = ArchivePath;
+    var files = new List<VirtualFile>();
+    foreach (var entry in picked) {
+      if (!entry.IsDirectory) {
+        files.Add(Lazy(entry.Name, entry));
+        continue;
+      }
+
+      files.Add(VirtualFile.Directory(entry.Name));
+      var prefix = entry.Path.EndsWith('/') ? entry.Path : entry.Path + "/";
+      foreach (var inner in _allEntries.Where(e => e.Path.StartsWith(prefix, StringComparison.Ordinal) && e.Path.Length > prefix.Length)) {
+        var relative = entry.Name + "/" + inner.Path[prefix.Length..].TrimEnd('/');
+        files.Add(inner.IsDirectory ? VirtualFile.Directory(relative) : Lazy(relative, inner));
       }
     }
-    var files = filePaths.Distinct().ToArray();
-    if (files.Length == 0) return [];
 
-    // Ensure a clean staging dir per drag gesture; previous drag's contents are left in
-    // place (the user may still be completing that drop), but the session-level directory
-    // is reused so repeated drags don't leak unbounded temp folders.
-    var stagingDir = Path.Combine(this.DragOutStagingRoot, Guid.NewGuid().ToString("N")[..8]);
-    Directory.CreateDirectory(stagingDir);
-    ArchiveOperations.Extract(ArchivePath, stagingDir, password: null, files: files);
+    return files.Count > 0 ? files.ToArray() : null;
 
-    // For each dragged top-level entry (not the expanded directory contents), surface
-    // its path under the staging dir. Explorer copies directories recursively.
-    var topLevel = new List<string>();
-    foreach (var entry in selection.Where(e => !e.IsParentEntry)) {
-      var candidate = Path.Combine(stagingDir, entry.Path.Replace('/', Path.DirectorySeparatorChar));
-      if (entry.IsDirectory) {
-        if (Directory.Exists(candidate)) topLevel.Add(candidate);
-      } else if (File.Exists(candidate)) {
-        topLevel.Add(candidate);
-      }
-    }
-    return topLevel.ToArray();
+    VirtualFile Lazy(string relative, ArchiveEntryViewModel entry)
+      => new(relative, () => ArchiveOperations.OpenEntry(archive, entry.Path), entry.OriginalSize >= 0 ? entry.OriginalSize : null,
+        entry.LastModified?.ToUniversalTime());
   }
 
-  private string? _dragOutStagingRoot;
-  private string DragOutStagingRoot {
-    get {
-      if (this._dragOutStagingRoot == null || !Directory.Exists(this._dragOutStagingRoot)) {
-        this._dragOutStagingRoot = Path.Combine(Path.GetTempPath(),
-          "cwb-drag-" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(this._dragOutStagingRoot);
-      }
-      return this._dragOutStagingRoot;
+  /// <summary>Why dropped <paramref name="files"/> cannot be received into <paramref name="target"/>, or null.</summary>
+  internal string? WhyNotReceive(IReadOnlyList<IncomingFile> files, Location target)
+    => IsNestedCopy(target) ? "Nothing can be put inside a nested archive." : Transfer.WhyNot(files, target);
+
+  /// <summary>
+  /// Receives files another application dropped with no path of their own — mail attachments and
+  /// the like — into <paramref name="target"/>. Runs while the drop is being handled, because the
+  /// content can only be read then. Returns the reason on failure.
+  /// </summary>
+  internal string? ReceiveDropped(IReadOnlyList<IncomingFile> files, Location target) {
+    if (WhyNotReceive(files, target) is { } refusal) return Fail(refusal);
+    if (BeginChange(TimeSpan.FromSeconds(2)) is { } busy) return Fail(busy);
+
+    try {
+      IsBusy = true;
+      var result = Transfer.Receive(files, target);
+      if (HasArchive && !IsBrowsingOsFolder) ReloadArchiveInPlace();
+      else RefreshVisibleEntries();
+
+      StatusText = $"Received {result.Created.Count} item(s) into {target}.";
+      RaiseChanged([target]);
+      return null;
+    } catch (Exception ex) {
+      return Fail($"Receiving the drop failed: {ex.Message}");
+    } finally {
+      IsBusy = false;
+      EndChange();
+    }
+
+    string Fail(string reason) {
+      StatusText = reason;
+      return reason;
     }
   }
 

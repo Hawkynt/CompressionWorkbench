@@ -25,6 +25,13 @@ internal static class IconKeys {
   public const string Back = "Back";
   public const string Forward = "Forward";
   public const string Rename = "Rename";
+  public const string Cut = "Cut";
+  public const string Copy = "Copy";
+  public const string Paste = "Paste";
+  public const string Refresh = "Refresh";
+  public const string SelectAll = "SelectAll";
+  public const string SelectNone = "SelectNone";
+  public const string SelectInvert = "SelectInvert";
   public const string Exit = "Exit";
   public const string About = "About";
   public const string Save = "Save";
@@ -165,6 +172,55 @@ internal static class IconSet {
 
     [IconKeys.Forward] = [
       Fill(Blue, Poly(14, 8, 8, 2, 8, 5, 2, 5, 2, 11, 8, 11, 8, 14)),
+    ],
+
+    // Two arrows chasing each other round: reread.
+    [IconKeys.Refresh] = [
+      Fill(Green, Poly(8, 2, 13, 4.5, 11.6, 5.8, 13.5, 8, 11.5, 8, 10.4, 6.8, 8, 5.2, 5.6, 6.8, 4.6, 8.5, 2.5, 8, 3.8, 5.2)),
+      Fill(Green, Poly(8, 14, 3, 11.5, 4.4, 10.2, 2.5, 8, 4.5, 8, 5.6, 9.2, 8, 10.8, 10.4, 9.2, 11.4, 7.5, 13.5, 8, 12.2, 10.8)),
+    ],
+
+    // Rows, every one ticked.
+    [IconKeys.SelectAll] = [
+      Fill(Blue, Rect(2, 2, 14, 5), Rect(2, 6.5, 14, 9.5), Rect(2, 11, 14, 14)),
+      Fill(White, Rect(3, 3, 5, 4), Rect(3, 7.5, 5, 8.5), Rect(3, 12, 5, 13)),
+    ],
+
+    // Rows, none ticked.
+    [IconKeys.SelectNone] = [
+      Fill(PageEdge, Rect(2, 2, 14, 5), Rect(2, 6.5, 14, 9.5), Rect(2, 11, 14, 14)),
+      Fill(PageBody, Rect(2.8, 2.8, 13.2, 4.2), Rect(2.8, 7.3, 13.2, 8.7), Rect(2.8, 11.8, 13.2, 13.2)),
+    ],
+
+    // Rows, alternately ticked.
+    [IconKeys.SelectInvert] = [
+      Fill(Blue, Rect(2, 2, 14, 5), Rect(2, 11, 14, 14)),
+      Fill(PageEdge, Rect(2, 6.5, 14, 9.5)),
+      Fill(PageBody, Rect(2.8, 7.3, 13.2, 8.7)),
+    ],
+
+    // Two pages, one over the other.
+    [IconKeys.Copy] = [
+      Fill(PageEdge, Rect(1, 1, 10, 12)),
+      Fill(PageBody, Rect(2, 2, 9, 11)),
+      Fill(PageEdge, Rect(5, 4, 15, 15)),
+      Fill(PageBody, Rect(6, 5, 14, 14)),
+      Fill(PageText, Rect(7.5, 7, 12.5, 7.8), Rect(7.5, 9, 12.5, 9.8), Rect(7.5, 11, 11, 11.8)),
+    ],
+
+    // Scissors: two blades crossing above two finger loops.
+    [IconKeys.Cut] = [
+      Fill(Slate, Poly(4.5, 1, 6, 1, 10.5, 10, 9, 10.5), Poly(11.5, 1, 10, 1, 5.5, 10, 7, 10.5)),
+      Fill(Red, Rect(2, 10, 7, 15), Rect(9, 10, 14, 15)),
+      Fill(White, Rect(3.3, 11.3, 5.7, 13.7), Rect(10.3, 11.3, 12.7, 13.7)),
+    ],
+
+    // A clipboard with a page on it.
+    [IconKeys.Paste] = [
+      Fill(0xFFB07A3A, Rect(2, 2, 14, 15)),
+      Fill(DarkSlate, Rect(5.5, 1, 10.5, 3.5)),
+      Fill(PageBody, Rect(4, 4.5, 12, 14)),
+      Fill(PageText, Rect(5.5, 6.5, 10.5, 7.3), Rect(5.5, 8.5, 10.5, 9.3), Rect(5.5, 10.5, 9, 11.3)),
     ],
 
     // A text field with the caret in it: the name is being typed.

@@ -8,6 +8,7 @@ using System.Reflection;
 using Compression.Lib;
 using Compression.Mounting;
 using Compression.NativeUI;
+using Compression.NativeUI.Editing;
 using Compression.NativeUI.Navigation;
 using Compression.NativeUI.ViewModels;
 using Compression.NativeUI.Views;
@@ -71,6 +72,18 @@ public sealed class MainFormTests {
     }
   }
 
+  /// <summary>Every item of the shell's ribbon: the Quick Access Toolbar and every tab, contextual ones included.</summary>
+  private static IEnumerable<RibbonItem> RibbonItems(MainForm shell) {
+    var ribbon = Field<Ribbon>(shell, "_ribbon");
+    foreach (var item in ribbon.QuickAccessItems) yield return item;
+    foreach (var tab in ribbon.Tabs)
+      foreach (var group in tab.Groups)
+        foreach (var item in group.Items)
+          if (item is RibbonItem ribbonItem) yield return ribbonItem;
+  }
+
+  private static RibbonItem RibbonItemNamed(MainForm shell, string text) => RibbonItems(shell).Single(i => i.Text == text);
+
   private static IEnumerable<ToolStripMenuItem> MenuItems(ToolStripItem item) {
     if (item is not ToolStripMenuItem menuItem) yield break;
 
@@ -100,7 +113,7 @@ public sealed class MainFormTests {
   [Test]
   public void GivenTheShell_WhenItIsBuilt_ThenEveryExpectedRegionIsPresentExactlyOnce() {
     WithShell(shell => {
-      foreach (var name in new[] { "_menu", "_toolbar", "_breadcrumbBar", "_split", "_status", "_dropOverlay" }) {
+      foreach (var name in new[] { "_ribbon", "_breadcrumbBar", "_split", "_status", "_dropOverlay" }) {
         var control = Field<Control>(shell, name);
         Assert.That(shell.Controls.Cast<Control>().Count(c => ReferenceEquals(c, control)), Is.EqualTo(1),
           $"{name} should appear exactly once in the form's controls");
@@ -115,14 +128,45 @@ public sealed class MainFormTests {
     });
   }
 
+  // ── ribbon size ─────────────────────────────────────────────────────────────────────────────
+
+  /// <summary>The breadcrumb bar when it is shown, else the panes: whatever sits directly under the ribbon.</summary>
+  private static Control FirstBelowRibbon(MainForm shell)
+    => Field<Control>(shell, "_breadcrumbBar") is { Visible: true } bar ? bar : Field<Control>(shell, "_split");
+
+  [Test]
+  public void GivenTheShell_WhenLaidOut_ThenTheRibbonIsAsTallAsItsItemsNeedAndWhatFollowsSitsRightUnderIt() {
+    WithShell(shell => {
+      var ribbon = Field<Ribbon>(shell, "_ribbon");
+      shell.PerformLayout();
+
+      Assert.That(ribbon.Height, Is.EqualTo(ribbon.NaturalHeight), "a fixed height fits one display scaling and squeezes the rows on another");
+      Assert.That(FirstBelowRibbon(shell).Top, Is.EqualTo(ribbon.Top + ribbon.Height));
+    });
+  }
+
+  [Test]
+  public void GivenTheRibbonIsMinimized_WhenLaidOut_ThenItKeepsToItsTabStripAndNothingSitsUnderIt() {
+    WithShell(shell => {
+      var ribbon = Field<Ribbon>(shell, "_ribbon");
+
+      ribbon.Minimized = true;
+      shell.PerformLayout();
+
+      Assert.That(ribbon.Height, Is.EqualTo(ribbon.TabStripHeight), "a minimized ribbon stretched back to full height covers the breadcrumb bar");
+      Assert.That(FirstBelowRibbon(shell).Top, Is.EqualTo(ribbon.Top + ribbon.Height));
+
+      ribbon.Minimized = false;
+      Assert.That(ribbon.Height, Is.EqualTo(ribbon.NaturalHeight), "restoring brings the full height back");
+    });
+  }
+
   // ── accelerators ────────────────────────────────────────────────────────────────────────────
 
   [Test]
-  public void GivenTheMenuBar_WhenAcceleratorsAreCollected_ThenNoKeyIsClaimedTwice() {
+  public void GivenTheRibbon_WhenShortcutsAreCollected_ThenNoKeyIsClaimedTwice() {
     WithShell(shell => {
-      var claims = Field<MenuStrip>(shell, "_menu").Items
-        .Cast<ToolStripItem>()
-        .SelectMany(MenuItems)
+      var claims = RibbonItems(shell)
         .Where(i => i.ShortcutKeys != Keys.None)
         .GroupBy(i => i.ShortcutKeys)
         .Where(g => g.Count() > 1)
@@ -139,35 +183,33 @@ public sealed class MainFormTests {
   /// key away from the list, where it does the thing the user expects.
   /// </summary>
   [Test]
-  public void GivenViewAsText_WhenTheMenuIsBuilt_ThenEnterIsShownButNotRegistered() {
+  public void GivenViewAsText_WhenTheRibbonIsBuilt_ThenEnterIsShownButNotRegistered() {
     WithShell(shell => {
-      var item = Field<MenuStrip>(shell, "_menu").Items
-        .Cast<ToolStripItem>()
-        .SelectMany(MenuItems)
-        .Single(i => i.Text.Replace("&", "") == "View as Text");
+      var item = RibbonItemNamed(shell, "View as Text");
 
       Assert.Multiple(() => {
         Assert.That(item.ShortcutKeys, Is.EqualTo(Keys.None), "Enter belongs to the entry list");
-        Assert.That(item.ShortcutKeyDisplayString, Is.EqualTo("Enter"), "but it is still advertised");
+        Assert.That(item.ToolTipText, Does.Contain("Enter"), "but it is still advertised");
       });
     });
   }
 
-  [TestCase("Go Up", Keys.Back)]
+  [TestCase("Up", Keys.Back)]
+  [TestCase("Back", Keys.Alt | Keys.Left)]
+  [TestCase("Forward", Keys.Alt | Keys.Right)]
+  [TestCase("Refresh", Keys.F5)]
   [TestCase("Delete", Keys.Delete)]
-  [TestCase("Open...", Keys.Control | Keys.O)]
-  [TestCase("Create...", Keys.Control | Keys.N)]
-  [TestCase("Extract All...", Keys.Control | Keys.E)]
-  [TestCase("Test Integrity", Keys.Control | Keys.T)]
+  [TestCase("Open", Keys.Control | Keys.O)]
+  [TestCase("Create", Keys.Control | Keys.N)]
+  [TestCase("Extract All", Keys.Control | Keys.E)]
+  [TestCase("Test", Keys.Control | Keys.T)]
   [TestCase("Properties", Keys.Alt | Keys.Enter)]
-  public void GivenAnAction_WhenTheMenuIsBuilt_ThenItCarriesItsAccelerator(string label, Keys expected) {
+  [TestCase("New Folder", Keys.Control | Keys.Shift | Keys.N)]
+  [TestCase("Select All", Keys.Control | Keys.A)]
+  [TestCase("Preview Pane", Keys.Alt | Keys.P)]
+  public void GivenACommand_WhenTheRibbonIsBuilt_ThenItCarriesItsShortcut(string label, Keys expected) {
     WithShell(shell => {
-      var item = Field<MenuStrip>(shell, "_menu").Items
-        .Cast<ToolStripItem>()
-        .SelectMany(MenuItems)
-        .Single(i => i.Text.Replace("&", "") == label);
-
-      Assert.That(item.ShortcutKeys, Is.EqualTo(expected));
+      Assert.That(RibbonItemNamed(shell, label).ShortcutKeys, Is.EqualTo(expected));
     });
   }
 
@@ -185,7 +227,7 @@ public sealed class MainFormTests {
         .Select(i => $"{i.Text} -> {i.ShortcutKeys}")
         .ToList();
 
-      Assert.That(duplicated, Is.Empty, "the menu bar owns these keys; the context menu shows them");
+      Assert.That(duplicated, Is.Empty, "the ribbon owns these keys; the context menu shows them");
     });
   }
 
@@ -421,16 +463,6 @@ public sealed class MainFormTests {
     }));
   }
 
-  [Test]
-  public void GivenTheBackAndForwardItems_WhenTheMenuIsBuilt_ThenTheyUseTheUsualKeys() {
-    WithShell(shell => {
-      var items = Field<MenuStrip>(shell, "_menu").Items.Cast<ToolStripItem>().SelectMany(MenuItems).ToList();
-
-      Assert.That(items.Single(i => i.Text == "&Back").ShortcutKeys, Is.EqualTo(Keys.Alt | Keys.Left));
-      Assert.That(items.Single(i => i.Text == "&Forward").ShortcutKeys, Is.EqualTo(Keys.Alt | Keys.Right));
-    });
-  }
-
   // ── rename ──────────────────────────────────────────────────────────────────────────────────
 
   [Test]
@@ -448,16 +480,15 @@ public sealed class MainFormTests {
   }
 
   [Test]
-  public void GivenTheRenameItems_WhenTheMenusAreBuilt_ThenF2IsShownButLeftToTheList() {
+  public void GivenTheRenameCommands_WhenBuilt_ThenF2IsShownButLeftToTheList() {
     WithShell(shell => {
-      var items = Field<MenuStrip>(shell, "_menu").Items.Cast<ToolStripItem>().SelectMany(MenuItems)
-        .Concat(Field<ContextMenuStrip>(shell, "_entryMenu").Items.Cast<ToolStripItem>().SelectMany(MenuItems))
-        .Where(i => i.Text == "Rena&me")
-        .ToList();
+      var ribbon = RibbonItemNamed(shell, "Rename");
+      var menu = Field<ContextMenuStrip>(shell, "_entryMenu").Items.Cast<ToolStripItem>().SelectMany(MenuItems).Single(i => i.Text == "Rena&me");
 
-      Assert.That(items, Has.Count.EqualTo(2));
-      Assert.That(items.All(i => i.ShortcutKeyDisplayString == "F2" && i.ShortcutKeys == Keys.None), Is.True,
-        "the list starts editing on F2 itself; an accelerator would take the key away from it");
+      Assert.That((ribbon.ShortcutKeys, menu.ShortcutKeys), Is.EqualTo((Keys.None, Keys.None)),
+        "the list starts editing on F2 itself; a shortcut would take the key away from it");
+      Assert.That(ribbon.ToolTipText, Does.Contain("F2"));
+      Assert.That(menu.ShortcutKeyDisplayString, Is.EqualTo("F2"));
     });
   }
 
@@ -476,6 +507,309 @@ public sealed class MainFormTests {
       Assert.That(editor, Is.Not.Null.And.Property(nameof(Control.Visible)).True);
       Assert.That(editor!.Text, Is.EqualTo("sub"));
     }));
+  }
+
+  [Test]
+  public void GivenAFolderOnDisk_WhenANewFolderIsMade_ThenTheListOpensItsNameForEditing() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.Folder(root));
+
+      model.NewFolderCommand.Execute(null);
+
+      var editor = Field<ListView>(shell, "_entries").Controls.OfType<TextBox>().SingleOrDefault();
+      Assert.That(editor?.Visible, Is.True);
+      Assert.That(editor!.Text, Is.EqualTo("New folder"));
+    }));
+  }
+
+  // ── preview pane ────────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenThePreviewPane_WhenToggledFromTheRibbon_ThenItHidesAndReturns() {
+    WithShell(shell => {
+      var toggle = (RibbonToggleButton)RibbonItemNamed(shell, "Preview Pane");
+      Assert.That(shell.PreviewPaneVisible, Is.True, "a file manager opens with its preview showing");
+
+      toggle.PerformClick();
+      Assert.That((shell.PreviewPaneVisible, toggle.Checked), Is.EqualTo((false, false)));
+
+      toggle.PerformClick();
+      Assert.That((shell.PreviewPaneVisible, toggle.Checked), Is.EqualTo((true, true)));
+    });
+  }
+
+  [Test]
+  public void GivenAFolderSelected_WhenThePaneRefreshes_ThenItSaysFolderWithoutReadingAnything() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.Folder(root));
+      var list = Field<ListView>(shell, "_entries");
+
+      list.Items.Cast<ListViewItem>().First(i => i.Text == "sub").Selected = true;
+
+      var pane = Field<Compression.NativeUI.Controls.PreviewPane>(shell, "_preview");
+      Assert.That(pane.Caption, Does.StartWith("sub").And.EndWith("Folder"));
+    }));
+  }
+
+  [Test]
+  public void GivenTheViewTab_WhenThumbnailsAreChosen_ThenTheListShowsLargeIconsAndDetailsBringsTheColumnsBack() {
+    WithScratch((root, _) => WithShell(shell => {
+      Field<MainViewModel>(shell, "_model").NavigateTo(Location.Folder(root));
+      var details = (RibbonToggleButton)RibbonItemNamed(shell, "Details");
+      var thumbnails = (RibbonToggleButton)RibbonItemNamed(shell, "Thumbnails");
+      var list = Field<ListView>(shell, "_entries");
+
+      thumbnails.PerformClick();
+      Assert.Multiple(() => {
+        Assert.That(list.View, Is.EqualTo(ListViewView.LargeIcon));
+        Assert.That(list.LargeImageList, Is.Not.Null);
+        Assert.That((details.Checked, thumbnails.Checked), Is.EqualTo((false, true)));
+        Assert.That(list.Items.Cast<ListViewItem>().Single(i => i.Text == "sub").ImageKey, Is.EqualTo("Folder"),
+          "an entry without a picture keeps its icon, at the large size");
+      });
+
+      details.PerformClick();
+      Assert.That(list.View, Is.EqualTo(ListViewView.Details));
+      Assert.That((details.Checked, thumbnails.Checked), Is.EqualTo((true, false)));
+
+      details.PerformClick();
+      Assert.That((list.View, details.Checked, thumbnails.Checked), Is.EqualTo((ListViewView.Details, true, false)),
+        "clicking the layout already chosen keeps it, as a radio button does");
+    }));
+  }
+
+  // ── ribbon ──────────────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenTheShell_WhenBuilt_ThenEveryCommandOfTheOldMenuBarIsOnTheRibbon() {
+    WithShell(shell => {
+      var labels = RibbonItems(shell).Select(i => i.Text).ToHashSet();
+      string[] expected = [
+        "Open", "Create", "Convert", "File Associations", "About", "Exit",
+        "Paste", "Cut", "Copy", "New Folder", "Rename", "Delete", "Properties", "View as Text", "View as Hex",
+        "Navigation Pane", "Preview Pane", "Details", "Thumbnails",
+        "Analyze File", "Analyze Entry", "Reverse Engineer", "Maintenance", "Partitions", "Mount", "Benchmark",
+        "Extract All", "Extract Selected", "Add Files", "Test",
+        "Back", "Forward", "Up", "Refresh",
+      ];
+
+      Assert.That(expected.Where(e => !labels.Contains(e)), Is.Empty, "a command the menu bar had must not be lost");
+    });
+  }
+
+  [Test]
+  public void GivenTheArchiveToolsTab_WhenTheShellMovesInAndOutOfAnArchive_ThenItAppearsOnlyInside() {
+    WithScratch((root, zip) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      var tools = Field<RibbonContextualTabGroup>(shell, "_archiveTools");
+
+      model.NavigateTo(Location.Folder(root));
+      Assert.That(tools.Visible, Is.False, "a folder on disk is not an archive");
+
+      model.NavigateTo(Location.InArchive(zip, "docs/"));
+      Assert.That(tools.Visible, Is.True);
+
+      model.NavigateTo(Location.Folder(root));
+      Assert.That(tools.Visible, Is.False);
+    }));
+  }
+
+  [Test]
+  public void GivenTheNavigationPaneToggle_WhenSwitchedOff_ThenTheTreeFoldsAwayAndReturns() {
+    WithShell(shell => {
+      var toggle = (RibbonToggleButton)RibbonItemNamed(shell, "Navigation Pane");
+      var split = Field<SplitContainer>(shell, "_split");
+
+      toggle.PerformClick();
+      Assert.That(split.Panel1Collapsed, Is.True);
+
+      toggle.PerformClick();
+      Assert.That(split.Panel1Collapsed, Is.False);
+    });
+  }
+
+  [Test]
+  public void GivenAFolder_WhenSelectAllNoneAndInvertAreUsed_ThenTheSelectionFollowsButTheParentRowIsNeverPicked() {
+    WithScratch((root, _) => WithShell(shell => {
+      Field<MainViewModel>(shell, "_model").NavigateTo(Location.Folder(root));
+      var list = Field<ListView>(shell, "_entries");
+      var selectable = list.Items.Cast<ListViewItem>().Count(i => i.Text != "..");
+
+      RibbonItemNamed(shell, "Select All").PerformClick();
+      Assert.That(list.SelectedItems.Count(), Is.EqualTo(selectable));
+      Assert.That(list.Items.Cast<ListViewItem>().Single(i => i.Text == "..").Selected, Is.False);
+
+      RibbonItemNamed(shell, "Invert Selection").PerformClick();
+      Assert.That(list.SelectedItems.Count(), Is.Zero);
+
+      RibbonItemNamed(shell, "Invert Selection").PerformClick();
+      RibbonItemNamed(shell, "Select None").PerformClick();
+      Assert.That(list.SelectedItems.Count(), Is.Zero);
+    }));
+  }
+
+  [Test]
+  public void GivenAFileAddedBehindTheShellsBack_WhenRefreshIsPressed_ThenItAppears() {
+    WithScratch((root, _) => WithShell(shell => {
+      Field<MainViewModel>(shell, "_model").NavigateTo(Location.Folder(root));
+      File.WriteAllText(Path.Combine(root, "late.txt"), "late");
+
+      RibbonItemNamed(shell, "Refresh").PerformClick();
+
+      Assert.That(Field<ListView>(shell, "_entries").Items.Cast<ListViewItem>().Select(i => i.Text), Does.Contain("late.txt"));
+    }));
+  }
+
+  [Test]
+  public void GivenTheListHasFocus_WhenF5IsPressed_ThenTheRibbonsRefreshRunsWithNoMenuBarInvolved() {
+    WithScratch((root, _) => WithShell(shell => {
+      Field<MainViewModel>(shell, "_model").NavigateTo(Location.Folder(root));
+      var list = Field<ListView>(shell, "_entries");
+      list.Focus();
+      File.WriteAllText(Path.Combine(root, "late.txt"), "late");
+
+      PeerOf(list).RaiseKeyDown(Keys.F5);
+
+      Assert.That(list.Items.Cast<ListViewItem>().Select(i => i.Text), Does.Contain("late.txt"),
+        "the key reaches the ribbon through the form's shortcut chain");
+    }));
+  }
+
+  // ── views stay fresh ────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenAnExpandedTreeNode_WhenANewFolderIsMadeThere_ThenTheTreeShowsIt() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.Folder(root));
+      var tree = Field<TreeView>(shell, "_tree");
+      var node = tree.SelectedNode!;
+      node.Expand();
+      Assume.That(node.Nodes.Count, Is.GreaterThan(0), "the scratch folder has a sub-folder, so the node has children to reread");
+
+      model.CreateNewFolder();
+
+      Assert.That(node.Nodes.Cast<TreeNode>().Select(n => n.Text), Does.Contain("New folder"));
+    }));
+  }
+
+  [Test]
+  public void GivenTheTreeHasFocus_WhenCtrlCIsPressed_ThenTheTreesFolderIsOnTheClipboardNotTheListsSelection() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.Folder(Path.Combine(root, "sub")));
+
+      PeerOf(Field<Control>(shell, "_tree")).RaiseKeyDown(Keys.C, KeyModifiers.Control);
+
+      var clipboard = (IReadOnlyList<TransferItem>)typeof(MainViewModel).GetField("_clipboardItems", Private)!.GetValue(model)!;
+      Assert.That(clipboard, Is.EqualTo(new[] { new TransferItem(Location.Folder(root), "sub", true) }));
+    }));
+  }
+
+  // ── drag and drop ───────────────────────────────────────────────────────────────────────────
+
+  private static DragDropEffects EffectOf(MainForm shell, object data, Location? target)
+    => (DragDropEffects)typeof(MainForm).GetMethod("EffectFor", Private)!.Invoke(shell, [data, target])!;
+
+  [Test]
+  public void GivenEntriesDraggedWithinTheDisk_WhenOverAnotherFolder_ThenTheyWouldMove() {
+    WithScratch((root, _) => WithShell(shell => {
+      var items = new[] { new TransferItem(Location.Folder(root), "bundle.zip", false) };
+
+      Assert.That(EffectOf(shell, new ShellDragData(items), Location.Folder(Path.Combine(root, "sub"))), Is.EqualTo(DragDropEffects.Move));
+    }));
+  }
+
+  [Test]
+  public void GivenEntriesDraggedOverTheFolderTheyAreIn_WhenAsked_ThenNothingIsOffered() {
+    WithScratch((root, _) => WithShell(shell => {
+      var items = new[] { new TransferItem(Location.Folder(root), "bundle.zip", false) };
+
+      Assert.That(EffectOf(shell, new ShellDragData(items), Location.Folder(root)), Is.EqualTo(DragDropEffects.None));
+    }));
+  }
+
+  [Test]
+  public void GivenFilesFromOutside_WhenOverAFolder_ThenTheyWouldBeCopiedNotMoved() {
+    WithScratch((root, zip) => WithShell(shell => {
+      Assert.That(EffectOf(shell, new[] { zip }, Location.Folder(Path.Combine(root, "sub"))), Is.EqualTo(DragDropEffects.Copy),
+        "the application they came from still expects them");
+      Assert.That(EffectOf(shell, new[] { Path.Combine(root, "missing.txt") }, Location.Folder(Path.Combine(root, "sub"))), Is.EqualTo(DragDropEffects.None));
+    }));
+  }
+
+  [Test]
+  public void GivenAFolderDraggedIntoItself_WhenAsked_ThenNothingIsOffered() {
+    WithScratch((root, _) => WithShell(shell => {
+      Directory.CreateDirectory(Path.Combine(root, "sub", "inner"));
+      var items = new[] { new TransferItem(Location.Folder(root), "sub", true) };
+
+      Assert.That(EffectOf(shell, new ShellDragData(items), Location.Folder(Path.Combine(root, "sub", "inner"))), Is.EqualTo(DragDropEffects.None));
+    }));
+  }
+
+  [Test]
+  public void GivenTheShellsOwnFileListDrag_WhenOverAnotherFolderOfTheSameArchive_ThenItStillMoves() {
+    WithScratch((root, zip) => WithShell(shell => {
+      var items = new[] { new TransferItem(Location.InArchive(zip, ""), "top.txt", false) };
+      var files = new[] { Path.Combine(root, "sub") };   // stands in for the extracted copies
+      typeof(MainForm).GetField("_outgoingDrag", Private)!.SetValue(shell, ((object Payload, System.Collections.Generic.IReadOnlyList<TransferItem> Items)?)(files, items));
+
+      Assert.That(EffectOf(shell, files, Location.InArchive(zip, "docs/")), Is.EqualTo(DragDropEffects.Move),
+        "inside the window the extracted files still mean the entries they came from");
+      Assert.That(EffectOf(shell, new[] { Path.Combine(root, "sub") }, Location.InArchive(zip, "docs/")), Is.EqualTo(DragDropEffects.Copy),
+        "an equal list from somewhere else is not the shell's own drag");
+    }));
+  }
+
+  [Test]
+  public void GivenFilesWithNoPathFromAnotherApplication_WhenOverAFolder_ThenTheyWouldBeCopiedIn() {
+    WithScratch((root, zip) => WithShell(shell => {
+      var attachment = new[] { new VirtualFile("invoice.pdf", () => new MemoryStream()) };
+
+      Assert.Multiple(() => {
+        Assert.That(EffectOf(shell, attachment, Location.Folder(Path.Combine(root, "sub"))), Is.EqualTo(DragDropEffects.Copy));
+        Assert.That(EffectOf(shell, attachment, Location.InArchive(zip, "docs/")), Is.EqualTo(DragDropEffects.Copy));
+        Assert.That(EffectOf(shell, attachment, Location.Folder(Path.Combine(root, "gone"))), Is.EqualTo(DragDropEffects.None));
+      });
+    }));
+  }
+
+  [Test]
+  public void GivenTheShell_WhenBuilt_ThenTheListAndTheTreeTakeDrops() {
+    WithShell(shell => {
+      Assert.That(Field<Control>(shell, "_entries").AllowDrop, Is.True);
+      Assert.That(Field<Control>(shell, "_tree").AllowDrop, Is.True);
+    });
+  }
+
+  // ── clipboard ───────────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenASelectedEntry_WhenCtrlCIsPressedInTheList_ThenItIsOnTheClipboard() {
+    WithScratch((root, _) => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      model.NavigateTo(Location.Folder(root));
+      model.SelectedEntries.Add(model.Entries.First(e => e.Name == "sub"));
+
+      PeerOf(Field<Control>(shell, "_entries")).RaiseKeyDown(Keys.C, KeyModifiers.Control);
+
+      Assert.That(model.HasClipboard, Is.True);
+    }));
+  }
+
+  [Test]
+  public void GivenTheClipboardCommands_WhenTheRibbonIsBuilt_ThenTheirKeysAreShownButLeftToTheFileViews() {
+    WithShell(shell => {
+      var items = RibbonItems(shell).Where(i => i.Text is "Cut" or "Copy" or "Paste").ToList();
+
+      Assert.That(items, Has.Count.EqualTo(3));
+      Assert.That(items.Select(i => i.ToolTipText), Is.EquivalentTo(new[] { "Cut (Ctrl+X)", "Copy (Ctrl+C)", "Paste (Ctrl+V)" }));
+      Assert.That(items.All(i => i.ShortcutKeys == Keys.None), Is.True,
+        "registered on the ribbon, Ctrl+V would paste files while a name is being typed");
+    });
   }
 
   [Test]

@@ -5,6 +5,11 @@ backends, so Windows and Linux run the same code rather than two frontends drift
 
 ## Screens
 
+- **Ribbon** — the commands live in an Office-style ribbon instead of a menu bar: a Quick Access
+  Toolbar (Back, Forward, Up, Refresh), File, Home (clipboard, organize, open, selection), View
+  (navigation and preview panes, Details / Thumbnails), Tools (analysis, maintenance, partitions,
+  mounting, benchmark), and an Archive Tools tab that appears only inside an archive (extract, add,
+  test, and the maintenance verbs). Every shortcut works form-wide from the ribbon.
 - **Archive browser** — the main window, laid out like a file manager. A folder tree on the left
   shows the drives (or `/`) and home, with the open archive grafted in as a folder beside the file it
   lives in; it follows every navigation, however it happened. The breadcrumb bar is also an address
@@ -17,7 +22,27 @@ backends, so Windows and Linux run the same code rather than two frontends drift
   filesystem images whose driver renames in place (FAT, ext, Minix, the Commodore disk images,
   RomFS). It is lossless there — a ZIP is copied with only its names changed, an image has one
   directory entry changed — and it is not offered for formats that could only rename by
-  re-creating themselves. Names Windows or POSIX would refuse are caught before anything is touched.
+  re-creating themselves. Names Windows or POSIX would refuse are caught before anything is touched. Cut, copy and paste (Ctrl+X / C / V in the list or the tree) move files and
+  folders between host folders and archive folders in any direction; nothing is overwritten — a
+  taken name gets a number — and a cut removes its sources only after every copy has landed.
+  Whatever arrives in a folder is written beside its destination under a staging name and renamed
+  into place when complete, so extraction never detours through a temp folder on another volume.
+  New Folder (Ctrl+Shift+N) works in folders on disk and opens the new name for editing.
+  Rows drag onto a folder in the tree or a folder row in the list: within one disk volume or one
+  archive that moves them, anywhere else it copies; files dropped from the desktop copy the same way.
+  Rows dragged out of the window arrive in Explorer, Nautilus or Finder as ordinary files. Archive
+  entries are not extracted up front: they are decoded only when the target asks and written straight
+  into the destination — on Linux and macOS under a temporary name in that folder, renamed when
+  complete; on Windows Explorer pulls the stream into the destination itself. Attachments dragged
+  from mail clients and other applications that have no file on disk are received the same way,
+  written beside the destination and renamed into place, or added to the open archive.
+- **Thumbnails** — View → Thumbnails (Ctrl+Shift+2; Details is Ctrl+Shift+6) shows large icons, and
+  every entry any image decoder can read gets its picture shrunk into its icon, decoded in the
+  background — on disk and inside archives alike. Entries over 16 MB and beyond the first 500 of a
+  folder keep their icon.
+- **Preview pane** — beside the list (Alt+P toggles it): the selected entry as a picture when any
+  of the image decoders reads it, as the start of its text when it reads as text, otherwise its name.
+  Entries larger than 32 MB are not read for a glance.
 - **Preview** — the selected entry as a picture, as text, or as a hex dump, with an optional
   statistics side panel. Multi-frame images get playback controls.
 - **Properties** — sizes, ratio, method and dates, plus byte statistics for a file or a child count

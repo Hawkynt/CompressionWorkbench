@@ -99,6 +99,26 @@ public sealed class ShellNavigationTests {
     Assert.That(opened, Is.Zero, "a folder change inside an open archive must not reread the whole listing");
   }
 
+  // ── listing order ───────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenAnArchiveStoringFilesBeforeFolders_WhenListed_ThenFoldersComeFirstAndEachGroupIsByName() {
+    var mixed = Path.Combine(this._root, "mixed.zip");
+    using (var zip = ZipFile.Open(mixed, ZipArchiveMode.Create)) {
+      zip.CreateEntry("zeta.txt");
+      zip.CreateEntry("Beta/one.txt");
+      zip.CreateEntry("alpha.txt");
+      zip.CreateEntry("alpha/");
+      zip.CreateEntry("Gamma.txt");
+    }
+
+    this._model.Open(mixed);
+
+    Assert.That(this._model.Entries.Where(e => !e.IsParentEntry).Select(e => e.Name),
+      Is.EqualTo(new[] { "alpha", "Beta", "alpha.txt", "Gamma.txt", "zeta.txt" }),
+      "the same order a folder on disk is listed in: folders, then files, each ignoring case");
+  }
+
   // ── breadcrumbs ─────────────────────────────────────────────────────────────────────────────
 
   [Test]
@@ -115,6 +135,15 @@ public sealed class ShellNavigationTests {
       Assert.That(crumbs[^3].Target, Is.EqualTo(Location.InArchive(this._zip, "")));
       Assert.That(crumbs[^1].Target, Is.EqualTo(Location.InArchive(this._zip, "docs/guide/")));
     });
+  }
+
+  [Test]
+  public void GivenABrowsedHostFolder_WhenAnArchiveInItIsOpened_ThenTheArchiveJoinsTheTrail() {
+    this._model.NavigateTo(Location.Folder(this.A));
+
+    this._model.Open(this._zip);
+
+    Assert.That(this._model.Breadcrumbs.Select(c => c.Label).TakeLast(2), Is.EqualTo(new[] { "a", "bundle.zip" }));
   }
 
   [Test]
@@ -185,5 +214,52 @@ public sealed class ShellNavigationTests {
   public void GivenAnAddressRunningIntoAnArchive_WhenTyped_ThenTheShellLandsInsideIt() {
     Assert.That(this._model.NavigateToAddress(this._zip + Path.DirectorySeparatorChar + "src"), Is.True);
     Assert.That(this._model.CurrentLocation, Is.EqualTo(Location.InArchive(this._zip, "src/")));
+  }
+
+  // ── rereading the archive after it changed ──────────────────────────────────────────────────
+
+  [Test]
+  public void GivenAFolderInsideAnArchive_WhenTheArchiveIsReread_ThenTheShellStaysThereWithoutANewHistoryStop() {
+    this._model.NavigateTo(Location.Folder(this.B));
+    this._model.NavigateTo(Location.InArchive(this._zip, "docs/"));
+    var arrivals = this._arrivals.Count;
+
+    this._model.ReloadArchiveInPlace();
+
+    Assert.Multiple(() => {
+      Assert.That(this._model.CurrentLocation, Is.EqualTo(Location.InArchive(this._zip, "docs/")));
+      Assert.That(this._arrivals, Has.Count.EqualTo(arrivals), "a reread is not a visit");
+    });
+    this._model.BackCommand.Execute(null);
+    Assert.That(this._model.CurrentLocation, Is.EqualTo(Location.Folder(this.B)));
+  }
+
+  [Test]
+  public void GivenTheFolderWasEmptiedFromOutside_WhenTheArchiveIsReread_ThenTheShellFallsBackToTheRoot() {
+    this._model.NavigateTo(Location.InArchive(this._zip, "src/"));
+    ArchiveOperations.Remove(this._zip, ["src/main.c"]);
+
+    this._model.ReloadArchiveInPlace();
+
+    Assert.That(this._model.CurrentLocation, Is.EqualTo(Location.InArchive(this._zip, "")),
+      "a folder with nothing left in it no longer exists in an archive that records only files");
+  }
+
+  [Test]
+  public void GivenANestedArchive_WhenItIsReread_ThenGoingUpStillLeadsBackToTheArchiveItCameFrom() {
+    var outer = Path.Combine(this._root, "outer.zip");
+    using (var zip = ZipFile.Open(outer, ZipArchiveMode.Create))
+      zip.CreateEntryFromFile(this._zip, "inner.zip");
+    this._model.NavigateTo(Location.InArchive(outer, ""));
+    // Activating an archive entry is what descends into it, as a double-click or Enter does.
+    this._model.SelectedEntries.Add(this._model.Entries.Single(e => e.Name == "inner.zip"));
+    this._model.ViewSelectedAs(hex: false);
+    Assert.That(this._model.IsNestedArchive, Is.True, "precondition: the shell descended into the inner archive");
+
+    this._model.ReloadArchiveInPlace();
+    Assert.That(this._model.IsNestedArchive, Is.True, "a plain reopen cleared the chain of parent archives");
+
+    this._model.NavigateUpCommand.Execute(null);
+    Assert.That(this._model.CurrentLocation, Is.EqualTo(Location.InArchive(outer, "")));
   }
 }

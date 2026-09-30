@@ -1,6 +1,7 @@
 using System.Drawing;
 using Compression.Lib;
 using Compression.Mounting;
+using Compression.NativeUI.Controls;
 using Compression.NativeUI.Navigation;
 using Compression.NativeUI.Theming;
 using Compression.NativeUI.ViewModels;
@@ -15,20 +16,17 @@ namespace Compression.NativeUI.Views;
 /// <see cref="MainViewModel"/>. Browses archives and the host filesystem alike, and is the entry
 /// point to every other window.
 /// </summary>
-internal sealed class MainForm : Form {
-  private const int MenuHeight = 26;
-  private const int ToolbarHeight = 30;
+internal sealed partial class MainForm : Form {
+  // The ribbon's full height: its tab strip over one row of groups.
   private const int BreadcrumbHeight = 26;
   private const int StatusHeight = 24;
 
   private readonly MainViewModel _model = new();
 
-  private readonly MenuStrip _menu = new();
-  private readonly ToolStrip _toolbar = new();
   private readonly Panel _breadcrumbBar = new();
   private readonly Label _formatLabel = new() { ForeColor = Color.FromArgb(0x44, 0x66, 0xAA) };
   private readonly Breadcrumb _breadcrumb = new() { TrimOnClick = true };
-  private readonly ListView _entries = new() {
+  private readonly KeyedListView _entries = new() {
     View = ListViewView.Details,
     FullRowSelect = true,
     MultiSelect = true,
@@ -43,13 +41,29 @@ internal sealed class MainForm : Form {
     Panel1MinSize = 120,
     Panel2MinSize = 200,
   };
-  private readonly TreeView _tree = new() {
+  private readonly KeyedTreeView _tree = new() {
     Dock = DockStyle.Fill,
     ShowLines = true,
     ShowRootLines = true,
     ShowPlusMinus = true,
   };
   private readonly FolderSource _folders;
+
+  // Contents on the left, the preview pane on the right; the pane keeps its width, as the tree does.
+  private readonly SplitContainer _contentSplit = new() {
+    Dock = DockStyle.Fill,
+    FixedPanel = FixedPanel.Panel2,
+    Panel1MinSize = 200,
+    Panel2MinSize = 120,
+  };
+  private readonly PreviewPane _preview = new() { Dock = DockStyle.Fill };
+
+  // Bumped for every selection change, so a slow read for an entry the user has already moved past
+  // does not overwrite the preview of the one they moved to.
+  private int _previewGeneration;
+  private bool _previewSized;
+  private const int PreviewPaneWidth = 280;
+  private const int TreePaneWidth = 230;
 
   // Set while the tree is being moved to match a navigation that happened elsewhere, so selecting
   // the node there does not navigate a second time.
@@ -78,8 +92,9 @@ internal sealed class MainForm : Form {
       () => this._model.HasArchive && !this._model.IsNestedArchive ? this._model.ArchivePath : null);
 
     this.Text = this._model.Title;
-    this.ClientSize = new(900, 600);
-    this.MinimumSize = new(600, 400);
+    // Wide enough for three panes — tree, list and preview — with the list columns readable.
+    this.ClientSize = new(1180, 680);
+    this.MinimumSize = new(700, 420);
     this.StartPosition = FormStartPosition.CenterScreen;
     this.AllowDrop = true;
 
@@ -89,18 +104,20 @@ internal sealed class MainForm : Form {
     this._model.Entries.CollectionChanged += (_, _) => this.RefreshEntries();
     this._model.Breadcrumbs.CollectionChanged += (_, _) => this.RefreshBreadcrumbs();
 
-    this.BuildMenu();
-    this.BuildToolbar();
+    this.BuildRibbon();
     this.BuildBreadcrumbBar();
     this.BuildEntryList();
     this.BuildNavigationTree();
+    this.WireDragAndDrop();
     this.BuildStatusBar();
 
     this._split.Panel1.Controls.Add(this._tree);
-    this._split.Panel2.Controls.Add(this._entries);
+    this._split.Panel2.Controls.Add(this._contentSplit);
+    this._contentSplit.Panel1.Controls.Add(this._entries);
+    this._contentSplit.Panel2.Controls.Add(this._preview);
 
     // Added in one place, in z-order: the drop overlay sits above the panes it covers.
-    this.Controls.AddRange(this._menu, this._toolbar, this._breadcrumbBar, this._split, this._dropOverlay, this._status);
+    this.Controls.AddRange(this._ribbon, this._breadcrumbBar, this._split, this._dropOverlay, this._status);
 
     this.DragOver += this.OnDragOver;
     this.DragLeave += (_, _) => this.SetDropOverlay(visible: false, "");
@@ -114,63 +131,13 @@ internal sealed class MainForm : Form {
   /// <summary>Opens <paramref name="path"/> as an archive.</summary>
   public void OpenArchive(string path) => this._model.Open(path);
 
+  /// <summary>Browses the folder at <paramref name="path"/>, which may be relative to the working directory.</summary>
+  public void OpenFolder(string path) => this._model.NavigateTo(Navigation.Location.Folder(Path.GetFullPath(path)));
+
   /// <summary>Starts in filesystem-browser mode at the folder last used.</summary>
   public void StartInOsBrowserAtLastFolder() => this._model.StartInOsBrowserAtLastFolder();
 
   // ── Construction ────────────────────────────────────────────────────────────────────────────
-
-  private void BuildMenu() {
-    this._menu.Items.AddRange([
-      Menu("&File", [
-        Item("&Open...", IconKeys.Open, Keys.Control | Keys.O, this._model.OpenCommand),
-        Item("&Create...", IconKeys.Create, Keys.Control | Keys.N, this._model.CreateCommand),
-        Item("&Add Files...", IconKeys.Add, Keys.None, this._model.AddFilesCommand),
-        new ToolStripSeparator(),
-        Item("Anal&yze File...", IconKeys.Analyze, Keys.None, this._model.AnalyzeFileCommand),
-        new ToolStripSeparator(),
-        Action("E&xit", IconKeys.Exit, this.Close),
-      ]),
-      Menu("&Actions", [
-        Item("Extract &All...", IconKeys.Extract, Keys.Control | Keys.E, this._model.ExtractAllCommand),
-        Item("Extract &Selected...", IconKeys.ExtractSelected, Keys.None, this._model.ExtractSelectedCommand),
-        Item("&Test Integrity", IconKeys.Test, Keys.Control | Keys.T, this._model.TestCommand),
-        new ToolStripSeparator(),
-        Item("&Back", IconKeys.Back, Keys.Alt | Keys.Left, this._model.BackCommand),
-        Item("&Forward", IconKeys.Forward, Keys.Alt | Keys.Right, this._model.ForwardCommand),
-        Item("Go &Up", IconKeys.NavigateUp, Keys.Back, this._model.NavigateUpCommand),
-        Item("&Delete", IconKeys.Remove, Keys.Delete, this._model.DeleteSelectedCommand),
-        // F2 belongs to the list, which starts editing the focused name itself; shown, not claimed.
-        Item("Rena&me", IconKeys.Rename, Keys.None, this._model.RenameCommand, "F2"),
-        new ToolStripSeparator(),
-        Item("&View as Text", IconKeys.ViewText, Keys.None, this._model.ViewAsTextCommand, "Enter"),
-        Item("View as &Hex", IconKeys.ViewHex, Keys.None, this._model.ViewAsHexCommand),
-        new ToolStripSeparator(),
-        Item("&Properties", IconKeys.Properties, Keys.Alt | Keys.Enter, this._model.PropertiesCommand),
-        Item("A&nalyze Entry...", IconKeys.Analyze, Keys.None, this._model.AnalyzeCommand),
-      ]),
-      Menu("&Tools", [
-        Item("&Benchmark...", IconKeys.Test, Keys.None, this._model.BenchmarkCommand),
-        new ToolStripSeparator(),
-        Action("&Reverse Engineer Format...", IconKeys.Analyze, () => new ReverseEngineerWindow().Show()),
-        new ToolStripSeparator(),
-        Action("&Maintenance (Optimize / Shrink / Defragment / Purge / Wipe)...", IconKeys.Defragment, this.OpenMaintenance),
-        Action("Convert &Archive...", IconKeys.Create, () => _ = this.ConvertArchiveAsync()),
-        Action("&Partition Editor...", IconKeys.Create, this.OpenPartitionEditor),
-        Action("&Mount Image...", IconKeys.Open, this.OpenMountWindow),
-        new ToolStripSeparator(),
-        Item("&File Associations...", IconKeys.Properties, Keys.None, this._model.FileAssociationsCommand),
-      ]),
-      Menu("&Help", [
-        Action("&About", IconKeys.About, () => new AboutWindow().ShowDialog(this)),
-      ]),
-    ]);
-  }
-
-  private static ToolStripMenuItem Menu(string text, ToolStripItem[] children) {
-    var item = new ToolStripMenuItem(text);
-    item.DropDownItems.AddRange(children);
-    return item;
-  }
 
   /// <summary>
   /// A menu item bound to a command. <paramref name="displayShortcut"/> only labels the item — it
@@ -194,33 +161,6 @@ internal sealed class MainForm : Form {
     var item = new ToolStripMenuItem(text) { Image = Images.Icon(iconKey) };
     item.Click += (_, _) => action();
     return item;
-  }
-
-  private void BuildToolbar() {
-    this._toolbar.Items.AddRange([
-      Button("Open", IconKeys.Open, "Open archive (Ctrl+O)", this._model.OpenCommand),
-      Button("Create", IconKeys.Create, "Create archive (Ctrl+N)", this._model.CreateCommand),
-      new ToolStripSeparator(),
-      Button("Extract", IconKeys.Extract, "Extract all (Ctrl+E)", this._model.ExtractAllCommand),
-      Button("Add", IconKeys.Add, "Add files to archive", this._model.AddFilesCommand),
-      Button("Test", IconKeys.Test, "Test integrity (Ctrl+T)", this._model.TestCommand),
-      new ToolStripSeparator(),
-      Button("Back", IconKeys.Back, "Back (Alt+Left)", this._model.BackCommand),
-      Button("Forward", IconKeys.Forward, "Forward (Alt+Right)", this._model.ForwardCommand),
-      Button("Up", IconKeys.NavigateUp, "Go up (Backspace)", this._model.NavigateUpCommand),
-      new ToolStripSeparator(),
-      Button("Analyze", IconKeys.Analyze, "Analyze binary file", this._model.AnalyzeFileCommand),
-    ]);
-
-    static ToolStripButton Button(string text, string iconKey, string tip, ICommand command) {
-      var button = new ToolStripButton(text) { Image = Images.Icon(iconKey), ToolTipText = tip };
-      button.Click += (_, _) => {
-        if (command.CanExecute(null)) command.Execute(null);
-      };
-      command.CanExecuteChanged += (_, _) => button.Enabled = command.CanExecute(null);
-      button.Enabled = command.CanExecute(null);
-      return button;
-    }
   }
 
   private void BuildNavigationTree() {
@@ -298,6 +238,42 @@ internal sealed class MainForm : Form {
     };
   }
 
+  /// <summary>The folder a tree node stands for, as something to copy or move: its parent and its name.</summary>
+  private static Editing.TransferItem? TreeNodeAsItem(Location node) {
+    if (!node.IsInArchive) {
+      var path = Path.TrimEndingDirectorySeparator(node.HostPath);
+      return Path.GetDirectoryName(path) is { } parent
+        ? new(Navigation.Location.Folder(parent), Path.GetFileName(path), IsFolder: true)
+        : null; // a drive or the root
+    }
+
+    var folder = (node.ArchiveFolder ?? "").TrimEnd('/');
+    if (folder.Length == 0)
+      return Path.GetDirectoryName(node.HostPath) is { } holder
+        ? new(Navigation.Location.Folder(holder), Path.GetFileName(node.HostPath), IsFolder: false)
+        : null;
+
+    var slash = folder.LastIndexOf('/');
+    return new(Navigation.Location.InArchive(node.HostPath, slash < 0 ? "" : folder[..(slash + 1)]), folder[(slash + 1)..], IsFolder: true);
+  }
+
+  /// <summary>
+  /// Rereads the tree nodes of the places a change touched, so a renamed, moved, created or deleted
+  /// folder does not linger in the tree. Only nodes that have been expanded carry children to reread.
+  /// </summary>
+  private void ReloadTreeNodes(IReadOnlyList<Location> places) {
+    foreach (var node in Walk(this._tree.Nodes.Cast<TreeNode>()))
+      if (node.Tag is Location at && places.Contains(at) && node.Nodes.Count > 0)
+        this.ReloadChildren(node);
+
+    static IEnumerable<TreeNode> Walk(IEnumerable<TreeNode> nodes) {
+      foreach (var node in nodes.ToList()) {
+        yield return node;
+        foreach (var child in Walk(node.Nodes.Cast<TreeNode>())) yield return child;
+      }
+    }
+  }
+
   private void ReloadChildren(TreeNode node) {
     node.Nodes.Clear();
     foreach (var child in this._folders.Children((Location)node.Tag!))
@@ -353,7 +329,7 @@ internal sealed class MainForm : Form {
     // The icon sits in the name column, as in every file manager: the column an item's own text
     // occupies is the one label editing edits, so a separate icon column made renaming edit nothing.
     this._entries.Columns.AddRange([
-      new ColumnHeader("Name", 300),
+      new ColumnHeader("Name", 250),
       new ColumnHeader("Original", 90) { TextAlign = ContentAlignment.MiddleRight },
       new ColumnHeader("Compressed", 90) { TextAlign = ContentAlignment.MiddleRight },
       new ColumnHeader("Ratio", 60) { TextAlign = ContentAlignment.MiddleRight },
@@ -367,6 +343,7 @@ internal sealed class MainForm : Form {
         if (item.Tag is ArchiveEntryViewModel entry) this._model.SelectedEntries.Add(entry);
 
       CommandManager.InvalidateRequerySuggested();
+      this.RefreshPreview();
     };
 
     this._entries.LabelEdit = true;
@@ -388,6 +365,10 @@ internal sealed class MainForm : Form {
           return;
         }
     };
+
+    this._entries.KeyDown += (_, e) => this.OnClipboardKey(e);
+    this._tree.KeyDown += (_, e) => this.OnClipboardKey(e, fromTree: true);
+    this._model.Changed += (_, places) => this.ReloadTreeNodes(places);
 
     this._entries.ItemActivate += (_, _) => this.ActivateSelectedEntry();
     this._entries.MouseDoubleClick += (_, _) => this.ActivateSelectedEntry();
@@ -430,6 +411,10 @@ internal sealed class MainForm : Form {
       this.Item("&Delete", IconKeys.Remove, Keys.None, this._model.DeleteSelectedCommand, "Del"),
       this.Item("Rena&me", IconKeys.Rename, Keys.None, this._model.RenameCommand, "F2"),
       new ToolStripSeparator(),
+      this.Item("Cu&t", IconKeys.Cut, Keys.None, this._model.CutCommand, "Ctrl+X"),
+      this.Item("&Copy", IconKeys.Copy, Keys.None, this._model.CopyCommand, "Ctrl+C"),
+      this.Item("&Paste", IconKeys.Paste, Keys.None, this._model.PasteCommand, "Ctrl+V"),
+      new ToolStripSeparator(),
       this.Item("&Add Files...", IconKeys.Add, Keys.None, this._model.AddFilesCommand),
       new ToolStripSeparator(),
       maintenance,
@@ -452,10 +437,12 @@ internal sealed class MainForm : Form {
   private void LayoutChildren() {
     var width = this.ClientSize.Width;
 
-    this._menu.Bounds = new(0, 0, width, MenuHeight);
-    this._toolbar.Bounds = new(0, MenuHeight, width, ToolbarHeight);
+    // As tall as its items need at the current font and display scaling; a minimized ribbon folds
+    // down to its tab strip and the panes take the space it gives back.
+    var ribbonHeight = this._ribbon.Minimized ? this._ribbon.TabStripHeight : this._ribbon.NaturalHeight;
+    this._ribbon.Bounds = new(0, 0, width, ribbonHeight);
 
-    var y = MenuHeight + ToolbarHeight;
+    var y = ribbonHeight;
     var breadcrumbVisible = this._breadcrumbBar.Visible;
     if (breadcrumbVisible) {
       this._breadcrumbBar.Bounds = new(0, y, width, BreadcrumbHeight);
@@ -466,6 +453,16 @@ internal sealed class MainForm : Form {
 
     var paneHeight = Math.Max(60, this.ClientSize.Height - y - StatusHeight);
     this._split.Bounds = new(0, y, width, paneHeight);
+
+    // The tree and the preview open at fixed widths, once; from then on the list takes whatever the
+    // window gains, and a width the user dragged to is theirs. Set before the split has a size, a
+    // distance is clamped to the minimum, which is why this waits for the first real layout.
+    if (!this._previewSized && width > 0) {
+      this._previewSized = true;
+      this._split.SplitterDistance = TreePaneWidth;
+      var contentWidth = width - this._split.SplitterDistance - this._split.SplitterWidth;
+      this._contentSplit.SplitterDistance = Math.Max(this._contentSplit.Panel1MinSize, contentWidth - PreviewPaneWidth);
+    }
     this._dropOverlay.Bounds = this._split.Bounds;
     this._status.Bounds = new(0, this.ClientSize.Height - StatusHeight, width, StatusHeight);
   }
@@ -506,8 +503,10 @@ internal sealed class MainForm : Form {
         entry.LastModifiedText,
       ]) {
         Tag = entry,
-        ImageKey = entry.IconKey,
+        ImageKey = this.ImageKeyFor(entry),
       });
+
+    this.StartThumbnails();
   }
 
   /// <summary>
@@ -545,6 +544,104 @@ internal sealed class MainForm : Form {
     }
 
     this.RefreshEntries();
+  }
+
+  /// <summary>Whether the preview pane is shown.</summary>
+  internal bool PreviewPaneVisible {
+    get => !this._contentSplit.Panel2Collapsed;
+    set {
+      this._contentSplit.Panel2Collapsed = !value;
+      this.RefreshPreview();
+    }
+  }
+
+  /// <summary>
+  /// Shows the single selected entry in the preview pane. The bytes are read off the UI thread; a
+  /// result that arrives after the selection has moved on is dropped.
+  /// </summary>
+  private void RefreshPreview() {
+    var generation = ++this._previewGeneration;
+    if (!this.PreviewPaneVisible) return;
+
+    var selected = this._model.SelectedEntries.Where(e => !e.IsParentEntry).Take(2).ToList();
+    if (selected.Count != 1) {
+      this._preview.ShowCaption(selected.Count == 0 ? PreviewPane.NothingSelected : $"{this._model.SelectedEntries.Count(e => !e.IsParentEntry)} items selected");
+      return;
+    }
+
+    var entry = selected[0];
+    this._preview.ShowCaption(entry.Name);
+    if (entry.IsDirectory) {
+      this._preview.ShowCaption(this._model.ReadForPreview(entry).Caption);
+      return;
+    }
+
+    this.QueuePreview(entry, this._model.CapturePreviewSource(), generation);
+  }
+
+  // One preview read at a time, newest request wins: holding an arrow key used to queue a read and a
+  // decode per row passed, each up to the preview limit, all running at once.
+  private readonly object _previewLock = new();
+  private (ArchiveEntryViewModel Entry, PreviewSource Source, int Generation)? _previewPending;
+  private bool _previewRunning;
+
+  private void QueuePreview(ArchiveEntryViewModel entry, PreviewSource source, int generation) {
+    lock (this._previewLock) {
+      this._previewPending = (entry, source, generation);
+      if (this._previewRunning) return;
+      this._previewRunning = true;
+    }
+
+    Task.Run(this.RunPreviews);
+  }
+
+  private void RunPreviews() {
+    while (true) {
+      (ArchiveEntryViewModel Entry, PreviewSource Source, int Generation) job;
+      lock (this._previewLock) {
+        if (this._previewPending is not { } next) {
+          this._previewRunning = false;
+          return;
+        }
+
+        job = next;
+        this._previewPending = null;
+      }
+
+      if (job.Generation != Volatile.Read(ref this._previewGeneration)) continue;
+
+      var (data, caption) = this._model.ReadForPreview(job.Entry, job.Source);
+      var prepared = data is null ? null : PreviewPane.Prepare(caption, data);
+      this.BeginInvoke(() => {
+        if (job.Generation != this._previewGeneration) return;
+        if (prepared is null) this._preview.ShowCaption(caption);
+        else this._preview.Show(prepared);
+      });
+    }
+  }
+
+  /// <summary>Ctrl+C, Ctrl+X and Ctrl+V where files are shown — the list and the tree, not a text box.</summary>
+  private void OnClipboardKey(KeyEventArgs e, bool fromTree = false) {
+    if (!e.Control || e.Alt || e.Shift) return;
+
+    // In the tree, copy and cut take the folder the tree has selected, not the list's selection.
+    if (fromTree && e.KeyCode is Keys.C or Keys.X) {
+      if (this._tree.SelectedNode?.Tag is Location node && TreeNodeAsItem(node) is { } item)
+        this._model.PutOnClipboard([item], cut: e.KeyCode == Keys.X);
+      e.Handled = true;
+      return;
+    }
+
+    var command = e.KeyCode switch {
+      Keys.C => this._model.CopyCommand,
+      Keys.X => this._model.CutCommand,
+      Keys.V => this._model.PasteCommand,
+      _ => null,
+    };
+    if (command is null) return;
+
+    if (command.CanExecute(null)) command.Execute(null);
+    e.Handled = true;
   }
 
   private ArchiveEntryViewModel? EntryAt(int index)
@@ -609,7 +706,7 @@ internal sealed class MainForm : Form {
     // Re-list whenever the maintenance window mutates the archive we have open.
     window.ArchiveMutated += path => {
       if (this._model.HasArchive && string.Equals(path, this._model.ArchivePath, StringComparison.OrdinalIgnoreCase))
-        this._model.Open(this._model.ArchivePath);
+        this._model.ReloadArchiveInPlace();
     };
 
     window.Show();

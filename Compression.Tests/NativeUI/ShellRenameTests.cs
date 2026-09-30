@@ -216,4 +216,31 @@ public sealed class ShellRenameTests {
 
     Assert.That(requested, Is.SameAs(target));
   }
+
+  // ── new folder ──────────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void GivenAFolderOnDisk_WhenNewFoldersAreMade_ThenEachTakesTheNextFreeNameAndIsHandedOverForNaming() {
+    this._model.NavigateTo(Location.Folder(this._root));
+    var named = new System.Collections.Generic.List<string>();
+    this._model.RenameRequested += (_, entry) => named.Add(entry.Name);
+
+    Assert.That(this._model.CreateNewFolder(), Is.EqualTo("New folder"));
+    Assert.That(this._model.CreateNewFolder(), Is.EqualTo("New folder (2)"));
+
+    Assert.Multiple(() => {
+      Assert.That(Directory.Exists(Path.Combine(this._root, "New folder (2)")), Is.True);
+      Assert.That(named, Is.EqualTo(new[] { "New folder", "New folder (2)" }), "the user names it straight away");
+      Assert.That(this.Names(), Does.Contain("New folder (2)"));
+    });
+  }
+
+  [Test]
+  public void GivenAnArchiveFolder_WhenAskedForANewFolder_ThenItIsNotOffered() {
+    this._model.NavigateTo(Location.InArchive(this._zip, "docs/"));
+
+    Assert.That(this._model.NewFolderCommand.CanExecute(null), Is.False,
+      "an empty folder would not survive a writer that keeps only files");
+    Assert.That(this._model.CreateNewFolder(), Is.Null);
+  }
 }
