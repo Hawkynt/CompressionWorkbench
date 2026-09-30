@@ -56,6 +56,9 @@ public static class AcronisTibxWriter {
   /// <summary>4 KiB page size for all pages.</summary>
   public const int PageSize = AcronisTibxPage.PageSize;
 
+  /// <summary>Maximum file payload represented by the prototype's single DATA page.</summary>
+  public const int MaximumFileContentLength = PageSize - 0x14;
+
   /// <summary>Default version code emitted at header offset 0x008 (BE16).</summary>
   public const ushort DefaultVersion = 0x0008;
 
@@ -76,6 +79,17 @@ public static class AcronisTibxWriter {
   /// <param name="archiveUuid">Optional 16-byte archive identity (random in real archives).</param>
   public static byte[] Build(IReadOnlyList<FileSpec> files, byte[]? archiveUuid = null) {
     ArgumentNullException.ThrowIfNull(files);
+    if (archiveUuid is not null && archiveUuid.Length != AcronisTibxReader.UuidLength)
+      throw new ArgumentException($"An Acronis TIBX archive UUID must contain exactly {AcronisTibxReader.UuidLength} bytes.", nameof(archiveUuid));
+
+    for (var i = 0; i < files.Count; ++i) {
+      var file = files[i] ?? throw new ArgumentException($"File at index {i} is null.", nameof(files));
+      ArgumentException.ThrowIfNullOrWhiteSpace(file.Name);
+      ArgumentNullException.ThrowIfNull(file.Content);
+      if (file.Content.Length > MaximumFileContentLength)
+        throw new NotSupportedException(
+          $"Acronis TIBX prototype writer stores at most {MaximumFileContentLength} bytes per file in one DATA page; '{file.Name}' has {file.Content.Length} bytes.");
+    }
 
     var pages = new List<byte[]>();
 
@@ -114,9 +128,7 @@ public static class AcronisTibxWriter {
     // 8-word BE32 dump-field cluster at 0x1e0 (fsize/offset/aligned_size/size + commit ids).
     // Zeros are valid; the reader surfaces them verbatim as forensic hex.
     // 16-byte archive UUID at 0x233.
-    var uuid = archiveUuid is { Length: AcronisTibxReader.UuidLength }
-      ? archiveUuid
-      : Guid.NewGuid().ToByteArray();
+    var uuid = archiveUuid ?? Guid.NewGuid().ToByteArray();
     uuid.AsSpan(0, AcronisTibxReader.UuidLength).CopyTo(page.AsSpan(AcronisTibxReader.UuidOffset, AcronisTibxReader.UuidLength));
     // HDR page-zero carries no page-frame CRC (the reader surfaces it as zero).
     return page;
@@ -159,6 +171,10 @@ public static class AcronisTibxWriter {
   }
 
   private static byte[] BuildDataPage(byte[] content, uint seq) {
+    if (content.Length > MaximumFileContentLength)
+      throw new NotSupportedException(
+        $"Acronis TIBX prototype writer stores at most {MaximumFileContentLength} bytes per file in one DATA page; got {content.Length} bytes.");
+
     var page = new byte[PageSize];
     page[0] = 0x41;
     page[1] = (byte)AcronisTibxPageType.Data;
@@ -166,12 +182,8 @@ public static class AcronisTibxWriter {
     page[3] = 0;
     DataMagic.CopyTo(page.AsSpan(AcronisTibxPage.ContentMagicOffset, 4));
     BinaryPrimitives.WriteUInt32BigEndian(page.AsSpan(0xC, 4), seq);
-    BinaryPrimitives.WriteUInt32BigEndian(page.AsSpan(0x10, 4), (uint)Math.Min(content.Length, PageSize - 0x14));
-    // Store up to one page's worth of content for forensic surface. Real .tibx chunks content
-    // across many DATA pages via the (unspecified) extent map; one page is a structural sample.
-    var room = PageSize - 0x14;
-    var n = Math.Min(content.Length, room);
-    if (n > 0) content.AsSpan(0, n).CopyTo(page.AsSpan(0x14, n));
+    BinaryPrimitives.WriteUInt32BigEndian(page.AsSpan(0x10, 4), (uint)content.Length);
+    if (content.Length > 0) content.CopyTo(page.AsSpan(0x14, content.Length));
     WritePageCrc(page);
     return page;
   }

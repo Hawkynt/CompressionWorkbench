@@ -7776,6 +7776,7 @@ Whole-archive writer for Acronis True Image `.tibx` (2020+ libarchive3 LSM page 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DefaultVersion` | `const ushort DefaultVersion` | Default version code emitted at header offset 0x008 (BE16). |
+| `MaximumFileContentLength` | `const int MaximumFileContentLength` | Maximum file payload represented by the prototype's single DATA page. |
 | `PageSize` | `const int PageSize` | 4 KiB page size for all pages. |
 | `Build` | `static byte[] Build(IReadOnlyList<FileSpec> files, byte[] archiveUuid = null)` | Builds a complete `.tibx` container carrying `files` and returns the full archive bytes (a whole number of 4 KiB pages). |
 
