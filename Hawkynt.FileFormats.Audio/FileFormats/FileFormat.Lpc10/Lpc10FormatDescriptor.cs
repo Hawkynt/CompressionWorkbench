@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using Codec.Lpc10;
 using Codec.Pcm;
@@ -175,7 +176,7 @@ public sealed class Lpc10FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     info.AppendLine("frame_bits=54");
     info.AppendLine("frame_samples=180");
     info.AppendLine($"frames={frames}");
-    info.AppendLine($"duration_seconds={durationSeconds:0.###}");
+    info.AppendLine(CultureInfo.InvariantCulture, $"duration_seconds={durationSeconds:0.###}");
     info.AppendLine("note=headerless raw stream; mono 8000 Hz assumed per the FS-1015 default.");
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
 

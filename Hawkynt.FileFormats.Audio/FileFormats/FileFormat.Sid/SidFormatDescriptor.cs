@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using Codec.Pcm;
 using Codec.Sid;
@@ -322,14 +323,14 @@ public sealed class SidFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         var seconds = DualModelRenderSeconds;
         foreach (var (model, suffix) in DualModels)
           RenderLeg(blob, OverrideSid1(setup.Chips, model), setup.ClockHz, seconds, suffix, result);
-        sb.AppendLine($"rendered_duration={seconds:0.#}s");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"rendered_duration={seconds:0.#}s");
         sb.AppendLine("rendered_model=both (MOS6581 + MOS8580)");
         sb.AppendLine($"rendered_clock={(setup.ClockHz < 1_000_000 ? "PAL" : "NTSC")}");
         sb.AppendLine($"rendered_sids={setup.Chips.Count}");
       } else {
         RenderLeg(blob, setup.Chips, setup.ClockHz, RenderSeconds, suffix: null, result);
         if (result.Count > 0) {
-          sb.AppendLine($"rendered_duration={RenderSeconds:0.#}s");
+          sb.AppendLine(CultureInfo.InvariantCulture, $"rendered_duration={RenderSeconds:0.#}s");
           sb.AppendLine($"rendered_model={DescribeModelSet(setup.Chips)}");
           sb.AppendLine($"rendered_clock={(setup.ClockHz < 1_000_000 ? "PAL" : "NTSC")}");
           sb.AppendLine($"rendered_sids={setup.Chips.Count}");

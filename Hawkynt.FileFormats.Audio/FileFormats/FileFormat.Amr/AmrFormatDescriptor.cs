@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using Codec.AmrNb;
 using Codec.AmrWb;
@@ -208,7 +209,7 @@ public sealed partial class AmrFormatDescriptor : IFormatDescriptor, IArchiveFor
     meta.AppendLine($"sample_rate={sampleRate}");
     meta.AppendLine($"frame_samples={samplesPerFrame}");
     meta.AppendLine($"frames_total={totalFrames}");
-    meta.AppendLine($"duration_seconds={durationSeconds:0.###}");
+    meta.AppendLine(CultureInfo.InvariantCulture, $"duration_seconds={durationSeconds:0.###}");
     meta.AppendLine("note=RFC 4867 encode/mux/demux enabled for mono and MC1.0 (1-6 channels).");
     meta.AppendLine("note=SID/NO_DATA frames render as silence (DTX comfort noise not synthesized).");
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(meta.ToString())));

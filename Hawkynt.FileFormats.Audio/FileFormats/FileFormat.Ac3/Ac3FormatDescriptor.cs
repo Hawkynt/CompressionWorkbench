@@ -537,7 +537,7 @@ public sealed class Ac3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     var duration = first.SampleRate > 0 ? (double)totalSamples / first.SampleRate : 0;
     info.AppendLine($"frames={frames}");
-    info.AppendLine($"duration_seconds={duration:0.###}");
+    info.AppendLine(CultureInfo.InvariantCulture, $"duration_seconds={duration:0.###}");
     if (dependentFrames > 0)
       info.AppendLine($"note=skipped {dependentFrames} dependent/non-primary E-AC-3 substream frame(s) (only independent substream 0 is decoded)." );
     return info.ToString();
