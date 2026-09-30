@@ -136,7 +136,7 @@ public sealed class ArReader : IDisposable {
 
       this._entries.Add(new ArEntry {
         Name         = name,
-        ModifiedTime = DateTimeOffset.FromUnixTimeSeconds(unixTime),
+        ModifiedTime = ToTimestamp(unixTime),
         OwnerId      = uid,
         GroupId      = gid,
         FileMode     = fileMode,
@@ -172,6 +172,12 @@ public sealed class ArReader : IDisposable {
   }
 
   // ── Field helpers ────────────────────────────────────────────────────────
+
+  /// <summary>An mtime outside the range DateTimeOffset can hold reads as the epoch, like an unparsable one.</summary>
+  private static DateTimeOffset ToTimestamp(long unixSeconds) =>
+    unixSeconds is >= -62135596800L and <= 253402300799L
+      ? DateTimeOffset.FromUnixTimeSeconds(unixSeconds)
+      : DateTimeOffset.UnixEpoch;
 
   private static string ReadField(ReadOnlySpan<byte> header, int offset, int length) =>
     Encoding.ASCII.GetString(header.Slice(offset, length)).TrimEnd(' ');
