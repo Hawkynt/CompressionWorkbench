@@ -32,8 +32,36 @@
     <EmbeddedResource Include="stubs\**\*" Condition="Exists('stubs') And '$(ExcludeStubs)' != 'true'" LogicalName="stubs/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
-  <ItemGroup>
+  <!--
+    SfxSlim drops audio support. It exists for the self-extracting stubs, which are prepended to
+    every archive built with them: audio decoding is ~6 MB of assembly an archive extractor never
+    calls, and the three adapters below are the only things in this library that reach for it.
+    A slim stub simply does not recognise an audio container as an archive, which is a clean
+    "cannot identify" rather than a wrong answer, because the format is detected from the bytes
+    at extraction time rather than recorded when the SFX was built.
+  -->
+  <ItemGroup Condition="'$(SfxSlim)' != 'true'">
     <ProjectReference Include="..\Hawkynt.FileFormats.Audio\Hawkynt.FileFormats.Audio.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(SfxSlim)' == 'true'">
+    <Compile Remove="AsfAudioAdapter.cs" />
+    <Compile Remove="AudioAdapterResolver.cs" />
+    <Compile Remove="AudioConversionInventory.cs" />
+    <Compile Remove="AudioConversionOperation.cs" />
+    <Compile Remove="AudioFormatAdapters.cs" />
+    <Compile Remove="CafAudioAdapter.cs" />
+    <Compile Remove="ElementaryAudioAdapters.cs" />
+    <Compile Remove="FileFormats\FileFormat.Avif\AvifFormatDescriptor.cs" />
+    <Compile Remove="FileFormats\FileFormat.Heif\**\*.cs" />
+    <Compile Remove="FileFormats\FileFormat.Jp2\Jp2FormatDescriptor.cs" />
+    <Compile Remove="FileFormats\FileFormat.Jxl\JxlFormatDescriptor.cs" />
+    <Compile Remove="G711PacketAdapter.cs" />
+    <Compile Remove="WavAudioAdapter.cs" />
+    <Compile Remove="WavPackAudioPacketAdapter.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Hawkynt.FileFormats.Archives\Hawkynt.FileFormats.Archives.csproj" />
     <ProjectReference Include="..\Compression.Core\Hawkynt.Compression.Core.csproj" />
     <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />

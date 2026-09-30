@@ -1,4 +1,5 @@
 using F = Compression.Lib.FormatDetector.Format;
+using Compression.Registry;
 
 namespace Compression.Lib;
 

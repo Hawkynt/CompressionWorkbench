@@ -47,7 +47,16 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
+  # NativeAOT cannot cross-compile, so the stubs build one runner per runtime, and every console
+  # stub extracts a real archive on its own OS before it can be embedded.
+  sfx-stubs:
+    uses: ./.github/workflows/_sfx-stubs.yml
+    with:
+      version: ${{ inputs.version }}
+      ref: ${{ inputs.ref }}
+
   build:
+    needs: [sfx-stubs]
     runs-on: windows-latest
     timeout-minutes: 60
     permissions:
@@ -131,75 +140,21 @@ jobs:
       - name: Build solution
         run: dotnet build CompressionWorkbench.slnx --configuration Release --no-restore -p:Version=${{ inputs.version }}
 
-      - name: Publish SFX stubs into Compression.Lib/stubs
-        shell: pwsh
+      - name: Collect SFX stubs into Compression.Lib/stubs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sfx-stub-*
+          merge-multiple: true
+          path: Compression.Lib/stubs
+
+      - name: Report the stub inventory
+        shell: bash
         run: |
-          # Collect every RID failure instead of aborting on the first one.
-          $PSNativeCommandUseErrorActionPreference = $false
+          # Every stub embeds into cwb and the shell, so a size regression is worth seeing in the
+          # log rather than discovering in a release.
+          find Compression.Lib/stubs -type f -exec ls -l {} + | sort -k9
+          echo "total: $(du -sh Compression.Lib/stubs | cut -f1)"
 
-          $rids       = @("win-x64", "win-x86", "win-arm64", "linux-x64", "linux-arm64")
-          $stagingDir = "sfx-staging"
-          $stubsDir   = "Compression.Lib/stubs"
-          $failures   = @()
-
-          # Phase 1: publish all stubs to a staging directory. ExcludeStubs
-          # prevents Compression.Lib from embedding previously-built stubs
-          # during this publish step, which would push the assembly over the
-          # Roslyn PE size limit.
-          foreach ($rid in $rids) {
-            $dest = "$stagingDir/$rid"
-            New-Item -ItemType Directory -Path $dest -Force | Out-Null
-
-            Write-Host "::group::Publishing SFX CLI stub for $rid"
-            dotnet publish Compression.Sfx.Cli/Compression.Sfx.Cli.csproj -r $rid -c Release -p:ExcludeStubs=true -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }} --nologo
-            $cliExit = $LASTEXITCODE
-            Write-Host "::endgroup::"
-            $exeName = if ($rid.StartsWith("win")) { "sfx-cli.exe" } else { "sfx-cli" }
-            $src = "Compression.Sfx.Cli/bin/Release/net10.0/$rid/publish/$exeName"
-            if ($cliExit -eq 0 -and (Test-Path $src)) {
-              Copy-Item $src $dest -Force
-              Write-Host "  -> $dest/$exeName" -ForegroundColor Green
-            } else {
-              $failures += "Sfx.Cli/$rid (exit=$cliExit, missing=$src)"
-              Write-Host "  -> FAILED (exit=$cliExit) for $rid" -ForegroundColor Red
-            }
-
-            if ($rid.StartsWith("win")) {
-              Write-Host "::group::Publishing SFX UI stub for $rid"
-              dotnet publish Compression.Sfx.Ui/Compression.Sfx.Ui.csproj -r $rid -c Release -p:ExcludeStubs=true -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }} --nologo
-              $uiExit = $LASTEXITCODE
-              Write-Host "::endgroup::"
-              $src = "Compression.Sfx.Ui/bin/Release/net10.0-windows/$rid/publish/sfx-ui.exe"
-              if ($uiExit -eq 0 -and (Test-Path $src)) {
-                Copy-Item $src $dest -Force
-                Write-Host "  -> $dest/sfx-ui.exe" -ForegroundColor Green
-              } else {
-                $failures += "Sfx.Ui/$rid (exit=$uiExit, missing=$src)"
-                Write-Host "  -> FAILED (exit=$uiExit) for $rid" -ForegroundColor Red
-              }
-            }
-          }
-
-          # Phase 2: stage into Compression.Lib/stubs/ for embedding.
-          if (Test-Path $stagingDir) {
-            New-Item -ItemType Directory -Path $stubsDir -Force | Out-Null
-            Copy-Item "$stagingDir/*" $stubsDir -Recurse -Force
-            Remove-Item $stagingDir -Recurse -Force
-            Write-Host "Stubs staged into $stubsDir" -ForegroundColor Green
-          }
-
-          if ($failures.Count -gt 0) {
-            Write-Host ""
-            Write-Host "=== SFX publish failures ===" -ForegroundColor Red
-            $failures | ForEach-Object { Write-Host "  * $_" -ForegroundColor Red }
-            exit 1
-          }
-
-      # EnableSingleFileBundle=false disables the post-build SingleFileBundle.targets
-      # that fires on `dotnet build`. When called from `dotnet publish`, the post-
-      # build target deletes runtimeconfig.json after Build, then the publish step's
-      # own PublishSingleFile bundling can't find it. Letting publish handle the
-      # single-file bundling natively avoids the conflict.
       - name: Publish CLI (win-x64)
         run: dotnet publish Compression.CLI/Compression.CLI.csproj -r win-x64 -c Release --self-contained --nologo -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }}
 

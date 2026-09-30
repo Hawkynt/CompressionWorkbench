@@ -1,5 +1,6 @@
 using System.Text;
 using Compression.Lib;
+using Compression.Registry;
 
 namespace Compression.Tests.Sfx;
 

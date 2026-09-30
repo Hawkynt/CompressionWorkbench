@@ -133,12 +133,43 @@ Append `+` to any method for optimal encoding:
 - `--threads N` — Parallel compression threads
 - `--solid-size SIZE` — 7z solid block size
 - `--force-compress` — Override incompressibility detection
-- `--sfx` / `--sfx-ui` — Create self-extracting archive
+- `--sfx` / `--sfx-ui` — Create a self-extracting archive. `--sfx` is a console stub; `--sfx-ui`
+  shows a small window with a folder picker. Both are NativeAOT binaries, so the recipient needs
+  nothing installed.
+- `--sfx-target RID[,RID...]` — Which runtimes to build for. Several, comma-separated, produce one
+  file that runs on all of them.
 
 ## Self-Extracting Archives
 
 ```bash
-cwb create output.exe files/ --sfx           # Console SFX
-cwb create output.exe files/ --sfx-ui        # GUI SFX
-cwb create output.exe files/ --sfx-target linux-x64  # Cross-platform
+cwb create output.exe files/ --sfx                     # console stub, this machine's runtime
+cwb create output.exe files/ --sfx-ui                  # windowed stub with a folder picker
+cwb create output.exe files/ --sfx-target linux-x64    # build for another runtime
+cwb create output.exe files/ --sfx --sfx-target win-x64,linux-x64,osx-arm64
 ```
+
+**Nothing to install.** The stubs are compiled ahead of time to native code, so an SFX runs on a
+machine with no .NET on it. Targets: `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`, `osx-x64`,
+`osx-arm64`. There is no x86 target — NativeAOT has none — and no musl build.
+
+**Size.** A stub carved for one format is 0.9–2.1 MB depending on how much codec it needs (tar is
+the smallest, RAR the largest). Formats outside the carved set fall back to a universal stub of
+about 11.6 MB that reads every archive format the toolkit supports. Nothing is unsupported; only
+the size differs.
+
+**One file for several systems.** Listing more than one target produces a single file that is both
+a Windows executable and a POSIX shell script. Windows runs it directly. On Linux and macOS invoke
+it as `sh output.exe` — the first bytes of the file have to be `MZ` for Windows, which leaves no
+room for a `#!` line, so the kernel cannot launch it on its own.
+
+**It is still an ordinary archive.** The payload is stored verbatim at the end of the file, so the
+tool that owns the format can open it without running our stub:
+
+```bash
+unzip -l output.exe                # lists the entries
+unzip output.exe readme.txt        # pulls out a single file
+7z e output.exe readme.txt         # likewise
+```
+
+This works for formats whose readers tolerate leading data — anything that locates itself by a
+signature scan or an end-anchored directory. It does not work for `tar`, which has neither.
