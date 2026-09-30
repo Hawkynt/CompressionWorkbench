@@ -79,7 +79,18 @@ namespace FileFormat.Macrium;
 ///   <item><description>ccooper21's community reverse-engineering of legacy <c>.mrimg</c> — decompression layer only; no full legacy spec exists</description></item>
 /// </list>
 /// </summary>
-public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
+
+  /// <inheritdoc />
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new("Compression", "Data compression", FormatOptionKind.Enum, "Medium", ["None", "Medium", "High"], "Macrium's documented compression tiers; medium and high select Zstandard effort 3 and 9."),
+    new("BlockSize", "Data block size", FormatOptionKind.Integer, "65536", ["4096", "16384", "65536", "262144", "1048576"], "Partition data block size in bytes; must be a multiple of 512."),
+    new("ReservedSectorsLength", "Track 0 length", FormatOptionKind.Integer, "0", null, "Bytes from the beginning of the supplied disk image copied verbatim into $TRACK0 (maximum 1 MiB)."),
+    new("DiskNumber", "Disk number", FormatOptionKind.Integer, "0", null, "Disk number recorded in Macrium metadata."),
+    new("PartitionNumber", "Partition number", FormatOptionKind.Integer, "1", null, "Partition number recorded in Macrium metadata."),
+    new("Pbkdf2Iterations", "Password derivation iterations", FormatOptionKind.Integer, "600000", null, "PBKDF2-HMAC-SHA256 iterations used when a password is supplied."),
+    new("BackupFormat", "Backup payload kind", FormatOptionKind.Enum, "partition", ["partition", "file_and_folder"], "Reflect X uses the same container layout for disk images and file/folder backup virtual disks."),
+  ];
 
   /// <summary>The synthetic entry name under which Macrium Reflect X exposes the reconstructed disk-image payload.</summary>
   public const string DiskImageEntryName = "disk-image.raw";
@@ -339,22 +350,50 @@ public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// from a caller-supplied <see cref="FormatCreateOptions"/>.
   /// </summary>
   private static MacriumWriter BuildWriter(FormatCreateOptions options) {
-    var encrypt = !string.IsNullOrEmpty(options.Password);
+    var method = options.MethodName?.Trim().ToLowerInvariant();
+    if (method is not (null or "stored" or "zstd" or "aes-128-cbc" or "aes-192-cbc" or "aes-256-cbc"))
+      throw new ArgumentException($"Unsupported Macrium method '{options.MethodName}'.", nameof(options));
+    var selectedAes = method switch {
+      "aes-128-cbc" => MacriumAesType.Aes128,
+      "aes-192-cbc" => MacriumAesType.Aes192,
+      "aes-256-cbc" => MacriumAesType.Aes256,
+      _ => (MacriumAesType?)null,
+    };
+    var encrypt = !string.IsNullOrEmpty(options.Password) || selectedAes.HasValue;
     var aesType = MacriumAesType.Aes256;
+    if (selectedAes.HasValue)
+      aesType = selectedAes.Value;
     if (encrypt && !string.IsNullOrEmpty(options.EncryptionMethod)) {
       aesType = options.EncryptionMethod.ToLowerInvariant().Replace("-", "") switch {
         "aes128" => MacriumAesType.Aes128,
         "aes192" => MacriumAesType.Aes192,
-        _ => MacriumAesType.Aes256,
+        "aes256" => MacriumAesType.Aes256,
+        var unsupported => throw new ArgumentException($"Unsupported Macrium encryption method '{unsupported}'.", nameof(options)),
       };
     }
-    var compress = options.GetOptionBool("compress", fallback: true);
+    var defaultCompression = method == "stored" ? "None" : "Medium";
+    var compression = options.GetOption("Compression", defaultCompression);
+    var compressionLevel = compression.ToLowerInvariant() switch {
+      "none" or "medium" => 3,
+      "high" => 9,
+      var unsupported => throw new ArgumentException($"Unsupported Macrium compression tier '{unsupported}'.", nameof(options)),
+    };
+    var compress = compression.Equals("None", StringComparison.OrdinalIgnoreCase)
+      ? false
+      : options.GetOptionBool("compress", fallback: true);
     return new MacriumWriter {
       CompressDataBlocks = compress,
+      CompressionLevel = compressionLevel,
       EncryptDataBlocks = encrypt,
       Password = options.Password,
       AesType = aesType,
-      Pbkdf2Iterations = options.GetOptionInt("pbkdf2_iterations", MacriumCrypto.DefaultPbkdf2Iterations),
+      BlockSize = options.GetOptionInt("BlockSize", MacriumWriter.DefaultBlockSize),
+      ReservedSectorsLength = options.GetOptionInt("ReservedSectorsLength", 0),
+      DiskNumber = options.GetOptionInt("DiskNumber", 0),
+      PartitionNumber = options.GetOptionInt("PartitionNumber", 1),
+      BackupFormat = options.GetOption("BackupFormat", "partition"),
+      Pbkdf2Iterations = options.GetOptionInt("Pbkdf2Iterations",
+        options.GetOptionInt("pbkdf2_iterations", MacriumCrypto.DefaultPbkdf2Iterations)),
     };
   }
 }

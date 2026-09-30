@@ -1,0 +1,9 @@
+required_schema.json in this folder is taken unmodified from
+https://github.com/macrium/mrimgx_file_layout (schema/required_schema.json)
+at revision 93db24aaa9236a19976d4d3d6007eabd10dbc8d9.
+
+Copyright (c) 2024 Paramount Software UK Limited. Licensed under the MIT
+License; the upstream licence text is reproduced unchanged in LICENSE.txt.
+
+It is test data only: MacriumVendorSchemaTests validates the $JSON metadata
+block our Reflect X writer emits against it.

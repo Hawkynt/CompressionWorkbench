@@ -58,6 +58,9 @@ public sealed class MacriumWriter {
   /// <summary>Optional zstd compression of data blocks (and metadata blocks). Default off for round-trip predictability.</summary>
   public bool CompressDataBlocks { get; init; }
 
+  /// <summary>Zstandard effort used for data and JSON metadata blocks (1–9).</summary>
+  public int CompressionLevel { get; init; } = 3;
+
   /// <summary>Optional AES-CBC encryption of data blocks. Default off.</summary>
   public bool EncryptDataBlocks { get; init; }
 
@@ -79,6 +82,9 @@ public sealed class MacriumWriter {
   /// <summary>Partition number to advertise in <c>$JSON.disks[0].partitions[0]._header.partition_number</c>. Default = 1.</summary>
   public int PartitionNumber { get; init; } = 1;
 
+  /// <summary>Backup payload kind recorded in root metadata.</summary>
+  public string BackupFormat { get; init; } = "partition";
+
   /// <summary>Total bytes copied verbatim into <c>$TRACK0</c>. Capped at 1 MB per spec.</summary>
   public int ReservedSectorsLength { get; init; }
 
@@ -90,6 +96,11 @@ public sealed class MacriumWriter {
   public byte[] Build(ReadOnlySpan<byte> diskImage) {
     if (this.BlockSize <= 0 || this.BlockSize % 512 != 0)
       throw new InvalidOperationException("BlockSize must be a positive multiple of 512.");
+    if (this.CompressionLevel is < 1 or > 9)
+      throw new InvalidOperationException("CompressionLevel must be between 1 and 9.");
+    if (!this.BackupFormat.Equals("partition", StringComparison.OrdinalIgnoreCase)
+        && !this.BackupFormat.Equals("file_and_folder", StringComparison.OrdinalIgnoreCase))
+      throw new InvalidOperationException("BackupFormat must be 'partition' or 'file_and_folder'.");
     if (this.EncryptDataBlocks && string.IsNullOrEmpty(this.Password))
       throw new InvalidOperationException("Password is required when EncryptDataBlocks is true.");
 
@@ -137,7 +148,7 @@ public sealed class MacriumWriter {
 
       var payload = (byte[])rawBytes.ToArray();
       if (this.CompressDataBlocks)
-        payload = CompressZstd(payload);
+        payload = CompressZstd(payload, this.CompressionLevel);
       if (this.EncryptDataBlocks) {
         var iv = MacriumCrypto.DeriveBlockIv(derivedKey!, imageIdBytes, this.DiskNumber, this.PartitionNumber, blockIndex);
         payload = MacriumCrypto.EncryptBlock(payload, aesKey!, iv);
@@ -165,11 +176,10 @@ public sealed class MacriumWriter {
     WriteMetadataBlock(ms, "$TRACK0", track0, compressed: false, encrypted: false, last: false);
 
     // ─── $INDEX (terminal of the disk chain in our minimum-format emission) ─
-    // Layout (DataBlockIndex variant — no Reserved-Sectors-Index for non-FAT):
-    //   uint32 index_count
-    //   DataBlockIndexElement[index_count]
+    // Layout: ReservedSectorsIndex followed by DataBlockIndex. The writer
+    // emits an empty reserved-sector array for this raw partition image.
     // Each element = int64 file_position + 16-byte md5 + uint32 block_length + uint16 file_number = 30 bytes.
-    var indexBuf = SerializeIndex(indexElements);
+    var indexBuf = SerializeIndex([], indexElements);
     WriteMetadataBlock(ms, "$INDEX", indexBuf, compressed: false, encrypted: false, last: true);
 
     // ── 4) Root metadata chain at footer offset ───────────────────────────
@@ -185,7 +195,8 @@ public sealed class MacriumWriter {
       blockCount: totalBlocks,
       hmac: hmac);
     var jsonBytes = Encoding.UTF8.GetBytes(jsonText);
-    WriteMetadataBlock(ms, "$JSON", jsonBytes, compressed: true, encrypted: false, last: false);
+    WriteMetadataBlock(ms, "$JSON", jsonBytes, compressed: true, encrypted: false, last: false,
+      compressionLevel: this.CompressionLevel);
 
     // ─── $AUXDATA terminal block of the root chain ────────────────────────
     WriteMetadataBlock(ms, "$AUXDATA", [], compressed: false, encrypted: false, last: true);
@@ -207,10 +218,10 @@ public sealed class MacriumWriter {
     return bytes;
   }
 
-  private static byte[] CompressZstd(byte[] raw) {
+  private static byte[] CompressZstd(byte[] raw, int compressionLevel) {
     using var input = new MemoryStream(raw, writable: false);
     using var output = new MemoryStream();
-    using (var zs = new ZstdStream(output, CompressionStreamMode.Compress, leaveOpen: true))
+    using (var zs = new ZstdStream(output, CompressionStreamMode.Compress, compressionLevel, leaveOpen: true))
       input.CopyTo(zs);
     return output.ToArray();
   }
@@ -221,13 +232,14 @@ public sealed class MacriumWriter {
       ReadOnlySpan<byte> payload,
       bool compressed,
       bool encrypted,
-      bool last) {
+      bool last,
+      int compressionLevel = 3) {
 
     // Compress for metadata-side blocks when caller asked. Encryption of
     // metadata blocks is supported by the spec but not exercised here.
     var bodyBytes = payload.ToArray();
     if (compressed)
-      bodyBytes = CompressZstd(bodyBytes);
+      bodyBytes = CompressZstd(bodyBytes, compressionLevel);
 
     // 32-byte header: name(8) + length(4 LE) + md5(16) + flags(1) + pad(3).
     Span<byte> header = stackalloc byte[32];
@@ -256,24 +268,36 @@ public sealed class MacriumWriter {
     output.Write(bodyBytes);
   }
 
-  private static byte[] SerializeIndex(IReadOnlyList<DataBlockIndexElement> elements) {
-    // uint32 index_count + N × (int64 + md5[16] + uint32 + uint16) = 4 + N*30 bytes.
-    var size = 4 + elements.Count * 30;
+  private static byte[] SerializeIndex(
+      IReadOnlyList<DataBlockIndexElement> reservedSectorElements,
+      IReadOnlyList<DataBlockIndexElement> dataElements) {
+    // $INDEX contains two arrays in order: reserved-sector blocks, then
+    // ordinary partition data blocks. Each array is uint32 count + N × 30 bytes.
+    var size = checked(8 + (reservedSectorElements.Count + dataElements.Count) * 30);
     var buf = new byte[size];
     var span = buf.AsSpan();
-    BinaryPrimitives.WriteUInt32LittleEndian(span[..4], (uint)elements.Count);
-    var offset = 4;
+    var offset = 0;
+    WriteIndexArray(span, ref offset, reservedSectorElements);
+    WriteIndexArray(span, ref offset, dataElements);
+    return buf;
+  }
+
+  private static void WriteIndexArray(
+      Span<byte> destination,
+      ref int offset,
+      IReadOnlyList<DataBlockIndexElement> elements) {
+    BinaryPrimitives.WriteUInt32LittleEndian(destination.Slice(offset, 4), (uint)elements.Count);
+    offset += 4;
     foreach (var e in elements) {
-      BinaryPrimitives.WriteInt64LittleEndian(span.Slice(offset, 8), e.FilePosition);
+      BinaryPrimitives.WriteInt64LittleEndian(destination.Slice(offset, 8), e.FilePosition);
       offset += 8;
-      e.Md5Hash.CopyTo(span.Slice(offset, 16));
+      e.Md5Hash.CopyTo(destination.Slice(offset, 16));
       offset += 16;
-      BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(offset, 4), e.BlockLength);
+      BinaryPrimitives.WriteUInt32LittleEndian(destination.Slice(offset, 4), e.BlockLength);
       offset += 4;
-      BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(offset, 2), e.FileNumber);
+      BinaryPrimitives.WriteUInt16LittleEndian(destination.Slice(offset, 2), e.FileNumber);
       offset += 2;
     }
-    return buf;
   }
 
   private string BuildJson(
@@ -294,10 +318,13 @@ public sealed class MacriumWriter {
 
     // _compression — track what the writer actually applied to data blocks
     // so the reader's $INDEX walk knows whether to invoke zstd-decompress.
+    // The vendor schema knows exactly three tiers (none/medium/high) and one
+    // method (zstd), so uncompressed output carries the level alone.
     if (this.CompressDataBlocks)
-      sb.Append("\"_compression\":{\"compression_level\":\"medium\",\"compression_method\":\"zstd\"},");
+      sb.Append("\"_compression\":{\"compression_level\":\"").Append(this.CompressionLevel >= 7 ? "high" : "medium")
+        .Append("\",\"compression_method\":\"zstd\"},");
     else
-      sb.Append("\"_compression\":{\"compression_level\":\"none\",\"compression_method\":\"none\"},");
+      sb.Append("\"_compression\":{\"compression_level\":\"none\"},");
 
     // _encryption block — present and enabled when password supplied.
     sb.Append("\"_encryption\":{");
@@ -312,13 +339,16 @@ public sealed class MacriumWriter {
       sb.Append("\"key_derivation\":\"pbkdf2\",");
       sb.Append("\"key_iterations\":").Append(this.Pbkdf2Iterations.ToString(System.Globalization.CultureInfo.InvariantCulture));
     } else {
-      sb.Append("\"enable\":false,\"key_iterations\":0");
+      sb.Append("\"aes_type\":\"none\",\"enable\":false,\"hmac\":\"\",\"key_iterations\":0");
     }
     sb.Append("},");
 
     // _header — navigational fields used by readers.
     sb.Append("\"_header\":{");
-    sb.Append("\"backup_format\":\"partition\",");
+    var backupFormat = this.BackupFormat.Equals("partition", StringComparison.OrdinalIgnoreCase)
+      ? "partition"
+      : "file_and_folder";
+    sb.Append("\"backup_format\":\"").Append(backupFormat).Append("\",");
     sb.Append("\"backup_guid\":\"00000000-0000-0000-0000-000000000000\",");
     sb.Append("\"backup_time\":").Append(backupTime.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
     sb.Append("\"backup_type\":\"full\",");
@@ -330,19 +360,35 @@ public sealed class MacriumWriter {
     sb.Append("\"increment_number\":0,");
     sb.Append("\"index_file_position\":").Append(indexFilePosition.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
     sb.Append("\"json_version\":1,");
+    sb.Append("\"merged_files\":[],");
     sb.Append("\"netbios_name\":\"compression-workbench\",");
     sb.Append("\"split_file\":false");
     sb.Append("},");
 
     // disks[0]._header / partitions[0]._header — minimum required by spec.
     sb.Append("\"disks\":[{");
+    sb.Append("\"_geometry\":{");
+    sb.Append("\"bytes_per_sector\":").Append(SectorSize.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
+    sb.Append("\"disk_size\":").Append(diskImage.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    sb.Append("},");
     sb.Append("\"_header\":{");
-    sb.Append("\"disk_format\":\"raw\",");
+    sb.Append("\"disk_format\":\"").Append(IsGptDisk(diskImage) ? "gpt" : "mbr").Append("\",");
     sb.Append("\"disk_number\":").Append(this.DiskNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
     sb.Append("\"disk_signature\":\"00000000-0000-0000-0000-000000000000\",");
     sb.Append("\"imaged_partition_count\":1");
     sb.Append("},");
     sb.Append("\"partitions\":[{");
+    // The data blocks start right after $TRACK0, so that is where the
+    // partition sits on the reconstructed disk. Sectors, per the schema.
+    var startSector = reservedLen / SectorSize;
+    var partitionSectors = (partitionByteSize + SectorSize - 1) / SectorSize;
+    sb.Append("\"_file_system\":{\"lcn0_offset\":0,\"reserved_sectors_byte_length\":0},");
+    sb.Append("\"_geometry\":{");
+    sb.Append("\"boot_sector_offset\":0,");
+    sb.Append("\"end\":").Append((startSector + Math.Max(partitionSectors, 1) - 1).ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
+    sb.Append("\"length\":").Append(partitionByteSize.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
+    sb.Append("\"start\":").Append(startSector.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    sb.Append("},");
     sb.Append("\"_header\":{");
     sb.Append("\"block_count\":").Append(blockCount.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
     sb.Append("\"block_size\":").Append(this.BlockSize.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',');
@@ -364,6 +410,12 @@ public sealed class MacriumWriter {
     sb.Append('}');
     return sb.ToString();
   }
+
+  private const int SectorSize = 512;
+
+  /// <summary>A GPT disk carries the "EFI PART" header signature in LBA 1; anything else is recorded as MBR, the schema's only other disk format.</summary>
+  private static bool IsGptDisk(ReadOnlySpan<byte> disk)
+    => disk.Length >= 2 * SectorSize && disk.Slice(SectorSize, 8).SequenceEqual("EFI PART"u8);
 
   /// <summary>Per-block index element exactly as the spec describes (struct DataBlockIndexElement: int64 file_position + uint8[16] md5_hash + uint32 block_length + uint16 file_number = 30 bytes packed).</summary>
   internal sealed class DataBlockIndexElement {

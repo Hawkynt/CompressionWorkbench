@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using Compression.Core.Streams;
 using Compression.Registry;
@@ -87,9 +88,8 @@ public class MacriumDetectionTests {
       BinaryPrimitives.WriteUInt32LittleEndian(lenBytes, (uint)payload.Length);
       ms.Write(lenBytes, 0, 4);
 
-      // Synthetic MD5 — reader records it but doesn't validate.
-      var hash = new byte[16];
-      for (var i = 0; i < 16; ++i) hash[i] = (byte)(payload.Length + i);
+      // Metadata headers hash the bytes as stored, including compressed data.
+      var hash = MD5.HashData(payload);
       ms.Write(hash, 0, 16);
 
       byte flags = 0;
@@ -269,6 +269,16 @@ public class MacriumDetectionTests {
     Assert.That(ini, Does.Contain("AES-CBC"));
     Assert.That(ini, Does.Contain("PBKDF2"));
     Assert.That(ini, Does.Contain("zstd"));
+  }
+
+  [TestCase("{\"_header\":{\"imageid\":\"0000000000000000\",\"split_file\":true,\"file_number\":0,\"backup_type\":\"full\"}}", "split-backup-set-requires-additional-files")]
+  [TestCase("{\"_header\":{\"imageid\":\"0000000000000000\",\"split_file\":false,\"file_number\":0,\"backup_type\":\"incremental\"}}", "incremental-or-differential-requires-parent-chain")]
+  public void ReflectX_DoesNotClaimSingleFileRestoreForIncompleteSets(string json, string expectedStatus) {
+    var image = BuildReflectXImage(jsonText: json);
+    using var ms = new MemoryStream(image);
+    using var reader = new MacriumReader(ms);
+    Assert.That(reader.SectorReconstructionAvailable, Is.False);
+    Assert.That(reader.SectorReconstructionStatus, Is.EqualTo(expectedStatus));
   }
 
   // ---- Legacy .mrimg Stage-0 fall-through --------------------------------

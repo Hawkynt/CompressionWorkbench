@@ -20053,7 +20053,7 @@ AES variant selector. The numeric value is the key length in bytes (truncation o
 
 #### `MacriumBlock`
 
-A single Macrium Reflect X metadata block, as parsed from the chain that starts at the offset stored in the file footer. On-disk layout per ``: Bytes 0..7: ASCII `block_name` (e.g. `"$JSON "`, `"$INDEX "`).Bytes 8..11: `uint32` little-endian payload length.Bytes 12..27: 16-byte MD5 hash of the (decompressed / decrypted) payload.Byte 28: flags — bit 0 = `last_block`, bit 1 = `compression`, bit 2 = `encryption`, bits 3..7 reserved.Bytes 29..31: padding for 32-byte header alignment.
+A single Macrium Reflect X metadata block, as parsed from the chain that starts at the offset stored in the file footer. On-disk layout per ``: Bytes 0..7: ASCII `block_name` (e.g. `"$JSON "`, `"$INDEX "`).Bytes 8..11: `uint32` little-endian payload length.Bytes 12..27: 16-byte MD5 hash of the on-disk payload bytes.Byte 28: flags — bit 0 = `last_block`, bit 1 = `compression`, bit 2 = `encryption`, bits 3..7 reserved.Bytes 29..31: padding for 32-byte header alignment.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -20063,7 +20063,7 @@ A single Macrium Reflect X metadata block, as parsed from the chain that starts 
 | `IsCompressed` | `bool IsCompressed { get; init; }` | True when bit 1 (`compression`) is set — payload is zstd-compressed. |
 | `IsEncrypted` | `bool IsEncrypted { get; init; }` | True when bit 2 (`encryption`) is set — payload is AES-CBC encrypted. |
 | `IsLast` | `bool IsLast { get; init; }` | True when bit 0 (`last_block`) is set; terminates the chain walk. |
-| `Md5Hash` | `byte[] Md5Hash { get; init; }` | 16-byte MD5 hash of the payload (decompressed / decrypted form, per spec). |
+| `Md5Hash` | `byte[] Md5Hash { get; init; }` | 16-byte MD5 hash of the payload bytes as stored in the file. |
 | `Name` | `string Name { get; init; }` | ASCII block name with trailing spaces stripped (e.g. `"$JSON"`, `"$INDEX"`, `"$AUXDATA"`). |
 | `PayloadLength` | `long PayloadLength { get; init; }` | Payload length in bytes, as declared in the block header. |
 | `PayloadOffset` | `long PayloadOffset { get; init; }` | Absolute byte offset of the block payload (`HeaderOffset` + 32). |
@@ -20104,7 +20104,7 @@ Represents a macrium entry.
 
 Descriptor for Macrium Reflect backup / disk-imaging containers from Paramount Software UK: `.mrimgx` / `.mrbakx` (Reflect X / v9+) — R/W via the MIT-licensed vendor spec ``. Footer parse + metadata block chain walk + `$JSON` decompression + `$INDEX` sector reconstruction (AES-CBC + zstd + PBKDF2-SHA256) for read; full container emit for create; rebuild-based `Add` / `Remove` / replace for in-place modify.`.mrimg` (legacy, Reflect v8.x and earlier) — Stage 0 detection-only. No vendor spec; only ccooper21's partial RE exists (covers decompression only). Legacy EULA also restricts reverse engineering of that product.What is surfaced for Reflect X (R/W):`metadata.ini` — parsed footer offset, block chain summary, R/W status.`metadata.json` — decompressed `$JSON` block when present and unencrypted (zstd-decoded).`block-NN.<name>.bin` — opaque payload for each metadata block (`$JSON`, `$AUXDATA`, `$TRACK0`, `$EPT`, `$BITMAP`, `$INDEX`) with original framing intact.`disk-image.raw` — sector-reconstructed disk image (when password supplied for encrypted containers).`macrium-image.bin` — raw image bytes for downstream tooling.R/W semantics: Macrium Reflect X is a disk-image format whose logical payload is a single contiguous sector stream — the same shape as VHD / VDI / VMDK / QCOW2. `Add` and `Remove` operate on the synthetic `disk-image.raw` entry (Add concatenates supplied input bytes onto the existing image and rebuilds the container; Add of an entry whose name matches an existing one replaces the disk payload; Remove of `disk-image.raw` empties the disk payload). The container is rebuilt from scratch on every modify — old block payloads are wiped because the new `$INDEX` walk references freshly-emitted ciphertext, so no forensic recovery of replaced blocks is possible from the resulting bytes (per `ModifyRebuilder` contract). Remaining limitations (still blockers for full Macrium feature parity):Delta / incremental / differential restores require resolving the parent chain across multiple files (single-file full backups round-trip end-to-end).Mountable VHDX output is not produced; the vendor ships a reference `img_to_vhdx.exe` for that workflow.Encrypted-image modify requires the same password that opened the image; we do NOT support password rotation as part of a modify (re-create with the new password instead).Detection note: the Reflect X marker (`"MACRIUM_FILE"`) lives in the file footer, not at offset 0. `MagicSignature` only supports forward offsets, so detection is extension-driven for both variants; the `MacriumReader` verifies the footer / offset-0 tag once the file is opened. Legacy `.mrimg` samples with the community-RE `"MR_BACKUP"` or `"MACX"` tag at offset 0 are still surfaced by the reader, but those tags are not authoritative magic. References: `https://github.com/macrium/mrimgx_file_layout` — MIT-licensed vendor spec for the Reflect X (.mrimgx/.mrbakx) container`https://www.macrium.com` — Paramount Software UK, the format vendor (Reflect knowledge base)ccooper21's community reverse-engineering of legacy `.mrimg` — decompression layer only; no full legacy spec exists
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -20121,6 +20121,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a fresh Reflect X (`.mrimgx`) container at `output` with the supplied inputs concatenated into a single synthetic disk image. `options` controls compression and encryption. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -20205,8 +20206,10 @@ Writes a valid Macrium Reflect X (`.mrimgx`) container from a flat disk-image pa
 | `MacriumWriter` | `MacriumWriter()` |  |
 | `DefaultBlockSize` | `const int DefaultBlockSize` | Default partition block size = 64 KB (matches Macrium's spec example). |
 | `AesType` | `MacriumAesType AesType { get; init; }` | AES variant for data block encryption. Honoured only when `EncryptDataBlocks` is true. |
+| `BackupFormat` | `string BackupFormat { get; init; }` | Backup payload kind recorded in root metadata. |
 | `BlockSize` | `int BlockSize { get; init; }` | The partition block size, in bytes. Always a multiple of 512. |
 | `CompressDataBlocks` | `bool CompressDataBlocks { get; init; }` | Optional zstd compression of data blocks (and metadata blocks). Default off for round-trip predictability. |
+| `CompressionLevel` | `int CompressionLevel { get; init; }` | Zstandard effort used for data and JSON metadata blocks (1–9). |
 | `DiskNumber` | `int DiskNumber { get; init; }` | Disk number to advertise in `$JSON.disks[0]._header.disk_number`. Default = 0. |
 | `EncryptDataBlocks` | `bool EncryptDataBlocks { get; init; }` | Optional AES-CBC encryption of data blocks. Default off. |
 | `ImageId` | `byte[] ImageId { get; init; }` | Image identifier (8 raw bytes => 16 hex chars in JSON). Random by default; explicit for round-trip tests. |

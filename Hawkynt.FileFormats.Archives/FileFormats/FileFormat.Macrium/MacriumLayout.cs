@@ -38,6 +38,11 @@ internal sealed class MacriumLayout {
   public int KeyIterations { get; init; } = MacriumCrypto.DefaultPbkdf2Iterations;
   public byte[]? ExpectedHmac { get; init; }
 
+  public int FileNumber { get; init; }
+  public bool IsSplitFile { get; init; }
+  public bool DeltaIndex { get; init; }
+  public string BackupType { get; init; } = "full";
+
   /// <summary>Absolute file offset where the disk-level metadata chain ($TRACK0/$EPT/$BITMAP/$INDEX) begins. 0 when the JSON doesn't surface it.</summary>
   public long IndexFilePosition { get; init; }
 
@@ -61,6 +66,10 @@ internal sealed class MacriumLayout {
       _ => MacriumAesType.Aes256,
     };
     var keyIter = TryGetInt(root, "_encryption", "key_iterations") ?? MacriumCrypto.DefaultPbkdf2Iterations;
+    var fileNumber = TryGetInt(root, "_header", "file_number") ?? 0;
+    var isSplitFile = TryGetBool(root, "_header", "split_file") ?? false;
+    var deltaIndex = TryGetBool(root, "_header", "delta_index") ?? false;
+    var backupType = TryGetString(root, "_header", "backup_type") ?? "full";
     var hmacHex = TryGetString(root, "_encryption", "hmac");
     byte[]? expectedHmac = null;
     if (encryptEnable && !string.IsNullOrEmpty(hmacHex)) {
@@ -104,6 +113,10 @@ internal sealed class MacriumLayout {
       AesType = aesType,
       KeyIterations = keyIter,
       ExpectedHmac = expectedHmac,
+      FileNumber = fileNumber,
+      IsSplitFile = isSplitFile,
+      DeltaIndex = deltaIndex,
+      BackupType = backupType,
       IndexFilePosition = indexFilePosition,
     };
   }

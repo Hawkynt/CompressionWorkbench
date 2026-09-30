@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using Compression.Core.Streams;
 using FileFormat.Zstd;
@@ -361,6 +362,16 @@ public sealed class MacriumReader : IDisposable {
       return;
     }
 
+    if (_layout.IsSplitFile || _layout.FileNumber > 0) {
+      this.SectorReconstructionStatus = "split-backup-set-requires-additional-files";
+      return;
+    }
+
+    if (_layout.DeltaIndex || !_layout.BackupType.Equals("full", StringComparison.OrdinalIgnoreCase)) {
+      this.SectorReconstructionStatus = "incremental-or-differential-requires-parent-chain";
+      return;
+    }
+
     var indexBlock = _blocks.FirstOrDefault(b => b.Name == "$INDEX");
     if (indexBlock is null) {
       this.SectorReconstructionStatus = "no-$INDEX-block";
@@ -389,49 +400,43 @@ public sealed class MacriumReader : IDisposable {
     }
 
     // Walk $INDEX.
-    List<MacriumWriter.DataBlockIndexElement> elements;
+    ParsedIndex index;
     try {
       var indexPayload = ReadBlockPayload(indexBlock); // never encrypted in our writer.
-      elements = DeserializeIndex(indexPayload);
+      index = DeserializeIndex(indexPayload);
     } catch {
       this.SectorReconstructionStatus = "$INDEX-parse-failed";
       return;
     }
 
     // Find $TRACK0 (uncompressed, never encrypted in our writer per spec convention).
-    byte[] track0 = [];
     var t0 = _blocks.FirstOrDefault(b => b.Name == "$TRACK0");
-    if (t0 is not null) {
-      try { track0 = ReadBlockPayload(t0); } catch { /* tolerate missing */ }
+    if (t0 is null) {
+      this.SectorReconstructionStatus = "no-$TRACK0-block";
+      return;
+    }
+    byte[] track0;
+    try { track0 = ReadBlockPayload(t0); }
+    catch {
+      this.SectorReconstructionStatus = "$TRACK0-parse-failed";
+      return;
     }
 
-    // Reconstruct partition payload.
-    using var partitionMs = new MemoryStream();
-    for (var i = 0; i < elements.Count; ++i) {
-      var element = elements[i];
-      if (element.FilePosition < 0
-          || element.BlockLength == 0
-          || element.FilePosition + element.BlockLength > _data.Length) {
-        this.SectorReconstructionStatus = $"index-element-{i}-out-of-range";
-        return;
-      }
-      var raw = _data.AsSpan((int)element.FilePosition, (int)element.BlockLength).ToArray();
-      try {
-        var working = raw;
-        if (_layout.IsEncrypted) {
-          var iv = MacriumCrypto.DeriveBlockIv(
-            derivedKey!, _layout.ImageId,
-            _layout.DiskNumber, _layout.PartitionNumber, i);
-          working = MacriumCrypto.DecryptBlock(working, aesKey!, iv);
-        }
-        if (_layout.IsZstd)
-          working = DecompressZstd(working);
-        partitionMs.Write(working, 0, working.Length);
-      } catch {
-        this.SectorReconstructionStatus = $"block-{i}-decode-failed";
-        return;
-      }
+    // A data-block file number refers to another member of a split backup set.
+    // Refuse to interpret its offset against this file's bytes.
+    var allElements = index.ReservedSectors.Concat(index.DataBlocks).ToArray();
+    var externalFile = allElements.FirstOrDefault(e => e.FileNumber != 0);
+    if (externalFile is not null) {
+      this.SectorReconstructionStatus = $"split-data-file-{externalFile.FileNumber}-requires-backup-set";
+      return;
     }
+
+    // Restore reserved sectors first, then ordinary partition blocks. Their IV
+    // block indices restart independently, as defined by Reflect's restore
+    // layout.
+    using var partitionMs = new MemoryStream();
+    if (!AppendIndexedBlocks(index.ReservedSectors, partitionMs, derivedKey, aesKey, "reserved")) return;
+    if (!AppendIndexedBlocks(index.DataBlocks, partitionMs, derivedKey, aesKey, "data")) return;
 
     // Truncate partition payload to its exact byte size per JSON
     // _cw_extra.partition_byte_size — vendor doesn't expose this; we
@@ -451,33 +456,94 @@ public sealed class MacriumReader : IDisposable {
     this.SectorReconstructionStatus = "ok";
   }
 
-  private static List<MacriumWriter.DataBlockIndexElement> DeserializeIndex(byte[] indexBytes) {
+  private bool AppendIndexedBlocks(
+      IReadOnlyList<MacriumWriter.DataBlockIndexElement> elements,
+      MemoryStream destination,
+      byte[]? derivedKey,
+      byte[]? aesKey,
+      string indexKind) {
+    for (var i = 0; i < elements.Count; ++i) {
+      var element = elements[i];
+      if (element.FilePosition < 0 || element.BlockLength == 0
+          || element.FilePosition > _data.LongLength - (long)element.BlockLength) {
+        this.SectorReconstructionStatus = $"{indexKind}-index-element-{i}-out-of-range";
+        return false;
+      }
+
+      try {
+        var raw = _data.AsSpan((int)element.FilePosition, (int)element.BlockLength);
+        var working = raw.ToArray();
+        if (_layout!.IsEncrypted) {
+          var iv = MacriumCrypto.DeriveBlockIv(
+            derivedKey!, _layout.ImageId,
+            _layout.DiskNumber, _layout.PartitionNumber, i);
+          working = MacriumCrypto.DecryptBlock(working, aesKey!, iv);
+        }
+        if (_layout.IsZstd)
+          working = DecompressZstd(working);
+        if (!CryptographicOperations.FixedTimeEquals(MD5.HashData(working), element.Md5Hash)) {
+          this.SectorReconstructionStatus = $"{indexKind}-block-{i}-checksum-mismatch";
+          return false;
+        }
+        destination.Write(working);
+      } catch {
+        this.SectorReconstructionStatus = $"{indexKind}-block-{i}-decode-failed";
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private sealed record ParsedIndex(
+    List<MacriumWriter.DataBlockIndexElement> ReservedSectors,
+    List<MacriumWriter.DataBlockIndexElement> DataBlocks);
+
+  private static ParsedIndex DeserializeIndex(byte[] indexBytes) {
     if (indexBytes.Length < 4)
       throw new InvalidDataException("$INDEX block too small.");
     var span = indexBytes.AsSpan();
-    var count = BinaryPrimitives.ReadUInt32LittleEndian(span[..4]);
-    var required = 4 + (long)count * 30;
-    if (required > indexBytes.Length)
-      throw new InvalidDataException("$INDEX block truncated.");
-    var list = new List<MacriumWriter.DataBlockIndexElement>((int)count);
-    var offset = 4;
+    var firstCount = BinaryPrimitives.ReadUInt32LittleEndian(span[..4]);
+    var secondCountOffset = 4L + firstCount * 30L;
+    if (secondCountOffset + 4 <= indexBytes.Length) {
+      var secondCount = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice((int)secondCountOffset, 4));
+      var exactLength = secondCountOffset + 4 + secondCount * 30L;
+      if (exactLength == indexBytes.Length) {
+        var reserved = ReadIndexElements(span, 4, firstCount);
+        var data = ReadIndexElements(span, checked((int)secondCountOffset + 4), secondCount);
+        return new ParsedIndex(reserved, data);
+      }
+    }
+
+    // Compatibility with early CompressionWorkbench images, whose $INDEX
+    // incorrectly stored only the ordinary data count and its array.
+    var legacyLength = 4L + firstCount * 30L;
+    if (legacyLength != indexBytes.Length)
+      throw new InvalidDataException("$INDEX block has inconsistent array counts or is truncated.");
+    return new ParsedIndex([], ReadIndexElements(span, 4, firstCount));
+  }
+
+  private static List<MacriumWriter.DataBlockIndexElement> ReadIndexElements(
+      ReadOnlySpan<byte> span,
+      int offset,
+      uint count) {
+    var elements = new List<MacriumWriter.DataBlockIndexElement>(checked((int)count));
     for (var i = 0; i < count; ++i) {
-      var filePos = BinaryPrimitives.ReadInt64LittleEndian(span.Slice(offset, 8));
+      var filePosition = BinaryPrimitives.ReadInt64LittleEndian(span.Slice(offset, 8));
       offset += 8;
       var md5 = span.Slice(offset, 16).ToArray();
       offset += 16;
-      var blockLen = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(offset, 4));
+      var blockLength = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(offset, 4));
       offset += 4;
-      var fileNum = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(offset, 2));
+      var fileNumber = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(offset, 2));
       offset += 2;
-      list.Add(new MacriumWriter.DataBlockIndexElement {
-        FilePosition = filePos,
+      elements.Add(new MacriumWriter.DataBlockIndexElement {
+        FilePosition = filePosition,
         Md5Hash = md5,
-        BlockLength = blockLen,
-        FileNumber = fileNum,
+        BlockLength = blockLength,
+        FileNumber = fileNumber,
       });
     }
-    return list;
+    return elements;
   }
 
   private static byte[] DecompressZstd(byte[] raw) {
@@ -493,6 +559,10 @@ public sealed class MacriumReader : IDisposable {
 
   private byte[] ReadBlockPayload(MacriumBlock block) {
     var raw = _data.AsSpan((int)block.PayloadOffset, (int)block.PayloadLength).ToArray();
+    if (!CryptographicOperations.FixedTimeEquals(MD5.HashData(raw), block.Md5Hash))
+      throw new InvalidDataException($"{block.Name} metadata block checksum mismatch.");
+    if (block.IsEncrypted)
+      throw new InvalidDataException($"{block.Name} metadata block is encrypted and cannot be decoded without its metadata key.");
     if (!block.IsCompressed)
       return raw;
 
