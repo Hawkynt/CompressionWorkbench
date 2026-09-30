@@ -84,13 +84,22 @@ public sealed class NbiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var data = ReadAll(stream);
-    var r = new NbiReader(data);
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    => ((IArchiveFormatOperations)this).ListSpan(ReadAll(stream), password);
+
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    => ((IArchiveFormatOperations)this).ExtractSpan(ReadAll(stream), outputDir, password, files);
+
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    var r = new NbiReader(archive);
     var entries = new List<ArchiveEntryInfo> {
-      new(0, "FULL.nbi", data.Length, data.Length, "Stored", false, false, null, Kind: "Track"),
+      new(0, "FULL.nbi", archive.Length, archive.Length, "Stored", false, false, null, Kind: "Track"),
       new(1, "metadata.ini", 0, 0, "Stored", false, false, null, Kind: "Tag"),
     };
+
     var idx = 2;
     if (r.IsValid && r.PayloadLength > 0)
       entries.Add(new ArchiveEntryInfo(idx++, "payload.bin", r.PayloadLength, r.PayloadLength,
@@ -101,26 +110,25 @@ public sealed class NbiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         entries.Add(new ArchiveEntryInfo(idx++, SegmentName(i), seg.ImageLength, seg.ImageLength,
           "Stored", false, false, null, Kind: "Track"));
       }
+
     return entries;
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var data = ReadAll(stream);
-    var r = new NbiReader(data);
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    var r = new NbiReader(archive);
 
-    if (Wants(files, "FULL.nbi"))
-      WriteFile(outputDir, "FULL.nbi", data);
+    if (Wants(files, "FULL.nbi")) {
+      using var target = CreateEntryFile(outputDir, "FULL.nbi");
+      target.Write(archive);
+    }
 
     if (Wants(files, "metadata.ini"))
-      WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(BuildMetadata(r, data.Length)));
+      WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(BuildMetadata(r, archive.Length)));
 
     if (r.IsValid && r.PayloadLength > 0 && Wants(files, "payload.bin")) {
-      var payload = new byte[r.PayloadLength];
-      Array.Copy(data, NbiReader.HeaderSectorSize, payload, 0, payload.Length);
-      WriteFile(outputDir, "payload.bin", payload);
+      using var target = CreateEntryFile(outputDir, "payload.bin");
+      target.Write(archive[NbiReader.HeaderSectorSize..]);
     }
 
     if (r.IsValid && r.SegmentsComplete)
@@ -129,9 +137,9 @@ public sealed class NbiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         var name = SegmentName(i);
         if (!Wants(files, name))
           continue;
-        var slice = new byte[seg.ImageLength];
-        Array.Copy(data, seg.DataOffset, slice, 0, slice.Length);
-        WriteFile(outputDir, name, slice);
+
+        using var target = CreateEntryFile(outputDir, name);
+        target.Write(archive.Slice(checked((int)seg.DataOffset), checked((int)seg.ImageLength)));
       }
   }
 

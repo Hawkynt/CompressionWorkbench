@@ -123,4 +123,88 @@ public class Ktx2Tests {
     var sig = desc.MagicSignatures[0].Bytes;
     Assert.That(sig.AsSpan().SequenceEqual(Ktx2Decomposer.Identifier), Is.True);
   }
+  private static string Metadata(byte[] file) {
+    var entry = Ktx2Decomposer.Decompose(file).Single(e => e.Name == "metadata.ini");
+    return Encoding.UTF8.GetString(entry.Data);
+  }
+
+  private static string[] Names(byte[] file) {
+    var desc = (IArchiveFormatOperations)new Ktx2FormatDescriptor();
+    return desc.ListSpan(file, null).Select(e => e.Name).ToArray();
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenDfdRangeWhoseEndWrapsUInt32_WhenListed_ThenDfdIsOmittedAndParseStaysComplete() {
+    var file = BuildSample(out _, out _);
+    // 0xFFFFFFF0 + 0x20 wraps to 0x10: inside the file if the sum is taken in 32 bits.
+    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(48), 0xFFFF_FFF0);
+    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(52), 0x20);
+
+    Assert.Multiple(() => {
+      Assert.That(Names(file), Has.None.EqualTo("dfd.bin"));
+      Assert.That(Names(file), Has.Member("levels/level_01.bin"));
+      Assert.That(Metadata(file), Does.Not.Contain("parse_status = partial"));
+    });
+  }
+
+  [Test, Category("Boundary")]
+  public void GivenLevelOneBytePastEndOfFile_WhenListed_ThenOnlyThatLevelIsOmitted() {
+    var file = BuildSample(out _, out var level1);
+    BinaryPrimitives.WriteUInt64LittleEndian(file.AsSpan(80 + 24 + 8), (ulong)level1.Length + 1);
+
+    Assert.Multiple(() => {
+      Assert.That(Names(file), Has.Member("levels/level_00.bin"));
+      Assert.That(Names(file), Has.None.EqualTo("levels/level_01.bin"));
+    });
+  }
+
+  [Test, Category("Boundary")]
+  public void GivenLevelEndingExactlyAtEndOfFile_WhenExtracted_ThenItIsByteIdentical() {
+    var file = BuildSample(out _, out var level1);
+
+    var entry = Ktx2Decomposer.Decompose(file).Single(e => e.Name == "levels/level_01.bin");
+
+    Assert.That(entry.Data, Is.EqualTo(level1));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void GivenLevelCountZero_WhenListed_ThenOneLevelIsRead() {
+    var file = BuildSample(out _, out _);
+    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(40), 0);
+
+    var names = Names(file);
+
+    Assert.Multiple(() => {
+      Assert.That(names, Has.Member("levels/level_00.bin"));
+      Assert.That(names, Has.None.EqualTo("levels/level_01.bin"));
+    });
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenLevelIndexLongerThanFile_WhenListed_ThenOnlyFullAndPartialMetadataRemain() {
+    var file = BuildSample(out _, out _);
+    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(40), 1000);
+
+    Assert.Multiple(() => {
+      Assert.That(Names(file), Is.EqualTo(new[] { "FULL.ktx2", "metadata.ini" }));
+      Assert.That(Metadata(file), Does.Contain("parse_status = partial"));
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenSample_WhenListedFromStreamAndSpan_ThenListingsAreIdentical() {
+    var file = BuildSample(out _, out _);
+    var desc = new Ktx2FormatDescriptor();
+    using var stream = new MemoryStream(file);
+
+    var fromStream = desc.List(stream, null);
+    var fromSpan = ((IArchiveFormatOperations)desc).ListSpan(file, null);
+    var fromOwning = Ktx2Decomposer.Decompose(file);
+
+    Assert.Multiple(() => {
+      Assert.That(fromSpan, Is.EqualTo(fromStream));
+      Assert.That(fromSpan.Select(e => (e.Name, e.OriginalSize)),
+        Is.EqualTo(fromOwning.Select(e => (e.Name, e.Data.LongLength))));
+    });
+  }
 }

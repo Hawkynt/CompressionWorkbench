@@ -77,21 +77,36 @@ public sealed class Ktx2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var file = ReadAll(stream);
-    var entries = Ktx2Decomposer.Decompose(file);
-    return entries.Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Data.LongLength, e.Data.LongLength, "stored", false, false, null, e.Kind)).ToList();
-  }
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    => ((IArchiveFormatOperations)this).ListSpan(ReadAll(stream), password);
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var file = ReadAll(stream);
-    foreach (var e in Ktx2Decomposer.Decompose(file)) {
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, e.Data);
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    => ((IArchiveFormatOperations)this).ExtractSpan(ReadAll(stream), outputDir, password, files);
+
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    var layout = Ktx2Decomposer.DecomposeLayout(archive);
+    return layout.Entries.Select((entry, index) => new ArchiveEntryInfo(
+      index, entry.Name, entry.Size, entry.Size, "stored",
+      false, false, null, entry.Kind)).ToList();
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    var layout = Ktx2Decomposer.DecomposeLayout(archive);
+    foreach (var entry in layout.Entries) {
+      if (files != null && !MatchesFilter(entry.Name, files))
+        continue;
+
+      if (entry.GeneratedData is { } generated) {
+        WriteFile(outputDir, entry.Name, generated);
+        continue;
+      }
+
+      using var target = CreateEntryFile(outputDir, entry.Name);
+      target.Write(archive.Slice(entry.Offset, entry.Length));
     }
   }
 
