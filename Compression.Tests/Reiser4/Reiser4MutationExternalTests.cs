@@ -122,4 +122,39 @@ public sealed class Reiser4MutationExternalTests {
       Assert.That(reader.Extract(reader.Entries.Single()), Is.EqualTo(replacement));
     });
   }
+
+  [Test, Category("HappyPath")]
+  public void MultiLevelNestedTree_RemainsConsistentAfterMetadataAndRebuildEdits() {
+    RequireReiser4Progs();
+    var writer = new Reiser4Writer { Label = "nested" };
+    for (var i = 0; i < 5_000; ++i)
+      writer.AddFile($"wide/file-{i:D5}.bin", i == 0 ? Payload(123, 20) : []);
+    writer.AddDirectory("empty/child");
+    using var image = new MemoryStream();
+    writer.Write(image);
+    this.AssertReiser4ProgsAccept(image.ToArray(), "wide", "empty");
+    Reiser4Reader.FileMetadata before;
+    using (var reader = new Reiser4Reader(image))
+      before = reader.Entries.Single(static entry => entry.Name == "wide/file-00000.bin").Metadata!;
+    var descriptor = new Reiser4FormatDescriptor();
+    descriptor.UpdateMetadata(image, "wide/file-00000.bin", before with {
+      Mode = 0x8180, UserId = 300, GroupId = 400,
+      ModifiedTime = 1234567, AccessedTime = 7654321, ChangedTime = 2345678,
+    });
+    descriptor.Add(image, [ArchiveInputInfo.InMemory("wide/added.bin", Payload(9_137, 21))]);
+    descriptor.Remove(image, ["empty"]);
+    descriptor.Defragment(image);
+    this.AssertReiser4ProgsAccept(image.ToArray(), "wide");
+    using var result = new Reiser4Reader(image);
+    var kept = result.Entries.Single(static entry => entry.Name == "wide/file-00000.bin");
+    Assert.Multiple(() => {
+      Assert.That(result.NativeTreeValid, Is.True);
+      Assert.That(kept.Metadata!.ObjectId, Is.EqualTo(before.ObjectId));
+      Assert.That(kept.Metadata.Mode, Is.EqualTo(0x8180));
+      Assert.That(kept.Metadata.UserId, Is.EqualTo(300));
+      Assert.That(kept.Metadata.GroupId, Is.EqualTo(400));
+      Assert.That(result.Extract(kept), Is.EqualTo(Payload(123, 20)));
+      Assert.That(result.Entries.Any(static entry => entry.Name == "empty" || entry.Name.StartsWith("empty/")), Is.False);
+    });
+  }
 }
