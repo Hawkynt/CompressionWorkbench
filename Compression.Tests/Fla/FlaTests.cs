@@ -161,7 +161,7 @@ public class FlaTests {
   [TestCase(null)]
   [TestCase("deflate")]
   [TestCase("stored")]
-  public void Create_GivenProjectWithoutMimetype_WhenWritten_ThenStoredMimetypeIsFirstMember(string? method) {
+  public void Create_GivenProjectWithoutMimetype_WhenWritten_ThenStoredMimetypeIsLastMemberLikeFlashWritesIt(string? method) {
     var inputs = new[] {
       ArchiveInputInfo.InMemory("LIBRARY/symbol.xml", "<symbol/>"u8),
       ArchiveInputInfo.InMemory("DOMDocument.xml", "<DOMDocument/>"u8),
@@ -171,30 +171,52 @@ public class FlaTests {
 
     output.Position = 0;
     using var zip = new ZipArchive(output, ZipArchiveMode.Read);
-    Assert.That(zip.Entries[0].FullName, Is.EqualTo("mimetype"));
-    Assert.That(zip.Entries[0].CompressedLength, Is.EqualTo(25), "mimetype must be stored");
-    using (var s = zip.Entries[0].Open())
+    Assert.That(zip.Entries.Select(e => e.FullName), Is.EqualTo(new[] { "LIBRARY/symbol.xml", "DOMDocument.xml", "mimetype" }));
+    var mimetype = zip.Entries[^1];
+    Assert.That(mimetype.CompressedLength, Is.EqualTo(25), "mimetype must be stored");
+    using (var s = mimetype.Open())
     using (var r = new StreamReader(s))
       Assert.That(r.ReadToEnd(), Is.EqualTo("application/vnd.adobe.xfl"));
-    // Raw local header: name 'mimetype' at offset 30, method 0 (stored).
+    // Raw local header of the last member: method 0 (stored), name 'mimetype', no extra field.
     var bytes = output.ToArray();
-    Assert.That(Encoding.ASCII.GetString(bytes, 30, 8), Is.EqualTo("mimetype"));
-    Assert.That(BitConverter.ToUInt16(bytes, 8), Is.Zero);
-    Assert.That(zip.Entries.Select(e => e.FullName), Is.EqualTo(new[] { "mimetype", "LIBRARY/symbol.xml", "DOMDocument.xml" }));
+    var header = bytes.AsSpan().LastIndexOf(new byte[] { 0x50, 0x4B, 0x03, 0x04 });
+    Assert.That(BitConverter.ToUInt16(bytes, header + 8), Is.Zero);
+    Assert.That(BitConverter.ToUInt16(bytes, header + 28), Is.Zero);
+    Assert.That(Encoding.ASCII.GetString(bytes, header + 30, 8), Is.EqualTo("mimetype"));
   }
 
   [Test]
   public void Create_GivenMatchingMimetypeInput_WhenWritten_ThenItIsNotDuplicated() {
     var inputs = new[] {
-      ArchiveInputInfo.InMemory("DOMDocument.xml", "<DOMDocument/>"u8),
       ArchiveInputInfo.InMemory("mimetype", "application/vnd.adobe.xfl"u8),
+      ArchiveInputInfo.InMemory("DOMDocument.xml", "<DOMDocument/>"u8),
     };
     using var output = new MemoryStream();
     new FlaFormatDescriptor().Create(output, inputs, new FormatCreateOptions());
     output.Position = 0;
     using var zip = new ZipArchive(output, ZipArchiveMode.Read);
-    Assert.That(zip.Entries.Count(e => e.FullName == "mimetype"), Is.EqualTo(1));
-    Assert.That(zip.Entries[0].FullName, Is.EqualTo("mimetype"));
+    Assert.That(zip.Entries.Select(e => e.FullName), Is.EqualTo(new[] { "DOMDocument.xml", "mimetype" }));
+  }
+
+  [Test]
+  public void Create_GivenFolderInputs_WhenWritten_ThenEachBecomesAStoredFolderEntry() {
+    var inputs = new[] {
+      new ArchiveInputInfo("LIBRARY", "LIBRARY", IsDirectory: true),
+      new ArchiveInputInfo("META-INF/", "META-INF/", IsDirectory: true),
+      ArchiveInputInfo.InMemory("DOMDocument.xml", "<DOMDocument/>"u8),
+    };
+    using var output = new MemoryStream();
+    new FlaFormatDescriptor().Create(output, inputs, new FormatCreateOptions());
+    output.Position = 0;
+    using var zip = new ZipArchive(output, ZipArchiveMode.Read);
+    Assert.That(zip.Entries.Select(e => e.FullName), Is.EqualTo(new[] { "LIBRARY/", "META-INF/", "DOMDocument.xml", "mimetype" }));
+    Assert.That(zip.Entries.Take(2).Select(e => e.Length), Is.All.Zero);
+  }
+
+  [Test]
+  public void Create_GivenOnlyAFolderNamedLikeTheDocument_WhenWritten_ThenRefused() {
+    var inputs = new[] { new ArchiveInputInfo("DOMDocument.xml", "DOMDocument.xml", IsDirectory: true) };
+    Assert.Throws<ArgumentException>(() => new FlaFormatDescriptor().Create(new MemoryStream(), inputs, new FormatCreateOptions()));
   }
 
   [TestCase("application/zip")]
