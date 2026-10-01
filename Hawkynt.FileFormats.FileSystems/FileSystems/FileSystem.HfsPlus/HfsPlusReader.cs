@@ -38,7 +38,11 @@ public sealed class HfsPlusReader : IDisposable {
   // HFS+ epoch: 1904-01-01T00:00:00Z.
   private static readonly DateTime HfsEpoch = new(1904, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-  /// <summary>Gets all file and directory entries found in the volume.</summary>
+  /// <summary>
+  /// The volume's files and folders as a POSIX system shows them: names with ':' where the
+  /// catalog stores '/', hard links carrying their shared data, and the metadata directories and
+  /// journal files left out.
+  /// </summary>
   public IReadOnlyList<HfsPlusEntry> Entries { get; }
 
   /// <summary>
@@ -80,15 +84,179 @@ public sealed class HfsPlusReader : IDisposable {
     _extentsStartBlock = BinaryPrimitives.ReadUInt32BigEndian(vh[208..]);
     _extentsBlockCount = BinaryPrimitives.ReadUInt32BigEndian(vh[212..]);
 
+    // TN1150: kHFSVolumeJournaledBit (bit 13 of attributes at +4) says journalInfoBlock (+12)
+    // names the block holding the journal info block.
+    var attributes = BinaryPrimitives.ReadUInt32BigEndian(vh[4..]);
+    _journalInfoBlock = (attributes & VolumeJournaledMask) != 0 ? BinaryPrimitives.ReadUInt32BigEndian(vh[12..]) : 0;
+
     // Parse catalog B-tree.
-    var entries = new List<HfsPlusEntry>();
-    ParseCatalog(entries);
-    Entries = entries;
+    var nodes = new List<CatalogNode>();
+    ParseCatalog(nodes);
+    (Entries, AllFiles) = Resolve(nodes);
+  }
+
+  /// <summary>
+  /// Every file record in the catalog as stored: hard links unresolved and the metadata
+  /// directories' files included. What a check of the whole volume's contents compares, and
+  /// what the layout map names.
+  /// </summary>
+  internal IReadOnlyList<HfsPlusEntry> AllFiles { get; }
+
+  private readonly uint _journalInfoBlock;
+  private const uint VolumeJournaledMask = 1u << 13;
+
+  // TN1150 "Hard Links": the metadata directory holding the indirect node files, a child of the
+  // root whose name starts with four U+0000; a hard link is a file record of type 'hlnk', creator
+  // 'hfs+', whose permissions.special (iNodeNum) names the indirect node file "iNode<n>".
+  private const string MetadataDirectoryName = "\0\0\0\0HFS+ Private Data";
+  // Mac OS X 10.5 keeps the targets of directory hard links in a second metadata directory
+  // (libfshfs documentation; xnu bsd/hfs HFSPLUS_DIR_METADATA_FOLDER).
+  private const string DirectoryMetadataDirectoryName = ".HFS+ Private Directory Data\r";
+  private const uint HardLinkFileType = 0x686C6E6B; // 'hlnk'
+  private const uint HfsPlusCreator = 0x6866732B;   // 'hfs+'
+  private const string IndirectNodePrefix = "iNode";
+  private const uint RootFolderCnid = 2;
+
+  /// <summary>One catalog leaf record of a folder or a file, as stored.</summary>
+  private sealed record CatalogNode(uint Parent, string Name, bool IsFolder, uint Cnid, DateTime? Modified) {
+    public uint FileType { get; init; }
+    public uint Creator { get; init; }
+    public uint Special { get; init; }
+    public long Size { get; init; }
+    public uint FirstBlock { get; init; }
+    public uint BlockCount { get; init; }
+    public IReadOnlyList<(uint StartBlock, uint BlockCount)> Extents { get; init; } = [];
+    public bool IsSymlink { get; init; }
+    public string? LinkTarget { get; init; }
+  }
+
+  /// <summary>
+  /// Builds the POSIX view of the catalog: paths from folder records whatever order they arrive
+  /// in, hard links carrying their indirect node file's data, and the volume's own bookkeeping
+  /// (metadata directories, journal files) left out — the files a hard link shares are reached
+  /// through the link.
+  /// </summary>
+  private (List<HfsPlusEntry> Visible, List<HfsPlusEntry> AllFiles) Resolve(List<CatalogNode> nodes) {
+    var folders = new Dictionary<uint, CatalogNode>();
+    foreach (var node in nodes.Where(static n => n.IsFolder))
+      folders[node.Cnid] = node;
+
+    // The volume root folder (parent CNID 1) carries the VOLUME NAME as its catalog name, but
+    // anchors paths at the empty root — its children resolve to bare paths ("docs/guide.txt").
+    var paths = new Dictionary<uint, string> { [RootFolderCnid] = "" };
+    foreach (var node in folders.Values.Where(static n => n.Parent == 1))
+      paths[node.Cnid] = "";
+
+    string PathOf(uint folder) {
+      if (paths.TryGetValue(folder, out var known)) return known;
+      // Walk up to a folder whose path is known; an unknown or cyclic parent anchors at the root.
+      var chain = new List<CatalogNode>();
+      var seen = new HashSet<uint>();
+      var at = folder;
+      while (!paths.ContainsKey(at) && folders.TryGetValue(at, out var f) && seen.Add(at)) {
+        chain.Add(f);
+        at = f.Parent;
+      }
+      var path = paths.GetValueOrDefault(at, "");
+      for (var i = chain.Count - 1; i >= 0; --i) {
+        var name = HfsPlusName.FromCatalog(chain[i].Name);
+        path = path.Length > 0 ? path + "/" + name : name;
+        paths[chain[i].Cnid] = path;
+      }
+      return paths.GetValueOrDefault(folder, "");
+    }
+
+    string FullPathOf(CatalogNode node) {
+      var parent = PathOf(node.Parent);
+      var name = HfsPlusName.FromCatalog(node.Name);
+      return parent.Length > 0 ? parent + "/" + name : name;
+    }
+
+    uint? RootChild(string name) => folders.Values.FirstOrDefault(n => n.Parent == RootFolderCnid && n.Name == name)?.Cnid;
+    var fileMetadata = RootChild(MetadataDirectoryName);
+    var directoryMetadata = RootChild(DirectoryMetadataDirectoryName);
+    // Directory hard links are not resolved, so a directory metadata folder that holds
+    // anything stays visible: hiding it would hide the only path to those files.
+    if (directoryMetadata is { } dm && nodes.Any(n => n.Parent == dm))
+      directoryMetadata = null;
+
+    bool IsHiddenFolder(uint cnid) => cnid == fileMetadata || cnid == directoryMetadata;
+    bool IsInsideHidden(uint parent) {
+      var seen = new HashSet<uint>();
+      for (var at = parent; seen.Add(at) && folders.TryGetValue(at, out var f); at = f.Parent)
+        if (IsHiddenFolder(at)) return true;
+      return false;
+    }
+
+    var journalFiles = JournalFileIds(nodes);
+    var indirectNodes = new Dictionary<string, CatalogNode>(StringComparer.Ordinal);
+    if (fileMetadata is { } fm)
+      foreach (var node in nodes.Where(n => !n.IsFolder && n.Parent == fm))
+        indirectNodes.TryAdd(node.Name, node);
+
+    var visible = new List<HfsPlusEntry>();
+    var all = new List<HfsPlusEntry>();
+    foreach (var node in nodes) {
+      if (node.IsFolder && node.Parent == 1) continue;
+      var fullPath = FullPathOf(node);
+      var hidden = IsInsideHidden(node.Parent) || (node.IsFolder ? IsHiddenFolder(node.Cnid) : journalFiles.Contains(node.Cnid));
+      if (node.IsFolder) {
+        if (!hidden)
+          visible.Add(new HfsPlusEntry {
+            Name = HfsPlusName.FromCatalog(node.Name), FullPath = fullPath, IsDirectory = true,
+            Cnid = node.Cnid, LastModified = node.Modified,
+          });
+        continue;
+      }
+
+      all.Add(ToEntry(node, node, fullPath));
+      if (hidden) continue;
+      var data = node.FileType == HardLinkFileType && node.Creator == HfsPlusCreator
+                 && indirectNodes.TryGetValue(IndirectNodePrefix + node.Special.ToString(System.Globalization.CultureInfo.InvariantCulture), out var target)
+        ? target
+        : node;
+      visible.Add(ToEntry(node, data, fullPath));
+    }
+    return (visible, all);
+  }
+
+  /// <summary>The entry named by <paramref name="name"/>'s record whose bytes are <paramref name="data"/>'s.</summary>
+  private static HfsPlusEntry ToEntry(CatalogNode name, CatalogNode data, string fullPath) => new() {
+    Name = HfsPlusName.FromCatalog(name.Name),
+    FullPath = fullPath,
+    Size = data.Size,
+    IsSymlink = data.IsSymlink,
+    LinkTarget = data.LinkTarget,
+    Cnid = data.Cnid,
+    LastModified = data.Modified,
+    FirstBlock = data.FirstBlock,
+    BlockCount = data.BlockCount,
+    Extents = data.Extents,
+  };
+
+  /// <summary>
+  /// The CNIDs of the journal's two files, which TN1150 puts in the root folder as
+  /// ".journal_info_block" (at the volume header's journalInfoBlock) and ".journal" (at the
+  /// offset that block records: flags u32, device_signature[8] u32, offset u64, size u64).
+  /// A file merely named like them, on a volume without a journal, stays visible.
+  /// </summary>
+  private HashSet<uint> JournalFileIds(List<CatalogNode> nodes) {
+    var ids = new HashSet<uint>();
+    if (_journalInfoBlock == 0) return ids;
+    var infoOffset = (long)_journalInfoBlock * _blockSize;
+    long journalOffset = -1;
+    if (infoOffset + 52 <= _data.Length)
+      journalOffset = (long)BinaryPrimitives.ReadUInt64BigEndian(_data.Read(infoOffset + 36, 8));
+    foreach (var node in nodes.Where(static n => !n.IsFolder && n.Parent == RootFolderCnid)) {
+      if (node.Name == ".journal_info_block" && node.FirstBlock == _journalInfoBlock) ids.Add(node.Cnid);
+      else if (node.Name == ".journal" && journalOffset > 0 && (long)node.FirstBlock * _blockSize == journalOffset) ids.Add(node.Cnid);
+    }
+    return ids;
   }
 
   // ── Catalog B-tree parsing ──────────────────────────────────────────────
 
-  private void ParseCatalog(List<HfsPlusEntry> entries) {
+  private void ParseCatalog(List<CatalogNode> nodes) {
     if (_catalogBlockCount == 0 || _catalogStartBlock == 0)
       return;
 
@@ -126,16 +294,13 @@ public sealed class HfsPlusReader : IDisposable {
 
     if (nodeSize == 0) return;
 
-    // Build a CNID-to-path map for directory resolution.
-    // Root folder CNID = 2.
-    var dirPaths = new Dictionary<uint, string> { [2] = "" };
-
     // Walk the whole leaf chain. Catalogs that outgrow a single leaf node grow
     // index nodes above several leaves, but every record still lives on a leaf
     // and the leaves are doubly linked (fLink/bLink). Starting at firstLeafNode
     // and following fLink therefore visits every record without descending the
-    // index level — the records arrive in catalog-key order, so a single
-    // forward pass resolves each folder before the files that live inside it.
+    // index level. Paths are resolved once every record is in (see Resolve):
+    // key order puts a folder's children after it only when its CNID is the
+    // smaller, which a moved folder's need not be.
     var currentNode = firstLeafNode;
     var visited = new HashSet<uint>();
 
@@ -190,10 +355,10 @@ public sealed class HfsPlusReader : IDisposable {
 
         switch (recordType) {
           case 1: // Folder record.
-            ParseFolderRecord(nd, dataOffset, parentCnid, name, dirPaths, entries);
+            ParseFolderRecord(nd, dataOffset, parentCnid, name, nodes);
             break;
           case 2: // File record.
-            ParseFileRecord(nd, dataOffset, parentCnid, name, dirPaths, entries);
+            ParseFileRecord(nd, dataOffset, parentCnid, name, nodes);
             break;
           // 3 = folder thread, 4 = file thread — skip.
         }
@@ -205,7 +370,7 @@ public sealed class HfsPlusReader : IDisposable {
   }
 
   private static void ParseFolderRecord(ReadOnlySpan<byte> nd, int dataOffset, uint parentCnid,
-      string name, Dictionary<uint, string> dirPaths, List<HfsPlusEntry> entries) {
+      string name, List<CatalogNode> nodes) {
     // Folder record layout:
     // offset 0: recordType (int16 BE) = 1
     // offset 2: flags (uint16 BE)
@@ -219,27 +384,7 @@ public sealed class HfsPlusReader : IDisposable {
     var modDateRaw = BinaryPrimitives.ReadUInt32BigEndian(nd[(dataOffset + 16)..]);
     var modDate = modDateRaw > 0 ? HfsEpoch.AddSeconds(modDateRaw) : (DateTime?)null;
 
-    // The volume root folder (parent CNID 1) carries the VOLUME NAME as its
-    // catalog name, but it anchors paths at the empty root — its children must
-    // resolve to bare paths ("docs/guide.txt"), not "<volume>/docs/guide.txt".
-    if (parentCnid == 1) {
-      dirPaths[cnid] = "";
-      return;
-    }
-
-    var parentPath = dirPaths.GetValueOrDefault(parentCnid, "");
-    var fullPath = parentPath.Length > 0 ? parentPath + "/" + name : name;
-
-    dirPaths[cnid] = fullPath;
-
-    entries.Add(new HfsPlusEntry {
-      Name = name,
-      FullPath = fullPath,
-      Size = 0,
-      IsDirectory = true,
-      Cnid = cnid,
-      LastModified = modDate,
-    });
+    nodes.Add(new CatalogNode(parentCnid, name, IsFolder: true, cnid, modDate));
   }
 
   // Finder fdType for a HFS+ symbolic link: 'slnk' (the link's target path lives
@@ -249,7 +394,7 @@ public sealed class HfsPlusReader : IDisposable {
   private const uint SymlinkFileType = 0x736C6E6B; // 'slnk'
 
   private void ParseFileRecord(ReadOnlySpan<byte> nd, int dataOffset, uint parentCnid,
-      string name, Dictionary<uint, string> dirPaths, List<HfsPlusEntry> entries) {
+      string name, List<CatalogNode> nodes) {
     // TN1150 HFSPlusCatalogFile (248 bytes):
     //   offset 0:   recordType (int16 BE) = 2 (kHFSPlusFileRecord)
     //   offset 2:   flags (uint16 BE)
@@ -279,6 +424,10 @@ public sealed class HfsPlusReader : IDisposable {
 
     // userInfo (FInfo) sits at record offset 48: fdType (u32 BE) then fdCreator.
     var fileType = BinaryPrimitives.ReadUInt32BigEndian(nd[(dataOffset + 48)..]);
+    var creator = BinaryPrimitives.ReadUInt32BigEndian(nd[(dataOffset + 52)..]);
+    // permissions (HFSPlusBSDInfo) at 32: ownerID, groupID, adminFlags, ownerFlags, fileMode,
+    // then special (u32) at 44 — the iNodeNum of a hard link.
+    var special = BinaryPrimitives.ReadUInt32BigEndian(nd[(dataOffset + 44)..]);
     var isSymlink = fileType == SymlinkFileType;
 
     const int dataForkOffset = 88;
@@ -301,22 +450,17 @@ public sealed class HfsPlusReader : IDisposable {
       foreach (var (s1, c1, _) in OverflowExtents(cnid).Where(e => e.FileStart >= covered).OrderBy(e => e.FileStart))
         extents.Add((s1, c1));
 
-    var parentPath = dirPaths.GetValueOrDefault(parentCnid, "");
-    var fullPath = parentPath.Length > 0 ? parentPath + "/" + name : name;
-
     string? linkTarget = null;
     if (isSymlink)
       linkTarget = ReadForkText(startBlock, logicalSize);
 
-    entries.Add(new HfsPlusEntry {
-      Name = name,
-      FullPath = fullPath,
+    nodes.Add(new CatalogNode(parentCnid, name, IsFolder: false, cnid, modDate) {
+      FileType = fileType,
+      Creator = creator,
+      Special = special,
       Size = logicalSize,
-      IsDirectory = false,
       IsSymlink = isSymlink,
       LinkTarget = linkTarget,
-      Cnid = cnid,
-      LastModified = modDate,
       FirstBlock = startBlock,
       BlockCount = blockCount,
       Extents = extents,

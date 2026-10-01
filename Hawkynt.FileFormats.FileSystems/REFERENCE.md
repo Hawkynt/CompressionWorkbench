@@ -7841,7 +7841,7 @@ In-place HFS+ modifier — performs random-access mutation of an existing HFS+ i
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AddFile` | `static void AddFile(Stream image, string name, byte[] data)` | Adds (or replaces by name) a file. If the catalog leaf cannot fit the new record, falls back to a full rebuild so the call always succeeds. |
-| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file. Returns true if it was present and removed, false if no such entry exists. |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file. Returns true if it was present and removed, false if no such entry exists. `name` is the POSIX name, with ':' where the catalog stores '/'. A hard link is refused: its indirect node file's link count would be left counting it. |
 
 #### `HfsPlusReader`
 
@@ -7852,7 +7852,7 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `HfsPlusReader` | `HfsPlusReader(Stream stream, bool leaveOpen = false)` | Initializes a new `HfsPlusReader` and parses the HFS+ volume. |
-| `Entries` | `IReadOnlyList<HfsPlusEntry> Entries { get; }` | Gets all file and directory entries found in the volume. |
+| `Entries` | `IReadOnlyList<HfsPlusEntry> Entries { get; }` | The volume's files and folders as a POSIX system shows them: names with ':' where the catalog stores '/', hard links carrying their shared data, and the metadata directories and journal files left out. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(HfsPlusEntry entry)` | Extracts the data fork content of the specified file entry. |
 

@@ -77,9 +77,8 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
         image.Position = 0;
         using var reader = new HfsPlusReader(image, leaveOpen: true);
         var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
-        foreach (var entry in reader.Entries)
-          if (!entry.IsDirectory)
-            sizeMap[entry.FullPath] = entry.Size;
+        foreach (var entry in reader.AllFiles)
+          sizeMap[entry.FullPath] = entry.Size;
         fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
       } catch {
         fileSizeLookup = null;
@@ -373,7 +372,7 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
     stream.Position = 0;
     var reader = new HfsPlusReader(stream, leaveOpen: true);
-    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+    return reader.AllFiles.Select(reader.Extract).ToList();
   }
 
   /// <summary>

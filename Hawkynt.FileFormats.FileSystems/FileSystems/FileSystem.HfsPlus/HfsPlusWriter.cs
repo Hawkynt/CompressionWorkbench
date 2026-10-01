@@ -575,7 +575,7 @@ public sealed class HfsPlusWriter {
 
       var slash = path.LastIndexOf('/');
       var parentPath = slash < 0 ? "" : path[..slash];
-      var leaf = slash < 0 ? path : path[(slash + 1)..];
+      var leaf = HfsPlusName.ToCatalog(slash < 0 ? path : path[(slash + 1)..]);
       var parentCnid = EnsureFolder(parentPath);
 
       var cnid = localNextCnid++;
@@ -610,7 +610,7 @@ public sealed class HfsPlusWriter {
       var normalized = rawName.Replace('\\', '/').Trim('/');
       var slash = normalized.LastIndexOf('/');
       var parentPath = slash < 0 ? "" : normalized[..slash];
-      var leafName = slash < 0 ? normalized : normalized[(slash + 1)..];
+      var leafName = HfsPlusName.ToCatalog(slash < 0 ? normalized : normalized[(slash + 1)..]);
       var parentCnid = folderCnids[parentPath];
       var effLen = streamingSize ?? (long)data.Length;
       var blockCount = (uint)((effLen + blockSize - 1) / blockSize);

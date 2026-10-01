@@ -193,7 +193,7 @@ public static class HfsPlusExtentMap {
         var nameByteLen = nameLength * 2;
         var name = "";
         if (nameLength > 0 && recOffset + 8 + nameByteLen <= nodeSize) {
-          name = Encoding.BigEndianUnicode.GetString(nd, recOffset + 8, nameByteLen);
+          name = HfsPlusName.FromCatalog(Encoding.BigEndianUnicode.GetString(nd, recOffset + 8, nameByteLen));
         }
         var dataOffset = recOffset + 2 + keyLength;
         if ((dataOffset & 1) != 0) dataOffset++;
