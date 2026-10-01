@@ -24,6 +24,8 @@ bld/
 [Oo]bj/
 bin
 obj
+# An XFL project keeps its media data in a 'bin' folder; the FLA reference vectors need theirs.
+!Compression.Tests/Fla/ReferenceVectors/*/bin/
 [Ll]og/
 [Ll]ogs/
 
