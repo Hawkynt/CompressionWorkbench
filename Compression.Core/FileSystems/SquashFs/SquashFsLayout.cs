@@ -176,18 +176,17 @@ internal static class SquashFsLayout {
     return padded;
   }
 
+  // Both directions use this codebase's own zlib. The platform's zlib packs the same block to a
+  // different length on each operating system, so whether a re-packed block fit - and with it
+  // whether defragmenting worked at all - depended on where it ran.
   private static byte[] InflateZlib(byte[] data) {
-    using var input = new MemoryStream(data);
-    using var output = new MemoryStream();
-    using (var stream = new System.IO.Compression.ZLibStream(input, System.IO.Compression.CompressionMode.Decompress, leaveOpen: true))
-      stream.CopyTo(output);
-    return output.ToArray();
+    // The block may be padded past its trailer (see Repack), so the deflate stream is read up to
+    // its own final block rather than to the end of the buffer.
+    if (data.Length < 2 || (data[0] * 256 + data[1]) % 31 != 0 || (data[0] & 0x0F) != 8)
+      throw new InvalidDataException("SquashFS metadata block is not zlib.");
+    return Compression.Core.Deflate.DeflateDecompressor.Decompress(data.AsSpan(2));
   }
 
-  private static byte[] DeflateZlib(byte[] data) {
-    using var output = new MemoryStream();
-    using (var stream = new System.IO.Compression.ZLibStream(output, System.IO.Compression.CompressionLevel.SmallestSize, leaveOpen: true))
-      stream.Write(data, 0, data.Length);
-    return output.ToArray();
-  }
+  private static byte[] DeflateZlib(byte[] data)
+    => global::FileFormat.Zlib.ZlibStream.Compress(data, Compression.Core.Deflate.DeflateCompressionLevel.Maximum);
 }
