@@ -4,12 +4,9 @@ using Compression.Lib;
 namespace Compression.Tests.Operations;
 
 /// <summary>
-/// Verifies the composite <c>compact</c> verb (defrag → optimize → shrink) and
-/// its <c>--minimal</c> geometry rebuild: contents are preserved byte-for-byte,
-/// the standard pass never grows the container, and the minimal pass on a fixed
-/// 1.44&#160;MB FAT floppy collapses the image well below the standard pass by
-/// re-creating it at minimal geometry (auto-fit size, 512&#160;B clusters,
-/// 16-entry root).
+/// Verifies the composite <c>compact</c> verb (defragment extents → compress → shrink):
+/// contents are preserved byte-for-byte, the pass never grows the container, and the
+/// former minimal-geometry rebuild is refused rather than run.
 /// </summary>
 [TestFixture]
 public class CompactOperationTests {
@@ -76,33 +73,20 @@ public class CompactOperationTests {
     Assert.That(got["README.TXT"], Is.EqualTo(payload), "file content must survive compaction byte-for-byte");
   }
 
-  [Test]
-  public void Compact_Minimal_OnFloppy_ShrinksFarBelowStandard_AndKeepsContents() {
-    var payload = new byte[4096];
-    for (var i = 0; i < payload.Length; i++) payload[i] = (byte)(i * 7);
+  /// <summary>
+  /// The minimal-geometry rebuild re-created the container and kept only names and bytes;
+  /// it is refused now, before anything is touched. Geometry is reconfigure's business.
+  /// </summary>
+  [Test, Category("Exception")]
+  public void Compact_Minimal_IsRefusedAndTheImageIsUntouched() {
+    var payload = new byte[3000];
+    for (var i = 0; i < payload.Length; i++) payload[i] = (byte)(i * 7 + 3);
+    var img = CreateFatImage("1.44 MB (3.5\" HD)", ("DATA.BIN", payload));
+    var original = File.ReadAllBytes(img);
 
-    // Two identical 1.44 MB floppies with the same small payload.
-    var stdImg = CreateFatImage("1.44 MB (3.5\" HD)", ("DATA.BIN", payload));
-    var minImg = CreateFatImage("1.44 MB (3.5\" HD)", ("DATA.BIN", payload));
-    var floppySize = new FileInfo(stdImg).Length; // ~1.44 MB
-
-    var stdResult = CompactOperation.Compact(stdImg, new CompactOperation.CompactOptions { Minimal = false });
-    var minResult = CompactOperation.Compact(minImg, new CompactOperation.CompactOptions { Minimal = true });
-
-    Assert.Multiple(() => {
-      Assert.That(minResult.Minimal, Is.True);
-      Assert.That(minResult.NewSize, Is.LessThan(floppySize), "minimal must shrink the fixed floppy");
-      Assert.That(minResult.NewSize, Is.LessThan(stdResult.NewSize),
-        "minimal-geometry rebuild must beat the standard (geometry-preserving) compact");
-      // Tight FAT12 geometry: a 4 KB payload should land well under 32 KB — the
-      // image is essentially [reserved + 2 small FATs + 16-entry root + data].
-      Assert.That(minResult.NewSize, Is.LessThan(32 * 1024),
-        "minimal FAT geometry must be a few KB, not the writer's default headroom");
-    });
-
-    // Contents survive the geometry rewrite, and the result is still a valid FAT.
-    var got = ReadAll(minImg);
-    Assert.That(got["DATA.BIN"], Is.EqualTo(payload));
+    Assert.That(() => CompactOperation.Compact(img, new CompactOperation.CompactOptions { Minimal = true }),
+      Throws.TypeOf<NotSupportedException>().With.Message.Contains("reconfigure"));
+    Assert.That(File.ReadAllBytes(img), Is.EqualTo(original));
   }
 
   [Test]

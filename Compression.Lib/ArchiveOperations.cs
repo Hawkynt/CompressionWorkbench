@@ -759,118 +759,26 @@ public static class ArchiveOperations {
   // ── Optimize ──────────────────────────────────────────────────────
 
   /// <summary>
-  /// Optimizes an archive by re-encoding with the best available encoder
-  /// while keeping the same format. Uses Zopfli (level Maximum) for Deflate,
-  /// Best for LZMA/LZX/etc. The output is fully compatible with standard decoders.
+  /// Re-encodes a file with the best compression its format offers, keeping the format and
+  /// everything else it carries — the <c>compress</c> maintenance operation
+  /// (<see cref="MaintenanceOperations.Compress"/>), kept under its old name for callers of it.
   /// </summary>
   /// <remarks>
-  /// Fail-safe: the output is staged to a sibling <c>.tmp</c> file, flushed
-  /// to disk, then atomically renamed over <paramref name="outputPath"/>. A
-  /// crash during recompression never leaves a partial archive in place.
+  /// Formats that cannot re-encode losslessly refuse with <see cref="NotSupportedException"/>
+  /// instead of being copied through; formats whose maintenance is canonicalization or
+  /// repacking have their own operations (<see cref="MaintenanceOperations.Canonicalize"/>,
+  /// <see cref="MaintenanceOperations.Repack"/>). When nothing smaller verifies, the output is
+  /// the original bytes.
   /// </remarks>
-  /// <returns>(originalSize, optimizedSize, entriesOptimized)</returns>
+  /// <returns>(originalSize, optimizedSize, entriesOptimized) — the last is 1 for a single stream,
+  /// the number of files for a container, and 0 when the original was kept.</returns>
   public static (long OriginalSize, long OptimizedSize, int EntriesOptimized) Optimize(
       string inputPath, string outputPath, string? password) {
-    var format = FormatDetector.Detect(inputPath);
-    var originalSize = new FileInfo(inputPath).Length;
-    var entries = 0;
-
-    // ── ZIP: re-encode each Deflate entry with Zopfli ────────────────
-    if (format == F.Zip) {
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => entries = OptimizeZip(inputPath, outFs, password));
-      return (originalSize, new FileInfo(outputPath).Length, entries);
-    }
-
-    // ── Gzip: re-encode Deflate with Maximum level ───────────────────
-    if (format == F.Gzip) {
-      var data = DecompressFile(inputPath, F.Gzip);
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-        using var gs = new FileFormat.Gzip.GzipStream(outFs,
-          Compression.Core.Streams.CompressionStreamMode.Compress,
-          Compression.Core.Deflate.DeflateCompressionLevel.Maximum,
-          leaveOpen: true);
-        gs.Write(data);
-      });
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── Zlib: re-encode Deflate with Maximum level ───────────────────
-    if (format == F.Zlib) {
-      var data = File.ReadAllBytes(inputPath);
-      var decompressed = FileFormat.Zlib.ZlibStream.Decompress(data.AsSpan());
-      var recompressed = FileFormat.Zlib.ZlibStream.Compress(decompressed.AsSpan(),
-        Compression.Core.Deflate.DeflateCompressionLevel.Maximum);
-      AtomicFileWriter.WriteAllBytesAtomic(outputPath, recompressed);
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── MacBinary: canonicalize the wrapper without dropping Mac-specific payloads ──
-    if (format == F.MacBinary) {
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-        using var inFs = File.OpenRead(inputPath);
-        FileFormat.MacBinary.MacBinaryOptimizer.Optimize(inFs, outFs);
-      });
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── Compound tar: re-encode outer compression with best level ────
-    var comp = FormatDetector.GetTarCompression(format);
-    if (comp.HasValue) {
-      // Decompress to raw tar, recompress with best settings
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-        using var inFs = File.OpenRead(inputPath);
-        using var rawTar = new MemoryStream();
-        DecompressStreamPair(inFs, rawTar, comp.Value);
-        rawTar.Position = 0;
-        CompressStreamPairOptimal(rawTar, outFs, comp.Value);
-      });
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── Other stream formats: decompress + recompress with best ──────
-    if (FormatDetector.IsStreamFormat(format)) {
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-        using var inFs = File.OpenRead(inputPath);
-        using var raw = new MemoryStream();
-        DecompressStreamPair(inFs, raw, format);
-        raw.Position = 0;
-        CompressStreamPairOptimal(raw, outFs, format);
-      });
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── Unsupported: fall back to copy ───────────────────────────────
-    // Use temp+rename so a crash mid-copy doesn't leave a truncated target.
-    AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-      using var inFs = File.OpenRead(inputPath);
-      inFs.CopyTo(outFs);
-    });
-    return (originalSize, originalSize, 0);
-  }
-
-  private static int OptimizeZip(string inputPath, Stream outFs, string? password) {
-    using var inFs = File.OpenRead(inputPath);
-    var r = new FileFormat.Zip.ZipReader(inFs, leaveOpen: true, password: password);
-    var w = new FileFormat.Zip.ZipWriter(outFs, leaveOpen: true,
-      compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Maximum,
-      password: password);
-
-    var optimized = 0;
-    foreach (var entry in r.Entries) {
-      if (entry.IsDirectory) {
-        w.AddDirectory(entry.FileName, entry.LastModified);
-        continue;
-      }
-
-      // For Deflate entries: decompress and re-encode with Zopfli (Maximum)
-      // For other methods: decompress and re-encode with Deflate Maximum
-      var data = r.ExtractEntry(entry);
-      w.AddEntry(entry.FileName, data, FileFormat.Zip.ZipCompressionMethod.Deflate, entry.LastModified);
-      ++optimized;
-    }
-
-    w.Finish();
-    return optimized;
+    var result = MaintenanceOperations.Compress(inputPath, outputPath, password);
+    if (!result.Changed) return (result.OriginalSize, result.NewSize, 0);
+    var format = FormatDetector.Detect(outputPath);
+    var entries = FormatDetector.IsStreamFormat(format) ? 1 : List(outputPath, password).Count(e => !e.IsDirectory);
+    return (result.OriginalSize, result.NewSize, entries);
   }
 
   // ── Stream compression dispatch (registry-only) ─────────────────
