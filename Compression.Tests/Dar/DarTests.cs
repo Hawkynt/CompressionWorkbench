@@ -65,6 +65,9 @@ public class DarTests {
     Assert.That(d.Extensions, Contains.Item(".dar"));
     // Weak magic -> extension-driven detection only.
     Assert.That(d.MagicSignatures, Is.Empty);
+    // Creation is advertised because dar -t / dar -x accept the output (DarExternalConformanceTests).
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+    Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveCreatable>());
   }
 
   [Test, Category("HappyPath")]

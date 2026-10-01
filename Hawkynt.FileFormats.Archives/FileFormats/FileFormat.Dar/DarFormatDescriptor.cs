@@ -29,24 +29,32 @@ namespace FileFormat.Dar;
 /// <para>Layout derived from dar's documentation and from archives written by dar 2.7.13 and 2.8.6:
 /// <c>docs/DAR-ON-DISK.md</c>.</para>
 /// </summary>
-public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Dar";
   public string DisplayName => "Disk ARchive (DAR)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".dar";
   public IReadOnlyList<string> Extensions => [".dar"];
   public IReadOnlyList<string> CompoundExtensions => [];
   // A four-byte magic of 123 is too weak to claim arbitrary files: detection is by extension.
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("stored", "Stored"),
+    new("gzip", "gzip"),
+    new("bzip2", "bzip2"),
+    new("xz", "xz"),
+    new("zstd", "zstd"),
+    new("lz4", "lz4"),
+  ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "Disk ARchive (dar / libdar), formats 9-11.3: single and multi-slice, tape marks, " +
-    "gzip/bzip2/xz/zstd/lz4/lzo streaming and block compression, sparse files and hard links. Read-only.";
+    "gzip/bzip2/xz/zstd/lz4/lzo streaming and block compression, sparse files and hard links; " +
+    "writes dar-compatible format-11.3 single-slice archives.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var seekable = stream.CanSeek ? stream : Buffer(stream);
@@ -81,6 +89,24 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (!ReferenceEquals(seekable, stream))
         seekable.Dispose();
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    var algorithm = DarWriter.AlgorithmFor(options.MethodName);
+    var items = new List<DarWriter.Item>(inputs.Count);
+    foreach (var input in inputs) {
+      var onDisk = input.InMemoryContent == null && (input.IsDirectory ? Directory.Exists(input.FullPath) : File.Exists(input.FullPath));
+      var modified = onDisk ? File.GetLastWriteTimeUtc(input.FullPath) : DateTime.UtcNow;
+      var accessed = onDisk ? File.GetLastAccessTimeUtc(input.FullPath) : modified;
+      var permissions = input.IsDirectory ? (ushort)0x1ED : (ushort)0x1A4;
+      if (onDisk && !OperatingSystem.IsWindows())
+        permissions = (ushort)((int)File.GetUnixFileMode(input.FullPath) & 0xFFF);
+      items.Add(new(input.ArchiveName, input.IsDirectory, input.IsDirectory ? [] : input.ReadContent(), permissions, modified, accessed));
+    }
+    DarWriter.Write(output, items, algorithm, options.Level);
   }
 
   private static ArchiveEntryInfo ToInfo(int index, DarEntry e) => new(

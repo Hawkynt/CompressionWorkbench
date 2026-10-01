@@ -8,11 +8,12 @@ read only to work out *what the bytes are*. That knowledge is written down here,
 `FileFormat.Dar` is implemented from this document. No libdar code, file layout or identifier
 was carried across.
 
-Every layout below was then checked against archives the real tool wrote:
+Every layout below was then checked against archives the real tool wrote, and against what the
+real tool makes of archives we write:
 
 | Oracle | Where |
 | --- | --- |
-| dar 2.7.13 (libdar 6.7.1, Ubuntu 24.04 package) | WSL; `Compression.Tests/Dar/DarExternalConformanceTests.cs` |
+| dar 2.7.13 (libdar 6.7.1, Ubuntu 24.04 package) | WSL; `Compression.Tests/Dar/DarExternalConformanceTests.cs` runs it both ways |
 | dar 2.8.6 (`dar64-2.8.6-win64`) | the `single` and `sliced` vectors under `Compression.Tests/Dar/ReferenceVectors` |
 
 Both versions write archive format **11.3**.
@@ -240,7 +241,31 @@ If the data flags carry `04`, delta-signature metadata follows: a base checksum 
 11.2 only), an infinint signature size, its offset when the size is non-zero, and the
 result checksum.
 
-## 10. Refused, unverified and open
+## 10. What this writer emits
+
+It writes a single slice in format 11.3, laid out like `dar -at` (no tape marks), so no escape
+layer is needed [measured]:
+
+    slice header: 00 00 00 7B | name | 'T' 'T' | 80 00000001 | 00 03 | 80 0000000A | name
+    version header: 11.3, letter, "N/A", flags 00, checksum
+    file data, one unit per file, uncompressed when compression would not shrink it
+    catalogue: name, ".", root entry (permissions 0), d/f entries, z…, checksum; compressed as one unit
+    terminator → catalogue
+    version trailer: flags 08 + initial offset, checksum
+    terminator → trailer
+    'T'
+
+uid and gid are written as 0, and permissions and times come from the input when it is on disk.
+The inode change time repeats the modification time. Supported methods are stored, gzip, bzip2,
+xz, zstd, and lz4 (block framing, 246 660-byte blocks).
+
+**Oracle result** (dar 2.7.13): for every method, `dar -t` exits 0, `dar -l` lists every name,
+and `dar -O -x` restores a tree that compares byte-identical to the input, including the
+empty-file, empty-directory and 200-byte-name cases. An archive with no entries is accepted too.
+`-O` is needed because restoring ownership takes root. dar asks about it for its own archives
+too.
+
+## 11. Refused, unverified and open
 
 - **Refused**: encrypted archives (flags 0x20, 0x04 or 0x0400), formats before 9 or after 11.3,
   unknown compression letters and unknown header flags. `List()` then returns the raw slice and a
@@ -253,7 +278,8 @@ result checksum.
 - **Unverified**: formats 9 to 11.2 are decoded by the version rules above (dates, the
   not-saved flag byte, the in-place path, the patch base checksum), but no archive older than
   11.3 was available to measure.
-- **Not attempted**: writing.
+- **Not attempted**: multi-slice writing, tape-mark writing, symlinks and ownership in the writer
+  (the archive input model carries neither).
 
 ## Sources
 

@@ -1,10 +1,12 @@
 #pragma warning disable CS1591
+using Compression.Registry;
 using FileFormat.Dar;
 
 namespace Compression.Tests.Dar;
 
 /// <summary>
-/// dar itself as the oracle: archives dar writes — every compression, tape marks or
+/// dar itself as the oracle, both ways: archives we write must pass <c>dar -t</c> and come back
+/// byte for byte from <c>dar -x</c>, and archives dar writes — every compression, tape marks or
 /// not, block mode, slices — must come back byte for byte from our reader. Skipped when dar is
 /// absent (<c>sudo apt-get install -y dar</c> in WSL or on the Linux host).
 /// </summary>
@@ -53,6 +55,46 @@ public class DarExternalConformanceTests {
     foreach (var rel in expected)
       Assert.That(File.ReadAllBytes(Path.Combine(actualRoot, rel)), Is.EqualTo(File.ReadAllBytes(Path.Combine(expectedRoot, rel))), rel);
     Assert.That(Directory.Exists(Path.Combine(actualRoot, "emptydir")), Is.True, "the empty directory");
+  }
+
+  // ── Ours -> dar ─────────────────────────────────────────────────────────────
+
+  [TestCaseSource(typeof(DarWriterTests), nameof(DarWriterTests.Methods))]
+  public void GivenOurArchive_WhenDarTestsAndExtractsIt_ThenItIsAcceptedAndByteIdentical(string method) {
+    RequireDar();
+    var src = Path.Combine(this._tmp, "src");
+    WriteTree(src);
+    var inputs = Directory.EnumerateFileSystemEntries(src, "*", SearchOption.AllDirectories)
+      .Select(p => new ArchiveInputInfo(p, Path.GetRelativePath(src, p).Replace('\\', '/'), Directory.Exists(p)))
+      .ToList();
+    var basePath = Path.Combine(this._tmp, "ours");
+    using (var fs = File.Create(basePath + ".1.dar"))
+      new DarFormatDescriptor().Create(fs, inputs, new FormatCreateOptions { MethodName = method });
+    var darBase = FsInteropToolbox.WinToWsl(basePath);
+
+    var test = Dar($"-t {darBase}");
+    Assert.That(test.ExitCode, Is.EqualTo(0), $"dar -t refused the {method} archive:\n{test.StdOut}\n{test.StdErr}");
+
+    var list = Dar($"-l {darBase}");
+    Assert.That(list.ExitCode, Is.EqualTo(0));
+    foreach (var name in DarFixtures.TreeFiles.Keys.Select(k => k.Split('/')[^1]).Append("emptydir"))
+      Assert.That(list.StdOut, Does.Contain(name));
+
+    var outDir = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(outDir);
+    // -O: restoring ownership needs root; dar asks about it even for its own archives otherwise.
+    var extract = Dar($"-O -x {darBase} -R {FsInteropToolbox.WinToWsl(outDir)}");
+    Assert.That(extract.ExitCode, Is.EqualTo(0), $"dar -x failed on the {method} archive:\n{extract.StdOut}\n{extract.StdErr}");
+    AssertSameTree(src, outDir);
+  }
+
+  [Test]
+  public void GivenOurArchiveOfNothing_WhenDarTestsIt_ThenItIsAccepted() {
+    RequireDar();
+    var basePath = Path.Combine(this._tmp, "nothing");
+    using (var fs = File.Create(basePath + ".1.dar"))
+      new DarFormatDescriptor().Create(fs, [], new FormatCreateOptions());
+    Assert.That(Dar($"-t {FsInteropToolbox.WinToWsl(basePath)}").ExitCode, Is.EqualTo(0));
   }
 
   // ── dar -> ours ─────────────────────────────────────────────────────────────
