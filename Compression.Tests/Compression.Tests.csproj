@@ -75,6 +75,12 @@
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Sparsebundles written by Apple's hdiutil (keramics, ewfprobe test corpora); see
+         AppleSparse/ReferenceVectors/README.md. The tests rebuild each bundle directory from these. -->
+    <EmbeddedResource Include="AppleSparse\ReferenceVectors\**\*"
+                      Exclude="AppleSparse\ReferenceVectors\README.md;AppleSparse\ReferenceVectors\.gitattributes">
+      <LogicalName>SparsebundleVectors/$([System.String]::Copy('%(RecursiveDir)').Replace('\','/'))%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Macrium's MIT-licensed Reflect X metadata schema, the oracle for the writer's $JSON block.
          Provenance in Macrium/VendorSchema/THIRD-PARTY-NOTICE.MacriumSchema.txt. -->
     <EmbeddedResource Include="Macrium\VendorSchema\required_schema.json" LogicalName="MacriumVendor.required_schema.json" />
