@@ -59,6 +59,42 @@ public sealed class SparsebundleReferenceVectorTests {
     });
   }
 
+  /// <summary>hdiutil wrote a GUID partition map; the HFS+ volume keramics filled is its one partition.</summary>
+  private static string HfsPartitionPrefix(IEnumerable<string> names)
+    => names.Select(static n => n.Split('/')[0]).Distinct().Single(static p => p.StartsWith("Partition", StringComparison.Ordinal));
+
+  [Test, Category("HappyPath")]
+  public void GivenTheHdiutilHfsPlusBundle_WhenListedThroughInfoPlist_ThenTheVolumeFilesKeramicsWroteAppear() {
+    var root = SparsebundleVectors.Materialize(SparsebundleVectors.HfsPlus, this._tmp);
+    using var plist = File.OpenRead(Path.Combine(root, "Info.plist"));
+    var names = new SparsebundleFormatDescriptor().List(plist, null).Select(e => e.Name.Replace('\\', '/')).ToList();
+    var volume = HfsPartitionPrefix(names);
+    Assert.Multiple(() => {
+      Assert.That(volume, Does.Contain("Apple_HFS"));
+      foreach (var entry in new[] { "emptyfile", "file_hardlink1", "testdir1/testfile1", "testdir1/xattr1", "testdir1/large_xattr", "testdir1/resourcefork1" })
+        Assert.That(names, Does.Contain($"{volume}/{entry}"), entry);
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenTheHdiutilHfsPlusBundle_WhenExtracted_ThenTheSymlinksPointWhereKeramicsMadeThem() {
+    // keramics' create_file_entries ran `ln -s "${MOUNT_POINT}/testdir1/testfile1"` and
+    // `ln -s "${MOUNT_POINT}/testdir1"` with MOUNT_POINT=/Volumes/hfsplus_test.
+    var root = SparsebundleVectors.Materialize(SparsebundleVectors.HfsPlus, this._tmp);
+    var output = Path.Combine(this._tmp, "out");
+    var descriptor = new SparsebundleFormatDescriptor();
+    string volume;
+    using (var plist = File.OpenRead(Path.Combine(root, "Info.plist")))
+      volume = HfsPartitionPrefix(descriptor.List(plist, null).Select(static e => e.Name.Replace('\\', '/')));
+    using (var plist = File.OpenRead(Path.Combine(root, "Info.plist")))
+      descriptor.Extract(plist, output, null, [$"{volume}/file_symboliclink1", $"{volume}/directory_symboliclink1", $"{volume}/emptyfile"]);
+    Assert.Multiple(() => {
+      Assert.That(File.ReadAllText(Path.Combine(output, volume, "file_symboliclink1")), Is.EqualTo("/Volumes/hfsplus_test/testdir1/testfile1"));
+      Assert.That(File.ReadAllText(Path.Combine(output, volume, "directory_symboliclink1")), Is.EqualTo("/Volumes/hfsplus_test/testdir1"));
+      Assert.That(File.ReadAllBytes(Path.Combine(output, volume, "emptyfile")), Is.Empty);
+    });
+  }
+
   [Test, Category("HappyPath")]
   public void GivenTheHdiutilUdsbBundle_WhenListed_ThenTheRawMediaIsOneDiskImage() {
     var root = SparsebundleVectors.Materialize(SparsebundleVectors.Ewfprobe, this._tmp);
