@@ -83,6 +83,13 @@ internal sealed class Ocfs2Allocators {
   public long TotalClusters { get; }
 
   private readonly bool _discontigGroups;
+  private readonly long _truncateLogBlkno;
+  private readonly uint _compat;
+
+  /// <summary><c>OCFS2_FEATURE_COMPAT_BACKUP_SB</c>: superblock copies at 1 GiB, 4 GiB, 16 GiB, ….</summary>
+  private const uint CompatBackupSuperblock = 0x0001;
+  /// <summary>The first backup superblock's byte offset (<c>OCFS2_BACKUP_SB_START</c>).</summary>
+  private const long FirstBackupSuperblockOffset = 1L << 30;
 
   private Ocfs2Allocators(Stream image, byte[] superblock) {
     this._image = image;
@@ -104,6 +111,8 @@ internal sealed class Ocfs2Allocators {
 
     this.GlobalBitmapBlkno = this.SystemFile(systemDir, "global_bitmap");
     this.InodeAllocBlkno = this.SystemFile(systemDir, "inode_alloc:0000");
+    this._truncateLogBlkno = this.SystemFile(systemDir, "truncate_log:0000");
+    this._compat = BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(sb + 0x1C, 4));
 
     var journal = this.ReadDinode(this.SystemFile(systemDir, "journal:0000"));
     if ((BinaryPrimitives.ReadUInt32LittleEndian(journal.AsSpan(Id1Offset, 4)) & JournalDirty) != 0)
@@ -321,6 +330,120 @@ internal sealed class Ocfs2Allocators {
     }
     this.SetClusters(chosen, used: true);
     return chosen;
+  }
+
+  // ── shrink ─────────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Trims the free clusters at the end of the volume in place and returns the
+  /// new cluster count (the old one when nothing can go). Trailing groups whose
+  /// only allocated bit is their own descriptor are unlinked from their chains,
+  /// the last kept group's <c>bg_bits</c> ends at the last allocated cluster, and
+  /// the chain records, the global bitmap dinode (<c>i_total</c>, <c>i_used</c>,
+  /// <c>i_size</c>, <c>i_clusters</c>) and the superblock's <c>i_clusters</c>
+  /// follow; the stream is cut to the new size. Every surviving block other than
+  /// those counters is untouched.
+  /// </summary>
+  /// <exception cref="NotSupportedException">
+  /// The volume has truncate-log entries still to free, backup superblocks the
+  /// new size would keep, or chains laid out so that dropping groups would leave
+  /// a hole in the chain list. Nothing has been written then.
+  /// </exception>
+  public long ShrinkToFit() {
+    var tl = this.ReadDinode(this._truncateLogBlkno);
+    if (BinaryPrimitives.ReadUInt16LittleEndian(tl.AsSpan(Id2Offset + 2, 2)) != 0)
+      throw new NotSupportedException("OCFS2: the truncate log still holds clusters to free; mount the volume once first.");
+
+    var groupCount = this.ClusterGroupCount;
+    var groups = new byte[groupCount][];
+    for (var g = 0; g < groupCount; ++g)
+      groups[g] = this.ReadGroup(this.ClusterGroupBlkno(g), this.GlobalBitmapBlkno);
+
+    // The last cluster anything holds, ignoring descriptors of groups that hold nothing else.
+    long last = -1;
+    for (var g = groupCount - 1; g >= 0 && last < 0; --g)
+      for (var bit = Bits(groups[g]) - 1; bit >= (g == 0 ? 0 : 1); --bit)
+        if (Test(groups[g], bit)) { last = (long)g * this._clustersPerGroup + bit; break; }
+    var newTotal = last + 1;
+    if (newTotal >= this.TotalClusters) return this.TotalClusters;
+    if ((this._compat & CompatBackupSuperblock) != 0 && newTotal * BlockSize > FirstBackupSuperblockOffset)
+      throw new NotSupportedException("OCFS2: the volume keeps backup superblocks, which a shrink would have to rewrite.");
+
+    var keptGroups = (int)((newTotal + this._clustersPerGroup - 1) / this._clustersPerGroup);
+    var dinode = this.ReadDinode(this.GlobalBitmapBlkno);
+    var chains = BinaryPrimitives.ReadUInt16LittleEndian(dinode.AsSpan(Id2Offset + 6, 2));
+
+    // Unlink every dropped group from its chain: find what points at it.
+    var dropped = new HashSet<long>();
+    for (var g = keptGroups; g < groupCount; ++g) dropped.Add(this.ClusterGroupBlkno(g));
+    var rewrites = new Dictionary<long, byte[]>();
+    var emptied = new List<int>();
+    for (var c = 0; c < chains; ++c) {
+      var rec = Id2Offset + 0x10 + c * 16;
+      long prev = 0, removedBits = 0, removedFree = 0;
+      for (var blkno = (long)BinaryPrimitives.ReadUInt64LittleEndian(dinode.AsSpan(rec + 8, 8)); blkno != 0;) {
+        var group = rewrites.TryGetValue(blkno, out var r) ? r : this.ReadGroup(blkno, this.GlobalBitmapBlkno);
+        var next = (long)BinaryPrimitives.ReadUInt64LittleEndian(group.AsSpan(GroupNextOffset, 8));
+        if (dropped.Contains(blkno)) {
+          removedBits += Bits(group);
+          removedFree += BinaryPrimitives.ReadUInt16LittleEndian(group.AsSpan(GroupFreeOffset, 2));
+          if (prev == 0) BinaryPrimitives.WriteUInt64LittleEndian(dinode.AsSpan(rec + 8, 8), (ulong)next);
+          else {
+            var p = rewrites.TryGetValue(prev, out var pr) ? pr : this.ReadGroup(prev, this.GlobalBitmapBlkno);
+            BinaryPrimitives.WriteUInt64LittleEndian(p.AsSpan(GroupNextOffset, 8), (ulong)next);
+            rewrites[prev] = p;
+          }
+        } else prev = blkno;
+        blkno = next;
+      }
+      if (removedBits == 0) continue;
+      var total = BinaryPrimitives.ReadUInt32LittleEndian(dinode.AsSpan(rec + 4, 4));
+      var free = BinaryPrimitives.ReadUInt32LittleEndian(dinode.AsSpan(rec, 4));
+      BinaryPrimitives.WriteUInt32LittleEndian(dinode.AsSpan(rec + 4, 4), (uint)(total - removedBits));
+      BinaryPrimitives.WriteUInt32LittleEndian(dinode.AsSpan(rec, 4), (uint)(free - removedFree));
+      if (BinaryPrimitives.ReadUInt64LittleEndian(dinode.AsSpan(rec + 8, 8)) == 0) emptied.Add(c);
+    }
+    // A chain list has no holes: only the highest chains may empty.
+    var keptChains = chains - emptied.Count;
+    if (emptied.Any(c => c < keptChains))
+      throw new NotSupportedException("OCFS2: dropping the trailing groups would empty a chain in the middle of the chain list.");
+    for (var c = keptChains; c < chains; ++c)
+      dinode.AsSpan(Id2Offset + 0x10 + c * 16, 16).Clear();
+    BinaryPrimitives.WriteUInt16LittleEndian(dinode.AsSpan(Id2Offset + 6, 2), (ushort)keptChains);
+
+    // The last kept group now ends at the new last cluster.
+    var lastBlkno = this.ClusterGroupBlkno(keptGroups - 1);
+    var lastGroup = rewrites.TryGetValue(lastBlkno, out var lg) ? lg : groups[keptGroups - 1];
+    var oldBits = Bits(lastGroup);
+    var oldFree = BinaryPrimitives.ReadUInt16LittleEndian(lastGroup.AsSpan(GroupFreeOffset, 2));
+    var newBits = (int)(newTotal - (long)(keptGroups - 1) * this._clustersPerGroup);
+    BinaryPrimitives.WriteUInt16LittleEndian(lastGroup.AsSpan(GroupBitsOffset, 2), (ushort)newBits);
+    Recount(lastGroup);
+    var newFree = BinaryPrimitives.ReadUInt16LittleEndian(lastGroup.AsSpan(GroupFreeOffset, 2));
+    rewrites[lastBlkno] = lastGroup;
+    var lastChain = Id2Offset + 0x10 + BinaryPrimitives.ReadUInt16LittleEndian(lastGroup.AsSpan(GroupChainOffset, 2)) * 16;
+    BinaryPrimitives.WriteUInt32LittleEndian(dinode.AsSpan(lastChain + 4, 4),
+      (uint)(BinaryPrimitives.ReadUInt32LittleEndian(dinode.AsSpan(lastChain + 4, 4)) - (oldBits - newBits)));
+    BinaryPrimitives.WriteUInt32LittleEndian(dinode.AsSpan(lastChain, 4),
+      (uint)(BinaryPrimitives.ReadUInt32LittleEndian(dinode.AsSpan(lastChain, 4)) - (oldFree - newFree)));
+
+    // Totals: every dropped group took exactly its descriptor's bit with it.
+    var used = BinaryPrimitives.ReadUInt32LittleEndian(dinode.AsSpan(Id1Offset, 4));
+    BinaryPrimitives.WriteUInt32LittleEndian(dinode.AsSpan(Id1Offset, 4), (uint)(used - (groupCount - keptGroups)));
+    BinaryPrimitives.WriteUInt32LittleEndian(dinode.AsSpan(Id1Offset + 4, 4), (uint)newTotal);
+    BinaryPrimitives.WriteUInt64LittleEndian(dinode.AsSpan(0x20, 8), (ulong)(newTotal * BlockSize));
+    BinaryPrimitives.WriteUInt32LittleEndian(dinode.AsSpan(0x14, 4), (uint)newTotal);
+
+    var superblock = ReadBlock(this._image, Ocfs2Writer.SuperBlockBlkno);
+    BinaryPrimitives.WriteUInt32LittleEndian(superblock.AsSpan(0x14, 4), (uint)newTotal);
+
+    foreach (var (blkno, group) in rewrites)
+      if (!dropped.Contains(blkno)) this.WriteBlock(blkno, group);
+    this.WriteBlock(this.GlobalBitmapBlkno, dinode);
+    this.WriteBlock(Ocfs2Writer.SuperBlockBlkno, superblock);
+    this._image.SetLength(newTotal * BlockSize);
+    this._image.Flush();
+    return newTotal;
   }
 
   // ── slot 0's inode allocator ───────────────────────────────────────────
