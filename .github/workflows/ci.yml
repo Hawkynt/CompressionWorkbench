@@ -165,6 +165,9 @@ jobs:
           # two packages the owning readers were never asked -- which is what #85 and #86
           # each reported. Installed so those cases run instead of silently degrading.
           sudo apt-get install -y cabextract wimtools
+          # dar owns the DAR format: the DAR writer only advertises CanCreate because dar -t and
+          # dar -x accept what it writes, which the gate below checks on every run.
+          sudo apt-get install -y dar
           sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
           sudo modprobe gfs2 || true
 
@@ -201,6 +204,17 @@ jobs:
           --configuration Release --no-build
           --filter "FullyQualifiedName~Compression.Tests.Gfs2.Gfs2NestedDirectoryExternalTests"
           --logger "trx;LogFileName=gfs2-exhash-tests.trx"
+
+      # Hard gate, both directions: dar must accept and restore byte for byte what the DAR writer
+      # produces, and the reader must restore what dar writes (every compression, slices, tape
+      # marks). Without this the writer's CanCreate would rest on our reader agreeing with itself.
+      - name: DAR oracle
+        if: matrix.os == 'ubuntu-latest'
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "FullyQualifiedName~Compression.Tests.Dar.DarExternalConformanceTests"
+          --logger "trx;LogFileName=dar-oracle-tests.trx"
 
       # Bucket generation handling is a cross-tree invariant: alloc_v4,
       # bucket_gens, extent/b-tree pointers and backpointers must all carry the
