@@ -56,15 +56,19 @@ internal sealed record BlockMapSnapshot(IReadOnlyList<DefragBlockInfo>? Map, lon
     var imageSize = stream.Length;
     if (imageSize <= 0) return null;
 
-    var filled = NormalizeExtents([.. extentMap.EnumerateExtents(stream)], imageSize);
+    // Runs are counted in the order the walker yields — the file's own order — before the extents
+    // are sorted by offset for drawing: sorted, a file stored backwards would look contiguous.
+    List<DefragBlockInfo> raw = [.. extentMap.EnumerateExtents(stream)];
+    var runs = OwnerLookup.From(CountRunsByOwner(raw).Select(r => (r.Key, r.Value)));
+    var filled = NormalizeExtents(raw, imageSize);
     if (filled is null) return null;
 
-    Dictionary<string, DateTime?>? mtimeByName = null;
+    OwnerLookup<DateTime?>? mtimeByName = null;
     List<ArchiveEntryInfo>? entries = null;
     try {
       stream.Position = 0;
       entries = ops.List(stream, password: null);
-      mtimeByName = entries.Where(e => !e.IsDirectory).GroupBy(e => e.Name).ToDictionary(g => g.Key, g => g.First().LastModified);
+      mtimeByName = OwnerLookup.From(entries.Where(e => !e.IsDirectory).Select(e => (e.Name, e.LastModified)));
     } catch {
       // Classification is best-effort; the layout itself is what matters here.
     }
@@ -76,7 +80,6 @@ internal sealed record BlockMapSnapshot(IReadOnlyList<DefragBlockInfo>? Map, lon
         ? ex with { Classification = thresholds is null ? DefragBlockClass.Normal : Classify(mtime, thresholds, 0, 1) }
         : ex);
 
-    var runs = CountRunsByOwner(classified);
     IReadOnlyList<FileRow> rows = entries is null ? [] : [.. entries.Where(e => !e.IsDirectory).Select(e => new FileRow {
       Name = e.Name,
       Size = e.OriginalSize,
@@ -100,15 +103,17 @@ internal sealed record BlockMapSnapshot(IReadOnlyList<DefragBlockInfo>? Map, lon
     var imageSize = stream.Length;
     if (imageSize <= 0) return null;
 
-    var filled = NormalizeExtents([.. archiveLayout.EnumerateLayout(stream)], imageSize);
+    List<DefragBlockInfo> raw = [.. archiveLayout.EnumerateLayout(stream)];
+    var runs = OwnerLookup.From(CountRunsByOwner(raw).Select(r => (r.Key, r.Value)));
+    var filled = NormalizeExtents(raw, imageSize);
     if (filled is null) return null;
 
-    Dictionary<string, string>? methodByName = null;
+    OwnerLookup<string>? methodByName = null;
     List<ArchiveEntryInfo>? entries = null;
     try {
       stream.Position = 0;
       entries = ops.List(stream, password: null);
-      methodByName = entries.Where(e => !e.IsDirectory).GroupBy(e => e.Name).ToDictionary(g => g.Key, g => g.First().Method ?? "");
+      methodByName = OwnerLookup.From(entries.Where(e => !e.IsDirectory).Select(e => (e.Name, e.Method ?? "")));
     } catch {
       // Classification is best-effort.
     }
@@ -119,9 +124,7 @@ internal sealed record BlockMapSnapshot(IReadOnlyList<DefragBlockInfo>? Map, lon
         ? ex with { Classification = ClassifyByMethod(method) }
         : ex);
 
-    // Counted off the layout the container reported. An entry the map does not name is not one run
-    // — it is unmeasured.
-    var runs = CountRunsByOwner(classified);
+    // An entry the map does not name is not one run — it is unmeasured.
     IReadOnlyList<FileRow> rows = entries is null ? [] : [.. entries.Where(e => !e.IsDirectory).Select(e => new FileRow {
       Name = e.Name,
       Size = e.OriginalSize,
@@ -386,4 +389,44 @@ internal sealed record BlockMapSnapshot(IReadOnlyList<DefragBlockInfo>? Map, lon
 
     return runs;
   }
+}
+
+/// <summary>
+/// Finds what a layout map says about a file by the name the listing gives it. A format's layout
+/// walker and its lister do not always spell a name alike — FAT's walker keeps the stored 8.3 name
+/// in capitals while the lister applies the lowercase flags, so <c>BIG.BIN</c> in the map is
+/// <c>big.bin</c> in the list — so a name that does not match exactly is matched ignoring case and
+/// separators, but only when that match is unambiguous.
+/// </summary>
+internal sealed class OwnerLookup<T> {
+  private readonly Dictionary<string, T> _exact = new(StringComparer.Ordinal);
+  private readonly Dictionary<string, (T Value, bool Ambiguous)> _folded = new(StringComparer.OrdinalIgnoreCase);
+
+  internal OwnerLookup(IEnumerable<(string Name, T Value)> pairs) {
+    foreach (var (name, value) in pairs) {
+      var key = Normalize(name);
+      if (!this._exact.TryAdd(key, value)) continue;
+      this._folded[key] = this._folded.TryGetValue(key, out var seen) ? (seen.Value, true) : (value, false);
+    }
+  }
+
+  public IEnumerable<T> Values => this._exact.Values;
+
+  public bool TryGetValue(string name, out T value) {
+    var key = Normalize(name);
+    if (this._exact.TryGetValue(key, out value!)) return true;
+    if (this._folded.TryGetValue(key, out var folded) && !folded.Ambiguous) {
+      value = folded.Value;
+      return true;
+    }
+
+    value = default!;
+    return false;
+  }
+
+  private static string Normalize(string name) => name.Replace('\\', '/').TrimStart('/');
+}
+
+internal static class OwnerLookup {
+  public static OwnerLookup<T> From<T>(IEnumerable<(string Name, T Value)> pairs) => new(pairs);
 }
