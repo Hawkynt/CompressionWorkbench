@@ -71,6 +71,10 @@
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Streams written by libcsc's reference csc tool; see Csc/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Csc\ReferenceVectors\*.csc">
+      <LogicalName>CscVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- OneNote sections from the Apache Tika test corpus; see OneNote/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
