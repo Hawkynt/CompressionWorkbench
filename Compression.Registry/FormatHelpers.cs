@@ -23,10 +23,42 @@ public static class FormatHelpers {
   public static FileStream CreateEntryFile(string baseDir, string entryName) {
     var safeName = entryName.Replace('\\', '/').TrimStart('/');
     if (safeName.Contains("..")) safeName = Path.GetFileName(safeName);
+    safeName = string.Join('/', safeName.Split('/').Select(static s => HostFileName(s, OperatingSystem.IsWindows())));
     var fullPath = Path.Combine(baseDir, safeName);
     var dir = Path.GetDirectoryName(fullPath);
     if (dir != null) Directory.CreateDirectory(dir);
     return File.Create(fullPath);
+  }
+
+  private static readonly HashSet<string> WindowsDeviceNames = new(StringComparer.OrdinalIgnoreCase) {
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+  };
+
+  /// <summary>
+  /// <paramref name="name"/> as one path component the host can create: every character it
+  /// cannot hold becomes '_'. Everywhere that is U+0000; on Windows also the control
+  /// characters and <c>&lt; &gt; : " | ? *</c>, a trailing dot or blank (which Windows would
+  /// silently drop) and a device name such as <c>CON</c> (which it would open instead). An
+  /// entry name that is legal in its own file system — HFS+'s <c>forward:slash</c>, a
+  /// metadata name with U+0000 or a carriage return in it — therefore extracts under a
+  /// recognisable name instead of failing the extraction or, for ':' on NTFS, landing in an
+  /// alternate data stream.
+  /// </summary>
+  internal static string HostFileName(string name, bool windows) {
+    if (name is "" or "." or "..") return name;
+    var chars = name.ToCharArray();
+    for (var i = 0; i < chars.Length; ++i)
+      if (chars[i] == '\0' || (windows && (chars[i] < ' ' || chars[i] is '<' or '>' or ':' or '"' or '|' or '?' or '*')))
+        chars[i] = '_';
+    if (windows) {
+      for (var i = chars.Length - 1; i >= 0 && chars[i] is '.' or ' '; --i)
+        chars[i] = '_';
+      var result = new string(chars);
+      return WindowsDeviceNames.Contains(result.Split('.')[0].TrimEnd()) ? "_" + result : result;
+    }
+    return new string(chars);
   }
 
   /// <summary>
