@@ -25,7 +25,7 @@ namespace Compression.NativeUI.Views;
 /// again exactly as it was; nothing about it is rebuilt.
 /// </remarks>
 internal sealed partial class MainForm {
-  private const int FieldWidth = 160;
+  private const int FieldWidth = 188;
   private const int CaptionWidth = 72;
 
   private readonly RibbonContextualTabGroup _diskTools = new("Disk Tools", Color.FromArgb(0x3A, 0x8E, 0x5C)) { Visible = false };
