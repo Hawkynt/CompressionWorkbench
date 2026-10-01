@@ -159,7 +159,7 @@ public sealed partial class MainFormTests {
   public void GivenDefragment_WhenAnotherOperationIsPicked_ThenTheDefragModesAndLayoutOptionsGreyOut() {
     WithImages(root => WithShell(shell => {
       OpenOnDefragmentTab(shell, MaintenanceFixtures.FragmentedFat(root));
-      var interleave = Field<RibbonHostItem>(shell, "_interleaveItem");
+      var interleave = Field<RibbonSpinner>(shell, "_interleaveSpinner");
       Assert.That((Toggle(shell, "Consolidate").Enabled, interleave.Enabled), Is.EqualTo((true, true)));
 
       Toggle(shell, "Shrink").PerformClick();
@@ -183,32 +183,60 @@ public sealed partial class MainFormTests {
   public void GivenCarveHole_WhenPickedAndUnpicked_ThenItsSizeAndOffsetAppearOnlyWhilePicked() {
     WithImages(root => WithShell(shell => {
       OpenOnDefragmentTab(shell, MaintenanceFixtures.FragmentedFat(root));
-      var size = Field<RibbonHostItem>(shell, "_holeSizeItem");
-      var at = Field<RibbonHostItem>(shell, "_holeAtItem");
-      Assert.That((size.Visible, at.Visible), Is.EqualTo((false, false)));
+      var fields = new RibbonFieldItem[] {
+        Field<RibbonSpinner>(shell, "_holeSizeSpinner"), Field<RibbonComboBox>(shell, "_holePlacementCombo"), Field<RibbonSpinner>(shell, "_holeOffsetSpinner"),
+      };
+      Assert.That(fields.Select(f => f.Visible), Is.All.False);
 
       Toggle(shell, "Carve Hole").PerformClick();
-      Assert.That((size.Visible, at.Visible), Is.EqualTo((true, true)));
+      Assert.That(fields.Select(f => f.Visible), Is.All.True);
 
       Toggle(shell, "Re-order").PerformClick();
-      Assert.That((size.Visible, at.Visible), Is.EqualTo((false, false)));
+      Assert.That(fields.Select(f => f.Visible), Is.All.False);
     }));
   }
 
-  [TestCase("0", false)]
-  [TestCase("1", true)]
-  [TestCase("256", true)]
-  [TestCase("257", false)]
-  [TestCase("two", false)]
-  public void GivenAnInterleave_WhenTyped_ThenStartFollowsWhetherItIsInRange(string stride, bool startable) {
+  [Test]
+  public void GivenCarveHole_WhenTheHoleIsPlacedAtTheEndOrAtAnOffset_ThenTheOffsetFieldFollowsAndTheEngineGetsTheBytes() {
     WithImages(root => WithShell(shell => {
       OpenOnDefragmentTab(shell, MaintenanceFixtures.FragmentedFat(root));
+      Toggle(shell, "Carve Hole").PerformClick();
+      var placement = Field<RibbonComboBox>(shell, "_holePlacementCombo");
+      var offset = Field<RibbonSpinner>(shell, "_holeOffsetSpinner");
+      var presenter = Field<global::Compression.NativeUI.Maintenance.MaintenancePresenter>(shell, "_presenter");
+      Field<RibbonSpinner>(shell, "_holeSizeSpinner").Value = 128;
 
-      Field<TextBox>(shell, "_interleaveBox").Text = stride;
+      Assert.That((offset.Enabled, presenter.BuildDefragOptions().HoleAt), Is.EqualTo((false, -1L)), "End: no offset, auto placement");
 
-      var start = Item<RibbonButton>(shell, "Start");
-      Assert.That(start.Enabled, Is.EqualTo(startable));
-      if (!startable) Assert.That(start.ToolTipText, Does.Contain("Interleave"), "Start says what blocks it");
+      placement.SelectedIndex = 1;
+      offset.Value = 256;
+      var options = presenter.BuildDefragOptions();
+      Assert.That((offset.Enabled, options.HoleSize, options.HoleAt), Is.EqualTo((true, 128L * 1024, 256L * 1024)));
+    }));
+  }
+
+  /// <summary>
+  /// The interleave is a spinner over 1–256, so a value outside the range cannot be entered: it is
+  /// clamped, and Start stays available. The text-level boundaries are covered by the presenter tests.
+  /// </summary>
+  [TestCase(0, 1)]
+  [TestCase(1, 1)]
+  [TestCase(256, 256)]
+  [TestCase(257, 256)]
+  public void GivenTheInterleaveSpinner_WhenSet_ThenItClampsToOneTo256AndTheEngineGetsThatStride(int typed, int expected) {
+    WithImages(root => WithShell(shell => {
+      OpenOnDefragmentTab(shell, MaintenanceFixtures.FragmentedFat(root));
+      var spinner = Field<RibbonSpinner>(shell, "_interleaveSpinner");
+      spinner.Value = 7; // away from the boundary, so every case is a change
+
+      spinner.Value = typed;
+
+      var presenter = Field<global::Compression.NativeUI.Maintenance.MaintenancePresenter>(shell, "_presenter");
+      Assert.Multiple(() => {
+        Assert.That(spinner.Value, Is.EqualTo((decimal)expected));
+        Assert.That(presenter.BuildDefragOptions().InterleaveStride, Is.EqualTo(expected));
+        Assert.That(Item<RibbonButton>(shell, "Start").Enabled, Is.True);
+      });
     }));
   }
 
@@ -261,32 +289,21 @@ public sealed partial class MainFormTests {
   }
 
   /// <summary>
-  /// A hosted field gets one stacked row. GTK draws a native combo box at its natural height
-  /// whatever bounds it is handed, which cut the bottom off its text, so every hosted input must
-  /// stay within its row and none may be a native combo box.
+  /// GTK draws a native combo box at its natural height whatever bounds it is handed, which cut the
+  /// bottom off its text in a ribbon row. Every input on the tab is therefore a ribbon field — drawn
+  /// by the ribbon and always one stacked row — and none is a hosted native control.
   /// </summary>
   [Test]
-  public void GivenTheOptionsFields_WhenTheTabIsLaidOut_ThenEveryHostedInputFitsItsRow() {
+  public void GivenTheDefragmentTab_WhenItsInputsAreCollected_ThenEachIsAOneRowRibbonFieldAndNoneIsAHostedControl() {
     WithImages(root => WithShell(shell => {
       OpenOnDefragmentTab(shell, MaintenanceFixtures.FragmentedFat(root));
-      Toggle(shell, "Carve Hole").PerformClick();
-      var ribbon = Field<Ribbon>(shell, "_ribbon");
-      ribbon.PerformLayout();
-
-      var hosted = DefragTab(shell).Groups
-        .SelectMany(g => g.Items.Cast<ToolStripItem>().OfType<RibbonHostItem>().Where(h => h.Visible).Select(h => (Group: g, Host: h)))
-        .ToList();
-      Assert.That(hosted, Is.Not.Empty);
+      var items = DefragTab(shell).Groups.SelectMany(g => g.Items.Cast<ToolStripItem>()).ToList();
 
       Assert.Multiple(() => {
-        foreach (var (group, host) in hosted) {
-          var row = group.Bounds.Height / 3;
-          Assert.That(host.Control.Height, Is.LessThanOrEqualTo(row), $"{host.Text} is taller than a row");
-          foreach (Control input in host.Control.Controls) {
-            Assert.That(input.Height, Is.LessThanOrEqualTo(host.Control.Height), $"{host.Text}: {input.GetType().Name}");
-            Assert.That(input, Is.Not.InstanceOf<ComboBox>(), $"{host.Text}: a native combo box ignores its row height on GTK");
-          }
-        }
+        Assert.That(items.OfType<RibbonHostItem>(), Is.Empty, "a hosted native control ignores its row height on GTK");
+        var fields = items.OfType<RibbonFieldItem>().ToList();
+        Assert.That(fields.Select(f => f.Text), Is.SupersetOf(new[] { "Interleave", "Metadata", "Profile", "Hole KiB", "Hole at", "Offset KiB" }));
+        Assert.That(fields.Select(f => f.ItemSize), Is.All.EqualTo(RibbonItemSize.Small), "one stacked row each");
       });
     }));
   }
@@ -325,7 +342,7 @@ public sealed partial class MainFormTests {
       OpenOnDefragmentTab(shell, image);
 
       Toggle(shell, "Carve Hole").PerformClick();
-      Field<TextBox>(shell, "_holeSizeBox").Text = "1g";
+      Field<RibbonSpinner>(shell, "_holeSizeSpinner").Value = 1024 * 1024; // 1 GiB on a 1.44 MB floppy
       Item<RibbonButton>(shell, "Start").PerformClick();
       Settle(shell);
 
