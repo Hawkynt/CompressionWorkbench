@@ -92,7 +92,7 @@ internal static class Ocfs2Reader {
       CollectNames(image, inlineStart, inlineEnd, names);
     } else {
       var perCluster = BlocksPerCluster(image, blockSize);
-      foreach (var (_, blkno, clusters, _) in ReadExtents(image, (int)rootOff))
+      foreach (var (_, blkno, clusters, _) in ReadExtents(image, (int)rootOff, blockSize))
         for (long b = 0; b < (long)clusters * perCluster; b++) {
           var blockStart = (int)((blkno + b) * blockSize);
           if (blockStart < 0 || blockStart + blockSize > image.Length) break;
@@ -142,18 +142,24 @@ internal static class Ocfs2Reader {
   public static int ReadBlockSize(byte[] image)
     => TryReadSuperblock(image, out var blockSize, out _) ? blockSize : 0;
 
-  public static List<FilePlacement> ReadFilePlacements(byte[] image) {
+  /// <summary>
+  /// Walks the tree in <paramref name="image"/> and returns the on-disk placement
+  /// of every regular file. <paramref name="image"/> may be only the head of the
+  /// volume; a file dinode or extent block past it is then read from
+  /// <paramref name="volume"/>.
+  /// </summary>
+  public static List<FilePlacement> ReadFilePlacements(byte[] image, Stream? volume = null) {
     var result = new List<FilePlacement>();
     if (!TryReadSuperblock(image, out var blockSize, out var rootBlkno)) return result;
     var rootOff = checked(rootBlkno * blockSize);
     if (rootOff < 0 || rootOff + blockSize > image.Length) return result;
     if (!IsDinode(image, (int)rootOff)) return result;
-    WalkPlacements(image, rootBlkno, blockSize, "", result, []);
+    WalkPlacements(image, volume, rootBlkno, blockSize, "", result, []);
     return result;
   }
 
   private static void WalkPlacements(
-      byte[] image, long dirBlkno, int blockSize, string prefix,
+      byte[] image, Stream? volume, long dirBlkno, int blockSize, string prefix,
       List<FilePlacement> result, HashSet<long> visited) {
     if (!visited.Add(dirBlkno)) return;
     var dirOff = (int)(dirBlkno * blockSize);
@@ -176,7 +182,7 @@ internal static class Ocfs2Reader {
           if (name is not ("." or "..")) {
             var path = prefix.Length == 0 ? name : prefix + "/" + name;
             if (fileType is FtRegFile or FtSymlink)
-              result.Add(MakePlacement(image, (long)inode, blockSize, path));
+              result.Add(MakePlacement(image, volume, (long)inode, blockSize, path));
             else if (fileType == FtDir)
               subdirs.Add(((long)inode, path));
           }
@@ -191,7 +197,7 @@ internal static class Ocfs2Reader {
       Handle(inlineStart, inlineStart + (int)Math.Clamp(dirSize, 0, maxInline));
     } else {
       var perCluster = BlocksPerCluster(image, blockSize);
-      foreach (var (_, blkno, clusters, _) in ReadExtents(image, dirOff))
+      foreach (var (_, blkno, clusters, _) in ReadExtents(image, dirOff, blockSize))
         for (long b = 0; b < (long)clusters * perCluster; b++) {
           var bs = (int)((blkno + b) * blockSize);
           if (bs < 0 || bs + blockSize > image.Length) break;
@@ -199,21 +205,29 @@ internal static class Ocfs2Reader {
         }
     }
     foreach (var (blkno, path) in subdirs)
-      WalkPlacements(image, blkno, blockSize, path, result, visited);
+      WalkPlacements(image, volume, blkno, blockSize, path, result, visited);
   }
 
-  private static FilePlacement MakePlacement(byte[] image, long dinodeBlkno, int blockSize, string name) {
-    var off = (int)(dinodeBlkno * blockSize);
-    var size = (long)BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(off + OffSize, 8));
-    var dyn = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(off + OffDynFeatures, 2));
+  private static FilePlacement MakePlacement(byte[] image, Stream? volume, long dinodeBlkno, int blockSize, string name) {
+    var perCluster = BlocksPerCluster(image, blockSize);
+    var head = image;
+    var off = checked((int)(dinodeBlkno * blockSize));
+    if ((long)off + blockSize > image.Length) {
+      // A dinode past the buffered head: parse it out of its own block.
+      head = ReadBlock(image, volume, dinodeBlkno, blockSize);
+      off = 0;
+    }
+    if (!IsDinode(head, off))
+      throw new InvalidDataException($"OCFS2: '{name}' names block {dinodeBlkno}, which is not an inode.");
+    var size = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(off + OffSize, 8));
+    var dyn = BinaryPrimitives.ReadUInt16LittleEndian(head.AsSpan(off + OffDynFeatures, 2));
     if ((dyn & DynInlineData) != 0)
       return new FilePlacement(name, dinodeBlkno, dinodeBlkno, size, Inline: true, [], HasTree: false);
-    var perCluster = BlocksPerCluster(image, blockSize);
-    var extents = ReadExtents(image, off)
+    var extents = ReadExtents(head, off, blockSize, image, volume)
       .Select(e => ((long)e.Cpos * perCluster, e.Blkno, (long)e.Clusters * perCluster, e.Unwritten))
       .ToList();
     var dataBlk = extents.Count > 0 ? extents[0].Item2 : 0;
-    return new FilePlacement(name, dinodeBlkno, dataBlk, size, Inline: false, extents, HasExtentTree(image, off));
+    return new FilePlacement(name, dinodeBlkno, dataBlk, size, Inline: false, extents, HasExtentTree(head, off));
   }
 
   /// <summary>
@@ -302,7 +316,7 @@ internal static class Ocfs2Reader {
     } else {
       // Extent-backed: each extent record points at a run of directory blocks.
       var perCluster = BlocksPerCluster(image, blockSize);
-      foreach (var (_, blkno, clusters, _) in ReadExtents(image, dirOff)) {
+      foreach (var (_, blkno, clusters, _) in ReadExtents(image, dirOff, blockSize)) {
         var clusterBlocks = (long)clusters * perCluster;
         for (long b = 0; b < clusterBlocks; b++) {
           var blockStart = (int)((blkno + b) * blockSize);
@@ -389,7 +403,7 @@ internal static class Ocfs2Reader {
     // unwritten run, both read as zeros.
     var result = new byte[fileSize];
     var clusterBytes = (long)blockSize * BlocksPerCluster(image, blockSize);
-    foreach (var (cpos, blkno, clusters, unwritten) in ReadExtents(image, off)) {
+    foreach (var (cpos, blkno, clusters, unwritten) in ReadExtents(image, off, blockSize)) {
       var logical = cpos * clusterBytes;
       if (logical >= fileSize || unwritten) continue;
       var dataOff = blkno * blockSize;
@@ -401,33 +415,80 @@ internal static class Ocfs2Reader {
     return result;
   }
 
+  /// <summary>Where an extent block keeps its <c>ocfs2_extent_list</c> (after the 0x30-byte header).</summary>
+  private const int ExtentBlockListOffset = 0x30;
+  /// <summary><c>h_blkno</c> of an extent block: the block it claims to be.</summary>
+  private const int ExtentBlockBlknoOffset = 0x18;
+  /// <summary>Deeper than any volume the 32-bit cluster space allows; a loop guard.</summary>
+  private const int MaxTreeDepth = 8;
+  private static readonly byte[] ExtentBlockSig = "EXBLK01"u8.ToArray();
+
   /// <summary>
-  /// Reads the leaf extent records from a dinode's inline extent list
-  /// (<c>id2.i_list</c>): logical cluster, first block, length in clusters and
-  /// whether the run is unwritten (allocated, reads as zeros). Only depth-0
-  /// (leaf) lists are followed — the toolkit's writer never builds extent-tree
-  /// interior nodes; <see cref="HasExtentTree"/> says when a dinode has one.
+  /// Reads every leaf extent record of a dinode in file order: logical cluster,
+  /// first block, length in clusters and whether the run is unwritten
+  /// (allocated, reads as zeros). A list of depth <c>d &gt; 0</c> holds interior
+  /// records (<c>e_cpos</c>, <c>e_int_clusters</c>, <c>e_blkno</c>) that name
+  /// extent blocks (<c>EXBLK01</c>) whose own list, at 0x30, has depth
+  /// <c>d − 1</c>; they are followed down to the leaves. A block that is not the
+  /// extent block it should be raises <see cref="InvalidDataException"/> rather
+  /// than reading as zeros.
   /// </summary>
-  private static IEnumerable<(uint Cpos, long Blkno, int Clusters, bool Unwritten)> ReadExtents(byte[] image, int dinodeOff) {
-    var extOff = dinodeOff + Id2Offset;
-    if (extOff + 8 > image.Length) yield break;
+  /// <param name="image">Buffer holding the dinode at <paramref name="dinodeOff"/>.</param>
+  /// <param name="volumeHead">Buffered head of the volume, for extent blocks (defaults to <paramref name="image"/>).</param>
+  /// <param name="volume">The whole volume, for extent blocks past the head.</param>
+  private static List<(uint Cpos, long Blkno, int Clusters, bool Unwritten)> ReadExtents(
+      byte[] image, int dinodeOff, int blockSize, byte[]? volumeHead = null, Stream? volume = null) {
+    var result = new List<(uint, long, int, bool)>();
+    var listOff = dinodeOff + Id2Offset;
+    if (listOff + 0x10 > image.Length) return result;
+    var end = Math.Min(image.Length, dinodeOff + blockSize);
+    CollectExtents(image.AsSpan(listOff, end - listOff), blockSize, volumeHead ?? image, volume, result, expectedDepth: -1);
+    return result;
+  }
 
-    var treeDepth = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(extOff + 0, 2));
-    var nextFreeRec = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(extOff + 4, 2));
-    if (treeDepth != 0) yield break; // interior trees not supported here
+  private static void CollectExtents(
+      ReadOnlySpan<byte> list, int blockSize, byte[] head, Stream? volume,
+      List<(uint, long, int, bool)> result, int expectedDepth) {
+    var depth = BinaryPrimitives.ReadUInt16LittleEndian(list);
+    var count = BinaryPrimitives.ReadUInt16LittleEndian(list[2..]);
+    var used = BinaryPrimitives.ReadUInt16LittleEndian(list[4..]);
+    if (depth > MaxTreeDepth || (expectedDepth >= 0 && depth != expectedDepth) || used > count || 0x10 + used * 16 > list.Length)
+      throw new InvalidDataException($"OCFS2: an extent list claims depth {depth}, {used} of {count} records — not a valid tree node.");
 
-    for (var i = 0; i < nextFreeRec; i++) {
-      var recOff = extOff + 0x10 + i * 16;
-      if (recOff + 16 > image.Length) yield break;
-      // e_cpos (u32) @+0, e_leaf_clusters (u16) @+4, reserved @+6, flags @+7,
-      // e_blkno (u64) @+8. OCFS2_EXT_UNWRITTEN = 0x01.
-      var cpos = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(recOff, 4));
-      var clusters = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(recOff + 4, 2));
-      var flags = image[recOff + 7];
-      var blkno = (long)BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(recOff + 8, 8));
-      if (clusters == 0) continue;
-      yield return (cpos, blkno, clusters, (flags & 0x01) != 0);
+    for (var i = 0; i < used; i++) {
+      var rec = list.Slice(0x10 + i * 16, 16);
+      var cpos = BinaryPrimitives.ReadUInt32LittleEndian(rec);
+      var blkno = (long)BinaryPrimitives.ReadUInt64LittleEndian(rec[8..]);
+      if (depth == 0) {
+        // e_leaf_clusters (u16) @+4, reserved @+6, flags @+7. OCFS2_EXT_UNWRITTEN = 0x01.
+        var clusters = BinaryPrimitives.ReadUInt16LittleEndian(rec[4..]);
+        if (clusters == 0) continue;
+        result.Add((cpos, blkno, clusters, (rec[7] & 0x01) != 0));
+        continue;
+      }
+      // Interior: e_int_clusters (u32) @+4 — what lies below, not needed to walk it.
+      if (blkno == 0) continue;
+      var block = ReadBlock(head, volume, blkno, blockSize);
+      if (!block.AsSpan(0, ExtentBlockSig.Length).SequenceEqual(ExtentBlockSig)
+          || (long)BinaryPrimitives.ReadUInt64LittleEndian(block.AsSpan(ExtentBlockBlknoOffset, 8)) != blkno)
+        throw new InvalidDataException($"OCFS2: block {blkno} should be an extent block and is not.");
+      CollectExtents(block.AsSpan(ExtentBlockListOffset), blockSize, head, volume, result, depth - 1);
     }
+  }
+
+  /// <summary>One block, out of the buffered head when it is there, else out of the volume.</summary>
+  private static byte[] ReadBlock(byte[] head, Stream? volume, long blkno, int blockSize) {
+    var at = blkno * blockSize;
+    var block = new byte[blockSize];
+    if (blkno > 0 && at + blockSize <= head.Length) {
+      Buffer.BlockCopy(head, (int)at, block, 0, blockSize);
+      return block;
+    }
+    if (volume == null || blkno <= 0 || at + blockSize > volume.Length)
+      throw new InvalidDataException($"OCFS2: block {blkno} lies outside the volume that was read.");
+    volume.Position = at;
+    volume.ReadExactly(block);
+    return block;
   }
 
   /// <summary>Whether a dinode's extents hang off an interior tree rather than its own leaf list.</summary>
