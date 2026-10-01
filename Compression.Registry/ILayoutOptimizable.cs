@@ -52,6 +52,24 @@ public interface ILayoutOptimizable {
   LayoutReclaim ReclaimSupport => LayoutReclaim.None;
 
   /// <summary>
+  /// Whether <see cref="RebuildStreaming"/> lays the volume out again keeping everything it
+  /// carries — label, serial or UUID, owners, modes, attributes, links, extended attributes,
+  /// every timestamp — and not only names and bytes.
+  /// </summary>
+  /// <remarks>
+  /// <para><b>Default: false.</b> The generic rebuild extracts to a folder and creates a new
+  /// volume from it, and the create API carries a path, the bytes and a modification time,
+  /// nothing more; on a volume the real tools made that drops exactly what the
+  /// lossless-or-refuse rule protects (the ext, FAT, exFAT and NTFS rebuilds were shown to by
+  /// <c>MaintenancePreservesRealVolumesTests</c>). A descriptor sets this only for a relayout
+  /// that carries its format's whole metadata, and only then does
+  /// <see cref="MaintenanceCapabilities"/> offer <see cref="MaintenanceCapability.ChangeGeometry"/>.</para>
+  /// <para>It does not gate <see cref="RebuildStreaming"/> itself, which also serves conversion
+  /// and analysis, where a new volume is what was asked for.</para>
+  /// </remarks>
+  bool RelayoutPreservesEverything => false;
+
+  /// <summary>
   /// Applies metadata-only changes (volume label, serial number, geometry CHS
   /// fields, etc.) by seeking directly to the relevant superblock offsets.
   /// Throws <see cref="NotSupportedException"/> for changes that would require

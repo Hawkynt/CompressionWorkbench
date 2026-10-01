@@ -7,6 +7,30 @@ namespace Compression.Registry;
 /// </summary>
 public interface IArchiveDefragmentable {
   /// <summary>
+  /// The <see cref="DefragOptions"/> modes and options this defragmenter honours in place;
+  /// anything else is refused before a byte moves (<see cref="DefragSupport.Require"/>).
+  /// </summary>
+  /// <remarks>
+  /// <para><b>Default</b>: <see cref="DefragFeature.None"/> for a descriptor relying on the
+  /// interface's rebuild default — writing the container out again moves no extent — and
+  /// <see cref="DefragFeature.ConsolidateAtStart"/>, the one mode every concrete defragmenter
+  /// promises, for a descriptor with its own <c>Defragment</c>. Descriptors that honour more
+  /// declare it here and check requests against the same value.</para>
+  /// <para>A shell reads this through <see cref="MaintenanceCapabilities.Describe(IFormatDescriptor)"/>
+  /// to enable only the modes that will run.</para>
+  /// </remarks>
+  DefragFeature SupportedDefragFeatures {
+    get {
+      // A class's own reflection never returns an interface's default body, so finding the
+      // method at all means the class (or a base class) implements it.
+      var type = this.GetType();
+      var own = type.GetMethod(nameof(Defragment), [typeof(Stream)]) is not null
+             || type.GetMethod(nameof(Defragment), [typeof(Stream), typeof(DefragOptions)]) is not null;
+      return own ? DefragFeature.ConsolidateAtStart : DefragFeature.None;
+    }
+  }
+
+  /// <summary>
   /// Defragments using the format's default consolidate-at-start strategy.
   /// Generic list/extract/create descriptors use the verified staged rebuild.
   /// </summary>

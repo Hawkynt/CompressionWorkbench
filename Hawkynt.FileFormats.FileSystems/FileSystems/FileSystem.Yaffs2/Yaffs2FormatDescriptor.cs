@@ -32,6 +32,7 @@ namespace FileSystem.Yaffs2;
 ///   <item><description><c>https://en.wikipedia.org/wiki/YAFFS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(Yaffs2BlockMover))]
 public sealed class Yaffs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable, ISyntheticEntryNames {

@@ -29,6 +29,7 @@ namespace FileSystem.Nilfs1;
 ///   <item><description><c>https://en.wikipedia.org/wiki/NILFS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(Nilfs1BlockMover))]
 public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 

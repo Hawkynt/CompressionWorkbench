@@ -27,6 +27,7 @@ namespace FileSystem.Trsdos;
 ///   <item><description><c>https://en.wikipedia.org/wiki/TRSDOS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(TrsdosBlockMover))]
 public sealed class TrsdosFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
   IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {

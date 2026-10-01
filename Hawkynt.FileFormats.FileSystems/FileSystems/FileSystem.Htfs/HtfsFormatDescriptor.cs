@@ -25,6 +25,7 @@ namespace FileSystem.Htfs;
 /// <para><b>Hierarchy</b>: real — directories nest via the writer's inode +
 /// 16-byte dirent chain (single-block dirs cap one BB of entries each).</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(HtfsBlockMover))]
 public sealed class HtfsFormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {

@@ -19,6 +19,7 @@ namespace FileSystem.Fatx;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system</c> — Wikipedia's FAT reference, which covers the FATX variant</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(FatxBlockMover))]
 public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemPlaceable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   /// <summary>

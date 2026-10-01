@@ -25,6 +25,7 @@ namespace FileSystem.ApplePascal;
 ///   <item><description><c>https://en.wikipedia.org/wiki/UCSD_Pascal</c> — Wikipedia overview of the UCSD p-System family</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(ApplePascalBlockMover))]
 public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 

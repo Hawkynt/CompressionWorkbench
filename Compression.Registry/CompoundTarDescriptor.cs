@@ -7,7 +7,7 @@ namespace Compression.Registry;
 /// Auto-generated descriptor for compound tar formats (tar.gz, tar.bz2, etc.).
 /// Wraps tar archive operations with a stream compression layer via the registry.
 /// </summary>
-public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
+public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema, ICompressionOptimizable {
 
   /// <summary>
   /// Inherits the inner TAR descriptor's schema and adds a <c>CompressionLevel</c>
@@ -55,6 +55,20 @@ public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("tar", _displayName)];
   public string? TarCompressionFormatId => _streamFormatId;
+
+  private ICompressionOptimizable? OuterCompressor
+    => FormatRegistry.GetById(_streamFormatId) as ICompressionOptimizable is { CanOptimizeCompression: true } outer ? outer : null;
+
+  /// <summary>Whether the wrapping stream format re-encodes losslessly; the tar inside is never touched.</summary>
+  public bool CanOptimizeCompression => this.OuterCompressor is not null;
+
+  /// <summary>
+  /// Re-encodes the wrapping stream through its own lossless compressor. The tar it decodes
+  /// to — every header, mode, owner, time and link — comes out byte for byte the same.
+  /// </summary>
+  public void OptimizeCompression(Stream input, Stream output, string? password = null)
+    => (this.OuterCompressor ?? throw new NotSupportedException(
+         $"{_displayName}: the wrapping {_streamFormatId} stream has no lossless re-encode.")).OptimizeCompression(input, output, password);
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var streamOps = FormatRegistry.GetStreamOps(_streamFormatId)!;

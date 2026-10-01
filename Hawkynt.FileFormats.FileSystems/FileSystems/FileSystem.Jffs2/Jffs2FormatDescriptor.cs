@@ -23,6 +23,7 @@ namespace FileSystem.Jffs2;
 ///   <item><description><c>https://en.wikipedia.org/wiki/JFFS2</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(Jffs2BlockMover))]
 public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable, ISyntheticEntryNames {
 
   /// <inheritdoc />

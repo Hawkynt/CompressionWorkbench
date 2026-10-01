@@ -38,6 +38,7 @@ namespace FileSystem.Zfs;
 /// along it is written down once, which is what <see cref="ZfsLayout" /> is
 /// for.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(ZfsBlockMover))]
 public sealed class ZfsFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 

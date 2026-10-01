@@ -21,6 +21,7 @@ namespace FileSystem.Adfs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Advanced_Disc_Filing_System</c> — Wikipedia overview of the ADFS variants</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(AdfsBlockMover))]
 public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFilesystemExtentMap, IFormatOptionsSchema, ILayoutOptimizable {
 
   /// <summary>

@@ -14,6 +14,7 @@ namespace FileSystem.Refs;
 /// can relocate file data, live MSB+ metadata and checkpoint pages while
 /// preserving the format-fixed VBR/SUPB bootstrap anchors.
 /// </summary>
+[FilesystemBlockMover(typeof(RefsBlockMover))]
 public sealed class RefsFormatDescriptor :
   IFormatDescriptor,
   IArchiveFormatOperations,

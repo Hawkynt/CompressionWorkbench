@@ -2,8 +2,9 @@
 namespace Compression.Registry;
 
 /// <summary>
-/// Runs an in-place defragmentation and keeps its result only if every file
-/// still reads back byte for byte; otherwise the image is restored and rebuilt.
+/// Runs an in-place maintenance pass and keeps its result only if every file still
+/// reads back intact: <see cref="RunOrRebuild"/> falls back to a rebuild,
+/// <see cref="RunVerifiedInPlace"/> refuses and rolls back.
 /// </summary>
 /// <remarks>
 /// <para>Byte-moving defragmenters relink allocation structures as they go, and
@@ -66,6 +67,63 @@ public static class DefragContentGuard {
 
     Restore(archive, snapshot);
     rebuild();
+  }
+
+  /// <summary>
+  /// Runs an in-place maintenance pass that may only rearrange the image, never change
+  /// what it holds: captures the <see cref="ArchiveSemanticManifest"/>, lets
+  /// <paramref name="edit"/> write through journalled patches,
+  /// and keeps the result only when the image length and the manifest — every path,
+  /// byte, timestamp, link and container property the reader reports — are unchanged.
+  /// </summary>
+  /// <remarks>
+  /// <para>Unlike <see cref="RunOrRebuild"/> there is no rebuild behind it: a rebuild
+  /// keeps names and bytes and drops the rest, which is the loss this guard exists to
+  /// refuse. Any failure — the edit's own refusal, an exception halfway through, a
+  /// verification mismatch — rolls every patch back and surfaces as
+  /// <see cref="NotSupportedException"/>, with the image byte for byte as it was.</para>
+  /// <para>Only the journalled ranges are held in memory, so the guard scales to volumes
+  /// far larger than RAM; the manifest pass reads every file once before and once after.</para>
+  /// </remarks>
+  /// <param name="image">The image, readable, writable and seekable.</param>
+  /// <param name="ops">The reader the manifest is taken through.</param>
+  /// <param name="edit">The pass; every write it makes must go through the journal it is handed.</param>
+  /// <param name="operation">What to call the pass in a refusal message.</param>
+  public static void RunVerifiedInPlace(
+      Stream image,
+      IArchiveFormatOperations ops,
+      Action<Stream, InPlacePatchJournal> edit,
+      string operation) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(ops);
+    ArgumentNullException.ThrowIfNull(edit);
+    if (!image.CanRead || !image.CanWrite || !image.CanSeek)
+      throw new ArgumentException($"{operation} needs a readable, writable, seekable stream.", nameof(image));
+
+    var length = image.Length;
+    ArchiveSemanticManifest before;
+    try {
+      before = ArchiveSemanticManifest.Capture(image, ops);
+    } catch (Exception ex) when (ex is not NotSupportedException) {
+      throw new NotSupportedException($"{operation}: the image cannot be read back to verify the pass ({ex.Message}); nothing was changed.", ex);
+    }
+
+    var journal = new InPlacePatchJournal();
+    try {
+      edit(image, journal);
+      image.Flush();
+      if (image.Length != length)
+        throw new NotSupportedException($"{operation} changed the image size ({length} -> {image.Length}).");
+      var after = ArchiveSemanticManifest.Capture(image, ops);
+      before.RequireSameAs(after, operation);
+    } catch (Exception ex) {
+      journal.Rollback(image);
+      if (image.Length != length) image.SetLength(length);
+      image.Position = 0;
+      if (ex is NotSupportedException) throw;
+      throw new NotSupportedException($"{operation} refused: {ex.Message} The image was left unchanged.", ex);
+    }
+    image.Position = 0;
   }
 
   private static void Restore(Stream archive, MemoryStream snapshot) {

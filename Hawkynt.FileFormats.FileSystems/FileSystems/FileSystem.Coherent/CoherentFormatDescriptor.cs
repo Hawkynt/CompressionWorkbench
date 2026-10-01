@@ -18,6 +18,7 @@ namespace FileSystem.Coherent;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Coherent_(operating_system)</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(CoherentBlockMover))]
 public sealed class CoherentFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFilesystemExtentMap {
 
   /// <summary>

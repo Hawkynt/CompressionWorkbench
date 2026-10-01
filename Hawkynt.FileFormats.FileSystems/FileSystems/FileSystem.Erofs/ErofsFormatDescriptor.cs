@@ -19,6 +19,7 @@ namespace FileSystem.Erofs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/EROFS</c> — overview</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(ErofsBlockMover))]
 public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable,
   IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {

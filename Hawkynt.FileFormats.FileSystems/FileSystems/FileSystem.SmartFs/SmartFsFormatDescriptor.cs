@@ -21,6 +21,7 @@ namespace FileSystem.SmartFs;
 ///   <item><description>Apache NuttX SmartFS documentation — logical sectors are powers of two from 256 through 32768 bytes.</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(SmartFsBlockMover))]
 public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable,
     IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap {

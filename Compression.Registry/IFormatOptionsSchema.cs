@@ -67,6 +67,10 @@ public enum FormatOptionKind {
 /// options (e.g. "Journal" only visible when "Version" is ext3/ext4).</param>
 /// <param name="IsOptimizationAxis">Whether the generic compression optimizer may vary this option.
 /// Set to <see langword="false"/> for caller constraints such as <see cref="FormatOptionKeys.TargetCompatibility"/>.</param>
+/// <param name="IsAllocationGeometry">Whether the option sets allocation geometry — cluster or block size,
+/// image size, table sizes — rather than a label, a compression parameter or a compatibility switch. Only
+/// options tagged here can be changed on an existing volume by the geometry maintenance operation
+/// (<see cref="MaintenanceCapability.ChangeGeometry"/>, <c>cwb reconfigure</c>).</param>
 public sealed record FormatOptionDescriptor(
     string Key,
     string DisplayName,
@@ -75,4 +79,5 @@ public sealed record FormatOptionDescriptor(
     IReadOnlyList<string>? AllowedValues = null,
     string? Description = null,
     string? DependsOn = null,
-    bool IsOptimizationAxis = true);
+    bool IsOptimizationAxis = true,
+    bool IsAllocationGeometry = false);

@@ -32,6 +32,7 @@ namespace FileSystem.Gfs1;
 /// <c>sb_locktable</c>. The writer emits these via the options schema; the
 /// real distributed-lock protocol negotiation is out of WORM scope.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(Gfs1BlockMover))]
 public sealed class Gfs1FormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {

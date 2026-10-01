@@ -12,6 +12,7 @@ namespace FileSystem.F2fs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/F2FS</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(F2fsBlockMover))]
 public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
 
   // A F2FS segment is 2 MiB; image size in bytes = segment count × 2 MiB.

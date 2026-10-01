@@ -19,7 +19,11 @@ namespace FileSystem.SquashFs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/SquashFS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(SquashFsBlockMover))]
 public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+
+  /// <inheritdoc />
+  public DefragFeature SupportedDefragFeatures => DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder;
 
   // The optimization adapters are keyed on this descriptor's runtime type, so the
   // registration has to have run before any instance can be looked up. Doing it from
@@ -39,7 +43,8 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     FilesystemSchemaPresets.PowerOfTwoSize(
       key: "BlockSize", displayName: "Data block size",
       min: 4096, max: 1048576, defaultLabel: "128 KB",
-      description: "Compressed data block size. SquashFS allows powers of two from 4 KB to 1 MB; larger blocks compress better but waste more on small files."),
+      description: "Compressed data block size. SquashFS allows powers of two from 4 KB to 1 MB; larger blocks compress better but waste more on small files.",
+      isAllocationGeometry: false),
   ];
 
   /// <summary>
@@ -201,7 +206,7 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
-    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder, "SquashFS");
+    DefragSupport.Require(options, this.SupportedDefragFeatures, "SquashFS");
     if (!archive.CanSeek || archive.Length > PlannerImageCap)
       throw new NotSupportedException(
         $"SquashFS: in-place defragmentation checks the result against a snapshot held in memory; images over {PlannerImageCap:N0} bytes are refused.");

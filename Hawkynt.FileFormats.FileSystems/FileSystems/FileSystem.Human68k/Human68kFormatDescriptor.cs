@@ -32,6 +32,7 @@ namespace FileSystem.Human68k;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Sharp_X68000</c> — Wikipedia overview of the host platform</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(Human68kBlockMover))]
 public sealed class Human68kFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
   IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {

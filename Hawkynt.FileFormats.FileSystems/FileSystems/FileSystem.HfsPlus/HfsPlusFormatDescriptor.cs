@@ -14,6 +14,9 @@ namespace FileSystem.HfsPlus;
 /// </summary>
 public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
+  /// <inheritdoc />
+  public DefragFeature SupportedDefragFeatures => DefragFeature.Packing | DefragFeature.CarveHole;
+
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
   /// <summary>
@@ -391,7 +394,7 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
-    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole, "HFS+");
+    DefragSupport.Require(options, this.SupportedDefragFeatures, "HFS+");
     if (!archive.CanSeek || archive.Length > MaxBufferedImageBytes)
       throw new NotSupportedException(
         $"HFS+: in-place defragmentation checks the result against a snapshot held in memory; volumes over {MaxBufferedImageBytes:N0} bytes are refused.");

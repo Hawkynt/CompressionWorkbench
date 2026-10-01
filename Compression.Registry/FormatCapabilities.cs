@@ -53,6 +53,12 @@ public enum FormatCapabilities {
   /// of <see cref="CanCreate"/> and <see cref="CanModify"/> and is backed by <see cref="IContainerRemuxable"/>.
   /// </summary>
   CanRemux = 1 << 7,
+  /// <summary>
+  /// The creation-time <c>method+</c> hint: the writer can search its parameters for the
+  /// smallest output when a container is created. It is not a maintenance capability —
+  /// re-encoding an existing file is <see cref="ICompressionOptimizable"/>, discovered through
+  /// <see cref="MaintenanceCapabilities"/>.
+  /// </summary>
   SupportsOptimize = 1 << 8,
   CanCompoundWithTar = 1 << 9,
   /// <summary>R/W: can add/replace/remove entries in an existing archive/image. The implementation may edit in place or relayout/rebuild. Implies <see cref="CanCreate"/> for normal writable formats.</summary>

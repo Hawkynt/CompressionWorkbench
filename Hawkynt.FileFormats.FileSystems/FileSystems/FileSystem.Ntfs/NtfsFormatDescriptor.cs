@@ -20,6 +20,9 @@ namespace FileSystem.Ntfs;
 /// </summary>
 public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
+  /// <inheritdoc />
+  public DefragFeature SupportedDefragFeatures => DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder | DefragFeature.MetadataZone | DefragFeature.LayoutTemplate;
+
   // The optimization adapters are keyed on this descriptor's runtime type, so the
   // registration has to have run before any instance can be looked up. Doing it from
   // the type initializer gives exactly that guarantee without a module initializer.
@@ -295,8 +298,7 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(options);
     // Interleaving deals a file's clusters out one by one, and a run list with a run
     // per cluster outgrows the file's MFT record long before the file is large.
-    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder
-      | DefragFeature.MetadataZone | DefragFeature.LayoutTemplate, "NTFS");
+    DefragSupport.Require(options, this.SupportedDefragFeatures, "NTFS");
     DefragmentWithPlanner(archive, options);
   }
 

@@ -19,6 +19,7 @@ namespace FileSystem.Xenix;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Xenix</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(XenixBlockMover))]
 public sealed class XenixFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
   /// <summary>
   /// Gets the id.
