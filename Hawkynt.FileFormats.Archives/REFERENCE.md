@@ -9525,7 +9525,7 @@ Writer for Apple's AppleSingle (RFC 1740) container format. Emits the canonical 
 
 Apple `sparsebundle` — a directory-based expanding disk image used by Time Machine, FileVault and `hdiutil create -type SPARSEBUNDLE`. The bundle is a directory containing `Info.plist`, `Info.bckup`, `token` and a `bands/` directory whose hex-named files each hold one virtual band (default 8 MB). References: Apple `hdiutil(1)` man page — the creating tool; the bundle layout itself is undocumented by Apple`https://github.com/torarnv/sparsebundlefs` — sparsebundlefs — open-source FUSE implementation of the band layout`https://en.wikipedia.org/wiki/Sparse_image` — background on Apple sparse images/bundles
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9541,9 +9541,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`,
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a TAR transport of a sparsebundle directory. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 

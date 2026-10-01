@@ -24,16 +24,25 @@ public class SparsebundleTests {
       Assert.That(desc.Category, Is.EqualTo(FormatCategory.Archive));
       Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
       Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
-      Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+      // No CanCreate / CanModify: directory-output not modelled by the
+      // stream-based archive contract. Description must spell out the deferred
+      // promotion path so future work is grounded.
+      Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
       Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
       Assert.That(desc, Is.Not.InstanceOf<IArchiveModifiable>());
+      // A TAR of the bundle members was tried (#408) and dropped: libmodi does not take it for a
+      // sparsebundle, and the stream contract has no way to write the bundle directory itself.
+      Assert.That(desc, Is.Not.InstanceOf<IArchiveCreatable>());
     });
   }
 
   [Test, Category("EquivalenceClass")]
-  public void Descriptor_Description_DocumentsTarTransport() {
+  public void Descriptor_Description_DocumentsHonestDirectoryConstraint() {
     var desc = new SparsebundleFormatDescriptor();
-    Assert.That(desc.Description, Does.Contain("TAR transport"));
+    Assert.That(desc.Description, Does.Contain("R-only"));
+    Assert.That(desc.Description, Does.Contain("directory"));
+    Assert.That(desc.Description, Does.Contain("Sparseimage"),
+      "Description must point callers at the companion R/W Sparseimage descriptor.");
   }
 
   // ── Plist parsing ──────────────────────────────────────────────────
@@ -181,142 +190,6 @@ public class SparsebundleTests {
       Assert.That(File.ReadAllBytes(diskImg), Is.EqualTo(bandData));
     } finally {
       if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
-    }
-  }
-
-  [Test, Category("RoundTrip")]
-  public void Descriptor_CreateAndExtract_RawDisk_PreservesBytesAndSparseBands() {
-    var disk = new byte[4096];
-    new Random(42).NextBytes(disk.AsSpan(1024, 1024));
-    using var archive = new MemoryStream();
-    var desc = new SparsebundleFormatDescriptor();
-    desc.Create(archive, [ArchiveInputInfo.InMemory("disk.img", disk)], new FormatCreateOptions {
-      FormatSpecific = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["BandSize"] = "1024" },
-    });
-    archive.Position = 0;
-    var entries = desc.List(archive, null);
-    Assert.That(entries.Any(e => e.Name == "bands/1"), Is.True);
-
-    archive.Position = 0;
-    var output = Path.Combine(Path.GetTempPath(), "cwb_sb_tar_" + Guid.NewGuid().ToString("N"));
-    try {
-      desc.Extract(archive, output, null, null);
-      Assert.That(File.ReadAllBytes(Path.Combine(output, "bands", "1")), Is.EqualTo(disk.AsSpan(1024, 1024).ToArray()));
-      Assert.That(File.Exists(Path.Combine(output, "Info.bckup")), Is.True);
-      Assert.That(File.Exists(Path.Combine(output, "token")), Is.True);
-      Assert.That(new SparsebundleReader(output).ExtractDisk(), Is.EqualTo(disk));
-    } finally {
-      if (Directory.Exists(output)) Directory.Delete(output, true);
-    }
-  }
-
-  [Test, Category("RoundTrip")]
-  public void Descriptor_Create_BundleMembers_PreservesMetadataAndBandBytes() {
-    var plist = Encoding.UTF8.GetBytes(BuildPlist(512, 777));
-    var backup = "backup-metadata"u8.ToArray();
-    var band = RandomBytes(512, seed: 73);
-    using var archive = new MemoryStream();
-    var desc = new SparsebundleFormatDescriptor();
-    desc.Create(archive, [
-      ArchiveInputInfo.InMemory("Info.plist", plist),
-      ArchiveInputInfo.InMemory("Info.bckup", backup),
-      ArchiveInputInfo.InMemory("token", Array.Empty<byte>()),
-      ArchiveInputInfo.InMemory("bands/a", band),
-      ArchiveInputInfo.InMemory("com.apple.TimeMachine.MachineID.plist", "machine"u8.ToArray()),
-    ], new FormatCreateOptions());
-
-    archive.Position = 0;
-    var output = Path.Combine(Path.GetTempPath(), "cwb_sb_members_" + Guid.NewGuid().ToString("N"));
-    try {
-      desc.Extract(archive, output, null, null);
-      Assert.Multiple(() => {
-        Assert.That(File.ReadAllBytes(Path.Combine(output, "Info.plist")), Is.EqualTo(plist));
-        Assert.That(File.ReadAllBytes(Path.Combine(output, "Info.bckup")), Is.EqualTo(backup));
-        Assert.That(File.ReadAllBytes(Path.Combine(output, "bands", "a")), Is.EqualTo(band));
-        Assert.That(File.ReadAllBytes(Path.Combine(output, "com.apple.TimeMachine.MachineID.plist")), Is.EqualTo("machine"u8.ToArray()));
-      });
-    } finally {
-      if (Directory.Exists(output)) Directory.Delete(output, true);
-    }
-  }
-
-  private static Dictionary<string, byte[]> CreateMembers(byte[] disk, int bandSize) {
-    using var archive = new MemoryStream();
-    new SparsebundleFormatDescriptor().Create(archive, [ArchiveInputInfo.InMemory("disk.img", disk)], new FormatCreateOptions {
-      FormatSpecific = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["BandSize"] = bandSize.ToString(CultureInfo.InvariantCulture) },
-    });
-    var output = Path.Combine(Path.GetTempPath(), "cwb_sb_members_" + Guid.NewGuid().ToString("N"));
-    try {
-      archive.Position = 0;
-      new SparsebundleFormatDescriptor().Extract(archive, output, null, null);
-      return Directory.EnumerateFiles(output, "*", SearchOption.AllDirectories)
-        .ToDictionary(f => Path.GetRelativePath(output, f).Replace('\\', '/'), File.ReadAllBytes, StringComparer.Ordinal);
-    } finally {
-      if (Directory.Exists(output)) Directory.Delete(output, true);
-    }
-  }
-
-  [Test, Category("EquivalenceClass")]
-  public void GivenARawDisk_WhenCreating_ThenInfoPlistCarriesTheKeysHdiutilWrites() {
-    var members = CreateMembers(RandomBytes(3000, seed: 5), 1024);
-    var plist = Encoding.UTF8.GetString(members["Info.plist"]);
-    Assert.Multiple(() => {
-      Assert.That(plist, Does.Contain("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\""));
-      foreach (var key in new[] { "CFBundleInfoDictionaryVersion", "band-size", "bundle-backingstore-version", "diskimage-bundle-type", "size" })
-        Assert.That(plist, Does.Contain($"<key>{key}</key>"), key);
-      Assert.That(plist, Does.Contain("<integer>1024</integer>"));
-      Assert.That(plist, Does.Contain("<integer>3000</integer>"));
-      Assert.That(members["Info.bckup"], Is.EqualTo(members["Info.plist"]), "Info.bckup is the backup copy of Info.plist");
-      Assert.That(members["token"], Is.Empty);
-    });
-  }
-
-  [TestCase(4096, 1024, new[] { "bands/0", "bands/1", "bands/2", "bands/3" }, TestName = "GivenADiskOfWholeBands_WhenCreating_ThenEveryBandIsFull")]
-  [TestCase(3000, 1024, new[] { "bands/0", "bands/1", "bands/2" }, TestName = "GivenAPartialLastBand_WhenCreating_ThenTheLastBandIsShort")]
-  [TestCase(17 * 1024, 1024, new[] { "bands/0", "bands/10" }, TestName = "GivenSeventeenBands_WhenCreating_ThenBandNamesAreLowercaseHex")]
-  [Category("BoundaryCase")]
-  public void Create_SplitsTheDiskIntoHexNamedBands(int diskSize, int bandSize, string[] mustExist) {
-    var disk = RandomBytes(diskSize, seed: diskSize);
-    var members = CreateMembers(disk, bandSize);
-    Assert.Multiple(() => {
-      foreach (var band in mustExist) Assert.That(members.ContainsKey(band), Is.True, band);
-      var last = "bands/" + ((diskSize - 1) / bandSize).ToString("x", CultureInfo.InvariantCulture);
-      Assert.That(members[last].Length, Is.EqualTo(diskSize - (diskSize - 1) / bandSize * bandSize));
-    });
-  }
-
-  [Test, Category("BoundaryCase")]
-  public void GivenAnAllZeroDisk_WhenCreating_ThenNoBandIsStored() {
-    var members = CreateMembers(new byte[4096], 1024);
-    Assert.That(members.Keys.Where(k => k.StartsWith("bands/", StringComparison.Ordinal)), Is.Empty);
-  }
-
-  [TestCase(0, TestName = "GivenABandSizeOfZero_WhenCreating_ThenItIsRejected")]
-  [TestCase(-1, TestName = "GivenANegativeBandSize_WhenCreating_ThenItIsRejected")]
-  [Category("Exceptional")]
-  public void Create_RejectsNonPositiveBandSizes(int bandSize)
-    => Assert.That(() => CreateMembers(new byte[16], bandSize), Throws.TypeOf<ArgumentOutOfRangeException>());
-
-  [Test, Category("RoundTrip")]
-  public void Descriptor_Create_FromPlistAndDisk_RebuildsBandsAndKeepsPlist() {
-    var disk = RandomBytes(2048, seed: 91);
-    var plist = Encoding.UTF8.GetBytes(BuildPlist(1024, disk.Length));
-    using var archive = new MemoryStream();
-    var desc = new SparsebundleFormatDescriptor();
-    desc.Create(archive, [
-      ArchiveInputInfo.InMemory("Info.plist", plist),
-      ArchiveInputInfo.InMemory("Info.bckup", plist),
-      ArchiveInputInfo.InMemory("disk.img", disk),
-    ], new FormatCreateOptions());
-
-    archive.Position = 0;
-    var output = Path.Combine(Path.GetTempPath(), "cwb_sb_rebuild_" + Guid.NewGuid().ToString("N"));
-    try {
-      desc.Extract(archive, output, null, null);
-      Assert.That(File.ReadAllBytes(Path.Combine(output, "Info.plist")), Is.EqualTo(plist));
-      Assert.That(new SparsebundleReader(output).ExtractDisk(), Is.EqualTo(disk));
-    } finally {
-      if (Directory.Exists(output)) Directory.Delete(output, true);
     }
   }
 
