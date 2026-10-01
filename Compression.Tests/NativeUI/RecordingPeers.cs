@@ -175,4 +175,27 @@ internal sealed class RecordingWindow : RecordingControlPeer, IWindowPeer {
   public void SetWindowState(FormWindowState state) { }
 }
 
+/// <summary>
+/// A combo box peer that keeps its items and selection. It has to be a real class: the interface
+/// takes its items as a <see cref="ReadOnlySpan{T}"/>, which a dispatch proxy cannot box.
+/// </summary>
+internal sealed class RecordingComboBoxPeer : RecordingControlPeer, IComboBoxPeer {
+  private int _selectedIndex = -1;
+
+  public string[] Items { get; private set; } = [];
+
+  public event EventHandler? SelectionChanged;
+  public event EventHandler? DropDownOpened;
+  public event EventHandler? DropDownClosed;
+
+  public void SetItems(ReadOnlySpan<string> items, int selectedIndex) {
+    this.Items = items.ToArray();
+    this._selectedIndex = selectedIndex;
+  }
+
+  public void SetSelectedIndex(int index) => this._selectedIndex = index;
+  public int GetSelectedIndex() => this._selectedIndex;
+  public void SetDroppedDown(bool droppedDown) { }
+}
+
 #pragma warning restore CS0067

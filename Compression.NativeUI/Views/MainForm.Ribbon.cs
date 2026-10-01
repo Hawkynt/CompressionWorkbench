@@ -8,8 +8,9 @@ namespace Compression.NativeUI.Views;
 /// <summary>
 /// The command surface: an Office-style ribbon in place of a menu bar and toolbar. Every command the
 /// shell has lives here once — the Quick Access Toolbar for navigation, File for archives as files,
-/// Home for everyday file work, View for panes and layout, Tools for the specialist windows, and an
-/// Archive Tools tab that appears only while the shell is inside an archive.
+/// Home for everyday file work, View for panes and layout, Tools for the specialist windows, an
+/// Archive Tools tab that appears only while the shell is inside an archive, and a Disk Tools tab
+/// (Defragment) that appears while there is an image to maintain.
 /// </summary>
 /// <remarks>
 /// Shortcut keys are registered on the ribbon items and dispatched form-wide. Keys that belong to the
@@ -39,6 +40,7 @@ internal sealed partial class MainForm {
     this._ribbon.Tabs.Add(archive);
     this._archiveTools.Add(archive);
     this._ribbon.ContextualTabGroups.Add(this._archiveTools);
+    this.BuildDefragmentTab();
 
     this._ribbon.SelectedIndex = 1; // Home, as in Explorer
     this._ribbon.PreferredHeightChanged += (_, _) => this.LayoutChildren();
@@ -119,7 +121,8 @@ internal sealed partial class MainForm {
         this.RibbonCommand("Analyze Entry", IconKeys.Analyze, this._model.AnalyzeCommand, RibbonItemSize.Small, Keys.None, "Analyze the selected entry"),
         this.RibbonAction("Reverse Engineer", IconKeys.Analyze, () => new ReverseEngineerWindow().Show(), RibbonItemSize.Small, Keys.None, "Work out an unknown format")),
       Group("Disks and Images",
-        this.RibbonAction("Maintenance", IconKeys.Defragment, this.OpenMaintenance, RibbonItemSize.Large, Keys.None, "Optimize, shrink, defragment, purge or wipe an image"),
+        this.RibbonCommand("Maintenance", IconKeys.Defragment, this._model.MaintenanceCommand, RibbonItemSize.Large, Keys.Control | Keys.Shift | Keys.D,
+          "Open the Defragment tab: defragment, optimize, shrink, compact, clear or purge the open or selected image (Ctrl+Shift+D)"),
         this.RibbonAction("Partitions", IconKeys.Create, this.OpenPartitionEditor, RibbonItemSize.Small, Keys.None, "Edit MBR and GPT partition tables"),
         this.RibbonAction("Mount", IconKeys.Open, this.OpenMountWindow, RibbonItemSize.Small, Keys.None, "Mount a filesystem image")),
       Group("Performance",
@@ -137,13 +140,6 @@ internal sealed partial class MainForm {
         this.RibbonCommand("Add Files", IconKeys.Add, this._model.AddFilesCommand, RibbonItemSize.Large, Keys.None, "Add files to the archive"),
         this.RibbonCommand("Test", IconKeys.Test, this._model.TestCommand, RibbonItemSize.Small, Keys.Control | Keys.T, "Test integrity (Ctrl+T)")),
       Group("Maintenance",
-        this.RibbonCommand("Compact", IconKeys.Defragment, this._model.CompactEntryCommand, RibbonItemSize.Large, Keys.None, "Defragment, optimize and shrink in one pass"),
-        this.RibbonCommand("Defragment", IconKeys.Defragment, this._model.DefragmentEntryCommand, RibbonItemSize.Small),
-        this.RibbonCommand("Optimize", IconKeys.Analyze, this._model.OptimizeEntryCommand, RibbonItemSize.Small),
-        this.RibbonCommand("Shrink", IconKeys.Defragment, this._model.ShrinkEntryCommand, RibbonItemSize.Small),
-        this.RibbonCommand("Purge", IconKeys.Remove, this._model.PurgeEntryCommand, RibbonItemSize.Small),
-        this.RibbonCommand("Wipe Free Space", IconKeys.Remove, this._model.WipeEntryCommand, RibbonItemSize.Small),
-        this.RibbonCommand("Scramble", IconKeys.Defragment, this._model.ScrambleEntryCommand, RibbonItemSize.Small),
         this.RibbonCommand("Reconfigure", IconKeys.Properties, this._model.ReconfigureEntryCommand, RibbonItemSize.Small)));
     return tab;
   }
