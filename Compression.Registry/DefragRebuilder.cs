@@ -176,8 +176,8 @@ public static class DefragRebuilder {
   /// classification emitted here is a listing-order proxy only. Honest
   /// mtime-based classification requires the pre-defrag snapshot built from
   /// <see cref="ArchiveEntryInfo.LastModified"/> on the descriptor's
-  /// <see cref="IArchiveFormatOperations.List"/> output (see the WPF
-  /// <c>DefragmentWindow.PreviewBlockMap</c> method for the canonical
+  /// <see cref="IArchiveFormatOperations.List"/> output (see the shell's
+  /// <c>BlockMapSnapshot.Read</c> method for the canonical
   /// implementation).</para>
   /// </summary>
   private static DefragProgressEvent BuildScanEvent(
@@ -210,7 +210,7 @@ public static class DefragRebuilder {
   /// access to entry mtimes (its input is just (name, bytes) tuples), so this
   /// proxy is the best the rebuild path can do; UI consumers wanting honest
   /// mtime-based classification should use the pre-defrag snapshot path
-  /// (<c>DefragmentWindow.PreviewBlockMap</c>) which has access to
+  /// (<c>BlockMapSnapshot.Read</c> in the shell) which has access to
   /// <see cref="ArchiveEntryInfo.LastModified"/>.
   /// </summary>
   /// <summary>

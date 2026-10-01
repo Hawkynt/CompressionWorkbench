@@ -28,7 +28,7 @@ namespace Compression.Tests.NativeUI;
 /// </remarks>
 [TestFixture]
 [NonParallelizable]
-public sealed class MainFormTests {
+public sealed partial class MainFormTests {
   private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
 
   /// <summary>
@@ -207,6 +207,7 @@ public sealed class MainFormTests {
   [TestCase("New Folder", Keys.Control | Keys.Shift | Keys.N)]
   [TestCase("Select All", Keys.Control | Keys.A)]
   [TestCase("Preview Pane", Keys.Alt | Keys.P)]
+  [TestCase("Maintenance", Keys.Control | Keys.Shift | Keys.D)]
   public void GivenACommand_WhenTheRibbonIsBuilt_ThenItCarriesItsShortcut(string label, Keys expected) {
     WithShell(shell => {
       Assert.That(RibbonItemNamed(shell, label).ShortcutKeys, Is.EqualTo(expected));
