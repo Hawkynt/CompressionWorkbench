@@ -17,8 +17,6 @@ public sealed class Reiser4Reader : IDisposable {
   /// <summary>Byte offset of the master superblock: block 16 at a 4 KB block size.</summary>
   public const long MasterOffset = 65536;
 
-  private const ulong NativeLeafBlock = 24;
-  private const ulong NativeTwigBlock = 23;
   private const int ItemHeaderBytes = 38;
   private const int DirectoryUnitHeaderBytes = 26;
   private const int TargetKeyBytes = 24;
@@ -33,6 +31,7 @@ public sealed class Reiser4Reader : IDisposable {
 
   private readonly ImageAccessor _image;
   private readonly List<Entry> _entries = [];
+  private readonly HashSet<string> _nativeNames = new(StringComparer.Ordinal);
 
   /// <summary>True when the image carries a valid Reiser4 master superblock.</summary>
   public bool Valid { get; }
@@ -46,7 +45,7 @@ public sealed class Reiser4Reader : IDisposable {
   /// <summary>Volume UUID from the master superblock, as hex.</summary>
   public string UuidHex { get; } = "";
 
-  /// <summary>Files found in the native tree, or in the legacy payload directory.</summary>
+  /// <summary>Files and directories found in the native tree, or files in the legacy payload directory.</summary>
   public IReadOnlyList<Entry> Entries => this._entries;
 
   /// <summary>Total size of the backing image in bytes.</summary>
@@ -72,7 +71,10 @@ public sealed class Reiser4Reader : IDisposable {
 
     // Native metadata is authoritative. The private payload directory is kept
     // only so old workbench images remain readable while they are migrated.
-    if (this.TryReadNativeTree()) return;
+    if (this.TryReadNativeTree()) { this.NativeTreeValid = true; return; }
+    this._entries.Clear();
+    this._nativeNames.Clear();
+    this.RootMetadata = null;
 
     if (!master.AsSpan(Reiser4Writer.MasterPayloadMarkerOff, Reiser4Writer.PayloadMarker.Length)
         .SequenceEqual(Reiser4Writer.PayloadMarker))
@@ -83,11 +85,39 @@ public sealed class Reiser4Reader : IDisposable {
     this.ReadLegacyDirectory(dirBlock);
   }
 
+  /// <summary>True when the complete supported native namespace was decoded.</summary>
+  public bool NativeTreeValid { get; private set; }
+
+  /// <summary>Root stat-data, including inherited plugin settings.</summary>
+  public FileMetadata? RootMetadata { get; private set; }
+
+  internal IReadOnlyList<ulong> NativeNodeBlocks { get; private set; } = [];
+
   internal readonly record struct NativeRun(ulong Start, ulong Width);
 
-  /// <summary>One regular file: its name, first data block and byte length.</summary>
+  /// <summary>Stat-data fields which can be represented by the current writer.</summary>
+  public sealed record FileMetadata(
+      long Size, ushort Mode, uint LinkCount, uint UserId, uint GroupId,
+      uint ModifiedTime, uint AccessedTime, uint ChangedTime,
+      byte[] RawStatData) {
+    /// <summary>Stable filesystem object identity.</summary>
+    public ulong ObjectId { get; init; }
+    /// <summary>Locality of the object stat key.</summary>
+    public ulong StatLocality { get; init; }
+
+    /// <summary>Last-write timestamp, when the seconds value is representable.</summary>
+    public DateTime? LastModified => ModifiedTime == 0
+      ? null
+      : DateTimeOffset.FromUnixTimeSeconds(ModifiedTime).UtcDateTime;
+  }
+
+  /// <summary>One filesystem object and its physical extents.</summary>
   public sealed record Entry(string Name, ulong FirstBlock, long Size) {
     internal IReadOnlyList<NativeRun>? NativeRuns { get; init; }
+    /// <summary>True when this entry is a directory.</summary>
+    public bool IsDirectory { get; init; }
+    /// <summary>On-disk stat-data fields retained for metadata-preserving rebuilds.</summary>
+    public FileMetadata? Metadata { get; init; }
   }
 
   /// <summary>Reads a file's contents. Only valid below the array limit.</summary>
@@ -105,6 +135,7 @@ public sealed class Reiser4Reader : IDisposable {
   public long ExtractTo(Entry entry, Stream destination) {
     ArgumentNullException.ThrowIfNull(entry);
     ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return 0;
     if (entry.Size <= 0) return 0;
 
     if (entry.NativeRuns is { } runs)
@@ -185,129 +216,216 @@ public sealed class Reiser4Reader : IDisposable {
   }
 
   /// <summary>
-  /// Reads the single native leaf profile emitted by <see cref="Reiser4Tree"/>.
-  /// Item layout is decoded independently from the writer: item headers name the
-  /// plugin and key, cde40 units point at object ids, stat40 supplies byte sizes,
-  /// and extent40 supplies physical runs. Unsupported/corrupt layouts fail closed
-  /// and leave the legacy fallback available.
+  /// Walks formatted node40 internal pointers from the format40 root, collects
+  /// standard leaf1 items, then resolves cde40 names against stat40 keys. Unknown
+  /// node and item plugins fail closed so the legacy compatibility path remains
+  /// available for images carrying it.
   /// </summary>
   private bool TryReadNativeTree() {
     if (this.BlockSize != Reiser4Writer.BlockSize) return false;
+    var format = this._image.Read((long)17 * this.BlockSize, this.BlockSize);
+    if (format.Length != this.BlockSize || !format.AsSpan(52, Reiser4MasterSb.Format40Magic.Length)
+        .SequenceEqual(Reiser4MasterSb.Format40Magic)) return false;
+    var root = BinaryPrimitives.ReadUInt64LittleEndian(format.AsSpan(16, 8));
+    if (root == 0) return false;
 
-    var statSizes = new Dictionary<ulong, long>();
-    var extents = new Dictionary<ulong, IReadOnlyList<NativeRun>>();
-    byte[]? directory = null;
-    if (!this.TryReadNativeNode(NativeLeafBlock, statSizes, extents, ref directory)) return false;
-    // Extents are twig items, so a file body is found one level up; a twig that
-    // is missing or unreadable only means no file has a body.
-    _ = this.TryReadNativeNode(NativeTwigBlock, statSizes, extents, ref directory);
+    var leafBlocks = new List<(ulong Block, byte[] Data)>();
+    var nodeBlocks = new HashSet<ulong>();
+    if (!this.WalkNativeNodes(root, nodeBlocks, leafBlocks, 0) || leafBlocks.Count == 0)
+      return false;
 
-    if (directory is null) return false;
-    var parsed = ParseNativeDirectory(directory, statSizes, extents);
-    if (parsed is null) return false;
-    this._entries.AddRange(parsed);
+    var statData = new Dictionary<(ulong Locality, ulong ObjectId), FileMetadata>();
+    var extents = new Dictionary<(ulong Locality, ulong ObjectId), List<(ulong Offset, List<NativeRun> Runs)>>();
+    var directories = new Dictionary<ulong, List<byte[]>>();
+    foreach (var (_, leaf) in leafBlocks) {
+      if (!TryReadLeafItems(leaf, out var leafItems, out var bodiesEnd)) return false;
+      var byBody = leafItems.OrderBy(static item => item.BodyOffset).ToArray();
+      for (var i = 0; i < byBody.Length; ++i) {
+        var item = byBody[i];
+        var end = i + 1 < byBody.Length ? byBody[i + 1].BodyOffset : bodiesEnd;
+        if (end < item.BodyOffset) return false;
+        var body = leaf.AsSpan(item.BodyOffset, end - item.BodyOffset);
+        var objectKey = (item.Locality, item.ObjectId);
+        switch (item.Plugin) {
+          case PluginStat40 when item.Minor == MinorStatData && item.Ordering == 0 && item.KeyOffset == 0:
+            if (body.Length < 44 || (BinaryPrimitives.ReadUInt16LittleEndian(body) & 3) != 3) return false;
+            var size = BinaryPrimitives.ReadUInt64LittleEndian(body.Slice(8, 8));
+            if (size > long.MaxValue) return false;
+            if (statData.ContainsKey(objectKey)) return false;
+            statData[objectKey] = new FileMetadata((long)size,
+              BinaryPrimitives.ReadUInt16LittleEndian(body.Slice(2, 2)),
+              BinaryPrimitives.ReadUInt32LittleEndian(body.Slice(4, 4)),
+              BinaryPrimitives.ReadUInt32LittleEndian(body.Slice(16, 4)),
+              BinaryPrimitives.ReadUInt32LittleEndian(body.Slice(20, 4)),
+              BinaryPrimitives.ReadUInt32LittleEndian(body.Slice(24, 4)),
+              BinaryPrimitives.ReadUInt32LittleEndian(body.Slice(28, 4)),
+              BinaryPrimitives.ReadUInt32LittleEndian(body.Slice(32, 4)), body.ToArray()) {
+                ObjectId = item.ObjectId, StatLocality = item.Locality,
+              };
+            break;
+          case PluginExtent40 when item.Minor == MinorFileBody && item.Ordering == 0:
+            if ((body.Length & 15) != 0) return false;
+            var runs = new List<NativeRun>(body.Length / 16);
+            for (var p = 0; p < body.Length; p += 16) {
+              var start = BinaryPrimitives.ReadUInt64LittleEndian(body.Slice(p, 8));
+              var width = BinaryPrimitives.ReadUInt64LittleEndian(body.Slice(p + 8, 8));
+              if (width != 0) runs.Add(new NativeRun(start, width));
+            }
+            if (!extents.TryGetValue(objectKey, out var pieces)) extents[objectKey] = pieces = [];
+            pieces.Add((item.KeyOffset, runs));
+            break;
+          case PluginCde40 when item.Minor == 0:
+            if (!directories.TryGetValue(item.Locality, out var items)) directories[item.Locality] = items = [];
+            items.Add(body.ToArray());
+            break;
+          case PluginNodePointer when leaf[26] == 2:
+            if (body.Length != 8) return false;
+            break;
+          default: return false;
+        }
+      }
+    }
+
+    foreach (var parts in extents.Values) {
+      ulong logical = 0;
+      foreach (var part in parts.OrderBy(static p => p.Offset)) {
+        if (part.Offset != logical) return false;
+        foreach (var run in part.Runs) {
+          if (run.Start < 25 || nodeBlocks.Any(node => node >= run.Start && node - run.Start < run.Width) || run.Start >= (ulong)(this.Length / this.BlockSize) ||
+              run.Width > (ulong)(this.Length / this.BlockSize) - run.Start ||
+              run.Width > (ulong)long.MaxValue / (ulong)this.BlockSize - logical / (ulong)this.BlockSize) return false;
+          logical += run.Width * (ulong)this.BlockSize;
+        }
+      }
+    }
+    var joinedExtents = extents.ToDictionary(static pair => pair.Key,
+      static pair => (IReadOnlyList<NativeRun>)pair.Value.OrderBy(static part => part.Offset)
+        .SelectMany(static part => part.Runs).ToArray());
+    var visited = new HashSet<ulong>();
+    if (!WalkNativeDirectory(0x2a, "", statData, joinedExtents, directories, visited))
+      return false;
+    if (!statData.TryGetValue((0x29, 0x2a), out var rootMetadata) || (rootMetadata.Mode & 0xF000) != 0x4000)
+      return false;
+    if (statData.Count != this._entries.Count + 1 || directories.Keys.Any(key => !visited.Contains(key)) ||
+        extents.Keys.Any(key => !statData.TryGetValue(key, out var metadata) || (metadata.Mode & 0xF000) != 0x8000))
+      return false;
+    this.RootMetadata = rootMetadata;
+    this.NativeNodeBlocks = nodeBlocks.ToArray();
     return true;
   }
 
-  /// <summary>Collects the stat data, extents and directory items of one node40.</summary>
-  private bool TryReadNativeNode(ulong block, Dictionary<ulong, long> statSizes,
-      Dictionary<ulong, IReadOnlyList<NativeRun>> extents, ref byte[]? directory) {
-    var offset = checked((long)block * this.BlockSize);
-    if (offset + this.BlockSize > this._image.Length) return false;
+  private const ushort PluginNodePointer = 3;
 
-    var leaf = this._image.Read(offset, this.BlockSize);
-    if (leaf.Length != this.BlockSize
-        || BinaryPrimitives.ReadUInt32LittleEndian(leaf.AsSpan(8, 4)) != unchecked((uint)Reiser4Tree.NodeMagic))
+  private readonly record struct NativeItem(
+    ulong Locality, byte Minor, ulong Ordering, ulong ObjectId, ulong KeyOffset, ushort Plugin, ushort BodyOffset);
+
+  private bool WalkNativeNodes(ulong block, HashSet<ulong> visited,
+      List<(ulong Block, byte[] Data)> leaves, int depth, int expectedLevel = 0) {
+    if (depth > 16 || block >= (ulong)(this._image.Length / this.BlockSize) || !visited.Add(block)) return false;
+    var node = this._image.Read(checked((long)block * this.BlockSize), this.BlockSize);
+    if (node.Length != this.BlockSize || BinaryPrimitives.ReadUInt16LittleEndian(node) != 0
+        || BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(8, 4)) != unchecked((uint)Reiser4Tree.NodeMagic))
       return false;
+    var level = node[26];
+    if (expectedLevel != 0 && level != expectedLevel) return false;
+    var count = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(2, 2));
+    if (count > (this.BlockSize - Reiser4Tree.NodeHeaderBytes) / ItemHeaderBytes) return false;
+    if (level == 1) {
+      leaves.Add((block, node));
+      return true;
+    }
+    if (level < 2 || count == 0) return false;
 
-    var itemCount = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(2, 2));
-    var bodiesEnd = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(6, 2));
-    if (itemCount == 0 || itemCount > (this.BlockSize - Reiser4Tree.NodeHeaderBytes) / ItemHeaderBytes
-        || bodiesEnd < Reiser4Tree.NodeHeaderBytes || bodiesEnd > this.BlockSize - itemCount * ItemHeaderBytes)
+    if (!TryReadLeafItems(node, out var items, out var bodiesEnd)) return false;
+    if (level == 2) leaves.Add((block, node));
+    var children = new List<ulong>(count);
+    var byBody = items.OrderBy(static item => item.BodyOffset).ToArray();
+    for (var i = 0; i < byBody.Length; ++i) {
+      var item = byBody[i];
+      var end = i + 1 < byBody.Length ? byBody[i + 1].BodyOffset : bodiesEnd;
+      if (item.Plugin == PluginExtent40 && level == 2) continue;
+      if (item.Plugin != PluginNodePointer || end - item.BodyOffset != sizeof(ulong)) return false;
+      children.Add(BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(item.BodyOffset, sizeof(ulong))));
+    }
+    foreach (var child in children)
+      if (!this.WalkNativeNodes(child, visited, leaves, depth + 1, level - 1)) return false;
+    return true;
+  }
+
+  private bool TryReadLeafItems(byte[] leaf, out List<NativeItem> items, out int bodiesEnd) {
+    items = [];
+    var count = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(2, 2));
+    bodiesEnd = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(6, 2));
+    if (count == 0 || count > (this.BlockSize - Reiser4Tree.NodeHeaderBytes) / ItemHeaderBytes
+        || bodiesEnd < Reiser4Tree.NodeHeaderBytes || bodiesEnd > this.BlockSize - count * ItemHeaderBytes)
       return false;
-
-    var items = new List<NativeItem>(itemCount);
-    for (var i = 0; i < itemCount; ++i) {
+    for (var i = 0; i < count; ++i) {
       var header = this.BlockSize - (i + 1) * ItemHeaderBytes;
       var key0 = BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(header, 8));
       var bodyOffset = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(header + 32, 2));
       var plugin = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(header + 36, 2));
       if (bodyOffset < Reiser4Tree.NodeHeaderBytes || bodyOffset > bodiesEnd) return false;
-      items.Add(new NativeItem(
-        Minor: (byte)(key0 & 0xF),
-        Ordering: BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(header + 8, 8)),
-        ObjectId: BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(header + 16, 8)),
-        KeyOffset: BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(header + 24, 8)),
-        Plugin: plugin,
-        BodyOffset: bodyOffset));
+      items.Add(new NativeItem(key0 >> 4, (byte)(key0 & 0xf),
+        BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(header + 8, 8)),
+        BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(header + 16, 8)),
+        BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(header + 24, 8)), plugin, bodyOffset));
     }
-
-    var byBody = items.OrderBy(static item => item.BodyOffset).ToArray();
-    for (var i = 0; i < byBody.Length; ++i) {
-      var item = byBody[i];
-      var end = i + 1 < byBody.Length ? byBody[i + 1].BodyOffset : bodiesEnd;
-      if (end < item.BodyOffset) return false;
-      var body = leaf.AsSpan(item.BodyOffset, end - item.BodyOffset);
-
-      switch (item.Plugin) {
-        case PluginStat40 when item.Minor == MinorStatData && body.Length >= 16:
-          var size = BinaryPrimitives.ReadUInt64LittleEndian(body.Slice(8, 8));
-          if (size <= long.MaxValue) statSizes[item.ObjectId] = (long)size;
-          break;
-        case PluginExtent40 when item.Minor == MinorFileBody:
-          if ((body.Length & 15) != 0) return false;
-          var runs = new List<NativeRun>(body.Length / 16);
-          for (var p = 0; p < body.Length; p += 16) {
-            var start = BinaryPrimitives.ReadUInt64LittleEndian(body.Slice(p, 8));
-            var width = BinaryPrimitives.ReadUInt64LittleEndian(body.Slice(p + 8, 8));
-            if (width != 0) runs.Add(new NativeRun(start, width));
-          }
-          extents[item.ObjectId] = runs;
-          break;
-        case PluginCde40 when !body.IsEmpty:
-          directory = body.ToArray();
-          break;
-      }
-    }
-
     return true;
   }
 
-  private readonly record struct NativeItem(
-    byte Minor, ulong Ordering, ulong ObjectId, ulong KeyOffset, ushort Plugin, ushort BodyOffset);
+  private bool WalkNativeDirectory(ulong directoryId, string path,
+      IReadOnlyDictionary<(ulong Locality, ulong ObjectId), FileMetadata> statData,
+      IReadOnlyDictionary<(ulong Locality, ulong ObjectId), IReadOnlyList<NativeRun>> extents,
+      IReadOnlyDictionary<ulong, List<byte[]>> directories, HashSet<ulong> visited) {
+    if (path.Count(static c => c == '/') > 128 || !visited.Add(directoryId)) return false;
+    if (!directories.TryGetValue(directoryId, out var directoryItems)) return false;
 
-  private static List<Entry>? ParseNativeDirectory(
-      ReadOnlySpan<byte> body,
-      IReadOnlyDictionary<ulong, long> statSizes,
-      IReadOnlyDictionary<ulong, IReadOnlyList<NativeRun>> extents) {
-    if (body.Length < 2) return null;
-    var count = BinaryPrimitives.ReadUInt16LittleEndian(body);
-    var unitsStart = 2 + count * DirectoryUnitHeaderBytes;
-    if (unitsStart > body.Length) return null;
+    foreach (var directory in directoryItems) {
+      if (directory.Length < 2) return false;
+      var count = BinaryPrimitives.ReadUInt16LittleEndian(directory);
+      var unitsStart = 2 + count * DirectoryUnitHeaderBytes;
+      if (unitsStart > directory.Length) return false;
 
-    var result = new List<Entry>();
-    for (var i = 0; i < count; ++i) {
-      var header = 2 + i * DirectoryUnitHeaderBytes;
-      var ordering = BinaryPrimitives.ReadUInt64LittleEndian(body.Slice(header, 8));
-      var objectIdPart = BinaryPrimitives.ReadUInt64LittleEndian(body.Slice(header + 8, 8));
-      var offsetPart = BinaryPrimitives.ReadUInt64LittleEndian(body.Slice(header + 16, 8));
-      var unit = BinaryPrimitives.ReadUInt16LittleEndian(body.Slice(header + 24, 2));
-      var unitEnd = i + 1 < count
-        ? BinaryPrimitives.ReadUInt16LittleEndian(body.Slice(header + DirectoryUnitHeaderBytes + 24, 2))
-        : body.Length;
-      if (unit < unitsStart || unitEnd < unit || unitEnd > body.Length || unit + TargetKeyBytes > unitEnd)
-        return null;
+      for (var i = 0; i < count; ++i) {
+        var header = 2 + i * DirectoryUnitHeaderBytes;
+        var ordering = BinaryPrimitives.ReadUInt64LittleEndian(directory.AsSpan(header, 8));
+        var objectIdPart = BinaryPrimitives.ReadUInt64LittleEndian(directory.AsSpan(header + 8, 8));
+        var offsetPart = BinaryPrimitives.ReadUInt64LittleEndian(directory.AsSpan(header + 16, 8));
+        var unit = BinaryPrimitives.ReadUInt16LittleEndian(directory.AsSpan(header + 24, 2));
+        var unitEnd = i + 1 < count
+          ? BinaryPrimitives.ReadUInt16LittleEndian(directory.AsSpan(header + DirectoryUnitHeaderBytes + 24, 2))
+          : directory.Length;
+        if (unit < unitsStart || unitEnd < unit || unitEnd > directory.Length || unit + TargetKeyBytes > unitEnd)
+          return false;
 
-      var targetObjectId = BinaryPrimitives.ReadUInt64LittleEndian(body.Slice(unit + 16, 8));
-      var name = DecodeName(body.Slice(unit, unitEnd - unit), ordering, objectIdPart, offsetPart);
-      if (name.Length == 0 || name is "." or "..") continue;
-      if (!statSizes.TryGetValue(targetObjectId, out var size)) continue;
-      extents.TryGetValue(targetObjectId, out var runs);
-      runs ??= Array.Empty<NativeRun>();
-      if (size > 0 && runs.Count == 0) return null;
-      result.Add(new Entry(name, runs.Count == 0 ? 0 : runs[0].Start, size) { NativeRuns = runs });
+        var name = DecodeName(directory.AsSpan(unit, unitEnd - unit), ordering, objectIdPart, offsetPart);
+        if (name.Length == 0 || name is "." or "..") continue;
+        if (name.Contains('/') || name.Contains('\\') || name.Contains('\0') || name.Contains(':') || name.Any(static c => c > 127)) return false;
+        var targetLocality = BinaryPrimitives.ReadUInt64LittleEndian(directory.AsSpan(unit, 8)) >> 4;
+        var targetObjectId = BinaryPrimitives.ReadUInt64LittleEndian(directory.AsSpan(unit + 16, 8));
+        if (!statData.TryGetValue((targetLocality, targetObjectId), out var metadata)) return false;
+
+        var fullName = string.IsNullOrEmpty(path) ? name : $"{path}/{name}";
+        if (!this._nativeNames.Add(fullName)) return false;
+        var modeType = metadata.Mode & 0xF000;
+        if (modeType == 0x4000) {
+          this._entries.Add(new Entry(fullName, 0, 0) { IsDirectory = true, Metadata = metadata });
+          if (!this.WalkNativeDirectory(targetObjectId, fullName, statData, extents, directories, visited))
+            return false;
+          continue;
+        }
+
+        if (modeType != 0x8000) return false;
+        extents.TryGetValue((targetLocality, targetObjectId), out var runs);
+        runs ??= Array.Empty<NativeRun>();
+        if (runs.Aggregate(0UL, static (sum, run) => sum + run.Width) * (ulong)this.BlockSize < (ulong)metadata.Size) return false;
+        this._entries.Add(new Entry(fullName, runs.Count == 0 ? 0 : runs[0].Start, metadata.Size) {
+          NativeRuns = runs,
+          Metadata = metadata,
+        });
+      }
     }
-    return result;
+    return true;
   }
 
   private static string DecodeName(
@@ -317,7 +435,7 @@ public sealed class Reiser4Reader : IDisposable {
       var stored = unit[TargetKeyBytes..];
       var nul = stored.IndexOf((byte)0);
       if (nul >= 0) stored = stored[..nul];
-      return Encoding.ASCII.GetString(stored);
+      return Encoding.Latin1.GetString(stored);
     }
 
     Span<byte> name = stackalloc byte[23];
@@ -325,7 +443,7 @@ public sealed class Reiser4Reader : IDisposable {
     length += Unpack(name[length..], ordering & 0x00FF_FFFF_FFFF_FFFFUL, 7);
     length += Unpack(name[length..], objectId, 8);
     length += Unpack(name[length..], offset, 8);
-    return Encoding.ASCII.GetString(name[..length]);
+    return Encoding.Latin1.GetString(name[..length]);
   }
 
   private static int Unpack(Span<byte> destination, ulong value, int bytes) {

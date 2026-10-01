@@ -2124,13 +2124,15 @@ public class ExternalFsInteropTests {
     Directory.CreateDirectory(extractDir);
     using (var s2 = File.OpenRead(imgPath))
       descriptor.Extract(s2, extractDir, null, null);
-    var metaPath = Path.Combine(extractDir, "metadata.ini");
-    Assert.That(File.Exists(metaPath), $"metadata.ini missing in {extractDir}");
-    var meta = File.ReadAllText(metaPath);
-    Assert.That(meta, Does.Contain("parse_status=ok"),
-      $"Our reader failed to parse the Reiser4 master superblock:\n{meta}");
-    Assert.That(meta, Does.Match(@"blocksize=\d+"),
-      $"metadata.ini should report a non-empty blocksize:\n{meta}");
+    using var native = new Reiser4Reader(stream);
+    Assert.Multiple(() => {
+      Assert.That(native.Valid, Is.True);
+      Assert.That(native.NativeTreeValid, Is.True);
+      Assert.That(native.BlockSize, Is.EqualTo(4096));
+      Assert.That(native.RootMetadata, Is.Not.Null);
+      Assert.That(entries, Is.Empty, "a freshly formatted native namespace contains no user members");
+      Assert.That(Directory.GetFiles(extractDir), Is.Empty);
+    });
   }
 
   [Test]

@@ -60,7 +60,7 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanModify;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -101,7 +101,7 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Reiser4 filesystem image — native single-leaf file profile with streaming create, rebuild mutation, defrag and wipe.";
+  public string Description => "Reiser4 filesystem image — native node40 traversal and multi-leaf writing with nested directories and metadata-preserving rebuilds.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -135,9 +135,14 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     var idx = 0;
     if (payload.Count > 0) {
       foreach (var e in payload)
-        entries.Add(new ArchiveEntryInfo(idx++, e.Name, e.Size, e.Size, "stored", false, false, null));
+        entries.Add(new ArchiveEntryInfo(idx++, e.Name, e.Size, e.Size, "stored", e.IsDirectory, false,
+          e.Metadata?.LastModified));
       return entries;
     }
+
+    if (stream.CanSeek) stream.Position = 0;
+    using (var native = new Reiser4Reader(stream))
+      if (native.NativeTreeValid) return entries;
 
     entries.Add(new ArchiveEntryInfo(idx++, "FULL.reiser4", image.LongLength, image.LongLength, "stored", false, false, null));
     entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
@@ -183,11 +188,12 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     // A volume that carries files extracts exactly those, mirroring List.
     if (stream.CanSeek) stream.Position = 0;
     using (var reader = new Reiser4Reader(stream)) {
-      if (reader.Entries.Count > 0) {
+      if (reader.NativeTreeValid || reader.Entries.Count > 0) {
         foreach (var e in reader.Entries) {
           if (files is { Length: > 0 } && !MatchesFilter(e.Name, files)) continue;
           var target = Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
           Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
+          if (e.IsDirectory) { Directory.CreateDirectory(target); continue; }
           using var output = File.Create(target);
           reader.ExtractTo(e, output);
         }
@@ -231,17 +237,24 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   // ── IArchiveCreatable ────────────────────────────────────────────────
-  // The reserved blocks are byte-exact mkfs.reiser4 captures describing an empty
-  // storage tree; growing that tree (extent40 item bodies keyed by file offset,
-  // cde40 directory units) is not reproduced here. Files go in the workbench-layout
-  // payload area past those blocks, with the block-allocator bitmap and
-  // sb_free_blocks kept consistent so the volume stays internally coherent.
+  // A captured mkfs prefix supplies the format defaults; native stat40, cde40
+  // and extent40 items describe the supported namespace across native nodes.
   /// <summary>
   /// Performs the create operation.
   /// </summary>
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    => CreateCore(output, inputs, options);
+
+  private static void CreateCore(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options,
+      RebuildMetadata? saved = null) {
     ArgumentNullException.ThrowIfNull(output);
     var w = new Reiser4Writer();
+    if (saved is not null) {
+      w.Label = saved.Label;
+      w.Uuid = Convert.FromHexString(saved.UuidHex);
+      w.BlockCount = (ulong)(saved.Length / Reiser4Writer.BlockSize);
+      w.AddDirectory("", saved.Root);
+    }
 
     // Volume label: prefer the schema knob, falling back to the legacy
     // password-slot mapping (kept for callers that pre-date the schema).
@@ -256,31 +269,33 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     var sizes = new List<long>();
     if (inputs != null)
       foreach (var i in inputs) {
-        if (i.IsDirectory) continue;
+        var name = i.ArchiveName.Replace('\\', '/').TrimEnd('/');
+        var metadata = saved?.Entries.GetValueOrDefault(name)?.Metadata;
+        if (i.IsDirectory) { w.AddDirectory(name, metadata); continue; }
         var length = i.InMemoryContent?.LongLength ?? new FileInfo(i.FullPath).Length;
         sizes.Add(length);
         if (i.InMemoryContent is { } bytes) {
-          w.AddFile(i.ArchiveName, bytes);
+          w.AddFile(i.ArchiveName, bytes, metadata);
           continue;
         }
         var path = i.FullPath;
-        w.AddStreamingFile(i.ArchiveName, length, () => File.OpenRead(path));
+        w.AddStreamingFile(i.ArchiveName, length, () => File.OpenRead(path), metadata);
       }
 
     // The requested size is a floor: the volume has to be at least large enough
     // for the payload's directory chain, data blocks and bitmaps.
     var sizeBytes = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
     var requested = sizeBytes > 0 ? (ulong)Math.Max(1, sizeBytes / Reiser4Writer.BlockSize) : 0UL;
-    w.BlockCount = Math.Max(requested, Reiser4Writer.EstimateBlockCount(sizes));
+    w.BlockCount = Math.Max(w.BlockCount, Math.Max(requested, Reiser4Writer.EstimateBlockCount(sizes)));
 
     w.Write(output);
   }
 
   /// <summary>
-  /// Creates the supported native single-leaf profile from input streams. Each source
+  /// Creates the supported native node40 profile from input streams. Each source
   /// is consumed once into a temporary file, then copied in bounded chunks by
   /// <see cref="Reiser4Writer"/>; no complete file is staged in memory. Directory
-  /// inputs are currently ignored because this writer emits root-level regular files only.
+  /// inputs retain empty directories and nested paths.
   /// </summary>
   public void CreateFromStreams(Stream target,
       IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs,
@@ -292,7 +307,7 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     var sizes = new List<long>();
     try {
       foreach (var input in inputs) {
-        if (input.IsDirectory) continue;
+        if (input.IsDirectory) { writer.AddDirectory(input.Name); continue; }
         if (input.Size < 0) throw new ArgumentOutOfRangeException(nameof(inputs), "Input sizes must be non-negative.");
         var path = Path.Combine(Path.GetTempPath(), "cwb-reiser4-" + Guid.NewGuid().ToString("N"));
         staged.Add(path);
@@ -351,7 +366,7 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
     stream.Position = 0;
     using var reader = new Reiser4Reader(stream, leaveOpen: true);
-    return reader.Entries.Where(e => e.Size > 0).Select(reader.Extract).ToList();
+    return reader.Entries.Where(e => !e.IsDirectory && e.Size > 0).Select(reader.Extract).ToList();
   }
 
   /// <summary>Plans the new layout and moves the runs into it, repointing at the end.</summary>
@@ -397,63 +412,234 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
-    // Moving what is out of place beats writing the volume out again: a file is
-    // the run of blocks that starts where its directory entry says, so a move
-    // is the copy plus those eight bytes. What the format will not describe is
-    // a file whose blocks are no longer one sequence, and the pass refuses
-    // rather than write that down.
-    if (archive.CanSeek && archive.Length <= MaxBufferedImageBytes) {
-      var planned = false;
-      // The in-place pass is kept only if every payload still reads back: it
-      // can refuse partway, and a rebuild is the honest answer when it does.
-      DefragContentGuard.RunOrRebuild(archive,
-        readContents: ReadPayloadsForGuard,
-        inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
-        rebuild: () => planned = false);
-      if (planned) return;
-      archive.Position = 0;
+    var saved = CaptureMetadata(archive);
+
+    using (var reader = new Reiser4Reader(archive)) {
+      var plannerProfile = reader.NativeNodeBlocks.Count == 2 && reader.NativeNodeBlocks.Contains(23UL) &&
+        reader.NativeNodeBlocks.Contains(24UL) && reader.Entries.All(static entry => !entry.IsDirectory);
+      if (plannerProfile && archive.CanSeek && archive.Length <= MaxBufferedImageBytes) {
+        var planned = false;
+        DefragContentGuard.RunOrRebuild(archive,
+          readContents: ReadPayloadsForGuard,
+          inPlace: () => {
+            DefragmentWithPlanner(archive, options);
+            var moved = CaptureMetadata(archive);
+            if (saved.Root is { } root && !MetadataMatches(root, moved.Root) ||
+                saved.Entries.Any(pair => !moved.Entries.TryGetValue(pair.Key, out var entry) ||
+                  pair.Value.Metadata is { } metadata && !MetadataMatches(metadata, entry.Metadata)))
+              throw new InvalidDataException("Reiser4: in-place defrag changed native metadata.");
+            planned = true;
+          },
+          rebuild: () => planned = false);
+        if (planned) return;
+        archive.Position = 0;
+      }
     }
 
     if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy))
       throw new NotSupportedException(
         $"Reiser4 defragmentation supports ConsolidateAtStart and FillHolesLazy; got {options.Mode}.");
 
-    Stream? target = null;
-    var spill = new List<(string Name, string Path, long Size)>();
-    DefragRebuilder.RebuildStreaming(archive, options,
-      readEntries: ReadEntries,
-      beginWrite: s => target = s,
-      writeEntry: (name, data) => {
-        // The volume has to be sized before the first byte is written, so the
-        // entries are collected first and the writer is built in finishWrite.
-        var path = Path.GetTempFileName();
-        File.WriteAllBytes(path, data);
-        spill.Add((name, path, data.LongLength));
-      },
-      finishWrite: () => {
-        try {
-          var w = new Reiser4Writer {
-            BlockCount = Reiser4Writer.EstimateBlockCount(spill.ConvertAll(e => e.Size)),
-          };
-          foreach (var (name, path, size) in spill) {
-            var captured = path;
-            w.AddStreamingFile(name, size, () => File.OpenRead(captured));
-          }
-          w.Write(target!);
-        } finally {
-          foreach (var (_, path, _) in spill)
-            try { File.Delete(path); } catch { /* scratch file already gone */ }
-        }
-      });
+    using var source = new RebuildSource(this, archive);
+    RebuildVerb.RebuildInPlace(archive, source, new MetadataCreator(saved),
+      onProgress: options.OnProgress, cancellationToken: options.CancellationToken);
   }
 
-  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
-    using var reader = new Reiser4Reader(stream);
-    foreach (var e in reader.Entries) {
-      using var buffer = new MemoryStream();
-      reader.ExtractTo(e, buffer);
-      yield return (e.Name, buffer.ToArray());
+  /// <summary>Rebuilds tightly while retaining native metadata, or copies through on failure.</summary>
+  public void Shrink(Stream input, Stream output) {
+    using var staged = RebuildVerb.CreateScratchStream();
+    var useStaged = false;
+    try {
+      var saved = CaptureMetadata(input) with { Length = 0 };
+      using var source = new RebuildSource(this, input);
+      RebuildVerb.RebuildToStream(input, staged, source, new MetadataCreator(saved));
+      useStaged = staged.Length < input.Length;
+    } catch { /* retain the original when the supported writer cannot represent it */ }
+    input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    if (useStaged) { staged.Position = 0; staged.CopyTo(output); }
+    else input.CopyTo(output);
+  }
+
+  /// <summary>Rebuilds the supported native profile while carrying existing metadata.</summary>
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.UnitSize is not (0 or Reiser4Writer.BlockSize) || options.MakeSparse || options.DeduplicateWithLinks)
+      throw new NotSupportedException("Reiser4: this writer uses 4096-byte blocks without sparse or shared-file transforms.");
+    var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    if (options.ImageSize > 0) parameters["ImageSize"] = options.ImageSize.ToString(CultureInfo.InvariantCulture);
+    if (options.Parameters is not null)
+      foreach (var pair in options.Parameters) {
+        if (!pair.Key.Equals("ImageSize", StringComparison.OrdinalIgnoreCase))
+          throw new NotSupportedException($"Reiser4: unsupported rebuild parameter '{pair.Key}'.");
+        parameters[pair.Key] = pair.Value;
+      }
+    var saved = CaptureMetadata(source) with { Length = 0 };
+    using var sourceOps = new RebuildSource(this, source);
+    RebuildVerb.RebuildToStream(source, target, sourceOps, new MetadataCreator(saved), parameters);
+  }
+
+  private static string SafeMemberPath(string root, string name) {
+    var components = name.Replace('\\', '/').TrimEnd('/').Split('/');
+    if (components.Length == 0 || components.Any(static component => component.Length == 0 ||
+        component is "." or ".." || component.Contains(':') || component.Contains('\0')))
+      throw new InvalidDataException($"Reiser4: invalid member path '{name}'.");
+    return Path.Combine(root, Path.Combine(components));
+  }
+
+  // One native walk for a rebuild; opening every member must not reparse a wide tree.
+  private sealed class RebuildSource : IArchiveFormatOperations, IDisposable {
+    private readonly Reiser4FormatDescriptor _owner;
+    private readonly Stream _source;
+    private readonly Reiser4Reader _reader;
+    private readonly Dictionary<string, Reiser4Reader.Entry> _entries;
+
+    internal RebuildSource(Reiser4FormatDescriptor owner, Stream source) {
+      this._owner = owner;
+      this._source = source;
+      this._reader = new Reiser4Reader(source);
+      if (!this._reader.NativeTreeValid) throw new NotSupportedException("Reiser4: unsupported rebuild source.");
+      this._entries = this._reader.Entries.ToDictionary(static entry => entry.Name, StringComparer.Ordinal);
     }
+
+    public List<ArchiveEntryInfo> List(Stream stream, string? password)
+      => ReferenceEquals(stream, this._source)
+        ? this._reader.Entries.Select(static (entry, index) => new ArchiveEntryInfo(index, entry.Name,
+          entry.Size, entry.Size, "stored", entry.IsDirectory, false, entry.Metadata?.LastModified)).ToList()
+        : this._owner.List(stream, password);
+
+    public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+      if (!ReferenceEquals(stream, this._source)) { this._owner.Extract(stream, outputDir, password, files); return; }
+      foreach (var entry in this._reader.Entries) {
+        if (files is { Length: > 0 } && !MatchesFilter(entry.Name, files)) continue;
+        var destination = SafeMemberPath(outputDir, entry.Name);
+        if (entry.IsDirectory) { Directory.CreateDirectory(destination); continue; }
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        using var output = File.Create(destination);
+        if (this._reader.ExtractTo(entry, output) != entry.Size)
+          throw new EndOfStreamException($"Reiser4: truncated source member '{entry.Name}'.");
+      }
+    }
+
+    public Stream OpenEntry(Stream archive, string entryName, string? password) {
+      if (!ReferenceEquals(archive, this._source))
+        return ((IArchiveFormatOperations)this._owner).OpenEntry(archive, entryName, password);
+      if (!this._entries.TryGetValue(entryName, out var entry) || entry.IsDirectory)
+        throw new FileNotFoundException("Reiser4: source member was not found.", entryName);
+      if (entry.Size == 0) return new MemoryStream([], writable: false);
+      var spool = RebuildVerb.CreateScratchStream();
+      try {
+        if (this._reader.ExtractTo(entry, spool) != entry.Size)
+          throw new EndOfStreamException($"Reiser4: truncated source member '{entryName}'.");
+        spool.Position = 0;
+        return spool;
+      } catch { spool.Dispose(); throw; }
+    }
+
+    public void Dispose() => this._reader.Dispose();
+  }
+
+  private sealed record RebuildMetadata(string Label, string UuidHex, long Length,
+      Reiser4Reader.FileMetadata? Root, Dictionary<string, Reiser4Reader.Entry> Entries);
+
+  private static RebuildMetadata CaptureMetadata(Stream archive) {
+    using var reader = new Reiser4Reader(archive);
+    if (!reader.NativeTreeValid)
+      throw new NotSupportedException("Reiser4: refusing to rebuild an incomplete or unsupported native tree.");
+    return new(reader.Label, reader.UuidHex, reader.Length, reader.RootMetadata,
+      reader.Entries.ToDictionary(static entry => entry.Name, StringComparer.Ordinal));
+  }
+
+  private sealed class MetadataCreator(RebuildMetadata saved) : IArchiveCreatable {
+    public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+      var directoryNames = inputs.Where(static input => input.IsDirectory)
+        .Select(static input => input.ArchiveName.Replace('\\', '/').TrimEnd('/')).ToArray();
+      uint DirectoryLinks(string name) => checked((name.Length == 0 ? 3U : 2U) + (uint)directoryNames.Count(path => {
+        var slash = path.LastIndexOf('/');
+        return (slash < 0 ? "" : path[..slash]) == name;
+      }));
+      var entries = saved.Entries.ToDictionary(static pair => pair.Key, pair => pair.Value.IsDirectory && pair.Value.Metadata is { } metadata
+        ? pair.Value with { Metadata = metadata with { LinkCount = DirectoryLinks(pair.Key) } } : pair.Value, StringComparer.Ordinal);
+      var effective = saved with {
+        Entries = entries, Root = saved.Root is { } rootMetadata ? rootMetadata with { LinkCount = DirectoryLinks("") } : null,
+      };
+      CreateCore(output, inputs, options, effective);
+      using var rebuilt = new Reiser4Reader(output);
+      if (!rebuilt.NativeTreeValid || rebuilt.Label != saved.Label || rebuilt.UuidHex != saved.UuidHex)
+        throw new InvalidDataException("Reiser4: rebuilt native tree or volume identity failed verification.");
+      var expectedNames = inputs.Select(static input => input.ArchiveName.Replace('\\', '/').TrimEnd('/'))
+        .Order(StringComparer.Ordinal).ToArray();
+      if (!rebuilt.Entries.Select(static entry => entry.Name).Order(StringComparer.Ordinal)
+          .SequenceEqual(expectedNames, StringComparer.Ordinal))
+        throw new InvalidDataException("Reiser4: rebuilt namespace failed verification.");
+      if (effective.Root is { } root && !MetadataMatches(root, rebuilt.RootMetadata))
+        throw new InvalidDataException("Reiser4: root metadata failed verification.");
+      foreach (var entry in rebuilt.Entries) {
+        if (effective.Entries.TryGetValue(entry.Name, out var original) && original.Metadata is { } before &&
+            !MetadataMatches(before, entry.Metadata))
+          throw new InvalidDataException($"Reiser4: metadata was lost for '{entry.Name}'.");
+      }
+    }
+  }
+
+  private static bool MetadataMatches(Reiser4Reader.FileMetadata expected, Reiser4Reader.FileMetadata? actual)
+    => actual is not null && expected.ObjectId == actual.ObjectId && expected.StatLocality == actual.StatLocality &&
+      expected.Mode == actual.Mode && expected.LinkCount == actual.LinkCount &&
+      expected.UserId == actual.UserId && expected.GroupId == actual.GroupId &&
+      expected.ModifiedTime == actual.ModifiedTime && expected.AccessedTime == actual.AccessedTime &&
+      expected.ChangedTime == actual.ChangedTime && expected.RawStatData.Length == actual.RawStatData.Length &&
+      expected.RawStatData.AsSpan(0, 2).SequenceEqual(actual.RawStatData.AsSpan(0, 2)) &&
+      expected.RawStatData.AsSpan(44).SequenceEqual(actual.RawStatData.AsSpan(44));
+
+  /// <summary>Updates a native object's Unix fields and stat-data extensions through a staged rebuild.</summary>
+  /// <param name="archive">The readable, writable, seekable volume to update.</param>
+  /// <param name="name">The member path, or an empty string for the root directory.</param>
+  /// <param name="metadata">Unix fields and stat-data extension bytes to retain.</param>
+  public void UpdateMetadata(Stream archive, string name, Reiser4Reader.FileMetadata metadata) {
+    ArgumentNullException.ThrowIfNull(metadata);
+    var saved = CaptureMetadata(archive);
+    var normalized = name.Replace('\\', '/').TrimEnd('/');
+    var original = normalized.Length == 0 ? saved.Root : saved.Entries.GetValueOrDefault(normalized)?.Metadata;
+    if (original is null) throw new FileNotFoundException("Reiser4: native object was not found.", name);
+    if ((metadata.Mode & 0xF000) != (original.Mode & 0xF000))
+      throw new NotSupportedException("Reiser4: metadata updates cannot change an object's kind.");
+    var updated = metadata with {
+      Size = original.Size, ObjectId = original.ObjectId, StatLocality = original.StatLocality,
+      RawStatData = metadata.RawStatData.ToArray(),
+    };
+    if (normalized.Length == 0) saved = saved with { Root = updated };
+    else saved.Entries[normalized] = saved.Entries[normalized] with { Metadata = updated };
+    using var source = new RebuildSource(this, archive);
+    RebuildVerb.EditViaRebuild(archive, source, new MetadataCreator(saved), static _ => { });
+  }
+
+  /// <summary>Adds or replaces members while retaining existing stat-data extensions.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    var saved = CaptureMetadata(archive);
+    using var source = new RebuildSource(this, archive);
+    RebuildVerb.EditViaRebuild(archive, source, new MetadataCreator(saved), directory => {
+      foreach (var input in inputs) {
+        var destination = SafeMemberPath(directory, input.ArchiveName);
+        if (input.IsDirectory) { Directory.CreateDirectory(destination); continue; }
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        if (input.InMemoryContent is { } bytes) File.WriteAllBytes(destination, bytes);
+        else File.Copy(input.FullPath, destination, overwrite: true);
+      }
+    });
+  }
+
+  /// <summary>Removes members and directory subtrees through a metadata-preserving rebuild.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    var saved = CaptureMetadata(archive);
+    using var source = new RebuildSource(this, archive);
+    RebuildVerb.EditViaRebuild(archive, source, new MetadataCreator(saved), directory => {
+      foreach (var name in entryNames) {
+        var destination = SafeMemberPath(directory, name);
+        if (Directory.Exists(destination)) Directory.Delete(destination, recursive: true);
+        else if (File.Exists(destination)) File.Delete(destination);
+      }
+    });
   }
 
   // ── IArchiveWriteConstraints ─────────────────────────────────────────
@@ -462,9 +648,7 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     ArgumentNullException.ThrowIfNull(input);
-    reason = input.IsDirectory
-      ? "this Reiser4 profile writes regular files in the root directory only"
-      : Reiser4Writer.RejectName(input.ArchiveName);
+    reason = Reiser4Writer.RejectName(input.IsDirectory ? input.ArchiveName.TrimEnd('/', '\\') : input.ArchiveName);
     return reason is null;
   }
   /// <summary>
@@ -479,7 +663,7 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// Gets the accepted inputs description.
   /// </summary>
   public string AcceptedInputsDescription =>
-    "Reiser4 image; regular files in the root directory, named by the native tree (no sub-directories).";
+    "Reiser4 image; regular files and nested directories named by the native tree.";
 
   // Bounded read — must NOT pull multi-GB images into memory when the carver
   // runs us speculatively. Master SB is at 65536, format40 SB at 65536+blocksize
@@ -509,7 +693,7 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     try {
       if (image.CanSeek) image.Position = 0;
       using var reader = new Reiser4Reader(image);
-      if (!reader.Valid) return [];
+      if (!reader.NativeTreeValid) return [];
 
       var blockSize = reader.BlockSize;
       // Everything before the first file's blocks is reserved or directory.
@@ -530,6 +714,11 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       var metadataEnd = files.Count > 0 ? firstData : Math.Min(reader.Length, 25L * blockSize);
       result.Add(new DefragBlockInfo(0, metadataEnd, DefragBlockKind.MetadataReserved,
         "Reserved blocks and the payload directory"));
+
+      foreach (var node in reader.NativeNodeBlocks)
+        if ((long)node * blockSize >= metadataEnd)
+          result.Add(new DefragBlockInfo((long)node * blockSize, blockSize,
+            DefragBlockKind.MetadataReserved, "Native tree node"));
 
       // The bitmaps sit at stride boundaries inside the payload area.
       for (var block = Reiser4Writer.BlocksPerBitmap;
