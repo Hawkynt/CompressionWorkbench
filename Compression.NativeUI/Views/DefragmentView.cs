@@ -25,7 +25,7 @@ internal sealed class DefragmentView : Panel {
   private readonly SplitContainer _split = new() { FixedPanel = FixedPanel.Panel2, Panel1MinSize = 160, Panel2MinSize = 200, Dock = DockStyle.Fill };
   private readonly Label _filesStatus = new() { Text = "—", ForeColor = Color.DimGray, Dock = DockStyle.Top, Height = 18 };
   private readonly DataGridView _files = new() { ReadOnly = true, ShowGridLines = true, Dock = DockStyle.Fill };
-  private readonly TextBox _log = new() { ReadOnly = true, Multiline = true, Font = MonoFont, Dock = DockStyle.Bottom, Height = LogHeight };
+  private readonly LogView _log = new() { Font = MonoFont, Dock = DockStyle.Bottom, Height = LogHeight };
   private readonly LegendStrip _legend = new() { Dock = DockStyle.Bottom, Height = LegendHeight };
   private readonly ProgressBar _progress = new() { Minimum = 0, Maximum = 100, Dock = DockStyle.Bottom, Height = ProgressHeight };
   private TileContentsWindow? _tileWindow;
@@ -91,7 +91,7 @@ internal sealed class DefragmentView : Panel {
   private bool _legendVisible = true;
 
   /// <summary>Every line logged since the view was last reset.</summary>
-  public string LogText => this._log.Text;
+  public string LogText => this._log.LogText;
 
   public int ProgressValue {
     get => this._progress.Value;
@@ -129,14 +129,13 @@ internal sealed class DefragmentView : Panel {
   }
 
   public void Log(string line) {
-    this._log.AppendText(line + Environment.NewLine);
-    this._log.SelectionStart = this._log.Text.Length;
+    this._log.Append(line);
   }
 
   /// <summary>Forgets the previous image: no map, no rows, no log.</summary>
   public void Clear() {
     this.ShowSnapshot(BlockMapSnapshot.Empty("—"));
-    this._log.Text = "";
+    this._log.Clear();
     this.ProgressValue = 0;
   }
 
