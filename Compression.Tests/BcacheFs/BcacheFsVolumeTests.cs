@@ -66,6 +66,104 @@ public class BcacheFsVolumeTests {
     AssertReadsBack(Build(files), files, "as written");
   }
 
+  // Equivalence classes of timestamps: before the Unix epoch (negative stored units), the epoch
+  // itself, and both ends of what DateTimeOffset can hold.
+  [TestCase("1969-12-31T23:59:59.9999999Z")]
+  [TestCase("1970-01-01T00:00:00Z")]
+  [TestCase("0001-01-01T00:00:00Z")]
+  [TestCase("9999-12-31T23:59:59.9999999Z")]
+  [Category("BoundaryCase")]
+  public void Writer_GivenBoundaryTimestamp_WhenReadBack_ThenExact(string iso) {
+    var time = DateTimeOffset.Parse(iso, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal);
+    var writer = new BcacheFsWriter();
+    writer.AddFile("t.bin", [1], new ArchiveEntryMetadata(LastWriteTimeUtc: time, LastAccessTimeUtc: time));
+    using var image = new MemoryStream();
+    writer.WriteTo(image);
+    image.Position = 0;
+    using var reader = new BcacheFsReader(image);
+    Assert.That(reader.Entries.Single().Metadata.LastWriteTimeUtc, Is.EqualTo(time));
+    Assert.That(reader.Entries.Single().Metadata.LastAccessTimeUtc, Is.EqualTo(time));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void Writer_GivenNoMetadata_ThenDefaultModeAndZeroOwnership() {
+    var writer = new BcacheFsWriter();
+    writer.AddFile("plain.bin", [1]);
+    using var image = new MemoryStream();
+    writer.WriteTo(image);
+    image.Position = 0;
+    using var reader = new BcacheFsReader(image);
+    var metadata = reader.Entries.Single().Metadata;
+    Assert.That(metadata.UnixMode, Is.EqualTo(0x1A4), "0644");
+    Assert.That(metadata.UnixUserId, Is.Zero);
+    Assert.That(metadata.UnixGroupId, Is.Zero);
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Writer_PreservesProvidedFileOwnershipTimesAndMode() {
+    var access = new DateTimeOffset(2024, 2, 3, 4, 5, 6, TimeSpan.Zero).AddTicks(1_234_567);
+    var modified = access.AddDays(2);
+    var created = access.AddDays(-30);
+    var changed = access.AddMinutes(15);
+    var metadata = new ArchiveEntryMetadata(
+      CreationTimeUtc: created,
+      LastAccessTimeUtc: access,
+      LastWriteTimeUtc: modified,
+      UnixUserId: 1234,
+      UnixGroupId: 4321,
+      UnixMode: 0x1A0,
+      StatusChangeTimeUtc: changed);
+    var writer = new BcacheFsWriter();
+    writer.AddFile("metadata.bin", [1, 2, 3], metadata);
+
+    using var image = new MemoryStream();
+    writer.WriteTo(image);
+    image.Position = 0;
+    using var reader = new BcacheFsReader(image);
+
+    Assert.That(reader.Valid, Is.True, reader.Status);
+    var actual = reader.Entries.Single().Metadata;
+    Assert.That(actual.CreationTimeUtc, Is.EqualTo(created));
+    Assert.That(actual.LastAccessTimeUtc, Is.EqualTo(access));
+    Assert.That(actual.LastWriteTimeUtc, Is.EqualTo(modified));
+    Assert.That(actual.StatusChangeTimeUtc, Is.EqualTo(changed));
+    Assert.That(actual.UnixUserId, Is.EqualTo(1234));
+    Assert.That(actual.UnixGroupId, Is.EqualTo(4321));
+    Assert.That(actual.UnixMode, Is.EqualTo(0x1A0));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void InPlaceAdd_PreservesProvidedFileMetadata() {
+    var modified = new DateTimeOffset(2025, 6, 7, 8, 9, 10, TimeSpan.Zero).AddTicks(12_345);
+    var metadata = new ArchiveEntryMetadata(
+      CreationTimeUtc: modified.AddDays(-10),
+      LastAccessTimeUtc: modified.AddDays(-1),
+      LastWriteTimeUtc: modified,
+      UnixUserId: 101,
+      UnixGroupId: 202,
+      UnixMode: 0x180,
+      StatusChangeTimeUtc: modified.AddMinutes(-5));
+    using var image = new MemoryStream(Build(new Dictionary<string, byte[]> {
+      ["existing.bin"] = [9],
+    }));
+    var descriptor = new BcacheFsFormatDescriptor();
+
+    descriptor.Add(image, [ArchiveInputInfo.InMemory("new.bin", new byte[] { 1, 2, 3 }, metadata)]);
+    image.Position = 0;
+    using var reader = new BcacheFsReader(image);
+
+    Assert.That(reader.Valid, Is.True, reader.Status);
+    var entry = reader.Entries.Single(e => e.Name == "new.bin");
+    Assert.That(reader.Read(entry), Is.EqualTo(new byte[] { 1, 2, 3 }));
+    Assert.That(entry.Metadata.CreationTimeUtc, Is.EqualTo(metadata.CreationTimeUtc));
+    Assert.That(entry.Metadata.LastAccessTimeUtc, Is.EqualTo(metadata.LastAccessTimeUtc));
+    Assert.That(entry.Metadata.LastWriteTimeUtc, Is.EqualTo(metadata.LastWriteTimeUtc));
+    Assert.That(entry.Metadata.StatusChangeTimeUtc, Is.EqualTo(metadata.StatusChangeTimeUtc));
+    Assert.That(entry.Metadata.UnixUserId, Is.EqualTo(metadata.UnixUserId));
+    Assert.That(entry.Metadata.UnixGroupId, Is.EqualTo(metadata.UnixGroupId));
+    Assert.That(entry.Metadata.UnixMode, Is.EqualTo(metadata.UnixMode));
+  }
+
   /// <summary>Directories are keys too, and a nested path is several of them.</summary>
   [Test, Category("RoundTrip")]
   public void ANestedPath_KeepsEveryComponent() {

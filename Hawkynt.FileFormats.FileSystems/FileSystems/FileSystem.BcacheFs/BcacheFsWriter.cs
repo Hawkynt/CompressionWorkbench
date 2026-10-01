@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Compression.Core.DiskImage;
+using Compression.Registry;
 using static FileSystem.BcacheFs.BcacheFsFormat;
 
 namespace FileSystem.BcacheFs;
@@ -63,7 +64,7 @@ public sealed class BcacheFsWriter {
 
   private enum Kind { File, Directory, Symlink }
 
-  private readonly List<(string Name, Kind Kind, FilePayload Payload)> _entries = [];
+  private readonly List<(string Name, Kind Kind, FilePayload Payload, ArchiveEntryMetadata? Metadata)> _entries = [];
   // Empty by default, as `bcachefs format` leaves it unless a label is asked for.
   private string _label = "";
   private long _imageSize = MinImageSize;
@@ -91,24 +92,25 @@ public sealed class BcacheFsWriter {
     this._imageSize = bytes;
   }
 
-  /// <summary>Adds a file, held in memory.</summary>
-  public void AddFile(string name, byte[] data) {
+  /// <summary>Adds a file, held in memory, with the times, ownership and mode it should carry.</summary>
+  public void AddFile(string name, byte[] data, ArchiveEntryMetadata? metadata = null) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    this._entries.Add((name, Kind.File, FilePayload.FromBytes(data)));
+    this._entries.Add((name, Kind.File, FilePayload.FromBytes(data), metadata));
   }
 
   /// <summary>Adds a file whose bytes are read as the volume is written.</summary>
-  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream,
+      ArchiveEntryMetadata? metadata = null) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(openStream);
-    this._entries.Add((name, Kind.File, FilePayload.FromStream(size, openStream)));
+    this._entries.Add((name, Kind.File, FilePayload.FromStream(size, openStream), metadata));
   }
 
   /// <summary>Adds a directory, which may stay empty.</summary>
   public void AddDirectory(string name) {
     ArgumentNullException.ThrowIfNull(name);
-    this._entries.Add((name, Kind.Directory, FilePayload.Empty));
+    this._entries.Add((name, Kind.Directory, FilePayload.Empty, null));
   }
 
   /// <summary>
@@ -127,7 +129,7 @@ public sealed class BcacheFsWriter {
       throw new ArgumentException("A symbolic link target cannot contain NUL.", nameof(target));
     var data = new byte[bytes.Length + 1];
     bytes.CopyTo(data, 0);
-    this._entries.Add((name, Kind.Symlink, FilePayload.FromBytes(data)));
+    this._entries.Add((name, Kind.Symlink, FilePayload.FromBytes(data), null));
   }
 
   /// <summary>
@@ -218,6 +220,7 @@ public sealed class BcacheFsWriter {
     internal required ulong Inode { get; init; }
     internal required long Length { get; init; }
     internal required FilePayload Payload { get; init; }
+    internal ArchiveEntryMetadata? Metadata { get; init; }
     internal long FirstSector { get; set; }
     internal List<byte[]> ExtentValues { get; } = [];
   }
@@ -294,7 +297,7 @@ public sealed class BcacheFsWriter {
     var dirents = new List<Key>();
     var extents = new List<Key>();
     var files = new List<PlannedFile>();
-    var leaves = new List<(string Name, ulong Parent, Kind Kind, FilePayload Payload)>();
+    var leaves = new List<(string Name, ulong Parent, Kind Kind, FilePayload Payload, ArchiveEntryMetadata? Metadata)>();
 
     ulong DirectoryInode(string path, ulong parent, string leaf) {
       if (directories.TryGetValue(path, out var existing)) return existing.Inode;
@@ -304,7 +307,7 @@ public sealed class BcacheFsWriter {
     }
 
     var seen = new HashSet<string>(StringComparer.Ordinal);
-    foreach (var (rawName, kind, payload) in this._entries) {
+    foreach (var (rawName, kind, payload, metadata) in this._entries) {
       var parts = rawName.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
       if (parts.Length == 0) continue;
 
@@ -320,15 +323,16 @@ public sealed class BcacheFsWriter {
       var path = string.Join('/', parts);
       if (directories.ContainsKey(path) || !seen.Add(path))
         throw new ArgumentException($"bcachefs: '{path}' is added twice.");
-      leaves.Add((parts[^1], parent, kind, payload));
+      leaves.Add((parts[^1], parent, kind, payload, metadata));
     }
 
     // ── Where the data goes: each file from a fresh bucket, after the reservation ──
     var bucket = (long)FirstMetadataBucket + MetadataBuckets;
     var planned = new List<(PlannedFile File, string Name, ulong Parent, Kind Kind)>();
-    foreach (var (name, parent, kind, payload) in leaves) {
+    foreach (var (name, parent, kind, payload, metadata) in leaves) {
       var file = new PlannedFile {
-        Inode = nextInode++, Length = payload.Size, Payload = payload, FirstSector = bucket * BucketSectors,
+        Inode = nextInode++, Length = payload.Size, Payload = payload, Metadata = metadata,
+        FirstSector = bucket * BucketSectors,
       };
       bucket += (file.Length + BucketBytes - 1) / BucketBytes;
       files.Add(file);
@@ -352,7 +356,8 @@ public sealed class BcacheFsWriter {
     foreach (var (file, name, parent, kind) in planned) {
       var sectors = (file.Length + SectorSize - 1) / SectorSize;
       inodes.Add(InodeKey(file.Inode, parent, DirentHash(HashSeed(parent), name),
-        kind == Kind.Symlink ? ModeSymlink : ModeFile, size: (ulong)file.Length, sectors: (ulong)sectors, links: 0));
+        kind == Kind.Symlink ? ModeSymlink : ModeFile, size: (ulong)file.Length, sectors: (ulong)sectors, links: 0,
+        metadata: file.Metadata));
       dirents.Add(DirentKey(parent, name, file.Inode, kind == Kind.Symlink ? DtLnk : DtReg));
 
       foreach (var (placed, spanSectors) in ExtentSpans(file.Length)) {
@@ -398,18 +403,27 @@ public sealed class BcacheFsWriter {
   /// the record, write fewer and it reads the wrong field.</para>
   ///
   /// <para>The four time fields are 96 bits wide, so each is a varint for the low
-  /// 64 bits followed by one for the high 32.</para>
+  /// 64 bits followed by one for the high 32. A time is a signed count of the
+  /// superblock's time units from its time base, stored two's-complement in the
+  /// low half.</para>
+  ///
+  /// <para><paramref name="metadata" /> supplies the times, the owner and group, and
+  /// the permission bits; the kind of inode stays what <paramref name="mode" /> says.</para>
   /// </remarks>
   internal static Key InodeKey(ulong inode, ulong parent, ulong parentOffset,
-      ulong mode, ulong size, ulong sectors, int links, uint subvolume = 0) {
+      ulong mode, ulong size, ulong sectors, int links, uint subvolume = 0,
+      ArchiveEntryMetadata? metadata = null) {
+    if (metadata?.UnixMode is { } permissions)
+      mode = (mode & 0xF000) | ((ulong)permissions & 0x1FF);
+
     // In the order the format lists them; a trailing run of zeroes is not written.
     (ulong Value, bool Wide)[] fields = [
-      (0, true),                  // bi_atime
-      (0, true),                  // bi_ctime
-      (0, true),                  // bi_mtime
-      (0, true),                  // bi_otime
-      (0, false),                 // bi_uid
-      (0, false),                 // bi_gid
+      (ToBcacheTime(metadata?.LastAccessTimeUtc), true),    // bi_atime
+      (ToBcacheTime(metadata?.StatusChangeTimeUtc), true),  // bi_ctime
+      (ToBcacheTime(metadata?.LastWriteTimeUtc), true),     // bi_mtime
+      (ToBcacheTime(metadata?.CreationTimeUtc), true),      // bi_otime
+      (metadata?.UnixUserId ?? 0, false),                   // bi_uid
+      (metadata?.UnixGroupId ?? 0, false),                  // bi_gid
       // The stored count is the link count less what the kind of inode always has:
       // one for a file, two for a directory.
       ((ulong)links, false),      // bi_nlink, biased
@@ -459,6 +473,17 @@ public sealed class BcacheFsWriter {
     buffer.AsSpan(0, cursor).CopyTo(value.AsSpan(48));
 
     return new Key(KeyInodeV3, new Bpos(0, inode, SnapshotIdMax), 0, value);
+  }
+
+  /// <summary>
+  /// A time in the units an inode stores it in: this writer's superblock says one
+  /// unit is 100 ns from a time base of zero, so a unit is exactly one .NET tick
+  /// since the Unix epoch, and a time before it is negative.
+  /// </summary>
+  internal static ulong ToBcacheTime(DateTimeOffset? time) {
+    if (time is not { } value) return 0;
+    var ticks = checked(value.UtcTicks - DateTimeOffset.UnixEpoch.UtcTicks);
+    return unchecked((ulong)ticks);
   }
 
   /// <summary>

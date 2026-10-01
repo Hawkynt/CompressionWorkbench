@@ -217,9 +217,11 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
           if (entry.Unreadable != null) continue;
           var target = Path.Combine(outputDir, entry.Name.Replace('/', Path.DirectorySeparatorChar));
           Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
-          using var output = File.Create(target);
-          if (entry.LinkTarget is { } link) output.Write(Encoding.UTF8.GetBytes(link));
-          else reader.ExtractTo(entry, output);
+          using (var output = File.Create(target)) {
+            if (entry.LinkTarget is { } link) output.Write(Encoding.UTF8.GetBytes(link));
+            else reader.ExtractTo(entry, output);
+          }
+          if (entry.LinkTarget == null) ApplyFileMetadata(target, entry.Metadata);
         }
 
         WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(sb), files);
@@ -301,10 +303,11 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       var length = input.InMemoryContent?.LongLength ?? new FileInfo(input.FullPath).Length;
       sizes.Add(length);
       if (input.InMemoryContent is { } bytes)
-        writer.AddFile(input.ArchiveName, bytes);
+        writer.AddFile(input.ArchiveName, bytes, input.Metadata);
       else {
         var path = input.FullPath;
-        writer.AddStreamingFile(input.ArchiveName, length, () => File.OpenRead(path));
+        var metadata = input.Metadata ?? ArchiveInputInfo.FromFile(new FileInfo(path), input.ArchiveName).Metadata;
+        writer.AddStreamingFile(input.ArchiveName, length, () => File.OpenRead(path), metadata);
       }
     }
 
@@ -330,7 +333,7 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       var probe = ArchiveInputInfo.InMemory(input.Name, []);
       if (!this.CanAccept(probe, out var reason))
         throw new ArgumentException(reason, nameof(inputs));
-      writer.AddStreamingFile(input.Name, input.Size, input.OpenStream);
+      writer.AddStreamingFile(input.Name, input.Size, input.OpenStream, input.Metadata);
     }
 
     var requested = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
@@ -621,6 +624,24 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (!string.IsNullOrEmpty(label)) writer.SetLabel(label);
     return writer;
+  }
+
+  private static void ApplyFileMetadata(string path, ArchiveEntryMetadata metadata) {
+    if (metadata.LastAccessTimeUtc is { } access)
+      File.SetLastAccessTimeUtc(path, access.UtcDateTime);
+    if (metadata.LastWriteTimeUtc is { } write)
+      File.SetLastWriteTimeUtc(path, write.UtcDateTime);
+    if (!OperatingSystem.IsWindows() && metadata.UnixMode is { } mode)
+      File.SetUnixFileMode(path, (UnixFileMode)(mode & 0x1FF));
+    // Creation/birth time is not settable on every host filesystem. Preserve the
+    // extraction result when the destination platform cannot represent it.
+    if (metadata.CreationTimeUtc is { } creation) {
+      try {
+        File.SetCreationTimeUtc(path, creation.UtcDateTime);
+      } catch (PlatformNotSupportedException) {
+      } catch (IOException) {
+      }
+    }
   }
 
   private static void WriteVolume(BcacheFsWriter writer, Stream output) {

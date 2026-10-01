@@ -286,36 +286,56 @@ public sealed class BcacheFsExternalConformanceTests {
   /// is left exactly as written. Reading a file through the driver verifies each
   /// extent's checksum on the way.
   /// </remarks>
-  [Test, Category("HappyPath")]
-  public void GivenOurVolume_WhenMountedThroughFuse_ThenTreeModesLinksAndBytesMatch() {
-    RequireBcachefsTools();
+  /// <summary>The first checker that can serve a volume through FUSE, or a skip.</summary>
+  private static string RequireFuseChecker() {
     var fuse = Checkers().FirstOrDefault(c =>
       FsInteropToolbox.RunWsl(
         $"out=$({c} fusemount --help 2>&1); ! echo \"$out\" | grep -q 'Unknown command' "
         + "&& echo \"$out\" | grep -qi usage && command -v fusermount3").ExitCode == 0);
     if (fuse == null)
       Assert.Ignore("No FUSE-capable bcachefs: name a bcachefs-tools build with FUSE support in CWB_BCACHEFS_EXTRA.");
+    return fuse;
+  }
 
-    var (writer, expected) = Sampler();
-    var path = Write(Path.Combine(this._tmpDir, "fuse.img"), writer);
+  /// <summary>
+  /// Mounts a copy of <paramref name="imagePath" /> through FUSE, runs
+  /// <paramref name="commands" /> inside the mount point and returns what they print.
+  /// </summary>
+  /// <remarks>
+  /// Read-write on a copy: a newer bcachefs upgrades the volume as it mounts it, so
+  /// the original stays exactly as written.
+  /// </remarks>
+  private static string RunInsideFuseMount(string fuse, string imagePath, string commands) {
     var id = Guid.NewGuid().ToString("N");
     var script =
-      $"set -e; img=/tmp/cwb-{id}.img; mnt=/tmp/cwb-{id}.mnt; cp {FsInteropToolbox.WinToWsl(path)} $img; mkdir -p $mnt; " +
-      $"( timeout 300 {fuse} fusemount -f $img $mnt > /tmp/cwb-{id}.log 2>&1 & ); " +
-      "for i in $(seq 1 100); do mountpoint -q $mnt && break; sleep 0.1; done; mountpoint -q $mnt; " +
-      "cd $mnt; find . -mindepth 1 -printf '%y %m %s %P\\t%l\\n' | sort > /tmp/cwb-" + id + ".tree; " +
-      "find . -type f -print0 | sort -z | xargs -0 -r sha256sum >> /tmp/cwb-" + id + ".tree; cd /; " +
-      "fusermount3 -u $mnt; cat /tmp/cwb-" + id + ".tree; rm -rf $img $mnt /tmp/cwb-" + id + ".*";
+      $"set -e; img=/tmp/cwb-{id}.img; mnt=/tmp/cwb-{id}.mnt; out=/tmp/cwb-{id}.out; "
+      + $"cp {FsInteropToolbox.WinToWsl(imagePath)} $img; mkdir -p $mnt; "
+      + $"( timeout 300 {fuse} fusemount -f $img $mnt > /tmp/cwb-{id}.log 2>&1 & ); "
+      + "for i in $(seq 1 100); do mountpoint -q $mnt && break; sleep 0.1; done; mountpoint -q $mnt; "
+      + $"( cd $mnt; {commands} ) > $out; fusermount3 -u $mnt; cat $out; rm -rf $img $mnt /tmp/cwb-{id}.*";
     var result = FsInteropToolbox.RunWsl(script);
     var output = Combined(result);
     TestContext.Out.WriteLine(output);
     Assert.That(result.ExitCode, Is.EqualTo(0), $"the FUSE mount failed:\n{output}");
+    return result.StdOut;
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenOurVolume_WhenMountedThroughFuse_ThenTreeModesLinksAndBytesMatch() {
+    RequireBcachefsTools();
+    var fuse = RequireFuseChecker();
+
+    var (writer, expected) = Sampler();
+    var path = Write(Path.Combine(this._tmpDir, "fuse.img"), writer);
+    var stdout = RunInsideFuseMount(fuse, path,
+      "find . -mindepth 1 -printf '%y %m %s %P\\t%l\\n' | sort; "
+      + "find . -type f -print0 | sort -z | xargs -0 -r sha256sum");
 
     var seenFiles = new Dictionary<string, (string Mode, long Size)>(StringComparer.Ordinal);
     var seenLinks = new Dictionary<string, string>(StringComparer.Ordinal);
     var seenDirs = new HashSet<string>(StringComparer.Ordinal);
     var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
-    foreach (var line in result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)) {
+    foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries)) {
       if (line.Length > 66 && line[64] == ' ' && line[65] == ' ') {
         hashes[line[66..].TrimStart('.', '/')] = line[..64];
         continue;
@@ -340,6 +360,98 @@ public sealed class BcacheFsExternalConformanceTests {
         Assert.That(seen.Mode, Is.EqualTo("644"), $"{name} mode");
         Assert.That(hashes.GetValueOrDefault(name), Is.EqualTo(Convert.ToHexStringLower(SHA256.HashData(data))),
           $"{name} must read back byte for byte through the driver");
+      }
+    });
+  }
+
+  /// <summary>
+  /// Owner, group, permission bits and times given to a file come back through the
+  /// driver as <c>stat</c> sees them, and the checker still finds nothing to fix.
+  /// </summary>
+  /// <remarks>
+  /// Birth time has no place in what FUSE reports, and bcachefs' FUSE front end
+  /// shows any time before the epoch as the epoch itself; both are checked through
+  /// this package's reader instead (<c>BcacheFsVolumeTests</c>), and the encoding of
+  /// a pre-epoch time against a volume the tools wrote
+  /// (<c>BcacheFsReferenceVectorTests</c>).
+  /// </remarks>
+  [Test, Category("RoundTrip")]
+  public void GivenFilesWithOwnersModesAndTimes_WhenMountedThroughFuse_ThenStatShowsThem() {
+    RequireBcachefsTools();
+    var access = new DateTimeOffset(2024, 2, 3, 4, 5, 6, TimeSpan.Zero).AddTicks(1_234_567);
+    var files = new (string Name, ArchiveEntryMetadata Metadata)[] {
+      ("owned.bin", new ArchiveEntryMetadata(
+        LastAccessTimeUtc: access, LastWriteTimeUtc: access.AddDays(2), StatusChangeTimeUtc: access.AddMinutes(15),
+        CreationTimeUtc: access.AddDays(-30), UnixUserId: 1234, UnixGroupId: 4321, UnixMode: 0x1A0)),
+      ("root.bin", new ArchiveEntryMetadata(
+        LastAccessTimeUtc: new DateTimeOffset(2001, 9, 9, 1, 46, 40, TimeSpan.Zero),
+        LastWriteTimeUtc: new DateTimeOffset(1999, 12, 31, 23, 59, 59, TimeSpan.Zero).AddTicks(9_999_999),
+        StatusChangeTimeUtc: new DateTimeOffset(2038, 1, 19, 3, 14, 8, TimeSpan.Zero),
+        UnixUserId: 0, UnixGroupId: 100, UnixMode: 0x1ED)),
+    };
+    var writer = new BcacheFsWriter();
+    foreach (var (name, metadata) in files) writer.AddFile(name, Payload(5_000, name.Length), metadata);
+    var path = Write(Path.Combine(this._tmpDir, "metadata.img"), writer);
+    AssertFsckClean(path);
+
+    // name, octal mode, uid, gid, then atime, mtime and ctime in whole seconds and nanoseconds.
+    var stdout = RunInsideFuseMount(RequireFuseChecker(), path,
+      "stat -c '%n %a %u %g %X %Y %Z' *.bin; stat -c '%n %x|%y|%z' *.bin");
+    Assert.Multiple(() => {
+      foreach (var (name, metadata) in files) {
+        var line = stdout.Split('\n').Single(l => l.StartsWith(name + " ", StringComparison.Ordinal) && !l.Contains('|'));
+        var f = line.Split(' ');
+        Assert.That(Convert.ToInt32(f[1], 8), Is.EqualTo(metadata.UnixMode), $"{name} mode");
+        Assert.That(uint.Parse(f[2], CultureInfo.InvariantCulture), Is.EqualTo(metadata.UnixUserId), $"{name} owner");
+        Assert.That(uint.Parse(f[3], CultureInfo.InvariantCulture), Is.EqualTo(metadata.UnixGroupId), $"{name} group");
+        Assert.That(long.Parse(f[4], CultureInfo.InvariantCulture), Is.EqualTo(metadata.LastAccessTimeUtc!.Value.ToUnixTimeSeconds()), $"{name} atime");
+        Assert.That(long.Parse(f[5], CultureInfo.InvariantCulture), Is.EqualTo(metadata.LastWriteTimeUtc!.Value.ToUnixTimeSeconds()), $"{name} mtime");
+        Assert.That(long.Parse(f[6], CultureInfo.InvariantCulture), Is.EqualTo(metadata.StatusChangeTimeUtc!.Value.ToUnixTimeSeconds()), $"{name} ctime");
+
+        // The sub-second part survives too: stat prints nanoseconds, the volume keeps 100 ns.
+        var exact = stdout.Split('\n').Single(l => l.StartsWith(name + " ", StringComparison.Ordinal) && l.Contains('|'));
+        var mtime = exact.Split('|')[1];
+        var fraction = (metadata.LastWriteTimeUtc!.Value.UtcTicks % TimeSpan.TicksPerSecond * 100).ToString("D9", CultureInfo.InvariantCulture);
+        Assert.That(mtime, Does.Contain("." + fraction), $"{name} mtime nanoseconds");
+      }
+    });
+  }
+
+  /// <summary>
+  /// Metadata given to a file added in place, and to one replaced in place over an
+  /// inode that already carried some, is what the driver reports afterwards.
+  /// </summary>
+  [Test, Category("RoundTrip")]
+  public void GivenAVolume_WhenFilesAreAddedAndReplacedInPlaceWithMetadata_ThenFsckAndFuseAgree() {
+    RequireBcachefsTools();
+    var path = Path.Combine(this._tmpDir, "edited-metadata.img");
+    var descriptor = new BcacheFsFormatDescriptor();
+    var when = new DateTimeOffset(2025, 6, 7, 8, 9, 10, TimeSpan.Zero).AddTicks(12_345);
+    var replaced = new ArchiveEntryMetadata(LastAccessTimeUtc: when, LastWriteTimeUtc: when.AddHours(1),
+      StatusChangeTimeUtc: when.AddHours(2), UnixUserId: 501, UnixGroupId: 20, UnixMode: 0x180);
+    var added = new ArchiveEntryMetadata(LastAccessTimeUtc: when.AddDays(1), LastWriteTimeUtc: when.AddDays(2),
+      StatusChangeTimeUtc: when.AddDays(3), UnixUserId: 65534, UnixGroupId: 65534, UnixMode: 0x124);
+    using (var image = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite)) {
+      descriptor.Create(image, [ArchiveInputInfo.InMemory("replaced.bin", Payload(10_000, 9),
+        new ArchiveEntryMetadata(UnixUserId: 1, UnixGroupId: 1, UnixMode: 0x1FF))], new FormatCreateOptions());
+      image.Position = 0;
+      descriptor.Add(image, [
+        ArchiveInputInfo.InMemory("replaced.bin", Payload(20_000, 10), replaced),
+        ArchiveInputInfo.InMemory("added.bin", Payload(3_000, 11), added),
+      ]);
+    }
+    AssertFsckClean(path);
+
+    var stdout = RunInsideFuseMount(RequireFuseChecker(), path, "stat -c '%n %a %u %g %X %Y %Z' *.bin");
+    Assert.Multiple(() => {
+      foreach (var (name, metadata) in new[] { ("replaced.bin", replaced), ("added.bin", added) }) {
+        var f = stdout.Split('\n').Single(l => l.StartsWith(name + " ", StringComparison.Ordinal)).Split(' ');
+        Assert.That(Convert.ToInt32(f[1], 8), Is.EqualTo(metadata.UnixMode), $"{name} mode");
+        Assert.That(uint.Parse(f[2], CultureInfo.InvariantCulture), Is.EqualTo(metadata.UnixUserId), $"{name} owner");
+        Assert.That(uint.Parse(f[3], CultureInfo.InvariantCulture), Is.EqualTo(metadata.UnixGroupId), $"{name} group");
+        Assert.That(long.Parse(f[4], CultureInfo.InvariantCulture), Is.EqualTo(metadata.LastAccessTimeUtc!.Value.ToUnixTimeSeconds()), $"{name} atime");
+        Assert.That(long.Parse(f[5], CultureInfo.InvariantCulture), Is.EqualTo(metadata.LastWriteTimeUtc!.Value.ToUnixTimeSeconds()), $"{name} mtime");
+        Assert.That(long.Parse(f[6], CultureInfo.InvariantCulture), Is.EqualTo(metadata.StatusChangeTimeUtc!.Value.ToUnixTimeSeconds()), $"{name} ctime");
       }
     });
   }

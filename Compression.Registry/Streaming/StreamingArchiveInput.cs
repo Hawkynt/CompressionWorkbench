@@ -35,5 +35,6 @@ public sealed record StreamingArchiveInput(
   string Name,
   long Size,
   bool IsDirectory,
-  Func<Stream> OpenStream
+  Func<Stream> OpenStream,
+  ArchiveEntryMetadata? Metadata = null
 );

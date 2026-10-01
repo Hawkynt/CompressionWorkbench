@@ -36,7 +36,8 @@ public sealed class BcacheFsReferenceVectorTests {
   private sealed record Manifest(
     IReadOnlyDictionary<string, (string Sha256, long Size)> Files,
     IReadOnlyDictionary<string, string> Links,
-    IReadOnlyList<string> Directories);
+    IReadOnlyList<string> Directories,
+    IReadOnlyDictionary<string, (ushort Mode, uint Uid, uint Gid, long MtimeNs, long CtimeNs)> Metadata);
 
   private static Manifest ReadManifest() {
     using var resource = typeof(BcacheFsReferenceVectorTests).Assembly
@@ -45,9 +46,15 @@ public sealed class BcacheFsReferenceVectorTests {
     var files = new Dictionary<string, (string, long)>(StringComparer.Ordinal);
     var links = new Dictionary<string, string>(StringComparer.Ordinal);
     var directories = new List<string>();
+    var metadata = new Dictionary<string, (ushort, uint, uint, long, long)>(StringComparer.Ordinal);
+    var invariant = System.Globalization.CultureInfo.InvariantCulture;
     while (text.ReadLine() is { } line) {
       if (line.Length == 0) continue;
-      if (line.StartsWith("L ", StringComparison.Ordinal)) {
+      if (line.StartsWith("M ", StringComparison.Ordinal)) {
+        var m = line.Split(' ');
+        metadata[m[1]] = (Convert.ToUInt16(m[2], 8), uint.Parse(m[3], invariant), uint.Parse(m[4], invariant),
+          long.Parse(m[5], invariant), long.Parse(m[6], invariant));
+      } else if (line.StartsWith("L ", StringComparison.Ordinal)) {
         var arrow = line.IndexOf(" -> ", StringComparison.Ordinal);
         links[line[2..arrow]] = line[(arrow + 4)..];
       } else if (line.StartsWith("D ", StringComparison.Ordinal)) {
@@ -57,7 +64,7 @@ public sealed class BcacheFsReferenceVectorTests {
         files[parts[2]] = (parts[0], long.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture));
       }
     }
-    return new Manifest(files, links, directories);
+    return new Manifest(files, links, directories, metadata);
   }
 
   [Test, Category("HappyPath")]
@@ -92,6 +99,37 @@ public sealed class BcacheFsReferenceVectorTests {
         Assert.That(entry.Size, Is.EqualTo(size), $"{name} length");
         Assert.That(Convert.ToHexStringLower(SHA256.HashData(reader.Read(entry))), Is.EqualTo(sha256),
           $"{name} must read back byte for byte");
+      }
+    });
+  }
+
+  /// <summary>
+  /// The owners, permission bits and times the tool copied from the source tree.
+  /// </summary>
+  /// <remarks>
+  /// The tool keeps times in nanoseconds from the moment it formatted the volume,
+  /// so every one is stored relative to a time base this package's writer never
+  /// uses, and one of them lies before the Unix epoch: both have to come out as the
+  /// instant the source file carried, to the 100 ns <see cref="DateTimeOffset" /> holds.
+  /// </remarks>
+  [Test, Category("HappyPath")]
+  public void GivenAVolumeTheToolsPopulated_WhenRead_ThenOwnersModesAndTimesMatchTheManifest() {
+    var manifest = ReadManifest();
+    Assert.That(manifest.Metadata, Is.Not.Empty, "precondition: the manifest records file metadata");
+    using var image = Image(Populated);
+    using var reader = new BcacheFsReader(image);
+    Assert.That(reader.Valid, Is.True, reader.Status);
+
+    static DateTimeOffset FromNanoseconds(long ns) => DateTimeOffset.UnixEpoch.AddTicks(ns / 100);
+
+    Assert.Multiple(() => {
+      foreach (var (name, (mode, uid, gid, mtime, ctime)) in manifest.Metadata) {
+        var actual = reader.Entries.Single(e => e.Name == name).Metadata;
+        Assert.That(actual.UnixMode, Is.EqualTo(mode), $"{name} mode");
+        Assert.That(actual.UnixUserId, Is.EqualTo(uid), $"{name} owner");
+        Assert.That(actual.UnixGroupId, Is.EqualTo(gid), $"{name} group");
+        Assert.That(actual.LastWriteTimeUtc, Is.EqualTo(FromNanoseconds(mtime)), $"{name} mtime");
+        Assert.That(actual.StatusChangeTimeUtc, Is.EqualTo(FromNanoseconds(ctime)), $"{name} ctime");
       }
     });
   }

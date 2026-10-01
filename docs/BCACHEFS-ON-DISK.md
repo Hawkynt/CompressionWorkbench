@@ -52,6 +52,7 @@ keys were laid out, for reading newer volumes.
 |---|---|---|
 | `version`, `version_min` | `0x0403` (1.3) both | measured |
 | `block_size` | 1 sector (the tool picks the device's; any power of two ≥ 512 is valid) | read |
+| `time_base_lo`, `time_precision` | 0 and 100 ns (the tool: format time and 1 ns; any precision up to a second is valid) | read |
 | `features[0]` | `new_siphash`, `new_extent_overwrite`, `btree_ptr_v2`, `new_varint`, `journal_no_flush`, `alloc_v2`, `extents_across_btree_nodes` = `0x78A80` | measured |
 | `compat[0]` | `alloc_info`, `alloc_metadata`, `extents_above_btree_updates_done`, `bformat_overflow_done` = `0xF` | measured |
 | `flags[0]` | initialized, clean, sb csum crc32c, error action ro, btree node size, gc_reserve 8 %, meta/data csum crc32c, 1/1 replicas wanted, POSIX ACL | measured |
@@ -168,6 +169,19 @@ seed itself, link count stored less 1 for files and 2 for directories), dirents
 hashed with SipHash-2-4 shifted right by one, extents keyed by their end sector
 with a crc32c (type 5, seed 0) entry before the pointer, one extent per bucket at
 most 128 sectors. Subvolume 1 (40 bytes) → snapshot `U32_MAX` → snapshot tree 1.
+
+**Times, owner, group, mode.** The four time fields are 96 bits — a varint for
+the low 64, one for the high 32 — and hold a signed count of the superblock's
+`time_precision` nanoseconds from `time_base_lo`, two's-complement in the low
+half (read: `bch2_time_to_timespec`; measured: the tools store a source file older
+than the format as a negative count with a zero high half). This writer sets
+`time_precision` 100 and `time_base_lo` 0, so a unit is one .NET tick since the
+epoch. Owner and group are fields 5 and 6; the permission bits share the mode
+with the inode kind in `bi_flags`. Confirmed through FUSE (`stat`: owner, group,
+mode, atime/mtime/ctime to the 100 ns), and against a volume v1.39.6 populated
+from a tree with foreign owners, nanosecond and pre-epoch times. The FUSE front end
+shows any time before the epoch as the epoch, so pre-epoch times are proven
+through the tool-written volume, not through a mount.
 
 **Symbolic links** keep the target as the inode's data, written through the page
 cache with its terminating NUL, so the size is the target length plus one (read:

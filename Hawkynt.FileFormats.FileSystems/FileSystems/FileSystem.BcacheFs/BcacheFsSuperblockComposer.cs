@@ -59,7 +59,9 @@ internal static class BcacheFsSuperblockComposer {
     sb[122] = 0;                                                               // dev_idx
     sb[123] = 1;                                                               // nr_devices
     BinaryPrimitives.WriteUInt32LittleEndian(span[124..], (uint)(variable / 8));
-    BinaryPrimitives.WriteUInt32LittleEndian(span[140..], 1);                  // time_precision
+    // 100 ns is DateTimeOffset's exact resolution and widens the signed inode
+    // timestamp range enough to cover its whole year 0001..9999 domain.
+    BinaryPrimitives.WriteUInt32LittleEndian(span[140..], TimePrecisionNanoseconds);
 
     WriteFlags(span[144..208]);
     BinaryPrimitives.WriteUInt64LittleEndian(span[208..], Features);
