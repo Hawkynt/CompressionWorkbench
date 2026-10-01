@@ -127,7 +127,7 @@ internal sealed class MountWindow : Form {
 
     try {
       FormatRegistration.EnsureInitialized();
-      var detected = FormatDetector.DetectByExtension(path);
+      var detected = FormatDetector.Detect(path);
       if (detected == FormatDetector.Format.Unknown) {
         this.ShowProbeFailure("No registered format could be detected for this file.");
         return;

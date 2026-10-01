@@ -109,7 +109,7 @@ internal static class Program {
     var directory = Path.GetDirectoryName(inputPath) ?? ".";
     var archivePath = Path.Combine(directory, baseName + extension);
 
-    var format = FormatDetector.DetectByExtension(archivePath);
+    var format = FormatDetector.DetectByExtensionForCreate(archivePath);
     if (format == F.Unknown) {
       MessageBox.Show($"Unknown archive format for {extension}", "Create Archive", MessageBoxButtons.OK, MessageBoxIcon.Error);
       return 1;
