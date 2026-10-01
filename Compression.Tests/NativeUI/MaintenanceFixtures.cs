@@ -20,10 +20,17 @@ internal static class MaintenanceFixtures {
     ["ECHO.LOG"] = Pattern(3_300, 0x55),
   };
 
+  /// <summary>
+  /// The same contents under lowercase 8.3 names, as Linux writes them: a short entry with the
+  /// lowercase flags set and no long name, which FAT's layout walker reports in capitals.
+  /// </summary>
+  public static readonly IReadOnlyDictionary<string, byte[]> LowercaseFatFiles
+    = FatFiles.ToDictionary(f => f.Key.ToLowerInvariant(), f => f.Value);
+
   /// <summary>A 1.44 MB FAT12 floppy whose files are scattered on purpose, so defragmenting moves something.</summary>
-  public static string FragmentedFat(string folder, string name = "volume.img") {
+  public static string FragmentedFat(string folder, string name = "volume.img", IReadOnlyDictionary<string, byte[]>? files = null) {
     var writer = new FileSystem.Fat.FatWriter();
-    foreach (var (file, data) in FatFiles) writer.AddFile(file, data);
+    foreach (var (file, data) in files ?? FatFiles) writer.AddFile(file, data);
     var path = Path.Combine(folder, name);
     File.WriteAllBytes(path, writer.Build());
 

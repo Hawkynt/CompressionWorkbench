@@ -179,6 +179,64 @@ public sealed class MaintenancePresenterTests {
     Assert.That(presenter.StartBlocker, Is.Null, "interleave only applies to Defragment");
   }
 
+  // ── the files panel ─────────────────────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Linux writes a lowercase 8.3 name as a short entry with the lowercase flags; FAT's layout walker
+  /// reports it in capitals while the lister reports it in lowercase. The fragment counts were looked
+  /// up by the listed name and so came out as an em dash for every file.
+  /// </summary>
+  [TestCase(false)]
+  [TestCase(true)]
+  public void GivenAFragmentedFat_WhenAnalyzed_ThenEveryFileShowsTheRunsTheLayoutMapGivesIt(bool lowercase) {
+    var files = lowercase ? MaintenanceFixtures.LowercaseFatFiles : MaintenanceFixtures.FatFiles;
+    var path = MaintenanceFixtures.FragmentedFat(this._root, files: files);
+    System.Collections.Generic.Dictionary<string, int> expected;
+    using (var stream = File.OpenRead(path))
+      expected = BlockMapSnapshot.CountRunsByOwner([.. ((IFilesystemExtentMap)FormatRegistry.GetArchiveOps("Fat")!).EnumerateExtents(stream)]);
+
+    var snapshot = new MaintenancePresenter(path, "Fat").Analyze();
+
+    Assert.Multiple(() => {
+      Assert.That(snapshot.Rows.Select(r => r.Name), Is.EquivalentTo(files.Keys));
+      foreach (var row in snapshot.Rows) {
+        var runs = expected.Single(e => string.Equals(e.Key, row.Name, StringComparison.OrdinalIgnoreCase)).Value;
+        Assert.That(row.FragmentsDisplay, Is.EqualTo(runs.ToString("N0")), row.Name);
+      }
+      Assert.That(snapshot.Rows.Count(r => int.Parse(r.FragmentsDisplay) > 1), Is.GreaterThan(0), "the fixture is fragmented");
+    });
+  }
+
+  [Test]
+  public void GivenLayoutOwners_WhenLookedUpByListedName_ThenExactWinsAndCaseOrSlashDifferencesMatchOnlyWhenUnambiguous() {
+    var lookup = OwnerLookup.From<int>([("BIG.BIN", 3), ("/docs/Note.txt", 2), ("a.txt", 1), ("A.TXT", 5)]);
+
+    Assert.Multiple(() => {
+      Assert.That(lookup.TryGetValue("big.bin", out var big) ? big : -1, Is.EqualTo(3), "case differs only");
+      Assert.That(lookup.TryGetValue("docs/note.txt", out var note) ? note : -1, Is.EqualTo(2), "leading slash and case");
+      Assert.That(lookup.TryGetValue("A.TXT", out var exact) ? exact : -1, Is.EqualTo(5), "an exact match wins");
+      Assert.That(lookup.TryGetValue("A.txt", out _), Is.False, "two owners differ only by case: no guess");
+      Assert.That(lookup.TryGetValue("missing.bin", out _), Is.False);
+    });
+  }
+
+  // ── the run log ─────────────────────────────────────────────────────────────────────────────
+
+  [TestCase("SUCCEEDED (31 ms) — Defragmentation complete — 46 moves, 0 bytes staged in memory", 20)]
+  [TestCase("short", 20)]
+  [TestCase("averyveryverylongwordwithoutanyspacesatallthatmustbebroken", 10)]
+  [TestCase("", 10)]
+  public void GivenALogLine_WhenWrappedToAWidth_ThenNoRowIsWiderAndNothingIsLost(string line, int columns) {
+    static int Measure(string s) => s.Length; // one unit per character
+
+    var rows = global::Compression.NativeUI.Controls.LogView.Wrap(line, columns, Measure);
+
+    Assert.Multiple(() => {
+      Assert.That(rows.All(r => Measure(r) <= columns), Is.True, string.Join(" | ", rows));
+      Assert.That(string.Concat(rows).Replace(" ", ""), Is.EqualTo(line.Replace(" ", "")), "only spaces at a break may go");
+    });
+  }
+
   // ── running ─────────────────────────────────────────────────────────────────────────────────
 
   [Test]
