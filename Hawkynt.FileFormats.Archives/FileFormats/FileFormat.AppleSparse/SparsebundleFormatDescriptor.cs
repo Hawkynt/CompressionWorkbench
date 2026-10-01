@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using Compression.Core.DiskImage;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -122,8 +123,13 @@ public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFo
       return ListFromPlistStream(stream);
     }
 
-    // Try inner-FS delegation against the virtual disk view
+    // hdiutil puts a GUID partition map on the medium unless told otherwise, so the volume
+    // usually sits in a partition rather than at offset 0.
     var vStream = new SparsebundleStream(reader);
+    if (PartitionedDiskLister.List(vStream, password) is { } partitioned)
+      return partitioned;
+
+    vStream.Position = 0;
     var inner = InnerFsDetector.Detect(vStream);
     if (inner is IArchiveFormatOperations ops) {
       try {
@@ -161,8 +167,11 @@ public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFo
       return;
     }
 
-    // Try inner-FS delegation
     var vStream = new SparsebundleStream(reader);
+    if (PartitionedDiskLister.Extract(vStream, outputDir, password, files))
+      return;
+
+    vStream.Position = 0;
     var inner = InnerFsDetector.Detect(vStream);
     if (inner is IArchiveFormatOperations ops) {
       try {

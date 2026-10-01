@@ -30,6 +30,9 @@ public class SparsebundleTests {
       Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
       Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
       Assert.That(desc, Is.Not.InstanceOf<IArchiveModifiable>());
+      // A TAR of the bundle members was tried (#408) and dropped: libmodi does not take it for a
+      // sparsebundle, and the stream contract has no way to write the bundle directory itself.
+      Assert.That(desc, Is.Not.InstanceOf<IArchiveCreatable>());
     });
   }
 

@@ -1,0 +1,3 @@
+# Bundles written by Apple's hdiutil: the bytes are the fixture. libmodi refuses an
+# Info.plist whose line endings a checkout rewrote, so nothing here is text to git.
+* -text
