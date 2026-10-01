@@ -47,13 +47,16 @@ public sealed class Ocfs2FormatDescriptor
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
   /// <summary>
-  /// The one tunable the writer honours: the volume label written into
+  /// The tunables the writer honours: the volume label written into
   /// <c>s_label</c> (64-byte superblock field) via <see cref="Ocfs2Writer.SetLabel"/>
-  /// and read back as <c>Ocfs2Superblock.Label</c>. The 4&#160;KB block/cluster
-  /// size is fixed by the single-node MVP layout, so it is not exposed.
+  /// and read back as <c>Ocfs2Superblock.Label</c>, and the image size — free
+  /// space left for files added in place later, which never grow the volume. The
+  /// 4&#160;KB block/cluster size is fixed by the single-node layout, so it is not
+  /// exposed.
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.VolumeLabel(maxChars: 63),
+    FilesystemSchemaPresets.ImageSize(["16 MB", "32 MB", "64 MB", "128 MB", "256 MB", "512 MB"]),
   ];
 
   /// <summary>
@@ -185,12 +188,14 @@ public sealed class Ocfs2FormatDescriptor
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (!string.IsNullOrEmpty(label))
       w.SetLabel(label);
+    w.SetMinimumSize(FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", "")));
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       var info = i;
       // Only the length is needed to lay the volume out; reading a large input
       // into a byte[] would cap the volume at what an array can hold.
-      var name = Path.GetFileName(info.ArchiveName);
+      // The full archive path: the writer builds the directories it names.
+      var name = info.ArchiveName;
       if (info.InMemoryContent is { } bytes)
         w.AddFile(name, bytes);
       else
