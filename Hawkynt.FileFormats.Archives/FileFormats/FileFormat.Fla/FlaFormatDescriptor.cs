@@ -11,8 +11,8 @@ namespace FileFormat.Fla;
 /// the classic pre-CS4 OLE2 Compound File variant (CFB), and the CS5+ XFL
 /// variant which is a plain ZIP container. Detection is by the first bytes.
 /// Both are surfaced as archives: CFB streams become <c>streams/{name}.bin</c>,
-/// while ZIP/XFL members retain their paths. Creation writes ZIP/XFL documents;
-/// the legacy CFB variant remains read-only.
+/// while ZIP/XFL members retain their paths. Creation packs an XFL project folder
+/// into a ZIP/XFL document; the legacy CFB variant remains read-only.
 /// Uses compound extension <c>.fla</c> with empty magic to avoid conflicting
 /// with DOC/ZIP descriptors that own the generic magics.
 ///
@@ -22,7 +22,7 @@ namespace FileFormat.Fla;
 ///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/</c> — [MS-CFB] — Compound File Binary (the pre-CS4 OLE2 variant's container)</description></item>
 ///   <item><description><c>https://en.wikipedia.org/wiki/Adobe_Animate</c> — application background</description></item>
 ///   <item><description><c>https://blogs.adobe.com/digitalmedia/2010/05/the_xfl_file_format_explained/</c> — Adobe — a compressed FLA is the zipped XFL folder</description></item>
-///   <item><description><c>http://justsolve.archiveteam.org/wiki/FLA</c> and real CS5.5 listings — the leading stored 25-byte <c>mimetype</c> member (<c>application/vnd.adobe.xfl</c>); community-documented, not in an Adobe specification</description></item>
+///   <item><description>Compressed FLA files saved by Flash Professional CS6 (JPEXS FFDec test data, see <c>Compression.Tests/Fla/ReferenceVectors</c>) — folder entries, and the stored 25-byte <c>mimetype</c> member (<c>application/vnd.adobe.xfl</c>) written last; observed, not in an Adobe specification</description></item>
 /// </list>
 /// </summary>
 public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
@@ -153,11 +153,16 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       using var source = new MemoryStream(entries[0].Data, writable: false);
       using var archive = new ZipArchive(source, ZipArchiveMode.Read);
       foreach (var entry in archive.Entries) {
-        if (string.IsNullOrEmpty(entry.Name) && entry.FullName.EndsWith('/')) continue;
         if (files != null && files.Length > 0 && !MatchesFilter(entry.FullName, files)) continue;
-        var safeName = entry.FullName.Replace('\\', '/').TrimStart('/');
+        var safeName = entry.FullName.Replace('\\', '/').Trim('/');
         if (safeName.Contains("..", StringComparison.Ordinal)) safeName = Path.GetFileName(safeName);
+        if (safeName.Length == 0) continue;
         var path = Path.Combine(outputDir, safeName.Replace('/', Path.DirectorySeparatorChar));
+        if (string.IsNullOrEmpty(entry.Name) && entry.FullName.EndsWith('/')) {
+          // Folder entries (Flash writes 'LIBRARY/' even for an empty library) become folders.
+          Directory.CreateDirectory(path);
+          continue;
+        }
         if (File.Exists(path)) File.SetLastWriteTimeUtc(path, entry.LastWriteTime.UtcDateTime);
       }
     }
@@ -197,24 +202,27 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     using var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
 
-    // Like other Adobe UCF packages (and EPUB's OCF), a compressed FLA starts with an uncompressed
-    // 'mimetype' member naming the package type, so it is written first and stored.
+    foreach (var input in inputs) {
+      var name = input.ArchiveName.Replace('\\', '/').Trim('/');
+      if (string.IsNullOrWhiteSpace(name) || IsRootMimetype(name))
+        continue;
+      if (input.IsDirectory) {
+        // Flash keeps folder entries such as 'LIBRARY/' even when the folder is empty.
+        archive.CreateEntry(name + "/", CompressionLevel.NoCompression).LastWriteTime = GetInputTimestamp(input);
+        continue;
+      }
+      var entry = archive.CreateEntry(name, compression);
+      entry.LastWriteTime = GetInputTimestamp(input);
+      using var target = entry.Open();
+      target.Write(input.ReadContent());
+    }
+
+    // Flash Professional CS6 writes the package type as an uncompressed 'mimetype' member, and
+    // writes it last (see the reference vectors next to this format's tests).
     var mimetypeEntry = archive.CreateEntry(MimetypeName, CompressionLevel.NoCompression);
     mimetypeEntry.LastWriteTime = suppliedMimetype is null ? ZipEpoch : GetInputTimestamp(suppliedMimetype);
     using (var target = mimetypeEntry.Open())
       target.Write(XflMimetype);
-
-    foreach (var input in inputs) {
-      if (input.IsDirectory) continue;
-      var name = input.ArchiveName.Replace('\\', '/').TrimStart('/');
-      if (string.IsNullOrWhiteSpace(name) || IsRootMimetype(name))
-        continue;
-      var entry = archive.CreateEntry(name, compression);
-      entry.LastWriteTime = GetInputTimestamp(input);
-      using var target = entry.Open();
-      var bytes = input.ReadContent();
-      target.Write(bytes);
-    }
   }
 
   private static readonly DateTimeOffset ZipEpoch = new(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
@@ -228,7 +236,7 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     => string.Equals(archiveName.Replace('\\', '/').TrimStart('/'), MimetypeName, StringComparison.Ordinal);
 
   private static DateTimeOffset GetInputTimestamp(ArchiveInputInfo input) {
-    if (input.InMemoryContent is null && File.Exists(input.FullPath)) {
+    if (input.InMemoryContent is null && (File.Exists(input.FullPath) || Directory.Exists(input.FullPath))) {
       var timestamp = new DateTimeOffset(File.GetLastWriteTime(input.FullPath));
       if (timestamp < ZipEpoch) return ZipEpoch;
       if (timestamp > new DateTimeOffset(2107, 12, 31, 23, 59, 58, TimeSpan.Zero))
