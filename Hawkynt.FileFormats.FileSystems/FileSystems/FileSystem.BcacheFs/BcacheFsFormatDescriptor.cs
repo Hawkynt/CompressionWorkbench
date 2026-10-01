@@ -9,7 +9,7 @@ namespace FileSystem.BcacheFs;
 
 /// <summary>
 /// Full workbench descriptor for the single-device bcachefs profile implemented
-/// here: native b-trees, true in-place CRUD, allocation/accounting maintenance,
+/// here: native b-trees, true in-place CRUD, allocation and usage maintenance,
 /// in-place defragmentation, purge and unused-space wiping.
 /// </summary>
 [FilesystemBlockMover(typeof(BcacheFsBlockMover))]
@@ -158,9 +158,12 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       using var reader = new BcacheFsReader(stream);
       if (reader.Valid) {
         var index = 0;
-        foreach (var entry in reader.Entries)
-          entries.Add(new ArchiveEntryInfo(index++, entry.Name, entry.Size, entry.Size,
-            "stored", false, false, null));
+        foreach (var entry in reader.Entries) {
+          // A link lists the length of the target it stores, not of what it points at.
+          var size = entry.LinkTarget is { } link ? Encoding.UTF8.GetByteCount(link) : entry.Size;
+          entries.Add(new ArchiveEntryInfo(index++, entry.Name, size, size,
+            "stored", false, false, null, IsSymlink: entry.LinkTarget != null, LinkTarget: entry.LinkTarget));
+        }
 
         // the volume's own description travels with its files, on a readable
         // filesystem exactly as on a carved one
@@ -210,10 +213,13 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       if (reader.Valid) {
         foreach (var entry in reader.Entries) {
           if (files is { Length: > 0 } && !MatchesFilter(entry.Name, files)) continue;
+          // A compressed or encrypted extent is not decoded here; the rest still is.
+          if (entry.Unreadable != null) continue;
           var target = Path.Combine(outputDir, entry.Name.Replace('/', Path.DirectorySeparatorChar));
           Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
           using var output = File.Create(target);
-          reader.ExtractTo(entry, output);
+          if (entry.LinkTarget is { } link) output.Write(Encoding.UTF8.GetBytes(link));
+          else reader.ExtractTo(entry, output);
         }
 
         WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(sb), files);
@@ -287,7 +293,10 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     foreach (var input in inputs) {
       if (!this.CanAccept(input, out var reason))
         throw new ArgumentException(reason, nameof(inputs));
-      if (input.IsDirectory) continue;
+      if (input.IsDirectory) {
+        writer.AddDirectory(input.ArchiveName);
+        continue;
+      }
 
       var length = input.InMemoryContent?.LongLength ?? new FileInfo(input.FullPath).Length;
       sizes.Add(length);
@@ -311,8 +320,11 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
-    var files = inputs.Where(i => !i.IsDirectory).ToList();
+    var all = inputs.ToList();
+    var files = all.Where(i => !i.IsDirectory).ToList();
     var writer = NewWriter(options);
+    foreach (var directory in all.Where(i => i.IsDirectory))
+      writer.AddDirectory(directory.Name);
 
     foreach (var input in files) {
       var probe = ArchiveInputInfo.InMemory(input.Name, []);
@@ -519,7 +531,7 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     mover.Settle(archive);
 
     // Extent pointers now name the moved data. Rebuild every dependent metadata
-    // account in the metadata reservation, including accounting/backpointers; this
+    // account in the metadata reservation, including usage totals/backpointers; this
     // is still in-place and removes the old single-node limitation of SettleAllocation.
     archive.Position = 0;
     BcacheFsInPlaceModifier.NormalizeMetadata(archive);

@@ -258,78 +258,19 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
   /// which is what <c>fsck</c> reports as "data type user ptr gen 0 missing in
   /// alloc btree" — hundreds of times, once per run.</para>
   ///
-  /// <para>Only the entries describing file data are replaced. What the superblock,
-  /// the journal and the b-trees themselves occupy has not moved, so those keys are
-  /// read off the volume and put back untouched rather than derived again from a
-  /// layout rule — the rule that produced them assumes files sit immediately after
-  /// the metadata, which is exactly what a defragmentation stops being true.</para>
+  /// <para>The whole description is derived again from the extents as they now
+  /// stand — alloc, freespace, LRU and backpointers, and the usage totals the
+  /// superblock's clean section carries — because the checker cross-examines all
+  /// of them against each other, and a pass that patches some is how they come to
+  /// disagree.</para>
   /// </remarks>
   public void SettleAllocation(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
-
-    var volume = BcacheFsVolume.Open(image);
-    if (!volume.Valid) return;
-
-    var bucketSectors = volume.BucketSectorCount;
-    if (bucketSectors <= 0) return;
-
-    // Where every run of file data now sits, gathered by the bucket holding it.
-    // A run may not straddle a bucket, so a bucket's dirty sectors are the runs
-    // that landed in it -- normally one, and summed rather than assumed.
-    var userSectors = new SortedDictionary<long, uint>();
-    foreach (var slot in this._slots) {
-      var bucket = slot.Sector / bucketSectors;
-      userSectors.TryGetValue(bucket, out var already);
-      userSectors[bucket] = (uint)Math.Min(bucketSectors, already + slot.Sectors);
-    }
-
-    // ── alloc: what each bucket holds ──────────────────────────────────────
-    var keptAlloc = new List<Key>();
-    var usedBuckets = new SortedSet<long>();
-    foreach (var (offset, key) in ReadKeys(image, volume, BtreeAlloc)) {
-      _ = offset;
-      // The data type sits at byte fourteen of a bch_alloc_v4.
-      if (key.Type == KeyAllocV4 && key.Value.Length > 14 && key.Value[14] == DataUser) continue;
-      keptAlloc.Add(key);
-      usedBuckets.Add((long)key.Position.Offset);
-    }
-
-    foreach (var (bucket, sectors) in userSectors) {
-      keptAlloc.Add(AllocUserKey(bucket, sectors));
-      usedBuckets.Add(bucket);
-    }
-
-    // ── freespace: the runs of buckets nothing holds ───────────────────────
-    var totalBuckets = volume.DeviceSectors / bucketSectors;
-    var freespace = new List<Key>();
-    var runStart = -1L;
-    for (var bucket = 0L; bucket <= totalBuckets; ++bucket) {
-      if (bucket < totalBuckets && !usedBuckets.Contains(bucket)) {
-        if (runStart < 0) runStart = bucket;
-        continue;
-      }
-
-      if (runStart >= 0) freespace.Add(FreeRunKey(runStart, bucket));
-      runStart = -1;
-    }
-
-    // ── backpointers: from the space back to the key that claims it ────────
-    var backpointers = new List<Key>();
-    foreach (var (offset, key) in ReadKeys(image, volume, BtreeBackpointers)) {
-      _ = offset;
-      // A backpointer's data type is byte two of the value; the ones naming
-      // b-tree nodes describe metadata that has not moved.
-      if (key.Type == KeyBackpointer && key.Value.Length > 2 && key.Value[2] == DataUser) continue;
-      backpointers.Add(key);
-    }
-
-    foreach (var slot in this._slots)
-      backpointers.Add(ExtentBackpointer(slot.Sector, slot.Sectors, slot.ExtentPosition));
-
-    RewriteTree(image, volume, BtreeAlloc, keptAlloc);
-    RewriteTree(image, volume, BtreeFreespace, freespace);
-    RewriteTree(image, volume, BtreeBackpointers, backpointers);
-    image.Flush();
+    // Every derived tree and the clean section's totals are rebuilt together from
+    // the extents as they now stand; rewriting only some of them is how two
+    // accounts of the same bucket come to disagree.
+    image.Position = 0;
+    BcacheFsInPlaceModifier.NormalizeMetadata(image);
   }
 
   /// <summary>
@@ -403,40 +344,14 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
     foreach (var (_, key) in this.ReadKeys(image, volume, BtreeFreespace)) {
       if (key.Type != KeySet) continue;
 
-      var end = (long)key.Position.Offset;
+      // The top byte carries generation bits, not the bucket.
+      var end = (long)(key.Position.Offset & ((1UL << 56) - 1));
       for (var bucket = end - key.Size; bucket < end; ++bucket)
         if (occupied.Contains(bucket))
           problems.Add($"the freespace tree offers bucket {bucket}, which the alloc tree says is in use");
     }
 
     return problems;
-  }
-
-  /// <summary>What one bucket of file data holds, as the alloc tree records it.</summary>
-  /// <remarks>
-  /// The same forty-eight byte <c>bch_alloc_v4</c> the writer lays down for a
-  /// freshly built volume. A bucket a defragmentation moved data into is on its
-  /// first use as far as this volume is concerned, so its generation is zero.
-  /// </remarks>
-  private static Key AllocUserKey(long bucket, uint dirtySectors) {
-    var value = new byte[48];
-    value[14] = DataUser;
-    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(16), dirtySectors);
-    return new Key(KeyAllocV4, new Bpos(0, (ulong)bucket, 0), 0, value);
-  }
-
-  /// <summary>One run of buckets holding nothing, keyed by where it ends.</summary>
-  private static Key FreeRunKey(long firstBucket, long endBucket) =>
-    new(KeySet, new Bpos(0, (ulong)endBucket, 0), (uint)(endBucket - firstBucket), []);
-
-  /// <summary>Points back from a stretch of file data to the extent naming it.</summary>
-  private static Key ExtentBackpointer(long firstSector, int sectors, Bpos extent) {
-    var value = new byte[32];
-    value[0] = (byte)BtreeExtents;
-    value[2] = DataUser;
-    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(8), (uint)sectors);
-    WriteBpos(value.AsSpan(12), extent);
-    return new Key(KeyBackpointer, new Bpos(0, (ulong)firstSector << ExtentBpShift, 0), 0, value);
   }
 
   /// <summary>Every key a tree's nodes hold, with the node each came from.</summary>
@@ -473,61 +388,5 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
         offset += bytes;
       }
     }
-  }
-
-  /// <summary>
-  /// Lays a new set of keys into a single-node tree, keeping the node's header.
-  /// </summary>
-  /// <remarks>
-  /// The header carries the node's identity, the range it is responsible for and
-  /// the format its keys are read under, none of which a re-account changes; only
-  /// the keys and the two things derived from them -- how many words the node holds
-  /// and the checksum over them -- are written again. A tree that outgrew the
-  /// sectors its pointer claims cannot be fixed this way, because that pointer
-  /// lives in the superblock, so this says so and lets the caller write the volume
-  /// out again instead of leaving a node the reader would read short.
-  /// </remarks>
-  private void RewriteTree(Stream image, BcacheFsVolume volume, int btree, List<Key> keys) {
-    var offsets = volume.NodeSectors(btree).Select(s => s * SectorSize).ToList();
-    if (offsets.Count != 1)
-      throw new NotSupportedException(
-        $"bcachefs: tree {btree} spans {offsets.Count} nodes; re-accounting one node at a time "
-        + "cannot say which keys belong to which.");
-
-    var nodeOffset = offsets[0];
-    var node = new byte[this._nodeSectors * SectorSize];
-    image.Position = nodeOffset;
-    image.ReadExactly(node);
-
-    var claimed = BcacheFsNodeBuilder.KeysOffset
-      + BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(158)) * 8;
-    var claimedSectors = (claimed + SectorSize - 1) / SectorSize;
-
-    keys.Sort((a, b) => Compare(a.Position, b.Position));
-    var cursor = BcacheFsNodeBuilder.KeysOffset;
-    foreach (var key in keys) {
-      if (cursor + key.Bytes > node.Length)
-        throw new NotSupportedException($"bcachefs: tree {btree} no longer fits one node.");
-      cursor += WriteKey(node.AsSpan(cursor), key);
-    }
-
-    var neededSectors = (cursor + SectorSize - 1) / SectorSize;
-    if (neededSectors > claimedSectors)
-      throw new NotSupportedException(
-        $"bcachefs: tree {btree} grew from {claimedSectors} sectors to {neededSectors}, "
-        + "which the pointer in the superblock still describes as the shorter one.");
-
-    // Anything the old, longer key list left behind is not part of the node any
-    // more, and a reader that trusted the words count would never look at it --
-    // but a checker that scans the bucket would.
-    node.AsSpan(cursor, claimedSectors * SectorSize - cursor).Clear();
-
-    BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(158),
-      (ushort)((cursor - BcacheFsNodeBuilder.KeysOffset) / 8));
-    BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(0), MetadataChecksum(node.AsSpan(16, cursor - 16)));
-    BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(8), 0);
-
-    image.Position = nodeOffset;
-    image.Write(node, 0, claimedSectors * SectorSize);
   }
 }

@@ -1894,12 +1894,9 @@ public class ExternalFsInteropTests {
   [Test]
   public void BcacheFs_OurImage_BcachefsShowSuperAccepts() {
     RequireWslTool("bcachefs", "bcachefs-tools");
-    // Forward direction: our writer emits a WORM-minimal SB-only image with
-    // a real `struct bch_sb` + `bch_sb_layout` + `BCH_SB_FIELD_members_v2`,
-    // and `bcachefs show-super` parses + prints it without error. Note:
-    // `bcachefs fsck` will still complain about the empty B-trees, journal,
-    // replicas, etc. — that is explicitly out of scope here, see
-    // Hawkynt.FileFormats.FileSystems/README.md for the full gap statement.
+    // Forward direction: `bcachefs show-super` parses and prints the superblock our
+    // writer emits. That `bcachefs fsck` accepts the whole volume is what
+    // BcacheFs_OurImage_PassesFsck and BcacheFsExternalConformanceTests show.
     var w = new FileSystem.BcacheFs.BcacheFsWriter();
     w.SetLabel("cwb-bcachefs-interop");
     var imgPath = Path.Combine(this._tmpDir, "bcachefs_ours.img");

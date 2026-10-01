@@ -18,6 +18,7 @@ internal static class BcacheFsDefragmenter {
     ArgumentNullException.ThrowIfNull(options);
     if (!image.CanRead || !image.CanWrite || !image.CanSeek)
       throw new ArgumentException("bcachefs defragmentation needs a readable, writable, seekable stream.", nameof(image));
+    BcacheFsInPlaceModifier.RequireWritableProfile(image);
 
     options.OnProgress?.Invoke(new DefragProgressEvent(
       "metadata", 0, -1, -1, image.Length, null,

@@ -1,0 +1,9 @@
+acaae18b24cd5b0b3c28039966803d81cec61cd02742b10b202b46b97051cc8a 26 hello.txt
+bcb62744f7cc7cdb8bcf58017b3de61915ac1889ab4b4db3f598aaba7bb06046 1048576 sparse.bin
+2e35d7f881ab578aeb8f0e5c9c6dd14b6cecb6b2494f9acd4503bad765b470d4 300000 sub/deeper/pattern.bin
+225270fa091dc75bf959a0e3bbcb897fc3ae8e7fa128ae1394cf5614e15505f5 4097 sub/odd-size.bin
+L dirlink -> sub/deeper
+L link -> hello.txt
+D emptydir
+D sub
+D sub/deeper

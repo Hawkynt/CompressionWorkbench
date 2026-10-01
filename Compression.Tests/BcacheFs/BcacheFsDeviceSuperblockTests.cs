@@ -21,7 +21,7 @@ public class BcacheFsDeviceSuperblockTests {
       Assert.That(discovered.AdvertisedSectors, Has.Count.EqualTo(3));
       Assert.That(discovered.Copies, Has.Count.EqualTo(3));
       Assert.That(discovered.Copies.All(c => c.Checksum.Valid), Is.True);
-      Assert.That(discovered.Current!.Version, Is.EqualTo(BcacheFsOnDiskCatalog.MetadataVersion));
+      Assert.That(discovered.Current!.Version, Is.EqualTo(BcacheFsFormat.Version));
       Assert.That(discovered.Current.DeviceCount, Is.EqualTo(1));
       Assert.That(discovered.Current.BtreeNodeSectors, Is.EqualTo(BcacheFsFormat.BucketSectors));
       Assert.That(discovered.Current.Fields.Any(f =>

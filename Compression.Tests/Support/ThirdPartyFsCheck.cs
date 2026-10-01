@@ -66,11 +66,9 @@ internal static class ThirdPartyFsCheck {
     // It hands a root-owned 0700 root directory to whoever mounts it, so the
     // ownership is spelled out the way this driver spells it.
     ["Bfs"] = new("befs", "uid=" + Uid + ",gid=" + Gid, false, null, "", []),
-    // A bcachefs volume written whole carries no allocation information — the trees
-    // a running filesystem keeps so it can decide where to write next — and says so
-    // twice: once with the feature bit for that, and once with the bit that says it
-    // is an image file which was never sized to a device. A kernel that reads those
-    // mounts it read-only without stopping to build what is missing.
+    // A bcachefs volume written here is metadata version 1.3, cleanly shut down, with
+    // its allocation information in place, so any driver since 6.7 mounts it and the
+    // distribution's bcachefs-tools checks it.
     ["BcacheFs"] = new("bcachefs", "", false, "bcachefs", "fsck -n {0}", [0]),
     ["Btrfs"] = new("btrfs", "", false, "btrfs", "check --readonly {0}", [0]),
     ["CramFs"] = new("cramfs", "", true, "fsck.cramfs", "{0}", [0]),
