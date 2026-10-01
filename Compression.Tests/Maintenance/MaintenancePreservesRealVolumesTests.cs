@@ -47,11 +47,27 @@ public class MaintenancePreservesRealVolumesTests {
     new("defrag_metadata_front", (s, d) => Defrag(s, d, new DefragOptions { MetadataZonePlacement = MetadataZone.Front }), [], []),
     new("wipe", (s, d) => ((IWipeEmpty)d).WipeUnusedSpace(s), [], []),
     new("shrink", (s, d) => {
+      if (d is not IArchiveShrinkable shrinkable) throw new NotSupportedException($"{d.GetType().Name} does not offer shrink.");
       using var o = new MemoryStream();
-      ((IArchiveShrinkable)d).Shrink(s, o);
+      shrinkable.Shrink(s, o);
       s.Position = 0; s.SetLength(0); o.Position = 0; o.CopyTo(s);
     }, [], []),
+    // The maintenance operations split by effect go through MaintenanceVerbs, the same
+    // entry point the CLI uses, so an operation a format does not offer is a refusal here
+    // exactly as it is there.
+    new("sort_entries", (s, d) => MaintenanceVerbs.SortDirectoryEntries(d, s), [], []),
+    new("compress", (s, d) => Staged(s, o => MaintenanceVerbs.Compress(d, s, o)), [], []),
+    new("repack", (s, d) => Staged(s, o => MaintenanceVerbs.Repack(d, s, o)), [], []),
+    new("reconfigure", (s, d) => Staged(s, o => MaintenanceVerbs.ChangeGeometry(d, s, o,
+      new Dictionary<string, string> { ["ClusterSize"] = "8 KB" })), [], []),
   ];
+
+  /// <summary>Runs a staged operation and, only when it succeeds, writes its result over the volume.</summary>
+  private static void Staged(Stream volume, Action<MemoryStream> run) {
+    using var output = new MemoryStream();
+    run(output);
+    volume.Position = 0; volume.SetLength(0); output.Position = 0; output.CopyTo(volume);
+  }
 
   private static void Defrag(Stream s, object d, DefragOptions o) {
     ((IArchiveDefragmentable)d).Defragment(s, o);
@@ -76,7 +92,9 @@ public class MaintenancePreservesRealVolumesTests {
         ["defrag_start"] = Outcome.Preserve, ["defrag_end"] = Outcome.Preserve, ["defrag_fill"] = Outcome.Preserve,
         ["defrag_carve"] = Outcome.Preserve, ["defrag_ascending"] = Outcome.Refuse,
         ["defrag_interleave"] = Outcome.Refuse, ["defrag_metadata_front"] = Outcome.Preserve,
-        ["wipe"] = Outcome.Preserve, ["shrink"] = Outcome.Preserve,
+        // exFAT does not offer shrink (the evidence matrix in docs/MAINTENANCE-MECHANISMS.md says so).
+        ["wipe"] = Outcome.Preserve, ["shrink"] = Outcome.Refuse,
+        ["sort_entries"] = Outcome.Preserve, ["compress"] = Outcome.Refuse, ["repack"] = Outcome.Refuse, ["reconfigure"] = Outcome.Refuse,
       }),
       ["ntfs"] =(() => new FileSystem.Ntfs.NtfsFormatDescriptor(), new() {
         ["add_root"] = Outcome.Preserve, ["add_nested"] = Outcome.Preserve,
@@ -85,6 +103,7 @@ public class MaintenancePreservesRealVolumesTests {
         ["defrag_carve"] = Outcome.Preserve, ["defrag_ascending"] = Outcome.Preserve,
         ["defrag_interleave"] = Outcome.Refuse, ["defrag_metadata_front"] = Outcome.Preserve,
         ["wipe"] = Outcome.Preserve, ["shrink"] = Outcome.Preserve,
+        ["sort_entries"] = Outcome.Refuse, ["compress"] = Outcome.Refuse, ["repack"] = Outcome.Refuse, ["reconfigure"] = Outcome.Refuse,
       }),
     };
 
@@ -95,6 +114,7 @@ public class MaintenancePreservesRealVolumesTests {
     ["defrag_carve"] = Outcome.Preserve, ["defrag_ascending"] = Outcome.Preserve,
     ["defrag_interleave"] = Outcome.Refuse, ["defrag_metadata_front"] = Outcome.Preserve,
     ["wipe"] = Outcome.Preserve, ["shrink"] = Outcome.Preserve,
+    ["sort_entries"] = Outcome.Refuse, ["compress"] = Outcome.Refuse, ["repack"] = Outcome.Refuse, ["reconfigure"] = Outcome.Refuse,
   };
 
   private static Dictionary<string, Outcome> FatExpectations() => new() {
@@ -104,6 +124,7 @@ public class MaintenancePreservesRealVolumesTests {
     ["defrag_carve"] = Outcome.Preserve, ["defrag_ascending"] = Outcome.Preserve,
     ["defrag_interleave"] = Outcome.Preserve, ["defrag_metadata_front"] = Outcome.Preserve,
     ["wipe"] = Outcome.Preserve, ["shrink"] = Outcome.Preserve,
+    ["sort_entries"] = Outcome.Preserve, ["compress"] = Outcome.Refuse, ["repack"] = Outcome.Refuse, ["reconfigure"] = Outcome.Refuse,
   };
 
   private static IEnumerable<TestCaseData> Cases() {
@@ -179,9 +200,38 @@ public class MaintenancePreservesRealVolumesTests {
       Assert.That(present, Is.EqualTo(shouldExist), $"{fs}: {opName} did not {(shouldExist ? "add" : "remove")} '{change}'.");
     }
 
-    if (opName.StartsWith("defrag", StringComparison.Ordinal) || opName == "wipe")
+    if (opName.StartsWith("defrag", StringComparison.Ordinal) || opName is "wipe" or "sort_entries")
       Assert.That(new FileInfo(work).Length, Is.EqualTo(original.LongLength), $"{fs}: {opName} changed the image size.");
   }
+
+  /// <summary>
+  /// The preservation case above proves the sort lost nothing; this proves it did what it
+  /// says. The kernel driver lists a FAT or exFAT directory in on-disk order, so after the
+  /// sort its <c>readdir</c> order is name order — in the root and in a subfolder.
+  /// </summary>
+  [TestCase("fat16"), TestCase("fat32"), TestCase("exfat"), CancelAfter(600_000)]
+  public void SortEntries_PutsTheKernelsListingInNameOrder(string fs) {
+    var kind = RealImageLab.Kinds[fs];
+    if (!RealImageLab.Available(kind, out var why)) Assert.Ignore(why);
+    var (reference, _) = this.Reference(kind);
+    var work = Path.Combine(this._root, $"{fs}.sort-order.img");
+    File.Copy(reference, work, true);
+    var rootBefore = RealImageLab.ReaddirOrder(kind, work, "");
+    Assume.That(rootBefore, Is.Not.EqualTo(NameOrder(rootBefore)), "precondition: the reference root is not already in name order");
+
+    using (var stream = new FileStream(work, FileMode.Open, FileAccess.ReadWrite))
+      MaintenanceVerbs.SortDirectoryEntries(Matrix[fs].Descriptor(), stream);
+
+    var root = RealImageLab.ReaddirOrder(kind, work, "");
+    var docs = RealImageLab.ReaddirOrder(kind, work, "docs");
+    Assert.Multiple(() => {
+      Assert.That(root, Is.EqualTo(NameOrder(rootBefore)), "root");
+      Assert.That(docs, Is.EqualTo(NameOrder(docs)), "docs");
+    });
+  }
+
+  private static List<string> NameOrder(IEnumerable<string> names)
+    => [.. names.OrderBy(static n => n, StringComparer.OrdinalIgnoreCase).ThenBy(static n => n, StringComparer.Ordinal)];
 
   /// <summary>
   /// A folder the operation added to or removed from legitimately gets a new
