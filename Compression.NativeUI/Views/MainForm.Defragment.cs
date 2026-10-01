@@ -153,20 +153,15 @@ internal sealed partial class MainForm {
   /// that applies keeps the tab narrow enough that no group with a hosted field has to fold away.
   /// </summary>
   private RibbonGroup OptionsGroup() {
-    this._metadataZoneCombo.Items.AddRange([
-      "Don't move metadata",
-      "Metadata at front",
-      "Metadata at back",
-      "Metadata in middle",
-      "Before file content",
-    ]);
+    // Short, because the field is narrow; the tooltip says what each placement means.
+    this._metadataZoneCombo.Items.AddRange(["Unchanged", "Front", "Back", "Middle", "Before data"]);
     this._metadataZoneCombo.SelectedIndex = 0;
     this.RefreshLayoutProfiles();
 
     this._interleaveItem = this.Field("Interleave", this._interleaveBox,
       $"Block interleave: 1 = contiguous, 2 = every other block, N = each file's Kth block at start + K×N. {MaintenanceInput.MinInterleave}–{MaintenanceInput.MaxInterleave}.",
       () => this.WithPresenter(p => p.InterleaveText = this._interleaveBox.Text));
-    this._metadataZoneItem = this.Field("Metadata", this._metadataZoneCombo, "Where filesystem metadata and directory entries are placed.",
+    this._metadataZoneItem = this.Field("Metadata", this._metadataZoneCombo, "Where filesystem metadata and directory entries are placed: unchanged, at the front (fast access), at the back (data first), in the middle (least seeking) or just before the file content (read-ahead).",
       () => this.WithPresenter(p => p.MetadataZone = this.SelectedMetadataZone()));
     this._layoutProfileItem = this.Field("Profile", this._layoutProfileCombo,
       "A zone-based layout template: files go into named byte ranges with per-zone sort orders.",
@@ -176,7 +171,7 @@ internal sealed partial class MainForm {
       this.RefreshLayoutProfiles();
     }, RibbonItemSize.Small, Keys.None, "Create, change or delete layout profiles");
 
-    this._placementCombo.Items.AddRange(["Format default", "Metadata first", "Data first"]);
+    this._placementCombo.Items.AddRange(["Default", "Metadata first", "Data first"]);
     this._placementCombo.SelectedIndex = 0;
 
     this._seedItem = this.Field("Seed", this._seedBox, "Seeds Scramble's shuffle. The same seed deals the same layout every run.",
