@@ -8,8 +8,9 @@ backends, so Windows and Linux run the same code rather than two frontends drift
 - **Ribbon** — the commands live in an Office-style ribbon instead of a menu bar: a Quick Access
   Toolbar (Back, Forward, Up, Refresh), File, Home (clipboard, organize, open, selection), View
   (navigation and preview panes, Details / Thumbnails), Tools (analysis, maintenance, partitions,
-  mounting, benchmark), and an Archive Tools tab that appears only inside an archive (extract, add,
-  test, and the maintenance verbs). Every shortcut works form-wide from the ribbon.
+  mounting, benchmark), an Archive Tools tab that appears only inside an archive (extract, add, test,
+  reconfigure), and a Disk Tools tab, Defragment, that appears while there is something to maintain.
+  Every shortcut works form-wide from the ribbon.
 - **Archive browser** — the main window, laid out like a file manager. A folder tree on the left
   shows the drives (or `/`) and home, with the open archive grafted in as a folder beside the file it
   lives in; it follows every navigation, however it happened. The breadcrumb bar is also an address
@@ -49,8 +50,26 @@ backends, so Windows and Linux run the same code rather than two frontends drift
   for a directory.
 - **Binary analysis** — magic scan, algorithm fingerprints, entropy map, heatmap, trial
   decompression, chain reconstruction, statistics, strings and a struct-template interpreter.
-- **Maintenance** — defragment, optimize, shrink, purge, wipe-empty, compact and scramble, over a
-  live block map that can also be projected onto a platter or a stack of platters.
+- **Defragment tab** — maintenance is a contextual ribbon tab rather than a window. It appears while
+  the open archive or image, or an archive file selected in a folder, supports any maintenance
+  operation (Tools → Maintenance or Ctrl+Shift+D selects it; the Maintenance entries of the list's
+  context menu open it with their operation picked). Selecting it hands the client area below the
+  breadcrumb bar to the block map; leaving it shows the browser again exactly as it was.
+
+  | Group | Items |
+  | --- | --- |
+  | Operation | Defragment, Optimize, Shrink, Compact, Clear (wipe free space), Purge, Scramble as a radio group; Start; Stop where the operation can be stopped |
+  | Defrag Mode | Consolidate (Pack at End as its variant), Defrag (fill holes), Re-order (ascending blocks), Sort Entries, Carve Hole with its size and offset fields |
+  | Options | Block interleave (1–256), metadata placement, layout profile and Edit Profiles; the seed for Scramble, the chunk placement for a file-internal Optimize and Minimal Geometry for Compact appear while their operation is picked |
+  | View | Blocks, Circle, 3D Stack; Files panel; Legend; Analyze (read the layout again) |
+
+  Every item asks one capability adapter (`Maintenance/MaintenanceCapabilities.cs`) whether the target
+  supports it, and is disabled with the reason in its tooltip when not — Sort Entries, for instance,
+  says that no format offers it yet. Defrag modes and layout options are probed against the
+  descriptor's own refusal guard without touching the image. Operations run off the UI thread through
+  `MaintenancePresenter`, driving the map live; a refusal (`NotSupportedException`) is reported and
+  leaves the image byte-identical, and after a change the archive is re-listed in place. A nested
+  archive is maintained as a temporary copy and written back into its host after each change.
 - **Partition editor** — MBR and GPT tables: add, delete, purge, convert, format, verify.
 - **Benchmark** — every building block against seven synthetic data patterns.
 - **Reverse engineer** — discovers an unknown format by probing a tool or by locating known content
@@ -85,7 +104,7 @@ ran at a scale factor other than 1.
 ## Screenshots
 
 `--screenshot=<archive-browser|analysis|maintenance>` builds a deterministic fixture and shows that
-one window. It does not write an image: NativeForms has no way to render a window to a bitmap, so CI
+one window (`maintenance` is the shell on the Defragment tab over a scrambled FAT floppy). It does not write an image: NativeForms has no way to render a window to a bitmap, so CI
 takes the picture from outside with an X11 capture tool. Everything that makes a capture
 reproducible lives here — fixed payloads, fixed timestamps, a fixed scramble seed, and an analysis
 window that leaves its elapsed time out of the status line.
