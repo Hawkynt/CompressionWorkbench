@@ -94,6 +94,11 @@
                       Exclude="AppleSparse\ReferenceVectors\README.md;AppleSparse\ReferenceVectors\.gitattributes">
       <LogicalName>SparsebundleVectors/$([System.String]::Copy('%(RecursiveDir)').Replace('\','/'))%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- FLA files and an XFL project saved by Flash Professional CS6, from the JPEXS FFDec test data,
+         with xfl2svg's captured reports; see Fla/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Fla\ReferenceVectors\**\*" Exclude="Fla\ReferenceVectors\README.md;Fla\ReferenceVectors\.gitattributes">
+      <LogicalName>FlaVectors.%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Macrium's MIT-licensed Reflect X metadata schema, the oracle for the writer's $JSON block.
          Provenance in Macrium/VendorSchema/THIRD-PARTY-NOTICE.MacriumSchema.txt. -->
     <EmbeddedResource Include="Macrium\VendorSchema\required_schema.json" LogicalName="MacriumVendor.required_schema.json" />
