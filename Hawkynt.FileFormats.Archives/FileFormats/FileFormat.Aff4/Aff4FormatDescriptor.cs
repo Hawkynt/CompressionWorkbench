@@ -57,6 +57,9 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     new("Level", "Deflate level", FormatOptionKind.Integer, "6",
       AllowedValues: ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
       Description: "Maps to the platform ZIP Deflate effort tiers; ignored for Stored."),
+    new("Hashes", "Stream hashes", FormatOptionKind.String, "sha256",
+      Description: "Comma-separated linear hashes stored per file as aff4:hash: md5, sha1, sha256, sha512.",
+      IsOptimizationAxis: false),
   ];
   /// <summary>
   /// Gets the default extension.
@@ -95,7 +98,9 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     "surfaces other members plus metadata distilled from the Turtle graph. Creates AFF4-L ZipSegment volumes.";
 
   private sealed record MemberInfo(string Name, long Size, long CompressedSize, string Method, DateTime? LastModified, string? Kind, bool IsDirectory = false);
-  private sealed record InputMember(string Name, string Urn, byte[] Data, DateTimeOffset Modified, string Sha256);
+  private sealed record WrittenFile(string Name, string Urn, long Size, DateTimeOffset Modified, IReadOnlyList<(string Datatype, string Hex)> Hashes);
+
+  private static readonly string[] ReservedNames = ["version.txt", "container.description", "information.turtle", "information.turtle.hashes"];
 
   /// <summary>Creates a standards-based AFF4-L volume using ZIP-backed data streams.</summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -103,10 +108,6 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
     if (!output.CanWrite) throw new ArgumentException("Output stream must be writable.", nameof(output));
-    if (output.CanSeek) {
-      output.Position = 0;
-      output.SetLength(0);
-    }
     if (options.Password is not null || options.EncryptFilenames)
       throw new NotSupportedException("AFF4 ZIP volumes do not define encryption for this writer.");
 
@@ -118,9 +119,11 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var level = options.TryGetInt("Level", out var configuredLevel) ? configuredLevel : options.Level ?? 6;
     if (level is < 0 or > 9)
       throw new ArgumentOutOfRangeException(nameof(options), "AFF4 Deflate level must be from 0 through 9.");
-    var compression = method == "stored" ? CompressionLevel.NoCompression : GetCompressionLevel(level);
-    var volume = Guid.NewGuid();
-    var members = new List<InputMember>();
+    var hashNames = ParseHashNames(options.GetOption("Hashes", "sha256"), nameof(options));
+    var compression = GetCompressionLevel(level);
+
+    // Validate every name before writing anything.
+    var files = new List<(ArchiveInputInfo Input, string Name)>();
     var folders = new HashSet<string>(StringComparer.Ordinal);
     var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var input in inputs) {
@@ -128,51 +131,89 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       if (input.IsDirectory) name = name.TrimEnd('/');
       else if (name.EndsWith('/')) throw new ArgumentException($"File path '{name}' ends with a directory separator.", nameof(inputs));
       if (string.IsNullOrEmpty(name)) continue;
-      if (name.IndexOf('/') < 0 && new[] { "version.txt", "container.description", "information.turtle", "information.turtle.hashes" }
-            .Contains(name, StringComparer.OrdinalIgnoreCase))
+      if (name.IndexOf('/') < 0 && ReservedNames.Contains(name, StringComparer.OrdinalIgnoreCase))
         throw new ArgumentException($"'{name}' is reserved by the AFF4 container.", nameof(inputs));
       if (!names.Add(name)) throw new ArgumentException($"Duplicate AFF4 path '{name}'.", nameof(inputs));
       var segments = name.Split('/', StringSplitOptions.RemoveEmptyEntries);
       for (var i = 1; i < segments.Length; ++i)
         folders.Add(string.Join('/', segments[..i]));
-      if (input.IsDirectory) { folders.Add(name.TrimEnd('/')); continue; }
-
-      var data = input.ReadContent();
-      var modified = File.Exists(input.FullPath)
-        ? new DateTimeOffset(File.GetLastWriteTimeUtc(input.FullPath))
-        : DateTimeOffset.UtcNow;
-      if (modified.Year < 1980) modified = new DateTimeOffset(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
-      if (modified.Year > 2107) modified = new DateTimeOffset(2107, 12, 31, 23, 59, 58, TimeSpan.Zero);
-      members.Add(new InputMember(name, $"aff4://{Guid.NewGuid():D}", data, modified, Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant()));
+      if (input.IsDirectory) folders.Add(name);
+      else files.Add((input, name));
     }
 
-    var turtle = BuildTurtle(volume, members, folders);
-    var turtleHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(turtle))).ToLowerInvariant();
-    var volumeArn = $"aff4://{volume:D}";
-    using var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true, Encoding.UTF8);
+    if (output.CanSeek) {
+      output.Position = 0;
+      output.SetLength(0);
+    }
+    var volumeArn = $"aff4://{Guid.NewGuid():D}";
+    var stamp = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    var zip = new Aff4ZipWriter(output);
     // AFF4 Standard v1.0 section 5.4: the volume ARN goes in container.description, which must
     // be the first member, and is recommended in the ZIP comment as well.
-    zip.Comment = volumeArn;
-    AddZipText(zip, "container.description", volumeArn, CompressionLevel.NoCompression);
-    AddZipText(zip, "version.txt", "major=2\nminor=1\ntool=CompressionWorkbench\n", CompressionLevel.NoCompression);
-    foreach (var member in members) {
-      var entry = zip.CreateEntry(member.Urn, compression);
-      entry.LastWriteTime = member.Modified;
-      using var target = entry.Open();
-      target.Write(member.Data);
+    AddText(zip, "container.description", volumeArn, stamp);
+    AddText(zip, "version.txt", "major=2\nminor=1\ntool=CompressionWorkbench\n", stamp);
+    var written = new List<WrittenFile>(files.Count);
+    foreach (var (input, name) in files) {
+      var modified = input.InMemoryContent == null && File.Exists(input.FullPath)
+        ? new DateTimeOffset(File.GetLastWriteTimeUtc(input.FullPath))
+        : DateTimeOffset.UtcNow;
+      var urn = $"aff4://{Guid.NewGuid():D}";
+      var hashers = hashNames.Select(h => (Name: h, Hash: IncrementalHash.CreateHash(HashAlgorithmOf(h)))).ToList();
+      using var source = input.InMemoryContent is { } content ? new MemoryStream(content, writable: false) : (Stream)File.OpenRead(input.FullPath);
+      long size = 0;
+      zip.AddEntry(urn, source, method == "deflate", compression, modified, chunk => {
+        size += chunk.Length;
+        foreach (var (_, hash) in hashers) hash.AppendData(chunk);
+      });
+      written.Add(new WrittenFile(name, urn, size, modified,
+        [.. hashers.Select(h => (DatatypeOf(h.Name), Convert.ToHexString(h.Hash.GetHashAndReset()).ToLowerInvariant()))]));
+      foreach (var (_, hash) in hashers) hash.Dispose();
     }
-    AddZipText(zip, "information.turtle", turtle, CompressionLevel.NoCompression);
+
+    var turtle = BuildTurtle(volumeArn, written, folders);
+    var turtleHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(turtle))).ToLowerInvariant();
+    AddText(zip, "information.turtle", turtle, stamp);
     // AFF4-L section 10.1's example writes the subject as ":/information.turtle", which is not
     // valid Turtle (a prefixed local name cannot start with "/"); the full IRI names the same thing.
-    AddZipText(zip, "information.turtle.hashes",
+    AddText(zip, "information.turtle.hashes",
       $"@prefix : <{volumeArn}> .\n@prefix aff4: <http://aff4.org/Schema#> .\n\n<{volumeArn}/information.turtle> aff4:hash \"{turtleHash}\"^^aff4:SHA256 .\n",
-      CompressionLevel.NoCompression);
+      stamp);
+    zip.Finish(volumeArn);
   }
 
   private static CompressionLevel GetCompressionLevel(int level) => level switch {
-    <= 1 => CompressionLevel.Fastest,
+    0 => CompressionLevel.NoCompression,
+    1 => CompressionLevel.Fastest,
     >= 8 => CompressionLevel.SmallestSize,
     _ => CompressionLevel.Optimal,
+  };
+
+  private static List<string> ParseHashNames(string value, string paramName) {
+    var result = new List<string>();
+    foreach (var part in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
+      var name = part.ToLowerInvariant().Replace("-", string.Empty, StringComparison.Ordinal);
+      if (name is not ("md5" or "sha1" or "sha256" or "sha512"))
+        throw new ArgumentException($"Unsupported AFF4 hash '{part}'. Use md5, sha1, sha256 or sha512.", paramName);
+      if (!result.Contains(name)) result.Add(name);
+    }
+    // AFF4-L section 6.1: producers MUST store a linear hash of every ZipSegment stream.
+    if (result.Count == 0) throw new ArgumentException("AFF4-L requires at least one stream hash.", paramName);
+    return result;
+  }
+
+  private static HashAlgorithmName HashAlgorithmOf(string name) => name switch {
+    "md5" => HashAlgorithmName.MD5,
+    "sha1" => HashAlgorithmName.SHA1,
+    "sha512" => HashAlgorithmName.SHA512,
+    _ => HashAlgorithmName.SHA256,
+  };
+
+  // AFF4 Standard v1.0 hash datatypes (http://aff4.org/Schema#MD5 etc.).
+  private static string DatatypeOf(string name) => name switch {
+    "md5" => "MD5",
+    "sha1" => "SHA1",
+    "sha512" => "SHA512",
+    _ => "SHA256",
   };
 
   private static string NormalizeArchiveName(string name) {
@@ -183,26 +224,25 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return normalized;
   }
 
-  private static string BuildTurtle(Guid volume, IReadOnlyList<InputMember> members, IEnumerable<string> folders) {
+  private static string BuildTurtle(string volumeArn, IReadOnlyList<WrittenFile> files, IEnumerable<string> folders) {
     var sb = new StringBuilder();
-    sb.Append("@prefix : <aff4://").Append(volume.ToString("D")).Append("> .\n")
+    sb.Append("@prefix : <").Append(volumeArn).Append("> .\n")
       .Append("@prefix aff4: <http://aff4.org/Schema#> .\n")
-      .Append("@prefix aff4l: <http://aff4.org/Schema/2022/#> .\n")
       .Append("@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n\n")
       .Append(": a aff4:ZipVolume .\n\n");
-    foreach (var member in members) {
-      var leaf = member.Name[(member.Name.LastIndexOf('/') + 1)..];
-      sb.Append('<').Append(member.Urn).Append("> a aff4:FileImage, aff4:Image, aff4:ZipSegment ;\n");
-      AppendNames(sb, leaf, "/" + member.Name);
+    foreach (var file in files) {
+      var leaf = file.Name[(file.Name.LastIndexOf('/') + 1)..];
+      sb.Append('<').Append(file.Urn).Append("> a aff4:FileImage, aff4:Image, aff4:ZipSegment ;\n");
+      AppendNames(sb, leaf, "/" + file.Name);
       sb
-        .Append("  aff4:size \"").Append(member.Data.LongLength.ToString(CultureInfo.InvariantCulture)).Append("\"^^xsd:long ;\n")
-        .Append("  aff4:lastWritten ").Append(TurtleString(member.Modified.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture))).Append("^^xsd:dateTime ;\n")
-        .Append("  aff4:hash ").Append(TurtleString(member.Sha256)).Append("^^aff4:SHA256 .\n\n");
+        .Append("  aff4:size \"").Append(file.Size.ToString(CultureInfo.InvariantCulture)).Append("\"^^xsd:long ;\n")
+        .Append("  aff4:lastWritten ").Append(TurtleString(file.Modified.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture))).Append("^^xsd:dateTime ;\n")
+        .Append("  aff4:hash ").AppendJoin(", ", file.Hashes.Select(h => TurtleString(h.Hex) + "^^aff4:" + h.Datatype)).Append(" .\n\n");
     }
     // AFF4-L section 1.1 deprecates path-based ARNs: folders get GUID ARNs like files.
     foreach (var folder in folders.OrderBy(x => x, StringComparer.Ordinal)) {
       var leaf = folder[(folder.LastIndexOf('/') + 1)..];
-      sb.Append("<aff4://").Append(Guid.NewGuid().ToString("D")).Append("> a aff4:Folder ;\n");
+      sb.Append("<aff4://").Append(Guid.NewGuid().ToString("D")).Append("> a aff4:Folder, aff4:Image ;\n");
       AppendNames(sb, leaf, "/" + folder);
       sb.Length -= 3; // turn the trailing " ;\n" into the statement end
       sb.Append(" .\n\n");
@@ -211,9 +251,11 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <summary>
-  /// AFF4-L section 5: a name with a control character (or one that is not valid UTF-16, hence not
-  /// valid UTF-8) is stored %XX-escaped in aff4:fileName / aff4:originalPathName, with the raw
-  /// bytes base64-encoded in the ...Raw property.
+  /// AFF4-L sections 1.1 and 5: aff4:fileName and aff4:originalPathName, %XX-escaped with the raw
+  /// bytes base64-encoded in the ...Raw property when the name has a control character (or is not
+  /// valid UTF-16, hence not valid UTF-8). The path is repeated as aff4:originalFileName, the
+  /// property the AFF4-L draft's own examples and the AFF4 v1.1 logical readers (pyaff4) use, so
+  /// that legacy AFF4-L readers find the file too.
   /// </summary>
   private static void AppendNames(StringBuilder sb, string leaf, string path) {
     foreach (var (property, value) in new[] { ("fileName", leaf), ("originalPathName", path) }) {
@@ -224,6 +266,8 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       } else
         sb.Append("  aff4:").Append(property).Append(' ').Append(TurtleString(value)).Append(" ;\n");
     }
+    var legacy = NeedsNameEscaping(path) ? EscapeName(Encoding.UTF8.GetBytes(path)) : path;
+    sb.Append("  aff4:originalFileName ").Append(TurtleString(legacy)).Append(" ;\n");
   }
 
   private static bool NeedsNameEscaping(string value) {
@@ -248,11 +292,9 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   private static string TurtleString(string value) => "\"" + value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal).Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal) + "\"";
 
-  private static void AddZipText(ZipArchive zip, string name, string content, CompressionLevel level) {
-    var entry = zip.CreateEntry(name, level);
-    entry.LastWriteTime = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    using var target = entry.Open();
-    target.Write(Encoding.UTF8.GetBytes(content));
+  private static void AddText(Aff4ZipWriter zip, string name, string content, DateTimeOffset modified) {
+    using var source = new MemoryStream(Encoding.UTF8.GetBytes(content), writable: false);
+    zip.AddEntry(name, source, deflate: false, CompressionLevel.NoCompression, modified);
   }
 
   /// <summary>

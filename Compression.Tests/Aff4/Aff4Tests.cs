@@ -233,6 +233,116 @@ public class Aff4Tests {
       [ArchiveInputInfo.InMemory("A.txt", "x"u8), ArchiveInputInfo.InMemory("a.TXT", "y"u8)], new FormatCreateOptions()));
   }
 
+  // ── ZIP layer ────────────────────────────────────────────────────────────
+
+  [TestCase("deflate")]
+  [TestCase("stored")]
+  public void Create_GivenAnyInput_ThenEveryLocalHeaderIsZip64WithDataDescriptor(string method) {
+    // AFF4 Standard v1.0 section 5.4: all ZIP headers MUST be ZIP64.
+    using var archive = new MemoryStream();
+    new Aff4FormatDescriptor().Create(archive, [ArchiveInputInfo.InMemory("a.txt", "abc"u8), ArchiveInputInfo.InMemory("e", ReadOnlySpan<byte>.Empty)],
+      new FormatCreateOptions(method));
+    var bytes = archive.ToArray();
+    archive.Position = 0;
+    using var zip = new ZipArchive(archive, ZipArchiveMode.Read);
+    Assert.That(zip.Entries, Has.Count.EqualTo(6));
+    var headers = 0;
+    for (var i = 0; i + 30 <= bytes.Length; ++i) {
+      if (BitConverter.ToUInt32(bytes, i) != 0x04034B50) continue;
+      ++headers;
+      Assert.That(BitConverter.ToUInt16(bytes, i + 4), Is.EqualTo(45), "version needed");
+      Assert.That(BitConverter.ToUInt16(bytes, i + 6) & 0x0008, Is.EqualTo(0x0008), "data descriptor flag");
+      Assert.That(BitConverter.ToUInt32(bytes, i + 18), Is.EqualTo(uint.MaxValue), "compressed size deferred to ZIP64");
+      var nameLength = BitConverter.ToUInt16(bytes, i + 26);
+      Assert.That(BitConverter.ToUInt16(bytes, i + 28), Is.EqualTo(20));
+      Assert.That(BitConverter.ToUInt16(bytes, i + 30 + nameLength), Is.EqualTo(0x0001), "ZIP64 extra id");
+    }
+    Assert.That(headers, Is.EqualTo(6));
+  }
+
+  [Test]
+  public void Create_GivenEmptyFileWithDeflate_ThenMemberHoldsTheEmptyFinalBlock() {
+    using var archive = new MemoryStream();
+    new Aff4FormatDescriptor().Create(archive, [ArchiveInputInfo.InMemory("empty.bin", ReadOnlySpan<byte>.Empty)], new FormatCreateOptions("deflate"));
+    archive.Position = 0;
+    using var zip = new ZipArchive(archive, ZipArchiveMode.Read);
+    var segment = zip.Entries.Single(e => e.FullName.StartsWith("aff4://", StringComparison.Ordinal));
+    Assert.That(segment.Length, Is.Zero);
+    Assert.That(segment.CompressedLength, Is.EqualTo(2));
+    using var data = segment.Open();
+    Assert.That(data.ReadByte(), Is.EqualTo(-1));
+  }
+
+  [Test]
+  public void Create_GivenNoInputs_ThenVolumeHoldsOnlyMetadata() {
+    using var archive = new MemoryStream();
+    new Aff4FormatDescriptor().Create(archive, [], new FormatCreateOptions());
+    archive.Position = 0;
+    var listed = new Aff4FormatDescriptor().List(archive, null).Select(e => e.Name).ToList();
+    Assert.That(listed, Is.EquivalentTo(new[] { "FULL.aff4", "metadata.ini", "container.description", "version.txt", "information.turtle", "information.turtle.hashes" }));
+  }
+
+  // ── metadata ─────────────────────────────────────────────────────────────
+
+  [Test]
+  public void Create_GivenFile_ThenLegacyOriginalFileNameIsWrittenForPyaff4() {
+    using var archive = new MemoryStream();
+    new Aff4FormatDescriptor().Create(archive, [ArchiveInputInfo.InMemory("dir/a.txt", "x"u8)], new FormatCreateOptions());
+    archive.Position = 0;
+    using var zip = new ZipArchive(archive, ZipArchiveMode.Read);
+    var turtle = ReadEntry(zip, "information.turtle");
+    Assert.That(turtle, Does.Contain("aff4:originalPathName \"/dir/a.txt\""));
+    Assert.That(turtle, Does.Contain("aff4:originalFileName \"/dir/a.txt\""));
+  }
+
+  [TestCase("md5", "MD5", 32)]
+  [TestCase("sha1", "SHA1", 40)]
+  [TestCase("sha256", "SHA256", 64)]
+  [TestCase("SHA-512", "SHA512", 128)]
+  public void Create_GivenHashOption_ThenThatLinearHashIsStored(string option, string datatype, int hexLength) {
+    using var archive = new MemoryStream();
+    new Aff4FormatDescriptor().Create(archive, [ArchiveInputInfo.InMemory("a.txt", "abc"u8)],
+      new FormatCreateOptions { FormatSpecific = new(StringComparer.OrdinalIgnoreCase) { ["Hashes"] = option } });
+    archive.Position = 0;
+    using var zip = new ZipArchive(archive, ZipArchiveMode.Read);
+    var match = System.Text.RegularExpressions.Regex.Match(ReadEntry(zip, "information.turtle"), $"\"([0-9a-f]+)\"\\^\\^aff4:{datatype}\\b");
+    Assert.That(match.Success, Is.True);
+    Assert.That(match.Groups[1].Value, Has.Length.EqualTo(hexLength));
+  }
+
+  [Test]
+  public void Create_GivenSeveralHashes_ThenAllAreStoredOnEachFile() {
+    using var archive = new MemoryStream();
+    new Aff4FormatDescriptor().Create(archive, [ArchiveInputInfo.InMemory("a.txt", "abc"u8)],
+      new FormatCreateOptions { FormatSpecific = new(StringComparer.OrdinalIgnoreCase) { ["Hashes"] = "md5, sha1,sha256,md5" } });
+    archive.Position = 0;
+    using var zip = new ZipArchive(archive, ZipArchiveMode.Read);
+    var turtle = ReadEntry(zip, "information.turtle");
+    Assert.That(turtle, Does.Contain("\"900150983cd24fb0d6963f7d28e17f72\"^^aff4:MD5"));
+    Assert.That(turtle, Does.Contain("\"a9993e364706816aba3e25717850c26c9cd0d89d\"^^aff4:SHA1"));
+    Assert.That(turtle, Does.Contain("\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\"^^aff4:SHA256"));
+    Assert.That(System.Text.RegularExpressions.Regex.Matches(turtle, "aff4:MD5").Count, Is.EqualTo(1), "duplicates collapse");
+  }
+
+  [TestCase("crc32")]
+  [TestCase("")]
+  [TestCase(" , ")]
+  public void Create_GivenUnsupportedOrNoHash_ThenRefused(string option) {
+    Assert.Throws<ArgumentException>(() => new Aff4FormatDescriptor().Create(new MemoryStream(), [ArchiveInputInfo.InMemory("a", "x"u8)],
+      new FormatCreateOptions { FormatSpecific = new(StringComparer.OrdinalIgnoreCase) { ["Hashes"] = option } }));
+  }
+
+  [Test]
+  public void Create_GivenNonAsciiNames_ThenListedBackUnchanged() {
+    var name = "Grüße/ネコ 🐈.txt";
+    using var archive = new MemoryStream();
+    new Aff4FormatDescriptor().Create(archive, [ArchiveInputInfo.InMemory(name, "x"u8)], new FormatCreateOptions());
+    archive.Position = 0;
+    var listed = new Aff4FormatDescriptor().List(archive, null);
+    Assert.That(listed.Select(e => e.Name), Does.Contain(name));
+    Assert.That(listed.Where(e => e.IsDirectory).Select(e => e.Name), Does.Contain("Grüße"));
+  }
+
   // ── reader ───────────────────────────────────────────────────────────────
 
   private static byte[] BuildVolume(string turtle, params (string Name, byte[] Data)[] members) {
