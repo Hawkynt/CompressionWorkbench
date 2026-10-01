@@ -46,12 +46,12 @@ internal sealed partial class MainForm {
   private RibbonButton _editProfilesButton = null!;
 
   private readonly TextBox _interleaveBox = new() { Text = "1" };
-  private readonly ComboBox _metadataZoneCombo = new() { DropDownStyle = ComboBoxStyle.DropDownList };
-  private readonly ComboBox _layoutProfileCombo = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+  private readonly ChoiceBox _metadataZoneCombo = new();
+  private readonly ChoiceBox _layoutProfileCombo = new();
   private readonly TextBox _holeSizeBox = new() { Text = "64m" };
   private readonly TextBox _holeAtBox = new() { Text = "auto" };
   private readonly TextBox _seedBox = new() { Text = "1" };
-  private readonly ComboBox _placementCombo = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+  private readonly ChoiceBox _placementCombo = new();
   private RibbonHostItem _interleaveItem = null!;
   private RibbonHostItem _metadataZoneItem = null!;
   private RibbonHostItem _layoutProfileItem = null!;
@@ -154,8 +154,7 @@ internal sealed partial class MainForm {
   /// </summary>
   private RibbonGroup OptionsGroup() {
     // Short, because the field is narrow; the tooltip says what each placement means.
-    this._metadataZoneCombo.Items.AddRange(["Unchanged", "Front", "Back", "Middle", "Before data"]);
-    this._metadataZoneCombo.SelectedIndex = 0;
+    this._metadataZoneCombo.SetItems(["Unchanged", "Front", "Back", "Middle", "Before data"]);
     this.RefreshLayoutProfiles();
 
     this._interleaveItem = this.Field("Interleave", this._interleaveBox,
@@ -171,8 +170,7 @@ internal sealed partial class MainForm {
       this.RefreshLayoutProfiles();
     }, RibbonItemSize.Small, Keys.None, "Create, change or delete layout profiles");
 
-    this._placementCombo.Items.AddRange(["Default", "Metadata first", "Data first"]);
-    this._placementCombo.SelectedIndex = 0;
+    this._placementCombo.SetItems(["Default", "Metadata first", "Data first"]);
 
     this._seedItem = this.Field("Seed", this._seedBox, "Seeds Scramble's shuffle. The same seed deals the same layout every run.",
       () => this.WithPresenter(p => p.SeedText = this._seedBox.Text));
@@ -223,7 +221,7 @@ internal sealed partial class MainForm {
 
     switch (input) {
       case TextBox box: box.TextChanged += (_, _) => { if (!this._syncingDefragRibbon) { changed(); this.SyncDefragmentRibbon(); } }; break;
-      case ComboBox combo: combo.SelectedIndexChanged += (_, _) => { if (!this._syncingDefragRibbon) { changed(); this.SyncDefragmentRibbon(); } }; break;
+      case ChoiceBox combo: combo.SelectedIndexChanged += (_, _) => { if (!this._syncingDefragRibbon) { changed(); this.SyncDefragmentRibbon(); } }; break;
     }
 
     this._ribbonTips.SetToolTip(input, tip);
@@ -350,13 +348,12 @@ internal sealed partial class MainForm {
 
     this._syncingDefragRibbon = true;
     try {
-      this._layoutProfileCombo.Items.Clear();
       this._layoutProfileEntries.Clear();
-      this._layoutProfileCombo.Items.Add("(none)");
+      var names = new List<string> { "(none)" };
       this._layoutProfileEntries.Add(null);
       try {
         foreach (var entry in LayoutProfileStore.List()) {
-          this._layoutProfileCombo.Items.Add($"{entry.Name} [{(entry.Origin == ProfileOrigin.Builtin ? "Built-in" : "User")}]");
+          names.Add($"{entry.Name} [{(entry.Origin == ProfileOrigin.Builtin ? "Built-in" : "User")}]");
           this._layoutProfileEntries.Add(entry);
         }
       } catch {
@@ -364,7 +361,7 @@ internal sealed partial class MainForm {
       }
 
       var keep = this._layoutProfileEntries.FindIndex(e => e is not null && string.Equals(e.FilePath, previous, StringComparison.OrdinalIgnoreCase));
-      this._layoutProfileCombo.SelectedIndex = Math.Max(0, keep);
+      this._layoutProfileCombo.SetItems(names, Math.Max(0, keep));
     } finally {
       this._syncingDefragRibbon = false;
     }
