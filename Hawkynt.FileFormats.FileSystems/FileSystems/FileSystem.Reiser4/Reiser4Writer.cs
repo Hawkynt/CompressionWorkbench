@@ -8,10 +8,11 @@ using Compression.Core.DiskImage;
 namespace FileSystem.Reiser4;
 
 /// <summary>
-/// WORM (write-once-read-many) creator for an **empty** Reiser4 filesystem image
-/// that is byte-exact-compatible with what <c>mkfs.reiser4 -fffy</c> from
-/// <c>reiser4progs 1.2.2</c> produces, and that <c>fsck.reiser4</c> validates as
-/// <c>"FS is consistent."</c>.
+/// Creator for a Reiser4 filesystem image that starts from what
+/// <c>mkfs.reiser4 -fffy</c> from <c>reiser4progs 1.2.2</c> produces and adds
+/// regular files to the root directory through the native tree — stat data and
+/// entries in the leaf, extents in the twig — so that <c>fsck.reiser4</c>
+/// validates the result as <c>"FS is consistent."</c> with or without files.
 ///
 /// <para>
 /// The image holds 25 reserved blocks at fixed positions (block size = 4 KB):
@@ -226,16 +227,37 @@ public sealed class Reiser4Writer {
 
   /// <summary>Adds a regular file to the payload area.</summary>
   public void AddFile(string name, byte[] data) {
-    ArgumentException.ThrowIfNullOrEmpty(name);
+    ValidateName(name);
     ArgumentNullException.ThrowIfNull(data);
     this._files.Add((name, FilePayload.FromBytes(data)));
   }
 
   /// <summary>Adds a file whose bytes are pulled from <paramref name="openStream" /> as the image is written.</summary>
   public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
-    ArgumentException.ThrowIfNullOrEmpty(name);
+    ValidateName(name);
     ArgumentNullException.ThrowIfNull(openStream);
     this._files.Add((name, FilePayload.FromStream(size, openStream)));
+  }
+
+  /// <summary>
+  /// Why <paramref name="name" /> cannot be a root-directory entry of this profile,
+  /// or <see langword="null" /> when it can. A slash would be written into a single
+  /// directory entry's name (reiser4 has no such entry), "." and ".." are the
+  /// directory's own entries, and a NUL ends the name early.
+  /// </summary>
+  internal static string? RejectName(string? name) => name switch {
+    null or "" => "an entry needs a name",
+    "." or ".." => $"'{name}' is reserved for the directory's own entries",
+    _ when name.AsSpan().IndexOfAny('/', '\\') >= 0 => $"'{name}' is nested; this writer only builds the root directory",
+    _ when name.Contains('\0') => $"'{name}' contains a NUL character",
+    _ => null,
+  };
+
+  private void ValidateName(string name) {
+    if (RejectName(name) is { } reason)
+      throw new NotSupportedException("Reiser4: " + reason + ".");
+    if (this._files.Any(f => f.Name.Equals(name, StringComparison.Ordinal)))
+      throw new ArgumentException($"Reiser4: '{name}' is already in the root directory.", nameof(name));
   }
 
   /// <summary>
@@ -324,13 +346,11 @@ public sealed class Reiser4Writer {
       return cursor++;
     }
 
-    var dirBlockCount = (this._files.Count + DirEntriesPerBlock - 1) / Math.Max(1, DirEntriesPerBlock);
-    var dirBlocks = new List<ulong>(dirBlockCount);
-    for (var i = 0; i < dirBlockCount; ++i)
-      dirBlocks.Add(Alloc());
-
+    // No private directory chain any more: the native tree names every file, and
+    // blocks that the tree does not reach but the bitmap marks used are exactly
+    // what fsck.reiser4 reports as a bitmap mismatch. Readers keep understanding
+    // the chain in images written before.
     var payloads = new DeferredPayloads();
-    var entries = new List<(string Name, ulong Block, long Size)>(this._files.Count);
     // The same runs the payload area is made of become the extents of the file in
     // the tree — one file's bytes, described twice, sitting in one place.
     var treeFiles = new List<Reiser4Tree.Entry>(this._files.Count);
@@ -357,7 +377,6 @@ public sealed class Reiser4Writer {
         runs.Add(new Reiser4Tree.Run(runStart, (ulong)runBlocks));
       }
 
-      entries.Add((name, first, payload.Size));
       treeFiles.Add(new Reiser4Tree.Entry {
         Name = name, ObjectId = nextObjectId++, Size = payload.Size, Runs = runs,
       });
@@ -369,34 +388,9 @@ public sealed class Reiser4Writer {
     // not only what our own reader knows to look for.
     Reiser4Tree.Build(blk24, BlockSize, mkfsId, (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
       RootLocality, RootObjectId, treeFiles);
+    Reiser4Tree.BuildTwig(blk23, BlockSize, mkfsId, RootObjectId, treeFiles);
 
     var usedBlocks = cursor;   // every block below the cursor is reserved or payload
-
-    // ── Directory chain ──────────────────────────────────────────────────
-    var dirImages = new List<byte[]>(dirBlocks.Count);
-    for (var i = 0; i < dirBlocks.Count; ++i) {
-      var block = new byte[BlockSize];
-      DirMagic.CopyTo(block.AsSpan(0, DirMagic.Length));
-      var next = i + 1 < dirBlocks.Count ? dirBlocks[i + 1] : 0UL;
-      BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(8, 8), next);
-      var take = Math.Min(DirEntriesPerBlock, entries.Count - i * DirEntriesPerBlock);
-      BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(16, 4), (uint)take);
-      for (var j = 0; j < take; ++j) {
-        var (name, first, size) = entries[i * DirEntriesPerBlock + j];
-        var o = DirHeadSize + j * DirEntrySize;
-        var nameBytes = Encoding.UTF8.GetBytes(name);
-        nameBytes.AsSpan(0, Math.Min(nameBytes.Length, DirNameLength - 1)).CopyTo(block.AsSpan(o, DirNameLength - 1));
-        BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(o + DirNameLength, 8), first);
-        BinaryPrimitives.WriteInt64LittleEndian(block.AsSpan(o + DirNameLength + 8, 8), size);
-      }
-      dirImages.Add(block);
-    }
-
-    // ── Master superblock: announce the payload area ─────────────────────
-    if (dirBlocks.Count > 0) {
-      PayloadMarker.CopyTo(blk16.AsSpan(MasterPayloadMarkerOff, PayloadMarker.Length));
-      BinaryPrimitives.WriteUInt64LittleEndian(blk16.AsSpan(MasterPayloadDirOff, 8), dirBlocks[0]);
-    }
 
     // ── Free-block accounting and the bitmap blocks ──────────────────────
     BinaryPrimitives.WriteUInt64LittleEndian(blk17.AsSpan(F40FreeBlocksOff, 8), blocks - usedBlocks);
@@ -404,7 +398,7 @@ public sealed class Reiser4Writer {
 
     // ── Emit the metadata prefix, then the payload ───────────────────────
     var basePosition = output.CanSeek ? output.Position : 0;
-    var firstDataBlock = ReservedBlockCount + (ulong)dirBlocks.Count;
+    var firstDataBlock = ReservedBlockCount;
     var zero = new byte[BlockSize];
     for (var b = 0UL; b < firstDataBlock; b++) {
       var buf = b switch {
@@ -415,7 +409,7 @@ public sealed class Reiser4Writer {
         22 => blk22,
         23 => blk23,
         24 => blk24,
-        _ => b >= ReservedBlockCount ? dirImages[(int)(b - ReservedBlockCount)] : zero,
+        _ => zero,
       };
       output.Write(buf, 0, BlockSize);
     }

@@ -5,14 +5,21 @@ using System.Text;
 namespace FileSystem.Reiser4;
 
 /// <summary>
-/// Builds the leaf of a reiser4 tree: the root directory's stat data and entries,
-/// and for each file a stat data and the extents holding its bytes.
+/// Builds the two-level reiser4 tree: a leaf with the root directory's stat data
+/// and entries plus every file's stat data, and above it the twig that points at
+/// that leaf and holds each file's extents.
 /// </summary>
 /// <remarks>
 /// <para>A node is a 28-byte header, item bodies growing up from there, and an
 /// array of 38-byte item headers growing down from the node's end — each a
 /// four-word key, the body's offset, flags, and which plugin reads it. Items sit
 /// in key order.</para>
+///
+/// <para>Extents are twig items, not leaf items: reiser4 keeps the pointers to a
+/// file body's unformatted blocks one level above the leaves, next to the pointers
+/// to those leaves. <c>fsck.reiser4</c> rejects a level-1 node holding an extent
+/// as broken ("node level does not match the item type"), so the body keys, which
+/// sort after every stat data and entry, follow the leaf pointer in the twig.</para>
 ///
 /// <para>A key is four little-endian words: the locality in the top sixty bits of
 /// the first with the item's type in its low four, an ordering, an object id, and
@@ -34,6 +41,7 @@ internal static class Reiser4Tree {
   private const int PluginStat40 = 0x0;
   private const int PluginCde40 = 0x2;
   private const int PluginExtent40 = 0x5;
+  private const int PluginNodePtr40 = 0x3;
 
   private const byte MinorFileName = 0;
   private const byte MinorStatData = 1;
@@ -209,11 +217,20 @@ internal static class Reiser4Tree {
     var rootStatLength = BinaryPrimitives.ReadUInt16LittleEndian(leaf[(blockSize - 2 * ItemHeaderBytes + 32)..])
       - rootStatOffset;
     var rootStat = leaf.Slice(rootStatOffset, rootStatLength).ToArray();
+    var directory = Directory(rootLocality, rootObjectId, files, blockSize);
+
+    // A directory's size is its entry count and its bytes the space its entries
+    // take (every unit, without the item's two-byte count); fsck.reiser4 checks
+    // both against the entries it finds. mkfs wrote them for "." and ".." alone.
+    if ((BinaryPrimitives.ReadUInt16LittleEndian(rootStat) & 0x3) != 0x3 || rootStat.Length < 44)
+      throw new InvalidOperationException("Reiser4: the root stat-data template lacks the light-weight and unix extensions.");
+    BinaryPrimitives.WriteUInt64LittleEndian(rootStat.AsSpan(8), (ulong)(2 + files.Count));
+    BinaryPrimitives.WriteUInt64LittleEndian(rootStat.AsSpan(36), (ulong)(directory.Length - 2));
 
     var bodies = new List<(ulong Locality, byte Minor, ulong Ordering, ulong ObjectId, ulong Offset,
                            int Plugin, byte[] Body)> {
       (rootLocality, MinorStatData, 0, rootObjectId, 0, PluginStat40, rootStat),
-      (rootObjectId, MinorFileName, 0, 0, 0, PluginCde40, Directory(rootLocality, rootObjectId, files, blockSize)),
+      (rootObjectId, MinorFileName, 0, 0, 0, PluginCde40, directory),
     };
 
     foreach (var file in files) {
@@ -223,7 +240,33 @@ internal static class Reiser4Tree {
         StatData(0x81A4, 1, (ulong)file.Size, held * (ulong)blockSize, time)));
     }
 
-    foreach (var file in files) {
+    WriteNode(leaf, blockSize, mkfsId, level: 1, bodies);
+  }
+
+  /// <summary>
+  /// Rewrites <paramref name="twig" /> so it points at the leaf and carries every
+  /// file's extents, in key order after that pointer.
+  /// </summary>
+  /// <param name="twig">The twig as mkfs left it, whose single leaf pointer is kept.</param>
+  internal static void BuildTwig(Span<byte> twig, int blockSize, uint mkfsId, ulong rootObjectId, IReadOnlyList<Entry> files) {
+    var pointerHeader = blockSize - ItemHeaderBytes;
+    if (BinaryPrimitives.ReadUInt16LittleEndian(twig[2..]) != 1
+        || BinaryPrimitives.ReadUInt16LittleEndian(twig[(pointerHeader + 36)..]) != PluginNodePtr40)
+      throw new InvalidOperationException("Reiser4: the twig template does not hold exactly one leaf pointer.");
+    var pointerOffset = BinaryPrimitives.ReadUInt16LittleEndian(twig[(pointerHeader + 32)..]);
+    var key = twig.Slice(pointerHeader, 32);
+    var first = BinaryPrimitives.ReadUInt64LittleEndian(key);
+
+    var bodies = new List<(ulong Locality, byte Minor, ulong Ordering, ulong ObjectId, ulong Offset,
+                           int Plugin, byte[] Body)> {
+      (first >> 4, (byte)(first & 0xF), BinaryPrimitives.ReadUInt64LittleEndian(key[8..]),
+       BinaryPrimitives.ReadUInt64LittleEndian(key[16..]), BinaryPrimitives.ReadUInt64LittleEndian(key[24..]),
+       PluginNodePtr40, twig.Slice(pointerOffset, 8).ToArray()),
+    };
+
+    // Body keys share the root's object id as locality and differ only in the
+    // file's object id, so object-id order is key order.
+    foreach (var file in files.OrderBy(static f => f.ObjectId)) {
       if (file.Runs.Count == 0) continue;
 
       var extents = new byte[file.Runs.Count * 16];
@@ -235,13 +278,19 @@ internal static class Reiser4Tree {
       bodies.Add((rootObjectId, MinorFileBody, 0, file.ObjectId, 0, PluginExtent40, extents));
     }
 
+    WriteNode(twig, blockSize, mkfsId, level: 2, bodies);
+  }
+
+  /// <summary>Lays <paramref name="bodies" /> out as one node40 at <paramref name="level" />.</summary>
+  private static void WriteNode(Span<byte> leaf, int blockSize, uint mkfsId, byte level,
+      List<(ulong Locality, byte Minor, ulong Ordering, ulong ObjectId, ulong Offset, int Plugin, byte[] Body)> bodies) {
     leaf[..blockSize].Clear();
     var at = NodeHeaderBytes;
     for (var i = 0; i < bodies.Count; ++i) {
       var (locality, minor, ordering, objectId, offset, plugin, body) = bodies[i];
       if (at + body.Length > blockSize - (i + 1) * ItemHeaderBytes)
         throw new InvalidOperationException(
-          $"Reiser4: {bodies.Count} items do not fit one {blockSize}-byte leaf; this writer builds one.");
+          $"Reiser4: {bodies.Count} items do not fit one {blockSize}-byte node; this writer builds a single leaf under a single twig.");
 
       body.CopyTo(leaf[at..]);
       var header = blockSize - (i + 1) * ItemHeaderBytes;
@@ -261,7 +310,7 @@ internal static class Reiser4Tree {
     BinaryPrimitives.WriteUInt32LittleEndian(leaf[12..], mkfsId);
     BinaryPrimitives.WriteUInt64LittleEndian(leaf[16..], 0);                 // flush id
     BinaryPrimitives.WriteUInt16LittleEndian(leaf[24..], 0);                 // flags
-    leaf[26] = 1;                                                            // level: a leaf
+    leaf[26] = level;                                                        // 1 = leaf, 2 = twig
     leaf[27] = 0;
   }
 }

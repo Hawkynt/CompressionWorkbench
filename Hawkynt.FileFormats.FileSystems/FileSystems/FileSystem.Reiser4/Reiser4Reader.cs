@@ -18,6 +18,7 @@ public sealed class Reiser4Reader : IDisposable {
   public const long MasterOffset = 65536;
 
   private const ulong NativeLeafBlock = 24;
+  private const ulong NativeTwigBlock = 23;
   private const int ItemHeaderBytes = 38;
   private const int DirectoryUnitHeaderBytes = 26;
   private const int TargetKeyBytes = 24;
@@ -192,7 +193,26 @@ public sealed class Reiser4Reader : IDisposable {
   /// </summary>
   private bool TryReadNativeTree() {
     if (this.BlockSize != Reiser4Writer.BlockSize) return false;
-    var offset = checked((long)NativeLeafBlock * this.BlockSize);
+
+    var statSizes = new Dictionary<ulong, long>();
+    var extents = new Dictionary<ulong, IReadOnlyList<NativeRun>>();
+    byte[]? directory = null;
+    if (!this.TryReadNativeNode(NativeLeafBlock, statSizes, extents, ref directory)) return false;
+    // Extents are twig items, so a file body is found one level up; a twig that
+    // is missing or unreadable only means no file has a body.
+    _ = this.TryReadNativeNode(NativeTwigBlock, statSizes, extents, ref directory);
+
+    if (directory is null) return false;
+    var parsed = ParseNativeDirectory(directory, statSizes, extents);
+    if (parsed is null) return false;
+    this._entries.AddRange(parsed);
+    return true;
+  }
+
+  /// <summary>Collects the stat data, extents and directory items of one node40.</summary>
+  private bool TryReadNativeNode(ulong block, Dictionary<ulong, long> statSizes,
+      Dictionary<ulong, IReadOnlyList<NativeRun>> extents, ref byte[]? directory) {
+    var offset = checked((long)block * this.BlockSize);
     if (offset + this.BlockSize > this._image.Length) return false;
 
     var leaf = this._image.Read(offset, this.BlockSize);
@@ -223,10 +243,6 @@ public sealed class Reiser4Reader : IDisposable {
     }
 
     var byBody = items.OrderBy(static item => item.BodyOffset).ToArray();
-    var statSizes = new Dictionary<ulong, long>();
-    var extents = new Dictionary<ulong, IReadOnlyList<NativeRun>>();
-    ReadOnlySpan<byte> directory = default;
-
     for (var i = 0; i < byBody.Length; ++i) {
       var item = byBody[i];
       var end = i + 1 < byBody.Length ? byBody[i + 1].BodyOffset : bodiesEnd;
@@ -248,16 +264,12 @@ public sealed class Reiser4Reader : IDisposable {
           }
           extents[item.ObjectId] = runs;
           break;
-        case PluginCde40:
-          directory = body;
+        case PluginCde40 when !body.IsEmpty:
+          directory = body.ToArray();
           break;
       }
     }
 
-    if (directory.IsEmpty) return false;
-    var parsed = ParseNativeDirectory(directory, statSizes, extents);
-    if (parsed is null) return false;
-    this._entries.AddRange(parsed);
     return true;
   }
 

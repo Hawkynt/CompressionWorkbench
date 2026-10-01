@@ -172,7 +172,18 @@ public class ConversionMatrixTests {
   // from one). Keyed "Source|Target", case-insensitive.
   private static readonly Dictionary<string, string> KnownGapPairs =
     new(StringComparer.OrdinalIgnoreCase) {
+      // The native Reiser4 profile writes regular files in the root directory only.
+      // Sources whose matrix payload carries SUB/INNER.TXT are refused rather than
+      // written as one entry whose name contains a slash; flat sources convert.
+      { "Zip|Reiser4", ReiserRootOnly },
+      { "Tar|Reiser4", ReiserRootOnly },
+      { "SevenZip|Reiser4", ReiserRootOnly },
+      { "Cpio|Reiser4", ReiserRootOnly },
+      { "Fat|Reiser4", ReiserRootOnly },
     };
+
+  private const string ReiserRootOnly =
+    "[name/charset/size constraint] Reiser4 profile is root-directory only; the nested SUB/INNER.TXT payload is refused";
 
   /// <summary>
   /// Returns the documented gap reason for a pair if it is a known, quarantined

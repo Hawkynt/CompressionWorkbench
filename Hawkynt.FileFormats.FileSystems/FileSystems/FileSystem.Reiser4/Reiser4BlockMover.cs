@@ -24,6 +24,7 @@ namespace FileSystem.Reiser4;
 public sealed class Reiser4BlockMover : IFilesystemBlockMover {
 
   private const ulong NativeLeafBlock = 24;
+  private const ulong NativeTwigBlock = 23;
   private const int NativeItemHeaderBytes = 38;
   private const ushort NativeExtent40Plugin = 5;
   private const byte NativeFileBodyMinor = 4;
@@ -202,22 +203,28 @@ public sealed class Reiser4BlockMover : IFilesystemBlockMover {
   /// other tree byte stay untouched, so defrag does not silently rebuild metadata.
   /// </summary>
   private void RepointNativeExtents(Stream image) {
-    var leafOffset = checked((long)NativeLeafBlock * Reiser4Writer.BlockSize);
-    var leaf = new byte[Reiser4Writer.BlockSize];
-    image.Position = leafOffset;
-    image.ReadExactly(leaf);
+    // Extents are twig items (block 23); images from before the writer put them
+    // there carry them in the leaf (block 24), so both are searched.
+    var nodes = new List<(long Offset, byte[] Bytes, ushort ItemCount, ushort BodiesEnd, ushort[] BodyOffsets)>(2);
+    foreach (var block in (ReadOnlySpan<ulong>)[NativeTwigBlock, NativeLeafBlock]) {
+      var nodeOffset = checked((long)block * Reiser4Writer.BlockSize);
+      var node = new byte[Reiser4Writer.BlockSize];
+      image.Position = nodeOffset;
+      image.ReadExactly(node);
+      if (BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(8, 4)) != NativeNodeMagic) continue;
 
-    var itemCount = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(2, 2));
-    var bodiesEnd = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(6, 2));
-    if (itemCount == 0
-        || itemCount > (Reiser4Writer.BlockSize - Reiser4Tree.NodeHeaderBytes) / NativeItemHeaderBytes
-        || bodiesEnd < Reiser4Tree.NodeHeaderBytes || bodiesEnd > Reiser4Writer.BlockSize)
-      throw new InvalidDataException("Reiser4: malformed native leaf while settling defragmentation.");
+      var count = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(2, 2));
+      var end = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(6, 2));
+      if (count == 0
+          || count > (Reiser4Writer.BlockSize - Reiser4Tree.NodeHeaderBytes) / NativeItemHeaderBytes
+          || end < Reiser4Tree.NodeHeaderBytes || end > Reiser4Writer.BlockSize)
+        throw new InvalidDataException($"Reiser4: malformed native node {block} while settling defragmentation.");
 
-    var bodyOffsets = new ushort[itemCount];
-    for (var i = 0; i < itemCount; ++i) {
-      var header = Reiser4Writer.BlockSize - (i + 1) * NativeItemHeaderBytes;
-      bodyOffsets[i] = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(header + 32, 2));
+      var offsets = new ushort[count];
+      for (var i = 0; i < count; ++i)
+        offsets[i] = BinaryPrimitives.ReadUInt16LittleEndian(
+          node.AsSpan(Reiser4Writer.BlockSize - (i + 1) * NativeItemHeaderBytes + 32, 2));
+      nodes.Add((nodeOffset, node, count, end, offsets));
     }
 
     foreach (var (name, objectId) in this._objectIdOf) {
@@ -226,48 +233,53 @@ public sealed class Reiser4BlockMover : IFilesystemBlockMover {
         throw new InvalidOperationException($"Reiser4: run accounting for '{name}' is incomplete.");
 
       var found = false;
-      for (var i = 0; i < itemCount; ++i) {
-        var header = Reiser4Writer.BlockSize - (i + 1) * NativeItemHeaderBytes;
-        var key0 = BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(header, 8));
-        var itemObjectId = BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(header + 16, 8));
-        var plugin = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(header + 36, 2));
-        if ((byte)(key0 & 0xF) != NativeFileBodyMinor
-            || plugin != NativeExtent40Plugin || itemObjectId != objectId)
-          continue;
+      foreach (var (_, leaf, itemCount, bodiesEnd, bodyOffsets) in nodes) {
+        for (var i = 0; i < itemCount; ++i) {
+          var header = Reiser4Writer.BlockSize - (i + 1) * NativeItemHeaderBytes;
+          var key0 = BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(header, 8));
+          var itemObjectId = BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(header + 16, 8));
+          var plugin = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(header + 36, 2));
+          if ((byte)(key0 & 0xF) != NativeFileBodyMinor
+              || plugin != NativeExtent40Plugin || itemObjectId != objectId)
+            continue;
 
-        var body = bodyOffsets[i];
-        var end = bodiesEnd;
-        foreach (var candidate in bodyOffsets)
-          if (candidate > body && candidate < end) end = candidate;
-        var bodyLength = end - body;
-        if (bodyLength != runs.Count * 16)
-          throw new NotSupportedException(
-            $"Reiser4: native extent40 body for '{name}' has {bodyLength / 16} runs, " +
-            $"but the mover tracks {runs.Count}.");
-
-        for (var r = 0; r < runs.Count; ++r) {
-          if ((runs[r] & (Reiser4Writer.BlockSize - 1)) != 0)
-            throw new InvalidOperationException($"Reiser4: run of '{name}' is not block aligned.");
-          var startBlock = checked((ulong)(runs[r] / Reiser4Writer.BlockSize));
-          var width = checked((ulong)((lengths[r] + Reiser4Writer.BlockSize - 1) / Reiser4Writer.BlockSize));
-          BinaryPrimitives.WriteUInt64LittleEndian(leaf.AsSpan(body + r * 16, 8), startBlock);
-          var existingWidth = BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(body + r * 16 + 8, 8));
-          if (existingWidth != width)
+          var body = bodyOffsets[i];
+          var end = bodiesEnd;
+          foreach (var candidate in bodyOffsets)
+            if (candidate > body && candidate < end) end = candidate;
+          var bodyLength = end - body;
+          if (bodyLength != runs.Count * 16)
             throw new NotSupportedException(
-              $"Reiser4: native extent40 width for '{name}' is {existingWidth} blocks; " +
-              $"the mover accounts for {width}.");
-        }
+              $"Reiser4: native extent40 body for '{name}' has {bodyLength / 16} runs, " +
+              $"but the mover tracks {runs.Count}.");
 
-        found = true;
-        break;
+          for (var r = 0; r < runs.Count; ++r) {
+            if ((runs[r] & (Reiser4Writer.BlockSize - 1)) != 0)
+              throw new InvalidOperationException($"Reiser4: run of '{name}' is not block aligned.");
+            var startBlock = checked((ulong)(runs[r] / Reiser4Writer.BlockSize));
+            var width = checked((ulong)((lengths[r] + Reiser4Writer.BlockSize - 1) / Reiser4Writer.BlockSize));
+            BinaryPrimitives.WriteUInt64LittleEndian(leaf.AsSpan(body + r * 16, 8), startBlock);
+            var existingWidth = BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(body + r * 16 + 8, 8));
+            if (existingWidth != width)
+              throw new NotSupportedException(
+                $"Reiser4: native extent40 width for '{name}' is {existingWidth} blocks; " +
+                $"the mover accounts for {width}.");
+          }
+
+          found = true;
+          break;
+        }
+        if (found) break;
       }
 
       if (!found)
         throw new InvalidDataException($"Reiser4: native tree has no extent40 item for '{name}'.");
     }
 
-    image.Position = leafOffset;
-    image.Write(leaf);
+    foreach (var (nodeOffset, node, _, _, _) in nodes) {
+      image.Position = nodeOffset;
+      image.Write(node);
+    }
   }
 
   /// <summary>
