@@ -15,7 +15,7 @@ public class Mp4FastStartTests {
   /// chunk offset pointing into mdat. This is the non-fast-start layout
   /// that players must download entirely before starting playback.
   /// </summary>
-  private static byte[] BuildMoovAtEnd(out long originalStcoOffset) {
+  internal static byte[] BuildMoovAtEnd(out long originalStcoOffset) {
     // ftyp: 20 bytes (size:4 + type:4 + major_brand:4 + minor_version:4 + compatible_brand:4)
     var ftyp = BuildAtom("ftyp", [
       .."isom"u8, // major brand

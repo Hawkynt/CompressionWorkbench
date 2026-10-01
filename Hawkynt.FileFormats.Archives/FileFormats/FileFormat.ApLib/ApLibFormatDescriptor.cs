@@ -6,7 +6,7 @@ namespace FileFormat.ApLib;
 /// <summary>
 /// Describes ap lib format.
 /// </summary>
-public sealed class ApLibFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
+public sealed class ApLibFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

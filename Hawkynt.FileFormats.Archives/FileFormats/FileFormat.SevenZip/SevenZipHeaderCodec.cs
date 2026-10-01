@@ -503,8 +503,9 @@ internal static class SevenZipHeaderCodec {
   private static List<SevenZipFileInfo> ReadFilesInfo(Stream stream) {
     var numFiles = (int)SevenZipVarInt.Read(stream);
     var files = new List<SevenZipFileInfo>(numFiles);
+    var skipped = new HashSet<byte>();
     for (var i = 0; i < numFiles; ++i)
-      files.Add(new SevenZipFileInfo());
+      files.Add(new SevenZipFileInfo { SkippedPropertyIds = skipped });
 
     while (true) {
       var id = ReadByte(stream);
@@ -558,7 +559,8 @@ internal static class SevenZipHeaderCodec {
           ReadAttributes(stream, files);
           break;
         default:
-          // Skip unknown property
+          // Skip unknown property, but remember it: a rewrite cannot carry what was never read.
+          if (id != SevenZipConstants.IdDummy) skipped.Add(id);
           var remaining = propSize - (stream.Position - startPos);
           if (remaining > 0)
             stream.Position += remaining;

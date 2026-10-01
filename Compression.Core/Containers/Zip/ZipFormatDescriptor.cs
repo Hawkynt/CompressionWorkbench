@@ -15,7 +15,7 @@ namespace FileFormat.Zip;
 ///   <item><description>Info-ZIP zip/unzip — long-standing open reference implementations</description></item>
 /// </list>
 /// </summary>
-public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveRenamable, IArchiveCreatable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
+public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveRenamable, IArchiveCreatable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema, ICompressionOptimizable, IArchiveRepackable {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -29,6 +29,24 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new("EncryptionMethod", "Encryption method", FormatOptionKind.Enum, "none",
       AllowedValues: ["none", "zipcrypto", "aes-128", "aes-192", "aes-256"]),
   ];
+
+  /// <summary>
+  /// Re-deflates every entry that gets smaller at maximum effort, rewriting the archive
+  /// from its own directory so that names, extra fields, comments, attributes, flags and
+  /// timestamps are carried across as stored (<see cref="ZipRawRewriter"/>). Encrypted,
+  /// ZIP64-sized and non-Deflate/Stored entries are copied verbatim.
+  /// </summary>
+  public void OptimizeCompression(Stream input, Stream output, string? password = null)
+    => ZipRawRewriter.Recompress(input, output);
+
+  /// <summary>
+  /// Copies every entry the central directory lists, byte for byte, into a fresh archive —
+  /// dropping the space removed entries left behind — and writes the directory again with
+  /// the new offsets. The rewrite decodes nothing; verifying it reads every entry back, so
+  /// an encrypted archive needs its password to be repacked through <see cref="MaintenanceVerbs"/>.
+  /// </summary>
+  public void Repack(Stream input, Stream output, string? password = null)
+    => ZipRawRewriter.Repack(input, output);
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);

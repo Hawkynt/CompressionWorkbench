@@ -89,4 +89,10 @@ internal sealed class SevenZipFileInfo {
 
   /// <summary>Gets or sets the Windows file attributes.</summary>
   public uint? Attributes { get; set; }
+
+  /// <summary>
+  /// The FilesInfo property ids the header carried that this reader skips (anti-items, start
+  /// positions, …); shared by every file of one header. Padding (<c>kDummy</c>) is not listed.
+  /// </summary>
+  public IReadOnlySet<byte> SkippedPropertyIds { get; set; } = new HashSet<byte>();
 }

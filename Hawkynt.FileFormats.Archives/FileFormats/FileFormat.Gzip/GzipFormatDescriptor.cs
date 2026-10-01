@@ -9,7 +9,7 @@ namespace FileFormat.Gzip;
 /// <summary>
 /// Describes gzip format.
 /// </summary>
-public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatValidator, IFormatOptionsSchema {
+public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatValidator, IFormatOptionsSchema, ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -117,6 +117,40 @@ public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
     using var cs = new GzipStream(output, Compression.Core.Streams.CompressionStreamMode.Compress,
       DeflateCompressionLevel.Maximum, leaveOpen: true);
     input.CopyTo(cs);
+  }
+
+  /// <summary>
+  /// Re-deflates at maximum effort and writes the original member header back verbatim —
+  /// file name, modification time, OS byte, extra field, comment, extra flags and header
+  /// CRC — so that <c>gunzip -N</c> restores exactly what it restored before (RFC 1952 §2.3).
+  /// </summary>
+  /// <exception cref="NotSupportedException">The file holds more than one member: each member
+  /// carries its own header, and one re-encoded member would keep only the first.</exception>
+  public void OptimizeCompression(Stream input, Stream output, string? password = null) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    input.Position = 0;
+    var header = GzipHeader.Read(input);
+
+    using var raw = RebuildVerb.CreateScratchStream();
+    input.Position = 0;
+    using (var decoder = new GzipStream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true)) {
+      decoder.CopyTo(raw);
+      if (decoder.MembersRead != 1)
+        throw new NotSupportedException(
+          $"gzip: the file holds {decoder.MembersRead} members, each with its own header; re-encoding them as one would drop all but the first. Refused, nothing was changed.");
+    }
+
+    raw.Position = 0;
+    using (var encoder = new GzipStream(output, Compression.Core.Streams.CompressionStreamMode.Compress,
+             DeflateCompressionLevel.Maximum, leaveOpen: true) { Header = header }) {
+      raw.CopyTo(encoder);
+    }
+    output.Flush();
+    output.Position = 0;
+    raw.Position = 0;
+    ContentPreservation.RequireSameDecodedPayload(this, output, raw);
+    output.Position = 0;
   }
 
   /// <summary>
