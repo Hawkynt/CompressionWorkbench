@@ -260,6 +260,37 @@ public sealed partial class MainFormTests {
     }));
   }
 
+  /// <summary>
+  /// A hosted field gets one stacked row. GTK draws a native combo box at its natural height
+  /// whatever bounds it is handed, which cut the bottom off its text, so every hosted input must
+  /// stay within its row and none may be a native combo box.
+  /// </summary>
+  [Test]
+  public void GivenTheOptionsFields_WhenTheTabIsLaidOut_ThenEveryHostedInputFitsItsRow() {
+    WithImages(root => WithShell(shell => {
+      OpenOnDefragmentTab(shell, MaintenanceFixtures.FragmentedFat(root));
+      Toggle(shell, "Carve Hole").PerformClick();
+      var ribbon = Field<Ribbon>(shell, "_ribbon");
+      ribbon.PerformLayout();
+
+      var hosted = DefragTab(shell).Groups
+        .SelectMany(g => g.Items.Cast<ToolStripItem>().OfType<RibbonHostItem>().Where(h => h.Visible).Select(h => (Group: g, Host: h)))
+        .ToList();
+      Assert.That(hosted, Is.Not.Empty);
+
+      Assert.Multiple(() => {
+        foreach (var (group, host) in hosted) {
+          var row = group.Bounds.Height / 3;
+          Assert.That(host.Control.Height, Is.LessThanOrEqualTo(row), $"{host.Text} is taller than a row");
+          foreach (Control input in host.Control.Controls) {
+            Assert.That(input.Height, Is.LessThanOrEqualTo(host.Control.Height), $"{host.Text}: {input.GetType().Name}");
+            Assert.That(input, Is.Not.InstanceOf<ComboBox>(), $"{host.Text}: a native combo box ignores its row height on GTK");
+          }
+        }
+      });
+    }));
+  }
+
   // ── running ─────────────────────────────────────────────────────────────────────────────────
 
   [Test]
