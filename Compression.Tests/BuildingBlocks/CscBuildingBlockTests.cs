@@ -1,5 +1,5 @@
 using System.Text;
-using Compression.Core.Entropy.ContextMixing.Csc;
+using Compression.Core.Dictionary.Csc;
 
 namespace Compression.Tests.BuildingBlocks;
 
@@ -50,8 +50,8 @@ public class CscBuildingBlockTests {
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void EnglishText_RoundTripsAndCompresses() {
     var data = Encoding.ASCII.GetBytes(
-      "CSC combines LZ77 parsing with a context-modelled range coder for its literal stream. " +
-      "CSC combines LZ77 parsing with a context-modelled range coder for its literal stream.");
+      "CSC combines LZ77 parsing with an LZMA-style range coder for its literal stream. " +
+      "CSC combines LZ77 parsing with an LZMA-style range coder for its literal stream.");
     var compressed = Bb.Compress(data);
     var round = Bb.Decompress(compressed);
     Assert.That(round, Is.EqualTo(data).AsCollection);
@@ -62,8 +62,18 @@ public class CscBuildingBlockTests {
   public void Registry_Metadata_IsStable() {
     Assert.Multiple(() => {
       Assert.That(Bb.Id, Is.EqualTo("BB_Csc"));
-      Assert.That(Bb.DisplayName, Is.EqualTo("CSC (reduced)"));
-      Assert.That(Bb.Family, Is.EqualTo(Compression.Registry.AlgorithmFamily.ContextMixing));
+      Assert.That(Bb.DisplayName, Is.EqualTo("CSC"));
+      Assert.That(Bb.Family, Is.EqualTo(Compression.Registry.AlgorithmFamily.Dictionary));
+    });
+  }
+
+  [Test, Category("Spec")]
+  public void Payload_IsACompleteLibcscStream() {
+    var data = Encoding.ASCII.GetBytes("building blocks carry the same libcsc stream the csc tool writes");
+    var payload = Bb.Compress(data);
+    Assert.Multiple(() => {
+      Assert.That(payload, Is.EqualTo(CscCodec.Compress(data)));
+      Assert.That(CscStreamProperties.Read(payload).DictionarySize, Is.EqualTo(32u * 1024));
     });
   }
 }

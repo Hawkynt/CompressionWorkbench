@@ -737,6 +737,74 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
+### Namespace `Compression.Core.Dictionary.Csc`
+
+[`CscBuildingBlock`](#cscbuildingblock) · [`CscCodec`](#csccodec) · [`CscEncoderOptions`](#cscencoderoptions) · [`CscStreamProperties`](#cscstreamproperties)
+
+#### `CscBuildingBlock`
+
+Exposes libcsc (Fu Siyuan's CSC) as a benchmarkable building block. The payload is a complete libcsc stream — the 10-byte property header plus the coded blocks — exactly as the reference `csc` tool writes it at its default level 2.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CscBuildingBlock` | `CscBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `CscCodec`
+
+Reads and writes the stream format of Fu Siyuan's libcsc (https://github.com/fusiyuan2010/CSC), byte-compatible with the reference `csc` tool: a 10-byte property header followed by tagged range-coder and bit-coder blocks.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, CscEncoderOptions options = null)` | Compresses `data` into a new libcsc stream. |
+| `Compress` | `static void Compress(Stream input, Stream output, CscEncoderOptions options = null)` | Compresses `input` (from its current position to the end) to `output`. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses a complete libcsc stream. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a libcsc stream (property header included) from `input` to `output`. |
+
+#### `CscEncoderOptions`
+
+Tuning knobs of the libcsc encoder, matching the reference `csc` tool's switches.
+
+Implements `IEquatable<CscEncoderOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CscEncoderOptions` | `CscEncoderOptions(int Level = 2, long DictionarySize = 64000000, bool DeltaFilter = true, bool TextFilter = true, bool ExecutableFilter = true)` | Tuning knobs of the libcsc encoder, matching the reference `csc` tool's switches. |
+| `DefaultDictionarySize` | `const long DefaultDictionarySize` | The reference tool's default requested window (64,000,000 bytes). |
+| `DefaultLevel` | `const int DefaultLevel` | The reference tool's default level. |
+| `MaxDictionarySize` | `const long MaxDictionarySize` | Largest requested window the reference tool accepts (exclusive bound 1 GiB). |
+| `MinDictionarySize` | `const long MinDictionarySize` | Smallest requested window the reference tool accepts. |
+| `Default` | `static CscEncoderOptions Default { get; }` | The defaults of the reference tool. |
+| `DeltaFilter` | `bool DeltaFilter { get; init; }` | Lets the analyzer route data tables through the delta coder (`-fdelta0` turns it off). |
+| `DictionarySize` | `long DictionarySize { get; init; }` | Requested window in bytes; the tool's `-d`. Like the tool, the encoder shrinks it to the input length when that is known and adds the 10 KiB libcsc reserves, then clamps to 32 KiB..1 GiB. |
+| `ExecutableFilter` | `bool ExecutableFilter { get; init; }` | Lets the analyzer apply the E8/E9 call transform (`-fexe0` turns it off). |
+| `Level` | `int Level { get; init; }` | Effort 1 (fastest) to 5 (strongest); the tool's `-m`. libcsc's default is 2. |
+| `TextFilter` | `bool TextFilter { get; init; }` | Lets the analyzer apply the English word substitution (`-ftxt0` turns it off). |
+
+#### `CscStreamProperties`
+
+The 10-byte property header that opens every libcsc stream: a big-endian 32-bit window size followed by the 24-bit compressed block size and the 24-bit raw block size.
+
+Implements `IEquatable<CscStreamProperties>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CscStreamProperties` | `CscStreamProperties(uint DictionarySize, uint CscBlockSize, uint RawBlockSize)` | The 10-byte property header that opens every libcsc stream: a big-endian 32-bit window size followed by the 24-bit compressed block size and the 24-bit raw block size. |
+| `Size` | `const int Size` | Size of the serialized header in bytes. |
+| `CscBlockSize` | `uint CscBlockSize { get; init; }` | The largest compressed block the stream contains. |
+| `DictionarySize` | `uint DictionarySize { get; init; }` | The LZ77 window in bytes (32 KiB to 1 GiB). |
+| `RawBlockSize` | `uint RawBlockSize { get; init; }` | The most uncompressed bytes one coded block may produce. |
+| `Read` | `static CscStreamProperties Read(ReadOnlySpan<byte> header)` | Parses a property header. |
+| `Validate` | `void Validate()` | Rejects headers libcsc itself would refuse (window outside 32 KiB..1 GiB) and the empty block sizes it would then fail on, so a damaged stream fails up front instead of mid-decode. |
+| `Write` | `void Write(Span<byte> destination)` | Serializes the header. |
+
 ### Namespace `Compression.Core.Dictionary.Ctw`
 
 [`CtwBuildingBlock`](#ctwbuildingblock)
@@ -4541,35 +4609,6 @@ A clean-room, deliberately reduced reimplementation of the cmix architecture: ha
 | --- | --- | --- |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the reduced cmix-style model set. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses reduced-cmix-style compressed data. |
-
-### Namespace `Compression.Core.Entropy.ContextMixing.Csc`
-
-[`CscBuildingBlock`](#cscbuildingblock) · [`CscCompressor`](#csccompressor)
-
-#### `CscBuildingBlock`
-
-Exposes the CSC-style LZ77 + context-mixing compressor as a benchmarkable building block.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `CscBuildingBlock` | `CscBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
-#### `CscCompressor`
-
-A clean-room implementation of the CSC architecture: LZ77 parsing whose literal and flag streams are entropy-coded with logistic-domain context mixing.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data via LZ77 parsing with a context-mixed entropy back end. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses CSC-style compressed data. |
 
 ### Namespace `Compression.Core.Entropy.ContextMixing.Ctw`
 

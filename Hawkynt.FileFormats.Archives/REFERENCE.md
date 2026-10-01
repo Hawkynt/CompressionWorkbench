@@ -13002,7 +13002,7 @@ Inherits `ZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchi
 
 #### `CscFormatDescriptor`
 
-Describes csc format.
+Describes the libcsc stream format (Fu Siyuan's CSC), as written by the reference `csc` tool.
 
 Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
@@ -13020,21 +13020,22 @@ Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | CSC's original encoder exposes five effort levels and a dictionary-size knob. This reduced managed encoder keeps the same useful tuning dimensions: level controls hash-chain search depth, while dictionary size controls the LZ77 look-back window. The 16-bit distance representation limits this stream implementation to 64 KiB dictionaries. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The reference `csc` tool's own switches: `-m1`..`-m5` select the parser and match finder (levels 1-2 lazy with hash chains, 3-4 optimal, 5 optimal with a binary tree) and `-d` requests a window, which the encoder shrinks to the input length anyway, so the window is left out of the optimizer's search. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input using the strongest supported single CSC preset. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input at the strongest level. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input with the reference tool's defaults. |
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the requested CSC tuning options. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `CscStream`
 
-CSC: Context Stream Compression by Fu Siyuan. Format: 10-byte big-endian property header + 4-byte uncompressed size, then range-coded LZ77. Header layout: uint32 dict_size | uint24 csc_blocksize | uint24 raw_blocksize | uint32 actual_size
+CSC: the stream format of Fu Siyuan's libcsc (https://github.com/fusiyuan2010/CSC), as written by its `csc c` tool — a 10-byte big-endian property header (window size, compressed block size, raw block size) followed by tagged range-coder and bit-coder blocks. See `CscCodec` for the codec.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses with the reference tool's defaults (level 2, 64,000,000-byte window shrunk to the input). |
+| `Compress` | `static void Compress(Stream input, Stream output, CscEncoderOptions options)` | Compresses with explicit encoder options. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a CSC stream. |
 
 ### Namespace `FileFormat.Cvsd`
 

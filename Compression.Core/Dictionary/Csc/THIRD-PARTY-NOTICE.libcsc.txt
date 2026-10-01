@@ -1,0 +1,70 @@
+libcsc (CSC) — converted to C#
+
+Source:   https://github.com/fusiyuan2010/CSC
+Revision: c5dbe0944d07acbc97d2c04ec9f99a139c6f3931 (2016-10-13)
+Author:   Fu Siyuan
+Licence:  public domain (The Unlicense, reproduced below)
+
+The files in this directory are a conversion of libcsc (src/libcsc/) into this
+codebase, not a verbatim copy:
+
+  csc_enc.cpp (CSCEncProps_Init)  -> CscEncoderSettings.cs
+  csc_encoder_main.cpp            -> CscEncoder.cs
+  csc_dec.cpp                     -> CscDecoder.cs
+  csc_coder.cpp                   -> CscEntropyEncoder.cs
+  csc_memio.cpp                   -> CscBlockWriter.cs, CscBlockReader.cs
+  csc_model.cpp                   -> CscModel.cs
+  csc_lz.cpp                      -> CscLzEncoder.cs
+  csc_mf.cpp                      -> CscMatchFinder.cs
+  csc_analyzer.cpp                -> CscAnalyzer.cs
+  csc_filters.cpp                 -> CscFilters.cs (the E8/E9 filter in it is
+                                     credited upstream to Eugene Shelwien; the
+                                     word list to Sami Runsas)
+
+Format constants (distance slot table, 4-bit reversal table, word list, block
+types, header layout) are copied exactly, as the format requires.
+
+Deliberate differences from the reference implementation, none of which changes
+the stream format:
+
+  * The encoder writes a zero where libcsc leaves an uninitialised guard byte at
+    the end of each segment's range-coder output. The decoder never reads it.
+  * The encoder never emits a one-byte rep0 match whose source is window offset
+    0 (only possible right after the window wrapped): libcsc's decoder resolves
+    that case to the byte past the window end, so its own encoder's choice there
+    would not decode. Everywhere else the output is byte-identical to libcsc's.
+  * The encoder does not write an empty block (libcsc's reader rejects them);
+    the reader skips empty blocks instead of failing.
+  * The decoder validates every length and distance and reports a damaged
+    stream as InvalidDataException instead of reading out of bounds.
+
+Verification: the reference `csc` tool built from the revision above decodes
+our streams and we decode its streams, and with the same switches both produce
+the same bytes apart from the guard bytes — see Compression.Tests/Csc.
+
+------------------------------------------------------------------------------
+
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <http://unlicense.org>
