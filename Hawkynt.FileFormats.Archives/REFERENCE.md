@@ -13072,31 +13072,105 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 ### Namespace `FileFormat.Dar`
 
-[`DarFormatDescriptor`](#darformatdescriptor) · [`DarSliceHeader`](#darsliceheader)
+[`DarArchive`](#dararchive) · [`DarEntry`](#darentry) · [`DarEntryKind`](#darentrykind) · [`DarFormatDescriptor`](#darformatdescriptor) · [`DarSavedStatus`](#darsavedstatus) · [`DarSliceHeader`](#darsliceheader) · [`DarVersionHeader`](#darversionheader)
+
+#### `DarArchive`
+
+Reader for a DAR archive (archive format 9 through 11.3; verified on 11.3): the version trailer and catalogue located through the two terminators at the end of the archive, and file data read back through the escape, compression and sparse layers. Layout in `docs/DAR-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NewestFormat` | `static readonly ValueTuple<int, int> NewestFormat` | The newest archive format this reader knows (dar 2.7.x and 2.8.x write it). |
+| `DataName` | `byte[] DataName { get; }` | The 10-byte data name recorded at the head of the catalogue. |
+| `Entries` | `IReadOnlyList<DarEntry> Entries { get; }` | Every catalogue entry below the root, in catalogue order. |
+| `InPlace` | `string InPlace { get; }` | The `-R` root path recorded at backup time. |
+| `Trailer` | `DarVersionHeader Trailer { get; }` | The version trailer that describes the archive's layers. |
+| `AlgorithmName` | `static string AlgorithmName(char a)` | A display name for a catalogue compression letter. |
+| `ReadData` | `byte[] ReadData(DarEntry entry)` | Reads, decompresses, expands and checks the data of `entry`. |
+| `Read` | `static DarArchive Read(Stream archive)` | Reads the archive-level stream (slice headers and trailers already removed). |
+
+#### `DarEntry`
+
+One entry of a DAR catalogue, its path rebuilt from the directory nesting.
+
+Implements `IEquatable<DarEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DarEntry` | `DarEntry(string Path, DarEntryKind Kind, DarSavedStatus Status, ushort Permissions, ulong Uid, ulong Gid, DateTime? LastAccess, DateTime? LastModified, DateTime? LastChange, ulong Size, ulong Offset, ulong StorageSize, char Algorithm, byte DataFlags, byte[] Checksum, string LinkTarget, bool HasExtendedAttributes, bool HasFilesystemAttributes, ulong? HardLinkLabel)` | One entry of a DAR catalogue, its path rebuilt from the directory nesting. |
+| `Algorithm` | `char Algorithm { get; init; }` |  |
+| `Checksum` | `byte[] Checksum { get; init; }` |  |
+| `DataFlags` | `byte DataFlags { get; init; }` |  |
+| `Gid` | `ulong Gid { get; init; }` |  |
+| `HardLinkLabel` | `ulong? HardLinkLabel { get; init; }` |  |
+| `HasData` | `bool HasData { get; }` | Whether this archive carries the entry's file data. |
+| `HasExtendedAttributes` | `bool HasExtendedAttributes { get; init; }` |  |
+| `HasFilesystemAttributes` | `bool HasFilesystemAttributes { get; init; }` |  |
+| `IsSparse` | `bool IsSparse { get; }` | Whether the stored data uses dar's hole records. |
+| `Kind` | `DarEntryKind Kind { get; init; }` |  |
+| `LastAccess` | `DateTime? LastAccess { get; init; }` |  |
+| `LastChange` | `DateTime? LastChange { get; init; }` |  |
+| `LastModified` | `DateTime? LastModified { get; init; }` |  |
+| `LinkTarget` | `string LinkTarget { get; init; }` |  |
+| `Offset` | `ulong Offset { get; init; }` |  |
+| `Path` | `string Path { get; init; }` |  |
+| `Permissions` | `ushort Permissions { get; init; }` |  |
+| `Size` | `ulong Size { get; init; }` |  |
+| `Status` | `DarSavedStatus Status { get; init; }` |  |
+| `StorageSize` | `ulong StorageSize { get; init; }` |  |
+| `Uid` | `ulong Uid { get; init; }` |  |
+
+#### `DarEntryKind`
+
+What a catalogue entry describes (the low five bits of its signature byte).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Directory` | `0` | `d` |
+| `File` | `1` | `f` |
+| `Symlink` | `2` | `l` |
+| `CharDevice` | `3` | `c` |
+| `BlockDevice` | `4` | `b` |
+| `Fifo` | `5` | `p` |
+| `Socket` | `6` | `s` |
+| `Door` | `7` | `o` (Solaris door) |
 
 #### `DarFormatDescriptor`
 
-DAR (Disk ARchive) slice. Every slice file of a DAR archive starts with a slice header (see `DarSliceHeader`): big-endian magic 123, a 10-byte internal name shared by all slices of the archive, a last-slice flag and an extension that since archive format 8 is a TLV list carrying the slicing scheme and the data name. Format-8 slices also end in a one-byte trailer repeating the last-slice answer, which is the only place it lives when the header flag is `'E'` (every slice of a multi-slice archive). Honest scope: this descriptor surfaces a verbatim `FULL.dar` and a `metadata.ini` describing the slice header and trailer. The archive header, catalogue and member data live in the concatenated slice payloads, possibly compressed and encrypted, and are not decoded (`member_enumeration=deferred`). Detection is extension-driven (`.dar`) because a four-byte magic of 123 is too weak to claim generic files. Read-only; malformed input degrades to FULL + partial metadata without throwing.Verified against slices written by dar 2.8.6: single-slice, `-s` and `-S`/`-s` sets are checked in under `Compression.Tests/Dar/ReferenceVectors`. References: `https://darbinding.sourceforge.net/specs/dar3.html` — DAR format description (slice header, infinint)`https://dar.sourceforge.io/doc/Notes.html` — dar internals notes (TLV slice header, slice trailer)`https://en.wikipedia.org/wiki/Dar_(disk_archiver)` — background
+DAR (Disk ARchive), the archive format of `dar`/libdar. Every slice file starts with a slice header (`DarSliceHeader`) and ends with a one-byte trailer; the bytes between, glued across all slices, hold a version header, the file data, the catalogue and, at the end, two terminators that lead back to the version trailer and the catalogue (`DarArchive`). Reading: archive formats 9 to 11.3, single or multi-slice (the sibling `basename.N.dar` files are picked up from the slice's directory), with or without tape marks, uncompressed or gzip, bzip2, xz, zstd, lz4 or lzo compressed in streaming or block mode, sparse files expanded, hard links resolved, every data and catalogue checksum checked. Directories and regular files are extracted; symlinks, devices, pipes and sockets are listed but not materialised. Encrypted archives, unknown compression and newer formats are refused: listing then falls back to the raw slice (`FULL.dar`) and a `metadata.ini` naming the reason, and never throws.Writing: a single-slice format-11.3 archive without tape marks — what `dar -at` produces — stored or compressed with gzip, bzip2, xz, zstd or lz4. `dar -t` accepts it and `dar -x` restores the input byte for byte (dar 2.7.13; see `Compression.Tests/Dar/DarExternalConformanceTests.cs`).Layout derived from dar's documentation and from archives written by dar 2.7.13 and 2.8.6: `docs/DAR-ON-DISK.md`.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DarFormatDescriptor` | `DarFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `DarSavedStatus`
+
+Whether the entry's data is in this archive (the top three bits of its signature byte).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Delta` | `1` | 1: the data is a binary delta against the archive of reference. |
+| `NotSaved` | `2` | 2: unchanged since the archive of reference; no data here. |
+| `Saved` | `3` | 3: data saved in this archive. |
+| `InodeOnly` | `4` | 4: only the inode metadata changed; no data here. |
+| `Fake` | `7` | 7: a placeholder from an isolated catalogue. |
 
 #### `DarSliceHeader`
 
@@ -13127,6 +13201,29 @@ Implements `IEquatable<DarSliceHeader>`.
 | `Trailer` | `char? Trailer { get; init; }` | The slice trailer, when the file ends in `'T'` or `'N'`. |
 | `UnknownTlvTypes` | `IReadOnlyList<ushort> UnknownTlvTypes { get; init; }` | TLV types this reader skipped. |
 | `Parse` | `static DarSliceHeader Parse(ReadOnlySpan<byte> head, int lastByte)` | Reads the header from `head` (the first bytes of the slice) and the trailer from `lastByte` (the file's final byte, or -1 when the file is empty). Never throws on malformed input: the first contradiction is reported in `Problem`. |
+
+#### `DarVersionHeader`
+
+The version header written at the start of a DAR archive and repeated as the version trailer before its end (`docs/DAR-ON-DISK.md`, section 4): format edition, compression letter, user comment, flags, then the optional fields the flags announce and a 2-byte checksum.
+
+Implements `IEquatable<DarVersionHeader>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DarVersionHeader` | `DarVersionHeader(int Major, int Minor, char Algorithm, string UserComment, uint Flags, ulong InitialOffset, ulong BlockSize)` | The version header written at the start of a DAR archive and repeated as the version trailer before its end (`docs/DAR-ON-DISK.md`, section 4): format edition, compression letter, user comment, flags, then the optional fields the flags announce and a 2-byte checksum. |
+| `ChecksumWidth` | `const int ChecksumWidth` | Width of the version header's checksum. |
+| `Algorithm` | `char Algorithm { get; init; }` | Compression letter (`n`, `z`, `y`, `x`, `d`, `q`, `l`...). |
+| `BlockSize` | `ulong BlockSize { get; init; }` | Compression block size; 0 for streaming compression. |
+| `Flags` | `uint Flags { get; init; }` | The flag field with continuation bits removed. |
+| `HasTapeMarks` | `bool HasTapeMarks { get; }` | Whether escape marks (tape marks) are interleaved with the data. |
+| `InitialOffset` | `ulong InitialOffset { get; init; }` | Where file data starts in the archive; 0 when not recorded. |
+| `Major` | `int Major { get; init; }` | Archive format major number. |
+| `Minor` | `int Minor { get; init; }` | Archive format minor number. |
+| `UserComment` | `string UserComment { get; init; }` | The user comment (dar writes `N/A` unless told otherwise). |
+| `AtLeast` | `bool AtLeast(int major, int minor)` | Whether the archive format is at least `major`.`minor`. |
+| `Parse` | `static DarVersionHeader Parse(ReadOnlySpan<byte> s, out int length)` | Parses a version header or trailer from the start of `s` and checks its checksum. |
+| `ToString` | `override string ToString()` |  |
+| `Write` | `void Write(Stream output)` | Writes this header in the layout dar 2.7/2.8 write. |
 
 ### Namespace `FileFormat.Dbm`
 

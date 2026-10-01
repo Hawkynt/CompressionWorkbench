@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Reflection;
 using FileFormat.Dar;
 
 namespace Compression.Tests.Dar;
@@ -102,8 +101,8 @@ public class DarTests {
     Assert.That(meta, Does.Contain("data_name=ECF8BC6A000000006D03"));
     Assert.That(meta, Does.Contain("last_slice=yes"));
     Assert.That(meta, Does.Contain("slice_header_length=38"));   // 16 + count 5 + type 2 + length 5 + name 10
-    Assert.That(meta, Does.Contain("member_enumeration=deferred"));
-    Assert.That(meta, Does.Contain("parse_status=ok"));
+    Assert.That(meta, Does.Contain("member_enumeration=unavailable"));
+    Assert.That(meta, Does.Contain("slice_header=ok"));
   }
 
   [TestCase('N', "no")]
@@ -115,7 +114,7 @@ public class DarTests {
     Assert.That(meta, Does.Contain($"last_slice={expected}"));
     Assert.That(meta, Does.Contain("first_slice_size=1500"));
     Assert.That(meta, Does.Contain("slice_size=1200"));
-    Assert.That(meta, Does.Contain("parse_status=ok"));
+    Assert.That(meta, Does.Contain("slice_header=ok"));
   }
 
   [Test]
@@ -130,7 +129,7 @@ public class DarTests {
     // dar -s 5G writes 40 00000001 40000000.
     var meta = Metadata(Slice('E', 'T', TlvList(Tlv(1, Infinint(5UL << 30))), 'T'));
     Assert.That(meta, Does.Contain($"slice_size={5UL << 30}"));
-    Assert.That(meta, Does.Contain("parse_status=ok"));
+    Assert.That(meta, Does.Contain("slice_header=ok"));
   }
 
   [Test]
@@ -140,7 +139,7 @@ public class DarTests {
     Assert.That(meta, Does.Contain("slice_size=4096"));
     Assert.That(meta, Does.Contain("last_slice=no"));
     Assert.That(meta, Does.Contain("slice_header_length=21"));
-    Assert.That(meta, Does.Contain("parse_status=ok"));
+    Assert.That(meta, Does.Contain("slice_header=ok"));
   }
 
   [Test]
@@ -148,7 +147,7 @@ public class DarTests {
     var meta = Metadata(Slice('T', 'T', TlvList(Tlv(7, [1, 2, 3]), Tlv(3, Name)), 'T'));
     Assert.That(meta, Does.Contain("unknown_tlv_types=7"));
     Assert.That(meta, Does.Contain("data_name=ECF8BC6A000000006D03"));
-    Assert.That(meta, Does.Contain("parse_status=ok"));
+    Assert.That(meta, Does.Contain("slice_header=ok"));
   }
 
   [TestCase('X', 'T', TestName = "GivenAnUnknownSliceFlag_WhenParsed_ThenItIsPartial")]
@@ -199,7 +198,7 @@ public class DarTests {
     var image = Slice('T', 'N', [], trailer: null)[..16];
     var meta = Metadata(image);
     Assert.That(meta, Does.Contain("slice_header_length=16"));
-    Assert.That(meta, Does.Contain("parse_status=ok"));
+    Assert.That(meta, Does.Contain("slice_header=ok"));
   }
 
   [Test, Category("Exceptional")]
@@ -221,45 +220,42 @@ public class DarTests {
     }
   }
 
-  // ── Slices written by dar 2.8.6 (see ReferenceVectors/README.md) ──────────
+  // ── Slice headers written by dar 2.8.6 (see ReferenceVectors/README.md) ──────────
 
-  private static byte[] Vector(string name) {
-    using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"DarVectors.{name}")
-      ?? throw new FileNotFoundException($"Embedded DAR vector '{name}' is missing from the test assembly.");
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    return ms.ToArray();
+  private static DarSliceHeader HeaderOf(string vector) {
+    using var ms = new MemoryStream(DarFixtures.Vector(vector));
+    return DarSliceSet.ReadHeader(ms);
   }
 
   [Test]
   public void GivenASingleSliceArchiveFromDar_WhenParsed_ThenHeaderAndTrailerAgree() {
-    var meta = Metadata(Vector("single.1.dar"));
-    Assert.That(meta, Does.Contain("header_flag=T"));
-    Assert.That(meta, Does.Contain("extension_flag=T"));
-    Assert.That(meta, Does.Contain("trailer_flag=T"));
-    Assert.That(meta, Does.Contain("last_slice=yes"));
-    Assert.That(meta, Does.Contain("internal_name=11F9BC6A000000007305"));
-    Assert.That(meta, Does.Contain("data_name=11F9BC6A000000007305"));
-    Assert.That(meta, Does.Not.Contain("slice_size="));
-    Assert.That(meta, Does.Contain("parse_status=ok"));
+    var h = HeaderOf("single.1.dar");
+    Assert.That(h.IsValid, Is.True, h.Problem);
+    Assert.That(h.Flag, Is.EqualTo('T'));
+    Assert.That(h.Extension, Is.EqualTo('T'));
+    Assert.That(h.Trailer, Is.EqualTo('T'));
+    Assert.That(h.IsLastSlice, Is.True);
+    Assert.That(Convert.ToHexString(h.InternalName), Is.EqualTo("11F9BC6A000000007305"));
+    Assert.That(Convert.ToHexString(h.DataName!), Is.EqualTo("11F9BC6A000000007305"));
+    Assert.That(h.SliceSize, Is.Null);
   }
 
-  [TestCase("sliced.1.dar", "no")]
-  [TestCase("sliced.2.dar", "no")]
-  [TestCase("sliced.3.dar", "yes")]
-  public void GivenASlicedArchiveFromDar_WhenEachSliceIsParsed_ThenTheTrailerTellsTheLastOne(string name, string last) {
-    var meta = Metadata(Vector(name));
-    Assert.That(meta, Does.Contain("header_flag=E"));
-    Assert.That(meta, Does.Contain($"last_slice={last}"));
-    Assert.That(meta, Does.Contain("first_slice_size=1500"));
-    Assert.That(meta, Does.Contain("slice_size=1200"));
-    Assert.That(meta, Does.Contain("parse_status=ok"));
+  [TestCase("sliced.1.dar", false)]
+  [TestCase("sliced.2.dar", false)]
+  [TestCase("sliced.3.dar", true)]
+  public void GivenASlicedArchiveFromDar_WhenEachSliceIsParsed_ThenTheTrailerTellsTheLastOne(string name, bool last) {
+    var h = HeaderOf(name);
+    Assert.That(h.IsValid, Is.True, h.Problem);
+    Assert.That(h.Flag, Is.EqualTo('E'));
+    Assert.That(h.IsLastSlice, Is.EqualTo(last));
+    Assert.That(h.FirstSliceSize, Is.EqualTo(1500));
+    Assert.That(h.SliceSize, Is.EqualTo(1200));
   }
 
   [Test]
   public void GivenASlicedArchiveFromDar_WhenParsed_ThenEverySliceSharesOneInternalName() {
     var names = new[] { "sliced.1.dar", "sliced.2.dar", "sliced.3.dar" }
-      .Select(n => Metadata(Vector(n)).Split('\n').Single(l => l.StartsWith("internal_name=", StringComparison.Ordinal)))
+      .Select(n => Convert.ToHexString(HeaderOf(n).InternalName))
       .Distinct()
       .ToArray();
     Assert.That(names, Has.Length.EqualTo(1));
@@ -267,8 +263,21 @@ public class DarTests {
 
   [Test]
   public void GivenASlicedArchiveFromDar_WhenMeasured_ThenTheRecordedSizesMatchTheFiles() {
-    Assert.That(Vector("sliced.1.dar"), Has.Length.EqualTo(1500));
-    Assert.That(Vector("sliced.2.dar"), Has.Length.EqualTo(1200));
-    Assert.That(Vector("sliced.3.dar").Length, Is.LessThanOrEqualTo(1200));
+    Assert.That(DarFixtures.Vector("sliced.1.dar"), Has.Length.EqualTo(1500));
+    Assert.That(DarFixtures.Vector("sliced.2.dar"), Has.Length.EqualTo(1200));
+    Assert.That(DarFixtures.Vector("sliced.3.dar").Length, Is.LessThanOrEqualTo(1200));
+  }
+
+  [Test]
+  public void GivenAMiddleSliceWithoutItsSiblings_WhenListed_ThenItFallsBackAndSaysWhy() {
+    // A MemoryStream has no file name, so the other slices cannot be found.
+    var image = DarFixtures.Vector("sliced.2.dar");
+    using var ms = new MemoryStream(image);
+    var entries = new DarFormatDescriptor().List(ms, null);
+    Assert.That(entries.Select(e => e.Name), Is.EqualTo(new[] { "FULL.dar", "metadata.ini" }));
+    var meta = Metadata(image);
+    Assert.That(meta, Does.Contain("last_slice=no"));
+    Assert.That(meta, Does.Contain("archive_problem=This DAR slice is not the last"));
+    Assert.That(meta, Does.Contain("parse_status=partial"));
   }
 }
