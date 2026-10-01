@@ -19,18 +19,22 @@ namespace FileSystem.Ocfs2;
 /// <c>mkfs.ocfs2</c> as well as the toolkit's own writer (verified by an external
 /// conformance test that reads a real <c>mkfs.ocfs2 -M local</c> volume).</para>
 ///
-/// <para><b>Writing</b> produces a single-node (no DLM) image with 4 KB
-/// blocks/clusters, inline directory entries, and extent-based file data. The
-/// superblock and dinode layout are spec-correct — the reference
-/// <c>debugfs.ocfs2 stats</c> reads the written superblock at exit 0. The writer
-/// does NOT yet emit the full chain-allocator / journal / slot-map / local-alloc
-/// system-file suite a mountable volume needs, so <c>fsck.ocfs2</c> does not pass
-/// on a written image. Create/modify are therefore scoped to structurally-correct
-/// construction with self/round-trip readback, not fsck-clean conformance.</para>
+/// <para><b>Writing</b> produces a single-node ("local", no DLM) volume with 4 KB
+/// blocks/clusters, the full system-file suite (chain allocators split into
+/// cluster groups, a JBD2 journal of at least the kernel's 4 MiB minimum, slot
+/// map, local alloc, truncate log, orphan dir), inline or extent-backed
+/// directories and files. The Linux kernel driver mounts it and reads the tree
+/// back byte for byte, and <c>fsck.ocfs2 -fn</c> passes it before and after a
+/// kernel read-write mount (see <c>Ocfs2KernelMountTests</c>).</para>
 ///
-/// <para>Modifier scope: root-directory mutations only (subdirectory and
-/// extent-backed root directory paths fall back to the rebuild path). DLM/heartbeat
-/// lockdown and multi-node cluster semantics are out of scope by design.</para>
+/// <para><b>Editing</b> is in place or refused: Add/Replace/Remove work on regular
+/// files in an inline root directory, on this package's volumes and on
+/// <c>mkfs.ocfs2</c>'s; defragmentation moves single-run files in place. Anything
+/// else — a nested path, an extent-backed root, a file sharing extents — raises
+/// <see cref="NotSupportedException"/> and leaves the image as it was. Nothing is
+/// rebuilt, because a rebuild would draw a new UUID and reset every timestamp.
+/// DLM/heartbeat lockdown and multi-node cluster semantics are out of scope by
+/// design.</para>
 ///
 /// References:
 /// <list type="bullet">
@@ -47,13 +51,16 @@ public sealed class Ocfs2FormatDescriptor
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
   /// <summary>
-  /// The one tunable the writer honours: the volume label written into
+  /// The tunables the writer honours: the volume label written into
   /// <c>s_label</c> (64-byte superblock field) via <see cref="Ocfs2Writer.SetLabel"/>
-  /// and read back as <c>Ocfs2Superblock.Label</c>. The 4&#160;KB block/cluster
-  /// size is fixed by the single-node MVP layout, so it is not exposed.
+  /// and read back as <c>Ocfs2Superblock.Label</c>, and the image size — free
+  /// space left for files added in place later, which never grow the volume. The
+  /// 4&#160;KB block/cluster size is fixed by the single-node layout, so it is not
+  /// exposed.
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.VolumeLabel(maxChars: 63),
+    FilesystemSchemaPresets.ImageSize(["16 MB", "32 MB", "64 MB", "128 MB", "256 MB", "512 MB"]),
   ];
 
   /// <summary>
@@ -109,15 +116,12 @@ public sealed class Ocfs2FormatDescriptor
   /// Gets the description.
   /// </summary>
   public string Description =>
-    "OCFS2 (Oracle Cluster Filesystem 2) — spec-correct reader (INODE01 dinodes, "
-    + "real ocfs2_dinode offsets, 8-byte inline-data header, 16-byte extent-list "
-    + "header) that parses real mkfs.ocfs2 images as well as our own; extent-based "
-    + "writer with true in-place Add/Replace/Remove on the root directory via "
-    + "Ocfs2InPlaceModifier (O(touched bytes) random-access I/O). Written superblock "
-    + "is read by the reference debugfs.ocfs2, but the writer does not yet emit the "
-    + "full journal/chain-allocator system files, so written images are not yet "
-    + "fsck.ocfs2-clean/mountable. Subdirectory and extent-backed-root mutations fall "
-    + "back to the rebuild path. Single-node only — DLM/heartbeat lockdown and "
+    "OCFS2 (Oracle Cluster Filesystem 2) — spec-correct reader that parses real "
+    + "mkfs.ocfs2 volumes as well as our own; single-node (local) writer whose volumes "
+    + "the Linux kernel mounts and fsck.ocfs2 passes, before and after a kernel "
+    + "read-write mount. In-place Add/Replace/Remove of root-directory files and "
+    + "in-place defragmentation; nested paths, extent-backed roots and shared extents "
+    + "are refused rather than rebuilt. Single-node only — DLM/heartbeat lockdown and "
     + "multi-node cluster semantics are out of scope.";
 
   // ── IArchiveFormatOperations (List / Extract) ─────────────────────────
@@ -185,12 +189,14 @@ public sealed class Ocfs2FormatDescriptor
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (!string.IsNullOrEmpty(label))
       w.SetLabel(label);
+    w.SetMinimumSize(FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", "")));
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       var info = i;
       // Only the length is needed to lay the volume out; reading a large input
       // into a byte[] would cap the volume at what an array can hold.
-      var name = Path.GetFileName(info.ArchiveName);
+      // The full archive path: the writer builds the directories it names.
+      var name = info.ArchiveName;
       if (info.InMemoryContent is { } bytes)
         w.AddFile(name, bytes);
       else
@@ -203,62 +209,39 @@ public sealed class Ocfs2FormatDescriptor
 
   /// <summary>
   /// Adds (or replaces by name) files in the root directory of an existing
-  /// OCFS2 image using <see cref="Ocfs2InPlaceModifier"/>. Touches only the
-  /// global bitmap data block, the root dir dinode, the new file dinode block,
-  /// and the new data blocks — no whole-image rewrite. Subdirectory paths and
-  /// extent-backed root directories fall back to the rebuild path so callers
-  /// keep working when the writer's MVP scope is exceeded.
+  /// OCFS2 volume using <see cref="Ocfs2InPlaceModifier"/>, which touches only
+  /// the blocks the change moves. A nested path, an extent-backed root, a full
+  /// inline area or a volume without room is refused before anything is written:
+  /// relaying the volume out instead would give it a new UUID and new timestamps.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    // The in-place modifier walks the volume in memory, which a volume past two
-    // gigabytes does not fit in — and where it can still edit, it has no room
-    // to grow a full volume. Above that the edit unpacks and relays it out.
-    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.AddLargeVolume(archive, inputs, this, this);
-      return;
-    }
-
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
     foreach (var (name, data) in FilesOnly(inputs)) {
       try {
-        // Replace-by-name semantics — drop any prior entry with the same name first.
-        Ocfs2InPlaceModifier.RemoveFile(archive, name, wipeData: true);
-        Ocfs2InPlaceModifier.AddFile(archive, name, data);
-      } catch (NotSupportedException) {
-        // Subdir path, extent-backed root dir, or full inline area — fall back
-        // to the rebuild path so callers still get the file added.
-        ModifyRebuilder.Add(archive, [ArchiveInputInfo.InMemory(name, data)], ReadFileEntries, BuildImage, largeVolumeCreator: this);
-      } catch (IOException) {
-        // No free clusters / no inline room — same fall-back rationale.
-        ModifyRebuilder.Add(archive, [ArchiveInputInfo.InMemory(name, data)], ReadFileEntries, BuildImage, largeVolumeCreator: this);
+        Ocfs2InPlaceModifier.AddOrReplaceFile(archive, name.Replace('\\', '/').Trim('/'), data);
+      } catch (IOException ex) {
+        throw new NotSupportedException($"OCFS2: '{name}' cannot be added in place: {ex.Message}", ex);
       }
     }
   }
 
   /// <summary>
-  /// Removes files from the root directory of an existing OCFS2 image using
-  /// <see cref="Ocfs2InPlaceModifier"/>. Frees the dinode block + data
-  /// clusters via global bitmap bit flips and zero-wipes them so no forensic
-  /// trace remains. Names that aren't in the root directory fall back to the
-  /// rebuild path (which can reach subdirectories).
+  /// Removes files from the root directory of an existing OCFS2 volume using
+  /// <see cref="Ocfs2InPlaceModifier"/>: clusters and inode bits go back to their
+  /// allocators and the blocks are zeroed. A name that is not a regular file in
+  /// the root directory is refused.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    // See Add: past two gigabytes the volume cannot be walked in memory.
-    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
-      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
-      return;
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    var paths = entryNames.Select(n => n.Replace('\\', '/').Trim('/')).ToArray();
+    if (paths.FirstOrDefault(p => p.Contains('/')) is { } nested)
+      throw new NotSupportedException($"OCFS2: '{nested}' is not in the root directory; only root-directory files are removed in place.");
+    foreach (var (name, path) in entryNames.Zip(paths)) {
+      if (!Ocfs2InPlaceModifier.RemoveFile(archive, path, wipeData: true))
+        throw new FileNotFoundException($"OCFS2: the root directory has no '{name}'.", name);
     }
-
-    var unhandled = new List<string>();
-    foreach (var name in entryNames) {
-      try {
-        if (!Ocfs2InPlaceModifier.RemoveFile(archive, name, wipeData: true))
-          unhandled.Add(name);
-      } catch (NotSupportedException) {
-        unhandled.Add(name);
-      }
-    }
-    if (unhandled.Count > 0)
-      ModifyRebuilder.Remove(archive, [.. unhandled], ReadFileEntries, BuildImage, largeVolumeCreator: this);
   }
 
   // ── IArchiveDefragmentable ────────────────────────────────────────────
@@ -276,48 +259,23 @@ public sealed class Ocfs2FormatDescriptor
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
-    // Below the streaming cap the layout is changed by moving what is out of
-    // place: a file this reader resolves is one extent record in its own
-    // dinode, so a move is the copy, eight bytes, and the bitmap bits. Until
-    // this was here a volume under the cap fell through every branch and
-    // Defragment returned having done nothing at all.
-    if (!(archive.CanSeek && archive.Length > MaxBufferedImageBytes)) {
-      // The in-place pass is kept only if every payload still reads back: it
-      // can refuse partway — a file whose extents hang off an interior tree has
-      // no record here to repoint — and a rebuild is the honest answer then.
-      DefragContentGuard.RunOrRebuild(archive,
-        readContents: stream => ReadFileEntries(stream).Select(e => e.Data).ToList(),
-        inPlace: () => DefragmentWithPlanner(archive, options),
-        rebuild: () => DefragRebuilder.Rebuild(archive, options,
-          readEntries: stream => ReadFileEntries(stream).ToList(),
-          buildImage: files => {
-            var built = BuildImage(files);
-            if (built.Length >= archive.Length) return built;
-            var padded = new byte[archive.Length];
-            Array.Copy(built, padded, built.Length);
-            return padded;
-          }));
-      return;
-    }
+    // The layout is changed by moving what is out of place: a movable file is
+    // one extent record in its own dinode, so a move is the copy, eight bytes,
+    // and the bitmap bits. Files with several runs, holes or an extent tree are
+    // pinned where they are.
+    //
+    // The pass is kept only if every payload still reads back; otherwise the
+    // image is restored and the request refused. A rebuild is not an answer: it
+    // would draw a new UUID and reset every timestamp on the volume.
+    if (!archive.CanSeek || archive.Length > MaxBufferedImageBytes)
+      throw new NotSupportedException(
+        $"OCFS2: in-place defragmentation holds the volume in memory to verify it, which stops at {MaxBufferedImageBytes:N0} bytes.");
 
-    // A volume too large to materialise goes through the streaming rebuilder;
-    // BuildImage returns a byte[] of the whole volume and ReadFileEntries
-    // buffers the source, both of which stop at the array limit.
-    // Every mode streams above the cap: end-pack and carve-hole order their
-    // entries from scratch inside the rebuilder, so none of them falls back
-    // to a buffered rebuild the volume is too large for.
-    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
-      Ocfs2Writer? streamWriter = null;
-      Stream? target = null;
-      DefragRebuilder.RebuildStreaming(archive, options,
-        readEntries: stream => ReadFileEntries(stream).ToList(),
-        beginWrite: s2 => { streamWriter = new Ocfs2Writer(); target = s2; },
-        // As a stream factory, not inline: an inline payload would go back into
-        // the buffer this path exists to avoid.
-        writeEntry: (name, data) => streamWriter!.AddStreamingFile(
-          name, data.LongLength, () => new MemoryStream(data, writable: false)),
-        finishWrite: () => streamWriter!.WriteTo(target!));
-    }
+    DefragContentGuard.RunOrRebuild(archive,
+      readContents: stream => ReadFileEntries(stream).Select(e => e.Data).ToList(),
+      inPlace: () => DefragmentWithPlanner(archive, options),
+      rebuild: () => throw new NotSupportedException(
+        "OCFS2: the requested layout cannot be reached by moving single-run files in place; the volume is unchanged."));
   }
 
   // ── IFilesystemExtentMap ──────────────────────────────────────────────
@@ -340,59 +298,55 @@ public sealed class Ocfs2FormatDescriptor
       return [];
     }
 
-    return EnumerateExtentsCore(head, image.Length);
+    try {
+      return EnumerateExtentsCore(image, head);
+    } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or EndOfStreamException) {
+      // A map that cannot be trusted must not read as "everything is free".
+      return [new DefragBlockInfo(0, image.Length, DefragBlockKind.MetadataReserved, "Unmapped")];
+    } finally {
+      image.Position = 0;
+    }
   }
 
-  private static List<DefragBlockInfo> EnumerateExtentsCore(byte[] data, long imageLength) {
-    var result = new List<DefragBlockInfo>();
+  /// <summary>
+  /// The volume's extent map. A single-run file surfaces as a Used extent clamped
+  /// to its logical size, so its cluster tip reads as a gap; every other cluster
+  /// the global bitmap marks allocated — in any of its groups — is reserved:
+  /// system metadata, group descriptors, directory blocks, and the data of files
+  /// that are not one run (several runs, holes, an extent tree), which stay where
+  /// they are.
+  /// </summary>
+  private static List<DefragBlockInfo> EnumerateExtentsCore(Stream image, byte[] head) {
     const int blockSize = Ocfs2Writer.BlockSize;
+    var result = new List<DefragBlockInfo>();
+    if (head.Length < (Ocfs2Writer.SuperBlockBlkno + 1) * blockSize) return result;
 
-    if (data.Length < (Ocfs2Writer.SuperBlockBlkno + 1) * blockSize) return result;
+    var movable = new Dictionary<long, (long Size, long Blocks, string Name)>();
+    foreach (var f in Ocfs2Reader.ReadFilePlacements(head))
+      if (f.IsSingleRun && f.Size > 0)
+        movable[f.DataBlkno] = (f.Size, f.Extents[0].Blocks, f.Name);
 
-    var totalBlocks = imageLength / blockSize;
+    var volume = Ocfs2Allocators.Open(image);
+    var total = Math.Min(volume.TotalClusters, image.Length / blockSize);
+    var used = volume.ReadClusterBitmap(total);
 
-    // Identify each regular file's data-cluster run so it can surface as a Used
-    // extent (clamped to logical size, leaving the cluster tip as a free gap),
-    // rather than being lumped into the reserved metadata region.
-    var fileDataClusters = new Dictionary<long, (long Size, string Name)>();
-    try {
-      foreach (var f in Ocfs2Reader.ReadFilePlacements(data)) {
-        if (f.Inline || f.Size <= 0) continue;
-        fileDataClusters[f.DataBlkno] = (f.Size, f.Name);
-      }
-    } catch { /* best-effort */ }
-
-    // Every cluster set in the global bitmap (block 3 group descriptor) is
-    // allocated. Mark allocated clusters as reserved — except file data clusters,
-    // which are emitted as Used extents — so the wiper never zeroes live metadata.
-    var bmpOff = Ocfs2Writer.GlobalBitmapGroupBlkno * blockSize + Ocfs2Writer.BitmapInGroupOffset;
-    long cluster = 0;
-    while (cluster < totalBlocks) {
-      if (fileDataClusters.TryGetValue(cluster, out var file)) {
-        var clusters = (file.Size + blockSize - 1) / blockSize;
-        var dataOff = cluster * blockSize;
-        // Used portion clamped to logical size; the remaining tip is left as a gap.
-        result.Add(new DefragBlockInfo(dataOff, file.Size, DefragBlockKind.Used, file.Name));
-        cluster += clusters;
+    for (long cluster = 0; cluster < total;) {
+      if (movable.TryGetValue(cluster, out var file)) {
+        // Used portion clamped to logical size; the tip of its last cluster is a gap.
+        result.Add(new DefragBlockInfo(cluster * blockSize, file.Size, DefragBlockKind.Used, file.Name));
+        var sized = (file.Size + blockSize - 1) / blockSize;
+        if (file.Blocks > sized)
+          result.Add(new DefragBlockInfo((cluster + sized) * blockSize, (file.Blocks - sized) * blockSize,
+            DefragBlockKind.MetadataReserved, "Allocated"));
+        cluster += file.Blocks;
         continue;
       }
-      var byteIdx = bmpOff + (int)(cluster >> 3);
-      var used = byteIdx < data.Length && (data[byteIdx] & (1 << (int)(cluster & 7))) != 0;
-      if (used) {
-        // Coalesce a run of reserved clusters.
-        var runStart = cluster;
-        while (cluster < totalBlocks
-               && !fileDataClusters.ContainsKey(cluster)
-               && (bmpOff + (int)(cluster >> 3)) < data.Length
-               && (data[bmpOff + (int)(cluster >> 3)] & (1 << (int)(cluster & 7))) != 0)
-          cluster++;
-        result.Add(new DefragBlockInfo(runStart * blockSize, (cluster - runStart) * blockSize,
-          DefragBlockKind.MetadataReserved, runStart < Ocfs2Writer.FirstFileBlkno ? "SystemMetadata" : "Allocated"));
-        continue;
-      }
-      cluster++;
+      if (!used[(int)cluster]) { ++cluster; continue; }
+      var runStart = cluster;
+      while (cluster < total && used[(int)cluster] && !movable.ContainsKey(cluster)) ++cluster;
+      result.Add(new DefragBlockInfo(runStart * blockSize, (cluster - runStart) * blockSize,
+        DefragBlockKind.MetadataReserved, runStart < Ocfs2Writer.FirstFileBlkno ? "SystemMetadata" : "Allocated"));
     }
-
     return result;
   }
 
@@ -446,6 +400,7 @@ public sealed class Ocfs2FormatDescriptor
 
     Compression.Core.Layout.DefragPlannerExecutor.Execute(archive, options, mover, moves,
       archive.Length, reinitAfterMove: null);
+    mover.CommitAllocation(archive);
 
     archive.Position = 0;
     var postExtents = descriptor.EnumerateExtents(archive).ToList();
@@ -479,12 +434,46 @@ public sealed class Ocfs2FormatDescriptor
       if (p.Size > Array.MaxLength)
         throw new InvalidOperationException(
           $"OCFS2: '{p.Name}' is {p.Size:N0} bytes, more than a byte[] can hold.");
-      var offset = p.Inline
-        ? p.DinodeBlkno * blockSize + Ocfs2Reader.Id2Offset + Ocfs2Reader.InlineHeaderLen
-        : p.DataBlkno * blockSize;
-      result.Add((p.Name, accessor.Read(offset, (int)p.Size)));
+      using var bytes = new MemoryStream((int)p.Size);
+      CopyFile(accessor, p, blockSize, bytes);
+      result.Add((p.Name, bytes.ToArray()));
     }
     return result;
+  }
+
+  /// <summary>
+  /// Streams a file's bytes out of the volume: inline from its dinode, or run by
+  /// run at each extent's logical position — a file larger than a cluster group
+  /// is several runs with group descriptors between them, and a hole or an
+  /// unwritten run reads as zeros.
+  /// </summary>
+  private static void CopyFile(Compression.Core.DiskImage.ImageAccessor accessor, Ocfs2Reader.FilePlacement p, int blockSize, Stream target) {
+    if (p.Size <= 0) return;
+    if (p.Inline) {
+      accessor.CopyTo(p.DinodeBlkno * blockSize + Ocfs2Reader.Id2Offset + Ocfs2Reader.InlineHeaderLen, target, p.Size);
+      return;
+    }
+    long written = 0;
+    void Zeros(long upTo) {
+      var zero = new byte[64 * 1024];
+      while (written < upTo) {
+        var n = (int)Math.Min(zero.Length, upTo - written);
+        target.Write(zero, 0, n);
+        written += n;
+      }
+    }
+    foreach (var e in p.Extents.OrderBy(e => e.LogicalBlock)) {
+      var logical = e.LogicalBlock * blockSize;
+      if (logical >= p.Size) break;
+      Zeros(logical);
+      var length = Math.Min(e.Blocks * blockSize, p.Size - logical);
+      if (e.Unwritten) Zeros(logical + length);
+      else {
+        accessor.CopyTo(e.Blkno * blockSize, target, length);
+        written = logical + length;
+      }
+    }
+    Zeros(p.Size);
   }
 
   /// <summary>Largest volume this descriptor will hold in memory.</summary>
@@ -508,18 +497,8 @@ public sealed class Ocfs2FormatDescriptor
     foreach (var p in placements) {
       if (files != null && files.Length > 0 && !MatchesFilter(p.Name, files)) continue;
       using var target = CreateEntryFile(outputDir, p.Name);
-      if (p.Size <= 0) continue;
-      var offset = p.Inline
-        ? p.DinodeBlkno * blockSize + Ocfs2Reader.Id2Offset + Ocfs2Reader.InlineHeaderLen
-        : p.DataBlkno * blockSize;
-      accessor.CopyTo(offset, target, p.Size);
+      CopyFile(accessor, p, blockSize, target);
     }
-  }
-
-  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
-    var w = new Ocfs2Writer();
-    foreach (var (n, d) in files) w.AddFile(n, d);
-    return w.Build();
   }
 
   /// <summary>

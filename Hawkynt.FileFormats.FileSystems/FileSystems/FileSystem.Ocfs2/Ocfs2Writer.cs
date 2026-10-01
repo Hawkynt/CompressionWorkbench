@@ -6,12 +6,14 @@ using System.Text;
 namespace FileSystem.Ocfs2;
 
 /// <summary>
-/// Builds a complete, fsck-clean OCFS2 (Oracle Cluster Filesystem 2) image from
-/// scratch in the single-node "local" (non-clustered) variant — the layout the
-/// reference <c>mkfs.ocfs2 -M local -N 1</c> produces with feature set
+/// Builds a complete OCFS2 (Oracle Cluster Filesystem 2) image from scratch in the
+/// single-node "local" (non-clustered) variant — the layout the reference
+/// <c>mkfs.ocfs2 -M local -N 1</c> produces with feature set
 /// <c>local | extended-slotmap | inline-data | append-dio</c> (incompat 0x8148)
 /// and <c>strict-journal-super</c> (compat 0x2). No metaecc, so the per-block
-/// <c>ocfs2_block_check</c> (CRC32C + ECC) stays zero.
+/// <c>ocfs2_block_check</c> (CRC32C + ECC) stays zero. The Linux kernel driver
+/// mounts the result and <c>fsck.ocfs2 -fn</c> passes it, before and after a
+/// kernel read-write mount.
 ///
 /// Fixed block layout (4 KB block == 4 KB cluster):
 /// <code>
@@ -33,12 +35,17 @@ namespace FileSystem.Ocfs2;
 ///   16    local_alloc:0000 dinode
 ///   17    truncate_log:0000 dinode
 /// </code>
-/// The global_inode_alloc group at block 4 owns a contiguous run of blocks
-/// (blocks 4..4+groupBits-1); every system dinode is a bit within it. Heartbeat,
-/// journal and slot_map data follow; then the per-slot inode_alloc group, which
-/// owns lost+found and all user-file dinodes; finally user file data clusters.
-/// The global_bitmap marks every block up to the end of the inode_alloc group as
-/// used, mirroring mkfs.
+/// The global_inode_alloc group at block 4 owns blocks 4..17; every system dinode
+/// is a bit within it. Heartbeat, journal and slot_map data follow; then the
+/// per-slot inode_alloc groups, which own lost+found and all user dinodes;
+/// finally user file and directory data.
+///
+/// <para>The global bitmap is split into cluster groups of
+/// <see cref="ClustersPerGroup"/> clusters, as mkfs does: group 0's descriptor
+/// sits at block 3, group <c>k</c>'s at cluster <c>k * ClustersPerGroup</c>,
+/// where it is the group's own first (allocated) bit. No extent covers a group
+/// descriptor, so a file's data is split into one extent record per group it
+/// crosses.</para>
 /// </summary>
 internal sealed class Ocfs2Writer {
 
@@ -53,14 +60,20 @@ internal sealed class Ocfs2Writer {
   internal const int ClusterSizeBits = 12;
 
   /// <summary>
-  /// Free bits left in the per-slot inode group so files can be added later.
+  /// Free bits guaranteed in the per-slot inode groups so files can be added later.
   /// </summary>
   /// <remarks>
-  /// Every one costs a block of the volume whether or not it is ever used, so
-  /// this is a balance rather than a maximum: enough that adding files to a
-  /// fresh volume works, small enough that an empty volume stays small.
+  /// Groups are whole (<see cref="InodeGroupBits"/> wide), so this only decides
+  /// when one more group is laid out: a volume whose last group would keep fewer
+  /// free bits than this gets another.
   /// </remarks>
   internal const int SpareInodeBits = 32;
+
+  /// <summary>
+  /// Bits per per-slot inode group (<c>cl_cpg</c> of <c>inode_alloc:NNNN</c>):
+  /// 1024 at 4 KiB blocks, as measured on a <c>mkfs.ocfs2</c> volume.
+  /// </summary>
+  internal const int InodeGroupBits = 1024;
 
   internal const int SuperBlockBlkno = 2;
   internal const int GlobalBitmapGroupBlkno = 3;
@@ -81,15 +94,38 @@ internal sealed class Ocfs2Writer {
   internal const int SystemDinodeCount = TruncateLogBlkno - InodeAllocGroupBlkno + 1; // blocks 4..17 = 14
 
   // ── Layout accessors used by the in-place modifier / descriptor ──
-  // The cluster allocation bitmap lives in the global_bitmap group descriptor
-  // (block 3) at byte offset BitmapInGroupOffset within that block.
+  // The cluster allocation bitmap of group 0 lives in the global_bitmap group
+  // descriptor (block 3) at byte offset BitmapInGroupOffset within that block.
   internal const int BitmapDataBlkno = GlobalBitmapGroupBlkno; // block 3 (group desc holds bg_bitmap)
   internal const int BitmapInGroupOffset = 0x40;               // ocfs2_group_desc.bg_bitmap
   internal const int FirstFileBlkno = TruncateLogBlkno + 1;    // first non-system block
 
   // Tunables (kept small but spec-valid; fsck does not enforce mkfs minimums).
-  private const int HeartbeatClusters = 1;   // mkfs uses 256; fsck only needs i_size to match the extent
-  private const int JournalClusters = 16;    // valid JBD2 journal; mkfs uses 1024
+  private const int HeartbeatClusters = 1;   // mkfs uses 256; a local volume never heartbeats
+
+  /// <summary>
+  /// The smallest journal the kernel mounts: <c>OCFS2_MIN_JOURNAL_SIZE</c>
+  /// (4 MiB, <c>fs/ocfs2/ocfs2_fs.h</c>). <c>ocfs2_journal_init</c> refuses a
+  /// smaller <c>journal:NNNN</c> with "Journal file size (…) is too small", and
+  /// fsck.ocfs2 does not check it — a 64 KiB journal passed fsck and never
+  /// mounted. 4 MiB is also <c>JBD2_MIN_JOURNAL_BLOCKS</c> (1024) at 4 KiB blocks.
+  /// </summary>
+  internal const long MinJournalBytes = 4L * 1024 * 1024;
+
+  /// <summary>
+  /// Journal size for a volume of <paramref name="volumeBytes"/>, stepped as
+  /// <c>mkfs.ocfs2 1.8.7 -M local -b 4096 -C 4096</c> was measured to pick it:
+  /// 4 MiB below 128 MiB, 16 MiB below 1 GiB, 64 MiB from there on (mkfs grows
+  /// past 64 MiB only from 16 GiB; the kernel asks for no more than the minimum).
+  /// </summary>
+  internal static int JournalClustersFor(long volumeBytes) {
+    var bytes = volumeBytes switch {
+      < 128L << 20 => MinJournalBytes,
+      < 1L << 30 => 16L << 20,
+      _ => 64L << 20,
+    };
+    return (int)(bytes / ClusterSize);
+  }
 
   private static readonly byte[] SuperSignature = "OCFSV2"u8.ToArray();
   private static readonly byte[] InodeSignature = "INODE01"u8.ToArray();
@@ -159,15 +195,31 @@ internal sealed class Ocfs2Writer {
 
   // Chain-allocator geometry. cl_count is the max chain records that fit in id2
   // for a 4 KB block: (4096 - 0xC0 - 0x10) / sizeof(chain_rec=16) = 243.
-  private const int ChainListCount = 243;
+  internal const int ChainListCount = 243;
 
   // ocfs2_dinode.id1.bitmap1 lives at byte 0xB8 (i_used) / 0xBC (i_total).
   private const int Id1UsedOffset = 0xB8;
   private const int Id1TotalOffset = 0xBC;
 
-  // Standard clusters-per-group for the global cluster bitmap at 4 KB blocks:
-  // a single group descriptor's bg_bitmap holds (blocksize - 0x40) * 8 bits.
-  private const int ClustersPerGroup = (BlockSize - 0x40) * 8; // 32256
+  /// <summary>
+  /// Clusters per global-bitmap group (<c>cl_cpg</c>) at 4 KB blocks: a group
+  /// descriptor's <c>bg_bitmap</c> holds (blocksize − 0x40) × 8 bits. mkfs.ocfs2
+  /// uses the same 32256, and places group <c>k</c>'s descriptor at cluster
+  /// <c>k × 32256</c>.
+  /// </summary>
+  internal const int ClustersPerGroup = (BlockSize - 0x40) * 8; // 32256
+
+  private long _minimumBlocks;
+
+  /// <summary>
+  /// Makes the volume at least <paramref name="bytes"/> long, the rest free space
+  /// for files added later — what choosing a device size gives <c>mkfs.ocfs2</c>.
+  /// A volume is never made smaller than its contents need.
+  /// </summary>
+  public void SetMinimumSize(long bytes) {
+    ArgumentOutOfRangeException.ThrowIfNegative(bytes);
+    this._minimumBlocks = bytes / BlockSize;
+  }
 
   /// <summary>Sets the volume label written into <c>s_label</c> (capped at 63 ASCII bytes).</summary>
   public void SetLabel(string label) {
@@ -199,6 +251,12 @@ internal sealed class Ocfs2Writer {
     _files.Add((normalized, [], FilePayload.FromStream(size, openStream)));
   }
 
+  /// <summary>A run of clusters: where it starts and how many it covers.</summary>
+  private readonly record struct Run(long Start, long Clusters);
+
+  /// <summary>A chain-allocator group: its descriptor block, its bits, and how many are taken.</summary>
+  private readonly record struct Group(long Blkno, int Bits, int Used);
+
   /// <summary>A node in the directory tree assembled from the added file paths.</summary>
   private sealed class TreeNode {
     public required string Name;
@@ -212,9 +270,10 @@ internal sealed class Ocfs2Writer {
     // Layout assignment.
     public long DinodeBlkno;
     public long ParentBlkno;
-    public long DataBlkno;
-    public int DataClusters;
-    public int InodeAllocBit; // bit index within the inode_alloc group
+    /// <summary>The clusters holding the node's data, in file order; empty when inline.</summary>
+    public List<Run> Runs = [];
+    public long DataClusters;
+    public int InodeAllocBit; // bit index within its inode_alloc group
   }
 
   private TreeNode BuildTree() {
@@ -239,36 +298,103 @@ internal sealed class Ocfs2Writer {
     return root;
   }
 
+  // ───────────────────────── cluster allocation ─────────────────────────
+
+  /// <summary>
+  /// Hands out clusters front to back, never covering a global-bitmap group
+  /// descriptor, and remembers every run it handed out — those, and nothing
+  /// else, are what the bitmap marks used.
+  /// </summary>
+  private sealed class ClusterCursor {
+    private readonly List<Run> _allocated = [];
+
+    public ClusterCursor(long reservedPrefix) {
+      this._allocated.Add(new Run(0, reservedPrefix));
+      this.Next = reservedPrefix;
+    }
+
+    /// <summary>The first cluster not yet handed out.</summary>
+    public long Next { get; private set; }
+
+    public IReadOnlyList<Run> Allocated => this._allocated;
+
+    internal static bool IsGroupDescriptor(long cluster) => cluster >= ClustersPerGroup && cluster % ClustersPerGroup == 0;
+    private static long NextDescriptor(long cluster) => (cluster / ClustersPerGroup + 1) * ClustersPerGroup;
+
+    /// <summary>A run of <paramref name="count"/> clusters that lies inside one group.</summary>
+    public long Contiguous(long count) {
+      if (count <= 0 || count >= ClustersPerGroup)
+        throw new InvalidOperationException($"OCFS2: a contiguous run of {count} clusters does not fit one cluster group.");
+      if (IsGroupDescriptor(this.Next)) ++this.Next;
+      if (this.Next + count > NextDescriptor(this.Next)) this.Next = NextDescriptor(this.Next) + 1;
+      var start = this.Next;
+      this.Take(start, count);
+      return start;
+    }
+
+    /// <summary>
+    /// <paramref name="count"/> clusters as consecutive runs, split where a group
+    /// descriptor sits and where an extent record's 16-bit length runs out.
+    /// </summary>
+    public List<Run> Runs(long count) {
+      var runs = new List<Run>();
+      while (count > 0) {
+        if (IsGroupDescriptor(this.Next)) ++this.Next;
+        var take = Math.Min(count, Math.Min(NextDescriptor(this.Next) - this.Next, ushort.MaxValue));
+        runs.Add(new Run(this.Next, take));
+        this.Take(this.Next, take);
+        count -= take;
+      }
+      return runs;
+    }
+
+    private void Take(long start, long count) {
+      var last = this._allocated[^1];
+      if (last.Start + last.Clusters == start)
+        this._allocated[^1] = last with { Clusters = last.Clusters + count };
+      else
+        this._allocated.Add(new Run(start, count));
+      this.Next = start + count;
+    }
+  }
+
   // ───────────────────────── layout plan ─────────────────────────
 
   private sealed class Plan {
     public long TotalBlocks;
     public int InodeAllocGroupBits;   // bg_bits of the global_inode_alloc group (owns blocks 4..)
-    public int InodeAllocGroupBlock = InodeAllocGroupBlkno;
     public long HeartbeatData;        // first block of heartbeat data
+    public int JournalClusters;
     public long JournalData;          // first block of journal data
     public long SlotMapData;          // slot_map data block
-    public long PerSlotGroupBlock;    // inode_alloc:0000 group descriptor block
-    public int PerSlotGroupBits;      // bg_bits of the per-slot inode group
+    public List<Group> InodeGroups = null!;   // inode_alloc:0000 groups
     public long LostFoundBlkno;
-    public long FirstUserDataBlock;
-    public int UsedClusters;          // clusters marked used in global_bitmap
+    public List<Group> ClusterGroups = null!; // global_bitmap groups
+    public IReadOnlyList<Run> Allocated = null!;
     public TreeNode Root = null!;
     public List<TreeNode> Dirs = null!;
     public List<TreeNode> Files = null!;
-    public int PerSlotUsedBits;       // bits set in the per-slot inode group bitmap
   }
 
   private Plan BuildPlan() {
+    // The journal scales with the volume and the volume contains the journal:
+    // lay out with the smallest, and again with whatever the result asks for,
+    // until the two agree (monotone, so at most a couple of passes).
+    var journal = JournalClustersFor(0);
+    for (;;) {
+      var plan = this.BuildPlan(journal);
+      var wanted = JournalClustersFor(plan.TotalBlocks * ClusterSize);
+      if (wanted <= journal) return plan;
+      journal = wanted;
+    }
+  }
+
+  private Plan BuildPlan(int journalClusters) {
     var root = BuildTree();
     root.DinodeBlkno = RootDirBlkno;
 
     var dirs = new List<TreeNode>();
     var files = new List<TreeNode>();
-
-    // Per-slot inode group owns: bit 0 = the group descriptor itself, bit 1 =
-    // lost+found, then one bit per user dir/file dinode.
-    var perSlotGroupBlock = (long)0; // filled after data regions are sized
     var userInodes = new List<TreeNode>();
     void CollectInodes(TreeNode node) {
       foreach (var c in node.Order) {
@@ -281,37 +407,34 @@ internal sealed class Ocfs2Writer {
     }
     CollectInodes(root);
 
-    // global_inode_alloc group: owns blocks 4 .. (4+bits-1). Must cover every
-    // system dinode (blocks 4..17 == 14 bits). Round the group up so the heartbeat
-    // region begins right after it, mirroring mkfs (contiguous group ownership).
-    var inodeGroupBits = SystemDinodeCount; // 14 — exactly the system dinodes
-    var afterInodeGroup = InodeAllocGroupBlkno + inodeGroupBits; // first free block
+    // Blocks 0..17: reserved, superblock, global bitmap group 0 descriptor and
+    // the global_inode_alloc group, which owns every system dinode.
+    var cursor = new ClusterCursor(FirstFileBlkno);
+    var heartbeatData = cursor.Contiguous(HeartbeatClusters);
+    var journalData = cursor.Contiguous(journalClusters);
+    var slotMapData = cursor.Contiguous(1);
 
-    var heartbeatData = (long)afterInodeGroup;
-    var journalData = heartbeatData + HeartbeatClusters;
-    var slotMapData = journalData + JournalClusters;
-    perSlotGroupBlock = slotMapData + 1;
-
-    // Per-slot inode group: bit0 = group block, bit1 = lost+found, then user inodes.
-    var lostFoundBlkno = perSlotGroupBlock + 1;
-    var perSlotUsedBits = 2 + userInodes.Count;
-
-    // Assign user dinode blocks contiguously after lost+found.
-    var nextInode = lostFoundBlkno + 1;
-    for (var i = 0; i < userInodes.Count; i++) {
-      userInodes[i].DinodeBlkno = nextInode++;
-      userInodes[i].InodeAllocBit = 2 + i;
+    // Per-slot inode groups. Inode n (lost+found is 0) is bit 1 + n % 1023 of
+    // group n / 1023 — bit 0 of every group is its own descriptor. Every group
+    // is a whole cl_cpg wide: fsck.ocfs2 takes a group to own cl_cpg clusters
+    // whatever its bg_bits says, and the kernel grows the allocator by that
+    // much, so a shorter last group reads as clusters past the end of the volume.
+    var inodeCount = 1 + userInodes.Count;
+    var groupCount = (inodeCount + SpareInodeBits + InodeGroupBits - 2) / (InodeGroupBits - 1);
+    var groupStarts = new List<(long Blkno, int Bits)>(groupCount);
+    for (var g = 0; g < groupCount; ++g)
+      groupStarts.Add((cursor.Contiguous(InodeGroupBits), InodeGroupBits));
+    var perGroup = InodeGroupBits - 1;
+    (long Blkno, int Bit) InodeAt(int n) => (groupStarts[n / perGroup].Blkno + 1 + n % perGroup, 1 + n % perGroup);
+    var inodeGroups = new List<Group>(groupStarts.Count);
+    for (var g = 0; g < groupStarts.Count; ++g) {
+      var inGroup = Math.Clamp(inodeCount - g * perGroup, 0, perGroup);
+      inodeGroups.Add(new Group(groupStarts[g].Blkno, groupStarts[g].Bits, 1 + inGroup));
     }
 
-    // The per-slot inode group must be large enough to hold all its bits, and
-    // then some. An inode on OCFS2 is a bit in this group, not a cluster out of
-    // the global bitmap, so a group sized to exactly what the volume was created
-    // with is a volume no file can ever be added to: the in-place modifier had
-    // nowhere to put an inode and took a cluster instead, which fsck.ocfs2 read
-    // as "Bit does not exist in bitmap range while testing if inode 90 is
-    // allocated". A real mkfs hands out a whole group; this reserves a modest
-    // margin of free bits, which is what makes the volume writable afterwards.
-    var perSlotGroupBits = Math.Max(perSlotUsedBits + SpareInodeBits, 1);
+    var lostFoundBlkno = InodeAt(0).Blkno;
+    for (var i = 0; i < userInodes.Count; i++)
+      (userInodes[i].DinodeBlkno, userInodes[i].InodeAllocBit) = InodeAt(1 + i);
 
     // Parent back-references.
     void SetParents(TreeNode node) {
@@ -322,19 +445,16 @@ internal sealed class Ocfs2Writer {
     }
     SetParents(root);
 
-    // User data clusters begin after the per-slot inode group's owned range.
-    var firstUserData = perSlotGroupBlock + perSlotGroupBits;
-    var nextData = firstUserData;
-
-    // Files: allocate data clusters (extent-backed). Inline-small files keep data
-    // in the dinode; only files larger than the inline area need clusters.
+    // Files: inline-small files keep their bytes in the dinode; larger ones get
+    // clusters, one extent record per run.
     foreach (var f in files) {
-      if (f.Payload.Size > MaxInline) {
-        var clusters = (int)((f.Payload.Size + ClusterSize - 1) / ClusterSize);
-        f.DataBlkno = nextData;
-        f.DataClusters = clusters;
-        nextData += clusters;
-      }
+      if (f.Payload.Size <= MaxInline) continue;
+      f.DataClusters = (f.Payload.Size + ClusterSize - 1) / ClusterSize;
+      f.Runs = cursor.Runs(f.DataClusters);
+      if (f.Runs.Count > ExtentListCount)
+        throw new NotSupportedException(
+          $"OCFS2: '{f.Name}' needs {f.Runs.Count} extent records, more than the {ExtentListCount} a dinode holds " +
+          "without an extent tree, which this writer does not build.");
     }
 
     // Directories that overflow the inline area become extent-backed. The root
@@ -345,32 +465,36 @@ internal sealed class Ocfs2Writer {
       if (inlineLen <= MaxInline) continue;
       var blocks = BuildExtentDirBlocks(dir, isRoot ? lostFoundBlkno : 0);
       dir.Data = blocks;
-      dir.DataBlkno = nextData;
       dir.DataClusters = blocks.Length / ClusterSize;
-      nextData += dir.DataClusters;
+      dir.Runs = cursor.Runs(dir.DataClusters);
+      if (dir.Runs.Count > ExtentListCount)
+        throw new NotSupportedException($"OCFS2: directory '{dir.Name}' needs more extent records than a dinode holds.");
     }
 
-    var usedClusters = (int)nextData; // every cluster up to here is allocated
-    var totalBlocks = Math.Max(nextData, usedClusters);
-    // Keep a little tail of free space so the bitmap has free bits (fsck is happy
-    // either way, but mkfs always leaves slack).
-    totalBlocks = Math.Max(totalBlocks + 8, 64);
+    // A little tail of free space, as mkfs always leaves slack — or the size asked for.
+    var totalBlocks = Math.Max(Math.Max(cursor.Next + 8, 64), this._minimumBlocks);
+
+    var clusterGroups = new List<Group>();
+    for (long first = 0; first < totalBlocks; first += ClustersPerGroup) {
+      var bits = (int)Math.Min(ClustersPerGroup, totalBlocks - first);
+      var blkno = first == 0 ? GlobalBitmapGroupBlkno : first;
+      clusterGroups.Add(new Group(blkno, bits, Used: 0)); // counted from the bitmap when written
+    }
 
     return new Plan {
       TotalBlocks = totalBlocks,
-      InodeAllocGroupBits = inodeGroupBits,
+      InodeAllocGroupBits = SystemDinodeCount,
       HeartbeatData = heartbeatData,
+      JournalClusters = journalClusters,
       JournalData = journalData,
       SlotMapData = slotMapData,
-      PerSlotGroupBlock = perSlotGroupBlock,
-      PerSlotGroupBits = perSlotGroupBits,
+      InodeGroups = inodeGroups,
       LostFoundBlkno = lostFoundBlkno,
-      FirstUserDataBlock = firstUserData,
-      UsedClusters = usedClusters,
+      ClusterGroups = clusterGroups,
+      Allocated = cursor.Allocated,
       Root = root,
       Dirs = dirs,
       Files = files,
-      PerSlotUsedBits = perSlotUsedBits,
     };
   }
 
@@ -407,14 +531,14 @@ internal sealed class Ocfs2Writer {
     // Only the blocks the filesystem populates are held: file payloads are
     // placed by seek afterwards, so a volume past what a byte[] can address
     // costs its metadata rather than its size.
-    var image = new SparseBlockImage(BlockSize, (long)plan.TotalBlocks * BlockSize);
+    var image = new SparseBlockImage(BlockSize, plan.TotalBlocks * BlockSize);
     payloads = new DeferredPayloads();
 
     WriteSuperblock(image, plan);
     WriteGlobalBitmap(image, plan);
     WriteGlobalInodeAlloc(image, plan);
     WriteRootDir(image, plan);
-    WriteSystemDir(image, plan);
+    WriteSystemDir(image);
     WriteBadBlocks(image);
     WriteSlotMap(image, plan);
     WriteHeartbeat(image, plan);
@@ -429,17 +553,45 @@ internal sealed class Ocfs2Writer {
     // User directories and files.
     foreach (var dir in plan.Dirs)
       WriteDirDinode(image, dir);
-    foreach (var dir in plan.Dirs.Prepend(plan.Root))
-      if (dir.DataClusters > 0 && dir.Data.Length > 0)
-        image.Write((long)dir.DataBlkno * BlockSize, dir.Data);
+    foreach (var dir in plan.Dirs.Prepend(plan.Root)) {
+      long consumed = 0;
+      foreach (var run in dir.Runs) {
+        image.Write(run.Start * BlockSize, dir.Data.AsSpan((int)(consumed * ClusterSize), (int)(run.Clusters * ClusterSize)));
+        consumed += run.Clusters;
+      }
+    }
 
     foreach (var f in plan.Files) {
       WriteFileDinode(image, f);
-      if (f.DataClusters > 0 && f.Payload.Size > 0)
-        payloads.Add((long)f.DataBlkno * BlockSize, f.Payload);
+      long offset = 0;
+      foreach (var run in f.Runs) {
+        var length = Math.Min(run.Clusters * ClusterSize, f.Payload.Size - offset);
+        payloads.Add(run.Start * BlockSize, Slice(f.Payload, offset, length));
+        offset += length;
+      }
     }
 
     return image;
+  }
+
+  /// <summary>The <paramref name="length"/> bytes of a payload that start at <paramref name="offset"/>.</summary>
+  private static FilePayload Slice(FilePayload payload, long offset, long length) {
+    if (offset == 0 && length == payload.Size) return payload;
+    if (payload.Data is { } bytes && offset + length <= Array.MaxLength)
+      return FilePayload.FromStream(length, () => new MemoryStream(bytes, (int)offset, (int)length, writable: false));
+    return FilePayload.FromStream(length, () => {
+      var s = payload.Open();
+      if (s.CanSeek) s.Position = offset;
+      else {
+        var skip = new byte[64 * 1024];
+        for (var left = offset; left > 0;) {
+          var n = s.Read(skip, 0, (int)Math.Min(skip.Length, left));
+          if (n <= 0) break;
+          left -= n;
+        }
+      }
+      return s;
+    });
   }
 
   // ───────────────────────── dinode header ─────────────────────────
@@ -447,7 +599,7 @@ internal sealed class Ocfs2Writer {
   private void WriteDinodeHeader(
       SparseBlockImage image, long blkno, uint mode, uint flags, long size, ushort links,
       int suballocSlot, int suballocBit) {
-    var off = (int)(blkno * BlockSize);
+    var off = blkno * BlockSize;
     InodeSignature.CopyTo(image.At(off, InodeSignature.Length));
     BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x08, 4), this._fsGeneration);
     BinaryPrimitives.WriteInt16LittleEndian(image.At(off + 0x0C, 2), (short)suballocSlot);
@@ -469,28 +621,38 @@ internal sealed class Ocfs2Writer {
     BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x60, 4), this._fsGeneration);
   }
 
+  /// <summary>Writes a leaf extent list holding one record per run, numbered in file order.</summary>
+  private static void WriteExtentList(SparseBlockImage image, long blkno, IReadOnlyList<Run> runs) {
+    SetExtentListHeader(image, blkno, ExtentListCount, (ushort)runs.Count);
+    long cpos = 0;
+    for (var i = 0; i < runs.Count; ++i) {
+      SetExtentRecord(image, blkno, i, (uint)cpos, (ushort)runs[i].Clusters, runs[i].Start);
+      cpos += runs[i].Clusters;
+    }
+  }
+
   private static void SetExtentRecord(SparseBlockImage image, long blkno, int recIdx, uint cpos, ushort clusters, long dataBlkno) {
-    var rec = (int)(blkno * BlockSize) + Id2Offset + ListHeaderLen + recIdx * 16;
+    var rec = blkno * BlockSize + Id2Offset + ListHeaderLen + recIdx * 16;
     BinaryPrimitives.WriteUInt32LittleEndian(image.At(rec + 0, 4), cpos);
     BinaryPrimitives.WriteUInt16LittleEndian(image.At(rec + 4, 2), clusters);
     BinaryPrimitives.WriteUInt64LittleEndian(image.At(rec + 8, 8), (ulong)dataBlkno);
   }
 
   private static void SetExtentListHeader(SparseBlockImage image, long blkno, ushort count, ushort nextFree) {
-    var off = (int)(blkno * BlockSize) + Id2Offset;
+    var off = blkno * BlockSize + Id2Offset;
     BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0, 2), 0);        // l_tree_depth
     BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 2, 2), count);    // l_count
     BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 4, 2), nextFree); // l_next_free_rec
   }
 
   // l_count for a leaf extent list inline in a dinode: (4096-0xC0-0x10)/16 = 243.
-  private const int ExtentListCount = 243;
+  internal const int ExtentListCount = 243;
 
   // ───────────────────────── superblock ─────────────────────────
 
   private void WriteSuperblock(SparseBlockImage image, Plan plan) {
     WriteDinodeHeader(image, SuperBlockBlkno, 0, FlValid | FlSystem | FlSuperBlock, 0, 0, -1, 0xFFFF);
-    var dinodeOff = (int)(SuperBlockBlkno * BlockSize);
+    var dinodeOff = SuperBlockBlkno * BlockSize;
     image.At(dinodeOff, 8).Clear();
     SuperSignature.CopyTo(image.At(dinodeOff, SuperSignature.Length));
 
@@ -518,84 +680,126 @@ internal sealed class Ocfs2Writer {
     this._uuid.CopyTo(image.At(off + 0x90, 16)); // s_uuid
   }
 
-  // ───────────────────────── group descriptors ─────────────────────────
+  // ───────────────────────── chain allocators ─────────────────────────
 
   /// <summary>
-  /// Writes an <c>ocfs2_group_desc</c> (GROUP01) at <paramref name="blkno"/>.
-  /// <paramref name="bits"/> total bits in the group, <paramref name="usedBits"/>
-  /// the count marked used (bits 0..usedBits-1 set in the bitmap).
+  /// Writes an <c>ocfs2_group_desc</c> (GROUP01) header at <paramref name="blkno"/>
+  /// whose <c>bg_bitmap</c> has already been filled in, counting the free bits
+  /// (and the longest free run) from that bitmap. Returns the free count.
   /// </summary>
-  private void WriteGroupDesc(SparseBlockImage image, long blkno, int bits, int usedBits, long parentInode) {
-    var off = (int)(blkno * BlockSize);
+  private int WriteGroupDesc(SparseBlockImage image, long blkno, int bits, int chain, long nextGroup, long parentInode) {
+    var off = blkno * BlockSize;
     GroupSignature.CopyTo(image.At(off, GroupSignature.Length));
-    // bg_size: bytes available for the bitmap = blocksize - header(0x40), capped.
-    var bgSize = BlockSize - 0x40; // 4032
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x08, 2), (ushort)bgSize);
+    var bitmap = image.At(off + BitmapInGroupOffset, BlockSize - BitmapInGroupOffset);
+    int free = 0, contig = 0, run = 0;
+    for (var i = 0; i < bits; ++i) {
+      if ((bitmap[i >> 3] & (1 << (i & 7))) != 0) { run = 0; continue; }
+      ++free;
+      contig = Math.Max(contig, ++run);
+    }
+
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x08, 2), (ushort)(BlockSize - BitmapInGroupOffset)); // bg_size
     BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x0A, 2), (ushort)bits);          // bg_bits
-    var freeBits = bits - usedBits;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x0C, 2), (ushort)freeBits);      // bg_free_bits_count
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x0E, 2), 0);                     // bg_chain
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x10, 4), this._fsGeneration);          // bg_generation
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x14, 2), (ushort)freeBits);      // bg_contig_free_bits
-    // bg_next_group @0x18 = 0
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x0C, 2), (ushort)free);          // bg_free_bits_count
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x0E, 2), (ushort)chain);         // bg_chain
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(off + 0x10, 4), this._fsGeneration);    // bg_generation
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x14, 2), (ushort)contig);        // bg_contig_free_bits
+    BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x18, 8), (ulong)nextGroup);      // bg_next_group
     BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x20, 8), (ulong)parentInode);    // bg_parent_dinode
     BinaryPrimitives.WriteUInt64LittleEndian(image.At(off + 0x28, 8), (ulong)blkno);          // bg_blkno
+    return free;
+  }
 
-    // bg_bitmap @0x40: set bits [0, usedBits).
-    var bmp = off + 0x40;
-    for (var i = 0; i < usedBits; i++)
+  /// <summary>Marks bits <c>[0, used)</c> of a group's bitmap.</summary>
+  private static void SetLeadingBits(SparseBlockImage image, long groupBlkno, int used) {
+    var bmp = groupBlkno * BlockSize + BitmapInGroupOffset;
+    for (var i = 0; i < used; i++)
       image[bmp + (i >> 3)] |= (byte)(1 << (i & 7));
   }
 
-  private void WriteGlobalBitmap(SparseBlockImage image, Plan plan) {
-    // Dinode (chain allocator over all clusters).
-    WriteDinodeHeader(image, GlobalBitmapBlkno, ModeFile, FlValid | FlSystem | FlBitmap | FlChain,
-      plan.TotalBlocks * ClusterSize, 1, -1, GlobalBitmapBlkno);
+  /// <summary>
+  /// Writes a chain allocator: its dinode's bitmap totals and chain list, and the
+  /// headers of its groups. Group <c>g</c> joins chain <c>g % 243</c>, linked to
+  /// the next group of that chain through <c>bg_next_group</c>, as mkfs spreads
+  /// them. The groups' bitmaps must already be filled in.
+  /// </summary>
+  private void WriteChainAllocator(SparseBlockImage image, long dinodeBlkno, int clustersPerGroup, IReadOnlyList<Group> groups, long sizeBytes) {
+    WriteDinodeHeader(image, dinodeBlkno, ModeFile, FlValid | FlSystem | FlBitmap | FlChain,
+      sizeBytes, 1, -1, (int)(dinodeBlkno - InodeAllocGroupBlkno));
 
-    var dinodeOff = (int)(GlobalBitmapBlkno * BlockSize);
-    // id1.bitmap1 { i_used @0xB8, i_total @0xBC }
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1UsedOffset, 4), (uint)plan.UsedClusters);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1TotalOffset, 4), (uint)plan.TotalBlocks);
+    var chains = Math.Min(groups.Count, ChainListCount);
+    var chainFree = new long[chains];
+    var chainTotal = new long[chains];
+    long usedTotal = 0, bitsTotal = 0;
+    for (var g = 0; g < groups.Count; ++g) {
+      var chain = g % ChainListCount;
+      var next = g + ChainListCount < groups.Count ? groups[g + ChainListCount].Blkno : 0;
+      var free = WriteGroupDesc(image, groups[g].Blkno, groups[g].Bits, chain, next, dinodeBlkno);
+      chainFree[chain] += free;
+      chainTotal[chain] += groups[g].Bits;
+      usedTotal += groups[g].Bits - free;
+      bitsTotal += groups[g].Bits;
+    }
 
-    // id2.i_chain
+    var dinodeOff = dinodeBlkno * BlockSize;
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1UsedOffset, 4), (uint)usedTotal);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1TotalOffset, 4), (uint)bitsTotal);
+
     var ch = dinodeOff + Id2Offset;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x00, 2), (ushort)ClustersPerGroup); // cl_cpg (fixed 32256)
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x00, 2), (ushort)clustersPerGroup); // cl_cpg
     BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x02, 2), 1);                        // cl_bpc
     BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x04, 2), ChainListCount);           // cl_count
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x06, 2), 1);                        // cl_next_free_rec
-    // chain rec 0 @0x10: c_free, c_total, c_blkno
-    var free = (int)plan.TotalBlocks - plan.UsedClusters;
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(ch + 0x10, 4), (uint)free);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(ch + 0x14, 4), (uint)plan.TotalBlocks);
-    BinaryPrimitives.WriteUInt64LittleEndian(image.At(ch + 0x18, 8), GlobalBitmapGroupBlkno);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x06, 2), (ushort)chains);           // cl_next_free_rec
+    for (var c = 0; c < chains; ++c) {
+      var rec = ch + ListHeaderLen + c * 16;
+      BinaryPrimitives.WriteUInt32LittleEndian(image.At(rec + 0x00, 4), (uint)chainFree[c]);  // c_free
+      BinaryPrimitives.WriteUInt32LittleEndian(image.At(rec + 0x04, 4), (uint)chainTotal[c]); // c_total
+      BinaryPrimitives.WriteUInt64LittleEndian(image.At(rec + 0x08, 8), (ulong)groups[c].Blkno); // c_blkno
+    }
+  }
 
-    // Group descriptor at block 3: covers all clusters, used = plan.UsedClusters.
-    WriteGroupDesc(image, GlobalBitmapGroupBlkno, (int)plan.TotalBlocks, plan.UsedClusters, GlobalBitmapBlkno);
+  private void WriteGlobalBitmap(SparseBlockImage image, Plan plan) {
+    // A set bit is an allocated cluster: every run handed out, plus each group's
+    // own descriptor — group 0's lies inside the reserved prefix already.
+    void Mark(long cluster) {
+      var group = cluster / ClustersPerGroup;
+      var blkno = group == 0 ? GlobalBitmapGroupBlkno : group * ClustersPerGroup;
+      var bit = cluster % ClustersPerGroup;
+      image[blkno * BlockSize + BitmapInGroupOffset + (bit >> 3)] |= (byte)(1 << (int)(bit & 7));
+    }
+    foreach (var run in plan.Allocated)
+      for (var c = run.Start; c < run.Start + run.Clusters; ++c)
+        Mark(c);
+    for (var g = 1; g < plan.ClusterGroups.Count; ++g)
+      Mark(g * (long)ClustersPerGroup);
+
+    WriteChainAllocator(image, GlobalBitmapBlkno, ClustersPerGroup, plan.ClusterGroups, plan.TotalBlocks * ClusterSize);
   }
 
   private void WriteGlobalInodeAlloc(SparseBlockImage image, Plan plan) {
+    // The group descriptor IS block 4 and counts as bit 0; bits 1..13 are the
+    // system dinodes at blocks 5..17, all in use.
     var bits = plan.InodeAllocGroupBits;
-    var used = SystemDinodeCount; // every system dinode block 4..17
-    var size = (long)bits * BlockSize;
-    WriteDinodeHeader(image, GlobalInodeAllocBlkno, ModeFile, FlValid | FlSystem | FlBitmap | FlChain,
-      size, 1, -1, GlobalInodeAllocBlkno - InodeAllocGroupBlkno);
+    SetLeadingBits(image, InodeAllocGroupBlkno, SystemDinodeCount);
+    WriteChainAllocator(image, GlobalInodeAllocBlkno, bits, [new Group(InodeAllocGroupBlkno, bits, SystemDinodeCount)],
+      (long)bits * BlockSize);
+  }
 
-    var dinodeOff = (int)(GlobalInodeAllocBlkno * BlockSize);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1UsedOffset, 4), (uint)used);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1TotalOffset, 4), (uint)bits);
+  private void WritePerSlotInodeAlloc(SparseBlockImage image, Plan plan) {
+    foreach (var g in plan.InodeGroups)
+      SetLeadingBits(image, g.Blkno, g.Used);
+    WriteChainAllocator(image, InodeAllocBlkno, InodeGroupBits, plan.InodeGroups,
+      plan.InodeGroups.Sum(g => (long)g.Bits) * BlockSize);
+  }
 
-    var ch = dinodeOff + Id2Offset;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x00, 2), (ushort)bits); // cl_cpg
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x02, 2), 1);            // cl_bpc
+  private void WriteExtentAlloc(SparseBlockImage image) {
+    // Empty chain allocator for extent blocks.
+    WriteDinodeHeader(image, ExtentAllocBlkno, ModeFile, FlValid | FlSystem | FlBitmap | FlChain, 0, 1, -1, ExtentAllocBlkno - InodeAllocGroupBlkno);
+    var ch = ExtentAllocBlkno * BlockSize + Id2Offset;
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x00, 2), 1024); // cl_cpg
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x02, 2), 1);    // cl_bpc
     BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x04, 2), ChainListCount);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x06, 2), 1);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(ch + 0x10, 4), (uint)(bits - used)); // c_free
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(ch + 0x14, 4), (uint)bits);          // c_total
-    BinaryPrimitives.WriteUInt64LittleEndian(image.At(ch + 0x18, 8), InodeAllocGroupBlkno);
-
-    WriteGroupDesc(image, InodeAllocGroupBlkno, bits, used, GlobalInodeAllocBlkno);
-    // The system dinodes are blocks 4..17. The group descriptor IS block 4, and it
-    // counts as bit 0. Bits 1..13 = blocks 5..17. usedBits=14 covers exactly 4..17.
+    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x06, 2), 0);    // cl_next_free_rec = empty
   }
 
   // ───────────────────────── system directories & files ─────────────────────────
@@ -605,7 +809,7 @@ internal sealed class Ocfs2Writer {
     var links = (ushort)(2 + node.Order.Count(c => c.IsDir) + 1); // +1 for lost+found
 
     if (node.DataClusters > 0) {
-      WriteExtentDir(image, node, RootDirBlkno, (long)node.DataClusters * ClusterSize, links,
+      WriteExtentDir(image, node, RootDirBlkno, node.DataClusters * ClusterSize, links,
         FlValid | FlSystem, RootDirBlkno - InodeAllocGroupBlkno);
       return;
     }
@@ -613,7 +817,7 @@ internal sealed class Ocfs2Writer {
     WriteInlineDir(image, RootDirBlkno, inline, links, FlValid | FlSystem, RootDirBlkno - InodeAllocGroupBlkno);
   }
 
-  private void WriteSystemDir(SparseBlockImage image, Plan plan) {
+  private void WriteSystemDir(SparseBlockImage image) {
     var entries = new List<(long Inode, string Name, byte Type)> {
       (SystemDirBlkno, ".", FtDir),
       (SystemDirBlkno, "..", FtDir), // system dir is its own parent
@@ -643,16 +847,13 @@ internal sealed class Ocfs2Writer {
     // slot_map is a regular file with one cluster of data; extended-slotmap means
     // the data is ocfs2_extended_slot[] — all zero (no node mounted) is valid.
     WriteDinodeHeader(image, SlotMapBlkno, ModeFile, FlValid | FlSystem, ClusterSize, 1, -1, SlotMapBlkno - InodeAllocGroupBlkno);
-    SetExtentListHeader(image, SlotMapBlkno, ExtentListCount, 1);
-    SetExtentRecord(image, SlotMapBlkno, 0, 0, 1, plan.SlotMapData);
-    // data left zeroed: es_valid=0 for the single slot.
+    WriteExtentList(image, SlotMapBlkno, [new Run(plan.SlotMapData, 1)]);
   }
 
   private void WriteHeartbeat(SparseBlockImage image, Plan plan) {
     var size = (long)HeartbeatClusters * ClusterSize;
     WriteDinodeHeader(image, HeartbeatBlkno, ModeFile, FlValid | FlSystem | FlHeartbeat, size, 1, -1, HeartbeatBlkno - InodeAllocGroupBlkno);
-    SetExtentListHeader(image, HeartbeatBlkno, ExtentListCount, 1);
-    SetExtentRecord(image, HeartbeatBlkno, 0, 0, (ushort)HeartbeatClusters, plan.HeartbeatData);
+    WriteExtentList(image, HeartbeatBlkno, [new Run(plan.HeartbeatData, HeartbeatClusters)]);
   }
 
   private void WriteOrphanDir(SparseBlockImage image) {
@@ -664,63 +865,30 @@ internal sealed class Ocfs2Writer {
     WriteInlineDir(image, OrphanDirBlkno, inline, 2, FlValid | FlSystem, OrphanDirBlkno - InodeAllocGroupBlkno);
   }
 
-  private void WriteExtentAlloc(SparseBlockImage image) {
-    // Empty chain allocator for extent blocks.
-    WriteDinodeHeader(image, ExtentAllocBlkno, ModeFile, FlValid | FlSystem | FlBitmap | FlChain, 0, 1, -1, ExtentAllocBlkno - InodeAllocGroupBlkno);
-    var dinodeOff = (int)(ExtentAllocBlkno * BlockSize);
-    var ch = dinodeOff + Id2Offset;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x00, 2), 1024); // cl_cpg
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x02, 2), 1);    // cl_bpc
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x04, 2), ChainListCount);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x06, 2), 0);    // cl_next_free_rec = empty
-  }
-
-  private void WritePerSlotInodeAlloc(SparseBlockImage image, Plan plan) {
-    var bits = plan.PerSlotGroupBits;
-    var used = plan.PerSlotUsedBits;
-    var size = (long)bits * BlockSize;
-    WriteDinodeHeader(image, InodeAllocBlkno, ModeFile, FlValid | FlSystem | FlBitmap | FlChain,
-      size, 1, -1, InodeAllocBlkno - InodeAllocGroupBlkno);
-
-    var dinodeOff = (int)(InodeAllocBlkno * BlockSize);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1UsedOffset, 4), (uint)used);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + Id1TotalOffset, 4), (uint)bits);
-
-    var ch = dinodeOff + Id2Offset;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x00, 2), (ushort)Math.Min(bits, 1024)); // cl_cpg
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x02, 2), 1);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x04, 2), ChainListCount);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.At(ch + 0x06, 2), 1);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(ch + 0x10, 4), (uint)(bits - used));
-    BinaryPrimitives.WriteUInt32LittleEndian(image.At(ch + 0x14, 4), (uint)bits);
-    BinaryPrimitives.WriteUInt64LittleEndian(image.At(ch + 0x18, 8), (ulong)plan.PerSlotGroupBlock);
-
-    WriteGroupDesc(image, plan.PerSlotGroupBlock, bits, used, InodeAllocBlkno);
-  }
-
   private void WriteJournal(SparseBlockImage image, Plan plan) {
-    var size = (long)JournalClusters * ClusterSize;
+    var size = (long)plan.JournalClusters * ClusterSize;
     WriteDinodeHeader(image, JournalBlkno, ModeFile, FlValid | FlSystem | FlJournal, size, 1, -1, JournalBlkno - InodeAllocGroupBlkno);
-    SetExtentListHeader(image, JournalBlkno, ExtentListCount, 1);
-    SetExtentRecord(image, JournalBlkno, 0, 0, (ushort)JournalClusters, plan.JournalData);
+    WriteExtentList(image, JournalBlkno, [new Run(plan.JournalData, plan.JournalClusters)]);
 
-    // JBD2 journal superblock (big-endian) in the first journal data block.
-    var jb = (int)(plan.JournalData * BlockSize);
+    // JBD2 journal superblock (big-endian) in the first journal data block, as
+    // mkfs.ocfs2 leaves it: a clean journal, s_start = 0 — anything else asks
+    // the kernel to replay a log that was never written.
+    var jb = plan.JournalData * BlockSize;
     BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x00, 4), 0xC03B3998u); // h_magic
     BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x04, 4), 4);            // h_blocktype = JBD2_SUPERBLOCK_V2
     // h_sequence @0x08 = 0
     BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x0C, 4), BlockSize);    // s_blocksize
-    BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x10, 4), (uint)JournalClusters); // s_maxlen
+    BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x10, 4), (uint)plan.JournalClusters); // s_maxlen
     BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x14, 4), 1);            // s_first
     BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x18, 4), 1);            // s_sequence
-    BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x1C, 4), 1);            // s_start
-    this._uuid.CopyTo(image.At(jb + 0x30, 16));                                        // s_uuid
+    // s_start @0x1C = 0: nothing to recover
+    this._uuid.CopyTo(image.At(jb + 0x30, 16));                                  // s_uuid
     BinaryPrimitives.WriteUInt32BigEndian(image.At(jb + 0x40, 4), 1);            // s_nr_users
   }
 
   private void WriteLocalAlloc(SparseBlockImage image) {
     WriteDinodeHeader(image, LocalAllocBlkno, ModeFile, FlValid | FlSystem | FlLocalAlloc | FlBitmap, 0, 1, -1, LocalAllocBlkno - InodeAllocGroupBlkno);
-    var off = (int)(LocalAllocBlkno * BlockSize) + Id2Offset;
+    var off = LocalAllocBlkno * BlockSize + Id2Offset;
     // ocfs2_local_alloc header is 16 bytes (la_bm_off u32 + la_size u16 +
     // la_reserved1 u16 + la_reserved2 u64); la_bitmap follows.
     var laSize = BlockSize - Id2Offset - 16; // 3888
@@ -729,7 +897,7 @@ internal sealed class Ocfs2Writer {
 
   private void WriteTruncateLog(SparseBlockImage image) {
     WriteDinodeHeader(image, TruncateLogBlkno, ModeFile, FlValid | FlSystem | FlDealloc, 0, 1, -1, TruncateLogBlkno - InodeAllocGroupBlkno);
-    var off = (int)(TruncateLogBlkno * BlockSize) + Id2Offset;
+    var off = TruncateLogBlkno * BlockSize + Id2Offset;
     // ocfs2_truncate_log: tl_count @0x00 = max records that fit, tl_used @0x02 = 0.
     var tlCount = (BlockSize - Id2Offset - 8) / 8; // (4096-0xC0-8)/sizeof(rec=8)
     BinaryPrimitives.WriteUInt16LittleEndian(image.At(off + 0x00, 2), (ushort)tlCount);
@@ -751,7 +919,7 @@ internal sealed class Ocfs2Writer {
   private void WriteDirDinode(SparseBlockImage image, TreeNode node) {
     var links = (ushort)(2 + node.Order.Count(c => c.IsDir));
     if (node.DataClusters > 0) {
-      WriteExtentDir(image, node, node.DinodeBlkno, (long)node.DataClusters * ClusterSize, links, FlValid, node.InodeAllocBit, slot: 0);
+      WriteExtentDir(image, node, node.DinodeBlkno, node.DataClusters * ClusterSize, links, FlValid, node.InodeAllocBit, slot: 0);
       return;
     }
     var inline = BuildInlineDir(node);
@@ -762,9 +930,9 @@ internal sealed class Ocfs2Writer {
     // The real size: clamping it to the inline limit sent every large file down
     // the inline branch, where its bytes do not exist.
     var size = f.Payload.Size;
+    WriteDinodeHeader(image, f.DinodeBlkno, ModeFile, FlValid, size, 1, 0, f.InodeAllocBit);
     if (size <= MaxInline) {
-      WriteDinodeHeaderWithSlot(image, f.DinodeBlkno, ModeFile, FlValid, size, 1, 0, f.InodeAllocBit);
-      var dinodeOff = (int)(f.DinodeBlkno * BlockSize);
+      var dinodeOff = f.DinodeBlkno * BlockSize;
       // Inline files keep their bytes in the dinode → i_clusters must be 0.
       BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + 0x14, 4), 0);
       BinaryPrimitives.WriteUInt16LittleEndian(image.At(dinodeOff + DynFeaturesOffset, 2), DynInlineData);
@@ -775,21 +943,12 @@ internal sealed class Ocfs2Writer {
       if (size > 0) image.Write(off + InlineHeaderLen, f.Payload.ToArray().AsSpan(0, (int)size));
       return;
     }
-    WriteDinodeHeaderWithSlot(image, f.DinodeBlkno, ModeFile, FlValid, size, 1, 0, f.InodeAllocBit);
-    SetExtentListHeader(image, f.DinodeBlkno, ExtentListCount, 1);
-    SetExtentRecord(image, f.DinodeBlkno, 0, 0, (ushort)f.DataClusters, f.DataBlkno);
-  }
-
-  // Header variant that takes an explicit suballoc slot (for inodes allocated
-  // from the per-slot inode_alloc, slot 0).
-  private void WriteDinodeHeaderWithSlot(SparseBlockImage image, long blkno, uint mode, uint flags, long size, ushort links, int slot, int bit) {
-    WriteDinodeHeader(image, blkno, mode, flags, size, links, slot, bit);
+    WriteExtentList(image, f.DinodeBlkno, f.Runs);
   }
 
   private void WriteExtentDir(SparseBlockImage image, TreeNode node, long blkno, long size, ushort links, uint flags, int bit, int slot = -1) {
     WriteDinodeHeader(image, blkno, ModeDir, flags, size, links, slot, bit);
-    SetExtentListHeader(image, blkno, ExtentListCount, 1);
-    SetExtentRecord(image, blkno, 0, 0, (ushort)node.DataClusters, node.DataBlkno);
+    WriteExtentList(image, blkno, node.Runs);
   }
 
   private void WriteInlineDir(SparseBlockImage image, long blkno, byte[] inline, ushort links, uint flags, int bit) =>
@@ -797,7 +956,7 @@ internal sealed class Ocfs2Writer {
 
   private void WriteInlineDirWithSlot(SparseBlockImage image, long blkno, byte[] inline, ushort links, uint flags, int slot, int bit) {
     WriteDinodeHeader(image, blkno, ModeDir, flags, MaxInline, links, slot, bit);
-    var dinodeOff = (int)(blkno * BlockSize);
+    var dinodeOff = blkno * BlockSize;
     // i_size for inline dirs == id_count (full inline area), matching mkfs.
     BinaryPrimitives.WriteUInt64LittleEndian(image.At(dinodeOff + 0x20, 8), MaxInline);
     BinaryPrimitives.WriteUInt32LittleEndian(image.At(dinodeOff + 0x14, 4), 0); // i_clusters = 0
@@ -811,11 +970,6 @@ internal sealed class Ocfs2Writer {
 
   // ───────────────────────── directory entry builders ─────────────────────────
 
-  /// <summary>
-  /// Builds inline dir-entry bytes that EXACTLY fill the inline area (MaxInline):
-  /// the final entry's rec_len is stretched to consume the remaining space, which
-  /// is what mkfs and the kernel do for inline directories.
-  /// </summary>
   /// <summary>Packed byte length of a set of dir entries (no inline stretch).</summary>
   private static int InlineDirByteLength(List<(long Inode, string Name, byte Type)> entries) {
     var total = 0;
@@ -824,6 +978,11 @@ internal sealed class Ocfs2Writer {
     return total;
   }
 
+  /// <summary>
+  /// Builds inline dir-entry bytes that EXACTLY fill the inline area (MaxInline):
+  /// the final entry's rec_len is stretched to consume the remaining space, which
+  /// is what mkfs and the kernel do for inline directories.
+  /// </summary>
   private static byte[] BuildDirEntriesFillingInline(List<(long Inode, string Name, byte Type)> entries) {
     var buf = new byte[MaxInline];
     var pos = 0;

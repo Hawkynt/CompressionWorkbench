@@ -40,6 +40,7 @@ internal static class Ocfs2Reader {
   // ocfs2_super_block field offsets relative to id2 (dinode + 0xC0).
   private const int SbRootBlkno = 0x28;
   private const int SbBlocksizeBits = 0x38;
+  private const int SbClustersizeBits = 0x3C;
 
   // i_dyn_features: OCFS2_INLINE_DATA_FL.
   private const ushort DynInlineData = 0x0001;
@@ -90,8 +91,9 @@ internal static class Ocfs2Reader {
       var inlineEnd = inlineStart + (int)Math.Clamp(dirSize, 0, maxInline);
       CollectNames(image, inlineStart, inlineEnd, names);
     } else {
-      foreach (var (blkno, clusters) in ReadExtents(image, (int)rootOff))
-        for (long b = 0; b < clusters; b++) {
+      var perCluster = BlocksPerCluster(image, blockSize);
+      foreach (var (_, blkno, clusters, _) in ReadExtents(image, (int)rootOff))
+        for (long b = 0; b < (long)clusters * perCluster; b++) {
           var blockStart = (int)((blkno + b) * blockSize);
           if (blockStart < 0 || blockStart + blockSize > image.Length) break;
           CollectNames(image, blockStart, blockStart + blockSize, names);
@@ -122,7 +124,18 @@ internal static class Ocfs2Reader {
   /// bytes are stored inline in the dinode. Used by the descriptor's extent map
   /// to locate real data offsets for cluster-tip wiping.
   /// </summary>
-  public readonly record struct FilePlacement(string Name, long DinodeBlkno, long DataBlkno, long Size, bool Inline);
+  /// <remarks>
+  /// <see cref="Extents"/> lists every leaf record in file order — logical block,
+  /// first block, block count, unwritten — and <see cref="HasTree"/> is set when
+  /// the extents hang off an interior tree this reader does not follow, in which
+  /// case the list is empty and the file's bytes are not resolvable here.
+  /// </remarks>
+  public readonly record struct FilePlacement(string Name, long DinodeBlkno, long DataBlkno, long Size, bool Inline,
+      IReadOnlyList<(long LogicalBlock, long Blkno, long Blocks, bool Unwritten)> Extents, bool HasTree) {
+    /// <summary>True when the data is one written run starting at logical block 0 and nothing else.</summary>
+    public bool IsSingleRun => !this.Inline && !this.HasTree && this.Extents.Count == 1
+                               && this.Extents[0].LogicalBlock == 0 && !this.Extents[0].Unwritten;
+  }
 
   /// <summary>Walks the tree and returns the on-disk placement of every regular file.</summary>
   /// <summary>Block size recorded in the superblock, or 0 when it is unreadable.</summary>
@@ -177,8 +190,9 @@ internal static class Ocfs2Reader {
       var maxInline = blockSize - Id2Offset - InlineHeaderLen;
       Handle(inlineStart, inlineStart + (int)Math.Clamp(dirSize, 0, maxInline));
     } else {
-      foreach (var (blkno, clusters) in ReadExtents(image, dirOff))
-        for (long b = 0; b < clusters; b++) {
+      var perCluster = BlocksPerCluster(image, blockSize);
+      foreach (var (_, blkno, clusters, _) in ReadExtents(image, dirOff))
+        for (long b = 0; b < (long)clusters * perCluster; b++) {
           var bs = (int)((blkno + b) * blockSize);
           if (bs < 0 || bs + blockSize > image.Length) break;
           Handle(bs, bs + blockSize);
@@ -193,10 +207,13 @@ internal static class Ocfs2Reader {
     var size = (long)BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(off + OffSize, 8));
     var dyn = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(off + OffDynFeatures, 2));
     if ((dyn & DynInlineData) != 0)
-      return new FilePlacement(name, dinodeBlkno, dinodeBlkno, size, Inline: true);
-    long dataBlk = 0;
-    foreach (var (blkno, _) in ReadExtents(image, off)) { dataBlk = blkno; break; }
-    return new FilePlacement(name, dinodeBlkno, dataBlk, size, Inline: false);
+      return new FilePlacement(name, dinodeBlkno, dinodeBlkno, size, Inline: true, [], HasTree: false);
+    var perCluster = BlocksPerCluster(image, blockSize);
+    var extents = ReadExtents(image, off)
+      .Select(e => ((long)e.Cpos * perCluster, e.Blkno, (long)e.Clusters * perCluster, e.Unwritten))
+      .ToList();
+    var dataBlk = extents.Count > 0 ? extents[0].Item2 : 0;
+    return new FilePlacement(name, dinodeBlkno, dataBlk, size, Inline: false, extents, HasExtentTree(image, off));
   }
 
   /// <summary>
@@ -284,8 +301,9 @@ internal static class Ocfs2Reader {
       ParseDirEntries(image, inlineStart, inlineEnd, prefix, result, subdirs);
     } else {
       // Extent-backed: each extent record points at a run of directory blocks.
-      foreach (var (blkno, clusters) in ReadExtents(image, dirOff)) {
-        var clusterBlocks = clusters; // block size == cluster size for our images
+      var perCluster = BlocksPerCluster(image, blockSize);
+      foreach (var (_, blkno, clusters, _) in ReadExtents(image, dirOff)) {
+        var clusterBlocks = (long)clusters * perCluster;
         for (long b = 0; b < clusterBlocks; b++) {
           var blockStart = (int)((blkno + b) * blockSize);
           if (blockStart < 0 || blockStart + blockSize > image.Length) break;
@@ -367,29 +385,30 @@ internal static class Ocfs2Reader {
       return inline;
     }
 
+    // Each record lands at its logical cluster: a hole between records, and an
+    // unwritten run, both read as zeros.
     var result = new byte[fileSize];
-    long resultPos = 0;
-    foreach (var (blkno, clusters) in ReadExtents(image, off)) {
+    var clusterBytes = (long)blockSize * BlocksPerCluster(image, blockSize);
+    foreach (var (cpos, blkno, clusters, unwritten) in ReadExtents(image, off)) {
+      var logical = cpos * clusterBytes;
+      if (logical >= fileSize || unwritten) continue;
       var dataOff = blkno * blockSize;
-      var dataLen = (long)clusters * blockSize;
-      var copyLen = Math.Min(dataLen, fileSize - resultPos);
-      if (dataOff < 0 || dataOff + copyLen > image.Length)
-        copyLen = Math.Max(0, image.Length - dataOff);
-      if (copyLen > 0)
-        Buffer.BlockCopy(image, (int)dataOff, result, (int)resultPos, (int)copyLen);
-      resultPos += copyLen;
-      if (resultPos >= fileSize) break;
+      var copyLen = Math.Min(clusters * clusterBytes, fileSize - logical);
+      copyLen = Math.Min(copyLen, Math.Max(0, image.Length - dataOff));
+      if (dataOff >= 0 && copyLen > 0)
+        Buffer.BlockCopy(image, (int)dataOff, result, (int)logical, (int)copyLen);
     }
     return result;
   }
 
   /// <summary>
   /// Reads the leaf extent records from a dinode's inline extent list
-  /// (<c>id2.i_list</c>). Only depth-0 (leaf) lists are followed — the toolkit's
-  /// writer never builds extent-tree interior nodes, and reference images small
-  /// enough to round-trip here keep their user data in leaf records.
+  /// (<c>id2.i_list</c>): logical cluster, first block, length in clusters and
+  /// whether the run is unwritten (allocated, reads as zeros). Only depth-0
+  /// (leaf) lists are followed — the toolkit's writer never builds extent-tree
+  /// interior nodes; <see cref="HasExtentTree"/> says when a dinode has one.
   /// </summary>
-  private static IEnumerable<(long Blkno, int Clusters)> ReadExtents(byte[] image, int dinodeOff) {
+  private static IEnumerable<(uint Cpos, long Blkno, int Clusters, bool Unwritten)> ReadExtents(byte[] image, int dinodeOff) {
     var extOff = dinodeOff + Id2Offset;
     if (extOff + 8 > image.Length) yield break;
 
@@ -401,11 +420,26 @@ internal static class Ocfs2Reader {
       var recOff = extOff + 0x10 + i * 16;
       if (recOff + 16 > image.Length) yield break;
       // e_cpos (u32) @+0, e_leaf_clusters (u16) @+4, reserved @+6, flags @+7,
-      // e_blkno (u64) @+8.
+      // e_blkno (u64) @+8. OCFS2_EXT_UNWRITTEN = 0x01.
+      var cpos = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(recOff, 4));
       var clusters = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(recOff + 4, 2));
+      var flags = image[recOff + 7];
       var blkno = (long)BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(recOff + 8, 8));
       if (clusters == 0) continue;
-      yield return (blkno, clusters);
+      yield return (cpos, blkno, clusters, (flags & 0x01) != 0);
     }
+  }
+
+  /// <summary>Whether a dinode's extents hang off an interior tree rather than its own leaf list.</summary>
+  private static bool HasExtentTree(byte[] image, int dinodeOff)
+    => dinodeOff + Id2Offset + 2 <= image.Length
+       && BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(dinodeOff + Id2Offset, 2)) != 0;
+
+  /// <summary>Blocks per cluster, from the superblock; 1 when it cannot be read.</summary>
+  private static int BlocksPerCluster(byte[] image, int blockSize) {
+    var sb = (long)blockSize * Ocfs2Superblock.SuperBlockBlkno + Id2Offset;
+    if (sb + SbClustersizeBits + 4 > image.Length) return 1;
+    var bits = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan((int)sb + SbClustersizeBits, 4));
+    return bits is >= 12 and <= 20 && (1 << (int)bits) >= blockSize ? (1 << (int)bits) / blockSize : 1;
   }
 }

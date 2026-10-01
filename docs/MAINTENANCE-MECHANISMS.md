@@ -190,6 +190,11 @@ the repack kept only names and bytes.
 
 - **In place, verified against the real tools' volumes** (see the matrix): ext2/3/4, FAT12/16/32,
   NTFS, exFAT (root directory), ISO 9660 (root directory).
+- **In place, verified through the kernel driver on our volumes and on `mkfs.ocfs2 -M local`
+  volumes filled through it**: OCFS2 — root-directory files added, replaced and removed, single-run
+  files defragmented; `fsck.ocfs2 -fn` clean before and after a kernel read-write mount
+  (`Ocfs2KernelMountTests`). Nested paths, extent-backed roots, shared extents and a full volume
+  are refused; nothing is rebuilt.
 - **In place, checked with the reference checker on a fresh `mkfs.hfsplus` volume only**
   (there is no HFS+ kernel driver to fill one with): HFS+ — root folder of a single-leaf
   catalog; anything else refused.

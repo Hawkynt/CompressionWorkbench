@@ -114,8 +114,7 @@ public class Ocfs2ExternalConformanceTests {
   /// reports the spec-correct geometry (Root Blknum 5, System Dir 6, 4 KB
   /// block/cluster, inline-data feature). This proves the superblock + dinode
   /// header is genuinely on-disk-correct — the reference tool, not just our own
-  /// reader, parses it. (Full directory walking still needs the chain-allocator
-  /// system files the writer does not yet emit; see the fsck report test.)
+  /// reader, parses it. The kernel mount itself is <see cref="Ocfs2KernelMountTests"/>.
   /// </summary>
   [Test]
   public void OurWriterImage_DebugfsReadsSuperblock() {

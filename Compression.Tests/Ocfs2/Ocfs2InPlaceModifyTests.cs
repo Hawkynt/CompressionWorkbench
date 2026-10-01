@@ -96,18 +96,25 @@ public class Ocfs2InPlaceModifyTests {
     Assert.That(System.Text.Encoding.UTF8.GetString(files["added.txt"]), Is.EqualTo("ADDED-CONTENT"));
   }
 
+  /// <summary>
+  /// Given a volume, when an extent-backed file is added, then exactly the
+  /// blocks the change moves differ: cluster bitmap group (3) and its allocator
+  /// dinode (11), root dir (5), the inode allocator dinode (14) and its group,
+  /// the new dinode, and the data clusters — and no other system block.
+  /// </summary>
   [Test, Category("Performance")]
   public void Add_LeavesUntouchedBlocksByteIdentical() {
     using var ms = BuildImage(("a.txt", "AAA"u8.ToArray()), ("b.txt", "BBB"u8.ToArray()));
     var before = ms.ToArray();
-    Ocfs2InPlaceModifier.AddFile(ms, "c.txt", "CCC"u8.ToArray());
+    Ocfs2InPlaceModifier.AddFile(ms, "c.txt", Extentful());
     var after = ms.ToArray();
 
     var diffs = DifferingBlocks(before, after);
-    // Expected diffs: the cluster bitmap (block 3), root dir (block 5), the new
-    // file's dinode block, and its data block.
     Assert.That(diffs, Does.Contain(BitmapDataBlkno), "cluster bitmap block must change");
     Assert.That(diffs, Does.Contain(RootDirBlkno), "root dir dinode block must change");
+    Assert.That(diffs, Does.Contain(11), "global_bitmap dinode keeps i_used and the chain record in step");
+    Assert.That(diffs, Does.Contain(14), "inode_alloc:0000 dinode keeps i_used and the chain record in step");
+    Assert.That(diffs, Has.Count.EqualTo(8), "3, 5, 11, 14, the inode group, the new dinode and two data clusters");
 
     // No untouched system blocks should change: reserved (0,1), superblock (2),
     // system dir (6), global_inode_alloc (8).
@@ -118,16 +125,34 @@ public class Ocfs2InPlaceModifyTests {
     Assert.That(diffs, Does.Not.Contain(8));
   }
 
+  /// <summary>
+  /// Given a volume, when a file small enough for its dinode is added, then its
+  /// bytes live inline and the cluster bitmap is untouched — only the inode
+  /// allocator hands out a bit.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void Add_InlineFile_LeavesClusterBitmapAlone() {
+    using var ms = BuildImage(("a.txt", "AAA"u8.ToArray()));
+    var before = ms.ToArray();
+    Ocfs2InPlaceModifier.AddFile(ms, "b.txt", "BBB"u8.ToArray());
+    var diffs = DifferingBlocks(before, ms.ToArray());
+    Assert.That(diffs, Does.Not.Contain(BitmapDataBlkno));
+    Assert.That(diffs, Does.Not.Contain(11));
+    Assert.That(diffs, Does.Contain(14), "the inode bit comes out of inode_alloc:0000");
+    Assert.That(ListFiles(ms.ToArray()).Single(f => f.Name == "b.txt").Data, Is.EqualTo("BBB"u8.ToArray()));
+  }
+
   [Test, Category("Performance")]
   public void Add_UpdatesBitmap() {
     using var ms = BuildImage(("a.txt", "AAA"u8.ToArray()));
     var beforeBitmap = ReadBlock(ms, BitmapDataBlkno);
-    Ocfs2InPlaceModifier.AddFile(ms, "b.txt", "BBB"u8.ToArray());
+    Ocfs2InPlaceModifier.AddFile(ms, "b.txt", Extentful());
     var afterBitmap = ReadBlock(ms, BitmapDataBlkno);
     Assert.That(afterBitmap, Is.Not.EqualTo(beforeBitmap), "bitmap must change after Add");
 
-    // Bits that were set in `before` must still be set in `after` (no spurious frees).
-    for (var bit = 0; bit < beforeBitmap.Length * 8; bit++)
+    // Bits that were set in `before` must still be set in `after` (no spurious
+    // frees). The bitmap starts at 0x40, after the descriptor's counters.
+    for (var bit = 0x40 * 8; bit < beforeBitmap.Length * 8; bit++)
       if ((beforeBitmap[bit / 8] & (1 << (bit % 8))) != 0)
         Assert.That(afterBitmap[bit / 8] & (1 << (bit % 8)), Is.Not.Zero,
           $"bitmap bit {bit} was set before Add but cleared after — spurious free.");
@@ -186,8 +211,10 @@ public class Ocfs2InPlaceModifyTests {
     var after = ms.ToArray();
 
     var diffs = DifferingBlocks(before, after);
-    Assert.That(diffs, Does.Contain(BitmapDataBlkno), "cluster bitmap block must change");
+    // drop.txt is inline: no cluster to free, only its inode bit.
+    Assert.That(diffs, Does.Not.Contain(BitmapDataBlkno), "an inline file owns no cluster");
     Assert.That(diffs, Does.Contain(RootDirBlkno), "root dir dinode block must change");
+    Assert.That(diffs, Does.Contain(14), "the inode bit goes back to inode_alloc:0000");
 
     // Untouched system blocks unchanged: reserved (0,1), superblock (2),
     // system dir (6), global_inode_alloc (8).
@@ -218,15 +245,15 @@ public class Ocfs2InPlaceModifyTests {
 
     Assert.That(afterBitmap, Is.Not.EqualTo(beforeBitmap), "bitmap must change after Remove");
 
-    // Some bits set before must now be cleared (freed dinode + data clusters).
+    // Exactly b.txt's two data clusters are freed. Its dinode is a bit of the
+    // inode allocator, whose group's cluster stays allocated in this bitmap.
     var freedBits = 0;
-    for (var bit = 0; bit < beforeBitmap.Length * 8; bit++) {
-      var was = (beforeBitmap[bit / 8] & (1 << (bit % 8))) != 0;
-      var now = (afterBitmap[bit / 8] & (1 << (bit % 8))) != 0;
+    for (var bit = 0; bit < (beforeBitmap.Length - 0x40) * 8; bit++) {
+      var was = (beforeBitmap[0x40 + bit / 8] & (1 << (bit % 8))) != 0;
+      var now = (afterBitmap[0x40 + bit / 8] & (1 << (bit % 8))) != 0;
       if (was && !now) freedBits++;
     }
-    Assert.That(freedBits, Is.GreaterThanOrEqualTo(2),
-      $"expected ≥2 freed bits (dinode + data cluster); freed {freedBits}");
+    Assert.That(freedBits, Is.EqualTo(2), $"expected the 2 data clusters of a 5000-byte file freed; freed {freedBits}");
   }
 
   [Test, Category("HappyPath")]
