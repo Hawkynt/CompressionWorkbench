@@ -7,7 +7,6 @@ using Compression.NativeUI.ViewModels;
 using Compression.Registry;
 using Compression.Registry.Layout;
 using Hawkynt.NativeForms;
-using Hawkynt.NativeForms.Drawing;
 using Color = System.Drawing.Color;
 
 namespace Compression.NativeUI.Views;
@@ -25,12 +24,9 @@ namespace Compression.NativeUI.Views;
 /// again exactly as it was; nothing about it is rebuilt.
 /// </remarks>
 internal sealed partial class MainForm {
-  private const int FieldWidth = 188;
-  private const int CaptionWidth = 72;
 
   private readonly RibbonContextualTabGroup _diskTools = new("Disk Tools", Color.FromArgb(0x3A, 0x8E, 0x5C)) { Visible = false };
   private readonly DefragmentView _defragView = new() { Visible = false };
-  private readonly ToolTip _ribbonTips = new();
   private RibbonTab _defragTab = null!;
 
   private readonly Dictionary<MaintenanceVerb, RibbonToggleButton> _verbToggles = [];
@@ -45,20 +41,18 @@ internal sealed partial class MainForm {
   private RibbonButton _analyzeButton = null!;
   private RibbonButton _editProfilesButton = null!;
 
-  private readonly TextBox _interleaveBox = new() { Text = "1" };
-  private readonly ChoiceBox _metadataZoneCombo = new();
-  private readonly ChoiceBox _layoutProfileCombo = new();
-  private readonly TextBox _holeSizeBox = new() { Text = "64m" };
-  private readonly TextBox _holeAtBox = new() { Text = "auto" };
-  private readonly TextBox _seedBox = new() { Text = "1" };
-  private readonly ChoiceBox _placementCombo = new();
-  private RibbonHostItem _interleaveItem = null!;
-  private RibbonHostItem _metadataZoneItem = null!;
-  private RibbonHostItem _layoutProfileItem = null!;
-  private RibbonHostItem _holeSizeItem = null!;
-  private RibbonHostItem _holeAtItem = null!;
-  private RibbonHostItem _seedItem = null!;
-  private RibbonHostItem _placementItem = null!;
+  // Ribbon fields, drawn by the ribbon: one row tall on every backend, and still usable from a
+  // collapsed group's popup.
+  private readonly RibbonSpinner _interleaveSpinner = new("Interleave") {
+    Minimum = MaintenanceInput.MinInterleave, Maximum = MaintenanceInput.MaxInterleave, Value = 1, FieldWidth = 56,
+  };
+  private readonly RibbonComboBox _metadataZoneCombo = new("Metadata") { FieldWidth = 112 };
+  private readonly RibbonComboBox _layoutProfileCombo = new("Profile") { FieldWidth = 112 };
+  private readonly RibbonSpinner _holeSizeSpinner = new("Hole KiB") { Minimum = 1, Maximum = 1L << 32, Value = 64, Increment = 64, FieldWidth = 80 };
+  private readonly RibbonComboBox _holePlacementCombo = new("Hole at") { FieldWidth = 80 };
+  private readonly RibbonSpinner _holeOffsetSpinner = new("Offset KiB") { Minimum = 0, Maximum = 1L << 32, Value = 0, Increment = 64, FieldWidth = 80 };
+  private readonly RibbonSpinner _seedSpinner = new("Seed") { Minimum = int.MinValue, Maximum = int.MaxValue, Value = 1, FieldWidth = 80 };
+  private readonly RibbonComboBox _placementCombo = new("Chunks") { FieldWidth = 112 };
   private readonly List<LayoutProfileEntry?> _layoutProfileEntries = [];
 
   private MaintenanceSession? _maintenanceSession;
@@ -139,42 +133,45 @@ internal sealed partial class MainForm {
       @checked: false, on => this.WithPresenter(p => p.PackAtEnd = on));
     group.Items.Add(this._packAtEndToggle);
 
-    this._holeSizeItem = this.Field("Hole size", this._holeSizeBox, "Size in bytes. Suffixes: k=KiB, m=MiB, g=GiB. Examples: 64m, 1g, 524288.",
-      () => this.WithPresenter(p => p.HoleSizeText = this._holeSizeBox.Text));
-    this._holeAtItem = this.Field("Hole at", this._holeAtBox, "Byte offset where the hole starts. 'auto' = after the last live extent.",
-      () => this.WithPresenter(p => p.HoleAtText = this._holeAtBox.Text));
-    group.Items.AddRange(this._holeSizeItem, this._holeAtItem);
+    this._holePlacementCombo.Items.AddRange(["End", "Offset"]);
+    this._holePlacementCombo.SelectedIndex = 0;
+    this.Field(this._holeSizeSpinner, "Size of the hole to carve, in KiB.", () => this.WithPresenter(p => p.HoleSizeText = HoleSizeText()));
+    this.Field(this._holePlacementCombo, "End: after the last live extent. Offset: at the offset beside.",
+      () => this.WithPresenter(p => p.HoleAtText = HoleAtText()));
+    this.Field(this._holeOffsetSpinner, "Where the hole starts, in KiB from the start of the image.",
+      () => this.WithPresenter(p => p.HoleAtText = HoleAtText()));
+    group.Items.AddRange(this._holeSizeSpinner, this._holePlacementCombo, this._holeOffsetSpinner);
     return group;
   }
 
   /// <summary>
   /// The layout options of a defragmentation, then — below Edit Profiles, shown only while their
   /// operation is picked — the one option Scramble, Optimize or Compact takes. Showing only the one
-  /// that applies keeps the tab narrow enough that no group with a hosted field has to fold away.
+  /// that applies keeps the tab narrow.
   /// </summary>
   private RibbonGroup OptionsGroup() {
     // Short, because the field is narrow; the tooltip says what each placement means.
-    this._metadataZoneCombo.SetItems(["Unchanged", "Front", "Back", "Middle", "Before data"]);
+    this._metadataZoneCombo.Items.AddRange(["Unchanged", "Front", "Back", "Middle", "Before data"]);
+    this._metadataZoneCombo.SelectedIndex = 0;
     this.RefreshLayoutProfiles();
 
-    this._interleaveItem = this.Field("Interleave", this._interleaveBox,
+    this.Field(this._interleaveSpinner,
       $"Block interleave: 1 = contiguous, 2 = every other block, N = each file's Kth block at start + K×N. {MaintenanceInput.MinInterleave}–{MaintenanceInput.MaxInterleave}.",
-      () => this.WithPresenter(p => p.InterleaveText = this._interleaveBox.Text));
-    this._metadataZoneItem = this.Field("Metadata", this._metadataZoneCombo, "Where filesystem metadata and directory entries are placed: unchanged, at the front (fast access), at the back (data first), in the middle (least seeking) or just before the file content (read-ahead).",
+      () => this.WithPresenter(p => p.InterleaveText = InterleaveText()));
+    this.Field(this._metadataZoneCombo, "Where filesystem metadata and directory entries are placed: unchanged, at the front (fast access), at the back (data first), in the middle (least seeking) or just before the file content (read-ahead).",
       () => this.WithPresenter(p => p.MetadataZone = this.SelectedMetadataZone()));
-    this._layoutProfileItem = this.Field("Profile", this._layoutProfileCombo,
-      "A zone-based layout template: files go into named byte ranges with per-zone sort orders.",
+    this.Field(this._layoutProfileCombo, "A zone-based layout template: files go into named byte ranges with per-zone sort orders.",
       this.OnLayoutProfileChanged);
     this._editProfilesButton = this.RibbonAction("Edit Profiles", IconKeys.Properties, () => {
       new LayoutProfileEditor().ShowDialog(this);
       this.RefreshLayoutProfiles();
     }, RibbonItemSize.Small, Keys.None, "Create, change or delete layout profiles");
 
-    this._placementCombo.SetItems(["Default", "Metadata first", "Data first"]);
-
-    this._seedItem = this.Field("Seed", this._seedBox, "Seeds Scramble's shuffle. The same seed deals the same layout every run.",
-      () => this.WithPresenter(p => p.SeedText = this._seedBox.Text));
-    this._placementItem = this.Field("Chunks", this._placementCombo, "Where an optimized file puts its metadata chunks relative to the payload.",
+    this._placementCombo.Items.AddRange(["Default", "Metadata first", "Data first"]);
+    this._placementCombo.SelectedIndex = 0;
+    this.Field(this._seedSpinner, "Seeds Scramble's shuffle. The same seed deals the same layout every run.",
+      () => this.WithPresenter(p => p.SeedText = SeedText()));
+    this.Field(this._placementCombo, "Where an optimized file puts its metadata chunks relative to the payload.",
       () => this.WithPresenter(p => p.ChunkPlacement = this._placementCombo.SelectedIndex switch {
         1 => MetadataPlacementProfile.MetadataFirst,
         2 => MetadataPlacementProfile.DataFirst,
@@ -184,8 +181,8 @@ internal sealed partial class MainForm {
       "Compact rebuilds at the smallest geometry the format allows", @checked: false, on => this.WithPresenter(p => p.MinimalGeometry = on));
 
     var group = new RibbonGroup("Options");
-    group.Items.AddRange(this._interleaveItem, this._metadataZoneItem, this._layoutProfileItem,
-      this._editProfilesButton, this._seedItem, this._placementItem, this._minimalGeometryToggle);
+    group.Items.AddRange(this._interleaveSpinner, this._metadataZoneCombo, this._layoutProfileCombo,
+      this._editProfilesButton, this._seedSpinner, this._placementCombo, this._minimalGeometryToggle);
     return group;
   }
 
@@ -212,22 +209,29 @@ internal sealed partial class MainForm {
     return group;
   }
 
-  /// <summary>A hosted input with its caption in front, one stacked row tall.</summary>
-  private RibbonHostItem Field(string caption, Control input, string tip, Action changed) {
-    var panel = new Panel();
-    var label = new Label { Text = caption, Dock = DockStyle.Left, Width = CaptionWidth };
-    input.Dock = DockStyle.Fill;
-    panel.Controls.AddRange(input, label);
-
-    switch (input) {
-      case TextBox box: box.TextChanged += (_, _) => { if (!this._syncingDefragRibbon) { changed(); this.SyncDefragmentRibbon(); } }; break;
-      case ChoiceBox combo: combo.SelectedIndexChanged += (_, _) => { if (!this._syncingDefragRibbon) { changed(); this.SyncDefragmentRibbon(); } }; break;
+  /// <summary>Wires a ribbon field: its tooltip, kept in <see cref="ToolStripItem.Tag"/>, and what a change does.</summary>
+  private void Field(RibbonFieldItem field, string tip, Action changed) {
+    field.Tag = tip;
+    field.ToolTipText = tip;
+    void OnChanged(object? sender, EventArgs e) {
+      if (this._syncingDefragRibbon) return;
+      changed();
+      this.SyncDefragmentRibbon();
     }
 
-    this._ribbonTips.SetToolTip(input, tip);
-    this._ribbonTips.SetToolTip(label, tip);
-    return new RibbonHostItem(panel) { HostWidth = FieldWidth, Text = caption, ToolTipText = tip, Tag = tip };
+    switch (field) {
+      case RibbonSpinner spinner: spinner.ValueChanged += OnChanged; break;
+      case RibbonComboBox combo: combo.SelectedIndexChanged += OnChanged; break;
+    }
   }
+
+  // The presenter reads typed values; the fields can only hold valid ones, so these never fail to parse.
+  private string InterleaveText() => ((int)this._interleaveSpinner.Value).ToString(System.Globalization.CultureInfo.InvariantCulture);
+  private string HoleSizeText() => $"{(long)this._holeSizeSpinner.Value}k";
+  private string HoleAtText() => this._holePlacementCombo.SelectedIndex == 1
+    ? ((long)this._holeOffsetSpinner.Value * 1024).ToString(System.Globalization.CultureInfo.InvariantCulture)
+    : "auto";
+  private string SeedText() => ((int)this._seedSpinner.Value).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
   // ── the tab and the client area ─────────────────────────────────────────────────────────────
 
@@ -284,10 +288,10 @@ internal sealed partial class MainForm {
     this._maintenanceSession = this._model.OpenMaintenanceSession();
     if (this._maintenanceSession is { } session) {
       this._presenter = new MaintenancePresenter(session.ImagePath, session.FormatId) {
-        InterleaveText = this._interleaveBox.Text,
-        HoleSizeText = this._holeSizeBox.Text,
-        HoleAtText = this._holeAtBox.Text,
-        SeedText = this._seedBox.Text,
+        InterleaveText = this.InterleaveText(),
+        HoleSizeText = this.HoleSizeText(),
+        HoleAtText = this.HoleAtText(),
+        SeedText = this.SeedText(),
         MetadataZone = this.SelectedMetadataZone(),
       };
       this.OnLayoutProfileChanged();
@@ -361,7 +365,9 @@ internal sealed partial class MainForm {
       }
 
       var keep = this._layoutProfileEntries.FindIndex(e => e is not null && string.Equals(e.FilePath, previous, StringComparison.OrdinalIgnoreCase));
-      this._layoutProfileCombo.SetItems(names, Math.Max(0, keep));
+      this._layoutProfileCombo.Items.Clear();
+      this._layoutProfileCombo.Items.AddRange(names);
+      this._layoutProfileCombo.SelectedIndex = Math.Max(0, keep);
     } finally {
       this._syncingDefragRibbon = false;
     }
@@ -426,25 +432,24 @@ internal sealed partial class MainForm {
       this._packAtEndToggle.ToolTipText = $"Pack at End: {(caps is null ? NoTarget : !consolidate ? "Applies to Consolidate." : caps.PackAtEnd.Reason)}";
 
       var carve = defrag && p!.Strategy == DefragStrategy.CarveHole;
-      this._holeSizeItem.Visible = carve;
-      this._holeAtItem.Visible = carve;
-      this.Mark(this._holeSizeItem, idle, carve && MaintenanceInput.ParseSize(this._holeSizeBox.Text).Error is { } sizeError ? sizeError : null);
-      this.Mark(this._holeAtItem, idle, carve && MaintenanceInput.ParseHoleAt(this._holeAtBox.Text).Error is { } atError ? atError : null);
+      foreach (var field in new RibbonFieldItem[] { this._holeSizeSpinner, this._holePlacementCombo, this._holeOffsetSpinner }) {
+        field.Visible = carve;
+        field.Enabled = idle;
+      }
+      this._holeOffsetSpinner.Enabled = idle && this._holePlacementCombo.SelectedIndex == 1;
 
-      this.Option(this._interleaveItem, idle && defrag, caps?.Interleave, defrag,
-        caps?.Interleave.Supported == true && defrag ? MaintenanceInput.ParseInterleave(this._interleaveBox.Text).Error : null);
-      this.Option(this._metadataZoneItem, idle && defrag, caps?.MetadataZone, defrag, null);
-      this.Option(this._layoutProfileItem, idle && defrag, caps?.LayoutProfile, defrag, null);
+      Option(this._interleaveSpinner, idle && defrag, caps?.Interleave, defrag);
+      Option(this._metadataZoneCombo, idle && defrag, caps?.MetadataZone, defrag);
+      Option(this._layoutProfileCombo, idle && defrag, caps?.LayoutProfile, defrag);
       this._editProfilesButton.Enabled = idle && defrag && caps?.LayoutProfile.Supported == true;
 
       var scramble = p?.Verb == MaintenanceVerb.Scramble;
-      this._seedItem.Visible = scramble;
-      this._placementItem.Visible = p?.Verb == MaintenanceVerb.Optimize && caps?.ChunkPlacement.Supported == true;
+      this._seedSpinner.Visible = scramble;
+      this._placementCombo.Visible = p?.Verb == MaintenanceVerb.Optimize && caps?.ChunkPlacement.Supported == true;
       this._minimalGeometryToggle.Visible = p?.Verb == MaintenanceVerb.Compact && caps?.MinimalGeometry.Supported == true;
-      this.Option(this._seedItem, idle && scramble, scramble ? Capability.Yes("Seeds Scramble's shuffle.") : null, scramble,
-        scramble ? MaintenanceInput.ParseSeed(this._seedBox.Text).Error : null, appliesTo: "Scramble");
+      Option(this._seedSpinner, idle && scramble, scramble ? Capability.Yes("Seeds Scramble's shuffle.") : null, scramble, appliesTo: "Scramble");
       var optimize = p?.Verb == MaintenanceVerb.Optimize;
-      this.Option(this._placementItem, idle && optimize, caps?.ChunkPlacement, optimize, null, appliesTo: "Optimize");
+      Option(this._placementCombo, idle && optimize, caps?.ChunkPlacement, optimize, appliesTo: "Optimize");
       var compact = p?.Verb == MaintenanceVerb.Compact;
       this._minimalGeometryToggle.Enabled = idle && compact && caps?.MinimalGeometry.Supported == true;
       this._minimalGeometryToggle.Checked = p?.MinimalGeometry == true && compact;
@@ -464,33 +469,13 @@ internal sealed partial class MainForm {
     }
   }
 
-  /// <summary>Enables a hosted option and explains it: supported, not applicable, refused, or mistyped.</summary>
-  private void Option(RibbonHostItem item, bool applies, Capability? capability, bool relevant, string? error, string appliesTo = "Defragment") {
-    var supported = capability?.Supported == true;
-    item.Enabled = applies && supported;
-    item.Control.Enabled = item.Enabled;
+  /// <summary>Enables an option field and explains it: supported, not applicable, or refused.</summary>
+  private static void Option(RibbonFieldItem field, bool applies, Capability? capability, bool relevant, string appliesTo = "Defragment") {
+    field.Enabled = applies && capability?.Supported == true;
     var reason = capability is null ? "Open or select an image to maintain."
       : !relevant ? $"Applies to {appliesTo}."
       : capability.Value.Reason;
-    item.ToolTipText = error ?? $"{item.Text}: {reason} {item.Tag}";
-    this.Flag(item, error);
-  }
-
-  private void Mark(RibbonHostItem item, bool enabled, string? error) {
-    item.Enabled = enabled;
-    item.Control.Enabled = enabled;
-    item.ToolTipText = error ?? item.Tag as string;
-    this.Flag(item, error);
-  }
-
-  /// <summary>A value that does not read turns its field pink, and the tooltip says what is wrong.</summary>
-  private void Flag(RibbonHostItem item, string? error) {
-    var input = item.Control.Controls[0];
-    if (input is TextBox box)
-      box.BackColor = error is not null ? Color.FromArgb(0xFF, 0xD8, 0xD8)
-        : box.Enabled ? DefaultTheme.Instance.FieldBackground
-        : DefaultTheme.Instance.ControlBackground;
-    this._ribbonTips.SetToolTip(input, error ?? item.Tag as string);
+    field.ToolTipText = $"{field.Text}: {reason} {field.Tag}";
   }
 
   // ── running ─────────────────────────────────────────────────────────────────────────────────
