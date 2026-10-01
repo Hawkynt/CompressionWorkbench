@@ -3,7 +3,6 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -16,17 +15,19 @@ namespace FileFormat.Aff4;
 /// data streams under <c>aff4://&lt;uuid&gt;/</c> paths split into bevy/chunk
 /// segments named with zero-padded indices (e.g. <c>00000000</c>, <c>00000000.index</c>).
 ///
-/// <para>This descriptor reads ZIP members and AFF4-L logical file names, and creates
-/// ZIP-backed AFF4-L ZipSegment streams using Stored or Deflate. Extraction also
-/// offers a verbatim <c>FULL.aff4</c> and <c>metadata.ini</c> distilled from the Turtle
-/// graph. Detection is extension-driven (<c>.aff4</c>) so it does not steal generic ZIPs;
-/// malformed input degrades to FULL + partial metadata without throwing.</para>
+/// <para>Logical images (AFF4-L, and the AFF4 v1.1 logical images pyaff4 writes) list and
+/// extract as their files and folders, with data from ZipSegments, ImageStreams or in-metadata
+/// streams; other members, and every member of a physical image, list as stored. Creation writes
+/// AFF4-L ZipSegment volumes using Stored or Deflate. Extraction also offers a verbatim
+/// <c>FULL.aff4</c> and <c>metadata.ini</c> distilled from the Turtle graph. Detection is
+/// extension-driven (<c>.aff4</c>) so it does not steal generic ZIPs; malformed input degrades
+/// to FULL + partial metadata without throwing.</para>
 ///
 /// References:
 /// <list type="bullet">
-///   <item><description><c>https://github.com/aff4/Standard</c> — AFF4 standard specification documents</description></item>
+///   <item><description><c>https://github.com/aff4/Standard</c> — AFF4 Standard v1.0 (ImageStream, storage layer, ZIP64)</description></item>
 ///   <item><description><c>inprogress/AFF4-L-StandardSpecification-v1.0.md</c> — AFF4-L v1.0 (ZipSegment streams, metadata and hashes)</description></item>
-///   <item><description><c>https://github.com/aff4/pyaff4</c> — pyaff4 — canonical reference implementation</description></item>
+///   <item><description><c>https://github.com/aff4/pyaff4</c> — pyaff4 — canonical reference implementation, the oracle for reading and writing</description></item>
 ///   <item><description>Cohen, Garfinkel &amp; Schatz, "Extending the Advanced Forensic Format to accommodate multiple data sources, logical evidence, arbitrary information and forensic workflow" (DFRWS 2009) — the defining AFF4 paper</description></item>
 /// </list>
 /// </summary>
@@ -90,8 +91,8 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   public string Description =>
     "Advanced Forensic Format 4 (AFF4): a ZIP/ZIP64 container with information.turtle RDF " +
-    "metadata, version.txt and aff4:// image streams. Delegates to the ZIP reader; surfaces " +
-    "each member plus metadata distilled from the Turtle graph. Creates AFF4-L ZipSegment volumes.";
+    "metadata, version.txt and aff4:// image streams. Lists logical images as their files; " +
+    "surfaces other members plus metadata distilled from the Turtle graph. Creates AFF4-L ZipSegment volumes.";
 
   private sealed record MemberInfo(string Name, long Size, long CompressedSize, string Method, DateTime? LastModified, string? Kind, bool IsDirectory = false);
   private sealed record InputMember(string Name, string Urn, byte[] Data, DateTimeOffset Modified, string Sha256);
@@ -281,35 +282,49 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       stream.CopyTo(outStream);
     }
 
-    var turtle = ReadTurtle(stream);
-    var logicalNames = ParseLogicalNames(turtle);
-    var logicalModified = ParseLogicalModified(turtle);
-    foreach (var directory in ParseLogicalFolders(turtle))
-      if (Wants(files, directory)) Directory.CreateDirectory(SafeCombine(outputDir, directory));
+    string? turtle = null;
+    Aff4Volume? volume = null;
+    ZipArchive? zip = null;
     try {
-      stream.Seek(0, SeekOrigin.Begin);
-      using var zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
-      foreach (var entry in zip.Entries) {
-        var storedName = entry.FullName.Replace('\\', '/');
-        if (storedName.EndsWith('/')) {
-          var directoryName = storedName.TrimEnd('/');
-          if (Wants(files, directoryName) || Wants(files, storedName))
-            Directory.CreateDirectory(SafeCombine(outputDir, directoryName));
-          continue;
-        }
-        var name = logicalNames.GetValueOrDefault(storedName, storedName);
-        if (Wants(files, name) || Wants(files, storedName)) {
-          var dest = SafeCombine(outputDir, name);
+      volume = Aff4Volume.Open(stream, out zip);
+    } catch (InvalidDataException) {
+      // Malformed ZIP — fall through to partial metadata.
+      zip?.Dispose();
+    }
+    if (volume != null) {
+      // A damaged stream inside a readable volume fails the extraction rather than truncating it.
+      using (zip) {
+        turtle = volume.Turtle;
+        foreach (var item in volume.Items) {
+          if (!Wants(files, item.Path)) continue;
+          var dest = SafeCombine(outputDir, item.Path);
+          if (item.IsDirectory) { Directory.CreateDirectory(dest); continue; }
           var destDir = Path.GetDirectoryName(dest);
           if (destDir != null) Directory.CreateDirectory(destDir);
-          using var es = entry.Open();
-          using var outFile = File.Create(dest);
-          es.CopyTo(outFile);
-          try { File.SetLastWriteTime(dest, logicalModified.GetValueOrDefault(storedName, entry.LastWriteTime).LocalDateTime); } catch { /* timestamp precision/platform limits */ }
+          using (var outFile = File.Create(dest))
+            volume.CopyTo(item, outFile);
+          if (item.LastWritten is { } modified)
+            try { File.SetLastWriteTimeUtc(dest, modified.UtcDateTime); } catch { /* timestamp precision/platform limits */ }
+        }
+        foreach (var entry in volume.Entries) {
+          var storedName = entry.FullName.Replace('\\', '/');
+          if (volume.ConsumedMembers.Contains(entry.FullName)) continue;
+          if (storedName.EndsWith('/')) {
+            var directoryName = storedName.TrimEnd('/');
+            if (Wants(files, directoryName) || Wants(files, storedName))
+              Directory.CreateDirectory(SafeCombine(outputDir, directoryName));
+            continue;
+          }
+          if (!Wants(files, storedName)) continue;
+          var dest = SafeCombine(outputDir, storedName);
+          var destDir = Path.GetDirectoryName(dest);
+          if (destDir != null) Directory.CreateDirectory(destDir);
+          using (var es = entry.Open())
+          using (var outFile = File.Create(dest))
+            es.CopyTo(outFile);
+          try { File.SetLastWriteTime(dest, entry.LastWriteTime.LocalDateTime); } catch { /* timestamp precision/platform limits */ }
         }
       }
-    } catch {
-      // Malformed ZIP — fall through to partial metadata.
     }
 
     if (Wants(files, "metadata.ini"))
@@ -319,120 +334,28 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   private static bool Wants(string[]? files, string name)
     => files == null || files.Length == 0 || MatchesFilter(name, files);
 
-  private static IEnumerable<MemberInfo> EnumerateMembers(Stream stream) {
+  private static List<MemberInfo> EnumerateMembers(Stream stream) {
     var result = new List<MemberInfo>();
     try {
-      var turtle = ReadTurtle(stream);
-      var logicalNames = ParseLogicalNames(turtle);
-      var logicalFolders = ParseLogicalFolders(turtle);
-      var logicalModified = ParseLogicalModified(turtle);
-      stream.Seek(0, SeekOrigin.Begin);
-      using var zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
-      foreach (var entry in zip.Entries) {
-        var storedName = entry.FullName.Replace('\\', '/');
-        if (storedName.EndsWith('/')) {
-          result.Add(new MemberInfo(storedName.TrimEnd('/'), 0, 0, "Stored", entry.LastWriteTime.DateTime, "folder", IsDirectory: true));
-          continue;
+      var volume = Aff4Volume.Open(stream, out var zip);
+      using (zip) {
+        foreach (var item in volume.Items)
+          result.Add(item.IsDirectory
+            ? new MemberInfo(item.Path, 0, 0, "Stored", item.LastWritten?.LocalDateTime, "folder", IsDirectory: true)
+            : new MemberInfo(item.Path, item.Size, item.Size, item.Storage.ToString(), item.LastWritten?.LocalDateTime, "file"));
+        foreach (var entry in volume.Entries) {
+          if (volume.ConsumedMembers.Contains(entry.FullName)) continue;
+          var storedName = entry.FullName.Replace('\\', '/');
+          if (storedName.EndsWith('/')) {
+            result.Add(new MemberInfo(storedName.TrimEnd('/'), 0, 0, "Stored", entry.LastWriteTime.DateTime, "folder", IsDirectory: true));
+            continue;
+          }
+          var method = entry.CompressedLength == entry.Length ? "Stored" : "Deflate";
+          result.Add(new MemberInfo(storedName, entry.Length, entry.CompressedLength, method, entry.LastWriteTime.DateTime, ClassifyMember(storedName)));
         }
-        var name = logicalNames.GetValueOrDefault(storedName, storedName);
-        var method = entry.CompressedLength == entry.Length ? "Stored" : "Deflate";
-        var modified = logicalModified.TryGetValue(storedName, out var exactModified)
-          ? exactModified.LocalDateTime
-          : entry.LastWriteTime.DateTime;
-        result.Add(new MemberInfo(name, entry.Length, entry.CompressedLength, method, modified, ClassifyMember(name)));
       }
-      foreach (var folder in logicalFolders)
-        result.Add(new MemberInfo(folder, 0, 0, "Stored", null, "folder", IsDirectory: true));
     } catch {
       // Malformed — surface only FULL + metadata.
-    }
-    return result;
-  }
-
-  private static string? ReadTurtle(Stream stream) {
-    try {
-      stream.Seek(0, SeekOrigin.Begin);
-      using var zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
-      var entry = zip.Entries.FirstOrDefault(e => IsTurtle(e.FullName));
-      if (entry == null) return null;
-      using var source = entry.Open();
-      using var buffer = new MemoryStream();
-      source.CopyTo(buffer);
-      return SafeUtf8(buffer.ToArray());
-    } catch { return null; }
-  }
-
-  private static Dictionary<string, string> ParseLogicalNames(string? turtle) {
-    var result = new Dictionary<string, string>(StringComparer.Ordinal);
-    if (turtle == null) return result;
-    foreach (Match match in Regex.Matches(turtle,
-      "<(?<urn>aff4://[^>]+)>\\s+a\\s+aff4:FileImage\\b(?<body>.*?)(?:\\.\\s*(?:\\r?\\n|$))",
-      RegexOptions.Singleline | RegexOptions.CultureInvariant)) {
-      var logical = LogicalPath(match.Groups["body"].Value);
-      if (logical is { Length: > 0 }) result[match.Groups["urn"].Value] = logical;
-    }
-    return result;
-  }
-
-  private static List<string> ParseLogicalFolders(string? turtle) {
-    var result = new List<string>();
-    if (turtle == null) return result;
-    foreach (Match match in Regex.Matches(turtle,
-      "<(?<urn>aff4://[^>]+)>\\s+a\\s+aff4:Folder\\b(?<body>.*?)(?:\\.\\s*(?:\\r?\\n|$))",
-      RegexOptions.Singleline | RegexOptions.CultureInvariant)) {
-      var logical = LogicalPath(match.Groups["body"].Value);
-      if (logical is { Length: > 0 }) result.Add(logical);
-    }
-    return result;
-  }
-
-  /// <summary>
-  /// The logical path of a FileImage or Folder: aff4:originalPathNameRaw (base64) when present,
-  /// else aff4:originalPathName, else the AFF4 v1.1 / pyaff4 aff4:originalFileName. Windows
-  /// separators become '/'.
-  /// </summary>
-  private static string? LogicalPath(string body) {
-    var raw = Regex.Match(body, "aff4:originalPathNameRaw\\s+\"(?<b64>[A-Za-z0-9+/=\\s]*)\"", RegexOptions.CultureInvariant);
-    string? path = null;
-    if (raw.Success) {
-      try { path = Encoding.UTF8.GetString(Convert.FromBase64String(raw.Groups["b64"].Value)); } catch (FormatException) { path = null; }
-    }
-    if (path == null) {
-      var named = Regex.Match(body, "aff4:(?:originalPathName|originalFileName)\\s+\"(?<path>(?:\\\\.|[^\"\\\\])*)\"", RegexOptions.CultureInvariant);
-      if (!named.Success) return null;
-      path = TurtleUnescape(named.Groups["path"].Value);
-    }
-    path = path.Replace('\\', '/').TrimStart('/');
-    return path.Split('/').Any(part => part is ".." or ".") ? Path.GetFileName(path) : path;
-  }
-
-  // Turtle string escapes; any other backslash is kept, since producers write Windows paths such
-  // as "\GovDocs\000\000785.html" unescaped.
-  private static string TurtleUnescape(string value) {
-    var sb = new StringBuilder(value.Length);
-    for (var i = 0; i < value.Length; ++i) {
-      if (value[i] != '\\' || i + 1 >= value.Length) { sb.Append(value[i]); continue; }
-      var next = value[i + 1];
-      var mapped = next switch { '"' => '"', '\\' => '\\', 'n' => '\n', 'r' => '\r', 't' => '\t', '\'' => '\'', _ => '\0' };
-      if (mapped == '\0') { sb.Append('\\'); continue; }
-      sb.Append(mapped);
-      ++i;
-    }
-    return sb.ToString();
-  }
-
-  private static Dictionary<string, DateTimeOffset> ParseLogicalModified(string? turtle) {
-    var result = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
-    if (turtle == null) return result;
-    foreach (Match match in Regex.Matches(turtle,
-      "<(?<urn>aff4://[^>]+)>\\s+a\\s+aff4:FileImage\\b(?<body>.*?)(?:\\.\\s*(?:\\r?\\n|$))",
-      RegexOptions.Singleline | RegexOptions.CultureInvariant)) {
-      var timestamp = Regex.Match(match.Groups["body"].Value,
-        "aff4:lastWritten\\s+\"(?<value>(?:\\\\.|[^\"\\\\])*)\"",
-        RegexOptions.CultureInvariant);
-      if (timestamp.Success && DateTimeOffset.TryParse(timestamp.Groups["value"].Value,
-            CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var modified))
-        result[match.Groups["urn"].Value] = modified;
     }
     return result;
   }
@@ -450,16 +373,25 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     => name.EndsWith("information.turtle", StringComparison.OrdinalIgnoreCase) ||
        name.EndsWith(".turtle", StringComparison.OrdinalIgnoreCase);
 
+  private static string? ReadTurtle(Stream stream) {
+    try {
+      var volume = Aff4Volume.Open(stream, out var zip);
+      using (zip) return volume.Turtle;
+    } catch { return null; }
+  }
+
   private static string BuildMetadataIni(Stream stream, string? turtle) {
+    turtle ??= ReadTurtle(stream);
     var sb = new StringBuilder();
     sb.Append("[Aff4]\n");
-    var members = EnumerateMembers(stream).ToList();
+    var members = EnumerateMembers(stream);
     var isZip = LooksLikeZip(stream);
     sb.Append(CultureInfo.InvariantCulture, $"valid={(isZip ? 1 : 0)}\n");
     sb.Append(CultureInfo.InvariantCulture, $"member_count={members.Count}\n");
     sb.Append(CultureInfo.InvariantCulture, $"has_version_txt={(members.Any(m => m.Kind == "version") ? 1 : 0)}\n");
     sb.Append(CultureInfo.InvariantCulture, $"has_turtle={(turtle != null || members.Any(m => m.Kind == "metadata") ? 1 : 0)}\n");
     sb.Append(CultureInfo.InvariantCulture, $"stream_member_count={members.Count(m => m.Kind == "stream")}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"logical_file_count={members.Count(m => m.Kind == "file")}\n");
 
     if (turtle != null) {
       var size = FindTurtleValue(turtle, "aff4:size") ?? FindTurtleValue(turtle, "size");
@@ -524,11 +456,6 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (!destination.StartsWith(rootPrefix, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
       destination = Path.Combine(root, "_");
     return destination;
-  }
-
-  private static string SafeUtf8(byte[] data) {
-    try { return Encoding.UTF8.GetString(data); }
-    catch { return string.Empty; }
   }
 
   private static long SafeLength(Stream s) => s.CanSeek ? s.Length : 0;
