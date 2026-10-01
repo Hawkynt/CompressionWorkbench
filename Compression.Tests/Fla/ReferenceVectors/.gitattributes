@@ -1,0 +1,5 @@
+# Flash's own bytes, hashed and compared byte for byte: nothing may translate a newline in them.
+# The captured xfl2svg reports are LF text and are compared line by line, so they stay text.
+* -text -diff
+*.xfl2svg.txt text eol=lf
+README.md text
