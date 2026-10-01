@@ -184,11 +184,11 @@ public class Ocfs2LayoutTests {
 
   /// <summary>
   /// Given a volume, when an edit outside the in-place scope is asked for — a
-  /// nested add, a nested remove, an add the volume has no room for — then it is
+  /// path through a file, removing a directory, an add the volume has no room for — then it is
   /// refused with NotSupportedException and the image is byte for byte unchanged.
   /// </summary>
-  [TestCase("add-nested")]
-  [TestCase("remove-nested")]
+  [TestCase("add-through-file")]
+  [TestCase("remove-directory")]
   [TestCase("add-too-big")]
   [Category("ErrorHandling")]
   public void OutOfScopeEdit_IsRefusedAndLeavesTheImageUnchanged(string edit) {
@@ -202,8 +202,8 @@ public class Ocfs2LayoutTests {
 
     Assert.Throws<NotSupportedException>(() => {
       switch (edit) {
-        case "add-nested": d.Add(ms, [ArchiveInputInfo.InMemory("docs/new.txt", "x"u8.ToArray())]); break;
-        case "remove-nested": d.Remove(ms, ["docs/guide.txt"]); break;
+        case "add-through-file": d.Add(ms, [ArchiveInputInfo.InMemory("root.txt/new.txt", "x"u8.ToArray())]); break;
+        case "remove-directory": d.Remove(ms, ["docs"]); break;
         case "add-too-big": d.Add(ms, [ArchiveInputInfo.InMemory("huge.bin", new byte[64 * 1024 * 1024])]); break;
       }
     });

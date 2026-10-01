@@ -28,9 +28,10 @@ namespace FileSystem.Ocfs2;
 /// kernel read-write mount (see <c>Ocfs2KernelMountTests</c>).</para>
 ///
 /// <para><b>Editing</b> is in place or refused: Add/Replace/Remove work on regular
-/// files in an inline root directory, on this package's volumes and on
-/// <c>mkfs.ocfs2</c>'s; defragmentation moves single-run files in place. Anything
-/// else — a nested path, an extent-backed root, a file sharing extents — raises
+/// files anywhere in a tree of inline directories (missing directories are made),
+/// on this package's volumes and on <c>mkfs.ocfs2</c>'s; defragmentation moves
+/// single-run files in place; shrink trims trailing free clusters in place.
+/// Anything else — an extent-backed directory, a file sharing extents — raises
 /// <see cref="NotSupportedException"/> and leaves the image as it was. Nothing is
 /// rebuilt, because a rebuild would draw a new UUID and reset every timestamp.
 /// DLM/heartbeat lockdown and multi-node cluster semantics are out of scope by
@@ -120,8 +121,8 @@ public sealed class Ocfs2FormatDescriptor
     "OCFS2 (Oracle Cluster Filesystem 2) — spec-correct reader that parses real "
     + "mkfs.ocfs2 volumes as well as our own; single-node (local) writer whose volumes "
     + "the Linux kernel mounts and fsck.ocfs2 passes, before and after a kernel "
-    + "read-write mount. In-place Add/Replace/Remove of root-directory files and "
-    + "in-place defragmentation; nested paths, extent-backed roots and shared extents "
+    + "read-write mount. In-place Add/Replace/Remove of files in inline directories, "
+    + "in-place defragmentation and shrink; extent-backed directories and shared extents "
     + "are refused rather than rebuilt. Single-node only — DLM/heartbeat lockdown and "
     + "multi-node cluster semantics are out of scope.";
 
@@ -209,11 +210,12 @@ public sealed class Ocfs2FormatDescriptor
   // ── IArchiveModifiable (true in-place R/W) ────────────────────────────
 
   /// <summary>
-  /// Adds (or replaces by name) files in the root directory of an existing
-  /// OCFS2 volume using <see cref="Ocfs2InPlaceModifier"/>, which touches only
-  /// the blocks the change moves. A nested path, an extent-backed root, a full
-  /// inline area or a volume without room is refused before anything is written:
-  /// relaying the volume out instead would give it a new UUID and new timestamps.
+  /// Adds (or replaces by path) files in an existing OCFS2 volume using
+  /// <see cref="Ocfs2InPlaceModifier"/>, which touches only the blocks the change
+  /// moves; missing directories on the way are made inline. A directory that is
+  /// not inline, a full inline area or a volume without room is refused before
+  /// anything is written: relaying the volume out instead would give it a new
+  /// UUID and new timestamps.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
@@ -228,21 +230,58 @@ public sealed class Ocfs2FormatDescriptor
   }
 
   /// <summary>
-  /// Removes files from the root directory of an existing OCFS2 volume using
+  /// Removes files from an existing OCFS2 volume using
   /// <see cref="Ocfs2InPlaceModifier"/>: clusters and inode bits go back to their
-  /// allocators and the blocks are zeroed. A name that is not a regular file in
-  /// the root directory is refused.
+  /// allocators and the blocks are zeroed. A name that is not a regular file, or
+  /// that sits in a directory that is not inline, is refused.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
-    var paths = entryNames.Select(n => n.Replace('\\', '/').Trim('/')).ToArray();
-    if (paths.FirstOrDefault(p => p.Contains('/')) is { } nested)
-      throw new NotSupportedException($"OCFS2: '{nested}' is not in the root directory; only root-directory files are removed in place.");
-    foreach (var (name, path) in entryNames.Zip(paths)) {
-      if (!Ocfs2InPlaceModifier.RemoveFile(archive, path, wipeData: true))
-        throw new FileNotFoundException($"OCFS2: the root directory has no '{name}'.", name);
+    foreach (var name in entryNames) {
+      if (!Ocfs2InPlaceModifier.RemoveFile(archive, name.Replace('\\', '/').Trim('/'), wipeData: true))
+        throw new FileNotFoundException($"OCFS2: the volume has no file '{name}'.", name);
     }
+  }
+
+
+  // ── IArchiveShrinkable: in-place trim ─────────────────────────────────
+
+  /// <summary>
+  /// Trims the free clusters at the end of the volume in place
+  /// (<see cref="Ocfs2Allocators.ShrinkToFit"/>): trailing empty cluster groups
+  /// leave their chains, the last group, the bitmap totals and the superblock
+  /// follow, and every file, inode, time, label and the UUID stay as they were.
+  /// When nothing can be trimmed — or the volume is one the trimmer refuses —
+  /// the volume is copied through unchanged; it is never rebuilt.
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    try {
+      input.Position = 0;
+      // A scratch file: a MemoryStream cannot hold a volume past 2 GB.
+      using var work = new FileStream(Path.Combine(Path.GetTempPath(), "cwb_ocfs2_" + Guid.NewGuid().ToString("N") + ".tmp"),
+        FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024, FileOptions.DeleteOnClose);
+      input.CopyTo(work);
+      var volume = Ocfs2Allocators.Open(work);
+      if (volume.ShrinkToFit() < volume.TotalClusters) {
+        output.Position = 0;
+        output.SetLength(0);
+        work.Position = 0;
+        work.CopyTo(output);
+        return;
+      }
+    } catch (NotSupportedException) {
+      // refused: copy through below
+    } catch (InvalidDataException) {
+      // not a volume the trimmer parses: copy through below
+    }
+
+    input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    input.CopyTo(output);
   }
 
   // ── IArchiveDefragmentable ────────────────────────────────────────────
@@ -323,7 +362,7 @@ public sealed class Ocfs2FormatDescriptor
     if (head.Length < (Ocfs2Writer.SuperBlockBlkno + 1) * blockSize) return result;
 
     var movable = new Dictionary<long, (long Size, long Blocks, string Name)>();
-    foreach (var f in Ocfs2Reader.ReadFilePlacements(head))
+    foreach (var f in Ocfs2Reader.ReadFilePlacements(head, image))
       if (f.IsSingleRun && f.Size > 0)
         movable[f.DataBlkno] = (f.Size, f.Extents[0].Blocks, f.Name);
 
@@ -430,7 +469,7 @@ public sealed class Ocfs2FormatDescriptor
     stream.Position = 0;
     using var accessor = new Compression.Core.DiskImage.ImageAccessor(stream, leaveOpen: true);
     var result = new List<(string Name, byte[] Data)>();
-    foreach (var p in Ocfs2Reader.ReadFilePlacements(head)) {
+    foreach (var p in Ocfs2Reader.ReadFilePlacements(head, stream)) {
       if (p.Size <= 0) { result.Add((p.Name, [])); continue; }
       if (p.Size > Array.MaxLength)
         throw new InvalidOperationException(
@@ -490,7 +529,7 @@ public sealed class Ocfs2FormatDescriptor
     var head = new byte[(int)Math.Min(stream.Length, MaxBufferedImageBytes)];
     stream.ReadExactly(head, 0, head.Length);
 
-    var placements = Ocfs2Reader.ReadFilePlacements(head);
+    var placements = Ocfs2Reader.ReadFilePlacements(head, stream);
     stream.Position = 0;
     using var accessor = new Compression.Core.DiskImage.ImageAccessor(stream, leaveOpen: true);
     var blockSize = Ocfs2Reader.ReadBlockSize(head);
