@@ -13,7 +13,7 @@ namespace Compression.Tests.Operations;
 [TestFixture]
 public sealed class ArchivesReadmeStateTests {
 
-  private static readonly string[] MaintenanceTokens = ["defrag", "shrink", "wipe", "optimize", "reorder"];
+  private static readonly string[] MaintenanceTokens = ["compress", "canonicalize", "repack", "defrag", "shrink", "wipe"];
 
   [Test, Category("HappyPath")]
   public void EverySupportMatrixCellMatchesTheLiveDescriptor() {
@@ -56,12 +56,15 @@ public sealed class ArchivesReadmeStateTests {
 
       var maintenance = columns.IndexOf("Maintenance");
       if (maintenance >= 0) {
+        // The by-effect operations come from the same discovery surface the CLI and the shell use.
+        var profile = MaintenanceCapabilities.Describe(descriptor);
         var expected = new List<string>();
+        if (profile.Supports(MaintenanceCapability.Compress)) expected.Add("compress");
+        if (profile.Supports(MaintenanceCapability.Canonicalize)) expected.Add("canonicalize");
+        if (profile.Supports(MaintenanceCapability.Repack)) expected.Add("repack");
         if (ops is IArchiveDefragmentable) expected.Add("defrag");
         if (ops is IArchiveShrinkable) expected.Add("shrink");
         if (ops is IWipeEmpty or IArchiveLayoutMap) expected.Add("wipe");
-        if (ops is ILayoutOptimizable || caps.HasFlag(FormatCapabilities.SupportsOptimize)) expected.Add("optimize");
-        if (ops is IFileInternalChunkMover) expected.Add("reorder");
         var documented = cells[maintenance] == "—" ? [] : cells[maintenance].Split('·', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         foreach (var token in documented)
           if (!MaintenanceTokens.Contains(token)) problems.Add($"{id}.Maintenance: unknown verb '{token}'");

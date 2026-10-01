@@ -101,7 +101,8 @@ cwb list archive.zip                     # list an addressable container
 cwb extract archive.7z -o ./output       # extract
 cwb create output.zip ./input            # create when the target format supports it
 cwb convert input.tar.gz output.tar.xz    # convert through the cheapest valid path
-cwb optimize input.zip optimized.zip     # search/re-encode for better compression
+cwb compress input.zip smaller.zip       # lossless re-encode, same format, metadata kept
+cwb maintenance card.img                 # which lossless maintenance a format offers
 cwb auto-extract sample.vhd --recursive  # disk -> partition -> filesystem -> nested payloads
 cwb carve damaged.img                    # recover recognizable files from damaged/raw data
 cwb defragment disk.img --mode pack-start
@@ -244,7 +245,12 @@ filesystem maintenance and binary analysis.
 | `replace <archive> <entry> <file>` | - | Replace a single entry with a new file |
 | `info <archive>` | - | Show detailed archive information |
 | `convert <input> <output>` | - | Convert between formats (archive, filesystem, stream) |
-| `optimize <input> <output>` | `opt` | Re-encode with optimal compression; `--search-blocks` / `--best` searches building blocks and `--apply <out>` writes the winner |
+| `compress <input> [output]` | - | Re-encode with the format's best compression, keeping the format and its metadata; lossless or refused |
+| `canonicalize <input> [output]` | - | Rewrite into the canonical form (MP4 fast start, metadata order, MacBinary normal form) without re-encoding |
+| `repack <input> [output]` | - | Rebuild from the same entries, copied verbatim, dropping dead space |
+| `sort-entries <image>` | `sort-dir` | Sort FAT/exFAT directory entries in place; nothing else moves |
+| `maintenance <file>` | - | List the maintenance operations, defrag modes and geometry keys the file's format offers |
+| `optimize <input> <output>` | `opt` | Same as `compress`; `--search-blocks` / `--best` instead searches building blocks and `--apply <out>` writes the winner |
 | `bestfit <file>` | - | Benchmark building blocks, rank them and report the best compressor; `--apply <out>` writes it and `--ratio` favours best ratio within the speed window |
 | `benchmark <file>` | `bench` | Benchmark all building blocks on the supplied data |
 | `formats` | - | List all supported formats |
@@ -276,7 +282,7 @@ cwb x archive.rar -p mypassword
 cwb create output.zip myDir file1.txt '*.txt'
 cwb create output.7z file.txt --method lzma2+
 cwb convert input.tar.gz output.tar.xz
-cwb optimize input.zip optimized.zip
+cwb compress input.zip optimized.zip
 cwb benchmark largefile.bin
 cwb analyze unknown.bin
 cwb auto-extract sample.vhd --recursive
@@ -429,7 +435,7 @@ Three cross-cutting ideas are worth knowing at root level because they combine s
 ### 🗜️ Compression search
 
 Building blocks expose their tunable parameters instead of collapsing to a single "fast" or "best"
-preset. `benchmark`, `bestfit` and `optimize` can compare algorithms and parameter sets on the actual
+preset. `benchmark`, `bestfit` and `compress` can compare algorithms and parameter sets on the actual
 input data. Algorithm details and input-size constraints live in
 [Compression.Core/README.md](Compression.Core/README.md) and [docs/LARGE-INPUTS.md](docs/LARGE-INPUTS.md).
 
@@ -442,8 +448,10 @@ than by hard-coded format pairs.
 
 ### 🧹 Maintenance
 
-Archives, filesystems and disk-image containers can expose maintenance verbs such as defragment,
-shrink, wipe, layout/optimize or reorder. Those are capabilities, not promises made for every format.
+Archives, filesystems and disk-image containers can expose maintenance operations split by effect —
+compress, canonicalize, repack, sort directory entries, defragment, change geometry, shrink, purge,
+wipe. Each is lossless or refuses, and each is a capability, not a promise made for every format:
+`cwb maintenance <file>` and `MaintenanceCapabilities.Describe` answer per format.
 The authoritative per-format cells are in the [archive](Hawkynt.FileFormats.Archives/README.md) and
 [filesystem](Hawkynt.FileFormats.FileSystems/README.md) matrices; the common mechanisms are described
 in [docs/MAINTENANCE-MECHANISMS.md](docs/MAINTENANCE-MECHANISMS.md).

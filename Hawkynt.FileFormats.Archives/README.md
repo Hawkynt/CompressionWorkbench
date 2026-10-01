@@ -24,7 +24,7 @@ The package bundles the archive-domain `FileFormat.*` assemblies and takes `Hawk
 
 - Compression-stream readers and writers for modern and historical formats, including the encodings (BinHex, MacBinary, uuencode/base64, yEnc).
 - Archive enumeration, extraction, test, fresh creation and — for most containers — add/replace/remove on an existing archive.
-- Maintenance verbs on the same surface: defragment, shrink, wipe unused space, optimize layout, reorder metadata.
+- Maintenance operations split by effect, each lossless or refused: compress (lossless re-encode), canonicalize, repack, defragment, shrink, wipe unused space.
 - Software-package and installer inspection without executing the package or installer.
 - Office, OpenDocument, e-book, mail and web bundles exposed through the same archive surface.
 - Game, engine, console, Amiga and vintage archives beside the mainstream ZIP / TAR / 7z / RAR / CAB families.
@@ -39,7 +39,7 @@ The package bundles the archive-domain `FileFormat.*` assemblies and takes `Hawk
 | **WORM** | Read plus create a fresh archive; no edit of an existing one. |
 | **R/W** | Read plus add / replace / remove on an existing archive. The edit may be byte-preserving in place or a verified extract → edit → re-create rebuild; both keep the result valid. |
 
-Column legend: **Id** is the registry identifier (`FormatRegistry.GetById`, `cwb formats`). **Test** — the descriptor verifies checksums/structure (`CanTest`). **Maintenance** — the verbs the descriptor implements: `defrag` (`IArchiveDefragmentable`), `shrink` (`IArchiveShrinkable`), `wipe` (`IWipeEmpty` / `IArchiveLayoutMap`), `optimize` (`ILayoutOptimizable` or `SupportsOptimize`), `reorder` (`IFileInternalChunkMover`, moving container metadata such as MP4 `moov` or Matroska `Cues` in place). For media containers **Demux** is per-track extraction, **Mux** is building a container from elementary streams, **Remux / edit** is in-place relayout or editing. **Notes** name the deliberate subset or the naming quirk worth knowing; formats that do not preserve arbitrary entry names say so there.
+Column legend: **Id** is the registry identifier (`FormatRegistry.GetById`, `cwb formats`). **Test** — the descriptor verifies checksums/structure (`CanTest`). **Maintenance** — the operations the descriptor offers (`MaintenanceCapabilities`): `compress` (`ICompressionOptimizable`: re-encode with the best compression, names, times, attributes and headers kept), `canonicalize` (`IArchiveCanonicalizable`: canonical form without re-encoding, e.g. MP4 `moov` first), `repack` (`IArchiveRepackable`: entries copied verbatim, dead space dropped), `defrag` (`IArchiveDefragmentable`), `shrink` (`IArchiveShrinkable`), `wipe` (`IWipeEmpty` / `IArchiveLayoutMap`). The **Optimize** column is the creation-time `method+` parameter search (`SupportsOptimize`), not a maintenance operation. For media containers **Demux** is per-track extraction, **Mux** is building a container from elementary streams, **Remux / edit** is in-place relayout or editing. **Notes** name the deliberate subset or the naming quirk worth knowing; formats that do not preserve arbitrary entry names say so there.
 
 Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is derived from the descriptor's `Capabilities` and the interfaces its operations object implements; `Compression.Tests.Operations.ArchivesReadmeStateTests` fails when a cell disagrees with the built registry, so the table cannot drift from the code.
 
@@ -136,7 +136,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | PackDisk (Amiga) | `PackDisk` | `.pdsk` | WORM | ✅ | defrag | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
 | PackIt | `PackIt` | `.pit` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [RAR](https://en.wikipedia.org/wiki/RAR_(file_format)) | `Rar` | `.rar` | R/W | ✅ | wipe | v1–v5 readers; creation and edits emit RAR4/RAR5 without claiming WinRAR encoder parity | [rarlab.com](https://www.rarlab.com/technote.htm) |
-| [7z](https://en.wikipedia.org/wiki/7z) | `SevenZip` | `.7z` | R/W | ✅ | wipe |  | [7-zip.org](https://www.7-zip.org/7z.html) |
+| [7z](https://en.wikipedia.org/wiki/7z) | `SevenZip` | `.7z` | R/W | ✅ | compress · wipe |  | [7-zip.org](https://www.7-zip.org/7z.html) |
 | [SHAR](https://en.wikipedia.org/wiki/Shar) | `Shar` | `.shar` `.sh` | R/W | ✅ | defrag | Add appends in place; Remove re-emits the script from the survivors | [gnu.org](https://www.gnu.org/software/sharutils/) |
 | [Spark (RISC OS)](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Spark` | `.spk` `.spark` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Spark) |
 | [Split File (.001)](https://en.wikipedia.org/wiki/File_spanning) | `SplitFile` | `.001` | WORM | ✅ | — |  | [Wikipedia](https://en.wikipedia.org/wiki/File_spanning) |
@@ -153,7 +153,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | xDisk / GDC (Amiga) | `xDisk` | `.xdsk` `.gdc` | WORM | ✅ | defrag | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
 | xMash (Amiga) | `xMash` | `.xmsh` | WORM | ✅ | defrag | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
 | ZAP (Amiga) | `Zap` | `.zap` | WORM | ✅ | wipe | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net/) |
-| [ZIP](https://en.wikipedia.org/wiki/ZIP_(file_format)) | `Zip` | `.zip` `.zipx` | R/W | ✅ | shrink · wipe · optimize | Store, Deflate, Deflate64, Shrink, Reduce, Implode, BZip2, LZMA, PPMd, Zstd, AES | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
+| [ZIP](https://en.wikipedia.org/wiki/ZIP_(file_format)) | `Zip` | `.zip` `.zipx` | R/W | ✅ | compress · repack · shrink · wipe | Store, Deflate, Deflate64, Shrink, Reduce, Implode, BZip2, LZMA, PPMd, Zstd, AES | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
 | [ZOO](https://en.wikipedia.org/wiki/Zoo_(file_format)) | `Zoo` | `.zoo` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/ZOO) |
 | [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `Zpaq` | `.zpaq` | R/W | ✅ | defrag | Reader covers the stored/simple models; ZPAQL virtual-machine execution is not implemented | [mattmahoney.net](http://mattmahoney.net/dc/zpaq.html) |
 
@@ -286,7 +286,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Mass Effect TFC | `Tfc` | `.tfc` | WORM | ✅ | — | Entries are bundle_NNNNN.bin | [GitHub](https://github.com/ME3Tweaks/LegendaryExplorer) |
 | Nintendo U8 | `U8` | `.u8` `.arc` | R/W | ✅ | defrag · wipe |  | [wiibrew.org](https://wiibrew.org/wiki/U8_archive) |
 | Unreal UMX | `Umx` | `.umx` | WORM | ✅ | wipe | Header/package shell output only; the export table is not encoded | [wiki.beyondunreal.com](https://wiki.beyondunreal.com/Legacy:Package_File_Format) |
-| Unity asset bundle | `UnityBundle` | `.bundle` `.unity3d` `.assetbundle` | R/W | ✅ | defrag · optimize | BlocksInfo-at-end bundles edit in place by appending tail blocks; other layouts rebuild | [docs.unity3d.com](https://docs.unity3d.com/Manual/AssetBundlesIntro.html) |
+| Unity asset bundle | `UnityBundle` | `.bundle` `.unity3d` `.assetbundle` | R/W | ✅ | defrag | BlocksInfo-at-end bundles edit in place by appending tail blocks; other layouts rebuild | [docs.unity3d.com](https://docs.unity3d.com/Manual/AssetBundlesIntro.html) |
 | Unreal .pak | `UnrealPak` | `.pak` | WORM | ✅ | defrag |  | [GitHub](https://github.com/panzi/u4pak) |
 | Valve VPK | `Vpk` | `.vpk` | R/W | ✅ | defrag · wipe |  | [developer.valvesoftware.com](https://developer.valvesoftware.com/wiki/VPK) |
 | Volition VPP v1 | `Vpp` | `.vpp` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/gibbed/Gibbed.Volition) |

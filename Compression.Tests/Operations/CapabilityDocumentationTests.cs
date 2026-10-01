@@ -29,8 +29,9 @@ public sealed class CapabilityDocumentationTests {
     var problems = new List<string>();
 
     foreach (var id in FormatRegistry.FilesystemFormatIds) {
-      var ops = FormatRegistry.GetArchiveOps(id);
-      var expected = ExpectedRow(ops);
+      var descriptor = FormatRegistry.GetById(id);
+      if (descriptor is null) { problems.Add($"{id}: no descriptor registered"); continue; }
+      var expected = ExpectedRow(descriptor);
       if (!documented.Remove(id, out var actual)) {
         problems.Add($"missing row: {RenderRow(id, expected)}");
         continue;
@@ -75,15 +76,18 @@ public sealed class CapabilityDocumentationTests {
       "Write-capability prose contradicts executable descriptor state:\n" + string.Join("\n", contradictions));
   }
 
-  private static Dictionary<string, bool> ExpectedRow(IArchiveFormatOperations? ops)
-    => new(StringComparer.OrdinalIgnoreCase) {
-      ["Compact"] = FilesystemSupportMatrix.Compacts(ops),
-      ["Defrag"] = FilesystemSupportMatrix.Defrags(ops),
-      ["Wipe"] = FilesystemSupportMatrix.Wipes(ops),
-      ["Shrink"] = FilesystemSupportMatrix.Shrinks(ops),
-      ["Layout"] = FilesystemSupportMatrix.RelaysOut(ops),
-      ["Purge"] = FilesystemSupportMatrix.Purges(ops),
+  private static Dictionary<string, bool> ExpectedRow(IFormatDescriptor descriptor) {
+    var profile = MaintenanceCapabilities.Describe(descriptor);
+    return new(StringComparer.OrdinalIgnoreCase) {
+      ["Compact"] = profile.Supports(MaintenanceCapability.Compact),
+      ["Defrag"] = FilesystemSupportMatrix.Defrags(FormatRegistry.GetArchiveOps(descriptor.Id)),
+      ["Sort"] = profile.Supports(MaintenanceCapability.SortDirectoryEntries),
+      ["Wipe"] = profile.Supports(MaintenanceCapability.WipeUnused),
+      ["Shrink"] = profile.Supports(MaintenanceCapability.Shrink),
+      ["Geometry"] = profile.Supports(MaintenanceCapability.ChangeGeometry),
+      ["Purge"] = profile.Supports(MaintenanceCapability.Purge),
     };
+  }
 
   /// <summary>
   /// Every row of every family table in the generated region, keyed by the id in
@@ -93,7 +97,7 @@ public sealed class CapabilityDocumentationTests {
   private static Dictionary<string, Dictionary<string, bool>> ParseFilesystemMatrix(string section) {
     var lines = section.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
     var result = new Dictionary<string, Dictionary<string, bool>>(StringComparer.OrdinalIgnoreCase);
-    var verbs = new[] { "Compact", "Defrag", "Wipe", "Shrink", "Layout", "Purge" };
+    var verbs = new[] { "Compact", "Defrag", "Sort", "Wipe", "Shrink", "Geometry", "Purge" };
     List<string>? columns = null;
 
     foreach (var line in lines) {
@@ -134,7 +138,7 @@ public sealed class CapabilityDocumentationTests {
   private static string Render(bool value) => value ? "✅" : "—";
 
   private static string RenderRow(string id, IReadOnlyDictionary<string, bool> row)
-    => $"| `{id}` | {Render(row["Compact"])} | {Render(row["Defrag"])} | {Render(row["Wipe"])} | {Render(row["Shrink"])} | {Render(row["Layout"])} | {Render(row["Purge"])} |";
+    => $"| `{id}` | {Render(row["Compact"])} | {Render(row["Defrag"])} | {Render(row["Sort"])} | {Render(row["Wipe"])} | {Render(row["Shrink"])} | {Render(row["Geometry"])} | {Render(row["Purge"])} |";
 
   private static string Slice(string text, string startHeading, string endHeading) {
     var start = text.IndexOf(startHeading, StringComparison.Ordinal);
