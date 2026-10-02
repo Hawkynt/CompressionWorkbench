@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace Compression.Core.Streams;
 
 /// <summary>
@@ -68,6 +70,58 @@ public abstract class CompressionStream : Stream {
       throw new InvalidOperationException("Cannot write to a compression stream in Decompress mode.");
 
     this.CompressBlock(buffer, offset, count);
+  }
+
+  /// <inheritdoc />
+  public override int Read(Span<byte> buffer) {
+    ObjectDisposedException.ThrowIf(this._disposed, this);
+
+    return this.Mode != CompressionStreamMode.Decompress
+      ? throw new InvalidOperationException("Cannot read from a compression stream in Compress mode.")
+      : this.DecompressBlock(buffer);
+  }
+
+  /// <inheritdoc />
+  public override void Write(ReadOnlySpan<byte> buffer) {
+    ObjectDisposedException.ThrowIf(this._disposed, this);
+
+    if (this.Mode != CompressionStreamMode.Compress)
+      throw new InvalidOperationException("Cannot write to a compression stream in Decompress mode.");
+
+    this.CompressBlock(buffer);
+  }
+
+  /// <summary>
+  /// Decompresses into a span. The default goes through a pooled array and
+  /// <see cref="DecompressBlock(byte[], int, int)"/>; codecs that can decode into a span directly
+  /// override it.
+  /// </summary>
+  /// <param name="buffer">Where to put the decompressed bytes.</param>
+  /// <returns>The number of bytes decompressed, or 0 at the end of the compressed data.</returns>
+  protected virtual int DecompressBlock(Span<byte> buffer) {
+    var rented = ArrayPool<byte>.Shared.Rent(buffer.Length);
+    try {
+      var n = this.DecompressBlock(rented, 0, buffer.Length);
+      rented.AsSpan(0, n).CopyTo(buffer);
+      return n;
+    } finally {
+      ArrayPool<byte>.Shared.Return(rented);
+    }
+  }
+
+  /// <summary>
+  /// Compresses a span. The default goes through a pooled array and
+  /// <see cref="CompressBlock(byte[], int, int)"/>; codecs that can take a span directly override it.
+  /// </summary>
+  /// <param name="buffer">The bytes to compress.</param>
+  protected virtual void CompressBlock(ReadOnlySpan<byte> buffer) {
+    var rented = ArrayPool<byte>.Shared.Rent(buffer.Length);
+    try {
+      buffer.CopyTo(rented);
+      this.CompressBlock(rented, 0, buffer.Length);
+    } finally {
+      ArrayPool<byte>.Shared.Return(rented);
+    }
   }
 
   /// <inheritdoc />
