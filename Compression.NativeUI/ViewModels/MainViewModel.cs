@@ -876,11 +876,11 @@ internal sealed class MainViewModel : ViewModelBase {
   /// offered for an operation the tab would then refuse.
   /// </summary>
   private bool CanMaintain(MaintenanceVerb verb)
-    => TryResolveMaintenanceTarget(out var formatId, out _) && MaintenanceCapabilities.For(formatId).Verb(verb).Supported;
+    => TryResolveMaintenanceTarget(out var formatId, out _) && TargetCapabilities.For(formatId).Verb(verb).Supported;
 
   /// <summary>Whether there is a maintenance target that supports at least one operation.</summary>
   internal bool HasMaintenanceTarget
-    => TryResolveMaintenanceTarget(out var formatId, out _) && MaintenanceCapabilities.For(formatId).AnySupported;
+    => TryResolveMaintenanceTarget(out var formatId, out _) && TargetCapabilities.For(formatId).AnySupported;
 
   /// <summary>
   /// Identifies the resolved maintenance target — the selected archive file or entry, else the open

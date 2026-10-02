@@ -361,8 +361,9 @@ selected. While it is selected the block map takes the whole client area — lin
 platter or a 3-D stack of platters, with an optional files panel and colour key — and the ribbon picks
 the operation (Defragment, Optimize, Shrink, Compact, Clear free space, Purge, Scramble), the
 defragmentation mode (Consolidate at the start or end, Defrag by filling holes, Re-order into ascending
-blocks, Carve a hole of a chosen size and offset), the block interleave (1–256), metadata placement and
-layout profile. Each item is enabled only where the format supports it and says why when it is not;
+blocks, Carve a hole of a chosen size and offset, or Sort Entries — directories sorted by name in place,
+on FAT and exFAT), the block interleave (1–256), metadata placement, layout profile and, for Optimize,
+whether to compress, repack or canonicalize. Each item is enabled only where the format supports it and says why when it is not;
 a request the format refuses leaves the image byte-identical. Leaving the tab returns the browser
 exactly as it was.
 

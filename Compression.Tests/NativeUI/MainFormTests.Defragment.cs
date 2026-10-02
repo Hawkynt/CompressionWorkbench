@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using Compression.Core.Layout;
 using Compression.Lib;
+using Compression.Registry;
 using Compression.NativeUI;
 using Compression.NativeUI.Controls;
 using Compression.NativeUI.Navigation;
@@ -122,7 +123,7 @@ public sealed partial class MainFormTests {
   // ── what is offered ─────────────────────────────────────────────────────────────────────────
 
   [Test]
-  public void GivenAFatImage_WhenOnTheTab_ThenDefragmentIsOfferedAndOptimizeIsNotAndEachSaysWhy() {
+  public void GivenAFatImage_WhenOnTheTab_ThenEachItemFollowsTheRegistryProfileAndSaysWhy() {
     WithImages(root => WithShell(shell => {
       OpenOnDefragmentTab(shell, MaintenanceFixtures.FragmentedFat(root));
 
@@ -131,10 +132,11 @@ public sealed partial class MainFormTests {
         Assert.That(Toggle(shell, "Defragment").Checked, Is.True, "the first supported operation is preselected");
         Assert.That(Toggle(shell, "Shrink").Enabled, Is.True);
         Assert.That(Toggle(shell, "Clear").Enabled, Is.True);
-        Assert.That(Toggle(shell, "Optimize").Enabled, Is.False);
-        Assert.That(Toggle(shell, "Optimize").ToolTipText, Does.Contain("no optimizer"));
-        Assert.That(Toggle(shell, "Sort Entries").Enabled, Is.False);
-        Assert.That(Toggle(shell, "Sort Entries").ToolTipText, Does.Contain("sorting directory entries"));
+        var profile = MaintenanceCapabilities.Describe("Fat")!;
+        var optimizes = profile.Supports(MaintenanceCapability.Compress) || profile.Supports(MaintenanceCapability.Repack) || profile.Supports(MaintenanceCapability.Canonicalize);
+        Assert.That(Toggle(shell, "Optimize").Enabled, Is.EqualTo(optimizes));
+        Assert.That(Toggle(shell, "Optimize").ToolTipText, Does.StartWith("Optimize: "), "says why either way");
+        Assert.That(Toggle(shell, "Sort Entries").Enabled, Is.True, "FAT sorts directory entries (#440)");
         Assert.That(Item<RibbonButton>(shell, "Start").Enabled, Is.True);
       });
     }));
@@ -149,6 +151,8 @@ public sealed partial class MainFormTests {
         Assert.That(Toggle(shell, "Defragment").Enabled, Is.False);
         Assert.That(Toggle(shell, "Optimize").Enabled, Is.True);
         Assert.That(Toggle(shell, "Optimize").Checked, Is.True);
+        Assert.That(Item<RibbonComboBox>(shell, "Method").Visible, Is.True, "Optimize offers its methods");
+        Assert.That(Item<RibbonComboBox>(shell, "Method").Items, Is.Not.Empty);
         Assert.That(Toggle(shell, "Purge").Enabled, Is.True);
         Assert.That(Toggle(shell, "Consolidate").Enabled, Is.False, "no defrag mode applies to an archive");
       });
@@ -330,6 +334,35 @@ public sealed partial class MainFormTests {
           Assert.That(after[name], Is.EqualTo(data), $"{name} byte-identical");
         Assert.That(DefragView(shell).StatusText, Does.Contain("no fragmentation"), "the map is read again afterwards");
         Assert.That(DiskTools(shell).Visible, Is.True, "the tab stays with its image after the reload");
+      });
+    }));
+  }
+
+  [Test]
+  public void GivenAnUnsortedFat_WhenSortEntriesIsStarted_ThenTheRootIsSortedInPlaceAndTheLayoutOptionsDoNotApply() {
+    WithImages(root => WithShell(shell => {
+      var image = MaintenanceFixtures.UnsortedFat(root);
+      var size = new FileInfo(image).Length;
+      OpenOnDefragmentTab(shell, image);
+
+      Toggle(shell, "Sort Entries").PerformClick();
+      Assert.Multiple(() => {
+        Assert.That(Toggle(shell, "Sort Entries").Checked, Is.True);
+        Assert.That(Field<RibbonSpinner>(shell, "_interleaveSpinner").Enabled, Is.False, "a sort moves no data, so interleave does not apply");
+        Assert.That(Field<RibbonSpinner>(shell, "_interleaveSpinner").ToolTipText, Does.Contain("extent moves"));
+      });
+
+      Item<RibbonButton>(shell, "Start").PerformClick();
+      Settle(shell);
+
+      var order = MaintenanceFixtures.RootOrder(image);
+      Assert.Multiple(() => {
+        Assert.That(Field<MainViewModel>(shell, "_model").StatusText, Does.StartWith("Defragment finished"));
+        Assert.That(order, Is.EqualTo(MaintenanceFixtures.NameOrder(order)));
+        Assert.That(new FileInfo(image).Length, Is.EqualTo(size));
+        var after = MaintenanceFixtures.ReadFatFiles(image);
+        foreach (var (name, data) in MaintenanceFixtures.UnsortedFatFiles)
+          Assert.That(after[name], Is.EqualTo(data), name);
       });
     }));
   }
