@@ -7841,7 +7841,7 @@ In-place HFS+ modifier — performs random-access mutation of an existing HFS+ i
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AddFile` | `static void AddFile(Stream image, string name, byte[] data)` | Adds (or replaces by name) a file. If the catalog leaf cannot fit the new record, falls back to a full rebuild so the call always succeeds. |
-| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file. Returns true if it was present and removed, false if no such entry exists. `name` is the POSIX name, with ':' where the catalog stores '/'. A hard link is refused: its indirect node file's link count would be left counting it. |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named file. Returns true if it was present and removed, false if no such entry exists. `name` is the POSIX name, with ':' where the catalog stores '/'. Every extent of both forks is wiped (when asked) and freed. Refused, with the volume untouched: a hard link (its indirect node file's link count would be left counting it), a file with extended attributes or transparent compression (its attribute records would be orphaned), a fork continued in the extents overflow file (those records would be orphaned), and an allocation file that does not start at block 1. |
 
 #### `HfsPlusReader`
 

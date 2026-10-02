@@ -109,6 +109,21 @@ public class HfsPlusExternalConformanceTests {
     AssertFsckClean(writer.Build());
   }
 
+  [Test]
+  public void FragmentedFileRemovedInPlace_PassesFsckCleanly() {
+    if (!IsLinux) Assert.Ignore("fsck.hfsplus conformance check is Linux-only");
+    if (!HasCommand("fsck.hfsplus")) Assert.Ignore("fsck.hfsplus (hfsprogs) not installed");
+
+    // A file in three extents out of disk order, removed in place: every extent must be
+    // freed, or fsck reports blocks allocated to no file and a wrong free count.
+    var image = HfsPlusRemoveExtentsTests.FragmentedVolume(out _);
+    AssertFsckClean(image);
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    Assert.That(HfsPlusModifier.RemoveFile(ms, "split.bin"), Is.True);
+    AssertFsckClean(ms.ToArray());
+  }
+
   private void AssertFsckClean(byte[] image) {
     var imagePath = Path.Combine(_tmpDir, "volume.hfsplus");
     File.WriteAllBytes(imagePath, image);

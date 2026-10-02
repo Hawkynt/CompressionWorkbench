@@ -60,8 +60,11 @@ public static class HfsPlusModifier {
   /// <summary>
   /// Removes the named file. Returns true if it was present and removed,
   /// false if no such entry exists. <paramref name="name"/> is the POSIX name, with ':' where
-  /// the catalog stores '/'. A hard link is refused: its indirect node file's link count
-  /// would be left counting it.
+  /// the catalog stores '/'. Every extent of both forks is wiped (when asked) and freed. Refused,
+  /// with the volume untouched: a hard link (its indirect node file's link count would be left
+  /// counting it), a file with extended attributes or transparent compression (its attribute
+  /// records would be orphaned), a fork continued in the extents overflow file (those records
+  /// would be orphaned), and an allocation file that does not start at block 1.
   /// </summary>
   public static bool RemoveFile(Stream image, string name, bool wipeData = true) {
     ArgumentNullException.ThrowIfNull(image);
@@ -80,28 +83,50 @@ public static class HfsPlusModifier {
     var leaf = img.AsSpan(leafBase, ctx.NodeSize);
 
     // Locate the file record (recordType 2, key parent==RootFolderCnid, name match).
-    if (!TryFindFileRecord(leaf, ctx.NodeSize, name, out var fileRecIdx, out var fileCnid,
-        out var startBlock, out var blockCount, out var isHardLink))
+    if (!TryFindFileRecord(leaf, ctx.NodeSize, name, out var fileRecIdx, out var fileCnid, out var record))
       return false;
-    if (isHardLink)
+    var shown = HfsPlusName.FromCatalog(name);
+    // TN1150: a hard link is a file of type 'hlnk', creator 'hfs+' (userInfo at +48).
+    if (BinaryPrimitives.ReadUInt32BigEndian(leaf[(record + 48)..]) == 0x686C6E6B
+        && BinaryPrimitives.ReadUInt32BigEndian(leaf[(record + 52)..]) == 0x6866732B)
       throw new NotSupportedException(
-        $"HFS+: '{HfsPlusName.FromCatalog(name)}' is a hard link; removing it in place would leave its shared data's link count wrong.");
+        $"HFS+: '{shown}' is a hard link; removing it in place would leave its shared data's link count wrong.");
+    // kHFSHasAttributesMask (flags 0x0004), or UF_COMPRESSED (ownerFlags 0x20), whose
+    // content lives in an attribute.
+    if ((BinaryPrimitives.ReadUInt16BigEndian(leaf[(record + 2)..]) & 0x0004) != 0 || (leaf[record + 32 + 9] & 0x20) != 0)
+      throw new NotSupportedException(
+        $"HFS+: '{shown}' has extended attributes; removing it in place would orphan their records.");
+    var extents = new List<(uint Start, uint Count)>();
+    foreach (var fork in new[] { DataForkOffset, ResourceForkOffset }) {
+      var forkExtents = ForkExtents(leaf[(record + fork)..], out var complete);
+      if (!complete)
+        throw new NotSupportedException(
+          $"HFS+: '{shown}' continues in the extents overflow file; removing it in place would orphan those records.");
+      extents.AddRange(forkExtents);
+    }
+    if (AllocationFileStart(img) != 1)
+      throw new NotSupportedException("HFS+: the allocation file does not start at block 1; the in-place editor does not edit it there.");
+    if (extents.Any(e => (long)e.Start + e.Count > ctx.TotalBlocks))
+      throw new InvalidDataException($"HFS+: '{shown}' has an extent past the end of the volume.");
 
     // Locate the matching file thread record (key parent==fileCnid, empty name).
     var threadRecIdx = FindThreadRecord(leaf, ctx.NodeSize, fileCnid);
 
-    // Wipe data blocks.
-    if (wipeData && blockCount > 0) {
-      var dataOffset = (long)startBlock * ctx.BlockSize;
-      var byteLen = (long)blockCount * ctx.BlockSize;
-      if (dataOffset + byteLen <= img.Length)
-        img.AsSpan((int)dataOffset, (int)byteLen).Clear();
-    }
-
-    // Free bitmap bits.
+    // Wipe and free every extent of both forks; freeing only the first leaked
+    // the rest of a fragmented file and left the bitmap claiming blocks no file owned.
     var bitmapBase = ctx.BlockSize; // allocation bitmap lives at block 1
-    for (uint b = startBlock; b < startBlock + blockCount; b++)
-      ClearBitmapBit(img, (int)bitmapBase, b);
+    uint blockCount = 0;
+    foreach (var (start, count) in extents) {
+      if (wipeData) {
+        var dataOffset = (long)start * ctx.BlockSize;
+        var byteLen = (long)count * ctx.BlockSize;
+        if (dataOffset + byteLen <= img.Length)
+          img.AsSpan((int)dataOffset, (int)byteLen).Clear();
+      }
+      for (var b = start; b < start + count; b++)
+        ClearBitmapBit(img, (int)bitmapBase, b);
+      blockCount += count;
+    }
 
     // Remove records from the leaf (highest index first to avoid shifting issues).
     var indices = threadRecIdx >= 0
@@ -265,8 +290,8 @@ public static class HfsPlusModifier {
   /// equal to the root folder and whose name matches <paramref name="name"/>.
   /// </summary>
   private static bool TryFindFileRecord(ReadOnlySpan<byte> leaf, int nodeSize, string name,
-      out int recordIndex, out uint fileCnid, out uint startBlock, out uint blockCount, out bool isHardLink) {
-    recordIndex = -1; fileCnid = 0; startBlock = 0; blockCount = 0; isHardLink = false;
+      out int recordIndex, out uint fileCnid, out int recordOffset) {
+    recordIndex = -1; fileCnid = 0; recordOffset = -1;
     var numRecords = BinaryPrimitives.ReadUInt16BigEndian(leaf[10..]);
     var nameBytes = Encoding.BigEndianUnicode.GetBytes(name);
 
@@ -293,16 +318,35 @@ public static class HfsPlusModifier {
       if (recType != 2) continue;
 
       fileCnid = BinaryPrimitives.ReadUInt32BigEndian(leaf[(dataOff + 8)..]);
-      startBlock = BinaryPrimitives.ReadUInt32BigEndian(leaf[(dataOff + DataForkOffset + 16)..]);
-      blockCount = BinaryPrimitives.ReadUInt32BigEndian(leaf[(dataOff + DataForkOffset + 20)..]);
-      // TN1150: a hard link is a file of type 'hlnk', creator 'hfs+' (userInfo at +48).
-      isHardLink = BinaryPrimitives.ReadUInt32BigEndian(leaf[(dataOff + 48)..]) == 0x686C6E6B
-                   && BinaryPrimitives.ReadUInt32BigEndian(leaf[(dataOff + 52)..]) == 0x6866732B;
+      recordOffset = dataOff;
       recordIndex = i;
       return true;
     }
     return false;
   }
+
+  /// <summary>
+  /// The eight extent descriptors of one HFSPlusForkData (logicalSize u64, clumpSize u32,
+  /// totalBlocks u32, extents); <paramref name="complete"/> is false when they hold fewer
+  /// blocks than totalBlocks, i.e. the overflow file holds the rest.
+  /// </summary>
+  private static List<(uint Start, uint Count)> ForkExtents(ReadOnlySpan<byte> fork, out bool complete) {
+    var totalBlocks = BinaryPrimitives.ReadUInt32BigEndian(fork[12..]);
+    var extents = new List<(uint Start, uint Count)>(8);
+    long covered = 0;
+    for (var k = 0; k < 8; k++) {
+      var count = BinaryPrimitives.ReadUInt32BigEndian(fork[(20 + k * 8)..]);
+      if (count == 0) break;
+      extents.Add((BinaryPrimitives.ReadUInt32BigEndian(fork[(16 + k * 8)..]), count));
+      covered += count;
+    }
+    complete = covered >= totalBlocks;
+    return extents;
+  }
+
+  /// <summary>The allocation file's first block (volume header allocationFile.extents[0]).</summary>
+  private static uint AllocationFileStart(byte[] img)
+    => BinaryPrimitives.ReadUInt32BigEndian(img.AsSpan(VolumeHeaderOffset + 112 + 16));
 
   /// <summary>
   /// Finds the file thread record whose key is (parent=fileCnid, name="").
