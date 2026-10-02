@@ -28,7 +28,7 @@ public sealed class HfsPlusReader : IDisposable {
   private readonly uint _catalogBlockCount;
   private readonly uint _extentsStartBlock;
   private readonly uint _extentsBlockCount;
-  private Dictionary<uint, List<(uint StartBlock, uint Count, uint FileStart)>>? _overflow;
+  private Dictionary<(uint, byte), List<(uint StartBlock, uint Count, uint FileStart)>>? _overflow;
 
   private const int VolumeHeaderOffset = 1024;
   private const int VolumeHeaderSize = 512;
@@ -92,6 +92,7 @@ public sealed class HfsPlusReader : IDisposable {
     // Parse catalog B-tree.
     var nodes = new List<CatalogNode>();
     ParseCatalog(nodes);
+    AttachDecmpfs(nodes, vh[352..]);
     (Entries, AllFiles) = Resolve(nodes);
   }
 
@@ -128,6 +129,97 @@ public sealed class HfsPlusReader : IDisposable {
     public IReadOnlyList<(uint StartBlock, uint BlockCount)> Extents { get; init; } = [];
     public bool IsSymlink { get; init; }
     public string? LinkTarget { get; init; }
+    public bool IsCompressed { get; init; }
+    public long ResourceSize { get; init; }
+    public IReadOnlyList<(uint StartBlock, uint BlockCount)> ResourceExtents { get; init; } = [];
+    public byte[]? Decmpfs { get; init; }
+  }
+
+  private const string DecmpfsAttributeName = "com.apple.decmpfs";
+
+  /// <summary>
+  /// Gives every file flagged UF_COMPRESSED its "com.apple.decmpfs" extended attribute and the
+  /// size that attribute's header records, which is the file's real length (its data fork is
+  /// empty). The attributes file is a B-tree like the catalog (TN1150): key = keyLength u16,
+  /// pad u16, fileID u32, startBlock u32, nameLength u16, UTF-16BE name; an inline record is
+  /// recordType 0x10, reserved u32 x2, size u32, data; a fork record is 0x20, reserved u32,
+  /// HFSPlusForkData.
+  /// </summary>
+  private void AttachDecmpfs(List<CatalogNode> nodes, ReadOnlySpan<byte> attributesFork) {
+    var wanted = nodes.Where(static n => n.IsCompressed).Select(static n => n.Cnid).ToHashSet();
+    if (wanted.Count == 0) return;
+    var found = new Dictionary<uint, byte[]>();
+    var forkExtents = new List<(uint StartBlock, uint BlockCount)>();
+    for (var k = 0; k < 8; k++) {
+      var count = BinaryPrimitives.ReadUInt32BigEndian(attributesFork[(20 + k * 8)..]);
+      if (count == 0) break;
+      forkExtents.Add((BinaryPrimitives.ReadUInt32BigEndian(attributesFork[(16 + k * 8)..]), count));
+    }
+    var forkBytes = forkExtents.Sum(static e => (long)e.BlockCount) * _blockSize;
+    if (forkBytes < 512) return;
+    var header = ReadExtents(forkExtents, 0, 512);
+    if ((sbyte)header[8] != 1) return;
+    var firstLeaf = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(14 + 10));
+    var nodeSize = BinaryPrimitives.ReadUInt16BigEndian(header.AsSpan(14 + 18));
+    if (nodeSize < 512) return;
+    var visited = new HashSet<uint>();
+    for (var node = firstLeaf; node != 0 && visited.Add(node);) {
+      if ((long)(node + 1) * nodeSize > forkBytes) break;
+      var nd = ReadExtents(forkExtents, (long)node * nodeSize, nodeSize);
+      if ((sbyte)nd[8] != -1) break;
+      var records = BinaryPrimitives.ReadUInt16BigEndian(nd.AsSpan(10));
+      for (var i = 0; i < records; i++) {
+        var recOffset = BinaryPrimitives.ReadUInt16BigEndian(nd.AsSpan(nodeSize - 2 * (i + 1)));
+        if (recOffset + 14 > nodeSize) continue;
+        var keyLength = BinaryPrimitives.ReadUInt16BigEndian(nd.AsSpan(recOffset));
+        var fileId = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(recOffset + 4));
+        var nameLength = BinaryPrimitives.ReadUInt16BigEndian(nd.AsSpan(recOffset + 12));
+        if (!wanted.Contains(fileId) || nameLength != DecmpfsAttributeName.Length || recOffset + 14 + nameLength * 2 > nodeSize) continue;
+        if (Encoding.BigEndianUnicode.GetString(nd, recOffset + 14, nameLength * 2) != DecmpfsAttributeName) continue;
+        var data = recOffset + 2 + keyLength;
+        if (data + 16 > nodeSize) continue;
+        switch (BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(data))) {
+          case 0x10: {
+            var size = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(data + 12));
+            if (data + 16 + size <= nodeSize) found[fileId] = nd.AsSpan(data + 16, (int)size).ToArray();
+            break;
+          }
+          case 0x20 when data + 8 + 80 <= nodeSize: {
+            // An attribute fork's further extents would be 0x30 records, not overflow-file ones.
+            var (size, extents) = ReadFork(nd.AsSpan(data + 8), 0, 0);
+            if (size is > 0 and <= int.MaxValue) found[fileId] = ReadExtents(extents, 0, (int)size);
+            break;
+          }
+        }
+      }
+      node = BinaryPrimitives.ReadUInt32BigEndian(nd);
+    }
+
+    for (var i = 0; i < nodes.Count; i++)
+      if (nodes[i].IsCompressed && found.TryGetValue(nodes[i].Cnid, out var attribute) && HfsPlusDecmpfs.TryReadSize(attribute, out var length))
+        nodes[i] = nodes[i] with { Decmpfs = attribute, Size = length };
+  }
+
+  /// <summary><paramref name="length"/> bytes from <paramref name="offset"/> into the fork the extents describe.</summary>
+  private byte[] ReadExtents(IReadOnlyList<(uint StartBlock, uint BlockCount)> extents, long offset, int length) {
+    var result = new byte[length];
+    var done = 0;
+    long forkAt = 0;
+    foreach (var (start, count) in extents) {
+      var runBytes = (long)count * _blockSize;
+      if (done < length && offset + done < forkAt + runBytes) {
+        var inRun = offset + done - forkAt;
+        var take = (int)Math.Min(length - done, runBytes - inRun);
+        var physical = (long)start * _blockSize + inRun;
+        if (physical + take > _data.Length) break;
+        _data.Read(physical, take).CopyTo(result, done);
+        done += take;
+      }
+      forkAt += runBytes;
+      if (done >= length) break;
+    }
+    if (done < length) throw new InvalidDataException("HFS+ fork ends before the bytes it was read for.");
+    return result;
   }
 
   /// <summary>
@@ -232,6 +324,9 @@ public sealed class HfsPlusReader : IDisposable {
     FirstBlock = data.FirstBlock,
     BlockCount = data.BlockCount,
     Extents = data.Extents,
+    Decmpfs = data.Decmpfs,
+    ResourceSize = data.ResourceSize,
+    ResourceExtents = data.ResourceExtents,
   };
 
   /// <summary>
@@ -431,24 +526,18 @@ public sealed class HfsPlusReader : IDisposable {
     var isSymlink = fileType == SymlinkFileType;
 
     const int dataForkOffset = 88;
-    var logicalSize = (long)BinaryPrimitives.ReadUInt64BigEndian(nd[(dataOffset + dataForkOffset)..]);
+    const int resourceForkOffset = 168;
     // extents[0] starts 16 bytes into the ForkData struct (after logicalSize+clumpSize+totalBlocks).
     var startBlock = BinaryPrimitives.ReadUInt32BigEndian(nd[(dataOffset + dataForkOffset + 16)..]);
     var blockCount = BinaryPrimitives.ReadUInt32BigEndian(nd[(dataOffset + dataForkOffset + 20)..]);
-    var forkTotalBlocks = BinaryPrimitives.ReadUInt32BigEndian(nd[(dataOffset + dataForkOffset + 12)..]);
-    var extents = new List<(uint StartBlock, uint BlockCount)>(8);
-    uint covered = 0;
-    for (var k = 0; k < 8; k++) {
-      var at = dataOffset + dataForkOffset + 16 + k * 8;
-      var s0 = BinaryPrimitives.ReadUInt32BigEndian(nd[at..]);
-      var c0 = BinaryPrimitives.ReadUInt32BigEndian(nd[(at + 4)..]);
-      if (c0 == 0) break;
-      extents.Add((s0, c0));
-      covered += c0;
-    }
-    if (covered < forkTotalBlocks)
-      foreach (var (s1, c1, _) in OverflowExtents(cnid).Where(e => e.FileStart >= covered).OrderBy(e => e.FileStart))
-        extents.Add((s1, c1));
+    var (logicalSize, extents) = ReadFork(nd[(dataOffset + dataForkOffset)..], cnid, DataForkType);
+
+    // ownerFlags (permissions + 9) bit UF_COMPRESSED: the content is the decmpfs
+    // attribute's, possibly with its compressed bytes in the resource fork.
+    var compressed = (nd[dataOffset + 32 + 9] & CompressedOwnerFlag) != 0;
+    var (resourceSize, resourceExtents) = compressed
+      ? ReadFork(nd[(dataOffset + resourceForkOffset)..], cnid, ResourceForkType)
+      : (0L, []);
 
     string? linkTarget = null;
     if (isSymlink)
@@ -464,22 +553,52 @@ public sealed class HfsPlusReader : IDisposable {
       FirstBlock = startBlock,
       BlockCount = blockCount,
       Extents = extents,
+      IsCompressed = compressed,
+      ResourceSize = resourceSize,
+      ResourceExtents = resourceExtents,
     });
   }
 
+  private const byte DataForkType = 0x00;
+  private const byte ResourceForkType = 0xFF;
+  private const byte CompressedOwnerFlag = 0x20; // UF_COMPRESSED
+
   /// <summary>
-  /// The data-fork extents the extents overflow B-tree records for
-  /// <paramref name="cnid" />, each with the fork block it starts at (TN1150:
-  /// key = keyLength u16, forkType u8, pad u8, fileID u32, startBlock u32; record =
-  /// eight extent descriptors).
+  /// One HFSPlusForkData (logicalSize u64, clumpSize u32, totalBlocks u32, eight extent
+  /// descriptors) and the extents the overflow file adds when those eight fall short of
+  /// totalBlocks.
   /// </summary>
-  private List<(uint StartBlock, uint Count, uint FileStart)> OverflowExtents(uint cnid) {
-    _overflow ??= ReadOverflow();
-    return _overflow.TryGetValue(cnid, out var list) ? list : [];
+  private (long LogicalSize, List<(uint StartBlock, uint BlockCount)> Extents) ReadFork(ReadOnlySpan<byte> fork, uint cnid, byte forkType) {
+    var logicalSize = (long)BinaryPrimitives.ReadUInt64BigEndian(fork);
+    var totalBlocks = BinaryPrimitives.ReadUInt32BigEndian(fork[12..]);
+    var extents = new List<(uint StartBlock, uint BlockCount)>(8);
+    uint covered = 0;
+    for (var k = 0; k < 8; k++) {
+      var start = BinaryPrimitives.ReadUInt32BigEndian(fork[(16 + k * 8)..]);
+      var count = BinaryPrimitives.ReadUInt32BigEndian(fork[(20 + k * 8)..]);
+      if (count == 0) break;
+      extents.Add((start, count));
+      covered += count;
+    }
+    if (covered < totalBlocks)
+      foreach (var (start, count, _) in OverflowExtents(cnid, forkType).Where(e => e.FileStart >= covered).OrderBy(e => e.FileStart))
+        extents.Add((start, count));
+    return (logicalSize, extents);
   }
 
-  private Dictionary<uint, List<(uint StartBlock, uint Count, uint FileStart)>> ReadOverflow() {
-    var result = new Dictionary<uint, List<(uint, uint, uint)>>();
+  /// <summary>
+  /// The extents the extents overflow B-tree records for one fork of
+  /// <paramref name="cnid" />, each with the fork block it starts at (TN1150:
+  /// key = keyLength u16, forkType u8 (0x00 data, 0xFF resource), pad u8, fileID u32,
+  /// startBlock u32; record = eight extent descriptors).
+  /// </summary>
+  private List<(uint StartBlock, uint Count, uint FileStart)> OverflowExtents(uint cnid, byte forkType) {
+    _overflow ??= ReadOverflow();
+    return _overflow.TryGetValue((cnid, forkType), out var list) ? list : [];
+  }
+
+  private Dictionary<(uint, byte), List<(uint StartBlock, uint Count, uint FileStart)>> ReadOverflow() {
+    var result = new Dictionary<(uint, byte), List<(uint, uint, uint)>>();
     if (_extentsStartBlock == 0 || _extentsBlockCount == 0) return result;
     var fileOffset = (long)_extentsStartBlock * _blockSize;
     if (fileOffset + 512 > _data.Length) return result;
@@ -501,11 +620,12 @@ public sealed class HfsPlusReader : IDisposable {
         var recOffset = BinaryPrimitives.ReadUInt16BigEndian(nd[(nodeSize - 2 * (i + 1))..]);
         if (recOffset + 12 + 64 > nodeSize) continue;
         var keyLength = BinaryPrimitives.ReadUInt16BigEndian(nd[recOffset..]);
-        if (keyLength < 10 || nd[recOffset + 2] != 0) continue;   // data fork only
+        if (keyLength < 10) continue;
+        var forkType = nd[recOffset + 2];
         var fileId = BinaryPrimitives.ReadUInt32BigEndian(nd[(recOffset + 4)..]);
         var forkStart = BinaryPrimitives.ReadUInt32BigEndian(nd[(recOffset + 8)..]);
         var data = recOffset + 2 + keyLength;
-        if (!result.TryGetValue(fileId, out var list)) result[fileId] = list = [];
+        if (!result.TryGetValue((fileId, forkType), out var list)) result[(fileId, forkType)] = list = [];
         for (var k = 0; k < 8 && data + k * 8 + 8 <= nodeSize; k++) {
           var start = BinaryPrimitives.ReadUInt32BigEndian(nd[(data + k * 8)..]);
           var count = BinaryPrimitives.ReadUInt32BigEndian(nd[(data + k * 8 + 4)..]);
@@ -540,6 +660,10 @@ public sealed class HfsPlusReader : IDisposable {
   public byte[] Extract(HfsPlusEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory || entry.Size == 0) return [];
+    if (entry.Decmpfs is { } attribute)
+      return HfsPlusDecmpfs.Decode(attribute, () => entry.ResourceSize is > 0 and <= int.MaxValue
+        ? ReadExtents(entry.ResourceExtents, 0, (int)entry.ResourceSize)
+        : []);
 
     // A fork is up to eight extents in the catalog record plus any the overflow
     // file adds. Reading only the first returned zeros for the rest of every

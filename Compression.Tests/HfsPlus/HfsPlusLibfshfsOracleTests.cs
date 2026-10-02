@@ -92,15 +92,13 @@ public sealed class HfsPlusLibfshfsOracleTests {
       .ToList();
   }
 
-  [Test, Category("HappyPath")]
-  public void GivenTheHdiutilVolume_WhenLibfshfsReadsIt_ThenOurReaderListsAndReadsTheSame() {
-    var volume = Path.Combine(this._tmp, "hfsplus.img");
-    File.WriteAllBytes(volume, HfsPlusLinksAndNamesTests.KeramicsVolume(this._tmp));
+  /// <summary>Every entry libfshfs shows (metadata directories aside) is ours, with the same kind, size and bytes.</summary>
+  private static void AssertSameAsLibfshfs(string volume) {
     var oracle = Libfshfs(volume)
-      .Where(static e => !e.Path.StartsWith("␀␀␀␀HFS+ Private Data", StringComparison.Ordinal)
+      .Where(static e => !e.Path.StartsWith("\u2400\u2400\u2400\u2400HFS+ Private Data", StringComparison.Ordinal)
                          && !e.Path.StartsWith(".HFS+ Private Directory Data\r", StringComparison.Ordinal))
       .ToList();
-    var reader = new HfsPlusReader(File.OpenRead(volume));
+    using var reader = new HfsPlusReader(File.OpenRead(volume));
     var ours = reader.Entries.ToDictionary(static e => e.FullPath, StringComparer.Ordinal);
 
     Assert.That(ours.Keys, Is.EquivalentTo(oracle.Select(static e => e.Path)), "listing");
@@ -115,5 +113,19 @@ public sealed class HfsPlusLibfshfsOracleTests {
       Assert.That(oracle.Single(static e => e.Path == "file_hardlink1").Sha256,
         Is.EqualTo(oracle.Single(static e => e.Path == "testdir1/testfile1").Sha256), "libfshfs resolves the hard link too");
     });
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenTheHdiutilVolume_WhenLibfshfsReadsIt_ThenOurReaderListsAndReadsTheSame() {
+    var volume = Path.Combine(this._tmp, "hfsplus.img");
+    File.WriteAllBytes(volume, HfsPlusLinksAndNamesTests.KeramicsVolume(this._tmp));
+    AssertSameAsLibfshfs(volume);
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenTheVolumeWithDecmpfsFiles_WhenLibfshfsReadsIt_ThenOurReaderDecodesTheSameBytes() {
+    var volume = Path.Combine(this._tmp, "hfsplus.raw");
+    File.WriteAllBytes(volume, HfsPlusDecmpfsTests.KeramicsRaw());
+    AssertSameAsLibfshfs(volume);
   }
 }

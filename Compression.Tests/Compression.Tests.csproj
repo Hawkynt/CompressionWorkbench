@@ -88,6 +88,10 @@
     <!-- Macrium's MIT-licensed Reflect X metadata schema, the oracle for the writer's $JSON block.
          Provenance in Macrium/VendorSchema/THIRD-PARTY-NOTICE.MacriumSchema.txt. -->
     <EmbeddedResource Include="Macrium\VendorSchema\required_schema.json" LogicalName="MacriumVendor.required_schema.json" />
+    <!-- keramics' HFS+ volume written on macOS (decmpfs files); see HfsPlus/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="HfsPlus\ReferenceVectors\*.gz">
+      <LogicalName>HfsPlusVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
