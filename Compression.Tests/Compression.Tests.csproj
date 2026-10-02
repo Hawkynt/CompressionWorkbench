@@ -101,6 +101,10 @@
     <EmbeddedResource Include="HfsPlus\ReferenceVectors\*.gz">
       <LogicalName>HfsPlusVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- LZBITMAP pairs from libzbitmap's test corpus; see Lzbitmap/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Lzbitmap\ReferenceVectors\*-*" Exclude="Lzbitmap\ReferenceVectors\README.md">
+      <LogicalName>LzbitmapVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>

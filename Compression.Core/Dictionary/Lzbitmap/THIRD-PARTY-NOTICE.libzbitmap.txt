@@ -1,0 +1,33 @@
+libzbitmap (LZBITMAP) — converted to C#
+
+Source:   https://github.com/eafer/libzbitmap
+Revision: 574abeae25b25c3319b9b6a9225cc7464e08ae88
+Author:   Ernesto A. Fernández, Corellium LLC
+Licence:  MIT (reproduced below)
+
+Lzbitmap.cs is a conversion of libzbitmap.c (zbm_decompress, zbm_compress)
+into this codebase, not a verbatim copy. The format constants (the "ZBM\x09"
+magic, the 32 KiB chunk limit, the 6- and 15-byte chunk headers, twelve
+10-bit top bitmaps in 17 bytes, bitmap numbers 0-2 / 3-14 / 0xF, repetition
+counts from 4) are copied exactly, as the format requires. The compressor
+keeps libzbitmap's pattern search and top-bitmap selection.
+
+Copyright (c) 2022 Corellium LLC
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
