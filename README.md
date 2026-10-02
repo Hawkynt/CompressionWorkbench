@@ -355,6 +355,18 @@ Power-user navigation includes:
 - **Registered file-type filters** — the Open dialog exposes an all-formats filter plus generated
   per-format filters.
 
+**Maintenance** has its own contextual ribbon tab, *Disk Tools → Defragment* (Tools → Maintenance,
+Ctrl+Shift+D), shown while an image or archive that supports any maintenance operation is open or
+selected. While it is selected the block map takes the whole client area — linear blocks, a circular
+platter or a 3-D stack of platters, with an optional files panel and colour key — and the ribbon picks
+the operation (Defragment, Optimize, Shrink, Compact, Clear free space, Purge, Scramble), the
+defragmentation mode (Consolidate at the start or end, Defrag by filling holes, Re-order into ascending
+blocks, Carve a hole of a chosen size and offset, or Sort Entries — directories sorted by name in place,
+on FAT and exFAT), the block interleave (1–256), metadata placement, layout profile and, for Optimize,
+whether to compress, repack or canonicalize. Each item is enabled only where the format supports it and says why when it is not;
+a request the format refuses leaves the image byte-identical. Leaving the tab returns the browser
+exactly as it was.
+
 The Binary Analysis wizard walks progressively deeper through an unknown binary:
 
 - **Scan Results** — registered magic-byte signatures with offsets and confidence.

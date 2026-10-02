@@ -81,7 +81,7 @@ internal sealed class HeadlessBackend : IPlatformBackend {
   // rather than a file of empty overrides each is a proxy that answers every call with default.
   public IButtonPeer CreateButton() => Stub<IButtonPeer>();
   public ICheckBoxPeer CreateCheckBox() => Stub<ICheckBoxPeer>();
-  public IComboBoxPeer CreateComboBox() => Stub<IComboBoxPeer>();
+  public IComboBoxPeer CreateComboBox() => new RecordingComboBoxPeer();
   public IGroupBoxPeer CreateGroupBox() => Stub<IGroupBoxPeer>();
   public ILabelPeer CreateLabel() => Stub<ILabelPeer>();
   public ILinkLabelPeer CreateLinkLabel() => Stub<ILinkLabelPeer>();

@@ -3,6 +3,7 @@ using Compression.NativeUI.Navigation;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Compression.Lib;
+using Compression.NativeUI.Maintenance;
 using Compression.NativeUI.Views;
 using Compression.Registry;
 using Hawkynt.NativeForms;
@@ -119,6 +120,9 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand WipeEntryCommand { get; }
   public ICommand CompactEntryCommand { get; }
   public ICommand ScrambleEntryCommand { get; }
+
+  /// <summary>Opens the Defragment tab on the resolved maintenance target, with no operation preselected.</summary>
+  public ICommand MaintenanceCommand { get; }
   public ICommand ReconfigureEntryCommand { get; }
   public ICommand DeleteSelectedCommand { get; }
   /// <summary>Asks the view to start editing the selected entry's name; see <see cref="RenameRequested"/>.</summary>
@@ -224,6 +228,7 @@ internal sealed class MainViewModel : ViewModelBase {
     WipeEntryCommand = new RelayCommand(_ => OpenMaintenance(MaintenanceVerb.WipeEmpty), _ => CanMaintain(MaintenanceVerb.WipeEmpty));
     CompactEntryCommand = new RelayCommand(_ => OpenMaintenance(MaintenanceVerb.Compact), _ => CanMaintain(MaintenanceVerb.Compact));
     ScrambleEntryCommand = new RelayCommand(_ => OpenMaintenance(MaintenanceVerb.Scramble), _ => CanMaintain(MaintenanceVerb.Scramble));
+    MaintenanceCommand = new RelayCommand(_ => MaintenanceRequested?.Invoke(this, new(null, PreferSelection: false)), _ => HasMaintenanceTarget);
     ReconfigureEntryCommand = new RelayCommand(_ => Reconfigure(), _ => CanReconfigure());
     DeleteSelectedCommand = new RelayCommand(_ => DeleteSelectedEntries(), _ => CanDeleteSelected);
     CopyCommand = new RelayCommand(_ => PutSelectionOnClipboard(cut: false), _ => CanCopySelection());
@@ -811,20 +816,10 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   /// <summary>
-  /// Resolves which archive a maintenance verb should target, <em>without</em>
-  /// materialising anything (cheap enough for CanExecute). Two cases, in
-  /// priority order:
-  /// <list type="number">
-  ///   <item>A single selected non-directory entry whose extension routes to a
-  ///   recognized archive/filesystem format — either a real on-disk file
-  ///   (OS-browser) or an archive nested inside the currently-open archive.
-  ///   <paramref name="archiveEntry"/> is set to it.</item>
-  ///   <item>Otherwise the currently-open archive itself (which is a temp file
-  ///   when the user has descended into a nested archive — so the verbs remain
-  ///   available "even when this is an archive within another one").</item>
-  /// </list>
-  /// Returns <c>false</c> (verb disabled) when neither applies or the registry
-  /// is not yet warm.
+  /// Resolves which container a maintenance command acts on: a single selected file whose
+  /// <em>content</em> proves it a container (<see cref="SelectedMaintenanceTarget"/>), else the
+  /// archive the shell is inside. A name alone never decides — a plain <c>f19.bin</c> inside a FAT
+  /// volume is not a BIN/CUE image, and the volume stays the target.
   /// </summary>
   private bool TryResolveMaintenanceTarget(out string formatId, out ArchiveEntryViewModel? archiveEntry) {
     formatId = "";
@@ -833,127 +828,176 @@ internal sealed class MainViewModel : ViewModelBase {
     // fires CommandManager.InvalidateRequerySuggested when registration ends.
     if (!Compression.Lib.FormatRegistration.IsReady) return false;
 
-    if (SelectedEntries.Count == 1) {
-      var e = SelectedEntries[0];
-      if (!e.IsDirectory && !e.IsParentEntry) {
-        // A file on disk is judged by its content (cached, since this runs on every requery); an
-        // entry inside an archive has no bytes at hand, so its name decides.
-        var probeName = IsBrowsingOsFolder ? e.Path : e.Name;
-        if (!string.IsNullOrEmpty(probeName)) {
-          var f = IsBrowsingOsFolder && File.Exists(e.Path)
-            ? FormatDetector.DetectCached(e.Path)
-            : FormatDetector.DetectByExtension(probeName);
-          if (f != FormatDetector.Format.Unknown && !FormatDetector.IsStreamFormat(f)) {
-            // OS-browser candidate must actually exist on disk.
-            if (!IsBrowsingOsFolder || File.Exists(e.Path)) {
-              formatId = f.ToString();
-              archiveEntry = e;
-              return true;
-            }
-          }
-        }
-      }
-    }
-
-    // Fall back to the open archive itself.
-    if (HasArchive && !string.IsNullOrEmpty(ArchivePath) && !string.IsNullOrEmpty(Format)
-        && Format != FormatDetector.Format.Unknown.ToString()) {
-      formatId = Format;
+    if (ProveSelectedContainer() is { } selected) {
+      (formatId, archiveEntry) = (selected.Format.ToString(), selected.Entry);
       return true;
     }
+
+    if (OpenVolumeFormat() is { } open) {
+      formatId = open;
+      return true;
+    }
+
     return false;
   }
 
+  /// <summary>The open archive's format while the shell is inside it; a folder on disk being browsed is not the archive left behind.</summary>
+  private string? OpenVolumeFormat()
+    => HasArchive && !IsBrowsingOsFolder && !string.IsNullOrEmpty(ArchivePath) && !string.IsNullOrEmpty(Format)
+       && Format != FormatDetector.Format.Unknown.ToString()
+      ? Format
+      : null;
+
+  // Content verdicts for entries of the open archive, so a requery does not reopen the entry.
+  private readonly Dictionary<string, FormatDetector.Format> _entryFormats = new(StringComparer.Ordinal);
+
+  /// <summary>How much of an entry is read to identify it when its stream cannot seek.</summary>
+  private const int EntryProbeBytes = 1 << 20;
+
   /// <summary>
-  /// True when the resolved maintenance target's descriptor implements the
-  /// capability interface backing <paramref name="verb"/>. Mirrors the action
-  /// availability inside <see cref="DefragmentWindow"/> so a context-menu
-  /// item is never offered for an op the window can't actually run.
+  /// The single selected file, when its content identifies it as a container format (not a bare
+  /// stream): on disk by <see cref="FormatDetector.DetectCached"/>, inside the open archive by
+  /// opening the entry and running <see cref="FormatDetector.DetectByContent"/> on its head.
   /// </summary>
-  private bool CanMaintain(MaintenanceVerb verb) {
-    if (!TryResolveMaintenanceTarget(out var formatId, out _)) return false;
-    var ops = FormatRegistry.GetArchiveOps(formatId);
-    if (ops == null) return false;
-    return verb switch {
-      MaintenanceVerb.Optimize => ops is IArchiveCreatable or IFileInternalChunkMover,
-      MaintenanceVerb.Shrink => ops is IArchiveShrinkable || formatId is "Fat" or "Ext" or "Ext1" or "Vhd",
-      MaintenanceVerb.Defragment => ops is IArchiveDefragmentable,
-      MaintenanceVerb.Purge => ops is IArchiveModifiable,
-      MaintenanceVerb.WipeEmpty => ops is IWipeEmpty or IFilesystemExtentMap or IArchiveLayoutMap,
-      MaintenanceVerb.Compact => ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable,
-      MaintenanceVerb.Scramble => ops is IFilesystemScrambleable,
-      _ => false,
-    };
+  private (FormatDetector.Format Format, ArchiveEntryViewModel Entry)? ProveSelectedContainer() {
+    if (SelectedEntries.Count != 1) return null;
+    var e = SelectedEntries[0];
+    if (e.IsDirectory || e.IsParentEntry || string.IsNullOrEmpty(e.Path)) return null;
+
+    FormatDetector.Format format;
+    if (IsBrowsingOsFolder) {
+      if (!File.Exists(e.Path)) return null;
+      format = FormatDetector.DetectCached(e.Path);
+    } else if (HasArchive && File.Exists(ArchivePath)) {
+      format = DetectEntryByContent(e);
+    } else {
+      return null;
+    }
+
+    return format == FormatDetector.Format.Unknown || FormatDetector.IsStreamFormat(format) ? null : (format, e);
+  }
+
+  private FormatDetector.Format DetectEntryByContent(ArchiveEntryViewModel entry) {
+    var key = $"{ArchivePath}|{File.GetLastWriteTimeUtc(ArchivePath).Ticks}|{entry.Path}";
+    if (_entryFormats.TryGetValue(key, out var known)) return known;
+
+    var format = FormatDetector.Format.Unknown;
+    try {
+      using var stream = ArchiveOperations.OpenEntry(ArchivePath, entry.Path, password: null);
+      if (stream.CanSeek) {
+        format = FormatDetector.DetectByContent(stream);
+      } else {
+        var head = new byte[EntryProbeBytes];
+        var read = 0;
+        for (int n; read < head.Length && (n = stream.Read(head, read, head.Length - read)) > 0;) read += n;
+        using var prefix = new MemoryStream(head, 0, read, writable: false);
+        format = FormatDetector.DetectByContent(prefix);
+      }
+    } catch {
+      // An entry that cannot be opened or read is not a target; the open volume stays one.
+    }
+
+    return _entryFormats[key] = format;
+  }
+
+  /// <summary>The open volume as a maintenance target, when it supports any operation.</summary>
+  internal MaintenanceTarget? OpenVolumeMaintenanceTarget
+    => FormatRegistration.IsReady && OpenVolumeFormat() is { } format && TargetCapabilities.For(format).AnySupported
+      ? new(MaintenanceTargetKind.OpenVolume, $"{format}|{ArchivePath}", format, Path.GetFileName(ArchivePath), Entry: null)
+      : null;
+
+  /// <summary>The selected file as a maintenance target, when its content proves it a container that supports any operation.</summary>
+  internal MaintenanceTarget? SelectedMaintenanceTarget {
+    get {
+      if (!FormatRegistration.IsReady || ProveSelectedContainer() is not var (format, entry)) return null;
+      var id = format.ToString();
+      if (!TargetCapabilities.For(id).AnySupported) return null;
+      var key = $"{id}|{(IsBrowsingOsFolder ? entry.Path : ArchivePath + "::" + entry.Path)}";
+      return new(MaintenanceTargetKind.Selected, key, id, entry.Name, entry);
+    }
+  }
+
+  /// <summary>Every target the Defragment tab can offer now: the open volume first, then a proven selection.</summary>
+  internal IReadOnlyList<MaintenanceTarget> MaintenanceTargets() {
+    var targets = new List<MaintenanceTarget>(2);
+    if (OpenVolumeMaintenanceTarget is { } open) targets.Add(open);
+    if (SelectedMaintenanceTarget is { } selected && targets.All(t => t.Key != selected.Key)) targets.Add(selected);
+    return targets;
   }
 
   /// <summary>
-  /// Opens <see cref="DefragmentWindow"/> pre-targeted at
-  /// <paramref name="verb"/> against the resolved target. For an archive nested
-  /// inside the open archive, the entry is extracted to a temp file, maintained
-  /// there, and (when the host is <see cref="IArchiveModifiable"/>) written back
-  /// via <see cref="ArchiveOperations.Replace"/>.
+  /// True when the resolved maintenance target supports <paramref name="verb"/>. Asks the same
+  /// capability adapter the Defragment tab enables its ribbon from, so a context-menu item is never
+  /// offered for an operation the tab would then refuse.
   /// </summary>
-  private void OpenMaintenance(MaintenanceVerb verb) {
-    if (!TryResolveMaintenanceTarget(out _, out var entry)) return;
+  private bool CanMaintain(MaintenanceVerb verb)
+    => TryResolveMaintenanceTarget(out var formatId, out _) && TargetCapabilities.For(formatId).Verb(verb).Supported;
 
-    string targetPath;
-    Action? cleanup = null;
-    Action? writeBack = null;
+  /// <summary>Whether there is a maintenance target that supports at least one operation.</summary>
+  internal bool HasMaintenanceTarget => MaintenanceTargets().Count > 0;
+
+  /// <summary>
+  /// Raised when a maintenance command asks for the Defragment tab: the operation to preselect (null
+  /// for none) and whether the command was aimed at the selection rather than the open volume.
+  /// </summary>
+  public event EventHandler<MaintenanceRequest>? MaintenanceRequested;
+
+  // The list's context menu acts on what is selected; the tab's own entry defaults to the open volume.
+  private void OpenMaintenance(MaintenanceVerb verb) => MaintenanceRequested?.Invoke(this, new(verb, PreferSelection: true));
+
+  /// <summary>
+  /// Opens <paramref name="target"/> for maintenance. A real file — on disk, or the open archive — is
+  /// maintained in place. An archive nested inside the open archive is extracted to a temporary file,
+  /// maintained there, and written back into the host after each change when the host is
+  /// <see cref="IArchiveModifiable"/>; the session deletes the copy when disposed.
+  /// </summary>
+  internal MaintenanceSession? OpenMaintenanceSession(MaintenanceTarget target) {
+    var (key, formatId, entry) = (target.Key, target.FormatId, target.Entry);
 
     if (entry != null && IsBrowsingOsFolder) {
-      // Real on-disk archive file — maintained in place.
-      targetPath = entry.Path;
-      if (string.IsNullOrEmpty(targetPath) || !File.Exists(targetPath)) return;
-    } else if (entry != null) {
-      // Nested archive entry inside the currently-open archive: materialise →
-      // maintain → write back into the host (if the host supports modification).
+      if (string.IsNullOrEmpty(entry.Path) || !File.Exists(entry.Path)) return null;
+      return new(key, entry.Path, formatId, entry.Name, _ => RefreshVisibleEntries(), cleanup: null);
+    }
+
+    if (entry != null) {
       try {
         var bytes = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: null);
-        var temp = Path.Combine(Path.GetTempPath(),
-          $"cwb_maint_{Guid.NewGuid():N}_{Path.GetFileName(entry.Name)}");
+        var temp = Path.Combine(Path.GetTempPath(), $"cwb_maint_{Guid.NewGuid():N}_{Path.GetFileName(entry.Name)}");
         File.WriteAllBytes(temp, bytes);
-        targetPath = temp;
-        cleanup = () => { try { File.Delete(temp); } catch { /* best effort */ } };
 
         var hostPath = ArchivePath;
         var entryName = entry.Path;
         var entryLabel = entry.Name;
-        if (FormatRegistry.GetArchiveOps(Format) is IArchiveModifiable) {
-          writeBack = () => {
-            try {
-              ArchiveOperations.Replace(hostPath, entryName, temp);
-              StatusText = $"Wrote maintained '{entryLabel}' back into {Path.GetFileName(hostPath)}.";
-            } catch (Exception ex) {
-              StatusText = $"Could not write '{entryLabel}' back into host archive: {ex.Message}";
-            }
-          };
-        } else {
-          StatusText = $"'{Format}' is read-only — '{entryLabel}' will be maintained in a copy that is not written back.";
-        }
+        var writable = FormatRegistry.GetArchiveOps(Format) is IArchiveModifiable;
+        if (!writable)
+          StatusText = $"'{Format}' is read-only — '{entryLabel}' is maintained in a copy that is not written back.";
+
+        return new(key, temp, formatId, entryLabel, _ => {
+          if (!writable) return;
+          try {
+            ArchiveOperations.Replace(hostPath, entryName, temp);
+            StatusText = $"Wrote maintained '{entryLabel}' back into {Path.GetFileName(hostPath)}.";
+          } catch (Exception ex) {
+            StatusText = $"Could not write '{entryLabel}' back into host archive: {ex.Message}";
+          }
+
+          if (HasArchive) ReloadArchiveInPlace();
+        }, cleanup: () => {
+          try { File.Delete(temp); } catch { /* best effort */ }
+        });
       } catch (Exception ex) {
         StatusText = $"Cannot open nested archive '{entry.Name}': {ex.Message}";
-        return;
+        return null;
       }
-    } else {
-      // The currently-open archive itself (top-level real file, or a descended
-      // nested temp — the latter mutates the temp only, matching the existing
-      // nested-edit limitation).
-      if (string.IsNullOrEmpty(ArchivePath) || !File.Exists(ArchivePath)) return;
-      targetPath = ArchivePath;
     }
 
-    var dlg = new DefragmentWindow(targetPath, verb);
-    dlg.ArchiveMutated += mutated => {
-      writeBack?.Invoke();
-      if (writeBack != null && HasArchive)
-        ReloadArchiveInPlace(); // nested write-back → re-list the host
-      else if (HasArchive && string.Equals(mutated, ArchivePath, StringComparison.OrdinalIgnoreCase))
-        ReloadArchiveInPlace();
-      else if (IsBrowsingOsFolder)
-        RefreshVisibleEntries();
-    };
-    dlg.FormClosed += (_, _) => cleanup?.Invoke();
-    dlg.Show();
+    // The open archive itself: a top-level file, or a descended nested temp — the latter mutates the
+    // temp only, matching the existing nested-edit limitation.
+    if (string.IsNullOrEmpty(ArchivePath) || !File.Exists(ArchivePath)) return null;
+    var archivePath = ArchivePath;
+    return new(key, archivePath, formatId, Path.GetFileName(archivePath), mutated => {
+      if (HasArchive && string.Equals(mutated, ArchivePath, StringComparison.OrdinalIgnoreCase)) ReloadArchiveInPlace();
+    }, cleanup: null);
   }
 
   /// <summary>
