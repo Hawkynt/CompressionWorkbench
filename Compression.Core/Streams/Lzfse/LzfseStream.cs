@@ -27,6 +27,24 @@ public static class LzfseStream {
   private const int MatchSearchDepth = 4;
 
   /// <summary>
+  /// Encodes <paramref name="data"/> as a bare LZVN stream — the payload of a <c>bvxn</c> block,
+  /// and the form HFS+/APFS transparent compression (decmpfs methods 7/8) stores — ending with
+  /// the eight-byte end-of-stream instruction.
+  /// </summary>
+  public static byte[] EncodeLzvn(ReadOnlySpan<byte> data) => Lzvn.Compress(data);
+
+  /// <summary>Decodes a bare LZVN stream that expands to exactly <paramref name="length"/> bytes.</summary>
+  /// <exception cref="InvalidDataException">The stream is malformed or does not fill <paramref name="length"/> bytes.</exception>
+  public static byte[] DecodeLzvn(ReadOnlySpan<byte> stream, int length) {
+    ArgumentOutOfRangeException.ThrowIfNegative(length);
+    var output = new byte[length];
+    var written = Lzvn.Decompress(stream, output);
+    if (written != length)
+      throw new InvalidDataException($"LZVN stream decoded {written} bytes, expected {length}.");
+    return output;
+  }
+
+  /// <summary>
   /// Compresses data from <paramref name="input"/> and writes an LZFSE-format stream to <paramref name="output"/>.
   /// </summary>
   public static void Compress(Stream input, Stream output) {
