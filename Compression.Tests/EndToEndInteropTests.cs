@@ -388,6 +388,10 @@ public class EndToEndInteropTests {
     ".g64",
     // ANI cursor: only accepts CUR/ICO inputs validated against the cursor-frame magic.
     ".ani",
+    // Compressed FLA: packs an XFL project and refuses loose files without a root
+    // DOMDocument.xml. Fla/FlaReferenceVectorTests and FlaXfl2SvgOracleTests round-trip
+    // projects Flash itself saved.
+    ".fla",
     // AppleSingle entry IDs come from a documented namespace; arbitrary names map to a
     // synthetic high-range id whose reverse-mapping doesn't survive Extract verbatim.
     // AppleDouble shares that namespace and rejects the same generic names.
