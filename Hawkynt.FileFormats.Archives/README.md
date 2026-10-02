@@ -67,7 +67,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | KWAJ | `Kwaj` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/KWAJ) |
 | Lizard (LZ5) | `Lizard` | `.liz` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/inikep/lizard) |
 | [LZ4 frame](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) | `Lz4` | `.lz4` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md) |
-| [LZFSE](https://en.wikipedia.org/wiki/LZFSE) | `Lzfse` | `.lzfse` | ✅ | ✅ | — | Uncompressed and LZVN blocks only; the FSE/tANS compressed block families are not implemented | [GitHub](https://github.com/lzfse/lzfse) |
+| [LZFSE](https://en.wikipedia.org/wiki/LZFSE) | `Lzfse` | `.lzfse` | ✅ | ✅ | — | Reads `bvx1`, `bvx2` (FSE/tANS), `bvxn` (LZVN) and `bvx-` (stored) blocks; writes `bvx2`, `bvxn` or `bvx-` per block, whichever is smallest (`bvx1` is read only, as Apple's own encoder never emits it) | [GitHub](https://github.com/lzfse/lzfse) |
 | LZG | `Lzg` | `.lzg` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/mbitsnbites/liblzg) |
 | LZHAM | `Lzham` | `.lzham` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/richgel999/lzham_codec) |
 | [Lzip](https://en.wikipedia.org/wiki/Lzip) | `Lzip` | `.lz` `.lzip` | ✅ | ✅ | ✅ |  | [nongnu.org](https://www.nongnu.org/lzip/manual/lzip_manual.html#File-format) |
@@ -563,7 +563,7 @@ Every public and protected member of all 2585 types, generated from the built as
 
 - WORM is not R/W: creating a valid archive is different from safely editing one, and only descriptors with a proven edit path advertise `CanModify`.
 - R/W by rebuild rewrites the container; formats whose listing renames entries (track images, chunked backup images, hash-keyed game archives) can only address entries by the names they list.
-- LZFSE: uncompressed and LZVN blocks only. ZPAQ: no ZPAQL virtual machine. StuffIt X and UMX writers emit the envelope shell only. SFAR: LZX payload extraction is limited. Inno Setup: some versions expose no per-file extraction.
+- LZFSE: `bvx1` blocks are read but never written. ZPAQ: no ZPAQL virtual machine. StuffIt X and UMX writers emit the envelope shell only. SFAR: LZX payload extraction is limited. Inno Setup: some versions expose no per-file extraction.
 - OLE2 (DOC / XLS / PPT / MSG / Thumbs.db / MSI) creation produces a valid CFB envelope, not the application's document or database streams.
 - RAR and 7z creation target the implemented RAR4/RAR5 and 7z paths, not every historical writer version, and no vendor encoder heuristic is reproduced.
 - Media containers are demuxed at the container level; carried codecs are decoded only where the audio package provides them.
