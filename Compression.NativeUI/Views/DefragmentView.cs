@@ -64,9 +64,27 @@ internal sealed class DefragmentView : Panel {
 
   /// <summary>The line above the map: how honest the picture is, or what the running operation is doing.</summary>
   public string StatusText {
-    get => this._status.Text;
-    set => this._status.Text = value;
+    get => this._statusText;
+    set {
+      this._statusText = value;
+      this.ShowStatusLine();
+    }
   }
+
+  /// <summary>What is being maintained — "disk.img — FAT · 16.0 MB" — shown at the start of the status line.</summary>
+  public string TargetText {
+    get => this._targetText;
+    set {
+      this._targetText = value;
+      this.ShowStatusLine();
+    }
+  }
+
+  private string _statusText = "—";
+  private string _targetText = "";
+
+  private void ShowStatusLine()
+    => this._status.Text = this._targetText.Length == 0 ? this._statusText : $"{this._targetText}  │  {this._statusText}";
 
   /// <summary>Whether the files panel shows beside the map.</summary>
   public bool FilesPanelVisible {

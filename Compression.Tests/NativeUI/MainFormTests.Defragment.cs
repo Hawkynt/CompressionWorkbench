@@ -88,6 +88,107 @@ public sealed partial class MainFormTests {
     }));
   }
 
+  // ── the target ──────────────────────────────────────────────────────────────────────────────
+
+  private static void Select(MainViewModel model, string name) {
+    model.SelectedEntries.Clear();
+    model.SelectedEntries.Add(model.Entries.First(e => e.Name == name));
+    CommandManager.InvalidateRequerySuggested();
+  }
+
+  private static RibbonComboBox TargetCombo(MainForm shell) => Field<RibbonComboBox>(shell, "_targetCombo");
+
+  /// <summary>
+  /// A plain file named <c>f19.bin</c> inside a FAT volume is not a BIN/CUE image. Its name used to
+  /// make it the target — "0 regions", an empty files panel, nearly everything disabled — instead of
+  /// the volume the user had open.
+  /// </summary>
+  [Test]
+  public void GivenAPlainBinFileSelectedInsideAFatVolume_WhenTheTabOpens_ThenTheVolumeIsTheTargetWithEveryFatOperation() {
+    WithImages(root => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      shell.OpenArchive(MaintenanceFixtures.FatWithPlainBinFiles(root));
+      Select(model, "f19.bin");
+
+      Assert.That(model.SelectedMaintenanceTarget, Is.Null, "a .bin name with no container content proves nothing");
+
+      RibbonItemNamed(shell, "Maintenance").PerformClick();
+      Settle(shell);
+
+      Assert.Multiple(() => {
+        Assert.That(TargetCombo(shell).Items, Is.EqualTo(new[] { "Open volume (disk.img)" }));
+        Assert.That(TargetCombo(shell).SelectedIndex, Is.EqualTo(0));
+        Assert.That(DefragView(shell).TargetText, Does.StartWith("disk.img — ").And.Contain("FAT"));
+        Assert.That(DefragView(shell).StatusText, Does.StartWith("Real on-disk layout"));
+        foreach (var operation in new[] { "Defragment", "Shrink", "Clear", "Scramble" })
+          Assert.That(Toggle(shell, operation).Enabled, Is.True, operation);
+        Assert.That(Toggle(shell, "Sort Entries").Enabled, Is.True);
+      });
+    }));
+  }
+
+  [TestCase("fake.img")]
+  [TestCase("notes.txt")]
+  public void GivenAnEntryWhoseOnlyClaimIsItsName_WhenSelected_ThenItIsNotOfferedAsATarget(string name) {
+    WithImages(root => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      shell.OpenArchive(MaintenanceFixtures.ZipWithNestedImage(root));
+      Select(model, name);
+
+      Assert.That(model.SelectedMaintenanceTarget, Is.Null);
+      Assert.That(model.MaintenanceTargets().Select(t => t.Kind), Is.EqualTo(new[] { MaintenanceTargetKind.OpenVolume }));
+    }));
+  }
+
+  [Test]
+  public void GivenARealFatImageInsideAZip_WhenSelected_ThenTheTabOffersItAndPickingItMakesItTheTarget() {
+    WithImages(root => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      shell.OpenArchive(MaintenanceFixtures.ZipWithNestedImage(root));
+      Select(model, "inner.img");
+
+      Assert.That(model.SelectedMaintenanceTarget?.FormatId, Is.EqualTo("Fat"), "its content is a FAT boot sector");
+
+      RibbonItemNamed(shell, "Maintenance").PerformClick();
+      Settle(shell);
+      Assert.Multiple(() => {
+        Assert.That(TargetCombo(shell).Items, Is.EqualTo(new[] { "Open volume (nested.zip)", "Selected: inner.img (Fat)" }));
+        Assert.That(TargetCombo(shell).SelectedIndex, Is.EqualTo(0), "the open volume is the default");
+        Assert.That(Toggle(shell, "Defragment").Enabled, Is.False, "the ZIP has no extents to move");
+      });
+
+      TargetCombo(shell).SelectedIndex = 1;
+      Settle(shell);
+      Assert.Multiple(() => {
+        Assert.That(DefragView(shell).TargetText, Does.StartWith("inner.img — "));
+        Assert.That(Toggle(shell, "Defragment").Enabled, Is.True, "the nested FAT image moves extents");
+        Assert.That(Toggle(shell, "Sort Entries").Enabled, Is.True);
+      });
+    }));
+  }
+
+  [Test]
+  public void GivenAChosenTarget_WhenTheSelectionChangesOnTheTab_ThenTheTargetStaysAsChosen() {
+    WithImages(root => WithShell(shell => {
+      var model = Field<MainViewModel>(shell, "_model");
+      shell.OpenArchive(MaintenanceFixtures.ZipWithNestedImage(root));
+      Select(model, "inner.img");
+      model.DefragmentEntryCommand.Execute(null); // the context menu: aimed at the selection
+      Settle(shell);
+      Assume.That(DefragView(shell).TargetText, Does.StartWith("inner.img — "));
+      Toggle(shell, "Sort Entries").PerformClick();
+
+      Select(model, "notes.txt");
+      Settle(shell);
+
+      Assert.Multiple(() => {
+        Assert.That(DefragView(shell).TargetText, Does.StartWith("inner.img — "), "a selection change never retargets silently");
+        Assert.That(TargetCombo(shell).Items, Does.Contain("Selected: inner.img (Fat)"), "the chosen target stays listed");
+        Assert.That(Toggle(shell, "Sort Entries").Checked, Is.True, "the configured operation is kept");
+      });
+    }));
+  }
+
   // ── the client area ─────────────────────────────────────────────────────────────────────────
 
   [Test]
