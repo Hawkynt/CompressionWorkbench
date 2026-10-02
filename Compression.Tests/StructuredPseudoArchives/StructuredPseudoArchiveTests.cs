@@ -251,6 +251,35 @@ public sealed class StructuredPseudoArchiveTests {
       Throws.ArgumentException);
   }
 
+  [Test]
+  public void GivenInputsTheEngineMarkedIncompressible_WhenNrbfIsCreated_ThenTheHintIsIgnoredAndTheBytesRoundTrip() {
+    // The create path marks inputs that will not compress; NRBF stores every byte as it is, so
+    // the hint has nothing to change and must not be taken for a compression option.
+    var descriptor = new NrbfFormatDescriptor();
+    byte[] random = [0x9c, 0x13, 0xe7, 0x42, 0x05, 0xb8];
+    using var encoded = new MemoryStream();
+    descriptor.Create(encoded, [ArchiveInputInfo.InMemory("random.bin", random)],
+      new FormatCreateOptions { IncompressiblePaths = new HashSet<string>(StringComparer.Ordinal) { "random.bin" } });
+
+    encoded.Position = 0;
+    using var extracted = new MemoryStream();
+    descriptor.ExtractEntry(encoded, "random.bin", extracted, null);
+    Assert.That(extracted.ToArray(), Is.EqualTo(random));
+  }
+
+  [TestCase("level")]
+  [TestCase("method")]
+  [TestCase("format-specific")]
+  public void GivenAnOptionNrbfCannotHonour_WhenCreated_ThenItIsRefused(string option) {
+    var options = option switch {
+      "level" => new FormatCreateOptions { Level = 9 },
+      "method" => new FormatCreateOptions { MethodName = "deflate" },
+      _ => new FormatCreateOptions { FormatSpecific = new Dictionary<string, string> { ["x"] = "y" } },
+    };
+
+    Assert.That(() => new NrbfFormatDescriptor().Create(new MemoryStream(), [], options), Throws.ArgumentException);
+  }
+
   [TestCaseSource(nameof(CreatableDescriptors))]
   public void CreatableStructuredFormats_RoundTripArbitraryBytes(object descriptorObject) {
     var creator = (IArchiveCreatable)descriptorObject;

@@ -47,10 +47,12 @@ internal static class NrbfWriter {
     if (!output.CanWrite) throw new ArgumentException("NRBF output must be writable.", nameof(output));
     if (!string.IsNullOrEmpty(options.MethodName) && !options.MethodName.Equals("ms-nrbf", StringComparison.OrdinalIgnoreCase))
       throw new ArgumentException($"NRBF does not support the method '{options.MethodName}'.", nameof(options));
+    // IncompressiblePaths is not checked: the create path marks inputs that will not compress, and
+    // NRBF stores every byte as it is, so the hint has nothing to change.
     if (options.Password is not null || options.EncryptFilenames || options.EncryptionMethod is not null
         || options.Optimize || options.OptimizeLevel != 0 || options.Level is not null || options.DictSize != 0
         || options.WordSize is not null || options.Threads != 1 || options.SolidSize != 0 || options.ForceCompress
-        || options.IncompressiblePaths is not null || options.FormatSpecific.Count != 0)
+        || options.FormatSpecific.Count != 0)
       throw new ArgumentException("NRBF supports only the ms-nrbf method; compression, encryption and format-specific options are not defined.", nameof(options));
 
     var entries = new List<(string Name, byte[]? Data)>(inputs.Count);
