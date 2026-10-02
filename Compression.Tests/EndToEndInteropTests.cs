@@ -462,6 +462,22 @@ public class EndToEndInteropTests {
     // extension, because ".img"/".bin"/".uimg" all belong to other formats and the
     // 0x27051956 magic is what identifies it. FirmwareContainerWriteTests does.
     ".uimg",
+    // Minecraft region: holds only chunk_X_Z.nbt entries (X, Z in 0..31) and refuses any other
+    // name, so loose files cannot go in. McaTests round-trips real chunk sets.
+    ".mca",
+    // ".dat" routes to CREG, a registry hive whose root key cannot hold values, so loose files at
+    // the root are refused; TNEF shares the extension and is unreachable here. The libcreg
+    // oracle tests and TnefTests round-trip both.
+    ".dat",
+    // Partclone: one partition image (image.img plus optional metadata.ini / allocation.map),
+    // never loose files. PartcloneTests and the partclone conformance tests round-trip it.
+    ".aa",
+    // MOBI: built from exactly one HTML document. MobiFormatTests and the KindleUnpack
+    // conformance tests round-trip it.
+    ".mobi",
+    // PyInstaller CArchive: ".pkg" is shared by too many formats to route by extension, so this
+    // grid cannot reach the writer. PyInstallerTests and the CArchive oracle tests do.
+    ".pkg",
   };
 
   private static IEnumerable<string> RoundTripFormats() {
