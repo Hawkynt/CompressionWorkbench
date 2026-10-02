@@ -32,8 +32,8 @@ internal enum MaintenanceVerb {
 
 /// <summary>
 /// How a defragmentation lays the volume out, in the words the ribbon uses. Each maps onto one
-/// engine <see cref="Compression.Registry.DefragMode"/>, except <see cref="SortEntries"/>, which no
-/// descriptor offers yet and is answered by the capability query rather than by a placeholder.
+/// engine <see cref="Compression.Registry.DefragMode"/>, except <see cref="SortEntries"/>, which is
+/// the registry's separate directory sort and moves no data.
 /// </summary>
 internal enum DefragStrategy {
   /// <summary>Pack every file at one end of the volume (<c>ConsolidateAtStart</c>, or <c>ConsolidateAtEnd</c>).</summary>
@@ -45,27 +45,21 @@ internal enum DefragStrategy {
   /// <summary>Move only what reads backwards, so every file ascends (<c>AscendingOrder</c>).</summary>
   Reorder,
 
-  /// <summary>Sort the entries of every directory. No descriptor offers this today.</summary>
+  /// <summary>Sort the entries of every directory by name, in place (<c>SortDirectoryEntries</c>).</summary>
   SortEntries,
 
   /// <summary>Reserve one contiguous free region of a chosen size (<c>CarveHole</c>).</summary>
   CarveHole,
 }
 
-/// <summary>Which engine an optimize runs through for a given format.</summary>
-internal enum OptimizeRoute {
-  /// <summary>The format has no optimizer.</summary>
-  None,
+/// <summary>How Optimize improves a container; the format offers some, all or none of them.</summary>
+internal enum OptimizeMethod {
+  /// <summary>Re-encode the payload with the best compression, same format.</summary>
+  Compress,
 
-  /// <summary>Chunks inside one file are reordered in place (MP4 fast-start, PNG/JPEG metadata).</summary>
-  FileInternal,
+  /// <summary>Rebuild from the same entries, stored bytes copied verbatim, dead space dropped.</summary>
+  Repack,
 
-  /// <summary>A compressed-volume file's clusters are re-encoded (DoubleSpace, DriveSpace).</summary>
-  CompressedVolume,
-
-  /// <summary>A 7z archive's solid blocks are regrouped; the smallest candidate wins.</summary>
-  SolidBlocks,
-
-  /// <summary>The container is re-encoded with its strongest settings into a staged copy.</summary>
-  Reencode,
+  /// <summary>Rewrite into the canonical representation (chunk order, padding, header normal form).</summary>
+  Canonicalize,
 }

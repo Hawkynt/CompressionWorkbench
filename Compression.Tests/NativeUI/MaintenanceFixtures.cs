@@ -40,6 +40,33 @@ internal static class MaintenanceFixtures {
     return path;
   }
 
+  /// <summary>Files written to the root out of name order, long names and 8.3 names mixed.</summary>
+  public static readonly IReadOnlyDictionary<string, byte[]> UnsortedFatFiles = new Dictionary<string, byte[]> {
+    ["Zulu long file name.txt"] = Pattern(6_000, 0x61),
+    ["alpha.txt"] = Pattern(1_200, 0x62),
+    ["Mike.bin"] = Pattern(9_000, 0x63),
+    ["BETA.TXT"] = Pattern(700, 0x64),
+  };
+
+  /// <summary>A FAT12 floppy whose root directory is out of name order.</summary>
+  public static string UnsortedFat(string folder, string name = "unsorted.img") {
+    var writer = new FileSystem.Fat.FatWriter();
+    foreach (var (file, data) in UnsortedFatFiles) writer.AddFile(file, data);
+    var path = Path.Combine(folder, name);
+    File.WriteAllBytes(path, writer.Build());
+    return path;
+  }
+
+  /// <summary>The root directory's file names in the order the directory holds them.</summary>
+  public static List<string> RootOrder(string path) {
+    using var stream = File.OpenRead(path);
+    var reader = new FileSystem.Fat.FatReader(stream, leaveOpen: true);
+    return [.. reader.Entries.Where(e => !e.IsDirectory && !e.Name.Contains('/')).Select(e => e.Name)];
+  }
+
+  public static List<string> NameOrder(IEnumerable<string> names)
+    => [.. names.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ThenBy(n => n, StringComparer.Ordinal)];
+
   public static string Zip(string folder, string name = "bundle.zip") {
     var path = Path.Combine(folder, name);
     using var archive = ZipFile.Open(path, ZipArchiveMode.Create);

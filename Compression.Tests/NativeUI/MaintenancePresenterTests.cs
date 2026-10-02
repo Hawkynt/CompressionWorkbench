@@ -32,43 +32,45 @@ public sealed class MaintenancePresenterTests {
   // ── capabilities ────────────────────────────────────────────────────────────────────────────
 
   [Test]
-  public void GivenFat_WhenCapabilitiesAreAsked_ThenDefragmentAndItsInPlaceModesAreOffered() {
-    var caps = MaintenanceCapabilities.For("Fat");
+  public void GivenFat_WhenCapabilitiesAreAsked_ThenExtentDefragmentSortAndTheirModesAreOffered() {
+    var caps = TargetCapabilities.For("Fat");
 
     Assert.Multiple(() => {
       Assert.That(caps.Verb(MaintenanceVerb.Defragment).Supported, Is.True);
       Assert.That(caps.Verb(MaintenanceVerb.Shrink).Supported, Is.True);
       Assert.That(caps.Verb(MaintenanceVerb.WipeEmpty).Supported, Is.True);
       Assert.That(caps.Verb(MaintenanceVerb.Scramble).Supported, Is.True);
-      Assert.That(caps.Verb(MaintenanceVerb.Optimize).Supported, Is.False, "a filesystem's layout operation is Defragment; Optimize would copy it through");
-      foreach (var strategy in new[] { DefragStrategy.Consolidate, DefragStrategy.Defrag, DefragStrategy.Reorder, DefragStrategy.CarveHole })
+      foreach (var strategy in new[] { DefragStrategy.Consolidate, DefragStrategy.Defrag, DefragStrategy.Reorder, DefragStrategy.CarveHole, DefragStrategy.SortEntries })
         Assert.That(caps.Strategy(strategy).Supported, Is.True, strategy.ToString());
       Assert.That(caps.PackAtStart.Supported && caps.PackAtEnd.Supported, Is.True);
       Assert.That(caps.Interleave.Supported, Is.True, "FAT's planner honours block interleave");
       Assert.That(caps.MetadataZone.Supported, Is.True);
-      Assert.That(caps.LayoutProfile.Supported, Is.False, "FAT refuses layout templates, so the profile is not offered");
+      Assert.That(caps.LayoutProfile.Supported, Is.False, "FAT does not declare layout templates, so the profile is not offered");
     });
   }
 
-  [Test]
-  public void GivenAnyFormat_WhenSortEntriesIsAsked_ThenItIsRefusedWithAReason() {
-    foreach (var format in new[] { "Fat", "Zip", "Ntfs", "ExFat" }) {
-      var sort = MaintenanceCapabilities.For(format).Strategy(DefragStrategy.SortEntries);
-      Assert.That(sort.Supported, Is.False, format);
-      Assert.That(sort.Reason, Does.Contain("sorting directory entries"), format);
-    }
+  [TestCase("Fat", true)]
+  [TestCase("ExFat", true)]
+  [TestCase("Ntfs", false)]
+  [TestCase("Zip", false)]
+  public void GivenAFormat_WhenSortEntriesIsAsked_ThenOnlyFatAndExFatOfferIt(string format, bool offered) {
+    var sort = TargetCapabilities.For(format).Strategy(DefragStrategy.SortEntries);
+
+    Assert.That(sort.Supported, Is.EqualTo(offered));
+    if (!offered) Assert.That(sort.Reason, Does.Contain("sorting directory entries"));
   }
 
   [Test]
-  public void GivenZip_WhenCapabilitiesAreAsked_ThenDefragmentIsNotOfferedButOptimizePurgeAndClearAre() {
-    var caps = MaintenanceCapabilities.For("Zip");
+  public void GivenZip_WhenCapabilitiesAreAsked_ThenDefragmentIsNotOfferedButOptimizeIsWithItsMethods() {
+    var caps = TargetCapabilities.For("Zip");
+    var profile = MaintenanceCapabilities.Describe("Zip")!;
 
     Assert.Multiple(() => {
       Assert.That(caps.Verb(MaintenanceVerb.Defragment).Supported, Is.False, "an archive has no free-space layout to defragment (#432)");
       Assert.That(caps.Verb(MaintenanceVerb.Optimize).Supported, Is.True);
-      Assert.That(caps.OptimizeRoute, Is.EqualTo(OptimizeRoute.Reencode));
-      Assert.That(caps.Verb(MaintenanceVerb.Purge).Supported, Is.True);
-      Assert.That(caps.Verb(MaintenanceVerb.WipeEmpty).Supported, Is.True);
+      Assert.That(caps.OptimizeMethods, Is.Not.Empty);
+      Assert.That(caps.OptimizeMethods.Contains(OptimizeMethod.Compress), Is.EqualTo(profile.Supports(MaintenanceCapability.Compress)));
+      Assert.That(caps.OptimizeMethods.Contains(OptimizeMethod.Repack), Is.EqualTo(profile.Supports(MaintenanceCapability.Repack)));
       Assert.That(caps.Verb(MaintenanceVerb.Scramble).Supported, Is.False);
       Assert.That(Enum.GetValues<DefragStrategy>().Any(s => caps.Strategy(s).Supported), Is.False);
     });
@@ -76,10 +78,43 @@ public sealed class MaintenancePresenterTests {
 
   [Test]
   public void GivenAPartitionedDisk_WhenCapabilitiesAreAsked_ThenNothingIsOffered() {
-    var caps = MaintenanceCapabilities.For("PartitionedDisk");
+    var caps = TargetCapabilities.For("PartitionedDisk");
 
     Assert.That(caps.AnySupported, Is.False, "a partitioned disk is read-only; each volume is maintained on its own");
     Assert.That(caps.Verbs.Values.All(v => v.Reason.Length > 0), Is.True, "every refusal says why");
+  }
+
+  /// <summary>
+  /// The tab is a view of the registry's maintenance profile: for every registered format, each
+  /// ribbon answer must be exactly what <see cref="MaintenanceCapabilities.Describe(string)"/> says.
+  /// </summary>
+  [Test]
+  public void GivenEveryRegisteredFormat_WhenTheTabAsks_ThenItAgreesWithTheRegistryProfile() {
+    var mismatches = new System.Collections.Generic.List<string>();
+    foreach (var descriptor in FormatRegistry.All) {
+      var profile = MaintenanceCapabilities.Describe(descriptor);
+      var caps = TargetCapabilities.For(descriptor.Id);
+      void Check(string what, bool tab, bool registry) {
+        if (tab != registry) mismatches.Add($"{descriptor.Id} {what}: tab {tab}, registry {registry}");
+      }
+
+      Check("Defragment", caps.Verb(MaintenanceVerb.Defragment).Supported,
+        profile.Supports(MaintenanceCapability.DefragmentExtents) || profile.Supports(MaintenanceCapability.SortDirectoryEntries));
+      Check("Optimize", caps.Verb(MaintenanceVerb.Optimize).Supported,
+        profile.Supports(MaintenanceCapability.Compress) || profile.Supports(MaintenanceCapability.Repack) || profile.Supports(MaintenanceCapability.Canonicalize));
+      Check("Shrink", caps.Verb(MaintenanceVerb.Shrink).Supported, profile.Supports(MaintenanceCapability.Shrink));
+      Check("Purge", caps.Verb(MaintenanceVerb.Purge).Supported, profile.Supports(MaintenanceCapability.Purge));
+      Check("Clear", caps.Verb(MaintenanceVerb.WipeEmpty).Supported, profile.Supports(MaintenanceCapability.WipeUnused));
+      Check("Compact", caps.Verb(MaintenanceVerb.Compact).Supported, profile.Supports(MaintenanceCapability.Compact));
+      Check("Scramble", caps.Verb(MaintenanceVerb.Scramble).Supported, profile.Supports(MaintenanceCapability.Scramble));
+      Check("Sort Entries", caps.Strategy(DefragStrategy.SortEntries).Supported, profile.Supports(MaintenanceCapability.SortDirectoryEntries));
+      Check("Carve Hole", caps.Strategy(DefragStrategy.CarveHole).Supported,
+        profile.Supports(MaintenanceCapability.DefragmentExtents) && profile.Supports(DefragFeature.CarveHole));
+      Check("Interleave", caps.Interleave.Supported,
+        profile.Supports(MaintenanceCapability.DefragmentExtents) && profile.Supports(DefragFeature.Interleave));
+    }
+
+    Assert.That(mismatches, Is.Empty);
   }
 
   // ── typed values ────────────────────────────────────────────────────────────────────────────
@@ -256,6 +291,41 @@ public sealed class MaintenancePresenterTests {
         Assert.That(after[name], Is.EqualTo(data), name);
       Assert.That(presenter.Analyze().Status, Does.Contain("no fragmentation"));
     });
+  }
+
+  [Test]
+  public void GivenAnUnsortedFat_WhenSortEntriesRuns_ThenTheRootIsInNameOrderAndSizeAndEveryFileAreUnchanged() {
+    var path = MaintenanceFixtures.UnsortedFat(this._root);
+    var size = new FileInfo(path).Length;
+    Assume.That(MaintenanceFixtures.RootOrder(path), Is.Not.EqualTo(MaintenanceFixtures.NameOrder(MaintenanceFixtures.RootOrder(path))), "the fixture starts unsorted");
+    var presenter = new MaintenancePresenter(path, "Fat") { Verb = MaintenanceVerb.Defragment, Strategy = DefragStrategy.SortEntries, InterleaveText = "0" };
+
+    var outcome = presenter.RunAsync(_ => { }, _ => { }, CancellationToken.None).Result;
+
+    var order = MaintenanceFixtures.RootOrder(path);
+    Assert.Multiple(() => {
+      Assert.That(outcome.Kind, Is.EqualTo(MaintenanceOutcomeKind.Succeeded), outcome.Summary);
+      Assert.That(order, Is.EqualTo(MaintenanceFixtures.NameOrder(order)), "the root is in name order");
+      Assert.That(new FileInfo(path).Length, Is.EqualTo(size));
+      var after = MaintenanceFixtures.ReadFatFiles(path);
+      foreach (var (name, data) in MaintenanceFixtures.UnsortedFatFiles)
+        Assert.That(after[name], Is.EqualTo(data), name);
+      Assert.That(presenter.CanCancel, Is.False, "a directory sort is one pass, not a move that can stop part-way");
+    });
+  }
+
+  /// <summary>fsck.fat accepts the sorted volume. Needs WSL with dosfstools; skipped otherwise.</summary>
+  [Test, Category("ExternalFsInterop")]
+  public void GivenAnUnsortedFat_WhenSortEntriesRuns_ThenFsckFatAcceptsTheVolume() {
+    if (!FsInteropToolbox.WslAvailable || !FsInteropToolbox.WslHasTool("fsck.fat"))
+      Assert.Ignore("needs WSL with fsck.fat (dosfstools)");
+    var path = MaintenanceFixtures.UnsortedFat(this._root);
+    var presenter = new MaintenancePresenter(path, "Fat") { Verb = MaintenanceVerb.Defragment, Strategy = DefragStrategy.SortEntries };
+    Assume.That(presenter.RunAsync(_ => { }, _ => { }, CancellationToken.None).Result.Kind, Is.EqualTo(MaintenanceOutcomeKind.Succeeded));
+
+    var (stdOut, stdErr, exitCode) = FsInteropToolbox.RunWsl($"fsck.fat -n -V {FsInteropToolbox.WinToWsl(path)}");
+
+    Assert.That(exitCode, Is.EqualTo(0), $"fsck.fat rejected the sorted volume:\n{stdOut}\n{stdErr}");
   }
 
   [Test]

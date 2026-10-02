@@ -33,7 +33,6 @@ internal sealed partial class MainForm {
   private readonly Dictionary<DefragStrategy, RibbonToggleButton> _strategyToggles = [];
   private readonly Dictionary<BlockMapView, RibbonToggleButton> _viewToggles = [];
   private RibbonToggleButton _packAtEndToggle = null!;
-  private RibbonToggleButton _minimalGeometryToggle = null!;
   private RibbonToggleButton _filesPanelToggle = null!;
   private RibbonToggleButton _legendToggle = null!;
   private RibbonButton _startButton = null!;
@@ -52,7 +51,7 @@ internal sealed partial class MainForm {
   private readonly RibbonComboBox _holePlacementCombo = new("Hole at") { FieldWidth = 80 };
   private readonly RibbonSpinner _holeOffsetSpinner = new("Offset KiB") { Minimum = 0, Maximum = 1L << 32, Value = 0, Increment = 64, FieldWidth = 80 };
   private readonly RibbonSpinner _seedSpinner = new("Seed") { Minimum = int.MinValue, Maximum = int.MaxValue, Value = 1, FieldWidth = 80 };
-  private readonly RibbonComboBox _placementCombo = new("Chunks") { FieldWidth = 112 };
+  private readonly RibbonComboBox _optimizeMethodCombo = new("Method") { FieldWidth = 112 };
   private readonly List<LayoutProfileEntry?> _layoutProfileEntries = [];
 
   private MaintenanceSession? _maintenanceSession;
@@ -167,22 +166,14 @@ internal sealed partial class MainForm {
       this.RefreshLayoutProfiles();
     }, RibbonItemSize.Small, Keys.None, "Create, change or delete layout profiles");
 
-    this._placementCombo.Items.AddRange(["Default", "Metadata first", "Data first"]);
-    this._placementCombo.SelectedIndex = 0;
     this.Field(this._seedSpinner, "Seeds Scramble's shuffle. The same seed deals the same layout every run.",
       () => this.WithPresenter(p => p.SeedText = SeedText()));
-    this.Field(this._placementCombo, "Where an optimized file puts its metadata chunks relative to the payload.",
-      () => this.WithPresenter(p => p.ChunkPlacement = this._placementCombo.SelectedIndex switch {
-        1 => MetadataPlacementProfile.MetadataFirst,
-        2 => MetadataPlacementProfile.DataFirst,
-        _ => null,
-      }));
-    this._minimalGeometryToggle = this.RibbonToggle("Minimal Geometry", IconKeys.Defragment, RibbonItemSize.Small, Keys.None,
-      "Compact rebuilds at the smallest geometry the format allows", @checked: false, on => this.WithPresenter(p => p.MinimalGeometry = on));
+    this.Field(this._optimizeMethodCombo, "How Optimize improves the container: compress (best compression, same format), repack (same entries, dead space dropped) or canonicalize (normal form). Only what the format offers is listed.",
+      () => this.WithPresenter(p => p.OptimizeMethod = this.SelectedOptimizeMethod()));
 
     var group = new RibbonGroup("Options");
     group.Items.AddRange(this._interleaveSpinner, this._metadataZoneCombo, this._layoutProfileCombo,
-      this._editProfilesButton, this._seedSpinner, this._placementCombo, this._minimalGeometryToggle);
+      this._editProfilesButton, this._seedSpinner, this._optimizeMethodCombo);
     return group;
   }
 
@@ -338,6 +329,11 @@ internal sealed partial class MainForm {
     this.SyncDefragmentRibbon();
   }
 
+  private OptimizeMethod SelectedOptimizeMethod()
+    => this._presenter?.Capabilities.OptimizeMethods is { } methods && this._optimizeMethodCombo.SelectedIndex is var i && i >= 0 && i < methods.Count
+      ? methods[i]
+      : OptimizeMethod.Compress;
+
   private MetadataZone SelectedMetadataZone() => this._metadataZoneCombo.SelectedIndex switch {
     1 => MetadataZone.Front,
     2 => MetadataZone.Back,
@@ -438,22 +434,26 @@ internal sealed partial class MainForm {
       }
       this._holeOffsetSpinner.Enabled = idle && this._holePlacementCombo.SelectedIndex == 1;
 
-      Option(this._interleaveSpinner, idle && defrag, caps?.Interleave, defrag);
-      Option(this._metadataZoneCombo, idle && defrag, caps?.MetadataZone, defrag);
-      Option(this._layoutProfileCombo, idle && defrag, caps?.LayoutProfile, defrag);
-      this._editProfilesButton.Enabled = idle && defrag && caps?.LayoutProfile.Supported == true;
+      // The layout options shape extent moves; a directory sort moves nothing.
+      var extents = defrag && p!.MovesExtents;
+      Option(this._interleaveSpinner, idle && extents, caps?.Interleave, extents, appliesTo: "extent moves");
+      Option(this._metadataZoneCombo, idle && extents, caps?.MetadataZone, extents, appliesTo: "extent moves");
+      Option(this._layoutProfileCombo, idle && extents, caps?.LayoutProfile, extents, appliesTo: "extent moves");
+      this._editProfilesButton.Enabled = idle && extents && caps?.LayoutProfile.Supported == true;
 
       var scramble = p?.Verb == MaintenanceVerb.Scramble;
       this._seedSpinner.Visible = scramble;
-      this._placementCombo.Visible = p?.Verb == MaintenanceVerb.Optimize && caps?.ChunkPlacement.Supported == true;
-      this._minimalGeometryToggle.Visible = p?.Verb == MaintenanceVerb.Compact && caps?.MinimalGeometry.Supported == true;
       Option(this._seedSpinner, idle && scramble, scramble ? Capability.Yes("Seeds Scramble's shuffle.") : null, scramble, appliesTo: "Scramble");
       var optimize = p?.Verb == MaintenanceVerb.Optimize;
-      Option(this._placementCombo, idle && optimize, caps?.ChunkPlacement, optimize, appliesTo: "Optimize");
-      var compact = p?.Verb == MaintenanceVerb.Compact;
-      this._minimalGeometryToggle.Enabled = idle && compact && caps?.MinimalGeometry.Supported == true;
-      this._minimalGeometryToggle.Checked = p?.MinimalGeometry == true && compact;
-      this._minimalGeometryToggle.ToolTipText = $"Minimal Geometry: {(caps is null ? NoTarget : !compact ? "Applies to Compact." : caps.MinimalGeometry.Reason)}";
+      this._optimizeMethodCombo.Visible = optimize;
+      var methods = caps?.OptimizeMethods ?? [];
+      if (!this._optimizeMethodCombo.Items.Select(i => i).SequenceEqual(methods.Select(m => m.ToString()))) {
+        this._optimizeMethodCombo.Items.Clear();
+        this._optimizeMethodCombo.Items.AddRange(methods.Select(m => m.ToString()));
+      }
+      this._optimizeMethodCombo.SelectedIndex = p is null ? -1 : methods.ToList().IndexOf(p.OptimizeMethod);
+      this._optimizeMethodCombo.Enabled = idle && optimize && methods.Count > 1;
+      this._optimizeMethodCombo.ToolTipText = $"Method: {(caps is null ? NoTarget : caps.Verb(MaintenanceVerb.Optimize).Reason)} {this._optimizeMethodCombo.Tag}";
 
       var blocker = p?.StartBlocker ?? (p is null ? NoTarget : null);
       this._startButton.Enabled = idle && blocker is null;

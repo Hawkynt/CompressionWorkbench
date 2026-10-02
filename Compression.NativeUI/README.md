@@ -58,15 +58,16 @@ backends, so Windows and Linux run the same code rather than two frontends drift
 
   | Group | Items |
   | --- | --- |
-  | Operation | Defragment, Optimize, Shrink, Compact, Clear (wipe free space), Purge, Scramble as a radio group; Start; Stop where the operation can be stopped |
-  | Defrag Mode | Consolidate (Pack at End as its variant), Defrag (fill holes), Re-order (ascending blocks), Sort Entries, Carve Hole with its size and offset fields |
-  | Options | Block interleave (1–256), metadata placement, layout profile and Edit Profiles; the seed for Scramble, the chunk placement for a file-internal Optimize and Minimal Geometry for Compact appear while their operation is picked |
+  | Operation | Defragment, Optimize, Shrink, Compact, Clear (wipe free space), Purge, Scramble as a radio group; Start; Stop while extents are being moved |
+  | Defrag Mode | Consolidate (Pack at End as its variant), Defrag (fill holes), Re-order (ascending blocks), Carve Hole with its size, placement and offset fields — all extent moves — and Sort Entries, which sorts every directory by name in place and moves no data |
+  | Options | Block interleave (spinner, 1–256), metadata placement, layout profile and Edit Profiles for extent moves; the seed for Scramble and the method for Optimize (Compress, Repack or Canonicalize, as the format offers) appear while their operation is picked |
   | View | Blocks, Circle, 3D Stack; Files panel; Legend; Analyze (read the layout again) |
 
-  Every item asks one capability adapter (`Maintenance/MaintenanceCapabilities.cs`) whether the target
-  supports it, and is disabled with the reason in its tooltip when not — Sort Entries, for instance,
-  says that no format offers it yet. Defrag modes and layout options are probed against the
-  descriptor's own refusal guard without touching the image. Operations run off the UI thread through
+  Every item asks one adapter (`Maintenance/TargetCapabilities.cs`) whether the target supports it,
+  and is disabled with the reason in its tooltip when not. The adapter is a view of the registry's
+  `MaintenanceCapabilities.Describe` profile — operations, honoured defrag features — so the tab, the
+  CLI and the support matrices cannot disagree; a test holds it to the profile for every registered
+  format. Sort Entries is offered for FAT and exFAT. Operations run off the UI thread through
   `MaintenancePresenter`, driving the map live; a refusal (`NotSupportedException`) is reported and
   leaves the image byte-identical, and after a change the archive is re-listed in place. A nested
   archive is maintained as a temporary copy and written back into its host after each change.

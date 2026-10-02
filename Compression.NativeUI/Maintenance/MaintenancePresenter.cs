@@ -35,14 +35,15 @@ internal sealed class MaintenancePresenter {
   public MaintenancePresenter(string imagePath, string formatId) {
     this.ImagePath = imagePath;
     this.FormatId = formatId;
-    this.Capabilities = MaintenanceCapabilities.For(formatId);
+    this.Capabilities = TargetCapabilities.For(formatId);
     this.Verb = VerbOrder.Cast<MaintenanceVerb?>().FirstOrDefault(v => this.Capabilities.Verb(v!.Value).Supported);
     this.Strategy = Enum.GetValues<DefragStrategy>().FirstOrDefault(s => this.Capabilities.Strategy(s).Supported);
+    this.OptimizeMethod = this.Capabilities.OptimizeMethods.FirstOrDefault();
   }
 
   public string ImagePath { get; }
   public string FormatId { get; }
-  public MaintenanceCapabilities Capabilities { get; }
+  public TargetCapabilities Capabilities { get; }
   public IArchiveFormatOperations? Operations => FormatRegistry.GetArchiveOps(this.FormatId);
 
   // ── what the user picked ────────────────────────────────────────────────────────────────────
@@ -56,8 +57,10 @@ internal sealed class MaintenancePresenter {
   public string HoleSizeText { get; set; } = "64m";
   public string HoleAtText { get; set; } = "auto";
   public string SeedText { get; set; } = "1";
-  public bool MinimalGeometry { get; set; }
-  public MetadataPlacementProfile? ChunkPlacement { get; set; }
+  public OptimizeMethod OptimizeMethod { get; set; }
+
+  /// <summary>Whether the picked defragmentation moves extents, as against sorting directory entries.</summary>
+  public bool MovesExtents => this.Strategy != DefragStrategy.SortEntries;
 
   public bool IsRunning { get; private set; }
 
@@ -71,6 +74,8 @@ internal sealed class MaintenancePresenter {
       if (this.Verb is not { } verb) return "Pick an operation.";
       if (this.Capabilities.Verb(verb) is { Supported: false } refused) return refused.Reason;
       if (verb == MaintenanceVerb.Defragment && this.Capabilities.Strategy(this.Strategy) is { Supported: false } strategy) return strategy.Reason;
+      if (verb == MaintenanceVerb.Optimize && !this.Capabilities.OptimizeMethods.Contains(this.OptimizeMethod))
+        return $"This format does not offer {TargetCapabilities.Describe(this.OptimizeMethod)}.";
       return this.Validate().FirstOrDefault();
     }
   }
@@ -80,7 +85,7 @@ internal sealed class MaintenancePresenter {
     var errors = new List<string>();
     switch (this.Verb) {
       case MaintenanceVerb.Defragment:
-        if (this.Capabilities.Interleave.Supported && MaintenanceInput.ParseInterleave(this.InterleaveText).Error is { } stride) errors.Add(stride);
+        if (this.MovesExtents && this.Capabilities.Interleave.Supported && MaintenanceInput.ParseInterleave(this.InterleaveText).Error is { } stride) errors.Add(stride);
         if (this.Strategy == DefragStrategy.CarveHole) {
           if (MaintenanceInput.ParseSize(this.HoleSizeText).Error is { } size) errors.Add(size);
           if (MaintenanceInput.ParseHoleAt(this.HoleAtText).Error is { } at) errors.Add(at);
@@ -95,22 +100,14 @@ internal sealed class MaintenancePresenter {
     return errors;
   }
 
-  /// <summary>Whether the picked operation can be stopped part-way.</summary>
-  public bool CanCancel => this.Verb switch {
-    MaintenanceVerb.Defragment => true,
-    MaintenanceVerb.Optimize => this.Capabilities.OptimizeRoute is OptimizeRoute.Reencode or OptimizeRoute.SolidBlocks,
-    _ => false,
-  };
+  /// <summary>Whether the picked operation can be stopped part-way: only an extent move can.</summary>
+  public bool CanCancel => this.Verb == MaintenanceVerb.Defragment && this.MovesExtents;
 
   /// <summary>
   /// Whether stopping discards a staged copy (the original untouched) rather than leaving in-place
-  /// moves where they got to.
+  /// moves where they got to. Extent moves are always in place.
   /// </summary>
-  public bool IsStaged => this.Verb switch {
-    MaintenanceVerb.Defragment => this.Capabilities.StagedDefragment,
-    MaintenanceVerb.Optimize => true,
-    _ => false,
-  };
+  public bool IsStaged => false;
 
   /// <summary>The engine mode the picked strategy stands for.</summary>
   public DefragMode EngineMode => this.Strategy switch {
@@ -162,9 +159,6 @@ internal sealed class MaintenancePresenter {
       case MaintenanceVerb.Scramble:
         return $"Fragment {file} on purpose?\n\nEvery file's blocks are scattered across the volume. The contents are preserved exactly "
              + "-- only the layout changes, and Defragment undoes it -- but this is a testing tool, not a repair.";
-      case MaintenanceVerb.Compact when this.MinimalGeometry && this.Capabilities.MinimalGeometry.Supported:
-        return "Minimal geometry rebuilds the container at the smallest size the format allows (e.g. a 1.44 MB FAT floppy collapses to a few KB).\n\n"
-             + "Contents are preserved, but the result may no longer be a standard, mountable image. Continue?";
       default:
         return null;
     }
@@ -191,22 +185,22 @@ internal sealed class MaintenancePresenter {
 
     // Everything the worker needs is read here, on the caller's thread, so a later ribbon change
     // cannot alter a run already under way.
-    var defragOptions = verb == MaintenanceVerb.Defragment ? this.BuildDefragOptions(ev => progress(FromEvent(ev)), token) : null;
+    var defragOptions = verb == MaintenanceVerb.Defragment && this.MovesExtents ? this.BuildDefragOptions(ev => progress(FromEvent(ev)), token) : null;
     var seed = MaintenanceInput.ParseSeed(this.SeedText).Value;
-    var minimal = this.MinimalGeometry && this.Capabilities.MinimalGeometry.Supported;
-    var placement = this.ChunkPlacement;
+    var method = this.OptimizeMethod;
 
     return Task.Run(() => {
       var clock = Stopwatch.StartNew();
       MaintenanceOutcome outcome;
       try {
         outcome = verb switch {
-          MaintenanceVerb.Defragment => this.RunDefragment(path, defragOptions!, log),
-          MaintenanceVerb.Optimize => this.RunOptimize(path, placement, progress, log, token),
+          MaintenanceVerb.Defragment when defragOptions is null => this.RunSortEntries(path),
+          MaintenanceVerb.Defragment => this.RunDefragment(path, defragOptions, log),
+          MaintenanceVerb.Optimize => RunOptimize(path, method),
           MaintenanceVerb.Shrink => this.RunShrink(path),
           MaintenanceVerb.WipeEmpty => this.RunWipe(path),
           MaintenanceVerb.Purge => this.RunPurge(path),
-          MaintenanceVerb.Compact => RunCompact(path, minimal, log),
+          MaintenanceVerb.Compact => RunCompact(path, log),
           MaintenanceVerb.Scramble => this.RunScramble(path, seed, progress),
           _ => new(MaintenanceOutcomeKind.Refused, $"{verb} is not an operation.", false),
         };
@@ -242,8 +236,8 @@ internal sealed class MaintenancePresenter {
     => new(ev.BlockMap, ev.ImageSize, ev.CurrentReadOffset, ev.CurrentWriteOffset, ev.Fraction, ev.Status, CommitStarted: ev.Phase == "committing");
 
   private MaintenanceOutcome RunDefragment(string path, DefragOptions options, Action<string> log) {
-    if (this.Operations is not IArchiveDefragmentable defragmentable)
-      throw new NotSupportedException($"{this.FormatId} has no defragmenter.");
+    if (TargetCapabilities.Carrier(this.FormatId, MaintenanceCapability.DefragmentExtents) is not IArchiveDefragmentable defragmentable)
+      throw new NotSupportedException($"{this.FormatId} does not move extents in place.");
 
     log($"Mode: {options.Mode}{(options.InterleaveStride > 1 ? $", interleave {options.InterleaveStride}" : "")}"
       + $"{(options.MetadataZonePlacement != MetadataZone.Unchanged ? $", metadata {options.MetadataZonePlacement}" : "")}"
@@ -264,122 +258,31 @@ internal sealed class MaintenancePresenter {
     return new(MaintenanceOutcomeKind.Succeeded, finalStatus ?? "Defragmented; size and contents unchanged.", true);
   }
 
-  private MaintenanceOutcome RunOptimize(string path, MetadataPlacementProfile? placement, Action<MaintenanceProgress> progress, Action<string> log, CancellationToken token) {
-    var originalSize = new FileInfo(path).Length;
-    switch (this.Capabilities.OptimizeRoute) {
-      case OptimizeRoute.FileInternal: {
-        if (this.Operations is not IFileInternalChunkMover mover) throw new NotSupportedException($"{this.FormatId} has no chunk mover.");
-        using (var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite))
-          mover.Optimize(stream, placement);
-        return new(MaintenanceOutcomeKind.Succeeded, SizeChange(originalSize, new FileInfo(path).Length), true);
-      }
-
-      case OptimizeRoute.CompressedVolume: {
-        var descriptor = FormatRegistry.GetById(this.FormatId) ?? throw new NotSupportedException($"{this.FormatId} is not registered.");
-        var result = CvfOptimizer.Optimize(path, descriptor);
-        log($"Re-encoded via {result.MethodUsed}; {result.FilesCompressed} cluster(s) compressed, {result.FilesStoredVerbatim} stored verbatim.");
-        return new(MaintenanceOutcomeKind.Succeeded, SizeChange(result.OriginalSize, result.OptimizedSize), true);
-      }
-
-      case OptimizeRoute.SolidBlocks:
-        return this.RunSolidBlocks(path, originalSize, progress, log, token);
-
-      case OptimizeRoute.Reencode:
-        return this.RunReencode(path, originalSize, progress, token);
-
-      default:
-        throw new NotSupportedException($"{this.FormatId} has no optimizer.");
-    }
+  private MaintenanceOutcome RunSortEntries(string path) {
+    var before = new FileInfo(path).Length;
+    MaintenanceOperations.SortDirectoryEntries(path);
+    return new(MaintenanceOutcomeKind.Succeeded, $"Every directory is in name order; {MaintenanceInput.FormatSize(before)}, no data moved.", true);
   }
 
-  private MaintenanceOutcome RunReencode(string path, long originalSize, Action<MaintenanceProgress> progress, CancellationToken token) {
-    var staged = path + ".opt.tmp";
-    AtomicFileWriter.TryDelete(staged);
-    if (this.Operations is { } ops && BlockMapSnapshot.StagedProjection(path, ops, originalSize) is { } projection)
-      progress(new(projection, originalSize, 0, -1, 0, "Staged rebuild — green: source read; orange: staged bytes written."));
+  /// <summary>Optimizes through the registry's staged, verified file operation; the original is replaced atomically.</summary>
+  private static MaintenanceOutcome RunOptimize(string path, OptimizeMethod method) {
+    var result = method switch {
+      OptimizeMethod.Compress => MaintenanceOperations.Compress(path, path),
+      OptimizeMethod.Repack => MaintenanceOperations.Repack(path, path),
+      _ => MaintenanceOperations.Canonicalize(path, path),
+    };
 
-    try {
-      var worker = Task.Run(() => ArchiveOperations.Optimize(path, staged, password: null), CancellationToken.None);
-      while (!worker.Wait(100)) {
-        var written = FindStagedOutputLength(staged);
-        var fraction = originalSize > 0 ? Math.Clamp((double)written / originalSize, 0, 0.95) : 0;
-        var span = Math.Max(1L, originalSize);
-        progress(new(null, originalSize, Math.Clamp((long)(fraction * span), 0, span - 1), written > 0 ? Math.Clamp(written, 0, span - 1) : -1, fraction,
-          token.IsCancellationRequested
-            ? "Cancellation pending — the current unit finishes, then the staged copy is discarded."
-            : $"Rebuilding a staged copy — {MaintenanceInput.FormatSize(written)} written; the original is unchanged."));
-      }
-
-      var result = worker.GetAwaiter().GetResult();
-      token.ThrowIfCancellationRequested();
-      progress(new(null, originalSize, -1, -1, 0.99, "Staged copy complete — committing.", CommitStarted: true));
-      AtomicFileWriter.ReplaceTarget(staged, path);
-      return new(MaintenanceOutcomeKind.Succeeded, $"{result.EntriesOptimized} entries re-encoded; {SizeChange(originalSize, result.OptimizedSize)}", true);
-    } finally {
-      AtomicFileWriter.TryDelete(staged);
-    }
-  }
-
-  private MaintenanceOutcome RunSolidBlocks(string path, long originalSize, Action<MaintenanceProgress> progress, Action<string> log, CancellationToken token) {
-    FileFormat.SevenZip.SolidBlockOptimizer.OptimizeResult result;
-    using (var source = File.OpenRead(path))
-      result = FileFormat.SevenZip.SolidBlockOptimizer.Optimize(
-        source,
-        maxTrials: 5,
-        onProgress: (index, total, name) => log($"  Trying strategy {index + 1}/{total}: {name}..."),
-        onDetailedProgress: detail => {
-          var span = Math.Max(1L, originalSize);
-          var share = detail.Phase == "extracting" ? detail.BytesDone / Math.Max(1.0, detail.BytesTotal) : detail.Current / Math.Max(1.0, detail.Total);
-          var (fraction, read, write) = detail.Phase switch {
-            "extracting" => (0.30 * share, Math.Clamp((long)(share * span), 0, span - 1), -1L),
-            "strategy" => (0.30 + 0.10 * share, -1L, -1L),
-            "building" => (0.40 + 0.55 * share, -1L, Math.Clamp((long)(share * span), 0, span - 1)),
-            _ => (0.0, -1L, -1L),
-          };
-          progress(new(null, originalSize, read, write, Math.Clamp(fraction, 0, 0.95), detail.Phase switch {
-            "extracting" => $"Reading source entry: {detail.Name}",
-            "strategy" => $"Planning solid grouping: {detail.Name}",
-            "building" => $"Building staged solid candidate: {detail.Name}",
-            _ => "Staged 7z regrouping",
-          }));
-        },
-        cancellationToken: token);
-
-    foreach (var trial in result.Trials)
-      log($"    {trial.StrategyName}: {MaintenanceInput.FormatSize(trial.OutputSize)} ({trial.Elapsed.TotalMilliseconds:F0} ms)");
-
-    var newSize = (long)result.Data.Length;
-    if (newSize >= originalSize)
-      return new(MaintenanceOutcomeKind.Succeeded, "No grouping beat the original; the archive is unchanged.", false);
-
-    progress(new(null, originalSize, -1, -1, 0.99, "Winning layout selected — committing.", CommitStarted: true));
-    AtomicFileWriter.WriteAllBytesAtomic(path, result.Data);
-    return new(MaintenanceOutcomeKind.Succeeded, $"winner {result.WinningStrategy}; {SizeChange(originalSize, newSize)}", true);
+    return new(MaintenanceOutcomeKind.Succeeded,
+      result.Changed ? $"{method}: {SizeChange(result.OriginalSize, result.NewSize)}" : $"{method}: nothing to gain; the file is unchanged.",
+      result.Changed);
   }
 
   private MaintenanceOutcome RunShrink(string path) {
-    var originalSize = new FileInfo(path).Length;
-    switch (this.FormatId) {
-      case "Fat": {
-        using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
-        var result = FileSystem.Fat.FatShrinkHelper.Shrink(stream);
-        return Shrunk(result.WasReduced, result.OriginalSize, result.NewSize);
-      }
-      case "Ext" or "Ext1": {
-        using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
-        var result = FileSystem.Ext.ExtShrinkHelper.Shrink(stream);
-        return Shrunk(result.WasReduced, result.OriginalSize, result.NewSize);
-      }
-      case "Vhd": {
-        using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
-        var result = FileFormat.Vhd.VhdCompactor.Compact(stream);
-        return Shrunk(result.WasReduced, result.OriginalSize, result.NewSize);
-      }
-    }
-
-    if (this.Operations is not IArchiveShrinkable shrinkable) throw new NotSupportedException($"{this.FormatId} cannot shrink.");
+    if (TargetCapabilities.Carrier(this.FormatId, MaintenanceCapability.Shrink) is not IArchiveShrinkable shrinkable)
+      throw new NotSupportedException($"{this.FormatId} cannot shrink losslessly.");
 
     // Shrink into a staged file, then swap it in, so a crash mid-write cannot corrupt the source.
+    var originalSize = new FileInfo(path).Length;
     var staged = path + ".shrink.tmp";
     try {
       using (var input = File.OpenRead(path))
@@ -387,18 +290,18 @@ internal sealed class MaintenancePresenter {
         shrinkable.Shrink(input, output);
 
       var newSize = new FileInfo(staged).Length;
+      if (newSize >= originalSize)
+        return new(MaintenanceOutcomeKind.Succeeded, "Already compact; nothing to trim.", false);
+
       AtomicFileWriter.ReplaceTarget(staged, path);
-      return Shrunk(newSize < originalSize, originalSize, newSize);
+      return new(MaintenanceOutcomeKind.Succeeded, SizeChange(originalSize, newSize), true);
     } finally {
       AtomicFileWriter.TryDelete(staged);
     }
-
-    static MaintenanceOutcome Shrunk(bool reduced, long before, long after)
-      => new(MaintenanceOutcomeKind.Succeeded, reduced ? SizeChange(before, after) : "Already compact; nothing to trim.", reduced);
   }
 
   private MaintenanceOutcome RunWipe(string path) {
-    var ops = this.Operations;
+    var ops = TargetCapabilities.Carrier(this.FormatId, MaintenanceCapability.WipeUnused);
     var totalUnused = -1L;
     long wiped;
     using (var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite)) {
@@ -424,21 +327,17 @@ internal sealed class MaintenancePresenter {
   }
 
   private MaintenanceOutcome RunPurge(string path) {
-    var ops = this.Operations;
-    if (ops is not IArchiveModifiable) throw new NotSupportedException($"{this.FormatId} cannot remove entries.");
-
-    List<ArchiveEntryInfo> entries;
-    using (var probe = File.OpenRead(path))
-      entries = ops.List(probe, password: null);
-    if (entries.Count == 0) return new(MaintenanceOutcomeKind.Succeeded, "The container is already empty.", false);
+    if (TargetCapabilities.Carrier(this.FormatId, MaintenanceCapability.Purge) is not IArchivePurgeable purgeable)
+      throw new NotSupportedException($"{this.FormatId} has no valid empty state to purge to.");
 
     var originalSize = new FileInfo(path).Length;
-    ArchiveOperations.Remove(path, [.. entries.Select(e => e.Name)]);
-    return new(MaintenanceOutcomeKind.Succeeded, $"{entries.Count(e => !e.IsDirectory)} file(s) erased; {SizeChange(originalSize, new FileInfo(path).Length)}", true);
+    using (var image = File.Open(path, FileMode.Open, FileAccess.ReadWrite))
+      purgeable.Purge(image);
+    return new(MaintenanceOutcomeKind.Succeeded, $"Every file erased; {SizeChange(originalSize, new FileInfo(path).Length)}", true);
   }
 
-  private static MaintenanceOutcome RunCompact(string path, bool minimal, Action<string> log) {
-    var result = CompactOperation.Compact(path, new CompactOperation.CompactOptions { Minimal = minimal, Log = line => log("  " + line) });
+  private static MaintenanceOutcome RunCompact(string path, Action<string> log) {
+    var result = CompactOperation.Compact(path, new CompactOperation.CompactOptions { Log = line => log("  " + line) });
     var steps = result.StepsRun.Count > 0 ? string.Join(", ", result.StepsRun) : "none";
     return new(MaintenanceOutcomeKind.Succeeded, $"steps: {steps}; {SizeChange(result.OriginalSize, result.NewSize)}", result.StepsRun.Count > 0);
   }
@@ -454,22 +353,5 @@ internal sealed class MaintenancePresenter {
   private static string SizeChange(long before, long after) {
     var pct = before > 0 ? 100.0 * (after - before) / before : 0;
     return $"{MaintenanceInput.FormatSize(before)} → {MaintenanceInput.FormatSize(after)} ({pct:+0.0;-0.0;0.0}%)";
-  }
-
-  /// <summary>
-  /// The optimizer writes through its own temporary file, so the staged size is the largest of the
-  /// target and any sibling scratch file it is currently filling.
-  /// </summary>
-  private static long FindStagedOutputLength(string target) {
-    try {
-      var best = File.Exists(target) ? new FileInfo(target).Length : 0L;
-      var directory = Path.GetDirectoryName(target);
-      if (string.IsNullOrEmpty(directory)) directory = Directory.GetCurrentDirectory();
-      foreach (var candidate in Directory.EnumerateFiles(directory, Path.GetFileName(target) + ".tmp.*"))
-        best = Math.Max(best, new FileInfo(candidate).Length);
-      return best;
-    } catch {
-      return 0;
-    }
   }
 }
