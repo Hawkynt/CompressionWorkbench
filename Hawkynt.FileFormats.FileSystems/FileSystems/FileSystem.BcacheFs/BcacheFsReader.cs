@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Registry;
 using static FileSystem.BcacheFs.BcacheFsFormat;
 
 namespace FileSystem.BcacheFs;
@@ -52,8 +53,9 @@ public sealed class BcacheFsReader : IDisposable {
   /// <param name="FileOffset">Which byte of the file it begins at.</param>
   public readonly record struct Extent(long FirstSector, int Sectors, long FileOffset);
 
-  /// <summary>One file: its path, its length, and where its bytes are.</summary>
-  public sealed record Entry(string Name, long Size, ulong Inode, IReadOnlyList<Extent> Extents) {
+  /// <summary>One file: its path, its length, where its bytes are, and its times, owner and mode.</summary>
+  public sealed record Entry(string Name, long Size, ulong Inode, IReadOnlyList<Extent> Extents,
+      ArchiveEntryMetadata Metadata) {
 
     /// <summary>Where the file's first byte is, or zero when it holds none.</summary>
     public long FirstSector => this.Extents.Count == 0 ? 0 : this.Extents[0].FirstSector;
@@ -130,11 +132,18 @@ public sealed class BcacheFsReader : IDisposable {
       list.Add((name, target, type));
     }
 
-    // Then sizes, from the inodes tree.
-    var sizes = new Dictionary<ulong, long>();
+    // Then sizes, times, owners and modes, from the inodes tree. A time is a signed
+    // count of the superblock's units from its base.
+    var raw = core.Superblock.RawBytes;
+    var timeBase = (Int128)BinaryPrimitives.ReadUInt64LittleEndian(raw.AsSpan(128))
+      | ((Int128)BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(136)) << 64);
+    var precision = Math.Max(1u, BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(140)));
+    var inodes = new Dictionary<ulong, (long Size, ArchiveEntryMetadata Metadata)>();
     foreach (var key in Keys(BcacheFsBtreeId.Inodes)) {
       if (key.RawType != KeyInodeV3 || key.Value.Length < 48 || key.Position.Snapshot != snapshot) continue;
-      sizes[key.Position.Offset] = (long)BinaryPrimitives.ReadUInt64LittleEndian(key.Value.AsSpan(32));
+      inodes[key.Position.Offset] = (
+        (long)BinaryPrimitives.ReadUInt64LittleEndian(key.Value.AsSpan(32)),
+        ReadMetadata(key.Value, timeBase, precision));
     }
 
     // Then the extents, gathered per inode and ordered by where they land in the file.
@@ -182,9 +191,11 @@ public sealed class BcacheFsReader : IDisposable {
           continue;
         }
 
-        var size = sizes.GetValueOrDefault(target, 0L);
+        var info = inodes.GetValueOrDefault(target);
         var runs = extents.TryGetValue(target, out var found) ? found : [];
-        var entry = new Entry(full, size, target, runs) { Unreadable = unreadable.GetValueOrDefault(target) };
+        var entry = new Entry(full, info.Size, target, runs, info.Metadata ?? new ArchiveEntryMetadata()) {
+          Unreadable = unreadable.GetValueOrDefault(target),
+        };
         if (type == DtLnk && entry.Unreadable == null) {
           var bytes = this.Read(entry);
           var end = Array.IndexOf(bytes, (byte)0);
@@ -235,6 +246,63 @@ public sealed class BcacheFsReader : IDisposable {
 
     reason = "extent carries no dirty pointer";
     return false;
+  }
+
+  /// <summary>The times, owner, group and permission bits an <c>inode_v3</c> carries.</summary>
+  private static ArchiveEntryMetadata ReadMetadata(byte[] value, Int128 timeBase, uint precision) {
+    var flags = BinaryPrimitives.ReadUInt64LittleEndian(value.AsSpan(16));
+    var fields = (int)((flags >> 24) & 0x7F);
+    var cursor = (int)((flags >> 31) & 0x1F) * 8;
+    var mode = (ushort)((flags >> 36) & 0xFFFF);
+    ulong access = 0, change = 0, write = 0, creation = 0, uid = 0, gid = 0;
+
+    for (var index = 0; index < fields && index < 6; ++index) {
+      if (cursor >= value.Length) break;
+      var consumed = ReadVarint(value.AsSpan(cursor), out var item);
+      if (consumed <= 0 || cursor + consumed > value.Length) break;
+      cursor += consumed;
+      if (index < 4) {
+        // The time fields are 96 bits: the low 64, then the high 32.
+        if (cursor >= value.Length) break;
+        var highBytes = ReadVarint(value.AsSpan(cursor), out var high);
+        if (highBytes <= 0 || cursor + highBytes > value.Length) break;
+        cursor += highBytes;
+        if (high != 0) continue;
+      }
+
+      switch (index) {
+        case 0: access = item; break;
+        case 1: change = item; break;
+        case 2: write = item; break;
+        case 3: creation = item; break;
+        case 4: uid = item; break;
+        case 5: gid = item; break;
+      }
+    }
+
+    return new ArchiveEntryMetadata(
+      CreationTimeUtc: ToDateTime(creation, timeBase, precision),
+      LastAccessTimeUtc: ToDateTime(access, timeBase, precision),
+      LastWriteTimeUtc: ToDateTime(write, timeBase, precision),
+      UnixUserId: (uint)Math.Min(uid, uint.MaxValue),
+      UnixGroupId: (uint)Math.Min(gid, uint.MaxValue),
+      UnixMode: (ushort)(mode & 0x1FF),
+      StatusChangeTimeUtc: ToDateTime(change, timeBase, precision));
+  }
+
+  /// <summary>
+  /// A stored time as an instant, or null outside what <see cref="DateTimeOffset" /> holds.
+  /// </summary>
+  /// <remarks>
+  /// 128-bit arithmetic: years 1 and 9999 are both outside what a signed 64-bit
+  /// count of nanoseconds holds, although their stored 100 ns units fit easily.
+  /// </remarks>
+  private static DateTimeOffset? ToDateTime(ulong rawTime, Int128 timeBase, uint precision) {
+    var nanoseconds = (Int128)unchecked((long)rawTime) * precision + timeBase;
+    var ticks = nanoseconds / 100;
+    var minTicks = (Int128)(DateTimeOffset.MinValue.UtcTicks - DateTimeOffset.UnixEpoch.UtcTicks);
+    var maxTicks = (Int128)(DateTimeOffset.MaxValue.UtcTicks - DateTimeOffset.UnixEpoch.UtcTicks);
+    return ticks < minTicks || ticks > maxTicks ? null : DateTimeOffset.UnixEpoch.AddTicks((long)ticks);
   }
 
   private static string ReadName(ReadOnlySpan<byte> source) {

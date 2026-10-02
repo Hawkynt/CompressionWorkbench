@@ -119,6 +119,9 @@ internal static class BcacheFsFormat {
   /// <summary>Largest extent the volume writes, as a power of two sectors: 64 KiB.</summary>
   internal const int EncodedExtentMaxBits = 7;
 
+  /// <summary>How many nanoseconds one stored time unit is, with a time base of zero.</summary>
+  internal const uint TimePrecisionNanoseconds = 100;
+
   /// <summary>The journal sequence a volume written whole records as its last.</summary>
   internal const ulong CleanJournalSeq = 1;
 

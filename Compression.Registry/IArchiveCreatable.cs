@@ -51,13 +51,14 @@ public interface IArchiveCreatable {
     var buffered = new List<ArchiveInputInfo>();
     foreach (var input in inputs) {
       if (input.IsDirectory) {
-        buffered.Add(new ArchiveInputInfo(input.Name, input.Name, IsDirectory: true));
+        buffered.Add(new ArchiveInputInfo(input.Name, input.Name, IsDirectory: true,
+          Metadata: input.Metadata));
         continue;
       }
       using var src = input.OpenStream();
       using var ms = new MemoryStream();
       src.CopyTo(ms);
-      buffered.Add(ArchiveInputInfo.InMemory(input.Name, ms.ToArray()));
+      buffered.Add(ArchiveInputInfo.InMemory(input.Name, ms.ToArray(), input.Metadata));
     }
     this.Create(target, buffered, options);
   }

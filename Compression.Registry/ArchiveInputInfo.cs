@@ -16,25 +16,32 @@ public sealed record ArchiveInputInfo(
   string FullPath,
   string ArchiveName,
   bool IsDirectory,
-  byte[]? InMemoryContent = null
+  byte[]? InMemoryContent = null,
+  ArchiveEntryMetadata? Metadata = null
 ) {
   /// <summary>Creates an in-memory input whose content comes from
   /// <paramref name="content"/> rather than a file on disk.</summary>
-  public static ArchiveInputInfo InMemory(string archiveName, byte[] content)
-    => new(FullPath: archiveName, ArchiveName: archiveName, IsDirectory: false, InMemoryContent: content);
+  public static ArchiveInputInfo InMemory(string archiveName, byte[] content,
+      ArchiveEntryMetadata? metadata = null)
+    => new(FullPath: archiveName, ArchiveName: archiveName, IsDirectory: false,
+      InMemoryContent: content, Metadata: metadata);
 
   /// <summary>Creates an in-memory input from a byte span (copied into the
   /// input, so the caller's buffer may be reused/stack-allocated).</summary>
-  public static ArchiveInputInfo InMemory(string archiveName, ReadOnlySpan<byte> content)
-    => new(FullPath: archiveName, ArchiveName: archiveName, IsDirectory: false, InMemoryContent: content.ToArray());
+  public static ArchiveInputInfo InMemory(string archiveName, ReadOnlySpan<byte> content,
+      ArchiveEntryMetadata? metadata = null)
+    => new(FullPath: archiveName, ArchiveName: archiveName, IsDirectory: false,
+      InMemoryContent: content.ToArray(), Metadata: metadata);
 
   /// <summary>Creates an in-memory input by reading <paramref name="content"/>
   /// fully into memory. Reads from the stream's current position to its end.</summary>
-  public static ArchiveInputInfo InMemory(string archiveName, System.IO.Stream content) {
+  public static ArchiveInputInfo InMemory(string archiveName, System.IO.Stream content,
+      ArchiveEntryMetadata? metadata = null) {
     ArgumentNullException.ThrowIfNull(content);
     using var ms = new System.IO.MemoryStream();
     content.CopyTo(ms);
-    return new(FullPath: archiveName, ArchiveName: archiveName, IsDirectory: false, InMemoryContent: ms.ToArray());
+    return new(FullPath: archiveName, ArchiveName: archiveName, IsDirectory: false,
+      InMemoryContent: ms.ToArray(), Metadata: metadata);
   }
 
   /// <summary>Creates an on-disk input from a <see cref="System.IO.FileInfo"/>.
@@ -42,7 +49,13 @@ public sealed record ArchiveInputInfo(
   /// the archive name defaults to the file's leaf name.</summary>
   public static ArchiveInputInfo FromFile(System.IO.FileInfo file, string? archiveName = null) {
     ArgumentNullException.ThrowIfNull(file);
-    return new(FullPath: file.FullName, ArchiveName: archiveName ?? file.Name, IsDirectory: false);
+    var metadata = new ArchiveEntryMetadata(
+      CreationTimeUtc: file.CreationTimeUtc,
+      LastAccessTimeUtc: file.LastAccessTimeUtc,
+      LastWriteTimeUtc: file.LastWriteTimeUtc,
+      UnixMode: OperatingSystem.IsWindows() ? null : (ushort)System.IO.File.GetUnixFileMode(file.FullName));
+    return new(FullPath: file.FullName, ArchiveName: archiveName ?? file.Name,
+      IsDirectory: false, Metadata: metadata);
   }
 
   /// <summary>Returns the input's bytes: the in-memory content when present,

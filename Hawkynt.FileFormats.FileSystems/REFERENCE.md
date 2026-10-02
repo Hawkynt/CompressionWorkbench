@@ -3185,17 +3185,18 @@ Implements `IDisposable`.
 
 #### `BcacheFsReader.Entry`
 
-One file: its path, its length, and where its bytes are.
+One file: its path, its length, where its bytes are, and its times, owner and mode.
 
 Implements `IEquatable<Entry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Entry` | `Entry(string Name, long Size, ulong Inode, IReadOnlyList<Extent> Extents)` | One file: its path, its length, and where its bytes are. |
+| `Entry` | `Entry(string Name, long Size, ulong Inode, IReadOnlyList<Extent> Extents, ArchiveEntryMetadata Metadata)` | One file: its path, its length, where its bytes are, and its times, owner and mode. |
 | `Extents` | `IReadOnlyList<Extent> Extents { get; init; }` |  |
 | `FirstSector` | `long FirstSector { get; }` | Where the file's first byte is, or zero when it holds none. |
 | `Inode` | `ulong Inode { get; init; }` |  |
 | `LinkTarget` | `string LinkTarget { get; init; }` | Where a symbolic link points, or null for a regular file. |
+| `Metadata` | `ArchiveEntryMetadata Metadata { get; init; }` |  |
 | `Name` | `string Name { get; init; }` |  |
 | `Size` | `long Size { get; init; }` |  |
 | `Unreadable` | `string Unreadable { get; init; }` | Why the file's bytes cannot be read here — a compressed or encrypted extent — or null when they can. |
@@ -3223,8 +3224,8 @@ Writes a bcachefs volume: a superblock, the b-trees that describe the files, and
 | `BcachefsMagic` | `static readonly byte[] BcachefsMagic` | BCHFS_MAGIC, in storage byte order. |
 | `MinImageSize` | `const long MinImageSize` | Smallest volume this writes. A bcachefs device needs at least 512 buckets, and the two superblock slots at the front already claim thirty-three of them. |
 | `AddDirectory` | `void AddDirectory(string name)` | Adds a directory, which may stay empty. |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file, held in memory. |
-| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a file whose bytes are read as the volume is written. |
+| `AddFile` | `void AddFile(string name, byte[] data, ArchiveEntryMetadata metadata = null)` | Adds a file, held in memory, with the times, ownership and mode it should carry. |
+| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream, ArchiveEntryMetadata metadata = null)` | Adds a file whose bytes are read as the volume is written. |
 | `AddSymlink` | `void AddSymlink(string name, string target)` | Adds a symbolic link pointing at `target`. |
 | `EstimateSize` | `static long EstimateSize(IEnumerable<long> fileSizes)` | The smallest volume that holds `fileSizes`: the superblock slots, the journal, the b-tree reservation, the file data, and the slot at the tail. |
 | `SetImageSize` | `void SetImageSize(long bytes)` | Sets the total volume size in bytes. |

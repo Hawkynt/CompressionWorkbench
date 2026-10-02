@@ -63,6 +63,7 @@ internal static class BcacheFsInPlaceModifier {
     internal Key? ExistingInode { get; init; }
     internal Key? ExistingDirent { get; init; }
     internal byte DirentType { get; init; } = DtReg;
+    internal ArchiveEntryMetadata? Metadata { get; set; }
     internal List<Key> ExistingExtents { get; } = [];
     internal List<Key> FinalExtents { get; } = [];
     internal PendingPayload? Pending { get; set; }
@@ -107,6 +108,9 @@ internal static class BcacheFsInPlaceModifier {
         throw new InvalidOperationException($"bcachefs: '{path}' is a directory.");
 
       var length = input.InMemoryContent?.LongLength ?? new FileInfo(input.FullPath).Length;
+      var metadata = input.Metadata ?? (input.InMemoryContent is null
+        ? ArchiveInputInfo.FromFile(new FileInfo(input.FullPath), input.ArchiveName).Metadata
+        : null);
       Func<Stream> open = input.InMemoryContent is { } bytes
         ? () => new MemoryStream(bytes, writable: false)
         : () => File.OpenRead(input.FullPath);
@@ -117,6 +121,7 @@ internal static class BcacheFsInPlaceModifier {
         foreach (var key in existing.ExistingExtents)
           AddFreedRange(model.FreedRanges, key);
         existing.Length = length;
+        existing.Metadata = metadata;
         existing.Pending = new PendingPayload { Length = length, Open = open };
         existing.FinalExtents.Clear();
         continue;
@@ -128,6 +133,7 @@ internal static class BcacheFsInPlaceModifier {
         ParentPath = parent,
         Inode = model.NextInode++,
         Length = length,
+        Metadata = metadata,
         Pending = new PendingPayload { Length = length, Open = open },
       };
     }
@@ -577,9 +583,9 @@ internal static class BcacheFsInPlaceModifier {
       var parentInode = model.Directories[file.ParentPath].Inode;
       var sectors = (ulong)((file.Length + SectorSize - 1) / SectorSize);
       trees[BtreeInodes].Add(file.ExistingInode is { } existing
-        ? PatchFileSize(existing, (ulong)file.Length, sectors)
+        ? PatchInodeMetadata(PatchFileSize(existing, (ulong)file.Length, sectors), file.Metadata)
         : BcacheFsWriter.InodeKey(file.Inode, parentInode, file.DirentOffset, BcacheFsWriter.ModeFile,
-          (ulong)file.Length, sectors, 0));
+          (ulong)file.Length, sectors, 0, metadata: file.Metadata));
       trees[BtreeDirents].Add(file.ExistingDirent
         ?? BcacheFsWriter.DirentKey(parentInode, file.DirentOffset, file.Name, file.Inode, DtReg));
     }
@@ -631,6 +637,73 @@ internal static class BcacheFsInPlaceModifier {
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(24), sectors);
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(32), size);
     return inode with { Value = value };
+  }
+
+  private static Key PatchInodeMetadata(Key inode, ArchiveEntryMetadata? metadata) {
+    if (metadata == null || inode.Type != KeyInodeV3 || inode.Value.Length < 48)
+      return inode;
+
+    var value = inode.Value;
+    var flags = BinaryPrimitives.ReadUInt64LittleEndian(value.AsSpan(16));
+    var fieldCount = (int)((flags >> 24) & 0x7F);
+    var fieldsStart = (int)((flags >> 31) & 0x1F) * 8;
+    if (fieldsStart < 48 || fieldsStart > value.Length)
+      throw new InvalidDataException("bcachefs: inode metadata field list lies outside its key.");
+
+    var fields = new List<(ulong Low, ulong High)>(Math.Max(fieldCount, 6));
+    var cursor = fieldsStart;
+    for (var index = 0; index < fieldCount; ++index) {
+      var lowBytes = ReadVarint(value.AsSpan(cursor), out var low);
+      if (lowBytes <= 0 || cursor + lowBytes > value.Length)
+        throw new InvalidDataException("bcachefs: truncated packed inode metadata field.");
+      cursor += lowBytes;
+      ulong high = 0;
+      if (index < 4) {
+        var highBytes = ReadVarint(value.AsSpan(cursor), out high);
+        if (highBytes <= 0 || cursor + highBytes > value.Length)
+          throw new InvalidDataException("bcachefs: truncated wide packed inode metadata field.");
+        cursor += highBytes;
+      }
+      fields.Add((low, high));
+    }
+
+    while (fields.Count < 6) fields.Add((0, 0));
+    if (metadata.LastAccessTimeUtc is { } atime)
+      fields[0] = (BcacheFsWriter.ToBcacheTime(atime), 0);
+    if (metadata.StatusChangeTimeUtc is { } ctime)
+      fields[1] = (BcacheFsWriter.ToBcacheTime(ctime), 0);
+    if (metadata.LastWriteTimeUtc is { } mtime) {
+      fields[2] = (BcacheFsWriter.ToBcacheTime(mtime), 0);
+    }
+    if (metadata.CreationTimeUtc is { } otime)
+      fields[3] = (BcacheFsWriter.ToBcacheTime(otime), 0);
+    if (metadata.UnixUserId is { } uid) fields[4] = (uid, 0);
+    if (metadata.UnixGroupId is { } gid) fields[5] = (gid, 0);
+
+    var present = fields.Count;
+    while (present > 0) {
+      var last = fields[present - 1];
+      if (last.Low != 0 || last.High != 0) break;
+      --present;
+    }
+    var packed = new byte[Math.Max(1, present * 18)];
+    cursor = 0;
+    for (var index = 0; index < present; ++index) {
+      cursor += WriteVarint(packed.AsSpan(cursor), fields[index].Low);
+      if (index < 4) cursor += WriteVarint(packed.AsSpan(cursor), fields[index].High);
+    }
+
+    var updated = new byte[fieldsStart + cursor];
+    value.AsSpan(0, fieldsStart).CopyTo(updated);
+    packed.AsSpan(0, cursor).CopyTo(updated.AsSpan(fieldsStart));
+    flags = (flags & ~(0x7FUL << 24)) | ((ulong)present << 24);
+    if (metadata.UnixMode is { } permissions) {
+      var inodeKind = (flags >> 36) & 0xF000;
+      var mode = inodeKind | ((ulong)permissions & 0x1FF);
+      flags = (flags & ~(0xFFFFUL << 36)) | (mode << 36);
+    }
+    BinaryPrimitives.WriteUInt64LittleEndian(updated.AsSpan(16), flags);
+    return inode with { Value = updated };
   }
 
   private static Key PatchDirectoryLinks(Key inode, int childDirectories) {
