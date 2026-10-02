@@ -1,5 +1,13 @@
 # bcachefs accounting, backpointer and LRU keys
 
+> **Historical.** This describes the metadata version 1.38 volume the writer used
+> to emit. bcachefs-tools 1.3.x — what Debian and Ubuntu ship, and what CI checks
+> with — refuses a 1.38 superblock outright, so the writer now emits version 1.3,
+> which has no accounting btree and keeps its usage totals in the superblock's
+> clean section. What it writes now, and how each value was established, is in
+> [BCACHEFS-ON-DISK.md](BCACHEFS-ON-DISK.md). The encodings below remain a record
+> of the 1.38 layouts as measured, for reading volumes that carry them.
+
 What a volume written here carries, what is still missing and why, and how each
 encoding was established. Written down because none of it is obvious from the
 headers alone; the next attempt should not have to work it out again.

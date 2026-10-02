@@ -47,14 +47,15 @@ public sealed class BcacheFsBucketGenerationTests {
 
     var live = BucketMetadata(image, reusedBucket);
     var pointerGeneration = ExtentPointerGeneration(image, replacement.Inode, replacement.FirstSector);
-    var backpointerGeneration = BackpointerGeneration(image, replacement.FirstSector);
+    var backpointerTarget = BackpointerTarget(image, replacement.FirstSector);
     Assert.Multiple(() => {
       Assert.That(live.AllocGeneration, Is.EqualTo(1));
       Assert.That(live.OldestGeneration, Is.EqualTo(1));
       Assert.That(live.DataType, Is.EqualTo(DataUser));
       Assert.That(live.BucketGensGeneration, Is.EqualTo(1));
       Assert.That(pointerGeneration, Is.EqualTo(1));
-      Assert.That(backpointerGeneration, Is.EqualTo(1));
+      Assert.That(backpointerTarget.Inode, Is.EqualTo(replacement.Inode),
+        "the reused bucket's backpointer names the replacement's extent");
     });
 
     // A later unrelated metadata commit must preserve the nonzero generation and
@@ -119,18 +120,21 @@ public sealed class BcacheFsBucketGenerationTests {
     return 0;
   }
 
-  private static byte BackpointerGeneration(MemoryStream image, long sector) {
+  /// <summary>The extent position the backpointer for <paramref name="sector" /> names.</summary>
+  /// <remarks>At version 1.3 a backpointer carries no generation; the bucket's alloc
+  /// key and bucket_gens slot do, and the pointer repeats it.</remarks>
+  private static Bpos BackpointerTarget(MemoryStream image, long sector) {
     image.Position = 0;
     var volume = BcacheFsVolume.Open(image);
-    var position = (ulong)sector << ExtentBpShift;
+    var position = (ulong)sector << BackpointerShift;
     var backpointer = volume.Keys(BtreeBackpointers)
       .Single(key => key.Position.Inode == 0 && key.Position.Offset == position);
-    Assert.That(backpointer.Value, Has.Length.GreaterThan(3));
+    Assert.That(backpointer.Value, Has.Length.EqualTo(32));
     Assert.Multiple(() => {
       Assert.That(backpointer.Value[0], Is.EqualTo(BtreeExtents));
       Assert.That(backpointer.Value[2], Is.EqualTo(DataUser));
     });
-    return backpointer.Value[3];
+    return ReadBpos(backpointer.Value.AsSpan(12));
   }
 
   private static byte[] Payload(int length, int seed) {

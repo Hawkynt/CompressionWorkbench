@@ -3123,7 +3123,7 @@ Implements `IFilesystemBlockMover`.
 
 #### `BcacheFsFormatDescriptor`
 
-Full workbench descriptor for the single-device bcachefs profile implemented here: native b-trees, true in-place CRUD, allocation/accounting maintenance, in-place defragmentation, purge and unused-space wiping.
+Full workbench descriptor for the single-device bcachefs profile implemented here: native b-trees, true in-place CRUD, allocation and usage maintenance, in-place defragmentation, purge and unused-space wiping.
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
@@ -3174,7 +3174,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `BcacheFsReader` | `BcacheFsReader(Stream stream, bool leaveOpen = true)` | Initializes a new instance of `BcacheFsReader`. |
 | `Directories` | `IReadOnlyList<string> Directories { get; }` | Directories the volume holds, by full path. |
-| `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Every file the volume holds, by full path. |
+| `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Every file and symbolic link the volume holds, by full path. |
 | `Label` | `string Label { get; }` | The label the superblock carries. |
 | `Length` | `long Length { get; }` | The volume's length in bytes. |
 | `Status` | `string Status { get; }` | Why the volume did not read, when it did not. |
@@ -3195,8 +3195,10 @@ Implements `IEquatable<Entry>`.
 | `Extents` | `IReadOnlyList<Extent> Extents { get; init; }` |  |
 | `FirstSector` | `long FirstSector { get; }` | Where the file's first byte is, or zero when it holds none. |
 | `Inode` | `ulong Inode { get; init; }` |  |
+| `LinkTarget` | `string LinkTarget { get; init; }` | Where a symbolic link points, or null for a regular file. |
 | `Name` | `string Name { get; init; }` |  |
 | `Size` | `long Size { get; init; }` |  |
+| `Unreadable` | `string Unreadable { get; init; }` | Why the file's bytes cannot be read here — a compressed or encrypted extent — or null when they can. |
 
 #### `BcacheFsReader.Extent`
 
@@ -3208,7 +3210,7 @@ Implements `IEquatable<Extent>`.
 | --- | --- | --- |
 | `Extent` | `Extent(long FirstSector, int Sectors, long FileOffset)` | One run of sectors belonging to a file. |
 | `FileOffset` | `long FileOffset { get; init; }` | Which byte of the file it begins at. |
-| `FirstSector` | `long FirstSector { get; init; }` | Where it starts on the device. |
+| `FirstSector` | `long FirstSector { get; init; }` | Where its live data starts on the device. |
 | `Sectors` | `int Sectors { get; init; }` | How long it is. |
 
 #### `BcacheFsWriter`
@@ -3220,9 +3222,11 @@ Writes a bcachefs volume: a superblock, the b-trees that describe the files, and
 | `BcacheFsWriter` | `BcacheFsWriter()` |  |
 | `BcachefsMagic` | `static readonly byte[] BcachefsMagic` | BCHFS_MAGIC, in storage byte order. |
 | `MinImageSize` | `const long MinImageSize` | Smallest volume this writes. A bcachefs device needs at least 512 buckets, and the two superblock slots at the front already claim thirty-three of them. |
+| `AddDirectory` | `void AddDirectory(string name)` | Adds a directory, which may stay empty. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file, held in memory. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a file whose bytes are read as the volume is written. |
-| `EstimateSize` | `static long EstimateSize(IEnumerable<long> fileSizes)` | The smallest volume that holds `fileSizes`: the superblock slots, the journal, one bucket per b-tree, the file data, and the slot at the tail. |
+| `AddSymlink` | `void AddSymlink(string name, string target)` | Adds a symbolic link pointing at `target`. |
+| `EstimateSize` | `static long EstimateSize(IEnumerable<long> fileSizes)` | The smallest volume that holds `fileSizes`: the superblock slots, the journal, the b-tree reservation, the file data, and the slot at the tail. |
 | `SetImageSize` | `void SetImageSize(long bytes)` | Sets the total volume size in bytes. |
 | `SetInternalUuid` | `void SetInternalUuid(Guid uuid)` | Overrides the internal UUID, which is also what the metadata magic is derived from. |
 | `SetLabel` | `void SetLabel(string label)` | Sets the volume label; it is truncated into the superblock's 32-byte field. |

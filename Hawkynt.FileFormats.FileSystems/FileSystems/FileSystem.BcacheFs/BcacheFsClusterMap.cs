@@ -186,7 +186,8 @@ internal sealed class BcacheFsClusterMap {
       }
 
       var dev = (byte)key.Position.Inode;
-      var end = (long)key.Position.Offset;
+      // The top byte carries generation bits, not the bucket.
+      var end = (long)(key.Position.Offset & ((1UL << 56) - 1));
       var start = end - key.Size;
       if (start < 0 || end < start) {
         diagnostics.Add($"freespace key dev {dev} has invalid run {start}..{end}.");

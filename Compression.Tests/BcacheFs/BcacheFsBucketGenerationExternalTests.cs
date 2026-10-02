@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Compression.Registry;
 using FileSystem.BcacheFs;
 
@@ -34,7 +33,7 @@ public sealed class BcacheFsBucketGenerationExternalTests {
         image.Flush(flushToDisk: true);
       }
 
-      var result = Run("bcachefs", "fsck", "-n", path);
+      var result = FsInteropToolbox.RunWsl($"bcachefs fsck -n {FsInteropToolbox.WinToWsl(path)}");
       TestContext.Out.WriteLine($"bcachefs fsck exit={result.ExitCode}\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
       Assert.That(result.ExitCode, Is.EqualTo(0),
         $"bcachefs fsck rejected the reused-generation image:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
@@ -82,7 +81,7 @@ public sealed class BcacheFsBucketGenerationExternalTests {
         }
       }
 
-      var result = Run("bcachefs", "fsck", "-n", path);
+      var result = FsInteropToolbox.RunWsl($"bcachefs fsck -n {FsInteropToolbox.WinToWsl(path)}");
       TestContext.Out.WriteLine($"bcachefs fsck exit={result.ExitCode}\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
       Assert.That(result.ExitCode, Is.EqualTo(0),
         $"bcachefs fsck rejected the defragmented reused-generation image:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
@@ -95,28 +94,25 @@ public sealed class BcacheFsBucketGenerationExternalTests {
   /// Stops the oracle before it judges an image it cannot read.
   /// </summary>
   /// <remarks>
-  /// <para>This package stamps the metadata version in
-  /// <see cref="BcacheFsFormat.Version"/> and the <c>incompat_version_field</c>
-  /// feature with it. A checker older than that version refuses the superblock
-  /// outright — <c>error validating superblock: Filesystem has incompatible
-  /// features</c>, <c>invalid_sb_features</c> — without looking at a single
-  /// bucket, which is a statement about the checker and not about the volume.
-  /// Ubuntu's current archive ships 1.3.4 against the 1.38 written here, so the
-  /// oracle is skipped there and runs wherever the tool is new enough.</para>
+  /// <para>This package writes metadata version 1.3, the version Debian's and
+  /// Ubuntu's bcachefs-tools write and check, so any checker from 1.3 on can open
+  /// it. A checker older than that refuses the superblock outright, which is a
+  /// statement about the checker and not about the volume; that, and an absent
+  /// tool, are the only skips.</para>
   ///
-  /// <para>This is the only skip. A checker that opens the image and then
-  /// complains is answering the question that was asked, and its answer is the
-  /// verdict — an oracle that ran and said no is never downgraded to a skip.</para>
+  /// <para>A checker that opens the image and then complains is answering the
+  /// question that was asked, and its answer is the verdict — an oracle that ran
+  /// and said no is never downgraded to a skip.</para>
   /// </remarks>
   private static void RequireCapableChecker() {
-    if (!OperatingSystem.IsLinux())
-      Assert.Ignore("The mandatory bcachefs generation oracle runs on the Ubuntu CI leg.");
+    if (!FsInteropToolbox.WslAvailable)
+      Assert.Ignore("No Linux environment (WSL) to run bcachefs-tools in.");
+    if (!FsInteropToolbox.WslHasTool("bcachefs"))
+      Assert.Ignore("bcachefs-tools is not installed: `sudo apt install -y bcachefs-tools`.");
 
     var required = (Major: BcacheFsFormat.Version >> 10, Minor: BcacheFsFormat.Version & 0x3FF);
-    var reported = Run("bcachefs", "version").StdOut.Trim();
-
-    var digits = reported.AsSpan().TrimStart('v');
-    var parts = digits.ToString().Split('.');
+    var reported = FsInteropToolbox.RunWsl("bcachefs version").StdOut.Trim();
+    var parts = reported.TrimStart('v').Split('.');
     if (parts.Length < 2
       || !int.TryParse(parts[0], out var major)
       || !int.TryParse(parts[1], out var minor))
@@ -125,34 +121,7 @@ public sealed class BcacheFsBucketGenerationExternalTests {
     if (major < required.Major || (major == required.Major && minor < required.Minor))
       Assert.Ignore(
         $"bcachefs-tools {reported} predates the metadata version this package writes "
-        + $"({required.Major}.{required.Minor}) and refuses the superblock before reading any "
-        + "bucket, so it cannot witness generations here.");
-  }
-
-  private static (string StdOut, string StdErr, int ExitCode) Run(
-      string executable, params string[] arguments) {
-    Process? process;
-    try {
-      var start = new ProcessStartInfo(executable) {
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-        UseShellExecute = false,
-        CreateNoWindow = true,
-      };
-      foreach (var argument in arguments) start.ArgumentList.Add(argument);
-      process = Process.Start(start);
-    } catch (System.ComponentModel.Win32Exception e) {
-      Assert.Fail($"'{executable}' is required by this Linux oracle but is not installed: {e.Message}");
-      return default;
-    }
-
-    Assert.That(process, Is.Not.Null);
-    using (process) {
-      var stdout = process!.StandardOutput.ReadToEnd();
-      var stderr = process.StandardError.ReadToEnd();
-      process.WaitForExit();
-      return (stdout, stderr, process.ExitCode);
-    }
+        + $"({required.Major}.{required.Minor}) and refuses the superblock before reading any bucket.");
   }
 
   private static byte[] Payload(int length, int seed) {

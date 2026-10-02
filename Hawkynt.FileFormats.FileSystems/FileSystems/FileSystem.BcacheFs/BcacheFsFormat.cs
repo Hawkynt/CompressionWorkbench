@@ -55,62 +55,87 @@ internal static class BcacheFsFormat {
   ];
 
   /// <summary>
-  /// Metadata version 1.38 — <c>need_discard_by_journal_seq</c>.
+  /// Metadata version 1.3 — <c>rebalance_work</c>.
   /// </summary>
   /// <remarks>
-  /// One below what the current tools write: bcachefs-tools v1.39.2 stamps 1.39,
-  /// <c>per_dev_fragmentation_lru</c>, and a volume claiming that version is
-  /// claiming per-device fragmentation LRUs this writer does not build. An older
-  /// version is a supported volume that the kernel upgrades on mount; a newer one
-  /// promising structures that are not there is not.
+  /// The newest version the bcachefs-tools that Debian and Ubuntu ship (1.3.x)
+  /// can open, and the version their <c>bcachefs format</c> writes; newer tools
+  /// upgrade it as they open it. It is the version a third party can check a
+  /// volume of this package against.
   /// </remarks>
-  internal const ushort Version = (1 << 10) | 38;
+  internal const ushort Version = (1 << 10) | 3;
 
-  /// <summary>The floor an initialised volume is held to.</summary>
-  internal const ushort VersionMin = (0 << 10) | 14;
+  /// <summary>The oldest version anything on the volume was written at.</summary>
+  internal const ushort VersionMin = Version;
 
   // Superblock section types.
   internal const uint FieldJournal = 0;
+  internal const uint FieldMembersV1 = 1;
   internal const uint FieldReplicasV0 = 3;
   internal const uint FieldClean = 6;
   internal const uint FieldJournalV2 = 9;
   internal const uint FieldMembersV2 = 11;
   internal const uint FieldErrors = 12;
-  internal const uint FieldExt = 13;
 
-  /// <summary>Bytes one member entry occupies in a members_v2 section.</summary>
-  internal const int MemberBytes = 296;
+  /// <summary>Bytes one member entry occupies in a members_v2 section, at version 1.3.</summary>
+  internal const int MemberBytes = 120;
+
+  /// <summary>Bytes one member entry occupies in the older members_v1 section.</summary>
+  internal const int MemberV1Bytes = 56;
 
   // Feature bits.
   internal const ulong FeatureNewSiphash = 1UL << 7;
   internal const ulong FeatureNewExtentOverwrite = 1UL << 9;
   internal const ulong FeatureBtreePtrV2 = 1UL << 11;
-  internal const ulong FeatureExtentsAboveBtreeUpdates = 1UL << 12;
-  internal const ulong FeatureBtreeUpdatesJournalled = 1UL << 13;
   internal const ulong FeatureNewVarint = 1UL << 15;
   internal const ulong FeatureJournalNoFlush = 1UL << 16;
   internal const ulong FeatureAllocV2 = 1UL << 17;
   internal const ulong FeatureExtentsAcrossBtreeNodes = 1UL << 18;
-  internal const ulong FeatureIncompatVersionField = 1UL << 19;
-  internal const ulong FeatureNoAllocInfo = 1UL << 21;
 
   /// <summary>
-  /// Says the volume is an image file that was never sized to a device.
+  /// The incompatible features a cleanly shut down volume carries.
   /// </summary>
   /// <remarks>
-  /// It is exactly what a volume written whole is, and saying so is what lets a
-  /// mount skip building the free-space information it would otherwise stop to
-  /// build — which, on a read-only mount, it cannot. A kernel that reads this bit
-  /// mounts the volume read-only and says why.
+  /// <c>extents_above_btree_updates</c> and <c>btree_updates_journalled</c> are
+  /// set while a volume is mounted and cleared again when it is marked clean, so a
+  /// volume written whole and never mounted claims neither.
   /// </remarks>
-  internal const ulong FeatureSmallImage = 1UL << 22;
+  internal const ulong Features = FeatureNewSiphash | FeatureNewExtentOverwrite | FeatureBtreePtrV2
+    | FeatureNewVarint | FeatureJournalNoFlush | FeatureAllocV2 | FeatureExtentsAcrossBtreeNodes;
 
-  /// <summary>Compat bits a volume written whole can claim.</summary>
+  /// <summary>Compat bits a clean volume carrying its allocation information claims.</summary>
   internal const ulong CompatAllocInfo = 1UL << 0;
   internal const ulong CompatAllocMetadata = 1UL << 1;
   internal const ulong CompatExtentsAboveBtreeUpdatesDone = 1UL << 2;
   internal const ulong CompatBformatOverflowDone = 1UL << 3;
-  internal const ulong CompatNoStalePtrs = 1UL << 5;
+
+  internal const ulong CompatFeatures = CompatAllocInfo | CompatAllocMetadata
+    | CompatExtentsAboveBtreeUpdatesDone | CompatBformatOverflowDone;
+
+  // Option values as the superblock stores them.
+  internal const int StrHashSiphashOption = 2;
+  internal const int ChecksumOptionCrc32C = 1;
+
+  /// <summary>Largest extent the volume writes, as a power of two sectors: 64 KiB.</summary>
+  internal const int EncodedExtentMaxBits = 7;
+
+  /// <summary>The journal sequence a volume written whole records as its last.</summary>
+  internal const ulong CleanJournalSeq = 1;
+
+  /// <summary>What a journal entry's magic is the superblock's magic folded with.</summary>
+  internal const ulong JsetMagic = 0x245235c1a3625032UL;
+
+  // Journal entry types, as the clean section frames its contents.
+  internal const byte JsetBtreeRoot = 1;
+  internal const byte JsetUsage = 5;
+  internal const byte JsetDataUsage = 6;
+  internal const byte JsetClock = 7;
+  internal const byte JsetDevUsage = 8;
+
+  // What a usage entry counts, in the slot a journal entry keeps its btree id in.
+  internal const byte FsUsageReserved = 0;
+  internal const byte FsUsageInodes = 1;
+  internal const byte FsUsageKeyVersion = 2;
 
   // ── B-tree ids ──────────────────────────────────────────────────────────
 
@@ -120,17 +145,19 @@ internal static class BcacheFsFormat {
   internal const int BtreeAlloc = 4;
   internal const int BtreeSubvolumes = 8;
   internal const int BtreeSnapshots = 9;
+  internal const int BtreeLru = 10;
   internal const int BtreeFreespace = 11;
   internal const int BtreeBackpointers = 13;
-  internal const int BtreeAccounting = 20;
   internal const int BtreeNeedDiscard = 12;
   internal const int BtreeBucketGens = 14;
   internal const int BtreeSnapshotTrees = 15;
-  internal const int BtreeLoggedOps = 17;
 
   // ── Key types ───────────────────────────────────────────────────────────
 
+  internal const byte KeyDeleted = 0;
+  internal const byte KeyWhiteout = 1;
   internal const byte KeyExtent = 6;
+  internal const byte KeyReservation = 7;
   internal const byte KeyDirent = 10;
   internal const byte KeyBtreePtrV2 = 18;
   internal const byte KeySubvolume = 21;
@@ -140,9 +167,7 @@ internal static class BcacheFsFormat {
   internal const byte KeyInodeV3 = 29;
   internal const byte KeyBucketGens = 30;
   internal const byte KeyBackpointer = 28;
-  internal const byte KeyAccounting = 34;
   internal const byte KeySnapshotTree = 31;
-  internal const byte KeyInodeAllocCursor = 35;
 
   /// <summary>What a bucket holds, as the alloc key records it.</summary>
   internal const byte DataFree = 0;
@@ -151,22 +176,25 @@ internal static class BcacheFsFormat {
   internal const byte DataBtree = 3;
   internal const byte DataUser = 4;
 
-  /// <summary>Accounting key types, as the type tag that opens the position.</summary>
-  internal const byte AccountingNrInodes = 0;
-  internal const byte AccountingReplicas = 2;
-  internal const byte AccountingDevDataType = 3;
-  internal const byte AccountingSnapshot = 5;
-  internal const byte AccountingBtree = 6;
+  /// <summary>How many data types a dev_usage entry lists, free through need_discard.</summary>
+  internal const int DataTypeCount = 10;
 
   /// <summary>
   /// How far a backpointer's position is shifted above the sector it names.
   /// </summary>
   /// <remarks>
-  /// A backpointer is keyed by where in the device its target sits, with room
-  /// below for an offset inside the bucket, so the sector is shifted up and the
-  /// low bits carry that offset.
+  /// The room below the sector is for an offset into a compressed extent; at
+  /// version 1.3 it is a fixed ten bits, <c>MAX_EXTENT_COMPRESS_RATIO_SHIFT</c>.
   /// </remarks>
-  internal const int ExtentBpShift = 16;
+  internal const int BackpointerShift = 10;
+
+  /// <summary>An alloc_v4 value with its fragmentation index: seven words.</summary>
+  internal const int AllocV4U64s = 7;
+  internal const int AllocV4Bytes = AllocV4U64s * 8;
+
+  /// <summary>The LRU id the fragmentation index sorts under, and where in a position the id starts.</summary>
+  internal const ulong LruFragmentationId = 0xFFFF;
+  internal const int LruTimeBits = 48;
 
   /// <summary>How many buckets one bucket_gens key covers.</summary>
   internal const int BucketGensNr = 256;
@@ -198,6 +226,7 @@ internal static class BcacheFsFormat {
   // Directory entry types, as in POSIX d_type.
   internal const byte DtDir = 4;
   internal const byte DtReg = 8;
+  internal const byte DtLnk = 10;
 
   // ── Checksums ───────────────────────────────────────────────────────────
 

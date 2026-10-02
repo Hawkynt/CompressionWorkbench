@@ -6,6 +6,15 @@ namespace FileSystem.BcacheFs;
 internal static class BcacheFsTreeLayout {
   private const int PointerKeyBytes = BkeyBytes + 48;
 
+  /// <summary>How many bytes of a node its keys may fill.</summary>
+  /// <remarks>
+  /// One word short of the node: the driver always keeps a word spare past the
+  /// last key for its varint decoder, and counts a node filled to the last byte
+  /// as over-full — a newer bcachefs asserts on such a node the moment it inserts
+  /// into it.
+  /// </remarks>
+  internal const int NodeCapacity = BucketBytes - 8;
+
   internal static IReadOnlyList<BcacheFsTreeNodeShape> DescribeNodes(int btree, IReadOnlyList<Key> keys) {
     var sorted = keys.OrderBy(k => k,
       Comparer<Key>.Create((a, b) => Compare(a.Position, b.Position))).ToArray();
@@ -30,7 +39,7 @@ internal static class BcacheFsTreeLayout {
       while (index < current.Count) {
         var start = index;
         var bytes = BcacheFsNodeBuilder.KeysOffset;
-        while (index < current.Count && bytes + PointerKeyBytes <= BucketBytes) {
+        while (index < current.Count && bytes + PointerKeyBytes <= NodeCapacity) {
           bytes += PointerKeyBytes;
           ++index;
         }
@@ -52,7 +61,8 @@ internal static class BcacheFsTreeLayout {
       ulong magic,
       int btree,
       IReadOnlyList<Key> keys,
-      IEnumerator<long> targetBuckets) {
+      IEnumerator<long> targetBuckets,
+      Func<long, byte>? generationOf = null) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(keys);
     ArgumentNullException.ThrowIfNull(targetBuckets);
@@ -65,7 +75,7 @@ internal static class BcacheFsTreeLayout {
     for (var i = 0; i < leaves.Count; ++i) {
       var min = i == 0 ? Bpos.Min : Successor(leaves[i - 1][^1].Position);
       var max = i == leaves.Count - 1 ? Bpos.Max : leaves[i][^1].Position;
-      current.Add(WriteNode(image, magic, btree, 0, min, max, leaves[i], targetBuckets, written));
+      current.Add(WriteNode(image, magic, btree, 0, min, max, leaves[i], targetBuckets, written, generationOf));
     }
 
     var level = 0;
@@ -78,14 +88,14 @@ internal static class BcacheFsTreeLayout {
       while (index < current.Count) {
         var group = new List<WrittenNode>();
         var bytes = BcacheFsNodeBuilder.KeysOffset;
-        while (index < current.Count && bytes + current[index].Pointer.Bytes <= BucketBytes) {
+        while (index < current.Count && bytes + current[index].Pointer.Bytes <= NodeCapacity) {
           bytes += current[index].Pointer.Bytes;
           group.Add(current[index++]);
         }
         if (group.Count == 0) throw new NotSupportedException("bcachefs interior pointer does not fit in a node.");
         next.Add(WriteNode(image, magic, btree, level,
           group[0].MinKey, group[^1].MaxKey,
-          group.Select(n => n.Pointer).ToArray(), targetBuckets, written));
+          group.Select(n => n.Pointer).ToArray(), targetBuckets, written, generationOf));
       }
       current = next;
     }
@@ -104,7 +114,8 @@ internal static class BcacheFsTreeLayout {
       Bpos max,
       IReadOnlyList<Key> keys,
       IEnumerator<long> targetBuckets,
-      List<BcacheFsWrittenNode> written) {
+      List<BcacheFsWrittenNode> written,
+      Func<long, byte>? generationOf) {
     if (!targetBuckets.MoveNext())
       throw new InvalidOperationException($"bcachefs placement ran out of target buckets while writing tree {btree}.");
     var bucket = targetBuckets.Current;
@@ -127,7 +138,7 @@ internal static class BcacheFsTreeLayout {
     image.Write(buffer, 0, sectors * SectorSize);
 
     written.Add(new BcacheFsWrittenNode(btree, level, bucket, sector, sectors, min, max));
-    return new WrittenNode(min, max, builder.Pointer(sector, sectors), bucket);
+    return new WrittenNode(min, max, builder.Pointer(sector, sectors, generationOf?.Invoke(bucket) ?? 0), bucket);
   }
 
   private static List<Key[]> PartitionKeys(IReadOnlyList<Key> sorted) {
@@ -137,7 +148,7 @@ internal static class BcacheFsTreeLayout {
     while (index < sorted.Count) {
       var start = index;
       var bytes = BcacheFsNodeBuilder.KeysOffset;
-      while (index < sorted.Count && bytes + sorted[index].Bytes <= BucketBytes) {
+      while (index < sorted.Count && bytes + sorted[index].Bytes <= NodeCapacity) {
         bytes += sorted[index].Bytes;
         ++index;
       }

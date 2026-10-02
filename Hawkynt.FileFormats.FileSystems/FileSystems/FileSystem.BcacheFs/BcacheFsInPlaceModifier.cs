@@ -17,18 +17,16 @@ namespace FileSystem.BcacheFs;
 /// payload is written into currently-free buckets, then the b-tree metadata is
 /// committed inside the fixed 64-bucket metadata reservation. Removed/replaced
 /// extents are zeroed after the new roots have been installed.</para>
-/// <para>The metadata commit rebuilds the twelve trees this implementation owns
-/// (extents, inodes, dirents, subvolume/snapshot roots and allocation/accounting
+/// <para>The metadata commit rebuilds the trees this implementation owns
+/// (extents, inodes, dirents, subvolume/snapshot roots and the allocation
 /// trees) but does not rewrite the image or any unaffected user-data extent. That
 /// keeps mutation O(changed data + filesystem metadata), which is the distinction
 /// <c>CanModify</c> is meant to expose for a filesystem.</para>
 /// </remarks>
 internal static class BcacheFsInPlaceModifier {
 
-  private const int JournalFirstBucket = 33;
-  private const int JournalBuckets = 16;
-  private const int FirstMetadataBucket = JournalFirstBucket + JournalBuckets;
-  private const int MetadataBuckets = 64;
+  private const int FirstMetadataBucket = BcacheFsWriter.FirstMetadataBucket;
+  private const int MetadataBuckets = BcacheFsWriter.MetadataBuckets;
 
   /// <summary>
   /// Whether a bucket belongs to the window <see cref="Commit"/> rewrites.
@@ -41,14 +39,10 @@ internal static class BcacheFsInPlaceModifier {
   /// </remarks>
   internal static bool IsMetadataReservation(long bucket)
     => bucket >= FirstMetadataBucket && bucket < FirstMetadataBucket + MetadataBuckets;
-  private const int MaxExtentSectors = 128;
-  private const ulong FirstDynamicInode = 2147483648UL;
+  private const ulong FirstDynamicInode = BcacheFsWriter.FirstDynamicInode;
 
-  private static readonly int[] Btrees = [
-    BtreeExtents, BtreeInodes, BtreeDirents,
-    BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees, BtreeLoggedOps,
-    BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeAccounting, BtreeBackpointers,
-  ];
+  /// <summary>Trees a volume of this profile may carry; any other live tree is refused.</summary>
+  private static readonly int[] OwnedTrees = BcacheFsMetadataCommit.TreeOrder;
 
   private sealed class DirectoryState {
     internal required string Path { get; init; }
@@ -68,6 +62,7 @@ internal static class BcacheFsInPlaceModifier {
     internal required long Length { get; set; }
     internal Key? ExistingInode { get; init; }
     internal Key? ExistingDirent { get; init; }
+    internal byte DirentType { get; init; } = DtReg;
     internal List<Key> ExistingExtents { get; } = [];
     internal List<Key> FinalExtents { get; } = [];
     internal PendingPayload? Pending { get; set; }
@@ -80,15 +75,13 @@ internal static class BcacheFsInPlaceModifier {
     internal List<long> Buckets { get; } = [];
   }
 
-  private readonly record struct BucketState(byte Generation, byte OldestGeneration, byte DataType);
-
   private sealed class Model {
     internal required BcacheFsVolume Volume { get; init; }
     internal required Dictionary<string, DirectoryState> Directories { get; init; }
     internal required Dictionary<string, FileState> Files { get; init; }
     internal required Dictionary<int, List<Key>> PreservedTrees { get; init; }
     internal required HashSet<long> OccupiedBuckets { get; init; }
-    internal required Dictionary<long, BucketState> BucketStates { get; init; }
+    internal required Dictionary<long, BcacheFsMetadataCommit.BucketState> BucketStates { get; init; }
     internal required List<(long Offset, long Length)> FreedRanges { get; init; }
     internal required ulong NextInode { get; set; }
   }
@@ -119,6 +112,8 @@ internal static class BcacheFsInPlaceModifier {
         : () => File.OpenRead(input.FullPath);
 
       if (model.Files.TryGetValue(path, out var existing)) {
+        if (existing.DirentType != DtReg)
+          throw new InvalidOperationException($"bcachefs: '{path}' is a symbolic link, not a file to replace.");
         foreach (var key in existing.ExistingExtents)
           AddFreedRange(model.FreedRanges, key);
         existing.Length = length;
@@ -182,7 +177,7 @@ internal static class BcacheFsInPlaceModifier {
 
   /// <summary>
   /// Rewrites only the metadata trees, preserving every current file extent.
-  /// Useful after a layout operation wants accounting/backpointers normalized
+  /// Useful after a layout operation wants usage totals/backpointers normalized
   /// without touching payload bytes.
   /// </summary>
   internal static void NormalizeMetadata(Stream image) {
@@ -191,7 +186,55 @@ internal static class BcacheFsInPlaceModifier {
     Commit(image, ReadModel(image));
   }
 
+  /// <summary>
+  /// Refuses a volume this package did not write, or one written to since.
+  /// </summary>
+  /// <remarks>
+  /// <para>Every edit here re-publishes the whole metadata generation from the keys
+  /// it read, so it may only run on a volume whose every key it can read: one bset
+  /// per node with the fields unpacked, nothing waiting in the journal but the
+  /// shutdown entry this package leaves, metadata version 1.3. A volume
+  /// <c>bcachefs format</c> or a kernel wrote packs its keys and appends bsets, and
+  /// an edit that saw only part of it would publish a volume missing the rest.</para>
+  ///
+  /// <para>So a foreign volume is turned away with the reason rather than rewritten.</para>
+  /// </remarks>
+  internal static void RequireWritableProfile(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var core = BcacheFsCoreVolume.Open(image);
+    if (!core.Recoverable)
+      throw new InvalidDataException("bcachefs: the volume could not be recovered: " + string.Join("; ", core.Diagnostics));
+
+    const string profile = "in-place edits are implemented for the version 1.3 single-device volumes this package writes";
+    if (core.Superblock.Version != BcacheFsFormat.Version)
+      throw new NotSupportedException(
+        $"bcachefs: the volume is metadata version {core.Superblock.Version >> 10}.{core.Superblock.Version & 0x3FF}; {profile}.");
+    if (!core.Clean)
+      throw new NotSupportedException($"bcachefs: the volume was not cleanly shut down; {profile}.");
+    if (core.Members.Count != 1)
+      throw new NotSupportedException($"bcachefs: the volume has {core.Members.Count} member devices; {profile}.");
+    if (core.Overlay.KeyUpdates.Count != 0 || core.Journal.Sequences.Any(s => s.Sequence != CleanJournalSeq))
+      throw new NotSupportedException($"bcachefs: the journal holds entries this package did not write; {profile}.");
+
+    image.Position = 0;
+    var plain = BcacheFsVolume.Open(image);
+    foreach (var id in BcacheFsOnDiskCatalog.KnownBtrees) {
+      if (core.Root(id) == null) continue;
+      var tree = BcacheFsBtreeReader.ReadTree(core, id);
+      if (!tree.Complete)
+        throw new InvalidDataException($"bcachefs: the {id} tree is incomplete: {string.Join("; ", tree.Diagnostics)}");
+      if (tree.Nodes.Any(n => n.Sets.Count(set => set.Visible) != 1)
+          || tree.MaterializedLeafSlots.Any(k => k.IsPacked)
+          || plain.Keys((int)id).Count() != tree.MaterializedLeafSlots.Count)
+        throw new NotSupportedException(
+          $"bcachefs: the {id} tree was written by another implementation (appended or packed bsets); {profile}.");
+    }
+    image.Position = 0;
+  }
+
   private static Model ReadModel(Stream image) {
+    RequireWritableProfile(image);
     image.Position = 0;
     var volume = BcacheFsVolume.Open(image);
     if (!volume.Valid)
@@ -200,15 +243,11 @@ internal static class BcacheFsInPlaceModifier {
       throw new NotSupportedException(
         $"bcachefs in-place mutation currently requires {BucketSectors}-sector buckets; volume uses {volume.BucketSectorCount}.");
 
-    var unsupportedRoots = volume.Roots.Keys.Except(Btrees).ToArray();
+    var unsupportedRoots = volume.Roots.Keys.Except(OwnedTrees).ToArray();
     if (unsupportedRoots.Length != 0)
       throw new NotSupportedException(
         $"bcachefs in-place mutation refuses extra live b-trees ({string.Join(",", unsupportedRoots)}); "
-        + "rewriting accounting without owning those trees would be corrupting them.");
-
-    foreach (var required in Btrees)
-      if (!volume.Roots.ContainsKey(required))
-        throw new NotSupportedException($"bcachefs in-place mutation requires b-tree {required}.");
+        + "rewriting the allocation information without owning those trees would be corrupting them.");
 
     var inodeKeys = ReadTree(volume, BtreeInodes)
       .Where(k => k.Type == KeyInodeV3)
@@ -261,9 +300,9 @@ internal static class BcacheFsInPlaceModifier {
           continue;
         }
 
-        if (type != DtReg)
+        if (type is not (DtReg or DtLnk))
           throw new NotSupportedException(
-            $"bcachefs in-place mutation currently supports regular files/directories; '{path}' has dirent type {type}.");
+            $"bcachefs in-place mutation supports regular files, symbolic links and directories; '{path}' has dirent type {type}.");
         if (inode.Value.Length < 40)
           throw new InvalidDataException($"bcachefs: inode {target} is shorter than inode_v3.");
 
@@ -271,6 +310,7 @@ internal static class BcacheFsInPlaceModifier {
           Path = path, Name = name, ParentPath = parentPath, Inode = target,
           Length = (long)BinaryPrimitives.ReadUInt64LittleEndian(inode.Value.AsSpan(32)),
           ExistingInode = inode, ExistingDirent = dirent, DirentOffset = dirent.Position.Offset,
+          DirentType = type,
         };
       }
     }
@@ -298,7 +338,7 @@ internal static class BcacheFsInPlaceModifier {
     }
 
     var occupied = new HashSet<long>();
-    var bucketStates = new Dictionary<long, BucketState>();
+    var bucketStates = new Dictionary<long, BcacheFsMetadataCommit.BucketState>();
     var allocKeys = ReadTree(volume, BtreeAlloc);
     if (allocKeys.Any(k => k.Type != KeyAllocV4))
       throw new NotSupportedException("bcachefs in-place mutation requires alloc_v4 allocation keys.");
@@ -314,7 +354,7 @@ internal static class BcacheFsInPlaceModifier {
       if (indexedGeneration != generation)
         throw new InvalidDataException(
           $"bcachefs: bucket {bucket} has alloc generation {generation} but bucket_gens says {indexedGeneration}.");
-      bucketStates[bucket] = new BucketState(generation, oldestGeneration, dataType);
+      bucketStates[bucket] = new(generation, oldestGeneration, dataType);
       if (dataType != DataFree) occupied.Add(bucket);
     }
 
@@ -324,7 +364,7 @@ internal static class BcacheFsInPlaceModifier {
           $"bcachefs: bucket_gens records generation {generation} for alloc-tree hole {bucket}.");
 
     // Only the shape of an extent is a precondition. Where the data sits is not:
-    // a defragmentation moves the bytes and then asks for the accounting to be
+    // a defragmentation moves the bytes and then asks for the allocation to be
     // rebuilt around them, so on that path the incoming alloc tree still
     // describes the buckets the runs came from. The extent-to-bucket agreement
     // is therefore checked on what the commit writes, not on what it reads.
@@ -335,7 +375,6 @@ internal static class BcacheFsInPlaceModifier {
       [BtreeSubvolumes] = ReadTree(volume, BtreeSubvolumes),
       [BtreeSnapshots] = ReadTree(volume, BtreeSnapshots),
       [BtreeSnapshotTrees] = ReadTree(volume, BtreeSnapshotTrees),
-      [BtreeLoggedOps] = ReadTree(volume, BtreeLoggedOps),
     };
 
     var maxInode = inodeKeys.Keys.DefaultIfEmpty(FirstDynamicInode - 1).Max();
@@ -375,30 +414,16 @@ internal static class BcacheFsInPlaceModifier {
     WritePendingData(image, model);
 
     var trees = BuildLogicalTrees(model);
-    var metadataBuckets = BuildAllocationTrees(model, trees);
-    ValidateBucketGenerations(trees);
-    if (metadataBuckets.Count > MetadataBuckets)
-      throw new NotSupportedException(
-        $"bcachefs metadata needs {metadataBuckets.Count} buckets; an in-place commit budgets {MetadataBuckets}.");
+    var userBuckets = trees[BtreeExtents]
+      .Select(e => BcacheFsAllocationBuilder.ExtentDataSector(e) / BucketSectors)
+      .ToHashSet();
+    var geometry = BcacheFsSuperblockEditor.ReadGeometry(image);
 
     // All live source keys were materialized before this point, so the buckets
     // the new generation lands in can be rewritten without needing any old node.
-    foreach (var bucket in metadataBuckets)
-      ZeroRange(image, bucket * BucketBytes, BucketBytes);
-
-    var roots = new List<(int Btree, int Level, Key Pointer)>(Btrees.Length);
-    var slot = 0;
-    foreach (var btree in Btrees) {
-      var (level, pointer) = WriteTree(image, model.Volume.InternalMagic, btree, trees[btree],
-        metadataBuckets, model.BucketStates, ref slot);
-      roots.Add((btree, level, pointer));
-    }
-
-    if (slot != metadataBuckets.Count)
-      throw new InvalidOperationException(
-        $"bcachefs metadata plan drifted: expected {metadataBuckets.Count} buckets, wrote {slot}.");
-
-    PatchSuperblocks(image, roots, metadataBuckets.Count);
+    var published = BcacheFsMetadataCommit.Publish(image, model.Volume.InternalMagic, geometry, trees,
+      model.BucketStates, shapes => ChooseMetadataBuckets(shapes, geometry, userBuckets));
+    BcacheFsSuperblockEditor.PublishClean(image, published);
 
     // Deleted/replaced user data becomes forensic free space only after the new
     // roots are live. New payload was deliberately allocated outside these runs,
@@ -448,7 +473,7 @@ internal static class BcacheFsInPlaceModifier {
 
   private static ulong ReserveDirentOffset(Dictionary<ulong, HashSet<ulong>> used, ulong parent, string name) {
     if (!used.TryGetValue(parent, out var set)) used[parent] = set = [];
-    var offset = DirentHash(HashSeed(parent), name);
+    var offset = DirentHash(BcacheFsWriter.HashSeed(parent), name);
     while (!set.Add(offset)) ++offset;
     return offset;
   }
@@ -504,7 +529,7 @@ internal static class BcacheFsInPlaceModifier {
         var value = new byte[16];
         BinaryPrimitives.WriteUInt64LittleEndian(value, ExtentCrc32(sectors, checksum));
         BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8),
-          ExtentPointer(firstSector, generation: BucketGeneration(model.BucketStates, bucket)));
+          ExtentPointer(firstSector, generation: model.BucketStates.GetValueOrDefault(bucket).Generation));
         file.FinalExtents.Add(new Key(KeyExtent,
           new Bpos(file.Inode, (ulong)(logicalSector + sectors), SnapshotIdMax),
           (uint)sectors, value));
@@ -516,7 +541,9 @@ internal static class BcacheFsInPlaceModifier {
   }
 
   private static Dictionary<int, List<Key>> BuildLogicalTrees(Model model) {
-    var trees = Btrees.ToDictionary(id => id, _ => new List<Key>());
+    var trees = new Dictionary<int, List<Key>> {
+      [BtreeExtents] = [], [BtreeInodes] = [], [BtreeDirents] = [],
+    };
 
     // Extents: unchanged files retain their exact keys/pointers/checksums; only
     // new/replaced files contribute freshly written keys.
@@ -532,7 +559,7 @@ internal static class BcacheFsInPlaceModifier {
       if (dir.Path.Length == 0) {
         trees[BtreeInodes].Add(dir.ExistingInode is { } root
           ? PatchDirectoryLinks(root, childDirectoryCounts.GetValueOrDefault("", 0))
-          : InodeKey(RootInode, 0, 0, isDirectory: true, 0, 0,
+          : BcacheFsWriter.InodeKey(RootInode, 0, 0, BcacheFsWriter.ModeDirectory, 0, 0,
             childDirectoryCounts.GetValueOrDefault("", 0), RootSubvolume));
         continue;
       }
@@ -540,10 +567,10 @@ internal static class BcacheFsInPlaceModifier {
       var parentInode = model.Directories[dir.ParentPath].Inode;
       trees[BtreeInodes].Add(dir.ExistingInode is { } existing
         ? PatchDirectoryLinks(existing, childDirectoryCounts.GetValueOrDefault(dir.Path, 0))
-        : InodeKey(dir.Inode, parentInode, dir.DirentOffset, isDirectory: true,
+        : BcacheFsWriter.InodeKey(dir.Inode, parentInode, dir.DirentOffset, BcacheFsWriter.ModeDirectory,
           0, 0, childDirectoryCounts.GetValueOrDefault(dir.Path, 0)));
       trees[BtreeDirents].Add(dir.ExistingDirent
-        ?? DirentKey(parentInode, dir.DirentOffset, dir.Name, dir.Inode, DtDir));
+        ?? BcacheFsWriter.DirentKey(parentInode, dir.DirentOffset, dir.Name, dir.Inode, DtDir));
     }
 
     foreach (var file in model.Files.Values) {
@@ -551,177 +578,19 @@ internal static class BcacheFsInPlaceModifier {
       var sectors = (ulong)((file.Length + SectorSize - 1) / SectorSize);
       trees[BtreeInodes].Add(file.ExistingInode is { } existing
         ? PatchFileSize(existing, (ulong)file.Length, sectors)
-        : InodeKey(file.Inode, parentInode, file.DirentOffset, isDirectory: false,
+        : BcacheFsWriter.InodeKey(file.Inode, parentInode, file.DirentOffset, BcacheFsWriter.ModeFile,
           (ulong)file.Length, sectors, 0));
       trees[BtreeDirents].Add(file.ExistingDirent
-        ?? DirentKey(parentInode, file.DirentOffset, file.Name, file.Inode, DtReg));
+        ?? BcacheFsWriter.DirentKey(parentInode, file.DirentOffset, file.Name, file.Inode, DtReg));
     }
 
-    trees[BtreeSubvolumes].AddRange(model.PreservedTrees[BtreeSubvolumes]);
-    trees[BtreeSnapshots].AddRange(model.PreservedTrees[BtreeSnapshots]);
-    trees[BtreeSnapshotTrees].AddRange(model.PreservedTrees[BtreeSnapshotTrees]);
-
-    // The workbench profile keeps only the inode allocation cursor in logged_ops.
-    // Keeping a stale cursor would hand out an inode we just created.
-    var nonCursor = model.PreservedTrees[BtreeLoggedOps]
-      .Where(k => k.Type != KeyInodeAllocCursor)
-      .ToList();
-    if (nonCursor.Count != 0)
-      throw new NotSupportedException(
-        "bcachefs in-place mutation refuses unknown logged_ops keys in this profile.");
-    trees[BtreeLoggedOps].Add(InodeAllocCursorKey(model.NextInode));
+    trees[BtreeSubvolumes] = [.. model.PreservedTrees[BtreeSubvolumes]];
+    trees[BtreeSnapshots] = [.. model.PreservedTrees[BtreeSnapshots]];
+    trees[BtreeSnapshotTrees] = [.. model.PreservedTrees[BtreeSnapshotTrees]];
 
     foreach (var list in trees.Values)
       list.Sort((a, b) => Compare(a.Position, b.Position));
     return trees;
-  }
-
-  private static List<long> BuildAllocationTrees(Model model, Dictionary<int, List<Key>> trees) {
-    var extents = trees[BtreeExtents];
-    var alloc = trees[BtreeAlloc];
-    var bucketGens = trees[BtreeBucketGens];
-    var freespace = trees[BtreeFreespace];
-    var accounting = trees[BtreeAccounting];
-    var backpointers = trees[BtreeBackpointers];
-
-    var totalBuckets = model.Volume.DeviceSectors / BucketSectors;
-    var userSectors = UserSectorsByBucket(extents);
-    var btreeBuckets = (long)Btrees.Length;
-
-    for (var attempt = 0; attempt < 12; ++attempt) {
-      // the generation goes wherever there is room: a fixed run would collide
-      // with whatever a placement pass has already put there
-      var metadataBuckets = ChooseMetadataBuckets(btreeBuckets, model.Volume.DeviceSectors, userSectors);
-      var metadataSet = metadataBuckets.ToHashSet();
-
-      alloc.Clear();
-      bucketGens.Clear();
-      freespace.Clear();
-      accounting.Clear();
-      backpointers.Clear();
-
-      var finalStates = new Dictionary<long, BucketState>();
-      var bucketsOf = new ulong[DataUser + 1];
-      var sectorsOf = new ulong[DataUser + 1];
-      var runStart = -1L;
-
-      for (var bucket = 0L; bucket <= totalBuckets; ++bucket) {
-        var free = bucket < totalBuckets;
-        if (free) {
-          var (type, sectors) = BucketContents(model.Volume.DeviceSectors,
-            bucket, metadataSet, userSectors);
-          free = type == DataFree;
-          ++bucketsOf[type];
-          sectorsOf[type] += sectors;
-
-          var previous = BucketStateOf(model.BucketStates, bucket);
-          var generation = previous.Generation;
-          var oldestGeneration = previous.OldestGeneration;
-          if (previous.DataType != DataFree && type == DataFree) {
-            generation = unchecked((byte)(generation + 1));
-            // This mutation profile owns every live pointer to the bucket. Once
-            // it becomes free there is no older generation left to retain.
-            oldestGeneration = generation;
-          }
-
-          var finalState = new BucketState(generation, oldestGeneration, type);
-          if (generation != 0 || oldestGeneration != 0 || type != DataFree)
-            finalStates[bucket] = finalState;
-          if (!free || generation != 0 || oldestGeneration != 0)
-            alloc.Add(AllocKey(bucket, type, sectors, generation, oldestGeneration));
-        }
-
-        if (free) {
-          if (runStart < 0) runStart = bucket;
-          continue;
-        }
-        if (runStart >= 0) freespace.Add(FreespaceKey(runStart, bucket));
-        runStart = -1;
-      }
-
-      for (var first = 0L; first < totalBuckets; first += BucketGensNr)
-        bucketGens.Add(BucketGensKey(first, finalStates));
-
-      accounting.Add(NrInodesKey((ulong)trees[BtreeInodes].Count));
-      for (byte type = DataFree; type <= DataUser; ++type)
-        if (bucketsOf[type] > 0)
-          accounting.Add(DevDataTypeKey(type, bucketsOf[type], sectorsOf[type]));
-
-      // A pointer's generation belongs to the bucket the bytes are in, not to the
-      // one they were in. A pass that relocates a run rewrites the sector in the
-      // pointer and leaves the generation where it was, so a run moved into a
-      // bucket that has been emptied once would be read as a stale pointer and
-      // the file dropped. The commit is where the run is placed as far as the
-      // volume is concerned, so it is where the generation is stamped.
-      foreach (var extent in extents)
-        StampExtentGeneration(extent, BucketGeneration(finalStates, ExtentSector(extent) / BucketSectors));
-
-      foreach (var extent in extents) {
-        var sector = ExtentSector(extent);
-        backpointers.Add(ExtentBackpointerKey(
-          sector, (int)extent.Size, extent.Position, ExtentGeneration(extent)));
-      }
-
-      var at = 0;
-      foreach (var btree in Btrees) {
-        var count = NodeCount(trees[btree]);
-        for (var i = 0; i < count && at + i < metadataBuckets.Count; ++i) {
-          var bucket = metadataBuckets[at + i];
-          var level = count > 1 && i == count - 1 ? 1 : 0;
-          backpointers.Add(NodeBackpointerKey(
-            bucket, btree, level, BucketSectors, BucketGeneration(finalStates, bucket)));
-        }
-        at += count;
-      }
-
-      ulong btreeSectors = 0;
-      foreach (var btree in Btrees) {
-        var count = (ulong)NodeCount(trees[btree]);
-        btreeSectors += count * BucketSectors;
-        accounting.Add(BtreeAccountingKey(btree, count));
-      }
-
-      foreach (var btree in new[] { BtreeExtents, BtreeInodes, BtreeDirents }) {
-        var list = trees[btree];
-        if (list.Count == 0) continue;
-        accounting.Add(SnapshotAccountingKey(SnapshotIdMax, btree,
-          (ulong)list.Count, (ulong)list.Sum(k => k.Bytes),
-          btree == BtreeExtents ? sectorsOf[DataUser] : 0));
-      }
-
-      accounting.Add(ReplicasKey(DataBtree, btreeSectors));
-      if (sectorsOf[DataUser] > 0)
-        accounting.Add(ReplicasKey(DataUser, sectorsOf[DataUser]));
-
-      foreach (var list in trees.Values)
-        list.Sort((a, b) => Compare(a.Position, b.Position));
-
-      var settled = Btrees.Sum(btree => NodeCount(trees[btree]));
-      if (settled == btreeBuckets) {
-        model.BucketStates.Clear();
-        foreach (var (bucket, state) in finalStates)
-          model.BucketStates[bucket] = state;
-        return metadataBuckets;
-      }
-      btreeBuckets = settled;
-    }
-
-    throw new InvalidOperationException("bcachefs metadata node count did not converge.");
-  }
-
-  private static (byte Type, uint Sectors) BucketContents(long deviceSectors, long bucket,
-      IReadOnlySet<long> metadataBuckets, IReadOnlyDictionary<long, uint> userSectors) {
-    var sbEndSector = PrimarySbSector + 2L * SbSlotSectors;
-    if (bucket < sbEndSector / BucketSectors) return (DataSb, BucketSectors);
-    if (bucket == sbEndSector / BucketSectors)
-      return (DataSb, (uint)(sbEndSector % BucketSectors));
-
-    var firstLastSbBucket = (deviceSectors - SbSlotSectors) / BucketSectors;
-    if (bucket >= firstLastSbBucket) return (DataSb, BucketSectors);
-    if (bucket < FirstMetadataBucket) return (DataJournal, BucketSectors);
-    if (metadataBuckets.Contains(bucket)) return (DataBtree, BucketSectors);
-    if (userSectors.TryGetValue(bucket, out var sectors)) return (DataUser, sectors);
-    return (DataFree, 0);
   }
 
   /// <summary>The buckets one commit's metadata generation is written into.</summary>
@@ -730,210 +599,29 @@ internal static class BcacheFsInPlaceModifier {
   /// holds file data. A placement pass is free to put extents anywhere, so the
   /// metadata has to be the thing that moves out of the way.
   /// </remarks>
-  private static List<long> ChooseMetadataBuckets(long count, long deviceSectors,
-      IReadOnlyDictionary<long, uint> userSectors) {
-    var lastSbBucket = (deviceSectors - SbSlotSectors) / BucketSectors;
-    var chosen = new List<long>((int)count);
-    for (var bucket = (long)FirstMetadataBucket; chosen.Count < count && bucket < lastSbBucket; ++bucket)
-      if (!userSectors.ContainsKey(bucket))
-        chosen.Add(bucket);
-
-    if (chosen.Count < count)
+  private static IReadOnlyDictionary<int, long[]> ChooseMetadataBuckets(
+      IReadOnlyDictionary<int, IReadOnlyList<BcacheFsTreeNodeShape>> shapes,
+      BcacheFsAllocationBuilder.Geometry geometry,
+      IReadOnlySet<long> userBuckets) {
+    var count = shapes.Values.Sum(s => s.Count);
+    if (count > MetadataBuckets)
       throw new NotSupportedException(
-        $"bcachefs metadata needs {count} free buckets; only {chosen.Count} are available.");
-    return chosen;
-  }
+        $"bcachefs metadata needs {count} buckets; an in-place commit budgets {MetadataBuckets}.");
 
-  private static Dictionary<long, uint> UserSectorsByBucket(IEnumerable<Key> extents) {
-    var result = new Dictionary<long, uint>();
-    foreach (var extent in extents) {
-      var sector = ExtentSector(extent);
-      var bucket = sector / BucketSectors;
-      result.TryGetValue(bucket, out var current);
-      var next = current + extent.Size;
-      if (next > BucketSectors)
-        throw new InvalidDataException($"bcachefs: bucket {bucket} is overcommitted ({next} sectors).");
-      result[bucket] = next;
-    }
+    var lastSbBucket = (geometry.DeviceSectors - SbSlotSectors) / BucketSectors;
+    var free = new Queue<long>();
+    for (var bucket = (long)FirstMetadataBucket; free.Count < count && bucket < lastSbBucket; ++bucket)
+      if (!userBuckets.Contains(bucket))
+        free.Enqueue(bucket);
+    if (free.Count < count)
+      throw new NotSupportedException(
+        $"bcachefs metadata needs {count} free buckets; only {free.Count} are available.");
+
+    var result = new Dictionary<int, long[]>();
+    foreach (var id in BcacheFsMetadataCommit.TreeOrder)
+      if (shapes.TryGetValue(id, out var treeShapes))
+        result[id] = [.. Enumerable.Range(0, treeShapes.Count).Select(_ => free.Dequeue())];
     return result;
-  }
-
-  private static (int Level, Key Pointer) WriteTree(Stream image, ulong magic, int btree,
-      List<Key> keys, List<long> buckets, IReadOnlyDictionary<long, BucketState> bucketStates,
-      ref int nextSlot) {
-    Key Place(BcacheFsNodeBuilder node, ref int slot) {
-      if (slot >= buckets.Count)
-        throw new NotSupportedException("bcachefs metadata reservation exhausted.");
-      var buffer = new byte[BucketBytes];
-      var sectors = node.Write(buffer);
-      var bucket = buckets[slot];
-      var sector = bucket * BucketSectors;
-      ++slot;
-      image.Position = sector * SectorSize;
-      image.Write(buffer, 0, sectors * SectorSize);
-      return node.Pointer(sector, sectors, BucketGeneration(bucketStates, bucket));
-    }
-
-    var tree = new BcacheFsNodeBuilder {
-      BtreeId = btree, Seq = NextSeq(), SuperblockMagic = magic,
-    };
-    foreach (var key in keys) tree.Add(key);
-
-    if (tree.Bytes <= BucketBytes)
-      return (0, Place(tree, ref nextSlot));
-
-    var sorted = keys.OrderBy(k => k,
-      Comparer<Key>.Create((a, b) => Compare(a.Position, b.Position))).ToList();
-    var leaves = new List<BcacheFsNodeBuilder>();
-    var root = new BcacheFsNodeBuilder {
-      BtreeId = btree, Seq = NextSeq(), SuperblockMagic = magic, Level = 1,
-    };
-
-    var index = 0;
-    while (index < sorted.Count) {
-      var leaf = new BcacheFsNodeBuilder {
-        BtreeId = btree, Seq = NextSeq(), SuperblockMagic = magic,
-        MinKey = leaves.Count == 0 ? Bpos.Min : Successor(sorted[index - 1].Position),
-      };
-      var bytes = BcacheFsNodeBuilder.KeysOffset;
-      while (index < sorted.Count && bytes + sorted[index].Bytes <= BucketBytes) {
-        bytes += sorted[index].Bytes;
-        leaf.Add(sorted[index++]);
-      }
-      if (leaf.Count == 0)
-        throw new NotSupportedException("bcachefs key is too large for one b-tree node.");
-      leaves.Add(leaf);
-    }
-
-    for (var i = 0; i < leaves.Count; ++i) {
-      var bounded = new BcacheFsNodeBuilder {
-        BtreeId = btree,
-        Seq = leaves[i].Seq,
-        SuperblockMagic = magic,
-        MinKey = leaves[i].MinKey,
-        MaxKey = i == leaves.Count - 1 ? Bpos.Max : leaves[i].Keys[^1].Position,
-      };
-      foreach (var key in leaves[i].Keys) bounded.Add(key);
-      root.Add(Place(bounded, ref nextSlot));
-    }
-
-    return (1, Place(root, ref nextSlot));
-  }
-
-  private static int NodeCount(IReadOnlyList<Key> keys) {
-    var bytes = BcacheFsNodeBuilder.KeysOffset + keys.Sum(k => k.Bytes);
-    if (bytes <= BucketBytes) return 1;
-
-    var leaves = 0;
-    bytes = BcacheFsNodeBuilder.KeysOffset;
-    var any = false;
-    foreach (var key in keys.OrderBy(k => k,
-      Comparer<Key>.Create((a, b) => Compare(a.Position, b.Position)))) {
-      if (key.Bytes + BcacheFsNodeBuilder.KeysOffset > BucketBytes)
-        throw new NotSupportedException("bcachefs key is too large for one b-tree node.");
-      if (any && bytes + key.Bytes > BucketBytes) {
-        ++leaves;
-        bytes = BcacheFsNodeBuilder.KeysOffset;
-      }
-      bytes += key.Bytes;
-      any = true;
-    }
-    if (any) ++leaves;
-    return leaves + 1;
-  }
-
-  private static void PatchSuperblocks(Stream image,
-      IReadOnlyList<(int Btree, int Level, Key Pointer)> roots, long btreeBuckets) {
-    var deviceSectors = image.Length / SectorSize;
-    long[] slots = [PrimarySbSector, PrimarySbSector + SbSlotSectors, deviceSectors - SbSlotSectors];
-
-    image.Position = PrimarySbSector * SectorSize + 112;
-    Span<byte> seqBytes = stackalloc byte[8];
-    image.ReadExactly(seqBytes);
-    var seq = BinaryPrimitives.ReadUInt64LittleEndian(seqBytes) + 1;
-
-    foreach (var slot in slots) {
-      var fixedPart = new byte[SbFixedBytes];
-      image.Position = slot * SectorSize;
-      image.ReadExactly(fixedPart);
-      if (!fixedPart.AsSpan(24, 16).SequenceEqual(Magic))
-        throw new InvalidDataException($"bcachefs: missing superblock copy at sector {slot}.");
-
-      var u64s = BinaryPrimitives.ReadUInt32LittleEndian(fixedPart.AsSpan(124));
-      var sb = new byte[SbFixedBytes + checked((int)u64s * 8)];
-      image.Position = slot * SectorSize;
-      image.ReadExactly(sb);
-      BinaryPrimitives.WriteUInt64LittleEndian(sb.AsSpan(112), seq);
-
-      var seenRoots = 0;
-      foreach (var (type, offset, length) in Sections(sb)) {
-        if (type == FieldMembersV2)
-          PatchMemberBitmap(sb.AsSpan(offset, length), btreeBuckets);
-        if (type != FieldClean) continue;
-
-        var cursor = offset + 24;
-        var end = offset + length;
-        while (cursor + 8 <= end) {
-          var words = BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(cursor));
-          var entryType = sb[cursor + 4];
-          var total = (words + 1) * 8;
-          if (words == 0 || cursor + total > end) break;
-
-          if (entryType == 1) {
-            var btree = sb[cursor + 2];
-            var replacement = roots.FirstOrDefault(r => r.Btree == btree);
-            if (replacement.Pointer.Value != null) {
-              if (replacement.Pointer.Bytes != words * 8)
-                throw new InvalidDataException(
-                  $"bcachefs root entry {btree} changed size unexpectedly.");
-              sb[cursor + 3] = (byte)replacement.Level;
-              WriteKey(sb.AsSpan(cursor + 8, replacement.Pointer.Bytes), replacement.Pointer);
-              ++seenRoots;
-            }
-          }
-          cursor += total;
-        }
-      }
-
-      if (seenRoots != roots.Count)
-        throw new InvalidDataException(
-          $"bcachefs superblock copy at {slot} exposed {seenRoots}/{roots.Count} roots.");
-
-      var checksum = MetadataChecksum(sb.AsSpan(16));
-      BinaryPrimitives.WriteUInt64LittleEndian(sb, checksum);
-      BinaryPrimitives.WriteUInt64LittleEndian(sb.AsSpan(8), 0);
-      BinaryPrimitives.WriteUInt64LittleEndian(sb.AsSpan(104), (ulong)slot);
-      image.Position = slot * SectorSize;
-      image.Write(sb);
-    }
-  }
-
-  private static IEnumerable<(uint Type, int Offset, int Length)> Sections(byte[] sb) {
-    var offset = SbFixedBytes;
-    while (offset + 8 <= sb.Length) {
-      var words = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(offset));
-      if (words == 0) yield break;
-      var length = checked((int)words * 8);
-      if (offset + length > sb.Length) yield break;
-      yield return (BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(offset + 4)), offset, length);
-      offset += length;
-    }
-  }
-
-  private static void PatchMemberBitmap(Span<byte> section, long btreeBuckets) {
-    if (section.Length < 16 + 136) return;
-    var member = section[16..];
-    var btreeEndSector = (FirstMetadataBucket + btreeBuckets) * BucketSectors;
-    var shift = 0;
-    while ((64L << shift) < btreeEndSector) ++shift;
-    var bitmap = 0UL;
-    for (var b = (long)FirstMetadataBucket; b < FirstMetadataBucket + btreeBuckets; ++b) {
-      var first = b * BucketSectors >> shift;
-      var last = ((b + 1) * BucketSectors - 1) >> shift;
-      for (var bit = first; bit <= last; ++bit) bitmap |= 1UL << (int)bit;
-    }
-    member[28] = (byte)shift;
-    BinaryPrimitives.WriteUInt64LittleEndian(member[128..], bitmap);
   }
 
   private static Key PatchFileSize(Key inode, ulong size, ulong sectors) {
@@ -985,138 +673,6 @@ internal static class BcacheFsInPlaceModifier {
     return inode with { Value = value };
   }
 
-  private static Key InodeKey(ulong inode, ulong parent, ulong parentOffset,
-      bool isDirectory, ulong size, ulong sectors, int links, uint subvolume = 0) {
-    (ulong Value, bool Wide)[] fields = [
-      (0, true), (0, true), (0, true), (0, true),
-      (0, false), (0, false), ((ulong)links, false), (0, false), (0, false),
-      (0, false), (0, false), (0, false), (0, false), (0, false), (0, false),
-      (0, false), (0, false), (0, false), (0, false),
-      (parent, false), (parentOffset, false), (subvolume, false),
-    ];
-    var present = fields.Length;
-    while (present > 0 && fields[present - 1].Value == 0) --present;
-
-    var packed = new byte[256];
-    var cursor = 0;
-    for (var i = 0; i < present; ++i) {
-      cursor += WriteVarint(packed.AsSpan(cursor), fields[i].Value);
-      if (fields[i].Wide) packed[cursor++] = 0;
-    }
-
-    var value = new byte[48 + cursor];
-    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8), HashSeed(inode));
-    var mode = (ulong)(isDirectory ? 0x41ED : 0x81A4);
-    const int inodeStrHashSiphash = 3;
-    var flags = ((ulong)inodeStrHashSiphash << 20)
-      | ((ulong)present << 24) | (6UL << 31) | (mode << 36);
-    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(16), flags);
-    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(24), sectors);
-    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(32), size);
-    packed.AsSpan(0, cursor).CopyTo(value.AsSpan(48));
-    return new Key(KeyInodeV3, new Bpos(0, inode, SnapshotIdMax), 0, value);
-  }
-
-  private static Key DirentKey(ulong parent, ulong offset, string name, ulong target, byte type) {
-    var nameBytes = Encoding.UTF8.GetBytes(name);
-    var length = 9 + nameBytes.Length;
-    var value = new byte[(length + 7) / 8 * 8];
-    BinaryPrimitives.WriteUInt64LittleEndian(value, target);
-    value[8] = type;
-    nameBytes.CopyTo(value.AsSpan(9));
-    return new Key(KeyDirent, new Bpos(parent, offset, SnapshotIdMax), 0, value);
-  }
-
-  private static Key AllocKey(
-      long bucket, byte dataType, uint dirtySectors, byte generation, byte oldestGeneration) {
-    var value = new byte[48];
-    value[12] = generation;
-    value[13] = oldestGeneration;
-    value[14] = dataType;
-    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(16), dirtySectors);
-    return new Key(KeyAllocV4, new Bpos(0, (ulong)bucket, 0), 0, value);
-  }
-
-  private static Key BucketGensKey(long first, IReadOnlyDictionary<long, BucketState> states) {
-    var value = new byte[BucketGensNr];
-    for (var i = 0; i < value.Length; ++i)
-      value[i] = BucketGeneration(states, first + i);
-    return new Key(KeyBucketGens, new Bpos(0, (ulong)(first / BucketGensNr), 0), 0, value);
-  }
-
-  private static Key FreespaceKey(long first, long end) =>
-    new(KeySet, new Bpos(0, (ulong)end, 0), (uint)(end - first), []);
-
-  private static Key InodeAllocCursorKey(ulong next) {
-    var value = new byte[24];
-    BinaryPrimitives.WriteUInt64LittleEndian(value, FirstDynamicInode);
-    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8), long.MaxValue);
-    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(16), next);
-    return new Key(KeyInodeAllocCursor, new Bpos(1, 1, 0), 0, value);
-  }
-
-  private static Key AccountingKey(ReadOnlySpan<byte> position, params ulong[] counters) {
-    Span<byte> s = stackalloc byte[20];
-    s.Clear();
-    position.CopyTo(s);
-    var inode = BinaryPrimitives.ReadUInt64BigEndian(s);
-    var offset = BinaryPrimitives.ReadUInt64BigEndian(s[8..]);
-    var snapshot = BinaryPrimitives.ReadUInt32BigEndian(s[16..]);
-    var value = new byte[8 * counters.Length];
-    for (var i = 0; i < counters.Length; ++i)
-      BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(i * 8), counters[i]);
-    return new Key(KeyAccounting, new Bpos(inode, offset, snapshot), 0, value);
-  }
-
-  private static Key NrInodesKey(ulong count) => AccountingKey([AccountingNrInodes], count);
-
-  private static Key DevDataTypeKey(byte type, ulong buckets, ulong sectors) =>
-    AccountingKey([AccountingDevDataType, 0, type], buckets, sectors,
-      type == DataFree ? 0 : buckets * BucketSectors - sectors);
-
-  private static Key ReplicasKey(byte type, ulong sectors) =>
-    AccountingKey([AccountingReplicas, type, 1, 1, 0], sectors);
-
-  private static Key BtreeAccountingKey(int btree, ulong nodes) {
-    Span<byte> pos = stackalloc byte[5];
-    pos[0] = AccountingBtree;
-    BinaryPrimitives.WriteUInt32LittleEndian(pos[1..], (uint)btree);
-    return AccountingKey(pos, nodes * BucketSectors, nodes, nodes > 1 ? 1UL : 0);
-  }
-
-  private static Key SnapshotAccountingKey(uint snapshot, int btree,
-      ulong keys, ulong keyBytes, ulong externalSectors) {
-    Span<byte> pos = stackalloc byte[9];
-    pos[0] = AccountingSnapshot;
-    BinaryPrimitives.WriteUInt32LittleEndian(pos[1..], snapshot);
-    BinaryPrimitives.WriteUInt32LittleEndian(pos[5..], (uint)btree);
-    return AccountingKey(pos, keys, keyBytes, externalSectors);
-  }
-
-  private static Key ExtentBackpointerKey(
-      long sector, int sectors, Bpos position, byte generation) {
-    var value = new byte[32];
-    value[0] = (byte)BtreeExtents;
-    value[2] = DataUser;
-    value[3] = generation;
-    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(8), (uint)sectors);
-    WriteBpos(value.AsSpan(12), position);
-    return new Key(KeyBackpointer, new Bpos(0, (ulong)sector << ExtentBpShift, 0), 0, value);
-  }
-
-  private static Key NodeBackpointerKey(
-      long bucket, int btree, int level, int sectors, byte generation) {
-    var value = new byte[32];
-    value[0] = (byte)btree;
-    value[1] = (byte)level;
-    value[2] = DataBtree;
-    value[3] = generation;
-    BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(8), (uint)sectors);
-    WriteBpos(value.AsSpan(12), Bpos.Max);
-    return new Key(KeyBackpointer,
-      new Bpos(0, (ulong)(bucket * BucketSectors) << ExtentBpShift, 0), 0, value);
-  }
-
   private static void ValidateExtent(Key extent, int bucketSectors) {
     if (extent.Value.Length < 8)
       throw new InvalidDataException("bcachefs extent has no pointer value.");
@@ -1146,106 +702,6 @@ internal static class BcacheFsInPlaceModifier {
     throw new InvalidDataException("bcachefs extent contains no pointer.");
   }
 
-  /// <summary>Writes a generation into the pointer an extent already carries.</summary>
-  private static void StampExtentGeneration(Key extent, byte generation) {
-    for (var i = 0; i + 8 <= extent.Value.Length; i += 8) {
-      var word = BinaryPrimitives.ReadUInt64LittleEndian(extent.Value.AsSpan(i));
-      if (!IsPointer(word)) continue;
-      BinaryPrimitives.WriteUInt64LittleEndian(extent.Value.AsSpan(i),
-        ExtentPointer(PointerSector(word), (byte)((word >> 48) & 0xFF), generation));
-      return;
-    }
-    throw new InvalidDataException("bcachefs extent contains no pointer.");
-  }
-
-  private static byte ExtentGeneration(Key extent) {
-    for (var i = 0; i + 8 <= extent.Value.Length; i += 8) {
-      var word = BinaryPrimitives.ReadUInt64LittleEndian(extent.Value.AsSpan(i));
-      if (IsPointer(word)) return (byte)(word >> 56);
-    }
-    throw new InvalidDataException("bcachefs extent contains no pointer.");
-  }
-
-  /// <summary>
-  /// Checks that the four places a bucket's generation is written down still say
-  /// the same thing, on the keys the commit is about to lay out.
-  /// </summary>
-  /// <remarks>
-  /// <para>A pointer names a bucket and the generation that bucket had when the
-  /// data was put there. bcachefs treats a dirty pointer whose generation has
-  /// since moved on as data loss rather than as a pointer to fix, so a run left
-  /// one generation behind is a file the volume has quietly dropped.</para>
-  ///
-  /// <para>The same number is written down four times — the alloc key, the
-  /// bucket_gens slot, the extent's pointer and that extent's backpointer — and
-  /// these are checked against each other rather than against the state they were
-  /// all derived from, so an encoding fault in any one of the four is caught here
-  /// instead of on the next mount. A bucket the alloc tree does not describe may
-  /// not carry a generation at all: bcachefs requires a hole in the alloc tree to
-  /// read as generation zero.</para>
-  /// </remarks>
-  private static void ValidateBucketGenerations(IReadOnlyDictionary<int, List<Key>> trees) {
-    var allocated = new Dictionary<long, (byte Generation, byte DataType)>();
-    foreach (var key in trees[BtreeAlloc]) {
-      var bucket = (long)key.Position.Offset;
-      allocated[bucket] = (key.Value[12], key.Value[14]);
-    }
-
-    foreach (var key in trees[BtreeBucketGens]) {
-      var first = checked((long)key.Position.Offset * BucketGensNr);
-      for (var i = 0; i < key.Value.Length; ++i) {
-        var bucket = first + i;
-        var indexed = key.Value[i];
-        if (!allocated.TryGetValue(bucket, out var state)) {
-          if (indexed != 0)
-            throw new InvalidDataException(
-              $"bcachefs: bucket_gens records generation {indexed} for alloc-tree hole {bucket}.");
-          continue;
-        }
-
-        if (state.Generation != indexed)
-          throw new InvalidDataException(
-            $"bcachefs: bucket {bucket} has alloc generation {state.Generation} but bucket_gens says {indexed}.");
-      }
-    }
-
-    var pointed = new Dictionary<ulong, byte>();
-    foreach (var extent in trees[BtreeExtents]) {
-      var sector = ExtentSector(extent);
-      var bucket = sector / BucketSectors;
-      if (!allocated.TryGetValue(bucket, out var state) || state.DataType != DataUser)
-        throw new InvalidDataException(
-          $"bcachefs: extent at sector {sector} points into bucket {bucket}, which is not allocated as user data.");
-
-      var pointerGeneration = ExtentGeneration(extent);
-      if (state.Generation != pointerGeneration)
-        throw new InvalidDataException(
-          $"bcachefs: extent at sector {sector} carries generation {pointerGeneration}, bucket {bucket} is generation {state.Generation}.");
-      pointed[(ulong)sector << ExtentBpShift] = pointerGeneration;
-    }
-
-    foreach (var key in trees[BtreeBackpointers]) {
-      if (key.Value[2] != DataUser) continue;
-      if (!pointed.TryGetValue(key.Position.Offset, out var pointerGeneration))
-        throw new InvalidDataException(
-          $"bcachefs: a user-data backpointer at {key.Position.Offset} names no extent.");
-      if (key.Value[3] != pointerGeneration)
-        throw new InvalidDataException(
-          $"bcachefs: backpointer at {key.Position.Offset} carries generation {key.Value[3]}, "
-          + $"its extent carries {pointerGeneration}.");
-    }
-  }
-
-  private static BucketState BucketStateOf(
-      IReadOnlyDictionary<long, BucketState> states, long bucket)
-    => states.TryGetValue(bucket, out var state)
-      ? state
-      : new BucketState(0, 0, DataFree);
-
-  private static byte BucketGeneration(
-      IReadOnlyDictionary<long, BucketState> states, long bucket)
-    => BucketStateOf(states, bucket).Generation;
-
   private static void AddFreedRange(List<(long Offset, long Length)> ranges, Key extent) {
     var sector = ExtentSector(extent);
     ranges.Add((sector * SectorSize, (long)extent.Size * SectorSize));
@@ -1253,8 +709,6 @@ internal static class BcacheFsInPlaceModifier {
 
   private static List<Key> ReadTree(BcacheFsVolume volume, int btree) =>
     volume.Keys(btree).Select(e => new Key(e.Type, e.Position, e.Size, e.Value)).ToList();
-
-  private static ulong HashSeed(ulong inode) => inode * 0x9E3779B97F4A7C15UL | 1UL;
 
   private static string ReadName(ReadOnlySpan<byte> source) {
     var end = source.Length;
@@ -1273,13 +727,6 @@ internal static class BcacheFsInPlaceModifier {
   private static string Leaf(string path) {
     var slash = path.LastIndexOf('/');
     return slash < 0 ? path : path[(slash + 1)..];
-  }
-
-  private static ulong NextSeq() {
-    Span<byte> bytes = stackalloc byte[8];
-    RandomNumberGenerator.Fill(bytes);
-    var value = BinaryPrimitives.ReadUInt64LittleEndian(bytes);
-    return value == 0 ? 1UL : value;
   }
 
   private static void EnsureWritable(Stream image) {

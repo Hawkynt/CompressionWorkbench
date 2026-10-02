@@ -178,15 +178,12 @@ public class BcacheFsTests {
     var img = ms.ToArray();
     var version = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(4096 + 16, 2));
     var versionMin = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(4096 + 18, 2));
-    // The version a current kernel writes, and the one whose structures this
-    // writer produces.
-    Assert.That(version, Is.EqualTo((1 << 10) | 38),
-      "version should be BCH_VERSION(1, 38)");
-    // A volume that says it is initialised — and this one does, so that a mount
-    // refuses it rather than formatting over it — is held to the version that put
-    // the written-sector count in btree pointers, and turned away below it.
-    Assert.That(versionMin, Is.EqualTo(14),
-      "version_min should be BCH_VERSION(0, 14), the floor an initialised volume is held to");
+    // The version bcachefs-tools 1.3.x writes and checks, and the one whose
+    // structures this writer produces; nothing older was ever written to it.
+    Assert.That(version, Is.EqualTo((1 << 10) | 3),
+      "version should be BCH_VERSION(1, 3), rebalance_work");
+    Assert.That(versionMin, Is.EqualTo(version),
+      "version_min names the oldest version anything on the volume was written at");
     Assert.That(versionMin, Is.LessThanOrEqualTo(version), "version_min must be ≤ version");
   }
 
