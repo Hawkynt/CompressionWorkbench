@@ -228,7 +228,7 @@ internal sealed class MainViewModel : ViewModelBase {
     WipeEntryCommand = new RelayCommand(_ => OpenMaintenance(MaintenanceVerb.WipeEmpty), _ => CanMaintain(MaintenanceVerb.WipeEmpty));
     CompactEntryCommand = new RelayCommand(_ => OpenMaintenance(MaintenanceVerb.Compact), _ => CanMaintain(MaintenanceVerb.Compact));
     ScrambleEntryCommand = new RelayCommand(_ => OpenMaintenance(MaintenanceVerb.Scramble), _ => CanMaintain(MaintenanceVerb.Scramble));
-    MaintenanceCommand = new RelayCommand(_ => MaintenanceRequested?.Invoke(this, null), _ => HasMaintenanceTarget);
+    MaintenanceCommand = new RelayCommand(_ => MaintenanceRequested?.Invoke(this, new(null, PreferSelection: false)), _ => HasMaintenanceTarget);
     ReconfigureEntryCommand = new RelayCommand(_ => Reconfigure(), _ => CanReconfigure());
     DeleteSelectedCommand = new RelayCommand(_ => DeleteSelectedEntries(), _ => CanDeleteSelected);
     CopyCommand = new RelayCommand(_ => PutSelectionOnClipboard(cut: false), _ => CanCopySelection());
@@ -816,20 +816,10 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   /// <summary>
-  /// Resolves which archive a maintenance verb should target, <em>without</em>
-  /// materialising anything (cheap enough for CanExecute). Two cases, in
-  /// priority order:
-  /// <list type="number">
-  ///   <item>A single selected non-directory entry whose extension routes to a
-  ///   recognized archive/filesystem format — either a real on-disk file
-  ///   (OS-browser) or an archive nested inside the currently-open archive.
-  ///   <paramref name="archiveEntry"/> is set to it.</item>
-  ///   <item>Otherwise the currently-open archive itself (which is a temp file
-  ///   when the user has descended into a nested archive — so the verbs remain
-  ///   available "even when this is an archive within another one").</item>
-  /// </list>
-  /// Returns <c>false</c> (verb disabled) when neither applies or the registry
-  /// is not yet warm.
+  /// Resolves which container a maintenance command acts on: a single selected file whose
+  /// <em>content</em> proves it a container (<see cref="SelectedMaintenanceTarget"/>), else the
+  /// archive the shell is inside. A name alone never decides — a plain <c>f19.bin</c> inside a FAT
+  /// volume is not a BIN/CUE image, and the volume stays the target.
   /// </summary>
   private bool TryResolveMaintenanceTarget(out string formatId, out ArchiveEntryViewModel? archiveEntry) {
     formatId = "";
@@ -838,36 +828,101 @@ internal sealed class MainViewModel : ViewModelBase {
     // fires CommandManager.InvalidateRequerySuggested when registration ends.
     if (!Compression.Lib.FormatRegistration.IsReady) return false;
 
-    if (SelectedEntries.Count == 1) {
-      var e = SelectedEntries[0];
-      if (!e.IsDirectory && !e.IsParentEntry) {
-        // A file on disk is judged by its content (cached, since this runs on every requery); an
-        // entry inside an archive has no bytes at hand, so its name decides.
-        var probeName = IsBrowsingOsFolder ? e.Path : e.Name;
-        if (!string.IsNullOrEmpty(probeName)) {
-          var f = IsBrowsingOsFolder && File.Exists(e.Path)
-            ? FormatDetector.DetectCached(e.Path)
-            : FormatDetector.DetectByExtension(probeName);
-          if (f != FormatDetector.Format.Unknown && !FormatDetector.IsStreamFormat(f)) {
-            // OS-browser candidate must actually exist on disk.
-            if (!IsBrowsingOsFolder || File.Exists(e.Path)) {
-              formatId = f.ToString();
-              archiveEntry = e;
-              return true;
-            }
-          }
-        }
-      }
-    }
-
-    // Fall back to the open archive itself — while the shell is in it; a folder on disk being
-    // browsed is not the archive left behind.
-    if (HasArchive && !IsBrowsingOsFolder && !string.IsNullOrEmpty(ArchivePath) && !string.IsNullOrEmpty(Format)
-        && Format != FormatDetector.Format.Unknown.ToString()) {
-      formatId = Format;
+    if (ProveSelectedContainer() is { } selected) {
+      (formatId, archiveEntry) = (selected.Format.ToString(), selected.Entry);
       return true;
     }
+
+    if (OpenVolumeFormat() is { } open) {
+      formatId = open;
+      return true;
+    }
+
     return false;
+  }
+
+  /// <summary>The open archive's format while the shell is inside it; a folder on disk being browsed is not the archive left behind.</summary>
+  private string? OpenVolumeFormat()
+    => HasArchive && !IsBrowsingOsFolder && !string.IsNullOrEmpty(ArchivePath) && !string.IsNullOrEmpty(Format)
+       && Format != FormatDetector.Format.Unknown.ToString()
+      ? Format
+      : null;
+
+  // Content verdicts for entries of the open archive, so a requery does not reopen the entry.
+  private readonly Dictionary<string, FormatDetector.Format> _entryFormats = new(StringComparer.Ordinal);
+
+  /// <summary>How much of an entry is read to identify it when its stream cannot seek.</summary>
+  private const int EntryProbeBytes = 1 << 20;
+
+  /// <summary>
+  /// The single selected file, when its content identifies it as a container format (not a bare
+  /// stream): on disk by <see cref="FormatDetector.DetectCached"/>, inside the open archive by
+  /// opening the entry and running <see cref="FormatDetector.DetectByContent"/> on its head.
+  /// </summary>
+  private (FormatDetector.Format Format, ArchiveEntryViewModel Entry)? ProveSelectedContainer() {
+    if (SelectedEntries.Count != 1) return null;
+    var e = SelectedEntries[0];
+    if (e.IsDirectory || e.IsParentEntry || string.IsNullOrEmpty(e.Path)) return null;
+
+    FormatDetector.Format format;
+    if (IsBrowsingOsFolder) {
+      if (!File.Exists(e.Path)) return null;
+      format = FormatDetector.DetectCached(e.Path);
+    } else if (HasArchive && File.Exists(ArchivePath)) {
+      format = DetectEntryByContent(e);
+    } else {
+      return null;
+    }
+
+    return format == FormatDetector.Format.Unknown || FormatDetector.IsStreamFormat(format) ? null : (format, e);
+  }
+
+  private FormatDetector.Format DetectEntryByContent(ArchiveEntryViewModel entry) {
+    var key = $"{ArchivePath}|{File.GetLastWriteTimeUtc(ArchivePath).Ticks}|{entry.Path}";
+    if (_entryFormats.TryGetValue(key, out var known)) return known;
+
+    var format = FormatDetector.Format.Unknown;
+    try {
+      using var stream = ArchiveOperations.OpenEntry(ArchivePath, entry.Path, password: null);
+      if (stream.CanSeek) {
+        format = FormatDetector.DetectByContent(stream);
+      } else {
+        var head = new byte[EntryProbeBytes];
+        var read = 0;
+        for (int n; read < head.Length && (n = stream.Read(head, read, head.Length - read)) > 0;) read += n;
+        using var prefix = new MemoryStream(head, 0, read, writable: false);
+        format = FormatDetector.DetectByContent(prefix);
+      }
+    } catch {
+      // An entry that cannot be opened or read is not a target; the open volume stays one.
+    }
+
+    return _entryFormats[key] = format;
+  }
+
+  /// <summary>The open volume as a maintenance target, when it supports any operation.</summary>
+  internal MaintenanceTarget? OpenVolumeMaintenanceTarget
+    => FormatRegistration.IsReady && OpenVolumeFormat() is { } format && TargetCapabilities.For(format).AnySupported
+      ? new(MaintenanceTargetKind.OpenVolume, $"{format}|{ArchivePath}", format, Path.GetFileName(ArchivePath), Entry: null)
+      : null;
+
+  /// <summary>The selected file as a maintenance target, when its content proves it a container that supports any operation.</summary>
+  internal MaintenanceTarget? SelectedMaintenanceTarget {
+    get {
+      if (!FormatRegistration.IsReady || ProveSelectedContainer() is not var (format, entry)) return null;
+      var id = format.ToString();
+      if (!TargetCapabilities.For(id).AnySupported) return null;
+      var key = $"{id}|{(IsBrowsingOsFolder ? entry.Path : ArchivePath + "::" + entry.Path)}";
+      return new(MaintenanceTargetKind.Selected, key, id, entry.Name, entry);
+    }
+  }
+
+  /// <summary>Every target the Defragment tab can offer now: the open volume first, then a proven selection.</summary>
+  internal IReadOnlyList<MaintenanceTarget> MaintenanceTargets() {
+    var targets = new List<MaintenanceTarget>(2);
+    if (OpenVolumeMaintenanceTarget is { } open) targets.Add(open);
+    if (SelectedMaintenanceTarget is { } selected && targets.All(t => t.Key != selected.Key)) targets.Add(selected);
+    return targets;
   }
 
   /// <summary>
@@ -879,35 +934,25 @@ internal sealed class MainViewModel : ViewModelBase {
     => TryResolveMaintenanceTarget(out var formatId, out _) && TargetCapabilities.For(formatId).Verb(verb).Supported;
 
   /// <summary>Whether there is a maintenance target that supports at least one operation.</summary>
-  internal bool HasMaintenanceTarget
-    => TryResolveMaintenanceTarget(out var formatId, out _) && TargetCapabilities.For(formatId).AnySupported;
+  internal bool HasMaintenanceTarget => MaintenanceTargets().Count > 0;
 
   /// <summary>
-  /// Identifies the resolved maintenance target — the selected archive file or entry, else the open
-  /// archive — so the view can tell whether a session still belongs to what is selected. Null when
-  /// there is none.
+  /// Raised when a maintenance command asks for the Defragment tab: the operation to preselect (null
+  /// for none) and whether the command was aimed at the selection rather than the open volume.
   /// </summary>
-  internal string? MaintenanceTargetKey
-    => TryResolveMaintenanceTarget(out var formatId, out var entry)
-      ? $"{formatId}|{(entry is null ? ArchivePath : IsBrowsingOsFolder ? entry.Path : ArchivePath + "::" + entry.Path)}"
-      : null;
+  public event EventHandler<MaintenanceRequest>? MaintenanceRequested;
+
+  // The list's context menu acts on what is selected; the tab's own entry defaults to the open volume.
+  private void OpenMaintenance(MaintenanceVerb verb) => MaintenanceRequested?.Invoke(this, new(verb, PreferSelection: true));
 
   /// <summary>
-  /// Raised when a maintenance command asks for the Defragment tab, with the operation to preselect
-  /// (null for none). The view owns the tab, so it is the one that opens it.
-  /// </summary>
-  public event EventHandler<MaintenanceVerb?>? MaintenanceRequested;
-
-  private void OpenMaintenance(MaintenanceVerb verb) => MaintenanceRequested?.Invoke(this, verb);
-
-  /// <summary>
-  /// Opens the resolved target for maintenance. A real file — on disk, or the open archive — is
+  /// Opens <paramref name="target"/> for maintenance. A real file — on disk, or the open archive — is
   /// maintained in place. An archive nested inside the open archive is extracted to a temporary file,
   /// maintained there, and written back into the host after each change when the host is
   /// <see cref="IArchiveModifiable"/>; the session deletes the copy when disposed.
   /// </summary>
-  internal MaintenanceSession? OpenMaintenanceSession() {
-    if (!TryResolveMaintenanceTarget(out var formatId, out var entry) || MaintenanceTargetKey is not { } key) return null;
+  internal MaintenanceSession? OpenMaintenanceSession(MaintenanceTarget target) {
+    var (key, formatId, entry) = (target.Key, target.FormatId, target.Entry);
 
     if (entry != null && IsBrowsingOsFolder) {
       if (string.IsNullOrEmpty(entry.Path) || !File.Exists(entry.Path)) return null;

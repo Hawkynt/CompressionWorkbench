@@ -54,6 +54,10 @@ internal sealed partial class MainForm {
   private readonly RibbonComboBox _optimizeMethodCombo = new("Method") { FieldWidth = 112 };
   private readonly List<LayoutProfileEntry?> _layoutProfileEntries = [];
 
+  private readonly RibbonComboBox _targetCombo = new("Target") { FieldWidth = 170 };
+  private readonly List<MaintenanceTarget> _offeredTargets = [];
+  private MaintenanceTarget? _sessionTarget;
+  private bool _pendingPreferSelection;
   private MaintenanceSession? _maintenanceSession;
   private MaintenancePresenter? _presenter;
   private MaintenanceVerb? _pendingVerb;
@@ -73,18 +77,35 @@ internal sealed partial class MainForm {
 
   private void BuildDefragmentTab() {
     this._defragTab = new RibbonTab("Defragment");
-    this._defragTab.Groups.AddRange(this.OperationGroup(), this.StrategyGroup(), this.OptionsGroup(), this.ViewGroup());
+    this._defragTab.Groups.AddRange(this.TargetGroup(), this.OperationGroup(), this.StrategyGroup(), this.OptionsGroup(), this.ViewGroup());
 
     this._ribbon.Tabs.Add(this._defragTab);
     this._diskTools.Add(this._defragTab);
     this._ribbon.ContextualTabGroups.Add(this._diskTools);
 
     this._ribbon.SelectedIndexChanged += (_, _) => this.OnRibbonTabChanged();
-    this._model.MaintenanceRequested += (_, verb) => this.OpenDefragmentTab(verb);
+    this._model.MaintenanceRequested += (_, request) => this.OpenDefragmentTab(request.Verb, request.PreferSelection);
     this._model.LocationChanged += (_, _) => this.UpdateDiskTools();
     CommandManager.RequerySuggested += (_, _) => this.UpdateDiskTools();
     this.FormClosing += this.OnClosingWhileMaintaining;
     this.UpdateDiskTools();
+  }
+
+  /// <summary>
+  /// What the tab works on: the open volume by default, or a selected file whose content proved it a
+  /// container. Picking here is the only way the target changes while an image is being worked on;
+  /// selecting something else in the list only adds or removes the offer.
+  /// </summary>
+  private RibbonGroup TargetGroup() {
+    this.Field(this._targetCombo, "The volume or container the operations work on.", () => {
+      var index = this._targetCombo.SelectedIndex;
+      if (index >= 0 && index < this._offeredTargets.Count && this._offeredTargets[index].Key != this._sessionTarget?.Key)
+        this.OpenSession(this._offeredTargets[index]);
+    });
+
+    var group = new RibbonGroup("Target");
+    group.Items.Add(this._targetCombo);
+    return group;
   }
 
   private RibbonGroup OperationGroup() {
@@ -226,28 +247,88 @@ internal sealed partial class MainForm {
 
   // ── the tab and the client area ─────────────────────────────────────────────────────────────
 
-  /// <summary>Shows the contextual tab while there is something to maintain, and follows the target.</summary>
+  /// <summary>Shows the contextual tab while there is something to maintain, and keeps the target offer current.</summary>
   private void UpdateDiskTools() {
-    var running = this._presenter?.IsRunning == true || this._maintenanceCancellation is not null;
+    var running = this.MaintenanceRunning;
     var visible = running || this._model.HasMaintenanceTarget || (this._defragActive && this._maintenanceSession is not null);
 
     if (!visible && this._ribbon.SelectedTab == this._defragTab) this._ribbon.SelectedIndex = 1;
     this._diskTools.Visible = visible;
 
-    // On the tab, a different target selected meanwhile — Back, Forward, a typed address — is taken
-    // up; a target that merely vanished (a refresh that dropped the selection) keeps the session.
-    if (this._defragActive && !running && this._model.MaintenanceTargetKey is { } key && key != this._maintenanceSession?.Key)
-      this.OpenSessionForTarget();
+    // Only while idle: a running operation keeps its target and its offer whatever is selected.
+    if (this._defragActive && !running) this.RefreshTargets();
   }
 
-  /// <summary>Selects the Defragment tab, preselecting <paramref name="verb"/> when the target supports it.</summary>
-  internal void OpenDefragmentTab(MaintenanceVerb? verb) {
+  private bool MaintenanceRunning => this._presenter?.IsRunning == true || this._maintenanceCancellation is not null;
+
+  /// <summary>
+  /// Re-evaluates what the Target field offers. The session keeps its target: a selection change only
+  /// adds or removes the offer of a selected container, and a selected target stays listed after the
+  /// selection moves off it. Only when the open volume the session works on is no longer open — Back,
+  /// a typed address — does the tab move to the volume that is open now.
+  /// </summary>
+  private void RefreshTargets() {
+    var targets = this._model.MaintenanceTargets().ToList();
+    if (this._sessionTarget is { } current) {
+      var left = current.Kind == MaintenanceTargetKind.OpenVolume && targets.All(t => t.Key != current.Key)
+        && this._model.OpenVolumeMaintenanceTarget is not null;
+      if (left) {
+        this.OpenSession(DefaultTarget(targets, preferSelection: false)!);
+        return;
+      }
+
+      if (targets.All(t => t.Key != current.Key)) targets.Insert(current.Kind == MaintenanceTargetKind.OpenVolume ? 0 : targets.Count, current);
+    } else if (DefaultTarget(targets, preferSelection: false) is { } first) {
+      this.OpenSession(first);
+      return;
+    }
+
+    this.OfferTargets(targets);
+  }
+
+  /// <summary>The open volume, unless the request came from the selection and a selected container is proven.</summary>
+  private static MaintenanceTarget? DefaultTarget(IReadOnlyList<MaintenanceTarget> targets, bool preferSelection)
+    => (preferSelection ? targets.FirstOrDefault(t => t.Kind == MaintenanceTargetKind.Selected) : null)
+       ?? targets.FirstOrDefault(t => t.Kind == MaintenanceTargetKind.OpenVolume)
+       ?? targets.FirstOrDefault();
+
+  private void OfferTargets(List<MaintenanceTarget> targets) {
+    this._syncingDefragRibbon = true;
+    try {
+      if (!this._offeredTargets.Select(t => t.Key).SequenceEqual(targets.Select(t => t.Key))) {
+        this._offeredTargets.Clear();
+        this._offeredTargets.AddRange(targets);
+        this._targetCombo.Items.Clear();
+        this._targetCombo.Items.AddRange(targets.Select(t => t.Label));
+      }
+
+      this._targetCombo.SelectedIndex = this._offeredTargets.FindIndex(t => t.Key == this._sessionTarget?.Key);
+    } finally {
+      this._syncingDefragRibbon = false;
+    }
+
+    this.SyncDefragmentRibbon();
+  }
+
+  /// <summary>
+  /// Selects the Defragment tab, preselecting <paramref name="verb"/> when the target supports it.
+  /// <paramref name="preferSelection"/> aims it at a proven selected container instead of the open volume.
+  /// </summary>
+  internal void OpenDefragmentTab(MaintenanceVerb? verb, bool preferSelection = false) {
     this.UpdateDiskTools();
     if (!this._diskTools.Visible) return;
 
     this._pendingVerb = verb;
-    if (this._ribbon.SelectedTab == this._defragTab) this.ApplyPendingVerb();
-    else this._ribbon.SelectedIndex = this._ribbon.Tabs.IndexOf(this._defragTab);
+    this._pendingPreferSelection = preferSelection;
+    if (this._ribbon.SelectedTab != this._defragTab) {
+      this._ribbon.SelectedIndex = this._ribbon.Tabs.IndexOf(this._defragTab);
+      return;
+    }
+
+    // Already on the tab: a command aimed at the selection is an explicit choice, so it retargets.
+    if (preferSelection && !this.MaintenanceRunning && this._model.SelectedMaintenanceTarget is { } selected && selected.Key != this._sessionTarget?.Key)
+      this.OpenSession(selected);
+    this.ApplyPendingVerb();
   }
 
   private void OnRibbonTabChanged() {
@@ -257,9 +338,11 @@ internal sealed partial class MainForm {
     this._defragActive = onTab;
     if (onTab) {
       // A session still running an operation is kept, whatever is selected now: its file is in use.
-      var running = this._maintenanceCancellation is not null;
-      if (this._maintenanceSession is null || !running && this._model.MaintenanceTargetKey is { } key && key != this._maintenanceSession.Key)
-        this.OpenSessionForTarget();
+      if (!this.MaintenanceRunning || this._maintenanceSession is null) {
+        var target = DefaultTarget(this._model.MaintenanceTargets(), this._pendingPreferSelection);
+        if (target is not null && target.Key != this._sessionTarget?.Key) this.OpenSession(target);
+      }
+      this._pendingPreferSelection = false;
       this.ApplyPendingVerb();
     } else if (this._maintenanceCancellation is null) {
       this.CloseSession();
@@ -272,12 +355,13 @@ internal sealed partial class MainForm {
     this.UpdateDiskTools();
   }
 
-  private void OpenSessionForTarget() {
+  private void OpenSession(MaintenanceTarget target) {
     this.CloseSession();
     this._defragView.Clear();
 
-    this._maintenanceSession = this._model.OpenMaintenanceSession();
+    this._maintenanceSession = this._model.OpenMaintenanceSession(target);
     if (this._maintenanceSession is { } session) {
+      this._sessionTarget = target;
       this._presenter = new MaintenancePresenter(session.ImagePath, session.FormatId) {
         InterleaveText = this.InterleaveText(),
         HoleSizeText = this.HoleSizeText(),
@@ -286,15 +370,22 @@ internal sealed partial class MainForm {
         MetadataZone = this.SelectedMetadataZone(),
       };
       this.OnLayoutProfileChanged();
-      this._defragView.Log($"{session.DisplayName} — {session.FormatId}");
+      var display = FormatRegistry.GetById(session.FormatId)?.DisplayName is { Length: > 0 } name ? name : session.FormatId;
+      this._defragView.TargetText = $"{session.DisplayName} — {display} · {MaintenanceInput.FormatSize(new FileInfo(session.ImagePath).Length)}";
+      this._defragView.Log($"{session.DisplayName} — {display}");
       this.AnalyzeTarget();
+    } else {
+      this._defragView.TargetText = "";
     }
 
-    this.SyncDefragmentRibbon();
+    var targets = this._model.MaintenanceTargets().ToList();
+    if (this._sessionTarget is { } current && targets.All(t => t.Key != current.Key)) targets.Add(current);
+    this.OfferTargets(targets);
   }
 
   private void CloseSession() {
     this._presenter = null;
+    this._sessionTarget = null;
     this._maintenanceSession?.Dispose();
     this._maintenanceSession = null;
   }
@@ -461,6 +552,10 @@ internal sealed partial class MainForm {
       this._stopButton.Enabled = running && p?.CanCancel == true && !this._maintenanceCommitStarted && this._maintenanceCancellation is { IsCancellationRequested: false };
       this._analyzeButton.Enabled = idle;
 
+      this._targetCombo.Enabled = !running && this._offeredTargets.Count > 1;
+      this._targetCombo.ToolTipText = this._sessionTarget is null
+        ? "Open or select an image to maintain."
+        : running ? "An operation is running on this target." : $"Working on {this._sessionTarget.Label}. {this._targetCombo.Tag}";
       foreach (var (view, toggle) in this._viewToggles) toggle.Checked = this._defragView.Map.ViewMode == view;
       this._filesPanelToggle.Checked = this._defragView.FilesPanelVisible;
       this._legendToggle.Checked = this._defragView.LegendVisible;

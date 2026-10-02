@@ -67,6 +67,30 @@ internal static class MaintenanceFixtures {
   public static List<string> NameOrder(IEnumerable<string> names)
     => [.. names.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ThenBy(n => n, StringComparer.Ordinal)];
 
+  /// <summary>A FAT floppy holding plain data files named <c>*.bin</c> — a name BIN/CUE claims, a content nothing does.</summary>
+  public static string FatWithPlainBinFiles(string folder, string name = "disk.img") {
+    var writer = new FileSystem.Fat.FatWriter();
+    for (var i = 1; i <= 20; ++i) writer.AddFile($"f{i}.bin", Pattern(3_000 + i * 97, i));
+    var path = Path.Combine(folder, name);
+    File.WriteAllBytes(path, writer.Build());
+    return path;
+  }
+
+  /// <summary>
+  /// A ZIP holding a real FAT image (<c>inner.img</c>), a file that only looks like one by its name
+  /// (<c>fake.img</c>, plain bytes) and a text file.
+  /// </summary>
+  public static string ZipWithNestedImage(string folder, string name = "nested.zip") {
+    var inner = new FileSystem.Fat.FatWriter();
+    inner.AddFile("INNER.TXT", Pattern(5_000, 0x71));
+    var path = Path.Combine(folder, name);
+    using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
+    using (var stream = archive.CreateEntry("inner.img", CompressionLevel.NoCompression).Open()) stream.Write(inner.Build());
+    using (var stream = archive.CreateEntry("fake.img").Open()) stream.Write(Pattern(40_000, 0x72));
+    using (var writer = new StreamWriter(archive.CreateEntry("notes.txt").Open())) writer.Write("notes");
+    return path;
+  }
+
   public static string Zip(string folder, string name = "bundle.zip") {
     var path = Path.Combine(folder, name);
     using var archive = ZipFile.Open(path, ZipArchiveMode.Create);

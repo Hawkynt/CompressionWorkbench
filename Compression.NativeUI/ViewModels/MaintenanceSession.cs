@@ -14,7 +14,7 @@ internal sealed class MaintenanceSession(
   Action? cleanup) : IDisposable {
   private Action? _cleanup = cleanup;
 
-  /// <summary>Identifies the target, as <see cref="MainViewModel.MaintenanceTargetKey"/> does.</summary>
+  /// <summary>Identifies the target, as <see cref="MaintenanceTarget.Key"/> does.</summary>
   public string Key { get; } = key;
 
   /// <summary>The file the operations read and write.</summary>
