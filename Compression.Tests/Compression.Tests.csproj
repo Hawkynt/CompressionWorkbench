@@ -75,6 +75,11 @@
     <EmbeddedResource Include="Csc\ReferenceVectors\*.csc">
       <LogicalName>CscVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- AFF4 logical images from pyaff4 (its reference image dream.aff4 and two it wrote) plus pyaff4's
+         own read-back listing; see Aff4/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Aff4\ReferenceVectors\*.aff4;Aff4\ReferenceVectors\*.tsv">
+      <LogicalName>Aff4Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- OneNote sections from the Apache Tika test corpus; see OneNote/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>

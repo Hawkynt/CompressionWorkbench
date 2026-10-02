@@ -1,0 +1,11 @@
+pyaff4-logical-snappy.aff4	empty.bin	0	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+pyaff4-logical-snappy.aff4	evidence\Grüße ネコ.txt	10	7eae7926ff271bb8a7ea3093d88b655347c7eabc5a11186bbbd0661c9d40f879
+pyaff4-logical-snappy.aff4	evidence\deep\small.bin	3000	449aa56c516a3aea57027f449e9459161e6c385f5345efa03fd63ec276f1b60b
+pyaff4-logical-snappy.aff4	evidence\deep\stream.bin	103240	6e4e7ea80f172e59390ead4ac0dab5384d381cd09be5280db3a89152c5db61bc
+pyaff4-logical-snappy.aff4	evidence\hello.txt	12	a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447
+pyaff4-logical-zlib-stored.aff4	empty.bin	0	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+pyaff4-logical-zlib-stored.aff4	evidence\Grüße ネコ.txt	10	7eae7926ff271bb8a7ea3093d88b655347c7eabc5a11186bbbd0661c9d40f879
+pyaff4-logical-zlib-stored.aff4	evidence\deep\small.bin	3000	449aa56c516a3aea57027f449e9459161e6c385f5345efa03fd63ec276f1b60b
+pyaff4-logical-zlib-stored.aff4	evidence\deep\stream.bin	103240	6e4e7ea80f172e59390ead4ac0dab5384d381cd09be5280db3a89152c5db61bc
+pyaff4-logical-zlib-stored.aff4	evidence\hello.txt	12	a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447
+dream.aff4	./test_images/AFF4-L/dream.txt	8688	2f8c33d140c42a3039c16281724fd94a3070176daec59987c32d2da5c0affc67
