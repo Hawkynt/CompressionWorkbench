@@ -40,4 +40,16 @@ public sealed class HfsPlusEntry {
   /// holds, then any the extents overflow file adds.
   /// </summary>
   internal IReadOnlyList<(uint StartBlock, uint BlockCount)> Extents { get; init; } = [];
+
+  /// <summary>
+  /// The "com.apple.decmpfs" attribute of a file stored with HFS+ transparent compression, or
+  /// null. When set, <see cref="Size"/> is the length it decompresses to.
+  /// </summary>
+  internal byte[]? Decmpfs { get; init; }
+
+  /// <summary>The resource fork's length, read only for a compressed file (whose chunks it may hold).</summary>
+  internal long ResourceSize { get; init; }
+
+  /// <summary>The resource fork's extents, read only for a compressed file.</summary>
+  internal IReadOnlyList<(uint StartBlock, uint BlockCount)> ResourceExtents { get; init; } = [];
 }

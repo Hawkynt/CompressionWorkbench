@@ -1,0 +1,2 @@
+# A volume macOS wrote, gzip-compressed: the bytes are the fixture.
+*.gz -text
