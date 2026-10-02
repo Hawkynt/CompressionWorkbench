@@ -29,6 +29,26 @@ public sealed class HfsPlusWriter {
   // holds 4096-byte nodes regardless of how big an allocation block is.
   internal const ushort CatalogNodeSize = 4096;
 
+  /// <summary>
+  /// HFS+ transparent compression for the files added: <see cref="HfsPlusCompression.None"/>
+  /// (default) keeps every file in its data fork. Otherwise each non-empty file is stored as a
+  /// "com.apple.decmpfs" attribute — inline when the encoding fits it (at most 3802 bytes, for a
+  /// file of at most 64 KiB), else as 64 KiB chunks in the resource fork — with UF_COMPRESSED set
+  /// and an empty data fork, as macOS stores it. A file whose resource-fork form would not be
+  /// smaller stays uncompressed (except for <see cref="HfsPlusCompression.Raw"/>, which is asked
+  /// for explicitly), and so does a file too large for <see cref="HfsPlusCompression.InlineUncompressed"/>.
+  /// A compressed file's content is held in memory while the volume is laid out.
+  /// </summary>
+  public HfsPlusCompression TransparentCompression { get; set; }
+
+  // BSD file modes the writer records (S_IFREG | 0644, S_IFDIR | 0755).
+  internal const ushort RegularFileMode = 0x81A4;
+  internal const ushort DirectoryMode = 0x41ED;
+
+  // B-tree node size of the attributes file, which holds the decmpfs attributes.
+  private const ushort AttributesNodeSize = 4096;
+  private const string DecmpfsName = "com.apple.decmpfs";
+
   // ── Construction-time options (case-sensitive HFSX, journal, name) ───────
   private readonly bool _caseSensitive;
   private readonly bool _journalEnabled;
@@ -205,8 +225,10 @@ public sealed class HfsPlusWriter {
     var catalog = BuildCatalogTree(blockSize, CatalogStartBlock, out var catalogBlockCount,
         out var userDataStartBlock, out var nextBlockAfterData, out var nextCnid,
         out var folderCount);
+    // Compressed files take fewer blocks than their size; the plan is the truth.
+    dataBlocksNeeded = (int)(nextBlockAfterData - userDataStartBlock);
 
-    var minBlocks = CatalogStartBlock + catalogBlockCount + (uint)dataBlocksNeeded + 1u; // boot+alloc+ext+catalog+data+altVHB
+    var minBlocks = CatalogStartBlock + catalogBlockCount + catalog.AttributesBlockCount + (uint)dataBlocksNeeded + 1u; // boot+alloc+ext+catalog+attributes+data+altVHB
     var totalBlocks = Math.Max((uint)DefaultImageBlocks, minBlocks);
     var imageSize = (long)totalBlocks * blockSize;
     this.DeclaredImageBytes = imageSize;
@@ -292,8 +314,14 @@ public sealed class HfsPlusWriter {
     WriteForkData(vh.Slice(272, CatalogForkDataSize),
         (long)catalogBlockCount * blockSize, blockSize, catalogStartBlock, catalogBlockCount);
 
-    // Attributes B-tree file: not allocated (HFS+ allows empty attributes file).
-    WriteForkData(vh.Slice(352, CatalogForkDataSize), 0L, 0u, 0u, 0u);
+    // Attributes B-tree file: right after the catalog when a file carries a decmpfs
+    // attribute; otherwise not allocated (HFS+ allows an empty attributes file).
+    var attributesStartBlock = catalogStartBlock + catalogBlockCount;
+    if (catalog.AttributesBlockCount > 0)
+      WriteForkData(vh.Slice(352, CatalogForkDataSize),
+          (long)catalog.AttributesBlockCount * blockSize, blockSize, attributesStartBlock, catalog.AttributesBlockCount);
+    else
+      WriteForkData(vh.Slice(352, CatalogForkDataSize), 0L, 0u, 0u, 0u);
 
     // Startup file: empty (only used for special boot scenarios).
     WriteForkData(vh.Slice(432, CatalogForkDataSize), 0L, 0u, 0u, 0u);
@@ -348,6 +376,9 @@ public sealed class HfsPlusWriter {
     var catalogBase = (int)(catalogStartBlock * blockSize);
     for (var n = 0; n < catalog.Nodes.Count; n++)
       catalog.Nodes[n].CopyTo(disk.AsSpan(catalogBase + n * nodeSize, nodeSize));
+    var attributesBase = (int)(attributesStartBlock * blockSize);
+    for (var n = 0; n < catalog.AttributesNodes.Count; n++)
+      catalog.AttributesNodes[n].CopyTo(disk.AsSpan(attributesBase + n * AttributesNodeSize, AttributesNodeSize));
 
     // ── Write user file data into its allocation blocks ───────────────────
     foreach (var (startBlock, data) in catalog.FileData) {
@@ -382,13 +413,13 @@ public sealed class HfsPlusWriter {
     MarkUsed(0);
     MarkUsed(AllocBlock);
     MarkUsed(ExtentsBlock);
-    for (var b = catalogStartBlock; b < catalogStartBlock + catalogBlockCount; b++) MarkUsed(b);
+    for (var b = catalogStartBlock; b < userDataStartBlock; b++) MarkUsed(b);   // catalog + attributes
     // User data blocks.
     for (var b = userDataStartBlock; b < nextBlock; b++) MarkUsed(b);
     // Alt VHB lives in the last allocation block.
     MarkUsed(totalBlocks - 1);
 
-    var usedBlocks = CatalogStartBlock + catalogBlockCount + (uint)dataBlocksNeeded + 1u; // boot+alloc+ext+catalog+data+altVH
+    var usedBlocks = nextBlockAfterData + 1u; // boot+alloc+ext+catalog+attributes+data, then the altVH block
     BinaryPrimitives.WriteUInt32BigEndian(vh[48..], totalBlocks - usedBlocks); // freeBlocks
     BinaryPrimitives.WriteUInt32BigEndian(vh[52..], nextBlock); // nextAllocation
     BinaryPrimitives.WriteUInt32BigEndian(vh[36..], folderCount); // folderCount (subdirectories; root excluded)
@@ -534,6 +565,8 @@ public sealed class HfsPlusWriter {
   private sealed class CatalogTree {
     public required List<byte[]> Nodes { get; init; }
     public required List<(uint StartBlock, byte[] Data)> FileData { get; init; }
+    public List<byte[]> AttributesNodes { get; init; } = [];
+    public uint AttributesBlockCount { get; init; }
   }
 
   /// <summary>
@@ -621,6 +654,25 @@ public sealed class HfsPlusWriter {
 
     nextCnid = localNextCnid;
 
+    // ── HFS+ transparent compression ──────────────────────────────────────
+    // A compressed file keeps an empty data fork; its content is the decmpfs attribute and,
+    // for the chunked methods, the resource fork, which takes the file's place in the data area.
+    var encodings = new Dictionary<uint, HfsPlusDecmpfs.Encoding>();
+    if (this.TransparentCompression != HfsPlusCompression.None)
+      for (var f = 0; f < fileMeta.Count; f++) {
+        var fm = fileMeta[f];
+        if (fm.EffectiveLength <= 0) continue;
+        var content = fm.StreamOpener != null && fm.StreamingSize is { } streamed ? ReadAll(fm.StreamOpener, streamed) : fm.Data;
+        if (HfsPlusDecmpfs.Encode(content, this.TransparentCompression) is not { } encoding) continue;
+        encodings[fm.Cnid] = encoding;
+        var forkLength = encoding.ResourceFork?.Length ?? 0;
+        fileMeta[f] = fm with {
+          Data = encoding.ResourceFork ?? [], StreamingSize = null, StreamOpener = null,
+          BlockCount = (uint)((forkLength + blockSize - 1) / blockSize), EffectiveLength = forkLength,
+        };
+      }
+    var attributesTree = BuildAttributesTree(encodings, blockSize, out var attributesBlockCount);
+
     // ── Compute the catalog fork size (node count) ─────────────────────────
     // Catalog node count = 1 header + leaves + index nodes. To size the fork we
     // need the leaf count, which depends on record sizes — and the record sizes
@@ -650,11 +702,13 @@ public sealed class HfsPlusWriter {
     }
 
     foreach (var fm in fileMeta) {
-      var rec = BuildFileRecord(fm.Cnid, fm.Parent, fm.LeafName, fm.EffectiveLength, 0u, fm.BlockCount);
+      var compressed = encodings.ContainsKey(fm.Cnid);
+      var rec = BuildFileRecord(fm.Cnid, fm.Parent, fm.LeafName, fm.EffectiveLength, 0u, fm.BlockCount, compressed);
       // Offset of extents[0].startBlock inside the record = keyLength prefix +
-      // key body + DataForkOffset + 16 (logicalSize+clumpSize+totalBlocks).
+      // key body + fork offset + 16 (logicalSize+clumpSize+totalBlocks). A compressed
+      // file's blocks belong to its resource fork.
       var keyLen = BinaryPrimitives.ReadUInt16BigEndian(rec) + 2;
-      var patchOffset = keyLen + DataForkOffset + 16;
+      var patchOffset = keyLen + (compressed ? ResourceForkOffset : DataForkOffset) + 16;
       keyed.Add((fm.Parent, fm.LeafName, rec, patchOffset, fm.Data, fm.StreamingSize, fm.StreamOpener, fm.BlockCount));
       // File thread record.
       keyed.Add((fm.Cnid, "", BuildFileThreadRecord(fm.Cnid, fm.Parent, fm.LeafName), -1, null, null, null, 0u));
@@ -767,7 +821,7 @@ public sealed class HfsPlusWriter {
     // ── Assign user-data start blocks now that the fork size is known ──────
     // Walk the sorted records; every file record (ForkPatchOffset >= 0) gets the
     // next run of data blocks and its data-fork extent patched in place.
-    userDataStartBlock = catalogStartBlock + catalogBlockCount;
+    userDataStartBlock = catalogStartBlock + catalogBlockCount + attributesBlockCount;
     nextBlockAfterData = userDataStartBlock;
     for (var i = 0; i < keyed.Count; i++) {
       var entry = keyed[i];
@@ -814,7 +868,89 @@ public sealed class HfsPlusWriter {
     return new CatalogTree {
       Nodes = [.. nodes],
       FileData = fileData,
+      AttributesNodes = attributesTree,
+      AttributesBlockCount = attributesBlockCount,
     };
+  }
+
+  private static byte[] ReadAll(Func<Stream> opener, long size) {
+    if (size > Array.MaxLength)
+      throw new NotSupportedException($"HFS+: a {size:N0}-byte file is too large to compress in memory.");
+    using var source = opener();
+    var content = new byte[size];
+    source.ReadExactly(content);
+    return content;
+  }
+
+  /// <summary>
+  /// The attributes B-tree holding each compressed file's "com.apple.decmpfs" attribute, laid
+  /// out like the catalog (header node, leaves, index levels). TN1150 HFSPlusAttrKey: keyLength,
+  /// pad, fileID, startBlock (0 for an inline attribute), name length, UTF-16BE name, compared by
+  /// fileID then name; HFSPlusAttrData: recordType 0x10, two reserved words, size, data.
+  /// </summary>
+  private static List<byte[]> BuildAttributesTree(Dictionary<uint, HfsPlusDecmpfs.Encoding> encodings, uint blockSize, out uint blockCount) {
+    blockCount = 0;
+    if (encodings.Count == 0) return [];
+    const ushort nodeSize = AttributesNodeSize;
+    var name = Encoding.BigEndianUnicode.GetBytes(DecmpfsName);
+    var records = new List<byte[]>();
+    foreach (var (cnid, encoding) in encodings.OrderBy(static e => e.Key)) {
+      var keyLength = 12 + name.Length;
+      var dataLength = 16 + encoding.Attribute.Length;
+      var record = new byte[2 + keyLength + dataLength + (dataLength & 1)];
+      BinaryPrimitives.WriteUInt16BigEndian(record, (ushort)keyLength);
+      BinaryPrimitives.WriteUInt32BigEndian(record.AsSpan(4), cnid);
+      BinaryPrimitives.WriteUInt16BigEndian(record.AsSpan(12), (ushort)(name.Length / 2));
+      name.CopyTo(record, 14);
+      var data = record.AsSpan(2 + keyLength);
+      BinaryPrimitives.WriteUInt32BigEndian(data, 0x10);                                   // kHFSPlusAttrInlineData
+      BinaryPrimitives.WriteUInt32BigEndian(data[12..], (uint)encoding.Attribute.Length);
+      encoding.Attribute.CopyTo(data[16..]);
+      records.Add(record);
+    }
+
+    var leafGroups = PackRecords(records, nodeSize);
+    const uint firstLeaf = 1u;
+    var next = firstLeaf + (uint)leafGroups.Count;
+    var indexImages = new List<(uint Node, byte[] Image)>();
+    uint depth = 1, root = firstLeaf;
+    if (leafGroups.Count > 1) {
+      var childKeys = leafGroups.Select(static g => g[0][..(BinaryPrimitives.ReadUInt16BigEndian(g[0]) + 2)]).ToList();
+      var childNodes = Enumerable.Range(0, leafGroups.Count).Select(static i => firstLeaf + (uint)i).ToList();
+      for (var level = 0; ; ++level) {
+        var groups = PackIndexEntries(childKeys.Zip(childNodes).Select(static p => (p.First, p.Second)).ToList(), nodeSize);
+        var levelBase = next;
+        var keys = new List<byte[]>();
+        var nodesHere = new List<uint>();
+        for (var g = 0; g < groups.Count; g++) {
+          var node = next++;
+          nodesHere.Add(node);
+          keys.Add(groups[g][0].Key);
+          indexImages.Add((node, BuildIndexNode(groups[g], nodeSize, (byte)(2 + level),
+            g + 1 < groups.Count ? levelBase + (uint)(g + 1) : 0u, g > 0 ? levelBase + (uint)(g - 1) : 0u)));
+        }
+        if (groups.Count == 1) {
+          root = nodesHere[0];
+          depth = (uint)(2 + level);
+          break;
+        }
+        childKeys = keys;
+        childNodes = nodesHere;
+      }
+    }
+
+    var used = next;
+    blockCount = (uint)(((long)used * nodeSize + blockSize - 1) / blockSize);
+    var totalNodes = Math.Max(used, (uint)((long)blockCount * blockSize / nodeSize));
+    var nodes = new byte[used][];
+    // maxKeyLength 266 = kHFSPlusAttrKeyMaximumLength (TN1150); attribute keys compare binary.
+    nodes[0] = BuildBTreeHeaderNode(nodeSize, depth, root, (uint)records.Count, firstLeaf,
+        firstLeaf + (uint)leafGroups.Count - 1, totalNodes, used, maxKeyLength: 266, keyCompareType: 0);
+    for (var i = 0; i < leafGroups.Count; i++)
+      nodes[firstLeaf + i] = BuildLeafNode(leafGroups[i], nodeSize,
+        i + 1 < leafGroups.Count ? firstLeaf + (uint)(i + 1) : 0u, i > 0 ? firstLeaf + (uint)(i - 1) : 0u);
+    foreach (var (node, image) in indexImages) nodes[node] = image;
+    return [.. nodes];
   }
 
   /// <summary>
@@ -927,7 +1063,13 @@ public sealed class HfsPlusWriter {
   /// always fits the header node's map record.
   /// </summary>
   private static byte[] BuildCatalogHeaderNode(int nodeSize, uint treeDepth, uint rootNode,
-      uint leafRecords, uint firstLeafNode, uint lastLeafNode, uint totalNodes, uint usedNodes) {
+      uint leafRecords, uint firstLeafNode, uint lastLeafNode, uint totalNodes, uint usedNodes)
+    => BuildBTreeHeaderNode(nodeSize, treeDepth, rootNode, leafRecords, firstLeafNode, lastLeafNode,
+        totalNodes, usedNodes, maxKeyLength: 516, keyCompareType: 0xCF);
+
+  private static byte[] BuildBTreeHeaderNode(int nodeSize, uint treeDepth, uint rootNode,
+      uint leafRecords, uint firstLeafNode, uint lastLeafNode, uint totalNodes, uint usedNodes,
+      ushort maxKeyLength, byte keyCompareType) {
     var node = new byte[nodeSize];
     node[8] = 1; // kind = kBTHeaderNode
     node[9] = 0; // height
@@ -940,7 +1082,7 @@ public sealed class HfsPlusWriter {
     BinaryPrimitives.WriteUInt32BigEndian(hdr[10..], firstLeafNode);
     BinaryPrimitives.WriteUInt32BigEndian(hdr[14..], lastLeafNode);
     BinaryPrimitives.WriteUInt16BigEndian(hdr[18..], (ushort)nodeSize);
-    BinaryPrimitives.WriteUInt16BigEndian(hdr[20..], 516); // maxKeyLength (HFS+ catalog)
+    BinaryPrimitives.WriteUInt16BigEndian(hdr[20..], maxKeyLength);
 
     // The map record in the header node covers (nodeSize - 256) * 8 nodes; if
     // the catalog ever needed more nodes than that, dedicated map nodes would
@@ -950,13 +1092,13 @@ public sealed class HfsPlusWriter {
     var mapCapacity = (uint)(mapBytesInHeader * 8);
     if (totalNodes > mapCapacity)
       throw new NotSupportedException(
-        $"HFS+ catalog requires {totalNodes} nodes, exceeding the {mapCapacity}-node "
+        $"HFS+ B-tree requires {totalNodes} nodes, exceeding the {mapCapacity}-node "
         + "single-header-map limit; map nodes are not implemented.");
 
     BinaryPrimitives.WriteUInt32BigEndian(hdr[22..], totalNodes);              // totalNodes (fork capacity)
     BinaryPrimitives.WriteUInt32BigEndian(hdr[26..], totalNodes - usedNodes);  // freeNodes (surplus slots)
     hdr[36] = 0;    // btreeType = kHFSBTreeType
-    hdr[37] = 0xCF; // keyCompareType = kHFSBinaryCompare
+    hdr[37] = keyCompareType; // 0xCF kHFSCaseFolding (catalog), 0 for the attributes file
     // attributes: kBTBigKeysMask (2) | kBTVariableIndexKeysMask (4) = 6.
     BinaryPrimitives.WriteUInt32BigEndian(hdr[38..], 6);
 
@@ -1008,6 +1150,8 @@ public sealed class HfsPlusWriter {
     BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(16), now);   // contentModDate
     BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(20), now);   // attributeModDate
     BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(24), now);   // accessDate
+    // permissions.fileMode (+32+10): a directory rwxr-xr-x (zero would mean "no BSD information").
+    BinaryPrimitives.WriteUInt16BigEndian(recData.AsSpan(32 + 10), DirectoryMode);
 
     var result = new byte[key.Length + recData.Length];
     key.CopyTo(result, 0);
@@ -1058,7 +1202,7 @@ public sealed class HfsPlusWriter {
   /// after the catalog key) and the resource fork at offset 168.
   /// </summary>
   private static byte[] BuildFileRecord(uint fileCnid, uint parentCnid, string name,
-      long logicalSize, uint startBlock, uint blockCount) {
+      long logicalSize, uint startBlock, uint blockCount, bool compressed = false) {
     var key = BuildCatalogKey(parentCnid, name);
     var recData = new byte[CatalogFileRecordSize];
 
@@ -1067,7 +1211,8 @@ public sealed class HfsPlusWriter {
     // flags = kHFSThreadExistsMask (0x0002) — required because we always
     // emit a paired file thread record. Without this, fsck reports
     // "Incorrect number of thread records" or "Invalid catalog record type".
-    BinaryPrimitives.WriteUInt16BigEndian(recData.AsSpan(2), 0x0002);
+    // A compressed file also sets kHFSHasAttributesMask (0x0004): it carries the decmpfs attribute.
+    BinaryPrimitives.WriteUInt16BigEndian(recData.AsSpan(2), (ushort)(compressed ? 0x0006 : 0x0002));
     BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(4), 0);       // reserved1
     BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(8), fileCnid);// fileID
     var now = HfsTimestamp(DateTime.UtcNow);
@@ -1076,17 +1221,28 @@ public sealed class HfsPlusWriter {
     BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(20), now);    // attributeModDate
     BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(24), now);    // accessDate
     BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(28), 0);      // backupDate
-    // permissions[16] at offset 32 — zeros (owner=0, group=0, mode=0 → unspecified).
+    // permissions (HFSPlusBSDInfo) at offset 32: owner and group 0, fileMode (+10) a regular
+    // file rw-r--r--. A zero fileMode reads as "no BSD information", which libfshfs refuses to
+    // read as a regular file.
     // userInfo[16] at offset 48 (FileInfo) — zeros.
     // finderInfo[16] at offset 64 (ExtendedFileInfo) — zeros.
     BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(80), 0);      // textEncoding
     BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(84), 0);      // reserved2
+    BinaryPrimitives.WriteUInt16BigEndian(recData.AsSpan(32 + 10), RegularFileMode);
 
-    // HFSPlusForkData dataFork at offset 88 (80 bytes).
-    WriteForkData(recData.AsSpan(DataForkOffset, CatalogForkDataSize), logicalSize, DefaultBlockSize, startBlock, blockCount);
+    if (compressed) {
+      // permissions.ownerFlags (offset 32 + 9): UF_COMPRESSED. The data fork stays empty and
+      // the resource fork holds the chunks (or is empty when the attribute holds everything).
+      recData[32 + 9] = 0x20;
+      WriteForkData(recData.AsSpan(DataForkOffset, CatalogForkDataSize), 0, DefaultBlockSize, 0, 0);
+      WriteForkData(recData.AsSpan(ResourceForkOffset, CatalogForkDataSize), logicalSize, DefaultBlockSize, startBlock, blockCount);
+    } else {
+      // HFSPlusForkData dataFork at offset 88 (80 bytes).
+      WriteForkData(recData.AsSpan(DataForkOffset, CatalogForkDataSize), logicalSize, DefaultBlockSize, startBlock, blockCount);
 
-    // HFSPlusForkData resourceFork at offset 168 (80 bytes). Empty for our writer.
-    WriteForkData(recData.AsSpan(ResourceForkOffset, CatalogForkDataSize), 0, DefaultBlockSize, 0, 0);
+      // HFSPlusForkData resourceFork at offset 168 (80 bytes). Empty for an uncompressed file.
+      WriteForkData(recData.AsSpan(ResourceForkOffset, CatalogForkDataSize), 0, DefaultBlockSize, 0, 0);
+    }
 
     var result = new byte[key.Length + recData.Length];
     key.CopyTo(result, 0);

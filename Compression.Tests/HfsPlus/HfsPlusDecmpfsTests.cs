@@ -191,10 +191,11 @@ public sealed class HfsPlusDecmpfsTests {
     Assert.That(HfsPlusDecmpfs.Decode(Attribute(4, content.Length), () => ZlibResourceFork(blocks)), Is.EqualTo(content));
   }
 
-  [TestCase(5u, TestName = "GivenTheSparseMethod_WhenDecoded_ThenItIsRefused")]
-  [TestCase(9u, TestName = "GivenTheRawInlineMethod_WhenDecoded_ThenItIsRefused")]
-  [TestCase(10u, TestName = "GivenTheRawResourceForkMethod_WhenDecoded_ThenItIsRefused")]
-  [TestCase(13u, TestName = "GivenLzBitmap_WhenDecoded_ThenItIsRefused")]
+  [TestCase(0u, TestName = "GivenMethodZero_WhenDecoded_ThenItIsUndefined")]
+  [TestCase(2u, TestName = "GivenMethodTwo_WhenDecoded_ThenItIsUndefined")]
+  [TestCase(6u, TestName = "GivenMethodSix_WhenDecoded_ThenItIsUndefined")]
+  [TestCase(15u, TestName = "GivenMethodFifteen_WhenDecoded_ThenItIsUndefined")]
+  [TestCase(0x80000003u, TestName = "GivenAnUnknownDatalessLikeMethod_WhenDecoded_ThenItIsUndefined")]
   [Category("ExceptionalCase")]
   public void UnsupportedMethod(uint method)
     => Assert.Throws<NotSupportedException>(() => HfsPlusDecmpfs.Decode(Attribute(method, 4, [1, 2, 3, 4]), () => []));

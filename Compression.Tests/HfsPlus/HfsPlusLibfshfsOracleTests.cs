@@ -93,7 +93,7 @@ public sealed class HfsPlusLibfshfsOracleTests {
   }
 
   /// <summary>Every entry libfshfs shows (metadata directories aside) is ours, with the same kind, size and bytes.</summary>
-  private static void AssertSameAsLibfshfs(string volume) {
+  private static void AssertSameAsLibfshfs(string volume, bool keramicsHardLink = true) {
     var oracle = Libfshfs(volume)
       .Where(static e => !e.Path.StartsWith("\u2400\u2400\u2400\u2400HFS+ Private Data", StringComparison.Ordinal)
                          && !e.Path.StartsWith(".HFS+ Private Directory Data\r", StringComparison.Ordinal))
@@ -110,8 +110,9 @@ public sealed class HfsPlusLibfshfsOracleTests {
         if (expected.Sha256 is { } sha256)
           Assert.That(Convert.ToHexStringLower(SHA256.HashData(reader.Extract(entry))), Is.EqualTo(sha256), expected.Path);
       }
-      Assert.That(oracle.Single(static e => e.Path == "file_hardlink1").Sha256,
-        Is.EqualTo(oracle.Single(static e => e.Path == "testdir1/testfile1").Sha256), "libfshfs resolves the hard link too");
+      if (keramicsHardLink)
+        Assert.That(oracle.Single(static e => e.Path == "file_hardlink1").Sha256,
+          Is.EqualTo(oracle.Single(static e => e.Path == "testdir1/testfile1").Sha256), "libfshfs resolves the hard link too");
     });
   }
 
@@ -127,5 +128,51 @@ public sealed class HfsPlusLibfshfsOracleTests {
     var volume = Path.Combine(this._tmp, "hfsplus.raw");
     File.WriteAllBytes(volume, HfsPlusDecmpfsTests.KeramicsRaw());
     AssertSameAsLibfshfs(volume);
+  }
+
+  /// <summary>
+  /// Our writer's transparently compressed files, read by libfshfs: every file must list with its
+  /// real size and read its exact bytes, inline and chunked, stored and encoded chunks alike.
+  /// libfshfs 20260922 implements decmpfs methods 3/4, 7/8, 9/10, 11/12 and 5; it has no method 1
+  /// and no LZBITMAP (13/14), so those two writer modes have no independent HFS+ reader here —
+  /// see <see cref="GivenAMethodLibfshfsDoesNotImplement_WhenItReadsOurVolume_ThenItDoesNotClaimTheContent"/>.
+  /// </summary>
+  [TestCase(HfsPlusCompression.Zlib, TestName = "GivenOurZlibVolume_WhenLibfshfsReadsIt_ThenEveryFileIsItsContent")]
+  [TestCase(HfsPlusCompression.Lzvn, TestName = "GivenOurLzvnVolume_WhenLibfshfsReadsIt_ThenEveryFileIsItsContent")]
+  [TestCase(HfsPlusCompression.Lzfse, TestName = "GivenOurLzfseVolume_WhenLibfshfsReadsIt_ThenEveryFileIsItsContent")]
+  [TestCase(HfsPlusCompression.Raw, TestName = "GivenOurRawVolume_WhenLibfshfsReadsIt_ThenEveryFileIsItsContent")]
+  [Category("HappyPath")]
+  public void LibfshfsReadsOurCompressedVolume(HfsPlusCompression compression) {
+    var volume = Path.Combine(this._tmp, $"{compression}.img");
+    File.WriteAllBytes(volume, HfsPlusDecmpfsMethodsTests.CompressedVolume(compression));
+    var oracle = Libfshfs(volume).Where(static e => !e.Dir).ToDictionary(static e => e.Path);
+    Assert.Multiple(() => {
+      foreach (var (name, content) in HfsPlusDecmpfsMethodsTests.Files()) {
+        Assert.That(oracle.TryGetValue(name, out var entry), Is.True, name);
+        Assert.That(entry!.Size, Is.EqualTo(content.Length), name);
+        Assert.That(entry.Sha256, Is.EqualTo(Convert.ToHexStringLower(SHA256.HashData(content))), name);
+      }
+    });
+    AssertSameAsLibfshfs(volume, keramicsHardLink: false);
+  }
+
+  /// <summary>
+  /// For a method libfshfs does not implement it must not report content it cannot decode:
+  /// either it refuses the file or the bytes differ. This records the absence of an oracle rather
+  /// than claiming one.
+  /// </summary>
+  [TestCase(HfsPlusCompression.Lzbitmap, TestName = "GivenOurLzbitmapVolume_WhenLibfshfsReadsIt_ThenItHasNoDecoderForIt")]
+  [TestCase(HfsPlusCompression.InlineUncompressed, TestName = "GivenOurMethodOneVolume_WhenLibfshfsReadsIt_ThenItHasNoDecoderForIt")]
+  [Category("BoundaryCase")]
+  public void GivenAMethodLibfshfsDoesNotImplement_WhenItReadsOurVolume_ThenItDoesNotClaimTheContent(HfsPlusCompression compression) {
+    var volume = Path.Combine(this._tmp, $"{compression}.img");
+    File.WriteAllBytes(volume, HfsPlusDecmpfsMethodsTests.CompressedVolume(compression));
+    var python = Python.Value;
+    if (python is null) Assert.Ignore("No Python with pyfshfs on the PATH (`pip install libfshfs-python`).");
+    var (code, stdout, _) = Run(python!, ["-c", ListScript, volume]);
+    var content = HfsPlusDecmpfsMethodsTests.Files().Single(static f => f.Name == "inline.txt").Content;
+    var expected = Convert.ToHexStringLower(SHA256.HashData(content));
+    Assert.That(code != 0 || !stdout.Contains(expected, StringComparison.Ordinal), Is.True,
+      "libfshfs now decodes this method: turn this test into a byte-for-byte oracle comparison");
   }
 }

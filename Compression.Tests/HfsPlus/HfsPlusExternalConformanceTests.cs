@@ -149,6 +149,21 @@ public class HfsPlusExternalConformanceTests {
     Assert.Fail("every file opened a leaf");
   }
 
+  [TestCase(HfsPlusCompression.Zlib)]
+  [TestCase(HfsPlusCompression.Lzvn)]
+  [TestCase(HfsPlusCompression.Lzfse)]
+  [TestCase(HfsPlusCompression.Lzbitmap)]
+  [TestCase(HfsPlusCompression.Raw)]
+  [TestCase(HfsPlusCompression.InlineUncompressed)]
+  public void TransparentlyCompressedVolume_PassesFsckCleanly(HfsPlusCompression compression) {
+    if (!IsLinux) Assert.Ignore("fsck.hfsplus conformance check is Linux-only");
+    if (!HasCommand("fsck.hfsplus")) Assert.Ignore("fsck.hfsplus (hfsprogs) not installed");
+
+    // The attributes B-tree, kHFSHasAttributesMask, UF_COMPRESSED and the resource forks must
+    // all be what fsck_hfs expects of a compressed file.
+    AssertFsckClean(HfsPlusDecmpfsMethodsTests.CompressedVolume(compression));
+  }
+
   private void AssertFsckClean(byte[] image) {
     var imagePath = Path.Combine(_tmpDir, "volume.hfsplus");
     File.WriteAllBytes(imagePath, image);
