@@ -175,10 +175,18 @@ public class Ocfs2InPlaceModifyTests {
     Assert.Throws<IOException>(() => Ocfs2InPlaceModifier.AddFile(ms, "dup.txt", "SECOND"u8.ToArray()));
   }
 
-  [Test, Category("ErrorHandling")]
-  public void Add_SubdirPath_ThrowsNotSupported() {
+  [Test, Category("HappyPath")]
+  public void Add_SubdirPath_MakesTheDirectory() {
     using var ms = BuildImage(("seed.txt", "SEED"u8.ToArray()));
-    Assert.Throws<NotSupportedException>(() => Ocfs2InPlaceModifier.AddFile(ms, "sub/file.txt", "DATA"u8.ToArray()));
+    Ocfs2InPlaceModifier.AddFile(ms, "sub/file.txt", "DATA"u8.ToArray());
+    var files = ListFiles(ms.ToArray()).ToDictionary(f => f.Name, f => f.Data);
+    Assert.That(files.Keys, Is.EquivalentTo(new[] { "seed.txt", "sub/file.txt" }));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void Add_PathThroughAFile_ThrowsNotSupported() {
+    using var ms = BuildImage(("seed.txt", "SEED"u8.ToArray()));
+    Assert.Throws<NotSupportedException>(() => Ocfs2InPlaceModifier.AddFile(ms, "seed.txt/file.txt", "DATA"u8.ToArray()));
   }
 
   [Test, Category("ErrorHandling")]
