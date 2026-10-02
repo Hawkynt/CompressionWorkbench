@@ -35,6 +35,7 @@ internal static class SevenZipHeaderCodec {
     List<SevenZipFolder>? folders = null;
     SevenZipSubStreamsInfo? subStreams = null;
     List<SevenZipFileInfo>? files = null;
+    var skipped = new HashSet<string>(StringComparer.Ordinal);
 
     while (true) {
       id = ReadByte(stream);
@@ -46,9 +47,12 @@ internal static class SevenZipHeaderCodec {
           (packInfo, folders, subStreams) = ReadMainStreams(stream);
           break;
         case SevenZipConstants.IdFilesInfo:
-          files = ReadFilesInfo(stream);
+          files = ReadFilesInfo(stream, skipped);
           break;
         default:
+          // Archive properties, additional streams: not interpreted, so remembered — a
+          // rewrite from the parsed structures could not carry them.
+          skipped.Add($"header property 0x{id:X2}");
           SkipData(stream);
           break;
       }
@@ -500,12 +504,11 @@ internal static class SevenZipHeaderCodec {
 
   // ---- FilesInfo ----
 
-  private static List<SevenZipFileInfo> ReadFilesInfo(Stream stream) {
+  private static List<SevenZipFileInfo> ReadFilesInfo(Stream stream, HashSet<string> skipped) {
     var numFiles = (int)SevenZipVarInt.Read(stream);
     var files = new List<SevenZipFileInfo>(numFiles);
-    var skipped = new HashSet<byte>();
     for (var i = 0; i < numFiles; ++i)
-      files.Add(new SevenZipFileInfo { SkippedPropertyIds = skipped });
+      files.Add(new SevenZipFileInfo { SkippedProperties = skipped });
 
     while (true) {
       var id = ReadByte(stream);
@@ -560,7 +563,7 @@ internal static class SevenZipHeaderCodec {
           break;
         default:
           // Skip unknown property, but remember it: a rewrite cannot carry what was never read.
-          if (id != SevenZipConstants.IdDummy) skipped.Add(id);
+          if (id != SevenZipConstants.IdDummy) skipped.Add($"file property 0x{id:X2}");
           var remaining = propSize - (stream.Position - startPos);
           if (remaining > 0)
             stream.Position += remaining;
@@ -674,6 +677,14 @@ internal static class SevenZipHeaderCodec {
       WritePropWithSize(stream, SevenZipConstants.IdCTime, ctimeData);
     }
 
+    // ATime
+    var hasATimes = files.Any(f => f.LastAccessTime.HasValue);
+    if (hasATimes) {
+      using var atimeData = new MemoryStream();
+      WriteTimes(atimeData, files, f => f.LastAccessTime);
+      WritePropWithSize(stream, SevenZipConstants.IdATime, atimeData);
+    }
+
     // Attributes
     var hasAttrs = files.Any(f => f.Attributes.HasValue);
     if (hasAttrs) {
@@ -683,6 +694,17 @@ internal static class SevenZipHeaderCodec {
     }
 
     stream.WriteByte(SevenZipConstants.IdEnd);
+  }
+
+  /// <summary>
+  /// Refuses an edit of a header that holds properties this codec skips: they are tied to the
+  /// file list (one bit or value per entry), so re-emitting them verbatim after the list changed
+  /// would attach them to the wrong entries, and dropping them would lose them.
+  /// </summary>
+  internal static void RequireCarriable(IReadOnlyList<SevenZipFileInfo> files, string operation) {
+    if (files.Count > 0 && files[0].SkippedProperties is { Count: > 0 } skipped)
+      throw new NotSupportedException(
+        $"7z {operation}: the header holds {string.Join(", ", skipped.Order(StringComparer.Ordinal))}, which a rewrite cannot carry. Refused, nothing was changed.");
   }
 
   private static void WriteNames(Stream stream, List<SevenZipFileInfo> files) {

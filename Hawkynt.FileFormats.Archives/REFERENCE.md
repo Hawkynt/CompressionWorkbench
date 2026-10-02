@@ -27209,6 +27209,7 @@ Represents a single entry (file or directory) in a 7z archive.
 | `Crc` | `uint? Crc { get; set; }` | Gets or sets the CRC-32 of the uncompressed data. |
 | `CreationTime` | `DateTime? CreationTime { get; set; }` | Gets or sets the creation time in UTC. |
 | `IsDirectory` | `bool IsDirectory { get; set; }` | Gets or sets whether this entry is a directory. |
+| `LastAccessTime` | `DateTime? LastAccessTime { get; set; }` | Gets or sets the last access time in UTC (`kATime`, written by 7-Zip's `-mta=on`). |
 | `LastWriteTime` | `DateTime? LastWriteTime { get; set; }` | Gets or sets the last write time in UTC. |
 | `Method` | `string Method { get; set; }` | Gets or sets the compression method name. |
 | `Name` | `string Name { get; set; }` | Gets or sets the file name (including path within the archive). |
@@ -27260,7 +27261,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single 7z entry as a read-only `Stream` bounded to its uncompressed size. 7z is solid-block: the underlying reader must decompress the whole containing folder to extract any one entry — the existing in-memory path is preserved — but the returned view is a `BoundedEntryStream` sized to the single entry's logical bytes, so neighbouring entries within the same solid block are physically unreachable through it. |
-| `OptimizeCompression` | `void OptimizeCompression(Stream input, Stream output, string password = null)` | Recompresses the archive as one LZMA2 solid block with a dictionary sized to the payload, keeping every entry's name, modification and creation time and attributes (Unix modes and links included), directories and empty files. |
+| `OptimizeCompression` | `void OptimizeCompression(Stream input, Stream output, string password = null)` | Recompresses the archive as one LZMA2 solid block with a dictionary sized to the payload, keeping every entry's name, modification, creation and access time and attributes (Unix modes and links included), directories and empty files. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes complete solid folders and empty-stream entries directly. The remover validates the layout and serializes the replacement next-header/signature before compacting packed streams, so unsupported profiles can fall back before mutation without cloning the whole archive. Cost is metadata plus bytes that physically follow removed packed streams. |
 | `ValidateHeader` | `ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)` | Validates the supplied data. |
 | `ValidateIntegrity` | `ValidationResult ValidateIntegrity(Stream stream)` | Validates the supplied data. |

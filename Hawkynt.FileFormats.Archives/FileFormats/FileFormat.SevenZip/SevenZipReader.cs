@@ -36,18 +36,13 @@ public sealed class SevenZipReader : IDisposable {
 
   /// <summary>
   /// What this archive's header holds that <see cref="Entries"/> does not carry, so that a
-  /// rewrite from the entries would drop it: access times and file properties the reader
-  /// skips. Empty when a rewrite can keep everything.
+  /// rewrite from the entries would drop it: the header properties the reader skips. Empty
+  /// when a rewrite can keep everything.
   /// </summary>
-  internal IReadOnlyList<string> UncarriedMetadata {
-    get {
-      var result = new List<string>();
-      if (this._fileInfos.Any(static f => f.LastAccessTime is not null)) result.Add("access times");
-      if (this._fileInfos.FirstOrDefault()?.SkippedPropertyIds is { Count: > 0 } skipped)
-        result.Add("file properties " + string.Join(", ", skipped.Order().Select(static id => $"0x{id:X2}")));
-      return result;
-    }
-  }
+  internal IReadOnlyList<string> UncarriedMetadata
+    => this._fileInfos.FirstOrDefault()?.SkippedProperties is { Count: > 0 } skipped
+      ? [.. skipped.Order(StringComparer.Ordinal)]
+      : [];
 
   /// <summary>
   /// Initializes a new <see cref="SevenZipReader"/> from a seekable stream.
@@ -203,6 +198,7 @@ public sealed class SevenZipReader : IDisposable {
         IsDirectory = fileInfo.IsDirectory,
         LastWriteTime = fileInfo.LastWriteTime,
         CreationTime = fileInfo.CreationTime,
+        LastAccessTime = fileInfo.LastAccessTime,
         Attributes = fileInfo.Attributes,
       };
 

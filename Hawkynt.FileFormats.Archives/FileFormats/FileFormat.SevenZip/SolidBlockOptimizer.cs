@@ -344,6 +344,7 @@ public static class SolidBlockOptimizer {
           Name = name,
           LastWriteTime = meta.LastWriteTime,
           CreationTime = meta.CreationTime,
+          LastAccessTime = meta.LastAccessTime,
           Attributes = meta.Attributes,
         }, data);
         entryIndexMap[idx] = addOrder++;
