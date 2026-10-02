@@ -68,6 +68,9 @@ public sealed class GzipStream : CompressionStream {
   /// </summary>
   public uint OriginalSize => this._originalSize;
 
+  /// <summary>Number of members whose header has been read so far while decompressing (RFC 1952 §2.2).</summary>
+  internal int MembersRead { get; private set; }
+
   private bool _trailerVerified;
   private bool _allMembersDone;
 
@@ -82,6 +85,7 @@ public sealed class GzipStream : CompressionStream {
         return 0;
 
       this._header = GzipHeader.Read(InnerStream);
+      ++this.MembersRead;
       this._decompressor = new DeflateDecompressor(InnerStream);
       this._headerRead = true;
       this._trailerVerified = false;

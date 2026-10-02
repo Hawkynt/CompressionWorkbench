@@ -15,6 +15,7 @@ namespace FileSystem.Vdfs;
 ///   <item><description>VdfsSharp — C# VDFS extractor/creator (GitHub)</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(VdfsBlockMover))]
 public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
   /// <summary>
   /// Gets the id.

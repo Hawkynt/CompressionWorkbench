@@ -35,6 +35,21 @@ public sealed class SevenZipReader : IDisposable {
   public IReadOnlyList<SevenZipEntry> Entries => this._entries;
 
   /// <summary>
+  /// What this archive's header holds that <see cref="Entries"/> does not carry, so that a
+  /// rewrite from the entries would drop it: access times and file properties the reader
+  /// skips. Empty when a rewrite can keep everything.
+  /// </summary>
+  internal IReadOnlyList<string> UncarriedMetadata {
+    get {
+      var result = new List<string>();
+      if (this._fileInfos.Any(static f => f.LastAccessTime is not null)) result.Add("access times");
+      if (this._fileInfos.FirstOrDefault()?.SkippedPropertyIds is { Count: > 0 } skipped)
+        result.Add("file properties " + string.Join(", ", skipped.Order().Select(static id => $"0x{id:X2}")));
+      return result;
+    }
+  }
+
+  /// <summary>
   /// Initializes a new <see cref="SevenZipReader"/> from a seekable stream.
   /// </summary>
   /// <param name="stream">A seekable stream containing the 7z archive.</param>

@@ -7,7 +7,7 @@ namespace FileFormat.Csc;
 /// <summary>
 /// Describes the libcsc stream format (Fu Siyuan's CSC), as written by the reference <c>csc</c> tool.
 /// </summary>
-public sealed class CscFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class CscFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema, ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

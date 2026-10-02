@@ -14,6 +14,9 @@ namespace FileSystem.Btrfs;
 /// </summary>
 public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
+  /// <inheritdoc />
+  public DefragFeature SupportedDefragFeatures => DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder;
+
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
   /// <inheritdoc />
@@ -145,7 +148,7 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
-    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder, "Btrfs");
+    DefragSupport.Require(options, this.SupportedDefragFeatures, "Btrfs");
     if (!archive.CanSeek || archive.Length > PlannerImageCap)
       throw new NotSupportedException(
         $"Btrfs: in-place defragmentation checks the result against a snapshot held in memory; volumes over {PlannerImageCap:N0} bytes are refused.");

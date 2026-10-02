@@ -6,11 +6,10 @@ using Compression.Registry;
 namespace Compression.Tests.Operations;
 
 /// <summary>
-/// Verifies the <c>reconfigure</c> verb: changing an existing container's
-/// geometry/options after creation (FAT cluster size, NTFS MFT record size)
-/// actually takes effect on disk while the live contents round-trip
-/// byte-for-byte. A non-creatable / non-schema format is rejected, and a failed
-/// rebuild leaves the original untouched.
+/// Verifies the <c>reconfigure</c> verb — the geometry maintenance operation — at the file
+/// level: formats whose relayout cannot keep everything they carry refuse, and every refusal
+/// leaves the original byte for byte as it was. The verified success path is covered by
+/// <c>MaintenanceVerbsTests</c> with a relayout that is lossless by construction.
 /// </summary>
 [TestFixture]
 public class ReconfigureOperationTests {
@@ -73,96 +72,44 @@ public class ReconfigureOperationTests {
     return bytesPerSector * sectorsPerCluster;
   }
 
-  [Test]
-  public void Reconfigure_Fat_ChangesClusterSize_AndPreservesContents() {
-    var payload = new byte[6000];
-    for (var i = 0; i < payload.Length; i++) payload[i] = (byte)(i * 31 + 7);
-    var readme = "the quick brown fox\n"u8.ToArray();
-
-    // Auto-fit FAT image with a default cluster size.
+  /// <summary>
+  /// FAT's relayout writes a fresh volume from extracted files: a new serial, no label, no
+  /// attributes, fresh folder times. That is not a geometry change that keeps the data, so
+  /// it is refused, and the image stays byte for byte as it was.
+  /// </summary>
+  [Test, Category("Exception")]
+  public void Reconfigure_Fat_IsRefusedAndTheImageIsUntouched() {
     var img = CreateImage(FormatDetector.Format.Fat, ".img",
       new Dictionary<string, string> { ["ImageSize"] = "1.44 MB (3.5\" HD)" },
-      ("DATA.BIN", payload), ("README.TXT", readme));
+      ("DATA.BIN", new byte[6000]), ("README.TXT", "the quick brown fox\n"u8.ToArray()));
+    var original = File.ReadAllBytes(img);
 
-    var beforeCluster = ReadBpbClusterSize(img);
-
-    var result = ReconfigureOperation.Reconfigure(img,
-      new Dictionary<string, string> {
-        ["ImageSize"] = "1.44 MB (3.5\" HD)",
-        ["ClusterSize"] = "2 KB",
-      });
-
-    var afterCluster = ReadBpbClusterSize(img);
-
-    Assert.Multiple(() => {
-      Assert.That(result.FileCount, Is.EqualTo(2), "both files must be preserved");
-      Assert.That(afterCluster, Is.EqualTo(2048), "BPB must report the requested 2 KB cluster size");
-    });
-    if (beforeCluster == 2048)
-      Assert.Inconclusive("default cluster already 2 KB — change not observable for this geometry");
-
-    var got = ReadAll(img);
-    Assert.Multiple(() => {
-      Assert.That(got["DATA.BIN"], Is.EqualTo(payload), "DATA.BIN must survive byte-for-byte");
-      Assert.That(got["README.TXT"], Is.EqualTo(readme), "README.TXT must survive byte-for-byte");
-    });
+    Assert.That(() => ReconfigureOperation.Reconfigure(img, new Dictionary<string, string> { ["ClusterSize"] = "2 KB" }),
+      Throws.TypeOf<NotSupportedException>().With.Message.Contains("losslessly"));
+    Assert.That(File.ReadAllBytes(img), Is.EqualTo(original));
+    Assert.That(Directory.GetFiles(_work, "*.tmp*"), Is.Empty, "no staged file may be left behind");
   }
 
-  [Test]
-  public void Reconfigure_Ntfs_ChangesMftRecordSize_AndPreservesContents() {
-    if (FormatRegistry.GetArchiveOps("Ntfs") is not Compression.Registry.IArchiveCreatable) {
-      Assert.Ignore("NTFS create path unavailable in this build.");
-      return;
-    }
-
-    var payload = new byte[9000];
-    for (var i = 0; i < payload.Length; i++) payload[i] = (byte)(i % 256);
-
+  /// <summary>
+  /// NTFS's relayout drops the label, serial, security descriptors, streams, reparse points,
+  /// times and attributes (the finding of the real-volume evidence matrix), so it is refused.
+  /// </summary>
+  [Test, Category("Exception")]
+  public void Reconfigure_Ntfs_IsRefusedAndTheImageIsUntouched() {
     string img;
     try {
       img = CreateImage(FormatDetector.Format.Ntfs, ".ntfs",
-        new Dictionary<string, string> {
-          ["ImageSize"] = "16 MB",
-          ["ClusterSize"] = "4 KB",
-          ["MftRecordSize"] = "1 KB",
-        },
-        ("data.bin", payload));
+        new Dictionary<string, string> { ["ImageSize"] = "16 MB", ["ClusterSize"] = "4 KB", ["MftRecordSize"] = "1 KB" },
+        ("data.bin", new byte[9000]));
     } catch (Exception ex) {
       Assert.Ignore($"NTFS image could not be created with the requested geometry: {ex.Message}");
       return;
     }
+    var original = File.ReadAllBytes(img);
 
-    // MFT record size field is at boot-sector offset 64. For a 1 KB record under
-    // a 4 KB cluster: -log2(1024) = -10.
-    using (var fs = File.OpenRead(img)) {
-      var boot = new byte[80];
-      fs.ReadExactly(boot);
-      Assert.That((sbyte)boot[64], Is.EqualTo(-10), "precondition: created with 1 KB MFT record");
-    }
-
-    ReconfigureOperation.ReconfigureResult result;
-    try {
-      result = ReconfigureOperation.Reconfigure(img,
-        new Dictionary<string, string> {
-          ["ImageSize"] = "16 MB",
-          ["ClusterSize"] = "4 KB",
-          ["MftRecordSize"] = "2 KB",
-        });
-    } catch (Exception ex) {
-      Assert.Ignore($"NTFS could not honour the MFT record reconfigure: {ex.Message}");
-      return;
-    }
-
-    using (var fs = File.OpenRead(img)) {
-      var boot = new byte[80];
-      fs.ReadExactly(boot);
-      // 2 KB record under 4 KB cluster: -log2(2048) = -11.
-      Assert.That((sbyte)boot[64], Is.EqualTo(-11), "MFT record size must change to 2 KB");
-    }
-
-    Assert.That(result.FileCount, Is.EqualTo(1));
-    var got = ReadAll(img);
-    Assert.That(got["data.bin"], Is.EqualTo(payload), "file must survive the geometry rewrite");
+    Assert.That(() => ReconfigureOperation.Reconfigure(img, new Dictionary<string, string> { ["MftRecordSize"] = "2 KB" }),
+      Throws.TypeOf<NotSupportedException>());
+    Assert.That(File.ReadAllBytes(img), Is.EqualTo(original));
   }
 
   [Test]

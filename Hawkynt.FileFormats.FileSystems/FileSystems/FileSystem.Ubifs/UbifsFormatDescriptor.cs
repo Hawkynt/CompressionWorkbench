@@ -39,6 +39,7 @@ namespace FileSystem.Ubifs;
 /// rewritten for a moved node to be found again is a structure this
 /// implementation cannot yet read, let alone write.
 /// </remarks>
+[FilesystemBlockMover(typeof(UbifsBlockMover))]
 public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap {
 
   /// <summary>

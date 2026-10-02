@@ -16,7 +16,7 @@ namespace FileFormat.JpegArchive;
 /// accessible explicitly via <c>cwb list --format JpegArchive photo.jpg</c>.
 /// </para>
 /// </summary>
-public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveLayoutMap, IArchiveDefragmentable {
+public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveLayoutMap, IArchiveDefragmentable, IArchiveCanonicalizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -185,6 +185,25 @@ public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOpe
     // All defrag modes converge to the same operation, unless a metadata
     // placement profile overrides the default.
     JpegOptimizer.Optimize(archive, options.MetadataPlacement);
+  }
+
+  // ── IArchiveCanonicalizable ───────────────────────────────────
+
+  /// <summary>
+  /// Writes a copy with the metadata segments in canonical order — EXIF first — without
+  /// re-encoding the image data (<see cref="JpegOptimizer"/>).
+  /// </summary>
+  public void Canonicalize(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    input.CopyTo(output);
+    output.Position = 0;
+    JpegOptimizer.Optimize(output);
+    output.Flush();
+    output.Position = 0;
   }
 
   // Photoshop IRB: sequence of 8BIM resource blocks.

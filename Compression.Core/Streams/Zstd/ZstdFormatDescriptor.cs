@@ -6,7 +6,7 @@ namespace FileFormat.Zstd;
 /// <summary>
 /// Describes zstd format.
 /// </summary>
-public sealed class ZstdFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class ZstdFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema, ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

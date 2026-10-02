@@ -47,6 +47,7 @@ namespace FileSystem.Gfs2;
 ///   <item><description>Red Hat Cluster Suite / Resilient Storage Add-On documentation</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(Gfs2BlockMover))]
 public sealed class Gfs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty, ISyntheticEntryNames {
 

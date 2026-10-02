@@ -16,6 +16,9 @@ namespace FileSystem.Ext;
 /// </summary>
 public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
+  /// <inheritdoc />
+  public DefragFeature SupportedDefragFeatures => DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder | DefragFeature.MetadataZone;
+
   /// <summary>
   /// Zeros all unused space in the ext2/3/4 image: free blocks, block-tip slack
   /// (the bytes between a file's real size and the end of its last allocated
@@ -64,7 +67,8 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Description: "ext filesystem revision. ext3 adds journaling; ext4 adds extents + large file support."),
     new FormatOptionDescriptor(
       Key: "BlockSize", DisplayName: "Block Size (bytes)", Kind: FormatOptionKind.Integer, Default: "4096",
-      AllowedValues: ["1024", "2048", "4096"]),
+      AllowedValues: ["1024", "2048", "4096"],
+      IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "Journal", DisplayName: "Enable Journal", Kind: FormatOptionKind.Boolean, Default: "true",
       DependsOn: "Version=ext3|ext4",
@@ -73,7 +77,8 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Key: "VolumeLabel", DisplayName: "Volume Label", Kind: FormatOptionKind.String, Default: ""),
     new FormatOptionDescriptor(
       Key: "InodeSize", DisplayName: "Inode Size (bytes)", Kind: FormatOptionKind.Integer, Default: "256",
-      AllowedValues: ["128", "256"]),
+      AllowedValues: ["128", "256"],
+      IsAllocationGeometry: true),
   ];
 
   /// <summary>
@@ -189,8 +194,7 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </remarks>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
-    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder
-      | DefragFeature.MetadataZone, "ext");
+    DefragSupport.Require(options, this.SupportedDefragFeatures, "ext");
     DefragmentWithPlanner(archive, options);
   }
 

@@ -31,7 +31,10 @@ dotnet build Compression.CLI
 |---------|-------|-------------|
 | `convert <input> <output>` | - | Convert between any formats (archive, FS, stream) |
 | `convert-archive <in> <out>` | - | Cross-format conversion (archive↔archive, archive↔FS, FS↔FS). `convert-fs` is a hidden back-compat alias |
-| `optimize <input> <output>` | `opt` | Re-encode with optimal compression |
+| `compress <input> [output]` | - | Re-encode with the format's best compression; names, times, attributes and headers kept, or refused |
+| `canonicalize <input> [output]` | - | Canonical form without re-encoding (MP4 fast start, metadata order, MacBinary) |
+| `repack <input> [output]` | - | Rebuild from the same entries copied verbatim; drops dead space |
+| `optimize <input> <output>` | `opt` | Same as `compress` (kept for scripts); `--search-blocks` ranks building blocks instead |
 | `bestfit <file>` | - | Rank every building block on the file's data; `--apply` writes the winner's output |
 | `benchmark <file>` | `bench` | Compare compression across algorithms |
 | `formats` | - | List all supported formats |
@@ -58,8 +61,10 @@ dotnet build Compression.CLI
 | `place <image> <name>` | - | Put one named file at one chosen offset, moving whatever is in the way |
 | `shrink <image>` | - | Defrag + truncate trailing free space |
 | `wipe-empty <image>` | `wipe` | Zero-fill all unused space in an image or archive |
-| `compact <image>` | - | Defragment + optimize + shrink: the smallest still-valid container |
-| `reconfigure <image>` | - | Change geometry/options after creation without losing data; verified before the original is replaced |
+| `sort-entries <image>` | `sort-dir` | Sort FAT/exFAT directory entries in place; no data moves, size unchanged |
+| `maintenance <file>` | - | Which of these operations, which defrag modes and which geometry keys the format offers |
+| `compact <image>` | - | Defragment extents + compress + shrink, each where offered; never changes geometry |
+| `reconfigure <image>` | - | Change allocation geometry; only tagged geometry keys, only where the relayout keeps everything (no format yet), verified before the original is replaced |
 | `convert-clusters <image>` | - | Rebuild a FAT image with a different cluster size |
 | `resize <image>` | - | Resize a filesystem image to a target size |
 | `dedup <image>` | - | Find and optionally remove duplicate files (by SHA-256) |
@@ -82,9 +87,11 @@ virtual-disk container (VHD/VHDX/VMDK/QCOW2/VDI).
 | `format` | Write a fresh filesystem image into a partition |
 | `verify` | Check signature, GPT header/entry-array CRCs, primary/backup consistency, extent bounds |
 
-The verbs `compact`, `defragment`, `shrink`, `wipe-empty` and `purge` are the
-maintenance set defined once in [`docs/ARCHIVE-MODEL.md`](../docs/ARCHIVE-MODEL.md);
-which formats offer which is recorded in the package READMEs, not here.
+The maintenance operations — `compress`, `canonicalize`, `repack`, `sort-entries`,
+`defragment`, `reconfigure`, `shrink`, `wipe-empty`, `purge` and the `compact` composite —
+are defined once in [`docs/ARCHIVE-MODEL.md`](../docs/ARCHIVE-MODEL.md). Each is lossless or
+refuses (exit code 2, file untouched); which formats offer which is recorded in the package
+READMEs and printed by `cwb maintenance <file>`.
 
 ## Examples
 
@@ -95,7 +102,7 @@ cwb x archive.rar -p mypassword
 cwb create output.zip myDir file1.txt *.txt
 cwb create output.7z file.txt --method lzma2+
 cwb convert input.tar.gz output.tar.xz
-cwb optimize input.zip optimized.zip
+cwb compress input.zip optimized.zip
 cwb benchmark largefile.bin
 cwb analyze unknown.bin
 cwb auto-extract sample.vhd --recursive

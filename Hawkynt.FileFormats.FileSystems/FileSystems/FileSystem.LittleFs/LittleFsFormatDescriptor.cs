@@ -19,6 +19,7 @@ namespace FileSystem.LittleFs;
 ///   <item><description><c>https://github.com/littlefs-project/littlefs/blob/master/DESIGN.md</c> — design document (metadata pairs, CTZ skip-lists)</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(LittleFsBlockMover))]
 public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

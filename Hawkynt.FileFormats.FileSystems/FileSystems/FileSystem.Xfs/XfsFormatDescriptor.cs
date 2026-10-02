@@ -17,6 +17,9 @@ namespace FileSystem.Xfs;
 /// </summary>
 public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
+  /// <inheritdoc />
+  public DefragFeature SupportedDefragFeatures => DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder;
+
   /// <summary>
   /// XFS geometry (block size, inode size, AG layout) is fixed at the
   /// <c>mkfs.xfs</c>-faithful defaults the writer emits, so the only honoured
@@ -124,7 +127,7 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
-    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder, "XFS");
+    DefragSupport.Require(options, this.SupportedDefragFeatures, "XFS");
     if (!archive.CanSeek || archive.Length > PlannerImageCap)
       throw new NotSupportedException(
         $"XFS: in-place defragmentation checks the result against a snapshot held in memory; volumes over {PlannerImageCap:N0} bytes are refused.");

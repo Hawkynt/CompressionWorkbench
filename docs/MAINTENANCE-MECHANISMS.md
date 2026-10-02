@@ -1,15 +1,59 @@
 # Maintenance mechanisms and write capability
 
-How the maintenance verbs are provided, and what a read-write claim is allowed
-to mean. The verbs themselves — optimize, shrink, defrag, purge, wipe and the
-`compact` composite — are defined once in [`ARCHIVE-MODEL.md`](ARCHIVE-MODEL.md)
-&rarr; *The five maintenance verbs*, together with the interface that unlocks
-each. This page is the half that does not fit a table: why so few formats need
-bespoke code for any of it, and the rule that decides when `CanModify` may be
-advertised.
+How the maintenance operations are provided, and what a read-write claim is allowed
+to mean. The operations themselves — compress, canonicalize, repack, sort entries,
+defrag, change geometry, shrink, purge, wipe and the `compact` composite — are defined
+once in [`ARCHIVE-MODEL.md`](ARCHIVE-MODEL.md) &rarr; *The maintenance operations*,
+together with the interface that unlocks each. This page is the half that does not fit
+a table: how a shell asks which of them a format offers, why so few formats need bespoke
+code, and the rule that decides when an operation — or `CanModify` — may be advertised.
 
 Per-format coverage is not here. It is in the package READMEs, rendered from the
 descriptors — see [the end of this page](#where-the-per-format-coverage-lives).
+
+## Asking what a format offers
+
+`Compression.Registry.MaintenanceCapabilities` is the one query, and it answers from the
+interfaces a descriptor implements — never from a name, a category or a creation option:
+
+```csharp
+MaintenanceProfile profile = MaintenanceCapabilities.Describe(descriptor); // or Describe("Fat")
+profile.Supports(MaintenanceCapability.SortDirectoryEntries);   // FAT, exFAT
+profile.Supports(MaintenanceCapability.DefragmentExtents);      // in-place extent mover present
+profile.Supports(DefragFeature.CarveHole | DefragFeature.AscendingOrder); // modes it honours
+profile.GeometryOptions;                                         // keys reconfigure may set
+```
+
+`Compression.Lib.MaintenanceOperations.Describe(path)` does the same for a file, and
+`MaintenanceOperations.Compress / Canonicalize / Repack / SortDirectoryEntries` run the
+operations on files (atomically; the output may be the input). `cwb maintenance <file>`
+prints the profile. A shell enables exactly what the profile lists — operations and defrag
+modes alike — and treats `NotSupportedException` from anything else as "this format does
+not do that".
+
+| `MaintenanceCapability` | Backed by | Realised by (this repository) |
+|---|---|---|
+| `Compress` | `ICompressionOptimizable` (`CanOptimizeCompression`) | 36 single-stream codecs through the decode → best-encode → decode-again default; gzip carries its member header across and refuses multi-member files; compound tar re-encodes only the outer stream; ZIP re-deflates entries from its own directory (`ZipRawRewriter`), copying encrypted, ZIP64 and non-Deflate entries verbatim; 7z recompresses as one LZMA2 block and refuses encrypted archives or headers with access times / skipped properties. Stream formats whose header carries a file name, time or mode (lzop, Squeeze, Crunch, KWAJ, SZDD) do not claim it. |
+| `Canonicalize` | `IArchiveCanonicalizable` | every `IFileInternalChunkMover` (MP4, Matroska, AVI, WAV, MP3, PNG), JPEG metadata order, MacBinary |
+| `Repack` | `IArchiveRepackable` | ZIP: every entry the central directory lists copied byte for byte, holes dropped; a non-zero preamble (self-extractor stub) is refused |
+| `SortDirectoryEntries` | `IFilesystemDirectoryOrderer` | FAT12/16/32, exFAT |
+| `DefragmentExtents` | `IArchiveDefragmentable` + `IFilesystemBlockMover` (on the descriptor or named by `[FilesystemBlockMover]`) | every in-place mover; modes from `SupportedDefragFeatures` |
+| `ChangeGeometry` | `ILayoutOptimizable.RelayoutPreservesEverything` + options tagged `IsAllocationGeometry` | none yet — see below |
+| `Shrink`, `Purge`, `WipeUnused`, `Scramble` | `IArchiveShrinkable`, `IArchivePurgeable`, `IWipeEmpty`, `IFilesystemScrambleable` | as before |
+
+Every staged result is verified before it is kept: the same `ArchiveSemanticManifest`
+(paths, kinds, lengths, SHA-256, modification times, link targets, container properties)
+for a container, the same decoded bytes for a single stream (`MaintenanceVerbs`). The
+in-place sort journals its writes and rolls them back on any mismatch
+(`DefragContentGuard.RunVerifiedInPlace`). Both checks see what the format's reader
+reports; the evidence matrix below covers what it does not.
+
+**Change geometry is offered by no format.** The generic relayout extracts to a folder and
+creates a new volume, and the create API carries a path, the bytes and a modification time.
+On a real volume that drops the label, serial, attributes, owners and folder times — the
+evidence matrix shows it for ext, FAT, exFAT and NTFS — so `RelayoutPreservesEverything`
+defaults to false and `cwb reconfigure` refuses with the image untouched. A format earns the
+capability with a relayout that carries its whole metadata, set explicitly on its descriptor.
 
 ## Default-mechanism rollout
 
@@ -103,9 +147,9 @@ undeclared create refusal fails.
   analysis, as ReFS does. The Layout column of the support matrix reports the rebuild
   rather than the interface, and is the count of how far this reaches.
 - **`reconfigure`** (`Compression.Lib.ReconfigureOperation`, `cwb reconfigure --set
-  Key=Value`, and the UI *Maintenance → Reconfigure* entry) re-applies geometry/options
-  to an *existing* image (e.g. NTFS MFT-record size, cluster size, FAT root entries)
-  via the verified rebuild — contents preserved, only geometry changes.
+  Key=Value`) is the change-geometry operation. It accepts only keys a schema tags
+  `IsAllocationGeometry`, runs only where the format's relayout keeps everything, and keeps
+  a result only when the manifest matches — so today it refuses everywhere (see above).
 - **NTFS per-file compression**: the `Compression` create option (`Off`/`LZNT1`)
   stores files in a compressed `$DATA` attribute; small files stay resident in the MFT.
 - **Creation-option schemas** (`IFormatOptionsSchema`) now cover **75 of 89** creatable
@@ -163,19 +207,22 @@ every `CanModify` claimant's ops must implement `IArchiveModifiable`. The eviden
 volumes with `mkfs.*`, fills them through the kernel driver (libguestfs), runs every verb and
 compares a manifest read back through the same driver — names, types, modes, owners, sizes,
 times, link targets and counts, xattrs, digests, label, UUID, and DOS attributes via `mattrib`
-— and runs the reference checker. Its table is the evidence matrix below.
+— and runs the reference checker. Its table is the evidence matrix below. For the
+directory sort it also reads the kernel's `readdir` order back and requires name order in
+the root and in a subfolder — the preservation check alone would pass a sort that did
+nothing.
 
 ### Evidence matrix (reference volumes made by the real tools)
 
 `P` = in place, nothing else changed, reference checker clean. `R` = refused, image
-untouched. Wipe and shrink are in place; defrag keeps the image size.
+untouched. Wipe, shrink and sort are in place; defrag and sort keep the image size.
 
-| Format (tool) | add root | add nested | remove root | remove nested | pack start / end / fill | carve | ascending | interleave | metadata front | wipe | shrink | checker |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| ext4, ext2 (`mkfs.ext*`) | P | P | P | P | P | P | P | R | P | P | P | `e2fsck -fn` |
-| FAT16, FAT32 (`mkfs.vfat` + `mtools`) | P | P | P | P | P | P | P | P (FAT16) / R (FAT32: move budget) | P | P | P | `fsck.vfat -n` |
-| NTFS (`mkfs.ntfs`) | P | P | P | P | P | P | P | R | P | P | P | `ntfsfix -n` |
-| exFAT (`mkfs.exfat`) | P | R | P | R | P | P | R | R | P | P | not offered | `fsck.exfat -n` |
+| Format (tool) | add root | add nested | remove root | remove nested | pack start / end / fill | carve | ascending | interleave | metadata front | wipe | shrink | sort entries | compress / repack / reconfigure | checker |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ext4, ext2 (`mkfs.ext*`) | P | P | P | P | P | P | P | R | P | P | P | R | R | `e2fsck -fn` |
+| FAT16, FAT32 (`mkfs.vfat` + `mtools`) | P | P | P | P | P | P | P | P (FAT16) / R (FAT32: move budget) | P | P | P | P | R | `fsck.vfat -n` |
+| NTFS (`mkfs.ntfs`) | P | P | P | P | P | P | P | R | P | P | P | R | R | `ntfsfix -n` |
+| exFAT (`mkfs.exfat`) | P | R | P | R | P | P | R | R | P | P | not offered | P | R | `fsck.exfat -n` |
 | ISO 9660 + RR + Joliet (`xorriso`) | P | R | P | R | P | R when it does not fit | R | R | R | P | not offered | kernel mount, `xorriso` |
 | 7z (`7z a -snl`) | P (metadata-preserving rewrite when the in-place adder declines) | P | P | P | — (not offered) | — | — | — | — | P | — | `7z t` |
 
@@ -224,11 +271,12 @@ there is no coverage matrix on this page.
 
 - **Filesystems and disk-image containers** — the support matrix in
   [`Hawkynt.FileFormats.FileSystems/README.md`](../Hawkynt.FileFormats.FileSystems/README.md).
-  Its Compact, Defrag, Wipe, Shrink, Layout and Purge columns are rendered from
+  Its Compact, Defrag, Sort, Wipe, Shrink, Geometry and Purge columns are rendered from
   the descriptors by `Compression.Tests/Documentation/FilesystemSupportMatrix.cs`
   and re-derived on every build, so a cell that stops matching the code fails
   rather than misleading a reader.
 - **Archives** — the *Maintenance* column of
   [`Hawkynt.FileFormats.Archives/README.md`](../Hawkynt.FileFormats.Archives/README.md).
-- **Whatever is loaded right now** — `cwb formats`, which answers from the live
-  registry and is the authority both tables are checked against.
+- **Whatever is loaded right now** — `cwb formats`, and `cwb maintenance <file>` for one
+  file's operations, both answering from the live registry that the two tables are
+  checked against.

@@ -52,7 +52,7 @@ public class JpegLayoutMapTests {
   /// <summary>
   /// Builds a JPEG with APP0 before APP1-EXIF (not optimized) to test the optimizer.
   /// </summary>
-  private static byte[] BuildUnoptimizedJpeg() {
+  internal static byte[] BuildUnoptimizedJpeg() {
     using var ms = new MemoryStream();
 
     // SOI

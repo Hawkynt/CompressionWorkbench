@@ -184,6 +184,24 @@ internal static class RealImageLab {
     return lines;
   }
 
+  /// <summary>
+  /// The names in <paramref name="folder"/> (relative to the volume root; empty for the root
+  /// itself) in the order the kernel driver's <c>readdir</c> returns them — for FAT and exFAT,
+  /// the order of the directory entries on disk.
+  /// </summary>
+  public static List<string> ReaddirOrder(FsKind kind, string img, string folder) {
+    var inner = $"cd '/sysroot/{folder}' && find . -mindepth 1 -maxdepth 1 -printf '%P\\n'\n";
+    var b64 = Convert.ToBase64String(Encoding.ASCII.GetBytes(inner));
+    var scriptPath = Path.Combine(Path.GetDirectoryName(img)!, "readdir_" + Guid.NewGuid().ToString("N")[..8] + ".sh");
+    File.WriteAllText(scriptPath,
+      $"guestfish --ro -a '{Wsl(img)}' run : mount-ro /dev/sda / : debug sh \"echo {b64} | base64 -d | sh\" 2>&1 | grep -v -i kvm\n");
+    var r = FsInteropToolbox.RunWsl($"bash '{Wsl(scriptPath)}'");
+    Assert.That(r.StdOut + r.StdErr, Does.Not.Contain("libguestfs: error"),
+      $"{kind.Name}: the kernel driver could not list '{folder}'\n{r.StdOut}\n{r.StdErr}");
+    return [.. r.StdOut.Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries)
+      .Where(static n => n != "lost+found")];
+  }
+
   /// <summary>The reference tool's own consistency check; the verdict and its output.</summary>
   public static (bool Clean, string Output) Check(FsKind kind, string img) {
     var r = FsInteropToolbox.RunWsl(kind.CheckCommand.Replace("{img}", $"'{Wsl(img)}'") + " 2>&1");

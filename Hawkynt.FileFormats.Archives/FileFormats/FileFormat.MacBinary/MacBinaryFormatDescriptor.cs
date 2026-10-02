@@ -6,7 +6,7 @@ namespace FileFormat.MacBinary;
 /// <summary>
 /// Describes mac binary format.
 /// </summary>
-public sealed class MacBinaryFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
+public sealed class MacBinaryFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IArchiveCanonicalizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -72,5 +72,22 @@ public sealed class MacBinaryFormatDescriptor : IFormatDescriptor, IStreamFormat
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     MacBinaryWriter.Write(output, "data", ms.ToArray());
+  }
+
+  /// <summary>
+  /// Writes the canonical MacBinary form (<see cref="MacBinaryOptimizer"/>): reserved header
+  /// fields and padding zeroed, version pair and header CRC repaired, bytes past the last
+  /// declared section dropped. The data fork, resource fork, secondary header and Get Info
+  /// comment are copied byte for byte.
+  /// </summary>
+  public void Canonicalize(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    MacBinaryOptimizer.Optimize(input, output);
+    output.Flush();
+    output.Position = 0;
   }
 }

@@ -15,7 +15,7 @@ namespace FileFormat.SevenZip;
 ///   <item><description><c>https://en.wikipedia.org/wiki/7z</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
+public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema, ICompressionOptimizable {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -147,6 +147,42 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     staged.CopyTo(archive);
     archive.SetLength(staged.Length);
     archive.Flush();
+  }
+
+  /// <summary>
+  /// Recompresses the archive as one LZMA2 solid block with a dictionary sized to the
+  /// payload, keeping every entry's name, modification and creation time and attributes
+  /// (Unix modes and links included), directories and empty files.
+  /// </summary>
+  /// <exception cref="NotSupportedException">The archive is encrypted (a rewrite would have to
+  /// decide how to encrypt it again), or its header carries metadata the entries do not —
+  /// access times, anti-items, start positions — which a rewrite would drop.</exception>
+  public void OptimizeCompression(Stream input, Stream output, string? password = null) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    input.Position = 0;
+    var reader = new SevenZipReader(input, leaveOpen: true, password: password);
+    if (reader.Entries.Any(static e => e.Method.Contains("AES", StringComparison.OrdinalIgnoreCase)))
+      throw new NotSupportedException("7z: the archive is encrypted; recompressing it would have to re-encrypt it. Refused, nothing was changed.");
+    if (reader.UncarriedMetadata is { Count: > 0 } uncarried)
+      throw new NotSupportedException($"7z: the archive holds {string.Join(" and ", uncarried)}, which a rewrite cannot carry. Refused, nothing was changed.");
+
+    var payload = reader.Entries.Where(static e => !e.IsDirectory).Sum(static e => Math.Max(0L, e.Size));
+    var dictionary = (int)Math.Clamp(System.Numerics.BitOperations.RoundUpToPowerOf2((ulong)Math.Max(payload, 1L << 16)), 1UL << 16, 1UL << 26);
+    output.Position = 0;
+    output.SetLength(0);
+    var writer = new SevenZipWriter(output, SevenZipCodec.Lzma2, leaveOpen: true, dictionarySize: dictionary);
+    for (var i = 0; i < reader.Entries.Count; i++) {
+      var e = reader.Entries[i];
+      var copy = new SevenZipEntry {
+        Name = e.Name, LastWriteTime = e.LastWriteTime, CreationTime = e.CreationTime, Attributes = e.Attributes,
+      };
+      if (e.IsDirectory) writer.AddDirectory(copy);
+      else writer.AddEntry(copy, reader.Extract(i));
+    }
+    writer.Finish();
+    output.Flush();
+    output.Position = 0;
   }
 
   // Not IArchiveDefragmentable: an archive has no free-space layout to defragment,

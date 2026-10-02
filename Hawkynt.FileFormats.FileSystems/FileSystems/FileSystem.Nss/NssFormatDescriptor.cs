@@ -46,6 +46,7 @@ namespace FileSystem.Nss;
 /// exactly as it was and refused for anything that would need to know where a
 /// file's bytes are.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(NssBlockMover))]
 public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap {
   /// <summary>
   /// Gets the id.

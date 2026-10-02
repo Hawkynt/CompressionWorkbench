@@ -14,7 +14,19 @@ namespace FileSystem.Fat;
 ///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/fat</c> — mainline kernel implementation</description></item>
 /// </list>
 /// </summary>
-public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemPlaceable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemPlaceable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemDirectoryOrderer {
+
+  /// <summary>
+  /// Sorts every directory by name in place (<see cref="FatDirectoryOrderer"/>): only directory
+  /// records move, no cluster is touched, and the pass is verified against the volume's own
+  /// listing — paths, contents, timestamps — before it is kept; anything else rolls back and
+  /// is refused.
+  /// </summary>
+  public void SortDirectoryEntries(Stream image)
+    => DefragContentGuard.RunVerifiedInPlace(image, this, FatDirectoryOrderer.Sort, "FAT directory sort");
+
+  /// <inheritdoc />
+  public DefragFeature SupportedDefragFeatures => DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder | DefragFeature.Interleave | DefragFeature.MetadataZone;
 
   // The optimization adapters are keyed on this descriptor's runtime type, so the
   // registration has to have run before any instance can be looked up. Doing it from
@@ -39,7 +51,8 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Kind: FormatOptionKind.Enum,
       Default: "Auto",
       AllowedValues: ["Auto", "FAT12", "FAT16", "FAT32"],
-      Description: "Auto selects FAT12/16/32 by cluster count. Force a type when the target system requires it (e.g. FAT32 on a floppy-sized image for a game console)."),
+      Description: "Auto selects FAT12/16/32 by cluster count. Force a type when the target system requires it (e.g. FAT32 on a floppy-sized image for a game console).",
+      IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "ImageSize",
       DisplayName: "Image size",
@@ -60,7 +73,8 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         // Hard disk / USB card sizes
         "32 MB", "128 MB", "512 MB", "1 GB", "2 GB", "4 GB"],
       Description: "Auto sizes the image to exactly hold the files being stored (recommended). " +
-        "Fixed presets match floppy, optical and card formats."),
+        "Fixed presets match floppy, optical and card formats.",
+      IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "VolumeLabel",
       DisplayName: "Volume label",
@@ -73,7 +87,8 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Kind: FormatOptionKind.Enum,
       Default: "Auto",
       AllowedValues: ["Auto", "512 B", "1 KB", "2 KB", "4 KB", "8 KB", "16 KB", "32 KB", "64 KB"],
-      Description: "Allocation unit size. Auto picks the best fit for the image size and FAT type."),
+      Description: "Allocation unit size. Auto picks the best fit for the image size and FAT type.",
+      IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "RootEntries",
       DisplayName: "Root entries",
@@ -83,7 +98,8 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Description: "Max items in the root directory (FAT12/16 only; FAT32 has no limit). " +
         "Microsoft DMF Win95 disks used 16 to reclaim those sectors for data. " +
         "Auto: 224 for FAT12, 512 for FAT16.",
-      DependsOn: "FatType=Auto|FAT12|FAT16"),
+      DependsOn: "FatType=Auto|FAT12|FAT16",
+      IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "LongFilenames",
       DisplayName: "Long filenames (VFAT)",
@@ -193,8 +209,7 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </remarks>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
-    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole | DefragFeature.AscendingOrder
-      | DefragFeature.Interleave | DefragFeature.MetadataZone, "FAT");
+    DefragSupport.Require(options, this.SupportedDefragFeatures, "FAT");
     DefragmentWithPlanner(archive, options);
   }
 

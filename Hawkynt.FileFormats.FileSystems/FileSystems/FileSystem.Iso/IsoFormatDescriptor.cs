@@ -17,6 +17,9 @@ namespace FileSystem.Iso;
 /// </summary>
 public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
+  /// <inheritdoc />
+  public DefragFeature SupportedDefragFeatures => DefragFeature.Packing | DefragFeature.CarveHole;
+
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
   /// <summary>
@@ -348,7 +351,7 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
-    DefragSupport.Require(options, DefragFeature.Packing | DefragFeature.CarveHole, "ISO 9660");
+    DefragSupport.Require(options, this.SupportedDefragFeatures, "ISO 9660");
     if (!archive.CanSeek || archive.Length > MaxBufferedImageBytes)
       throw new NotSupportedException(
         $"ISO 9660: in-place defragmentation checks the result against a snapshot held in memory; images over {MaxBufferedImageBytes:N0} bytes are refused.");

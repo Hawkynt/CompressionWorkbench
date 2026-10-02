@@ -20,6 +20,7 @@ namespace FileSystem.Bfs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Be_File_System</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(BfsBlockMover))]
 public sealed class BfsFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {

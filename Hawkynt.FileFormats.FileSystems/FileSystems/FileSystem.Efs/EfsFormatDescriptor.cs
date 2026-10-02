@@ -29,6 +29,7 @@ namespace FileSystem.Efs;
 /// dirents). Reader recurses from inode 2 (root) and surfaces each entry at
 /// its full path.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(EfsBlockMover))]
 public sealed class EfsFormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
