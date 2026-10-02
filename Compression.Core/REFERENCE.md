@@ -1641,7 +1641,7 @@ Decodes the LZJB copymap format produced by `LzjbCompressor`. Reference: https:/
 
 ### Namespace `Compression.Core.Dictionary.Lzma`
 
-[`Lzma2Decoder`](#lzma2decoder) · [`Lzma2Encoder`](#lzma2encoder) · [`LzmaBuildingBlock`](#lzmabuildingblock) · [`LzmaCompressionLevel`](#lzmacompressionlevel) · [`LzmaDecoder`](#lzmadecoder) · [`LzmaEncoder`](#lzmaencoder)
+[`Lzma2Decoder`](#lzma2decoder) · [`Lzma2Encoder`](#lzma2encoder) · [`LzmaBuildingBlock`](#lzmabuildingblock) · [`LzmaCompressionLevel`](#lzmacompressionlevel) · [`LzmaDecoder`](#lzmadecoder) · [`LzmaDictionarySize`](#lzmadictionarysize) · [`LzmaEncoder`](#lzmaencoder)
 
 #### `Lzma2Decoder`
 
@@ -1701,6 +1701,16 @@ LZMA decoder implementing the full LZMA1 decompression algorithm.
 | `LzmaDecoder` | `LzmaDecoder(Stream input, int literalContextBits, int literalPositionBits, int positionBits, int dictionarySize, long uncompressedSize = -1)` | Initializes a new LZMA decoder for a raw stream whose coding parameters are known from the outside instead of from a properties header. |
 | `Decode` | `byte[] Decode()` | Decodes the entire compressed stream and returns the decompressed data. |
 | `Decode` | `void Decode(Stream output)` | Decodes the compressed stream writing to the specified output stream. |
+
+#### `LzmaDictionarySize`
+
+The LZMA dictionary sizes 7-Zip recognises: 2^n or 3 × 2^(n-1), from 4 KiB up to 1 GiB.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Maximum` | `const int Maximum` | The largest dictionary written. |
+| `Minimum` | `const int Minimum` | The smallest dictionary written. |
+| `Normalize` | `static int Normalize(long size)` | Rounds `size` up to the next recognised size, within the bounds. |
 
 #### `LzmaEncoder`
 
