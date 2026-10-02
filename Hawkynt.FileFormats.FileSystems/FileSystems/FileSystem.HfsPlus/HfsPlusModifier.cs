@@ -45,25 +45,31 @@ public static class HfsPlusModifier {
 
     // Replace-by-name: if it already exists, remove first so we don't end up
     // with two records sharing the same key.
-    RemoveFile(image, name, wipeData: true);
+    var catalogName = HfsPlusName.ToCatalog(name);
+    RemoveCatalogFile(image, catalogName, wipeData: true);
 
     // A catalog shape or free-space layout the in-place path does not handle is
     // refused. The rebuild that used to follow flattened the folder tree to leaf
     // names and dropped the volume name, journal, dates, permissions, Finder info
     // and resource forks.
-    if (!TryAddInPlace(image, name, data))
+    if (!TryAddInPlace(image, catalogName, data))
       throw new NotSupportedException(
         $"HFS+: '{name}' cannot be added in place (catalog spans more than one leaf, or no contiguous free run).");
   }
 
   /// <summary>
   /// Removes the named file. Returns true if it was present and removed,
-  /// false if no such entry exists.
+  /// false if no such entry exists. <paramref name="name"/> is the POSIX name, with ':' where
+  /// the catalog stores '/'. A hard link is refused: its indirect node file's link count
+  /// would be left counting it.
   /// </summary>
   public static bool RemoveFile(Stream image, string name, bool wipeData = true) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(name);
+    return RemoveCatalogFile(image, HfsPlusName.ToCatalog(name), wipeData);
+  }
 
+  private static bool RemoveCatalogFile(Stream image, string name, bool wipeData) {
     var img = ReadAll(image);
     var ctx = ParseVolume(img);
     if (ctx is null) return false;
@@ -75,8 +81,11 @@ public static class HfsPlusModifier {
 
     // Locate the file record (recordType 2, key parent==RootFolderCnid, name match).
     if (!TryFindFileRecord(leaf, ctx.NodeSize, name, out var fileRecIdx, out var fileCnid,
-        out var startBlock, out var blockCount))
+        out var startBlock, out var blockCount, out var isHardLink))
       return false;
+    if (isHardLink)
+      throw new NotSupportedException(
+        $"HFS+: '{HfsPlusName.FromCatalog(name)}' is a hard link; removing it in place would leave its shared data's link count wrong.");
 
     // Locate the matching file thread record (key parent==fileCnid, empty name).
     var threadRecIdx = FindThreadRecord(leaf, ctx.NodeSize, fileCnid);
@@ -256,8 +265,8 @@ public static class HfsPlusModifier {
   /// equal to the root folder and whose name matches <paramref name="name"/>.
   /// </summary>
   private static bool TryFindFileRecord(ReadOnlySpan<byte> leaf, int nodeSize, string name,
-      out int recordIndex, out uint fileCnid, out uint startBlock, out uint blockCount) {
-    recordIndex = -1; fileCnid = 0; startBlock = 0; blockCount = 0;
+      out int recordIndex, out uint fileCnid, out uint startBlock, out uint blockCount, out bool isHardLink) {
+    recordIndex = -1; fileCnid = 0; startBlock = 0; blockCount = 0; isHardLink = false;
     var numRecords = BinaryPrimitives.ReadUInt16BigEndian(leaf[10..]);
     var nameBytes = Encoding.BigEndianUnicode.GetBytes(name);
 
@@ -286,6 +295,9 @@ public static class HfsPlusModifier {
       fileCnid = BinaryPrimitives.ReadUInt32BigEndian(leaf[(dataOff + 8)..]);
       startBlock = BinaryPrimitives.ReadUInt32BigEndian(leaf[(dataOff + DataForkOffset + 16)..]);
       blockCount = BinaryPrimitives.ReadUInt32BigEndian(leaf[(dataOff + DataForkOffset + 20)..]);
+      // TN1150: a hard link is a file of type 'hlnk', creator 'hfs+' (userInfo at +48).
+      isHardLink = BinaryPrimitives.ReadUInt32BigEndian(leaf[(dataOff + 48)..]) == 0x686C6E6B
+                   && BinaryPrimitives.ReadUInt32BigEndian(leaf[(dataOff + 52)..]) == 0x6866732B;
       recordIndex = i;
       return true;
     }
