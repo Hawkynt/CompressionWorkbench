@@ -58,6 +58,7 @@ backends, so Windows and Linux run the same code rather than two frontends drift
 
   | Group | Items |
   | --- | --- |
+  | Target | The open volume (default), or a selected file whose content — never its name — proves it a container: "Selected: inner.img (Fat)". Changing the selection never retargets; only picking here does |
   | Operation | Defragment, Optimize, Shrink, Compact, Clear (wipe free space), Purge, Scramble as a radio group; Start; Stop while extents are being moved |
   | Defrag Mode | Consolidate (Pack at End as its variant), Defrag (fill holes), Re-order (ascending blocks), Carve Hole with its size, placement and offset fields — all extent moves — and Sort Entries, which sorts every directory by name in place and moves no data |
   | Options | Block interleave (spinner, 1–256), metadata placement, layout profile and Edit Profiles for extent moves; the seed for Scramble and the method for Optimize (Compress, Repack or Canonicalize, as the format offers) appear while their operation is picked |
