@@ -35,26 +35,30 @@ public static class HfsPlusModifier {
   private static readonly DateTime HfsEpoch = new(1904, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
   /// <summary>
-  /// Adds (or replaces by name) a file. If the catalog leaf cannot fit the new
-  /// record, falls back to a full rebuild so the call always succeeds.
+  /// Adds (or replaces by name) a file in the root folder of a single-leaf catalog. Anything
+  /// the in-place path cannot do is refused and the volume left exactly as it was — including
+  /// the file being replaced.
   /// </summary>
   public static void AddFile(Stream image, string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
 
-    // Replace-by-name: if it already exists, remove first so we don't end up
-    // with two records sharing the same key.
+    // Replace-by-name removes the old record first so no two records share a key. Both steps
+    // run on a copy: an add that then fails must not leave the replaced file deleted.
     var catalogName = HfsPlusName.ToCatalog(name);
-    RemoveCatalogFile(image, catalogName, wipeData: true);
+    using var work = new MemoryStream();
+    work.Write(ReadAll(image));
+    RemoveCatalogFile(work, catalogName, wipeData: true);
 
     // A catalog shape or free-space layout the in-place path does not handle is
     // refused. The rebuild that used to follow flattened the folder tree to leaf
     // names and dropped the volume name, journal, dates, permissions, Finder info
     // and resource forks.
-    if (!TryAddInPlace(image, catalogName, data))
+    if (!TryAddInPlace(work, catalogName, data))
       throw new NotSupportedException(
         $"HFS+: '{name}' cannot be added in place (catalog spans more than one leaf, or no contiguous free run).");
+    WriteAll(image, work.ToArray());
   }
 
   /// <summary>
@@ -64,7 +68,9 @@ public static class HfsPlusModifier {
   /// with the volume untouched: a hard link (its indirect node file's link count would be left
   /// counting it), a file with extended attributes or transparent compression (its attribute
   /// records would be orphaned), a fork continued in the extents overflow file (those records
-  /// would be orphaned), and an allocation file that does not start at block 1.
+  /// would be orphaned), an allocation file that does not start at block 1, a catalog stored in
+  /// more than one extent, and a record whose removal would change its leaf's first key (which
+  /// the index above names) or empty its leaf.
   /// </summary>
   public static bool RemoveFile(Stream image, string name, bool wipeData = true) {
     ArgumentNullException.ThrowIfNull(image);
@@ -77,14 +83,20 @@ public static class HfsPlusModifier {
     var ctx = ParseVolume(img);
     if (ctx is null) return false;
 
-    // Catalog node 0 is the header; node 1 is the leaf in the writer's layout.
-    var catalogBase = (int)(ctx.CatalogStartBlock * ctx.BlockSize);
-    var leafBase = catalogBase + (int)ctx.FirstLeafNode * ctx.NodeSize;
-    var leaf = img.AsSpan(leafBase, ctx.NodeSize);
-
-    // Locate the file record (recordType 2, key parent==RootFolderCnid, name match).
-    if (!TryFindFileRecord(leaf, ctx.NodeSize, name, out var fileRecIdx, out var fileCnid, out var record))
-      return false;
+    // Every record lives on a leaf and the leaves are chained by fLink from firstLeafNode, so
+    // walking that chain finds a record wherever the catalog put it — the first leaf held
+    // only the smallest keys of a catalog that outgrew one node.
+    var leaves = LeafNodes(img, ctx);
+    var fileLeaf = -1;
+    int fileRecIdx = -1, record = -1;
+    uint fileCnid = 0;
+    foreach (var node in leaves)
+      if (TryFindFileRecord(img.AsSpan(node, ctx.NodeSize), ctx.NodeSize, name, out fileRecIdx, out fileCnid, out record)) {
+        fileLeaf = node;
+        break;
+      }
+    if (fileLeaf < 0) return false;
+    var leaf = img.AsSpan(fileLeaf, ctx.NodeSize);
     var shown = HfsPlusName.FromCatalog(name);
     // TN1150: a hard link is a file of type 'hlnk', creator 'hfs+' (userInfo at +48).
     if (BinaryPrimitives.ReadUInt32BigEndian(leaf[(record + 48)..]) == 0x686C6E6B
@@ -109,8 +121,26 @@ public static class HfsPlusModifier {
     if (extents.Any(e => (long)e.Start + e.Count > ctx.TotalBlocks))
       throw new InvalidDataException($"HFS+: '{shown}' has an extent past the end of the volume.");
 
-    // Locate the matching file thread record (key parent==fileCnid, empty name).
-    var threadRecIdx = FindThreadRecord(leaf, ctx.NodeSize, fileCnid);
+    // Locate the matching file thread record (key parent==fileCnid, empty name), on any leaf.
+    var threadLeaf = -1;
+    var threadRecIdx = -1;
+    foreach (var node in leaves)
+      if ((threadRecIdx = FindThreadRecord(img.AsSpan(node, ctx.NodeSize), ctx.NodeSize, fileCnid)) >= 0) {
+        threadLeaf = node;
+        break;
+      }
+
+    // Taking a leaf's first record changes the key the index node above names it by, and
+    // taking its last empties it; neither is rewritten here, so both are refused.
+    var removals = new List<(int Leaf, int Index)> { (fileLeaf, fileRecIdx) };
+    if (threadLeaf >= 0) removals.Add((threadLeaf, threadRecIdx));
+    foreach (var group in removals.GroupBy(static r => r.Leaf)) {
+      var records = BinaryPrimitives.ReadUInt16BigEndian(img.AsSpan(group.Key + 10));
+      if (group.Count() >= records)
+        throw new NotSupportedException($"HFS+: removing '{shown}' would empty a catalog leaf; the in-place editor does not rebalance the B-tree.");
+      if (ctx.TreeDepth > 1 && group.Any(static r => r.Index == 0))
+        throw new NotSupportedException($"HFS+: '{shown}' opens a catalog leaf; removing it would change the key the index names that leaf by.");
+    }
 
     // Wipe and free every extent of both forks; freeing only the first leaked
     // the rest of a fragmented file and left the bitmap claiming blocks no file owned.
@@ -128,12 +158,9 @@ public static class HfsPlusModifier {
       blockCount += count;
     }
 
-    // Remove records from the leaf (highest index first to avoid shifting issues).
-    var indices = threadRecIdx >= 0
-      ? new[] { Math.Max(fileRecIdx, threadRecIdx), Math.Min(fileRecIdx, threadRecIdx) }
-      : new[] { fileRecIdx };
-    foreach (var idx in indices)
-      RemoveLeafRecord(leaf, ctx.NodeSize, idx);
+    // Remove the records (highest index first within a leaf, so the other keeps its index).
+    foreach (var (node, index) in removals.OrderBy(static r => r.Leaf).ThenByDescending(static r => r.Index))
+      RemoveLeafRecord(img.AsSpan(node, ctx.NodeSize), ctx.NodeSize, index);
 
     // Update VH counters.
     var vh = img.AsSpan(VolumeHeaderOffset);
@@ -144,7 +171,7 @@ public static class HfsPlusModifier {
     BinaryPrimitives.WriteUInt32BigEndian(vh[20..], HfsTimestamp(DateTime.UtcNow));
 
     // Decrement leafRecords in catalog header.
-    DecrementLeafRecords(img, ctx, indices.Length);
+    DecrementLeafRecords(img, ctx, removals.Count);
 
     // The removed file was a direct child of the root folder, so drop the root
     // folder record's valence by 1 to keep fsck_hfs's directory-item-count
@@ -284,6 +311,28 @@ public static class HfsPlusModifier {
   }
 
   // ── Leaf record helpers ─────────────────────────────────────────────────
+
+  /// <summary>
+  /// The image offsets of every catalog leaf node, following fLink from firstLeafNode. The
+  /// catalog must be the one contiguous extent the volume header names first: a node beyond it
+  /// lives in an extent this editor does not map, so the volume is refused rather than misread.
+  /// </summary>
+  private static List<int> LeafNodes(byte[] img, VolumeContext ctx) {
+    var catalogBase = (long)ctx.CatalogStartBlock * ctx.BlockSize;
+    var catalogBytes = (long)ctx.CatalogBlockCount * ctx.BlockSize;
+    var leaves = new List<int>();
+    var visited = new HashSet<uint>();
+    for (var node = ctx.FirstLeafNode; node != 0 && visited.Add(node);) {
+      if ((long)(node + 1) * ctx.NodeSize > catalogBytes || catalogBase + (long)(node + 1) * ctx.NodeSize > img.Length)
+        throw new NotSupportedException("HFS+: the catalog continues past its first extent; the in-place editor does not edit it there.");
+      var offset = (int)(catalogBase + (long)node * ctx.NodeSize);
+      if ((sbyte)img[offset + 8] != -1)
+        throw new InvalidDataException($"HFS+: catalog node {node} on the leaf chain is not a leaf.");
+      leaves.Add(offset);
+      node = BinaryPrimitives.ReadUInt32BigEndian(img.AsSpan(offset));
+    }
+    return leaves;
+  }
 
   /// <summary>
   /// Locates a file record (recordType=2) whose catalog key has parent CNID

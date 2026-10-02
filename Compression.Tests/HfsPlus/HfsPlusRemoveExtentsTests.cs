@@ -19,7 +19,12 @@ public sealed class HfsPlusRemoveExtentsTests {
   private const uint BlockSize = 4096;
 
   /// <summary>Where the file record whose catalog key names <paramref name="name"/> starts.</summary>
-  internal static int FileRecordOffset(byte[] image, string name) {
+  internal static int FileRecordOffset(byte[] image, string name) => RecordOffset(image, name, 2);
+
+  /// <summary>Where the root folder's record (key: parent 1, the writer's default volume name) starts.</summary>
+  internal static int FolderRecordOffset(byte[] image) => RecordOffset(image, "Untitled", 1);
+
+  private static int RecordOffset(byte[] image, string name, short recordType) {
     var key = new byte[2 + name.Length * 2];
     BinaryPrimitives.WriteUInt16BigEndian(key, (ushort)name.Length);
     Encoding.BigEndianUnicode.GetBytes(name).CopyTo(key, 2);
@@ -31,7 +36,7 @@ public sealed class HfsPlusRemoveExtentsTests {
       if (keyStart >= 0 && BinaryPrimitives.ReadUInt16BigEndian(image.AsSpan(keyStart)) == 6 + name.Length * 2) {
         var dataOffset = keyStart + 2 + 6 + name.Length * 2;
         if ((dataOffset & 1) != 0) dataOffset++;
-        if (BinaryPrimitives.ReadInt16BigEndian(image.AsSpan(dataOffset)) == 2) return dataOffset;
+        if (BinaryPrimitives.ReadInt16BigEndian(image.AsSpan(dataOffset)) == recordType) return dataOffset;
       }
       from = at + 1;
     }
