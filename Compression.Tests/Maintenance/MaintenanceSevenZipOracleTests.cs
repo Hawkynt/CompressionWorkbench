@@ -121,12 +121,14 @@ public sealed class MaintenanceSevenZipOracleTests {
   }
 
   [Test]
-  public void Compress_7zWithAccessTimes_IsRefusedAndLeftUntouched() {
-    var archive = Make("atime.7z", "-t7z -mx=0 -mta=on");
-    var original = File.ReadAllBytes(archive);
+  public void Compress_7zWithAccessAndCreationTimes_Keeps7zListing() {
+    var archive = Make("atime.7z", "-t7z -mx=0 -mtc=on -mta=on");
+    var before = Listing(archive);
+    Assume.That(string.Join("|", before), Does.Contain("Accessed="), "precondition: 7-Zip stored access times");
 
-    Assert.That(() => MaintenanceOperations.Compress(archive, archive), Throws.TypeOf<NotSupportedException>()
-      .With.Message.Contains("access times"));
-    Assert.That(File.ReadAllBytes(archive), Is.EqualTo(original));
+    MaintenanceOperations.Compress(archive, archive);
+
+    AssertTestsClean(archive);
+    Assert.That(Listing(archive), Is.EqualTo(before));
   }
 }

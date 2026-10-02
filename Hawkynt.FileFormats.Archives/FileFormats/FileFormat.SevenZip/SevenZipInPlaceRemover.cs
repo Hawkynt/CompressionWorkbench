@@ -66,6 +66,7 @@ public static class SevenZipInPlaceRemover {
     ReadExact(archive, headerData, (int)sig.NextHeaderSize);
     using var headerStream = new MemoryStream(headerData);
     var (packInfo, folders, subStreams, fileInfos) = SevenZipHeaderCodec.ReadHeader(headerStream);
+    SevenZipHeaderCodec.RequireCarriable(fileInfos, "remove");
 
     if (packInfo.PackPos != 0)
       throw new NotSupportedException("7z in-place remove requires PackPos == 0.");

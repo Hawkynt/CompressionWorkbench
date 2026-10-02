@@ -117,6 +117,9 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       IReadOnlyList<(SevenZipEntry Entry, byte[] Data)> additions) {
     archive.Position = 0;
     var reader = new SevenZipReader(archive);
+    if (reader.UncarriedMetadata is { Count: > 0 } uncarried)
+      throw new NotSupportedException(
+        $"7z: the archive holds {string.Join(", ", uncarried)}, which a rewrite cannot carry. Refused, nothing was changed.");
     var replaced = additions.Select(a => a.Entry.Name).ToHashSet(StringComparer.Ordinal);
     using var staged = new MemoryStream();
     var expected = new List<string>();
@@ -125,7 +128,8 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       var e = reader.Entries[i];
       if (!keep(e) || replaced.Contains(e.Name)) continue;
       var copy = new SevenZipEntry {
-        Name = e.Name, LastWriteTime = e.LastWriteTime, CreationTime = e.CreationTime, Attributes = e.Attributes,
+        Name = e.Name, LastWriteTime = e.LastWriteTime, CreationTime = e.CreationTime,
+        LastAccessTime = e.LastAccessTime, Attributes = e.Attributes,
       };
       if (e.IsDirectory) writer.AddDirectory(copy);
       else writer.AddEntry(copy, reader.Extract(i));
@@ -151,12 +155,12 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
   /// <summary>
   /// Recompresses the archive as one LZMA2 solid block with a dictionary sized to the
-  /// payload, keeping every entry's name, modification and creation time and attributes
+  /// payload, keeping every entry's name, modification, creation and access time and attributes
   /// (Unix modes and links included), directories and empty files.
   /// </summary>
   /// <exception cref="NotSupportedException">The archive is encrypted (a rewrite would have to
-  /// decide how to encrypt it again), or its header carries metadata the entries do not —
-  /// access times, anti-items, start positions — which a rewrite would drop.</exception>
+  /// decide how to encrypt it again), or its header carries properties the reader does not
+  /// interpret — anti-items, start positions, archive properties — which a rewrite would drop.</exception>
   public void OptimizeCompression(Stream input, Stream output, string? password = null) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
@@ -175,7 +179,8 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     for (var i = 0; i < reader.Entries.Count; i++) {
       var e = reader.Entries[i];
       var copy = new SevenZipEntry {
-        Name = e.Name, LastWriteTime = e.LastWriteTime, CreationTime = e.CreationTime, Attributes = e.Attributes,
+        Name = e.Name, LastWriteTime = e.LastWriteTime, CreationTime = e.CreationTime,
+        LastAccessTime = e.LastAccessTime, Attributes = e.Attributes,
       };
       if (e.IsDirectory) writer.AddDirectory(copy);
       else writer.AddEntry(copy, reader.Extract(i));

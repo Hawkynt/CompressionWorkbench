@@ -19,6 +19,9 @@ public sealed class SevenZipEntry {
   /// <summary>Gets or sets the creation time in UTC.</summary>
   public DateTime? CreationTime { get; set; }
 
+  /// <summary>Gets or sets the last access time in UTC (<c>kATime</c>, written by 7-Zip's <c>-mta=on</c>).</summary>
+  public DateTime? LastAccessTime { get; set; }
+
   /// <summary>Gets or sets the compressed size in bytes (-1 if unknown).</summary>
   public long CompressedSize { get; set; } = -1;
 

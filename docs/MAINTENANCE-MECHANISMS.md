@@ -33,7 +33,7 @@ not do that".
 
 | `MaintenanceCapability` | Backed by | Realised by (this repository) |
 |---|---|---|
-| `Compress` | `ICompressionOptimizable` (`CanOptimizeCompression`) | 36 single-stream codecs through the decode → best-encode → decode-again default; gzip carries its member header across and refuses multi-member files; compound tar re-encodes only the outer stream; ZIP re-deflates entries from its own directory (`ZipRawRewriter`), copying encrypted, ZIP64 and non-Deflate entries verbatim; 7z recompresses as one LZMA2 block and refuses encrypted archives or headers with access times / skipped properties. Stream formats whose header carries a file name, time or mode (lzop, Squeeze, Crunch, KWAJ, SZDD) do not claim it. |
+| `Compress` | `ICompressionOptimizable` (`CanOptimizeCompression`) | 36 single-stream codecs through the decode → best-encode → decode-again default; gzip carries its member header across and refuses multi-member files; compound tar re-encodes only the outer stream; ZIP re-deflates entries from its own directory (`ZipRawRewriter`), copying encrypted, ZIP64 and non-Deflate entries verbatim; 7z recompresses as one LZMA2 block, carrying modification, creation and access times and attributes, and refuses encrypted archives or headers with properties it does not interpret (anti-items, start positions, archive properties). Stream formats whose header carries a file name, time or mode (lzop, Squeeze, Crunch, KWAJ, SZDD) do not claim it. |
 | `Canonicalize` | `IArchiveCanonicalizable` | every `IFileInternalChunkMover` (MP4, Matroska, AVI, WAV, MP3, PNG), JPEG metadata order, MacBinary |
 | `Repack` | `IArchiveRepackable` | ZIP: every entry the central directory lists copied byte for byte, holes dropped; a non-zero preamble (self-extractor stub) is refused |
 | `SortDirectoryEntries` | `IFilesystemDirectoryOrderer` | FAT12/16/32, exFAT |
@@ -224,13 +224,13 @@ untouched. Wipe, shrink and sort are in place; defrag and sort keep the image si
 | NTFS (`mkfs.ntfs`) | P | P | P | P | P | P | P | R | P | P | P | R | R | `ntfsfix -n` |
 | exFAT (`mkfs.exfat`) | P | R | P | R | P | P | R | R | P | P | not offered | P | R | `fsck.exfat -n` |
 | ISO 9660 + RR + Joliet (`xorriso`) | P | R | P | R | P | R when it does not fit | R | R | R | P | not offered | kernel mount, `xorriso` |
-| 7z (`7z a -snl`) | P (metadata-preserving rewrite when the in-place adder declines) | P | P | P | — (not offered) | — | — | — | — | P | — | `7z t` |
+| 7z (`7z a -snl`, `-mtc=on -mta=on`, attributes) | P (metadata-preserving rewrite when the in-place adder declines) | P | P | P | — (not offered) | — | — | — | — | P | — | — | compress P | `7z t`, `7z l -slt` |
 
 Demoted (no `CanModify`, no shrink): **XFS**, **Btrfs** (the in-place adders corrupt volumes
 made by `mkfs.xfs` / `mkfs.btrfs`; removal only ever existed as a rebuild with a new UUID, no
 label, zero timestamps), **SquashFS** (every edit converted the compression to gzip and dropped
 owners, modes, times, symlinks and xattrs). Their in-place defrag stays, guarded, and refuses
-otherwise. **ZIP, 7z, TAR** no longer offer defragment: an archive has no free-space layout, and
+otherwise. 7z edits carry every entry's modification, creation and access time and attributes across, in place and in the rewrite (`SevenZipEditLosslessTests` compares `7z l -slt` before and after); a header holding properties the codec does not interpret — the anti-items of a 7-Zip update archive — is refused untouched. **ZIP, 7z, TAR** no longer offer defragment: an archive has no free-space layout, and
 the repack kept only names and bytes.
 
 ### R/W realisation per format
