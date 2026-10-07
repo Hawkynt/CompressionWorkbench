@@ -254,7 +254,7 @@ Circular buffer that supports byte-by-byte writing and distance/length copying (
 
 ### Namespace `Compression.Core.Deflate`
 
-[`Deflate64BuildingBlock`](#deflate64buildingblock) · [`Deflate64Compressor`](#deflate64compressor) · [`Deflate64Constants`](#deflate64constants) · [`Deflate64Decompressor`](#deflate64decompressor) · [`DeflateBuildingBlock`](#deflatebuildingblock) · [`DeflateCompressionLevel`](#deflatecompressionlevel) · [`DeflateCompressor`](#deflatecompressor) · [`DeflateConstants`](#deflateconstants) · [`DeflateDecompressor`](#deflatedecompressor) · [`DeflateHuffmanTable`](#deflatehuffmantable) · [`DeflateLevelOption`](#deflateleveloption) · [`MsZipCompressor`](#mszipcompressor) · [`MsZipDecompressor`](#mszipdecompressor) · [`ZopfliBuildingBlock`](#zopflibuildingblock)
+[`Deflate64BuildingBlock`](#deflate64buildingblock) · [`Deflate64Compressor`](#deflate64compressor) · [`Deflate64Constants`](#deflate64constants) · [`Deflate64Decompressor`](#deflate64decompressor) · [`DeflateBuildingBlock`](#deflatebuildingblock) · [`DeflateCompressionLevel`](#deflatecompressionlevel) · [`DeflateCompressor`](#deflatecompressor) · [`DeflateConstants`](#deflateconstants) · [`DeflateDecompressor`](#deflatedecompressor) · [`DeflateHuffmanTable`](#deflatehuffmantable) · [`DeflateLevelOption`](#deflateleveloption) · [`MsZipCompressor`](#mszipcompressor) · [`MsZipDecompressor`](#mszipdecompressor) · [`RawDeflateStream`](#rawdeflatestream) · [`ZopfliBuildingBlock`](#zopflibuildingblock)
 
 #### `Deflate64BuildingBlock`
 
@@ -383,10 +383,13 @@ Decompresses data in the DEFLATE format (RFC 1951).
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DeflateDecompressor` | `DeflateDecompressor(Stream input)` | Initializes a new `DeflateDecompressor` for streaming decompression. |
-| `UnconsumedBytes` | `int UnconsumedBytes { get; }` | Gets the number of whole bytes buffered by the bit reader but not consumed by the decompressor. This is needed by container formats (e.g. gzip) to rewind the stream before reading a trailer. |
+| `IsFinished` | `bool IsFinished { get; }` | Gets a value indicating whether the final block has been decoded. |
+| `UnconsumedBytes` | `int UnconsumedBytes { get; }` | Gets the number of whole bytes read from the underlying stream but not consumed by the DEFLATE data. Once the stream has ended on a seekable input this is zero, because the read-ahead has already been handed back by seeking. |
 | `DecompressAll` | `byte[] DecompressAll()` | Decompresses all data from the stream. |
+| `Decompress` | `int Decompress(Span<byte> output)` | Decompresses data into `output`, filling it unless the DEFLATE stream ends first. |
 | `Decompress` | `int Decompress(byte[] output, int offset, int count)` | Decompresses data from the input stream into the provided buffer. Returns the number of bytes written. Returns 0 when decompression is complete. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressedData)` | Decompresses DEFLATE data in one shot. |
+| `ReadRemainder` | `int ReadRemainder(Span<byte> destination)` | Reads bytes that follow the end of the DEFLATE data — a container's trailer, or the next member — taking the decompressor's read-ahead first and then the underlying stream. |
 
 #### `DeflateHuffmanTable`
 
@@ -430,6 +433,22 @@ Decompresses data in the MSZIP format: a sequence of "CK"-prefixed Deflate block
 | `BlockSize` | `const int BlockSize` | The uncompressed block size limit: 32 768 bytes. |
 | `DecompressBlock` | `static byte[] DecompressBlock(ReadOnlySpan<byte> block)` | Decompresses a single MSZIP block (including its "CK" prefix) and returns the uncompressed bytes. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int uncompressedSize = -1)` | Decompresses an MSZIP byte stream. |
+
+#### `RawDeflateStream`
+
+Stream that reads or writes a bare DEFLATE bitstream (RFC 1951) — no zlib or gzip framing.
+
+Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RawDeflateStream` | `RawDeflateStream(Stream stream, CompressionStreamMode mode, DeflateCompressionLevel level, bool leaveOpen = false)` | Creates a DEFLATE stream. |
+| `RawDeflateStream` | `RawDeflateStream(Stream stream, CompressionStreamMode mode, bool leaveOpen = false)` | Creates a DEFLATE stream at `Default`. |
+| `CompressBlock` | `protected override void CompressBlock(ReadOnlySpan<byte> buffer)` | Compresses a span. The default goes through a pooled array and `CompressBlock`; codecs that can take a span directly override it. |
+| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` | Compresses data from the provided buffer and writes it to the inner stream. |
+| `DecompressBlock` | `protected override int DecompressBlock(Span<byte> buffer)` | Decompresses into a span. The default goes through a pooled array and `DecompressBlock`; codecs that can decode into a span directly override it. |
+| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Decompresses data from the inner stream into the provided buffer. |
+| `FinishCompression` | `protected override void FinishCompression()` | Called when the stream is being closed in Compress mode. Implementations should flush any remaining compressed data. |
 
 #### `ZopfliBuildingBlock`
 
@@ -5591,6 +5610,45 @@ Implements `IEquatable<UnpackResult>`.
 | `Diagnostics` | `IReadOnlyList<ExecutableDiagnostic> Diagnostics { get; init; }` |  |
 | `Level` | `ExecutableUnpackLevel Level { get; init; }` |  |
 
+### Namespace `Compression.Core.FileSystems.Cvf`
+
+[`CvfLzCodec`](#cvflzcodec) · [`CvfLzMethod`](#cvflzmethod) · [`Sd4Codec`](#sd4codec)
+
+#### `CvfLzCodec`
+
+Genuine DoubleSpace/DriveSpace per-cluster compression codec (DS-0-x and JM-0-x), verified byte-exact against the independent dmsdos decoder. The bitstream packs bits LSB-first into little-endian 16-bit words; a cluster payload is a 16-bit magic (`"DS"`=0x5344 / `"MJ"`=0x4D4A) + 16-bit version + an LZ77 token stream terminated by the 0x113f sync.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DS_0_0` | `const uint DS_0_0` |  |
+| `JM_0_0` | `const uint JM_0_0` |  |
+| `SQ_0_0` | `const uint SQ_0_0` |  |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Compresses one cluster. Returns the payload (4-byte method header + token stream, padded to a 2-byte word), or `null` if it would not be smaller than the raw cluster (caller stores raw instead). |
+| `Decompress` | `static byte[] Decompress(byte[] payload, int inLen, int outLen)` | Decompresses a cluster payload to exactly `outLen` bytes. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Encodes a cluster with the given method, always returning the payload (4-byte header + token stream), or `null` for `Stored` / unsupported methods. The caller decides whether the result fits the cluster's sector budget. |
+
+#### `CvfLzMethod`
+
+Compression methods for the MS-DOS DoubleSpace/DriveSpace CVF cluster codec family, byte-compatible with the dmsdos driver's `ds_dec`/`jm_dec`.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Stored` | `0` |  |
+| `Ds` | `1` |  |
+| `Jm` | `2` |  |
+| `Auto` | `3` |  |
+| `Sq` | `4` |  |
+| `Sd4` | `5` |  |
+
+#### `Sd4Codec`
+
+Genuine Stacker 4 (SD-4, cluster header `0x0081`) per-cluster codec, byte-compatible with the dmsdos `sd4_decomp` decoder. SD-4 is a bespoke dynamic-Huffman format: a helper Huffman table (table1) encodes the 0x150 code-lengths of the main table (table2), which then Huffman-codes the data. We emit an all-literals SD-4 stream — table2 is a 256-symbol Huffman over the cluster's byte frequencies (genuine entropy compression), with no LZ reps/prog tokens; the decoder terminates on output-full. The bitstream is MSB-first packed into little-endian 16-bit words; Huffman codes are canonical (first-code-per-length, not bit-reversed) exactly as `sd4b_rdhufi` builds them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(byte[] payload, int inLen, int outLen)` |  |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` |  |
+
 ### Namespace `Compression.Core.Image`
 
 [`PlaneSplitter`](#planesplitter) · [`PlaneSplitter.PixelLayout`](#planesplitterpixellayout)
@@ -6041,13 +6099,17 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `Mode` | `CompressionStreamMode Mode { get; }` | Gets the compression mode. |
 | `Position` | `override long Position { get; set; }` |  |
 | `CompressBlock` | `protected abstract void CompressBlock(byte[] buffer, int offset, int count)` | Compresses data from the provided buffer and writes it to the inner stream. |
+| `CompressBlock` | `protected virtual void CompressBlock(ReadOnlySpan<byte> buffer)` | Compresses a span. The default goes through a pooled array and `CompressBlock`; codecs that can take a span directly override it. |
 | `DecompressBlock` | `protected abstract int DecompressBlock(byte[] buffer, int offset, int count)` | Decompresses data from the inner stream into the provided buffer. |
+| `DecompressBlock` | `protected virtual int DecompressBlock(Span<byte> buffer)` | Decompresses into a span. The default goes through a pooled array and `DecompressBlock`; codecs that can decode into a span directly override it. |
 | `Dispose` | `protected override void Dispose(bool disposing)` |  |
 | `FinishCompression` | `protected virtual void FinishCompression()` | Called when the stream is being closed in Compress mode. Implementations should flush any remaining compressed data. |
 | `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
 | `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
 | `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
 | `SetLength` | `override void SetLength(long value)` |  |
+| `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
 | `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
 #### `CompressionStreamMode`
@@ -8744,45 +8806,6 @@ Performs a verified whole-image rebuild and publishes it to a mutable image stre
 | `FlushDurably` | `static void FlushDurably(Stream image)` |  |
 | `Replace` | `static void Replace(Stream image, Action<Stream> buildCandidate, Action<Stream> validateCandidate = null)` |  |
 
-### Namespace `Compression.Registry.Cvf`
-
-[`CvfLzCodec`](#cvflzcodec) · [`CvfLzMethod`](#cvflzmethod) · [`Sd4Codec`](#sd4codec)
-
-#### `CvfLzCodec`
-
-Genuine DoubleSpace/DriveSpace per-cluster compression codec (DS-0-x and JM-0-x), verified byte-exact against the independent dmsdos decoder. The bitstream packs bits LSB-first into little-endian 16-bit words; a cluster payload is a 16-bit magic (`"DS"`=0x5344 / `"MJ"`=0x4D4A) + 16-bit version + an LZ77 token stream terminated by the 0x113f sync.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `DS_0_0` | `const uint DS_0_0` |  |
-| `JM_0_0` | `const uint JM_0_0` |  |
-| `SQ_0_0` | `const uint SQ_0_0` |  |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Compresses one cluster. Returns the payload (4-byte method header + token stream, padded to a 2-byte word), or `null` if it would not be smaller than the raw cluster (caller stores raw instead). |
-| `Decompress` | `static byte[] Decompress(byte[] payload, int inLen, int outLen)` | Decompresses a cluster payload to exactly `outLen` bytes. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Encodes a cluster with the given method, always returning the payload (4-byte header + token stream), or `null` for `Stored` / unsupported methods. The caller decides whether the result fits the cluster's sector budget. |
-
-#### `CvfLzMethod`
-
-Compression methods for the MS-DOS DoubleSpace/DriveSpace CVF cluster codec family, byte-compatible with the dmsdos driver's `ds_dec`/`jm_dec`.
-
-| Value | Numeric | Summary |
-| --- | --- | --- |
-| `Stored` | `0` |  |
-| `Ds` | `1` |  |
-| `Jm` | `2` |  |
-| `Auto` | `3` |  |
-| `Sq` | `4` |  |
-| `Sd4` | `5` |  |
-
-#### `Sd4Codec`
-
-Genuine Stacker 4 (SD-4, cluster header `0x0081`) per-cluster codec, byte-compatible with the dmsdos `sd4_decomp` decoder. SD-4 is a bespoke dynamic-Huffman format: a helper Huffman table (table1) encodes the 0x150 code-lengths of the main table (table2), which then Huffman-codes the data. We emit an all-literals SD-4 stream — table2 is a 256-symbol Huffman over the cluster's byte frequencies (genuine entropy compression), with no LZ reps/prog tokens; the decoder terminates on output-full. The bitstream is MSB-first packed into little-endian 16-bit words; Huffman codes are canonical (first-code-per-length, not bit-reversed) exactly as `sd4b_rdhufi` builds them.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Decode` | `static byte[] Decode(byte[] payload, int inLen, int outLen)` |  |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` |  |
-
 ### Namespace `Compression.Registry.Layout`
 
 [`DefragSortField`](#defragsortfield) · [`DefragSortKey`](#defragsortkey) · [`FilterExpression`](#filterexpression) · [`FilterFileContext`](#filterfilecontext) · [`IFileFilter`](#ifilefilter) · [`IFilterFileContext`](#ifilterfilecontext) · [`LayoutTemplate`](#layouttemplate) · [`LayoutTemplateResolver`](#layouttemplateresolver) · [`LayoutZone`](#layoutzone) · [`LeftoverStrategy`](#leftoverstrategy) · [`RangeSpec`](#rangespec) · [`ResolvedFilePlacement`](#resolvedfileplacement) · [`SortDirection`](#sortdirection)
@@ -9152,6 +9175,77 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | --- | --- | --- |
 | `Bzip2Stream` | `Bzip2Stream(Stream stream, CompressionStreamMode mode, int blockSize100k = 9, bool leaveOpen = false)` | Initializes a new `Bzip2Stream`. |
 | `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` | Compresses data from the provided buffer and writes it to the inner stream. |
+| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Decompresses data from the inner stream into the provided buffer. |
+| `FinishCompression` | `protected override void FinishCompression()` | Called when the stream is being closed in Compress mode. Implementations should flush any remaining compressed data. |
+
+### Namespace `FileFormat.Gzip`
+
+[`GzipConstants`](#gzipconstants) · [`GzipHeader`](#gzipheader) · [`GzipRawHelper`](#gziprawhelper) · [`GzipStream`](#gzipstream)
+
+#### `GzipConstants`
+
+Constants defined by RFC 1952 (GZIP file format).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlagComment` | `const byte FlagComment` | Flag: comment is present. |
+| `FlagExtra` | `const byte FlagExtra` | Flag: extra field is present. |
+| `FlagHcrc` | `const byte FlagHcrc` | Flag: header CRC16 is present. |
+| `FlagName` | `const byte FlagName` | Flag: original file name is present. |
+| `FlagText` | `const byte FlagText` | Flag: file is probably ASCII text. |
+| `Magic1` | `const byte Magic1` | GZIP magic number byte 1. |
+| `Magic2` | `const byte Magic2` | GZIP magic number byte 2. |
+| `MethodDeflate` | `const byte MethodDeflate` | Compression method: Deflate. |
+| `OsFat` | `const byte OsFat` | OS code: FAT filesystem (MS-DOS, OS/2, NT/Win32). |
+| `OsUnix` | `const byte OsUnix` | OS code: Unix. |
+| `OsUnknown` | `const byte OsUnknown` | OS code: unknown. |
+
+#### `GzipHeader`
+
+Represents the header of a GZIP member (RFC 1952).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GzipHeader` | `GzipHeader()` |  |
+| `Comment` | `string Comment { get; set; }` | Gets or sets the comment (if FCOMMENT flag is set). |
+| `ExtraField` | `byte[] ExtraField { get; set; }` | Gets or sets the extra field data (if FEXTRA flag is set). |
+| `ExtraFlags` | `byte ExtraFlags { get; set; }` | Gets or sets the extra flags (compression level hint). |
+| `FileName` | `string FileName { get; set; }` | Gets or sets the original file name (if FNAME flag is set). |
+| `Flags` | `byte Flags { get; set; }` | Gets or sets the header flags. |
+| `HeaderCrc` | `ushort? HeaderCrc { get; set; }` | Gets or sets the header CRC16 (if FHCRC flag is set). |
+| `Method` | `byte Method { get; set; }` | Gets or sets the compression method (always 8 for Deflate). |
+| `ModificationTime` | `uint ModificationTime { get; set; }` | Gets or sets the modification time as Unix timestamp. |
+| `OperatingSystem` | `byte OperatingSystem { get; set; }` | Gets or sets the operating system code. |
+| `Read` | `static GzipHeader Read(Stream stream)` | Reads a GZIP header from the stream. |
+| `Write` | `void Write(Stream stream)` | Writes this GZIP header to the stream. |
+
+#### `GzipRawHelper`
+
+Low-level helpers for working with raw Deflate bitstreams inside Gzip framing. Enables zero-decompression restreaming between formats sharing the Deflate codec.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Unwrap` | `static ValueTuple<byte[], uint, uint> Unwrap(ReadOnlySpan<byte> gzipData)` | Extracts the raw Deflate bitstream from a Gzip stream without decompressing. Also returns the CRC-32 and original size from the trailer. |
+| `Wrap` | `static byte[] Wrap(ReadOnlySpan<byte> deflateData, uint crc32, uint originalSize)` | Wraps a raw Deflate bitstream in Gzip framing. The caller provides the CRC-32 and original size (already known from the source format). |
+| `Wrap` | `static void Wrap(Stream output, ReadOnlySpan<byte> deflateData, uint crc32, uint originalSize)` | Wraps a raw Deflate bitstream in Gzip framing, writing to a stream. |
+
+#### `GzipStream`
+
+Stream for reading and writing GZIP format data (RFC 1952).
+
+Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GzipStream` | `GzipStream(Stream stream, CompressionStreamMode mode, DeflateCompressionLevel compressionLevel, bool leaveOpen = false)` | Initializes a new `GzipStream` with a specific compression level. |
+| `GzipStream` | `GzipStream(Stream stream, CompressionStreamMode mode, bool leaveOpen = false)` | Initializes a new `GzipStream` for decompression. |
+| `Crc32Value` | `uint Crc32Value { get; }` | Gets the CRC-32 value of the uncompressed data. |
+| `Header` | `GzipHeader Header { get; set; }` | Gets or sets the GZIP header. Set before writing to customize the header. |
+| `MembersRead` | `int MembersRead { get; }` | Number of members whose header has been read so far while decompressing (RFC 1952 §2.2). |
+| `OriginalSize` | `uint OriginalSize { get; }` | Gets the original (uncompressed) size mod 2^32. |
+| `CompressBlock` | `protected override void CompressBlock(ReadOnlySpan<byte> buffer)` | Compresses a span. The default goes through a pooled array and `CompressBlock`; codecs that can take a span directly override it. |
+| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` | Compresses data from the provided buffer and writes it to the inner stream. |
+| `DecompressBlock` | `protected override int DecompressBlock(Span<byte> buffer)` | Decompresses into a span. The default goes through a pooled array and `DecompressBlock`; codecs that can decode into a span directly override it. |
 | `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Decompresses data from the inner stream into the provided buffer. |
 | `FinishCompression` | `protected override void FinishCompression()` | Called when the stream is being closed in Compress mode. Implementations should flush any remaining compressed data. |
 
@@ -9704,6 +9798,7 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `ExtractEntryRaw` | `ValueTuple<ZipCompressionMethod, uint, long, byte[]> ExtractEntryRaw(ZipEntry entry)` | Extracts the raw compressed bytes for an entry without decompressing. Returns the method, CRC-32, uncompressed size, and raw bitstream. Useful for restreaming between formats sharing the same codec (e.g., ZIP Deflate → Gzip). |
 | `ExtractEntry` | `byte[] ExtractEntry(ZipEntry entry)` | Performs the extract entry operation. |
+| `OpenEntryStream` | `Stream OpenEntryStream(ZipEntry entry)` | Opens an entry for forward-only reading without materialising it. Stored and Deflate entries that are not encrypted are decoded straight from the archive as they are read, so an entry of any size costs a fixed amount of memory; the CRC-32 and size are checked when the end is reached. Any other entry is decoded in memory, as by `OpenEntry`. |
 | `OpenEntry` | `Stream OpenEntry(ZipEntry entry)` | Opens a stream to read the decompressed data for an entry. |
 | `TryCopyEntryTo` | `bool TryCopyEntryTo(ZipEntry entry, Stream destination)` | Extracts the data for an entry. |
 
@@ -9787,14 +9882,23 @@ Low-level helpers for working with raw Deflate bitstreams inside Zlib framing. E
 
 #### `ZlibStream`
 
-Compresses and decompresses data in the zlib format (RFC 1950).
+Compresses and decompresses data in the zlib format (RFC 1950), either as a `Stream` or through the one-shot static helpers.
+
+Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `ZlibStream` | `ZlibStream(Stream stream, CompressionStreamMode mode, DeflateCompressionLevel level, bool leaveOpen = false)` | Creates a zlib stream. |
+| `ZlibStream` | `ZlibStream(Stream stream, CompressionStreamMode mode, bool leaveOpen = false)` | Creates a zlib stream at `Default`. |
+| `CompressBlock` | `protected override void CompressBlock(ReadOnlySpan<byte> buffer)` | Compresses a span. The default goes through a pooled array and `CompressBlock`; codecs that can take a span directly override it. |
+| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` | Compresses data from the provided buffer and writes it to the inner stream. |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, DeflateCompressionLevel level = 6)` | Compresses a byte span to zlib format. |
 | `Compress` | `static void Compress(Stream input, Stream output, DeflateCompressionLevel level = 6, int windowBits = 15)` | Compresses data to zlib format. |
+| `DecompressBlock` | `protected override int DecompressBlock(Span<byte> buffer)` | Decompresses into a span. The default goes through a pooled array and `DecompressBlock`; codecs that can decode into a span directly override it. |
+| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Decompresses data from the inner stream into the provided buffer. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses zlib-formatted data from a byte span. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses zlib-formatted data. |
+| `FinishCompression` | `protected override void FinishCompression()` | Called when the stream is being closed in Compress mode. Implementations should flush any remaining compressed data. |
 
 ### Namespace `FileFormat.Zstd`
 
