@@ -124,6 +124,31 @@ public class HfsPlusExternalConformanceTests {
     AssertFsckClean(ms.ToArray());
   }
 
+  [Test]
+  public void FileRemovedFromAManyLeafCatalog_PassesFsckCleanly() {
+    if (!IsLinux) Assert.Ignore("fsck.hfsplus conformance check is Linux-only");
+    if (!HasCommand("fsck.hfsplus")) Assert.Ignore("fsck.hfsplus (hfsprogs) not installed");
+
+    // A file in a later leaf of a catalog with an index level, removed in place: the leaf
+    // chain, index keys, leafRecords and root valence must all still agree.
+    var writer = new HfsPlusWriter();
+    for (var i = 0; i < 600; i++) writer.AddFile($"file{i:D4}.txt", Encoding.ASCII.GetBytes($"content of file {i}"));
+    var image = writer.Build(4096);
+    // Take the last file whose records do not open a leaf (those removals are refused).
+    for (var i = 599; i >= 0; i--) {
+      using var ms = new MemoryStream();
+      ms.Write(image);
+      try {
+        Assert.That(HfsPlusModifier.RemoveFile(ms, $"file{i:D4}.txt"), Is.True);
+      } catch (NotSupportedException) {
+        continue;
+      }
+      AssertFsckClean(ms.ToArray());
+      return;
+    }
+    Assert.Fail("every file opened a leaf");
+  }
+
   private void AssertFsckClean(byte[] image) {
     var imagePath = Path.Combine(_tmpDir, "volume.hfsplus");
     File.WriteAllBytes(imagePath, image);
