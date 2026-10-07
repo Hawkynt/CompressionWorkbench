@@ -1,4 +1,6 @@
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Gzip;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.BitRock;
@@ -361,8 +363,8 @@ public sealed class BitRockReader {
     try {
       using var src = new MemoryStream(this._vfs, offset, length, writable: false);
       using Stream dec = gzip
-        ? new GZipStream(src, CompressionMode.Decompress, leaveOpen: true)
-        : new ZLibStream(src, CompressionMode.Decompress, leaveOpen: true);
+        ? new GzipStream(src, CompressionStreamMode.Decompress, leaveOpen: true)
+        : new ZlibStream(src, CompressionStreamMode.Decompress, leaveOpen: true);
       using var outMs = new MemoryStream();
       dec.CopyTo(outMs);
       return outMs.ToArray();

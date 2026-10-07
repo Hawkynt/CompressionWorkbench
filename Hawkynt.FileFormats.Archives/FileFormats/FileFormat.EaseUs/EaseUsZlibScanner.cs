@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 
 namespace FileFormat.EaseUs;
 
@@ -27,7 +28,7 @@ namespace FileFormat.EaseUs;
 /// distinguish a real zlib substream from a coincidental byte sequence is
 /// to actually inflate it — the Adler-32 trailer plus the DEFLATE
 /// terminal-block bit make this a strong test. We use
-/// <see cref="ZLibStream"/> for the inflation; failures (header invalid,
+/// <see cref="ZlibStream"/> for the inflation; failures (header invalid,
 /// truncated, corrupt past header) are captured as
 /// <see cref="EaseUsChunkInflateStatus"/> values rather than thrown so
 /// forensic users see the full candidate inventory.
@@ -88,10 +89,10 @@ public static class EaseUsZlibScanner {
   /// <summary>
   /// Attempts to inflate the candidate zlib substream starting at
   /// <paramref name="offset"/> in <paramref name="data"/>. The decoder
-  /// reads through a byte-counting one-byte-at-a-time wrapper so the
-  /// final consumed-byte count is exact — <see cref="ZLibStream"/>
-  /// internally buffers ~8 KiB at a time, which would otherwise overrun
-  /// the substream boundary and break multi-stream scanning.
+  /// reads ahead, but on a seekable stream <see cref="ZlibStream"/> hands
+  /// the read-ahead back once the Adler-32 trailer is checked, so the
+  /// stream position afterwards is the exact compressed length that
+  /// multi-stream scanning needs.
   /// </summary>
   public static EaseUsZlibChunk TryInflate(byte[] data, int offset, int maxRetainedPayloadBytes = DefaultMaxRetainedPayloadBytes) {
     ArgumentNullException.ThrowIfNull(data);
@@ -100,12 +101,8 @@ public static class EaseUsZlibScanner {
 
     var fch = data[offset + 1];
 
-    // Wrap the tail in a byte-counting stream that only services 1-byte
-    // Read calls. That defeats ZLibStream's internal read-ahead so
-    // CountingByteStream.BytesConsumed equals the exact compressed-
-    // substream byte count after the Adler-32 trailer is consumed.
-    using var src = new CountingByteStream(data, offset);
-    using var z = new ZLibStream(src, CompressionMode.Decompress, leaveOpen: true);
+    using var src = new MemoryStream(data, offset, data.Length - offset, writable: false);
+    using var z = new ZlibStream(src, CompressionStreamMode.Decompress, leaveOpen: true);
 
     long produced = 0;
     var keep = maxRetainedPayloadBytes > 0;
@@ -147,13 +144,13 @@ public static class EaseUsZlibScanner {
         keep = false;
     }
 
-    // A successfully-opened ZLibStream that produces zero bytes still
+    // A successfully-opened ZlibStream that produces zero bytes still
     // means the header was valid AND a terminal DEFLATE block was found.
-    // The Adler-32 check is performed by ZLibStream as part of closing
-    // the stream — we count "produced == 0" as a documented edge case
-    // (empty payload) and treat it as Inflated only if the stream
-    // actually consumed bytes past the header + trailer.
-    var compressedLength = src.BytesConsumed;
+    // The Adler-32 trailer was checked when the stream reported its end —
+    // we count "produced == 0" as a documented edge case (empty payload)
+    // and treat it as Inflated only if the stream actually consumed bytes
+    // past the header + trailer.
+    var compressedLength = src.Position;
     if (produced == 0 && compressedLength <= 2) {
       return new EaseUsZlibChunk {
         Offset = offset,
@@ -172,54 +169,5 @@ public static class EaseUsZlibScanner {
       PayloadRetained = underCap,
       Payload = underCap ? sink!.ToArray() : [],
     };
-  }
-
-  /// <summary>
-  /// One-byte-at-a-time stream over a backing byte array, tracking the
-  /// exact number of bytes consumed. Used to defeat
-  /// <see cref="ZLibStream"/>'s internal read-ahead so the compressed-
-  /// substream length comes out exact for multi-stream scanning.
-  /// </summary>
-  private sealed class CountingByteStream : Stream {
-    private readonly byte[] _buffer;
-    private readonly int _start;
-    private int _position;
-
-    public CountingByteStream(byte[] buffer, int start) {
-      _buffer = buffer;
-      _start = start;
-      _position = start;
-    }
-
-    public long BytesConsumed => _position - _start;
-    public override bool CanRead => true;
-    public override bool CanSeek => false;
-    public override bool CanWrite => false;
-    public override long Length => _buffer.Length - _start;
-    public override long Position {
-      get => _position - _start;
-      set => throw new NotSupportedException();
-    }
-
-    public override int Read(byte[] buf, int off, int count) {
-      ArgumentNullException.ThrowIfNull(buf);
-      if (count <= 0) return 0;
-      if (_position >= _buffer.Length) return 0;
-      buf[off] = _buffer[_position];
-      _position++;
-      return 1;
-    }
-
-    public override int ReadByte() {
-      if (_position >= _buffer.Length) return -1;
-      var b = _buffer[_position];
-      _position++;
-      return b;
-    }
-
-    public override void Flush() { }
-    public override long Seek(long o, SeekOrigin s) => throw new NotSupportedException();
-    public override void SetLength(long v) => throw new NotSupportedException();
-    public override void Write(byte[] buf, int off, int cnt) => throw new NotSupportedException();
   }
 }

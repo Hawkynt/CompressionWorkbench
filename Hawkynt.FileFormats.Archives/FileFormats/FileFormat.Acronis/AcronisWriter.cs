@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -144,17 +145,10 @@ public static class AcronisWriter {
 
   // ----- record framing (inverse of AcronisRecordReader) -----
 
-  // Canonical empty raw-deflate stream: BFINAL=1, BTYPE=01 (fixed Huffman), end-of-block symbol.
-  // DeflateStream emits ZERO bytes for empty input, which the reader's inflate path cannot consume,
-  // so empty payloads are written as this 2-byte terminator block instead.
-  private static ReadOnlySpan<byte> EmptyDeflateBlock => [0x03, 0x00];
-
+  // An empty payload still yields a final block (BFINAL=1, fixed Huffman, end-of-block: 0x03 0x00),
+  // which the reader's inflate path needs to find.
   private static void WriteDeflateBody(Stream s, byte[] payload) {
-    if (payload.Length == 0) {
-      s.Write(EmptyDeflateBlock);
-      return;
-    }
-    using var def = new DeflateStream(s, CompressionLevel.Fastest, leaveOpen: true);
+    using var def = new RawDeflateStream(s, CompressionStreamMode.Compress, DeflateCompressionLevel.Fast, leaveOpen: true);
     def.Write(payload, 0, payload.Length);
   }
 

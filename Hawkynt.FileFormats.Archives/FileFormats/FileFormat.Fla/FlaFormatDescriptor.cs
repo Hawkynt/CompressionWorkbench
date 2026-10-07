@@ -1,8 +1,8 @@
 #pragma warning disable CS1591
-using System.IO.Compression;
 using System.Text;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
+using FileFormat.Zip;
 
 namespace FileFormat.Fla;
 
@@ -298,15 +298,12 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         using var zipMs = new MemoryStream(blob, writable: false);
         int count = 0;
         try {
-          using var archive = new ZipArchive(zipMs, ZipArchiveMode.Read, leaveOpen: false);
+          using var archive = new ZipReader(zipMs, leaveOpen: false);
           foreach (var entry in archive.Entries) {
-            // Skip directory entries (zero-length name-ends-in-slash).
-            if (string.IsNullOrEmpty(entry.Name) && entry.FullName.EndsWith('/'))
+            // Skip directory entries (name ends in a slash).
+            if (entry.IsDirectory)
               continue;
-            using var es = entry.Open();
-            using var buf = new MemoryStream();
-            es.CopyTo(buf);
-            entries.Add((entry.FullName, buf.ToArray()));
+            entries.Add((entry.FileName, archive.ExtractEntry(entry)));
             count++;
           }
         } catch {

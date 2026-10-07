@@ -1,6 +1,8 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 
 namespace FileFormat.Paragon;
 
@@ -74,7 +76,7 @@ namespace FileFormat.Paragon;
 ///     chunk's body is written at the offset recorded in its chunk-table
 ///     entry. When the chunk is compressed (<c>ChunkIsCompress = 'Y'</c>)
 ///     the body is a raw zlib stream
-///     (<see cref="System.IO.Compression.ZLibStream"/>); when not
+///     (<see cref="FileFormat.Zlib.ZlibStream"/>); when not
 ///     compressed it is the raw bytes verbatim. Per-chunk integrity is
 ///     verified by Adler-32 (see <see cref="ParagonAdler32"/>) stored in the table entry — the
 ///     vendor uses the same checksum ("Chunk is not valid, adler32
@@ -242,7 +244,7 @@ public sealed class ParagonWriter : IDisposable {
 
     if (this._compressChunks && logicalSize > 0) {
       using var ms = new MemoryStream();
-      using (var z = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+      using (var z = new ZlibStream(ms, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true))
         z.Write(chunkData);
       bodyBytes = ms.ToArray();
       // If compressed payload is larger than the source, fall back to stored.

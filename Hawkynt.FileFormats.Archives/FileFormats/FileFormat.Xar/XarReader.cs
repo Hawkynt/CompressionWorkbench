@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
 using System.Xml.Linq;
 
 namespace FileFormat.Xar;
@@ -144,13 +145,13 @@ public sealed class XarReader {
 
   private static byte[] DecompressZlib(byte[] data, int expectedSize) {
     // Zlib data: 2-byte header + deflate stream + 4-byte Adler32
-    // .NET's DeflateStream can handle raw deflate if we skip the zlib header
+    // The raw Deflate decoder takes it once the zlib header is skipped
     if (data.Length < 2)
       return data;
 
     // Skip zlib header (2 bytes) and omit trailing Adler32 (4 bytes)
     using var ms = new MemoryStream(data, 2, data.Length - 2);
-    using var ds = new DeflateStream(ms, CompressionMode.Decompress);
+    using var ds = new RawDeflateStream(ms, CompressionStreamMode.Decompress);
     var result = new byte[expectedSize];
     var totalRead = 0;
     while (totalRead < expectedSize) {

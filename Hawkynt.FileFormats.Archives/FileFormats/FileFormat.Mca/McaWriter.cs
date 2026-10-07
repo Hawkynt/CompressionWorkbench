@@ -1,7 +1,10 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Globalization;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Gzip;
+using FileFormat.Zlib;
 using System.Text.RegularExpressions;
 using Compression.Core.Dictionary.Lz4;
 using Compression.Registry;
@@ -93,14 +96,14 @@ public static partial class McaWriter {
   private static byte[] Compress(byte[] data, bool gzip, int level) {
     using var output = new MemoryStream();
     var compressionLevel = level switch {
-      0 => CompressionLevel.NoCompression,
-      <= 2 => CompressionLevel.Fastest,
-      >= 8 => CompressionLevel.SmallestSize,
-      _ => CompressionLevel.Optimal,
+      0 => DeflateCompressionLevel.None,
+      <= 2 => DeflateCompressionLevel.Fast,
+      >= 8 => DeflateCompressionLevel.Best,
+      _ => DeflateCompressionLevel.Default,
     };
     using (Stream compressor = gzip
-             ? new GZipStream(output, compressionLevel, leaveOpen: true)
-             : new ZLibStream(output, compressionLevel, leaveOpen: true))
+             ? new GzipStream(output, CompressionStreamMode.Compress, compressionLevel, leaveOpen: true)
+             : new ZlibStream(output, CompressionStreamMode.Compress, compressionLevel, leaveOpen: true))
       compressor.Write(data);
     return output.ToArray();
   }

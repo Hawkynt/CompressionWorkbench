@@ -24,7 +24,7 @@ namespace FileFormat.EaseUs;
 /// IMGF + 0xFF trailer convention. The reader walks every
 /// <c>0x78 {0x01|0x9C|0xDA}</c> candidate zlib substream header in the
 /// body, runs a real trial inflate against each one (using
-/// <see cref="System.IO.Compression.ZLibStream"/>), and surfaces every
+/// <see cref="FileFormat.Zlib.ZlibStream"/>), and surfaces every
 /// confirmed substream as a forensic entry stamped with its offset and
 /// compressed / decompressed sizes. The block-allocation table that maps
 /// logical sectors back to compressed chunks, the AES-256 key envelope,

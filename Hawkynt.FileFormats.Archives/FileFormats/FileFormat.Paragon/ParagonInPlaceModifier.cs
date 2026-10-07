@@ -1,7 +1,9 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Globalization;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using Compression.Registry;
 
 namespace FileFormat.Paragon;
@@ -313,7 +315,7 @@ public static class ParagonInPlaceModifier {
     if (!compressChunks || payload.Length == 0)
       return (payload, false);
     using var ms = new MemoryStream();
-    using (var z = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+    using (var z = new ZlibStream(ms, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true))
       z.Write(payload, 0, payload.Length);
     var compressed = ms.ToArray();
     return compressed.Length >= payload.Length ? (payload, false) : (compressed, true);

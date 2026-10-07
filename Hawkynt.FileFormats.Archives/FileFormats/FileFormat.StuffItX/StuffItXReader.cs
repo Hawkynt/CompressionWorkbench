@@ -1,4 +1,5 @@
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
 using System.Text;
 
 namespace FileFormat.StuffItX;
@@ -338,7 +339,7 @@ public sealed class StuffItXReader : IDisposable {
 
   private static byte[] DecompressDeflate(byte[] compressed, int expectedSize) {
     using var input  = new MemoryStream(compressed);
-    using var deflate = new DeflateStream(input, CompressionMode.Decompress);
+    using var deflate = new RawDeflateStream(input, CompressionStreamMode.Decompress);
     if (expectedSize > 0) {
       var buf  = new byte[expectedSize];
       var total = 0;

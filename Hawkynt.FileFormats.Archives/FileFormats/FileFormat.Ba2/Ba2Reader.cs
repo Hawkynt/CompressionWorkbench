@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.Ba2;
@@ -75,12 +76,12 @@ public sealed class Ba2Reader : IDisposable {
     }
 
     // Zlib stream of PackedSize bytes producing exactly Size bytes. We slice the substream
-    // so the ZLibStream doesn't read past the entry.
+    // so the decoder cannot read past the entry.
     var compressed = new byte[entry.PackedSize];
     ReadExact(compressed);
 
     using var compressedMs = new MemoryStream(compressed, writable: false);
-    using var zlib = new ZLibStream(compressedMs, CompressionMode.Decompress);
+    using var zlib = new ZlibStream(compressedMs, CompressionStreamMode.Decompress);
     var output = new byte[entry.Size];
     var read = 0;
     while (read < output.Length) {

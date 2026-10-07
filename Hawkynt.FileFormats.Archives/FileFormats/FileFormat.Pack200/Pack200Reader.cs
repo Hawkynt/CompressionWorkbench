@@ -1,4 +1,5 @@
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Gzip;
 using System.Text;
 
 namespace FileFormat.Pack200;
@@ -314,7 +315,7 @@ public sealed class Pack200Reader {
     if (raw.Length < 2 || raw[0] != 0x1F || raw[1] != 0x8B)
       return raw;
     using var input = new MemoryStream(raw);
-    using var gz = new GZipStream(input, CompressionMode.Decompress);
+    using var gz = new GzipStream(input, CompressionStreamMode.Decompress);
     using var output = new MemoryStream();
     gz.CopyTo(output);
     return output.ToArray();

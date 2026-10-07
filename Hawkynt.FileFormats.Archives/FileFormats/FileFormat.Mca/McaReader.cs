@@ -1,6 +1,8 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Gzip;
+using FileFormat.Zlib;
 
 namespace FileFormat.Mca;
 
@@ -106,12 +108,12 @@ public sealed class McaReader {
     using var output = new MemoryStream();
     switch (chunk.CompressionType & 0x7F) {
       case 1: {
-        using var gz = new GZipStream(input, CompressionMode.Decompress);
+        using var gz = new GzipStream(input, CompressionStreamMode.Decompress);
         gz.CopyTo(output);
         break;
       }
       case 2: {
-        using var zl = new ZLibStream(input, CompressionMode.Decompress);
+        using var zl = new ZlibStream(input, CompressionStreamMode.Decompress);
         zl.CopyTo(output);
         break;
       }

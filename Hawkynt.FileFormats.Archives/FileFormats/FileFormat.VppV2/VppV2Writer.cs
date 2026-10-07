@@ -1,4 +1,6 @@
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.VppV2;
@@ -7,7 +9,7 @@ namespace FileFormat.VppV2;
 /// Creates a Volition Package v2 archive (Saint's Row 2 era, .vpp_pc).
 /// </summary>
 /// <remarks>
-/// Per-entry zlib compression (raw deflate via <see cref="ZLibStream"/>) is attempted on every entry;
+/// Per-entry zlib compression (raw deflate via <see cref="ZlibStream"/>) is attempted on every entry;
 /// when the compressed result is not smaller than the original the entry is stored uncompressed.
 /// The archive-level Compressed flag is set whenever at least one entry ends up zlib-compressed.
 /// Whole-archive Condensed mode is not produced.
@@ -26,8 +28,8 @@ public sealed class VppV2Writer : IDisposable {
   /// </summary>
   /// <param name="stream">The stream to write the archive to. Must be writable and seekable.</param>
   /// <param name="leaveOpen">Whether to leave the stream open on dispose.</param>
-  /// <param name="compressionLevel">When <see cref="CompressionLevel.NoCompression"/> all entries are stored.</param>
-  public VppV2Writer(Stream stream, bool leaveOpen = false, CompressionLevel compressionLevel = CompressionLevel.Optimal) {
+  /// <param name="compressionLevel">When <see cref="DeflateCompressionLevel.None"/> all entries are stored.</param>
+  public VppV2Writer(Stream stream, bool leaveOpen = false, DeflateCompressionLevel compressionLevel = DeflateCompressionLevel.Default) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanWrite)
       throw new ArgumentException("Stream must be writable.", nameof(stream));
@@ -36,7 +38,7 @@ public sealed class VppV2Writer : IDisposable {
 
     this._stream             = stream;
     this._leaveOpen          = leaveOpen;
-    this._attemptCompression = compressionLevel != CompressionLevel.NoCompression;
+    this._attemptCompression = compressionLevel != DeflateCompressionLevel.None;
   }
 
   /// <summary>Adds an entry to the archive.</summary>
@@ -182,7 +184,7 @@ public sealed class VppV2Writer : IDisposable {
 
   private static byte[]? TryCompress(byte[] data) {
     using var ms = new MemoryStream();
-    using (var zs = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+    using (var zs = new ZlibStream(ms, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true))
       zs.Write(data, 0, data.Length);
     return ms.ToArray();
   }

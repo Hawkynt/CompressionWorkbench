@@ -1,6 +1,8 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.EaseUs;
@@ -61,7 +63,7 @@ namespace FileFormat.EaseUs;
 public static class EaseUsWriter {
 
   /// <summary>Zlib compression level used for every body substream (maps to the 0x78 0xDA FCHECK byte).</summary>
-  public const CompressionLevel BodyCompressionLevel = CompressionLevel.Optimal;
+  public const DeflateCompressionLevel BodyCompressionLevel = DeflateCompressionLevel.Default;
 
   /// <summary>Number of 0xFF padding bytes appended after the trailer block (matches the observed tail convention).</summary>
   public const int DefaultTrailingFfPadding = 16;
@@ -171,19 +173,15 @@ public static class EaseUsWriter {
   }
 
   /// <summary>
-  /// Canonical RFC-1950 zlib stream for a zero-length payload: header
-  /// <c>0x78 0x9C</c>, a single empty stored/final DEFLATE block
-  /// (<c>0x03 0x00</c>), and the Adler-32 of the empty input
-  /// (<c>0x00000001</c>). .NET's <see cref="ZLibStream"/> emits nothing at
-  /// all for a zero-byte write, so we substitute this fixed envelope to
-  /// keep every body substream a real, scannable zlib stream.
+  /// Zlib-compresses one body substream. A zero-length payload still gets a
+  /// real, scannable zlib stream — header <c>0x78 0x9C</c>, an empty final
+  /// DEFLATE block (<c>0x03 0x00</c>) and the Adler-32 of nothing
+  /// (<c>0x00000001</c>) — because <see cref="ZlibStream"/> always writes
+  /// the full frame.
   /// </summary>
-  private static readonly byte[] EmptyZlibStream = [0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01];
-
   private static byte[] ZlibCompress(byte[] payload) {
-    if (payload.Length == 0) return (byte[])EmptyZlibStream.Clone();
     using var ms = new MemoryStream();
-    using (var z = new ZLibStream(ms, BodyCompressionLevel, leaveOpen: true))
+    using (var z = new ZlibStream(ms, CompressionStreamMode.Compress, BodyCompressionLevel, leaveOpen: true))
       z.Write(payload, 0, payload.Length);
     return ms.ToArray();
   }

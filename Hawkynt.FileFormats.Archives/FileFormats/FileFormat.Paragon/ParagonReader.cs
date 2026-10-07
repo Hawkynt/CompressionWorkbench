@@ -1,7 +1,8 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Globalization;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.Paragon;
@@ -425,7 +426,7 @@ public sealed class ParagonReader : IDisposable {
     byte[] logical;
     if (info.IsCompressed) {
       using var input = new MemoryStream(src.ToArray(), writable: false);
-      using var z = new ZLibStream(input, CompressionMode.Decompress);
+      using var z = new ZlibStream(input, CompressionStreamMode.Decompress);
       using var output = new MemoryStream(capacity: (int)info.LogicalSize);
       z.CopyTo(output);
       logical = output.ToArray();

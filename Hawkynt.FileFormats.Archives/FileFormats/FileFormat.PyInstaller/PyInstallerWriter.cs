@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 using Compression.Registry;
 
@@ -15,11 +17,6 @@ internal static class PyInstallerWriter {
 
   /// <summary>Fixed part of a TOC entry: four big-endian uint32 fields, the compression flag and the type code.</summary>
   private const int TocEntryHeaderLength = 18;
-
-  /// <summary><c>zlib.compress(b"")</c>: a zlib header, an empty final stored block and the Adler-32 of nothing.</summary>
-  /// <remarks>.NET's <see cref="ZLibStream" /> writes no bytes at all when nothing was written to it, which
-  /// no zlib decoder accepts; PyInstaller's reader fails such an entry with "incomplete or truncated stream".</remarks>
-  private static readonly byte[] EmptyZlibStream = [0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01];
 
   private sealed record EncodedEntry(string Name, byte TypeCode, byte[] Data, int UncompressedLength);
 
@@ -94,17 +91,17 @@ internal static class PyInstallerWriter {
     return separator == '/' ? normalized : normalized.Replace('/', separator);
   }
 
+  // An empty entry still gets a complete zlib frame, which PyInstaller's reader requires
+  // ("incomplete or truncated stream" otherwise); ZlibStream always writes one.
   private static byte[] Compress(byte[] data, int? level) {
-    if (data.Length == 0)
-      return [.. EmptyZlibStream];
     using var output = new MemoryStream();
     var compressionLevel = level switch {
-      0 => CompressionLevel.NoCompression,
-      <= 2 => CompressionLevel.Fastest,
-      >= 8 => CompressionLevel.SmallestSize,
-      _ => CompressionLevel.Optimal,
+      0 => DeflateCompressionLevel.None,
+      <= 2 => DeflateCompressionLevel.Fast,
+      >= 8 => DeflateCompressionLevel.Best,
+      _ => DeflateCompressionLevel.Default,
     };
-    using (var zlib = new ZLibStream(output, compressionLevel, leaveOpen: true))
+    using (var zlib = new ZlibStream(output, CompressionStreamMode.Compress, compressionLevel, leaveOpen: true))
       zlib.Write(data);
     return output.ToArray();
   }

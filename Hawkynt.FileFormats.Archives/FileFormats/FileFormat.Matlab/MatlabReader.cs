@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.Matlab;
@@ -204,7 +205,7 @@ public sealed class MatlabReader {
 
   private static byte[] DecompressZlib(byte[] compressed) {
     using var ms = new MemoryStream(compressed, writable: false);
-    using var zlib = new ZLibStream(ms, CompressionMode.Decompress);
+    using var zlib = new ZlibStream(ms, CompressionStreamMode.Decompress);
     using var output = new MemoryStream();
     zlib.CopyTo(output);
     return output.ToArray();

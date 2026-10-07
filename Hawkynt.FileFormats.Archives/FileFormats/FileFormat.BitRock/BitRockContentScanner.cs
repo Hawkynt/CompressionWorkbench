@@ -1,4 +1,5 @@
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Gzip;
 using System.Text;
 using FileFormat.Tar;
 
@@ -22,7 +23,7 @@ public sealed record BitRockPayloadComponent(string Name, long ContentOffset, lo
 /// <c>InCAMPro.2.0SP1.246831.Win64.tar</c>, <c>InLink.1.5.235442.Win64.tar</c>.</para>
 ///
 /// <para>Because the cookfs page store is stripped back to a plain gzip stream, decoding uses the stock
-/// <see cref="GZipStream"/> — no private framing — so every component decodes end-to-end and every
+/// <see cref="GzipStream"/> — no private framing — so every component decodes end-to-end and every
 /// extracted file is byte-exact. Reconstruction is streamed to a temporary file (bounded memory, never
 /// the whole multi-hundred-megabyte payload in RAM), and extraction streams each entry to disk.</para>
 /// </summary>
@@ -142,7 +143,7 @@ public static class BitRockContentScanner {
       Stream content, BitRockPayloadComponent component) {
     content.Position = component.ContentOffset;
     using var member = new SubReadStream(content, component.Length);
-    using var gz = new GZipStream(member, CompressionMode.Decompress, leaveOpen: true);
+    using var gz = new GzipStream(member, CompressionStreamMode.Decompress, leaveOpen: true);
     using var tar = new TarReader(gz, leaveOpen: true);
     while (true) {
       TarEntry? entry;
@@ -162,14 +163,14 @@ public static class BitRockContentScanner {
 
   /// <summary>
   /// Fully extracts a payload component to <paramref name="rootDir"/>, streaming each file straight to
-  /// disk. The gzip member is decoded by the stock <see cref="GZipStream"/> and every tar header is
+  /// disk. The gzip member is decoded by the stock <see cref="GzipStream"/> and every tar header is
   /// checksum-validated, so every written file is byte-exact.
   /// </summary>
   public static BitRockComponentExtract ExtractComponentToDisk(
       Stream content, BitRockPayloadComponent component, string rootDir, Func<string, bool>? accept = null) {
     content.Position = component.ContentOffset;
     using var member = new SubReadStream(content, component.Length);
-    using var gz = new GZipStream(member, CompressionMode.Decompress, leaveOpen: true);
+    using var gz = new GzipStream(member, CompressionStreamMode.Decompress, leaveOpen: true);
     using var tar = new TarReader(gz, leaveOpen: true);
     long files = 0, dirs = 0, bytes = 0;
     var clean = true;

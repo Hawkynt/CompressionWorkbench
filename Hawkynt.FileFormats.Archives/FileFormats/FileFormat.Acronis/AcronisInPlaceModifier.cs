@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
 using System.Security.Cryptography;
 using System.Text;
 using Compression.Registry;
@@ -328,7 +329,7 @@ public static class AcronisInPlaceModifier {
   /// </summary>
   private static void WriteRawDeflateRecord(Stream image, AcronisRecordType type, byte[] payload) {
     image.WriteByte((byte)type);
-    using (var def = new DeflateStream(image, CompressionLevel.Fastest, leaveOpen: true))
+    using (var def = new RawDeflateStream(image, CompressionStreamMode.Compress, DeflateCompressionLevel.Fast, leaveOpen: true))
       def.Write(payload, 0, payload.Length);
     // 4-byte trailing checksum slot — reader does not validate; mirror the test fixtures' zero fill.
     Span<byte> sum = stackalloc byte[4];
@@ -343,7 +344,7 @@ public static class AcronisInPlaceModifier {
     image.WriteByte((byte)type);
     image.WriteByte(0x78);
     image.WriteByte(0x9C);
-    using (var def = new DeflateStream(image, CompressionLevel.Fastest, leaveOpen: true))
+    using (var def = new RawDeflateStream(image, CompressionStreamMode.Compress, DeflateCompressionLevel.Fast, leaveOpen: true))
       def.Write(payload, 0, payload.Length);
     Span<byte> adlerBuf = stackalloc byte[4];
     BinaryPrimitives.WriteUInt32BigEndian(adlerBuf, ComputeAdler32(payload));

@@ -1,5 +1,5 @@
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
 using Compression.Core.Streams;
 using FileFormat.Bzip2;
 
@@ -117,7 +117,7 @@ internal sealed class CookfsArchive {
           var comp = new byte[dataLen];
           this._s.ReadExactly(comp);
           using var src = new MemoryStream(comp, writable: false);
-          using var inf = new DeflateStream(src, CompressionMode.Decompress);
+          using var inf = new RawDeflateStream(src, CompressionStreamMode.Decompress);
           written += inf.CopyTo2(dest, buf);
           break;
         }

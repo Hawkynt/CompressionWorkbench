@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
 using System.Text;
 using System.Xml.Linq;
 using Compression.Core.Checksums;
@@ -109,7 +110,7 @@ public sealed class XarWriter : IDisposable {
     // Zlib header: CMF=0x78 (deflate, window 32KB), FLG=0x9C (default compression, check bits)
     ms.WriteByte(0x78);
     ms.WriteByte(0x9C);
-    using (var ds = new DeflateStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+    using (var ds = new RawDeflateStream(ms, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true))
       ds.Write(data);
     // Adler-32 checksum (big-endian)
     var adler = ComputeAdler32(data);
