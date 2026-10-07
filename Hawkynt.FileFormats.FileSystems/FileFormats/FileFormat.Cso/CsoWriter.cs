@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
 
 namespace FileFormat.Cso;
 
@@ -112,7 +113,7 @@ public sealed class CsoWriter {
   /// <summary>Raw-DEFLATE encode <paramref name="data"/> (no zlib wrapper).</summary>
   internal static byte[] Deflate(ReadOnlySpan<byte> data) {
     using var output = new MemoryStream();
-    using (var deflate = new DeflateStream(output, CompressionLevel.Optimal, leaveOpen: true))
+    using (var deflate = new RawDeflateStream(output, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true))
       deflate.Write(data);
     return output.ToArray();
   }
@@ -120,7 +121,7 @@ public sealed class CsoWriter {
   /// <summary>Raw-DEFLATE decode helper retained for callers that need a bounded decoded slab.</summary>
   internal static byte[] Inflate(ReadOnlySpan<byte> data, int expectedSize) {
     using var input = new MemoryStream(data.ToArray(), writable: false);
-    using var deflate = new DeflateStream(input, CompressionMode.Decompress);
+    using var deflate = new RawDeflateStream(input, CompressionStreamMode.Decompress);
     var output = new byte[expectedSize];
     var written = 0;
     while (written < output.Length) {

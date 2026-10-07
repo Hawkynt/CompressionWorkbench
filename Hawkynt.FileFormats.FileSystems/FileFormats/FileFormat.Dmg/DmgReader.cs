@@ -1,6 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using FileFormat.Zlib;
 using System.Net;
 using System.Text;
 using Compression.Core.Streams;
@@ -242,7 +242,7 @@ public sealed class DmgReader : IDisposable {
           break;
         case BlockTypeZlib:
           ExtractStream(block, destOffset, destLength, output, "zlib",
-            static source => new ZLibStream(source, CompressionMode.Decompress, leaveOpen: false));
+            static source => new ZlibStream(source, CompressionStreamMode.Decompress, leaveOpen: false));
           break;
         case BlockTypeBzip2:
           ExtractStream(block, destOffset, destLength, output, "bzip2",

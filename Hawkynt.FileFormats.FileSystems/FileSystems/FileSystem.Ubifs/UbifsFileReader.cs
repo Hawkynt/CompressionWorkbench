@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileSystem.Ubifs;
@@ -258,7 +259,7 @@ public sealed class UbifsFileReader {
     if (compressed.Length < 2) return [];
     try {
       using var input = new MemoryStream(compressed.ToArray());
-      using var zls = new ZLibStream(input, CompressionMode.Decompress, leaveOpen: false);
+      using var zls = new ZlibStream(input, CompressionStreamMode.Decompress, leaveOpen: false);
       using var output = new MemoryStream(expectedSize > 0 ? expectedSize : DefaultBlockSize);
       zls.CopyTo(output);
       return output.ToArray();

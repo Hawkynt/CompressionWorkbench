@@ -1,10 +1,10 @@
 #pragma warning disable CS1591
 using System.Globalization;
-using System.IO.Compression;
 using System.Text;
 using Compression.Registry;
 using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
+using FileFormat.Zip;
 
 namespace FileFormat.Ipsw;
 
@@ -108,9 +108,9 @@ public sealed class IpswFormatDescriptor :
     }
 
     stream.Position = 0;
-    using var zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
+    using var zip = new ZipReader(stream, leaveOpen: true);
     foreach (var entry in zip.Entries) {
-      var name = NormalizeZipPath(entry.FullName);
+      var name = NormalizeZipPath(entry.FileName);
       if (IsSynthetic(name) || !Wants(files, name))
         continue;
 
@@ -123,7 +123,7 @@ public sealed class IpswFormatDescriptor :
       var parent = Path.GetDirectoryName(destination);
       if (!string.IsNullOrEmpty(parent))
         Directory.CreateDirectory(parent);
-      using var source = entry.Open();
+      using var source = zip.OpenEntryStream(entry);
       using var output = File.Create(destination);
       source.CopyTo(output);
     }
@@ -145,22 +145,22 @@ public sealed class IpswFormatDescriptor :
       return new BoundedEntryStream(archive, archive.Length, leaveOpen: true);
 
     if (string.Equals(entryName, "metadata.ini", StringComparison.OrdinalIgnoreCase)) {
-      using var zip = new ZipArchive(archive, ZipArchiveMode.Read, leaveOpen: true);
+      using var zip = new ZipReader(archive, leaveOpen: true);
       var metadata = BuildMetadata(zip);
       return new BoundedEntryStream(new MemoryStream(metadata, writable: false), metadata.Length, leaveOpen: false);
     }
 
-    var reader = new ZipArchive(archive, ZipArchiveMode.Read, leaveOpen: true);
+    var reader = new ZipReader(archive, leaveOpen: true);
     var normalized = NormalizeZipPath(entryName);
     var entry = reader.Entries.FirstOrDefault(candidate =>
-      string.Equals(NormalizeZipPath(candidate.FullName), normalized, StringComparison.OrdinalIgnoreCase));
+      string.Equals(NormalizeZipPath(candidate.FileName), normalized, StringComparison.OrdinalIgnoreCase));
     if (entry == null || IsDirectoryEntry(entry)) {
       reader.Dispose();
       return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
     }
 
-    var owned = new ZipOwnedReadStream(entry.Open(), reader);
-    return new BoundedEntryStream(owned, entry.Length, leaveOpen: false);
+    var owned = new ZipOwnedReadStream(reader.OpenEntryStream(entry), reader);
+    return new BoundedEntryStream(owned, entry.UncompressedSize, leaveOpen: false);
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -174,29 +174,38 @@ public sealed class IpswFormatDescriptor :
       output.SetLength(0);
     }
 
-    using var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
-    foreach (var input in inputs) {
-      var name = NormalizeZipPath(input.ArchiveName);
-      if (IsSynthetic(name))
-        continue;
+    // The ZIP writer records entry offsets and patches each stored entry's CRC afterwards, so a
+    // forward-only output is staged in a scratch file first.
+    using var scratch = output.CanSeek ? null : CreateScratchStream();
+    var target = scratch ?? output;
+    using (var zip = new ZipWriter(target, leaveOpen: true)) {
+      foreach (var input in inputs) {
+        var name = NormalizeZipPath(input.ArchiveName);
+        if (IsSynthetic(name))
+          continue;
 
-      if (input.IsDirectory) {
-        if (!name.EndsWith('/'))
-          name += '/';
-        zip.CreateEntry(name, CompressionLevel.NoCompression);
-        continue;
+        if (input.IsDirectory) {
+          zip.AddDirectory(name);
+          continue;
+        }
+
+        var size = input.InMemoryContent?.LongLength ?? new FileInfo(input.FullPath).Length;
+        var method = SelectCompression(name, size);
+        var modified = TryGetTimestamp(input);
+        if (method == ZipCompressionMethod.Store && input.InMemoryContent is null) {
+          // Large payloads are stored and streamed; only the small ones are deflated in memory.
+          using var source = File.OpenRead(input.FullPath);
+          zip.AddStreamingStoredEntry(name, size, source, modified);
+        } else
+          zip.AddEntry(name, input.InMemoryContent ?? File.ReadAllBytes(input.FullPath), method, modified);
       }
 
-      var size = input.InMemoryContent?.LongLength ?? new FileInfo(input.FullPath).Length;
-      var entry = zip.CreateEntry(name, SelectCompression(name, size));
-      TryApplyTimestamp(entry, input);
-      using var destination = entry.Open();
-      if (input.InMemoryContent is { } bytes) {
-        destination.Write(bytes);
-      } else {
-        using var source = File.OpenRead(input.FullPath);
-        source.CopyTo(destination);
-      }
+      zip.Finish();
+    }
+
+    if (scratch != null) {
+      scratch.Position = 0;
+      scratch.CopyTo(output);
     }
   }
 
@@ -309,36 +318,32 @@ public sealed class IpswFormatDescriptor :
 
   private static List<IpswEntry> EnumerateEntries(Stream stream) {
     stream.Position = 0;
-    using var zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
+    using var zip = new ZipReader(stream, leaveOpen: true);
     var result = new List<IpswEntry>(zip.Entries.Count);
     foreach (var entry in zip.Entries) {
-      var name = NormalizeZipPath(entry.FullName);
+      var name = NormalizeZipPath(entry.FileName);
       var isDirectory = IsDirectoryEntry(entry);
-      var method = entry.CompressedLength == entry.Length ? "Stored" : "Deflate";
+      var method = entry.CompressedSize == entry.UncompressedSize ? "Stored" : "Deflate";
       result.Add(new IpswEntry(
         name,
-        entry.Length,
-        entry.CompressedLength,
+        entry.UncompressedSize,
+        entry.CompressedSize,
         method,
         isDirectory,
-        entry.LastWriteTime.DateTime,
+        entry.LastModified,
         ClassifyKind(name, isDirectory)));
     }
     return result;
   }
 
-  private static byte[] BuildMetadata(ZipArchive zip) {
+  private static byte[] BuildMetadata(ZipReader zip) {
     string? identifier = null;
     string? productVersion = null;
     string? buildVersion = null;
     var manifest = zip.Entries.FirstOrDefault(entry =>
-      string.Equals(NormalizeZipPath(entry.FullName), "BuildManifest.plist", StringComparison.OrdinalIgnoreCase));
-    if (manifest != null && manifest.Length <= 16 * 1024 * 1024) {
-      using var source = manifest.Open();
-      using var memory = new MemoryStream();
-      source.CopyTo(memory);
-      TryParsePlistFields(memory.ToArray(), out identifier, out productVersion, out buildVersion);
-    }
+      string.Equals(NormalizeZipPath(entry.FileName), "BuildManifest.plist", StringComparison.OrdinalIgnoreCase));
+    if (manifest != null && manifest.UncompressedSize <= 16 * 1024 * 1024)
+      TryParsePlistFields(zip.ExtractEntry(manifest), out identifier, out productVersion, out buildVersion);
     return Encoding.UTF8.GetBytes(BuildMetadataIni(identifier, productVersion, buildVersion, zip.Entries.Count));
   }
 
@@ -360,25 +365,24 @@ public sealed class IpswFormatDescriptor :
     return "other";
   }
 
-  private static CompressionLevel SelectCompression(string name, long size) {
+  private static ZipCompressionMethod SelectCompression(string name, long size) {
     var fileName = LeafName(name);
     if (size >= 32L * 1024 * 1024 ||
         fileName.EndsWith(".dmg", StringComparison.OrdinalIgnoreCase) ||
         fileName.EndsWith(".img4", StringComparison.OrdinalIgnoreCase) ||
         fileName.EndsWith(".im4p", StringComparison.OrdinalIgnoreCase) ||
         fileName.EndsWith(".im4m", StringComparison.OrdinalIgnoreCase))
-      return CompressionLevel.NoCompression;
-    return CompressionLevel.Optimal;
+      return ZipCompressionMethod.Store;
+    return ZipCompressionMethod.Deflate;
   }
 
-  private static void TryApplyTimestamp(ZipArchiveEntry entry, ArchiveInputInfo input) {
+  private static DateTime? TryGetTimestamp(ArchiveInputInfo input) {
     if (input.InMemoryContent != null || !File.Exists(input.FullPath))
-      return;
-    try {
-      entry.LastWriteTime = File.GetLastWriteTime(input.FullPath);
-    } catch (ArgumentOutOfRangeException) {
-      // ZIP/DOS timestamps are bounded to 1980..2107; payload data is unaffected.
-    }
+      return null;
+
+    // ZIP/DOS timestamps are bounded to 1980..2107; payload data is unaffected either way.
+    var modified = File.GetLastWriteTime(input.FullPath);
+    return modified.Year is >= 1980 and <= 2107 ? modified : null;
   }
 
   private static bool Wants(string[]? files, string name)
@@ -387,8 +391,8 @@ public sealed class IpswFormatDescriptor :
   private static bool IsSynthetic(string name)
     => SyntheticEntries.Contains(name);
 
-  private static bool IsDirectoryEntry(ZipArchiveEntry entry)
-    => entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\');
+  private static bool IsDirectoryEntry(ZipEntry entry)
+    => entry.FileName.EndsWith('/') || entry.FileName.EndsWith('\\');
 
   private static string NormalizeZipPath(string name)
     => name.Replace('\\', '/').TrimStart('/');
@@ -466,7 +470,7 @@ public sealed class IpswFormatDescriptor :
       64 * 1024,
       FileOptions.DeleteOnClose);
 
-  private sealed class ZipOwnedReadStream(Stream inner, ZipArchive owner) : Stream {
+  private sealed class ZipOwnedReadStream(Stream inner, ZipReader owner) : Stream {
     public override bool CanRead => inner.CanRead;
     public override bool CanSeek => inner.CanSeek;
     public override bool CanWrite => false;

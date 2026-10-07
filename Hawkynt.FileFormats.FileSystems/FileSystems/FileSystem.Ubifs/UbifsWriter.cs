@@ -1,6 +1,8 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 using Compression.Core.Checksums;
 
@@ -387,7 +389,7 @@ public sealed class UbifsWriter {
 
   internal static byte[] ZlibCompress(byte[] data) {
     using var output = new MemoryStream();
-    using (var zls = new ZLibStream(output, CompressionLevel.Optimal, leaveOpen: true))
+    using (var zls = new ZlibStream(output, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true))
       zls.Write(data, 0, data.Length);
     return output.ToArray();
   }
