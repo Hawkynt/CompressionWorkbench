@@ -260,6 +260,28 @@ jobs:
           --filter "FullyQualifiedName~Compression.Tests.StructuredPseudoArchives.StructuredPseudoArchiveExternalToolTests"
           --logger "trx;LogFileName=structured-writer-tests.trx"
 
+      # xfl2svg is the third-party XFL reader that judges the FLA reader and writer (Adobe Animate
+      # cannot run on a runner). Pinned to the commit the captured reports were made with.
+      - name: Install FLA oracle
+        continue-on-error: true
+        shell: bash
+        run: |
+          XFL2SVG="xfl2svg @ https://codeload.github.com/PluieElectrique/xfl2svg/zip/33304eff3c06be6e4a0637b7dbee04b3e37a47b9"
+          { python3 -m pip install --user --break-system-packages flit_core \
+              && python3 -m pip install --user --break-system-packages --no-build-isolation "$XFL2SVG"; } \
+            || { python -m pip install --user flit_core && python -m pip install --user --no-build-isolation "$XFL2SVG"; } \
+            || true
+
+      # A hard gate like the structured oracles: xfl2svg must read Flash's own files and ours as the
+      # same document. Without xfl2svg the cases Assert.Ignore and say so; a reader that is there
+      # and disagrees fails the build.
+      - name: FLA xfl2svg oracle
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "FullyQualifiedName~Compression.Tests.Fla.FlaXfl2SvgOracleTests"
+          --logger "trx;LogFileName=fla-oracle-tests.trx"
+
       - name: End-to-end interop tests
         continue-on-error: true
         run: >
