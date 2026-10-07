@@ -67,6 +67,7 @@ public static class SevenZipInPlaceAdder {
     ReadExact(archive, headerData, (int)sig.NextHeaderSize);
     using var headerStream = new MemoryStream(headerData);
     var (packInfo, folders, subStreams, fileInfos) = SevenZipHeaderCodec.ReadHeader(headerStream);
+    SevenZipHeaderCodec.RequireCarriable(fileInfos, "add");
 
     // ── Verify the archive matches the byte-additive append contract ──
     if (packInfo.PackPos != 0)

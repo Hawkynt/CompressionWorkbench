@@ -522,6 +522,7 @@ public sealed class SevenZipWriter : IDisposable {
     IsEmptyFile = !entry.IsDirectory && entry.Size == 0,
     LastWriteTime = entry.LastWriteTime,
     CreationTime = entry.CreationTime,
+    LastAccessTime = entry.LastAccessTime,
     Attributes = entry.Attributes,
   };
 

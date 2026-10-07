@@ -91,8 +91,9 @@ internal sealed class SevenZipFileInfo {
   public uint? Attributes { get; set; }
 
   /// <summary>
-  /// The FilesInfo property ids the header carried that this reader skips (anti-items, start
-  /// positions, …); shared by every file of one header. Padding (<c>kDummy</c>) is not listed.
+  /// The header properties this reader skips — FilesInfo properties such as anti-items or
+  /// start positions, and top-level ones such as archive properties — named for a refusal
+  /// message; shared by every file of one header. Padding (<c>kDummy</c>) is not listed.
   /// </summary>
-  public IReadOnlySet<byte> SkippedPropertyIds { get; set; } = new HashSet<byte>();
+  public IReadOnlySet<string> SkippedProperties { get; set; } = new HashSet<string>();
 }
