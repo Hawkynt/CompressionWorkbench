@@ -77,7 +77,7 @@ internal sealed partial class MainForm {
 
   private void BuildDefragmentTab() {
     this._defragTab = new RibbonTab("Defragment");
-    this._defragTab.Groups.AddRange(this.TargetGroup(), this.OperationGroup(), this.StrategyGroup(), this.OptionsGroup(), this.ViewGroup());
+    this._defragTab.Groups.AddRange(this.OperationGroup(), this.StrategyGroup(), this.OptionsGroup(), this.ViewGroup());
 
     this._ribbon.Tabs.Add(this._defragTab);
     this._diskTools.Add(this._defragTab);
@@ -92,21 +92,18 @@ internal sealed partial class MainForm {
   }
 
   /// <summary>
-  /// What the tab works on: the open volume by default, or a selected file whose content proved it a
-  /// container. Picking here is the only way the target changes while an image is being worked on;
-  /// selecting something else in the list only adds or removes the offer.
+  /// Wires the target field: the open volume by default, or a selected file whose content proved it
+  /// a container. Picking here is the only way the target changes while an image is being worked on;
+  /// selecting something else in the list only adds or removes the offer. The field is a small row of
+  /// the Options group, shown only while there is a choice to make — the header line names the
+  /// target always — so it costs the ribbon no width when there is nothing to choose.
   /// </summary>
-  private RibbonGroup TargetGroup() {
+  private void WireTargetField() =>
     this.Field(this._targetCombo, "The volume or container the operations work on.", () => {
       var index = this._targetCombo.SelectedIndex;
       if (index >= 0 && index < this._offeredTargets.Count && this._offeredTargets[index].Key != this._sessionTarget?.Key)
         this.OpenSession(this._offeredTargets[index]);
     });
-
-    var group = new RibbonGroup("Target");
-    group.Items.Add(this._targetCombo);
-    return group;
-  }
 
   private RibbonGroup OperationGroup() {
     (MaintenanceVerb Verb, string Text, string Icon)[] verbs = [
@@ -119,17 +116,21 @@ internal sealed partial class MainForm {
       (MaintenanceVerb.Scramble, "Scramble", IconKeys.Defragment),
     ];
 
+    this._startButton = this.RibbonAction("Start", IconKeys.Test, this.StartMaintenance, RibbonItemSize.Large, Keys.None, "Run the chosen operation");
+    this._stopButton = this.RibbonAction("Stop", IconKeys.Remove, this.StopMaintenance, RibbonItemSize.Small, Keys.None, "Stop the running operation");
+    this._analyzeButton = this.RibbonAction("Analyze", IconKeys.Refresh, this.AnalyzeTarget, RibbonItemSize.Small, Keys.None, "Read the image's layout again");
+
+    // Start leads; Stop fills the slot under Scramble, so the group needs no column of its own for it
+    // and the whole tab stays expanded at the default window width.
     var group = new RibbonGroup("Operation");
+    group.Items.Add(this._startButton);
     foreach (var (verb, text, icon) in verbs) {
       var toggle = this.RibbonToggle(text, icon, RibbonItemSize.Small, Keys.None, text, @checked: false, on => this.ChooseVerb(verb, on));
       this._verbToggles[verb] = toggle;
       group.Items.Add(toggle);
     }
 
-    this._startButton = this.RibbonAction("Start", IconKeys.Test, this.StartMaintenance, RibbonItemSize.Large, Keys.None, "Run the chosen operation");
-    this._stopButton = this.RibbonAction("Stop", IconKeys.Remove, this.StopMaintenance, RibbonItemSize.Small, Keys.None, "Stop the running operation");
-    this._analyzeButton = this.RibbonAction("Analyze", IconKeys.Refresh, this.AnalyzeTarget, RibbonItemSize.Small, Keys.None, "Read the image's layout again");
-    group.Items.AddRange(this._startButton, this._stopButton);
+    group.Items.Add(this._stopButton);
     return group;
   }
 
@@ -182,7 +183,7 @@ internal sealed partial class MainForm {
       () => this.WithPresenter(p => p.MetadataZone = this.SelectedMetadataZone()));
     this.Field(this._layoutProfileCombo, "A zone-based layout template: files go into named byte ranges with per-zone sort orders.",
       this.OnLayoutProfileChanged);
-    this._editProfilesButton = this.RibbonAction("Edit Profiles", IconKeys.Properties, () => {
+    this._editProfilesButton = this.RibbonAction("Profiles…", IconKeys.Properties, () => {
       new LayoutProfileEditor().ShowDialog(this);
       this.RefreshLayoutProfiles();
     }, RibbonItemSize.Small, Keys.None, "Create, change or delete layout profiles");
@@ -192,9 +193,10 @@ internal sealed partial class MainForm {
     this.Field(this._optimizeMethodCombo, "How Optimize improves the container: compress (best compression, same format), repack (same entries, dead space dropped) or canonicalize (normal form). Only what the format offers is listed.",
       () => this.WithPresenter(p => p.OptimizeMethod = this.SelectedOptimizeMethod()));
 
+    this.WireTargetField();
     var group = new RibbonGroup("Options");
     group.Items.AddRange(this._interleaveSpinner, this._metadataZoneCombo, this._layoutProfileCombo,
-      this._editProfilesButton, this._seedSpinner, this._optimizeMethodCombo);
+      this._editProfilesButton, this._seedSpinner, this._optimizeMethodCombo, this._targetCombo);
     return group;
   }
 
@@ -552,6 +554,8 @@ internal sealed partial class MainForm {
       this._stopButton.Enabled = running && p?.CanCancel == true && !this._maintenanceCommitStarted && this._maintenanceCancellation is { IsCancellationRequested: false };
       this._analyzeButton.Enabled = idle;
 
+      // Seed and Method never show together, so with Edit Profiles the target makes at most three rows.
+      this._targetCombo.Visible = this._offeredTargets.Count > 1;
       this._targetCombo.Enabled = !running && this._offeredTargets.Count > 1;
       this._targetCombo.ToolTipText = this._sessionTarget is null
         ? "Open or select an image to maintain."

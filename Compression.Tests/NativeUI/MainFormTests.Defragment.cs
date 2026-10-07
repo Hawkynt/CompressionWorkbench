@@ -118,6 +118,7 @@ public sealed partial class MainFormTests {
       Assert.Multiple(() => {
         Assert.That(TargetCombo(shell).Items, Is.EqualTo(new[] { "Open volume (disk.img)" }));
         Assert.That(TargetCombo(shell).SelectedIndex, Is.EqualTo(0));
+        Assert.That(TargetCombo(shell).Visible, Is.False, "with nothing to choose, the header line names the target and the field takes no room");
         Assert.That(DefragView(shell).TargetText, Does.StartWith("disk.img — ").And.Contain("FAT"));
         Assert.That(DefragView(shell).StatusText, Does.StartWith("Real on-disk layout"));
         foreach (var operation in new[] { "Defragment", "Shrink", "Clear", "Scramble" })
@@ -154,6 +155,7 @@ public sealed partial class MainFormTests {
       Assert.Multiple(() => {
         Assert.That(TargetCombo(shell).Items, Is.EqualTo(new[] { "Open volume (nested.zip)", "Selected: inner.img (Fat)" }));
         Assert.That(TargetCombo(shell).SelectedIndex, Is.EqualTo(0), "the open volume is the default");
+        Assert.That(TargetCombo(shell).Visible, Is.True, "a choice to make shows the field");
         Assert.That(Toggle(shell, "Defragment").Enabled, Is.False, "the ZIP has no extents to move");
       });
 
@@ -186,6 +188,35 @@ public sealed partial class MainFormTests {
         Assert.That(TargetCombo(shell).Items, Does.Contain("Selected: inner.img (Fat)"), "the chosen target stays listed");
         Assert.That(Toggle(shell, "Sort Entries").Checked, Is.True, "the configured operation is kept");
       });
+    }));
+  }
+
+  /// <summary>
+  /// The owner wants interleave and the view modes as directly visible ribbon items, so no group of
+  /// the tab may fold into a drop-down at the default 1180 px width — neither in the plain case nor
+  /// in the widest one (a second target offered while Optimize shows its method).
+  /// </summary>
+  [Test]
+  public void GivenTheDefaultWindowWidth_WhenTheDefragmentTabIsShown_ThenNoGroupIsCollapsed() {
+    WithImages(root => WithShell(shell => {
+      var ribbon = Field<Ribbon>(shell, "_ribbon");
+      void AssertExpanded(string state) {
+        ribbon.PerformLayout();
+        Assert.That(ribbon.Width, Is.EqualTo(1180), "the shell's default client width");
+        var collapsed = DefragTab(shell).Groups.Where(g => g.IsCollapsed).Select(g => g.Text).ToList();
+        Assert.That(collapsed, Is.Empty, state);
+      }
+
+      OpenOnDefragmentTab(shell, MaintenanceFixtures.FragmentedFat(root));
+      AssertExpanded("a FAT volume, one target");
+
+      var model = Field<MainViewModel>(shell, "_model");
+      shell.OpenArchive(MaintenanceFixtures.ZipWithNestedImage(root));
+      Select(model, "inner.img");
+      Settle(shell);
+      Toggle(shell, "Optimize").PerformClick();
+      Assume.That(TargetCombo(shell).Visible, Is.True);
+      AssertExpanded("a ZIP with a nested image offered and Optimize's method shown");
     }));
   }
 
