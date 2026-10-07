@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text;
 using FileSystem.HfsPlus;
 
@@ -23,15 +21,11 @@ namespace Compression.Tests.HfsPlus;
 [Category("OsIntegration")]
 public class HfsPlusExternalConformanceTests {
 
-  private static bool IsLinux => RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
-
-  private static bool HasCommand(string name) {
-    try {
-      var result = RunTool("/bin/sh", $"-c \"which {name} 2>/dev/null\"");
-      return result.ExitCode == 0 && !string.IsNullOrWhiteSpace(result.StdOut);
-    } catch {
-      return false;
-    }
+  // Run natively on Linux and through WSL on Windows, like the other hfsprogs gates: a check that
+  // only ran on a Linux host never ran on the machines these volumes are mostly written on.
+  private static void RequireTool(string tool) {
+    if (!FsInteropToolbox.WslAvailable) Assert.Ignore("WSL is not installed; fsck.hfsplus cannot run on this host");
+    if (!FsInteropToolbox.WslHasTool(tool)) Assert.Ignore($"'{tool}' (hfsprogs) is not installed");
   }
 
   private string _tmpDir = null!;
@@ -49,8 +43,7 @@ public class HfsPlusExternalConformanceTests {
 
   [Test]
   public void RepresentativeImage_PassesFsckCleanly() {
-    if (!IsLinux) Assert.Ignore("fsck.hfsplus conformance check is Linux-only");
-    if (!HasCommand("fsck.hfsplus")) Assert.Ignore("fsck.hfsplus (hfsprogs) not installed");
+    RequireTool("fsck.hfsplus");
 
     var writer = new HfsPlusWriter();
 
@@ -78,8 +71,7 @@ public class HfsPlusExternalConformanceTests {
 
   [Test]
   public void MultiLevelCatalogIndex_PassesFsckCleanly() {
-    if (!IsLinux) Assert.Ignore("fsck.hfsplus conformance check is Linux-only");
-    if (!HasCommand("fsck.hfsplus")) Assert.Ignore("fsck.hfsplus (hfsprogs) not installed");
+    RequireTool("fsck.hfsplus");
 
     // Enough records that a single index node cannot point at every leaf, so
     // the catalog grows a second index level. Every index node at one level
@@ -93,8 +85,7 @@ public class HfsPlusExternalConformanceTests {
 
   [Test]
   public void NonAsciiAndMixedCaseNames_PassesFsckCleanly() {
-    if (!IsLinux) Assert.Ignore("fsck.hfsplus conformance check is Linux-only");
-    if (!HasCommand("fsck.hfsplus")) Assert.Ignore("fsck.hfsplus (hfsprogs) not installed");
+    RequireTool("fsck.hfsplus");
 
     // Names whose case-folding order differs from a raw UTF-16 byte order
     // ('Z' < 'a' as bytes, but apple < Zebra when case-folded) plus accented
@@ -111,8 +102,7 @@ public class HfsPlusExternalConformanceTests {
 
   [Test]
   public void FragmentedFileRemovedInPlace_PassesFsckCleanly() {
-    if (!IsLinux) Assert.Ignore("fsck.hfsplus conformance check is Linux-only");
-    if (!HasCommand("fsck.hfsplus")) Assert.Ignore("fsck.hfsplus (hfsprogs) not installed");
+    RequireTool("fsck.hfsplus");
 
     // A file in three extents out of disk order, removed in place: every extent must be
     // freed, or fsck reports blocks allocated to no file and a wrong free count.
@@ -126,8 +116,7 @@ public class HfsPlusExternalConformanceTests {
 
   [Test]
   public void FileRemovedFromAManyLeafCatalog_PassesFsckCleanly() {
-    if (!IsLinux) Assert.Ignore("fsck.hfsplus conformance check is Linux-only");
-    if (!HasCommand("fsck.hfsplus")) Assert.Ignore("fsck.hfsplus (hfsprogs) not installed");
+    RequireTool("fsck.hfsplus");
 
     // A file in a later leaf of a catalog with an index level, removed in place: the leaf
     // chain, index keys, leafRecords and root valence must all still agree.
@@ -156,8 +145,7 @@ public class HfsPlusExternalConformanceTests {
   [TestCase(HfsPlusCompression.Raw)]
   [TestCase(HfsPlusCompression.InlineUncompressed)]
   public void TransparentlyCompressedVolume_PassesFsckCleanly(HfsPlusCompression compression) {
-    if (!IsLinux) Assert.Ignore("fsck.hfsplus conformance check is Linux-only");
-    if (!HasCommand("fsck.hfsplus")) Assert.Ignore("fsck.hfsplus (hfsprogs) not installed");
+    RequireTool("fsck.hfsplus");
 
     // The attributes B-tree, kHFSHasAttributesMask, UF_COMPRESSED and the resource forks must
     // all be what fsck_hfs expects of a compressed file.
@@ -168,33 +156,12 @@ public class HfsPlusExternalConformanceTests {
     var imagePath = Path.Combine(_tmpDir, "volume.hfsplus");
     File.WriteAllBytes(imagePath, image);
 
-    var result = RunTool("fsck.hfsplus", $"-f -n \"{imagePath}\"");
-    var combined = result.StdOut + result.StdErr;
+    var (stdOut, stdErr, _) = FsInteropToolbox.RunWsl($"fsck.hfsplus -f -n {FsInteropToolbox.WinToWsl(imagePath)}");
+    var combined = stdOut + stdErr;
 
     Assert.That(combined, Does.Contain("appears to be OK"),
       $"fsck.hfsplus did not report the volume clean.\n{combined}");
     Assert.That(combined, Does.Not.Contain("found corrupt"),
       $"fsck.hfsplus reported corruption.\n{combined}");
-  }
-
-  private record struct ToolResult(string StdOut, string StdErr, int ExitCode);
-
-  private static ToolResult RunTool(string tool, string args, int timeoutMs = 120_000) {
-    var psi = new ProcessStartInfo {
-      FileName = tool,
-      Arguments = args,
-      RedirectStandardOutput = true,
-      RedirectStandardError = true,
-      UseShellExecute = false,
-      CreateNoWindow = true,
-    };
-    using var proc = Process.Start(psi)
-      ?? throw new InvalidOperationException($"Failed to start {tool}");
-    var stdout = proc.StandardOutput.ReadToEnd();
-    var stderr = proc.StandardError.ReadToEnd();
-    if (!proc.WaitForExit(timeoutMs)) {
-      try { proc.Kill(); } catch { /* best effort */ }
-    }
-    return new ToolResult(stdout, stderr, proc.ExitCode);
   }
 }
