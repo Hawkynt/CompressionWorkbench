@@ -325,6 +325,7 @@ public sealed class HfsPlusReader : IDisposable {
     BlockCount = data.BlockCount,
     Extents = data.Extents,
     Decmpfs = data.Decmpfs,
+    IsDataless = data.Decmpfs is { } attribute && HfsPlusDecmpfs.IsDataless(attribute),
     ResourceSize = data.ResourceSize,
     ResourceExtents = data.ResourceExtents,
   };

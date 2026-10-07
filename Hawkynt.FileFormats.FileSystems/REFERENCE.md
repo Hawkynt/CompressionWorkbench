@@ -7762,7 +7762,7 @@ Builds a spec-compliant Classic HFS disk image per Inside Macintosh: Files (1992
 
 ### Namespace `FileSystem.HfsPlus`
 
-[`HfsPlusBlockMover`](#hfsplusblockmover) · [`HfsPlusEntry`](#hfsplusentry) · [`HfsPlusExtentMap`](#hfsplusextentmap) · [`HfsPlusFormatDescriptor`](#hfsplusformatdescriptor) · [`HfsPlusModifier`](#hfsplusmodifier) · [`HfsPlusReader`](#hfsplusreader) · [`HfsPlusWriter`](#hfspluswriter)
+[`HfsPlusBlockMover`](#hfsplusblockmover) · [`HfsPlusCompression`](#hfspluscompression) · [`HfsPlusEntry`](#hfsplusentry) · [`HfsPlusExtentMap`](#hfsplusextentmap) · [`HfsPlusFormatDescriptor`](#hfsplusformatdescriptor) · [`HfsPlusModifier`](#hfsplusmodifier) · [`HfsPlusReader`](#hfsplusreader) · [`HfsPlusWriter`](#hfspluswriter)
 
 #### `HfsPlusBlockMover`
 
@@ -7784,6 +7784,20 @@ Implements `IFilesystemBlockMover`, `IFilesystemMetadataMover`.
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` |  |
 
+#### `HfsPlusCompression`
+
+The compression an HFS+ writer applies to file contents (HFS+ transparent compression, the "com.apple.decmpfs" attribute). Each value names a pair of decmpfs methods: the first stores a file of at most 64 KiB whose encoding fits the attribute inline, the second stores the encoding as 64 KiB chunks in the resource fork.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` | Files are stored in their data fork, uncompressed. |
+| `Zlib` | `1` | zlib — decmpfs methods 3 (inline) and 4 (resource fork). |
+| `Lzvn` | `2` | LZVN — decmpfs methods 7 and 8. |
+| `Lzfse` | `3` | LZFSE — decmpfs methods 11 and 12. |
+| `Lzbitmap` | `4` | LZBITMAP — decmpfs methods 13 and 14. |
+| `Raw` | `5` | Uncompressed chunks behind decmpfs — methods 9 and 10. |
+| `InlineUncompressed` | `6` | Uncompressed bytes in the attribute itself — method 1; larger files stay uncompressed. |
+
 #### `HfsPlusEntry`
 
 Represents a single file or directory entry found within an HFS+ volume image.
@@ -7793,6 +7807,7 @@ Represents a single file or directory entry found within an HFS+ volume image.
 | `HfsPlusEntry` | `HfsPlusEntry()` |  |
 | `Cnid` | `uint Cnid { get; init; }` | The Catalog Node ID assigned to this entry. |
 | `FullPath` | `string FullPath { get; init; }` | The full slash-separated path from the volume root. |
+| `IsDataless` | `bool IsDataless { get; init; }` | Whether this file is a dataless placeholder (decmpfs DATALESS_CMPFS_TYPE or DATALESS_PKG_CMPFS_TYPE): its content lives with a file provider, not on this volume, so it reports a size of 0 and extracts as an empty file. |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry is a directory rather than a file. |
 | `IsSymlink` | `bool IsSymlink { get; init; }` | Whether this entry is a symbolic link (Finder type 'slnk'). |
 | `LastModified` | `DateTime? LastModified { get; init; }` | The last modification timestamp (may be null if not available). |
@@ -7875,6 +7890,7 @@ Creates minimal HFS+ filesystem images per Apple TN1150 ("HFS Plus Volume Format
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `HfsPlusWriter` | `HfsPlusWriter(bool caseSensitive = false, bool journalEnabled = false, int journalSize = 8388608, string volumeName = "Untitled")` | Creates a new HFS+ writer. |
+| `TransparentCompression` | `HfsPlusCompression TransparentCompression { get; set; }` | HFS+ transparent compression for the files added: `None` (default) keeps every file in its data fork. Otherwise each non-empty file is stored as a "com.apple.decmpfs" attribute — inline when the encoding fits it (at most 3802 bytes, for a file of at most 64 KiB), else as 64 KiB chunks in the resource fork — with UF_COMPRESSED set and an empty data fork, as macOS stores it. A file whose resource-fork form would not be smaller stays uncompressed (except for `Raw`, which is asked for explicitly), and so does a file too large for `InlineUncompressed`. A compressed file's content is held in memory while the volume is laid out. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to be included in the volume image. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a streaming file: `size` drives catalog + extent allocation in pass 1; bytes are pulled from `openStream` in pass 2 of `BuildToStreaming`. Never buffered as `byte[]`. |
 | `BuildAutoSized` | `byte[] BuildAutoSized(int requestedBlockSize = 0)` | Picks the allocation block size that minimises slack + structural overhead via `FilesystemLayoutOptimizer`, then builds the image. The candidate set is [4 KB … 64 KB]; most HFS+ images stay at 4 KB — the optimizer only bumps the block size for large-file sets where the bigger allocation unit cuts table overhead. |

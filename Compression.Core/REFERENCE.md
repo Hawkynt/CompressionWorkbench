@@ -1290,6 +1290,35 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
+### Namespace `Compression.Core.Dictionary.Lzbitmap`
+
+[`Lzbitmap`](#lzbitmap) · [`LzbitmapBuildingBlock`](#lzbitmapbuildingblock)
+
+#### `Lzbitmap`
+
+Apple's LZBITMAP compression (libcompression `COMPRESSION_LZBITMAP`, decmpfs methods 13/14).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> src)` | Compresses `src` into an LZBITMAP stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> src)` | Decompresses a whole LZBITMAP stream. |
+
+#### `LzbitmapBuildingBlock`
+
+Exposes Apple's LZBITMAP (see `Lzbitmap`) as a benchmarkable building block.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LzbitmapBuildingBlock` | `LzbitmapBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
 ### Namespace `Compression.Core.Dictionary.Lzf`
 
 [`LzfBuildingBlock`](#lzfbuildingblock) · [`LzfCompressor`](#lzfcompressor) · [`LzfDecompressor`](#lzfdecompressor)
@@ -9201,7 +9230,9 @@ Provides static methods for compressing and decompressing data using Apple's LZF
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data from `input` and writes an LZFSE-format stream to `output`. |
+| `DecodeLzvn` | `static byte[] DecodeLzvn(ReadOnlySpan<byte> stream, int length)` | Decodes a bare LZVN stream that expands to exactly `length` bytes. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an Apple LZFSE stream from `input` to `output`. |
+| `EncodeLzvn` | `static byte[] EncodeLzvn(ReadOnlySpan<byte> data)` | Encodes `data` as a bare LZVN stream — the payload of a `bvxn` block, and the form HFS+/APFS transparent compression (decmpfs methods 7/8) stores — ending with the eight-byte end-of-stream instruction. |
 
 ### Namespace `FileFormat.Lzma`
 

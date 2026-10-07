@@ -38,6 +38,12 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       AllowedValues: ["8388608", "16777216", "33554432", "67108864"],
       Description: "Journal size in bytes (8/16/32/64 MiB).",
       DependsOn: "Journal=true"),
+    new FormatOptionDescriptor(
+      Key: "Compression", DisplayName: "Transparent compression", Kind: FormatOptionKind.Enum, Default: "None",
+      AllowedValues: ["None", "Zlib", "Lzvn", "Lzfse", "Lzbitmap", "Raw", "InlineUncompressed"],
+      Description: "Store files with HFS+ transparent compression (decmpfs): zlib 3/4, LZVN 7/8, LZFSE 11/12, " +
+        "LZBITMAP 13/14, raw 9/10 or uncompressed-in-attribute 1. Inline when it fits the attribute, " +
+        "64 KiB resource-fork chunks otherwise; a file that would not shrink stays uncompressed."),
     FilesystemSchemaPresets.VolumeLabel(),
     FilesystemSchemaPresets.ClusterSize(
       key: "BlockSize",
@@ -219,7 +225,7 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     var r = new HfsPlusReader(stream, leaveOpen: true);
     var entries = r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.Size,
       e.Size, "Stored", e.IsDirectory, false, e.LastModified,
-      Kind: null, IsSymlink: e.IsSymlink, LinkTarget: e.LinkTarget)).ToList();
+      Kind: e.IsDataless ? "dataless" : null, IsSymlink: e.IsSymlink, LinkTarget: e.LinkTarget)).ToList();
     return SymlinkResolver.Resolve(entries);
   }
 
@@ -266,7 +272,7 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     // earlier stash schema; finally default to "Untitled".
     var volumeName = options.GetOption("VolumeLabel", options.GetOption("VolumeName", "Untitled"));
 
-    var w = new HfsPlusWriter(caseSensitive, journal, journalSize, volumeName);
+    var w = new HfsPlusWriter(caseSensitive, journal, journalSize, volumeName) { TransparentCompression = ParseCompression(options) };
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       var info = i;
@@ -304,7 +310,7 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     var journal = options.GetOptionBool("Journal", true);
     var journalSize = options.GetOptionInt("JournalSize", 8 * 1024 * 1024);
     var volumeName = options.GetOption("VolumeLabel", options.GetOption("VolumeName", "Untitled"));
-    var w = new HfsPlusWriter(caseSensitive, journal, journalSize, volumeName);
+    var w = new HfsPlusWriter(caseSensitive, journal, journalSize, volumeName) { TransparentCompression = ParseCompression(options) };
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
       w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
@@ -316,6 +322,13 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       return;
     }
     output.Write(w.BuildAutoSized(blockSize));
+  }
+
+  private static HfsPlusCompression ParseCompression(FormatCreateOptions options) {
+    var value = options.GetOption("Compression", "None");
+    return Enum.TryParse<HfsPlusCompression>(value, ignoreCase: true, out var compression)
+      ? compression
+      : throw new ArgumentException($"HFS+: unknown transparent compression '{value}'.", nameof(options));
   }
 
   /// <summary>

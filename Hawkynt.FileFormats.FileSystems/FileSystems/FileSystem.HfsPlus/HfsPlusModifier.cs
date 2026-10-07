@@ -648,6 +648,7 @@ public static class HfsPlusModifier {
     BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(16), now);
     BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(20), now);
     BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(24), now);
+    BinaryPrimitives.WriteUInt16BigEndian(recData.AsSpan(32 + 10), HfsPlusWriter.RegularFileMode);   // permissions.fileMode
     WriteForkData(recData.AsSpan(DataForkOffset, CatalogForkDataSize), logicalSize, blockSize, startBlock, blockCount);
     WriteForkData(recData.AsSpan(ResourceForkOffset, CatalogForkDataSize), 0, blockSize, 0, 0);
 
