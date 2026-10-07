@@ -159,7 +159,7 @@ Core is the reusable primitive layer. Its checked-in code is organised around co
 | Transforms | BWT, MTF, RLE, delta/BCJ-style transforms | Reversible preprocessing stages |
 | Hashing/checksums | CRC-family, xxHash-family and cryptographic hashes present in Core | Integrity, lookup and format support |
 | SIMD helpers | match-length/copy/histogram helpers | Accelerated hot-path primitives where supported |
-| Streams | sub/concatenated stream helpers | Reusable format-reader plumbing |
+| Streams | sub/concatenated stream helpers; raw Deflate, zlib and gzip streams | Reusable format-reader plumbing and the streaming codecs the format packages share |
 | Disk-image helpers | MBR/GPT and partition-related primitives | Shared lower-level disk/container parsing |
 
 The registry provides a common comparison surface; it does not erase algorithm-specific semantics. Concrete APIs remain appropriate when streaming, allocation, tuning parameters, or format-specific behavior matters.
@@ -222,7 +222,7 @@ Audio, archive and filesystem functionality lives in the separate package projec
 
 - A common API shape does not imply identical streaming, memory, or parameter semantics across every algorithm; use concrete APIs when those distinctions matter.
 - Some encoders intentionally implement a standards-compliant subset while decoders accept a wider format.
-- Pure managed code is the design goal, not an automatic speed claim. BCL/native implementations may be faster for common algorithms on some workloads.
+- Pure managed code is the design goal, not an automatic speed claim. BCL/native implementations may be faster for common algorithms on some workloads: Deflate compresses to the same ratio as the zlib-ng behind `System.IO.Compression` but at roughly half its speed at the default level, and decompresses somewhat slower. In exchange the output is identical on every platform.
 - Do not infer a package, format, algorithm, profile, or release state from roadmap intent. Checked-in project files, the compiled registry/public API, and tests are the evidence sources.
 - Do not state volatile algorithm counts unless they are generated from the registry/build.
 - When code and prose disagree, the compiled registry/API and tests win; update the prose.
