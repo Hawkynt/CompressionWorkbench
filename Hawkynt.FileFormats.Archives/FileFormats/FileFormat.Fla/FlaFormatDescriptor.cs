@@ -2,6 +2,8 @@
 using System.Text;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
+using Compression.Core.Checksums;
+using Compression.Core.Deflate;
 using FileFormat.Zip;
 
 namespace FileFormat.Fla;
@@ -151,19 +153,20 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
     if (entries.Count > 0 && Detect(entries[0].Data) == Variant.Xfl) {
       using var source = new MemoryStream(entries[0].Data, writable: false);
-      using var archive = new ZipArchive(source, ZipArchiveMode.Read);
+      using var archive = new ZipReader(source);
       foreach (var entry in archive.Entries) {
-        if (files != null && files.Length > 0 && !MatchesFilter(entry.FullName, files)) continue;
-        var safeName = entry.FullName.Replace('\\', '/').Trim('/');
+        if (files != null && files.Length > 0 && !MatchesFilter(entry.FileName, files)) continue;
+        var safeName = entry.FileName.Replace('\\', '/').Trim('/');
         if (safeName.Contains("..", StringComparison.Ordinal)) safeName = Path.GetFileName(safeName);
         if (safeName.Length == 0) continue;
         var path = Path.Combine(outputDir, safeName.Replace('/', Path.DirectorySeparatorChar));
-        if (string.IsNullOrEmpty(entry.Name) && entry.FullName.EndsWith('/')) {
+        if (entry.IsDirectory) {
           // Folder entries (Flash writes 'LIBRARY/' even for an empty library) become folders.
           Directory.CreateDirectory(path);
           continue;
         }
-        if (File.Exists(path)) File.SetLastWriteTimeUtc(path, entry.LastWriteTime.UtcDateTime);
+        // ZIP stores the local clock time of the writer, as a DOS date.
+        if (File.Exists(path)) File.SetLastWriteTime(path, entry.LastModified);
       }
     }
   }
@@ -186,7 +189,7 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var method = options.MethodName?.Trim().ToLowerInvariant();
     var compression = method switch {
       null or "" or "deflate" => GetDeflateLevel(options.Level),
-      "stored" when options.Level is null => CompressionLevel.NoCompression,
+      "stored" when options.Level is null => (DeflateCompressionLevel?)null,
       "stored" => throw new ArgumentException("The compression level only applies to DEFLATE entries.", nameof(options)),
       _ => throw new NotSupportedException($"FLA compression method '{options.MethodName}' is not supported."),
     };
@@ -200,29 +203,39 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         && !suppliedMimetype.ReadContent().AsSpan().SequenceEqual(XflMimetype))
       throw new ArgumentException($"An XFL 'mimetype' entry must contain exactly '{Encoding.ASCII.GetString(XflMimetype)}'.", nameof(inputs));
 
-    using var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
+    // The ZIP writer records member offsets, so a forward-only output is staged in memory.
+    var target = output.CanSeek ? output : new MemoryStream();
+    using (var archive = new ZipWriter(target, leaveOpen: true)) {
+      foreach (var input in inputs) {
+        var name = input.ArchiveName.Replace('\\', '/').Trim('/');
+        if (string.IsNullOrWhiteSpace(name) || IsRootMimetype(name))
+          continue;
+        if (input.IsDirectory) {
+          // Flash keeps folder entries such as 'LIBRARY/' even when the folder is empty.
+          archive.AddDirectory(name, GetInputTimestamp(input).DateTime);
+          continue;
+        }
 
-    foreach (var input in inputs) {
-      var name = input.ArchiveName.Replace('\\', '/').Trim('/');
-      if (string.IsNullOrWhiteSpace(name) || IsRootMimetype(name))
-        continue;
-      if (input.IsDirectory) {
-        // Flash keeps folder entries such as 'LIBRARY/' even when the folder is empty.
-        archive.CreateEntry(name + "/", CompressionLevel.NoCompression).LastWriteTime = GetInputTimestamp(input);
-        continue;
+        var data = input.ReadContent();
+        if (compression is { } level)
+          // Flash deflates every member but the mimetype, even one that does not get smaller.
+          archive.AddRawEntry(name, DeflateCompressor.Compress(data, level), ZipCompressionMethod.Deflate,
+            Crc32.Compute(data), data.LongLength, GetInputTimestamp(input).DateTime);
+        else
+          archive.AddEntry(name, data, ZipCompressionMethod.Store, GetInputTimestamp(input).DateTime);
       }
-      var entry = archive.CreateEntry(name, compression);
-      entry.LastWriteTime = GetInputTimestamp(input);
-      using var target = entry.Open();
-      target.Write(input.ReadContent());
+
+      // Flash Professional CS6 writes the package type as an uncompressed 'mimetype' member, and
+      // writes it last (see the reference vectors next to this format's tests).
+      archive.AddEntry(MimetypeName, XflMimetype.ToArray(), ZipCompressionMethod.Store,
+        (suppliedMimetype is null ? ZipEpoch : GetInputTimestamp(suppliedMimetype)).DateTime);
+      archive.Finish();
     }
 
-    // Flash Professional CS6 writes the package type as an uncompressed 'mimetype' member, and
-    // writes it last (see the reference vectors next to this format's tests).
-    var mimetypeEntry = archive.CreateEntry(MimetypeName, CompressionLevel.NoCompression);
-    mimetypeEntry.LastWriteTime = suppliedMimetype is null ? ZipEpoch : GetInputTimestamp(suppliedMimetype);
-    using (var target = mimetypeEntry.Open())
-      target.Write(XflMimetype);
+    if (!ReferenceEquals(target, output)) {
+      target.Position = 0;
+      target.CopyTo(output);
+    }
   }
 
   private static readonly DateTimeOffset ZipEpoch = new(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
@@ -246,11 +259,11 @@ public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return ZipEpoch;
   }
 
-  // System.IO.Compression exposes effort tiers rather than every numeric deflate level.
-  private static CompressionLevel GetDeflateLevel(int? level) => level switch {
-    null or >= 4 and <= 6 => CompressionLevel.Optimal,
-    >= 0 and <= 3 => CompressionLevel.Fastest,
-    >= 7 and <= 9 => CompressionLevel.SmallestSize,
+  // Every numeric level is honoured: 0 writes stored Deflate blocks, 1-9 are the zlib levels.
+  private static DeflateCompressionLevel? GetDeflateLevel(int? level) => level switch {
+    null => DeflateCompressionLevel.Default,
+    0 => DeflateCompressionLevel.None,
+    >= 1 and <= 9 => (DeflateCompressionLevel)level.Value,
     _ => throw new ArgumentOutOfRangeException(nameof(level), level, "FLA compression level must be between 0 and 9."),
   };
 

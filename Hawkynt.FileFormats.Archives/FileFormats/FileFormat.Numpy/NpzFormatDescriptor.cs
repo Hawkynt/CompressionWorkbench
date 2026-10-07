@@ -22,10 +22,9 @@ namespace FileFormat.Numpy;
 /// </list>
 /// </summary>
 /// <remarks>
-/// We read the ZIP central directory via <see cref="ZipArchive"/> rather than
-/// via <c>FileFormat.Zip</c> so this project has no inter-format dependency;
-/// the only container semantics needed are DEFLATE + stored entries, both of
-/// which are handled by the BCL implementation.
+/// The ZIP container is read and written through Core's <see cref="ZipReader"/> and
+/// <see cref="ZipWriter"/>; the only container semantics needed are DEFLATE and
+/// stored entries.
 /// </remarks>
 public sealed class NpzFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
