@@ -198,7 +198,7 @@ public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     "last initialised offset and trails a chunk-offset table whose per-entry layout is the " +
     "reverse-engineered ChunkNumber u32 / ChunkOffSet u64 / ChunkSize u32 / ChunkIsCompress " +
     "byte tuple plus a LogicalSize / Adler-32 for round-trip verification. Per-chunk " +
-    "compression is zlib (System.IO.Compression.ZLibStream, optimal level) matching the vendor's " +
+    "compression is zlib (ZlibStream, default level) matching the vendor's " +
     "Adler-32-checked zlib pipeline. The reader parses the real structured " +
     "+4 Major / +6 FormatVersion fields (writer emits 0x0002 / 0x0003; reader rejects > 3); " +
     "the +0xC / +0x30 / +0xD8 chained-archive identity fields, the +0x26 / +0x27 / +0xE8 flag " +

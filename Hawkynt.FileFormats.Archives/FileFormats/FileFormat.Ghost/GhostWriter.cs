@@ -1,6 +1,8 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 
 namespace FileFormat.Ghost;
 
@@ -166,7 +168,7 @@ public static class GhostZlib {
     }
 
     using var src = new MemoryStream(data.Slice(4, compLen - 4).ToArray(), writable: false);
-    using var z = new ZLibStream(src, CompressionMode.Decompress);
+    using var z = new ZlibStream(src, CompressionStreamMode.Decompress);
     var read = 0;
     while (read < dst.Length) {
       var n = z.Read(dst[read..]);
@@ -184,17 +186,17 @@ public static class GhostZlib {
     using var ms = new MemoryStream();
     ms.WriteByte(0); ms.WriteByte(0); ms.WriteByte(0); ms.WriteByte(0);
     var cl = MapLevel(level);
-    using (var z = new ZLibStream(ms, cl, leaveOpen: true))
+    using (var z = new ZlibStream(ms, CompressionStreamMode.Compress, cl, leaveOpen: true))
       z.Write(src);
 
     if (ms.Length >= src.Length + 4) return GhostFastLz.StoreUncompressed(src);
     return ms.ToArray();
   }
 
-  private static CompressionLevel MapLevel(byte level) => level switch {
-    GhostConstants.CompressionHigh3 or GhostConstants.CompressionHigh4 => CompressionLevel.Fastest,
-    GhostConstants.CompressionHigh5 or GhostConstants.CompressionHigh6 or GhostConstants.CompressionHigh7 => CompressionLevel.Optimal,
-    GhostConstants.CompressionHigh8 or GhostConstants.CompressionHigh9 => CompressionLevel.SmallestSize,
-    _ => CompressionLevel.Optimal
+  private static DeflateCompressionLevel MapLevel(byte level) => level switch {
+    GhostConstants.CompressionHigh3 or GhostConstants.CompressionHigh4 => DeflateCompressionLevel.Fast,
+    GhostConstants.CompressionHigh5 or GhostConstants.CompressionHigh6 or GhostConstants.CompressionHigh7 => DeflateCompressionLevel.Default,
+    GhostConstants.CompressionHigh8 or GhostConstants.CompressionHigh9 => DeflateCompressionLevel.Best,
+    _ => DeflateCompressionLevel.Default
   };
 }

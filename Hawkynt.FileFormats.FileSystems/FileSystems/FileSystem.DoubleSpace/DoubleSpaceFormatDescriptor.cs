@@ -147,11 +147,11 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
       DependsOn: "Compatibility=Genuine"),
   ];
 
-  private static Compression.Registry.Cvf.CvfLzMethod ParseMethod(string s) => s.ToLowerInvariant() switch {
-    "ds" => Compression.Registry.Cvf.CvfLzMethod.Ds,
-    "jm" => Compression.Registry.Cvf.CvfLzMethod.Jm,
-    "auto" => Compression.Registry.Cvf.CvfLzMethod.Auto,
-    _ => Compression.Registry.Cvf.CvfLzMethod.Stored,
+  private static Compression.Core.FileSystems.Cvf.CvfLzMethod ParseMethod(string s) => s.ToLowerInvariant() switch {
+    "ds" => Compression.Core.FileSystems.Cvf.CvfLzMethod.Ds,
+    "jm" => Compression.Core.FileSystems.Cvf.CvfLzMethod.Jm,
+    "auto" => Compression.Core.FileSystems.Cvf.CvfLzMethod.Auto,
+    _ => Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored,
   };
 
   private static bool IsGenuineV2(byte[] data) =>
@@ -272,7 +272,7 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
       }
     var w = new GenuineCvfWriter {
       VolumeLabel = r.VolumeLabel,
-      CompressionMethod = Compression.Registry.Cvf.CvfLzMethod.Auto,
+      CompressionMethod = Compression.Core.FileSystems.Cvf.CvfLzMethod.Auto,
       CompressionLevel = 2,
     };
     foreach (var (n, d) in keep) w.AddFile(n, d);

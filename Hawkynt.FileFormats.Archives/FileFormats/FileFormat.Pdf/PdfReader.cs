@@ -1,5 +1,7 @@
 #pragma warning disable CS1591
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -304,26 +306,25 @@ public sealed partial class PdfReader : IDisposable {
     return info.Filter switch {
       "/DCTDecode" => rawStream, // JPEG — return as-is
       "/JPXDecode" => rawStream, // JPEG 2000 — return as-is
-      "/FlateDecode" => DeflateStream(rawStream),
+      "/FlateDecode" => DecodeFlate(rawStream),
       _ => rawStream, // Unknown filter — return raw
     };
   }
 
-  private static byte[] DeflateStream(byte[] compressed) {
+  private static byte[] DecodeFlate(byte[] compressed) {
     try {
       // PDF uses zlib (RFC 1950) wrapping around deflate
       using var input = new MemoryStream(compressed);
-      using var deflate = new DeflateStream(
-        new ZLibStream(input, CompressionMode.Decompress), CompressionMode.Decompress);
+      using var zlib = new ZlibStream(input, CompressionStreamMode.Decompress);
       using var output = new MemoryStream();
-      deflate.CopyTo(output);
+      zlib.CopyTo(output);
       return output.ToArray();
     } catch {
       // Fallback: try raw deflate (skip 2-byte zlib header manually)
       try {
         if (compressed.Length >= 2) {
           using var input = new MemoryStream(compressed, 2, compressed.Length - 2);
-          using var deflate = new DeflateStream(input, CompressionMode.Decompress);
+          using var deflate = new RawDeflateStream(input, CompressionStreamMode.Decompress);
           using var output = new MemoryStream();
           deflate.CopyTo(output);
           return output.ToArray();

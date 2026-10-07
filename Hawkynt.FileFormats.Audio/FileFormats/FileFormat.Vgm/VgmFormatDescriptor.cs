@@ -1,7 +1,8 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Globalization;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Gzip;
 using System.Text;
 using Codec.Pcm;
 using Codec.Sn76489;
@@ -258,7 +259,7 @@ public sealed class VgmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (blob.Length < 2 || blob[0] != 0x1F || blob[1] != 0x8B)
       return blob;
     using var input = new MemoryStream(blob);
-    using var gz = new GZipStream(input, CompressionMode.Decompress);
+    using var gz = new GzipStream(input, CompressionStreamMode.Decompress);
     using var output = new MemoryStream();
     gz.CopyTo(output);
     return output.ToArray();

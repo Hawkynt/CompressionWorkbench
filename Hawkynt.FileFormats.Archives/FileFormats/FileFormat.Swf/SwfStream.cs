@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using Compression.Core.Checksums;
 using Compression.Core.Deflate;
 using Compression.Core.Dictionary.Lzma;
@@ -70,7 +71,7 @@ public static class SwfStream {
     output.Write(outHeader);
 
     if (signature == 'C') {
-      using var zlib = new ZLibStream(input, CompressionMode.Decompress, leaveOpen: true);
+      using var zlib = new ZlibStream(input, CompressionStreamMode.Decompress, leaveOpen: true);
       zlib.CopyTo(output);
       return;
     }
@@ -121,7 +122,7 @@ public static class SwfStream {
     outHeader[0] = (byte)'C';
     output.Write(outHeader);
 
-    using var zlib = new ZLibStream(output, CompressionLevel.Optimal, leaveOpen: true);
+    using var zlib = new ZlibStream(output, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true);
     input.CopyTo(zlib);
   }
 

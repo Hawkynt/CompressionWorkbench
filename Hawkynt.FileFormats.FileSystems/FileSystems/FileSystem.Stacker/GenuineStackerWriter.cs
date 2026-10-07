@@ -67,8 +67,8 @@ public sealed class GenuineStackerWriter {
   /// Stacker reader dispatches a 0x5344 ("DS") cluster header to the DS decoder,
   /// so DS-compressed Stacker clusters are read by the real driver. (JM/Auto map
   /// to DS here, as the Stacker path only recognises DS among the LZ headers.)</summary>
-  public Compression.Registry.Cvf.CvfLzMethod CompressionMethod { get; init; }
-    = Compression.Registry.Cvf.CvfLzMethod.Stored;
+  public Compression.Core.FileSystems.Cvf.CvfLzMethod CompressionMethod { get; init; }
+    = Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored;
 
   /// <summary>Codec effort (search depth). Higher = better ratio, slower.</summary>
   public int CompressionLevel { get; init; } = 1;
@@ -135,12 +135,12 @@ public sealed class GenuineStackerWriter {
     var layout = new List<ClusterPlan>();
     foreach (var (cl, full) in clusterFull) {
       var comp = this.CompressionMethod switch {
-        Compression.Registry.Cvf.CvfLzMethod.Stored => null,
-        Compression.Registry.Cvf.CvfLzMethod.Sd4 => Compression.Registry.Cvf.CvfLzCodec.Encode(full, Compression.Registry.Cvf.CvfLzMethod.Sd4, this.CompressionLevel),
-        Compression.Registry.Cvf.CvfLzMethod.Auto => Smaller(
-          Compression.Registry.Cvf.CvfLzCodec.Encode(full, Compression.Registry.Cvf.CvfLzMethod.Ds, this.CompressionLevel),
-          Compression.Registry.Cvf.CvfLzCodec.Encode(full, Compression.Registry.Cvf.CvfLzMethod.Sd4, this.CompressionLevel)),
-        _ => Compression.Registry.Cvf.CvfLzCodec.Encode(full, Compression.Registry.Cvf.CvfLzMethod.Ds, this.CompressionLevel),
+        Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored => null,
+        Compression.Core.FileSystems.Cvf.CvfLzMethod.Sd4 => Compression.Core.FileSystems.Cvf.CvfLzCodec.Encode(full, Compression.Core.FileSystems.Cvf.CvfLzMethod.Sd4, this.CompressionLevel),
+        Compression.Core.FileSystems.Cvf.CvfLzMethod.Auto => Smaller(
+          Compression.Core.FileSystems.Cvf.CvfLzCodec.Encode(full, Compression.Core.FileSystems.Cvf.CvfLzMethod.Ds, this.CompressionLevel),
+          Compression.Core.FileSystems.Cvf.CvfLzCodec.Encode(full, Compression.Core.FileSystems.Cvf.CvfLzMethod.Sd4, this.CompressionLevel)),
+        _ => Compression.Core.FileSystems.Cvf.CvfLzCodec.Encode(full, Compression.Core.FileSystems.Cvf.CvfLzMethod.Ds, this.CompressionLevel),
       };
       var ksize = comp is null ? Spc : (comp.Length + Ss - 1) / Ss;
       if (comp is not null && ksize < Spc || (comp is not null && this.ForceCompress && ksize <= Spc)) {

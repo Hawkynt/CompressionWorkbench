@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.PyInstaller;
@@ -148,7 +149,7 @@ public sealed class PyInstallerReader {
       return raw;
 
     using var src = new MemoryStream(raw, writable: false);
-    using var zs = new ZLibStream(src, CompressionMode.Decompress);
+    using var zs = new ZlibStream(src, CompressionStreamMode.Decompress);
     using var outp = new MemoryStream(entry.UncompressedLength > 0 ? (int)entry.UncompressedLength : 0);
     zs.CopyTo(outp);
     return outp.ToArray();
@@ -166,7 +167,7 @@ public sealed class PyInstallerReader {
     try {
       var blob = this.GetData(entry);
       return ReadPyzModuleNames(blob);
-    } catch (InvalidDataException) {
+    } catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException) {
       return [];
     }
   }

@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
 using System.Text;
 using System.Xml.Linq;
 using Compression.Core.Checksums;
@@ -32,7 +33,7 @@ namespace FileFormat.Xar;
 /// <para>Limitations: only handles flat (non-nested) <c>&lt;file&gt;</c>
 /// entries; does not validate or update the optional TOC checksum block
 /// (the existing reader/writer don't emit one); added entries are stored
-/// with zlib compression at <see cref="CompressionLevel.Optimal"/>.</para>
+/// with zlib compression at <see cref="DeflateCompressionLevel.Default"/>.</para>
 /// </remarks>
 public static class XarModifier {
 
@@ -280,7 +281,7 @@ public static class XarModifier {
     using var ms = new MemoryStream();
     ms.WriteByte(0x78);
     ms.WriteByte(0x9C);
-    using (var ds = new DeflateStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+    using (var ds = new RawDeflateStream(ms, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true))
       ds.Write(data);
     var adler = ComputeAdler32(data);
     Span<byte> adlerBytes = stackalloc byte[4];
@@ -292,7 +293,7 @@ public static class XarModifier {
   private static byte[] DecompressZlib(byte[] data, int expectedSize) {
     if (data.Length < 2) return data;
     using var ms = new MemoryStream(data, 2, data.Length - 2);
-    using var ds = new DeflateStream(ms, CompressionMode.Decompress);
+    using var ds = new RawDeflateStream(ms, CompressionStreamMode.Decompress);
     var capacity = expectedSize > 0 ? expectedSize : 4096;
     using var outMs = new MemoryStream(capacity);
     ds.CopyTo(outMs);

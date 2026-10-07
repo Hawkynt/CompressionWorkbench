@@ -78,7 +78,7 @@ namespace FileFormat.EaseUs;
 ///     deflate streams (binwalk routinely finds the 0x78 0x9C / 0x78 0xDA
 ///     / 0x78 0x01 markers throughout). The reader walks every
 ///     <c>0x78 {0x01|0x9C|0xDA}</c> candidate header and runs a trial
-///     inflate via <see cref="System.IO.Compression.ZLibStream"/>; the
+///     inflate via <see cref="FileFormat.Zlib.ZlibStream"/>; the
 ///     Adler-32 trailer plus the DEFLATE terminal-block flag reject
 ///     coincidental matches. Each confirmed substream is recorded with
 ///     its offset, compressed length, decompressed length, and the
@@ -452,7 +452,7 @@ public sealed class EaseUsReader : IDisposable {
   /// <summary>
   /// Trial-inflate scan: locates every <c>0x78 {0x01|0x9C|0xDA}</c>
   /// candidate header from <see cref="HeaderSize"/> onward and runs a
-  /// real <see cref="System.IO.Compression.ZLibStream"/> inflate against
+  /// real <see cref="FileFormat.Zlib.ZlibStream"/> inflate against
   /// each one. Confirmed substreams populate <see cref="Chunks"/> with
   /// the compressed and decompressed sizes and (within the per-chunk
   /// retention cap) the inflated payload; coincidental byte-pattern hits

@@ -1,7 +1,7 @@
 #pragma warning disable CS1591
 using Compression.Core.Layout;
 using Compression.Registry;
-using Compression.Registry.Cvf;
+using Compression.Core.FileSystems.Cvf;
 using FileSystem.DoubleSpace;
 using static Compression.Registry.FormatHelpers;
 

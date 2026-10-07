@@ -1,4 +1,5 @@
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.Hpi;
@@ -144,7 +145,7 @@ public sealed class HpiReader : IDisposable {
 
   private static int DecompressZlib(byte[] payload, Span<byte> destination) {
     using var src = new MemoryStream(payload, writable: false);
-    using var z = new ZLibStream(src, CompressionMode.Decompress);
+    using var z = new ZlibStream(src, CompressionStreamMode.Decompress);
     var written = 0;
     while (written < destination.Length) {
       var read = z.Read(destination[written..]);

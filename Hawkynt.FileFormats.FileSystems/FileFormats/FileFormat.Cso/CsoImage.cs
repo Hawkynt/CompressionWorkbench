@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
 using System.Text;
 
 namespace FileFormat.Cso;
@@ -193,7 +194,7 @@ internal static class CsoImage {
 
   private static byte[] InflateExact(ReadOnlySpan<byte> source, int expectedSize, int blockIndex) {
     using var input = new MemoryStream(source.ToArray(), writable: false);
-    using var deflate = new DeflateStream(input, CompressionMode.Decompress, leaveOpen: false);
+    using var deflate = new RawDeflateStream(input, CompressionStreamMode.Decompress, leaveOpen: false);
     var output = new byte[expectedSize];
     var written = 0;
     while (written < output.Length) {

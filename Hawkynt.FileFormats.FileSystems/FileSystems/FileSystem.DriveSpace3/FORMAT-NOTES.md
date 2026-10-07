@@ -32,7 +32,7 @@ emits) versus 8 KB for the other compressed filesystems. Per-cluster compression
 is an orthogonal codec keyed by a 4-byte header — `JM-0-0` (DriveSpace 3 *Normal*,
 shared with DOS 6.22 DriveSpace), `JM-0-1` (*High*), `SQ-0-0` (*Ultra*).
 `GenuineDvr3Writer` emits stored clusters (MDFAT flag = used + uncompressed) or
-`DS`/`JM`/`SQ`-compressed ones through `Compression.Registry.Cvf.CvfLzCodec`,
+`DS`/`JM`/`SQ`-compressed ones through `Compression.Core.FileSystems.Cvf.CvfLzCodec`,
 selected per `CvfLzMethod`; all of them are read back byte-exact by `dmsdos`.
 
 ## Correction to the "MSDBL inner-base @0x27" assumption

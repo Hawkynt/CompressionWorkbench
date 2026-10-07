@@ -277,6 +277,37 @@ When archive files with known original content are available (but no tool):
 
 ---
 
+## Codec Independence
+
+Product code uses only this repository's codecs — never the platform's `System.IO.Compression`
+(`DeflateStream`, `GZipStream`, `ZLibStream`, `Brotli*`, `ZipArchive`, `ZipFile`). The platform's
+zlib and brotli are native libraries whose output differs between operating systems and runtime
+versions; a format that re-encodes data and compares the result (SquashFS in-place defrag, #443)
+then behaves differently on Windows and Linux. Our encoders depend only on the input and the
+settings, so the same call produces the same bytes everywhere.
+
+| Need | Use |
+| --- | --- |
+| Raw Deflate (RFC 1951) | `DeflateCompressor` / `DeflateDecompressor`, or `RawDeflateStream` as a `Stream` |
+| zlib (RFC 1950) | `FileFormat.Zlib.ZlibStream` (stream or static one-shot helpers) |
+| gzip (RFC 1952) | `FileFormat.Gzip.GzipStream` (multi-member, any inner stream) |
+| Brotli (RFC 7932) | `FileFormat.Brotli.BrotliStream` |
+| ZIP container | `FileFormat.Zip.ZipReader` (`OpenEntryStream` streams stored/Deflate entries) / `ZipWriter` |
+
+Level mapping from the platform's `CompressionLevel`: `NoCompression` → `None`, `Fastest` → `Fast`
+(zlib level 1), `Optimal` → `Default` (6), `SmallestSize` → `Best` (9). `Maximum` is the
+Zopfli-style optimal parse and buffers the whole input; the other levels stream through a 64 KB
+window.
+
+`NoPlatformCompressionTests` enforces the rule twice: it inspects the compiled product assemblies
+for type and assembly references into `System.IO.Compression*` (which also catches global usings
+and fully qualified names), and it searches the sources of every product project for the
+namespace. Tests are exempt — there the platform codecs serve as an independent oracle — and so is
+`Vendored/**`. Third-party NuGet packages and the CLI's Costura-injected assembly loader (which only
+inflates what Costura embedded at build time) are outside the check.
+
+---
+
 ## SIMD Strategy
 
 Performance-critical paths use hardware intrinsics with runtime detection and scalar fallbacks.

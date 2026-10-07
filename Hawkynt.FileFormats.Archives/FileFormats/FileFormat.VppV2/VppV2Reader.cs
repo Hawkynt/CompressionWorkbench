@@ -1,4 +1,5 @@
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.VppV2;
@@ -9,7 +10,7 @@ namespace FileFormat.VppV2;
 /// <remarks>
 /// Layout: header (Magic+Version+ShortName(256)+Path(96)+8 dwords) → padding to 0x800 →
 /// TOC (FileCount × 28 bytes) → padding to 0x800 → name table (packed null-terminated UTF-8) →
-/// padding to 0x800 → data region. Per-entry zlib uses raw deflate via <see cref="ZLibStream"/>.
+/// padding to 0x800 → data region. Per-entry zlib uses raw deflate via <see cref="ZlibStream"/>.
 /// Whole-archive Condensed mode is explicitly rejected.
 /// </remarks>
 public sealed class VppV2Reader : IDisposable {
@@ -103,7 +104,7 @@ public sealed class VppV2Reader : IDisposable {
     ReadExact(compressed);
 
     using var ms = new MemoryStream(compressed);
-    using var zs = new ZLibStream(ms, CompressionMode.Decompress);
+    using var zs = new ZlibStream(ms, CompressionStreamMode.Decompress);
     var output = new byte[entry.DataSize];
     var read = 0;
     while (read < output.Length) {

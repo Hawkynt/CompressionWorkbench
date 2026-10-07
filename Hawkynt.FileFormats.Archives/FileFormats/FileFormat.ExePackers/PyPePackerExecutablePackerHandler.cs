@@ -1,9 +1,11 @@
 #pragma warning disable CS1591
 using System.Globalization;
-using System.IO.Compression;
 using System.Buffers.Binary;
 using System.Text;
 using Compression.Core.ExecutableUnpacking;
+using Compression.Core.Streams;
+using FileFormat.Gzip;
+using FileFormat.Zip;
 
 namespace FileFormat.ExePackers;
 
@@ -111,7 +113,7 @@ public sealed class PyPePackerExecutablePackerHandler : IExecutablePackerHandler
 
       var encrypted = EntropyDecode2(encodedPayload);
       var gzip = Rc6CbcDecrypt(encrypted, key, iv);
-      using var gzipStream = new GZipStream(new MemoryStream(gzip, writable: false), CompressionMode.Decompress);
+      using var gzipStream = new GzipStream(new MemoryStream(gzip, writable: false), CompressionStreamMode.Decompress);
       using var decoded = new MemoryStream();
       gzipStream.CopyTo(decoded);
       decodedPe = decoded.ToArray();
@@ -137,18 +139,20 @@ public sealed class PyPePackerExecutablePackerHandler : IExecutablePackerHandler
         continue;
 
       try {
-        using var archive = new ZipArchive(new MemoryStream(image[i..].ToArray(), writable: false), ZipArchiveMode.Read);
-        var entry = archive.GetEntry("__main__.py");
-        if (entry == null)
+        var candidate = image[i..].ToArray();
+        using var archive = new ZipReader(new MemoryStream(candidate, writable: false));
+        var entry = archive.Entries.FirstOrDefault(static e => e.FileName == "__main__.py");
+        // A "PK\x03\x04" that is not the archive start yields a directory of nonsense.
+        if (entry == null || entry.CompressedSize > candidate.Length)
           continue;
 
-        using var entryStream = entry.Open();
-        using var script = new MemoryStream();
-        entryStream.CopyTo(script);
-        scriptBytes = script.ToArray();
+        scriptBytes = archive.ExtractEntry(entry);
         return scriptBytes.Length > 0;
       } catch (InvalidDataException) {
+      } catch (IOException) {
       } catch (ArgumentException) {
+      } catch (NotSupportedException) {
+      } catch (OverflowException) {
       }
     }
 

@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Globalization;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Gzip;
 using System.Text;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
@@ -22,7 +23,7 @@ namespace FileFormat.Nifti;
 /// <remarks>
 /// Detects the version via the <c>sizeof_hdr</c> sentinel: 348 → NIfTI-1,
 /// 540 → NIfTI-2, in either byte order. If the file begins with <c>0x1F 0x8B</c>
-/// it is transparently inflated (via <see cref="GZipStream"/>) before parsing —
+/// it is transparently inflated (via <see cref="GzipStream"/>) before parsing —
 /// this covers the common <c>.nii.gz</c> distribution format.
 /// </remarks>
 public sealed class NiftiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
@@ -115,7 +116,7 @@ public sealed class NiftiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     // Gzip framing — transparently inflate .nii.gz before parsing.
     if (raw.Length >= 2 && raw[0] == 0x1F && raw[1] == 0x8B) {
       using var src = new MemoryStream(raw);
-      using var gz = new GZipStream(src, CompressionMode.Decompress);
+      using var gz = new GzipStream(src, CompressionStreamMode.Decompress);
       using var dst = new MemoryStream();
       gz.CopyTo(dst);
       raw = dst.ToArray();

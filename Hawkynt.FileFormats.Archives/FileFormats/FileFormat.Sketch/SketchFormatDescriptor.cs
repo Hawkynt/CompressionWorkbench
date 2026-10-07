@@ -1,8 +1,8 @@
 #pragma warning disable CS1591
-using System.IO.Compression;
 using System.Text;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
+using FileFormat.Zip;
 
 namespace FileFormat.Sketch;
 
@@ -161,14 +161,14 @@ public sealed class SketchFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     string? appVersion = null;
 
     using (var zipStream = new MemoryStream(fullBytes)) {
-      using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen: false);
+      using var archive = new ZipReader(zipStream, leaveOpen: false);
       foreach (var e in archive.Entries) {
         totalEntries++;
-        var name = e.FullName.Replace('\\', '/');
-        if (name.EndsWith('/') || e.Length == 0 && string.IsNullOrEmpty(e.Name)) continue;
+        var name = e.FileName.Replace('\\', '/');
+        if (name.EndsWith('/')) continue;
 
-        var data = ReadEntry(e);
-        var lm = e.LastWriteTime == DateTimeOffset.MinValue ? (DateTime?)null : e.LastWriteTime.UtcDateTime;
+        var data = archive.ExtractEntry(e);
+        DateTime? lm = new DateTimeOffset(e.LastModified).UtcDateTime;
 
         if (name.Equals("document.json", StringComparison.OrdinalIgnoreCase)) {
           documentJson = data; documentJsonModified = lm; hasDocumentJson = true;
@@ -217,13 +217,6 @@ public sealed class SketchFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       images, imageData,
       other, otherData
     );
-  }
-
-  private static byte[] ReadEntry(ZipArchiveEntry e) {
-    using var s = e.Open();
-    using var ms = new MemoryStream();
-    s.CopyTo(ms);
-    return ms.ToArray();
   }
 
   /// <summary>

@@ -49,6 +49,9 @@ as complete. It means:
 
 - **Clean-room, managed implementations.** Prefer specifications, standards, published vectors and
   behavioral oracles; avoid native compression dependencies and hidden platform-specific readers.
+  Product code does not use the platform's `System.IO.Compression` either: its zlib/brotli output
+  differs by operating system, ours is the same bytes everywhere (see
+  [ARCHITECTURE.md](ARCHITECTURE.md#codec-independence)).
 - **Complete domain coverage as a direction, honest capability ledgers as the present truth.** A
   missing writer, unsupported profile or read-only implementation stays visible in the package that
   owns it.

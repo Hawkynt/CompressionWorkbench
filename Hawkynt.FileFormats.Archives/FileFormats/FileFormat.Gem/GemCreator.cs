@@ -1,4 +1,6 @@
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Gzip;
 using System.Security.Cryptography;
 using System.Text;
 using Compression.Registry;
@@ -136,7 +138,7 @@ internal static class GemCreator {
 
   private static byte[] Gzip(byte[] data) {
     using var stream = new MemoryStream();
-    using (var gzip = new GZipStream(stream, CompressionLevel.SmallestSize, leaveOpen: true))
+    using (var gzip = new GzipStream(stream, CompressionStreamMode.Compress, DeflateCompressionLevel.Best, leaveOpen: true))
       gzip.Write(data);
     return stream.ToArray();
   }

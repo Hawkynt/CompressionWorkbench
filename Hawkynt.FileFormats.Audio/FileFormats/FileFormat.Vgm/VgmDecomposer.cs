@@ -1,7 +1,8 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Globalization;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Gzip;
 using System.Text;
 
 namespace FileFormat.Vgm;
@@ -165,7 +166,7 @@ public static class VgmDecomposer {
   private static byte[]? TryGunzip(byte[] file) {
     try {
       using var src = new MemoryStream(file);
-      using var gz = new GZipStream(src, CompressionMode.Decompress);
+      using var gz = new GzipStream(src, CompressionStreamMode.Decompress);
       using var dst = new MemoryStream();
       gz.CopyTo(dst);
       return dst.ToArray();

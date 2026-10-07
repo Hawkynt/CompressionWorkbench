@@ -6139,45 +6139,6 @@ Performs a verified whole-image rebuild and publishes it to a mutable image stre
 | `FlushDurably` | `static void FlushDurably(Stream image)` |  |
 | `Replace` | `static void Replace(Stream image, Action<Stream> buildCandidate, Action<Stream> validateCandidate = null)` |  |
 
-### Namespace `Compression.Registry.Cvf`
-
-[`CvfLzCodec`](#cvflzcodec) · [`CvfLzMethod`](#cvflzmethod) · [`Sd4Codec`](#sd4codec)
-
-#### `CvfLzCodec`
-
-Genuine DoubleSpace/DriveSpace per-cluster compression codec (DS-0-x and JM-0-x), verified byte-exact against the independent dmsdos decoder. The bitstream packs bits LSB-first into little-endian 16-bit words; a cluster payload is a 16-bit magic (`"DS"`=0x5344 / `"MJ"`=0x4D4A) + 16-bit version + an LZ77 token stream terminated by the 0x113f sync.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `DS_0_0` | `const uint DS_0_0` |  |
-| `JM_0_0` | `const uint JM_0_0` |  |
-| `SQ_0_0` | `const uint SQ_0_0` |  |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Compresses one cluster. Returns the payload (4-byte method header + token stream, padded to a 2-byte word), or `null` if it would not be smaller than the raw cluster (caller stores raw instead). |
-| `Decompress` | `static byte[] Decompress(byte[] payload, int inLen, int outLen)` | Decompresses a cluster payload to exactly `outLen` bytes. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Encodes a cluster with the given method, always returning the payload (4-byte header + token stream), or `null` for `Stored` / unsupported methods. The caller decides whether the result fits the cluster's sector budget. |
-
-#### `CvfLzMethod`
-
-Compression methods for the MS-DOS DoubleSpace/DriveSpace CVF cluster codec family, byte-compatible with the dmsdos driver's `ds_dec`/`jm_dec`.
-
-| Value | Numeric | Summary |
-| --- | --- | --- |
-| `Stored` | `0` |  |
-| `Ds` | `1` |  |
-| `Jm` | `2` |  |
-| `Auto` | `3` |  |
-| `Sq` | `4` |  |
-| `Sd4` | `5` |  |
-
-#### `Sd4Codec`
-
-Genuine Stacker 4 (SD-4, cluster header `0x0081`) per-cluster codec, byte-compatible with the dmsdos `sd4_decomp` decoder. SD-4 is a bespoke dynamic-Huffman format: a helper Huffman table (table1) encodes the 0x150 code-lengths of the main table (table2), which then Huffman-codes the data. We emit an all-literals SD-4 stream — table2 is a 256-symbol Huffman over the cluster's byte frequencies (genuine entropy compression), with no LZ reps/prog tokens; the decoder terminates on output-full. The bitstream is MSB-first packed into little-endian 16-bit words; Huffman codes are canonical (first-code-per-length, not bit-reversed) exactly as `sd4b_rdhufi` builds them.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Decode` | `static byte[] Decode(byte[] payload, int inLen, int outLen)` |  |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` |  |
-
 ### Namespace `Compression.Registry.Layout`
 
 [`DefragSortField`](#defragsortfield) · [`DefragSortKey`](#defragsortkey) · [`FilterExpression`](#filterexpression) · [`FilterFileContext`](#filterfilecontext) · [`IFileFilter`](#ifilefilter) · [`IFilterFileContext`](#ifilterfilecontext) · [`LayoutTemplate`](#layouttemplate) · [`LayoutTemplateResolver`](#layouttemplateresolver) · [`LayoutZone`](#layoutzone) · [`LeftoverStrategy`](#leftoverstrategy) · [`RangeSpec`](#rangespec) · [`ResolvedFilePlacement`](#resolvedfileplacement) · [`SortDirection`](#sortdirection)
@@ -11331,7 +11292,7 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PsfWriter` | `PsfWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `PsfWriter` bound to `stream`. |
-| `ProgramData` | `byte[] ProgramData { get; set; }` | Uncompressed program payload. Will be zlib-compressed at `CompressionLevel.Optimal`. |
+| `ProgramData` | `byte[] ProgramData { get; set; }` | Uncompressed program payload. Will be zlib-compressed at `DeflateCompressionLevel.Default`. |
 | `ReservedData` | `byte[] ReservedData { get; set; }` | Reserved-area blob written verbatim between header and compressed program. |
 | `Tags` | `Dictionary<string, string> Tags { get; }` | Tag key/value pairs serialized as a UTF-8 `[TAG]` block. Empty -> no tag block. |
 | `VersionByte` | `byte VersionByte { get; set; }` | The platform/version byte (default 0x01 = PS1). |

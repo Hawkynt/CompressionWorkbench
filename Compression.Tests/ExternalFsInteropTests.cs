@@ -2315,10 +2315,10 @@ public class ExternalFsInteropTests {
   // For now both tests skip cleanly with actionable instructions.
 
   [Test, Category("DriverProof")]
-  [TestCase(Compression.Registry.Cvf.CvfLzMethod.Stored)]
-  [TestCase(Compression.Registry.Cvf.CvfLzMethod.Ds)]
-  [TestCase(Compression.Registry.Cvf.CvfLzMethod.Jm)]
-  public void DoubleSpace_OurImage_DmsdosAccepts(Compression.Registry.Cvf.CvfLzMethod method) {
+  [TestCase(Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored)]
+  [TestCase(Compression.Core.FileSystems.Cvf.CvfLzMethod.Ds)]
+  [TestCase(Compression.Core.FileSystems.Cvf.CvfLzMethod.Jm)]
+  public void DoubleSpace_OurImage_DmsdosAccepts(Compression.Core.FileSystems.Cvf.CvfLzMethod method) {
     // Driver-proof: the independent dmsdos driver (built on demand via
     // DmsdosCache) must detect our genuine DoubleSpace/DriveSpace v2 CVF,
     // mount it, and read every file back byte-exact. The feature-rich

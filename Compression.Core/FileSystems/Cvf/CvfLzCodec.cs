@@ -2,9 +2,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
 
-namespace Compression.Registry.Cvf;
+namespace Compression.Core.FileSystems.Cvf;
 
 /// <summary>
 /// Compression methods for the MS-DOS DoubleSpace/DriveSpace CVF cluster codec
@@ -208,18 +209,18 @@ public static class CvfLzCodec {
   // SQ-0-0 (DriveSpace 3 "Ultra") is, byte-for-byte, "SQ" + 16-bit version + a
   // raw RFC-1951 DEFLATE stream: dmsdos sq_dec's fixed-Huffman table, length and
   // distance base/extra tables, and bit-reversed LSB-first packing all match
-  // DEFLATE exactly. So .NET's DeflateStream produces a genuine SQ body.
+  // DEFLATE exactly, so our Deflate encoder produces a genuine SQ body.
   private static byte[] CompressSq(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
     ms.WriteByte(0x53); ms.WriteByte(0x51); ms.WriteByte(0); ms.WriteByte(0); // "SQ", version 0
-    using (var ds = new DeflateStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+    using (var ds = new RawDeflateStream(ms, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true))
       ds.Write(data);
     return ms.ToArray();
   }
 
   private static byte[] DecompressSq(byte[] payload, int inLen, int outLen) {
     using var ins = new MemoryStream(payload, 4, inLen - 4);
-    using var ds = new DeflateStream(ins, CompressionMode.Decompress);
+    using var ds = new RawDeflateStream(ins, CompressionStreamMode.Decompress);
     var outp = new byte[outLen];
     var n = 0; int r;
     while (n < outLen && (r = ds.Read(outp, n, outLen - n)) > 0) n += r;

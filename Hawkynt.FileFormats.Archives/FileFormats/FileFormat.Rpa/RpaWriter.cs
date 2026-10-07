@@ -1,6 +1,8 @@
 #pragma warning disable CS1591
 using System.Globalization;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.Rpa;
@@ -120,7 +122,7 @@ public sealed class RpaWriter : IDisposable {
     // 3. Emit zlib-compressed pickle index at the next free byte.
     var indexOffset = this._stream.Position;
     var pickle = RpaPickleWriter.Emit(indexEntries, this._xorKey);
-    using (var zlib = new ZLibStream(this._stream, CompressionLevel.Optimal, leaveOpen: true))
+    using (var zlib = new ZlibStream(this._stream, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true))
       zlib.Write(pickle);
 
     // 4. Back-patch the header with the real index offset and key.

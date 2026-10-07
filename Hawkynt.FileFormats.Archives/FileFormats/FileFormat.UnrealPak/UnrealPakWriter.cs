@@ -1,7 +1,9 @@
 #pragma warning disable CS1591
 #pragma warning disable CA5350 // Unreal Pak v3 mandates SHA-1 in entry and index records.
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Security.Cryptography;
 using System.Text;
 using Compression.Registry;
@@ -204,19 +206,19 @@ internal static class UnrealPakWriter {
     WriteUInt32(output, entry.CompressionBlockSize);
   }
 
-  private static byte[] CompressZlib(ReadOnlySpan<byte> source, CompressionLevel level) {
+  private static byte[] CompressZlib(ReadOnlySpan<byte> source, DeflateCompressionLevel level) {
     using var output = new MemoryStream();
-    using (var zlib = new ZLibStream(output, level, leaveOpen: true))
+    using (var zlib = new ZlibStream(output, CompressionStreamMode.Compress, level, leaveOpen: true))
       zlib.Write(source);
     return output.ToArray();
   }
 
-  private static CompressionLevel SelectCompressionLevel(FormatCreateOptions options) {
+  private static DeflateCompressionLevel SelectCompressionLevel(FormatCreateOptions options) {
     if (options.Optimize || options.Level >= 8)
-      return CompressionLevel.SmallestSize;
+      return DeflateCompressionLevel.Best;
     if (options.Level <= 2)
-      return CompressionLevel.Fastest;
-    return CompressionLevel.Optimal;
+      return DeflateCompressionLevel.Fast;
+    return DeflateCompressionLevel.Default;
   }
 
   private static string NormalizeMethod(string? methodName) {

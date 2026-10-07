@@ -22,7 +22,7 @@ public class DriveSpace3GenuineMaintenanceTests {
   ];
 
   private static byte[] MakeGenuine() {
-    var w = new GenuineDvr3Writer { VolumeLabel = "DRV3", CompressionMethod = Compression.Registry.Cvf.CvfLzMethod.Stored };
+    var w = new GenuineDvr3Writer { VolumeLabel = "DRV3", CompressionMethod = Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored };
     foreach (var (n, d) in Seed) w.AddFile(n, d);
     return w.Build();
   }

@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Globalization;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.Rpa;
@@ -69,7 +70,7 @@ public sealed class RpaReader {
     stream.Position = this.IndexOffset;
     byte[] rawIndex;
     try {
-      using var zlib = new ZLibStream(stream, CompressionMode.Decompress, leaveOpen: true);
+      using var zlib = new ZlibStream(stream, CompressionStreamMode.Decompress, leaveOpen: true);
       using var ms = new MemoryStream();
       zlib.CopyTo(ms);
       rawIndex = ms.ToArray();

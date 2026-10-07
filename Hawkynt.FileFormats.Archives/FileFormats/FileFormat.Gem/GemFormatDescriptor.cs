@@ -1,5 +1,6 @@
 using System.Globalization;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Gzip;
 using System.Text;
 using Compression.Registry;
 using FileFormat.Tar;
@@ -187,7 +188,7 @@ public sealed class GemFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   private static byte[] GunzipAll(byte[] data) {
     using var input = new MemoryStream(data);
-    using var gz = new GZipStream(input, CompressionMode.Decompress);
+    using var gz = new GzipStream(input, CompressionStreamMode.Decompress);
     using var output = new MemoryStream();
     gz.CopyTo(output);
     return output.ToArray();

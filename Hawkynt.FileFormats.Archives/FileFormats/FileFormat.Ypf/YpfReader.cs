@@ -1,4 +1,5 @@
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.Ypf;
@@ -128,7 +129,7 @@ public sealed class YpfReader : IDisposable {
 
   private static byte[] Inflate(byte[] compressed) {
     using var src = new MemoryStream(compressed, writable: false);
-    using var z = new ZLibStream(src, CompressionMode.Decompress);
+    using var z = new ZlibStream(src, CompressionStreamMode.Decompress);
     using var dst = new MemoryStream();
     z.CopyTo(dst);
     return dst.ToArray();

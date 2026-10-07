@@ -1,4 +1,6 @@
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.Hpi;
@@ -286,7 +288,7 @@ public sealed class HpiWriter : IDisposable {
 
   private static byte[] ZlibCompress(byte[] data, int offset, int length) {
     using var ms = new MemoryStream();
-    using (var z = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+    using (var z = new ZlibStream(ms, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true))
       z.Write(data, offset, length);
     return ms.ToArray();
   }

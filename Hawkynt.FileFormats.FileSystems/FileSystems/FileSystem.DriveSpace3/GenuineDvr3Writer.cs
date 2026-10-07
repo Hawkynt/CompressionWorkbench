@@ -1,7 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
-using Compression.Registry.Cvf;
+using Compression.Core.FileSystems.Cvf;
 
 namespace FileSystem.DriveSpace3;
 
@@ -53,10 +53,10 @@ public sealed class GenuineDvr3Writer {
   /// Default (before 1980) leaves the FAT date/time fields zero.</summary>
   public DateTime Timestamp { get; init; }
 
-  /// <summary>Per-cluster compression codec. <see cref="Compression.Registry.Cvf.CvfLzMethod.Stored"/>
+  /// <summary>Per-cluster compression codec. <see cref="Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored"/>
   /// (default) emits uncompressed clusters; DS/JM emit genuine DriveSpace 3 compressed clusters.</summary>
-  public Compression.Registry.Cvf.CvfLzMethod CompressionMethod { get; init; }
-    = Compression.Registry.Cvf.CvfLzMethod.Stored;
+  public Compression.Core.FileSystems.Cvf.CvfLzMethod CompressionMethod { get; init; }
+    = Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored;
 
   /// <summary>Codec effort (search depth). Higher = better ratio, slower.</summary>
   public int CompressionLevel { get; init; } = 1;

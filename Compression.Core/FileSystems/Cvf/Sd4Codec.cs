@@ -2,7 +2,7 @@
 using System;
 using System.IO;
 
-namespace Compression.Registry.Cvf;
+namespace Compression.Core.FileSystems.Cvf;
 
 /// <summary>
 /// Genuine Stacker 4 (SD-4, cluster header <c>0x0081</c>) per-cluster codec,

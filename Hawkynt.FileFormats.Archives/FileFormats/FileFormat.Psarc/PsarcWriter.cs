@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -164,7 +166,7 @@ public sealed class PsarcWriter : IDisposable {
   private byte[] CompressBlock(byte[] data, int offset, int length) {
     using var ms = new MemoryStream();
     // SmallestSize gives best ratio; PSARC blocks are independent so per-block overhead is acceptable.
-    using (var z = new ZLibStream(ms, CompressionLevel.SmallestSize, leaveOpen: true))
+    using (var z = new ZlibStream(ms, CompressionStreamMode.Compress, DeflateCompressionLevel.Best, leaveOpen: true))
       z.Write(data, offset, length);
     return ms.ToArray();
   }

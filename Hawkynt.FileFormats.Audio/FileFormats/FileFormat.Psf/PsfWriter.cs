@@ -1,4 +1,6 @@
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.Psf;
@@ -20,7 +22,7 @@ public sealed class PsfWriter : IDisposable {
   /// <summary>Reserved-area blob written verbatim between header and compressed program.</summary>
   public byte[] ReservedData { get; set; } = [];
 
-  /// <summary>Uncompressed program payload. Will be zlib-compressed at <c>CompressionLevel.Optimal</c>.</summary>
+  /// <summary>Uncompressed program payload. Will be zlib-compressed at <c>DeflateCompressionLevel.Default</c>.</summary>
   public byte[] ProgramData { get; set; } = [];
 
   /// <summary>Tag key/value pairs serialized as a UTF-8 <c>[TAG]</c> block. Empty -> no tag block.</summary>
@@ -60,16 +62,11 @@ public sealed class PsfWriter : IDisposable {
       WriteTagBlock();
   }
 
+  // An empty program still gets a complete zlib frame, so the CRC and reader path are
+  // exercised the same way as for non-empty programs.
   private static byte[] Deflate(byte[] data) {
-    if (data.Length == 0) {
-      // ZLibStream still emits a valid zlib frame for empty input; preserve that so the
-      // CRC and reader path are exercised the same way as for non-empty programs.
-      using var emptyMs = new MemoryStream();
-      using (var z = new ZLibStream(emptyMs, CompressionLevel.Optimal, leaveOpen: true)) { }
-      return emptyMs.ToArray();
-    }
     using var ms = new MemoryStream();
-    using (var z = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+    using (var z = new ZlibStream(ms, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true))
       z.Write(data, 0, data.Length);
     return ms.ToArray();
   }

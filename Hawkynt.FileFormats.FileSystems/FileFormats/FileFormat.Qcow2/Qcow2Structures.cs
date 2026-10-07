@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
 
 namespace FileFormat.Qcow2;
 
@@ -224,7 +225,7 @@ internal static class Qcow2Structures {
     ReadExactlyAt(stream, offset, compressed);
 
     using var source = new MemoryStream(compressed, writable: false);
-    using var inflater = new DeflateStream(source, CompressionMode.Decompress, leaveOpen: false);
+    using var inflater = new RawDeflateStream(source, CompressionStreamMode.Decompress, leaveOpen: false);
     var total = 0;
     while (total < destination.Length) {
       var read = inflater.Read(destination[total..]);

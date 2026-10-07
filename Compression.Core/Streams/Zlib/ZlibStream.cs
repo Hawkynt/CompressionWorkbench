@@ -1,18 +1,57 @@
 using System.Buffers.Binary;
 using Compression.Core.Checksums;
 using Compression.Core.Deflate;
+using Compression.Core.Streams;
 
 namespace FileFormat.Zlib;
 
 /// <summary>
-/// Compresses and decompresses data in the zlib format (RFC 1950).
+/// Compresses and decompresses data in the zlib format (RFC 1950), either as a
+/// <see cref="Stream"/> or through the one-shot static helpers.
 /// </summary>
 /// <remarks>
-/// The zlib format wraps a Deflate stream with a 2-byte header and a
-/// 4-byte Adler-32 checksum trailer. The header encodes the compression
-/// method (always Deflate), window size, and compression level.
+/// <para>The zlib format wraps a Deflate stream with a 2-byte header and a 4-byte Adler-32
+/// checksum trailer. The header encodes the compression method (always Deflate), window size,
+/// and compression level.</para>
+/// <para>Both directions stream: compression keeps only the Deflate window in memory, and
+/// decompression stops at the end of the Deflate data, checks the Adler-32 trailer and leaves
+/// anything after it unread (on a seekable inner stream the position is exactly past the
+/// trailer). A checksum mismatch or a malformed header raises <see cref="InvalidDataException"/>.</para>
 /// </remarks>
-public static class ZlibStream {
+public sealed class ZlibStream : CompressionStream {
+  private readonly Adler32 _adler = new();
+  private readonly DeflateCompressionLevel _level;
+  private readonly int _windowBits;
+
+  private DeflateCompressor? _compressor;
+  private DeflateDecompressor? _decompressor;
+  private bool _ended;
+
+  /// <summary>Creates a zlib stream at <see cref="DeflateCompressionLevel.Default"/>.</summary>
+  /// <param name="stream">The stream to read zlib data from or write it to.</param>
+  /// <param name="mode">Whether this stream compresses or decompresses.</param>
+  /// <param name="leaveOpen">Whether to leave <paramref name="stream"/> open on dispose.</param>
+  public ZlibStream(Stream stream, CompressionStreamMode mode, bool leaveOpen = false)
+    : this(stream, mode, DeflateCompressionLevel.Default, ZlibConstants.DefaultWindowBits, leaveOpen) {
+  }
+
+  /// <summary>Creates a zlib stream.</summary>
+  /// <param name="stream">The stream to read zlib data from or write it to.</param>
+  /// <param name="mode">Whether this stream compresses or decompresses.</param>
+  /// <param name="level">The Deflate compression level (compress mode only).</param>
+  /// <param name="leaveOpen">Whether to leave <paramref name="stream"/> open on dispose.</param>
+  public ZlibStream(Stream stream, CompressionStreamMode mode, DeflateCompressionLevel level, bool leaveOpen = false)
+    : this(stream, mode, level, ZlibConstants.DefaultWindowBits, leaveOpen) {
+  }
+
+  private ZlibStream(Stream stream, CompressionStreamMode mode, DeflateCompressionLevel level, int windowBits, bool leaveOpen)
+    : base(stream, mode, leaveOpen) {
+    ArgumentOutOfRangeException.ThrowIfLessThan(windowBits, 8);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(windowBits, 15);
+    this._level = level;
+    this._windowBits = windowBits;
+  }
+
   /// <summary>
   /// Compresses data to zlib format.
   /// </summary>
@@ -20,33 +59,16 @@ public static class ZlibStream {
   /// <param name="output">The stream to write zlib-compressed data to.</param>
   /// <param name="level">The Deflate compression level.</param>
   /// <param name="windowBits">
-  /// The window size exponent (8-15). Defaults to 15 (32 KB window).
+  /// The window size exponent (8-15) recorded in the header. Defaults to 15 (32 KB window).
   /// </param>
   public static void Compress(Stream input, Stream output,
       DeflateCompressionLevel level = DeflateCompressionLevel.Default,
       int windowBits = ZlibConstants.DefaultWindowBits) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
-    ArgumentOutOfRangeException.ThrowIfLessThan(windowBits, 8);
-    ArgumentOutOfRangeException.ThrowIfGreaterThan(windowBits, 15);
 
-    // Read all input data (needed for Adler-32 and Deflate)
-    using var ms = new MemoryStream();
-    input.CopyTo(ms);
-    var data = ms.ToArray();
-
-    // Write 2-byte header
-    WriteHeader(output, windowBits, level);
-
-    // Compress with Deflate
-    var compressed = DeflateCompressor.Compress(data, level);
-    output.Write(compressed);
-
-    // Write Adler-32 checksum (big-endian)
-    var adler = Adler32.Compute(data);
-    Span<byte> trailer = stackalloc byte[4];
-    BinaryPrimitives.WriteUInt32BigEndian(trailer, adler);
-    output.Write(trailer);
+    using var zlib = new ZlibStream(output, CompressionStreamMode.Compress, level, windowBits, leaveOpen: true);
+    input.CopyTo(zlib);
   }
 
   /// <summary>
@@ -58,15 +80,8 @@ public static class ZlibStream {
   public static byte[] Compress(ReadOnlySpan<byte> data,
       DeflateCompressionLevel level = DeflateCompressionLevel.Default) {
     using var output = new MemoryStream();
-    WriteHeader(output, ZlibConstants.DefaultWindowBits, level);
-
-    var compressed = DeflateCompressor.Compress(data, level);
-    output.Write(compressed);
-
-    var adler = Adler32.Compute(data);
-    Span<byte> trailer = stackalloc byte[4];
-    BinaryPrimitives.WriteUInt32BigEndian(trailer, adler);
-    output.Write(trailer);
+    using (var zlib = new ZlibStream(output, CompressionStreamMode.Compress, level, leaveOpen: true))
+      zlib.Write(data);
 
     return output.ToArray();
   }
@@ -77,40 +92,17 @@ public static class ZlibStream {
   /// <param name="input">The stream containing zlib-compressed data.</param>
   /// <param name="output">The stream to write decompressed data to.</param>
   /// <exception cref="InvalidDataException">
-  /// Thrown when the zlib header is invalid or the Adler-32 checksum does not match.
+  /// Thrown when the input is empty, the zlib header is invalid or the Adler-32 checksum does not match.
   /// </exception>
   public static void Decompress(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
 
-    // Read 2-byte header
-    Span<byte> header = stackalloc byte[2];
-    input.ReadExactly(header);
-    ParseHeader(header);
+    using var zlib = new ZlibStream(input, CompressionStreamMode.Decompress, leaveOpen: true);
+    if (!zlib.TryStart())
+      throw new InvalidDataException("Zlib data is too short.");
 
-    // Read remaining bytes (Deflate data + 4-byte Adler-32)
-    using var remaining = new MemoryStream();
-    input.CopyTo(remaining);
-    var buf = remaining.ToArray();
-
-    if (buf.Length < ZlibConstants.TrailerSize)
-      throw new InvalidDataException("Zlib stream is too short for Adler-32 trailer.");
-
-    // Split into Deflate data and trailer
-    var deflateData = buf.AsSpan(0, buf.Length - ZlibConstants.TrailerSize);
-    var trailerSpan = buf.AsSpan(buf.Length - ZlibConstants.TrailerSize);
-    var expectedAdler = BinaryPrimitives.ReadUInt32BigEndian(trailerSpan);
-
-    // Decompress Deflate data
-    var decompressed = DeflateDecompressor.Decompress(deflateData);
-
-    // Verify checksum
-    var actualAdler = Adler32.Compute(decompressed);
-    if (actualAdler != expectedAdler)
-      throw new InvalidDataException(
-        $"Zlib Adler-32 mismatch: expected 0x{expectedAdler:X8}, got 0x{actualAdler:X8}.");
-
-    output.Write(decompressed);
+    zlib.CopyTo(output);
   }
 
   /// <summary>
@@ -137,6 +129,87 @@ public static class ZlibStream {
     return decompressed;
   }
 
+  /// <inheritdoc />
+  protected override int DecompressBlock(byte[] buffer, int offset, int count)
+    => this.DecompressBlock(buffer.AsSpan(offset, count));
+
+  /// <inheritdoc />
+  protected override int DecompressBlock(Span<byte> buffer) {
+    if (this._ended || buffer.IsEmpty || !this.TryStart())
+      return 0;
+
+    var n = this._decompressor!.Decompress(buffer);
+    if (n > 0) {
+      this._adler.Update(buffer[..n]);
+      return n;
+    }
+
+    Span<byte> trailer = stackalloc byte[ZlibConstants.TrailerSize];
+    if (this._decompressor.ReadRemainder(trailer) != trailer.Length)
+      throw new InvalidDataException("Zlib stream is too short for Adler-32 trailer.");
+
+    var expected = BinaryPrimitives.ReadUInt32BigEndian(trailer);
+    if (expected != this._adler.Value)
+      throw new InvalidDataException(
+        $"Zlib Adler-32 mismatch: expected 0x{expected:X8}, got 0x{this._adler.Value:X8}.");
+
+    this._ended = true;
+    return 0;
+  }
+
+  /// <inheritdoc />
+  protected override void CompressBlock(byte[] buffer, int offset, int count)
+    => this.CompressBlock(buffer.AsSpan(offset, count));
+
+  /// <inheritdoc />
+  protected override void CompressBlock(ReadOnlySpan<byte> buffer) {
+    this.EnsureCompressor();
+    this._adler.Update(buffer);
+    this._compressor!.Write(buffer);
+  }
+
+  /// <inheritdoc />
+  protected override void FinishCompression() {
+    this.EnsureCompressor();
+    this._compressor!.Finish();
+
+    Span<byte> trailer = stackalloc byte[ZlibConstants.TrailerSize];
+    BinaryPrimitives.WriteUInt32BigEndian(trailer, this._adler.Value);
+    this.InnerStream.Write(trailer);
+    this.InnerStream.Flush();
+  }
+
+  private void EnsureCompressor() {
+    if (this._compressor is not null)
+      return;
+
+    WriteHeader(this.InnerStream, this._windowBits, this._level);
+    this._compressor = new(this.InnerStream, this._level);
+  }
+
+  // Reads and checks the header on first use. An input that holds nothing at all is an empty
+  // stream rather than an error, as with the platform's zlib stream; a lone byte is truncation.
+  private bool TryStart() {
+    if (this._decompressor is not null)
+      return true;
+    if (this._ended)
+      return false;
+
+    Span<byte> header = stackalloc byte[ZlibConstants.HeaderSize];
+    var read = this.InnerStream.ReadAtLeast(header, header.Length, throwOnEndOfStream: false);
+    if (read == 0) {
+      this._ended = true;
+      return false;
+    }
+
+    if (read < header.Length)
+      throw new InvalidDataException("Zlib header is truncated.");
+
+    ParseHeader(header);
+    this._decompressor = new(this.InnerStream);
+    return true;
+  }
+
   private static void WriteHeader(Stream output, int windowBits, DeflateCompressionLevel level) {
     // CMF: method=8 (Deflate), info = windowBits - 8
     var cmf = ZlibConstants.CompressionMethodDeflate | ((windowBits - 8) << 4);
@@ -152,7 +225,7 @@ public static class ZlibStream {
     var flg = flevel << 6;
 
     // Adjust FCHECK so (CMF*256 + FLG) is a multiple of 31
-    var check = 31 - ((cmf * 256 + flg) % 31);
+    var check = (31 - ((cmf * 256 + flg) % 31)) % 31;
     flg |= check;
 
     output.WriteByte((byte)cmf);

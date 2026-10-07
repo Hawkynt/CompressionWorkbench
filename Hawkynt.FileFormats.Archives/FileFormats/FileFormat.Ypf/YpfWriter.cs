@@ -1,4 +1,6 @@
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.Ypf;
@@ -120,7 +122,7 @@ public sealed class YpfWriter : IDisposable {
     if (data.Length == 0)
       return [];
     using var ms = new MemoryStream();
-    using (var z = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+    using (var z = new ZlibStream(ms, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true))
       z.Write(data, 0, data.Length);
     return ms.ToArray();
   }

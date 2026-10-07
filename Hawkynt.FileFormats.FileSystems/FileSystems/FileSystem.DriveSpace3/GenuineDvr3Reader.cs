@@ -150,7 +150,7 @@ public sealed class GenuineDvr3Reader : IDisposable {
           if (srcOff + inLen <= this._data.Length) {
             var payload = new byte[inLen];
             Array.Copy(this._data, srcOff, payload, 0, inLen);
-            var full = Compression.Registry.Cvf.CvfLzCodec.Decompress(payload, inLen, clusterBytes);
+            var full = Compression.Core.FileSystems.Cvf.CvfLzCodec.Decompress(payload, inLen, clusterBytes);
             Array.Copy(full, 0, output, written, want);
           }
         }

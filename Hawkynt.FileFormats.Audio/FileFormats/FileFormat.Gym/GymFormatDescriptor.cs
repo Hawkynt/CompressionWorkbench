@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 using Compression.Registry;
 
@@ -172,7 +173,7 @@ public sealed class GymFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private static byte[] TryInflate(byte[] packed) {
     try {
       using var input = new MemoryStream(packed);
-      using var z = new ZLibStream(input, CompressionMode.Decompress);
+      using var z = new ZlibStream(input, CompressionStreamMode.Decompress);
       using var output = new MemoryStream();
       z.CopyTo(output);
       return output.ToArray();

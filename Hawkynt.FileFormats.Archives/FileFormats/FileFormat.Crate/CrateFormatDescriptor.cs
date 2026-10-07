@@ -1,5 +1,7 @@
 using System.Globalization;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Gzip;
 using System.Text;
 using Compression.Registry;
 using FileFormat.Tar;
@@ -135,7 +137,7 @@ public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       tarBytes = tarMs.ToArray();
     }
 
-    using var gz = new GZipStream(output, CompressionLevel.Optimal, leaveOpen: true);
+    using var gz = new GzipStream(output, CompressionStreamMode.Compress, DeflateCompressionLevel.Default, leaveOpen: true);
     gz.Write(tarBytes);
   }
 
@@ -245,11 +247,11 @@ public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {
     byte[] inner;
     try {
-      using var gz = new GZipStream(stream, CompressionMode.Decompress, leaveOpen: true);
+      using var gz = new GzipStream(stream, CompressionStreamMode.Decompress, leaveOpen: true);
       using var ms = new MemoryStream();
       gz.CopyTo(ms);
       inner = ms.ToArray();
-    } catch (InvalidDataException ex) {
+    } catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException) {
       throw new InvalidDataException("Not a Rust crate: outer gzip layer failed to inflate.", ex);
     }
 

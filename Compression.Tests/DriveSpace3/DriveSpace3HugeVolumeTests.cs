@@ -1,6 +1,6 @@
 using System.Text;
 using Compression.Registry;
-using Compression.Registry.Cvf;
+using Compression.Core.FileSystems.Cvf;
 using Compression.Tests.Support;
 using FileSystem.DriveSpace3;
 

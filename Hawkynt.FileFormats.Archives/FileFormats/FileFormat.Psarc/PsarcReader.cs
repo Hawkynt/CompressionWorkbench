@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Text;
 
 namespace FileFormat.Psarc;
@@ -156,7 +157,7 @@ public sealed class PsarcReader : IDisposable {
       }
 
       using var src = new MemoryStream(blockBytes, writable: false);
-      using var z = new ZLibStream(src, CompressionMode.Decompress);
+      using var z = new ZlibStream(src, CompressionStreamMode.Decompress);
       var blockWritten = 0;
       while (blockWritten < expected) {
         var read = z.Read(output, written + blockWritten, expected - blockWritten);

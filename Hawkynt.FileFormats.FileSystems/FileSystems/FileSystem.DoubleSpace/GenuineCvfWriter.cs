@@ -71,8 +71,8 @@ public sealed class GenuineCvfWriter {
 
   /// <summary>Per-cluster compression codec. Stored (default) emits uncompressed
   /// clusters; DS = DoubleSpace DS-0-x, JM = DriveSpace JM-0-x.</summary>
-  public Compression.Registry.Cvf.CvfLzMethod CompressionMethod { get; init; }
-    = Compression.Registry.Cvf.CvfLzMethod.Stored;
+  public Compression.Core.FileSystems.Cvf.CvfLzMethod CompressionMethod { get; init; }
+    = Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored;
 
   /// <summary>Codec effort (search depth). Higher = better ratio, slower.</summary>
   public int CompressionLevel { get; init; } = 1;
@@ -127,7 +127,7 @@ public sealed class GenuineCvfWriter {
     var physCursor = physDataStart;
     var layout = new List<ClusterPlan>();
     foreach (var (cl, full) in clusterFull) {
-      var comp = Compression.Registry.Cvf.CvfLzCodec.Encode(full, this.CompressionMethod, this.CompressionLevel);
+      var comp = Compression.Core.FileSystems.Cvf.CvfLzCodec.Encode(full, this.CompressionMethod, this.CompressionLevel);
       var ksize = comp is null ? Spc : (comp.Length + Ss - 1) / Ss;
       if (comp is not null && ksize <= Spc && (ksize < Spc || this.ForceCompress)) {
         layout.Add(new ClusterPlan(cl, comp, ksize, true, physCursor));

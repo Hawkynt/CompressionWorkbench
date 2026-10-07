@@ -1,9 +1,9 @@
 #pragma warning disable CS1591
 using System.Globalization;
-using System.IO.Compression;
 using System.Text;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
+using FileFormat.Zip;
 
 namespace FileFormat.Numpy;
 
@@ -22,10 +22,9 @@ namespace FileFormat.Numpy;
 /// </list>
 /// </summary>
 /// <remarks>
-/// We read the ZIP central directory via <see cref="ZipArchive"/> rather than
-/// via <c>FileFormat.Zip</c> so this project has no inter-format dependency;
-/// the only container semantics needed are DEFLATE + stored entries, both of
-/// which are handled by the BCL implementation.
+/// The ZIP container is read and written through Core's <see cref="ZipReader"/> and
+/// <see cref="ZipWriter"/>; the only container semantics needed are DEFLATE and
+/// stored entries.
 /// </remarks>
 public sealed class NpzFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
@@ -115,17 +114,14 @@ public sealed class NpzFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (files == null || files.Length == 0 || MatchesFilter("metadata.ini", files))
       WriteFile(outputDir, "metadata.ini", metaBytes);
 
-    // Re-open the zip to extract — CollectEntries closed its ZipArchive.
+    // Re-open the zip to extract — CollectEntries closed its reader.
     stream.Seek(0, SeekOrigin.Begin);
-    using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
+    using var archive = new ZipReader(stream, leaveOpen: true);
     foreach (var entry in archive.Entries) {
-      if (entry.FullName.EndsWith("/", StringComparison.Ordinal)) continue;
-      if (files != null && files.Length > 0 && !MatchesFilter(entry.FullName, files)) continue;
+      if (entry.IsDirectory) continue;
+      if (files != null && files.Length > 0 && !MatchesFilter(entry.FileName, files)) continue;
 
-      using var src = entry.Open();
-      using var buf = new MemoryStream();
-      src.CopyTo(buf);
-      WriteFile(outputDir, entry.FullName, buf.ToArray());
+      WriteFile(outputDir, entry.FileName, archive.ExtractEntry(entry));
     }
   }
 
@@ -140,21 +136,25 @@ public sealed class NpzFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
 
-    using var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
+    using var archive = new ZipWriter(output, leaveOpen: true);
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       var raw = i.ReadContent();
       var name = i.ArchiveName.Replace('\\', '/');
       var alreadyNpy = name.EndsWith(".npy", StringComparison.OrdinalIgnoreCase) && IsNpyPayload(raw);
 
-      var entry = archive.CreateEntry(alreadyNpy ? name : EnsureNpySuffix(name), CompressionLevel.NoCompression);
-      using var s = entry.Open();
-      if (alreadyNpy) {
-        s.Write(raw, 0, raw.Length);
-      } else {
+      byte[] payload;
+      if (alreadyNpy)
+        payload = raw;
+      else {
+        using var s = new MemoryStream();
         NpyWriter.Write(s, raw);
+        payload = s.ToArray();
       }
+
+      archive.AddEntry(alreadyNpy ? name : EnsureNpySuffix(name), payload, ZipCompressionMethod.Store);
     }
+    archive.Finish();
   }
 
   private static bool IsNpyPayload(ReadOnlySpan<byte> data)
@@ -175,13 +175,13 @@ public sealed class NpzFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     stream.Seek(0, SeekOrigin.Begin);
     try {
-      using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
+      using var archive = new ZipReader(stream, leaveOpen: true);
       var npyCount = 0;
       var otherCount = 0;
       foreach (var entry in archive.Entries) {
-        if (entry.FullName.EndsWith("/", StringComparison.Ordinal)) continue;
-        entries.Add(new ZipEntrySummary(entry.FullName, entry.Length, entry.CompressedLength, entry.LastWriteTime));
-        if (entry.FullName.EndsWith(".npy", StringComparison.OrdinalIgnoreCase)) npyCount++;
+        if (entry.IsDirectory) continue;
+        entries.Add(new ZipEntrySummary(entry.FileName, entry.UncompressedSize, entry.CompressedSize, new DateTimeOffset(entry.LastModified)));
+        if (entry.FileName.EndsWith(".npy", StringComparison.OrdinalIgnoreCase)) npyCount++;
         else otherCount++;
       }
       sb.Append("parse_status=ok\r\n");

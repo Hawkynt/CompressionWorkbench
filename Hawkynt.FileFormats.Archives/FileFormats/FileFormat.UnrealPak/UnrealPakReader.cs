@@ -1,7 +1,8 @@
 #pragma warning disable CS1591
 #pragma warning disable CA5350 // Unreal Pak mandates SHA-1 for index and entry integrity fields.
 using System.Buffers.Binary;
-using System.IO.Compression;
+using Compression.Core.Streams;
+using FileFormat.Zlib;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -427,7 +428,7 @@ public sealed class UnrealPakReader {
 
   private static byte[] DecompressZlibBlock(byte[] compressed, int expectedSize, string entryName) {
     using var input = new MemoryStream(compressed, writable: false);
-    using var zlib = new ZLibStream(input, CompressionMode.Decompress, leaveOpen: false);
+    using var zlib = new ZlibStream(input, CompressionStreamMode.Decompress, leaveOpen: false);
     var result = new byte[expectedSize];
     var offset = 0;
     while (offset < result.Length) {
