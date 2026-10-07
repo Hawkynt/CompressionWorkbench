@@ -44,8 +44,14 @@ internal static class ScreenshotMode {
         return window;
       }
 
-      case "maintenance":
-        return new DefragmentWindow(CreateFilesystemFixture(fixtureRoot));
+      case "maintenance": {
+        // The shell on the Defragment tab, so the capture shows the ribbon and the block view the
+        // way a user reaches them.
+        var window = new MainForm([]);
+        window.OpenArchive(CreateFilesystemFixture(fixtureRoot));
+        window.OpenDefragmentTab(verb: null);
+        return window;
+      }
 
       default:
         throw new ArgumentOutOfRangeException(nameof(target), target,

@@ -8,8 +8,9 @@ backends, so Windows and Linux run the same code rather than two frontends drift
 - **Ribbon** — the commands live in an Office-style ribbon instead of a menu bar: a Quick Access
   Toolbar (Back, Forward, Up, Refresh), File, Home (clipboard, organize, open, selection), View
   (navigation and preview panes, Details / Thumbnails), Tools (analysis, maintenance, partitions,
-  mounting, benchmark), and an Archive Tools tab that appears only inside an archive (extract, add,
-  test, and the maintenance verbs). Every shortcut works form-wide from the ribbon.
+  mounting, benchmark), an Archive Tools tab that appears only inside an archive (extract, add, test,
+  reconfigure), and a Disk Tools tab, Defragment, that appears while there is something to maintain.
+  Every shortcut works form-wide from the ribbon.
 - **Archive browser** — the main window, laid out like a file manager. A folder tree on the left
   shows the drives (or `/`) and home, with the open archive grafted in as a folder beside the file it
   lives in; it follows every navigation, however it happened. The breadcrumb bar is also an address
@@ -49,8 +50,31 @@ backends, so Windows and Linux run the same code rather than two frontends drift
   for a directory.
 - **Binary analysis** — magic scan, algorithm fingerprints, entropy map, heatmap, trial
   decompression, chain reconstruction, statistics, strings and a struct-template interpreter.
-- **Maintenance** — defragment, optimize, shrink, purge, wipe-empty, compact and scramble, over a
-  live block map that can also be projected onto a platter or a stack of platters.
+- **Defragment tab** — maintenance is a contextual ribbon tab rather than a window. It appears while
+  the open archive or image, or an archive file selected in a folder, supports any maintenance
+  operation (Tools → Maintenance or Ctrl+Shift+D selects it; the Maintenance entries of the list's
+  context menu open it with their operation picked). Selecting it hands the client area below the
+  breadcrumb bar to the block map; leaving it shows the browser again exactly as it was.
+
+  | Group | Items |
+  | --- | --- |
+  | Operation | Start, then Defragment, Optimize, Shrink, Compact, Clear (wipe free space), Purge, Scramble as a radio group; Stop while extents are being moved |
+  | Defrag Mode | Consolidate (Pack at End as its variant), Defrag (fill holes), Re-order (ascending blocks), Carve Hole with its size, placement and offset fields — all extent moves — and Sort Entries, which sorts every directory by name in place and moves no data |
+  | Options | Block interleave (spinner, 1–256), metadata placement, layout profile and Profiles… (the editor) for extent moves; the seed for Scramble and the method for Optimize (Compress, Repack or Canonicalize, as the format offers) appear while their operation is picked, and the Target choice appears only when there is one to make |
+  | View | Blocks, Circle, 3D Stack; Files panel; Legend; Analyze (read the layout again) |
+
+  The line above the map names the target. It is the open volume, or a selected file whose content —
+  never its name — proves it a container ("Selected: inner.img (Fat)"); changing the selection never
+  retargets, only picking in the Target field does.
+
+  Every item asks one adapter (`Maintenance/TargetCapabilities.cs`) whether the target supports it,
+  and is disabled with the reason in its tooltip when not. The adapter is a view of the registry's
+  `MaintenanceCapabilities.Describe` profile — operations, honoured defrag features — so the tab, the
+  CLI and the support matrices cannot disagree; a test holds it to the profile for every registered
+  format. Sort Entries is offered for FAT and exFAT. Operations run off the UI thread through
+  `MaintenancePresenter`, driving the map live; a refusal (`NotSupportedException`) is reported and
+  leaves the image byte-identical, and after a change the archive is re-listed in place. A nested
+  archive is maintained as a temporary copy and written back into its host after each change.
 - **Partition editor** — MBR and GPT tables: add, delete, purge, convert, format, verify.
 - **Benchmark** — every building block against seven synthetic data patterns.
 - **Reverse engineer** — discovers an unknown format by probing a tool or by locating known content
@@ -85,7 +109,7 @@ ran at a scale factor other than 1.
 ## Screenshots
 
 `--screenshot=<archive-browser|analysis|maintenance>` builds a deterministic fixture and shows that
-one window. It does not write an image: NativeForms has no way to render a window to a bitmap, so CI
+one window (`maintenance` is the shell on the Defragment tab over a scrambled FAT floppy). It does not write an image: NativeForms has no way to render a window to a bitmap, so CI
 takes the picture from outside with an X11 capture tool. Everything that makes a capture
 reproducible lives here — fixed payloads, fixed timestamps, a fixed scramble seed, and an analysis
 window that leaves its elapsed time out of the status line.

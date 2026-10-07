@@ -117,7 +117,8 @@ internal sealed partial class MainForm : Form {
     this._contentSplit.Panel2.Controls.Add(this._preview);
 
     // Added in one place, in z-order: the drop overlay sits above the panes it covers.
-    this.Controls.AddRange(this._ribbon, this._breadcrumbBar, this._split, this._dropOverlay, this._status);
+    // The Defragment tab's block view takes the panes' place while that tab is selected.
+    this.Controls.AddRange(this._ribbon, this._breadcrumbBar, this._split, this._defragView, this._dropOverlay, this._status);
 
     this.DragOver += this.OnDragOver;
     this.DragLeave += (_, _) => this.SetDropOverlay(visible: false, "");
@@ -382,7 +383,7 @@ internal sealed partial class MainForm : Form {
     var maintenance = new ToolStripMenuItem("&Maintenance") { Image = Images.Icon(IconKeys.Defragment) };
     maintenance.DropDownItems.AddRange([
       Tip(this.Item("&Compact (defrag + optimize + shrink)...", IconKeys.Defragment, Keys.None, this._model.CompactEntryCommand),
-        "One pass to the smallest valid container holding the same contents. Tick 'Minimal geometry' in the window for the bare-minimum (non-standard) rebuild."),
+        "One pass to the smallest valid container holding the same contents. Minimal Geometry on the Defragment tab gives the bare-minimum (non-standard) rebuild."),
       Tip(this.Item("&Reconfigure (geometry/options)...", IconKeys.Properties, Keys.None, this._model.ReconfigureEntryCommand),
         "Change an existing image's geometry/options after creation (e.g. FAT cluster size or root entries, NTFS MFT record size). Contents preserved byte-for-byte."),
       new ToolStripSeparator(),
@@ -395,7 +396,7 @@ internal sealed partial class MainForm : Form {
       new ToolStripSeparator(),
       Tip(this.Item("&Purge...", IconKeys.Remove, Keys.None, this._model.PurgeEntryCommand),
         "Erase ALL live data, leaving a valid empty container."),
-      Tip(this.Item("&Wipe Empty...", IconKeys.Remove, Keys.None, this._model.WipeEntryCommand),
+      Tip(this.Item("C&lear Free Space...", IconKeys.Remove, Keys.None, this._model.WipeEntryCommand),
         "Overwrite only unused space (free clusters, slack, deleted entries). Live data untouched."),
       Tip(this.Item("Scra&mble...", IconKeys.Defragment, Keys.None, this._model.ScrambleEntryCommand),
         "Scatter every block of every file across the volume — fragmentation on purpose, so Defragment has something real to work against. Content preserved; asks first."),
@@ -463,6 +464,8 @@ internal sealed partial class MainForm : Form {
       var contentWidth = width - this._split.SplitterDistance - this._split.SplitterWidth;
       this._contentSplit.SplitterDistance = Math.Max(this._contentSplit.Panel1MinSize, contentWidth - PreviewPaneWidth);
     }
+    this._defragView.Bounds = this._split.Bounds;
+    this._defragView.SizeFilesPanelOnce();
     this._dropOverlay.Bounds = this._split.Bounds;
     this._status.Bounds = new(0, this.ClientSize.Height - StatusHeight, width, StatusHeight);
   }
@@ -698,19 +701,6 @@ internal sealed partial class MainForm : Form {
   }
 
   // ── Window commands ─────────────────────────────────────────────────────────────────────────
-
-  private void OpenMaintenance() {
-    var preselected = this._model.HasArchive ? this._model.ArchivePath : null;
-    var window = preselected is not null ? new DefragmentWindow(preselected) : new DefragmentWindow();
-
-    // Re-list whenever the maintenance window mutates the archive we have open.
-    window.ArchiveMutated += path => {
-      if (this._model.HasArchive && string.Equals(path, this._model.ArchivePath, StringComparison.OrdinalIgnoreCase))
-        this._model.ReloadArchiveInPlace();
-    };
-
-    window.Show();
-  }
 
   private void OpenPartitionEditor() {
     var preselected = this._model.HasArchive ? this._model.ArchivePath : null;
