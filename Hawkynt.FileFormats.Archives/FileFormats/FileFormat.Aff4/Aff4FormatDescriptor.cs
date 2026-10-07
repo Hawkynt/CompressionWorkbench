@@ -1,10 +1,11 @@
 #pragma warning disable CS1591
 using System.Globalization;
-using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
+using Compression.Core.Deflate;
+using FileFormat.Zip;
 
 namespace FileFormat.Aff4;
 
@@ -56,7 +57,7 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       AllowedValues: ["deflate", "stored"], Description: "AFF4-L ZipSegment permits ZIP Stored or Deflate."),
     new("Level", "Deflate level", FormatOptionKind.Integer, "6",
       AllowedValues: ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
-      Description: "Maps to the platform ZIP Deflate effort tiers; ignored for Stored."),
+      Description: "0 = stored Deflate blocks, 1 = fast, 2-7 = default, 8-9 = best; ignored for Stored."),
     new("Hashes", "Stream hashes", FormatOptionKind.String, "sha256",
       Description: "Comma-separated linear hashes stored per file as aff4:hash: md5, sha1, sha256, sha512.",
       IsOptimizationAxis: false),
@@ -181,11 +182,11 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     zip.Finish(volumeArn);
   }
 
-  private static CompressionLevel GetCompressionLevel(int level) => level switch {
-    0 => CompressionLevel.NoCompression,
-    1 => CompressionLevel.Fastest,
-    >= 8 => CompressionLevel.SmallestSize,
-    _ => CompressionLevel.Optimal,
+  private static DeflateCompressionLevel GetCompressionLevel(int level) => level switch {
+    0 => DeflateCompressionLevel.None,
+    1 => DeflateCompressionLevel.Fast,
+    >= 8 => DeflateCompressionLevel.Best,
+    _ => DeflateCompressionLevel.Default,
   };
 
   private static List<string> ParseHashNames(string value, string paramName) {
@@ -294,7 +295,7 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   private static void AddText(Aff4ZipWriter zip, string name, string content, DateTimeOffset modified) {
     using var source = new MemoryStream(Encoding.UTF8.GetBytes(content), writable: false);
-    zip.AddEntry(name, source, deflate: false, CompressionLevel.NoCompression, modified);
+    zip.AddEntry(name, source, deflate: false, DeflateCompressionLevel.None, modified);
   }
 
   /// <summary>
@@ -326,10 +327,10 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
     string? turtle = null;
     Aff4Volume? volume = null;
-    ZipArchive? zip = null;
+    ZipReader? zip = null;
     try {
       volume = Aff4Volume.Open(stream, out zip);
-    } catch (InvalidDataException) {
+    } catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or ArgumentException) {
       // Malformed ZIP — fall through to partial metadata.
       zip?.Dispose();
     }
@@ -349,8 +350,8 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
             try { File.SetLastWriteTimeUtc(dest, modified.UtcDateTime); } catch { /* timestamp precision/platform limits */ }
         }
         foreach (var entry in volume.Entries) {
-          var storedName = entry.FullName.Replace('\\', '/');
-          if (volume.ConsumedMembers.Contains(entry.FullName)) continue;
+          var storedName = entry.FileName.Replace('\\', '/');
+          if (volume.ConsumedMembers.Contains(entry.FileName)) continue;
           if (storedName.EndsWith('/')) {
             var directoryName = storedName.TrimEnd('/');
             if (Wants(files, directoryName) || Wants(files, storedName))
@@ -361,10 +362,10 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
           var dest = SafeCombine(outputDir, storedName);
           var destDir = Path.GetDirectoryName(dest);
           if (destDir != null) Directory.CreateDirectory(destDir);
-          using (var es = entry.Open())
+          using (var es = zip!.OpenEntryStream(entry))
           using (var outFile = File.Create(dest))
             es.CopyTo(outFile);
-          try { File.SetLastWriteTime(dest, entry.LastWriteTime.LocalDateTime); } catch { /* timestamp precision/platform limits */ }
+          try { File.SetLastWriteTime(dest, entry.LastModified); } catch { /* timestamp precision/platform limits */ }
         }
       }
     }
@@ -386,14 +387,14 @@ public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
             ? new MemberInfo(item.Path, 0, 0, "Stored", item.LastWritten?.LocalDateTime, "folder", IsDirectory: true)
             : new MemberInfo(item.Path, item.Size, item.Size, item.Storage.ToString(), item.LastWritten?.LocalDateTime, "file"));
         foreach (var entry in volume.Entries) {
-          if (volume.ConsumedMembers.Contains(entry.FullName)) continue;
-          var storedName = entry.FullName.Replace('\\', '/');
+          if (volume.ConsumedMembers.Contains(entry.FileName)) continue;
+          var storedName = entry.FileName.Replace('\\', '/');
           if (storedName.EndsWith('/')) {
-            result.Add(new MemberInfo(storedName.TrimEnd('/'), 0, 0, "Stored", entry.LastWriteTime.DateTime, "folder", IsDirectory: true));
+            result.Add(new MemberInfo(storedName.TrimEnd('/'), 0, 0, "Stored", entry.LastModified, "folder", IsDirectory: true));
             continue;
           }
-          var method = entry.CompressedLength == entry.Length ? "Stored" : "Deflate";
-          result.Add(new MemberInfo(storedName, entry.Length, entry.CompressedLength, method, entry.LastWriteTime.DateTime, ClassifyMember(storedName)));
+          var method = entry.CompressedSize == entry.UncompressedSize ? "Stored" : "Deflate";
+          result.Add(new MemberInfo(storedName, entry.UncompressedSize, entry.CompressedSize, method, entry.LastModified, ClassifyMember(storedName)));
         }
       }
     } catch {

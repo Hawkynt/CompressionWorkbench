@@ -1,14 +1,15 @@
 using System.Buffers;
 using System.Buffers.Binary;
-using System.IO.Compression;
 using System.Text;
 using Compression.Core.Checksums;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
 
 namespace FileFormat.Aff4;
 
 /// <summary>
 /// The ZIP layer of an AFF4 volume. AFF4 Standard v1.0 section 5.4 requires every ZIP header to be
-/// ZIP64, which <see cref="ZipArchive"/> does not do for small members. Each member is written the
+/// ZIP64, which general-purpose ZIP writers do not do for small members. Each member is written the
 /// way the AFF4 Canonical Reference Images (Evimetry) write them, streaming and without seeking:
 /// a version-4.5 local header whose 32-bit sizes are 0xFFFFFFFF and which carries a ZIP64 extra
 /// field, then the data, then a ZIP64 data descriptor (PKWARE APPNOTE 6.3.10 sections 4.3.9 and
@@ -30,7 +31,7 @@ internal sealed class Aff4ZipWriter {
   public Aff4ZipWriter(Stream output) => this._output = output;
 
   /// <summary>Writes one member, Stored or Deflate, from <paramref name="source"/>; every read byte is also fed to <paramref name="observe"/>.</summary>
-  public void AddEntry(string name, Stream source, bool deflate, CompressionLevel level, DateTimeOffset modified, Action<ReadOnlySpan<byte>>? observe = null) {
+  public void AddEntry(string name, Stream source, bool deflate, DeflateCompressionLevel level, DateTimeOffset modified, Action<ReadOnlySpan<byte>>? observe = null) {
     var nameBytes = Encoding.UTF8.GetBytes(name);
     if (nameBytes.Length > ushort.MaxValue) throw new ArgumentException($"ZIP member name '{name}' is too long.", nameof(name));
     var flags = (ushort)(FlagDataDescriptor | (name.Any(c => c > 0x7F) ? FlagUtf8 : 0));
@@ -64,7 +65,7 @@ internal sealed class Aff4ZipWriter {
     var buffer = ArrayPool<byte>.Shared.Rent(1 << 16);
     try {
       var counter = new CountingStream(this);
-      using (var sink = deflate ? new DeflateStream(counter, level, leaveOpen: true) : (Stream)counter) {
+      using (var sink = deflate ? new RawDeflateStream(counter, CompressionStreamMode.Compress, level, leaveOpen: true) : (Stream)counter) {
         int read;
         while ((read = source.Read(buffer, 0, buffer.Length)) > 0) {
           var chunk = buffer.AsSpan(0, read);
@@ -77,9 +78,6 @@ internal sealed class Aff4ZipWriter {
     } finally {
       ArrayPool<byte>.Shared.Return(buffer);
     }
-    // DeflateStream emits nothing for empty input, but a Deflate member needs at least the empty
-    // final fixed-Huffman block (RFC 1951 section 3.2.6), or unzip reports invalid data.
-    if (deflate && this._position == dataStart) this.Write([0x03, 0x00]);
     var compressedSize = this._position - dataStart;
 
     Span<byte> descriptor = stackalloc byte[24];

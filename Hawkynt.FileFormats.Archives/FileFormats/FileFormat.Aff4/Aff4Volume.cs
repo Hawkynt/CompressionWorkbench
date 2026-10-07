@@ -1,6 +1,9 @@
 using System.Buffers.Binary;
 using System.Globalization;
-using System.IO.Compression;
+using Compression.Core.Deflate;
+using Compression.Core.Streams;
+using FileFormat.Zip;
+using FileFormat.Zlib;
 using System.Text;
 using Compression.Core.Dictionary.Lz4;
 using Compression.Core.Dictionary.Snappy;
@@ -44,20 +47,20 @@ internal sealed class Aff4Volume {
   public const string Aff4Ns = "http://aff4.org/Schema#";
   private const int MaxChunkSize = 64 << 20;
 
-  private readonly ZipArchive _zip;
-  private readonly Dictionary<string, ZipArchiveEntry> _members;
+  private readonly ZipReader _zip;
+  private readonly Dictionary<string, ZipEntry> _members;
 
   public string? VolumeArn { get; }
   public string? Turtle { get; }
   public IReadOnlyList<Aff4LogicalItem> Items { get; }
   /// <summary>ZIP members that carry logical data and so are represented by <see cref="Items"/>.</summary>
   public IReadOnlySet<string> ConsumedMembers { get; }
-  public IReadOnlyCollection<ZipArchiveEntry> Entries => this._zip.Entries;
+  public IReadOnlyList<ZipEntry> Entries => this._zip.Entries;
 
-  private Aff4Volume(ZipArchive zip) {
+  private Aff4Volume(ZipReader zip) {
     this._zip = zip;
-    this._members = new Dictionary<string, ZipArchiveEntry>(StringComparer.Ordinal);
-    foreach (var entry in zip.Entries) this._members.TryAdd(entry.FullName, entry);
+    this._members = new Dictionary<string, ZipEntry>(StringComparer.Ordinal);
+    foreach (var entry in zip.Entries) this._members.TryAdd(entry.FileName, entry);
     this.VolumeArn = this.ReadVolumeArn();
     this.Turtle = this.ReadText("information.turtle");
     var consumed = new HashSet<string>(StringComparer.Ordinal);
@@ -66,9 +69,9 @@ internal sealed class Aff4Volume {
   }
 
   /// <summary>Opens <paramref name="stream"/> as a ZIP volume; the caller owns both objects.</summary>
-  public static Aff4Volume Open(Stream stream, out ZipArchive zip) {
+  public static Aff4Volume Open(Stream stream, out ZipReader zip) {
     stream.Seek(0, SeekOrigin.Begin);
-    zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
+    zip = new ZipReader(stream, leaveOpen: true);
     return new Aff4Volume(zip);
   }
 
@@ -86,7 +89,7 @@ internal sealed class Aff4Volume {
 
   private string? ReadText(string member) {
     if (!this._members.TryGetValue(member, out var entry)) return null;
-    using var source = entry.Open();
+    using var source = this._zip.OpenEntryStream(entry);
     using var reader = new StreamReader(source, new UTF8Encoding(false, false));
     return reader.ReadToEnd();
   }
@@ -134,7 +137,7 @@ internal sealed class Aff4Volume {
       var member = this.ResolveMember(arn, null);
       if (member != null) {
         consumed.Add(member);
-        items.Add(new(arn, path, false, this._members[member].Length, lastWritten, Aff4Storage.ZipSegment, member, null, 0, 0, null));
+        items.Add(new(arn, path, false, this._members[member].UncompressedSize, lastWritten, Aff4Storage.ZipSegment, member, null, 0, 0, null));
         continue;
       }
       if (inline != null) {
@@ -178,7 +181,7 @@ internal sealed class Aff4Volume {
   public void CopyTo(Aff4LogicalItem item, Stream target) {
     switch (item.Storage) {
       case Aff4Storage.ZipSegment: {
-        using var source = this._members[item.Member!].Open();
+        using var source = this._zip.OpenEntryStream(this._members[item.Member!]);
         source.CopyTo(target);
         return;
       }
@@ -199,8 +202,8 @@ internal sealed class Aff4Volume {
       var name = $"{item.Member}/{bevy:D8}";
       if (!this._members.TryGetValue(name + ".index", out var indexEntry) || !this._members.TryGetValue(name, out var bevyEntry))
         throw new InvalidDataException($"AFF4 ImageStream {item.Arn} is missing bevy {bevy}.");
-      var index = ReadAll(indexEntry);
-      var data = ReadAll(bevyEntry);
+      var index = this._zip.ExtractEntry(indexEntry);
+      var data = this._zip.ExtractEntry(bevyEntry);
       // AFF4 Standard v1.0 section 3: index entries are (u64 bevy offset, u32 stored length).
       for (var i = 0; i + 12 <= index.Length && remaining > 0; i += 12) {
         var offset = BinaryPrimitives.ReadUInt64LittleEndian(index.AsSpan(i));
@@ -247,7 +250,9 @@ internal sealed class Aff4Volume {
       }
       case ChunkCompression.Deflate or ChunkCompression.Zlib: {
         using var input = new MemoryStream(stored.ToArray());
-        using Stream inflater = method == ChunkCompression.Zlib ? new ZLibStream(input, CompressionMode.Decompress) : new DeflateStream(input, CompressionMode.Decompress);
+        using Stream inflater = method == ChunkCompression.Zlib
+          ? new ZlibStream(input, CompressionStreamMode.Decompress)
+          : new RawDeflateStream(input, CompressionStreamMode.Decompress);
         using var output = new MemoryStream(chunkSize);
         inflater.CopyTo(output);
         return output.ToArray();
@@ -255,13 +260,6 @@ internal sealed class Aff4Volume {
       default:
         throw new NotSupportedException($"AFF4 ImageStream {arn} uses an unsupported compression method.");
     }
-  }
-
-  private static byte[] ReadAll(ZipArchiveEntry entry) {
-    using var source = entry.Open();
-    using var buffer = new MemoryStream(entry.Length is > 0 and < int.MaxValue ? (int)entry.Length : 0);
-    source.CopyTo(buffer);
-    return buffer.ToArray();
   }
 
   /// <summary>
