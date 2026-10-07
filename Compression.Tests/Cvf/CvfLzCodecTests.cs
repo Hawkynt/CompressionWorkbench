@@ -1,4 +1,4 @@
-using Compression.Registry.Cvf;
+using Compression.Core.FileSystems.Cvf;
 
 namespace Compression.Tests.Cvf;
 

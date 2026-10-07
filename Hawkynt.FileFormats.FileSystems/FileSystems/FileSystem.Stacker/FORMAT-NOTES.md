@@ -32,7 +32,7 @@ copied.
 uses an 8 KB cluster (= 16 sectors/cluster, what `GenuineStackerWriter` emits) and
 two compressed-cluster codecs keyed by a header — `SD-3` (Stacker 3) and `0x81-0`
 (Stacker 4, "more powerful than SD-3"). `GenuineStackerWriter` emits stored clusters or
-`DS`/`SD-4`-compressed ones through `Compression.Registry.Cvf.CvfLzCodec`,
+`DS`/`SD-4`-compressed ones through `Compression.Core.FileSystems.Cvf.CvfLzCodec`,
 selected per `CvfLzMethod`; `dmsdos` reads all three back byte-exact.
 
 A Stacker compressed volume is an ordinary MS-DOS host file (canonically

@@ -158,11 +158,11 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       DependsOn: "Compatibility=Genuine"),
   ];
 
-  private static Compression.Registry.Cvf.CvfLzMethod ParseMethod(string s) => s.ToLowerInvariant() switch {
-    "ds" => Compression.Registry.Cvf.CvfLzMethod.Ds,
-    "sd4" => Compression.Registry.Cvf.CvfLzMethod.Sd4,
-    "auto" => Compression.Registry.Cvf.CvfLzMethod.Auto,
-    _ => Compression.Registry.Cvf.CvfLzMethod.Stored,
+  private static Compression.Core.FileSystems.Cvf.CvfLzMethod ParseMethod(string s) => s.ToLowerInvariant() switch {
+    "ds" => Compression.Core.FileSystems.Cvf.CvfLzMethod.Ds,
+    "sd4" => Compression.Core.FileSystems.Cvf.CvfLzMethod.Sd4,
+    "auto" => Compression.Core.FileSystems.Cvf.CvfLzMethod.Auto,
+    _ => Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored,
   };
 
   /// <summary>
@@ -361,7 +361,7 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     if (genuine) {
       var w = new GenuineStackerWriter {
         VolumeLabel = label,
-        CompressionMethod = Compression.Registry.Cvf.CvfLzMethod.Auto,
+        CompressionMethod = Compression.Core.FileSystems.Cvf.CvfLzMethod.Auto,
         CompressionLevel = 2,
       };
       foreach (var (n, d) in keep) w.AddFile(n, d);

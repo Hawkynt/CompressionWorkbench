@@ -19,7 +19,7 @@ public class StackerGenuineMaintenanceTests {
   ];
 
   private static byte[] MakeGenuine() {
-    var w = new GenuineStackerWriter { VolumeLabel = "STAC", CompressionMethod = Compression.Registry.Cvf.CvfLzMethod.Stored };
+    var w = new GenuineStackerWriter { VolumeLabel = "STAC", CompressionMethod = Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored };
     foreach (var (n, d) in Seed) w.AddFile(n, d);
     return w.Build();
   }
