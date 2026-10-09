@@ -395,4 +395,129 @@ public sealed class Reiser4NativeTreeTests {
     Assert.That(reader.Extract(reader.Entries.Single()), Is.EqualTo(Payload(9_137, 15)));
   }
 
+  private static uint MkfsIdOf(byte[] image)
+    => BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(17 * Reiser4Writer.BlockSize + 48));
+
+  private static ushort HeightOf(byte[] image)
+    => BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(17 * Reiser4Writer.BlockSize + 68));
+
+  [Test, Category("RoundTrip")]
+  public void GivenAVolume_WhenEditingAndDefragmentingByRebuild_ThenTheMkfsIdSurvivesWithUuidAndLabel() {
+    var writer = new Reiser4Writer { Label = "keepme", MkfsId = 0x1234ABCDu, Uuid = Enumerable.Range(1, 16).Select(static i => (byte)i).ToArray() };
+    writer.AddFile("a/b.bin", Payload(5_000, 30));
+    using var image = new MemoryStream(writer.Build());
+    var descriptor = new Reiser4FormatDescriptor();
+    descriptor.Add(image, [ArchiveInputInfo.InMemory("a/c.bin", Payload(9_000, 31))]);
+    Assert.That(MkfsIdOf(image.ToArray()), Is.EqualTo(0x1234ABCDu), "after add");
+    descriptor.Remove(image, ["a/b.bin"]);
+    Assert.That(MkfsIdOf(image.ToArray()), Is.EqualTo(0x1234ABCDu), "after remove");
+    descriptor.Defragment(image);
+    Assert.That(MkfsIdOf(image.ToArray()), Is.EqualTo(0x1234ABCDu), "after defrag");
+    using var reader = new Reiser4Reader(image);
+    Assert.Multiple(() => {
+      Assert.That(reader.Label, Is.EqualTo("keepme"));
+      Assert.That(reader.UuidHex, Is.EqualTo(Convert.ToHexString(writer.Uuid!)));
+    });
+  }
+
+  // Offsets inside the fixed blocks that carry the profile rather than the identity:
+  // the format40 tail policy (block 17, byte 70), the backup of the root directory's
+  // plugin set (block 22, from byte 127 on), the status block (21) and the journal (19, 20).
+  [TestCase(17, 70, (byte)1, TestName = "GivenATailsOnlyPolicy_WhenEditing_ThenTheEditIsRefusedAndTheImageIsUntouched")]
+  [TestCase(22, 131, (byte)2, TestName = "GivenANonDefaultHashInTheBackedUpPluginSet_WhenEditing_ThenTheEditIsRefusedAndTheImageIsUntouched")]
+  [TestCase(21, 16, (byte)2, TestName = "GivenAStatusBlockNotMarkedConsistent_WhenEditing_ThenTheEditIsRefusedAndTheImageIsUntouched")]
+  [TestCase(19, 0, (byte)1, TestName = "GivenAJournalHeaderThatIsNotBlank_WhenEditing_ThenTheEditIsRefusedAndTheImageIsUntouched")]
+  public void VolumeOutsideTheWriterProfile_IsRefusedForEveryRebuild(int block, int offset, byte value) {
+    var writer = new Reiser4Writer();
+    writer.AddFile("d/f.bin", Payload(3_000, 32));
+    var original = writer.Build();
+    original[block * Reiser4Writer.BlockSize + offset] = value;
+    var descriptor = new Reiser4FormatDescriptor();
+    using var image = new MemoryStream(original.ToArray());
+
+    Assert.Multiple(() => {
+      Assert.Throws<NotSupportedException>(() => descriptor.Add(image, [ArchiveInputInfo.InMemory("x.bin", Payload(10, 33))]));
+      Assert.That(image.ToArray(), Is.EqualTo(original), "add");
+      Assert.Throws<NotSupportedException>(() => descriptor.Remove(image, ["d/f.bin"]));
+      Assert.That(image.ToArray(), Is.EqualTo(original), "remove");
+      Assert.Throws<NotSupportedException>(() => descriptor.Defragment(image));
+      Assert.That(image.ToArray(), Is.EqualTo(original), "defragment");
+      using var relayout = new MemoryStream();
+      Assert.Throws<NotSupportedException>(() => descriptor.RebuildStreaming(image, relayout, new LayoutRebuildOptions()));
+      Assert.That(image.ToArray(), Is.EqualTo(original), "relayout source");
+      using var shrunk = new MemoryStream();
+      descriptor.Shrink(image, shrunk);
+      Assert.That(shrunk.ToArray(), Is.EqualTo(original), "shrink copies a volume it cannot rebuild through unchanged");
+    });
+  }
+
+  [Test, Category("Boundary")]
+  public void GivenOneFile_WhenWriting_ThenTheTreeIsTheTwoLevelTreeMkfsWrites() {
+    var writer = new Reiser4Writer();
+    writer.AddFile("one.bin", Payload(4_097, 36));
+    var image = writer.Build();
+    Assert.That(HeightOf(image), Is.EqualTo(2));
+  }
+
+  [Test, Category("Boundary")]
+  public void GivenMoreTwigExtentsThanOneTwigHolds_WhenWriting_ThenTheTreeGrowsAThirdLevelAndEveryFileReadsBack() {
+    // A twig item is a 38-byte header and a 16-byte extent unit: one 4 KiB twig holds
+    // fewer than 76 of them, so 200 single-run files cannot share the root.
+    var writer = new Reiser4Writer();
+    for (var i = 0; i < 200; ++i) writer.AddFile($"f{i:D3}", Payload(1 + i, i));
+    using var image = new MemoryStream(writer.Build());
+    using var reader = new Reiser4Reader(image);
+    Assert.Multiple(() => {
+      Assert.That(HeightOf(image.ToArray()), Is.EqualTo(3));
+      Assert.That(reader.NativeTreeValid, Is.True);
+      Assert.That(reader.Entries, Has.Count.EqualTo(200));
+      foreach (var entry in reader.Entries)
+        Assert.That(reader.Extract(entry), Is.EqualTo(Payload(1 + int.Parse(entry.Name[1..]), int.Parse(entry.Name[1..]))), entry.Name);
+    });
+  }
+
+  [Test, Category("Boundary")]
+  public void GivenATallTree_WhenRemovingAllButOneFile_ThenTheRebuildShrinksBackToTwoLevels() {
+    var writer = new Reiser4Writer();
+    for (var i = 0; i < 200; ++i) writer.AddFile($"dir/f{i:D3}", Payload(10, i));
+    using var image = new MemoryStream(writer.Build());
+    Assert.That(HeightOf(image.ToArray()), Is.EqualTo(3));
+    new Reiser4FormatDescriptor().Remove(image, [.. Enumerable.Range(1, 199).Select(static i => $"dir/f{i:D3}")]);
+    using var reader = new Reiser4Reader(image);
+    Assert.Multiple(() => {
+      Assert.That(HeightOf(image.ToArray()), Is.EqualTo(2));
+      Assert.That(reader.Entries.Select(static e => e.Name), Is.EquivalentTo(new[] { "dir", "dir/f000" }));
+      Assert.That(reader.Extract(reader.Entries.Single(static e => !e.IsDirectory)), Is.EqualTo(Payload(10, 0)));
+    });
+  }
+
+  [Test, Category("Boundary")]
+  public void GivenTheOnlyFileOfADirectory_WhenRemovingIt_ThenTheDirectoryStaysAsAnEmptyDirectory() {
+    var writer = new Reiser4Writer();
+    writer.AddFile("keep/only.bin", Payload(10, 37));
+    writer.AddFile("other.bin", Payload(10, 38));
+    using var image = new MemoryStream(writer.Build());
+    new Reiser4FormatDescriptor().Remove(image, ["keep/only.bin"]);
+    using var reader = new Reiser4Reader(image);
+    Assert.That(reader.Entries.Select(static e => (e.Name, e.IsDirectory)),
+      Is.EquivalentTo(new[] { ("keep", true), ("other.bin", false) }));
+  }
+
+  [TestCase(23, TestName = "GivenANameOfTwentyThreeCharacters_WhenWriting_ThenItIsHeldInTheKeyAndReadsBack")]
+  [TestCase(24, TestName = "GivenANameOfTwentyFourCharacters_WhenWriting_ThenItIsHashedAndReadsBack")]
+  [TestCase(255, TestName = "GivenANameOf255Characters_WhenWriting_ThenItReadsBack")]
+  [Category("Boundary")]
+  public void NameLengthBoundaries_RoundTrip(int length) {
+    var name = new string((char)('a' + length % 26), length);
+    var writer = new Reiser4Writer();
+    writer.AddFile("n/" + name, Payload(length, length));
+    using var image = new MemoryStream(writer.Build());
+    using var reader = new Reiser4Reader(image);
+    var entry = reader.Entries.Single(static e => !e.IsDirectory);
+    Assert.Multiple(() => {
+      Assert.That(entry.Name, Is.EqualTo("n/" + name));
+      Assert.That(reader.Extract(entry), Is.EqualTo(Payload(length, length)));
+    });
+  }
+
 }

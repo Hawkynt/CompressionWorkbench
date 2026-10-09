@@ -10,9 +10,10 @@ namespace FileSystem.Reiser4;
 /// <summary>
 /// Creator for a Reiser4 filesystem image that starts from what
 /// <c>mkfs.reiser4 -fffy</c> from <c>reiser4progs 1.2.2</c> produces and adds
-/// regular files to the root directory through the native tree — stat data and
-/// entries in the leaf, extents in the twig — so that <c>fsck.reiser4</c>
-/// validates the result as <c>"FS is consistent."</c> with or without files.
+/// directories and regular files through the native tree — stat data and directory
+/// entries in leaves, extents in twigs, as many internal levels above them as the
+/// tree needs — so that <c>fsck.reiser4</c> validates the result as
+/// <c>"FS is consistent."</c> with or without files.
 ///
 /// <para>
 /// The image holds 25 reserved blocks at fixed positions (block size = 4 KB):
@@ -462,6 +463,50 @@ public sealed class Reiser4Writer {
     if (string.IsNullOrEmpty(label)) return [];
     var bytes = Encoding.ASCII.GetBytes(label);
     return bytes.Length <= 16 ? bytes : bytes[..16];
+  }
+
+  /// <summary>
+  /// Why the fixed blocks of an existing volume describe something this writer would not
+  /// write back, or <see langword="null" /> when a rebuild reproduces them.
+  /// </summary>
+  /// <remarks>
+  /// <para>A rebuild writes the captured mkfs prefix again with only the volume's identity
+  /// patched in, so every other byte of those blocks has to be what the source already
+  /// holds. That is where a volume made with another profile shows: the format40 tail
+  /// policy, and the plugin set the backup record keeps of the root directory's — hash,
+  /// fibration, formatting. Writing the default profile over them leaves the root's own
+  /// plugin set disagreeing with its backup, which <c>fsck.reiser4</c> reports, and names
+  /// keyed with a hash the volume does not use, which nothing can look up.</para>
+  /// <para>A status block other than "consistent" marks a volume the tools found damaged,
+  /// and a journal header or footer that is not blank belongs to a volume the kernel
+  /// wrote, whose transactions this reader does not replay. Both are left alone rather
+  /// than silently rewritten.</para>
+  /// </remarks>
+  internal static string? ProfileMismatch(Func<int, byte[]> readBlock) {
+    ArgumentNullException.ThrowIfNull(readBlock);
+    static bool SameOutside(ReadOnlySpan<byte> actual, ReadOnlySpan<byte> template, params (int Start, int End)[] volatileRanges) {
+      if (actual.Length != template.Length) return false;
+      for (var i = 0; i < template.Length; ++i)
+        if (actual[i] != template[i] && !volatileRanges.Any(range => i >= range.Start && i < range.End))
+          return false;
+      return true;
+    }
+
+    // Master: uuid, label and the legacy payload marker and pointer that follow them.
+    if (!SameOutside(readBlock(16), LoadTemplate(16), (MasterUuidOff, MasterPayloadDirOff + 8)))
+      return "the master superblock carries fields this writer does not reproduce";
+    // Format40: the counters, the root, the mkfs id and the tree height move; magic,
+    // tail policy, flags and version are the profile.
+    if (!SameOutside(readBlock(17), LoadTemplate(17), (F40BlockCountOff, F40MagicOff), (F40TreeHeightOff, F40PolicyOff)))
+      return "the volume uses a tail policy or format40 flags other than the default profile";
+    if (readBlock(19).Any(static b => b != 0) || readBlock(20).Any(static b => b != 0))
+      return "the journal is not blank, and its transactions are not replayed";
+    if (!SameOutside(readBlock(21), LoadTemplate(21)))
+      return "the status block does not mark the volume consistent";
+    if (!SameOutside(readBlock(22), LoadTemplate(22), (BackupUuidOff, BackupLabelOff + 16),
+          (BackupF40BlockCountOff, BackupF40MkfsIdOff + 4)))
+      return "the root directory's plugin set (hash, fibration or formatting) is not the default profile";
+    return null;
   }
 
   private static byte[] LoadTemplate(int blockNumber) {

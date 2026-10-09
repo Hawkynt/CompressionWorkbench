@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
@@ -7,11 +8,12 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Reiser4;
 
 /// <summary>
-/// Read-only descriptor for Reiser4 filesystem images (successor to ReiserFS 3.6
-/// — completely different on-disk layout). Surfaces the master superblock at
-/// offset 65536 and, when present, the format40 superblock that follows it,
-/// plus a structured metadata bundle and the raw image. Walking the twig-level
-/// B-tree is explicitly out of scope (multi-week effort).
+/// Descriptor for Reiser4 filesystem images (successor to ReiserFS 3.6 — completely
+/// different on-disk layout). Volumes whose node40 tree the reader walks completely list
+/// and extract their files and directories, and are created and edited through staged
+/// rebuilds that carry the volume's identity and every object's metadata across; other
+/// images surface the master superblock at offset 65536, the format40 superblock that
+/// follows it, a structured metadata bundle and the raw image.
 ///
 /// Magic:
 /// <list type="bullet">
@@ -253,6 +255,7 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     if (saved is not null) {
       w.Label = saved.Label;
       w.Uuid = Convert.FromHexString(saved.UuidHex);
+      w.MkfsId = saved.MkfsId;
       w.BlockCount = (ulong)(saved.Length / Reiser4Writer.BlockSize);
       w.AddDirectory("", saved.Root);
     }
@@ -541,14 +544,31 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     public void Dispose() => this._reader.Dispose();
   }
 
-  private sealed record RebuildMetadata(string Label, string UuidHex, long Length,
+  private sealed record RebuildMetadata(string Label, string UuidHex, uint MkfsId, long Length,
       Reiser4Reader.FileMetadata? Root, Dictionary<string, Reiser4Reader.Entry> Entries);
 
+  /// <summary>
+  /// Everything a rebuild has to carry across, taken before anything is written. A tree the
+  /// reader cannot walk completely, or fixed blocks the writer would not reproduce, are
+  /// refused here, so the source is never touched.
+  /// </summary>
   private static RebuildMetadata CaptureMetadata(Stream archive) {
     using var reader = new Reiser4Reader(archive);
     if (!reader.NativeTreeValid)
       throw new NotSupportedException("Reiser4: refusing to rebuild an incomplete or unsupported native tree.");
-    return new(reader.Label, reader.UuidHex, reader.Length, reader.RootMetadata,
+    var blocks = new Dictionary<int, byte[]>();
+    byte[] Block(int number) {
+      if (blocks.TryGetValue(number, out var cached)) return cached;
+      var buffer = new byte[Reiser4Writer.BlockSize];
+      archive.Position = (long)number * Reiser4Writer.BlockSize;
+      archive.ReadExactly(buffer);
+      return blocks[number] = buffer;
+    }
+    if (Reiser4Writer.ProfileMismatch(Block) is { } reason)
+      throw new NotSupportedException($"Reiser4: refusing to rebuild: {reason}.");
+    var mkfsId = BinaryPrimitives.ReadUInt32LittleEndian(Block(17).AsSpan(48, 4));
+    archive.Position = 0;
+    return new(reader.Label, reader.UuidHex, mkfsId, reader.Length, reader.RootMetadata,
       reader.Entries.ToDictionary(static entry => entry.Name, StringComparer.Ordinal));
   }
 
