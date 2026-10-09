@@ -246,12 +246,14 @@ public class Reiser4Tests {
     Assert.That(sb.TreeHeight, Is.EqualTo(2));
     Assert.That(sb.Policy, Is.EqualTo(2));
 
-    // Descriptor List() should expose the standard surface from our own image.
+    // A valid empty namespace must not turn diagnostic superblock views into live members.
     using var ms = new MemoryStream(img);
     var d = new FileSystem.Reiser4.Reiser4FormatDescriptor();
     var entries = d.List(ms, null);
-    Assert.That(entries.Select(e => e.Name), Does.Contain("master_superblock.bin"));
-    Assert.That(entries.Select(e => e.Name), Does.Contain("format40_superblock.bin"));
+    Assert.That(entries, Is.Empty);
+    using var reader = new FileSystem.Reiser4.Reiser4Reader(ms);
+    Assert.That(reader.NativeTreeValid, Is.True);
+    Assert.That(reader.RootMetadata, Is.Not.Null);
   }
 
   [Test, Category("HappyPath")]

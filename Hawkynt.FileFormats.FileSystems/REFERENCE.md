@@ -12109,7 +12109,7 @@ Performs the bounded offline ReFS block-clone operation for two existing, equal-
 
 ### Namespace `FileSystem.Reiser4`
 
-[`Reiser4BlockMover`](#reiser4blockmover) · [`Reiser4FormatDescriptor`](#reiser4formatdescriptor) · [`Reiser4MasterSb`](#reiser4mastersb) · [`Reiser4Reader`](#reiser4reader) · [`Reiser4Reader.Entry`](#reiser4readerentry) · [`Reiser4Writer`](#reiser4writer)
+[`Reiser4BlockMover`](#reiser4blockmover) · [`Reiser4FormatDescriptor`](#reiser4formatdescriptor) · [`Reiser4MasterSb`](#reiser4mastersb) · [`Reiser4Reader`](#reiser4reader) · [`Reiser4Reader.Entry`](#reiser4readerentry) · [`Reiser4Reader.FileMetadata`](#reiser4readerfilemetadata) · [`Reiser4Writer`](#reiser4writer)
 
 #### `Reiser4BlockMover`
 
@@ -12131,7 +12131,7 @@ Implements `IFilesystemBlockMover`.
 
 #### `Reiser4FormatDescriptor`
 
-Read-only descriptor for Reiser4 filesystem images (successor to ReiserFS 3.6 — completely different on-disk layout). Surfaces the master superblock at offset 65536 and, when present, the format40 superblock that follows it, plus a structured metadata bundle and the raw image. Walking the twig-level B-tree is explicitly out of scope (multi-week effort). Magic: `"ReIsEr4"` at offset 65536 — master superblock `ms_magic[16]`. References: `https://archive.kernel.org/oldwiki/reiser4.wiki.kernel.org/` — archived Reiser4 wiki (format40 layout, plugin system)reiser4progs (`mkfs.reiser4` / `debugfs.reiser4`) — canonical userspace tooling`https://en.wikipedia.org/wiki/Reiser4` — Wikipedia article
+Descriptor for Reiser4 filesystem images (successor to ReiserFS 3.6 — completely different on-disk layout). Volumes whose node40 tree the reader walks completely list and extract their files and directories, and are created and edited through staged rebuilds that carry the volume's identity and every object's metadata across; other images surface the master superblock at offset 65536, the format40 superblock that follows it, a structured metadata bundle and the raw image. Magic: `"ReIsEr4"` at offset 65536 — master superblock `ms_magic[16]`. References: `https://archive.kernel.org/oldwiki/reiser4.wiki.kernel.org/` — archived Reiser4 wiki (format40 layout, plugin system)reiser4progs (`mkfs.reiser4` / `debugfs.reiser4`) — canonical userspace tooling`https://en.wikipedia.org/wiki/Reiser4` — Wikipedia article
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
@@ -12154,14 +12154,19 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` | Gets the min total archive size. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Knobs the empty-filesystem writer actually honours. `VolumeLabel` is written into the master superblock label field (and the backup record) and surfaces through `fsck.reiser4` / our metadata readback; `ImageSize` drives `BlockCount` (4 KB blocks, clamped to the writer minimum). The 4 KB block size is fixed — the embedded mkfs.reiser4 templates are byte-exact 4096-byte captures — so it is intentionally not exposed. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces members while retaining existing stat-data extensions. |
 | `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
-| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Creates the supported native single-leaf profile from input streams. Each source is consumed once into a temporary file, then copied in bounded chunks by `Reiser4Writer`; no complete file is staged in memory. Directory inputs are currently ignored because this writer emits root-level regular files only. |
+| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Creates the supported native node40 profile from input streams. Each source is consumed once into a temporary file, then copied in bounded chunks by `Reiser4Writer`; no complete file is staged in memory. Directory inputs retain empty directories and nested paths. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rewrites the volume with every file laid out contiguously from the start of the payload area. Each entry is spilled to scratch and the writer pulls it back, so the rebuild is not bounded by what a byte[] can hold. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Reports the volume's layout: the reserved blocks and the payload directory chain as metadata, then each file's blocks. A file's blocks are consecutive apart from the block-allocator bitmaps they step over. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Rebuilds the supported native profile while carrying existing metadata. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes members and directory subtrees through a metadata-preserving rebuild. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds tightly while retaining native metadata, or copies through on failure. |
+| `UpdateMetadata` | `void UpdateMetadata(Stream archive, string name, FileMetadata metadata)` | Updates a native object's mode, owner and timestamps through a staged rebuild. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every byte no live file and no metadata block occupies. |
 
 #### `Reiser4MasterSb`
@@ -12206,9 +12211,11 @@ Implements `IDisposable`.
 | `Reiser4Reader` | `Reiser4Reader(Stream stream, bool leaveOpen = true)` | Initializes a new instance of `Reiser4Reader`. |
 | `MasterOffset` | `const long MasterOffset` | Byte offset of the master superblock: block 16 at a 4 KB block size. |
 | `BlockSize` | `int BlockSize { get; }` | Filesystem block size from the master superblock. |
-| `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Files found in the native tree, or in the legacy payload directory. |
+| `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Files and directories found in the native tree, or files in the legacy payload directory. |
 | `Label` | `string Label { get; }` | Volume label from the master superblock. |
 | `Length` | `long Length { get; }` | Total size of the backing image in bytes. |
+| `NativeTreeValid` | `bool NativeTreeValid { get; }` | True when the complete supported native namespace was decoded. |
+| `RootMetadata` | `FileMetadata RootMetadata { get; }` | Root stat-data, including inherited plugin settings. |
 | `UuidHex` | `string UuidHex { get; }` | Volume UUID from the master superblock, as hex. |
 | `Valid` | `bool Valid { get; }` | True when the image carries a valid Reiser4 master superblock. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
@@ -12218,20 +12225,44 @@ Implements `IDisposable`.
 
 #### `Reiser4Reader.Entry`
 
-One regular file: its name, first data block and byte length.
+One filesystem object and its physical extents.
 
 Implements `IEquatable<Entry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Entry` | `Entry(string Name, ulong FirstBlock, long Size)` | One regular file: its name, first data block and byte length. |
+| `Entry` | `Entry(string Name, ulong FirstBlock, long Size)` | One filesystem object and its physical extents. |
 | `FirstBlock` | `ulong FirstBlock { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | True when this entry is a directory. |
+| `Metadata` | `FileMetadata Metadata { get; init; }` | On-disk stat-data fields retained for metadata-preserving rebuilds. |
 | `Name` | `string Name { get; init; }` |  |
 | `Size` | `long Size { get; init; }` |  |
 
+#### `Reiser4Reader.FileMetadata`
+
+Stat-data fields which can be represented by the current writer.
+
+Implements `IEquatable<FileMetadata>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FileMetadata` | `FileMetadata(long Size, ushort Mode, uint LinkCount, uint UserId, uint GroupId, uint ModifiedTime, uint AccessedTime, uint ChangedTime, byte[] RawStatData)` | Stat-data fields which can be represented by the current writer. |
+| `AccessedTime` | `uint AccessedTime { get; init; }` |  |
+| `ChangedTime` | `uint ChangedTime { get; init; }` |  |
+| `GroupId` | `uint GroupId { get; init; }` |  |
+| `LastModified` | `DateTime? LastModified { get; }` | Last-write timestamp, when the seconds value is representable. |
+| `LinkCount` | `uint LinkCount { get; init; }` |  |
+| `Mode` | `ushort Mode { get; init; }` |  |
+| `ModifiedTime` | `uint ModifiedTime { get; init; }` |  |
+| `ObjectId` | `ulong ObjectId { get; init; }` | Stable filesystem object identity. |
+| `RawStatData` | `byte[] RawStatData { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `StatLocality` | `ulong StatLocality { get; init; }` | Locality of the object stat key. |
+| `UserId` | `uint UserId { get; init; }` |  |
+
 #### `Reiser4Writer`
 
-Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy` from `reiser4progs 1.2.2` produces and adds regular files to the root directory through the native tree — stat data and entries in the leaf, extents in the twig — so that `fsck.reiser4` validates the result as `"FS is consistent."` with or without files. The image holds 25 reserved blocks at fixed positions (block size = 4 KB): 0..15 — jump-area / partition data (zero).16 — master superblock (`"ReIsEr4"` at offset 65536).17 — format40 superblock (`"ReIsEr40FoRmAt"` at offset 52).18 — block-allocator bitmap (4-byte adler32 + bit array).19..20 — journal header / footer (zero for an empty FS).21 — status block (`"ReiSeR4StATusBl"`).22 — superblock backup record.23 — storage-tree root (twig, level 2).24 — leaf containing the root-directory stat-data + ".", "..". Implementation strategy: we embed the seven non-zero reference blocks as resources captured byte-exact from a real `mkfs.reiser4` image, then patch in only the per-image fields: UUID (16 bytes, random)Label (≤ 16 bytes, optional)mkfs_id (4 bytes, random) — appears in 4 places: format40 SB, backup record, twig header, leaf header.block_count / free_blocks (in format40 SB and backup).Bitmap (block 18) — bits 0..24 set for the 25 reserved blocks plus filler bits for the unused tail of the bitmap range, then adler32 of the bitmap data prepended. Round-trips with `fsck.reiser4 -y` exit 0 and produces output identical to the reference image except for the random fields above.
+Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy` from `reiser4progs 1.2.2` produces and adds directories and regular files through the native tree — stat data and directory entries in leaves, extents in twigs, as many internal levels above them as the tree needs — so that `fsck.reiser4` validates the result as `"FS is consistent."` with or without files. The image holds 25 reserved blocks at fixed positions (block size = 4 KB): 0..15 — jump-area / partition data (zero).16 — master superblock (`"ReIsEr4"` at offset 65536).17 — format40 superblock (`"ReIsEr40FoRmAt"` at offset 52).18 — block-allocator bitmap (4-byte adler32 + bit array).19..20 — journal header / footer (zero for an empty FS).21 — status block (`"ReiSeR4StATusBl"`).22 — superblock backup record.23 — storage-tree root (twig, level 2).24 — leaf containing the root-directory stat-data + ".", "..". Implementation strategy: we embed the seven non-zero reference blocks as resources captured byte-exact from a real `mkfs.reiser4` image, then patch in only the per-image fields: UUID (16 bytes, random)Label (≤ 16 bytes, optional)mkfs_id (4 bytes, random) — appears in 4 places: format40 SB, backup record, twig header, leaf header.block_count / free_blocks (in format40 SB and backup).Bitmap (block 18) — bits 0..24 set for the 25 reserved blocks plus filler bits for the unused tail of the bitmap range, then adler32 of the bitmap data prepended. Round-trips with `fsck.reiser4 -y` exit 0 and produces output identical to the reference image except for the random fields above.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12242,8 +12273,9 @@ Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy
 | `Label` | `string Label { get; set; }` | Customisable label written to the master SB (NUL-padded to 16 bytes; longer strings are truncated; null = empty/zero). |
 | `MkfsId` | `uint? MkfsId { get; set; }` | Optional 32-bit mkfs identifier. When null, a random value is drawn from `Shared`. |
 | `Uuid` | `byte[] Uuid { get; set; }` | Optional 16-byte UUID. When null, a random Guid is used. |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a regular file to the payload area. |
-| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a file whose bytes are pulled from `openStream` as the image is written. |
+| `AddDirectory` | `void AddDirectory(string name, FileMetadata metadata = null)` | Retains an explicit directory, including an empty directory. |
+| `AddFile` | `void AddFile(string name, byte[] data, FileMetadata metadata = null)` | Adds a regular file to the payload area. |
+| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream, FileMetadata metadata = null)` | Adds a file whose bytes are pulled from `openStream` as the image is written. |
 | `Build` | `byte[] Build()` | Builds the image fully in memory and returns the byte array. For block counts above ~32 K the result will be tens of MB; prefer the streaming overload when caller-side allocation matters. |
 | `EstimateBlockCount` | `static ulong EstimateBlockCount(IEnumerable<long> fileSizes)` | Smallest block count that holds `fileSizes`: the reserved blocks, the directory chain, every file's data blocks, and the bitmap blocks interleaved among them. |
 | `Write` | `void Write(Stream output)` | Streams the full image into `output`. Writes `BlockCount`×4096 bytes and leaves the stream positioned at the end. |
