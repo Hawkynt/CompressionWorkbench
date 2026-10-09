@@ -250,7 +250,9 @@ public sealed class Reiser4NativeTreeTests {
     using var source = new MemoryStream(writer.Build());
     using var initial = new Reiser4Reader(source);
     var metadata = initial.Entries.Single(static e => !e.IsDirectory).Metadata!;
-    var raw = metadata.RawStatData.Concat(new byte[] { 0xDE, 0xAD, 0xBE, 0xEF }).ToArray();
+    // A large-time extension (mask bit 2): three nanosecond fields after the Unix ones.
+    var raw = metadata.RawStatData.Concat(new byte[] { 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0 }).ToArray();
+    BinaryPrimitives.WriteUInt16LittleEndian(raw, 0x7);
     BinaryPrimitives.WriteUInt32LittleEndian(raw.AsSpan(16), 1234);
     BinaryPrimitives.WriteUInt32LittleEndian(raw.AsSpan(20), 5678);
     var retained = metadata with { UserId = 1234, GroupId = 5678, RawStatData = raw };
@@ -449,6 +451,55 @@ public sealed class Reiser4NativeTreeTests {
       descriptor.Shrink(image, shrunk);
       Assert.That(shrunk.ToArray(), Is.EqualTo(original), "shrink copies a volume it cannot rebuild through unchanged");
     });
+  }
+
+  private static Reiser4Reader.FileMetadata MetadataOfOneFile() {
+    var writer = new Reiser4Writer();
+    writer.AddFile("f.bin", Payload(100, 39));
+    using var reader = new Reiser4Reader(new MemoryStream(writer.Build()));
+    return reader.Entries.Single().Metadata!;
+  }
+
+  [Test]
+  public void GivenStatDataBytesItsMaskDoesNotDeclare_WhenWriting_ThenTheyAreRefused() {
+    var metadata = MetadataOfOneFile();
+    var writer = new Reiser4Writer();
+    writer.AddFile("f.bin", Payload(100, 39), metadata with { RawStatData = [.. metadata.RawStatData, 0xDE, 0xAD, 0xBE, 0xEF] });
+    Assert.Throws<NotSupportedException>(() => writer.Build());
+  }
+
+  [TestCase(3, TestName = "GivenASymlinkStatExtension_WhenWriting_ThenItIsRefused")]
+  [TestCase(7, TestName = "GivenACryptoStatExtension_WhenWriting_ThenItIsRefused")]
+  [TestCase(15, TestName = "GivenAChainedExtensionMask_WhenWriting_ThenItIsRefused")]
+  public void UnsupportedStatExtension_IsRefused(int bit) {
+    var metadata = MetadataOfOneFile();
+    var raw = metadata.RawStatData.ToArray();
+    BinaryPrimitives.WriteUInt16LittleEndian(raw, (ushort)(0x3 | 1 << bit));
+    var writer = new Reiser4Writer();
+    writer.AddFile("f.bin", Payload(100, 39), metadata with { RawStatData = raw });
+    Assert.Throws<NotSupportedException>(() => writer.Build());
+  }
+
+  [Test]
+  public void GivenAVolumeCarryingAStatExtensionThatDoesNotParse_WhenAdding_ThenTheEditIsRefusedAndTheImageIsUntouched() {
+    var writer = new Reiser4Writer();
+    writer.AddFile("f.bin", Payload(100, 40));
+    var original = writer.Build();
+    // Declare a large-time extension the 44-byte body does not have room for.
+    using (var reader = new Reiser4Reader(new MemoryStream(original))) {
+      var at = FindStatData(original, reader.Entries.Single().Metadata!.RawStatData);
+      BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(at), 0x7);
+    }
+    using var image = new MemoryStream(original.ToArray());
+    Assert.Throws<NotSupportedException>(() => new Reiser4FormatDescriptor().Add(image,
+      [ArchiveInputInfo.InMemory("x.bin", Payload(10, 41))]));
+    Assert.That(image.ToArray(), Is.EqualTo(original));
+  }
+
+  private static int FindStatData(byte[] image, byte[] statData) {
+    for (var i = 0; i <= image.Length - statData.Length; ++i)
+      if (image.AsSpan(i, statData.Length).SequenceEqual(statData)) return i;
+    throw new AssertionException("stat data not found in the image");
   }
 
   [Test]

@@ -142,9 +142,48 @@ internal static class Reiser4Tree {
     return (ordering | (ulong)Fibre(name) << 57, objectId, offset, hashed);
   }
 
+  /// <summary>
+  /// Why a stat-data body does not hold exactly the extensions its mask declares, or
+  /// <see langword="null" /> when it does.
+  /// </summary>
+  /// <remarks>
+  /// Extensions follow the 16-bit mask in bit order: light-weight (bit 0, 14 bytes),
+  /// Unix (bit 1, 28), large times (bit 2, three 32-bit nanosecond fields), the plugin
+  /// set (bit 4) and heir set (bit 8) — a 16-bit count of 4-byte member/plugin slots —
+  /// and flags (bit 5, 32 bits). Anything else, including bit 15, which chains a
+  /// further mask, is not carried: a body that does not parse is what
+  /// <c>fsck.reiser4</c> calls a fatal corruption.
+  /// </remarks>
+  internal static string? StatDataProblem(ReadOnlySpan<byte> body) {
+    if (body.Length < 2) return "the stat data has no extension mask";
+    var mask = BinaryPrimitives.ReadUInt16LittleEndian(body);
+    if ((mask & 3) != 3) return "the stat data lacks the light-weight or Unix extension";
+    var at = 2;
+    for (var bit = 0; bit < 16; ++bit) {
+      if ((mask & 1 << bit) == 0) continue;
+      int length;
+      switch (bit) {
+        case 0: length = 14; break;
+        case 1: length = 28; break;
+        case 2: length = 12; break;
+        case 5: length = 4; break;
+        case 4 or 8:
+          if (at + 2 > body.Length) return "a plugin-set extension is truncated";
+          length = 2 + 4 * BinaryPrimitives.ReadUInt16LittleEndian(body[at..]);
+          break;
+        default: return $"stat-data extension {bit} is not supported";
+      }
+      if (at + length > body.Length) return $"stat-data extension {bit} is truncated";
+      at += length;
+    }
+    return at == body.Length ? null : "the stat data holds bytes its extension mask does not declare";
+  }
+
   /// <summary>A stat data saying what a file is and how long.</summary>
   private static byte[] StatData(ushort mode, uint links, ulong size, ulong bytes, uint time,
                                  Reiser4Reader.FileMetadata? metadata = null) {
+    if (metadata is { RawStatData.Length: > 0 } carried && StatDataProblem(carried.RawStatData) is { } problem)
+      throw new NotSupportedException($"Reiser4: {problem}.");
     if (metadata is { } saved && saved.RawStatData.Length >= 44) {
       var preserved = saved.RawStatData.ToArray();
       BinaryPrimitives.WriteUInt16LittleEndian(preserved.AsSpan(2), saved.Mode);
