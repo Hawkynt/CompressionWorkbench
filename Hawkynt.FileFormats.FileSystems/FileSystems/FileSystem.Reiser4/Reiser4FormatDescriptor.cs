@@ -613,10 +613,13 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       expected.RawStatData.AsSpan(0, 2).SequenceEqual(actual.RawStatData.AsSpan(0, 2)) &&
       expected.RawStatData.AsSpan(44).SequenceEqual(actual.RawStatData.AsSpan(44));
 
-  /// <summary>Updates a native object's Unix fields and stat-data extensions through a staged rebuild.</summary>
+  /// <summary>Updates a native object's mode, owner and timestamps through a staged rebuild.</summary>
   /// <param name="archive">The readable, writable, seekable volume to update.</param>
   /// <param name="name">The member path, or an empty string for the root directory.</param>
-  /// <param name="metadata">Unix fields and stat-data extension bytes to retain.</param>
+  /// <param name="metadata">The object's metadata with new mode, UID, GID or timestamps; its link
+  /// count and stat-data extension bytes must be the ones the volume holds.</param>
+  /// <exception cref="NotSupportedException">The update changes the object's kind, its link count or
+  /// its extension bytes, or the volume is outside the supported profile; the volume is unchanged.</exception>
   public void UpdateMetadata(Stream archive, string name, Reiser4Reader.FileMetadata metadata) {
     ArgumentNullException.ThrowIfNull(metadata);
     var saved = CaptureMetadata(archive);
@@ -625,9 +628,19 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     if (original is null) throw new FileNotFoundException("Reiser4: native object was not found.", name);
     if ((metadata.Mode & 0xF000) != (original.Mode & 0xF000))
       throw new NotSupportedException("Reiser4: metadata updates cannot change an object's kind.");
+    // The link count follows the namespace: a file has one name, a directory one more than
+    // its sub-directories. Any other value is what fsck.reiser4 reports as wrong.
+    if (metadata.LinkCount != original.LinkCount)
+      throw new NotSupportedException("Reiser4: the link count follows the namespace and cannot be set.");
+    // Extension bytes past the Unix fields are carried as found because their meaning is not
+    // verified here; accepting new ones would write a stat data nothing has checked.
+    if (metadata.RawStatData.Length != original.RawStatData.Length ||
+        !metadata.RawStatData.AsSpan(0, 2).SequenceEqual(original.RawStatData.AsSpan(0, 2)) ||
+        !metadata.RawStatData.AsSpan(Math.Min(44, metadata.RawStatData.Length)).SequenceEqual(original.RawStatData.AsSpan(Math.Min(44, original.RawStatData.Length))))
+      throw new NotSupportedException("Reiser4: stat-data extensions other than the Unix fields cannot be changed.");
     var updated = metadata with {
       Size = original.Size, ObjectId = original.ObjectId, StatLocality = original.StatLocality,
-      RawStatData = metadata.RawStatData.ToArray(),
+      RawStatData = original.RawStatData.ToArray(),
     };
     if (normalized.Length == 0) saved = saved with { Root = updated };
     else saved.Entries[normalized] = saved.Entries[normalized] with { Metadata = updated };

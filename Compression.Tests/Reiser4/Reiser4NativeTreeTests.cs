@@ -451,6 +451,32 @@ public sealed class Reiser4NativeTreeTests {
     });
   }
 
+  [Test]
+  public void GivenALinkCountChange_WhenUpdatingMetadata_ThenItIsRefusedAndTheImageIsUntouched() {
+    var writer = new Reiser4Writer();
+    writer.AddFile("f.bin", Payload(100, 34));
+    var original = writer.Build();
+    using var image = new MemoryStream(original.ToArray());
+    Reiser4Reader.FileMetadata before;
+    using (var reader = new Reiser4Reader(image)) before = reader.Entries.Single().Metadata!;
+    Assert.Throws<NotSupportedException>(() =>
+      new Reiser4FormatDescriptor().UpdateMetadata(image, "f.bin", before with { LinkCount = 5 }));
+    Assert.That(image.ToArray(), Is.EqualTo(original));
+  }
+
+  [Test]
+  public void GivenNewExtensionBytes_WhenUpdatingMetadata_ThenTheyAreRefusedAndTheImageIsUntouched() {
+    var writer = new Reiser4Writer();
+    writer.AddFile("f.bin", Payload(100, 35));
+    var original = writer.Build();
+    using var image = new MemoryStream(original.ToArray());
+    Reiser4Reader.FileMetadata before;
+    using (var reader = new Reiser4Reader(image)) before = reader.Entries.Single().Metadata!;
+    var widened = before with { RawStatData = [.. before.RawStatData, 0xDE, 0xAD, 0xBE, 0xEF] };
+    Assert.Throws<NotSupportedException>(() => new Reiser4FormatDescriptor().UpdateMetadata(image, "f.bin", widened));
+    Assert.That(image.ToArray(), Is.EqualTo(original));
+  }
+
   [Test, Category("Boundary")]
   public void GivenOneFile_WhenWriting_ThenTheTreeIsTheTwoLevelTreeMkfsWrites() {
     var writer = new Reiser4Writer();
