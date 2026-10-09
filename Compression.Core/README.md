@@ -222,7 +222,7 @@ Audio, archive and filesystem functionality lives in the separate package projec
 
 - A common API shape does not imply identical streaming, memory, or parameter semantics across every algorithm; use concrete APIs when those distinctions matter.
 - Some encoders intentionally implement a standards-compliant subset while decoders accept a wider format.
-- Pure managed code is the design goal, not an automatic speed claim. BCL/native implementations may be faster for common algorithms on some workloads: Deflate compresses to the same ratio as the zlib-ng behind `System.IO.Compression` but at roughly half its speed at the default level, and decompresses somewhat slower. In exchange the output is identical on every platform.
+- Pure managed code is the design goal, not an automatic speed claim. BCL/native implementations may be faster for common algorithms on some workloads: Deflate compresses to the same or a better ratio than the zlib-ng behind `System.IO.Compression` at every level and decompresses 10–30% faster, but compresses text 15–25% slower at levels 6–9 (zlib-ng's level 6 uses a cheaper strategy that compresses worse) and about 40% slower at level 1, where zlib-ng's output is 20–25% larger. In exchange the output is identical on every platform. `dotnet run -c Release --project Compression.Benchmarks -- deflate-table` measures it on your machine.
 - Do not infer a package, format, algorithm, profile, or release state from roadmap intent. Checked-in project files, the compiled registry/public API, and tests are the evidence sources.
 - Do not state volatile algorithm counts unless they are generated from the registry/build.
 - When code and prose disagree, the compiled registry/API and tests win; update the prose.

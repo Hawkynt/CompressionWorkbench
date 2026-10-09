@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 
 namespace Compression.Core.Deflate;
 
@@ -10,16 +11,23 @@ namespace Compression.Core.Deflate;
 /// Streaming DEFLATE encoder (RFC 1951) for the hash-chain levels 1–9.
 /// </summary>
 /// <remarks>
-/// <para>The match search is the one RFC 1951 §4 recommends: three-byte strings are hashed
-/// into chains over a 32 KB window held in a 64 KB buffer that slides by 32 KB, chains are
-/// cut off after a level-dependent number of probes, and levels 4–9 defer each match by one
-/// byte to see whether the next position starts a longer one ("lazy matching"). Levels 1–3
-/// take matches greedily and insert only the first strings of short matches into the hash.</para>
+/// <para>The match search is the one RFC 1951 §4 recommends: strings are hashed into chains
+/// over a 32 KB window held in a 64 KB buffer that slides by 32 KB, chains are cut off after a
+/// level-dependent number of probes, and levels 4–9 defer each match by one byte to see
+/// whether the next position starts a longer one ("lazy matching"). Levels 1–3 take matches
+/// greedily and insert only the inner strings of short matches into the hash.</para>
+/// <para>The chains are keyed on four bytes rather than three: a chain then holds only real
+/// candidates for a match of four or more, which is most of what a three-byte chain walks past.
+/// Matches of exactly three bytes come from a side table that remembers the latest position of
+/// every three-byte hash, at short distances only, where they beat three literals. Runs of one
+/// byte value are linked into their chain a vector at a time. (Four-byte hashing with a
+/// three-byte side table is the arrangement of zlib-ng and libdeflate; no code was taken.)</para>
 /// <para>The per-level search limits (good/lazy/nice length and chain depth) are the agreed
 /// values of zlib's configuration table, so a level here does the same amount of work as the
 /// same zlib level. Each block is emitted as stored, fixed- or dynamic-Huffman, whichever is
 /// smallest, with length-limited code lengths from the shared deterministic builder. The
-/// output depends only on the input and the level — never on the platform.</para>
+/// output depends only on the input and the level — never on the platform, nor on how the
+/// input is split across <see cref="Write"/> calls.</para>
 /// </remarks>
 internal sealed partial class DeflateEncoder {
   private const int WSize = DeflateConstants.WindowSize;
@@ -29,7 +37,10 @@ internal sealed partial class DeflateEncoder {
   private const int MinLookahead = MaxMatch + MinMatch + 1;
   private const int MaxDist = WSize - MinLookahead;
   private const int HashBits = 15;
+  private const int Hash3Bits = 14;
   private const int TooFar = 4096;
+  private const int GreedyMatch3Reach = 1024;
+  private const uint HashMultiplier = 0x9E3779B1u;
   private const int SymbolBufferSize = 1 << 14;
   private const int OutputBufferSize = 1 << 16;
 
@@ -61,6 +72,7 @@ internal sealed partial class DeflateEncoder {
   private readonly byte[] _window = new byte[2 * WSize + MaxMatch + 8];
   private readonly ushort[] _head = new ushort[1 << HashBits];
   private readonly ushort[] _prev = new ushort[WSize];
+  private readonly ushort[] _head3 = new ushort[1 << Hash3Bits];
   private int _strStart;
   private int _lookahead;
   private int _blockStart;
@@ -68,12 +80,17 @@ internal sealed partial class DeflateEncoder {
   private int _matchLength = MinMatch - 1;
   private bool _matchAvailable;
 
-  private readonly byte[] _symLength = new byte[SymbolBufferSize];
+  // A symbol is a literal/length index — the literal, or 256 + length - MinMatch — and a
+  // distance, 0 for a literal.
+  private readonly ushort[] _symLitLen = new ushort[SymbolBufferSize];
   private readonly ushort[] _symDistance = new ushort[SymbolBufferSize];
   private int _symCount;
   private readonly long[] _litFreq = new long[DeflateConstants.LiteralLengthAlphabetSize];
   private readonly long[] _distFreq = new long[DeflateConstants.DistanceAlphabetSize];
   private readonly long[] _distTreeFreq = new long[DeflateConstants.DistanceAlphabetSize];
+
+  private readonly ulong[] _litLenEntries = new ulong[256 + MaxMatch - MinMatch + 1];
+  private readonly ulong[] _distEntries = new ulong[DeflateConstants.DistanceAlphabetSize + 1];
 
   private readonly byte[] _out = new byte[OutputBufferSize];
   private int _outPos;
@@ -126,6 +143,9 @@ internal sealed partial class DeflateEncoder {
   }
 
   // ── match search ─────────────────────────────────────────────────────
+  //
+  // Both loops keep the scan state in locals and write it back to the fields only around
+  // FlushBlock and on exit, so the JIT can hold it in registers across the hot path.
 
   private void Compress(bool flush) {
     if (this._greedy)
@@ -134,163 +154,313 @@ internal sealed partial class DeflateEncoder {
       this.CompressLazy(flush);
   }
 
+  [MethodImpl(MethodImplOptions.AggressiveOptimization)]
   private void CompressGreedy(bool flush) {
-    var window = this._window;
-    while (true) {
-      if (this._lookahead < MinLookahead && (!flush || this._lookahead == 0))
-        return;
+    ref var window = ref MemoryMarshal.GetArrayDataReference(this._window);
+    var tables = new HashTables(this);
+    var symbols = new SymbolSink(this);
+    var strStart = this._strStart;
+    var lookahead = this._lookahead;
+    var minimum = flush ? 1 : MinLookahead;
+    var (chainLimit, niceLimit, maxInsert) = (this._chain, this._nice, this._lazy);
 
-      var hashHead = this._lookahead >= MinMatch ? this.Insert(this._strStart) : 0;
+    while (lookahead >= minimum) {
       var matchLength = 0;
-      if (hashHead != 0 && this._strStart - hashHead <= MaxDist)
-        matchLength = this.LongestMatch(hashHead, MinMatch - 1);
+      var matchStart = 0;
+      if (lookahead >= MinMatch) {
+        var candidate = tables.Insert(ref window, strStart, out var candidate3);
+        if (candidate != 0 && strStart - candidate <= MaxDist)
+          matchLength = LongestMatch(ref window, ref tables.Prev, strStart, candidate, MinMatch - 1,
+            chainLimit, Math.Min(niceLimit, lookahead), Math.Min(MaxMatch, lookahead), ref matchStart);
+
+        if (matchLength < MinMatch && IsMatch3(ref window, strStart, candidate3, GreedyMatch3Reach)) {
+          matchLength = MinMatch;
+          matchStart = candidate3;
+        }
+      }
 
       if (matchLength >= MinMatch) {
-        this.TallyMatch(this._strStart - this._matchStart, matchLength);
-        this._lookahead -= matchLength;
-        if (matchLength <= this._lazy && this._lookahead >= MinMatch) {
-          for (var i = 1; i < matchLength; ++i)
-            this.Insert(this._strStart + i);
-        }
-
-        this._strStart += matchLength;
+        symbols.Match(strStart - matchStart, matchLength);
+        lookahead -= matchLength;
+        // Like zlib's fast levels, only short matches put their inner strings into the hash.
+        if (matchLength <= maxInsert && lookahead >= MinMatch)
+          tables.InsertRange(ref window, strStart + 1, strStart + matchLength);
+        strStart += matchLength;
       } else {
-        this.TallyLiteral(window[this._strStart]);
-        --this._lookahead;
-        ++this._strStart;
+        symbols.Literal(Unsafe.Add(ref window, strStart));
+        --lookahead;
+        ++strStart;
       }
 
-      if (this._symCount == SymbolBufferSize)
-        this.FlushBlock(last: false);
+      if (symbols.IsFull) {
+        this._strStart = strStart;
+        symbols.Flush(this);
+      }
     }
+
+    this._strStart = strStart;
+    this._lookahead = lookahead;
+    symbols.Store(this);
   }
 
+  [MethodImpl(MethodImplOptions.AggressiveOptimization)]
   private void CompressLazy(bool flush) {
-    var window = this._window;
-    while (true) {
-      if (this._lookahead < MinLookahead && (!flush || this._lookahead == 0))
-        break;
+    ref var window = ref MemoryMarshal.GetArrayDataReference(this._window);
+    var tables = new HashTables(this);
+    var symbols = new SymbolSink(this);
+    var strStart = this._strStart;
+    var lookahead = this._lookahead;
+    var matchStart = this._matchStart;
+    var matchLength = this._matchLength;
+    var matchAvailable = this._matchAvailable;
+    var minimum = flush ? 1 : MinLookahead;
+    var (good, lazy, niceLimit, chainLimit) = (this._good, this._lazy, this._nice, this._chain);
 
-      var hashHead = this._lookahead >= MinMatch ? this.Insert(this._strStart) : 0;
-      var prevLength = this._matchLength;
-      var prevMatch = this._matchStart;
-      this._matchLength = MinMatch - 1;
+    while (lookahead >= minimum) {
+      var candidate = 0;
+      var candidate3 = 0;
+      if (lookahead >= MinMatch)
+        candidate = tables.Insert(ref window, strStart, out candidate3);
 
-      if (hashHead != 0 && prevLength < this._lazy && this._strStart - hashHead <= MaxDist) {
-        this._matchLength = this.LongestMatch(hashHead, prevLength);
+      var prevLength = matchLength;
+      var prevMatch = matchStart;
+      matchLength = MinMatch - 1;
+
+      if (candidate != 0 && prevLength < lazy && strStart - candidate <= MaxDist) {
+        matchLength = LongestMatch(ref window, ref tables.Prev, strStart, candidate, prevLength,
+          prevLength >= good ? chainLimit >> 2 : chainLimit, Math.Min(niceLimit, lookahead), Math.Min(MaxMatch, lookahead), ref matchStart);
 
         // A minimal match far away costs more than the three literals it replaces.
-        if (this._matchLength == MinMatch && this._strStart - this._matchStart > TooFar)
-          this._matchLength = MinMatch - 1;
+        if (matchLength == MinMatch && strStart - matchStart > TooFar)
+          matchLength = MinMatch - 1;
       }
 
-      if (prevLength >= MinMatch && this._matchLength <= prevLength) {
-        // The match found one position back is at least as good: emit it.
-        var maxInsert = this._strStart + this._lookahead - MinMatch;
-        this.TallyMatch(this._strStart - 1 - prevMatch, prevLength);
-        this._lookahead -= prevLength - 1;
-        for (var i = prevLength - 2; i > 0; --i)
-          if (++this._strStart <= maxInsert)
-            this.Insert(this._strStart);
+      if (matchLength < MinMatch && prevLength < MinMatch && lookahead >= MinMatch && IsMatch3(ref window, strStart, candidate3, TooFar)) {
+        matchLength = MinMatch;
+        matchStart = candidate3;
+      }
 
-        this._matchAvailable = false;
-        this._matchLength = MinMatch - 1;
-        ++this._strStart;
-        if (this._symCount == SymbolBufferSize)
-          this.FlushBlock(last: false);
-      } else if (this._matchAvailable) {
+      if (prevLength >= MinMatch && matchLength <= prevLength) {
+        // The match found one position back is at least as good: emit it, and put the strings
+        // it covers into the hash.
+        symbols.Match(strStart - 1 - prevMatch, prevLength);
+        var end = strStart - 1 + prevLength;
+        tables.InsertRange(ref window, strStart + 1, Math.Min(end, strStart + lookahead - MinMatch + 1));
+        lookahead -= prevLength - 1;
+        strStart = end;
+        matchAvailable = false;
+        matchLength = MinMatch - 1;
+        if (symbols.IsFull) {
+          this._strStart = strStart;
+          symbols.Flush(this);
+        }
+      } else if (matchAvailable) {
         // The previous position did not start a better match than this one: it is a literal.
-        this.TallyLiteral(window[this._strStart - 1]);
-        if (this._symCount == SymbolBufferSize)
-          this.FlushBlock(last: false);
-        ++this._strStart;
-        --this._lookahead;
+        symbols.Literal(Unsafe.Add(ref window, strStart - 1));
+        if (symbols.IsFull) {
+          this._strStart = strStart;
+          symbols.Flush(this);
+        }
+
+        ++strStart;
+        --lookahead;
       } else {
-        this._matchAvailable = true;
-        ++this._strStart;
-        --this._lookahead;
+        matchAvailable = true;
+        ++strStart;
+        --lookahead;
       }
     }
 
-    if (flush && this._matchAvailable) {
-      this.TallyLiteral(window[this._strStart - 1]);
-      this._matchAvailable = false;
+    if (flush && matchAvailable) {
+      symbols.Literal(Unsafe.Add(ref window, strStart - 1));
+      matchAvailable = false;
     }
-  }
 
-  [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private int Insert(int position) {
-    // Multiplicative hash of the three bytes at position. The fourth byte loaded alongside
-    // is masked off; the window's tail slack keeps that load in bounds.
-    var hash = (int)((Load32(this._window, position) & 0xFFFFFF) * 0x9E3779B1u >> (32 - HashBits));
-    ref var head = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(this._head), hash);
-    int previous = head;
-    Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(this._prev), position & WMask) = (ushort)previous;
-    head = (ushort)position;
-    return previous;
+    this._strStart = strStart;
+    this._lookahead = lookahead;
+    this._matchStart = matchStart;
+    this._matchLength = matchLength;
+    this._matchAvailable = matchAvailable;
+    symbols.Store(this);
   }
 
   /// <summary>
-  /// Walks the hash chain from <paramref name="current"/> for the longest match at the
-  /// current position that beats <paramref name="best"/>.
+  /// Whether the three bytes at <paramref name="candidate"/> repeat at <paramref name="position"/>
+  /// within <paramref name="maxDistance"/>.
+  /// </summary>
+  /// <remarks>
+  /// The chains are keyed on four bytes, so a match of exactly three is found only through this
+  /// side table, which remembers the latest position of every three-byte hash.
+  /// </remarks>
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  private static bool IsMatch3(ref byte window, int position, int candidate, int maxDistance)
+    => candidate != 0
+       && position - candidate <= maxDistance
+       && ((Load32(ref window, candidate) ^ Load32(ref window, position)) & 0xFFFFFF) == 0;
+
+  /// <summary>The hash heads and chain links, as references the hot loops keep in registers.</summary>
+  private readonly ref struct HashTables {
+    private readonly ref ushort _head;
+    private readonly ref ushort _head3;
+    public readonly ref ushort Prev;
+
+    public HashTables(DeflateEncoder encoder) {
+      this._head = ref MemoryMarshal.GetArrayDataReference(encoder._head);
+      this._head3 = ref MemoryMarshal.GetArrayDataReference(encoder._head3);
+      this.Prev = ref MemoryMarshal.GetArrayDataReference(encoder._prev);
+    }
+
+    /// <summary>
+    /// Links the string at <paramref name="position"/> into its chain and returns the previous
+    /// head (0: none), with the latest earlier position of its first three bytes in
+    /// <paramref name="candidate3"/>.
+    /// </summary>
+    /// <remarks>
+    /// Multiplicative hashes of the four and the three bytes at the position. The bytes past
+    /// the data that the load may cover are window slack, and only steer the last strings,
+    /// which no later string searches from.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Insert(ref byte window, int position, out int candidate3) {
+      var value = Load32(ref window, position);
+      ref var head3 = ref Unsafe.Add(ref this._head3, (int)((value << 8) * HashMultiplier >> (32 - Hash3Bits)));
+      candidate3 = head3;
+      head3 = (ushort)position;
+      ref var head = ref Unsafe.Add(ref this._head, (int)(value * HashMultiplier >> (32 - HashBits)));
+      int previous = head;
+      Unsafe.Add(ref this.Prev, position & WMask) = (ushort)previous;
+      head = (ushort)position;
+      return previous;
+    }
+
+    /// <summary>Inserts every string from <paramref name="from"/> up to, not including, <paramref name="to"/>.</summary>
+    /// <remarks>
+    /// Inside a run of one byte value every string equals the one before it, so its chain link
+    /// is simply the previous position and the heads only need their final value — written once
+    /// the run ends instead of being read back and rewritten for every byte.
+    /// </remarks>
+    public void InsertRange(ref byte window, int from, int to) {
+      if (from >= to)
+        return;
+
+      var value = Load32(ref window, from);
+      ref var head3 = ref Unsafe.Add(ref this._head3, (int)((value << 8) * HashMultiplier >> (32 - Hash3Bits)));
+      ref var head = ref Unsafe.Add(ref this._head, (int)(value * HashMultiplier >> (32 - HashBits)));
+      Unsafe.Add(ref this.Prev, from & WMask) = head;
+      for (var position = from + 1; position < to; ++position) {
+        var next = Load32(ref window, position);
+        if (next == value) {
+          // Five equal bytes: a run, whose strings all equal this one until a byte breaks it.
+          var room = to - position;
+          var run = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref window, position + 3), room).IndexOfAnyExcept((byte)value);
+          if (run < 0)
+            run = room;
+
+          this.LinkRun(position, run);
+          position += run - 1;
+          continue;
+        }
+
+        head3 = (ushort)(position - 1);
+        head = (ushort)(position - 1);
+        value = next;
+        head3 = ref Unsafe.Add(ref this._head3, (int)((value << 8) * HashMultiplier >> (32 - Hash3Bits)));
+        head = ref Unsafe.Add(ref this._head, (int)(value * HashMultiplier >> (32 - HashBits)));
+        Unsafe.Add(ref this.Prev, position & WMask) = head;
+      }
+
+      head3 = (ushort)(to - 1);
+      head = (ushort)(to - 1);
+    }
+
+    /// <summary>Links each of the <paramref name="count"/> strings from <paramref name="start"/> to the one before it.</summary>
+    private readonly void LinkRun(int start, int count) {
+      // The links are consecutive positions, stored a vector at a time; a run is shorter than
+      // the window, so it wraps around the end of the chain table at most once.
+      var index = start & WMask;
+      var first = Math.Min(count, WSize - index);
+      FillSequence(MemoryMarshal.CreateSpan(ref Unsafe.Add(ref this.Prev, index), first), (ushort)(start - 1));
+      if (first < count)
+        FillSequence(MemoryMarshal.CreateSpan(ref this.Prev, count - first), (ushort)(start - 1 + first));
+    }
+
+    private static void FillSequence(Span<ushort> destination, ushort value) {
+      var i = 0;
+      if (Vector128.IsHardwareAccelerated && destination.Length >= Vector128<ushort>.Count) {
+        var vector = Vector128.Create(value) + Vector128.Create((ushort)0, 1, 2, 3, 4, 5, 6, 7);
+        var step = Vector128.Create((ushort)Vector128<ushort>.Count);
+        for (; i <= destination.Length - Vector128<ushort>.Count; i += Vector128<ushort>.Count) {
+          vector.CopyTo(destination[i..]);
+          vector += step;
+        }
+      }
+
+      for (; i < destination.Length; ++i)
+        destination[i] = (ushort)(value + i);
+    }
+  }
+
+  /// <summary>
+  /// Walks the hash chain from <paramref name="current"/> for the longest match at
+  /// <paramref name="scan"/> that beats <paramref name="best"/>.
   /// </summary>
   /// <remarks>
   /// Bytes are compared eight at a time. Every read stays inside the window array: the scan
   /// never passes <c>_strStart + _lookahead + 7 &lt;= 2 * WSize + 7</c>, candidates lie before
   /// the scan, and the array carries <c>MaxMatch + 8</c> bytes of slack past the window.
   /// </remarks>
-  private int LongestMatch(int current, int best) {
-    ref var window = ref MemoryMarshal.GetArrayDataReference(this._window);
-    ref var prev = ref MemoryMarshal.GetArrayDataReference(this._prev);
-    var scan = this._strStart;
-    var chain = this._chain;
-    var nice = Math.Min(this._nice, this._lookahead);
-    var maxLength = Math.Min(MaxMatch, this._lookahead);
+  [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+  private static int LongestMatch(ref byte window, ref ushort prev, int scan, int current, int best, int chain, int nice, int maxLength, ref int matchStart) {
     var limit = scan > MaxDist ? scan - MaxDist : 0;
-    if (best >= this._good)
-      chain >>= 2;
-
-    var scanStart = Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref window, scan));
-    var scanEnd = Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref window, scan + best - 1));
+    var lookahead = maxLength;
+    ref var scanRef = ref Unsafe.Add(ref window, scan);
+    var scanStart = Unsafe.ReadUnaligned<ushort>(ref scanRef);
+    var scanEnd = Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref scanRef, best - 1));
+    // The window seen from the last two bytes of the best match so far, so a candidate's
+    // ending bytes are one indexed load away.
+    ref var windowAtEnd = ref Unsafe.Add(ref window, best - 1);
     do {
       // Quick rejects: the two bytes ending at the best length so far, then the first two.
-      if (Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref window, current + best - 1)) != scanEnd
-          || Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref window, current)) != scanStart)
+      if (Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref windowAtEnd, (nuint)(uint)current)) != scanEnd
+          || Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref window, (nuint)(uint)current)) != scanStart)
         continue;
 
-      var length = 2;
-      while (true) {
-        var diff = Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref window, current + length))
-                   ^ Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref window, scan + length));
-        if (diff != 0) {
-          // The first differing byte is the lowest one in memory order.
-          length += (BitConverter.IsLittleEndian ? BitOperations.TrailingZeroCount(diff) : BitOperations.LeadingZeroCount(diff)) >> 3;
-          break;
-        }
-
-        length += 8;
-        if (length >= maxLength)
-          break;
-      }
-
-      if (length > maxLength)
-        length = maxLength;
-
+      var length = MatchLength(ref Unsafe.Add(ref window, (nuint)(uint)current), ref scanRef, maxLength);
       if (length > best) {
-        this._matchStart = current;
+        matchStart = current;
         best = length;
         if (length >= nice)
           break;
-        scanEnd = Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref window, scan + best - 1));
+        scanEnd = Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref scanRef, best - 1));
+        windowAtEnd = ref Unsafe.Add(ref window, best - 1);
       }
-    } while ((current = Unsafe.Add(ref prev, current & WMask)) > limit && --chain != 0);
+    } while ((current = Unsafe.Add(ref prev, (nuint)(uint)(current & WMask))) > limit && --chain != 0);
 
-    return Math.Min(best, this._lookahead);
+    return Math.Min(best, lookahead);
+  }
+
+  /// <summary>Length of the common prefix of two strings whose first two bytes agree, capped at <paramref name="maxLength"/>.</summary>
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  private static int MatchLength(ref byte candidate, ref byte scan, int maxLength) {
+    var length = 2;
+    while (true) {
+      var diff = Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref candidate, length))
+                 ^ Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref scan, length));
+      if (diff != 0) {
+        // The first differing byte is the lowest one in memory order.
+        length += (BitConverter.IsLittleEndian ? BitOperations.TrailingZeroCount(diff) : BitOperations.LeadingZeroCount(diff)) >> 3;
+        return Math.Min(length, maxLength);
+      }
+
+      length += 8;
+      if (length >= maxLength)
+        return maxLength;
+    }
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private static uint Load32(byte[] array, int index) {
-    var value = Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(array), index));
+  private static uint Load32(ref byte window, int index) {
+    var value = Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref window, index));
     return BitConverter.IsLittleEndian ? value : BinaryPrimitives.ReverseEndianness(value);
   }
 
@@ -302,6 +472,7 @@ internal sealed partial class DeflateEncoder {
 
     SlideTable(this._head);
     SlideTable(this._prev);
+    SlideTable(this._head3);
   }
 
   /// <summary>
@@ -310,7 +481,7 @@ internal sealed partial class DeflateEncoder {
   /// </summary>
   /// <remarks>
   /// <c>max(v, WSize) - WSize</c> is exactly that clamp for unsigned values, so whole vectors
-  /// go at once; both tables are a multiple of every vector width in length.
+  /// go at once; every table is a multiple of every vector width in length.
   /// </remarks>
   private static void SlideTable(ushort[] table) {
     var window = new Vector<ushort>(WSize);
@@ -321,26 +492,52 @@ internal sealed partial class DeflateEncoder {
 
   // ── symbols ──────────────────────────────────────────────────────────
 
-  [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private void TallyLiteral(byte value) {
-    this._symLength[this._symCount] = value;
-    this._symDistance[this._symCount++] = 0;
-    ++this._litFreq[value];
+  /// <summary>The block's symbol buffer and frequency counts, as references the hot loops keep in registers.</summary>
+  private ref struct SymbolSink {
+    private readonly ref ushort _litLen;
+    private readonly ref ushort _distance;
+    private readonly ref long _litFreq;
+    private readonly ref long _distFreq;
+    private int _count;
+
+    public SymbolSink(DeflateEncoder encoder) {
+      this._litLen = ref MemoryMarshal.GetArrayDataReference(encoder._symLitLen);
+      this._distance = ref MemoryMarshal.GetArrayDataReference(encoder._symDistance);
+      this._litFreq = ref MemoryMarshal.GetArrayDataReference(encoder._litFreq);
+      this._distFreq = ref MemoryMarshal.GetArrayDataReference(encoder._distFreq);
+      this._count = encoder._symCount;
+    }
+
+    public readonly bool IsFull => this._count == SymbolBufferSize;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Literal(byte value) {
+      Unsafe.Add(ref this._litLen, this._count) = value;
+      Unsafe.Add(ref this._distance, this._count++) = 0;
+      ++Unsafe.Add(ref this._litFreq, value);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Match(int distance, int length) {
+      Unsafe.Add(ref this._litLen, this._count) = (ushort)(256 + length - MinMatch);
+      Unsafe.Add(ref this._distance, this._count++) = (ushort)distance;
+      ++Unsafe.Add(ref this._litFreq, 257 + LengthCodes[length - MinMatch]);
+      ++Unsafe.Add(ref this._distFreq, DistanceCodes[DistanceSlot(distance)]);
+    }
+
+    /// <summary>Emits the buffered symbols as a block ending at the encoder's <c>_strStart</c>, and starts over.</summary>
+    public void Flush(DeflateEncoder encoder) {
+      encoder._symCount = this._count;
+      encoder.FlushBlock(last: false);
+      this._count = 0;
+    }
+
+    public readonly void Store(DeflateEncoder encoder) => encoder._symCount = this._count;
   }
 
+  /// <summary>Index of <paramref name="distance"/> in <see cref="DistanceCodes"/>; 0 for no distance.</summary>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private void TallyMatch(int distance, int length) {
-    this._symLength[this._symCount] = (byte)(length - MinMatch);
-    this._symDistance[this._symCount++] = (ushort)distance;
-    ++this._litFreq[257 + LengthCodes[length - MinMatch]];
-    ++this._distFreq[DistanceCode(distance)];
-  }
-
-  [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private static int DistanceCode(int distance) {
-    var d = distance - 1;
-    return d < 256 ? DistanceCodes[d] : DistanceCodes[256 + (d >> 7)];
-  }
+  private static int DistanceSlot(int distance) => distance <= 256 ? distance : 256 + ((distance - 1) >> 7);
 
   // ── blocks ───────────────────────────────────────────────────────────
 
@@ -422,39 +619,100 @@ internal sealed partial class DeflateEncoder {
     } while (!data.IsEmpty);
   }
 
+  /// <summary>Writes the buffered symbols and the end-of-block code with the given codes.</summary>
+  /// <remarks>
+  /// <para>Every code is first folded into a table entry: a literal's code, or a length's code
+  /// together with its extra bits, in one; a distance code with its length, extra-bit count and
+  /// base in another. A literal looks up the distance entry of distance 0, which writes
+  /// nothing, so literals and matches take the same branch-free path.</para>
+  /// <para>The bit accumulator is spilled after every symbol by an unconditional eight-byte
+  /// store, of which only the whole bytes count: at most 7 bits stay behind, a symbol adds at
+  /// most 15 + 5 + 15 + 13 = 48, so the accumulator never overflows, and keeping eight bytes
+  /// of room in the output buffer is the only check per symbol.</para>
+  /// </remarks>
+  [MethodImpl(MethodImplOptions.AggressiveOptimization)]
   private void EmitSymbols(int[] litLengths, ushort[] litCodes, int[] distLengths, ushort[] distCodes) {
-    var lengthExtra = DeflateConstants.LengthExtraBits;
+    var litLen = this._litLenEntries;
+    for (var symbol = 0; symbol < 256; ++symbol)
+      litLen[symbol] = litCodes[symbol] | (ulong)litLengths[symbol] << 32;
+
     var lengthBase = DeflateConstants.LengthBase;
-    var distExtra = DeflateConstants.DistanceExtraBits;
-    var distBase = DeflateConstants.DistanceBase;
-
-    for (var i = 0; i < this._symCount; ++i) {
-      int distance = this._symDistance[i];
-      int value = this._symLength[i];
-      if (distance == 0) {
-        this.PutBits(litCodes[value], litLengths[value]);
-        continue;
-      }
-
-      var lengthCode = LengthCodes[value];
-      var symbol = 257 + lengthCode;
-      var bits = (ulong)litCodes[symbol];
-      var count = litLengths[symbol];
-      var extra = lengthExtra[lengthCode];
-      bits |= (ulong)(value + MinMatch - lengthBase[lengthCode]) << count;
-      count += extra;
-
-      var distCode = DistanceCode(distance);
-      bits |= (ulong)distCodes[distCode] << count;
-      count += distLengths[distCode];
-      bits |= (ulong)(distance - distBase[distCode]) << count;
-      count += distExtra[distCode];
-
-      // At most 15 + 5 + 15 + 13 = 48 bits.
-      this.PutBits(bits, count);
+    var lengthExtra = DeflateConstants.LengthExtraBits;
+    for (var value = 0; value <= MaxMatch - MinMatch; ++value) {
+      var code = LengthCodes[value];
+      var count = litLengths[257 + code];
+      litLen[256 + value] = litCodes[257 + code] | (ulong)(value + MinMatch - lengthBase[code]) << count | (ulong)(count + lengthExtra[code]) << 32;
     }
 
-    this.PutBits(litCodes[DeflateConstants.EndOfBlock], litLengths[DeflateConstants.EndOfBlock]);
+    var distances = this._distEntries;
+    var distBase = DeflateConstants.DistanceBase;
+    var distExtra = DeflateConstants.DistanceExtraBits;
+    for (var code = 0; code < DeflateConstants.DistanceAlphabetSize; ++code)
+      distances[code] = distCodes[code] | (ulong)distLengths[code] << 32 | (ulong)distExtra[code] << 40 | (ulong)distBase[code] << 48;
+
+    ref var litLenRef = ref MemoryMarshal.GetArrayDataReference(litLen);
+    ref var distRef = ref MemoryMarshal.GetArrayDataReference(distances);
+    ref var slots = ref MemoryMarshal.GetArrayDataReference(DistanceCodes);
+    ref var symLitLen = ref MemoryMarshal.GetArrayDataReference(this._symLitLen);
+    ref var symDistance = ref MemoryMarshal.GetArrayDataReference(this._symDistance);
+    var output = this._out;
+    var room = output.Length - 8;
+
+    // The header may have left up to 31 bits; bring that down to the at most 7 the loop expects.
+    if (this._outPos > room)
+      this.FlushOutput();
+    var bitBuf = this._bitBuf;
+    var bitCount = this._bitCount;
+    var outPos = this._outPos;
+    Spill(output, ref outPos, ref bitBuf, ref bitCount);
+
+    var symbols = this._symCount;
+    for (var i = 0; i < symbols; ++i) {
+      if (outPos > room) {
+        this._outPos = outPos;
+        this.FlushOutput();
+        outPos = 0;
+      }
+
+      var entry = Unsafe.Add(ref litLenRef, Unsafe.Add(ref symLitLen, i));
+      int distance = Unsafe.Add(ref symDistance, i);
+      var distEntry = Unsafe.Add(ref distRef, Unsafe.Add(ref slots, DistanceSlot(distance)));
+      var bits = (ulong)(uint)entry;
+      var count = (int)(byte)(entry >> 32);
+      bits |= (distEntry & 0xFFFF) << count;
+      count += (byte)(distEntry >> 32);
+      bits |= (ulong)(distance - (int)(distEntry >> 48)) << count;
+      count += (byte)(distEntry >> 40);
+
+      bitBuf |= bits << bitCount;
+      bitCount += count;
+      Spill(output, ref outPos, ref bitBuf, ref bitCount);
+    }
+
+    if (outPos > room) {
+      this._outPos = outPos;
+      this.FlushOutput();
+      outPos = 0;
+    }
+
+    bitBuf |= (ulong)litCodes[DeflateConstants.EndOfBlock] << bitCount;
+    bitCount += litLengths[DeflateConstants.EndOfBlock];
+    Spill(output, ref outPos, ref bitBuf, ref bitCount);
+
+    this._bitBuf = bitBuf;
+    this._bitCount = bitCount;
+    this._outPos = outPos;
+  }
+
+  /// <summary>Stores the accumulator's whole bytes; needs eight bytes of room at <paramref name="outPos"/>.</summary>
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  private static void Spill(byte[] output, ref int outPos, ref ulong bitBuf, ref int bitCount) {
+    Unsafe.WriteUnaligned(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(output), outPos),
+      BitConverter.IsLittleEndian ? bitBuf : BinaryPrimitives.ReverseEndianness(bitBuf));
+    var bytes = bitCount >> 3;
+    outPos += bytes;
+    bitBuf >>= bytes << 3;
+    bitCount &= 7;
   }
 
   // ── bit output ───────────────────────────────────────────────────────
@@ -532,11 +790,13 @@ internal sealed partial class DeflateEncoder {
   }
 
   // Distances 1–256 directly, larger ones by (distance - 1) >> 7, which is exact because every
-  // code above 15 spans a multiple of 128 distances.
+  // code above 15 spans a multiple of 128 distances. Slot 0 — a literal's distance — maps to a
+  // code past the alphabet, whose emit entry writes nothing.
   private static byte[] BuildDistanceCodes() {
     var table = new byte[512];
-    for (var d = 0; d < 256; ++d)
-      table[d] = (byte)DeflateConstants.GetDistanceCode(d + 1);
+    table[0] = DeflateConstants.DistanceAlphabetSize;
+    for (var d = 1; d <= 256; ++d)
+      table[d] = (byte)DeflateConstants.GetDistanceCode(d);
     for (var i = 2; i < 256; ++i)
       table[256 + i] = (byte)DeflateConstants.GetDistanceCode((i << 7) + 1);
     return table;

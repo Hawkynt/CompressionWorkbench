@@ -63,7 +63,9 @@ public sealed class DeflateCompressor {
   /// <param name="level">The compression level.</param>
   /// <returns>The DEFLATE compressed data.</returns>
   public static byte[] Compress(ReadOnlySpan<byte> data, DeflateCompressionLevel level = DeflateCompressionLevel.Default) {
-    using var ms = new MemoryStream();
+    // Half the input holds most compressible data in one go; a MemoryStream growing from empty
+    // reallocates and copies the output at every doubling before the final copy out.
+    using var ms = new MemoryStream((int)Math.Min(data.Length / 2L + 64, Array.MaxLength));
     var compressor = new DeflateCompressor(ms, level);
     compressor.Write(data);
     compressor.Finish();

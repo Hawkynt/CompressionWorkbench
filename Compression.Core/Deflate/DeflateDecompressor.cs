@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 
 namespace Compression.Core.Deflate;
 
@@ -12,7 +13,13 @@ namespace Compression.Core.Deflate;
 /// <para>The decoder works on a 64-bit bit accumulator refilled from a read-ahead buffer, and
 /// decodes Huffman symbols through two-level lookup tables (a root table indexed by the next
 /// few bits, with sub-tables for the rarer longer codes), writing straight into an output
-/// buffer that doubles as the 32 KB history window.</para>
+/// buffer that doubles as the 32 KB history window. A table entry carries the base length or
+/// distance and its extra-bit count along with the code, so a symbol costs one lookup.</para>
+/// <para>Two loops share the work. Wherever the read-ahead and the output buffer both have
+/// room for the largest step, a fast loop decodes without bounds or truncation checks — up to
+/// three literals per refill, matches copied sixteen bytes at a time; at the edges a careful
+/// loop decodes one symbol at a time with every check, and hands back as soon as the fast
+/// loop can resume. Malformed input is rejected by both alike.</para>
 /// <para>Input is read ahead in chunks. When the stream ends and the underlying stream is
 /// seekable, the read-ahead is handed back by seeking, so the stream is left positioned on
 /// the first byte after the DEFLATE data; otherwise <see cref="UnconsumedBytes"/> reports how
@@ -24,12 +31,28 @@ public sealed class DeflateDecompressor {
   private const int MaxMatch = 258;
   private const int InputChunk = 16384;
   private const int StreamingBufferSize = WindowSize * 4;
-  private const int LitRootBits = 10;
+  private const int LitRootBits = 11;
+  private const int LitRootMask = (1 << LitRootBits) - 1;
   private const int DistRootBits = 8;
+  private const int DistRootMask = (1 << DistRootBits) - 1;
   private const int CodeLengthRootBits = 7;
 
-  private static readonly int[] StaticLitTable = BuildTable(DeflateConstants.GetStaticLiteralLengths(), LitRootBits);
-  private static readonly int[] StaticDistTable = BuildTable(DeflateConstants.GetStaticDistanceLengths(), DistRootBits);
+  // Room a match copy needs past the write position: the match, plus the overshoot of its
+  // last sixteen-byte step.
+  private const int CopySlack = MaxMatch + 16;
+  // The fast loop writes up to three literals or one match per step.
+  private const int FastOutputSlack = CopySlack + 16;
+  // The fast loop reads eight bytes per refill and refills once per step.
+  private const int FastInputSlack = 16;
+
+  // Decode-table entry flags; see BuildTable.
+  private const uint Literal = 0x8000;
+  private const uint Exceptional = 0x4000;
+  private const uint SubTable = 0x2000;
+  private const uint EndOfBlock = 0x1000;
+
+  private static readonly uint[] StaticLitTable = BuildTable(DeflateConstants.GetStaticLiteralLengths(), LitRootBits, TableKind.LiteralLength, null);
+  private static readonly uint[] StaticDistTable = BuildTable(DeflateConstants.GetStaticDistanceLengths(), DistRootBits, TableKind.Distance, null);
 
   private readonly Stream? _input;
   private byte[] _in;
@@ -47,8 +70,10 @@ public sealed class DeflateDecompressor {
   private State _state;
   private bool _final;
   private int _storedLeft;
-  private int[] _litTable = StaticLitTable;
-  private int[] _distTable = StaticDistTable;
+  private uint[] _litTable = StaticLitTable;
+  private uint[] _distTable = StaticDistTable;
+  private uint[]? _dynamicLitTable;
+  private uint[]? _dynamicDistTable;
 
   private enum State { Header, Stored, Huffman, Done }
 
@@ -85,7 +110,7 @@ public sealed class DeflateDecompressor {
   /// <returns>The decompressed data.</returns>
   public byte[] DecompressAll() {
     while (this._state != State.Done) {
-      if (this._buf.Length - this._wpos <= MaxMatch + 8)
+      if (this._buf.Length - this._wpos <= CopySlack)
         this.Grow();
 
       this.Step();
@@ -176,7 +201,7 @@ public sealed class DeflateDecompressor {
 
   private void Grow() {
     var size = (int)Math.Min(Math.Max(this._buf.Length * 2L, StreamingBufferSize), Array.MaxLength);
-    if (size - this._wpos <= MaxMatch + 8)
+    if (size - this._wpos <= CopySlack)
       throw new InvalidDataException("DEFLATE output exceeds the largest supported buffer.");
 
     Array.Resize(ref this._buf, size);
@@ -189,7 +214,7 @@ public sealed class DeflateDecompressor {
       return;
     }
 
-    if (this._buf.Length - this._wpos > MaxMatch + 8)
+    if (this._buf.Length - this._wpos > CopySlack)
       return;
 
     var keep = Math.Min(this._wpos, WindowSize);
@@ -261,13 +286,10 @@ public sealed class DeflateDecompressor {
     return value;
   }
 
-  [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private int DecodeSymbol(int[] table, int rootBits) {
+  /// <summary>Decodes one symbol of a code-length table, whose codes never need a sub-table.</summary>
+  private int DecodeSymbol(uint[] table, int rootBits) {
     var entry = table[(int)this._bitBuf & ((1 << rootBits) - 1)];
-    if ((entry & 0x80) != 0)
-      entry = table[(entry >> 8) + ((int)(this._bitBuf >> rootBits) & ((1 << (entry & 0x0F)) - 1))];
-
-    var length = entry & 0xFF;
+    var length = (int)(entry & 0xFF);
     if (length == 0)
       ThrowInvalidCode();
     if (length > this._bitCnt)
@@ -275,7 +297,7 @@ public sealed class DeflateDecompressor {
 
     this._bitBuf >>= length;
     this._bitCnt -= length;
-    return entry >> 8;
+    return (int)(entry >> 16);
   }
 
   // ── blocks ───────────────────────────────────────────────────────────
@@ -398,18 +420,143 @@ public sealed class DeflateDecompressor {
   }
 
   private void DecodeHuffman() {
-    // The hot loop keeps the bit state in locals and writes it back before anything that
-    // reads it from the fields.
+    // Alternate between the two loops: the fast one wherever it is safe, the careful one at
+    // the edges. Each call of either makes progress or hands back for more room.
+    while (true) {
+      if (this._wpos < this._buf.Length - FastOutputSlack && this._inEnd - this._inPos >= 2 * FastInputSlack && this.DecodeFast())
+        return;
+
+      if (!this.DecodeCareful())
+        return;
+    }
+  }
+
+  /// <summary>
+  /// Decodes symbols while the output buffer and the read-ahead both have room for the
+  /// largest step, without any per-symbol bounds or truncation check.
+  /// </summary>
+  /// <remarks>
+  /// <para>Inside the safe zone every refill can load eight whole bytes, so the accumulator
+  /// holds at least 56 bits after each one: enough for three literals (3 × 15 bits), or for a
+  /// length and its distance (15 + 5 + 15 + 13 = 48 bits). The next table entry is looked up
+  /// before a match is copied, so the lookup overlaps the copy.</para>
+  /// <para>Returns <see langword="true"/> when the block ended; otherwise the careful loop
+  /// takes over at the edge of the zone.</para>
+  /// </remarks>
+  [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+  private bool DecodeFast() {
     var buf = this._buf;
-    // Copies run in whole eight-byte steps, so up to seven bytes past a match may be written;
-    // stopping MaxMatch + 8 short of the end keeps that inside the buffer.
-    var stopAt = buf.Length - MaxMatch - 8;
+    var stopAt = buf.Length - FastOutputSlack;
+    var inEnd = this._inEnd - FastInputSlack;
     var lit = this._litTable;
     var dist = this._distTable;
-    ref var lengthBase = ref MemoryMarshal.GetReference(DeflateConstants.LengthBase);
-    ref var lengthExtra = ref MemoryMarshal.GetReference(DeflateConstants.LengthExtraBits);
-    ref var distBase = ref MemoryMarshal.GetReference(DeflateConstants.DistanceBase);
-    ref var distExtra = ref MemoryMarshal.GetReference(DeflateConstants.DistanceExtraBits);
+    ref var litRef = ref MemoryMarshal.GetArrayDataReference(lit);
+    ref var distRef = ref MemoryMarshal.GetArrayDataReference(dist);
+    ref var input = ref MemoryMarshal.GetArrayDataReference(this._in);
+    ref var output = ref MemoryMarshal.GetArrayDataReference(buf);
+    var wpos = this._wpos;
+    var bitBuf = this._bitBuf;
+    var bitCnt = this._bitCnt;
+    var inPos = this._inPos;
+
+    Refill(ref input, ref inPos, ref bitBuf, ref bitCnt);
+    var entry = Unsafe.Add(ref litRef, (int)bitBuf & LitRootMask);
+    while (wpos < stopAt && inPos <= inEnd) {
+      if ((entry & Literal) != 0) {
+        bitBuf >>= (int)entry;
+        bitCnt -= (int)(entry & 0xFF);
+        Unsafe.Add(ref output, wpos++) = (byte)(entry >> 16);
+        entry = Unsafe.Add(ref litRef, (int)bitBuf & LitRootMask);
+        if ((entry & Literal) != 0) {
+          bitBuf >>= (int)entry;
+          bitCnt -= (int)(entry & 0xFF);
+          Unsafe.Add(ref output, wpos++) = (byte)(entry >> 16);
+          entry = Unsafe.Add(ref litRef, (int)bitBuf & LitRootMask);
+          if ((entry & Literal) != 0) {
+            bitBuf >>= (int)entry;
+            bitCnt -= (int)(entry & 0xFF);
+            Unsafe.Add(ref output, wpos++) = (byte)(entry >> 16);
+            entry = Unsafe.Add(ref litRef, (int)bitBuf & LitRootMask);
+          }
+        }
+
+        // The lookup above only needed root bits that are already in place; the refill
+        // makes room for whatever the entry turns out to be.
+        Refill(ref input, ref inPos, ref bitBuf, ref bitCnt);
+        continue;
+      }
+
+      if ((entry & Exceptional) != 0) {
+        if ((entry & SubTable) != 0) {
+          entry = Unsafe.Add(ref litRef, (int)(entry >> 16) + ((int)(bitBuf >> LitRootBits) & ((1 << (int)((entry >> 8) & 0xF)) - 1)));
+          if ((entry & Literal) != 0) {
+            bitBuf >>= (int)entry;
+            bitCnt -= (int)(entry & 0xFF);
+            Unsafe.Add(ref output, wpos++) = (byte)(entry >> 16);
+            Refill(ref input, ref inPos, ref bitBuf, ref bitCnt);
+            entry = Unsafe.Add(ref litRef, (int)bitBuf & LitRootMask);
+            continue;
+          }
+        }
+
+        if ((entry & Exceptional) != 0) {
+          if ((entry & EndOfBlock) == 0)
+            ThrowInvalidCode();
+
+          bitBuf >>= (int)entry;
+          bitCnt -= (int)(entry & 0xFF);
+          (this._bitBuf, this._bitCnt, this._inPos, this._wpos) = (bitBuf, bitCnt, inPos, wpos);
+          this.EndBlock();
+          return true;
+        }
+      }
+
+      // A length, then its distance; at least 56 bits are in the accumulator.
+      var saved = bitBuf;
+      bitBuf >>= (int)entry;
+      bitCnt -= (int)(entry & 0xFF);
+      var length = (int)(entry >> 16) + ExtraBits(saved, entry);
+
+      entry = Unsafe.Add(ref distRef, (int)bitBuf & DistRootMask);
+      if ((entry & Exceptional) != 0) {
+        if ((entry & SubTable) == 0)
+          ThrowInvalidCode();
+        entry = Unsafe.Add(ref distRef, (int)(entry >> 16) + ((int)(bitBuf >> DistRootBits) & ((1 << (int)((entry >> 8) & 0xF)) - 1)));
+        if ((entry & Exceptional) != 0)
+          ThrowInvalidCode();
+      }
+
+      saved = bitBuf;
+      bitBuf >>= (int)entry;
+      bitCnt -= (int)(entry & 0xFF);
+      var distance = (int)(entry >> 16) + ExtraBits(saved, entry);
+      if (distance > wpos)
+        ThrowDistanceTooFar(distance, wpos);
+
+      Refill(ref input, ref inPos, ref bitBuf, ref bitCnt);
+      entry = Unsafe.Add(ref litRef, (int)bitBuf & LitRootMask);
+      CopyMatch(ref Unsafe.Add(ref output, wpos), distance, length);
+      wpos += length;
+    }
+
+    (this._bitBuf, this._bitCnt, this._inPos, this._wpos) = (bitBuf, bitCnt, inPos, wpos);
+    return false;
+  }
+
+  /// <summary>
+  /// Decodes one symbol at a time with every check in place: near the end of the input,
+  /// where a refill may come up short, and near the end of the output buffer.
+  /// </summary>
+  /// <returns><see langword="true"/> when the fast loop can take over again.</returns>
+  [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+  private bool DecodeCareful() {
+    var buf = this._buf;
+    // Copies run in whole steps of up to sixteen bytes, so up to fifteen bytes past a match
+    // may be written; stopping MaxMatch + 16 short of the end keeps that inside the buffer.
+    var stopAt = buf.Length - CopySlack;
+    var fastStop = buf.Length - FastOutputSlack;
+    var lit = this._litTable;
+    var dist = this._distTable;
     ref var output = ref MemoryMarshal.GetArrayDataReference(buf);
     var wpos = this._wpos;
     var bitBuf = this._bitBuf;
@@ -419,99 +566,121 @@ public sealed class DeflateDecompressor {
     while (wpos < stopAt) {
       // 15 (length code) + 5 (extra) + 15 (distance code) + 13 (extra) = 48 bits per token.
       if (bitCnt < 48) {
-        if (this._inEnd - inPos >= 8) {
-          // The bits loaded above the count are the very bytes a later refill ORs in again.
-          bitBuf |= BinaryPrimitives.ReadUInt64LittleEndian(this._in.AsSpan(inPos)) << bitCnt;
-          inPos += (63 - bitCnt) >> 3;
-          bitCnt |= 56;
-        } else {
+        if (this._inEnd - inPos >= 8)
+          Refill(ref MemoryMarshal.GetArrayDataReference(this._in), ref inPos, ref bitBuf, ref bitCnt);
+        else {
           (this._bitBuf, this._bitCnt, this._inPos) = (bitBuf, bitCnt, inPos);
           this.RefillSlow();
           (bitBuf, bitCnt, inPos) = (this._bitBuf, this._bitCnt, this._inPos);
         }
       }
 
-      var entry = lit[(int)bitBuf & ((1 << LitRootBits) - 1)];
-      if ((entry & 0x80) != 0)
-        entry = lit[(entry >> 8) + ((int)(bitBuf >> LitRootBits) & ((1 << (entry & 0x0F)) - 1))];
+      var entry = lit[(int)bitBuf & LitRootMask];
+      if ((entry & SubTable) != 0)
+        entry = lit[(int)(entry >> 16) + ((int)(bitBuf >> LitRootBits) & ((1 << (int)((entry >> 8) & 0xF)) - 1))];
 
-      var codeLength = entry & 0xFF;
-      if (codeLength == 0)
+      if ((entry & (Exceptional | EndOfBlock)) == Exceptional)
         ThrowInvalidCode();
-      if (codeLength > bitCnt)
+      if ((int)(entry & 0xFF) > bitCnt)
         ThrowTruncated();
 
-      bitBuf >>= codeLength;
-      bitCnt -= codeLength;
-      var symbol = entry >> 8;
+      var saved = bitBuf;
+      bitBuf >>= (int)entry;
+      bitCnt -= (int)(entry & 0xFF);
 
-      if (symbol < 256) {
-        Unsafe.Add(ref output, wpos++) = (byte)symbol;
+      if ((entry & Literal) != 0) {
+        Unsafe.Add(ref output, wpos++) = (byte)(entry >> 16);
+        if (wpos < fastStop && this._inEnd - inPos >= 2 * FastInputSlack) {
+          (this._bitBuf, this._bitCnt, this._inPos, this._wpos) = (bitBuf, bitCnt, inPos, wpos);
+          return true;
+        }
+
         continue;
       }
 
-      if (symbol == DeflateConstants.EndOfBlock) {
+      if ((entry & EndOfBlock) != 0) {
         (this._bitBuf, this._bitCnt, this._inPos, this._wpos) = (bitBuf, bitCnt, inPos, wpos);
         this.EndBlock();
-        return;
+        return false;
       }
 
-      symbol -= 257;
-      if ((uint)symbol >= 29)
+      var length = (int)(entry >> 16) + ExtraBits(saved, entry);
+
+      entry = dist[(int)bitBuf & DistRootMask];
+      if ((entry & SubTable) != 0)
+        entry = dist[(int)(entry >> 16) + ((int)(bitBuf >> DistRootBits) & ((1 << (int)((entry >> 8) & 0xF)) - 1))];
+      if ((entry & Exceptional) != 0)
         ThrowInvalidCode();
-
-      var length = Unsafe.Add(ref lengthBase, symbol);
-      var extra = Unsafe.Add(ref lengthExtra, symbol);
-      if (extra > bitCnt)
-        ThrowTruncated();
-      length += (int)bitBuf & ((1 << extra) - 1);
-      bitBuf >>= extra;
-      bitCnt -= extra;
-
-      entry = dist[(int)bitBuf & ((1 << DistRootBits) - 1)];
-      if ((entry & 0x80) != 0)
-        entry = dist[(entry >> 8) + ((int)(bitBuf >> DistRootBits) & ((1 << (entry & 0x0F)) - 1))];
-
-      codeLength = entry & 0xFF;
-      if (codeLength == 0)
-        ThrowInvalidCode();
-      if (codeLength > bitCnt)
+      if ((int)(entry & 0xFF) > bitCnt)
         ThrowTruncated();
 
-      bitBuf >>= codeLength;
-      bitCnt -= codeLength;
-      var distSymbol = entry >> 8;
-      if ((uint)distSymbol >= 30)
-        ThrowInvalidCode();
-
-      var distance = Unsafe.Add(ref distBase, distSymbol);
-      extra = Unsafe.Add(ref distExtra, distSymbol);
-      if (extra > bitCnt)
-        ThrowTruncated();
-      distance += (int)bitBuf & ((1 << extra) - 1);
-      bitBuf >>= extra;
-      bitCnt -= extra;
-
+      saved = bitBuf;
+      bitBuf >>= (int)entry;
+      bitCnt -= (int)(entry & 0xFF);
+      var distance = (int)(entry >> 16) + ExtraBits(saved, entry);
       if (distance > wpos)
         ThrowDistanceTooFar(distance, wpos);
 
-      // Bounds: wpos < stopAt, so wpos + length + 7 < buf.Length; the source lies before wpos.
-      ref var dst = ref Unsafe.Add(ref output, wpos);
-      ref var src = ref Unsafe.Add(ref output, wpos - distance);
-      if (distance >= 8)
-        // Each eight-byte step reads only bytes at least eight behind it, all already final.
-        for (var i = 0; i < length; i += 8)
-          Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, i), Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref src, i)));
-      else if (distance == 1)
-        Unsafe.InitBlockUnaligned(ref dst, src, (uint)length);
-      else
-        for (var i = 0; i < length; ++i)
-          Unsafe.Add(ref dst, i) = Unsafe.Add(ref src, i);
-
+      CopyMatch(ref Unsafe.Add(ref output, wpos), distance, length);
       wpos += length;
+      if (wpos < fastStop && this._inEnd - inPos >= 2 * FastInputSlack) {
+        (this._bitBuf, this._bitCnt, this._inPos, this._wpos) = (bitBuf, bitCnt, inPos, wpos);
+        return true;
+      }
     }
 
     (this._bitBuf, this._bitCnt, this._inPos, this._wpos) = (bitBuf, bitCnt, inPos, wpos);
+    return false;
+  }
+
+  /// <summary>
+  /// Tops the accumulator up to at least 56 bits from eight bytes at <paramref name="inPos"/>,
+  /// which the caller guarantees are there.
+  /// </summary>
+  /// <remarks>
+  /// All eight bytes are ORed in but only the whole ones that fit are counted; the bits loaded
+  /// above the count are the very bits a later refill ORs in again, so loading them early is
+  /// harmless.
+  /// </remarks>
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  private static void Refill(ref byte input, ref int inPos, ref ulong bitBuf, ref int bitCnt) {
+    var word = Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref input, inPos));
+    bitBuf |= (BitConverter.IsLittleEndian ? word : BinaryPrimitives.ReverseEndianness(word)) << bitCnt;
+    inPos += (63 - bitCnt) >> 3;
+    bitCnt |= 56;
+  }
+
+  /// <summary>The extra bits that follow the code of <paramref name="entry"/> in <paramref name="saved"/>, the accumulator before the code was consumed.</summary>
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  private static int ExtraBits(ulong saved, uint entry)
+    => (int)((saved & ~(ulong.MaxValue << (int)(entry & 0xFF))) >> (int)((entry >> 8) & 0xF));
+
+  /// <summary>Copies <paramref name="length"/> bytes from <paramref name="distance"/> back to <paramref name="destination"/>.</summary>
+  /// <remarks>
+  /// Copies run in whole 16- or 8-byte steps and may write up to fifteen bytes past the match,
+  /// which the callers' slack keeps inside the buffer. Each step reads only bytes at least a
+  /// step behind it, all already final; shorter distances repeat a pattern and go byte by byte.
+  /// </remarks>
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  private static void CopyMatch(ref byte destination, int distance, int length) {
+    ref var source = ref Unsafe.Subtract(ref destination, distance);
+    if (distance >= 16) {
+      var i = 0;
+      do {
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, i), Unsafe.ReadUnaligned<Vector128<byte>>(ref Unsafe.Add(ref source, i)));
+        i += 16;
+      } while (i < length);
+    } else if (distance >= 8) {
+      var i = 0;
+      do {
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, i), Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref source, i)));
+        i += 8;
+      } while (i < length);
+    } else if (distance == 1)
+      Unsafe.InitBlockUnaligned(ref destination, source, (uint)length);
+    else
+      for (var i = 0; i < length; ++i)
+        Unsafe.Add(ref destination, i) = Unsafe.Add(ref source, i);
   }
 
   private void ReadDynamicTables() {
@@ -521,14 +690,15 @@ public sealed class DeflateDecompressor {
     if (hlit > 286 || hdist > 30)
       throw new InvalidDataException($"Invalid DEFLATE dynamic header: HLIT={hlit}, HDIST={hdist}.");
 
-    var codeLengthLengths = new int[DeflateConstants.CodeLengthAlphabetSize];
+    Span<int> codeLengthLengths = stackalloc int[DeflateConstants.CodeLengthAlphabetSize];
+    codeLengthLengths.Clear();
     var order = DeflateConstants.CodeLengthOrder;
     for (var i = 0; i < hclen; ++i)
       codeLengthLengths[order[i]] = (int)this.GetBits(3);
 
-    var codeLengthTable = BuildTable(codeLengthLengths, CodeLengthRootBits);
+    var codeLengthTable = BuildTable(codeLengthLengths, CodeLengthRootBits, TableKind.Plain, null);
 
-    var lengths = new int[hlit + hdist];
+    Span<int> lengths = stackalloc int[hlit + hdist];
     var index = 0;
     while (index < lengths.Length) {
       if (this._bitCnt < 16)
@@ -559,28 +729,40 @@ public sealed class DeflateDecompressor {
       if (index + repeat > lengths.Length)
         throw new InvalidDataException("DEFLATE code lengths overrun the table.");
 
-      lengths.AsSpan(index, repeat).Fill(value);
+      lengths.Slice(index, repeat).Fill(value);
       index += repeat;
     }
 
     if (lengths[DeflateConstants.EndOfBlock] == 0)
       throw new InvalidDataException("DEFLATE block has no end-of-block code.");
 
-    this._litTable = BuildTable(lengths.AsSpan(0, hlit), LitRootBits);
-    this._distTable = BuildTable(lengths.AsSpan(hlit, hdist), DistRootBits);
+    this._litTable = this._dynamicLitTable = BuildTable(lengths[..hlit], LitRootBits, TableKind.LiteralLength, this._dynamicLitTable);
+    this._distTable = this._dynamicDistTable = BuildTable(lengths.Slice(hlit, hdist), DistRootBits, TableKind.Distance, this._dynamicDistTable);
   }
 
+  private enum TableKind { Plain, LiteralLength, Distance }
+
   /// <summary>
-  /// Builds a two-level decoding table for canonical Huffman code lengths (RFC 1951 §3.2.2).
+  /// Builds a two-level decoding table for canonical Huffman code lengths (RFC 1951 §3.2.2),
+  /// reusing <paramref name="reuse"/> when it is large enough.
   /// </summary>
   /// <remarks>
-  /// A direct entry is <c>symbol &lt;&lt; 8 | length</c>; a link to a sub-table is
-  /// <c>offset &lt;&lt; 8 | 0x80 | subBits</c>, and the sub-table is indexed by the bits after
-  /// the root ones. Zero marks a bit pattern no code describes — an incomplete code is
-  /// accepted, an over-subscribed one is not.
+  /// <para>An entry is <c>value &lt;&lt; 16 | flags | codeLength &lt;&lt; 8 | totalBits</c>,
+  /// where totalBits counts the code and the extra bits that follow it, so consuming a symbol
+  /// is one shift by the entry itself. The value is the literal, the base length or distance,
+  /// or — in a code-length table — the symbol. A literal/length or distance table folds the
+  /// RFC's base and extra-bit tables in, which spares the decoder two lookups per symbol.</para>
+  /// <para>A link to a sub-table is <c>offset &lt;&lt; 16 | Exceptional | SubTable | subBits &lt;&lt; 8</c>,
+  /// the sub-table being indexed by the bits after the root ones. A bit pattern no code
+  /// describes, and the symbols the format reserves (286, 287, distance codes 30 and 31),
+  /// decode to a bare <c>Exceptional</c>: an incomplete code is accepted, an over-subscribed
+  /// one is not.</para>
+  /// <para>The flag layout follows libdeflate's decode-table design (MIT licence): fold the
+  /// base and the extra-bit count into the entry and let the low byte drive the shift.</para>
   /// </remarks>
-  private static int[] BuildTable(ReadOnlySpan<int> lengths, int rootBits) {
+  private static uint[] BuildTable(ReadOnlySpan<int> lengths, int rootBits, TableKind kind, uint[]? reuse) {
     Span<int> count = stackalloc int[16];
+    count.Clear();
     foreach (var length in lengths) {
       if ((uint)length > 15)
         throw new InvalidDataException($"Invalid DEFLATE code length {length}.");
@@ -596,6 +778,7 @@ public sealed class DeflateDecompressor {
     }
 
     Span<int> next = stackalloc int[16];
+    next.Clear();
     var code = 0;
     for (var length = 1; length <= 15; ++length) {
       code = (code + count[length - 1]) << 1;
@@ -604,7 +787,7 @@ public sealed class DeflateDecompressor {
 
     var rootSize = 1 << rootBits;
     var rootMask = rootSize - 1;
-    var reversed = new int[lengths.Length];
+    Span<int> reversed = stackalloc int[lengths.Length];
     Span<int> subBits = stackalloc int[rootSize];
     subBits.Clear();
     for (var symbol = 0; symbol < lengths.Length; ++symbol) {
@@ -626,14 +809,19 @@ public sealed class DeflateDecompressor {
         size += 1 << subBits[i];
       }
 
-    var table = new int[size];
+    var table = reuse != null && reuse.Length >= size ? reuse : new uint[size];
+    table.AsSpan(0, size).Fill(Exceptional);
+    for (var i = 0; i < rootSize; ++i)
+      if (subBits[i] > 0)
+        table[i] = (uint)subOffset[i] << 16 | Exceptional | SubTable | (uint)subBits[i] << 8;
+
     for (var symbol = 0; symbol < lengths.Length; ++symbol) {
       var length = lengths[symbol];
       if (length == 0)
         continue;
 
       var rev = reversed[symbol];
-      var entry = (symbol << 8) | length;
+      var entry = Entry(kind, symbol, length);
       if (length <= rootBits) {
         for (var i = rev; i < rootSize; i += 1 << length)
           table[i] = entry;
@@ -642,12 +830,30 @@ public sealed class DeflateDecompressor {
 
       var root = rev & rootMask;
       var bits = subBits[root];
-      table[root] = (subOffset[root] << 8) | 0x80 | bits;
       for (var i = rev >> rootBits; i < 1 << bits; i += 1 << (length - rootBits))
         table[subOffset[root] + i] = entry;
     }
 
     return table;
+  }
+
+  private static uint Entry(TableKind kind, int symbol, int length) {
+    var code = (uint)length << 8;
+    switch (kind) {
+      case TableKind.Plain:
+        return (uint)symbol << 16 | code | (uint)length;
+      case TableKind.LiteralLength when symbol < 256:
+        return (uint)symbol << 16 | Literal | code | (uint)length;
+      case TableKind.LiteralLength when symbol == DeflateConstants.EndOfBlock:
+        return Exceptional | EndOfBlock | code | (uint)length;
+      case TableKind.LiteralLength when symbol - 257 < 29:
+        return (uint)DeflateConstants.LengthBase[symbol - 257] << 16 | code | (uint)(length + DeflateConstants.LengthExtraBits[symbol - 257]);
+      case TableKind.Distance when symbol < 30:
+        return (uint)DeflateConstants.DistanceBase[symbol] << 16 | code | (uint)(length + DeflateConstants.DistanceExtraBits[symbol]);
+      default:
+        // Reserved symbols: decoding one is an error.
+        return Exceptional;
+    }
   }
 
   [DoesNotReturn]
