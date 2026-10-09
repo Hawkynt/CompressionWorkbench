@@ -36,7 +36,11 @@ workbench placement of extents in leaves. This placement follows upstream
 twig level and other object items to the leaf level.
 Stat-data must include the lightweight and Unix extensions. Its first 44 bytes
 carry extension mask, mode, link count, size, UID, GID, three timestamps and
-allocated-byte count. Additional stat-data bytes are retained opaquely.
+allocated-byte count. Further extensions follow in mask-bit order; the writer
+carries large times (bit 2, 12 bytes), flags (bit 5, 4 bytes), the plugin set
+(bit 4) and the heir set (bit 8), each a 16-bit count of 4-byte slots, and
+refuses a body holding any other extension or bytes its mask does not declare,
+which `fsck.reiser4` reports as a fatal corruption.
 Extent bodies contain pairs of 64-bit block start and block count. Multiple
 items are joined in logical-offset order only when they describe contiguous
 logical content. Holes and unsupported body plugins are rejected.
@@ -57,30 +61,66 @@ unsupported names rather than truncating them into different names.
 
 ## Rebuild contract and limits
 
-Add, remove, defrag, shrink and layout rebuild capture metadata before staging.
-Existing stat-data extension bytes survive. Mode, ownership, link count and
-timestamps are retained or applied through the typed metadata fields; size and
-allocated-byte fields follow the rebuilt layout. `UpdateMetadata` stages explicit
-metadata changes, including changes to the root. Existing object IDs survive,
-and new IDs are allocated beyond the retained IDs rather than renumbering live
-objects. Verification includes identity and typed fields as well as extension
-bytes. Volume UUID and label, root stat-data extensions,
-and empty directories are retained. Edits and defrag stage the target and verify
-its complete native namespace and retained stat-data before replacing the source.
-Unsupported or incomplete native trees are refused before editing. Shrink copies
-the original through if a supported smaller result cannot be built.
+Add, remove, defrag, shrink and layout rebuild capture metadata before staging,
+and write nothing to the source until the staged volume has been read back and
+verified. Volume UUID, label and mkfs id survive, as do existing object IDs;
+new IDs are allocated beyond the retained ones rather than renumbering live
+objects. Mode, ownership and timestamps are retained, size, allocated bytes and
+directory link counts follow the rebuilt namespace, and the declared
+stat-data extensions listed above are carried byte for byte. Root stat-data
+(with its plugin set) and empty directories are retained.
 
-Reading supports multiple internal levels. Writing builds multiple leaves and additional internal levels as needed. An
-indivisible stat-data body or directory unit larger than a node is refused. This is not full Reiser4 metadata support:
-separate xattr items, arbitrary object plugins, symlinks, sparse files, shared
-objects, non-ASCII names and alternate node plugins are outside the profile.
-Opaque stat-data retention does not prove the semantics of unknown extensions.
-Native tree blocks discovered by traversal are reserved in the wipe map.
+`UpdateMetadata` sets mode permission bits, UID, GID and the three timestamps
+through the same staged rebuild, including on the root. It refuses a change of
+object kind, of link count (which follows the namespace) and of extension bytes
+with `NotSupportedException`, the volume unchanged.
 
-Validation uses reiser4progs 1.2.2 (Ubuntu package 1.2.2-1build2): native images
-with 1, 100 and 5000 files in nested directories plus empty directories were
-accepted by `fsck.reiser4 -y` as consistent. The largest has 166 leaves and
-three tree levels. `Reiser4MutationExternalTests` additionally checks a wide
-nested tree after Unix metadata updates, add/remove and defrag against
-`fsck.reiser4` and `debugfs.reiser4`. Synthetic tests exercise stat-data tails
-without claiming their unknown extension semantics are validated by the oracle.
+A rebuild writes the captured mkfs prefix back with only the identity patched
+in, so it is refused, before anything is written, when the source's fixed
+blocks hold anything else:
+
+| Block | What must match the captured profile | Why |
+| --- | --- | --- |
+| 16 master | everything but UUID and label | other disk-format fields are not reproduced |
+| 17 format40 | magic, tail policy, flags, version | `mkfs.reiser4 -o formatting=tails` changes the policy |
+| 19, 20 journal | blank | a kernel-written journal is not replayed |
+| 21 status | "consistent" | a volume fsck marked damaged is not silently cleared |
+| 22 backup | everything but UUID, label, block count, mkfs id | it backs up the root's plugin set: hash, fibration, formatting |
+
+Writing the default profile over another one was observed to fail:
+`fsck.reiser4` reported the root's plugin set disagreeing with its backup, and
+with `-o hash=tea_hash` a long name keyed with r5 could not be looked up by
+`debugfs.reiser4`. Such volumes are read, not rewritten. Unsupported or
+incomplete native trees are refused the same way. Shrink copies the original
+through when it cannot build a supported smaller result.
+
+Reading supports multiple internal levels. Writing builds multiple leaves and
+additional internal levels as needed. An indivisible stat-data body or
+directory unit larger than a node is refused. This is not full Reiser4
+metadata support: separate xattr items, tail and ctail bodies, arbitrary
+object plugins, symlinks, sparse files, shared objects, non-ASCII names,
+short keys and alternate node plugins are outside the profile. Native tree
+blocks discovered by traversal are reserved in the wipe map.
+
+## Evidence
+
+Oracle: reiser4progs 1.2.2 (Ubuntu package 1.2.2-1build2) under WSL. The WSL
+kernel (6.6) has no Reiser4 driver, so nothing was mounted; volumes written by
+the tools themselves come from `mkfs.reiser4` and from
+`fsck.reiser4 --build-fs`. File bytes are taken where `debugfs.reiser4 -i`
+says they are (its own path lookup, stat data and extent units); `debugfs -k`
+is not usable as a byte oracle because it hands file contents to `printf` as
+the format string.
+
+| Volume | Checked by | Result |
+| --- | --- | --- |
+| 3,004 files in 28 nested directories, empty and deep-empty directories, sizes 0/1/4095/4096/4097/2.2 MB, names of 23, 24, 100 and 255 characters | `fsck.reiser4 --check`; `debugfs -s`; `debugfs -i` + block copy for 316 files; `measurefs -S` | consistent; height 3, 38 twigs, 113 leaves, 3,040 objects; 0 byte mismatches |
+| the same after metadata update, add (nested), remove (subtree and a 255-character name), defrag, shrink, relayout | `fsck`; `debugfs -s`, `-i` and `-k` before/after | consistent each time; UUID, label, stat data and stat keys (object IDs) of untouched objects identical; the update applied exactly |
+| 12,000 files with extents | `fsck`; `debugfs -s` | consistent; height 4 |
+| our volume after `fsck.reiser4 --build-fs` inserted lost+found (object 0xffff, uid 1000) | our reader; then add into lost+found and `fsck` | read completely, 0 mismatches; consistent, object ID and owner kept |
+| `mkfs.reiser4` volume, then add nested files, long names, an empty directory | `fsck`; `debugfs -s`, `-i` | consistent; UUID, label, mkfs id, policies and root stat unchanged |
+| `mkfs.reiser4 -o hash=tea_hash` / `formatting=tails` / `fibration=lexic_fibre` | our editor | read; edit refused, image byte-identical |
+| a file carrying a large-time extension (mask bit 2) through add and defrag | `fsck`; `debugfs -i` | consistent; `sdext_lt` still present |
+
+`Reiser4ProfileExternalTests` and `Reiser4MutationExternalTests` replay these
+checks wherever reiser4progs is installed.
