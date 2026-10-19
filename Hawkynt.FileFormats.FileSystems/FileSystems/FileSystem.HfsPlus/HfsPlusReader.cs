@@ -39,8 +39,8 @@ public sealed class HfsPlusReader : IDisposable {
 
   /// <summary>
   /// The volume's files and folders as a POSIX system shows them: names with ':' where the
-  /// catalog stores '/', hard links carrying their shared data, and the metadata directories and
-  /// journal files left out.
+  /// catalog stores '/', hard links carrying their shared data, directory hard links holding
+  /// their directory's content, and the metadata directories and journal files left out.
   /// </summary>
   public IReadOnlyList<HfsPlusEntry> Entries { get; }
 
