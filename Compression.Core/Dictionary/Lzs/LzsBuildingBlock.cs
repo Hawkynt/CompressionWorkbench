@@ -44,13 +44,6 @@ public sealed class LzsBuildingBlock : IBuildingBlock {
 
   /// <summary>Compresses <paramref name="data"/> with the requested encoder effort.</summary>
   public byte[] Compress(ReadOnlySpan<byte> data, LzsCompressionLevel level) {
-    var settings = level switch {
-      LzsCompressionLevel.Fast => new CompressionSettings(FastChain, Lazy: false),
-      LzsCompressionLevel.Balanced => new CompressionSettings(BalancedChain, Lazy: false),
-      LzsCompressionLevel.Maximum => new CompressionSettings(MaxOffset, Lazy: true),
-      _ => throw new ArgumentOutOfRangeException(nameof(level), level, null),
-    };
-
     using var ms = new MemoryStream();
 
     // The file-format wrapper stores the uncompressed size before the RFC bitstream.
@@ -58,7 +51,24 @@ public sealed class LzsBuildingBlock : IBuildingBlock {
     BinaryPrimitives.WriteInt32LittleEndian(headerBuf, data.Length);
     ms.Write(headerBuf);
 
-    var writer = new BitWriter(ms);
+    EncodeStream(data, ms, level);
+    return ms.ToArray();
+  }
+
+  /// <summary>
+  /// Writes the bare RFC 1974 token stream for <paramref name="data"/> — no size header — terminated
+  /// by the end marker and zero-padded to the next byte boundary.
+  /// </summary>
+  public static void EncodeStream(ReadOnlySpan<byte> data, Stream output, LzsCompressionLevel level = LzsCompressionLevel.Balanced) {
+    ArgumentNullException.ThrowIfNull(output);
+    var settings = level switch {
+      LzsCompressionLevel.Fast => new CompressionSettings(FastChain, Lazy: false),
+      LzsCompressionLevel.Balanced => new CompressionSettings(BalancedChain, Lazy: false),
+      LzsCompressionLevel.Maximum => new CompressionSettings(MaxOffset, Lazy: true),
+      _ => throw new ArgumentOutOfRangeException(nameof(level), level, null),
+    };
+
+    var writer = new BitWriter(output);
     var hashHead = new int[1 << 14];
     var hashPrev = new int[data.Length];
     Array.Fill(hashHead, -1);
@@ -93,7 +103,6 @@ public sealed class LzsBuildingBlock : IBuildingBlock {
     writer.WriteBit(1);
     WriteBits(writer, 0, 7);
     writer.Flush();
-    return ms.ToArray();
   }
 
   /// <inheritdoc/>
@@ -109,42 +118,53 @@ public sealed class LzsBuildingBlock : IBuildingBlock {
     if (originalSize == 0 && src.IsEmpty)
       return []; // Accept the historical empty wrapper, which omitted the RFC end marker.
 
-    var bitIndex = 0L;
     var result = new byte[originalSize];
+    if (DecodeStream(src, result, out _) != originalSize)
+      throw new InvalidDataException("LZS end marker occurs before the declared uncompressed size.");
+
+    return result;
+  }
+
+  /// <summary>
+  /// Decodes a bare RFC 1974 token stream (no size header) into <paramref name="destination"/> up to
+  /// and including its end marker.
+  /// </summary>
+  /// <param name="source">The token stream.</param>
+  /// <param name="destination">Receives the decoded bytes; the stream may not produce more than fit.</param>
+  /// <param name="bytesConsumed">Source bytes up to and including the one holding the end marker's last bit.</param>
+  /// <returns>The number of bytes decoded.</returns>
+  /// <exception cref="InvalidDataException">The stream is truncated, references data before its start, or overflows <paramref name="destination"/>.</exception>
+  public static int DecodeStream(ReadOnlySpan<byte> source, Span<byte> destination, out int bytesConsumed) {
+    var bitIndex = 0L;
     var pos = 0;
-    var sawEndMarker = false;
 
-    while (!sawEndMarker) {
-      var flag = ReadBit(src, ref bitIndex);
+    while (true) {
+      var flag = ReadBit(source, ref bitIndex);
       if (flag == 0) {
-        if (pos >= originalSize)
+        if (pos >= destination.Length)
           throw new InvalidDataException("LZS stream contains data beyond its declared uncompressed size.");
-        result[pos++] = (byte)ReadBits(src, ref bitIndex, 8);
+        destination[pos++] = (byte)ReadBits(source, ref bitIndex, 8);
         continue;
       }
 
-      var shortOffset = ReadBit(src, ref bitIndex) == 1;
-      var offset = ReadBits(src, ref bitIndex, shortOffset ? 7 : 11);
-      if (shortOffset && offset == 0) {
-        sawEndMarker = true;
-        continue;
-      }
+      var shortOffset = ReadBit(source, ref bitIndex) == 1;
+      var offset = ReadBits(source, ref bitIndex, shortOffset ? 7 : 11);
+      if (shortOffset && offset == 0)
+        break;
       if (offset <= 0 || offset > MaxOffset || offset > pos)
         throw new InvalidDataException("LZS stream contains an invalid match offset.");
 
-      var length = ReadLength(src, ref bitIndex);
-      if (length > originalSize - pos)
+      var length = ReadLength(source, ref bitIndex);
+      if (length > destination.Length - pos)
         throw new InvalidDataException("LZS match exceeds the declared uncompressed size.");
 
       var srcPos = pos - offset;
       for (var j = 0; j < length; ++j)
-        result[pos++] = result[srcPos + j];
+        destination[pos++] = destination[srcPos + j];
     }
 
-    if (pos != originalSize)
-      throw new InvalidDataException("LZS end marker occurs before the declared uncompressed size.");
-
-    return result;
+    bytesConsumed = (int)((bitIndex + 7) >> 3);
+    return pos;
   }
 
   private static Match FindBestMatch(ReadOnlySpan<byte> data, int pos, int[] hashHead, int[] hashPrev, int maxChain) {

@@ -5,17 +5,18 @@ using System.IO;
 namespace Compression.Core.FileSystems.Cvf;
 
 /// <summary>
-/// Genuine Stacker 4 (SD-4, cluster header <c>0x0081</c>) per-cluster codec,
-/// byte-compatible with the dmsdos <c>sd4_decomp</c> decoder. SD-4 is a bespoke
-/// dynamic-Huffman format: a helper Huffman table (table1) encodes the 0x150
-/// code-lengths of the main table (table2), which then Huffman-codes the data.
+/// Genuine Stacker 4 (SD-4, cluster header <c>0x0081</c>) per-cluster codec, as
+/// specified in <c>docs/CVF-CODECS-ON-DISK.md</c>. SD-4 is Huffman-coded LZ77: a
+/// helper code (22 symbols: lengths 0..15 and six run tokens) transmits the 0x150
+/// code lengths of the main code, whose symbols are the 256 literals, 63 short-match
+/// tokens, 16 long-match tokens and the end token.
 /// <para>
-/// We emit an <b>all-literals</b> SD-4 stream — table2 is a 256-symbol Huffman
-/// over the cluster's byte frequencies (genuine entropy compression), with no LZ
-/// reps/prog tokens; the decoder terminates on output-full. The bitstream is
-/// MSB-first packed into little-endian 16-bit words; Huffman codes are canonical
-/// (first-code-per-length, not bit-reversed) exactly as <c>sd4b_rdhufi</c> builds
-/// them.
+/// <see cref="Decode"/> reads the complete format — run tokens, short and long
+/// matches with length extensions — and is pinned to streams the dmsdos SD-4
+/// encoder wrote. <see cref="Encode"/> emits an <b>all-literals</b> stream (main code
+/// over the cluster's byte frequencies, no match tokens), which the dmsdos driver
+/// reads back byte-exact. The bitstream is MSB-first within little-endian 16-bit
+/// words; codes are canonical and MSB-first.
 /// </para>
 /// </summary>
 public static class Sd4Codec {
@@ -162,39 +163,153 @@ public static class Sd4Codec {
     return w.ToBytes();
   }
 
+  // ── decoding (docs/CVF-CODECS-ON-DISK.md, "SD-4") ──────────────────────────
+
+  private const int HelperSymbols = 0x16;     // code lengths 0..15 + run tokens 1..6
+  private const int MainSymbols = 0x150;      // literals 0..255 + tokens 1..0x50
+  private const int EndToken = 0x50;
+  private const int FirstLongToken = 0x40;
+
+  // Short-match classes: token t (1..0x3F) is class (t-1)/3 with length 3 + (t-1)%3; the offset is
+  // ShortBase[class] plus ShortBits[class] extra bits.
+  private static readonly int[] ShortBits = [0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9];
+  private static readonly int[] ShortBase = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536];
+
+  // Long-match offset classes, chosen by a 2-bit selector.
+  private static readonly int[] LongBits = [5, 7, 9, 11];
+  private static readonly int[] LongBase = [0x1, 0x21, 0xA1, 0x2A1];
+
+  // Escalating length extensions of a long match whose token says 21.
+  private static readonly int[] LengthExtensionBits = [4, 8, 12, 16];
+
+  /// <summary>
+  /// Decodes one SD-4 cluster payload into <paramref name="outLen"/> bytes. A stream that ends (end
+  /// token) before the cluster is full leaves the tail zero.
+  /// </summary>
+  /// <exception cref="InvalidDataException">Bad magic, an inconsistent code table, or a match that reaches before the cluster start.</exception>
   public static byte[] Decode(byte[] payload, int inLen, int outLen) {
     var r = new BitReader(payload, inLen);
     if (r.ReadN(16) != 0x81) throw new InvalidDataException("SD-4: bad magic.");
-    var start = r.ReadN(3) + 1;
-    var bmax2 = r.ReadN(5);
-    var l1 = new byte[0x16];
-    l1[0] = (byte)r.ReadN(4);
-    for (var i = start; i <= bmax2; i++) l1[i] = (byte)r.ReadN(4);
-    for (var i = 0x10; i <= 0x15; i++) l1[i] = (byte)r.ReadN(4);
-    var (t1c, t1l) = Canonical(l1);
-    var dec1 = BuildDecode(l1, t1c, t1l);
 
-    var clen = new byte[0x150];
-    for (var k = 0; k < 0x150; k++) clen[k] = (byte)DecodeSym(r, dec1);
+    // Helper-table code lengths: symbol 0, symbols first..last, then the six run tokens.
+    var first = r.ReadN(3) + 1;
+    var last = r.ReadN(5);
+    if (first > last || last > 15) throw new InvalidDataException("SD-4: helper table range is invalid.");
+    var helperLengths = new byte[HelperSymbols];
+    helperLengths[0] = (byte)r.ReadN(4);
+    for (var i = first; i <= last; ++i) helperLengths[i] = (byte)r.ReadN(4);
+    for (var i = 0x10; i < HelperSymbols; ++i) helperLengths[i] = (byte)r.ReadN(4);
+    var helper = new CanonicalDecoder(helperLengths);
 
-    var (t2c, t2l) = Canonical(clen);
-    var dec2 = BuildDecode(clen, t2c, t2l);
+    var mainLengths = new byte[MainSymbols];
+    for (var n = 0; n < MainSymbols;) {
+      var symbol = helper.Decode(r);
+      if (symbol < 0x10) { mainLengths[n++] = (byte)symbol; continue; }
+      if (n == 0 && symbol >= 0x13) throw new InvalidDataException("SD-4: length repeat with no previous length.");
+      var (value, count) = (symbol - 0x0F) switch {
+        1 => ((byte)0, 2),
+        2 => ((byte)0, 3),
+        3 => ((byte)0, ZeroRunLength(r)),
+        4 => (mainLengths[n - 1], 2),
+        5 => (mainLengths[n - 1], 3),
+        _ => (mainLengths[n - 1], RepeatRunLength(r)),
+      };
+      count = Math.Min(count, MainSymbols - n);
+      mainLengths.AsSpan(n, count).Fill(value);
+      n += count;
+    }
+    var main = new CanonicalDecoder(mainLengths);
 
-    var outp = new byte[outLen];
-    for (var p = 0; p < outLen; p++) outp[p] = (byte)DecodeSym(r, dec2);
-    return outp;
+    var output = new byte[outLen];
+    var p = 0;
+    while (p < outLen) {
+      var symbol = main.Decode(r);
+      if (symbol < 0x100) { output[p++] = (byte)symbol; continue; }
+
+      var token = symbol - 0xFF;
+      if (token == EndToken) break;
+
+      int length, offset;
+      if (token < FirstLongToken) {
+        var cls = (token - 1) / 3;
+        length = 3 + (token - 1) % 3;
+        offset = ShortBase[cls] + r.ReadN(ShortBits[cls]);
+      } else {
+        var cls = r.ReadN(2);
+        offset = LongBase[cls] + r.ReadN(LongBits[cls]);
+        length = token - FirstLongToken + 6;
+        var saturated = 21;
+        foreach (var bits in LengthExtensionBits) {
+          if (length != saturated) break;
+          var extra = r.ReadN(bits);
+          length += extra;
+          saturated += (1 << bits) - 1;
+        }
+      }
+
+      if (offset > p) throw new InvalidDataException("SD-4: match reaches before the start of the cluster.");
+      length = Math.Min(length, outLen - p);   // the reference driver clips an overlong final match
+      for (var k = 0; k < length; ++k, ++p) output[p] = output[p - offset];
+    }
+    return output;
   }
 
-  // Simple (code<<? ) decode map keyed by (len,code).
-  private static System.Collections.Generic.Dictionary<(int, int), int> BuildDecode(byte[] lengths, int[] code, int[] len) {
-    var m = new System.Collections.Generic.Dictionary<(int, int), int>();
-    for (var s = 0; s < lengths.Length; s++) if (len[s] > 0) m[(len[s], code[s])] = s;
-    return m;
+  // Run token 3: 4 + 3 bits; a saturated 7 continues with 7-bit groups while they read 0x7F.
+  private static int ZeroRunLength(BitReader r) {
+    var v = r.ReadN(3);
+    var n = 4 + v;
+    if (v == 7)
+      do { v = r.ReadN(7); n += v; } while (v == 0x7F);
+    return n;
   }
 
-  private static int DecodeSym(BitReader r, System.Collections.Generic.Dictionary<(int, int), int> map) {
-    var code = 0;
-    for (var l = 1; l <= 16; l++) { code = (code << 1) | r.ReadN(1); if (map.TryGetValue((l, code), out var s)) return s; }
-    throw new InvalidDataException("SD-4: bad code.");
+  // Run token 6: 4 + 3-bit groups, continuing while a group reads 7.
+  private static int RepeatRunLength(BitReader r) {
+    var n = 4;
+    int v;
+    do { v = r.ReadN(3); n += v; } while (v == 7);
+    return n;
+  }
+
+  /// <summary>
+  /// Canonical MSB-first prefix code: codes ascend with length and, within a length, with symbol
+  /// number. The code must be complete (Kraft sum exactly one) with lengths of at most 15 bits.
+  /// </summary>
+  private sealed class CanonicalDecoder {
+    private readonly int[] _count = new int[16];
+    private readonly int[] _symbols;
+
+    public CanonicalDecoder(ReadOnlySpan<byte> lengths) {
+      foreach (var l in lengths) {
+        if (l > 15) throw new InvalidDataException("SD-4: code length above 15.");
+        ++this._count[l];
+      }
+      this._count[0] = 0;
+      var left = 1;
+      for (var len = 1; len <= 15; ++len) {
+        left = (left << 1) - this._count[len];
+        if (left < 0) throw new InvalidDataException("SD-4: over-subscribed code table.");
+      }
+      if (left != 0) throw new InvalidDataException("SD-4: incomplete code table.");
+
+      var offsets = new int[16];
+      for (var len = 1; len < 15; ++len) offsets[len + 1] = offsets[len] + this._count[len];
+      this._symbols = new int[offsets[15] + this._count[15]];
+      for (var s = 0; s < lengths.Length; ++s)
+        if (lengths[s] != 0) this._symbols[offsets[lengths[s]]++] = s;
+    }
+
+    public int Decode(BitReader r) {
+      int code = 0, firstCode = 0, index = 0;
+      for (var len = 1; len <= 15; ++len) {
+        code |= r.ReadN(1);
+        var count = this._count[len];
+        if (code - firstCode < count) return this._symbols[index + code - firstCode];
+        index += count;
+        firstCode = (firstCode + count) << 1;
+        code <<= 1;
+      }
+      throw new InvalidDataException("SD-4: undecodable bit sequence.");
+    }
   }
 }

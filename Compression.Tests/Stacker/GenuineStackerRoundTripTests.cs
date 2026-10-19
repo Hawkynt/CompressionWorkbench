@@ -1,3 +1,5 @@
+using Compression.Core.FileSystems.Cvf;
+using Compression.Tests.Cvf;
 using FileSystem.Stacker;
 
 namespace Compression.Tests.Stacker;
@@ -36,6 +38,25 @@ public class GenuineStackerRoundTripTests {
       var entry = r.Entries.First(e => e.Name == name);
       Assert.That(r.Extract(entry), Is.EqualTo(expected), $"{name} did not round-trip");
     }
+  }
+
+  [Test, Category("RoundTrip")]
+  public void CompressedClusters_RoundTrip_PerMethod(
+      [Values(CvfLzMethod.Ds, CvfLzMethod.Sd3, CvfLzMethod.Sd4, CvfLzMethod.Auto)] CvfLzMethod method) {
+    var inputs = new (string Name, byte[] Data)[] {
+      ("TEXT.TXT", CvfSamples.Get("text-32k")[..20000]),   // three clusters, last one partial
+      ("DIR.DAT", CvfSamples.Get("dir-8k")),
+      ("TINY.TXT", "hi"u8.ToArray()),
+    };
+
+    var w = new GenuineStackerWriter { CompressionMethod = method };
+    foreach (var (n, d) in inputs) w.AddFile(n, d);
+    using var r = new GenuineStackerReader(new MemoryStream(w.Build()));
+
+    Assert.Multiple(() => {
+      foreach (var (name, expected) in inputs)
+        Assert.That(r.Extract(r.Entries.First(e => e.Name == name)), Is.EqualTo(expected), name);
+    });
   }
 
   private static byte[] Make(Random rnd, int n) {

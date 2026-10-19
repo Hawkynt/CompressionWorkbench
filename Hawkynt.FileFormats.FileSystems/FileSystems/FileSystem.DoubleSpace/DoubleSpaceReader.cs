@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.FileSystems.Cvf;
 
 namespace FileSystem.DoubleSpace;
 
@@ -307,25 +308,25 @@ public sealed class DoubleSpaceReader : IDisposable {
     var clusterBytes = this._bytesPerSector * this._sectorsPerCluster;
 
     // Real MS-DOS DoubleSpace/DriveSpace CVF: resolve the cluster through the
-    // genuine MDFAT to its physical sector run. Clusters whose data the DOS
-    // driver could not compress are stored verbatim (the common case for
-    // already-compressed or high-entropy content) and read back byte-exact;
-    // compressible clusters carry an LZ run we decode via DsCompression.
+    // genuine MDFAT to its physical sector run. Entry bits: 0..20 physical
+    // sector - 1, 22..25 on-disk sectors - 1, 26..29 cluster sectors - 1, 30
+    // stored, 31 used. A stored run is read verbatim; a compressed one starts
+    // with its method header ("DS"/"JM"/"SQ") and is decoded by CvfLzCodec.
     if (this._realMdfatBaseOffset > 0 && cluster >= 0) {
       var entryOff = this._realMdfatBaseOffset + cluster * 4;
       if (entryOff + 4 <= this._data.Length) {
         var entry = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(entryOff));
-        var physSector = (int)((entry & 0x1FFFFFu) + 1);
-        var physOffset = physSector * this._bytesPerSector;
-        if (entry != 0 && physOffset + clusterBytes <= this._data.Length) {
-          var run = this._data.AsSpan(physOffset, clusterBytes).ToArray();
-          try {
-            var dec = DsCompression.Decompress(run);
-            if (dec.Length >= clusterBytes) return dec;
-          } catch (InvalidDataException) {
-            // Not a valid LZ run — the cluster is stored verbatim.
-          }
-          return run;
+        var used = (entry & 0x8000_0000u) != 0;
+        var stored = (entry & 0x4000_0000u) != 0;
+        var physOffset = (int)((entry & 0x1FFFFFu) + 1) * this._bytesPerSector;
+        var inLen = (int)(((entry >> 22) & 0xF) + 1) * this._bytesPerSector;
+        var outLen = Math.Min(clusterBytes, (int)(((entry >> 26) & 0xF) + 1) * this._bytesPerSector);
+        if (used && stored && physOffset + clusterBytes <= this._data.Length)
+          return this._data.AsSpan(physOffset, clusterBytes).ToArray();
+        if (used && !stored && physOffset + inLen <= this._data.Length) {
+          var buffer = new byte[clusterBytes];
+          CvfLzCodec.Decompress(this._data.AsSpan(physOffset, inLen).ToArray(), inLen, outLen).CopyTo(buffer, 0);
+          return buffer;
         }
       }
       return new byte[clusterBytes];

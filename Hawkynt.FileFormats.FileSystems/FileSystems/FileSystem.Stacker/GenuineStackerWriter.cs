@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.FileSystems.Cvf;
 
 namespace FileSystem.Stacker;
 
@@ -63,10 +64,10 @@ public sealed class GenuineStackerWriter {
   /// Default (before 1980) leaves the FAT date/time fields zero.</summary>
   public DateTime Timestamp { get; init; }
 
-  /// <summary>Per-cluster compression. Stored (default) or DS — the dmsdos
-  /// Stacker reader dispatches a 0x5344 ("DS") cluster header to the DS decoder,
-  /// so DS-compressed Stacker clusters are read by the real driver. (JM/Auto map
-  /// to DS here, as the Stacker path only recognises DS among the LZ headers.)</summary>
+  /// <summary>Per-cluster compression: Stored (default), Sd3 (Stacker 3), Sd4
+  /// (Stacker 4), Ds, or Auto (smallest of Ds/Sd3/Sd4 per cluster). The Stacker
+  /// driver tells them apart by the payload's first word — 0x0081 SD-4, 0x5344
+  /// ("DS") the DoubleSpace codec, anything else SD-3. JM/SQ map to Ds.</summary>
   public Compression.Core.FileSystems.Cvf.CvfLzMethod CompressionMethod { get; init; }
     = Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored;
 
@@ -129,18 +130,21 @@ public sealed class GenuineStackerWriter {
     this._realFirstData = this._firstRoot + RootSecs;
 
     // 2. Compress each cluster (auto-best) and pack into physical sectors. The
-    // Stacker reader recognises only DS (0x5344) and SD-4 (0x0081); Auto keeps
-    // the smaller of the two per cluster, JM/SQ fall back to DS.
+    // Stacker reader dispatches on the payload's first word: SD-4 (0x0081), DS
+    // (0x5344), otherwise SD-3. Auto keeps the smallest of the three per cluster,
+    // JM/SQ fall back to DS.
     var physCursor = this._realFirstData;
     var layout = new List<ClusterPlan>();
     foreach (var (cl, full) in clusterFull) {
       var comp = this.CompressionMethod switch {
-        Compression.Core.FileSystems.Cvf.CvfLzMethod.Stored => null,
-        Compression.Core.FileSystems.Cvf.CvfLzMethod.Sd4 => Compression.Core.FileSystems.Cvf.CvfLzCodec.Encode(full, Compression.Core.FileSystems.Cvf.CvfLzMethod.Sd4, this.CompressionLevel),
-        Compression.Core.FileSystems.Cvf.CvfLzMethod.Auto => Smaller(
-          Compression.Core.FileSystems.Cvf.CvfLzCodec.Encode(full, Compression.Core.FileSystems.Cvf.CvfLzMethod.Ds, this.CompressionLevel),
-          Compression.Core.FileSystems.Cvf.CvfLzCodec.Encode(full, Compression.Core.FileSystems.Cvf.CvfLzMethod.Sd4, this.CompressionLevel)),
-        _ => Compression.Core.FileSystems.Cvf.CvfLzCodec.Encode(full, Compression.Core.FileSystems.Cvf.CvfLzMethod.Ds, this.CompressionLevel),
+        CvfLzMethod.Stored => null,
+        CvfLzMethod.Sd4 or CvfLzMethod.Sd3 => CvfLzCodec.Encode(full, this.CompressionMethod, this.CompressionLevel),
+        CvfLzMethod.Auto => Smaller(
+          Smaller(
+            CvfLzCodec.Encode(full, CvfLzMethod.Ds, this.CompressionLevel),
+            CvfLzCodec.Encode(full, CvfLzMethod.Sd3, this.CompressionLevel)),
+          CvfLzCodec.Encode(full, CvfLzMethod.Sd4, this.CompressionLevel)),
+        _ => CvfLzCodec.Encode(full, CvfLzMethod.Ds, this.CompressionLevel),
       };
       var ksize = comp is null ? Spc : (comp.Length + Ss - 1) / Ss;
       if (comp is not null && ksize < Spc || (comp is not null && this.ForceCompress && ksize <= Spc)) {

@@ -8,10 +8,11 @@ using Compression.Core.Streams;
 namespace Compression.Core.FileSystems.Cvf;
 
 /// <summary>
-/// Compression methods for the MS-DOS DoubleSpace/DriveSpace CVF cluster codec
-/// family, byte-compatible with the dmsdos driver's <c>ds_dec</c>/<c>jm_dec</c>.
+/// Per-cluster compression methods of the DoubleSpace/DriveSpace/Stacker CVF
+/// family (see <c>docs/CVF-CODECS-ON-DISK.md</c>). <see cref="Sd3"/> and
+/// <see cref="Sd4"/> are the Stacker 3 and Stacker 4 codecs.
 /// </summary>
-public enum CvfLzMethod { Stored, Ds, Jm, Auto, Sq, Sd4 }
+public enum CvfLzMethod { Stored, Ds, Jm, Auto, Sq, Sd4, Sd3 }
 
 /// <summary>
 /// Genuine DoubleSpace/DriveSpace per-cluster compression codec (DS-0-x and
@@ -148,6 +149,7 @@ public static class CvfLzCodec {
       case CvfLzMethod.Jm: return CompressJm(data, level);
       case CvfLzMethod.Sq: return CompressSq(data);
       case CvfLzMethod.Sd4: return Sd4Codec.Encode(data);
+      case CvfLzMethod.Sd3: return Sd3Codec.Encode(data);
       case CvfLzMethod.Auto:
         // Per-cluster best-of: each cluster carries its own method header, so we
         // pick whichever codec yields the smallest payload for this cluster.
@@ -265,6 +267,22 @@ public static class CvfLzCodec {
     return outp;
   }
 
+  /// <summary>
+  /// Decompresses a Stacker cluster payload to <paramref name="outLen"/> bytes. Stacker records no
+  /// method per cluster; the payload's first little-endian word selects it — <c>0x0081</c> SD-4,
+  /// <c>0x5344</c> ("DS") the DoubleSpace codec, anything else SD-3, whose first token is always a
+  /// literal and so can never begin with either word.
+  /// </summary>
+  public static byte[] DecompressStacker(byte[] payload, int inLen, int outLen) {
+    ArgumentNullException.ThrowIfNull(payload);
+    if (inLen < 2) throw new InvalidDataException("Stacker cluster payload is too short.");
+    return (payload[0] | (payload[1] << 8)) switch {
+      0x0081 => Sd4Codec.Decode(payload, inLen, outLen),
+      DsMagic => Decompress(payload, inLen, outLen),
+      _ => Sd3Codec.Decode(payload.AsSpan(0, inLen), outLen),
+    };
+  }
+
   private static void DecodeDs(BitReader br, byte[] outp, ref int p) {
     while (p < outp.Length) {
       var u = br.Peek();
@@ -296,6 +314,10 @@ public static class CvfLzCodec {
   private static void Copy(byte[] outp, ref int p, int off, BitReader br, int k) {
     if (off == Sync) return;          // sync token mid-stream (shouldn't fill)
     var len = br.RdLen() + k;
+    // Past the end of the input every token reads as a zero-distance, invalid-length match, so
+    // these checks also guarantee that a truncated stream terminates.
+    if (len <= 0) throw new InvalidDataException("CVF codec: invalid match length.");
+    if (off <= 0 || off > p) throw new InvalidDataException("CVF codec: match reaches before the start of the cluster.");
     var src = p - off;
     for (var i = 0; i < len && p < outp.Length; i++) outp[p++] = outp[src + i];
   }
