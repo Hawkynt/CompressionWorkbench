@@ -13,7 +13,7 @@ MSIX / APPX,msix;appx;msixbundle;appxbundle;emsix;emsixbundle,package,,,,,,,Y,1,
 RAR (1.5-4.x),rar;r00;part1.rar,archive,R,R,R,R,R,fmt/411;fmt/613;x-fmt/264,RW,7,https://www.rarlab.com/technote.htm,Rar,Y,Y,Y,OK,,
 RAR5,rar,archive,R,R,R,,,fmt/411;fmt/613;x-fmt/264,RW,5,https://www.rarlab.com/technote.htm,Rar,Y,Y,Y,OK,,
 tar (ustar/pax/GNU/v7),tar;ustar;pax;ctar;tbz;tgz;txz,archive,RW,RW,R,R,R,x-fmt/265,RW,7,https://pubs.opengroup.org/onlinepubs/9799919799/utilities/pax.html,Tar,Y,Y,Y,OK,,
-tar + compression (tar.gz/.bz2/.xz/.zst/.lz/.lz4/.br),tgz;tar.gz;tbz2;tar.bz2;txz;tar.xz;tar.zst;tlz;tar.lz;tar.lz4;tar.br;tar.z,archive,,,,,,,Y,1,https://www.gnu.org/software/tar/manual/,TarGz;TarBz2;TarXz;TarZst;TarLzip;TarLz4;TarBr,Y,Y,,PARTIAL,,tar.Z / tar.lzma / tar.lzo have no compound descriptor (open via the stream format)
+tar + compression (tar.gz/.bz2/.xz/.zst/.lz/.lz4/.br),tgz;tar.gz;tbz2;tar.bz2;txz;tar.xz;tar.zst;tlz;tar.lz;tar.lz4;tar.br;tar.z,archive,,,,,,,Y,1,https://www.gnu.org/software/tar/manual/,TarGz;TarBz2;TarXz;TarZst;TarLzip;TarLz4;TarBr;TarZ;TarLzma;TarLzo,Y,Y,,OK,,
 Slackware package,tgz;txz,package,,,,,,,Y,1,https://www.slackware.com/,TarGz;TarXz,Y,Y,,OK,,
 Arch Linux pacman package,pkg.tar.zst;pkg.tar.xz,package,,,,,,,Y,1,https://wiki.archlinux.org/title/Pacman,TarZst;TarXz,Y,Y,,OK,,
 cpio (odc/newc/crc/bin),cpio;crc;pwb,archive,R,RW,R,D,R,fmt/635,Y,7,https://pubs.opengroup.org/onlinepubs/007908799/xcu/cpio.html,Cpio,Y,Y,Y,OK,,
