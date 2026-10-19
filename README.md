@@ -161,7 +161,7 @@ root-level "supported formats" list.
 ### 🧾 Coverage against other tools
 
 [`docs/catalogue/`](docs/catalogue/GAPS.md) compares the registry with the format lists of 7-Zip,
-libarchive, XADMaster/The Unarchiver, binwalk, Universal Extractor 2, PRONOM and Wikipedia (snapshot
+libarchive, XADMaster/The Unarchiver, binwalk, [Universal Extractor 2](https://github.com/Bioruebe/UniExtract2), PRONOM and Wikipedia (snapshot
 of 2026-10-19). The table below is from that snapshot:
 
 | Measure | Value |
@@ -529,6 +529,7 @@ compression families CompressionWorkbench deals with:
 - **[BRRtools](https://github.com/Optiroc/BRRtools)** — SNES S-DSP BRR encoder/decoder and behavioral oracle for `Codec.Brr`; validation is pinned to BRRtools 3.15 at revision [`5b809f171d6a8fe436f09cd883f26994e58feb35`](https://github.com/Optiroc/BRRtools/commit/5b809f171d6a8fe436f09cd883f26994e58feb35). Upstream has no `LICENSE` file, so it is used as an oracle only and no implementation code is copied.
 - **[Matt Mahoney's data-compression page](https://mattmahoney.net/dc/)** — context-mixing compressors and corpora
 - **[Packing Box](https://github.com/packing-box/awesome-executable-packing)** — curated executable-packer material
+- **[Universal Extractor 2](https://github.com/Bioruebe/UniExtract2)** — Bioruebe's extraction front-end for hundreds of archive, installer and disk-image formats; its format definitions and the extractor it routes each format to are a map of what exists and which open tool reads it. It is GPL-2.0, so it serves as a reference and black-box oracle only; tools it drives that are permissively licensed (e.g. unshield, innoextract) are used under their own licences.
 
 ---
 
