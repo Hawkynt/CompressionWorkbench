@@ -1,95 +1,96 @@
-#pragma warning disable CS1591
 namespace FileSystem.Zfs;
 
 /// <summary>
-/// ZFS on-disk constants. Values from OpenZFS <c>include/sys/*.h</c>.
+/// ZFS on-disk constants as recorded in <c>docs/ZFS-ON-DISK.md</c> (copied exactly from
+/// the ZFS On-Disk Specification and the OpenZFS headers: these are agreed values, not
+/// expression).
 /// </summary>
 internal static class ZfsConstants {
-  // Uberblock magic — stored as LE uint64 at offset 0 of each uberblock.
   public const ulong UberblockMagic = 0x00BAB10C;
+  public const ulong EmbeddedChecksumMagic = 0x0210DA7AB10C7A11;
+  public const ulong SaMagic = 0x2F505A;
 
-  // Label geometry.
   public const int LabelSize = 256 * 1024;
-  public const int BootHeaderOffset = 8 * 1024;     // after 8KB VTOC pad
-  public const int NvListOffset = 16 * 1024;        // after 8KB VTOC + 8KB boot
+  public const int LabelCount = 4;
+  public const int NvListOffset = 16 * 1024;
   public const int NvListSize = 112 * 1024;
-  public const int UberblockArrayOffset = 128 * 1024;
-  public const int UberblockSize = 1024;            // for version 28
-  public const int UberblockCount = 128;
+  public const int UberblockRingOffset = 128 * 1024;
+  public const int UberblockRingSize = 128 * 1024;
+  public const int MinUberblockShift = 10;
+  public const int MaxUberblockShift = 13;
 
-  // Pool version — 28 is pre-feature-flags, easier to target.
-  public const ulong PoolVersion = 28;
+  /// <summary>Where a leaf device's allocatable space starts: two labels plus the boot area.</summary>
+  public const long DataStart = 4L * 1024 * 1024;
 
-  // Pool state.
-  public const ulong PoolStateActive = 0;
+  public const int SectorShift = 9;
+  public const int GangHeaderSize = 512;
+  public const int BlockPointerSize = 128;
+  public const int DnodeSlotSize = 512;
 
-  // ashift (log2 of sector size). 9 = 512-byte sectors.
-  public const uint Ashift = 9;
-  public const uint SectorSize = 1u << (int)Ashift;
+  // Checksum ids.
+  public const byte ChecksumInherit = 0;
+  public const byte ChecksumOn = 1;
+  public const byte ChecksumOff = 2;
+  public const byte ChecksumLabel = 3;
+  public const byte ChecksumGangHeader = 4;
+  public const byte ChecksumZilog = 5;
+  public const byte ChecksumFletcher2 = 6;
+  public const byte ChecksumFletcher4 = 7;
+  public const byte ChecksumSha256 = 8;
+  public const byte ChecksumZilog2 = 9;
+  public const byte ChecksumNoParity = 10;
+  public const byte ChecksumSha512 = 11;
+  public const byte ChecksumSkein = 12;
+  public const byte ChecksumEdonR = 13;
+  public const byte ChecksumBlake3 = 14;
 
-  // Block size for our dnode/metadata blocks (16 KB is the default minimum dnode block size).
-  public const int DnodeBlockSize = 16 * 1024;
-  public const int DnodeSize = 512;                 // bytes per dnode_phys_t
-  public const int DnodesPerBlock = DnodeBlockSize / DnodeSize;
+  // Compression ids.
+  public const byte CompressInherit = 0;
+  public const byte CompressOn = 1;
+  public const byte CompressOff = 2;
+  public const byte CompressLzjb = 3;
+  public const byte CompressEmpty = 4;
+  public const byte CompressGzip1 = 5;
+  public const byte CompressGzip9 = 13;
+  public const byte CompressZle = 14;
+  public const byte CompressLz4 = 15;
+  public const byte CompressZstd = 16;
 
-  // Checksum types (<c>include/sys/zio_checksum.h</c>).
-  public const byte ZioChecksumOff = 2;
-  public const byte ZioChecksumFletcher2 = 6;
-  public const byte ZioChecksumFletcher4 = 7;
-  public const byte ZioChecksumSha256 = 8;
-  public const byte ZioChecksumLabel = 4;
+  // Object types.
+  public const byte OtObjectDirectory = 1;
+  public const byte OtDslDir = 12;
+  public const byte OtDslDataset = 16;
+  public const byte OtZnode = 17;
+  public const byte OtPlainFileContents = 19;
+  public const byte OtDirectoryContents = 20;
+  public const byte OtMasterNode = 21;
+  public const byte OtSa = 44;
 
-  // Compression types (<c>include/sys/zio_compress.h</c>).
-  public const byte ZioCompressOff = 2;
+  // Object-set types.
+  public const ulong OstMeta = 1;
+  public const ulong OstZfs = 2;
+  public const ulong OstZvol = 3;
+  public const int ObjsetTypeOffset = 0x2C0;
 
-  // Object types (<c>include/sys/dmu.h</c>).
-  public const byte DmuOtNone = 0;
-  public const byte DmuOtObjectDirectory = 1;       // ZAP (name → obj)
-  public const byte DmuOtObjectArray = 2;
-  public const byte DmuOtDslDir = 12;
-  public const byte DmuOtDslDirChildMap = 13;
-  public const byte DmuOtDslDsSnapMap = 15;
-  public const byte DmuOtDslProps = 16;
-  public const byte DmuOtDslDataset = 17;
-  public const byte DmuOtZap = 20;                  // generic ZAP
-  public const byte DmuOtPlainFileContents = 19;
-  public const byte DmuOtDirectoryContents = 20;    // aliased w/ ZAP
-  public const byte DmuOtMasterNode = 21;
-  public const byte DmuOtDeletedFiles = 22;
-  public const byte DmuOtPackedNvlist = 24;
+  public const byte DnodeFlagSpillBlkptr = 1 << 2;
 
-  // DMU Objset types.
-  public const byte DmuOstNone = 0;
-  public const byte DmuOstMeta = 1;
-  public const byte DmuOstZfs = 2;
+  // ZAP block types and magics.
+  public const ulong ZbtLeaf = 0x8000000000000000UL;
+  public const ulong ZbtHeader = 0x8000000000000001UL;
+  public const ulong ZbtMicro = 0x8000000000000003UL;
+  public const ulong ZapMagic = 0x2F52AB2ABUL;
+  public const uint ZapLeafMagic = 0x2AB1EAF;
 
-  // Dnode flags.
-  public const byte DnodeFlagUsedBytes = 1;
+  // Directory entry value: object id in bits 0-47, DT_* type in bits 60-63.
+  public const ulong DirentObjectMask = (1UL << 48) - 1;
+  public const int DirentTypeShift = 60;
 
-  // ZAP magics / block types (<c>include/sys/zap_impl.h</c>, <c>zap_leaf.h</c>).
-  public const ulong ZbtMicro = 0x8000000000000003UL;  // MZAP_ENT_PHYS / microzap
-  public const ulong ZbtHeader = 0x8000000000000001UL; // zap_phys_t header block
-  public const ulong ZbtLeaf = 0x8000000000000000UL;   // zap_leaf_phys_t leaf block
-  public const ulong ZapMagic = 0x2F52AB2ABUL;         // zap_phys_t.zap_magic
+  // POSIX file types (mode & S_IFMT).
+  public const ulong ModeTypeMask = 0xF000;
+  public const ulong ModeDirectory = 0x4000;
+  public const ulong ModeRegular = 0x8000;
+  public const ulong ModeSymlink = 0xA000;
 
-  // ZFS directory ZAP entry value encoding (<c>include/sys/zfs_znode.h</c>):
-  // the object id occupies the low 48 bits and the file type (the upper nibble of
-  // the POSIX mode, i.e. <c>IFTODT</c>) occupies the high 4 bits:
-  //   value = (uint64)type &lt;&lt; 60 | objid
-  public const int ZfsDirentTypeShift = 60;
-  public const ulong ZfsDirentObjMask = (1UL << 48) - 1;
-
-  // File types as stored in the directory-entry value high bits (BSD d_type / IFTODT).
-  public const ulong ZfsDirentTypeDir = 4;   // DT_DIR
-  public const ulong ZfsDirentTypeReg = 8;   // DT_REG
-
-  // POSIX mode bits for the znode bonus (<c>S_IFDIR</c> / <c>S_IFREG</c>).
-  public const ulong ModeIfDir = 0x4000;
-  public const ulong ModeIfReg = 0x8000;
-
-  // Objset header size within an objset_phys_t block.
-  public const int ObjsetPhysSize = 1024;
-
-  // Well-known MOS object ID for object directory.
-  public const ulong MosObjectDirectoryId = 1;
+  /// <summary>Size of a version ≤ 4 <c>znode_phys_t</c>; a short symlink target follows it in the bonus.</summary>
+  public const int OldZnodeSize = 264;
 }

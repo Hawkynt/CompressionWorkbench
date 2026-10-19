@@ -20,7 +20,6 @@ using FileSystem.Ntfs;
 using FileSystem.Reiser4;
 using FileSystem.SquashFs;
 using FileSystem.Ufs;
-using FileSystem.Zfs;
 
 namespace Compression.Tests;
 
@@ -1679,30 +1678,8 @@ public class ExternalFsInteropTests {
       "hls should list hello.txt");
   }
 
-  // ═══════════════════════════════════════════════════════════════════
-  // ZFS (zfsutils-linux package) — zdb -l reads labels without kernel module
-  // ═══════════════════════════════════════════════════════════════════
-
-  [Test]
-  public void Zfs_OurImage_ZdbReportsLabel() {
-    RequireWslTool("zdb", "zfsutils-linux");
-    var zfs = new ZfsWriter();
-    zfs.SetPoolName("compworkbench");
-    zfs.AddFile("hello.txt", SmallText);
-    zfs.AddFile("repeat.txt", RepetitiveText);
-    var imgPath = Path.Combine(this._tmpDir, "zfs_zdb.img");
-    using (var fs = File.Create(imgPath)) zfs.WriteTo(fs);
-
-    // zdb -l <file> reads the 4 vdev labels (XDR NVList) without needing the kernel module.
-    // Exit 0 on a parseable label, non-zero on a malformed NVList or label checksum mismatch.
-    var result = FsInteropToolbox.RunWsl($"zdb -l {FsInteropToolbox.WinToWsl(imgPath)}");
-    Assert.That(result.ExitCode, Is.EqualTo(0),
-      $"zdb rejected our ZFS labels (exit {result.ExitCode}):\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
-    Assert.That(result.StdOut, Does.Contain("version:"),
-      "zdb -l should print the version field from our NVList");
-    Assert.That(result.StdOut, Does.Contain("compworkbench"),
-      "zdb -l should print the pool name we set");
-  }
+  // ZFS: the reader is checked against OpenZFS in Zfs/ZfsExternalConformanceTests.cs;
+  // there is no ZFS writer to validate here.
 
   // ═══════════════════════════════════════════════════════════════════
   // UFS — no apt-installable validator. Two paths:

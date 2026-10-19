@@ -114,6 +114,10 @@
     <EmbeddedResource Include="Lzbitmap\ReferenceVectors\*-*" Exclude="Lzbitmap\ReferenceVectors\README.md">
       <LogicalName>LzbitmapVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Pools OpenZFS 2.2.2 created, with the mounted pools' SHA-256 manifests; see Zfs/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Zfs\ReferenceVectors\*.gz;Zfs\ReferenceVectors\*.manifest">
+      <LogicalName>ZfsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>

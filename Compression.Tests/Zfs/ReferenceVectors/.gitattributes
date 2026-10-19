@@ -1,0 +1,5 @@
+# OpenZFS's bytes are compared byte for byte; the scripts run under a POSIX shell.
+*.gz -text -diff
+*.manifest text eol=lf
+*.sh text eol=lf
+README.md text
