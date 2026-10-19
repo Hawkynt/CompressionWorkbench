@@ -77,6 +77,7 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
+    RequireNoPendingJournal(image);
     image.Position = 0;
     var imageSize = image.Length;
 
@@ -139,23 +140,15 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
   /// <summary>
   /// Adds (or replaces by name) files inside an existing HFS+ image via
-  /// <see cref="HfsPlusModifier.AddFile"/>. The modifier mutates the catalog
-  /// leaf, allocation bitmap, and volume header in place; what it cannot express is
-  /// refused.
+  /// <see cref="HfsPlusModifier.AddFile(Stream, string, byte[])"/>, at their paths — missing
+  /// folders are created. The modifier edits the catalog, extents and attributes B-trees, the
+  /// allocation file and the volume header in place; what it cannot do losslessly is refused.
   /// </summary>
-  /// <remarks>
-  /// Only the root folder of a single-leaf catalog is edited in place. A path into a
-  /// folder is refused rather than flattened to its leaf name, and so is a volume the
-  /// in-place editor cannot handle — there is no rebuild behind it any more.
-  /// </remarks>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     RequireInPlaceSize(archive);
-    foreach (var input in inputs.Where(i => !i.IsDirectory))
-      if (input.ArchiveName.Replace('\\', '/').Trim('/').Contains('/'))
-        throw new NotSupportedException(
-          $"HFS+: '{input.ArchiveName}' is inside a folder; only the root folder is edited in place.");
-    foreach (var (name, data) in FlatFiles(inputs))
-      HfsPlusModifier.AddFile(archive, name, data);
+    foreach (var input in inputs.Where(static i => !i.IsDirectory))
+      HfsPlusModifier.AddFile(archive, input.ArchiveName.Replace('\\', '/').Trim('/'),
+        input.InMemoryContent ?? File.ReadAllBytes(input.FullPath));
   }
 
   /// <summary>
@@ -171,16 +164,14 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Removes the named entries from an existing HFS+ image via
   /// <see cref="HfsPlusModifier.RemoveFile"/>. File data blocks are wiped and
-  /// the catalog records are excised from the leaf node; a missing name is reported.
+  /// the file's catalog, extents and attribute records are removed; a missing name is reported.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     RequireInPlaceSize(archive);
     foreach (var raw in entryNames ?? []) {
       var name = raw.Replace('\\', '/').Trim('/');
-      if (name.Contains('/'))
-        throw new NotSupportedException($"HFS+: '{raw}' is inside a folder; only the root folder is edited in place.");
       if (!HfsPlusModifier.RemoveFile(archive, name, wipeData: true))
-        throw new FileNotFoundException($"HFS+: '{raw}' is not in the root folder.", raw);
+        throw new FileNotFoundException($"HFS+: '{raw}' is not on the volume.", raw);
     }
   }
   /// <summary>
@@ -408,6 +399,7 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
     DefragSupport.Require(options, this.SupportedDefragFeatures, "HFS+");
+    RequireNoPendingJournal(archive);
     if (!archive.CanSeek || archive.Length > MaxBufferedImageBytes)
       throw new NotSupportedException(
         $"HFS+: in-place defragmentation checks the result against a snapshot held in memory; volumes over {MaxBufferedImageBytes:N0} bytes are refused.");
@@ -417,6 +409,15 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       rebuild: () => throw new NotSupportedException("HFS+: the volume cannot be laid out in place; it was left unchanged."));
   }
 
+
+  /// <summary>
+  /// Refuses a volume whose journal still holds transactions: the replay a mount performs would
+  /// write those metadata blocks over whatever an in-place pass changed.
+  /// </summary>
+  private static void RequireNoPendingJournal(Stream archive) {
+    if (HfsPlusJournal.HasPendingTransactions(archive))
+      throw new NotSupportedException("HFS+: the volume's journal holds transactions not yet replayed; it is not changed in place.");
+  }
 
   /// <summary>Largest volume the in-place defragmentation snapshots.</summary>
   private const long MaxBufferedImageBytes = 256L * 1024 * 1024;

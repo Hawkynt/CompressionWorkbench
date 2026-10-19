@@ -5,703 +5,481 @@ using System.Text;
 namespace FileSystem.HfsPlus;
 
 /// <summary>
-/// In-place HFS+ modifier — performs random-access mutation of an existing
-/// HFS+ image without rebuilding the whole filesystem. Designed for the
-/// single-leaf catalog shape that <see cref="HfsPlusWriter"/> emits
-/// (treeDepth=1, root==leaf node 1). When an Add would overflow the single
-/// leaf, the modifier falls back to a writer-driven rebuild via
-/// <see cref="HfsPlusWriter"/> so the operation always succeeds.
-///
-/// <para>What we touch on a small Add:</para>
-/// <list type="bullet">
-///   <item>The volume header (offset 1024) — file count, free blocks, next CNID.</item>
-///   <item>The alternate volume header at <c>imageSize-1024</c> (mirror).</item>
-///   <item>The allocation bitmap block (block 1).</item>
-///   <item>The catalog leaf node (block 3 → offset 3×blockSize for the standard layout).</item>
-///   <item>The newly-allocated data blocks for the file payload.</item>
-/// </list>
+/// In-place HFS+/HFSX editor: adds, replaces and removes files in an existing volume, editing the
+/// catalog, extents overflow and attributes B-trees, the allocation file and the volume header the
+/// way TN1150 lays them out — every other record, date, permission, Finder info, resource fork,
+/// extended attribute and journal of the volume is kept as it was.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Each operation works on a copy and writes the volume back only when it succeeds, so whatever
+/// it refuses leaves the image byte-identical. Refused: a hard link or directory hard link (their
+/// link chains and counts are not maintained here), anything inside the metadata directories,
+/// a volume whose journal holds transactions not yet replayed, a special file continued in the
+/// extents overflow file, and a volume without the free space the edit needs.
+/// </para>
+/// <para>
+/// The B-trees are rewritten as packed trees after each edit (<see cref="HfsPlusBTreeFile"/>),
+/// which is how an insertion that splits a node — or a removal that empties one — stays a valid
+/// tree, and a B-tree file that needs more nodes grows into free space.
+/// </para>
+/// </remarks>
 public static class HfsPlusModifier {
-  private const int VolumeHeaderOffset = 1024;
-  private const ushort HfsPlusSignature = 0x482B; // "H+"
-  private const ushort HfsxSignature = 0x4858;    // "HX"
+  private const uint RootParentCnid = 1;
   private const uint RootFolderCnid = 2;
-  // Catalog file record/struct sizes (TN1150 §6).
+  private const short FolderRecord = 1;
+  private const short FileRecord = 2;
+  private const short FolderThreadRecord = 3;
+  private const short FileThreadRecord = 4;
   private const int CatalogFileRecordSize = 248;
-  private const int CatalogForkDataSize = 80;
+  private const int CatalogFolderRecordSize = 88;
   private const int DataForkOffset = 88;
   private const int ResourceForkOffset = 168;
-  // HFS+ epoch: 1904-01-01T00:00:00Z.
-  private static readonly DateTime HfsEpoch = new(1904, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+  private const byte DataFork = 0x00;
+  private const byte ResourceFork = 0xFF;
+  private const ushort ThreadExistsMask = 0x0002;   // kHFSThreadExistsMask
+  private const ushort HasAttributesMask = 0x0004;  // kHFSHasAttributesMask
+  private const ushort HasFolderCountMask = 0x0010; // kHFSHasFolderCountMask (HFSX folders)
+  private const ushort HasLinkChainMask = 0x0020;   // kHFSHasLinkChainMask
+  private const byte CompressedOwnerFlag = 0x20;    // UF_COMPRESSED
+  private const uint AttributeInline = 0x10;        // kHFSPlusAttrInlineData
+  private const uint AttributeFork = 0x20;          // kHFSPlusAttrForkData
+  private const uint AttributeExtents = 0x30;       // kHFSPlusAttrExtents
+  private const string DecmpfsName = "com.apple.decmpfs";
+  private const string FileMetadataFolder = "\0\0\0\0HFS+ Private Data";
+  private const string DirectoryMetadataFolder = ".HFS+ Private Directory Data\r";
 
   /// <summary>
-  /// Adds (or replaces by name) a file in the root folder of a single-leaf catalog. Anything
-  /// the in-place path cannot do is refused and the volume left exactly as it was — including
-  /// the file being replaced.
+  /// Adds (or replaces by name) a file. <paramref name="name"/> is a POSIX path ('/' separates
+  /// folders, ':' stands for the '/' a catalog name may hold); missing folders on the way are
+  /// created. Refused, with the volume untouched, as the class remarks list.
   /// </summary>
-  public static void AddFile(Stream image, string name, byte[] data) {
+  public static void AddFile(Stream image, string name, byte[] data)
+    => AddFile(image, name, data, HfsPlusCompression.None);
+
+  /// <summary>
+  /// Adds (or replaces by name) a file, stored with HFS+ transparent compression when
+  /// <paramref name="compression"/> asks for it (as <see cref="HfsPlusWriter.TransparentCompression"/>
+  /// does: a file whose compressed form would not be smaller stays uncompressed), and with the
+  /// given extended attributes — inline when small enough for an attributes node, else in a fork
+  /// of their own.
+  /// </summary>
+  public static void AddFile(Stream image, string name, byte[] data, HfsPlusCompression compression,
+      IReadOnlyDictionary<string, byte[]>? extendedAttributes = null) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
+    var components = Components(name);
+    if (components.Count == 0) throw new ArgumentException("HFS+: an empty name cannot be added.", nameof(name));
+    if (extendedAttributes is { } attributes) {
+      foreach (var key in attributes.Keys)
+        if (key.Length is 0 or > 127 || key == DecmpfsName)
+          throw new ArgumentException($"HFS+: '{key}' cannot be an extended attribute name here.", nameof(extendedAttributes));
+    }
 
-    // Replace-by-name removes the old record first so no two records share a key. Both steps
-    // run on a copy: an add that then fails must not leave the replaced file deleted.
-    var catalogName = HfsPlusName.ToCatalog(name);
-    using var work = new MemoryStream();
-    work.Write(ReadAll(image));
-    RemoveCatalogFile(work, catalogName, wipeData: true);
-
-    // A catalog shape or free-space layout the in-place path does not handle is
-    // refused. The rebuild that used to follow flattened the folder tree to leaf
-    // names and dropped the volume name, journal, dates, permissions, Finder info
-    // and resource forks.
-    if (!TryAddInPlace(work, catalogName, data))
-      throw new NotSupportedException(
-        $"HFS+: '{name}' cannot be added in place (catalog spans more than one leaf, or no contiguous free run).");
-    WriteAll(image, work.ToArray());
+    Edit(image, volume => {
+      var parent = RootFolderCnid;
+      for (var i = 0; i < components.Count - 1; i++) parent = FindOrCreateFolder(volume, parent, components[i]);
+      var leaf = components[^1];
+      RequireNotMetadata(volume, parent, leaf);
+      if (FindChild(volume, parent, leaf) is { } existing) {
+        if (Type(existing.Record) != FileRecord)
+          throw new NotSupportedException($"HFS+: '{name}' is a folder; a file cannot replace it.");
+        DeleteFile(volume, parent, existing.Index, wipe: true, name);
+      }
+      CreateFile(volume, parent, leaf, data, compression, extendedAttributes);
+      return true;
+    });
   }
 
   /// <summary>
-  /// Removes the named file. Returns true if it was present and removed,
-  /// false if no such entry exists. <paramref name="name"/> is the POSIX name, with ':' where
-  /// the catalog stores '/'. Every extent of both forks is wiped (when asked) and freed. Refused,
-  /// with the volume untouched: a hard link (its indirect node file's link count would be left
-  /// counting it), a file with extended attributes or transparent compression (its attribute
-  /// records would be orphaned), a fork continued in the extents overflow file (those records
-  /// would be orphaned), an allocation file that does not start at block 1, a catalog stored in
-  /// more than one extent, and a record whose removal would change its leaf's first key (which
-  /// the index above names) or empty its leaf.
+  /// Removes the named file: its catalog records, its extended attributes (a compressed file's
+  /// decmpfs attribute among them), its extents overflow records, and every block of both forks
+  /// and of any attribute fork, which are wiped when asked and freed. Returns false when no such
+  /// file exists. <paramref name="name"/> is a POSIX path. Refused, with the volume untouched, as
+  /// the class remarks list.
   /// </summary>
   public static bool RemoveFile(Stream image, string name, bool wipeData = true) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(name);
-    return RemoveCatalogFile(image, HfsPlusName.ToCatalog(name), wipeData);
-  }
-
-  private static bool RemoveCatalogFile(Stream image, string name, bool wipeData) {
-    var img = ReadAll(image);
-    var ctx = ParseVolume(img);
-    if (ctx is null) return false;
-
-    // Every record lives on a leaf and the leaves are chained by fLink from firstLeafNode, so
-    // walking that chain finds a record wherever the catalog put it — the first leaf held
-    // only the smallest keys of a catalog that outgrew one node.
-    var leaves = LeafNodes(img, ctx);
-    var fileLeaf = -1;
-    int fileRecIdx = -1, record = -1;
-    uint fileCnid = 0;
-    foreach (var node in leaves)
-      if (TryFindFileRecord(img.AsSpan(node, ctx.NodeSize), ctx.NodeSize, name, out fileRecIdx, out fileCnid, out record)) {
-        fileLeaf = node;
-        break;
+    var components = Components(name);
+    if (components.Count == 0) return false;
+    return Edit(image, volume => {
+      var parent = RootFolderCnid;
+      for (var i = 0; i < components.Count - 1; i++) {
+        if (FindChild(volume, parent, components[i]) is not { } folder) return false;
+        if (IsDirectoryLink(folder.Record))
+          throw new NotSupportedException($"HFS+: '{name}' lies in a directory hard link; its directory is shared and not edited in place.");
+        if (Type(folder.Record) != FolderRecord) return false;
+        parent = Cnid(folder.Record);
       }
-    if (fileLeaf < 0) return false;
-    var leaf = img.AsSpan(fileLeaf, ctx.NodeSize);
-    var shown = HfsPlusName.FromCatalog(name);
-    // TN1150: a hard link is a file of type 'hlnk', creator 'hfs+' (userInfo at +48).
-    if (BinaryPrimitives.ReadUInt32BigEndian(leaf[(record + 48)..]) == 0x686C6E6B
-        && BinaryPrimitives.ReadUInt32BigEndian(leaf[(record + 52)..]) == 0x6866732B)
-      throw new NotSupportedException(
-        $"HFS+: '{shown}' is a hard link; removing it in place would leave its shared data's link count wrong.");
-    // kHFSHasAttributesMask (flags 0x0004), or UF_COMPRESSED (ownerFlags 0x20), whose
-    // content lives in an attribute.
-    if ((BinaryPrimitives.ReadUInt16BigEndian(leaf[(record + 2)..]) & 0x0004) != 0 || (leaf[record + 32 + 9] & 0x20) != 0)
-      throw new NotSupportedException(
-        $"HFS+: '{shown}' has extended attributes; removing it in place would orphan their records.");
-    var extents = new List<(uint Start, uint Count)>();
-    foreach (var fork in new[] { DataForkOffset, ResourceForkOffset }) {
-      var forkExtents = ForkExtents(leaf[(record + fork)..], out var complete);
-      if (!complete)
-        throw new NotSupportedException(
-          $"HFS+: '{shown}' continues in the extents overflow file; removing it in place would orphan those records.");
-      extents.AddRange(forkExtents);
-    }
-    if (AllocationFileStart(img) != 1)
-      throw new NotSupportedException("HFS+: the allocation file does not start at block 1; the in-place editor does not edit it there.");
-    if (extents.Any(e => (long)e.Start + e.Count > ctx.TotalBlocks))
-      throw new InvalidDataException($"HFS+: '{shown}' has an extent past the end of the volume.");
-
-    // Locate the matching file thread record (key parent==fileCnid, empty name), on any leaf.
-    var threadLeaf = -1;
-    var threadRecIdx = -1;
-    foreach (var node in leaves)
-      if ((threadRecIdx = FindThreadRecord(img.AsSpan(node, ctx.NodeSize), ctx.NodeSize, fileCnid)) >= 0) {
-        threadLeaf = node;
-        break;
-      }
-
-    // Taking a leaf's first record changes the key the index node above names it by, and
-    // taking its last empties it; neither is rewritten here, so both are refused.
-    var removals = new List<(int Leaf, int Index)> { (fileLeaf, fileRecIdx) };
-    if (threadLeaf >= 0) removals.Add((threadLeaf, threadRecIdx));
-    foreach (var group in removals.GroupBy(static r => r.Leaf)) {
-      var records = BinaryPrimitives.ReadUInt16BigEndian(img.AsSpan(group.Key + 10));
-      if (group.Count() >= records)
-        throw new NotSupportedException($"HFS+: removing '{shown}' would empty a catalog leaf; the in-place editor does not rebalance the B-tree.");
-      if (ctx.TreeDepth > 1 && group.Any(static r => r.Index == 0))
-        throw new NotSupportedException($"HFS+: '{shown}' opens a catalog leaf; removing it would change the key the index names that leaf by.");
-    }
-
-    // Wipe and free every extent of both forks; freeing only the first leaked
-    // the rest of a fragmented file and left the bitmap claiming blocks no file owned.
-    var bitmapBase = ctx.BlockSize; // allocation bitmap lives at block 1
-    uint blockCount = 0;
-    foreach (var (start, count) in extents) {
-      if (wipeData) {
-        var dataOffset = (long)start * ctx.BlockSize;
-        var byteLen = (long)count * ctx.BlockSize;
-        if (dataOffset + byteLen <= img.Length)
-          img.AsSpan((int)dataOffset, (int)byteLen).Clear();
-      }
-      for (var b = start; b < start + count; b++)
-        ClearBitmapBit(img, (int)bitmapBase, b);
-      blockCount += count;
-    }
-
-    // Remove the records (highest index first within a leaf, so the other keeps its index).
-    foreach (var (node, index) in removals.OrderBy(static r => r.Leaf).ThenByDescending(static r => r.Index))
-      RemoveLeafRecord(img.AsSpan(node, ctx.NodeSize), ctx.NodeSize, index);
-
-    // Update VH counters.
-    var vh = img.AsSpan(VolumeHeaderOffset);
-    var fileCount = BinaryPrimitives.ReadUInt32BigEndian(vh[32..]);
-    if (fileCount > 0) BinaryPrimitives.WriteUInt32BigEndian(vh[32..], fileCount - 1);
-    var freeBlocks = BinaryPrimitives.ReadUInt32BigEndian(vh[48..]);
-    BinaryPrimitives.WriteUInt32BigEndian(vh[48..], freeBlocks + blockCount);
-    BinaryPrimitives.WriteUInt32BigEndian(vh[20..], HfsTimestamp(DateTime.UtcNow));
-
-    // Decrement leafRecords in catalog header.
-    DecrementLeafRecords(img, ctx, removals.Count);
-
-    // The removed file was a direct child of the root folder, so drop the root
-    // folder record's valence by 1 to keep fsck_hfs's directory-item-count
-    // check satisfied.
-    AdjustRootFolderValence(img, ctx, -1);
-
-    // Mirror VH to alternate.
-    MirrorAlternateVh(img);
-
-    WriteAll(image, img);
-    return true;
-  }
-
-  // ── In-place add ─────────────────────────────────────────────────────────
-
-  private static bool TryAddInPlace(Stream image, string name, byte[] data) {
-    var img = ReadAll(image);
-    var ctx = ParseVolume(img);
-    if (ctx is null) return false;
-    // Only handle the simple shape the writer emits: treeDepth=1, single leaf
-    // node 1 covering all records.
-    if (ctx.TreeDepth != 1 || ctx.RootNode != 1 || ctx.FirstLeafNode != 1 || ctx.LastLeafNode != 1)
-      return false;
-
-    // Catalog node 0 is the header; node 1 is the leaf in the writer's layout.
-    var catalogBase = (int)(ctx.CatalogStartBlock * ctx.BlockSize);
-    var leafBase = catalogBase + (int)ctx.FirstLeafNode * ctx.NodeSize;
-    var leaf = img.AsSpan(leafBase, ctx.NodeSize);
-
-    // Allocate data blocks via bitmap walk.
-    var blocksNeeded = (uint)((data.Length + ctx.BlockSize - 1) / ctx.BlockSize);
-    var bitmapBase = (int)ctx.BlockSize;
-    var allocated = AllocateContiguous(img, bitmapBase, ctx.TotalBlocks, blocksNeeded);
-    if (allocated == 0 && blocksNeeded > 0) return false;
-
-    // Pick a fresh CNID.
-    var vh = img.AsSpan(VolumeHeaderOffset);
-    var nextCnid = BinaryPrimitives.ReadUInt32BigEndian(vh[64..]);
-    if (nextCnid < 16) nextCnid = 16;
-    var fileCnid = nextCnid;
-
-    // Build the two records.
-    var fileRec = BuildFileRecord(fileCnid, RootFolderCnid, name, data.Length, allocated, blocksNeeded, ctx.BlockSize);
-    var threadRec = BuildFileThreadRecord(fileCnid, RootFolderCnid, name);
-
-    // Try insertion. If overflow, undo bitmap allocation and signal fallback.
-    if (!TryInsertLeafRecord(leaf, ctx.NodeSize, fileRec, RootFolderCnid, name) ||
-        !TryInsertLeafRecord(leaf, ctx.NodeSize, threadRec, fileCnid, "")) {
-      for (uint b = allocated; b < allocated + blocksNeeded; b++)
-        ClearBitmapBit(img, bitmapBase, b);
-      return false;
-    }
-
-    // Write file payload to allocated blocks.
-    if (data.Length > 0) {
-      var off = (long)allocated * ctx.BlockSize;
-      if (off + data.Length > img.Length) return false;
-      data.CopyTo(img, (int)off);
-    }
-
-    // Update VH: fileCount++, nextCatalogID++, freeBlocks-=blocksNeeded, modifyDate.
-    var fileCount = BinaryPrimitives.ReadUInt32BigEndian(vh[32..]);
-    BinaryPrimitives.WriteUInt32BigEndian(vh[32..], fileCount + 1);
-    BinaryPrimitives.WriteUInt32BigEndian(vh[64..], fileCnid + 1);
-    var freeBlocks = BinaryPrimitives.ReadUInt32BigEndian(vh[48..]);
-    BinaryPrimitives.WriteUInt32BigEndian(vh[48..], freeBlocks - blocksNeeded);
-    BinaryPrimitives.WriteUInt32BigEndian(vh[20..], HfsTimestamp(DateTime.UtcNow));
-    BinaryPrimitives.WriteUInt32BigEndian(vh[52..], allocated + blocksNeeded); // nextAllocation hint
-
-    // Bump leafRecords by 2 in catalog header.
-    IncrementLeafRecords(img, ctx, 2);
-
-    // The new file lives directly under the root folder, so the root folder
-    // record's valence (its child count) must rise by 1; fsck_hfs reports
-    // "Invalid directory item count" otherwise. The root folder record is
-    // keyed (parent=1, name=volume), the only recordType-1 record under
-    // parent CNID 1.
-    AdjustRootFolderValence(img, ctx, +1);
-
-    // Mirror to alt VH.
-    MirrorAlternateVh(img);
-    WriteAll(image, img);
-    return true;
-  }
-
-
-  // ── Volume context ───────────────────────────────────────────────────────
-
-  private sealed class VolumeContext {
-    public uint BlockSize;
-    public uint TotalBlocks;
-    public uint CatalogStartBlock;
-    public uint CatalogBlockCount;
-    public ushort NodeSize;
-    public ushort TreeDepth;
-    public uint RootNode;
-    public uint FirstLeafNode;
-    public uint LastLeafNode;
-  }
-
-  private static VolumeContext? ParseVolume(byte[] img) {
-    if (img.Length < VolumeHeaderOffset + 512) return null;
-    var vh = img.AsSpan(VolumeHeaderOffset);
-    var sig = BinaryPrimitives.ReadUInt16BigEndian(vh);
-    if (sig != HfsPlusSignature && sig != HfsxSignature) return null;
-
-    var blockSize = BinaryPrimitives.ReadUInt32BigEndian(vh[40..]);
-    var totalBlocks = BinaryPrimitives.ReadUInt32BigEndian(vh[44..]);
-    if (blockSize == 0) return null;
-    var catalogStart = BinaryPrimitives.ReadUInt32BigEndian(vh[288..]);
-    var catalogCount = BinaryPrimitives.ReadUInt32BigEndian(vh[292..]);
-    if (catalogStart == 0 || catalogCount == 0) return null;
-
-    var catalogBase = (long)catalogStart * blockSize;
-    if (catalogBase + 14 > img.Length) return null;
-    var hdrNode = img.AsSpan((int)catalogBase);
-    if ((sbyte)hdrNode[8] != 1) return null;       // not a header node
-    var hdr = hdrNode[14..];
-    var treeDepth = BinaryPrimitives.ReadUInt16BigEndian(hdr);
-    var rootNode = BinaryPrimitives.ReadUInt32BigEndian(hdr[2..]);
-    var firstLeaf = BinaryPrimitives.ReadUInt32BigEndian(hdr[10..]);
-    var lastLeaf = BinaryPrimitives.ReadUInt32BigEndian(hdr[14..]);
-    var nodeSize = BinaryPrimitives.ReadUInt16BigEndian(hdr[18..]);
-    if (nodeSize == 0) return null;
-
-    return new VolumeContext {
-      BlockSize = blockSize,
-      TotalBlocks = totalBlocks,
-      CatalogStartBlock = catalogStart,
-      CatalogBlockCount = catalogCount,
-      NodeSize = nodeSize,
-      TreeDepth = treeDepth,
-      RootNode = rootNode,
-      FirstLeafNode = firstLeaf,
-      LastLeafNode = lastLeaf,
-    };
-  }
-
-  // ── Leaf record helpers ─────────────────────────────────────────────────
-
-  /// <summary>
-  /// The image offsets of every catalog leaf node, following fLink from firstLeafNode. The
-  /// catalog must be the one contiguous extent the volume header names first: a node beyond it
-  /// lives in an extent this editor does not map, so the volume is refused rather than misread.
-  /// </summary>
-  private static List<int> LeafNodes(byte[] img, VolumeContext ctx) {
-    var catalogBase = (long)ctx.CatalogStartBlock * ctx.BlockSize;
-    var catalogBytes = (long)ctx.CatalogBlockCount * ctx.BlockSize;
-    var leaves = new List<int>();
-    var visited = new HashSet<uint>();
-    for (var node = ctx.FirstLeafNode; node != 0 && visited.Add(node);) {
-      if ((long)(node + 1) * ctx.NodeSize > catalogBytes || catalogBase + (long)(node + 1) * ctx.NodeSize > img.Length)
-        throw new NotSupportedException("HFS+: the catalog continues past its first extent; the in-place editor does not edit it there.");
-      var offset = (int)(catalogBase + (long)node * ctx.NodeSize);
-      if ((sbyte)img[offset + 8] != -1)
-        throw new InvalidDataException($"HFS+: catalog node {node} on the leaf chain is not a leaf.");
-      leaves.Add(offset);
-      node = BinaryPrimitives.ReadUInt32BigEndian(img.AsSpan(offset));
-    }
-    return leaves;
-  }
-
-  /// <summary>
-  /// Locates a file record (recordType=2) whose catalog key has parent CNID
-  /// equal to the root folder and whose name matches <paramref name="name"/>.
-  /// </summary>
-  private static bool TryFindFileRecord(ReadOnlySpan<byte> leaf, int nodeSize, string name,
-      out int recordIndex, out uint fileCnid, out int recordOffset) {
-    recordIndex = -1; fileCnid = 0; recordOffset = -1;
-    var numRecords = BinaryPrimitives.ReadUInt16BigEndian(leaf[10..]);
-    var nameBytes = Encoding.BigEndianUnicode.GetBytes(name);
-
-    for (var i = 0; i < numRecords; i++) {
-      var recOff = ReadOffset(leaf, nodeSize, i);
-      if (recOff < 14 || recOff + 8 > nodeSize) continue;
-      var keyLen = BinaryPrimitives.ReadUInt16BigEndian(leaf[recOff..]);
-      var parent = BinaryPrimitives.ReadUInt32BigEndian(leaf[(recOff + 2)..]);
-      if (parent != RootFolderCnid) continue;
-      var nameLen = BinaryPrimitives.ReadUInt16BigEndian(leaf[(recOff + 6)..]);
-      var nameByteLen = nameLen * 2;
-      if (recOff + 8 + nameByteLen > nodeSize) continue;
-      if (nameByteLen != nameBytes.Length) continue;
-      var equal = true;
-      for (var b = 0; b < nameByteLen; b++) {
-        if (leaf[recOff + 8 + b] != nameBytes[b]) { equal = false; break; }
-      }
-      if (!equal) continue;
-
-      var dataOff = recOff + 2 + keyLen;
-      if ((dataOff & 1) != 0) dataOff++;
-      if (dataOff + 248 > nodeSize) continue;
-      var recType = BinaryPrimitives.ReadInt16BigEndian(leaf[dataOff..]);
-      if (recType != 2) continue;
-
-      fileCnid = BinaryPrimitives.ReadUInt32BigEndian(leaf[(dataOff + 8)..]);
-      recordOffset = dataOff;
-      recordIndex = i;
+      if (FindChild(volume, parent, components[^1]) is not { } file) return false;
+      if (Type(file.Record) != FileRecord)
+        throw new NotSupportedException($"HFS+: '{name}' is a folder; only files are removed in place.");
+      RequireNotMetadata(volume, parent, components[^1]);
+      DeleteFile(volume, parent, file.Index, wipeData, name);
       return true;
-    }
-    return false;
+    });
   }
 
-  /// <summary>
-  /// The eight extent descriptors of one HFSPlusForkData (logicalSize u64, clumpSize u32,
-  /// totalBlocks u32, extents); <paramref name="complete"/> is false when they hold fewer
-  /// blocks than totalBlocks, i.e. the overflow file holds the rest.
-  /// </summary>
-  private static List<(uint Start, uint Count)> ForkExtents(ReadOnlySpan<byte> fork, out bool complete) {
-    var totalBlocks = BinaryPrimitives.ReadUInt32BigEndian(fork[12..]);
-    var extents = new List<(uint Start, uint Count)>(8);
-    long covered = 0;
-    for (var k = 0; k < 8; k++) {
-      var count = BinaryPrimitives.ReadUInt32BigEndian(fork[(20 + k * 8)..]);
-      if (count == 0) break;
-      extents.Add((BinaryPrimitives.ReadUInt32BigEndian(fork[(16 + k * 8)..]), count));
-      covered += count;
+  /// <summary>Runs <paramref name="edit"/> on a copy of the volume and writes it back when it returns true.</summary>
+  private static bool Edit(Stream image, Func<HfsPlusVolumeEditor, bool> edit) {
+    var copy = ReadAll(image);
+    var volume = HfsPlusVolumeEditor.Open(copy);
+    if (!edit(volume)) return false;
+    volume.Flush();
+    WriteAll(image, copy);
+    return true;
+  }
+
+  /// <summary>The catalog names of a POSIX path's components; "." is skipped and ".." refused.</summary>
+  private static List<string> Components(string path) {
+    var parts = path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries).Where(static p => p != ".").ToList();
+    if (parts.Contains(".."))
+      throw new ArgumentException($"HFS+: '{path}' climbs out of a folder; give a path from the volume root.", nameof(path));
+    return parts.Select(HfsPlusName.ToCatalog).ToList();
+  }
+
+  // ── Catalog lookups ─────────────────────────────────────────────────────
+
+  /// <summary>Whether a catalog record is a directory hard link (xnu: type 'fdrp', creator 'MACS', a link chain).</summary>
+  private static bool IsDirectoryLink(byte[] record) {
+    var body = record.AsSpan(HfsPlusBTreeFile.DataOffset(record));
+    return BinaryPrimitives.ReadInt16BigEndian(body) == FileRecord
+           && BinaryPrimitives.ReadUInt32BigEndian(body[48..]) == 0x66647270 && BinaryPrimitives.ReadUInt32BigEndian(body[52..]) == 0x4D414353
+           && (BinaryPrimitives.ReadUInt16BigEndian(body[2..]) & HasLinkChainMask) != 0;
+  }
+
+  private static short Type(byte[] record) => BinaryPrimitives.ReadInt16BigEndian(record.AsSpan(HfsPlusBTreeFile.DataOffset(record)));
+  private static uint Cnid(byte[] record) => BinaryPrimitives.ReadUInt32BigEndian(record.AsSpan(HfsPlusBTreeFile.DataOffset(record) + 8));
+
+  /// <summary>The folder or file record named <paramref name="name"/> in <paramref name="parent"/>, as the volume's key order matches names.</summary>
+  private static (int Index, byte[] Record)? FindChild(HfsPlusVolumeEditor volume, uint parent, string name) {
+    var at = volume.Catalog.Search(CatalogKey(parent, name));
+    if (at < 0) return null;
+    var record = volume.Catalog.Records[at];
+    return Type(record) is FolderRecord or FileRecord ? (at, record) : null;
+  }
+
+  /// <summary>The thread record of <paramref name="cnid"/>: its key is (cnid, empty name).</summary>
+  private static int FindThread(HfsPlusVolumeEditor volume, uint cnid) => volume.Catalog.Search(CatalogKey(cnid, ""));
+
+  /// <summary>The index of the folder record of <paramref name="folder"/>, found through its thread.</summary>
+  private static int FolderRecordIndex(HfsPlusVolumeEditor volume, uint folder) {
+    var thread = FindThread(volume, folder);
+    if (thread < 0) throw new InvalidDataException($"HFS+: folder {folder} has no thread record.");
+    var record = volume.Catalog.Records[thread];
+    var data = HfsPlusBTreeFile.DataOffset(record);
+    if (BinaryPrimitives.ReadInt16BigEndian(record.AsSpan(data)) != FolderThreadRecord)
+      throw new InvalidDataException($"HFS+: catalog node {folder} is not a folder.");
+    var parent = BinaryPrimitives.ReadUInt32BigEndian(record.AsSpan(data + 4));
+    var nameLength = BinaryPrimitives.ReadUInt16BigEndian(record.AsSpan(data + 8));
+    var name = Encoding.BigEndianUnicode.GetString(record, data + 10, nameLength * 2);
+    var at = volume.Catalog.Search(CatalogKey(parent, name));
+    if (at < 0 || Type(volume.Catalog.Records[at]) != FolderRecord) throw new InvalidDataException($"HFS+: folder {folder}'s thread names no folder record.");
+    return at;
+  }
+
+  /// <summary>Refuses anything in, or named like, a metadata directory: those hold the targets of hard links.</summary>
+  private static void RequireNotMetadata(HfsPlusVolumeEditor volume, uint parent, string name) {
+    if (parent == RootFolderCnid && (name == FileMetadataFolder || name == DirectoryMetadataFolder))
+      throw new NotSupportedException("HFS+: the metadata directories are not edited in place.");
+    for (var (at, hops) = (parent, 0); at != RootFolderCnid && hops < 65536; hops++) {
+      var thread = FindThread(volume, at);
+      if (thread < 0) return;
+      var record = volume.Catalog.Records[thread];
+      var data = HfsPlusBTreeFile.DataOffset(record);
+      var up = BinaryPrimitives.ReadUInt32BigEndian(record.AsSpan(data + 4));
+      var nameLength = BinaryPrimitives.ReadUInt16BigEndian(record.AsSpan(data + 8));
+      var folderName = Encoding.BigEndianUnicode.GetString(record, data + 10, nameLength * 2);
+      if (up == RootFolderCnid && folderName is FileMetadataFolder or DirectoryMetadataFolder)
+        throw new NotSupportedException("HFS+: the metadata directories are not edited in place.");
+      if (up == at) return;
+      at = up;
     }
-    complete = covered >= totalBlocks;
+  }
+
+  // ── Folders ─────────────────────────────────────────────────────────────
+
+  private static uint FindOrCreateFolder(HfsPlusVolumeEditor volume, uint parent, string name) {
+    if (FindChild(volume, parent, name) is { } existing) {
+      if (IsDirectoryLink(existing.Record))
+        throw new NotSupportedException($"HFS+: '{HfsPlusName.FromCatalog(name)}' is a directory hard link; its directory is shared and not edited in place.");
+      if (Type(existing.Record) != FolderRecord) throw new NotSupportedException($"HFS+: '{HfsPlusName.FromCatalog(name)}' is a file, not a folder.");
+      return Cnid(existing.Record);
+    }
+    RequireNotMetadata(volume, parent, name);
+    var cnid = volume.NextCatalogId();
+    var now = HfsPlusVolumeEditor.HfsTimestamp(DateTime.UtcNow);
+    var body = new byte[CatalogFolderRecordSize];
+    BinaryPrimitives.WriteInt16BigEndian(body, FolderRecord);
+    var parentRecord = volume.Catalog.Records[FolderRecordIndex(volume, parent)];
+    var parentFlags = BinaryPrimitives.ReadUInt16BigEndian(parentRecord.AsSpan(HfsPlusBTreeFile.DataOffset(parentRecord) + 2));
+    // An HFSX volume whose folders keep a subfolder count does so for the new one too.
+    BinaryPrimitives.WriteUInt16BigEndian(body.AsSpan(2), (ushort)(parentFlags & HasFolderCountMask));
+    BinaryPrimitives.WriteUInt32BigEndian(body.AsSpan(8), cnid);
+    for (var d = 12; d <= 24; d += 4) BinaryPrimitives.WriteUInt32BigEndian(body.AsSpan(d), now);
+    BinaryPrimitives.WriteUInt16BigEndian(body.AsSpan(32 + 10), HfsPlusWriter.DirectoryMode);
+    volume.Catalog.Insert([.. CatalogKey(parent, name), .. body]);
+    volume.Catalog.Insert(Thread(FolderThreadRecord, cnid, parent, name));
+    AdjustFolder(volume, parent, valence: +1, folders: +1);
+    volume.WriteHeader(36, volume.ReadHeader(36) + 1);  // folderCount
+    return cnid;
+  }
+
+  /// <summary>Changes a folder's valence and, where it keeps one, its subfolder count; stamps its content date.</summary>
+  private static void AdjustFolder(HfsPlusVolumeEditor volume, uint folder, int valence, int folders) {
+    var index = FolderRecordIndex(volume, folder);
+    var record = volume.Catalog.Records[index].ToArray();
+    var data = HfsPlusBTreeFile.DataOffset(record);
+    var span = record.AsSpan(data);
+    BinaryPrimitives.WriteUInt32BigEndian(span[4..], checked((uint)(BinaryPrimitives.ReadUInt32BigEndian(span[4..]) + valence)));
+    if (folders != 0 && (BinaryPrimitives.ReadUInt16BigEndian(span[2..]) & HasFolderCountMask) != 0 && span.Length >= 88)
+      BinaryPrimitives.WriteUInt32BigEndian(span[84..], checked((uint)(BinaryPrimitives.ReadUInt32BigEndian(span[84..]) + folders)));
+    BinaryPrimitives.WriteUInt32BigEndian(span[16..], HfsPlusVolumeEditor.HfsTimestamp(DateTime.UtcNow));  // contentModDate
+    volume.Catalog.Replace(index, record);
+  }
+
+  // ── Files ───────────────────────────────────────────────────────────────
+
+  private static void CreateFile(HfsPlusVolumeEditor volume, uint parent, string name, byte[] data,
+      HfsPlusCompression compression, IReadOnlyDictionary<string, byte[]>? extendedAttributes) {
+    var cnid = volume.NextCatalogId();
+    var encoding = compression == HfsPlusCompression.None || data.Length == 0 ? null : HfsPlusDecmpfs.Encode(data, compression);
+    var payload = encoding is null ? data : encoding.ResourceFork ?? [];
+    var blocks = (uint)((payload.LongLength + volume.BlockSize - 1) / volume.BlockSize);
+    var extents = volume.Allocate(blocks) ?? throw new NotSupportedException($"HFS+: the volume has no room for {blocks} more blocks.");
+    var at = 0L;
+    foreach (var (start, count) in extents) {
+      var bytes = (int)Math.Min((long)count * volume.BlockSize, payload.Length - at);
+      var target = volume.Image.AsSpan((int)((long)start * volume.BlockSize), (int)((long)count * volume.BlockSize));
+      target.Clear();
+      payload.AsSpan((int)at, bytes).CopyTo(target);
+      at += bytes;
+    }
+
+    var hasAttributes = encoding is not null || extendedAttributes is { Count: > 0 };
+    var now = HfsPlusVolumeEditor.HfsTimestamp(DateTime.UtcNow);
+    var body = new byte[CatalogFileRecordSize];
+    BinaryPrimitives.WriteInt16BigEndian(body, FileRecord);
+    BinaryPrimitives.WriteUInt16BigEndian(body.AsSpan(2), (ushort)(ThreadExistsMask | (hasAttributes ? HasAttributesMask : 0)));
+    BinaryPrimitives.WriteUInt32BigEndian(body.AsSpan(8), cnid);
+    for (var d = 12; d <= 24; d += 4) BinaryPrimitives.WriteUInt32BigEndian(body.AsSpan(d), now);
+    BinaryPrimitives.WriteUInt16BigEndian(body.AsSpan(32 + 10), HfsPlusWriter.RegularFileMode);
+    if (encoding is not null) body[32 + 9] = CompressedOwnerFlag;
+    WriteFork(body.AsSpan(encoding is null ? DataForkOffset : ResourceForkOffset, 80), payload.LongLength, volume.BlockSize, extents);
+    volume.Catalog.Insert([.. CatalogKey(parent, name), .. body]);
+    volume.Catalog.Insert(Thread(FileThreadRecord, cnid, parent, name));
+
+    // Runs past the eighth go to the extents overflow file, eight per record, keyed by the
+    // fork block each record starts at (TN1150 HFSPlusExtentKey).
+    var forkBlock = (uint)extents.Take(8).Sum(static e => (long)e.BlockCount);
+    for (var first = 8; first < extents.Count; first += 8) {
+      var group = extents.Skip(first).Take(8).ToList();
+      volume.Extents.Insert(ExtentRecord(encoding is null ? DataFork : ResourceFork, cnid, forkBlock, group));
+      forkBlock += (uint)group.Sum(static e => (long)e.BlockCount);
+    }
+
+    if (encoding is not null) InsertAttribute(volume, cnid, DecmpfsName, encoding.Attribute, inlineLimit: HfsPlusDecmpfs.MaxAttributeSize);
+    foreach (var (attribute, value) in extendedAttributes ?? new Dictionary<string, byte[]>())
+      InsertAttribute(volume, cnid, attribute, value, inlineLimit: MaxInlineAttributeSize(volume));
+
+    AdjustFolder(volume, parent, valence: +1, folders: 0);
+    volume.WriteHeader(32, volume.ReadHeader(32) + 1);  // fileCount
+    if (extents.Count > 0) volume.WriteHeader(52, extents[^1].StartBlock + extents[^1].BlockCount);  // nextAllocation
+  }
+
+  private static void DeleteFile(HfsPlusVolumeEditor volume, uint parent, int index, bool wipe, string shown) {
+    var record = volume.Catalog.Records[index];
+    var data = HfsPlusBTreeFile.DataOffset(record);
+    var body = record.AsSpan(data);
+    var cnid = BinaryPrimitives.ReadUInt32BigEndian(body[8..]);
+    var type = BinaryPrimitives.ReadUInt32BigEndian(body[48..]);
+    var creator = BinaryPrimitives.ReadUInt32BigEndian(body[52..]);
+    // TN1150 hard link ('hlnk'/'hfs+') and xnu directory hard link ('fdrp'/'MACS' with a link chain).
+    if (type == 0x686C6E6B && creator == 0x6866732B)
+      throw new NotSupportedException($"HFS+: '{shown}' is a hard link; removing it in place would leave its shared data's link count wrong.");
+    if (type == 0x66647270 && creator == 0x4D414353 && (BinaryPrimitives.ReadUInt16BigEndian(body[2..]) & HasLinkChainMask) != 0)
+      throw new NotSupportedException($"HFS+: '{shown}' is a directory hard link; removing it in place would leave its directory's link chain wrong.");
+
+    // Each fork's blocks: the eight its record holds and the extents overflow records keyed to it.
+    // Blocks that do not add up to the fork's totalBlocks mean records are missing or stray, and
+    // freeing what is found would leave the rest allocated to nobody — refused.
+    var blocks = new List<(uint, uint)>();
+    foreach (var (forkOffset, forkType) in new[] { (DataForkOffset, DataFork), (ResourceForkOffset, ResourceFork) }) {
+      var fork = ForkExtents(body[forkOffset..]);
+      fork.AddRange(volume.Extents.Records
+        .Where(r => r[2] == forkType && BinaryPrimitives.ReadUInt32BigEndian(r.AsSpan(4)) == cnid)
+        .SelectMany(ExtentRecordExtents));
+      if (fork.Sum(static e => (long)e.Item2) != BinaryPrimitives.ReadUInt32BigEndian(body[(forkOffset + 12)..]))
+        throw new InvalidDataException($"HFS+: '{shown}' has a fork whose extents do not add up to its block count; it is not removed.");
+      blocks.AddRange(fork);
+    }
+    if (volume.Attributes is { } attributes)
+      blocks.AddRange(attributes.Records.Where(r => BinaryPrimitives.ReadUInt32BigEndian(r.AsSpan(4)) == cnid).SelectMany(AttributeExtentsOf));
+
+    var thread = FindThread(volume, cnid);
+    var threadRecord = thread >= 0 ? volume.Catalog.Records[thread] : null;
+    volume.Catalog.RemoveAll(r => ReferenceEquals(r, record) || ReferenceEquals(r, threadRecord));
+    volume.Extents.RemoveAll(r => BinaryPrimitives.ReadUInt32BigEndian(r.AsSpan(4)) == cnid);
+    volume.Attributes?.RemoveAll(r => BinaryPrimitives.ReadUInt32BigEndian(r.AsSpan(4)) == cnid);
+    volume.Free(blocks, wipe);
+
+    AdjustFolder(volume, parent, valence: -1, folders: 0);
+    var files = volume.ReadHeader(32);
+    if (files > 0) volume.WriteHeader(32, files - 1);
+  }
+
+  /// <summary>The extents an HFSPlusForkData holds itself.</summary>
+  private static List<(uint, uint)> ForkExtents(ReadOnlySpan<byte> fork) => ExtentArray(fork[16..]);
+
+  /// <summary>An array of eight extent descriptors (startBlock u32, blockCount u32), up to the first empty one.</summary>
+  private static List<(uint, uint)> ExtentArray(ReadOnlySpan<byte> descriptors) {
+    var extents = new List<(uint, uint)>(8);
+    for (var k = 0; k < 8; k++) {
+      var count = BinaryPrimitives.ReadUInt32BigEndian(descriptors[(4 + k * 8)..]);
+      if (count == 0) break;
+      extents.Add((BinaryPrimitives.ReadUInt32BigEndian(descriptors[(k * 8)..]), count));
+    }
     return extents;
   }
 
-  /// <summary>The allocation file's first block (volume header allocationFile.extents[0]).</summary>
-  private static uint AllocationFileStart(byte[] img)
-    => BinaryPrimitives.ReadUInt32BigEndian(img.AsSpan(VolumeHeaderOffset + 112 + 16));
+  private static IEnumerable<(uint, uint)> ExtentRecordExtents(byte[] record)
+    => ExtentArray(record.AsSpan(HfsPlusBTreeFile.DataOffset(record)));
+
+  /// <summary>The blocks an attribute record owns: a fork attribute's eight extents or an extents record's.</summary>
+  private static IEnumerable<(uint, uint)> AttributeExtentsOf(byte[] record) {
+    var data = HfsPlusBTreeFile.DataOffset(record);
+    return BinaryPrimitives.ReadUInt32BigEndian(record.AsSpan(data)) switch {
+      AttributeFork => ForkExtents(record.AsSpan(data + 8)),
+      AttributeExtents => ExtentArray(record.AsSpan(data + 8)),
+      _ => [],
+    };
+  }
+
+  // ── Extended attributes ─────────────────────────────────────────────────
 
   /// <summary>
-  /// Finds the file thread record whose key is (parent=fileCnid, name="").
+  /// The largest attribute value xnu keeps inline for the volume's attribute node size: half a
+  /// node less the node descriptor, three offsets, the largest key and the data header.
   /// </summary>
-  private static int FindThreadRecord(ReadOnlySpan<byte> leaf, int nodeSize, uint fileCnid) {
-    var numRecords = BinaryPrimitives.ReadUInt16BigEndian(leaf[10..]);
-    for (var i = 0; i < numRecords; i++) {
-      var recOff = ReadOffset(leaf, nodeSize, i);
-      if (recOff < 14 || recOff + 8 > nodeSize) continue;
-      var keyLen = BinaryPrimitives.ReadUInt16BigEndian(leaf[recOff..]);
-      var parent = BinaryPrimitives.ReadUInt32BigEndian(leaf[(recOff + 2)..]);
-      var nameLen = BinaryPrimitives.ReadUInt16BigEndian(leaf[(recOff + 6)..]);
-      if (parent != fileCnid || nameLen != 0) continue;
-      var dataOff = recOff + 2 + keyLen;
-      if ((dataOff & 1) != 0) dataOff++;
-      if (dataOff + 2 > nodeSize) continue;
-      var recType = BinaryPrimitives.ReadInt16BigEndian(leaf[dataOff..]);
-      if (recType == 4) return i;
-    }
-    return -1;
+  private static int MaxInlineAttributeSize(HfsPlusVolumeEditor volume) {
+    var nodeSize = volume.Attributes?.NodeSize ?? 4096;
+    return ((nodeSize - 14 - 6) / 2 - 268 - 16) & ~1;
   }
 
-  private static int ReadOffset(ReadOnlySpan<byte> leaf, int nodeSize, int recordIndex) {
-    var offsetPos = nodeSize - 2 * (recordIndex + 1);
-    return BinaryPrimitives.ReadUInt16BigEndian(leaf[offsetPos..]);
-  }
-
-  /// <summary>
-  /// Inserts <paramref name="record"/> into the leaf, keeping records sorted by
-  /// (parent CNID asc, name UTF-16BE binary asc). Returns false when the record
-  /// + its new offset slot won't fit in the available free space.
-  /// </summary>
-  private static bool TryInsertLeafRecord(Span<byte> leaf, int nodeSize,
-      byte[] record, uint keyParent, string keyName) {
-    int numRecords = BinaryPrimitives.ReadUInt16BigEndian(leaf[10..]);
-    var newKeyName = Encoding.BigEndianUnicode.GetBytes(keyName);
-
-    // Snapshot current offset table BEFORE any mutation.
-    var oldOffsets = new ushort[numRecords + 1];
-    for (var i = 0; i < numRecords + 1; i++)
-      oldOffsets[i] = BinaryPrimitives.ReadUInt16BigEndian(leaf[(nodeSize - 2 * (i + 1))..]);
-    var freeOff = oldOffsets[numRecords];
-
-    // Determine insertion index by walking records in key order.
-    var insertIndex = numRecords;
-    for (var i = 0; i < numRecords; i++) {
-      var off = oldOffsets[i];
-      var p = BinaryPrimitives.ReadUInt32BigEndian(leaf[(off + 2)..]);
-      var nl = BinaryPrimitives.ReadUInt16BigEndian(leaf[(off + 6)..]);
-      var cmp = CompareKey(p, leaf.Slice(off + 8, nl * 2), keyParent, newKeyName);
-      if (cmp >= 0) { insertIndex = i; break; }
-    }
-
-    var newRecLen = record.Length;
-    if ((newRecLen & 1) != 0) newRecLen++; // pad to even
-
-    // Capacity check: free space must hold the new record + a new offset slot.
-    var existingTableBytes = 2 * (numRecords + 1);
-    var availableBefore = nodeSize - freeOff - existingTableBytes;
-    if (availableBefore < newRecLen + 2) return false;
-
-    var insertPos = insertIndex < numRecords ? oldOffsets[insertIndex] : freeOff;
-
-    // Shift payload [insertPos..freeOff) forward by newRecLen via temp buffer.
-    var bytesToShift = freeOff - insertPos;
-    if (bytesToShift > 0) {
-      Span<byte> temp = bytesToShift <= 256 ? stackalloc byte[bytesToShift] : new byte[bytesToShift];
-      leaf.Slice(insertPos, bytesToShift).CopyTo(temp);
-      temp.CopyTo(leaf.Slice(insertPos + newRecLen, bytesToShift));
-    }
-    record.AsSpan().CopyTo(leaf.Slice(insertPos, record.Length));
-    if (newRecLen > record.Length) leaf[insertPos + record.Length] = 0;
-
-    // Build new offsets (numRecords+2 entries).
-    var newOffsets = new ushort[numRecords + 2];
-    for (var i = 0; i < insertIndex; i++) newOffsets[i] = oldOffsets[i];
-    newOffsets[insertIndex] = (ushort)insertPos;
-    for (var i = insertIndex; i < numRecords; i++) newOffsets[i + 1] = (ushort)(oldOffsets[i] + newRecLen);
-    newOffsets[numRecords + 1] = (ushort)(oldOffsets[numRecords] + newRecLen);
-
-    // Clear the old offset table region first (it's now one entry shorter on the
-    // end side). Then write the new (longer) table.
-    for (var i = 0; i < oldOffsets.Length; i++) {
-      var pos = nodeSize - 2 * (i + 1);
-      BinaryPrimitives.WriteUInt16BigEndian(leaf[pos..], 0);
-    }
-    for (var i = 0; i < newOffsets.Length; i++) {
-      var pos = nodeSize - 2 * (i + 1);
-      BinaryPrimitives.WriteUInt16BigEndian(leaf[pos..], newOffsets[i]);
-    }
-
-    BinaryPrimitives.WriteUInt16BigEndian(leaf[10..], (ushort)(numRecords + 1));
-    return true;
-  }
-
-  private static void RemoveLeafRecord(Span<byte> leaf, int nodeSize, int recordIndex) {
-    var numRecords = BinaryPrimitives.ReadUInt16BigEndian(leaf[10..]);
-    if (recordIndex < 0 || recordIndex >= numRecords) return;
-
-    // Read offset table.
-    var offsets = new ushort[numRecords + 1];
-    for (var i = 0; i < numRecords + 1; i++)
-      offsets[i] = BinaryPrimitives.ReadUInt16BigEndian(leaf[(nodeSize - 2 * (i + 1))..]);
-
-    var recStart = offsets[recordIndex];
-    var recEnd = offsets[recordIndex + 1];
-    var recLen = recEnd - recStart;
-    var bytesAfter = offsets[numRecords] - recEnd;
-
-    // Shift payload [recEnd..freeOff) backward by recLen.
-    if (bytesAfter > 0)
-      leaf.Slice(recEnd, bytesAfter).CopyTo(leaf.Slice(recStart, bytesAfter));
-    // Zero the freed tail bytes.
-    leaf.Slice(offsets[numRecords] - recLen, recLen).Clear();
-
-    // Build new offsets array of size numRecords (one fewer record).
-    var newOffsets = new ushort[numRecords];
-    for (var i = 0; i < recordIndex; i++) newOffsets[i] = offsets[i];
-    for (var i = recordIndex + 1; i <= numRecords; i++)
-      newOffsets[i - 1] = (ushort)(offsets[i] - recLen);
-
-    // Clear old offset table region (the topmost entry slot frees up by 2 bytes).
-    // First zero all old entries, then write new.
-    for (var i = 0; i < numRecords + 1; i++) {
-      var pos = nodeSize - 2 * (i + 1);
-      BinaryPrimitives.WriteUInt16BigEndian(leaf[pos..], 0);
-    }
-    for (var i = 0; i < newOffsets.Length; i++) {
-      var pos = nodeSize - 2 * (i + 1);
-      BinaryPrimitives.WriteUInt16BigEndian(leaf[pos..], newOffsets[i]);
-    }
-    BinaryPrimitives.WriteUInt16BigEndian(leaf[10..], (ushort)(numRecords - 1));
-  }
-
-  // ── Catalog header maintenance ──────────────────────────────────────────
-
-  private static void IncrementLeafRecords(byte[] img, VolumeContext ctx, int delta) {
-    var hdrBase = (int)(ctx.CatalogStartBlock * ctx.BlockSize);
-    var hdr = img.AsSpan(hdrBase + 14);
-    var n = BinaryPrimitives.ReadUInt32BigEndian(hdr[6..]);
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[6..], n + (uint)delta);
-  }
-
-  private static void DecrementLeafRecords(byte[] img, VolumeContext ctx, int delta) {
-    var hdrBase = (int)(ctx.CatalogStartBlock * ctx.BlockSize);
-    var hdr = img.AsSpan(hdrBase + 14);
-    var n = BinaryPrimitives.ReadUInt32BigEndian(hdr[6..]);
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[6..], n >= delta ? n - (uint)delta : 0u);
-  }
-
-  /// <summary>
-  /// Adjusts the root folder record's valence (its direct-child count) by
-  /// <paramref name="delta"/>. The root folder record is the single
-  /// recordType-1 (kHFSPlusFolderRecord) record whose catalog key has parent
-  /// CNID 1; its valence field sits at body offset 4 (TN1150
-  /// HFSPlusCatalogFolder). Re-scans the leaf so it is robust to record shifts
-  /// from a preceding insert/remove.
-  /// </summary>
-  private static void AdjustRootFolderValence(byte[] img, VolumeContext ctx, int delta) {
-    var catalogBase = (int)(ctx.CatalogStartBlock * ctx.BlockSize);
-    var leafBase = catalogBase + (int)ctx.FirstLeafNode * ctx.NodeSize;
-    var leaf = img.AsSpan(leafBase, ctx.NodeSize);
-    var numRecords = BinaryPrimitives.ReadUInt16BigEndian(leaf[10..]);
-    for (var i = 0; i < numRecords; i++) {
-      var recOff = ReadOffset(leaf, ctx.NodeSize, i);
-      if (recOff < 14 || recOff + 8 > ctx.NodeSize) continue;
-      var keyLen = BinaryPrimitives.ReadUInt16BigEndian(leaf[recOff..]);
-      var parent = BinaryPrimitives.ReadUInt32BigEndian(leaf[(recOff + 2)..]);
-      if (parent != 1) continue; // root folder is keyed under CnidRootParent (1)
-      var dataOff = recOff + 2 + keyLen;
-      if ((dataOff & 1) != 0) dataOff++;
-      if (dataOff + 8 > ctx.NodeSize) continue;
-      var recType = BinaryPrimitives.ReadInt16BigEndian(leaf[dataOff..]);
-      if (recType != 1) continue; // kHFSPlusFolderRecord
-      var valence = BinaryPrimitives.ReadUInt32BigEndian(leaf[(dataOff + 4)..]);
-      var adjusted = delta >= 0 ? valence + (uint)delta
-                                : (valence >= (uint)(-delta) ? valence - (uint)(-delta) : 0u);
-      BinaryPrimitives.WriteUInt32BigEndian(leaf[(dataOff + 4)..], adjusted);
+  private static void InsertAttribute(HfsPlusVolumeEditor volume, uint cnid, string name, byte[] value, int inlineLimit) {
+    var attributes = volume.EnsureAttributes();
+    var nameBytes = Encoding.BigEndianUnicode.GetBytes(name);
+    if (value.Length <= inlineLimit) {
+      var record = new byte[AttributeKey(cnid, nameBytes, 0).Length + 16 + value.Length + (value.Length & 1)];
+      var key = AttributeKey(cnid, nameBytes, 0);
+      key.CopyTo(record, 0);
+      BinaryPrimitives.WriteUInt32BigEndian(record.AsSpan(key.Length), AttributeInline);
+      BinaryPrimitives.WriteUInt32BigEndian(record.AsSpan(key.Length + 12), (uint)value.Length);
+      value.CopyTo(record, key.Length + 16);
+      attributes.Insert(record);
       return;
     }
-  }
 
-  // ── Bitmap helpers ──────────────────────────────────────────────────────
-
-  /// <summary>
-  /// Allocates <paramref name="count"/> contiguous free blocks via a linear
-  /// bitmap walk. Returns the start block, or 0 if nothing fits (or if 0
-  /// blocks were requested — caller treats 0+0 specially).
-  /// </summary>
-  private static uint AllocateContiguous(byte[] img, int bitmapBase, uint totalBlocks, uint count) {
-    if (count == 0) return 0;
-    var run = 0u;
-    var runStart = 0u;
-    for (uint b = 0; b < totalBlocks; b++) {
-      if (BitmapBitIsSet(img, bitmapBase, b)) { run = 0; continue; }
-      if (run == 0) runStart = b;
-      run++;
-      if (run >= count) {
-        for (uint i = 0; i < count; i++) SetBitmapBit(img, bitmapBase, runStart + i);
-        return runStart;
-      }
+    // A value too large for a node lives in a fork of its own: a fork-data record with the first
+    // eight extents, extents records for the rest (TN1150 HFSPlusAttrForkData / HFSPlusAttrExtents).
+    var blocks = (uint)((value.LongLength + volume.BlockSize - 1) / volume.BlockSize);
+    var extents = volume.Allocate(blocks) ?? throw new NotSupportedException($"HFS+: the volume has no room for a {value.Length}-byte attribute.");
+    var at = 0;
+    foreach (var (start, count) in extents) {
+      var target = volume.Image.AsSpan((int)((long)start * volume.BlockSize), (int)((long)count * volume.BlockSize));
+      target.Clear();
+      var bytes = (int)Math.Min(target.Length, value.Length - at);
+      value.AsSpan(at, bytes).CopyTo(target);
+      at += bytes;
     }
-    return 0;
+    var forkKey = AttributeKey(cnid, nameBytes, 0);
+    var forkRecord = new byte[forkKey.Length + 8 + 80];
+    forkKey.CopyTo(forkRecord, 0);
+    BinaryPrimitives.WriteUInt32BigEndian(forkRecord.AsSpan(forkKey.Length), AttributeFork);
+    WriteFork(forkRecord.AsSpan(forkKey.Length + 8, 80), value.Length, volume.BlockSize, extents);
+    attributes.Insert(forkRecord);
+    var forkBlock = (uint)extents.Take(8).Sum(static e => (long)e.BlockCount);
+    for (var first = 8; first < extents.Count; first += 8) {
+      var group = extents.Skip(first).Take(8).ToList();
+      var key = AttributeKey(cnid, nameBytes, forkBlock);
+      var record = new byte[key.Length + 8 + 64];
+      key.CopyTo(record, 0);
+      BinaryPrimitives.WriteUInt32BigEndian(record.AsSpan(key.Length), AttributeExtents);
+      for (var k = 0; k < group.Count; k++) {
+        BinaryPrimitives.WriteUInt32BigEndian(record.AsSpan(key.Length + 8 + k * 8), group[k].StartBlock);
+        BinaryPrimitives.WriteUInt32BigEndian(record.AsSpan(key.Length + 12 + k * 8), group[k].BlockCount);
+      }
+      attributes.Insert(record);
+      forkBlock += (uint)group.Sum(static e => (long)e.BlockCount);
+    }
   }
 
-  private static bool BitmapBitIsSet(byte[] img, int bitmapBase, uint block) {
-    var byteIdx = bitmapBase + (int)(block / 8);
-    var bitIdx = (int)(7 - (block % 8));
-    if (byteIdx >= img.Length) return true;
-    return (img[byteIdx] & (1 << bitIdx)) != 0;
+  /// <summary>TN1150 HFSPlusAttrKey: keyLength, pad, fileID, startBlock, name length, UTF-16BE name.</summary>
+  private static byte[] AttributeKey(uint cnid, byte[] name, uint startBlock) {
+    var key = new byte[14 + name.Length];
+    BinaryPrimitives.WriteUInt16BigEndian(key, (ushort)(12 + name.Length));
+    BinaryPrimitives.WriteUInt32BigEndian(key.AsSpan(4), cnid);
+    BinaryPrimitives.WriteUInt32BigEndian(key.AsSpan(8), startBlock);
+    BinaryPrimitives.WriteUInt16BigEndian(key.AsSpan(12), (ushort)(name.Length / 2));
+    name.CopyTo(key, 14);
+    return key;
   }
 
-  private static void SetBitmapBit(byte[] img, int bitmapBase, uint block) {
-    var byteIdx = bitmapBase + (int)(block / 8);
-    var bitIdx = (int)(7 - (block % 8));
-    if (byteIdx >= img.Length) return;
-    img[byteIdx] |= (byte)(1 << bitIdx);
-  }
+  // ── Record builders ─────────────────────────────────────────────────────
 
-  private static void ClearBitmapBit(byte[] img, int bitmapBase, uint block) {
-    var byteIdx = bitmapBase + (int)(block / 8);
-    var bitIdx = (int)(7 - (block % 8));
-    if (byteIdx >= img.Length) return;
-    img[byteIdx] &= (byte)~(1 << bitIdx);
-  }
-
-  // ── Record builders (mirror HfsPlusWriter) ──────────────────────────────
-
-  private static byte[] BuildCatalogKey(uint parentCnid, string name) {
+  /// <summary>TN1150 HFSPlusCatalogKey: keyLength, parentID, name length, UTF-16BE name.</summary>
+  private static byte[] CatalogKey(uint parent, string name) {
     var nameBytes = Encoding.BigEndianUnicode.GetBytes(name);
-    var nameLen = (ushort)(nameBytes.Length / 2);
-    var keyLen = (ushort)(4 + 2 + nameBytes.Length);
-    var key = new byte[2 + keyLen];
-    BinaryPrimitives.WriteUInt16BigEndian(key, keyLen);
-    BinaryPrimitives.WriteUInt32BigEndian(key.AsSpan(2), parentCnid);
-    BinaryPrimitives.WriteUInt16BigEndian(key.AsSpan(6), nameLen);
+    var key = new byte[8 + nameBytes.Length];
+    BinaryPrimitives.WriteUInt16BigEndian(key, (ushort)(6 + nameBytes.Length));
+    BinaryPrimitives.WriteUInt32BigEndian(key.AsSpan(2), parent);
+    BinaryPrimitives.WriteUInt16BigEndian(key.AsSpan(6), (ushort)(nameBytes.Length / 2));
     nameBytes.CopyTo(key, 8);
     return key;
   }
 
-  private static byte[] BuildFileRecord(uint fileCnid, uint parentCnid, string name,
-      long logicalSize, uint startBlock, uint blockCount, uint blockSize) {
-    var key = BuildCatalogKey(parentCnid, name);
-    var recData = new byte[CatalogFileRecordSize];
-    BinaryPrimitives.WriteInt16BigEndian(recData, 2);                 // recordType = kHFSPlusFileRecord
-    BinaryPrimitives.WriteUInt16BigEndian(recData.AsSpan(2), 0x0002); // flags = kHFSThreadExistsMask
-    BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(8), fileCnid);
-    var now = HfsTimestamp(DateTime.UtcNow);
-    BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(12), now);
-    BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(16), now);
-    BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(20), now);
-    BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(24), now);
-    BinaryPrimitives.WriteUInt16BigEndian(recData.AsSpan(32 + 10), HfsPlusWriter.RegularFileMode);   // permissions.fileMode
-    WriteForkData(recData.AsSpan(DataForkOffset, CatalogForkDataSize), logicalSize, blockSize, startBlock, blockCount);
-    WriteForkData(recData.AsSpan(ResourceForkOffset, CatalogForkDataSize), 0, blockSize, 0, 0);
-
-    var result = new byte[key.Length + recData.Length];
-    key.CopyTo(result, 0);
-    recData.CopyTo(result, key.Length);
-    return result;
-  }
-
-  private static byte[] BuildFileThreadRecord(uint fileCnid, uint parentCnid, string name) {
-    var key = BuildCatalogKey(fileCnid, "");
+  /// <summary>A folder or file thread record: key (cnid, ""), data recordType, reserved, parentID, name.</summary>
+  private static byte[] Thread(short type, uint cnid, uint parent, string name) {
+    var key = CatalogKey(cnid, "");
     var nameBytes = Encoding.BigEndianUnicode.GetBytes(name);
-    var nameLen = (ushort)(nameBytes.Length / 2);
-    var recData = new byte[10 + nameBytes.Length];
-    BinaryPrimitives.WriteInt16BigEndian(recData, 4); // kHFSPlusFileThreadRecord
-    BinaryPrimitives.WriteUInt32BigEndian(recData.AsSpan(4), parentCnid);
-    BinaryPrimitives.WriteUInt16BigEndian(recData.AsSpan(8), nameLen);
-    nameBytes.CopyTo(recData, 10);
-
-    var result = new byte[key.Length + recData.Length];
-    key.CopyTo(result, 0);
-    recData.CopyTo(result, key.Length);
-    return result;
+    var record = new byte[key.Length + 10 + nameBytes.Length];
+    key.CopyTo(record, 0);
+    BinaryPrimitives.WriteInt16BigEndian(record.AsSpan(key.Length), type);
+    BinaryPrimitives.WriteUInt32BigEndian(record.AsSpan(key.Length + 4), parent);
+    BinaryPrimitives.WriteUInt16BigEndian(record.AsSpan(key.Length + 8), (ushort)(nameBytes.Length / 2));
+    nameBytes.CopyTo(record, key.Length + 10);
+    return record;
   }
 
-  private static void WriteForkData(Span<byte> dst, long logicalSize, uint clumpSize, uint startBlock, uint blockCount) {
-    BinaryPrimitives.WriteUInt64BigEndian(dst, (ulong)logicalSize);
-    BinaryPrimitives.WriteUInt32BigEndian(dst[8..], clumpSize);
-    BinaryPrimitives.WriteUInt32BigEndian(dst[12..], blockCount);
-    BinaryPrimitives.WriteUInt32BigEndian(dst[16..], startBlock);
-    BinaryPrimitives.WriteUInt32BigEndian(dst[20..], blockCount);
-  }
-
-  // ── Misc helpers ────────────────────────────────────────────────────────
-
-  /// <summary>
-  /// Compares two HFS+ catalog keys: first by parent CNID, then by UTF-16BE
-  /// binary name comparison.
-  /// </summary>
-  private static int CompareKey(uint pa, ReadOnlySpan<byte> na, uint pb, ReadOnlySpan<byte> nb) {
-    if (pa != pb) return pa.CompareTo(pb);
-    var min = Math.Min(na.Length, nb.Length);
-    for (var i = 0; i < min; i++) {
-      if (na[i] != nb[i]) return na[i].CompareTo(nb[i]);
+  /// <summary>An extents overflow record: key (keyLength 10, forkType, pad, fileID, startBlock), eight extents.</summary>
+  private static byte[] ExtentRecord(byte forkType, uint cnid, uint startBlock, List<(uint StartBlock, uint BlockCount)> extents) {
+    var record = new byte[12 + 64];
+    BinaryPrimitives.WriteUInt16BigEndian(record, 10);
+    record[2] = forkType;
+    BinaryPrimitives.WriteUInt32BigEndian(record.AsSpan(4), cnid);
+    BinaryPrimitives.WriteUInt32BigEndian(record.AsSpan(8), startBlock);
+    for (var k = 0; k < extents.Count; k++) {
+      BinaryPrimitives.WriteUInt32BigEndian(record.AsSpan(12 + k * 8), extents[k].StartBlock);
+      BinaryPrimitives.WriteUInt32BigEndian(record.AsSpan(16 + k * 8), extents[k].BlockCount);
     }
-    return na.Length.CompareTo(nb.Length);
+    return record;
   }
 
-  private static void MirrorAlternateVh(byte[] img) {
-    if (img.Length < 1024) return;
-    var altOff = img.Length - 1024;
-    img.AsSpan(VolumeHeaderOffset, 512).CopyTo(img.AsSpan(altOff, 512));
+  /// <summary>An HFSPlusForkData: logicalSize, clumpSize, totalBlocks and the first eight extents.</summary>
+  private static void WriteFork(Span<byte> fork, long logicalSize, uint clumpSize, List<(uint StartBlock, uint BlockCount)> extents) {
+    fork.Clear();
+    BinaryPrimitives.WriteUInt64BigEndian(fork, (ulong)logicalSize);
+    BinaryPrimitives.WriteUInt32BigEndian(fork[8..], clumpSize);
+    BinaryPrimitives.WriteUInt32BigEndian(fork[12..], (uint)extents.Sum(static e => (long)e.BlockCount));
+    for (var k = 0; k < Math.Min(8, extents.Count); k++) {
+      BinaryPrimitives.WriteUInt32BigEndian(fork[(16 + k * 8)..], extents[k].StartBlock);
+      BinaryPrimitives.WriteUInt32BigEndian(fork[(20 + k * 8)..], extents[k].BlockCount);
+    }
   }
+
+  // ── Stream helpers ──────────────────────────────────────────────────────
 
   private static byte[] ReadAll(Stream image) {
     image.Position = 0;
@@ -714,11 +492,5 @@ public static class HfsPlusModifier {
     image.Position = 0;
     image.Write(data);
     image.SetLength(data.Length);
-  }
-
-  private static uint HfsTimestamp(DateTime dt) {
-    if (dt < HfsEpoch) return 0;
-    var seconds = (dt - HfsEpoch).TotalSeconds;
-    return seconds > uint.MaxValue ? uint.MaxValue : (uint)seconds;
   }
 }

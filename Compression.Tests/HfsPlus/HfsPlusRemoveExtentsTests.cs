@@ -170,40 +170,51 @@ public sealed class HfsPlusRemoveExtentsTests {
     Assert.That(BinaryPrimitives.ReadUInt32BigEndian(after.AsSpan(1024 + 48)), Is.EqualTo(BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(1024 + 48))));
   }
 
-  private static void AssertRefusedAndUnchanged(byte[] image, string name) {
+  [Test, Category("ExceptionalCase")]
+  public void GivenAForkWhoseOverflowRecordsAreMissing_WhenRemoved_ThenItIsRefusedAndTheVolumeIsUnchanged() {
+    var image = FragmentedVolume(out _);
+    // totalBlocks above what the eight descriptors hold, and no overflow record for the rest:
+    // freeing the three blocks found would leave the fourth allocated to nobody.
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(FileRecordOffset(image, "split.bin") + 88 + 12), 4);
     using var ms = new MemoryStream();
     ms.Write(image);
-    Assert.Throws<NotSupportedException>(() => HfsPlusModifier.RemoveFile(ms, name));
+    Assert.Throws<InvalidDataException>(() => HfsPlusModifier.RemoveFile(ms, "split.bin"));
     Assert.That(ms.ToArray(), Is.EqualTo(image));
   }
 
-  [Test, Category("ExceptionalCase")]
-  public void GivenAForkContinuedInTheOverflowFile_WhenRemoved_ThenItIsRefusedAndTheVolumeIsUnchanged() {
-    var image = FragmentedVolume(out _);
-    // totalBlocks above what the eight descriptors hold: the rest would be overflow records.
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(FileRecordOffset(image, "split.bin") + 88 + 12), 4);
-    AssertRefusedAndUnchanged(image, "split.bin");
-  }
-
-  [Test, Category("ExceptionalCase")]
-  public void GivenAFileWithExtendedAttributes_WhenRemoved_ThenItIsRefusedAndTheVolumeIsUnchanged() {
+  [Test, Category("BoundaryCase")]
+  public void GivenAFileFlaggedWithAttributesItDoesNotHave_WhenRemoved_ThenItGoesAndTheBitmapAgrees() {
     var image = FragmentedVolume(out _);
     var record = FileRecordOffset(image, "split.bin");
     BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(record + 2), (ushort)(BinaryPrimitives.ReadUInt16BigEndian(image.AsSpan(record + 2)) | 0x0004));
-    AssertRefusedAndUnchanged(image, "split.bin");
+    var after = Remove(image, "split.bin");
+    AssertBitmapConsistent(after);
+    Assert.That(new HfsPlusReader(new MemoryStream(after)).Entries.Select(e => e.FullPath), Is.EqualTo(new[] { "keep.txt" }));
   }
 
-  [Test, Category("ExceptionalCase")]
-  public void GivenATransparentlyCompressedFile_WhenRemoved_ThenItIsRefusedAndTheVolumeIsUnchanged() {
+  [Test, Category("HappyPath")]
+  public void GivenAnAllocationFileElsewhere_WhenAFileIsRemoved_ThenTheBitmapWhereItLivesIsUpdated() {
     var image = FragmentedVolume(out _);
-    image[FileRecordOffset(image, "split.bin") + 32 + 9] |= 0x20;
-    AssertRefusedAndUnchanged(image, "split.bin");
-  }
+    var vh = image.AsSpan(1024);
+    var totalBlocks = BinaryPrimitives.ReadUInt32BigEndian(vh[44..]);
+    // Move the one-block allocation file to the second-to-last block: copy it, mark that block
+    // used and the old one free, and point the volume header at it.
+    var moved = totalBlocks - 2;
+    image.AsSpan((int)BlockSize, (int)BlockSize).CopyTo(image.AsSpan((int)(moved * BlockSize)));
+    var bitmap = image.AsSpan((int)(moved * BlockSize), (int)BlockSize);
+    bitmap[(int)(moved / 8)] |= (byte)(0x80 >> (int)(moved % 8));
+    bitmap[0] &= unchecked((byte)~0x40);
+    image.AsSpan((int)BlockSize, (int)BlockSize).Clear();
+    BinaryPrimitives.WriteUInt32BigEndian(vh[(112 + 16)..], moved);
+    var freeBefore = BinaryPrimitives.ReadUInt32BigEndian(vh[48..]);
 
-  [Test, Category("ExceptionalCase")]
-  public void GivenAnAllocationFileElsewhere_WhenRemoved_ThenItIsRefusedAndTheVolumeIsUnchanged() {
-    var image = FragmentedVolume(out _);
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(1024 + 112 + 16), 2);
-    AssertRefusedAndUnchanged(image, "split.bin");
+    var after = Remove(image, "split.bin");
+    var bits = after.AsSpan((int)(moved * BlockSize), (int)BlockSize).ToArray();
+    var start = BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(FileRecordOffset(image, "split.bin") + 88 + 16));
+    Assert.Multiple(() => {
+      Assert.That(Enumerable.Range((int)start, 3).All(b => (bits[b / 8] & (0x80 >> (b % 8))) == 0), Is.True, "the file's blocks are free in the moved bitmap");
+      Assert.That(after.AsSpan((int)BlockSize, (int)BlockSize).ToArray(), Is.All.Zero, "the old bitmap block is left alone");
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(after.AsSpan(1024 + 48)), Is.EqualTo(freeBefore + 3));
+    });
   }
 }
