@@ -141,6 +141,15 @@ through the MDFAT to its physical run, then decoding the run framing.
 
 ## Per-cluster compression codec (HiPack / UltraPack)
 
+> **Update (2026-10).** The genuine `MSDSP6.x` family keys each cluster by its
+> 4-byte header: HiPack is `JM-0-1` (the JM bitstream with version byte 1) and
+> UltraPack is `SQ-0-0` (a raw DEFLATE body). Both, and `JM-0-0`, are specified in
+> [`docs/CVF-CODECS-ON-DISK.md`](../../../docs/CVF-CODECS-ON-DISK.md) and decoded by
+> `CvfLzCodec`, pinned to 32 KiB clusters the dmsdos compressors wrote
+> (`CvfReferenceVectorTests`). What follows describes the legacy `MS_DSP3`
+> self-format and its `MsLzh` codec only. Fragmented DriveSpace 3 clusters are
+> still not read.
+
 DriveSpace 3 replaced the DOS-6.x DS-LZ77 codec with an LZ77 + Huffman
 ("HiPack" / "UltraPack") scheme. **None of the three locally available oracle
 images (`drvspace3.cvf`, `drvspace62.cvf`, `dblspace60.cvf`) contain a single
