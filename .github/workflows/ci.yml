@@ -168,6 +168,9 @@ jobs:
           # dar owns the DAR format: the DAR writer only advertises CanCreate because dar -t and
           # dar -x accept what it writes, which the gate below checks on every run.
           sudo apt-get install -y dar
+          # reiser4progs owns Reiser4: fsck.reiser4 and debugfs.reiser4 judge every volume the
+          # Reiser4 writer creates or edits, in the gate below.
+          sudo apt-get install -y reiser4progs
           sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
           sudo modprobe gfs2 || true
 
@@ -215,6 +218,19 @@ jobs:
           --configuration Release --no-build
           --filter "FullyQualifiedName~Compression.Tests.Dar.DarExternalConformanceTests"
           --logger "trx;LogFileName=dar-oracle-tests.trx"
+
+      # Hard gate: reiser4progs judges what the Reiser4 writer creates and edits. fsck.reiser4
+      # --check must call every volume consistent, debugfs.reiser4 must resolve each path to the
+      # bytes we wrote, and volumes mkfs.reiser4 made are edited without losing their identity.
+      - name: Reiser4 oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_REISER4PROGS: "1"
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "FullyQualifiedName~Compression.Tests.Reiser4.Reiser4ProfileExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4MutationExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4NativeTreeExternalTests"
+          --logger "trx;LogFileName=reiser4-oracle-tests.trx"
 
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are

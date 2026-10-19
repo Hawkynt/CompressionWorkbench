@@ -123,4 +123,7 @@ the format string.
 | a file carrying a large-time extension (mask bit 2) through add and defrag | `fsck`; `debugfs -i` | consistent; `sdext_lt` still present |
 
 `Reiser4ProfileExternalTests` and `Reiser4MutationExternalTests` replay these
-checks wherever reiser4progs is installed.
+checks wherever reiser4progs is installed. The Linux CI leg installs
+reiser4progs and runs them as the hard "Reiser4 oracle" gate, with
+`CWB_REQUIRE_REISER4PROGS=1` so a missing tool fails the gate instead of
+skipping it.

@@ -12,6 +12,7 @@ public sealed class Reiser4NativeTreeExternalTests {
   public void DebugfsReiser4_SeesFileWrittenIntoNativeTree() {
     if (!OperatingSystem.IsLinux())
       Assert.Ignore("debugfs.reiser4 oracle is exercised on Linux runners.");
+    Reiser4Oracle.Require("debugfs.reiser4");
 
     const string fileName = "native-visible.bin";
     var payload = Enumerable.Range(0, 7_000).Select(static i => (byte)(i * 29)).ToArray();
@@ -34,7 +35,7 @@ public sealed class Reiser4NativeTreeExternalTests {
         start.ArgumentList.Add(path);
         process = Process.Start(start);
       } catch (Win32Exception) {
-        Assert.Ignore("debugfs.reiser4 is not installed on this runner.");
+        Reiser4Oracle.Missing("debugfs.reiser4 is not installed on this runner.");
         return;
       }
 
