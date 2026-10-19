@@ -610,7 +610,7 @@ format,YodaCrypter,Yoda's Crypter (Win32 PE),Archive,,,Y,Y,,
 format,Ypf,YukaScript YPF,Archive,,.ypf,Y,Y,Y,Y
 format,Zap,ZAP (Amiga Disk Archiver),Archive,,.zap,Y,Y,Y,
 format,Zarr,Zarr array metadata,Archive,,,Y,Y,,
-format,Zfs,ZFS,Archive,Y,.zfs;.zpool,Y,Y,Y,Y
+format,Zfs,ZFS,Archive,Y,.zfs;.zpool,Y,Y,,
 format,Zip,ZIP,Archive,,.zip;.zipx,Y,Y,Y,Y
 format,Zlib,Zlib,Stream,,.zlib,,Y,Y,
 format,Zling,Zling,Stream,,.zling,,Y,Y,
@@ -743,6 +743,7 @@ block,bb:BB_Xpress,XPRESS Huffman,Dictionary,,,,Y,Y,
 block,bb:BB_Xz,XZ/LZMA2,Dictionary,,,,Y,Y,
 block,bb:BB_Yay0,Yay0,Dictionary,,,,Y,Y,
 block,bb:BB_Yaz0,Yaz0,Dictionary,,,,Y,Y,
+block,bb:BB_Zle,ZLE,Transform,,,,Y,Y,
 block,bb:BB_Zling,Zling,Dictionary,,,,Y,Y,
 block,bb:BB_Zopfli,Zopfli,Dictionary,,,,Y,Y,
 block,bb:BB_Zpaq,ZPAQ,ContextMixing,,,,Y,Y,
