@@ -79,6 +79,10 @@
     <EmbeddedResource Include="Csc\ReferenceVectors\*.csc">
       <LogicalName>CscVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- CVF cluster payloads the dmsdos compressors wrote; see Cvf/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Cvf\ReferenceVectors\*.bin">
+      <LogicalName>CvfVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- AFF4 logical images from pyaff4 (its reference image dream.aff4 and two it wrote) plus pyaff4's
          own read-back listing; see Aff4/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Aff4\ReferenceVectors\*.aff4;Aff4\ReferenceVectors\*.tsv">

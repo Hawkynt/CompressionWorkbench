@@ -2091,7 +2091,9 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data, LzsCompressionLevel level)` | Compresses `data` with the requested encoder effort. |
+| `DecodeStream` | `static int DecodeStream(ReadOnlySpan<byte> source, Span<byte> destination, out int bytesConsumed)` | Decodes a bare RFC 1974 token stream (no size header) into `destination` up to and including its end marker. |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `EncodeStream` | `static void EncodeStream(ReadOnlySpan<byte> data, Stream output, LzsCompressionLevel level = 1)` | Writes the bare RFC 1974 token stream for `data` — no size header — terminated by the end marker and zero-padded to the next byte boundary. |
 
 #### `LzsCompressionLevel`
 
@@ -5612,7 +5614,7 @@ Implements `IEquatable<UnpackResult>`.
 
 ### Namespace `Compression.Core.FileSystems.Cvf`
 
-[`CvfLzCodec`](#cvflzcodec) · [`CvfLzMethod`](#cvflzmethod) · [`Sd4Codec`](#sd4codec)
+[`CvfLzCodec`](#cvflzcodec) · [`CvfLzMethod`](#cvflzmethod) · [`Sd3Codec`](#sd3codec) · [`Sd4Codec`](#sd4codec)
 
 #### `CvfLzCodec`
 
@@ -5624,12 +5626,13 @@ Genuine DoubleSpace/DriveSpace per-cluster compression codec (DS-0-x and JM-0-x)
 | `JM_0_0` | `const uint JM_0_0` |  |
 | `SQ_0_0` | `const uint SQ_0_0` |  |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Compresses one cluster. Returns the payload (4-byte method header + token stream, padded to a 2-byte word), or `null` if it would not be smaller than the raw cluster (caller stores raw instead). |
+| `DecompressStacker` | `static byte[] DecompressStacker(byte[] payload, int inLen, int outLen)` | Decompresses a Stacker cluster payload to `outLen` bytes. Stacker records no method per cluster; the payload's first little-endian word selects it — `0x0081` SD-4, `0x5344` ("DS") the DoubleSpace codec, anything else SD-3, whose first token is always a literal and so can never begin with either word. |
 | `Decompress` | `static byte[] Decompress(byte[] payload, int inLen, int outLen)` | Decompresses a cluster payload to exactly `outLen` bytes. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Encodes a cluster with the given method, always returning the payload (4-byte header + token stream), or `null` for `Stored` / unsupported methods. The caller decides whether the result fits the cluster's sector budget. |
 
 #### `CvfLzMethod`
 
-Compression methods for the MS-DOS DoubleSpace/DriveSpace CVF cluster codec family, byte-compatible with the dmsdos driver's `ds_dec`/`jm_dec`.
+Per-cluster compression methods of the DoubleSpace/DriveSpace/Stacker CVF family (see `docs/CVF-CODECS-ON-DISK.md`). `Sd3` and `Sd4` are the Stacker 3 and Stacker 4 codecs.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
@@ -5639,14 +5642,24 @@ Compression methods for the MS-DOS DoubleSpace/DriveSpace CVF cluster codec fami
 | `Auto` | `3` |  |
 | `Sq` | `4` |  |
 | `Sd4` | `5` |  |
+| `Sd3` | `6` |  |
 
-#### `Sd4Codec`
+#### `Sd3Codec`
 
-Genuine Stacker 4 (SD-4, cluster header `0x0081`) per-cluster codec, byte-compatible with the dmsdos `sd4_decomp` decoder. SD-4 is a bespoke dynamic-Huffman format: a helper Huffman table (table1) encodes the 0x150 code-lengths of the main table (table2), which then Huffman-codes the data. We emit an all-literals SD-4 stream — table2 is a 256-symbol Huffman over the cluster's byte frequencies (genuine entropy compression), with no LZ reps/prog tokens; the decoder terminates on output-full. The bitstream is MSB-first packed into little-endian 16-bit words; Huffman codes are canonical (first-code-per-length, not bit-reversed) exactly as `sd4b_rdhufi` builds them.
+Stacker 3 ("SD-3") per-cluster codec, as specified in `docs/CVF-CODECS-ON-DISK.md`: a bare Stac LZS token stream (RFC 1974, MSB-first bytes) with no header, closed by the LZS end marker, zero-padded to a byte boundary and followed by one check byte — `0xFF` XOR every decoded byte. The token grammar is the `LzsBuildingBlock` one; this type adds only the framing.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decode` | `static byte[] Decode(byte[] payload, int inLen, int outLen)` |  |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> payload, int outLen)` | Decodes one cluster payload into a buffer of `outLen` bytes. A stream that ends before the cluster is full leaves the tail zero, as the Stacker driver does for a file's last cluster. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes one cluster: LZS token stream, end marker, byte alignment, check byte. |
+
+#### `Sd4Codec`
+
+Genuine Stacker 4 (SD-4, cluster header `0x0081`) per-cluster codec, as specified in `docs/CVF-CODECS-ON-DISK.md`. SD-4 is Huffman-coded LZ77: a helper code (22 symbols: lengths 0..15 and six run tokens) transmits the 0x150 code lengths of the main code, whose symbols are the 256 literals, 63 short-match tokens, 16 long-match tokens and the end token. `Decode` reads the complete format — run tokens, short and long matches with length extensions — and is pinned to streams the dmsdos SD-4 encoder wrote. `Encode` emits an all-literals stream (main code over the cluster's byte frequencies, no match tokens), which the dmsdos driver reads back byte-exact. The bitstream is MSB-first within little-endian 16-bit words; codes are canonical and MSB-first.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(byte[] payload, int inLen, int outLen)` | Decodes one SD-4 cluster payload into `outLen` bytes. A stream that ends (end token) before the cluster is full leaves the tail zero. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` |  |
 
 ### Namespace `Compression.Core.Image`
