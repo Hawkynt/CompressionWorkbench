@@ -27078,6 +27078,82 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.SeqBox`
+
+[`SeqBoxContainer`](#seqboxcontainer) · [`SeqBoxContainer.Parsed`](#seqboxcontainerparsed) · [`SeqBoxFormatDescriptor`](#seqboxformatdescriptor) · [`SeqBoxMetadata`](#seqboxmetadata)
+
+#### `SeqBoxContainer`
+
+SeqBox (SBX) single-file container: the file is cut into fixed-size blocks, each with a 16-byte header (`"SBx"`, version, CRC-16, 6-byte file UID, 32-bit sequence number, all big-endian) so the file can be recovered from a damaged or unindexed disk by scanning for blocks. Block 0 optionally carries TLV metadata; data blocks start at sequence 1, and the last one is padded with 0x1A. The CRC is CRC-16/CCITT (polynomial 0x1021, MSB first) seeded with the version number and taken over everything after the CRC field.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HeaderSize` | `const int HeaderSize` | Size of every block header. |
+| `Signature` | `static ReadOnlySpan<byte> Signature { get; }` | The three signature bytes every block starts with. |
+| `BlockSize` | `static int BlockSize(int version)` | Block size of a SeqBox version, or 0 for an unknown version. |
+| `IsSeqBox` | `static bool IsSeqBox(ReadOnlySpan<byte> head)` | Whether the stream starts with a valid SeqBox block (signature, known version, CRC). |
+| `Read` | `static Parsed Read(Stream stream)` | Parses and verifies a whole container. Every block must carry the signature, the first block's version and UID and a valid CRC; data blocks must be numbered 1, 2, 3, … in file order. With FSZ the payload is trimmed to it; with an HSH SHA-256 the payload is verified. Without FSZ the trailing 0x1A padding cannot be told from data and is kept, as sbxdec does. |
+| `Write` | `static void Write(Stream output, ReadOnlySpan<byte> data, string fileName, int version = 1, byte[] uid = null, DateTimeOffset? fileTime = null, string sbxName = null, DateTimeOffset? sbxTime = null, bool withMetadata = true)` | Writes a container the way sbxenc does: block 0 with FNM, SNM, FSZ, FDT, SDT and a SHA-256 HSH (unless `withMetadata` is false), then the data in sequence-numbered blocks, the last padded with 0x1A. An empty file is the metadata block alone. |
+
+#### `SeqBoxContainer.Parsed`
+
+A parsed container: version, UID, metadata (if block 0 is present) and the payload.
+
+Implements `IEquatable<Parsed>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Parsed` | `Parsed(int Version, byte[] Uid, SeqBoxMetadata Metadata, int DataBlocks, long PayloadLength, byte[] Data)` | A parsed container: version, UID, metadata (if block 0 is present) and the payload. |
+| `DataBlocks` | `int DataBlocks { get; init; }` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Metadata` | `SeqBoxMetadata Metadata { get; init; }` |  |
+| `PayloadLength` | `long PayloadLength { get; init; }` |  |
+| `Uid` | `byte[] Uid { get; init; }` |  |
+| `Version` | `int Version { get; init; }` |  |
+
+#### `SeqBoxFormatDescriptor`
+
+SeqBox (.sbx), Marco Pontello's recoverable single-file container. Lists as one entry named by the FNM metadata; creates the sbxenc layout (version 1, 512-byte blocks, full metadata).
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SeqBoxFormatDescriptor` | `SeqBoxFormatDescriptor()` |  |
+| `UnnamedEntry` | `const string UnnamedEntry` | Entry name used when the container has no metadata block (sbxdec appends ".out"). |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `SeqBoxMetadata`
+
+Metadata carried by a SeqBox block 0 (all fields optional).
+
+Implements `IEquatable<SeqBoxMetadata>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SeqBoxMetadata` | `SeqBoxMetadata(string FileName = null, string SbxName = null, long? FileSize = null, long? FileTime = null, long? SbxTime = null, byte[] Hash = null)` | Metadata carried by a SeqBox block 0 (all fields optional). |
+| `FileName` | `string FileName { get; init; }` | FNM: the encoded file's name (UTF-8). |
+| `FileSize` | `long? FileSize { get; init; }` | FSZ: the encoded file's size; trims the last block's 0x1A padding. |
+| `FileTime` | `long? FileTime { get; init; }` | FDT: the encoded file's modification time, seconds since the Unix epoch. |
+| `Hash` | `byte[] Hash { get; init; }` | HSH: a multihash; `0x12 0x20` + 32 bytes is SHA-256. |
+| `SbxName` | `string SbxName { get; init; }` | SNM: the container's own file name (UTF-8). |
+| `SbxTime` | `long? SbxTime { get; init; }` | SDT: when the container was made, seconds since the Unix epoch. |
+
 ### Namespace `FileFormat.SevenZip`
 
 [`SevenZipCodec`](#sevenzipcodec) · [`SevenZipEntry`](#sevenzipentry) · [`SevenZipFilter`](#sevenzipfilter) · [`SevenZipFormatDescriptor`](#sevenzipformatdescriptor) · [`SevenZipInPlaceAdder`](#sevenzipinplaceadder) · [`SevenZipInPlaceRemover`](#sevenzipinplaceremover) · [`SevenZipLayoutMap`](#sevenziplayoutmap) · [`SevenZipReader`](#sevenzipreader) · [`SevenZipWriter`](#sevenzipwriter) · [`SevenZipWriter.BlockDescriptor`](#sevenzipwriterblockdescriptor) · [`SolidBlockOptimizer`](#solidblockoptimizer) · [`SolidBlockOptimizer.DetailedProgress`](#solidblockoptimizerdetailedprogress) · [`SolidBlockOptimizer.OptimizeResult`](#solidblockoptimizeroptimizeresult) · [`SolidBlockOptimizer.ProgressCallback`](#solidblockoptimizerprogresscallback) · [`SolidBlockOptimizer.TrialResult`](#solidblockoptimizertrialresult) · [`SolidBlockPlanner`](#solidblockplanner) · [`SolidBlockPlanner.SolidBlock`](#solidblockplannersolidblock)
