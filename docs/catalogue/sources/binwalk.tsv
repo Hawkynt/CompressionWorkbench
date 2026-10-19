@@ -1,0 +1,97 @@
+name	aliases_extensions	kind	rw	evidence
+AES tables	aes-sbox	encryption	D	signatures/aes.rs
+Android boot image	bootimg	firmware	D	signatures/android_bootimg.rs
+Android sparse image	simg;sparse	disk-image	R	signatures/androidsparse.rs + extractors/androidsparse.rs
+APFS	apple file system	filesystem	R	signatures/apfs.rs + extractors/tsk.rs
+Arcadyan obfuscated LZMA		compression	R	signatures/arcadyan.rs + extractors/arcadyan.rs
+ARJ	.arj	archive	D	signatures/arj.rs
+Autel obfuscated firmware		firmware	R	signatures/autel.rs + extractors/autel.rs
+BIN firmware header		firmware	D	signatures/binhdr.rs
+BMP	.bmp	media	R	signatures/bmp.rs + extractors/bmp.rs
+Btrfs	btrfs	filesystem	R	signatures/btrfs.rs + extractors/tsk.rs
+bzip2	.bz2	compression	R	signatures/bzip2.rs + extractors/bzip2.rs
+Cabinet	.cab;MSCF	archive	R	signatures/cab.rs + extractors/cab.rs
+CFE bootloader		firmware	D	signatures/cfe.rs
+CHK firmware header		firmware	D	signatures/chk.rs
+compress'd (LZW)	.Z	compression	D	signatures/compressd.rs
+Copyright text		other	D	signatures/copyright.rs
+CPIO	.cpio	archive	D	signatures/cpio.rs
+CramFS	cramfs	filesystem	D	signatures/cramfs.rs
+CSman DAT		firmware	R	signatures/csman.rs + extractors/csman.rs
+Dahua ZIP	dahua	archive	R	signatures/dahua_zip.rs + extractors/dahua_zip.rs
+Debian package	.deb	archive	D	signatures/deb.rs
+DKBS firmware header		firmware	D	signatures/dkbs.rs
+D-Link TLV firmware		firmware	D	signatures/dlink_tlv.rs
+DLK encrypted firmware	DLKE	encryption	D	signatures/dlke.rs
+DLOB firmware header	DLOB	firmware	D	signatures/dlob.rs
+Apple DMG	.dmg	disk-image	R	signatures/dmg.rs + extractors/dmg.rs
+DMS firmware image		firmware	D	signatures/dms.rs
+DPAPI blob		encryption	D	signatures/dpapi.rs
+Device tree blob	DTB;FDT	firmware	R	signatures/dtb.rs + extractors/dtb.rs
+DirectX shader bytecode	DXBC	executable	R	signatures/dxbc.rs + extractors/dxbc.rs
+eCos kernel exception handler		firmware	D	signatures/ecos.rs
+EFI GPT	GPT	partition-table	D	signatures/efigpt.rs
+ELF	.elf	executable	D	signatures/elf.rs
+Known encrypted firmware		encryption	R	signatures/encfw.rs + extractors/encfw.rs
+D-Link encrypted image		encryption	D	signatures/encrpted_img.rs
+ext2/3/4	ext	filesystem	R	signatures/ext.rs + extractors/tsk.rs
+FAT	FAT12;FAT16;FAT32	filesystem	R	signatures/fat.rs + extractors/tsk.rs
+GIF	.gif	media	R	signatures/gif.rs + extractors/gif.rs
+GPG signed file	gpg;pgp	encryption	R	signatures/gpg.rs + extractors/gpg.rs
+gzip	.gz	compression	R	signatures/gzip.rs + extractors/gzip.rs
+Hash constants (CRC32/SHA256/MD5)		other	D	signatures/hashes.rs
+ISO 9660	.iso	disk-image	R	signatures/iso9660.rs + extractors/iso9660.rs
+JBOOT firmware header	STAG;SCH2	firmware	R	signatures/jboot.rs + extractors/jboot.rs
+JFFS2	jffs2	filesystem	R	signatures/jffs2.rs + extractors/jffs2.rs
+JPEG	.jpg;.jpeg	media	R	signatures/jpeg.rs + extractors/jpeg.rs
+Linux kernel image	zImage;Image;ARM64 boot	firmware	R	signatures/linux.rs + extractors/linux.rs
+LogFS	logfs	filesystem	D	signatures/logfs.rs
+LUKS	luks	encryption	D	signatures/luks.rs
+LZ4	.lz4	compression	R	signatures/lz4.rs + extractors/lz4.rs
+LZFSE	lzfse	compression	R	signatures/lzfse.rs + extractors/lzfse.rs
+LZMA	.lzma	compression	R	signatures/lzma.rs + extractors/lzma.rs
+LZO	.lzo	compression	R	signatures/lzop.rs + extractors/lzop.rs
+Matter OTA firmware	matter	firmware	R	signatures/matter_ota.rs + extractors/matter_ota.rs
+MBR partition table	MBR	partition-table	R	signatures/mbr.rs + extractors/mbr.rs
+D-Link MH01 firmware		firmware	R	signatures/mh01.rs + extractors/mh01.rs
+NTFS	ntfs	filesystem	R	signatures/ntfs.rs + extractors/tsk.rs
+OpenSSL encrypted data	openssl enc	encryption	D	signatures/openssl.rs
+PackImg firmware header		firmware	D	signatures/packimg.rs
+Pcap-NG	.pcapng	other	R	signatures/pcap.rs + extractors/pcap.rs
+Intel PCH ROM	pchrom;IFD	firmware	D	signatures/pchrom.rs
+PDF	.pdf	document	D	signatures/pdf.rs
+Windows PE	.exe;.dll	executable	D	signatures/pe.rs
+PEM keys and certificates	.pem	encryption	R	signatures/pem.rs + extractors/pem.rs
+HP PJL	PJL	other	D	signatures/pjl.rs
+PKCS DER hash	DER	encryption	D	signatures/pkcs_der.rs
+PNG	.png	media	R	signatures/png.rs + extractors/png.rs
+QCOW	qcow;qcow2	disk-image	D	signatures/qcow.rs
+QNX IFS	dumpifs	filesystem	R	signatures/qnx.rs + extractors/dumpifs.rs
+RAR	.rar	archive	R	signatures/rar.rs + extractors/rar.rs
+RIFF	WAV;AVI;WEBP	media	R	signatures/riff.rs + extractors/riff.rs
+RomFS	romfs	filesystem	R	signatures/romfs.rs + extractors/romfs.rs
+RSA session key		encryption	D	signatures/rsa.rs
+RTK firmware header		firmware	D	signatures/rtk.rs
+SEAMA firmware header	seama	firmware	D	signatures/seama.rs
+7-Zip	.7z	archive	R	signatures/sevenzip.rs + extractors/sevenzip.rs
+SHRS encrypted firmware	shrs	encryption	D	signatures/shrs.rs
+SquashFS	squashfs	filesystem	R	signatures/squashfs.rs + extractors/squashfs.rs
+Motorola S-record	srec	firmware	R	signatures/srec.rs + extractors/srec.rs
+SVG	.svg	media	R	signatures/svg.rs + extractors/svg.rs
+tar	.tar	archive	R	signatures/tarball.rs + extractors/tarball.rs
+TP-Link firmware header	tplink	firmware	D	signatures/tplink.rs
+TRX	trx	firmware	R	signatures/trx.rs + extractors/trx.rs
+UBI / UBIFS	ubi;ubifs	filesystem	R	signatures/ubi.rs + extractors/ubi.rs
+U-Boot version string	uboot	firmware	D	signatures/uboot.rs
+UEFI PI firmware volume / capsule	uefi	firmware	R	signatures/uefi.rs + extractors/uefi.rs
+uImage	U-Boot legacy image	firmware	R	signatures/uimage.rs + extractors/uimage.rs
+VxWorks	wind kernel;symbol table	firmware	R	signatures/vxworks.rs + extractors/vxworks.rs
+Windows CE binary image	wince	firmware	R	signatures/wince.rs + extractors/wince.rs
+XZ	.xz	compression	R	signatures/xz.rs + via sevenzip extractor
+YAFFS2	yaffs	filesystem	R	signatures/yaffs.rs + extractors/yaffs2.rs
+ZIP	.zip	archive	D	signatures/zip.rs
+zlib	zlib	compression	R	signatures/zlib.rs + extractors/zlib.rs
+Zstandard	.zst	compression	R	signatures/zstd.rs + extractors/zstd.rs
+DEFLATE raw stream	inflate	compression	R	extractors/inflate.rs
+Byte-swapped firmware	swapped	firmware	R	extractors/swapped.rs
+Sleuth Kit filesystem extraction	tsk	filesystem	R	extractors/tsk.rs

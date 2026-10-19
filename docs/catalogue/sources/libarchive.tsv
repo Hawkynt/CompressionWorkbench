@@ -1,0 +1,40 @@
+name	aliases_extensions	kind	rw	evidence
+tar (ustar)	.tar;POSIX ustar	archive	RW	archive_read_support_format_tar.c; archive_write_set_format_ustar.c
+tar (pax)	.tar;POSIX pax;pax restricted	archive	RW	archive_write_set_format_pax.c (pax and pax_restricted)
+tar (gnutar)	.tar;GNU tar;old GNU	archive	RW	archive_write_set_format_gnutar.c
+tar (v7)	.tar;old V7 tar	archive	RW	archive_write_set_format_v7tar.c
+tar (Solaris extended)	.tar;Solaris 9 extended tar	archive	R	archive_read_support_format_tar.c
+cpio (odc)	.cpio;POSIX octet-oriented	archive	RW	archive_write_set_format_cpio_odc.c
+cpio (newc)	.cpio;SVR4 ASCII;crc	archive	RW	archive_write_set_format_cpio_newc.c
+cpio (bin)	.cpio;binary little/big endian	archive	RW	archive_write_set_format_cpio_binary.c (read: both byte orders)
+cpio (pwb)	.cpio;PWB	archive	RW	archive_write_set_format_cpio_binary.c (pwb); archive_read_support_format_cpio.c
+shar	.shar;.sh;shell archive	archive	W	archive_write_set_format_shar.c
+ZIP	.zip;.zipx;ZIPX	archive	RW	archive_read_support_format_zip.c; archive_write_set_format_zip.c
+ar (GNU/BSD)	.a;.ar;.lib	archive	RW	archive_read_support_format_ar.c; archive_write_set_format_ar.c
+mtree	.mtree;.spec	other	RW	archive_read_support_format_mtree.c; archive_write_set_format_mtree.c
+7-Zip	.7z	archive	RW	archive_read_support_format_7zip.c; archive_write_set_format_7zip.c
+ISO9660	.iso;Joliet;Rock Ridge;El Torito	filesystem	RW	archive_read_support_format_iso9660.c; archive_write_set_format_iso9660.c
+WARC	.warc	archive	RW	archive_read_support_format_warc.c; archive_write_set_format_warc.c
+XAR	.xar;.pkg;.xip	archive	RW	archive_read_support_format_xar.c; archive_write_set_format_xar.c
+CAB	.cab;Microsoft Cabinet	archive	R	archive_read_support_format_cab.c
+LHA	.lzh;.lha	archive	R	archive_read_support_format_lha.c
+RAR	.rar;RAR 3.x/4.x	archive	R	archive_read_support_format_rar.c
+RAR5	.rar;RAR 5.0	archive	R	archive_read_support_format_rar5.c
+raw	raw data stream as single entry	other	RW	archive_read_support_format_raw.c; archive_write_set_format_raw.c
+empty	zero-length input	other	R	archive_read_support_format_empty.c
+gzip	.gz;.tgz	compression	RW	archive_read_support_filter_gzip.c; archive_write_add_filter_gzip.c
+bzip2	.bz2;.tbz	compression	RW	archive_read_support_filter_bzip2.c; archive_write_add_filter_bzip2.c
+compress (.Z)	.Z;.taz;LZW	compression	RW	archive_read_support_filter_compress.c; archive_write_add_filter_compress.c
+lzma	.lzma;lzma_alone	compression	RW	archive_read_support_filter_xz.c; archive_write_add_filter_xz.c
+lzip	.lz	compression	RW	archive_read_support_filter_xz.c (lzip reader); archive_write_add_filter_lzip via xz.c
+xz	.xz;.txz	compression	RW	archive_read_support_filter_xz.c; archive_write_add_filter_xz.c
+lz4	.lz4	compression	RW	archive_read_support_filter_lz4.c; archive_write_add_filter_lz4.c
+lzop	.lzo	compression	RW	archive_read_support_filter_lzop.c; archive_write_add_filter_lzop.c
+zstd	.zst;.tzst	compression	RW	archive_read_support_filter_zstd.c; archive_write_add_filter_zstd.c
+lrzip	.lrz	compression	RW	archive_read_support_filter_lrzip.c; archive_write_add_filter_lrzip.c (external lrzip)
+grzip	.grz	compression	RW	archive_read_support_filter_grzip.c; archive_write_add_filter_grzip.c (external grzip)
+uuencode	.uu;.uue	encoding	RW	archive_read_support_filter_uu.c; archive_write_add_filter_uuencode.c
+b64encode	.b64;base64	encoding	W	archive_write_add_filter_b64encode.c
+rpm wrapper	.rpm (payload extraction)	installer	R	archive_read_support_filter_rpm.c
+external program	user-supplied command filter	filter	RW	archive_read_support_filter_program.c; archive_write_add_filter_program.c
+none	passthrough	filter	RW	archive_read_support_filter_none.c; archive_write_add_filter_none.c

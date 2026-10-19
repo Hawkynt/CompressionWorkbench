@@ -1,0 +1,127 @@
+name	aliases_extensions	kind	rw	evidence
+ZIP	zip;z01;exe(SFX)	archive	R	XADZipParser.m, XADZipSFXParsers.m
+ZIPX (WinZip)	zipx	archive	R	XADZipParser.m; theunarchiver.com list
+RAR	rar;r00	archive	R	XADRARParser.m
+RAR 5	rar	archive	R	XADRAR5Parser.m
+7-Zip	7z	archive	R	XAD7ZipParser.m
+Tar	tar;tgz;tbz	archive	R	XADTarParser.m
+Gzip	gz;tgz	compression	R	XADGzipParser.m
+Bzip2	bz2;tbz2	compression	R	XADBzip2Parser.m
+LZMA-alone	lzma	compression	R	XADLZMAAloneParser.m
+XZ	xz;txz	compression	R	XADXZParser.m
+CAB (Microsoft Cabinet)	cab;exe	archive	R	XADCABParser.m
+MSI / CFBF (OLE2 compound file)	msi;doc;ppt;xls	document	R	XADCFBFParser.m
+NSIS installer	exe	installer	R	XADNSISParser.m
+ISO 9660 / disc images	iso;bin;mdf;nrg;cdi	disk-image	R	XADISO9660Parser.m
+Split file	001;002	other	R	XADSplitFileParser.m
+StuffIt	sit;sea	archive	R	XADStuffItParser.m
+StuffIt 5	sit	archive	R	XADStuffIt5Parser.m
+StuffIt X	sitx	archive	R	XADStuffItXParser.m
+StuffIt split segments		other	R	XADStuffItSplitParser.m
+DiskDoubler	dd	archive	R	XADDiskDoublerParser.m
+Compact Pro	cpt	archive	R	XADCompactProParser.m
+PackIt	pit	archive	R	XADPackItParser.m
+Cpio	cpio	archive	R	XADCpioParser.m
+Compress (.Z)	Z	compression	R	XADCompressParser.m
+ARJ	arj	archive	R	XADARJParser.m
+ARC	arc	archive	R	XADARCParser.m
+PAK	pak	archive	R	XADARCParser.m; theunarchiver.com list
+ACE	ace	archive	R	libxad/clients/Ace.c
+ZOO	zoo	archive	R	XADZooParser.m
+LZH / LHA	lzh;lha	archive	R	XADLZHParser.m; libxad LhA.c
+LZH SFX	exe	archive	R	XADLZHSFXParsers.m
+ZIP SFX	exe	archive	R	XADZipSFXParsers.m
+LZX (Amiga)	lzx	archive	R	XADLZXParser.m
+PowerPacker	pp	compression	R	XADPowerPackerParser.m
+LBR	lbr	archive	R	XADLBRParser.m
+Squeeze	sq;qqq	compression	R	XADSqueezeParser.m
+Crunch (CP/M)	cru;crunch	compression	R	XADCrunchParser.m
+ADF (Amiga disk)	adf	filesystem	R	libxad FS_Amiga.c; theunarchiver.com list
+DMS (Disk Masher)	dms	disk-image	R	libxad DMS.c
+XAR	xar;pkg	archive	R	XADXARParser.m
+RPM	rpm	archive	R	XADRPMParser.m
+Deb / Ar	deb;ar;a	archive	R	XADArParser.m
+ALZip	alz	archive	R	XADALZipParser.m
+Egg (ALZip)	egg	archive	R	XADALZipParser.m
+WARC	warc	archive	R	XADWARCParser.m
+NSA	nsa	game	R	XADNSAParser.m
+SAR	sar	game	R	XADSARParser.m
+NDS ROM	nds	game	R	XADNDSParser.m
+SWF	swf	document	R	XADSWFParser.m, XADSWFTagParser.m
+PDF (bitmap images)	pdf	document	R	XADPDFParser.m
+PPMd (standalone)	pmd	compression	R	XADPPMdParser.m
+Now Compress	now	archive	R	XADNowCompressParser.m
+AppleSingle/AppleDouble	as;adouble	encoding	R	XADAppleSingleParser.m
+MacBinary	bin;macbin	encoding	R	XADMacBinaryParser.m
+BinHex	hqx	encoding	R	XADBinHexParser.m
+Mac archive wrapper (resource forks)		other	R	XADMacArchiveParser.m
+libxad bridge (Amiga/misc clients)		other	R	XADLibXADParser.m
+AMPK	ampk	archive	R	libxad AMPK.c
+CrunchDisk		disk-image	R	libxad CrunchDisk.c
+DCS	dcs	compression	R	libxad DCS.c
+FAT filesystem	img;ima	filesystem	R	libxad FS_FAT.c
+SOS filesystem		filesystem	R	libxad FS_SOS.c
+IFF-CDAF	cdaf	disk-image	R	libxad IFF-CDAF.c
+LhF	lhf	archive	R	libxad LhF.c
+MDC	mdc	archive	R	libxad MDC.c
+MXM-SimpleArc		archive	R	libxad MXM-SimpleArc.c
+PackDev		disk-image	R	libxad PackDev.c
+PackDisk		disk-image	R	libxad PackDisk.c
+SuperDuper3		disk-image	R	libxad SuperDuper3.c
+Zoom		disk-image	R	libxad Zoom.c
+xDisk		disk-image	R	libxad xDisk.c
+xMash		compression	R	libxad xMash.c
+XPK	xpk	compression	R	libxad xadIO_XPK.c
+RAR 1.3/1.5/2.0/3.0/5.0 methods		codec	R	XADRAR13/15/20/30/50 Handle.m
+LZW		codec	R	LZW.c; XADCompressHandle.m
+LZSS		codec	R	LZSS.c; XADLZSSHandle.m; XADFastLZSSHandle.m
+BWT		codec	R	BWT.c
+Implode (ZIP)		codec	R	XADZipImplodeHandle.m
+Shrink (ZIP)		codec	R	XADZipShrinkHandle.m
+Deflate / Deflate64		codec	R	XADDeflateHandle.m
+MSZIP (CAB)		codec	R	XADMSZipHandle.m
+Quantum		codec	R	XADQuantumHandle.m
+LZX (Microsoft)		codec	R	XADMSLZXHandle.m
+LZX (Amiga) codec		codec	R	XADLZXHandle.m
+PPMd variant H/I/7		codec	R	XADPPMdHandles.m
+LZMA / LZMA2		codec	R	XADLZMAHandle.m, XADLZMA2Handle.m
+XZ codec		codec	R	XADXZHandle.m
+StuffIt Arsenic		codec	R	XADStuffItArsenicHandle.m
+StuffIt method 13		codec	R	XADStuffIt13Handle.m
+StuffIt Huffman		codec	R	XADStuffItHuffmanHandle.m
+StuffIt old methods (RLE90, LZW)		codec	R	XADStuffItOldHandles.m
+StuffIt DES		codec	R	XADStuffItDESHandle.m
+StuffIt X Blend		codec	R	XADStuffItXBlendHandle.m
+StuffIt X Cyanide		codec	R	XADStuffItXCyanideHandle.m
+StuffIt X Darkhorse		codec	R	XADStuffItXDarkhorseHandle.m
+StuffIt X Iron		codec	R	XADStuffItXIronHandle.m
+StuffIt X English dictionary		codec	R	XADStuffItXEnglishHandle.m
+StuffIt X x86 filter		codec	R	XADStuffItXX86Handle.m
+StuffIt X block		codec	R	XADStuffItXBlockHandle.m
+DiskDoubler methods (ADn/DDn/Method2)		codec	R	XADDiskDoubler*Handle.m
+Compact Pro LZH/RLE		codec	R	XADCompactProLZHHandle.m, XADCompactProRLEHandle.m
+ARC Crunch		codec	R	XADARCCrunchHandle.m
+ARC Crush		codec	R	XADARCCrushHandle.m
+ARC Distill		codec	R	XADARCDistillHandle.m
+ARJ Fastest		codec	R	XADARJFastestHandle.m
+LZH static/dynamic/old		codec	R	XADLZHStaticHandle.m, XADLZHDynamicHandle.m, XADLZHOldHandles.m
+LArc methods		codec	R	XADLArcHandles.m
+PMArc		codec	R	XADPMArc1Handle.m
+Squeeze codec		codec	R	XADSqueezeHandle.m
+Crunch CP/M codecs		codec	R	XADCrunchHandles.m
+Stac LZS		codec	R	XADStacLZSHandle.m
+Now Compress codec		codec	R	XADNowCompressHandle.m
+NSIS bzip2		codec	R	XADNSISBzip2Handle.m
+7z BCJ2		codec	R	XAD7ZipBCJ2Handle.m
+7z branch filters (BCJ/ARM/PPC/SPARC/IA64)		codec	R	XAD7ZipBranchHandles.m
+7z AES		codec	R	XAD7ZipAESHandle.m
+WinZip AES		codec	R	XADWinZipAESHandle.m
+WinZip JPEG		codec	R	XADWinZipJPEGHandle.m
+WinZip WavPack		codec	R	XADWinZipWavPackHandle.m
+ZipCrypto		codec	R	XADZipCryptHandle.m
+RC4		codec	R	XADRC4Handle.m
+RLE90		codec	R	XADRLE90Handle.m
+Delta filter		codec	R	XADDeltaHandle.m
+Tar sparse		codec	R	XADTarSparseHandle.m
+CAB block		codec	R	XADCABBlockHandle.m
+RAR audio / VM		codec	R	RARAudioDecoder.c; RARVirtualMachine.c

@@ -1,0 +1,20 @@
+name	aliases_extensions	kind	rw	evidence
+cfa:ZIP		archive	RW	Comparison of file archivers: Writing table
+cfa:TAR		archive	RW	Comparison of file archivers: Writing table
+cfa:GZ		archive	RW	Comparison of file archivers: Writing table
+cfa:BZ2		archive	RW	Comparison of file archivers: Writing table
+cfa:7z		archive	RW	Comparison of file archivers: Writing table
+cfa:XZ		archive	RW	Comparison of file archivers: Writing table
+cfa:RAR		archive	RW	Comparison of file archivers: Writing table
+cfa:LHA/LZH		archive	RW	Comparison of file archivers: Writing table
+cfa:ACE		archive	RW	Comparison of file archivers: Writing table
+cfa:SIT		archive	RW	Comparison of file archivers: Writing table
+cfa:SITX		archive	RW	Comparison of file archivers: Writing table
+cfa:ARJ		archive	RW	Comparison of file archivers: Writing table
+cfa:KGB		archive	RW	Comparison of file archivers: Writing table
+cfa:DAR		archive	RW	Comparison of file archivers: Writing table
+cfa:ARC		archive	RW	Comparison of file archivers: Writing table
+cfa:CAB		archive	RW	Comparison of file archivers: Writing table
+cfa:ALZ		archive	RW	Comparison of file archivers: Writing table
+cfa:ISO/CD Image		archive	RW	Comparison of file archivers: Writing table
+cfa:ZPAQ		archive	RW	Comparison of file archivers: Writing table

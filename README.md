@@ -158,6 +158,27 @@ The linked package README is authoritative for those details. If a row is partia
 an encoder, or deliberately limited to a profile, that is documented there rather than blurred into a
 root-level "supported formats" list.
 
+### 🧾 Coverage against other tools
+
+[`docs/catalogue/`](docs/catalogue/GAPS.md) compares the registry with the format lists of 7-Zip,
+libarchive, XADMaster/The Unarchiver, binwalk, Universal Extractor 2, PRONOM and Wikipedia (snapshot
+of 2026-10-19). The table below is from that snapshot:
+
+| Measure | Value |
+| --- | ---: |
+| Formats, codecs and filesystems listed by at least one source | 525 |
+| … mapped to a descriptor or building block here | 288 (54.9 %) |
+| … of those listed by three or more sources | 66 of 67 |
+| Mapped, but the reader covers only part of the format | 43 |
+| Read here, but only another tool writes them | 23 |
+| Listed by a source, missing here | 237 |
+| Registry ids no source lists | 458 |
+
+[GAPS.md](docs/catalogue/GAPS.md) ranks the missing formats, lists the partial readers with the limit
+each one hits, and compares the shell's features with 7-Zip File Manager, WinRAR and PeaZip. The data
+is in [`reference-formats.csv`](docs/catalogue/reference-formats.csv), and `CatalogueConsistencyTests`
+fails when that file names a descriptor that no longer exists.
+
 ---
 
 ## 🧱 Abstraction layers
@@ -487,6 +508,7 @@ in [docs/MAINTENANCE-MECHANISMS.md](docs/MAINTENANCE-MECHANISMS.md).
 | What CLI commands exist? | [Compression.CLI/README.md](Compression.CLI/README.md) and [CLI reference](#%EF%B8%8F-cli-reference) |
 | What does the common archive/addressable-entry model mean? | [docs/ARCHIVE-MODEL.md](docs/ARCHIVE-MODEL.md) |
 | How do maintenance operations work without per-format duplication? | [docs/MAINTENANCE-MECHANISMS.md](docs/MAINTENANCE-MECHANISMS.md) |
+| Which formats do other tools handle that this one does not? | [docs/catalogue/GAPS.md](docs/catalogue/GAPS.md) |
 | How is the solution structured? | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | How do I add or change a format? | [CONTRIBUTING.md](CONTRIBUTING.md) |
 

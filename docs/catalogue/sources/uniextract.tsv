@@ -1,0 +1,126 @@
+name	aliases_extensions	kind	rw	evidence
+7-zip	.7z;.001;.exe	archive	R	UniExtract2 docs/FORMATS.md
+ACE	.ace	archive	R	UniExtract2 docs/FORMATS.md
+ALZip	.alz	archive	R	UniExtract2 docs/FORMATS.md
+ARC	.arc	archive	R	UniExtract2 docs/FORMATS.md
+ARJ	.arj	archive	R	UniExtract2 docs/FORMATS.md
+Asar	.asar	archive	R	UniExtract2 docs/FORMATS.md
+BCM	.bcm	archive	R	UniExtract2 docs/FORMATS.md
+BGA	.bza;.gza	archive	R	UniExtract2 docs/FORMATS.md
+bzip2	.bz2;.tbz2;.tar.bz2	compression	R	UniExtract2 docs/FORMATS.md
+Chromium package	.pak	archive	R	UniExtract2 docs/FORMATS.md
+CPIO	.cpio	archive	R	UniExtract2 docs/FORMATS.md
+DGCA	.dgc	archive	R	UniExtract2 docs/FORMATS.md
+FreeArc	.arc	archive	R	UniExtract2 docs/FORMATS.md
+gzip	.gz;.tgz;.tar.gz;.ipk	compression	R	UniExtract2 docs/FORMATS.md
+KGB	.kgb;.kge	archive	R	UniExtract2 docs/FORMATS.md
+Debian package	.deb	archive	R	UniExtract2 docs/FORMATS.md
+RPM package	.rpm	archive	R	UniExtract2 docs/FORMATS.md
+LBR	.lbr;.lzr;.lqr	archive	R	UniExtract2 docs/FORMATS.md
+LZIP	.lz	compression	R	UniExtract2 docs/FORMATS.md
+LZH	.lzh;.lha	archive	R	UniExtract2 docs/FORMATS.md
+LZMA	.lzma	compression	R	UniExtract2 docs/FORMATS.md
+LZO	.lzo	compression	R	UniExtract2 docs/FORMATS.md
+LZW compress	.Z;.tz;.tar.Z	compression	R	UniExtract2 docs/FORMATS.md
+LZX	.lzx	archive	R	UniExtract2 docs/FORMATS.md
+PEA	.pea	archive	R	UniExtract2 docs/FORMATS.md
+RAR	.rar;.r00;.part1.rar	archive	R	UniExtract2 docs/FORMATS.md
+StuffIt	.sit;.sitx	archive	R	UniExtract2 docs/FORMATS.md
+TAR	.tar;.tgz;.txz;.ctar	archive	R	UniExtract2 docs/FORMATS.md
+UHARC	.uha	archive	R	UniExtract2 docs/FORMATS.md
+UPX	.exe;.dll	archive	R	UniExtract2 docs/FORMATS.md
+XZ	.xz;.txz;.tar.xz	compression	R	UniExtract2 docs/FORMATS.md
+ZIP	.zip;.jar;.xpi;.wz;.imz	archive	R	UniExtract2 docs/FORMATS.md
+Zoo	.zoo	archive	R	UniExtract2 docs/FORMATS.md
+ZPAQ	.zpaq	archive	R	UniExtract2 docs/FORMATS.md
+Actual Installer	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Advanced Installer	.exe	installer	R	UniExtract2 docs/FORMATS.md
+BitRock Install Builder	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Clickteam Install Creator	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Create Install	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Excelsior Installer	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Gentee	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Ghost Installer	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Inno Setup	.exe;GOG installers	installer	R	UniExtract2 docs/FORMATS.md
+Install4j	.exe	installer	R	UniExtract2 docs/FORMATS.md
+InstallAware	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Installer VISE	.exe	installer	R	UniExtract2 docs/FORMATS.md
+InstallForge	.exe	installer	R	UniExtract2 docs/FORMATS.md
+InstallScript	.exe	installer	R	UniExtract2 docs/FORMATS.md
+InstallShield	.cab;.exe	installer	R	UniExtract2 docs/FORMATS.md
+MSCF self-extractor	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Netopsystems FEAD	.exe	installer	R	UniExtract2 docs/FORMATS.md
+NSIS	.exe	installer	R	UniExtract2 docs/FORMATS.md
+PyInstaller	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Self-Extracting Zip	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Setup Factory	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Smart Install Maker	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Spoon Installer	.exe	installer	R	UniExtract2 docs/FORMATS.md
+SuperDAT Updater	.exe	installer	R	UniExtract2 docs/FORMATS.md
+SymbianOS/EPOC Installer	.sis;.sisx	installer	R	UniExtract2 docs/FORMATS.md
+Windows Installer	.msi;.msm;.msp;.msu;.cab	installer	R	UniExtract2 docs/FORMATS.md
+Wise Installer	.exe	installer	R	UniExtract2 docs/FORMATS.md
+WiX	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Enigma Virtual Box	.exe	installer	R	UniExtract2 docs/FORMATS.md
+MoleBox	.exe	installer	R	UniExtract2 docs/FORMATS.md
+Amiga disk format	.adf	disk-image	R	UniExtract2 docs/FORMATS.md
+Android boot image	.img	disk-image	R	UniExtract2 docs/FORMATS.md
+Apple Disk Image	.dmg	disk-image	R	UniExtract2 docs/FORMATS.md
+BIN/CUE	.bin;.cue	disk-image	R	UniExtract2 docs/FORMATS.md
+CloneCD image	.ccd	disk-image	R	UniExtract2 docs/FORMATS.md
+Compressed ISO	.cso	disk-image	R	UniExtract2 docs/FORMATS.md
+DiscJuggler image	.cdi	disk-image	R	UniExtract2 docs/FORMATS.md
+Dreamcast GDI	.gdi	disk-image	R	UniExtract2 docs/FORMATS.md
+Error Code Modeler	.ecm	disk-image	R	UniExtract2 docs/FORMATS.md
+gBurner Image	.gbi	disk-image	R	UniExtract2 docs/FORMATS.md
+IMG floppy image	.img	disk-image	R	UniExtract2 docs/FORMATS.md
+ISO 9660	.iso	disk-image	R	UniExtract2 docs/FORMATS.md
+ISO Zipped	.isz	disk-image	R	UniExtract2 docs/FORMATS.md
+HTC NBH ROM image	.nbh	disk-image	R	UniExtract2 docs/FORMATS.md
+Nero image	.nrg	disk-image	R	UniExtract2 docs/FORMATS.md
+PowerISO	.daa	disk-image	R	UniExtract2 docs/FORMATS.md
+Magic ISO	.uif	disk-image	R	UniExtract2 docs/FORMATS.md
+Media Descriptor File	.mdf;.mds	disk-image	R	UniExtract2 docs/FORMATS.md
+VirtualBox VDI	.vdi	disk-image	R	UniExtract2 docs/FORMATS.md
+Virtual PC VHD	.vhd	disk-image	R	UniExtract2 docs/FORMATS.md
+VMware VMDK	.vmdk	disk-image	R	UniExtract2 docs/FORMATS.md
+Windows Imaging Format	.wim	disk-image	R	UniExtract2 docs/FORMATS.md
+Animated images	.gif;.png	media	R	UniExtract2 docs/FORMATS.md
+Audio files	.mp3;.ogg;.flac;.wma;.m4a;.aa	media	R	UniExtract2 docs/FORMATS.md
+Flash files	.swf	media	R	UniExtract2 docs/FORMATS.md
+FMOD Sample Bank	.fsb	media	R	UniExtract2 docs/FORMATS.md
+sfArk soundfont	.sfark	media	R	UniExtract2 docs/FORMATS.md
+Video files	.avi;.mp4;.mkv;.ogv;.webm;.wmv;.3gp;.m4v;.flv;.smk	media	R	UniExtract2 docs/FORMATS.md
+Bethesda Archive	.bsa;.ba2;.pex	game	R	UniExtract2 docs/FORMATS.md
+Bruns Engine	.um3	game	R	UniExtract2 docs/FORMATS.md
+Godot Engine package	.pck	game	R	UniExtract2 docs/FORMATS.md
+KiriKiri	.xp3	game	R	UniExtract2 docs/FORMATS.md
+LiveMaker	.gal	game	R	UniExtract2 docs/FORMATS.md
+NScripter	.nsa;.ns2;.sar	game	R	UniExtract2 docs/FORMATS.md
+Ren'Py archive	.rpa	game	R	UniExtract2 docs/FORMATS.md
+RPG Maker	.rgssad;.rgss2a;.rgss3a;.rpgmvp;.rpgmvo;.rpgmvm	game	R	UniExtract2 docs/FORMATS.md
+Smile Game builder	.sgbpack	game	R	UniExtract2 docs/FORMATS.md
+Telltale archive	.ttarch	game	R	UniExtract2 docs/FORMATS.md
+Unity	.assets;.unity3d;.resource;.unitypackage	game	R	UniExtract2 docs/FORMATS.md
+Unreal Engine pak	.pak	game	R	UniExtract2 docs/FORMATS.md
+UTAGE	.utage	game	R	UniExtract2 docs/FORMATS.md
+Visionaire Engine	.vis;.vc001;.vv001	game	R	UniExtract2 docs/FORMATS.md
+WinterMute Engine	.dcp	game	R	UniExtract2 docs/FORMATS.md
+Wolf RPG Editor	.wolf	game	R	UniExtract2 docs/FORMATS.md
+YU-RIS	.ypf;.ycg	game	R	UniExtract2 docs/FORMATS.md
+E-Mail message	.eml	document	R	UniExtract2 docs/FORMATS.md
+Encoded files (uu/xx/b64/binhex)	.b64;.hqx;.ntx;.uu;.uue;.xx;.xxe;.ync	document	R	UniExtract2 docs/FORMATS.md
+GNU Gettext catalog	.mo	document	R	UniExtract2 docs/FORMATS.md
+MacBinary		document	R	UniExtract2 docs/FORMATS.md
+Compiled HTML Help	.chm	document	R	UniExtract2 docs/FORMATS.md
+Microsoft Reader eBook	.lit	document	R	UniExtract2 docs/FORMATS.md
+Windows Help	.hlp	document	R	UniExtract2 docs/FORMATS.md
+MIME HTML archive	.mht	document	R	UniExtract2 docs/FORMATS.md
+Outlook Express mailbox	.dbx	document	R	UniExtract2 docs/FORMATS.md
+PHP archive	.phar	document	R	UniExtract2 docs/FORMATS.md
+PDF	.pdf	document	R	UniExtract2 docs/FORMATS.md
+Qt Message	.qm	document	R	UniExtract2 docs/FORMATS.md
+SQLite database	.sqlite;.sqlite3;.db	document	R	UniExtract2 docs/FORMATS.md
+Web archive	.warc	document	R	UniExtract2 docs/FORMATS.md
+Split files	.001;.002	other	R	UniExtract2 docs/FORMATS.md
+Windows thumbnail cache	Thumbs.db;thumbcache_*.db	other	R	UniExtract2 docs/FORMATS.md

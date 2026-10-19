@@ -1,0 +1,81 @@
+name	aliases_extensions	kind	rw	evidence
+Microsoft Excel Backup	xlk	document		x-fmt/23
+Scalable Vector Graphics Compressed	svgz	compression		x-fmt/109
+Internet Archive	arc	archive		x-fmt/219; fmt/410
+ZIP Format	zip	archive		x-fmt/263
+RAR Archive	rar	archive		x-fmt/264; fmt/411; fmt/613
+Tape Archive Format	tar	archive		x-fmt/265
+GZIP Format	gz;z	compression		x-fmt/266
+BZIP Compressed Archive	bz	archive		x-fmt/267
+BZIP2 Compressed Archive	bz2	archive		x-fmt/268
+ZOO Compressed Archive	zoo	archive		x-fmt/269
+Java Archive Format	jar	archive		x-fmt/412
+Windows Cabinet File	cab	archive		x-fmt/414
+BinHex Binary Text	hqx	other		x-fmt/416
+Windows Setup File	inf	installer		x-fmt/420
+Information or Setup File	inf	installer		fmt/212
+WARC	warc	archive		fmt/289; fmt/1281; fmt/1355
+Shell Archive Format	shar	archive		fmt/329
+Stuffit X Archive File	sitx	archive		fmt/399
+MS-DOS Compression Format (SZDD Variant)		compression		fmt/462
+ISO 9660 Disk Image File	bin;cdr;dmg;iso;toast	disk-image		fmt/468
+MS DOS Compression Format (KWAJ Variant)		compression		fmt/469
+7Zip format	7z	archive		fmt/484
+eXtensible ARchive format	xar	archive		fmt/600
+ARJ File Format	arj	archive		fmt/610
+Stuffit Archive File	sit	archive		fmt/639; fmt/1459; fmt/1460
+LHA File Format	lha;lzh	archive		fmt/626
+CPIO	cpio	archive		fmt/635
+MBOX	mbox	other		fmt/720
+Virtual Disk Image	vdi	disk-image		fmt/726
+RPM Package Manager file	rpm;src.rpm	installer		fmt/793; fmt/794; fmt/795
+Encase Image File/Expert Witness Compression File	e01	disk-image		fmt/803
+CD-ROM/XA (eXtended Architecture)	dat	disk-image		fmt/819
+G64 GCR-encoded Disk Image Format	g41;g64;g71	disk-image		fmt/821
+Apple Safari Webarchive	webarchive	other		fmt/866
+SafeGuard Encrypted Virtual Disk	hdr;vol	disk-image		fmt/887
+Compressed MusicXML	mxl	document		fmt/897; fmt/2005
+Xar Image Format	xar	archive		fmt/922
+Microsoft OneNote Package File	onepkg	document		fmt/987
+SNAP Archive Data File	adf	archive		fmt/1057
+Apple Disk Image	dmg	disk-image		fmt/1071
+FAT Disk Image	dsk;ima;img	disk-image		fmt/1087
+PEA Archive Format	pea	archive		fmt/1095
+FreeArc Archive Format	arc	archive		fmt/1096
+ZPAQ Archive Format	zpaq	archive		fmt/1097
+XZ File Format	xz	compression		fmt/1098
+Uuencoded File	uue	other		fmt/1102
+Hierarchical File System	img	filesystem		fmt/1105
+QuickBooks Backup File	qbb	other		fmt/1354
+Softdisk Text Compressor	ctx	compression		fmt/1359
+Comic Book Archive	cb7;cba;cbr;cbt;cbz	archive		fmt/1462
+Magic Shadow Archiver Disk Image File	msa	disk-image		fmt/1472
+Mar Archive	mac;mar	archive		fmt/1483
+Agisoft Project Archive	psz	archive		fmt/1502
+SelF-eXtracting LHA/LZH Compressed Files	sfx	archive		fmt/1558
+exFAT (Extensible File Allocation Table) Disc Image	img	disk-image		fmt/1609
+WRAptor Compressed File	wr3;wra	archive		fmt/1611
+Z Compressed Data	z	compression		fmt/1671
+EndNote Compressed Library	enlx	other		fmt/1683; fmt/1685
+UDF Disc Image	cdr;dmg;iso;toast	disk-image		fmt/1738
+UDF-ISO 9660 Bridge Disc	cdr;dmg;iso;toast	disk-image		fmt/1739
+Apple Partition Map Disk Image	bin;cdr;dmg;img;iso;toast	disk-image		fmt/1740
+Apple Partition Map ISO 9660 Hybrid	cdr;iso;toast	disk-image		fmt/1741
+Hierarchical File System Plus	dmg;img;toast	filesystem		fmt/1742
+Apple Partition Map - ISO 9660 - UDF Hybrid Disk Image	dmg;iso;toast	disk-image		fmt/1757
+Archiver Format	a	archive		fmt/1835
+HMM Packfile	pak	game		fmt/1876
+Pasti Floppy Disk Image	stx	disk-image		fmt/1904
+HxC Floppy Emulator Disk Image	hfe	disk-image		fmt/2031; fmt/2038
+Open Packaging Format	opf	document		fmt/2032
+HxC Floppy Emulator Stream Image	hfe	disk-image		fmt/2039
+Android Package File	apk	installer		fmt/2041
+Android App Bundle File	aab	archive		fmt/2042
+Android Archive File	aar	archive		fmt/2043
+A2R Disk Image File	a2r	disk-image		fmt/2057; fmt/2058
+WOZ Disk Image File	woz	disk-image		fmt/2059; fmt/2060
+MOOF Disk Image File	moof	disk-image		fmt/2061
+Macintosh File System	dsk;img;mfs	filesystem		fmt/2068
+ACE	ace	archive		fmt/2075; fmt/2076
+FieldWorks Language Explorer FWBackup	fwbackup	other		fmt/2086
+ROS Bag Format	bag	other		fmt/2093

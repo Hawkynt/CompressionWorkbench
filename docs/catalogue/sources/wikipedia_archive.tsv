@@ -1,0 +1,151 @@
+name	aliases_extensions	kind	rw	evidence
+Unix Archiver	.a;.ar	archive		List of archive formats: archiving only
+cpio	.cpio	archive		List of archive formats: archiving only + List of archive formats: containers and compression + Comparison of file archivers: format support (reading/writing)
+Shell archive	.shar;.run	archive		List of archive formats: archiving only + List of archive formats: containers and compression
+LBR (CP/M library)	.LBR	archive		List of archive formats: archiving only
+ISO-9660 image	.iso	disk-image		List of archive formats: archiving only
+LBR (Commodore library)	.lbr	archive		List of archive formats: archiving only
+Mozilla ARchive	.mar	archive		List of archive formats: archiving only
+SeqBox	.sbx	archive		List of archive formats: archiving only
+Tape archive	.tar	archive		List of archive formats: archiving only + List of archive formats: containers and compression
+Brotli	.br	compression		List of archive formats: compression only
+bzip2	.bz2	compression		List of archive formats: compression only
+Freeze	.F;.?XF	compression		List of archive formats: compression only
+genozip	.genozip	compression		List of archive formats: compression only + List of archive formats: archiving and compression
+gzip	.gz	compression		List of archive formats: compression only
+lzip	.lz	compression		List of archive formats: compression only
+LZ4	.lz4	compression		List of archive formats: compression only
+lzma	.lzma	compression		List of archive formats: compression only
+lzop	.lzo	compression		List of archive formats: compression only
+rzip	.rz	compression		List of archive formats: compression only
+sfArk	.sfark	compression		List of archive formats: compression only
+Snappy	.sz	compression		List of archive formats: compression only
+SQ	.?Q?;.SQ;.QQQ	compression		List of archive formats: compression only
+CRUNCH	.?Z?	compression		List of archive formats: compression only
+xz	.xz	compression		List of archive formats: compression only + Comparison of file archivers: format support (reading/writing)
+pack	.z	compression		List of archive formats: compression only
+compress	.Z	compression		List of archive formats: compression only
+Zstandard	.zst	compression		List of archive formats: compression only
+MS-DOS compressed (.??_ / SZDD)	.??_	compression		List of archive formats: compression only
+7z	.7z	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression + Comparison of file archivers: format support (reading/writing)
+7zX	.s7z	archive		List of archive formats: archiving and compression
+Apple Archive	.aar	archive		List of archive formats: archiving and compression
+ACE	.ace	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression + Comparison of file archivers: format support (reading/writing)
+AFA	.afa	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+ALZip	.alz	archive		List of archive formats: archiving and compression
+APK	.apk	package		List of archive formats: archiving and compression
+ARC	.arc;.ark	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression + Comparison of file archivers: format support (reading/writing)
+FreeArc	.arc;.cdx	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+ARJ	.arj	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression + Comparison of file archivers: format support (reading/writing)
+B1	.b1	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+B6Z	.b6z	archive		List of archive formats: archiving and compression
+Scifer (.ba)	.ba	archive		List of archive formats: archiving and compression
+BlakHole	.bh	archive		List of archive formats: archiving and compression
+Cabinet	.cab	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+Compressia archive	.car	archive		List of archive formats: archiving and compression
+Compact File Set	.cfs	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+Compact Pro	.cpt	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+Disk Archiver	.dar	archive		List of archive formats: archiving and compression
+DiskDoubler	.dd	archive		List of archive formats: archiving and compression
+DGCA	.dgc	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+Apple Disk Image	.dmg	disk-image		List of archive formats: archiving and compression
+EAR	.ear	package		List of archive formats: archiving and compression
+GCA	.gca	archive		List of archive formats: archiving and compression
+HA	.ha	archive		List of archive formats: archiving and compression
+WinHKI	.hki	archive		List of archive formats: archiving and compression
+ICE	.ice	archive		List of archive formats: archiving and compression
+JAR	.jar	package		List of archive formats: archiving and compression
+KGB Archiver	.kgb	archive		List of archive formats: archiving and compression
+LHA	.lzh;.lha	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+LZX	.lzx	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+PAK	.pak	archive		List of archive formats: archiving and compression
+PartImage	.partimg	disk-image		List of archive formats: archiving and compression
+PAQ	.paq6;.paq7;.paq8 and variants	archive		List of archive formats: archiving and compression
+PeaZip	.pea	archive		List of archive formats: archiving and compression
+PHAR	.phar	package		List of archive formats: archiving and compression
+PIM	.pim	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+PackIt	.pit	archive		List of archive formats: archiving and compression
+Quadruple D	.qda	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+RAR	.rar	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression + Comparison of file archivers: format support (reading/writing)
+RK and WinRK	.rk	archive		List of archive formats: archiving and compression
+Self Dissolving ARChive	.sda	archive		List of archive formats: archiving and compression
+Self Extracting Archive (Classic Mac OS)	.sea	archive		List of archive formats: archiving and compression
+Scifer (.sen)	.sen	archive		List of archive formats: archiving and compression
+Self Extracting Archive (Commodore 64, Commodore 128)	.sfx	archive		List of archive formats: archiving and compression
+NuFX	.shk	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+StuffIt	.sit	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+StuffIt X	.sitx	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+SQX	.sqx	archive		List of archive formats: archiving and compression
+tar with gzip, compress, bzip2, lzip, xz, or zstd	.tar.gz;.tgz;.tar.Z;.tar.bz2;.tbz2;.tar.lz;.tlz;.tar.xz;.txz;.tar.zst	archive		List of archive formats: archiving and compression
+UltraCompressor II	.uc;.uc0;.uc2;.ucn;.ur2;.ue2	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression
+PerfectCompress	.uca	archive		List of archive formats: archiving and compression
+UHarc	.uha	archive		List of archive formats: archiving and compression
+WAR	.war	package		List of archive formats: archiving and compression
+Windows Image	.wim;.swm;.esd	disk-image		List of archive formats: archiving and compression + List of archive formats: containers and compression
+XAR	.xar	archive		List of archive formats: archiving and compression
+KiriKiri	.xp3	archive		List of archive formats: archiving and compression
+YZ1	.yz1	archive		List of archive formats: archiving and compression
+ZIP	.zip;.zipx	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression + Comparison of file archivers: format support (reading/writing)
+zoo	.zoo	archive		List of archive formats: archiving and compression
+ZPAQ	.zpaq	archive		List of archive formats: archiving and compression + List of archive formats: containers and compression + Comparison of file archivers: format support (reading/writing)
+Zzip	.zz	archive		List of archive formats: archiving and compression
+dvdisaster error-correction file	.ecc	other		List of archive formats: data recovery
+Error-correcting SeqBox	.ecsbx	other		List of archive formats: data recovery
+Lziprecover fec file	.fec	other		List of archive formats: data recovery
+Parchive file	.par.par2	other		List of archive formats: data recovery
+WinRAR recovery volume	.rev	other		List of archive formats: data recovery
+Extended TAR format	.tar	archive		List of archive formats: containers and compression
+BagIt		archive		List of archive formats: containers and compression
+Spark	.arc	archive		List of archive formats: containers and compression
+WinMount format	.mou	archive		List of archive formats: containers and compression
+Debian package	.deb	package		List of archive formats: software packaging and distribution
+Macintosh Installer	.pkg;.mpkg (metapackage)	installer		List of archive formats: software packaging and distribution
+RPM Package Manager	.rpm	package		List of archive formats: software packaging and distribution
+Slackware Package	.tgz	package		List of archive formats: software packaging and distribution
+Windows Installer	.msi	installer		List of archive formats: software packaging and distribution
+MSIX	.appx;.appxbundle;.emsix;.emsixbundle;.msix;.msixbundle	installer		List of archive formats: software packaging and distribution
+Google Chrome extension package	.crx	package		List of archive formats: software packaging and distribution
+Pacman	.pkg.tar.zst;.pkg.tar (no compression)	package		List of archive formats: software packaging and distribution
+GZ	.gz	compression		Comparison of file archivers: format support (reading/writing)
+BZ2	.bz2	compression		Comparison of file archivers: format support (reading/writing)
+SIT	.sit	archive		Comparison of file archivers: format support (reading/writing)
+SITX	.sitx	archive		Comparison of file archivers: format support (reading/writing)
+KGB	.kgb	archive		Comparison of file archivers: format support (reading/writing)
+DAR	.dar	archive		Comparison of file archivers: format support (reading/writing)
+CAB	.cab	archive		Comparison of file archivers: format support (reading/writing)
+ALZ	.alz	archive		Comparison of file archivers: format support (reading/writing)
+Terse	.tersed	compression		Comparison of file archivers: format support (reading/writing)
+pax	.pax	archive		Comparison of file archivers: format support (reading/writing)
+Raw disk image	.img;.raw;.dd;.bin	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+VHD	.vhd	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+VHDX	.vhdx	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+VMDK	.vmdk	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+VDI	.vdi	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+QCOW2	.qcow2;.qcow	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+QED	.qed	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+HDD (Parallels)	.hdd;.hds	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+Apple Disk Image (UDIF)	.dmg;.sparseimage;.sparsebundle	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+Expert Witness (EnCase) E01	.e01;.ex01	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+AFF (Advanced Forensic Format)	.aff;.afd;.afm	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+NRG (Nero)	.nrg	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+BIN/CUE	.bin;.cue	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+MDF/MDS (Alcohol 120%)	.mdf;.mds	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+CCD/IMG/SUB (CloneCD)	.ccd;.img;.sub	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+CDI (DiscJuggler)	.cdi	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+Toast image	.toast	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+DAA (PowerISO)	.daa	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+ISZ (Compressed ISO)	.isz	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+UIF (MagicISO)	.uif	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+IMG (floppy/raw)	.img;.ima;.vfd;.flp	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+IMD (ImageDisk)	.imd	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+TD0 (Teledisk)	.td0	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+Disk Copy 4.2	.dc42;.image	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+2MG (Apple II)	.2mg;.2img	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+NIB (Apple II nibble)	.nib	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+D64 (C64 disk)	.d64;.d71;.d81	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+ADF (Amiga disk)	.adf	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+DMS (Amiga Disk Masher)	.dms	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+Ghost image (Norton Ghost)	.gho;.ghs	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+Acronis True Image	.tib	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+MAME CHD	.chd	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
+OVA/OVF	.ova;.ovf	disk-image		Disk image (article: virtual/raw/forensic disk image formats) - format names
