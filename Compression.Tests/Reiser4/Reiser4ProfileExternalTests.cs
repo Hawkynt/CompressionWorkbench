@@ -33,13 +33,7 @@ public sealed class Reiser4ProfileExternalTests {
     try { Directory.Delete(this._tmpDir, recursive: true); } catch { /* best effort */ }
   }
 
-  private static void RequireReiser4Progs() {
-    if (!FsInteropToolbox.WslAvailable && OperatingSystem.IsWindows())
-      Assert.Ignore("WSL is not available on this machine.");
-    foreach (var tool in new[] { "mkfs.reiser4", "fsck.reiser4", "debugfs.reiser4" })
-      if (!FsInteropToolbox.WslHasTool(tool))
-        Assert.Ignore($"reiser4progs is not installed ('{tool}' missing; `sudo apt install -y reiser4progs`).");
-  }
+  private static void RequireReiser4Progs() => Reiser4Oracle.Require();
 
   private static byte[] Payload(int length, int seed) {
     var bytes = new byte[length];

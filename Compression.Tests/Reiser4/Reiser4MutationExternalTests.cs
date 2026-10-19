@@ -27,12 +27,7 @@ public sealed class Reiser4MutationExternalTests {
     try { Directory.Delete(this._tmpDir, recursive: true); } catch { /* best effort */ }
   }
 
-  private static void RequireReiser4Progs() {
-    if (!FsInteropToolbox.WslAvailable && OperatingSystem.IsWindows())
-      Assert.Ignore("WSL is not available on this machine.");
-    if (!FsInteropToolbox.WslHasTool("fsck.reiser4") || !FsInteropToolbox.WslHasTool("debugfs.reiser4"))
-      Assert.Ignore("reiser4progs is not installed (`sudo apt install -y reiser4progs`).");
-  }
+  private static void RequireReiser4Progs() => Reiser4Oracle.Require("fsck.reiser4", "debugfs.reiser4");
 
   private static byte[] Payload(int length, int seed) {
     var bytes = new byte[length];
