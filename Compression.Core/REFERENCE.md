@@ -1673,7 +1673,7 @@ Implements `IBuildingBlock`.
 
 #### `LzjbCompressor`
 
-Implements LZJB compression from its public algorithm description: Jeff Bonwick, LZJB (ZFS metadata/small-block compressor), documented at https://en.wikipedia.org/wiki/LZJB and https://docs.oracle.com/cd/E19253-01/819-5461/gbchx/index.html — a 1KB-window LZ77 variant with an 8-flag copymap byte and a 3-byte minimum match.
+LZJB compression, Jeff Bonwick's compressor from Solaris and ZFS, in the bitstream `LzjbDecompressor` documents.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1681,11 +1681,12 @@ Implements LZJB compression from its public algorithm description: Jeff Bonwick,
 
 #### `LzjbDecompressor`
 
-Decodes the LZJB copymap format produced by `LzjbCompressor`. Reference: https://en.wikipedia.org/wiki/LZJB.
+Decodes LZJB, Jeff Bonwick's compressor from Solaris and ZFS (`compression=lzjb`).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses an LZJB stream. |
+| `Decompress` | `static void Decompress(ReadOnlySpan<byte> data, Span<byte> destination)` | Decompresses an LZJB stream until `destination` is full. |
 
 ### Namespace `Compression.Core.Dictionary.Lzma`
 
@@ -6166,7 +6167,7 @@ Utility for splitting archive data into fixed-size volumes.
 
 ### Namespace `Compression.Core.Transforms`
 
-[`Bcj2Filter`](#bcj2filter) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding)
+[`Bcj2Filter`](#bcj2filter) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
 
 #### `Bcj2Filter`
 
@@ -6493,6 +6494,33 @@ Run-Length Encoding (RLE) transform. Encodes runs of identical bytes as (count, 
 | --- | --- | --- |
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes RLE-encoded data back to the original. Input format: repeated pairs of (count, value) where count is 1-255. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes data using run-length encoding. Output format: repeated pairs of (count, value) where count is 1-255. Uses SIMD-accelerated run scanning when available. |
+
+#### `ZleBuildingBlock`
+
+Exposes ZFS's zero-length encoding (see `ZleEncoding`) as a benchmarkable building block. The stream is self-delimiting, so no size header is added.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZleBuildingBlock` | `ZleBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `ZleEncoding`
+
+ZLE, the zero-length encoding ZFS offers as `compression=zle`: runs of zero bytes collapse to one control byte, everything else is copied in short literal runs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LiteralLimit` | `const int LiteralLimit` | The ZFS parameter: control bytes below it start a literal run. |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes a whole ZLE stream. |
+| `Decode` | `static void Decode(ReadOnlySpan<byte> data, Span<byte> destination)` | Decodes until `destination` is full, as ZFS does: what follows is padding and is ignored. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes `data`. |
 
 ### Namespace `Compression.Registry`
 
