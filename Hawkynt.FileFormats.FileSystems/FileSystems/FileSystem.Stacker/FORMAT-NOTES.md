@@ -6,8 +6,14 @@
 >   output as "stacker version 3 CVF", mounts it, and reads every file back
 >   **byte-exact**; our reader reads the same driver-certified image byte-exact
 >   (gated by `GenuineStackerDmsdosTests` + `GenuineStackerRoundTripTests`).
->   The dmsdos gate runs once per `CvfLzMethod` — `Stored`, `Ds` and `Sd4` — so
->   the compressed cluster paths are proven against the driver too.
+>   The dmsdos gate runs once per `CvfLzMethod` — `Stored`, `Ds`, `Sd3`, `Sd4` and
+>   `Auto` — so the compressed cluster paths are proven against the driver too.
+> - **Cluster codecs:** SD-3, SD-4 and DS are specified in
+>   [`docs/CVF-CODECS-ON-DISK.md`](../../../docs/CVF-CODECS-ON-DISK.md). The reader
+>   decodes the full SD-4 format (run tokens, short and long matches), pinned to
+>   clusters the dmsdos SD-3/SD-4 compressors wrote (`CvfReferenceVectorTests`); the
+>   writer's SD-4 output is literals-only. The AMAP flag nibble is honoured:
+>   fragmented and suballocated clusters are refused, not guessed at.
 > - **The legacy `StackerWriter` (invented `STKMAP01` trailer) is NOT genuine:**
 >   `dmsdos` panics on it. It is retained only for self-round-trip.
 >
@@ -32,8 +38,8 @@ copied.
 uses an 8 KB cluster (= 16 sectors/cluster, what `GenuineStackerWriter` emits) and
 two compressed-cluster codecs keyed by a header — `SD-3` (Stacker 3) and `0x81-0`
 (Stacker 4, "more powerful than SD-3"). `GenuineStackerWriter` emits stored clusters or
-`DS`/`SD-4`-compressed ones through `Compression.Core.FileSystems.Cvf.CvfLzCodec`,
-selected per `CvfLzMethod`; `dmsdos` reads all three back byte-exact.
+`DS`/`SD-3`/`SD-4`-compressed ones through `Compression.Core.FileSystems.Cvf.CvfLzCodec`,
+selected per `CvfLzMethod`; `dmsdos` reads all of them back byte-exact.
 
 A Stacker compressed volume is an ordinary MS-DOS host file (canonically
 `STACVOL.DSK`, also `*.STA`/`*.STK`) that wraps a compressed inner FAT volume.

@@ -12926,7 +12926,7 @@ Builds a genuine Stac Electronics STACVOL — the on-disk shape a real Stacker d
 | --- | --- | --- |
 | `GenuineStackerWriter` | `GenuineStackerWriter()` |  |
 | `CompressionLevel` | `int CompressionLevel { get; init; }` | Codec effort (search depth). Higher = better ratio, slower. |
-| `CompressionMethod` | `CvfLzMethod CompressionMethod { get; init; }` | Per-cluster compression. Stored (default) or DS — the dmsdos Stacker reader dispatches a 0x5344 ("DS") cluster header to the DS decoder, so DS-compressed Stacker clusters are read by the real driver. (JM/Auto map to DS here, as the Stacker path only recognises DS among the LZ headers.) |
+| `CompressionMethod` | `CvfLzMethod CompressionMethod { get; init; }` | Per-cluster compression: Stored (default), Sd3 (Stacker 3), Sd4 (Stacker 4), Ds, or Auto (smallest of Ds/Sd3/Sd4 per cluster). The Stacker driver tells them apart by the payload's first word — 0x0081 SD-4, 0x5344 ("DS") the DoubleSpace codec, anything else SD-3. JM/SQ map to Ds. |
 | `ForceCompress` | `bool ForceCompress { get; init; }` | Keep a compressed cluster even if it does not shrink (auto-best off). |
 | `Timestamp` | `DateTime Timestamp { get; init; }` | Creation/modification timestamp stamped on every file entry. Default (before 1980) leaves the FAT date/time fields zero. |
 | `Version` | `int Version { get; init; }` | Stacker major version recorded in the decoded superblock (< 410 ⇒ v3). |
