@@ -110,25 +110,40 @@ public sealed class HfsPlusMultiLeafRemoveTests {
     Assert.That(new HfsPlusReader(ms, leaveOpen: true).Entries.Select(e => e.FullPath), Does.Not.Contain(Name(target)));
   }
 
-  [Test, Category("ExceptionalCase")]
-  public void GivenAFileWhoseRecordOpensALeaf_WhenRemoved_ThenItIsRefusedAndTheVolumeIsUnchanged() {
+  [Test, Category("BoundaryCase")]
+  public void GivenAFileWhoseRecordOpensALeaf_WhenRemoved_ThenTheIndexIsRebuiltAndEveryOtherFileStillReads() {
     var image = Volume();
     var opening = Classify(image).OpensALeaf;
     Assert.That(opening, Is.Not.Empty, "precondition: some record opens a leaf");
     using var ms = new MemoryStream();
     ms.Write(image);
-    Assert.Throws<NotSupportedException>(() => HfsPlusModifier.RemoveFile(ms, Name(opening[0])));
-    Assert.That(ms.ToArray(), Is.EqualTo(image));
+    Assert.That(HfsPlusModifier.RemoveFile(ms, Name(opening[^1])), Is.True);
+    var after = ms.ToArray();
+    var reader = new HfsPlusReader(new MemoryStream(after));
+    var left = CatalogRecords(after, out _, out var leafRecords);
+    Assert.Multiple(() => {
+      Assert.That(reader.Entries.Select(e => e.FullPath).ToList(), Has.Count.EqualTo(Files - 1).And.No.Contains(Name(opening[^1])));
+      Assert.That(leafRecords, Is.EqualTo((uint)left.Count));
+      for (var i = 0; i < Files; i += 37)
+        if (i != opening[^1]) Assert.That(reader.Extract(reader.Entries.Single(e => e.FullPath == Name(i))), Is.EqualTo(Content(i)), Name(i));
+    });
+    HfsPlusRemoveExtentsTests.AssertBitmapConsistent(after);
   }
 
-  [Test, Category("ExceptionalCase")]
-  public void GivenACatalogOfManyLeaves_WhenAFileIsReplaced_ThenItIsRefusedAndTheOldFileSurvives() {
+  [Test, Category("HappyPath")]
+  public void GivenACatalogOfManyLeaves_WhenAFileIsReplaced_ThenItHoldsTheNewBytesAndTheOthersAreUntouched() {
     var image = Volume();
     var target = Classify(image).Removable[0];
     using var ms = new MemoryStream();
     ms.Write(image);
-    Assert.Throws<NotSupportedException>(() => HfsPlusModifier.AddFile(ms, Name(target), [1, 2, 3]));
-    Assert.That(ms.ToArray(), Is.EqualTo(image));
+    HfsPlusModifier.AddFile(ms, Name(target), [1, 2, 3]);
+    var reader = new HfsPlusReader(new MemoryStream(ms.ToArray()));
+    Assert.Multiple(() => {
+      Assert.That(reader.Entries, Has.Count.EqualTo(Files));
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FullPath == Name(target))), Is.EqualTo(new byte[] { 1, 2, 3 }));
+      Assert.That(reader.Extract(reader.Entries.Single(e => e.FullPath == Name(target + 1))), Is.EqualTo(Content(target + 1)));
+    });
+    HfsPlusRemoveExtentsTests.AssertBitmapConsistent(ms.ToArray());
   }
 
   [Test, Category("ExceptionalCase")]

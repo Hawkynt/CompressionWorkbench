@@ -86,6 +86,17 @@ public static class HfsPlusExtentMap {
     extents.AddRange(extra);
   }
 
+  /// <summary>The non-empty extent descriptors of the HFSPlusForkData at <paramref name="forkOffset"/> in the volume header.</summary>
+  private static List<(uint StartBlock, uint BlockCount)> VolumeHeaderExtents(byte[] vh, int forkOffset) {
+    var extents = new List<(uint, uint)>(8);
+    for (var k = 0; k < 8; k++) {
+      var count = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(forkOffset + 20 + k * 8, 4));
+      if (count == 0) break;
+      extents.Add((BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(forkOffset + 16 + k * 8, 4)), count));
+    }
+    return extents;
+  }
+
   private static IEnumerable<DefragBlockInfo> EnumerateCore(Stream image) {
     if (image.Length < VolumeHeaderOffset + VolumeHeaderSize) yield break;
 
@@ -132,28 +143,35 @@ public static class HfsPlusExtentMap {
         (192, "HFS+ extents overflow file"),
         (352, "HFS+ attributes file"),
         (432, "HFS+ startup file") }) {
-      var startBlock = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(forkOffset + 16, 4));
-      var blockCount = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(forkOffset + 20, 4));
-      if (blockCount == 0) continue;
-
-      var at = (long)startBlock * blockSize;
-      var span = (long)blockCount * blockSize;
-      if (at < 0 || at + span > image.Length) continue;
-      yield return new DefragBlockInfo(at, span, DefragBlockKind.MetadataReserved, FileName: forkName);
+      // Every one of the eight extents the volume header holds: a special file that grew past
+      // its first run continues in the next.
+      foreach (var (startBlock, blockCount) in VolumeHeaderExtents(vh, forkOffset)) {
+        var at = (long)startBlock * blockSize;
+        var span = (long)blockCount * blockSize;
+        if (at < 0 || at + span > image.Length) continue;
+        yield return new DefragBlockInfo(at, span, DefragBlockKind.MetadataReserved, FileName: forkName);
+      }
     }
 
-    // Catalog file extent[0] at VH offset 272+16=288 / 272+20=292.
-    var catalogStartBlock = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(288, 4));
-    var catalogBlockCount = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(292, 4));
-    if (catalogBlockCount == 0 || catalogStartBlock == 0) yield break;
-
-    var catalogOff = (long)catalogStartBlock * blockSize;
-    var catalogLen = (long)catalogBlockCount * blockSize;
-    if (catalogOff + catalogLen > image.Length) catalogLen = image.Length - catalogOff;
-    if (catalogLen <= 0) yield break;
-
-    yield return new DefragBlockInfo(catalogOff, catalogLen,
-      DefragBlockKind.MetadataReserved, FileName: "HFS+ catalog file");
+    // The catalog file's extents (VH offset 272): node n lies n * nodeSize into them.
+    var catalogExtents = VolumeHeaderExtents(vh, 272)
+      .Where(e => e.StartBlock != 0 && (long)(e.StartBlock + e.BlockCount) * blockSize <= image.Length)
+      .ToList();
+    if (catalogExtents.Count == 0) yield break;
+    // Only the first run carries the name the block mover can repoint (it rewrites extents[0]);
+    // the runs after it are pinned under a name of their own.
+    for (var k = 0; k < catalogExtents.Count; k++)
+      yield return new DefragBlockInfo((long)catalogExtents[k].StartBlock * blockSize, (long)catalogExtents[k].BlockCount * blockSize,
+        DefragBlockKind.MetadataReserved, FileName: k == 0 ? "HFS+ catalog file" : "HFS+ catalog file (continued)");
+    var catalogOff = (long)catalogExtents[0].StartBlock * blockSize;
+    long CatalogOffset(long forkOffset) {
+      foreach (var (startBlock, blockCount) in catalogExtents) {
+        var bytes = (long)blockCount * blockSize;
+        if (forkOffset < bytes) return (long)startBlock * blockSize + forkOffset;
+        forkOffset -= bytes;
+      }
+      return -1;
+    }
 
     // Walk catalog B-tree leaves via fLink — node-by-node through the cache.
     if (catalogOff + 14 + 30 > image.Length) yield break;
@@ -167,13 +185,28 @@ public static class HfsPlusExtentMap {
     var nodeSize = BinaryPrimitives.ReadUInt16BigEndian(btHeader.AsSpan(18, 2));
     if (nodeSize == 0) yield break;
 
+    // The journal's two files (TN1150: ".journal_info_block" at the volume header's
+    // journalInfoBlock, ".journal" at the offset that block records) are found by where they
+    // lie, not by name; their blocks are pinned, since nothing repoints the volume header or the
+    // info block if they moved.
+    var journalStarts = new HashSet<uint>();
+    if ((BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(4, 4)) & (1u << 13)) != 0) {
+      var infoBlock = BinaryPrimitives.ReadUInt32BigEndian(vh.AsSpan(12, 4));
+      journalStarts.Add(infoBlock);
+      var infoAt = (long)infoBlock * blockSize;
+      if (infoBlock != 0 && infoAt + 52 <= image.Length) {
+        var journalOffset = BinaryPrimitives.ReadUInt64BigEndian(cache.Read(infoAt + 36, 8));
+        if (journalOffset % blockSize == 0) journalStarts.Add((uint)(journalOffset / blockSize));
+      }
+    }
+
     var dirPaths = new Dictionary<uint, string> { [2] = "" };
     var currentNode = firstLeafNode;
     var visited = new HashSet<uint>();
 
     while (currentNode != 0 && visited.Add(currentNode)) {
-      var nodeOffset = catalogOff + (long)currentNode * nodeSize;
-      if (nodeOffset + nodeSize > image.Length) break;
+      var nodeOffset = CatalogOffset((long)currentNode * nodeSize);
+      if (nodeOffset < 0 || nodeOffset + nodeSize > image.Length) break;
 
       // Read this leaf via cache — keeps working set bounded to one node.
       var nd = cache.Read(nodeOffset, nodeSize);
@@ -228,6 +261,8 @@ public static class HfsPlusExtentMap {
             // allocation-bitmap sweep, which pins them.
             const int dataForkOffset = 88;
             var remaining = (long)BinaryPrimitives.ReadUInt64BigEndian(nd.AsSpan(dataOffset + dataForkOffset, 8));
+            var journalFile = parentCnid == 2 && journalStarts.Contains(BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(dataOffset + dataForkOffset + 16, 4)));
+            var dataKind = journalFile ? DefragBlockKind.MetadataReserved : DefragBlockKind.Used;
             for (var k = 0; k < 8; k++) {
               var at = dataOffset + dataForkOffset + 16 + k * 8;
               var startBlock = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(at, 4));
@@ -238,7 +273,7 @@ public static class HfsPlusExtentMap {
               var used = Math.Min(Math.Max(remaining, 1), runBytes);
               if (runOff + used > image.Length) used = Math.Max(0, image.Length - runOff);
               if (used > 0 && startBlock != 0)
-                yield return new DefragBlockInfo(runOff, used, DefragBlockKind.Used, fullPath);
+                yield return new DefragBlockInfo(runOff, used, dataKind, fullPath);
               remaining -= runBytes;
             }
 
@@ -261,6 +296,78 @@ public static class HfsPlusExtentMap {
       }
 
       currentNode = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(0, 4));
+    }
+
+    // Runs past a fork's eighth extent (extents overflow records: eight descriptors after a
+    // 12-byte key) and the forks of large extended attributes (attribute records 0x20, a fork
+    // after 8 bytes, and 0x30, eight descriptors after 8 bytes) belong to their files too. They
+    // stay reserved where they lie — nothing repoints them — but they are owned, not stray.
+    foreach (var record in LeafRecords(cache, image.Length, VolumeHeaderExtents(vh, 192), blockSize)) {
+      if (record.Length < 12 + 64) continue;
+      var cnid = BinaryPrimitives.ReadUInt32BigEndian(record.AsSpan(4, 4));
+      foreach (var extent in Descriptors(record, 12, blockSize, image.Length))
+        yield return extent with { FileName = $"HFS+ overflow extent of CNID {cnid}" };
+    }
+    foreach (var record in LeafRecords(cache, image.Length, VolumeHeaderExtents(vh, 352), blockSize)) {
+      if (record.Length < 14) continue;
+      var data = 2 + BinaryPrimitives.ReadUInt16BigEndian(record.AsSpan(0, 2));
+      data += data & 1;
+      if (data + 8 + 64 > record.Length) continue;
+      var cnid = BinaryPrimitives.ReadUInt32BigEndian(record.AsSpan(4, 4));
+      var at = BinaryPrimitives.ReadUInt32BigEndian(record.AsSpan(data, 4)) switch {
+        0x20 when data + 8 + 80 <= record.Length => data + 8 + 16,
+        0x30 => data + 8,
+        _ => -1,
+      };
+      if (at < 0) continue;
+      foreach (var extent in Descriptors(record, at, blockSize, image.Length))
+        yield return extent with { FileName = $"HFS+ attribute fork of CNID {cnid}" };
+    }
+  }
+
+  /// <summary>The non-empty runs of eight extent descriptors at <paramref name="at"/>.</summary>
+  private static IEnumerable<DefragBlockInfo> Descriptors(byte[] record, int at, uint blockSize, long imageLength) {
+    for (var k = 0; k < 8; k++) {
+      var start = BinaryPrimitives.ReadUInt32BigEndian(record.AsSpan(at + k * 8, 4));
+      var count = BinaryPrimitives.ReadUInt32BigEndian(record.AsSpan(at + k * 8 + 4, 4));
+      if (count == 0) yield break;
+      var offset = (long)start * blockSize;
+      var length = Math.Min((long)count * blockSize, imageLength - offset);
+      if (length > 0) yield return new DefragBlockInfo(offset, length, DefragBlockKind.MetadataReserved);
+    }
+  }
+
+  /// <summary>Every leaf record of the B-tree file in <paramref name="extents"/>, following the leaf chain.</summary>
+  private static IEnumerable<byte[]> LeafRecords(SectorCache cache, long imageLength, List<(uint StartBlock, uint BlockCount)> extents, uint blockSize) {
+    long ForkOffset(long offset) {
+      foreach (var (startBlock, blockCount) in extents) {
+        var bytes = (long)blockCount * blockSize;
+        if (offset < bytes) return (long)startBlock * blockSize + offset;
+        offset -= bytes;
+      }
+      return -1;
+    }
+    var headerAt = ForkOffset(0);
+    if (headerAt < 0 || headerAt + 64 > imageLength) yield break;
+    var header = cache.Read(headerAt, 64);
+    if ((sbyte)header[8] != 1) yield break;
+    var firstLeaf = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(14 + 10, 4));
+    var nodeSize = BinaryPrimitives.ReadUInt16BigEndian(header.AsSpan(14 + 18, 2));
+    if (nodeSize < 512) yield break;
+    var visited = new HashSet<uint>();
+    for (var node = firstLeaf; node != 0 && visited.Add(node);) {
+      var at = ForkOffset((long)node * nodeSize);
+      if (at < 0 || at + nodeSize > imageLength) yield break;
+      var nd = cache.Read(at, nodeSize);
+      if ((sbyte)nd[8] != -1) yield break;
+      var count = BinaryPrimitives.ReadUInt16BigEndian(nd.AsSpan(10, 2));
+      for (var i = 0; i < count; i++) {
+        var start = BinaryPrimitives.ReadUInt16BigEndian(nd.AsSpan(nodeSize - 2 * (i + 1), 2));
+        var end = BinaryPrimitives.ReadUInt16BigEndian(nd.AsSpan(nodeSize - 2 * (i + 2), 2));
+        if (start < 14 || end <= start || end > nodeSize) continue;
+        yield return nd.AsSpan(start, end - start).ToArray();
+      }
+      node = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(0, 4));
     }
   }
 }

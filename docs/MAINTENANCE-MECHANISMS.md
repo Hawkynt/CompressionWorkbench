@@ -243,9 +243,11 @@ the repack kept only names and bytes.
   tail trimmed by shrink (label, UUID and every file kept); `fsck.ocfs2 -fn` clean before and after
   a kernel read-write mount (`Ocfs2KernelMountTests`). Extent-backed directories, shared extents,
   files with extent trees (for removal) and a full volume are refused; nothing is rebuilt.
-- **In place, checked with the reference checker on a fresh `mkfs.hfsplus` volume only**
-  (there is no HFS+ kernel driver to fill one with): HFS+ — root folder of a single-leaf
-  catalog; anything else refused.
+- **In place, checked with the reference checker on `mkfs.hfsplus` volumes (`-J`, `-s`) and
+  on the hdiutil volume from keramics** (there is no HFS+ kernel driver to fill one with):
+  HFS+ — files added, replaced and removed at any path, compressed and with extended
+  attributes, across node splits and B-tree growth; `fsck.hfsplus -fn` clean and libfshfs
+  reading every file back. Hard links and journals holding transactions are refused.
 - **In place, verified against our own writer's output only** (not yet against the real tools'
   volumes): GEMDOS, GS/OS, HFS, APFS, F2FS, JFS, UFS, UDF, JFFS2/YAFFS2/UBIFS/NILFS2, the CVF
   family, the retro disk formats, PS1 memory cards, and the in-place archive editors (ZIP family,

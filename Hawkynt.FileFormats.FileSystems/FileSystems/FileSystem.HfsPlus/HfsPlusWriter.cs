@@ -715,13 +715,16 @@ public sealed class HfsPlusWriter {
     }
 
     // Sort by HFS+ catalog key: parentCNID first, then the name under the
-    // volume's declared keyCompareType. The catalog header advertises
+    // volume's declared keyCompareType. An HFS+ catalog advertises
     // kHFSCaseFolding (0xCF), so the name order must follow TN1150's
     // case-folding FastUnicodeCompare — not a raw UTF-16 byte compare, which
-    // would put 'Z' before 'a' and make fsck report "Keys out of order".
+    // would put 'Z' before 'a' and make fsck report "Keys out of order". A
+    // case-sensitive HFSX catalog advertises kHFSBinaryCompare (0xBC) and orders
+    // names by UTF-16 code unit, so "README" and "readme" are two names.
+    var caseSensitive = this._caseSensitive;
     keyed.Sort((a, b) => {
       if (a.Parent != b.Parent) return a.Parent.CompareTo(b.Parent);
-      return HfsPlusCaseFold.Compare(a.Name, b.Name);
+      return caseSensitive ? string.CompareOrdinal(a.Name, b.Name) : HfsPlusCaseFold.Compare(a.Name, b.Name);
     });
 
     var records = new List<byte[]>(keyed.Count);
@@ -857,9 +860,10 @@ public sealed class HfsPlusWriter {
     // allocation block size exceeds the node size) stay zero on disk and are
     // flagged free in the header bitmap.
     var nodes = new byte[usedNodes][];
-    nodes[0] = BuildCatalogHeaderNode(nodeSize, treeDepth, rootNode,
+    nodes[0] = BuildBTreeHeaderNode(nodeSize, treeDepth, rootNode,
         (uint)records.Count, firstLeafNodeNumber,
-        firstLeafNodeNumber + (uint)leafCount - 1, totalNodes, usedNodes);
+        firstLeafNodeNumber + (uint)leafCount - 1, totalNodes, usedNodes,
+        maxKeyLength: 516, keyCompareType: this._caseSensitive ? (byte)0xBC : (byte)0xCF);
     for (var i = 0; i < leafCount; i++)
       nodes[firstLeafNodeNumber + i] = leafImages[i];
     foreach (var (nodeNo, img) in indexNodeImages)
@@ -1056,17 +1060,11 @@ public sealed class HfsPlusWriter {
   }
 
   /// <summary>
-  /// Lays out the catalog B-tree header node (node 0) with the BTHeaderRec, a
-  /// 128-byte UserDataRec, and a BTMapRec whose bits mark every allocated node
-  /// (and map nodes if the bitmap overflows the header node). For the node
-  /// counts this writer produces (catalogs of a few thousand nodes) the bitmap
-  /// always fits the header node's map record.
+  /// Lays out a B-tree header node (node 0) with the BTHeaderRec, a 128-byte
+  /// UserDataRec, and a BTMapRec whose bits mark every allocated node. For the
+  /// node counts this writer produces (catalogs of a few thousand nodes) the
+  /// bitmap always fits the header node's map record.
   /// </summary>
-  private static byte[] BuildCatalogHeaderNode(int nodeSize, uint treeDepth, uint rootNode,
-      uint leafRecords, uint firstLeafNode, uint lastLeafNode, uint totalNodes, uint usedNodes)
-    => BuildBTreeHeaderNode(nodeSize, treeDepth, rootNode, leafRecords, firstLeafNode, lastLeafNode,
-        totalNodes, usedNodes, maxKeyLength: 516, keyCompareType: 0xCF);
-
   private static byte[] BuildBTreeHeaderNode(int nodeSize, uint treeDepth, uint rootNode,
       uint leafRecords, uint firstLeafNode, uint lastLeafNode, uint totalNodes, uint usedNodes,
       ushort maxKeyLength, byte keyCompareType) {

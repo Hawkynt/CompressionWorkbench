@@ -407,7 +407,7 @@ public sealed class HfsPlusLinksAndNamesTests {
 
   [Test, Category("BoundaryCase")]
   public void GivenADirectoryMetadataFolderThatHoldsFiles_WhenListed_ThenItStaysVisible() {
-    // Directory hard links are not resolved; hiding their targets would hide the files.
+    // No directory hard link reaches dir_30, so hiding the folder would hide the only path to its files.
     var w = new HfsPlusWriter();
     w.AddFile(".HFS+ Private Directory Data\r/dir_30/kept.txt", [5]);
     var reader = new HfsPlusReader(new MemoryStream(w.Build(BlockSize)));
