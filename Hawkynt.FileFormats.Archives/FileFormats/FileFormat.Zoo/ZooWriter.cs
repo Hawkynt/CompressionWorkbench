@@ -60,7 +60,7 @@ public sealed class ZooWriter : IDisposable {
     _ = ZooCompatibility.GetExtractVersion(chosenMethod);
 
     var compressed = Compress(data, chosenMethod);
-    if (chosenMethod == ZooCompressionMethod.Lzw && compressed.Length >= data.Length) {
+    if (chosenMethod != ZooCompressionMethod.Store && compressed.Length >= data.Length) {
       compressed = data;
       chosenMethod = ZooCompressionMethod.Store;
     }
@@ -198,6 +198,8 @@ public sealed class ZooWriter : IDisposable {
   private static byte[] Compress(byte[] data, ZooCompressionMethod method) {
     if (method == ZooCompressionMethod.Store)
       return data;
+    if (method == ZooCompressionMethod.Lzh)
+      return ZooLzhCodec.Encode(data);
     if (method != ZooCompressionMethod.Lzw)
       throw new NotSupportedException($"Unsupported Zoo packing method: {(byte)method}.");
 

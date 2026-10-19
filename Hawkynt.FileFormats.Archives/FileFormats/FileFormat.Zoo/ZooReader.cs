@@ -39,6 +39,7 @@ public sealed class ZooReader : IDisposable {
     byte[] data = entry.CompressionMethod switch {
       ZooCompressionMethod.Store => compressed,
       ZooCompressionMethod.Lzw => DecompressLzw(compressed, entry.OriginalSize),
+      ZooCompressionMethod.Lzh => ZooLzhCodec.Decode(compressed, entry.OriginalSize),
       _ => throw new NotSupportedException($"Unsupported Zoo compression method: {(byte)entry.CompressionMethod}."),
     };
 

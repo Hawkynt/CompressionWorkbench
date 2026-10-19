@@ -49,6 +49,12 @@ public static class ZooConstants {
   /// <summary>Compression method: normal Zoo LZW.</summary>
   public const byte MethodLzw = 1;
 
+  /// <summary>Compression method: Zoo 2.10 LZH (Okumura "ar" -lh5- blocks, 8 KiB window, zero block-size terminator).</summary>
+  public const byte MethodLzh = 2;
+
+  /// <summary>Window size of Zoo LZH in bits (DICBIT in Zoo 2.10).</summary>
+  public const int LzhDictionaryBits = 13;
+
   /// <summary>Initial LZW code width in bits.</summary>
   public const int LzwMinBits = 9;
 
