@@ -593,10 +593,31 @@ public class ExternalInteropTests {
     return null;
   }
 
+  private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _gnuTar = new(StringComparer.OrdinalIgnoreCase);
+
+  private static bool IsGnuTar(string path) => _gnuTar.GetOrAdd(path, static p => {
+    try {
+      using var proc = Process.Start(new ProcessStartInfo {
+        FileName = p, Arguments = "--version", RedirectStandardOutput = true, RedirectStandardError = true,
+        UseShellExecute = false, CreateNoWindow = true,
+      })!;
+      var text = proc.StandardOutput.ReadToEnd();
+      proc.WaitForExit(10000);
+      return text.Contains("GNU tar", StringComparison.Ordinal);
+    } catch {
+      return false;
+    }
+  });
+
   private static (string StdOut, string StdErr, int ExitCode) RunTool(string tool, string args) {
     var resolved = ResolveOnPath(tool);
     if (resolved is null)
       Assert.Ignore($"Tool not found: {tool}");
+    // GNU tar (Git for Windows ships one) reads "C:" in an archive path as a remote host and fails
+    // with "Cannot connect to C: resolve failed"; --force-local makes it a local file. Windows' own
+    // bsdtar has no such option and needs none.
+    if (tool == "tar" && OperatingSystem.IsWindows() && IsGnuTar(resolved!))
+      args += " --force-local"; // last: the dash-less "xf" bundle must stay the first argument
     var psi = new ProcessStartInfo {
       FileName = resolved,
       Arguments = args,
