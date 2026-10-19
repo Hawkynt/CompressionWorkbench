@@ -1,0 +1,97 @@
+name	aliases_extensions	kind	rw	evidence
+7z	7z	archive	RW	7-zip.org main page; Archive/7z
+XZ	xz;txz	compression	RW	7-zip.org main page; Archive/XzHandler.cpp
+BZIP2	bz2;bzip2;tbz2;tbz	compression	RW	7-zip.org main page; Archive/Bz2Handler.cpp
+GZIP	gz;gzip;tgz	compression	RW	7-zip.org main page; Archive/GzHandler.cpp
+TAR	tar;ustar;pax	archive	RW	7-zip.org main page; Archive/Tar
+ZIP	zip;zipx;jar;war;ear;apk;docx;xlsx;pptx;odt;epub;xpi	archive	RW	7-zip.org main page; Archive/Zip
+WIM	wim;swm;esd;ppkg	disk-image	RW	7-zip.org main page; Archive/Wim
+APFS	apfs	filesystem	R	7-zip.org main page; Archive/ApfsHandler.cpp
+APM	apm	partition-table	R	Archive/ApmHandler.cpp
+AR	ar;a;deb;lib	archive	R	7-zip.org main page; Archive/ArHandler.cpp
+ARJ	arj	archive	R	7-zip.org main page; Archive/ArjHandler.cpp
+AVB	avb;Android Verified Boot	firmware	R	Archive/AvbHandler.cpp
+Base64	b64;base64	other	R	Archive/Base64Handler.cpp
+CAB	cab	archive	R	7-zip.org main page; Archive/Cab
+CHM	chm;chi;chq;chw;hxs	document	R	7-zip.org main page; Archive/Chm
+CPIO	cpio	archive	R	7-zip.org main page; Archive/CpioHandler.cpp
+CramFS	cramfs	filesystem	R	7-zip.org main page; Archive/CramfsHandler.cpp
+DMG	dmg	disk-image	R	7-zip.org main page; Archive/DmgHandler.cpp
+ELF	elf	executable	R	Archive/ElfHandler.cpp
+EXT	ext;ext2;ext3;ext4	filesystem	R	7-zip.org main page; Archive/ExtHandler.cpp
+FAT	fat	filesystem	R	7-zip.org main page; Archive/FatHandler.cpp
+FLV	flv	media	R	Archive/FlvHandler.cpp
+GPT	gpt	partition-table	R	7-zip.org main page; Archive/GptHandler.cpp
+HFS	hfs;hfsx	filesystem	R	7-zip.org main page; Archive/HfsHandler.cpp
+IHEX	ihex;hex	firmware	R	7-zip.org main page; Archive/IhexHandler.cpp
+ISO	iso;img	disk-image	R	7-zip.org main page; Archive/Iso
+LP	lp;Android Logical Partitions	partition-table	R	Archive/LpHandler.cpp
+LVM	lvm	partition-table	R	Archive/LvmHandler.cpp
+LZH	lzh;lha	archive	R	7-zip.org main page; Archive/LzhHandler.cpp
+LZMA	lzma	compression	R	7-zip.org main page; Archive/LzmaHandler.cpp
+MBR	mbr	partition-table	R	7-zip.org main page; Archive/MbrHandler.cpp
+MSI	msi;msp;doc;xls;ppt;Compound	installer	R	7-zip.org main page; Archive/ComHandler.cpp
+MsLZ	mslz;SZDD	compression	R	Archive/MslzHandler.cpp
+Mub	mub	executable	R	Archive/MubHandler.cpp
+Mach-O	macho	executable	R	Archive/MachoHandler.cpp
+NSIS	nsis	installer	R	7-zip.org main page; Archive/Nsis
+NTFS	ntfs	filesystem	R	7-zip.org main page; Archive/NtfsHandler.cpp
+PE	exe;dll;sys	executable	R	Archive/PeHandler.cpp
+TE	te	executable	R	Archive/PeHandler.cpp (Terse Executable)
+PPMD	pmd;ppmd	compression	R	Archive/PpmdHandler.cpp
+QCOW2	qcow;qcow2;qcow2c	disk-image	R	7-zip.org main page; Archive/QcowHandler.cpp
+RAR	rar;r00	archive	R	7-zip.org main page; Archive/Rar
+RAR5	rar	archive	R	Archive/Rar/Rar5Handler.cpp
+RPM	rpm	archive	R	7-zip.org main page; Archive/RpmHandler.cpp
+Sparse	simg;Android sparse image	disk-image	R	Archive/SparseHandler.cpp
+Split	001	archive	R	Archive/SplitHandler.cpp
+SquashFS	squashfs	filesystem	R	7-zip.org main page; Archive/SquashfsHandler.cpp
+SWF	swf	media	R	Archive/SwfHandler.cpp
+SWFc	swf	media	R	Archive/SwfHandler.cpp (compressed SWF)
+UDF	udf	filesystem	R	7-zip.org main page; Archive/Udf
+UEFI	uefif;UEFI capsule;BIOS	firmware	R	7-zip.org main page; Archive/UefiHandler.cpp
+VDI	vdi	disk-image	R	7-zip.org main page; Archive/VdiHandler.cpp
+VHD	vhd	disk-image	R	7-zip.org main page; Archive/VhdHandler.cpp
+VHDX	vhdx;avhdx	disk-image	R	7-zip.org main page; Archive/VhdxHandler.cpp
+VMDK	vmdk	disk-image	R	7-zip.org main page; Archive/VmdkHandler.cpp
+XAR	xar;pkg;xip	archive	R	7-zip.org main page; Archive/XarHandler.cpp
+Z	z;taz	compression	R	7-zip.org main page; Archive/ZHandler.cpp
+ZSTD	zst;tzst	compression	R	Archive/ZstdHandler.cpp
+LZMA2	lzma2	codec	RW	Compress/Lzma2Register.cpp
+PPMd (method)	ppmd	codec	RW	Compress/PpmdRegister.cpp
+Deflate	deflate	codec	RW	Compress/DeflateRegister.cpp
+Deflate64	deflate64	codec	RW	Compress/Deflate64Register.cpp
+Zlib	zlib	codec	RW	Compress/ZlibEncoder.cpp
+Copy	copy	codec	RW	Compress/CopyRegister.cpp
+BCJ x86	bcj;x86	filter	RW	Compress/BcjRegister.cpp
+BCJ2	bcj2	filter	RW	Compress/Bcj2Register.cpp
+PPC	ppc	filter	RW	Compress/BranchRegister.cpp
+IA64	ia64	filter	RW	Compress/BranchRegister.cpp
+ARM	arm	filter	RW	Compress/BranchRegister.cpp
+ARMT	armt;thumb	filter	RW	Compress/BranchRegister.cpp
+ARM64	arm64	filter	RW	Compress/BranchRegister.cpp
+SPARC	sparc	filter	RW	Compress/BranchRegister.cpp
+RISCV	riscv	filter	RW	Compress/BranchRegister.cpp
+Delta	delta	filter	RW	Compress/DeltaFilter.cpp
+Swap2/Swap4	swap2;swap4	filter	RW	Compress/ByteSwap.cpp
+Implode	implode	codec	R	Compress/ImplodeDecoder.cpp
+Shrink	shrink	codec	R	Compress/ShrinkDecoder.cpp
+LZX	lzx	codec	R	Compress/LzxDecoder.cpp
+LZMS	lzms	codec	R	Compress/LzmsDecoder.cpp
+Quantum	quantum	codec	R	Compress/QuantumDecoder.cpp
+Xpress	xpress	codec	R	Compress/XpressDecoder.cpp
+LZFSE	lzfse	codec	R	Compress/LzfseDecoder.cpp
+Rar1	rar1	codec	R	Compress/Rar1Decoder.cpp
+Rar2	rar2	codec	R	Compress/Rar2Decoder.cpp
+Rar3	rar3	codec	R	Compress/Rar3Decoder.cpp
+Rar5 (method)	rar5	codec	R	Compress/Rar5Decoder.cpp
+LZH (method)	lzh	codec	R	Compress/LzhDecoder.cpp
+Z (LZW method)	z	codec	R	Compress/ZDecoder.cpp
+Zstd (method)	zstd	codec	R	Compress/ZstdDecoder.cpp
+AES-256 (7z)	7zaes	encryption	RW	Crypto/7zAes.cpp
+AES (WinZip)	wzaes	encryption	RW	Crypto/WzAes.cpp
+ZipCrypto	zipcrypto	encryption	RW	Crypto/ZipCrypto.cpp
+Zip Strong Encryption	zipstrong	encryption	R	Crypto/ZipStrong.cpp
+RAR AES-128	rar3aes	encryption	R	Crypto/RarAes.cpp
+RAR5 AES-256	rar5aes	encryption	R	Crypto/Rar5Aes.cpp
+RAR 2.0 crypto	rar20	encryption	R	Crypto/Rar20Crypto.cpp

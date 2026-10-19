@@ -1,0 +1,20 @@
+name	aliases_extensions	kind	rw	evidence
+OLE2 Compound Document Format		document		fmt/111
+Microsoft Compiled HTML Help	chm;chw	document		fmt/634
+Apple Disk Copy Image	dmg;image;img;smi	disk-image		fmt/625
+TAP (Commodore 64)	tap	disk-image		fmt/802
+T64 Tape Image Format	t64	disk-image		fmt/820
+Amiga Disk File	adf	disk-image		fmt/1361
+InstallShield Executable	ex_	installer		fmt/1466
+Nero Burning ROM Image File	nrg	disk-image		fmt/1743
+SuperCard Pro Image File	scp	disk-image		fmt/2071
+Windows Help File	hlp	document		fmt/474
+Cue Sheet	cue	disk-image		fmt/1069
+Perfect ZX Tape (PZX) Image Format	pzx	disk-image		fmt/1898
+AppleSingle	as	encoding		fmt/967;fmt/968
+MacBinary	bin	encoding		fmt/1761;fmt/1762;fmt/1763
+pcap Packet Capture	pcap;cap	other		fmt/779
+pcap Next Generation Packet Capture	pcapng	other		fmt/780
+Executable and Linkable Format	elf;o	executable		fmt/688;fmt/689;fmt/690;fmt/691
+Windows Portable Executable	exe;dll;sys	executable		x-fmt/411;fmt/899;fmt/900
+Keyhole Markup Language (Container)	kmz	archive		fmt/724

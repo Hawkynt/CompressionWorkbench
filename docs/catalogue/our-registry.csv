@@ -1,0 +1,750 @@
+kind,id,display_name,category,filesystem,extensions,list,extract,create,modify
+format,Aac,AAC (ADTS),Audio,,.aac,Y,Y,Y,
+format,Ac3,AC-3 / E-AC-3,Audio,,.ac3;.eac3,Y,Y,Y,
+format,Ace,ACE,Archive,,.ace,Y,Y,Y,Y
+format,Acm,Interplay ACM (Fallout / Baldur's Gate audio),Audio,,.acm,Y,Y,Y,
+format,AcronisTib,Acronis True Image (.tib),Archive,,.tib,Y,Y,,Y
+format,AcronisTibx,Acronis True Image .tibx,Archive,,.tibx,Y,Y,,
+format,Adf,ADF,Archive,Y,.adf,Y,Y,Y,Y
+format,Adfs,Acorn ADFS,Archive,Y,.adl;.adf,Y,Y,Y,Y
+format,AdvFs,AdvFS (Tru64 UNIX),Archive,Y,.advfs,Y,Y,Y,Y
+format,Adx,CRI ADX,Audio,,.adx,Y,Y,Y,
+format,Aea,Sony ATRAC1 / MiniDisc (.aea),Audio,,.aea,Y,Y,Y,
+format,Aff4,Advanced Forensic Format 4 (AFF4),Archive,,.aff4,Y,Y,Y,
+format,Afio,afio,Archive,,.afio,Y,Y,Y,
+format,Afs,Sega AFS,Archive,,.afs,Y,Y,Y,Y
+format,Ahx,AHX / THX Synth-Tracker,Audio,,.ahx;.thx,Y,Y,Y,
+format,Ai,Adobe Illustrator,Archive,,.ai,Y,Y,,
+format,Aica,Yamaha AICA ADPCM (Dreamcast),Audio,,.aica,Y,Y,Y,
+format,Aiff,AIFF / AIFC (Apple audio),Audio,,.aif;.aiff;.aifc,Y,Y,Y,
+format,Akb,Square Enix AKB / AKB2,Audio,,.akb,Y,Y,Y,
+format,Alac,ALAC (Apple Lossless),Audio,,.m4a;.alac;.caf,Y,Y,Y,
+format,AlZip,ALZip,Archive,,.alz,Y,Y,Y,Y
+format,Amf,AMF (DSMI Advanced Module Format),Audio,,.amf,Y,Y,Y,
+format,AmigaPfs,Amiga Professional FS,Archive,Y,.pfs,Y,Y,Y,Y
+format,Ampk,AMPK (Amiga Pack),Archive,,.ampk,Y,Y,Y,Y
+format,Amr,3GPP AMR,Audio,,.amr;.awb;.3ga,Y,Y,Y,
+format,AmrNb,AMR-NB,Audio,,.amr,,,,
+format,AmrWb,AMR-WB,Audio,,.amr,,,,
+format,AndroidBundle,Android App Bundle / split-APK set,Archive,,.aab;.apks,Y,Y,Y,Y
+format,AndroidOta,Android OTA payload,Archive,,,Y,Y,Y,
+format,AndroidSparse,Android Sparse Image,Archive,,.simg;.sparse,Y,Y,Y,
+format,Ani,ANI (animated cursor),Archive,,.ani,Y,Y,Y,
+format,Aomei,AOMEI Backupper Image (ADI/AFI),Archive,,.adi;.afi,Y,Y,Y,Y
+format,Apc,CRYO APC,Audio,,.apc,Y,Y,Y,
+format,Ape,Monkey's Audio (.ape),Audio,,.ape;.mac,Y,Y,Y,
+format,Apfs,APFS,Archive,Y,.apfs,Y,Y,Y,Y
+format,Apk,APK,Archive,,.apk,Y,Y,Y,Y
+format,ApkNativeLibs,APK native libraries,Archive,,,Y,Y,Y,
+format,ApLib,aPLib,Stream,,.aplib,,Y,Y,
+format,Apng,APNG (animated PNG),Archive,,.apng,Y,Y,,
+format,AppImage,AppImage,Archive,,.AppImage,Y,Y,Y,
+format,AppleDos,Apple DOS 3.3,Archive,Y,.dsk;.do,Y,Y,Y,Y
+format,AppleDouble,AppleDouble,Archive,,.appledouble,Y,Y,Y,Y
+format,ApplePascal,Apple UCSD Pascal,Archive,Y,.pvol;.pdv;.pas,Y,Y,Y,Y
+format,AppleSingle,AppleSingle,Archive,,.as;.applesingle,Y,Y,Y,Y
+format,Appx,APPX,Archive,,.appx;.msix,Y,Y,Y,Y
+format,Ar,AR,Archive,,.a;.ar;.deb,Y,Y,Y,Y
+format,Arc,ARC,Archive,,.arc,Y,Y,Y,Y
+format,Arj,ARJ,Archive,,.arj,Y,Y,Y,Y
+format,Arrow,Apache Arrow IPC,Archive,,.arrow;.feather,Y,Y,,
+format,Arsc,Android Resources (ARSC),Archive,,.arsc,Y,Y,,
+format,Asar,Electron Asar,Archive,,.asar,Y,Y,Y,
+format,Asf,ASF (Advanced Systems Format),Audio,,.asf;.wma;.wmv,Y,Y,Y,Y
+format,AsPack,ASPack (Win32 PE),Archive,,,Y,Y,,
+format,AsProtect,ASProtect (Win32 PE),Archive,,,Y,Y,,
+format,Ast,AST (GameCube/Wii stream),Audio,,.ast,Y,Y,Y,
+format,Atari8,ATR (Atari 8-bit),Archive,Y,.atr,Y,Y,Y,Y
+format,Au,Sun/NeXT .au (.snd),Audio,,.au;.snd,Y,Y,Y,
+format,Aud,Westwood AUD (Command & Conquer),Audio,,.aud,Y,Y,Y,
+format,Avi,AVI (RIFF video),Video,,.avi,Y,Y,Y,
+format,Avif,AVIF,Image,,.avif;.avifs,Y,Y,,
+format,Avr,AVR (Audio Visual Research),Audio,,.avr,Y,Y,Y,
+format,Avro,Apache Avro OCF,Archive,,.avro,Y,Y,,
+format,Awb,CRI Audio Wave Bank,Archive,,.awb;.acb,Y,Y,Y,
+format,Ay,ZX Spectrum AY,Audio,,.ay,Y,Y,,
+format,B64Encoding,Base64 (uuencode wrapper),Wrapper,,.b64;.base64,,Y,Y,
+format,Ba2,Bethesda Archive v2,Archive,,.ba2,Y,Y,Y,Y
+format,Balz,BALZ,Stream,,.balz,,Y,Y,
+format,Bbc,BBC DFS,Archive,Y,.ssd;.dsd,Y,Y,Y,Y
+format,BcacheFs,BcacheFS,Archive,Y,.bcachefs,Y,Y,Y,Y
+format,Bcm,BCM,Stream,,.bcm,,Y,Y,
+format,Bcstm,BCSTM (3DS stream),Audio,,.bcstm,Y,Y,Y,
+format,BeeGfs,BeeGFS,Archive,Y,,,,,
+format,Bfs,BFS,Archive,Y,.bfs;.img,Y,Y,Y,Y
+format,Bfstm,BFSTM (WiiU/Switch stream),Audio,,.bfstm,Y,Y,Y,
+format,Big,BIG,Archive,,.big,Y,Y,Y,Y
+format,BigTiff,BigTIFF (large multi-page),Archive,,.btf;.bigtiff,Y,Y,,
+format,Bik,Bink Video,Audio,,.bik;.bk2,Y,Y,Y,
+format,BinaryII,Apple II Binary II,Archive,,.bny;.bqy,Y,Y,Y,Y
+format,BinCue,BIN/CUE,Archive,,.bin;.cue,Y,Y,Y,Y
+format,BinHex,BinHex,Wrapper,,.hqx,,Y,Y,
+format,BitRock,BitRock / InstallBuilder,Archive,,,Y,Y,,
+format,Bkf,Microsoft NTBackup (MTF),Archive,,.bkf,Y,Y,Y,Y
+format,BochsDisk,Bochs Redolog Disk,Archive,,.redolog,Y,Y,,
+format,Bonk,Bonk Audio,Audio,,.bonk,Y,Y,Y,
+format,BriefLz,BriefLZ,Stream,,.blz,,Y,Y,
+format,Brotli,Brotli,Stream,,.br,,Y,Y,
+format,Brr,SNES BRR sample,Audio,,.brr,Y,Y,Y,
+format,Brstm,BRSTM (Wii stream),Audio,,.brstm,Y,Y,Y,
+format,Bsa,BSA,Archive,,.bsa,Y,Y,Y,Y
+format,Bsc,BSC,Stream,,.bsc,,Y,Y,
+format,Btrfs,Btrfs Filesystem Image,Archive,Y,.btrfs;.img,Y,Y,Y,
+format,Bwav,BWAV (Switch stream),Audio,,.bwav,Y,Y,Y,
+format,Bzexe,bzexe executable wrapper,Archive,,,Y,Y,,
+format,Bzip2,BZip2,Stream,,.bz2;.bzip2,,Y,Y,
+format,Cab,CAB,Archive,,.cab,Y,Y,Y,Y
+format,Caf,CAF (Core Audio Format),Audio,,.caf,Y,Y,Y,
+format,Cb7,CB7,Archive,,.cb7,Y,Y,Y,Y
+format,Cbr,CBR,Archive,,.cbr,Y,Y,Y,Y
+format,Cbz,CBZ,Archive,,.cbz,Y,Y,Y,Y
+format,Cdi,CDI,Archive,,.cdi,Y,Y,Y,Y
+format,CephFs,CephFS / RADOS pool export,Archive,Y,.rados;.ceph,Y,Y,Y,Y
+format,Chm,CHM,Archive,,.chm,Y,Y,Y,Y
+format,CloneCd,CloneCD CCD,Archive,,.ccd,Y,Y,,
+format,Cmf,Creative Music File (OPL),Audio,,.cmf,Y,Y,,
+format,Cmix,cmix,Stream,,.cmix,,Y,Y,
+format,Coherent,Coherent FS,Archive,Y,.coh;.coherent,Y,Y,Y,Y
+format,Collada,Collada (.dae),Archive,,.dae,Y,Y,,
+format,CompactPro,Compact Pro,Archive,,.cpt,Y,Y,Y,Y
+format,CompoundFileBinary,Compound File Binary / OLE Structured Storage,Archive,,.cfb;.ole,Y,Y,,
+format,Compress,Unix Compress,Stream,,.z,,Y,Y,
+format,CpcDsk,CPC DSK,Archive,Y,.dsk,Y,Y,Y,Y
+format,Cpio,CPIO,Archive,,.cpio,Y,Y,Y,Y
+format,Cpm,"CP/M 2.2 (8"" SSSD)",Archive,Y,.cpm;.dsk,Y,Y,Y,Y
+format,CramFs,CramFS,Archive,Y,.cramfs,Y,Y,Y,Y
+format,Crate,Rust Crate,Archive,,.crate,Y,Y,Y,
+format,Creg,Windows 9x Registry hive (CREG),Archive,,.dat;.dao;.pol,Y,Y,Y,
+format,Crinkler,Crinkler (Win32 PE 4K),Archive,,,Y,Y,,
+format,Cromemco,Cromemco RDOS,Archive,Y,.rdos;.crom,Y,Y,Y,Y
+format,Crunch,CP/M Crunch,Stream,,.cru,,Y,Y,
+format,Crx,CRX,Archive,,.crx,Y,Y,Y,
+format,Csc,CSC,Stream,,.csc,,Y,Y,
+format,Cso,PSP CSO/ZSO,Archive,,.cso;.ziso;.zso,Y,Y,Y,Y
+format,Cur,Windows CUR cursor,Archive,,.cur,Y,Y,Y,
+format,Cvsd,Raw CVSD,Audio,,.cvsd,Y,Y,Y,
+format,Cxfs,SGI CXFS (Cluster XFS),Archive,Y,.cxfs,Y,Y,Y,Y
+format,D64,D64,Archive,Y,.d64,Y,Y,Y,Y
+format,D71,D71,Archive,Y,.d71,Y,Y,Y,Y
+format,D81,D81,Archive,Y,.d81,Y,Y,Y,Y
+format,Dar,Disk ARchive (DAR),Archive,,.dar,Y,Y,Y,
+format,Dbm,DBM (DigiBooster Pro),Audio,,.dbm,Y,Y,,
+format,Dcs,DCS (Amiga Disk Archiver),Archive,,.dcs,Y,Y,Y,
+format,Dcx,DCX (multi-image PCX),Archive,,.dcx,Y,Y,,
+format,Deb,DEB,Archive,,.deb,Y,Y,Y,Y
+format,Density,Density,Stream,,.density,,Y,Y,
+format,Dff,DSDIFF (.dff),Audio,,.dff;.dsdiff,Y,Y,Y,
+format,Dfpwm,DFPWM1a (ComputerCraft),Audio,,.dfpwm,Y,Y,Y,
+format,Dicom,DICOM,Archive,,.dcm;.dicom,Y,Y,,
+format,DicomDir,DICOMDIR (multi-study index),Archive,,.dcmdir,Y,Y,,
+format,DiskDoubler,DiskDoubler,Archive,,.dd;.sea,Y,Y,Y,
+format,Djvu,DjVu,Image,,.djvu;.djv,Y,Y,,
+format,Dls,DLS (Downloadable Sounds),Audio,,.dls,Y,Y,,
+format,Dmg,DMG,Archive,,.dmg,Y,Y,Y,Y
+format,Dms,DMS,Archive,,.dms,Y,Y,Y,
+format,Dng,Adobe DNG / Camera RAW,Image,,.dng;.nef;.cr2;.raf;.arw;.rw2;.orf;.pef;.srw,Y,Y,,
+format,Doc,DOC,Archive,,.doc,Y,Y,Y,Y
+format,Docx,DOCX,Archive,,.docx,Y,Y,Y,Y
+format,DoubleSpace,DoubleSpace CVF,Archive,Y,.cvf,Y,Y,Y,Y
+format,Dpx,DPX (SMPTE film),Archive,,.dpx,Y,Y,,
+format,DragonFs,DragonFS,Archive,Y,.dfs,Y,Y,Y,Y
+format,DriveSpace,DriveSpace CVF,Archive,Y,.cvf,Y,Y,Y,Y
+format,DriveSpace3,DriveSpace 3 CVF,Archive,Y,,Y,Y,Y,Y
+format,Dsf,DSF (DSD Stream File),Audio,,.dsf,Y,Y,Y,
+format,Dtb,Flattened Device Tree Blob,Archive,,.dtb;.dtbo,Y,Y,Y,Y
+format,Dts,DTS (Coherent Acoustics),Audio,,.dts;.dtshd,Y,Y,,
+format,Dxf,DXF (AutoCAD Drawing Exchange),Archive,,.dxf,Y,Y,,
+format,Dzip,Bloodlines DZIP,Archive,,.dzip,Y,Y,Y,Y
+format,Ear,EAR,Archive,,.ear,Y,Y,Y,Y
+format,EaSchl,Electronic Arts SCHl Stream,Audio,,.eam;.sng,Y,Y,Y,
+format,EaseUsPbd,EaseUS Todo Backup (.pbd),Archive,,.pbd,Y,Y,,
+format,Ecryptfs,eCryptfs,Archive,Y,.ecryptfs,Y,Y,Y,Y
+format,Efs,EFS (SGI Extent File System),Archive,Y,.efs;.efsimg,Y,Y,Y,Y
+format,Egg,EGG,Archive,,.egg,Y,Y,Y,
+format,Elf,ELF executable,Archive,,.elf;.so;.o;.ko,Y,Y,,
+format,Eml,EML (RFC 822 message),Archive,,.eml,Y,Y,Y,Y
+format,Epub,EPUB,Archive,,.epub,Y,Y,Y,Y
+format,Erofs,EROFS,Archive,Y,.erofs;.img,Y,Y,Y,Y
+format,Esd,ESD,Archive,,.esd,Y,Y,Y,
+format,EspsSd,ESPS sampled data (.sd),Audio,,.sd,Y,Y,,
+format,Ewf,EnCase EWF (E01),Archive,,.e01;.ewf;.l01,Y,Y,Y,Y
+format,ExFat,exFAT,Archive,Y,.img;.exfat,Y,Y,Y,Y
+format,Ext,ext2/3/4,Archive,Y,.ext2;.ext3;.ext4;.img,Y,Y,Y,Y
+format,Ext1,ext1,Archive,Y,.ext1,Y,Y,Y,Y
+format,F2fs,F2FS,Archive,Y,.f2fs,Y,Y,Y,Y
+format,F669,Composer 669,Audio,,.669,Y,Y,,
+format,Far,FAR (Farandole Composer),Audio,,.far,Y,Y,,
+format,Fat,FAT Filesystem Image,Archive,Y,.img;.ima;.flp;.fat,Y,Y,Y,Y
+format,FatPlus,FAT+ Filesystem Image (large-file extension),Archive,Y,,Y,Y,Y,Y
+format,Fatx,FATX (Xbox),Archive,Y,.fatx,Y,Y,Y,Y
+format,Fb2,FB2 (FictionBook),Archive,,.fb2,Y,Y,,
+format,Ffu,Windows Full Flash Update (FFU),Archive,,.ffu,Y,Y,,
+format,Fits,FITS,Archive,,.fits;.fit;.fts,Y,Y,Y,
+format,Fla,Flash/Animate FLA,Archive,,.fla,Y,Y,Y,
+format,Flac,FLAC,Stream,,.flac;.fla,Y,Y,Y,
+format,FlacArchive,FLAC (archive view),Audio,,,Y,Y,,
+format,Fli,FLI/FLC (Autodesk animation),Archive,,.fli;.flc,Y,Y,,
+format,Flv,Flash Video (FLV),Video,,.flv,Y,Y,Y,
+format,Fmod,FMOD Sample Bank,Archive,,.fsb,Y,Y,,
+format,FreeArc,FreeArc,Archive,,.arc,Y,Y,Y,Y
+format,Freeze,Freeze,Stream,,.f;.freeze,,Y,Y,
+format,Fsg,FSG (Win32 PE),Archive,,,Y,Y,,
+format,G64,G64 (Commodore GCR),Archive,Y,.g64,Y,Y,Y,Y
+format,G711Alaw,Raw A-law (G.711),Audio,,.al;.alaw,Y,Y,Y,
+format,G711Ulaw,Raw µ-law (G.711),Audio,,.ul;.ulaw,Y,Y,Y,
+format,G7231,ITU-T G.723.1,Audio,,.g723;.g7231,Y,Y,,
+format,GameMaker,GameMaker data file,Archive,,.win;.unx;.ios,Y,Y,Y,
+format,Gar,Nintendo 3DS GAR,Archive,,.gar,Y,Y,Y,Y
+format,Gb,Game Boy / GBC ROM,Archive,,.gb;.gbc,Y,Y,,
+format,Gbs,Game Boy Sound,Audio,,.gbs,Y,Y,,
+format,Gem,Ruby Gem,Archive,,.gem,Y,Y,Y,
+format,Gemdos,GEMDOS (Atari ST),Archive,Y,.st;.stx;.dim,Y,Y,Y,Y
+format,Gfs1,"GFS (Sistina/Red Hat, original)",Archive,Y,.gfs;.gfs1,Y,Y,Y,Y
+format,Gfs2,GFS2 (Global File System 2),Archive,Y,.gfs2,Y,Y,Y,Y
+format,Ghost,Symantec / Norton Ghost,Archive,,.gho;.ghs,Y,Y,Y,Y
+format,Gif,GIF (multi-frame),Archive,,.gif,Y,Y,,
+format,Glb,GLB (binary glTF),Image,,.glb;.vrm,Y,Y,,
+format,GlusterFs,GlusterFS brick,Archive,Y,.gluster,Y,Y,,
+format,Gob,Lucasarts GOB,Archive,,.gob;.goo,Y,Y,Y,Y
+format,GodotPck,Godot PCK,Archive,,.pck,Y,Y,Y,Y
+format,GoPacker,GoPacker executable wrapper,Archive,,,Y,Y,,
+format,Gpfs,IBM Storage Scale / GPFS,Archive,Y,.gpfs,Y,Y,,
+format,Grp,GRP,Archive,,.grp,Y,Y,Y,Y
+format,GsmRaw,Raw GSM 06.10 (.gsm),Audio,,.gsm,Y,Y,Y,
+format,GsOs,Apple IIgs GS/OS (2IMG),Archive,Y,.gsdos,Y,Y,Y,Y
+format,Gym,Genesis GYM log,Audio,,.gym,Y,Y,,
+format,Gzexe,gzexe executable wrapper,Archive,,,Y,Y,,
+format,Gzip,GZIP,Stream,,.gz;.gzip,,Y,Y,
+format,Ha,HA,Archive,,.ha,Y,Y,Y,Y
+format,Hammer,HAMMER (DragonFly BSD),Archive,Y,.hammer,Y,Y,Y,Y
+format,Hammer2,HAMMER2 (DragonFly BSD),Archive,Y,.hammer2,Y,Y,Y,Y
+format,Hca,CRI HCA,Audio,,.hca,Y,Y,,
+format,Hcom,HCOM (Macintosh),Audio,,.hcom,Y,Y,Y,
+format,Hdf4,HDF4,Archive,,.hdf;.hdf4;.h4,Y,Y,,
+format,Hdf5,HDF5,Archive,,.h5;.hdf5,Y,Y,,
+format,Heif,HEIF / HEIC,Image,,.heic;.heif;.heix;.hif,Y,Y,,
+format,Hes,PC Engine HES,Audio,,.hes,Y,Y,,
+format,Hfe,HxC Floppy Emulator (HFE),Archive,,.hfe,Y,Y,,
+format,Hfs,HFS (Classic),Archive,Y,.hfs,Y,Y,Y,Y
+format,HfsPlus,HFS+,Archive,Y,.dmg;.hfsx;.hfs,Y,Y,Y,Y
+format,Hog,HOG,Archive,,.hog,Y,Y,Y,Y
+format,Hpfs,HPFS,Archive,Y,.img;.hpfs,Y,Y,Y,Y
+format,Hpi,Total Annihilation HPI,Archive,,.hpi;.ufo;.ccx;.gp3,Y,Y,Y,Y
+format,Hps,HPS (GameCube HALPST stream),Audio,,.hps,Y,Y,Y,
+format,Htfs,HTFS (SCO High Throughput File System),Archive,Y,.htfs;.s5,Y,Y,Y,Y
+format,Huan,Huan PE64 encrypted loader,Archive,,,Y,Y,,
+format,Human68k,Sharp X68000 Human68k,Archive,Y,.2hd;.dim,Y,Y,Y,Y
+format,Iceberg,Apache Iceberg metadata,Archive,,,Y,Y,,
+format,IcePacker,ICE Packer,Stream,,.ice,,Y,Y,
+format,Icns,ICNS (Apple icon),Archive,,.icns,Y,Y,,
+format,Ico,Windows ICO/CUR,Archive,,.ico,Y,Y,Y,Y
+format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
+format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
+format,InnoSetup,Inno Setup,Archive,,,Y,Y,Y,
+format,IntelHex,Intel HEX,Archive,,.hex;.ihex;.ihx;.h86,Y,Y,Y,Y
+format,Ipa,IPA,Archive,,.ipa,Y,Y,Y,Y
+format,Ipsw,Apple IPSW,Archive,,.ipsw;.otazip,Y,Y,Y,Y
+format,Ircam,IRCAM / BICSF (.sf),Audio,,.sf;.ircam,Y,Y,Y,
+format,Iso,ISO 9660,Archive,Y,.iso,Y,Y,Y,Y
+format,It,IT (Impulse Tracker),Audio,,.it,Y,Y,,
+format,Iti,Impulse Tracker Instrument,Audio,,.iti,Y,Y,,
+format,Its,Impulse Tracker Sample,Audio,,.its,Y,Y,,
+format,Jar,JAR,Archive,,.jar,Y,Y,Y,Y
+format,Jffs2,JFFS2,Archive,Y,.jffs2;.jffs;.img,Y,Y,Y,Y
+format,Jfs,JFS,Archive,Y,.jfs,Y,Y,Y,Y
+format,Jfs1,JFS1 (OS/2 original IBM JFS),Archive,Y,.jfs1,Y,Y,Y,Y
+format,Jp2,JPEG 2000,Image,,.jp2;.jpf;.jpx;.j2c;.jpc,Y,Y,,
+format,Jpeg,JPEG image,Image,,.jpg;.jpeg;.jpe;.jfif,Y,Y,,
+format,JpegArchive,JPEG (archive view),Image,,,Y,Y,,
+format,Json,JSON object graph,Archive,,.json;.cwb.json,Y,Y,Y,
+format,JuiceFs,JuiceFS,Archive,Y,.juicefs,Y,Y,,
+format,Jxl,JPEG XL,Archive,,.jxl,Y,Y,,
+format,Kkrunchy,kkrunchy (Win32 PE 64K),Archive,,,Y,Y,,
+format,Kmz,KMZ,Archive,,.kmz,Y,Y,Y,Y
+format,Kss,KSS (MSX/SMS music),Audio,,.kss,Y,Y,,
+format,Ktx2,KTX2 Texture,Archive,,.ktx2,Y,Y,,
+format,Kwaj,KWAJ,Stream,,,,Y,Y,
+format,Lbr,LBR,Archive,,.lbr,Y,Y,Y,Y
+format,LegacyOfficeCompoundFile,Legacy Microsoft Office compound file,Archive,,.dot;.xlt;.pps;.pot,Y,Y,,
+format,Leveldb,LevelDB SSTable,Archive,,.ldb;.sst,Y,Y,,
+format,Lfd,LucasArts LFD,Archive,,.lfd,Y,Y,Y,
+format,LhF,LhF (LhFloppy),Archive,,.lhf,Y,Y,Y,Y
+format,Lif,HP LIF (Logical Interchange Format),Archive,Y,.lif,Y,Y,Y,Y
+format,Lit,LIT (Microsoft Reader),Archive,,.lit,Y,Y,,
+format,LittleFs,LittleFS,Archive,Y,.littlefs;.lfs,Y,Y,Y,Y
+format,Lizard,Lizard (LZ5),Stream,,.liz,,Y,Y,
+format,Lnk,Windows Shell Link,Archive,,.lnk,Y,Y,Y,
+format,Lpc10,FS-1015 LPC-10,Audio,,.lpc10;.lpc,Y,Y,Y,
+format,Lrzip,Long Range Zip,Archive,,.lrz,Y,Y,Y,
+format,Lustre,Lustre,Archive,Y,.lustre;.ost;.mdt,Y,Y,,
+format,Lynx,Commodore Lynx archive,Archive,,.lnx,Y,Y,Y,Y
+format,Lz4,LZ4,Stream,,.lz4,,Y,Y,
+format,LzExe,LZEXE (DOS exe),Archive,,,Y,Y,,
+format,Lzfse,LZFSE,Stream,,.lzfse,,Y,Y,
+format,Lzg,LZG,Stream,,.lzg,,Y,Y,
+format,Lzh,LZH,Archive,,.lzh;.lha,Y,Y,Y,Y
+format,Lzham,LZHAM,Stream,,.lzham,,Y,Y,
+format,Lzip,Lzip,Stream,,.lz;.lzip,,Y,Y,
+format,Lzma,LZMA,Stream,,.lzma,,Y,Y,
+format,Lzop,LZOP,Stream,,.lzo,,Y,Y,
+format,Lzs,LZS,Stream,,.lzs,,Y,Y,
+format,LzxAmiga,LZX (Amiga),Archive,,.lzx,Y,Y,Y,Y
+format,M3u8,HLS Playlist (M3U8),Archive,,.m3u8;.m3u,Y,Y,,
+format,MacBinary,MacBinary,Wrapper,,.bin;.macbin,,Y,Y,
+format,MachO,Mach-O executable,Archive,,.macho;.dylib;.bundle;.o,Y,Y,,
+format,Macrium,Macrium Reflect,Archive,,.mrimgx;.mrbakx;.mrimg,Y,Y,Y,
+format,MacriumPreX,Macrium Reflect pre-X (.mrimg/.mrbak),Archive,,.mrimg;.mrbak;.mrex;.mrsql,Y,Y,,
+format,MacSnd,Mac 'snd ' resource,Audio,,,Y,Y,,
+format,Maff,MAFF,Archive,,.maff,Y,Y,Y,Y
+format,Matlab,MATLAB MAT v5,Archive,,.mat,Y,Y,,
+format,MatlabV4,MATLAB MAT v4,Archive,,.mat,Y,Y,,
+format,Maud,IFF/MAUD (MacroSystem),Audio,,.maud,Y,Y,Y,
+format,Mbox,mbox (Unix mailbox),Archive,,.mbox;.mbx,Y,Y,Y,Y
+format,Mca,MCA (Minecraft region),Archive,,.mca;.mcr,Y,Y,Y,
+format,Mcm,MCM,Stream,,.mcm,,Y,Y,
+format,Mdb,Microsoft Access (Jet Red / ACCDB),Archive,,.mdb;.accdb,Y,Y,,
+format,Mdf,MDF/MDS,Archive,,.mdf;.mds,Y,Y,Y,Y
+format,Med,OctaMED (MMD0 / MMD1),Audio,,.med;.mmd0;.mmd1,Y,Y,,
+format,MessagePack,MessagePack object graph,Archive,,.msgpack;.mpk,Y,Y,Y,
+format,Mew,MEW (Win32 PE),Archive,,,Y,Y,,
+format,Mfs,MFS (Macintosh File System),Archive,Y,.mfs,Y,Y,Y,Y
+format,Mfs1,MFS-1 (Acorn Master File System v1),Archive,Y,.mfsd;.mfs,Y,Y,Y,Y
+format,Mhk,Cyan Mohawk,Archive,,.mhk,Y,Y,Y,
+format,Midi,MIDI (Standard MIDI File),Audio,,.mid;.midi,Y,Y,Y,
+format,MinixFs,Minix FS,Archive,Y,.minix;.img,Y,Y,Y,Y
+format,MinixV1,Minix V1 FS,Archive,Y,.minix1,Y,Y,Y,Y
+format,MinixV2,Minix V2 FS,Archive,Y,.minix2,Y,Y,Y,Y
+format,Mix,Westwood MIX,Archive,,.mix,Y,Y,Y,
+format,Mkv,MKV / WebM (demuxed),Video,,.mkv;.webm;.mka;.mks,Y,Y,Y,
+format,Mng,MNG (multi-image PNG),Archive,,.mng,Y,Y,,
+format,Mo,MO (gettext binary catalog),Archive,,.mo,Y,Y,Y,
+format,Mobi,MOBI / AZW (Amazon eBook),Archive,,.mobi;.prc;.azw;.azw3,Y,Y,Y,
+format,Mod,MOD (ProTracker / SoundTracker),Audio,,.mod,Y,Y,,
+format,MooseFs,MooseFS,Archive,Y,.mfsm,Y,Y,,
+format,Mp3,MP3 (MPEG audio),Audio,,.mp3;.mp2,Y,Y,Y,
+format,Mp4,MP4 / MOV (demuxed),Video,,.mp4;.m4v;.m4a;.mov;.3gp;.3g2,Y,Y,Y,
+format,Mpc,Musepack (MPC),Audio,,.mpc;.mpp;.mp+,Y,Y,,
+format,MpegPs,MPEG Program Stream,Video,,.mpg;.mpeg;.vob;.m2p;.ps,Y,Y,Y,
+format,MpegTs,MPEG-2 Transport Stream,Archive,,.ts;.m2ts;.mts,Y,Y,Y,Y
+format,Mpo,MPO (stereoscopic JPEG),Archive,,.mpo,Y,Y,,
+format,Mpq,MPQ,Archive,,.mpq,Y,Y,Y,Y
+format,MPress,MPRESS (Win32 PE / Linux ELF),Archive,,,Y,Y,,
+format,Msa,MSA (Magic Shadow Archiver),Archive,Y,.msa,Y,Y,Y,Y
+format,Msg,MSG,Archive,,.msg,Y,Y,Y,Y
+format,Msi,MSI (OLE Compound File),Archive,,.msi;.msp;.mst,Y,Y,Y,Y
+format,Msix,MSIX,Archive,,.msix;.msixbundle,Y,Y,Y,Y
+format,Mtm,MTM (MultiTracker),Audio,,.mtm,Y,Y,,
+format,Mtree,mtree,Archive,,.mtree,Y,,Y,
+format,Mus,DMX/Doom MUS,Audio,,.mus,Y,Y,,
+format,Mz,DOS MZ executable,Archive,,.exe;.com;.ovl;.bin,Y,Y,,
+format,Narc,Nintendo NARC,Archive,,.narc;.carc,Y,Y,Y,Y
+format,Nbi,Net Boot Image (NBI),Archive,,.nbi,Y,Y,,
+format,Nds,NDS,Archive,,.nds,Y,Y,Y,Y
+format,Nelly,Nellymoser Asao (Flash audio stream),Audio,,.nelly,Y,Y,,
+format,Nes,NES ROM (iNES / NES 2.0),Archive,,.nes,Y,Y,,
+format,NetAssembly,.NET assembly,Archive,,,Y,Y,,
+format,NetCdf,NetCDF (Classic),Archive,,.nc;.cdf,Y,Y,,
+format,Nib,NIB (Commodore nibble dump),Archive,Y,.nib,Y,Y,Y,Y
+format,Nifti,NIfTI,Archive,,.nii;.nii.gz,Y,Y,,
+format,Nilfs1,NILFS v1,Archive,Y,.nilfs1;.nilfs,Y,Y,Y,Y
+format,Nilfs2,NILFS2,Archive,Y,.nilfs2;.nilfs,Y,Y,Y,Y
+format,Npy,NumPy NPY,Archive,,.npy,Y,Y,Y,
+format,Npz,NumPy NPZ,Archive,,.npz,Y,Y,Y,
+format,Nrbf,.NET BinaryFormatter / NRBF object graph,Archive,,.nrbf,Y,Y,Y,
+format,Nrg,NRG,Archive,,.nrg,Y,Y,Y,Y
+format,Nsa,NSA,Archive,,.nsa,Y,Y,Y,Y
+format,Nsf,NES Sound Format,Audio,,.nsf;.nsfe,Y,Y,,
+format,Nsis,NSIS,Archive,,,Y,Y,Y,
+format,NsPack,NsPack (Win32 PE),Archive,,,Y,Y,,
+format,Nss,NSS (Novell Storage Services),Archive,Y,.nss,Y,Y,Y,
+format,Ntfs,NTFS,Archive,Y,.ntfs;.img,Y,Y,Y,Y
+format,NuFx,NuFX / ShrinkIt,Archive,,.shk;.sdk;.bxy,Y,Y,Y,Y
+format,NuPkg,NuPkg,Archive,,.nupkg,Y,Y,Y,Y
+format,Nwfs,NWFS (Novell NetWare 386 Traditional Filesystem),Archive,Y,.nwfs;.nwvol;.netware,Y,Y,Y,Y
+format,Nwfs386,NWFS386 (Novell Traditional NetWare filesystem),Archive,Y,.nwfs386;.nw386,Y,Y,Y,Y
+format,Obj,Wavefront OBJ (3D model),Archive,,.obj,Y,Y,,
+format,Ocfs2,OCFS2 (Oracle Cluster Filesystem 2),Archive,Y,.ocfs2,Y,Y,Y,Y
+format,Odp,ODP,Archive,,.odp,Y,Y,Y,Y
+format,Ods,ODS,Archive,,.ods,Y,Y,Y,Y
+format,Ods1,ODS-1 (VAX/VMS Files-11 L1),Archive,Y,.ods1;.vms,Y,Y,Y,Y
+format,Odt,ODT,Archive,,.odt,Y,Y,Y,Y
+format,OfficeOpenXml,Office Open XML package parts,Archive,,.docm;.dotx;.dotm;.xlsm;.xltx;.xltm;.pptm;.ppsx;.ppsm;.potx;.potm,Y,Y,,
+format,Ogg,OGG (Xiph container),Audio,,.ogg;.oga;.opus;.spx,Y,Y,Y,
+format,Okt,Oktalyzer,Audio,,.okt,Y,Y,,
+format,Oma,Sony OpenMG (OMA/AA3),Audio,,.oma;.aa3;.at3,Y,Y,,
+format,OneFs,Dell EMC Isilon OneFS,Archive,Y,.onefs,Y,Y,,
+format,OneNote,Microsoft OneNote,Archive,,.one;.onetoc2,Y,Y,,
+format,Onnx,ONNX,Archive,,.onnx,Y,Y,,
+format,OpenVms,OpenVMS Files-11,Archive,Y,.ods2;.ods5;.vmsdisk,Y,Y,Y,Y
+format,Opus,Opus (Ogg),Audio,,.opus,Y,Y,,
+format,OrangeFs,OrangeFS / PVFS2 DBPF,Archive,Y,.orangefs;.pvfs;.bstream,Y,Y,Y,Y
+format,Orc,Apache ORC,Archive,,.orc,Y,Y,,
+format,Origami,Origami .NET executable wrapper,Archive,,,Y,Y,,
+format,Os9Rbf,Microware OS-9 RBF,Archive,Y,.os9;.rbf,Y,Y,Y,Y
+format,Otc,OTC (OpenType collection),Archive,,.otc,Y,Y,,
+format,Otf,OTF (OpenType font — glyphs),Archive,,.otf,Y,Y,,
+format,Ova,OVA/OVF Virtual Appliance,Archive,,.ova,Y,Y,Y,
+format,Pack200,Pack200,Archive,,.pack;.pack.gz,Y,,,
+format,PackBits,PackBits,Stream,,.packbits,,Y,Y,
+format,PackDisk,PackDisk (Amiga),Archive,,.pdsk,Y,Y,Y,
+format,PackIt,PackIt,Archive,,.pit,Y,Y,Y,Y
+format,Paf,PARIS Audio File (Ensoniq),Audio,,.paf,Y,Y,Y,
+format,Pak,PAK,Archive,,.pak,Y,Y,Y,Y
+format,Papaw,Papaw executable wrapper,Archive,,,Y,Y,,
+format,Paq8,PAQ8,Stream,,.paq8l;.paq8,,Y,Y,
+format,Par2,Parchive v2 (PAR2),Archive,,.par2,Y,Y,,
+format,Paragon,Paragon Backup,Archive,,.pbf,Y,Y,Y,Y
+format,ParallelsHdd,Parallels Disk (HDS),Archive,,.hds,Y,Y,,
+format,Parquet,Apache Parquet,Archive,,.parquet,Y,Y,,
+format,Partclone,partclone (Clonezilla),Archive,,.aa;.img,Y,Y,Y,
+format,PartitionedDisk,Partitioned disk image,Archive,,,Y,Y,,
+format,Pbp,PSP PBP Archive,Archive,,.pbp,Y,Y,Y,
+format,Pc98,NEC PC-98 DOS,Archive,Y,.hdm;.fdi;.d88,Y,Y,Y,Y
+format,Pcap,PCAP (libpcap capture),Archive,,.pcap;.cap,Y,Y,,
+format,Pcapng,PCAP Next Generation,Archive,,.pcapng;.ntar,Y,Y,,
+format,Pdf,PDF (Image Extraction),Archive,,.pdf,Y,Y,Y,Y
+format,PeResources,PE Resources (Windows binary),Archive,,.dll;.exe;.ocx;.cpl;.sys;.mui;.mun,Y,Y,,
+format,Petite,Petite (Win32 PE),Archive,,,Y,Y,,
+format,Pfs0,Nintendo PartitionFS,Archive,,.nsp;.pfs0,Y,Y,Y,Y
+format,Pickle,Python pickle object graph,Archive,,.pkl;.pickle,Y,Y,Y,
+format,Pkcs12,PKCS#12 (PFX),Archive,,.p12;.pfx,Y,Y,,
+format,PkLite,PKLITE (DOS exe),Archive,,,Y,Y,,
+format,Ply,PLY (Stanford polygon),Archive,,.ply,Y,Y,,
+format,Png,PNG image,Image,,.png,Y,Y,,
+format,Po,PO (gettext text catalog),Archive,,.po;.pot,Y,Y,,
+format,PowerPacker,PowerPacker,Stream,,.pp;.pp20,,Y,Y,
+format,Ppmd,PPMd,Stream,,.pmd,,Y,Y,
+format,Ppt,PPT,Archive,,.ppt,Y,Y,Y,Y
+format,Pptx,PPTX,Archive,,.pptx,Y,Y,Y,Y
+format,ProDos,ProDOS,Archive,Y,.po;.2mg,Y,Y,Y,Y
+format,Ps1MemoryCard,PlayStation Memory Card,Archive,Y,.mcr;.mcd;.mem;.psm,Y,Y,Y,Y
+format,Psarc,PSARC,Archive,,.psarc,Y,Y,Y,Y
+format,Psb,Photoshop Large Document,Image,,.psb,Y,Y,,
+format,Psd,Photoshop document,Image,,.psd;.psb,Y,Y,,
+format,Psf,Portable Sound Format,Archive,,.psf;.psf2;.minipsf;.minipsf2;.ssf;.dsf;.gsf;.usf;.2sf;.ncsf;.snsf;.qsf,Y,Y,Y,
+format,Psm,PSM (Epic MegaGames MASI),Audio,,.psm,Y,Y,,
+format,Pst,PST / OST (Outlook mailbox),Archive,,.pst;.ost,Y,Y,,
+format,Ptm,PTM (PolyTracker),Audio,,.ptm,Y,Y,,
+format,Pvf,Portable Voice Format (mgetty),Audio,,.pvf,Y,Y,Y,
+format,PyInstaller,PyInstaller,Archive,,,Y,Y,Y,
+format,Qcow2,QCOW2,Archive,,.qcow2;.qcow,Y,Y,Y,Y
+format,Qed,QEMU Enhanced Disk (QED),Archive,,.qed,Y,Y,,
+format,Qnx4,QNX4 FS,Archive,Y,.qnx4;.qnx,Y,Y,Y,Y
+format,Qnx6,QNX6 Neutrino FS,Archive,Y,.qnx6,Y,Y,Y,Y
+format,Qoa,Quite OK Audio (QOA),Audio,,.qoa,Y,Y,Y,
+format,Qoi,Quite OK Image (QOI),Archive,,.qoi,Y,Y,Y,
+format,QuickLz,QuickLZ,Stream,,.quicklz,,Y,Y,
+format,Rar,RAR,Archive,,.rar,Y,Y,Y,Y
+format,Rarc,Nintendo RARC,Archive,,.arc;.rarc,Y,Y,Y,
+format,RealMedia,RealMedia / RealAudio,Audio,,.rm;.rmvb;.ra,Y,Y,Y,
+format,RefPack,RefPack/QFS,Stream,,.qfs;.refpack,,Y,Y,
+format,Refs,ReFS,Archive,Y,.refs,Y,Y,,Y
+format,Reg,Windows Registry export,Archive,,.reg,Y,Y,Y,
+format,Regf,Windows Registry hive (REGF),Archive,,.hiv;.hive;.hve,Y,Y,,
+format,Reiser4,Reiser4,Archive,Y,.reiser4,Y,Y,Y,Y
+format,ReiserFs,ReiserFS,Archive,Y,.reiserfs,Y,Y,Y,Y
+format,ResourceDll,Resource DLL (Win32 RT_RCDATA archive),Archive,,.resource.dll,Y,Y,Y,
+format,Rf64,RF64 / BWF (Broadcast Wave),Audio,,.rf64;.bwf,Y,Y,Y,
+format,Rgss,RPG Maker RGSSAD,Archive,,.rgssad;.rgss2a;.rgss3a,Y,Y,Y,Y
+format,Rnc,RNC ProPack,Stream,,.rnc,,Y,Y,
+format,RomFs,ROMFS,Archive,Y,.romfs,Y,Y,Y,Y
+format,Roq,id Software RoQ,Audio,,.roq,Y,Y,Y,
+format,Rpa,Ren'Py Archive,Archive,,.rpa,Y,Y,Y,Y
+format,Rpm,RPM,Archive,,.rpm,Y,Y,Y,
+format,Rt11,DEC RT-11 (RX01),Archive,Y,.rt11;.rx01,Y,Y,Y,Y
+format,Rzip,Rzip,Stream,,.rz;.rzip,,Y,Y,
+format,S3m,S3M (Scream Tracker 3),Audio,,.s3m,Y,Y,,
+format,Sar,SAR,Archive,,.sar,Y,Y,Y,Y
+format,Sarc,Nintendo SARC,Archive,,.sarc;.pack;.bars,Y,Y,Y,Y
+format,Sbc,Bluetooth SBC / mSBC,Audio,,.sbc;.msbc,Y,Y,,
+format,Sdat,SDAT (Nintendo DS sound archive),Audio,,.sdat,Y,Y,,
+format,Sds,SDS (MIDI Sample Dump),Audio,,.sds,Y,Y,,
+format,SevenZip,7z,Archive,,.7z,Y,Y,Y,Y
+format,Sf2,SoundFont 2,Audio,,.sf2,Y,Y,,
+format,Sfar,BioWare SFAR,Archive,,.sfar,Y,Y,Y,
+format,Sfs,Amiga SFS,Archive,Y,.sfs,Y,Y,Y,Y
+format,Shar,SHAR,Archive,,.shar;.sh,Y,Y,Y,Y
+format,Shn,Shorten (SHN),Audio,,.shn,Y,Y,Y,
+format,Shrinkler,Shrinkler (Amiga),Archive,,,Y,Y,,
+format,Sid,Commodore 64 SID,Audio,,.sid,Y,Y,,
+format,SilentPacker,Silent_Packer ELF XOR wrapper,Archive,,,Y,Y,,
+format,Siren,Siren7 / ITU-T G.722.1,Audio,,.sir;.g7221,Y,Y,,
+format,Sketch,Sketch,Archive,,.sketch,Y,Y,,
+format,Slf,Sir-Tech SLF,Archive,,.slf,Y,Y,Y,Y
+format,SmartFs,SmartFS,Archive,Y,.smartfs;.smart,Y,Y,Y,Y
+format,Smk,Smacker Video,Audio,,.smk,Y,Y,,
+format,Smp,SampleVision (Turtle Beach),Audio,,.smp,Y,Y,Y,
+format,Snap,Snap package,Archive,,.snap,Y,Y,Y,
+format,Snappy,Snappy,Stream,,.sz;.snappy,,Y,Y,
+format,Sndr,Sounder (PC),Audio,,.sndr,Y,Y,Y,
+format,Sndt,SoundTool,Audio,,.sndt,Y,Y,Y,
+format,Snes,SNES ROM,Archive,,.sfc;.smc;.fig;.swc,Y,Y,,
+format,Sol,Sierra SOL,Audio,,.sol,Y,Y,Y,
+format,Spark,Spark,Archive,,.spk;.spark,Y,Y,Y,Y
+format,Sparsebundle,Apple Sparsebundle,Archive,,.sparsebundle,Y,Y,,
+format,Sparseimage,Apple Sparseimage,Archive,,.sparseimage,Y,Y,Y,Y
+format,Spc,SNES SPC700,Audio,,.spc,Y,Y,,
+format,Sphere,NIST SPHERE,Audio,,.sph;.nist,Y,Y,Y,
+format,SplitFile,Split File (.001),Archive,,.001,Y,Y,Y,
+format,Sqlite,SQLite 3 Database,Archive,,.sqlite;.sqlite3;.db3,Y,Y,,
+format,SquashFs,SquashFS,Archive,Y,.sqfs;.squashfs;.snap;.appimage,Y,Y,Y,
+format,Squeeze,Squeeze,Stream,,.sqz,,Y,Y,
+format,Sqx,SQX,Archive,,.sqx,Y,Y,Y,Y
+format,Srec,Motorola S-Record,Archive,,.s19;.s28;.s37;.srec;.mot;.mhx,Y,Y,Y,
+format,Stacker,Stacker CVF,Archive,Y,.sta;.stk,Y,Y,Y,Y
+format,Stl,STL (stereolithography),Archive,,.stl,Y,Y,,
+format,Stm,STM (Scream Tracker 2),Audio,,.stm,Y,Y,,
+format,Storable,Perl Storable object graph,Archive,,.storable;.sto,Y,Y,Y,
+format,StuffIt,StuffIt,Archive,,.sit,Y,Y,Y,Y
+format,StuffItX,StuffIt X,Archive,,.sitx,Y,Y,Y,
+format,Sup,Blu-ray PGS Subtitles,Archive,,.sup,Y,Y,Y,Y
+format,Svx8,IFF/8SVX (Amiga),Audio,,.8svx;.svx,Y,Y,Y,
+format,Swav,SWAV (Nintendo DS sample),Audio,,.swav,Y,Y,Y,
+format,Swf,SWF,Stream,,.swf,,Y,Y,
+format,Swm,Split WIM,Archive,,.swm;.swm2;.swm3;.swm4;.swm5;.swm6;.swm7;.swm8;.swm9,Y,Y,Y,
+format,SysV,UNIX System V FS,Archive,Y,.s5;.sysv,Y,Y,Y,Y
+format,SzCompress,SZ (old MS COMPRESS),Stream,,,,Y,Y,
+format,Szdd,SZDD,Stream,,,,Y,Y,
+format,T64,T64,Archive,,.t64,Y,Y,Y,Y
+format,TahoeLafs,Tahoe-LAFS share / capability namespace,Archive,Y,.tahoe-share;.share;.tahoe-cap,Y,Y,,Y
+format,Tap,TAP,Archive,,.tap,Y,Y,Y,Y
+format,Tar,TAR,Archive,,.tar,Y,Y,Y,Y
+format,TarBr,tar.br,CompoundTar,,.tar.br;.tbr,Y,Y,Y,
+format,TarBz2,tar.bz2,CompoundTar,,.tar.bz2;.tbz2,Y,Y,Y,
+format,TarGz,tar.gz,CompoundTar,,.tar.gz;.tgz,Y,Y,Y,
+format,TarLz4,tar.lz4,CompoundTar,,.tar.lz4,Y,Y,Y,
+format,TarLzip,tar.lz,CompoundTar,,.tar.lz;.tlz,Y,Y,Y,
+format,TarXz,tar.xz,CompoundTar,,.tar.xz;.txz,Y,Y,Y,
+format,TarZst,tar.zst,CompoundTar,,.tar.zst,Y,Y,Y,
+format,Td0,TeleDisk (TD0),Archive,,.td0,Y,Y,,
+format,Tds,Autodesk 3DS (.3ds),Archive,,.3ds,Y,Y,,
+format,TFat,Transactional FAT (TFAT),Archive,Y,.tfat,Y,Y,Y,Y
+format,Tfc,Mass Effect TFC,Archive,,.tfc,Y,Y,Y,
+format,TfRecord,TensorFlow TFRecord,Archive,,.tfrecord;.tfrecords,Y,Y,Y,
+format,Tfs,TFS (unverified historical BBN Trans-FS label),Archive,Y,,Y,Y,,
+format,Themida,Themida / WinLicense (Win32 PE),Archive,,,Y,Y,,
+format,ThumbsDb,Thumbs.db,Archive,,.db,Y,Y,Y,Y
+format,Ti99,TI-99/4A DSR,Archive,Y,.tifd;.tifiles,Y,Y,Y,Y
+format,Tiff,TIFF (multi-page),Archive,,.tif;.tiff,Y,Y,,
+format,TiTxt,TI-TXT (MSP430),Archive,,,Y,Y,Y,Y
+format,Tnef,MS-TNEF (winmail.dat),Archive,,.dat;.tnef,Y,Y,Y,Y
+format,TrDos,TR-DOS,Archive,Y,.trd,Y,Y,Y,Y
+format,Trsdos,TRSDOS / LDOS,Archive,Y,.trsdos;.dmk;.jv1;.jv3,Y,Y,Y,Y
+format,Tta,True Audio (TTA),Audio,,.tta,Y,Y,Y,
+format,Ttc,TTC (TrueType collection),Archive,,.ttc,Y,Y,Y,
+format,Ttf,TTF (TrueType font — glyphs),Archive,,.ttf,Y,Y,,
+format,Tux2,TUX2,Archive,Y,.tux2,Y,Y,Y,Y
+format,Tux3,TUX3,Archive,Y,.tux3,Y,Y,,
+format,Txw,TXW (Yamaha TX16W),Audio,,.txw,Y,Y,Y,
+format,U8,Nintendo U8,Archive,,.u8;.arc,Y,Y,Y,Y
+format,Ubifs,UBIFS,Archive,Y,.ubifs;.ubi;.img,Y,Y,Y,Y
+format,Udf,UDF,Archive,Y,.udf,Y,Y,Y,Y
+format,UefiFv,UEFI Firmware Volume,Archive,,.fv;.fd,Y,Y,Y,Y
+format,Ufs,UFS,Archive,Y,.ufs,Y,Y,Y,Y
+format,Uharc,UHARC,Archive,,.uha,Y,Y,Y,Y
+format,UImage,U-Boot uImage,Archive,,,Y,Y,Y,Y
+format,Ult,UltraTracker,Audio,,.ult,Y,Y,,
+format,Umx,Unreal Music (UMX),Archive,,.umx,Y,Y,Y,
+format,UnityBundle,Unity Asset Bundle,Archive,,.bundle;.unity3d;.assetbundle,Y,Y,Y,Y
+format,UnrealPak,Unreal Pak,Archive,,.pak,Y,Y,Y,
+format,Upx,UPX-packed executable,Archive,,,Y,Y,,
+format,UuEncoding,UUEncoding,Wrapper,,.uue;.uu,,Y,Y,
+format,Vag,Sony VAG (PS1/PS2 SPU-ADPCM),Audio,,.vag,Y,Y,Y,
+format,Vdfs,VDFS,Archive,Y,.vdf,Y,Y,Y,Y
+format,Vdi,VDI,Archive,,.vdi,Y,Y,Y,Y
+format,Veeam,Veeam Backup & Replication,Archive,,.vbk;.vib;.vrb,Y,Y,,
+format,Vgm,Video Game Music Log,Audio,,.vgm;.vgz,Y,Y,,
+format,Vhd,VHD,Archive,,.vhd,Y,Y,Y,Y
+format,Vhdx,VHDX,Archive,,.vhdx,Y,Y,Y,Y
+format,Vib,vSphere Installation Bundle,Archive,,.vib,Y,Y,Y,
+format,Vmdk,VMDK,Archive,,.vmdk,Y,Y,Y,Y
+format,VmProtect,VMProtect (Win32 PE),Archive,,,Y,Y,,
+format,VobSub,VobSub DVD Subtitles,Archive,,.idx,Y,Y,Y,Y
+format,Voc,Creative Voice (.voc),Audio,,.voc,Y,Y,Y,
+format,Vox,Dialogic VOX (OKI ADPCM),Audio,,.vox,Y,Y,Y,
+format,Vpk,VPK,Archive,,.vpk,Y,Y,Y,Y
+format,Vpp,Volition Package (RF1),Archive,,.vpp,Y,Y,Y,Y
+format,VppV2,Volition VPP v2 (Saint's Row 2),Archive,,.vpp_pc,Y,Y,Y,Y
+format,Vsdx,Visio Drawing,Archive,,.vsdx;.vstx;.vssx;.vsdm;.vstm;.vssm,Y,Y,Y,Y
+format,VxFs,VxFS (Veritas),Archive,Y,.vxfs,Y,Y,Y,Y
+format,Wacz,WACZ,Archive,,.wacz,Y,Y,Y,
+format,Wad,WAD,Archive,,.wad,Y,Y,Y,Y
+format,Wad2,WAD2/WAD3,Archive,,.wad,Y,Y,Y,Y
+format,Wafl,NetApp WAFL,Archive,Y,.wafl,Y,Y,,
+format,War,WAR,Archive,,.war,Y,Y,Y,Y
+format,Warc,WARC,Archive,,.warc,Y,Y,Y,
+format,Wasm,WebAssembly module,Archive,,.wasm,Y,Y,,
+format,Wav,WAV (RIFF audio),Audio,,.wav;.wave,Y,Y,Y,
+format,WavArc,WavArc,Audio,,.wa,Y,Y,,
+format,Wave64,Wave64 (.w64),Audio,,.w64,Y,Y,Y,
+format,WavPack,WavPack (.wv),Audio,,.wv;.wvc,Y,Y,,
+format,Wbn,Web Bundle,Archive,,.wbn,Y,Y,Y,
+format,Webp,WebP,Image,,.webp,Y,Y,,
+format,Wem,Wwise Encoded Media,Audio,,.wem,Y,Y,,
+format,Wheel,Python Wheel,Archive,,.whl,Y,Y,Y,
+format,Wim,WIM,Archive,,.wim;.swm;.esd,Y,Y,Y,
+format,WordPerfect,WordPerfect,Archive,,.wpd;.wp;.wp5;.wp6;.wp7,Y,Y,,
+format,Woz,Apple II WOZ,Archive,,.woz,Y,Y,,
+format,Wrapster,Wrapster,Archive,,,Y,Y,Y,
+format,WwiseBnk,Wwise SoundBank,Archive,,.bnk,Y,Y,,
+format,Xa,CD-XA audio (.xa),Audio,,.xa,Y,Y,Y,
+format,Xar,XAR,Archive,,.xar,Y,Y,Y,Y
+format,xDisk,xDisk/GDC (Amiga),Archive,,.xdsk;.gdc,Y,Y,Y,
+format,Xenix,Xenix FS,Archive,Y,.xnx;.xenix,Y,Y,Y,Y
+format,Xfs,XFS,Archive,Y,.xfs,Y,Y,Y,
+format,Xi,XI (FastTracker II Instrument),Audio,,.xi,Y,Y,,
+format,Xls,XLS,Archive,,.xls,Y,Y,Y,Y
+format,Xlsx,XLSX,Archive,,.xlsx,Y,Y,Y,Y
+format,Xm,XM (FastTracker II),Audio,,.xm,Y,Y,,
+format,xMash,xMash (Amiga),Archive,,.xmsh,Y,Y,Y,
+format,Xmi,Miles XMIDI,Audio,,.xmi,Y,Y,,
+format,Xml,XML object graph,Archive,,.xml;.cwb.xml,Y,Y,Y,
+format,Xpi,XPI,Archive,,.xpi,Y,Y,Y,Y
+format,Xps,XPS / OpenXPS,Archive,,.xps;.oxps,Y,Y,Y,Y
+format,Xwb,XACT Wave Bank,Audio,,.xwb,Y,Y,,
+format,Xz,XZ,Stream,,.xz,,Y,Y,
+format,Yaffs2,YAFFS2,Archive,Y,.yaffs2;.yaffs,Y,Y,Y,Y
+format,Yaz0,Yaz0,Stream,,.yaz0;.szs,,Y,Y,
+format,YEnc,yEnc,Wrapper,,.yenc,,Y,Y,
+format,YodaCrypter,Yoda's Crypter (Win32 PE),Archive,,,Y,Y,,
+format,Ypf,YukaScript YPF,Archive,,.ypf,Y,Y,Y,Y
+format,Zap,ZAP (Amiga Disk Archiver),Archive,,.zap,Y,Y,Y,
+format,Zarr,Zarr array metadata,Archive,,,Y,Y,,
+format,Zfs,ZFS,Archive,Y,.zfs;.zpool,Y,Y,Y,Y
+format,Zip,ZIP,Archive,,.zip;.zipx,Y,Y,Y,Y
+format,Zlib,Zlib,Stream,,.zlib,,Y,Y,
+format,Zling,Zling,Stream,,.zling,,Y,Y,
+format,Zoo,ZOO,Archive,,.zoo,Y,Y,Y,Y
+format,Zpaq,ZPAQ,Archive,,.zpaq,Y,Y,Y,Y
+format,Zstd,Zstandard,Stream,,.zst;.zstd,,Y,Y,
+format,ZxScl,SCL (ZX Spectrum),Archive,Y,.scl,Y,Y,Y,Y
+format,ZxSnapshot,ZX Spectrum Snapshot / Tape,Archive,,.sna;.z80;.tap;.tzx,Y,Y,,
+block,bb:BB_842,842,Dictionary,,,,Y,Y,
+block,bb:BB_Ace,ACE,Dictionary,,,,Y,Y,
+block,bb:BB_AdaptiveHuffman,Adaptive Huffman (FGK),Entropy,,,,Y,Y,
+block,bb:BB_Aplib,aPLib,Dictionary,,,,Y,Y,
+block,bb:BB_Arithmetic,Arithmetic Coding,Entropy,,,,Y,Y,
+block,bb:BB_Arj,ARJ,Dictionary,,,,Y,Y,
+block,bb:BB_Balz,BALZ,Dictionary,,,,Y,Y,
+block,bb:BB_BcjArm,BCJ ARM,Transform,,,,Y,Y,
+block,bb:BB_BcjArm64,BCJ ARM64,Transform,,,,Y,Y,
+block,bb:BB_BcjArmThumb,BCJ ARM Thumb,Transform,,,,Y,Y,
+block,bb:BB_BcjIa64,BCJ IA-64,Transform,,,,Y,Y,
+block,bb:BB_BcjPowerPc,BCJ PowerPC,Transform,,,,Y,Y,
+block,bb:BB_BcjRiscV,BCJ RISC-V,Transform,,,,Y,Y,
+block,bb:BB_BcjSparc,BCJ SPARC,Transform,,,,Y,Y,
+block,bb:BB_BcjX86,BCJ x86,Transform,,,,Y,Y,
+block,bb:BB_Bcm,BCM (reduced),ContextMixing,,,,Y,Y,
+block,bb:BB_BPE,Byte Pair Encoding,Dictionary,,,,Y,Y,
+block,bb:BB_BriefLz,BriefLZ,Dictionary,,,,Y,Y,
+block,bb:BB_Brotli,Brotli,Dictionary,,,,Y,Y,
+block,bb:BB_Bsc,BSC (reduced),ContextMixing,,,,Y,Y,
+block,bb:BB_Bwt,BWT,Transform,,,,Y,Y,
+block,bb:BB_Bzip2,bzip2,Classic,,,,Y,Y,
+block,bb:BB_Cmix,CMIX (reduced model set),ContextMixing,,,,Y,Y,
+block,bb:BB_ContextMixing,Context Mixing,ContextMixing,,,,Y,Y,
+block,bb:BB_ContextTreeWeighting,Context Tree Weighting,ContextMixing,,,,Y,Y,
+block,bb:BB_Crush,Crush,Dictionary,,,,Y,Y,
+block,bb:BB_Csc,CSC,Dictionary,,,,Y,Y,
+block,bb:BB_CTW,Context Predictor (order-2/1/0),ContextMixing,,,,Y,Y,
+block,bb:BB_Deflate,DEFLATE,Dictionary,,,,Y,Y,
+block,bb:BB_Deflate64,Deflate64,Dictionary,,,,Y,Y,
+block,bb:BB_Delta,Delta,Transform,,,,Y,Y,
+block,bb:BB_DeltaRle,Delta + RLE,Transform,,,,Y,Y,
+block,bb:BB_Density,Density (Chameleon),Dictionary,,,,Y,Y,
+block,bb:BB_Dmc,DMC,Entropy,,,,Y,Y,
+block,bb:BB_Dna,DNA Sequence Compression,Dictionary,,,,Y,Y,
+block,bb:BB_DoubleSpace,DoubleSpace JM,Dictionary,,,,Y,Y,
+block,bb:BB_Dpcm,DPCM,Transform,,,,Y,Y,
+block,bb:BB_DriveSpace,DriveSpace LZ,Dictionary,,,,Y,Y,
+block,bb:BB_DsLz77,DS LZ77,Dictionary,,,,Y,Y,
+block,bb:BB_EliasDelta,Elias Delta,Entropy,,,,Y,Y,
+block,bb:BB_EliasGamma,Elias Gamma,Entropy,,,,Y,Y,
+block,bb:BB_ExpGolomb,Exp-Golomb,Entropy,,,,Y,Y,
+block,bb:BB_FastLz,FastLZ,Dictionary,,,,Y,Y,
+block,bb:BB_Fibonacci,Fibonacci Coding,Entropy,,,,Y,Y,
+block,bb:BB_Fpaq0,FPAQ0,Entropy,,,,Y,Y,
+block,bb:BB_FSE,FSE,Entropy,,,,Y,Y,
+block,bb:BB_GbaLz77,Nintendo GBA/NDS LZ77 (type 0x10),Dictionary,,,,Y,Y,
+block,bb:BB_Golomb,Golomb/Rice,Entropy,,,,Y,Y,
+block,bb:BB_GolombFixedM,Golomb/Rice (fixed M=2),Entropy,,,,Y,Y,
+block,bb:BB_Huffman,Huffman,Entropy,,,,Y,Y,
+block,bb:BB_Implode,Implode,Dictionary,,,,Y,Y,
+block,bb:BB_Levenshtein,Levenshtein Coding,Entropy,,,,Y,Y,
+block,bb:BB_Lizard,Lizard,Dictionary,,,,Y,Y,
+block,bb:BB_Lz4,LZ4,Dictionary,,,,Y,Y,
+block,bb:BB_Lz4Frame,LZ4 Frame,Dictionary,,,,Y,Y,
+block,bb:BB_Lz77,LZ77,Dictionary,,,,Y,Y,
+block,bb:BB_Lz77Optimal,LZ77-Optimal,Dictionary,,,,Y,Y,
+block,bb:BB_Lz78,LZ78,Dictionary,,,,Y,Y,
+block,bb:BB_Lzap,LZAP,Dictionary,,,,Y,Y,
+block,bb:BB_Lzav,LZAV,Dictionary,,,,Y,Y,
+block,bb:BB_Lzbitmap,LZBITMAP,Dictionary,,,,Y,Y,
+block,bb:BB_Lzc,LZC (UNIX compress),Dictionary,,,,Y,Y,
+block,bb:BB_Lzf,LZF,Dictionary,,,,Y,Y,
+block,bb:BB_Lzfse,LZFSE,Dictionary,,,,Y,Y,
+block,bb:BB_Lzfx,LZFX,Dictionary,,,,Y,Y,
+block,bb:BB_Lzg,LZG,Dictionary,,,,Y,Y,
+block,bb:BB_Lzh,LZH (LH5),Dictionary,,,,Y,Y,
+block,bb:BB_LZHAM,LZHAM,Dictionary,,,,Y,Y,
+block,bb:BB_Lzjb,LZJB,Dictionary,,,,Y,Y,
+block,bb:BB_Lzma,LZMA,Dictionary,,,,Y,Y,
+block,bb:BB_Lzms,LZMS,Dictionary,,,,Y,Y,
+block,bb:BB_Lzmw,LZMW,Dictionary,,,,Y,Y,
+block,bb:BB_Lzo,LZO1X,Dictionary,,,,Y,Y,
+block,bb:BB_Lzp,LZP,Dictionary,,,,Y,Y,
+block,bb:BB_Lzrle,LZRLE,Dictionary,,,,Y,Y,
+block,bb:BB_Lzrw1,LZRW1,Dictionary,,,,Y,Y,
+block,bb:BB_Lzrw3,LZRW3,Dictionary,,,,Y,Y,
+block,bb:BB_Lzs,LZS,Dictionary,,,,Y,Y,
+block,bb:BB_Lzss,LZSS,Dictionary,,,,Y,Y,
+block,bb:BB_Lzturbo,LZTURBO,Dictionary,,,,Y,Y,
+block,bb:BB_Lzvn,LZVN,Dictionary,,,,Y,Y,
+block,bb:BB_Lzw,LZW,Dictionary,,,,Y,Y,
+block,bb:BB_Lzwl,LZWL,Dictionary,,,,Y,Y,
+block,bb:BB_Lzx,LZX,Dictionary,,,,Y,Y,
+block,bb:BB_Mcm,MCM (reduced),ContextMixing,,,,Y,Y,
+block,bb:BB_MsLzh,MS LZH,Dictionary,,,,Y,Y,
+block,bb:BB_Mtf,MTF,Transform,,,,Y,Y,
+block,bb:BB_Neural,Neural,ContextMixing,,,,Y,Y,
+block,bb:BB_Nrv2b,NRV2B,Dictionary,,,,Y,Y,
+block,bb:BB_Nrv2d,NRV2D,Dictionary,,,,Y,Y,
+block,bb:BB_Nrv2e,NRV2E,Dictionary,,,,Y,Y,
+block,bb:BB_NuLzw,NuLZW (ShrinkIt LZW/2),Dictionary,,,,Y,Y,
+block,bb:BB_Omega,Omega Coding,Entropy,,,,Y,Y,
+block,bb:BB_PackBits,PackBits,Transform,,,,Y,Y,
+block,bb:BB_Paq8hp,PAQ8hp (reduced model set),ContextMixing,,,,Y,Y,
+block,bb:BB_Pithy,Pithy,Dictionary,,,,Y,Y,
+block,bb:BB_PPM,PPM,ContextMixing,,,,Y,Y,
+block,bb:BB_Ppmd,PPMd,ContextMixing,,,,Y,Y,
+block,bb:BB_Quantum,Quantum,Dictionary,,,,Y,Y,
+block,bb:BB_QuickLz,QuickLZ 1.5 level 1,Dictionary,,,,Y,Y,
+block,bb:BB_RangeCoding,Range Coding,Entropy,,,,Y,Y,
+block,bb:BB_rANS,rANS,Entropy,,,,Y,Y,
+block,bb:BB_Rar,RAR5,Dictionary,,,,Y,Y,
+block,bb:BB_Rar3,RAR3 (classic),Dictionary,,,,Y,Y,
+block,bb:BB_Reduce,Reduce,Dictionary,,,,Y,Y,
+block,bb:BB_RePair,Re-Pair,Dictionary,,,,Y,Y,
+block,bb:BB_Rle,RLE,Transform,,,,Y,Y,
+block,bb:BB_ROLZ,ROLZ,Dictionary,,,,Y,Y,
+block,bb:BB_Rzip,rzip,Dictionary,,,,Y,Y,
+block,bb:BB_Salvador,Salvador,Dictionary,,,,Y,Y,
+block,bb:BB_Sequitur,Sequitur,Dictionary,,,,Y,Y,
+block,bb:BB_ShannonFano,Shannon-Fano,Entropy,,,,Y,Y,
+block,bb:BB_Shoco,Shoco,Dictionary,,,,Y,Y,
+block,bb:BB_Shrink,Shrink,Dictionary,,,,Y,Y,
+block,bb:BB_Snappy,Snappy,Dictionary,,,,Y,Y,
+block,bb:BB_Sqx,SQX,Dictionary,,,,Y,Y,
+block,bb:BB_SuffixTree,Suffix Tree Compression,Dictionary,,,,Y,Y,
+block,bb:BB_tANS,tANS,Entropy,,,,Y,Y,
+block,bb:BB_Tunstall,Tunstall Coding,Entropy,,,,Y,Y,
+block,bb:BB_Unary,Unary Coding,Entropy,,,,Y,Y,
+block,bb:BB_Xpress,XPRESS Huffman,Dictionary,,,,Y,Y,
+block,bb:BB_Xz,XZ/LZMA2,Dictionary,,,,Y,Y,
+block,bb:BB_Yay0,Yay0,Dictionary,,,,Y,Y,
+block,bb:BB_Yaz0,Yaz0,Dictionary,,,,Y,Y,
+block,bb:BB_Zling,Zling,Dictionary,,,,Y,Y,
+block,bb:BB_Zopfli,Zopfli,Dictionary,,,,Y,Y,
+block,bb:BB_Zpaq,ZPAQ,ContextMixing,,,,Y,Y,
+block,bb:BB_Zstd,Zstandard,Dictionary,,,,Y,Y,
+block,bb:BB_Zx0,ZX0,Dictionary,,,,Y,Y,

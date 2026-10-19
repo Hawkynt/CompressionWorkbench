@@ -1,0 +1,242 @@
+name	aliases_extensions	kind	rw	evidence
+ADFS	Advanced Disc Filing System;Acorn	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+AdvFS	Advanced File System;Tru64	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+APFS	Apple File System	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+AthFS	AtheOS File System;Syllable;AFS	filesystem		List of file systems: disk file systems
+BFS (SVR4)	Boot File System;UnixWare	filesystem		List of file systems: disk file systems
+BeFS	Be File System;BFS;OpenBFS;BeOS;Haiku	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+Byte File System (z/VM)	BFS;z/VM	filesystem		List of file systems: disk file systems
+Btrfs	B-tree FS	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+Veritas CFS	Cluster File System	filesystem		List of file systems: disk file systems
+CP/M file system	CP/M	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+DFS (Acorn)	Disc Filing System	filesystem		List of file systems: disk file systems
+DOS 3.x	Apple DOS 3.3	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+EFS (IRIX)	Extent File System	filesystem		List of file systems: disk file systems
+ext	Extended file system	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+ext2	Second extended	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+ext3	Third extended	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+ext4	Fourth extended	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+ext3cow	ext3 versioning	filesystem		List of file systems: disk file systems
+FAT	File Allocation Table;FAT12;FAT16;FAT32	filesystem		List of file systems: disk file systems
+VFAT	long file names	filesystem		List of file systems: disk file systems
+FATX	Xbox	filesystem		List of file systems: disk file systems
+Amiga FFS	FFS (Amiga);FFS Intl;FFS DCache;FFS2	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+FFS (BSD)	Berkeley Fast File System;UFS	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+Fossil	Plan 9	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+Files-11	ODS-1;ODS-2;ODS-5;OpenVMS	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+Flex machine file system		filesystem		List of file systems: disk file systems
+HAMMER	DragonFly BSD	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+HAMMER2	DragonFly BSD	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+HFS (IBM MVS)	Hierarchical File System;z/OS	filesystem		List of file systems: disk file systems
+HFS	Hierarchical File System;Mac OS Standard	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+HFS+	HFS Plus;Mac OS Extended	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+HPFS	High Performance File System;OS/2	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+HTFS	High Throughput Filesystem;SCO OpenServer	filesystem		List of file systems: disk file systems
+ISO 9660	CD-ROM;Rock Ridge;Joliet;High Sierra	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+JFS	IBM Journaled File System;JFS1;JFS2	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+LFS	4.4BSD Log-structured File System	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+MFS (Macintosh)	Macintosh File System	filesystem		List of file systems: disk file systems
+MFS (TiVo)	Media File System	filesystem		List of file systems: disk file systems
+Minix file system	Minix V1;Minix V2;Minix V3	filesystem		List of file systems: disk file systems
+NWFS	NetWare File System	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+NeXT file system		filesystem		List of file systems: disk file systems
+Next3	ext3 with snapshots	filesystem		List of file systems: disk file systems
+NILFS	NILFS2;log-structured	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+NSS	Novell Storage Services	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+NTFS	New Technology File System	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+OneFS	Isilon	filesystem		List of file systems: disk file systems
+OFS (Amiga)	Old File System	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+OS-9 file system	RBF	filesystem		List of file systems: disk file systems
+PFS (Amiga)	PFS2;PFS3;Professional File System	filesystem		List of file systems: disk file systems
+ProDOS	Apple II	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+QNX4 FS	Qnx4fs	filesystem		List of file systems: disk file systems
+ReFS	Resilient File System	filesystem		List of file systems: disk file systems + List of file systems: fault-tolerant + Comparison of file systems: general information
+Reiser4		filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+ReiserFS		filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+Reliance	Datalight	filesystem		List of file systems: disk file systems
+Reliance Nitro	Datalight	filesystem		List of file systems: disk file systems
+RFS (RTEMS)	Remote File System	filesystem		List of file systems: disk file systems
+SkyFS	SkyOS	filesystem		List of file systems: disk file systems
+SFS (Amiga)	Smart File System	filesystem		List of file systems: disk file systems
+Newton Soup	Apple Newton	filesystem		List of file systems: disk file systems
+Tux3		filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+UDF	Universal Disk Format	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+UFS	Unix File System;UFS1	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+UFS2		filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+VxFS	Veritas File System	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+XFS	SGI	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+zFS (z/OS)	z/OS File System	filesystem		List of file systems: disk file systems
+ZFS	Sun/Oracle	filesystem		List of file systems: disk file systems + Comparison of file systems: general information
+Bcachefs		filesystem		List of file systems: fault-tolerant + Comparison of file systems: general information
+NOVA	non-volatile memory accelerated FS	filesystem		List of file systems: fault-tolerant + Comparison of file systems: general information
+3FS	Fire-Flyer File System;DeepSeek	filesystem		List of file systems: flash/solid state
+CHFS	NetBSD	filesystem		List of file systems: flash/solid state + Comparison of file systems: general information
+exFAT	Extended FAT;FAT64	filesystem		List of file systems: flash/solid state + Comparison of file systems: general information
+ExtremeFFS	Microsoft SSD	filesystem		List of file systems: flash/solid state
+F2FS	Flash-Friendly File System	filesystem		List of file systems: flash/solid state + Comparison of file systems: general information
+FFS2 (flash)	Microsoft Flash File System	filesystem		List of file systems: flash/solid state
+JFFS	Journalling Flash File System	filesystem		List of file systems: flash/solid state
+JFFS2		filesystem		List of file systems: flash/solid state
+LSFS	log-structured FS	filesystem		List of file systems: flash/solid state + Comparison of file systems: general information
+LogFS		filesystem		List of file systems: flash/solid state
+NVFS	Non-Volatile File System;Palm	filesystem		List of file systems: flash/solid state
+WAFL	Write Anywhere File Layout;NetApp	filesystem		List of file systems: flash/solid state + Comparison of file systems: general information
+Reliance Velocity	Tuxera	filesystem		List of file systems: flash/solid state
+Reliance Edge	Tuxera	filesystem		List of file systems: flash/solid state
+emFile	SEGGER	filesystem		List of file systems: flash/solid state
+SPIFFS	SPI Flash File System	filesystem		List of file systems: flash/solid state
+TFAT	Transactional FAT	filesystem		List of file systems: flash/solid state
+TrueFFS	M-Systems	filesystem		List of file systems: flash/solid state
+UBIFS		filesystem		List of file systems: flash/solid state
+YAFFS	YAFFS2	filesystem		List of file systems: flash/solid state
+JesFS		filesystem		List of file systems: flash/solid state
+CMS file system	IBM VM/CMS	filesystem		List of file systems: record-oriented
+MTS file system	Michigan Terminal System	filesystem		List of file systems: record-oriented
+OS4000 file system	GEC 4000	filesystem		List of file systems: record-oriented
+FlexOS record-oriented FAT extension	IBM 4680/4690 OS	filesystem		List of file systems: record-oriented
+z/OS access methods	BSAM;BPAM;QSAM	filesystem		List of file systems: record-oriented
+Pick file system	Pick Operating System	filesystem		List of file systems: record-oriented
+Shared File System (IBM VM)	SFS	filesystem		List of file systems: record-oriented
+VSAM	Virtual Storage Access Method	filesystem		List of file systems: record-oriented
+CXFS	Clustered XFS;SGI	filesystem		List of file systems: shared-disk
+Dell Fluid File System	ExaFS	filesystem		List of file systems: shared-disk
+BWFS	Blue Whale Clustered file system	filesystem		List of file systems: shared-disk
+SAN File System (DataPlow)	SFS	filesystem		List of file systems: shared-disk
+EMC Celerra HighRoad		filesystem		List of file systems: shared-disk
+GFS2	Global File System 2	filesystem		List of file systems: shared-disk
+GPFS	IBM Spectrum Scale;General Parallel File System	filesystem		List of file systems: shared-disk + Comparison of file systems: general information
+Nasan Clustered File System	DataPlow	filesystem		List of file systems: shared-disk
+Oracle ACFS		filesystem		List of file systems: shared-disk
+OCFS2	Oracle Cluster File System	filesystem		List of file systems: shared-disk + Comparison of file systems: general information
+QFS	Sun/Oracle	filesystem		List of file systems: shared-disk + Comparison of file systems: general information
+ScoutFS	Versity	filesystem		List of file systems: shared-disk
+StorNext File System	CVFS;Quantum	filesystem		List of file systems: shared-disk
+Veritas Storage Foundation Cluster FS	CFS	filesystem		List of file systems: shared-disk
+Xsan	Apple	filesystem		List of file systems: shared-disk
+VMFS	VMware;VMFS2;VMFS3;VMFS5	filesystem		List of file systems: shared-disk + Comparison of file systems: general information
+AXFS	compressed read-only XIP	filesystem		List of file systems: special-purpose
+Boot File System (UnixWare)	BFS	filesystem		List of file systems: special-purpose
+CDfs	Linux virtual	filesystem		List of file systems: special-purpose
+Cramfs	compressed read-only	filesystem		List of file systems: special-purpose
+LTFS	Linear Tape File System	filesystem		List of file systems: special-purpose
+lnfs	long names	filesystem		List of file systems: special-purpose
+romfs		filesystem		List of file systems: special-purpose
+SquashFS	compressed read-only	filesystem		List of file systems: special-purpose + Comparison of file systems: general information
+EROFS	Enhanced Read-Only File System	filesystem		List of file systems: special-purpose + Comparison of file systems: general information
+UMSDOS	FAT with permissions	filesystem		List of file systems: special-purpose
+UVFAT		filesystem		List of file systems: special-purpose
+Venti	Plan 9	filesystem		List of file systems: special-purpose
+DECtape		filesystem		Comparison of file systems: general information
+OS/3x0 FS		filesystem		Comparison of file systems: general information
+Level-D	DEC	filesystem		Comparison of file systems: general information
+George 3		filesystem		Comparison of file systems: general information
+V6FS	Version 6 Unix file system	filesystem		Comparison of file systems: general information
+RT-11 file system		filesystem		Comparison of file systems: general information
+GEC DOS		filesystem		Comparison of file systems: general information
+GEC DOS filing system extended		filesystem		Comparison of file systems: general information
+FAT8	FAT (8-bit);Microsoft Disk BASIC	filesystem		Comparison of file systems: general information
+UCSD p-System		filesystem		Comparison of file systems: general information
+CBM DOS	Commodore	filesystem		Comparison of file systems: general information
+Atari DOS		filesystem		Comparison of file systems: general information
+V7FS	Version 7 Unix file system	filesystem		Comparison of file systems: general information
+FAT12		filesystem		Comparison of file systems: general information
+FAT16		filesystem		Comparison of file systems: general information
+FAT16B		filesystem		Comparison of file systems: general information
+FAT16X		filesystem		Comparison of file systems: general information
+FAT32	FAT32X	filesystem		Comparison of file systems: general information
+Elektronika BK tape format		filesystem		Comparison of file systems: general information
+GEMDOS	Atari TOS	filesystem		Comparison of file systems: general information
+High Sierra	HSF	filesystem		Comparison of file systems: general information
+Minix V1 FS		filesystem		Comparison of file systems: general information
+Minix V2 FS		filesystem		Comparison of file systems: general information
+Minix V3 FS		filesystem		Comparison of file systems: general information
+Xiafs		filesystem		Comparison of file systems: general information
+JXFS	HP	filesystem		Comparison of file systems: general information
+UniFS		filesystem		Comparison of file systems: general information
+CASL		filesystem		Comparison of file systems: general information
+VaultFS		network-fs		Comparison of file systems: general information
+SpadFS		filesystem		Comparison of file systems: general information
+MicroDOS file system		filesystem		Comparison of file systems: general information
+IBM zFS		filesystem		Comparison of file systems: general information
+PolyServe File System	PSFS	filesystem		Comparison of file systems: general information
+GFS	Global File System	filesystem		Comparison of file systems: general information
+OCFS	Oracle Cluster File System v1	filesystem		Comparison of file systems: general information
+Lustre		network-fs		Comparison of file systems: general information
+Google File System	GFS	network-fs		Comparison of file systems: general information
+BeeGFS		network-fs		Comparison of file systems: general information
+GlusterFS		network-fs		Comparison of file systems: general information
+OrangeFS		network-fs		Comparison of file systems: general information
+BlueStore/CephFS	Ceph	network-fs		Comparison of file systems: general information
+MFS		filesystem		Comparison of file systems: general information
+DFS		filesystem		Comparison of file systems: general information
+9P	Plan 9 protocol;v9fs	network-fs		List of file systems: distributed/peer-to-peer
+Amazon S3		network-fs		List of file systems: distributed/peer-to-peer
+Andrew File System	AFS;OpenAFS;Arla	network-fs		List of file systems: distributed/peer-to-peer
+AvereOS		network-fs		List of file systems: distributed/peer-to-peer
+Cloudian		network-fs		List of file systems: distributed/peer-to-peer
+DCE/DFS	DCE Distributed File System	network-fs		List of file systems: distributed/peer-to-peer
+FAL	File Access Listener;DECnet DAP	network-fs		List of file systems: distributed/peer-to-peer
+Magma		network-fs		List of file systems: distributed/peer-to-peer
+MapR FS		network-fs		List of file systems: distributed/peer-to-peer
+NCP	NetWare Core Protocol	network-fs		List of file systems: distributed/peer-to-peer
+NFS	Network File System	network-fs		List of file systems: distributed/peer-to-peer
+Self-certifying File System	SFS	network-fs		List of file systems: distributed/peer-to-peer
+SMB	CIFS;Server Message Block	network-fs		List of file systems: distributed/peer-to-peer
+Coda		network-fs		List of file systems: distributed/peer-to-peer
+Microsoft Dfs	Distributed File System	network-fs		List of file systems: distributed/peer-to-peer
+InterMezzo		network-fs		List of file systems: distributed/peer-to-peer
+LizardFS		network-fs		List of file systems: distributed/peer-to-peer
+MooseFS		network-fs		List of file systems: distributed/peer-to-peer
+Scality		network-fs		List of file systems: distributed/peer-to-peer
+Tahoe-LAFS		network-fs		List of file systems: distributed/peer-to-peer
+HMDFS	OpenHarmony Distributed File System	network-fs		List of file systems: distributed/peer-to-peer
+IBM zFS (distributed research)		network-fs		List of file systems: distributed/peer-to-peer
+pNFS	Parallel NFS	network-fs		List of file systems: distributed/peer-to-peer
+CRFS	Coherent Remote File System	network-fs		List of file systems: distributed/peer-to-peer
+POHMELFS		network-fs		List of file systems: distributed/peer-to-peer
+Alluxio		network-fs		List of file systems: distributed/peer-to-peer
+Chiron FS		network-fs		List of file systems: distributed/peer-to-peer
+CloudStore		network-fs		List of file systems: distributed/peer-to-peer
+dCache		network-fs		List of file systems: distributed/peer-to-peer
+Gfarm		network-fs		List of file systems: distributed/peer-to-peer
+HDFS	Hadoop Distributed File System	network-fs		List of file systems: distributed/peer-to-peer
+IBRIX Fusion		network-fs		List of file systems: distributed/peer-to-peer
+JuiceFS		network-fs		List of file systems: distributed/peer-to-peer
+ObjectiveFS		network-fs		List of file systems: distributed/peer-to-peer
+OIO-FS		network-fs		List of file systems: distributed/peer-to-peer
+PanFS		network-fs		List of file systems: distributed/peer-to-peer
+Quobyte		network-fs		List of file systems: distributed/peer-to-peer
+RozoFS		network-fs		List of file systems: distributed/peer-to-peer
+SeaweedFS		network-fs		List of file systems: distributed/peer-to-peer
+XtreemFS		network-fs		List of file systems: distributed/peer-to-peer
+IPFS	InterPlanetary File System	network-fs		List of file systems: distributed/peer-to-peer
+IBM Cloud Object Storage		network-fs		List of file systems: distributed/peer-to-peer
+GridFS		network-fs		List of file systems: special-purpose
+Freenet		network-fs		List of file systems: special-purpose
+FTPFS		network-fs		List of file systems: special-purpose
+GmailFS		network-fs		List of file systems: special-purpose
+Davfs2	WebDAV	network-fs		List of file systems: special-purpose
+Barracuda WebDAV		network-fs		List of file systems: special-purpose
+SSHFS	Secure Shell File System	network-fs		List of file systems: file system interfaces
+Nexfs		network-fs		List of file systems: special-purpose
+MVFS	MultiVersion File System	network-fs		List of file systems: special-purpose
+devfs		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+procfs		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+tmpfs		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+sysfs		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+debugfs		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+configfs		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+sysctlfs		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+kernfs		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+WinFS		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+wikifs		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+aufs	UnionFS variant	pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+UnionFS		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+OverlayFS		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+FUSE		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+LUFS		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+PUFFS		pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+VFS	Virtual Filesystem	pseudo-fs		List of file systems: pseudo/special-purpose/interfaces
+eCryptfs		other		List of file systems: encrypted file systems
+EncFS		other		List of file systems: encrypted file systems
+EFS (Windows)	Encrypting File System	other		List of file systems: encrypted file systems
