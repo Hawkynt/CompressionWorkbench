@@ -1,0 +1,42 @@
+ZX0 (Einar Saukas) — stream format followed from the reference compressor
+
+Source:   https://github.com/einar-saukas/ZX0 (src/compress.c, src/dzx0.c)
+Revision: the revision consulted was not recorded; the licence below was
+          verified at ecde3a2ae05061fe06469ed46df81a33b7de7d86 on 2026-10-19.
+Author:   Einar Saukas
+Licence:  BSD-3-Clause (reproduced below)
+
+Zx0BuildingBlock.cs reproduces the ZX0 v2 forward bit stream (interlaced
+Elias-gamma codes, the offset-LSB "backtrack" bit, the 256 end marker) as the
+reference compressor emits it. The encoder is a greedy parser of this
+project's own; the reference's optimal parser is not reproduced.
+
+BSD 3-Clause License
+
+Copyright (c) 2021, Einar Saukas
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
