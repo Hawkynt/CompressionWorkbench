@@ -940,7 +940,7 @@ Nintendo U8,u8;arc,archive,,,,,,,,0,,U8,Y,Y,Y,OURS-ONLY,,
 UltraTracker,ult,media,,,,,,,,0,,Ult,Y,,,OURS-ONLY,,
 Unreal Music (UMX),umx,archive,,,,,,,,0,,Umx,Y,Y,,OURS-ONLY,,
 Sony VAG (PS1/PS2 SPU-ADPCM),vag,media,,,,,,,,0,,Vag,Y,Y,,OURS-ONLY,,
-VDFS,vdf,filesystem,,,,,,,,0,,Vdfs,Y,Y,Y,OURS-ONLY,,
+VDFS,vdf,filesystem,,,,,,,,0,https://github.com/GothicKit/ZenKit,Vdfs,Y,Y,Y,OURS-ONLY,,"Gothic ZenGin VDF, stored and Union-zipped (zlib ZippedStream); ZenKit reads what we write, GothicVDFS/VDFSTool volumes read (docs/VDFS-ON-DISK.md)"
 Veeam Backup & Replication,vbk;vib;vrb,archive,,,,,,,,0,,Veeam,Y,,,OURS-ONLY,,
 Video Game Music Log,vgm;vgz,media,,,,,,,,0,,Vgm,Y,,,OURS-ONLY,,
 vSphere Installation Bundle,vib,archive,,,,,,,,0,,Vib,Y,Y,,OURS-ONLY,,
