@@ -68,6 +68,13 @@ public static class ToolDiscovery {
       var result = new Dictionary<string, DiscoveredTool>(StringComparer.OrdinalIgnoreCase);
       var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
+      // An explicit CWB_TOOL_<NAME> (e.g. CWB_TOOL_7Z) naming an existing file wins over any search.
+      foreach (var name in _toolNames) {
+        var explicitPath = Environment.GetEnvironmentVariable("CWB_TOOL_" + name.ToUpperInvariant());
+        if (!string.IsNullOrEmpty(explicitPath) && File.Exists(explicitPath))
+          result.TryAdd(name, new DiscoveredTool { Name = name, Path = explicitPath });
+      }
+
       // Search PATH for each tool.
       foreach (var name in _toolNames) {
         var path = FindOnPath(name, isWindows);
@@ -84,6 +91,14 @@ public static class ToolDiscovery {
           var name = System.IO.Path.GetFileNameWithoutExtension(knownPath).ToLowerInvariant();
           result.TryAdd(name, new DiscoveredTool { Name = name, Path = knownPath });
         }
+
+        // A PortableApps.com install (<drive>:\PortableApps\7-ZipPortable) on any fixed drive.
+        if (!result.ContainsKey("7z"))
+          foreach (var drive in SafeFixedDrives())
+            if (FindPortableSevenZip(System.IO.Path.Combine(drive, "PortableApps")) is { } portable) {
+              result.TryAdd("7z", new DiscoveredTool { Name = "7z", Path = portable });
+              break;
+            }
 
         // Check Git for Windows paths.
         var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
@@ -109,6 +124,35 @@ public static class ToolDiscovery {
 
       _cache = result;
       return result;
+    }
+  }
+
+  /// <summary>
+  /// The 7z.exe of a PortableApps.com 7-Zip under <paramref name="portableAppsRoot"/>, preferring the
+  /// build for this process's architecture (7-Zip64, 7-ZipARM64), else the 32-bit one; null if absent.
+  /// </summary>
+  public static string? FindPortableSevenZip(string portableAppsRoot) {
+    var app = System.IO.Path.Combine(portableAppsRoot, "7-ZipPortable", "App");
+    var preferred = RuntimeInformation.ProcessArchitecture switch {
+      Architecture.X64 => "7-Zip64",
+      Architecture.Arm64 => "7-ZipARM64",
+      _ => "7-Zip",
+    };
+    foreach (var build in new[] { preferred, "7-Zip" }) {
+      var candidate = System.IO.Path.Combine(app, build, "7z.exe");
+      if (File.Exists(candidate)) return candidate;
+    }
+
+    return null;
+  }
+
+  private static IEnumerable<string> SafeFixedDrives() {
+    DriveInfo[] drives;
+    try { drives = DriveInfo.GetDrives(); } catch { yield break; }
+    foreach (var drive in drives) {
+      bool usable;
+      try { usable = drive.DriveType == DriveType.Fixed && drive.IsReady; } catch { usable = false; }
+      if (usable) yield return drive.RootDirectory.FullName;
     }
   }
 
