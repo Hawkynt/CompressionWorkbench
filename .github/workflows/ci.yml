@@ -59,7 +59,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    # The Linux leg runs on 24.04: later Ubuntu images no longer ship bcachefs-tools or
+    # reiser4progs, and one missing package fails the whole oracle install. The job keeps the
+    # name "ubuntu-latest" so the required checks and the matrix conditions below still match.
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && 'ubuntu-24.04' || matrix.os }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
