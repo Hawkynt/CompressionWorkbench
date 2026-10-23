@@ -1,80 +1,69 @@
-using System.Buffers.Binary;
 using Compression.Registry;
 using FileSystem.Zfs;
+using static Compression.Tests.Zfs.ZfsReferencePools;
 
 namespace Compression.Tests.Zfs;
 
 [TestFixture]
 public sealed class ZfsFilesystemDriverTests {
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void NativeSession_UsesDnodeIdentityAndSupportsPositionalReads() {
-    var payload = new byte[48 * 1024 + 137];
-    for (var i = 0; i < payload.Length; i++) payload[i] = (byte)((i * 29 + 7) & 0xFF);
-
-    var writer = new ZfsWriter();
-    writer.AddFile("dir/data.bin", payload);
-    using var image = new MemoryStream();
-    writer.WriteTo(image, 8L * 1024 * 1024);
-
+  [Test, Category("HappyPath"), Category("Oracle")]
+  public void NativeSession_ReadsAPositionalSliceOfARealPoolFile() {
     var adapter = new ZfsFilesystemDriverAdapter();
-    image.Position = 0;
+    using var image = Open("cwbmain");
     var profile = adapter.ProbeFilesystem(image);
     Assert.That(profile.CanMount, Is.True, string.Join("; ", profile.Limitations));
     Assert.That(profile.CanMountWritable, Is.False);
     Assert.That(profile.Capabilities.HasFlag(FilesystemDriverCapabilities.StableNodeIds), Is.True);
-    Assert.That(profile.Capabilities.HasFlag(FilesystemDriverCapabilities.RandomAccess), Is.True);
 
-    image.Position = 0;
     using var session = adapter.OpenFilesystem(image, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
-    var dirId = session.Lookup(session.RootNodeId, "dir");
-    Assert.That(dirId, Is.Not.Null);
-    var fileId = session.Lookup(dirId!.Value, "data.bin");
-    Assert.That(fileId, Is.Not.Null);
-    Assert.That(fileId!.Value.Value, Is.GreaterThan(0UL), "regular-file node must carry the native dataset dnode object id");
+    var dataset = session.Lookup(session.RootNodeId, "c-zstd")!.Value;
+    var file = session.Lookup(dataset, "text.txt")!.Value;
+    using var handle = session.OpenFile(file, FileAccess.Read);
 
-    using var handle = session.OpenFile(fileId.Value, FileAccess.Read);
-    Assert.That(handle.Length, Is.EqualTo(payload.Length));
+    using var reader = new ZfsReader(Open("cwbmain"));
+    var expected = reader.Extract(reader.Entries.Single(e => e.Name == "c-zstd/text.txt"));
+    Assert.That(Sha256Of(expected), Is.EqualTo(Manifest("cwbmain").Single(m => m.Path == "c-zstd/text.txt").Sha256));
+    Assert.That(handle.Length, Is.EqualTo(expected.Length));
     var slice = new byte[733];
-    var read = handle.Read(12_345, slice);
-    Assert.That(read, Is.EqualTo(slice.Length));
-    Assert.That(slice, Is.EqualTo(payload.AsSpan(12_345, slice.Length).ToArray()));
+    Assert.That(handle.Read(150_001, slice), Is.EqualTo(slice.Length));
+    Assert.That(slice, Is.EqualTo(expected.AsSpan(150_001, slice.Length).ToArray()));
   }
 
-  [Test, Category("ErrorHandling")]
-  public void Probe_RejectsUnsupportedPoolVersion() {
-    var writer = new ZfsWriter();
-    writer.AddFile("a.bin", "abc"u8.ToArray());
-    using var built = new MemoryStream();
-    writer.WriteTo(built, 8L * 1024 * 1024);
-    var bytes = built.ToArray();
+  [Test, Category("Spec"), Category("Oracle")]
+  public void NativeSession_HardLinksShareANodeAndLinksResolve() {
+    using var image = Open("cwbmain");
+    using var session = new ZfsFilesystemDriverAdapter()
+      .OpenFilesystem(image, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    var text = session.Lookup(session.RootNodeId, "text.txt")!.Value;
+    var hard = session.Lookup(session.RootNodeId, "hardlink.txt")!.Value;
+    Assert.That(hard, Is.EqualTo(text));
+    Assert.That(session.Stat(text).LinkCount, Is.EqualTo(2u));
+    var link = session.Lookup(session.RootNodeId, "link")!.Value;
+    Assert.That(session.ReadSymbolicLink(link), Is.EqualTo("text.txt"));
+  }
 
-    var changed = 0;
-    for (var slot = ZfsConstants.UberblockArrayOffset;
-         slot + ZfsConstants.UberblockSize <= ZfsConstants.LabelSize;
-         slot += ZfsConstants.UberblockSize) {
-      if (BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(slot, 8)) != ZfsConstants.UberblockMagic)
-        continue;
-      BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(slot + 8, 8), ZfsConstants.PoolVersion + 1);
-      changed++;
-    }
-    Assert.That(changed, Is.GreaterThan(0), "writer must emit at least one valid L0 uberblock");
-
-    using var image = new MemoryStream(bytes, writable: false);
-    var profile = new ZfsFilesystemDriverAdapter().ProbeFilesystem(image);
-    Assert.That(profile.CanMount, Is.False);
-    Assert.That(string.Join("; ", profile.Limitations), Does.Contain("pool version"));
+  [Test, Category("HappyPath"), Category("Oracle")]
+  public void MultiStream_RaidZ1FromAStreamSet() {
+    var sources = new FilesystemStreamSet(Enumerable.Range(0, 3)
+      .Select(i => new FilesystemStreamSource($"cwbraidz1-{i}", Open($"cwbraidz1-{i}"), FilesystemSourceRole.Data)));
+    var adapter = new ZfsFilesystemDriverAdapter();
+    Assert.That(adapter.ProbeFilesystem(sources).CanMount, Is.True);
+    using var session = adapter.OpenFilesystem(sources, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    var big = session.Lookup(session.RootNodeId, "big.txt")!.Value;
+    using var handle = session.OpenFile(big, FileAccess.Read);
+    Assert.That(handle.Length, Is.EqualTo(Manifest("cwbraidz1").Single(m => m.Path == "big.txt").Size));
   }
 
   [Test, Category("ErrorHandling")]
   public void NativeSession_RefusesWritableMount() {
-    var writer = new ZfsWriter();
-    writer.AddFile("a.bin", "abc"u8.ToArray());
-    using var image = new MemoryStream();
-    writer.WriteTo(image, 8L * 1024 * 1024);
-
-    var adapter = new ZfsFilesystemDriverAdapter();
-    image.Position = 0;
+    using var image = Open("cwbv28");
     Assert.Throws<NotSupportedException>(() =>
-      adapter.OpenFilesystem(image, new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true)));
+      new ZfsFilesystemDriverAdapter().OpenFilesystem(image, new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true)));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void Probe_GarbageIsNotMountable() {
+    var profile = new ZfsFilesystemDriverAdapter().ProbeFilesystem(new MemoryStream(new byte[2 * 1024 * 1024]));
+    Assert.That(profile.CanMount, Is.False);
   }
 }

@@ -43,7 +43,6 @@ public class MultiFsDefragmentTests {
   [TestCase("ReiserFs")]
   [TestCase("TFat")]
   [TestCase("Udf")]
-  [TestCase("Zfs")]
   // Phase: descriptor advertises IArchiveDefragmentable but the method
   // throws NotSupported because the FS lacks a writer / a content-aware
   // reader. The capability is surfaced so callers can probe honestly.

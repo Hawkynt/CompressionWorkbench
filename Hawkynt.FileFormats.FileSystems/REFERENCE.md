@@ -15122,64 +15122,65 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 ### Namespace `FileSystem.Zfs`
 
-[`ZfsBlockMover`](#zfsblockmover) · [`ZfsEntry`](#zfsentry) · [`ZfsFilesystemDriverAdapter`](#zfsfilesystemdriveradapter) · [`ZfsFormatDescriptor`](#zfsformatdescriptor) · [`ZfsInPlaceAdder`](#zfsinplaceadder) · [`ZfsModifier`](#zfsmodifier) · [`ZfsReader`](#zfsreader) · [`ZfsWriter`](#zfswriter)
+[`ZfsDataset`](#zfsdataset) · [`ZfsEntry`](#zfsentry) · [`ZfsFilesystemDriverAdapter`](#zfsfilesystemdriveradapter) · [`ZfsFormatDescriptor`](#zfsformatdescriptor) · [`ZfsReader`](#zfsreader)
 
-#### `ZfsBlockMover`
+#### `ZfsDataset`
 
-Moves a file's blocks inside a ZFS pool, repoints the block pointer that named each, and takes every check above them again.
+A dataset the reader found, and why it was not listed if it was not.
 
-Implements `IFilesystemBlockMover`.
+Implements `IEquatable<ZfsDataset>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ZfsBlockMover` | `ZfsBlockMover()` |  |
-| `BlockSize` | `int BlockSize { get; }` | A sector, which is the unit a block pointer counts addresses in. |
-| `FirstDataByte` | `long FirstDataByte { get; }` | First byte a block may occupy: past the two labels at the front. |
-| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call repoints the pointer naming the block it is given, so a file in several blocks is simply several calls. |
-| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A block may be held outside the pool while the rest of the layout moves, which is what lets a full pool be rearranged at all. |
-| `Init` | `void Init(Stream image)` | Reads the pool once and notes which pointer names each block. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `SettleChecksums` | `void SettleChecksums(Stream image)` | Takes every check in the pool again, from the bottom up. |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
+| `ZfsDataset` | `ZfsDataset(string Name, string Path, string Kind, string Refusal)` | A dataset the reader found, and why it was not listed if it was not. |
+| `Kind` | `string Kind { get; init; }` | `filesystem`, `snapshot` or `volume`. |
+| `Name` | `string Name { get; init; }` | Full dataset name (`pool/fs`, `pool/fs@snap`). |
+| `Path` | `string Path { get; init; }` | Where its contents appear in `Entries`. |
+| `Refusal` | `string Refusal { get; init; }` | Null when listed; otherwise the reason its contents are absent. |
 
 #### `ZfsEntry`
 
-Represents a zfs entry.
+One name in the pool's namespace: a file, directory or symbolic link of a ZPL dataset. Child datasets appear under their dataset name, snapshots under `<dataset>/.zfs/snapshot/<name>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ZfsEntry` | `ZfsEntry()` |  |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets a value indicating whether is directory. |
-| `LastModified` | `DateTime? LastModified { get; init; }` | Gets or sets the last modified. |
-| `Name` | `string Name { get; init; }` | Gets or sets the name. |
-| `Size` | `long Size { get; init; }` | Gets or sets the size. |
+| `Dataset` | `string Dataset { get; init; }` | Full name of the dataset (or snapshot) the entry belongs to. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether the entry is a directory. |
+| `IsSymlink` | `bool IsSymlink { get; }` | Whether the entry is a symbolic link. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | Modification time (UTC), when the object records one. |
+| `LinkTarget` | `string LinkTarget { get; init; }` | The target of a symbolic link, otherwise null. |
+| `Mode` | `uint Mode { get; init; }` | POSIX mode bits, type included. |
+| `Name` | `string Name { get; init; }` | Path from the pool root, '/'-separated. |
+| `Size` | `long Size { get; init; }` | Logical size in bytes; for a symbolic link the length of its target. |
 
 #### `ZfsFilesystemDriverAdapter`
 
-Native read-only ZFS sidecar for the repository's v28 single-vdev profile. Dataset dnode object IDs are preserved as path-independent identities and file bytes are streamed through `ZfsReader`, which validates the Fletcher-4 checksum of every block it follows. The driver rejects compressed or hole-bearing data mappings instead of exposing the raw physical bytes as logical file contents.
+Native read-only ZFS driver over `ZfsReader`: one device image, or the devices of a mirror/RAID-Z/striped pool as a `FilesystemStreamSet`. Files are dnodes of their dataset, so hard links share one node; every block read is checksum-verified and decompressed by the reader.
 
-Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
+Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`, `IMultiStreamFilesystemDriverProvider`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ZfsFilesystemDriverAdapter` | `ZfsFilesystemDriverAdapter()` |  |
-| `FormatId` | `string FormatId { get; }` |  |
-| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
-| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(IRandomAccessBlockDevice device, FilesystemOpenOptions options)` |  |
-| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
-| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device)` |  |
-| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
+| `FormatId` | `string FormatId { get; }` | Gets the format id. |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` | Describes which driver layers are available. |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(FilesystemStreamSet sources, FilesystemOpenOptions options)` | Opens the devices of one pool read-only. |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(IRandomAccessBlockDevice device, FilesystemOpenOptions options)` | Opens a block device read-only. |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` | Opens a single device image read-only. |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(FilesystemStreamSet sources)` | Probes the devices of one pool. |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device)` | Probes a block device. |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` | Probes a single device image. |
 
 #### `ZfsFormatDescriptor`
 
-Descriptor for ZFS pool images — four 256 KB vdev labels (NVList + uberblock ring) around the pool data area; WORM pool writer + reader round-trip. References: Sun Microsystems, "ZFS On-Disk Specification" (2006 draft) — vdev labels, uberblocks, DMU structures`https://github.com/openzfs/zfs` — OpenZFS — the maintained implementation`https://openzfs.github.io/openzfs-docs/` — OpenZFS documentation`https://en.wikipedia.org/wiki/ZFS` — Wikipedia article
+Descriptor for ZFS pool device images (vdevs) as OpenZFS writes them. Read-only: every dataset and snapshot, all ZFS block compressions, gang and embedded blocks, mirrors and RAID-Z (see `ZfsReader`). References: Sun Microsystems, "ZFS On-Disk Specification" (2006 draft) — vdev labels, uberblocks, DMU, DSL, ZAP, ZPL`docs/ZFS-ON-DISK.md` — the structures added since, derived from OpenZFS 2.2`https://github.com/openzfs/zfs` — OpenZFS, whose tools wrote the reference pools the tests read`https://openzfs.github.io/openzfs-docs/` — OpenZFS documentation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`.
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ZfsFormatDescriptor` | `ZfsFormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -15190,68 +15191,34 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` | Gets the min total archive size. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Knobs the WORM pool writer honours. `VolumeLabel` maps to the pool name written into the vdev-label NVList `name` field (and the vdev `path`), read back as `ZfsReader.PoolName`; `ImageSize` maps to the total pool image size and must be at least `MinTotalArchiveSize` (the four 256 KB vdev labels plus a usable data area). The 512-byte sector size and Fletcher-4 checksum are fixed, so they are not exposed. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Where the pool keeps its bytes: the four labels, the object sets, dnode arrays and indirect blocks as structure, and each file's data under its name. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
-
-#### `ZfsInPlaceAdder`
-
-Genuine copy-on-write in-place add for ZFS pool images produced by `ZfsWriter` — the spec-faithful alternative to the whole-image rebuild in `ZfsModifier`. A file is added (or replaced) in the root dataset directory by writing NEW (CoW) blocks only for the changed path and leaving every untouched data block byte-identical at its original offset. The CoW path mirrors how ZFS itself commits a transaction group: it walks the active uberblock down to the file's would-be location, then rewrites only the tree blocks on that path into freshly-allocated free space, bottom-up: the new file's data block + its block pointer;a new file dnode, appended to the dataset's dnode array — which means the whole dataset dnode-array block is CoW'd (it also carries the repointed ROOT-directory dnode whose ZAP block is rewritten with the extra entry);the rewritten ROOT directory micro-ZAP block (name → new object id);the dataset `objset_phys_t` block (its meta-dnode now points at the new dnode-array block);the DSL dataset dnode in the MOS dnode array (its bonus `ds_bp` now points at the new dataset objset) — so the MOS dnode-array block is CoW'd;the MOS `objset_phys_t` block (meta-dnode → new MOS dnode array);a new uberblock (txg+1, root_bp → new MOS objset) written into the next slot of every label's uberblock array, with Fletcher-4 recomputed for every new block. Every existing block (the seed file's data, the seed file's dnode bytes that are copied verbatim into the new dnode-array block, the labels' NVList, the unused uberblock slots) stays byte-identical at its original offset; the new blocks are appended into the free tail of the data area, so the image size is unchanged and no existing block is moved or overwritten. Verified by round-tripping the result through `ZfsReader` (added + existing files list and extract byte-identically) and by the CoW-offset proof (every pre-existing data block is unchanged at its offset). Cases the in-place adder does not handle — a multi-block (indirect) dnode array, a fat-ZAP root directory, a file larger than a single 1 MB data block, a micro-ZAP that is already full, or a data area with no room to append the new blocks — throw `NotSupportedException` so the caller can rebuild.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream archive, string name, byte[] data)` | Adds (or replaces) a small file in the root dataset directory of `archive` via copy-on-write. Throws `NotSupportedException` for any shape the in-place path does not handle so the caller can rebuild instead. |
-| `AddFile` | `static void AddFile(byte[] image, string name, byte[] data)` | In-memory variant operating directly on the image bytes. |
-
-#### `ZfsModifier`
-
-Modifier for ZFS pool images produced by `ZfsWriter`. `AddOrReplace` first attempts a genuine copy-on-write in-place add via `ZfsInPlaceAdder`: it writes NEW (CoW) blocks for the changed path only — the file data block + its dnode, the rewritten ROOT-directory micro-ZAP, the dataset dnode array, the dataset and MOS objset blocks, and a new uberblock (txg+1) into the next slot of every label's uberblock array — leaving every untouched data block byte-identical at its offset and the image size unchanged. The result round-trips through `ZfsReader` (added and existing files list and extract byte-identically), and Fletcher-4 is recomputed for every new block. Cases the in-place adder does not handle — nested directories, a multi-block (indirect) dnode array, a fat-ZAP root directory, a full micro-ZAP or dnode-array block, a file larger than a single 1 MB data block, or a data area with no free tail to append into — throw `NotSupportedException` and fall back to the rebuild strategy: read every entry via `ZfsReader`, apply the changes in memory, and emit a fresh image over the old bytes via `ZfsWriter`. `Remove` is always rebuild-based (reclaiming freed blocks in place is not implemented).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `AddOrReplace` | `static void AddOrReplace(Stream archive, IReadOnlyList<ValueTuple<string, byte[]>> toAddOrReplace)` | Adds or replaces files in `archive`. Tries genuine in-place copy-on-write first (per file, in order); if any add hits an unhandled shape the whole batch falls back to a single rebuild that applies every change. Existing entries are preserved except those whose names are overridden by the new inputs. |
-| `Remove` | `static void Remove(Stream archive, IReadOnlyCollection<string> names)` | Rebuilds `archive` without the named entries. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts the pool's files (links as files holding their target). |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the pool's files. Never throws: an image that cannot be read lists as `FULL.zfs` plus a `metadata.ini` saying why. |
 
 #### `ZfsReader`
 
-Reads a ZFS pool image produced by `ZfsWriter` (and compatible minimal spec-aligned images). Traverses: vdev label → highest-TXG uberblock → MOS objset → object directory ZAP → DSL dataset → dataset objset → master node / ROOT dir ZAP → file dnodes. Validates Fletcher-4 checksums on all traversed blocks.
+Reads OpenZFS storage pools: one or more vdev images, every dataset, snapshot and file in them, with all of ZFS's block compressions, gang and embedded blocks, holes, ditto copies, mirrors and RAID-Z. Written from `docs/ZFS-ON-DISK.md`.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ZfsReader` | `ZfsReader(Stream stream, bool leaveOpen = true)` | Initializes a new instance of `ZfsReader`. |
-| `Entries` | `IReadOnlyList<ZfsEntry> Entries { get; }` | Gets the entries. |
-| `Length` | `long Length { get; }` | Total size of the backing image in bytes. |
-| `PoolName` | `string PoolName { get; }` | Gets the pool name. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `ExtractTo` | `long ExtractTo(ZfsEntry entry, Stream destination)` | Writes `entry`'s contents into `destination`, one record at a time through the dnode's indirect tree. Returns the byte count. |
-| `Extract` | `byte[] Extract(ZfsEntry entry)` | Decodes the supplied input. |
-
-#### `ZfsWriter`
-
-Writes a minimum-viable WORM ZFS pool image — single-vdev, single-dataset, flat root directory, Fletcher-4 checksums, no compression/encryption/snapshots. Validates round-trip through `ZfsReader`. Image layout:
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `ZfsWriter` | `ZfsWriter()` |  |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
-| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a file whose bytes are pulled from `openStream` block by block as the pool is written, so the content never has to fit in memory. |
-| `ComputeAutoSize` | `long ComputeAutoSize()` | Smallest pool that holds the added files: the four vdev labels, every file's records, the indirect blocks above them, and headroom for the object sets and ZAPs. Rounded up to a megabyte. |
-| `SetDatasetName` | `void SetDatasetName(string name)` | Sets the dataset name. |
-| `SetPoolName` | `void SetPoolName(string name)` | Sets the pool name. |
-| `WriteTo` | `void WriteTo(Stream output, long imageSize = 67108864)` | Writes the to to the supplied output. |
+| `ZfsReader` | `ZfsReader(IReadOnlyList<Stream> devices, bool leaveOpen = true)` | Opens the pool spread over `devices` (mirror, RAID-Z or striped vdevs). |
+| `ZfsReader` | `ZfsReader(Stream stream, bool leaveOpen = true)` | Opens the pool on a single device image. |
+| `Datasets` | `IReadOnlyList<ZfsDataset> Datasets { get; }` | Every dataset and snapshot found, listed or refused. |
+| `Entries` | `IReadOnlyList<ZfsEntry> Entries { get; }` | Every file, directory and symbolic link, parents before children. |
+| `Length` | `long Length { get; }` | Length of the first device image. |
+| `PoolGuid` | `ulong PoolGuid { get; }` | Pool GUID. |
+| `PoolName` | `string PoolName { get; }` | Pool name from the vdev labels. |
+| `PoolVersion` | `ulong PoolVersion { get; }` | SPA version of the active uberblock (5000 for feature-flag pools). |
+| `Topology` | `IReadOnlyList<string> Topology { get; }` | Top-level vdevs as reconstructed from the labels. |
+| `Txg` | `ulong Txg { get; }` | Transaction group of the uberblock the namespace was read from. |
+| `UnverifiedChecksums` | `IReadOnlyCollection<string> UnverifiedChecksums { get; }` | Checksum algorithms met that the reader does not verify. |
+| `Warnings` | `IReadOnlyList<string> Warnings { get; }` | Parts of the pool that could not be read; the rest is still listed. |
+| `Dispose` | `void Dispose()` | Releases the device images (unless opened with `leaveOpen`). |
+| `ExtractTo` | `long ExtractTo(ZfsEntry entry, Stream destination)` | Streams a file's contents record by record into `destination`; holes and the sparse tail come out as zeros. A link writes its target. Returns the byte count. |
+| `Extract` | `byte[] Extract(ZfsEntry entry)` | Reads a file's contents (or a link's target) into memory. |
 
 ### Namespace `FileSystem.ZxScl`
 
