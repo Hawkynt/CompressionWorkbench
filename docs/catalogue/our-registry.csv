@@ -158,6 +158,7 @@ format,Dzip,Bloodlines DZIP,Archive,,.dzip,Y,Y,Y,Y
 format,Ear,EAR,Archive,,.ear,Y,Y,Y,Y
 format,EaSchl,Electronic Arts SCHl Stream,Audio,,.eam;.sng,Y,Y,Y,
 format,EaseUsPbd,EaseUS Todo Backup (.pbd),Archive,,.pbd,Y,Y,,
+format,Ecm,ECM,Stream,,.ecm,,Y,Y,
 format,Ecryptfs,eCryptfs,Archive,Y,.ecryptfs,Y,Y,Y,Y
 format,Efs,EFS (SGI Extent File System),Archive,Y,.efs;.efsimg,Y,Y,Y,Y
 format,Egg,EGG,Archive,,.egg,Y,Y,Y,
