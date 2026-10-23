@@ -118,6 +118,10 @@
     <EmbeddedResource Include="Zfs\ReferenceVectors\*.gz;Zfs\ReferenceVectors\*.manifest">
       <LogicalName>ZfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Fossil volume written by plan9port's fossil server; see Fossil/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Fossil\ReferenceVectors\*.gz;Fossil\ReferenceVectors\*.manifest">
+      <LogicalName>FossilVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
