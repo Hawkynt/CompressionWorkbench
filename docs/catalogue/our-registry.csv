@@ -403,6 +403,7 @@ format,Pc98,NEC PC-98 DOS,Archive,Y,.hdm;.fdi;.d88,Y,Y,Y,Y
 format,Pcap,PCAP (libpcap capture),Archive,,.pcap;.cap,Y,Y,,
 format,Pcapng,PCAP Next Generation,Archive,,.pcapng;.ntar,Y,Y,,
 format,Pdf,PDF (Image Extraction),Archive,,.pdf,Y,Y,Y,Y
+format,Pea,PEA (PeaZip),Archive,,.pea,Y,Y,Y,
 format,PeResources,PE Resources (Windows binary),Archive,,.dll;.exe;.ocx;.cpl;.sys;.mui;.mun,Y,Y,,
 format,Petite,Petite (Win32 PE),Archive,,,Y,Y,,
 format,Pfs0,Nintendo PartitionFS,Archive,,.nsp;.pfs0,Y,Y,Y,Y
