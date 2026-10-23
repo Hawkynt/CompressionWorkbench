@@ -126,6 +126,10 @@
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Archives the open-source ARJ port wrote with each method; see Arj/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Arj\ReferenceVectors\*.arj">
+      <LogicalName>ArjVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

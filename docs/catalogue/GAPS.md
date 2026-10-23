@@ -162,7 +162,6 @@ running real-world samples. The file named at the end of each row is where the l
 | 7z | `SevenZip` | 7 | Deflate64, ARM64, RISC-V, Zstd/Brotli/LZ4 coders and external header references unsupported (SevenZipReader.cs) |
 | ISO 9660 (Joliet / Rock Ridge / El Torito) | `Iso` | 7 | Rock Ridge limited to NM names (no SL/PX/TF/CE, no zisofs); interleaved files throw (IsoReader.cs) |
 | ZIP | `Zip` | 7 | methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs) |
-| ARJ | `Arj` | 6 | method 4 is treated as stored, so method-4 members extract wrong (ArjReader.cs) |
 | LHA / LZH | `Lzh` | 6 | lh2/lh3 are decoded with the lh5 decoder (approximation) (LhaReader.cs) |
 | XAR (eXtensible ARchive) | `Xar` | 5 | bzip2 throws; lzma/xz members are returned raw (XarReader.cs) |
 | StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |
@@ -207,14 +206,13 @@ running real-world samples. The file named at the end of each row is where the l
 
 - **Silent wrong output.** `DiskDoubler` and `PackIt` return compressed bytes as if they were the
   file. `Xar` does the same for lzma/xz members. `Btrfs` skips compressed extents, `Vhdx` reads
-  unsupported block states as zeros, and `Vmdk` returns compressed grains raw. `Arj` treats method 4
-  as stored, and `Lzh` decodes lh2/lh3 with the lh5 decoder. Each of these gives the caller wrong
+  unsupported block states as zeros, and `Vmdk` returns compressed grains raw. `Lzh` decodes lh2/lh3 with the lh5 decoder. Each of these gives the caller wrong
   data instead of an error.
 - **Capability claims against real files.** `Zpaq` and `FreeArc` declare `CanCreate | CanModify`,
   but neither reads an archive written by the real tool. Their round-trip only proves that our
   writer and reader agree with each other.
-- **Stale comments.** The "(not supported)" comments in `ArcConstants.cs` and `ArjConstants.cs`
-  describe methods the readers do decode.
+- **Stale comments.** The "(not supported)" comments in `ArcConstants.cs` describe methods the
+  reader does decode.
 
 ## ➕ Ours only
 

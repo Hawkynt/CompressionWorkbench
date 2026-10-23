@@ -94,7 +94,8 @@ public static class ArjModifier {
 
       var body = ReadBytes(arj, basicSize);
       if (body.Length < basicSize) return blockStart;
-      var compressedSize = ReadUInt32Le(body, 12);
+      // The main header (file type 2) has no data block; its bytes 12..15 are the archive's modification time.
+      var compressedSize = body[6] == ArjConstants.FileTypeComment ? 0u : ReadUInt32Le(body, 12);
       // Skip header CRC + extended header size + extended bytes (we treat ext as 0).
       arj.Position += 4; // CRC
       var extHdrSize = ReadUInt16Le(arj);
@@ -117,7 +118,8 @@ public static class ArjModifier {
 
       var body = ReadBytes(arj, basicSize);
       if (body.Length < basicSize) break;
-      var compressedSize = ReadUInt32Le(body, 12);
+      // The main header (file type 2) has no data block; its bytes 12..15 are the archive's modification time.
+      var compressedSize = body[6] == ArjConstants.FileTypeComment ? 0u : ReadUInt32Le(body, 12);
       var fileType = body[6];
 
       // Skip CRC + ext size + ext bytes.
