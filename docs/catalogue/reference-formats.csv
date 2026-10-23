@@ -240,7 +240,7 @@ MoleBox,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 UPX-packed executable,exe;dll,executable,,,,,R,,,1,https://upx.github.io/,Upx,Y,,,READ-ONLY-BUT-SOURCES-WRITE,upx,
 macOS Installer package (flat pkg),pkg;mpkg,installer,,,,,,,Y,1,,Xar,Y,Y,Y,OK,,
 ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet;mdf;nrg;toast,filesystem,R,RW,R,R,R,fmt/1739;fmt/1741;fmt/1757;fmt/468,RW,7,https://www.ecma-international.org/publications-and-standards/standards/ecma-119/,Iso,Y,Y,Y,PARTIAL,,"Rock Ridge limited to NM names (no SL/PX/TF/CE, no zisofs); interleaved files throw (IsoReader.cs)"
-High Sierra format,iso;hsf,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+High Sierra format,iso;hsf,filesystem,,,,,,,Y,1,http://www.os2museum.com/files/docs/cdrom/hsg_wp.html,HighSierra,Y,Y,,OK,,
 UDF,udf;cdr;dmg;iso;toast,filesystem,R,,,,,fmt/1738;fmt/1739;fmt/1757,Y,3,https://www.osta.org/specs/,Udf,Y,Y,Y,PARTIAL,,type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs)
 Roxio Toast image,toast,disk-image,,,,,,,Y,1,,Iso;Hfs,Y,Y,Y,OK,,
 Apple Partition Map,apm;bin;cdr;dmg;img;iso;toast,partition-table,R,,,,,fmt/1740;fmt/1741;fmt/1757,,2,https://en.wikipedia.org/wiki/Apple_Partition_Map,PartitionedDisk,Y,,,READ-ONLY-BUT-SOURCES-WRITE,pdisk / hdiutil,
