@@ -459,6 +459,7 @@ format,Sarc,Nintendo SARC,Archive,,.sarc;.pack;.bars,Y,Y,Y,Y
 format,Sbc,Bluetooth SBC / mSBC,Audio,,.sbc;.msbc,Y,Y,,
 format,Sdat,SDAT (Nintendo DS sound archive),Audio,,.sdat,Y,Y,,
 format,Sds,SDS (MIDI Sample Dump),Audio,,.sds,Y,Y,,
+format,SeqBox,SeqBox,Archive,,.sbx,Y,Y,Y,
 format,SevenZip,7z,Archive,,.7z,Y,Y,Y,Y
 format,Sf2,SoundFont 2,Audio,,.sf2,Y,Y,,
 format,Sfar,BioWare SFAR,Archive,,.sfar,Y,Y,Y,
