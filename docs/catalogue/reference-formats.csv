@@ -121,7 +121,7 @@ Crunch (CP/M),cru;crunch;?z?,compression,,,R,,,,Y,2,,Crunch,Y,Y,,OK,,
 MS-DOS COMPRESS (SZDD),szdd;??_;mslz,compression,R,,,,,fmt/462,Y,3,https://www.cabextract.org.uk/libmspack/doc/szdd_kwaj_format.html,Szdd;SzCompress,Y,Y,,OK,,
 MS-DOS COMPRESS (KWAJ),kwaj,compression,,,,,,fmt/469,,1,https://www.cabextract.org.uk/libmspack/doc/szdd_kwaj_format.html,Kwaj;bb:BB_KwajLzh,Y,Y,,OK,,"all five methods (store, XOR, LZSS, LZ+Huffman, MSZIP); libmspack msexpand expands our output"
 PPMd (standalone .pmd),pmd;ppmd,compression,R,,R,,,,,2,,Ppmd,Y,Y,,OK,,
-IBM TERSE,tersed,compression,,,,,,,Y,1,,,,,,MISSING,,
+IBM TERSE,tersed,compression,,,,,,,Y,1,https://github.com/openmainframeproject/tersedecompress,Terse;bb:BB_TersePack,Y,Y,,OK,,"PACK + SPACK read (AMATERSE files decode to their z/OS datasets), host PACK written; TerseDecompress reads ours"
 Softdisk Text Compressor,ctx,compression,,,,,,fmt/1359,,1,,,,,,MISSING,,
 WRAptor,wr3;wra,compression,,,,,,fmt/1611,,1,,,,,,MISSING,,
 LZFSE,lzfse,compression,,,,R,,,,1,https://github.com/lzfse/lzfse,Lzfse,Y,Y,,OK,,
@@ -160,7 +160,7 @@ LArc methods (lz4/lz5/lzs),,codec,,,R,,,,,1,,Lzh,Y,Y,Y,OK,,
 PMArc methods (pm0-pm2),pma,codec,,,R,,,,,1,,Lzh,Y,Y,Y,OK,,
 ARC Crunch / Squash (LZW),,codec,,,R,,,,,1,,Arc,Y,Y,Y,OK,,
 ARC Crush,,codec,,,R,,,,,1,,bb:BB_Crush,Y,Y,,OK,,
-ARC Distill,,codec,,,R,,,,,1,,,,,,MISSING,,
+ARC Distill,,codec,,,R,,,,,1,,bb:BB_ArcDistill,Y,Y,,OK,,PAK method 11 read and written inside ARC/PAK archives; unar extracts ours
 Stac LZS,lzs,codec,,,R,,,,,1,,bb:BB_Lzs,Y,Y,,OK,,
 Delta filter,delta,filter,RW,,R,,,,,2,,bb:BB_Delta,Y,Y,,OK,,
 BCJ x86,bcj;x86,filter,RW,,R,,,,,2,,bb:BB_BcjX86,Y,Y,,OK,,

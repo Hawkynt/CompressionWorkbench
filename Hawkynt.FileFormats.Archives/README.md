@@ -63,6 +63,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Density | `Density` | `.density` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/k0dai/density) |
 | Freeze | `Freeze` | `.f` `.freeze` | ✅ | ✅ | ✅ | Optimizer searches the parse strategy, the match-search depth and the position Huffman table | [Archive Team](http://fileformats.archiveteam.org/wiki/Freeze) |
 | [gzip](https://en.wikipedia.org/wiki/Gzip) | `Gzip` | `.gz` `.gzip` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1952) |
+| [IBM TERSE](https://en.wikipedia.org/wiki/IBM_TERSE) | `Terse` | `.tersed` `.trs` | ✅ | ✅ | — | Reads PACK and SPACK from z/OS AMATERSE and TERSE/PC (binary content; variable records keep their RDWs); writes host PACK (one FB record), which TerseDecompress reads | [GitHub](https://github.com/openmainframeproject/tersedecompress) |
 | ICE Packer | `IcePacker` | `.ice` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/ICE) |
 | KWAJ | `Kwaj` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/KWAJ) |
 | Lizard (LZ5) | `Lizard` | `.liz` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/inikep/lizard) |
