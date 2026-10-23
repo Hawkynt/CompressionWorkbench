@@ -574,6 +574,12 @@ public sealed class SevenZipReader : IDisposable {
       return DeltaFilter.Decode(data, distance);
     }
 
+    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecSwap2))
+      return ByteSwapFilter.Swap2(data);
+
+    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecSwap4))
+      return ByteSwapFilter.Swap4(data);
+
     if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecCopy))
       return data;
 
