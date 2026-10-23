@@ -472,7 +472,7 @@ Measured against the [chesvectain/PackingData](https://github.com/chesvectain/Pa
 
 ### 🔗 Compound formats
 
-`tar.gz`, `tar.bz2`, `tar.xz`, `tar.zst`, `tar.lz4`, `tar.lz` and `tar.br` are composed from the TAR descriptor and the matching stream descriptor (`CanCompoundWithTar`). Detection and writing reuse those two layers; there is no second TAR implementation.
+`tar.gz`, `tar.bz2`, `tar.xz`, `tar.zst`, `tar.lz4`, `tar.lz`, `tar.br`, `tar.Z`, `tar.lzma` and `tar.lzo` are composed from the TAR descriptor and the matching stream descriptor (`CanCompoundWithTar`). Detection and writing reuse those two layers; there is no second TAR implementation.
 
 ### 🚧 Gaps
 
