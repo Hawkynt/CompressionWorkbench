@@ -184,7 +184,7 @@ running real-world samples. The file named at the end of each row is where the l
 | Compact Pro | `CompactPro` | 2 | stored and RLE only; LZ+RLE and LZ+Huffman unsupported (CompactProReader.cs) |
 | DiskDoubler | `DiskDoubler` | 2 | stored only; compressed members are returned as raw compressed bytes without an error (DiskDoublerReader.cs) |
 | EnCase / Expert Witness (E01) | `Ewf` | 2 | single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs) |
-| PackIt | `PackIt` | 2 | PMag (stored) only; PMa4 Huffman members are returned raw (PackItReader.cs) |
+| PackIt | `PackIt` | 2 | encrypted PMa5/PMa6 entries refused; stored and Huffman entries verified on real archives against unar (PackItReader.cs) |
 | UHARC | `Uharc` | 2 | stored and LZP only (UharcReader.cs) |
 | VHDX | `Vhdx` | 2 | differencing / partially-present blocks read as zeros (VhdxStream.cs) |
 | Comic Book Archive | `Cbz`, `Cbr`, `Cb7` | 1 | .cbt (tar) and .cba (ACE) have no descriptor |
