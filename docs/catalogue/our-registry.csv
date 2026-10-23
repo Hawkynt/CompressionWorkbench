@@ -238,6 +238,7 @@ format,Iceberg,Apache Iceberg metadata,Archive,,,Y,Y,,
 format,IcePacker,ICE Packer,Stream,,.ice,,Y,Y,
 format,Icns,ICNS (Apple icon),Archive,,.icns,Y,Y,,
 format,Ico,Windows ICO/CUR,Archive,,.ico,Y,Y,Y,Y
+format,IExpress,IExpress self-extractor,Archive,,,Y,Y,,
 format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
 format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
 format,InnoSetup,Inno Setup,Archive,,,Y,Y,Y,
@@ -333,6 +334,7 @@ format,Msa,MSA (Magic Shadow Archiver),Archive,Y,.msa,Y,Y,Y,Y
 format,Msg,MSG,Archive,,.msg,Y,Y,Y,Y
 format,Msi,MSI (OLE Compound File),Archive,,.msi;.msp;.mst,Y,Y,Y,Y
 format,Msix,MSIX,Archive,,.msix;.msixbundle,Y,Y,Y,Y
+format,Msu,Windows Update package (MSU),Archive,,.msu,Y,Y,,
 format,Mtm,MTM (MultiTracker),Audio,,.mtm,Y,Y,,
 format,Mtree,mtree,Archive,,.mtree,Y,,Y,
 format,Mus,DMX/Doom MUS,Audio,,.mus,Y,Y,,

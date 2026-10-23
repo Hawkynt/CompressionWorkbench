@@ -504,6 +504,9 @@ public static partial class FormatDetector {
       var buf = new byte[2];
       var isPe = fs.Read(buf, 0, 2) >= 2 && buf[0] == 'M' && buf[1] == 'Z';
 
+      // IExpress / wextract: the cabinet lives in the RT_RCDATA resource "CABINET".
+      if (isPe && FileFormat.IExpress.IExpressFormatDescriptor.IsIExpress(fs)) return Format.IExpress;
+
       // NSIS/InnoSetup markers can live anywhere in the file (our own stub-less
       // NSIS writer puts the "NullsoftInst" signature in a leading overlay
       // header, not a PE overlay), so scan the whole file when it is small and

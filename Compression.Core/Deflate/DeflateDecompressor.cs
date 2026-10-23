@@ -130,6 +130,23 @@ public sealed class DeflateDecompressor {
   }
 
   /// <summary>
+  /// Decompresses DEFLATE data whose matches may reach back into <paramref name="dictionary"/>,
+  /// the bytes that precede it (MSZIP keeps the previous block's output as history).
+  /// </summary>
+  /// <param name="compressedData">The DEFLATE compressed data.</param>
+  /// <param name="dictionary">Preceding output; only the last 32 KiB can be referenced.</param>
+  /// <returns>The decompressed data, without the dictionary.</returns>
+  public static byte[] Decompress(ReadOnlySpan<byte> compressedData, ReadOnlySpan<byte> dictionary) {
+    if (dictionary.Length > WindowSize)
+      dictionary = dictionary[^WindowSize..];
+    var capacity = (int)Math.Clamp(compressedData.Length * 4L + dictionary.Length, 4096 + dictionary.Length, Array.MaxLength);
+    var d = new DeflateDecompressor(compressedData.ToArray(), capacity);
+    dictionary.CopyTo(d._buf);
+    d._wpos = d._rpos = dictionary.Length;
+    return d.DecompressAll();
+  }
+
+  /// <summary>
   /// Decompresses data from the input stream into the provided buffer.
   /// Returns the number of bytes written. Returns 0 when decompression is complete.
   /// </summary>
