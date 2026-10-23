@@ -1,0 +1,23 @@
+DmsDecoder.cs, DmsReader.cs and DmsRecords.cs convert the DMS client of libxad:
+
+  Source:   https://github.com/MacPaw/XADMaster/blob/master/libxad/clients/DMS.c
+            ($Id: DMS.c, "DMS 1.13 (31.05.2006)")
+  Licence:  GNU Lesser General Public License, version 2.1 or (at your option) any later
+            version; taken here under LGPL-3.0-or-later.
+  Holder:   Copyright (C) 1998 and later by Dirk Stoecker <soft@dstoecker.de>
+
+    XAD library system for archive handling
+    Copyright (C) 1998 and later by Dirk Stoecker <soft@dstoecker.de>
+
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+    License as published by the Free Software Foundation; either
+    version 2.1 of the License, or (at your option) any later version.
+
+    This library is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+    Lesser General Public License for more details.
+
+Local changes: rewritten as C#; a match or table that would run past its track, or a
+Huffman code that does not resolve, raises InvalidDataException instead of continuing.
