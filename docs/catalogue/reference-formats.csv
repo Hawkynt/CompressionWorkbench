@@ -46,7 +46,7 @@ EGG (ALZip),egg,archive,,,R,,,,,1,https://en.wikipedia.org/wiki/ALZip,Egg,Y,Y,,P
 StuffIt (classic + 5),sit;sea,archive,,,R,,R,fmt/1459;fmt/1460;fmt/639,RW,4,https://en.wikipedia.org/wiki/StuffIt,StuffIt,Y,Y,Y,PARTIAL,,store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs)
 StuffIt X,sitx,archive,,,R,,R,fmt/399,RW,4,https://en.wikipedia.org/wiki/StuffIt,StuffItX,Y,Y,,PARTIAL,,stored and deflate only; Brimstone/Cyanide/Darkhorse/Iron throw (StuffItXReader.cs)
 DiskDoubler,dd,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/DiskDoubler,DiskDoubler,Y,Y,,PARTIAL,,stored only; compressed members are returned as raw compressed bytes without an error (DiskDoublerReader.cs)
-Compact Pro,cpt,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/Compact_Pro,CompactPro,Y,Y,Y,PARTIAL,,stored and RLE only; LZ+RLE and LZ+Huffman unsupported (CompactProReader.cs)
+Compact Pro,cpt,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/Compact_Pro,CompactPro,Y,Y,Y,PARTIAL,,"multi-volume and encrypted archives refused; writer emits RLE-only forks (CompactProReader.cs)"
 PackIt,pit,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/PackIt,PackIt,Y,Y,Y,PARTIAL,,PMag (stored) only; PMa4 Huffman members are returned raw (PackItReader.cs)
 Now Compress,now,archive,,,R,,,,,1,,,,,,MISSING,,
 LZX (Amiga),lzx,archive,,,R,,R,,Y,3,https://en.wikipedia.org/wiki/LZX,LzxAmiga,Y,Y,Y,OK,,
@@ -186,7 +186,7 @@ StuffIt X Iron,,codec,,,R,,,,,1,,,,,,MISSING,,
 StuffIt X English dictionary preprocessor,,codec,,,R,,,,,1,,,,,,MISSING,,
 StuffIt X x86 filter,,filter,,,R,,,,,1,,,,,,MISSING,,
 DiskDoubler methods (ADn/DDn/Method2),,codec,,,R,,,,,1,,,,,,MISSING,,
-Compact Pro LZH/RLE,,codec,,,R,,,,,1,,,,,,MISSING,,
+Compact Pro LZH/RLE,,codec,,,R,,,,,1,,CompactPro,Y,Y,Y,PARTIAL,,"decoded inside the CompactPro descriptor (no building block); no LZH encoder"
 Squeeze (Huffman),,codec,,,R,,,,,1,,Squeeze,Y,Y,,OK,,
 Crunch CP/M (LZW),,codec,,,R,,,,,1,,Crunch,Y,Y,,OK,,
 Now Compress method,,codec,,,R,,,,,1,,,,,,MISSING,,
