@@ -67,6 +67,10 @@
                       Exclude="StructuredPseudoArchives\ReferenceVectors\*.py;StructuredPseudoArchives\ReferenceVectors\*.pl;StructuredPseudoArchives\ReferenceVectors\*.ps1;StructuredPseudoArchives\ReferenceVectors\README.md">
       <LogicalName>ReferenceVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Volumes the Linux btrfs driver wrote with compress-force; see Btrfs/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Btrfs\ReferenceVectors\*.gz;Btrfs\ReferenceVectors\manifest.txt">
+      <LogicalName>BtrfsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Volumes bcachefs-tools wrote; see BcacheFs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="BcacheFs\ReferenceVectors\*.gz;BcacheFs\ReferenceVectors\manifest.txt">
       <LogicalName>BcacheFsVectors.%(Filename)%(Extension)</LogicalName>

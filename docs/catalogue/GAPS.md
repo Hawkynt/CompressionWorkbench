@@ -180,7 +180,6 @@ running real-world samples. The file named at the end of each row is where the l
 | VMDK | `Vmdk` | 3 | stream-optimized / compressed grains read raw; split extents and delta chains unsupported (VmdkReader.cs) |
 | Windows PE | `Mz`, `PeResources` | 3 | archive view of resources/overlay, not a full PE section extractor |
 | ZPAQ | `Zpaq` | 3 | reads only the stored blocks our own writer emits; ZPAQL-compressed blocks (every real zpaq level) throw (ZpaqReader.cs) |
-| Btrfs | `Btrfs` | 2 | zlib/lzo/zstd compressed extents are skipped (BtrfsReader.cs) |
 | Compact Pro | `CompactPro` | 2 | stored and RLE only; LZ+RLE and LZ+Huffman unsupported (CompactProReader.cs) |
 | DiskDoubler | `DiskDoubler` | 2 | stored only; compressed members are returned as raw compressed bytes without an error (DiskDoublerReader.cs) |
 | EnCase / Expert Witness (E01) | `Ewf` | 2 | single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs) |
@@ -206,7 +205,7 @@ running real-world samples. The file named at the end of each row is where the l
 ### ⚠️ Found along the way (flagged, not fixed here)
 
 - **Silent wrong output.** `DiskDoubler` and `PackIt` return compressed bytes as if they were the
-  file. `Xar` does the same for lzma/xz members. `Btrfs` skips compressed extents, `Vhdx` reads
+  file. `Xar` does the same for lzma/xz members. `Vhdx` reads
   unsupported block states as zeros, and `Vmdk` returns compressed grains raw. `Arj` treats method 4
   as stored, and `Lzh` decodes lh2/lh3 with the lh5 decoder. Each of these gives the caller wrong
   data instead of an error.
