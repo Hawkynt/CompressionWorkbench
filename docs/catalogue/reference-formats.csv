@@ -41,7 +41,7 @@ PAK (NoGate ARC extension),pak,archive,,,R,,,,Y,2,,,,,,MISSING,,
 zoo,zoo,archive,,,R,,R,x-fmt/269,Y,4,https://en.wikipedia.org/wiki/Zoo_(file_format),Zoo,Y,Y,Y,PARTIAL,,LZH method (2) unsupported (ZooReader.cs)
 LBR (CP/M library),lbr;lqr;lzr,archive,,,R,,R,,Y,3,https://en.wikipedia.org/wiki/LBR_(file_format),Lbr,Y,Y,Y,OK,,
 LBR (Commodore library),lbr,archive,,,,,,,Y,1,,,,,,MISSING,,
-ALZip,alz,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ALZip,AlZip,Y,Y,Y,PARTIAL,,store and deflate only (AlZipReader.cs)
+ALZip,alz,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ALZip,AlZip,Y,Y,Y,PARTIAL,,"split (multi-volume) archives and obfuscated deflate (method 3) refused; writer emits stored/deflate, not ALZ bzip2 (AlZipReader.cs)"
 EGG (ALZip),egg,archive,,,R,,,,,1,https://en.wikipedia.org/wiki/ALZip,Egg,Y,Y,,PARTIAL,,"store and deflate only; bzip2/LZMA/AZO, encryption and split archives unsupported (EggReader.cs)"
 StuffIt (classic + 5),sit;sea,archive,,,R,,R,fmt/1459;fmt/1460;fmt/639,RW,4,https://en.wikipedia.org/wiki/StuffIt,StuffIt,Y,Y,Y,PARTIAL,,store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs)
 StuffIt X,sitx,archive,,,R,,R,fmt/399,RW,4,https://en.wikipedia.org/wiki/StuffIt,StuffItX,Y,Y,,PARTIAL,,stored and deflate only; Brimstone/Cyanide/Darkhorse/Iron throw (StuffItXReader.cs)
