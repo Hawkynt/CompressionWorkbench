@@ -390,7 +390,7 @@ Acorn ADFS,adf;adl;acorn,filesystem,,,,,,,Y,1,,Adfs,Y,Y,Y,OK,,
 AdvFS,tru64,filesystem,,,,,,,Y,1,,AdvFs,Y,Y,Y,OK,,
 APFS,apfs,filesystem,R,,,R,,,Y,3,https://developer.apple.com/support/downloads/Apple-File-System-Reference.pdf,Apfs,Y,Y,Y,PARTIAL,,"no decmpfs (LZVN/LZFSE) compressed files, no encryption (ApfsReader.cs)"
 AtheOS/Syllable AFS,afs;syllable,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-Boot File System (SVR4 / UnixWare),bfs;unixware,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+Boot File System (SVR4 / UnixWare),bfs;unixware,filesystem,,,,,,,Y,1,https://github.com/torvalds/linux/blob/master/include/uapi/linux/bfs_fs.h,Svr4Bfs,Y,Y,Y,OK,mkfs.bfs,
 BeFS (BFS),bfs;beos;haiku;openbfs,filesystem,,,,,,,Y,1,https://www.haiku-os.org/legacy-docs/practical-file-system-design.pdf,Bfs,Y,Y,Y,OK,,
 Byte File System (z/VM),bfs,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Btrfs,btrfs,filesystem,,,,R,,,Y,2,https://btrfs.readthedocs.io/en/latest/dev/On-disk-format.html,Btrfs,Y,Y,,PARTIAL,,zlib/lzo/zstd compressed extents are skipped (BtrfsReader.cs)

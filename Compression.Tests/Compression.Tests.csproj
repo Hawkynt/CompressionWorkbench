@@ -118,6 +118,10 @@
     <EmbeddedResource Include="Zfs\ReferenceVectors\*.gz;Zfs\ReferenceVectors\*.manifest">
       <LogicalName>ZfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- mkfs.bfs volume written by the Linux bfs driver; see Svr4Bfs/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Svr4Bfs\ReferenceVectors\*.gz;Svr4Bfs\ReferenceVectors\*.manifest">
+      <LogicalName>Svr4BfsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>

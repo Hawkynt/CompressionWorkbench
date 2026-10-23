@@ -498,6 +498,7 @@ format,Storable,Perl Storable object graph,Archive,,.storable;.sto,Y,Y,Y,
 format,StuffIt,StuffIt,Archive,,.sit,Y,Y,Y,Y
 format,StuffItX,StuffIt X,Archive,,.sitx,Y,Y,Y,
 format,Sup,Blu-ray PGS Subtitles,Archive,,.sup,Y,Y,Y,Y
+format,Svr4Bfs,SVR4 Boot File System (BFS),Archive,Y,.svbfs,Y,Y,Y,Y
 format,Svx8,IFF/8SVX (Amiga),Audio,,.8svx;.svx,Y,Y,Y,
 format,Swav,SWAV (Nintendo DS sample),Audio,,.swav,Y,Y,Y,
 format,Swf,SWF,Stream,,.swf,,Y,Y,
