@@ -227,6 +227,7 @@ format,Hes,PC Engine HES,Audio,,.hes,Y,Y,,
 format,Hfe,HxC Floppy Emulator (HFE),Archive,,.hfe,Y,Y,,
 format,Hfs,HFS (Classic),Archive,Y,.hfs,Y,Y,Y,Y
 format,HfsPlus,HFS+,Archive,Y,.dmg;.hfsx;.hfs,Y,Y,Y,Y
+format,HighSierra,High Sierra (CD-ROM),Archive,Y,.hsf,Y,Y,Y,
 format,Hog,HOG,Archive,,.hog,Y,Y,Y,Y
 format,Hpfs,HPFS,Archive,Y,.img;.hpfs,Y,Y,Y,Y
 format,Hpi,Total Annihilation HPI,Archive,,.hpi;.ufo;.ccx;.gp3,Y,Y,Y,Y
