@@ -12,7 +12,7 @@
 >   [`docs/CVF-CODECS-ON-DISK.md`](../../../docs/CVF-CODECS-ON-DISK.md). The reader
 >   decodes the full SD-4 format (run tokens, short and long matches), pinned to
 >   clusters the dmsdos SD-3/SD-4 compressors wrote (`CvfReferenceVectorTests`); the
->   writer's SD-4 output is literals-only. The AMAP flag nibble is honoured:
+>   writer's SD-4 output uses back-references and run-coded tables, read back by dmsdos. The AMAP flag nibble is honoured:
 >   fragmented and suballocated clusters are refused, not guessed at.
 > - **The legacy `StackerWriter` (invented `STKMAP01` trailer) is NOT genuine:**
 >   `dmsdos` panics on it. It is retained only for self-round-trip.
