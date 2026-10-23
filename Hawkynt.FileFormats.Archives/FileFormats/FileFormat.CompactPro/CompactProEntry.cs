@@ -1,54 +1,39 @@
 namespace FileFormat.CompactPro;
 
-/// <summary>
-/// Represents a single entry in a Compact Pro (.cpt) archive.
-/// </summary>
+/// <summary>One file or folder of a Compact Pro archive's directory.</summary>
 public sealed class CompactProEntry {
-  /// <summary>Gets or sets the filename (up to 63 characters).</summary>
-  public string FileName { get; init; } = string.Empty;
+  /// <summary>Path with '/' separators (folders included).</summary>
+  public string FileName { get; init; } = "";
 
-  /// <summary>Gets or sets whether this entry is a directory.</summary>
   public bool IsDirectory { get; init; }
 
-  /// <summary>Gets or sets the uncompressed data fork size in bytes.</summary>
+  public uint FileOffset { get; init; }
+
   public uint DataForkSize { get; init; }
-
-  /// <summary>Gets or sets the uncompressed resource fork size in bytes.</summary>
   public uint ResourceForkSize { get; init; }
-
-  /// <summary>Gets or sets the compressed data fork size in bytes.</summary>
   public uint DataForkCompressedSize { get; init; }
-
-  /// <summary>Gets or sets the compressed resource fork size in bytes.</summary>
   public uint ResourceForkCompressedSize { get; init; }
 
-  /// <summary>Gets or sets the compression method for the data fork.</summary>
-  public byte DataForkMethod { get; init; }
+  /// <summary>Stored CRC: the CRC-32 register over resource then data fork, not inverted.</summary>
+  public uint Crc { get; init; }
 
-  /// <summary>Gets or sets the compression method for the resource fork.</summary>
-  public byte ResourceForkMethod { get; init; }
+  /// <summary>Bit 0 encrypted, bit 1 resource fork LZH, bit 2 data fork LZH.</summary>
+  public ushort Flags { get; init; }
 
-  /// <summary>Gets or sets the CRC-16 of the decompressed data fork.</summary>
-  public ushort DataForkCrc { get; init; }
-
-  /// <summary>Gets or sets the CRC-16 of the decompressed resource fork.</summary>
-  public ushort ResourceForkCrc { get; init; }
-
-  /// <summary>Gets or sets the Mac four-character file type code (e.g. 0x54455854 for 'TEXT').</summary>
   public uint FileType { get; init; }
-
-  /// <summary>Gets or sets the Mac four-character creator code.</summary>
   public uint FileCreator { get; init; }
-
-  /// <summary>Gets or sets the creation date.</summary>
+  public ushort FinderFlags { get; init; }
   public DateTime CreatedDate { get; init; }
-
-  /// <summary>Gets or sets the modification date.</summary>
   public DateTime ModifiedDate { get; init; }
+  public byte Volume { get; init; }
 
-  /// <summary>Internal: byte offset of the data fork compressed data in the stream.</summary>
-  internal long DataOffset { get; init; }
+  public bool IsEncrypted => (this.Flags & 1) != 0;
+  public bool ResourceForkLzh => (this.Flags & 2) != 0;
+  public bool DataForkLzh => (this.Flags & 4) != 0;
 
-  /// <summary>Internal: byte offset of the resource fork compressed data in the stream.</summary>
-  internal long ResourceOffset { get; init; }
+  /// <summary>Offset of the data fork's packed bytes (it follows the resource fork).</summary>
+  public long DataOffset => this.FileOffset + (long)this.ResourceForkCompressedSize;
+
+  /// <summary>Offset of the resource fork's packed bytes.</summary>
+  public long ResourceOffset => this.FileOffset;
 }
