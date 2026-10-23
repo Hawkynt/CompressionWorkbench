@@ -76,6 +76,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [LZS](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Stac) | `Lzs` | `.lzs` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc2395) |
 | [MacBinary](https://en.wikipedia.org/wiki/MacBinary) | `MacBinary` | `.bin` `.macbin` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1740) |
 | MCM | `Mcm` | `.mcm` | ✅ | ✅ | ✅ | Optimizer searches Legacy plus reduced Turbo/Fast/Mid/High/Max managed profiles | [GitHub](https://github.com/mathieuchartier/mcm) |
+| [pack (.z)](https://en.wikipedia.org/wiki/Pack_(compression)) | `UnixPack` |  | ✅ | ✅ | — | System V static-Huffman `pack`; detected by its `1F 1E` magic (`.z` belongs to `compress`); GNU gzip decodes our output | [Wikipedia](https://en.wikipedia.org/wiki/Pack_(compression)) |
 | [PackBits](https://en.wikipedia.org/wiki/PackBits) | `PackBits` | `.packbits` | ✅ | ✅ | ✅ |  | [developer.apple.com](https://developer.apple.com/library/archive/documentation/mac/pdf/MoreMacintoshToolbox.pdf) |
 | [PAQ8](https://en.wikipedia.org/wiki/PAQ) | `Paq8` | `.paq8l` `.paq8` | ✅ | ✅ | ✅ |  | [mattmahoney.net](https://mattmahoney.net/dc/paq.html) |
 | PowerPacker | `PowerPacker` | `.pp` `.pp20` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/PowerPacker) |
@@ -90,6 +91,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | SZ (MS COMPRESS, KWAJ-less) | `SzCompress` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
 | SZDD | `Szdd` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
 | [uuencode](https://en.wikipedia.org/wiki/Uuencoding) | `UuEncoding` | `.uue` `.uu` | ✅ | ✅ | — |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/uuencode.html) |
+| [XXencode](https://en.wikipedia.org/wiki/Xxencoding) | `XxEncoding` | `.xxe` `.xx` | ✅ | ✅ | — | Detected by extension only (the `begin` header is uuencode's); uudeview cross-decodes both directions | [Archive Team](http://fileformats.archiveteam.org/wiki/XXencode) |
 | [XZ](https://en.wikipedia.org/wiki/XZ_Utils) | `Xz` | `.xz` | ✅ | ✅ | ✅ |  | [tukaani.org](https://tukaani.org/xz/xz-file-format.txt) |
 | [yEnc](https://en.wikipedia.org/wiki/YEnc) | `YEnc` | `.yenc` `.uu` | ✅ | ✅ | — |  | [yenc.org](http://www.yenc.org/yenc-draft.1.3.txt) |
 | Yaz0 | `Yaz0` | `.yaz0` `.szs` | ✅ | ✅ | ✅ |  | [wiki.tockdom.com](https://wiki.tockdom.com/wiki/YAZ0) |
