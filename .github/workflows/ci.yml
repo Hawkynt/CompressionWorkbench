@@ -235,6 +235,18 @@ jobs:
           --filter "FullyQualifiedName~Compression.Tests.Reiser4.Reiser4ProfileExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4MutationExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4NativeTreeExternalTests"
           --logger "trx;LogFileName=reiser4-oracle-tests.trx"
 
+      # Hard gate: isz-tool (GPL-3.0 Python, pinned, used as a black box) verifies both CRCs of
+      # what the ISZ writer creates and extracts the same ISO.
+      - name: ISZ oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_ISZ_TOOL: "1"
+        run: |
+          curl -sfL -o "$RUNNER_TEMP/isz-tool.py" https://raw.githubusercontent.com/oserres/isz-tool/d99f05793badd3b882a56b9135444485a78d6b41/isz-tool.py
+          CWB_ISZ_TOOL="$RUNNER_TEMP/isz-tool.py" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Isz.IszExternalConformanceTests" \
+            --logger "trx;LogFileName=isz-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the
