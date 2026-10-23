@@ -118,6 +118,10 @@
     <EmbeddedResource Include="Zfs\ReferenceVectors\*.gz;Zfs\ReferenceVectors\*.manifest">
       <LogicalName>ZfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- ARC crawl files from warcio's tests and a Heritrix crawl; see IaArc/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="IaArc\ReferenceVectors\*.arc;IaArc\ReferenceVectors\*.arc.gz;IaArc\ReferenceVectors\warcio-listing.txt">
+      <LogicalName>IaArcVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
