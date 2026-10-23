@@ -265,7 +265,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Minecraft region (MCA) | `Mca` | `.mca` `.mcr` | WORM | ✅ | — | Chunks are `chunk_X_Z.nbt`; gzip, zlib, stored and LZ4-Java block-stream creation; oversized (external `.mcc`) chunks are listed but not written or extracted | [minecraft.wiki](https://minecraft.wiki/w/Region_file_format) |
 | Cyan Mohawk | `Mhk` | `.mhk` | WORM | ✅ | defrag · wipe | Entries are typed tDAT_NNNN names | [GitHub](https://github.com/scummvm/scummvm) |
 | Westwood MIX | `Mix` | `.mix` | WORM | ✅ | defrag · wipe | Hash-keyed names; hex names are synthesised where the original is absent | [GitHub](https://github.com/OpenRA/OpenRA) |
-| [Blizzard MPQ](https://en.wikipedia.org/wiki/MPQ) | `Mpq` | `.mpq` | R/W | ✅ | defrag · wipe |  | [zezula.net](http://www.zezula.net/en/mpq/main.html) |
+| [Blizzard MPQ](https://en.wikipedia.org/wiki/MPQ) | `Mpq` | `.mpq` | R/W | ✅ | defrag · wipe | Reads zlib and bzip2 sectors; other compression methods are refused | [zezula.net](http://www.zezula.net/en/mpq/main.html) |
 | Nintendo NARC | `Narc` | `.narc` `.carc` | R/W | ✅ | defrag · wipe |  | [problemkaputt.de](https://problemkaputt.de/gbatek.htm) |
 | [Nintendo DS ROM](https://en.wikipedia.org/wiki/Nintendo_DS) | `Nds` | `.nds` | R/W | ✅ | defrag · wipe | NitroFS-oriented output, not ARM boot-code synthesis | [problemkaputt.de](https://problemkaputt.de/gbatek.htm) |
 | [NES ROM](https://en.wikipedia.org/wiki/INES) | `Nes` | `.nes` | R | ✅ | — |  | [nesdev.org](https://www.nesdev.org/wiki/INES) |

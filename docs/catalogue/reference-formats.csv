@@ -809,7 +809,7 @@ Musepack (MPC),mpc;mpp;mp+,media,,,,,,,,0,,Mpc,Y,,,OURS-ONLY,,
 MPEG Program Stream,mpg;mpeg;vob;m2p;ps,media,,,,,,,,0,,MpegPs,Y,Y,,OURS-ONLY,,
 MPEG-2 Transport Stream,ts;m2ts;mts,archive,,,,,,,,0,,MpegTs,Y,Y,Y,OURS-ONLY,,
 MPO (stereoscopic JPEG),mpo,archive,,,,,,,,0,,Mpo,Y,,,OURS-ONLY,,
-MPQ,mpq,archive,,,,,,,,0,,Mpq,Y,Y,Y,OURS-ONLY,,
+MPQ,mpq,archive,,,,,,,,0,,Mpq,Y,Y,Y,OURS-ONLY,,"zlib and bzip2 blocks only; PKWare DCL, Huffman, ADPCM, LZMA and sparse blocks are refused (MpqReader.cs)"
 MPRESS (Win32 PE / Linux ELF),,archive,,,,,,,,0,,MPress,Y,,,OURS-ONLY,,
 MSG,msg,archive,,,,,,,,0,,Msg,Y,Y,Y,OURS-ONLY,,
 MTM (MultiTracker),mtm,media,,,,,,,,0,,Mtm,Y,,,OURS-ONLY,,
