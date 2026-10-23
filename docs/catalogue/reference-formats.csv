@@ -9,7 +9,7 @@ Android Archive (AAR library),aar,package,,,,,,fmt/2043,,1,https://developer.and
 Comic Book Archive,cbz;cbr;cb7;cbt;cba,archive,,,,,,fmt/1462,,1,https://en.wikipedia.org/wiki/Comic_book_archive,Cbz;Cbr;Cb7,Y,Y,Y,PARTIAL,,.cbt (tar) and .cba (ACE) have no descriptor
 Chrome extension (CRX),crx,package,,,,,,,Y,1,https://en.wikipedia.org/wiki/Google_Chrome#Extensions,Crx,Y,Y,,OK,,
 MSIX / APPX,msix;appx;msixbundle;appxbundle;emsix;emsixbundle,package,,,,,,,Y,1,https://learn.microsoft.com/windows/msix/overview,Appx;Msix,Y,Y,Y,OK,,
-7z,7z;s7z;001;exe,archive,RW,RW,R,R,R,fmt/484,RW,7,https://www.7-zip.org/7z.html,SevenZip,Y,Y,Y,PARTIAL,,"Deflate64, ARM64, RISC-V, Zstd/Brotli/LZ4 coders and external header references unsupported (SevenZipReader.cs)"
+7z,7z;s7z;001;exe,archive,RW,RW,R,R,R,fmt/484,RW,7,https://www.7-zip.org/7z.html,SevenZip,Y,Y,Y,PARTIAL,,"external header references (kAdditionalStreamsInfo) unsupported; no known writer emits them (SevenZipHeaderCodec.cs)"
 RAR (1.5-4.x),rar;r00;part1.rar,archive,R,R,R,R,R,fmt/411;fmt/613;x-fmt/264,RW,7,https://www.rarlab.com/technote.htm,Rar,Y,Y,Y,OK,,
 RAR5,rar,archive,R,R,R,,,fmt/411;fmt/613;x-fmt/264,RW,5,https://www.rarlab.com/technote.htm,Rar,Y,Y,Y,OK,,
 tar (ustar/pax/GNU/v7),tar;ustar;pax;ctar;tbz;tgz;txz,archive,RW,RW,R,R,R,x-fmt/265,RW,7,https://pubs.opengroup.org/onlinepubs/9799919799/utilities/pax.html,Tar,Y,Y,Y,OK,,
