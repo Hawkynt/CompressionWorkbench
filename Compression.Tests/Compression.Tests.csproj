@@ -118,6 +118,10 @@
     <EmbeddedResource Include="Zfs\ReferenceVectors\*.gz;Zfs\ReferenceVectors\*.manifest">
       <LogicalName>ZfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- UC2 archives written by the original UltraCompressor II (klauspost/uc2 testdata); see Uc2/ReferenceVectors/README.txt. -->
+    <EmbeddedResource Include="Uc2\ReferenceVectors\*.uc2;Uc2\ReferenceVectors\sums.txt">
+      <LogicalName>Uc2Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>

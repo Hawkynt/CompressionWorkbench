@@ -29700,6 +29700,84 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalizes and writes the archive. |
 
+### Namespace `FileFormat.Uc2`
+
+[`Uc2Archive`](#uc2archive) · [`Uc2Archive.Input`](#uc2archiveinput) · [`Uc2Archive.Parsed`](#uc2archiveparsed) · [`Uc2Entry`](#uc2entry) · [`Uc2FormatDescriptor`](#uc2formatdescriptor)
+
+#### `Uc2Archive`
+
+UltraCompressor II (.uc2) archives: FHEAD + XHEAD, headerless compressed streams for files and masters (shared dictionaries), and a compressed central directory; every stream is checked with UC2's 16-bit XOR checksum. Reads every UC2 release's archives (methods 1-9, 21-29, 30-37, 40-47 and turbo 80; supermaster, no-master and custom masters; delta filter) and writes archives UC2 r2 reads: one 512-byte custom master compressed with the supermaster, files with method 3.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Extract` | `static byte[] Extract(Parsed archive, Uc2Entry entry)` | Extracts one file, verifying its checksum. |
+| `Fletch` | `static ushort Fletch(ReadOnlySpan<byte> data)` | UC2's "Fletcher": 0xA55A XOR the XOR of all little-endian 16-bit words (odd tail byte = low byte). |
+| `Read` | `static Parsed Read(Stream stream)` | Parses an archive and verifies its central directory. |
+| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs)` | Writes a UC2 archive that UC2 r2 reads (wVersionNeededToExtract 200): one custom master of 512 zero bytes compressed with the supermaster, every file compressed with method 3 against it, directories implied by the paths, 8.3 aliases plus "AIP:Win95 LongN" tags for names that do not fit 8.3, and the CDIR compressed with no master. |
+
+#### `Uc2Archive.Input`
+
+A file to write: its archive path ('/'-separated), content and time.
+
+Implements `IEquatable<Input>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Input` | `Input(string Path, byte[] Data, DateTime LastModified)` | A file to write: its archive path ('/'-separated), content and time. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `LastModified` | `DateTime LastModified { get; init; }` |  |
+| `Path` | `string Path { get; init; }` |  |
+
+#### `Uc2Archive.Parsed`
+
+A parsed archive: entries plus what is needed to extract them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entries` | `IReadOnlyList<Uc2Entry> Entries { get; }` | Gets the entries, directories included. |
+
+#### `Uc2Entry`
+
+One file or directory of a UC2 archive (the newest revision of its name).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Uc2Entry` | `Uc2Entry()` |  |
+| `Attributes` | `byte Attributes { get; init; }` | Gets the DOS attribute byte. |
+| `CompressedSize` | `long CompressedSize { get; init; }` | Gets the compressed stream size (excluding its master). |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets whether this is a directory. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | Gets the modification time (DOS local time, 2-second resolution). |
+| `Method` | `int Method { get; init; }` | Gets the compression method number. |
+| `Path` | `string Path { get; init; }` | Gets the path inside the archive, '/'-separated (long names where the archive records them). |
+| `ShortName` | `string ShortName { get; init; }` | Gets the DOS 8.3 name as stored. |
+| `Size` | `long Size { get; init; }` | Gets the uncompressed size. |
+
+#### `Uc2FormatDescriptor`
+
+UltraCompressor II archive (.uc2), Nico de Vries / AIP-NL, 1994-1996.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Uc2FormatDescriptor` | `Uc2FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Uharc`
 
 [`UharcEntry`](#uharcentry) · [`UharcFormatDescriptor`](#uharcformatdescriptor) · [`UharcReader`](#uharcreader) · [`UharcWriter`](#uharcwriter)
