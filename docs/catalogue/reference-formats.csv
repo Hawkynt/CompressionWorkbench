@@ -260,7 +260,7 @@ QCOW / QCOW2,qcow;qcow2;qcow2c,disk-image,R,,,D,,,Y,3,https://gitlab.com/qemu-pr
 Android sparse image,simg;sparse,disk-image,R,,,R,,,,2,https://android.googlesource.com/platform/system/core/+/master/libsparse/sparse_format.h,AndroidSparse,Y,Y,,OK,,
 Android boot image,img;bootimg,firmware,,,,D,R,,,2,,,,,,MISSING,,https://source.android.com/docs/core/architecture/bootloader/boot-image-header
 EnCase / Expert Witness (E01),e01;ex01;l01,disk-image,,,,,,fmt/803,Y,2,https://github.com/libyal/libewf/blob/main/documentation/Expert%20Witness%20Compression%20Format%20(EWF).asciidoc,Ewf,Y,Y,Y,PARTIAL,,"single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs)"
-AFF (Advanced Forensic Format v1-3),aff;afd;afm,disk-image,,,,,,,Y,1,,,,,,MISSING,,
+AFF (Advanced Forensic Format v1-3),aff;afd;afm,disk-image,,,,,,,Y,1,https://github.com/sshock/AFFLIBv3,Aff,Y,Y,Y,PARTIAL,,"single-file .aff only (AFD/AFM are multi-file); encrypted images refused; spec docs/AFF-ON-DISK.md, verified against afflib-tools"
 Nero image (NRG),nrg,disk-image,,,,,R,fmt/1743,Y,3,,Nrg,Y,Y,Y,OK,,
 BIN/CUE,bin;cue,disk-image,,,,,R,fmt/1069,Y,3,https://en.wikipedia.org/wiki/Cue_sheet_(computing),BinCue,Y,Y,Y,OK,,
 Alcohol MDF/MDS,mdf;mds,disk-image,,,,,R,,Y,2,,Mdf,Y,Y,Y,OK,,
