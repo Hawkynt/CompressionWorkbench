@@ -235,6 +235,23 @@ jobs:
           --filter "FullyQualifiedName~Compression.Tests.Reiser4.Reiser4ProfileExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4MutationExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4NativeTreeExternalTests"
           --logger "trx;LogFileName=reiser4-oracle-tests.trx"
 
+      # Hard gate, both directions: the reference ECM tool must restore what the ECM encoder
+      # writes, and our decoder must restore what it writes. No distribution packages it, so it is
+      # built from the pinned upstream revision (GPL-3.0; used as a black box, never shipped).
+      - name: ECM oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_ECM: "1"
+        run: |
+          git clone --quiet https://github.com/alucryd/ecm-tools "$RUNNER_TEMP/ecm-tools"
+          git -C "$RUNNER_TEMP/ecm-tools" checkout --quiet 2765930b79fff478a6a584a554c719b8bf041422
+          gcc -O2 -o "$RUNNER_TEMP/ecm-tools/bin2ecm" "$RUNNER_TEMP/ecm-tools/ecm.c"
+          sudo install -m 755 "$RUNNER_TEMP/ecm-tools/bin2ecm" /usr/local/bin/bin2ecm
+          sudo ln -sf bin2ecm /usr/local/bin/ecm2bin
+          dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Ecm.EcmExternalConformanceTests" \
+            --logger "trx;LogFileName=ecm-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the
