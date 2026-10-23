@@ -310,7 +310,7 @@ Android Verified Boot (vbmeta),img;avb,firmware,R,,,,,,,1,https://android.google
 Device tree blob,dtb;dtbo;fdt,firmware,,,,R,,,,1,https://www.devicetree.org/specifications/,Dtb,Y,Y,Y,OK,,
 U-Boot uImage,uimage,firmware,,,,R,,,,1,,UImage,Y,Y,Y,OK,,
 TRX firmware,trx,firmware,,,,R,,,,1,https://openwrt.org/docs/techref/headers,Trx,Y,Y,Y,OK,,byte-identical to OpenWrt trx/otrx; CRC verified on read; otrx check + binwalk accept our output
-Linux kernel image (zImage/Image),zimage;image,firmware,,,,R,,,,1,,,,,,MISSING,,
+Linux kernel image (zImage/Image),zimage;image,firmware,,,,R,,,,1,https://www.kernel.org/doc/html/latest/arch/x86/boot.html,LinuxKernelImage,Y,,,OK,,x86 bzImage / ARM zImage / arm64 + RISC-V Image / EFI zboot; payload decoded with own codecs; read-only (built by the kernel build)
 VxWorks image,,firmware,,,,R,,,,1,,,,,,MISSING,,
 Windows CE image (B000FF),bin;nb0;wince,firmware,,,,R,,,,1,,,,,,MISSING,,
 QNX IFS,ifs;dumpifs,firmware,,,,R,,,,1,,,,,,MISSING,,

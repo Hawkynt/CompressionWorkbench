@@ -272,6 +272,7 @@ format,Leveldb,LevelDB SSTable,Archive,,.ldb;.sst,Y,Y,,
 format,Lfd,LucasArts LFD,Archive,,.lfd,Y,Y,Y,
 format,LhF,LhF (LhFloppy),Archive,,.lhf,Y,Y,Y,Y
 format,Lif,HP LIF (Logical Interchange Format),Archive,Y,.lif,Y,Y,Y,Y
+format,LinuxKernelImage,Linux kernel image (zImage/Image),Archive,,.zimage;.bzimage;.vmlinuz,Y,Y,,
 format,Lit,LIT (Microsoft Reader),Archive,,.lit,Y,Y,,
 format,LittleFs,LittleFS,Archive,Y,.littlefs;.lfs,Y,Y,Y,Y
 format,Lizard,Lizard (LZ5),Stream,,.liz,,Y,Y,
