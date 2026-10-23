@@ -13,7 +13,7 @@ namespace Compression.Benchmarks;
 [Config(typeof(InProcessConfig))]
 public class BuildingBlockBenchmarks {
 
-  private static readonly string[] BlockIds = ["BB_Deflate", "BB_Lz4", "BB_Snappy", "BB_Brotli", "BB_Lzma", "BB_Huffman", "BB_KwajLzh", "BB_UnixPack", "BB_ArcDistill", "BB_TersePack", "BB_Grzip"];
+  private static readonly string[] BlockIds = ["BB_Deflate", "BB_Lz4", "BB_Snappy", "BB_Brotli", "BB_Lzma", "BB_Huffman", "BB_KwajLzh", "BB_UnixPack", "BB_ArcDistill", "BB_TersePack", "BB_Grzip", "BB_Bzip021"];
 
   private byte[] _compressibleData = null!;
   private byte[] _incompressibleData = null!;
@@ -25,7 +25,7 @@ public class BuildingBlockBenchmarks {
   [Params("Compressible", "Incompressible")]
   public string DataKind { get; set; } = null!;
 
-  [Params("BB_Deflate", "BB_Lz4", "BB_Snappy", "BB_Brotli", "BB_Lzma", "BB_Huffman", "BB_KwajLzh", "BB_UnixPack", "BB_ArcDistill", "BB_TersePack", "BB_Grzip")]
+  [Params("BB_Deflate", "BB_Lz4", "BB_Snappy", "BB_Brotli", "BB_Lzma", "BB_Huffman", "BB_KwajLzh", "BB_UnixPack", "BB_ArcDistill", "BB_TersePack", "BB_Grzip", "BB_Bzip021")]
   public string BlockId { get; set; } = null!;
 
   [GlobalSetup]

@@ -99,7 +99,7 @@ lziprecover FEC file,fec,other,,,,,,,Y,1,,,,,,MISSING,,
 gzip,gz;gzip;z;ipk;tar.gz;tgz,compression,RW,RW,R,R,R,x-fmt/266,RW,7,https://www.rfc-editor.org/rfc/rfc1952,Gzip,Y,Y,,OK,,
 SVG compressed (svgz),svgz,compression,,,,,,x-fmt/109,,1,https://www.w3.org/TR/SVG11/minimize.html,Gzip,Y,Y,,OK,,
 bzip2,bz2;bzip2;tbz;tar.bz2;tbz2,compression,RW,RW,R,R,R,x-fmt/268,RW,7,https://sourceware.org/bzip2/,Bzip2,Y,Y,,OK,,
-"bzip (0.21, arithmetic)",bz,compression,,,,,,x-fmt/267,,1,,,,,,MISSING,,
+"bzip (0.21, arithmetic)",bz,compression,,,,,,x-fmt/267,,1,docs/BZIP021-ON-DISK.md,Bzip021;bb:BB_Bzip021,Y,Y,,OK,,bzip 0.21 decompresses ours; we decode its -1..-9 output and its shipped sample files
 xz,xz;txz;tar.xz,compression,RW,RW,R,R,R,fmt/1098,RW,7,https://tukaani.org/xz/xz-file-format.txt,Xz,Y,Y,,OK,,
 LZMA (alone),lzma;lzma_alone,compression,R,RW,R,R,R,,Y,6,https://www.7-zip.org/sdk.html,Lzma,Y,Y,,OK,,
 lzip,lz,compression,,RW,,,R,,Y,3,https://www.nongnu.org/lzip/manual/lzip_manual.html,Lzip,Y,Y,,OK,,
