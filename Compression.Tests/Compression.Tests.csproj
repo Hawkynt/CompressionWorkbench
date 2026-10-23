@@ -79,6 +79,10 @@
     <EmbeddedResource Include="Csc\ReferenceVectors\*.csc">
       <LogicalName>CscVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- XPK files the Amiga sub-libraries wrote (ancient's corpus); see Xpk/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Xpk\ReferenceVectors\*.xpkf;Xpk\ReferenceVectors\*.gz">
+      <LogicalName>XpkVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Files IBM AMATERSE wrote, with their z/OS contents; see Terse/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Terse\ReferenceVectors\*.PACK;Terse\ReferenceVectors\*.SPACK;Terse\ReferenceVectors\*.expected">
       <LogicalName>TerseVectors.%(Filename)%(Extension)</LogicalName>

@@ -92,6 +92,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | SZ (MS COMPRESS, KWAJ-less) | `SzCompress` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
 | SZDD | `Szdd` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
 | [uuencode](https://en.wikipedia.org/wiki/Uuencoding) | `UuEncoding` | `.uue` `.uu` | ✅ | ✅ | — |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/uuencode.html) |
+| [XPK](https://en.wikipedia.org/wiki/XPK_(compression)) | `Xpk` | `.xpk` | ✅ | ✅ | — | Reads the NONE, RLEN, SQSH, NUKE and DUKE sub-libraries (other sub-libraries are refused); writes NONE and RLEN, which ancient decodes | [GitHub](https://github.com/temisu/ancient) |
 | [XXencode](https://en.wikipedia.org/wiki/Xxencoding) | `XxEncoding` | `.xxe` `.xx` | ✅ | ✅ | — | Detected by extension only (the `begin` header is uuencode's); uudeview cross-decodes both directions | [Archive Team](http://fileformats.archiveteam.org/wiki/XXencode) |
 | [XZ](https://en.wikipedia.org/wiki/XZ_Utils) | `Xz` | `.xz` | ✅ | ✅ | ✅ |  | [tukaani.org](https://tukaani.org/xz/xz-file-format.txt) |
 | [yEnc](https://en.wikipedia.org/wiki/YEnc) | `YEnc` | `.yenc` `.uu` | ✅ | ✅ | — |  | [yenc.org](http://www.yenc.org/yenc-draft.1.3.txt) |

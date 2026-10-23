@@ -127,7 +127,7 @@ WRAptor,wr3;wra,compression,,,,,,fmt/1611,,1,,,,,,MISSING,,
 LZFSE,lzfse,compression,,,,R,,,,1,https://github.com/lzfse/lzfse,Lzfse,Y,Y,,OK,,
 zlib,zlib,compression,RW,,,R,,,,2,https://www.rfc-editor.org/rfc/rfc1950,Zlib,Y,Y,,OK,,
 PowerPacker,pp;pp20,compression,,,R,,,,,1,,PowerPacker,Y,Y,,OK,,
-XPK (Amiga),xpk,compression,,,R,,,,,1,,,,,,MISSING,,
+XPK (Amiga),xpk,compression,,,R,,,,,1,https://github.com/temisu/ancient,Xpk,Y,Y,,PARTIAL,,"NONE, RLEN, SQSH, NUKE, DUKE read (Amiga-made SQSH/NUKE/DUKE files match their originals); NONE and RLEN written; other sub-libraries refused"
 xMash (Amiga),xmsh,compression,,,R,,,,,1,,xMash,Y,Y,,OK,,
 DCS (Amiga Disk Archiver),dcs,compression,,,R,,,,,1,,Dcs,Y,Y,,OK,,
 Arcadyan obfuscated LZMA,,firmware,,,,R,,,,1,,,,,,MISSING,,
