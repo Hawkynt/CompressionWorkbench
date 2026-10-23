@@ -309,14 +309,14 @@ UEFI firmware volume / capsule,fv;fd;cap;bios;uefi;uefif,firmware,R,,,R,,,,2,htt
 Android Verified Boot (vbmeta),img;avb,firmware,R,,,,,,,1,https://android.googlesource.com/platform/external/avb/+/main/README.md,AndroidVbmeta,Y,Y,Y,OK,,hash + RSA signature verified on read; unsigned (NONE) images written byte-identical to avbtool; signed images read-only
 Device tree blob,dtb;dtbo;fdt,firmware,,,,R,,,,1,https://www.devicetree.org/specifications/,Dtb,Y,Y,Y,OK,,
 U-Boot uImage,uimage,firmware,,,,R,,,,1,,UImage,Y,Y,Y,OK,,
-TRX firmware,trx,firmware,,,,R,,,,1,,,,,,MISSING,,
+TRX firmware,trx,firmware,,,,R,,,,1,https://openwrt.org/docs/techref/headers,Trx,Y,Y,Y,OK,,byte-identical to OpenWrt trx/otrx; CRC verified on read; otrx check + binwalk accept our output
 Linux kernel image (zImage/Image),zimage;image,firmware,,,,R,,,,1,,,,,,MISSING,,
 VxWorks image,,firmware,,,,R,,,,1,,,,,,MISSING,,
 Windows CE image (B000FF),bin;nb0;wince,firmware,,,,R,,,,1,,,,,,MISSING,,
 QNX IFS,ifs;dumpifs,firmware,,,,R,,,,1,,,,,,MISSING,,
 Intel flash descriptor (PCH ROM),bin;ifd;pchrom,firmware,,,,D,,,,1,,,,,,MISSING,,
 CFE bootloader,,firmware,,,,D,,,,1,,,,,,MISSING,,
-CHK firmware header,chk,firmware,,,,D,,,,1,,,,,,MISSING,,
+CHK firmware header,chk,firmware,,,,D,,,,1,https://openwrt.org/docs/techref/headers,NetgearChk,Y,Y,Y,OK,,byte-identical to OpenWrt mkchkimg; four checksums verified; spec docs/NETGEAR-CHK-ON-DISK.md
 BIN firmware header,,firmware,,,,D,,,,1,,,,,,MISSING,,
 CSman DAT,dat,firmware,,,,R,,,,1,,,,,,MISSING,,
 Dahua ZIP firmware,dahua,firmware,,,,R,,,,1,,,,,,MISSING,,
@@ -324,14 +324,14 @@ DKBS firmware header,,firmware,,,,D,,,,1,,,,,,MISSING,,
 D-Link TLV firmware,,firmware,,,,D,,,,1,,,,,,MISSING,,
 D-Link encrypted firmware (DLKE),dlke,firmware,,,,D,,,,1,,,,,,MISSING,,
 D-Link encrypted image,,firmware,,,,D,,,,1,,,,,,MISSING,,
-DLOB firmware header,dlob,firmware,,,,D,,,,1,,,,,,MISSING,,
+DLOB firmware header,dlob,firmware,,,,D,,,,1,https://openwrt.org/docs/techref/headers,Seama,Y,Y,Y,OK,,the SEAMA seal (metadata-only header followed by entities) that binwalk names DLOB
 D-Link DMS firmware image,,firmware,,,,D,,,,1,,,,,,MISSING,,
 JBOOT firmware header,sch2;stag,firmware,,,,R,,,,1,,,,,,MISSING,,
 Matter OTA image,ota;matter,firmware,,,,R,,,,1,,,,,,MISSING,,
 D-Link MH01 firmware,,firmware,,,,R,,,,1,,,,,,MISSING,,
 PackImg firmware header,,firmware,,,,D,,,,1,,,,,,MISSING,,
 RTK firmware header,,firmware,,,,D,,,,1,,,,,,MISSING,,
-SEAMA firmware header,seama,firmware,,,,D,,,,1,,,,,,MISSING,,
+SEAMA firmware header,seama,firmware,,,,D,,,,1,https://openwrt.org/docs/techref/headers,Seama,Y,Y,Y,OK,,byte-identical to OpenWrt seama (entity and seal); MD5 verified; oseama reads our edits
 SHRS encrypted firmware,shrs,firmware,,,,D,,,,1,,,,,,MISSING,,
 TP-Link firmware header,tplink,firmware,,,,D,,,,1,,,,,,MISSING,,
 Autel obfuscated firmware,,firmware,,,,R,,,,1,,,,,,MISSING,,
