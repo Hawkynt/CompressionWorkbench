@@ -129,7 +129,6 @@ format,D71,D71,Archive,Y,.d71,Y,Y,Y,Y
 format,D81,D81,Archive,Y,.d81,Y,Y,Y,Y
 format,Dar,Disk ARchive (DAR),Archive,,.dar,Y,Y,Y,
 format,Dbm,DBM (DigiBooster Pro),Audio,,.dbm,Y,Y,,
-format,Dcs,DCS (Amiga Disk Archiver),Archive,,.dcs,Y,Y,Y,
 format,Dcx,DCX (multi-image PCX),Archive,,.dcx,Y,Y,,
 format,Deb,DEB,Archive,,.deb,Y,Y,Y,Y
 format,Density,Density,Stream,,.density,,Y,Y,
@@ -386,7 +385,6 @@ format,Otf,OTF (OpenType font — glyphs),Archive,,.otf,Y,Y,,
 format,Ova,OVA/OVF Virtual Appliance,Archive,,.ova,Y,Y,Y,
 format,Pack200,Pack200,Archive,,.pack;.pack.gz,Y,,,
 format,PackBits,PackBits,Stream,,.packbits,,Y,Y,
-format,PackDisk,PackDisk (Amiga),Archive,,.pdsk,Y,Y,Y,
 format,PackIt,PackIt,Archive,,.pit,Y,Y,Y,Y
 format,Paf,PARIS Audio File (Ensoniq),Audio,,.paf,Y,Y,Y,
 format,Pak,PAK,Archive,,.pak,Y,Y,Y,Y
@@ -589,14 +587,12 @@ format,Wrapster,Wrapster,Archive,,,Y,Y,Y,
 format,WwiseBnk,Wwise SoundBank,Archive,,.bnk,Y,Y,,
 format,Xa,CD-XA audio (.xa),Audio,,.xa,Y,Y,Y,
 format,Xar,XAR,Archive,,.xar,Y,Y,Y,Y
-format,xDisk,xDisk/GDC (Amiga),Archive,,.xdsk;.gdc,Y,Y,Y,
 format,Xenix,Xenix FS,Archive,Y,.xnx;.xenix,Y,Y,Y,Y
 format,Xfs,XFS,Archive,Y,.xfs,Y,Y,Y,
 format,Xi,XI (FastTracker II Instrument),Audio,,.xi,Y,Y,,
 format,Xls,XLS,Archive,,.xls,Y,Y,Y,Y
 format,Xlsx,XLSX,Archive,,.xlsx,Y,Y,Y,Y
 format,Xm,XM (FastTracker II),Audio,,.xm,Y,Y,,
-format,xMash,xMash (Amiga),Archive,,.xmsh,Y,Y,Y,
 format,Xmi,Miles XMIDI,Audio,,.xmi,Y,Y,,
 format,Xml,XML object graph,Archive,,.xml;.cwb.xml,Y,Y,Y,
 format,Xpi,XPI,Archive,,.xpi,Y,Y,Y,Y
