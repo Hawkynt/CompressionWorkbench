@@ -111,7 +111,7 @@ Zstandard,zst;zstd;tzst,compression,R,RW,,R,,,Y,4,https://www.rfc-editor.org/rfc
 Freeze,f;freeze;?xf,compression,,,,,,,Y,1,,Freeze,Y,Y,,OK,,
 rzip,rz,compression,,,,,,,Y,1,https://rzip.samba.org/,Rzip,Y,Y,,OK,,
 lrzip,lrz,compression,,RW,,,,,,1,https://github.com/ckolivas/lrzip,Lrzip,Y,Y,,OK,,
-grzip,grz,compression,,RW,,,,,,1,,,,,,MISSING,,
+grzip,grz,compression,,RW,,,,,,1,https://fossies.org/linux/grzip/GRZipII.c,Grzip;bb:BB_Grzip,Y,Y,,OK,,grzip 0.3.0 decompresses ours; we decode its -m1..-m4 / -l / -D / -S output
 Brotli,br,compression,,,,,,,Y,1,https://www.rfc-editor.org/rfc/rfc7932,Brotli,Y,Y,,OK,,
 Snappy (framed),sz;snappy,compression,,,,,,,Y,1,https://github.com/google/snappy/blob/main/framing_format.txt,Snappy,Y,Y,,OK,,
 genozip,genozip,compression,,,,,,,Y,1,,,,,,MISSING,,

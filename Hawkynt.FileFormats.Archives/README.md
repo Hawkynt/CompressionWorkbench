@@ -62,6 +62,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | CSC | `Csc` | `.csc` | ✅ | ✅ | ✅ | libcsc stream; the reference `csc` tool decodes ours and we decode its output, at every level (1–5), window and filter switch; optimizer searches the five levels | [GitHub](https://github.com/fusiyuan2010/CSC) |
 | Density | `Density` | `.density` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/k0dai/density) |
 | Freeze | `Freeze` | `.f` `.freeze` | ✅ | ✅ | ✅ | Optimizer searches the parse strategy, the match-search depth and the position Huffman table | [Archive Team](http://fileformats.archiveteam.org/wiki/Freeze) |
+| GRZipII | `Grzip` | `.grz` | ✅ | ✅ | — | Reads every grzip 0.3.0 mode (BWT/ST4, MTF/WFC, LZP, delta filter); writes LZP + BWT + MTF, which grzip decompresses | [Fossies](https://fossies.org/linux/grzip/GRZipII.c) |
 | [gzip](https://en.wikipedia.org/wiki/Gzip) | `Gzip` | `.gz` `.gzip` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1952) |
 | [IBM TERSE](https://en.wikipedia.org/wiki/IBM_TERSE) | `Terse` | `.tersed` `.trs` | ✅ | ✅ | — | Reads PACK and SPACK from z/OS AMATERSE and TERSE/PC (binary content; variable records keep their RDWs); writes host PACK (one FB record), which TerseDecompress reads | [GitHub](https://github.com/openmainframeproject/tersedecompress) |
 | ICE Packer | `IcePacker` | `.ice` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/ICE) |
