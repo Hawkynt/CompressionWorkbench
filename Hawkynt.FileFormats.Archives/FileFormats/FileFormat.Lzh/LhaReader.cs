@@ -63,6 +63,9 @@ public sealed class LhaReader : IDisposable {
       case LhaConstants.MethodLh7:
         data = DecompressLzh(compressedData, (int)entry.OriginalSize, LzhConstants.Lh7PositionBits);
         break;
+      case LhaConstants.MethodLhx:
+        data = DecompressLzh(compressedData, (int)entry.OriginalSize, 20);
+        break;
       case LhaConstants.MethodLzs:
         data = LzsDecoder.Decode(compressedData, (int)entry.OriginalSize);
         break;
@@ -73,10 +76,10 @@ public sealed class LhaReader : IDisposable {
         data = compressedData;
         break;
       case LhaConstants.MethodPm1:
-        data = PmaDecoder.Decode(compressedData, (int)entry.OriginalSize, 2);
+        data = Pm1Decoder.Decode(compressedData, (int)entry.OriginalSize);
         break;
       case LhaConstants.MethodPm2:
-        data = PmaDecoder.Decode(compressedData, (int)entry.OriginalSize, 3);
+        data = Pm2Decoder.Decode(compressedData, (int)entry.OriginalSize);
         break;
       default:
         throw new NotSupportedException($"Unsupported LHA method: {entry.Method}");

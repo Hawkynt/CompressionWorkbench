@@ -163,7 +163,7 @@ running real-world samples. The file named at the end of each row is where the l
 | ISO 9660 (Joliet / Rock Ridge / El Torito) | `Iso` | 7 | Rock Ridge limited to NM names (no SL/PX/TF/CE, no zisofs); interleaved files throw (IsoReader.cs) |
 | ZIP | `Zip` | 7 | methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs) |
 | ARJ | `Arj` | 6 | method 4 is treated as stored, so method-4 members extract wrong (ArjReader.cs) |
-| LHA / LZH | `Lzh` | 6 | lh2/lh3 decoded but read-only; lh1, lzs, lz5, pm1, pm2, level-1 extended headers and level-3 headers fail on lhasa's test archives (refused by the CRC check), lhx and lk7 unsupported (LhaReader.cs) |
+| LHA / LZH | `Lzh` | 6 | every method and header level of lhasa's test suite reads except LHARK's lk7; lh2, lh3, lhx, pm1 and pm2 are read-only; self-extracting executables are not opened (LhaReader.cs) |
 | XAR (eXtensible ARchive) | `Xar` | 5 | bzip2 throws; lzma/xz members are returned raw (XarReader.cs) |
 | StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |
 | StuffIt X | `StuffItX` | 4 | stored and deflate only; Brimstone/Cyanide/Darkhorse/Iron throw (StuffItXReader.cs) |

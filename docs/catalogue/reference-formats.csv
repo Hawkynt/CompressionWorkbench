@@ -34,7 +34,7 @@ Windows Update package (MSU),msu,installer,,,,,R,,,1,,,,,,MISSING,,
 Compiled HTML Help (CHM),chm;chi;chq;chw;hxs,document,R,,,,R,fmt/634,,3,https://www.nongnu.org/chmspec/latest/,Chm,Y,Y,Y,PARTIAL,,content sections above 1 unsupported (ChmReader.cs)
 Windows Imaging (WIM/SWM/ESD),wim;swm;esd;ppkg,disk-image,RW,,,,R,,Y,3,https://learn.microsoft.com/windows-hardware/manufacture/desktop/wim-vs-ffu-image-file-formats,Wim;Swm;Esd,Y,Y,,OK,,
 ARJ,arj,archive,R,,R,D,R,fmt/610,RW,6,https://en.wikipedia.org/wiki/ARJ,Arj,Y,Y,Y,PARTIAL,,"method 4 is treated as stored, so method-4 members extract wrong (ArjReader.cs)"
-LHA / LZH,lzh;lha;lzs;exe;sfx,archive,R,R,R,,R,fmt/1558;fmt/626,RW,6,https://en.wikipedia.org/wiki/LHA_(file_format),Lzh,Y,Y,Y,PARTIAL,,"lh2/lh3 decoded but read-only; lh1, lzs, lz5, pm1, pm2, level-1 extended headers and level-3 headers fail on lhasa's test archives (refused by the CRC check), lhx and lk7 unsupported (LhaReader.cs)"
+LHA / LZH,lzh;lha;lzs;exe;sfx,archive,R,R,R,,R,fmt/1558;fmt/626,RW,6,https://en.wikipedia.org/wiki/LHA_(file_format),Lzh,Y,Y,Y,PARTIAL,,"every method and header level of lhasa's test suite reads except LHARK's lk7; lh2, lh3, lhx, pm1 and pm2 are read-only; self-extracting executables are not opened (LhaReader.cs)"
 ACE,ace,archive,,,R,,R,fmt/2075;fmt/2076,RW,4,https://en.wikipedia.org/wiki/ACE_(compressed_file_format),Ace,Y,Y,Y,OK,,
 ARC (SEA),arc;ark,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ARC_(file_format),Arc,Y,Y,Y,OK,,
 PAK (NoGate ARC extension),pak,archive,,,R,,,,Y,2,,,,,,MISSING,,
