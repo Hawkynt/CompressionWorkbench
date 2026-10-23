@@ -152,7 +152,7 @@ public static partial class FormatDetector {
   }
 
   /// <summary>Get the descriptor for a format, or null if no descriptor exists (Sfx, Iso, Udf).</summary>
-  private static IFormatDescriptor? GetDesc(Format f) {
+  internal static IFormatDescriptor? GetDesc(Format f) {
     EnsureRegistryMapped();
     return FormatDetector._formatToDesc!.GetValueOrDefault(f);
   }
