@@ -1,6 +1,10 @@
 using System.Buffers.Binary;
+using Compression.Core.Checksums;
 using Compression.Core.Deflate;
 using Compression.Core.Streams;
+using FileFormat.Bzip2;
+using FileFormat.Lzma;
+using FileFormat.Xz;
 using System.Xml.Linq;
 
 namespace FileFormat.Xar;
@@ -86,26 +90,18 @@ public sealed class XarReader {
         var dataEl = fileEl.Element("data");
         long origSize = 0, compSize = 0, heapOffset = 0;
         var method = "none";
-        string? archivedChecksum = null, extractedChecksum = null;
+        string? archivedChecksum = null, extractedChecksum = null, extractedChecksumStyle = null;
         DateTime? lastModified = null;
 
         if (dataEl != null) {
           origSize = ParseLong(dataEl.Element("size")?.Value);
           compSize = ParseLong(dataEl.Element("length")?.Value);
           heapOffset = ParseLong(dataEl.Element("offset")?.Value);
-          method = dataEl.Element("encoding")?.Attribute("style")?.Value ?? "none";
-          // Normalize method names
-          if (method.Contains("zlib") || method.Contains("x-gzip"))
-            method = "zlib";
-          else if (method.Contains("bzip2"))
-            method = "bzip2";
-          else if (method.Contains("lzma") || method.Contains("xz"))
-            method = "lzma";
-          else if (method == "application/octet-stream" || method.Contains("none"))
-            method = "none";
+          method = NormalizeMethod(dataEl.Element("encoding")?.Attribute("style")?.Value);
 
           archivedChecksum = dataEl.Element("archived-checksum")?.Value;
           extractedChecksum = dataEl.Element("extracted-checksum")?.Value;
+          extractedChecksumStyle = dataEl.Element("extracted-checksum")?.Attribute("style")?.Value;
         }
 
         var mtimeStr = fileEl.Element("mtime")?.Value;
@@ -122,12 +118,31 @@ public sealed class XarReader {
           HeapOffset = heapOffset,
           ArchivedChecksum = archivedChecksum,
           ExtractedChecksum = extractedChecksum,
+          ExtractedChecksumStyle = extractedChecksumStyle,
         });
       }
     }
   }
 
-  /// <summary>Extracts the data for a given entry.</summary>
+  /// <summary>Maps an encoding style (a MIME type) to the method name <see cref="XarEntry.Method"/> reports.</summary>
+  /// <remarks>
+  /// xar names its encodings by MIME type: <c>application/octet-stream</c> (stored),
+  /// <c>application/x-gzip</c> (a zlib stream, despite the name), <c>application/x-bzip2</c>,
+  /// <c>application/x-lzma</c> and <c>application/x-xz</c>. An unrecognised style is kept verbatim so
+  /// extraction can refuse it by name rather than hand back encoded bytes.
+  /// </remarks>
+  private static string NormalizeMethod(string? style) => style switch {
+    null or "" or "application/octet-stream" => "none",
+    "application/x-gzip" or "application/zlib" or "application/x-zlib" => "zlib",
+    "application/x-bzip2" => "bzip2",
+    "application/x-lzma" => "lzma",
+    "application/x-xz" => "xz",
+    _ => style,
+  };
+
+  /// <summary>Extracts the data for a given entry and checks it against the TOC's extracted checksum.</summary>
+  /// <exception cref="NotSupportedException">The entry's encoding is not one xar defines.</exception>
+  /// <exception cref="InvalidDataException">The decoded data is the wrong size or fails its checksum.</exception>
   public byte[] Extract(XarEntry entry) {
     if (entry.IsDirectory) return [];
 
@@ -135,21 +150,67 @@ public sealed class XarReader {
     var compressedData = new byte[entry.CompressedSize];
     _stream.ReadExactly(compressedData);
 
-    return entry.Method switch {
+    var data = entry.Method switch {
+      "none" => compressedData,
       "zlib" => DecompressZlib(compressedData, (int)entry.OriginalSize),
-      "bzip2" => DecompressBzip2(compressedData),
-      "none" or "" => compressedData,
-      _ => compressedData, // unknown method, return raw
+      "bzip2" => DecodeStream(compressedData, s => new Bzip2Stream(s, CompressionStreamMode.Decompress, leaveOpen: true)),
+      // xar's own lzma encoder (lzma_easy_encoder) writes .xz streams under "application/x-lzma";
+      // libarchive writes the legacy .lzma ("alone") format there. Both readers sniff, so do we.
+      "lzma" or "xz" when IsXz(compressedData) =>
+        DecodeStream(compressedData, s => new XzStream(s, CompressionStreamMode.Decompress, leaveOpen: true)),
+      "lzma" => DecodeLzmaAlone(compressedData),
+      "xz" => throw new InvalidDataException($"XAR entry '{entry.FileName}' is marked xz but lacks the xz stream magic."),
+      _ => throw new NotSupportedException($"XAR entry '{entry.FileName}' uses unsupported encoding '{entry.Method}'."),
     };
+
+    if (data.LongLength != entry.OriginalSize)
+      throw new InvalidDataException(
+        $"XAR entry '{entry.FileName}' decoded to {data.LongLength} bytes; the TOC says {entry.OriginalSize}.");
+    VerifyChecksum(entry, data);
+    return data;
+  }
+
+  private static bool IsXz(ReadOnlySpan<byte> data) =>
+    data.Length >= 6 && data[..6].SequenceEqual((ReadOnlySpan<byte>)[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]);
+
+  private static byte[] DecodeStream(byte[] data, Func<Stream, Stream> open) {
+    using var input = new MemoryStream(data, writable: false);
+    using var decoder = open(input);
+    using var output = new MemoryStream();
+    decoder.CopyTo(output);
+    return output.ToArray();
+  }
+
+  private static byte[] DecodeLzmaAlone(byte[] data) {
+    using var input = new MemoryStream(data, writable: false);
+    using var output = new MemoryStream();
+    LzmaStream.Decompress(input, output);
+    return output.ToArray();
+  }
+
+  /// <summary>Checks <paramref name="data"/> against the TOC's <c>extracted-checksum</c> when it names a known hash.</summary>
+  private static void VerifyChecksum(XarEntry entry, byte[] data) {
+    if (string.IsNullOrWhiteSpace(entry.ExtractedChecksum) || entry.ExtractedChecksumStyle is null)
+      return;
+    byte[]? actual = entry.ExtractedChecksumStyle.ToLowerInvariant() switch {
+      "sha1" => Sha1.Compute(data),
+      "md5" => Md5.Compute(data),
+      "sha256" => Sha256.Compute(data),
+      _ => null,
+    };
+    if (actual is null)
+      return;
+    if (!string.Equals(Convert.ToHexString(actual), entry.ExtractedChecksum.Trim(), StringComparison.OrdinalIgnoreCase))
+      throw new InvalidDataException(
+        $"XAR entry '{entry.FileName}' fails its {entry.ExtractedChecksumStyle} extracted-checksum.");
   }
 
   private static byte[] DecompressZlib(byte[] data, int expectedSize) {
-    // Zlib data: 2-byte header + deflate stream + 4-byte Adler32
-    // The raw Deflate decoder takes it once the zlib header is skipped
+    // Zlib data: 2-byte header + deflate stream + 4-byte Adler32; the raw Deflate decoder takes it
+    // once the header is skipped, and stops by itself before the trailer.
     if (data.Length < 2)
-      return data;
+      throw new InvalidDataException("XAR zlib stream is shorter than its two-byte header.");
 
-    // Skip zlib header (2 bytes) and omit trailing Adler32 (4 bytes)
     using var ms = new MemoryStream(data, 2, data.Length - 2);
     using var ds = new RawDeflateStream(ms, CompressionStreamMode.Decompress);
     var result = new byte[expectedSize];
@@ -160,13 +221,6 @@ public sealed class XarReader {
       totalRead += read;
     }
     return result[..totalRead];
-  }
-
-  private static byte[] DecompressBzip2(byte[] data) {
-    // Bzip2 decompression requires FileFormat.Bzip2 which we don't reference.
-    // For XAR archives with bzip2 entries, return the raw compressed data.
-    // The higher-level Compression.Lib can re-decompress if needed.
-    throw new NotSupportedException("XAR entries compressed with bzip2 are not supported in standalone mode. Use Compression.Lib for full format support.");
   }
 
   private static long ParseLong(string? s) =>
