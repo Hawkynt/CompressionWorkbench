@@ -117,7 +117,7 @@ public sealed class ArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("crunch", "Crunched"), new("store", "Store"), new("pack", "Packed"),
-    new("squeeze", "Squeezed"), new("squash", "Squashed")
+    new("squeeze", "Squeezed"), new("squash", "Squashed"), new("distill", "Distilled")
   ];
   /// <summary>
   /// Gets the tar compression format id.
@@ -169,6 +169,7 @@ public sealed class ArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       "crunch7" => ArcCompressionMethod.Crunched7,
       "crunch" or "crunch8" => ArcCompressionMethod.Crunched,
       "squash" or "squashed" => ArcCompressionMethod.Squashed,
+      "distill" or "distilled" => ArcCompressionMethod.Distilled,
       _ => ArcCompressionMethod.Crunched,
     };
     var w = new ArcWriter(output, arcMethod);

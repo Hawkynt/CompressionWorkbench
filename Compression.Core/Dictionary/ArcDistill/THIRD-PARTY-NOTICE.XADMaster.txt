@@ -1,0 +1,15 @@
+XADMaster (The Unarchiver) — PAK Distill decoder converted to C#
+
+Source:   https://github.com/MacPaw/XADMaster
+Revision: 7cb9ee0abbb163f261e4cb74501e15067032319c
+File:     XADARCDistillHandle.m (tree layout, offset prefix code, position-scaled
+          offset bits)
+Authors:  Dag Ågren and contributors; (c) 2017-present MacPaw Way Ltd.
+Licence:  GNU Lesser General Public License, version 2.1 or (at your option) any
+          later version. This repository is LGPL-3.0-or-later.
+
+ArcDistillBuildingBlock.Decode is a conversion of the handle above; the 64-entry
+offset code (lengths and codes) is copied exactly. The encoder is original to
+this repository.
+
+The full LGPL-2.1 text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt

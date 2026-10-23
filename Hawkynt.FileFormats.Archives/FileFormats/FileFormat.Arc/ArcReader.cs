@@ -161,6 +161,8 @@ public sealed class ArcReader : IDisposable {
         ArcCrunch.DecodeCrunched6(compressedData, (int)entry.OriginalSize),
       ArcConstants.MethodCrunched7 =>
         ArcCrunch.DecodeCrunched7(compressedData, (int)entry.OriginalSize),
+      ArcConstants.MethodDistilled =>
+        Compression.Core.Dictionary.ArcDistill.ArcDistillBuildingBlock.Decode(compressedData, (int)entry.OriginalSize),
       _ => throw new NotSupportedException($"Unknown ARC compression method {entry.Method}."),
     };
 

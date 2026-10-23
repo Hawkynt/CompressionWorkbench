@@ -37,6 +37,9 @@ public static class ArcConstants {
   /// <summary>Method 9: Squashed — LZW 9-13 bits, no RLE.</summary>
   public const byte MethodSquashed = 9;
 
+  /// <summary>Method 11: Distilled — PAK 2.x LZSS + Huffman (see <c>ArcDistillBuildingBlock</c>).</summary>
+  public const byte MethodDistilled = 11;
+
   /// <summary>Length of the filename field in the header (13 bytes, null-terminated).</summary>
   public const int FileNameLength = 13;
 

@@ -27,4 +27,6 @@ public enum ArcCompressionMethod : byte {
 
   /// <summary>LZW with 9-13 bit codes, no RLE pre-pass (method 9).</summary>
   Squashed = ArcConstants.MethodSquashed,
+  /// <summary>PAK "Distill": 8 KiB LZSS with a transmitted Huffman tree (method 11).</summary>
+  Distilled = ArcConstants.MethodDistilled,
 }
