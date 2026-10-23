@@ -59,7 +59,7 @@ FreeArc,arc;cdx,archive,,,,,R,fmt/1096,Y,3,https://en.wikipedia.org/wiki/FreeArc
 ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpaq,Y,Y,Y,PARTIAL,,reads only the stored blocks our own writer emits; ZPAQL-compressed blocks (every real zpaq level) throw (ZpaqReader.cs)
 PAQ (paq6/7/8 family),paq6;paq7;paq8;paq8l,archive,,,,,,,Y,1,https://mattmahoney.net/dc/paq.html,Paq8,Y,Y,,PARTIAL,,a single PAQ8 variant (.paq8l); the other PAQ versions are mutually incompatible
 KGB Archiver,kgb;kge,archive,,,,,R,,RW,2,,,,,,MISSING,,
-PEA (PeaZip),pea,archive,,,,,R,fmt/1095,Y,3,,,,,,MISSING,,https://peazip.github.io/pea-file-format.html
+PEA (PeaZip),pea,archive,,,,,R,fmt/1095,Y,3,https://peazip.github.io/pea-file-format.html,Pea,Y,Y,,PARTIAL,,encrypted streams (EAX/HMAC/Twofish/Serpent and cascades) and multi-volume archives unsupported; no in-place modify
 DGCA,dgc,archive,,,,,R,,Y,2,,,,,,MISSING,,
 GCA,gca,archive,,,,,,,Y,1,,,,,,MISSING,,
 BGA,bza;gza,archive,,,,,R,,,1,,,,,,MISSING,,
