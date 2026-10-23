@@ -45,7 +45,7 @@ ALZip,alz,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ALZip,AlZip,Y,Y,Y,P
 EGG (ALZip),egg,archive,,,R,,,,,1,https://en.wikipedia.org/wiki/ALZip,Egg,Y,Y,,PARTIAL,,"store and deflate only; bzip2/LZMA/AZO, encryption and split archives unsupported (EggReader.cs)"
 StuffIt (classic + 5),sit;sea,archive,,,R,,R,fmt/1459;fmt/1460;fmt/639,RW,4,https://en.wikipedia.org/wiki/StuffIt,StuffIt,Y,Y,Y,PARTIAL,,store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs)
 StuffIt X,sitx,archive,,,R,,R,fmt/399,RW,4,https://en.wikipedia.org/wiki/StuffIt,StuffItX,Y,Y,,PARTIAL,,stored and deflate only; Brimstone/Cyanide/Darkhorse/Iron throw (StuffItXReader.cs)
-DiskDoubler,dd,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/DiskDoubler,DiskDoubler,Y,Y,,PARTIAL,,stored only; compressed members are returned as raw compressed bytes without an error (DiskDoublerReader.cs)
+DiskDoubler,dd,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/DiskDoubler,DiskDoubler,Y,Y,,PARTIAL,,"single files only (no DDAR/DDA2 archives); methods 0, 1, 6, 9 decoded and checked against unar on real files; 2-5, 7, 8, 10 and delta refused (DiskDoublerReader.cs)"
 Compact Pro,cpt,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/Compact_Pro,CompactPro,Y,Y,Y,PARTIAL,,stored and RLE only; LZ+RLE and LZ+Huffman unsupported (CompactProReader.cs)
 PackIt,pit,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/PackIt,PackIt,Y,Y,Y,PARTIAL,,"real layout (PMag/PMa4, header and fork CRC-16) verified on real archives against unar; encrypted PMa5/PMa6 entries refused (PackItReader.cs)"
 Now Compress,now,archive,,,R,,,,,1,,,,,,MISSING,,
@@ -185,7 +185,7 @@ StuffIt X Darkhorse,,codec,,,R,,,,,1,,,,,,MISSING,,
 StuffIt X Iron,,codec,,,R,,,,,1,,,,,,MISSING,,
 StuffIt X English dictionary preprocessor,,codec,,,R,,,,,1,,,,,,MISSING,,
 StuffIt X x86 filter,,filter,,,R,,,,,1,,,,,,MISSING,,
-DiskDoubler methods (ADn/DDn/Method2),,codec,,,R,,,,,1,,,,,,MISSING,,
+DiskDoubler methods (ADn/DDn/Method2),,codec,,,R,,,,,1,,DiskDoubler,Y,Y,,PARTIAL,,"ADn (6, 9) decoded; DDn and Method 2 refused (DiskDoublerAdDecoder.cs)"
 Compact Pro LZH/RLE,,codec,,,R,,,,,1,,,,,,MISSING,,
 Squeeze (Huffman),,codec,,,R,,,,,1,,Squeeze,Y,Y,,OK,,
 Crunch CP/M (LZW),,codec,,,R,,,,,1,,Crunch,Y,Y,,OK,,
