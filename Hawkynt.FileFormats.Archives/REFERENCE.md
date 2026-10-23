@@ -16755,30 +16755,33 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 ### Namespace `FileFormat.FreeArc`
 
-[`FreeArcEntry`](#freearcentry) · [`FreeArcFormatDescriptor`](#freearcformatdescriptor) · [`FreeArcReader`](#freearcreader) · [`FreeArcWriter`](#freearcwriter)
+[`FreeArcEntry`](#freearcentry) · [`FreeArcFormatDescriptor`](#freearcformatdescriptor) · [`FreeArcMethods`](#freearcmethods) · [`FreeArcReader`](#freearcreader) · [`FreeArcWriter`](#freearcwriter)
 
 #### `FreeArcEntry`
 
-Represents a single file entry within a FreeArc archive.
+Represents a single file or directory recorded in a FreeArc directory block.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FreeArcEntry` | `FreeArcEntry()` |  |
-| `CompressedSize` | `long CompressedSize { get; init; }` | The compressed size of the file data in bytes. |
-| `Method` | `string Method { get; init; }` | The compression method string (e.g. "storing", "lzma", "freearc"). |
-| `Name` | `string Name { get; init; }` | The file name as stored in the archive directory block. |
+| `CompressedSize` | `long CompressedSize { get; init; }` | The compressed size of the solid block that holds this file, reported on the block's first file only (FreeArc does not record per-file compressed sizes); zero on the others. |
+| `Crc` | `uint Crc { get; init; }` | The CRC-32 of the uncompressed file contents. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry is a directory. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | The modification time (stored as 32-bit Unix seconds), in UTC. |
+| `Method` | `string Method { get; init; }` | The method string of the solid block holding this file, e.g. `lzma:32kb:normal:32`. |
+| `Name` | `string Name { get; init; }` | The full stored path, with `/` as separator. |
 | `Size` | `long Size { get; init; }` | The uncompressed size of the file in bytes. |
 
 #### `FreeArcFormatDescriptor`
 
-Format descriptor for FreeArc compressed archives (.arc). References: `https://github.com/Bulat-Ziganshin/FA` — FreeArc'Next by FreeArc's author, Bulat Ziganshin (the original freearc.org site is defunct)`https://en.wikipedia.org/wiki/FreeArc` — Wikipedia overviewNo formal specification — the archive layout is defined by the original FreeArc sources
+Format descriptor for FreeArc archives (.arc, signature `ArC\x01`). References: `docs/FREEARC-ON-DISK.md` — the layout this implementation follows, derived from FreeArc's sources and checked against FreeArc 0.67's output`https://github.com/Bulat-Ziganshin/FA` — FreeArc'Next by FreeArc's author, Bulat Ziganshin (the original freearc.org site is defunct)`https://en.wikipedia.org/wiki/FreeArc` — Wikipedia overview
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FreeArcFormatDescriptor` | `FreeArcFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
 | `DefaultExtension` | `string DefaultExtension { get; }` |  |
@@ -16787,7 +16790,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
@@ -16797,29 +16800,48 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
+#### `FreeArcMethods`
+
+FreeArc compression method strings: `name:param:param...` stages joined by `+`, applied left to right when compressing and therefore undone right to left when extracting.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Storing` | `const string Storing` | The method name of an uncompressed stage. |
+| `Decode` | `static byte[] Decode(string compressor, byte[] input, long outputSize)` | Decodes `input` produced by `compressor` into exactly `outputSize` bytes. |
+| `Encode` | `static byte[] Encode(string compressor, ReadOnlySpan<byte> input)` | Encodes `input` with a single supported stage. |
+| `IsEncrypted` | `static bool IsEncrypted(string compressor)` | Gets whether `compressor` contains an encryption stage. |
+| `IsSupported` | `static bool IsSupported(string compressor)` | Gets whether every stage of `compressor` can be decoded. |
+| `Stages` | `static string[] Stages(string compressor)` | Splits a method string into its stages. |
+| `WithDictionary` | `static string WithDictionary(string compressor, long inputLength)` | Gives a bare `lzma` stage an explicit dictionary (the next power of two covering the input, 64 KiB to 64 MiB) so FreeArc's decoder does not reserve its much larger default. |
+
 #### `FreeArcReader`
 
-Reads FreeArc archives (.arc). This implementation parses a well-defined binary subset of the FreeArc container format that is produced by `FreeArcWriter` and understood by this reader. Binary layout (all integers are little-endian): 4 bytes — magic "ArC\x01"4 bytes — uint32 archive flags (reserved, currently 0)One or more blocks, each preceded by a 1-byte block type: 0x01 = directory block0x02 = data block0x00 = end-of-archive marker Directory block payload: uint32 — number of file entriesPer entry: uint16 nameLen + UTF-8 name + uint64 size + uint64 compressedSize + uint64 dataOffset + uint16 methodLen + ASCII method Data block payload: uint32 — payload length in bytespayload bytes (concatenated raw file data)
+Reads real FreeArc archives (`.arc`, signature `ArC\x01`) as written by FreeArc 0.4x–0.67.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FreeArcReader` | `FreeArcReader(Stream stream, bool leaveOpen = false)` | Initialises a new `FreeArcReader` and parses the archive. |
-| `Magic` | `static readonly byte[] Magic` | Magic bytes at the start of every FreeArc archive. |
-| `Entries` | `IReadOnlyList<FreeArcEntry> Entries { get; }` | Gets all file entries found in the archive directory. |
+| `FreeArcReader` | `FreeArcReader(Stream stream, bool leaveOpen = false)` | Opens a FreeArc archive and reads its footer and directory blocks. |
+| `Comment` | `string Comment { get; }` | Gets the archive comment, or an empty string. |
+| `Entries` | `IReadOnlyList<FreeArcEntry> Entries { get; }` | Gets all files and directories recorded in the archive's directory blocks, in archive order. |
+| `IsLocked` | `bool IsLocked { get; }` | Gets whether the archive is locked against further modification. |
+| `SfxSize` | `long SfxSize { get; }` | Gets the size of the data preceding the archive proper (an SFX module), or zero. |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(FreeArcEntry entry)` | Extracts and returns the raw (uncompressed) bytes for the specified entry. |
+| `Extract` | `byte[] Extract(FreeArcEntry entry)` | Extracts the contents of `entry`, verifying its CRC-32. |
 
 #### `FreeArcWriter`
 
-Builds minimal FreeArc archives (.arc) that can be read by `FreeArcReader`. All files are stored without compression (method "storing"). The writer produces the exact binary layout described in `FreeArcReader`: magic, archive flags, a single directory block, a single data block, and the end-of-archive marker.
+Writes real FreeArc archives that FreeArc 0.67's `arc` and `unarc` list, test and extract.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FreeArcWriter` | `FreeArcWriter()` |  |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the archive being built. |
-| `Build` | `byte[] Build()` | Serialises the archive and returns it as a byte array. |
+| `FreeArcWriter` | `FreeArcWriter(string method = "storing")` | Creates a writer that compresses the file block with `method`. |
+| `Method` | `string Method { get; }` | Gets the method string used for the file block. |
+| `AddDirectory` | `void AddDirectory(string name, DateTime? modified = null)` | Adds a directory entry. |
+| `AddFile` | `void AddFile(string name, byte[] data, DateTime? modified = null)` | Adds a file. |
+| `Build` | `byte[] Build()` | Builds the archive. |
+| `WriteTo` | `void WriteTo(Stream output)` | Writes the archive to `output`, which must be positioned at its start. |
 
 ### Namespace `FileFormat.Freeze`
 
