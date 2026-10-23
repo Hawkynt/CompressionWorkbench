@@ -235,6 +235,18 @@ jobs:
           --filter "FullyQualifiedName~Compression.Tests.Reiser4.Reiser4ProfileExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4MutationExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4NativeTreeExternalTests"
           --logger "trx;LogFileName=reiser4-oracle-tests.trx"
 
+      # Hard gate, both directions: AFFLIB's affinfo/affcat/affverify accept and reproduce what the
+      # AFF writer creates and edits; we reproduce, hash-verified, what affconvert writes.
+      - name: AFF oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_AFFLIB: "1"
+        run: |
+          sudo apt-get install -y afflib-tools
+          dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Aff.AffExternalConformanceTests" \
+            --logger "trx;LogFileName=aff-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the
