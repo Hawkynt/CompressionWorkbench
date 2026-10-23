@@ -32275,7 +32275,7 @@ Represents a single file entry in a XAR archive.
 | `FileName` | `string FileName { get; init; }` | File name (path within archive). |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry is a directory. |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Last modification date. |
-| `Method` | `string Method { get; init; }` | Compression method name (e.g., "zlib", "bzip2", "none"). |
+| `Method` | `string Method { get; init; }` | Compression method: "none", "zlib", "bzip2", "lzma", "xz", or the raw encoding style when unrecognised. |
 | `OriginalSize` | `long OriginalSize { get; init; }` | Uncompressed size in bytes. |
 
 #### `XarFormatDescriptor`
@@ -32326,7 +32326,7 @@ Reads XAR (eXtensible ARchive) archives. XAR is Apple's archive format used for 
 | `XarReader` | `XarReader(Stream stream)` | Creates a new XAR reader for the given stream. |
 | `Entries` | `IReadOnlyList<XarEntry> Entries { get; }` | All entries in the archive. |
 | `HeapStart` | `long HeapStart { get; }` | Byte offset where the data heap begins (after header + TOC). |
-| `Extract` | `byte[] Extract(XarEntry entry)` | Extracts the data for a given entry. |
+| `Extract` | `byte[] Extract(XarEntry entry)` | Extracts the data for a given entry and checks it against the TOC's extracted checksum. |
 
 #### `XarWriter`
 

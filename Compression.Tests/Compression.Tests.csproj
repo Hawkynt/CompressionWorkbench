@@ -122,6 +122,10 @@
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- XAR archives libarchive's bsdtar wrote with each encoding; see Xar/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Xar\ReferenceVectors\*.xar">
+      <LogicalName>XarVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>
