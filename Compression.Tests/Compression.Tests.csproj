@@ -122,8 +122,8 @@
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
-    <!-- -lh2- / -lh3- archives UNLHA32.DLL wrote, from lhasa's test suite; see Lzh/ReferenceVectors/README.md. -->
-    <EmbeddedResource Include="Lzh\ReferenceVectors\*.lzh">
+    <!-- Archives other LHA-family tools wrote, from lhasa's test suite; see Lzh/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Lzh\ReferenceVectors\*.lzh;Lzh\ReferenceVectors\*.lzs;Lzh\ReferenceVectors\*.pma">
       <LogicalName>LzhVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
