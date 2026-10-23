@@ -335,6 +335,9 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
           "Zstd: Fast modern compression with good ratio. Requires extractors supporting ZIP method 93. "
           + "Not yet widely supported.\n"
           + "Opens with: 7-Zip 21+, PeaZip, NanaZip (very limited support elsewhere)",
+        (F.Zip, "xz") =>
+          "XZ: LZMA2 in a complete .xz stream (ZIP method 95). Ratio close to LZMA.\n"
+          + "Opens with: 7-Zip, PeaZip, NanaZip, WinZip (not Windows Explorer)",
         (F.Zip, "shrink") =>
           "Shrink: Legacy LZW method from PKZIP 1.0 (1989). Use only for vintage compatibility. "
           + "Very limited compression ratio by modern standards.\n"
