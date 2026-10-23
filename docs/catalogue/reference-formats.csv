@@ -122,7 +122,7 @@ MS-DOS COMPRESS (SZDD),szdd;??_;mslz,compression,R,,,,,fmt/462,Y,3,https://www.c
 MS-DOS COMPRESS (KWAJ),kwaj,compression,,,,,,fmt/469,,1,https://www.cabextract.org.uk/libmspack/doc/szdd_kwaj_format.html,Kwaj;bb:BB_KwajLzh,Y,Y,,OK,,"all five methods (store, XOR, LZSS, LZ+Huffman, MSZIP); libmspack msexpand expands our output"
 PPMd (standalone .pmd),pmd;ppmd,compression,R,,R,,,,,2,,Ppmd,Y,Y,,OK,,
 IBM TERSE,tersed,compression,,,,,,,Y,1,https://github.com/openmainframeproject/tersedecompress,Terse;bb:BB_TersePack,Y,Y,,OK,,"PACK + SPACK read (AMATERSE files decode to their z/OS datasets), host PACK written; TerseDecompress reads ours"
-Softdisk Text Compressor,ctx,compression,,,,,,fmt/1359,,1,,,,,,MISSING,,
+Softdisk Text Compressor,ctx,compression,,,,,,fmt/1359,,1,http://fileformats.archiveteam.org/wiki/Softdisk_Text_Compressor,SoftdiskCtx,Y,Y,,OK,,eleven Softdisk-made files decode as ctxer decodes them; ctxer decodes ours
 WRAptor,wr3;wra,compression,,,,,,fmt/1611,,1,,,,,,MISSING,,
 LZFSE,lzfse,compression,,,,R,,,,1,https://github.com/lzfse/lzfse,Lzfse,Y,Y,,OK,,
 zlib,zlib,compression,RW,,,R,,,,2,https://www.rfc-editor.org/rfc/rfc1950,Zlib,Y,Y,,OK,,
