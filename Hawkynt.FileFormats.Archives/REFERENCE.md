@@ -13243,7 +13243,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 #### `DarArchive`
 
-Reader for a DAR archive (archive format 9 through 11.3; verified on 11.3): the version trailer and catalogue located through the two terminators at the end of the archive, and file data read back through the escape, compression and sparse layers. Layout in `docs/DAR-ON-DISK.md`.
+Reader for a DAR archive (archive formats 8.1 through 11.3, each verified on archives the dar release that writes it produced): the version trailer and catalogue located through the two terminators at the end of the archive, and file data read back through the escape, compression and sparse layers. Layout in `docs/DAR-ON-DISK.md`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13253,6 +13253,7 @@ Reader for a DAR archive (archive format 9 through 11.3; verified on 11.3): the 
 | `InPlace` | `string InPlace { get; }` | The `-R` root path recorded at backup time. |
 | `Trailer` | `DarVersionHeader Trailer { get; }` | The version trailer that describes the archive's layers. |
 | `AlgorithmName` | `static string AlgorithmName(char a)` | A display name for a catalogue compression letter. |
+| `CopyData` | `void CopyData(DarEntry entry, Stream destination)` | Streams the data of `entry` into `destination` through the escape, compression and sparse layers, in constant memory whatever its size, and checks its size and checksum at the end. |
 | `ReadData` | `byte[] ReadData(DarEntry entry)` | Reads, decompresses, expands and checks the data of `entry`. |
 | `Read` | `static DarArchive Read(Stream archive)` | Reads the archive-level stream (slice headers and trailers already removed). |
 
@@ -13304,13 +13305,17 @@ What a catalogue entry describes (the low five bits of its signature byte).
 
 #### `DarFormatDescriptor`
 
-DAR (Disk ARchive), the archive format of `dar`/libdar. Every slice file starts with a slice header (`DarSliceHeader`) and ends with a one-byte trailer; the bytes between, glued across all slices, hold a version header, the file data, the catalogue and, at the end, two terminators that lead back to the version trailer and the catalogue (`DarArchive`). Reading: archive formats 9 to 11.3, single or multi-slice (the sibling `basename.N.dar` files are picked up from the slice's directory), with or without tape marks, uncompressed or gzip, bzip2, xz, zstd, lz4 or lzo compressed in streaming or block mode, sparse files expanded, hard links resolved, every data and catalogue checksum checked. Directories and regular files are extracted; symlinks, devices, pipes and sockets are listed but not materialised. Encrypted archives, unknown compression and newer formats are refused: listing then falls back to the raw slice (`FULL.dar`) and a `metadata.ini` naming the reason, and never throws.Writing: a single-slice format-11.3 archive without tape marks — what `dar -at` produces — stored or compressed with gzip, bzip2, xz, zstd or lz4. `dar -t` accepts it and `dar -x` restores the input byte for byte (dar 2.7.13; see `Compression.Tests/Dar/DarExternalConformanceTests.cs`).Layout derived from dar's documentation and from archives written by dar 2.7.13 and 2.8.6: `docs/DAR-ON-DISK.md`.
+DAR (Disk ARchive), the archive format of `dar`/libdar. Every slice file starts with a slice header (`DarSliceHeader`) and ends with a one-byte trailer; the bytes between, glued across all slices, hold a version header, the file data, the catalogue and, at the end, two terminators that lead back to the version trailer and the catalogue (`DarArchive`). Reading: archive formats 8.1 to 11.3, single or multi-slice (the sibling `basename.N.dar` files are picked up from the slice's directory), with or without tape marks, uncompressed or gzip, bzip2, xz, zstd, lz4 or lzo compressed in streaming or block mode, sparse files expanded, hard links resolved, every data and catalogue checksum checked, members of any size streamed to disk. Directories and regular files are extracted; symlinks, devices, pipes and sockets are listed but not materialised. Encrypted archives, unknown compression and newer formats are refused: listing then falls back to the raw slice (`FULL.dar`) and a `metadata.ini` naming the reason, and never throws.Writing: format 11.3, stored or compressed with gzip, bzip2, xz, zstd or lz4, in one slice or cut at `SliceSizeOption` / `FirstSliceSizeOption` (dar's `-s` / `-S`), with or without `TapeMarksOption`; file data is streamed, symlinks and uid/gid/permissions/times are kept. dar 2.7.13 and 2.8.6 accept it (`dar -t`, also sequentially) and restore the input byte for byte (see `Compression.Tests/Dar/DarExternalConformanceTests.cs`).Layout derived from dar's documentation and from archives written by dar 2.4.24 to 2.8.6: `docs/DAR-ON-DISK.md`.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DarFormatDescriptor` | `DarFormatDescriptor()` |  |
+| `CompressionBlockSizeOption` | `const string CompressionBlockSizeOption` | Option key: dar's block-mode compression block size (`-z algo:level:size`). |
+| `FirstSliceSizeOption` | `const string FirstSliceSizeOption` | Option key: size of the first slice when it differs (dar's `-S`). |
+| `SliceSizeOption` | `const string SliceSizeOption` | Option key: size of every slice file in bytes (dar's `-s`); `k`, `M`, `G` and `T` suffixes count in 1024s. Empty or 0 writes one slice. |
+| `TapeMarksOption` | `const string TapeMarksOption` | Option key: write tape marks, the escape layer dar's sequential reading needs (dar's default; `false` is `dar -at`). |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
@@ -13322,6 +13327,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
