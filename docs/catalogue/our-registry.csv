@@ -354,7 +354,7 @@ format,Nrbf,.NET BinaryFormatter / NRBF object graph,Archive,,.nrbf,Y,Y,Y,
 format,Nrg,NRG,Archive,,.nrg,Y,Y,Y,Y
 format,Nsa,NSA,Archive,,.nsa,Y,Y,Y,Y
 format,Nsf,NES Sound Format,Audio,,.nsf;.nsfe,Y,Y,,
-format,Nsis,NSIS,Archive,,,Y,Y,Y,
+format,Nsis,NSIS,Archive,,,Y,Y,,
 format,NsPack,NsPack (Win32 PE),Archive,,,Y,Y,,
 format,Nss,NSS (Novell Storage Services),Archive,Y,.nss,Y,Y,Y,
 format,Ntfs,NTFS,Archive,Y,.ntfs;.img,Y,Y,Y,Y

@@ -22962,87 +22962,85 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 ### Namespace `FileFormat.Nsis`
 
-[`NsisCompression`](#nsiscompression) · [`NsisEntry`](#nsisentry) · [`NsisFormatDescriptor`](#nsisformatdescriptor) · [`NsisReader`](#nsisreader) · [`NsisWriter`](#nsiswriter)
+[`NsisCompression`](#nsiscompression) · [`NsisEntry`](#nsisentry) · [`NsisFormatDescriptor`](#nsisformatdescriptor) · [`NsisReader`](#nsisreader)
 
 #### `NsisCompression`
 
-Identifies the compression algorithm used in an NSIS installer.
+Identifies the compressor an NSIS installer was built with (`SetCompressor`).
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `None` | `0` | No compression — data is stored verbatim. |
-| `Zlib` | `1` | Zlib/Deflate compression (2-byte zlib header + raw Deflate stream). |
-| `BZip2` | `2` | BZip2 block-sorted compression. |
-| `Lzma` | `3` | LZMA compression (5-byte properties header + raw LZMA stream). |
+| `None` | `0` | Nothing is compressed: the header and every block are stored. |
+| `Zlib` | `1` | "zlib": raw Deflate with no zlib wrapper (NSIS 2's inflate also omits stored-block NLEN). |
+| `BZip2` | `2` | "bzip2": NSIS's header-less bzip2 dialect. |
+| `Lzma` | `3` | "lzma": a 5-byte properties header, then range-coded data ending in an end marker. |
 
 #### `NsisEntry`
 
-Represents a data block embedded in an NSIS installer.
+A file an NSIS installer extracts: one `File` instruction of the install script.
 
 Implements `IEquatable<NsisEntry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `NsisEntry` | `NsisEntry(string FileName, long Size, long CompressedSize, bool IsDirectory)` | Represents a data block embedded in an NSIS installer. |
-| `CompressedSize` | `long CompressedSize { get; init; }` | The compressed size in bytes, or -1 when unknown (solid stream). |
-| `FileName` | `string FileName { get; init; }` | The entry name. Will be a generated name such as "block_0" unless the installer header was successfully parsed to recover actual file names. |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether the entry represents a directory. |
-| `Size` | `long Size { get; init; }` | The uncompressed size in bytes, or -1 when unknown (solid stream). |
+| `NsisEntry` | `NsisEntry(string FileName, uint DataOffset, DateTime? LastModified)` | A file an NSIS installer extracts: one `File` instruction of the install script. |
+| `CompressedSize` | `long CompressedSize { get; }` | Gets the stored size of the file's block, or -1 when the block lives inside a solid stream and therefore has no size of its own. |
+| `DataOffset` | `uint DataOffset { get; init; }` | Offset of the file's length-prefixed block within the data section. |
+| `FileName` | `string FileName { get; init; }` | The target path as the script names it, with forward slashes. A leading `$INSTDIR` is dropped, as 7-Zip does; any other variable (`$PLUGINSDIR`, `$SYSDIR`, ...) stays. |
+| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether the entry is a directory; NSIS `File` entries never are. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | The file time the compiler recorded, in UTC, or `null` when none. |
+| `Size` | `long Size { get; }` | Gets the uncompressed size in bytes, or -1 until the size has been resolved. |
 
 #### `NsisFormatDescriptor`
 
-NSIS (Nullsoft Scriptable Install System) installer archive — PE stub plus compressed installer data. References: `https://nsis.sourceforge.io` — official NSIS project site and sources — the installer data layout is defined there`https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System` — Wikipedia`https://www.7-zip.org` — 7-Zip — widely used independent parser of NSIS installer payloads
+NSIS (Nullsoft Scriptable Install System) installer: the files its install script extracts. References: `https://github.com/kichik/nsis` — NSIS sources; `Source/exehead/fileform.h` defines the layout (zlib/libpng licence)`https://nsis.sourceforge.io/Docs/` — NSIS documentation`https://www.7-zip.org` — 7-Zip's NSIS handler, the reference reader this one is checked against
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `NsisFormatDescriptor` | `NsisFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the NSIS data block in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the NSIS data block per the requested mode. |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The reader produces the decoded bytes per entry; the matched bytes are wrapped in a `BoundedEntryStream` sized to their logical length. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Decodes one entry into memory; an unknown name yields no bytes. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens one entry as a bounded read-only stream. |
 
 #### `NsisReader`
 
-Reads data blocks from an NSIS (Nullsoft Scriptable Install System) installer executable.
+Reads the files an NSIS (Nullsoft Scriptable Install System) installer carries.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `NsisReader` | `NsisReader(Stream stream, bool leaveOpen = false)` | Opens an NSIS installer from a stream. The stream must be seekable. |
-| `Compression` | `NsisCompression Compression { get; }` | Gets the compression method used by this installer. |
-| `Entries` | `IReadOnlyList<NsisEntry> Entries { get; }` | Gets the data blocks found in the installer. |
-| `IsSolid` | `bool IsSolid { get; }` | Gets whether the installer uses solid (single-stream) compression. |
+| `NsisReader` | `NsisReader(Stream stream, bool leaveOpen = false)` | Opens an NSIS installer. |
+| `ArchiveLength` | `int ArchiveLength { get; }` | Gets `length_of_all_following_data`: firstheader, data and CRC. |
+| `Compression` | `NsisCompression Compression { get; }` | Gets the compressor the installer was built with. |
+| `Entries` | `IReadOnlyList<NsisEntry> Entries { get; }` | Gets the files the install script extracts, in script order. |
+| `FirstHeaderFlags` | `int FirstHeaderFlags { get; }` | Gets `firstheader.flags` (FH_FLAGS_*: 1 = uninstaller, 2 = silent, 4 = no CRC, 8 = force CRC). |
+| `FirstHeaderOffset` | `long FirstHeaderOffset { get; }` | Gets the file offset of `firstheader`. |
+| `HasFilterFlag` | `bool HasFilterFlag { get; }` | Gets whether the LZMA stream carries the x86 branch-filter flag byte. |
+| `HeaderLength` | `int HeaderLength { get; }` | Gets the uncompressed size of the script header. |
+| `Is64Bit` | `bool Is64Bit { get; }` | Gets whether the header was written for a 64-bit exehead. |
+| `IsNsis3` | `bool IsNsis3 { get; }` | Gets whether the strings use the NSIS 3 escape codes rather than NSIS 2's. |
+| `IsSolid` | `bool IsSolid { get; }` | Gets whether the header and files share one compressed stream (`/SOLID`). |
+| `IsUnicode` | `bool IsUnicode { get; }` | Gets whether the installer's strings are UTF-16 (`Unicode true`, NSIS 3). |
 | `Dispose` | `void Dispose()` |  |
-| `ExtractSolidStream` | `byte[] ExtractSolidStream()` | Decompresses the entire solid data stream and returns it as a single byte array. Only meaningful when `IsSolid` is `true`. |
-| `Extract` | `byte[] Extract(NsisEntry entry)` | Extracts the raw (decompressed) data for the given entry. |
-
-#### `NsisWriter`
-
-Writes a minimal NSIS-formatted file. No PE stub is emitted — the reader's `ScanForSignature` fallback finds the NSIS overlay via linear scan when PE parsing fails. Files are stored uncompressed as individual data blocks (non-solid). Roundtrips through `NsisReader`. Note: the produced file has no executable code and cannot be "run" to install — the NSIS format is primarily an installer stub + overlay data, and emitting a functional installer would require shipping a signed PE stub which is out of scope for a compression toolkit.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `NsisWriter` | `NsisWriter()` |  |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
+| `ExtractMany` | `void ExtractMany(IEnumerable<NsisEntry> entries, Action<NsisEntry, byte[]> sink)` | Decodes the given entries, calling `sink` once per entry. A solid installer is decoded in a single forward pass that stops after the last requested block. |
+| `Extract` | `byte[] Extract(NsisEntry entry)` | Returns the decompressed bytes of one entry. |
+| `ResolveSizes` | `void ResolveSizes()` | Fills in `Size` (and, for non-solid installers, `CompressedSize`) for every entry. Compressed blocks have to be decoded to learn their size. |
 
 ### Namespace `FileFormat.NuFx`
 
