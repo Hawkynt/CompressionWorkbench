@@ -1,41 +1,41 @@
 namespace FileFormat.AlZip;
 
-/// <summary>
-/// Represents a single file entry in an ALZip (.alz) archive.
-/// </summary>
+/// <summary>One local file header of an ALZip archive.</summary>
 public sealed class AlZipEntry {
-  /// <summary>File name (path within archive).</summary>
   public required string FileName { get; init; }
 
-  /// <summary>Uncompressed size in bytes.</summary>
   public long OriginalSize { get; init; }
 
-  /// <summary>Compressed size in bytes.</summary>
   public long CompressedSize { get; init; }
 
-  /// <summary>Whether this entry is a directory.</summary>
-  public bool IsDirectory { get; init; }
-
-  /// <summary>Compression method: Store(0), Bzip2(1), Deflate(2).</summary>
+  /// <summary>0 store, 1 ALZ bzip2, 2 deflate, 3 obfuscated deflate.</summary>
   public int Method { get; init; }
 
-  /// <summary>CRC-32 checksum of uncompressed data.</summary>
   public uint Crc32 { get; init; }
 
-  /// <summary>Last modification date.</summary>
   public DateTime? LastModified { get; init; }
 
-  /// <summary>File attributes byte.</summary>
+  /// <summary>DOS attribute bits (0x10 directory).</summary>
   public byte Attributes { get; init; }
 
-  /// <summary>Offset of the compressed data in the stream.</summary>
+  /// <summary>Descriptor byte: bit 0 encrypted, bit 3 data descriptor, high nibble the size-field width.</summary>
+  public byte Descriptor { get; init; }
+
+  internal uint DosTime { get; init; }
+
+  internal byte[]? EncryptionHeader { get; init; }
+
   internal long DataOffset { get; init; }
 
-  /// <summary>Human-readable method name.</summary>
-  public string MethodName => Method switch {
+  public bool IsDirectory => (this.Attributes & 0x10) != 0;
+
+  public bool IsEncrypted => (this.Descriptor & 0x01) != 0;
+
+  public string MethodName => this.Method switch {
     0 => "Store",
     1 => "Bzip2",
     2 => "Deflate",
-    _ => $"Unknown({Method})",
+    3 => "Obfuscated deflate",
+    _ => $"Unknown({this.Method})",
   };
 }

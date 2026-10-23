@@ -103,7 +103,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
 | [ACE](https://en.wikipedia.org/wiki/ACE_(compressed_file_format)) | `Ace` | `.ace` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/droe/acefile) |
 | [afio](https://en.wikipedia.org/wiki/Afio) | `Afio` | `.afio` | WORM | ✅ | — | Writes stored members only; the per-file gzip extension is read but not written | [GitHub](https://github.com/kholtman/afio) |
-| [ALZip](https://en.wikipedia.org/wiki/ALZip) | `AlZip` | `.alz` | R/W | ✅ | defrag · wipe |  | [kippler.com](http://www.kippler.com/win/unalz/) |
+| [ALZip](https://en.wikipedia.org/wiki/ALZip) | `AlZip` | `.alz` | R/W | ✅ | — | Reads stored, deflate and ALZ-bzip2 members, ZipCrypto, CP949 names; writes stored/deflate (optionally encrypted) archives unalz extracts; split archives are refused | [GitHub](https://github.com/alkegi/unalz) |
 | AMPK (Amiga Pack) | `Ampk` | `.ampk` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/AmiPack) |
 | [AR](https://en.wikipedia.org/wiki/Ar_(Unix)) | `Ar` | `.a` `.ar` `.deb` | R/W | ✅ | defrag · wipe |  | [freebsd.org](https://www.freebsd.org/cgi/man.cgi?query=ar&sektion=5) |
 | [ARC](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Arc` | `.arc` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/hyc/arc) |
