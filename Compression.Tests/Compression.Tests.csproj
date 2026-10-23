@@ -118,6 +118,10 @@
     <EmbeddedResource Include="Zfs\ReferenceVectors\*.gz;Zfs\ReferenceVectors\*.manifest">
       <LogicalName>ZfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- ACE archives from acefile's test corpus and ones our writer produced for acefile; see Ace/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\acefile-listing.txt">
+      <LogicalName>AceVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>

@@ -101,7 +101,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 
 | Format | Id | Extensions | State | Test | Maintenance | Notes | Reference |
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
-| [ACE](https://en.wikipedia.org/wiki/ACE_(compressed_file_format)) | `Ace` | `.ace` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/droe/acefile) |
+| [ACE](https://en.wikipedia.org/wiki/ACE_(compressed_file_format)) | `Ace` | `.ace` | R/W | ✅ | defrag | Reads ACE 1.0/2.0 (all modes, solid, encrypted, SFX; converted from acefile); writes ACE 1.0 stored/LZ77, solid and encrypted archives acefile reads; multi-volume members are refused | [GitHub](https://github.com/droe/acefile) |
 | [afio](https://en.wikipedia.org/wiki/Afio) | `Afio` | `.afio` | WORM | ✅ | — | Writes stored members only; the per-file gzip extension is read but not written | [GitHub](https://github.com/kholtman/afio) |
 | [ALZip](https://en.wikipedia.org/wiki/ALZip) | `AlZip` | `.alz` | R/W | ✅ | defrag · wipe |  | [kippler.com](http://www.kippler.com/win/unalz/) |
 | AMPK (Amiga Pack) | `Ampk` | `.ampk` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/AmiPack) |
