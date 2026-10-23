@@ -10169,10 +10169,10 @@ Constants for the ARJ archive format.
 | `FlagPathSep` | `const byte FlagPathSep` | ARJ flag: path translated (directory separators converted). |
 | `FlagVolume` | `const byte FlagVolume` | ARJ flag: volume continuation. |
 | `HeaderId` | `const ushort HeaderId` | The two-byte magic number that marks the start of every ARJ header (0xEA60, little-endian). |
-| `MethodCompressed1` | `const byte MethodCompressed1` | Compression method 1: compressed (LZ77+Huffman, primary). |
-| `MethodCompressed2` | `const byte MethodCompressed2` | Compression method 2: compressed (alternate). |
-| `MethodCompressed3` | `const byte MethodCompressed3` | Compression method 3: compressed (alternate). |
-| `MethodStoreFast` | `const byte MethodStoreFast` | Compression method 4: store (no-compression, fastest). |
+| `MethodCompressed1` | `const byte MethodCompressed1` | Compression method 1: LZ77 + Huffman, best ratio ("most"). |
+| `MethodCompressed2` | `const byte MethodCompressed2` | Compression method 2: LZ77 + Huffman, same bit stream as method 1 with a shorter search. |
+| `MethodCompressed3` | `const byte MethodCompressed3` | Compression method 3: LZ77 + Huffman, same bit stream as method 1 with the shortest search. |
+| `MethodFastest` | `const byte MethodFastest` | Compression method 4: "fastest" — LZ77 with fixed prefix codes and no Huffman stage. |
 | `MethodStore` | `const byte MethodStore` | Compression method 0: store (no compression). |
 | `MinVersionToExtract` | `const byte MinVersionToExtract` | Minimum archiver version required to extract (stored method only). |
 | `OsAmiga` | `const byte OsAmiga` | Host OS: Amiga. |
@@ -10256,7 +10256,7 @@ Random-access in-place modifier for ARJ archives. Add appends a new entry just b
 
 #### `ArjReader`
 
-Reads entries from an ARJ archive stream. Supports extraction of stored entries (methods 0 and 4). Compressed methods (1–3) are detected but extraction is not supported.
+Reads entries from an ARJ archive stream and extracts every ARJ method: 0 (stored), 1-3 (LZ77 + Huffman) and 4 ("fastest", LZ77 with fixed prefix codes).
 
 Implements `IDisposable`.
 

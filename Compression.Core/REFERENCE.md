@@ -591,7 +591,7 @@ Which aPLib bit-stream dialect a decoder should expect.
 
 ### Namespace `Compression.Core.Dictionary.Arj`
 
-[`ArjBuildingBlock`](#arjbuildingblock) · [`ArjDecoder`](#arjdecoder) · [`ArjEncoder`](#arjencoder)
+[`ArjBuildingBlock`](#arjbuildingblock) · [`ArjDecoder`](#arjdecoder) · [`ArjEncoder`](#arjencoder) · [`ArjFastestDecoder`](#arjfastestdecoder)
 
 #### `ArjBuildingBlock`
 
@@ -626,6 +626,14 @@ Encodes data using ARJ compression (methods 1-3). Uses LZSS with Huffman-coded l
 | --- | --- | --- |
 | `ArjEncoder` | `ArjEncoder(int method = 1)` | Initializes a new `ArjEncoder`. |
 | `Encode` | `byte[] Encode(ReadOnlySpan<byte> data)` | Compresses data using ARJ encoding. |
+
+#### `ArjFastestDecoder`
+
+Decodes ARJ method 4 ("fastest"), the LZ77 variant ARJ uses when asked for speed over ratio.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize)` | Decodes `originalSize` bytes of method-4 data. |
 
 ### Namespace `Compression.Core.Dictionary.Balz`
 
