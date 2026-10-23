@@ -65,6 +65,7 @@ public sealed class BcacheFsWriter {
   private enum Kind { File, Directory, Symlink }
 
   private readonly List<(string Name, Kind Kind, FilePayload Payload, ArchiveEntryMetadata? Metadata)> _entries = [];
+  private readonly Dictionary<string, Dictionary<string, byte[]>> _xattrs = new(StringComparer.Ordinal);
   // Empty by default, as `bcachefs format` leaves it unless a label is asked for.
   private string _label = "";
   private long _imageSize = MinImageSize;
@@ -131,6 +132,29 @@ public sealed class BcacheFsWriter {
     bytes.CopyTo(data, 0);
     this._entries.Add((name, Kind.Symlink, FilePayload.FromBytes(data), null));
   }
+
+  /// <summary>
+  /// Gives the file, link or directory at <paramref name="path" /> an extended
+  /// attribute, named with its namespace (<c>user.</c>, <c>trusted.</c> or
+  /// <c>security.</c>); the empty path is the root directory.
+  /// </summary>
+  /// <remarks>
+  /// The path must name something added to this writer by the time the volume is
+  /// written. Setting the same name twice keeps the last value.
+  /// </remarks>
+  public void AddExtendedAttribute(string path, string name, byte[] value) {
+    ArgumentNullException.ThrowIfNull(path);
+    ArgumentNullException.ThrowIfNull(value);
+    var (type, stored) = BcacheFsXattrCodec.Split(name);
+    _ = BcacheFsXattrCodec.Value(type, stored, value);
+    var key = NormalizePath(path);
+    if (!this._xattrs.TryGetValue(key, out var attributes))
+      this._xattrs[key] = attributes = new(StringComparer.Ordinal);
+    attributes[name] = (byte[])value.Clone();
+  }
+
+  private static string NormalizePath(string path)
+    => string.Join('/', path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries));
 
   /// <summary>
   /// The smallest volume that holds <paramref name="fileSizes" />: the superblock
@@ -296,8 +320,10 @@ public sealed class BcacheFsWriter {
     var inodes = new List<Key>();
     var dirents = new List<Key>();
     var extents = new List<Key>();
+    var xattrs = new List<Key>();
+    var inodeOfPath = new Dictionary<string, ulong>(StringComparer.Ordinal) { [""] = RootInode };
     var files = new List<PlannedFile>();
-    var leaves = new List<(string Name, ulong Parent, Kind Kind, FilePayload Payload, ArchiveEntryMetadata? Metadata)>();
+    var leaves = new List<(string Path, string Name, ulong Parent, Kind Kind, FilePayload Payload, ArchiveEntryMetadata? Metadata)>();
 
     ulong DirectoryInode(string path, ulong parent, string leaf) {
       if (directories.TryGetValue(path, out var existing)) return existing.Inode;
@@ -323,19 +349,20 @@ public sealed class BcacheFsWriter {
       var path = string.Join('/', parts);
       if (directories.ContainsKey(path) || !seen.Add(path))
         throw new ArgumentException($"bcachefs: '{path}' is added twice.");
-      leaves.Add((parts[^1], parent, kind, payload, metadata));
+      leaves.Add((path, parts[^1], parent, kind, payload, metadata));
     }
 
     // ── Where the data goes: each file from a fresh bucket, after the reservation ──
     var bucket = (long)FirstMetadataBucket + MetadataBuckets;
     var planned = new List<(PlannedFile File, string Name, ulong Parent, Kind Kind)>();
-    foreach (var (name, parent, kind, payload, metadata) in leaves) {
+    foreach (var (path, name, parent, kind, payload, metadata) in leaves) {
       var file = new PlannedFile {
         Inode = nextInode++, Length = payload.Size, Payload = payload, Metadata = metadata,
         FirstSector = bucket * BucketSectors,
       };
       bucket += (file.Length + BucketBytes - 1) / BucketBytes;
       files.Add(file);
+      inodeOfPath[path] = file.Inode;
       planned.Add((file, name, parent, kind));
     }
 
@@ -369,12 +396,20 @@ public sealed class BcacheFsWriter {
       }
     }
 
+    foreach (var (path, directory) in directories) inodeOfPath[path] = directory.Inode;
+    foreach (var (path, attributes) in this._xattrs) {
+      if (!inodeOfPath.TryGetValue(path, out var inode))
+        throw new ArgumentException($"bcachefs: an xattr is given to '{path}', which was not added.");
+      xattrs.AddRange(BcacheFsXattrCodec.Keys(inode, HashSeed(inode), attributes));
+    }
+
     return new Plan {
       Files = files,
       Trees = new Dictionary<int, List<Key>> {
         [BtreeExtents] = extents,
         [BtreeInodes] = inodes,
         [BtreeDirents] = dirents,
+        [BtreeXattrs] = xattrs,
         [BtreeSubvolumes] = [SubvolumeKey()],
         [BtreeSnapshots] = [SnapshotKey()],
         [BtreeSnapshotTrees] = [SnapshotTreeKey()],
