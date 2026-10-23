@@ -12,28 +12,12 @@ internal static class StuffItConstants {
   // Entry header layout — 112 bytes total.
   public const int EntryHeaderSize        = 112;
   public const int FileNameOffset         = 3;   // offset of name bytes within header
-  public const int FileNameMaxLength      = 63;
+  public const int FileNameMaxLength      = 31;  // bytes 34-35 follow the name field
 
-  // Compression method codes.
+  // Compression method codes written by StuffItWriter (the reader names all of them, see StuffItReader.MethodName).
   public const byte MethodStore           = 0;
   public const byte MethodRle             = 1;
-  public const byte MethodLzc            = 2;   // 14-bit LZW — not supported
-  public const byte MethodHuffman        = 3;   // not supported
-  public const byte MethodLzah           = 5;   // LZ + adaptive Huffman — not supported
-  public const byte MethodFixedHuffman   = 6;   // MW — not supported
-  public const byte MethodMwImproved     = 8;   // not supported
-  public const byte MethodLzc12          = 13;  // 12-bit LZW — not supported
-  public const byte MethodLzc12Rle       = 14;  // 12-bit LZW + RLE — not supported
-  public const byte MethodEncrypted      = 15;  // DES — not supported
-
-  // RLE escape byte used by method 1.
-  public const byte RleMarker            = 0x90;
 
   // Mac epoch: January 1, 1904 00:00:00 UTC.
   public static readonly DateTime MacEpoch = new(1904, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-
-  // CRC-16/CCITT polynomial (normal, non-reflected) — used for StuffIt entry checksums.
-  // The reflected form of 0x1021 is 0x8408, used by ARC.
-  // StuffIt uses the forward (non-reflected) variant with init=0.
-  public const ushort Crc16Polynomial    = 0x1021;
 }

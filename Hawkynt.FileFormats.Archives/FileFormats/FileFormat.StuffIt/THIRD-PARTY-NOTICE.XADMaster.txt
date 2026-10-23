@@ -1,0 +1,24 @@
+StuffIt decoding in this folder (StuffItReader's classic and StuffIt 5 directory parsing,
+StuffIt13Decoder, StuffIt13Tables, StuffItLzahDecoder, StuffItArsenicDecoder, StuffItHuffman,
+StuffItRle90) is converted from XADMaster, the archive library of The Unarchiver.
+
+Upstream:  https://github.com/MacPaw/XADMaster
+Revision:  7cb9ee0abbb163f261e4cb74501e15067032319c
+Files:     XADStuffItParser.m, XADStuffIt5Parser.m, XADStuffIt13Handle.m, XADStuffItHuffmanHandle.m,
+           XADStuffItArsenicHandle.m, XADLZHDynamicHandle.m, XADRLE90Handle.m, XADPrefixCode.m, BWT.c
+Licence:   GNU Lesser General Public License, version 2.1 or (at your option) any later version.
+           This repository is distributed under LGPL-3.0-or-later, which the "any later version"
+           grant permits.
+
+Copyright (c) 2017-present, MacPaw Way Ltd. and the XADMaster contributors (Dag Ågren et al.).
+
+This library is free software; you can redistribute it and/or modify it under the terms of the
+GNU Lesser General Public License as published by the Free Software Foundation; either version 2.1
+of the License, or (at your option) any later version.
+
+This library is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+Lesser General Public License for more details.
+
+The code-length tables of method 13 and the Arsenic randomisation table are copied verbatim; all
+other code was rewritten in C# for this codebase.
