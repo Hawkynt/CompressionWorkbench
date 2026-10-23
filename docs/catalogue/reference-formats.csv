@@ -210,7 +210,7 @@ MacBinary,bin;macbin,encoding,,,R,,R,fmt/1761;fmt/1762;fmt/1763,,3,https://en.wi
 AppleSingle / AppleDouble,as;adouble,encoding,,,R,,,fmt/967;fmt/968,,2,https://www.rfc-editor.org/rfc/rfc1740,AppleSingle;AppleDouble,Y,Y,Y,OK,,
 Intel HEX,hex;ihex,firmware,R,,,,,,,1,https://en.wikipedia.org/wiki/Intel_HEX,IntelHex,Y,Y,Y,OK,,
 Motorola S-record,srec;s19;mot,firmware,,,,R,,,,1,https://en.wikipedia.org/wiki/SREC_(file_format),Srec,Y,Y,,OK,,
-NSIS installer,exe;nsis,installer,R,,R,,R,,,3,https://nsis.sourceforge.io/,Nsis,Y,Y,,PARTIAL,,solid installers cannot be extracted per entry (NsisReader.cs)
+NSIS installer,exe;nsis,installer,R,,R,,R,,,3,https://nsis.sourceforge.io/,Nsis,Y,,,READ-ONLY-BUT-SOURCES-WRITE,makensis,"LZMA behind the x86 branch filter refused; uninstaller payload not listed (NsisReader.cs)"
 Inno Setup,exe,installer,,,,,R,,,1,https://jrsoftware.org/isinfo.php,InnoSetup,Y,Y,,PARTIAL,,listing only; file extraction throws for every Inno version (InnoSetupReader.cs)
 InstallShield (cab / exe),exe;cab;ex_;hdr,installer,,,,,R,fmt/1466,,2,,,,,,MISSING,,
 Wise Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
