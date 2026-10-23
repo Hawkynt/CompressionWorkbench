@@ -33126,6 +33126,7 @@ Compression method used for a `ZooEntry`.
 | --- | --- | --- |
 | `Store` | `0` | File data is stored verbatim with no compression. |
 | `Lzw` | `1` | File data is compressed using normal Zoo LZW (9–13 bit, LSB-first). |
+| `Lzh` | `2` | File data is compressed with Zoo 2.10 LZH (-lh5- style static-Huffman blocks, 8 KiB window). |
 
 #### `ZooConstants`
 
@@ -33141,10 +33142,12 @@ Constants for the Zoo archive format.
 | `DirectoryEntryType2FixedSize` | `const int DirectoryEntryType2FixedSize` | Fixed size of a type-2 directory entry before its variable section. |
 | `ExtractMajorVersion` | `const byte ExtractMajorVersion` | Minimum Zoo version required to extract Store and normal LZW entries. |
 | `ExtractMinorVersion` | `const byte ExtractMinorVersion` | Minimum Zoo version required to extract Store and normal LZW entries. |
+| `LzhDictionaryBits` | `const int LzhDictionaryBits` | Window size of Zoo LZH in bits (DICBIT in Zoo 2.10). |
 | `LzwMaxBits` | `const int LzwMaxBits` | Maximum LZW code width in bits. |
 | `LzwMinBits` | `const int LzwMinBits` | Initial LZW code width in bits. |
 | `Magic` | `const uint Magic` | Magic number present in the archive header and every directory entry. |
 | `MaxShortNameLength` | `const int MaxShortNameLength` | Maximum short filename length (13 bytes including null terminator). |
+| `MethodLzh` | `const byte MethodLzh` | Compression method: Zoo 2.10 LZH (Okumura "ar" -lh5- blocks, 8 KiB window, zero block-size terminator). |
 | `MethodLzw` | `const byte MethodLzw` | Compression method: normal Zoo LZW. |
 | `MethodStore` | `const byte MethodStore` | Compression method: file is stored without compression. |
 | `MinimumArchiveHeaderSize` | `const int MinimumArchiveHeaderSize` | Minimum/legacy type-0 Zoo archive-header size. |
@@ -33152,6 +33155,7 @@ Constants for the Zoo archive format.
 | `SystemIdPortable` | `const ushort SystemIdPortable` | Portable pathname/filesystem syntax identifier. |
 | `TypeFile` | `const byte TypeFile` | Entry type for a standard short-name file entry. |
 | `TypeLongName` | `const byte TypeLongName` | Entry type for a file entry with a variable portable-name section. |
+| `EndOfDirectory` | `static ReadOnlySpan<byte> EndOfDirectory { get; }` | The directory entry Zoo writes after the last member: its next-entry link is 0, which is how Zoo recognises the end of the chain, so the last real member must point at this entry rather than carry the 0 itself. Bytes as Zoo 2.10 writes them (all fields zero, type 2, header CRC 0x83FC). |
 | `FileLeader` | `static ReadOnlySpan<byte> FileLeader { get; }` | Five-byte marker placed immediately before member payloads. |
 
 #### `ZooEntry`

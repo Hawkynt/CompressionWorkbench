@@ -121,9 +121,15 @@ public sealed class ZooWriter : IDisposable {
       return;
     }
 
+    // Zoo ends the chain with an all-zero directory entry; the last member links to it.
+    var terminatorOffset = endPosition;
+    this._stream.Position = terminatorOffset;
+    this._stream.Write(ZooConstants.EndOfDirectory);
+    endPosition = this._stream.Position;
+
     for (var i = 0; i < this._pending.Count; ++i) {
       var entry = this._pending[i].Entry;
-      var nextOffset = i + 1 < this._pending.Count ? this._pending[i + 1].Entry.HeaderOffset : 0;
+      var nextOffset = i + 1 < this._pending.Count ? this._pending[i + 1].Entry.HeaderOffset : terminatorOffset;
       if ((ulong)nextOffset > uint.MaxValue)
         throw new NotSupportedException("Zoo uses 32-bit directory offsets; this archive has exceeded that limit.");
 
