@@ -145,6 +145,7 @@ internal static class BcacheFsFormat {
   internal const int BtreeExtents = 0;
   internal const int BtreeInodes = 1;
   internal const int BtreeDirents = 2;
+  internal const int BtreeXattrs = 3;
   internal const int BtreeAlloc = 4;
   internal const int BtreeSubvolumes = 8;
   internal const int BtreeSnapshots = 9;
@@ -161,7 +162,9 @@ internal static class BcacheFsFormat {
   internal const byte KeyWhiteout = 1;
   internal const byte KeyExtent = 6;
   internal const byte KeyReservation = 7;
+  internal const byte KeyInlineData = 17;
   internal const byte KeyDirent = 10;
+  internal const byte KeyXattr = 11;
   internal const byte KeyBtreePtrV2 = 18;
   internal const byte KeySubvolume = 21;
   internal const byte KeySnapshot = 22;

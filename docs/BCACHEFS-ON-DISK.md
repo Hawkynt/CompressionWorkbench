@@ -4,8 +4,11 @@ The volume `BcacheFsWriter` writes, and the in-place edits re-publish, is
 **metadata version 1.3 (`rebalance_work`)**: the newest version the
 bcachefs-tools Debian and Ubuntu ship (1.3.x) can open, and the version their
 `bcachefs format` writes. Current tools (v1.39.6) check it after an in-memory
-upgrade, and mount it through FUSE. No kernel has mounted it here — WSL's 6.6 has
-no bcachefs driver; `BcacheFsVolumeTests` mounts it wherever one is present.
+upgrade, and mount it through FUSE. The Linux kernel's own driver (Ubuntu 24.04's
+6.8, booted in the libguestfs appliance because WSL's 6.6 has none) mounts it
+read-write, shows the tree, modes, owners, times, xattrs, links and bytes that went
+in, and writes into it; this package then reads what the kernel wrote and edits it
+in place (`Compression.Tests/BcacheFs/BcacheFsKernelMountTests.cs`).
 
 ## How this was established
 
@@ -24,7 +27,9 @@ Each fact below is marked:
   (`libbcachefs/bcachefs_format.h`, `alloc_background.[ch]`, `backpointers.h`,
   `btree_gc.c`, `recovery.c`, `sb-clean.c`, `lru.h`, `journal.h`);
 - **checked** — a rule whose violation `bcachefs fsck -n` 1.3.x was shown to
-  report.
+  report;
+- **kernel** — what the 6.8 kernel (`6.8.0-146-generic`, module `bcachefs.ko`) did
+  to a volume this package wrote, seen through its mount and read back here.
 
 The proof is in `Compression.Tests/BcacheFs/BcacheFsExternalConformanceTests.cs`
 (fsck on every shape of volume and after every kind of edit, a deliberately wrong
@@ -157,7 +162,12 @@ the position of the key holding the pointer. Positioned at
 `(bucket_start_sector << 10) + bucket_offset`, where `bucket_offset` is the offset
 into the bucket shifted up by ten plus the checksummed-region offset — the shift is
 the fixed `MAX_EXTENT_COMPRESS_RATIO_SHIFT` at 1.3 (read; measured
-`6553600 = 6400 << 10`). A node's backpointer gives the level of the *pointer* to
+`6553600 = 6400 << 10`). The region offset is the crc entry's `offset`: a partial
+overwrite leaves two keys pointing at the start of one checksummed region, live
+from different offsets into it, and the offset is what keeps their backpointers
+apart (read: `bch2_extent_ptr_to_bp`; kernel). `bucket_len` and the bucket's dirty
+sectors are `ptr_disk_sectors`: the key's size, or for a compressed region the
+size scaled by compressed over uncompressed and rounded up (read). A node's backpointer gives the level of the *pointer* to
 it (node level + 1) and that pointer's position, which is the node's max key
 (measured: level 1 for every root leaf on the tool's volume).
 
@@ -183,6 +193,20 @@ from a tree with foreign owners, nanosecond and pre-epoch times. The FUSE front 
 shows any time before the epoch as the epoch, so pre-epoch times are proven
 through the tool-written volume, not through a mount.
 
+**Extended attributes** are `KEY_TYPE_xattr` (11) keys in the xattrs tree (3),
+at the owning inode and an offset from the inode's string hash: SipHash-2-4 keyed by
+the inode's hash seed over the namespace byte followed by the name, shifted right
+by one, a collision taking the next free offset (read: `bch2_xattr_hash`,
+`bch2_str_hash_end`). The value is `x_type`, `x_name_len`, `x_val_len`
+(little-endian 16 bits), the name without its prefix, the value, padded to whole
+words. Namespaces: `user.` 0, `system.posix_acl_access` 1, `…_default` 2,
+`trusted.` 3, `security.` 4 (read: `KEY_TYPE_XATTR_INDEX_*`). A key holds at most
+255 words with its five-word header, so header, name and value come to at most
+2000 bytes (read: the `U8_MAX` check in `bch2_xattr_set`). ACLs are stored in
+bcachefs's own encoding, not the xattr one, and are not written here. Confirmed by
+the kernel: `getfattr` shows every attribute written here, a 1900-byte value
+included, and the kernel's own `setfattr`/`setfattr -x` read back here.
+
 **Symbolic links** keep the target as the inode's data, written through the page
 cache with its terminating NUL, so the size is the target length plus one (read:
 `bch2_symlink` → `page_symlink(…, strlen + 1)`; confirmed through FUSE:
@@ -198,18 +222,141 @@ cache with its terminating NUL, so the size is the target length plus one (read:
   checksummed region an offset, which moves where the live data starts.
 - A stretch of a file no extent covers is a hole and reads as zeroes (the sparse
   file in the v1.39.6 reference volume).
-- Compressed and encrypted extents are recognised and refused per file, not
-  decoded.
+- Compressed extents are decoded and every checksummed extent is verified on
+  read; encrypted extents are refused per file (see below).
 
-The in-place edits re-publish every tree from the keys they read, so they run only
-on volumes whose every key the writer's own reader sees: version 1.3, cleanly shut
-down, one member, one unpacked bset per node, nothing in the journal but the
-shutdown entry. Anything else — including every volume the tools wrote — is
-refused with the reason and left untouched.
+## Compressed and checksummed data
 
-## Observed but not acted on
+Read in v1.3.4 `compress.c`, `checksum.c`, `extents.h` and `bcachefs_format.h`;
+confirmed against volumes the tools and the 6.8 kernel wrote
+(`Compression.Tests/BcacheFs/ReferenceVectors/README.md`).
 
-v1.39.6's upgrade pass prints `N buckets with no backpointers` on volumes written
-here and not on the formatter's; it repairs nothing and fsck exits 0. It is
-counting buckets during its own 1.3 → 1.14 backpointer conversion and was not
-traced further.
+**The encoded region.** An extent value is a list of entries; a `crc32`,
+`crc64` or `crc128` entry describes the pointers that follow it. The pointer
+names the first sector of the *encoded region*, which is `compressed_size`
+sectors long on disk and decodes to `uncompressed_size` sectors. The key's own
+size is the live part: it starts `offset` sectors into the *decoded* data. All
+three sizes are stored less one, in 7, 9 or 13 bits for the three entry widths
+(read). An extent with no checksum entry is plain sectors at the pointer.
+
+| Entry | compressed / uncompressed / offset bits | nonce | csum type, compression type | checksum |
+|---|---|---|---|---|
+| `crc32` (type bit 1) | 7 / 7 / 7 from bit 2 | — | bits 24, 28 (4 each) | high 32 bits of the word |
+| `crc64` (type bit 2) | 9 / 9 / 9 from bit 3 | 10 bits at 30 | bits 40, 44 | second word low 64, top 16 bits of the first word high |
+| `crc128` (type bit 3) | 13 / 13 / 13 from bit 4 | 13 bits at 43 | bits 56, 60 | the 16 bytes after the header |
+
+**Checksums** cover the whole encoded region as it lies on disk — compressed
+bytes and the zero padding up to a block boundary included (read:
+`bch2_checksum_bio` over `compressed_size` sectors). Types: 1 `crc32c_nonzero`
+(seed and final XOR `0xFFFFFFFF`), 2 `crc64_nonzero` (seed and final XOR all
+ones), 5 `crc32c` (seed 0, no XOR), 6 `crc64` (seed 0, no XOR), 7 `xxhash`
+(XXH64, seed 0). CRC-64 is the big-endian (non-reflected) ECMA-182 polynomial
+`0x42F0E1EBA9EA3693`. A `crc32` entry holds the 32 low bits; the wider entries
+hold the result in the low word, and nothing in the high word for these types.
+Types 3 and 4 are ChaCha20/Poly1305 MACs over encrypted data.
+
+**Compression types**: 0 none, 1 `lz4_old`, 2 `gzip`, 3 `lz4`, 4 `zstd`,
+5 `incompressible` (a hint for rebalance: the data is stored plain). On disk:
+
+- `lz4`, `lz4_old` — one raw LZ4 *block* (no frame), zero padded to the block
+  size. The kernel decodes it with the partial decoder, which stops once
+  `uncompressed_size` bytes have come out, so the padding is never parsed. Both
+  types decode the same way.
+- `gzip` — despite the name, raw DEFLATE (`-MAX_WBITS`: no zlib or gzip
+  header, no trailer), zero padded; decoding ends at the final block.
+- `zstd` — a little-endian 32-bit length, then one zstd frame of exactly that
+  many bytes, then padding. The length is there because the decoder needs the
+  exact input size (the source says so).
+
+Every decoder must produce exactly `uncompressed_size × 512` bytes; anything
+else is an I/O error in the kernel and a read error here. The writer compresses
+at most `encoded_extent_max` (64 KiB by default) per extent and only stores the
+result when it is at least one block smaller.
+
+**Inline data** — `KEY_TYPE_inline_data` (17) in the extents tree: the value
+*is* the data, starting at the first value byte, its length the value's length
+in whole words (the tail beyond the inode size is padding). The key covers
+`size` sectors ending at its position like any extent; anything past the data
+reads as zeroes. `indirect_inline_data` (19) is the same thing in the reflink
+tree, reached only through a `reflink_p`, which this reader does not follow.
+
+**Encryption** needs the volume key (ChaCha20, MAC by Poly1305) and this
+repository has no implementation of either, so a file with an encrypted extent
+is listed but refused with that reason. An unknown compression or checksum type
+is refused the same way rather than guessed at.
+
+## What the kernel does to it
+
+Measured on volumes this package wrote, mounted read-write by 6.8 and unmounted:
+
+- it upgrades the superblock to **1.4 (`member_seq`)** the moment it mounts, a
+  compatible upgrade that touches no tree; bcachefs-tools 1.3.4 still checks the
+  result;
+- it packs its keys and appends bsets to existing nodes, and leaves journal
+  entries behind its clean shutdown;
+- a small file and a symbolic link's target become **`KEY_TYPE_inline_data`** (17):
+  the bytes live in the extent key and occupy no bucket;
+- it packs several files' extents into one bucket at different offsets, and a
+  partial overwrite (`dd … conv=notrunc`) splits an extent into keys that share one
+  checksummed region at different crc offsets;
+- it keeps the times in the superblock's units (100 ns here) and sets ctime to the
+  moment it changes an inode.
+
+## In-place edits
+
+Every edit re-publishes every tree from the keys it read, taken from the recovered
+view (every visible bset, packed or not, the journal replayed), so it runs on any
+volume whose every tree it either carries or rebuilds:
+
+- carried key by key: extents (pointer extents, inline data, reservations), inodes
+  (`inode_v3`, and whatever else the tree holds that names no file), dirents,
+  xattrs (with their inode: kept while it survives, dropped with it), subvolumes,
+  snapshots, snapshot trees;
+- rebuilt from what occupies the device: alloc, bucket_gens, freespace,
+  need_discard, LRU, backpointers;
+- refused with the reason: a volume not cleanly shut down, of several members,
+  newer than **1.4**, with buckets other than 64 KiB or the journal elsewhere than
+  this writer puts it, with keys in any other tree (reflink, quotas, stripes,
+  logged ops …), or with an inode no directory reaches.
+
+A file whose bytes are not touched keeps its inode and extents exactly: a sparse
+file's sector count is what its extents hold, not its length rounded up. The
+superblock keeps the version the volume had (1.4 after the kernel), and the journal
+is replaced by the one shutdown entry.
+
+New data goes into free buckets still at generation zero first (see *Upgrading
+past 1.14*). Defragmentation first brings a volume the kernel wrote into the shape
+this writer produces — every pointer extent alone at the start of a bucket past the
+metadata reservation, its checksummed region exactly its live data — by copying
+the live bytes of every other extent into a bucket of its own with a fresh crc32c;
+holes stay holes, inline data stays inline, and a compressed or encrypted extent is
+refused rather than decoded and moved.
+
+## Upgrading past 1.14
+
+v1.39.6 upgrading a volume prints `scanning for missing backpointers in 0/N
+buckets, M buckets with no backpointers` and repairs nothing. Traced:
+
+- On a fresh volume `M` is 1, and it is 1 on a volume `bcachefs format` 1.3.4 wrote
+  too: the bucket is the node of the **accounting tree** (1.9) the upgrade creates
+  itself (measured: `bcachefs list -b backpointers` after `fsck -y` shows exactly
+  one new backpointer, `btree=accounting`, into the one new alloc key).
+- From 1.14 a backpointer carries the bucket's generation and flags in the bytes
+  where 1.3 kept the low 40 bits of `bucket_offset` (read: `struct
+  bch_backpointer`, `check_bucket_backpointer_mismatch`). Upgrading, the pass
+  discards every old backpointer whose "generation" does not match its bucket or
+  whose "flags" are not zero, then rebuilds them from the extents. So every bucket
+  **reused at a nonzero generation**, and every extent **not at its bucket's first
+  sector**, is counted: measured 4 extra buckets after a remove-then-add that
+  reused the freed buckets, 10 on a volume the kernel had written into (its own
+  packed, offset extents count the same way).
+
+A 1.3 backpointer cannot express either, so the remedy is placement: in-place edits
+lay new data and metadata into buckets still at generation zero first, and the
+writer starts every extent at a bucket boundary, so a volume created and edited
+here reports the accounting node and nothing else
+(`GivenOurVolumeEditedInPlace_WhenANewerToolUpgradesIt_ThenItRebuildsNoBackpointerOfOurs`).
+A bucket reused because nothing else was free, a defragmentation that packs data
+into freed buckets, and extents the kernel placed are still rebuilt by the upgrade,
+as they are on any 1.3 volume.
+
