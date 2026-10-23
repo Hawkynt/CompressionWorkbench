@@ -393,7 +393,7 @@ AtheOS/Syllable AFS,afs;syllable,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Boot File System (SVR4 / UnixWare),bfs;unixware,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 BeFS (BFS),bfs;beos;haiku;openbfs,filesystem,,,,,,,Y,1,https://www.haiku-os.org/legacy-docs/practical-file-system-design.pdf,Bfs,Y,Y,Y,OK,,
 Byte File System (z/VM),bfs,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-Btrfs,btrfs,filesystem,,,,R,,,Y,2,https://btrfs.readthedocs.io/en/latest/dev/On-disk-format.html,Btrfs,Y,Y,,PARTIAL,,zlib/lzo/zstd compressed extents are skipped (BtrfsReader.cs)
+Btrfs,btrfs,filesystem,,,,R,,,Y,2,https://btrfs.readthedocs.io/en/latest/dev/On-disk-format.html,Btrfs,Y,Y,,OK,,zlib/lzo/zstd compressed extents decoded; checked against kernel-written volumes (Btrfs/ReferenceVectors)
 CP/M file system,cpm,filesystem,,,,,,,Y,1,,Cpm,Y,Y,Y,OK,,
 Acorn DFS,ssd;dsd,filesystem,,,,,,,Y,1,,Bbc,Y,Y,Y,OK,,
 Apple DOS 3.x,dsk;do,filesystem,,,,,,,Y,1,,AppleDos,Y,Y,Y,OK,,

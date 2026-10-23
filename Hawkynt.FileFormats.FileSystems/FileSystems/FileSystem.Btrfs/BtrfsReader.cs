@@ -8,7 +8,8 @@ namespace FileSystem.Btrfs;
 /// <summary>
 /// Reads Btrfs filesystem images (single-device, non-RAID).
 /// Parses superblock, builds chunk map (logical-to-physical translation),
-/// traverses B-trees to enumerate files and extract uncompressed extents.
+/// traverses B-trees to enumerate files and extract their extents — inline, regular,
+/// preallocated, holes, and zlib / LZO / zstd compressed (see <see cref="BtrfsCompression" />).
 /// </summary>
 public sealed class BtrfsReader : IDisposable {
   private static readonly byte[] Magic = "_BHRfS_M"u8.ToArray();
@@ -413,68 +414,72 @@ public sealed class BtrfsReader : IDisposable {
 
   /// <summary>
   /// Writes <paramref name="entry" />'s bytes to <paramref name="destination" /> without
-  /// materialising them, truncating to the entry's recorded size. Required for a file
-  /// larger than a byte[] can hold.
+  /// materialising them, exactly <see cref="BtrfsEntry.Size" /> bytes long. Required for a
+  /// file larger than a byte[] can hold.
   /// </summary>
+  /// <exception cref="NotSupportedException">The file uses an unknown compression method or encryption.</exception>
+  /// <exception cref="InvalidDataException">A compressed extent is corrupt.</exception>
   public void ExtractTo(BtrfsEntry entry, Stream destination) {
     ArgumentNullException.ThrowIfNull(entry);
     ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return;
 
+    var sink = new FileSink(destination, entry.Size);
     var fsTreeLogical = FindFsTreeRoot();
-    if (fsTreeLogical < 0) return;
-    var fsPhysical = LogicalToPhysical(fsTreeLogical);
-    if (fsPhysical < 0) return;
-
-    var bounded = new BoundedWriter(destination, entry.Size);
-    CollectExtentData(fsPhysical, entry.Inode, bounded);
-  }
-
-  /// <summary>Write-only sink that drops anything past <paramref name="limit" /> bytes.</summary>
-  private sealed class BoundedWriter(Stream inner, long limit) : Stream {
-    private long _written;
-    public override bool CanRead => false;
-    public override bool CanSeek => false;
-    public override bool CanWrite => true;
-    public override long Length => this._written;
-    public override long Position { get => this._written; set => throw new NotSupportedException(); }
-    public override void Flush() => inner.Flush();
-    public override int Read(byte[] b, int o, int c) => throw new NotSupportedException();
-    public override long Seek(long o, SeekOrigin s) => throw new NotSupportedException();
-    public override void SetLength(long v) => throw new NotSupportedException();
-    public override void Write(byte[] b, int o, int c) {
-      if (this._written >= limit) return;
-      var take = (int)Math.Min(c, limit - this._written);
-      inner.Write(b, o, take);
-      this._written += take;
-    }
+    var fsPhysical = fsTreeLogical < 0 ? -1 : LogicalToPhysical(fsTreeLogical);
+    if (fsPhysical >= 0)
+      CollectExtentData(fsPhysical, entry.Inode, sink);
+    // A trailing hole (or, under NO_HOLES, any hole) has no extent item: it reads as zeros.
+    sink.ZerosTo(entry.Size);
   }
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
+  /// <exception cref="NotSupportedException">The file uses an unknown compression method or encryption.</exception>
+  /// <exception cref="InvalidDataException">A compressed extent is corrupt.</exception>
   public byte[] Extract(BtrfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
-
-    var physical = LogicalToPhysical(_rootTreeLogical);
-    if (physical < 0) return [];
-
-    var fsTreeLogical = FindFsTreeRoot();
-    if (fsTreeLogical < 0) return [];
-
-    var fsPhysical = LogicalToPhysical(fsTreeLogical);
-    if (fsPhysical < 0) return [];
-
     using var ms = new MemoryStream();
-    CollectExtentData(fsPhysical, entry.Inode, ms);
-
-    var result = ms.ToArray();
-    if (result.Length > entry.Size)
-      return result.AsSpan(0, (int)entry.Size).ToArray();
-    return result;
+    ExtractTo(entry, ms);
+    return ms.ToArray();
   }
 
-  private void CollectExtentData(long physical, long inodeId, Stream output) {
+  /// <summary>
+  /// Places extent payloads at their file offsets: zero-fills the gaps between them
+  /// (holes), drops anything that overlaps bytes already written, and stops at the
+  /// inode's size.
+  /// </summary>
+  private sealed class FileSink(Stream inner, long size) {
+    private static readonly byte[] ZeroBlock = new byte[65536];
+    public long Position { get; private set; }
+
+    /// <summary>Zero-fills up to <paramref name="fileOffset" /> (bounded by the file size).</summary>
+    public void ZerosTo(long fileOffset) {
+      var end = Math.Min(fileOffset, size);
+      while (this.Position < end) {
+        var n = (int)Math.Min(ZeroBlock.Length, end - this.Position);
+        inner.Write(ZeroBlock, 0, n);
+        this.Position += n;
+      }
+    }
+
+    /// <summary>Writes <paramref name="data" /> as the bytes starting at <paramref name="fileOffset" />.</summary>
+    public void WriteAt(long fileOffset, ReadOnlySpan<byte> data) {
+      this.ZerosTo(fileOffset);
+      var skip = this.Position - fileOffset;
+      if (skip >= data.Length) return;
+      if (skip > 0) data = data[(int)skip..];
+      var room = size - this.Position;
+      if (room <= 0) return;
+      if (data.Length > room) data = data[..(int)room];
+      inner.Write(data);
+      this.Position += data.Length;
+    }
+  }
+
+  private void CollectExtentData(long physical, long inodeId, FileSink output) {
     if (physical < 0 || physical + 101 > _data.Length) return;
     var offset = physical;
 
@@ -490,60 +495,103 @@ public sealed class BtrfsReader : IDisposable {
         var childPhysical = LogicalToPhysical(childLogical);
         CollectExtentData(childPhysical, inodeId, output);
       }
-    } else {
-      // Collect EXTENT_DATA items sorted by file offset (key.offset)
-      var extents = new SortedList<long, (long dataPos, int dataSize)>();
+      return;
+    }
 
-      for (uint i = 0; i < nritems && i < 1000; i++) {
-        var itemOff = offset + 101 + (int)i * 25;
-        if (itemOff + 25 > _data.Length) break;
+    // Collect EXTENT_DATA items sorted by file offset (key.offset)
+    var extents = new SortedList<long, (long dataPos, int dataSize)>();
 
-        var keyObjId = _data.ReadInt64(itemOff);
-        var keyType = _data.ReadByte(itemOff + 8);
-        var keyOffset = _data.ReadInt64(itemOff + 9);
+    for (uint i = 0; i < nritems && i < 1000; i++) {
+      var itemOff = offset + 101 + (int)i * 25;
+      if (itemOff + 25 > _data.Length) break;
 
-        if (keyObjId != inodeId || keyType != ExtentData) continue;
+      var keyObjId = _data.ReadInt64(itemOff);
+      var keyType = _data.ReadByte(itemOff + 8);
+      var keyOffset = _data.ReadInt64(itemOff + 9);
 
-        var dataOffset = _data.ReadUInt32(itemOff + 17);
-        var dataSize = _data.ReadUInt32(itemOff + 21);
+      if (keyObjId != inodeId || keyType != ExtentData) continue;
 
-        var dataPos = offset + 101 + (int)dataOffset;
-        if (dataPos < 0 || dataPos + 21 > _data.Length) continue;
+      var dataOffset = _data.ReadUInt32(itemOff + 17);
+      var dataSize = _data.ReadUInt32(itemOff + 21);
 
-        extents[keyOffset] = (dataPos, (int)dataSize);
+      var dataPos = offset + 101 + (int)dataOffset;
+      if (dataPos < 0 || dataPos + 21 > _data.Length) continue;
+
+      extents[keyOffset] = (dataPos, (int)dataSize);
+    }
+
+    foreach (var (fileOffset, (dataPos, dataSize)) in extents)
+      EmitExtent(fileOffset, dataPos, dataSize, output);
+  }
+
+  /// <summary>Writes one <c>btrfs_file_extent_item</c>'s bytes at <paramref name="fileOffset" />.</summary>
+  private void EmitExtent(long fileOffset, long dataPos, int dataSize, FileSink output) {
+    // btrfs_file_extent_item: generation(8) ram_bytes(8) compression(1) encryption(1)
+    // other_encoding(2) type(1) = 21-byte header; inline payload or
+    // disk_bytenr(8) disk_num_bytes(8) offset(8) num_bytes(8) follow.
+    var ramBytes = _data.ReadInt64(dataPos + 8);
+    var compression = _data.ReadByte(dataPos + 16);
+    var encryption = _data.ReadByte(dataPos + 17);
+    var otherEncoding = _data.ReadUInt16(dataPos + 18);
+    var extentType = _data.ReadByte(dataPos + 20);
+
+    if (encryption != 0 || otherEncoding != 0)
+      throw new NotSupportedException($"btrfs: extent encoding (encryption {encryption}, other {otherEncoding}) is not supported.");
+
+    switch (extentType) {
+      case 0: {
+        // Inline: the payload follows the header; compressed inline data decodes to ram_bytes.
+        var inlineLen = dataSize - 21;
+        if (inlineLen <= 0 || dataPos + 21 + inlineLen > _data.Length) return;
+        var payload = _data.Read(dataPos + 21, inlineLen);
+        output.WriteAt(fileOffset, compression == BtrfsCompression.None
+          ? payload
+          : BtrfsCompression.Decompress(compression, payload, ramBytes, _sectorSize));
+        return;
       }
+      case 1:
+      case 2: {
+        if (dataPos + 53 > _data.Length) return;
+        var diskBytenr = _data.ReadInt64(dataPos + 21);
+        var diskNumBytes = _data.ReadInt64(dataPos + 29);
+        var extOffset = _data.ReadInt64(dataPos + 37);
+        var numBytes = _data.ReadInt64(dataPos + 45);
 
-      foreach (var (fileOffset, (dataPos, dataSize)) in extents) {
-        // EXTENT_DATA: generation(8) + ram_bytes(8) + compression(1) + encryption(1)
-        //              + other_encoding(2) + type(1) = 21 bytes header
-        var compression = _data.ReadByte(dataPos + 16);
-        var extentType = _data.ReadByte(dataPos + 20);
-
-        if (extentType == 0) {
-          // Inline extent: data follows the 21-byte header
-          var inlineLen = dataSize - 21;
-          if (inlineLen > 0 && dataPos + 21 + inlineLen <= _data.Length)
-            _data.CopyTo(dataPos + 21, output, inlineLen);
-        } else if (extentType == 1 && compression == 0) {
-          // Regular (non-compressed) extent
-          if (dataPos + 53 > _data.Length) continue;
-          var diskBytenr = _data.ReadInt64(dataPos + 21);
-          var diskNumBytes = _data.ReadInt64(dataPos + 29);
-          var extOffset = _data.ReadInt64(dataPos + 37);
-          var numBytes = _data.ReadInt64(dataPos + 45);
-
-          if (diskBytenr == 0) {
-            // Sparse extent — write zeros
-            output.Write(new byte[(int)numBytes]);
-          } else {
-            var extPhysical = LogicalToPhysical(diskBytenr);
-            if (extPhysical >= 0 && extPhysical + extOffset + numBytes <= _data.Length) {
-              _data.CopyTo(extPhysical + extOffset, output, numBytes);
-            }
-          }
+        // A hole (disk_bytenr 0) or a preallocated-but-unwritten extent reads as zeros.
+        if (diskBytenr == 0 || extentType == 2) {
+          output.ZerosTo(fileOffset + numBytes);
+          return;
         }
-        // Compressed extents are not supported (skip silently)
+
+        var extPhysical = LogicalToPhysical(diskBytenr);
+        if (extPhysical < 0)
+          throw new InvalidDataException($"btrfs: data extent at logical 0x{diskBytenr:X} is not mapped by any chunk.");
+
+        if (compression == BtrfsCompression.None) {
+          if (extPhysical + extOffset + numBytes > _data.Length)
+            throw new InvalidDataException("btrfs: data extent runs past the end of the image.");
+          var buffer = new byte[(int)Math.Min(numBytes, 1 << 20)];
+          for (long done = 0; done < numBytes;) {
+            var n = (int)Math.Min(buffer.Length, numBytes - done);
+            _data.Read(extPhysical + extOffset + done, buffer.AsSpan(0, n));
+            output.WriteAt(fileOffset + done, buffer.AsSpan(0, n));
+            done += n;
+          }
+          return;
+        }
+
+        // Compressed: disk_num_bytes of framed data decode to ram_bytes; the file sees
+        // num_bytes of that starting at offset.
+        if (diskNumBytes is <= 0 or > 16L << 20 || extPhysical + diskNumBytes > _data.Length)
+          throw new InvalidDataException($"btrfs: implausible compressed extent length {diskNumBytes}.");
+        var decoded = BtrfsCompression.Decompress(compression, _data.Read(extPhysical, (int)diskNumBytes), ramBytes, _sectorSize);
+        if (extOffset < 0 || extOffset + numBytes > decoded.Length)
+          throw new InvalidDataException("btrfs: file extent references bytes beyond its decompressed extent.");
+        output.WriteAt(fileOffset, decoded.AsSpan((int)extOffset, (int)numBytes));
+        return;
       }
+      default:
+        throw new NotSupportedException($"btrfs: file extent type {extentType} is not supported.");
     }
   }
 
