@@ -127,6 +127,7 @@ format,Cxfs,SGI CXFS (Cluster XFS),Archive,Y,.cxfs,Y,Y,Y,Y
 format,D64,D64,Archive,Y,.d64,Y,Y,Y,Y
 format,D71,D71,Archive,Y,.d71,Y,Y,Y,Y
 format,D81,D81,Archive,Y,.d81,Y,Y,Y,Y
+format,Daa,DAA (PowerISO),Archive,,.daa,Y,Y,Y,Y
 format,Dar,Disk ARchive (DAR),Archive,,.dar,Y,Y,Y,
 format,Dbm,DBM (DigiBooster Pro),Audio,,.dbm,Y,Y,,
 format,Dcs,DCS (Amiga Disk Archiver),Archive,,.dcs,Y,Y,Y,
