@@ -40,6 +40,9 @@ public enum ZipCompressionMethod : ushort {
   /// <summary>Zstandard compression.</summary>
   Zstd = 93,
 
+  /// <summary>WinZip WavPack (a wrapped WavPack image of a WAV file); decoded through <see cref="ZipMethodCodecs"/>.</summary>
+  WavPack = 97,
+
   /// <summary>PPMd version I, Rev 1 compression.</summary>
   Ppmd = 98,
 

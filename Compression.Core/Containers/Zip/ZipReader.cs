@@ -158,7 +158,10 @@ public sealed partial class ZipReader : IDisposable {
         data = ZipPpmdHelper.Decompress(compressedData, (int)entry.UncompressedSize);
         break;
       default:
-        throw new NotSupportedException($"Unsupported compression method: {effectiveMethod}");
+        data = ZipMethodCodecs.TryGetDecoder((ushort)effectiveMethod, out var external)
+          ? external(compressedData, entry.UncompressedSize)
+          : throw new NotSupportedException($"Unsupported compression method: {effectiveMethod}");
+        break;
     }
 
     // Verify CRC
