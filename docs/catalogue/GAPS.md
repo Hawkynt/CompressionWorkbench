@@ -179,7 +179,7 @@ running real-world samples. The file named at the end of each row is where the l
 | UDF | `Udf` | 3 | type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs) |
 | VMDK | `Vmdk` | 3 | stream-optimized / compressed grains read raw; split extents and delta chains unsupported (VmdkReader.cs) |
 | Windows PE | `Mz`, `PeResources` | 3 | archive view of resources/overlay, not a full PE section extractor |
-| ZPAQ | `Zpaq` | 3 | reads only the stored blocks our own writer emits; ZPAQL-compressed blocks (every real zpaq level) throw (ZpaqReader.cs) |
+| ZPAQ | `Zpaq` | 3 | encrypted (`-key`), multi-part and `-index` archives are refused; modify rewrites a single version instead of appending one (ZpaqReader.cs, ZpaqWriter.cs) |
 | Btrfs | `Btrfs` | 2 | zlib/lzo/zstd compressed extents are skipped (BtrfsReader.cs) |
 | Compact Pro | `CompactPro` | 2 | stored and RLE only; LZ+RLE and LZ+Huffman unsupported (CompactProReader.cs) |
 | DiskDoubler | `DiskDoubler` | 2 | stored only; compressed members are returned as raw compressed bytes without an error (DiskDoublerReader.cs) |
@@ -210,9 +210,10 @@ running real-world samples. The file named at the end of each row is where the l
   unsupported block states as zeros, and `Vmdk` returns compressed grains raw. `Arj` treats method 4
   as stored, and `Lzh` decodes lh2/lh3 with the lh5 decoder. Each of these gives the caller wrong
   data instead of an error.
-- **Capability claims against real files.** `Zpaq` and `FreeArc` declare `CanCreate | CanModify`,
-  but neither reads an archive written by the real tool. Their round-trip only proves that our
-  writer and reader agree with each other.
+- **Capability claims against real files.** `FreeArc` declares `CanCreate | CanModify`, but does
+  not read an archive written by the real tool. Its round-trip only proves that our writer and
+  reader agree with each other. (`Zpaq` had the same problem; it now reads zpaq 7.15's archives at
+  every method and zpaq extracts what it writes, see `ZpaqExternalOracleTests`.)
 - **Stale comments.** The "(not supported)" comments in `ArcConstants.cs` and `ArjConstants.cs`
   describe methods the readers do decode.
 
