@@ -240,7 +240,7 @@ format,Icns,ICNS (Apple icon),Archive,,.icns,Y,Y,,
 format,Ico,Windows ICO/CUR,Archive,,.ico,Y,Y,Y,Y
 format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
 format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
-format,InnoSetup,Inno Setup,Archive,,,Y,Y,Y,
+format,InnoSetup,Inno Setup,Archive,,,Y,Y,,
 format,IntelHex,Intel HEX,Archive,,.hex;.ihex;.ihx;.h86,Y,Y,Y,Y
 format,Ipa,IPA,Archive,,.ipa,Y,Y,Y,Y
 format,Ipsw,Apple IPSW,Archive,,.ipsw;.otazip,Y,Y,Y,Y
