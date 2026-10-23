@@ -79,6 +79,10 @@
     <EmbeddedResource Include="Csc\ReferenceVectors\*.csc">
       <LogicalName>CscVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Files IBM AMATERSE wrote, with their z/OS contents; see Terse/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Terse\ReferenceVectors\*.PACK;Terse\ReferenceVectors\*.SPACK;Terse\ReferenceVectors\*.expected">
+      <LogicalName>TerseVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- CVF cluster payloads the dmsdos compressors wrote; see Cvf/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Cvf\ReferenceVectors\*.bin">
       <LogicalName>CvfVectors.%(Filename)%(Extension)</LogicalName>

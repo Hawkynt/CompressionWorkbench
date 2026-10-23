@@ -1,0 +1,18 @@
+TerseDecompress (Open Mainframe Project) — TERSE decoders converted to C#
+
+Source:   https://github.com/openmainframeproject/tersedecompress
+Revision: 12f5f9f34821defeef696c3232d97b7733dc79a6
+Files:    src/main/java/org/openmainframeproject/tersedecompress/
+          TerseHeader.java, TerseBlockReader.java, TerseDecompresser.java (binary
+          mode), NonSpackDecompresser.java, SpackDecompresser.java
+Authors:  Copyright Contributors to the TerseDecompress Project; (C) 2018 IBM Corp.
+          (Iain Lewis; Klaus Egeler, Boris Barth; Andrew Rowley, Mario Bezzi)
+Licence:  Apache License, Version 2.0 — https://www.apache.org/licenses/LICENSE-2.0
+          (compatible with this repository's LGPL-3.0-or-later)
+
+TerseCodec's header parser and its PACK and SPACK decoders are conversions of the
+files above. The PACK encoder is original to this repository.
+
+Modifications: converted to C#; the decoders report malformed input as
+InvalidDataException instead of writing what they can; only binary mode is
+implemented (no EBCDIC-to-ASCII text conversion).
