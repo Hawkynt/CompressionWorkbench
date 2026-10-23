@@ -116,47 +116,13 @@ public class LhaTests {
     Assert.That(extracted, Is.EqualTo(data));
   }
 
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void RoundTrip_SingleFile_Lh2() {
-    var data = new byte[500];
-    for (var i = 0; i < data.Length; ++i)
-      data[i] = (byte)(i % 13);
-
-    var writer = new LhaWriter(LhaConstants.MethodLh2);
-    writer.AddFile("lh2.bin", data);
-
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new LhaReader(ms);
-
-    Assert.That(reader.Entries, Has.Count.EqualTo(1));
-    var extracted = reader.ExtractEntry(reader.Entries[0]);
-    Assert.That(extracted, Is.EqualTo(data));
-  }
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void RoundTrip_SingleFile_Lh3() {
-    var data = new byte[500];
-    for (var i = 0; i < data.Length; ++i)
-      data[i] = (byte)(i % 7);
-
-    var writer = new LhaWriter(LhaConstants.MethodLh3);
-    writer.AddFile("lh3.bin", data);
-
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new LhaReader(ms);
-
-    Assert.That(reader.Entries, Has.Count.EqualTo(1));
-    var extracted = reader.ExtractEntry(reader.Entries[0]);
-    Assert.That(extracted, Is.EqualTo(data));
-  }
+  // -lh2- and -lh3- are read-only: the writer once emitted lh5 data under those IDs, which no real
+  // LHA reads. Reading them is pinned against real archives in LhaLegacyMethodVectorTests.
+  [Category("Exception")]
+  [TestCase(LhaConstants.MethodLh2)]
+  [TestCase(LhaConstants.MethodLh3)]
+  public void Writer_RefusesReadOnlyMethod(string method) =>
+    Assert.Throws<NotSupportedException>(() => _ = new LhaWriter(method));
 
   [Category("HappyPath")]
   [Category("RoundTrip")]
