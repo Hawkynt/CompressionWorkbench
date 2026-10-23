@@ -79,6 +79,10 @@
     <EmbeddedResource Include="Csc\ReferenceVectors\*.csc">
       <LogicalName>CscVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Firmware images written by each format's reference tool; see Firmware/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Firmware\ReferenceVectors\*" Exclude="Firmware\ReferenceVectors\README.md">
+      <LogicalName>FirmwareVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- CVF cluster payloads the dmsdos compressors wrote; see Cvf/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Cvf\ReferenceVectors\*.bin">
       <LogicalName>CvfVectors.%(Filename)%(Extension)</LogicalName>
