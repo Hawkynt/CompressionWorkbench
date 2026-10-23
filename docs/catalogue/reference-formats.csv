@@ -114,7 +114,7 @@ lrzip,lrz,compression,,RW,,,,,,1,https://github.com/ckolivas/lrzip,Lrzip,Y,Y,,OK
 grzip,grz,compression,,RW,,,,,,1,https://fossies.org/linux/grzip/GRZipII.c,Grzip;bb:BB_Grzip,Y,Y,,OK,,grzip 0.3.0 decompresses ours; we decode its -m1..-m4 / -l / -D / -S output
 Brotli,br,compression,,,,,,,Y,1,https://www.rfc-editor.org/rfc/rfc7932,Brotli,Y,Y,,OK,,
 Snappy (framed),sz;snappy,compression,,,,,,,Y,1,https://github.com/google/snappy/blob/main/framing_format.txt,Snappy,Y,Y,,OK,,
-genozip,genozip,compression,,,,,,,Y,1,,,,,,MISSING,,
+genozip,genozip,compression,,,,,,,Y,1,https://github.com/divonlan/genozip,,,,,MISSING,,"refused: the only implementation is source-available under a licence that forbids reverse engineering and derivative works, and there is no published format specification"
 sfArk,sfark,compression,,,,,R,,Y,2,,,,,,MISSING,,
 Squeeze (SQ),sq;qqq;?q?,compression,,,R,,,,Y,2,,Squeeze,Y,Y,,OK,,
 Crunch (CP/M),cru;crunch;?z?,compression,,,R,,,,Y,2,,Crunch,Y,Y,,OK,,
@@ -123,7 +123,7 @@ MS-DOS COMPRESS (KWAJ),kwaj,compression,,,,,,fmt/469,,1,https://www.cabextract.o
 PPMd (standalone .pmd),pmd;ppmd,compression,R,,R,,,,,2,,Ppmd,Y,Y,,OK,,
 IBM TERSE,tersed,compression,,,,,,,Y,1,https://github.com/openmainframeproject/tersedecompress,Terse;bb:BB_TersePack,Y,Y,,OK,,"PACK + SPACK read (AMATERSE files decode to their z/OS datasets), host PACK written; TerseDecompress reads ours"
 Softdisk Text Compressor,ctx,compression,,,,,,fmt/1359,,1,http://fileformats.archiveteam.org/wiki/Softdisk_Text_Compressor,SoftdiskCtx,Y,Y,,OK,,eleven Softdisk-made files decode as ctxer decodes them; ctxer decodes ours
-WRAptor,wr3;wra,compression,,,,,,fmt/1611,,1,,,,,,MISSING,,
+WRAptor,wr3;wra,compression,,,,,,fmt/1611,,1,https://ist.uwaterloo.ca/~schepers/formats/WRA-WR3.TXT,,,,,MISSING,,"refused for now: the public description leaves the CRC and the GEOS reconstruction open, and no WRAptor-made sample or runnable reference was found to verify against"
 LZFSE,lzfse,compression,,,,R,,,,1,https://github.com/lzfse/lzfse,Lzfse,Y,Y,,OK,,
 zlib,zlib,compression,RW,,,R,,,,2,https://www.rfc-editor.org/rfc/rfc1950,Zlib,Y,Y,,OK,,
 PowerPacker,pp;pp20,compression,,,R,,,,,1,,PowerPacker,Y,Y,,OK,,
