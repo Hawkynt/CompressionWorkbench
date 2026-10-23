@@ -22790,6 +22790,60 @@ The NIfTI header revision the file declares.
 | `Nifti1` | `1` |  |
 | `Nifti2` | `2` |  |
 
+### Namespace `FileFormat.NowCompress`
+
+[`NowCompressArchive`](#nowcompressarchive) · [`NowCompressEntry`](#nowcompressentry) · [`NowCompressFormatDescriptor`](#nowcompressformatdescriptor)
+
+#### `NowCompressArchive`
+
+Now Compress (Now Software, Macintosh, early 1990s): a directory of 110-byte records followed by one stream per file, each a checksummed table of blocks; blocks are stored or compressed with a 32 KiB LZSS, a static Huffman code, both, or a later Huffman-coded LZSS. Each file's stream carries the resource fork, then the data fork. The format stores no checksum of the data itself, so decoding errors surface only as structural failures.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsNowCompress` | `static bool IsNowCompress(ReadOnlySpan<byte> b)` | Whether the bytes start like a Now Compress archive (magic, file count, first name, header checksum). |
+| `Read` | `static List<NowCompressEntry> Read(Stream stream)` | Parses the directory and decodes every fork. |
+
+#### `NowCompressEntry`
+
+One file or folder of a Now Compress archive.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NowCompressEntry` | `NowCompressEntry()` |  |
+| `DataSize` | `long DataSize { get; init; }` | Gets the data fork size. |
+| `Data` | `byte[] Data { get; }` | Gets the decoded data fork. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets whether this is a folder. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | Gets the modification time. |
+| `Path` | `string Path { get; init; }` | Gets the path inside the archive, '/'-separated. |
+| `ResourceSize` | `long ResourceSize { get; init; }` | Gets the resource fork size. |
+| `Resource` | `byte[] Resource { get; }` | Gets the decoded resource fork. |
+
+#### `NowCompressFormatDescriptor`
+
+Now Compress archive (Now Software, Macintosh). Read-only.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NowCompressFormatDescriptor` | `NowCompressFormatDescriptor()` |  |
+| `ResourceForkSuffix` | `const string ResourceForkSuffix` | Suffix under which a file's resource fork is listed and extracted. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Nrbf`
 
 [`NrbfFormatDescriptor`](#nrbfformatdescriptor)
