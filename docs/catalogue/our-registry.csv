@@ -183,6 +183,7 @@ format,Fits,FITS,Archive,,.fits;.fit;.fts,Y,Y,Y,
 format,Fla,Flash/Animate FLA,Archive,,.fla,Y,Y,Y,
 format,Flac,FLAC,Stream,,.flac;.fla,Y,Y,Y,
 format,FlacArchive,FLAC (archive view),Audio,,,Y,Y,,
+format,Flex,FLEX disk (6800/6809),Archive,Y,.flx;.dsk,Y,Y,Y,Y
 format,Fli,FLI/FLC (Autodesk animation),Archive,,.fli;.flc,Y,Y,,
 format,Flv,Flash Video (FLV),Video,,.flv,Y,Y,Y,
 format,Fmod,FMOD Sample Bank,Archive,,.fsb,Y,Y,,
