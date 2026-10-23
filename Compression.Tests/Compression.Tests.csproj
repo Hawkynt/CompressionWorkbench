@@ -71,6 +71,10 @@
     <EmbeddedResource Include="BcacheFs\ReferenceVectors\*.gz;BcacheFs\ReferenceVectors\manifest.txt">
       <LogicalName>BcacheFsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Installers compiled by ISCC 5.6.1 / 6.0.5, plus innoextract's extraction; see InnoSetup/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="InnoSetup\ReferenceVectors\*.gz;InnoSetup\ReferenceVectors\oracle.tsv">
+      <LogicalName>InnoVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>

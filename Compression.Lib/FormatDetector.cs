@@ -504,6 +504,10 @@ public static partial class FormatDetector {
       var buf = new byte[2];
       var isPe = fs.Read(buf, 0, 2) >= 2 && buf[0] == 'M' && buf[1] == 'Z';
 
+      // Inno Setup: the setup loader's offset table (at 0x30 or in RCDATA #11111) points at the
+      // setup-0 version tag, wherever in the file that is.
+      if (isPe && FileFormat.InnoSetup.InnoSetupReader.IsInnoSetup(fs)) return Format.InnoSetup;
+
       // NSIS/InnoSetup markers can live anywhere in the file (our own stub-less
       // NSIS writer puts the "NullsoftInst" signature in a leading overlay
       // header, not a PE overlay), so scan the whole file when it is small and
@@ -517,7 +521,6 @@ public static partial class FormatDetector {
         var bytesRead = fs.Read(tail, 0, tail.Length);
         var tailSpan = tail.AsSpan(0, bytesRead);
         if (ContainsBytes(tailSpan, "NullsoftInst"u8)) return Format.Nsis;
-        if (ContainsBytes(tailSpan, "Inno Setup"u8)) return Format.InnoSetup;
         // PyInstaller "onefile" build: the CArchive MEI cookie sits near EOF,
         // after the PE image (and before any appended Authenticode signature).
         if (ContainsBytes(tailSpan, PyInstallerCookie)) return Format.PyInstaller;

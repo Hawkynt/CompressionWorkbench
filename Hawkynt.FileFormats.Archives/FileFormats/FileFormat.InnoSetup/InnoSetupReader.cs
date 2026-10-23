@@ -1,408 +1,413 @@
-using System.Buffers.Binary;
 using System.Text;
-using Compression.Core.Deflate;
-using Compression.Core.Dictionary.Lzma;
 
 namespace FileFormat.InnoSetup;
 
 /// <summary>
-/// Reads Inno Setup installer metadata from a Windows PE executable.
+/// Reads the files an Inno Setup installer carries.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Inno Setup installers are PE executables with an embedded compressed data block
-/// appended after the last PE section (the "PE overlay").  The overlay begins with
-/// a null-terminated version string such as
-/// <c>"Inno Setup Setup Data (5.5.3) (u)"</c> and is followed by a CRC-32 word,
-/// a compressed-size word, and the Setup.0 compressed header block.
-/// </para>
-/// <para>
-/// The Setup.0 block is compressed with zlib for versions below 4.2.6 and with
-/// LZMA1 for 4.2.6 and later.  After decompression the block contains Pascal-style
-/// strings (4-byte little-endian length prefix + UTF-8 bytes) that encode the app
-/// name, version, file names, destination directories, and other metadata.
-/// </para>
-/// <para>
-/// Extraction of individual files (Setup.1) is only supported when the file data
-/// is non-solid; solid installers throw <see cref="NotSupportedException"/>.
-/// </para>
+/// <para>Layout: the setup loader exe holds an offset table (at 0x30 before 5.1.5, otherwise in
+/// RCDATA resource 11111) pointing at setup-0 (a 64-byte version tag and two compressed header
+/// blocks) and setup-1 (the file data as "zlb\x1a" chunks, embedded or in setup-N.bin slices).
+/// Header block one holds the setup header and every script section; block two holds the file
+/// locations: chunk, offset inside the decompressed chunk, size and checksum.</para>
+/// <para>Converted from innoextract (https://github.com/dscharrer/innoextract, zlib licence).
+/// Every extracted file is checked against the checksum the compiler stored for it, so a file
+/// either comes out exactly as the compiler stored it or the extraction fails.</para>
 /// </remarks>
 public sealed class InnoSetupReader {
+
   private readonly Stream _stream;
+  private readonly InnoOffsets _offsets;
+  private readonly InnoSetupInfo _info;
   private readonly List<InnoSetupEntry> _entries = [];
-  private readonly long _setup0Offset;   // absolute stream position of the compressed Setup.0 payload
-  private readonly long _setup1Offset;   // absolute stream position of Setup.1 (file data block)
+  private readonly string? _sliceDirectory;
 
-  // -------------------------------------------------------------------------
-  // Public API
-  // -------------------------------------------------------------------------
+  /// <summary>Gets the setup-data version.</summary>
+  public InnoVersion Version => this._info.Version;
 
-  /// <summary>Gets the Inno Setup version string detected in the overlay, e.g. "5.5.3".</summary>
-  public string Version { get; }
+  /// <summary>Gets the version as text, e.g. "5.5.7 (unicode)".</summary>
+  public string VersionText => this._info.Version.ToString();
 
-  /// <summary>Gets the list of entries parsed from the Setup.0 header.</summary>
+  /// <summary>Gets the application name from the setup header.</summary>
+  public string AppName => this._info.AppName;
+
+  /// <summary>Gets the application version from the setup header.</summary>
+  public string AppVersion => this._info.AppVersion;
+
+  /// <summary>Gets the compressor the files were stored with.</summary>
+  public InnoCompression Compression => this._info.Compression;
+
+  /// <summary>Gets whether some files are encrypted.</summary>
+  public bool IsEncrypted => this._info.EncryptionUsed;
+
+  /// <summary>Gets the files, named and filtered the way innoextract extracts them.</summary>
   public IReadOnlyList<InnoSetupEntry> Entries => this._entries;
 
   /// <summary>
-  /// Opens an Inno Setup installer from a seekable stream.
+  /// Opens an Inno Setup installer (setup.exe) or a bare setup-0 file.
   /// </summary>
-  /// <param name="stream">A seekable stream positioned at the start of the PE file.</param>
-  /// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> is null.</exception>
-  /// <exception cref="InvalidDataException">
-  /// Thrown when no Inno Setup signature can be found in the stream.
-  /// </exception>
+  /// <param name="stream">A seekable stream over the whole file.</param>
+  /// <exception cref="InvalidDataException">No Inno Setup data, or headers that do not parse.</exception>
+  /// <exception cref="NotSupportedException">The 16-bit Inno Setup 1.2.x format.</exception>
   public InnoSetupReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
+    if (!stream.CanSeek)
+      throw new ArgumentException("Stream must be seekable.", nameof(stream));
     this._stream = stream;
+    this._offsets = InnoLoader.Locate(stream);
+    if (stream is FileStream fs)
+      this._sliceDirectory = Path.GetDirectoryName(Path.GetFullPath(fs.Name));
 
-    var overlayOffset = FindOverlayOffset(stream);
-    var (versionString, sigEnd, isLegacy) = FindSignature(stream, overlayOffset);
-    this.Version = versionString;
-
-    // sigEnd points to the byte immediately after the null-terminator of the
-    // version string.  From here: 4-byte header CRC, 4-byte compressed size,
-    // then the compressed Setup.0 payload.
-    stream.Position = sigEnd;
-    Span<byte> hdr = stackalloc byte[8];
-    stream.ReadExactly(hdr);
-    // uint headerCrc = BinaryPrimitives.ReadUInt32LittleEndian(hdr);   // not verified here
-    var compressedSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(hdr[4..]);
-
-    this._setup0Offset = stream.Position;
-
-    // Read the compressed Setup.0 block
-    var compressedData = new byte[compressedSize];
-    stream.ReadExactly(compressedData);
-
-    this._setup1Offset = stream.Position; // Setup.1 starts right after Setup.0
-
-    // Decompress: try LZMA first (4.2.6+), then fall back to zlib (Deflate)
-    byte[]? decompressed = null;
-    if (!isLegacy)
-      decompressed = TryDecompressLzma(compressedData);
-    if (decompressed is null)
-      decompressed = TryDecompressZlib(compressedData);
-
-    if (decompressed is not null)
-      ParseHeader(decompressed);
+    if (this._offsets.HeaderOffset < 0 || this._offsets.HeaderOffset + 64 > stream.Length)
+      throw new InvalidDataException("Inno Setup headers lie outside the file.");
+    var tag = new byte[64];
+    stream.Position = this._offsets.HeaderOffset;
+    stream.ReadExactly(tag);
+    var version = InnoVersion.Parse(tag);
+    this._info = this.LoadInfo(version);
+    this.BuildEntries();
   }
 
   /// <summary>
-  /// Attempts to extract the data for <paramref name="entry"/> from the Setup.1 block.
+  /// 6.5.0+: a CRC32 and TSetupEncryptionHeader (EncryptionUse, KDF salt, iterations, base nonce,
+  /// password test) follow the version tag. Returns whether files are encrypted; refuses
+  /// installers whose headers are encrypted too.
   /// </summary>
-  /// <param name="entry">The entry to extract.</param>
-  /// <returns>The decompressed file bytes.</returns>
-  /// <exception cref="ArgumentNullException">Thrown when <paramref name="entry"/> is null.</exception>
-  /// <exception cref="NotSupportedException">
-  /// Thrown when the installer uses a solid archive or an unsupported compression format.
-  /// </exception>
-  public byte[] Extract(InnoSetupEntry entry) {
-    ArgumentNullException.ThrowIfNull(entry);
-
-    if (entry.IsDirectory)
-      throw new InvalidOperationException("Cannot extract a directory entry.");
-
-    if (entry.CompressedSize < 0)
-      throw new NotSupportedException(
-        "Extraction is not supported for this installer: file data offsets are unavailable.");
-
-    // Non-solid: each file is prefixed by a 4-byte compressed-size word inside
-    // the Setup.1 stream.  We recorded the per-file offset in InnoSetupEntry via
-    // the DestDir field hack only for entries that carry an explicit _setup1Pos.
-    // For the simplified reader we only expose extraction when CompressedSize is known.
-    throw new NotSupportedException(
-      "Individual file extraction from Setup.1 is not yet implemented for this installer version.");
+  private static bool ReadEncryptionHeader(Stream stream, InnoVersion v) {
+    if (v.Below(6, 5, 0))
+      return false;
+    Span<byte> h = stackalloc byte[4 + 49];
+    stream.ReadExactly(h);
+    if (System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(h) != global::Compression.Core.Checksums.Crc32.Compute(h[4..]))
+      throw new InvalidDataException("Inno Setup encryption header CRC mismatch.");
+    return h[4] switch {
+      0 => false,
+      1 => true,
+      2 => throw new NotSupportedException("This Inno Setup installer encrypts its headers too; a password is needed."),
+      _ => throw new InvalidDataException($"Unknown Inno Setup encryption mode {h[4]}."),
+    };
   }
 
-  // -------------------------------------------------------------------------
-  // PE overlay detection
-  // -------------------------------------------------------------------------
-
   /// <summary>
-  /// Parses the PE header to find the offset of the PE overlay (the byte
-  /// immediately following the last PE section's raw data).
-  /// Returns 0 if the stream does not look like a PE file.
+  /// Cheap detection: a setup loader offset table whose setup-0 starts with an Inno Setup
+  /// version tag.
   /// </summary>
-  private static long FindOverlayOffset(Stream stream) {
-    stream.Position = 0;
-    Span<byte> mz = stackalloc byte[2];
-    if (stream.Read(mz) < 2 || mz[0] != (byte)'M' || mz[1] != (byte)'Z')
-      return 0;
+  public static bool IsInnoSetup(Stream stream) {
+    ArgumentNullException.ThrowIfNull(stream);
+    try {
+      var offsets = InnoLoader.Locate(stream);
+      if (!offsets.TableFound || offsets.HeaderOffset < 0 || offsets.HeaderOffset + 64 > stream.Length)
+        return false;
+      var tag = new byte[64];
+      stream.Position = offsets.HeaderOffset;
+      stream.ReadExactly(tag);
+      return tag.AsSpan().IndexOf("Inno Setup"u8) >= 0;
+    } catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException) {
+      return false;
+    }
+  }
 
-    // Read e_lfanew at offset 0x3C
-    stream.Position = InnoSetupConstants.PeHeaderPtrOffset;
-    Span<byte> ptrBuf = stackalloc byte[4];
-    if (stream.Read(ptrBuf) < 4)
-      return 0;
-
-    var peOffset = (long)BinaryPrimitives.ReadUInt32LittleEndian(ptrBuf);
-
-    // Validate PE signature "PE\0\0"
-    stream.Position = peOffset;
-    Span<byte> peSig = stackalloc byte[4];
-    if (stream.Read(peSig) < 4
-        || peSig[0] != (byte)'P' || peSig[1] != (byte)'E'
-        || peSig[2] != 0 || peSig[3] != 0)
-      return 0;
-
-    // COFF header is 20 bytes starting at peOffset+4
-    // NumberOfSections at offset +2, SizeOfOptionalHeader at offset +16
-    Span<byte> coff = stackalloc byte[20];
-    if (stream.Read(coff) < 20)
-      return 0;
-
-    var numSections      = BinaryPrimitives.ReadUInt16LittleEndian(coff[2..]);
-    var optHeaderSize    = BinaryPrimitives.ReadUInt16LittleEndian(coff[16..]);
-
-    // Skip the optional header
-    var sectionTableOffset = stream.Position + optHeaderSize;
-
-    // Each section header is 40 bytes.
-    // PointerToRawData at +20, SizeOfRawData at +16
-    var maxEnd = 0L;
-    stream.Position = sectionTableOffset;
-    Span<byte> sec = stackalloc byte[40];
-    for (var i = 0; i < numSections; ++i) {
-      if (stream.Read(sec) < 40)
+  // Ambiguous or unknown tags: try the listed layout, then each later one, and keep the first
+  // that parses cleanly (no warnings, no trailing bytes) -- innoextract's rule.
+  private InnoSetupInfo LoadInfo(InnoVersion version) {
+    InnoSetupInfo? fallback = null;
+    Exception? firstError = null;
+    var candidate = (InnoVersion?)version;
+    var tryOthers = !version.IsKnown || version.IsAmbiguous;
+    while (candidate is { } v) {
+      try {
+        var info = new InnoSetupInfo { Version = v };
+        this._stream.Position = this._offsets.HeaderOffset + 64;
+        var encryptedFiles = ReadEncryptionHeader(this._stream, v);
+        info.LoadPrimary(InnoCodec.ReadHeaderBlock(this._stream, v), out var w1, out var t1);
+        info.EncryptionUsed |= encryptedFiles;
+        info.LoadData(InnoCodec.ReadHeaderBlock(this._stream, v), out var w2, out var t2);
+        if (w1 + w2 == 0 && !t1 && !t2)
+          return info;
+        fallback ??= info;
+      } catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or ArgumentException) {
+        firstError ??= ex;
+      }
+      if (!tryOthers)
         break;
-      var rawSize = (long)BinaryPrimitives.ReadUInt32LittleEndian(sec[16..]);
-      var rawPtr  = (long)BinaryPrimitives.ReadUInt32LittleEndian(sec[20..]);
-      if (rawPtr > 0 && rawSize > 0) {
-        var end = rawPtr + rawSize;
-        if (end > maxEnd)
-          maxEnd = end;
+      candidate = v.Next();
+      tryOthers = candidate is { IsAmbiguous: true };
+    }
+    return fallback ?? throw new InvalidDataException($"Inno Setup {version} headers could not be parsed: {firstError?.Message}", firstError);
+  }
+
+  // ── naming and selection (innoextract cli/extract.cpp, setup/filename.cpp) ──────────
+
+  private void BuildEntries() {
+    var chosen = new Dictionary<string, (InnoFileEntry File, string Path)>(StringComparer.Ordinal);
+    var order = new List<string>();
+    foreach (var file in this._info.Files) {
+      if (file.Location >= this._info.DataEntries.Count)
+        continue; // external file, copied from the target system
+      var path = ConvertPath(file.Destination);
+      if (path.Length == 0)
+        continue;
+      var key = path.ToLowerInvariant();
+      if (!chosen.TryGetValue(key, out var existing)) {
+        chosen[key] = (file, path);
+        order.Add(key);
+        continue;
       }
+      var skip = HandleCollision(existing.File, this._info.DataEntries[(int)existing.File.Location], file, this._info.DataEntries[(int)file.Location]);
+      if (!skip)
+        chosen[key] = (file, file.IsUninstallerExe ? existing.Path : path);
     }
 
-    return maxEnd > 0 ? maxEnd : 0;
-  }
-
-  // -------------------------------------------------------------------------
-  // Signature scanning
-  // -------------------------------------------------------------------------
-
-  /// <summary>
-  /// Scans from <paramref name="startOffset"/> for the Inno Setup version
-  /// signature.  Returns the version string, the stream position immediately
-  /// after the null terminator, and whether this is a legacy (pre-4.x) format.
-  /// </summary>
-  private static (string Version, long SigEnd, bool IsLegacy) FindSignature(
-      Stream stream, long startOffset) {
-
-    var scanEnd = Math.Min(
-      startOffset + InnoSetupConstants.ScanWindow,
-      stream.Length);
-
-    // Modern: "Inno Setup Setup Data (" + version + ")\0"
-    var prefixBytes = Encoding.ASCII.GetBytes(InnoSetupConstants.SignaturePrefix);
-
-    // Legacy: "rDlPtS" magic
-    var legacyBytes = InnoSetupConstants.LegacyMagic;
-
-    // Read the scan region into a buffer
-    stream.Position = startOffset;
-    var regionLen = (int)(scanEnd - startOffset);
-    var region = new byte[regionLen];
-    var read = 0;
-    while (read < regionLen) {
-      var n = stream.Read(region, read, regionLen - read);
-      if (n == 0) break;
-      read += n;
-    }
-    regionLen = read;
-
-    // Search for modern signature
-    for (var i = 0; i <= regionLen - prefixBytes.Length; ++i) {
-      if (!region.AsSpan(i, prefixBytes.Length).SequenceEqual(prefixBytes))
-        continue;
-
-      // Found prefix — read until null terminator to get the full string
-      var end = i + prefixBytes.Length;
-      while (end < regionLen && region[end] != 0)
-        ++end;
-
-      if (end >= regionLen)
-        continue; // no null terminator in scan window
-
-      var versionStr = Encoding.ASCII.GetString(region, i + prefixBytes.Length,
-        end - (i + prefixBytes.Length));
-      // Strip trailing ")" and flags like " (u)"
-      var closeParen = versionStr.IndexOf(')');
-      if (closeParen > 0)
-        versionStr = versionStr[..closeParen];
-
-      var sigEnd = startOffset + end + 1; // +1 to skip the '\0'
-      return (versionStr, sigEnd, false);
-    }
-
-    // Search for legacy signature
-    for (var i = 0; i <= regionLen - legacyBytes.Length; ++i) {
-      if (!region.AsSpan(i, legacyBytes.Length).SequenceEqual(legacyBytes))
-        continue;
-
-      // Legacy format: version is the next two bytes after the 6-byte magic
-      var vByte1 = i + legacyBytes.Length < regionLen ? region[i + legacyBytes.Length] : 0;
-      var vByte2 = i + legacyBytes.Length + 1 < regionLen ? region[i + legacyBytes.Length + 1] : 0;
-      var versionStr = $"{vByte1}.{vByte2}";
-
-      // In legacy format, the 8-byte magic is followed directly by header data
-      // (no null terminator needed — advance past magic + 2 version bytes)
-      var sigEnd = startOffset + i + legacyBytes.Length + 2;
-      return (versionStr, sigEnd, true);
-    }
-
-    throw new InvalidDataException(
-      "Inno Setup signature not found. The stream may not be an Inno Setup installer.");
-  }
-
-  // -------------------------------------------------------------------------
-  // Decompression
-  // -------------------------------------------------------------------------
-
-  private static byte[]? TryDecompressLzma(byte[] data) {
-    if (data.Length < InnoSetupConstants.LzmaPropSize)
-      return null;
-
-    try {
-      var props = data[..InnoSetupConstants.LzmaPropSize];
-      using var ms = new MemoryStream(data, InnoSetupConstants.LzmaPropSize,
-        data.Length - InnoSetupConstants.LzmaPropSize);
-      var decoder = new LzmaDecoder(ms, props);
-      return decoder.Decode();
-    } catch {
-      return null;
+    foreach (var key in order) {
+      var (file, path) = chosen[key];
+      var data = this._info.DataEntries[(int)file.Location];
+      this._entries.Add(new InnoSetupEntry(path, (long)data.FileSize, data.Timestamp, (int)file.Location));
     }
   }
 
-  private static byte[]? TryDecompressZlib(byte[] data) {
-    // zlib: 2-byte header (CMF + FLG), then raw Deflate, then 4-byte Adler-32
-    if (data.Length < 6)
-      return null;
-
-    try {
-      // Strip the 2-byte zlib header and 4-byte trailer
-      using var deflateStream = new MemoryStream(data, 2, data.Length - 6);
-      var decompressor = new DeflateDecompressor(deflateStream);
-      return decompressor.DecompressAll();
-    } catch {
-      return null;
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Header parsing
-  // -------------------------------------------------------------------------
-
-  /// <summary>
-  /// Scans the decompressed Setup.0 block for Pascal strings and builds the
-  /// entry list.  Because the exact binary layout varies across dozens of
-  /// sub-versions, this uses a heuristic scan rather than a fixed struct.
-  /// </summary>
-  private void ParseHeader(byte[] data) {
-    // Strategy: walk through the data collecting adjacent Pascal strings.
-    // A Pascal string is: 4-byte LE length (0 < len <= 65535) followed by
-    // len bytes of printable UTF-8 / ASCII text.  Groups of 3+ consecutive
-    // such strings that look like (sourceName, destDir, destName) are treated
-    // as file entries.
-    using var ms = new MemoryStream(data);
-    using var br = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
-
-    var strings = new List<(long Pos, string Value)>();
-
-    // First pass: collect all plausible Pascal strings
-    while (ms.Position + 4 < data.Length) {
-      var pos = ms.Position;
-      int len;
-      try { len = br.ReadInt32(); } catch { break; }
-
-      if (len is > 0 and <= 65535 && ms.Position + len <= data.Length) {
-        var bytes = br.ReadBytes(len);
-        // Accept if content is printable ASCII / UTF-8 (no control chars except CR/LF/TAB)
-        if (LooksPrintable(bytes)) {
-          var str = Encoding.UTF8.GetString(bytes);
-          strings.Add((pos, str));
-          continue;
+  /// <summary>innoextract's handle_collision: true when the new file loses to the one already chosen.</summary>
+  private static bool HandleCollision(InnoFileEntry oldFile, InnoDataEntry oldData, InnoFileEntry newFile, InnoDataEntry newData) {
+    var allowTimestamp = true;
+    if (!newFile.IgnoreVersion) {
+      if (oldData.VersionInfoValid) {
+        allowTimestamp = false;
+        if (!newData.VersionInfoValid || oldData.FileVersion > newData.FileVersion) {
+          if (!newFile.PromptIfOlder)
+            return true;
+        } else if (newData.FileVersion == oldData.FileVersion && !newFile.OverwriteSameVersion) {
+          if (newFile.ReplaceSameVersionIfContentsDiffer && oldData.Checksum.AsSpan().SequenceEqual(newData.Checksum))
+            return true;
+          if (!newFile.CompareTimeStamp)
+            return true;
+          allowTimestamp = true;
         }
-        // Not a valid string — back up by len and try again
-        ms.Position -= len;
-      }
-      // Advance by 1 byte and retry
-      ms.Position = pos + 1;
+      } else if (newData.VersionInfoValid)
+        allowTimestamp = false;
     }
-
-    // Second pass: group consecutive strings into file entries.
-    // Inno Setup file entries contain at minimum:
-    //   [0] source/dest filename
-    //   [1] dest directory (often starts with "{app}" or similar)
-    // We output one entry per string that looks like a file path.
-    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    foreach (var (_, value) in strings) {
-      if (value.Length < 2)
-        continue;
-
-      // Likely a filename: contains a dot and no path seps, or looks like an
-      // Inno constant path like {app}\foo.exe
-      if (LooksLikeFilename(value) && seen.Add(value)) {
-        this._entries.Add(new InnoSetupEntry(
-          FileName: value,
-          DestDir: "",
-          Size: -1,
-          CompressedSize: -1,
-          IsDirectory: false));
-      }
-    }
-
-    // If we found nothing useful, add a single synthetic entry so callers
-    // know parsing occurred but file names were not recoverable.
-    if (this._entries.Count == 0 && strings.Count > 0) {
-      // Expose the first few strings as-is so the caller sees some metadata
-      foreach (var (_, value) in strings.Take(8)) {
-        if (value.Length < 2 || !seen.Add(value)) continue;
-        this._entries.Add(new InnoSetupEntry(
-          FileName: value,
-          DestDir: "",
-          Size: -1,
-          CompressedSize: -1,
-          IsDirectory: false));
-      }
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Helpers
-  // -------------------------------------------------------------------------
-
-  private static bool LooksPrintable(byte[] bytes) {
-    if (bytes.Length == 0) return false;
-    var nonPrintable = 0;
-    foreach (var b in bytes) {
-      if (b < 0x09 || (b >= 0x0E && b < 0x20))
-        ++nonPrintable;
-    }
-    // Allow up to 5% non-printable bytes (for UTF-8 multibyte sequences)
-    return nonPrintable <= bytes.Length / 20 + 1;
-  }
-
-  private static bool LooksLikeFilename(string s) {
-    // Must not be purely numeric or very short
-    if (s.Length < 3) return false;
-
-    // Reject strings that are clearly not filenames (too many spaces, etc.)
-    var spaceRatio = s.Count(c => c == ' ') * 10 / s.Length;
-    if (spaceRatio > 4) return false;
-
-    // Accept if it has an extension (dot followed by 1-6 alpha chars)
-    var dot = s.LastIndexOf('.');
-    if (dot > 0 && dot < s.Length - 1) {
-      var ext = s[(dot + 1)..];
-      if (ext.Length is >= 1 and <= 6 && ext.All(char.IsAsciiLetterOrDigit))
+    if (allowTimestamp && newFile.CompareTimeStamp) {
+      if (newData.Timestamp == oldData.Timestamp)
+        return true;
+      if (newData.Timestamp < oldData.Timestamp && !newFile.PromptIfOlder)
         return true;
     }
-
-    // Accept Inno constant paths like {app}, {sys}, {win}, {tmp}
-    if (s.StartsWith('{') && s.Contains('}'))
-      return true;
-
     return false;
+  }
+
+  /// <summary>
+  /// Expands Inno constants to directory names ({app} → app, {{ → {), replaces characters that
+  /// are unsafe in paths with '$', and normalises the separators and . / .. segments.
+  /// </summary>
+  internal static string ConvertPath(string path) {
+    var i = 0;
+    var expanded = Expand(path, ref i, close: false);
+    var parts = new List<string>();
+    foreach (var segment in expanded.Split('\\', '/')) {
+      if (segment.Length == 0 || segment == ".")
+        continue;
+      if (segment == "..") {
+        if (parts.Count > 0)
+          parts.RemoveAt(parts.Count - 1);
+        continue;
+      }
+      parts.Add(segment);
+    }
+    return string.Join('/', parts);
+  }
+
+  private static string Expand(string s, ref int i, bool close) {
+    var sb = new StringBuilder();
+    while (i < s.Length) {
+      var c = s[i];
+      if (c != '{' && c != '}') {
+        sb.Append(IsUnsafe(c) ? '$' : c);
+        ++i;
+        continue;
+      }
+      ++i;
+      if (c == '}') {
+        if (close)
+          break;
+        sb.Append('}');
+        continue;
+      }
+      if (i < s.Length && s[i] == '{') {
+        sb.Append('{');
+        ++i;
+        continue;
+      }
+      var name = Expand(s, ref i, close: true);
+      foreach (var ch in name)
+        sb.Append(IsUnsafe(ch) ? '$' : ch);
+    }
+    return sb.ToString();
+  }
+
+  private static bool IsUnsafe(char c) => c < 32 || c is '<' or '>' or ':' or '"' or '|' or '?' or '*';
+
+  // ── extraction ──────────────────────────────────────────────────────
+
+  /// <summary>Returns the bytes of one entry, verified against the stored checksum.</summary>
+  public byte[] Extract(InnoSetupEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    byte[]? result = null;
+    this.ExtractMany([entry], (_, data) => result = data);
+    return result!;
+  }
+
+  /// <summary>
+  /// Decodes the given entries; each chunk is decompressed once for all the files it holds.
+  /// </summary>
+  public void ExtractMany(IEnumerable<InnoSetupEntry> entries, Action<InnoSetupEntry, byte[]> sink) {
+    ArgumentNullException.ThrowIfNull(entries);
+    ArgumentNullException.ThrowIfNull(sink);
+    var byChunk = entries
+      .GroupBy(e => {
+        var d = this._info.DataEntries[e.DataIndex];
+        return (d.FirstSlice, d.ChunkOffset, d.ChunkSize, d.Compression, d.Encryption);
+      })
+      .OrderBy(g => g.Key.FirstSlice).ThenBy(g => g.Key.ChunkOffset);
+
+    foreach (var chunk in byChunk) {
+      if (chunk.Key.Encryption != InnoEncryption.None)
+        throw new NotSupportedException("Encrypted Inno Setup files are not supported.");
+      var needed = chunk.Max(e => this._info.DataEntries[e.DataIndex].FileOffset + this._info.DataEntries[e.DataIndex].FileSize);
+      if (needed > int.MaxValue)
+        throw new NotSupportedException("Inno Setup chunks larger than 2 GiB are not supported.");
+      var decoded = this.ReadChunk(chunk.Key.FirstSlice, chunk.Key.ChunkOffset, chunk.Key.ChunkSize, chunk.Key.Compression, (long)needed);
+      foreach (var e in chunk) {
+        var d = this._info.DataEntries[e.DataIndex];
+        var bytes = decoded.AsSpan((int)d.FileOffset, (int)d.FileSize).ToArray();
+        InnoCodec.Unfilter(d.Filter, bytes);
+        if (!InnoCodec.Verify(d.ChecksumKind, d.Checksum, bytes))
+          throw new InvalidDataException($"Inno Setup {d.ChecksumKind} checksum mismatch for '{e.FileName}'.");
+        sink(e, bytes);
+      }
+    }
+  }
+
+  private static ReadOnlySpan<byte> ChunkMagic => "zlb\x1a"u8;
+
+  private byte[] ReadChunk(uint slice, ulong offset, ulong size, InnoCompression compression, long needed) {
+    using var slices = new SliceReader(this, slice, (long)offset);
+    Span<byte> magic = stackalloc byte[4];
+    slices.ReadExactly(magic);
+    if (!magic.SequenceEqual(ChunkMagic))
+      throw new InvalidDataException("Inno Setup chunk has no \"zlb\\x1a\" magic.");
+    using var bounded = new BoundedReader(slices, (long)size);
+    try {
+      return InnoCodec.Decompress(compression, bounded, needed);
+    } catch (InvalidDataException ex) {
+      throw new InvalidDataException($"Inno Setup chunk at slice {slice} offset {offset} ({compression}, {size} bytes): {ex.Message}", ex);
+    }
+  }
+
+  /// <summary>Opens setup-1 slice <paramref name="index"/>; returns the stream and its data start/end.</summary>
+  private (Stream Stream, long Start, long End, bool Owned) OpenSlice(uint index) {
+    if (this._offsets.DataOffset != 0) {
+      if (index != 0)
+        throw new InvalidDataException("An Inno Setup installer with embedded data has only one slice.");
+      return (this._stream, this._offsets.DataOffset, this._stream.Length, false);
+    }
+    if (this._sliceDirectory == null)
+      throw new NotSupportedException("This installer keeps its files in external setup-N.bin slices, which need a file path to locate.");
+
+    var perDisk = Math.Max(1u, this._info.SlicesPerDisk);
+    var suffix = perDisk == 1 ? $"{index + 1}" : $"{index / perDisk + 1}{(char)('a' + index % perDisk)}";
+    var bases = new[] { this._info.BaseFilename, "setup" }.Where(b => b.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase);
+    foreach (var b in bases) {
+      var name = b + "-" + suffix + ".bin";
+      var path = Directory.EnumerateFiles(this._sliceDirectory)
+        .FirstOrDefault(p => string.Equals(Path.GetFileName(p), name, StringComparison.OrdinalIgnoreCase));
+      if (path == null)
+        continue;
+      var fs = File.OpenRead(path);
+      Span<byte> head = stackalloc byte[16];
+      fs.ReadExactly(head[..12]);
+      long total;
+      if (head[..8].SequenceEqual("idska32\x1a"u8) || head[..8].SequenceEqual("idska16\x1a"u8))
+        total = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(head[8..]);
+      else if (head[..8].SequenceEqual("idskb32\x1a"u8)) {
+        fs.ReadExactly(head[12..16]);
+        total = System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(head[8..]);
+      } else {
+        fs.Dispose();
+        throw new InvalidDataException($"'{name}' is not an Inno Setup slice.");
+      }
+      if (total > fs.Length)
+        total = fs.Length;
+      return (fs, 0, total, true);
+    }
+    throw new InvalidDataException($"Inno Setup slice {index + 1} ({string.Join(" or ", bases.Select(b => b + "-" + suffix + ".bin"))}) was not found.");
+  }
+
+  /// <summary>Reads setup-1 data sequentially across slice boundaries.</summary>
+  private sealed class SliceReader : Stream {
+    private readonly InnoSetupReader _owner;
+    private uint _slice;
+    private (Stream Stream, long Start, long End, bool Owned) _current;
+    private long _pos;
+
+    public SliceReader(InnoSetupReader owner, uint slice, long offset) {
+      this._owner = owner;
+      this._slice = slice;
+      this._current = owner.OpenSlice(slice);
+      this._pos = this._current.Start + offset;
+      if (this._pos > this._current.End)
+        throw new InvalidDataException("Inno Setup chunk offset lies outside its slice.");
+    }
+
+    public override int Read(byte[] buffer, int offset, int count) {
+      while (this._pos >= this._current.End) {
+        if (this._owner._offsets.DataOffset != 0)
+          return 0;
+        if (this._current.Owned)
+          this._current.Stream.Dispose();
+        ++this._slice;
+        this._current = this._owner.OpenSlice(this._slice);
+        this._pos = this._current.Stream.Position; // just past the slice header
+      }
+      this._current.Stream.Position = this._pos;
+      var n = this._current.Stream.Read(buffer, offset, (int)Math.Min(count, this._current.End - this._pos));
+      this._pos += n;
+      return n;
+    }
+
+    protected override void Dispose(bool disposing) {
+      if (disposing && this._current.Owned)
+        this._current.Stream.Dispose();
+      base.Dispose(disposing);
+    }
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+  }
+
+  /// <summary>Limits a stream to a number of bytes.</summary>
+  private sealed class BoundedReader(Stream inner, long length) : Stream {
+    private long _left = length;
+    public override int Read(byte[] buffer, int offset, int count) {
+      if (this._left <= 0)
+        return 0;
+      var n = inner.Read(buffer, offset, (int)Math.Min(count, this._left));
+      this._left -= n;
+      return n;
+    }
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
   }
 }
