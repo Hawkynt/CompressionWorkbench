@@ -1476,7 +1476,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Dictionary.Lzh`
 
-[`Lh1Decoder`](#lh1decoder) · [`Lh1Encoder`](#lh1encoder) · [`Lz5Decoder`](#lz5decoder) · [`Lz5Encoder`](#lz5encoder) · [`LzhBuildingBlock`](#lzhbuildingblock) · [`LzhConstants`](#lzhconstants) · [`LzhDecoder`](#lzhdecoder) · [`LzhEncoder`](#lzhencoder) · [`LzsDecoder`](#lzsdecoder) · [`LzsEncoder`](#lzsencoder) · [`PmaDecoder`](#pmadecoder) · [`PmaEncoder`](#pmaencoder)
+[`Lh1Decoder`](#lh1decoder) · [`Lh1Encoder`](#lh1encoder) · [`Lh2Decoder`](#lh2decoder) · [`Lh3Decoder`](#lh3decoder) · [`Lz5Decoder`](#lz5decoder) · [`Lz5Encoder`](#lz5encoder) · [`LzhBuildingBlock`](#lzhbuildingblock) · [`LzhConstants`](#lzhconstants) · [`LzhDecoder`](#lzhdecoder) · [`LzhEncoder`](#lzhencoder) · [`LzsDecoder`](#lzsdecoder) · [`LzsEncoder`](#lzsencoder) · [`PmaDecoder`](#pmadecoder) · [`PmaEncoder`](#pmaencoder)
 
 #### `Lh1Decoder`
 
@@ -1495,6 +1495,22 @@ Encodes data using the LHA -lh1- adaptive Huffman method.
 | --- | --- | --- |
 | `Lh1Encoder` | `Lh1Encoder()` |  |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Compresses data using the -lh1- algorithm. |
+
+#### `Lh2Decoder`
+
+Decodes LHA `-lh2-`: LZSS over an 8 KiB window with two adaptive Huffman trees.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decodes `originalSize` bytes of `-lh2-` data. |
+
+#### `Lh3Decoder`
+
+Decodes LHA `-lh3-`: LZSS over an 8 KiB window with static Huffman trees sent per block.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decodes `originalSize` bytes of `-lh3-` data. |
 
 #### `Lz5Decoder`
 
