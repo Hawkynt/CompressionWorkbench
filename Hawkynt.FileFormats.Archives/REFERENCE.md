@@ -18621,69 +18621,115 @@ Creates IFF CDAF archives with FNAM+FDAT chunk pairs.
 
 ### Namespace `FileFormat.InnoSetup`
 
-[`InnoSetupEntry`](#innosetupentry) · [`InnoSetupFormatDescriptor`](#innosetupformatdescriptor) · [`InnoSetupReader`](#innosetupreader) · [`InnoSetupWriter`](#innosetupwriter)
+[`InnoCompression`](#innocompression) · [`InnoEncryption`](#innoencryption) · [`InnoSetupEntry`](#innosetupentry) · [`InnoSetupFormatDescriptor`](#innosetupformatdescriptor) · [`InnoSetupReader`](#innosetupreader) · [`InnoVersion`](#innoversion)
+
+#### `InnoCompression`
+
+Compression of a setup-1 chunk.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Stored` | `0` | Stored. |
+| `Zlib` | `1` | zlib (with the two-byte zlib header). |
+| `BZip2` | `2` | bzip2. |
+| `Lzma1` | `3` | LZMA with Inno's five-byte properties header. |
+| `Lzma2` | `4` | LZMA2 with Inno's one-byte dictionary-size header. |
+| `Unknown` | `5` | A value the header does not define. |
+
+#### `InnoEncryption`
+
+Encryption of a setup-1 chunk.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` | Not encrypted. |
+| `Arc4Md5` | `1` | ARC4 keyed with MD5(salt + password) (4.2.2 – 5.3.8). |
+| `Arc4Sha1` | `2` | ARC4 keyed with SHA-1(salt + password) (5.3.9 – 6.3.x). |
+| `XChaCha20` | `3` | XChaCha20 keyed by PBKDF2-SHA256 (6.4+). |
 
 #### `InnoSetupEntry`
 
-Represents a file or directory entry listed in an Inno Setup installer.
+A file an Inno Setup installer installs.
 
 Implements `IEquatable<InnoSetupEntry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `InnoSetupEntry` | `InnoSetupEntry(string FileName, string DestDir, long Size, long CompressedSize, bool IsDirectory)` | Represents a file or directory entry listed in an Inno Setup installer. |
-| `CompressedSize` | `long CompressedSize { get; init; }` | The compressed size in bytes, or -1 when unknown. |
-| `DestDir` | `string DestDir { get; init; }` | The destination directory string from the installer header, or empty. |
-| `FileName` | `string FileName { get; init; }` | The source filename or a generated name when parsing fails. |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry represents a directory rather than a file. |
-| `Size` | `long Size { get; init; }` | The uncompressed file size in bytes, or -1 when unknown. |
+| `InnoSetupEntry` | `InnoSetupEntry(string FileName, long Size, DateTime? LastModified, int DataIndex)` | A file an Inno Setup installer installs. |
+| `DataIndex` | `int DataIndex { get; init; }` | Index of the file location (data entry) holding the bytes. |
+| `FileName` | `string FileName { get; init; }` | The destination path with Inno constants spelled as directories, as innoextract writes it: `{app}\bin\x.dll` becomes `app/bin/x.dll`. |
+| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether the entry is a directory; Inno [Files] entries never are. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | The file time the compiler recorded (UTC), or null. |
+| `Size` | `long Size { get; init; }` | The uncompressed size in bytes. |
 
 #### `InnoSetupFormatDescriptor`
 
-Inno Setup installer package (PE stub + Setup.0 data blob). References: `https://jrsoftware.org/isinfo.php` — official Inno Setup site (Jordan Russell)`https://github.com/dscharrer/innoextract` — innoextract — de-facto reference for the undocumented installer data layout`https://en.wikipedia.org/wiki/Inno_Setup` — Wikipedia
+Inno Setup installer: the files of its [Files] section. References: `https://jrsoftware.org/isinfo.php` — Inno Setup; `https://github.com/jrsoftware/issrc` holds its sources (Shared.Struct.pas defines the records)`https://github.com/dscharrer/innoextract` — innoextract (zlib licence), the extractor this reader was converted from and is checked against
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `InnoSetupFormatDescriptor` | `InnoSetupFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The reader produces the decoded bytes per entry; the matched bytes are wrapped in a `BoundedEntryStream` sized to their logical length. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Decodes one entry into memory; an unknown name yields no bytes. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens one entry as a bounded read-only stream. |
 
 #### `InnoSetupReader`
 
-Reads Inno Setup installer metadata from a Windows PE executable.
+Reads the files an Inno Setup installer carries.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `InnoSetupReader` | `InnoSetupReader(Stream stream)` | Opens an Inno Setup installer from a seekable stream. |
-| `Entries` | `IReadOnlyList<InnoSetupEntry> Entries { get; }` | Gets the list of entries parsed from the Setup.0 header. |
-| `Version` | `string Version { get; }` | Gets the Inno Setup version string detected in the overlay, e.g. "5.5.3". |
-| `Extract` | `byte[] Extract(InnoSetupEntry entry)` | Attempts to extract the data for `entry` from the Setup.1 block. |
+| `InnoSetupReader` | `InnoSetupReader(Stream stream)` | Opens an Inno Setup installer (setup.exe) or a bare setup-0 file. |
+| `AppName` | `string AppName { get; }` | Gets the application name from the setup header. |
+| `AppVersion` | `string AppVersion { get; }` | Gets the application version from the setup header. |
+| `Compression` | `InnoCompression Compression { get; }` | Gets the compressor the files were stored with. |
+| `Entries` | `IReadOnlyList<InnoSetupEntry> Entries { get; }` | Gets the files, named and filtered the way innoextract extracts them. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether some files are encrypted. |
+| `VersionText` | `string VersionText { get; }` | Gets the version as text, e.g. "5.5.7 (unicode)". |
+| `Version` | `InnoVersion Version { get; }` | Gets the setup-data version. |
+| `ExtractMany` | `void ExtractMany(IEnumerable<InnoSetupEntry> entries, Action<InnoSetupEntry, byte[]> sink)` | Decodes the given entries; each chunk is decompressed once for all the files it holds. |
+| `Extract` | `byte[] Extract(InnoSetupEntry entry)` | Returns the bytes of one entry, verified against the stored checksum. |
+| `IsInnoSetup` | `static bool IsInnoSetup(Stream stream)` | Cheap detection: a setup loader offset table whose setup-0 starts with an Inno Setup version tag. |
 
-#### `InnoSetupWriter`
+#### `InnoVersion`
 
-Writes a minimal Inno Setup header. No PE stub is emitted; the reader scans from offset 0 for the Inno signature when it can't parse a PE. Setup.0 is emitted as an empty compressed block — the reader's LZMA + zlib decompression both fail gracefully on empty input, leaving the entry list empty. This is detection-only WORM; producing a functional installer requires bundling a signed PE stub which is out of scope.
+The setup-data version an Inno Setup installer was written with, packed as `(a << 24) | (b << 16) | (c << 8) | d`.
+
+Implements `IEquatable<InnoVersion>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `InnoSetupWriter` | `InnoSetupWriter()` |  |
-| `WriteTo` | `void WriteTo(Stream output, byte[] embeddedData = null)` | Writes the to to the supplied output. |
+| `InnoVersion` | `InnoVersion(uint Value, bool IsUnicode, bool IsIsx, bool IsKnown)` | The setup-data version an Inno Setup installer was written with, packed as `(a << 24) \| (b << 16) \| (c << 8) \| d`. |
+| `Build` | `int Build { get; }` | Gets the fourth version component (variant or build). |
+| `IsAmbiguous` | `bool IsAmbiguous { get; }` | True for the tags that more than one layout used (the compiler was changed without the tag). |
+| `IsIsx` | `bool IsIsx { get; init; }` |  |
+| `IsKnown` | `bool IsKnown { get; init; }` |  |
+| `IsUnicode` | `bool IsUnicode { get; init; }` |  |
+| `Major` | `int Major { get; }` | Gets the major version. |
+| `Minor` | `int Minor { get; }` | Gets the minor version. |
+| `Patch` | `int Patch { get; }` | Gets the patch version. |
+| `Value` | `uint Value { get; init; }` |  |
+| `AtLeast` | `bool AtLeast(int a, int b, int c, int d = 0)` | True when this version is at least a.b.c.d. |
+| `Below` | `bool Below(int a, int b, int c, int d = 0)` | True when this version is below a.b.c.d. |
+| `Next` | `InnoVersion? Next()` | The next known version of the same flavour (ANSI/Unicode, ISX), or null. |
+| `Parse` | `static InnoVersion Parse(ReadOnlySpan<byte> tag64)` | Parses the 64-byte version tag at the start of setup-0. |
+| `ToString` | `override string ToString()` |  |
+| `V` | `static uint V(int a, int b, int c, int d = 0)` | Packs a version number. |
 
 ### Namespace `FileFormat.Ipa`
 

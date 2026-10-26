@@ -134,6 +134,7 @@ Every catalogued row where a source records write support (7-Zip, libarchive, an
 | BeeGFS | `BeeGfs` | beegfs-setup-storage | Wikipedia |
 | BitRock InstallBuilder | `BitRock` | InstallBuilder | UniExtract |
 | NSIS installer | `Nsis` | makensis | 7-Zip, XADMaster, UniExtract |
+| Inno Setup | `InnoSetup` | ISCC | UniExtract |
 | GPFS / IBM Storage Scale | `Gpfs` | mmcrfs | Wikipedia |
 | GlusterFS | `GlusterFs` | gluster volume create | Wikipedia |
 | HxC Floppy Emulator (HFE) | `Hfe` | HxC Floppy Emulator tool | PRONOM |
@@ -190,7 +191,6 @@ running real-world samples. The file named at the end of each row is where the l
 | EGG (ALZip) | `Egg` | 1 | store and deflate only; bzip2/LZMA/AZO, encryption and split archives unsupported (EggReader.cs) |
 | Encoded text (uu/xx/b64/BinHex/yEnc) | `UuEncoding`, `B64Encoding`, `BinHex`, `YEnc` | 1 | no XXEncode descriptor |
 | HA | `Ha` | 1 | stored only; HSC and ASC throw (HaReader.cs) |
-| Inno Setup | `InnoSetup` | 1 | listing only; file extraction throws for every Inno version (InnoSetupReader.cs) |
 | MS-DOS COMPRESS (KWAJ) | `Kwaj` | 1 | methods 2 (LZSS) and 3 (LZ+Huffman) throw (KwajStream.cs) |
 | PAQ (paq6/7/8 family) | `Paq8` | 1 | a single PAQ8 variant (.paq8l); the other PAQ versions are mutually incompatible |
 | RAR audio / VM filters | `Rar` | 1 | RAR3 filters matched to the six standard programs only; no general RarVM (Rar3Decoder.cs) |
