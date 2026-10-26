@@ -169,11 +169,36 @@ public sealed class AndroidBootImageTests {
     });
   }
 
+  [Test]
+  public void GivenOneFileUnderAnArbitraryName_WhenCreated_ThenItIsTheKernel() {
+    var payload = Bytes(3000, 11);
+    var image = Create(("PROBE.BIN", payload));
+    var files = Extract(image);
+    Assert.That(files.Keys, Is.EquivalentTo(new[] { "metadata.ini", "kernel" }));
+    Assert.That(files["kernel"], Is.EqualTo(payload));
+    Assert.That(image, Is.EqualTo(Create(("kernel", payload))), "the same image mkbootimg --kernel would make");
+  }
+
+  [Test]
+  public void GivenOneArbitraryFileBesideARamdisk_WhenCreated_ThenItIsTheKernelAndTheRamdiskStays() {
+    var files = Extract(Create(("vmlinuz", [1, 2, 3]), ("ramdisk", [4, 5])));
+    Assert.That(files["kernel"], Is.EqualTo(new byte[] { 1, 2, 3 }));
+    Assert.That(files["ramdisk"], Is.EqualTo(new byte[] { 4, 5 }));
+  }
+
   // ── refusals on create ───────────────────────────────────────────────
 
   [Test, Category("Exception")]
-  public void GivenAnArbitraryFileName_WhenCreated_ThenItIsRefused()
-    => Assert.That(() => Create(("readme.txt", [1])), Throws.ArgumentException);
+  public void GivenTwoArbitraryFileNames_WhenCreated_ThenTheyAreRefused()
+    => Assert.That(() => Create(("a.bin", [1]), ("b.bin", [2])), Throws.ArgumentException);
+
+  [Test, Category("Exception")]
+  public void GivenAKernelAndAnArbitraryFileName_WhenCreated_ThenTheArbitraryOneIsRefused()
+    => Assert.That(() => Create(("kernel", [1]), ("readme.txt", [2])), Throws.ArgumentException);
+
+  [Test, Category("Exception")]
+  public void GivenOnlyTheWholeImageView_WhenCreated_ThenItIsRefusedRatherThanTakenAsTheKernel()
+    => Assert.That(() => Create(("FULL.img", [1])), Throws.ArgumentException);
 
   [Test, Category("Exception")]
   public void GivenASecondStageForAV3Image_WhenCreated_ThenItIsRefused()

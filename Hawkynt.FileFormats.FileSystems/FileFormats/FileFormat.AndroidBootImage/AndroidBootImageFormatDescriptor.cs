@@ -104,13 +104,18 @@ public sealed class AndroidBootImageFormatDescriptor : IFormatDescriptor, IArchi
   /// <summary>
   /// Builds an image from component files named as <c>unpack_bootimg</c> names them, with the
   /// header fields taken from a <c>metadata.ini</c> among the inputs (the rendering this
-  /// descriptor lists) and <c>mkbootimg</c>'s defaults for every field it does not set.
+  /// descriptor lists) and <c>mkbootimg</c>'s defaults for every field it does not set. A single
+  /// input under any other name is the payload a boot image exists to carry and becomes the
+  /// kernel, as <c>mkbootimg --kernel</c> would take it; more than one such input is refused.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var files = inputs.Where(i => !i.IsDirectory && !string.IsNullOrEmpty(i.ArchiveName))
       .Select(i => (Name: Leaf(i.ArchiveName), Input: i)).ToList();
+    var unnamed = files.FindAll(f => !IsComponentName(f.Name) && !IsReservedName(f.Name));
+    if (unnamed.Count == 1 && !files.Exists(f => f.Name.Equals(Kernel, StringComparison.OrdinalIgnoreCase)))
+      files[files.IndexOf(unnamed[0])] = (Kernel, unnamed[0].Input);
     foreach (var (name, _) in files)
       if (!IsComponentName(name) && !name.Equals(FirmwareArchive.MetadataName, StringComparison.OrdinalIgnoreCase))
         throw new ArgumentException($"Android boot image: '{name}' is not a boot image component " +
@@ -276,6 +281,10 @@ public sealed class AndroidBootImageFormatDescriptor : IFormatDescriptor, IArchi
   private static bool IsComponentName(string name)
     => TryRamdiskIndex(name, out _) || name.ToLowerInvariant() is Kernel or Ramdisk or Second or RecoveryDtbo or Dtb
       or BootSignature or VendorRamdisk or Bootconfig or Trailer;
+
+  /// <summary>The rendering and whole-image view this descriptor lists; never a payload.</summary>
+  private static bool IsReservedName(string name)
+    => name.Equals(FirmwareArchive.MetadataName, StringComparison.OrdinalIgnoreCase) || name.Equals(FullImage, StringComparison.OrdinalIgnoreCase);
 
   private static bool TryRamdiskIndex(string name, out int index) {
     index = -1;

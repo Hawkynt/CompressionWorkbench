@@ -24,7 +24,7 @@ namespace FileFormat.AndroidVbmeta;
 /// Apache-2.0, converted.</para>
 /// </remarks>
 public sealed class AndroidVbmetaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveModifiable, ISyntheticEntryNames {
+    IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, ISyntheticEntryNames {
 
   public const string PublicKeyName = "public_key.bin", PublicKeyMetadataName = "public_key_metadata.bin",
     SignatureName = "signature.bin", TrailerName = "trailer.bin", FullImage = "FULL.img", DescriptorFolder = "descriptors/";
@@ -141,6 +141,30 @@ public sealed class AndroidVbmetaFormatDescriptor : IFormatDescriptor, IArchiveF
     if (ini is not null) ApplyHeader(v, ini, creating: true);
     v.Write(output);
   }
+
+  // ── write constraints ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The members <see cref="Create"/> writes. A vbmeta holds structured AVB descriptors, not
+  /// files, so an arbitrary blob has nowhere to go; a public key or signature needs the private key.
+  /// </summary>
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    ArgumentNullException.ThrowIfNull(input);
+    reason = null;
+    if (input.IsDirectory) return true;
+    var name = input.ArchiveName.Replace('\\', '/').TrimStart('/');
+    if (name.Equals(FirmwareArchive.MetadataName, StringComparison.OrdinalIgnoreCase) || TryDescriptorIndex(name, out _)
+        || name.Equals(PublicKeyMetadataName, StringComparison.OrdinalIgnoreCase) || name.Equals(TrailerName, StringComparison.OrdinalIgnoreCase))
+      return true;
+    reason = name.Equals(PublicKeyName, StringComparison.OrdinalIgnoreCase) || name.Equals(SignatureName, StringComparison.OrdinalIgnoreCase)
+      ? "vbmeta: only unsigned (NONE) images can be written; signing needs the private key."
+      : $"vbmeta: '{name}' is not a vbmeta member — {this.AcceptedInputsDescription}.";
+    return false;
+  }
+
+  public long? MaxTotalArchiveSize => null;
+
+  public string AcceptedInputsDescription => "accepts: descriptors/NN_*.bin, public_key_metadata.bin, trailer.bin, metadata.ini";
 
   private static void ApplyHeader(AvbVbmeta v, IReadOnlyDictionary<string, string> ini, bool creating) {
     var current = FirmwareArchive.ParseIni(RenderMetadata(v));

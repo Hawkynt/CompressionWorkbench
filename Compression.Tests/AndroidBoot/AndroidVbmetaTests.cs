@@ -140,6 +140,35 @@ public sealed class AndroidVbmetaTests {
   public void GivenAMalformedDescriptorBlob_WhenCreated_ThenItIsRefused()
     => Assert.That(() => Create([("descriptors/00_x.bin", new byte[20])]), Throws.ArgumentException);
 
+  // ── write constraints ────────────────────────────────────────────────
+
+  [TestCase("descriptors/00_hash.bin")]
+  [TestCase("descriptors\\03_property.bin")]
+  [TestCase("public_key_metadata.bin")]
+  [TestCase("trailer.bin")]
+  [TestCase("METADATA.INI")]
+  public void GivenAMemberCreateWrites_WhenOffered_ThenItIsAccepted(string name) {
+    Assert.That(Descriptor.CanAccept(ArchiveInputInfo.InMemory(name, [1]), out var reason), Is.True);
+    Assert.That(reason, Is.Null);
+  }
+
+  [TestCase("PROBE.BIN")]
+  [TestCase("descriptors/hash.bin")]
+  [TestCase("00_hash.bin")]
+  [TestCase("FULL.img")]
+  public void GivenANameThatIsNoVbmetaMember_WhenOffered_ThenItIsDeclinedWithTheMemberList(string name) {
+    Assert.That(Descriptor.CanAccept(ArchiveInputInfo.InMemory(name, [1]), out var reason), Is.False);
+    Assert.That(reason, Does.Contain("descriptors/NN_*.bin"));
+    Assert.That(() => Create([(name, new byte[] { 1 })]), Throws.ArgumentException, "Create refuses what CanAccept declines");
+  }
+
+  [TestCase("public_key.bin")]
+  [TestCase("signature.bin")]
+  public void GivenAKeyOrSignature_WhenOffered_ThenItIsDeclinedBecauseSigningNeedsThePrivateKey(string name) {
+    Assert.That(Descriptor.CanAccept(ArchiveInputInfo.InMemory(name, [1]), out var reason), Is.False);
+    Assert.That(reason, Does.Contain("private key"));
+  }
+
   // ── avbtool oracle ───────────────────────────────────────────────────
 
   private static readonly Lazy<string[]?> Avbtool = new(() => {
