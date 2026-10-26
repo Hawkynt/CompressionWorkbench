@@ -33178,43 +33178,11 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.Zpaq`
 
-[`Component`](#component) · [`ComponentType`](#componenttype) · [`ZpaqBuildingBlock`](#zpaqbuildingblock) · [`ZpaqConstants`](#zpaqconstants) · [`ZpaqEntry`](#zpaqentry) · [`ZpaqFormatDescriptor`](#zpaqformatdescriptor) · [`ZpaqRangeCoder`](#zpaqrangecoder) · [`ZpaqRangeDecoder`](#zpaqrangedecoder) · [`ZpaqRangeEncoder`](#zpaqrangeencoder) · [`ZpaqReader`](#zpaqreader) · [`ZpaqWriter`](#zpaqwriter) · [`ZpaqlVm`](#zpaqlvm)
-
-#### `Component`
-
-Represents a single prediction component in the ZPAQL context-mixing model.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Component` | `Component()` |  |
-| `Aux` | `int Aux { get; set; }` | Auxiliary state (match length, mixer weights, etc.). |
-| `Context` | `int Context { get; set; }` | Current hashed context value. |
-| `Memory` | `int[] Memory { get; set; }` | Component memory (CM counters, ICM byte histories, etc.). |
-| `Param1` | `int Param1 { get; set; }` | First parameter (meaning depends on type, e.g. log2 of table size). |
-| `Param2` | `int Param2 { get; set; }` | Second parameter (meaning depends on type). |
-| `Param3` | `int Param3 { get; set; }` | Third parameter (meaning depends on type). |
-| `Prediction` | `int Prediction { get; set; }` | Current prediction (0..65535, probability of next bit being 1). |
-| `Type` | `ComponentType Type { get; set; }` | The component type. |
-
-#### `ComponentType`
-
-Component type identifiers for the ZPAQL context-mixing prediction model.
-
-| Value | Numeric | Summary |
-| --- | --- | --- |
-| `Const` | `0` | Constant prediction (always predicts 50/50). |
-| `Cm` | `1` | Context model — 2^n counters indexed by hashed context. |
-| `Icm` | `2` | Indirect context model — byte history maps to a counter. |
-| `Match` | `3` | Match model — predicts by finding a previous matching context. |
-| `Avg` | `4` | Average of two component predictions. |
-| `Mix2` | `5` | Two-input adaptive mixer. |
-| `Mix` | `6` | N-input adaptive mixer. |
-| `Isse` | `7` | Indirect secondary symbol estimation. |
-| `Sse` | `8` | Direct secondary symbol estimation. |
+[`ZpaqBuildingBlock`](#zpaqbuildingblock) · [`ZpaqEntry`](#zpaqentry) · [`ZpaqFormatDescriptor`](#zpaqformatdescriptor) · [`ZpaqReader`](#zpaqreader) · [`ZpaqWriter`](#zpaqwriter)
 
 #### `ZpaqBuildingBlock`
 
-Exposes the ZPAQ context-mixing codec — the compression stage that the ZPAQ journaling archiver wraps — as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support.
+ZPAQ compression as a building block: the input coded as a plain ZPAQ stream (locator tag, blocks of one segment, SHA-1 trailers) with zpaq's method 4 — an order-0 ICM, an ISSE chain up to order 6, a match model and a mixer, all described in the block's own ZPAQL header.
 
 Implements `IBuildingBlock`.
 
@@ -33228,39 +33196,23 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-#### `ZpaqConstants`
-
-Constants for the ZPAQ archive format (level 1 journaling).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `BlockTypeCompressed` | `const byte BlockTypeCompressed` | Block type byte: compressed data block (contains ZPAQL program + compressed payload). |
-| `BlockTypeData` | `const byte BlockTypeData` | Block type byte: data block in a journaling transaction. Each data block holds the (ZPAQL-compressed) payload for one or more files. |
-| `BlockTypeHeader` | `const byte BlockTypeHeader` | Block type byte: comment/filename header block in a journaling transaction. In a level-1 journaling archive this block carries the transaction date, filenames and per-file attributes for one transaction. |
-| `BlockTypeIndex` | `const byte BlockTypeIndex` | Block type byte: hash/index block that closes a journaling transaction. Contains SHA-1 hashes of the uncompressed file data. |
-| `FileTimeSize` | `const int FileTimeSize` | Size of the Windows FILETIME timestamp stored in journaling header blocks (8 bytes). |
-| `Level1` | `const byte Level1` | Compression level byte for ZPAQ level 1 archives. |
-| `Level2` | `const byte Level2` | Compression level byte for ZPAQ level 2 archives. |
-| `MinBlockHeaderSize` | `const int MinBlockHeaderSize` | Minimum number of bytes in a valid block header (3-byte prefix + 1 level byte + 1 type byte = 5 bytes). |
-| `WindowsToUnixEpochTicks` | `const long WindowsToUnixEpochTicks` | Windows FILETIME ticks (100-nanosecond intervals) from the Windows epoch (1601-01-01) to the Unix epoch (1970-01-01), used when converting timestamps. |
-| `BlockPrefix` | `static ReadOnlySpan<byte> BlockPrefix { get; }` | The 3-byte block locator prefix present at the start of every ZPAQ block ("zPQ"). |
-
 #### `ZpaqEntry`
 
-Represents a single file entry recorded in a ZPAQ journaling archive.
+A file or directory as recorded in a ZPAQ archive.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompressedSize` | `long CompressedSize { get; }` | Gets the compressed size of the data block(s) that carry this file's data. This is the total byte count of the raw (still-compressed) data blocks associated with this entry. |
-| `FileName` | `string FileName { get; }` | Gets the filename as stored in the archive. Path separators are always forward slashes; directory entries end with '/'. |
-| `IsDirectory` | `bool IsDirectory { get; }` | Gets a value indicating whether this entry represents a directory. |
-| `LastModified` | `DateTime? LastModified { get; }` | Gets the last-modified timestamp decoded from the journal header, or `null` when the timestamp could not be recovered. |
-| `Size` | `long Size { get; }` | Gets the uncompressed size of the file in bytes as reported by the archive. This value is zero for directory entries and for files whose size could not be determined from the journal (e.g. when the header block is compressed). |
-| `Version` | `int Version { get; }` | Gets the zero-based transaction index in which this entry was recorded. Each append to a ZPAQ archive constitutes a new transaction; the most recent transaction with a given filename defines the file's current state. |
+| `Attributes` | `long Attributes { get; }` | Raw attribute bytes as stored (first byte 'w' = Windows attributes follow, 'u' = Unix mode follows), packed little-endian; 0 when none were stored. |
+| `CompressedSize` | `long CompressedSize { get; }` | Compressed size attributed to this entry: the share of the data blocks it references, proportional to its new (non-deduplicated) fragments. Zero for directories. |
+| `FileName` | `string FileName { get; }` | Path as stored, with forward slashes; directories end with '/'. |
+| `IsDirectory` | `bool IsDirectory { get; }` | Whether this entry is a directory. |
+| `LastModified` | `DateTime? LastModified { get; }` | Last-modified time (UTC) from the archive's decimal date, or `null`. |
+| `Size` | `long Size { get; }` | Uncompressed size in bytes, or -1 when the archive does not record it (streaming format). |
+| `Version` | `int Version { get; }` | 1-based version (transaction) that last wrote this entry. |
 
 #### `ZpaqFormatDescriptor`
 
-ZPAQ journaling archive with content-defined deduplication and configurable context-mixing compression. References: `http://mattmahoney.net/dc/zpaq.html` — official ZPAQ page and Level 2 format specification (Matt Mahoney)`https://github.com/zpaq/zpaq` — reference implementation`https://en.wikipedia.org/wiki/ZPAQ` — Wikipedia overview
+ZPAQ archive (journaling and streaming layouts) with deduplication and ZPAQL-described context-mixing compression. References: `https://mattmahoney.net/dc/zpaq206.pdf` — ZPAQ Level 2 specification (Matt Mahoney)`https://mattmahoney.net/dc/zpaq.html` — zpaq / libzpaq reference implementation (public domain)
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
@@ -33268,109 +33220,56 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | --- | --- | --- |
 | `ZpaqFormatDescriptor` | `ZpaqFormatDescriptor()` |  |
 | `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the ZPAQ archive in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the ZPAQ archive per the requested mode. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-
-#### `ZpaqRangeCoder`
-
-Shared constants and the safety argument of the ZPAQ binary range coder.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `CarryEdge` | `const uint CarryEdge` | Value at or above which the top byte of `low` may still be bumped by a carry. |
-| `FlushBytes` | `const int FlushBytes` | Number of `low` bytes the encoder pushes out when the message ends. |
-| `MaximumProbability` | `const int MaximumProbability` | Largest probability of a 1 bit the coder accepts. |
-| `MinimumProbability` | `const int MinimumProbability` | Smallest probability of a 1 bit the coder accepts. |
-| `ProbabilityBits` | `const int ProbabilityBits` | Number of fractional bits in a probability, so probabilities span 0..2^16. |
-| `RangeMinimum` | `const uint RangeMinimum` | Lower bound of the normalised range; the coder renormalises below this. |
-| `Split` | `static uint Split(uint range, int probabilityOfOne)` | Computes the split point between the 1 subrange and the 0 subrange. |
-
-#### `ZpaqRangeDecoder`
-
-Carry-propagating binary range decoder, the exact mirror of `ZpaqRangeEncoder`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `ZpaqRangeDecoder` | `ZpaqRangeDecoder(byte[] input, int offset)` | Creates a decoder reading from the given buffer, priming its code word from the first `FlushBytes` bytes. |
-| `Range` | `uint Range { get; }` | Gets the current range, for tests that assert the coder invariant. |
-| `DecodeBit` | `int DecodeBit(int probabilityOfOne)` | Decodes one bit against the given probability. |
-
-#### `ZpaqRangeEncoder`
-
-Carry-propagating binary range encoder. See `ZpaqRangeCoder` for the invariant that keeps both subranges non-empty.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `ZpaqRangeEncoder` | `ZpaqRangeEncoder(Stream output)` | Creates an encoder writing its bytes to the given stream. |
-| `Range` | `uint Range { get; }` | Gets the current range, for tests that assert the coder invariant. |
-| `EncodeBit` | `void EncodeBit(int bit, int probabilityOfOne)` | Codes one bit against the given probability. |
-| `Flush` | `void Flush()` | Pushes out the remaining bytes of `low`, ending the coded stream. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `ZpaqReader`
 
-Reads the journaling index of a ZPAQ archive, exposing the files recorded across all transactions.
+Reads ZPAQ archives in both layouts the format defines: the journaling layout of `zpaq` 6.x/7.x (versioned transactions of `c`/`d`/`h`/`i` blocks with deduplicated, SHA-1 checked fragments) and the plain streaming layout (one file per block or segment run).
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ZpaqReader` | `ZpaqReader(Stream stream, bool leaveOpen = false)` | Opens a ZPAQ archive stream and scans its journal. |
-| `Entries` | `IReadOnlyList<ZpaqEntry> Entries { get; }` | Gets the entries discovered by scanning the archive journal. The list reflects the last recorded state of each file across all transactions (i.e. later transactions that mention the same filename supersede earlier ones in the final view). |
+| `ZpaqReader` | `ZpaqReader(Stream stream, bool leaveOpen = false)` | Opens a ZPAQ archive and reads its index. |
+| `Entries` | `IReadOnlyList<ZpaqEntry> Entries { get; }` | Files and directories present in the latest version, ordered by name. |
+| `Errors` | `int Errors { get; }` | Number of blocks that failed to decode and were skipped while reading the index. |
+| `VersionCount` | `int VersionCount { get; }` | Number of versions (transactions) in the archive. |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `Stream Extract(ZpaqEntry entry)` | Returns the entry's uncompressed bytes as a stream when the data block was STORED (the layout this toolkit's `ZpaqWriter` emits). |
+| `ExtractBytes` | `byte[] ExtractBytes(ZpaqEntry entry)` | Decodes the entry's content, verifying every fragment's (or segment's) SHA-1. |
+| `Extract` | `Stream Extract(ZpaqEntry entry)` | Returns the entry's content as a read-only stream. |
+| `GetEntries` | `IReadOnlyList<ZpaqEntry> GetEntries(int version)` | The archive contents as of version `version` (1-based). |
+| `GetVersionDate` | `DateTime? GetVersionDate(int version)` | UTC date of version `version` (1-based), or `null` for a streaming archive. |
 
 #### `ZpaqWriter`
 
-Writes a ZPAQ level-1 journaling archive.
+Writes a ZPAQ journaling archive holding one version (transaction): the `c` header, the deduplicated and compressed `d` data blocks, their `h` fragment tables and the `i` index, exactly as `zpaq add` lays them out.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ZpaqWriter` | `ZpaqWriter(Stream stream, bool leaveOpen = false)` | Initializes a new ZPAQ writer that writes to the specified stream. |
-| `AddDirectory` | `void AddDirectory(string dirName, DateTime? lastModified = null)` | Adds a directory entry to the archive. |
-| `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? lastModified = null)` | Adds a file entry to the archive with the given name and data. |
+| `ZpaqWriter` | `ZpaqWriter(Stream stream, bool leaveOpen = false, string method = "1")` | Creates a writer that emits the archive to `stream` on dispose. |
+| `Method` | `string Method { get; }` | The zpaq compression method used for the data blocks. |
+| `TransactionDate` | `DateTime? TransactionDate { get; set; }` | Date of the transaction; defaults to the time of disposal. |
+| `AddDirectory` | `void AddDirectory(string dirName, DateTime? lastModified = null)` | Adds a directory entry. |
+| `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? lastModified = null)` | Adds (or replaces) a file. |
 | `Dispose` | `void Dispose()` |  |
-
-#### `ZpaqlVm`
-
-ZPAQL virtual machine for ZPAQ compression and decompression.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `ZpaqlVm` | `ZpaqlVm(ReadOnlySpan<byte> program)` | Parses a ZPAQL program header from a binary span and constructs the VM. |
-| `ZpaqlVm` | `ZpaqlVm(byte[] hcomp, byte[] pcomp, int hh, int hm, Component[] components = null)` | Creates a ZPAQL VM with the specified program and component configuration. |
-| `A` | `uint A { get; set; }` | Gets or sets register A (32-bit accumulator). |
-| `B` | `uint B { get; set; }` | Gets or sets register B (32-bit, also indexes M[]). |
-| `C` | `uint C { get; set; }` | Gets or sets register C (32-bit, also indexes M[]). |
-| `Components` | `Component[] Components { get; }` | Gets the context-mixing components. |
-| `D` | `uint D { get; set; }` | Gets or sets register D (32-bit, also indexes M[]). |
-| `F` | `bool F { get; set; }` | Gets or sets the flag register (1-bit). |
-| `H` | `uint[] H { get; }` | Gets the H[] context array. H values are set by the HCOMP program and used as context indices for the prediction components. |
-| `M` | `byte[] M { get; }` | Gets the M[] byte array used by the HCOMP/PCOMP programs. |
-| `OutputByte` | `Action<byte> OutputByte { get; set; }` | Event invoked when the PCOMP program executes an OUT instruction. |
-| `Predict` | `int Predict()` | Computes a combined prediction from all components. |
-| `Reset` | `void Reset()` | Resets the VM state (registers, arrays, components) without changing the program or component configuration. |
-| `RunHcomp` | `void RunHcomp(int input)` | Executes the HCOMP program with the given input byte. This should be called after each decoded byte to update the context hashes in H[]. |
-| `RunPcomp` | `void RunPcomp(int input)` | Executes the PCOMP (post-processing) program with the given input byte. |
-| `Squash` | `static int Squash(int x)` | Squash function: maps a logistic value (-2048..2047) to a probability (0..65535). squash(x) = 65536 / (1 + exp(-x / 64)). |
-| `Stretch` | `static int Stretch(int p)` | Stretch function: inverse of squash, maps probability (1..65534) to logistic. |
-| `Update` | `void Update(int bit)` | Updates all components after a decoded bit. |
 
 ### Namespace `FileFormat.ZxSnapshot`
 
