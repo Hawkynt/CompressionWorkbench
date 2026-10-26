@@ -14,8 +14,7 @@ namespace FileFormat.Aomei;
 /// <see cref="BrFileHead.Size"/> field, not a path separator).
 ///
 /// <para>
-/// Implementation ported from the reverse-engineered format spec at
-/// <c>docs/AOMEI_FORMAT_SPEC.md</c>: full <c>BIFH</c>/<c>BIFT</c> structs
+/// Implementation of the reverse-engineered container layout: full <c>BIFH</c>/<c>BIFT</c> structs
 /// with <c>BRCrc32</c> verification, the recovered
 /// <c>BR_STANDARD_HEADER</c> tagged-record framing, and typed views of the
 /// four confirmed INFO records (COMPRESS / ENCRYPT / PASSWORD /
@@ -55,7 +54,7 @@ namespace FileFormat.Aomei;
 /// round-trips through our own reader. <i>It is not byte-compatible with
 /// the AOMEI Backupper application</i>: the head/tail body fields (0x650 /
 /// 0x668 bytes after the standard header) are zero-filled because their
-/// layout is TODO in the recovered spec. Containers produced here advertise
+/// layout is still unknown. Containers produced here advertise
 /// compression / encryption / backup-type via standard INFO records, and
 /// wrap user inputs in a vendor-namespace
 /// <see cref="AomeiWriter.UserDataTypeTag"/> envelope so the project's own
@@ -65,10 +64,9 @@ namespace FileFormat.Aomei;
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://www.aomeitech.com</c> — vendor — the .adi/.afi container is proprietary and unpublished</description></item>
-///   <item><description><c>docs/AOMEI_FORMAT_SPEC.md</c> (this repository) — reverse-engineered BIFH/BIFT + BR_STANDARD_HEADER on-disk spec</description></item>
 /// </list>
 /// <para>AOMEI never published a specification. What is known of the on-disk layout was recovered
-/// by decompiling the shipped binaries, and is written down in <c>docs/AOMEI_FORMAT_SPEC.md</c>.</para>
+/// by decompiling the shipped binaries.</para>
 /// </summary>
 public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
