@@ -122,6 +122,10 @@
     <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">
       <LogicalName>VdfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- MHTML saved by Chromium and built by Python's email package; see Mht/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Mht\ReferenceVectors\*.mht;Mht\ReferenceVectors\*.mhtml;Mht\ReferenceVectors\*.txt">
+      <LogicalName>MhtVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>

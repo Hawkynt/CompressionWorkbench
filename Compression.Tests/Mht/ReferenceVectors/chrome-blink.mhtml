@@ -1,0 +1,54 @@
+From: <Saved by Blink>
+Snapshot-Content-Location: http://127.0.0.1:8731/index.html
+Subject: MHT fixture
+Date: Mon, 26 Oct 2026 08:58:48 GMT
+MIME-Version: 1.0
+Content-Type: multipart/related;
+	type="text/html";
+	boundary="----MultipartBoundary--S6VqlcxxCgiROgSyWbfg9V25iGOE59xFOBFZmH6ZgP----"
+
+
+------MultipartBoundary--S6VqlcxxCgiROgSyWbfg9V25iGOE59xFOBFZmH6ZgP----
+Content-Type: text/html
+Content-ID: <frame-D1721D1E1CB7CB2B001DB2F14FE802D7@mhtml.blink>
+Content-Transfer-Encoding: quoted-printable
+Content-Location: http://127.0.0.1:8731/index.html
+
+<!DOCTYPE html><html><head><meta http-equiv=3D"Content-Type" content=3D"tex=
+t/html; charset=3DUTF-8"><title>MHT fixture</title><link rel=3D"stylesheet"=
+ href=3D"http://127.0.0.1:8731/style.css"></head>
+<body><h1>Hello MHTML</h1><p>Gr=C3=BC=C3=9Fe =E2=80=93 =C3=BCn=C3=AFc=C3=B6=
+d=C3=A9 text.</p><img src=3D"http://127.0.0.1:8731/img/dot.png" alt=3D"dot"=
+>
+<iframe src=3D"cid:frame-132427B4FCE9736482480EBAB95F1362@mhtml.blink"></if=
+rame>
+</body></html>
+------MultipartBoundary--S6VqlcxxCgiROgSyWbfg9V25iGOE59xFOBFZmH6ZgP----
+Content-Type: image/png
+Content-Transfer-Encoding: base64
+Content-Location: http://127.0.0.1:8731/img/dot.png
+
+iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR4nGP4z8AARwzEcQCukw/x
+0F8jngAAAABJRU5ErkJggg==
+
+------MultipartBoundary--S6VqlcxxCgiROgSyWbfg9V25iGOE59xFOBFZmH6ZgP----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: http://127.0.0.1:8731/style.css
+
+@charset "utf-8";
+
+body { font-family: sans-serif; color: rgb(18, 52, 86); }
+
+h1 { background: url("img/dot.png"); }
+------MultipartBoundary--S6VqlcxxCgiROgSyWbfg9V25iGOE59xFOBFZmH6ZgP----
+Content-Type: text/html
+Content-ID: <frame-132427B4FCE9736482480EBAB95F1362@mhtml.blink>
+Content-Transfer-Encoding: quoted-printable
+Content-Location: http://127.0.0.1:8731/frame.html
+
+<!DOCTYPE html><html><head><meta http-equiv=3D"Content-Type" content=3D"tex=
+t/html; charset=3DUTF-8"><title>frame</title></head><body><p>inner frame</p=
+>
+</body></html>
+------MultipartBoundary--S6VqlcxxCgiROgSyWbfg9V25iGOE59xFOBFZmH6ZgP------
