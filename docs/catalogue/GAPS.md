@@ -180,9 +180,9 @@ running real-world samples. The file named at the end of each row is where the l
 | ZPAQ | `Zpaq` | 3 | reads only the stored blocks our own writer emits; ZPAQL-compressed blocks (every real zpaq level) throw (ZpaqReader.cs) |
 | Btrfs | `Btrfs` | 2 | zlib/lzo/zstd compressed extents are skipped (BtrfsReader.cs) |
 | Compact Pro | `CompactPro` | 2 | stored and RLE only; LZ+RLE and LZ+Huffman unsupported (CompactProReader.cs) |
-| DiskDoubler | `DiskDoubler` | 2 | stored only; compressed members are returned as raw compressed bytes without an error (DiskDoublerReader.cs) |
+| DiskDoubler | `DiskDoubler` | 2 | single files only (no DDAR/DDA2 archives); methods 0, 1, 6, 9 decoded and checked against unar on real files; 2-5, 7, 8, 10 and delta refused (DiskDoublerReader.cs) |
 | EnCase / Expert Witness (E01) | `Ewf` | 2 | single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs) |
-| PackIt | `PackIt` | 2 | PMag (stored) only; PMa4 Huffman members are returned raw (PackItReader.cs) |
+| PackIt | `PackIt` | 2 | encrypted PMa5/PMa6 entries refused; stored and Huffman entries verified on real archives against unar (PackItReader.cs) |
 | UHARC | `Uharc` | 2 | stored and LZP only (UharcReader.cs) |
 | VHDX | `Vhdx` | 2 | differencing / partially-present blocks read as zeros (VhdxStream.cs) |
 | Comic Book Archive | `Cbz`, `Cbr`, `Cb7` | 1 | .cbt (tar) and .cba (ACE) have no descriptor |
