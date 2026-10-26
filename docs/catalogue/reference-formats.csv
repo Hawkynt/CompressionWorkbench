@@ -1,5 +1,5 @@
 name,aliases_extensions,kind,src_7zip,src_libarchive,src_xad,src_binwalk,src_uniextract,src_pronom,src_wikipedia,source_count,reference_url,ours,ours_read,ours_create,ours_modify,gap,native_writer,notes
-ZIP,zip;zipx;z01;sfx-zip;apk;docx;ear;epub;exe;imz;jar;odt;pptx;war;wz;xlsx;xpi,archive,RW,RW,R,D,R,x-fmt/263,RW,7,https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT,Zip,Y,Y,Y,PARTIAL,,"methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs)"
+ZIP,zip;zipx;z01;sfx-zip;apk;docx;ear;epub;exe;imz;jar;odt;pptx;war;wz;xlsx;xpi,archive,RW,RW,R,D,R,x-fmt/263,RW,7,https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT,Zip,Y,Y,Y,PARTIAL,,"methods JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs)"
 Java Archive (JAR),jar,archive,,,,,,x-fmt/412,Y,2,https://docs.oracle.com/en/java/javase/21/docs/specs/jar/jar.html,Jar,Y,Y,Y,OK,,
 Web Application Archive (WAR),war,archive,,,,,,,Y,1,https://jakarta.ee/specifications/servlet/,War,Y,Y,Y,OK,,
 Enterprise Archive (EAR),ear,archive,,,,,,,Y,1,https://jakarta.ee/specifications/platform/,Ear,Y,Y,Y,OK,,
@@ -24,7 +24,7 @@ Shell archive (shar),shar;run;sh,archive,,W,,,,fmt/329,Y,3,https://www.gnu.org/s
 mtree manifest,mtree;spec,archive,,RW,,,,,,1,https://man.freebsd.org/mtree/5,Mtree,Y,Y,,OK,,
 WARC (Web ARChive),warc,archive,,RW,R,,R,fmt/1281;fmt/1355;fmt/289,,4,https://iipc.github.io/warc-specifications/,Warc,Y,Y,,OK,,
 Internet Archive ARC (crawl),arc,archive,,,,,,fmt/410;x-fmt/219,,1,https://archive.org/web/researcher/ArcFileFormat.php,,,,,MISSING,,
-XAR (eXtensible ARchive),xar;pkg;xip;mpkg,archive,R,RW,R,,,fmt/600,Y,5,https://github.com/mackyle/xar/wiki/xarformat,Xar,Y,Y,Y,PARTIAL,,bzip2 throws; lzma/xz members are returned raw (XarReader.cs)
+XAR (eXtensible ARchive),xar;pkg;xip;mpkg,archive,R,RW,R,,,fmt/600,Y,5,https://github.com/mackyle/xar/wiki/xarformat,Xar,Y,Y,Y,OK,,"every xar encoding (none, gzip/zlib, bzip2, lzma, xz) decoded and checked against the TOC checksum; verified on bsdtar-written archives"
 Xar Image Format (PRONOM fmt/922),xar,archive,,,,,,fmt/922,,1,,,,,,MISSING,,PRONOM lists this separately from eXtensible ARchive
 Microsoft Cabinet (CAB),cab;exe;mscf,archive,R,R,R,R,,x-fmt/414,RW,6,https://learn.microsoft.com/previous-versions/bb417343(v=msdn.10),Cab,Y,Y,Y,OK,,
 CAB self-extractor (IExpress / MSCF SFX),exe,installer,,,,,R,,,1,,,,,,MISSING,,
