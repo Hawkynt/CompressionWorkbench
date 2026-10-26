@@ -8,7 +8,7 @@ namespace Compression.Tests.Aomei;
 
 /// <summary>
 /// R/W tests for the AOMEI BIFH/BIFT outer container, exercising the
-/// implementation that ports docs/AOMEI_FORMAT_SPEC.md to working code:
+/// implementation of the recovered outer-container layout:
 /// BR_STANDARD_HEADER + BRCrc32 (zlib CRC-32) + INFO records + writer
 /// round-trip.
 /// </summary>
