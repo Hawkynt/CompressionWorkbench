@@ -5,12 +5,11 @@ namespace FileFormat.Aomei;
 
 /// <summary>
 /// <c>BR_IMAGE_FILE_TAIL</c> — the 0x674-byte struct at offset
-/// <c>file_size - 0x674</c>. Layout per <c>docs/AOMEI_FORMAT_SPEC.md</c> §2.2,
-/// sourced from <c>ammntdrv.sys!FUN_0001601c</c>.
+/// <c>file_size - 0x674</c>. Layout sourced from <c>ammntdrv.sys!FUN_0001601c</c>.
 ///
 /// <para>
 /// Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the
-/// remaining 0x668 bytes are <b>TODO</b> per spec §10.1 (likely index offset,
+/// remaining 0x668 bytes are <b>TODO</b> (likely index offset,
 /// total payload size and back-pointer to head). The reader exposes the raw
 /// body bytes via <see cref="BodyRaw"/>; the writer fills it with zeros and
 /// seals the CRC.
