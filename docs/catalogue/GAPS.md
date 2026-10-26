@@ -160,7 +160,7 @@ running real-world samples. The file named at the end of each row is where the l
 | Format | Ours | Sources | What is missing |
 | --- | --- | :---: | --- |
 | 7z | `SevenZip` | 7 | Deflate64, ARM64, RISC-V, Zstd/Brotli/LZ4 coders and external header references unsupported (SevenZipReader.cs) |
-| ISO 9660 (Joliet / Rock Ridge / El Torito) | `Iso` | 7 | Rock Ridge limited to NM names (no SL/PX/TF/CE, no zisofs); interleaved files throw (IsoReader.cs) |
+| ISO 9660 (Joliet / Rock Ridge / El Torito) | `Iso` | 7 | Rock Ridge PX modes and TF times are not surfaced; interleaved files throw (IsoReader.cs) |
 | ZIP | `Zip` | 7 | methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs) |
 | LHA / LZH | `Lzh` | 6 | lh2/lh3 are decoded with the lh5 decoder (approximation) (LhaReader.cs) |
 | XAR (eXtensible ARchive) | `Xar` | 5 | bzip2 throws; lzma/xz members are returned raw (XarReader.cs) |
