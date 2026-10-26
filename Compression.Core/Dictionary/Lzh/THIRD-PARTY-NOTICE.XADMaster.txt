@@ -1,0 +1,37 @@
+XADMaster (LHA -lh2- / -lh3-) - converted to C#
+
+Source:   https://github.com/MacPaw/XADMaster (The Unarchiver's unarchiving engine)
+Revision: 7cb9ee0abbb163f261e4cb74501e15067032319c (master, 2026-09-21)
+Authors:  Dag Ågren (original author); MacPaw Way Ltd. (2017-present);
+          parts descend from libxad (Dirk Stöcker and contributors)
+Licence:  GNU Lesser General Public License, version 2.1 or (at your option)
+          any later version. This repository is LGPL-3.0-or-later, which the
+          "or any later version" grant permits; the full LGPL text is in the
+          repository's LICENSE file.
+
+Upstream notice, as carried in each XADMaster source file:
+
+  Copyright (c) 2017-present, MacPaw Way Ltd. All rights reserved.
+
+  This library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.
+
+Files converted:
+
+  XADLZHOldHandles.m (LZHUFF2/LZHUFF3 paths) -> Lh2Decoder.cs, Lh3Decoder.cs,
+                                                LhaLegacyBitReader.cs
+
+The decoders are conversions: the adaptive two-tree bookkeeping of -lh2- and
+the per-block static trees with the "ready made" position table of -lh3- are
+carried across, with the tables copied exactly. One deliberate difference:
+XADMaster sizes the -lh3- position alphabet as 1 << (16 - 6); the ready-made
+table only satisfies Kraft's equality with 128 symbols (8 KiB / 64), so 128 is
+used. Checked against lh2.lzh and lh3.lzh from the lhasa test suite (written
+by UNLHA32.DLL 2.67a), whose CRC-16s the output matches.

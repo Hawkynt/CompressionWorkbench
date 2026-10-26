@@ -138,6 +138,10 @@
     <EmbeddedResource Include="Xar\ReferenceVectors\*.xar">
       <LogicalName>XarVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- -lh2- / -lh3- archives UNLHA32.DLL wrote, from lhasa's test suite; see Lzh/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Lzh\ReferenceVectors\*.lzh">
+      <LogicalName>LzhVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>
