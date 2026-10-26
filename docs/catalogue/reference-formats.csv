@@ -5,7 +5,7 @@ Web Application Archive (WAR),war,archive,,,,,,,Y,1,https://jakarta.ee/specifica
 Enterprise Archive (EAR),ear,archive,,,,,,,Y,1,https://jakarta.ee/specifications/platform/,Ear,Y,Y,Y,OK,,
 Android Package (APK),apk,package,,,,,,fmt/2041,Y,2,https://developer.android.com/guide/components/fundamentals,Apk,Y,Y,Y,OK,,
 Android App Bundle,aab;apks,package,,,,,,fmt/2042,,1,https://developer.android.com/guide/app-bundle/app-bundle-format,AndroidBundle,Y,Y,Y,OK,,
-Android Archive (AAR library),aar,package,,,,,,fmt/2043,,1,https://developer.android.com/studio/projects/android-library#aar-contents,,,,,MISSING,,
+Android Archive (AAR library),aar,package,,,,,,fmt/2043,,1,https://developer.android.com/studio/projects/android-library#aar-contents,Aar,Y,Y,Y,OK,,
 Comic Book Archive,cbz;cbr;cb7;cbt;cba,archive,,,,,,fmt/1462,,1,https://en.wikipedia.org/wiki/Comic_book_archive,Cbz;Cbr;Cb7,Y,Y,Y,PARTIAL,,.cbt (tar) and .cba (ACE) have no descriptor
 Chrome extension (CRX),crx,package,,,,,,,Y,1,https://en.wikipedia.org/wiki/Google_Chrome#Extensions,Crx,Y,Y,,OK,,
 MSIX / APPX,msix;appx;msixbundle;appxbundle;emsix;emsixbundle,package,,,,,,,Y,1,https://learn.microsoft.com/windows/msix/overview,Appx;Msix,Y,Y,Y,OK,,
@@ -363,7 +363,7 @@ Qt message catalog (QM),qm,document,,,,,R,,,1,,,,,,MISSING,,
 SQLite database,sqlite;sqlite3;db,document,,,,,R,,,1,,Sqlite,Y,,,READ-ONLY-BUT-SOURCES-WRITE,sqlite3,
 Windows thumbnail cache,db;thumbs.db,document,,,,,R,,,1,,ThumbsDb,Y,Y,Y,PARTIAL,,Thumbs.db only; thumbcache_*.db has no descriptor
 Safari webarchive,webarchive,document,,,,,,fmt/866,,1,,,,,,MISSING,,
-Compressed MusicXML (MXL),mxl,document,,,,,,fmt/2005;fmt/897,,1,,,,,,MISSING,,
+Compressed MusicXML (MXL),mxl,document,,,,,,fmt/2005;fmt/897,,1,https://www.w3.org/2021/06/musicxml40/tutorial/compressed-mxl-files/,Mxl,Y,Y,Y,OK,,
 OneNote package (ONEPKG),onepkg,document,,,,,,fmt/987,,1,,,,,,MISSING,,
 NScripter archive (NSA/NS2),nsa;ns2,game,,,R,,R,,,2,,Nsa,Y,Y,Y,OK,,
 NScripter SAR,sar,game,,,R,,R,,,2,,Sar,Y,Y,Y,OK,,

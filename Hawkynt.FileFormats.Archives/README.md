@@ -171,6 +171,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 
 | Format | Id | Extensions | State | Test | Maintenance | Notes | Reference |
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
+| [AAR (Android library)](https://developer.android.com/studio/projects/android-library#aar-contents) | `Aar` | `.aar` | R/W | ✅ | defrag · wipe |  | [developer.android.com](https://developer.android.com/studio/projects/android-library#aar-contents) |
 | [Android App Bundle / split APK](https://en.wikipedia.org/wiki/Android_App_Bundle) | `AndroidBundle` | `.aab` `.apks` | R/W | ✅ | defrag · wipe |  | [developer.android.com](https://developer.android.com/guide/app-bundle) |
 | Android OTA payload | `AndroidOta` |  | WORM | ✅ | — | Create emits a whole-image payload; it re-lists as payload blobs, not files | [source.android.com](https://source.android.com/docs/core/ota) |
 | [APK](https://en.wikipedia.org/wiki/Apk_(file_format)) | `Apk` | `.apk` | R/W | ✅ | defrag · wipe |  | [developer.android.com](https://developer.android.com/guide/components/fundamentals) |
@@ -218,6 +219,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [mbox (Unix mailbox)](https://en.wikipedia.org/wiki/Mbox) | `Mbox` | `.mbox` `.mbx` | R/W | ✅ | — | Entries are message_NN.eml | [RFC](https://www.rfc-editor.org/rfc/rfc4155) |
 | [MOBI / AZW](https://en.wikipedia.org/wiki/Mobipocket) | `Mobi` | `.mobi` `.prc` `.azw` `.azw3` | WORM | ✅ | — | Creates MOBI 7 books from one UTF-8 HTML document (stored or PalmDOC), accepted by KindleUnpack; reads stored and PalmDOC text with trailing entries; HUFF/CDIC and DRM text stay raw records | [wiki.mobileread.com](https://wiki.mobileread.com/wiki/MOBI) |
 | [MSG](https://en.wikipedia.org/wiki/MSG_(file_format)) | `Msg` | `.msg` | R/W | ✅ | wipe | CFB envelope; MAPI properties are not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxmsg/) |
+| [MXL (compressed MusicXML)](https://en.wikipedia.org/wiki/MusicXML) | `Mxl` | `.mxl` | R/W | ✅ | defrag · wipe |  | [w3.org](https://www.w3.org/2021/06/musicxml40/tutorial/compressed-mxl-files/) |
 | [ODP](https://en.wikipedia.org/wiki/OpenDocument) | `Odp` | `.odp` | R/W | ✅ | defrag · wipe |  | [libreoffice.org](https://www.libreoffice.org) |
 | [ODS](https://en.wikipedia.org/wiki/OpenDocument) | `Ods` | `.ods` | R/W | ✅ | defrag · wipe |  | [libreoffice.org](https://www.libreoffice.org) |
 | [ODT](https://en.wikipedia.org/wiki/OpenDocument) | `Odt` | `.odt` | R/W | ✅ | defrag · wipe |  | [libreoffice.org](https://www.libreoffice.org) |
