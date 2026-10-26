@@ -144,7 +144,6 @@ public class ConversionMatrixTests {
       { "G64", "[other] G64 GCR disk; exposed as track_NN.bin not original names" },
       { "GameMaker", "[other] GameMaker data.win; exposed as chunks/GEN8.bin not original names" },
       { "Ghost", "[other] Norton Ghost image; exposed as partitionN.bin not original names" },
-      { "InnoSetup", "[other] Inno Setup installer; re-lists as the single .exe stub, names lost" },
       { "Lfd", "[other] LucasArts LFD; entries renamed DATA.<stem> / RMAP.resource" },
       { "LhF", "[other] LhF Amiga disk; exposed as track_NNN.raw not original names" },
       { "Lnk", "[other] Windows .lnk; exposed as header.bin/linkinfo.bin not a file tree" },
