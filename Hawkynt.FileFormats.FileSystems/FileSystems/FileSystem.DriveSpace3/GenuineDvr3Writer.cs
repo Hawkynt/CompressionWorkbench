@@ -66,6 +66,8 @@ public sealed class GenuineDvr3Writer {
   /// smaller of compressed/stored is chosen per cluster (auto-best).</summary>
   public bool ForceCompress { get; init; }
 
+  private static byte[] Smaller(byte[] a, byte[] b) => b.Length < a.Length ? b : a;
+
   /// <summary>Adds a file to the root directory of the compressed volume.</summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
@@ -120,7 +122,10 @@ public sealed class GenuineDvr3Writer {
     var physCursor = physDataStart;
     var layout = new List<ClusterPlan>();
     foreach (var (cl, full) in clusterFull) {
-      var comp = CvfLzCodec.Encode(full, this.CompressionMethod, this.CompressionLevel);
+      // Auto covers every codec a DriveSpace 3 volume reads: DS/JM (the codec's Auto) and SQ.
+      var comp = this.CompressionMethod == CvfLzMethod.Auto
+        ? Smaller(CvfLzCodec.Encode(full, CvfLzMethod.Auto, this.CompressionLevel)!, CvfLzCodec.Encode(full, CvfLzMethod.Sq, this.CompressionLevel)!)
+        : CvfLzCodec.Encode(full, this.CompressionMethod, this.CompressionLevel);
       var ksize = comp is null ? Spc : (comp.Length + Ss - 1) / Ss;
       if (comp is not null && ksize <= Spc && (ksize < Spc || this.ForceCompress)) {
         layout.Add(new ClusterPlan(cl, comp, ksize, true, physCursor));

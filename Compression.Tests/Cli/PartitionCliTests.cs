@@ -267,4 +267,61 @@ public class PartitionCliTests {
       if (File.Exists(path)) File.Delete(path);
     }
   }
+
+  // ── Logical sector size ─────────────────────────────────────────────
+
+  private static string CreateEmptyGpt(int sectorSize, int sectors) {
+    var path = Path.Combine(Path.GetTempPath(), $"cwb-partcli-{Guid.NewGuid():N}.partcli-test");
+    using (var fs = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite)) {
+      fs.SetLength((long)sectorSize * sectors);
+      PartitionEditor.CreateEmpty(fs, PartitionScheme.Gpt, sectorSize);
+    }
+    return path;
+  }
+
+  [TestCase(512, 2048L)]
+  [TestCase(4096, 256L)]
+  [Category("HappyPath")]
+  public void Given_GptDisk_When_AddedBySectors_Then_LbasCountInTheDisksOwnSectorSize(int sectorSize, long startLba) {
+    var path = CreateEmptyGpt(sectorSize, 4096);
+    try {
+      var used = PartitionOperations.AddBySectors(path, startLba, 1024, PartitionType.Linux, "data");
+
+      var result = PartitionOperations.List(path);
+      Assert.That(used, Is.EqualTo(sectorSize));
+      Assert.That(result.SectorSize, Is.EqualTo(sectorSize));
+      Assert.That(result.Partitions.Single().StartOffset, Is.EqualTo(startLba * sectorSize));
+      Assert.That(result.Partitions.Single().Size, Is.EqualTo(1024L * sectorSize));
+    } finally {
+      if (File.Exists(path)) File.Delete(path);
+    }
+  }
+
+  [Test, Category("Boundary")]
+  public void Given_4KnGpt_When_AddedPastTheLastUsableSector_Then_RefusedAndTableUnchanged() {
+    var path = CreateEmptyGpt(4096, 1024);
+    try {
+      var before = File.ReadAllBytes(path);
+      // 1024 blocks: LastUsableLBA is 1024 - 4 entry blocks - 1 header - 1 = 1018.
+      Assert.That(() => PartitionOperations.AddBySectors(path, 256, 1018 - 256 + 2, PartitionType.Linux),
+        Throws.InvalidOperationException);
+      Assert.That(File.ReadAllBytes(path), Is.EqualTo(before));
+      Assert.That(() => PartitionOperations.AddBySectors(path, 256, 1018 - 256 + 1, PartitionType.Linux), Throws.Nothing);
+    } finally {
+      if (File.Exists(path)) File.Delete(path);
+    }
+  }
+
+  [TestCase(-1L, 8L)]
+  [TestCase(256L, 0L)]
+  [Category("ErrorPath")]
+  public void Given_NegativeStartOrEmptyLength_When_AddedBySectors_Then_Refused(long startLba, long length) {
+    var path = CreateEmptyGpt(4096, 1024);
+    try {
+      Assert.That(() => PartitionOperations.AddBySectors(path, startLba, length, PartitionType.Linux),
+        Throws.InstanceOf<ArgumentOutOfRangeException>());
+    } finally {
+      if (File.Exists(path)) File.Delete(path);
+    }
+  }
 }
