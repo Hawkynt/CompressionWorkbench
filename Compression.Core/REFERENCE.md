@@ -591,7 +591,7 @@ Which aPLib bit-stream dialect a decoder should expect.
 
 ### Namespace `Compression.Core.Dictionary.Arj`
 
-[`ArjBuildingBlock`](#arjbuildingblock) · [`ArjDecoder`](#arjdecoder) · [`ArjEncoder`](#arjencoder)
+[`ArjBuildingBlock`](#arjbuildingblock) · [`ArjDecoder`](#arjdecoder) · [`ArjEncoder`](#arjencoder) · [`ArjFastestDecoder`](#arjfastestdecoder)
 
 #### `ArjBuildingBlock`
 
@@ -626,6 +626,14 @@ Encodes data using ARJ compression (methods 1-3). Uses LZSS with Huffman-coded l
 | --- | --- | --- |
 | `ArjEncoder` | `ArjEncoder(int method = 1)` | Initializes a new `ArjEncoder`. |
 | `Encode` | `byte[] Encode(ReadOnlySpan<byte> data)` | Compresses data using ARJ encoding. |
+
+#### `ArjFastestDecoder`
+
+Decodes ARJ method 4 ("fastest"), the LZ77 variant ARJ uses when asked for speed over ratio.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize)` | Decodes `originalSize` bytes of method-4 data. |
 
 ### Namespace `Compression.Core.Dictionary.Balz`
 
@@ -9733,6 +9741,7 @@ ZIP compression methods.
 | `BZip2` | `12` | BZip2 compression. |
 | `Lzma` | `14` | LZMA compression. |
 | `Zstd` | `93` | Zstandard compression. |
+| `Xz` | `95` | XZ compression (a complete .xz stream, APPNOTE 4.4.5 method 95). |
 | `Ppmd` | `98` | PPMd version I, Rev 1 compression. |
 | `WinZipAes` | `99` | WinZip AES encryption (actual method stored in extra field). |
 

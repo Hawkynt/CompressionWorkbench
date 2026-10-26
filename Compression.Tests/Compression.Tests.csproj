@@ -122,9 +122,21 @@
     <EmbeddedResource Include="Codecs\G722\ReferenceVectors\*.pcm;Codecs\G722\ReferenceVectors\*.g722">
       <LogicalName>G722Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- VDF volumes from GothicVDFS, VDFSTool and ZenKit, with ZenKit's listings; see Vdfs/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">
+      <LogicalName>VdfsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- ZIP archives written by third-party archivers; see Zip/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
+      <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Archives the open-source ARJ port wrote with each method; see Arj/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Arj\ReferenceVectors\*.arj">
+      <LogicalName>ArjVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 
