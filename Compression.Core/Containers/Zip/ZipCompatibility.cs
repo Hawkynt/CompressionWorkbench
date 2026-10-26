@@ -106,6 +106,7 @@ public static class ZipCompatibility {
     ZipCompressionMethod.BZip2 => ZipConstants.VersionNeeded46,
     ZipCompressionMethod.Lzma or
     ZipCompressionMethod.Zstd or
+    ZipCompressionMethod.Xz or
     ZipCompressionMethod.Ppmd => ZipConstants.VersionNeeded63,
     ZipCompressionMethod.WinZipAes => ZipConstants.VersionNeeded51,
     _ => throw new NotSupportedException($"ZIP compression method {method} has no known compatibility profile."),

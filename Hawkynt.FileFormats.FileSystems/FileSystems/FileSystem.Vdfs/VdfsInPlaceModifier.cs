@@ -1,394 +1,219 @@
-#pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.Text;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.Vdfs;
 
 /// <summary>
-/// In-place VDFS modifier — true random-access editing without rebuilding the
-/// whole archive. Targets images produced by <see cref="VdfsWriter"/>: 16-byte
-/// magic, 20-byte header fields, 80-byte entries packed at <c>rootOffset</c>,
-/// contiguous stored-mode file data referenced by each entry's jump field.
-///
-/// <para>What it touches per <see cref="AddFile"/>:
-/// <list type="bullet">
-///   <item>Appends the new file's data bytes at end-of-stream.</item>
-///   <item>Relocates the entry table to a fresh region past all live data —
-///         existing data byte ranges keep their original absolute offsets so
-///         every surviving entry's jump field remains valid without rewriting.</item>
-///   <item>Patches the header's entry count, file count, total data size, and
-///         root/entries offset in-place.</item>
-/// </list>
-/// The previously-occupied entry-table bytes become orphaned slack and are
-/// reclaimable through a defrag pass.</para>
-///
-/// <para><see cref="RemoveFile"/> zeroes the entry's name (first byte = 0)
-/// which the reader already skips as "empty name", and optionally wipes the
-/// file's data bytes. The entry record itself is left in the table so existing
-/// neighbour entries keep their byte offsets unchanged.</para>
-///
-/// <para><see cref="ReplaceFile"/> rewrites the file's data at its current
-/// offset when the new payload fits and updates the entry's size in-place;
-/// otherwise it falls back to remove-plus-add so the new payload lives at a
-/// fresh tail offset and no other entries are disturbed.</para>
-///
-/// <para>Honest scope: this modifier handles VDFS <b>stored mode only</b>.
-/// The VDFS format spec leaves entry-type flags reserved for compressed
-/// variants but no production Gothic-engine image observed in REGoth/VdfsSharp
-/// corpora uses them — compression support is deferred until a real example
-/// surfaces.</para>
+/// Edits a VDF volume in place: surviving payloads keep their bytes and, wherever the
+/// catalog leaves them room, their offsets.
 /// </summary>
+/// <remarks>
+/// <para>Every edit rewrites the catalog at offset 296, where every reference tool puts it,
+/// laid out as <see cref="VdfsWriter" /> lays it out — a directory's entries contiguous and
+/// its last entry flagged, which a tombstoned record in the middle of a block would break.</para>
+///
+/// <para>When the catalog grows into the first payloads, those payloads move to the end of
+/// the volume and their entries follow them; nothing else moves. A new payload goes to the
+/// end. A removed payload is zeroed. A replacement that fits its old extent is written over
+/// it. In a zipped volume new payloads are ZippedStreams, except <c>.wav</c>/<c>.ogg</c>.</para>
+///
+/// <para>A volume whose catalog cannot be followed in full is refused rather than edited:
+/// rewriting it would drop whatever the damaged part still names.</para>
+/// </remarks>
 public static class VdfsInPlaceModifier {
-  private const int HeaderSize = 16;
-  private const int FieldsSize = 20;
-  private const int EntrySize = 80;
-  private const int DefaultEntriesStart = HeaderSize + FieldsSize; // 36
-  private const uint TypeFile = 0x02;
-
-  private const int OffsetEntryCount = 16;
-  private const int OffsetFileCount = 20;
-  private const int OffsetTotalDataSize = 28;
-  private const int OffsetRootOffset = 32;
-
-  private const int EntryNameSize = 64;
-  private const int EntryOffsetJump = 64;
-  private const int EntryOffsetSize = 68;
-  private const int EntryOffsetType = 72;
-  private const int EntryOffsetAttr = 76;
-
-  // ── Public API ────────────────────────────────────────────────────────────
 
   /// <summary>
-  /// Adds (or replaces) a file in a VDFS archive. The new data bytes are
-  /// appended at end-of-stream and a new entry-table region is written past
-  /// them; existing live file data keeps its original absolute byte offset so
-  /// every surviving entry's jump pointer remains valid.
+  /// Adds a file, replacing any file of the same path. Existing payloads keep their bytes.
   /// </summary>
+  /// <exception cref="InvalidDataException">The volume is not a VDF or its catalog is damaged.</exception>
   public static void AddFile(Stream archive, string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    if (!archive.CanSeek || !archive.CanRead || !archive.CanWrite)
-      throw new ArgumentException("Archive stream must be readable, writable, and seekable.", nameof(archive));
+    RequireEditable(archive);
 
-    // Replace semantics: drop any prior entry of the same name (entry stays
-    // in the table marked-empty so neighbour offsets don't shift).
-    RemoveFile(archive, name, wipeData: true);
-
-    var ctx = ReadContext(archive);
-
-    // Live extents = jump windows of surviving entries (those whose first
-    // name byte is non-zero and whose type marks them as a file).
-    var liveEntries = ctx.Entries.Where(e => e.IsLive).ToList();
-    var liveDataEnd = ComputeLiveDataEnd(ctx, liveEntries);
-
-    // Append the new file's data at the live-data tail.
-    var newDataOffset = liveDataEnd;
-    EnsureLength(archive, newDataOffset + data.Length);
-    archive.Position = newDataOffset;
-    archive.Write(data);
-    var afterNewData = newDataOffset + data.Length;
-
-    // Rebuild the entry-table body in memory: surviving entries (verbatim
-    // 80-byte records, jump pointers untouched) plus one fresh entry for the
-    // new file. The fresh entry's name is space-padded then null-terminated
-    // exactly the way VdfsWriter would have written it for a Build-time add.
-    var survivingRecords = liveEntries.Select(e => e.Record).ToList();
-    var newRecord = BuildEntryRecord(name, (uint)newDataOffset, (uint)data.Length);
-    survivingRecords.Add(newRecord);
-
-    // Place the new entry table at the very end of the file.
-    var newRootOffset = afterNewData;
-    var newTableSize = survivingRecords.Count * EntrySize;
-    EnsureLength(archive, newRootOffset + newTableSize);
-    archive.Position = newRootOffset;
-    foreach (var rec in survivingRecords)
-      archive.Write(rec);
-
-    // Patch the header to point at the relocated entry table.
-    PatchHeader(archive,
-      entryCount: (uint)survivingRecords.Count,
-      fileCount: (uint)survivingRecords.Count,
-      totalDataSize: SumFileSizes(survivingRecords),
-      rootOffset: (uint)newRootOffset);
+    var volume = Volume.Load(archive);
+    volume.RemoveAndWipe(archive, name, wipeData: true);
+    volume.Add(name.ToUpperInvariant(), data);
+    volume.Commit(archive);
   }
 
   /// <summary>
-  /// Removes a named file from a VDFS archive. The entry's first name byte is
-  /// zeroed (the reader's existing "empty name → skip" rule turns it into a
-  /// tombstone), all 80 entry bytes are cleared, and the file's data extent is
-  /// optionally zero-wiped. Returns <c>true</c> when an entry was removed.
+  /// Removes a file — or a directory and everything under it — and zeroes the payloads.
+  /// Returns whether anything was removed.
   /// </summary>
   public static bool RemoveFile(Stream archive, string name, bool wipeData = true) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(name);
-    if (!archive.CanSeek || !archive.CanRead || !archive.CanWrite)
-      throw new ArgumentException("Archive stream must be readable, writable, and seekable.", nameof(archive));
+    RequireEditable(archive);
 
-    Context ctx;
+    Volume volume;
     try {
-      ctx = ReadContext(archive);
+      volume = Volume.Load(archive);
     } catch (InvalidDataException) {
       return false;
     }
 
-    var hit = ctx.Entries.FirstOrDefault(e => e.IsLive
-      && string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
-    if (hit == null) return false;
-
-    // Zero the 80-byte entry record on disk. The reader skips entries with
-    // an empty name (first byte == 0 makes the decoded name empty) and the
-    // surrounding entries keep their original byte positions in the table.
-    var zeros = new byte[EntrySize];
-    archive.Position = hit.RecordOffset;
-    archive.Write(zeros);
-
-    if (wipeData && hit.DataSize > 0) {
-      WipeRange(archive, hit.DataOffset, hit.DataSize);
-    }
-
-    // Update header file count (entry-table length stays the same — the dead
-    // record stays in place to preserve neighbour offsets).
-    var liveCount = ctx.Entries.Count(e => e.IsLive
-      && !string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
-    var liveTotal = ctx.Entries
-      .Where(e => e.IsLive && !string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase))
-      .Sum(e => (long)e.DataSize);
-    PatchFileCount(archive, (uint)liveCount, (uint)liveTotal);
-
+    if (!volume.RemoveAndWipe(archive, name, wipeData)) return false;
+    volume.Commit(archive);
     return true;
   }
 
   /// <summary>
-  /// Replaces an existing file's payload in-place when the new bytes fit
-  /// inside the original extent (data written at the same offset, entry size
-  /// trimmed). When the new payload is larger, falls back to remove-plus-add
-  /// so the bytes land at a fresh tail offset.
+  /// Replaces a file's contents, over its old extent when the new payload fits there and
+  /// at the end of the volume otherwise. A missing file is added.
   /// </summary>
   public static bool ReplaceFile(Stream archive, string name, byte[] newData) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(newData);
-    if (!archive.CanSeek || !archive.CanRead || !archive.CanWrite)
-      throw new ArgumentException("Archive stream must be readable, writable, and seekable.", nameof(archive));
+    RequireEditable(archive);
 
-    var ctx = ReadContext(archive);
-    var hit = ctx.Entries.FirstOrDefault(e => e.IsLive
-      && string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
-    if (hit == null) {
+    var volume = Volume.Load(archive);
+    var node = volume.Catalog.Find(name);
+    if (node is not { IsDirectory: false }) {
       AddFile(archive, name, newData);
       return true;
     }
 
-    if (newData.Length <= hit.DataSize) {
-      // Fits — rewrite payload at the existing offset, update entry size.
-      archive.Position = hit.DataOffset;
-      archive.Write(newData);
-      var tail = hit.DataSize - newData.Length;
-      if (tail > 0) {
-        // Zero the unused tail of the original extent so leftover bytes
-        // from the prior payload don't linger.
-        WipeRange(archive, hit.DataOffset + newData.Length, tail);
-      }
-      // Patch the entry's size field on disk.
-      archive.Position = hit.RecordOffset + EntryOffsetSize;
-      Span<byte> sizeBuf = stackalloc byte[4];
-      BinaryPrimitives.WriteUInt32LittleEndian(sizeBuf, (uint)newData.Length);
-      archive.Write(sizeBuf);
-
-      // Recompute the header's total-data-size from all live entries.
-      var newTotal = (long)0;
-      foreach (var e in ctx.Entries)
-        if (e.IsLive)
-          newTotal += string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase)
-            ? newData.Length
-            : e.DataSize;
-      PatchFileCount(archive, (uint)ctx.Entries.Count(e => e.IsLive), (uint)newTotal);
+    var encoded = volume.Encode(node.Name, newData);
+    var stored = (long)node.Tag!;
+    if (encoded.Length > stored || node.Size == 0) {
+      AddFile(archive, name, newData);
       return true;
     }
 
-    // Doesn't fit — remove + add at the tail.
-    RemoveFile(archive, name, wipeData: true);
-    AddFile(archive, name, newData);
+    archive.Position = node.Offset;
+    archive.Write(encoded);
+    ExtentCopy.Zero(archive, node.Offset + encoded.Length, stored - encoded.Length);
+    node.Size = newData.Length;
+    node.Tag = (long)encoded.Length;
+    volume.Commit(archive);
     return true;
   }
 
-  // ── Context parsing ──────────────────────────────────────────────────────
-
-  private sealed record EntryView(
-    int Index,
-    long RecordOffset,
-    string Name,
-    long DataOffset,
-    long DataSize,
-    uint Type,
-    byte[] Record) {
-    /// <summary>
-    /// Live = non-empty name AND not flagged as a pure directory (per VDFS
-    /// type-bit convention: bit 0 alone = directory). A directory record
-    /// has no data extent we'd want to wipe/relocate.
-    /// </summary>
-    public bool IsLive => !string.IsNullOrEmpty(this.Name) && (this.Type & 0x01) == 0;
+  private static void RequireEditable(Stream archive) {
+    if (!archive.CanSeek || !archive.CanRead || !archive.CanWrite)
+      throw new ArgumentException("Archive stream must be readable, writable, and seekable.", nameof(archive));
   }
 
-  private sealed record Context(
-    int EntryCount,
-    int RootOffset,
-    long ImageLength,
-    IReadOnlyList<EntryView> Entries);
+  /// <summary>A volume's header facts and catalog, with each file's stored length in its tag.</summary>
+  private sealed class Volume {
+    public VdfsCatalog Catalog { get; } = new();
+    private readonly Dictionary<VdfsCatalog.Node, byte[]> _pending = [];
+    private bool _zipped;
+    private long _oldCatalogOffset;
+    private long _oldCatalogLength;
 
-  private static Context ReadContext(Stream archive) {
-    archive.Position = 0;
-    if (archive.Length < HeaderSize + FieldsSize)
-      throw new InvalidDataException("VDFS: archive too small for header.");
+    public static Volume Load(Stream archive) {
+      using var reader = new VdfsReader(archive, leaveOpen: true);
+      if (reader.IsPartial)
+        throw new InvalidDataException("VDFS: the catalog cannot be followed in full; refusing to rewrite it.");
 
-    var header = new byte[HeaderSize + FieldsSize];
-    archive.ReadExactly(header);
-
-    var magic = "PSVDSC_V2.00\n\r\n\r"u8;
-    if (!header.AsSpan(0, magic.Length).SequenceEqual(magic))
-      throw new InvalidDataException("VDFS: invalid magic.");
-
-    var entryCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(OffsetEntryCount));
-    var rootOffset = (int)BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(OffsetRootOffset));
-    var entriesStart = rootOffset > 0 ? rootOffset : DefaultEntriesStart;
-
-    var entries = new List<EntryView>(entryCount);
-    for (var i = 0; i < entryCount; i++) {
-      var recordOffset = entriesStart + i * EntrySize;
-      if (recordOffset + EntrySize > archive.Length) break;
-      var rec = new byte[EntrySize];
-      archive.Position = recordOffset;
-      archive.ReadExactly(rec);
-
-      var name = DecodeName(rec);
-      var dataOffset = BinaryPrimitives.ReadUInt32LittleEndian(rec.AsSpan(EntryOffsetJump));
-      var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(rec.AsSpan(EntryOffsetSize));
-      var type = BinaryPrimitives.ReadUInt32LittleEndian(rec.AsSpan(EntryOffsetType));
-
-      entries.Add(new EntryView(
-        Index: i,
-        RecordOffset: recordOffset,
-        Name: name,
-        DataOffset: dataOffset,
-        DataSize: dataSize,
-        Type: type,
-        Record: rec));
-    }
-
-    return new Context(
-      EntryCount: entryCount,
-      RootOffset: entriesStart,
-      ImageLength: archive.Length,
-      Entries: entries);
-  }
-
-  /// <summary>
-  /// Mirrors the writer's name decoding: the entry name is the ASCII bytes up
-  /// to the first NUL or trailing space terminator. An entry whose first byte
-  /// is NUL decodes to an empty string, which signals a tombstone to the reader.
-  /// </summary>
-  private static string DecodeName(byte[] rec) {
-    var nameLen = EntryNameSize;
-    for (var j = 0; j < EntryNameSize; j++) {
-      if (rec[j] == 0 || (rec[j] == 0x20 && (j + 1 >= EntryNameSize || rec[j + 1] == 0))) {
-        nameLen = j;
-        break;
+      var volume = new Volume {
+        _zipped = reader.IsZippedVolume,
+        _oldCatalogOffset = reader.EntryTableOffset,
+        _oldCatalogLength = reader.EntryTableLength,
+      };
+      foreach (var entry in reader.Entries.Where(e => !e.IsDirectory)) {
+        var node = volume.Catalog.GetOrAddFile(entry.Name);
+        node.Offset = entry.DataOffset;
+        node.Size = entry.Size;
+        node.Attributes = entry.Attributes;
+        node.Tag = entry.StoredSize;
       }
-    }
-    return Encoding.ASCII.GetString(rec, 0, nameLen).TrimEnd();
-  }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
-  /// <summary>
-  /// Computes the offset one byte past the last live file's data extent.
-  /// New payloads are appended here so existing live extents keep their
-  /// original byte ranges.
-  /// </summary>
-  private static long ComputeLiveDataEnd(Context ctx, IReadOnlyList<EntryView> liveEntries) {
-    long maxEnd = 0;
-    foreach (var e in liveEntries) {
-      var end = e.DataOffset + e.DataSize;
-      if (end > maxEnd) maxEnd = end;
+      return volume;
     }
 
-    // Floor: the live-data region starts at least at the end of the writer's
-    // default table layout. When no files survive we still want to avoid
-    // overlapping the original 36 + N*80 metadata window.
-    var defaultDataStart = (long)(DefaultEntriesStart + ctx.EntryCount * EntrySize);
-    if (maxEnd < defaultDataStart) maxEnd = defaultDataStart;
-    return maxEnd;
-  }
+    /// <summary>The payload as this volume stores it.</summary>
+    public byte[] Encode(string name, byte[] data)
+      => this._zipped && data.Length > 0 && !VdfsLayout.IsStoredRawWhenZipped(name)
+        ? VdfsZippedStream.Encode(data)
+        : data;
 
-  private static byte[] BuildEntryRecord(string name, uint dataOffset, uint dataSize) {
-    var rec = new byte[EntrySize];
-    var nameBytes = Encoding.ASCII.GetBytes(name);
-    Array.Fill(rec, (byte)0x20, 0, EntryNameSize);
-    Array.Copy(nameBytes, 0, rec, 0, Math.Min(nameBytes.Length, EntryNameSize));
-    rec[Math.Min(nameBytes.Length, EntryNameSize - 1)] = 0; // NUL terminator
-    BinaryPrimitives.WriteUInt32LittleEndian(rec.AsSpan(EntryOffsetJump), dataOffset);
-    BinaryPrimitives.WriteUInt32LittleEndian(rec.AsSpan(EntryOffsetSize), dataSize);
-    BinaryPrimitives.WriteUInt32LittleEndian(rec.AsSpan(EntryOffsetType), TypeFile);
-    BinaryPrimitives.WriteUInt32LittleEndian(rec.AsSpan(EntryOffsetAttr), 0);
-    return rec;
-  }
-
-  private static uint SumFileSizes(IReadOnlyList<byte[]> records) {
-    var total = 0u;
-    foreach (var rec in records) {
-      var type = BinaryPrimitives.ReadUInt32LittleEndian(rec.AsSpan(EntryOffsetType));
-      if ((type & 0x01) != 0) continue; // skip directory records
-      total += BinaryPrimitives.ReadUInt32LittleEndian(rec.AsSpan(EntryOffsetSize));
+    public bool RemoveAndWipe(Stream archive, string name, bool wipeData) {
+      var removed = this.Catalog.Remove(name);
+      if (wipeData)
+        foreach (var file in removed)
+          if (!this._pending.Remove(file))
+            ExtentCopy.Zero(archive, file.Offset, Math.Min((long)file.Tag!, Math.Max(0, archive.Length - file.Offset)));
+      return removed.Count > 0;
     }
-    return total;
-  }
 
-  private static void PatchHeader(Stream archive, uint entryCount, uint fileCount, uint totalDataSize, uint rootOffset) {
-    Span<byte> buf = stackalloc byte[4];
-
-    archive.Position = OffsetEntryCount;
-    BinaryPrimitives.WriteUInt32LittleEndian(buf, entryCount);
-    archive.Write(buf);
-
-    archive.Position = OffsetFileCount;
-    BinaryPrimitives.WriteUInt32LittleEndian(buf, fileCount);
-    archive.Write(buf);
-
-    archive.Position = OffsetTotalDataSize;
-    BinaryPrimitives.WriteUInt32LittleEndian(buf, totalDataSize);
-    archive.Write(buf);
-
-    archive.Position = OffsetRootOffset;
-    BinaryPrimitives.WriteUInt32LittleEndian(buf, rootOffset);
-    archive.Write(buf);
-  }
-
-  private static void PatchFileCount(Stream archive, uint fileCount, uint totalDataSize) {
-    Span<byte> buf = stackalloc byte[4];
-    archive.Position = OffsetFileCount;
-    BinaryPrimitives.WriteUInt32LittleEndian(buf, fileCount);
-    archive.Write(buf);
-
-    archive.Position = OffsetTotalDataSize;
-    BinaryPrimitives.WriteUInt32LittleEndian(buf, totalDataSize);
-    archive.Write(buf);
-  }
-
-  private static void WipeRange(Stream archive, long start, long count) {
-    if (start >= archive.Length) return;
-    var capped = Math.Min(count, archive.Length - start);
-    archive.Position = start;
-    var chunk = new byte[Math.Min(4096, capped)];
-    var remaining = capped;
-    while (remaining > 0) {
-      var write = (int)Math.Min(chunk.Length, remaining);
-      archive.Write(chunk, 0, write);
-      remaining -= write;
+    public void Add(string name, byte[] data) {
+      if ((ulong)data.LongLength > uint.MaxValue)
+        throw new ArgumentException($"VDFS: '{name}' is larger than the 32-bit size field.");
+      var node = this.Catalog.GetOrAddFile(name);
+      var encoded = this.Encode(node.Name, data);
+      node.Size = data.Length;
+      node.Offset = -1;
+      node.Tag = (long)encoded.Length;
+      this._pending[node] = encoded;
     }
-  }
 
-  private static void EnsureLength(Stream archive, long required) {
-    if (archive.Length < required) archive.SetLength(required);
+    /// <summary>
+    /// Writes the catalog at 296, moving out of its way any payload it now covers, places
+    /// pending payloads at the end, and patches the header.
+    /// </summary>
+    public void Commit(Stream archive) {
+      var files = this.Catalog.Files().Select(f => f.File).ToList();
+      var catalogEnd = VdfsLayout.HeaderSize + (long)this.Catalog.EntryCount * VdfsLayout.EntrySize;
+      var placed = files.Where(f => f.Offset >= 0 && (long)f.Tag! > 0).ToList();
+      var tail = Math.Max(catalogEnd, placed.Count == 0 ? 0 : placed.Max(f => f.Offset + (long)f.Tag!));
+      tail = Math.Max(tail, this._oldCatalogOffset + this._oldCatalogLength);
+
+      foreach (var file in placed.Where(f => f.Offset < catalogEnd).OrderBy(f => f.Offset)) {
+        var stored = (long)file.Tag!;
+        ExtentCopy.Move(archive, file.Offset, tail, stored);
+        // What the catalog does not overwrite would stay behind as a stale copy.
+        var leftover = file.Offset + stored - catalogEnd;
+        if (leftover > 0) ExtentCopy.Zero(archive, catalogEnd, leftover);
+        file.Offset = tail;
+        tail += stored;
+      }
+
+      foreach (var file in files) {
+        if (this._pending.TryGetValue(file, out var bytes)) {
+          if (archive.Length < tail + bytes.Length) archive.SetLength(tail + bytes.Length);
+          archive.Position = tail;
+          archive.Write(bytes);
+          file.Offset = tail;
+          tail += bytes.Length;
+        }
+        if (file.Offset > uint.MaxValue)
+          throw new InvalidOperationException("VDFS: payload offsets are 32-bit; the volume has grown past 4 GiB.");
+      }
+      this._pending.Clear();
+
+      // Empty files point at the end of the volume, as VdfsWriter places them.
+      var end = Math.Max(Math.Max(tail, catalogEnd), archive.Length);
+      foreach (var file in files.Where(f => (long)f.Tag! == 0))
+        file.Offset = Math.Min(end, uint.MaxValue);
+
+      // The old catalog's bytes past the new one are dead now. Nothing live sits in them:
+      // they held the catalog, and any payload under the new catalog has just moved away.
+      var deadStart = Math.Max(this._oldCatalogOffset, catalogEnd);
+      var deadEnd = this._oldCatalogOffset + this._oldCatalogLength;
+      if (deadEnd > deadStart && !files.Any(f => f.Offset < deadEnd && f.Offset + (long)f.Tag! > deadStart))
+        ExtentCopy.Zero(archive, deadStart, deadEnd - deadStart);
+
+      var catalog = this.Catalog.Serialize();
+      if (archive.Length < catalogEnd) archive.SetLength(catalogEnd);
+      archive.Position = VdfsLayout.HeaderSize;
+      archive.Write(catalog);
+
+      var header = new byte[VdfsLayout.HeaderSize];
+      archive.Position = 0;
+      archive.ReadExactly(header);
+      var dosTime = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(VdfsLayout.TimestampOffset));
+      var flags = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(VdfsLayout.VolumeFlagsOffset));
+      VdfsWriter.WriteHeaderFields(header, this.Catalog, dosTime, files.Sum(f => f.Size), flags);
+      archive.Position = 0;
+      archive.Write(header);
+      archive.Flush();
+
+      this._oldCatalogOffset = VdfsLayout.HeaderSize;
+      this._oldCatalogLength = catalog.Length;
+    }
   }
 }
