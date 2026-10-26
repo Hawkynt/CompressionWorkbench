@@ -1,0 +1,5 @@
+a.txt=hello xp3|line two
+sub/c.txt=deep file
+umlaut=kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri kirikiri 
+exists sub/b.bin=1
+exists nope.txt=0

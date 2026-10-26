@@ -371,7 +371,7 @@ Nintendo DS ROM,nds,game,,,R,,,,,1,,Nds,Y,Y,Y,OK,,
 Bethesda archive (BSA/BA2),bsa;ba2;pex,game,,,,,R,,,1,,Bsa;Ba2,Y,Y,Y,OK,,
 Bruns engine (UM3),um3,game,,,,,R,,,1,,,,,,MISSING,,
 Godot PCK,pck,game,,,,,R,,,1,,GodotPck,Y,Y,Y,OK,,
-KiriKiri XP3,xp3,game,,,,,R,,Y,2,,,,,,MISSING,,
+KiriKiri XP3,xp3,game,,,,,R,,Y,2,https://krkrz.github.io/,Xp3,Y,Y,Y,OK,,
 LiveMaker,gal,game,,,,,R,,,1,,,,,,MISSING,,
 Ren'Py archive (RPA),rpa,game,,,,,R,,,1,,Rpa,Y,Y,Y,OK,,
 RPG Maker archives,rgssad;rgss2a;rgss3a;rpgmvp;rpgmvo;rpgmvm,game,,,,,R,,,1,,Rgss,Y,Y,Y,PARTIAL,,RGSSAD v1-3 only; MV/MZ asset encryption (.rpgmv*) has no descriptor
