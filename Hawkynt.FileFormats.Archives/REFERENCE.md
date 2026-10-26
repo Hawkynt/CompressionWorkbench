@@ -19634,6 +19634,7 @@ Constants for the LHA/LZH archive format.
 | `MethodLh6` | `const string MethodLh6` | Method: LZH compression with 32KB window. |
 | `MethodLh7` | `const string MethodLh7` | Method: LZH compression with 64KB window. |
 | `MethodLhd` | `const string MethodLhd` | Method: directory marker. |
+| `MethodLhx` | `const string MethodLhx` | Method: lh5-style static Huffman with a 1 MiB window (UNLHA32), read-only. |
 | `MethodLz4` | `const string MethodLz4` | Method: store (same as lh0, legacy). |
 | `MethodLz5` | `const string MethodLz5` | Method: LZSS with 4KB window (LArc variant). |
 | `MethodLzs` | `const string MethodLzs` | Method: LZSS with 4KB window (no Huffman). |
