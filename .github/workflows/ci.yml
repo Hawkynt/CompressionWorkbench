@@ -235,7 +235,7 @@ jobs:
         run: >
           dotnet test Compression.Tests
           --configuration Release --no-build
-          --filter "FullyQualifiedName~Compression.Tests.Reiser4.Reiser4ProfileExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4MutationExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4NativeTreeExternalTests"
+          --filter "FullyQualifiedName~Compression.Tests.Reiser4.Reiser4ProfileExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4MutationExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4NativeTreeExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4FeatureExternalTests"
           --logger "trx;LogFileName=reiser4-oracle-tests.trx"
 
       # Hard gate, both directions: zpaq must list and extract byte for byte what the ZPAQ writer

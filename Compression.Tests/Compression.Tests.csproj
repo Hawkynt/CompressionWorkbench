@@ -67,6 +67,13 @@
                       Exclude="StructuredPseudoArchives\ReferenceVectors\*.py;StructuredPseudoArchives\ReferenceVectors\*.pl;StructuredPseudoArchives\ReferenceVectors\*.ps1;StructuredPseudoArchives\ReferenceVectors\README.md">
       <LogicalName>ReferenceVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Volumes a Reiser4 kernel wrote under mkfs.reiser4 plugin profiles, with the kernel's read-back;
+         see Reiser4/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Reiser4\ReferenceVectors\*.gz;Reiser4\ReferenceVectors\*.manifest">
+      <LogicalName>Reiser4Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- The QEMU harness that lets a Reiser4 kernel judge what the writer produces. -->
+    <None Include="Reiser4\KernelOracle\*.sh" CopyToOutputDirectory="PreserveNewest" LinkBase="Reiser4\KernelOracle" />
     <!-- Volumes bcachefs-tools wrote; see BcacheFs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="BcacheFs\ReferenceVectors\*.gz;BcacheFs\ReferenceVectors\manifest.txt">
       <LogicalName>BcacheFsVectors.%(Filename)%(Extension)</LogicalName>
