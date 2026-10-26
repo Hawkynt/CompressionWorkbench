@@ -205,7 +205,7 @@ public sealed class KwajTests {
     using var output = new MemoryStream();
 
     Assert.Throws<ArgumentException>(() =>
-      KwajStream.Compress(input, output, method: KwajConstants.MethodLzss));
+      KwajStream.Compress(input, output, method: 5));
   }
 
   [Category("Exception")]

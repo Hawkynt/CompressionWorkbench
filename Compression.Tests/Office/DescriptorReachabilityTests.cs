@@ -37,8 +37,6 @@ public sealed class DescriptorReachabilityTests {
     "EaseUsPbd",    // EaseUsFormatDescriptor
     "FlacArchive",  // FlacArchiveDescriptor
     "JpegArchive",  // JpegArchiveDescriptor
-    "xDisk",        // XDiskFormatDescriptor  -- casing only
-    "xMash",        // XMashFormatDescriptor  -- casing only
   ];
 
   [SetUp]
