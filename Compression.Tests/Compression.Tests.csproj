@@ -122,6 +122,10 @@
     <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">
       <LogicalName>VdfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- TS sources and the QM files Qt's lrelease 6.12.0 compiled from them; see Qm/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Qm\ReferenceVectors\*.ts;Qm\ReferenceVectors\*.qm">
+      <LogicalName>QmVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>

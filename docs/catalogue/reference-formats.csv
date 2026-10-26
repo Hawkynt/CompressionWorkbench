@@ -359,7 +359,7 @@ Microsoft Reader (LIT),lit,document,,,,,R,,,1,,Lit,Y,,,OK,,
 Windows Help (HLP),hlp,document,,,,,R,fmt/474,,2,,,,,,MISSING,,
 MIME HTML archive (MHT),mht;mhtml,document,,,,,R,,,1,,,,,,MISSING,,
 Outlook Express mailbox (DBX),dbx,document,,,,,R,,,1,,,,,,MISSING,,
-Qt message catalog (QM),qm,document,,,,,R,,,1,,,,,,MISSING,,
+Qt message catalog (QM),qm,document,,,,,R,,,1,https://doc.qt.io/qt-6/linguist-ts-file-format.html,Qm,Y,Y,,OK,,
 SQLite database,sqlite;sqlite3;db,document,,,,,R,,,1,,Sqlite,Y,,,READ-ONLY-BUT-SOURCES-WRITE,sqlite3,
 Windows thumbnail cache,db;thumbs.db,document,,,,,R,,,1,,ThumbsDb,Y,Y,Y,PARTIAL,,Thumbs.db only; thumbcache_*.db has no descriptor
 Safari webarchive,webarchive,document,,,,,,fmt/866,,1,,,,,,MISSING,,
