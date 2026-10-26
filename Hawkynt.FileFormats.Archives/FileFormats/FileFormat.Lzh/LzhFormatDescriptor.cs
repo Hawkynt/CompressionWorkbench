@@ -98,7 +98,7 @@ public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("lh5", "LH5"), new("lh0", "LH0 (Store)"), new("lh1", "LH1"), new("lh4", "LH4"),
     new("lh6", "LH6"), new("lh7", "LH7"), new("lzs", "LZS"), new("lz5", "LZ5"),
-    new("pm0", "PM0"), new("pm1", "PM1"), new("pm2", "PM2")
+    new("pm0", "PM0")
   ];
   /// <summary>
   /// Gets the tar compression format id.

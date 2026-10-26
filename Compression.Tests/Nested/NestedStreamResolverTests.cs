@@ -111,4 +111,28 @@ public class NestedStreamResolverTests {
       Assert.Ignore("FAT descriptor does not implement IArchiveModifiable (unexpected)");
     }
   }
+
+  [TestCase("gpt", 512)]
+  [TestCase("gpt", 4096)]
+  [TestCase("mbr", 512)]
+  [Category("HappyPath")]
+  public void Given_RawPartitionedDisk_When_Resolved_Then_TheFilesystemInsideThePartitionIsReturned(string scheme, int sectorSize) {
+    var fatWriter = new FileSystem.Fat.FatWriter();
+    fatWriter.AddFile("inner.txt", "inside a partition"u8.ToArray());
+    var fat = fatWriter.Build(totalSectors: 2880);
+    using var disk = new MemoryStream();
+    new FileFormat.PartitionedDisk.PartitionedDiskFormatDescriptor().Create(disk, [ArchiveInputInfo.InMemory("fat.img", fat)],
+      new FormatCreateOptions { FormatSpecific = new(StringComparer.OrdinalIgnoreCase) {
+        ["scheme"] = scheme, ["sectorSize"] = sectorSize.ToString(System.Globalization.CultureInfo.InvariantCulture) } });
+
+    var resolution = NestedStreamResolver.ResolveDeepest(disk);
+
+    Assert.That(resolution, Is.Not.Null, "a raw disk's partitions must be descended into");
+    Assert.That(resolution!.InnerDescriptor.Id, Is.EqualTo("Fat"));
+    Assert.That(resolution.NestingPath, Does.Contain($"{scheme.ToUpperInvariant()} partition 0"));
+    Assert.That(resolution.InnerStream.Length, Is.EqualTo(fat.Length));
+    resolution.InnerStream.Position = 0;
+    Assert.That(FormatRegistry.GetArchiveOps("Fat")!.List(resolution.InnerStream, null).Select(e => e.Name),
+      Has.Some.EqualTo("inner.txt"));
+  }
 }
