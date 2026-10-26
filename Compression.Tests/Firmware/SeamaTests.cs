@@ -129,6 +129,22 @@ public sealed class SeamaTests {
   public void GivenBothAnImageAndEntities_WhenCreated_ThenItIsRefused()
     => Assert.That(() => Create(("image.bin", [1]), ("entity_00.bin", [2])), Throws.ArgumentException);
 
+  [Test]
+  public void GivenOneFileUnderAnArbitraryName_WhenCreated_ThenItIsTheImage() {
+    var payload = VectorInput(1, 5000);
+    var image = Create(("PROBE.BIN", payload));
+    Assert.That(Extract(image)["image.bin"], Is.EqualTo(payload));
+    Assert.That(image, Is.EqualTo(Create(("image.bin", payload))));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenTwoArbitraryFileNames_WhenCreated_ThenTheyAreRefused()
+    => Assert.That(() => Create(("a.bin", [1]), ("b.bin", [2])), Throws.ArgumentException);
+
+  [Test, Category("Exception")]
+  public void GivenAnImageAndAnArbitraryFileName_WhenCreated_ThenTheArbitraryOneIsRefused()
+    => Assert.That(() => Create(("image.bin", [1]), ("readme.txt", [2])), Throws.ArgumentException);
+
   [Test, Category("ArchiveExternal")]
   public void GivenAnEditedSeal_WhenOseamaReadsIt_ThenItListsTheNewEntity() {
     var oseama = FirmwareUtilsOracle.Require("oseama");

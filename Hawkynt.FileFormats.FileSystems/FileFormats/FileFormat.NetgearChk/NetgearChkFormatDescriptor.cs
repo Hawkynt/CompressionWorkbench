@@ -107,12 +107,22 @@ public sealed class NetgearChkFormatDescriptor : IFormatDescriptor, IArchiveForm
     }
   }
 
-  private static string Leaf(string name) => name.Replace('\\', '/').TrimEnd('/').Split('/')[^1];
+  private static string Leaf(string name) => FirmwareArchive.LeafName(name);
 
-  /// <summary>An image from <c>kernel.bin</c>, an optional <c>rootfs.bin</c> and the board id and region of a <c>metadata.ini</c> (mkchkimg's defaults otherwise).</summary>
+  private static bool IsKnownName(string name)
+    => name.Equals(KernelName, StringComparison.OrdinalIgnoreCase) || name.Equals(RootfsName, StringComparison.OrdinalIgnoreCase)
+      || name.Equals(TrailerName, StringComparison.OrdinalIgnoreCase) || name.Equals(FirmwareArchive.MetadataName, StringComparison.OrdinalIgnoreCase)
+      || name.Equals(FullImage, StringComparison.OrdinalIgnoreCase);
+
+  /// <summary>
+  /// An image from <c>kernel.bin</c>, an optional <c>rootfs.bin</c> and the board id and region of a
+  /// <c>metadata.ini</c> (mkchkimg's defaults otherwise). A single input under any other name is the
+  /// payload and becomes <c>kernel.bin</c>, as <c>mkchkimg -k</c> would take it.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
+    inputs = FirmwareArchive.FoldLonePayload(inputs, IsKnownName, KernelName);
     var img = new NetgearChkImage();
     Dictionary<string, string>? ini = null;
     foreach (var input in inputs.Where(i => !i.IsDirectory && !string.IsNullOrEmpty(i.ArchiveName))) {

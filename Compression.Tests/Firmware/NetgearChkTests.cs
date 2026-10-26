@@ -117,4 +117,20 @@ public sealed class NetgearChkTests {
       Assert.That(BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(36)), Is.EqualTo(0x81c60d64u));
     });
   }
+
+  [Test]
+  public void GivenOneFileUnderAnArbitraryName_WhenCreated_ThenItIsTheKernel() {
+    var payload = VectorInput(2, 77);
+    var image = Create(("PROBE.BIN", payload));
+    Assert.That(Extract(image)["kernel.bin"], Is.EqualTo(payload));
+    Assert.That(image, Is.EqualTo(Create(("kernel.bin", payload))));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenTwoArbitraryFileNames_WhenCreated_ThenTheyAreRefused()
+    => Assert.That(() => Create(("a.bin", [1]), ("b.bin", [2])), Throws.ArgumentException);
+
+  [Test, Category("Exception")]
+  public void GivenAKernelAndAnArbitraryFileName_WhenCreated_ThenTheArbitraryOneIsRefused()
+    => Assert.That(() => Create(("kernel.bin", [1]), ("readme.txt", [2])), Throws.ArgumentException);
 }

@@ -127,13 +127,17 @@ public sealed class SeamaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return found.Count == 0 ? null : [.. found.Values];
   }
 
+  private static bool IsKnownName(string name)
+    => TryEntityIndex(name, out _) || name.Equals(ImageName, StringComparison.OrdinalIgnoreCase) || name.Equals(TrailerName, StringComparison.OrdinalIgnoreCase)
+      || name.Equals(FirmwareArchive.MetadataName, StringComparison.OrdinalIgnoreCase) || name.Equals(FullImage, StringComparison.OrdinalIgnoreCase);
+
   private static bool TryEntityIndex(string name, out int index) {
     index = -1;
     return name.StartsWith("entity_", StringComparison.OrdinalIgnoreCase) && name.EndsWith(".bin", StringComparison.OrdinalIgnoreCase)
       && int.TryParse(name.AsSpan(7, name.Length - 11), NumberStyles.None, CultureInfo.InvariantCulture, out index);
   }
 
-  private static string Leaf(string name) => name.Replace('\\', '/').TrimEnd('/').Split('/')[^1];
+  private static string Leaf(string name) => FirmwareArchive.LeafName(name);
 
   private static void ApplyMetadata(SeamaImage img, IReadOnlyDictionary<string, string> ini) {
     if (ini.TryGetValue("seama.endianness", out var endian)) img.BigEndian = !endian.Trim().Equals("little", StringComparison.OrdinalIgnoreCase);
@@ -148,11 +152,13 @@ public sealed class SeamaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <summary>
   /// A single entity from <c>image.bin</c>, or a seal from <c>entity_00.bin</c>, <c>entity_01.bin</c>…;
   /// meta strings come from a <c>metadata.ini</c> (<c>meta_0</c>, <c>meta_1</c>… under <c>[seama]</c>
-  /// for the image or the seal, under <c>[entity_NN]</c> for each sealed entity).
+  /// for the image or the seal, under <c>[entity_NN]</c> for each sealed entity). A single input
+  /// under any other name is the payload and becomes <c>image.bin</c>, as <c>seama -i</c> would take it.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
+    inputs = FirmwareArchive.FoldLonePayload(inputs, IsKnownName, ImageName);
     byte[]? single = null;
     byte[] trailer = [];
     var entities = new SortedDictionary<int, byte[]>();

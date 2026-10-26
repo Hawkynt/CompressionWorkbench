@@ -116,12 +116,21 @@ public sealed class TrxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       && int.TryParse(name.AsSpan(10, name.Length - 14), NumberStyles.None, CultureInfo.InvariantCulture, out index);
   }
 
-  private static string Leaf(string name) => name.Replace('\\', '/').TrimEnd('/').Split('/')[^1];
+  private static string Leaf(string name) => FirmwareArchive.LeafName(name);
 
-  /// <summary>Builds an image from <c>partition_0.bin</c>… (contiguous from 0), an optional <c>trailer.bin</c> and the version, flags and alignments of a <c>metadata.ini</c>.</summary>
+  private static bool IsKnownName(string name)
+    => TryPartitionIndex(name, out _) || name.Equals(TrailerName, StringComparison.OrdinalIgnoreCase)
+      || name.Equals(FirmwareArchive.MetadataName, StringComparison.OrdinalIgnoreCase) || name.Equals(FullImage, StringComparison.OrdinalIgnoreCase);
+
+  /// <summary>
+  /// Builds an image from <c>partition_0.bin</c>… (contiguous from 0), an optional <c>trailer.bin</c>
+  /// and the version, flags and alignments of a <c>metadata.ini</c>. A single input under any other
+  /// name is the payload and becomes <c>partition_0.bin</c>, as <c>trx -f</c> would take it.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
+    inputs = FirmwareArchive.FoldLonePayload(inputs, IsKnownName, "partition_0.bin");
     var img = new TrxImage();
     var partitions = new SortedDictionary<int, byte[]>();
     Dictionary<string, string>? ini = null;

@@ -177,6 +177,23 @@ public sealed class TrxTests {
   public void GivenAGapInPartitionNumbers_WhenCreated_ThenItIsRefused()
     => Assert.That(() => Create(("partition_0.bin", [1]), ("partition_2.bin", [1])), Throws.ArgumentException);
 
+  [Test]
+  public void GivenOneFileUnderAnArbitraryName_WhenCreated_ThenItIsTheFirstPartition() {
+    var payload = Bytes(1001, 5);
+    var image = Create(("PROBE.BIN", payload));
+    // The last partition runs to the header's length, which trx pads to 4 KiB.
+    Assert.That(Extract(image)["partition_0.bin"][..payload.Length], Is.EqualTo(payload));
+    Assert.That(image, Is.EqualTo(Create(("partition_0.bin", payload))));
+  }
+
+  [Test, Category("Exception")]
+  public void GivenTwoArbitraryFileNames_WhenCreated_ThenTheyAreRefused()
+    => Assert.That(() => Create(("a.bin", [1]), ("b.bin", [2])), Throws.ArgumentException);
+
+  [Test, Category("Exception")]
+  public void GivenAFirstPartitionAndAnArbitraryFileName_WhenCreated_ThenTheArbitraryOneIsRefused()
+    => Assert.That(() => Create(("partition_0.bin", [1]), ("readme.txt", [2])), Throws.ArgumentException);
+
   // ── OpenWrt firmware-utils vectors (see ReferenceVectors/README.md) ──
 
   /// <summary>Byte i of input k, as the vector generator wrote it: (i * (31 + 2k) + 7k + 1) &amp; 0xFF.</summary>
