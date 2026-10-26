@@ -79,6 +79,10 @@
     <EmbeddedResource Include="Csc\ReferenceVectors\*.csc">
       <LogicalName>CscVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Archives FreeArc 0.67's Arc.exe wrote; see FreeArc/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="FreeArc\ReferenceVectors\*.arc">
+      <LogicalName>FreeArcVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- CVF cluster payloads the dmsdos compressors wrote; see Cvf/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Cvf\ReferenceVectors\*.bin">
       <LogicalName>CvfVectors.%(Filename)%(Extension)</LogicalName>
