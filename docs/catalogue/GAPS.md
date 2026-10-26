@@ -165,7 +165,7 @@ running real-world samples. The file named at the end of each row is where the l
 | LHA / LZH | `Lzh` | 6 | lh2/lh3 are decoded with the lh5 decoder (approximation) (LhaReader.cs) |
 | XAR (eXtensible ARchive) | `Xar` | 5 | bzip2 throws; lzma/xz members are returned raw (XarReader.cs) |
 | StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |
-| StuffIt X | `StuffItX` | 4 | stored and deflate only; Brimstone/Cyanide/Darkhorse/Iron throw (StuffItXReader.cs) |
+| StuffIt X | `StuffItX` | 4 | Darkhorse, Deflate, Blend, method 7, the English/x86 preprocessors and encryption throw (StuffItXReader.cs) |
 | zoo | `Zoo` | 4 | LZH method (2) unsupported (ZooReader.cs) |
 | ALZip | `AlZip` | 3 | store and deflate only (AlZipReader.cs) |
 | APFS | `Apfs` | 3 | no decmpfs (LZVN/LZFSE) compressed files, no encryption (ApfsReader.cs) |

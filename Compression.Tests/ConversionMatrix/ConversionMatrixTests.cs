@@ -123,7 +123,6 @@ public class ConversionMatrixTests {
       { "Sparseimage", "[single-payload/whole-image target] Apple sparse disk image; one disk.img blob" },
       { "SplitFile", "[single-payload/whole-image target] byte-splitter; rejoins to a single 'joined' member, not a tree" },
       { "Srec", "[single-payload/whole-image target] Motorola S-record firmware pseudo-archive; writer re-encodes one flat image and re-lists as metadata.ini+firmware.bin, not a file tree" },
-      { "StuffItX", "[single-payload/whole-image target] writer emits an image that re-lists as 0 files" },
       { "Umx", "[single-payload/whole-image target] Unreal package; writer emits a blob that re-lists as 0 files" },
       { "Wbn", "[single-payload/whole-image target] WebBundle writer collapses tree to a single FULL.wbn" },
       { "Wrapster", "[single-payload/whole-image target] Wrapster MP3 wrapper; one FULL.mp3 + 0/1 frame, not a tree" },

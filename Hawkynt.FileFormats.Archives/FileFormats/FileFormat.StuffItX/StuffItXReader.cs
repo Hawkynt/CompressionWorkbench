@@ -1,405 +1,459 @@
-using Compression.Core.Deflate;
-using Compression.Core.Streams;
 using System.Text;
+using Compression.Core.Checksums;
 
 namespace FileFormat.StuffItX;
 
 /// <summary>
-/// Reads entries from a StuffIt X (.sitx) archive.
+/// Reads StuffIt X (.sitx) archives.
 /// </summary>
 /// <remarks>
 /// <para>
-/// StuffIt X uses a hierarchical, element-based container format introduced by Aladdin Systems
-/// (later Smith Micro Software). This implementation supports:
-/// <list type="bullet">
-///   <item>Magic validation ("StuffIt!" or "StuffIt" + version byte).</item>
-///   <item>P2 variable-length integer decoding (7 data bits per byte, big-endian, MSB = continuation).</item>
-///   <item>Sequential element-stream parsing to build a flat entry list.</item>
-///   <item>Extraction of stored entries (method 0) and Deflate-compressed entries (method 5).</item>
-///   <item>Graceful skip of all other compression methods — entries are still listed.</item>
-/// </list>
+/// After the eight-byte "StuffIt!" signature the archive is a sequence of elements, each read as a
+/// least-significant-bit-first bit stream: a flag bit, the element type, attribute pairs and
+/// algorithm pairs, all as "P2" numbers (see <see cref="StuffItXInput.ReadP2"/>). Files and
+/// directories carry an object id and a parent id; forks bind a file to a slice of a solid data
+/// stream (type 0 = data fork, 1 = resource fork, others such as previews are not exposed); data
+/// elements hold the streams as length-prefixed blocks followed by an optional CRC-32 of the
+/// decoded stream; a Brimstone-compressed catalog element holds names, dates and Finder info.
 /// </para>
 /// <para>
-/// Compression method codes: 0 = Stored, 2 = Brimstone (PPMd variant), 5 = Deflate,
-/// 8 = Darkhorse (LZSS), 13 = Cyanide (BWT), 14 = Iron (BWT).
+/// Supported stream codings are none, Brimstone (method 0), Cyanide (1), the RC4-obscured stored
+/// method (5) and Iron (6). Darkhorse (2), Deflate (3), Blend (4), method 7, the English and x86
+/// preprocessors and encrypted streams are listed but not extracted.
 /// </para>
+/// <para>Converted from XADMaster's <c>XADStuffItXParser.m</c>, <c>StuffItXUtilities.m</c>,
+/// <c>XADStuffItXBlockHandle.m</c> and <c>XADRC4Handle.m</c> (LGPL-2.1-or-later, see
+/// THIRD-PARTY-NOTICE.XADMaster.txt).</para>
 /// </remarks>
 public sealed class StuffItXReader : IDisposable {
-  // ── Magic / header constants ──────────────────────────────────────────────────
+  private static readonly byte[] Signature = "StuffIt"u8.ToArray();
 
-  // "StuffIt!" as ASCII bytes
-  private static readonly byte[] MagicFull = "StuffIt!"u8.ToArray();
-  // "StuffIt" prefix (7 bytes) — version byte follows
-  private static readonly byte[] MagicPrefix = "StuffIt"u8.ToArray();
+  private const int ElementEnd = 0;
+  private const int ElementData = 1;
+  private const int ElementFile = 2;
+  private const int ElementFork = 3;
+  private const int ElementDirectory = 4;
+  private const int ElementCatalog = 5;
+  private const int ElementClue = 6;
+  private const int ElementRoot = 7;
+  private const int ElementBoundary = 8;
+  private const int ElementUnknown9 = 9;
 
-  // Minimum header size before the element stream.
-  // The exact offset is read from the header; we require at least 0x60 bytes.
-  private const int MinHeaderSize = 0x60;
-
-  // ── Element type tags (P2-encoded, low bits) ─────────────────────────────────
-
-  // These are representative tag values observed in the SITX format.
-  // The lower nibble of the tag often encodes the element subtype.
-  private const long TagEndOfStream       = 0x00;
-  private const long TagDirectoryStart    = 0x20;
-  private const long TagDirectoryEnd      = 0x21;
-  private const long TagFile              = 0x30;
-  private const long TagDataFork         = 0x40;
-  private const long TagResourceFork     = 0x41;
-
-  // Compression method codes
-  private const int MethodStored  = 0;
-  private const int MethodDeflate = 5;
-
-  // ── State ─────────────────────────────────────────────────────────────────────
+  private const int ForkData = 0;
+  private const int ForkResource = 1;
 
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
+  private readonly byte[] _data;
   private readonly List<StuffItXEntry> _entries = [];
-  private bool _disposed;
+  private readonly Dictionary<long, DataStream> _streams = [];
+  private readonly Dictionary<long, byte[]> _decoded = [];
 
-  // ── Public API ────────────────────────────────────────────────────────────────
-
-  /// <summary>
-  /// Opens a StuffIt X archive from the given stream and parses its element catalog.
-  /// </summary>
-  /// <param name="stream">A seekable, readable stream positioned at offset 0.</param>
-  /// <param name="leaveOpen">
-  /// <see langword="true"/> to leave <paramref name="stream"/> open when this reader is disposed.
-  /// </param>
-  /// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> is null.</exception>
-  /// <exception cref="InvalidDataException">Thrown when the stream does not begin with a valid StuffIt X magic.</exception>
+  /// <summary>Opens a StuffIt X archive and reads its directory.</summary>
+  /// <exception cref="InvalidDataException">The data is not a well-formed StuffIt X archive.</exception>
+  /// <exception cref="NotSupportedException">The archive uses a base-N text encoding or an unknown catalog tag.</exception>
   public StuffItXReader(Stream stream, bool leaveOpen = false) {
-    this._stream    = stream ?? throw new ArgumentNullException(nameof(stream));
+    this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
-    ParseArchive();
+    using (var ms = new MemoryStream()) {
+      stream.CopyTo(ms);
+      this._data = ms.ToArray();
+    }
+    this.Parse();
   }
 
-  /// <summary>Gets the list of entries discovered during parsing.</summary>
+  /// <summary>The archive's files, directories and resource forks.</summary>
   public IReadOnlyList<StuffItXEntry> Entries => this._entries;
 
-  /// <summary>
-  /// Extracts and decompresses the data for the specified entry.
-  /// </summary>
-  /// <param name="entry">An entry obtained from <see cref="Entries"/>.</param>
-  /// <returns>The decompressed entry bytes.</returns>
-  /// <exception cref="ArgumentNullException">Thrown when <paramref name="entry"/> is null.</exception>
-  /// <exception cref="NotSupportedException">
-  /// Thrown when the entry uses a compression method that is not supported for extraction.
-  /// </exception>
+  /// <summary>Whether <paramref name="data"/> starts with a StuffIt X signature.</summary>
+  public static bool IsStuffItX(ReadOnlySpan<byte> data)
+    => data.Length >= 8 && data[..7].SequenceEqual(Signature) && data[7] is (byte)'!' or (byte)'?';
+
+  /// <summary>Decodes one entry.</summary>
+  /// <exception cref="NotSupportedException">The entry's stream uses a method this reader does not decode.</exception>
+  /// <exception cref="InvalidDataException">The stream is corrupt or fails its CRC-32.</exception>
   public byte[] Extract(StuffItXEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
-    ObjectDisposedException.ThrowIf(this._disposed, this);
+    if (entry.IsDirectory || entry.StreamId < 0 || entry.OriginalSize == 0) return [];
+    var stream = this.DecodeStream(entry.StreamId);
+    if (entry.StreamOffset + entry.OriginalSize > stream.Length) throw new InvalidDataException($"StuffIt X fork '{entry.FullPath}' runs past its stream.");
+    return stream.AsSpan((int)entry.StreamOffset, (int)entry.OriginalSize).ToArray();
+  }
 
-    if (entry.CompressedSize == 0 && entry.OriginalSize == 0)
-      return [];
+  /// <summary>Ids of every data stream, including the ones only previews refer to.</summary>
+  internal IEnumerable<long> StreamIds => this._streams.Keys;
 
-    this._stream.Position = entry.DataOffset;
-    var compressed = ReadExact((int)entry.CompressedSize);
-
-    return entry.MethodCode switch {
-      MethodStored  => compressed,
-      MethodDeflate => DecompressDeflate(compressed, (int)entry.OriginalSize),
-      _             => throw new NotSupportedException(
-                         $"StuffIt X compression method {entry.MethodCode} ({entry.Method}) " +
-                         "is not supported for extraction."),
-    };
+  /// <summary>Decodes a whole data stream and checks its CRC-32 where the archive stores one.</summary>
+  internal byte[] DecodeStream(long id) {
+    if (this._decoded.TryGetValue(id, out var cached)) return cached;
+    if (!this._streams.TryGetValue(id, out var stream)) throw new InvalidDataException($"StuffIt X data stream {id} is missing.");
+    var decoded = this.Decode(stream.Element, stream.Length);
+    if (decoded.Length < stream.Length) throw new InvalidDataException($"StuffIt X data stream {id} is truncated.");
+    if (stream.Element.Algorithms[1] == 0 && stream.Crc is { } crc && Crc32.Compute(decoded.AsSpan(0, (int)stream.Length)) != crc)
+      throw new InvalidDataException($"StuffIt X data stream {id} fails its CRC-32.");
+    this._decoded[id] = decoded;
+    return decoded;
   }
 
   /// <inheritdoc />
   public void Dispose() {
-    if (!this._disposed) {
-      this._disposed = true;
-      if (!this._leaveOpen)
-        this._stream.Dispose();
-    }
+    if (!this._leaveOpen) this._stream.Dispose();
   }
 
-  // ── Parsing ───────────────────────────────────────────────────────────────────
+  // ── element stream ───────────────────────────────────────────────────────────
 
-  private void ParseArchive() {
-    if (this._stream.Length < MinHeaderSize)
-      throw new InvalidDataException("Stream is too short to be a StuffIt X archive.");
-
-    this._stream.Position = 0;
-    var headerBytes = ReadExact(MinHeaderSize);
-
-    ValidateMagic(headerBytes);
-
-    // Bytes 0x58–0x5B (offsets 88–91): element stream start offset (big-endian uint32).
-    // This field points to where the element catalog begins in the file.
-    // Different .sitx versions place the offset at slightly different positions;
-    // we try 0x28 first (a common location), then fall back to scanning.
-    var elementOffset = FindElementStreamOffset(headerBytes);
-
-    if (elementOffset <= 0 || elementOffset >= this._stream.Length)
-      elementOffset = MinHeaderSize; // fall back to end-of-header
-
-    this._stream.Position = elementOffset;
-    ParseElementStream();
+  private sealed class Element {
+    public int Type;
+    public readonly long[] Attributes = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1];
+    public readonly long[] Algorithms = [-1, -1, -1, -1, -1, -1];
+    public int DataOffset;
   }
 
-  private static void ValidateMagic(byte[] header) {
-    // Check for "StuffIt!" (8-byte full magic)
-    var fullMatch = true;
-    for (var i = 0; i < MagicFull.Length && i < header.Length; i++) {
-      if (header[i] != MagicFull[i]) { fullMatch = false; break; }
-    }
-    if (fullMatch) return;
+  private sealed record Fork(List<long> Files, long Type, long Length);
 
-    // Check for "StuffIt" prefix (7 bytes) — version byte follows at offset 7
-    var prefixMatch = true;
-    for (var i = 0; i < MagicPrefix.Length && i < header.Length; i++) {
-      if (header[i] != MagicPrefix[i]) { prefixMatch = false; break; }
-    }
-    if (prefixMatch) return;
-
-    throw new InvalidDataException(
-      "Not a StuffIt X archive: magic bytes do not match \"StuffIt\" prefix.");
+  private sealed class DataStream(Element element, uint? crc, long compressedSize) {
+    public Element Element { get; } = element;
+    public uint? Crc { get; } = crc;
+    public long CompressedSize { get; } = compressedSize;
+    public long Length { get; set; }
   }
 
-  /// <summary>
-  /// Heuristically locates the element-stream start offset from the archive header.
-  /// StuffIt X stores a pointer in the header at a version-dependent position.
-  /// We try several known positions before falling back.
-  /// </summary>
-  private static long FindElementStreamOffset(byte[] header) {
-    // Candidate locations for the "catalog offset" pointer (big-endian uint32).
-    // These come from reverse-engineering notes and community documentation.
-    int[] candidateOffsets = [0x28, 0x30, 0x38, 0x54, 0x58];
-
-    foreach (var pos in candidateOffsets) {
-      if (pos + 4 > header.Length) continue;
-      var offset = ReadBigEndianUInt32(header, pos);
-      // A plausible offset is > MinHeaderSize and < some large limit
-      if (offset >= MinHeaderSize && offset < 0x10000000)
-        return offset;
-    }
-
-    return MinHeaderSize;
+  private sealed class Node(long id, long parent, bool isDirectory) {
+    public long Id { get; } = id;
+    public long Parent { get; } = parent;
+    public bool IsDirectory { get; } = isDirectory;
+    public string Path { get; set; } = "";
+    public string Name { get; set; } = "";
+    public DateTime? Modified { get; set; }
+    public DateTime? Created { get; set; }
+    public string? Comment { get; set; }
   }
 
-  private void ParseElementStream() {
-    // Directory stack tracks the current path as we descend into directories.
-    var dirStack = new Stack<string>();
+  private static Element ReadElement(StuffItXInput input) {
+    var element = new Element();
+    input.ReadBit();
+    element.Type = input.ReadP2Int();
+    for (;;) {
+      var key = input.ReadP2();
+      if (key == 0) break;
+      var value = (long)input.ReadP2();
+      if (key <= 10) element.Attributes[key - 1] = value;
+    }
+    for (;;) {
+      var key = input.ReadP2();
+      if (key == 0) break;
+      var value = (long)input.ReadP2();
+      if (key <= 6) element.Algorithms[key - 1] = value;
+      if (key == 4) input.ReadP2();
+    }
+    element.DataOffset = input.Position;
+    return element;
+  }
 
-    var safetyLimit = this._stream.Length;
-    var iterations  = 0;
+  /// <summary>Walks an element's data blocks and trailer; returns the trailer CRC if present.</summary>
+  private static uint? ScanElementData(StuffItXInput input, Element element) {
+    input.Position = element.DataOffset;
+    for (;;) {
+      var length = input.ReadP2();
+      if (length == 0) break;
+      input.Skip((long)length);
+    }
+    input.Align();
+    uint? crc = null;
+    var trailer = input.ReadP2();
+    if (trailer == 0) return null;
+    if (trailer == 4) {
+      crc = input.ReadUInt32BigEndian();
+      trailer = input.ReadP2();
+    }
+    while (trailer != 0) {
+      input.Skip((long)trailer);
+      trailer = input.ReadP2();
+    }
+    return crc;
+  }
 
-    while (this._stream.Position < safetyLimit && iterations < 100_000) {
-      iterations++;
-      var startPos = this._stream.Position;
+  private void Parse() {
+    if (this._data.Length < 8 || !this._data.AsSpan(0, 7).SequenceEqual(Signature)) throw new InvalidDataException("Not a StuffIt X archive.");
+    if (this._data[7] == '?') throw new NotSupportedException("This StuffIt X archive is base-N text encoded.");
+    if (this._data[7] != '!') throw new InvalidDataException("Not a StuffIt X archive.");
 
-      long tag;
-      long elementDataSize;
-      try {
-        tag             = ReadP2(this._stream);
-        elementDataSize = ReadP2(this._stream);
-      } catch (EndOfStreamException) {
-        break;
+    var input = new StuffItXInput(this._data) { Position = 8 };
+    var nodes = new List<Node>();
+    var nodesById = new Dictionary<long, Node>();
+    var streamForks = new Dictionary<long, List<Fork?>>();
+
+    for (var done = false; !done;) {
+      if (input.Position >= input.End) throw new InvalidDataException("StuffIt X archive has no end element.");
+      var element = ReadElement(input);
+      switch (element.Type) {
+        case ElementEnd:
+          done = true;
+          break;
+        case ElementData: {
+          var crc = ScanElementData(input, element);
+          var end = input.Position;
+          this._streams[element.Attributes[0]] = new DataStream(element, crc, end - element.DataOffset) { Length = Math.Max(0, element.Attributes[4]) };
+          input.Position = end;
+          break;
+        }
+        case ElementFile:
+        case ElementDirectory: {
+          var node = new Node(element.Attributes[0], element.Attributes[1], element.Type == ElementDirectory);
+          nodes.Add(node);
+          nodesById[node.Id] = node;
+          break;
+        }
+        case ElementFork: {
+          long file = element.Attributes[1], stream = element.Attributes[2], index = element.Attributes[3], length = element.Attributes[4];
+          var type = (long)input.ReadP2();
+          if (index < 0 || index > 0xFFFF || length < 0) throw new InvalidDataException("StuffIt X fork is not valid.");
+          if (!streamForks.TryGetValue(stream, out var forks)) streamForks[stream] = forks = [];
+          while (forks.Count <= index) forks.Add(null);
+          if (forks[(int)index] is { } existing) {
+            if (existing.Length != length) throw new InvalidDataException("StuffIt X forks disagree on a shared stream slice.");
+            existing.Files.Add(file);
+          } else forks[(int)index] = new Fork([file], type, length);
+          break;
+        }
+        case ElementCatalog: {
+          ScanElementData(input, element);
+          var end = input.Position;
+          var catalog = this.Decode(element, element.Attributes[4]);
+          ParseCatalog(new StuffItXInput(catalog), nodes, nodesById);
+          input.Position = end;
+          break;
+        }
+        case ElementClue:
+          input.Skip(element.Attributes[4]);
+          break;
+        case ElementRoot:
+          input.ReadP2();
+          break;
+        case ElementBoundary:
+        case ElementUnknown9:
+          break;
+        default:
+          if (element.Type > 10) {
+            ScanElementData(input, element);
+            break;
+          }
+          throw new NotSupportedException($"StuffIt X element type {element.Type} is not supported.");
       }
+      input.Align();
+    }
 
-      if (tag == TagEndOfStream && elementDataSize == 0)
-        break;
+    this.BuildEntries(nodes, nodesById, streamForks);
+  }
 
-      var elementDataStart = this._stream.Position;
-
-      try {
-        ProcessElement(tag, elementDataSize, elementDataStart, dirStack);
-      } catch (Exception) {
-        // On any parse error inside an element, skip the element body and continue.
+  private void BuildEntries(List<Node> nodes, Dictionary<long, Node> nodesById, Dictionary<long, List<Fork?>> streamForks) {
+    var forksByFile = new Dictionary<long, List<(long Stream, long Offset, Fork Fork)>>();
+    foreach (var (streamId, forks) in streamForks) {
+      long offset = 0;
+      foreach (var fork in forks) {
+        if (fork == null) throw new InvalidDataException("StuffIt X stream has a gap between its forks.");
+        foreach (var file in fork.Files) {
+          if (!forksByFile.TryGetValue(file, out var list)) forksByFile[file] = list = [];
+          list.Add((streamId, offset, fork));
+        }
+        offset += fork.Length;
       }
+      // The data element records the decoded size itself. It is the length the CRC-32 covers,
+      // and it can exceed the forks' total: a preview fork may claim fewer bytes than its stream holds.
+      if (this._streams.TryGetValue(streamId, out var stream)) stream.Length = Math.Max(offset, stream.Element.Attributes[4]);
+    }
 
-      // Always advance to the next element regardless of what ProcessElement did.
-      var nextPos = elementDataStart + elementDataSize;
-      if (nextPos <= this._stream.Position && elementDataSize > 0) {
-        // ProcessElement consumed more than the element — something is wrong; stop.
-        break;
+    foreach (var node in nodes) {
+      var path = node.Path.Length > 0 ? node.Path : $"entry{node.Id}";
+      var name = node.Name.Length > 0 ? node.Name : path;
+      if (node.IsDirectory) {
+        this._entries.Add(new StuffItXEntry { Name = name, FullPath = path, IsDirectory = true, LastModified = node.Modified, Created = node.Created, Comment = node.Comment });
+        continue;
       }
-      if (nextPos > this._stream.Length)
-        break;
-      this._stream.Position = nextPos;
-
-      // Guard against zero-progress loops.
-      if (this._stream.Position == startPos)
-        break;
+      forksByFile.TryGetValue(node.Id, out var forks);
+      var dataFork = forks?.FirstOrDefault(f => f.Fork.Type == ForkData);
+      var resourceFork = forks?.FirstOrDefault(f => f.Fork.Type == ForkResource);
+      this._entries.Add(this.MakeEntry(node, name, path, dataFork?.Fork != null ? dataFork : null, false));
+      if (resourceFork?.Fork != null) this._entries.Add(this.MakeEntry(node, name + ".rsrc", path + ".rsrc", resourceFork, true));
     }
   }
 
-  private void ProcessElement(long tag, long elementDataSize, long elementDataStart,
-                               Stack<string> dirStack) {
-    if (elementDataSize <= 0) return;
+  private StuffItXEntry MakeEntry(Node node, string name, string path, (long Stream, long Offset, Fork Fork)? fork, bool resource) {
+    if (fork is not { } f || !this._streams.TryGetValue(f.Stream, out var stream))
+      return new StuffItXEntry { Name = name, FullPath = path, IsResourceFork = resource, LastModified = node.Modified, Created = node.Created, Comment = node.Comment };
+    var compressed = stream.Length > 0 ? f.Fork.Length * stream.CompressedSize / stream.Length : 0;
+    return new StuffItXEntry {
+      Name = name, FullPath = path, IsResourceFork = resource,
+      OriginalSize = f.Fork.Length, CompressedSize = compressed,
+      Method = MethodName(stream.Element), DataOffset = stream.Element.DataOffset,
+      LastModified = node.Modified, Created = node.Created, Comment = node.Comment,
+      StreamId = f.Stream, StreamOffset = f.Offset,
+    };
+  }
 
-    switch (tag) {
-      case TagDirectoryStart: {
-        var name = ReadP2String(elementDataSize);
-        dirStack.Push(name);
-        var path = BuildPath(dirStack);
-        this._entries.Add(new StuffItXEntry {
-          Name         = name,
-          FullPath     = path,
-          IsDirectory  = true,
-          OriginalSize = 0,
-          CompressedSize = 0,
-          Method       = "",
-          MethodCode   = 0,
-        });
-        break;
-      }
+  private static string MethodName(Element element) {
+    var method = element.Algorithms[0] switch {
+      -1 => "Stored",
+      0 => "Brimstone",
+      1 => "Cyanide",
+      2 => "Darkhorse",
+      3 => "Deflate",
+      4 => "Blend",
+      5 => "None",
+      6 => "Iron",
+      var m => $"Method {m}",
+    };
+    return element.Algorithms[2] switch {
+      -1 => method,
+      0 => method + "+English",
+      2 => method + "+x86",
+      var p => $"{method}+Preprocess {p}",
+    };
+  }
 
-      case TagDirectoryEnd:
-        if (dirStack.Count > 0)
-          dirStack.Pop();
-        break;
+  // ── stream decoding ──────────────────────────────────────────────────────────
 
-      case TagFile: {
-        ParseFileElement(elementDataSize, elementDataStart, dirStack);
-        break;
-      }
-
-      default:
-        // Unknown or unsupported element — skip (caller will advance stream).
-        break;
+  /// <summary>Joins an element's length-prefixed data blocks.</summary>
+  private byte[] ReadBlocks(Element element) {
+    var input = new StuffItXInput(this._data) { Position = element.DataOffset };
+    var output = new MemoryStream();
+    for (;;) {
+      var length = input.ReadP2();
+      if (length == 0) break;
+      output.Write(input.ReadBytes((long)length));
     }
-  }
-
-  private void ParseFileElement(long elementDataSize, long elementDataStart,
-                                 Stack<string> dirStack) {
-    if (elementDataSize < 4) return;
-
-    // File element layout (simplified):
-    //   P2  name length + name bytes
-    //   P2  method code
-    //   P2  original (uncompressed) size
-    //   P2  compressed size
-    //   ... compressed data follows (may be inline or pointed to by offset)
-
-    var name           = ReadP2String(elementDataSize);
-    if (string.IsNullOrEmpty(name)) return;
-
-    var methodCode     = (int)ReadP2(this._stream);
-    var originalSize   = ReadP2(this._stream);
-    var compressedSize = ReadP2(this._stream);
-
-    // Remaining bytes in the element body are the compressed data.
-    var dataOffset  = this._stream.Position;
-    var headerConsumed = dataOffset - elementDataStart;
-    var remaining   = elementDataSize - headerConsumed;
-
-    // Validate sizes: if compressedSize is unreasonable, derive from remaining bytes.
-    if (compressedSize <= 0 || compressedSize > remaining)
-      compressedSize = remaining > 0 ? remaining : 0;
-
-    var fullPath = BuildChildPath(dirStack, name);
-    var methodName = MethodName(methodCode);
-
-    this._entries.Add(new StuffItXEntry {
-      Name           = name,
-      FullPath       = fullPath,
-      IsDirectory    = false,
-      OriginalSize   = originalSize,
-      CompressedSize = compressedSize,
-      Method         = methodName,
-      MethodCode     = methodCode,
-      DataOffset     = dataOffset,
-    });
-  }
-
-  // ── String reading ────────────────────────────────────────────────────────────
-
-  /// <summary>
-  /// Reads a P2-length-prefixed string from the current stream position.
-  /// Falls back to empty string on any error or if the length exceeds the element budget.
-  /// </summary>
-  private string ReadP2String(long elementBudget) {
-    var len = ReadP2(this._stream);
-    if (len <= 0 || len > elementBudget || len > 4096)
-      return "";
-    var buf = ReadExact((int)len);
-    return Encoding.UTF8.GetString(buf);
-  }
-
-  // ── Path helpers ──────────────────────────────────────────────────────────────
-
-  private static string BuildPath(Stack<string> dirStack) {
-    // Stack enumeration is LIFO — reverse to get top-down order.
-    var parts = dirStack.ToArray();
-    Array.Reverse(parts);
-    return string.Join("/", parts) + "/";
-  }
-
-  private static string BuildChildPath(Stack<string> dirStack, string name) {
-    if (dirStack.Count == 0) return name;
-    var parts = dirStack.ToArray();
-    Array.Reverse(parts);
-    return string.Join("/", parts) + "/" + name;
-  }
-
-  // ── Decompression ─────────────────────────────────────────────────────────────
-
-  private static byte[] DecompressDeflate(byte[] compressed, int expectedSize) {
-    using var input  = new MemoryStream(compressed);
-    using var deflate = new RawDeflateStream(input, CompressionStreamMode.Decompress);
-    if (expectedSize > 0) {
-      var buf  = new byte[expectedSize];
-      var total = 0;
-      while (total < expectedSize) {
-        var read = deflate.Read(buf, total, expectedSize - total);
-        if (read == 0) break;
-        total += read;
-      }
-      return buf;
-    }
-    using var output = new MemoryStream();
-    deflate.CopyTo(output);
     return output.ToArray();
   }
 
-  // ── P2 variable-length integer ────────────────────────────────────────────────
+  private byte[] Decode(Element element, long length) {
+    if (element.Algorithms[3] >= 0) throw new NotSupportedException("Encrypted StuffIt X streams are not supported.");
+    if (element.Algorithms[2] >= 0) throw new NotSupportedException($"StuffIt X stream preprocessing '{MethodName(element)}' is not supported.");
+    if (length < 0 || length > int.MaxValue) throw new InvalidDataException("StuffIt X stream length is out of range.");
 
-  /// <summary>
-  /// Reads a P2 variable-length integer from <paramref name="s"/>.
-  /// Each byte contributes 7 data bits (big-endian); the high bit signals continuation.
-  /// </summary>
-  private static long ReadP2(Stream s) {
-    long val = 0;
-    while (true) {
-      var b = s.ReadByte();
-      if (b < 0) throw new EndOfStreamException("Unexpected end of stream reading P2 integer.");
-      val = (val << 7) | (b & 0x7FL);
-      if ((b & 0x80) == 0) break;
+    var payload = this.ReadBlocks(element);
+    var input = new StuffItXInput(payload);
+    switch (element.Algorithms[0]) {
+      case -1:
+        return payload;
+      case 0:
+        return StuffItXBrimstone.Decode(input, length);
+      case 1:
+        return StuffItXCyanide.Decode(input, length);
+      case 5:
+        return Rc4(payload);
+      case 6:
+        return StuffItXIron.Decode(input, length);
+      default:
+        throw new NotSupportedException($"StuffIt X compression method '{MethodName(element)}' is not supported.");
     }
-    return val;
   }
 
-  // ── Stream helpers ────────────────────────────────────────────────────────────
-
-  private byte[] ReadExact(int count) {
-    if (count <= 0) return [];
-    var buf   = new byte[count];
-    var total = 0;
-    while (total < buf.Length) {
-      var read = this._stream.Read(buf, total, buf.Length - total);
-      if (read == 0)
-        throw new EndOfStreamException("Unexpected end of stream reading StuffIt X data.");
-      total += read;
+  /// <summary>Method 5: two skipped bytes, a one-byte RC4 key, then the RC4-obscured data.</summary>
+  private static byte[] Rc4(byte[] payload) {
+    if (payload.Length < 3) throw new InvalidDataException("StuffIt X obscured stream is too short.");
+    Span<byte> s = stackalloc byte[256];
+    for (var k = 0; k < 256; ++k) s[k] = (byte)k;
+    var key = payload[2];
+    var j = 0;
+    for (var k = 0; k < 256; ++k) {
+      j = (j + s[k] + key) & 255;
+      (s[k], s[j]) = (s[j], s[k]);
     }
-    return buf;
+    var output = payload.AsSpan(3).ToArray();
+    int x = 0, y = 0;
+    for (var n = 0; n < output.Length; ++n) {
+      x = (x + 1) & 255;
+      y = (y + s[x]) & 255;
+      (s[x], s[y]) = (s[y], s[x]);
+      output[n] ^= s[(s[x] + s[y]) & 255];
+    }
+    return output;
   }
 
-  private static uint ReadBigEndianUInt32(byte[] buf, int offset)
-    => (uint)((buf[offset] << 24) | (buf[offset + 1] << 16) |
-              (buf[offset + 2] << 8)  |  buf[offset + 3]);
+  // ── catalog ──────────────────────────────────────────────────────────────────
 
-  // ── Method name lookup ────────────────────────────────────────────────────────
+  private static uint ReadBitsUInt32(StuffItXInput input) {
+    var v = 0u;
+    for (var i = 0; i < 4; ++i) v = (v << 8) | (uint)input.ReadBits(8);
+    return v;
+  }
 
-  private static string MethodName(int code) => code switch {
-    0  => "Stored",
-    2  => "Brimstone",
-    5  => "Deflate",
-    8  => "Darkhorse",
-    13 => "Cyanide",
-    14 => "Iron",
-    _  => $"Method{code}",
-  };
+  private static DateTime? ReadFileTime(StuffItXInput input) {
+    var v = 0UL;
+    for (var i = 0; i < 8; ++i) v = (v << 8) | (uint)input.ReadBits(8);
+    return v is > 0 and < 2650467743999999999UL ? DateTime.FromFileTimeUtc((long)v) : null;
+  }
+
+  private static string ReadString(StuffItXInput input) {
+    var length = input.ReadP2();
+    var bytes = input.ReadBytes((long)length);
+    input.Align();
+    try {
+      return new UTF8Encoding(false, true).GetString(bytes);
+    } catch (DecoderFallbackException) {
+      return Encoding.Latin1.GetString(bytes);
+    }
+  }
+
+  private static void ParseCatalog(StuffItXInput input, List<Node> nodes, Dictionary<long, Node> nodesById) {
+    foreach (var node in nodes) {
+      for (;;) {
+        var key = input.ReadP2();
+        if (key == 0) break;
+        switch (key) {
+          case 1: {
+            var name = ReadString(input).Replace('/', '_');
+            node.Name = name;
+            node.Path = nodesById.TryGetValue(node.Parent, out var parent) && parent != node && parent.Path.Length > 0 ? parent.Path + "/" + name : name;
+            break;
+          }
+          case 2:
+            node.Modified = ReadFileTime(input);
+            break;
+          case 3:
+            ReadBitsUInt32(input);
+            break;
+          case 4:
+          case 5:
+            for (var i = 0; i < 32; ++i) input.ReadBits(8);
+            break;
+          case 6: {
+            var hasOwner = input.ReadBits(8);
+            ReadBitsUInt32(input);
+            if (hasOwner != 0) {
+              ReadBitsUInt32(input);
+              ReadBitsUInt32(input);
+            }
+            break;
+          }
+          case 7:
+            input.ReadP2();
+            break;
+          case 8:
+            node.Created = ReadFileTime(input);
+            break;
+          case 9: {
+            var comment = ReadString(input);
+            if (comment.Length > 0) node.Comment = comment;
+            break;
+          }
+          case 10: {
+            // A list of names (StuffIt 7 for Mac repeats the file name here). The strings start on
+            // a byte boundary: XADMaster reads them straight after the count and loses its place.
+            var count = input.ReadP2();
+            input.Align();
+            for (var i = 0UL; i < count; ++i) ReadString(input);
+            break;
+          }
+          case 11:
+          case 12:
+            ReadString(input);
+            break;
+          default:
+            throw new NotSupportedException($"StuffIt X catalog tag {key} is not supported.");
+        }
+      }
+      input.Align();
+    }
+  }
 }
