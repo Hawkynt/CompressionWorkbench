@@ -197,6 +197,18 @@ public sealed class VmdkStream : Stream {
       // rgdOffset at 48 — skip
       var gdOffsetSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr[44..]); // offset 56
 
+      // This stream edits grains in place, so it only takes a plain hosted sparse
+      // extent: compressed / stream-optimized grains (flags bits 16-17, or the
+      // grain directory deferred to the footer) and delta disks, whose unallocated
+      // grains belong to a parent, are read through VmdkVirtualDisk instead.
+      stream.Position = 8;
+      Span<byte> flagBytes = stackalloc byte[4];
+      stream.ReadExactly(flagBytes);
+      var flags = BinaryPrimitives.ReadUInt32LittleEndian(flagBytes);
+      if ((flags & 0x0003_0000u) != 0 || gdOffsetSectors == -1 || HasParent(stream, hdr))
+        return null;
+      var zeroedGte = (flags & 0x0000_0004u) != 0;
+
       if (numGTEsPerGT <= 0) numGTEsPerGT = 512;
       var grainSizeBytes = (int)(grainSizeSectors * 512);
       if (grainSizeBytes <= 0) return null;
@@ -233,7 +245,8 @@ public sealed class VmdkStream : Stream {
           var grainIdx = gd * numGTEsPerGT + gte;
           if (grainIdx >= totalGrains) break;
           var grainSector = BinaryPrimitives.ReadUInt32LittleEndian(gtBuf.AsSpan(gte * 4));
-          grainOffsets[grainIdx] = grainSector == 0 ? 0 : (long)grainSector * 512;
+          // With the zeroed-GTE flag, entry 1 marks a grain that reads as zeros.
+          grainOffsets[grainIdx] = grainSector == 0 || (zeroedGte && grainSector == 1) ? 0 : (long)grainSector * 512;
         }
       }
 
@@ -252,6 +265,24 @@ public sealed class VmdkStream : Stream {
       stream.Position = 0;
       return null;
     }
+  }
+
+  /// <summary>True when the embedded descriptor names a parent (a delta disk).</summary>
+  private static bool HasParent(Stream stream, ReadOnlySpan<byte> hdr) {
+    var descriptorSector = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr[16..]); // offset 28
+    var descriptorSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr[24..]); // offset 36
+    if (descriptorSector <= 0 || descriptorSectors is <= 0 or > 2048) return false;
+    var offset = descriptorSector * 512;
+    var length = (int)descriptorSectors * 512;
+    if (offset + length > stream.Length) return false;
+    var bytes = new byte[length];
+    stream.Position = offset;
+    stream.ReadExactly(bytes);
+    var text = System.Text.Encoding.ASCII.GetString(bytes);
+    var at = text.IndexOf("parentCID=", StringComparison.Ordinal);
+    if (at < 0) return false;
+    var value = text[(at + 10)..].Split('\n')[0].Trim();
+    return !value.StartsWith("ffffffff", StringComparison.OrdinalIgnoreCase);
   }
 
   // ── Sparse grain allocation ──────────────────────────────────────────

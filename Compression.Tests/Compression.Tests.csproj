@@ -71,6 +71,10 @@
     <EmbeddedResource Include="BcacheFs\ReferenceVectors\*.gz;BcacheFs\ReferenceVectors\manifest.txt">
       <LogicalName>BcacheFsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Disks qemu-img / qemu-io wrote; see Vmdk/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
+      <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>
