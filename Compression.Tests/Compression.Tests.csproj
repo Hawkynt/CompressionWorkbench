@@ -122,6 +122,10 @@
     <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">
       <LogicalName>VdfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Safari-saved and plistlib-written web archives; see WebArchive/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="WebArchive\ReferenceVectors\*.webarchive;WebArchive\ReferenceVectors\*.txt">
+      <LogicalName>WebArchiveVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
