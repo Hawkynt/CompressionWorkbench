@@ -52,7 +52,7 @@ Now Compress,now,archive,,,R,,,,,1,,,,,,MISSING,,
 LZX (Amiga),lzx,archive,,,R,,R,,Y,3,https://en.wikipedia.org/wiki/LZX,LzxAmiga,Y,Y,Y,OK,,
 NuFX / ShrinkIt,shk;sdk;bxy,archive,,,,,,,Y,1,https://wiki.preterhuman.net/NuFX,NuFx,Y,Y,Y,OK,,
 Spark (Acorn),spk;arc,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/Spark_(archiver),Spark,Y,Y,Y,OK,,
-HA,ha,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/HA_(file_format),Ha,Y,Y,Y,PARTIAL,,stored only; HSC and ASC throw (HaReader.cs)
+HA,ha,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/HA_(file_format),Ha,Y,Y,Y,OK,,"reads CPY/ASC/HSC (ha.exe 0.999b archives and the original 1995 HA_SRC.HA); writes HSC/CPY that ha.exe extracts, HSC streams byte-identical to ha.exe; Unix special-file records listed, not extracted (docs/HA-ON-DISK.md)"
 SQX,sqx,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/SQX,Sqx,Y,Y,Y,OK,,
 UHARC,uha,archive,,,,,R,,Y,2,https://en.wikipedia.org/wiki/UHarc,Uharc,Y,Y,Y,PARTIAL,,stored and LZP only (UharcReader.cs)
 FreeArc,arc;cdx,archive,,,,,R,fmt/1096,Y,3,https://en.wikipedia.org/wiki/FreeArc,FreeArc,Y,Y,Y,PARTIAL,,only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs)

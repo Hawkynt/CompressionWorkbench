@@ -1,0 +1,45 @@
+Archive : ours.ha (5 files)
+  filename        original    compressed   rate     date        time   m
+ CRC-32    path
+dhsar  
+===========================================================================
+  docs            0           0           100.0 %   2024-05-06  09:08  DIR
+ 00000000  (none)
+ d----
+---------------------------------------------------------------------------
+  text.txt        69279       3554          5.1 %   2024-05-06  09:08  HSC
+ 2E7D92B5  docs\
+ ---a-
+---------------------------------------------------------------------------
+  raw.bin         3000        274           9.1 %   2024-05-06  09:08  HSC
+ B26B8940  (none)
+ ---a-
+---------------------------------------------------------------------------
+  empty.txt       0           0           100.0 %   2024-05-06  09:08  CPY
+ 00000000  (none)
+ ---a-
+---------------------------------------------------------------------------
+  tiny.txt        1           1           100.0 %   2024-05-06  09:08  CPY
+ E8B7BE43  (none)
+ ---a-
+===========================================================================
+  5               72280       3829          5.2 %
+Archive : ours.ha (5 files)
+Testing DIR DONE   docs
+Testing HSC        docs\text.txt 11 % 23 % 35 % 47 % 59 % 70 % 82 % 94 %100 %
+Testing HSC        raw.bin100 %
+Testing CPY        empty.txt100 %
+Testing CPY        tiny.txt100 %
+Archive : ours.ha (5 files)
+Making    DIR        docsDONE
+Unpacking HSC        docs\text.txt 11 % 23 % 35 % 47 % 59 % 70 % 82 % 94 %100 %
+Unpacking HSC        raw.bin100 %
+Unpacking CPY        empty.txt100 %
+Unpacking CPY        tiny.txt100 %
+exit=0
+47fedfe3862208cc5c572eb8e5e75f7a4f639d4c596752e8cc5a44cdcde9a10c *./docs/text.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 *./empty.txt
+7291514d2492fd7ff49e10ba7df95d19d31d199b89d74bcb62cebdee1bc1a498 *./raw.bin
+ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb *./tiny.txt
+.
+./docs

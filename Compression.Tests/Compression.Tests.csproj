@@ -193,6 +193,10 @@
     <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
       <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- HA archives ha.exe 0.999b wrote, and ours; see Ha/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Ha\ReferenceVectors\*.ha">
+      <LogicalName>HaVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar itself (2.4.24 to 2.8.6); see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
