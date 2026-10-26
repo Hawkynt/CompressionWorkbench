@@ -10169,10 +10169,10 @@ Constants for the ARJ archive format.
 | `FlagPathSep` | `const byte FlagPathSep` | ARJ flag: path translated (directory separators converted). |
 | `FlagVolume` | `const byte FlagVolume` | ARJ flag: volume continuation. |
 | `HeaderId` | `const ushort HeaderId` | The two-byte magic number that marks the start of every ARJ header (0xEA60, little-endian). |
-| `MethodCompressed1` | `const byte MethodCompressed1` | Compression method 1: compressed (LZ77+Huffman, primary). |
-| `MethodCompressed2` | `const byte MethodCompressed2` | Compression method 2: compressed (alternate). |
-| `MethodCompressed3` | `const byte MethodCompressed3` | Compression method 3: compressed (alternate). |
-| `MethodStoreFast` | `const byte MethodStoreFast` | Compression method 4: store (no-compression, fastest). |
+| `MethodCompressed1` | `const byte MethodCompressed1` | Compression method 1: LZ77 + Huffman, best ratio ("most"). |
+| `MethodCompressed2` | `const byte MethodCompressed2` | Compression method 2: LZ77 + Huffman, same bit stream as method 1 with a shorter search. |
+| `MethodCompressed3` | `const byte MethodCompressed3` | Compression method 3: LZ77 + Huffman, same bit stream as method 1 with the shortest search. |
+| `MethodFastest` | `const byte MethodFastest` | Compression method 4: "fastest" — LZ77 with fixed prefix codes and no Huffman stage. |
 | `MethodStore` | `const byte MethodStore` | Compression method 0: store (no compression). |
 | `MinVersionToExtract` | `const byte MinVersionToExtract` | Minimum archiver version required to extract (stored method only). |
 | `OsAmiga` | `const byte OsAmiga` | Host OS: Amiga. |
@@ -10256,7 +10256,7 @@ Random-access in-place modifier for ARJ archives. Add appends a new entry just b
 
 #### `ArjReader`
 
-Reads entries from an ARJ archive stream. Supports extraction of stored entries (methods 0 and 4). Compressed methods (1–3) are detected but extraction is not supported.
+Reads entries from an ARJ archive stream and extracts every ARJ method: 0 (stored), 1-3 (LZ77 + Huffman) and 4 ("fastest", LZ77 with fixed prefix codes).
 
 Implements `IDisposable`.
 
@@ -12604,6 +12604,37 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes supported non-solid pages directly through the RAR5 block remover. Unsupported encryption, recovery/quick-open, solid dependency and RAR4 cases are rejected before the first byte move and therefore safely fall back to the verified rebuild without an O(total bytes) transaction snapshot. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: gaps not covered by a live extent in the RAR layout map (markers, block headers, packed data and ENDARC are live and preserved). Cluster-tip wiping is N/A (RAR packs blocks back to back). |
 
+### Namespace `FileFormat.Cbt`
+
+[`CbtFormatDescriptor`](#cbtformatdescriptor)
+
+#### `CbtFormatDescriptor`
+
+Comic book archive — a POSIX tar container of sequentially named page images, conventionally suffixed .cbt. Byte-identical to a tar archive, so it is identified by extension only and every operation is the tar one. References: `https://en.wikipedia.org/wiki/Comic_book_archive` — the .cbt/.cbz/.cbr naming convention`https://pubs.opengroup.org/onlinepubs/9799919799/utilities/pax.html` — POSIX ustar/pax interchange format — the underlying container
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CbtFormatDescriptor` | `CbtFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
 ### Namespace `FileFormat.Cbz`
 
 [`CbzFormatDescriptor`](#cbzformatdescriptor)
@@ -13715,16 +13746,22 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `DiskDoublerEntry`
 
-Represents a single compressed file stored in a DiskDoubler file.
+Represents one fork of a DiskDoubler compressed file.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DiskDoublerEntry` | `DiskDoublerEntry()` |  |
+| `Checksum` | `ushort Checksum { get; init; }` | Gets the fork's checksum field (its meaning depends on the method). |
 | `CompressedSize` | `long CompressedSize { get; init; }` | Gets the compressed size in bytes. |
+| `Creator` | `string Creator { get; init; }` | Gets the Mac creator code. |
 | `DataOffset` | `long DataOffset { get; init; }` | Gets the absolute byte offset of the compressed data within the source stream. |
+| `DeltaType` | `int DeltaType { get; init; }` | Gets the fork's delta pre-processing type (0 = none). |
+| `FileType` | `string FileType { get; init; }` | Gets the Mac file type code. |
 | `IsDataFork` | `bool IsDataFork { get; init; }` | Gets whether this entry represents the data fork (as opposed to the resource fork). |
-| `Method` | `int Method { get; init; }` | Gets the compression method ID (0 = stored, 1 = RLE, 3 = LZC variant, others = proprietary). |
-| `Name` | `string Name { get; init; }` | Gets the original filename. |
+| `IsSupported` | `bool IsSupported { get; }` | Gets whether this reader can decode the entry's method. |
+| `Method` | `int Method { get; init; }` | Gets the compression method: 0 stored, 1 Unix compress, 2 and 5 DiskDoubler Huffman variants, 3 RLE, 4 Huffman, 6 and 9 "AD" LZSS, 7 Stac LZS, 8 Compact Pro, 10 "DD". The high bit is a flag and is masked off. |
+| `Modified` | `DateTime? Modified { get; init; }` | Gets the modification time, or `null` when the header holds zero. |
+| `Name` | `string Name { get; init; }` | Gets the entry name: the file's name for the data fork, with ".rsrc" appended for the resource fork. |
 | `OriginalSize` | `long OriginalSize { get; init; }` | Gets the original (uncompressed) size in bytes. |
 
 #### `DiskDoublerFormatDescriptor`
@@ -13745,7 +13782,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures: a single DiskDoubler file starts with 0xABCD0054. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
@@ -13757,27 +13794,28 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 
 #### `DiskDoublerReader`
 
-Reads the header of a DiskDoubler compressed file and provides access to its data and resource fork entries.
+Reads a single DiskDoubler compressed file and decodes its forks.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DiskDoublerReader` | `DiskDoublerReader(Stream stream, bool leaveOpen = false)` | Opens a DiskDoubler compressed file from the given stream and parses its header. |
-| `HeaderSize` | `const int HeaderSize` | Size of the fixed-length DiskDoubler file header in bytes. |
-| `Entries` | `IReadOnlyList<DiskDoublerEntry> Entries { get; }` | Gets the list of entries parsed from the DiskDoubler file header. |
+| `DiskDoublerReader` | `DiskDoublerReader(Stream stream, bool leaveOpen = false, string name = null)` | Opens a DiskDoubler compressed file from the given stream and parses its header. |
+| `Entries` | `IReadOnlyList<DiskDoublerEntry> Entries { get; }` | Gets the forks parsed from the header: the data fork (if any), then the resource fork (if any). |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(DiskDoublerEntry entry)` | Extracts the data for the specified entry. |
+| `Extract` | `byte[] Extract(DiskDoublerEntry entry)` | Decodes the specified fork. |
+| `IsDiskDoubler` | `static bool IsDiskDoubler(ReadOnlySpan<byte> header)` | Returns whether `header` starts a DiskDoubler file (directly or behind MacBinary). |
+| `MethodName` | `static string MethodName(int method)` | Names a method as the format's tools do. |
 
 #### `DiskDoublerWriter`
 
-Writes a DiskDoubler stored (method 0) file. Takes a single data fork payload; resource fork is empty. Roundtrips through `DiskDoublerReader`.
+Writes a single DiskDoubler file with a stored (method 0) data fork and no resource fork, in the layout `DiskDoublerReader` documents. The Unarchiver (`unar`) reads it back.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DiskDoublerWriter` | `DiskDoublerWriter()` |  |
-| `SetFile` | `void SetFile(string name, byte[] data)` | Sets the file. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
+| `SetFile` | `void SetFile(byte[] data, string fileType = "????", string creator = "????")` | Sets the data fork. DiskDoubler stores no name; the file's own name is the entry's name. |
+| `WriteTo` | `void WriteTo(Stream output)` | Writes the header and the stored data fork to `output`. |
 
 ### Namespace `FileFormat.Dls`
 
@@ -16755,30 +16793,33 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 ### Namespace `FileFormat.FreeArc`
 
-[`FreeArcEntry`](#freearcentry) · [`FreeArcFormatDescriptor`](#freearcformatdescriptor) · [`FreeArcReader`](#freearcreader) · [`FreeArcWriter`](#freearcwriter)
+[`FreeArcEntry`](#freearcentry) · [`FreeArcFormatDescriptor`](#freearcformatdescriptor) · [`FreeArcMethods`](#freearcmethods) · [`FreeArcReader`](#freearcreader) · [`FreeArcWriter`](#freearcwriter)
 
 #### `FreeArcEntry`
 
-Represents a single file entry within a FreeArc archive.
+Represents a single file or directory recorded in a FreeArc directory block.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FreeArcEntry` | `FreeArcEntry()` |  |
-| `CompressedSize` | `long CompressedSize { get; init; }` | The compressed size of the file data in bytes. |
-| `Method` | `string Method { get; init; }` | The compression method string (e.g. "storing", "lzma", "freearc"). |
-| `Name` | `string Name { get; init; }` | The file name as stored in the archive directory block. |
+| `CompressedSize` | `long CompressedSize { get; init; }` | The compressed size of the solid block that holds this file, reported on the block's first file only (FreeArc does not record per-file compressed sizes); zero on the others. |
+| `Crc` | `uint Crc { get; init; }` | The CRC-32 of the uncompressed file contents. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry is a directory. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | The modification time (stored as 32-bit Unix seconds), in UTC. |
+| `Method` | `string Method { get; init; }` | The method string of the solid block holding this file, e.g. `lzma:32kb:normal:32`. |
+| `Name` | `string Name { get; init; }` | The full stored path, with `/` as separator. |
 | `Size` | `long Size { get; init; }` | The uncompressed size of the file in bytes. |
 
 #### `FreeArcFormatDescriptor`
 
-Format descriptor for FreeArc compressed archives (.arc). References: `https://github.com/Bulat-Ziganshin/FA` — FreeArc'Next by FreeArc's author, Bulat Ziganshin (the original freearc.org site is defunct)`https://en.wikipedia.org/wiki/FreeArc` — Wikipedia overviewNo formal specification — the archive layout is defined by the original FreeArc sources
+Format descriptor for FreeArc archives (.arc, signature `ArC\x01`). References: `docs/FREEARC-ON-DISK.md` — the layout this implementation follows, derived from FreeArc's sources and checked against FreeArc 0.67's output`https://github.com/Bulat-Ziganshin/FA` — FreeArc'Next by FreeArc's author, Bulat Ziganshin (the original freearc.org site is defunct)`https://en.wikipedia.org/wiki/FreeArc` — Wikipedia overview
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FreeArcFormatDescriptor` | `FreeArcFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
 | `DefaultExtension` | `string DefaultExtension { get; }` |  |
@@ -16787,7 +16828,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
@@ -16797,29 +16838,48 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
+#### `FreeArcMethods`
+
+FreeArc compression method strings: `name:param:param...` stages joined by `+`, applied left to right when compressing and therefore undone right to left when extracting.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Storing` | `const string Storing` | The method name of an uncompressed stage. |
+| `Decode` | `static byte[] Decode(string compressor, byte[] input, long outputSize)` | Decodes `input` produced by `compressor` into exactly `outputSize` bytes. |
+| `Encode` | `static byte[] Encode(string compressor, ReadOnlySpan<byte> input)` | Encodes `input` with a single supported stage. |
+| `IsEncrypted` | `static bool IsEncrypted(string compressor)` | Gets whether `compressor` contains an encryption stage. |
+| `IsSupported` | `static bool IsSupported(string compressor)` | Gets whether every stage of `compressor` can be decoded. |
+| `Stages` | `static string[] Stages(string compressor)` | Splits a method string into its stages. |
+| `WithDictionary` | `static string WithDictionary(string compressor, long inputLength)` | Gives a bare `lzma` stage an explicit dictionary (the next power of two covering the input, 64 KiB to 64 MiB) so FreeArc's decoder does not reserve its much larger default. |
+
 #### `FreeArcReader`
 
-Reads FreeArc archives (.arc). This implementation parses a well-defined binary subset of the FreeArc container format that is produced by `FreeArcWriter` and understood by this reader. Binary layout (all integers are little-endian): 4 bytes — magic "ArC\x01"4 bytes — uint32 archive flags (reserved, currently 0)One or more blocks, each preceded by a 1-byte block type: 0x01 = directory block0x02 = data block0x00 = end-of-archive marker Directory block payload: uint32 — number of file entriesPer entry: uint16 nameLen + UTF-8 name + uint64 size + uint64 compressedSize + uint64 dataOffset + uint16 methodLen + ASCII method Data block payload: uint32 — payload length in bytespayload bytes (concatenated raw file data)
+Reads real FreeArc archives (`.arc`, signature `ArC\x01`) as written by FreeArc 0.4x–0.67.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FreeArcReader` | `FreeArcReader(Stream stream, bool leaveOpen = false)` | Initialises a new `FreeArcReader` and parses the archive. |
-| `Magic` | `static readonly byte[] Magic` | Magic bytes at the start of every FreeArc archive. |
-| `Entries` | `IReadOnlyList<FreeArcEntry> Entries { get; }` | Gets all file entries found in the archive directory. |
+| `FreeArcReader` | `FreeArcReader(Stream stream, bool leaveOpen = false)` | Opens a FreeArc archive and reads its footer and directory blocks. |
+| `Comment` | `string Comment { get; }` | Gets the archive comment, or an empty string. |
+| `Entries` | `IReadOnlyList<FreeArcEntry> Entries { get; }` | Gets all files and directories recorded in the archive's directory blocks, in archive order. |
+| `IsLocked` | `bool IsLocked { get; }` | Gets whether the archive is locked against further modification. |
+| `SfxSize` | `long SfxSize { get; }` | Gets the size of the data preceding the archive proper (an SFX module), or zero. |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(FreeArcEntry entry)` | Extracts and returns the raw (uncompressed) bytes for the specified entry. |
+| `Extract` | `byte[] Extract(FreeArcEntry entry)` | Extracts the contents of `entry`, verifying its CRC-32. |
 
 #### `FreeArcWriter`
 
-Builds minimal FreeArc archives (.arc) that can be read by `FreeArcReader`. All files are stored without compression (method "storing"). The writer produces the exact binary layout described in `FreeArcReader`: magic, archive flags, a single directory block, a single data block, and the end-of-archive marker.
+Writes real FreeArc archives that FreeArc 0.67's `arc` and `unarc` list, test and extract.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FreeArcWriter` | `FreeArcWriter()` |  |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the archive being built. |
-| `Build` | `byte[] Build()` | Serialises the archive and returns it as a byte array. |
+| `FreeArcWriter` | `FreeArcWriter(string method = "storing")` | Creates a writer that compresses the file block with `method`. |
+| `Method` | `string Method { get; }` | Gets the method string used for the file block. |
+| `AddDirectory` | `void AddDirectory(string name, DateTime? modified = null)` | Adds a directory entry. |
+| `AddFile` | `void AddFile(string name, byte[] data, DateTime? modified = null)` | Adds a file. |
+| `Build` | `byte[] Build()` | Builds the archive. |
+| `WriteTo` | `void WriteTo(Stream output)` | Writes the archive to `output`, which must be positioned at its start. |
 
 ### Namespace `FileFormat.Freeze`
 
@@ -18592,69 +18652,115 @@ Creates IFF CDAF archives with FNAM+FDAT chunk pairs.
 
 ### Namespace `FileFormat.InnoSetup`
 
-[`InnoSetupEntry`](#innosetupentry) · [`InnoSetupFormatDescriptor`](#innosetupformatdescriptor) · [`InnoSetupReader`](#innosetupreader) · [`InnoSetupWriter`](#innosetupwriter)
+[`InnoCompression`](#innocompression) · [`InnoEncryption`](#innoencryption) · [`InnoSetupEntry`](#innosetupentry) · [`InnoSetupFormatDescriptor`](#innosetupformatdescriptor) · [`InnoSetupReader`](#innosetupreader) · [`InnoVersion`](#innoversion)
+
+#### `InnoCompression`
+
+Compression of a setup-1 chunk.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Stored` | `0` | Stored. |
+| `Zlib` | `1` | zlib (with the two-byte zlib header). |
+| `BZip2` | `2` | bzip2. |
+| `Lzma1` | `3` | LZMA with Inno's five-byte properties header. |
+| `Lzma2` | `4` | LZMA2 with Inno's one-byte dictionary-size header. |
+| `Unknown` | `5` | A value the header does not define. |
+
+#### `InnoEncryption`
+
+Encryption of a setup-1 chunk.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` | Not encrypted. |
+| `Arc4Md5` | `1` | ARC4 keyed with MD5(salt + password) (4.2.2 – 5.3.8). |
+| `Arc4Sha1` | `2` | ARC4 keyed with SHA-1(salt + password) (5.3.9 – 6.3.x). |
+| `XChaCha20` | `3` | XChaCha20 keyed by PBKDF2-SHA256 (6.4+). |
 
 #### `InnoSetupEntry`
 
-Represents a file or directory entry listed in an Inno Setup installer.
+A file an Inno Setup installer installs.
 
 Implements `IEquatable<InnoSetupEntry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `InnoSetupEntry` | `InnoSetupEntry(string FileName, string DestDir, long Size, long CompressedSize, bool IsDirectory)` | Represents a file or directory entry listed in an Inno Setup installer. |
-| `CompressedSize` | `long CompressedSize { get; init; }` | The compressed size in bytes, or -1 when unknown. |
-| `DestDir` | `string DestDir { get; init; }` | The destination directory string from the installer header, or empty. |
-| `FileName` | `string FileName { get; init; }` | The source filename or a generated name when parsing fails. |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry represents a directory rather than a file. |
-| `Size` | `long Size { get; init; }` | The uncompressed file size in bytes, or -1 when unknown. |
+| `InnoSetupEntry` | `InnoSetupEntry(string FileName, long Size, DateTime? LastModified, int DataIndex)` | A file an Inno Setup installer installs. |
+| `DataIndex` | `int DataIndex { get; init; }` | Index of the file location (data entry) holding the bytes. |
+| `FileName` | `string FileName { get; init; }` | The destination path with Inno constants spelled as directories, as innoextract writes it: `{app}\bin\x.dll` becomes `app/bin/x.dll`. |
+| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether the entry is a directory; Inno [Files] entries never are. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | The file time the compiler recorded (UTC), or null. |
+| `Size` | `long Size { get; init; }` | The uncompressed size in bytes. |
 
 #### `InnoSetupFormatDescriptor`
 
-Inno Setup installer package (PE stub + Setup.0 data blob). References: `https://jrsoftware.org/isinfo.php` — official Inno Setup site (Jordan Russell)`https://github.com/dscharrer/innoextract` — innoextract — de-facto reference for the undocumented installer data layout`https://en.wikipedia.org/wiki/Inno_Setup` — Wikipedia
+Inno Setup installer: the files of its [Files] section. References: `https://jrsoftware.org/isinfo.php` — Inno Setup; `https://github.com/jrsoftware/issrc` holds its sources (Shared.Struct.pas defines the records)`https://github.com/dscharrer/innoextract` — innoextract (zlib licence), the extractor this reader was converted from and is checked against
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `InnoSetupFormatDescriptor` | `InnoSetupFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The reader produces the decoded bytes per entry; the matched bytes are wrapped in a `BoundedEntryStream` sized to their logical length. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Decodes one entry into memory; an unknown name yields no bytes. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens one entry as a bounded read-only stream. |
 
 #### `InnoSetupReader`
 
-Reads Inno Setup installer metadata from a Windows PE executable.
+Reads the files an Inno Setup installer carries.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `InnoSetupReader` | `InnoSetupReader(Stream stream)` | Opens an Inno Setup installer from a seekable stream. |
-| `Entries` | `IReadOnlyList<InnoSetupEntry> Entries { get; }` | Gets the list of entries parsed from the Setup.0 header. |
-| `Version` | `string Version { get; }` | Gets the Inno Setup version string detected in the overlay, e.g. "5.5.3". |
-| `Extract` | `byte[] Extract(InnoSetupEntry entry)` | Attempts to extract the data for `entry` from the Setup.1 block. |
+| `InnoSetupReader` | `InnoSetupReader(Stream stream)` | Opens an Inno Setup installer (setup.exe) or a bare setup-0 file. |
+| `AppName` | `string AppName { get; }` | Gets the application name from the setup header. |
+| `AppVersion` | `string AppVersion { get; }` | Gets the application version from the setup header. |
+| `Compression` | `InnoCompression Compression { get; }` | Gets the compressor the files were stored with. |
+| `Entries` | `IReadOnlyList<InnoSetupEntry> Entries { get; }` | Gets the files, named and filtered the way innoextract extracts them. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether some files are encrypted. |
+| `VersionText` | `string VersionText { get; }` | Gets the version as text, e.g. "5.5.7 (unicode)". |
+| `Version` | `InnoVersion Version { get; }` | Gets the setup-data version. |
+| `ExtractMany` | `void ExtractMany(IEnumerable<InnoSetupEntry> entries, Action<InnoSetupEntry, byte[]> sink)` | Decodes the given entries; each chunk is decompressed once for all the files it holds. |
+| `Extract` | `byte[] Extract(InnoSetupEntry entry)` | Returns the bytes of one entry, verified against the stored checksum. |
+| `IsInnoSetup` | `static bool IsInnoSetup(Stream stream)` | Cheap detection: a setup loader offset table whose setup-0 starts with an Inno Setup version tag. |
 
-#### `InnoSetupWriter`
+#### `InnoVersion`
 
-Writes a minimal Inno Setup header. No PE stub is emitted; the reader scans from offset 0 for the Inno signature when it can't parse a PE. Setup.0 is emitted as an empty compressed block — the reader's LZMA + zlib decompression both fail gracefully on empty input, leaving the entry list empty. This is detection-only WORM; producing a functional installer requires bundling a signed PE stub which is out of scope.
+The setup-data version an Inno Setup installer was written with, packed as `(a << 24) | (b << 16) | (c << 8) | d`.
+
+Implements `IEquatable<InnoVersion>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `InnoSetupWriter` | `InnoSetupWriter()` |  |
-| `WriteTo` | `void WriteTo(Stream output, byte[] embeddedData = null)` | Writes the to to the supplied output. |
+| `InnoVersion` | `InnoVersion(uint Value, bool IsUnicode, bool IsIsx, bool IsKnown)` | The setup-data version an Inno Setup installer was written with, packed as `(a << 24) \| (b << 16) \| (c << 8) \| d`. |
+| `Build` | `int Build { get; }` | Gets the fourth version component (variant or build). |
+| `IsAmbiguous` | `bool IsAmbiguous { get; }` | True for the tags that more than one layout used (the compiler was changed without the tag). |
+| `IsIsx` | `bool IsIsx { get; init; }` |  |
+| `IsKnown` | `bool IsKnown { get; init; }` |  |
+| `IsUnicode` | `bool IsUnicode { get; init; }` |  |
+| `Major` | `int Major { get; }` | Gets the major version. |
+| `Minor` | `int Minor { get; }` | Gets the minor version. |
+| `Patch` | `int Patch { get; }` | Gets the patch version. |
+| `Value` | `uint Value { get; init; }` |  |
+| `AtLeast` | `bool AtLeast(int a, int b, int c, int d = 0)` | True when this version is at least a.b.c.d. |
+| `Below` | `bool Below(int a, int b, int c, int d = 0)` | True when this version is below a.b.c.d. |
+| `Next` | `InnoVersion? Next()` | The next known version of the same flavour (ANSI/Unicode, ISX), or null. |
+| `Parse` | `static InnoVersion Parse(ReadOnlySpan<byte> tag64)` | Parses the 64-byte version tag at the start of setup-0. |
+| `ToString` | `override string ToString()` |  |
+| `V` | `static uint V(int a, int b, int c, int d = 0)` | Packs a version number. |
 
 ### Namespace `FileFormat.Ipa`
 
@@ -19634,6 +19740,7 @@ Constants for the LHA/LZH archive format.
 | `MethodLh6` | `const string MethodLh6` | Method: LZH compression with 32KB window. |
 | `MethodLh7` | `const string MethodLh7` | Method: LZH compression with 64KB window. |
 | `MethodLhd` | `const string MethodLhd` | Method: directory marker. |
+| `MethodLhx` | `const string MethodLhx` | Method: lh5-style static Huffman with a 1 MiB window (UNLHA32), read-only. |
 | `MethodLz4` | `const string MethodLz4` | Method: store (same as lh0, legacy). |
 | `MethodLz5` | `const string MethodLz5` | Method: LZSS with 4KB window (LArc variant). |
 | `MethodLzs` | `const string MethodLzs` | Method: LZSS with 4KB window (no Huffman). |
@@ -22962,87 +23069,85 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 ### Namespace `FileFormat.Nsis`
 
-[`NsisCompression`](#nsiscompression) · [`NsisEntry`](#nsisentry) · [`NsisFormatDescriptor`](#nsisformatdescriptor) · [`NsisReader`](#nsisreader) · [`NsisWriter`](#nsiswriter)
+[`NsisCompression`](#nsiscompression) · [`NsisEntry`](#nsisentry) · [`NsisFormatDescriptor`](#nsisformatdescriptor) · [`NsisReader`](#nsisreader)
 
 #### `NsisCompression`
 
-Identifies the compression algorithm used in an NSIS installer.
+Identifies the compressor an NSIS installer was built with (`SetCompressor`).
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `None` | `0` | No compression — data is stored verbatim. |
-| `Zlib` | `1` | Zlib/Deflate compression (2-byte zlib header + raw Deflate stream). |
-| `BZip2` | `2` | BZip2 block-sorted compression. |
-| `Lzma` | `3` | LZMA compression (5-byte properties header + raw LZMA stream). |
+| `None` | `0` | Nothing is compressed: the header and every block are stored. |
+| `Zlib` | `1` | "zlib": raw Deflate with no zlib wrapper (NSIS 2's inflate also omits stored-block NLEN). |
+| `BZip2` | `2` | "bzip2": NSIS's header-less bzip2 dialect. |
+| `Lzma` | `3` | "lzma": a 5-byte properties header, then range-coded data ending in an end marker. |
 
 #### `NsisEntry`
 
-Represents a data block embedded in an NSIS installer.
+A file an NSIS installer extracts: one `File` instruction of the install script.
 
 Implements `IEquatable<NsisEntry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `NsisEntry` | `NsisEntry(string FileName, long Size, long CompressedSize, bool IsDirectory)` | Represents a data block embedded in an NSIS installer. |
-| `CompressedSize` | `long CompressedSize { get; init; }` | The compressed size in bytes, or -1 when unknown (solid stream). |
-| `FileName` | `string FileName { get; init; }` | The entry name. Will be a generated name such as "block_0" unless the installer header was successfully parsed to recover actual file names. |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether the entry represents a directory. |
-| `Size` | `long Size { get; init; }` | The uncompressed size in bytes, or -1 when unknown (solid stream). |
+| `NsisEntry` | `NsisEntry(string FileName, uint DataOffset, DateTime? LastModified)` | A file an NSIS installer extracts: one `File` instruction of the install script. |
+| `CompressedSize` | `long CompressedSize { get; }` | Gets the stored size of the file's block, or -1 when the block lives inside a solid stream and therefore has no size of its own. |
+| `DataOffset` | `uint DataOffset { get; init; }` | Offset of the file's length-prefixed block within the data section. |
+| `FileName` | `string FileName { get; init; }` | The target path as the script names it, with forward slashes. A leading `$INSTDIR` is dropped, as 7-Zip does; any other variable (`$PLUGINSDIR`, `$SYSDIR`, ...) stays. |
+| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether the entry is a directory; NSIS `File` entries never are. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | The file time the compiler recorded, in UTC, or `null` when none. |
+| `Size` | `long Size { get; }` | Gets the uncompressed size in bytes, or -1 until the size has been resolved. |
 
 #### `NsisFormatDescriptor`
 
-NSIS (Nullsoft Scriptable Install System) installer archive — PE stub plus compressed installer data. References: `https://nsis.sourceforge.io` — official NSIS project site and sources — the installer data layout is defined there`https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System` — Wikipedia`https://www.7-zip.org` — 7-Zip — widely used independent parser of NSIS installer payloads
+NSIS (Nullsoft Scriptable Install System) installer: the files its install script extracts. References: `https://github.com/kichik/nsis` — NSIS sources; `Source/exehead/fileform.h` defines the layout (zlib/libpng licence)`https://nsis.sourceforge.io/Docs/` — NSIS documentation`https://www.7-zip.org` — 7-Zip's NSIS handler, the reference reader this one is checked against
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `NsisFormatDescriptor` | `NsisFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the NSIS data block in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the NSIS data block per the requested mode. |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The reader produces the decoded bytes per entry; the matched bytes are wrapped in a `BoundedEntryStream` sized to their logical length. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Decodes one entry into memory; an unknown name yields no bytes. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens one entry as a bounded read-only stream. |
 
 #### `NsisReader`
 
-Reads data blocks from an NSIS (Nullsoft Scriptable Install System) installer executable.
+Reads the files an NSIS (Nullsoft Scriptable Install System) installer carries.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `NsisReader` | `NsisReader(Stream stream, bool leaveOpen = false)` | Opens an NSIS installer from a stream. The stream must be seekable. |
-| `Compression` | `NsisCompression Compression { get; }` | Gets the compression method used by this installer. |
-| `Entries` | `IReadOnlyList<NsisEntry> Entries { get; }` | Gets the data blocks found in the installer. |
-| `IsSolid` | `bool IsSolid { get; }` | Gets whether the installer uses solid (single-stream) compression. |
+| `NsisReader` | `NsisReader(Stream stream, bool leaveOpen = false)` | Opens an NSIS installer. |
+| `ArchiveLength` | `int ArchiveLength { get; }` | Gets `length_of_all_following_data`: firstheader, data and CRC. |
+| `Compression` | `NsisCompression Compression { get; }` | Gets the compressor the installer was built with. |
+| `Entries` | `IReadOnlyList<NsisEntry> Entries { get; }` | Gets the files the install script extracts, in script order. |
+| `FirstHeaderFlags` | `int FirstHeaderFlags { get; }` | Gets `firstheader.flags` (FH_FLAGS_*: 1 = uninstaller, 2 = silent, 4 = no CRC, 8 = force CRC). |
+| `FirstHeaderOffset` | `long FirstHeaderOffset { get; }` | Gets the file offset of `firstheader`. |
+| `HasFilterFlag` | `bool HasFilterFlag { get; }` | Gets whether the LZMA stream carries the x86 branch-filter flag byte. |
+| `HeaderLength` | `int HeaderLength { get; }` | Gets the uncompressed size of the script header. |
+| `Is64Bit` | `bool Is64Bit { get; }` | Gets whether the header was written for a 64-bit exehead. |
+| `IsNsis3` | `bool IsNsis3 { get; }` | Gets whether the strings use the NSIS 3 escape codes rather than NSIS 2's. |
+| `IsSolid` | `bool IsSolid { get; }` | Gets whether the header and files share one compressed stream (`/SOLID`). |
+| `IsUnicode` | `bool IsUnicode { get; }` | Gets whether the installer's strings are UTF-16 (`Unicode true`, NSIS 3). |
 | `Dispose` | `void Dispose()` |  |
-| `ExtractSolidStream` | `byte[] ExtractSolidStream()` | Decompresses the entire solid data stream and returns it as a single byte array. Only meaningful when `IsSolid` is `true`. |
-| `Extract` | `byte[] Extract(NsisEntry entry)` | Extracts the raw (decompressed) data for the given entry. |
-
-#### `NsisWriter`
-
-Writes a minimal NSIS-formatted file. No PE stub is emitted — the reader's `ScanForSignature` fallback finds the NSIS overlay via linear scan when PE parsing fails. Files are stored uncompressed as individual data blocks (non-solid). Roundtrips through `NsisReader`. Note: the produced file has no executable code and cannot be "run" to install — the NSIS format is primarily an installer stub + overlay data, and emitting a functional installer would require shipping a signed PE stub which is out of scope for a compression toolkit.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `NsisWriter` | `NsisWriter()` |  |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
+| `ExtractMany` | `void ExtractMany(IEnumerable<NsisEntry> entries, Action<NsisEntry, byte[]> sink)` | Decodes the given entries, calling `sink` once per entry. A solid installer is decoded in a single forward pass that stops after the last requested block. |
+| `Extract` | `byte[] Extract(NsisEntry entry)` | Returns the decompressed bytes of one entry. |
+| `ResolveSizes` | `void ResolveSizes()` | Fills in `Size` (and, for non-solid installers, `CompressedSize`) for every entry. Compressed blocks have to be decoded to learn their size. |
 
 ### Namespace `FileFormat.NuFx`
 
@@ -24022,154 +24127,6 @@ Provides PackBits compression and decompression (Apple MacPaint standard) with a
 | `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` to `output` using PackBits encoding. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses `input` to `output` using PackBits decoding. |
 
-### Namespace `FileFormat.PackDisk`
-
-[`DcsFormatDescriptor`](#dcsformatdescriptor) · [`PackDiskEntry`](#packdiskentry) · [`PackDiskFormatDescriptor`](#packdiskformatdescriptor) · [`PackDiskReader`](#packdiskreader) · [`PackDiskWriter`](#packdiskwriter) · [`XDiskFormatDescriptor`](#xdiskformatdescriptor) · [`XMashFormatDescriptor`](#xmashformatdescriptor)
-
-#### `DcsFormatDescriptor`
-
-Amiga DCS disk archive — whole-floppy track data compressed with the XPK library. References: `https://aminet.net` — Aminet — distribution home of the archiver and the XPK compression libraryXPK master library developer documentation (Amiga) — defines the XPKF container the track data is stored inNo published specification — reverse-engineered from the tool
-
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `DcsFormatDescriptor` | `DcsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-
-#### `PackDiskEntry`
-
-Represents a pack disk entry.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `PackDiskEntry` | `PackDiskEntry()` |  |
-| `CompressedSize` | `long CompressedSize { get; init; }` | Gets or sets the compressed size. |
-| `Name` | `string Name { get; init; }` | Gets or sets the name. |
-| `Size` | `long Size { get; init; }` | Gets or sets the size. |
-
-#### `PackDiskFormatDescriptor`
-
-Amiga PackDisk disk archive — whole-floppy track data compressed with the XPK library. References: `https://aminet.net` — Aminet — distribution home of the archiver and the XPK compression libraryXPK master library developer documentation (Amiga) — defines the XPKF container the track data is stored inNo published specification — reverse-engineered from the tool
-
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `PackDiskFormatDescriptor` | `PackDiskFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-
-#### `PackDiskReader`
-
-Reads PackDisk/xMash/xDisk/GDC/DCS/MDC Amiga disk archives. These all use XPK-based compression for individual tracks. Common structure: 4-byte magic, track table, XPK-compressed track data. We support listing and extracting stored/raw data.
-
-Implements `IDisposable`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `PackDiskReader` | `PackDiskReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `PackDiskReader`. |
-| `Entries` | `IReadOnlyList<PackDiskEntry> Entries { get; }` | Gets the entries. |
-| `Format` | `string Format { get; }` | Gets the format. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(PackDiskEntry entry)` | Decodes the supplied input. |
-
-#### `PackDiskWriter`
-
-Writes PackDisk-family Amiga disk archives (PackDisk/xMash/xDisk/GDC/DCS/MDC). All share the same shape: a 4-byte format magic, 4 bytes of flags, then a sequence of tracks. WORM creation always emits *stored* tracks (raw 5632-byte sectors) -- the reader treats these as uncompressed because no "XPKF" chunk header precedes them. No XPK encoder is needed.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `PackDiskWriter` | `PackDiskWriter(string magic)` | Format magic. Use one of the 4-byte ASCII codes the reader recognises. |
-| `TrackSize` | `const int TrackSize` | Defines the track size constant value. |
-| `AddTrack` | `void AddTrack(ReadOnlySpan<byte> data)` | Performs the add track operation. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
-
-#### `XDiskFormatDescriptor`
-
-Amiga xDisk/GDC disk archive — whole-floppy track data compressed with the XPK library. References: `https://aminet.net` — Aminet — distribution home of the archiver and the XPK compression libraryXPK master library developer documentation (Amiga) — defines the XPKF container the track data is stored inNo published specification — reverse-engineered from the tool
-
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `XDiskFormatDescriptor` | `XDiskFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-
-#### `XMashFormatDescriptor`
-
-Amiga xMash disk archive — whole-floppy track data compressed with the XPK library. References: `https://aminet.net` — Aminet — distribution home of the archiver and the XPK compression libraryXPK master library developer documentation (Amiga) — defines the XPKF container the track data is stored inNo published specification — reverse-engineered from the tool
-
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `XMashFormatDescriptor` | `XMashFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-
 ### Namespace `FileFormat.PackIt`
 
 [`PackItEntry`](#packitentry) · [`PackItFormatDescriptor`](#packitformatdescriptor) · [`PackItModifier`](#packitmodifier) · [`PackItReader`](#packitreader) · [`PackItWriter`](#packitwriter)
@@ -24181,17 +24138,24 @@ Represents a file entry in a PackIt (.pit) archive.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PackItEntry` | `PackItEntry()` |  |
+| `Created` | `DateTime? Created { get; init; }` | Gets the creation time, or `null` when the header holds zero. |
 | `Creator` | `string Creator { get; init; }` | Gets the Mac four-character creator code (e.g. "CWIE"). |
 | `DataForkSize` | `long DataForkSize { get; init; }` | Gets the uncompressed data fork size in bytes. |
-| `DataOffset` | `long DataOffset { get; init; }` | Gets the absolute byte offset where the data fork begins in the source stream. |
+| `DataOffset` | `long DataOffset { get; init; }` | Gets the absolute offset where the data fork begins for a stored entry; for a compressed entry, the offset of its Huffman bit stream (the byte after the magic). |
+| `EntryLength` | `long EntryLength { get; init; }` | Gets the number of bytes the entry occupies, magic included. |
+| `EntryOffset` | `long EntryOffset { get; init; }` | Gets the absolute offset of the entry's magic. |
 | `FileType` | `string FileType { get; init; }` | Gets the Mac four-character file type code (e.g. "TEXT"). |
-| `IsCompressed` | `bool IsCompressed { get; init; }` | Gets whether this entry uses Huffman compression ("PMa4"). |
+| `FinderFlags` | `ushort FinderFlags { get; init; }` | Gets the Finder flags. |
+| `HeaderCrcValid` | `bool HeaderCrcValid { get; init; }` | Gets whether the header matched its CRC-16 (always `true` for encrypted entries, which cannot be checked). |
+| `IsCompressed` | `bool IsCompressed { get; init; }` | Gets whether this entry is Huffman-compressed ("PMa4", "PMa5", "PMa6"). |
+| `IsEncrypted` | `bool IsEncrypted { get; init; }` | Gets whether this entry is password-encrypted ("PMa5" XOR, "PMa6" DES). |
+| `Modified` | `DateTime? Modified { get; init; }` | Gets the modification time, or `null` when the header holds zero. |
 | `Name` | `string Name { get; init; }` | Gets the filename (up to 63 characters, Mac Roman / Latin-1 encoded). |
 | `ResourceForkSize` | `long ResourceForkSize { get; init; }` | Gets the uncompressed resource fork size in bytes. |
 
 #### `PackItFormatDescriptor`
 
-PackIt classic Macintosh archive (.pit; Harry Chesley, 1984) — sequential PMag/PMa4 records bundling data and resource forks. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver) — maintained implementation including PackItNo formal specification — format known from PackIt itself and later community documentation
+PackIt classic Macintosh archive (.pit; Harry Chesley, 1984) — sequential PMag/PMa4 records bundling data and resource forks. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver) — maintained implementation including PackItNo formal specification; header CRC measured on real PackIt II archives (see PackItReader)
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
@@ -24212,8 +24176,8 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing PackIt archive. Uses `PackItModifier` — Add appends Stored at EOF; Remove walks the entry chain and shifts trailing bytes (no central directory). |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the PackIt archive in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the PackIt archive per the requested mode. |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: re-chains the entries in listing order. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag. Each entry is carried over as its raw bytes (magic to fork CRC), so resource forks, Finder info, dates and Huffman coding survive unchanged; only the chain is rewritten. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -24223,12 +24187,12 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `PackItModifier`
 
-Random-access in-place modifier for PackIt (.pit) classic Macintosh archives. PackIt has no explicit end-of-archive marker — readers stop when the next 4 bytes are not "PMag" or "PMa4". Add appends a new stored entry at EOF; Remove walks the entry chain, locates the target, and shifts trailing bytes forward to compact (no central directory).
+In-place edits of a PackIt archive. PackIt has no directory: entries are a chain ended by `"PEnd"`, so an add rewrites the marker after the new entry and a remove shifts the tail.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream pit, string name, byte[] data, string fileType = "TEXT", string creator = "CWIE")` | Appends a stored ("PMag") entry at the end of the archive. Walks the existing entry chain to find the EOF (first non-magic 4 bytes), then writes the new entry there and truncates. I/O cost is one full sequential entry walk plus the new entry's bytes. |
-| `RemoveFile` | `static bool RemoveFile(Stream pit, string name, bool wipeData = true)` | Removes the named entry. Returns true if found. Walks the chain to locate the entry, then shifts trailing bytes forward to compact. |
+| `AddFile` | `static void AddFile(Stream pit, string name, byte[] data, string fileType = "TEXT", string creator = "CWIE")` | Appends a stored ("PMag") entry after the last entry and rewrites the `"PEnd"` marker behind it. |
+| `RemoveFile` | `static bool RemoveFile(Stream pit, string name, bool wipeData = true)` | Removes the named entry. Returns true if found. Locates the entry by walking the chain, then shifts the trailing bytes forward over it. |
 
 #### `PackItReader`
 
@@ -24239,21 +24203,23 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PackItReader` | `PackItReader(Stream stream, bool leaveOpen = false)` | Opens a PackIt archive from the given stream and reads all entries. |
-| `EntryHeaderSize` | `const int EntryHeaderSize` | Size of the fixed per-entry header in bytes (magic + filename field + metadata). |
 | `Entries` | `IReadOnlyList<PackItEntry> Entries { get; }` | Gets the list of entries found in the archive. |
+| `IsIncomplete` | `bool IsIncomplete { get; }` | Gets whether listing stopped early (truncated archive or an entry it cannot walk past). |
 | `Dispose` | `void Dispose()` |  |
+| `ExtractForks` | `ValueTuple<byte[], byte[]> ExtractForks(PackItEntry entry)` | Decodes both forks of `entry` and checks every CRC. |
+| `ExtractResourceFork` | `byte[] ExtractResourceFork(PackItEntry entry)` | Extracts the resource fork of the specified entry. |
 | `Extract` | `byte[] Extract(PackItEntry entry)` | Extracts the data fork of the specified entry. |
 
 #### `PackItWriter`
 
-Creates a PackIt (.pit) classic Macintosh archive.
+Creates a PackIt (.pit) classic Macintosh archive of stored ("PMag") entries.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PackItWriter` | `PackItWriter(Stream stream, bool leaveOpen = false)` | Initialises a new `PackItWriter`. |
-| `AddFile` | `void AddFile(string name, byte[] data, string fileType = "TEXT", string creator = "CWIE")` | Appends a stored file entry to the archive. |
+| `AddFile` | `void AddFile(string name, byte[] data, string fileType = "TEXT", string creator = "CWIE", byte[] resourceFork = null, DateTime? modified = null)` | Appends a stored file entry to the archive. |
 | `Dispose` | `void Dispose()` |  |
 
 ### Namespace `FileFormat.Paf`
@@ -32275,7 +32241,7 @@ Represents a single file entry in a XAR archive.
 | `FileName` | `string FileName { get; init; }` | File name (path within archive). |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry is a directory. |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Last modification date. |
-| `Method` | `string Method { get; init; }` | Compression method name (e.g., "zlib", "bzip2", "none"). |
+| `Method` | `string Method { get; init; }` | Compression method: "none", "zlib", "bzip2", "lzma", "xz", or the raw encoding style when unrecognised. |
 | `OriginalSize` | `long OriginalSize { get; init; }` | Uncompressed size in bytes. |
 
 #### `XarFormatDescriptor`
@@ -32326,7 +32292,7 @@ Reads XAR (eXtensible ARchive) archives. XAR is Apple's archive format used for 
 | `XarReader` | `XarReader(Stream stream)` | Creates a new XAR reader for the given stream. |
 | `Entries` | `IReadOnlyList<XarEntry> Entries { get; }` | All entries in the archive. |
 | `HeapStart` | `long HeapStart { get; }` | Byte offset where the data heap begins (after header + TOC). |
-| `Extract` | `byte[] Extract(XarEntry entry)` | Extracts the data for a given entry. |
+| `Extract` | `byte[] Extract(XarEntry entry)` | Extracts the data for a given entry and checks it against the TOC's extracted checksum. |
 
 #### `XarWriter`
 
@@ -33243,43 +33209,11 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.Zpaq`
 
-[`Component`](#component) · [`ComponentType`](#componenttype) · [`ZpaqBuildingBlock`](#zpaqbuildingblock) · [`ZpaqConstants`](#zpaqconstants) · [`ZpaqEntry`](#zpaqentry) · [`ZpaqFormatDescriptor`](#zpaqformatdescriptor) · [`ZpaqRangeCoder`](#zpaqrangecoder) · [`ZpaqRangeDecoder`](#zpaqrangedecoder) · [`ZpaqRangeEncoder`](#zpaqrangeencoder) · [`ZpaqReader`](#zpaqreader) · [`ZpaqWriter`](#zpaqwriter) · [`ZpaqlVm`](#zpaqlvm)
-
-#### `Component`
-
-Represents a single prediction component in the ZPAQL context-mixing model.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Component` | `Component()` |  |
-| `Aux` | `int Aux { get; set; }` | Auxiliary state (match length, mixer weights, etc.). |
-| `Context` | `int Context { get; set; }` | Current hashed context value. |
-| `Memory` | `int[] Memory { get; set; }` | Component memory (CM counters, ICM byte histories, etc.). |
-| `Param1` | `int Param1 { get; set; }` | First parameter (meaning depends on type, e.g. log2 of table size). |
-| `Param2` | `int Param2 { get; set; }` | Second parameter (meaning depends on type). |
-| `Param3` | `int Param3 { get; set; }` | Third parameter (meaning depends on type). |
-| `Prediction` | `int Prediction { get; set; }` | Current prediction (0..65535, probability of next bit being 1). |
-| `Type` | `ComponentType Type { get; set; }` | The component type. |
-
-#### `ComponentType`
-
-Component type identifiers for the ZPAQL context-mixing prediction model.
-
-| Value | Numeric | Summary |
-| --- | --- | --- |
-| `Const` | `0` | Constant prediction (always predicts 50/50). |
-| `Cm` | `1` | Context model — 2^n counters indexed by hashed context. |
-| `Icm` | `2` | Indirect context model — byte history maps to a counter. |
-| `Match` | `3` | Match model — predicts by finding a previous matching context. |
-| `Avg` | `4` | Average of two component predictions. |
-| `Mix2` | `5` | Two-input adaptive mixer. |
-| `Mix` | `6` | N-input adaptive mixer. |
-| `Isse` | `7` | Indirect secondary symbol estimation. |
-| `Sse` | `8` | Direct secondary symbol estimation. |
+[`ZpaqBuildingBlock`](#zpaqbuildingblock) · [`ZpaqEntry`](#zpaqentry) · [`ZpaqFormatDescriptor`](#zpaqformatdescriptor) · [`ZpaqReader`](#zpaqreader) · [`ZpaqWriter`](#zpaqwriter)
 
 #### `ZpaqBuildingBlock`
 
-Exposes the ZPAQ context-mixing codec — the compression stage that the ZPAQ journaling archiver wraps — as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support.
+ZPAQ compression as a building block: the input coded as a plain ZPAQ stream (locator tag, blocks of one segment, SHA-1 trailers) with zpaq's method 4 — an order-0 ICM, an ISSE chain up to order 6, a match model and a mixer, all described in the block's own ZPAQL header.
 
 Implements `IBuildingBlock`.
 
@@ -33293,39 +33227,23 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-#### `ZpaqConstants`
-
-Constants for the ZPAQ archive format (level 1 journaling).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `BlockTypeCompressed` | `const byte BlockTypeCompressed` | Block type byte: compressed data block (contains ZPAQL program + compressed payload). |
-| `BlockTypeData` | `const byte BlockTypeData` | Block type byte: data block in a journaling transaction. Each data block holds the (ZPAQL-compressed) payload for one or more files. |
-| `BlockTypeHeader` | `const byte BlockTypeHeader` | Block type byte: comment/filename header block in a journaling transaction. In a level-1 journaling archive this block carries the transaction date, filenames and per-file attributes for one transaction. |
-| `BlockTypeIndex` | `const byte BlockTypeIndex` | Block type byte: hash/index block that closes a journaling transaction. Contains SHA-1 hashes of the uncompressed file data. |
-| `FileTimeSize` | `const int FileTimeSize` | Size of the Windows FILETIME timestamp stored in journaling header blocks (8 bytes). |
-| `Level1` | `const byte Level1` | Compression level byte for ZPAQ level 1 archives. |
-| `Level2` | `const byte Level2` | Compression level byte for ZPAQ level 2 archives. |
-| `MinBlockHeaderSize` | `const int MinBlockHeaderSize` | Minimum number of bytes in a valid block header (3-byte prefix + 1 level byte + 1 type byte = 5 bytes). |
-| `WindowsToUnixEpochTicks` | `const long WindowsToUnixEpochTicks` | Windows FILETIME ticks (100-nanosecond intervals) from the Windows epoch (1601-01-01) to the Unix epoch (1970-01-01), used when converting timestamps. |
-| `BlockPrefix` | `static ReadOnlySpan<byte> BlockPrefix { get; }` | The 3-byte block locator prefix present at the start of every ZPAQ block ("zPQ"). |
-
 #### `ZpaqEntry`
 
-Represents a single file entry recorded in a ZPAQ journaling archive.
+A file or directory as recorded in a ZPAQ archive.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompressedSize` | `long CompressedSize { get; }` | Gets the compressed size of the data block(s) that carry this file's data. This is the total byte count of the raw (still-compressed) data blocks associated with this entry. |
-| `FileName` | `string FileName { get; }` | Gets the filename as stored in the archive. Path separators are always forward slashes; directory entries end with '/'. |
-| `IsDirectory` | `bool IsDirectory { get; }` | Gets a value indicating whether this entry represents a directory. |
-| `LastModified` | `DateTime? LastModified { get; }` | Gets the last-modified timestamp decoded from the journal header, or `null` when the timestamp could not be recovered. |
-| `Size` | `long Size { get; }` | Gets the uncompressed size of the file in bytes as reported by the archive. This value is zero for directory entries and for files whose size could not be determined from the journal (e.g. when the header block is compressed). |
-| `Version` | `int Version { get; }` | Gets the zero-based transaction index in which this entry was recorded. Each append to a ZPAQ archive constitutes a new transaction; the most recent transaction with a given filename defines the file's current state. |
+| `Attributes` | `long Attributes { get; }` | Raw attribute bytes as stored (first byte 'w' = Windows attributes follow, 'u' = Unix mode follows), packed little-endian; 0 when none were stored. |
+| `CompressedSize` | `long CompressedSize { get; }` | Compressed size attributed to this entry: the share of the data blocks it references, proportional to its new (non-deduplicated) fragments. Zero for directories. |
+| `FileName` | `string FileName { get; }` | Path as stored, with forward slashes; directories end with '/'. |
+| `IsDirectory` | `bool IsDirectory { get; }` | Whether this entry is a directory. |
+| `LastModified` | `DateTime? LastModified { get; }` | Last-modified time (UTC) from the archive's decimal date, or `null`. |
+| `Size` | `long Size { get; }` | Uncompressed size in bytes, or -1 when the archive does not record it (streaming format). |
+| `Version` | `int Version { get; }` | 1-based version (transaction) that last wrote this entry. |
 
 #### `ZpaqFormatDescriptor`
 
-ZPAQ journaling archive with content-defined deduplication and configurable context-mixing compression. References: `http://mattmahoney.net/dc/zpaq.html` — official ZPAQ page and Level 2 format specification (Matt Mahoney)`https://github.com/zpaq/zpaq` — reference implementation`https://en.wikipedia.org/wiki/ZPAQ` — Wikipedia overview
+ZPAQ archive (journaling and streaming layouts) with deduplication and ZPAQL-described context-mixing compression. References: `https://mattmahoney.net/dc/zpaq206.pdf` — ZPAQ Level 2 specification (Matt Mahoney)`https://mattmahoney.net/dc/zpaq.html` — zpaq / libzpaq reference implementation (public domain)
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
@@ -33333,109 +33251,56 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | --- | --- | --- |
 | `ZpaqFormatDescriptor` | `ZpaqFormatDescriptor()` |  |
 | `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the ZPAQ archive in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the ZPAQ archive per the requested mode. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-
-#### `ZpaqRangeCoder`
-
-Shared constants and the safety argument of the ZPAQ binary range coder.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `CarryEdge` | `const uint CarryEdge` | Value at or above which the top byte of `low` may still be bumped by a carry. |
-| `FlushBytes` | `const int FlushBytes` | Number of `low` bytes the encoder pushes out when the message ends. |
-| `MaximumProbability` | `const int MaximumProbability` | Largest probability of a 1 bit the coder accepts. |
-| `MinimumProbability` | `const int MinimumProbability` | Smallest probability of a 1 bit the coder accepts. |
-| `ProbabilityBits` | `const int ProbabilityBits` | Number of fractional bits in a probability, so probabilities span 0..2^16. |
-| `RangeMinimum` | `const uint RangeMinimum` | Lower bound of the normalised range; the coder renormalises below this. |
-| `Split` | `static uint Split(uint range, int probabilityOfOne)` | Computes the split point between the 1 subrange and the 0 subrange. |
-
-#### `ZpaqRangeDecoder`
-
-Carry-propagating binary range decoder, the exact mirror of `ZpaqRangeEncoder`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `ZpaqRangeDecoder` | `ZpaqRangeDecoder(byte[] input, int offset)` | Creates a decoder reading from the given buffer, priming its code word from the first `FlushBytes` bytes. |
-| `Range` | `uint Range { get; }` | Gets the current range, for tests that assert the coder invariant. |
-| `DecodeBit` | `int DecodeBit(int probabilityOfOne)` | Decodes one bit against the given probability. |
-
-#### `ZpaqRangeEncoder`
-
-Carry-propagating binary range encoder. See `ZpaqRangeCoder` for the invariant that keeps both subranges non-empty.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `ZpaqRangeEncoder` | `ZpaqRangeEncoder(Stream output)` | Creates an encoder writing its bytes to the given stream. |
-| `Range` | `uint Range { get; }` | Gets the current range, for tests that assert the coder invariant. |
-| `EncodeBit` | `void EncodeBit(int bit, int probabilityOfOne)` | Codes one bit against the given probability. |
-| `Flush` | `void Flush()` | Pushes out the remaining bytes of `low`, ending the coded stream. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `ZpaqReader`
 
-Reads the journaling index of a ZPAQ archive, exposing the files recorded across all transactions.
+Reads ZPAQ archives in both layouts the format defines: the journaling layout of `zpaq` 6.x/7.x (versioned transactions of `c`/`d`/`h`/`i` blocks with deduplicated, SHA-1 checked fragments) and the plain streaming layout (one file per block or segment run).
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ZpaqReader` | `ZpaqReader(Stream stream, bool leaveOpen = false)` | Opens a ZPAQ archive stream and scans its journal. |
-| `Entries` | `IReadOnlyList<ZpaqEntry> Entries { get; }` | Gets the entries discovered by scanning the archive journal. The list reflects the last recorded state of each file across all transactions (i.e. later transactions that mention the same filename supersede earlier ones in the final view). |
+| `ZpaqReader` | `ZpaqReader(Stream stream, bool leaveOpen = false)` | Opens a ZPAQ archive and reads its index. |
+| `Entries` | `IReadOnlyList<ZpaqEntry> Entries { get; }` | Files and directories present in the latest version, ordered by name. |
+| `Errors` | `int Errors { get; }` | Number of blocks that failed to decode and were skipped while reading the index. |
+| `VersionCount` | `int VersionCount { get; }` | Number of versions (transactions) in the archive. |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `Stream Extract(ZpaqEntry entry)` | Returns the entry's uncompressed bytes as a stream when the data block was STORED (the layout this toolkit's `ZpaqWriter` emits). |
+| `ExtractBytes` | `byte[] ExtractBytes(ZpaqEntry entry)` | Decodes the entry's content, verifying every fragment's (or segment's) SHA-1. |
+| `Extract` | `Stream Extract(ZpaqEntry entry)` | Returns the entry's content as a read-only stream. |
+| `GetEntries` | `IReadOnlyList<ZpaqEntry> GetEntries(int version)` | The archive contents as of version `version` (1-based). |
+| `GetVersionDate` | `DateTime? GetVersionDate(int version)` | UTC date of version `version` (1-based), or `null` for a streaming archive. |
 
 #### `ZpaqWriter`
 
-Writes a ZPAQ level-1 journaling archive.
+Writes a ZPAQ journaling archive holding one version (transaction): the `c` header, the deduplicated and compressed `d` data blocks, their `h` fragment tables and the `i` index, exactly as `zpaq add` lays them out.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ZpaqWriter` | `ZpaqWriter(Stream stream, bool leaveOpen = false)` | Initializes a new ZPAQ writer that writes to the specified stream. |
-| `AddDirectory` | `void AddDirectory(string dirName, DateTime? lastModified = null)` | Adds a directory entry to the archive. |
-| `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? lastModified = null)` | Adds a file entry to the archive with the given name and data. |
+| `ZpaqWriter` | `ZpaqWriter(Stream stream, bool leaveOpen = false, string method = "1")` | Creates a writer that emits the archive to `stream` on dispose. |
+| `Method` | `string Method { get; }` | The zpaq compression method used for the data blocks. |
+| `TransactionDate` | `DateTime? TransactionDate { get; set; }` | Date of the transaction; defaults to the time of disposal. |
+| `AddDirectory` | `void AddDirectory(string dirName, DateTime? lastModified = null)` | Adds a directory entry. |
+| `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? lastModified = null)` | Adds (or replaces) a file. |
 | `Dispose` | `void Dispose()` |  |
-
-#### `ZpaqlVm`
-
-ZPAQL virtual machine for ZPAQ compression and decompression.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `ZpaqlVm` | `ZpaqlVm(ReadOnlySpan<byte> program)` | Parses a ZPAQL program header from a binary span and constructs the VM. |
-| `ZpaqlVm` | `ZpaqlVm(byte[] hcomp, byte[] pcomp, int hh, int hm, Component[] components = null)` | Creates a ZPAQL VM with the specified program and component configuration. |
-| `A` | `uint A { get; set; }` | Gets or sets register A (32-bit accumulator). |
-| `B` | `uint B { get; set; }` | Gets or sets register B (32-bit, also indexes M[]). |
-| `C` | `uint C { get; set; }` | Gets or sets register C (32-bit, also indexes M[]). |
-| `Components` | `Component[] Components { get; }` | Gets the context-mixing components. |
-| `D` | `uint D { get; set; }` | Gets or sets register D (32-bit, also indexes M[]). |
-| `F` | `bool F { get; set; }` | Gets or sets the flag register (1-bit). |
-| `H` | `uint[] H { get; }` | Gets the H[] context array. H values are set by the HCOMP program and used as context indices for the prediction components. |
-| `M` | `byte[] M { get; }` | Gets the M[] byte array used by the HCOMP/PCOMP programs. |
-| `OutputByte` | `Action<byte> OutputByte { get; set; }` | Event invoked when the PCOMP program executes an OUT instruction. |
-| `Predict` | `int Predict()` | Computes a combined prediction from all components. |
-| `Reset` | `void Reset()` | Resets the VM state (registers, arrays, components) without changing the program or component configuration. |
-| `RunHcomp` | `void RunHcomp(int input)` | Executes the HCOMP program with the given input byte. This should be called after each decoded byte to update the context hashes in H[]. |
-| `RunPcomp` | `void RunPcomp(int input)` | Executes the PCOMP (post-processing) program with the given input byte. |
-| `Squash` | `static int Squash(int x)` | Squash function: maps a logistic value (-2048..2047) to a probability (0..65535). squash(x) = 65536 / (1 + exp(-x / 64)). |
-| `Stretch` | `static int Stretch(int p)` | Stretch function: inverse of squash, maps probability (1..65534) to logistic. |
-| `Update` | `void Update(int bit)` | Updates all components after a decoded bit. |
 
 ### Namespace `FileFormat.ZxSnapshot`
 

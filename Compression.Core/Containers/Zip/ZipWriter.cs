@@ -132,6 +132,13 @@ public sealed class ZipWriter : IDisposable {
           method = ZipCompressionMethod.Store;
         }
         break;
+      case ZipCompressionMethod.Xz:
+        compressedData = ZipXzHelper.Compress(data, this.LzmaDictionarySize, this.LzmaLevel);
+        if (compressedData.Length >= data.Length) {
+          compressedData = data;
+          method = ZipCompressionMethod.Store;
+        }
+        break;
       case ZipCompressionMethod.Zstd:
         compressedData = ZipZstdHelper.Compress(data);
         if (compressedData.Length >= data.Length) {

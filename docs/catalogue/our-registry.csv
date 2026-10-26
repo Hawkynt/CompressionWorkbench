@@ -129,7 +129,6 @@ format,D71,D71,Archive,Y,.d71,Y,Y,Y,Y
 format,D81,D81,Archive,Y,.d81,Y,Y,Y,Y
 format,Dar,Disk ARchive (DAR),Archive,,.dar,Y,Y,Y,
 format,Dbm,DBM (DigiBooster Pro),Audio,,.dbm,Y,Y,,
-format,Dcs,DCS (Amiga Disk Archiver),Archive,,.dcs,Y,Y,Y,
 format,Dcx,DCX (multi-image PCX),Archive,,.dcx,Y,Y,,
 format,Deb,DEB,Archive,,.deb,Y,Y,Y,Y
 format,Density,Density,Stream,,.density,,Y,Y,
@@ -240,7 +239,7 @@ format,Icns,ICNS (Apple icon),Archive,,.icns,Y,Y,,
 format,Ico,Windows ICO/CUR,Archive,,.ico,Y,Y,Y,Y
 format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
 format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
-format,InnoSetup,Inno Setup,Archive,,,Y,Y,Y,
+format,InnoSetup,Inno Setup,Archive,,,Y,Y,,
 format,IntelHex,Intel HEX,Archive,,.hex;.ihex;.ihx;.h86,Y,Y,Y,Y
 format,Ipa,IPA,Archive,,.ipa,Y,Y,Y,Y
 format,Ipsw,Apple IPSW,Archive,,.ipsw;.otazip,Y,Y,Y,Y
@@ -354,7 +353,7 @@ format,Nrbf,.NET BinaryFormatter / NRBF object graph,Archive,,.nrbf,Y,Y,Y,
 format,Nrg,NRG,Archive,,.nrg,Y,Y,Y,Y
 format,Nsa,NSA,Archive,,.nsa,Y,Y,Y,Y
 format,Nsf,NES Sound Format,Audio,,.nsf;.nsfe,Y,Y,,
-format,Nsis,NSIS,Archive,,,Y,Y,Y,
+format,Nsis,NSIS,Archive,,,Y,Y,,
 format,NsPack,NsPack (Win32 PE),Archive,,,Y,Y,,
 format,Nss,NSS (Novell Storage Services),Archive,Y,.nss,Y,Y,Y,
 format,Ntfs,NTFS,Archive,Y,.ntfs;.img,Y,Y,Y,Y
@@ -386,7 +385,6 @@ format,Otf,OTF (OpenType font — glyphs),Archive,,.otf,Y,Y,,
 format,Ova,OVA/OVF Virtual Appliance,Archive,,.ova,Y,Y,Y,
 format,Pack200,Pack200,Archive,,.pack;.pack.gz,Y,,,
 format,PackBits,PackBits,Stream,,.packbits,,Y,Y,
-format,PackDisk,PackDisk (Amiga),Archive,,.pdsk,Y,Y,Y,
 format,PackIt,PackIt,Archive,,.pit,Y,Y,Y,Y
 format,Paf,PARIS Audio File (Ensoniq),Audio,,.paf,Y,Y,Y,
 format,Pak,PAK,Archive,,.pak,Y,Y,Y,Y
@@ -397,7 +395,7 @@ format,Paragon,Paragon Backup,Archive,,.pbf,Y,Y,Y,Y
 format,ParallelsHdd,Parallels Disk (HDS),Archive,,.hds,Y,Y,,
 format,Parquet,Apache Parquet,Archive,,.parquet,Y,Y,,
 format,Partclone,partclone (Clonezilla),Archive,,.aa;.img,Y,Y,Y,
-format,PartitionedDisk,Partitioned disk image,Archive,,,Y,Y,,
+format,PartitionedDisk,Partitioned disk image,Archive,,,Y,Y,Y,Y
 format,Pbp,PSP PBP Archive,Archive,,.pbp,Y,Y,Y,
 format,Pc98,NEC PC-98 DOS,Archive,Y,.hdm;.fdi;.d88,Y,Y,Y,Y
 format,Pcap,PCAP (libpcap capture),Archive,,.pcap;.cap,Y,Y,,
@@ -514,7 +512,10 @@ format,TarBz2,tar.bz2,CompoundTar,,.tar.bz2;.tbz2,Y,Y,Y,
 format,TarGz,tar.gz,CompoundTar,,.tar.gz;.tgz,Y,Y,Y,
 format,TarLz4,tar.lz4,CompoundTar,,.tar.lz4,Y,Y,Y,
 format,TarLzip,tar.lz,CompoundTar,,.tar.lz;.tlz,Y,Y,Y,
+format,TarLzma,tar.lzma,CompoundTar,,.tar.lzma,Y,Y,Y,
+format,TarLzo,tar.lzo,CompoundTar,,.tar.lzo,Y,Y,Y,
 format,TarXz,tar.xz,CompoundTar,,.tar.xz;.txz,Y,Y,Y,
+format,TarZ,tar.Z,CompoundTar,,.tar.z,Y,Y,Y,
 format,TarZst,tar.zst,CompoundTar,,.tar.zst,Y,Y,Y,
 format,Td0,TeleDisk (TD0),Archive,,.td0,Y,Y,,
 format,Tds,Autodesk 3DS (.3ds),Archive,,.3ds,Y,Y,,
@@ -589,14 +590,12 @@ format,Wrapster,Wrapster,Archive,,,Y,Y,Y,
 format,WwiseBnk,Wwise SoundBank,Archive,,.bnk,Y,Y,,
 format,Xa,CD-XA audio (.xa),Audio,,.xa,Y,Y,Y,
 format,Xar,XAR,Archive,,.xar,Y,Y,Y,Y
-format,xDisk,xDisk/GDC (Amiga),Archive,,.xdsk;.gdc,Y,Y,Y,
 format,Xenix,Xenix FS,Archive,Y,.xnx;.xenix,Y,Y,Y,Y
 format,Xfs,XFS,Archive,Y,.xfs,Y,Y,Y,
 format,Xi,XI (FastTracker II Instrument),Audio,,.xi,Y,Y,,
 format,Xls,XLS,Archive,,.xls,Y,Y,Y,Y
 format,Xlsx,XLSX,Archive,,.xlsx,Y,Y,Y,Y
 format,Xm,XM (FastTracker II),Audio,,.xm,Y,Y,,
-format,xMash,xMash (Amiga),Archive,,.xmsh,Y,Y,Y,
 format,Xmi,Miles XMIDI,Audio,,.xmi,Y,Y,,
 format,Xml,XML object graph,Archive,,.xml;.cwb.xml,Y,Y,Y,
 format,Xpi,XPI,Archive,,.xpi,Y,Y,Y,Y
@@ -735,6 +734,7 @@ block,bb:BB_Shoco,Shoco,Dictionary,,,,Y,Y,
 block,bb:BB_Shrink,Shrink,Dictionary,,,,Y,Y,
 block,bb:BB_Snappy,Snappy,Dictionary,,,,Y,Y,
 block,bb:BB_Sqx,SQX,Dictionary,,,,Y,Y,
+block,bb:BB_StackerSd4,Stacker SD-4,Dictionary,,,,Y,Y,
 block,bb:BB_SuffixTree,Suffix Tree Compression,Dictionary,,,,Y,Y,
 block,bb:BB_tANS,tANS,Entropy,,,,Y,Y,
 block,bb:BB_Tunstall,Tunstall Coding,Entropy,,,,Y,Y,

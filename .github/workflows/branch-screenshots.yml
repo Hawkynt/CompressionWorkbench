@@ -5,9 +5,14 @@ on:
     branches-ignore:
       - main
       - master
-    paths-ignore:
-      - README.md
-      - docs/screenshots/**
+    paths:
+      - Compression.NativeUI/**
+      - Compression.Shell/**
+      - build/NativeForms.ref
+      - build/NativeForms.props
+      - .github/workflows/scripts/capture-screenshot.sh
+      - .github/workflows/branch-screenshots.yml
+      - .github/workflows/scripts/update-readme-screenshots.py
   workflow_dispatch:
 
 permissions:

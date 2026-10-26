@@ -161,4 +161,38 @@ public class MpqTests {
       File.Delete(tmp);
     }
   }
+
+  [Test, Category("Exception")]
+  [TestCase((byte)0x08, Description = "PKWare DCL")]
+  [TestCase((byte)0x01, Description = "Huffman")]
+  [TestCase((byte)0x12, Description = "LZMA")]
+  [TestCase((byte)0x40, Description = "ADPCM mono")]
+  [TestCase((byte)0x22, Description = "sparse + zlib")]
+  [TestCase((byte)0x0A, Description = "PKWare DCL + zlib")]
+  public void Block_UndecodedMask_IsRefusedNotReturnedRaw(byte mask) {
+    var block = new byte[] { mask, 1, 2, 3, 4 };
+    Assert.Throws<NotSupportedException>(() => FileFormat.Mpq.MpqReader.DecompressMpqBlock(block, 64));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Block_Zlib_Decodes() {
+    var data = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("mpq sector ", 40)));
+    using var ms = new MemoryStream();
+    ms.WriteByte(0x02);
+    using (var z = new System.IO.Compression.ZLibStream(ms, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
+      z.Write(data);
+    Assert.That(FileFormat.Mpq.MpqReader.DecompressMpqBlock(ms.ToArray(), data.Length), Is.EqualTo(data));
+  }
+
+  [Test, Category("Exception")]
+  public void Block_DamagedBzip2_ThrowsInsteadOfReturningRaw() {
+    var block = new byte[] { 0x10, (byte)'B', (byte)'Z', (byte)'h', (byte)'9', 0, 0, 0 };
+    Assert.Catch<Exception>(() => FileFormat.Mpq.MpqReader.DecompressMpqBlock(block, 64));
+  }
+
+  [Test, Category("Boundary")]
+  public void Block_NotShorterThanExpected_IsStored() {
+    var block = new byte[] { 0x08, 1, 2, 3 };
+    Assert.That(FileFormat.Mpq.MpqReader.DecompressMpqBlock(block, 4), Is.EqualTo(block));
+  }
 }
