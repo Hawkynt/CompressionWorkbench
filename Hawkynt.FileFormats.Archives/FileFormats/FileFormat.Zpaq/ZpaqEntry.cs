@@ -1,59 +1,52 @@
 namespace FileFormat.Zpaq;
 
 /// <summary>
-/// Represents a single file entry recorded in a ZPAQ journaling archive.
+/// A file or directory as recorded in a ZPAQ archive.
 /// </summary>
 public sealed class ZpaqEntry {
-  /// <summary>
-  /// Gets the filename as stored in the archive.
-  /// Path separators are always forward slashes; directory entries end with '/'.
-  /// </summary>
+  /// <summary>Path as stored, with forward slashes; directories end with '/'.</summary>
   public string FileName { get; }
 
-  /// <summary>
-  /// Gets the uncompressed size of the file in bytes as reported by the archive.
-  /// This value is zero for directory entries and for files whose size could not
-  /// be determined from the journal (e.g. when the header block is compressed).
-  /// </summary>
+  /// <summary>Uncompressed size in bytes, or -1 when the archive does not record it (streaming format).</summary>
   public long Size { get; }
 
   /// <summary>
-  /// Gets the compressed size of the data block(s) that carry this file's data.
-  /// This is the total byte count of the raw (still-compressed) data blocks
-  /// associated with this entry.
+  /// Compressed size attributed to this entry: the share of the data blocks it references,
+  /// proportional to its new (non-deduplicated) fragments. Zero for directories.
   /// </summary>
   public long CompressedSize { get; }
 
-  /// <summary>
-  /// Gets the last-modified timestamp decoded from the journal header, or
-  /// <see langword="null"/> when the timestamp could not be recovered.
-  /// </summary>
+  /// <summary>Last-modified time (UTC) from the archive's decimal date, or <see langword="null"/>.</summary>
   public DateTime? LastModified { get; }
 
-  /// <summary>
-  /// Gets a value indicating whether this entry represents a directory.
-  /// </summary>
+  /// <summary>Whether this entry is a directory.</summary>
   public bool IsDirectory { get; }
 
-  /// <summary>
-  /// Gets the zero-based transaction index in which this entry was recorded.
-  /// Each append to a ZPAQ archive constitutes a new transaction; the most
-  /// recent transaction with a given filename defines the file's current state.
-  /// </summary>
+  /// <summary>1-based version (transaction) that last wrote this entry.</summary>
   public int Version { get; }
 
-  internal ZpaqEntry(
-      string fileName,
-      long   size,
-      long   compressedSize,
-      DateTime? lastModified,
-      bool   isDirectory,
-      int    version) {
-    FileName       = fileName;
-    Size           = size;
-    CompressedSize = compressedSize;
-    LastModified   = lastModified;
-    IsDirectory    = isDirectory;
-    Version        = version;
+  /// <summary>
+  /// Raw attribute bytes as stored (first byte 'w' = Windows attributes follow, 'u' = Unix mode
+  /// follows), packed little-endian; 0 when none were stored.
+  /// </summary>
+  public long Attributes { get; }
+
+  /// <summary>Fragment IDs that make up the file (journaling format).</summary>
+  internal IReadOnlyList<uint> Fragments { get; }
+
+  /// <summary>Streaming-format segments (block offset, segment index) that make up the file.</summary>
+  internal IReadOnlyList<(long BlockOffset, int Segment)> Segments { get; }
+
+  internal ZpaqEntry(string fileName, long size, long compressedSize, DateTime? lastModified, int version, long attributes,
+      IReadOnlyList<uint> fragments, IReadOnlyList<(long, int)> segments) {
+    this.FileName = fileName;
+    this.Size = size;
+    this.CompressedSize = compressedSize;
+    this.LastModified = lastModified;
+    this.IsDirectory = fileName.EndsWith('/');
+    this.Version = version;
+    this.Attributes = attributes;
+    this.Fragments = fragments;
+    this.Segments = segments;
   }
 }

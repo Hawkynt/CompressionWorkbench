@@ -54,17 +54,17 @@ public static class ArjConstants {
   /// <summary>Compression method 0: store (no compression).</summary>
   public const byte MethodStore = 0;
 
-  /// <summary>Compression method 1: compressed (LZ77+Huffman, primary).</summary>
+  /// <summary>Compression method 1: LZ77 + Huffman, best ratio ("most").</summary>
   public const byte MethodCompressed1 = 1;
 
-  /// <summary>Compression method 2: compressed (alternate).</summary>
+  /// <summary>Compression method 2: LZ77 + Huffman, same bit stream as method 1 with a shorter search.</summary>
   public const byte MethodCompressed2 = 2;
 
-  /// <summary>Compression method 3: compressed (alternate).</summary>
+  /// <summary>Compression method 3: LZ77 + Huffman, same bit stream as method 1 with the shortest search.</summary>
   public const byte MethodCompressed3 = 3;
 
-  /// <summary>Compression method 4: store (no-compression, fastest).</summary>
-  public const byte MethodStoreFast = 4;
+  /// <summary>Compression method 4: "fastest" — LZ77 with fixed prefix codes and no Huffman stage.</summary>
+  public const byte MethodFastest = 4;
 
   // -------------------------------------------------------------------------
   // File type codes (byte 10 of the first-header section)

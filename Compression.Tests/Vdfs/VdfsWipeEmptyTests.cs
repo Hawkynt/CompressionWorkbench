@@ -3,10 +3,10 @@ using Compression.Registry;
 namespace Compression.Tests.Vdfs;
 
 /// <summary>
-/// Behaviour: VDFS is a packed archive — file data is stored contiguously and
+/// Behaviour: VDFS is a packed volume — payloads are stored contiguously and
 /// each entry's extent length equals its logical size, so there is no
 /// cluster-tip slack to scrub (tips N/A). The meaningful unused space is any
-/// region not claimed by the header/entry table or a live file extent, e.g.
+/// region not claimed by the header/catalog or a live file extent, e.g.
 /// dead bytes left behind by a shrunk/edited container. This verifies such a
 /// trailing free region is zeroed while the live file round-trips.
 /// </summary>
@@ -50,7 +50,7 @@ public class VdfsWipeEmptyTests {
     // And the live file round-trips intact.
     ms.Position = 0;
     var r = new FileSystem.Vdfs.VdfsReader(ms);
-    var entry = r.Entries.First(e => !e.IsDirectory && e.Name == "keep.bin");
+    var entry = r.Entries.First(e => !e.IsDirectory && e.Name == "KEEP.BIN");
     Assert.That(r.Extract(entry), Is.EqualTo(content), "file content must survive the wipe");
   }
 }

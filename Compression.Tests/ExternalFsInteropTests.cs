@@ -2303,9 +2303,7 @@ public class ExternalFsInteropTests {
     // mount it, and read every file back byte-exact. The feature-rich
     // DoubleSpaceWriter emits a self-consistent (non-genuine) layout; the
     // driver-genuine emitter is GenuineCvfWriter, proven here.
-    var build = DmsdosCache.EnsureTools();
-    if (build is null)
-      Assert.Ignore("dmsdos tools unavailable (need Linux + git + cmake + C compiler, or set CWB_DMSDOS_BUILD).");
+    DmsdosOracle.Require();
 
     var files = new (string Name, byte[] Data)[] {
       ("HELLO.TXT", SmallText),
@@ -2318,14 +2316,13 @@ public class ExternalFsInteropTests {
     var cvfPath = Path.Combine(this._tmpDir, "dblspace_genuine.cvf");
     File.WriteAllBytes(cvfPath, image);
 
-    var (_, det) = DmsdosCache.RunTool(DmsdosCache.CvfTest(build!), $"\"{cvfPath}\" -v");
+    var det = Encoding.ASCII.GetBytes(DmsdosOracle.Detect(cvfPath));
     Assert.That(Encoding.ASCII.GetString(det), Does.Contain("drivespace CVF (version 2)"),
       "dmsdos did not detect our CVF as a genuine DoubleSpace/DriveSpace v2 volume");
 
     foreach (var (name, expected) in files) {
-      var (exit, raw) = DmsdosCache.RunTool(DmsdosCache.DcRead(build!), $"\"{cvfPath}\" /{name} raw");
+      var (exit, payload) = DmsdosOracle.ReadFile(cvfPath, name);
       Assert.That(exit, Is.EqualTo(0), $"dcread failed for {name}");
-      var payload = DmsdosCache.PayloadAfterDiagnostics(raw);
       Assert.That(payload.Length, Is.GreaterThanOrEqualTo(expected.Length), $"short read for {name}");
       Assert.That(payload.AsSpan(0, expected.Length).ToArray(), Is.EqualTo(expected),
         $"{name} did not read back byte-exact through the dmsdos driver");

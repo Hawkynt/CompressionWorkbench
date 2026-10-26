@@ -105,14 +105,26 @@ Candidate formats from earlier stages are validated by parsing their headers and
 |---|----------|--------|
 | 1 | A signature of ≥ 0.9 confidence and ≥ 4 bytes inside sector 0 | That format (VHDX, QCOW2, VMDK, XFS, SquashFS, gzip, …) |
 | 2 | ISO 9660 / UDF volume descriptors at 32 KiB | `Iso` / `Udf` — ahead of any partition table, so a hybrid ISO whose system area carries an MBR or GPT browses as the ISO |
-| 3 | GPT header at LBA 1 whose CRC32 matches (UEFI 2.10 §5.3.2) | `PartitionedDisk` |
+| 3 | GPT header at LBA 1 whose CRC32 matches (UEFI 2.10 §5.3.2), at 512- or 4096-byte logical blocks | `PartitionedDisk` |
 | 4 | Sector 0 ends in 0x55AA: validated MBR table vs. volume boot record (FAT BPB, NTFS/exFAT OEM ID) | Table only → `PartitionedDisk`; boot record only → that filesystem; both → `PartitionedDisk` only if a partition holds a recognisable filesystem |
 | 5 | Apple Partition Map | `PartitionedDisk` |
-| 6 | A filesystem superblock signature of ≥ 0.75 confidence, up to the deepest one registered (ZFS at 128 KiB) | That filesystem |
+| 6 | A checksummed SGI volume header, Sun label or Amiga Rigid Disk Block, or a stand-alone BSD disklabel (both magics, sane geometry) | `PartitionedDisk` |
+| 7 | A filesystem superblock signature of ≥ 0.75 confidence, up to the deepest one registered (ZFS at 128 KiB) | That filesystem |
 
-A valid MBR (UEFI 2.10 §5.2.1) has a boot indicator of 0x00 or 0x80 in all four entries, and each used entry starts at LBA ≥ 1 inside the image, is at least one sector long and does not overlap another used entry. A trailing 0x55AA alone does not make a partition table: every FAT, NTFS and exFAT boot sector has one. Bytes that prove nothing stay `Unknown`, so noise named `.img` is no longer handed to the FAT reader. A `.img` path that does not exist yet, or is empty, still resolves to FAT as the create target. The probe reads 40 KiB, and reads further, out to the deepest filesystem signature, only for stage 6. It never scans the image.
+A valid MBR (UEFI 2.10 §5.2.1) has a boot indicator of 0x00 or 0x80 in all four entries, and each used entry starts at LBA ≥ 1 inside the image, is at least one sector long and does not overlap another used entry. A trailing 0x55AA alone does not make a partition table: every FAT, NTFS and exFAT boot sector has one. Bytes that prove nothing stay `Unknown`, so noise named `.img` is no longer handed to the FAT reader. A `.img` path that does not exist yet, or is empty, still resolves to FAT as the create target. The probe reads 40 KiB, and reads further, out to the deepest filesystem signature, only for stage 7. It never scans the image.
 
 `PartitionedDisk` lists each partition as a `PartitionN_Type/` directory holding the filesystem detected inside it (`InnerFsDetector`, which also reads past 4 KiB to find ISO 9660, UDF, JFS, btrfs and ZFS). A partition it does not recognise becomes a single `PartitionN_Type.raw` entry. Partitions are read through a `PartitionWindowStream` and never copied out. `OpenEntry` hands back the window itself, or the inner filesystem's entry stream over it. Virtual-disk containers (VHD, VHDX, VMDK, QCOW2, VDI, Bochs) are detected by their own signatures and run the same partition-aware listing over their guest disk.
+
+Tables: GPT at 512- or 4096-byte logical blocks (the block size is the one at which LBA 1 holds a CRC-valid header; a damaged primary falls back to the backup header), MBR with its EBR chain of logical partitions, APM, a BSD disklabel inside a BSD slice or standing alone, Amiga RDB, Sun and SGI labels. Writing:
+
+| Operation | How | Refused when |
+|-----------|-----|--------------|
+| Add/remove `PartitionN_Type/path` | The partition's own filesystem editor runs in place on a `StagedWindowStream`: writes are staged and reach the disk only when every edit in the call succeeded | No recognised filesystem; its editor is only the generic re-create default; the filesystem refuses (full, unsupported case); it would grow past the partition |
+| Add a root-level filesystem or `*.raw`/`*.img` image | New GPT/MBR entry after the last partition, 1 MiB-aligned where room allows, inside the usable LBA range | No free space; table full; not a partition image |
+| Remove `PartitionN_Type` | `PartitionEditor.DeletePartition` (GPT, MBR, logical); the sectors stay | BSD/RDB/Sun/SGI/APM tables |
+| `Create` | Partition images on a fresh GPT (`scheme=gpt`, default) or MBR, `sectorSize=512`/`4096`, partitions 1 MiB-aligned | A loose file; more than 128 (GPT) / 4 (MBR) images |
+
+Every refusal leaves the image byte-identical. `sgdisk -v`, `sfdisk --verify`, `parted`, `fdisk -b 4096`, `fsck.vfat` and `e2fsck` check the results (`PartitionedDiskExternalTests`). Resizing a partition is not an archive operation; the partition editor window does it through `PartitionEditor.ResizePartition` and the registered filesystem resizers.
 
 `FormatDetector.DetectByContent(Stream)` runs the same probe over a seekable stream, such as an entry inside a container, without a file on disk. `FormatDetector.DetectCached(path)` is `Detect` with a cache keyed on path, length and last-write time, for UI state that is re-evaluated on every repaint.
 

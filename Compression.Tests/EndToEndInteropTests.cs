@@ -318,9 +318,9 @@ public class EndToEndInteropTests {
     // Formats requiring special input data
     ".mp3",    // Wrapster wraps as MP3
     ".zpaq",   // ZPAQ journaling format, complex create/extract semantics
-    // XPK-dependent Amiga formats: writers emit raw tracks; readers expect XPK chunks.
+    // Track-indexed Amiga disk archivers and single-fork Mac compressors.
     // Test files use generic names (small.txt etc.) that the track-indexed format can't roundtrip.
-    ".pdsk", ".xmsh", ".xdsk", ".dcs", ".lhf", ".dd", ".zap",
+    ".lhf", ".dd", ".zap",
     // Placeholder writers (magic + a few fields, no actual entry data layout)
     ".sitx",
     // SFX-style installers — extension .exe is shared by InnoSetup, Nsis, and SFX
