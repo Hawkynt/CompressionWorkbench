@@ -130,6 +130,10 @@
     <EmbeddedResource Include="Arj\ReferenceVectors\*.arj">
       <LogicalName>ArjVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Real IT modules with compressed samples plus libxmp's PCM digests; see Codecs/TrackerXmIt/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Codecs\TrackerXmIt\ReferenceVectors\*.it;Codecs\TrackerXmIt\ReferenceVectors\*.sha256.txt">
+      <LogicalName>ItVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

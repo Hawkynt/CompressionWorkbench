@@ -42,7 +42,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 |---|---|---|---|---|
 | `Compression.Core/FileSystems/Cvf/CvfLzCodec.cs` (bit reader: "faithful port of dmsdos dblb_*") | dmsdos (`sandsmark/dmsdos`) decompression routines (`dblb_*` bit reader and the DS/JM decoders) | GPL-2.0 | [`CVF-CODECS-ON-DISK.md`](CVF-CODECS-ON-DISK.md) | clean-room rewrite in progress separately |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.G722/G722Codec.cs` | SpanDSP `src/g722.c` (Steve Underwood) | LGPL-2.1 **only** — no "or later", so not relicensable to LGPL-3 | [`G722-SPEC.md`](G722-SPEC.md) | to do |
-| `Hawkynt.FileFormats.Audio/Codecs/Codec.TrackerXmIt/ItSampleDecompressor.cs` | Schism Tracker `fmt/compression.c` (`it_decompress8/16`) | GPL-2.0-or-later | [`IT-SAMPLE-COMPRESSION-SPEC.md`](IT-SAMPLE-COMPRESSION-SPEC.md) | to do |
+| `Hawkynt.FileFormats.Audio/Codecs/Codec.TrackerXmIt/ItSampleDecompressor.cs` | Schism Tracker `fmt/compression.c` (`it_decompress8/16`) | GPL-2.0-or-later | [`IT-SAMPLE-COMPRESSION-SPEC.md`](IT-SAMPLE-COMPRESSION-SPEC.md) | rewritten clean-room from the specification; PCM matches libxmp and libopenmpt on real IT214/IT215 modules |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Nes2a03/Expansion/FdsAudio.cs` | NSFPlay `xgm/devices/Sound/nes_fds.cpp` (Brezza / Brad Smith) | none — the readme only presumes redistribution is allowed | [`FDS-EXPANSION-SOUND-SPEC.md`](FDS-EXPANSION-SOUND-SPEC.md) | to do |
 
 ## B — compatible, notice added

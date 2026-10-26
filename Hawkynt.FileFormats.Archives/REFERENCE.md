@@ -3168,12 +3168,12 @@ A parsed IT sample (IMPS header) with its PCM expanded to signed 16-bit. Handles
 
 #### `ItSampleDecompressor`
 
-Decodes Impulse Tracker compressed sample data (IT214 / IT215) into raw signed PCM.
+Decoder for Impulse Tracker compressed samples (IT 2.14 single-delta and IT 2.15 double-delta packing, 8- and 16-bit), written from `docs/IT-SAMPLE-COMPRESSION-SPEC.md`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress16` | `static short[] Decompress16(ReadOnlySpan<byte> compressed, int lengthSamples, bool it215)` | Decodes a 16-bit IT-compressed sample to signed 16-bit samples. |
-| `Decompress8` | `static sbyte[] Decompress8(ReadOnlySpan<byte> compressed, int lengthSamples, bool it215)` | Decodes an 8-bit IT-compressed sample to signed bytes. |
+| `Decompress16` | `static short[] Decompress16(ReadOnlySpan<byte> compressed, int lengthSamples, bool it215)` | Decodes an IT214/IT215-compressed 16-bit sample. |
+| `Decompress8` | `static sbyte[] Decompress8(ReadOnlySpan<byte> compressed, int lengthSamples, bool it215)` | Decodes an IT214/IT215-compressed 8-bit sample. |
 
 #### `TrackerRender`
 

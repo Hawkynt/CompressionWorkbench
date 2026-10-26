@@ -1,9 +1,10 @@
 # Impulse Tracker compressed samples (IT214 / IT215) — implementation specification
 
-Status: **specification for a clean-room replacement of
-`Hawkynt.FileFormats.Audio/Codecs/Codec.TrackerXmIt/ItSampleDecompressor.cs`.**
+Status: **implemented** — `Hawkynt.FileFormats.Audio/Codecs/Codec.TrackerXmIt/ItSampleDecompressor.cs`
+was rewritten clean-room from this document. Reference modules and oracle digests (libxmp,
+libopenmpt): `Compression.Tests/Codecs/TrackerXmIt/ReferenceVectors/README.md`.
 
-Why a replacement is needed: the current decoder calls itself "a direct port of the
+Why a replacement was needed: the previous decoder called itself "a direct port of the
 schismtracker reference decoder (`fmt/it.c`: `it_decompress8` / `it_decompress16`)". Schism
 Tracker is GPL-2.0-or-later (the file that holds those routines, `fmt/compression.c`, carries
 the GPL header), which this LGPL-3.0-or-later repository cannot absorb (see
@@ -60,9 +61,13 @@ At the start of every block the decoder resets its state: bit width to the maxim
 
 Within a block, bits are taken least-significant-bit first from each byte, bytes in order. An
 `w`-bit read assembles the value LSB-first: the first bit read is bit 0 of the result.
-Reads that run past the block's `n` bytes (or past the end of the buffer) return zero bits —
+Reads that run past the block's `n` bytes return zero bits —
 real encoders end blocks short of the last code's final bits, so this must not be an error.
-A block header that lies past the end of the buffer reads as `n = 0`.
+A block whose header, or whose `n` packed bytes, lie past the end of the buffer is truncated
+input and is refused (`InvalidDataException`): the missing samples cannot be known, and inventing
+them would return wrong bytes. (An earlier draft read such a header as `n = 0`; the implementation
+refuses instead; none of the 300-odd real compressed samples it was checked against needs the
+lenient reading.)
 
 ## 4. Decoding a block
 
@@ -101,7 +106,8 @@ have been produced, whatever bytes follow.
 | Condition | Behaviour |
 |---|---|
 | width leaves 1..`W` after an escape (only possible from the width-`W` escape) | `InvalidDataException` |
-| stream ends early | remaining bits read as zero; samples still produced |
+| a block's bit stream ends before its last code | missing bits read as zero; samples still produced |
+| a block header or its `n` bytes run past the end of the data | `InvalidDataException` |
 | `lengthSamples ≤ 0` | empty array |
 
 `ItSample.cs` catches exceptions and falls back to an empty sample; the decoder itself must
