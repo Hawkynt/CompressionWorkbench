@@ -98,6 +98,14 @@
     <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
       <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- TE images carved from Debian's EDK2 firmware plus 7-Zip's listing; see Te/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Te\ReferenceVectors\*.te;Te\ReferenceVectors\7zip-listing.txt">
+      <LogicalName>TeVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- PE images MinGW-w64 linked plus 7-Zip's listing; see PeSections/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="PeSections\ReferenceVectors\*.exe;PeSections\ReferenceVectors\7zip-listing.txt">
+      <LogicalName>PeSectionsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>

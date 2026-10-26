@@ -1,0 +1,36 @@
+7-Zip (PE and TE archive handlers) - converted to C#
+
+Source:   https://github.com/ip7z/7zip (7-Zip by Igor Pavlov), CPP/7zip/Archive/PeHandler.cpp
+Revision: b88c6bc09339de32f7d18bbab900686b244f42ba (main, 2026-10-21)
+Author:   Igor Pavlov
+Licence:  GNU Lesser General Public License, version 2.1 or (at your option)
+          any later version. This repository is LGPL-3.0-or-later, which the
+          "or any later version" grant permits; the full LGPL text is in the
+          repository's LICENSE file.
+
+Upstream notice (7-Zip's DOC/License.txt, for the files used here):
+
+  7-Zip Copyright (C) 1999-2026 Igor Pavlov.
+
+  This library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.
+
+Converted:
+
+  PeHandler.cpp (NPe: section table, extract sizes, .reloc/.pdata limits,
+                 CERTIFICATE, out-of-section debug items, COFF_SYMBOLS,
+                 [n] gap items, debug-padding image end)
+                                       -> FileFormat.PeSections/PeSectionReader.cs
+  PeHandler.cpp (NTe: header validation, StrippedSize conversion,
+                 machine and subsystem tables)
+                                       -> FileFormat.Te/TeReader.cs
+
+The resource-tree expansion of the PE handler was not converted; resources
+are served by FileFormat.PeResources.

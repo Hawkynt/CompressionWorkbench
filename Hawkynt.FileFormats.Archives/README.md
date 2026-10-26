@@ -324,6 +324,8 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Format | Id | Extensions | State | Test | Maintenance | Notes | Reference |
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
 | [PE resources (.rsrc)](https://en.wikipedia.org/wiki/Portable_Executable) | `PeResources` | `.dll` `.exe` `.ocx` `.cpl` … | R | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/windows/win32/debug/pe-format) |
+| [PE sections](https://en.wikipedia.org/wiki/Portable_Executable) | `PeSections` |  | R | ✅ | — | Sections (raw `.rsrc`), CERTIFICATE, out-of-section debug data, COFF_SYMBOLS, `[n]` gaps and `[overlay]`; agrees with 7-Zip's PE handler; selected explicitly or by `MZ` magic | [Microsoft Learn](https://learn.microsoft.com/windows/win32/debug/pe-format) |
+| [TE (Terse Executable)](https://en.wikipedia.org/wiki/Unified_Extensible_Firmware_Interface) | `Te` | `.te` | R | ✅ | — | UEFI PEI modules; sections checked against 7-Zip on EDK2 firmware images | [uefi.org](https://uefi.org/specifications) |
 | [Resource-only DLL](https://en.wikipedia.org/wiki/Dynamic_link_library) | `ResourceDll` |  | WORM | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/windows/win32/debug/pe-format) |
 | [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) | `Elf` | `.elf` `.so` `.o` `.ko` | R | ✅ | — |  | [sco.com](https://www.sco.com/developers/gabi/) |
 | [Mach-O](https://en.wikipedia.org/wiki/Mach-O) | `MachO` | `.macho` `.dylib` `.bundle` `.o` | R | ✅ | — |  | [GitHub](https://github.com/apple-oss-distributions/xnu) |
