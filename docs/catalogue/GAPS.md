@@ -16,16 +16,16 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | Catalogue rows | 983 |
 | … formats listed by at least one source | 525 |
 | … registry ids no source lists (OURS-ONLY) | 458 |
-| Source-listed rows mapped to something here | 284 / 525 (54.1 %) |
+| Source-listed rows mapped to something here | 285 / 525 (54.3 %) |
 | … of rows listed by ≥ 2 sources | 122 / 138 (88 %) |
 | … of rows listed by ≥ 3 sources | 66 / 67 (PEA is the one missing) |
 | … of rows listed by ≥ 4 sources | 31 / 31 |
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 241 | a source lists it; no descriptor or building block covers it |
+| `MISSING` | 240 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 23 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 40 | covered, but the reader handles only part of the format (see the table below) |
+| `PARTIAL` | 41 | covered, but the reader handles only part of the format (see the table below) |
 | `OK` | 221 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 458 | in our registry, listed by none of the seven sources |
 
@@ -38,7 +38,7 @@ read-only rows.
 | --- | ---: | ---: | ---: | ---: |
 | 7-Zip (formats + codecs) | 96 | 89 | 92.7 | 72 |
 | libarchive (formats + filters) | 28 | 27 | 96.4 | 23 |
-| XADMaster / The Unarchiver | 126 | 94 | 74.6 | 78 |
+| XADMaster / The Unarchiver | 126 | 95 | 75.4 | 78 |
 | binwalk v3 | 79 | 48 | 60.8 | 36 |
 | Universal Extractor 2 | 124 | 71 | 57.3 | 48 |
 | PRONOM | 87 | 63 | 72.4 | 43 |
