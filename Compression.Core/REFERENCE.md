@@ -9741,6 +9741,7 @@ ZIP compression methods.
 | `BZip2` | `12` | BZip2 compression. |
 | `Lzma` | `14` | LZMA compression. |
 | `Zstd` | `93` | Zstandard compression. |
+| `Xz` | `95` | XZ compression (a complete .xz stream, APPNOTE 4.4.5 method 95). |
 | `Ppmd` | `98` | PPMd version I, Rev 1 compression. |
 | `WinZipAes` | `99` | WinZip AES encryption (actual method stored in extra field). |
 
