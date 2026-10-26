@@ -67,9 +67,24 @@
                       Exclude="StructuredPseudoArchives\ReferenceVectors\*.py;StructuredPseudoArchives\ReferenceVectors\*.pl;StructuredPseudoArchives\ReferenceVectors\*.ps1;StructuredPseudoArchives\ReferenceVectors\README.md">
       <LogicalName>ReferenceVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Volumes a Reiser4 kernel wrote under mkfs.reiser4 plugin profiles, with the kernel's read-back;
+         see Reiser4/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Reiser4\ReferenceVectors\*.gz;Reiser4\ReferenceVectors\*.manifest">
+      <LogicalName>Reiser4Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- The QEMU harness that lets a Reiser4 kernel judge what the writer produces. -->
+    <None Include="Reiser4\KernelOracle\*.sh" CopyToOutputDirectory="PreserveNewest" LinkBase="Reiser4\KernelOracle" />
     <!-- Volumes bcachefs-tools wrote; see BcacheFs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="BcacheFs\ReferenceVectors\*.gz;BcacheFs\ReferenceVectors\manifest.txt">
       <LogicalName>BcacheFsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Installers compiled by makensis 2.51 / 3.10, plus 7-Zip's extraction; see Nsis/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Nsis\ReferenceVectors\*.gz;Nsis\ReferenceVectors\oracle.tsv">
+      <LogicalName>NsisVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Installers compiled by ISCC 5.6.1 / 6.0.5, plus innoextract's extraction; see InnoSetup/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="InnoSetup\ReferenceVectors\*.gz;InnoSetup\ReferenceVectors\oracle.tsv">
+      <LogicalName>InnoVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
@@ -78,6 +93,14 @@
     <!-- Streams written by libcsc's reference csc tool; see Csc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Csc\ReferenceVectors\*.csc">
       <LogicalName>CscVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Archives FreeArc 0.67's Arc.exe wrote; see FreeArc/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="FreeArc\ReferenceVectors\*.arc">
+      <LogicalName>FreeArcVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Archives the reference zpaq 7.15 wrote, with a manifest of their contents; see Zpaq/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Zpaq\ReferenceVectors\*.zpaq;Zpaq\ReferenceVectors\manifest.tsv">
+      <LogicalName>ZpaqVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- CVF cluster payloads the dmsdos compressors wrote; see Cvf/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Cvf\ReferenceVectors\*.bin">
@@ -118,9 +141,46 @@
     <EmbeddedResource Include="Zfs\ReferenceVectors\*.gz;Zfs\ReferenceVectors\*.manifest">
       <LogicalName>ZfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- ACE archives from acefile's test corpus and ones our writer produced for acefile; see Ace/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\acefile-listing.txt">
+      <LogicalName>AceVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- 7z archives 7-Zip 26.03, 7-Zip-zstd 26.02 and py7zr wrote; see SevenZip/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="SevenZip\ReferenceVectors\*.7z;SevenZip\ReferenceVectors\manifest.txt">
+      <LogicalName>SevenZipVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- ARC crawl files from warcio's tests and a Heritrix crawl; see IaArc/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="IaArc\ReferenceVectors\*.arc;IaArc\ReferenceVectors\*.arc.gz;IaArc\ReferenceVectors\warcio-listing.txt">
+      <LogicalName>IaArcVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- MARs from mardor's test data and written by mardor; see Mar/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Mar\ReferenceVectors\*.mar;Mar\ReferenceVectors\mardor-listing.txt">
+      <LogicalName>MarVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- VDF volumes from GothicVDFS, VDFSTool and ZenKit, with ZenKit's listings; see Vdfs/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">
+      <LogicalName>VdfsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- ZIP archives written by third-party archivers; see Zip/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
+      <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Archives the open-source ARJ port wrote with each method; see Arj/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Arj\ReferenceVectors\*.arj">
+      <LogicalName>ArjVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- XAR archives libarchive's bsdtar wrote with each encoding; see Xar/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Xar\ReferenceVectors\*.xar">
+      <LogicalName>XarVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- -lh2- / -lh3- archives UNLHA32.DLL wrote, from lhasa's test suite; see Lzh/ReferenceVectors/README.md. -->
+    <!-- Archives other LHA-family tools wrote, from lhasa's test suite; see Lzh/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Lzh\ReferenceVectors\*.lzh;Lzh\ReferenceVectors\*.lzs;Lzh\ReferenceVectors\*.pma">
+      <LogicalName>LzhVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

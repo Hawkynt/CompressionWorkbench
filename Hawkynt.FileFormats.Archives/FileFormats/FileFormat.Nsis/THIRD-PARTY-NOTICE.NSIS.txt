@@ -1,0 +1,29 @@
+The NSIS reader in this directory was written from these sources:
+
+1. NSIS (Nullsoft Scriptable Install System), https://github.com/kichik/nsis, master as of
+   2026-10-19: Source/exehead/fileform.h, fileform.c, util.c (installer layout, opcodes,
+   string escape codes) and Source/bzip2/decompress.c (the header-less bzip2 framing: block
+   marker 0x31, end marker 0x17, no CRCs). The structures and constants were taken over; the
+   code here is a new C# implementation.
+
+   Copyright (C) 1999-2026 Nullsoft and Contributors. zlib/libpng license:
+
+   This software is provided 'as-is', without any express or implied warranty. In no event
+   will the authors be held liable for any damages arising from the use of this software.
+
+   Permission is granted to anyone to use this software for any purpose, including commercial
+   applications, and to alter it and redistribute it freely, subject to the following
+   restrictions:
+
+     1. The origin of this software must not be misrepresented; you must not claim that you
+        wrote the original software. If you use this software in a product, an acknowledgment
+        in the product documentation would be appreciated but is not required.
+     2. Altered source versions must be plainly marked as such, and must not be misrepresented
+        as being the original software.
+     3. This notice may not be removed or altered from any source distribution.
+
+2. 7-Zip, https://github.com/ip7z/7zip, CPP/7zip/Archive/Nsis/NsisIn.cpp and NsisDecode.cpp
+   (GNU LGPL 2.1 or later), Copyright (C) Igor Pavlov: the compressor-signature table, the
+   NSIS 2 / NSIS 3 string-dialect check, the NSIS 2 stored-block rule (LEN without NLEN), the
+   shell-folder name table and the rule for naming files relative to $INSTDIR. Adapted into
+   this LGPL-3.0-or-later code base.

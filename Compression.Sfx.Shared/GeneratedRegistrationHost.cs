@@ -61,6 +61,9 @@ public static partial class FormatRegistration {
       ("TarLz4", "tar.lz4", "Lz4", ".tar.lz4", [".tar.lz4"]),
       ("TarLzip", "tar.lz", "Lzip", ".tar.lz", [".tar.lz", ".tlz"]),
       ("TarBr", "tar.br", "Brotli", ".tar.br", [".tar.br", ".tbr"]),
+      ("TarZ", "tar.Z", "Compress", ".tar.Z", [".tar.z"]),
+      ("TarLzma", "tar.lzma", "Lzma", ".tar.lzma", [".tar.lzma"]),
+      ("TarLzo", "tar.lzo", "Lzop", ".tar.lzo", [".tar.lzo"]),
     }) {
       // Only register a composite whose halves this stub actually carries.
       if (FormatRegistry.GetById(stream) is null || FormatRegistry.GetById("Tar") is null) continue;
