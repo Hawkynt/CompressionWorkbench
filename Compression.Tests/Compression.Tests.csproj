@@ -122,6 +122,10 @@
     <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">
       <LogicalName>VdfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- XP3s from the KiriKiri 2 Releaser and GARbro, and ours verified by them; see Xp3/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Xp3\ReferenceVectors\*.xp3;Xp3\ReferenceVectors\*.txt">
+      <LogicalName>Xp3Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>

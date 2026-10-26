@@ -1,0 +1,3 @@
+# Fixture bytes are the test: never let a checkout rewrite line endings.
+*.xp3 -text
+*.txt -text

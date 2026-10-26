@@ -289,6 +289,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Volition VPP v2 | `VppV2` | `.vpp_pc` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/gibbed/Gibbed.Volition) |
 | [Doom WAD](https://en.wikipedia.org/wiki/Doom_WAD) | `Wad` | `.wad` | R/W | ✅ | defrag · wipe | Lump names are 8 characters | [doomwiki.org](https://doomwiki.org/wiki/WAD) |
 | Quake / Half-Life WAD2/WAD3 | `Wad2` | `.wad` | R/W | ✅ | defrag · wipe |  | [developer.valvesoftware.com](https://developer.valvesoftware.com/wiki/WAD) |
+| [KiriKiri XP3](https://en.wikipedia.org/wiki/Kirikiri) | `Xp3` | `.xp3` | R/W | ✅ | — | Stored and zlib members, raw or zlib index, 1.x and 2.32 headers; reads KiriKiri 2 Releaser archives, writes archives KiriKiri Z runs; game-specific encryption is not decoded (members failing Adler-32 are refused) | [krkrz.github.io](https://krkrz.github.io/) |
 | YukaScript YPF | `Ypf` | `.ypf` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/morkt/GARbro) |
 | [ZX Spectrum snapshot / tape](https://en.wikipedia.org/wiki/ZX_Spectrum_software) | `ZxSnapshot` | `.sna` `.z80` `.tap` `.tzx` | R | ✅ | — |  | [sinclair.wiki.zxnet.co.uk](https://sinclair.wiki.zxnet.co.uk/wiki/TAP_format) |
 
