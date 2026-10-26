@@ -24,9 +24,9 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
 | `MISSING` | 240 | a source lists it; no descriptor or building block covers it |
-| `READ-ONLY-BUT-SOURCES-WRITE` | 24 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 40 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 221 | covered with no known gap against what the sources list |
+| `READ-ONLY-BUT-SOURCES-WRITE` | 20 | we only read it; a source or the format's own tool writes it |
+| `PARTIAL` | 41 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 224 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 458 | in our registry, listed by none of the seven sources |
 
 ### Per source
@@ -36,13 +36,13 @@ read-only rows.
 
 | Source | Rows it lists | Mapped | % | OK |
 | --- | ---: | ---: | ---: | ---: |
-| 7-Zip (formats + codecs) | 96 | 89 | 92.7 | 72 |
+| 7-Zip (formats + codecs) | 96 | 89 | 92.7 | 74 |
 | libarchive (formats + filters) | 28 | 27 | 96.4 | 23 |
 | XADMaster / The Unarchiver | 126 | 95 | 75.4 | 78 |
-| binwalk v3 | 79 | 48 | 60.8 | 36 |
+| binwalk v3 | 79 | 48 | 60.8 | 38 |
 | Universal Extractor 2 | 124 | 71 | 57.3 | 48 |
 | PRONOM | 87 | 63 | 72.4 | 43 |
-| Wikipedia | 266 | 156 | 58.6 | 117 |
+| Wikipedia | 266 | 156 | 58.6 | 118 |
 
 The libarchive and 7-Zip lists are almost fully covered. The rows still open are libarchive's grzip,
 plus seven 7-Zip rows: LVM, Android `super.img` (LP), AVB, TE, the Swap2/Swap4 filter, PKWARE strong
