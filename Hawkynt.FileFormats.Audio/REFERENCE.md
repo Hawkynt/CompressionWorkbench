@@ -1444,12 +1444,12 @@ Specifies flac subframe mode values.
 
 #### `G722Codec`
 
-ITU-T G.722 64 kbit/s sub-band ADPCM. A faithful port of the ITU / SpanDSP reference (the CMU single-channel core): a 24-tap quadrature mirror filter (QMF) splits the 16 kHz input into two 8 kHz sub-bands; the lower band is coded with 6-bit ADPCM and the higher band with 2-bit ADPCM (operating mode 1 — the full 64 kbit/s rate). The decoder mirrors this, running the two band ADPCM decoders and recombining the bands through the QMF synthesis filter. One octet carries one combined codeword (2 high-band bits in the top nibble's two MSBs, 6 low-band bits below): each octet represents two output samples (one QMF frame). The public API therefore consumes / produces ordinary 16-bit linear PCM at 16 kHz, with the encoder emitting one byte per two input samples.
+ITU-T G.722 sub-band ADPCM at 64 kbit/s (mode 1: six low-band bits and two high-band bits per octet), 16-bit signed linear PCM at 16 kHz, mono. Implemented from `docs/G722-SPEC.md`, which restates ITU-T Recommendation G.722 (09/2012) sections 3, 4 and 6; block and variable names in comments (`DETL`, `UPPOL2`, ...) are the Recommendation's. Like the common 16-bit software codecs, this one feeds 16-bit samples straight into the transmit QMF instead of the Recommendation's 14-bit interface and compensates with the QMF output shifts (`>> 14` on transmit, `>> 11` on receive), so streams interoperate with FFmpeg's `g722` encoder and decoder. One octet carries two samples: bits 7–6 are the high-band code, bits 5–0 the low-band code. Every call starts from the reset state; nothing carries across calls.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data)` | Decodes a G.722 (64 kbit/s) octet stream to 16-bit linear PCM at 16 kHz, producing two samples per input byte. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes 16-bit linear PCM at 16 kHz to a G.722 (64 kbit/s) octet stream, one byte per two input samples. An odd trailing sample is ignored (a full QMF frame needs two). |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data)` | Decodes G.722 octets to 16 kHz PCM, two samples per octet. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes 16 kHz PCM to G.722 octets; a trailing odd sample is dropped. |
 
 ### Namespace `Codec.G7231`
 
