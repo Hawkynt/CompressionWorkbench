@@ -49,6 +49,19 @@ public static class ZooConstants {
   /// <summary>Compression method: normal Zoo LZW.</summary>
   public const byte MethodLzw = 1;
 
+  /// <summary>Compression method: Zoo 2.10 LZH (Okumura "ar" -lh5- blocks, 8 KiB window, zero block-size terminator).</summary>
+  public const byte MethodLzh = 2;
+
+  /// <summary>
+  /// The directory entry Zoo writes after the last member: its next-entry link is 0, which is how Zoo
+  /// recognises the end of the chain, so the last real member must point at this entry rather than
+  /// carry the 0 itself. Bytes as Zoo 2.10 writes them (all fields zero, type 2, header CRC 0x83FC).
+  /// </summary>
+  public static ReadOnlySpan<byte> EndOfDirectory => [0xDC, 0xA7, 0xC4, 0xFD, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFC, 0x83];
+
+  /// <summary>Window size of Zoo LZH in bits (DICBIT in Zoo 2.10).</summary>
+  public const int LzhDictionaryBits = 13;
+
   /// <summary>Initial LZW code width in bits.</summary>
   public const int LzwMinBits = 9;
 

@@ -336,3 +336,382 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ```
+
+## FFmpeg (LGPL-2.1-or-later decoders, encoders and demuxer helpers)
+
+Source: `FFmpeg/FFmpeg` — LGPL-2.1-or-later. Each file's licence header was checked at tag
+`n7.1` (`b08d7969c550a804a59511c7b83f2dd8cc0499b8`); none of the files below is one of the
+GPL-only parts FFmpeg's `LICENSE.md` lists. The revisions the individual conversions were
+made from were not recorded.
+
+The codecs below are conversions of the named FFmpeg files into C#. FFmpeg licenses them under
+the GNU LGPL version 2.1 "or (at your option) any later version"; this package distributes the
+converted code under the GNU LGPL version 3 or later, as that clause allows. The LGPL-3.0 text
+is reproduced under GroovyCodecs above. The converted files are modified: they are C#
+rewrites, restructured for this package.
+
+| Codec folder | FFmpeg sources | Copyright holders named in those files |
+|---|---|---|
+| `Codec.Aac` (SBR) | `libavcodec/aacsbr.c`, `aacsbr_template.c`, `aacsbrdata.h` | Robert Swain; Alex Converse |
+| `Codec.Ac3` | `libavcodec/ac3dec.c`, `ac3dec_data.c`, `ac3tab.c`, `ac3.c`, `ac3_parser.c`, `eac3dec.c`, `eac3_data.c`, `ac3enc.c` | Fabrice Bellard; Michael Niedermayer; Kartikey Mahendra Bhatt; Bartlomiej Wolowiec; Justin Ruggles; Prakash Punnoor |
+| `Codec.AdpcmX`, `Codec.SolDpcm`, the Creative ADPCM path of `FileFormat.Voc` | `libavcodec/adpcm.c`, `adpcm_data.c`, `dpcm.c` | The FFmpeg project |
+| `Codec.AmrNb` | `libavcodec/amrnbdec.c`, `amrnbdata.h`, `acelp_vectors.c`, `acelp_pitch_delay.c`, `acelp_filters.c`, `celp_filters.c`, `celp_math.c`, `lsp.c` | Robert Swain; Colin McQuillan; Vladimir Voroshilov; Reynaldo H. Verdejo Pinochet |
+| `Codec.AmrWb` (decoder) | `libavcodec/amrwbdec.c`, `amrwbdata.h`, the ACELP helpers above, `libavutil/lfg.c` | Marcelo Galvao Povoa; Michael Niedermayer; Vladimir Voroshilov |
+| `Codec.Atrac1` | `libavcodec/atrac1.c`, `atrac1data.h`, `atrac.c`, `sinewin.c` | Maxim Poliakovski; Benjamin Larsson |
+| `Codec.Atrac3` | `libavcodec/atrac3.c`, `atrac3data.h`, `atrac.c`; `libavformat/omadec.c` | Maxim Poliakovski; Benjamin Larsson |
+| `Codec.BinkAudio` | `libavcodec/binkaudio.c`, `wma_freqs.c` | Peter Ross; Daniel Verkamp |
+| `Codec.Bonk` | `libavcodec/bonk.c`, `libavformat/bonk.c` | Paul B Mahol (`libavformat/bonk.c`; the decoder file names no holder) |
+| `Codec.Cook` | `libavcodec/cook.c`, `cookdata.h`, `libavutil/lfg.c`, `libavformat/rmdec.c` | Sascha Sommer; Benjamin Larsson; Michael Niedermayer; Fabrice Bellard |
+| `Codec.CriHca` | `libavcodec/hcadec.c`, `hca_data.h` | no copyright line in the files (FFmpeg contributors) |
+| `Codec.Dfpwm` | `libavcodec/dfpwmdec.c`, `dfpwmenc.c` | Jack Bruienne; Ben "GreaseMonkey" Russell |
+| `Codec.Dts` | `libavcodec/dca_core.c`, `dcadec.c`, `dcadata.c`, `dcahuff.c`, `dcadsp.c`, `dca.c`, `synth_filter.c`, `dcaenc.c` | Gildas Bazin; Benjamin Zores; Benjamin Larsson; Konstantin Shishkov; foo86; Michael Niedermayer; Alexander E. Patrakov |
+| `Codec.G7231` | `libavcodec/g723_1dec.c`, `g723_1.c`, `g723_1.h`, `celp_math.c`, `mathtables.c` | Benjamin Larsson; Mohamed Naufal Basheer; Michael Niedermayer |
+| `Codec.Mace` | `libavcodec/mace.c` | Laszlo Torok |
+| `Codec.MonkeysAudio` (alongside the Monkey's Audio SDK below) | `libavcodec/apedec.c` | Benjamin Zores |
+| `Codec.Musepack` | `libavcodec/mpc7.c`, `mpc8.c`, `mpc.c`, `mpc7data.h`, `mpc8data.h`, `mpc8huff.h`, `mpcdata.h`, `mpegaudiodsp_data.c`, `mpegaudiodsp_template.c`, `dct32_template.c`, `libavutil/lfg.c`, `libavformat/mpc.c`, `mpc8.c` | Konstantin Shishkov; Fabrice Bellard; Michael Niedermayer |
+| `Codec.Nellymoser` (the generator only; the codec is MIT, above) | `libavutil/lfg.c` | Michael Niedermayer |
+| `Codec.Qoa` (alongside `qoa.h` below) | `libavcodec/qoadec.c` | no copyright line in the file (FFmpeg contributors) |
+| `Codec.Ra144` | `libavcodec/ra144.c`, `ra144dec.c`, `celp_filters.c`, `mathtables.c` | The FFmpeg project; Vitor Sessak; Nick Kurshev |
+| `Codec.Ra288` | `libavcodec/ra288.c`, `ra288.h` | The FFmpeg project |
+| `Codec.Ralf` | `libavcodec/ralf.c`, `ralfdata.h` | Konstantin Shishkov |
+| `Codec.S302M` | `libavcodec/s302m.c` | Laurent Aimar; Baptiste Coudurier |
+| `Codec.Sbc` | `libavcodec/sbcdec.c`, `sbc.c`, `sbcdec_data.c` | Aurelien Jacobs; Intel Corporation; Nokia Corporation; Marcel Holtmann; Henryk Ploetz |
+| `Codec.Sipr` | `libavcodec/sipr.c`, `siprdata.h`, the ACELP/CELP/LSP helpers above, `libavformat/rmsipr.c` | Vladimir Voroshilov; Vitor Sessak |
+| `Codec.Siren` | `libavcodec/siren.c` | Youness Alaoui; Paul B Mahol; Lynne |
+| `Codec.SmackerAudio` | `libavcodec/smacker.c`, `libavformat/smacker.c` | Konstantin Shishkov |
+| `Codec.Speex` (alongside the Xiph BSD notice below) | `libavcodec/speexdec.c`, `speexdata.h` | see the Speex section below |
+| `Codec.TrueSpeech` | `libavcodec/truespeech.c`, `truespeech_data.h` | Konstantin Shishkov |
+| `Codec.Tta` | `libavcodec/tta.c`, `ttadsp.c`, `ttadata.c` | Alex Beregszaszi |
+| `Codec.WavArc` | `libavcodec/wavarc.c`, `libavformat/wavarc.c` | Paul B Mahol |
+| `Codec.Wma` | `libavcodec/wma.c`, `wmadec.c`, `wmadata.h`, `wma_freqs.c`, `aactab.c` | The FFmpeg project; Oded Shimon; Maxim Gavrilov |
+| `Codec.WmaLossless` | `libavcodec/wmalosslessdec.c`, `lossless_audiodsp.c` | Baptiste Coudurier, Benjamin Larsson, Ulion; Sascha Sommer; Andreas Öman; Mashiat Sarker Shakkhar; Benjamin Zores |
+| `Codec.WmaPro`, `Codec.Xma` | `libavcodec/wmaprodec.c`, `wmaprodata.h`, `wma.c`, `wma_common.c` | Baptiste Coudurier, Benjamin Larsson, Ulion; Sascha Sommer |
+
+The header every one of these files carries:
+
+```
+This file is part of FFmpeg.
+
+FFmpeg is free software; you can redistribute it and/or
+modify it under the terms of the GNU Lesser General Public
+License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version.
+
+FFmpeg is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Lesser General Public License for more details.
+```
+
+## Interplay ACM decoder
+
+`Codec.InterplayAcm` is a conversion of FFmpeg's `libavcodec/interplayacm.c`, which is under the
+ISC licence rather than the LGPL:
+
+```
+Copyright (c) 2004-2008 Marko Kreen
+Copyright (c) 2008 Adam Gashlin
+Copyright (c) 2015 Paul B Mahol
+
+Permission to use, copy, modify, and distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
+## Speex
+
+`Codec.Speex` is a conversion of FFmpeg's native Speex decoder (`libavcodec/speexdec.c`,
+`speexdata.h`). Those files carry the Xiph BSD notice of the libspeex code they derive from in
+addition to FFmpeg's LGPL-2.1-or-later header (see the FFmpeg section):
+
+```
+Copyright 2002-2008  Xiph.org Foundation
+Copyright 2002-2008  Jean-Marc Valin
+Copyright 2005-2007  Analog Devices Inc.
+Copyright 2005-2008  Commonwealth Scientific and Industrial Research Organisation (CSIRO)
+Copyright 1993, 2002, 2006 David Rowe
+Copyright 2003       EpicGames
+Copyright 1992-1994  Jutta Degener, Carsten Bormann
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+- Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+
+- Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+- Neither the name of the Xiph.org Foundation nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## Monkey's Audio SDK
+
+`Codec.MonkeysAudio` converts the reference SDK's range coder (`CUnBitArray`, `CBitArray`), the
+entropy stage, the predictors (`CPredictorDecompress3950toCurrent`, `CPredictorCompressNormal`),
+the `CNNFilter` cascade and `CPrepare`. The SDK is BSD-3-Clause (licence text from
+monkeysaudio.com, checked 2026-10-19):
+
+```
+Monkey's Audio License Agreement (3-Clause BSD)
+Copyright 2000-2026 by Matthew T. Ashland. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted
+provided that the following conditions are met:
+
+Redistributions of source code must retain the above copyright notice, this list of conditions
+and the following disclaimer.
+Redistributions in binary form must reproduce the above copyright notice, this list of
+conditions and the following disclaimer in the documentation and/or other materials provided
+with the distribution.
+Neither the name of the copyright holder nor the names of its contributors may be used to
+endorse or promote products derived from this software without specific prior written
+permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
+THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## WavPack
+
+`Codec.WavPack` converts the reference library's decorrelation passes (`unpack.c`, `pack.c`), its
+entropy word coder (`words.c`), its bit reader (`bits.c`) and its floating-point support. Source:
+`dbry/WavPack` — BSD-3-Clause (checked at `cb3b7fff5f566320ab2150d02a5a388c1829ecd9`):
+
+```
+                  Copyright (c) 1998 - 2025 David Bryant
+                          All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+      this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+      this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name of the copyright holder nor the names of its
+      contributors may be used to endorse or promote products derived from
+      this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## QOA (Quite OK Audio)
+
+`Codec.Qoa` takes its tables, predictor and bit packing from the reference `qoa.h`. Source:
+`phoboslab/qoa` — MIT (checked at `bc0589710ff6aa2f50e08fb4d0a815d567bc0f3e`):
+
+```
+Copyright (c) 2023, Dominic Szablewski - https://phoboslab.org
+SPDX-License-Identifier: MIT
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## VGAudio (CRI HCA inverse MDCT)
+
+`Codec.CriHca/HcaImdct.cs` converts VGAudio's `Mdct.RunImdct`. Source: `Thealexbarney/VGAudio` —
+MIT (checked at `9d8f6ea04c83cccccb3dd7851a631bbd53a8dbbe`; the upstream licence file leaves the
+holder's name blank, the project's author is Alex Barney):
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2016
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## libopus range decoder
+
+`Codec.Opus/OpusRangeDecoder.cs` converts libopus's `celt/entdec.c` and `celt/entcode.c`.
+Source: `xiph/opus` — the same BSD-3-Clause licence reproduced under Concentus above (checked at
+`51bd2e649f4516d103ab9a7f22a768595621e847`), whose copyright line reads:
+
+```
+Copyright 2001-2023 Xiph.Org, Skype Limited, Octasic,
+                    Jean-Marc Valin, Timothy B. Terriberry,
+                    CSIRO, Gregory Maxwell, Mark Borgerding,
+                    Erik de Castro Lopo, Mozilla, Amazon
+```
+
+## Nuked-OPL3
+
+`Codec.Opl` takes its operator, envelope, phase, waveform and rhythm logic and its envelope tables
+from Nuked-OPL3. Source: `nukeykt/Nuked-OPL3` — LGPL-2.1-or-later (checked at
+`765ec962e473aeb767e4cba74ffdc8f588ffbfe8`, version 1.8); distributed here under the LGPL-3.0
+reproduced under GroovyCodecs above, as the "any later version" clause allows:
+
+```
+Nuked OPL3
+Copyright (C) 2013-2020 Nuke.YKT
+
+This file is part of Nuked OPL3.
+
+Nuked OPL3 is free software: you can redistribute it and/or modify
+it under the terms of the GNU Lesser General Public License as
+published by the Free Software Foundation, either version 2.1
+of the License, or (at your option) any later version.
+
+Nuked OPL3 is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Lesser General Public License for more details.
+```
+
+## emu2413
+
+`Codec.Ym2413` transcribes the instrument patch ROM, the rhythm generation, the KSL/multiple
+tables and the envelope behaviour from emu2413 v1.5.9. Source: `digital-sound-antiques/emu2413` —
+MIT:
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2001-2019 Mitsutaka Okazaki
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## CCITT / Sun Microsystems G.721 / G.723 / G.726 reference
+
+`Codec.G72x` converts the Sun Microsystems reference implementation (`g72x.c`, `g721.c`,
+`g723_16.c`, `g723_24.c`, `g723_40.c`), which carries this notice:
+
+```
+This source code is a product of Sun Microsystems, Inc. and is provided
+for unrestricted use.  Users may copy or modify this source code without
+charge.
+
+SUN SOURCE CODE IS PROVIDED AS IS WITH NO WARRANTIES OF ANY KIND INCLUDING
+THE WARRANTIES OF DESIGN, MERCHANTIBILITY AND FITNESS FOR A PARTICULAR
+PURPOSE, OR ARISING FROM A COURSE OF DEALING, USAGE OR TRADE PRACTICE.
+
+Sun source code is provided with no support and without any obligation on
+the part of Sun Microsystems, Inc. to assist in its use, correction,
+modification or enhancement.
+
+SUN MICROSYSTEMS, INC. SHALL HAVE NO LIABILITY WITH RESPECT TO THE
+INFRINGEMENT OF COPYRIGHTS, TRADE SECRETS OR ANY PATENTS BY THIS SOFTWARE
+OR ANY PART THEREOF.
+
+In no event will Sun Microsystems, Inc. be liable for any lost revenue
+or profits or other special, indirect and consequential damages, even if
+Sun has been advised of the possibility of such damages.
+
+Sun Microsystems, Inc.
+2550 Garcia Avenue
+Mountain View, California  94043
+```
+
+## GSM 06.10 reference implementation
+
+`Codec.Gsm610` is converted from the Jutta Degener / Carsten Bormann reference, whose licence
+requires that this notice is kept (it also heads `Gsm610Codec.cs`):
+
+```
+Copyright 1992, 1993, 1994 by Jutta Degener and Carsten Bormann,
+Technische Universitaet Berlin
+
+Any use of this software is permitted provided that this notice is not
+removed and that neither the authors nor the Technische Universitaet Berlin
+are deemed to have made any representations as to the suitability of this
+software for any purpose nor are held responsible for any defects of
+this software.  THERE IS ABSOLUTELY NO WARRANTY FOR THIS SOFTWARE.
+
+As a matter of courtesy, the authors request to be informed about uses
+this software has found, about bugs in this software, and about any
+improvements that may be of general interest.
+
+Berlin, 28.11.1994
+Jutta Degener
+Carsten Bormann
+```
