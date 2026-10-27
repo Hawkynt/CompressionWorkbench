@@ -1881,7 +1881,7 @@ Writes standalone dynamic VHDX images using the MS-VHDX layout and BAT semantics
 
 ### Namespace `FileFormat.Vmdk`
 
-[`VmdkEntry`](#vmdkentry) · [`VmdkFormatDescriptor`](#vmdkformatdescriptor) · [`VmdkLayoutMap`](#vmdklayoutmap) · [`VmdkReader`](#vmdkreader) · [`VmdkStream`](#vmdkstream) · [`VmdkWriter`](#vmdkwriter)
+[`VmdkEntry`](#vmdkentry) · [`VmdkFormatDescriptor`](#vmdkformatdescriptor) · [`VmdkLayoutMap`](#vmdklayoutmap) · [`VmdkReader`](#vmdkreader) · [`VmdkStream`](#vmdkstream) · [`VmdkVirtualDisk`](#vmdkvirtualdisk) · [`VmdkWriter`](#vmdkwriter)
 
 #### `VmdkEntry`
 
@@ -1946,7 +1946,7 @@ Implements `IDisposable`.
 | `VmdkReader` | `VmdkReader(Stream stream, bool leaveOpen = false)` |  |
 | `Entries` | `IReadOnlyList<VmdkEntry> Entries { get; }` |  |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(VmdkEntry entry)` |  |
+| `Extract` | `byte[] Extract(VmdkEntry entry)` | Reads the whole guest disk through `VmdkVirtualDisk`: compressed and stream-optimized grains, zeroed grain-table entries, multi-extent descriptors and delta disks over their parent. |
 
 #### `VmdkStream`
 
@@ -1968,6 +1968,29 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `SetLength` | `override void SetLength(long value)` | Sets the length. |
 | `TryOpen` | `static VmdkStream TryOpen(Stream stream)` | Tries to open a `VmdkStream` for a sparse VMDK. Returns `null` if the stream is not a valid sparse VMDK. |
 | `Write` | `override void Write(byte[] buffer, int offset, int count)` | Writes the value to the supplied output. |
+
+#### `VmdkVirtualDisk`
+
+Read-only view of the guest disk a VMDK describes, whatever its layout: a hosted sparse extent (monolithicSparse, the pieces of twoGbMaxExtentSparse), a streamOptimized extent (compressed grains, metadata at the end), flat and zero extents named by a text descriptor, and delta disks that defer unallocated grains to their parent.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Open` | `static VmdkVirtualDisk Open(Stream stream)` | Opens the guest disk of `stream`. Returns `null` when the stream is not a VMDK at all. |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `TryOpen` | `static VmdkVirtualDisk TryOpen(Stream stream, out string reason)` | As `Open`, but returns `null` instead of throwing. |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
 #### `VmdkWriter`
 
