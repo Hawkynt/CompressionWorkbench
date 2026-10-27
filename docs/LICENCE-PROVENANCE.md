@@ -33,15 +33,14 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 |---|---|---|
 | A | 16 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
-| C | 4 | specifications: `docs/CVF-CODECS-ON-DISK.md` (rewrite already under way), `docs/G722-SPEC.md`, `docs/IT-SAMPLE-COMPRESSION-SPEC.md`, `docs/FDS-EXPANSION-SOUND-SPEC.md` |
-| R | 7 | |
+| C | 3 | specifications: `docs/CVF-CODECS-ON-DISK.md` (rewrite already under way), `docs/IT-SAMPLE-COMPRESSION-SPEC.md`, `docs/FDS-EXPANSION-SOUND-SPEC.md` |
+| R | 8 | |
 
 ## C — incompatible, must be rewritten clean-room
 
 | Claim site | Upstream | Licence | Specification for the rewrite | Status |
 |---|---|---|---|---|
 | `Compression.Core/FileSystems/Cvf/CvfLzCodec.cs` (bit reader: "faithful port of dmsdos dblb_*") | dmsdos (`sandsmark/dmsdos`) decompression routines (`dblb_*` bit reader and the DS/JM decoders) | GPL-2.0 | [`CVF-CODECS-ON-DISK.md`](CVF-CODECS-ON-DISK.md) | clean-room rewrite in progress separately |
-| `Hawkynt.FileFormats.Audio/Codecs/Codec.G722/G722Codec.cs` | SpanDSP `src/g722.c` (Steve Underwood) | LGPL-2.1 **only** — no "or later", so not relicensable to LGPL-3 | [`G722-SPEC.md`](G722-SPEC.md) | to do |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.TrackerXmIt/ItSampleDecompressor.cs` | Schism Tracker `fmt/compression.c` (`it_decompress8/16`) | GPL-2.0-or-later | [`IT-SAMPLE-COMPRESSION-SPEC.md`](IT-SAMPLE-COMPRESSION-SPEC.md) | to do |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Nes2a03/Expansion/FdsAudio.cs` | NSFPlay `xgm/devices/Sound/nes_fds.cpp` (Brezza / Brad Smith) | none — the readme only presumes redistribution is allowed | [`FDS-EXPANSION-SOUND-SPEC.md`](FDS-EXPANSION-SOUND-SPEC.md) | to do |
 
@@ -92,6 +91,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Claim site | What the comment refers to | Note |
 |---|---|---|
+| `Hawkynt.FileFormats.Audio/Codecs/Codec.G722/G722Codec.cs` | ITU-T G.722 (09/2012), via [`G722-SPEC.md`](G722-SPEC.md); FFmpeg 8.1.2 as a black-box oracle | independent implementation from the specification replaces the former SpanDSP-derived codec; checked-in encoder and decoder vectors record the oracle |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/PcePsg.cs`, `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/CpuHuC6280.cs` | Mednafen `pce_psg.cpp`, `huc6280.cpp` (GPL-2.0-or-later), formerly named as behavioural references | reviewed 2026-10-23: no structural correspondence. Mednafen's PSG uses an 18-bit five-tap LFSR, integer dB tables and frequency caches; PcePsg uses a 17-bit two-tap LFSR, a floating-point taper and an additive LFO. Mednafen's CPU is opcode macros; CpuHuC6280 is a plain switch and shares only instruction-set facts. The Mednafen wording was removed from both files |
 | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.BcacheFs/BcacheFsRawKey.cs` | bcachefs `get_inc_field()` (GPL-2.0) — the packed-key bit layout | "ports … semantics" means the on-disk bit order, a format fact; the implementation is an independent bit-serial loop |
 | `Compression.Core/Dictionary/Nrv2b/Nrv2bBuildingBlock.cs`, `Compression.Core/Dictionary/Nrv2d/Nrv2dBuildingBlock.cs`, `Compression.Core/Dictionary/Nrv2e/Nrv2eBuildingBlock.cs` | UCL `n2b_d.ch`, `n2d_d.c`, `n2e_d.c` (GPL-2.0-or-later) cited for the stream layout | format facts, verified against real UPX output; no code claim |

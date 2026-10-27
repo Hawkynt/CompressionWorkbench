@@ -142,6 +142,10 @@
     <EmbeddedResource Include="Zfs\ReferenceVectors\*.gz;Zfs\ReferenceVectors\*.manifest">
       <LogicalName>ZfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- G.722 streams FFmpeg 8.1.2 encoded and decoded; see Codecs/G722/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Codecs\G722\ReferenceVectors\*.pcm;Codecs\G722\ReferenceVectors\*.g722">
+      <LogicalName>G722Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Zoo archives written by Zoo 2.10; see Zoo/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Zoo\ReferenceVectors\*.zoo">
       <LogicalName>ZooVectors.%(Filename)%(Extension)</LogicalName>
