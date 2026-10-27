@@ -1,0 +1,26 @@
+StuffIt X support in this folder is converted from XADMaster, the archive library of The
+Unarchiver.
+
+Upstream:  https://github.com/MacPaw/XADMaster
+Revision:  7cb9ee0abbb163f261e4cb74501e15067032319c
+Files:     XADStuffItXParser.m, StuffItXUtilities.m, XADStuffItXBlockHandle.m,
+           XADStuffItXCyanideHandle.m, XADStuffItXIronHandle.m, XADRC4Handle.m,
+           XADPPMdHandles.m (Brimstone), PPMd/VariantG.c, PPMd/Context.c, PPMd/RangeCoder.c,
+           PPMd/SubAllocatorBrimstone.c, CarrylessRangeCoder.m, BWT.c, CSInputBuffer.m
+Licence:   GNU Lesser General Public License, version 2.1 or (at your option) any later version.
+           This repository is distributed under LGPL-3.0-or-later, which the "any later version"
+           grant permits.
+
+Copyright (c) 2017-present, MacPaw Way Ltd. and the XADMaster contributors.
+The PPMd variant G algorithm is by Dmitry Shkarin.
+
+Tables copied verbatim: the PPMd binary-escape initialisers, the escape table, the Cyanide Markov
+context groups. Everything else was rewritten in C# for this codebase.
+
+Local changes against XADMaster's behaviour, each confirmed against StuffIt-written archives:
+- catalog tag 10: the name strings start on a byte boundary after the count (XADMaster reads them
+  unaligned and fails on StuffIt 7 for Mac archives);
+- a data stream is decoded to the size its data element records, which the stored CRC-32 covers,
+  even where its forks claim less (the preview stream of StuffIt Deluxe 2009/2010 archives);
+- Iron's weighted recency list stops sinking an entry at the last of its 256 slots, where
+  XADMaster reads one element past its array.

@@ -164,7 +164,7 @@ running real-world samples. The file named at the end of each row is where the l
 | ZIP | `Zip` | 7 | methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs) |
 | LHA / LZH | `Lzh` | 6 | lh2/lh3 decoded but read-only; lh1, lzs, lz5, pm1, pm2, level-1 extended headers and level-3 headers fail on lhasa's test archives (refused by the CRC check), lhx and lk7 unsupported (LhaReader.cs) |
 | StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |
-| StuffIt X | `StuffItX` | 4 | stored and deflate only; Brimstone/Cyanide/Darkhorse/Iron throw (StuffItXReader.cs) |
+| StuffIt X | `StuffItX` | 4 | Darkhorse, Deflate, Blend, method 7, the English/x86 preprocessors and encryption throw (StuffItXReader.cs) |
 | zoo | `Zoo` | 4 | LZH method (2) unsupported (ZooReader.cs) |
 | ALZip | `AlZip` | 3 | store and deflate only (AlZipReader.cs) |
 | APFS | `Apfs` | 3 | no decmpfs (LZVN/LZFSE) compressed files, no encryption (ApfsReader.cs) |

@@ -28521,71 +28521,64 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.StuffItX`
 
-[`StuffItXEntry`](#stuffitxentry) · [`StuffItXFormatDescriptor`](#stuffitxformatdescriptor) · [`StuffItXReader`](#stuffitxreader) · [`StuffItXWriter`](#stuffitxwriter)
+[`StuffItXEntry`](#stuffitxentry) · [`StuffItXFormatDescriptor`](#stuffitxformatdescriptor) · [`StuffItXReader`](#stuffitxreader)
 
 #### `StuffItXEntry`
 
-Represents a single entry in a StuffIt X (.sitx) archive.
+One file, directory or resource fork of a StuffIt X (.sitx) archive.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StuffItXEntry` | `StuffItXEntry()` |  |
-| `CompressedSize` | `long CompressedSize { get; init; }` | Gets the compressed size of the entry data in bytes. |
-| `FullPath` | `string FullPath { get; init; }` | Gets the full path of the entry within the archive (slash-separated). |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets a value indicating whether this entry is a directory. |
-| `Method` | `string Method { get; init; }` | Gets a display name for the compression method used. |
-| `Name` | `string Name { get; init; }` | Gets the bare file or directory name. |
-| `OriginalSize` | `long OriginalSize { get; init; }` | Gets the uncompressed size of the entry data in bytes. |
+| `Comment` | `string Comment { get; init; }` | The entry's comment, when the catalog records one. |
+| `CompressedSize` | `long CompressedSize { get; init; }` | Compressed size in bytes. Forks share solid streams, so this is the fork's share of its stream, proportional to its length. |
+| `Created` | `DateTime? Created { get; init; }` | Creation time, when the catalog records one. |
+| `DataOffset` | `long DataOffset { get; init; }` | Offset of the stream's first data block in the archive. |
+| `FullPath` | `string FullPath { get; init; }` | Full path within the archive, '/'-separated; resource forks end in `.rsrc`. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry is a directory. |
+| `IsResourceFork` | `bool IsResourceFork { get; init; }` | Whether this entry is the resource fork of a file. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | Last modification time, when the catalog records one. |
+| `Method` | `string Method { get; init; }` | Name of the stream's compression method. |
+| `Name` | `string Name { get; init; }` | The bare file or directory name. |
+| `OriginalSize` | `long OriginalSize { get; init; }` | Uncompressed size in bytes. |
 
 #### `StuffItXFormatDescriptor`
 
-StuffIt X (.sitx) archive (Aladdin/Smith Micro) — proprietary element-stream container. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver) — partial open StuffIt X decoder`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt Xproprietary format; the element-stream codecs have no public specification
+StuffIt X (.sitx) archive (Aladdin Systems / Smith Micro), read-only. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver), the reader this one is converted from`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia — covers StuffIt X
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StuffItXFormatDescriptor` | `StuffItXFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single StuffIt X entry as a bounded read-only `Stream`. The reader's per-entry extractor returns the decompressed bytes; they are wrapped in a `BoundedEntryStream` sized to the entry's original size. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `StuffItXReader`
 
-Reads entries from a StuffIt X (.sitx) archive.
+Reads StuffIt X (.sitx) archives.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `StuffItXReader` | `StuffItXReader(Stream stream, bool leaveOpen = false)` | Opens a StuffIt X archive from the given stream and parses its element catalog. |
-| `Entries` | `IReadOnlyList<StuffItXEntry> Entries { get; }` | Gets the list of entries discovered during parsing. |
+| `StuffItXReader` | `StuffItXReader(Stream stream, bool leaveOpen = false)` | Opens a StuffIt X archive and reads its directory. |
+| `Entries` | `IReadOnlyList<StuffItXEntry> Entries { get; }` | The archive's files, directories and resource forks. |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(StuffItXEntry entry)` | Extracts and decompresses the data for the specified entry. |
-
-#### `StuffItXWriter`
-
-Writes a minimal StuffIt X header. Full element-stream emission with P2 varint encoding and element catalog is not implemented — the reader's element parser is complex and the format is proprietary. This writer produces a valid "StuffIt!" magic envelope that passes detection; file data is embedded but not recoverable through the reader's element parser.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `StuffItXWriter` | `StuffItXWriter()` |  |
-| `WriteTo` | `void WriteTo(Stream output, byte[] embeddedData = null)` | Writes the to to the supplied output. |
+| `Extract` | `byte[] Extract(StuffItXEntry entry)` | Decodes one entry. |
+| `IsStuffItX` | `static bool IsStuffItX(ReadOnlySpan<byte> data)` | Whether `data` starts with a StuffIt X signature. |
 
 ### Namespace `FileFormat.Sup`
 
