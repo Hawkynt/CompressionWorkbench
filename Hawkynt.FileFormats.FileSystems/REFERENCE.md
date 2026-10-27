@@ -1844,7 +1844,7 @@ Implements `IEquatable<VhdxImage>`.
 
 #### `VhdxStream`
 
-Seekable read/write view of the logical disk stored in a standalone VHDX. Payload BAT entries are translated through the MS-VHDX chunk interleaving; sector-bitmap BAT entries are skipped because standalone fixed/dynamic VHDX files do not allocate sector bitmap blocks.
+Seekable view of the logical disk stored in a VHDX (MS-VHDX v1). Payload BAT entries are translated through the chunk interleaving of payload and sector-bitmap entries.
 
 Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
@@ -1854,15 +1854,17 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `CanSeek` | `override bool CanSeek { get; }` |  |
 | `CanWrite` | `override bool CanWrite { get; }` |  |
 | `HasAmbiguousPayloadBlocks` | `bool HasAmbiguousPayloadBlocks { get; }` | True when at least one payload BAT entry has a state other than ZERO or FULLY_PRESENT. Those states do not provide a single canonical byte value for a standalone rebuild, so maintenance must fail closed instead of converting them into explicit zero blocks. |
+| `IsDifferencing` | `bool IsDifferencing { get; }` | True when this is a differencing disk read through its parent chain. |
 | `Length` | `override long Length { get; }` |  |
 | `Position` | `override long Position { get; set; }` |  |
 | `Dispose` | `protected override void Dispose(bool disposing)` |  |
 | `Flush` | `override void Flush()` |  |
+| `OpenReadOnly` | `static VhdxStream OpenReadOnly(Stream stream, out string reason)` | Opens any VHDX guest disk for reading, following a differencing disk's parent chain. Returns `null` with the reason when the disk cannot be read faithfully. |
 | `Read` | `override int Read(Span<byte> buffer)` |  |
 | `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
 | `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
 | `SetLength` | `override void SetLength(long value)` |  |
-| `TryOpen` | `static VhdxStream TryOpen(Stream stream)` | Opens a standalone VHDX guest disk. Differencing images are deliberately rejected because resolving parent chains is outside this stream's contract. |
+| `TryOpen` | `static VhdxStream TryOpen(Stream stream)` | Opens a standalone (fixed or dynamic) VHDX guest disk for reading and in-place editing. Returns `null` for anything else, including differencing disks and files with a log awaiting replay; use `OpenReadOnly` to read those. |
 | `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
 | `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
@@ -1879,7 +1881,7 @@ Writes standalone dynamic VHDX images using the MS-VHDX layout and BAT semantics
 
 ### Namespace `FileFormat.Vmdk`
 
-[`VmdkEntry`](#vmdkentry) · [`VmdkFormatDescriptor`](#vmdkformatdescriptor) · [`VmdkLayoutMap`](#vmdklayoutmap) · [`VmdkReader`](#vmdkreader) · [`VmdkStream`](#vmdkstream) · [`VmdkWriter`](#vmdkwriter)
+[`VmdkEntry`](#vmdkentry) · [`VmdkFormatDescriptor`](#vmdkformatdescriptor) · [`VmdkLayoutMap`](#vmdklayoutmap) · [`VmdkReader`](#vmdkreader) · [`VmdkStream`](#vmdkstream) · [`VmdkVirtualDisk`](#vmdkvirtualdisk) · [`VmdkWriter`](#vmdkwriter)
 
 #### `VmdkEntry`
 
@@ -1944,7 +1946,7 @@ Implements `IDisposable`.
 | `VmdkReader` | `VmdkReader(Stream stream, bool leaveOpen = false)` |  |
 | `Entries` | `IReadOnlyList<VmdkEntry> Entries { get; }` |  |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(VmdkEntry entry)` |  |
+| `Extract` | `byte[] Extract(VmdkEntry entry)` | Reads the whole guest disk through `VmdkVirtualDisk`: compressed and stream-optimized grains, zeroed grain-table entries, multi-extent descriptors and delta disks over their parent. |
 
 #### `VmdkStream`
 
@@ -1966,6 +1968,29 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `SetLength` | `override void SetLength(long value)` | Sets the length. |
 | `TryOpen` | `static VmdkStream TryOpen(Stream stream)` | Tries to open a `VmdkStream` for a sparse VMDK. Returns `null` if the stream is not a valid sparse VMDK. |
 | `Write` | `override void Write(byte[] buffer, int offset, int count)` | Writes the value to the supplied output. |
+
+#### `VmdkVirtualDisk`
+
+Read-only view of the guest disk a VMDK describes, whatever its layout: a hosted sparse extent (monolithicSparse, the pieces of twoGbMaxExtentSparse), a streamOptimized extent (compressed grains, metadata at the end), flat and zero extents named by a text descriptor, and delta disks that defer unallocated grains to their parent.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Open` | `static VmdkVirtualDisk Open(Stream stream)` | Opens the guest disk of `stream`. Returns `null` when the stream is not a VMDK at all. |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `TryOpen` | `static VmdkVirtualDisk TryOpen(Stream stream, out string reason)` | As `Open`, but returns `null` instead of throwing. |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
 #### `VmdkWriter`
 
@@ -6759,6 +6784,105 @@ Builds Microsoft Xbox / Xbox 360 FATX filesystem images from scratch per the rev
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a file whose bytes are produced on demand. `size` must match what `openStream` yields; the cluster layout is settled from it before a byte is read. |
 | `Build` | `byte[] Build(int sectorsPerCluster = 0, uint volumeId = 0)` | Builds a complete FATX image containing the previously-added files. |
 | `WriteTo` | `void WriteTo(Stream output, int sectorsPerCluster = 0, uint volumeId = 0)` | Writes the image into `output`: the superblock and FAT, then every cluster payload at its offset. Only a non-seekable target has to materialise the image, so a seekable one is bounded by the disk rather than by what a byte[] can address. |
+
+### Namespace `FileSystem.Flex`
+
+[`FlexDisk`](#flexdisk) · [`FlexEntry`](#flexentry) · [`FlexFormatDescriptor`](#flexformatdescriptor) · [`FlexWriter`](#flexwriter)
+
+#### `FlexDisk`
+
+The FLEX (Technical Systems Consultants, 6800/6809) disk layout over a raw `.dsk` image: 256-byte sectors, every track holding the same number of sector slots, sector numbers from 1. Track 0 holds the boot sectors (1, 2), the System Information Record (3), a reserved sector (4) and the directory chain from sector 5; all other sectors are file chains or the free chain. See `docs/FLEX-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlexDisk` | `FlexDisk(Stream stream)` | Opens a FLEX image; throws `InvalidDataException` when it is not one. |
+| `DataBytes` | `const int DataBytes` | Data bytes per sector after the link (2) and record number (2). |
+| `EntriesPerSector` | `const int EntriesPerSector` | Directory entries per directory sector, after its 16-byte header. |
+| `EntrySize` | `const int EntrySize` | Bytes per directory entry. |
+| `SectorSize` | `const int SectorSize` | Bytes per sector. |
+| `SirOffset` | `const int SirOffset` | Byte offset of the System Information Record (track 0, sector 3). |
+| `DirectorySectors` | `IReadOnlyList<ValueTuple<byte, byte>> DirectorySectors { get; }` | Directory sectors in chain order. |
+| `Entries` | `IReadOnlyList<FlexEntry> Entries { get; }` | Every live directory entry, in directory order. |
+| `FirstFree` | `ValueTuple<byte, byte> FirstFree { get; }` | Head of the free chain. |
+| `FreeSectors` | `ushort FreeSectors { get; }` | Sectors in the free chain, as the SIR records it. |
+| `Label` | `string Label { get; }` | Volume label (11 characters). |
+| `LastFree` | `ValueTuple<byte, byte> LastFree { get; }` | Tail of the free chain. |
+| `SectorsPerTrack` | `int SectorsPerTrack { get; }` | Sectors per track (SIR "highest sector number"). |
+| `Tracks` | `int Tracks { get; }` | Tracks (SIR "highest track number" + 1). |
+| `VolumeNumber` | `ushort VolumeNumber { get; }` | Volume number. |
+| `Chain` | `IEnumerable<ValueTuple<byte, byte, byte[]>> Chain(byte track, byte sector, int limit)` | Follows a link chain; throws on a loop or on more than `limit` sectors. |
+| `Extract` | `byte[] Extract(FlexEntry entry)` | The file's bytes: the 252 data bytes of every sector in its chain — a random file's two File Sector Map sectors included, exactly as they are stored. Refuses a chain that does not end at the directory's end address after the directory's sector count. |
+| `Offset` | `long Offset(int track, int sector)` | Byte offset of a sector; throws when it is outside the geometry or the image. |
+| `ReadSector` | `byte[] ReadSector(int track, int sector)` | Reads one sector. |
+
+#### `FlexEntry`
+
+One directory entry of a FLEX disk.
+
+Implements `IEquatable<FlexEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlexEntry` | `FlexEntry(string Name, string Extension, byte Attributes, byte StartTrack, byte StartSector, byte EndTrack, byte EndSector, ushort Sectors, bool IsRandom, byte Month, byte Day, byte Year, long EntryOffset)` | One directory entry of a FLEX disk. |
+| `Attributes` | `byte Attributes { get; init; }` | Protection bits: 0x80 write, 0x40 delete, 0x20 read, 0x10 catalog protect. |
+| `Created` | `DateTime? Created { get; }` | Creation date, when it is a valid one (years 00-74 read as 20xx, 75-99 as 19xx). |
+| `Day` | `byte Day { get; init; }` | Creation day. |
+| `EndSector` | `byte EndSector { get; init; }` | Sector of the last sector. |
+| `EndTrack` | `byte EndTrack { get; init; }` | Track of the last sector. |
+| `EntryOffset` | `long EntryOffset { get; init; }` | Byte offset of the entry in the image. |
+| `Extension` | `string Extension { get; init; }` | Extension (up to 3 characters). |
+| `FullName` | `string FullName { get; }` | NAME.EXT as FLEX shows it. |
+| `IsRandom` | `bool IsRandom { get; init; }` | File Sector Map indicator: a random file whose first two sectors are its sector map. |
+| `Month` | `byte Month { get; init; }` | Creation month. |
+| `Name` | `string Name { get; init; }` | File name (up to 8 characters). |
+| `Sectors` | `ushort Sectors { get; init; }` | Sectors in the file. |
+| `Size` | `long Size { get; }` | Bytes the file holds: every sector's 252 data bytes. |
+| `StartSector` | `byte StartSector { get; init; }` | Sector of the first sector. |
+| `StartTrack` | `byte StartTrack { get; init; }` | Track of the first sector. |
+| `Year` | `byte Year { get; init; }` | Creation year, tens and units only. |
+
+#### `FlexFormatDescriptor`
+
+FLEX disk images (Technical Systems Consultants' FLEX for the 6800/6809, 1976-): raw `.dsk` sector dumps with 256-byte linked sectors, a System Information Record on track 0 sector 3 and a directory chain from track 0 sector 5.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlexFormatDescriptor` | `FlexFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | FLEX has no magic number. What every FLEX disk shares: the SIR (track 0 sector 3) starts with 16 zero bytes, and the first directory sector (track 0 sector 5) links to track 0 sector 6 and has twelve zero bytes after its link and record number. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files in place; all inputs land or none do. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Formats a disk and writes the files by leaf name (FLEX has one flat directory). |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Deletes the named files in place; unknown names are ignored. |
+
+#### `FlexWriter`
+
+Formats FLEX disks the way NEWDISK does and edits them the way the File Management System does: files are written by taking sectors from the head of the free chain, deleted files have their name's first byte set to $FF (negative) and their chain appended to the tail of the free chain. The image is edited in memory; callers write it back.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Geometries` | `static readonly ValueTuple<int, int>[] Geometries` | Standard geometries tried, smallest first, when none is given. |
+| `AddFile` | `static void AddFile(byte[] img, string fileName, ReadOnlySpan<byte> data, DateTime? date = null)` | Adds (or replaces) a file in the image. |
+| `ChooseGeometry` | `static ValueTuple<int, int> ChooseGeometry(long sectorsNeeded, int directoryEntries)` | Picks the smallest standard geometry whose data area holds `sectorsNeeded` sectors. |
+| `EncodeName` | `static ValueTuple<byte[], byte[]> EncodeName(string fileName)` | Encodes a host name as FLEX name and extension, or throws `NotSupportedException`. |
+| `Format` | `static byte[] Format(int tracks, int sectorsPerTrack, string label = "", ushort volumeNumber = 0, DateTime? date = null)` | Formats an empty disk. |
+| `RemoveFile` | `static bool RemoveFile(byte[] img, string fileName)` | Deletes a file: name marked deleted, sectors zeroed and appended to the free chain. False when absent. |
 
 ### Namespace `FileSystem.Gemdos`
 
@@ -14457,43 +14581,48 @@ Writes a UFS1 (FreeBSD FFS) filesystem image that faithfully reproduces a `newfs
 
 ### Namespace `FileSystem.Vdfs`
 
-[`VdfsBlockMover`](#vdfsblockmover) · [`VdfsEntry`](#vdfsentry) · [`VdfsFormatDescriptor`](#vdfsformatdescriptor) · [`VdfsInPlaceModifier`](#vdfsinplacemodifier) · [`VdfsReader`](#vdfsreader) · [`VdfsWriter`](#vdfswriter)
+[`VdfsBlockMover`](#vdfsblockmover) · [`VdfsEntry`](#vdfsentry) · [`VdfsFormatDescriptor`](#vdfsformatdescriptor) · [`VdfsInPlaceModifier`](#vdfsinplacemodifier) · [`VdfsLayout`](#vdfslayout) · [`VdfsReader`](#vdfsreader) · [`VdfsWriter`](#vdfswriter) · [`VdfsZippedStream`](#vdfszippedstream) · [`VdfsZippedStream.Block`](#vdfszippedstreamblock) · [`VdfsZippedStream.Layout`](#vdfszippedstreamlayout)
 
 #### `VdfsBlockMover`
 
-Moves a file's payload inside a VDFS container and repoints its entry.
+Moves a file's payload inside a VDF volume and repoints its catalog entry.
 
 Implements `IFilesystemBlockMover`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `VdfsBlockMover` | `VdfsBlockMover()` |  |
-| `BlockSize` | `int BlockSize { get; }` | One byte. VDFS packs payloads end to end rather than on a grid, so the planner is free to place a file anywhere past the entry table. |
-| `FirstDataByte` | `long FirstDataByte { get; }` | First byte a payload may occupy: past the header and the table. |
-| `Init` | `void Init(Stream image)` | Reads the container's header. |
+| `BlockSize` | `int BlockSize { get; }` | One byte. Payloads are packed end to end rather than on a grid, so the planner is free to place a file anywhere past the catalog. |
+| `FirstDataByte` | `long FirstDataByte { get; }` | First byte a payload may occupy: past the header and the catalog. |
+| `Init` | `void Init(Stream image)` | Reads the volume's header. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `VdfsEntry`
 
-Represents a vdfs entry.
+One catalog entry of a VDF volume: a directory, or a file and where its payload lives.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `VdfsEntry` | `VdfsEntry()` |  |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets a value indicating whether is directory. |
-| `Name` | `string Name { get; init; }` | Gets or sets the name. |
-| `Size` | `long Size { get; init; }` | Gets or sets the size. |
+| `Attributes` | `uint Attributes { get; init; }` | Win32 attributes recorded in the entry. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether the entry is a directory. |
+| `IsZipped` | `bool IsZipped { get; init; }` | Whether the payload is a Union ZippedStream rather than the raw bytes. |
+| `Name` | `string Name { get; init; }` | Full path inside the volume, components joined by `/`. |
+| `Size` | `long Size { get; init; }` | Uncompressed size; 0 for a directory. |
+| `StoredSize` | `long StoredSize { get; init; }` | Bytes the payload occupies in the volume: the stream for a zipped file, else `Size`. |
 
 #### `VdfsFormatDescriptor`
 
-Descriptor for Gothic-engine VDFS archives (magic "PSVDSC_V2.00", .vdf) — the virtual-disk container used by Piranha Bytes' ZenGin games. References: `https://gothic-modding-community.github.io/gmc/` — Gothic Modding Community documentation`https://github.com/REGoth-project/REGoth` — REGoth engine reimplementation — includes a VDFS readerVdfsSharp — C# VDFS extractor/creator (GitHub)
+ZenGin VDF volumes (signature "PSVDSC_V2.00" at offset 256, .vdf/.mod) — the virtual disk Piranha Bytes' Gothic games load their data from — stored, or zipped the way Union zips them.
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `VdfsFormatDescriptor` | `VdfsFormatDescriptor()` |  |
+| `MethodStored` | `const string MethodStored` | Method name of a stored volume. |
+| `MethodZipped` | `const string MethodZipped` | Method name of a zipped (Union ZippedStream) volume. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -14503,59 +14632,148 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures: the signature follows the 256-byte comment. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces) files in a VDFS archive by appending the new data at end-of-stream and relocating the entry table past it — surviving file extents keep their original absolute byte offsets so their jump pointers stay valid without rewriting them. See `VdfsInPlaceModifier` for the full mutation strategy. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces) files in place: new payloads go to the end of the volume and the catalog is rewritten at 296; surviving payloads keep their bytes. See `VdfsInPlaceModifier`. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a volume of `inputs`, keeping their directories. Method `zipped` writes a Union zipped volume; "+" deflates at best effort. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | The header, the catalog where the header says it is, and each payload as stored — the whole ZippedStream for a zipped file. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries by zeroing each entry record on disk (an empty first byte makes the reader skip it) and zero-wiping each removed file's data extent. Neighbour entry positions and live data extents are not disturbed. See `VdfsInPlaceModifier`. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every byte of a VDFS container not claimed by the header/entry table or a live file extent — dead bytes left behind by editing or truncation. VDFS is a packed archive: each entry's data is contiguous and its extent length equals its logical size, so there is no cluster-tip slack to scrub (`wipeClusterTips` has no effect here). |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts the volume's files, keeping their directories. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the volume. Never throws: a stream with no VDF signature lists as the whole image plus a `metadata.ini` saying so, and a damaged catalog lists what it still names. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream of its decoded bytes. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named files (or directories) and zeroes their payloads. See `VdfsInPlaceModifier`. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every byte of a VDF volume not claimed by the header, the catalog or a live payload — dead bytes left behind by editing or truncation. Payloads are packed with no cluster grid, so there is no cluster-tip slack to scrub (`wipeClusterTips` has no effect here). |
 
 #### `VdfsInPlaceModifier`
 
-In-place VDFS modifier — true random-access editing without rebuilding the whole archive. Targets images produced by `VdfsWriter`: 16-byte magic, 20-byte header fields, 80-byte entries packed at `rootOffset`, contiguous stored-mode file data referenced by each entry's jump field. What it touches per `AddFile`: Appends the new file's data bytes at end-of-stream.Relocates the entry table to a fresh region past all live data — existing data byte ranges keep their original absolute offsets so every surviving entry's jump field remains valid without rewriting.Patches the header's entry count, file count, total data size, and root/entries offset in-place. The previously-occupied entry-table bytes become orphaned slack and are reclaimable through a defrag pass.`RemoveFile` zeroes the entry's name (first byte = 0) which the reader already skips as "empty name", and optionally wipes the file's data bytes. The entry record itself is left in the table so existing neighbour entries keep their byte offsets unchanged.`ReplaceFile` rewrites the file's data at its current offset when the new payload fits and updates the entry's size in-place; otherwise it falls back to remove-plus-add so the new payload lives at a fresh tail offset and no other entries are disturbed.Honest scope: this modifier handles VDFS stored mode only. The VDFS format spec leaves entry-type flags reserved for compressed variants but no production Gothic-engine image observed in REGoth/VdfsSharp corpora uses them — compression support is deferred until a real example surfaces.
+Edits a VDF volume in place: surviving payloads keep their bytes and, wherever the catalog leaves them room, their offsets.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream archive, string name, byte[] data)` | Adds (or replaces) a file in a VDFS archive. The new data bytes are appended at end-of-stream and a new entry-table region is written past them; existing live file data keeps its original absolute byte offset so every surviving entry's jump pointer remains valid. |
-| `RemoveFile` | `static bool RemoveFile(Stream archive, string name, bool wipeData = true)` | Removes a named file from a VDFS archive. The entry's first name byte is zeroed (the reader's existing "empty name → skip" rule turns it into a tombstone), all 80 entry bytes are cleared, and the file's data extent is optionally zero-wiped. Returns `true` when an entry was removed. |
-| `ReplaceFile` | `static bool ReplaceFile(Stream archive, string name, byte[] newData)` | Replaces an existing file's payload in-place when the new bytes fit inside the original extent (data written at the same offset, entry size trimmed). When the new payload is larger, falls back to remove-plus-add so the bytes land at a fresh tail offset. |
+| `AddFile` | `static void AddFile(Stream archive, string name, byte[] data)` | Adds a file, replacing any file of the same path. Existing payloads keep their bytes. |
+| `RemoveFile` | `static bool RemoveFile(Stream archive, string name, bool wipeData = true)` | Removes a file — or a directory and everything under it — and zeroes the payloads. Returns whether anything was removed. |
+| `ReplaceFile` | `static bool ReplaceFile(Stream archive, string name, byte[] newData)` | Replaces a file's contents, over its old extent when the new payload fits there and at the end of the volume otherwise. A missing file is added. |
+
+#### `VdfsLayout`
+
+On-disk constants of a ZenGin VDF volume, as `docs/VDFS-ON-DISK.md` describes them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CatalogOffsetOffset` | `const int CatalogOffsetOffset` | Header field: byte offset of the catalog. |
+| `CommentPad` | `const byte CommentPad` | Byte the comment is padded with, and where a reader stops reading it. |
+| `CommentSize` | `const int CommentSize` | Bytes of free-text comment at the start of the volume, padded with `0x1A`. |
+| `DataSizeOffset` | `const int DataSizeOffset` | Header field: the sum of every file's uncompressed size. |
+| `EntryAttributesField` | `const int EntryAttributesField` | Entry field: Win32 file attributes. |
+| `EntryCountOffset` | `const int EntryCountOffset` | Header field: number of catalog entries, directories included. |
+| `EntryOffsetField` | `const int EntryOffsetField` | Entry field: payload offset of a file, or first-child index of a directory. |
+| `EntrySizeField` | `const int EntrySizeField` | Entry field: uncompressed size of a file, 0 for a directory. |
+| `EntrySize` | `const int EntrySize` | Bytes per catalog entry. |
+| `EntryTypeField` | `const int EntryTypeField` | Entry field: type flags. |
+| `FileAttributes` | `const uint FileAttributes` | Attributes the reference tools give a file: `FILE_ATTRIBUTE_ARCHIVE`. |
+| `FileCountOffset` | `const int FileCountOffset` | Header field: number of files. |
+| `HeaderSize` | `const int HeaderSize` | Bytes of header before the catalog, which is also where every tool puts it. |
+| `NameSize` | `const int NameSize` | Bytes of entry name, space-padded. |
+| `SignatureOffset` | `const int SignatureOffset` | Where the 16-byte signature starts. |
+| `SignatureSize` | `const int SignatureSize` | Length of the signature. |
+| `TimestampOffset` | `const int TimestampOffset` | Header field: MS-DOS date and time the volume was written. |
+| `TypeDirectory` | `const uint TypeDirectory` | Type flag: the entry is a directory. |
+| `TypeLast` | `const uint TypeLast` | Type flag: the entry is the last one of its directory. |
+| `VolumeFlagsOffset` | `const int VolumeFlagsOffset` | Header field: volume flags (`VolumeNormal` or `VolumeZipped`). |
+| `VolumeNormal` | `const uint VolumeNormal` | Volume flags of a volume whose payloads are stored as-is. |
+| `VolumeZipped` | `const uint VolumeZipped` | Volume flags of a Union volume whose payloads are ZippedStreams. |
+| `NameEncoding` | `static Encoding NameEncoding { get; }` | Encoding of names and the comment: single-byte, every byte value round-trips. |
+| `SignatureGothic1` | `static ReadOnlySpan<byte> SignatureGothic1 { get; }` | Signature Gothic 1's tools write. |
+| `SignatureGothic2` | `static ReadOnlySpan<byte> SignatureGothic2 { get; }` | Signature Gothic 2's tools write. |
+| `SignaturePrefix` | `static ReadOnlySpan<byte> SignaturePrefix { get; }` | Shared prefix of every known signature. |
+| `SignatureVdfsTool` | `static ReadOnlySpan<byte> SignatureVdfsTool { get; }` | Signature VDFSTool writes. |
+| `FromDosTime` | `static DateTime? FromDosTime(uint dos)` | Unpacks the MS-DOS date/time word, or null when it names no valid date. |
+| `IsStoredRawWhenZipped` | `static bool IsStoredRawWhenZipped(string name)` | Whether a file is stored raw even in a zipped volume. Union streams sound straight from the volume, so its tools leave `.wav` and `.ogg` uncompressed. |
+| `ToDosTime` | `static uint ToDosTime(DateTime time)` | Packs a time into the MS-DOS date/time word the header carries. |
 
 #### `VdfsReader`
 
-Reads the entry table of a Gothic-engine VDFS archive and extracts the files it holds.
+Reads a ZenGin VDF volume: the 296-byte header, the catalog tree behind it, and each file's payload, stored or as a Union ZippedStream.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `VdfsReader` | `VdfsReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `VdfsReader`. |
-| `DefaultEntryTableOffset` | `const int DefaultEntryTableOffset` | Bytes of fixed header the entry table follows when the header names no offset of its own. |
-| `Entries` | `IReadOnlyList<VdfsEntry> Entries { get; }` | Gets the entries. |
-| `EntryTableLength` | `long EntryTableLength { get; }` | Bytes the entry table occupies. |
-| `EntryTableOffset` | `long EntryTableOffset { get; }` | Byte offset the entry table actually starts at. |
+| `VdfsReader` | `VdfsReader(Stream stream, bool leaveOpen = false)` | Opens `stream`, which must be seekable. |
+| `Comment` | `string Comment { get; }` | The volume comment, up to its first padding byte. |
+| `DeclaredEntryCount` | `int DeclaredEntryCount { get; }` | Catalog entries the header declares. |
+| `Entries` | `IReadOnlyList<VdfsEntry> Entries { get; }` | Directory and file entries, parents before their children. |
+| `EntryTableLength` | `long EntryTableLength { get; }` | Bytes the catalog occupies, as far as the volume holds it. |
+| `EntryTableOffset` | `long EntryTableOffset { get; }` | Byte offset the catalog starts at. |
+| `IsPartial` | `bool IsPartial { get; }` | Whether part of the catalog could not be followed or pointed outside the volume. |
+| `IsZippedVolume` | `bool IsZippedVolume { get; }` | Whether the volume flags mark it as a zipped (Union) volume. |
+| `Signature` | `byte[] Signature { get; }` | The 16 signature bytes as written. |
+| `Timestamp` | `DateTime? Timestamp { get; }` | When the header says the volume was written, if it names a valid date. |
+| `VolumeFlags` | `uint VolumeFlags { get; }` | Raw volume flags. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `ExtractTo` | `void ExtractTo(VdfsEntry entry, Stream destination)` | Copies an entry's bytes into `destination` a block at a time, so an entry larger than a byte[] can hold is extracted like any other. |
-| `Extract` | `byte[] Extract(VdfsEntry entry)` | Decodes the supplied input. |
+| `ExtractTo` | `void ExtractTo(VdfsEntry entry, Stream destination)` | Writes the decoded bytes of `entry` to `destination`, a block at a time, so an entry larger than a byte[] can hold is extracted like any other. |
+| `Extract` | `byte[] Extract(VdfsEntry entry)` | The decoded bytes of `entry`; empty for a directory. |
 
 #### `VdfsWriter`
 
-Builds a Gothic-engine VDFS archive from a set of files, writing the entry table and the file data behind it.
+Writes a ZenGin VDF volume — stored, or zipped the way Union zips one — from a set of files.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `VdfsWriter` | `VdfsWriter()` |  |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
-| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a file whose bytes are produced on demand. `size` must match what `openStream` yields; the descriptor table is laid out from it before a byte is read. |
-| `Build` | `byte[] Build()` | Materialises the whole descriptor container. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the container into `output`: the header and entry table, then each file's bytes at its recorded offset. Only the header is ever resident, so a container past what a byte[] can address is producible. |
+| `BlockSize` | `int BlockSize { get; init; }` | Bytes per ZippedStream block. |
+| `Comment` | `string Comment { get; init; }` | Free-text comment, at most 256 bytes. |
+| `Gothic1Signature` | `bool Gothic1Signature { get; init; }` | Whether to write Gothic 1's signature instead of Gothic 2's. |
+| `Level` | `DeflateCompressionLevel Level { get; init; }` | Deflate effort for zipped payloads. |
+| `Timestamp` | `DateTime Timestamp { get; init; }` | When the volume says it was written. Defaults to now. |
+| `UpperCaseNames` | `bool UpperCaseNames { get; init; }` | Whether names are upper-cased, as GothicVDFS and VDFSTool both write them. The engine looks names up without regard to case, so this changes nothing a game sees. |
+| `Zipped` | `bool Zipped { get; init; }` | Whether payloads are written as Union ZippedStreams (volume flags 0xA0). |
+| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file; a later file of the same path replaces an earlier one. |
+| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a file whose bytes are produced on demand. `size` must match what `openStream` yields. |
+| `Build` | `byte[] Build()` | Materialises the whole volume. |
+| `WriteTo` | `void WriteTo(Stream output)` | Writes the volume into `output`. Payloads are copied (or deflated) one at a time and the header and catalog written last, so only one block is ever resident. |
+
+#### `VdfsZippedStream`
+
+Union's ZippedStream: how a zipped VDF volume (`VolumeZipped`) stores one file's payload.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultBlockSize` | `const int DefaultBlockSize` | Block size this writer uses: ZenKit's, which it states is Union's default. |
+| `HeaderSize` | `const int HeaderSize` | Bytes of the stream header, and of each block header. |
+| `Decode` | `static void Decode(ImageAccessor data, Layout layout, Stream destination)` | Inflates every block of `layout` into `destination`. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int blockSize = 8192, DeflateCompressionLevel level = 6)` | Encodes a byte array; see `Encode`. |
+| `Encode` | `static long Encode(Stream source, long length, Stream destination, int blockSize = 8192, DeflateCompressionLevel level = 6)` | Writes `length` bytes of `source` as a ZippedStream and returns how many bytes that took. |
+| `TryParse` | `static Layout TryParse(ImageAccessor data, long offset, long expectedLength)` | Parses the stream at `offset` if it is a well-formed ZippedStream of `expectedLength` bytes, or returns null. |
+
+#### `VdfsZippedStream.Block`
+
+One block of a parsed stream.
+
+Implements `IEquatable<Block>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block` | `Block(long DataOffset, int SourceLength, int CompressedLength)` | One block of a parsed stream. |
+| `CompressedLength` | `int CompressedLength { get; init; }` | Bytes of zlib data. |
+| `DataOffset` | `long DataOffset { get; init; }` | Absolute offset of the block's zlib data. |
+| `SourceLength` | `int SourceLength { get; init; }` | Bytes the block inflates to. |
+
+#### `VdfsZippedStream.Layout`
+
+A parsed stream: where it ends and what its blocks are.
+
+Implements `IEquatable<Layout>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Layout` | `Layout(long StoredLength, int BlockSize, IReadOnlyList<Block> Blocks)` | A parsed stream: where it ends and what its blocks are. |
+| `BlockSize` | `int BlockSize { get; init; }` | The stream's nominal block size. |
+| `Blocks` | `IReadOnlyList<Block> Blocks { get; init; }` | Its blocks, in order. |
+| `StoredLength` | `long StoredLength { get; init; }` | Bytes the whole stream occupies, headers included. |
 
 ### Namespace `FileSystem.VxFs`
 

@@ -41,10 +41,16 @@ public sealed class ArjDecoder {
   /// Initializes a new <see cref="ArjDecoder"/>.
   /// </summary>
   /// <param name="input">The stream containing compressed data.</param>
-  /// <param name="method">The ARJ compression method (1, 2, or 3).</param>
+  /// <param name="method">
+  /// The ARJ compression method (1, 2, or 3). The three share one bit stream and one dictionary; they
+  /// differ only in how hard ARJ's encoder searched, so the decoder does not depend on it.
+  /// </param>
   public ArjDecoder(Stream input, int method = 1) {
+    _ = method;
     this._stream = input;
-    this._windowSize = method == 1 ? 26624 : 2048;
+    // Positions are coded with up to 16 bits (NP = 17), so a 64 KiB window holds every distance a
+    // stream can express; ARJ's encoder itself never reaches past its 26,624-byte dictionary.
+    this._windowSize = 1 << 16;
     this._compSize = input.Length - input.Position;
     // Initialize bit buffer by priming with 2 bytes
     this._bitBuf = 0;

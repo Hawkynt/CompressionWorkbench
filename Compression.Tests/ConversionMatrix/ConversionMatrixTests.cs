@@ -127,8 +127,6 @@ public class ConversionMatrixTests {
       { "Umx", "[single-payload/whole-image target] Unreal package; writer emits a blob that re-lists as 0 files" },
       { "Wbn", "[single-payload/whole-image target] WebBundle writer collapses tree to a single FULL.wbn" },
       { "Wrapster", "[single-payload/whole-image target] Wrapster MP3 wrapper; one FULL.mp3 + 0/1 frame, not a tree" },
-      { "xDisk", "[single-payload/whole-image target] Amiga xDisk image; writer emits one .xdsk blob" },
-      { "xMash", "[single-payload/whole-image target] Amiga xMash image; writer emits one .xmsh blob" },
       // -- bucket: name/charset/size constraint --
       { "Bbc", "[name/charset/size constraint] BBC Micro DFS disk; name-synthesizing FS, payload not found by content" },
       { "Cpm", "[name/charset/size constraint] CP/M disk; 8.3-folding name-synth FS, payload not found by content" },
@@ -143,7 +141,6 @@ public class ConversionMatrixTests {
       // -- bucket: other --
       { "Akb", "[other] Koei AKB audio bank; entries renamed to entry_NNN.bin so verbatim-name match fails" },
       { "Cso", "[other] CSO compressed ISO; payload exposed as FULL.cso+block_* not original names" },
-      { "Dcs", "[other] DCS Amiga disk; exposed as track_NNN.raw not original names" },
       { "Dtb", "[other] Device-tree blob; names re-rooted under _root/ and de-extensioned (HELLO.bin)" },
       { "Fits", "[other] FITS; payload exposed as hdu_* header/data members not original names" },
       { "G64", "[other] G64 GCR disk; exposed as track_NN.bin not original names" },
@@ -160,7 +157,6 @@ public class ConversionMatrixTests {
       { "Mo", "[other] GNU gettext .mo; entries renamed NNNN_<stem>.txt" },
       { "Npy", "[other] NumPy .npy; collapses to header.bin/array.bin (single array, names lost)" },
       { "Npz", "[other] NumPy .npz; entries suffixed .npy (HELLO.TXT.npy) so verbatim-name match fails" },
-      { "PackDisk", "[other] PackDisk Amiga disk; exposed as track_NNN.raw not original names" },
       { "Paragon", "[other] Paragon backup; exposed as chunk_NNNNNN.bin not original names" },
       { "TfRecord", "[other] TensorFlow TFRecord; entries renamed record_NNNNN.bin" },
       { "UefiFv", "[other] UEFI firmware volume; an FFS file is identified by GUID, so the writer names each one <guid>_RAW.bin and the original filename has nowhere to live" },

@@ -28,6 +28,7 @@ public sealed class FormatDescriptorGenerator : IIncrementalGenerator {
   private static readonly string[] SpecialFormats = [
     "Unknown", "Sfx", "Iso", "Udf",
     "TarGz", "TarBz2", "TarXz", "TarZst", "TarLz4", "TarLzip", "TarBr",
+    "TarZ", "TarLzma", "TarLzo",
   ];
 
   public void Initialize(IncrementalGeneratorInitializationContext context) {

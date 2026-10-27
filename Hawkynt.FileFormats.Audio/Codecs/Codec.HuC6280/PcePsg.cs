@@ -19,11 +19,12 @@ namespace Codec.HuC6280;
 /// advances at the documented PSG clock of 3.579545 MHz / 32, and the host pulls 16-bit stereo
 /// samples through <see cref="RenderSamples"/>, which decimates to the requested output rate by
 /// averaging the channel mix across each output-sample window.</para>
-/// <para>Faithful to Mednafen <c>pce_psg.cpp</c> and the ChregPSG/Charles MacDonald PSG notes.
-/// Approximations: the per-channel low-pass and the analog volume taper of the real DAC are not
-/// modelled (volumes use the documented 1.5 dB-per-step exponential table); the LFO depth/trigger
-/// edge cases and the precise noise LFSR tap of channel 5 follow Mednafen but the LFO is applied
-/// as a simple additive period modulation of channel 4.</para>
+/// <para>Written from the published register descriptions (Charles MacDonald's PC Engine PSG
+/// notes). It is a simplified model, not a reproduction of any emulator: the per-channel low-pass
+/// and the analog volume taper of the real DAC are not modelled (volumes use the documented
+/// 1.5 dB-per-step exponential table), the noise generator is a 17-bit two-tap LFSR rather than
+/// the hardware's exact sequence, and the LFO is applied as a simple additive period modulation
+/// of channel 4.</para>
 /// </summary>
 public sealed class PcePsg {
 
