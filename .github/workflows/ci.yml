@@ -314,6 +314,14 @@ jobs:
       # They were excluded from the core filter but had no step of their own, so
       # nothing ran them at all; advisory like the other interop tiers, because a
       # runner without one of the tools must not fail the build.
+      # The owning readers/writers of the legacy archive formats the external tier asks about:
+      # arj (ARJ methods 1-4), unar (The Unarchiver: PackIt, DiskDoubler), lhasa (LHA) and bsdtar (XAR in every
+      # encoding). Installed after the core gate so they only feed this advisory step.
+      - name: Install legacy-archive oracles (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        continue-on-error: true
+        run: sudo apt-get install -y arj unar libarchive-tools lhasa
+
       - name: External interop tests
         continue-on-error: true
         run: >

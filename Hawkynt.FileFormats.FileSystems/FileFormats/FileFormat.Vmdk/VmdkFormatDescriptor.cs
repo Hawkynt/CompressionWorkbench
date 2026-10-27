@@ -75,7 +75,7 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Lists the entries in the supplied container.
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    if (VmdkStream.TryOpen(stream) is { } vmdkStream) {
+    if (VmdkVirtualDisk.TryOpen(stream, out _) is { } vmdkStream) {
       using (vmdkStream) {
         vmdkStream.Position = 0;
         if (Compression.Core.DiskImage.PartitionedDiskLister.List(vmdkStream, password) is { } partitioned)
@@ -114,7 +114,7 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    if (VmdkStream.TryOpen(stream) is { } vmdkStream) {
+    if (VmdkVirtualDisk.TryOpen(stream, out _) is { } vmdkStream) {
       using (vmdkStream) {
         vmdkStream.Position = 0;
         if (Compression.Core.DiskImage.PartitionedDiskLister.Extract(vmdkStream, outputDir, password, files))
@@ -150,7 +150,7 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
-    if (VmdkStream.TryOpen(image) is { } vmdkStream) {
+    if (VmdkVirtualDisk.TryOpen(image, out _) is { } vmdkStream) {
       using (vmdkStream) {
         var inner = InnerFsDetector.Detect(vmdkStream);
         if (inner is IFilesystemExtentMap extentMap) {
