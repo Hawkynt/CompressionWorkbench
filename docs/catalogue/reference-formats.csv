@@ -38,7 +38,7 @@ LHA / LZH,lzh;lha;lzs;exe;sfx,archive,R,R,R,,R,fmt/1558;fmt/626,RW,6,https://en.
 ACE,ace,archive,,,R,,R,fmt/2075;fmt/2076,RW,4,https://en.wikipedia.org/wiki/ACE_(compressed_file_format),Ace,Y,Y,Y,OK,,
 ARC (SEA),arc;ark,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ARC_(file_format),Arc,Y,Y,Y,OK,,
 PAK (NoGate ARC extension),pak,archive,,,R,,,,Y,2,,,,,,MISSING,,
-zoo,zoo,archive,,,R,,R,x-fmt/269,Y,4,https://en.wikipedia.org/wiki/Zoo_(file_format),Zoo,Y,Y,Y,PARTIAL,,LZH method (2) unsupported (ZooReader.cs)
+zoo,zoo,archive,,,R,,R,x-fmt/269,Y,4,https://en.wikipedia.org/wiki/Zoo_(file_format),Zoo,Y,Y,Y,OK,,
 LBR (CP/M library),lbr;lqr;lzr,archive,,,R,,R,,Y,3,https://en.wikipedia.org/wiki/LBR_(file_format),Lbr,Y,Y,Y,OK,,
 LBR (Commodore library),lbr,archive,,,,,,,Y,1,,,,,,MISSING,,
 ALZip,alz,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ALZip,AlZip,Y,Y,Y,PARTIAL,,store and deflate only (AlZipReader.cs)
@@ -56,7 +56,7 @@ HA,ha,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/HA_(file_format),Ha,Y,Y,Y,
 SQX,sqx,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/SQX,Sqx,Y,Y,Y,OK,,
 UHARC,uha,archive,,,,,R,,Y,2,https://en.wikipedia.org/wiki/UHarc,Uharc,Y,Y,Y,PARTIAL,,stored and LZP only (UharcReader.cs)
 FreeArc,arc;cdx,archive,,,,,R,fmt/1096,Y,3,https://en.wikipedia.org/wiki/FreeArc,FreeArc,Y,Y,Y,PARTIAL,,only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs)
-ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpaq,Y,Y,Y,PARTIAL,,"journaling and streaming archives at every method are read and zpaq 7.15 extracts what we write; encrypted (-key), multi-part and -index archives are refused, and modify rewrites a single version instead of appending one (ZpaqReader.cs, ZpaqWriter.cs)"
+ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpaq,Y,Y,Y,PARTIAL,,reads only the stored blocks our own writer emits; ZPAQL-compressed blocks (every real zpaq level) throw (ZpaqReader.cs)
 PAQ (paq6/7/8 family),paq6;paq7;paq8;paq8l,archive,,,,,,,Y,1,https://mattmahoney.net/dc/paq.html,Paq8,Y,Y,,PARTIAL,,a single PAQ8 variant (.paq8l); the other PAQ versions are mutually incompatible
 KGB Archiver,kgb;kge,archive,,,,,R,,RW,2,,,,,,MISSING,,
 PEA (PeaZip),pea,archive,,,,,R,fmt/1095,Y,3,,,,,,MISSING,,https://peazip.github.io/pea-file-format.html
@@ -210,8 +210,8 @@ MacBinary,bin;macbin,encoding,,,R,,R,fmt/1761;fmt/1762;fmt/1763,,3,https://en.wi
 AppleSingle / AppleDouble,as;adouble,encoding,,,R,,,fmt/967;fmt/968,,2,https://www.rfc-editor.org/rfc/rfc1740,AppleSingle;AppleDouble,Y,Y,Y,OK,,
 Intel HEX,hex;ihex,firmware,R,,,,,,,1,https://en.wikipedia.org/wiki/Intel_HEX,IntelHex,Y,Y,Y,OK,,
 Motorola S-record,srec;s19;mot,firmware,,,,R,,,,1,https://en.wikipedia.org/wiki/SREC_(file_format),Srec,Y,Y,,OK,,
-NSIS installer,exe;nsis,installer,R,,R,,R,,,3,https://nsis.sourceforge.io/,Nsis,Y,,,READ-ONLY-BUT-SOURCES-WRITE,makensis,LZMA behind the x86 branch filter refused; uninstaller payload not listed (NsisReader.cs)
-Inno Setup,exe,installer,,,,,R,,,1,https://jrsoftware.org/isinfo.php,InnoSetup,Y,,,READ-ONLY-BUT-SOURCES-WRITE,ISCC,encrypted files and 16-bit 1.2.x refused (InnoSetupReader.cs)
+NSIS installer,exe;nsis,installer,R,,R,,R,,,3,https://nsis.sourceforge.io/,Nsis,Y,Y,,PARTIAL,,solid installers cannot be extracted per entry (NsisReader.cs)
+Inno Setup,exe,installer,,,,,R,,,1,https://jrsoftware.org/isinfo.php,InnoSetup,Y,Y,,PARTIAL,,listing only; file extraction throws for every Inno version (InnoSetupReader.cs)
 InstallShield (cab / exe),exe;cab;ex_;hdr,installer,,,,,R,fmt/1466,,2,,,,,,MISSING,,
 Wise Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 Setup Factory,exe,installer,,,,,R,,,1,,,,,,MISSING,,
@@ -243,18 +243,18 @@ ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet
 High Sierra format,iso;hsf,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 UDF,udf;cdr;dmg;iso;toast,filesystem,R,,,,,fmt/1738;fmt/1739;fmt/1757,Y,3,https://www.osta.org/specs/,Udf,Y,Y,Y,PARTIAL,,type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs)
 Roxio Toast image,toast,disk-image,,,,,,,Y,1,,Iso;Hfs,Y,Y,Y,OK,,
-Apple Partition Map,apm;bin;cdr;dmg;img;iso;toast,partition-table,R,,,,,fmt/1740;fmt/1741;fmt/1757,,2,https://en.wikipedia.org/wiki/Apple_Partition_Map,PartitionedDisk,Y,Y,Y,PARTIAL,pdisk / hdiutil,APM tables are read and their partitions' filesystems edited in place; APM entries cannot be created; added or removed
-MBR partition table,mbr,partition-table,R,,,R,,,,2,https://en.wikipedia.org/wiki/Master_boot_record,PartitionedDisk,Y,Y,Y,OK,fdisk / sfdisk,incl. EBR logical partitions; create/modify checked with sfdisk --verify and fsck
-GUID Partition Table (GPT),gpt,partition-table,R,,,D,,,,2,https://uefi.org/specifications,PartitionedDisk,Y,Y,Y,OK,sgdisk / gdisk,512- and 4096-byte LBAs; create/modify checked with sgdisk -v; sfdisk --verify and fdisk -b 4096
-Raw disk image,img;raw;dd;bin,disk-image,,,,,,,Y,1,,PartitionedDisk,Y,Y,Y,OK,dd,files inside partitions are edited in place by the partition filesystem's own editor
+Apple Partition Map,apm;bin;cdr;dmg;img;iso;toast,partition-table,R,,,,,fmt/1740;fmt/1741;fmt/1757,,2,https://en.wikipedia.org/wiki/Apple_Partition_Map,PartitionedDisk,Y,,,READ-ONLY-BUT-SOURCES-WRITE,pdisk / hdiutil,
+MBR partition table,mbr,partition-table,R,,,R,,,,2,https://en.wikipedia.org/wiki/Master_boot_record,PartitionedDisk,Y,,,READ-ONLY-BUT-SOURCES-WRITE,fdisk / sfdisk,
+GUID Partition Table (GPT),gpt,partition-table,R,,,D,,,,2,https://uefi.org/specifications,PartitionedDisk,Y,,,READ-ONLY-BUT-SOURCES-WRITE,sgdisk / gdisk,
+Raw disk image,img;raw;dd;bin,disk-image,,,,,,,Y,1,,PartitionedDisk,Y,,,READ-ONLY-BUT-SOURCES-WRITE,dd,
 Linux LVM2,lvm,partition-table,R,,,,,,,1,,,,,,MISSING,,https://man7.org/linux/man-pages/man8/lvm.8.html
 Android logical partitions (super.img),img;lp,partition-table,R,,,,,,,1,,,,,,MISSING,,https://source.android.com/docs/core/ota/dynamic_partitions
 Apple Disk Image (UDIF),dmg;smi;img,disk-image,R,,,R,R,fmt/1071,Y,5,https://en.wikipedia.org/wiki/Apple_Disk_Image,Dmg,Y,Y,Y,OK,,
 Apple sparse image / sparse bundle,sparseimage;sparsebundle,disk-image,,,,,,,Y,1,,Sparseimage;Sparsebundle,Y,Y,Y,OK,,
 Apple Disk Copy 4.2,dc42;image;dmg;img;smi,disk-image,,,,,,fmt/625,Y,2,,,,,,MISSING,,https://en.wikipedia.org/wiki/Disk_Copy
 VHD,vhd,disk-image,R,,,,R,,Y,3,https://learn.microsoft.com/windows/win32/vstor/about-vhd,Vhd,Y,Y,Y,OK,,
-VHDX,vhdx;avhdx,disk-image,R,,,,,,Y,2,https://learn.microsoft.com/openspecs/windows_protocols/ms-vhdx/,Vhdx,Y,Y,Y,PARTIAL,,differencing / partially-present blocks read as zeros (VhdxStream.cs)
-VMDK,vmdk,disk-image,R,,,,R,,Y,3,https://developer.broadcom.com/,Vmdk,Y,Y,Y,PARTIAL,,stream-optimized / compressed grains read raw; split extents and delta chains unsupported (VmdkReader.cs)
+VHDX,vhdx;avhdx,disk-image,R,,,,,,Y,2,https://learn.microsoft.com/openspecs/windows_protocols/ms-vhdx/,Vhdx,Y,Y,Y,OK,,"differencing disks read through the parent locator and sector bitmaps (checked against libvhdi); an unreplayed log is refused"
+VMDK,vmdk,disk-image,R,,,,R,,Y,3,https://developer.broadcom.com/,Vmdk,Y,Y,Y,OK,,"reads streamOptimized, monolithic/split sparse, flat and delta disks (checked against qemu-img); in-place edits only on plain monolithicSparse"
 VirtualBox VDI,vdi,disk-image,R,,,,R,fmt/726,Y,4,https://www.virtualbox.org/,Vdi,Y,Y,Y,OK,,
 QCOW / QCOW2,qcow;qcow2;qcow2c,disk-image,R,,,D,,,Y,3,https://gitlab.com/qemu-project/qemu/-/blob/master/docs/interop/qcow2.txt,Qcow2,Y,Y,Y,PARTIAL,,"no encryption, backing files, zstd clusters or extended L2 (Qcow2Structures.cs)"
 Android sparse image,simg;sparse,disk-image,R,,,R,,,,2,https://android.googlesource.com/platform/system/core/+/master/libsparse/sparse_format.h,AndroidSparse,Y,Y,,OK,,

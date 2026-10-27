@@ -87,8 +87,7 @@ public static class PartitionedDiskLister {
   /// </summary>
   private static bool TryReadBsdSlices(Stream disk, PartitionEntry part, out List<PartitionEntry> slices) {
     slices = [];
-    // A slice of a disklabel can start at the label itself; it does not nest a second time.
-    if (part.Source == "BSD" || part.Size <= 0 || part.StartOffset < 0 || part.StartOffset >= disk.Length)
+    if (part.Size <= 0 || part.StartOffset < 0 || part.StartOffset >= disk.Length)
       return false;
     try {
       using var window = new PartitionWindowStream(disk, part.StartOffset, part.Size);
@@ -179,309 +178,160 @@ public static class PartitionedDiskLister {
     return $"Partition{part.Index + 1}_{safeName}";
   }
 
-  // ── Partition addressing ──────────────────────────────────────────────
-
-  /// <summary>
-  /// One listed partition: a top-level partition, or a slice of a BSD disklabel nested inside
-  /// one, with the prefix its entries are listed under.
-  /// </summary>
-  /// <param name="Partition">The table entry (for a BSD slice, the slice's own entry).</param>
-  /// <param name="Prefix">The listing prefix, e.g. <c>Partition1_FAT32</c> or <c>Partition1_FreeBSD/Partition1_4_2BSD</c>.</param>
-  /// <param name="Offset">Byte offset of the partition on the disk.</param>
-  /// <param name="Size">Bytes of the partition that lie inside the image.</param>
-  /// <param name="IsBsdSlice">Whether this is a slice inside a BSD disklabel rather than a table entry.</param>
-  public sealed record PartitionTarget(PartitionEntry Partition, string Prefix, long Offset, long Size, bool IsBsdSlice);
-
-  /// <summary>
-  /// Every partition the listing shows a prefix for, in listing order: top-level partitions,
-  /// with a BSD-disklabel container replaced by its slices.
-  /// </summary>
-  public static List<PartitionTarget> EnumerateTargets(Stream disk, PartitionTableDetector.DetectionResult detection) {
-    var result = new List<PartitionTarget>();
-    foreach (var part in detection.Partitions) {
-      var prefix = MakePartitionPrefix(part);
-      if (TryReadBsdSlices(disk, part, out var slices)) {
-        foreach (var slice in slices)
-          result.Add(new PartitionTarget(slice, $"{prefix}/{MakePartitionPrefix(slice)}", slice.StartOffset,
-            Clamp(disk, slice), IsBsdSlice: true));
-        continue;
-      }
-      result.Add(new PartitionTarget(part, prefix, part.StartOffset, Clamp(disk, part), IsBsdSlice: false));
-    }
-    return result;
-  }
-
-  private static long Clamp(Stream disk, PartitionEntry part)
-    => Math.Max(0, Math.Min(part.Size, disk.Length - part.StartOffset));
-
-  /// <summary>
-  /// Finds the partition an entry name addresses. <paramref name="innerPath"/> is the rest of the
-  /// name below the partition's prefix — empty when the name is the partition itself
-  /// (<c>PartitionN_Type</c> or <c>PartitionN_Type.raw</c>).
-  /// </summary>
-  public static PartitionTarget? Resolve(IEnumerable<PartitionTarget> targets, string entryName, out string innerPath) {
-    var name = entryName.Replace('\\', '/').Trim('/');
-    innerPath = string.Empty;
-    PartitionTarget? best = null;
-    foreach (var t in targets) {
-      if (name.Equals(t.Prefix, StringComparison.Ordinal) || name.Equals(t.Prefix + ".raw", StringComparison.Ordinal)) {
-        innerPath = string.Empty;
-        return t;
-      }
-      if (name.StartsWith(t.Prefix + "/", StringComparison.Ordinal) && (best is null || t.Prefix.Length > best.Prefix.Length))
-        best = t;
-    }
-    if (best is not null) innerPath = name[(best.Prefix.Length + 1)..];
-    return best;
-  }
-
-  /// <summary>
-  /// Whether <paramref name="modifier"/> edits through its own code for <paramref name="method"/>
-  /// (<c>Add</c> or <c>Remove</c>) rather than the interface's generic extract → re-create
-  /// default, which re-creates the volume and loses what its writer does not reproduce.
-  /// </summary>
-  public static bool HasNativeEditor(IArchiveModifiable modifier, string method) {
-    var map = modifier.GetType().GetInterfaceMap(typeof(IArchiveModifiable));
-    for (var i = 0; i < map.InterfaceMethods.Length; ++i) {
-      var m = map.InterfaceMethods[i];
-      if (m.Name != method || m.GetParameters().Length != 2) continue;
-      return map.TargetMethods[i].DeclaringType != typeof(IArchiveModifiable);
-    }
-    return false;
-  }
-
   // ── Add / Remove (partition-aware) ────────────────────────────────────
 
   /// <summary>
-  /// Partition-aware <see cref="IArchiveModifiable.Add(System.IO.Stream, System.Collections.Generic.IReadOnlyList{Compression.Registry.ArchiveInputInfo})"/>.
-  /// Returns <c>false</c> when no partition table exists (or the stream is read-only) so the
-  /// caller can fall through to its single-filesystem path.
+  /// Partition-aware <see cref="IArchiveModifiable.Add(System.IO.Stream, System.Collections.Generic.IReadOnlyList{Compression.Registry.ArchiveInputInfo})"/>. Returns <c>true</c>
+  /// when a partition table was present and at least one input was dispatched
+  /// through the partition-aware path; <c>false</c> when no partition table
+  /// exists so the caller can fall through to the existing single-FS path.
   /// </summary>
   /// <remarks>
   /// <para>Two input shapes are recognised:</para>
   /// <list type="bullet">
-  ///   <item><description><c>PartitionN_Type/inner/path</c> — adds the file to that partition's
-  ///     filesystem through the filesystem's own in-place editor, working on a staged window over
-  ///     the partition: it can neither write outside the partition nor grow past it.</description></item>
-  ///   <item><description>A root-level filesystem image (recognised by content, or named
-  ///     <c>*.raw</c>/<c>*.img</c>/<c>PartitionN_…</c>) — becomes a new partition in the free
-  ///     space after the last one, 1 MiB-aligned where room allows, inside the table's usable
-  ///     range. GPT and MBR tables only.</description></item>
+  ///   <item><description><c>Partition&lt;N&gt;_&lt;Type&gt;/&lt;inner&gt;</c> —
+  ///     add the file to partition N's inner filesystem (delegated to its
+  ///     <see cref="IArchiveModifiable"/>).</description></item>
+  ///   <item><description>No prefix — treat the input bytes as a raw filesystem
+  ///     image, find free space past the last existing partition, write a new
+  ///     partition entry (FS type detected via <see cref="InnerFsDetector"/>),
+  ///     and copy the bytes into the new partition window.</description></item>
   /// </list>
-  /// <para>
-  /// Every edit is planned and staged before anything is written; a refusal — a filesystem with
-  /// no lossless in-place editor, a full volume, no free space, a full table — throws
-  /// <see cref="InvalidOperationException"/> and leaves the disk byte-identical.
-  /// </para>
   /// </remarks>
   public static bool TryAdd(Stream disk, IReadOnlyList<ArchiveInputInfo> inputs) {
     if (!disk.CanWrite) return false;
     var detection = PartitionTableDetector.Detect(disk);
     if (detection.Partitions.Count == 0) return false;
-    var targets = EnumerateTargets(disk, detection);
 
-    var innerAdds = new Dictionary<PartitionTarget, List<ArchiveInputInfo>>();
-    var newPartitions = new List<ArchiveInputInfo>();
+    PartitionEditor? editor = null;
     foreach (var input in inputs) {
-      if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName)) continue;
-      var target = Resolve(targets, input.ArchiveName, out var innerPath);
-      if (target is not null && innerPath.Length > 0) {
-        if (!innerAdds.TryGetValue(target, out var list)) innerAdds[target] = list = [];
-        list.Add(input with { ArchiveName = innerPath });
+      if (input.IsDirectory) continue;
+      var data = input.InMemoryContent ?? File.ReadAllBytes(input.FullPath);
+      var name = input.ArchiveName.Replace('\\', '/');
+
+      if (TryParsePartitionPrefix(name, out var partIdx, out var innerPath)
+          && partIdx < detection.Partitions.Count) {
+        var part = detection.Partitions[partIdx];
+        using var window = new PartitionWindowStream(disk, part.StartOffset, part.Size);
+        var innerDesc = InnerFsDetector.Detect(window);
+        if (innerDesc is not IArchiveModifiable mod)
+          throw new InvalidOperationException(
+            $"Partition {partIdx + 1} ({part.TypeName}) has no writable filesystem reader; cannot Add '{innerPath}'.");
+        window.Position = 0;
+        mod.Add(window, new[] { ArchiveInputInfo.InMemory(innerPath, data) });
         continue;
       }
-      if (target is not null)
-        throw new InvalidOperationException(
-          $"'{input.ArchiveName}' names an existing partition; remove it first to replace it.");
-      if (input.ArchiveName.Replace('\\', '/').Trim('/').Contains('/'))
-        throw new InvalidOperationException(
-          $"'{input.ArchiveName}' is not inside any partition of this disk.");
-      newPartitions.Add(input);
-    }
 
-    // Stage every filesystem edit first: nothing reaches the disk until all of them succeed.
-    var staged = innerAdds.Select(kv => StageInnerEdit(disk, kv.Key, "Add",
-      (mod, window) => mod.Add(window, kv.Value))).ToList();
-    var plan = newPartitions.Count > 0 ? PlanNewPartitions(disk, detection, newPartitions) : [];
-
-    foreach (var window in staged) window.Commit();
-    if (plan.Count > 0) {
-      var editor = new PartitionEditor(disk, detection.SectorSize);
-      foreach (var (input, start, length, type, label) in plan) {
-        WritePartitionData(disk, input, start, length);
-        editor.AddPartition(start, length, type, label);
+      // Root-level FS image drop → new partition past the last existing one.
+      editor ??= new PartitionEditor(disk);
+      var ptype = DetectInputPartitionType(data);
+      var lengthAligned = AlignUp(data.LongLength, SectorSize);
+      var startOffset = FindAppendOffset(editor.ListPartitions(), disk.Length, lengthAligned);
+      if (startOffset < 0)
+        throw new InvalidOperationException(
+          $"Not enough free space at the end of the disk to land a {data.LongLength}-byte filesystem image.");
+      editor.AddPartition(startOffset, lengthAligned, ptype, label: null);
+      disk.Position = startOffset;
+      disk.Write(data, 0, data.Length);
+      // Pad the partition window with zeros to its sector-aligned length.
+      var pad = lengthAligned - data.Length;
+      if (pad > 0) {
+        var zeros = new byte[512];
+        var remaining = pad;
+        while (remaining > 0) {
+          var chunk = (int)Math.Min(remaining, zeros.Length);
+          disk.Write(zeros, 0, chunk);
+          remaining -= chunk;
+        }
       }
     }
-    disk.Flush();
     return true;
   }
 
   /// <summary>
-  /// Partition-aware <see cref="IArchiveModifiable.Remove(System.IO.Stream, string[])"/>. Returns
-  /// <c>false</c> when no partition table exists (or the stream is read-only). Entry name shapes:
-  /// <c>PartitionN_Type/inner</c> removes a file — or a folder with everything beneath it —
-  /// through the partition filesystem's own in-place editor; <c>PartitionN_Type</c> or
-  /// <c>PartitionN_Type.raw</c> deletes the partition's table entry (GPT and MBR, including
-  /// logical partitions), leaving its sectors as they were.
+  /// Partition-aware <see cref="IArchiveModifiable.Remove(System.IO.Stream, string[])"/>. Returns <c>true</c>
+  /// when a partition table was present and at least one entry was removed;
+  /// <c>false</c> if no partition table was detected. Entry name shapes:
+  /// <c>Partition&lt;N&gt;_&lt;Type&gt;/&lt;inner&gt;</c> deletes an inner-FS
+  /// file; <c>Partition&lt;N&gt;_&lt;Type&gt;</c> or
+  /// <c>Partition&lt;N&gt;_&lt;Type&gt;.raw</c> deletes the whole partition.
   /// </summary>
-  /// <remarks>
-  /// A name that addresses nothing, a filesystem without a lossless in-place editor, or a
-  /// whole-partition delete on a scheme the editor cannot rewrite is refused with the disk left
-  /// byte-identical.
-  /// </remarks>
   public static bool TryRemove(Stream disk, string[] entryNames) {
     if (!disk.CanWrite) return false;
     var detection = PartitionTableDetector.Detect(disk);
     if (detection.Partitions.Count == 0) return false;
-    var targets = EnumerateTargets(disk, detection);
-
-    var innerRemoves = new Dictionary<PartitionTarget, List<string>>();
-    var deletions = new List<PartitionTarget>();
-    foreach (var rawName in entryNames ?? []) {
-      var target = Resolve(targets, rawName, out var innerPath)
-        ?? throw new FileNotFoundException($"'{rawName}' is not on this disk.", rawName);
-      if (innerPath.Length > 0) {
-        if (!innerRemoves.TryGetValue(target, out var list)) innerRemoves[target] = list = [];
-        list.Add(innerPath);
-        continue;
-      }
-      if (detection.Scheme is not ("GPT" or "MBR") || target.IsBsdSlice)
-        throw new InvalidOperationException(
-          $"Deleting '{target.Prefix}' would need a {(target.IsBsdSlice ? "BSD disklabel" : detection.Scheme)} table writer; only GPT and MBR entries can be deleted.");
-      if (!deletions.Contains(target)) deletions.Add(target);
-    }
-
-    var staged = innerRemoves.Select(kv => StageInnerEdit(disk, kv.Key, "Remove",
-      (mod, window) => mod.Remove(window, [.. kv.Value]))).ToList();
 
     PartitionEditor? editor = null;
-    var editorIndices = new List<int>();
-    if (deletions.Count > 0) {
-      editor = new PartitionEditor(disk, detection.SectorSize);
-      foreach (var target in deletions) {
-        var entry = editor.ListPartitions().FirstOrDefault(e =>
-          e.StartOffset == target.Partition.StartOffset && e.Size == target.Partition.Size
-          && e.Source != "MBR (Extended Container)")
-          ?? throw new InvalidOperationException($"'{target.Prefix}' has no entry the partition editor can delete.");
-        editorIndices.Add(entry.Index);
+    foreach (var rawName in entryNames) {
+      var name = rawName.Replace('\\', '/');
+
+      if (TryParsePartitionPrefix(name, out var partIdx, out var innerPath)
+          && partIdx < detection.Partitions.Count) {
+        var part = detection.Partitions[partIdx];
+        using var window = new PartitionWindowStream(disk, part.StartOffset, part.Size);
+        var innerDesc = InnerFsDetector.Detect(window);
+        if (innerDesc is IArchiveModifiable mod) {
+          window.Position = 0;
+          mod.Remove(window, new[] { innerPath });
+        }
+        continue;
+      }
+
+      // Whole-partition delete: "Partition3_FAT12" or "Partition3_FAT12.raw"
+      var stripped = name.EndsWith(".raw", StringComparison.OrdinalIgnoreCase) ? name[..^4] : name;
+      if (TryParsePartitionIndex(stripped, out var idx) && idx < detection.Partitions.Count) {
+        editor ??= new PartitionEditor(disk);
+        editor.DeletePartition(idx);
       }
     }
-
-    foreach (var window in staged) window.Commit();
-    if (editor is not null)
-      foreach (var index in editorIndices.OrderDescending())
-        editor.DeletePartition(index);
-    disk.Flush();
     return true;
   }
 
-  /// <summary>
-  /// Runs a filesystem edit against a staged window over <paramref name="target"/>. The edit
-  /// must go through the filesystem's own in-place editor; one that would only re-create the
-  /// volume is refused, as is one that throws. Nothing is written until the caller commits.
-  /// </summary>
-  private static StagedWindowStream StageInnerEdit(Stream disk, PartitionTarget target, string method,
-      Action<IArchiveModifiable, Stream> edit) {
-    var window = new StagedWindowStream(disk, target.Offset, target.Size);
-    var descriptor = InnerFsDetector.Detect(window);
-    if (descriptor is not IArchiveModifiable modifier)
-      throw new InvalidOperationException(
-        $"{target.Prefix} holds {(descriptor is null ? "no filesystem CompressionWorkbench recognises" : $"a {descriptor.DisplayName} volume CompressionWorkbench cannot edit")}; nothing was changed.");
-    if (!HasNativeEditor(modifier, method))
-      throw new InvalidOperationException(
-        $"{target.Prefix}: {descriptor.DisplayName} can only be edited by re-creating the volume, which would not preserve it; nothing was changed.");
-    try {
-      window.Position = 0;
-      edit(modifier, window);
-    } catch (Exception ex) when (ex is IOException or NotSupportedException or InvalidDataException
-                                   or ArgumentException or InvalidOperationException) {
-      throw new InvalidOperationException($"{target.Prefix} ({descriptor.DisplayName}) refused the edit: {ex.Message}", ex);
-    }
-    return window;
+  private static bool TryParsePartitionPrefix(string entryName, out int partitionIndex, out string innerPath) {
+    partitionIndex = -1;
+    innerPath = string.Empty;
+    var slash = entryName.IndexOf('/');
+    if (slash <= 0) return false;
+    var head = entryName[..slash];
+    if (!TryParsePartitionIndex(head, out partitionIndex)) return false;
+    innerPath = entryName[(slash + 1)..];
+    return innerPath.Length > 0;
   }
 
-  private static List<(ArchiveInputInfo Input, long Start, long Length, PartitionType Type, string? Label)> PlanNewPartitions(
-      Stream disk, PartitionTableDetector.DetectionResult detection, List<ArchiveInputInfo> inputs) {
-    if (detection.Scheme is not ("GPT" or "MBR"))
-      throw new InvalidOperationException($"New partitions can only be added to a GPT or MBR table, not {detection.Scheme}.");
-
-    var probe = new PartitionEditor(new ReadOnlyProbe(disk), detection.SectorSize);
-    var sectorSize = probe.LogicalSectorSize;
-    var (usableStart, usableEnd) = probe.UsableRange;
-    var existing = probe.ListPartitions();
-    var primaries = existing.Count(e => e.Source != "EBR");
-    var capacity = probe.Scheme == PartitionScheme.Gpt ? 128 : 4;
-    if ((probe.Scheme == PartitionScheme.Gpt ? existing.Count : primaries) + inputs.Count > capacity)
-      throw new InvalidOperationException(
-        $"The {detection.Scheme} table has room for {capacity} partitions; adding {inputs.Count} would exceed it.");
-
-    var cursor = Math.Max(usableStart, existing.Count == 0 ? 0 : existing.Max(e => e.StartOffset + e.Size));
-    var plan = new List<(ArchiveInputInfo, long, long, PartitionType, string?)>();
-    foreach (var input in inputs) {
-      using var content = OpenInput(input);
-      var type = DetectInputPartitionType(content);
-      var nameLooksLikeImage = Path.GetFileName(input.ArchiveName) is var leaf
-        && (leaf.EndsWith(".raw", StringComparison.OrdinalIgnoreCase) || leaf.EndsWith(".img", StringComparison.OrdinalIgnoreCase)
-            || leaf.StartsWith("Partition", StringComparison.Ordinal));
-      if (type == PartitionType.Unknown && !nameLooksLikeImage)
-        throw new InvalidOperationException(
-          $"'{input.ArchiveName}' is neither a filesystem image nor a raw partition image (*.raw/*.img); a disk holds partitions, not loose files.");
-      if (content.Length <= 0)
-        throw new InvalidOperationException($"'{input.ArchiveName}' is empty; a partition needs at least one sector.");
-
-      var length = AlignUp(content.Length, sectorSize);
-      var aligned = AlignUp(cursor, MiB);
-      var start = aligned + length <= usableEnd ? aligned : AlignUp(cursor, sectorSize);
-      if (start + length > usableEnd)
-        throw new InvalidOperationException(
-          $"Not enough free space after the last partition for '{input.ArchiveName}' ({content.Length:N0} bytes); nothing was changed.");
-      plan.Add((input, start, length, type == PartitionType.Unknown ? PartitionType.Linux : type,
-        Path.GetFileNameWithoutExtension(input.ArchiveName)));
-      cursor = start + length;
-    }
-    return plan;
+  private static bool TryParsePartitionIndex(string head, out int zeroBasedIndex) {
+    zeroBasedIndex = -1;
+    if (!head.StartsWith("Partition", StringComparison.Ordinal)) return false;
+    var us = head.IndexOf('_');
+    if (us <= 9) return false;
+    if (!int.TryParse(head[9..us], out var oneBased) || oneBased <= 0) return false;
+    zeroBasedIndex = oneBased - 1;
+    return true;
   }
 
-  private const long MiB = 1024 * 1024;
+  private const int SectorSize = 512;
 
-  private static Stream OpenInput(ArchiveInputInfo input)
-    => input.InMemoryContent is { } bytes
-      ? new MemoryStream(bytes, writable: false)
-      : new FileStream(input.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-
-  private static void WritePartitionData(Stream disk, ArchiveInputInfo input, long start, long length) {
-    using var content = OpenInput(input);
-    disk.Position = start;
-    content.CopyTo(disk);
-    var pad = length - content.Length;
-    if (pad > 0) disk.Write(new byte[pad]);
-  }
-
-  /// <summary>A view that satisfies <see cref="PartitionEditor"/>'s writable-stream check but refuses writes — for planning only.</summary>
-  private sealed class ReadOnlyProbe(Stream inner) : Stream {
-    public override bool CanRead => true;
-    public override bool CanSeek => true;
-    public override bool CanWrite => true;
-    public override long Length => inner.Length;
-    public override long Position { get => inner.Position; set => inner.Position = value; }
-    public override void Flush() { }
-    public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
-    public override long Seek(long offset, SeekOrigin origin) => inner.Seek(offset, origin);
-    public override void SetLength(long value) => throw new NotSupportedException();
-    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException("Planning view.");
-  }
-
-  private static long AlignUp(long value, long alignment)
+  private static long AlignUp(long value, int alignment)
     => (value + alignment - 1) / alignment * alignment;
+
+  private static long FindAppendOffset(IReadOnlyList<PartitionEntry> existing, long diskLength, long lengthBytes) {
+    long highest = SectorSize; // skip MBR
+    foreach (var e in existing) {
+      var end = e.StartOffset + e.Size;
+      if (end > highest) highest = end;
+    }
+    highest = AlignUp(highest, SectorSize);
+    return highest + lengthBytes <= diskLength ? highest : -1;
+  }
 
   /// <summary>
   /// Maps the input bytes to a logical <see cref="PartitionType"/> by running
-  /// <see cref="InnerFsDetector"/> over the input and translating the resulting descriptor ID;
-  /// <see cref="PartitionType.Unknown"/> when no filesystem is recognised.
+  /// <see cref="InnerFsDetector"/> over a wrapping memory stream and translating
+  /// the resulting descriptor ID.
   /// </summary>
-  private static PartitionType DetectInputPartitionType(Stream data) {
+  private static PartitionType DetectInputPartitionType(byte[] data) {
     if (data.Length < 512) return PartitionType.Unknown;
-    var desc = InnerFsDetector.Detect(data);
+    using var ms = new MemoryStream(data, writable: false);
+    var desc = InnerFsDetector.Detect(ms);
     if (desc is null) return PartitionType.Unknown;
     return desc.Id switch {
       "Fat" => PartitionType.Fat32Lba,

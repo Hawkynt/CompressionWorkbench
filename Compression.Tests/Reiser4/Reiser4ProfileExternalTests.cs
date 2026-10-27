@@ -143,6 +143,22 @@ public sealed class Reiser4ProfileExternalTests {
     });
   }
 
+  [TestCase("-o hash=tea_hash", TestName = "GivenAVolumeMkfsWroteWithTheTeaHash_WhenAdding_ThenTheEditIsRefusedAndTheImageIsUntouched")]
+  [TestCase("-o formatting=tails", TestName = "GivenAVolumeMkfsWroteWithATailsOnlyPolicy_WhenAdding_ThenTheEditIsRefusedAndTheImageIsUntouched")]
+  [TestCase("-o fibration=lexic_fibre", TestName = "GivenAVolumeMkfsWroteWithLexicographicFibration_WhenAdding_ThenTheEditIsRefusedAndTheImageIsUntouched")]
+  public void VolumeWithAnotherPluginProfile_IsReadButNotRewritten(string options) {
+    RequireReiser4Progs();
+    var original = this.Mkfs("cwbprof", options);
+    using var image = new MemoryStream();
+    image.Write(original);
+    using (var reader = new Reiser4Reader(image))
+      Assert.That(reader.NativeTreeValid, Is.True, "an empty volume of another profile is still read");
+    var error = Assert.Throws<NotSupportedException>(() => new Reiser4FormatDescriptor().Add(image,
+      [ArchiveInputInfo.InMemory("a-name-longer-than-twenty-three.txt", Payload(100, 5))]));
+    Assert.That(error!.Message, Does.Contain("refusing"));
+    Assert.That(image.ToArray(), Is.EqualTo(original));
+  }
+
   [Test, Category("Boundary")]
   public void GivenTwelveThousandFiles_WhenWriting_ThenFsckAcceptsAFourLevelTreeAndTheProgsReadTheBoundaryFiles() {
     RequireReiser4Progs();

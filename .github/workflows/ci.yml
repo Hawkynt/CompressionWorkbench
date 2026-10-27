@@ -174,9 +174,6 @@ jobs:
           # reiser4progs owns Reiser4: fsck.reiser4 and debugfs.reiser4 judge every volume the
           # Reiser4 writer creates or edits, in the gate below.
           sudo apt-get install -y reiser4progs
-          # zpaq (7.15) owns ZPAQ: it must list and extract what the ZPAQ writer produces, and the
-          # reader must decode every method zpaq writes, in the gate below.
-          sudo apt-get install -y zpaq
           sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
           sudo modprobe gfs2 || true
 
@@ -235,21 +232,8 @@ jobs:
         run: >
           dotnet test Compression.Tests
           --configuration Release --no-build
-          --filter "FullyQualifiedName~Compression.Tests.Reiser4.Reiser4ProfileExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4MutationExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4NativeTreeExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4FeatureExternalTests"
+          --filter "FullyQualifiedName~Compression.Tests.Reiser4.Reiser4ProfileExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4MutationExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4NativeTreeExternalTests"
           --logger "trx;LogFileName=reiser4-oracle-tests.trx"
-
-      # Hard gate, both directions: zpaq must list and extract byte for byte what the ZPAQ writer
-      # produces (every method), the reader must decode what zpaq writes (every method, versions,
-      # deduplication, streaming), and our compressed data blocks must equal zpaq 7.15's.
-      - name: ZPAQ oracle
-        if: matrix.os == 'ubuntu-latest'
-        env:
-          CWB_REQUIRE_ZPAQ: "1"
-        run: >
-          dotnet test Compression.Tests
-          --configuration Release --no-build
-          --filter "FullyQualifiedName~Compression.Tests.Zpaq.ZpaqExternalOracleTests"
-          --logger "trx;LogFileName=zpaq-oracle-tests.trx"
 
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are

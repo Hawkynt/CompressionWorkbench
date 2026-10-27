@@ -64,15 +64,12 @@ public static partial class FormatDetector {
   ///       virtual-disk containers, compressed streams, filesystems that start at byte 0;</description></item>
   ///     <item><description>ISO 9660 / UDF volume descriptors at 32 KiB — ahead of any partition
   ///       table, so a hybrid ISO whose system area carries an MBR or GPT browses as the ISO;</description></item>
-  ///     <item><description>a GPT header whose CRC32 matches, at 512- or 4096-byte logical blocks →
-  ///       <see cref="Format.PartitionedDisk"/>;</description></item>
+  ///     <item><description>a GPT header whose CRC32 matches → <see cref="Format.PartitionedDisk"/>;</description></item>
   ///     <item><description>sector 0 ending in 0x55AA: a validated MBR table versus a volume boot record
   ///       (FAT BPB, NTFS/exFAT/… OEM signature). A valid table with no boot record is the disk; a boot
   ///       record with no valid table is the filesystem; when both parse, the disk wins only if one of
   ///       its partitions holds a recognisable filesystem;</description></item>
   ///     <item><description>an Apple Partition Map → <see cref="Format.PartitionedDisk"/>;</description></item>
-  ///     <item><description>a checksummed SGI volume header or Sun label, a stand-alone BSD disklabel (both magics) or a checksummed
-  ///       Amiga Rigid Disk Block → <see cref="Format.PartitionedDisk"/>;</description></item>
   ///     <item><description>when <paramref name="includeSuperblocks"/> is set, a filesystem superblock
   ///       signature (≥ 0.75 confidence) anywhere up to the deepest registered one (ZFS at 128 KiB).</description></item>
   ///   </list>
@@ -107,8 +104,6 @@ public static partial class FormatDetector {
     }
 
     if (ApmParser.IsApm(head)) return Format.PartitionedDisk;
-
-    if (PartitionTableDetector.HasSelfValidatingLabel(stream)) return Format.PartitionedDisk;
 
     if (!includeSuperblocks) return Format.Unknown;
 
