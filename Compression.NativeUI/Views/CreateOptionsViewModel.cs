@@ -408,12 +408,6 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
         (F.Lzh, "pm0") =>
           "pm0: PMA store mode — no compression. PMA-compatible container format.\n"
           + "Opens with: PMarc, Unlha32.dll",
-        (F.Lzh, "pm1") =>
-          "pm1: PMA with PPMd order-2 prediction. Good for text files.\n"
-          + "Opens with: PMarc, Unlha32.dll",
-        (F.Lzh, "pm2") =>
-          "pm2: PMA with PPMd order-3 prediction. Best LHA method for text and source code.\n"
-          + "Opens with: PMarc, Unlha32.dll",
         (F.Lzh, _) =>
           "lh5 (8 KB) is the standard default. lh7 (64 KB) gives best general compression. "
           + "pm2 uses PPMd and excels on text. lh1-lh3 are legacy adaptive Huffman.\n"
@@ -556,8 +550,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
         "lh5  (default, 8 KB)", "lh7  (64 KB)", "lh6  (32 KB)",
         "lh4  (4 KB)", "lh1  (adaptive Huffman 4 KB)",
         "lh0  (store)", "lzs  (LZSS 2 KB)", "lz5  (LZSS 4 KB)",
-        "pm0  (PMA store)", "pm1  (PMA PPMd order-2)", "pm2  (PMA PPMd order-3)",
-        "pm2  (PPMd order-3)", "pm1  (PPMd order-2)", "pm0  (PMA store)"],
+        "pm0  (PMA store)"],
       F.Arj => [
         "Method 1 (default, best)", "Method 2", "Method 3  (fastest)", "Store"],
       F.Arc => [
