@@ -36,6 +36,9 @@ public sealed class DaaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Description => "PowerISO DAA compressed ISO image (format 0x100, deflate chunks)";
   public IReadOnlySet<string> SyntheticEntryNames => Synthetic;
 
+  /// <summary>DAA requires an ISO image payload, so it has no empty container for purge to leave behind.</summary>
+  public bool CanPurgeToEmpty => false;
+
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     try {
       var image = DaaImage.Read(stream);

@@ -88,6 +88,20 @@ public class DaaTests {
     Assert.That(new DaaFormatDescriptor().List(new MemoryStream(daa), null).Single().Name, Is.EqualTo("FULL.daa"));
   }
 
+  [TestCase(0)]
+  [TestCase(4096)]
+  public void GivenAMandatoryImage_WhenPurged_ThenRefusedWithoutChangingTheArchive(int size) {
+    var iso = SampleIso(size, 11);
+    var original = Write(iso);
+    using var archive = new MemoryStream(original.ToArray());
+    IArchivePurgeable descriptor = new DaaFormatDescriptor();
+
+    Assert.Throws<NotSupportedException>(() => descriptor.Purge(archive));
+    Assert.That(descriptor.CanPurgeToEmpty, Is.False);
+    Assert.That(archive.ToArray(), Is.EqualTo(original));
+    Assert.That(Read(archive.ToArray()), Is.EqualTo(iso));
+  }
+
   [Test]
   public void GivenVersion110_WhenRead_ThenNotSupported() {
     var daa = Write(SampleIso(5000, 4));
