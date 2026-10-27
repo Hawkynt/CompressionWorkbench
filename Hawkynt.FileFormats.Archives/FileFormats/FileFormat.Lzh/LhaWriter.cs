@@ -39,8 +39,6 @@ public sealed class LhaWriter {
       LhaConstants.MethodLzs => -1,
       LhaConstants.MethodLz5 => -2,
       LhaConstants.MethodLh1 => -3,
-      LhaConstants.MethodPm1 => -5,
-      LhaConstants.MethodPm2 => -6,
       LhaConstants.MethodLh4 => LzhConstants.Lh4PositionBits,
       LhaConstants.MethodLh5 => LzhConstants.Lh5PositionBits,
       LhaConstants.MethodLh6 => LzhConstants.Lh6PositionBits,
@@ -90,10 +88,6 @@ public sealed class LhaWriter {
 
     if (data.Length == 0 || this._positionBits == 0) {
       compressed = data;
-    } else if (this._positionBits == -5) {
-      compressed = PmaEncoder.Encode(data, 2);
-    } else if (this._positionBits == -6) {
-      compressed = PmaEncoder.Encode(data, 3);
     } else if (this._positionBits == -1) {
       compressed = LzsEncoder.Encode(data);
     } else if (this._positionBits == -2) {
@@ -135,7 +129,7 @@ public sealed class LhaWriter {
 
   private string GetStoredMethod() => this._method switch {
     LhaConstants.MethodLz4 or LhaConstants.MethodLzs or LhaConstants.MethodLz5 => LhaConstants.MethodLz4,
-    LhaConstants.MethodPm0 or LhaConstants.MethodPm1 or LhaConstants.MethodPm2 => LhaConstants.MethodPm0,
+    LhaConstants.MethodPm0 => LhaConstants.MethodPm0,
     _ => LhaConstants.MethodLh0,
   };
 
