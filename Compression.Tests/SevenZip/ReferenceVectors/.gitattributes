@@ -1,2 +1,0 @@
-# Fixture bytes are the test: never let a checkout rewrite line endings.
-*.7z -text

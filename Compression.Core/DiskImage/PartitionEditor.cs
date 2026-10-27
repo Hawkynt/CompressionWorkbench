@@ -36,15 +36,8 @@ namespace Compression.Core.DiskImage;
 /// </remarks>
 public sealed class PartitionEditor {
 
-  /// <summary>
-  /// The classic logical block size, and the one a disk without a GPT is assumed to use unless
-  /// the caller says otherwise. A 4Kn GPT disk is edited in 4096-byte blocks: see
-  /// <see cref="LogicalSectorSize"/>.
-  /// </summary>
+  /// <summary>Standard sector size used by the editor.</summary>
   public const int SectorSize = 512;
-
-  /// <summary>Logical block sizes the editor supports.</summary>
-  public static IReadOnlyList<int> SupportedSectorSizes => GptParser.SupportedSectorSizes;
 
   private const int MbrSignatureOffset = 510;
   private const ushort MbrBootSignature = 0xAA55;
@@ -56,11 +49,10 @@ public sealed class PartitionEditor {
   private const int GptHeaderSize = 92;
   private const int DefaultGptEntrySize = 128;
   private const int GptEntryCount = 128;
+  private const int GptReservedSectors = 33; // 32 sectors of entries + 1 sector of header
   private static ReadOnlySpan<byte> GptSignature => "EFI PART"u8;
 
   private readonly Stream _stream;
-  private readonly int _requestedSectorSize;
-  private int _sectorSize;
   private PartitionScheme _scheme;
   private readonly List<PartitionEntry> _entries = [];
 
@@ -68,102 +60,24 @@ public sealed class PartitionEditor {
   // defaults applied when initialising a fresh GPT).
   private uint _gptEntrySize = DefaultGptEntrySize;
   private uint _gptEntryCount = GptEntryCount;
-  private Guid? _gptDiskGuid;
 
   /// <summary>Partition scheme currently in use on the disk image.</summary>
   public PartitionScheme Scheme => this._scheme;
-
-  /// <summary>
-  /// The logical block size every LBA on this disk is counted in: the size at which the GPT
-  /// header validated, or — for an MBR or blank disk — the size the editor was opened with.
-  /// </summary>
-  public int LogicalSectorSize => this._sectorSize;
 
   /// <summary>
   /// Opens an editor over the given disk-image stream. The stream must be
   /// readable, writable, and seekable. The scheme (MBR/GPT/None) is
   /// auto-detected from the on-disk signature.
   /// </summary>
-  public PartitionEditor(Stream stream) : this(stream, SectorSize) { }
-
-  /// <summary>
-  /// Opens an editor over the given disk-image stream, counting LBAs in
-  /// <paramref name="sectorSize"/>-byte blocks unless a GPT on the disk validates at another
-  /// supported block size — the table on the disk decides, since rewriting it at a different
-  /// size would move every partition.
-  /// </summary>
-  /// <param name="stream">Readable, writable, seekable disk image.</param>
-  /// <param name="sectorSize">512 or 4096.</param>
-  public PartitionEditor(Stream stream, int sectorSize) {
+  public PartitionEditor(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanRead) throw new ArgumentException("Stream must be readable.", nameof(stream));
     if (!stream.CanWrite) throw new ArgumentException("Stream must be writable.", nameof(stream));
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
-    if (!SupportedSectorSizes.Contains(sectorSize))
-      throw new ArgumentOutOfRangeException(nameof(sectorSize), sectorSize, "Logical sector size must be 512 or 4096.");
 
     this._stream = stream;
-    this._requestedSectorSize = sectorSize;
-    this._sectorSize = sectorSize;
     this.Reload();
   }
-
-  /// <summary>
-  /// Writes an empty partition table of <paramref name="scheme"/> over the start (and, for GPT,
-  /// the end) of <paramref name="stream"/> and returns an editor over it. A GPT gets the
-  /// standard 128 entries of 128 bytes, its backup at the last LBA and a protective MBR.
-  /// </summary>
-  /// <param name="stream">Readable, writable, seekable target, already at the disk's full length.</param>
-  /// <param name="scheme"><see cref="PartitionScheme.Gpt"/> or <see cref="PartitionScheme.Mbr"/>.</param>
-  /// <param name="sectorSize">512 or 4096.</param>
-  public static PartitionEditor CreateEmpty(Stream stream, PartitionScheme scheme, int sectorSize = SectorSize) {
-    ArgumentNullException.ThrowIfNull(stream);
-    if (!SupportedSectorSizes.Contains(sectorSize))
-      throw new ArgumentOutOfRangeException(nameof(sectorSize), sectorSize, "Logical sector size must be 512 or 4096.");
-    if (stream.Length % sectorSize != 0)
-      throw new ArgumentException($"Disk length {stream.Length} is not a whole number of {sectorSize}-byte sectors.", nameof(stream));
-
-    // Clear whatever table the bytes held, so the editor starts from a blank disk.
-    var editor = new PartitionEditor(stream, sectorSize);
-    editor._entries.Clear();
-    editor._gptRawSlots.Clear();
-    editor._sectorSize = sectorSize;
-    switch (scheme) {
-      case PartitionScheme.Gpt:
-        editor._scheme = PartitionScheme.Gpt;
-        editor._gptEntrySize = DefaultGptEntrySize;
-        editor._gptEntryCount = GptEntryCount;
-        editor._gptDiskGuid = null;
-        editor.RewriteGpt();
-        break;
-      case PartitionScheme.Mbr:
-        if (stream.Length / sectorSize > uint.MaxValue)
-          throw new InvalidOperationException("An MBR cannot address a disk of more than 2^32 sectors; use GPT.");
-        editor._scheme = PartitionScheme.Mbr;
-        editor.InitializeEmptyMbr();
-        break;
-      default:
-        throw new ArgumentOutOfRangeException(nameof(scheme), scheme, "Only GPT and MBR tables can be created.");
-    }
-    return editor;
-  }
-
-  /// <summary>Sectors the GPT entry array occupies at the current block size.</summary>
-  private long GptEntrySectors => ((long)this._gptEntrySize * this._gptEntryCount + this._sectorSize - 1) / this._sectorSize;
-
-  /// <summary>First LBA a GPT partition may use: after the protective MBR, the header and the entry array.</summary>
-  private long GptFirstUsableLba => 2 + this.GptEntrySectors;
-
-  /// <summary>Last LBA a GPT partition may use: before the backup entry array and the backup header.</summary>
-  private long GptLastUsableLba => this._stream.Length / this._sectorSize - this.GptEntrySectors - 2;
-
-  /// <summary>
-  /// The byte range partitions may occupy under the current scheme: everything after LBA 0 for
-  /// MBR; between the primary and backup GPT structures for GPT.
-  /// </summary>
-  public (long Start, long End) UsableRange => this._scheme == PartitionScheme.Gpt
-    ? (this.GptFirstUsableLba * this._sectorSize, (this.GptLastUsableLba + 1) * this._sectorSize)
-    : (this._sectorSize, this._stream.Length / this._sectorSize * this._sectorSize);
 
   /// <summary>
   /// Convenience factory for an editor backed by an <see cref="IPartitionEditable"/>
@@ -201,10 +115,9 @@ public sealed class PartitionEditor {
   /// <exception cref="InvalidOperationException">Range overlaps an existing
   /// partition or exceeds the disk length.</exception>
   public void AddPartition(long startByteOffset, long lengthBytes, PartitionType type, string? label) {
-    this.ValidateRange(startByteOffset, lengthBytes);
+    ValidateRange(startByteOffset, lengthBytes);
     this.RequireFits(startByteOffset, lengthBytes);
     this.RequireNoOverlap(startByteOffset, lengthBytes);
-    this.RequireUsable(startByteOffset, lengthBytes);
 
     if (this._scheme == PartitionScheme.None) {
       // No table yet — promote to MBR.
@@ -272,7 +185,7 @@ public sealed class PartitionEditor {
   /// <exception cref="InvalidOperationException">No extended container exists,
   /// range outside container, or overlap detected.</exception>
   public void AddLogicalPartition(long startByteOffset, long lengthBytes, PartitionType type, string? label) {
-    this.ValidateRange(startByteOffset, lengthBytes);
+    ValidateRange(startByteOffset, lengthBytes);
     if (this._scheme != PartitionScheme.Mbr)
       throw new InvalidOperationException("Logical partitions only exist in MBR layouts.");
 
@@ -291,13 +204,13 @@ public sealed class PartitionEditor {
     var existingLogicals = this._entries.Count(e => e.Source == "EBR");
     if (existingLogicals == 0) {
       // First logical: container_start + 1 sector is the earliest legal data offset.
-      if (startByteOffset < container.StartOffset + this._sectorSize)
+      if (startByteOffset < container.StartOffset + SectorSize)
         throw new InvalidOperationException(
-          $"First logical must start at or after container_start + 1 sector ({container.StartOffset + this._sectorSize}); got {startByteOffset}.");
+          $"First logical must start at or after container_start + 1 sector ({container.StartOffset + SectorSize}); got {startByteOffset}.");
     } else {
       // Subsequent logical needs an EBR sector before it.
-      var ebrLba = (startByteOffset / this._sectorSize) - 1;
-      var ebrStart = ebrLba * this._sectorSize;
+      var ebrLba = (startByteOffset / SectorSize) - 1;
+      var ebrStart = ebrLba * SectorSize;
       if (ebrStart <= container.StartOffset)
         throw new InvalidOperationException(
           $"Logical start ({startByteOffset}) leaves no room for an EBR sector inside the extended container [{container.StartOffset}..{container.StartOffset + container.Size}).");
@@ -308,8 +221,8 @@ public sealed class PartitionEditor {
         $"Logical end ({startByteOffset + lengthBytes}) exceeds extended container end ({container.StartOffset + container.Size}).");
 
     // Overlap check: EBR + data for non-first; just data for first (EBR is at container start).
-    var checkStart = existingLogicals == 0 ? startByteOffset : startByteOffset - this._sectorSize;
-    var checkLength = existingLogicals == 0 ? lengthBytes : this._sectorSize + lengthBytes;
+    var checkStart = existingLogicals == 0 ? startByteOffset : startByteOffset - SectorSize;
+    var checkLength = existingLogicals == 0 ? lengthBytes : SectorSize + lengthBytes;
     this.RequireNoOverlap(checkStart, checkLength);
 
     var entry = new PartitionEntry {
@@ -365,9 +278,9 @@ public sealed class PartitionEditor {
 
     // For logicals also zero the preceding EBR sector.
     if (e.Source == "EBR") {
-      var ebrStart = e.StartOffset - this._sectorSize;
+      var ebrStart = e.StartOffset - SectorSize;
       if (ebrStart >= 0)
-        this.ZeroRange(ebrStart, this._sectorSize);
+        this.ZeroRange(ebrStart, SectorSize);
     }
 
     this.DeletePartition(index);
@@ -406,22 +319,11 @@ public sealed class PartitionEditor {
       });
     }
 
-    // A partition inside the GPT's own structures would be overwritten by them: refuse before
-    // writing anything.
-    this._gptEntrySize = DefaultGptEntrySize;
-    this._gptEntryCount = GptEntryCount;
-    var firstUsable = this.GptFirstUsableLba * this._sectorSize;
-    var lastUsableEnd = (this.GptLastUsableLba + 1) * this._sectorSize;
-    foreach (var e in translated)
-      if (e.StartOffset < firstUsable || e.StartOffset + e.Size > lastUsableEnd)
-        throw new InvalidOperationException(
-          $"Partition [{e.StartOffset}..{e.StartOffset + e.Size}) overlaps where the GPT's own structures go " +
-          $"(usable range [{firstUsable}..{lastUsableEnd})); converting would overwrite its data.");
-
     this._entries.Clear();
     this._entries.AddRange(translated);
     this._scheme = PartitionScheme.Gpt;
-    this._gptDiskGuid = null;
+    this._gptEntrySize = DefaultGptEntrySize;
+    this._gptEntryCount = GptEntryCount;
     this.RewriteGpt(); // Also rewrites the protective MBR.
   }
 
@@ -457,16 +359,12 @@ public sealed class PartitionEditor {
       });
     }
 
-    if (translated.Any(e => (e.StartOffset + e.Size) / this._sectorSize > uint.MaxValue))
-      throw new InvalidOperationException("A partition ends past 2^32 sectors, which an MBR entry cannot address.");
-
-    // Zero out primary GPT (header + entry array) and backup GPT (entry array + header at the
-    // end) before writing the MBR. Both lie outside the usable range, so no partition is touched.
-    var reserved = (this.GptEntrySectors + 1) * this._sectorSize;
-    this.ZeroRange(GptHeaderLba * (long)this._sectorSize, reserved);
-    var backupStart = this._stream.Length / this._sectorSize * this._sectorSize - reserved;
-    if (backupStart > reserved)
-      this.ZeroRange(backupStart, reserved);
+    // Zero out primary GPT (header + entry array, LBAs 1..33) and backup
+    // GPT (last 33 sectors) before writing the MBR.
+    this.ZeroRange(GptHeaderLba * SectorSize, (long)GptReservedSectors * SectorSize);
+    var backupStart = this._stream.Length - (long)GptReservedSectors * SectorSize;
+    if (backupStart > 0)
+      this.ZeroRange(backupStart, (long)GptReservedSectors * SectorSize);
 
     this._entries.Clear();
     this._entries.AddRange(translated);
@@ -610,8 +508,8 @@ public sealed class PartitionEditor {
   public void ResizePartition(int index, long newSizeBytes) {
     this.RequireValidIndex(index);
     if (newSizeBytes <= 0) throw new ArgumentOutOfRangeException(nameof(newSizeBytes));
-    if (newSizeBytes % this._sectorSize != 0)
-      throw new ArgumentException($"New size must be sector-aligned ({this._sectorSize} bytes).", nameof(newSizeBytes));
+    if (newSizeBytes % SectorSize != 0)
+      throw new ArgumentException($"New size must be sector-aligned ({SectorSize} bytes).", nameof(newSizeBytes));
 
     var resizer = InPlaceFilesystemResizer
       ?? throw new InvalidOperationException(
@@ -629,9 +527,6 @@ public sealed class PartitionEditor {
     if (newEnd > this._stream.Length)
       throw new InvalidOperationException(
         $"New partition end ({newEnd}) exceeds disk length ({this._stream.Length}).");
-    if (newEnd > this.UsableRange.End)
-      throw new InvalidOperationException(
-        $"New partition end ({newEnd}) runs into the backup partition table (usable end {this.UsableRange.End}).");
     if (!isShrink) {
       foreach (var other in this._entries) {
         if (other.Index == e.Index) continue;
@@ -763,17 +658,14 @@ public sealed class PartitionEditor {
   /// </summary>
   public void Reload() {
     this._entries.Clear();
-    this._gptRawSlots.Clear();
-    this._gptDiskGuid = null;
-    this._sectorSize = this._requestedSectorSize;
     if (this._stream.Length < SectorSize * 2L) {
       this._scheme = PartitionScheme.None;
       return;
     }
 
-    var head = new byte[(int)Math.Min(GptParser.ProbeBytes, this._stream.Length)];
+    var head = new byte[Math.Min(4096, (int)this._stream.Length)];
     this._stream.Position = 0;
-    var read = this._stream.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
+    var read = this._stream.Read(head, 0, head.Length);
     if (read < SectorSize) {
       this._scheme = PartitionScheme.None;
       return;
@@ -781,24 +673,22 @@ public sealed class PartitionEditor {
 
     if (GptParser.IsGpt(head)) {
       try {
-        var parsed = GptParser.Parse(this._stream, out var info);
-        // Keep the on-disk layout (block size, entry size/count, disk GUID) for round-trip preservation.
-        this._sectorSize = info.SectorSize;
-        this._gptEntryCount = info.EntryCount == 0 ? GptEntryCount : info.EntryCount;
-        this._gptEntrySize = info.EntrySize < DefaultGptEntrySize ? DefaultGptEntrySize : info.EntrySize;
-        this._gptDiskGuid = info.DiskGuid == Guid.Empty ? null : info.DiskGuid;
-        var entryArray = new byte[(long)info.EntryCount * info.EntrySize];
-        this._stream.Position = (long)info.EntriesLba * info.SectorSize;
-        this._stream.ReadExactly(entryArray);
-        this.CaptureGptSlots(entryArray);
+        var parsed = GptParser.Parse(this._stream);
+        // Read entry size from the on-disk header for round-trip preservation.
+        this._stream.Position = (long)GptHeaderLba * SectorSize;
+        Span<byte> hdr = stackalloc byte[GptHeaderSize];
+        this._stream.ReadExactly(hdr);
+        this._gptEntryCount = BinaryPrimitives.ReadUInt32LittleEndian(hdr[80..]);
+        this._gptEntrySize = BinaryPrimitives.ReadUInt32LittleEndian(hdr[84..]);
+        if (this._gptEntrySize < DefaultGptEntrySize) this._gptEntrySize = DefaultGptEntrySize;
+        if (this._gptEntryCount == 0) this._gptEntryCount = GptEntryCount;
 
         this._scheme = PartitionScheme.Gpt;
         this._entries.AddRange(parsed);
         this.ReindexAll();
         return;
-      } catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException or OverflowException) {
+      } catch {
         // Fall through to MBR.
-        this._sectorSize = this._requestedSectorSize;
       }
     }
 
@@ -807,9 +697,9 @@ public sealed class PartitionEditor {
       // Use the full parser so logical entries are included as well.
       List<PartitionEntry> parsed;
       try {
-        parsed = MbrParser.Parse(this._stream, this._sectorSize);
-      } catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException) {
-        parsed = [.. MbrParser.ParsePrimary(head, this._sectorSize)];
+        parsed = MbrParser.Parse(this._stream);
+      } catch {
+        parsed = [.. MbrParser.ParsePrimary(head)];
       }
 
       // MbrParser.Parse returns primaries (non-extended) plus EBR-discovered
@@ -818,7 +708,7 @@ public sealed class PartitionEditor {
       this._stream.Position = 0;
       var sector0 = new byte[SectorSize];
       this._stream.ReadExactly(sector0);
-      var primariesFromTable = MbrParser.ParsePrimary(sector0, this._sectorSize);
+      var primariesFromTable = MbrParser.ParsePrimary(sector0);
       var entries = new List<PartitionEntry>();
       foreach (var p in primariesFromTable)
         entries.Add(p);
@@ -836,35 +726,19 @@ public sealed class PartitionEditor {
 
   // ── Overlap / validation helpers ───────────────────────────────────
 
-  private void ValidateRange(long startByteOffset, long lengthBytes) {
+  private static void ValidateRange(long startByteOffset, long lengthBytes) {
     if (startByteOffset < 0) throw new ArgumentOutOfRangeException(nameof(startByteOffset));
     if (lengthBytes <= 0) throw new ArgumentOutOfRangeException(nameof(lengthBytes));
-    if (startByteOffset % this._sectorSize != 0)
-      throw new ArgumentException($"Start offset must be sector-aligned ({this._sectorSize} bytes).", nameof(startByteOffset));
-    if (lengthBytes % this._sectorSize != 0)
-      throw new ArgumentException($"Length must be a multiple of sector size ({this._sectorSize} bytes).", nameof(lengthBytes));
+    if (startByteOffset % SectorSize != 0)
+      throw new ArgumentException($"Start offset must be sector-aligned ({SectorSize} bytes).", nameof(startByteOffset));
+    if (lengthBytes % SectorSize != 0)
+      throw new ArgumentException($"Length must be a multiple of sector size ({SectorSize} bytes).", nameof(lengthBytes));
   }
 
   private void RequireFits(long startByteOffset, long lengthBytes) {
     if (startByteOffset + lengthBytes > this._stream.Length)
       throw new InvalidOperationException(
         $"Partition end ({startByteOffset + lengthBytes}) exceeds disk length ({this._stream.Length}).");
-  }
-
-  /// <summary>
-  /// A partition must stay clear of the table itself: LBA 0 for MBR, and for GPT the primary
-  /// header and entry array at the front and their backups at the end (UEFI 2.10, §5.3.1 —
-  /// FirstUsableLBA / LastUsableLBA). An MBR entry also cannot address past 2^32 sectors.
-  /// </summary>
-  private void RequireUsable(long startByteOffset, long lengthBytes) {
-    var (usableStart, usableEnd) = this.UsableRange;
-    if (startByteOffset < usableStart || startByteOffset + lengthBytes > usableEnd)
-      throw new InvalidOperationException(
-        $"Partition [{startByteOffset}..{startByteOffset + lengthBytes}) leaves the usable range [{usableStart}..{usableEnd}) " +
-        "and would overwrite the partition table.");
-    if (this._scheme != PartitionScheme.Gpt
-        && ((startByteOffset + lengthBytes) / this._sectorSize > uint.MaxValue))
-      throw new InvalidOperationException("An MBR entry cannot address past 2^32 sectors; use GPT.");
   }
 
   private void RequireNoOverlap(long startByteOffset, long lengthBytes) {
@@ -951,8 +825,8 @@ public sealed class PartitionEditor {
       entry[1] = 0xFE; entry[2] = 0xFF; entry[3] = 0xFF;
       entry[4] = mbrByte;
       entry[5] = 0xFE; entry[6] = 0xFF; entry[7] = 0xFF;
-      BinaryPrimitives.WriteUInt32LittleEndian(entry[8..], (uint)(e.StartOffset / this._sectorSize));
-      BinaryPrimitives.WriteUInt32LittleEndian(entry[12..], (uint)(e.Size / this._sectorSize));
+      BinaryPrimitives.WriteUInt32LittleEndian(entry[8..], (uint)(e.StartOffset / SectorSize));
+      BinaryPrimitives.WriteUInt32LittleEndian(entry[12..], (uint)(e.Size / SectorSize));
       primarySlot++;
     }
 
@@ -979,12 +853,12 @@ public sealed class PartitionEditor {
       .OrderBy(e => e.StartOffset)
       .ToList();
 
-    var containerStartLba = (uint)(container.StartOffset / this._sectorSize);
+    var containerStartLba = (uint)(container.StartOffset / SectorSize);
 
     // Always zero the first sector of the container first — when the chain
     // shrinks (logicals removed), we don't want a stale EBR lingering. The
     // active first EBR will be rewritten below if logicals.Count > 0.
-    this.ZeroRange(container.StartOffset, this._sectorSize);
+    this.ZeroRange(container.StartOffset, SectorSize);
 
     if (logicals.Count == 0) {
       this._stream.Flush();
@@ -993,14 +867,14 @@ public sealed class PartitionEditor {
 
     for (var i = 0; i < logicals.Count; ++i) {
       var logical = logicals[i];
-      var dataLba = (uint)(logical.StartOffset / this._sectorSize);
+      var dataLba = (uint)(logical.StartOffset / SectorSize);
 
       // EBR location: first logical -> container start; subsequent -> data-1.
       var ebrLba = i == 0 ? containerStartLba : dataLba - 1;
-      var ebrOffset = (long)ebrLba * this._sectorSize;
+      var ebrOffset = (long)ebrLba * SectorSize;
 
       var sector = new byte[SectorSize];
-      if (ebrOffset + this._sectorSize <= this._stream.Length) {
+      if (ebrOffset + SectorSize <= this._stream.Length) {
         this._stream.Position = ebrOffset;
         this._stream.ReadExactly(sector);
         Array.Clear(sector, MbrTableOffset, 4 * MbrEntrySize);
@@ -1015,14 +889,14 @@ public sealed class PartitionEditor {
         entry[4] = mbrByte;
         entry[5] = 0xFE; entry[6] = 0xFF; entry[7] = 0xFF;
         BinaryPrimitives.WriteUInt32LittleEndian(entry[8..], dataLba - ebrLba);
-        BinaryPrimitives.WriteUInt32LittleEndian(entry[12..], (uint)(logical.Size / this._sectorSize));
+        BinaryPrimitives.WriteUInt32LittleEndian(entry[12..], (uint)(logical.Size / SectorSize));
       }
 
       // Entry 1: pointer to next EBR (relative to extended container start),
       // or all-zero on the last EBR.
       if (i + 1 < logicals.Count) {
         var nextLogical = logicals[i + 1];
-        var nextDataLba = (uint)(nextLogical.StartOffset / this._sectorSize);
+        var nextDataLba = (uint)(nextLogical.StartOffset / SectorSize);
         var nextEbrLba = nextDataLba - 1;
 
         var entry = sector.AsSpan(MbrTableOffset + MbrEntrySize, MbrEntrySize);
@@ -1031,7 +905,7 @@ public sealed class PartitionEditor {
         entry[4] = 0x05;
         entry[5] = 0xFE; entry[6] = 0xFF; entry[7] = 0xFF;
         BinaryPrimitives.WriteUInt32LittleEndian(entry[8..], nextEbrLba - containerStartLba);
-        var nextLastLba = nextDataLba + (uint)(nextLogical.Size / this._sectorSize) - 1;
+        var nextLastLba = nextDataLba + (uint)(nextLogical.Size / SectorSize) - 1;
         BinaryPrimitives.WriteUInt32LittleEndian(entry[12..], nextLastLba - nextEbrLba + 1);
       }
 
@@ -1044,24 +918,15 @@ public sealed class PartitionEditor {
 
   // ── GPT writers ────────────────────────────────────────────────────
 
-  /// <summary>
-  /// Writes the protective MBR, the primary header and entry array at LBA 1/2, and the backup
-  /// entry array and header at the end of the disk (UEFI 2.10, §5.3). LastUsableLBA is the LBA
-  /// before the backup entry array, so the two never overlap. Entries that already existed keep
-  /// their unique GUID and attribute bits; the disk keeps its GUID.
-  /// </summary>
   private void RewriteGpt() {
-    var totalSectors = this._stream.Length / this._sectorSize;
+    var totalSectors = this._stream.Length / SectorSize;
+    if (totalSectors < 34 + GptReservedSectors)
+      throw new InvalidOperationException(
+        $"Stream too small for GPT layout ({this._stream.Length} bytes); need at least {(34 + GptReservedSectors) * SectorSize}.");
+
     var entrySize = (int)this._gptEntrySize;
     var entryCount = (int)this._gptEntryCount;
     var entryArrayBytes = entrySize * entryCount;
-    var entrySectors = this.GptEntrySectors;
-    var reservedSectors = entrySectors + 1;
-    var firstUsable = 2 + entrySectors;
-    var lastUsable = totalSectors - reservedSectors - 1;
-    if (lastUsable < firstUsable)
-      throw new InvalidOperationException(
-        $"Stream too small for GPT layout ({this._stream.Length} bytes); need more than {(firstUsable + reservedSectors) * this._sectorSize}.");
 
     // Build entry array.
     var entriesBuf = new byte[entryArrayBytes];
@@ -1069,34 +934,35 @@ public sealed class PartitionEditor {
       var e = this._entries[i];
       var slot = entriesBuf.AsSpan(i * entrySize, entrySize);
       var typeGuid = Guid.TryParse(e.TypeCode, out var g) ? g : Guid.Empty;
-      var known = this._gptRawSlots.TryGetValue(e.StartOffset, out var raw) && raw.Length == entrySize;
-      if (known) raw.CopyTo(slot);
       WriteMixedEndianGuid(slot, typeGuid);
-      if (!known) WriteMixedEndianGuid(slot[16..], DeriveUniqueGuid(i, e.StartOffset));
-      var firstLba = (ulong)(e.StartOffset / this._sectorSize);
-      var lastLba = (ulong)((e.StartOffset + e.Size) / this._sectorSize - 1);
+      WriteMixedEndianGuid(slot[16..], DeriveUniqueGuid(i, e.StartOffset));
+      var firstLba = (ulong)(e.StartOffset / SectorSize);
+      var lastLba = (ulong)((e.StartOffset + e.Size) / SectorSize - 1);
       BinaryPrimitives.WriteUInt64LittleEndian(slot[32..], firstLba);
       BinaryPrimitives.WriteUInt64LittleEndian(slot[40..], lastLba);
-      var attributes = known ? BinaryPrimitives.ReadUInt64LittleEndian(slot[48..]) & ~0x04UL : 0UL;
-      BinaryPrimitives.WriteUInt64LittleEndian(slot[48..], attributes | (e.IsActive ? 0x04UL : 0UL));
+      BinaryPrimitives.WriteUInt64LittleEndian(slot[48..], e.IsActive ? 0x04UL : 0UL);
+      var name = e.Name ?? string.Empty;
+      var nameBytes = Encoding.Unicode.GetBytes(name);
       var nameMax = Math.Min(72, entrySize - 56);
       if (nameMax > 0) {
-        slot.Slice(56, nameMax).Clear();
-        var nameBytes = Encoding.Unicode.GetBytes(e.Name ?? string.Empty);
-        nameBytes.AsSpan(0, Math.Min(nameMax, nameBytes.Length) & ~1).CopyTo(slot[56..]);
+        var copyLen = Math.Min(nameMax, nameBytes.Length);
+        nameBytes.AsSpan(0, copyLen).CopyTo(slot[56..]);
       }
     }
 
     var entriesCrc = Crc32.Compute(entriesBuf);
-    var diskGuid = this._gptDiskGuid ??= this.DeriveDiskGuid();
+
+    // Number of sectors needed for the entry array.
+    var entrySectors = (entryArrayBytes + SectorSize - 1) / SectorSize;
+    var reservedSectors = Math.Max(GptReservedSectors, entrySectors + 1);
 
     // Primary header at LBA 1.
     var primaryHeader = BuildGptHeader(
       myLba: 1,
       altLba: (ulong)(totalSectors - 1),
-      firstUsableLba: (ulong)firstUsable,
-      lastUsableLba: (ulong)lastUsable,
-      diskGuid: diskGuid,
+      firstUsableLba: (ulong)(2 + entrySectors),
+      lastUsableLba: (ulong)(totalSectors - reservedSectors),
+      diskGuid: this.DeriveDiskGuid(),
       entriesLba: 2,
       entriesCrc: entriesCrc,
       entryCount: entryCount,
@@ -1106,9 +972,9 @@ public sealed class PartitionEditor {
     var backupHeader = BuildGptHeader(
       myLba: (ulong)(totalSectors - 1),
       altLba: 1,
-      firstUsableLba: (ulong)firstUsable,
-      lastUsableLba: (ulong)lastUsable,
-      diskGuid: diskGuid,
+      firstUsableLba: (ulong)(2 + entrySectors),
+      lastUsableLba: (ulong)(totalSectors - reservedSectors),
+      diskGuid: this.DeriveDiskGuid(),
       entriesLba: backupEntriesLba,
       entriesCrc: entriesCrc,
       entryCount: entryCount,
@@ -1117,39 +983,23 @@ public sealed class PartitionEditor {
     // Protective MBR at LBA 0.
     this.WriteProtectiveMbr(totalSectors);
 
-    var headerSector = new byte[this._sectorSize];
+    var headerSector = new byte[SectorSize];
     primaryHeader.CopyTo(headerSector, 0);
-    this._stream.Position = this._sectorSize;
+    this._stream.Position = SectorSize;
     this._stream.Write(headerSector);
 
-    this._stream.Position = 2L * this._sectorSize;
+    this._stream.Position = 2L * SectorSize;
     this._stream.Write(entriesBuf);
 
-    this._stream.Position = (long)backupEntriesLba * this._sectorSize;
+    this._stream.Position = (long)backupEntriesLba * SectorSize;
     this._stream.Write(entriesBuf);
 
     Array.Clear(headerSector);
     backupHeader.CopyTo(headerSector, 0);
-    this._stream.Position = (totalSectors - 1) * this._sectorSize;
+    this._stream.Position = (totalSectors - 1) * SectorSize;
     this._stream.Write(headerSector);
 
     this._stream.Flush();
-    this.CaptureGptSlots(entriesBuf);
-  }
-
-  /// <summary>Raw entry-array slots by partition start, so a rewrite keeps unique GUIDs and attributes.</summary>
-  private readonly Dictionary<long, byte[]> _gptRawSlots = [];
-
-  private void CaptureGptSlots(ReadOnlySpan<byte> entryArray) {
-    this._gptRawSlots.Clear();
-    var size = (int)this._gptEntrySize;
-    for (var i = 0; (i + 1) * size <= entryArray.Length; ++i) {
-      var slot = entryArray.Slice(i * size, size);
-      if (slot[..16].IndexOfAnyExcept((byte)0) < 0) continue;
-      var firstLba = BinaryPrimitives.ReadUInt64LittleEndian(slot[32..]);
-      if (firstLba > (ulong)(long.MaxValue / this._sectorSize)) continue;
-      this._gptRawSlots[(long)firstLba * this._sectorSize] = slot.ToArray();
-    }
   }
 
   private void WriteProtectiveMbr(long totalSectors) {
@@ -1242,7 +1092,7 @@ public sealed class PartitionEditor {
     var container = this.FindExtendedContainer();
     if (container is not null) {
       foreach (var logical in this._entries.Where(p => p.Source == "EBR")) {
-        if (logical.StartOffset < container.StartOffset + this._sectorSize)
+        if (logical.StartOffset < container.StartOffset + SectorSize)
           issues.Add($"Logical #{logical.Index} starts before container_start + 1 sector.");
         if (logical.StartOffset + logical.Size > container.StartOffset + container.Size)
           issues.Add($"Logical #{logical.Index} data extends past extended container end.");
@@ -1251,24 +1101,14 @@ public sealed class PartitionEditor {
   }
 
   private void VerifyGpt(List<string> issues) {
-    if (this.GptLastUsableLba < this.GptFirstUsableLba) {
+    if (this._stream.Length < (34 + GptReservedSectors) * SectorSize) {
       issues.Add("Stream too small to hold primary + backup GPT.");
       return;
     }
 
-    var (usableStart, usableEnd) = this.UsableRange;
-    var ordered = this._entries.OrderBy(e => e.StartOffset).ToList();
-    for (var i = 0; i < ordered.Count; ++i) {
-      var e = ordered[i];
-      if (e.StartOffset < usableStart || e.StartOffset + e.Size > usableEnd)
-        issues.Add($"Partition #{e.Index} [{e.StartOffset}..{e.StartOffset + e.Size}) lies outside the usable range [{usableStart}..{usableEnd}).");
-      if (i > 0 && ordered[i - 1].StartOffset + ordered[i - 1].Size > e.StartOffset)
-        issues.Add($"Partition #{ordered[i - 1].Index} overlaps partition #{e.Index}.");
-    }
-
     // Primary header.
-    this._stream.Position = (long)GptHeaderLba * this._sectorSize;
-    var headerSector = new byte[this._sectorSize];
+    this._stream.Position = (long)GptHeaderLba * SectorSize;
+    var headerSector = new byte[SectorSize];
     this._stream.ReadExactly(headerSector);
     var primaryOk = VerifyGptHeader(headerSector, isPrimary: true, expectedMyLba: 1, issues, out var entriesLba, out var entryCount, out var entrySize, out var entriesCrc);
 
@@ -1278,7 +1118,7 @@ public sealed class PartitionEditor {
         issues.Add($"GPT entry array size {entryBytes} out of range.");
       } else {
         var buf = new byte[entryBytes];
-        this._stream.Position = (long)entriesLba * this._sectorSize;
+        this._stream.Position = (long)entriesLba * SectorSize;
         this._stream.ReadExactly(buf);
         var crc = Crc32.Compute(buf);
         if (crc != entriesCrc)
@@ -1287,9 +1127,9 @@ public sealed class PartitionEditor {
     }
 
     // Backup header.
-    var totalSectors = this._stream.Length / this._sectorSize;
-    this._stream.Position = (totalSectors - 1) * this._sectorSize;
-    var backupSector = new byte[this._sectorSize];
+    var totalSectors = this._stream.Length / SectorSize;
+    this._stream.Position = (totalSectors - 1) * SectorSize;
+    var backupSector = new byte[SectorSize];
     this._stream.ReadExactly(backupSector);
     var backupOk = VerifyGptHeader(backupSector, isPrimary: false, expectedMyLba: (ulong)(totalSectors - 1), issues,
       out var backupEntriesLba, out var backupEntryCount, out var backupEntrySize, out var backupEntriesCrc);
@@ -1298,7 +1138,7 @@ public sealed class PartitionEditor {
       var entryBytes = (long)backupEntryCount * backupEntrySize;
       if (entryBytes > 0 && entryBytes <= int.MaxValue) {
         var buf = new byte[entryBytes];
-        this._stream.Position = (long)backupEntriesLba * this._sectorSize;
+        this._stream.Position = (long)backupEntriesLba * SectorSize;
         this._stream.ReadExactly(buf);
         var crc = Crc32.Compute(buf);
         if (crc != backupEntriesCrc)
@@ -1326,7 +1166,7 @@ public sealed class PartitionEditor {
       return false;
     }
     var headerSize = BinaryPrimitives.ReadUInt32LittleEndian(sector.AsSpan(12));
-    if (headerSize < GptHeaderSize || headerSize > sector.Length) {
+    if (headerSize < GptHeaderSize || headerSize > SectorSize) {
       issues.Add($"{label} GPT header size {headerSize} out of range.");
       return false;
     }

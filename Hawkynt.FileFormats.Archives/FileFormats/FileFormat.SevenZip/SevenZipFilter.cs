@@ -33,8 +33,4 @@ public enum SevenZipFilter {
 
   /// <summary>BCJ2 x86 filter with 4 sub-streams (codec 0x0303011B).</summary>
   Bcj2 = 9,
-  /// <summary>SWAP2 filter, byte-swaps each 16-bit group (codec 0x020302).</summary>
-  Swap2 = 10,
-  /// <summary>SWAP4 filter, byte-reverses each 32-bit group (codec 0x020304).</summary>
-  Swap4 = 11,
 }

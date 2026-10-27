@@ -384,7 +384,6 @@ Decompresses data in the DEFLATE format (RFC 1951).
 | --- | --- | --- |
 | `DeflateDecompressor` | `DeflateDecompressor(Stream input)` | Initializes a new `DeflateDecompressor` for streaming decompression. |
 | `IsFinished` | `bool IsFinished { get; }` | Gets a value indicating whether the final block has been decoded. |
-| `StoredBlocksOmitComplement` | `bool StoredBlocksOmitComplement { get; set; }` | Gets or sets a value indicating whether stored blocks carry only LEN and no NLEN. |
 | `UnconsumedBytes` | `int UnconsumedBytes { get; }` | Gets the number of whole bytes read from the underlying stream but not consumed by the DEFLATE data. Once the stream has ended on a seekable input this is zero, because the read-ahead has already been handed back by seeking. |
 | `DecompressAll` | `byte[] DecompressAll()` | Decompresses all data from the stream. |
 | `Decompress` | `int Decompress(Span<byte> output)` | Decompresses data into `output`, filling it unless the DEFLATE stream ends first. |
@@ -469,23 +468,11 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Dictionary.Ace`
 
-[`AceBlowfish`](#aceblowfish) · [`AceBuildingBlock`](#acebuildingblock) · [`AceCompressor`](#acecompressor) · [`AceConstants`](#aceconstants) · [`AceDecompressor`](#acedecompressor)
-
-#### `AceBlowfish`
-
-ACE's password encryption: Blowfish in CBC mode (zero IV, continued across calls) on little-endian 32-bit halves, keyed by one SHA-1 compression of the password with ACE's non-standard padding.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `AceBlowfish` | `AceBlowfish(ReadOnlySpan<byte> password)` | Keys the cipher with raw password bytes. |
-| `AceBlowfish` | `AceBlowfish(string password)` | Keys the cipher with a UTF-8 password. |
-| `Decrypt` | `void Decrypt(Span<byte> data)` | Decrypts whole 8-byte blocks in place, chaining from the previous call. |
-| `DeriveKey` | `static uint[] DeriveKey(ReadOnlySpan<byte> password)` | The five SHA-1 state words ACE derives from a password (truncated to 50 bytes). |
-| `Encrypt` | `void Encrypt(Span<byte> data)` | Encrypts whole 8-byte blocks in place, chaining from the previous call. |
+[`AceBuildingBlock`](#acebuildingblock) · [`AceConstants`](#aceconstants) · [`AceDecoder`](#acedecoder) · [`AceEncoder`](#aceencoder) · [`AcePicFilter`](#acepicfilter) · [`AceSoundFilter`](#acesoundfilter)
 
 #### `AceBuildingBlock`
 
-The ACE 1.0 LZ77 codec (the bit stream of an ACE compression-type-1 member) as a building block. A 4-byte little-endian length and the dictionary-bits byte precede the stream so it round-trips.
+Exposes the ACE compression algorithm as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support.
 
 Implements `IBuildingBlock`.
 
@@ -499,39 +486,67 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-#### `AceCompressor`
-
-Writes ACE 1.0 LZ77 streams (compression type 1) that `AceDecompressor` and the reference decoders read: literals and explicit-distance matches over two block-wise Huffman trees. One instance per archive; with `solid` the dictionary carries over between members exactly as the decoder's does.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `AceCompressor` | `AceCompressor(int dictionaryBits = 20, bool solid = false)` | Creates a compressor with a dictionary of 2^`dictionaryBits` bytes. |
-| `DictionaryBits` | `int DictionaryBits { get; }` | Dictionary size in bits (what the file header's parameter field records). |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses one member. |
-| `RegisterStored` | `void RegisterStored(ReadOnlySpan<byte> data)` | Tells a solid compressor about a member that was stored rather than compressed: the decoder adds stored bytes to its dictionary too. |
-
 #### `AceConstants`
 
-Constants of ACE 1.0 / 2.0 compression (values per the ACE technical notes and acefile).
+Constants for the ACE compression algorithm.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompAce10` | `const int CompAce10` | Compression type: ACE 1.0 LZ77. |
-| `CompAce20` | `const int CompAce20` | Compression type: ACE 2.0 blocked (LZ77, delta, exe, sound and picture modes). |
-| `CompStore` | `const int CompStore` | Compression type: stored. |
-| `DefaultDictBits` | `const int DefaultDictBits` | Dictionary size the writer uses unless told otherwise, in bits. |
-| `MaxDictBits` | `const int MaxDictBits` | Largest dictionary, in bits. |
-| `MinDictBits` | `const int MinDictBits` | Smallest dictionary, in bits. |
+| `CompAce10` | `const int CompAce10` | Compression type: ACE 1.0 (LZ77 + Huffman). |
+| `CompAce20` | `const int CompAce20` | Compression type: ACE 2.0 (blocked, multiple sub-modes). |
+| `CompStore` | `const int CompStore` | Compression type: stored (no compression). |
+| `DefaultDictBits` | `const int DefaultDictBits` | Default dictionary bits. |
+| `LenSymbols` | `const int LenSymbols` | Length tree: 255 symbols for extended match lengths. |
+| `LengthBase` | `static readonly int[] LengthBase` | Match length bases for symbols 257-283. |
+| `LengthExtra` | `static readonly int[] LengthExtra` | Extra bits for match length symbols 257-283. |
+| `MainSymbols` | `const int MainSymbols` | Main Huffman tree: 284 symbols (256 literals + 28 length codes). |
+| `MaxDictBits` | `const int MaxDictBits` | Maximum dictionary bits. |
+| `MinDictBits` | `const int MinDictBits` | Minimum dictionary bits. |
+| `NumRepOffsets` | `const int NumRepOffsets` | Number of repeated offsets maintained. |
+| `SymbolEndOfBlock` | `const int SymbolEndOfBlock` | Symbol 256: end of block marker. |
+| `SymbolMatchBase` | `const int SymbolMatchBase` | Symbol range 257-282: match length base codes (length 2..28+). |
+| `SymbolModeSwitch` | `const int SymbolModeSwitch` | Symbol 283: ACE 2.0 mode switch marker. |
 
-#### `AceDecompressor`
+#### `AceDecoder`
 
-Decompresses ACE members. One instance serves a whole archive: the LZ77 dictionary carries over from member to member, which is what solid archives rely on (members must then be decoded in order).
+Decodes ACE 1.0 and 2.0 compressed data (LZ77 + dual Huffman trees). Instance-based: the sliding window and repeat offsets persist across calls for solid archive support. ACE 2.0 adds blocked sub-modes: LZ77, EXE (E8/E9), DELTA, SOUND, PIC.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AceDecompressor` | `AceDecompressor()` |  |
-| `DecompressComment` | `static byte[] DecompressComment(ReadOnlySpan<byte> packed)` | Decodes an archive or file comment: a 15-bit length, one LZ77-sized Huffman tree, then literals and copies whose source is found through a hash of the two preceding bytes. |
-| `Decompress` | `byte[] Decompress(ReadOnlyMemory<byte> packed, long size, int compressionType, int dictionaryBits)` | Decodes one member of `size` bytes compressed with `compressionType`. |
+| `AceDecoder` | `AceDecoder(int dictBits = 15)` | Initializes a new `AceDecoder` with the specified dictionary size. |
+| `DecodeBlock` | `static byte[] DecodeBlock(ReadOnlySpan<byte> compressed, int originalSize, int dictBits = 15, int compressionType = 1)` | Static convenience method for non-solid decoding (creates a fresh decoder). |
+| `DecodeBlock` | `static byte[] DecodeBlock(byte[] compressed, int originalSize, int dictBits = 15, int compressionType = 1)` | Static convenience method for non-solid decoding (creates a fresh decoder). |
+| `Decode` | `byte[] Decode(byte[] compressed, int originalSize, int compressionType = 1)` | Decompresses ACE data, preserving window state for subsequent solid calls. |
+
+#### `AceEncoder`
+
+Encodes data using ACE 1.0 or 2.0 compression (LZ77 + dual Huffman trees). Instance-based: the sliding window persists across calls for solid archive support. ACE 2.0 adds sub-mode switching: LZ77, EXE, DELTA, SOUND, PIC.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AceEncoder` | `AceEncoder(int dictBits = 15)` | Initializes a new `AceEncoder` with the specified dictionary size. |
+| `Encode20` | `byte[] Encode20(ReadOnlySpan<byte> data, int subMode = 0, int soundChannels = 1, int picWidth = 0, int picBytesPerPixel = 3)` | Compresses data using ACE 2.0 with a specified sub-mode applied as a preprocessing transform. |
+| `EncodeBlock20` | `static byte[] EncodeBlock20(ReadOnlySpan<byte> data, int dictBits = 15, int subMode = 0, int soundChannels = 1, int picWidth = 0, int picBytesPerPixel = 3)` | Static convenience method for non-solid ACE 2.0 encoding. |
+| `EncodeBlock` | `static byte[] EncodeBlock(ReadOnlySpan<byte> data, int dictBits = 15)` | Static convenience method for non-solid encoding (creates a fresh encoder). |
+| `Encode` | `byte[] Encode(ReadOnlySpan<byte> data)` | Compresses data using the ACE 1.0 algorithm, preserving window state for subsequent solid calls. |
+
+#### `AcePicFilter`
+
+ACE 2.0 PIC sub-mode filter. Decorrelates image data using Paeth-style prediction based on left and above neighbor bytes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data, int stride = 0)` | Inverse transform: reconstructs pixels from prediction residuals. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int stride = 0)` | Forward transform: converts pixels to prediction residuals. |
+
+#### `AceSoundFilter`
+
+ACE 2.0 SOUND sub-mode filter. Decorrelates audio data using adaptive linear prediction with LMS weight updates.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data, int channels = 1)` | Inverse transform: reconstructs audio samples from prediction residuals. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int channels = 1)` | Forward transform: converts audio samples to prediction residuals. |
 
 ### Namespace `Compression.Core.Dictionary.Aplib`
 
@@ -1021,28 +1036,6 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-### Namespace `Compression.Core.Dictionary.KwajLzh`
-
-[`KwajLzhBuildingBlock`](#kwajlzhbuildingblock)
-
-#### `KwajLzhBuildingBlock`
-
-KWAJ method 3 ("LZ + Huffman"), the strongest mode of Microsoft's MS-DOS `COMPRESS.EXE -Z`: LZSS over a 4 KiB ring with five canonical Huffman tables.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `KwajLzhBuildingBlock` | `KwajLzhBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes a raw KWAJ method-3 stream (the bytes after the KWAJ header). |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes `data` as a raw KWAJ method-3 stream. |
-
 ### Namespace `Compression.Core.Dictionary.Lizard`
 
 [`LizardBuildingBlock`](#lizardbuildingblock)
@@ -1082,7 +1075,6 @@ Decompresses data in the LZ4 block format.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DecompressAfterPrefix` | `static int DecompressAfterPrefix(ReadOnlySpan<byte> source, Span<byte> window, int prefixLength)` | Decompresses a block whose matches may reach back into history: `window` holds `prefixLength` bytes of already-decoded output (the linked-block dictionary of the LZ4 frame format) followed by room for this block. Returns the bytes written after the prefix. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> source, int originalSize)` | Decompresses an LZ4-compressed block. |
 | `Decompress` | `static int Decompress(ReadOnlySpan<byte> source, Span<byte> dest)` | Decompresses into a destination buffer, returning bytes written. |
 
@@ -3342,26 +3334,6 @@ SQX multimedia compressor/decompressor using delta coders (E0-E4) and arithmetic
 | `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decompresses multimedia data. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Compresses multimedia data using automatic delta order selection + arithmetic coding. |
 
-### Namespace `Compression.Core.Dictionary.StackerSd4`
-
-[`StackerSd4BuildingBlock`](#stackersd4buildingblock)
-
-#### `StackerSd4BuildingBlock`
-
-Stacker 4's SD-4 codec as a raw primitive: LZ77 over a 2720-byte window, Huffman-coded with a run-length coded code table (`docs/CVF-CODECS-ON-DISK.md`). The building-block wrapper stores the uncompressed size (32-bit little-endian) before one SD-4 stream covering the whole input.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `StackerSd4BuildingBlock` | `StackerSd4BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
 ### Namespace `Compression.Core.Dictionary.SuffixTree`
 
 [`SuffixTreeBuildingBlock`](#suffixtreebuildingblock)
@@ -3636,16 +3608,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.DiskImage`
 
-[`AmigaRdbParser`](#amigardbparser) · [`ApmParser`](#apmparser) · [`BsdDisklabelParser`](#bsddisklabelparser) · [`ClusterAllocator`](#clusterallocator) · [`DeferredPayloads`](#deferredpayloads) · [`ExtBlockGroupGeometry`](#extblockgroupgeometry) · [`ExtBlockGroupGeometry.ExtGeometry`](#extblockgroupgeometryextgeometry) · [`ExtentCopy`](#extentcopy) · [`FilePayload`](#filepayload) · [`GptParser`](#gptparser) · [`GptParser.HeaderInfo`](#gptparserheaderinfo) · [`ImageAccessor`](#imageaccessor) · [`MbrParser`](#mbrparser) · [`MbrWrapper`](#mbrwrapper) · [`MbrWrapper.PartitionType`](#mbrwrapperpartitiontype) · [`PartitionEditor`](#partitioneditor) · [`PartitionEntry`](#partitionentry) · [`PartitionScheme`](#partitionscheme) · [`PartitionTableDetector`](#partitiontabledetector) · [`PartitionTableDetector.DetectionResult`](#partitiontabledetectordetectionresult) · [`PartitionTableVerification`](#partitiontableverification) · [`PartitionType`](#partitiontype) · [`PartitionTypeDatabase`](#partitiontypedatabase) · [`PartitionTypeMapping`](#partitiontypemapping) · [`PartitionWindowStream`](#partitionwindowstream) · [`PartitionedDiskLister`](#partitioneddisklister) · [`PartitionedDiskLister.PartitionTarget`](#partitioneddisklisterpartitiontarget) · [`SgiDvhParser`](#sgidvhparser) · [`SparseBlockImage`](#sparseblockimage) · [`StagedWindowStream`](#stagedwindowstream) · [`SunVtocParser`](#sunvtocparser)
-
-#### `AmigaRdbParser`
-
-Parses the Amiga Rigid Disk Block (RDB) partition scheme. Big-endian throughout.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `IsRdb` | `static bool IsRdb(Stream disk)` | Reports whether a checksummed `RDSK` block sits in the first 16 blocks. |
-| `Parse` | `static List<PartitionEntry> Parse(Stream disk)` | Parses every partition the RDB's `PART` chain describes. |
+[`ApmParser`](#apmparser) · [`BsdDisklabelParser`](#bsddisklabelparser) · [`ClusterAllocator`](#clusterallocator) · [`DeferredPayloads`](#deferredpayloads) · [`ExtBlockGroupGeometry`](#extblockgroupgeometry) · [`ExtBlockGroupGeometry.ExtGeometry`](#extblockgroupgeometryextgeometry) · [`ExtentCopy`](#extentcopy) · [`FilePayload`](#filepayload) · [`GptParser`](#gptparser) · [`ImageAccessor`](#imageaccessor) · [`MbrParser`](#mbrparser) · [`MbrWrapper`](#mbrwrapper) · [`MbrWrapper.PartitionType`](#mbrwrapperpartitiontype) · [`PartitionEditor`](#partitioneditor) · [`PartitionEntry`](#partitionentry) · [`PartitionScheme`](#partitionscheme) · [`PartitionTableDetector`](#partitiontabledetector) · [`PartitionTableDetector.DetectionResult`](#partitiontabledetectordetectionresult) · [`PartitionTableVerification`](#partitiontableverification) · [`PartitionType`](#partitiontype) · [`PartitionTypeDatabase`](#partitiontypedatabase) · [`PartitionTypeMapping`](#partitiontypemapping) · [`PartitionWindowStream`](#partitionwindowstream) · [`PartitionedDiskLister`](#partitioneddisklister) · [`SparseBlockImage`](#sparseblockimage)
 
 #### `ApmParser`
 
@@ -3663,7 +3626,6 @@ Parses the 4.4BSD `disklabel` that FreeBSD/NetBSD/OpenBSD write into a BSD slice
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `IsDisklabel` | `static bool IsDisklabel(Stream slice)` | Reports whether a BSD disklabel magic is present at either candidate offset within the given slice stream. |
-| `IsStandaloneDisklabel` | `static bool IsStandaloneDisklabel(Stream disk)` | Reports whether `disk` carries a disklabel that stands on its own — no MBR slice around it, as a "dangerously dedicated" FreeBSD disk or a NetBSD/OpenBSD disk on a non-PC port writes it. With nothing else vouching for the bytes the label must prove itself structurally: `d_magic` and `d_magic2` both present 132 bytes apart, a sector size that is a power of two in [512, 8192], a partition count within `MAXPARTITIONS`, and every used partition starting inside the disk. |
 | `Parse` | `static List<PartitionEntry> Parse(Stream slice, long sliceStartByteOffset = 0)` | Parses the BSD disklabel contained in `slice` and returns its filesystem partitions. |
 
 #### `ClusterAllocator`
@@ -3753,39 +3715,13 @@ Implements `IEquatable<FilePayload>`.
 
 #### `GptParser`
 
-Parses GPT (GUID Partition Table) headers and partition entries.
+Parses GPT (GUID Partition Table) headers and partition entries. GPT header is at LBA 1 (offset 512 for 512-byte sectors), with partition entries starting at LBA 2+.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ProbeBytes` | `const int ProbeBytes` | Bytes of the image needed to see LBA 1 at every supported block size. |
-| `SupportedSectorSizes` | `static IReadOnlyList<int> SupportedSectorSizes { get; }` | Logical block sizes probed for the header at LBA 1, in probe order. |
-| `DetectSectorSize` | `static int DetectSectorSize(ReadOnlySpan<byte> data)` | The logical block size for which LBA 1 holds a valid GPT header, or 0 when none does. |
-| `HasValidHeader` | `static bool HasValidHeader(ReadOnlySpan<byte> data)` | Checks that LBA 1 holds a GPT header that is internally consistent, not merely the "EFI PART" signature, at any supported block size: see `HasValidHeader`. |
-| `HasValidHeader` | `static bool HasValidHeader(ReadOnlySpan<byte> data, int sectorSize)` | Checks that LBA 1, counted in `sectorSize`-byte blocks, holds a GPT header that is internally consistent: the header size lies in [92, block size], the header's own CRC32 matches (computed with the CRC field zeroed, UEFI 2.10 §5.3.2), it names itself as LBA 1 and its partition entries are 128 x 2^n bytes each, as the specification requires. |
-| `IsGpt` | `static bool IsGpt(ReadOnlySpan<byte> data)` | Checks whether LBA 1 carries the "EFI PART" signature at any supported block size. |
-| `Parse` | `static List<PartitionEntry> Parse(Stream diskData)` | Parses all partitions from a GPT disk image, at whichever block size its header validates. |
-| `Parse` | `static List<PartitionEntry> Parse(Stream diskData, out HeaderInfo info)` | Parses all partitions and reports the header that described them. |
-| `ReadHeader` | `static HeaderInfo ReadHeader(Stream diskData)` | The partition table's layout facts, or `null` when the image carries no usable GPT. Uses the same header `Parse` would. |
-
-#### `GptParser.HeaderInfo`
-
-Layout facts read from the header that was used to parse the table.
-
-Implements `IEquatable<HeaderInfo>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `HeaderInfo` | `HeaderInfo(int SectorSize, ulong MyLba, ulong AlternateLba, ulong FirstUsableLba, ulong LastUsableLba, Guid DiskGuid, ulong EntriesLba, uint EntryCount, uint EntrySize, bool FromBackup)` | Layout facts read from the header that was used to parse the table. |
-| `AlternateLba` | `ulong AlternateLba { get; init; }` | The LBA of the other header. |
-| `DiskGuid` | `Guid DiskGuid { get; init; }` | The disk GUID. |
-| `EntriesLba` | `ulong EntriesLba { get; init; }` | Starting LBA of the entry array the used header points at. |
-| `EntryCount` | `uint EntryCount { get; init; }` | Number of entries in the array. |
-| `EntrySize` | `uint EntrySize { get; init; }` | Size of one entry in bytes. |
-| `FirstUsableLba` | `ulong FirstUsableLba { get; init; }` | First LBA a partition may occupy. |
-| `FromBackup` | `bool FromBackup { get; init; }` | `true` when the primary was unusable and the backup was read. |
-| `LastUsableLba` | `ulong LastUsableLba { get; init; }` | Last LBA a partition may occupy. |
-| `MyLba` | `ulong MyLba { get; init; }` | The LBA the used header sits at (1 for the primary). |
-| `SectorSize` | `int SectorSize { get; init; }` | Logical block size every LBA is counted in. |
+| `HasValidHeader` | `static bool HasValidHeader(ReadOnlySpan<byte> data)` | Checks that LBA 1 holds a GPT header that is internally consistent, not merely the "EFI PART" signature: the header size lies in [92, 512], the header's own CRC32 matches (computed with the CRC field zeroed, UEFI 2.10 §5.3.2), it names itself as LBA 1 and its partition entries are 128 x 2^n bytes each, as the specification requires. |
+| `IsGpt` | `static bool IsGpt(ReadOnlySpan<byte> data)` | Checks whether the given data contains a valid GPT header at LBA 1. |
+| `Parse` | `static List<PartitionEntry> Parse(Stream diskData)` | Parses all partitions from a GPT disk image. |
 
 #### `ImageAccessor`
 
@@ -3812,14 +3748,14 @@ Implements `IDisposable`.
 
 #### `MbrParser`
 
-Parses MBR (Master Boot Record) partition tables, including extended/logical partition chains. The MBR sits at LBA 0 (offset 0) of a disk image, with 4 primary partition entries at offset 0x1BE. The entries count in logical blocks: 512 bytes on a classic or 512e disk, 4096 on a 4Kn disk.
+Parses MBR (Master Boot Record) partition tables, including extended/logical partition chains. The MBR sits at LBA 0 (offset 0) of a disk image, with 4 primary partition entries at offset 0x1BE.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `HasValidPartitionTable` | `static bool HasValidPartitionTable(ReadOnlySpan<byte> sector0, long diskLength, int sectorSize = 512)` | Checks whether sector 0 holds a partition table that is actually usable, rather than merely ending in the 0x55AA boot signature — which every FAT, NTFS and exFAT volume boot record does as well. |
+| `HasValidPartitionTable` | `static bool HasValidPartitionTable(ReadOnlySpan<byte> sector0, long diskLength)` | Checks whether sector 0 holds a partition table that is actually usable, rather than merely ending in the 0x55AA boot signature — which every FAT, NTFS and exFAT volume boot record does as well. |
 | `IsMbr` | `static bool IsMbr(ReadOnlySpan<byte> data)` | Checks whether the given data starts with a valid MBR. |
-| `ParsePrimary` | `static List<PartitionEntry> ParsePrimary(ReadOnlySpan<byte> mbr, int sectorSize = 512)` | Parses the 4 primary partition entries from an MBR without following extended chains. Operates on a 512-byte buffer (no stream needed). |
-| `Parse` | `static List<PartitionEntry> Parse(Stream diskData, int sectorSize = 512)` | Parses all partitions from an MBR, including extended/logical partitions. |
+| `ParsePrimary` | `static List<PartitionEntry> ParsePrimary(ReadOnlySpan<byte> mbr)` | Parses the 4 primary partition entries from an MBR without following extended chains. Operates on a 512-byte buffer (no stream needed). |
+| `Parse` | `static List<PartitionEntry> Parse(Stream diskData)` | Parses all partitions from an MBR, including extended/logical partitions. |
 
 #### `MbrWrapper`
 
@@ -3851,20 +3787,15 @@ Read/write partition-table editor for raw disk images. Handles MBR (4 primary en
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PartitionEditor` | `PartitionEditor(Stream stream)` | Opens an editor over the given disk-image stream. The stream must be readable, writable, and seekable. The scheme (MBR/GPT/None) is auto-detected from the on-disk signature. |
-| `PartitionEditor` | `PartitionEditor(Stream stream, int sectorSize)` | Opens an editor over the given disk-image stream, counting LBAs in `sectorSize`-byte blocks unless a GPT on the disk validates at another supported block size — the table on the disk decides, since rewriting it at a different size would move every partition. |
-| `SectorSize` | `const int SectorSize` | The classic logical block size, and the one a disk without a GPT is assumed to use unless the caller says otherwise. A 4Kn GPT disk is edited in 4096-byte blocks: see `LogicalSectorSize`. |
+| `SectorSize` | `const int SectorSize` | Standard sector size used by the editor. |
 | `InPlaceFilesystemConverter` | `static Func<Stream, string, string, bool> InPlaceFilesystemConverter { get; set; }` | Pluggable in-place filesystem-variant converter. Set by the higher-level `Compression.Lib` layer at startup (it can reference the per-family FileSystem.* projects, which Core cannot). When non-null, `ConvertFilesystem` attempts a metadata-only conversion via this delegate before falling back to `false`. Contract: takes (partitionStream, sourceFsId, targetFsId), returns `true` if the conversion succeeded entirely via metadata edits, `false` if no in-place path exists for the pair (the caller should then do a full migration: extract files → FormatPartition → re-import). |
 | `InPlaceFilesystemResizer` | `static Func<Stream, string, long, bool, bool> InPlaceFilesystemResizer { get; set; }` | Pluggable in-place filesystem-resizer. Set by the higher-level `Compression.Lib` layer at startup (Core cannot reference FileSystem.* projects, so the actual resizer lives there). The contract is: (partitionStream, fsId, newSizeBytes, isShrink) → bool Returns `true` when the resize succeeded entirely via in-place edits, `false` when no in-place path exists for the fsId (the caller should fall back to a full extract → reformat → re-import). |
-| `LogicalSectorSize` | `int LogicalSectorSize { get; }` | The logical block size every LBA on this disk is counted in: the size at which the GPT header validated, or — for an MBR or blank disk — the size the editor was opened with. |
 | `Scheme` | `PartitionScheme Scheme { get; }` | Partition scheme currently in use on the disk image. |
-| `SupportedSectorSizes` | `static IReadOnlyList<int> SupportedSectorSizes { get; }` | Logical block sizes the editor supports. |
-| `UsableRange` | `ValueTuple<long, long> UsableRange { get; }` | The byte range partitions may occupy under the current scheme: everything after LBA 0 for MBR; between the primary and backup GPT structures for GPT. |
 | `AddLogicalPartition` | `void AddLogicalPartition(long startByteOffset, long lengthBytes, PartitionType type, string label)` | Adds a new logical partition inside the existing MBR extended container. The byte range must lie entirely within the extended container and not overlap any existing logical (each logical occupies its EBR sector plus the data range). |
 | `AddPartition` | `void AddPartition(long startByteOffset, long lengthBytes, PartitionType type, string label)` | Adds a new primary partition entry covering [`startByteOffset`, `startByteOffset` + `lengthBytes`). |
 | `ConvertFilesystem` | `bool ConvertFilesystem(int partitionIndex, string newFsId)` | Attempts an in-place filesystem-variant conversion of the partition at `partitionIndex`. Reads the partition's current contents as a substream, dispatches to `InPlaceFilesystemConverter` (set by the Compression.Lib bootstrap), and returns the converter's answer. Returns `false` when:No converter has been registered (Core-only build).The source/target pair has no metadata-only conversion path (e.g. FAT → ext, NTFS → exFAT — any cross-family conversion).The image geometry rules out the requested target (e.g. a tiny FAT12 floppy can't fit FAT32's 32-reserved-sector overhead). In any of these cases the caller is expected to fall back to a full extract → reformat → re-import migration. |
 | `ConvertGptToMbr` | `void ConvertGptToMbr()` | Reads the current GPT partition table, takes the first 4 entries (MBR hard limit), zero-fills both GPT header areas, and writes a fresh MBR with the translated entries. |
 | `ConvertMbrToGpt` | `void ConvertMbrToGpt()` | Reads the current MBR partition table, drops it, then rewrites the equivalent GPT layout: protective MBR at LBA 0, primary GPT header at LBA 1, entries starting at LBA 2, backup GPT at the end of the disk. Translates MBR type bytes to GPT GUIDs via `PartitionTypeMapping`. The extended container (if present) is dropped — its logical children are promoted to top-level GPT entries. |
-| `CreateEmpty` | `static PartitionEditor CreateEmpty(Stream stream, PartitionScheme scheme, int sectorSize = 512)` | Writes an empty partition table of `scheme` over the start (and, for GPT, the end) of `stream` and returns an editor over it. A GPT gets the standard 128 entries of 128 bytes, its backup at the last LBA and a protective MBR. |
 | `DeletePartition` | `void DeletePartition(int index)` | Deletes the partition at the given index. The partition byte range is not modified — see `PurgePartition` to zero it. |
 | `FormatPartition` | `void FormatPartition(int index, string formatId, FormatCreateOptions options)` | Writes a fresh filesystem image of the given `formatId` into the partition's byte range. The format must be registered with `FormatRegistry` and support `IArchiveCreatable`. The resulting bytes must fit within the partition (an exception is thrown otherwise). |
 | `ListPartitions` | `IReadOnlyList<PartitionEntry> ListPartitions()` | Returns a snapshot of the current partition table. |
@@ -3902,15 +3833,14 @@ Partition scheme detected on a disk image.
 
 #### `PartitionTableDetector`
 
-Detects and parses partition tables from raw disk data.
+Detects and parses partition tables from raw disk data. Tries GPT first (since GPT disks also have a protective MBR), then falls back to MBR.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Detect` | `static DetectionResult Detect(Stream diskData)` | Attempts to detect a partition table in the given stream. Returns an empty partition list if no valid partition table is found. |
+| `Detect` | `static DetectionResult Detect(Stream diskData)` | Attempts to detect a partition table in the given stream. Tries GPT first (higher precedence), then MBR. Returns an empty partition list if no valid partition table is found. |
 | `Detect` | `static DetectionResult Detect(byte[] diskData)` | Attempts to detect a partition table in the given byte array. Convenience overload that wraps the data in a `MemoryStream`. |
 | `ExtractPartitionData` | `static byte[] ExtractPartitionData(Stream diskData, PartitionEntry partition)` | Extracts partition data from a disk image stream. Returns the raw bytes of the partition at the given offset and size. |
 | `ExtractPartitionData` | `static byte[] ExtractPartitionData(byte[] diskData, PartitionEntry partition)` | Extracts partition data from a byte array. |
-| `HasSelfValidatingLabel` | `static bool HasSelfValidatingLabel(Stream disk)` | Whether the first sector holds a partition table of a scheme that has no MBR-style boot signature to go on — SGI, Sun, a stand-alone BSD disklabel or an Amiga RDB — each verified by its own checksum (BSD: by its two magics and geometry). Used by content detection, which has already ruled out GPT, MBR and APM by then. |
 
 #### `PartitionTableDetector.DetectionResult`
 
@@ -3920,8 +3850,7 @@ Result of partition table detection, including the scheme used and the discovere
 | --- | --- | --- |
 | `DetectionResult` | `DetectionResult()` |  |
 | `Partitions` | `List<PartitionEntry> Partitions { get; init; }` | Discovered partitions. Empty if no partition table was found. |
-| `Scheme` | `string Scheme { get; init; }` | The partition scheme detected: "GPT", "MBR", "APM", "BSD", "RDB", "Sun", "SGI", or "None". |
-| `SectorSize` | `int SectorSize { get; init; }` | Logical block size the table counts in (512 unless a 4Kn GPT was found). |
+| `Scheme` | `string Scheme { get; init; }` | The partition scheme detected: "GPT", "MBR", "APM", or "None". |
 
 #### `PartitionTableVerification`
 
@@ -4011,38 +3940,11 @@ Partition-aware archive surface for raw disk image streams (VHD/VHDX/VMDK/Qcow2/
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EnumerateTargets` | `static List<PartitionTarget> EnumerateTargets(Stream disk, DetectionResult detection)` | Every partition the listing shows a prefix for, in listing order: top-level partitions, with a BSD-disklabel container replaced by its slices. |
 | `Extract` | `static bool Extract(Stream disk, string outputDir, string password, string[] files)` | Extracts entries across every partition into per-partition subdirectories of `outputDir`. Returns `true` if a partition table was detected and handled; `false` if no partition table was found (caller falls through to the unpartitioned path). |
-| `HasNativeEditor` | `static bool HasNativeEditor(IArchiveModifiable modifier, string method)` | Whether `modifier` edits through its own code for `method` (`Add` or `Remove`) rather than the interface's generic extract → re-create default, which re-creates the volume and loses what its writer does not reproduce. |
 | `List` | `static List<ArchiveEntryInfo> List(Stream disk, string password)` | Lists entries across every partition. Returns `null` if no partition table is present so the caller can fall through to the unpartitioned path. |
 | `MakePartitionPrefix` | `static string MakePartitionPrefix(PartitionEntry part)` | The directory name a partition is listed under: `Partition{N}_{TypeName}`, with N one-based and the type name reduced to letters, digits, '-' and '_'. |
-| `Resolve` | `static PartitionTarget Resolve(IEnumerable<PartitionTarget> targets, string entryName, out string innerPath)` | Finds the partition an entry name addresses. `innerPath` is the rest of the name below the partition's prefix — empty when the name is the partition itself (`PartitionN_Type` or `PartitionN_Type.raw`). |
-| `TryAdd` | `static bool TryAdd(Stream disk, IReadOnlyList<ArchiveInputInfo> inputs)` | Partition-aware `Add`. Returns `false` when no partition table exists (or the stream is read-only) so the caller can fall through to its single-filesystem path. |
-| `TryRemove` | `static bool TryRemove(Stream disk, string[] entryNames)` | Partition-aware `Remove`. Returns `false` when no partition table exists (or the stream is read-only). Entry name shapes: `PartitionN_Type/inner` removes a file — or a folder with everything beneath it — through the partition filesystem's own in-place editor; `PartitionN_Type` or `PartitionN_Type.raw` deletes the partition's table entry (GPT and MBR, including logical partitions), leaving its sectors as they were. |
-
-#### `PartitionedDiskLister.PartitionTarget`
-
-One listed partition: a top-level partition, or a slice of a BSD disklabel nested inside one, with the prefix its entries are listed under.
-
-Implements `IEquatable<PartitionTarget>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `PartitionTarget` | `PartitionTarget(PartitionEntry Partition, string Prefix, long Offset, long Size, bool IsBsdSlice)` | One listed partition: a top-level partition, or a slice of a BSD disklabel nested inside one, with the prefix its entries are listed under. |
-| `IsBsdSlice` | `bool IsBsdSlice { get; init; }` | Whether this is a slice inside a BSD disklabel rather than a table entry. |
-| `Offset` | `long Offset { get; init; }` | Byte offset of the partition on the disk. |
-| `Partition` | `PartitionEntry Partition { get; init; }` | The table entry (for a BSD slice, the slice's own entry). |
-| `Prefix` | `string Prefix { get; init; }` | The listing prefix, e.g. `Partition1_FAT32` or `Partition1_FreeBSD/Partition1_4_2BSD`. |
-| `Size` | `long Size { get; init; }` | Bytes of the partition that lie inside the image. |
-
-#### `SgiDvhParser`
-
-Parses the SGI disk volume header (DVH) in sector 0 — the IRIX partition scheme. Big-endian.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `IsDvh` | `static bool IsDvh(ReadOnlySpan<byte> sector0)` | Reports whether `sector0` is an SGI volume header with a valid checksum. |
-| `Parse` | `static List<PartitionEntry> Parse(ReadOnlySpan<byte> sector0)` | Parses the header's partitions, excluding the whole-volume partition and empty slots. |
+| `TryAdd` | `static bool TryAdd(Stream disk, IReadOnlyList<ArchiveInputInfo> inputs)` | Partition-aware `Add`. Returns `true` when a partition table was present and at least one input was dispatched through the partition-aware path; `false` when no partition table exists so the caller can fall through to the existing single-FS path. |
+| `TryRemove` | `static bool TryRemove(Stream disk, string[] entryNames)` | Partition-aware `Remove`. Returns `true` when a partition table was present and at least one entry was removed; `false` if no partition table was detected. Entry name shapes: `Partition<N>_<Type>/<inner>` deletes an inner-FS file; `Partition<N>_<Type>` or `Partition<N>_<Type>.raw` deletes the whole partition. |
 
 #### `SparseBlockImage`
 
@@ -4061,39 +3963,6 @@ Sparse, block-addressed image buffer. Only the blocks a writer actually touches 
 | `Read` | `byte[] Read(long offset, int length)` | Reads `length` bytes from `offset`, spanning blocks as needed. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the volume from the current position, extending the stream to its full size. |
 | `Write` | `void Write(long offset, ReadOnlySpan<byte> data)` | Copies `data` to `offset`, spanning blocks as needed. |
-
-#### `StagedWindowStream`
-
-A writable, fixed-length window over a range of a disk whose writes are held back until `Commit`. Reads see the staged writes on top of the disk's bytes, so a filesystem editor working through the window behaves exactly as it would on a standalone image; but nothing reaches the disk unless the whole edit finishes and the caller commits. An editor that throws half-way, or that tries to grow its volume past the partition, leaves the disk byte-identical.
-
-Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `StagedWindowStream` | `StagedWindowStream(Stream disk, long offset, long length)` | Opens a staged window of `length` bytes at `offset` on `disk`. |
-| `CanRead` | `override bool CanRead { get; }` |  |
-| `CanSeek` | `override bool CanSeek { get; }` |  |
-| `CanWrite` | `override bool CanWrite { get; }` |  |
-| `HasChanges` | `bool HasChanges { get; }` | Whether any write has been staged. |
-| `Length` | `override long Length { get; }` |  |
-| `Position` | `override long Position { get; set; }` |  |
-| `Commit` | `void Commit()` | Writes every staged page to the disk, in disk order, then flushes it. |
-| `Flush` | `override void Flush()` | Staged writes stay staged; only `Commit` writes them. |
-| `Read` | `override int Read(Span<byte> buffer)` |  |
-| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
-| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
-| `SetLength` | `override void SetLength(long value)` | A partition cannot grow from inside: asking for more than its length fails, and asking for less leaves the trailing bytes where they are, as unused space inside the partition. |
-| `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
-| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
-
-#### `SunVtocParser`
-
-Parses the Sun disk label (SunOS / Solaris SPARC "VTOC" label) in sector 0. Big-endian.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `IsSunLabel` | `static bool IsSunLabel(ReadOnlySpan<byte> sector0)` | Reports whether `sector0` is a Sun label with a valid checksum. |
-| `Parse` | `static List<PartitionEntry> Parse(ReadOnlySpan<byte> sector0)` | Parses the label's slices, excluding the whole-disk slice and empty slots. |
 
 ### Namespace `Compression.Core.DiskImage.Raid`
 
@@ -5175,7 +5044,6 @@ Provides static methods for building Huffman trees and extracting code lengths.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BuildFromFrequencies` | `static HuffmanNode BuildFromFrequencies(long[] frequencies)` | Builds a Huffman tree from symbol frequencies. |
-| `CompleteCodeLengths` | `static void CompleteCodeLengths(int[] codeLengths, int maxLength)` | Shortens codes until the lengths fill the code space exactly (Kraft sum of one), for decoders that reject incomplete trees. Lengths of zero (absent symbols) stay zero; a single present symbol is left at length one. |
 | `GetCodeLengths` | `static int[] GetCodeLengths(HuffmanNode root, int maxSymbol)` | Extracts code lengths from a Huffman tree for each symbol. |
 | `LimitCodeLengths` | `static void LimitCodeLengths(int[] codeLengths, int maxLength)` | Limits code lengths to a maximum value using the package-merge algorithm variant. Redistributes code lengths to satisfy the Kraft inequality while staying within the limit. |
 
@@ -5387,29 +5255,6 @@ LZMA-style byte-aligned range encoder with adaptive binary probabilities.
 | `EncodeBit` | `void EncodeBit(ref int prob, int bit)` | Encodes a single bit using an adaptive probability model. |
 | `EncodeDirectBits` | `void EncodeDirectBits(int value, int count)` | Encodes bits without probability adaptation (fixed 50/50 split). Used for alignment bits and direct-coded distance extra bits. |
 | `Finish` | `void Finish()` | Finishes encoding by flushing remaining state to the output. |
-
-### Namespace `Compression.Core.Entropy.UnixPack`
-
-[`UnixPackBuildingBlock`](#unixpackbuildingblock)
-
-#### `UnixPackBuildingBlock`
-
-Unix `pack` (`.z`, magic `1F 1E`): one static Huffman code over the whole file, from System V and still decoded by GNU gzip.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `UnixPackBuildingBlock` | `UnixPackBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The two magic bytes. |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes a complete pack file. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes `data` as a pack file. |
 
 ### Namespace `Compression.Core.ExecutableUnpacking`
 
@@ -5798,17 +5643,17 @@ Implements `IEquatable<UnpackResult>`.
 
 #### `CvfLzCodec`
 
-Per-cluster codecs of the DoubleSpace / DriveSpace / DriveSpace 3 / Stacker compressed volumes, implemented from `docs/CVF-CODECS-ON-DISK.md`. An MSDBL cluster payload starts with a 16-bit magic and a 16-bit version — `"DS"` (DS-0-x), `"JM"` (JM-0-x) or `"SQ"` (SQ-0-0, raw DEFLATE) — followed by the token stream; a Stacker payload carries no method field and is recognised by its first word.
+Genuine DoubleSpace/DriveSpace per-cluster compression codec (DS-0-x and JM-0-x), verified byte-exact against the independent dmsdos decoder. The bitstream packs bits LSB-first into little-endian 16-bit words; a cluster payload is a 16-bit magic (`"DS"`=0x5344 / `"MJ"`=0x4D4A) + 16-bit version + an LZ77 token stream terminated by the 0x113f sync.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DS_0_0` | `const uint DS_0_0` | Method header of a DS-0-0 payload, read as a little-endian 32-bit word. |
-| `JM_0_0` | `const uint JM_0_0` | Method header of a JM-0-0 payload, read as a little-endian 32-bit word. |
-| `SQ_0_0` | `const uint SQ_0_0` | Method header of an SQ-0-0 payload, read as a little-endian 32-bit word. |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Compresses one cluster. Returns the payload, or `null` when it would not be smaller than the raw cluster (the caller then stores the cluster raw). |
-| `DecompressStacker` | `static byte[] DecompressStacker(byte[] payload, int inLen, int outLen)` | Decompresses a Stacker cluster payload to `outLen` bytes. Stacker records no method per cluster; the payload's first little-endian word selects it — `0x0081` SD-4, `0x5344` ("DS") the DoubleSpace grammar, anything else SD-3, whose first token is always a literal and so can never begin with either word. |
-| `Decompress` | `static byte[] Decompress(byte[] payload, int inLen, int outLen)` | Decompresses an MSDBL cluster payload (DS, JM or SQ, told apart by its header) to exactly `outLen` bytes. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Encodes a cluster with the given method and always returns the payload, or `null` for `Stored`. The caller decides whether the result fits the cluster's sector budget. `Auto` keeps the smaller of DS and JM. |
+| `DS_0_0` | `const uint DS_0_0` |  |
+| `JM_0_0` | `const uint JM_0_0` |  |
+| `SQ_0_0` | `const uint SQ_0_0` |  |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Compresses one cluster. Returns the payload (4-byte method header + token stream, padded to a 2-byte word), or `null` if it would not be smaller than the raw cluster (caller stores raw instead). |
+| `DecompressStacker` | `static byte[] DecompressStacker(byte[] payload, int inLen, int outLen)` | Decompresses a Stacker cluster payload to `outLen` bytes. Stacker records no method per cluster; the payload's first little-endian word selects it — `0x0081` SD-4, `0x5344` ("DS") the DoubleSpace codec, anything else SD-3, whose first token is always a literal and so can never begin with either word. |
+| `Decompress` | `static byte[] Decompress(byte[] payload, int inLen, int outLen)` | Decompresses a cluster payload to exactly `outLen` bytes. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Encodes a cluster with the given method, always returning the payload (4-byte header + token stream), or `null` for `Stored` / unsupported methods. The caller decides whether the result fits the cluster's sector budget. |
 
 #### `CvfLzMethod`
 
@@ -5816,13 +5661,13 @@ Per-cluster compression methods of the DoubleSpace/DriveSpace/Stacker CVF family
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Stored` | `0` | No compression; the cluster is stored as is. |
-| `Ds` | `1` | DoubleSpace DS-0-x LZ77. |
-| `Jm` | `2` | DriveSpace JM-0-x LZ77 (DriveSpace 3 Normal/High). |
-| `Auto` | `3` | Per cluster the smaller of `Ds` and `Jm`, both of which every MSDBL volume reads. |
-| `Sq` | `4` | DriveSpace 3 SQ-0-0 (Ultra): a raw DEFLATE stream behind the method header. |
-| `Sd4` | `5` | Stacker 4 SD-4: Huffman-coded LZ77 behind the header word `0x0081`. |
-| `Sd3` | `6` | Stacker 3 SD-3: a bare LZS stream closed by a check byte. |
+| `Stored` | `0` |  |
+| `Ds` | `1` |  |
+| `Jm` | `2` |  |
+| `Auto` | `3` |  |
+| `Sq` | `4` |  |
+| `Sd4` | `5` |  |
+| `Sd3` | `6` |  |
 
 #### `Sd3Codec`
 
@@ -5835,12 +5680,12 @@ Stacker 3 ("SD-3") per-cluster codec, as specified in `docs/CVF-CODECS-ON-DISK.m
 
 #### `Sd4Codec`
 
-Stacker 4 (SD-4, cluster header `0x0081`) per-cluster codec, implemented from `docs/CVF-CODECS-ON-DISK.md`. SD-4 is Huffman-coded LZ77: a helper code (code lengths 0..15 and six run tokens) transmits the 336 code lengths of the main code, whose symbols are the 256 literals, 63 short-match tokens, 16 long-match tokens and the end token. Bits are read MSB-first from little-endian 16-bit words; both codes are canonical and complete.
+Genuine Stacker 4 (SD-4, cluster header `0x0081`) per-cluster codec, as specified in `docs/CVF-CODECS-ON-DISK.md`. SD-4 is Huffman-coded LZ77: a helper code (22 symbols: lengths 0..15 and six run tokens) transmits the 0x150 code lengths of the main code, whose symbols are the 256 literals, 63 short-match tokens, 16 long-match tokens and the end token. `Decode` reads the complete format — run tokens, short and long matches with length extensions — and is pinned to streams the dmsdos SD-4 encoder wrote. `Encode` emits an all-literals stream (main code over the cluster's byte frequencies, no match tokens), which the dmsdos driver reads back byte-exact. The bitstream is MSB-first within little-endian 16-bit words; codes are canonical and MSB-first.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Decode` | `static byte[] Decode(byte[] payload, int inLen, int outLen)` | Decodes one SD-4 cluster payload into `outLen` bytes. A stream that ends (end token) before the cluster is full leaves the tail zero. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int level = 2)` | Encodes one cluster with back-references, Huffman-coded behind a run-length coded code table. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` |  |
 
 ### Namespace `Compression.Core.Image`
 
@@ -6346,7 +6191,7 @@ Utility for splitting archive data into fixed-size volumes.
 
 ### Namespace `Compression.Core.Transforms`
 
-[`Bcj2Filter`](#bcj2filter) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`ByteSwapFilter`](#byteswapfilter) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`Swap2BuildingBlock`](#swap2buildingblock) · [`Swap4BuildingBlock`](#swap4buildingblock) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
+[`Bcj2Filter`](#bcj2filter) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
 
 #### `Bcj2Filter`
 
@@ -6533,15 +6378,6 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-#### `ByteSwapFilter`
-
-7-Zip's SWAP2 / SWAP4 filters (method ids `02 03 02` and `02 03 04`): reverse the byte order of every complete 2- or 4-byte group, leaving a trailing partial group as it is. Each filter is its own inverse.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Swap2` | `static byte[] Swap2(ReadOnlySpan<byte> data)` | Swaps the bytes of each complete 16-bit group. |
-| `Swap4` | `static byte[] Swap4(ReadOnlySpan<byte> data)` | Reverses the bytes of each complete 32-bit group. |
-
 #### `DeltaBuildingBlock`
 
 Exposes the Delta filter as a benchmarkable building block.
@@ -6682,38 +6518,6 @@ Run-Length Encoding (RLE) transform. Encodes runs of identical bytes as (count, 
 | --- | --- | --- |
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes RLE-encoded data back to the original. Input format: repeated pairs of (count, value) where count is 1-255. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes data using run-length encoding. Output format: repeated pairs of (count, value) where count is 1-255. Uses SIMD-accelerated run scanning when available. |
-
-#### `Swap2BuildingBlock`
-
-Exposes 7-Zip's SWAP2 filter as a building block.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Swap2BuildingBlock` | `Swap2BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
-#### `Swap4BuildingBlock`
-
-Exposes 7-Zip's SWAP4 filter as a building block.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Swap4BuildingBlock` | `Swap4BuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
 #### `ZleBuildingBlock`
 
@@ -9438,7 +9242,6 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` | Compresses data from the provided buffer and writes it to the inner stream. |
 | `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Decompresses data from the inner stream into the provided buffer. |
 | `FinishCompression` | `protected override void FinishCompression()` | Called when the stream is being closed in Compress mode. Implementations should flush any remaining compressed data. |
-| `OpenNsisDecoder` | `static Bzip2Stream OpenNsisDecoder(Stream stream, bool leaveOpen = false)` | Opens a decoder for the header-less bzip2 dialect embedded in NSIS installers: no "BZh" stream header, a single 0x31 byte before each block, 0x17 at the end, no CRCs. |
 
 ### Namespace `FileFormat.Gzip`
 

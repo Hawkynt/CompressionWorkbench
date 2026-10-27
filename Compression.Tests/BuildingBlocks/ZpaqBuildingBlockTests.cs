@@ -33,7 +33,7 @@ public class ZpaqBuildingBlockTests {
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void HighlyRepetitive_RoundTripsAndCompresses() {
-    var data = new byte[4096];  // large enough that the ~120-byte ZPAQ block header does not dominate
+    var data = new byte[256];
     Array.Fill(data, (byte)0x61);
     var compressed = Bb.Compress(data);
     var round = Bb.Decompress(compressed);

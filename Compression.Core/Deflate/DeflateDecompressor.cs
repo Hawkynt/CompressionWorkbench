@@ -105,16 +105,6 @@ public sealed class DeflateDecompressor {
   public bool IsFinished => this._state == State.Done;
 
   /// <summary>
-  /// Gets or sets a value indicating whether stored blocks carry only LEN and no NLEN.
-  /// </summary>
-  /// <remarks>
-  /// The inflate built into NSIS 2.x installers reads a stored block's 16-bit length and goes
-  /// straight to the data; its compiler writes no one's-complement copy. Set this before the
-  /// first read to decode such streams. RFC 1951 streams leave it <see langword="false"/>.
-  /// </remarks>
-  public bool StoredBlocksOmitComplement { get; set; }
-
-  /// <summary>
   /// Decompresses all data from the stream.
   /// </summary>
   /// <returns>The decompressed data.</returns>
@@ -330,11 +320,9 @@ public sealed class DeflateDecompressor {
         this._bitCnt -= drop;
 
         var len = this.GetBits(16);
-        if (!this.StoredBlocksOmitComplement) {
-          var nlen = this.GetBits(16);
-          if ((len ^ nlen) != 0xFFFF)
-            throw new InvalidDataException("Invalid uncompressed block: LEN/NLEN mismatch.");
-        }
+        var nlen = this.GetBits(16);
+        if ((len ^ nlen) != 0xFFFF)
+          throw new InvalidDataException("Invalid uncompressed block: LEN/NLEN mismatch.");
 
         this._storedLeft = (int)len;
         this._state = State.Stored;

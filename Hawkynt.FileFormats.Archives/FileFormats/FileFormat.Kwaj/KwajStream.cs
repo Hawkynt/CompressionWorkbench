@@ -1,8 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
 using Compression.Core.Deflate;
-using Compression.Core.Dictionary.KwajLzh;
-using FileFormat.Szdd;
 
 namespace FileFormat.Kwaj;
 
@@ -16,11 +14,10 @@ namespace FileFormat.Kwaj;
 /// <list type="bullet">
 ///   <item><description>0 — Store (verbatim copy).</description></item>
 ///   <item><description>1 — XOR with 0xFF.</description></item>
-///   <item><description>2 — LZSS, the QBasic "SZ " flavour (ring starts at 4096 − 18).</description></item>
-///   <item><description>3 — LZ + Huffman (<see cref="KwajLzhBuildingBlock"/>).</description></item>
 ///   <item><description>4 — MSZIP (Deflate with 32 KB block reset).</description></item>
 /// </list>
-/// All five are read and written; libmspack's KWAJ decoder is the reference for 2 and 3.
+/// Methods 2 (SZDD-style LZSS) and 3 (LZ+Huffman) throw
+/// <see cref="NotSupportedException"/>.
 /// </remarks>
 public static class KwajStream {
   // -------------------------------------------------------------------------
@@ -40,7 +37,7 @@ public static class KwajStream {
   /// Thrown when the magic signature is invalid or the header is truncated.
   /// </exception>
   /// <exception cref="NotSupportedException">
-  /// Thrown when the compression method is not 0–4.
+  /// Thrown when the compression method is 2 (LZSS) or 3 (LZ+Huffman).
   /// </exception>
   public static void Decompress(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
@@ -65,8 +62,8 @@ public static class KwajStream {
   /// <param name="input">A readable stream containing the uncompressed data.</param>
   /// <param name="output">The stream that receives the KWAJ file.</param>
   /// <param name="method">
-  /// The compression method to use: 0 (store), 1 (XOR), 2 (LZSS), 3 (LZ+Huffman) or
-  /// 4 (MSZIP). Defaults to 4.
+  /// The compression method to use. Must be 0 (store), 1 (XOR), or 4 (MSZIP).
+  /// Defaults to 4.
   /// </param>
   /// <param name="filename">
   /// Optional original filename to embed in the header. When provided the
@@ -77,7 +74,7 @@ public static class KwajStream {
   /// Thrown when <paramref name="input"/> or <paramref name="output"/> is <see langword="null"/>.
   /// </exception>
   /// <exception cref="ArgumentException">
-  /// Thrown when <paramref name="method"/> is not 0–4.
+  /// Thrown when <paramref name="method"/> is not 0, 1, or 4.
   /// </exception>
   public static void Compress(Stream input, Stream output, int method = KwajConstants.MethodMsZip,
     string? filename = null) =>
@@ -92,9 +89,9 @@ public static class KwajStream {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
 
-    if (method is < KwajConstants.MethodStore or > KwajConstants.MethodMsZip)
+    if (method is not (KwajConstants.MethodStore or KwajConstants.MethodXor or KwajConstants.MethodMsZip))
       throw new ArgumentException(
-        $"Unsupported compression method {method}. KWAJ defines 0 (store), 1 (XOR), 2 (LZSS), 3 (LZ+Huffman) and 4 (MSZIP).",
+        $"Unsupported compression method {method}. Only 0 (store), 1 (XOR), and 4 (MSZIP) are supported.",
         nameof(method));
 
     var plain = ReadAllBytes(input);
@@ -230,10 +227,9 @@ public static class KwajStream {
     method switch {
       KwajConstants.MethodStore  => plain.ToArray(),
       KwajConstants.MethodXor    => XorBytes(plain),
-      KwajConstants.MethodMsZip => CompressMsZip(plain, level),
-      // The QBasic "SZ " container is the same LZSS body behind a 12-byte header.
-      KwajConstants.MethodLzss => SzddStream.CompressQBasic(plain)[12..],
-      KwajConstants.MethodLzHuffman => KwajLzhBuildingBlock.Encode(plain),
+      KwajConstants.MethodMsZip => MsZipCompressor.Compress(plain, level),
+      KwajConstants.MethodLzss or KwajConstants.MethodLzHuffman =>
+        throw new NotSupportedException($"KWAJ compression method {method} is not supported."),
       _ => throw new NotSupportedException($"Unknown KWAJ compression method {method}."),
     };
 
@@ -242,87 +238,11 @@ public static class KwajStream {
     method switch {
       KwajConstants.MethodStore  => compressed.ToArray(),
       KwajConstants.MethodXor    => XorBytes(compressed),
-      KwajConstants.MethodMsZip => DecompressMsZip(compressed, decompressedLength),
-      KwajConstants.MethodLzss => DecompressLzss(compressed),
-      KwajConstants.MethodLzHuffman => KwajLzhBuildingBlock.Decode(compressed),
+      KwajConstants.MethodMsZip => MsZipDecompressor.Decompress(compressed, decompressedLength),
+      KwajConstants.MethodLzss or KwajConstants.MethodLzHuffman =>
+        throw new NotSupportedException($"KWAJ compression method {method} is not supported."),
       _ => throw new NotSupportedException($"Unknown KWAJ compression method {method}."),
     };
-
-  /// <summary>
-  /// KWAJ method 4 framing (libmspack <c>mszipd_decompress_kwaj</c>): each MSZIP block —
-  /// "CK" plus one Deflate block of at most 32 KiB output — is preceded by its byte length
-  /// as a little-endian 16-bit number; a length of zero ends the data.
-  /// </summary>
-  private static byte[] CompressMsZip(ReadOnlySpan<byte> plain, DeflateCompressionLevel level) {
-    using var ms = new MemoryStream();
-    Span<byte> len = stackalloc byte[2];
-    if (plain.Length > 0)
-      foreach (var (block, _) in MsZipCompressor.CompressBlocks(plain, level)) {
-        BinaryPrimitives.WriteUInt16LittleEndian(len, checked((ushort)block.Length));
-        ms.Write(len);
-        ms.Write(block);
-      }
-    ms.Write([0, 0]);
-    return ms.ToArray();
-  }
-
-  private static byte[] DecompressMsZip(ReadOnlySpan<byte> data, int decompressedLength) {
-    using var output = new MemoryStream(Math.Max(0, decompressedLength));
-    var pos = 0;
-    while (true) {
-      if (pos + 2 > data.Length)
-        throw new InvalidDataException("KWAJ MSZIP: data ends before the zero block length.");
-      var blockLength = BinaryPrimitives.ReadUInt16LittleEndian(data[pos..]);
-      pos += 2;
-      if (blockLength == 0)
-        break;
-      if (pos + blockLength > data.Length)
-        throw new InvalidDataException("KWAJ MSZIP: block runs past the end of the data.");
-      output.Write(MsZipDecompressor.DecompressBlock(data.Slice(pos, blockLength)));
-      pos += blockLength;
-    }
-    if (decompressedLength >= 0 && output.Length != decompressedLength)
-      throw new InvalidDataException($"KWAJ MSZIP: decoded {output.Length} bytes, header says {decompressedLength}.");
-    return output.ToArray();
-  }
-
-  /// <summary>
-  /// KWAJ method 2: LZSS with flag bytes read LSB first (1 = literal), a 4 KiB ring
-  /// pre-filled with spaces and written from 4096 − 18, running until the input ends
-  /// (libmspack <c>lzss_decompress</c>, <c>LZSS_MODE_QBASIC</c>).
-  /// </summary>
-  private static byte[] DecompressLzss(ReadOnlySpan<byte> data) {
-    const int windowSize = 4096;
-    Span<byte> window = stackalloc byte[windowSize];
-    window.Fill(0x20);
-    var pos = windowSize - 18;
-    var output = new byte[Math.Max(64, data.Length * 2)];
-    var count = 0;
-    var i = 0;
-    while (i < data.Length) {
-      var flags = data[i++];
-      for (var bit = 0; bit < 8; ++bit) {
-        if ((flags & (1 << bit)) != 0) {
-          if (i >= data.Length) return output[..count];
-          if (count == output.Length) Array.Resize(ref output, output.Length * 2);
-          output[count++] = window[pos] = data[i++];
-          pos = (pos + 1) & (windowSize - 1);
-        } else {
-          if (i + 1 >= data.Length) return output[..count];
-          var matchPos = data[i] | ((data[i + 1] & 0xF0) << 4);
-          var length = (data[i + 1] & 0x0F) + 3;
-          i += 2;
-          if (count + length > output.Length) Array.Resize(ref output, output.Length * 2 + length);
-          while (length-- > 0) {
-            output[count++] = window[pos] = window[matchPos];
-            pos = (pos + 1) & (windowSize - 1);
-            matchPos = (matchPos + 1) & (windowSize - 1);
-          }
-        }
-      }
-    }
-    return output[..count];
-  }
 
   private static byte[] XorBytes(ReadOnlySpan<byte> data) {
     var result = data.ToArray();

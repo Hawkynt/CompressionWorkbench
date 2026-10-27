@@ -1,51 +1,66 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
-using Compression.Core.Checksums;
 
 namespace FileFormat.DiskDoubler;
 
 /// <summary>
-/// Writes a single DiskDoubler file with a stored (method 0) data fork and no resource fork, in the
-/// layout <see cref="DiskDoublerReader"/> documents. The Unarchiver (<c>unar</c>) reads it back.
+/// Writes a DiskDoubler stored (method 0) file. Takes a single data fork
+/// payload; resource fork is empty. Roundtrips through
+/// <see cref="DiskDoublerReader"/>.
 /// </summary>
 public sealed class DiskDoublerWriter {
-  private byte[] _data = [];
-  private string _fileType = "????";
-  private string _creator = "????";
+  private const int HeaderSize = 82;
+  private const int FileNameOffset = 34;
+  private const int MaxNameLength = 47; // 82 - 34(offset) - 1(pascal len byte) = 47
 
-  /// <summary>Sets the data fork. DiskDoubler stores no name; the file's own name is the entry's name.</summary>
-  public void SetFile(byte[] data, string fileType = "????", string creator = "????") {
+  private string _name = "file";
+  private byte[] _data = [];
+
+  /// <summary>
+  /// Sets the file.
+  /// </summary>
+  public void SetFile(string name, byte[] data) {
+    ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    ArgumentNullException.ThrowIfNull(fileType);
-    ArgumentNullException.ThrowIfNull(creator);
-    this._data = data;
-    this._fileType = fileType;
-    this._creator = creator;
+    _name = name;
+    _data = data;
   }
 
-  /// <summary>Writes the header and the stored data fork to <paramref name="output"/>.</summary>
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 
-    var hdr = new byte[DiskDoublerConstants.HeaderSize];
-    BinaryPrimitives.WriteUInt32BigEndian(hdr, DiskDoublerConstants.Magic);
-    BinaryPrimitives.WriteUInt32BigEndian(hdr.AsSpan(4), (uint)this._data.Length);
-    BinaryPrimitives.WriteUInt32BigEndian(hdr.AsSpan(8), (uint)this._data.Length);
-    // [12..20] resource fork sizes, [20..22] methods: zero = empty and stored.
-    hdr[22] = 0x2A;  // the version byte real files carry
-    WriteFourCc(hdr.AsSpan(32, 4), this._fileType);
-    WriteFourCc(hdr.AsSpan(36, 4), this._creator);
-    BinaryPrimitives.WriteUInt16BigEndian(hdr.AsSpan(82), Crc16Ccitt.Compute(hdr.AsSpan(0, DiskDoublerConstants.HeaderCrcSpan)));
+    var hdr = new byte[HeaderSize];
+
+    // [0..4] version — reader doesn't validate; use zero.
+    // [4..8] Mac file type — "????" placeholder.
+    Encoding.ASCII.GetBytes("????").CopyTo(hdr, 4);
+    // [8..12] Mac creator — "????" placeholder.
+    Encoding.ASCII.GetBytes("????").CopyTo(hdr, 8);
+    // [12..14] Finder flags — 0.
+    // [14..16] reserved — 0.
+
+    // [16..20] data fork original size (BE).
+    BinaryPrimitives.WriteUInt32BigEndian(hdr.AsSpan(16), (uint)_data.Length);
+    // [20..24] data fork compressed size (BE) — same as original (stored).
+    BinaryPrimitives.WriteUInt32BigEndian(hdr.AsSpan(20), (uint)_data.Length);
+    // [24..28] resource fork original size — 0.
+    // [28..32] resource fork compressed size — 0.
+    // [32] data fork compression method — 0 (stored).
+    hdr[32] = DiskDoublerConstants.MethodStored;
+    // [33] resource fork compression method — 0.
+    hdr[33] = DiskDoublerConstants.MethodStored;
+
+    // [34] Pascal string: length byte + name bytes (Latin-1, up to 47 chars).
+    var nameBytes = Encoding.Latin1.GetBytes(_name);
+    var nameLen = Math.Min(nameBytes.Length, MaxNameLength);
+    hdr[FileNameOffset] = (byte)nameLen;
+    nameBytes.AsSpan(0, nameLen).CopyTo(hdr.AsSpan(FileNameOffset + 1));
 
     output.Write(hdr);
-    output.Write(this._data);
-  }
-
-  private static void WriteFourCc(Span<byte> dest, string value) {
-    var bytes = Encoding.Latin1.GetBytes(value);
-    var length = Math.Min(bytes.Length, 4);
-    bytes.AsSpan(0, length).CopyTo(dest);
-    dest[length..].Fill((byte)' ');
+    output.Write(_data);
   }
 }

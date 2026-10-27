@@ -74,10 +74,7 @@ public sealed class GenuineStackerWriter {
   /// <summary>Codec effort (search depth). Higher = better ratio, slower.</summary>
   public int CompressionLevel { get; init; } = 1;
 
-  /// <summary>Keep a compressed cluster even if it does not shrink (auto-best off). Stacker cannot
-  /// record a compressed run that fills a whole cluster — such a run reads as stored — so a payload that
-  /// needs every sector of its cluster is stored raw regardless; any shorter payload is kept compressed
-  /// either way, which leaves this option without effect on Stacker volumes.</summary>
+  /// <summary>Keep a compressed cluster even if it does not shrink (auto-best off).</summary>
   public bool ForceCompress { get; init; }
 
   private readonly List<(string Name, byte[] Data)> _files = [];
@@ -150,9 +147,7 @@ public sealed class GenuineStackerWriter {
         _ => CvfLzCodec.Encode(full, CvfLzMethod.Ds, this.CompressionLevel),
       };
       var ksize = comp is null ? Spc : (comp.Length + Ss - 1) / Ss;
-      // A run as long as the cluster always reads as stored (the AMAP has no flag for a whole-cluster
-      // compressed run), so a payload needing all Spc sectors is stored raw even under ForceCompress.
-      if (comp is not null && ksize < Spc) {
+      if (comp is not null && ksize < Spc || (comp is not null && this.ForceCompress && ksize <= Spc)) {
         layout.Add(new ClusterPlan(cl, comp!, ksize, physCursor));
         physCursor += ksize;
       } else {
