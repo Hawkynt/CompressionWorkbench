@@ -28,8 +28,8 @@ namespace Codec.HuC6280;
 ///     ($62/$82/$C2) and the long branch <c>BSR ($44)</c>.</item>
 /// </list>
 /// <para>Opcode semantics and cycle counts follow the documented HuC6280 reverse-engineering
-/// tables (the "HuC6280 CPU" opcode reference and Charles MacDonald's PC Engine notes) and the
-/// Mednafen <c>huc6280.cpp</c> core. Memory is accessed exclusively through <see cref="IBus6502"/>;
+/// tables (the "HuC6280 CPU" opcode reference and Charles MacDonald's PC Engine notes). Memory is
+/// accessed exclusively through <see cref="IBus6502"/>;
 /// the host bus is responsible for routing the 21-bit physical address that the MPR mapper would
 /// otherwise produce — this core exposes the MPR registers (<see cref="Mpr"/>) so the bus can map
 /// the logical 16-bit address through them.</para>
