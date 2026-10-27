@@ -9105,7 +9105,7 @@ Represents an aomei entry.
 
 #### `AomeiFormatDescriptor`
 
-Read/write descriptor for AOMEI Backupper image files (`.adi` disk / partition / system backup, `.afi` file/folder backup). Both share the `Magic` 5-byte ASCII signature at offset 0 (the trailing backslash is the low byte of the `Size` field, not a path separator). Implementation ported from the reverse-engineered format spec at `docs/AOMEI_FORMAT_SPEC.md`: full `BIFH`/`BIFT` structs with `BRCrc32` verification, the recovered `BR_STANDARD_HEADER` tagged-record framing, and typed views of the four confirmed INFO records (COMPRESS / ENCRYPT / PASSWORD / BACKUP_TYPE). What is surfaced for parsable input:`FULL.bifh` — the raw image bytes (also acts as a fallback for callers that just want the original payload).`metadata.ini` — parse status, decoded INFO record fields (backup_type, compress method/level, encrypt method/keylen, password MD5), record-walk summary.`header.bin` — the original 64-byte capture of the file start (preserved from the R/O baseline for backward compatibility with downstream forensic tooling).`head.bin` / `tail.bin` — the full 0x65C BIFH and 0x674 BIFT structs, available when the file is long enough to contain them, for future RE work on the as-yet-TODO body fields.`record-NN-NAME.bin` — every walked `BR_STANDARD_HEADER`-prefixed record's raw bytes, filename-tagged with its type code. Lets callers inspect the INDEX_TYPE_* records whose body layouts remain TODO.`userdata/NAME` — when the file was produced by this project's writer, the user-data envelopes (`UserDataTypeTag`) are unwrapped and their original filename + payload are emitted under a `userdata/` prefix.Create() — round-trip honest: the writer emits a wire-format correct BIFH+INFO+BIFT container with sealed CRCs. The container round-trips through our own reader. It is not byte-compatible with the AOMEI Backupper application: the head/tail body fields (0x650 / 0x668 bytes after the standard header) are zero-filled because their layout is TODO in the recovered spec. Containers produced here advertise compression / encryption / backup-type via standard INFO records, and wrap user inputs in a vendor-namespace `UserDataTypeTag` envelope so the project's own reader can extract them again. References: `https://www.aomeitech.com` — vendor — the .adi/.afi container is proprietary and unpublished`docs/AOMEI_FORMAT_SPEC.md` (this repository) — reverse-engineered BIFH/BIFT + BR_STANDARD_HEADER on-disk specAOMEI never published a specification. What is known of the on-disk layout was recovered by decompiling the shipped binaries, and is written down in `docs/AOMEI_FORMAT_SPEC.md`.
+Read/write descriptor for AOMEI Backupper image files (`.adi` disk / partition / system backup, `.afi` file/folder backup). Both share the `Magic` 5-byte ASCII signature at offset 0 (the trailing backslash is the low byte of the `Size` field, not a path separator). Implementation of the reverse-engineered container layout: full `BIFH`/`BIFT` structs with `BRCrc32` verification, the recovered `BR_STANDARD_HEADER` tagged-record framing, and typed views of the four confirmed INFO records (COMPRESS / ENCRYPT / PASSWORD / BACKUP_TYPE). What is surfaced for parsable input:`FULL.bifh` — the raw image bytes (also acts as a fallback for callers that just want the original payload).`metadata.ini` — parse status, decoded INFO record fields (backup_type, compress method/level, encrypt method/keylen, password MD5), record-walk summary.`header.bin` — the original 64-byte capture of the file start (preserved from the R/O baseline for backward compatibility with downstream forensic tooling).`head.bin` / `tail.bin` — the full 0x65C BIFH and 0x674 BIFT structs, available when the file is long enough to contain them, for future RE work on the as-yet-TODO body fields.`record-NN-NAME.bin` — every walked `BR_STANDARD_HEADER`-prefixed record's raw bytes, filename-tagged with its type code. Lets callers inspect the INDEX_TYPE_* records whose body layouts remain TODO.`userdata/NAME` — when the file was produced by this project's writer, the user-data envelopes (`UserDataTypeTag`) are unwrapped and their original filename + payload are emitted under a `userdata/` prefix.Create() — round-trip honest: the writer emits a wire-format correct BIFH+INFO+BIFT container with sealed CRCs. The container round-trips through our own reader. It is not byte-compatible with the AOMEI Backupper application: the head/tail body fields (0x650 / 0x668 bytes after the standard header) are zero-filled because their layout is still unknown. Containers produced here advertise compression / encryption / backup-type via standard INFO records, and wrap user inputs in a vendor-namespace `UserDataTypeTag` envelope so the project's own reader can extract them again. References: `https://www.aomeitech.com` — vendor — the .adi/.afi container is proprietary and unpublishedAOMEI never published a specification. What is known of the on-disk layout was recovered by decompiling the shipped binaries.
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
@@ -9165,7 +9165,7 @@ A single decoded INFO/INDEX record from the AOMEI payload. Carries the raw 12-by
 
 #### `AomeiReader`
 
-Reader for AOMEI Backupper image files (`.adi` disk / partition / system image and `.afi` file backup), implementing the partial specification recovered from binary reverse engineering of the AOMEI Backupper binary stack — see `docs/AOMEI_FORMAT_SPEC.md`. What this reader verifies and surfaces: Five-byte ASCII signature `BIFH\` at offset 0 — preserved from the original R/O metadata baseline so detection logic stays unchanged.Full `BR_IMAGE_FILE_HEAD` at offset 0 (0x65C bytes): Flag, Size and Crc32 fields verified per spec §2.1; the remaining 0x650 body bytes are surfaced as `HeadBody` for future RE work.Full `BR_IMAGE_FILE_TAIL` at offset `file_size - 0x674`: same Flag/Size/Crc32 verification, body surfaced as `TailBody`.Walk of every `BR_STANDARD_HEADER`-prefixed record between the head and the tail; each record's CRC is verified per the spec §3.1 invariant `BRCrc32(record, sizeof(record)) == saved_crc`.Typed views of the four confirmed INFO records: `InfoTypeImageCompress` (0x105), `InfoTypeImageEncrypt` (0x106), `InfoTypeImagePassword` (0x107), `InfoTypeBackupType` (0x10C). What is not yet decoded (per spec §10): Head/tail body fields past the first 12 bytes — layout TODO.INDEX_TYPE_DATABLOCK / DIRTREE / VOLUME / DATAAREA / ROOT record bodies — only the BR_STANDARD_HEADER framing is walked; the body bytes are passed through as opaque `Body`.Encryption (AES variant + IV derivation) and the compression method numeric mapping — fields surfaced as-is. The reader is tolerant: a short/partial image is reported via `ParseStatus` rather than thrown, so callers (e.g. the descriptor's `List` / `Extract` path) can fall back to the header-surface treatment without exception handling on the hot path.
+Reader for AOMEI Backupper image files (`.adi` disk / partition / system image and `.afi` file backup), implementing the partial layout recovered from binary reverse engineering of the AOMEI Backupper binary stack. What this reader verifies and surfaces: Five-byte ASCII signature `BIFH\` at offset 0 — preserved from the original R/O metadata baseline so detection logic stays unchanged.Full `BR_IMAGE_FILE_HEAD` at offset 0 (0x65C bytes): Flag, Size and Crc32 fields verified; the remaining 0x650 body bytes are surfaced as `HeadBody` for future RE work.Full `BR_IMAGE_FILE_TAIL` at offset `file_size - 0x674`: same Flag/Size/Crc32 verification, body surfaced as `TailBody`.Walk of every `BR_STANDARD_HEADER`-prefixed record between the head and the tail; each record's CRC is verified using the invariant `BRCrc32(record, sizeof(record)) == saved_crc`.Typed views of the four confirmed INFO records: `InfoTypeImageCompress` (0x105), `InfoTypeImageEncrypt` (0x106), `InfoTypeImagePassword` (0x107), `InfoTypeBackupType` (0x10C). What is not yet decoded: Head/tail body fields past the first 12 bytes — layout TODO.INDEX_TYPE_DATABLOCK / DIRTREE / VOLUME / DATAAREA / ROOT record bodies — only the BR_STANDARD_HEADER framing is walked; the body bytes are passed through as opaque `Body`.Encryption (AES variant + IV derivation) and the compression method numeric mapping — fields surfaced as-is. The reader is tolerant: a short/partial image is reported via `ParseStatus` rather than thrown, so callers (e.g. the descriptor's `List` / `Extract` path) can fall back to the header-surface treatment without exception handling on the hot path.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9241,7 +9241,7 @@ AOMEI `BRCrc32` — the CRC-32 used to integrity-protect the file head, file tai
 
 #### `BrFileHead`
 
-`BR_IMAGE_FILE_HEAD` — the 0x65C-byte struct at offset 0 of every `.adi`/`.afi` image. Layout per `docs/AOMEI_FORMAT_SPEC.md` §2.1, sourced from `ammntdrv.sys!FUN_00015e90`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x650 bytes are TODO per spec §10.1 (likely backup GUID, version, BR_IMAGE_INFO descriptors). The reader exposes the raw body bytes via `BodyRaw` for future RE work; the writer fills it with zeros and seals the CRC. The Flag field reuses the `BifhFlag``0x48464942` ("BIFH" LE) — the same four bytes as `BifhMagicAscii`[0..4] which the descriptor uses for offset-0 magic detection. The trailing 0x5C ("\\") byte that public sources document as part of the family magic is therefore the low byte of `Size` (0x65C = 1628 = 0x_00_00_06_5C LE) — not an extra magic byte. The reader still tolerates samples whose low-byte happens to differ (would be rejected at the Size check), keeping the 5-byte ASCII detection that has shipped since the R/O baseline.
+`BR_IMAGE_FILE_HEAD` — the 0x65C-byte struct at offset 0 of every `.adi`/`.afi` image. Layout sourced from `ammntdrv.sys!FUN_00015e90`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x650 bytes are TODO (likely backup GUID, version, BR_IMAGE_INFO descriptors). The reader exposes the raw body bytes via `BodyRaw` for future RE work; the writer fills it with zeros and seals the CRC. The Flag field reuses the `BifhFlag``0x48464942` ("BIFH" LE) — the same four bytes as `BifhMagicAscii`[0..4] which the descriptor uses for offset-0 magic detection. The trailing 0x5C ("\\") byte that public sources document as part of the family magic is therefore the low byte of `Size` (0x65C = 1628 = 0x_00_00_06_5C LE) — not an extra magic byte. The reader still tolerates samples whose low-byte happens to differ (would be rejected at the Size check), keeping the 5-byte ASCII detection that has shipped since the R/O baseline.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9256,7 +9256,7 @@ AOMEI `BRCrc32` — the CRC-32 used to integrity-protect the file head, file tai
 
 #### `BrFileTail`
 
-`BR_IMAGE_FILE_TAIL` — the 0x674-byte struct at offset `file_size - 0x674`. Layout per `docs/AOMEI_FORMAT_SPEC.md` §2.2, sourced from `ammntdrv.sys!FUN_0001601c`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x668 bytes are TODO per spec §10.1 (likely index offset, total payload size and back-pointer to head). The reader exposes the raw body bytes via `BodyRaw`; the writer fills it with zeros and seals the CRC.
+`BR_IMAGE_FILE_TAIL` — the 0x674-byte struct at offset `file_size - 0x674`. Layout sourced from `ammntdrv.sys!FUN_0001601c`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x668 bytes are TODO (likely index offset, total payload size and back-pointer to head). The reader exposes the raw body bytes via `BodyRaw`; the writer fills it with zeros and seals the CRC.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10169,10 +10169,10 @@ Constants for the ARJ archive format.
 | `FlagPathSep` | `const byte FlagPathSep` | ARJ flag: path translated (directory separators converted). |
 | `FlagVolume` | `const byte FlagVolume` | ARJ flag: volume continuation. |
 | `HeaderId` | `const ushort HeaderId` | The two-byte magic number that marks the start of every ARJ header (0xEA60, little-endian). |
-| `MethodCompressed1` | `const byte MethodCompressed1` | Compression method 1: compressed (LZ77+Huffman, primary). |
-| `MethodCompressed2` | `const byte MethodCompressed2` | Compression method 2: compressed (alternate). |
-| `MethodCompressed3` | `const byte MethodCompressed3` | Compression method 3: compressed (alternate). |
-| `MethodStoreFast` | `const byte MethodStoreFast` | Compression method 4: store (no-compression, fastest). |
+| `MethodCompressed1` | `const byte MethodCompressed1` | Compression method 1: LZ77 + Huffman, best ratio ("most"). |
+| `MethodCompressed2` | `const byte MethodCompressed2` | Compression method 2: LZ77 + Huffman, same bit stream as method 1 with a shorter search. |
+| `MethodCompressed3` | `const byte MethodCompressed3` | Compression method 3: LZ77 + Huffman, same bit stream as method 1 with the shortest search. |
+| `MethodFastest` | `const byte MethodFastest` | Compression method 4: "fastest" — LZ77 with fixed prefix codes and no Huffman stage. |
 | `MethodStore` | `const byte MethodStore` | Compression method 0: store (no compression). |
 | `MinVersionToExtract` | `const byte MinVersionToExtract` | Minimum archiver version required to extract (stored method only). |
 | `OsAmiga` | `const byte OsAmiga` | Host OS: Amiga. |
@@ -10256,7 +10256,7 @@ Random-access in-place modifier for ARJ archives. Add appends a new entry just b
 
 #### `ArjReader`
 
-Reads entries from an ARJ archive stream. Supports extraction of stored entries (methods 0 and 4). Compressed methods (1–3) are detected but extraction is not supported.
+Reads entries from an ARJ archive stream and extracts every ARJ method: 0 (stored), 1-3 (LZ77 + Huffman) and 4 ("fastest", LZ77 with fixed prefix codes).
 
 Implements `IDisposable`.
 
@@ -12789,83 +12789,83 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `CompactProEntry`
 
-Represents a single entry in a Compact Pro (.cpt) archive.
+One file or folder of a Compact Pro archive's directory.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CompactProEntry` | `CompactProEntry()` |  |
-| `CreatedDate` | `DateTime CreatedDate { get; init; }` | Gets or sets the creation date. |
-| `DataForkCompressedSize` | `uint DataForkCompressedSize { get; init; }` | Gets or sets the compressed data fork size in bytes. |
-| `DataForkCrc` | `ushort DataForkCrc { get; init; }` | Gets or sets the CRC-16 of the decompressed data fork. |
-| `DataForkMethod` | `byte DataForkMethod { get; init; }` | Gets or sets the compression method for the data fork. |
-| `DataForkSize` | `uint DataForkSize { get; init; }` | Gets or sets the uncompressed data fork size in bytes. |
-| `FileCreator` | `uint FileCreator { get; init; }` | Gets or sets the Mac four-character creator code. |
-| `FileName` | `string FileName { get; init; }` | Gets or sets the filename (up to 63 characters). |
-| `FileType` | `uint FileType { get; init; }` | Gets or sets the Mac four-character file type code (e.g. 0x54455854 for 'TEXT'). |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets or sets whether this entry is a directory. |
-| `ModifiedDate` | `DateTime ModifiedDate { get; init; }` | Gets or sets the modification date. |
-| `ResourceForkCompressedSize` | `uint ResourceForkCompressedSize { get; init; }` | Gets or sets the compressed resource fork size in bytes. |
-| `ResourceForkCrc` | `ushort ResourceForkCrc { get; init; }` | Gets or sets the CRC-16 of the decompressed resource fork. |
-| `ResourceForkMethod` | `byte ResourceForkMethod { get; init; }` | Gets or sets the compression method for the resource fork. |
-| `ResourceForkSize` | `uint ResourceForkSize { get; init; }` | Gets or sets the uncompressed resource fork size in bytes. |
+| `Crc` | `uint Crc { get; init; }` | Stored CRC: the CRC-32 register over resource then data fork, not inverted. |
+| `CreatedDate` | `DateTime CreatedDate { get; init; }` |  |
+| `DataForkCompressedSize` | `uint DataForkCompressedSize { get; init; }` |  |
+| `DataForkLzh` | `bool DataForkLzh { get; }` |  |
+| `DataForkSize` | `uint DataForkSize { get; init; }` |  |
+| `DataOffset` | `long DataOffset { get; }` | Offset of the data fork's packed bytes (it follows the resource fork). |
+| `FileCreator` | `uint FileCreator { get; init; }` |  |
+| `FileName` | `string FileName { get; init; }` | Path with '/' separators (folders included). |
+| `FileOffset` | `uint FileOffset { get; init; }` |  |
+| `FileType` | `uint FileType { get; init; }` |  |
+| `FinderFlags` | `ushort FinderFlags { get; init; }` |  |
+| `Flags` | `ushort Flags { get; init; }` | Bit 0 encrypted, bit 1 resource fork LZH, bit 2 data fork LZH. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `IsEncrypted` | `bool IsEncrypted { get; }` |  |
+| `ModifiedDate` | `DateTime ModifiedDate { get; init; }` |  |
+| `ResourceForkCompressedSize` | `uint ResourceForkCompressedSize { get; init; }` |  |
+| `ResourceForkLzh` | `bool ResourceForkLzh { get; }` |  |
+| `ResourceForkSize` | `uint ResourceForkSize { get; init; }` |  |
+| `ResourceOffset` | `long ResourceOffset { get; }` | Offset of the resource fork's packed bytes. |
+| `Volume` | `byte Volume { get; init; }` |  |
 
 #### `CompactProFormatDescriptor`
 
-Compact Pro archive (Bill Goodman / Cyclos) — classic-Mac compressor that rivaled StuffIt in the early 1990s. References: `https://github.com/MacPaw/XADMaster` — The Unarchiver's XADMaster — open-source Compact Pro reader`https://en.wikipedia.org/wiki/Compact_Pro` — format history
+Compact Pro (Bill Goodman / Cyclos, 1990-1995), the classic Mac archiver. Each file's forks are RLE-coded, optionally LZH-compressed below that. A resource fork is exposed as "name.rsrc". References: `https://github.com/MacPaw/XADMaster` — The Unarchiver's XADCompactProParser and fork handles (LGPL-2.1), converted for the reader`http://justsolve.archiveteam.org/wiki/Compact_Pro` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CompactProFormatDescriptor` | `CompactProFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the Compact Pro archive in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the Compact Pro archive per the requested mode. |
+| `ResourceSuffix` | `const string ResourceSuffix` | Suffix naming a resource-fork entry. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates an archive. An input named "x.rsrc" becomes the resource fork of "x" when "x" is also an input (or has no data fork of its own); everything else is a data fork. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single Compact Pro entry as a bounded read-only stream. The reader produces the decoded data-fork bytes; the matched bytes are wrapped in a `BoundedEntryStream` sized to the data fork's logical length. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `CompactProReader`
 
-Reads entries from a Compact Pro (.cpt) archive.
-
-Implements `IDisposable`.
+Reads Compact Pro (.cpt) archives: an 8-byte header (0x01, volume, magic, directory offset), the packed forks, then the directory — a CRC-32 over the rest of the directory, the entry count, an optional comment and the entries (folders carry the number of entries nested in them).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompactProReader` | `CompactProReader(Stream stream, bool leaveOpen = false)` | Opens a Compact Pro archive from the given stream and parses the entry directory. |
-| `Entries` | `IReadOnlyList<CompactProEntry> Entries { get; }` | Gets the list of file entries found in the archive. |
-| `Dispose` | `void Dispose()` |  |
-| `ExtractResourceFork` | `byte[] ExtractResourceFork(CompactProEntry entry)` | Extracts and decompresses the resource fork of the specified entry. |
-| `Extract` | `byte[] Extract(CompactProEntry entry)` | Extracts and decompresses the data fork of the specified entry. |
+| `CompactProReader` | `CompactProReader(Stream stream)` |  |
+| `MacEpoch` | `static readonly DateTime MacEpoch` |  |
+| `Comment` | `string Comment { get; }` |  |
+| `Entries` | `IReadOnlyList<CompactProEntry> Entries { get; }` |  |
+| `ExtractForks` | `ValueTuple<byte[], byte[]> ExtractForks(CompactProEntry entry)` | Decodes both forks and verifies the entry's CRC (computed over resource, then data fork). |
 
 #### `CompactProWriter`
 
-Creates a Compact Pro (.cpt) archive.
-
-Implements `IDisposable`.
+Writes single-volume Compact Pro archives: RLE-coded forks (no LZH), folders, data and resource forks, Finder type/creator and dates, with the directory and per-file CRCs real readers check.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompactProWriter` | `CompactProWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `CompactProWriter`. |
-| `AddDirectory` | `void AddDirectory(string name)` | Begins a new directory in the archive. Must be paired with `EndDirectory`. |
-| `AddFile` | `void AddFile(string name, byte[] data, byte[] resourceFork = null, DateTime? modified = null)` | Adds a file entry to the archive. |
-| `Dispose` | `void Dispose()` |  |
-| `EndDirectory` | `void EndDirectory()` | Ends the current directory. Must be paired with a prior `AddDirectory` call. |
+| `CompactProWriter` | `CompactProWriter()` |  |
+| `AddFile` | `void AddFile(string path, byte[] data, byte[] resource = null, uint type = 1061109567, uint creator = 1061109567, DateTime? modified = null)` |  |
+| `AddFolder` | `void AddFolder(string path)` |  |
+| `ToArray` | `byte[] ToArray()` |  |
+| `WriteTo` | `void WriteTo(Stream output)` |  |
 
 ### Namespace `FileFormat.Compress`
 
@@ -19634,6 +19634,7 @@ Constants for the LHA/LZH archive format.
 | `MethodLh6` | `const string MethodLh6` | Method: LZH compression with 32KB window. |
 | `MethodLh7` | `const string MethodLh7` | Method: LZH compression with 64KB window. |
 | `MethodLhd` | `const string MethodLhd` | Method: directory marker. |
+| `MethodLhx` | `const string MethodLhx` | Method: lh5-style static Huffman with a 1 MiB window (UNLHA32), read-only. |
 | `MethodLz4` | `const string MethodLz4` | Method: store (same as lh0, legacy). |
 | `MethodLz5` | `const string MethodLz5` | Method: LZSS with 4KB window (LArc variant). |
 | `MethodLzs` | `const string MethodLzs` | Method: LZSS with 4KB window (no Huffman). |
@@ -24021,154 +24022,6 @@ Provides PackBits compression and decompression (Apple MacPaint standard) with a
 | --- | --- | --- |
 | `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` to `output` using PackBits encoding. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses `input` to `output` using PackBits decoding. |
-
-### Namespace `FileFormat.PackDisk`
-
-[`DcsFormatDescriptor`](#dcsformatdescriptor) · [`PackDiskEntry`](#packdiskentry) · [`PackDiskFormatDescriptor`](#packdiskformatdescriptor) · [`PackDiskReader`](#packdiskreader) · [`PackDiskWriter`](#packdiskwriter) · [`XDiskFormatDescriptor`](#xdiskformatdescriptor) · [`XMashFormatDescriptor`](#xmashformatdescriptor)
-
-#### `DcsFormatDescriptor`
-
-Amiga DCS disk archive — whole-floppy track data compressed with the XPK library. References: `https://aminet.net` — Aminet — distribution home of the archiver and the XPK compression libraryXPK master library developer documentation (Amiga) — defines the XPKF container the track data is stored inNo published specification — reverse-engineered from the tool
-
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `DcsFormatDescriptor` | `DcsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-
-#### `PackDiskEntry`
-
-Represents a pack disk entry.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `PackDiskEntry` | `PackDiskEntry()` |  |
-| `CompressedSize` | `long CompressedSize { get; init; }` | Gets or sets the compressed size. |
-| `Name` | `string Name { get; init; }` | Gets or sets the name. |
-| `Size` | `long Size { get; init; }` | Gets or sets the size. |
-
-#### `PackDiskFormatDescriptor`
-
-Amiga PackDisk disk archive — whole-floppy track data compressed with the XPK library. References: `https://aminet.net` — Aminet — distribution home of the archiver and the XPK compression libraryXPK master library developer documentation (Amiga) — defines the XPKF container the track data is stored inNo published specification — reverse-engineered from the tool
-
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `PackDiskFormatDescriptor` | `PackDiskFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-
-#### `PackDiskReader`
-
-Reads PackDisk/xMash/xDisk/GDC/DCS/MDC Amiga disk archives. These all use XPK-based compression for individual tracks. Common structure: 4-byte magic, track table, XPK-compressed track data. We support listing and extracting stored/raw data.
-
-Implements `IDisposable`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `PackDiskReader` | `PackDiskReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `PackDiskReader`. |
-| `Entries` | `IReadOnlyList<PackDiskEntry> Entries { get; }` | Gets the entries. |
-| `Format` | `string Format { get; }` | Gets the format. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(PackDiskEntry entry)` | Decodes the supplied input. |
-
-#### `PackDiskWriter`
-
-Writes PackDisk-family Amiga disk archives (PackDisk/xMash/xDisk/GDC/DCS/MDC). All share the same shape: a 4-byte format magic, 4 bytes of flags, then a sequence of tracks. WORM creation always emits *stored* tracks (raw 5632-byte sectors) -- the reader treats these as uncompressed because no "XPKF" chunk header precedes them. No XPK encoder is needed.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `PackDiskWriter` | `PackDiskWriter(string magic)` | Format magic. Use one of the 4-byte ASCII codes the reader recognises. |
-| `TrackSize` | `const int TrackSize` | Defines the track size constant value. |
-| `AddTrack` | `void AddTrack(ReadOnlySpan<byte> data)` | Performs the add track operation. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
-
-#### `XDiskFormatDescriptor`
-
-Amiga xDisk/GDC disk archive — whole-floppy track data compressed with the XPK library. References: `https://aminet.net` — Aminet — distribution home of the archiver and the XPK compression libraryXPK master library developer documentation (Amiga) — defines the XPKF container the track data is stored inNo published specification — reverse-engineered from the tool
-
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `XDiskFormatDescriptor` | `XDiskFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-
-#### `XMashFormatDescriptor`
-
-Amiga xMash disk archive — whole-floppy track data compressed with the XPK library. References: `https://aminet.net` — Aminet — distribution home of the archiver and the XPK compression libraryXPK master library developer documentation (Amiga) — defines the XPKF container the track data is stored inNo published specification — reverse-engineered from the tool
-
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `XMashFormatDescriptor` | `XMashFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.PackIt`
 
@@ -32275,7 +32128,7 @@ Represents a single file entry in a XAR archive.
 | `FileName` | `string FileName { get; init; }` | File name (path within archive). |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry is a directory. |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Last modification date. |
-| `Method` | `string Method { get; init; }` | Compression method name (e.g., "zlib", "bzip2", "none"). |
+| `Method` | `string Method { get; init; }` | Compression method: "none", "zlib", "bzip2", "lzma", "xz", or the raw encoding style when unrecognised. |
 | `OriginalSize` | `long OriginalSize { get; init; }` | Uncompressed size in bytes. |
 
 #### `XarFormatDescriptor`
@@ -32326,7 +32179,7 @@ Reads XAR (eXtensible ARchive) archives. XAR is Apple's archive format used for 
 | `XarReader` | `XarReader(Stream stream)` | Creates a new XAR reader for the given stream. |
 | `Entries` | `IReadOnlyList<XarEntry> Entries { get; }` | All entries in the archive. |
 | `HeapStart` | `long HeapStart { get; }` | Byte offset where the data heap begins (after header + TOC). |
-| `Extract` | `byte[] Extract(XarEntry entry)` | Extracts the data for a given entry. |
+| `Extract` | `byte[] Extract(XarEntry entry)` | Extracts the data for a given entry and checks it against the TOC's extracted checksum. |
 
 #### `XarWriter`
 

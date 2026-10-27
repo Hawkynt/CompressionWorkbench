@@ -5,12 +5,11 @@ namespace FileFormat.Aomei;
 
 /// <summary>
 /// <c>BR_IMAGE_FILE_HEAD</c> — the 0x65C-byte struct at offset 0 of every
-/// <c>.adi</c>/<c>.afi</c> image. Layout per <c>docs/AOMEI_FORMAT_SPEC.md</c>
-/// §2.1, sourced from <c>ammntdrv.sys!FUN_00015e90</c>.
+/// <c>.adi</c>/<c>.afi</c> image. Layout sourced from <c>ammntdrv.sys!FUN_00015e90</c>.
 ///
 /// <para>
 /// Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the
-/// remaining 0x650 bytes are <b>TODO</b> per spec §10.1 (likely backup GUID,
+/// remaining 0x650 bytes are <b>TODO</b> (likely backup GUID,
 /// version, BR_IMAGE_INFO descriptors). The reader exposes the raw body bytes
 /// via <see cref="BodyRaw"/> for future RE work; the writer fills it with
 /// zeros and seals the CRC.
