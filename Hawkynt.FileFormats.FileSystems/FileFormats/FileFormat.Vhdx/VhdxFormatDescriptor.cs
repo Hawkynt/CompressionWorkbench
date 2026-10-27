@@ -80,7 +80,7 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Lists the entries in the supplied container.
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    if (VhdxStream.TryOpen(stream) is { } vhdxStream) {
+    if (VhdxStream.OpenReadOnly(stream, out _) is { } vhdxStream) {
       using (vhdxStream) {
         vhdxStream.Position = 0;
         if (Compression.Core.DiskImage.PartitionedDiskLister.List(vhdxStream, password) is { } partitioned)
@@ -107,7 +107,7 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    if (VhdxStream.TryOpen(stream) is { } vhdxStream) {
+    if (VhdxStream.OpenReadOnly(stream, out _) is { } vhdxStream) {
       using (vhdxStream) {
         vhdxStream.Position = 0;
         if (Compression.Core.DiskImage.PartitionedDiskLister.Extract(vhdxStream, outputDir, password, files))
@@ -157,7 +157,7 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
-    if (VhdxStream.TryOpen(image) is { } vhdxStream) {
+    if (VhdxStream.OpenReadOnly(image, out _) is { } vhdxStream) {
       using (vhdxStream) {
         var inner = InnerFsDetector.Detect(vhdxStream);
         if (inner is IFilesystemExtentMap extentMap) {
@@ -350,8 +350,13 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var headerBuf = cache.Read(0, headerLen);
     var img = VhdxReader.Read(headerBuf, totalLen);
 
+    string? refusal;
+    using (var guest = VhdxStream.OpenReadOnly(stream, out refusal)) { }
+    var metadata = BuildMetadata(img);
+    if (refusal is not null)
+      metadata = [.. metadata, .. Encoding.UTF8.GetBytes($"guest_disk = unreadable\nguest_disk_reason = {refusal.Replace('\n', ' ')}\n")];
     var entries = new List<(string, byte[])> {
-      ("metadata.ini", BuildMetadata(img)),
+      ("metadata.ini", metadata),
       ("file_type_identifier.bin", img.FileTypeIdentifier),
     };
     if (img.HeaderPrimary.Length > 0) entries.Add(("header_primary.bin", img.HeaderPrimary));
