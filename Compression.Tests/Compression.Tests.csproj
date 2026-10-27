@@ -126,6 +126,10 @@
     <EmbeddedResource Include="HfsPlus\ReferenceVectors\*.gz">
       <LogicalName>HfsPlusVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Rock Ridge images xorriso wrote; see Iso/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Iso\ReferenceVectors\*.gz;Iso\ReferenceVectors\manifest-*.txt">
+      <LogicalName>IsoVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- LZBITMAP pairs from libzbitmap's test corpus; see Lzbitmap/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Lzbitmap\ReferenceVectors\*-*" Exclude="Lzbitmap\ReferenceVectors\README.md">
       <LogicalName>LzbitmapVectors.%(Filename)%(Extension)</LogicalName>

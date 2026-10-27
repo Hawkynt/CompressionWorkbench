@@ -8296,7 +8296,9 @@ Represents an entry (file or directory) in an ISO 9660 image.
 | --- | --- | --- |
 | `IsoEntry` | `IsoEntry()` |  |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether the entry is a directory. |
+| `IsSymlink` | `bool IsSymlink { get; init; }` | Whether the entry is a Rock Ridge symbolic link (SL). |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Last modification timestamp. |
+| `LinkTarget` | `string LinkTarget { get; init; }` | The symbolic link's target, when `IsSymlink`. |
 | `Name` | `string Name { get; init; }` | Path of the entry within the image. |
 | `Size` | `long Size { get; init; }` | Size in bytes (0 for directories). |
 

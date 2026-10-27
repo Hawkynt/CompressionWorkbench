@@ -64,12 +64,53 @@ public sealed class IsoReader : IDisposable {
       descOff = jolietOffset;
     }
 
+    // zisofs data is compressed whichever tree names the file, but only the Rock
+    // Ridge records of the primary tree say so: map those by extent first.
+    if (_joliet)
+      CollectPrimaryZisofs(pvdOffset);
+
     var rootRec = descOff + 156;
     var rootExtent = _data.ReadUInt32(rootRec + 2);
     var rootLength = (long)_data.ReadUInt32(rootRec + 10);
     var rootExtendedAttributeBlocks = _data.ReadByte(rootRec + 1);
     var rootOffset = DataOffset(rootExtent, rootExtendedAttributeBlocks);
     ReadDirectory(rootOffset, rootLength, "");
+  }
+
+  private readonly Dictionary<long, ZisofsInfo> _zisofsByExtent = [];
+
+  private void CollectPrimaryZisofs(long pvdOffset) {
+    var rootRec = pvdOffset + 156;
+    var visited = new HashSet<long>();
+    Walk(DataOffset(_data.ReadUInt32(rootRec + 2), _data.ReadByte(rootRec + 1)), _data.ReadUInt32(rootRec + 10), 0);
+
+    void Walk(long offset, long length, int depth) {
+      if (depth > 64 || offset < 0 || length < 0 || offset + length > _data.Length || !visited.Add(offset)) return;
+      var end = offset + length;
+      var pos = offset;
+      while (pos < end) {
+        var recLen = _data.ReadByte(pos);
+        if (recLen == 0) { pos = ((pos / SectorSize) + 1) * SectorSize; continue; }
+        if (recLen < 34 || pos > end - recLen) return;
+        var nameLen = _data.ReadByte(pos + 32);
+        var special = nameLen == 1 && _data.ReadByte(pos + 33) is 0 or 1;
+        var extent = DataOffset(_data.ReadUInt32(pos + 2), _data.ReadByte(pos + 1));
+        if (!special) {
+          if ((_data.ReadByte(pos + 25) & 0x02) != 0) {
+            Walk(extent, _data.ReadUInt32(pos + 10), depth + 1);
+          } else if (RockRidgeAt(pos, recLen, nameLen)?.Zisofs is { } zf) {
+            _zisofsByExtent[extent] = zf;
+          }
+        }
+        pos += recLen;
+      }
+    }
+  }
+
+  private RockRidgeInfo? RockRidgeAt(long pos, int recLen, int nameLen) {
+    var suOffset = 33 + nameLen;
+    if ((nameLen & 1) == 0) ++suOffset;
+    return suOffset < recLen ? IsoRockRidge.Parse(_data, pos + suOffset, pos + recLen, SectorSize) : null;
   }
 
   private bool IsCD001(long vdOffset) =>
@@ -110,7 +151,26 @@ public sealed class IsoReader : IDisposable {
         throw new InvalidDataException($"ISO9660: directory record in '{basePath}' has a truncated file identifier.");
 
       var isSpecial = nameLen == 1 && (_data.ReadByte(pos + 33) is 0 or 1);
-      var name = DecodeName(pos, recLen, nameLen);
+      var rr = _joliet || isSpecial ? null : RockRidgeAt(pos, recLen, nameLen);
+      var name = DecodeName(pos, nameLen, rr);
+      // RE: a directory moved here (rr_moved) from deeper than ECMA-119 allows; it is
+      // listed at its real place, where a CL entry points to it.
+      if (rr is { Relocated: true } && isDir && pending is null) {
+        pos += recLen;
+        continue;
+      }
+      if (rr?.ChildLink is { } childLink && !isDir && pending is null) {
+        isDir = true;
+        extentLba = childLink;
+        extendedAttributeBlocks = 0;
+        var target = DataOffset(childLink, 0);
+        if (target < 0 || target + 34 > _data.Length)
+          throw new InvalidDataException($"ISO9660: Rock Ridge child link of '{name}' points outside the image.");
+        dataLength = _data.ReadUInt32(target + 10); // the relocated directory's own "." record
+        hasMoreExtents = false;
+        fileUnitSize = 0;
+        interleaveGapSize = 0;
+      }
       if (!isSpecial) {
         var semi = name.IndexOf(';');
         if (semi >= 0) name = name[..semi];
@@ -157,10 +217,40 @@ public sealed class IsoReader : IDisposable {
       if (fileUnitSize != 0 || interleaveGapSize != 0)
         limitation = $"ISO9660 interleaved file section uses FileUnitSize={fileUnitSize}, InterleaveGapSize={interleaveGapSize}.";
 
+      // SL: a symbolic link has no data of its own; its content is the target path.
+      if (pending is null && rr?.SymlinkTarget is { } linkTarget) {
+        _entries.Add(new IsoEntry {
+          Name = fullPath,
+          Size = Encoding.UTF8.GetByteCount(linkTarget),
+          IsSymlink = true,
+          LinkTarget = linkTarget,
+          LastModified = lastModified,
+          DataOffset = physicalOffset,
+        });
+        pos += recLen;
+        continue;
+      }
+
+      var zisofs = rr?.Zisofs ?? (_joliet && _zisofsByExtent.TryGetValue(physicalOffset, out var mapped) ? mapped : null);
+      if (rr?.UnsupportedCompression is { } algorithm)
+        limitation ??= $"Rock Ridge ZF compression '{algorithm}' is not supported.";
+      if (zisofs is not null && (hasMoreExtents || pending is not null))
+        limitation ??= "zisofs compression of a multi-extent file is not supported.";
+
       if (pending is null) {
         var segments = new List<IsoDataSegment> { new(0, physicalOffset, dataLength) };
         if (hasMoreExtents) {
           pending = new PendingFile(fullPath, lastModified, segments, dataLength, limitation);
+        } else if (zisofs is { } zf && limitation is null) {
+          _entries.Add(new IsoEntry {
+            Name = fullPath,
+            Size = zf.UncompressedSize,
+            StoredSize = dataLength,
+            Zisofs = zf,
+            LastModified = lastModified,
+            DataOffset = physicalOffset,
+            DataSegments = segments,
+          });
         } else {
           AddFile(fullPath, lastModified, segments, dataLength, limitation);
         }
@@ -202,14 +292,10 @@ public sealed class IsoReader : IDisposable {
     });
   }
 
-  private string DecodeName(long pos, int recLen, int nameLen) {
+  private string DecodeName(long pos, int nameLen, RockRidgeInfo? rr) {
     if (_joliet)
       return Encoding.BigEndianUnicode.GetString(_data.Read(pos + 33, nameLen));
-
-    var suOffset = 33 + nameLen;
-    if ((nameLen & 1) == 0) ++suOffset;
-    return GetRockRidgeName(pos + suOffset, pos + recLen)
-      ?? Encoding.ASCII.GetString(_data.Read(pos + 33, nameLen));
+    return rr?.Name ?? Encoding.ASCII.GetString(_data.Read(pos + 33, nameLen));
   }
 
   private DateTime? DecodeTimestamp(long pos, long end) {
@@ -230,20 +316,6 @@ public sealed class IsoReader : IDisposable {
   private static long DataOffset(uint extentLba, byte extendedAttributeBlocks)
     => checked(((long)extentLba + extendedAttributeBlocks) * SectorSize);
 
-  private string? GetRockRidgeName(long start, long end) {
-    var pos = start;
-    while (pos + 4 <= end) {
-      var sig0 = _data.ReadByte(pos);
-      var sig1 = _data.ReadByte(pos + 1);
-      var len = _data.ReadByte(pos + 2);
-      if (len < 4 || pos + len > end) break;
-      if (sig0 == 'N' && sig1 == 'M' && len > 5)
-        return Encoding.ASCII.GetString(_data.Read(pos + 5, len - 5));
-      pos += len;
-    }
-    return null;
-  }
-
   /// <summary>
   /// Copies an entry's logical bytes into <paramref name="destination"/>. Multi-extent
   /// file sections are concatenated in directory-record order as required by ECMA-119.
@@ -252,8 +324,21 @@ public sealed class IsoReader : IDisposable {
     ArgumentNullException.ThrowIfNull(entry);
     ArgumentNullException.ThrowIfNull(destination);
     if (entry.IsDirectory) return;
+    if (entry.IsSymlink) {
+      var target = Encoding.UTF8.GetBytes(entry.LinkTarget ?? "");
+      destination.Write(target, 0, target.Length);
+      return;
+    }
     if (entry.MountLimitation is { } limitation)
       throw new NotSupportedException($"ISO9660: '{entry.Name}' cannot be decoded safely: {limitation}");
+    if (entry.Zisofs is { } zf) {
+      var segment = Segments(entry)[0];
+      if (entry.StoredSize > Array.MaxLength || segment.PhysicalOffset < 0 || segment.PhysicalOffset > _data.Length - entry.StoredSize)
+        throw new InvalidDataException($"ISO9660: zisofs file '{entry.Name}' lies outside the image.");
+      var decoded = IsoRockRidge.DecodeZisofs(_data.Read(segment.PhysicalOffset, (int)entry.StoredSize), zf, entry.Name);
+      destination.Write(decoded, 0, decoded.Length);
+      return;
+    }
 
     long logical = 0;
     foreach (var segment in Segments(entry)) {
@@ -282,7 +367,7 @@ public sealed class IsoReader : IDisposable {
   internal static IReadOnlyList<IsoDataSegment> Segments(IsoEntry entry)
     => entry.DataSegments.Count != 0
       ? entry.DataSegments
-      : entry.Size <= 0
+      : entry.Size <= 0 || entry.IsSymlink
         ? []
         : [new(0, entry.DataOffset, entry.Size)];
 
