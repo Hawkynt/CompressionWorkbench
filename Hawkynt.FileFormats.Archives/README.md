@@ -117,11 +117,11 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [Compact Pro](https://en.wikipedia.org/wiki/Compact_Pro) | `CompactPro` | `.cpt` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [CPIO](https://en.wikipedia.org/wiki/Cpio) | `Cpio` | `.cpio` | R/W | ✅ | defrag · wipe | Reads and writes all four header variants — binary (both byte orders), `odc`, `newc` and `crc`, the last with its payload checksum verified; the `Format` option picks one and edits keep the archive's own | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html) |
 | [DAR (Disk ARchive)](https://en.wikipedia.org/wiki/Dar_(disk_archiver)) | `Dar` | `.dar` | WORM | ✅ | — | Reads formats 9–11.3 (verified on 11.3): single and multi-slice, tape marks, gzip / bzip2 / xz / zstd / lz4 / lzo in streaming or block mode, sparse files, hard links; encrypted archives are refused. Writes single-slice 11.3 archives (stored, gzip, bzip2, xz, zstd, lz4) that `dar -t` accepts and `dar -x` restores byte for byte. Layout: [DAR-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/DAR-ON-DISK.md) | [dar.linux.free.fr](http://dar.linux.free.fr) |
-| [DiskDoubler](https://en.wikipedia.org/wiki/DiskDoubler) | `DiskDoubler` | `.dd` `.sea` | WORM | — | wipe | Single-fork compressor: one payload per file | [GitHub](https://github.com/MacPaw/XADMaster) |
+| [DiskDoubler](https://en.wikipedia.org/wiki/DiskDoubler) | `DiskDoubler` | `.dd` `.sea` | WORM | — | wipe | Single-fork compressor: one payload per file. Reads methods 0, 1, 6 and 9, refuses the rest; writes stored | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [DMS](https://en.wikipedia.org/wiki/Disk_Masher_System) | `Dms` | `.dms` | WORM | ✅ | defrag |  | [GitHub](https://github.com/markrabjohn/xDMS) |
 | [EGG (ALZip)](https://en.wikipedia.org/wiki/EGG_(file_format)) | `Egg` | `.egg` | WORM | ✅ | defrag |  | [GitHub](https://github.com/alkegi/docs/blob/master/egg.md) |
 | [ESD](https://en.wikipedia.org/wiki/Windows_Imaging_Format) | `Esd` | `.esd` | WORM | ✅ | wipe | Solid LZMS WIM; created images carry a metadata resource but entries re-list as resources | [Microsoft Learn](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview) |
-| [FreeArc](https://en.wikipedia.org/wiki/FreeArc) | `FreeArc` | `.arc` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/Bulat-Ziganshin/FA) |
+| [FreeArc](https://en.wikipedia.org/wiki/FreeArc) | `FreeArc` | `.arc` | R/W | ✅ | defrag · wipe | Reads FreeArc 0.67 archives; decodes storing and lzma blocks only (tornado, ppmd, lzp, grzip, rep, delta, exe and encryption are refused). Writes storing/lzma archives that FreeArc 0.67 extracts byte-identically. Layout: [FREEARC-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/FREEARC-ON-DISK.md) | [GitHub](https://github.com/Bulat-Ziganshin/FA) |
 | HA | `Ha` | `.ha` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/HA) |
 | [IFF CDAF](https://en.wikipedia.org/wiki/Interchange_File_Format) | `IffCdaf` | `.cdaf` | R/W | ✅ | defrag · wipe |  | [Aminet](https://aminet.net) |
 | [LBR](https://en.wikipedia.org/wiki/LBR_(file_format)) | `Lbr` | `.lbr` | R/W | ✅ | defrag · wipe |  | [gaby.de](http://www.gaby.de/cpm/manuals/archive/lbr.txt) |
@@ -132,7 +132,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [LZX (Amiga)](https://en.wikipedia.org/wiki/LZX) | `LzxAmiga` | `.lzx` | R/W | ✅ | defrag · wipe |  | [Aminet](https://aminet.net) |
 | [mtree](https://man.freebsd.org/cgi/man.cgi?query=mtree&sektion=5) | `Mtree` | `.mtree` | WORM | ✅ | — | Filesystem metadata manifest; does not embed file bodies, so CWB does not dereference `contents=` host paths | [FreeBSD mtree(5)](https://man.freebsd.org/cgi/man.cgi?query=mtree&sektion=5) |
 | [NuFX / ShrinkIt](https://en.wikipedia.org/wiki/ShrinkIt) | `NuFx` | `.shk` `.sdk` `.bxy` | R/W | ✅ | defrag · shrink · wipe |  | [nulib.com](https://nulib.com/library/FTN.e08002.htm) |
-| PackIt | `PackIt` | `.pit` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/MacPaw/XADMaster) |
+| PackIt | `PackIt` | `.pit` | R/W | ✅ | defrag · wipe | Reads stored and Huffman entries, writes stored; encrypted entries are refused | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [RAR](https://en.wikipedia.org/wiki/RAR_(file_format)) | `Rar` | `.rar` | R/W | ✅ | wipe | v1–v5 readers; creation and edits emit RAR4/RAR5 without claiming WinRAR encoder parity | [rarlab.com](https://www.rarlab.com/technote.htm) |
 | [7z](https://en.wikipedia.org/wiki/7z) | `SevenZip` | `.7z` | R/W | ✅ | compress · wipe |  | [7-zip.org](https://www.7-zip.org/7z.html) |
 | [SHAR](https://en.wikipedia.org/wiki/Shar) | `Shar` | `.shar` `.sh` | R/W | ✅ | defrag | Add appends in place; Remove re-emits the script from the survivors | [gnu.org](https://www.gnu.org/software/sharutils/) |
@@ -150,7 +150,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [XAR](https://en.wikipedia.org/wiki/Xar_(archiver)) | `Xar` | `.xar` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/mackyle/xar) |
 | ZAP (Amiga) | `Zap` | `.zap` | WORM | ✅ | wipe | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net/) |
 | [ZIP](https://en.wikipedia.org/wiki/ZIP_(file_format)) | `Zip` | `.zip` `.zipx` | R/W | ✅ | compress · repack · shrink · wipe | Store, Deflate, Deflate64, Shrink, Reduce, Implode, BZip2, LZMA, XZ, PPMd, Zstd, AES | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
-| [ZOO](https://en.wikipedia.org/wiki/Zoo_(file_format)) | `Zoo` | `.zoo` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/ZOO) |
+| [ZOO](https://en.wikipedia.org/wiki/Zoo_(file_format)) | `Zoo` | `.zoo` | R/W | ✅ | defrag · wipe | Store, LZW, LZH | [Archive Team](http://fileformats.archiveteam.org/wiki/ZOO) |
 | [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `Zpaq` | `.zpaq` | R/W | ✅ | defrag | Reader covers the stored/simple models; ZPAQL virtual-machine execution is not implemented | [mattmahoney.net](http://mattmahoney.net/dc/zpaq.html) |
 
 ### 🧬 Structured data and registry
@@ -544,7 +544,7 @@ Use it when a .NET process needs to enumerate, extract, test, create, edit or in
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 2570 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
+Every public and protected member of all 2571 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
 
 <!-- API:END -->
 

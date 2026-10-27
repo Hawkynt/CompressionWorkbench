@@ -75,6 +75,10 @@
     <EmbeddedResource Include="Nsis\ReferenceVectors\*.gz;Nsis\ReferenceVectors\oracle.tsv">
       <LogicalName>NsisVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Disks qemu-img / qemu-io wrote; see Vmdk/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
+      <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>
@@ -86,6 +90,10 @@
     <!-- Streams written by libcsc's reference csc tool; see Csc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Csc\ReferenceVectors\*.csc">
       <LogicalName>CscVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Archives FreeArc 0.67's Arc.exe wrote; see FreeArc/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="FreeArc\ReferenceVectors\*.arc">
+      <LogicalName>FreeArcVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- CVF cluster payloads the dmsdos compressors wrote; see Cvf/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Cvf\ReferenceVectors\*.bin">
@@ -125,6 +133,10 @@
     <!-- Pools OpenZFS 2.2.2 created, with the mounted pools' SHA-256 manifests; see Zfs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Zfs\ReferenceVectors\*.gz;Zfs\ReferenceVectors\*.manifest">
       <LogicalName>ZfsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Zoo archives written by Zoo 2.10; see Zoo/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Zoo\ReferenceVectors\*.zoo">
+      <LogicalName>ZooVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- VDF volumes from GothicVDFS, VDFSTool and ZenKit, with ZenKit's listings; see Vdfs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">

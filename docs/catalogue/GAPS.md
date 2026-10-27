@@ -16,16 +16,16 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | Catalogue rows | 983 |
 | … formats listed by at least one source | 525 |
 | … registry ids no source lists (OURS-ONLY) | 458 |
-| Source-listed rows mapped to something here | 284 / 525 (54.1 %) |
+| Source-listed rows mapped to something here | 285 / 525 (54.3 %) |
 | … of rows listed by ≥ 2 sources | 122 / 138 (88 %) |
 | … of rows listed by ≥ 3 sources | 66 / 67 (PEA is the one missing) |
 | … of rows listed by ≥ 4 sources | 31 / 31 |
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 241 | a source lists it; no descriptor or building block covers it |
+| `MISSING` | 240 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 24 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 39 | covered, but the reader handles only part of the format (see the table below) |
+| `PARTIAL` | 40 | covered, but the reader handles only part of the format (see the table below) |
 | `OK` | 221 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 458 | in our registry, listed by none of the seven sources |
 
@@ -38,7 +38,7 @@ read-only rows.
 | --- | ---: | ---: | ---: | ---: |
 | 7-Zip (formats + codecs) | 96 | 89 | 92.7 | 72 |
 | libarchive (formats + filters) | 28 | 27 | 96.4 | 23 |
-| XADMaster / The Unarchiver | 126 | 94 | 74.6 | 78 |
+| XADMaster / The Unarchiver | 126 | 95 | 75.4 | 78 |
 | binwalk v3 | 79 | 48 | 60.8 | 36 |
 | Universal Extractor 2 | 124 | 71 | 57.3 | 48 |
 | PRONOM | 87 | 63 | 72.4 | 43 |
@@ -170,19 +170,18 @@ running real-world samples. The file named at the end of each row is where the l
 | ALZip | `AlZip` | 3 | store and deflate only (AlZipReader.cs) |
 | APFS | `Apfs` | 3 | no decmpfs (LZVN/LZFSE) compressed files, no encryption (ApfsReader.cs) |
 | Compiled HTML Help (CHM) | `Chm` | 3 | content sections above 1 unsupported (ChmReader.cs) |
-| FreeArc | `FreeArc` | 3 | reader/writer use a simplified private layout with no codecs; real FreeArc archives are not readable (FreeArcReader.cs) |
+| FreeArc | `FreeArc` | 3 | only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs) |
 | NTFS | `Ntfs` | 3 | WOF (XPRESS/LZX) compressed files not decoded; LZNT1 is |
 | QCOW / QCOW2 | `Qcow2` | 3 | no encryption, backing files, zstd clusters or extended L2 (Qcow2Structures.cs) |
 | SquashFS | `SquashFs` | 3 | SquashFS v4 only; v1-v3 rejected (SquashFsSuperblock.cs) |
 | UDF | `Udf` | 3 | type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs) |
-| VMDK | `Vmdk` | 3 | stream-optimized / compressed grains read raw; split extents and delta chains unsupported (VmdkReader.cs) |
 | Windows PE | `Mz`, `PeResources` | 3 | archive view of resources/overlay, not a full PE section extractor |
 | ZPAQ | `Zpaq` | 3 | reads only the stored blocks our own writer emits; ZPAQL-compressed blocks (every real zpaq level) throw (ZpaqReader.cs) |
 | Btrfs | `Btrfs` | 2 | zlib/lzo/zstd compressed extents are skipped (BtrfsReader.cs) |
 | Compact Pro | `CompactPro` | 2 | stored and RLE only; LZ+RLE and LZ+Huffman unsupported (CompactProReader.cs) |
-| DiskDoubler | `DiskDoubler` | 2 | stored only; compressed members are returned as raw compressed bytes without an error (DiskDoublerReader.cs) |
+| DiskDoubler | `DiskDoubler` | 2 | single files only (no DDAR/DDA2 archives); methods 0, 1, 6, 9 decoded and checked against unar on real files; 2-5, 7, 8, 10 and delta refused (DiskDoublerReader.cs) |
 | EnCase / Expert Witness (E01) | `Ewf` | 2 | single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs) |
-| PackIt | `PackIt` | 2 | PMag (stored) only; PMa4 Huffman members are returned raw (PackItReader.cs) |
+| PackIt | `PackIt` | 2 | encrypted PMa5/PMa6 entries refused; stored and Huffman entries verified on real archives against unar (PackItReader.cs) |
 | UHARC | `Uharc` | 2 | stored and LZP only (UharcReader.cs) |
 | Comic Book Archive | `Cbz`, `Cbr`, `Cb7` | 1 | .cbt (tar) and .cba (ACE) have no descriptor |
 | DMS (Disk Masher) | `Dms` | 1 | NONE/SIMPLE/QUICK only; MEDIUM/DEEP/HEAVY1/HEAVY2 throw (DmsReader.cs) |
@@ -206,9 +205,10 @@ running real-world samples. The file named at the end of each row is where the l
   file. `Xar` does the same for lzma/xz members. `Btrfs` skips compressed extents, `Vhdx` reads
   unsupported block states as zeros, and `Vmdk` returns compressed grains raw. `Lzh` decodes lh2/lh3 with the lh5 decoder. Each of these gives the caller wrong
   data instead of an error.
-- **Capability claims against real files.** `Zpaq` and `FreeArc` declare `CanCreate | CanModify`,
-  but neither reads an archive written by the real tool. Their round-trip only proves that our
-  writer and reader agree with each other.
+- **Capability claims against real files.** `Zpaq` declares `CanCreate | CanModify`, but does not
+  read an archive written by the real tool. Its round-trip only proves that our writer and reader
+  agree with each other. (`FreeArc` now reads FreeArc 0.67's archives and FreeArc accepts ours; see
+  `docs/FREEARC-ON-DISK.md`.)
 - **Stale comments.** The "(not supported)" comments in `ArcConstants.cs` describe methods the
   reader does decode.
 
