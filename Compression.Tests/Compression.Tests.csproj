@@ -126,6 +126,10 @@
     <EmbeddedResource Include="Zfs\ReferenceVectors\*.gz;Zfs\ReferenceVectors\*.manifest">
       <LogicalName>ZfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Zoo archives written by Zoo 2.10; see Zoo/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Zoo\ReferenceVectors\*.zoo">
+      <LogicalName>ZooVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- VDF volumes from GothicVDFS, VDFSTool and ZenKit, with ZenKit's listings; see Vdfs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">
       <LogicalName>VdfsVectors.%(Filename)%(Extension)</LogicalName>

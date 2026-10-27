@@ -38,7 +38,7 @@ LHA / LZH,lzh;lha;lzs;exe;sfx,archive,R,R,R,,R,fmt/1558;fmt/626,RW,6,https://en.
 ACE,ace,archive,,,R,,R,fmt/2075;fmt/2076,RW,4,https://en.wikipedia.org/wiki/ACE_(compressed_file_format),Ace,Y,Y,Y,OK,,
 ARC (SEA),arc;ark,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ARC_(file_format),Arc,Y,Y,Y,OK,,
 PAK (NoGate ARC extension),pak,archive,,,R,,,,Y,2,,,,,,MISSING,,
-zoo,zoo,archive,,,R,,R,x-fmt/269,Y,4,https://en.wikipedia.org/wiki/Zoo_(file_format),Zoo,Y,Y,Y,PARTIAL,,LZH method (2) unsupported (ZooReader.cs)
+zoo,zoo,archive,,,R,,R,x-fmt/269,Y,4,https://en.wikipedia.org/wiki/Zoo_(file_format),Zoo,Y,Y,Y,OK,,
 LBR (CP/M library),lbr;lqr;lzr,archive,,,R,,R,,Y,3,https://en.wikipedia.org/wiki/LBR_(file_format),Lbr,Y,Y,Y,OK,,
 LBR (Commodore library),lbr,archive,,,,,,,Y,1,,,,,,MISSING,,
 ALZip,alz,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ALZip,AlZip,Y,Y,Y,PARTIAL,,store and deflate only (AlZipReader.cs)
