@@ -40,6 +40,9 @@ public enum ZipCompressionMethod : ushort {
   /// <summary>Zstandard compression.</summary>
   Zstd = 93,
 
+  /// <summary>XZ compression (a complete .xz stream, APPNOTE 4.4.5 method 95).</summary>
+  Xz = 95,
+
   /// <summary>PPMd version I, Rev 1 compression.</summary>
   Ppmd = 98,
 

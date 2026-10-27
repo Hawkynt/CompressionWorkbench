@@ -1844,7 +1844,7 @@ Implements `IEquatable<VhdxImage>`.
 
 #### `VhdxStream`
 
-Seekable read/write view of the logical disk stored in a standalone VHDX. Payload BAT entries are translated through the MS-VHDX chunk interleaving; sector-bitmap BAT entries are skipped because standalone fixed/dynamic VHDX files do not allocate sector bitmap blocks.
+Seekable view of the logical disk stored in a VHDX (MS-VHDX v1). Payload BAT entries are translated through the chunk interleaving of payload and sector-bitmap entries.
 
 Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
@@ -1854,15 +1854,17 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `CanSeek` | `override bool CanSeek { get; }` |  |
 | `CanWrite` | `override bool CanWrite { get; }` |  |
 | `HasAmbiguousPayloadBlocks` | `bool HasAmbiguousPayloadBlocks { get; }` | True when at least one payload BAT entry has a state other than ZERO or FULLY_PRESENT. Those states do not provide a single canonical byte value for a standalone rebuild, so maintenance must fail closed instead of converting them into explicit zero blocks. |
+| `IsDifferencing` | `bool IsDifferencing { get; }` | True when this is a differencing disk read through its parent chain. |
 | `Length` | `override long Length { get; }` |  |
 | `Position` | `override long Position { get; set; }` |  |
 | `Dispose` | `protected override void Dispose(bool disposing)` |  |
 | `Flush` | `override void Flush()` |  |
+| `OpenReadOnly` | `static VhdxStream OpenReadOnly(Stream stream, out string reason)` | Opens any VHDX guest disk for reading, following a differencing disk's parent chain. Returns `null` with the reason when the disk cannot be read faithfully. |
 | `Read` | `override int Read(Span<byte> buffer)` |  |
 | `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
 | `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
 | `SetLength` | `override void SetLength(long value)` |  |
-| `TryOpen` | `static VhdxStream TryOpen(Stream stream)` | Opens a standalone VHDX guest disk. Differencing images are deliberately rejected because resolving parent chains is outside this stream's contract. |
+| `TryOpen` | `static VhdxStream TryOpen(Stream stream)` | Opens a standalone (fixed or dynamic) VHDX guest disk for reading and in-place editing. Returns `null` for anything else, including differencing disks and files with a log awaiting replay; use `OpenReadOnly` to read those. |
 | `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
 | `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
@@ -8271,7 +8273,9 @@ Represents an entry (file or directory) in an ISO 9660 image.
 | --- | --- | --- |
 | `IsoEntry` | `IsoEntry()` |  |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether the entry is a directory. |
+| `IsSymlink` | `bool IsSymlink { get; init; }` | Whether the entry is a Rock Ridge symbolic link (SL). |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Last modification timestamp. |
+| `LinkTarget` | `string LinkTarget { get; init; }` | The symbolic link's target, when `IsSymlink`. |
 | `Name` | `string Name { get; init; }` | Path of the entry within the image. |
 | `Size` | `long Size { get; init; }` | Size in bytes (0 for directories). |
 
