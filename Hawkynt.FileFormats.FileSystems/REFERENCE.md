@@ -3494,7 +3494,7 @@ Modifier for Btrfs images produced by `BtrfsWriter`. `AddOrReplace` first attemp
 
 #### `BtrfsReader`
 
-Reads Btrfs filesystem images (single-device, non-RAID). Parses superblock, builds chunk map (logical-to-physical translation), traverses B-trees to enumerate files and extract uncompressed extents.
+Reads Btrfs filesystem images (single-device, non-RAID). Parses superblock, builds chunk map (logical-to-physical translation), traverses B-trees to enumerate files and extract their extents — inline, regular, preallocated, holes, and zlib / LZO / zstd compressed (see `BtrfsCompression`).
 
 Implements `IDisposable`.
 
@@ -3504,7 +3504,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<BtrfsEntry> Entries { get; }` | Gets the entries. |
 | `UsedRealChunkTree` | `bool UsedRealChunkTree { get; }` | Diagnostic: indicates whether the chunk map used during reading was non-empty, i.e. this image carries a real chunk tree as opposed to relying on identity-mapping fallback for synthetic test data. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `ExtractTo` | `void ExtractTo(BtrfsEntry entry, Stream destination)` | Writes `entry`'s bytes to `destination` without materialising them, truncating to the entry's recorded size. Required for a file larger than a byte[] can hold. |
+| `ExtractTo` | `void ExtractTo(BtrfsEntry entry, Stream destination)` | Writes `entry`'s bytes to `destination` without materialising them, exactly `Size` bytes long. Required for a file larger than a byte[] can hold. |
 | `Extract` | `byte[] Extract(BtrfsEntry entry)` | Decodes the supplied input. |
 
 #### `BtrfsWriter`
