@@ -9,6 +9,9 @@ public enum ZooCompressionMethod : byte {
 
   /// <summary>File data is compressed using normal Zoo LZW (9–13 bit, LSB-first).</summary>
   Lzw = ZooConstants.MethodLzw,
+
+  /// <summary>File data is compressed with Zoo 2.10 LZH (-lh5- style static-Huffman blocks, 8 KiB window).</summary>
+  Lzh = ZooConstants.MethodLzh,
 }
 
 /// <summary>

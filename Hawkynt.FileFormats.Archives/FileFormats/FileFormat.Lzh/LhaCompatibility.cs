@@ -66,11 +66,12 @@ public static class LhaCompatibility {
     throw new NotSupportedException($"LHA method '{method}' is not available in archiver generation {generation}.");
   }
 
+  // Methods the writer can encode. -lh2-, -lh3-, -pm1- and -pm2- are read-only: their encoders are not
+  // implemented, and writing other data under their IDs, as this once did, produces archives no real
+  // LHA reads.
   internal static bool IsImplemented(string method) => method is
     LhaConstants.MethodLh0 or
     LhaConstants.MethodLh1 or
-    LhaConstants.MethodLh2 or
-    LhaConstants.MethodLh3 or
     LhaConstants.MethodLh4 or
     LhaConstants.MethodLh5 or
     LhaConstants.MethodLh6 or
@@ -78,7 +79,5 @@ public static class LhaCompatibility {
     LhaConstants.MethodLz4 or
     LhaConstants.MethodLzs or
     LhaConstants.MethodLz5 or
-    LhaConstants.MethodPm0 or
-    LhaConstants.MethodPm1 or
-    LhaConstants.MethodPm2;
+    LhaConstants.MethodPm0;
 }
