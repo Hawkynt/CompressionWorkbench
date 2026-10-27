@@ -1,15 +1,15 @@
 namespace FileFormat.Nsis;
 
 /// <summary>
-/// Identifies the compressor an NSIS installer was built with (<c>SetCompressor</c>).
+/// Identifies the compression algorithm used in an NSIS installer.
 /// </summary>
 public enum NsisCompression {
-  /// <summary>Nothing is compressed: the header and every block are stored.</summary>
+  /// <summary>No compression — data is stored verbatim.</summary>
   None = 0,
-  /// <summary>"zlib": raw Deflate with no zlib wrapper (NSIS 2's inflate also omits stored-block NLEN).</summary>
+  /// <summary>Zlib/Deflate compression (2-byte zlib header + raw Deflate stream).</summary>
   Zlib = 1,
-  /// <summary>"bzip2": NSIS's header-less bzip2 dialect.</summary>
+  /// <summary>BZip2 block-sorted compression.</summary>
   BZip2 = 2,
-  /// <summary>"lzma": a 5-byte properties header, then range-coded data ending in an end marker.</summary>
+  /// <summary>LZMA compression (5-byte properties header + raw LZMA stream).</summary>
   Lzma = 3,
 }

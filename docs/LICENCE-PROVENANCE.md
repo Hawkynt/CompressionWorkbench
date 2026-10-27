@@ -31,15 +31,16 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 21 | |
+| A | 14 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
-| C | 3 | specifications: `docs/G722-SPEC.md`, `docs/IT-SAMPLE-COMPRESSION-SPEC.md`, `docs/FDS-EXPANSION-SOUND-SPEC.md` |
-| R | 8 | one marked *audit* |
+| C | 4 | specifications: `docs/CVF-CODECS-ON-DISK.md` (rewrite already under way), `docs/G722-SPEC.md`, `docs/IT-SAMPLE-COMPRESSION-SPEC.md`, `docs/FDS-EXPANSION-SOUND-SPEC.md` |
+| R | 7 | one marked *audit* |
 
 ## C — incompatible, must be rewritten clean-room
 
 | Claim site | Upstream | Licence | Specification for the rewrite | Status |
 |---|---|---|---|---|
+| `Compression.Core/FileSystems/Cvf/CvfLzCodec.cs` (bit reader: "faithful port of dmsdos dblb_*") | dmsdos (`sandsmark/dmsdos`) decompression routines (`dblb_*` bit reader and the DS/JM decoders) | GPL-2.0 | [`CVF-CODECS-ON-DISK.md`](CVF-CODECS-ON-DISK.md) | clean-room rewrite in progress separately |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.G722/G722Codec.cs` | SpanDSP `src/g722.c` (Steve Underwood) | LGPL-2.1 **only** — no "or later", so not relicensable to LGPL-3 | [`G722-SPEC.md`](G722-SPEC.md) | to do |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.TrackerXmIt/ItSampleDecompressor.cs` | Schism Tracker `fmt/compression.c` (`it_decompress8/16`) | GPL-2.0-or-later | [`IT-SAMPLE-COMPRESSION-SPEC.md`](IT-SAMPLE-COMPRESSION-SPEC.md) | to do |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Nes2a03/Expansion/FdsAudio.cs` | NSFPlay `xgm/devices/Sound/nes_fds.cpp` (Brezza / Brad Smith) | none — the readme only presumes redistribution is allowed | [`FDS-EXPANSION-SOUND-SPEC.md`](FDS-EXPANSION-SOUND-SPEC.md) | to do |
@@ -70,17 +71,10 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Claim site | Upstream | Licence | Where the notice is |
 |---|---|---|---|
-| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Dms/DmsDecoder.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Dms/DmsReader.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Dms/DmsRecords.cs` | libxad DMS client `libxad/clients/DMS.c` (Dirk Stöcker), DMS 1.13 (2006-05-31) | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Dms/THIRD-PARTY-NOTICE.libxad.txt` |
-| `Compression.Core/Dictionary/KwajLzh/KwajLzhBuildingBlock.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Kwaj/KwajStream.cs` | libmspack `kwajd.c`, `kwaj.h`, `readhuff.h` and `lzssd.c` (Stuart Caie; method 3 by Jeff Johnson), revision `55d501976171397ccd5d5a7a1ca7da065b1d9a06` | LGPL-2.1; the notice records conversion to LGPL-3 under section 3 | `Compression.Core/Dictionary/KwajLzh/THIRD-PARTY-NOTICE.libmspack.txt` |
-| `Compression.Core/Dictionary/Ace/`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ace/AceReader.cs` | acefile `acefile.py` (Daniel Roethlisberger and contributors), revision `11ed076ae19e8228148731cfbc05f019a395b3b9` | BSD-2-Clause | `Compression.Core/Dictionary/Ace/THIRD-PARTY-NOTICE.acefile.txt` |
 | `Compression.Core/Dictionary/Lzbitmap/` | libzbitmap (Ernesto A. Fernández, Corellium) | MIT | `THIRD-PARTY-NOTICE.libzbitmap.txt` |
 | `Compression.Core/Dictionary/Csc/` | libcsc (Fu Siyuan) | Unlicense | `THIRD-PARTY-NOTICE.libcsc.txt` |
 | `Compression.Core/Dictionary/Arj/ArjFastestDecoder.cs` | XADMaster `XADARJFastestHandle.m` (Dag Ågren, MacPaw), revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Arj/THIRD-PARTY-NOTICE.XADMaster.txt` |
-| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Zpaq/` | libzpaq / zpaq 7.15 (Matt Mahoney) | public domain (Unlicense) | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Zpaq/THIRD-PARTY-NOTICE.libzpaq.txt` |
-| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.InnoSetup/` | innoextract 1.10-dev (Daniel Scharrer), master as of 2026-10-19; newer layout facts from Inno Setup tags `is-6_4_2` through `is-7_1_0` | zlib (innoextract); Inno Setup format facts | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.InnoSetup/THIRD-PARTY-NOTICE.InnoSetup.txt` |
-| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/DiskDoublerReader.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/DiskDoublerAdDecoder.cs` | XADMaster `XADDiskDoublerParser.m` and `XADDiskDoublerADnHandle.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Compression.Core/Dictionary/Lzh/Lh2Decoder.cs`, `Compression.Core/Dictionary/Lzh/Lh3Decoder.cs`, `Compression.Core/Dictionary/Lzh/LhaLegacyBitReader.cs` | XADMaster `XADLZHOldHandles.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.XADMaster.txt` |
-| `Compression.Core/Dictionary/Lzh/Lh1Tree.cs`, `Compression.Core/Dictionary/Lzh/Lh1Decoder.cs`, `Compression.Core/Dictionary/Lzh/LzsDecoder.cs`, `Compression.Core/Dictionary/Lzh/Lz5Decoder.cs`, `Compression.Core/Dictionary/Lzh/Pm1Decoder.cs`, `Compression.Core/Dictionary/Lzh/Pm2Decoder.cs`, `Compression.Core/Dictionary/Lzh/PmaHistory.cs`, `Compression.Core/Dictionary/Lzh/LhaBitInput.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Lzh/LhaHeaderParser.cs` | lhasa (Simon Howard), revision `75ed83559f23e9538e0045c62f53f77ab03d03d6` | ISC | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.lhasa.txt`; `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Lzh/THIRD-PARTY-NOTICE.lhasa.txt` |
 | `Compression.Core/Streams/Lzfse/` | Apple lzfse reference | BSD-3-Clause | `THIRD-PARTY-NOTICE.lzfse.txt`; `LzfseFseDecoder.cs` also carries the header inline |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Nellymoser/NellymoserCodec.cs`, `Hawkynt.FileFormats.Audio/Codecs/Codec.Nellymoser/NellymoserTables.cs` | FFmpeg `nellymoserdec.c`, `nellymoser.c` | MIT | `THIRD-PARTY-NOTICES.md` § Nellymoser |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Alac/` | Apple ALAC reference | Apache-2.0 | `THIRD-PARTY-NOTICES.md` § ALAC |
@@ -96,7 +90,6 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Claim site | What the comment refers to | Note |
 |---|---|---|
-| `Compression.Core/FileSystems/Cvf/CvfLzCodec.cs`, `Compression.Core/FileSystems/Cvf/MsdblLzCodec.cs`, `Compression.Core/FileSystems/Cvf/Sd4Codec.cs` | the measured format description in [`CVF-CODECS-ON-DISK.md`](CVF-CODECS-ON-DISK.md); dmsdos (GPL-2.0) as a black-box oracle | independent rewrite from the format description and reference vectors replaces the former dmsdos-derived bit reader and DS/JM decoders |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/PcePsg.cs`, `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/CpuHuC6280.cs` | Mednafen `pce_psg.cpp`, `huc6280.cpp` (GPL-2.0-or-later) as behavioural references, next to Charles MacDonald's notes | ***audit***: "faithful to Mednafen" is behaviour wording, not a port claim, but no intermediate specification exists. Compare structure with Mednafen; on correspondence, reclassify C and write a specification first |
 | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.BcacheFs/BcacheFsRawKey.cs` | bcachefs `get_inc_field()` (GPL-2.0) — the packed-key bit layout | "ports … semantics" means the on-disk bit order, a format fact; the implementation is an independent bit-serial loop |
 | `Compression.Core/Dictionary/Nrv2b/Nrv2bBuildingBlock.cs`, `Compression.Core/Dictionary/Nrv2d/Nrv2dBuildingBlock.cs`, `Compression.Core/Dictionary/Nrv2e/Nrv2eBuildingBlock.cs` | UCL `n2b_d.ch`, `n2d_d.c`, `n2e_d.c` (GPL-2.0-or-later) cited for the stream layout | format facts, verified against real UPX output; no code claim |

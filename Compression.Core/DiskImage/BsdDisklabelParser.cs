@@ -62,43 +62,6 @@ public static class BsdDisklabelParser {
   public static bool IsDisklabel(Stream slice) => FindLabelOffset(slice) >= 0;
 
   /// <summary>
-  /// Reports whether <paramref name="disk"/> carries a disklabel that stands on its own — no MBR
-  /// slice around it, as a "dangerously dedicated" FreeBSD disk or a NetBSD/OpenBSD disk on a
-  /// non-PC port writes it. With nothing else vouching for the bytes the label must prove
-  /// itself structurally: <c>d_magic</c> and <c>d_magic2</c> both present 132 bytes apart, a
-  /// sector size that is a power of two in [512, 8192], a partition count within
-  /// <c>MAXPARTITIONS</c>, and every used partition starting inside the disk.
-  /// </summary>
-  /// <remarks>
-  /// <c>d_checksum</c> is deliberately not required: the labels GNU parted 3.x writes
-  /// (<c>mklabel bsd</c>) do not satisfy the 4.4BSD <c>dkcksum</c> XOR rule, and neither the
-  /// Linux kernel nor libblkid checks it — the two magics are what both rely on.
-  /// </remarks>
-  /// <param name="disk">A seekable stream over the whole disk.</param>
-  public static bool IsStandaloneDisklabel(Stream disk) {
-    var labelOffset = FindLabelOffset(disk);
-    if (labelOffset < 0) return false;
-    var label = new byte[PartitionsOffset + MaxPartitions * PartitionRecordSize];
-    disk.Position = labelOffset;
-    var read = disk.ReadAtLeast(label, label.Length, throwOnEndOfStream: false);
-    if (read < PartitionsOffset) return false;
-    var span = label.AsSpan(0, read);
-    if (ReadU32(span, Magic2Offset) != DiskMagic) return false;
-    var secSize = ReadU32(span, 40);
-    if (secSize is < 512 or > 8192 || (secSize & (secSize - 1)) != 0) return false;
-    var npartitions = BinaryPrimitives.ReadUInt16LittleEndian(span[NPartitionsOffset..]);
-    if (npartitions is 0 or > MaxPartitions) return false;
-    if (PartitionsOffset + npartitions * PartitionRecordSize > span.Length) return false;
-    var diskSectors = (ulong)disk.Length / secSize;
-    for (var i = 0; i < npartitions; ++i) {
-      var size = ReadU32(span, PartitionsOffset + i * PartitionRecordSize);
-      var offset = ReadU32(span, PartitionsOffset + i * PartitionRecordSize + 4);
-      if (size != 0 && offset >= diskSectors) return false;
-    }
-    return true;
-  }
-
-  /// <summary>
   /// Parses the BSD disklabel contained in <paramref name="slice"/> and returns
   /// its filesystem partitions.
   /// </summary>

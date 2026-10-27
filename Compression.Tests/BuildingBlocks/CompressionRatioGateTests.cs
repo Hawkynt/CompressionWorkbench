@@ -50,8 +50,6 @@ public class CompressionRatioGateTests {
     ["BB_Dpcm"] = "difference transform, size-preserving by design",
     ["BB_Mtf"] = "ranking transform, size-preserving by design",
     ["BB_Zle"] = "ZFS zero-length encoding; only runs of zero bytes collapse",
-    ["BB_Swap2"] = "byte-order filter, size-preserving by design",
-    ["BB_Swap4"] = "byte-order filter, size-preserving by design",
     ["BB_EliasDelta"] = "universal code for small integers; arbitrary bytes cost over 8 bits",
     ["BB_EliasGamma"] = "universal code for small integers; arbitrary bytes cost over 8 bits",
     ["BB_ExpGolomb"] = "universal code for small integers; arbitrary bytes cost over 8 bits",

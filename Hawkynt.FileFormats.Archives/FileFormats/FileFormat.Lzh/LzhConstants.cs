@@ -40,9 +40,6 @@ public static class LhaConstants {
   /// <summary>Method: directory marker.</summary>
   public const string MethodLhd = "-lhd-";
 
-  /// <summary>Method: lh5-style static Huffman with a 1 MiB window (UNLHA32), read-only.</summary>
-  public const string MethodLhx = "-lhx-";
-
   /// <summary>Method: store (same as lh0, legacy).</summary>
   public const string MethodLz4 = "-lz4-";
 

@@ -12113,79 +12113,63 @@ Performs the bounded offline ReFS block-clone operation for two existing, equal-
 
 ### Namespace `FileSystem.Reiser4`
 
-[`Reiser4BlockMover`](#reiser4blockmover) · [`Reiser4FileBody`](#reiser4filebody) · [`Reiser4FormatDescriptor`](#reiser4formatdescriptor) · [`Reiser4MasterSb`](#reiser4mastersb) · [`Reiser4Reader`](#reiser4reader) · [`Reiser4Reader.Entry`](#reiser4readerentry) · [`Reiser4Reader.EntryKind`](#reiser4readerentrykind) · [`Reiser4Reader.FileMetadata`](#reiser4readerfilemetadata) · [`Reiser4Writer`](#reiser4writer)
+[`Reiser4BlockMover`](#reiser4blockmover) · [`Reiser4FormatDescriptor`](#reiser4formatdescriptor) · [`Reiser4MasterSb`](#reiser4mastersb) · [`Reiser4Reader`](#reiser4reader) · [`Reiser4Reader.Entry`](#reiser4readerentry) · [`Reiser4Reader.FileMetadata`](#reiser4readerfilemetadata) · [`Reiser4Writer`](#reiser4writer)
 
 #### `Reiser4BlockMover`
 
-Moves the data blocks of a Reiser4 volume's extent files in place and repoints the extent units that name them, wherever in the tree their twig nodes sit.
+Moves a file's blocks inside a Reiser4 payload area and rewrites the directory entry that said where it started.
 
 Implements `IFilesystemBlockMover`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Reiser4BlockMover` | `Reiser4BlockMover()` |  |
-| `BlockSize` | `int BlockSize { get; }` | A block, which is what an extent unit counts in. |
-| `FirstDataByte` | `long FirstDataByte { get; }` | First byte a file may occupy: past the jump area, the superblocks, the journal, the status and backup blocks and the first two nodes. |
-| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call notes where one unit's run has got to. |
-| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves. |
-| `Init` | `void Init(Stream image)` | Reads the tree once and notes where every extent unit is. |
+| `BlockSize` | `int BlockSize { get; }` | A block, which is what the directory counts in. |
+| `FirstDataByte` | `long FirstDataByte { get; }` | First byte a file may occupy: past the reserved blocks and the directory, which is where the first file already sits. |
+| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call notes where one run has got to; a file split by the bitmaps it steps over is simply several calls. |
+| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
+| `Init` | `void Init(Stream image)` | Reads the directory once and notes where every file is. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `SettleDirectory` | `void SettleDirectory(Stream image)` | Writes every unit's new start into its twig and moves the allocator bits with it. |
+| `SettleDirectory` | `void SettleDirectory(Stream image)` | Writes each file's new physical location into both the native extent40 item and the legacy workbench directory once the pass is over. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
-
-#### `Reiser4FileBody`
-
-How the body of a regular file this writer creates is stored.
-
-| Value | Numeric | Summary |
-| --- | --- | --- |
-| `Extents` | `0` | Extent items in twigs pointing at data blocks (`reg40`, "extents" formatting). |
-| `Tails` | `1` | Tail (`plain40`) items in leaves holding the bytes themselves (`reg40`, "tails" formatting). |
-| `Smart` | `2` | Tails up to four blocks, extents above that — the kernel's "smart" formatting. |
-| `Compressed` | `3` | A cryptcompress (`ccreg40`) file: compressed disk clusters in `ctail40` items. |
-| `Profile` | `4` | Whatever the volume's root plugin set says new files are: its create plugin, then its formatting. |
 
 #### `Reiser4FormatDescriptor`
 
-Descriptor for Reiser4 filesystem images (successor to ReiserFS 3.6 — completely different on-disk layout). Volumes whose node40/node41 tree the reader walks completely list and extract their files, directories, links and special files — after replaying a pending journal — and are created and edited through staged rebuilds that carry the volume's identity, plugin profile and every object's keys, metadata and body across; other images surface the master superblock at offset 65536, the format40 superblock that follows it, a structured metadata bundle and the raw image. Magic: `"ReIsEr4"` at offset 65536 — master superblock `ms_magic[16]`. References: `https://archive.kernel.org/oldwiki/reiser4.wiki.kernel.org/` — archived Reiser4 wiki (format40 layout, plugin system)reiser4progs (`mkfs.reiser4` / `debugfs.reiser4`) — canonical userspace tooling`https://en.wikipedia.org/wiki/Reiser4` — Wikipedia article
+Descriptor for Reiser4 filesystem images (successor to ReiserFS 3.6 — completely different on-disk layout). Volumes whose node40 tree the reader walks completely list and extract their files and directories, and are created and edited through staged rebuilds that carry the volume's identity and every object's metadata across; other images surface the master superblock at offset 65536, the format40 superblock that follows it, a structured metadata bundle and the raw image. Magic: `"ReIsEr4"` at offset 65536 — master superblock `ms_magic[16]`. References: `https://archive.kernel.org/oldwiki/reiser4.wiki.kernel.org/` — archived Reiser4 wiki (format40 layout, plugin system)reiser4progs (`mkfs.reiser4` / `debugfs.reiser4`) — canonical userspace tooling`https://en.wikipedia.org/wiki/Reiser4` — Wikipedia article
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Reiser4FormatDescriptor` | `Reiser4FormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` |  |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Knobs the writer honours. `VolumeLabel` is written into the master superblock label field (and the backup record); `ImageSize` drives `BlockCount` (4 KB blocks, clamped to the writer minimum); `FileBody` picks how regular files are stored (`Reiser4FileBody`). The 4 KB block size is fixed — the embedded mkfs.reiser4 templates are byte-exact 4096-byte captures — so it is intentionally not exposed. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `AddHardLink` | `void AddHardLink(Stream archive, string path, string existing)` | Adds `path` as a further name of the existing file `existing`. |
-| `AddSpecialFile` | `void AddSpecialFile(Stream archive, string path, ushort mode, ulong device = 0)` | Adds a device node (`device` = major << 20 \| minor), FIFO or socket. |
-| `AddSymlink` | `void AddSymlink(Stream archive, string path, string target)` | Adds a symbolic link at `path` pointing at `target`. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces members while retaining every existing object; new files are stored as extents. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, Reiser4FileBody body)` | Adds or replaces members, storing new regular files as `body` says. |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
-| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Creates the volume from input streams. Each source is consumed once into a temporary file, then copied in bounded chunks by `Reiser4Writer`; no complete file is staged in memory. Directory inputs retain empty directories and nested paths. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a volume holding `inputs`. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` | Gets the min total archive size. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Knobs the empty-filesystem writer actually honours. `VolumeLabel` is written into the master superblock label field (and the backup record) and surfaces through `fsck.reiser4` / our metadata readback; `ImageSize` drives `BlockCount` (4 KB blocks, clamped to the writer minimum). The 4 KB block size is fixed — the embedded mkfs.reiser4 templates are byte-exact 4096-byte captures — so it is intentionally not exposed. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces members while retaining existing stat-data extensions. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Creates the supported native node40 profile from input streams. Each source is consumed once into a temporary file, then copied in bounded chunks by `Reiser4Writer`; no complete file is staged in memory. Directory inputs retain empty directories and nested paths. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Defragments the volume: in place when the planner's moves can be written back as extent repoints (any tree height), otherwise by a staged rebuild that lays every file out contiguously at the same volume size. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Reports the volume's layout: the reserved blocks, the tree nodes and the allocator bitmaps as metadata, then each file's extent runs. A volume whose journal still holds transactions to replay reports nothing: its blocks are not yet where the tree says. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rewrites the volume with every file laid out contiguously from the start of the payload area. Each entry is spilled to scratch and the writer pulls it back, so the rebuild is not bounded by what a byte[] can hold. |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Reports the volume's layout: the reserved blocks and the payload directory chain as metadata, then each file's blocks. A file's blocks are consecutive apart from the block-allocator bitmaps they step over. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Rebuilds the volume while carrying existing metadata, at the requested image size or the smallest that holds it. |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Rebuilds the supported native profile while carrying existing metadata. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes members and directory subtrees through a metadata-preserving rebuild. |
-| `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds tightly while retaining native metadata, or copies through when the volume cannot be rebuilt smaller. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds tightly while retaining native metadata, or copies through on failure. |
 | `UpdateMetadata` | `void UpdateMetadata(Stream archive, string name, FileMetadata metadata)` | Updates a native object's mode, owner and timestamps through a staged rebuild. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every byte no live file and no metadata block occupies. |
 
@@ -12222,7 +12206,7 @@ Parses the Reiser4 master superblock at byte offset 65536 (16 * 4 KB) and the ad
 
 #### `Reiser4Reader`
 
-Reads a Reiser4 image: the master superblock's label, UUID and block size, and every object of the node40/node41 tree after the journal is replayed — directories, regular files whose bodies are extents, tails or compressed clusters (holes included), symbolic links, device nodes, FIFOs, sockets and hard links. The older workbench payload directory remains a compatibility fallback for images written before native tree items became authoritative.
+Reads a Reiser4 image: the master superblock's label, UUID and block size, plus regular files represented by the native stat40/cde40/extent40 items emitted by `Reiser4Writer`. The older workbench payload directory remains a compatibility fallback for images written before native tree items became authoritative.
 
 Implements `IDisposable`.
 
@@ -12231,17 +12215,15 @@ Implements `IDisposable`.
 | `Reiser4Reader` | `Reiser4Reader(Stream stream, bool leaveOpen = true)` | Initializes a new instance of `Reiser4Reader`. |
 | `MasterOffset` | `const long MasterOffset` | Byte offset of the master superblock: block 16 at a 4 KB block size. |
 | `BlockSize` | `int BlockSize { get; }` | Filesystem block size from the master superblock. |
-| `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Files, directories, links and special files found in the native tree, or files in the legacy payload directory. |
+| `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Files and directories found in the native tree, or files in the legacy payload directory. |
 | `Label` | `string Label { get; }` | Volume label from the master superblock. |
 | `Length` | `long Length { get; }` | Total size of the backing image in bytes. |
-| `NativeProblem` | `string NativeProblem { get; }` | Why the native tree was not decoded, when it was not. |
-| `NativeTreeValid` | `bool NativeTreeValid { get; }` | True when the complete native namespace was decoded. |
-| `ReplayedTransactions` | `int ReplayedTransactions { get; }` | Journal transactions replayed before the tree was read (0 when the journal was clean). |
+| `NativeTreeValid` | `bool NativeTreeValid { get; }` | True when the complete supported native namespace was decoded. |
 | `RootMetadata` | `FileMetadata RootMetadata { get; }` | Root stat-data, including inherited plugin settings. |
 | `UuidHex` | `string UuidHex { get; }` | Volume UUID from the master superblock, as hex. |
 | `Valid` | `bool Valid { get; }` | True when the image carries a valid Reiser4 master superblock. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `EnumerateRuns` | `IEnumerable<ValueTuple<long, long>> EnumerateRuns(Entry entry)` | Where an entry's bytes live as physical byte runs (extent data only; tails and clusters live in tree nodes). |
+| `EnumerateRuns` | `IEnumerable<ValueTuple<long, long>> EnumerateRuns(Entry entry)` | Where an entry's bytes live as physical byte runs. |
 | `ExtractTo` | `long ExtractTo(Entry entry, Stream destination)` | Writes `entry`'s contents into `destination`. |
 | `Extract` | `byte[] Extract(Entry entry)` | Reads a file's contents. Only valid below the array limit. |
 
@@ -12254,30 +12236,11 @@ Implements `IEquatable<Entry>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Entry` | `Entry(string Name, ulong FirstBlock, long Size)` | One filesystem object and its physical extents. |
-| `Body` | `string Body { get; init; }` | How the body of a regular file is stored: "extent", "tail", "ctail" or "" for none. |
-| `Device` | `ulong Device { get; init; }` | The device number of a device node, as the kernel encodes it (major << 20 \| minor). |
 | `FirstBlock` | `ulong FirstBlock { get; init; }` |  |
-| `HardLinkOf` | `string HardLinkOf { get; init; }` | The path this entry is a further name of, when the object has more than one name. |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | True when this entry is a directory. |
-| `Kind` | `EntryKind Kind { get; init; }` | What kind of object this entry names. |
-| `LinkTarget` | `string LinkTarget { get; init; }` | The target of a symbolic link. |
 | `Metadata` | `FileMetadata Metadata { get; init; }` | On-disk stat-data fields retained for metadata-preserving rebuilds. |
 | `Name` | `string Name { get; init; }` |  |
 | `Size` | `long Size { get; init; }` |  |
-
-#### `Reiser4Reader.EntryKind`
-
-What kind of object an entry names.
-
-| Value | Numeric | Summary |
-| --- | --- | --- |
-| `File` | `0` | A regular file. |
-| `Directory` | `1` | A directory. |
-| `Symlink` | `2` | A symbolic link; `LinkTarget` holds its target. |
-| `CharacterDevice` | `3` | A character device; `Device` holds its number. |
-| `BlockDevice` | `4` | A block device; `Device` holds its number. |
-| `Fifo` | `5` | A named pipe. |
-| `Socket` | `6` | A socket. |
 
 #### `Reiser4Reader.FileMetadata`
 
@@ -12299,12 +12262,11 @@ Implements `IEquatable<FileMetadata>`.
 | `RawStatData` | `byte[] RawStatData { get; init; }` |  |
 | `Size` | `long Size { get; init; }` |  |
 | `StatLocality` | `ulong StatLocality { get; init; }` | Locality of the object stat key. |
-| `StatOrdering` | `ulong StatOrdering { get; init; }` | Ordering word of the object stat key (the kernel derives it from the object's first name). |
 | `UserId` | `uint UserId { get; init; }` |  |
 
 #### `Reiser4Writer`
 
-Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy` from `reiser4progs 1.2.2` produces and adds directories, regular files, symbolic links, device nodes, FIFOs, sockets and hard links through the native tree — stat data, directory entries and tails in leaves, extents in twigs, as many internal levels above them as the tree needs — so that `fsck.reiser4` validates the result as `"FS is consistent."` and a Reiser4 kernel mounts and reads it. The image holds 25 reserved blocks at fixed positions (block size = 4 KB): 0..15 — jump-area / partition data (zero).16 — master superblock (`"ReIsEr4"` at offset 65536).17 — format40 superblock (`"ReIsEr40FoRmAt"` at offset 52).18 — block-allocator bitmap (4-byte adler32 + bit array).19..20 — journal header / footer (zero for an unjournalled volume).21 — status block (`"ReiSeR4StATusBl"`).22 — superblock backup record.23 — storage-tree root (twig, level 2, or higher).24 — first leaf (the root directory's stat data and entries). The fixed blocks are byte-exact captures of a real `mkfs.reiser4` image with only the per-image fields patched in: UUID, label, mkfs id, block and free-block counts, the root, the next object id, the file count and the tree height. Regular files are written as extents by default; `FileBody` selects tails, the kernel's smart policy or compressed (cryptcompress) files instead.
+Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy` from `reiser4progs 1.2.2` produces and adds directories and regular files through the native tree — stat data and directory entries in leaves, extents in twigs, as many internal levels above them as the tree needs — so that `fsck.reiser4` validates the result as `"FS is consistent."` with or without files. The image holds 25 reserved blocks at fixed positions (block size = 4 KB): 0..15 — jump-area / partition data (zero).16 — master superblock (`"ReIsEr4"` at offset 65536).17 — format40 superblock (`"ReIsEr40FoRmAt"` at offset 52).18 — block-allocator bitmap (4-byte adler32 + bit array).19..20 — journal header / footer (zero for an empty FS).21 — status block (`"ReiSeR4StATusBl"`).22 — superblock backup record.23 — storage-tree root (twig, level 2).24 — leaf containing the root-directory stat-data + ".", "..". Implementation strategy: we embed the seven non-zero reference blocks as resources captured byte-exact from a real `mkfs.reiser4` image, then patch in only the per-image fields: UUID (16 bytes, random)Label (≤ 16 bytes, optional)mkfs_id (4 bytes, random) — appears in 4 places: format40 SB, backup record, twig header, leaf header.block_count / free_blocks (in format40 SB and backup).Bitmap (block 18) — bits 0..24 set for the 25 reserved blocks plus filler bits for the unused tail of the bitmap range, then adler32 of the bitmap data prepended. Round-trips with `fsck.reiser4 -y` exit 0 and produces output identical to the reference image except for the random fields above.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12312,19 +12274,15 @@ Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy
 | `BlockSize` | `const int BlockSize` | Filesystem block size — 4 KB is the only supported value. Reiser4 theoretically supports 512 / 1024 / 2048 / 4096 / 8192, but the embedded templates are 4096-byte exact captures. |
 | `MinBlockCount` | `const ulong MinBlockCount` | Minimum block count we'll emit. mkfs.reiser4 itself rejects images below ~750 blocks, but we round up to 4096 (= 16 MB) to match the reference capture and avoid bitmap-truncation edge cases. |
 | `BlockCount` | `ulong BlockCount { get; set; }` | Total filesystem size in 4 KB blocks. Clamped to `MinBlockCount`. |
-| `FileBody` | `Reiser4FileBody FileBody { get; set; }` | How regular files are stored. `Profile` follows the captured mkfs profile, whose root names cryptcompress for new files. |
 | `Label` | `string Label { get; set; }` | Customisable label written to the master SB (NUL-padded to 16 bytes; longer strings are truncated; null = empty/zero). |
 | `MkfsId` | `uint? MkfsId { get; set; }` | Optional 32-bit mkfs identifier. When null, a random value is drawn from `Shared`. |
 | `Uuid` | `byte[] Uuid { get; set; }` | Optional 16-byte UUID. When null, a random Guid is used. |
 | `AddDirectory` | `void AddDirectory(string name, FileMetadata metadata = null)` | Retains an explicit directory, including an empty directory. |
-| `AddFile` | `void AddFile(string name, byte[] data, FileMetadata metadata = null)` | Adds a regular file. |
-| `AddHardLink` | `void AddHardLink(string name, string existing)` | Adds `name` as a further name of the file at `existing`. |
-| `AddSpecialFile` | `void AddSpecialFile(string name, ushort mode, ulong device = 0, FileMetadata metadata = null)` | Adds a device node, FIFO or socket; `mode` carries the file type bits. |
+| `AddFile` | `void AddFile(string name, byte[] data, FileMetadata metadata = null)` | Adds a regular file to the payload area. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream, FileMetadata metadata = null)` | Adds a file whose bytes are pulled from `openStream` as the image is written. |
-| `AddSymlink` | `void AddSymlink(string name, string target, FileMetadata metadata = null)` | Adds a symbolic link whose target is `target`. |
-| `Build` | `byte[] Build()` | Builds the image fully in memory and returns the byte array. |
-| `EstimateBlockCount` | `static ulong EstimateBlockCount(IEnumerable<long> fileSizes)` | Smallest block count that holds `fileSizes`: the reserved blocks, every file's data blocks, the tree, and the bitmap blocks interleaved among them. |
-| `Write` | `void Write(Stream output)` | Streams the full image into `output` and leaves the stream positioned at the end. |
+| `Build` | `byte[] Build()` | Builds the image fully in memory and returns the byte array. For block counts above ~32 K the result will be tens of MB; prefer the streaming overload when caller-side allocation matters. |
+| `EstimateBlockCount` | `static ulong EstimateBlockCount(IEnumerable<long> fileSizes)` | Smallest block count that holds `fileSizes`: the reserved blocks, the directory chain, every file's data blocks, and the bitmap blocks interleaved among them. |
+| `Write` | `void Write(Stream output)` | Streams the full image into `output`. Writes `BlockCount`×4096 bytes and leaves the stream positioned at the end. |
 
 ### Namespace `FileSystem.ReiserFs`
 
@@ -12973,7 +12931,7 @@ Builds a genuine Stac Electronics STACVOL — the on-disk shape a real Stacker d
 | `GenuineStackerWriter` | `GenuineStackerWriter()` |  |
 | `CompressionLevel` | `int CompressionLevel { get; init; }` | Codec effort (search depth). Higher = better ratio, slower. |
 | `CompressionMethod` | `CvfLzMethod CompressionMethod { get; init; }` | Per-cluster compression: Stored (default), Sd3 (Stacker 3), Sd4 (Stacker 4), Ds, or Auto (smallest of Ds/Sd3/Sd4 per cluster). The Stacker driver tells them apart by the payload's first word — 0x0081 SD-4, 0x5344 ("DS") the DoubleSpace codec, anything else SD-3. JM/SQ map to Ds. |
-| `ForceCompress` | `bool ForceCompress { get; init; }` | Keep a compressed cluster even if it does not shrink (auto-best off). Stacker cannot record a compressed run that fills a whole cluster — such a run reads as stored — so a payload that needs every sector of its cluster is stored raw regardless; any shorter payload is kept compressed either way, which leaves this option without effect on Stacker volumes. |
+| `ForceCompress` | `bool ForceCompress { get; init; }` | Keep a compressed cluster even if it does not shrink (auto-best off). |
 | `Timestamp` | `DateTime Timestamp { get; init; }` | Creation/modification timestamp stamped on every file entry. Default (before 1980) leaves the FAT date/time fields zero. |
 | `Version` | `int Version { get; init; }` | Stacker major version recorded in the decoded superblock (< 410 ⇒ v3). |
 | `VolumeLabel` | `string VolumeLabel { get; init; }` | Optional inner-volume label (≤11 chars). Empty = no label entry. |
@@ -13071,173 +13029,6 @@ Emits a Stacker STACVOL that `StackerReader` round-trips byte-exact. The contain
 | `VolumePath` | `string VolumePath { get; init; }` | Gets or sets the volume path. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
 | `Build` | `byte[] Build()` | Performs the build operation. |
-
-### Namespace `FileSystem.Svr4Bfs`
-
-[`Svr4BfsEntry`](#svr4bfsentry) · [`Svr4BfsFormatDescriptor`](#svr4bfsformatdescriptor) · [`Svr4BfsInode`](#svr4bfsinode) · [`Svr4BfsLayout`](#svr4bfslayout) · [`Svr4BfsModifier`](#svr4bfsmodifier) · [`Svr4BfsReader`](#svr4bfsreader) · [`Svr4BfsSuperblock`](#svr4bfssuperblock) · [`Svr4BfsWriter`](#svr4bfswriter)
-
-#### `Svr4BfsEntry`
-
-One name in the BFS root directory.
-
-Implements `IEquatable<Svr4BfsEntry>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Svr4BfsEntry` | `Svr4BfsEntry(string Name, int Ino, long Size, DateTime LastModified, Svr4BfsInode Inode, long DirentOffset)` | One name in the BFS root directory. |
-| `DirentOffset` | `long DirentOffset { get; init; }` | Byte offset of the directory entry inside the image. |
-| `Ino` | `int Ino { get; init; }` | The inode the name points at. |
-| `Inode` | `Svr4BfsInode Inode { get; init; }` | The inode itself. |
-| `LastModified` | `DateTime LastModified { get; init; }` | Inode modification time. |
-| `Name` | `string Name { get; init; }` | The directory-entry name (at most 14 bytes). |
-| `Size` | `long Size { get; init; }` | File size in bytes. |
-
-#### `Svr4BfsFormatDescriptor`
-
-Read/write descriptor for the SVR4 / UnixWare Boot File System — the flat, contiguous-file volume UnixWare boots from (`/stand`). Magic `0x1BADFACE` little-endian at offset 0.
-
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Svr4BfsFormatDescriptor` | `Svr4BfsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces root-level files in place; all inputs land or none do. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named files in place, zeroing their blocks; unknown names are ignored. |
-
-#### `Svr4BfsInode`
-
-One 64-byte BFS inode.
-
-Implements `IEquatable<Svr4BfsInode>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Svr4BfsInode` | `Svr4BfsInode(ushort Ino, uint StartBlock, uint EndBlock, uint EndOffset, uint VType, uint Mode, uint Uid, uint Gid, uint Nlink, uint Atime, uint Mtime, uint Ctime)` | One 64-byte BFS inode. |
-| `Atime` | `uint Atime { get; set; }` |  |
-| `Ctime` | `uint Ctime { get; set; }` |  |
-| `EndBlock` | `uint EndBlock { get; set; }` |  |
-| `EndOffset` | `uint EndOffset { get; set; }` |  |
-| `Gid` | `uint Gid { get; set; }` |  |
-| `HasNoBlocks` | `bool HasNoBlocks { get; }` | True when the inode owns no data blocks (an empty file stores start block 0). |
-| `Ino` | `ushort Ino { get; set; }` |  |
-| `IsFree` | `bool IsFree { get; }` | True when the slot is free. |
-| `Mode` | `uint Mode { get; set; }` |  |
-| `Mtime` | `uint Mtime { get; set; }` |  |
-| `Nlink` | `uint Nlink { get; set; }` |  |
-| `Size` | `long Size { get; }` | File size in bytes: the end offset names the last byte, relative to the volume. |
-| `StartBlock` | `uint StartBlock { get; set; }` |  |
-| `Uid` | `uint Uid { get; set; }` |  |
-| `VType` | `uint VType { get; set; }` |  |
-| `BlocksFor` | `static uint BlocksFor(long size)` | Blocks needed for `size` bytes. |
-| `EndOffsetFor` | `static uint EndOffsetFor(uint startBlock, long size)` | The end offset an inode stores for `size` bytes from `startBlock`. |
-| `Parse` | `static Svr4BfsInode Parse(ReadOnlySpan<byte> raw)` | Parses one inode. |
-| `WriteTo` | `void WriteTo(Span<byte> raw)` | Serialises the inode into a 64-byte slot (padding zeroed). |
-
-#### `Svr4BfsLayout`
-
-On-disk constants and structures of the SVR4 / UnixWare Boot File System (`/stand`). Every value here is documented in `docs/SVR4-BFS-ON-DISK.md` together with the measurement that confirmed it.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `BlockSize` | `const int BlockSize` | The only block size the format knows. |
-| `DirentSize` | `const int DirentSize` | Bytes per directory entry: a 16-bit inode number and a 14-byte name. |
-| `InodeSize` | `const int InodeSize` | Bytes per inode. |
-| `InodesPerBlock` | `const int InodesPerBlock` | Inodes per 512-byte block. |
-| `Magic` | `const uint Magic` | Superblock magic, little-endian at offset 0. |
-| `NameMax` | `const int NameMax` | Longest name a directory entry holds. |
-| `NoCompaction` | `const uint NoCompaction` | Value of the compaction fields (`s_from`, `s_to`, …) on a clean volume. |
-| `RootIno` | `const int RootIno` | Inode number of the root (and only) directory; inode slot 0. |
-| `VDir` | `const uint VDir` | `i_vtype` of a directory. |
-| `VReg` | `const uint VReg` | `i_vtype` of a regular file. |
-| `DecodeName` | `static string DecodeName(ReadOnlySpan<byte> raw)` | Decodes a NUL-padded directory-entry name. |
-| `EncodeName` | `static byte[] EncodeName(string name)` | Encodes a name as stored in a directory entry, or returns null when it cannot be stored. |
-| `InodeOffset` | `static long InodeOffset(int ino)` | Byte offset of inode `ino` inside the image. |
-| `LastInode` | `static int LastInode(uint start)` | Highest inode number an inode area ending at `start` can hold. |
-
-#### `Svr4BfsModifier`
-
-Edits an SVR4 BFS volume in place, the way the Linux `bfs` driver does: a new file takes a free inode slot, a free root-directory slot and one contiguous run of free blocks; a removed name clears its directory slot and, with the last link, its inode and data blocks.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream image, string name, byte[] data, ArchiveEntryMetadata metadata = null, DateTimeOffset? now = null)` | Adds `name`, replacing an existing file of that name. |
-| `RemoveFile` | `static bool RemoveFile(Stream image, string name, DateTimeOffset? now = null)` | Removes `name`; returns false when the root directory has no such name. |
-
-#### `Svr4BfsReader`
-
-Reads an SVR4 / UnixWare Boot File System image: superblock, inode table and the single root directory. BFS has no subdirectories, so every entry is a root-level file.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Svr4BfsReader` | `Svr4BfsReader(Stream stream)` | Opens `stream`; throws `InvalidDataException` when it is not BFS. |
-| `Entries` | `IReadOnlyList<Svr4BfsEntry> Entries { get; }` | Every file name the root directory lists, in directory order. |
-| `Inodes` | `IReadOnlyList<Svr4BfsInode> Inodes { get; }` | Every inode slot from the root (2) to `LastInode`, indexed by `ino - 2`. |
-| `LastInode` | `int LastInode { get; }` | Highest inode number the inode area holds. |
-| `Root` | `Svr4BfsInode Root { get; }` | The root directory inode. |
-| `Superblock` | `Svr4BfsSuperblock Superblock { get; }` | The parsed superblock. |
-| `Extract` | `byte[] Extract(Svr4BfsEntry entry)` | Returns the bytes of `entry`; refuses an inode whose extent is inconsistent. |
-| `GetInode` | `Svr4BfsInode? GetInode(int ino)` | The inode with number `ino`, or null when it is out of range or free. |
-| `IsReadable` | `bool IsReadable(Svr4BfsInode inode)` | True when the inode's blocks lie inside the data area and its size fits them — the condition under which its bytes can be returned without guessing. |
-
-#### `Svr4BfsSuperblock`
-
-The 512-byte BFS superblock.
-
-Implements `IEquatable<Svr4BfsSuperblock>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Svr4BfsSuperblock` | `Svr4BfsSuperblock(uint Start, uint End, uint From, uint To, uint BFrom, uint BTo, string FsName, string Volume)` | The 512-byte BFS superblock. |
-| `BFrom` | `uint BFrom { get; init; }` | Compaction backup source (`s_bfrom`). |
-| `BTo` | `uint BTo { get; init; }` | Compaction backup target (`s_bto`). |
-| `End` | `uint End { get; init; }` | Byte offset of the last byte of the volume. |
-| `FirstDataBlock` | `uint FirstDataBlock { get; }` | First block a file may occupy. |
-| `From` | `uint From { get; init; }` | Compaction source (`s_from`); all ones when clean. |
-| `FsName` | `string FsName { get; init; }` | Six-byte file-system name, space padded. |
-| `IsClean` | `bool IsClean { get; }` | True when no compaction was interrupted; only a clean volume is edited. |
-| `LastBlock` | `uint LastBlock { get; }` | Last whole block inside the volume. |
-| `Start` | `uint Start { get; init; }` | Byte offset of the first data block (end of the inode area). |
-| `To` | `uint To { get; init; }` | Compaction target (`s_to`); all ones when clean. |
-| `Volume` | `string Volume { get; init; }` | Six-byte volume name, space padded. |
-| `TryParse` | `static Svr4BfsSuperblock TryParse(ReadOnlySpan<byte> block)` | Parses block 0, or returns null when it is not a BFS superblock. |
-| `WriteTo` | `void WriteTo(Span<byte> block)` | Serialises the superblock into a zeroed 512-byte block. |
-
-#### `Svr4BfsWriter`
-
-Builds a fresh SVR4 / UnixWare Boot File System volume in the shape `mkfs.bfs` produces — superblock, inode area, a root directory with `.` and `..` — with the given files laid out contiguously behind the root directory, as the Linux `bfs` driver itself allocates them.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Svr4BfsWriter` | `Svr4BfsWriter()` |  |
-| `MaximumVolumeSize` | `const long MaximumVolumeSize` | Largest volume the 32-bit `s_end` byte offset can describe. |
-| `MinimumInodes` | `const int MinimumInodes` | Fewest inodes a volume gets — the count `mkfs.bfs` gives a small volume. |
-| `SpareInodes` | `const int SpareInodes` | Inode slots and directory slots left free beyond the files written, for later adds. |
-| `FsName` | `string FsName { get; set; }` | Six-character file-system name (`s_fsname`); padded with spaces. |
-| `InodeCount` | `int? InodeCount { get; set; }` | Inode count; null picks enough for the files plus `SpareInodes`. |
-| `Now` | `DateTimeOffset Now { get; set; }` | Timestamp used where an input carries none; defaults to now. |
-| `VolumeLabel` | `string VolumeLabel { get; set; }` | Six-character volume name (`s_volume`); padded with spaces. |
-| `VolumeSize` | `long? VolumeSize { get; set; }` | Volume size in bytes; null picks the used size plus a quarter (at least 64 KiB of free space). |
-| `AddFile` | `void AddFile(string name, byte[] data, ArchiveEntryMetadata metadata = null)` | Queues a root-level file. |
-| `Build` | `static byte[] Build(IEnumerable<ValueTuple<string, byte[]>> files)` | Builds a volume from `files` with default geometry. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the volume to `output` from its current position. |
 
 ### Namespace `FileSystem.SysV`
 

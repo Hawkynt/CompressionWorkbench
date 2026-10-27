@@ -1,3 +1,0 @@
-# Fixture bytes are the test: never let a checkout rewrite line endings.
-*.arc -text
-*.gz -text

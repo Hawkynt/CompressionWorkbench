@@ -1,60 +1,45 @@
 namespace FileFormat.Ace;
 
 /// <summary>
-/// Header types and flags of the ACE container, as acefile documents them from the ACE 1.2 technical
-/// notes and the test-archive corpus.
+/// Constants for the ACE archive format.
 /// </summary>
 internal static class AceConstants {
-  /// <summary>ACE magic signature at offset 7 in the main header.</summary>
+  /// <summary>ACE magic signature at offset 7 in the archive header.</summary>
   public const string Magic = "**ACE**";
 
-  public const byte HeaderTypeMain = 0;
-  public const byte HeaderTypeFile32 = 1;
-  public const byte HeaderTypeRecovery32 = 2;
-  public const byte HeaderTypeFile64 = 3;
-  public const byte HeaderTypeRecovery64A = 4;
-  public const byte HeaderTypeRecovery64B = 5;
+  /// <summary>Archive header type.</summary>
+  public const byte HeaderTypeArchive = 0;
 
-  // flags shared by all headers
-  public const ushort FlagAddSize = 1 << 0;
-  public const ushort FlagComment = 1 << 1;
-  public const ushort Flag64Bit = 1 << 2;
+  /// <summary>File header type.</summary>
+  public const byte HeaderTypeFile = 1;
 
-  // main header flags
-  public const ushort FlagV20Format = 1 << 8;
-  public const ushort FlagSfx = 1 << 9;
-  public const ushort FlagMultiVolume = 1 << 11;
-  public const ushort FlagAdvert = 1 << 12;
-  public const ushort FlagRecovery = 1 << 13;
-  public const ushort FlagLocked = 1 << 14;
-  public const ushort FlagSolid = 1 << 15;
+  /// <summary>Recovery record header type.</summary>
+  public const byte HeaderTypeRecovery = 2;
 
-  // file header flags
-  public const ushort FileFlagNtSecurity = 1 << 10;
-  public const ushort FileFlagContinuedFromPrevious = 1 << 12;
-  public const ushort FileFlagContinuedInNext = 1 << 13;
-  public const ushort FileFlagPassword = 1 << 14;
-  public const ushort FileFlagSolid = 1 << 15;
+  /// <summary>Archive header flag: solid archive.</summary>
+  public const ushort FlagSolid = 0x0004;
 
-  public const uint AttributeDirectory = 0x10;
-  public const uint AttributeArchive = 0x20;
+  /// <summary>Archive header flag: locked archive.</summary>
+  public const ushort FlagLocked = 0x0002;
 
-  /// <summary>Host OS byte for Win32, as WinAce writes it.</summary>
-  public const byte HostWin32 = 2;
+  /// <summary>Archive header flag: multi-volume.</summary>
+  public const ushort FlagMultiVolume = 0x0800;
 
-  /// <summary>
-  /// ACE's CRC: the IEEE CRC-32 register started at 0xFFFFFFFF and stored without the final
-  /// inversion. File headers hold all 32 bits, block headers the low 16.
-  /// </summary>
-  public static uint AceCrc32(ReadOnlySpan<byte> data) => ~Compression.Core.Checksums.Crc32.Compute(data);
+  /// <summary>Archive header flag: AV string present.</summary>
+  public const ushort FlagAvString = 0x0100;
 
-  /// <summary>WinAce stores names and comments in the OEM code page (CP437 on the systems that wrote them).</summary>
-  public static System.Text.Encoding Oem {
-    get {
-      System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
-      return System.Text.Encoding.GetEncoding(437);
-    }
-  }
+  /// <summary>Archive header flag: recovery record present.</summary>
+  public const ushort FlagRecovery = 0x0200;
 
-  public static ushort AceCrc16(ReadOnlySpan<byte> data) => (ushort)AceCrc32(data);
+  /// <summary>File header flag: continued from previous volume.</summary>
+  public const ushort FileFlagFromPrev = 0x0001;
+
+  /// <summary>File header flag: continued to next volume.</summary>
+  public const ushort FileFlagToNext = 0x0002;
+
+  /// <summary>File header flag: encrypted.</summary>
+  public const ushort FileFlagEncrypted = 0x0004;
+
+  /// <summary>File header flag: solid.</summary>
+  public const ushort FileFlagSolid = 0x4000;
 }

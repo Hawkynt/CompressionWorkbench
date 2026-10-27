@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Text;
 using Compression.Registry;
 
 namespace FileFormat.Lzh;
@@ -17,19 +18,85 @@ public static class LzhLayoutMap {
     archive.Position = 0;
 
     while (archive.Position < archive.Length) {
-      LhaHeader? header;
-      try {
-        header = LhaHeaderParser.Read(archive);
-      } catch (InvalidDataException) {
-        yield break;
-      }
-      if (header == null) yield break;
+      var entryStart = archive.Position;
 
-      var entryStart = header.HeaderOffset;
-      var dataOffset = header.DataOffset;
-      var compressedSize = header.CompressedSize;
-      var method = header.Method;
-      var fileName = header.Path;
+      // Peek at first two bytes
+      var firstByte = archive.ReadByte();
+      if (firstByte <= 0) yield break;
+      var secondByte = archive.ReadByte();
+      if (secondByte < 0) yield break;
+
+      // Read method string (5 bytes at offset 2)
+      var methodBytes = new byte[5];
+      if (archive.Read(methodBytes, 0, 5) < 5) yield break;
+      var method = Encoding.ASCII.GetString(methodBytes);
+
+      // Validate method
+      if (!method.StartsWith('-') || !method.EndsWith('-'))
+        yield break;
+
+      // Read common fields
+      var reader = new BinaryReader(archive, Encoding.ASCII, leaveOpen: true);
+      var compressedSize = reader.ReadUInt32();
+      var originalSize = reader.ReadUInt32();
+      var timestamp = reader.ReadUInt32();
+      var reserved = reader.ReadByte();
+      var level = reader.ReadByte();
+
+      string fileName;
+      long dataOffset;
+
+      switch (level) {
+        case 0: {
+          var nameLength = reader.ReadByte();
+          var nameBytes = reader.ReadBytes(nameLength);
+          fileName = Encoding.ASCII.GetString(nameBytes);
+          var crc16 = reader.ReadUInt16();
+          // Level 0: headerSize (firstByte) includes everything from offset 2 to end of header
+          // Total header = 2 + firstByte bytes
+          dataOffset = entryStart + 2 + firstByte;
+          break;
+        }
+        case 1: {
+          var nameLength = reader.ReadByte();
+          var nameBytes = reader.ReadBytes(nameLength);
+          fileName = Encoding.ASCII.GetString(nameBytes);
+          var crc16 = reader.ReadUInt16();
+          var osId = reader.ReadByte();
+          // Read extended headers
+          while (true) {
+            var extSize = reader.ReadUInt16();
+            if (extSize == 0) break;
+            var extType = reader.ReadByte();
+            var extData = reader.ReadBytes(extSize - 3);
+            if (extType == 0x01 && extData.Length > 0)
+              fileName = Encoding.ASCII.GetString(extData);
+          }
+          dataOffset = archive.Position;
+          break;
+        }
+        case 2: {
+          var totalHeaderSize = firstByte | (secondByte << 8);
+          var crc16 = reader.ReadUInt16();
+          var osId = reader.ReadByte();
+          fileName = ""; // will be set by extended headers
+
+          var headerEnd = entryStart + totalHeaderSize;
+          while (archive.Position < headerEnd) {
+            var extSize = reader.ReadUInt16();
+            if (extSize == 0) break;
+            var extType = reader.ReadByte();
+            var extData = reader.ReadBytes(extSize - 3);
+            if (extType == 0x01 && extData.Length > 0)
+              fileName = Encoding.ASCII.GetString(extData);
+          }
+          archive.Position = headerEnd;
+          dataOffset = headerEnd;
+          break;
+        }
+        default:
+          yield break;
+      }
 
       var headerSize = dataOffset - entryStart;
 

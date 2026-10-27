@@ -1,43 +1,86 @@
 namespace Compression.Core.Dictionary.Lzh;
 
 /// <summary>
-/// Encodes LArc <c>-lz5-</c> (see <see cref="Lz5Decoder"/> for the stream layout).
+/// Encodes data using the -lz5- format (LArc variant).
+/// Plain LZSS with a 4KB sliding window, no Huffman coding.
 /// </summary>
-/// <remarks>
-/// Matches only reach back into bytes already emitted (never into the predefined initial ring) and are
-/// written as absolute ring positions. Verified by lhasa extracting what this writes.
-/// </remarks>
 public static class Lz5Encoder {
-  private const int MaxLength = 15 + Lz5Decoder.Threshold;
+  private const int WindowSize = 4096;
+  private const int WindowMask = WindowSize - 1;
+  private const int Threshold = 2;
+  private const int MaxMatch = 17; // 4-bit length + 2
 
-  /// <summary>Encodes <paramref name="data"/>.</summary>
-  public static byte[] Encode(ReadOnlySpan<byte> data) => Encode(data.ToArray());
+  /// <summary>
+  /// Encodes data using the -lz5- format.
+  /// </summary>
+  /// <param name="data">The data to compress.</param>
+  /// <returns>The compressed data.</returns>
+  public static byte[] Encode(ReadOnlySpan<byte> data)
+    => Encode(data.ToArray());
 
-  /// <summary>Encodes <paramref name="data"/>.</summary>
+  /// <summary>
+  /// Encodes data using the -lz5- format.
+  /// </summary>
+  /// <param name="data">The data to compress.</param>
+  /// <returns>The compressed data.</returns>
   public static byte[] Encode(byte[] data) {
-    ArgumentNullException.ThrowIfNull(data);
-    using var ms = new MemoryStream();
-    var finder = new LhaMatchFinder(data, Lz5Decoder.RingSize - 1, Lz5Decoder.Threshold, MaxLength);
-    var group = new List<byte>(17);
-    var pos = 0;
-    while (pos < data.Length) {
-      byte flags = 0;
-      group.Clear();
-      for (var bit = 0; bit < 8 && pos < data.Length; ++bit) {
-        var (length, distance) = finder.Find(pos);
-        if (length == 0) {
-          flags |= (byte)(1 << bit);
-          group.Add(data[pos++]);
-          continue;
+    var window = new byte[WindowSize];
+    Array.Fill(window, (byte)0x20);
+    var windowPos = 0;
+
+    using var output = new MemoryStream();
+    var srcPos = 0;
+
+    while (srcPos < data.Length) {
+      var flagPos = (int)output.Position;
+      output.WriteByte(0); // placeholder for flag byte
+      var flags = 0;
+
+      for (var bit = 0; bit < 8 && srcPos < data.Length; ++bit) {
+        // Find best match in window
+        var bestLen = 0;
+        var bestOff = 0;
+
+        for (var off = 1; off < WindowSize && off <= srcPos; ++off) {
+          var matchPos = (windowPos - off) & WindowMask;
+          var len = 0;
+          while (len < MaxMatch && srcPos + len < data.Length
+              && window[(matchPos + len) & WindowMask] == data[srcPos + len])
+            ++len;
+
+          if (len > bestLen) {
+            bestLen = len;
+            bestOff = matchPos;
+          }
         }
-        var ringPos = (Lz5Decoder.RingSize - Lz5Decoder.StartOffset + pos - distance) % Lz5Decoder.RingSize;
-        group.Add((byte)ringPos);
-        group.Add((byte)(((ringPos >> 4) & 0xF0) | (length - Lz5Decoder.Threshold)));
-        pos += length;
+
+        if (bestLen >= Threshold) {
+          // Match: encode offset + length
+          var b1 = bestOff & 0xFF;
+          var b2 = ((bestOff >> 4) & 0xF0) | ((bestLen - Threshold) & 0x0F);
+          output.WriteByte((byte)b1);
+          output.WriteByte((byte)b2);
+
+          for (var j = 0; j < bestLen; ++j) {
+            window[windowPos] = data[srcPos++];
+            windowPos = (windowPos + 1) & WindowMask;
+          }
+        } else {
+          // Literal
+          flags |= 1 << bit;
+          output.WriteByte(data[srcPos]);
+          window[windowPos] = data[srcPos++];
+          windowPos = (windowPos + 1) & WindowMask;
+        }
       }
-      ms.WriteByte(flags);
-      ms.Write(group.ToArray());
+
+      // Patch flag byte
+      var savedPos = output.Position;
+      output.Position = flagPos;
+      output.WriteByte((byte)flags);
+      output.Position = savedPos;
     }
-    return ms.ToArray();
+
+    return output.ToArray();
   }
 }

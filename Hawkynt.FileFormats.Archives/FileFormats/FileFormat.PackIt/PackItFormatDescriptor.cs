@@ -10,36 +10,27 @@ namespace FileFormat.PackIt;
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://github.com/MacPaw/XADMaster</c> — XADMaster (The Unarchiver) — maintained implementation including PackIt</description></item>
-///   <item><description>No formal specification; header CRC measured on real PackIt II archives (see PackItReader)</description></item>
+///   <item><description>No formal specification — format known from PackIt itself and later community documentation</description></item>
 /// </list>
 /// </summary>
 public sealed class PackItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
-  /// <summary>Rebuild-based defrag: re-chains the entries in listing order.</summary>
+  /// <summary>Rebuild-based defrag: extracts then re-creates the PackIt archive in listing order.</summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  /// <summary>
-  /// Rebuild-based defrag. Each entry is carried over as its raw bytes (magic to fork CRC), so resource
-  /// forks, Finder info, dates and Huffman coding survive unchanged; only the chain is rewritten.
-  /// </summary>
+  /// <summary>Rebuild-based defrag: extracts then re-creates the PackIt archive per the requested mode.</summary>
   public void Defragment(Stream archive, DefragOptions options) {
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new PackItReader(stream, leaveOpen: true);
-        if (r.IsIncomplete)
-          throw new InvalidDataException("PackIt archive cannot be walked to its end; refusing to rebuild it.");
-        return r.Entries.Select(e => {
-          var raw = new byte[e.EntryLength];
-          stream.Position = e.EntryOffset;
-          stream.ReadExactly(raw);
-          return (e.Name, raw);
-        }).ToList();
+        return r.Entries.Select(e => (e.Name, r.Extract(e)));
       },
-      buildImage: entries => {
+      buildImage: files => {
         using var ms = new MemoryStream();
-        foreach (var (_, raw) in entries) ms.Write(raw);
-        ms.Write("PEnd"u8);
+        using (var w = new PackItWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddFile(n, d);
+        }
         return ms.ToArray();
       });
   }
@@ -49,8 +40,11 @@ public sealed class PackItFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new PackItReader(archive);
-    foreach (var e in r.Entries)
-      yield return new DefragBlockInfo(e.EntryOffset, e.EntryLength, DefragBlockKind.Used, FileName: e.Name);
+    foreach (var e in r.Entries) {
+      var totalSize = e.DataForkSize + e.ResourceForkSize;
+      if (totalSize > 0)
+        yield return new DefragBlockInfo(e.DataOffset, totalSize, DefragBlockKind.Used, FileName: e.Name);
+    }
   }
 
   /// <summary>
@@ -109,8 +103,6 @@ public sealed class PackItFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'P', (byte)'M', (byte)'a', (byte)'g'], Confidence: 0.85),
     new([(byte)'P', (byte)'M', (byte)'a', (byte)'4'], Confidence: 0.85),
-    new([(byte)'P', (byte)'M', (byte)'a', (byte)'5'], Confidence: 0.85),
-    new([(byte)'P', (byte)'M', (byte)'a', (byte)'6'], Confidence: 0.85),
   ];
   /// <summary>
   /// Gets the methods.
@@ -139,11 +131,11 @@ public sealed class PackItFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
         i,
         e.Name,
         e.DataForkSize,
-        e.EntryLength,
-        e.IsEncrypted ? "Huffman+Encrypted" : e.IsCompressed ? "Huffman" : "Stored",
+        e.DataForkSize,
+        e.IsCompressed ? "Huffman" : "Stored",
         false,
-        e.IsEncrypted,
-        e.Modified ?? DateTime.MinValue))
+        false,
+        DateTime.MinValue))
       .ToList();
   }
 

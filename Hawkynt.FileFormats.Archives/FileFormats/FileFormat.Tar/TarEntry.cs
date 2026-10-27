@@ -50,27 +50,4 @@ public sealed class TarEntry {
 
   /// <summary>Gets or sets the byte offset within the original file for multi-volume entries.</summary>
   public long Offset { get; set; }
-
-  /// <summary>
-  /// The data segments of a sparse member (GNU 'S' or PAX GNU.sparse.*), in file order;
-  /// everything between them is a hole that reads as zeros. <see langword="null"/> for
-  /// non-sparse members. When set, <see cref="Size"/> is the reconstructed (logical) size
-  /// and <see cref="StoredSize"/> the bytes the archive actually holds.
-  /// </summary>
-  public List<TarSparseSegment>? SparseMap { get; set; }
-
-  /// <summary>Gets whether this member is a sparse file whose holes the reader re-creates.</summary>
-  public bool IsSparse => this.SparseMap != null;
-
-  /// <summary>Gets or sets the number of data bytes stored in the archive for this member.</summary>
-  /// <remarks>Equals <see cref="Size"/> except for sparse members.</remarks>
-  public long StoredSize { get; set; }
-
-  /// <summary>Set while reading a GNU 'S' header whose map continues in extension blocks.</summary>
-  internal bool SparseHeaderExtended { get; set; }
 }
-
-/// <summary>One stored data segment of a sparse tar member.</summary>
-/// <param name="Offset">Logical offset of the segment within the reconstructed file.</param>
-/// <param name="Length">Number of stored bytes in the segment.</param>
-public readonly record struct TarSparseSegment(long Offset, long Length);
