@@ -12,25 +12,25 @@ namespace FileFormat.Vmdk;
 public sealed class VmdkReader : IDisposable {
   private static readonly byte[] SparseMagic = [0x4B, 0x44, 0x4D, 0x56];
 
+  private readonly Stream _stream;
   private readonly SectorCache _cache;
   private readonly long _streamLength;
   private readonly List<VmdkEntry> _entries = [];
   private long _diskSize;
 
-  private bool _isSparse;
   private bool _zeroedGrainEntryEnabled;
   private long _grainSizeBytes;
   private int _grainTableEntries;
   private uint[] _grainDirectory = [];
   private int _numGdEntries;
 
-  private long _flatDataOffset;
 
   public IReadOnlyList<VmdkEntry> Entries => this._entries;
 
   public VmdkReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     this._streamLength = stream.Length;
+    this._stream = stream;
     this._cache = new SectorCache(stream);
     this.Parse();
   }
@@ -55,7 +55,6 @@ public sealed class VmdkReader : IDisposable {
   }
 
   private void ParseSparse(byte[] head) {
-    this._isSparse = true;
     if (head.Length < 72)
       throw new InvalidDataException("VMDK: sparse header is truncated.");
 
@@ -120,59 +119,29 @@ public sealed class VmdkReader : IDisposable {
     }
 
     this._diskSize = totalSectors > 0 ? checked(totalSectors * 512) : this._streamLength;
-    this._flatDataOffset = 0;
-    this._isSparse = false;
     this._entries.Add(new VmdkEntry { Name = "disk.img", Size = this._diskSize });
   }
 
+  /// <summary>
+  /// Reads the whole guest disk through <see cref="VmdkVirtualDisk" />: compressed and
+  /// stream-optimized grains, zeroed grain-table entries, multi-extent descriptors and
+  /// delta disks over their parent.
+  /// </summary>
+  /// <exception cref="NotSupportedException">The disk needs a feature or a file this reader cannot reach.</exception>
+  /// <exception cref="InvalidDataException">The disk or a file it references is damaged or missing.</exception>
   public byte[] Extract(VmdkEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size > int.MaxValue)
       throw new NotSupportedException("VMDK buffered extraction currently supports guest disks up to 2 GiB.");
-
-    if (!this._isSparse) {
-      var length = checked((int)Math.Min(entry.Size, this._streamLength - this._flatDataOffset));
-      if (length <= 0) return [];
-      var result = new byte[checked((int)entry.Size)];
-      this._cache.Read(this._flatDataOffset, result.AsSpan(0, length));
-      return result;
-    }
-
-    var disk = new byte[checked((int)this._diskSize)];
-    if (this._grainSizeBytes <= 0 || this._grainDirectory.Length == 0)
-      return disk;
-
-    var totalGrains = (this._diskSize + this._grainSizeBytes - 1) / this._grainSizeBytes;
-    Span<byte> entryBytes = stackalloc byte[4];
-
-    for (long grainIndex = 0; grainIndex < totalGrains; ++grainIndex) {
-      var directoryIndex = checked((int)(grainIndex / this._grainTableEntries));
-      var tableIndex = checked((int)(grainIndex % this._grainTableEntries));
-      if (directoryIndex >= this._grainDirectory.Length) break;
-
-      var tableSector = this._grainDirectory[directoryIndex];
-      if (IsSparseEntry(tableSector)) continue;
-
-      var tableEntryOffset = checked((long)tableSector * 512 + tableIndex * 4L);
-      if (tableEntryOffset < 0 || tableEntryOffset + 4 > this._streamLength)
-        throw new InvalidDataException($"VMDK: grain table {directoryIndex} extends beyond the file.");
-      this._cache.Read(tableEntryOffset, entryBytes);
-      var grainSector = BinaryPrimitives.ReadUInt32LittleEndian(entryBytes);
-      if (IsSparseEntry(grainSector)) continue;
-
-      var sourceOffset = checked((long)grainSector * 512);
-      var destinationOffset = checked(grainIndex * this._grainSizeBytes);
-      var length = checked((int)Math.Min(this._grainSizeBytes, this._diskSize - destinationOffset));
-      if (sourceOffset < 0 || sourceOffset + length > this._streamLength)
-        throw new InvalidDataException($"VMDK: grain {grainIndex} extends beyond the file.");
-      this._cache.Read(sourceOffset, disk.AsSpan(checked((int)destinationOffset), length));
-    }
-
-    return disk;
+    using var disk = VmdkVirtualDisk.Open(this._stream)
+      ?? throw new InvalidDataException("VMDK: unrecognized format.");
+    if (disk.Length > int.MaxValue)
+      throw new NotSupportedException("VMDK buffered extraction currently supports guest disks up to 2 GiB.");
+    var result = new byte[checked((int)disk.Length)];
+    disk.Position = 0;
+    disk.ReadExactly(result);
+    return result;
   }
-
-  private bool IsSparseEntry(uint sector)
-    => sector == 0 || (this._zeroedGrainEntryEnabled && sector == 1);
 
   public void Dispose() => this._cache.Dispose();
 }
