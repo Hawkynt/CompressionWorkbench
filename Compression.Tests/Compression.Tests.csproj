@@ -90,6 +90,10 @@
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- keramics' VHDX test disks; see Vhdx/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Vhdx\ReferenceVectors\*.gz;Vhdx\ReferenceVectors\manifest.txt">
+      <LogicalName>VhdxVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Streams written by libcsc's reference csc tool; see Csc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Csc\ReferenceVectors\*.csc">
       <LogicalName>CscVectors.%(Filename)%(Extension)</LogicalName>
