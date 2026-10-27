@@ -593,7 +593,7 @@ Which aPLib bit-stream dialect a decoder should expect.
 
 ### Namespace `Compression.Core.Dictionary.Arj`
 
-[`ArjBuildingBlock`](#arjbuildingblock) · [`ArjDecoder`](#arjdecoder) · [`ArjEncoder`](#arjencoder)
+[`ArjBuildingBlock`](#arjbuildingblock) · [`ArjDecoder`](#arjdecoder) · [`ArjEncoder`](#arjencoder) · [`ArjFastestDecoder`](#arjfastestdecoder)
 
 #### `ArjBuildingBlock`
 
@@ -628,6 +628,14 @@ Encodes data using ARJ compression (methods 1-3). Uses LZSS with Huffman-coded l
 | --- | --- | --- |
 | `ArjEncoder` | `ArjEncoder(int method = 1)` | Initializes a new `ArjEncoder`. |
 | `Encode` | `byte[] Encode(ReadOnlySpan<byte> data)` | Compresses data using ARJ encoding. |
+
+#### `ArjFastestDecoder`
+
+Decodes ARJ method 4 ("fastest"), the LZ77 variant ARJ uses when asked for speed over ratio.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize)` | Decodes `originalSize` bytes of method-4 data. |
 
 ### Namespace `Compression.Core.Dictionary.Balz`
 
@@ -1478,43 +1486,59 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Dictionary.Lzh`
 
-[`Lh1Decoder`](#lh1decoder) · [`Lh1Encoder`](#lh1encoder) · [`Lz5Decoder`](#lz5decoder) · [`Lz5Encoder`](#lz5encoder) · [`LzhBuildingBlock`](#lzhbuildingblock) · [`LzhConstants`](#lzhconstants) · [`LzhDecoder`](#lzhdecoder) · [`LzhEncoder`](#lzhencoder) · [`LzsDecoder`](#lzsdecoder) · [`LzsEncoder`](#lzsencoder) · [`PmaDecoder`](#pmadecoder) · [`PmaEncoder`](#pmaencoder)
+[`Lh1Decoder`](#lh1decoder) · [`Lh1Encoder`](#lh1encoder) · [`Lh2Decoder`](#lh2decoder) · [`Lh3Decoder`](#lh3decoder) · [`Lz5Decoder`](#lz5decoder) · [`Lz5Encoder`](#lz5encoder) · [`LzhBuildingBlock`](#lzhbuildingblock) · [`LzhConstants`](#lzhconstants) · [`LzhDecoder`](#lzhdecoder) · [`LzhEncoder`](#lzhencoder) · [`LzsDecoder`](#lzsdecoder) · [`LzsEncoder`](#lzsencoder) · [`Pm1Decoder`](#pm1decoder) · [`Pm2Decoder`](#pm2decoder)
 
 #### `Lh1Decoder`
 
-Decodes LHA -lh1- compressed data. Uses a 4KB sliding window with dynamic (adaptive) Huffman coding.
+Decodes LHarc `-lh1-`: LZSS over a 4 KiB window with an adaptive Huffman tree for literals and copy lengths, and a fixed code for the high six bits of the copy distance.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Lh1Decoder` | `Lh1Decoder(Stream input)` | Initializes a new `Lh1Decoder`. |
-| `Decode` | `byte[] Decode(int originalSize)` | Decodes the compressed data. |
+| `Lh1Decoder` | `Lh1Decoder(Stream input)` | Initializes a new `Lh1Decoder` over the rest of `input`. |
+| `Decode` | `byte[] Decode(int originalSize)` | Decodes `originalSize` bytes. |
 
 #### `Lh1Encoder`
 
-Encodes data using the LHA -lh1- adaptive Huffman method.
+Encodes LHarc `-lh1-` (see `Lh1Decoder`): greedy LZSS matches over a 4 KiB window, coded through the same adaptive `Lh1Tree` the decoder evolves.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Lh1Encoder` | `Lh1Encoder()` |  |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Compresses data using the -lh1- algorithm. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes `data`. |
+
+#### `Lh2Decoder`
+
+Decodes LHA `-lh2-`: LZSS over an 8 KiB window with two adaptive Huffman trees.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decodes `originalSize` bytes of `-lh2-` data. |
+
+#### `Lh3Decoder`
+
+Decodes LHA `-lh3-`: LZSS over an 8 KiB window with static Huffman trees sent per block.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decodes `originalSize` bytes of `-lh3-` data. |
 
 #### `Lz5Decoder`
 
-Decodes -lz5- compressed data (LArc variant). Uses LZSS with a 4KB sliding window, no Huffman coding.
+Decodes LArc `-lz5-`: LZSS over a 4 KiB ring buffer, byte-aligned.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize)` | Decodes -lz5- compressed data. |
-| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decodes -lz5- compressed data. |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize)` | Decodes `originalSize` bytes of `-lz5-` data. |
+| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decodes `originalSize` bytes of `-lz5-` data. |
 
 #### `Lz5Encoder`
 
-Encodes data using the -lz5- format (LArc variant). Plain LZSS with a 4KB sliding window, no Huffman coding.
+Encodes LArc `-lz5-` (see `Lz5Decoder` for the stream layout).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes data using the -lz5- format. |
-| `Encode` | `static byte[] Encode(byte[] data)` | Encodes data using the -lz5- format. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes `data`. |
+| `Encode` | `static byte[] Encode(byte[] data)` | Encodes `data`. |
 
 #### `LzhBuildingBlock`
 
@@ -1579,37 +1603,37 @@ Encodes data using LZH compression (methods -lh5-, -lh6-, -lh7-). Uses LZSS with
 
 #### `LzsDecoder`
 
-Decodes -lzs- compressed data (LArc format). Uses plain LZSS with a 2KB sliding window, no Huffman coding.
+Decodes LArc `-lzs-`: LZSS over a 2 KiB ring buffer, with no entropy coding.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize)` | Decodes -lzs- compressed data. |
-| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decodes -lzs- compressed data. |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize)` | Decodes `originalSize` bytes of `-lzs-` data. |
+| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decodes `originalSize` bytes of `-lzs-` data. |
 
 #### `LzsEncoder`
 
-Encodes data using the -lzs- format (LArc). Plain LZSS with a 2KB sliding window, no Huffman coding.
+Encodes LArc `-lzs-` (see `LzsDecoder` for the stream layout).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes data using the -lzs- format. |
-| `Encode` | `static byte[] Encode(byte[] data)` | Encodes data using the -lzs- format. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes `data`. |
+| `Encode` | `static byte[] Encode(byte[] data)` | Encodes `data`. |
 
-#### `PmaDecoder`
+#### `Pm1Decoder`
 
-Decodes data compressed with the PMA (Prediction by Matching of Algorithms) method used in LHA archives with methods -pm1- and -pm2-. PMA uses PPMd (Prediction by Partial Matching) context modeling with arithmetic coding.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize, int order)` | Decodes PMA-compressed data. |
-
-#### `PmaEncoder`
-
-Encodes data using the PMA (Prediction by Matching of Algorithms) method used in LHA archives with methods -pm1- and -pm2-. PMA uses PPMd (Prediction by Partial Matching) context modeling with arithmetic coding.
+Decodes PMarc `-pm1-`: alternating runs of literals and copies over a 16 KiB window, all coded with fixed (static) prefix codes whose reach grows with the amount of output.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int order)` | Encodes data using PMA compression. |
+| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decodes `originalSize` bytes of `-pm1-` data. |
+
+#### `Pm2Decoder`
+
+Decodes PMarc `-pm2-`: LZSS over an 8 KiB window with literals coded against a move-to-front history and two small Huffman trees that are re-sent as the stream grows.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decodes `originalSize` bytes of `-pm2-` data. |
 
 ### Namespace `Compression.Core.Dictionary.Lzham`
 
@@ -9735,6 +9759,7 @@ ZIP compression methods.
 | `BZip2` | `12` | BZip2 compression. |
 | `Lzma` | `14` | LZMA compression. |
 | `Zstd` | `93` | Zstandard compression. |
+| `Xz` | `95` | XZ compression (a complete .xz stream, APPNOTE 4.4.5 method 95). |
 | `Ppmd` | `98` | PPMd version I, Rev 1 compression. |
 | `WinZipAes` | `99` | WinZip AES encryption (actual method stored in extra field). |
 

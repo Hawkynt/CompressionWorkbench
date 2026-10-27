@@ -55,12 +55,10 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// Gets the compound extensions.
   /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  // DiskDoubler has no universally reliable magic bytes; detection is primarily by extension.
-  // The header version identifier at offset 0 varies by version so we use a low-confidence hint.
   /// <summary>
-  /// Gets the magic signatures.
+  /// Gets the magic signatures: a single DiskDoubler file starts with 0xABCD0054.
   /// </summary>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0xAB, 0xCD, 0x00, 0x54], Confidence: 0.8)];
   /// <summary>
   /// Gets the methods.
   /// </summary>
@@ -89,10 +87,10 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
         e.Name,
         e.OriginalSize,
         e.CompressedSize,
-        $"Method {e.Method}",
+        DiskDoublerReader.MethodName(e.Method),
         false,
         false,
-        DateTime.MinValue))
+        e.Modified ?? DateTime.MinValue))
       .ToList();
   }
 
@@ -141,11 +139,11 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // WORM: store the first input as a DiskDoubler data fork (method 0 = stored).
-    // DiskDoubler wraps a single Macintosh file, not a multi-file archive.
+    // DiskDoubler wraps a single Macintosh file, not a multi-file archive, and records no name.
     var w = new DiskDoublerWriter();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.SetFile(Path.GetFileName(i.ArchiveName), i.ReadContent());
+      w.SetFile(i.ReadContent());
       break;
     }
     w.WriteTo(output);

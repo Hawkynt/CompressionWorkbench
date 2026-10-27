@@ -1,0 +1,33 @@
+XADMaster (ARJ method 4) - converted to C#
+
+Source:   https://github.com/MacPaw/XADMaster (The Unarchiver's unarchiving engine)
+Revision: 7cb9ee0abbb163f261e4cb74501e15067032319c (master, 2026-09-21)
+Authors:  Dag Ågren (original author); MacPaw Way Ltd. (2017-present);
+          parts descend from libxad (Dirk Stöcker and contributors)
+Licence:  GNU Lesser General Public License, version 2.1 or (at your option)
+          any later version. This repository is LGPL-3.0-or-later, which the
+          "or any later version" grant permits; the full LGPL text is in the
+          repository's LICENSE file.
+
+Upstream notice, as carried in each XADMaster source file:
+
+  Copyright (c) 2017-present, MacPaw Way Ltd. All rights reserved.
+
+  This library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.
+
+Files converted:
+
+  XADARJFastestHandle.m  -> ArjFastestDecoder.cs
+
+The method-4 decoder is a conversion, not a copy: the token grammar (unary-
+prefixed length and distance codes, minimum match 3) is carried across; the
+CSHandle/LZSS framework around it is not. Checked against archives written by
+the open-source ARJ port (arj a -m4).

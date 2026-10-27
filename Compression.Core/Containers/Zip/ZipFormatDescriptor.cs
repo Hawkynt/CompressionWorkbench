@@ -20,7 +20,7 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("Method", "Compression method", FormatOptionKind.Enum, "deflate",
-      AllowedValues: ["deflate", "store", "deflate64", "bzip2", "lzma", "zstd"]),
+      AllowedValues: ["deflate", "store", "deflate64", "bzip2", "lzma", "zstd", "xz"]),
     new("Level", "Compression level", FormatOptionKind.Integer, "5",
       AllowedValues: ["0", "1", "3", "5", "7", "9"],
       Description: "Compression level. 0 = fastest, 9 = max."),
@@ -177,7 +177,7 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("deflate", "Deflate", SupportsOptimize: true),
     new("store", "Store"), new("deflate64", "Deflate64"),
-    new("bzip2", "BZip2"), new("lzma", "LZMA"), new("zstd", "Zstandard"), new("ppmd", "PPMd")
+    new("bzip2", "BZip2"), new("lzma", "LZMA"), new("zstd", "Zstandard"), new("ppmd", "PPMd"), new("xz", "XZ")
   ];
   /// <summary>
   /// Gets the tar compression format id.
@@ -294,7 +294,7 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new ZipWriter(output, leaveOpen: true, compressionLevel: level,
       password: password, encryptionMethod: encryption);
 
-    if (options.DictSize > 0 && zipMethod == ZipCompressionMethod.Lzma)
+    if (options.DictSize > 0 && zipMethod is ZipCompressionMethod.Lzma or ZipCompressionMethod.Xz)
       w.LzmaDictionarySize = ZipOptionsResolver.NormalizeDictSize(
         ZipOptionsResolver.ResolveLzmaDictSize(options.DictSize, options.Optimize));
     w.LzmaLevel = ZipOptionsResolver.ResolveLzmaLevel(options.Level, options.Optimize);
