@@ -1,0 +1,5 @@
+# Volumes are compared byte for byte and the listings line by line: nothing may translate a newline.
+* -text -diff
+*.tsv text eol=lf
+README.md text
+LICENSE.ZenKit.md text
