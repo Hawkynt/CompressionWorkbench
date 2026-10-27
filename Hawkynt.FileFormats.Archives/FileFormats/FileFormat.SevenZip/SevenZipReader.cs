@@ -255,6 +255,10 @@ public sealed class SevenZipReader : IDisposable {
       if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecBzip2)) return "BZip2";
       if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecPpmd)) return "PPMd";
       if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecCopy)) return "Copy";
+      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecDeflate64)) return "Deflate64";
+      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecZstd)) return "Zstd";
+      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecBrotli)) return "Brotli";
+      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecLz4)) return "LZ4";
     }
     return "7z";
   }
@@ -574,14 +578,55 @@ public sealed class SevenZipReader : IDisposable {
       return DeltaFilter.Decode(data, distance);
     }
 
+    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecSwap2))
+      return ByteSwapFilter.Swap2(data);
+
+    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecSwap4))
+      return ByteSwapFilter.Swap4(data);
+
     if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecCopy))
       return data;
 
     if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecAes))
       return DecryptAes(coder, data);
 
+    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecDeflate64))
+      return Compression.Core.Deflate.Deflate64Decompressor.Decompress(data);
+
+    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecArm64))
+      return BcjFilter.DecodeArm64(data, BranchStartOffset(coder, 4));
+
+    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecRiscV))
+      return BcjFilter.DecodeRiscV(data, BranchStartOffset(coder, 2));
+
+    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecZstd))
+      return SevenZipZstdFamilyCoders.DecodeZstd(data);
+
+    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecBrotli))
+      return SevenZipZstdFamilyCoders.DecodeBrotli(data);
+
+    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecLz4))
+      return SevenZipZstdFamilyCoders.DecodeLz4(data);
+
     throw new NotSupportedException(
       $"Unsupported 7z codec: [{string.Join(", ", codecId.Select(b => $"0x{b:X2}"))}]");
+  }
+
+  /// <summary>
+  /// The start offset ("pc") of an ARM64 / RISC-V branch filter: absent properties mean 0, otherwise
+  /// a little-endian UInt32 that must be a multiple of the instruction alignment (7-Zip refuses
+  /// anything else the same way).
+  /// </summary>
+  private static int BranchStartOffset(SevenZipCoder coder, uint alignment) {
+    var props = coder.Properties;
+    if (props == null || props.Length == 0)
+      return 0;
+    if (props.Length != 4)
+      throw new NotSupportedException($"Unsupported 7z branch-filter property size {props.Length}.");
+    var pc = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(props);
+    if (pc % alignment != 0)
+      throw new NotSupportedException($"Unaligned 7z branch-filter start offset 0x{pc:X8}.");
+    return unchecked((int)pc);
   }
 
   private static int DecodeDictionarySize(byte encoded) {
