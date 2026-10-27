@@ -90,5 +90,8 @@ public static partial class FormatRegistration {
     FormatRegistry.Register(new CompoundTarDescriptor("TarLz4", "tar.lz4", "Lz4", ".tar.lz4", [".tar.lz4"]));
     FormatRegistry.Register(new CompoundTarDescriptor("TarLzip", "tar.lz", "Lzip", ".tar.lz", [".tar.lz", ".tlz"]));
     FormatRegistry.Register(new CompoundTarDescriptor("TarBr", "tar.br", "Brotli", ".tar.br", [".tar.br", ".tbr"]));
+    FormatRegistry.Register(new CompoundTarDescriptor("TarZ", "tar.Z", "Compress", ".tar.Z", [".tar.z"]));
+    FormatRegistry.Register(new CompoundTarDescriptor("TarLzma", "tar.lzma", "Lzma", ".tar.lzma", [".tar.lzma"]));
+    FormatRegistry.Register(new CompoundTarDescriptor("TarLzo", "tar.lzo", "Lzop", ".tar.lzo", [".tar.lzo"]));
   }
 }

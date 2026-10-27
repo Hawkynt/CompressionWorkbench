@@ -6,8 +6,8 @@ namespace FileFormat.Aomei;
 /// <summary>
 /// Reader for AOMEI Backupper image files (<c>.adi</c> disk / partition /
 /// system image and <c>.afi</c> file backup), implementing the partial
-/// specification recovered from binary reverse engineering of the AOMEI
-/// Backupper binary stack — see <c>docs/AOMEI_FORMAT_SPEC.md</c>.
+/// layout recovered from binary reverse engineering of the AOMEI
+/// Backupper binary stack.
 ///
 /// <para>
 /// What this reader verifies and surfaces:
@@ -17,7 +17,7 @@ namespace FileFormat.Aomei;
 ///         — preserved from the original R/O metadata baseline so detection
 ///         logic stays unchanged.</description></item>
 ///   <item><description>Full <c>BR_IMAGE_FILE_HEAD</c> at offset 0 (0x65C
-///         bytes): Flag, Size and Crc32 fields verified per spec §2.1; the
+///         bytes): Flag, Size and Crc32 fields verified; the
 ///         remaining 0x650 body bytes are surfaced as
 ///         <see cref="HeadBody"/> for future RE work.</description></item>
 ///   <item><description>Full <c>BR_IMAGE_FILE_TAIL</c> at offset
@@ -25,7 +25,7 @@ namespace FileFormat.Aomei;
 ///         surfaced as <see cref="TailBody"/>.</description></item>
 ///   <item><description>Walk of every <c>BR_STANDARD_HEADER</c>-prefixed
 ///         record between the head and the tail; each record's CRC is
-///         verified per the spec §3.1 invariant
+///         verified using the invariant
 ///         <c>BRCrc32(record, sizeof(record)) == saved_crc</c>.</description></item>
 ///   <item><description>Typed views of the four confirmed INFO records:
 ///         <see cref="AomeiConstants.InfoTypeImageCompress"/> (0x105),
@@ -35,7 +35,7 @@ namespace FileFormat.Aomei;
 /// </list>
 ///
 /// <para>
-/// What is not yet decoded (per spec §10):
+/// What is not yet decoded:
 /// </para>
 /// <list type="bullet">
 ///   <item><description>Head/tail body fields past the first 12 bytes —

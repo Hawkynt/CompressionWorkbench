@@ -45,7 +45,7 @@ namespace FileFormat.Ghost;
 /// extension hint (<c>.gho</c> / <c>.ghs</c>) to disambiguate.
 /// </para>
 /// <para>Symantec never published a specification. What is known of the on-disk layout was recovered
-/// by decompiling Ghost Explorer, and is written down in <c>docs/GHOST_LEGACY_FORMAT_SPEC.md</c>.</para>
+/// by decompiling Ghost Explorer.</para>
 /// </remarks>
 public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
