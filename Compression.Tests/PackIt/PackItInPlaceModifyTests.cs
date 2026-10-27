@@ -6,14 +6,15 @@ namespace Compression.Tests.PackIt;
 /// <summary>
 /// Locks PackIt's modifier as TRUE in-place at the byte level:
 /// <list type="bullet">
-///   <item>Add: appends a new entry at EOF. The entire pre-existing byte range
-///         <c>[0, oldLength)</c> must be byte-identical at the original offsets.</item>
+///   <item>Add: writes the new entry over the <c>"PEnd"</c> marker and re-appends the
+///         marker. Every byte before the marker, <c>[0, oldLength - 4)</c>, must be
+///         byte-identical at the original offsets.</item>
 ///   <item>Remove of last entry: the surviving prefix at <c>[0, removedEntryOffset)</c>
-///         must be byte-identical at the original offsets.</item>
+///         must be byte-identical at the original offsets, followed by the marker.</item>
 /// </list>
 /// These are the contract that distinguishes a real random-access modifier
-/// from a rebuild-disguised one. PackIt has no central directory and no
-/// trailing footer, so an EOF-append is a clean in-place mutation.
+/// from a rebuild-disguised one. PackIt has no central directory; its only
+/// trailer is the four-byte "PEnd" marker.
 /// </summary>
 [TestFixture]
 public class PackItInPlaceModifyTests {
@@ -36,9 +37,11 @@ public class PackItInPlaceModifyTests {
     var after = ms.ToArray();
     Assert.That(after.Length, Is.GreaterThan(oldLength),
       "Append must grow the archive.");
-    Assert.That(after.AsSpan(0, oldLength).SequenceEqual(before),
+    Assert.That(after.AsSpan(0, oldLength - 4).SequenceEqual(before.AsSpan(0, oldLength - 4)),
       Is.True,
-      "Pre-existing bytes [0, oldLength) must be byte-identical at original offsets.");
+      "Pre-existing entries [0, oldLength - 4) must be byte-identical at original offsets.");
+    Assert.That(after.AsSpan(after.Length - 4).SequenceEqual("PEnd"u8), Is.True,
+      "The end marker must follow the appended entry.");
   }
 
   [Test, Category("Contract")]
@@ -50,9 +53,9 @@ public class PackItInPlaceModifyTests {
     ms.Write(seed);
     PackItModifier.AddFile(ms, "added.bin", new byte[42]);
 
-    // The added entry occupies exactly [oldLength, newLength).
-    // 87-byte header + 42-byte data = 129 byte entry.
-    Assert.That(ms.Length, Is.EqualTo(oldLength + 87 + 42));
+    // The added entry occupies exactly [oldLength - 4, newLength - 4):
+    // 4-byte magic + 94-byte header + 42-byte data fork + 2-byte fork CRC.
+    Assert.That(ms.Length, Is.EqualTo(oldLength + 4 + 94 + 42 + 2));
   }
 
   [Test, Category("Contract")]
@@ -73,11 +76,12 @@ public class PackItInPlaceModifyTests {
     Assert.That(removed, Is.True);
 
     var after = ms.ToArray();
-    Assert.That(after.Length, Is.EqualTo(droppedEntryOffset),
-      "Removing the last entry must truncate to exactly the dropped entry's start offset.");
-    Assert.That(after.AsSpan().SequenceEqual(seed.AsSpan(0, (int)droppedEntryOffset)),
+    Assert.That(after.Length, Is.EqualTo(droppedEntryOffset + 4),
+      "Removing the last entry must leave exactly the survivors plus the end marker.");
+    Assert.That(after.AsSpan(0, (int)droppedEntryOffset).SequenceEqual(seed.AsSpan(0, (int)droppedEntryOffset)),
       Is.True,
       "Survivor prefix [0, removedEntryOffset) must be byte-identical at original offsets.");
+    Assert.That(after.AsSpan((int)droppedEntryOffset).SequenceEqual("PEnd"u8), Is.True);
   }
 
   [Test, Category("Contract")]
@@ -114,17 +118,14 @@ public class PackItInPlaceModifyTests {
 
   /// <summary>
   /// Walks the PackIt entry chain on a buffer copy and returns the byte
-  /// offset of the named entry's "PMag"/"PMa4" magic (i.e. the entry's
-  /// 87-byte fixed header begins at this offset).
+  /// offset of the named entry's "PMag"/"PMa4" magic.
   /// </summary>
   private static long FindEntryOffset(byte[] data, string targetName) {
     using var ms = new MemoryStream(data);
     using var r = new PackItReader(ms, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (!string.Equals(e.Name, targetName, StringComparison.OrdinalIgnoreCase)) continue;
-      // The reader exposes the data-fork offset; the entry's header magic is
-      // 87 bytes earlier (PackItReader.EntryHeaderSize).
-      return e.DataOffset - PackItReader.EntryHeaderSize;
+      return e.EntryOffset;
     }
     throw new InvalidOperationException($"Entry '{targetName}' not found in seed archive.");
   }
