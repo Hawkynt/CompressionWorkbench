@@ -41,7 +41,6 @@ public sealed class LhaWriter {
       LhaConstants.MethodLh1 => -3,
       LhaConstants.MethodPm1 => -5,
       LhaConstants.MethodPm2 => -6,
-      LhaConstants.MethodLh2 or LhaConstants.MethodLh3 => LzhConstants.Lh5PositionBits,
       LhaConstants.MethodLh4 => LzhConstants.Lh4PositionBits,
       LhaConstants.MethodLh5 => LzhConstants.Lh5PositionBits,
       LhaConstants.MethodLh6 => LzhConstants.Lh6PositionBits,

@@ -46,8 +46,10 @@ public sealed class LhaReader : IDisposable {
         data = DecompressLh1(compressedData, (int)entry.OriginalSize);
         break;
       case LhaConstants.MethodLh2:
+        data = Lh2Decoder.Decode(compressedData, (int)entry.OriginalSize);
+        break;
       case LhaConstants.MethodLh3:
-        data = DecompressLzh(compressedData, (int)entry.OriginalSize, LzhConstants.Lh5PositionBits);
+        data = Lh3Decoder.Decode(compressedData, (int)entry.OriginalSize);
         break;
       case LhaConstants.MethodLh4:
         data = DecompressLzh(compressedData, (int)entry.OriginalSize, LzhConstants.Lh4PositionBits);
