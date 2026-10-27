@@ -147,6 +147,8 @@ public sealed class MpqReader {
   public byte[] Extract(MpqEntry entry) {
     if (entry.IsEncrypted)
       throw new NotSupportedException("Encrypted MPQ files are not supported.");
+    if ((entry.Flags & 0x00000100) != 0 && (entry.Flags & 0x00000200) == 0)
+      throw new NotSupportedException($"MPQ file '{entry.FileName}' is PKWare DCL imploded, which is not supported.");
 
     _stream.Position = _headerOffset + entry.FileOffset;
 
@@ -191,37 +193,44 @@ public sealed class MpqReader {
     return output.ToArray();
   }
 
-  private static byte[] DecompressMpqBlock(byte[] data, int expectedSize) {
+  /// <summary>
+  /// Decodes one MPQ block (a sector, or a whole single-unit file). A block no shorter than its expected
+  /// size is stored; otherwise its first byte is the compression mask. Only zlib (0x02) and bzip2 (0x10)
+  /// on their own are decoded: every other mask — PKWare DCL (0x08), Huffman (0x01), ADPCM (0x40/0x80),
+  /// sparse (0x20), LZMA (0x12) and any combination — is refused rather than returned undecoded.
+  /// </summary>
+  /// <exception cref="NotSupportedException">The mask names a method this reader does not decode.</exception>
+  /// <exception cref="InvalidDataException">The compressed block is damaged or decodes to the wrong size.</exception>
+  internal static byte[] DecompressMpqBlock(byte[] data, int expectedSize) {
     if (data.Length == 0) return [];
     if (data.Length >= expectedSize) return data[..expectedSize];
 
     var method = data[0];
-
-    // zlib (0x02): data[1..] is a zlib-wrapped deflate stream
-    if ((method & 0x02) != 0) {
-      try {
-        return FileFormat.Zlib.ZlibStream.Decompress(data.AsSpan(1));
-      } catch {
-        // Fallback: try raw deflate (skip method byte only)
-        return Compression.Core.Deflate.DeflateDecompressor.Decompress(data.AsSpan(1));
-      }
-    }
-
-    // bzip2 (0x10): data[1..] is a bzip2-wrapped stream
-    if ((method & 0x10) != 0) {
-      try {
+    byte[] result;
+    switch (method) {
+      case 0x02:
+        try {
+          result = FileFormat.Zlib.ZlibStream.Decompress(data.AsSpan(1));
+        } catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException) {
+          // Some writers omit the zlib wrapper and store a bare deflate stream.
+          result = Compression.Core.Deflate.DeflateDecompressor.Decompress(data.AsSpan(1));
+        }
+        break;
+      case 0x10: {
         using var ms = new MemoryStream(data, 1, data.Length - 1, writable: false);
         using var bz = new FileFormat.Bzip2.Bzip2Stream(ms, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
         using var decompressed = new MemoryStream();
         bz.CopyTo(decompressed);
-        return decompressed.ToArray();
-      } catch {
-        return data[1..];
+        result = decompressed.ToArray();
+        break;
       }
+      default:
+        throw new NotSupportedException($"MPQ compression mask 0x{method:X2} is not supported (only zlib 0x02 and bzip2 0x10 are).");
     }
 
-    // PKWare DCL / Huffman / LZMA / other — return raw data as fallback
-    return data;
+    if (result.Length != expectedSize)
+      throw new InvalidDataException($"MPQ block decoded to {result.Length} bytes; {expectedSize} were expected.");
+    return result;
   }
 
   private string[]? TryReadListfile() {
