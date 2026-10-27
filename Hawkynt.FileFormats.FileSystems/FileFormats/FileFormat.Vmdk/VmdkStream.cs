@@ -23,10 +23,13 @@ public sealed class VmdkStream : Stream {
   // Per-GD-index byte offset of the grain table on disk (0 = GT not yet allocated).
   private readonly long[] _gtByteOffsets;
   private readonly long _gdByteOffset;
+  private readonly long[] _redundantGtByteOffsets;
+  private readonly long _redundantGdByteOffset;
   private long _position;
 
   private VmdkStream(Stream backing, long diskSize, int grainSizeBytes, int grainTableEntries,
-                     long[] grainOffsets, long[] gtByteOffsets, long gdByteOffset, bool leaveOpen) {
+                     long[] grainOffsets, long[] gtByteOffsets, long gdByteOffset,
+                     long[] redundantGtByteOffsets, long redundantGdByteOffset, bool leaveOpen) {
     _backing = backing;
     _diskSize = diskSize;
     _grainSizeBytes = grainSizeBytes;
@@ -34,6 +37,8 @@ public sealed class VmdkStream : Stream {
     _grainOffsets = grainOffsets;
     _gtByteOffsets = gtByteOffsets;
     _gdByteOffset = gdByteOffset;
+    _redundantGtByteOffsets = redundantGtByteOffsets;
+    _redundantGdByteOffset = redundantGdByteOffset;
     _leaveOpen = leaveOpen;
   }
 
@@ -194,7 +199,7 @@ public sealed class VmdkStream : Stream {
       var grainSizeSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr[8..]); // offset 20
       // descriptor offset/size at 28, 36 — skip
       var numGTEsPerGT = (int)BinaryPrimitives.ReadUInt32LittleEndian(hdr[32..]); // offset 44
-      // rgdOffset at 48 — skip
+      var rgdOffsetSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr[36..]); // offset 48
       var gdOffsetSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr[44..]); // offset 56
 
       // This stream edits grains in place, so it only takes a plain hosted sparse
@@ -258,9 +263,29 @@ public sealed class VmdkStream : Stream {
         gtByteOffsets[gd] = gtSectorOffset == 0 ? 0 : (long)gtSectorOffset * 512;
       }
 
+      var redundantGdByteOffset = (flags & 2u) != 0 && rgdOffsetSectors != 0
+        ? checked(rgdOffsetSectors * 512)
+        : 0;
+      long[] redundantGtByteOffsets = [];
+      if (redundantGdByteOffset != 0) {
+        if (redundantGdByteOffset < 0 || redundantGdByteOffset > stream.Length - gdBuf.Length)
+          return null;
+        stream.Position = redundantGdByteOffset;
+        stream.ReadExactly(gdBuf);
+        redundantGtByteOffsets = new long[numGdEntries];
+        for (var gd = 0; gd < numGdEntries; gd++) {
+          var tableOffset = (long)BinaryPrimitives.ReadUInt32LittleEndian(gdBuf.AsSpan(gd * 4)) * 512;
+          var tableBytes = Math.Min(numGTEsPerGT, totalGrains - gd * numGTEsPerGT) * 4L;
+          if (tableOffset != 0 && tableOffset > stream.Length - tableBytes)
+            return null;
+          redundantGtByteOffsets[gd] = tableOffset;
+        }
+      }
+
       stream.Position = 0;
       return new VmdkStream(stream, diskSize, grainSizeBytes, numGTEsPerGT,
-                            grainOffsets, gtByteOffsets, gdByteOffset, leaveOpen: true);
+                            grainOffsets, gtByteOffsets, gdByteOffset,
+                            redundantGtByteOffsets, redundantGdByteOffset, leaveOpen: true);
     } catch {
       stream.Position = 0;
       return null;
@@ -299,21 +324,10 @@ public sealed class VmdkStream : Stream {
     if (gdIdx >= _gtByteOffsets.Length)
       throw new InvalidOperationException($"Grain {grainIdx} maps to GD index {gdIdx} outside the grain directory.");
 
-    // Step 1: ensure a GT exists for this GD slot.
-    if (_gtByteOffsets[gdIdx] == 0) {
-      var gtOffset = AlignUp(_backing.Length, 512);
-      if (gtOffset > _backing.Length) PadZeros(_backing.Length, gtOffset - _backing.Length);
-      _backing.Position = gtOffset;
-      _backing.Write(new byte[_grainTableEntries * 4], 0, _grainTableEntries * 4);
-
-      // Update GD on disk.
-      Span<byte> gdEntry = stackalloc byte[4];
-      BinaryPrimitives.WriteUInt32LittleEndian(gdEntry, checked((uint)(gtOffset / 512)));
-      _backing.Position = _gdByteOffset + gdIdx * 4L;
-      _backing.Write(gdEntry);
-
-      _gtByteOffsets[gdIdx] = gtOffset;
-    }
+    // Both directory/table copies must expose every newly allocated grain.
+    EnsureGrainTable(gdIdx, _gtByteOffsets, _gdByteOffset);
+    if (_redundantGdByteOffset != 0)
+      EnsureGrainTable(gdIdx, _redundantGtByteOffsets, _redundantGdByteOffset);
 
     // Step 2: allocate the grain itself at the next sector-aligned EOF.
     var grainOffset = AlignUp(_backing.Length, 512);
@@ -326,8 +340,29 @@ public sealed class VmdkStream : Stream {
     BinaryPrimitives.WriteUInt32LittleEndian(gtEntry, checked((uint)(grainOffset / 512)));
     _backing.Position = _gtByteOffsets[gdIdx] + gteIdx * 4L;
     _backing.Write(gtEntry);
+    if (_redundantGdByteOffset != 0) {
+      _backing.Position = _redundantGtByteOffsets[gdIdx] + gteIdx * 4L;
+      _backing.Write(gtEntry);
+    }
 
     _grainOffsets[grainIdx] = grainOffset;
+  }
+
+  private void EnsureGrainTable(int gdIdx, long[] tableOffsets, long directoryOffset) {
+    if (tableOffsets[gdIdx] != 0)
+      return;
+
+    var tableOffset = AlignUp(_backing.Length, 512);
+    if (tableOffset > _backing.Length)
+      PadZeros(_backing.Length, tableOffset - _backing.Length);
+    _backing.Position = tableOffset;
+    _backing.Write(new byte[_grainTableEntries * 4]);
+
+    Span<byte> entry = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt32LittleEndian(entry, checked((uint)(tableOffset / 512)));
+    _backing.Position = directoryOffset + gdIdx * 4L;
+    _backing.Write(entry);
+    tableOffsets[gdIdx] = tableOffset;
   }
 
   private void PadZeros(long startOffset, long byteCount) {

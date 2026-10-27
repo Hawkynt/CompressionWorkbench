@@ -27,6 +27,7 @@ internal static class ZipOptionsResolver {
     "lzma" => (ZipCompressionMethod.Lzma, DeflateCompressionLevel.Default),
     "ppmd" => (ZipCompressionMethod.Ppmd, DeflateCompressionLevel.Default),
     "zstd" => (ZipCompressionMethod.Zstd, DeflateCompressionLevel.Default),
+    "xz" => (ZipCompressionMethod.Xz, DeflateCompressionLevel.Default),
     _ => (ZipCompressionMethod.Deflate,
           optimize ? DeflateCompressionLevel.Maximum : DeflateCompressionLevel.Default),
   };
