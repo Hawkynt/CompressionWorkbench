@@ -1,290 +1,122 @@
 using System.Buffers.Binary;
+using System.Text;
 
 namespace FileFormat.Dms;
 
 /// <summary>
-/// Reads and extracts tracks from an Amiga DMS (Disk Masher System) archive.
+/// Reads an Amiga DMS archive: verifies the header and track CRCs, decodes every track with
+/// one stateful <see cref="DmsDecoder"/> in file order, and checks each decoded track's sum.
 /// </summary>
+/// <remarks>
+/// Layout and decoding follow libxad's DMS client (LGPL-2.1-or-later); see
+/// <c>THIRD-PARTY-NOTICE.libxad.txt</c>.
+/// </remarks>
 public sealed class DmsReader : IDisposable {
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
-  private readonly List<DmsTrack> _tracks = [];
-  private bool _disposed;
+  private readonly string? _password;
+  private readonly List<DmsTrackHeader> _tracks = [];
+  private Dictionary<DmsTrackHeader, byte[]>? _decoded;
 
-  /// <summary>Gets the file header.</summary>
-  public DmsHeader Header { get; private set; } = null!;
+  public DmsHeader Header { get; }
 
-  /// <summary>Gets the track entries present in the archive.</summary>
-  public IReadOnlyList<DmsTrack> Entries => this._tracks;
+  /// <summary>Every track in file order, text tracks included.</summary>
+  public IReadOnlyList<DmsTrackHeader> Entries => this._tracks;
 
-  /// <summary>
-  /// Initializes a new <see cref="DmsReader"/> and parses the archive.
-  /// </summary>
-  /// <param name="stream">A seekable stream containing a DMS archive.</param>
-  /// <param name="leaveOpen">Whether to leave the stream open when this reader is disposed.</param>
-  /// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> is null.</exception>
-  /// <exception cref="ArgumentException">Thrown when <paramref name="stream"/> is not seekable.</exception>
-  /// <exception cref="InvalidDataException">Thrown when the stream does not contain a valid DMS archive.</exception>
-  public DmsReader(Stream stream, bool leaveOpen = false) {
+  /// <summary>The disk-data tracks (cylinders), in file order.</summary>
+  public IEnumerable<DmsTrackHeader> DataTracks => this._tracks.Where(t => !t.IsText);
+
+  /// <exception cref="InvalidDataException">Not a DMS archive, or a header CRC is wrong.</exception>
+  public DmsReader(Stream stream, bool leaveOpen = false, string? password = null) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanSeek)
       throw new ArgumentException("Stream must be seekable.", nameof(stream));
     this._leaveOpen = leaveOpen;
+    this._password = password;
 
-    ReadArchive();
-  }
+    stream.Position = 0;
+    Span<byte> header = stackalloc byte[DmsConstants.FileHeaderSize];
+    if (stream.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) != header.Length)
+      throw new InvalidDataException("DMS: file shorter than the 56-byte header.");
+    if (BinaryPrimitives.ReadUInt32BigEndian(header) != DmsConstants.MagicValue)
+      throw new InvalidDataException("DMS: \"DMS!\" magic missing.");
+    if (DmsCrc.Compute(header[4..54]) != BinaryPrimitives.ReadUInt16BigEndian(header[54..]))
+      throw new InvalidDataException("DMS: header CRC mismatch.");
+    this.Header = DmsHeader.Parse(header);
 
-  // ── Parsing ──────────────────────────────────────────────────────────────
-
-  private void ReadArchive() {
-    this._stream.Position = 0;
-
-    if (this._stream.Length < DmsConstants.FileHeaderSize)
-      ThrowInvalid("Stream is too short to be a DMS archive.");
-
-    Span<byte> headerBuf = stackalloc byte[DmsConstants.FileHeaderSize];
-    this._stream.ReadExactly(headerBuf);
-
-    // Verify magic.
-    var magic = BinaryPrimitives.ReadUInt32BigEndian(headerBuf);
-    if (magic != DmsConstants.MagicValue)
-      ThrowInvalid($"Invalid DMS magic: expected 0x{DmsConstants.MagicValue:X8}, got 0x{magic:X8}.");
-
-    // Verify header CRC (CRC-16 of bytes 8..55).
-    var storedCrc = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[4..]);
-    var computedCrc = ComputeCrc16(headerBuf[8..]);
-    if (storedCrc != computedCrc)
-      ThrowInvalid($"DMS header CRC mismatch: expected 0x{storedCrc:X4}, computed 0x{computedCrc:X4}.");
-
-    this.Header = new DmsHeader {
-      Magic           = magic,
-      CreatorVersion  = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[8..]),
-      NeededVersion   = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[10..]),
-      DiskType        = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[12..]),
-      CompressionMode = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[14..]),
-      InfoFlags       = BinaryPrimitives.ReadUInt32BigEndian(headerBuf[16..]),
-      From            = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[20..]),
-      To              = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[22..]),
-      PackedSize      = BinaryPrimitives.ReadUInt32BigEndian(headerBuf[24..]),
-      UnpackedSize    = BinaryPrimitives.ReadUInt32BigEndian(headerBuf[28..]),
-      LowTrack        = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[32..]),
-      HighTrack       = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[34..]),
-      CpuType         = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[36..]),
-      CpuSpeed        = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[38..]),
-      CreatedDay      = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[40..]),
-      CreatedMinute   = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[42..]),
-      CreatedTick     = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[44..]),
-    };
-
-    // Read track headers sequentially.
-    while (this._stream.Position + DmsConstants.TrackHeaderSize <= this._stream.Length) {
-      var track = TryReadTrack();
-      if (track == null)
-        break;
+    Span<byte> th = stackalloc byte[DmsConstants.TrackHeaderSize];
+    while (stream.Length - stream.Position >= DmsConstants.TrackHeaderSize) {
+      stream.ReadExactly(th);
+      if (BinaryPrimitives.ReadUInt16BigEndian(th) != DmsConstants.TrackSignature ||
+          DmsCrc.Compute(th[..18]) != BinaryPrimitives.ReadUInt16BigEndian(th[18..]))
+        break; // trailing data, or a second archive appended after this one
+      var track = new DmsTrackHeader(
+        BinaryPrimitives.ReadInt16BigEndian(th[2..]), BinaryPrimitives.ReadUInt16BigEndian(th[6..]),
+        BinaryPrimitives.ReadUInt16BigEndian(th[8..]), BinaryPrimitives.ReadUInt16BigEndian(th[10..]),
+        th[12], th[13], BinaryPrimitives.ReadUInt16BigEndian(th[14..]), BinaryPrimitives.ReadUInt16BigEndian(th[16..]),
+        stream.Position);
+      if (stream.Length - stream.Position < track.PackedSize)
+        throw new InvalidDataException($"DMS: track {track.Number} runs past the end of the file.");
       this._tracks.Add(track);
+      stream.Seek(track.PackedSize, SeekOrigin.Current);
     }
   }
 
-  private DmsTrack? TryReadTrack() {
-    Span<byte> buf = stackalloc byte[DmsConstants.TrackHeaderSize];
-    var read = this._stream.Read(buf);
-    if (read < DmsConstants.TrackHeaderSize)
-      return null;
-
-    var sig = BinaryPrimitives.ReadUInt16BigEndian(buf);
-    if (sig != DmsConstants.TrackSignature)
-      return null;
-
-    var trackNumber     = BinaryPrimitives.ReadUInt16BigEndian(buf[2..]);
-    // bytes 4-5: reserved
-    var compressedSize  = BinaryPrimitives.ReadUInt16BigEndian(buf[6..]);
-    var uncompressedSize = BinaryPrimitives.ReadUInt16BigEndian(buf[8..]);
-    var   mode            = buf[10];
-    var   flags           = buf[11];
-    var compressedCrc   = BinaryPrimitives.ReadUInt16BigEndian(buf[12..]);
-    // Note: bytes 12-15 store compressed CRC as 4 bytes in some implementations,
-    // but the CRC-16 occupies the first 2 bytes. bytes 14-15 may be padding.
-    var uncompressedCrc = BinaryPrimitives.ReadUInt16BigEndian(buf[16..]);
-
-    var dataOffset = this._stream.Position;
-
-    // Skip past the compressed data.
-    this._stream.Seek(compressedSize, SeekOrigin.Current);
-
-    return new DmsTrack {
-      TrackNumber      = trackNumber,
-      CompressedSize   = compressedSize,
-      UncompressedSize = uncompressedSize,
-      CompressionMode  = mode,
-      Flags            = flags,
-      CompressedCrc    = compressedCrc,
-      UncompressedCrc  = uncompressedCrc,
-      DataOffset       = dataOffset,
-    };
-  }
-
-  // ── Extraction ───────────────────────────────────────────────────────────
-
-  /// <summary>
-  /// Extracts and decompresses the data for the given track.
-  /// </summary>
-  /// <param name="track">The track to extract.</param>
-  /// <returns>The decompressed track data.</returns>
-  /// <exception cref="ArgumentNullException">Thrown when <paramref name="track"/> is null.</exception>
-  /// <exception cref="NotSupportedException">Thrown when the track uses an unsupported compression mode.</exception>
-  /// <exception cref="InvalidDataException">Thrown when CRC verification fails.</exception>
-  public byte[] Extract(DmsTrack track) {
+  /// <summary>Decoded bytes of <paramref name="track"/> (all earlier tracks are decoded first; DMS state is sequential).</summary>
+  public byte[] Extract(DmsTrackHeader track) {
     ArgumentNullException.ThrowIfNull(track);
-
-    this._stream.Position = track.DataOffset;
-    var compressed = new byte[track.CompressedSize];
-    this._stream.ReadExactly(compressed);
-
-    // Verify compressed data CRC.
-    var compCrc = ComputeCrc16(compressed);
-    if (compCrc != track.CompressedCrc)
-      ThrowInvalid($"CRC mismatch for compressed data on track {track.TrackNumber}: " +
-                   $"expected 0x{track.CompressedCrc:X4}, computed 0x{compCrc:X4}.");
-
-    var data = track.CompressionMode switch {
-      DmsConstants.ModeNone      => compressed,
-      DmsConstants.ModeSimpleRle => DecompressRle(compressed, track.UncompressedSize),
-      DmsConstants.ModeQuick     => DecompressQuick(compressed, track.UncompressedSize),
-      DmsConstants.ModeMedium    => throw new NotSupportedException("DMS Medium (mode 3) decompression is not supported."),
-      DmsConstants.ModeDeep      => throw new NotSupportedException("DMS Deep (mode 4) decompression is not supported."),
-      DmsConstants.ModeHeavy1    => throw new NotSupportedException("DMS Heavy1 (mode 5) decompression is not supported."),
-      DmsConstants.ModeHeavy2    => throw new NotSupportedException("DMS Heavy2 (mode 6) decompression is not supported."),
-      _                          => throw new NotSupportedException($"Unknown DMS compression mode: {track.CompressionMode}."),
-    };
-
-    // Verify decompressed data CRC.
-    var dataCrc = ComputeCrc16(data);
-    if (dataCrc != track.UncompressedCrc)
-      ThrowInvalid($"CRC mismatch for decompressed data on track {track.TrackNumber}: " +
-                   $"expected 0x{track.UncompressedCrc:X4}, computed 0x{dataCrc:X4}.");
-
-    return data;
+    this._decoded ??= this.DecodeAll();
+    return this._decoded[track];
   }
 
-  /// <summary>
-  /// Extracts the entire disk image by concatenating all decompressed tracks in order.
-  /// </summary>
-  /// <returns>The full disk image as a byte array.</returns>
+  /// <summary>The disk image: every data track's bytes, in file order (as xDMS writes them).</summary>
   public byte[] ExtractDisk() {
     using var ms = new MemoryStream();
-    foreach (var track in this._tracks) {
-      var data = Extract(track);
-      ms.Write(data);
-    }
+    foreach (var t in this.DataTracks)
+      ms.Write(this.Extract(t));
     return ms.ToArray();
   }
 
-  // ── Decompression: Mode 1 (Simple RLE) ──────────────────────────────────
+  /// <summary>Banner and FILE_ID.DIZ texts, keyed by a file name.</summary>
+  public IEnumerable<(string Name, byte[] Data)> TextEntries() {
+    var banner = 0;
+    foreach (var t in this._tracks.Where(t => t.IsText)) {
+      var name = t.Number == DmsConstants.TrackDiz ? "FILE_ID.DIZ" : banner++ == 0 ? "banner.txt" : $"banner{banner}.txt";
+      yield return (name, this.Extract(t).AsSpan().TrimEnd((byte)0).ToArray());
+    }
+  }
 
-  private static byte[] DecompressRle(byte[] compressed, int uncompressedSize) {
-    var output = new byte[uncompressedSize];
-    var srcPos = 0;
-    var dstPos = 0;
-
-    while (srcPos < compressed.Length && dstPos < uncompressedSize) {
-      var b = compressed[srcPos++];
-      if (b != DmsConstants.RleEscape) {
-        output[dstPos++] = b;
-      } else {
-        if (srcPos >= compressed.Length)
-          break;
-
-        var next = compressed[srcPos++];
-        if (next == 0x00) {
-          // Literal 0x90.
-          output[dstPos++] = DmsConstants.RleEscape;
-        } else {
-          // Run: next = repeat byte, then count byte follows.
-          if (srcPos >= compressed.Length)
-            break;
-          var count = compressed[srcPos++];
-          int runLength = count;
-          for (var i = 0; i < runLength && dstPos < uncompressedSize; i++)
-            output[dstPos++] = next;
+  private Dictionary<DmsTrackHeader, byte[]> DecodeAll() {
+    if (this.Header.IsEncrypted && this._password is null)
+      throw new UnauthorizedAccessException("DMS: the archive is encrypted; a password is required.");
+    var decoder = new DmsDecoder();
+    var pass = this.Header.IsEncrypted ? DmsCrc.Compute(Encoding.Latin1.GetBytes(this._password!)) : (ushort)0;
+    var result = new Dictionary<DmsTrackHeader, byte[]>(ReferenceEqualityComparer.Instance);
+    foreach (var t in this._tracks) {
+      this._stream.Position = t.DataOffset;
+      var packed = new byte[t.PackedSize];
+      this._stream.ReadExactly(packed);
+      if (this.Header.IsEncrypted) {
+        foreach (ref var b in packed.AsSpan()) {
+          var original = b;
+          b ^= (byte)pass;
+          pass = (ushort)((pass >> 1) + original);
         }
-      }
+      } else if (DmsCrc.Compute(packed) != t.PackedCrc)
+        throw new InvalidDataException($"DMS: packed data CRC mismatch on track {t.Number}.");
+
+      var data = decoder.DecodeTrack(packed, t);
+      if (DmsCrc.Sum(data) != t.DataChecksum)
+        throw this.Header.IsEncrypted
+          ? new UnauthorizedAccessException($"DMS: track {t.Number} does not decode; wrong password?")
+          : new InvalidDataException($"DMS: checksum mismatch on decoded track {t.Number}.");
+      result[t] = data;
     }
-
-    return output;
+    return result;
   }
 
-  // ── Decompression: Mode 2 (Quick — LZ77) ────────────────────────────────
-
-  private static byte[] DecompressQuick(byte[] compressed, int uncompressedSize) {
-    var output = new byte[uncompressedSize];
-    var srcPos = 0;
-    var dstPos = 0;
-
-    while (srcPos < compressed.Length && dstPos < uncompressedSize) {
-      if (srcPos + 1 >= compressed.Length)
-        break;
-
-      // Read 2-byte token (big-endian).
-      var token = (compressed[srcPos] << 8) | compressed[srcPos + 1];
-      srcPos += 2;
-
-      var offset = token & 0x0FFF;  // Low 12 bits = offset.
-      var length = (token >> 12) & 0x0F; // High nibble = length - 2.
-
-      if (offset == 0) {
-        // Literal byte: length field is ignored, next byte is literal.
-        if (srcPos >= compressed.Length)
-          break;
-        output[dstPos++] = compressed[srcPos++];
-      } else {
-        // Back-reference: copy length+2 bytes from offset back in output.
-        var matchLen = length + 2;
-        var matchPos = dstPos - offset;
-        if (matchPos < 0)
-          ThrowInvalid($"Quick decompression: invalid back-reference offset {offset} at position {dstPos}.");
-
-        for (var i = 0; i < matchLen && dstPos < uncompressedSize; i++)
-          output[dstPos++] = output[matchPos + i];
-      }
-    }
-
-    return output;
-  }
-
-  // ── CRC-16/CCITT (forward, non-reflected, init=0) ──────────────────────
-
-  private static readonly ushort[] Crc16Table = BuildCrc16Table();
-
-  private static ushort[] BuildCrc16Table() {
-    const ushort poly = DmsConstants.CrcPolynomial;
-    var table = new ushort[256];
-    for (var i = 0; i < 256; i++) {
-      var crc = (ushort)(i << 8);
-      for (var j = 0; j < 8; j++)
-        crc = (crc & 0x8000) != 0 ? (ushort)((crc << 1) ^ poly) : (ushort)(crc << 1);
-      table[i] = crc;
-    }
-    return table;
-  }
-
-  internal static ushort ComputeCrc16(ReadOnlySpan<byte> data) {
-    ushort crc = 0;
-    foreach (var b in data)
-      crc = (ushort)((crc << 8) ^ Crc16Table[(byte)(crc >> 8) ^ b]);
-    return crc;
-  }
-
-  // ── Helpers ──────────────────────────────────────────────────────────────
-
-  private static void ThrowInvalid(string message) =>
-    throw new InvalidDataException(message);
-
-  /// <inheritdoc />
   public void Dispose() {
-    if (!this._disposed) {
-      this._disposed = true;
-      if (!this._leaveOpen)
-        this._stream.Dispose();
-    }
+    if (!this._leaveOpen)
+      this._stream.Dispose();
   }
 }

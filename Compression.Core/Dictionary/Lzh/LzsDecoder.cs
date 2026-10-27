@@ -1,76 +1,54 @@
 namespace Compression.Core.Dictionary.Lzh;
 
 /// <summary>
-/// Decodes -lzs- compressed data (LArc format).
-/// Uses plain LZSS with a 2KB sliding window, no Huffman coding.
+/// Decodes LArc <c>-lzs-</c>: LZSS over a 2 KiB ring buffer, with no entropy coding.
 /// </summary>
 /// <remarks>
-/// Format: flag byte, then 8 tokens per flag.
-/// Flag bit 1 = literal byte.
-/// Flag bit 0 = match: 11-bit offset (big-endian across 2 bytes) + 4-bit length.
-/// The 2 bytes encode: high 8 bits = first byte, low 3 bits of offset in top 3 bits of second byte,
-/// length in low 4 bits of second byte. Minimum match = 2. Window initialized to spaces.
+/// <para>The stream is MSB-first bits. Each command opens with a flag bit: 1 is followed by an 8-bit
+/// literal, 0 by an 11-bit absolute ring-buffer position and a 4-bit length (copies of 2-17 bytes).
+/// The ring buffer starts filled with spaces and the write position starts 17 bytes before its end;
+/// positions are absolute, not distances.</para>
+/// <para>Sourcing: converted from lhasa's <c>lzs_decoder.c</c> (ISC, Simon Howard); see
+/// THIRD-PARTY-NOTICE.lhasa.txt beside this file. Checked against the <c>-lzs-</c> archives of lhasa's
+/// test suite.</para>
 /// </remarks>
 public static class LzsDecoder {
-  private const int WindowSize = 2048;
-  private const int WindowMask = WindowSize - 1;
-  private const int Threshold = 2;
+  internal const int RingSize = 2048;
+  internal const int StartOffset = 17;
+  internal const int Threshold = 2;
 
-  /// <summary>
-  /// Decodes -lzs- compressed data.
-  /// </summary>
-  /// <param name="compressed">The compressed data.</param>
-  /// <param name="originalSize">The expected uncompressed size.</param>
-  /// <returns>The decompressed data.</returns>
+  /// <summary>Decodes <paramref name="originalSize"/> bytes of <c>-lzs-</c> data.</summary>
   public static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize)
     => Decode(compressed.ToArray(), originalSize);
 
-  /// <summary>
-  /// Decodes -lzs- compressed data.
-  /// </summary>
-  /// <param name="compressed">The compressed data.</param>
-  /// <param name="originalSize">The expected uncompressed size.</param>
-  /// <returns>The decompressed data.</returns>
+  /// <summary>Decodes <paramref name="originalSize"/> bytes of <c>-lzs-</c> data.</summary>
   public static byte[] Decode(byte[] compressed, int originalSize) {
+    ArgumentNullException.ThrowIfNull(compressed);
+    ArgumentOutOfRangeException.ThrowIfNegative(originalSize);
     var output = new byte[originalSize];
-    var window = new byte[WindowSize];
-    Array.Fill(window, (byte)0x20);
-    var windowPos = 0;
+    var ring = new byte[RingSize];
+    Array.Fill(ring, (byte)' ');
+    var ringPos = RingSize - StartOffset;
+    var bits = new LhaBitInput(compressed);
     var outPos = 0;
-    var srcPos = 0;
 
-    while (outPos < originalSize && srcPos < compressed.Length) {
-      int flags = compressed[srcPos++];
-
-      for (var bit = 0; bit < 8 && outPos < originalSize; ++bit) {
-        if ((flags & (1 << bit)) != 0) {
-          // Literal
-          if (srcPos >= compressed.Length)
-            return output;
-          var b = compressed[srcPos++];
-          output[outPos++] = b;
-          window[windowPos] = b;
-          windowPos = (windowPos + 1) & WindowMask;
-        } else {
-          // Match
-          if (srcPos + 1 >= compressed.Length)
-            return output;
-          int b1 = compressed[srcPos++];
-          int b2 = compressed[srcPos++];
-
-          var offset = b1 | ((b2 & 0xE0) << 3);
-          var length = (b2 & 0x0F) + Threshold;
-
-          for (var j = 0; j < length && outPos < originalSize; ++j) {
-            var b = window[(offset + j) & WindowMask];
-            output[outPos++] = b;
-            window[windowPos] = b;
-            windowPos = (windowPos + 1) & WindowMask;
-          }
-        }
+    while (outPos < originalSize) {
+      if (bits.Exhausted)
+        throw new InvalidDataException("-lzs- stream ends before the member is complete.");
+      if (bits.ReadBit() != 0) {
+        var b = (byte)bits.ReadBits(8);
+        output[outPos++] = ring[ringPos] = b;
+        ringPos = (ringPos + 1) % RingSize;
+        continue;
+      }
+      var pos = bits.ReadBits(11);
+      var length = bits.ReadBits(4) + Threshold;
+      for (var i = 0; i < length && outPos < originalSize; ++i) {
+        var b = ring[(pos + i) % RingSize];
+        output[outPos++] = ring[ringPos] = b;
+        ringPos = (ringPos + 1) % RingSize;
       }
     }
-
     return output;
   }
 }
