@@ -31,10 +31,10 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 16 | |
+| A | 17 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 4 | specifications: `docs/CVF-CODECS-ON-DISK.md` (rewrite already under way), `docs/G722-SPEC.md`, `docs/IT-SAMPLE-COMPRESSION-SPEC.md`, `docs/FDS-EXPANSION-SOUND-SPEC.md` |
-| R | 7 | one marked *audit* |
+| R | 7 | |
 
 ## C — incompatible, must be rewritten clean-room
 
@@ -75,6 +75,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Compression.Core/Dictionary/Lzbitmap/` | libzbitmap (Ernesto A. Fernández, Corellium) | MIT | `THIRD-PARTY-NOTICE.libzbitmap.txt` |
 | `Compression.Core/Dictionary/Csc/` | libcsc (Fu Siyuan) | Unlicense | `THIRD-PARTY-NOTICE.libcsc.txt` |
 | `Compression.Core/Dictionary/Arj/ArjFastestDecoder.cs` | XADMaster `XADARJFastestHandle.m` (Dag Ågren, MacPaw), revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Arj/THIRD-PARTY-NOTICE.XADMaster.txt` |
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/DiskDoublerReader.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/DiskDoublerAdDecoder.cs` | XADMaster `XADDiskDoublerParser.m` and `XADDiskDoublerADnHandle.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Compression.Core/Dictionary/Lzh/Lh2Decoder.cs`, `Compression.Core/Dictionary/Lzh/Lh3Decoder.cs`, `Compression.Core/Dictionary/Lzh/LhaLegacyBitReader.cs` | XADMaster `XADLZHOldHandles.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Compression.Core/Dictionary/Lzh/Lh1Tree.cs`, `Compression.Core/Dictionary/Lzh/Lh1Decoder.cs`, `Compression.Core/Dictionary/Lzh/LzsDecoder.cs`, `Compression.Core/Dictionary/Lzh/Lz5Decoder.cs`, `Compression.Core/Dictionary/Lzh/Pm1Decoder.cs`, `Compression.Core/Dictionary/Lzh/Pm2Decoder.cs`, `Compression.Core/Dictionary/Lzh/PmaHistory.cs`, `Compression.Core/Dictionary/Lzh/LhaBitInput.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Lzh/LhaHeaderParser.cs` | lhasa (Simon Howard), revision `75ed83559f23e9538e0045c62f53f77ab03d03d6` | ISC | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.lhasa.txt`; `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Lzh/THIRD-PARTY-NOTICE.lhasa.txt` |
 | `Compression.Core/Streams/Lzfse/` | Apple lzfse reference | BSD-3-Clause | `THIRD-PARTY-NOTICE.lzfse.txt`; `LzfseFseDecoder.cs` also carries the header inline |
@@ -92,7 +93,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Claim site | What the comment refers to | Note |
 |---|---|---|
-| `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/PcePsg.cs`, `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/CpuHuC6280.cs` | Mednafen `pce_psg.cpp`, `huc6280.cpp` (GPL-2.0-or-later) as behavioural references, next to Charles MacDonald's notes | ***audit***: "faithful to Mednafen" is behaviour wording, not a port claim, but no intermediate specification exists. Compare structure with Mednafen; on correspondence, reclassify C and write a specification first |
+| `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/PcePsg.cs`, `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/CpuHuC6280.cs` | Mednafen `pce_psg.cpp`, `huc6280.cpp` (GPL-2.0-or-later), formerly named as behavioural references | reviewed 2026-10-23: no structural correspondence. Mednafen's PSG uses an 18-bit five-tap LFSR, integer dB tables and frequency caches; PcePsg uses a 17-bit two-tap LFSR, a floating-point taper and an additive LFO. Mednafen's CPU is opcode macros; CpuHuC6280 is a plain switch and shares only instruction-set facts. The Mednafen wording was removed from both files |
 | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.BcacheFs/BcacheFsRawKey.cs` | bcachefs `get_inc_field()` (GPL-2.0) — the packed-key bit layout | "ports … semantics" means the on-disk bit order, a format fact; the implementation is an independent bit-serial loop |
 | `Compression.Core/Dictionary/Nrv2b/Nrv2bBuildingBlock.cs`, `Compression.Core/Dictionary/Nrv2d/Nrv2dBuildingBlock.cs`, `Compression.Core/Dictionary/Nrv2e/Nrv2eBuildingBlock.cs` | UCL `n2b_d.ch`, `n2d_d.c`, `n2e_d.c` (GPL-2.0-or-later) cited for the stream layout | format facts, verified against real UPX output; no code claim |
 | `Compression.Core/Dictionary/Aplib/AplibBuildingBlock.cs`, `Compression.Core/BuildingBlocks/DoubleSpaceCompressor.cs`, `Compression.Core/BuildingBlocks/DriveSpaceCompressor.cs`, `Compression.Core/Dictionary/Balz/BalzBuildingBlock.cs`, `Compression.Core/Dictionary/Crush/CrushBuildingBlock.cs`, `Compression.Core/Dictionary/Lizard/LizardBuildingBlock.cs`, `Compression.Core/Dictionary/Lzg/LzgBuildingBlock.cs`, `Compression.Core/Dictionary/Lzap/LzapEncoder.cs`, `Compression.Core/Entropy/ContextMixing/MatchModel.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.ExePackers/WinUpackStream.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.ExePackers/JdpackExecutablePackerHandler.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.ExePackers/AsPackLzDecoder.cs` | "clean-room port of the format", or an explicit "not a port of …" | disclaimers |
