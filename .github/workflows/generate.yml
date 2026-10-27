@@ -1,14 +1,25 @@
 name: Generate
 
-# Cheap generation stage: every push to a working branch refreshes derived files and commits them
-# straight back onto that branch. By the time the pull request runs its full CI battery, the README
+# Cheap generation stage: a push to a working branch that touches the UI refreshes derived files
+# and commits them straight back onto that branch. By the time the pull request runs its full CI battery, the README
 # screenshot is already part of the branch rather than being a CI-only artifact.
+#
+# Only UI changes trigger it. A format or codec branch at most nudges a few pixels of the same
+# window, and refreshing the picture on each of them made every open pull request conflict on
+# that one PNG as soon as another one merged.
 #
 # Never on main: that branch takes changes through pull requests only, and the shared action refuses
 # to touch the default branch as an additional guard.
 on:
   push:
     branches-ignore: [main]
+    paths:
+      - Compression.NativeUI/**
+      - Compression.Shell/**
+      - build/NativeForms.ref
+      - build/NativeForms.props
+      - .github/workflows/scripts/capture-screenshot.sh
+      - .github/workflows/generate.yml
   workflow_dispatch: {}
 
 permissions:
