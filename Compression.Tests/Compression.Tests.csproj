@@ -75,6 +75,10 @@
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- keramics' VHDX test disks; see Vhdx/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Vhdx\ReferenceVectors\*.gz;Vhdx\ReferenceVectors\manifest.txt">
+      <LogicalName>VhdxVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Streams written by libcsc's reference csc tool; see Csc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Csc\ReferenceVectors\*.csc">
       <LogicalName>CscVectors.%(Filename)%(Extension)</LogicalName>
@@ -137,6 +141,14 @@
     <!-- Archives the open-source ARJ port wrote with each method; see Arj/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Arj\ReferenceVectors\*.arj">
       <LogicalName>ArjVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- XAR archives libarchive's bsdtar wrote with each encoding; see Xar/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Xar\ReferenceVectors\*.xar">
+      <LogicalName>XarVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- -lh2- / -lh3- archives UNLHA32.DLL wrote, from lhasa's test suite; see Lzh/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Lzh\ReferenceVectors\*.lzh">
+      <LogicalName>LzhVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

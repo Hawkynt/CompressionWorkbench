@@ -25,8 +25,8 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | --- | ---: | --- |
 | `MISSING` | 241 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 23 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 41 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 220 | covered with no known gap against what the sources list |
+| `PARTIAL` | 40 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 221 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 458 | in our registry, listed by none of the seven sources |
 
 ### Per source
@@ -36,13 +36,13 @@ read-only rows.
 
 | Source | Rows it lists | Mapped | % | OK |
 | --- | ---: | ---: | ---: | ---: |
-| 7-Zip (formats + codecs) | 96 | 89 | 92.7 | 71 |
-| libarchive (formats + filters) | 28 | 27 | 96.4 | 22 |
-| XADMaster / The Unarchiver | 126 | 94 | 74.6 | 77 |
+| 7-Zip (formats + codecs) | 96 | 89 | 92.7 | 72 |
+| libarchive (formats + filters) | 28 | 27 | 96.4 | 23 |
+| XADMaster / The Unarchiver | 126 | 94 | 74.6 | 78 |
 | binwalk v3 | 79 | 48 | 60.8 | 36 |
 | Universal Extractor 2 | 124 | 71 | 57.3 | 48 |
-| PRONOM | 87 | 63 | 72.4 | 42 |
-| Wikipedia | 266 | 156 | 58.6 | 116 |
+| PRONOM | 87 | 63 | 72.4 | 43 |
+| Wikipedia | 266 | 156 | 58.6 | 117 |
 
 The libarchive and 7-Zip lists are almost fully covered. The rows still open are libarchive's grzip,
 plus seven 7-Zip rows: LVM, Android `super.img` (LP), AVB, TE, the Swap2/Swap4 filter, PKWARE strong
@@ -162,8 +162,7 @@ running real-world samples. The file named at the end of each row is where the l
 | 7z | `SevenZip` | 7 | Deflate64, ARM64, RISC-V, Zstd/Brotli/LZ4 coders and external header references unsupported (SevenZipReader.cs) |
 | ISO 9660 (Joliet / Rock Ridge / El Torito) | `Iso` | 7 | Rock Ridge limited to NM names (no SL/PX/TF/CE, no zisofs); interleaved files throw (IsoReader.cs) |
 | ZIP | `Zip` | 7 | methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs) |
-| LHA / LZH | `Lzh` | 6 | lh2/lh3 are decoded with the lh5 decoder (approximation) (LhaReader.cs) |
-| XAR (eXtensible ARchive) | `Xar` | 5 | bzip2 throws; lzma/xz members are returned raw (XarReader.cs) |
+| LHA / LZH | `Lzh` | 6 | lh2/lh3 decoded but read-only; lh1, lzs, lz5, pm1, pm2, level-1 extended headers and level-3 headers fail on lhasa's test archives (refused by the CRC check), lhx and lk7 unsupported (LhaReader.cs) |
 | StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |
 | StuffIt X | `StuffItX` | 4 | stored and deflate only; Brimstone/Cyanide/Darkhorse/Iron throw (StuffItXReader.cs) |
 | zoo | `Zoo` | 4 | LZH method (2) unsupported (ZooReader.cs) |
@@ -185,7 +184,6 @@ running real-world samples. The file named at the end of each row is where the l
 | EnCase / Expert Witness (E01) | `Ewf` | 2 | single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs) |
 | PackIt | `PackIt` | 2 | PMag (stored) only; PMa4 Huffman members are returned raw (PackItReader.cs) |
 | UHARC | `Uharc` | 2 | stored and LZP only (UharcReader.cs) |
-| VHDX | `Vhdx` | 2 | differencing / partially-present blocks read as zeros (VhdxStream.cs) |
 | Comic Book Archive | `Cbz`, `Cbr`, `Cb7` | 1 | .cbt (tar) and .cba (ACE) have no descriptor |
 | DMS (Disk Masher) | `Dms` | 1 | NONE/SIMPLE/QUICK only; MEDIUM/DEEP/HEAVY1/HEAVY2 throw (DmsReader.cs) |
 | EGG (ALZip) | `Egg` | 1 | store and deflate only; bzip2/LZMA/AZO, encryption and split archives unsupported (EggReader.cs) |
