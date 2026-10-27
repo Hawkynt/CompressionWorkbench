@@ -24,9 +24,9 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
 | `MISSING` | 240 | a source lists it; no descriptor or building block covers it |
-| `READ-ONLY-BUT-SOURCES-WRITE` | 23 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 41 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 221 | covered with no known gap against what the sources list |
+| `READ-ONLY-BUT-SOURCES-WRITE` | 24 | we only read it; a source or the format's own tool writes it |
+| `PARTIAL` | 37 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 224 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 458 | in our registry, listed by none of the seven sources |
 
 ### Per source
@@ -133,6 +133,7 @@ Every catalogued row where a source records write support (7-Zip, libarchive, an
 | Acronis True Image | `AcronisTib`, `AcronisTibx` | Acronis True Image | Wikipedia |
 | BeeGFS | `BeeGfs` | beegfs-setup-storage | Wikipedia |
 | BitRock InstallBuilder | `BitRock` | InstallBuilder | UniExtract |
+| NSIS installer | `Nsis` | makensis | 7-Zip, XADMaster, UniExtract |
 | GPFS / IBM Storage Scale | `Gpfs` | mmcrfs | Wikipedia |
 | GlusterFS | `GlusterFs` | gluster volume create | Wikipedia |
 | HxC Floppy Emulator (HFE) | `Hfe` | HxC Floppy Emulator tool | PRONOM |
@@ -170,7 +171,6 @@ running real-world samples. The file named at the end of each row is where the l
 | APFS | `Apfs` | 3 | no decmpfs (LZVN/LZFSE) compressed files, no encryption (ApfsReader.cs) |
 | Compiled HTML Help (CHM) | `Chm` | 3 | content sections above 1 unsupported (ChmReader.cs) |
 | FreeArc | `FreeArc` | 3 | only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs) |
-| NSIS installer | `Nsis` | 3 | solid installers cannot be extracted per entry (NsisReader.cs) |
 | NTFS | `Ntfs` | 3 | WOF (XPRESS/LZX) compressed files not decoded; LZNT1 is |
 | QCOW / QCOW2 | `Qcow2` | 3 | no encryption, backing files, zstd clusters or extended L2 (Qcow2Structures.cs) |
 | SquashFS | `SquashFs` | 3 | SquashFS v4 only; v1-v3 rejected (SquashFsSuperblock.cs) |
