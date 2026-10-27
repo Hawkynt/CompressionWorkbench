@@ -384,7 +384,6 @@ Decompresses data in the DEFLATE format (RFC 1951).
 | --- | --- | --- |
 | `DeflateDecompressor` | `DeflateDecompressor(Stream input)` | Initializes a new `DeflateDecompressor` for streaming decompression. |
 | `IsFinished` | `bool IsFinished { get; }` | Gets a value indicating whether the final block has been decoded. |
-| `StoredBlocksOmitComplement` | `bool StoredBlocksOmitComplement { get; set; }` | Gets or sets a value indicating whether stored blocks carry only LEN and no NLEN. |
 | `UnconsumedBytes` | `int UnconsumedBytes { get; }` | Gets the number of whole bytes read from the underlying stream but not consumed by the DEFLATE data. Once the stream has ended on a seekable input this is zero, because the read-ahead has already been handed back by seeking. |
 | `DecompressAll` | `byte[] DecompressAll()` | Decompresses all data from the stream. |
 | `Decompress` | `int Decompress(Span<byte> output)` | Decompresses data into `output`, filling it unless the DEFLATE stream ends first. |
@@ -9346,7 +9345,6 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` | Compresses data from the provided buffer and writes it to the inner stream. |
 | `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Decompresses data from the inner stream into the provided buffer. |
 | `FinishCompression` | `protected override void FinishCompression()` | Called when the stream is being closed in Compress mode. Implementations should flush any remaining compressed data. |
-| `OpenNsisDecoder` | `static Bzip2Stream OpenNsisDecoder(Stream stream, bool leaveOpen = false)` | Opens a decoder for the header-less bzip2 dialect embedded in NSIS installers: no "BZh" stream header, a single 0x31 byte before each block, 0x17 at the end, no CRCs. |
 
 ### Namespace `FileFormat.Gzip`
 

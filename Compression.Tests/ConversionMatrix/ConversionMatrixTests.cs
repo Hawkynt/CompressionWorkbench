@@ -37,9 +37,10 @@ public class ConversionMatrixTests {
     new(StringComparer.OrdinalIgnoreCase) {
       "D64", "D71", "D81", "T64", "Cpm", "Atari8", "AppleDos", "ProDos",
       "Bbc", "ZxScl", "TrDos", "Mfs",
-      // Mfs1 folds names to 7-char DFS slots (HELLO.TXT -> HELLO.T); it extracts the
-      // exact stored bytes, so it round-trips by content, not by verbatim name.
-      "Mfs1",
+      // Mfs1 folds names to 7-char DFS slots (HELLO.TXT -> HELLO.T); Nsis stores
+      // no per-block names and the reader exposes block_N. Both extract the exact
+      // stored bytes, so they round-trip by content, not by verbatim name.
+      "Mfs1", "Nsis",
     };
 
   // Case-folding targets (8.3 / uppercase) — compare names case-insensitively
