@@ -16,7 +16,7 @@ public sealed class XarEntry {
   /// <summary>Whether this entry is a directory.</summary>
   public bool IsDirectory { get; init; }
 
-  /// <summary>Compression method name (e.g., "zlib", "bzip2", "none").</summary>
+  /// <summary>Compression method: "none", "zlib", "bzip2", "lzma", "xz", or the raw encoding style when unrecognised.</summary>
   public string Method { get; init; } = "none";
 
   /// <summary>Last modification date.</summary>
@@ -30,4 +30,7 @@ public sealed class XarEntry {
 
   /// <summary>Extracted checksum (from TOC).</summary>
   internal string? ExtractedChecksum { get; init; }
+
+  /// <summary>Hash named by the extracted checksum's <c>style</c> attribute (e.g. "sha1", "md5").</summary>
+  internal string? ExtractedChecksumStyle { get; init; }
 }
