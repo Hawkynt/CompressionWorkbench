@@ -620,8 +620,7 @@ public class GhostBinarySpecLockInTests {
     // Ghost Explorer 2003.789: FE EF magic at offset 0 of every .gho.
     // Observed in the file-header validate path (FUN_004126b0 + callers).
     Assert.That(GhostConstants.FileMagic, Is.EqualTo(0xEFFE),
-      "FE EF file magic is cross-confirmed by Ghost Explorer 2003.789 — " +
-      "if you change this constant, update docs/GHOST_LEGACY_FORMAT_SPEC.md too.");
+      "FE EF file magic is cross-confirmed by Ghost Explorer 2003.789.");
   }
 
   [Test, Category("HappyPath")]
@@ -631,8 +630,7 @@ public class GhostBinarySpecLockInTests {
     // FUN_00411e40, FUN_004131b0, FUN_00421fd0, FUN_00422260, FUN_00426460,
     // FUN_00426640, FUN_004267c0, FUN_00426af0.
     Assert.That(GhostConstants.RecordMagic, Is.EqualTo(0x012F18D8u),
-      "0x012F18D8 record magic is cross-confirmed by Ghost Explorer 2003.789 — " +
-      "update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.5 if changed.");
+      "0x012F18D8 record magic is cross-confirmed by Ghost Explorer 2003.789.");
   }
 
   [Test, Category("HappyPath")]
@@ -640,8 +638,7 @@ public class GhostBinarySpecLockInTests {
     // FUN_00421fd0:161 writes exactly 10 bytes for the record header
     // (4 type + 4 magic + 2 body length).
     Assert.That(GhostConstants.RecordHeaderSize, Is.EqualTo(10),
-      "10-byte record header is cross-confirmed by Ghost Explorer 2003.789 — " +
-      "update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.5 if changed.");
+      "10-byte record header is cross-confirmed by Ghost Explorer 2003.789.");
   }
 
   [Test, Category("HappyPath")]
@@ -650,8 +647,7 @@ public class GhostBinarySpecLockInTests {
     // observed in FUN_00411e40:72 + the 0x200 loop counter for header copy
     // at FUN_00411e40:138.
     Assert.That(GhostConstants.HeaderSize, Is.EqualTo(512),
-      "512-byte header is cross-confirmed by Ghost Explorer 2003.789 — " +
-      "update docs/GHOST_LEGACY_FORMAT_SPEC.md if changed.");
+      "512-byte header is cross-confirmed by Ghost Explorer 2003.789.");
   }
 
   [Test, Category("HappyPath")]
@@ -659,8 +655,7 @@ public class GhostBinarySpecLockInTests {
     // Both FUN_0042a7a0 (encoder) and FUN_0042ab40 (decoder) initialise a
     // 4096-entry hash table (256 outer iters × 16 inner stores).
     Assert.That(GhostConstants.FastLzHashSize, Is.EqualTo(4096),
-      "4096-entry FastLZ hash table is cross-confirmed by Ghost Explorer 2003.789 — " +
-      "update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.2 if changed.");
+      "4096-entry FastLZ hash table is cross-confirmed by Ghost Explorer 2003.789.");
   }
 
   [Test, Category("HappyPath")]
@@ -668,8 +663,7 @@ public class GhostBinarySpecLockInTests {
     // FUN_00411e40:216 writes type 0x23 as the end-of-image record after the
     // 0x012F18D8 magic.
     Assert.That(GhostConstants.RecordTypeEnd, Is.EqualTo((ushort)0x0023),
-      "End-record type 0x23 is cross-confirmed by Ghost Explorer 2003.789 — " +
-      "update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.5 if changed.");
+      "End-record type 0x23 is cross-confirmed by Ghost Explorer 2003.789.");
   }
 
   [Test, Category("HappyPath")]
@@ -715,7 +709,7 @@ public class GhostBinarySpecLockInTests {
     var expected = (int)((unchecked(multiplier * v) >> 4) & 0xFFF);
     Assert.That(h_abc, Is.EqualTo(expected),
       "GhostFastLz.Hash must use the 0x9E5F multiplier observed in Ghost Explorer 2003.789 " +
-      "FUN_0042a7a0:119 — update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.3 if changed.");
+      "FUN_0042a7a0:119.");
   }
 
   [Test, Category("HappyPath")]
@@ -725,7 +719,7 @@ public class GhostBinarySpecLockInTests {
     var stored = GhostFastLz.StoreUncompressed(new byte[] { 0xAA, 0xBB });
     Assert.That(stored[0], Is.EqualTo((byte)1),
       "First-byte 0x01 raw escape is cross-confirmed by Ghost Explorer 2003.789 " +
-      "FUN_0042ab40:31 — update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.4 if changed.");
+      "FUN_0042ab40:31.");
   }
 
   [Test, Category("HappyPath")]
@@ -751,7 +745,7 @@ public class GhostBinarySpecLockInTests {
       "Decoder must produce at least 3 bytes from a single match token.");
     Assert.That(dst[0], Is.EqualTo((byte)'1'),
       "Sentinel byte 0 must be ASCII '1' — Ghost Explorer 2003.789 uses literal " +
-      "\"123456789012345678\" at 0x0048a978. Update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.1 if changed.");
+      "\"123456789012345678\" at 0x0048a978.");
     Assert.That(dst[1], Is.EqualTo((byte)'2'),
       "Sentinel byte 1 must be ASCII '2' — cross-confirmed by Ghost Explorer 2003.789.");
     Assert.That(dst[2], Is.EqualTo((byte)'3'),
