@@ -253,7 +253,7 @@ Apple Disk Image (UDIF),dmg;smi;img,disk-image,R,,,R,R,fmt/1071,Y,5,https://en.w
 Apple sparse image / sparse bundle,sparseimage;sparsebundle,disk-image,,,,,,,Y,1,,Sparseimage;Sparsebundle,Y,Y,Y,OK,,
 Apple Disk Copy 4.2,dc42;image;dmg;img;smi,disk-image,,,,,,fmt/625,Y,2,,,,,,MISSING,,https://en.wikipedia.org/wiki/Disk_Copy
 VHD,vhd,disk-image,R,,,,R,,Y,3,https://learn.microsoft.com/windows/win32/vstor/about-vhd,Vhd,Y,Y,Y,OK,,
-VHDX,vhdx;avhdx,disk-image,R,,,,,,Y,2,https://learn.microsoft.com/openspecs/windows_protocols/ms-vhdx/,Vhdx,Y,Y,Y,PARTIAL,,differencing / partially-present blocks read as zeros (VhdxStream.cs)
+VHDX,vhdx;avhdx,disk-image,R,,,,,,Y,2,https://learn.microsoft.com/openspecs/windows_protocols/ms-vhdx/,Vhdx,Y,Y,Y,OK,,"differencing disks read through the parent locator and sector bitmaps (checked against libvhdi); an unreplayed log is refused"
 VMDK,vmdk,disk-image,R,,,,R,,Y,3,https://developer.broadcom.com/,Vmdk,Y,Y,Y,PARTIAL,,stream-optimized / compressed grains read raw; split extents and delta chains unsupported (VmdkReader.cs)
 VirtualBox VDI,vdi,disk-image,R,,,,R,fmt/726,Y,4,https://www.virtualbox.org/,Vdi,Y,Y,Y,OK,,
 QCOW / QCOW2,qcow;qcow2;qcow2c,disk-image,R,,,D,,,Y,3,https://gitlab.com/qemu-project/qemu/-/blob/master/docs/interop/qcow2.txt,Qcow2,Y,Y,Y,PARTIAL,,"no encryption, backing files, zstd clusters or extended L2 (Qcow2Structures.cs)"
