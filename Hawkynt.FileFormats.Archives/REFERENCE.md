@@ -9105,7 +9105,7 @@ Represents an aomei entry.
 
 #### `AomeiFormatDescriptor`
 
-Read/write descriptor for AOMEI Backupper image files (`.adi` disk / partition / system backup, `.afi` file/folder backup). Both share the `Magic` 5-byte ASCII signature at offset 0 (the trailing backslash is the low byte of the `Size` field, not a path separator). Implementation ported from the reverse-engineered format spec at `docs/AOMEI_FORMAT_SPEC.md`: full `BIFH`/`BIFT` structs with `BRCrc32` verification, the recovered `BR_STANDARD_HEADER` tagged-record framing, and typed views of the four confirmed INFO records (COMPRESS / ENCRYPT / PASSWORD / BACKUP_TYPE). What is surfaced for parsable input:`FULL.bifh` — the raw image bytes (also acts as a fallback for callers that just want the original payload).`metadata.ini` — parse status, decoded INFO record fields (backup_type, compress method/level, encrypt method/keylen, password MD5), record-walk summary.`header.bin` — the original 64-byte capture of the file start (preserved from the R/O baseline for backward compatibility with downstream forensic tooling).`head.bin` / `tail.bin` — the full 0x65C BIFH and 0x674 BIFT structs, available when the file is long enough to contain them, for future RE work on the as-yet-TODO body fields.`record-NN-NAME.bin` — every walked `BR_STANDARD_HEADER`-prefixed record's raw bytes, filename-tagged with its type code. Lets callers inspect the INDEX_TYPE_* records whose body layouts remain TODO.`userdata/NAME` — when the file was produced by this project's writer, the user-data envelopes (`UserDataTypeTag`) are unwrapped and their original filename + payload are emitted under a `userdata/` prefix.Create() — round-trip honest: the writer emits a wire-format correct BIFH+INFO+BIFT container with sealed CRCs. The container round-trips through our own reader. It is not byte-compatible with the AOMEI Backupper application: the head/tail body fields (0x650 / 0x668 bytes after the standard header) are zero-filled because their layout is TODO in the recovered spec. Containers produced here advertise compression / encryption / backup-type via standard INFO records, and wrap user inputs in a vendor-namespace `UserDataTypeTag` envelope so the project's own reader can extract them again. References: `https://www.aomeitech.com` — vendor — the .adi/.afi container is proprietary and unpublished`docs/AOMEI_FORMAT_SPEC.md` (this repository) — reverse-engineered BIFH/BIFT + BR_STANDARD_HEADER on-disk specAOMEI never published a specification. What is known of the on-disk layout was recovered by decompiling the shipped binaries, and is written down in `docs/AOMEI_FORMAT_SPEC.md`.
+Read/write descriptor for AOMEI Backupper image files (`.adi` disk / partition / system backup, `.afi` file/folder backup). Both share the `Magic` 5-byte ASCII signature at offset 0 (the trailing backslash is the low byte of the `Size` field, not a path separator). Implementation of the reverse-engineered container layout: full `BIFH`/`BIFT` structs with `BRCrc32` verification, the recovered `BR_STANDARD_HEADER` tagged-record framing, and typed views of the four confirmed INFO records (COMPRESS / ENCRYPT / PASSWORD / BACKUP_TYPE). What is surfaced for parsable input:`FULL.bifh` — the raw image bytes (also acts as a fallback for callers that just want the original payload).`metadata.ini` — parse status, decoded INFO record fields (backup_type, compress method/level, encrypt method/keylen, password MD5), record-walk summary.`header.bin` — the original 64-byte capture of the file start (preserved from the R/O baseline for backward compatibility with downstream forensic tooling).`head.bin` / `tail.bin` — the full 0x65C BIFH and 0x674 BIFT structs, available when the file is long enough to contain them, for future RE work on the as-yet-TODO body fields.`record-NN-NAME.bin` — every walked `BR_STANDARD_HEADER`-prefixed record's raw bytes, filename-tagged with its type code. Lets callers inspect the INDEX_TYPE_* records whose body layouts remain TODO.`userdata/NAME` — when the file was produced by this project's writer, the user-data envelopes (`UserDataTypeTag`) are unwrapped and their original filename + payload are emitted under a `userdata/` prefix.Create() — round-trip honest: the writer emits a wire-format correct BIFH+INFO+BIFT container with sealed CRCs. The container round-trips through our own reader. It is not byte-compatible with the AOMEI Backupper application: the head/tail body fields (0x650 / 0x668 bytes after the standard header) are zero-filled because their layout is still unknown. Containers produced here advertise compression / encryption / backup-type via standard INFO records, and wrap user inputs in a vendor-namespace `UserDataTypeTag` envelope so the project's own reader can extract them again. References: `https://www.aomeitech.com` — vendor — the .adi/.afi container is proprietary and unpublishedAOMEI never published a specification. What is known of the on-disk layout was recovered by decompiling the shipped binaries.
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
@@ -9165,7 +9165,7 @@ A single decoded INFO/INDEX record from the AOMEI payload. Carries the raw 12-by
 
 #### `AomeiReader`
 
-Reader for AOMEI Backupper image files (`.adi` disk / partition / system image and `.afi` file backup), implementing the partial specification recovered from binary reverse engineering of the AOMEI Backupper binary stack — see `docs/AOMEI_FORMAT_SPEC.md`. What this reader verifies and surfaces: Five-byte ASCII signature `BIFH\` at offset 0 — preserved from the original R/O metadata baseline so detection logic stays unchanged.Full `BR_IMAGE_FILE_HEAD` at offset 0 (0x65C bytes): Flag, Size and Crc32 fields verified per spec §2.1; the remaining 0x650 body bytes are surfaced as `HeadBody` for future RE work.Full `BR_IMAGE_FILE_TAIL` at offset `file_size - 0x674`: same Flag/Size/Crc32 verification, body surfaced as `TailBody`.Walk of every `BR_STANDARD_HEADER`-prefixed record between the head and the tail; each record's CRC is verified per the spec §3.1 invariant `BRCrc32(record, sizeof(record)) == saved_crc`.Typed views of the four confirmed INFO records: `InfoTypeImageCompress` (0x105), `InfoTypeImageEncrypt` (0x106), `InfoTypeImagePassword` (0x107), `InfoTypeBackupType` (0x10C). What is not yet decoded (per spec §10): Head/tail body fields past the first 12 bytes — layout TODO.INDEX_TYPE_DATABLOCK / DIRTREE / VOLUME / DATAAREA / ROOT record bodies — only the BR_STANDARD_HEADER framing is walked; the body bytes are passed through as opaque `Body`.Encryption (AES variant + IV derivation) and the compression method numeric mapping — fields surfaced as-is. The reader is tolerant: a short/partial image is reported via `ParseStatus` rather than thrown, so callers (e.g. the descriptor's `List` / `Extract` path) can fall back to the header-surface treatment without exception handling on the hot path.
+Reader for AOMEI Backupper image files (`.adi` disk / partition / system image and `.afi` file backup), implementing the partial layout recovered from binary reverse engineering of the AOMEI Backupper binary stack. What this reader verifies and surfaces: Five-byte ASCII signature `BIFH\` at offset 0 — preserved from the original R/O metadata baseline so detection logic stays unchanged.Full `BR_IMAGE_FILE_HEAD` at offset 0 (0x65C bytes): Flag, Size and Crc32 fields verified; the remaining 0x650 body bytes are surfaced as `HeadBody` for future RE work.Full `BR_IMAGE_FILE_TAIL` at offset `file_size - 0x674`: same Flag/Size/Crc32 verification, body surfaced as `TailBody`.Walk of every `BR_STANDARD_HEADER`-prefixed record between the head and the tail; each record's CRC is verified using the invariant `BRCrc32(record, sizeof(record)) == saved_crc`.Typed views of the four confirmed INFO records: `InfoTypeImageCompress` (0x105), `InfoTypeImageEncrypt` (0x106), `InfoTypeImagePassword` (0x107), `InfoTypeBackupType` (0x10C). What is not yet decoded: Head/tail body fields past the first 12 bytes — layout TODO.INDEX_TYPE_DATABLOCK / DIRTREE / VOLUME / DATAAREA / ROOT record bodies — only the BR_STANDARD_HEADER framing is walked; the body bytes are passed through as opaque `Body`.Encryption (AES variant + IV derivation) and the compression method numeric mapping — fields surfaced as-is. The reader is tolerant: a short/partial image is reported via `ParseStatus` rather than thrown, so callers (e.g. the descriptor's `List` / `Extract` path) can fall back to the header-surface treatment without exception handling on the hot path.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9241,7 +9241,7 @@ AOMEI `BRCrc32` — the CRC-32 used to integrity-protect the file head, file tai
 
 #### `BrFileHead`
 
-`BR_IMAGE_FILE_HEAD` — the 0x65C-byte struct at offset 0 of every `.adi`/`.afi` image. Layout per `docs/AOMEI_FORMAT_SPEC.md` §2.1, sourced from `ammntdrv.sys!FUN_00015e90`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x650 bytes are TODO per spec §10.1 (likely backup GUID, version, BR_IMAGE_INFO descriptors). The reader exposes the raw body bytes via `BodyRaw` for future RE work; the writer fills it with zeros and seals the CRC. The Flag field reuses the `BifhFlag``0x48464942` ("BIFH" LE) — the same four bytes as `BifhMagicAscii`[0..4] which the descriptor uses for offset-0 magic detection. The trailing 0x5C ("\\") byte that public sources document as part of the family magic is therefore the low byte of `Size` (0x65C = 1628 = 0x_00_00_06_5C LE) — not an extra magic byte. The reader still tolerates samples whose low-byte happens to differ (would be rejected at the Size check), keeping the 5-byte ASCII detection that has shipped since the R/O baseline.
+`BR_IMAGE_FILE_HEAD` — the 0x65C-byte struct at offset 0 of every `.adi`/`.afi` image. Layout sourced from `ammntdrv.sys!FUN_00015e90`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x650 bytes are TODO (likely backup GUID, version, BR_IMAGE_INFO descriptors). The reader exposes the raw body bytes via `BodyRaw` for future RE work; the writer fills it with zeros and seals the CRC. The Flag field reuses the `BifhFlag``0x48464942` ("BIFH" LE) — the same four bytes as `BifhMagicAscii`[0..4] which the descriptor uses for offset-0 magic detection. The trailing 0x5C ("\\") byte that public sources document as part of the family magic is therefore the low byte of `Size` (0x65C = 1628 = 0x_00_00_06_5C LE) — not an extra magic byte. The reader still tolerates samples whose low-byte happens to differ (would be rejected at the Size check), keeping the 5-byte ASCII detection that has shipped since the R/O baseline.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9256,7 +9256,7 @@ AOMEI `BRCrc32` — the CRC-32 used to integrity-protect the file head, file tai
 
 #### `BrFileTail`
 
-`BR_IMAGE_FILE_TAIL` — the 0x674-byte struct at offset `file_size - 0x674`. Layout per `docs/AOMEI_FORMAT_SPEC.md` §2.2, sourced from `ammntdrv.sys!FUN_0001601c`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x668 bytes are TODO per spec §10.1 (likely index offset, total payload size and back-pointer to head). The reader exposes the raw body bytes via `BodyRaw`; the writer fills it with zeros and seals the CRC.
+`BR_IMAGE_FILE_TAIL` — the 0x674-byte struct at offset `file_size - 0x674`. Layout sourced from `ammntdrv.sys!FUN_0001601c`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x668 bytes are TODO (likely index offset, total payload size and back-pointer to head). The reader exposes the raw body bytes via `BodyRaw`; the writer fills it with zeros and seals the CRC.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13715,22 +13715,16 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `DiskDoublerEntry`
 
-Represents one fork of a DiskDoubler compressed file.
+Represents a single compressed file stored in a DiskDoubler file.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DiskDoublerEntry` | `DiskDoublerEntry()` |  |
-| `Checksum` | `ushort Checksum { get; init; }` | Gets the fork's checksum field (its meaning depends on the method). |
 | `CompressedSize` | `long CompressedSize { get; init; }` | Gets the compressed size in bytes. |
-| `Creator` | `string Creator { get; init; }` | Gets the Mac creator code. |
 | `DataOffset` | `long DataOffset { get; init; }` | Gets the absolute byte offset of the compressed data within the source stream. |
-| `DeltaType` | `int DeltaType { get; init; }` | Gets the fork's delta pre-processing type (0 = none). |
-| `FileType` | `string FileType { get; init; }` | Gets the Mac file type code. |
 | `IsDataFork` | `bool IsDataFork { get; init; }` | Gets whether this entry represents the data fork (as opposed to the resource fork). |
-| `IsSupported` | `bool IsSupported { get; }` | Gets whether this reader can decode the entry's method. |
-| `Method` | `int Method { get; init; }` | Gets the compression method: 0 stored, 1 Unix compress, 2 and 5 DiskDoubler Huffman variants, 3 RLE, 4 Huffman, 6 and 9 "AD" LZSS, 7 Stac LZS, 8 Compact Pro, 10 "DD". The high bit is a flag and is masked off. |
-| `Modified` | `DateTime? Modified { get; init; }` | Gets the modification time, or `null` when the header holds zero. |
-| `Name` | `string Name { get; init; }` | Gets the entry name: the file's name for the data fork, with ".rsrc" appended for the resource fork. |
+| `Method` | `int Method { get; init; }` | Gets the compression method ID (0 = stored, 1 = RLE, 3 = LZC variant, others = proprietary). |
+| `Name` | `string Name { get; init; }` | Gets the original filename. |
 | `OriginalSize` | `long OriginalSize { get; init; }` | Gets the original (uncompressed) size in bytes. |
 
 #### `DiskDoublerFormatDescriptor`
@@ -13751,7 +13745,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures: a single DiskDoubler file starts with 0xABCD0054. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
@@ -13763,28 +13757,27 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 
 #### `DiskDoublerReader`
 
-Reads a single DiskDoubler compressed file and decodes its forks.
+Reads the header of a DiskDoubler compressed file and provides access to its data and resource fork entries.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DiskDoublerReader` | `DiskDoublerReader(Stream stream, bool leaveOpen = false, string name = null)` | Opens a DiskDoubler compressed file from the given stream and parses its header. |
-| `Entries` | `IReadOnlyList<DiskDoublerEntry> Entries { get; }` | Gets the forks parsed from the header: the data fork (if any), then the resource fork (if any). |
+| `DiskDoublerReader` | `DiskDoublerReader(Stream stream, bool leaveOpen = false)` | Opens a DiskDoubler compressed file from the given stream and parses its header. |
+| `HeaderSize` | `const int HeaderSize` | Size of the fixed-length DiskDoubler file header in bytes. |
+| `Entries` | `IReadOnlyList<DiskDoublerEntry> Entries { get; }` | Gets the list of entries parsed from the DiskDoubler file header. |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(DiskDoublerEntry entry)` | Decodes the specified fork. |
-| `IsDiskDoubler` | `static bool IsDiskDoubler(ReadOnlySpan<byte> header)` | Returns whether `header` starts a DiskDoubler file (directly or behind MacBinary). |
-| `MethodName` | `static string MethodName(int method)` | Names a method as the format's tools do. |
+| `Extract` | `byte[] Extract(DiskDoublerEntry entry)` | Extracts the data for the specified entry. |
 
 #### `DiskDoublerWriter`
 
-Writes a single DiskDoubler file with a stored (method 0) data fork and no resource fork, in the layout `DiskDoublerReader` documents. The Unarchiver (`unar`) reads it back.
+Writes a DiskDoubler stored (method 0) file. Takes a single data fork payload; resource fork is empty. Roundtrips through `DiskDoublerReader`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DiskDoublerWriter` | `DiskDoublerWriter()` |  |
-| `SetFile` | `void SetFile(byte[] data, string fileType = "????", string creator = "????")` | Sets the data fork. DiskDoubler stores no name; the file's own name is the entry's name. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the header and the stored data fork to `output`. |
+| `SetFile` | `void SetFile(string name, byte[] data)` | Sets the file. |
+| `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
 
 ### Namespace `FileFormat.Dls`
 
@@ -16762,33 +16755,30 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 ### Namespace `FileFormat.FreeArc`
 
-[`FreeArcEntry`](#freearcentry) · [`FreeArcFormatDescriptor`](#freearcformatdescriptor) · [`FreeArcMethods`](#freearcmethods) · [`FreeArcReader`](#freearcreader) · [`FreeArcWriter`](#freearcwriter)
+[`FreeArcEntry`](#freearcentry) · [`FreeArcFormatDescriptor`](#freearcformatdescriptor) · [`FreeArcReader`](#freearcreader) · [`FreeArcWriter`](#freearcwriter)
 
 #### `FreeArcEntry`
 
-Represents a single file or directory recorded in a FreeArc directory block.
+Represents a single file entry within a FreeArc archive.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FreeArcEntry` | `FreeArcEntry()` |  |
-| `CompressedSize` | `long CompressedSize { get; init; }` | The compressed size of the solid block that holds this file, reported on the block's first file only (FreeArc does not record per-file compressed sizes); zero on the others. |
-| `Crc` | `uint Crc { get; init; }` | The CRC-32 of the uncompressed file contents. |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry is a directory. |
-| `LastModified` | `DateTime? LastModified { get; init; }` | The modification time (stored as 32-bit Unix seconds), in UTC. |
-| `Method` | `string Method { get; init; }` | The method string of the solid block holding this file, e.g. `lzma:32kb:normal:32`. |
-| `Name` | `string Name { get; init; }` | The full stored path, with `/` as separator. |
+| `CompressedSize` | `long CompressedSize { get; init; }` | The compressed size of the file data in bytes. |
+| `Method` | `string Method { get; init; }` | The compression method string (e.g. "storing", "lzma", "freearc"). |
+| `Name` | `string Name { get; init; }` | The file name as stored in the archive directory block. |
 | `Size` | `long Size { get; init; }` | The uncompressed size of the file in bytes. |
 
 #### `FreeArcFormatDescriptor`
 
-Format descriptor for FreeArc archives (.arc, signature `ArC\x01`). References: `docs/FREEARC-ON-DISK.md` — the layout this implementation follows, derived from FreeArc's sources and checked against FreeArc 0.67's output`https://github.com/Bulat-Ziganshin/FA` — FreeArc'Next by FreeArc's author, Bulat Ziganshin (the original freearc.org site is defunct)`https://en.wikipedia.org/wiki/FreeArc` — Wikipedia overview
+Format descriptor for FreeArc compressed archives (.arc). References: `https://github.com/Bulat-Ziganshin/FA` — FreeArc'Next by FreeArc's author, Bulat Ziganshin (the original freearc.org site is defunct)`https://en.wikipedia.org/wiki/FreeArc` — Wikipedia overviewNo formal specification — the archive layout is defined by the original FreeArc sources
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FreeArcFormatDescriptor` | `FreeArcFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
 | `DefaultExtension` | `string DefaultExtension { get; }` |  |
@@ -16797,7 +16787,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
@@ -16807,48 +16797,29 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
-#### `FreeArcMethods`
-
-FreeArc compression method strings: `name:param:param...` stages joined by `+`, applied left to right when compressing and therefore undone right to left when extracting.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Storing` | `const string Storing` | The method name of an uncompressed stage. |
-| `Decode` | `static byte[] Decode(string compressor, byte[] input, long outputSize)` | Decodes `input` produced by `compressor` into exactly `outputSize` bytes. |
-| `Encode` | `static byte[] Encode(string compressor, ReadOnlySpan<byte> input)` | Encodes `input` with a single supported stage. |
-| `IsEncrypted` | `static bool IsEncrypted(string compressor)` | Gets whether `compressor` contains an encryption stage. |
-| `IsSupported` | `static bool IsSupported(string compressor)` | Gets whether every stage of `compressor` can be decoded. |
-| `Stages` | `static string[] Stages(string compressor)` | Splits a method string into its stages. |
-| `WithDictionary` | `static string WithDictionary(string compressor, long inputLength)` | Gives a bare `lzma` stage an explicit dictionary (the next power of two covering the input, 64 KiB to 64 MiB) so FreeArc's decoder does not reserve its much larger default. |
-
 #### `FreeArcReader`
 
-Reads real FreeArc archives (`.arc`, signature `ArC\x01`) as written by FreeArc 0.4x–0.67.
+Reads FreeArc archives (.arc). This implementation parses a well-defined binary subset of the FreeArc container format that is produced by `FreeArcWriter` and understood by this reader. Binary layout (all integers are little-endian): 4 bytes — magic "ArC\x01"4 bytes — uint32 archive flags (reserved, currently 0)One or more blocks, each preceded by a 1-byte block type: 0x01 = directory block0x02 = data block0x00 = end-of-archive marker Directory block payload: uint32 — number of file entriesPer entry: uint16 nameLen + UTF-8 name + uint64 size + uint64 compressedSize + uint64 dataOffset + uint16 methodLen + ASCII method Data block payload: uint32 — payload length in bytespayload bytes (concatenated raw file data)
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FreeArcReader` | `FreeArcReader(Stream stream, bool leaveOpen = false)` | Opens a FreeArc archive and reads its footer and directory blocks. |
-| `Comment` | `string Comment { get; }` | Gets the archive comment, or an empty string. |
-| `Entries` | `IReadOnlyList<FreeArcEntry> Entries { get; }` | Gets all files and directories recorded in the archive's directory blocks, in archive order. |
-| `IsLocked` | `bool IsLocked { get; }` | Gets whether the archive is locked against further modification. |
-| `SfxSize` | `long SfxSize { get; }` | Gets the size of the data preceding the archive proper (an SFX module), or zero. |
+| `FreeArcReader` | `FreeArcReader(Stream stream, bool leaveOpen = false)` | Initialises a new `FreeArcReader` and parses the archive. |
+| `Magic` | `static readonly byte[] Magic` | Magic bytes at the start of every FreeArc archive. |
+| `Entries` | `IReadOnlyList<FreeArcEntry> Entries { get; }` | Gets all file entries found in the archive directory. |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(FreeArcEntry entry)` | Extracts the contents of `entry`, verifying its CRC-32. |
+| `Extract` | `byte[] Extract(FreeArcEntry entry)` | Extracts and returns the raw (uncompressed) bytes for the specified entry. |
 
 #### `FreeArcWriter`
 
-Writes real FreeArc archives that FreeArc 0.67's `arc` and `unarc` list, test and extract.
+Builds minimal FreeArc archives (.arc) that can be read by `FreeArcReader`. All files are stored without compression (method "storing"). The writer produces the exact binary layout described in `FreeArcReader`: magic, archive flags, a single directory block, a single data block, and the end-of-archive marker.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FreeArcWriter` | `FreeArcWriter(string method = "storing")` | Creates a writer that compresses the file block with `method`. |
-| `Method` | `string Method { get; }` | Gets the method string used for the file block. |
-| `AddDirectory` | `void AddDirectory(string name, DateTime? modified = null)` | Adds a directory entry. |
-| `AddFile` | `void AddFile(string name, byte[] data, DateTime? modified = null)` | Adds a file. |
-| `Build` | `byte[] Build()` | Builds the archive. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the archive to `output`, which must be positioned at its start. |
+| `FreeArcWriter` | `FreeArcWriter()` |  |
+| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the archive being built. |
+| `Build` | `byte[] Build()` | Serialises the archive and returns it as a byte array. |
 
 ### Namespace `FileFormat.Freeze`
 
@@ -24061,24 +24032,17 @@ Represents a file entry in a PackIt (.pit) archive.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PackItEntry` | `PackItEntry()` |  |
-| `Created` | `DateTime? Created { get; init; }` | Gets the creation time, or `null` when the header holds zero. |
 | `Creator` | `string Creator { get; init; }` | Gets the Mac four-character creator code (e.g. "CWIE"). |
 | `DataForkSize` | `long DataForkSize { get; init; }` | Gets the uncompressed data fork size in bytes. |
-| `DataOffset` | `long DataOffset { get; init; }` | Gets the absolute offset where the data fork begins for a stored entry; for a compressed entry, the offset of its Huffman bit stream (the byte after the magic). |
-| `EntryLength` | `long EntryLength { get; init; }` | Gets the number of bytes the entry occupies, magic included. |
-| `EntryOffset` | `long EntryOffset { get; init; }` | Gets the absolute offset of the entry's magic. |
+| `DataOffset` | `long DataOffset { get; init; }` | Gets the absolute byte offset where the data fork begins in the source stream. |
 | `FileType` | `string FileType { get; init; }` | Gets the Mac four-character file type code (e.g. "TEXT"). |
-| `FinderFlags` | `ushort FinderFlags { get; init; }` | Gets the Finder flags. |
-| `HeaderCrcValid` | `bool HeaderCrcValid { get; init; }` | Gets whether the header matched its CRC-16 (always `true` for encrypted entries, which cannot be checked). |
-| `IsCompressed` | `bool IsCompressed { get; init; }` | Gets whether this entry is Huffman-compressed ("PMa4", "PMa5", "PMa6"). |
-| `IsEncrypted` | `bool IsEncrypted { get; init; }` | Gets whether this entry is password-encrypted ("PMa5" XOR, "PMa6" DES). |
-| `Modified` | `DateTime? Modified { get; init; }` | Gets the modification time, or `null` when the header holds zero. |
+| `IsCompressed` | `bool IsCompressed { get; init; }` | Gets whether this entry uses Huffman compression ("PMa4"). |
 | `Name` | `string Name { get; init; }` | Gets the filename (up to 63 characters, Mac Roman / Latin-1 encoded). |
 | `ResourceForkSize` | `long ResourceForkSize { get; init; }` | Gets the uncompressed resource fork size in bytes. |
 
 #### `PackItFormatDescriptor`
 
-PackIt classic Macintosh archive (.pit; Harry Chesley, 1984) — sequential PMag/PMa4 records bundling data and resource forks. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver) — maintained implementation including PackItNo formal specification; header CRC measured on real PackIt II archives (see PackItReader)
+PackIt classic Macintosh archive (.pit; Harry Chesley, 1984) — sequential PMag/PMa4 records bundling data and resource forks. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver) — maintained implementation including PackItNo formal specification — format known from PackIt itself and later community documentation
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
@@ -24099,8 +24063,8 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing PackIt archive. Uses `PackItModifier` — Add appends Stored at EOF; Remove walks the entry chain and shifts trailing bytes (no central directory). |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: re-chains the entries in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag. Each entry is carried over as its raw bytes (magic to fork CRC), so resource forks, Finder info, dates and Huffman coding survive unchanged; only the chain is rewritten. |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the PackIt archive in listing order. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the PackIt archive per the requested mode. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -24110,12 +24074,12 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `PackItModifier`
 
-In-place edits of a PackIt archive. PackIt has no directory: entries are a chain ended by `"PEnd"`, so an add rewrites the marker after the new entry and a remove shifts the tail.
+Random-access in-place modifier for PackIt (.pit) classic Macintosh archives. PackIt has no explicit end-of-archive marker — readers stop when the next 4 bytes are not "PMag" or "PMa4". Add appends a new stored entry at EOF; Remove walks the entry chain, locates the target, and shifts trailing bytes forward to compact (no central directory).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream pit, string name, byte[] data, string fileType = "TEXT", string creator = "CWIE")` | Appends a stored ("PMag") entry after the last entry and rewrites the `"PEnd"` marker behind it. |
-| `RemoveFile` | `static bool RemoveFile(Stream pit, string name, bool wipeData = true)` | Removes the named entry. Returns true if found. Locates the entry by walking the chain, then shifts the trailing bytes forward over it. |
+| `AddFile` | `static void AddFile(Stream pit, string name, byte[] data, string fileType = "TEXT", string creator = "CWIE")` | Appends a stored ("PMag") entry at the end of the archive. Walks the existing entry chain to find the EOF (first non-magic 4 bytes), then writes the new entry there and truncates. I/O cost is one full sequential entry walk plus the new entry's bytes. |
+| `RemoveFile` | `static bool RemoveFile(Stream pit, string name, bool wipeData = true)` | Removes the named entry. Returns true if found. Walks the chain to locate the entry, then shifts trailing bytes forward to compact. |
 
 #### `PackItReader`
 
@@ -24126,23 +24090,21 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PackItReader` | `PackItReader(Stream stream, bool leaveOpen = false)` | Opens a PackIt archive from the given stream and reads all entries. |
+| `EntryHeaderSize` | `const int EntryHeaderSize` | Size of the fixed per-entry header in bytes (magic + filename field + metadata). |
 | `Entries` | `IReadOnlyList<PackItEntry> Entries { get; }` | Gets the list of entries found in the archive. |
-| `IsIncomplete` | `bool IsIncomplete { get; }` | Gets whether listing stopped early (truncated archive or an entry it cannot walk past). |
 | `Dispose` | `void Dispose()` |  |
-| `ExtractForks` | `ValueTuple<byte[], byte[]> ExtractForks(PackItEntry entry)` | Decodes both forks of `entry` and checks every CRC. |
-| `ExtractResourceFork` | `byte[] ExtractResourceFork(PackItEntry entry)` | Extracts the resource fork of the specified entry. |
 | `Extract` | `byte[] Extract(PackItEntry entry)` | Extracts the data fork of the specified entry. |
 
 #### `PackItWriter`
 
-Creates a PackIt (.pit) classic Macintosh archive of stored ("PMag") entries.
+Creates a PackIt (.pit) classic Macintosh archive.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PackItWriter` | `PackItWriter(Stream stream, bool leaveOpen = false)` | Initialises a new `PackItWriter`. |
-| `AddFile` | `void AddFile(string name, byte[] data, string fileType = "TEXT", string creator = "CWIE", byte[] resourceFork = null, DateTime? modified = null)` | Appends a stored file entry to the archive. |
+| `AddFile` | `void AddFile(string name, byte[] data, string fileType = "TEXT", string creator = "CWIE")` | Appends a stored file entry to the archive. |
 | `Dispose` | `void Dispose()` |  |
 
 ### Namespace `FileFormat.Paf`
