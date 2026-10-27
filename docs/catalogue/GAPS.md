@@ -169,7 +169,7 @@ running real-world samples. The file named at the end of each row is where the l
 | ALZip | `AlZip` | 3 | store and deflate only (AlZipReader.cs) |
 | APFS | `Apfs` | 3 | no decmpfs (LZVN/LZFSE) compressed files, no encryption (ApfsReader.cs) |
 | Compiled HTML Help (CHM) | `Chm` | 3 | content sections above 1 unsupported (ChmReader.cs) |
-| FreeArc | `FreeArc` | 3 | reader/writer use a simplified private layout with no codecs; real FreeArc archives are not readable (FreeArcReader.cs) |
+| FreeArc | `FreeArc` | 3 | only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs) |
 | NSIS installer | `Nsis` | 3 | solid installers cannot be extracted per entry (NsisReader.cs) |
 | NTFS | `Ntfs` | 3 | WOF (XPRESS/LZX) compressed files not decoded; LZNT1 is |
 | QCOW / QCOW2 | `Qcow2` | 3 | no encryption, backing files, zstd clusters or extended L2 (Qcow2Structures.cs) |
@@ -206,9 +206,10 @@ running real-world samples. The file named at the end of each row is where the l
   file. `Xar` does the same for lzma/xz members. `Btrfs` skips compressed extents, `Vhdx` reads
   unsupported block states as zeros, and `Vmdk` returns compressed grains raw. `Lzh` decodes lh2/lh3 with the lh5 decoder. Each of these gives the caller wrong
   data instead of an error.
-- **Capability claims against real files.** `Zpaq` and `FreeArc` declare `CanCreate | CanModify`,
-  but neither reads an archive written by the real tool. Their round-trip only proves that our
-  writer and reader agree with each other.
+- **Capability claims against real files.** `Zpaq` declares `CanCreate | CanModify`, but does not
+  read an archive written by the real tool. Its round-trip only proves that our writer and reader
+  agree with each other. (`FreeArc` now reads FreeArc 0.67's archives and FreeArc accepts ours; see
+  `docs/FREEARC-ON-DISK.md`.)
 - **Stale comments.** The "(not supported)" comments in `ArcConstants.cs` describe methods the
   reader does decode.
 
