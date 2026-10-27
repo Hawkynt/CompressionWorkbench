@@ -34,7 +34,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | A | 16 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 3 | specifications: `docs/G722-SPEC.md`, `docs/IT-SAMPLE-COMPRESSION-SPEC.md`, `docs/FDS-EXPANSION-SOUND-SPEC.md` |
-| R | 8 | one marked *audit* |
+| R | 8 | |
 
 ## C — incompatible, must be rewritten clean-room
 
@@ -85,14 +85,14 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Vorbis/VorbisCodec.cs` | stb_vorbis 1.22 (structural reference) | public domain / MIT | none needed |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ba2/BethesdaLookup3.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Balz/BalzStream.cs`, `Compression.Core/Entropy/Ppmd/PpmdModelH.cs` | Bob Jenkins lookup3; BALZ max-parser score; Shkarin's PPMd rescale constant | public domain / constants | none needed |
 | `Hawkynt.FileFormats.Audio/Codecs/VENDORED_AUDIO_CODECS.md` | Concentus, .NET Ogg Vorbis Encoder, GroovyCodecs, AmrWbLib (vendored whole) | BSD-3 / MIT / LGPL-3.0 / BSD-3 | `THIRD-PARTY-NOTICES.md` and the vendored `LICENSE.txt` files |
-| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Aomei/AomeiFormatDescriptor.cs` | this repository's own [`AOMEI_FORMAT_SPEC.md`](AOMEI_FORMAT_SPEC.md) | own work | none needed |
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Aomei/AomeiFormatDescriptor.cs` | this repository's reverse-engineered AOMEI Backupper container layout | own work | none needed |
 
 ## R — not a code port
 
 | Claim site | What the comment refers to | Note |
 |---|---|---|
 | `Compression.Core/FileSystems/Cvf/CvfLzCodec.cs`, `Compression.Core/FileSystems/Cvf/MsdblLzCodec.cs`, `Compression.Core/FileSystems/Cvf/Sd4Codec.cs` | the measured format description in [`CVF-CODECS-ON-DISK.md`](CVF-CODECS-ON-DISK.md); dmsdos (GPL-2.0) as a black-box oracle | independent rewrite from the format description and reference vectors replaces the former dmsdos-derived bit reader and DS/JM decoders |
-| `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/PcePsg.cs`, `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/CpuHuC6280.cs` | Mednafen `pce_psg.cpp`, `huc6280.cpp` (GPL-2.0-or-later) as behavioural references, next to Charles MacDonald's notes | ***audit***: "faithful to Mednafen" is behaviour wording, not a port claim, but no intermediate specification exists. Compare structure with Mednafen; on correspondence, reclassify C and write a specification first |
+| `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/PcePsg.cs`, `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/CpuHuC6280.cs` | Mednafen `pce_psg.cpp`, `huc6280.cpp` (GPL-2.0-or-later), formerly named as behavioural references | reviewed 2026-10-23: no structural correspondence. Mednafen's PSG uses an 18-bit five-tap LFSR, integer dB tables and frequency caches; PcePsg uses a 17-bit two-tap LFSR, a floating-point taper and an additive LFO. Mednafen's CPU is opcode macros; CpuHuC6280 is a plain switch and shares only instruction-set facts. The Mednafen wording was removed from both files |
 | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.BcacheFs/BcacheFsRawKey.cs` | bcachefs `get_inc_field()` (GPL-2.0) — the packed-key bit layout | "ports … semantics" means the on-disk bit order, a format fact; the implementation is an independent bit-serial loop |
 | `Compression.Core/Dictionary/Nrv2b/Nrv2bBuildingBlock.cs`, `Compression.Core/Dictionary/Nrv2d/Nrv2dBuildingBlock.cs`, `Compression.Core/Dictionary/Nrv2e/Nrv2eBuildingBlock.cs` | UCL `n2b_d.ch`, `n2d_d.c`, `n2e_d.c` (GPL-2.0-or-later) cited for the stream layout | format facts, verified against real UPX output; no code claim |
 | `Compression.Core/Dictionary/Aplib/AplibBuildingBlock.cs`, `Compression.Core/BuildingBlocks/DoubleSpaceCompressor.cs`, `Compression.Core/BuildingBlocks/DriveSpaceCompressor.cs`, `Compression.Core/Dictionary/Balz/BalzBuildingBlock.cs`, `Compression.Core/Dictionary/Crush/CrushBuildingBlock.cs`, `Compression.Core/Dictionary/Lizard/LizardBuildingBlock.cs`, `Compression.Core/Dictionary/Lzg/LzgBuildingBlock.cs`, `Compression.Core/Dictionary/Lzap/LzapEncoder.cs`, `Compression.Core/Entropy/ContextMixing/MatchModel.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.ExePackers/WinUpackStream.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.ExePackers/JdpackExecutablePackerHandler.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.ExePackers/AsPackLzDecoder.cs` | "clean-room port of the format", or an explicit "not a port of …" | disclaimers |
