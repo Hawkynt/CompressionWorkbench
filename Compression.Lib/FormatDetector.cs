@@ -504,10 +504,12 @@ public static partial class FormatDetector {
       var buf = new byte[2];
       var isPe = fs.Read(buf, 0, 2) >= 2 && buf[0] == 'M' && buf[1] == 'Z';
 
-      // NSIS/InnoSetup markers can live anywhere in the file (our own stub-less
-      // NSIS writer puts the "NullsoftInst" signature in a leading overlay
-      // header, not a PE overlay), so scan the whole file when it is small and
-      // the tail otherwise — independent of the MZ check, so a stub-less
+      // An NSIS first header sits right after the exe stub, at a multiple of 512 bytes (the
+      // exehead itself only looks there), so a large installer keeps it far from the tail.
+      if (HasNsisFirstHeader(fs)) return Format.Nsis;
+
+      // Other installer markers can live anywhere in the file, so scan the whole file when it
+      // is small and the tail otherwise — independent of the MZ check, so a stub-less
       // installer image still re-detects as its own format.
       var scanLen = (int)Math.Min(fs.Length, 65536L);
       if (scanLen > 0) {
@@ -516,7 +518,6 @@ public static partial class FormatDetector {
         var tail = new byte[scanLen];
         var bytesRead = fs.Read(tail, 0, tail.Length);
         var tailSpan = tail.AsSpan(0, bytesRead);
-        if (ContainsBytes(tailSpan, "NullsoftInst"u8)) return Format.Nsis;
         if (ContainsBytes(tailSpan, "Inno Setup"u8)) return Format.InnoSetup;
         // PyInstaller "onefile" build: the CArchive MEI cookie sits near EOF,
         // after the PE image (and before any appended Authenticode signature).
@@ -556,6 +557,28 @@ public static partial class FormatDetector {
 
   private static bool ContainsBytes(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle)
     => haystack.IndexOf(needle) >= 0;
+
+  /// <summary>
+  /// Looks for NSIS's <c>firstheader</c> (flags with only the low four bits in use, 0xDEADBEEF,
+  /// "NullsoftInst") at 512-byte boundaries in the first 8 MiB.
+  /// </summary>
+  private static bool HasNsisFirstHeader(Stream fs) {
+    const int alignment = 512;
+    var limit = Math.Min(fs.Length, 8L << 20);
+    var chunk = new byte[64 * 1024];
+    for (long start = 0; start < limit; start += chunk.Length) {
+      fs.Position = start;
+      var read = fs.ReadAtLeast(chunk, chunk.Length, throwOnEndOfStream: false);
+      for (var i = 0; i + 20 <= read; i += alignment)
+        if ((chunk[i] & 0xF0) == 0 && chunk[i + 1] == 0 && chunk[i + 2] == 0 && chunk[i + 3] == 0
+            && chunk[i + 4] == 0xEF && chunk[i + 5] == 0xBE && chunk[i + 6] == 0xAD && chunk[i + 7] == 0xDE
+            && chunk.AsSpan(i + 8, 12).SequenceEqual("NullsoftInst"u8))
+          return true;
+      if (read < chunk.Length)
+        break;
+    }
+    return false;
+  }
 
   /// <summary>The 8-byte PyInstaller CArchive magic cookie (MEI + version bytes).</summary>
   private static readonly byte[] PyInstallerCookie =

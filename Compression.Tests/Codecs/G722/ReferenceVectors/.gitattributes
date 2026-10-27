@@ -1,0 +1,4 @@
+# FFmpeg's own bytes, compared byte for byte: nothing may translate a newline in them.
+* -text -diff
+README.md text
+make-vectors.sh text eol=lf
