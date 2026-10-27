@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 13 | |
+| A | 14 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 4 | specifications: `docs/CVF-CODECS-ON-DISK.md` (rewrite already under way), `docs/G722-SPEC.md`, `docs/IT-SAMPLE-COMPRESSION-SPEC.md`, `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 7 | |
@@ -74,6 +74,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Compression.Core/Dictionary/Lzbitmap/` | libzbitmap (Ernesto A. Fernández, Corellium) | MIT | `THIRD-PARTY-NOTICE.libzbitmap.txt` |
 | `Compression.Core/Dictionary/Csc/` | libcsc (Fu Siyuan) | Unlicense | `THIRD-PARTY-NOTICE.libcsc.txt` |
 | `Compression.Core/Dictionary/Arj/ArjFastestDecoder.cs` | XADMaster `XADARJFastestHandle.m` (Dag Ågren, MacPaw), revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Arj/THIRD-PARTY-NOTICE.XADMaster.txt` |
+| `Compression.Core/Dictionary/Lzh/Lh2Decoder.cs`, `Compression.Core/Dictionary/Lzh/Lh3Decoder.cs`, `Compression.Core/Dictionary/Lzh/LhaLegacyBitReader.cs` | XADMaster `XADLZHOldHandles.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Compression.Core/Streams/Lzfse/` | Apple lzfse reference | BSD-3-Clause | `THIRD-PARTY-NOTICE.lzfse.txt`; `LzfseFseDecoder.cs` also carries the header inline |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Nellymoser/NellymoserCodec.cs`, `Hawkynt.FileFormats.Audio/Codecs/Codec.Nellymoser/NellymoserTables.cs` | FFmpeg `nellymoserdec.c`, `nellymoser.c` | MIT | `THIRD-PARTY-NOTICES.md` § Nellymoser |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Alac/` | Apple ALAC reference | Apache-2.0 | `THIRD-PARTY-NOTICES.md` § ALAC |

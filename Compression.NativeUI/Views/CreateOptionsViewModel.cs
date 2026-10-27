@@ -387,12 +387,6 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
         (F.Lzh, "lh1") =>
           "lh1: Adaptive Huffman with 4 KB sliding window. The original LHA method from 1988.\n"
           + "Opens with: LHA/lha, 7-Zip (read), Unlha32.dll",
-        (F.Lzh, "lh2") =>
-          "lh2: Adaptive Huffman variant. Rarely used — lh5 or lh7 are generally preferred.\n"
-          + "Opens with: LHA/lha (some builds), Unlha32.dll",
-        (F.Lzh, "lh3") =>
-          "lh3: Adaptive Huffman with 8 KB window. Transitional method.\n"
-          + "Opens with: LHA/lha (some builds), Unlha32.dll",
         (F.Lzh, "lh4") =>
           "lh4: Static Huffman with 4 KB window. Older format, good compatibility with vintage tools.\n"
           + "Opens with: 7-Zip, LHA/lha, PeaZip, Unlha32.dll",
@@ -561,7 +555,6 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
       F.Lzh => [
         "lh5  (default, 8 KB)", "lh7  (64 KB)", "lh6  (32 KB)",
         "lh4  (4 KB)", "lh1  (adaptive Huffman 4 KB)",
-        "lh2  (adaptive Huffman)", "lh3  (adaptive Huffman 8 KB)",
         "lh0  (store)", "lzs  (LZSS 2 KB)", "lz5  (LZSS 4 KB)",
         "pm0  (PMA store)", "pm1  (PMA PPMd order-2)", "pm2  (PMA PPMd order-3)",
         "pm2  (PPMd order-3)", "pm1  (PPMd order-2)", "pm0  (PMA store)"],
