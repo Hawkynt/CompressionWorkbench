@@ -13715,16 +13715,22 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `DiskDoublerEntry`
 
-Represents a single compressed file stored in a DiskDoubler file.
+Represents one fork of a DiskDoubler compressed file.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DiskDoublerEntry` | `DiskDoublerEntry()` |  |
+| `Checksum` | `ushort Checksum { get; init; }` | Gets the fork's checksum field (its meaning depends on the method). |
 | `CompressedSize` | `long CompressedSize { get; init; }` | Gets the compressed size in bytes. |
+| `Creator` | `string Creator { get; init; }` | Gets the Mac creator code. |
 | `DataOffset` | `long DataOffset { get; init; }` | Gets the absolute byte offset of the compressed data within the source stream. |
+| `DeltaType` | `int DeltaType { get; init; }` | Gets the fork's delta pre-processing type (0 = none). |
+| `FileType` | `string FileType { get; init; }` | Gets the Mac file type code. |
 | `IsDataFork` | `bool IsDataFork { get; init; }` | Gets whether this entry represents the data fork (as opposed to the resource fork). |
-| `Method` | `int Method { get; init; }` | Gets the compression method ID (0 = stored, 1 = RLE, 3 = LZC variant, others = proprietary). |
-| `Name` | `string Name { get; init; }` | Gets the original filename. |
+| `IsSupported` | `bool IsSupported { get; }` | Gets whether this reader can decode the entry's method. |
+| `Method` | `int Method { get; init; }` | Gets the compression method: 0 stored, 1 Unix compress, 2 and 5 DiskDoubler Huffman variants, 3 RLE, 4 Huffman, 6 and 9 "AD" LZSS, 7 Stac LZS, 8 Compact Pro, 10 "DD". The high bit is a flag and is masked off. |
+| `Modified` | `DateTime? Modified { get; init; }` | Gets the modification time, or `null` when the header holds zero. |
+| `Name` | `string Name { get; init; }` | Gets the entry name: the file's name for the data fork, with ".rsrc" appended for the resource fork. |
 | `OriginalSize` | `long OriginalSize { get; init; }` | Gets the original (uncompressed) size in bytes. |
 
 #### `DiskDoublerFormatDescriptor`
@@ -13745,7 +13751,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures: a single DiskDoubler file starts with 0xABCD0054. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
@@ -13757,27 +13763,28 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 
 #### `DiskDoublerReader`
 
-Reads the header of a DiskDoubler compressed file and provides access to its data and resource fork entries.
+Reads a single DiskDoubler compressed file and decodes its forks.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DiskDoublerReader` | `DiskDoublerReader(Stream stream, bool leaveOpen = false)` | Opens a DiskDoubler compressed file from the given stream and parses its header. |
-| `HeaderSize` | `const int HeaderSize` | Size of the fixed-length DiskDoubler file header in bytes. |
-| `Entries` | `IReadOnlyList<DiskDoublerEntry> Entries { get; }` | Gets the list of entries parsed from the DiskDoubler file header. |
+| `DiskDoublerReader` | `DiskDoublerReader(Stream stream, bool leaveOpen = false, string name = null)` | Opens a DiskDoubler compressed file from the given stream and parses its header. |
+| `Entries` | `IReadOnlyList<DiskDoublerEntry> Entries { get; }` | Gets the forks parsed from the header: the data fork (if any), then the resource fork (if any). |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(DiskDoublerEntry entry)` | Extracts the data for the specified entry. |
+| `Extract` | `byte[] Extract(DiskDoublerEntry entry)` | Decodes the specified fork. |
+| `IsDiskDoubler` | `static bool IsDiskDoubler(ReadOnlySpan<byte> header)` | Returns whether `header` starts a DiskDoubler file (directly or behind MacBinary). |
+| `MethodName` | `static string MethodName(int method)` | Names a method as the format's tools do. |
 
 #### `DiskDoublerWriter`
 
-Writes a DiskDoubler stored (method 0) file. Takes a single data fork payload; resource fork is empty. Roundtrips through `DiskDoublerReader`.
+Writes a single DiskDoubler file with a stored (method 0) data fork and no resource fork, in the layout `DiskDoublerReader` documents. The Unarchiver (`unar`) reads it back.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DiskDoublerWriter` | `DiskDoublerWriter()` |  |
-| `SetFile` | `void SetFile(string name, byte[] data)` | Sets the file. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
+| `SetFile` | `void SetFile(byte[] data, string fileType = "????", string creator = "????")` | Sets the data fork. DiskDoubler stores no name; the file's own name is the entry's name. |
+| `WriteTo` | `void WriteTo(Stream output)` | Writes the header and the stored data fork to `output`. |
 
 ### Namespace `FileFormat.Dls`
 
@@ -24034,17 +24041,24 @@ Represents a file entry in a PackIt (.pit) archive.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PackItEntry` | `PackItEntry()` |  |
+| `Created` | `DateTime? Created { get; init; }` | Gets the creation time, or `null` when the header holds zero. |
 | `Creator` | `string Creator { get; init; }` | Gets the Mac four-character creator code (e.g. "CWIE"). |
 | `DataForkSize` | `long DataForkSize { get; init; }` | Gets the uncompressed data fork size in bytes. |
-| `DataOffset` | `long DataOffset { get; init; }` | Gets the absolute byte offset where the data fork begins in the source stream. |
+| `DataOffset` | `long DataOffset { get; init; }` | Gets the absolute offset where the data fork begins for a stored entry; for a compressed entry, the offset of its Huffman bit stream (the byte after the magic). |
+| `EntryLength` | `long EntryLength { get; init; }` | Gets the number of bytes the entry occupies, magic included. |
+| `EntryOffset` | `long EntryOffset { get; init; }` | Gets the absolute offset of the entry's magic. |
 | `FileType` | `string FileType { get; init; }` | Gets the Mac four-character file type code (e.g. "TEXT"). |
-| `IsCompressed` | `bool IsCompressed { get; init; }` | Gets whether this entry uses Huffman compression ("PMa4"). |
+| `FinderFlags` | `ushort FinderFlags { get; init; }` | Gets the Finder flags. |
+| `HeaderCrcValid` | `bool HeaderCrcValid { get; init; }` | Gets whether the header matched its CRC-16 (always `true` for encrypted entries, which cannot be checked). |
+| `IsCompressed` | `bool IsCompressed { get; init; }` | Gets whether this entry is Huffman-compressed ("PMa4", "PMa5", "PMa6"). |
+| `IsEncrypted` | `bool IsEncrypted { get; init; }` | Gets whether this entry is password-encrypted ("PMa5" XOR, "PMa6" DES). |
+| `Modified` | `DateTime? Modified { get; init; }` | Gets the modification time, or `null` when the header holds zero. |
 | `Name` | `string Name { get; init; }` | Gets the filename (up to 63 characters, Mac Roman / Latin-1 encoded). |
 | `ResourceForkSize` | `long ResourceForkSize { get; init; }` | Gets the uncompressed resource fork size in bytes. |
 
 #### `PackItFormatDescriptor`
 
-PackIt classic Macintosh archive (.pit; Harry Chesley, 1984) — sequential PMag/PMa4 records bundling data and resource forks. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver) — maintained implementation including PackItNo formal specification — format known from PackIt itself and later community documentation
+PackIt classic Macintosh archive (.pit; Harry Chesley, 1984) — sequential PMag/PMa4 records bundling data and resource forks. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver) — maintained implementation including PackItNo formal specification; header CRC measured on real PackIt II archives (see PackItReader)
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
@@ -24065,8 +24079,8 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing PackIt archive. Uses `PackItModifier` — Add appends Stored at EOF; Remove walks the entry chain and shifts trailing bytes (no central directory). |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the PackIt archive in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the PackIt archive per the requested mode. |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: re-chains the entries in listing order. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag. Each entry is carried over as its raw bytes (magic to fork CRC), so resource forks, Finder info, dates and Huffman coding survive unchanged; only the chain is rewritten. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -24076,12 +24090,12 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `PackItModifier`
 
-Random-access in-place modifier for PackIt (.pit) classic Macintosh archives. PackIt has no explicit end-of-archive marker — readers stop when the next 4 bytes are not "PMag" or "PMa4". Add appends a new stored entry at EOF; Remove walks the entry chain, locates the target, and shifts trailing bytes forward to compact (no central directory).
+In-place edits of a PackIt archive. PackIt has no directory: entries are a chain ended by `"PEnd"`, so an add rewrites the marker after the new entry and a remove shifts the tail.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream pit, string name, byte[] data, string fileType = "TEXT", string creator = "CWIE")` | Appends a stored ("PMag") entry at the end of the archive. Walks the existing entry chain to find the EOF (first non-magic 4 bytes), then writes the new entry there and truncates. I/O cost is one full sequential entry walk plus the new entry's bytes. |
-| `RemoveFile` | `static bool RemoveFile(Stream pit, string name, bool wipeData = true)` | Removes the named entry. Returns true if found. Walks the chain to locate the entry, then shifts trailing bytes forward to compact. |
+| `AddFile` | `static void AddFile(Stream pit, string name, byte[] data, string fileType = "TEXT", string creator = "CWIE")` | Appends a stored ("PMag") entry after the last entry and rewrites the `"PEnd"` marker behind it. |
+| `RemoveFile` | `static bool RemoveFile(Stream pit, string name, bool wipeData = true)` | Removes the named entry. Returns true if found. Locates the entry by walking the chain, then shifts the trailing bytes forward over it. |
 
 #### `PackItReader`
 
@@ -24092,21 +24106,23 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PackItReader` | `PackItReader(Stream stream, bool leaveOpen = false)` | Opens a PackIt archive from the given stream and reads all entries. |
-| `EntryHeaderSize` | `const int EntryHeaderSize` | Size of the fixed per-entry header in bytes (magic + filename field + metadata). |
 | `Entries` | `IReadOnlyList<PackItEntry> Entries { get; }` | Gets the list of entries found in the archive. |
+| `IsIncomplete` | `bool IsIncomplete { get; }` | Gets whether listing stopped early (truncated archive or an entry it cannot walk past). |
 | `Dispose` | `void Dispose()` |  |
+| `ExtractForks` | `ValueTuple<byte[], byte[]> ExtractForks(PackItEntry entry)` | Decodes both forks of `entry` and checks every CRC. |
+| `ExtractResourceFork` | `byte[] ExtractResourceFork(PackItEntry entry)` | Extracts the resource fork of the specified entry. |
 | `Extract` | `byte[] Extract(PackItEntry entry)` | Extracts the data fork of the specified entry. |
 
 #### `PackItWriter`
 
-Creates a PackIt (.pit) classic Macintosh archive.
+Creates a PackIt (.pit) classic Macintosh archive of stored ("PMag") entries.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PackItWriter` | `PackItWriter(Stream stream, bool leaveOpen = false)` | Initialises a new `PackItWriter`. |
-| `AddFile` | `void AddFile(string name, byte[] data, string fileType = "TEXT", string creator = "CWIE")` | Appends a stored file entry to the archive. |
+| `AddFile` | `void AddFile(string name, byte[] data, string fileType = "TEXT", string creator = "CWIE", byte[] resourceFork = null, DateTime? modified = null)` | Appends a stored file entry to the archive. |
 | `Dispose` | `void Dispose()` |  |
 
 ### Namespace `FileFormat.Paf`
