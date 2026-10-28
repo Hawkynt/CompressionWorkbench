@@ -75,6 +75,10 @@
     <EmbeddedResource Include="BcacheFs\ReferenceVectors\*.gz;BcacheFs\ReferenceVectors\manifest.txt">
       <LogicalName>BcacheFsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- A package built by Windows iexpress.exe, plus expand.exe's extraction; see IExpress/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="IExpress\ReferenceVectors\*.gz;IExpress\ReferenceVectors\oracle.tsv">
+      <LogicalName>IExpressVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Installers compiled by makensis 2.51 / 3.10, plus 7-Zip's extraction; see Nsis/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Nsis\ReferenceVectors\*.gz;Nsis\ReferenceVectors\oracle.tsv">
       <LogicalName>NsisVectors.%(Filename)%(Extension)</LogicalName>

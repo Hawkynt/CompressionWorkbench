@@ -27,10 +27,10 @@ Internet Archive ARC (crawl),arc,archive,,,,,,fmt/410;x-fmt/219,,1,https://archi
 XAR (eXtensible ARchive),xar;pkg;xip;mpkg,archive,R,RW,R,,,fmt/600,Y,5,https://github.com/mackyle/xar/wiki/xarformat,Xar,Y,Y,Y,OK,,"every xar encoding (none, gzip/zlib, bzip2, lzma, xz) decoded and checked against the TOC checksum; verified on bsdtar-written archives"
 Xar Image Format (PRONOM fmt/922),xar,archive,,,,,,fmt/922,,1,,,,,,MISSING,,PRONOM lists this separately from eXtensible ARchive
 Microsoft Cabinet (CAB),cab;exe;mscf,archive,R,R,R,R,,x-fmt/414,RW,6,https://learn.microsoft.com/previous-versions/bb417343(v=msdn.10),Cab,Y,Y,Y,OK,,
-CAB self-extractor (IExpress / MSCF SFX),exe,installer,,,,,R,,,1,,,,,,MISSING,,
+CAB self-extractor (IExpress / MSCF SFX),exe,installer,,,,,R,,,1,https://learn.microsoft.com/windows/win32/msi/cabinet-files,IExpress,Y,,,READ-ONLY-BUT-SOURCES-WRITE,iexpress.exe,"cabinets appended as a PE overlay are read through the generic self-extractor path"
 Compound File Binary (OLE2),cfb;ole;doc;xls;ppt,document,R,,R,,,fmt/111,,3,https://learn.microsoft.com/openspecs/windows_protocols/ms-cfb/,CompoundFileBinary;Doc;Xls;Ppt;LegacyOfficeCompoundFile,Y,Y,Y,OK,,
 Windows Installer (MSI/MSP/MSM),msi;msp;msm;mst,installer,R,,R,,R,,Y,4,https://learn.microsoft.com/windows/win32/msi/windows-installer-portal,Msi,Y,Y,Y,OK,,
-Windows Update package (MSU),msu,installer,,,,,R,,,1,,,,,,MISSING,,
+Windows Update package (MSU),msu,installer,,,,,R,,,1,https://learn.microsoft.com/troubleshoot/windows-client/installing-updates-features-roles/description-of-windows-update-standalone-installer,Msu,Y,,,OK,,
 Compiled HTML Help (CHM),chm;chi;chq;chw;hxs,document,R,,,,R,fmt/634,,3,https://www.nongnu.org/chmspec/latest/,Chm,Y,Y,Y,PARTIAL,,content sections above 1 unsupported (ChmReader.cs)
 Windows Imaging (WIM/SWM/ESD),wim;swm;esd;ppkg,disk-image,RW,,,,R,,Y,3,https://learn.microsoft.com/windows-hardware/manufacture/desktop/wim-vs-ffu-image-file-formats,Wim;Swm;Esd,Y,Y,,OK,,
 ARJ,arj,archive,R,,R,D,R,fmt/610,RW,6,https://en.wikipedia.org/wiki/ARJ,Arj,Y,Y,Y,OK,,methods 0-4 decoded; method 4 verified on archives the open-source ARJ port wrote
