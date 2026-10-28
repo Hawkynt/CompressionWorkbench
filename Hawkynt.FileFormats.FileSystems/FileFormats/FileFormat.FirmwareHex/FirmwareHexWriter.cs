@@ -33,6 +33,7 @@ public static class FirmwareHexWriter {
   /// one the reader rendered. An input list with no payload describes an image
   /// with no data, which both formats can write.
   /// </summary>
+  /// <exception cref="InvalidDataException">More than one non-metadata payload is supplied.</exception>
   public static FirmwareImage ImageFrom(IReadOnlyList<ArchiveInputInfo> inputs, string sourceFormat) {
     ArgumentNullException.ThrowIfNull(inputs);
 
@@ -53,7 +54,9 @@ public static class FirmwareHexWriter {
       }
       // Any other single input is the payload, whatever it is called: a caller
       // converting a .bin into a .hex should not have to rename it first.
-      payload ??= input.ReadContent();
+      if (payload is not null)
+        throw new InvalidDataException($"{sourceFormat} represents one logical firmware payload; multiple payload inputs are ambiguous.");
+      payload = input.ReadContent();
     }
 
     List<(uint Address, byte[] Data)> segments;
