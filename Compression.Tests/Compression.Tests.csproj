@@ -67,9 +67,17 @@
                       Exclude="StructuredPseudoArchives\ReferenceVectors\*.py;StructuredPseudoArchives\ReferenceVectors\*.pl;StructuredPseudoArchives\ReferenceVectors\*.ps1;StructuredPseudoArchives\ReferenceVectors\README.md">
       <LogicalName>ReferenceVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Volumes the Linux btrfs driver wrote with compress-force; see Btrfs/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Btrfs\ReferenceVectors\*.gz;Btrfs\ReferenceVectors\manifest.txt">
+      <LogicalName>BtrfsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Volumes bcachefs-tools wrote; see BcacheFs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="BcacheFs\ReferenceVectors\*.gz;BcacheFs\ReferenceVectors\manifest.txt">
       <LogicalName>BcacheFsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Installers compiled by makensis 2.51 / 3.10, plus 7-Zip's extraction; see Nsis/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Nsis\ReferenceVectors\*.gz;Nsis\ReferenceVectors\oracle.tsv">
+      <LogicalName>NsisVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- Disks qemu-img / qemu-io wrote; see Vmdk/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
@@ -86,6 +94,10 @@
     <!-- Streams written by libcsc's reference csc tool; see Csc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Csc\ReferenceVectors\*.csc">
       <LogicalName>CscVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Firmware images written by each format's reference tool; see Firmware/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Firmware\ReferenceVectors\*" Exclude="Firmware\ReferenceVectors\README.md">
+      <LogicalName>FirmwareVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- Archives FreeArc 0.67's Arc.exe wrote; see FreeArc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="FreeArc\ReferenceVectors\*.arc">
@@ -122,6 +134,10 @@
     <EmbeddedResource Include="HfsPlus\ReferenceVectors\*.gz">
       <LogicalName>HfsPlusVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Rock Ridge images xorriso wrote; see Iso/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Iso\ReferenceVectors\*.gz;Iso\ReferenceVectors\manifest-*.txt">
+      <LogicalName>IsoVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- LZBITMAP pairs from libzbitmap's test corpus; see Lzbitmap/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Lzbitmap\ReferenceVectors\*-*" Exclude="Lzbitmap\ReferenceVectors\README.md">
       <LogicalName>LzbitmapVectors.%(Filename)%(Extension)</LogicalName>
@@ -133,6 +149,10 @@
     <!-- FLEX disk made by flexfloppy + manifests; see Flex/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Flex\ReferenceVectors\*.gz;Flex\ReferenceVectors\*.manifest">
       <LogicalName>FlexVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- G.722 streams FFmpeg 8.1.2 encoded and decoded; see Codecs/G722/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Codecs\G722\ReferenceVectors\*.pcm;Codecs\G722\ReferenceVectors\*.g722">
+      <LogicalName>G722Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- Zoo archives written by Zoo 2.10; see Zoo/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Zoo\ReferenceVectors\*.zoo">
