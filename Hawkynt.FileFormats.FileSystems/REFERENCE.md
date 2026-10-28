@@ -3293,6 +3293,73 @@ Builds a fresh Atari 8-bit AtariDOS 2.x `.atr` disk image from scratch (WORM).
 | `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
 | `Build` | `byte[] Build()` | Builds the complete SS/SD ATR image (92 176 bytes). |
 
+### Namespace `FileSystem.Axfs`
+
+[`AxfsEntry`](#axfsentry) · [`AxfsFormatDescriptor`](#axfsformatdescriptor) · [`AxfsReader`](#axfsreader)
+
+#### `AxfsEntry`
+
+One inode of an AXFS image.
+
+Implements `IEquatable<AxfsEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AxfsEntry` | `AxfsEntry(string Path, ulong Index, uint Mode, uint Uid, uint Gid, ulong Size)` | One inode of an AXFS image. |
+| `Gid` | `uint Gid { get; init; }` | Group. |
+| `Index` | `ulong Index { get; init; }` | Inode index (the root is 0). |
+| `IsDirectory` | `bool IsDirectory { get; }` | True for a directory. |
+| `IsFile` | `bool IsFile { get; }` | True for a regular file. |
+| `IsSymlink` | `bool IsSymlink { get; }` | True for a symbolic link. |
+| `Mode` | `uint Mode { get; init; }` | Full Unix mode word. |
+| `Path` | `string Path { get; init; }` | Slash-separated path from the root. |
+| `Size` | `ulong Size { get; init; }` | File size, symlink target length, or (special files) the encoded device number. |
+| `Uid` | `uint Uid { get; init; }` | Owner. |
+
+#### `AxfsFormatDescriptor`
+
+AXFS — the "Advanced XIP File System" for embedded Linux (Numonyx, 2008): a read-only, compressed, execute-in-place image. Magic `0x48A0E4CD` and the signature "Advanced XIP FS" at offset 0.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AxfsFormatDescriptor` | `AxfsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+
+#### `AxfsReader`
+
+Reads an AXFS ("Advanced XIP File System") image as `mkfs.axfs` writes it: a big-endian superblock pointing at region descriptors, byte tables that map inodes to names, modes and nodes, and data held in an XIP, a byte-aligned or a zlib-compressed region. See `docs/AXFS-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AxfsReader` | `AxfsReader(Stream stream)` | Opens `stream`; throws `InvalidDataException` for anything it cannot read faithfully. |
+| `Magic` | `const uint Magic` | Superblock magic, big-endian at offset 0. |
+| `CblockSize` | `uint CblockSize { get; }` | Largest uncompressed cblock. |
+| `Entries` | `IReadOnlyList<AxfsEntry> Entries { get; }` | Every inode below the root, parents before children. |
+| `Files` | `ulong Files { get; }` | Inodes in the image. |
+| `PageSize` | `int PageSize { get; }` | Page (node) size: `1 << page_shift`. |
+| `Signature` | `static ReadOnlySpan<byte> Signature { get; }` | Superblock signature at offset 4. |
+| `Timestamp` | `ulong Timestamp { get; }` | Build time (UNIX seconds; `mkfs.axfs` writes 0). |
+| `Version` | `ValueTuple<byte, byte, byte> Version { get; }` | Version as major.minor.sub. |
+| `CountNodes` | `ValueTuple<ulong, ulong, ulong> CountNodes()` | Distinct nodes the files and symlinks use, by kind (XIP, byte-aligned, compressed). |
+| `Extract` | `byte[] Extract(AxfsEntry entry)` | Returns a regular file's bytes, or a symlink's target bytes. |
+
 ### Namespace `FileSystem.Bbc`
 
 [`BbcBlockMover`](#bbcblockmover) · [`BbcEntry`](#bbcentry) · [`BbcExtentMap`](#bbcextentmap) · [`BbcFormatDescriptor`](#bbcformatdescriptor) · [`BbcModifier`](#bbcmodifier) · [`BbcReader`](#bbcreader) · [`BbcWriter`](#bbcwriter)

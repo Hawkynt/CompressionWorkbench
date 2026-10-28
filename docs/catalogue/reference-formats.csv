@@ -482,7 +482,7 @@ QFS (Sun/Oracle),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 ScoutFS,versity,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 StorNext / Xsan,apple;cvfs;quantum,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 VMFS,vmfs;vmfs2;vmfs3;vmfs5;vmware,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-AXFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+AXFS,,filesystem,,,,,,,Y,1,https://github.com/jaredeh/axfs,Axfs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,mkfs.axfs,no reader outside this package to prove a writer
 CramFS,cramfs,filesystem,R,,,D,,,Y,3,,CramFs,Y,Y,Y,OK,,
 LTFS (Linear Tape),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 lnfs,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
