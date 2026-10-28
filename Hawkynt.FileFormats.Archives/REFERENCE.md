@@ -28482,7 +28482,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 #### `StuffItEntry`
 
-Represents a single file entry in a StuffIt (SIT) archive.
+Represents a single file or folder entry in a StuffIt archive (classic "SIT!" or StuffIt 5).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -28490,14 +28490,16 @@ Represents a single file entry in a StuffIt (SIT) archive.
 | `CompressedDataSize` | `long CompressedDataSize { get; set; }` | Gets or sets the compressed size of the data fork in bytes. |
 | `CompressedResourceSize` | `long CompressedResourceSize { get; set; }` | Gets or sets the compressed size of the resource fork in bytes. |
 | `DataForkSize` | `long DataForkSize { get; set; }` | Gets or sets the uncompressed size of the data fork in bytes. |
-| `DataMethod` | `int DataMethod { get; set; }` | Gets or sets the compression method code for the data fork. |
+| `DataMethod` | `int DataMethod { get; set; }` | Gets or sets the compression method code for the data fork (encryption flag removed). |
 | `FileCreator` | `string FileCreator { get; set; }` | Gets or sets the Mac four-character file creator code. |
-| `FileName` | `string FileName { get; set; }` | Gets or sets the file name as stored in the archive (up to 63 characters). |
+| `FileName` | `string FileName { get; set; }` | Gets or sets the entry's path inside the archive, folders separated by '/'. |
 | `FileType` | `string FileType { get; set; }` | Gets or sets the Mac four-character file type code (e.g. "TEXT"). |
-| `IsDirectory` | `bool IsDirectory { get; }` | StuffIt classic archives do not support directory entries. |
+| `HasResourceFork` | `bool HasResourceFork { get; }` | Gets whether the entry carries a resource fork. |
+| `IsDirectory` | `bool IsDirectory { get; set; }` | Gets or sets whether this entry is a folder. |
+| `IsEncrypted` | `bool IsEncrypted { get; set; }` | Gets or sets whether the forks are encrypted (classic DES or StuffIt 5 RC4). |
 | `LastModified` | `DateTime LastModified { get; set; }` | Gets or sets the last modification date/time of the file. |
 | `ResourceForkSize` | `long ResourceForkSize { get; set; }` | Gets or sets the uncompressed size of the resource fork in bytes. |
-| `ResourceMethod` | `int ResourceMethod { get; set; }` | Gets or sets the compression method code for the resource fork. |
+| `ResourceMethod` | `int ResourceMethod { get; set; }` | Gets or sets the compression method code for the resource fork (encryption flag removed). |
 
 #### `StuffItFormatDescriptor`
 
@@ -28508,6 +28510,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StuffItFormatDescriptor` | `StuffItFormatDescriptor()` |  |
+| `ResourceForkSuffix` | `const string ResourceForkSuffix` | Suffix under which a file's resource fork is listed and extracted. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -28531,17 +28534,19 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `StuffItReader`
 
-Reads entries from a StuffIt (SIT) classic archive.
+Reads StuffIt archives: the classic "SIT!" format of StuffIt 1.5-4.x (with folders) and the StuffIt 5 format ("StuffIt (c)1997-..." banner) written by StuffIt 5.x-7.x and StuffIt Deluxe/Standard for Windows.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StuffItReader` | `StuffItReader(Stream stream, bool leaveOpen = false)` | Opens a StuffIt archive from the given stream and parses the entry directory. |
-| `Entries` | `IReadOnlyList<StuffItEntry> Entries { get; }` | Gets the list of entries found in the archive. |
+| `Entries` | `IReadOnlyList<StuffItEntry> Entries { get; }` | Gets the entries (folders first in archive order, then their contents). |
+| `IsStuffIt5` | `bool IsStuffIt5 { get; }` | Gets whether the archive uses the StuffIt 5 layout. |
 | `Dispose` | `void Dispose()` |  |
-| `ExtractResourceFork` | `byte[] ExtractResourceFork(StuffItEntry entry)` | Extracts and decompresses the resource fork of the specified entry. |
-| `Extract` | `byte[] Extract(StuffItEntry entry)` | Extracts and decompresses the data fork of the specified entry. |
+| `ExtractResourceFork` | `byte[] ExtractResourceFork(StuffItEntry entry)` | Extracts and verifies the resource fork of `entry`. |
+| `Extract` | `byte[] Extract(StuffItEntry entry)` | Extracts and verifies the data fork of `entry`. |
+| `MethodName` | `static string MethodName(int method)` | Human-readable name of a StuffIt method number. |
 
 #### `StuffItWriter`
 
