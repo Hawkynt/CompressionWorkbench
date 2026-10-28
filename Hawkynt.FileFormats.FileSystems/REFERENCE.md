@@ -7080,6 +7080,105 @@ Builds Microsoft Xbox / Xbox 360 FATX filesystem images from scratch per the rev
 | `Build` | `byte[] Build(int sectorsPerCluster = 0, uint volumeId = 0)` | Builds a complete FATX image containing the previously-added files. |
 | `WriteTo` | `void WriteTo(Stream output, int sectorsPerCluster = 0, uint volumeId = 0)` | Writes the image into `output`: the superblock and FAT, then every cluster payload at its offset. Only a non-seekable target has to materialise the image, so a seekable one is bounded by the disk rather than by what a byte[] can address. |
 
+### Namespace `FileSystem.Flex`
+
+[`FlexDisk`](#flexdisk) · [`FlexEntry`](#flexentry) · [`FlexFormatDescriptor`](#flexformatdescriptor) · [`FlexWriter`](#flexwriter)
+
+#### `FlexDisk`
+
+The FLEX (Technical Systems Consultants, 6800/6809) disk layout over a raw `.dsk` image: 256-byte sectors, every track holding the same number of sector slots, sector numbers from 1. Track 0 holds the boot sectors (1, 2), the System Information Record (3), a reserved sector (4) and the directory chain from sector 5; all other sectors are file chains or the free chain. See `docs/FLEX-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlexDisk` | `FlexDisk(Stream stream)` | Opens a FLEX image; throws `InvalidDataException` when it is not one. |
+| `DataBytes` | `const int DataBytes` | Data bytes per sector after the link (2) and record number (2). |
+| `EntriesPerSector` | `const int EntriesPerSector` | Directory entries per directory sector, after its 16-byte header. |
+| `EntrySize` | `const int EntrySize` | Bytes per directory entry. |
+| `SectorSize` | `const int SectorSize` | Bytes per sector. |
+| `SirOffset` | `const int SirOffset` | Byte offset of the System Information Record (track 0, sector 3). |
+| `DirectorySectors` | `IReadOnlyList<ValueTuple<byte, byte>> DirectorySectors { get; }` | Directory sectors in chain order. |
+| `Entries` | `IReadOnlyList<FlexEntry> Entries { get; }` | Every live directory entry, in directory order. |
+| `FirstFree` | `ValueTuple<byte, byte> FirstFree { get; }` | Head of the free chain. |
+| `FreeSectors` | `ushort FreeSectors { get; }` | Sectors in the free chain, as the SIR records it. |
+| `Label` | `string Label { get; }` | Volume label (11 characters). |
+| `LastFree` | `ValueTuple<byte, byte> LastFree { get; }` | Tail of the free chain. |
+| `SectorsPerTrack` | `int SectorsPerTrack { get; }` | Sectors per track (SIR "highest sector number"). |
+| `Tracks` | `int Tracks { get; }` | Tracks (SIR "highest track number" + 1). |
+| `VolumeNumber` | `ushort VolumeNumber { get; }` | Volume number. |
+| `Chain` | `IEnumerable<ValueTuple<byte, byte, byte[]>> Chain(byte track, byte sector, int limit)` | Follows a link chain; throws on a loop or on more than `limit` sectors. |
+| `Extract` | `byte[] Extract(FlexEntry entry)` | The file's bytes: the 252 data bytes of every sector in its chain — a random file's two File Sector Map sectors included, exactly as they are stored. Refuses a chain that does not end at the directory's end address after the directory's sector count. |
+| `Offset` | `long Offset(int track, int sector)` | Byte offset of a sector; throws when it is outside the geometry or the image. |
+| `ReadSector` | `byte[] ReadSector(int track, int sector)` | Reads one sector. |
+
+#### `FlexEntry`
+
+One directory entry of a FLEX disk.
+
+Implements `IEquatable<FlexEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlexEntry` | `FlexEntry(string Name, string Extension, byte Attributes, byte StartTrack, byte StartSector, byte EndTrack, byte EndSector, ushort Sectors, bool IsRandom, byte Month, byte Day, byte Year, long EntryOffset)` | One directory entry of a FLEX disk. |
+| `Attributes` | `byte Attributes { get; init; }` | Protection bits: 0x80 write, 0x40 delete, 0x20 read, 0x10 catalog protect. |
+| `Created` | `DateTime? Created { get; }` | Creation date, when it is a valid one (years 00-74 read as 20xx, 75-99 as 19xx). |
+| `Day` | `byte Day { get; init; }` | Creation day. |
+| `EndSector` | `byte EndSector { get; init; }` | Sector of the last sector. |
+| `EndTrack` | `byte EndTrack { get; init; }` | Track of the last sector. |
+| `EntryOffset` | `long EntryOffset { get; init; }` | Byte offset of the entry in the image. |
+| `Extension` | `string Extension { get; init; }` | Extension (up to 3 characters). |
+| `FullName` | `string FullName { get; }` | NAME.EXT as FLEX shows it. |
+| `IsRandom` | `bool IsRandom { get; init; }` | File Sector Map indicator: a random file whose first two sectors are its sector map. |
+| `Month` | `byte Month { get; init; }` | Creation month. |
+| `Name` | `string Name { get; init; }` | File name (up to 8 characters). |
+| `Sectors` | `ushort Sectors { get; init; }` | Sectors in the file. |
+| `Size` | `long Size { get; }` | Bytes the file holds: every sector's 252 data bytes. |
+| `StartSector` | `byte StartSector { get; init; }` | Sector of the first sector. |
+| `StartTrack` | `byte StartTrack { get; init; }` | Track of the first sector. |
+| `Year` | `byte Year { get; init; }` | Creation year, tens and units only. |
+
+#### `FlexFormatDescriptor`
+
+FLEX disk images (Technical Systems Consultants' FLEX for the 6800/6809, 1976-): raw `.dsk` sector dumps with 256-byte linked sectors, a System Information Record on track 0 sector 3 and a directory chain from track 0 sector 5.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlexFormatDescriptor` | `FlexFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | FLEX has no magic number. What every FLEX disk shares: the SIR (track 0 sector 3) starts with 16 zero bytes, and the first directory sector (track 0 sector 5) links to track 0 sector 6 and has twelve zero bytes after its link and record number. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files in place; all inputs land or none do. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Formats a disk and writes the files by leaf name (FLEX has one flat directory). |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Deletes the named files in place; unknown names are ignored. |
+
+#### `FlexWriter`
+
+Formats FLEX disks the way NEWDISK does and edits them the way the File Management System does: files are written by taking sectors from the head of the free chain, deleted files have their name's first byte set to $FF (negative) and their chain appended to the tail of the free chain. The image is edited in memory; callers write it back.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Geometries` | `static readonly ValueTuple<int, int>[] Geometries` | Standard geometries tried, smallest first, when none is given. |
+| `AddFile` | `static void AddFile(byte[] img, string fileName, ReadOnlySpan<byte> data, DateTime? date = null)` | Adds (or replaces) a file in the image. |
+| `ChooseGeometry` | `static ValueTuple<int, int> ChooseGeometry(long sectorsNeeded, int directoryEntries)` | Picks the smallest standard geometry whose data area holds `sectorsNeeded` sectors. |
+| `EncodeName` | `static ValueTuple<byte[], byte[]> EncodeName(string fileName)` | Encodes a host name as FLEX name and extension, or throws `NotSupportedException`. |
+| `Format` | `static byte[] Format(int tracks, int sectorsPerTrack, string label = "", ushort volumeNumber = 0, DateTime? date = null)` | Formats an empty disk. |
+| `RemoveFile` | `static bool RemoveFile(byte[] img, string fileName)` | Deletes a file: name marked deleted, sectors zeroed and appended to the free chain. False when absent. |
+
 ### Namespace `FileSystem.Gemdos`
 
 [`GemdosBpb`](#gemdosbpb) · [`GemdosExtentMap`](#gemdosextentmap) · [`GemdosFormatDescriptor`](#gemdosformatdescriptor) · [`GemdosInPlaceModifier`](#gemdosinplacemodifier) · [`GemdosOptimizer`](#gemdosoptimizer) · [`GemdosOptimizer.GemdosGeometry`](#gemdosoptimizergemdosgeometry) · [`GemdosReader`](#gemdosreader) · [`GemdosWriter`](#gemdoswriter)

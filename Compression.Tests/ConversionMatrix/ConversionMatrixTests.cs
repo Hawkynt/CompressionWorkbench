@@ -130,6 +130,7 @@ public class ConversionMatrixTests {
       { "Bbc", "[name/charset/size constraint] BBC Micro DFS disk; name-synthesizing FS, payload not found by content" },
       { "Cpm", "[name/charset/size constraint] CP/M disk; 8.3-folding name-synth FS, payload not found by content" },
       { "Lif", "[name/charset/size constraint] HP-71 LIF disk pads file content to a 256-byte record so bytes differ" },
+      { "Flex", "[name/charset/size constraint] FLEX keeps no byte length: files are whole 252-byte sector records, zero-padded, so bytes differ" },
       { "Creg", "[name/charset/size constraint] a Windows 9x hive's root key has no key-name record, so the matrix payload's root-level files have nowhere to live; CREG refuses them rather than inventing a key" },
       { "Ps1MemoryCard", "[name/charset/size constraint] PS1 memory-card saves allocate whole 8 KiB blocks and arbitrary conversion payloads are zero-padded to the stored block size" },
       { "Rt11", "[name/charset/size constraint] RT-11 disk pads content to a 512-byte block so bytes differ" },

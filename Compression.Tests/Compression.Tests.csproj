@@ -146,6 +146,10 @@
     <EmbeddedResource Include="Zfs\ReferenceVectors\*.gz;Zfs\ReferenceVectors\*.manifest">
       <LogicalName>ZfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- FLEX disk made by flexfloppy + manifests; see Flex/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Flex\ReferenceVectors\*.gz;Flex\ReferenceVectors\*.manifest">
+      <LogicalName>FlexVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- G.722 streams FFmpeg 8.1.2 encoded and decoded; see Codecs/G722/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Codecs\G722\ReferenceVectors\*.pcm;Codecs\G722\ReferenceVectors\*.g722">
       <LogicalName>G722Vectors.%(Filename)%(Extension)</LogicalName>
