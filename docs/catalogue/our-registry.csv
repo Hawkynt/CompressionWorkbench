@@ -187,6 +187,7 @@ format,FlacArchive,FLAC (archive view),Audio,,,Y,Y,,
 format,Fli,FLI/FLC (Autodesk animation),Archive,,.fli;.flc,Y,Y,,
 format,Flv,Flash Video (FLV),Video,,.flv,Y,Y,Y,
 format,Fmod,FMOD Sample Bank,Archive,,.fsb,Y,Y,,
+format,Fossil,Fossil (Plan 9),Archive,Y,.fossil,Y,Y,,
 format,FreeArc,FreeArc,Archive,,.arc,Y,Y,Y,Y
 format,Freeze,Freeze,Stream,,.f;.freeze,,Y,Y,
 format,Fsg,FSG (Win32 PE),Archive,,,Y,Y,,
