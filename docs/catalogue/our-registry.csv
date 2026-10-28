@@ -350,6 +350,7 @@ format,Nifti,NIfTI,Archive,,.nii;.nii.gz,Y,Y,,
 format,Nilfs1,NILFS v1,Archive,Y,.nilfs1;.nilfs,Y,Y,Y,Y
 format,Nilfs2,NILFS2,Archive,Y,.nilfs2;.nilfs,Y,Y,Y,Y
 format,Npy,NumPy NPY,Archive,,.npy,Y,Y,Y,
+format,NowCompress,Now Compress,Archive,,.now,Y,Y,,
 format,Npz,NumPy NPZ,Archive,,.npz,Y,Y,Y,
 format,Nrbf,.NET BinaryFormatter / NRBF object graph,Archive,,.nrbf,Y,Y,Y,
 format,Nrg,NRG,Archive,,.nrg,Y,Y,Y,Y
