@@ -12789,83 +12789,83 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `CompactProEntry`
 
-Represents a single entry in a Compact Pro (.cpt) archive.
+One file or folder of a Compact Pro archive's directory.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CompactProEntry` | `CompactProEntry()` |  |
-| `CreatedDate` | `DateTime CreatedDate { get; init; }` | Gets or sets the creation date. |
-| `DataForkCompressedSize` | `uint DataForkCompressedSize { get; init; }` | Gets or sets the compressed data fork size in bytes. |
-| `DataForkCrc` | `ushort DataForkCrc { get; init; }` | Gets or sets the CRC-16 of the decompressed data fork. |
-| `DataForkMethod` | `byte DataForkMethod { get; init; }` | Gets or sets the compression method for the data fork. |
-| `DataForkSize` | `uint DataForkSize { get; init; }` | Gets or sets the uncompressed data fork size in bytes. |
-| `FileCreator` | `uint FileCreator { get; init; }` | Gets or sets the Mac four-character creator code. |
-| `FileName` | `string FileName { get; init; }` | Gets or sets the filename (up to 63 characters). |
-| `FileType` | `uint FileType { get; init; }` | Gets or sets the Mac four-character file type code (e.g. 0x54455854 for 'TEXT'). |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets or sets whether this entry is a directory. |
-| `ModifiedDate` | `DateTime ModifiedDate { get; init; }` | Gets or sets the modification date. |
-| `ResourceForkCompressedSize` | `uint ResourceForkCompressedSize { get; init; }` | Gets or sets the compressed resource fork size in bytes. |
-| `ResourceForkCrc` | `ushort ResourceForkCrc { get; init; }` | Gets or sets the CRC-16 of the decompressed resource fork. |
-| `ResourceForkMethod` | `byte ResourceForkMethod { get; init; }` | Gets or sets the compression method for the resource fork. |
-| `ResourceForkSize` | `uint ResourceForkSize { get; init; }` | Gets or sets the uncompressed resource fork size in bytes. |
+| `Crc` | `uint Crc { get; init; }` | Stored CRC: the CRC-32 register over resource then data fork, not inverted. |
+| `CreatedDate` | `DateTime CreatedDate { get; init; }` |  |
+| `DataForkCompressedSize` | `uint DataForkCompressedSize { get; init; }` |  |
+| `DataForkLzh` | `bool DataForkLzh { get; }` |  |
+| `DataForkSize` | `uint DataForkSize { get; init; }` |  |
+| `DataOffset` | `long DataOffset { get; }` | Offset of the data fork's packed bytes (it follows the resource fork). |
+| `FileCreator` | `uint FileCreator { get; init; }` |  |
+| `FileName` | `string FileName { get; init; }` | Path with '/' separators (folders included). |
+| `FileOffset` | `uint FileOffset { get; init; }` |  |
+| `FileType` | `uint FileType { get; init; }` |  |
+| `FinderFlags` | `ushort FinderFlags { get; init; }` |  |
+| `Flags` | `ushort Flags { get; init; }` | Bit 0 encrypted, bit 1 resource fork LZH, bit 2 data fork LZH. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `IsEncrypted` | `bool IsEncrypted { get; }` |  |
+| `ModifiedDate` | `DateTime ModifiedDate { get; init; }` |  |
+| `ResourceForkCompressedSize` | `uint ResourceForkCompressedSize { get; init; }` |  |
+| `ResourceForkLzh` | `bool ResourceForkLzh { get; }` |  |
+| `ResourceForkSize` | `uint ResourceForkSize { get; init; }` |  |
+| `ResourceOffset` | `long ResourceOffset { get; }` | Offset of the resource fork's packed bytes. |
+| `Volume` | `byte Volume { get; init; }` |  |
 
 #### `CompactProFormatDescriptor`
 
-Compact Pro archive (Bill Goodman / Cyclos) — classic-Mac compressor that rivaled StuffIt in the early 1990s. References: `https://github.com/MacPaw/XADMaster` — The Unarchiver's XADMaster — open-source Compact Pro reader`https://en.wikipedia.org/wiki/Compact_Pro` — format history
+Compact Pro (Bill Goodman / Cyclos, 1990-1995), the classic Mac archiver. Each file's forks are RLE-coded, optionally LZH-compressed below that. A resource fork is exposed as "name.rsrc". References: `https://github.com/MacPaw/XADMaster` — The Unarchiver's XADCompactProParser and fork handles (LGPL-2.1), converted for the reader`http://justsolve.archiveteam.org/wiki/Compact_Pro` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CompactProFormatDescriptor` | `CompactProFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the Compact Pro archive in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the Compact Pro archive per the requested mode. |
+| `ResourceSuffix` | `const string ResourceSuffix` | Suffix naming a resource-fork entry. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates an archive. An input named "x.rsrc" becomes the resource fork of "x" when "x" is also an input (or has no data fork of its own); everything else is a data fork. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single Compact Pro entry as a bounded read-only stream. The reader produces the decoded data-fork bytes; the matched bytes are wrapped in a `BoundedEntryStream` sized to the data fork's logical length. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `CompactProReader`
 
-Reads entries from a Compact Pro (.cpt) archive.
-
-Implements `IDisposable`.
+Reads Compact Pro (.cpt) archives: an 8-byte header (0x01, volume, magic, directory offset), the packed forks, then the directory — a CRC-32 over the rest of the directory, the entry count, an optional comment and the entries (folders carry the number of entries nested in them).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompactProReader` | `CompactProReader(Stream stream, bool leaveOpen = false)` | Opens a Compact Pro archive from the given stream and parses the entry directory. |
-| `Entries` | `IReadOnlyList<CompactProEntry> Entries { get; }` | Gets the list of file entries found in the archive. |
-| `Dispose` | `void Dispose()` |  |
-| `ExtractResourceFork` | `byte[] ExtractResourceFork(CompactProEntry entry)` | Extracts and decompresses the resource fork of the specified entry. |
-| `Extract` | `byte[] Extract(CompactProEntry entry)` | Extracts and decompresses the data fork of the specified entry. |
+| `CompactProReader` | `CompactProReader(Stream stream)` |  |
+| `MacEpoch` | `static readonly DateTime MacEpoch` |  |
+| `Comment` | `string Comment { get; }` |  |
+| `Entries` | `IReadOnlyList<CompactProEntry> Entries { get; }` |  |
+| `ExtractForks` | `ValueTuple<byte[], byte[]> ExtractForks(CompactProEntry entry)` | Decodes both forks and verifies the entry's CRC (computed over resource, then data fork). |
 
 #### `CompactProWriter`
 
-Creates a Compact Pro (.cpt) archive.
-
-Implements `IDisposable`.
+Writes single-volume Compact Pro archives: RLE-coded forks (no LZH), folders, data and resource forks, Finder type/creator and dates, with the directory and per-file CRCs real readers check.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompactProWriter` | `CompactProWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `CompactProWriter`. |
-| `AddDirectory` | `void AddDirectory(string name)` | Begins a new directory in the archive. Must be paired with `EndDirectory`. |
-| `AddFile` | `void AddFile(string name, byte[] data, byte[] resourceFork = null, DateTime? modified = null)` | Adds a file entry to the archive. |
-| `Dispose` | `void Dispose()` |  |
-| `EndDirectory` | `void EndDirectory()` | Ends the current directory. Must be paired with a prior `AddDirectory` call. |
+| `CompactProWriter` | `CompactProWriter()` |  |
+| `AddFile` | `void AddFile(string path, byte[] data, byte[] resource = null, uint type = 1061109567, uint creator = 1061109567, DateTime? modified = null)` |  |
+| `AddFolder` | `void AddFolder(string path)` |  |
+| `ToArray` | `byte[] ToArray()` |  |
+| `WriteTo` | `void WriteTo(Stream output)` |  |
 
 ### Namespace `FileFormat.Compress`
 

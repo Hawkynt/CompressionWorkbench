@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 18 | |
+| A | 19 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 3 | specifications: `docs/CVF-CODECS-ON-DISK.md` (rewrite already under way), `docs/IT-SAMPLE-COMPRESSION-SPEC.md`, `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 8 | |
@@ -70,6 +70,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Claim site | Upstream | Licence | Where the notice is |
 |---|---|---|---|
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.CompactPro/CompactProCodec.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.CompactPro/CompactProReader.cs` | XADMaster `XADCompactProParser.m`, `XADCompactProRLEHandle.m`, `XADCompactProLZHHandle.m`, fetched 2026-10-19 as recorded in the notice | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.CompactPro/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidBootImage/AndroidBootImage.cs`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidBootImage/AndroidBootImageMetadata.cs` | AOSP mkbootimg `bootimg.h`, `mkbootimg.py` and `unpack_bootimg.py`, revision `d2bb0af5ba6d3198a3e99529c97eda1be0b5a093` | BSD-3-Clause and Apache-2.0 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidBootImage/THIRD-PARTY-NOTICE.mkbootimg.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidVbmeta/AvbVbmeta.cs`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidVbmeta/AvbDescriptorText.cs` | AOSP Android Verified Boot headers and `avbtool.py`, revision `c5066a96caa7bf4150c0a8cc8cc14ab81733fdc7` | MIT | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidVbmeta/THIRD-PARTY-NOTICE.avb.txt` |
 | `Compression.Core/Dictionary/Lzbitmap/` | libzbitmap (Ernesto A. Fernández, Corellium) | MIT | `THIRD-PARTY-NOTICE.libzbitmap.txt` |
