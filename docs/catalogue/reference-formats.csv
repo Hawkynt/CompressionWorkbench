@@ -243,10 +243,10 @@ ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet
 High Sierra format,iso;hsf,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 UDF,udf;cdr;dmg;iso;toast,filesystem,R,,,,,fmt/1738;fmt/1739;fmt/1757,Y,3,https://www.osta.org/specs/,Udf,Y,Y,Y,PARTIAL,,type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs)
 Roxio Toast image,toast,disk-image,,,,,,,Y,1,,Iso;Hfs,Y,Y,Y,OK,,
-Apple Partition Map,apm;bin;cdr;dmg;img;iso;toast,partition-table,R,,,,,fmt/1740;fmt/1741;fmt/1757,,2,https://en.wikipedia.org/wiki/Apple_Partition_Map,PartitionedDisk,Y,,,READ-ONLY-BUT-SOURCES-WRITE,pdisk / hdiutil,
-MBR partition table,mbr,partition-table,R,,,R,,,,2,https://en.wikipedia.org/wiki/Master_boot_record,PartitionedDisk,Y,,,READ-ONLY-BUT-SOURCES-WRITE,fdisk / sfdisk,
-GUID Partition Table (GPT),gpt,partition-table,R,,,D,,,,2,https://uefi.org/specifications,PartitionedDisk,Y,,,READ-ONLY-BUT-SOURCES-WRITE,sgdisk / gdisk,
-Raw disk image,img;raw;dd;bin,disk-image,,,,,,,Y,1,,PartitionedDisk,Y,,,READ-ONLY-BUT-SOURCES-WRITE,dd,
+Apple Partition Map,apm;bin;cdr;dmg;img;iso;toast,partition-table,R,,,,,fmt/1740;fmt/1741;fmt/1757,,2,https://en.wikipedia.org/wiki/Apple_Partition_Map,PartitionedDisk,Y,Y,Y,PARTIAL,pdisk / hdiutil,APM tables are read and their partitions' filesystems edited in place; APM entries cannot be created; added or removed
+MBR partition table,mbr,partition-table,R,,,R,,,,2,https://en.wikipedia.org/wiki/Master_boot_record,PartitionedDisk,Y,Y,Y,OK,fdisk / sfdisk,incl. EBR logical partitions; create/modify checked with sfdisk --verify and fsck
+GUID Partition Table (GPT),gpt,partition-table,R,,,D,,,,2,https://uefi.org/specifications,PartitionedDisk,Y,Y,Y,OK,sgdisk / gdisk,512- and 4096-byte LBAs; create/modify checked with sgdisk -v; sfdisk --verify and fdisk -b 4096
+Raw disk image,img;raw;dd;bin,disk-image,,,,,,,Y,1,,PartitionedDisk,Y,Y,Y,OK,dd,files inside partitions are edited in place by the partition filesystem's own editor
 Linux LVM2,lvm,partition-table,R,,,,,,,1,,,,,,MISSING,,https://man7.org/linux/man-pages/man8/lvm.8.html
 Android logical partitions (super.img),img;lp,partition-table,R,,,,,,,1,,,,,,MISSING,,https://source.android.com/docs/core/ota/dynamic_partitions
 Apple Disk Image (UDIF),dmg;smi;img,disk-image,R,,,R,R,fmt/1071,Y,5,https://en.wikipedia.org/wiki/Apple_Disk_Image,Dmg,Y,Y,Y,OK,,
@@ -405,7 +405,7 @@ ext3cow,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 FAT8 (Disk BASIC),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 FATX (Xbox),fatx;xbox,filesystem,,,,,,,Y,1,,Fatx,Y,Y,Y,OK,,
 "UFS / FFS (BSD), UFS2",ufs;ufs1,filesystem,,,,,,,Y,1,,Ufs,Y,Y,Y,PARTIAL,,UFS1 only; UFS2 (magic 0x19540119) is not recognised
-Fossil (Plan 9),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+Fossil (Plan 9),,filesystem,,,,,,,Y,1,https://github.com/9fans/plan9port/tree/master/src/cmd/fossil,Fossil,Y,,,READ-ONLY-BUT-SOURCES-WRITE,flfmt,writer not yet proven against the fossil server
 Files-11 (ODS-1/2/5),ods2;ods5;ods-1;ods-2;ods-5;openvms,filesystem,,,,,,,Y,1,,OpenVms;Ods1,Y,Y,Y,OK,,
 FLEX file system,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 HAMMER,,filesystem,,,,,,,Y,1,,Hammer,Y,Y,Y,OK,,

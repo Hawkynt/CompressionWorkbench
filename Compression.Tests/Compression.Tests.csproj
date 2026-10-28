@@ -150,6 +150,10 @@
     <EmbeddedResource Include="Codecs\G722\ReferenceVectors\*.pcm;Codecs\G722\ReferenceVectors\*.g722">
       <LogicalName>G722Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Fossil volume written by plan9port's fossil server; see Fossil/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Fossil\ReferenceVectors\*.gz;Fossil\ReferenceVectors\*.manifest">
+      <LogicalName>FossilVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Zoo archives written by Zoo 2.10; see Zoo/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Zoo\ReferenceVectors\*.zoo">
       <LogicalName>ZooVectors.%(Filename)%(Extension)</LogicalName>
