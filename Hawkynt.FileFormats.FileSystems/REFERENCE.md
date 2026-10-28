@@ -13349,7 +13349,7 @@ Builds a genuine Stac Electronics STACVOL — the on-disk shape a real Stacker d
 | `GenuineStackerWriter` | `GenuineStackerWriter()` |  |
 | `CompressionLevel` | `int CompressionLevel { get; init; }` | Codec effort (search depth). Higher = better ratio, slower. |
 | `CompressionMethod` | `CvfLzMethod CompressionMethod { get; init; }` | Per-cluster compression: Stored (default), Sd3 (Stacker 3), Sd4 (Stacker 4), Ds, or Auto (smallest of Ds/Sd3/Sd4 per cluster). The Stacker driver tells them apart by the payload's first word — 0x0081 SD-4, 0x5344 ("DS") the DoubleSpace codec, anything else SD-3. JM/SQ map to Ds. |
-| `ForceCompress` | `bool ForceCompress { get; init; }` | Keep a compressed cluster even if it does not shrink (auto-best off). |
+| `ForceCompress` | `bool ForceCompress { get; init; }` | Keep a compressed cluster even if it does not shrink (auto-best off). Stacker cannot record a compressed run that fills a whole cluster — such a run reads as stored — so a payload that needs every sector of its cluster is stored raw regardless; any shorter payload is kept compressed either way, which leaves this option without effect on Stacker volumes. |
 | `Timestamp` | `DateTime Timestamp { get; init; }` | Creation/modification timestamp stamped on every file entry. Default (before 1980) leaves the FAT date/time fields zero. |
 | `Version` | `int Version { get; init; }` | Stacker major version recorded in the decoded superblock (< 410 ⇒ v3). |
 | `VolumeLabel` | `string VolumeLabel { get; init; }` | Optional inner-volume label (≤11 chars). Empty = no label entry. |
