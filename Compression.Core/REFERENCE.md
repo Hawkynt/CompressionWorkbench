@@ -384,6 +384,7 @@ Decompresses data in the DEFLATE format (RFC 1951).
 | --- | --- | --- |
 | `DeflateDecompressor` | `DeflateDecompressor(Stream input)` | Initializes a new `DeflateDecompressor` for streaming decompression. |
 | `IsFinished` | `bool IsFinished { get; }` | Gets a value indicating whether the final block has been decoded. |
+| `StoredBlocksOmitComplement` | `bool StoredBlocksOmitComplement { get; set; }` | Gets or sets a value indicating whether stored blocks carry only LEN and no NLEN. |
 | `UnconsumedBytes` | `int UnconsumedBytes { get; }` | Gets the number of whole bytes read from the underlying stream but not consumed by the DEFLATE data. Once the stream has ended on a seekable input this is zero, because the read-ahead has already been handed back by seeking. |
 | `DecompressAll` | `byte[] DecompressAll()` | Decompresses all data from the stream. |
 | `Decompress` | `int Decompress(Span<byte> output)` | Decompresses data into `output`, filling it unless the DEFLATE stream ends first. |
@@ -3608,7 +3609,16 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.DiskImage`
 
-[`ApmParser`](#apmparser) · [`BsdDisklabelParser`](#bsddisklabelparser) · [`ClusterAllocator`](#clusterallocator) · [`DeferredPayloads`](#deferredpayloads) · [`ExtBlockGroupGeometry`](#extblockgroupgeometry) · [`ExtBlockGroupGeometry.ExtGeometry`](#extblockgroupgeometryextgeometry) · [`ExtentCopy`](#extentcopy) · [`FilePayload`](#filepayload) · [`GptParser`](#gptparser) · [`ImageAccessor`](#imageaccessor) · [`MbrParser`](#mbrparser) · [`MbrWrapper`](#mbrwrapper) · [`MbrWrapper.PartitionType`](#mbrwrapperpartitiontype) · [`PartitionEditor`](#partitioneditor) · [`PartitionEntry`](#partitionentry) · [`PartitionScheme`](#partitionscheme) · [`PartitionTableDetector`](#partitiontabledetector) · [`PartitionTableDetector.DetectionResult`](#partitiontabledetectordetectionresult) · [`PartitionTableVerification`](#partitiontableverification) · [`PartitionType`](#partitiontype) · [`PartitionTypeDatabase`](#partitiontypedatabase) · [`PartitionTypeMapping`](#partitiontypemapping) · [`PartitionWindowStream`](#partitionwindowstream) · [`PartitionedDiskLister`](#partitioneddisklister) · [`SparseBlockImage`](#sparseblockimage)
+[`AmigaRdbParser`](#amigardbparser) · [`ApmParser`](#apmparser) · [`BsdDisklabelParser`](#bsddisklabelparser) · [`ClusterAllocator`](#clusterallocator) · [`DeferredPayloads`](#deferredpayloads) · [`ExtBlockGroupGeometry`](#extblockgroupgeometry) · [`ExtBlockGroupGeometry.ExtGeometry`](#extblockgroupgeometryextgeometry) · [`ExtentCopy`](#extentcopy) · [`FilePayload`](#filepayload) · [`GptParser`](#gptparser) · [`GptParser.HeaderInfo`](#gptparserheaderinfo) · [`ImageAccessor`](#imageaccessor) · [`MbrParser`](#mbrparser) · [`MbrWrapper`](#mbrwrapper) · [`MbrWrapper.PartitionType`](#mbrwrapperpartitiontype) · [`PartitionEditor`](#partitioneditor) · [`PartitionEntry`](#partitionentry) · [`PartitionScheme`](#partitionscheme) · [`PartitionTableDetector`](#partitiontabledetector) · [`PartitionTableDetector.DetectionResult`](#partitiontabledetectordetectionresult) · [`PartitionTableVerification`](#partitiontableverification) · [`PartitionType`](#partitiontype) · [`PartitionTypeDatabase`](#partitiontypedatabase) · [`PartitionTypeMapping`](#partitiontypemapping) · [`PartitionWindowStream`](#partitionwindowstream) · [`PartitionedDiskLister`](#partitioneddisklister) · [`PartitionedDiskLister.PartitionTarget`](#partitioneddisklisterpartitiontarget) · [`SgiDvhParser`](#sgidvhparser) · [`SparseBlockImage`](#sparseblockimage) · [`StagedWindowStream`](#stagedwindowstream) · [`SunVtocParser`](#sunvtocparser)
+
+#### `AmigaRdbParser`
+
+Parses the Amiga Rigid Disk Block (RDB) partition scheme. Big-endian throughout.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsRdb` | `static bool IsRdb(Stream disk)` | Reports whether a checksummed `RDSK` block sits in the first 16 blocks. |
+| `Parse` | `static List<PartitionEntry> Parse(Stream disk)` | Parses every partition the RDB's `PART` chain describes. |
 
 #### `ApmParser`
 
@@ -3626,6 +3636,7 @@ Parses the 4.4BSD `disklabel` that FreeBSD/NetBSD/OpenBSD write into a BSD slice
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `IsDisklabel` | `static bool IsDisklabel(Stream slice)` | Reports whether a BSD disklabel magic is present at either candidate offset within the given slice stream. |
+| `IsStandaloneDisklabel` | `static bool IsStandaloneDisklabel(Stream disk)` | Reports whether `disk` carries a disklabel that stands on its own — no MBR slice around it, as a "dangerously dedicated" FreeBSD disk or a NetBSD/OpenBSD disk on a non-PC port writes it. With nothing else vouching for the bytes the label must prove itself structurally: `d_magic` and `d_magic2` both present 132 bytes apart, a sector size that is a power of two in [512, 8192], a partition count within `MAXPARTITIONS`, and every used partition starting inside the disk. |
 | `Parse` | `static List<PartitionEntry> Parse(Stream slice, long sliceStartByteOffset = 0)` | Parses the BSD disklabel contained in `slice` and returns its filesystem partitions. |
 
 #### `ClusterAllocator`
@@ -3715,13 +3726,39 @@ Implements `IEquatable<FilePayload>`.
 
 #### `GptParser`
 
-Parses GPT (GUID Partition Table) headers and partition entries. GPT header is at LBA 1 (offset 512 for 512-byte sectors), with partition entries starting at LBA 2+.
+Parses GPT (GUID Partition Table) headers and partition entries.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `HasValidHeader` | `static bool HasValidHeader(ReadOnlySpan<byte> data)` | Checks that LBA 1 holds a GPT header that is internally consistent, not merely the "EFI PART" signature: the header size lies in [92, 512], the header's own CRC32 matches (computed with the CRC field zeroed, UEFI 2.10 §5.3.2), it names itself as LBA 1 and its partition entries are 128 x 2^n bytes each, as the specification requires. |
-| `IsGpt` | `static bool IsGpt(ReadOnlySpan<byte> data)` | Checks whether the given data contains a valid GPT header at LBA 1. |
-| `Parse` | `static List<PartitionEntry> Parse(Stream diskData)` | Parses all partitions from a GPT disk image. |
+| `ProbeBytes` | `const int ProbeBytes` | Bytes of the image needed to see LBA 1 at every supported block size. |
+| `SupportedSectorSizes` | `static IReadOnlyList<int> SupportedSectorSizes { get; }` | Logical block sizes probed for the header at LBA 1, in probe order. |
+| `DetectSectorSize` | `static int DetectSectorSize(ReadOnlySpan<byte> data)` | The logical block size for which LBA 1 holds a valid GPT header, or 0 when none does. |
+| `HasValidHeader` | `static bool HasValidHeader(ReadOnlySpan<byte> data)` | Checks that LBA 1 holds a GPT header that is internally consistent, not merely the "EFI PART" signature, at any supported block size: see `HasValidHeader`. |
+| `HasValidHeader` | `static bool HasValidHeader(ReadOnlySpan<byte> data, int sectorSize)` | Checks that LBA 1, counted in `sectorSize`-byte blocks, holds a GPT header that is internally consistent: the header size lies in [92, block size], the header's own CRC32 matches (computed with the CRC field zeroed, UEFI 2.10 §5.3.2), it names itself as LBA 1 and its partition entries are 128 x 2^n bytes each, as the specification requires. |
+| `IsGpt` | `static bool IsGpt(ReadOnlySpan<byte> data)` | Checks whether LBA 1 carries the "EFI PART" signature at any supported block size. |
+| `Parse` | `static List<PartitionEntry> Parse(Stream diskData)` | Parses all partitions from a GPT disk image, at whichever block size its header validates. |
+| `Parse` | `static List<PartitionEntry> Parse(Stream diskData, out HeaderInfo info)` | Parses all partitions and reports the header that described them. |
+| `ReadHeader` | `static HeaderInfo ReadHeader(Stream diskData)` | The partition table's layout facts, or `null` when the image carries no usable GPT. Uses the same header `Parse` would. |
+
+#### `GptParser.HeaderInfo`
+
+Layout facts read from the header that was used to parse the table.
+
+Implements `IEquatable<HeaderInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HeaderInfo` | `HeaderInfo(int SectorSize, ulong MyLba, ulong AlternateLba, ulong FirstUsableLba, ulong LastUsableLba, Guid DiskGuid, ulong EntriesLba, uint EntryCount, uint EntrySize, bool FromBackup)` | Layout facts read from the header that was used to parse the table. |
+| `AlternateLba` | `ulong AlternateLba { get; init; }` | The LBA of the other header. |
+| `DiskGuid` | `Guid DiskGuid { get; init; }` | The disk GUID. |
+| `EntriesLba` | `ulong EntriesLba { get; init; }` | Starting LBA of the entry array the used header points at. |
+| `EntryCount` | `uint EntryCount { get; init; }` | Number of entries in the array. |
+| `EntrySize` | `uint EntrySize { get; init; }` | Size of one entry in bytes. |
+| `FirstUsableLba` | `ulong FirstUsableLba { get; init; }` | First LBA a partition may occupy. |
+| `FromBackup` | `bool FromBackup { get; init; }` | `true` when the primary was unusable and the backup was read. |
+| `LastUsableLba` | `ulong LastUsableLba { get; init; }` | Last LBA a partition may occupy. |
+| `MyLba` | `ulong MyLba { get; init; }` | The LBA the used header sits at (1 for the primary). |
+| `SectorSize` | `int SectorSize { get; init; }` | Logical block size every LBA is counted in. |
 
 #### `ImageAccessor`
 
@@ -3748,14 +3785,14 @@ Implements `IDisposable`.
 
 #### `MbrParser`
 
-Parses MBR (Master Boot Record) partition tables, including extended/logical partition chains. The MBR sits at LBA 0 (offset 0) of a disk image, with 4 primary partition entries at offset 0x1BE.
+Parses MBR (Master Boot Record) partition tables, including extended/logical partition chains. The MBR sits at LBA 0 (offset 0) of a disk image, with 4 primary partition entries at offset 0x1BE. The entries count in logical blocks: 512 bytes on a classic or 512e disk, 4096 on a 4Kn disk.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `HasValidPartitionTable` | `static bool HasValidPartitionTable(ReadOnlySpan<byte> sector0, long diskLength)` | Checks whether sector 0 holds a partition table that is actually usable, rather than merely ending in the 0x55AA boot signature — which every FAT, NTFS and exFAT volume boot record does as well. |
+| `HasValidPartitionTable` | `static bool HasValidPartitionTable(ReadOnlySpan<byte> sector0, long diskLength, int sectorSize = 512)` | Checks whether sector 0 holds a partition table that is actually usable, rather than merely ending in the 0x55AA boot signature — which every FAT, NTFS and exFAT volume boot record does as well. |
 | `IsMbr` | `static bool IsMbr(ReadOnlySpan<byte> data)` | Checks whether the given data starts with a valid MBR. |
-| `ParsePrimary` | `static List<PartitionEntry> ParsePrimary(ReadOnlySpan<byte> mbr)` | Parses the 4 primary partition entries from an MBR without following extended chains. Operates on a 512-byte buffer (no stream needed). |
-| `Parse` | `static List<PartitionEntry> Parse(Stream diskData)` | Parses all partitions from an MBR, including extended/logical partitions. |
+| `ParsePrimary` | `static List<PartitionEntry> ParsePrimary(ReadOnlySpan<byte> mbr, int sectorSize = 512)` | Parses the 4 primary partition entries from an MBR without following extended chains. Operates on a 512-byte buffer (no stream needed). |
+| `Parse` | `static List<PartitionEntry> Parse(Stream diskData, int sectorSize = 512)` | Parses all partitions from an MBR, including extended/logical partitions. |
 
 #### `MbrWrapper`
 
@@ -3787,15 +3824,20 @@ Read/write partition-table editor for raw disk images. Handles MBR (4 primary en
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PartitionEditor` | `PartitionEditor(Stream stream)` | Opens an editor over the given disk-image stream. The stream must be readable, writable, and seekable. The scheme (MBR/GPT/None) is auto-detected from the on-disk signature. |
-| `SectorSize` | `const int SectorSize` | Standard sector size used by the editor. |
+| `PartitionEditor` | `PartitionEditor(Stream stream, int sectorSize)` | Opens an editor over the given disk-image stream, counting LBAs in `sectorSize`-byte blocks unless a GPT on the disk validates at another supported block size — the table on the disk decides, since rewriting it at a different size would move every partition. |
+| `SectorSize` | `const int SectorSize` | The classic logical block size, and the one a disk without a GPT is assumed to use unless the caller says otherwise. A 4Kn GPT disk is edited in 4096-byte blocks: see `LogicalSectorSize`. |
 | `InPlaceFilesystemConverter` | `static Func<Stream, string, string, bool> InPlaceFilesystemConverter { get; set; }` | Pluggable in-place filesystem-variant converter. Set by the higher-level `Compression.Lib` layer at startup (it can reference the per-family FileSystem.* projects, which Core cannot). When non-null, `ConvertFilesystem` attempts a metadata-only conversion via this delegate before falling back to `false`. Contract: takes (partitionStream, sourceFsId, targetFsId), returns `true` if the conversion succeeded entirely via metadata edits, `false` if no in-place path exists for the pair (the caller should then do a full migration: extract files → FormatPartition → re-import). |
 | `InPlaceFilesystemResizer` | `static Func<Stream, string, long, bool, bool> InPlaceFilesystemResizer { get; set; }` | Pluggable in-place filesystem-resizer. Set by the higher-level `Compression.Lib` layer at startup (Core cannot reference FileSystem.* projects, so the actual resizer lives there). The contract is: (partitionStream, fsId, newSizeBytes, isShrink) → bool Returns `true` when the resize succeeded entirely via in-place edits, `false` when no in-place path exists for the fsId (the caller should fall back to a full extract → reformat → re-import). |
+| `LogicalSectorSize` | `int LogicalSectorSize { get; }` | The logical block size every LBA on this disk is counted in: the size at which the GPT header validated, or — for an MBR or blank disk — the size the editor was opened with. |
 | `Scheme` | `PartitionScheme Scheme { get; }` | Partition scheme currently in use on the disk image. |
+| `SupportedSectorSizes` | `static IReadOnlyList<int> SupportedSectorSizes { get; }` | Logical block sizes the editor supports. |
+| `UsableRange` | `ValueTuple<long, long> UsableRange { get; }` | The byte range partitions may occupy under the current scheme: everything after LBA 0 for MBR; between the primary and backup GPT structures for GPT. |
 | `AddLogicalPartition` | `void AddLogicalPartition(long startByteOffset, long lengthBytes, PartitionType type, string label)` | Adds a new logical partition inside the existing MBR extended container. The byte range must lie entirely within the extended container and not overlap any existing logical (each logical occupies its EBR sector plus the data range). |
 | `AddPartition` | `void AddPartition(long startByteOffset, long lengthBytes, PartitionType type, string label)` | Adds a new primary partition entry covering [`startByteOffset`, `startByteOffset` + `lengthBytes`). |
 | `ConvertFilesystem` | `bool ConvertFilesystem(int partitionIndex, string newFsId)` | Attempts an in-place filesystem-variant conversion of the partition at `partitionIndex`. Reads the partition's current contents as a substream, dispatches to `InPlaceFilesystemConverter` (set by the Compression.Lib bootstrap), and returns the converter's answer. Returns `false` when:No converter has been registered (Core-only build).The source/target pair has no metadata-only conversion path (e.g. FAT → ext, NTFS → exFAT — any cross-family conversion).The image geometry rules out the requested target (e.g. a tiny FAT12 floppy can't fit FAT32's 32-reserved-sector overhead). In any of these cases the caller is expected to fall back to a full extract → reformat → re-import migration. |
 | `ConvertGptToMbr` | `void ConvertGptToMbr()` | Reads the current GPT partition table, takes the first 4 entries (MBR hard limit), zero-fills both GPT header areas, and writes a fresh MBR with the translated entries. |
 | `ConvertMbrToGpt` | `void ConvertMbrToGpt()` | Reads the current MBR partition table, drops it, then rewrites the equivalent GPT layout: protective MBR at LBA 0, primary GPT header at LBA 1, entries starting at LBA 2, backup GPT at the end of the disk. Translates MBR type bytes to GPT GUIDs via `PartitionTypeMapping`. The extended container (if present) is dropped — its logical children are promoted to top-level GPT entries. |
+| `CreateEmpty` | `static PartitionEditor CreateEmpty(Stream stream, PartitionScheme scheme, int sectorSize = 512)` | Writes an empty partition table of `scheme` over the start (and, for GPT, the end) of `stream` and returns an editor over it. A GPT gets the standard 128 entries of 128 bytes, its backup at the last LBA and a protective MBR. |
 | `DeletePartition` | `void DeletePartition(int index)` | Deletes the partition at the given index. The partition byte range is not modified — see `PurgePartition` to zero it. |
 | `FormatPartition` | `void FormatPartition(int index, string formatId, FormatCreateOptions options)` | Writes a fresh filesystem image of the given `formatId` into the partition's byte range. The format must be registered with `FormatRegistry` and support `IArchiveCreatable`. The resulting bytes must fit within the partition (an exception is thrown otherwise). |
 | `ListPartitions` | `IReadOnlyList<PartitionEntry> ListPartitions()` | Returns a snapshot of the current partition table. |
@@ -3833,14 +3875,15 @@ Partition scheme detected on a disk image.
 
 #### `PartitionTableDetector`
 
-Detects and parses partition tables from raw disk data. Tries GPT first (since GPT disks also have a protective MBR), then falls back to MBR.
+Detects and parses partition tables from raw disk data.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Detect` | `static DetectionResult Detect(Stream diskData)` | Attempts to detect a partition table in the given stream. Tries GPT first (higher precedence), then MBR. Returns an empty partition list if no valid partition table is found. |
+| `Detect` | `static DetectionResult Detect(Stream diskData)` | Attempts to detect a partition table in the given stream. Returns an empty partition list if no valid partition table is found. |
 | `Detect` | `static DetectionResult Detect(byte[] diskData)` | Attempts to detect a partition table in the given byte array. Convenience overload that wraps the data in a `MemoryStream`. |
 | `ExtractPartitionData` | `static byte[] ExtractPartitionData(Stream diskData, PartitionEntry partition)` | Extracts partition data from a disk image stream. Returns the raw bytes of the partition at the given offset and size. |
 | `ExtractPartitionData` | `static byte[] ExtractPartitionData(byte[] diskData, PartitionEntry partition)` | Extracts partition data from a byte array. |
+| `HasSelfValidatingLabel` | `static bool HasSelfValidatingLabel(Stream disk)` | Whether the first sector holds a partition table of a scheme that has no MBR-style boot signature to go on — SGI, Sun, a stand-alone BSD disklabel or an Amiga RDB — each verified by its own checksum (BSD: by its two magics and geometry). Used by content detection, which has already ruled out GPT, MBR and APM by then. |
 
 #### `PartitionTableDetector.DetectionResult`
 
@@ -3850,7 +3893,8 @@ Result of partition table detection, including the scheme used and the discovere
 | --- | --- | --- |
 | `DetectionResult` | `DetectionResult()` |  |
 | `Partitions` | `List<PartitionEntry> Partitions { get; init; }` | Discovered partitions. Empty if no partition table was found. |
-| `Scheme` | `string Scheme { get; init; }` | The partition scheme detected: "GPT", "MBR", "APM", or "None". |
+| `Scheme` | `string Scheme { get; init; }` | The partition scheme detected: "GPT", "MBR", "APM", "BSD", "RDB", "Sun", "SGI", or "None". |
+| `SectorSize` | `int SectorSize { get; init; }` | Logical block size the table counts in (512 unless a 4Kn GPT was found). |
 
 #### `PartitionTableVerification`
 
@@ -3940,11 +3984,38 @@ Partition-aware archive surface for raw disk image streams (VHD/VHDX/VMDK/Qcow2/
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `EnumerateTargets` | `static List<PartitionTarget> EnumerateTargets(Stream disk, DetectionResult detection)` | Every partition the listing shows a prefix for, in listing order: top-level partitions, with a BSD-disklabel container replaced by its slices. |
 | `Extract` | `static bool Extract(Stream disk, string outputDir, string password, string[] files)` | Extracts entries across every partition into per-partition subdirectories of `outputDir`. Returns `true` if a partition table was detected and handled; `false` if no partition table was found (caller falls through to the unpartitioned path). |
+| `HasNativeEditor` | `static bool HasNativeEditor(IArchiveModifiable modifier, string method)` | Whether `modifier` edits through its own code for `method` (`Add` or `Remove`) rather than the interface's generic extract → re-create default, which re-creates the volume and loses what its writer does not reproduce. |
 | `List` | `static List<ArchiveEntryInfo> List(Stream disk, string password)` | Lists entries across every partition. Returns `null` if no partition table is present so the caller can fall through to the unpartitioned path. |
 | `MakePartitionPrefix` | `static string MakePartitionPrefix(PartitionEntry part)` | The directory name a partition is listed under: `Partition{N}_{TypeName}`, with N one-based and the type name reduced to letters, digits, '-' and '_'. |
-| `TryAdd` | `static bool TryAdd(Stream disk, IReadOnlyList<ArchiveInputInfo> inputs)` | Partition-aware `Add`. Returns `true` when a partition table was present and at least one input was dispatched through the partition-aware path; `false` when no partition table exists so the caller can fall through to the existing single-FS path. |
-| `TryRemove` | `static bool TryRemove(Stream disk, string[] entryNames)` | Partition-aware `Remove`. Returns `true` when a partition table was present and at least one entry was removed; `false` if no partition table was detected. Entry name shapes: `Partition<N>_<Type>/<inner>` deletes an inner-FS file; `Partition<N>_<Type>` or `Partition<N>_<Type>.raw` deletes the whole partition. |
+| `Resolve` | `static PartitionTarget Resolve(IEnumerable<PartitionTarget> targets, string entryName, out string innerPath)` | Finds the partition an entry name addresses. `innerPath` is the rest of the name below the partition's prefix — empty when the name is the partition itself (`PartitionN_Type` or `PartitionN_Type.raw`). |
+| `TryAdd` | `static bool TryAdd(Stream disk, IReadOnlyList<ArchiveInputInfo> inputs)` | Partition-aware `Add`. Returns `false` when no partition table exists (or the stream is read-only) so the caller can fall through to its single-filesystem path. |
+| `TryRemove` | `static bool TryRemove(Stream disk, string[] entryNames)` | Partition-aware `Remove`. Returns `false` when no partition table exists (or the stream is read-only). Entry name shapes: `PartitionN_Type/inner` removes a file — or a folder with everything beneath it — through the partition filesystem's own in-place editor; `PartitionN_Type` or `PartitionN_Type.raw` deletes the partition's table entry (GPT and MBR, including logical partitions), leaving its sectors as they were. |
+
+#### `PartitionedDiskLister.PartitionTarget`
+
+One listed partition: a top-level partition, or a slice of a BSD disklabel nested inside one, with the prefix its entries are listed under.
+
+Implements `IEquatable<PartitionTarget>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PartitionTarget` | `PartitionTarget(PartitionEntry Partition, string Prefix, long Offset, long Size, bool IsBsdSlice)` | One listed partition: a top-level partition, or a slice of a BSD disklabel nested inside one, with the prefix its entries are listed under. |
+| `IsBsdSlice` | `bool IsBsdSlice { get; init; }` | Whether this is a slice inside a BSD disklabel rather than a table entry. |
+| `Offset` | `long Offset { get; init; }` | Byte offset of the partition on the disk. |
+| `Partition` | `PartitionEntry Partition { get; init; }` | The table entry (for a BSD slice, the slice's own entry). |
+| `Prefix` | `string Prefix { get; init; }` | The listing prefix, e.g. `Partition1_FAT32` or `Partition1_FreeBSD/Partition1_4_2BSD`. |
+| `Size` | `long Size { get; init; }` | Bytes of the partition that lie inside the image. |
+
+#### `SgiDvhParser`
+
+Parses the SGI disk volume header (DVH) in sector 0 — the IRIX partition scheme. Big-endian.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsDvh` | `static bool IsDvh(ReadOnlySpan<byte> sector0)` | Reports whether `sector0` is an SGI volume header with a valid checksum. |
+| `Parse` | `static List<PartitionEntry> Parse(ReadOnlySpan<byte> sector0)` | Parses the header's partitions, excluding the whole-volume partition and empty slots. |
 
 #### `SparseBlockImage`
 
@@ -3963,6 +4034,39 @@ Sparse, block-addressed image buffer. Only the blocks a writer actually touches 
 | `Read` | `byte[] Read(long offset, int length)` | Reads `length` bytes from `offset`, spanning blocks as needed. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the volume from the current position, extending the stream to its full size. |
 | `Write` | `void Write(long offset, ReadOnlySpan<byte> data)` | Copies `data` to `offset`, spanning blocks as needed. |
+
+#### `StagedWindowStream`
+
+A writable, fixed-length window over a range of a disk whose writes are held back until `Commit`. Reads see the staged writes on top of the disk's bytes, so a filesystem editor working through the window behaves exactly as it would on a standalone image; but nothing reaches the disk unless the whole edit finishes and the caller commits. An editor that throws half-way, or that tries to grow its volume past the partition, leaves the disk byte-identical.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `StagedWindowStream` | `StagedWindowStream(Stream disk, long offset, long length)` | Opens a staged window of `length` bytes at `offset` on `disk`. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `HasChanges` | `bool HasChanges { get; }` | Whether any write has been staged. |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Commit` | `void Commit()` | Writes every staged page to the disk, in disk order, then flushes it. |
+| `Flush` | `override void Flush()` | Staged writes stay staged; only `Commit` writes them. |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` | A partition cannot grow from inside: asking for more than its length fails, and asking for less leaves the trailing bytes where they are, as unused space inside the partition. |
+| `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `SunVtocParser`
+
+Parses the Sun disk label (SunOS / Solaris SPARC "VTOC" label) in sector 0. Big-endian.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsSunLabel` | `static bool IsSunLabel(ReadOnlySpan<byte> sector0)` | Reports whether `sector0` is a Sun label with a valid checksum. |
+| `Parse` | `static List<PartitionEntry> Parse(ReadOnlySpan<byte> sector0)` | Parses the label's slices, excluding the whole-disk slice and empty slots. |
 
 ### Namespace `Compression.Core.DiskImage.Raid`
 
@@ -9250,6 +9354,7 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` | Compresses data from the provided buffer and writes it to the inner stream. |
 | `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Decompresses data from the inner stream into the provided buffer. |
 | `FinishCompression` | `protected override void FinishCompression()` | Called when the stream is being closed in Compress mode. Implementations should flush any remaining compressed data. |
+| `OpenNsisDecoder` | `static Bzip2Stream OpenNsisDecoder(Stream stream, bool leaveOpen = false)` | Opens a decoder for the header-less bzip2 dialect embedded in NSIS installers: no "BZh" stream header, a single 0x31 byte before each block, 0x17 at the end, no CRCs. |
 
 ### Namespace `FileFormat.Gzip`
 

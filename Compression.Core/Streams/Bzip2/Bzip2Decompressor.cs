@@ -13,6 +13,7 @@ internal sealed class Bzip2Decompressor {
   private int _currentBlockPos;
   private bool _finished;
   private uint _combinedCrc;
+  private readonly bool _nsisVariant;
 
   /// <summary>
   /// Gets whether all blocks have been read.
@@ -28,8 +29,13 @@ internal sealed class Bzip2Decompressor {
   /// Initializes a new bzip2 decompressor.
   /// </summary>
   /// <param name="bits">The bit buffer for input (MSB-first).</param>
-  public Bzip2Decompressor(BitBuffer<MsbBitOrder> bits) {
+  /// <param name="nsisVariant">
+  /// Decode the header-less dialect NSIS installers carry: a block starts with the single byte
+  /// 0x31 and the stream ends with 0x17, with no CRCs and no randomisation bit.
+  /// </param>
+  public Bzip2Decompressor(BitBuffer<MsbBitOrder> bits, bool nsisVariant = false) {
     this._bits = bits;
+    this._nsisVariant = nsisVariant;
   }
 
   /// <summary>
@@ -61,6 +67,9 @@ internal sealed class Bzip2Decompressor {
   }
 
   private bool ReadNextBlock() {
+    if (this._nsisVariant)
+      return this.ReadNextNsisBlock();
+
     // Read 48-bit magic
     var high = this._bits.ReadBits(24);
     var low = this._bits.ReadBits(24);
@@ -100,6 +109,25 @@ internal sealed class Bzip2Decompressor {
     this._currentBlock = blockData;
     this._currentBlockPos = 0;
     return true;
+  }
+
+  private const uint NsisBlockMarker = 0x31;
+  private const uint NsisEndMarker = 0x17;
+
+  // NSIS keeps bzip2's entropy coding but trims the framing: one marker byte per block, no
+  // checksums and no randomised blocks (Source/bzip2/decompress.c in the NSIS tree).
+  private bool ReadNextNsisBlock() {
+    switch (this._bits.ReadBits(8)) {
+      case NsisEndMarker:
+        this._finished = true;
+        return false;
+      case NsisBlockMarker:
+        this._currentBlock = DecodeBlockBody(this._bits);
+        this._currentBlockPos = 0;
+        return true;
+      case var other:
+        throw new InvalidDataException($"Invalid NSIS bzip2 block marker: 0x{other:X2}");
+    }
   }
 
   /// <summary>
@@ -209,8 +237,7 @@ internal sealed class Bzip2Decompressor {
     var rle1Data = BurrowsWheelerTransform.Inverse(bwtData, bwtIndex);
 
     // RLE1 decode
-    var blockData = Bzip2Compressor.Rle1Decode(rle1Data);
-    return blockData;
+    return Bzip2Compressor.Rle1Decode(rle1Data);
   }
 
   private static bool[] ReadSymbolBitmap(BitBuffer<MsbBitOrder> bits) {
