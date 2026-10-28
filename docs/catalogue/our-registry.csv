@@ -26,9 +26,11 @@ format,Ampk,AMPK (Amiga Pack),Archive,,.ampk,Y,Y,Y,Y
 format,Amr,3GPP AMR,Audio,,.amr;.awb;.3ga,Y,Y,Y,
 format,AmrNb,AMR-NB,Audio,,.amr,,,,
 format,AmrWb,AMR-WB,Audio,,.amr,,,,
+format,AndroidBootImage,Android boot image,Archive,,.bootimg,Y,Y,Y,Y
 format,AndroidBundle,Android App Bundle / split-APK set,Archive,,.aab;.apks,Y,Y,Y,Y
 format,AndroidOta,Android OTA payload,Archive,,,Y,Y,Y,
 format,AndroidSparse,Android Sparse Image,Archive,,.simg;.sparse,Y,Y,Y,
+format,AndroidVbmeta,Android Verified Boot (vbmeta),Archive,,.avb,Y,Y,Y,Y
 format,Ani,ANI (animated cursor),Archive,,.ani,Y,Y,Y,
 format,Aomei,AOMEI Backupper Image (ADI/AFI),Archive,,.adi;.afi,Y,Y,Y,Y
 format,Apc,CRYO APC,Audio,,.apc,Y,Y,Y,

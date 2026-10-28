@@ -18,7 +18,8 @@ namespace Compression.Tests.Zoo;
 ///     <c>tailHeaderOffset + 6</c>).</description></item>
 ///   <item><description>All other <c>[0, oldLength)</c> bytes stay
 ///     bitwise identical — no entry body, no CRC, no name, no comment
-///     offset is rewritten.</description></item>
+///     offset is rewritten — except Zoo's trailing end-of-directory entry,
+///     which the new member replaces (a fresh one follows it).</description></item>
 /// </list>
 /// A future agent who silently converts <see cref="ZooModifier.AddFile"/>
 /// into a rebuild-and-replace would mutate bytes outside the link slot
@@ -108,13 +109,23 @@ public class ZooByteIdentityTests {
     Assert.That(after.Length, Is.GreaterThanOrEqualTo(before.Length),
       "Add must not shrink the archive.");
 
+    // Zoo's end-of-directory entry at the end of the seed is replaced by the new member.
+    var compared = before.AsSpan().EndsWith(ZooConstants.EndOfDirectory)
+      ? before.Length - ZooConstants.EndOfDirectory.Length
+      : before.Length;
     var changedOffsets = new List<int>();
-    for (var i = 0; i < before.Length; ++i)
+    for (var i = 0; i < compared; ++i)
       if (before[i] != after[i])
         changedOffsets.Add(i);
 
-    Assert.That(changedOffsets, Is.Not.Empty,
-      "Expected the 4-byte link slot to be rewritten; saw no mutation.");
+    // With an end-of-directory entry the new member takes its place, so the tail link already
+    // points at it and may stay unchanged; without one, the link slot must be rewritten.
+    if (compared == before.Length)
+      Assert.That(changedOffsets, Is.Not.Empty,
+        "Expected the 4-byte link slot to be rewritten; saw no mutation.");
+    using (var reader = new ZooReader(new MemoryStream(after)))
+      Assert.That(reader.Entries, Has.Count.GreaterThan(new ZooReader(new MemoryStream(before)).Entries.Count),
+        "The added member must be reachable through the directory chain.");
 
     // Every mutated byte must lie inside the [slotOffset, slotOffset+4) window.
     foreach (var o in changedOffsets)

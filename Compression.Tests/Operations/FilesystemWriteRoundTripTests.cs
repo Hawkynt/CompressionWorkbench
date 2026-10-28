@@ -55,6 +55,8 @@ public sealed class FilesystemWriteRoundTripTests {
              + "A ReFS corpus would have to come from Windows.",
     ["TahoeLafs"] = "R/W is a live capability-backed namespace — no creator can synthesize a Tahoe grid endpoint and root write-capability. "
                    + "TahoeLafsClientTests exercise the gateway contract with an in-process HTTP oracle.",
+    ["AndroidVbmeta"] = "members are structured AVB descriptors (descriptors/NN_*.bin), so an arbitrary byte blob is not one and the "
+                       + "generic probe cannot be written. AndroidVbmetaTests round-trips real descriptors byte-identical to avbtool.",
   };
 
   /// <summary>
