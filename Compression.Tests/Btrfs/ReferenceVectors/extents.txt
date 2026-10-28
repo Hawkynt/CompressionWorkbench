@@ -1,0 +1,9 @@
+== zlib
+      2 compression 0
+      7 compression 1
+== lzo
+      2 compression 0
+      7 compression 2
+== zstd
+      2 compression 0
+      7 compression 3

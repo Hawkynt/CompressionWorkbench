@@ -33,8 +33,25 @@ public sealed class Bzip2Stream : CompressionStream {
     this._blockSize100k = blockSize100k;
   }
 
+  private bool _nsisVariant;
+
+  /// <summary>
+  /// Opens a decoder for the header-less bzip2 dialect embedded in NSIS installers: no "BZh"
+  /// stream header, a single 0x31 byte before each block, 0x17 at the end, no CRCs.
+  /// </summary>
+  /// <param name="stream">The stream positioned at the first block marker.</param>
+  /// <param name="leaveOpen">Whether to leave the inner stream open.</param>
+  /// <returns>A read-only decompressing stream.</returns>
+  public static Bzip2Stream OpenNsisDecoder(Stream stream, bool leaveOpen = false)
+    => new(stream, CompressionStreamMode.Decompress, 9, leaveOpen) { _nsisVariant = true };
+
   /// <inheritdoc />
   protected override int DecompressBlock(byte[] buffer, int offset, int count) {
+    if (!this._headerRead && this._nsisVariant) {
+      this._decompressor = new Bzip2Decompressor(new BitBuffer<MsbBitOrder>(InnerStream), nsisVariant: true);
+      this._headerRead = true;
+    }
+
     if (!this._headerRead) {
       ReadHeader();
       this._headerRead = true;

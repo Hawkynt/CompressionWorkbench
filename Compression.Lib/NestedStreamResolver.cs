@@ -115,6 +115,10 @@ public static class NestedStreamResolver {
     var desc = DetectFormat(current);
     if (desc == null) return null;
 
+    // A raw whole-disk image: the filesystems are inside its partitions, not at byte 0.
+    if (desc.Id == PartitionedDiskId)
+      return TryDescendPartitions(current, ownership, pathSegments, depth + 1);
+
     // If it's a disk image container, try to open the virtual disk stream
     if (DiskImageFormatIds.Contains(desc.Id)) {
       var virtualStream = TryOpenVirtualDisk(current, desc.Id);
@@ -155,13 +159,14 @@ public static class NestedStreamResolver {
     if (detection.Scheme == "None" || detection.Partitions.Count == 0)
       return null;
 
-    // Try each partition, preferring the first that yields a writable FS
-    foreach (var part in detection.Partitions) {
-      if (part.Size <= 0 || part.StartOffset < 0 || part.StartOffset >= diskStream.Length)
+    // Try each partition — a BSD slice container contributes its slices — preferring the first
+    // that yields a writable FS.
+    foreach (var target in PartitionedDiskLister.EnumerateTargets(diskStream, detection)) {
+      var part = target.Partition;
+      if (target.Size <= 0 || target.Offset < 0 || target.Offset >= diskStream.Length)
         continue;
 
-      var actualSize = Math.Min(part.Size, diskStream.Length - part.StartOffset);
-      var partStream = new WritableSubStream(diskStream, part.StartOffset, actualSize);
+      var partStream = new WritableSubStream(diskStream, target.Offset, target.Size);
       // Don't add to ownership — it doesn't own the underlying stream
 
       var partSegments = new List<string>(pathSegments) {
@@ -175,47 +180,40 @@ public static class NestedStreamResolver {
     return null;
   }
 
+  private const string PartitionedDiskId = "PartitionedDisk";
+
+  /// <summary>
+  /// Identifies the stream: a fixed VHD by its footer first (its first bytes are the guest
+  /// disk's own), then by content — the disk-image probe that recognises a raw partitioned
+  /// disk, and signatures as deep as the deepest registered one (superblocks at 32/64/128 KiB
+  /// included) rather than a fixed 4 KiB — then the FAT boot-sector heuristic.
+  /// </summary>
   private static IFormatDescriptor? DetectFormat(Stream stream) {
     if (stream.Length < 4) return null;
 
     var savedPos = stream.Position;
     try {
-      stream.Position = 0;
-      var headerSize = (int)Math.Min(4096, stream.Length);
-      var header = new byte[headerSize];
-      var bytesRead = 0;
-      while (bytesRead < headerSize) {
-        var n = stream.Read(header, bytesRead, headerSize - bytesRead);
-        if (n == 0) break;
-        bytesRead += n;
-      }
-
-      var headerSpan = header.AsSpan(0, bytesRead);
-      IFormatDescriptor? best = null;
-      var bestConfidence = 0.0;
-
-      foreach (var desc in FormatRegistry.All) {
-        foreach (var sig in desc.MagicSignatures) {
-          if (MatchesMagic(headerSpan, sig) && sig.Confidence > bestConfidence) {
-            bestConfidence = sig.Confidence;
-            best = desc;
-          }
-        }
-      }
-
-      if (best != null) return best;
-
       // Heuristic: VHD fixed-disk detection — the "conectix" footer is at the
       // END of the file (offset = length - 512), not at offset 0. The registry
       // magic signature only checks offset 0 (which works for dynamic VHD).
       if (stream.Length >= 512 && stream.CanSeek) {
         stream.Position = stream.Length - 512;
         Span<byte> footer = stackalloc byte[8];
-        if (stream.Read(footer) == 8 && "conectix"u8.SequenceEqual(footer)) {
+        if (stream.ReadAtLeast(footer, 8, throwOnEndOfStream: false) == 8 && "conectix"u8.SequenceEqual(footer)) {
           var vhdDesc = FormatRegistry.GetById("Vhd");
           if (vhdDesc != null) return vhdDesc;
         }
       }
+
+      var format = FormatDetector.DetectByContent(stream);
+      if (format != FormatDetector.Format.Unknown && FormatDetector.GetDesc(format) is { } byContent)
+        return byContent;
+
+      stream.Position = 0;
+      var headerSize = (int)Math.Min(4096, stream.Length);
+      var header = new byte[headerSize];
+      var bytesRead = stream.ReadAtLeast(header, headerSize, throwOnEndOfStream: false);
+      var headerSpan = header.AsSpan(0, bytesRead);
 
       // Heuristic: FAT detection (no magic, BPB-based)
       if (bytesRead >= 64 && headerSpan[0] is 0xEB or 0xE9) {
@@ -232,18 +230,6 @@ public static class NestedStreamResolver {
     } finally {
       stream.Position = savedPos;
     }
-  }
-
-  private static bool MatchesMagic(ReadOnlySpan<byte> header, MagicSignature sig) {
-    if (header.Length < sig.Offset + sig.Bytes.Length) return false;
-    var slice = header.Slice(sig.Offset, sig.Bytes.Length);
-    if (sig.Mask != null) {
-      for (var i = 0; i < sig.Bytes.Length; i++)
-        if ((slice[i] & sig.Mask[i]) != (sig.Bytes[i] & sig.Mask[i]))
-          return false;
-      return true;
-    }
-    return slice.SequenceEqual(sig.Bytes);
   }
 
   /// <summary>
