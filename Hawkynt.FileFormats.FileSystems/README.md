@@ -59,6 +59,8 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 | Format | Id | State | Compact | Defrag | Sort | Wipe | Shrink | Geometry | Purge | Proof | Notes | Reference |
 | --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| [Android boot image](https://source.android.com/docs/core/architecture/bootloader/boot-image-header) | `AndroidBootImage` | R/W | — | — | — | — | — | — | ✅ | [`mkbootimg` / `unpack_bootimg`](https://android.googlesource.com/platform/system/tools/mkbootimg) — byte-identical both ways | boot/recovery header v0–v4 and vendor_boot v3/v4; components as `unpack_bootimg` names them, header in `metadata.ini`; edits refuse a signed image (v4 boot signature, AVB footer) and layouts `mkbootimg` cannot produce | [Boot image header](https://source.android.com/docs/core/architecture/bootloader/boot-image-header) |
+| [Android Verified Boot (vbmeta)](https://source.android.com/docs/security/features/verifiedboot/avb) | `AndroidVbmeta` | R/W | — | — | — | — | — | — | ✅ | [`avbtool`](https://android.googlesource.com/platform/external/avb) — byte-identical unsigned images, `info_image` reads ours; signatures checked against avbtool-signed vectors | hash and RSA signature verified on read; each descriptor a member; only unsigned (`NONE`) images are written or edited — a signed image is read-only, since re-signing needs the private key | [AVB README](https://android.googlesource.com/platform/external/avb/+/main/README.md) |
 | [Apple IPSW](https://en.wikipedia.org/wiki/IPSW) | `Ipsw` | R/W | ✅ | ✅ rebuild | — | ✅ | ✅ | — | ✅ | own reader + struct-parity tests | ZIP-based firmware archive | [IPSW](https://en.wikipedia.org/wiki/IPSW) |
 | [BIN/CUE](https://en.wikipedia.org/wiki/Cue_sheet_(computing)) | `BinCue` | R/W | — | — | — | ✅ | — | — | ✅ | own reader + struct-parity tests | Sector-image editor | [CUE sheet](https://wiki.hydrogenaud.io/index.php?title=Cue_sheet) |
 | [CDI](https://en.wikipedia.org/wiki/DiscJuggler) | `Cdi` | R/W | ✅ | ✅ rebuild | — | — | ✅ | — | ✅ | own reader + struct-parity tests | ISO 9660 edits rebuild; low-level existing-sector rewrite remains available | [DiscJuggler](https://en.wikipedia.org/wiki/DiscJuggler) |
@@ -201,7 +203,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [TI-99/4A DSR](https://en.wikipedia.org/wiki/TI-99/4A) | `Ti99` | R/W | ✅ | ✅ moving | — | ✅ | ✅ | — | ✅ | own reader + struct-parity tests | — | [TI-99/4A disk format](https://www.unige.ch/medecine/nouspikel/ti99/disks.htm) |
 | [TR-DOS](https://en.wikipedia.org/wiki/TR-DOS) | `TrDos` | R/W | ✅ | ✅ moving | — | ✅ | ✅ | — | ✅ | own reader + struct-parity tests | ZX Spectrum TRD | [TR-DOS](https://sinclair.wiki.zxnet.co.uk/wiki/TR-DOS) |
 | [TRSDOS / LDOS](https://en.wikipedia.org/wiki/TRSDOS) | `Trsdos` | R/W | ✅ | ✅ moving | — | ✅ | ✅ | — | ✅ | own reader + struct-parity tests | — | [TRSDOS](https://en.wikipedia.org/wiki/TRSDOS) |
-| [VDFS](https://en.wikipedia.org/wiki/Gothic_(series)) | `Vdfs` | R/W | ✅ | ✅ moving | — | ✅ | ✅ | — | ✅ | own reader + struct-parity tests | Gothic-engine VDFS | [VDFS](https://github.com/PhoenixTales/vdfs) |
+| [VDFS](https://en.wikipedia.org/wiki/Gothic_(series)) | `Vdfs` | R/W | ✅ | ✅ moving | — | ✅ | ✅ | — | ✅ | ZenKit reads the stored and zipped volumes we write; we read GothicVDFS, VDFSTool and ZenKit volumes and reproduce GothicVDFS byte for byte | Gothic (ZenGin) VDF, stored or Union-zipped (zlib ZippedStream); [on-disk notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/VDFS-ON-DISK.md) | [ZenKit](https://github.com/GothicKit/ZenKit) |
 
 ### Minicomputer and workstation
 
@@ -223,7 +225,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [eCryptfs](https://en.wikipedia.org/wiki/ECryptfs) | `Ecryptfs` | R/W | ✅ | — | — | ✅ | ✅ | — | ✅ | [ecryptfs-utils passphrase vector](https://github.com/dustinkirkland/ecryptfs-utils/blob/master/tests/userspace/verify-passphrase-sig.sh) + Linux kernel layout | Passphrase lower-file AES-128/192/256 read/create; private-key auth and xattr-only metadata are unsupported | [eCryptfs](https://www.kernel.org/doc/html/latest/filesystems/ecryptfs.html) |
 | [GlusterFS brick](https://en.wikipedia.org/wiki/Gluster) | `GlusterFs` | R | ✅ | — | — | ✅ | ✅ | — | — | detection of the on-disk signature | Brick metadata only | [GlusterFS](https://docs.gluster.org/) |
 | [IBM Storage Scale / GPFS](https://en.wikipedia.org/wiki/GPFS) | `Gpfs` | R | — | — | — | — | — | — | — | detection of the on-disk signature | IBM Spectrum Scale | [GPFS](https://www.ibm.com/docs/en/storage-scale) |
-| [ISZ (UltraISO)](http://justsolve.archiveteam.org/wiki/ISZ) | `Isz` | R/W | — | — | — | — | — | — | ✅ | isz-tool `verify --slow` / `isz2iso` | Single-segment, unencrypted; zero/stored/zlib chunks written, bzip2 read; CRC-32 verified. Layout: [ISZ-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/ISZ-ON-DISK.md) | [ISZ specification](https://www.ezbsystems.com/isz/iszspec.txt) |
+| [ISZ (UltraISO)](http://justsolve.archiveteam.org/wiki/ISZ) | `Isz` | R/W | — | — | — | — | — | — | — | isz-tool `verify --slow` / `isz2iso` | Single-segment, unencrypted; zero/stored/zlib chunks written, bzip2 read; CRC-32 verified. Layout: [ISZ-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/ISZ-ON-DISK.md) | [ISZ specification](https://www.ezbsystems.com/isz/iszspec.txt) |
 | [JuiceFS](https://juicefs.com/) | `JuiceFs` | R | ✅ | — | — | — | ✅ | — | — | canonical `juicefs dump` JSON/protobuf framing + struct-parity tests | Portable metadata backups only; JSON shrink strips insignificant whitespace; file payloads remain in object storage | [JuiceFS metadata backup](https://juicefs.com/docs/community/metadata_dump_load/) |
 | [Lustre](https://en.wikipedia.org/wiki/Lustre_(file_system)) | `Lustre` | R | ✅ | — | — | ✅ | ✅ | — | — | own reader + struct-parity tests | ldiskfs MDT/OST backing store; conservative offline free-block wipe + trailing-block shrink; namespace edits remain R/O | [Lustre](https://www.lustre.org/) |
 | [MooseFS](https://en.wikipedia.org/wiki/Moose_File_System) | `MooseFs` | R | — | — | — | ✅ | — | — | ✅ | detection of the on-disk signature | Chunk-server objects only | [MooseFS](https://moosefs.com/) |
@@ -283,7 +285,7 @@ ops.Remove(image, ["var/log/old.log"]);
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 869 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/REFERENCE.md).
+Every public and protected member of all 890 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/REFERENCE.md).
 
 <!-- API:END -->
 

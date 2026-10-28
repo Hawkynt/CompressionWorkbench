@@ -55,6 +55,8 @@ public sealed class FilesystemWriteRoundTripTests {
              + "A ReFS corpus would have to come from Windows.",
     ["TahoeLafs"] = "R/W is a live capability-backed namespace — no creator can synthesize a Tahoe grid endpoint and root write-capability. "
                    + "TahoeLafsClientTests exercise the gateway contract with an in-process HTTP oracle.",
+    ["AndroidVbmeta"] = "members are structured AVB descriptors (descriptors/NN_*.bin), so an arbitrary byte blob is not one and the "
+                       + "generic probe cannot be written. AndroidVbmetaTests round-trips real descriptors byte-identical to avbtool.",
   };
 
   /// <summary>
@@ -103,7 +105,8 @@ public sealed class FilesystemWriteRoundTripTests {
   public void ACreatedImage_ReadsTheWrittenBytesBack(string formatId) {
     if (KnownGaps.TryGetValue(formatId, out var gap)) Assert.Ignore($"{formatId}: tracked gap — {gap}");
 
-    var payload = Payload(1, 512);
+    // ISZ's default CD/DVD profile accepts complete 2048-byte sectors.
+    var payload = Payload(1, formatId == "Isz" ? 2048 : 512);
     var image = Create(formatId, [ArchiveInputInfo.InMemory(Probe, payload)]);
     Assert.That(image, Is.Not.Null, $"{formatId} claims CanCreate but produced no image.");
 
@@ -135,7 +138,7 @@ public sealed class FilesystemWriteRoundTripTests {
     if (UnitAddressed.TryGetValue(formatId, out var fixtureName))
       Assert.Ignore($"{formatId}: edited by numbered unit rather than by name — {fixtureName} covers that path.");
 
-    var seed = Payload(2, 384);
+    var seed = Payload(2, formatId == "Isz" ? 2048 : 384);
     var image = Create(formatId, [ArchiveInputInfo.InMemory(Seed, seed)]);
     Assert.That(image, Is.Not.Null, $"{formatId} claims CanModify but a probe image cannot be created.");
 

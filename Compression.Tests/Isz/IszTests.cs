@@ -72,6 +72,23 @@ public class IszTests {
   public void GivenAPartialSector_WhenWritten_ThenRefused()
     => Assert.Throws<ArgumentException>(() => Write(new byte[1000]));
 
+  [TestCase(0)]
+  [TestCase(1)]
+  public void GivenARequiredImage_WhenPurged_ThenRefusedWithoutChangingBytes(int sectors) {
+    var descriptor = new IszFormatDescriptor();
+    var iso = SampleIso(sectors, 7);
+    using var archive = new MemoryStream();
+    descriptor.Create(archive, [ArchiveInputInfo.InMemory("image.iso", iso)], new FormatCreateOptions());
+    var original = archive.ToArray();
+    archive.Position = 0;
+
+    var purgeable = (IArchivePurgeable)descriptor;
+    Assert.That(purgeable.CanPurgeToEmpty, Is.False);
+    Assert.Throws<NotSupportedException>(() => purgeable.Purge(archive));
+    Assert.That(archive.ToArray(), Is.EqualTo(original));
+    Assert.That(Read(archive.ToArray()), Is.EqualTo(iso));
+  }
+
   [Test]
   public void GivenACorruptedChunk_WhenRead_ThenTheCrcRefusesIt() {
     var isz = Write(SampleIso(64, 3));

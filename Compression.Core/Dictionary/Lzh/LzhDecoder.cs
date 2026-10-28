@@ -24,7 +24,7 @@ public sealed class LzhDecoder {
   /// Initializes a new <see cref="LzhDecoder"/>.
   /// </summary>
   /// <param name="input">The stream containing compressed data.</param>
-  /// <param name="positionBits">Number of position bits (13 for lh5, 15 for lh6, 16 for lh7).</param>
+  /// <param name="positionBits">Number of position bits (13 for lh5, 15 for lh6, 16 for lh7, 20 for lhx).</param>
   public LzhDecoder(Stream input, int positionBits = LzhConstants.Lh5PositionBits) {
     this._bits = new(input);
     this._windowSize = 1 << positionBits;
@@ -33,6 +33,7 @@ public sealed class LzhDecoder {
       13 => 4, // lh5
       15 => 5, // lh6
       16 => 5, // lh7
+      20 => 5, // lhx (UNLHA32's 1 MiB window)
       _ => 4
     };
   }

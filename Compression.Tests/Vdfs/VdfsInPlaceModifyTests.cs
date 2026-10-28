@@ -1,4 +1,3 @@
-#pragma warning disable CS1591
 using System.Buffers.Binary;
 using Compression.Registry;
 using FileSystem.Vdfs;
@@ -8,96 +7,87 @@ namespace Compression.Tests.Vdfs;
 [TestFixture]
 public class VdfsInPlaceModifyTests {
 
-  /// <summary>
-  /// Builds a VDFS image with the given seed files using <see cref="VdfsWriter"/>
-  /// and returns it as an expandable seekable stream ready for in-place mutation.
-  /// </summary>
-  private static MemoryStream BuildImage(params (string Name, byte[] Data)[] files) {
-    var w = new VdfsWriter();
+  /// <summary>An expandable seekable stream holding a volume of <paramref name="files" />.</summary>
+  private static MemoryStream BuildImage(params (string Name, byte[] Data)[] files) => BuildImage(false, files);
+
+  private static MemoryStream BuildImage(bool zipped, params (string Name, byte[] Data)[] files) {
+    var w = new VdfsWriter { Zipped = zipped };
     foreach (var (n, d) in files) w.AddFile(n, d);
     var bytes = w.Build();
-    var ms = new MemoryStream(bytes.Length * 4);
+    var ms = new MemoryStream();
     ms.Write(bytes);
-    ms.SetLength(bytes.Length);
     ms.Position = 0;
     return ms;
   }
 
-  /// <summary>
-  /// Returns the (offset, length) window of every live file's payload as the
-  /// original writer placed it: data starts immediately after the writer's
-  /// default 36 + N*80 table and is laid down in declaration order.
-  /// </summary>
-  private static List<(long Offset, long Length, byte[] Bytes)> CaptureOriginalExtents(
-    byte[] image, params (string Name, byte[] Data)[] files) {
-    const int defaultDataStart = 36 + 0; // base; entries occupy N*80
-    var entrySize = 80;
-    var dataStart = 36 + files.Length * entrySize;
-    var extents = new List<(long, long, byte[])>();
-    var cursor = (long)dataStart;
-    foreach (var (_, d) in files) {
-      var slice = image.AsSpan((int)cursor, d.Length).ToArray();
-      extents.Add((cursor, d.Length, slice));
-      cursor += d.Length;
-    }
-    _ = defaultDataStart;
-    return extents;
-  }
-
-  // ── Add (true in-place) ───────────────────────────────────────────────────
-
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Add_AppendsAtTail_ExistingDataByteIdenticalAtOriginalOffsets() {
-    var seedA = "ALPHA_SEED_BYTES"u8.ToArray();
-    var seedB = new byte[200];
-    for (var i = 0; i < seedB.Length; i++) seedB[i] = (byte)(i ^ 0x5A);
-
-    using var img = BuildImage(("a.txt", seedA), ("b.bin", seedB));
-    var originalBytes = img.ToArray();
-    var originalExtents = CaptureOriginalExtents(originalBytes,
-      ("a.txt", seedA), ("b.bin", seedB));
-
-    VdfsInPlaceModifier.AddFile(img, "c.dat", "CHARLIE"u8.ToArray());
-
-    var newBytes = img.ToArray();
-    // Every original data window must contain the exact original bytes.
-    foreach (var (off, len, expected) in originalExtents) {
-      var actual = newBytes.AsSpan((int)off, (int)len).ToArray();
-      Assert.That(actual, Is.EqualTo(expected),
-        $"original payload at offset {off}..+{len} was disturbed");
-    }
-  }
-
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Add_LeavesSurvivingEntryRecordsByteIdentical() {
-    // After Add, the new entry table lives at a fresh offset, but the
-    // surviving entry records must be byte-identical to the writer's originals
-    // (they carry the unchanged jump/size/type fields).
-    using var img = BuildImage(("a.txt", "AAA"u8.ToArray()), ("b.txt", "BBB"u8.ToArray()));
-    var original = img.ToArray();
-    var entrySize = 80;
-    var origEntries = new[] {
-      original.AsSpan(36, entrySize).ToArray(),
-      original.AsSpan(36 + entrySize, entrySize).ToArray(),
-    };
-
-    VdfsInPlaceModifier.AddFile(img, "c.txt", "CCC"u8.ToArray());
-
+  private static Dictionary<string, VdfsEntry> Files(MemoryStream img, out VdfsReader reader) {
     img.Position = 0;
-    var ctx = new VdfsReader(img);
-    img.Position = 0;
-    var newBytes = img.ToArray();
-    var newRootOffset = BinaryPrimitives.ReadUInt32LittleEndian(newBytes.AsSpan(32));
-
-    var actualA = newBytes.AsSpan((int)newRootOffset, entrySize).ToArray();
-    var actualB = newBytes.AsSpan((int)newRootOffset + entrySize, entrySize).ToArray();
-    Assert.That(actualA, Is.EqualTo(origEntries[0]),
-      "surviving entry a.txt must be byte-identical after relocation");
-    Assert.That(actualB, Is.EqualTo(origEntries[1]),
-      "surviving entry b.txt must be byte-identical after relocation");
+    reader = new VdfsReader(img, leaveOpen: true);
+    return reader.Entries.Where(e => !e.IsDirectory).ToDictionary(e => e.Name);
   }
 
-  [Test, Category("HappyPath"), Category("RoundTrip")]
+  private static Dictionary<string, (long Offset, long Stored)> Extents(MemoryStream img) {
+    img.Position = 0;
+    return new VdfsFormatDescriptor().EnumerateExtents(img)
+      .Where(e => e.Kind == DefragBlockKind.Used)
+      .ToDictionary(e => e.FileName!, e => (e.Offset, e.Length));
+  }
+
+  private static byte[] Filled(int length, byte value) {
+    var data = new byte[length];
+    Array.Fill(data, value);
+    return data;
+  }
+
+  // ── Add ──────────────────────────────────────────────────────────────────
+
+  [Test, Category("InPlace")]
+  public void Add_PayloadsBeyondTheGrownCatalog_KeepOffsetAndBytes() {
+    // Given A (100 bytes) right behind the catalog and B behind A
+    using var img = BuildImage(("a.bin", Filled(100, 0xAA)), ("b.bin", Filled(300, 0xBB)));
+    var before = Extents(img);
+    var bBytes = img.ToArray().AsSpan((int)before["B.BIN"].Offset, 300).ToArray();
+
+    // When a file is added, growing the catalog by one 80-byte entry into A's first bytes
+    VdfsInPlaceModifier.AddFile(img, "c.bin", Filled(10, 0xCC));
+
+    // Then B, which the catalog does not reach, keeps its offset and bytes
+    var after = Extents(img);
+    Assert.That(after["B.BIN"].Offset, Is.EqualTo(before["B.BIN"].Offset));
+    Assert.That(img.ToArray().AsSpan((int)after["B.BIN"].Offset, 300).ToArray(), Is.EqualTo(bBytes));
+
+    // And A has moved out of the catalog's way, to the end, intact
+    Assert.That(after["A.BIN"].Offset, Is.GreaterThan(before["B.BIN"].Offset));
+    var files = Files(img, out var r);
+    using (r) Assert.That(r.Extract(files["A.BIN"]), Is.EqualTo(Filled(100, 0xAA)));
+  }
+
+  [Test, Category("InPlace")]
+  public void Add_CatalogStaysAt296_HeaderCountsFollow() {
+    using var img = BuildImage(("a.txt", "A"u8.ToArray()));
+    VdfsInPlaceModifier.AddFile(img, "dir/b.txt", "BB"u8.ToArray());
+
+    var bytes = img.ToArray();
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(288)), Is.EqualTo(296u));
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(272)), Is.EqualTo(3u), "DIR, A.TXT, B.TXT");
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(276)), Is.EqualTo(2u));
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(284)), Is.EqualTo(3u));
+  }
+
+  [Test, Category("InPlace")]
+  public void Add_RelocatedPayload_LeavesNoStaleCopy() {
+    // Given a marker payload right behind the catalog, longer than one entry
+    var marker = "VDFS_RELOCATION_MARKER_0123456789_VDFS_RELOCATION_MARKER_0123456789_VDFS_RELOCATION_MARKER"u8.ToArray();
+    using var img = BuildImage(("a.bin", marker));
+
+    // When an add pushes it to the end
+    VdfsInPlaceModifier.AddFile(img, "b.bin", [1]);
+
+    // Then exactly one copy of it remains
+    Assert.That(Occurrences(img.ToArray(), marker), Is.EqualTo(1));
+  }
+
+  [Test, Category("InPlace")]
   public void Add_NewFileRoundTripsThroughReader() {
     using var img = BuildImage(("seed.txt", "SEED"u8.ToArray()));
     var payload = new byte[1024];
@@ -105,271 +95,179 @@ public class VdfsInPlaceModifyTests {
 
     VdfsInPlaceModifier.AddFile(img, "added.bin", payload);
 
-    img.Position = 0;
-    var r = new VdfsReader(img);
-    var names = r.Entries.Where(e => !e.IsDirectory).Select(e => e.Name).ToList();
-    Assert.That(names, Is.EquivalentTo(new[] { "seed.txt", "added.bin" }));
-    var entry = r.Entries.First(e => e.Name == "added.bin");
-    Assert.That(r.Extract(entry), Is.EqualTo(payload));
-  }
-
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Add_HeaderRootOffsetMovedToNewTableLocation() {
-    using var img = BuildImage(("a.txt", "A"u8.ToArray()));
-    VdfsInPlaceModifier.AddFile(img, "b.txt", "B"u8.ToArray());
-
-    var bytes = img.ToArray();
-    var rootOffset = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(32));
-    Assert.That(rootOffset, Is.GreaterThan((uint)(36 + 80)),
-      "root offset must point past the original entry-table region");
-    Assert.That(rootOffset + 2 * 80, Is.LessThanOrEqualTo((uint)bytes.Length),
-      "relocated table must fit inside the image");
-  }
-
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Add_MultipleAdds_AllReadable_AllOriginalSurvives() {
-    var seedAlpha = "ALPHA"u8.ToArray();
-    var seedBeta = "BETA"u8.ToArray();
-    using var img = BuildImage(("alpha.txt", seedAlpha), ("beta.txt", seedBeta));
-    var originalExtents = CaptureOriginalExtents(img.ToArray(),
-      ("alpha.txt", seedAlpha), ("beta.txt", seedBeta));
-
-    VdfsInPlaceModifier.AddFile(img, "c.txt", "CCC"u8.ToArray());
-    VdfsInPlaceModifier.AddFile(img, "d.txt", "DDDD"u8.ToArray());
-    VdfsInPlaceModifier.AddFile(img, "e.txt", "EEEEE"u8.ToArray());
-
-    var snapshot = img.ToArray();
-    foreach (var (off, len, expected) in originalExtents) {
-      Assert.That(snapshot.AsSpan((int)off, (int)len).ToArray(),
-        Is.EqualTo(expected),
-        $"original payload at {off}..+{len} survived the add cascade");
+    var files = Files(img, out var r);
+    using (r) {
+      Assert.That(files.Keys, Is.EquivalentTo(new[] { "SEED.TXT", "ADDED.BIN" }));
+      Assert.That(r.Extract(files["ADDED.BIN"]), Is.EqualTo(payload));
+      Assert.That(r.Extract(files["SEED.TXT"]), Is.EqualTo("SEED"u8.ToArray()));
+      Assert.That(r.IsPartial, Is.False);
     }
-
-    img.Position = 0;
-    var r = new VdfsReader(img);
-    var names = r.Entries.Where(e => !e.IsDirectory).Select(e => e.Name).ToList();
-    Assert.That(names, Is.EquivalentTo(new[] { "alpha.txt", "beta.txt", "c.txt", "d.txt", "e.txt" }));
   }
 
-  // ── Remove (true in-place) ────────────────────────────────────────────────
+  [Test, Category("InPlace")]
+  public void Add_MultipleAdds_AllReadable() {
+    using var img = BuildImage(("alpha.txt", "ALPHA"u8.ToArray()), ("beta.txt", "BETA"u8.ToArray()));
+    VdfsInPlaceModifier.AddFile(img, "c.txt", "CCC"u8.ToArray());
+    VdfsInPlaceModifier.AddFile(img, "sub/d.txt", "DDDD"u8.ToArray());
+    VdfsInPlaceModifier.AddFile(img, "sub/deeper/e.txt", "EEEEE"u8.ToArray());
 
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Remove_LeavesRemainingDataByteIdenticalAtOriginalOffsets() {
-    var keepA = "KEEP_AAA"u8.ToArray();
-    var dropB = new byte[64];
-    for (var i = 0; i < dropB.Length; i++) dropB[i] = (byte)(i * 7);
-    var keepC = "KEEP_CCC"u8.ToArray();
+    var files = Files(img, out var r);
+    using (r) {
+      Assert.That(files.Keys, Is.EquivalentTo(new[] { "ALPHA.TXT", "BETA.TXT", "C.TXT", "SUB/D.TXT", "SUB/DEEPER/E.TXT" }));
+      Assert.That(r.Extract(files["ALPHA.TXT"]), Is.EqualTo("ALPHA"u8.ToArray()));
+      Assert.That(r.Extract(files["SUB/DEEPER/E.TXT"]), Is.EqualTo("EEEEE"u8.ToArray()));
+    }
+  }
 
-    using var img = BuildImage(("a.txt", keepA), ("b.txt", dropB), ("c.txt", keepC));
-    // Original data layout for survivors (a is before b, c is after b).
-    var originalBytes = img.ToArray();
-    var entrySize = 80;
-    var dataStart = 36 + 3 * entrySize;
-    var aOff = dataStart;
-    var aBytes = originalBytes.AsSpan(aOff, keepA.Length).ToArray();
-    var cOff = aOff + keepA.Length + dropB.Length;
-    var cBytes = originalBytes.AsSpan(cOff, keepC.Length).ToArray();
+  [Test, Category("InPlace")]
+  public void Add_ToZippedVolume_ZipsNewPayloads_ButNotSound() {
+    using var img = BuildImage(true, ("seed.bin", Filled(4000, 1)));
+    VdfsInPlaceModifier.AddFile(img, "more.bin", Filled(9000, 2));
+    VdfsInPlaceModifier.AddFile(img, "theme.wav", Filled(500, 3));
 
-    VdfsInPlaceModifier.RemoveFile(img, "b.txt", wipeData: true);
+    var files = Files(img, out var r);
+    using (r) {
+      Assert.That(files["MORE.BIN"].IsZipped, Is.True);
+      Assert.That(files["THEME.WAV"].IsZipped, Is.False);
+      Assert.That(r.Extract(files["MORE.BIN"]), Is.EqualTo(Filled(9000, 2)));
+      Assert.That(r.Extract(files["THEME.WAV"]), Is.EqualTo(Filled(500, 3)));
+      Assert.That(r.Extract(files["SEED.BIN"]), Is.EqualTo(Filled(4000, 1)));
+    }
+  }
 
+  // ── Remove ───────────────────────────────────────────────────────────────
+
+  [Test, Category("InPlace")]
+  public void Remove_SurvivorsKeepOffsetsAndBytes() {
+    using var img = BuildImage(("a.txt", "KEEP_AAA"u8.ToArray()), ("b.txt", Filled(64, 7)), ("c.txt", "KEEP_CCC"u8.ToArray()));
+    var before = Extents(img);
     var snapshot = img.ToArray();
-    Assert.That(snapshot.AsSpan(aOff, keepA.Length).ToArray(), Is.EqualTo(aBytes),
-      "kept a.txt data must remain byte-identical at original offset");
-    Assert.That(snapshot.AsSpan(cOff, keepC.Length).ToArray(), Is.EqualTo(cBytes),
-      "kept c.txt data must remain byte-identical at original offset");
-  }
-
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Remove_LeavesSurvivingEntryRecordsByteIdentical() {
-    var entrySize = 80;
-    using var img = BuildImage(
-      ("a.txt", "A"u8.ToArray()),
-      ("b.txt", "B"u8.ToArray()),
-      ("c.txt", "C"u8.ToArray()));
-    var original = img.ToArray();
-    var aRec = original.AsSpan(36, entrySize).ToArray();
-    var cRec = original.AsSpan(36 + 2 * entrySize, entrySize).ToArray();
 
     VdfsInPlaceModifier.RemoveFile(img, "b.txt");
 
-    var snapshot = img.ToArray();
-    Assert.That(snapshot.AsSpan(36, entrySize).ToArray(), Is.EqualTo(aRec),
-      "a.txt entry record must be untouched");
-    Assert.That(snapshot.AsSpan(36 + 2 * entrySize, entrySize).ToArray(), Is.EqualTo(cRec),
-      "c.txt entry record must be untouched");
+    var after = Extents(img);
+    var now = img.ToArray();
+    foreach (var name in new[] { "A.TXT", "C.TXT" }) {
+      Assert.That(after[name], Is.EqualTo(before[name]), $"{name} moved");
+      var (offset, length) = before[name];
+      Assert.That(now.AsSpan((int)offset, (int)length).ToArray(), Is.EqualTo(snapshot.AsSpan((int)offset, (int)length).ToArray()));
+    }
   }
 
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Remove_DisappearsFromListing() {
+  [Test, Category("InPlace")]
+  public void Remove_DisappearsFromListing_AndTheOldCatalogTailIsZeroed() {
     using var img = BuildImage(("a.txt", "A"u8.ToArray()), ("b.txt", "B"u8.ToArray()));
-    var removed = VdfsInPlaceModifier.RemoveFile(img, "a.txt");
-    Assert.That(removed, Is.True);
+    Assert.That(VdfsInPlaceModifier.RemoveFile(img, "a.txt"), Is.True);
+
+    var files = Files(img, out var r);
+    using (r) Assert.That(files.Keys, Is.EquivalentTo(new[] { "B.TXT" }));
+
+    // The second entry slot held the old catalog; nothing of it may remain to be read back
+    var bytes = img.ToArray();
+    Assert.That(bytes.AsSpan(296 + 80, 80).ToArray(), Is.All.EqualTo(0));
+  }
+
+  [Test, Category("InPlace")]
+  public void Remove_Directory_RemovesEverythingUnderIt() {
+    using var img = BuildImage(("dir/a.txt", "A"u8.ToArray()), ("dir/sub/b.txt", "B"u8.ToArray()), ("c.txt", "C"u8.ToArray()));
+    Assert.That(VdfsInPlaceModifier.RemoveFile(img, "DIR"), Is.True);
 
     img.Position = 0;
-    var r = new VdfsReader(img);
-    var names = r.Entries.Where(e => !e.IsDirectory).Select(e => e.Name).ToList();
-    Assert.That(names, Is.EquivalentTo(new[] { "b.txt" }));
+    using var r = new VdfsReader(img, leaveOpen: true);
+    Assert.That(r.Entries.Select(e => e.Name), Is.EquivalentTo(new[] { "C.TXT" }));
   }
 
-  [Test, Category("HappyPath")]
-  public void Remove_MissingEntry_ReturnsFalse() {
+  [Test, Category("InPlace")]
+  public void Remove_MissingEntry_ReturnsFalse_AndChangesNothing() {
     using var img = BuildImage(("a.txt", "A"u8.ToArray()));
-    var removed = VdfsInPlaceModifier.RemoveFile(img, "missing.bin");
-    Assert.That(removed, Is.False);
+    var before = img.ToArray();
+    Assert.That(VdfsInPlaceModifier.RemoveFile(img, "missing.bin"), Is.False);
+    Assert.That(img.ToArray(), Is.EqualTo(before));
   }
 
   [Test, Category("Security")]
   public void Remove_WipesDataExtent() {
     var marker = "VDFS_INPLACE_REMOVE_MARKER_4242"u8.ToArray();
     using var img = BuildImage(("secret.dat", marker), ("other.dat", "OTHER"u8.ToArray()));
-
     VdfsInPlaceModifier.RemoveFile(img, "secret.dat", wipeData: true);
-
-    var bytes = img.ToArray();
-    Assert.That(IndexOf(bytes, marker), Is.LessThan(0),
-      "secret payload bytes must be wiped from the archive");
+    Assert.That(Occurrences(img.ToArray(), marker), Is.EqualTo(0));
   }
 
-  // ── Replace (in-place when it fits) ───────────────────────────────────────
+  // ── Replace ──────────────────────────────────────────────────────────────
 
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Replace_Fits_RewritesAtOriginalOffset_LeavesOtherDataByteIdentical() {
-    var entrySize = 80;
-    var seedA = "ALPHA_ORIGINAL_"u8.ToArray(); // 15 bytes
-    var seedB = "BETA_KEEP"u8.ToArray();
-    using var img = BuildImage(("a.txt", seedA), ("b.txt", seedB));
-    var original = img.ToArray();
-    var dataStart = 36 + 2 * entrySize;
-    var aOff = dataStart;
-    var bOff = aOff + seedA.Length;
-    var bBytes = original.AsSpan(bOff, seedB.Length).ToArray();
+  [Test, Category("InPlace")]
+  public void Replace_Fits_RewritesAtOriginalOffset_LeavesOthersAlone() {
+    using var img = BuildImage(("a.txt", "ALPHA_ORIGINAL_"u8.ToArray()), ("b.txt", "BETA_KEEP"u8.ToArray()));
+    var before = Extents(img);
 
-    var smallerA = "FITS"u8.ToArray(); // 4 bytes (< 15)
-    var ok = VdfsInPlaceModifier.ReplaceFile(img, "a.txt", smallerA);
-    Assert.That(ok, Is.True);
+    Assert.That(VdfsInPlaceModifier.ReplaceFile(img, "a.txt", "FITS"u8.ToArray()), Is.True);
 
-    var snap = img.ToArray();
-    // Other file's data untouched.
-    Assert.That(snap.AsSpan(bOff, seedB.Length).ToArray(), Is.EqualTo(bBytes),
-      "neighbour file payload must be byte-identical after in-place replace");
-    // a.txt's data now at the same offset, new bytes.
-    Assert.That(snap.AsSpan(aOff, smallerA.Length).ToArray(), Is.EqualTo(smallerA),
-      "replaced payload must live at the original extent offset");
-
-    img.Position = 0;
-    var r = new VdfsReader(img);
-    var entry = r.Entries.First(e => e.Name == "a.txt");
-    Assert.That(r.Extract(entry), Is.EqualTo(smallerA));
+    var after = Extents(img);
+    Assert.That(after["A.TXT"].Offset, Is.EqualTo(before["A.TXT"].Offset));
+    Assert.That(after["A.TXT"].Stored, Is.EqualTo(4));
+    Assert.That(after["B.TXT"], Is.EqualTo(before["B.TXT"]));
+    var files = Files(img, out var r);
+    using (r) {
+      Assert.That(r.Extract(files["A.TXT"]), Is.EqualTo("FITS"u8.ToArray()));
+      Assert.That(r.Extract(files["B.TXT"]), Is.EqualTo("BETA_KEEP"u8.ToArray()));
+    }
   }
 
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Replace_TooLarge_FallsBackToRemoveAdd_StillRoundTrips() {
-    using var img = BuildImage(("a.txt", "AAA"u8.ToArray()), ("b.txt", "BBB"u8.ToArray()));
-    var big = new byte[500];
+  [TestCase(false)]
+  [TestCase(true)]
+  [Category("InPlace")]
+  public void Replace_TooLarge_MovesToTheEnd_StillRoundTrips(bool zipped) {
+    using var img = BuildImage(zipped, ("a.txt", "AAA"u8.ToArray()), ("b.txt", "BBB"u8.ToArray()));
+    var big = new byte[50000];
     new Random(7).NextBytes(big);
 
-    var ok = VdfsInPlaceModifier.ReplaceFile(img, "a.txt", big);
-    Assert.That(ok, Is.True);
+    Assert.That(VdfsInPlaceModifier.ReplaceFile(img, "a.txt", big), Is.True);
 
-    img.Position = 0;
-    var r = new VdfsReader(img);
-    var a = r.Entries.First(e => e.Name == "a.txt");
-    var b = r.Entries.First(e => e.Name == "b.txt");
-    Assert.That(r.Extract(a), Is.EqualTo(big));
-    Assert.That(r.Extract(b), Is.EqualTo("BBB"u8.ToArray()));
+    var files = Files(img, out var r);
+    using (r) {
+      Assert.That(r.Extract(files["A.TXT"]), Is.EqualTo(big));
+      Assert.That(r.Extract(files["B.TXT"]), Is.EqualTo("BBB"u8.ToArray()));
+    }
   }
 
-  // ── Mutate-then-extract round-trip ────────────────────────────────────────
+  // ── Mixed ────────────────────────────────────────────────────────────────
 
-  [Test, Category("HappyPath"), Category("RoundTrip")]
+  [Test, Category("InPlace")]
   public void MutateThenExtract_RoundTrip() {
-    using var img = BuildImage(
-      ("keep.txt", "KEEP"u8.ToArray()),
-      ("drop.txt", "DROPME"u8.ToArray()));
+    using var img = BuildImage(("keep.txt", "KEEP"u8.ToArray()), ("drop.txt", "DROPME"u8.ToArray()));
 
     VdfsInPlaceModifier.AddFile(img, "added.bin", "ADDED_BYTES"u8.ToArray());
     VdfsInPlaceModifier.RemoveFile(img, "drop.txt");
-    VdfsInPlaceModifier.AddFile(img, "tail.dat", new byte[] { 1, 2, 3, 4, 5 });
+    VdfsInPlaceModifier.AddFile(img, "tail.dat", [1, 2, 3, 4, 5]);
 
-    img.Position = 0;
-    var r = new VdfsReader(img);
-    var names = r.Entries.Where(e => !e.IsDirectory).Select(e => e.Name).ToList();
-    Assert.That(names, Is.EquivalentTo(new[] { "keep.txt", "added.bin", "tail.dat" }));
-
-    Assert.That(r.Extract(r.Entries.First(e => e.Name == "keep.txt")),
-      Is.EqualTo("KEEP"u8.ToArray()));
-    Assert.That(r.Extract(r.Entries.First(e => e.Name == "added.bin")),
-      Is.EqualTo("ADDED_BYTES"u8.ToArray()));
-    Assert.That(r.Extract(r.Entries.First(e => e.Name == "tail.dat")),
-      Is.EqualTo(new byte[] { 1, 2, 3, 4, 5 }));
-  }
-
-  // ── Descriptor wiring (routes through VdfsInPlaceModifier, not rebuild) ──
-
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Descriptor_Add_UsesInPlaceModifier_PreservesOriginalDataBytes() {
-    var seed = "DESCRIPTOR_SEED_BYTES"u8.ToArray();
-    using var img = BuildImage(("seed.dat", seed));
-    var original = img.ToArray();
-    // The seed file's bytes live at offset 36 + 80 = 116.
-    var seedOffset = 36 + 80;
-    var seedSlice = original.AsSpan(seedOffset, seed.Length).ToArray();
-
-    var tmp = Path.GetTempFileName();
-    try {
-      File.WriteAllBytes(tmp, "via descriptor"u8.ToArray());
-      var d = new VdfsFormatDescriptor();
-      ((IArchiveModifiable)d).Add(img,
-        [new ArchiveInputInfo(tmp, "added.txt", false)]);
-
-      var snap = img.ToArray();
-      Assert.That(snap.AsSpan(seedOffset, seed.Length).ToArray(),
-        Is.EqualTo(seedSlice),
-        "Add through descriptor must preserve original data bytes at original offset");
-
-      img.Position = 0;
-      var entries = d.List(img, null);
-      Assert.That(entries.Where(e => !e.IsDirectory).Select(e => e.Name),
-        Has.Member("added.txt"));
-      Assert.That(entries.Where(e => !e.IsDirectory).Select(e => e.Name),
-        Has.Member("seed.dat"));
-    } finally {
-      File.Delete(tmp);
+    var files = Files(img, out var r);
+    using (r) {
+      Assert.That(files.Keys, Is.EquivalentTo(new[] { "KEEP.TXT", "ADDED.BIN", "TAIL.DAT" }));
+      Assert.That(r.Extract(files["KEEP.TXT"]), Is.EqualTo("KEEP"u8.ToArray()));
+      Assert.That(r.Extract(files["ADDED.BIN"]), Is.EqualTo("ADDED_BYTES"u8.ToArray()));
+      Assert.That(r.Extract(files["TAIL.DAT"]), Is.EqualTo(new byte[] { 1, 2, 3, 4, 5 }));
     }
   }
 
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Descriptor_Remove_UsesInPlaceModifier_PreservesNeighbourData() {
-    var keep = "DESC_KEEP_BYTES"u8.ToArray();
-    var drop = "DESC_DROP_BYTES"u8.ToArray();
-    using var img = BuildImage(("keep.txt", keep), ("drop.txt", drop));
-    var original = img.ToArray();
-    var keepOffset = 36 + 2 * 80;
-    var keepSlice = original.AsSpan(keepOffset, keep.Length).ToArray();
+  [Test, Category("InPlace")]
+  public void Descriptor_Remove_PreservesNeighbourData() {
+    using var img = BuildImage(("keep.txt", "DESC_KEEP_BYTES"u8.ToArray()), ("drop.txt", "DESC_DROP_BYTES"u8.ToArray()));
+    var before = Extents(img);
+    var keep = img.ToArray().AsSpan((int)before["KEEP.TXT"].Offset, 15).ToArray();
 
-    var d = new VdfsFormatDescriptor();
-    ((IArchiveModifiable)d).Remove(img, ["drop.txt"]);
+    new VdfsFormatDescriptor().Remove(img, ["drop.txt"]);
 
-    var snap = img.ToArray();
-    Assert.That(snap.AsSpan(keepOffset, keep.Length).ToArray(),
-      Is.EqualTo(keepSlice),
-      "Remove through descriptor must leave neighbour file data byte-identical");
-
+    var after = Extents(img);
+    Assert.That(after["KEEP.TXT"], Is.EqualTo(before["KEEP.TXT"]));
+    Assert.That(img.ToArray().AsSpan((int)after["KEEP.TXT"].Offset, 15).ToArray(), Is.EqualTo(keep));
     img.Position = 0;
-    var names = d.List(img, null).Where(e => !e.IsDirectory).Select(e => e.Name).ToList();
-    Assert.That(names, Is.EquivalentTo(new[] { "keep.txt" }));
+    Assert.That(new VdfsFormatDescriptor().List(img, null).Select(e => e.Name), Is.EquivalentTo(new[] { "KEEP.TXT" }));
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-
-  private static int IndexOf(byte[] haystack, byte[] needle) {
-    for (var i = 0; i + needle.Length <= haystack.Length; i++) {
-      var match = true;
-      for (var j = 0; j < needle.Length; j++) {
-        if (haystack[i + j] != needle[j]) { match = false; break; }
-      }
-      if (match) return i;
-    }
-    return -1;
+  private static int Occurrences(byte[] haystack, byte[] needle) {
+    var count = 0;
+    for (var i = 0; i + needle.Length <= haystack.Length; i++)
+      if (haystack.AsSpan(i, needle.Length).SequenceEqual(needle)) ++count;
+    return count;
   }
 }

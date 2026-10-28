@@ -34,6 +34,8 @@ public sealed class IszFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description => "UltraISO ISZ compressed ISO image (zlib/bzip2 chunks, CRC-32 verified)";
+  /// <summary>An ISZ requires its image member, so purge cannot leave an empty container.</summary>
+  public bool CanPurgeToEmpty => false;
   public IReadOnlySet<string> SyntheticEntryNames => Synthetic;
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
