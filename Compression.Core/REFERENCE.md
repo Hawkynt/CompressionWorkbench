@@ -636,6 +636,18 @@ Decodes ARJ method 4 ("fastest"), the LZ77 variant ARJ uses when asked for speed
 | --- | --- | --- |
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize)` | Decodes `originalSize` bytes of method-4 data. |
 
+### Namespace `Compression.Core.Dictionary.Azo`
+
+[`AzoDecoder`](#azodecoder)
+
+#### `AzoDecoder`
+
+ESTsoft's AZO compression (EGG method 3): independent blocks, each an LZ77 parse coded with an adaptive binary arithmetic coder — literal and length models predicted from context, a distance history, a small dictionary of recent matches.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, long expectedSize)` | Decodes an AZO stream into exactly `expectedSize` bytes. |
+
 ### Namespace `Compression.Core.Dictionary.Balz`
 
 [`BalzBuildingBlock`](#balzbuildingblock)

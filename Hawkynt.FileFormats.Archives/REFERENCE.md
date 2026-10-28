@@ -14493,9 +14493,10 @@ Implements `IDisposable`.
 | `EggReader` | `EggReader(Stream stream, bool leaveOpen = false)` | Opens an EGG archive over the given seekable stream and parses its directory. |
 | `Entries` | `IReadOnlyList<EggEntry> Entries { get; }` | File entries discovered in the archive. |
 | `IsGloballyEncrypted` | `bool IsGloballyEncrypted { get; }` | True when a global (archive-level) encryption header is present. |
+| `IsSolid` | `bool IsSolid { get; }` | True when the members are compressed as one solid stream. |
 | `IsSplit` | `bool IsSplit { get; }` | True when the archive is a member of a split (multi-volume) set. |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(EggEntry entry)` | Extracts and decompresses an entry into a byte array. Store and Deflate blocks are decoded natively; any other algorithm, or an encrypted / split-volume entry, raises `NotSupportedException` rather than returning wrong bytes. Every decoded block is checked against its declared size and CRC-32. |
+| `Extract` | `byte[] Extract(EggEntry entry, string password = null)` | Extracts and decompresses an entry: stored, deflate, bzip2, AZO and LZMA blocks, ZIP 2.0 / AES / LEA encryption, solid archives. Split (multi-volume) members raise `NotSupportedException` rather than returning wrong bytes. Every decoded block is checked against its declared size and CRC-32. |
 
 #### `EggWriter`
 

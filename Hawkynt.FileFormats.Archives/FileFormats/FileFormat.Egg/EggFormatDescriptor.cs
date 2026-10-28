@@ -44,7 +44,7 @@ public sealed class EggFormatDescriptor :
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
-    FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.SupportsDirectories | FormatCapabilities.SupportsPassword;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -79,7 +79,7 @@ public sealed class EggFormatDescriptor :
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "ESTsoft ALZip EGG archive (Store/Deflate read + write)";
+  public string Description => "ESTsoft ALZip EGG archive (reads stored/deflate/bzip2/AZO/LZMA, ZIP 2.0/AES/LEA encryption, solid; writes stored/deflate)";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -102,7 +102,7 @@ public sealed class EggFormatDescriptor :
         CreateSafeDirectory(outputDir, e.Name);
         continue;
       }
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      WriteFile(outputDir, e.Name, r.Extract(e, password));
     }
   }
 
@@ -118,7 +118,7 @@ public sealed class EggFormatDescriptor :
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-      var bytes = r.Extract(e);
+      var bytes = r.Extract(e, password);
       return new Compression.Registry.Streaming.BoundedEntryStream(
         new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
     }

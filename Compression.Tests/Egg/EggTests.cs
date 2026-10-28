@@ -183,14 +183,14 @@ public class EggTests {
   [Test, Category("HappyPath")]
   public void UnsupportedMethod_ListsButThrowsOnExtract() {
     var payload = "ignored"u8.ToArray();
-    // Algorithm 4 = LZMA — listed, but extraction must throw rather than fake bytes.
-    var archive = BuildStoreOrRaw("movie.lzma", payload, payload, algorithm: 4);
+    // Algorithm 9 is not an EGG method — listed, but extraction must throw rather than fake bytes.
+    var archive = BuildStoreOrRaw("movie.lzma", payload, payload, algorithm: 9);
 
     var d = new EggFormatDescriptor();
     using var ms = new MemoryStream(archive);
     var entries = d.List(ms, null);
     Assert.That(entries, Has.Count.EqualTo(1));
-    Assert.That(entries[0].Method, Is.EqualTo("LZMA"));
+    Assert.That(entries[0].Method, Is.EqualTo("Method9"));
 
     ms.Position = 0;
     Assert.Throws<NotSupportedException>(() =>

@@ -54,6 +54,9 @@ public sealed class EggEntry {
     _ => $"Method{PrimaryAlgorithm}",
   };
 
+  /// <summary>The entry's encryption field, when it has one.</summary>
+  internal EggEncryption? Encryption { get; set; }
+
   /// <summary>The physical data blocks that make up the entry, in order.</summary>
   internal List<EggBlock> Blocks { get; } = [];
 }
