@@ -13,6 +13,14 @@ public sealed class IsoEntry {
   public bool IsDirectory { get; init; }
   /// <summary>Last modification timestamp.</summary>
   public DateTime? LastModified { get; init; }
+  /// <summary>Whether the entry is a Rock Ridge symbolic link (SL).</summary>
+  public bool IsSymlink { get; init; }
+  /// <summary>The symbolic link's target, when <see cref="IsSymlink" />.</summary>
+  public string? LinkTarget { get; init; }
+  /// <summary>zisofs parameters when the file's data is zisofs-compressed (Rock Ridge ZF).</summary>
+  internal ZisofsInfo? Zisofs { get; init; }
+  /// <summary>Length of the bytes stored on the disc (differs from <see cref="Size" /> for zisofs).</summary>
+  internal long StoredSize { get; init; }
   internal long DataOffset { get; init; }
   internal IReadOnlyList<IsoDataSegment> DataSegments { get; init; } = [];
   internal string? MountLimitation { get; init; }
