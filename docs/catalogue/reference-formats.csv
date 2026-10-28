@@ -210,7 +210,7 @@ MacBinary,bin;macbin,encoding,,,R,,R,fmt/1761;fmt/1762;fmt/1763,,3,https://en.wi
 AppleSingle / AppleDouble,as;adouble,encoding,,,R,,,fmt/967;fmt/968,,2,https://www.rfc-editor.org/rfc/rfc1740,AppleSingle;AppleDouble,Y,Y,Y,OK,,
 Intel HEX,hex;ihex,firmware,R,,,,,,,1,https://en.wikipedia.org/wiki/Intel_HEX,IntelHex,Y,Y,Y,OK,,
 Motorola S-record,srec;s19;mot,firmware,,,,R,,,,1,https://en.wikipedia.org/wiki/SREC_(file_format),Srec,Y,Y,,OK,,
-NSIS installer,exe;nsis,installer,R,,R,,R,,,3,https://nsis.sourceforge.io/,Nsis,Y,Y,,PARTIAL,,solid installers cannot be extracted per entry (NsisReader.cs)
+NSIS installer,exe;nsis,installer,R,,R,,R,,,3,https://nsis.sourceforge.io/,Nsis,Y,,,READ-ONLY-BUT-SOURCES-WRITE,makensis,LZMA behind the x86 branch filter refused; uninstaller payload not listed (NsisReader.cs)
 Inno Setup,exe,installer,,,,,R,,,1,https://jrsoftware.org/isinfo.php,InnoSetup,Y,Y,,PARTIAL,,listing only; file extraction throws for every Inno version (InnoSetupReader.cs)
 InstallShield (cab / exe),exe;cab;ex_;hdr,installer,,,,,R,fmt/1466,,2,,,,,,MISSING,,
 Wise Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
@@ -239,7 +239,7 @@ Enigma Virtual Box,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 MoleBox,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 UPX-packed executable,exe;dll,executable,,,,,R,,,1,https://upx.github.io/,Upx,Y,,,READ-ONLY-BUT-SOURCES-WRITE,upx,
 macOS Installer package (flat pkg),pkg;mpkg,installer,,,,,,,Y,1,,Xar,Y,Y,Y,OK,,
-ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet;mdf;nrg;toast,filesystem,R,RW,R,R,R,fmt/1739;fmt/1741;fmt/1757;fmt/468,RW,7,https://www.ecma-international.org/publications-and-standards/standards/ecma-119/,Iso,Y,Y,Y,PARTIAL,,"Rock Ridge limited to NM names (no SL/PX/TF/CE, no zisofs); interleaved files throw (IsoReader.cs)"
+ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet;mdf;nrg;toast,filesystem,R,RW,R,R,R,fmt/1739;fmt/1741;fmt/1757;fmt/468,RW,7,https://www.ecma-international.org/publications-and-standards/standards/ecma-119/,Iso,Y,Y,Y,PARTIAL,,"Rock Ridge names (NM+CE), symlinks (SL), relocated directories (RE/CL) and zisofs (ZF) decoded; PX/TF not surfaced; interleaved files throw (IsoReader.cs)"
 High Sierra format,iso;hsf,filesystem,,,,,,,Y,1,http://www.os2museum.com/files/docs/cdrom/hsg_wp.html,HighSierra,Y,Y,,OK,,
 UDF,udf;cdr;dmg;iso;toast,filesystem,R,,,,,fmt/1738;fmt/1739;fmt/1757,Y,3,https://www.osta.org/specs/,Udf,Y,Y,Y,PARTIAL,,type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs)
 Roxio Toast image,toast,disk-image,,,,,,,Y,1,,Iso;Hfs,Y,Y,Y,OK,,
@@ -258,7 +258,7 @@ VMDK,vmdk,disk-image,R,,,,R,,Y,3,https://developer.broadcom.com/,Vmdk,Y,Y,Y,OK,,
 VirtualBox VDI,vdi,disk-image,R,,,,R,fmt/726,Y,4,https://www.virtualbox.org/,Vdi,Y,Y,Y,OK,,
 QCOW / QCOW2,qcow;qcow2;qcow2c,disk-image,R,,,D,,,Y,3,https://gitlab.com/qemu-project/qemu/-/blob/master/docs/interop/qcow2.txt,Qcow2,Y,Y,Y,PARTIAL,,"no encryption, backing files, zstd clusters or extended L2 (Qcow2Structures.cs)"
 Android sparse image,simg;sparse,disk-image,R,,,R,,,,2,https://android.googlesource.com/platform/system/core/+/master/libsparse/sparse_format.h,AndroidSparse,Y,Y,,OK,,
-Android boot image,img;bootimg,firmware,,,,D,R,,,2,,,,,,MISSING,,https://source.android.com/docs/core/architecture/bootloader/boot-image-header
+Android boot image,img;bootimg,firmware,,,,D,R,,,2,https://source.android.com/docs/core/architecture/bootloader/boot-image-header,AndroidBootImage,Y,Y,Y,OK,,mkbootimg/unpack_bootimg byte-identical oracle; vendor_boot v3/v4 included
 EnCase / Expert Witness (E01),e01;ex01;l01,disk-image,,,,,,fmt/803,Y,2,https://github.com/libyal/libewf/blob/main/documentation/Expert%20Witness%20Compression%20Format%20(EWF).asciidoc,Ewf,Y,Y,Y,PARTIAL,,"single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs)"
 AFF (Advanced Forensic Format v1-3),aff;afd;afm,disk-image,,,,,,,Y,1,,,,,,MISSING,,
 Nero image (NRG),nrg,disk-image,,,,,R,fmt/1743,Y,3,,Nrg,Y,Y,Y,OK,,
@@ -306,7 +306,7 @@ LhF,lhf,archive,,,R,,,,,1,,LhF,Y,Y,Y,OK,,
 MDC (Amiga),mdc,archive,,,R,,,,,1,,,,,,MISSING,,
 MXM-SimpleArc,,archive,,,R,,,,,1,,,,,,MISSING,,
 UEFI firmware volume / capsule,fv;fd;cap;bios;uefi;uefif,firmware,R,,,R,,,,2,https://uefi.org/specifications,UefiFv,Y,Y,Y,OK,,
-Android Verified Boot (vbmeta),img;avb,firmware,R,,,,,,,1,,,,,,MISSING,,
+Android Verified Boot (vbmeta),img;avb,firmware,R,,,,,,,1,https://android.googlesource.com/platform/external/avb/+/main/README.md,AndroidVbmeta,Y,Y,Y,OK,,hash + RSA signature verified on read; unsigned (NONE) images written byte-identical to avbtool; signed images read-only
 Device tree blob,dtb;dtbo;fdt,firmware,,,,R,,,,1,https://www.devicetree.org/specifications/,Dtb,Y,Y,Y,OK,,
 U-Boot uImage,uimage,firmware,,,,R,,,,1,,UImage,Y,Y,Y,OK,,
 TRX firmware,trx,firmware,,,,R,,,,1,,,,,,MISSING,,
@@ -393,7 +393,7 @@ AtheOS/Syllable AFS,afs;syllable,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Boot File System (SVR4 / UnixWare),bfs;unixware,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 BeFS (BFS),bfs;beos;haiku;openbfs,filesystem,,,,,,,Y,1,https://www.haiku-os.org/legacy-docs/practical-file-system-design.pdf,Bfs,Y,Y,Y,OK,,
 Byte File System (z/VM),bfs,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-Btrfs,btrfs,filesystem,,,,R,,,Y,2,https://btrfs.readthedocs.io/en/latest/dev/On-disk-format.html,Btrfs,Y,Y,,PARTIAL,,zlib/lzo/zstd compressed extents are skipped (BtrfsReader.cs)
+Btrfs,btrfs,filesystem,,,,R,,,Y,2,https://btrfs.readthedocs.io/en/latest/dev/On-disk-format.html,Btrfs,Y,Y,,OK,,zlib/lzo/zstd compressed extents decoded; checked against kernel-written volumes (Btrfs/ReferenceVectors)
 CP/M file system,cpm,filesystem,,,,,,,Y,1,,Cpm,Y,Y,Y,OK,,
 Acorn DFS,ssd;dsd,filesystem,,,,,,,Y,1,,Bbc,Y,Y,Y,OK,,
 Apple DOS 3.x,dsk;do,filesystem,,,,,,,Y,1,,AppleDos,Y,Y,Y,OK,,
