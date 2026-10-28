@@ -30,7 +30,9 @@ public class DriveSpace3GenuineDmsdosTests {
   [TestCase(CvfLzMethod.Sq)]
   [TestCase(CvfLzMethod.Auto)]
   public void GenuineDvr3_IsMountedAndReadByteExact_ByRealDmsdosDriver(CvfLzMethod method) {
-    DmsdosOracle.Require();
+    var build = DmsdosCache.EnsureTools();
+    if (build is null)
+      Assert.Ignore("dmsdos tools unavailable (need Linux + git + cmake + C compiler, or set CWB_DMSDOS_BUILD). Skipping driver-proof gate.");
 
     var files = SampleFiles();
     var writer = new GenuineDvr3Writer { CompressionMethod = method, CompressionLevel = 2 };
@@ -42,7 +44,7 @@ public class DriveSpace3GenuineDmsdosTests {
       File.WriteAllBytes(cvfPath, image);
 
       // 1. Detection: the real driver must recognise it as DriveSpace 3.
-      var detOut = Encoding.ASCII.GetBytes(DmsdosOracle.Detect(cvfPath));
+      var (_, detOut) = DmsdosCache.RunTool(DmsdosCache.CvfTest(build!), $"\"{cvfPath}\" -v");
       var detected = Encoding.ASCII.GetString(detOut);
       Assert.That(detected, Does.Contain("drivespace 3 CVF"),
         $"dmsdos did not detect a genuine DriveSpace 3 CVF; got: {detected.Trim()}");
@@ -50,8 +52,9 @@ public class DriveSpace3GenuineDmsdosTests {
       // 2. Read-back (write proof): every file must decompress byte-exact
       //    through the real driver — i.e. our writer's output is genuine.
       foreach (var (name, expected) in files) {
-        var (exit, payload) = DmsdosOracle.ReadFile(cvfPath, name);
+        var (exit, raw) = DmsdosCache.RunTool(DmsdosCache.DcRead(build!), $"\"{cvfPath}\" /{name} raw");
         Assert.That(exit, Is.EqualTo(0), $"dcread failed for {name}");
+        var payload = DmsdosCache.PayloadAfterDiagnostics(raw);
         Assert.That(payload.Length, Is.GreaterThanOrEqualTo(expected.Length),
           $"dcread returned too few bytes for {name}");
         Assert.That(payload.AsSpan(0, expected.Length).ToArray(), Is.EqualTo(expected),

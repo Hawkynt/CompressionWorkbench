@@ -6,7 +6,7 @@ Enterprise Archive (EAR),ear,archive,,,,,,,Y,1,https://jakarta.ee/specifications
 Android Package (APK),apk,package,,,,,,fmt/2041,Y,2,https://developer.android.com/guide/components/fundamentals,Apk,Y,Y,Y,OK,,
 Android App Bundle,aab;apks,package,,,,,,fmt/2042,,1,https://developer.android.com/guide/app-bundle/app-bundle-format,AndroidBundle,Y,Y,Y,OK,,
 Android Archive (AAR library),aar,package,,,,,,fmt/2043,,1,https://developer.android.com/studio/projects/android-library#aar-contents,,,,,MISSING,,
-Comic Book Archive,cbz;cbr;cb7;cbt;cba,archive,,,,,,fmt/1462,,1,https://en.wikipedia.org/wiki/Comic_book_archive,Cbz;Cbr;Cb7;Cbt,Y,Y,Y,PARTIAL,,".cba (ACE) has no descriptor: the ACE reader/writer is not conformant (acefile and unar reject its output), so a CBA view would inherit wrong bytes"
+Comic Book Archive,cbz;cbr;cb7;cbt;cba,archive,,,,,,fmt/1462,,1,https://en.wikipedia.org/wiki/Comic_book_archive,Cbz;Cbr;Cb7,Y,Y,Y,PARTIAL,,.cbt (tar) and .cba (ACE) have no descriptor
 Chrome extension (CRX),crx,package,,,,,,,Y,1,https://en.wikipedia.org/wiki/Google_Chrome#Extensions,Crx,Y,Y,,OK,,
 MSIX / APPX,msix;appx;msixbundle;appxbundle;emsix;emsixbundle,package,,,,,,,Y,1,https://learn.microsoft.com/windows/msix/overview,Appx;Msix,Y,Y,Y,OK,,
 7z,7z;s7z;001;exe,archive,RW,RW,R,R,R,fmt/484,RW,7,https://www.7-zip.org/7z.html,SevenZip,Y,Y,Y,PARTIAL,,external header references (kAdditionalStreamsInfo) unsupported; no known writer emits them (SevenZipHeaderCodec.cs)
@@ -23,7 +23,7 @@ RPM package,rpm;srpm;src.rpm,package,R,R,R,,R,fmt/793;fmt/794;fmt/795,Y,6,https:
 Shell archive (shar),shar;run;sh,archive,,W,,,,fmt/329,Y,3,https://www.gnu.org/software/sharutils/,Shar,Y,Y,Y,OK,,
 mtree manifest,mtree;spec,archive,,RW,,,,,,1,https://man.freebsd.org/mtree/5,Mtree,Y,Y,,OK,,
 WARC (Web ARChive),warc,archive,,RW,R,,R,fmt/1281;fmt/1355;fmt/289,,4,https://iipc.github.io/warc-specifications/,Warc,Y,Y,,OK,,
-Internet Archive ARC (crawl),arc,archive,,,,,,fmt/410;x-fmt/219,,1,https://archive.org/web/researcher/ArcFileFormat.php,IaArc,Y,Y,Y,OK,,
+Internet Archive ARC (crawl),arc,archive,,,,,,fmt/410;x-fmt/219,,1,https://archive.org/web/researcher/ArcFileFormat.php,,,,,MISSING,,
 XAR (eXtensible ARchive),xar;pkg;xip;mpkg,archive,R,RW,R,,,fmt/600,Y,5,https://github.com/mackyle/xar/wiki/xarformat,Xar,Y,Y,Y,OK,,"every xar encoding (none, gzip/zlib, bzip2, lzma, xz) decoded and checked against the TOC checksum; verified on bsdtar-written archives"
 Xar Image Format (PRONOM fmt/922),xar,archive,,,,,,fmt/922,,1,,,,,,MISSING,,PRONOM lists this separately from eXtensible ARchive
 Microsoft Cabinet (CAB),cab;exe;mscf,archive,R,R,R,R,,x-fmt/414,RW,6,https://learn.microsoft.com/previous-versions/bb417343(v=msdn.10),Cab,Y,Y,Y,OK,,
@@ -38,7 +38,7 @@ LHA / LZH,lzh;lha;lzs;exe;sfx,archive,R,R,R,,R,fmt/1558;fmt/626,RW,6,https://en.
 ACE,ace,archive,,,R,,R,fmt/2075;fmt/2076,RW,4,https://en.wikipedia.org/wiki/ACE_(compressed_file_format),Ace,Y,Y,Y,OK,,
 ARC (SEA),arc;ark,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ARC_(file_format),Arc,Y,Y,Y,OK,,
 PAK (NoGate ARC extension),pak,archive,,,R,,,,Y,2,,,,,,MISSING,,
-zoo,zoo,archive,,,R,,R,x-fmt/269,Y,4,https://en.wikipedia.org/wiki/Zoo_(file_format),Zoo,Y,Y,Y,PARTIAL,,LZH method (2) unsupported (ZooReader.cs)
+zoo,zoo,archive,,,R,,R,x-fmt/269,Y,4,https://en.wikipedia.org/wiki/Zoo_(file_format),Zoo,Y,Y,Y,OK,,
 LBR (CP/M library),lbr;lqr;lzr,archive,,,R,,R,,Y,3,https://en.wikipedia.org/wiki/LBR_(file_format),Lbr,Y,Y,Y,OK,,
 LBR (Commodore library),lbr,archive,,,,,,,Y,1,,,,,,MISSING,,
 ALZip,alz,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ALZip,AlZip,Y,Y,Y,PARTIAL,,store and deflate only (AlZipReader.cs)
@@ -56,7 +56,7 @@ HA,ha,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/HA_(file_format),Ha,Y,Y,Y,
 SQX,sqx,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/SQX,Sqx,Y,Y,Y,OK,,
 UHARC,uha,archive,,,,,R,,Y,2,https://en.wikipedia.org/wiki/UHarc,Uharc,Y,Y,Y,PARTIAL,,stored and LZP only (UharcReader.cs)
 FreeArc,arc;cdx,archive,,,,,R,fmt/1096,Y,3,https://en.wikipedia.org/wiki/FreeArc,FreeArc,Y,Y,Y,PARTIAL,,only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs)
-ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpaq,Y,Y,Y,PARTIAL,,"journaling and streaming archives at every method are read and zpaq 7.15 extracts what we write; encrypted (-key), multi-part and -index archives are refused, and modify rewrites a single version instead of appending one (ZpaqReader.cs, ZpaqWriter.cs)"
+ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpaq,Y,Y,Y,PARTIAL,,reads only the stored blocks our own writer emits; ZPAQL-compressed blocks (every real zpaq level) throw (ZpaqReader.cs)
 PAQ (paq6/7/8 family),paq6;paq7;paq8;paq8l,archive,,,,,,,Y,1,https://mattmahoney.net/dc/paq.html,Paq8,Y,Y,,PARTIAL,,a single PAQ8 variant (.paq8l); the other PAQ versions are mutually incompatible
 KGB Archiver,kgb;kge,archive,,,,,R,,RW,2,,,,,,MISSING,,
 PEA (PeaZip),pea,archive,,,,,R,fmt/1095,Y,3,,,,,,MISSING,,https://peazip.github.io/pea-file-format.html
@@ -68,7 +68,7 @@ Electron asar,asar,archive,,,,,R,,,1,https://github.com/electron/asar,Asar,Y,Y,,
 BCM,bcm,compression,,,,,R,,,1,https://github.com/encode84/bcm,Bcm,Y,Y,,OK,,
 Split file (.001),001;002,archive,R,,R,,R,,,3,,SplitFile,Y,Y,,OK,,
 Apple Archive (.aar),aar,archive,,,,,,,Y,1,,,,,,MISSING,,https://developer.apple.com/documentation/applearchive
-Mozilla ARchive (MAR),mar;mac,archive,,,,,,fmt/1483,Y,2,https://wiki.mozilla.org/Software_Update:MAR,Mar,Y,Y,Y,OK,,
+Mozilla ARchive (MAR),mar;mac,archive,,,,,,fmt/1483,Y,2,,,,,,MISSING,,https://wiki.mozilla.org/Software_Update:MAR
 SeqBox,sbx,archive,,,,,,,Y,1,,,,,,MISSING,,https://github.com/MarcoPon/SeqBox
 AFA,afa,archive,,,,,,,Y,1,,,,,,MISSING,,
 B1,b1,archive,,,,,,,Y,1,,,,,,MISSING,,
@@ -211,7 +211,7 @@ AppleSingle / AppleDouble,as;adouble,encoding,,,R,,,fmt/967;fmt/968,,2,https://w
 Intel HEX,hex;ihex,firmware,R,,,,,,,1,https://en.wikipedia.org/wiki/Intel_HEX,IntelHex,Y,Y,Y,OK,,
 Motorola S-record,srec;s19;mot,firmware,,,,R,,,,1,https://en.wikipedia.org/wiki/SREC_(file_format),Srec,Y,Y,,OK,,
 NSIS installer,exe;nsis,installer,R,,R,,R,,,3,https://nsis.sourceforge.io/,Nsis,Y,,,READ-ONLY-BUT-SOURCES-WRITE,makensis,LZMA behind the x86 branch filter refused; uninstaller payload not listed (NsisReader.cs)
-Inno Setup,exe,installer,,,,,R,,,1,https://jrsoftware.org/isinfo.php,InnoSetup,Y,,,READ-ONLY-BUT-SOURCES-WRITE,ISCC,encrypted files and 16-bit 1.2.x refused (InnoSetupReader.cs)
+Inno Setup,exe,installer,,,,,R,,,1,https://jrsoftware.org/isinfo.php,InnoSetup,Y,Y,,PARTIAL,,listing only; file extraction throws for every Inno version (InnoSetupReader.cs)
 InstallShield (cab / exe),exe;cab;ex_;hdr,installer,,,,,R,fmt/1466,,2,,,,,,MISSING,,
 Wise Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 Setup Factory,exe,installer,,,,,R,,,1,,,,,,MISSING,,
@@ -239,7 +239,7 @@ Enigma Virtual Box,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 MoleBox,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 UPX-packed executable,exe;dll,executable,,,,,R,,,1,https://upx.github.io/,Upx,Y,,,READ-ONLY-BUT-SOURCES-WRITE,upx,
 macOS Installer package (flat pkg),pkg;mpkg,installer,,,,,,,Y,1,,Xar,Y,Y,Y,OK,,
-ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet;mdf;nrg;toast,filesystem,R,RW,R,R,R,fmt/1739;fmt/1741;fmt/1757;fmt/468,RW,7,https://www.ecma-international.org/publications-and-standards/standards/ecma-119/,Iso,Y,Y,Y,PARTIAL,,"Rock Ridge limited to NM names (no SL/PX/TF/CE, no zisofs); interleaved files throw (IsoReader.cs)"
+ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet;mdf;nrg;toast,filesystem,R,RW,R,R,R,fmt/1739;fmt/1741;fmt/1757;fmt/468,RW,7,https://www.ecma-international.org/publications-and-standards/standards/ecma-119/,Iso,Y,Y,Y,PARTIAL,,"Rock Ridge names (NM+CE), symlinks (SL), relocated directories (RE/CL) and zisofs (ZF) decoded; PX/TF not surfaced; interleaved files throw (IsoReader.cs)"
 High Sierra format,iso;hsf,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 UDF,udf;cdr;dmg;iso;toast,filesystem,R,,,,,fmt/1738;fmt/1739;fmt/1757,Y,3,https://www.osta.org/specs/,Udf,Y,Y,Y,PARTIAL,,type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs)
 Roxio Toast image,toast,disk-image,,,,,,,Y,1,,Iso;Hfs,Y,Y,Y,OK,,
@@ -253,12 +253,12 @@ Apple Disk Image (UDIF),dmg;smi;img,disk-image,R,,,R,R,fmt/1071,Y,5,https://en.w
 Apple sparse image / sparse bundle,sparseimage;sparsebundle,disk-image,,,,,,,Y,1,,Sparseimage;Sparsebundle,Y,Y,Y,OK,,
 Apple Disk Copy 4.2,dc42;image;dmg;img;smi,disk-image,,,,,,fmt/625,Y,2,,,,,,MISSING,,https://en.wikipedia.org/wiki/Disk_Copy
 VHD,vhd,disk-image,R,,,,R,,Y,3,https://learn.microsoft.com/windows/win32/vstor/about-vhd,Vhd,Y,Y,Y,OK,,
-VHDX,vhdx;avhdx,disk-image,R,,,,,,Y,2,https://learn.microsoft.com/openspecs/windows_protocols/ms-vhdx/,Vhdx,Y,Y,Y,PARTIAL,,differencing / partially-present blocks read as zeros (VhdxStream.cs)
-VMDK,vmdk,disk-image,R,,,,R,,Y,3,https://developer.broadcom.com/,Vmdk,Y,Y,Y,PARTIAL,,stream-optimized / compressed grains read raw; split extents and delta chains unsupported (VmdkReader.cs)
+VHDX,vhdx;avhdx,disk-image,R,,,,,,Y,2,https://learn.microsoft.com/openspecs/windows_protocols/ms-vhdx/,Vhdx,Y,Y,Y,OK,,"differencing disks read through the parent locator and sector bitmaps (checked against libvhdi); an unreplayed log is refused"
+VMDK,vmdk,disk-image,R,,,,R,,Y,3,https://developer.broadcom.com/,Vmdk,Y,Y,Y,OK,,"reads streamOptimized, monolithic/split sparse, flat and delta disks (checked against qemu-img); in-place edits only on plain monolithicSparse"
 VirtualBox VDI,vdi,disk-image,R,,,,R,fmt/726,Y,4,https://www.virtualbox.org/,Vdi,Y,Y,Y,OK,,
 QCOW / QCOW2,qcow;qcow2;qcow2c,disk-image,R,,,D,,,Y,3,https://gitlab.com/qemu-project/qemu/-/blob/master/docs/interop/qcow2.txt,Qcow2,Y,Y,Y,PARTIAL,,"no encryption, backing files, zstd clusters or extended L2 (Qcow2Structures.cs)"
 Android sparse image,simg;sparse,disk-image,R,,,R,,,,2,https://android.googlesource.com/platform/system/core/+/master/libsparse/sparse_format.h,AndroidSparse,Y,Y,,OK,,
-Android boot image,img;bootimg,firmware,,,,D,R,,,2,,,,,,MISSING,,https://source.android.com/docs/core/architecture/bootloader/boot-image-header
+Android boot image,img;bootimg,firmware,,,,D,R,,,2,https://source.android.com/docs/core/architecture/bootloader/boot-image-header,AndroidBootImage,Y,Y,Y,OK,,mkbootimg/unpack_bootimg byte-identical oracle; vendor_boot v3/v4 included
 EnCase / Expert Witness (E01),e01;ex01;l01,disk-image,,,,,,fmt/803,Y,2,https://github.com/libyal/libewf/blob/main/documentation/Expert%20Witness%20Compression%20Format%20(EWF).asciidoc,Ewf,Y,Y,Y,PARTIAL,,"single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs)"
 AFF (Advanced Forensic Format v1-3),aff;afd;afm,disk-image,,,,,,,Y,1,,,,,,MISSING,,
 Nero image (NRG),nrg,disk-image,,,,,R,fmt/1743,Y,3,,Nrg,Y,Y,Y,OK,,
@@ -306,7 +306,7 @@ LhF,lhf,archive,,,R,,,,,1,,LhF,Y,Y,Y,OK,,
 MDC (Amiga),mdc,archive,,,R,,,,,1,,,,,,MISSING,,
 MXM-SimpleArc,,archive,,,R,,,,,1,,,,,,MISSING,,
 UEFI firmware volume / capsule,fv;fd;cap;bios;uefi;uefif,firmware,R,,,R,,,,2,https://uefi.org/specifications,UefiFv,Y,Y,Y,OK,,
-Android Verified Boot (vbmeta),img;avb,firmware,R,,,,,,,1,,,,,,MISSING,,
+Android Verified Boot (vbmeta),img;avb,firmware,R,,,,,,,1,https://android.googlesource.com/platform/external/avb/+/main/README.md,AndroidVbmeta,Y,Y,Y,OK,,hash + RSA signature verified on read; unsigned (NONE) images written byte-identical to avbtool; signed images read-only
 Device tree blob,dtb;dtbo;fdt,firmware,,,,R,,,,1,https://www.devicetree.org/specifications/,Dtb,Y,Y,Y,OK,,
 U-Boot uImage,uimage,firmware,,,,R,,,,1,,UImage,Y,Y,Y,OK,,
 TRX firmware,trx,firmware,,,,R,,,,1,,,,,,MISSING,,
@@ -393,7 +393,7 @@ AtheOS/Syllable AFS,afs;syllable,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Boot File System (SVR4 / UnixWare),bfs;unixware,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 BeFS (BFS),bfs;beos;haiku;openbfs,filesystem,,,,,,,Y,1,https://www.haiku-os.org/legacy-docs/practical-file-system-design.pdf,Bfs,Y,Y,Y,OK,,
 Byte File System (z/VM),bfs,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-Btrfs,btrfs,filesystem,,,,R,,,Y,2,https://btrfs.readthedocs.io/en/latest/dev/On-disk-format.html,Btrfs,Y,Y,,PARTIAL,,zlib/lzo/zstd compressed extents are skipped (BtrfsReader.cs)
+Btrfs,btrfs,filesystem,,,,R,,,Y,2,https://btrfs.readthedocs.io/en/latest/dev/On-disk-format.html,Btrfs,Y,Y,,OK,,zlib/lzo/zstd compressed extents decoded; checked against kernel-written volumes (Btrfs/ReferenceVectors)
 CP/M file system,cpm,filesystem,,,,,,,Y,1,,Cpm,Y,Y,Y,OK,,
 Acorn DFS,ssd;dsd,filesystem,,,,,,,Y,1,,Bbc,Y,Y,Y,OK,,
 Apple DOS 3.x,dsk;do,filesystem,,,,,,,Y,1,,AppleDos,Y,Y,Y,OK,,

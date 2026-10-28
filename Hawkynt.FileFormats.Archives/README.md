@@ -112,7 +112,6 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [CAB](https://en.wikipedia.org/wiki/Cabinet_(file_format)) | `Cab` | `.cab` | R/W | ✅ | defrag · wipe |  | [cabextract.org.uk](https://www.cabextract.org.uk/libmspack/) |
 | [CB7](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cb7` | `.cb7` | R/W | ✅ | defrag · wipe | 7z-backed comic book archive | [7-zip.org](https://www.7-zip.org/7z.html) |
 | [CBR](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cbr` | `.cbr` | R/W | ✅ | defrag · wipe | RAR-backed comic book archive | [rarlab.com](https://www.rarlab.com/technote.htm) |
-| [CBT](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cbt` | `.cbt` | R/W | ✅ | — | tar-backed comic book archive; 7-Zip reads ours and we read 7-Zip's | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9799919799/utilities/pax.html) |
 | [CBZ](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cbz` | `.cbz` | R/W | ✅ | defrag · wipe | ZIP-backed comic book archive | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
 | [CHM](https://en.wikipedia.org/wiki/Microsoft_Compiled_HTML_Help) | `Chm` | `.chm` | R/W | ✅ | defrag · wipe |  | [cabextract.org.uk](https://www.cabextract.org.uk/libmspack/) |
 | [Compact Pro](https://en.wikipedia.org/wiki/Compact_Pro) | `CompactPro` | `.cpt` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/MacPaw/XADMaster) |
@@ -151,8 +150,8 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [XAR](https://en.wikipedia.org/wiki/Xar_(archiver)) | `Xar` | `.xar` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/mackyle/xar) |
 | ZAP (Amiga) | `Zap` | `.zap` | WORM | ✅ | wipe | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net/) |
 | [ZIP](https://en.wikipedia.org/wiki/ZIP_(file_format)) | `Zip` | `.zip` `.zipx` | R/W | ✅ | compress · repack · shrink · wipe | Store, Deflate, Deflate64, Shrink, Reduce, Implode, BZip2, LZMA, XZ, PPMd, Zstd, AES | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
-| [ZOO](https://en.wikipedia.org/wiki/Zoo_(file_format)) | `Zoo` | `.zoo` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/ZOO) |
-| [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `Zpaq` | `.zpaq` | R/W | ✅ | defrag | Journaling (versions, deduplicated fragments) and streaming layouts, methods 0-5 and explicit `x` methods, full ZPAQL; zpaq 7.15 extracts what we write. Encrypted, multi-part and `-index` archives are refused; modify rewrites one version | [ZPAQ Level 2 spec](https://mattmahoney.net/dc/zpaq206.pdf) |
+| [ZOO](https://en.wikipedia.org/wiki/Zoo_(file_format)) | `Zoo` | `.zoo` | R/W | ✅ | defrag · wipe | Store, LZW, LZH | [Archive Team](http://fileformats.archiveteam.org/wiki/ZOO) |
+| [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `Zpaq` | `.zpaq` | R/W | ✅ | defrag | Reader covers the stored/simple models; ZPAQL virtual-machine execution is not implemented | [mattmahoney.net](http://mattmahoney.net/dc/zpaq.html) |
 
 ### 🧬 Structured data and registry
 
@@ -186,7 +185,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [Debian .deb](https://en.wikipedia.org/wiki/Deb_(file_format)) | `Deb` | `.deb` | R/W | ✅ | defrag · wipe |  | [debian.org](https://www.debian.org/doc/debian-policy/) |
 | [EAR](https://en.wikipedia.org/wiki/EAR_(file_format)) | `Ear` | `.ear` | R/W | ✅ | defrag · wipe |  | [jakarta.ee](https://jakarta.ee/specifications/platform/) |
 | [Ruby gem](https://en.wikipedia.org/wiki/RubyGems) | `Gem` | `.gem` | WORM | ✅ | — | TAR with gzip-compressed metadata and data members | [docs.ruby-lang.org](https://docs.ruby-lang.org/en/3.0/Gem/Format.html) |
-| [Inno Setup](https://en.wikipedia.org/wiki/Inno_Setup) | `InnoSetup` |  | R | ✅ | — | [Files] of setup data 1.3 – 7.1, stored/zlib/bzip2/LZMA/LZMA2, embedded or setup-N.bin slices, every file checksum-verified; checked against innoextract up to 6.0 and by the stored SHA-256 of every file of the official 6.4.3 and 7.1.0 installers. Encrypted files refused | [jrsoftware.org](https://jrsoftware.org/isinfo.php) |
+| [Inno Setup](https://en.wikipedia.org/wiki/Inno_Setup) | `InnoSetup` |  | WORM | ✅ | — | Extraction plus signature/container output, not an installer compiler; some versions expose no per-file extraction | [sourceforge.net](https://sourceforge.net/projects/innounp/) |
 | [IPA](https://en.wikipedia.org/wiki/.ipa) | `Ipa` | `.ipa` | R/W | ✅ | defrag · wipe |  | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
 | [JAR](https://en.wikipedia.org/wiki/JAR_(file_format)) | `Jar` | `.jar` | R/W | ✅ | defrag · wipe |  | [docs.oracle.com](https://docs.oracle.com/en-us/javase/8/docs/technotes/guides/jar/jar.html) |
 | [MSI](https://en.wikipedia.org/wiki/Windows_Installer) | `Msi` | `.msi` `.msp` `.mst` | R/W | ✅ | wipe | CFB envelope; a functional Installer database is not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/) |
@@ -216,7 +215,6 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [KMZ](https://en.wikipedia.org/wiki/Keyhole_Markup_Language) | `Kmz` | `.kmz` | R/W | ✅ | defrag · wipe |  | [developers.google.com](https://developers.google.com/kml/documentation) |
 | [LIT (Microsoft Reader)](https://en.wikipedia.org/wiki/Microsoft_Reader) | `Lit` | `.lit` | R | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Microsoft_Reader) |
 | [MAFF](https://en.wikipedia.org/wiki/Mozilla_Archive_Format) | `Maff` | `.maff` | R/W | ✅ | defrag · wipe |  | [maf.mozdev.org](http://maf.mozdev.org/maff-specification.html) |
-| [MAR](https://wiki.mozilla.org/Software_Update:MAR) | `Mar` | `.mar` | R/W | ✅ | — | Firefox/Thunderbird update packages; members are listed and extracted as stored (bzip2/xz named in Method); writes mardor-identical archives; signed archives refuse edits | [wiki.mozilla.org](https://wiki.mozilla.org/Software_Update:MAR) |
 | [mbox (Unix mailbox)](https://en.wikipedia.org/wiki/Mbox) | `Mbox` | `.mbox` `.mbx` | R/W | ✅ | — | Entries are message_NN.eml | [RFC](https://www.rfc-editor.org/rfc/rfc4155) |
 | [MOBI / AZW](https://en.wikipedia.org/wiki/Mobipocket) | `Mobi` | `.mobi` `.prc` `.azw` `.azw3` | WORM | ✅ | — | Creates MOBI 7 books from one UTF-8 HTML document (stored or PalmDOC), accepted by KindleUnpack; reads stored and PalmDOC text with trailing entries; HUFF/CDIC and DRM text stay raw records | [wiki.mobileread.com](https://wiki.mobileread.com/wiki/MOBI) |
 | [MSG](https://en.wikipedia.org/wiki/MSG_(file_format)) | `Msg` | `.msg` | R/W | ✅ | wipe | CFB envelope; MAPI properties are not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxmsg/) |
@@ -233,7 +231,6 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [TNEF (winmail.dat)](https://en.wikipedia.org/wiki/Transport_Neutral_Encapsulation_Format) | `Tnef` | `.dat` `.tnef` | R/W | ✅ | defrag |  | [GitHub](https://github.com/Yeraze/ytnef) |
 | [VSDX](https://en.wikipedia.org/wiki/Microsoft_Visio) | `Vsdx` | `.vsdx` `.vstx` `.vssx` `.vsdm` … | R/W | ✅ | defrag · wipe |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-376/) |
 | WACZ | `Wacz` | `.wacz` | WORM | ✅ | wipe | ZIP around WARC plus package metadata | [specs.webrecorder.net](https://specs.webrecorder.net/wacz/1.1.1/) |
-| [Internet Archive ARC](https://archive.org/web/researcher/ArcFileFormat.php) | `IaArc` | `.arc` (by `filedesc://` magic) | R/W | ✅ | — | ARC 1.0/2.0 crawl files (`.arc.gz` via gzip); entries are record bodies named by URL; warcio reads what we write; records are added only to version-1 files | [archive.org](https://archive.org/web/researcher/ArcFileFormat.php) |
 | [WARC](https://en.wikipedia.org/wiki/WARC_(file_format)) | `Warc` | `.warc` | WORM | ✅ | defrag · wipe | Entries are listed as "resource: name"; create emits resource records | [iipc.github.io](https://iipc.github.io/warc-specifications/) |
 | Web Bundle | `Wbn` | `.wbn` | WORM | ✅ | — | Minimal CBOR walk; create collapses inputs into one bundle | [datatracker.ietf.org](https://datatracker.ietf.org/doc/draft-ietf-wpack-bundled-responses/) |
 | [WordPerfect](https://en.wikipedia.org/wiki/WordPerfect) | `WordPerfect` | `.wpd` `.wp` `.wp5` `.wp6` … | R | ✅ | — |  | [sourceforge.net](https://sourceforge.net/projects/libwpd/) |
@@ -547,7 +544,7 @@ Use it when a .NET process needs to enumerate, extract, test, create, edit or in
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 2578 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
+Every public and protected member of all 2571 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
 
 <!-- API:END -->
 
@@ -562,7 +559,7 @@ Every public and protected member of all 2578 types, generated from the built as
 
 - WORM is not R/W: creating a valid archive is different from safely editing one, and only descriptors with a proven edit path advertise `CanModify`.
 - R/W by rebuild rewrites the container; formats whose listing renames entries (track images, chunked backup images, hash-keyed game archives) can only address entries by the names they list.
-- LZFSE: `bvx1` blocks are read but never written. ZPAQ: encrypted (`-key`) archives are refused. StuffIt X and UMX writers emit the envelope shell only. SFAR: LZX payload extraction is limited. Inno Setup: some versions expose no per-file extraction.
+- LZFSE: `bvx1` blocks are read but never written. ZPAQ: no ZPAQL virtual machine. StuffIt X and UMX writers emit the envelope shell only. SFAR: LZX payload extraction is limited. Inno Setup: some versions expose no per-file extraction.
 - OLE2 (DOC / XLS / PPT / MSG / Thumbs.db / MSI) creation produces a valid CFB envelope, not the application's document or database streams.
 - RAR and 7z creation target the implemented RAR4/RAR5 and 7z paths, not every historical writer version, and no vendor encoder heuristic is reproduced.
 - Media containers are demuxed at the container level; carried codecs are decoded only where the audio package provides them.

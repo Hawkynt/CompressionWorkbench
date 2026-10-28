@@ -68,7 +68,8 @@ public class DriveSpace3HugeVolumeTests {
 
   [Test, Category("DriverProof")]
   public void Large_Volume_IsReadByRealDmsdosDriver() {
-    DmsdosOracle.Require();
+    var build = DmsdosCache.EnsureTools();
+    if (build is null) Assert.Ignore("dmsdos unavailable.");
 
     var files = BigSet(120, 64 * 1024, 2);   // ~240 clusters, mixed
     var w = new GenuineDvr3Writer { CompressionMethod = CvfLzMethod.Auto, CompressionLevel = 1 };
@@ -78,13 +79,14 @@ public class DriveSpace3HugeVolumeTests {
     var cvf = Path.Combine(Path.GetTempPath(), $"cwb-dvr3huge-{Guid.NewGuid():N}.cvf");
     try {
       File.WriteAllBytes(cvf, image);
-      var det = Encoding.ASCII.GetBytes(DmsdosOracle.Detect(cvf));
+      var (_, det) = DmsdosCache.RunTool(DmsdosCache.CvfTest(build!), $"\"{cvf}\" -v");
       Assert.That(Encoding.ASCII.GetString(det), Does.Contain("drivespace 3 CVF"));
       // sample a handful across the volume
       foreach (var idx in new[] { 0, 37, 80, 119 }) {
         var (name, data) = files[idx];
-        var (exit, payload) = DmsdosOracle.ReadFile(cvf, name);
+        var (exit, raw) = DmsdosCache.RunTool(DmsdosCache.DcRead(build!), $"\"{cvf}\" /{name} raw");
         Assert.That(exit, Is.EqualTo(0), $"dcread {name}");
+        var payload = DmsdosCache.PayloadAfterDiagnostics(raw);
         Assert.That(payload.AsSpan(0, data.Length).ToArray(), Is.EqualTo(data), $"{name} byte-exact");
       }
     } finally { try { File.Delete(cvf); } catch { } }

@@ -1444,12 +1444,12 @@ Specifies flac subframe mode values.
 
 #### `G722Codec`
 
-ITU-T G.722 64 kbit/s sub-band ADPCM. A faithful port of the ITU / SpanDSP reference (the CMU single-channel core): a 24-tap quadrature mirror filter (QMF) splits the 16 kHz input into two 8 kHz sub-bands; the lower band is coded with 6-bit ADPCM and the higher band with 2-bit ADPCM (operating mode 1 — the full 64 kbit/s rate). The decoder mirrors this, running the two band ADPCM decoders and recombining the bands through the QMF synthesis filter. One octet carries one combined codeword (2 high-band bits in the top nibble's two MSBs, 6 low-band bits below): each octet represents two output samples (one QMF frame). The public API therefore consumes / produces ordinary 16-bit linear PCM at 16 kHz, with the encoder emitting one byte per two input samples.
+ITU-T G.722 sub-band ADPCM at 64 kbit/s (mode 1: six low-band bits and two high-band bits per octet), 16-bit signed linear PCM at 16 kHz, mono. Implemented from `docs/G722-SPEC.md`, which restates ITU-T Recommendation G.722 (09/2012) sections 3, 4 and 6; block and variable names in comments (`DETL`, `UPPOL2`, ...) are the Recommendation's. Like the common 16-bit software codecs, this one feeds 16-bit samples straight into the transmit QMF instead of the Recommendation's 14-bit interface and compensates with the QMF output shifts (`>> 14` on transmit, `>> 11` on receive), so streams interoperate with FFmpeg's `g722` encoder and decoder. One octet carries two samples: bits 7–6 are the high-band code, bits 5–0 the low-band code. Every call starts from the reset state; nothing carries across calls.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data)` | Decodes a G.722 (64 kbit/s) octet stream to 16-bit linear PCM at 16 kHz, producing two samples per input byte. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes 16-bit linear PCM at 16 kHz to a G.722 (64 kbit/s) octet stream, one byte per two input samples. An odd trailing sample is ignored (a full QMF frame needs two). |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data)` | Decodes G.722 octets to 16 kHz PCM, two samples per octet. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes 16 kHz PCM to G.722 octets; a trailing odd sample is dropped. |
 
 ### Namespace `Codec.G7231`
 
@@ -1628,7 +1628,7 @@ Microsoft GSM 6.10 / WAV49 framing used by WAVE format tag `0x0031`. A WAV49 blo
 
 #### `CpuHuC6280`
 
-A cycle-counting Hudson HuC6280 CPU core — the processor at the heart of the NEC PC Engine / TurboGrafx-16. The HuC6280 is a superset of the WDC 65C02 (itself a cleaned-up 6502): it adds the CMOS 65C02 opcodes (the `(zp)` addressing family, `STZ`, `BIT` immediate, `TRB/TSB`, `PHX/PHY/PLX/PLY`, `BRA`, the bit-test branches `BBR/BBS` and the bit set/reset `RMB/SMB`, and the fixed-up `JMP (abs,X)`/decimal-correct ADC/SBC) and then a pile of Hudson-specific instructions on top: the seven-cycle-per-byte block-transfer moves `TII $73, TDD $C3, TIN $D3, TIA $E3, TAI $F3` (source/destination/length read from three operand words; they consume the registers' worth of state and run to completion);the T-flag (bit 5 of P) and `SET ($F4)` immediate, which redirect the next ALU op's accumulator operand through a zero-page memory cell (the "memory operation" mode);`TST ($83/$A3/$93/$B3)` test-against-immediate (sets Z/N/V without altering the operand);the bank mapper accessors `TAM ($53)` / `TMA ($43)` that load/store the eight MPR (memory-paging) registers selected by a bitmask;the speed switch `CSL ($54)` / `CSH ($D4)` (1.79 MHz vs 7.16 MHz);the I/O port writes `ST0 ($03)` / `ST1 ($13)` / `ST2 ($23)` that latch the VDC address and the PSG/VDC data ports;register swaps `SXY ($02)`, `SAX ($22)`, `SAY ($42)`, plus `CLA/CLX/CLY` ($62/$82/$C2) and the long branch `BSR ($44)`.Opcode semantics and cycle counts follow the documented HuC6280 reverse-engineering tables (the "HuC6280 CPU" opcode reference and Charles MacDonald's PC Engine notes) and the Mednafen `huc6280.cpp` core. Memory is accessed exclusively through `IBus6502`; the host bus is responsible for routing the 21-bit physical address that the MPR mapper would otherwise produce — this core exposes the MPR registers (`Mpr`) so the bus can map the logical 16-bit address through them.Approximations: per-byte/-cycle bus timing is not pipelined (each instruction returns a total cycle count); the block-transfer "alternate" source/destination pattern of TIA/TAI is modelled by toggling which pointer increments, matching the documented behaviour. CSL/CSH are tracked as a `HighSpeed` flag that the host may use to scale its clock; the core itself does not change cycle counts.
+A cycle-counting Hudson HuC6280 CPU core — the processor at the heart of the NEC PC Engine / TurboGrafx-16. The HuC6280 is a superset of the WDC 65C02 (itself a cleaned-up 6502): it adds the CMOS 65C02 opcodes (the `(zp)` addressing family, `STZ`, `BIT` immediate, `TRB/TSB`, `PHX/PHY/PLX/PLY`, `BRA`, the bit-test branches `BBR/BBS` and the bit set/reset `RMB/SMB`, and the fixed-up `JMP (abs,X)`/decimal-correct ADC/SBC) and then a pile of Hudson-specific instructions on top: the seven-cycle-per-byte block-transfer moves `TII $73, TDD $C3, TIN $D3, TIA $E3, TAI $F3` (source/destination/length read from three operand words; they consume the registers' worth of state and run to completion);the T-flag (bit 5 of P) and `SET ($F4)` immediate, which redirect the next ALU op's accumulator operand through a zero-page memory cell (the "memory operation" mode);`TST ($83/$A3/$93/$B3)` test-against-immediate (sets Z/N/V without altering the operand);the bank mapper accessors `TAM ($53)` / `TMA ($43)` that load/store the eight MPR (memory-paging) registers selected by a bitmask;the speed switch `CSL ($54)` / `CSH ($D4)` (1.79 MHz vs 7.16 MHz);the I/O port writes `ST0 ($03)` / `ST1 ($13)` / `ST2 ($23)` that latch the VDC address and the PSG/VDC data ports;register swaps `SXY ($02)`, `SAX ($22)`, `SAY ($42)`, plus `CLA/CLX/CLY` ($62/$82/$C2) and the long branch `BSR ($44)`.Opcode semantics and cycle counts follow the documented HuC6280 reverse-engineering tables (the "HuC6280 CPU" opcode reference and Charles MacDonald's PC Engine notes). Memory is accessed exclusively through `IBus6502`; the host bus is responsible for routing the 21-bit physical address that the MPR mapper would otherwise produce — this core exposes the MPR registers (`Mpr`) so the bus can map the logical 16-bit address through them.Approximations: per-byte/-cycle bus timing is not pipelined (each instruction returns a total cycle count); the block-transfer "alternate" source/destination pattern of TIA/TAI is modelled by toggling which pointer increments, matching the documented behaviour. CSL/CSH are tracked as a `HighSpeed` flag that the host may use to scale its clock; the core itself does not change cycle counts.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1676,7 +1676,7 @@ A HES (PC Engine / TurboGrafx-16 music) tune player. It builds the HuC6280's ban
 
 #### `PcePsg`
 
-A register-level emulation of the PC Engine / TurboGrafx-16 PSG — the six-channel wavetable sound generator integrated into the HuC6280. Each channel carries a 32-step, 5-bit signed waveform table that the program writes one sample at a time (the write index auto-increments), a 12-bit frequency period, a 5-bit overall (master) volume and independent 4-bit left/right channel volumes for stereo panning. Channels also support a Direct-D/A (DDA) mode that pushes the written byte straight to the output, and channels 5 and 6 (indices 4 and 5) support extra modes: channel 5 a noise generator (5-bit LFSR), and channel 5 acting as a low-frequency oscillator (LFO) that modulates channel 4's frequency. A global left/right master volume (the "MML"/balance register at port $0801) scales the final mix. The chip is driven by writing its register file through `WriteRegister`: port $0800 selects the active channel (0-5), $0801 is the global L/R balance, $0802/$0803 set the active channel's frequency low/high, $0804 the channel control (enable, DDA, overall volume), $0805 the channel L/R volume, $0806 the waveform-table data (DDA sample), and $0807/$0808 the noise enable/frequency and LFO frequency/control. The waveform step counter advances at the documented PSG clock of 3.579545 MHz / 32, and the host pulls 16-bit stereo samples through `RenderSamples`, which decimates to the requested output rate by averaging the channel mix across each output-sample window.Faithful to Mednafen `pce_psg.cpp` and the ChregPSG/Charles MacDonald PSG notes. Approximations: the per-channel low-pass and the analog volume taper of the real DAC are not modelled (volumes use the documented 1.5 dB-per-step exponential table); the LFO depth/trigger edge cases and the precise noise LFSR tap of channel 5 follow Mednafen but the LFO is applied as a simple additive period modulation of channel 4.
+A register-level emulation of the PC Engine / TurboGrafx-16 PSG — the six-channel wavetable sound generator integrated into the HuC6280. Each channel carries a 32-step, 5-bit signed waveform table that the program writes one sample at a time (the write index auto-increments), a 12-bit frequency period, a 5-bit overall (master) volume and independent 4-bit left/right channel volumes for stereo panning. Channels also support a Direct-D/A (DDA) mode that pushes the written byte straight to the output, and channels 5 and 6 (indices 4 and 5) support extra modes: channel 5 a noise generator (5-bit LFSR), and channel 5 acting as a low-frequency oscillator (LFO) that modulates channel 4's frequency. A global left/right master volume (the "MML"/balance register at port $0801) scales the final mix. The chip is driven by writing its register file through `WriteRegister`: port $0800 selects the active channel (0-5), $0801 is the global L/R balance, $0802/$0803 set the active channel's frequency low/high, $0804 the channel control (enable, DDA, overall volume), $0805 the channel L/R volume, $0806 the waveform-table data (DDA sample), and $0807/$0808 the noise enable/frequency and LFO frequency/control. The waveform step counter advances at the documented PSG clock of 3.579545 MHz / 32, and the host pulls 16-bit stereo samples through `RenderSamples`, which decimates to the requested output rate by averaging the channel mix across each output-sample window.Written from the published register descriptions (Charles MacDonald's PC Engine PSG notes). It is a simplified model, not a reproduction of any emulator: the per-channel low-pass and the analog volume taper of the real DAC are not modelled (volumes use the documented 1.5 dB-per-step exponential table), the noise generator is a 17-bit two-tap LFSR rather than the hardware's exact sequence, and the LFO is applied as a simple additive period modulation of channel 4.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9105,7 +9105,7 @@ Represents an aomei entry.
 
 #### `AomeiFormatDescriptor`
 
-Read/write descriptor for AOMEI Backupper image files (`.adi` disk / partition / system backup, `.afi` file/folder backup). Both share the `Magic` 5-byte ASCII signature at offset 0 (the trailing backslash is the low byte of the `Size` field, not a path separator). Implementation ported from the reverse-engineered format spec at `docs/AOMEI_FORMAT_SPEC.md`: full `BIFH`/`BIFT` structs with `BRCrc32` verification, the recovered `BR_STANDARD_HEADER` tagged-record framing, and typed views of the four confirmed INFO records (COMPRESS / ENCRYPT / PASSWORD / BACKUP_TYPE). What is surfaced for parsable input:`FULL.bifh` — the raw image bytes (also acts as a fallback for callers that just want the original payload).`metadata.ini` — parse status, decoded INFO record fields (backup_type, compress method/level, encrypt method/keylen, password MD5), record-walk summary.`header.bin` — the original 64-byte capture of the file start (preserved from the R/O baseline for backward compatibility with downstream forensic tooling).`head.bin` / `tail.bin` — the full 0x65C BIFH and 0x674 BIFT structs, available when the file is long enough to contain them, for future RE work on the as-yet-TODO body fields.`record-NN-NAME.bin` — every walked `BR_STANDARD_HEADER`-prefixed record's raw bytes, filename-tagged with its type code. Lets callers inspect the INDEX_TYPE_* records whose body layouts remain TODO.`userdata/NAME` — when the file was produced by this project's writer, the user-data envelopes (`UserDataTypeTag`) are unwrapped and their original filename + payload are emitted under a `userdata/` prefix.Create() — round-trip honest: the writer emits a wire-format correct BIFH+INFO+BIFT container with sealed CRCs. The container round-trips through our own reader. It is not byte-compatible with the AOMEI Backupper application: the head/tail body fields (0x650 / 0x668 bytes after the standard header) are zero-filled because their layout is TODO in the recovered spec. Containers produced here advertise compression / encryption / backup-type via standard INFO records, and wrap user inputs in a vendor-namespace `UserDataTypeTag` envelope so the project's own reader can extract them again. References: `https://www.aomeitech.com` — vendor — the .adi/.afi container is proprietary and unpublished`docs/AOMEI_FORMAT_SPEC.md` (this repository) — reverse-engineered BIFH/BIFT + BR_STANDARD_HEADER on-disk specAOMEI never published a specification. What is known of the on-disk layout was recovered by decompiling the shipped binaries, and is written down in `docs/AOMEI_FORMAT_SPEC.md`.
+Read/write descriptor for AOMEI Backupper image files (`.adi` disk / partition / system backup, `.afi` file/folder backup). Both share the `Magic` 5-byte ASCII signature at offset 0 (the trailing backslash is the low byte of the `Size` field, not a path separator). Implementation of the reverse-engineered container layout: full `BIFH`/`BIFT` structs with `BRCrc32` verification, the recovered `BR_STANDARD_HEADER` tagged-record framing, and typed views of the four confirmed INFO records (COMPRESS / ENCRYPT / PASSWORD / BACKUP_TYPE). What is surfaced for parsable input:`FULL.bifh` — the raw image bytes (also acts as a fallback for callers that just want the original payload).`metadata.ini` — parse status, decoded INFO record fields (backup_type, compress method/level, encrypt method/keylen, password MD5), record-walk summary.`header.bin` — the original 64-byte capture of the file start (preserved from the R/O baseline for backward compatibility with downstream forensic tooling).`head.bin` / `tail.bin` — the full 0x65C BIFH and 0x674 BIFT structs, available when the file is long enough to contain them, for future RE work on the as-yet-TODO body fields.`record-NN-NAME.bin` — every walked `BR_STANDARD_HEADER`-prefixed record's raw bytes, filename-tagged with its type code. Lets callers inspect the INDEX_TYPE_* records whose body layouts remain TODO.`userdata/NAME` — when the file was produced by this project's writer, the user-data envelopes (`UserDataTypeTag`) are unwrapped and their original filename + payload are emitted under a `userdata/` prefix.Create() — round-trip honest: the writer emits a wire-format correct BIFH+INFO+BIFT container with sealed CRCs. The container round-trips through our own reader. It is not byte-compatible with the AOMEI Backupper application: the head/tail body fields (0x650 / 0x668 bytes after the standard header) are zero-filled because their layout is still unknown. Containers produced here advertise compression / encryption / backup-type via standard INFO records, and wrap user inputs in a vendor-namespace `UserDataTypeTag` envelope so the project's own reader can extract them again. References: `https://www.aomeitech.com` — vendor — the .adi/.afi container is proprietary and unpublishedAOMEI never published a specification. What is known of the on-disk layout was recovered by decompiling the shipped binaries.
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
@@ -9165,7 +9165,7 @@ A single decoded INFO/INDEX record from the AOMEI payload. Carries the raw 12-by
 
 #### `AomeiReader`
 
-Reader for AOMEI Backupper image files (`.adi` disk / partition / system image and `.afi` file backup), implementing the partial specification recovered from binary reverse engineering of the AOMEI Backupper binary stack — see `docs/AOMEI_FORMAT_SPEC.md`. What this reader verifies and surfaces: Five-byte ASCII signature `BIFH\` at offset 0 — preserved from the original R/O metadata baseline so detection logic stays unchanged.Full `BR_IMAGE_FILE_HEAD` at offset 0 (0x65C bytes): Flag, Size and Crc32 fields verified per spec §2.1; the remaining 0x650 body bytes are surfaced as `HeadBody` for future RE work.Full `BR_IMAGE_FILE_TAIL` at offset `file_size - 0x674`: same Flag/Size/Crc32 verification, body surfaced as `TailBody`.Walk of every `BR_STANDARD_HEADER`-prefixed record between the head and the tail; each record's CRC is verified per the spec §3.1 invariant `BRCrc32(record, sizeof(record)) == saved_crc`.Typed views of the four confirmed INFO records: `InfoTypeImageCompress` (0x105), `InfoTypeImageEncrypt` (0x106), `InfoTypeImagePassword` (0x107), `InfoTypeBackupType` (0x10C). What is not yet decoded (per spec §10): Head/tail body fields past the first 12 bytes — layout TODO.INDEX_TYPE_DATABLOCK / DIRTREE / VOLUME / DATAAREA / ROOT record bodies — only the BR_STANDARD_HEADER framing is walked; the body bytes are passed through as opaque `Body`.Encryption (AES variant + IV derivation) and the compression method numeric mapping — fields surfaced as-is. The reader is tolerant: a short/partial image is reported via `ParseStatus` rather than thrown, so callers (e.g. the descriptor's `List` / `Extract` path) can fall back to the header-surface treatment without exception handling on the hot path.
+Reader for AOMEI Backupper image files (`.adi` disk / partition / system image and `.afi` file backup), implementing the partial layout recovered from binary reverse engineering of the AOMEI Backupper binary stack. What this reader verifies and surfaces: Five-byte ASCII signature `BIFH\` at offset 0 — preserved from the original R/O metadata baseline so detection logic stays unchanged.Full `BR_IMAGE_FILE_HEAD` at offset 0 (0x65C bytes): Flag, Size and Crc32 fields verified; the remaining 0x650 body bytes are surfaced as `HeadBody` for future RE work.Full `BR_IMAGE_FILE_TAIL` at offset `file_size - 0x674`: same Flag/Size/Crc32 verification, body surfaced as `TailBody`.Walk of every `BR_STANDARD_HEADER`-prefixed record between the head and the tail; each record's CRC is verified using the invariant `BRCrc32(record, sizeof(record)) == saved_crc`.Typed views of the four confirmed INFO records: `InfoTypeImageCompress` (0x105), `InfoTypeImageEncrypt` (0x106), `InfoTypeImagePassword` (0x107), `InfoTypeBackupType` (0x10C). What is not yet decoded: Head/tail body fields past the first 12 bytes — layout TODO.INDEX_TYPE_DATABLOCK / DIRTREE / VOLUME / DATAAREA / ROOT record bodies — only the BR_STANDARD_HEADER framing is walked; the body bytes are passed through as opaque `Body`.Encryption (AES variant + IV derivation) and the compression method numeric mapping — fields surfaced as-is. The reader is tolerant: a short/partial image is reported via `ParseStatus` rather than thrown, so callers (e.g. the descriptor's `List` / `Extract` path) can fall back to the header-surface treatment without exception handling on the hot path.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9241,7 +9241,7 @@ AOMEI `BRCrc32` — the CRC-32 used to integrity-protect the file head, file tai
 
 #### `BrFileHead`
 
-`BR_IMAGE_FILE_HEAD` — the 0x65C-byte struct at offset 0 of every `.adi`/`.afi` image. Layout per `docs/AOMEI_FORMAT_SPEC.md` §2.1, sourced from `ammntdrv.sys!FUN_00015e90`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x650 bytes are TODO per spec §10.1 (likely backup GUID, version, BR_IMAGE_INFO descriptors). The reader exposes the raw body bytes via `BodyRaw` for future RE work; the writer fills it with zeros and seals the CRC. The Flag field reuses the `BifhFlag``0x48464942` ("BIFH" LE) — the same four bytes as `BifhMagicAscii`[0..4] which the descriptor uses for offset-0 magic detection. The trailing 0x5C ("\\") byte that public sources document as part of the family magic is therefore the low byte of `Size` (0x65C = 1628 = 0x_00_00_06_5C LE) — not an extra magic byte. The reader still tolerates samples whose low-byte happens to differ (would be rejected at the Size check), keeping the 5-byte ASCII detection that has shipped since the R/O baseline.
+`BR_IMAGE_FILE_HEAD` — the 0x65C-byte struct at offset 0 of every `.adi`/`.afi` image. Layout sourced from `ammntdrv.sys!FUN_00015e90`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x650 bytes are TODO (likely backup GUID, version, BR_IMAGE_INFO descriptors). The reader exposes the raw body bytes via `BodyRaw` for future RE work; the writer fills it with zeros and seals the CRC. The Flag field reuses the `BifhFlag``0x48464942` ("BIFH" LE) — the same four bytes as `BifhMagicAscii`[0..4] which the descriptor uses for offset-0 magic detection. The trailing 0x5C ("\\") byte that public sources document as part of the family magic is therefore the low byte of `Size` (0x65C = 1628 = 0x_00_00_06_5C LE) — not an extra magic byte. The reader still tolerates samples whose low-byte happens to differ (would be rejected at the Size check), keeping the 5-byte ASCII detection that has shipped since the R/O baseline.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9256,7 +9256,7 @@ AOMEI `BRCrc32` — the CRC-32 used to integrity-protect the file head, file tai
 
 #### `BrFileTail`
 
-`BR_IMAGE_FILE_TAIL` — the 0x674-byte struct at offset `file_size - 0x674`. Layout per `docs/AOMEI_FORMAT_SPEC.md` §2.2, sourced from `ammntdrv.sys!FUN_0001601c`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x668 bytes are TODO per spec §10.1 (likely index offset, total payload size and back-pointer to head). The reader exposes the raw body bytes via `BodyRaw`; the writer fills it with zeros and seals the CRC.
+`BR_IMAGE_FILE_TAIL` — the 0x674-byte struct at offset `file_size - 0x674`. Layout sourced from `ammntdrv.sys!FUN_0001601c`. Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the remaining 0x668 bytes are TODO (likely index offset, total payload size and back-pointer to head). The reader exposes the raw body bytes via `BodyRaw`; the writer fills it with zeros and seals the CRC.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12603,37 +12603,6 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes supported non-solid pages directly through the RAR5 block remover. Unsupported encryption, recovery/quick-open, solid dependency and RAR4 cases are rejected before the first byte move and therefore safely fall back to the verified rebuild without an O(total bytes) transaction snapshot. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: gaps not covered by a live extent in the RAR layout map (markers, block headers, packed data and ENDARC are live and preserved). Cluster-tip wiping is N/A (RAR packs blocks back to back). |
-
-### Namespace `FileFormat.Cbt`
-
-[`CbtFormatDescriptor`](#cbtformatdescriptor)
-
-#### `CbtFormatDescriptor`
-
-Comic book archive — a POSIX tar container of sequentially named page images, conventionally suffixed .cbt. Byte-identical to a tar archive, so it is identified by extension only and every operation is the tar one. References: `https://en.wikipedia.org/wiki/Comic_book_archive` — the .cbt/.cbz/.cbr naming convention`https://pubs.opengroup.org/onlinepubs/9799919799/utilities/pax.html` — POSIX ustar/pax interchange format — the underlying container
-
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `CbtFormatDescriptor` | `CbtFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
 
 ### Namespace `FileFormat.Cbz`
 
@@ -18458,93 +18427,6 @@ Writes a big-endian GameCube `.hps` (HAL HALPST) carrying DSP-ADPCM, laid out pe
 | `HpsWriter` | `HpsWriter()` |  |
 | `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate, int loopStart = 0)` | Encodes per-channel mono PCM16 to DSP-ADPCM and serialises a complete HPS. All channels must share the same sample count. |
 
-### Namespace `FileFormat.IaArc`
-
-[`IaArcFormatDescriptor`](#iaarcformatdescriptor) · [`IaArcReader`](#iaarcreader) · [`IaArcRecord`](#iaarcrecord) · [`IaArcWriter`](#iaarcwriter) · [`IaArcWriter.Record`](#iaarcwriterrecord)
-
-#### `IaArcFormatDescriptor`
-
-Internet Archive ARC — the crawl container that preceded WARC (ISO 28500). Each entry is one captured URL; its bytes are the record body exactly as archived (HTTP response headers included). References: `https://archive.org/web/researcher/ArcFileFormat.php` — the Internet Archive's ARC 1.0 / 2.0 specification`https://github.com/webrecorder/warcio` — warcio, the reader used as oracle
-
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `IaArcFormatDescriptor` | `IaArcFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
-
-#### `IaArcReader`
-
-Reads an uncompressed Internet Archive ARC crawl file (versions 1 and 2). An `.arc.gz` is a sequence of gzip members, one per record; it decompresses to exactly this stream.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `IaArcReader` | `IaArcReader(Stream stream)` |  |
-| `FileDescription` | `IaArcRecord FileDescription { get; }` | The `filedesc://` record. |
-| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The magic every ARC file starts with. |
-| `Records` | `IReadOnlyList<IaArcRecord> Records { get; }` | The URL records, in file order. |
-| `VersionBlock` | `byte[] VersionBlock { get; }` | The filedesc record's body: the version block plus any metadata that follows it. |
-| `Version` | `int Version { get; }` | ARC version, 1 or 2. |
-| `ReadBody` | `byte[] ReadBody(IaArcRecord record)` |  |
-
-#### `IaArcRecord`
-
-One record of an Internet Archive ARC file.
-
-Implements `IEquatable<IaArcRecord>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `IaArcRecord` | `IaArcRecord(long RecordOffset, string HeaderLine, string Url, string IpAddress, string ArchiveDate, string ContentType, long BodyOffset, long BodyLength)` | One record of an Internet Archive ARC file. |
-| `ArchiveDate` | `string ArchiveDate { get; init; }` | Archive date, 14 digits (YYYYMMDDhhmmss). |
-| `BodyLength` | `long BodyLength { get; init; }` | Body length (the line's last field). |
-| `BodyOffset` | `long BodyOffset { get; init; }` | Offset of the body (the captured response, HTTP headers included). |
-| `ContentType` | `string ContentType { get; init; }` | Content type field. |
-| `HeaderLine` | `string HeaderLine { get; init; }` | The record's header line, without its line terminator. |
-| `IpAddress` | `string IpAddress { get; init; }` | IP address field. |
-| `RecordOffset` | `long RecordOffset { get; init; }` | Offset of the record's header line. |
-| `Url` | `string Url { get; init; }` | The URL (may contain spaces; the remaining fields are taken from the right). |
-
-#### `IaArcWriter`
-
-Writes uncompressed version-1 Internet Archive ARC files and appends records to existing ones.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `WriteRecord` | `static void WriteRecord(Stream output, Record r)` | Writes one record: header line, body, LF separator. |
-| `Write` | `static void Write(Stream output, string arcFileName, DateTime createdUtc, IEnumerable<Record> records)` | Writes a new version-1 ARC: the filedesc record, then one URL record per entry. |
-
-#### `IaArcWriter.Record`
-
-Field values for a record this writer emits.
-
-Implements `IEquatable<Record>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Record` | `Record(string Url, byte[] Body, DateTime ArchiveDateUtc, string ContentType = "application/octet-stream", string IpAddress = "0.0.0.0")` | Field values for a record this writer emits. |
-| `ArchiveDateUtc` | `DateTime ArchiveDateUtc { get; init; }` |  |
-| `Body` | `byte[] Body { get; init; }` |  |
-| `ContentType` | `string ContentType { get; init; }` |  |
-| `IpAddress` | `string IpAddress { get; init; }` |  |
-| `Url` | `string Url { get; init; }` |  |
-
 ### Namespace `FileFormat.IcePacker`
 
 [`IcePackerFormatDescriptor`](#icepackerformatdescriptor) · [`IcePackerStream`](#icepackerstream)
@@ -18739,115 +18621,69 @@ Creates IFF CDAF archives with FNAM+FDAT chunk pairs.
 
 ### Namespace `FileFormat.InnoSetup`
 
-[`InnoCompression`](#innocompression) · [`InnoEncryption`](#innoencryption) · [`InnoSetupEntry`](#innosetupentry) · [`InnoSetupFormatDescriptor`](#innosetupformatdescriptor) · [`InnoSetupReader`](#innosetupreader) · [`InnoVersion`](#innoversion)
-
-#### `InnoCompression`
-
-Compression of a setup-1 chunk.
-
-| Value | Numeric | Summary |
-| --- | --- | --- |
-| `Stored` | `0` | Stored. |
-| `Zlib` | `1` | zlib (with the two-byte zlib header). |
-| `BZip2` | `2` | bzip2. |
-| `Lzma1` | `3` | LZMA with Inno's five-byte properties header. |
-| `Lzma2` | `4` | LZMA2 with Inno's one-byte dictionary-size header. |
-| `Unknown` | `5` | A value the header does not define. |
-
-#### `InnoEncryption`
-
-Encryption of a setup-1 chunk.
-
-| Value | Numeric | Summary |
-| --- | --- | --- |
-| `None` | `0` | Not encrypted. |
-| `Arc4Md5` | `1` | ARC4 keyed with MD5(salt + password) (4.2.2 – 5.3.8). |
-| `Arc4Sha1` | `2` | ARC4 keyed with SHA-1(salt + password) (5.3.9 – 6.3.x). |
-| `XChaCha20` | `3` | XChaCha20 keyed by PBKDF2-SHA256 (6.4+). |
+[`InnoSetupEntry`](#innosetupentry) · [`InnoSetupFormatDescriptor`](#innosetupformatdescriptor) · [`InnoSetupReader`](#innosetupreader) · [`InnoSetupWriter`](#innosetupwriter)
 
 #### `InnoSetupEntry`
 
-A file an Inno Setup installer installs.
+Represents a file or directory entry listed in an Inno Setup installer.
 
 Implements `IEquatable<InnoSetupEntry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `InnoSetupEntry` | `InnoSetupEntry(string FileName, long Size, DateTime? LastModified, int DataIndex)` | A file an Inno Setup installer installs. |
-| `DataIndex` | `int DataIndex { get; init; }` | Index of the file location (data entry) holding the bytes. |
-| `FileName` | `string FileName { get; init; }` | The destination path with Inno constants spelled as directories, as innoextract writes it: `{app}\bin\x.dll` becomes `app/bin/x.dll`. |
-| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether the entry is a directory; Inno [Files] entries never are. |
-| `LastModified` | `DateTime? LastModified { get; init; }` | The file time the compiler recorded (UTC), or null. |
-| `Size` | `long Size { get; init; }` | The uncompressed size in bytes. |
+| `InnoSetupEntry` | `InnoSetupEntry(string FileName, string DestDir, long Size, long CompressedSize, bool IsDirectory)` | Represents a file or directory entry listed in an Inno Setup installer. |
+| `CompressedSize` | `long CompressedSize { get; init; }` | The compressed size in bytes, or -1 when unknown. |
+| `DestDir` | `string DestDir { get; init; }` | The destination directory string from the installer header, or empty. |
+| `FileName` | `string FileName { get; init; }` | The source filename or a generated name when parsing fails. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry represents a directory rather than a file. |
+| `Size` | `long Size { get; init; }` | The uncompressed file size in bytes, or -1 when unknown. |
 
 #### `InnoSetupFormatDescriptor`
 
-Inno Setup installer: the files of its [Files] section. References: `https://jrsoftware.org/isinfo.php` — Inno Setup; `https://github.com/jrsoftware/issrc` holds its sources (Shared.Struct.pas defines the records)`https://github.com/dscharrer/innoextract` — innoextract (zlib licence), the extractor this reader was converted from and is checked against
+Inno Setup installer package (PE stub + Setup.0 data blob). References: `https://jrsoftware.org/isinfo.php` — official Inno Setup site (Jordan Russell)`https://github.com/dscharrer/innoextract` — innoextract — de-facto reference for the undocumented installer data layout`https://en.wikipedia.org/wiki/Inno_Setup` — Wikipedia
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `InnoSetupFormatDescriptor` | `InnoSetupFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Decodes one entry into memory; an unknown name yields no bytes. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens one entry as a bounded read-only stream. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The reader produces the decoded bytes per entry; the matched bytes are wrapped in a `BoundedEntryStream` sized to their logical length. |
 
 #### `InnoSetupReader`
 
-Reads the files an Inno Setup installer carries.
+Reads Inno Setup installer metadata from a Windows PE executable.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `InnoSetupReader` | `InnoSetupReader(Stream stream)` | Opens an Inno Setup installer (setup.exe) or a bare setup-0 file. |
-| `AppName` | `string AppName { get; }` | Gets the application name from the setup header. |
-| `AppVersion` | `string AppVersion { get; }` | Gets the application version from the setup header. |
-| `Compression` | `InnoCompression Compression { get; }` | Gets the compressor the files were stored with. |
-| `Entries` | `IReadOnlyList<InnoSetupEntry> Entries { get; }` | Gets the files, named and filtered the way innoextract extracts them. |
-| `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether some files are encrypted. |
-| `VersionText` | `string VersionText { get; }` | Gets the version as text, e.g. "5.5.7 (unicode)". |
-| `Version` | `InnoVersion Version { get; }` | Gets the setup-data version. |
-| `ExtractMany` | `void ExtractMany(IEnumerable<InnoSetupEntry> entries, Action<InnoSetupEntry, byte[]> sink)` | Decodes the given entries; each chunk is decompressed once for all the files it holds. |
-| `Extract` | `byte[] Extract(InnoSetupEntry entry)` | Returns the bytes of one entry, verified against the stored checksum. |
-| `IsInnoSetup` | `static bool IsInnoSetup(Stream stream)` | Cheap detection: a setup loader offset table whose setup-0 starts with an Inno Setup version tag. |
+| `InnoSetupReader` | `InnoSetupReader(Stream stream)` | Opens an Inno Setup installer from a seekable stream. |
+| `Entries` | `IReadOnlyList<InnoSetupEntry> Entries { get; }` | Gets the list of entries parsed from the Setup.0 header. |
+| `Version` | `string Version { get; }` | Gets the Inno Setup version string detected in the overlay, e.g. "5.5.3". |
+| `Extract` | `byte[] Extract(InnoSetupEntry entry)` | Attempts to extract the data for `entry` from the Setup.1 block. |
 
-#### `InnoVersion`
+#### `InnoSetupWriter`
 
-The setup-data version an Inno Setup installer was written with, packed as `(a << 24) | (b << 16) | (c << 8) | d`.
-
-Implements `IEquatable<InnoVersion>`.
+Writes a minimal Inno Setup header. No PE stub is emitted; the reader scans from offset 0 for the Inno signature when it can't parse a PE. Setup.0 is emitted as an empty compressed block — the reader's LZMA + zlib decompression both fail gracefully on empty input, leaving the entry list empty. This is detection-only WORM; producing a functional installer requires bundling a signed PE stub which is out of scope.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `InnoVersion` | `InnoVersion(uint Value, bool IsUnicode, bool IsIsx, bool IsKnown)` | The setup-data version an Inno Setup installer was written with, packed as `(a << 24) \| (b << 16) \| (c << 8) \| d`. |
-| `Build` | `int Build { get; }` | Gets the fourth version component (variant or build). |
-| `IsAmbiguous` | `bool IsAmbiguous { get; }` | True for the tags that more than one layout used (the compiler was changed without the tag). |
-| `IsIsx` | `bool IsIsx { get; init; }` |  |
-| `IsKnown` | `bool IsKnown { get; init; }` |  |
-| `IsUnicode` | `bool IsUnicode { get; init; }` |  |
-| `Major` | `int Major { get; }` | Gets the major version. |
-| `Minor` | `int Minor { get; }` | Gets the minor version. |
-| `Patch` | `int Patch { get; }` | Gets the patch version. |
-| `Value` | `uint Value { get; init; }` |  |
-| `AtLeast` | `bool AtLeast(int a, int b, int c, int d = 0)` | True when this version is at least a.b.c.d. |
-| `Below` | `bool Below(int a, int b, int c, int d = 0)` | True when this version is below a.b.c.d. |
-| `Next` | `InnoVersion? Next()` | The next known version of the same flavour (ANSI/Unicode, ISX), or null. |
-| `Parse` | `static InnoVersion Parse(ReadOnlySpan<byte> tag64)` | Parses the 64-byte version tag at the start of setup-0. |
-| `ToString` | `override string ToString()` |  |
-| `V` | `static uint V(int a, int b, int c, int d = 0)` | Packs a version number. |
+| `InnoSetupWriter` | `InnoSetupWriter()` |  |
+| `WriteTo` | `void WriteTo(Stream output, byte[] embeddedData = null)` | Writes the to to the supplied output. |
 
 ### Namespace `FileFormat.Ipa`
 
@@ -20688,104 +20524,6 @@ Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable
 | `Description` | `override string Description { get; }` | Gets the description. |
 | `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
 | `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
-
-### Namespace `FileFormat.Mar`
-
-[`MarAdditionalSection`](#maradditionalsection) · [`MarEntry`](#marentry) · [`MarFormatDescriptor`](#marformatdescriptor) · [`MarReader`](#marreader) · [`MarSignature`](#marsignature) · [`MarWriter`](#marwriter)
-
-#### `MarAdditionalSection`
-
-An additional-section block entry; id 1 is the product-information block.
-
-Implements `IEquatable<MarAdditionalSection>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `MarAdditionalSection` | `MarAdditionalSection(uint Id, byte[] Data)` | An additional-section block entry; id 1 is the product-information block. |
-| `ProductInformationId` | `const uint ProductInformationId` | Product-information block id. |
-| `Data` | `byte[] Data { get; init; }` |  |
-| `Id` | `uint Id { get; init; }` |  |
-
-#### `MarEntry`
-
-One file of a Mozilla ARchive: where its bytes sit, how many there are, and its permission bits.
-
-Implements `IEquatable<MarEntry>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `MarEntry` | `MarEntry(string Name, uint Offset, uint Size, uint Flags)` | One file of a Mozilla ARchive: where its bytes sit, how many there are, and its permission bits. |
-| `Flags` | `uint Flags { get; init; }` |  |
-| `Name` | `string Name { get; init; }` |  |
-| `Offset` | `uint Offset { get; init; }` |  |
-| `Size` | `uint Size { get; init; }` |  |
-
-#### `MarFormatDescriptor`
-
-Mozilla ARchive (MAR) — the container of Firefox / Thunderbird update packages. References: `https://wiki.mozilla.org/Software_Update:MAR` — Mozilla's format description`https://github.com/mozilla-releng/build-mar` — mardor, Mozilla release engineering's MAR reader/writer (the oracle)
-
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `MarFormatDescriptor` | `MarFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
-
-#### `MarReader`
-
-Reads a Mozilla ARchive (MAR), the container of Firefox/Thunderbird update packages.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `MarReader` | `MarReader(Stream stream)` |  |
-| `AdditionalSections` | `IReadOnlyList<MarAdditionalSection> AdditionalSections { get; }` | Additional sections (product information and any unknown ones), in file order. |
-| `DeclaredFileSize` | `ulong? DeclaredFileSize { get; }` | The total file size the signature block declares, when present. |
-| `Entries` | `IReadOnlyList<MarEntry> Entries { get; }` | Files in index order. |
-| `HasSignatureBlock` | `bool HasSignatureBlock { get; }` | Whether the archive carries the signature/additional-section header blocks. |
-| `IndexOffset` | `uint IndexOffset { get; }` | Offset of the index. |
-| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The "MAR1" magic. |
-| `ProductInformation` | `ValueTuple<string, string>? ProductInformation { get; }` | Channel and product version of the product-information block, when present. |
-| `Signatures` | `IReadOnlyList<MarSignature> Signatures { get; }` | Signatures; empty for unsigned or old-style archives. |
-| `DescribeStoredData` | `static string DescribeStoredData(ReadOnlySpan<byte> head)` | Names the compression the update tooling applied to a member ("xz", "bzip2") by its magic, or "stored" — informational only: extraction always returns the stored bytes. |
-| `Extract` | `byte[] Extract(MarEntry entry)` | Returns a member's stored bytes. |
-
-#### `MarSignature`
-
-A signature block entry (algorithm 1 = RSA-PKCS1-SHA1, 2 = RSA-PKCS1-SHA384).
-
-Implements `IEquatable<MarSignature>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `MarSignature` | `MarSignature(uint AlgorithmId, byte[] Data)` | A signature block entry (algorithm 1 = RSA-PKCS1-SHA1, 2 = RSA-PKCS1-SHA384). |
-| `AlgorithmId` | `uint AlgorithmId { get; init; }` |  |
-| `Data` | `byte[] Data { get; init; }` |  |
-
-#### `MarWriter`
-
-Writes an unsigned Mozilla ARchive. Without an additional-section list it writes the original layout (header, data, index); with one (even empty) — e.g. a product-information block — it writes the signed-era layout with an empty signature block, exactly as Mozilla's `mar -H channel -V version -c` and mardor do for unsigned packages.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `DefaultFlags` | `const uint DefaultFlags` | Default permission bits for a member with none supplied (rw-r--r--). |
-| `ProductInformation` | `static MarAdditionalSection ProductInformation(string channel, string productVersion)` | Builds the product-information section payload (channel and version, each NUL-terminated). |
-| `Write` | `static void Write(Stream output, IReadOnlyList<ValueTuple<string, byte[], uint>> files, IReadOnlyList<MarAdditionalSection> additionalSections = null)` |  |
 
 ### Namespace `FileFormat.Matlab`
 
@@ -33277,6 +33015,7 @@ Compression method used for a `ZooEntry`.
 | --- | --- | --- |
 | `Store` | `0` | File data is stored verbatim with no compression. |
 | `Lzw` | `1` | File data is compressed using normal Zoo LZW (9–13 bit, LSB-first). |
+| `Lzh` | `2` | File data is compressed with Zoo 2.10 LZH (-lh5- style static-Huffman blocks, 8 KiB window). |
 
 #### `ZooConstants`
 
@@ -33292,10 +33031,12 @@ Constants for the Zoo archive format.
 | `DirectoryEntryType2FixedSize` | `const int DirectoryEntryType2FixedSize` | Fixed size of a type-2 directory entry before its variable section. |
 | `ExtractMajorVersion` | `const byte ExtractMajorVersion` | Minimum Zoo version required to extract Store and normal LZW entries. |
 | `ExtractMinorVersion` | `const byte ExtractMinorVersion` | Minimum Zoo version required to extract Store and normal LZW entries. |
+| `LzhDictionaryBits` | `const int LzhDictionaryBits` | Window size of Zoo LZH in bits (DICBIT in Zoo 2.10). |
 | `LzwMaxBits` | `const int LzwMaxBits` | Maximum LZW code width in bits. |
 | `LzwMinBits` | `const int LzwMinBits` | Initial LZW code width in bits. |
 | `Magic` | `const uint Magic` | Magic number present in the archive header and every directory entry. |
 | `MaxShortNameLength` | `const int MaxShortNameLength` | Maximum short filename length (13 bytes including null terminator). |
+| `MethodLzh` | `const byte MethodLzh` | Compression method: Zoo 2.10 LZH (Okumura "ar" -lh5- blocks, 8 KiB window, zero block-size terminator). |
 | `MethodLzw` | `const byte MethodLzw` | Compression method: normal Zoo LZW. |
 | `MethodStore` | `const byte MethodStore` | Compression method: file is stored without compression. |
 | `MinimumArchiveHeaderSize` | `const int MinimumArchiveHeaderSize` | Minimum/legacy type-0 Zoo archive-header size. |
@@ -33303,6 +33044,7 @@ Constants for the Zoo archive format.
 | `SystemIdPortable` | `const ushort SystemIdPortable` | Portable pathname/filesystem syntax identifier. |
 | `TypeFile` | `const byte TypeFile` | Entry type for a standard short-name file entry. |
 | `TypeLongName` | `const byte TypeLongName` | Entry type for a file entry with a variable portable-name section. |
+| `EndOfDirectory` | `static ReadOnlySpan<byte> EndOfDirectory { get; }` | The directory entry Zoo writes after the last member: its next-entry link is 0, which is how Zoo recognises the end of the chain, so the last real member must point at this entry rather than carry the 0 itself. Bytes as Zoo 2.10 writes them (all fields zero, type 2, header CRC 0x83FC). |
 | `FileLeader` | `static ReadOnlySpan<byte> FileLeader { get; }` | Five-byte marker placed immediately before member payloads. |
 
 #### `ZooEntry`
@@ -33394,11 +33136,43 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.Zpaq`
 
-[`ZpaqBuildingBlock`](#zpaqbuildingblock) · [`ZpaqEntry`](#zpaqentry) · [`ZpaqFormatDescriptor`](#zpaqformatdescriptor) · [`ZpaqReader`](#zpaqreader) · [`ZpaqWriter`](#zpaqwriter)
+[`Component`](#component) · [`ComponentType`](#componenttype) · [`ZpaqBuildingBlock`](#zpaqbuildingblock) · [`ZpaqConstants`](#zpaqconstants) · [`ZpaqEntry`](#zpaqentry) · [`ZpaqFormatDescriptor`](#zpaqformatdescriptor) · [`ZpaqRangeCoder`](#zpaqrangecoder) · [`ZpaqRangeDecoder`](#zpaqrangedecoder) · [`ZpaqRangeEncoder`](#zpaqrangeencoder) · [`ZpaqReader`](#zpaqreader) · [`ZpaqWriter`](#zpaqwriter) · [`ZpaqlVm`](#zpaqlvm)
+
+#### `Component`
+
+Represents a single prediction component in the ZPAQL context-mixing model.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Component` | `Component()` |  |
+| `Aux` | `int Aux { get; set; }` | Auxiliary state (match length, mixer weights, etc.). |
+| `Context` | `int Context { get; set; }` | Current hashed context value. |
+| `Memory` | `int[] Memory { get; set; }` | Component memory (CM counters, ICM byte histories, etc.). |
+| `Param1` | `int Param1 { get; set; }` | First parameter (meaning depends on type, e.g. log2 of table size). |
+| `Param2` | `int Param2 { get; set; }` | Second parameter (meaning depends on type). |
+| `Param3` | `int Param3 { get; set; }` | Third parameter (meaning depends on type). |
+| `Prediction` | `int Prediction { get; set; }` | Current prediction (0..65535, probability of next bit being 1). |
+| `Type` | `ComponentType Type { get; set; }` | The component type. |
+
+#### `ComponentType`
+
+Component type identifiers for the ZPAQL context-mixing prediction model.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Const` | `0` | Constant prediction (always predicts 50/50). |
+| `Cm` | `1` | Context model — 2^n counters indexed by hashed context. |
+| `Icm` | `2` | Indirect context model — byte history maps to a counter. |
+| `Match` | `3` | Match model — predicts by finding a previous matching context. |
+| `Avg` | `4` | Average of two component predictions. |
+| `Mix2` | `5` | Two-input adaptive mixer. |
+| `Mix` | `6` | N-input adaptive mixer. |
+| `Isse` | `7` | Indirect secondary symbol estimation. |
+| `Sse` | `8` | Direct secondary symbol estimation. |
 
 #### `ZpaqBuildingBlock`
 
-ZPAQ compression as a building block: the input coded as a plain ZPAQ stream (locator tag, blocks of one segment, SHA-1 trailers) with zpaq's method 4 — an order-0 ICM, an ISSE chain up to order 6, a match model and a mixer, all described in the block's own ZPAQL header.
+Exposes the ZPAQ context-mixing codec — the compression stage that the ZPAQ journaling archiver wraps — as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support.
 
 Implements `IBuildingBlock`.
 
@@ -33412,23 +33186,39 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-#### `ZpaqEntry`
+#### `ZpaqConstants`
 
-A file or directory as recorded in a ZPAQ archive.
+Constants for the ZPAQ archive format (level 1 journaling).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Attributes` | `long Attributes { get; }` | Raw attribute bytes as stored (first byte 'w' = Windows attributes follow, 'u' = Unix mode follows), packed little-endian; 0 when none were stored. |
-| `CompressedSize` | `long CompressedSize { get; }` | Compressed size attributed to this entry: the share of the data blocks it references, proportional to its new (non-deduplicated) fragments. Zero for directories. |
-| `FileName` | `string FileName { get; }` | Path as stored, with forward slashes; directories end with '/'. |
-| `IsDirectory` | `bool IsDirectory { get; }` | Whether this entry is a directory. |
-| `LastModified` | `DateTime? LastModified { get; }` | Last-modified time (UTC) from the archive's decimal date, or `null`. |
-| `Size` | `long Size { get; }` | Uncompressed size in bytes, or -1 when the archive does not record it (streaming format). |
-| `Version` | `int Version { get; }` | 1-based version (transaction) that last wrote this entry. |
+| `BlockTypeCompressed` | `const byte BlockTypeCompressed` | Block type byte: compressed data block (contains ZPAQL program + compressed payload). |
+| `BlockTypeData` | `const byte BlockTypeData` | Block type byte: data block in a journaling transaction. Each data block holds the (ZPAQL-compressed) payload for one or more files. |
+| `BlockTypeHeader` | `const byte BlockTypeHeader` | Block type byte: comment/filename header block in a journaling transaction. In a level-1 journaling archive this block carries the transaction date, filenames and per-file attributes for one transaction. |
+| `BlockTypeIndex` | `const byte BlockTypeIndex` | Block type byte: hash/index block that closes a journaling transaction. Contains SHA-1 hashes of the uncompressed file data. |
+| `FileTimeSize` | `const int FileTimeSize` | Size of the Windows FILETIME timestamp stored in journaling header blocks (8 bytes). |
+| `Level1` | `const byte Level1` | Compression level byte for ZPAQ level 1 archives. |
+| `Level2` | `const byte Level2` | Compression level byte for ZPAQ level 2 archives. |
+| `MinBlockHeaderSize` | `const int MinBlockHeaderSize` | Minimum number of bytes in a valid block header (3-byte prefix + 1 level byte + 1 type byte = 5 bytes). |
+| `WindowsToUnixEpochTicks` | `const long WindowsToUnixEpochTicks` | Windows FILETIME ticks (100-nanosecond intervals) from the Windows epoch (1601-01-01) to the Unix epoch (1970-01-01), used when converting timestamps. |
+| `BlockPrefix` | `static ReadOnlySpan<byte> BlockPrefix { get; }` | The 3-byte block locator prefix present at the start of every ZPAQ block ("zPQ"). |
+
+#### `ZpaqEntry`
+
+Represents a single file entry recorded in a ZPAQ journaling archive.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CompressedSize` | `long CompressedSize { get; }` | Gets the compressed size of the data block(s) that carry this file's data. This is the total byte count of the raw (still-compressed) data blocks associated with this entry. |
+| `FileName` | `string FileName { get; }` | Gets the filename as stored in the archive. Path separators are always forward slashes; directory entries end with '/'. |
+| `IsDirectory` | `bool IsDirectory { get; }` | Gets a value indicating whether this entry represents a directory. |
+| `LastModified` | `DateTime? LastModified { get; }` | Gets the last-modified timestamp decoded from the journal header, or `null` when the timestamp could not be recovered. |
+| `Size` | `long Size { get; }` | Gets the uncompressed size of the file in bytes as reported by the archive. This value is zero for directory entries and for files whose size could not be determined from the journal (e.g. when the header block is compressed). |
+| `Version` | `int Version { get; }` | Gets the zero-based transaction index in which this entry was recorded. Each append to a ZPAQ archive constitutes a new transaction; the most recent transaction with a given filename defines the file's current state. |
 
 #### `ZpaqFormatDescriptor`
 
-ZPAQ archive (journaling and streaming layouts) with deduplication and ZPAQL-described context-mixing compression. References: `https://mattmahoney.net/dc/zpaq206.pdf` — ZPAQ Level 2 specification (Matt Mahoney)`https://mattmahoney.net/dc/zpaq.html` — zpaq / libzpaq reference implementation (public domain)
+ZPAQ journaling archive with content-defined deduplication and configurable context-mixing compression. References: `http://mattmahoney.net/dc/zpaq.html` — official ZPAQ page and Level 2 format specification (Matt Mahoney)`https://github.com/zpaq/zpaq` — reference implementation`https://en.wikipedia.org/wiki/ZPAQ` — Wikipedia overview
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
@@ -33436,56 +33226,109 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | --- | --- | --- |
 | `ZpaqFormatDescriptor` | `ZpaqFormatDescriptor()` |  |
 | `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the ZPAQ archive in listing order. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the ZPAQ archive per the requested mode. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `ZpaqRangeCoder`
+
+Shared constants and the safety argument of the ZPAQ binary range coder.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CarryEdge` | `const uint CarryEdge` | Value at or above which the top byte of `low` may still be bumped by a carry. |
+| `FlushBytes` | `const int FlushBytes` | Number of `low` bytes the encoder pushes out when the message ends. |
+| `MaximumProbability` | `const int MaximumProbability` | Largest probability of a 1 bit the coder accepts. |
+| `MinimumProbability` | `const int MinimumProbability` | Smallest probability of a 1 bit the coder accepts. |
+| `ProbabilityBits` | `const int ProbabilityBits` | Number of fractional bits in a probability, so probabilities span 0..2^16. |
+| `RangeMinimum` | `const uint RangeMinimum` | Lower bound of the normalised range; the coder renormalises below this. |
+| `Split` | `static uint Split(uint range, int probabilityOfOne)` | Computes the split point between the 1 subrange and the 0 subrange. |
+
+#### `ZpaqRangeDecoder`
+
+Carry-propagating binary range decoder, the exact mirror of `ZpaqRangeEncoder`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZpaqRangeDecoder` | `ZpaqRangeDecoder(byte[] input, int offset)` | Creates a decoder reading from the given buffer, priming its code word from the first `FlushBytes` bytes. |
+| `Range` | `uint Range { get; }` | Gets the current range, for tests that assert the coder invariant. |
+| `DecodeBit` | `int DecodeBit(int probabilityOfOne)` | Decodes one bit against the given probability. |
+
+#### `ZpaqRangeEncoder`
+
+Carry-propagating binary range encoder. See `ZpaqRangeCoder` for the invariant that keeps both subranges non-empty.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZpaqRangeEncoder` | `ZpaqRangeEncoder(Stream output)` | Creates an encoder writing its bytes to the given stream. |
+| `Range` | `uint Range { get; }` | Gets the current range, for tests that assert the coder invariant. |
+| `EncodeBit` | `void EncodeBit(int bit, int probabilityOfOne)` | Codes one bit against the given probability. |
+| `Flush` | `void Flush()` | Pushes out the remaining bytes of `low`, ending the coded stream. |
 
 #### `ZpaqReader`
 
-Reads ZPAQ archives in both layouts the format defines: the journaling layout of `zpaq` 6.x/7.x (versioned transactions of `c`/`d`/`h`/`i` blocks with deduplicated, SHA-1 checked fragments) and the plain streaming layout (one file per block or segment run).
+Reads the journaling index of a ZPAQ archive, exposing the files recorded across all transactions.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ZpaqReader` | `ZpaqReader(Stream stream, bool leaveOpen = false)` | Opens a ZPAQ archive and reads its index. |
-| `Entries` | `IReadOnlyList<ZpaqEntry> Entries { get; }` | Files and directories present in the latest version, ordered by name. |
-| `Errors` | `int Errors { get; }` | Number of blocks that failed to decode and were skipped while reading the index. |
-| `VersionCount` | `int VersionCount { get; }` | Number of versions (transactions) in the archive. |
+| `ZpaqReader` | `ZpaqReader(Stream stream, bool leaveOpen = false)` | Opens a ZPAQ archive stream and scans its journal. |
+| `Entries` | `IReadOnlyList<ZpaqEntry> Entries { get; }` | Gets the entries discovered by scanning the archive journal. The list reflects the last recorded state of each file across all transactions (i.e. later transactions that mention the same filename supersede earlier ones in the final view). |
 | `Dispose` | `void Dispose()` |  |
-| `ExtractBytes` | `byte[] ExtractBytes(ZpaqEntry entry)` | Decodes the entry's content, verifying every fragment's (or segment's) SHA-1. |
-| `Extract` | `Stream Extract(ZpaqEntry entry)` | Returns the entry's content as a read-only stream. |
-| `GetEntries` | `IReadOnlyList<ZpaqEntry> GetEntries(int version)` | The archive contents as of version `version` (1-based). |
-| `GetVersionDate` | `DateTime? GetVersionDate(int version)` | UTC date of version `version` (1-based), or `null` for a streaming archive. |
+| `Extract` | `Stream Extract(ZpaqEntry entry)` | Returns the entry's uncompressed bytes as a stream when the data block was STORED (the layout this toolkit's `ZpaqWriter` emits). |
 
 #### `ZpaqWriter`
 
-Writes a ZPAQ journaling archive holding one version (transaction): the `c` header, the deduplicated and compressed `d` data blocks, their `h` fragment tables and the `i` index, exactly as `zpaq add` lays them out.
+Writes a ZPAQ level-1 journaling archive.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ZpaqWriter` | `ZpaqWriter(Stream stream, bool leaveOpen = false, string method = "1")` | Creates a writer that emits the archive to `stream` on dispose. |
-| `Method` | `string Method { get; }` | The zpaq compression method used for the data blocks. |
-| `TransactionDate` | `DateTime? TransactionDate { get; set; }` | Date of the transaction; defaults to the time of disposal. |
-| `AddDirectory` | `void AddDirectory(string dirName, DateTime? lastModified = null)` | Adds a directory entry. |
-| `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? lastModified = null)` | Adds (or replaces) a file. |
+| `ZpaqWriter` | `ZpaqWriter(Stream stream, bool leaveOpen = false)` | Initializes a new ZPAQ writer that writes to the specified stream. |
+| `AddDirectory` | `void AddDirectory(string dirName, DateTime? lastModified = null)` | Adds a directory entry to the archive. |
+| `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? lastModified = null)` | Adds a file entry to the archive with the given name and data. |
 | `Dispose` | `void Dispose()` |  |
+
+#### `ZpaqlVm`
+
+ZPAQL virtual machine for ZPAQ compression and decompression.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZpaqlVm` | `ZpaqlVm(ReadOnlySpan<byte> program)` | Parses a ZPAQL program header from a binary span and constructs the VM. |
+| `ZpaqlVm` | `ZpaqlVm(byte[] hcomp, byte[] pcomp, int hh, int hm, Component[] components = null)` | Creates a ZPAQL VM with the specified program and component configuration. |
+| `A` | `uint A { get; set; }` | Gets or sets register A (32-bit accumulator). |
+| `B` | `uint B { get; set; }` | Gets or sets register B (32-bit, also indexes M[]). |
+| `C` | `uint C { get; set; }` | Gets or sets register C (32-bit, also indexes M[]). |
+| `Components` | `Component[] Components { get; }` | Gets the context-mixing components. |
+| `D` | `uint D { get; set; }` | Gets or sets register D (32-bit, also indexes M[]). |
+| `F` | `bool F { get; set; }` | Gets or sets the flag register (1-bit). |
+| `H` | `uint[] H { get; }` | Gets the H[] context array. H values are set by the HCOMP program and used as context indices for the prediction components. |
+| `M` | `byte[] M { get; }` | Gets the M[] byte array used by the HCOMP/PCOMP programs. |
+| `OutputByte` | `Action<byte> OutputByte { get; set; }` | Event invoked when the PCOMP program executes an OUT instruction. |
+| `Predict` | `int Predict()` | Computes a combined prediction from all components. |
+| `Reset` | `void Reset()` | Resets the VM state (registers, arrays, components) without changing the program or component configuration. |
+| `RunHcomp` | `void RunHcomp(int input)` | Executes the HCOMP program with the given input byte. This should be called after each decoded byte to update the context hashes in H[]. |
+| `RunPcomp` | `void RunPcomp(int input)` | Executes the PCOMP (post-processing) program with the given input byte. |
+| `Squash` | `static int Squash(int x)` | Squash function: maps a logistic value (-2048..2047) to a probability (0..65535). squash(x) = 65536 / (1 + exp(-x / 64)). |
+| `Stretch` | `static int Stretch(int p)` | Stretch function: inverse of squash, maps probability (1..65534) to logistic. |
+| `Update` | `void Update(int bit)` | Updates all components after a decoded bit. |
 
 ### Namespace `FileFormat.ZxSnapshot`
 

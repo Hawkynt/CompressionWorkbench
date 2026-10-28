@@ -14,7 +14,6 @@ internal sealed class AddPartitionDialog : Form {
   private const int LabelWidth = 120;
 
   private readonly long _diskBytes;
-  private readonly int _sectorSize;
   private readonly Label _heading = new();
   private readonly TextBox _startLba = new();
   private readonly TextBox _lengthSectors = new();
@@ -25,9 +24,8 @@ internal sealed class AddPartitionDialog : Form {
   private readonly Button _cancel = new() { Text = "Cancel", DialogResult = DialogResult.Cancel };
   private readonly ToolTip _toolTips = new();
 
-  public AddPartitionDialog(long diskBytes, bool isLogical, int sectorSize = PartitionEditor.SectorSize) {
+  public AddPartitionDialog(long diskBytes, bool isLogical) {
     this._diskBytes = diskBytes;
-    this._sectorSize = sectorSize;
 
     this.Text = "Add Partition";
     this.ClientSize = new(460, 340);
@@ -48,18 +46,18 @@ internal sealed class AddPartitionDialog : Form {
     }
     this._type.SelectedItem = PartitionType.Linux;
 
-    // Start one mebibyte in (sector 2048, or 256 on a 4Kn disk), leaving room for the table, and suggest either the
+    // Start at sector 2048 (one mebibyte in), leaving room for the MBR, and suggest either the
     // first 64 MiB or whatever is left if the disk is smaller.
-    var defaultStartLba = 1024 * 1024 / sectorSize;
-    var totalLba = Math.Max(0, diskBytes / sectorSize);
-    var suggestedLength = Math.Max(1, Math.Min(64L * 1024 * 1024 / sectorSize, Math.Max(1, totalLba - defaultStartLba)));
+    const int DefaultStartLba = 2048;
+    var totalLba = Math.Max(0, diskBytes / PartitionEditor.SectorSize);
+    var suggestedLength = Math.Max(1, Math.Min(64L * 1024 * 1024 / PartitionEditor.SectorSize, Math.Max(1, totalLba - DefaultStartLba)));
 
-    this._startLba.Text = defaultStartLba.ToString();
+    this._startLba.Text = DefaultStartLba.ToString();
     this._lengthSectors.Text = suggestedLength.ToString();
-    this._hint.Text = $"Disk size: {diskBytes:N0} bytes ({totalLba:N0} sectors of {sectorSize} B).";
+    this._hint.Text = $"Disk size: {diskBytes:N0} bytes ({totalLba:N0} sectors of 512 B).";
 
-    this._toolTips.SetToolTip(this._startLba, $"Sector index from the start of the disk. Each sector is {sectorSize} bytes.");
-    this._toolTips.SetToolTip(this._lengthSectors, $"Number of {sectorSize}-byte sectors. Multiply by {sectorSize} to get bytes.");
+    this._toolTips.SetToolTip(this._startLba, "Sector index from the start of the disk. Each sector is 512 bytes.");
+    this._toolTips.SetToolTip(this._lengthSectors, "Number of 512-byte sectors. Multiply by 512 to get bytes.");
 
     this._ok.Click += (_, _) => this.OnOk();
     this._cancel.Click += (_, _) => this.Close();
@@ -112,8 +110,8 @@ internal sealed class AddPartitionDialog : Form {
       return;
     }
 
-    var startBytes = startLba * this._sectorSize;
-    var lengthBytes = lengthLba * this._sectorSize;
+    var startBytes = startLba * PartitionEditor.SectorSize;
+    var lengthBytes = lengthLba * PartitionEditor.SectorSize;
     if (startBytes + lengthBytes > this._diskBytes) {
       MessageBox.Show(this,
         $"Partition end ({startBytes + lengthBytes:N0}) exceeds disk size ({this._diskBytes:N0}).",

@@ -26,9 +26,11 @@ format,Ampk,AMPK (Amiga Pack),Archive,,.ampk,Y,Y,Y,Y
 format,Amr,3GPP AMR,Audio,,.amr;.awb;.3ga,Y,Y,Y,
 format,AmrNb,AMR-NB,Audio,,.amr,,,,
 format,AmrWb,AMR-WB,Audio,,.amr,,,,
+format,AndroidBootImage,Android boot image,Archive,,.bootimg,Y,Y,Y,Y
 format,AndroidBundle,Android App Bundle / split-APK set,Archive,,.aab;.apks,Y,Y,Y,Y
 format,AndroidOta,Android OTA payload,Archive,,,Y,Y,Y,
 format,AndroidSparse,Android Sparse Image,Archive,,.simg;.sparse,Y,Y,Y,
+format,AndroidVbmeta,Android Verified Boot (vbmeta),Archive,,.avb,Y,Y,Y,Y
 format,Ani,ANI (animated cursor),Archive,,.ani,Y,Y,Y,
 format,Aomei,AOMEI Backupper Image (ADI/AFI),Archive,,.adi;.afi,Y,Y,Y,Y
 format,Apc,CRYO APC,Audio,,.apc,Y,Y,Y,
@@ -97,7 +99,6 @@ format,Cab,CAB,Archive,,.cab,Y,Y,Y,Y
 format,Caf,CAF (Core Audio Format),Audio,,.caf,Y,Y,Y,
 format,Cb7,CB7,Archive,,.cb7,Y,Y,Y,Y
 format,Cbr,CBR,Archive,,.cbr,Y,Y,Y,Y
-format,Cbt,CBT,Archive,,.cbt,Y,Y,Y,Y
 format,Cbz,CBZ,Archive,,.cbz,Y,Y,Y,Y
 format,Cdi,CDI,Archive,,.cdi,Y,Y,Y,Y
 format,CephFs,CephFS / RADOS pool export,Archive,Y,.rados;.ceph,Y,Y,Y,Y
@@ -234,14 +235,13 @@ format,Hps,HPS (GameCube HALPST stream),Audio,,.hps,Y,Y,Y,
 format,Htfs,HTFS (SCO High Throughput File System),Archive,Y,.htfs;.s5,Y,Y,Y,Y
 format,Huan,Huan PE64 encrypted loader,Archive,,,Y,Y,,
 format,Human68k,Sharp X68000 Human68k,Archive,Y,.2hd;.dim,Y,Y,Y,Y
-format,IaArc,Internet Archive ARC,Archive,,,Y,Y,Y,Y
 format,Iceberg,Apache Iceberg metadata,Archive,,,Y,Y,,
 format,IcePacker,ICE Packer,Stream,,.ice,,Y,Y,
 format,Icns,ICNS (Apple icon),Archive,,.icns,Y,Y,,
 format,Ico,Windows ICO/CUR,Archive,,.ico,Y,Y,Y,Y
 format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
 format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
-format,InnoSetup,Inno Setup,Archive,,,Y,Y,,
+format,InnoSetup,Inno Setup,Archive,,,Y,Y,Y,
 format,IntelHex,Intel HEX,Archive,,.hex;.ihex;.ihx;.h86,Y,Y,Y,Y
 format,Ipa,IPA,Archive,,.ipa,Y,Y,Y,Y
 format,Ipsw,Apple IPSW,Archive,,.ipsw;.otazip,Y,Y,Y,Y
@@ -297,7 +297,6 @@ format,Macrium,Macrium Reflect,Archive,,.mrimgx;.mrbakx;.mrimg,Y,Y,Y,
 format,MacriumPreX,Macrium Reflect pre-X (.mrimg/.mrbak),Archive,,.mrimg;.mrbak;.mrex;.mrsql,Y,Y,,
 format,MacSnd,Mac 'snd ' resource,Audio,,,Y,Y,,
 format,Maff,MAFF,Archive,,.maff,Y,Y,Y,Y
-format,Mar,MAR,Archive,,.mar,Y,Y,Y,Y
 format,Matlab,MATLAB MAT v5,Archive,,.mat,Y,Y,,
 format,MatlabV4,MATLAB MAT v4,Archive,,.mat,Y,Y,,
 format,Maud,IFF/MAUD (MacroSystem),Audio,,.maud,Y,Y,Y,
@@ -737,7 +736,6 @@ block,bb:BB_Shoco,Shoco,Dictionary,,,,Y,Y,
 block,bb:BB_Shrink,Shrink,Dictionary,,,,Y,Y,
 block,bb:BB_Snappy,Snappy,Dictionary,,,,Y,Y,
 block,bb:BB_Sqx,SQX,Dictionary,,,,Y,Y,
-block,bb:BB_StackerSd4,Stacker SD-4,Dictionary,,,,Y,Y,
 block,bb:BB_SuffixTree,Suffix Tree Compression,Dictionary,,,,Y,Y,
 block,bb:BB_tANS,tANS,Entropy,,,,Y,Y,
 block,bb:BB_Tunstall,Tunstall Coding,Entropy,,,,Y,Y,

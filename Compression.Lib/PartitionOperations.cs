@@ -43,11 +43,9 @@ public static class PartitionOperations {
   /// Snapshot returned by <see cref="List"/>: the detected scheme plus all
   /// primary and logical entries currently on disk.
   /// </summary>
-  /// <param name="SectorSize">Logical sector size the table counts in: 512, or 4096 on a 4Kn GPT disk.</param>
   public sealed record PartitionListResult(
     PartitionScheme Scheme,
-    IReadOnlyList<PartitionInfo> Partitions,
-    int SectorSize = PartitionEditor.SectorSize);
+    IReadOnlyList<PartitionInfo> Partitions);
 
   /// <summary>
   /// Lists all partitions in the given image.
@@ -62,22 +60,7 @@ public static class PartitionOperations {
       .Select(p => new PartitionInfo(p.Index, p.Source, p.StartOffset, p.Size, p.TypeCode, p.TypeName, p.Name, p.IsActive))
       .ToList()
       .AsReadOnly();
-    return new PartitionListResult(editor.Scheme, snapshot, editor.LogicalSectorSize);
-  }
-
-  /// <summary>
-  /// <see cref="Add"/> with the range given in the disk's own logical sectors — 512 bytes, or
-  /// 4096 on a 4Kn GPT disk — as <c>fdisk</c>/<c>sgdisk</c> count them.
-  /// </summary>
-  /// <returns>The logical sector size the LBAs were counted in.</returns>
-  public static int AddBySectors(
-    string imagePath, long startLba, long lengthSectors,
-    PartitionType type, string? label = null) {
-    ArgumentOutOfRangeException.ThrowIfNegative(startLba);
-    ArgumentOutOfRangeException.ThrowIfNegativeOrZero(lengthSectors);
-    var sectorSize = List(imagePath).SectorSize;
-    Add(imagePath, checked(startLba * sectorSize), checked(lengthSectors * sectorSize), type, label);
-    return sectorSize;
+    return new PartitionListResult(editor.Scheme, snapshot);
   }
 
   /// <summary>
