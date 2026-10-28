@@ -9284,7 +9284,15 @@ Implements `IEquatable<StreamingArchiveInput>`.
 
 ### Namespace `FileFormat.Bzip2`
 
-[`Bzip2BuildingBlock`](#bzip2buildingblock) · [`Bzip2FormatDescriptor`](#bzip2formatdescriptor) · [`Bzip2Stream`](#bzip2stream)
+[`AlzBzip2`](#alzbzip2) · [`Bzip2BuildingBlock`](#bzip2buildingblock) · [`Bzip2FormatDescriptor`](#bzip2formatdescriptor) · [`Bzip2Stream`](#bzip2stream)
+
+#### `AlzBzip2`
+
+ALZip's bzip2 variant (ALZ compression method 1): no "BZh" stream header, each block introduced by the 32-bit marker "DLZ\x01" instead of the 48-bit block magic, no block CRC and no randomised bit (the block starts at its BWT origin pointer), and the stream ended by "DLZ\x02" without a combined CRC. The block payload is standard bzip2 (900k blocks). Layout as documented by alkegi/unalz (MIT) and confirmed against its CC0 test archives; integrity rests on the ALZ entry's CRC-32.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, long expectedSize)` | Decodes an ALZ bzip2 stream; stops at the end marker or once `expectedSize` bytes are out. |
 
 #### `Bzip2BuildingBlock`
 

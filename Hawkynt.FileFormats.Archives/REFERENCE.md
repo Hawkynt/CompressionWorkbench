@@ -8607,91 +8607,81 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.AlZip`
 
-[`AlZipEntry`](#alzipentry) · [`AlZipFormatDescriptor`](#alzipformatdescriptor) · [`AlZipModifier`](#alzipmodifier) · [`AlZipReader`](#alzipreader) · [`AlZipWriter`](#alzipwriter)
+[`AlZipEntry`](#alzipentry) · [`AlZipFormatDescriptor`](#alzipformatdescriptor) · [`AlZipReader`](#alzipreader) · [`AlZipWriter`](#alzipwriter)
 
 #### `AlZipEntry`
 
-Represents a single file entry in an ALZip (.alz) archive.
+One local file header of an ALZip archive.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AlZipEntry` | `AlZipEntry()` |  |
-| `Attributes` | `byte Attributes { get; init; }` | File attributes byte. |
-| `CompressedSize` | `long CompressedSize { get; init; }` | Compressed size in bytes. |
-| `Crc32` | `uint Crc32 { get; init; }` | CRC-32 checksum of uncompressed data. |
-| `FileName` | `string FileName { get; init; }` | File name (path within archive). |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry is a directory. |
-| `LastModified` | `DateTime? LastModified { get; init; }` | Last modification date. |
-| `MethodName` | `string MethodName { get; }` | Human-readable method name. |
-| `Method` | `int Method { get; init; }` | Compression method: Store(0), Bzip2(1), Deflate(2). |
-| `OriginalSize` | `long OriginalSize { get; init; }` | Uncompressed size in bytes. |
+| `Attributes` | `byte Attributes { get; init; }` | DOS attribute bits (0x10 directory). |
+| `CompressedSize` | `long CompressedSize { get; init; }` |  |
+| `Crc32` | `uint Crc32 { get; init; }` |  |
+| `Descriptor` | `byte Descriptor { get; init; }` | Descriptor byte: bit 0 encrypted, bit 3 data descriptor, high nibble the size-field width. |
+| `FileName` | `string FileName { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; }` |  |
+| `IsEncrypted` | `bool IsEncrypted { get; }` |  |
+| `LastModified` | `DateTime? LastModified { get; init; }` |  |
+| `MethodName` | `string MethodName { get; }` |  |
+| `Method` | `int Method { get; init; }` | 0 store, 1 ALZ bzip2, 2 deflate, 3 obfuscated deflate. |
+| `OriginalSize` | `long OriginalSize { get; init; }` |  |
 
 #### `AlZipFormatDescriptor`
 
-ALZ archive — the proprietary container of ESTsoft's ALZip (Korean shareware archiver). References: `http://kippler.com/win/unalz/` — unalz — open-source ALZ extractor, the de-facto format reference`https://en.wikipedia.org/wiki/ALZip` — application backgroundThe format is proprietary (ESTsoft); no official specification was published
+ALZip (ESTsoft), the Korean archiver: stored, deflate and ALZ-bzip2 members, ZipCrypto encryption. References: `https://github.com/alkegi/unalz` — unalz (MIT), its CC0 test archives, and the reader the layout follows`https://github.com/MacPaw/XADMaster` — XADALZipParser (LGPL-2.1)
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AlZipFormatDescriptor` | `AlZipFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing ALZ archive. Uses `AlZipModifier` — Add appends a new entry over the trailing CLZ end marker; Remove walks the entry chain and shifts trailing bytes. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the ALZ archive in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the ALZ archive per the requested mode. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The reader produces the decoded bytes per entry; the matched bytes are wrapped in a `BoundedEntryStream` sized to their logical length. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `AlZipModifier`. |
-
-#### `AlZipModifier`
-
-Random-access in-place modifier for ALZ archives. Add appends a new entry over the trailing CLZ end-of-archive marker, then rewrites the marker. Remove walks the local-header chain, locates the named entry, and shifts trailing bytes forward to compact (ALZ has no central directory, so compaction is required).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream alz, string name, byte[] data, DateTime? lastModified = null)` | Appends a file to the archive at the position of the existing CLZ end marker, then writes a new end marker. Walks the entry chain once to locate the marker. |
-| `RemoveFile` | `static bool RemoveFile(Stream alz, string name, bool wipeData = true)` | Removes the named entry. Returns true if found. Walks the chain to locate the entry, optionally wipes its bytes, then shifts trailing bytes forward to compact. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `AlZipReader`
 
-Reads ALZip (.alz) archive files.
+Reads single-volume ALZip archives: "ALZ\x01" + 4 bytes, local file headers ("BLZ\x01"), then the central-directory and end records ("CLZ\x01", "CLZ\x02"). Members are stored, deflated or ALZ-bzip2'd, optionally ZipCrypto-encrypted. Names are CP949.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AlZipReader` | `AlZipReader(Stream stream, bool leaveOpen = false)` | Creates a new ALZip reader over the given stream. |
-| `Entries` | `IReadOnlyList<AlZipEntry> Entries { get; }` | File entries in the archive. |
+| `AlZipReader` | `AlZipReader(Stream stream, bool leaveOpen = false)` |  |
+| `Entries` | `IReadOnlyList<AlZipEntry> Entries { get; }` |  |
+| `IsSplit` | `bool IsSplit { get; }` | Whether the archive is one volume of a split set (only whole entries of it are readable). |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(AlZipEntry entry)` | Extracts the raw (decompressed) data for the given entry. |
+| `Extract` | `byte[] Extract(AlZipEntry entry, string password = null)` | Decompresses (and if needed decrypts) a member, verifying its CRC-32. |
 
 #### `AlZipWriter`
 
-Creates ALZip (.alz) archive files.
+Writes single-volume ALZip archives as ALZip 8 lays them out: the "ALZ\x01" header with version 0x0A, one "BLZ\x01" local header per member (stored or deflated, size fields as narrow as the sizes allow, CP949 names, optional ZipCrypto), then the "CLZ\x01" and "CLZ\x02" end records.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AlZipWriter` | `AlZipWriter(Stream stream, bool leaveOpen = false)` | Creates a new ALZip writer over the given stream. |
-| `AddDirectory` | `void AddDirectory(string dirName)` | Adds a directory entry to the archive. |
-| `AddFile` | `void AddFile(string fileName, byte[] data)` | Adds a file to the archive with deflate compression. |
+| `AlZipWriter` | `AlZipWriter(Stream stream, bool leaveOpen = false, string password = null, bool store = false)` |  |
+| `AddDirectory` | `void AddDirectory(string dirName, DateTime? modified = null)` |  |
+| `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? modified = null)` |  |
 | `Dispose` | `void Dispose()` |  |
+| `Finish` | `void Finish()` | Writes the end records; called by `Dispose`. |
 
 ### Namespace `FileFormat.Alac`
 

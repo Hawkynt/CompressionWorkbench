@@ -146,6 +146,10 @@
     <EmbeddedResource Include="Zfs\ReferenceVectors\*.gz;Zfs\ReferenceVectors\*.manifest">
       <LogicalName>ZfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- ALZip archives from unalz's CC0 test data and ones our writer produced; see AlZip/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="AlZip\ReferenceVectors\*.alz;AlZip\ReferenceVectors\unalz-listing.txt">
+      <LogicalName>AlZipVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- G.722 streams FFmpeg 8.1.2 encoded and decoded; see Codecs/G722/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Codecs\G722\ReferenceVectors\*.pcm;Codecs\G722\ReferenceVectors\*.g722">
       <LogicalName>G722Vectors.%(Filename)%(Extension)</LogicalName>
