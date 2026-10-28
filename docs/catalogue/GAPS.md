@@ -23,10 +23,10 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 240 | a source lists it; no descriptor or building block covers it |
-| `READ-ONLY-BUT-SOURCES-WRITE` | 23 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 41 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 221 | covered with no known gap against what the sources list |
+| `MISSING` | 238 | a source lists it; no descriptor or building block covers it |
+| `READ-ONLY-BUT-SOURCES-WRITE` | 20 | we only read it; a source or the format's own tool writes it |
+| `PARTIAL` | 37 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 230 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 458 | in our registry, listed by none of the seven sources |
 
 ### Per source
@@ -36,13 +36,13 @@ read-only rows.
 
 | Source | Rows it lists | Mapped | % | OK |
 | --- | ---: | ---: | ---: | ---: |
-| 7-Zip (formats + codecs) | 96 | 89 | 92.7 | 72 |
+| 7-Zip (formats + codecs) | 96 | 89 | 92.7 | 74 |
 | libarchive (formats + filters) | 28 | 27 | 96.4 | 23 |
 | XADMaster / The Unarchiver | 126 | 95 | 75.4 | 78 |
-| binwalk v3 | 79 | 48 | 60.8 | 36 |
+| binwalk v3 | 79 | 48 | 60.8 | 38 |
 | Universal Extractor 2 | 124 | 71 | 57.3 | 48 |
 | PRONOM | 87 | 63 | 72.4 | 43 |
-| Wikipedia | 266 | 156 | 58.6 | 117 |
+| Wikipedia | 266 | 156 | 58.6 | 118 |
 
 The libarchive and 7-Zip lists are almost fully covered. The rows still open are libarchive's grzip,
 plus seven 7-Zip rows: LVM, Android `super.img` (LP), AVB, TE, the Swap2/Swap4 filter, PKWARE strong
@@ -133,6 +133,7 @@ Every catalogued row where a source records write support (7-Zip, libarchive, an
 | Acronis True Image | `AcronisTib`, `AcronisTibx` | Acronis True Image | Wikipedia |
 | BeeGFS | `BeeGfs` | beegfs-setup-storage | Wikipedia |
 | BitRock InstallBuilder | `BitRock` | InstallBuilder | UniExtract |
+| NSIS installer | `Nsis` | makensis | 7-Zip, XADMaster, UniExtract |
 | GPFS / IBM Storage Scale | `Gpfs` | mmcrfs | Wikipedia |
 | GlusterFS | `GlusterFs` | gluster volume create | Wikipedia |
 | HxC Floppy Emulator (HFE) | `Hfe` | HxC Floppy Emulator tool | PRONOM |
@@ -160,7 +161,7 @@ running real-world samples. The file named at the end of each row is where the l
 | Format | Ours | Sources | What is missing |
 | --- | --- | :---: | --- |
 | 7z | `SevenZip` | 7 | Deflate64, ARM64, RISC-V, Zstd/Brotli/LZ4 coders and external header references unsupported (SevenZipReader.cs) |
-| ISO 9660 (Joliet / Rock Ridge / El Torito) | `Iso` | 7 | Rock Ridge limited to NM names (no SL/PX/TF/CE, no zisofs); interleaved files throw (IsoReader.cs) |
+| ISO 9660 (Joliet / Rock Ridge / El Torito) | `Iso` | 7 | Rock Ridge PX modes and TF times are not surfaced; interleaved files throw (IsoReader.cs) |
 | ZIP | `Zip` | 7 | methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs) |
 | LHA / LZH | `Lzh` | 6 | every method and header level of lhasa's test suite reads except LHARK's lk7; lh2, lh3, lhx, pm1 and pm2 are read-only; self-extracting executables are not opened (LhaReader.cs) |
 | StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |
@@ -170,14 +171,12 @@ running real-world samples. The file named at the end of each row is where the l
 | APFS | `Apfs` | 3 | no decmpfs (LZVN/LZFSE) compressed files, no encryption (ApfsReader.cs) |
 | Compiled HTML Help (CHM) | `Chm` | 3 | content sections above 1 unsupported (ChmReader.cs) |
 | FreeArc | `FreeArc` | 3 | only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs) |
-| NSIS installer | `Nsis` | 3 | solid installers cannot be extracted per entry (NsisReader.cs) |
 | NTFS | `Ntfs` | 3 | WOF (XPRESS/LZX) compressed files not decoded; LZNT1 is |
 | QCOW / QCOW2 | `Qcow2` | 3 | no encryption, backing files, zstd clusters or extended L2 (Qcow2Structures.cs) |
 | SquashFS | `SquashFs` | 3 | SquashFS v4 only; v1-v3 rejected (SquashFsSuperblock.cs) |
 | UDF | `Udf` | 3 | type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs) |
 | Windows PE | `Mz`, `PeResources` | 3 | archive view of resources/overlay, not a full PE section extractor |
 | ZPAQ | `Zpaq` | 3 | reads only the stored blocks our own writer emits; ZPAQL-compressed blocks (every real zpaq level) throw (ZpaqReader.cs) |
-| Btrfs | `Btrfs` | 2 | zlib/lzo/zstd compressed extents are skipped (BtrfsReader.cs) |
 | Compact Pro | `CompactPro` | 2 | stored and RLE only; LZ+RLE and LZ+Huffman unsupported (CompactProReader.cs) |
 | DiskDoubler | `DiskDoubler` | 2 | single files only (no DDAR/DDA2 archives); methods 0, 1, 6, 9 decoded and checked against unar on real files; 2-5, 7, 8, 10 and delta refused (DiskDoublerReader.cs) |
 | EnCase / Expert Witness (E01) | `Ewf` | 2 | single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs) |
@@ -202,8 +201,9 @@ running real-world samples. The file named at the end of each row is where the l
 ### ⚠️ Found along the way (flagged, not fixed here)
 
 - **Silent wrong output.** `DiskDoubler` and `PackIt` return compressed bytes as if they were the
-  file. `Xar` does the same for lzma/xz members. `Btrfs` skips compressed extents, `Vhdx` reads
-  unsupported block states as zeros, and `Vmdk` returns compressed grains raw. `Lzh` decodes lh2/lh3 with the lh5 decoder. Each of these gives the caller wrong
+  file. `Xar` does the same for lzma/xz members. `Vhdx` reads
+  unsupported block states as zeros, and `Vmdk` returns compressed grains raw. `Arj` treats method 4
+  as stored, and `Lzh` decodes lh2/lh3 with the lh5 decoder. Each of these gives the caller wrong
   data instead of an error.
 - **Capability claims against real files.** `Zpaq` declares `CanCreate | CanModify`, but does not
   read an archive written by the real tool. Its round-trip only proves that our writer and reader

@@ -7,6 +7,251 @@
 > Every public and protected type and member, read from the built assembly and merged
 > with its XML documentation. Generated — edit the XML docs in source, not this file.
 
+### Namespace `FileFormat.AndroidBootImage`
+
+[`AndroidBootImage`](#androidbootimage) · [`AndroidBootImageFormatDescriptor`](#androidbootimageformatdescriptor) · [`AndroidBootImageMetadata`](#androidbootimagemetadata) · [`VendorRamdisk`](#vendorramdisk)
+
+#### `AndroidBootImage`
+
+An Android `boot.img` / `recovery.img` (magic `ANDROID!`, header v0–v4) or `vendor_boot.img` (magic `VNDRBOOT`, header v3–v4), parsed into its header fields and page-aligned components, and written back the way AOSP `mkbootimg` lays one out.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AndroidBootImage` | `AndroidBootImage()` |  |
+| `BoardIdWords` | `const int BoardIdWords` |  |
+| `BootArgsSize` | `const int BootArgsSize` |  |
+| `BootExtraArgsSize` | `const int BootExtraArgsSize` |  |
+| `BootMagic` | `const string BootMagic` |  |
+| `BootNameSize` | `const int BootNameSize` |  |
+| `BootV1HeaderSize` | `const uint BootV1HeaderSize` | Header lengths per version, as `mkbootimg` writes them into the header-size field. |
+| `BootV2HeaderSize` | `const uint BootV2HeaderSize` | Header lengths per version, as `mkbootimg` writes them into the header-size field. |
+| `BootV3ArgsSize` | `const int BootV3ArgsSize` |  |
+| `BootV3HeaderSize` | `const uint BootV3HeaderSize` | Header lengths per version, as `mkbootimg` writes them into the header-size field. |
+| `BootV4HeaderSize` | `const uint BootV4HeaderSize` | Header lengths per version, as `mkbootimg` writes them into the header-size field. |
+| `V3PageSize` | `const int V3PageSize` |  |
+| `VendorArgsSize` | `const int VendorArgsSize` |  |
+| `VendorBootMagic` | `const string VendorBootMagic` |  |
+| `VendorRamdiskEntrySize` | `const int VendorRamdiskEntrySize` |  |
+| `VendorRamdiskNameSize` | `const int VendorRamdiskNameSize` |  |
+| `VendorRamdiskTypePlatform` | `const uint VendorRamdiskTypePlatform` |  |
+| `VendorV3HeaderSize` | `const uint VendorV3HeaderSize` |  |
+| `VendorV4HeaderSize` | `const uint VendorV4HeaderSize` |  |
+| `Board` | `byte[] Board { get; set; }` |  |
+| `BootSignature` | `byte[] BootSignature { get; set; }` |  |
+| `Bootconfig` | `byte[] Bootconfig { get; set; }` |  |
+| `Cmdline` | `byte[] Cmdline { get; set; }` | The command-line field, raw: 512 bytes (boot v0–v2), 1536 (boot v3/v4), 2048 (vendor). |
+| `DtbAddress` | `ulong DtbAddress { get; set; }` |  |
+| `Dtb` | `byte[] Dtb { get; set; }` |  |
+| `EffectivePageSize` | `uint EffectivePageSize { get; }` |  |
+| `ExtraCmdline` | `byte[] ExtraCmdline { get; set; }` |  |
+| `HasAvbFooter` | `bool HasAvbFooter { get; }` | True when the trailer ends in an AVB footer (`AVBf` in the last 64 bytes). |
+| `HeaderSize` | `uint HeaderSize { get; set; }` | The header-size field (boot v1+, vendor); 0 where the version has none. |
+| `HeaderTail` | `byte[] HeaderTail { get; set; }` | Header-region bytes after the fields this parser knows, up to the first component. |
+| `HeaderVersion` | `uint HeaderVersion { get; set; }` |  |
+| `ImageIdValid` | `bool ImageIdValid { get; }` | True when the stored image id equals the SHA-1 `mkbootimg` computes (boot v0–v2). |
+| `ImageId` | `byte[] ImageId { get; set; }` |  |
+| `IsCanonical` | `bool IsCanonical { get; }` |  |
+| `IsVendor` | `bool IsVendor { get; set; }` |  |
+| `KernelAddress` | `uint KernelAddress { get; set; }` |  |
+| `Kernel` | `byte[] Kernel { get; set; }` |  |
+| `KnownHeaderLength` | `int KnownHeaderLength { get; }` |  |
+| `NonCanonicalReason` | `string NonCanonicalReason { get; }` |  |
+| `OsVersionPatchLevel` | `uint OsVersionPatchLevel { get; set; }` | `(os_version << 11) \| os_patch_level`, raw. |
+| `PageSize` | `uint PageSize { get; set; }` | Flash page size. Fixed at 4096 for boot v3/v4. |
+| `RamdiskAddress` | `uint RamdiskAddress { get; set; }` |  |
+| `Ramdisk` | `byte[] Ramdisk { get; set; }` |  |
+| `RecoveryDtbo` | `byte[] RecoveryDtbo { get; set; }` |  |
+| `Reserved` | `uint[] Reserved { get; set; }` |  |
+| `SecondAddress` | `uint SecondAddress { get; set; }` |  |
+| `Second` | `byte[] Second { get; set; }` |  |
+| `TagsAddress` | `uint TagsAddress { get; set; }` |  |
+| `Trailer` | `byte[] Trailer { get; set; }` | Bytes after the last component: partition padding, an AVB footer, anything appended. |
+| `VendorRamdisks` | `List<VendorRamdisk> VendorRamdisks { get; set; }` |  |
+| `ComputeImageId` | `byte[] ComputeImageId()` | The boot v0–v2 image id exactly as `mkbootimg` computes it: SHA-1 over each component followed by its 32-bit length (kernel, ramdisk, second, then recovery DTBO from v1 and DTB from v2), zero-extended to 32 bytes. |
+| `FormatOsPatchLevel` | `static string FormatOsPatchLevel(uint packed)` |  |
+| `FormatOsVersion` | `static string FormatOsVersion(uint packed)` |  |
+| `IsPowerOfTwoPage` | `static bool IsPowerOfTwoPage(uint page)` |  |
+| `Pages` | `static int Pages(long size, int page)` |  |
+| `Parse` | `static AndroidBootImage Parse(ReadOnlySpan<byte> data)` |  |
+| `TryParseOsPatchLevel` | `static bool TryParseOsPatchLevel(string text, out uint level)` | Parses `YYYY-MM[-DD]` as `mkbootimg --os_patch_level` does (7 bits of year past 2000, 4 of month). |
+| `TryParseOsVersion` | `static bool TryParseOsVersion(string text, out uint version)` | Parses `a[.b[.c]]`, 7 bits per field, as `mkbootimg --os_version` does. |
+| `Write` | `void Write(Stream output, bool recomputeImageId)` | Writes the image in `mkbootimg` order: header page(s), then each component padded to the page size. A boot v0–v2 image id is recomputed when `recomputeImageId` is set (a fresh image, or one whose stored id was valid), else kept as it was. |
+
+#### `AndroidBootImageFormatDescriptor`
+
+Android boot image — `boot.img` / `recovery.img` (magic `ANDROID!`, header v0–v4) and `vendor_boot.img` (magic `VNDRBOOT`, header v3–v4) — as a pseudo-archive whose members are the components `unpack_bootimg` extracts, under the names it gives them: `kernel`, `ramdisk`, `second`, `recovery_dtbo`, `dtb`, `boot_signature`, `vendor_ramdisk` / `vendor_ramdiskNN`, `bootconfig`. `metadata.ini` renders the header; bytes after the last component (partition padding, an AVB footer) surface as `trailer.bin`.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AndroidBootImageFormatDescriptor` | `AndroidBootImageFormatDescriptor()` |  |
+| `BootSignature` | `const string BootSignature` |  |
+| `Bootconfig` | `const string Bootconfig` |  |
+| `Dtb` | `const string Dtb` |  |
+| `FullImage` | `const string FullImage` |  |
+| `Kernel` | `const string Kernel` |  |
+| `Ramdisk` | `const string Ramdisk` |  |
+| `RecoveryDtbo` | `const string RecoveryDtbo` |  |
+| `Second` | `const string Second` |  |
+| `Trailer` | `const string Trailer` |  |
+| `VendorRamdisk` | `const string VendorRamdisk` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds an image from component files named as `unpack_bootimg` names them, with the header fields taken from a `metadata.ini` among the inputs (the rendering this descriptor lists) and `mkbootimg`'s defaults for every field it does not set. A single input under any other name is the payload a boot image exists to carry and becomes the kernel, as `mkbootimg --kernel` would take it; more than one such input is refused. |
+| `Entries` | `static List<FirmwareEntry> Entries(byte[] data)` | The members of `data`; an image that does not parse lists as itself plus the reason. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` | Empties every component and the trailer, keeping the header fields: a valid image with nothing in it. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `AndroidBootImageMetadata`
+
+The `metadata.ini` rendering of an Android boot / vendor_boot header, and the reverse: applying an edited rendering back onto an image. A key is applied only when its value differs from what the image itself renders, so handing back an untouched rendering changes nothing — not even the bytes past the NUL of a string field.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BootSection` | `const string BootSection` |  |
+| `VendorSection` | `const string VendorSection` |  |
+| `Apply` | `static void Apply(AndroidBootImage img, IReadOnlyDictionary<string, string> ini)` | Applies every key of `ini` whose value differs from the image's own rendering. |
+| `NewImage` | `static AndroidBootImage NewImage(IReadOnlyDictionary<string, string> ini, bool vendorHint)` | A fresh image of the kind and header version `ini` names (boot v0 when it names none), carrying `mkbootimg`'s defaults: base 0x10000000 with its standard offsets, 2048-byte pages, and the header size of the version. |
+| `RamdiskEntryName` | `static string RamdiskEntryName(int index)` |  |
+| `RenderPartial` | `static byte[] RenderPartial(string error)` |  |
+| `Render` | `static byte[] Render(AndroidBootImage img)` |  |
+
+#### `VendorRamdisk`
+
+One fragment of a vendor_boot ramdisk table (header v4) or the single vendor ramdisk (v3).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VendorRamdisk` | `VendorRamdisk()` |  |
+| `BoardId` | `uint[] BoardId { get; set; }` |  |
+| `Data` | `byte[] Data { get; set; }` |  |
+| `Name` | `byte[] Name { get; set; }` | The 32-byte NUL-padded name field, kept raw. |
+| `Type` | `uint Type { get; set; }` |  |
+
+### Namespace `FileFormat.AndroidVbmeta`
+
+[`AndroidVbmetaFormatDescriptor`](#androidvbmetaformatdescriptor) · [`AvbDescriptor`](#avbdescriptor) · [`AvbDescriptorText`](#avbdescriptortext) · [`AvbVbmeta`](#avbvbmeta)
+
+#### `AndroidVbmetaFormatDescriptor`
+
+Android Verified Boot 2.0 `vbmeta` image (magic `AVB0`) as a pseudo-archive: `metadata.ini` renders the header, the verification result and every descriptor's fields; each descriptor is a member under `descriptors/` as its exact encoded bytes; the public key, its metadata and the signature are members of their own.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveWriteConstraints`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AndroidVbmetaFormatDescriptor` | `AndroidVbmetaFormatDescriptor()` |  |
+| `DescriptorFolder` | `const string DescriptorFolder` |  |
+| `FullImage` | `const string FullImage` |  |
+| `PublicKeyMetadataName` | `const string PublicKeyMetadataName` |  |
+| `PublicKeyName` | `const string PublicKeyName` |  |
+| `SignatureName` | `const string SignatureName` |  |
+| `TrailerName` | `const string TrailerName` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | The members `Create` writes. A vbmeta holds structured AVB descriptors, not files, so an arbitrary blob has nowhere to go; a public key or signature needs the private key. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes an unsigned vbmeta image from descriptor blobs (`descriptors/NN_*.bin`, in `NN` order), an optional `public_key_metadata.bin`, an optional `trailer.bin` and the header fields of a `metadata.ini` — required libavb version, rollback index and location, flags and release string. A public key or signature among the inputs is refused: signing needs the private key. |
+| `Entries` | `static List<FirmwareEntry> Entries(byte[] data)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `RenderMetadata` | `static byte[] RenderMetadata(AvbVbmeta v)` |  |
+
+#### `AvbDescriptor`
+
+One AVB descriptor, kept as its exact encoded bytes (16-byte tag/length header, body, padding).
+
+Implements `IEquatable<AvbDescriptor>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AvbDescriptor` | `AvbDescriptor(ulong Tag, byte[] Encoded)` | One AVB descriptor, kept as its exact encoded bytes (16-byte tag/length header, body, padding). |
+| `ChainPartition` | `const ulong ChainPartition` |  |
+| `Hash` | `const ulong Hash` |  |
+| `Hashtree` | `const ulong Hashtree` |  |
+| `KernelCmdline` | `const ulong KernelCmdline` |  |
+| `Property` | `const ulong Property` |  |
+| `Body` | `ReadOnlySpan<byte> Body { get; }` |  |
+| `Encoded` | `byte[] Encoded { get; init; }` |  |
+| `Kind` | `string Kind { get; }` |  |
+| `Tag` | `ulong Tag { get; init; }` |  |
+
+#### `AvbDescriptorText`
+
+Human-readable renderings of AVB descriptors: the fields `avbtool info_image` prints, as `key = value` lines, and a short name for the descriptor's entry. Rendering never throws — a descriptor whose body does not match its declared lengths is reported as malformed.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EntryName` | `static string EntryName(int index, AvbDescriptor d)` |  |
+| `Render` | `static void Render(StringBuilder sb, AvbDescriptor d)` |  |
+| `Subject` | `static string Subject(AvbDescriptor d)` | The partition name, property key, or nothing — whatever names the descriptor's subject. |
+
+#### `AvbVbmeta`
+
+An Android Verified Boot 2.0 `vbmeta` image (magic `AVB0`): the 256-byte header, the authentication block (hash, signature) and the auxiliary block (descriptors, public key, public key metadata), parsed and verified, and written back the way `avbtool make_vbmeta_image` lays one out.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AvbVbmeta` | `AvbVbmeta()` |  |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `ReleaseStringSize` | `const int ReleaseStringSize` |  |
+| `ReservedSize` | `const int ReservedSize` |  |
+| `AlgorithmType` | `uint AlgorithmType { get; set; }` |  |
+| `Descriptors` | `List<AvbDescriptor> Descriptors { get; set; }` |  |
+| `Flags` | `uint Flags { get; set; }` |  |
+| `HashValid` | `bool? HashValid { get; }` | Null when the algorithm carries no hash. |
+| `Hash` | `byte[] Hash { get; set; }` |  |
+| `IsCanonical` | `bool IsCanonical { get; }` | True when the image is laid out as avbtool lays it out, so a rewrite reproduces it. |
+| `NonCanonicalReason` | `string NonCanonicalReason { get; }` |  |
+| `PublicKeyMetadata` | `byte[] PublicKeyMetadata { get; set; }` |  |
+| `PublicKey` | `byte[] PublicKey { get; set; }` |  |
+| `ReleaseString` | `byte[] ReleaseString { get; set; }` | The 48-byte release-string field, raw (avbtool writes 47 bytes plus a NUL). |
+| `Reserved` | `byte[] Reserved { get; set; }` |  |
+| `RollbackIndexLocation` | `uint RollbackIndexLocation { get; set; }` |  |
+| `RollbackIndex` | `ulong RollbackIndex { get; set; }` |  |
+| `SignatureValid` | `bool? SignatureValid { get; }` | Null when the algorithm carries no signature this reader can check. |
+| `Signature` | `byte[] Signature { get; set; }` |  |
+| `Trailer` | `byte[] Trailer { get; set; }` | Bytes after the vbmeta blob (partition padding). |
+| `VersionMajor` | `uint VersionMajor { get; set; }` |  |
+| `VersionMinor` | `uint VersionMinor { get; set; }` |  |
+| `AlgorithmName` | `static string AlgorithmName(uint type)` |  |
+| `FromEncoded` | `static AvbDescriptor FromEncoded(byte[] encoded)` |  |
+| `Parse` | `static AvbVbmeta Parse(ReadOnlySpan<byte> d)` |  |
+| `ReleaseText` | `static string ReleaseText(byte[] field)` |  |
+| `TryRsaKey` | `static RSAParameters? TryRsaKey(ReadOnlySpan<byte> key)` | AVB's public key encoding: big-endian bit count and n0inv, then the modulus and R², each bit-count/8 bytes. Exponent 65537. |
+| `Validate` | `static void Validate(AvbDescriptor desc)` | Checks an encoded descriptor's own length field, so a malformed blob is refused rather than written. |
+| `Write` | `void Write(Stream output)` | Writes the vbmeta blob as avbtool's `_generate_vbmeta_blob` does, then the trailer. Only the unsigned `NONE` algorithm can be written: anything else needs the private key. |
+
 ### Namespace `FileFormat.BinCue`
 
 [`BinCueEntry`](#bincueentry) · [`BinCueFormatDescriptor`](#bincueformatdescriptor) · [`BinCueInPlaceModifier`](#bincueinplacemodifier) · [`BinCueInPlaceModifier.SectorGeometry`](#bincueinplacemodifiersectorgeometry) · [`BinCueLayoutMap`](#bincuelayoutmap) · [`BinCueReader`](#bincuereader)
@@ -602,6 +847,56 @@ Writer for EnCase Expert Witness Format (EWF / .E01) forensic images. Produces a
 | `ExaminerName` | `string ExaminerName { get; init; }` | Examiner name recorded in the acquisition header. |
 | `Notes` | `string Notes { get; init; }` | Notes recorded in the acquisition header. |
 | `Build` | `byte[] Build(ReadOnlySpan<byte> media)` | Builds a single-segment E01 image from the supplied raw media bytes. |
+
+### Namespace `FileFormat.FirmwareCommon`
+
+[`EmbeddedPayload`](#embeddedpayload) · [`FirmwareArchive`](#firmwarearchive) · [`FirmwareCrc32`](#firmwarecrc32) · [`FirmwareEntry`](#firmwareentry)
+
+#### `EmbeddedPayload`
+
+Recognises and unpacks a compressed payload embedded in a firmware image by the magic of its stream format, using this repository's own stream codecs through the registry. A payload is only reported as decompressed when the codec decodes it without error, so nothing is ever guessed into existence.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Find` | `static ValueTuple<int, string, string, byte[]>? Find(ReadOnlyMemory<byte> data, int start, Func<byte[], bool> accept, int maxCandidates = 64)` | Scans `data` from `start` for the first known stream magic whose codec decodes and whose output satisfies `accept`. |
+| `Identify` | `static ValueTuple<string, string>? Identify(ReadOnlySpan<byte> data)` | The stream format whose magic starts `data`, or null. |
+| `TryDecompress` | `static byte[] TryDecompress(string formatId, ReadOnlyMemory<byte> data, long limit = 1073741824)` | Decodes `data` with the codec `formatId` names, giving up past `limit` output bytes. Null when the codec is not registered or rejects the stream. |
+
+#### `FirmwareArchive`
+
+The list / extract plumbing every firmware pseudo-archive shares: a firmware image is parsed into an ordered set of named slices, and listing and extracting both walk that set.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MetadataName` | `const string MetadataName` |  |
+| `CString` | `static string CString(ReadOnlySpan<byte> field)` | A NUL-terminated field as text: everything before the first NUL, Latin-1 so no byte is lost. |
+| `Extract` | `static void Extract(IReadOnlyList<FirmwareEntry> entries, string outputDir, string[] files)` |  |
+| `Hex` | `static string Hex(ulong value)` |  |
+| `List` | `static List<ArchiveEntryInfo> List(IReadOnlyList<FirmwareEntry> entries)` |  |
+| `ParseIni` | `static Dictionary<string, string> ParseIni(ReadOnlySpan<byte> ini)` | Parses the `key = value` lines of an INI rendering into section-qualified keys (`section.key`); keys before any section are unqualified. The value keeps its exact text after the single blank that follows the `=`. |
+| `ReadAll` | `static byte[] ReadAll(Stream stream)` |  |
+| `TryParseNumber` | `static bool TryParseNumber(string text, out ulong value)` |  |
+
+#### `FirmwareCrc32`
+
+The reflected CRC-32 (polynomial 0xEDB88320) firmware headers use, exposed raw: initial value and final XOR are the caller's, because TRX for one stores the register without the final inversion.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compute` | `static uint Compute(ReadOnlySpan<byte> data)` | The standard CRC-32 (zlib, IEEE 802.3). |
+| `Update` | `static uint Update(uint crc, ReadOnlySpan<byte> data)` |  |
+
+#### `FirmwareEntry`
+
+One member a firmware container exposes: a slice of the image or a rendering of it.
+
+Implements `IEquatable<FirmwareEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FirmwareEntry` | `FirmwareEntry(string Name, ReadOnlyMemory<byte> Data)` | One member a firmware container exposes: a slice of the image or a rendering of it. |
+| `Data` | `ReadOnlyMemory<byte> Data { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
 
 ### Namespace `FileFormat.FirmwareHex`
 
@@ -3561,7 +3856,7 @@ Modifier for Btrfs images produced by `BtrfsWriter`. `AddOrReplace` first attemp
 
 #### `BtrfsReader`
 
-Reads Btrfs filesystem images (single-device, non-RAID). Parses superblock, builds chunk map (logical-to-physical translation), traverses B-trees to enumerate files and extract uncompressed extents.
+Reads Btrfs filesystem images (single-device, non-RAID). Parses superblock, builds chunk map (logical-to-physical translation), traverses B-trees to enumerate files and extract their extents — inline, regular, preallocated, holes, and zlib / LZO / zstd compressed (see `BtrfsCompression`).
 
 Implements `IDisposable`.
 
@@ -3571,7 +3866,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<BtrfsEntry> Entries { get; }` | Gets the entries. |
 | `UsedRealChunkTree` | `bool UsedRealChunkTree { get; }` | Diagnostic: indicates whether the chunk map used during reading was non-empty, i.e. this image carries a real chunk tree as opposed to relying on identity-mapping fallback for synthetic test data. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `ExtractTo` | `void ExtractTo(BtrfsEntry entry, Stream destination)` | Writes `entry`'s bytes to `destination` without materialising them, truncating to the entry's recorded size. Required for a file larger than a byte[] can hold. |
+| `ExtractTo` | `void ExtractTo(BtrfsEntry entry, Stream destination)` | Writes `entry`'s bytes to `destination` without materialising them, exactly `Size` bytes long. Required for a file larger than a byte[] can hold. |
 | `Extract` | `byte[] Extract(BtrfsEntry entry)` | Decodes the supplied input. |
 
 #### `BtrfsWriter`
@@ -8363,7 +8658,9 @@ Represents an entry (file or directory) in an ISO 9660 image.
 | --- | --- | --- |
 | `IsoEntry` | `IsoEntry()` |  |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether the entry is a directory. |
+| `IsSymlink` | `bool IsSymlink { get; init; }` | Whether the entry is a Rock Ridge symbolic link (SL). |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Last modification timestamp. |
+| `LinkTarget` | `string LinkTarget { get; init; }` | The symbolic link's target, when `IsSymlink`. |
 | `Name` | `string Name { get; init; }` | Path of the entry within the image. |
 | `Size` | `long Size { get; init; }` | Size in bytes (0 for directories). |
 
