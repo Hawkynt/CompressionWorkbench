@@ -2592,15 +2592,16 @@ partitionListCmd.SetAction((ParseResult ctx) => {
 });
 
 var partitionAddImageArg = new Argument<FileInfo>("image") { Description = "Disk image to modify" };
-var partitionAddStartOpt = new Option<long>("--start") { Description = "Start sector (LBA, multiplied by 512 internally)", Required = true };
-var partitionAddLengthOpt = new Option<long>("--length") { Description = "Length in sectors", Required = true };
+var partitionAddStartOpt = new Option<long>("--start") { Description = "Start sector (LBA, in the disk's logical sectors: 512 B, or 4096 B on a 4Kn GPT disk)", Required = true };
+var partitionAddLengthOpt = new Option<long>("--length") { Description = "Length in the disk's logical sectors", Required = true };
 var partitionAddTypeOpt = new Option<string>("--type") { Description = "Partition type: Linux, Fat32Lba, NtfsExfat, EfiSystem, ExtendedLba, …", Required = true };
 var partitionAddLabelOpt = new Option<string?>("--label") { Description = "Partition label (GPT only)" };
 
 var partitionAddCmd = new Command("add", """
   Add a primary or logical partition. If an extended container exists and the
   range falls inside it, the new entry is added as a logical partition.
-  Sectors are 512 bytes each.
+  Sectors are the disk's logical sectors, as fdisk and sgdisk count them:
+  512 bytes, or 4096 bytes on a 4Kn GPT disk.
   Example:
     cwb partition add disk.vhd --start 2048 --length 2048 --type Linux
     cwb partition add disk.img --start 4096 --length 1024 --type Fat32Lba --label boot
@@ -2610,10 +2611,10 @@ partitionAddCmd.SetAction((ParseResult ctx) => {
   if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
   try {
     var type = PartitionOperations.ParseType(ctx.GetValue(partitionAddTypeOpt)!);
-    var startBytes = ctx.GetValue(partitionAddStartOpt) * PartitionEditor.SectorSize;
-    var lengthBytes = ctx.GetValue(partitionAddLengthOpt) * PartitionEditor.SectorSize;
-    PartitionOperations.Add(image.FullName, startBytes, lengthBytes, type, ctx.GetValue(partitionAddLabelOpt));
-    Console.WriteLine($"Added {type} partition: start={startBytes:N0} bytes, size={lengthBytes:N0} bytes.");
+    var startLba = ctx.GetValue(partitionAddStartOpt);
+    var lengthSectors = ctx.GetValue(partitionAddLengthOpt);
+    var sectorSize = PartitionOperations.AddBySectors(image.FullName, startLba, lengthSectors, type, ctx.GetValue(partitionAddLabelOpt));
+    Console.WriteLine($"Added {type} partition: start={startLba * sectorSize:N0} bytes, size={lengthSectors * sectorSize:N0} bytes ({sectorSize}-byte sectors).");
     return 0;
   } catch (Exception ex) {
     Console.Error.WriteLine($"Add failed: {ex.Message}");

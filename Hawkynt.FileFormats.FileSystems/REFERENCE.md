@@ -7278,6 +7278,104 @@ Builds Microsoft Xbox / Xbox 360 FATX filesystem images from scratch per the rev
 | `Build` | `byte[] Build(int sectorsPerCluster = 0, uint volumeId = 0)` | Builds a complete FATX image containing the previously-added files. |
 | `WriteTo` | `void WriteTo(Stream output, int sectorsPerCluster = 0, uint volumeId = 0)` | Writes the image into `output`: the superblock and FAT, then every cluster payload at its offset. Only a non-seekable target has to materialise the image, so a seekable one is bounded by the disk rather than by what a byte[] can address. |
 
+### Namespace `FileSystem.Fossil`
+
+[`FossilEntry`](#fossilentry) · [`FossilFormatDescriptor`](#fossilformatdescriptor) · [`FossilReader`](#fossilreader) · [`FossilSourceEntry`](#fossilsourceentry)
+
+#### `FossilEntry`
+
+One file or directory of a Fossil volume.
+
+Implements `IEquatable<FossilEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilEntry` | `FossilEntry(string Path, bool IsDirectory, long Size, uint Mode, string Uid, string Gid, uint MTime, FossilSourceEntry Source)` | One file or directory of a Fossil volume. |
+| `Gid` | `string Gid { get; init; }` | Group. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | True for a directory. |
+| `MTime` | `uint MTime { get; init; }` | Modification time (UNIX seconds). |
+| `Mode` | `uint Mode { get; init; }` | Plan 9 mode word: permission bits plus `ModeDir` (1<<15) and friends. |
+| `Path` | `string Path { get; init; }` | Slash-separated path from the Fossil root (`active/…`, `snapshot/…`). |
+| `Size` | `long Size { get; init; }` | File size from the data source's entry. |
+| `Source` | `FossilSourceEntry Source { get; init; }` | The entry of the file's data source. |
+| `Uid` | `string Uid { get; init; }` | Owner. |
+
+#### `FossilFormatDescriptor`
+
+Fossil — the Plan 9 file server's on-disk format (Quinlan, McKie, Cox, 2002), as plan9port's `flfmt` and `fossil` write it. Header magic `0x3776ae89` at 128 KiB.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilFormatDescriptor` | `FossilFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+
+#### `FossilReader`
+
+Reads a Fossil volume (Plan 9's file server, as `flfmt` lays it out and the `fossil` server writes it): header at 128 KiB, superblock, label and data partitions; files are trees of local blocks addressed by their block number. Blocks already archived to Venti are refused — this reader has no Venti. See `docs/FOSSIL-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilReader` | `FossilReader(Stream stream)` | Opens a Fossil volume; throws `InvalidDataException` for anything it cannot read faithfully. |
+| `DirMagic` | `const uint DirMagic` |  |
+| `EntrySize` | `const int EntrySize` |  |
+| `HeaderMagic` | `const uint HeaderMagic` |  |
+| `HeaderOffset` | `const int HeaderOffset` |  |
+| `MaxDepth` | `const int MaxDepth` |  |
+| `MetaMagic` | `const uint MetaMagic` |  |
+| `ModeDir` | `const uint ModeDir` |  |
+| `ModeLink` | `const uint ModeLink` |  |
+| `ModeSnapshot` | `const uint ModeSnapshot` |  |
+| `ScoreSize` | `const int ScoreSize` |  |
+| `SuperMagic` | `const uint SuperMagic` |  |
+| `Active` | `uint Active { get; }` | Block address of the active root. |
+| `BlockSize` | `int BlockSize { get; }` | Bytes per block. |
+| `DataEnd` | `uint DataEnd { get; }` | End of the data partition. |
+| `DataStart` | `uint DataStart { get; }` | First block of the data partition. |
+| `Entries` | `IReadOnlyList<FossilEntry> Entries { get; }` | Every file and directory, parents first. |
+| `Epochs` | `ValueTuple<uint, uint> Epochs { get; }` | Superblock epochs. |
+| `Name` | `string Name { get; }` | Superblock name (the volume label). |
+| `Extract` | `byte[] Extract(FossilEntry entry)` | Reads a file's bytes; refuses blocks that are not local or lie outside the data partition. |
+
+#### `FossilSourceEntry`
+
+A source ("stream") entry as stored in a directory block (40 bytes).
+
+Implements `IEquatable<FossilSourceEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilSourceEntry` | `FossilSourceEntry(uint Gen, ushort PSize, ushort DSize, byte Flags, byte Depth, long Size, uint Address, bool IsLocal, bool IsZero, uint Tag, uint Snap)` | A source ("stream") entry as stored in a directory block (40 bytes). |
+| `Address` | `uint Address { get; init; }` |  |
+| `DSize` | `ushort DSize { get; init; }` |  |
+| `Depth` | `byte Depth { get; init; }` |  |
+| `Flags` | `byte Flags { get; init; }` |  |
+| `Gen` | `uint Gen { get; init; }` |  |
+| `IsActive` | `bool IsActive { get; }` | Entry in use. |
+| `IsDir` | `bool IsDir { get; }` | Source holds entries (a directory stream). |
+| `IsLocal` | `bool IsLocal { get; init; }` |  |
+| `IsZero` | `bool IsZero { get; init; }` |  |
+| `PSize` | `ushort PSize { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `Snap` | `uint Snap { get; init; }` |  |
+| `Tag` | `uint Tag { get; init; }` |  |
+
 ### Namespace `FileSystem.Gemdos`
 
 [`GemdosBpb`](#gemdosbpb) · [`GemdosExtentMap`](#gemdosextentmap) · [`GemdosFormatDescriptor`](#gemdosformatdescriptor) · [`GemdosInPlaceModifier`](#gemdosinplacemodifier) · [`GemdosOptimizer`](#gemdosoptimizer) · [`GemdosOptimizer.GemdosGeometry`](#gemdosoptimizergemdosgeometry) · [`GemdosReader`](#gemdosreader) · [`GemdosWriter`](#gemdoswriter)

@@ -310,7 +310,7 @@ internal sealed class PartitionsWindow : Form {
   private void OnAdd(bool isLogical) {
     if (this._editor is not { } editor || this._guestStream is not { } guest) return;
 
-    var dialog = new AddPartitionDialog(guest.Length, isLogical);
+    var dialog = new AddPartitionDialog(guest.Length, isLogical, editor.LogicalSectorSize);
     if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
     try {
