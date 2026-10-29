@@ -1,0 +1,67 @@
+libzpaq / zpaq 7.15 — converted to C#
+
+Source:   http://mattmahoney.net/dc/zpaq715.zip (zpaq v7.15, Aug 17 2016)
+Author:   Matt Mahoney
+Licence:  public domain (The Unlicense, reproduced below) for zpaq.cpp,
+          libzpaq.h and libzpaq.cpp. The libdivsufsort-lite section of
+          libzpaq.cpp (MIT) was NOT taken: suffix arrays are built by
+          ZpaqSuffixArray.cs, an SA-IS implementation written from the
+          Nong/Zhang/Chan paper. A suffix array is unique, so the BWT and
+          LZ77 output is unchanged.
+Spec:     The ZPAQ Open Standard Format for Highly Compressed Data, Level 2,
+          http://mattmahoney.net/dc/zpaq206.pdf
+
+The files in this directory are a conversion into this codebase, not a
+verbatim copy:
+
+  libzpaq.cpp ZPAQL (interpreter)      -> ZpaqlMachine.cs
+  libzpaq.cpp Predictor (interpreter)  -> ZpaqPredictor.cs
+  libzpaq.cpp Decoder, Encoder,
+              PostProcessor            -> ZpaqCoder.cs
+  libzpaq.cpp Decompresser             -> ZpaqDecompresser.cs
+  libzpaq.cpp Compiler                 -> ZpaqCompiler.cs
+  libzpaq.cpp Compressor               -> ZpaqCompressor.cs
+  libzpaq.cpp makeConfig, compressBlock,
+              e8e9                     -> ZpaqMethods.cs
+  libzpaq.cpp LZBuffer                 -> ZpaqLzBuffer.cs
+  libzpaq.cpp StringBuffer, SHA1 use   -> ZpaqIo.cs
+  zpaq.cpp Jidac::read_archive,
+           extract                     -> ZpaqReader.cs
+  zpaq.cpp Jidac::add                  -> ZpaqWriter.cs
+
+Constant tables (bit-history state table, CM/MATCH divisor tables, squash
+and stretch tables, the add() analysis divisor table, the locator tag, the
+ZPAQL opcode list and the generated ZPAQL programs for methods 0..5) are
+copied exactly, as the format requires.
+
+Not converted: the x86/x64 JIT, AES-256 encryption and scrypt key stretching
+(encrypted archives are refused), multi-part and index (-index) archives,
+and appending a new version to an existing archive (the writer emits a
+single-version archive; modify rebuilds it).
+
+---------------------------------------------------------------------
+
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <http://unlicense.org>
