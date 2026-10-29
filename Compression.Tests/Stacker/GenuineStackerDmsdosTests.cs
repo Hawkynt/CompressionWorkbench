@@ -30,9 +30,7 @@ public class GenuineStackerDmsdosTests {
   [TestCase(CvfLzMethod.Sd3)]
   [TestCase(CvfLzMethod.Auto)]
   public void GenuineStacker_IsMountedAndReadByteExact_ByRealDmsdosDriver(CvfLzMethod method) {
-    var build = DmsdosCache.EnsureTools();
-    if (build is null)
-      Assert.Ignore("dmsdos tools unavailable (need Linux + git + cmake + C compiler, or set CWB_DMSDOS_BUILD). Skipping driver-proof gate.");
+    DmsdosOracle.Require();
 
     var files = SampleFiles();
     var writer = new GenuineStackerWriter { CompressionMethod = method, CompressionLevel = 2 };
@@ -44,16 +42,15 @@ public class GenuineStackerDmsdosTests {
       File.WriteAllBytes(cvfPath, image);
 
       // 1. Detection.
-      var (_, detOut) = DmsdosCache.RunTool(DmsdosCache.CvfTest(build!), $"\"{cvfPath}\" -v");
+      var detOut = Encoding.ASCII.GetBytes(DmsdosOracle.Detect(cvfPath));
       var detected = Encoding.ASCII.GetString(detOut);
       Assert.That(detected, Does.Contain("stacker version 3 CVF"),
         $"dmsdos did not detect a genuine Stacker 3 CVF; got: {detected.Trim()}");
 
       // 2. Write proof: the real driver reads every file back byte-exact.
       foreach (var (name, expected) in files) {
-        var (exit, raw) = DmsdosCache.RunTool(DmsdosCache.DcRead(build!), $"\"{cvfPath}\" /{name} raw");
+        var (exit, payload) = DmsdosOracle.ReadFile(cvfPath, name);
         Assert.That(exit, Is.EqualTo(0), $"dcread failed for {name}");
-        var payload = DmsdosCache.PayloadAfterDiagnostics(raw);
         Assert.That(payload.Length, Is.GreaterThanOrEqualTo(expected.Length),
           $"dcread returned too few bytes for {name}");
         Assert.That(payload.AsSpan(0, expected.Length).ToArray(), Is.EqualTo(expected),
