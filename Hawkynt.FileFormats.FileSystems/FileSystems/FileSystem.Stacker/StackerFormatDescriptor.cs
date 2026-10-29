@@ -154,7 +154,8 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     new FormatOptionDescriptor(
       Key: "ForceCompress", DisplayName: "Force compression", Kind: FormatOptionKind.Boolean,
       Default: "false",
-      Description: "Keep the compressed form even when it does not shrink a cluster.",
+      Description: "Keep the compressed form even when it does not shrink a cluster. A compressed run "
+        + "filling a whole cluster cannot be told from a stored one on Stacker, so such a cluster is still stored.",
       DependsOn: "Compatibility=Genuine"),
   ];
 
