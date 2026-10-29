@@ -250,6 +250,7 @@ format,Ipa,IPA,Archive,,.ipa,Y,Y,Y,Y
 format,Ipsw,Apple IPSW,Archive,,.ipsw;.otazip,Y,Y,Y,Y
 format,Ircam,IRCAM / BICSF (.sf),Audio,,.sf;.ircam,Y,Y,Y,
 format,Iso,ISO 9660,Archive,Y,.iso,Y,Y,Y,Y
+format,Isz,ISZ (UltraISO),Archive,,.isz,Y,Y,Y,Y
 format,It,IT (Impulse Tracker),Audio,,.it,Y,Y,,
 format,Iti,Impulse Tracker Instrument,Audio,,.iti,Y,Y,,
 format,Its,Impulse Tracker Sample,Audio,,.its,Y,Y,,

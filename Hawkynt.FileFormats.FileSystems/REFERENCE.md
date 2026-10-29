@@ -1119,6 +1119,84 @@ In-place modifier for Apple IPSW packages. An IPSW is just a ZIP file with an Ap
 | `AddEntry` | `static void AddEntry(Stream ipsw, string zipPath, byte[] data)` | Adds (or replaces by ZIP path) a single entry inside the IPSW. The previous entry's bytes are wiped via `RemoveFile` before the new entry is appended. |
 | `RemoveEntry` | `static bool RemoveEntry(Stream ipsw, string zipPath)` | Removes a single entry by ZIP path. Returns true if removed. |
 
+### Namespace `FileFormat.Isz`
+
+[`IszFormatDescriptor`](#iszformatdescriptor) · [`IszImage`](#iszimage) · [`IszImage.Chunk`](#iszimagechunk) · [`IszImage.ChunkKind`](#iszimagechunkkind)
+
+#### `IszFormatDescriptor`
+
+UltraISO ISZ ("ISO Zipped") compressed CD/DVD image: exposes the decompressed ISO as `image.iso` (CRC-32 verified) plus a synthetic `metadata.ini`. Creates single-segment images with zero/stored/zlib chunks; replacing `image.iso` rewrites the container. Encrypted and split (.i01…) images are refused.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IszFormatDescriptor` | `IszFormatDescriptor()` |  |
+| `ImageName` | `const string ImageName` |  |
+| `MetadataName` | `const string MetadataName` |  |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | An ISZ requires its image member, so purge cannot leave an empty container. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Replaces `image.iso`, keeping the chunk size and volume serial of the existing container. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `IszImage`
+
+UltraISO compressed ISO (ISZ v1), single segment. Implemented from EZB Systems' published specification plus the measured details recorded in `docs/ISZ-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IszImage` | `IszImage()` |  |
+| `DefaultBlockSize` | `const int DefaultBlockSize` |  |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `BlockSize` | `uint BlockSize { get; }` |  |
+| `Chunks` | `IReadOnlyList<Chunk> Chunks { get; }` |  |
+| `DataChecksum` | `uint DataChecksum { get; }` |  |
+| `Encryption` | `byte Encryption { get; }` |  |
+| `ImageSize` | `long ImageSize { get; }` |  |
+| `PackedChecksum` | `uint PackedChecksum { get; }` |  |
+| `SectorSize` | `ushort SectorSize { get; }` |  |
+| `TotalSectors` | `uint TotalSectors { get; }` |  |
+| `Version` | `byte Version { get; }` |  |
+| `VolumeSerial` | `uint VolumeSerial { get; }` |  |
+| `CopyImageTo` | `void CopyImageTo(Stream source, Stream output)` | Writes the ISO image, verifying the stored CRC-32 of the decoded data. |
+| `Read` | `static IszImage Read(Stream stream)` |  |
+| `Write` | `static void Write(Stream output, ReadOnlySpan<byte> image, int blockSize = 32768, ushort sectorSize = 2048, uint volumeSerial = 0)` | Writes a single-segment ISZ with 3-byte chunk pointers: zero chunks, zlib where smaller, else stored. |
+
+#### `IszImage.Chunk`
+
+Implements `IEquatable<Chunk>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Chunk` | `Chunk(ChunkKind Kind, int Length, long Offset)` |  |
+| `Kind` | `ChunkKind Kind { get; init; }` |  |
+| `Length` | `int Length { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+
+#### `IszImage.ChunkKind`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Zero` | `0` |  |
+| `Data` | `1` |  |
+| `Zlib` | `2` |  |
+| `Bzip2` | `3` |  |
+
 ### Namespace `FileFormat.Mdf`
 
 [`MdfEntry`](#mdfentry) · [`MdfFormatDescriptor`](#mdfformatdescriptor) · [`MdfInPlaceModifier`](#mdfinplacemodifier) · [`MdfInPlaceModifier.SectorGeometry`](#mdfinplacemodifiersectorgeometry) · [`MdfLayoutMap`](#mdflayoutmap) · [`MdfReader`](#mdfreader)
