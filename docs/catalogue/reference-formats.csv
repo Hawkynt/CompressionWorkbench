@@ -270,7 +270,7 @@ Dreamcast GDI,gdi,disk-image,,,,,R,,,1,,,,,,MISSING,,
 ECM (Error Code Modeler),ecm,disk-image,,,,,R,,,1,,,,,,MISSING,,
 gBurner image,gbi,disk-image,,,,,R,,,1,,,,,,MISSING,,
 ISZ (compressed ISO),isz,disk-image,,,,,R,,Y,2,,,,,,MISSING,,
-PowerISO DAA,daa,disk-image,,,,,R,,Y,2,,,,,,MISSING,,
+PowerISO DAA,daa,disk-image,,,,,R,,Y,2,https://www.poweriso.com,Daa,Y,Y,Y,PARTIAL,,"format 0x100 read/write verified both ways against PowerISO for Linux 1.3; 0x110, split, password and GBI refused (no verifiable samples); spec docs/DAA-ON-DISK.md"
 MagicISO UIF,uif,disk-image,,,,,R,,Y,2,,,,,,MISSING,,
 Compressed ISO (CSO/ZSO),cso;zso,disk-image,,,,,R,,,1,,Cso,Y,Y,Y,OK,,
 HTC NBH ROM image,nbh,firmware,,,,,R,,,1,,,,,,MISSING,,
