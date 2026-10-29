@@ -2074,8 +2074,10 @@ internal sealed class MainViewModel : ViewModelBase {
     // Per-file + cumulative-size check via optional constraints.
     if (ops is Compression.Registry.IArchiveWriteConstraints constraints) {
       long cumulative = 0;
+      // The entry lands in the folder being browsed, as AddFilesToArchiveImpl names it.
+      var folderPrefix = _currentFolder.Length > 0 ? _currentFolder.TrimEnd('/') + "/" : "";
       foreach (var path in files) {
-        var entryName = System.IO.Path.GetFileName(path);
+        var entryName = folderPrefix + System.IO.Path.GetFileName(path);
         var size = new FileInfo(path).Exists ? new FileInfo(path).Length : 0;
         cumulative += size;
         var input = new Compression.Registry.ArchiveInputInfo(path, entryName, IsDirectory: false);

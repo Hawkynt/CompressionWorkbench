@@ -59,14 +59,28 @@ public sealed class ShellContentDetectionTests {
   }
 
   [Test]
-  public void GivenAnImgHoldingAPartitionTable_WhenOpened_ThenItIsAPartitionedDiskAndNothingIsOfferedToBeAddedToIt() {
+  public void GivenAnImgHoldingAPartitionTable_WhenOpened_ThenItIsAPartitionedDiskWhoseAddsGoThroughThePartitions() {
     this._model.Open(this.Write("disk.img", PartitionedDisk()));
 
     Assert.Multiple(() => {
       Assert.That(this._model.Format, Is.EqualTo("PartitionedDisk"), "the extension says FAT; the bytes say whole disk");
-      Assert.That(this._model.AddFilesCommand.CanExecute(null), Is.False,
-        "adding through the FAT writer would write a FAT structure over the partition table");
+      // Adding is offered, but through the partition-aware writer — never the FAT writer, which
+      // would write a FAT structure over the partition table.
+      Assert.That(this._model.AddFilesCommand.CanExecute(null), Is.True);
+      Assert.That(FormatRegistry.GetArchiveOps("PartitionedDisk"), Is.InstanceOf<IArchiveModifiable>());
     });
+  }
+
+  [Test]
+  public void GivenAPartitionedDisk_WhenAFileIsDroppedIntoAPartitionFolder_ThenTheDropIsAccepted() {
+    var disk = PartitionedDisk();
+    this._model.Open(this.Write("disk.img", disk));
+    this._model.CurrentFolder = PartitionedDiskLister.MakePartitionPrefix(PartitionTableDetector.Detect(disk).Partitions[0]);
+    var dropped = this.Write("any.txt", "dropped"u8.ToArray());
+
+    var (allowed, _) = this._model.EvaluateDropAgainstCurrentArchive([dropped]);
+
+    Assert.That(allowed, Is.True);
   }
 
   [Test]
