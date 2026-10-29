@@ -1,0 +1,6 @@
+# Guest disks as libvhdi 20210425 (pyvhdi, child opened with set_parent) read them;
+# qemu-img 8.2.2 `convert -O raw` agrees on ntfs-parent and ntfs-dynamic (it cannot open
+# differencing VHDX). The child differs from its parent in 163 of 8192 sectors.
+1ef1fb5360247aa7d36a38415bc7bf6e1e52f62af5e6bd1283815e82584c7efc 4194304 ntfs-differential.vhdx
+c5523065bc6ef82267be56c5f8888e2876ead8ba7edba2a65a3da8b076231b68 4194304 ntfs-parent.vhdx
+b92731f8e4bf3532418444d22a9086823a8122569500acd09cd8d2ce20eb98e9 4194304 ntfs-dynamic.vhdx

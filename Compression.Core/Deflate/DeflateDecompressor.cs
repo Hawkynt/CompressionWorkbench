@@ -105,6 +105,16 @@ public sealed class DeflateDecompressor {
   public bool IsFinished => this._state == State.Done;
 
   /// <summary>
+  /// Gets or sets a value indicating whether stored blocks carry only LEN and no NLEN.
+  /// </summary>
+  /// <remarks>
+  /// The inflate built into NSIS 2.x installers reads a stored block's 16-bit length and goes
+  /// straight to the data; its compiler writes no one's-complement copy. Set this before the
+  /// first read to decode such streams. RFC 1951 streams leave it <see langword="false"/>.
+  /// </remarks>
+  public bool StoredBlocksOmitComplement { get; set; }
+
+  /// <summary>
   /// Decompresses all data from the stream.
   /// </summary>
   /// <returns>The decompressed data.</returns>
@@ -127,6 +137,23 @@ public sealed class DeflateDecompressor {
   public static byte[] Decompress(ReadOnlySpan<byte> compressedData) {
     var capacity = (int)Math.Clamp(compressedData.Length * 4L, 4096, Array.MaxLength);
     return new DeflateDecompressor(compressedData.ToArray(), capacity).DecompressAll();
+  }
+
+  /// <summary>
+  /// Decompresses DEFLATE data whose matches may reach back into <paramref name="dictionary"/>,
+  /// the bytes that precede it (MSZIP keeps the previous block's output as history).
+  /// </summary>
+  /// <param name="compressedData">The DEFLATE compressed data.</param>
+  /// <param name="dictionary">Preceding output; only the last 32 KiB can be referenced.</param>
+  /// <returns>The decompressed data, without the dictionary.</returns>
+  public static byte[] Decompress(ReadOnlySpan<byte> compressedData, ReadOnlySpan<byte> dictionary) {
+    if (dictionary.Length > WindowSize)
+      dictionary = dictionary[^WindowSize..];
+    var capacity = (int)Math.Clamp(compressedData.Length * 4L + dictionary.Length, 4096 + dictionary.Length, Array.MaxLength);
+    var d = new DeflateDecompressor(compressedData.ToArray(), capacity);
+    dictionary.CopyTo(d._buf);
+    d._wpos = d._rpos = dictionary.Length;
+    return d.DecompressAll();
   }
 
   /// <summary>
@@ -320,9 +347,11 @@ public sealed class DeflateDecompressor {
         this._bitCnt -= drop;
 
         var len = this.GetBits(16);
-        var nlen = this.GetBits(16);
-        if ((len ^ nlen) != 0xFFFF)
-          throw new InvalidDataException("Invalid uncompressed block: LEN/NLEN mismatch.");
+        if (!this.StoredBlocksOmitComplement) {
+          var nlen = this.GetBits(16);
+          if ((len ^ nlen) != 0xFFFF)
+            throw new InvalidDataException("Invalid uncompressed block: LEN/NLEN mismatch.");
+        }
 
         this._storedLeft = (int)len;
         this._state = State.Stored;

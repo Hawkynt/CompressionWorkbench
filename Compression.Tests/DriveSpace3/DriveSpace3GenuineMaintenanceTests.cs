@@ -70,8 +70,7 @@ public class DriveSpace3GenuineMaintenanceTests {
 
   [Test, Category("DriverProof")]
   public void RebuiltImage_StillReadByRealDmsdosDriver() {
-    var build = DmsdosCache.EnsureTools();
-    if (build is null) Assert.Ignore("dmsdos unavailable.");
+    DmsdosOracle.Require();
 
     var d = new DriveSpace3FormatDescriptor();
     using var ms = new MemoryStream(); ms.Write(MakeGenuine()); ms.Position = 0;
@@ -81,12 +80,11 @@ public class DriveSpace3GenuineMaintenanceTests {
     var cvf = Path.Combine(Path.GetTempPath(), $"cwb-dvr3reb-{Guid.NewGuid():N}.cvf");
     try {
       File.WriteAllBytes(cvf, img);
-      var (_, det) = DmsdosCache.RunTool(DmsdosCache.CvfTest(build!), $"\"{cvf}\" -v");
+      var det = Encoding.ASCII.GetBytes(DmsdosOracle.Detect(cvf));
       Assert.That(Encoding.ASCII.GetString(det), Does.Contain("drivespace 3 CVF"));
       foreach (var (n, data) in Seed) {
-        var (exit, raw) = DmsdosCache.RunTool(DmsdosCache.DcRead(build!), $"\"{cvf}\" /{n} raw");
+        var (exit, payload) = DmsdosOracle.ReadFile(cvf, n);
         Assert.That(exit, Is.EqualTo(0), $"dcread {n}");
-        var payload = DmsdosCache.PayloadAfterDiagnostics(raw);
         Assert.That(payload.AsSpan(0, data.Length).ToArray(), Is.EqualTo(data), $"{n} byte-exact after rebuild");
       }
     } finally { try { File.Delete(cvf); } catch { } }

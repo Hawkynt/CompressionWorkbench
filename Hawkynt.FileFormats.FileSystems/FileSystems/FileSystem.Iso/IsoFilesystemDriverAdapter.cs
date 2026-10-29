@@ -177,6 +177,9 @@ public sealed class IsoFilesystemDriverAdapter :
         throw new InvalidDataException($"ISO filesystem contains duplicate decoded path '{path}'.");
       if (entry.MountLimitation is { } limitation)
         throw new NotSupportedException($"ISO file '{path}' is outside the native mounted profile: {limitation}");
+      if (entry.Zisofs is not null)
+        throw new NotSupportedException($"ISO file '{path}' is zisofs-compressed, which the positional mounted reader cannot serve.");
+      if (entry.IsSymlink) continue;
       if (entry.IsDirectory) {
         if (entry.DataOffset < 0 || entry.DataOffset >= image.Length)
           throw new InvalidDataException($"ISO directory '{path}' extent starts outside the image.");
@@ -309,12 +312,15 @@ internal sealed class IsoReadOnlyFilesystemSession : IFilesystemSession {
         nodeId,
         parent,
         name,
-        entry.IsDirectory ? FilesystemNodeKind.Directory : FilesystemNodeKind.RegularFile,
+        entry.IsDirectory ? FilesystemNodeKind.Directory
+          : entry.IsSymlink ? FilesystemNodeKind.SymbolicLink
+          : FilesystemNodeKind.RegularFile,
         entry.IsDirectory ? 0 : entry.Size,
-        entry.IsDirectory ? 0 : IsoFilesystemDriverAdapter.AllocatedLength(entry),
+        entry.IsDirectory || entry.IsSymlink ? 0 : IsoFilesystemDriverAdapter.AllocatedLength(entry),
         LinkCount: entry.IsDirectory ? 2U : 1U,
         Modified: ToOffset(entry.LastModified),
-        OpenReadHandle: entry.IsDirectory
+        SymbolicLinkTarget: entry.LinkTarget,
+        OpenReadHandle: entry.IsDirectory || entry.IsSymlink
           ? null
           : () => new IsoPositionalFileHandle(nodeId, _image, _ioGate, capturedSegments, capturedLength)));
     }
@@ -324,10 +330,12 @@ internal sealed class IsoReadOnlyFilesystemSession : IFilesystemSession {
 
   private void ValidateExtentBounds(IEnumerable<IsoEntry> entries) {
     foreach (var entry in entries) {
-      if (entry.IsDirectory)
+      if (entry.IsDirectory || entry.IsSymlink)
         continue;
       if (entry.MountLimitation is { } limitation)
         throw new NotSupportedException($"ISO file '{entry.Name}' is outside the mounted profile: {limitation}");
+      if (entry.Zisofs is not null)
+        throw new NotSupportedException($"ISO file '{entry.Name}' is zisofs-compressed, which the positional mounted reader cannot serve.");
       foreach (var segment in IsoReader.Segments(entry))
         if (segment.Length < 0 || segment.PhysicalOffset < 0 ||
             segment.PhysicalOffset > _image.Length || segment.Length > _image.Length - segment.PhysicalOffset)
