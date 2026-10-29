@@ -547,6 +547,60 @@ Writes PSP CSO v1/v2 and ZSO compressed-ISO containers.
 | `DefaultBlockSize` | `const int DefaultBlockSize` | Default block size — one cooked ISO 9660 sector. |
 | `Build` | `static byte[] Build(ReadOnlySpan<byte> uncompressedData, int blockSize = 2048)` | Builds a canonical CSO v1 stream around `uncompressedData`. |
 
+### Namespace `FileFormat.Daa`
+
+[`DaaFormatDescriptor`](#daaformatdescriptor) · [`DaaImage`](#daaimage)
+
+#### `DaaFormatDescriptor`
+
+PowerISO DAA ("Direct Access Archive") compressed CD/DVD image, format version 0x100: exposes the ISO as `image.iso` plus a synthetic `metadata.ini`; creates and rewrites version 0x100 images PowerISO reads. Version 0x110, split, password-protected and gBurner GBI images are refused.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DaaFormatDescriptor` | `DaaFormatDescriptor()` |  |
+| `ImageName` | `const string ImageName` |  |
+| `MetadataName` | `const string MetadataName` |  |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | DAA requires an ISO image payload, so it has no empty container for purge to leave behind. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Replaces `image.iso`, keeping the chunk size. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `DaaImage`
+
+PowerISO DAA image, format version 0x100 (single volume, unencrypted): a 76-byte header, a table of 3-byte compressed chunk lengths and raw-deflate chunks. Implemented from `docs/DAA-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DaaImage` | `DaaImage()` |  |
+| `DefaultChunkSize` | `const int DefaultChunkSize` |  |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `Version100` | `const uint Version100` |  |
+| `Version110` | `const uint Version110` |  |
+| `ChunkSize` | `uint ChunkSize { get; }` |  |
+| `Chunks` | `IReadOnlyList<ValueTuple<long, int>> Chunks { get; }` |  |
+| `IsoSize` | `long IsoSize { get; }` |  |
+| `Version` | `uint Version { get; }` |  |
+| `CopyIsoTo` | `void CopyIsoTo(Stream source, Stream output)` |  |
+| `Read` | `static DaaImage Read(Stream stream)` |  |
+| `Write` | `static void Write(Stream output, ReadOnlySpan<byte> iso, int chunkSize = 65536, DeflateCompressionLevel level = 6)` | Writes a version 0x100 image: header, 3-byte length table, raw-deflate chunks each followed by its CRC-32. |
+
 ### Namespace `FileFormat.Dmg`
 
 [`DmgEntry`](#dmgentry) · [`DmgFormatDescriptor`](#dmgformatdescriptor) · [`DmgReader`](#dmgreader) · [`DmgWriter`](#dmgwriter)
@@ -13427,7 +13481,7 @@ Builds a genuine Stac Electronics STACVOL — the on-disk shape a real Stacker d
 | `GenuineStackerWriter` | `GenuineStackerWriter()` |  |
 | `CompressionLevel` | `int CompressionLevel { get; init; }` | Codec effort (search depth). Higher = better ratio, slower. |
 | `CompressionMethod` | `CvfLzMethod CompressionMethod { get; init; }` | Per-cluster compression: Stored (default), Sd3 (Stacker 3), Sd4 (Stacker 4), Ds, or Auto (smallest of Ds/Sd3/Sd4 per cluster). The Stacker driver tells them apart by the payload's first word — 0x0081 SD-4, 0x5344 ("DS") the DoubleSpace codec, anything else SD-3. JM/SQ map to Ds. |
-| `ForceCompress` | `bool ForceCompress { get; init; }` | Keep a compressed cluster even if it does not shrink (auto-best off). |
+| `ForceCompress` | `bool ForceCompress { get; init; }` | Keep a compressed cluster even if it does not shrink (auto-best off). Stacker cannot record a compressed run that fills a whole cluster — such a run reads as stored — so a payload that needs every sector of its cluster is stored raw regardless; any shorter payload is kept compressed either way, which leaves this option without effect on Stacker volumes. |
 | `Timestamp` | `DateTime Timestamp { get; init; }` | Creation/modification timestamp stamped on every file entry. Default (before 1980) leaves the FAT date/time fields zero. |
 | `Version` | `int Version { get; init; }` | Stacker major version recorded in the decoded superblock (< 410 ⇒ v3). |
 | `VolumeLabel` | `string VolumeLabel { get; init; }` | Optional inner-volume label (≤11 chars). Empty = no label entry. |

@@ -255,6 +255,20 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Isz.IszExternalConformanceTests" \
             --logger "trx;LogFileName=isz-oracle-tests.trx"
 
+      # Hard gate, both directions: PowerISO for Linux (freeware, checksum-pinned, used as a black
+      # box) converts our DAA images back to identical ISOs, and we read the DAA images it writes.
+      - name: DAA oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_POWERISO: "1"
+        run: |
+          curl -sfL -o "$RUNNER_TEMP/poweriso.tgz" https://www.poweriso.com/poweriso-1.3.tar.gz
+          echo "605ae3fceb93952422b42d868f1317d1c6d48d2bdbaee700dcf17e99dbe65fc0  $RUNNER_TEMP/poweriso.tgz" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/poweriso.tgz" -C "$RUNNER_TEMP"
+          CWB_POWERISO="$RUNNER_TEMP/poweriso" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Daa.DaaExternalConformanceTests" \
+            --logger "trx;LogFileName=daa-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the
