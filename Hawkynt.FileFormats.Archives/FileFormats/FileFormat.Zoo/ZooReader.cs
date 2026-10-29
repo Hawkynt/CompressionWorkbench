@@ -39,6 +39,7 @@ public sealed class ZooReader : IDisposable {
     byte[] data = entry.CompressionMethod switch {
       ZooCompressionMethod.Store => compressed,
       ZooCompressionMethod.Lzw => DecompressLzw(compressed, entry.OriginalSize),
+      ZooCompressionMethod.Lzh => ZooLzhCodec.Decode(compressed, entry.OriginalSize),
       _ => throw new NotSupportedException($"Unsupported Zoo compression method: {(byte)entry.CompressionMethod}."),
     };
 
@@ -84,6 +85,10 @@ public sealed class ZooReader : IDisposable {
 
       var parsed = ZooDirectoryCodec.ReadHeader(this._stream, nextOffset);
       var entry = parsed.Entry;
+      // Zoo's end-of-directory entry: link 0, no name, no data. (Archives that end on a real member
+      // whose link is 0 still list that member.)
+      if (parsed.NextOffset == 0 && entry.DataOffset == 0 && string.IsNullOrEmpty(entry.EffectiveName))
+        break;
       if (entry.DataOffset < 0 || entry.DataOffset > this._stream.Length - entry.CompressedSize)
         throw new InvalidDataException($"Zoo member '{entry.EffectiveName}' points outside the archive.");
 

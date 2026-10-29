@@ -60,6 +60,14 @@ public sealed class LzxDecompressor {
   private readonly LzxStreamFormat _format;
   private bool _readStreamHeader;
 
+  // A block may span several calls (cabinet frames are 32 KiB, blocks are not bounded by them),
+  // and so may the match that straddles a frame boundary.
+  private int _blockType;
+  private int _blockSize;
+  private int _blockRemaining;
+  private int _pendingMatchLength;
+  private int _pendingMatchOffset;
+
   // E8 call-instruction translation state
   private readonly bool _e8Translation;
   private long _totalDecompressedBytes;
@@ -128,41 +136,40 @@ public sealed class LzxDecompressor {
     }
 
     while (outPos < uncompressedSize) {
-      var blockType = (int)this.ReadBits(3);
+      var starting = this._blockRemaining == 0;
+      if (starting) {
+        this._blockType = (int)this.ReadBits(3);
 
-      // Block size: twenty-four bits in a cabinet; in a WIM, one bit meaning
-      // "the usual 32 768" or sixteen bits otherwise.
-      int blockSize;
-      if (this._format == LzxStreamFormat.Cab)
-        blockSize = (int)this.ReadBits(24);
-      else if (this.ReadBits(1) == 1)
-        blockSize = LzxConstants.DefaultBlockSize;
-      else
-        blockSize = (int)this.ReadBits(16);
+        // Block size: twenty-four bits in a cabinet; in a WIM, one bit meaning
+        // "the usual 32 768" or sixteen bits otherwise.
+        if (this._format == LzxStreamFormat.Cab)
+          this._blockSize = (int)this.ReadBits(24);
+        else if (this.ReadBits(1) == 1)
+          this._blockSize = LzxConstants.DefaultBlockSize;
+        else
+          this._blockSize = (int)this.ReadBits(16);
+        if (this._blockSize == 0)
+          throw new InvalidDataException("LZX block of length zero.");
+        this._blockRemaining = this._blockSize;
 
-      blockSize = Math.Min(blockSize, uncompressedSize - outPos);
-
-      switch (blockType) {
-        case LzxConstants.BlockTypeVerbatim:
-          this.ReadVerbatimBlockHeader();
-          this.DecodeBlock(false, output, outPos, blockSize);
-          break;
-
-        case LzxConstants.BlockTypeAligned:
-          this.ReadAlignedBlockHeader();
-          this.DecodeBlock(true, output, outPos, blockSize);
-          break;
-
-        case LzxConstants.BlockTypeUncompressed:
-          this.DecodeUncompressedBlock(output, outPos, blockSize);
-          break;
-
-        default:
-          ThrowInvalidBlockType(blockType);
-          break;
+        switch (this._blockType) {
+          case LzxConstants.BlockTypeVerbatim: this.ReadVerbatimBlockHeader(); break;
+          case LzxConstants.BlockTypeAligned: this.ReadAlignedBlockHeader(); break;
+          case LzxConstants.BlockTypeUncompressed: break;
+          default: ThrowInvalidBlockType(this._blockType); break;
+        }
       }
 
-      outPos += blockSize;
+      // The block may run past what this call is asked for; the rest of it follows in the
+      // next call (the next cabinet frame).
+      var count = Math.Min(this._blockRemaining, uncompressedSize - outPos);
+      if (this._blockType == LzxConstants.BlockTypeUncompressed)
+        this.DecodeUncompressedBlock(output, outPos, count, starting, count == this._blockRemaining);
+      else
+        this.DecodeBlock(this._blockType == LzxConstants.BlockTypeAligned, output, outPos, count);
+
+      outPos += count;
+      this._blockRemaining -= count;
     }
 
     if (this._e8Translation && uncompressedSize > 10)
@@ -197,14 +204,16 @@ public sealed class LzxDecompressor {
     this.ReadVerbatimBlockHeader();
   }
 
-  private void DecodeUncompressedBlock(byte[] output, int outPos, int blockSize) {
-    // Discard partial bits to align to the next 16-bit word boundary
-    this.AlignTo16Bits();
+  private void DecodeUncompressedBlock(byte[] output, int outPos, int blockSize, bool starting, bool ending) {
+    if (starting) {
+      // Discard partial bits to align to the next 16-bit word boundary
+      this.AlignTo16Bits();
 
-    // R0/R1/R2 are stored as three LE 32-bit integers
-    this._r0 = this.ReadRawInt32LE();
-    this._r1 = this.ReadRawInt32LE();
-    this._r2 = this.ReadRawInt32LE();
+      // R0/R1/R2 are stored as three LE 32-bit integers
+      this._r0 = this.ReadRawInt32LE();
+      this._r1 = this.ReadRawInt32LE();
+      this._r2 = this.ReadRawInt32LE();
+    }
 
     // Copy raw bytes
     var bytesRead = this._input.Read(output, outPos, blockSize);
@@ -212,7 +221,7 @@ public sealed class LzxDecompressor {
       ThrowUnexpectedEndOfStream();
 
     // If block length is odd, consume one padding byte so stream stays word-aligned
-    if ((blockSize & 1) != 0)
+    if (ending && (this._blockSize & 1) != 0)
       this._input.ReadByte();
 
     // Mirror into the circular window
@@ -291,6 +300,20 @@ public sealed class LzxDecompressor {
 
   private void DecodeBlock(bool isAligned, byte[] output, int outPos, int blockSize) {
     var end = outPos + blockSize;
+
+    // The tail of a match that the previous call's end cut off.
+    if (this._pendingMatchLength > 0) {
+      var src = (this._windowPos - this._pendingMatchOffset + this._windowSize) & (this._windowSize - 1);
+      while (this._pendingMatchLength > 0 && outPos < end) {
+        var b = this._window[src];
+        output[outPos++] = b;
+        this._window[this._windowPos] = b;
+        this._windowPos = (this._windowPos + 1) & (this._windowSize - 1);
+        src = (src + 1) & (this._windowSize - 1);
+        --this._pendingMatchLength;
+      }
+    }
+
     while (outPos < end) {
       var mainSym = this.DecodeSymbol(this._mainTable!, LzxDecompressor.MainTableBits, this._mainLengths, this._numMainSymbols);
 
@@ -318,12 +341,17 @@ public sealed class LzxDecompressor {
 
         // Copy from sliding window (handles run-length / overlapping copies)
         var srcPos = (this._windowPos - matchOffset + this._windowSize) & (this._windowSize - 1);
-        for (var i = 0; i < matchLength && outPos < end; ++i) {
+        var i = 0;
+        for (; i < matchLength && outPos < end; ++i) {
           var b = this._window[srcPos];
           output[outPos++] = b;
           this._window[this._windowPos] = b;
           this._windowPos = (this._windowPos + 1) & (this._windowSize - 1);
           srcPos = (srcPos + 1) & (this._windowSize - 1);
+        }
+        if (i < matchLength) {
+          this._pendingMatchLength = matchLength - i;
+          this._pendingMatchOffset = matchOffset;
         }
       }
     }

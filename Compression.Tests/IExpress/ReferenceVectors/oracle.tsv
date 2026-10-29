@@ -1,0 +1,4 @@
+# fixture	path	size	sha256 -- CABINET resource taken out by 7-Zip 26.03, expanded by Windows expand.exe
+iexpress-lzx.exe	random.bin	3000	ea9a04acd72963e6c050896f128a26ced2a8a41696550c6cf4a81fb57f530a91
+iexpress-lzx.exe	readme.txt	44	6aa372797726bab30b5d04aafd1c2c67e32d3aadf8035941d6f2371bcd5abbba
+iexpress-lzx.exe	repeat.txt	32000	755a009b306c9e7bedbb976fbf50710eb9dddd63e9e17ac59ca8d32769fd7627
