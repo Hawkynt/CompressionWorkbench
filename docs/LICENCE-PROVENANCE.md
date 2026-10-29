@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 19 | |
+| A | 20 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 2 | specifications: `docs/IT-SAMPLE-COMPRESSION-SPEC.md`, `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 9 | |
@@ -69,6 +69,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Claim site | Upstream | Licence | Where the notice is |
 |---|---|---|---|
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Uc2/` | klauspost/uc2, revision `53622f89ada1cf0d4a69f91b653bdd44ec5b0f92`, format parsing and Ultra/Turbo decoding; UC2 supermaster dictionary from the same revision | LGPL-3.0 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Uc2/THIRD-PARTY-NOTICE.UltraCompressor2.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Fossil/FossilReader.cs` | plan9port Fossil `pack.c`, `vac.c`, `vac.h`, `source.c`, `file.c`, `dat.h`, revision `1f1396913fb5372408f442ed26933f5ae4b399cd` | MIT | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Fossil/THIRD-PARTY-NOTICE.Fossil.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidBootImage/AndroidBootImage.cs`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidBootImage/AndroidBootImageMetadata.cs` | AOSP mkbootimg `bootimg.h`, `mkbootimg.py` and `unpack_bootimg.py`, revision `d2bb0af5ba6d3198a3e99529c97eda1be0b5a093` | BSD-3-Clause and Apache-2.0 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidBootImage/THIRD-PARTY-NOTICE.mkbootimg.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidVbmeta/AvbVbmeta.cs`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidVbmeta/AvbDescriptorText.cs` | AOSP Android Verified Boot headers and `avbtool.py`, revision `c5066a96caa7bf4150c0a8cc8cc14ab81733fdc7` | MIT | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidVbmeta/THIRD-PARTY-NOTICE.avb.txt` |

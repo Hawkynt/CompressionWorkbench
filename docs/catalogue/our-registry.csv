@@ -544,6 +544,7 @@ format,Tux2,TUX2,Archive,Y,.tux2,Y,Y,Y,Y
 format,Tux3,TUX3,Archive,Y,.tux3,Y,Y,,
 format,Txw,TXW (Yamaha TX16W),Audio,,.txw,Y,Y,Y,
 format,U8,Nintendo U8,Archive,,.u8;.arc,Y,Y,Y,Y
+format,Uc2,UltraCompressor II,Archive,,.uc2;.pu2,Y,Y,Y,
 format,Ubifs,UBIFS,Archive,Y,.ubifs;.ubi;.img,Y,Y,Y,Y
 format,Udf,UDF,Archive,Y,.udf,Y,Y,Y,Y
 format,UefiFv,UEFI Firmware Volume,Archive,,.fv;.fd,Y,Y,Y,Y
