@@ -6316,6 +6316,53 @@ Utility for splitting archive data into fixed-size volumes.
 | `SplitIntoVolumes` | `static byte[][] SplitIntoVolumes(byte[] data, long maxVolumeSize)` | Splits a byte array into volumes of the specified maximum size. |
 | `WriteVolumes` | `static void WriteVolumes(byte[] data, long maxVolumeSize, Stream[] volumeStreams)` | Writes volumes to a set of streams. |
 
+### Namespace `Compression.Core.Streams.SfArk`
+
+[`SfArkBuildingBlock`](#sfarkbuildingblock) · [`SfArkCodec`](#sfarkcodec) · [`SfArkInfo`](#sfarkinfo)
+
+#### `SfArkBuildingBlock`
+
+Building block for sfArk V2; writes the Fast method.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SfArkBuildingBlock` | `SfArkBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `SfArkCodec`
+
+sfArk V2 (`.sfArk`): SoundFont 2 banks with the sample data coded losslessly by prediction (integrators, optional LPC lattice) and Rice-style residual codes, the rest zlib.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SignatureOffset` | `const int SignatureOffset` | Offset of `Signature` in the header. |
+| `Signature` | `static ReadOnlySpan<byte> Signature { get; }` | The signature, at `SignatureOffset` of the header. |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes an sfArk V2 file to the SoundFont it packs. |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data, out SfArkInfo info)` | Decodes an sfArk V2 file and reports what its header and text files say. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, string fileName = "sound.sf2")` | Packs a file as sfArk (Fast method). For a SoundFont 2 bank the `smpl` data is coded as audio; any other input is stored as zlib blocks only. |
+
+#### `SfArkInfo`
+
+What an sfArk header and its text files say about the packed SoundFont.
+
+Implements `IEquatable<SfArkInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SfArkInfo` | `SfArkInfo(string FileName, int Method, string CreatorVersion, byte[] Notes, byte[] License)` | What an sfArk header and its text files say about the packed SoundFont. |
+| `CreatorVersion` | `string CreatorVersion { get; init; }` | Version string of the program that wrote the file. |
+| `FileName` | `string FileName { get; init; }` | Original file name. |
+| `License` | `byte[] License { get; init; }` | The licence text, when present. |
+| `Method` | `int Method { get; init; }` | Compression method: 4 Turbo, 5 Fast, 6 Standard, 7 Max. |
+| `Notes` | `byte[] Notes { get; init; }` | The notes text, when present. |
+
 ### Namespace `Compression.Core.Transforms`
 
 [`Bcj2Filter`](#bcj2filter) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)

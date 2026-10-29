@@ -115,7 +115,7 @@ grzip,grz,compression,,RW,,,,,,1,,,,,,MISSING,,
 Brotli,br,compression,,,,,,,Y,1,https://www.rfc-editor.org/rfc/rfc7932,Brotli,Y,Y,,OK,,
 Snappy (framed),sz;snappy,compression,,,,,,,Y,1,https://github.com/google/snappy/blob/main/framing_format.txt,Snappy,Y,Y,,OK,,
 genozip,genozip,compression,,,,,,,Y,1,,,,,,MISSING,,
-sfArk,sfark,compression,,,,,R,,Y,2,,,,,,MISSING,,
+sfArk,sfark,compression,,,,,R,,Y,2,docs/SFARK-ON-DISK.md,SfArk;bb:BB_SfArk,Y,Y,,OK,,V2 only (V1 refused like the reference); published Standard/Max files decode as sfarkxtc decodes them; sfarkxtc decodes our Fast-method output
 Squeeze (SQ),sq;qqq;?q?,compression,,,R,,,,Y,2,,Squeeze,Y,Y,,OK,,
 Crunch (CP/M),cru;crunch;?z?,compression,,,R,,,,Y,2,,Crunch,Y,Y,,OK,,
 MS-DOS COMPRESS (SZDD),szdd;??_;mslz,compression,R,,,,,fmt/462,Y,3,https://www.cabextract.org.uk/libmspack/doc/szdd_kwaj_format.html,Szdd;SzCompress,Y,Y,,OK,,

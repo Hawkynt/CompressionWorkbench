@@ -27313,6 +27313,34 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.SfArk`
+
+[`SfArkFormatDescriptor`](#sfarkformatdescriptor)
+
+#### `SfArkFormatDescriptor`
+
+sfArk V2 compressed SoundFonts (`.sfArk`), see `SfArkCodec`.
+
+Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SfArkFormatDescriptor` | `SfArkFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Compress` | `void Compress(Stream input, Stream output)` |  |
+| `Decompress` | `void Decompress(Stream input, Stream output)` |  |
+
 ### Namespace `FileFormat.Sfar`
 
 [`SfarEntry`](#sfarentry) · [`SfarFormatDescriptor`](#sfarformatdescriptor) · [`SfarReader`](#sfarreader) · [`SfarWriter`](#sfarwriter)

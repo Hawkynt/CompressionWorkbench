@@ -466,6 +466,7 @@ format,Sds,SDS (MIDI Sample Dump),Audio,,.sds,Y,Y,,
 format,SevenZip,7z,Archive,,.7z,Y,Y,Y,Y
 format,Sf2,SoundFont 2,Audio,,.sf2,Y,Y,,
 format,Sfar,BioWare SFAR,Archive,,.sfar,Y,Y,Y,
+format,SfArk,sfArk,Stream,,.sfark,,Y,Y,
 format,Sfs,Amiga SFS,Archive,Y,.sfs,Y,Y,Y,Y
 format,Shar,SHAR,Archive,,.shar;.sh,Y,Y,Y,Y
 format,Shn,Shorten (SHN),Audio,,.shn,Y,Y,Y,
@@ -735,6 +736,7 @@ block,bb:BB_ROLZ,ROLZ,Dictionary,,,,Y,Y,
 block,bb:BB_Rzip,rzip,Dictionary,,,,Y,Y,
 block,bb:BB_Salvador,Salvador,Dictionary,,,,Y,Y,
 block,bb:BB_Sequitur,Sequitur,Dictionary,,,,Y,Y,
+block,bb:BB_SfArk,sfArk,Classic,,,,Y,Y,
 block,bb:BB_ShannonFano,Shannon-Fano,Entropy,,,,Y,Y,
 block,bb:BB_Shoco,Shoco,Dictionary,,,,Y,Y,
 block,bb:BB_Shrink,Shrink,Dictionary,,,,Y,Y,
