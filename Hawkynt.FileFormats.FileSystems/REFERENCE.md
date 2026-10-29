@@ -8852,6 +8852,70 @@ Builds a minimal ISO 9660 (ECMA-119) disc image, optionally with a Joliet Supple
 | `BuildToStreaming` | `void BuildToStreaming(Stream output)` | Two-pass streaming Build: pass 1 lays out the identical ISO image (same descriptors, path tables, directory extents, and file-data extent placement as `Build`) with each streaming file's data extent left zero; pass 2 seeks to each file's extent byte offset and copies its bytes from the opener in 64 KB chunks. The sector tail past each file's logical size stays zero, exactly as the in-memory path leaves it. For the same inputs (and same wall-clock second for the volatile ECMA-119 timestamps) the output is byte-for-byte identical to `Build`. |
 | `Build` | `byte[] Build()` | Performs the build operation. |
 
+### Namespace `FileSystem.Jffs1`
+
+[`Jffs1Entry`](#jffs1entry) · [`Jffs1FormatDescriptor`](#jffs1formatdescriptor) · [`Jffs1Reader`](#jffs1reader)
+
+#### `Jffs1Entry`
+
+One inode of a JFFS (version 1) image, after replaying its nodes.
+
+Implements `IEquatable<Jffs1Entry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Jffs1Entry` | `Jffs1Entry(string Path, uint Ino, uint Mode, ushort Uid, ushort Gid, uint MTime, byte[] Data)` | One inode of a JFFS (version 1) image, after replaying its nodes. |
+| `Data` | `byte[] Data { get; init; }` | File contents, symlink target, or (device nodes) the raw device number. |
+| `Gid` | `ushort Gid { get; init; }` | Group. |
+| `Ino` | `uint Ino { get; init; }` | Inode number. |
+| `IsDirectory` | `bool IsDirectory { get; }` |  |
+| `IsFile` | `bool IsFile { get; }` |  |
+| `IsSymlink` | `bool IsSymlink { get; }` |  |
+| `MTime` | `uint MTime { get; init; }` | Modification time (UNIX seconds). |
+| `Mode` | `uint Mode { get; init; }` | Unix mode word. |
+| `Path` | `string Path { get; init; }` | Slash-separated path from the root (inode 1). |
+| `Uid` | `ushort Uid { get; init; }` | Owner. |
+
+#### `Jffs1FormatDescriptor`
+
+JFFS version 1 — Axis Communications' Journalling Flash File System (Linux 2.4, removed in 2.6). Magic "1984" in either byte order at offset 0, followed by the root inode 1.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Jffs1FormatDescriptor` | `Jffs1FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+
+#### `Jffs1Reader`
+
+Reads JFFS version 1 (Axis Communications' Journalling Flash File System, Linux 2.4) images: a log of 60-byte raw inodes, each followed by its name and data, every part padded to four bytes. Either byte order is accepted ("1984" magic read either way). See `docs/JFFS1-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Jffs1Reader` | `Jffs1Reader(Stream stream)` | Parses the whole log; throws `InvalidDataException` for anything it will not replay. |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `Magic` | `const uint Magic` |  |
+| `RootIno` | `const uint RootIno` |  |
+| `BigEndian` | `bool BigEndian { get; }` | True when the image is big-endian. |
+| `Entries` | `IReadOnlyList<Jffs1Entry> Entries { get; }` | Every inode below the root, parents before children. |
+| `SkippedNodes` | `int SkippedNodes { get; }` | Raw nodes skipped because their header checksum failed or they were marked obsolete. |
+
 ### Namespace `FileSystem.Jffs2`
 
 [`Jffs2BlockMover`](#jffs2blockmover) · [`Jffs2FileReader`](#jffs2filereader) · [`Jffs2FileReader.FileEntry`](#jffs2filereaderfileentry) · [`Jffs2FormatDescriptor`](#jffs2formatdescriptor) · [`Jffs2InPlaceModifier`](#jffs2inplacemodifier) · [`Jffs2Writer`](#jffs2writer)

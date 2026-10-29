@@ -170,6 +170,10 @@
     <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">
       <LogicalName>VdfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- JFFS v1 images built by mkfs.jffs; see Jffs1/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Jffs1\ReferenceVectors\*.gz;Jffs1\ReferenceVectors\*.manifest">
+      <LogicalName>Jffs1Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- ZIP archives written by third-party archivers; see Zip/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
       <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>

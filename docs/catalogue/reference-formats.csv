@@ -452,7 +452,7 @@ exFAT,exfat;fat64;img,filesystem,,,,,,fmt/1609,Y,2,https://learn.microsoft.com/w
 ExtremeFFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 F2FS,f2fs,filesystem,,,,,,,Y,1,,F2fs,Y,Y,Y,OK,,
 Microsoft Flash File System 2,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-JFFS (v1),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+JFFS (v1),,filesystem,,,,,,,Y,1,https://github.com/ipwndev/DSLinux/blob/master/user/mtd-utils/mkfs.jffs.c,Jffs1,Y,,,READ-ONLY-BUT-SOURCES-WRITE,mkfs.jffs,no reader outside this package to prove a writer
 JFFS2,jffs2,filesystem,,,,R,,,Y,2,,Jffs2,Y,Y,Y,OK,,
 LSFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 LogFS,logfs,filesystem,,,,D,,,Y,2,,,,,,MISSING,,

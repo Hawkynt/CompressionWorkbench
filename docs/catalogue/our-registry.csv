@@ -254,6 +254,7 @@ format,It,IT (Impulse Tracker),Audio,,.it,Y,Y,,
 format,Iti,Impulse Tracker Instrument,Audio,,.iti,Y,Y,,
 format,Its,Impulse Tracker Sample,Audio,,.its,Y,Y,,
 format,Jar,JAR,Archive,,.jar,Y,Y,Y,Y
+format,Jffs1,JFFS (version 1),Archive,Y,.jffs,Y,Y,,
 format,Jffs2,JFFS2,Archive,Y,.jffs2;.jffs;.img,Y,Y,Y,Y
 format,Jfs,JFS,Archive,Y,.jfs,Y,Y,Y,Y
 format,Jfs1,JFS1 (OS/2 original IBM JFS),Archive,Y,.jfs1,Y,Y,Y,Y
