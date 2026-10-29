@@ -7144,6 +7144,23 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` | Writes each access unit behind a rebuilt 7-byte ADTS header. |
 | `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
+### Namespace `FileFormat.Aar`
+
+[`AarFormatDescriptor`](#aarformatdescriptor)
+
+#### `AarFormatDescriptor`
+
+Android Archive (AAR) — the ZIP an Android library module builds: `AndroidManifest.xml`, `classes.jar`, `R.txt` and optional `res/`, `jni/`, `assets/`, `lint.jar`. Recognised by extension only (a plain ZIP otherwise). References: `https://developer.android.com/studio/projects/android-library#aar-contents` — Android developer documentation, AAR contentsPRONOM `fmt/2043` — Android Archive File
+
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AarFormatDescriptor` | `AarFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
+
 ### Namespace `FileFormat.Ac3`
 
 [`Ac3FormatDescriptor`](#ac3formatdescriptor) · [`Ac3SyncFrame`](#ac3syncframe)
@@ -22392,6 +22409,23 @@ Implements `IEquatable<Result>`.
 | `Result` | `Result(byte[] Midi, int EventCount)` | Represents a result. |
 | `EventCount` | `int EventCount { get; init; }` |  |
 | `Midi` | `byte[] Midi { get; init; }` |  |
+
+### Namespace `FileFormat.Mxl`
+
+[`MxlFormatDescriptor`](#mxlformatdescriptor)
+
+#### `MxlFormatDescriptor`
+
+Compressed MusicXML (MXL) — a ZIP holding `META-INF/container.xml`, whose first `rootfile` names the score, plus an optional leading stored `mimetype` member (`application/vnd.recordare.musicxml`) and any linked resources. References: `https://www.w3.org/2021/06/musicxml40/tutorial/compressed-mxl-files/` — W3C MusicXML 4.0, compressed .mxl filesPRONOM `fmt/2005` — Compressed MusicXML
+
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MxlFormatDescriptor` | `MxlFormatDescriptor()` |  |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Mz`
 

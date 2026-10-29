@@ -120,6 +120,14 @@
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- AndroidX libraries from Google's Maven repository; see Aar/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Aar\ReferenceVectors\*.aar">
+      <LogicalName>AarVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Scores from the OpenSheetMusicDisplay test corpus; see Mxl/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Mxl\ReferenceVectors\*.mxl">
+      <LogicalName>MxlVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Sparsebundles written by Apple's hdiutil (keramics, ewfprobe test corpora); see
          AppleSparse/ReferenceVectors/README.md. The tests rebuild each bundle directory from these. -->
     <EmbeddedResource Include="AppleSparse\ReferenceVectors\**\*"
