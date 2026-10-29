@@ -272,7 +272,6 @@ format,Lbr,LBR,Archive,,.lbr,Y,Y,Y,Y
 format,LegacyOfficeCompoundFile,Legacy Microsoft Office compound file,Archive,,.dot;.xlt;.pps;.pot,Y,Y,,
 format,Leveldb,LevelDB SSTable,Archive,,.ldb;.sst,Y,Y,,
 format,Lfd,LucasArts LFD,Archive,,.lfd,Y,Y,Y,
-format,LhF,LhF (LhFloppy),Archive,,.lhf,Y,Y,Y,Y
 format,Lif,HP LIF (Logical Interchange Format),Archive,Y,.lif,Y,Y,Y,Y
 format,Lit,LIT (Microsoft Reader),Archive,,.lit,Y,Y,,
 format,LittleFs,LittleFS,Archive,Y,.littlefs;.lfs,Y,Y,Y,Y
@@ -613,7 +612,6 @@ format,Yaz0,Yaz0,Stream,,.yaz0;.szs,,Y,Y,
 format,YEnc,yEnc,Wrapper,,.yenc,,Y,Y,
 format,YodaCrypter,Yoda's Crypter (Win32 PE),Archive,,,Y,Y,,
 format,Ypf,YukaScript YPF,Archive,,.ypf,Y,Y,Y,Y
-format,Zap,ZAP (Amiga Disk Archiver),Archive,,.zap,Y,Y,Y,
 format,Zarr,Zarr array metadata,Archive,,,Y,Y,,
 format,Zfs,ZFS,Archive,Y,.zfs;.zpool,Y,Y,,
 format,Zip,ZIP,Archive,,.zip;.zipx,Y,Y,Y,Y

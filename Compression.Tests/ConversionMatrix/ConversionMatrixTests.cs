@@ -146,7 +146,6 @@ public class ConversionMatrixTests {
       { "Ghost", "[other] Norton Ghost image; exposed as partitionN.bin not original names" },
       { "InnoSetup", "[other] Inno Setup installer; re-lists as the single .exe stub, names lost" },
       { "Lfd", "[other] LucasArts LFD; entries renamed DATA.<stem> / RMAP.resource" },
-      { "LhF", "[other] LhF Amiga disk; exposed as track_NNN.raw not original names" },
       { "Lnk", "[other] Windows .lnk; exposed as header.bin/linkinfo.bin not a file tree" },
       { "Macrium", "[other] Macrium image; exposed as disk-image.raw + block-NN.$* not original names" },
       { "Mbox", "[other] mbox mail; entries renamed message_NN.eml" },
@@ -160,7 +159,6 @@ public class ConversionMatrixTests {
       { "UefiFv", "[other] UEFI firmware volume; an FFS file is identified by GUID, so the writer names each one <guid>_RAW.bin and the original filename has nowhere to live" },
       { "Tfc", "[other] UE texture cache; entries renamed bundle_NNNNN.bin" },
       { "Warc", "[other] WARC; entries listed as 'resource: <name>' so basename match fails" },
-      { "Zap", "[other] Zap Amiga disk; exposed as track_NNN.raw not original names" },
     };
 
   // SOURCE→TARGET pair-specific gaps (target works from most sources but fails
