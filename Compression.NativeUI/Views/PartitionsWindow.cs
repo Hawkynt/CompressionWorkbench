@@ -268,8 +268,8 @@ internal sealed class PartitionsWindow : Form {
 
     var partitions = editor.ListPartitions();
     var rows = partitions.Select(p => {
-      var startLba = p.StartOffset / PartitionEditor.SectorSize;
-      var endLba = (p.StartOffset + p.Size) / PartitionEditor.SectorSize - 1;
+      var startLba = p.StartOffset / editor.LogicalSectorSize;
+      var endLba = (p.StartOffset + p.Size) / editor.LogicalSectorSize - 1;
       return new PartitionRow {
         Index = p.Index,
         IndexDisplay = p.Index.ToString(),
@@ -310,7 +310,7 @@ internal sealed class PartitionsWindow : Form {
   private void OnAdd(bool isLogical) {
     if (this._editor is not { } editor || this._guestStream is not { } guest) return;
 
-    var dialog = new AddPartitionDialog(guest.Length, isLogical);
+    var dialog = new AddPartitionDialog(guest.Length, isLogical, editor.LogicalSectorSize);
     if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
     try {
