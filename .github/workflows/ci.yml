@@ -174,6 +174,14 @@ jobs:
           # reiser4progs owns Reiser4: fsck.reiser4 and debugfs.reiser4 judge every volume the
           # Reiser4 writer creates or edits, in the gate below.
           sudo apt-get install -y reiser4progs
+          # mkbootimg is AOSP's own boot image tool pair: the Android boot image writer must
+          # reproduce mkbootimg's bytes, and unpack_bootimg must read back what it writes.
+          sudo apt-get install -y mkbootimg
+          # avbtool judges vbmeta images; no distribution packages it, so the script is fetched
+          # at a pinned AOSP revision.
+          curl -sSfL "https://android.googlesource.com/platform/external/avb/+/c5066a96caa7bf4150c0a8cc8cc14ab81733fdc7/avbtool.py?format=TEXT" \
+            | base64 -d > "$RUNNER_TEMP/avbtool.py" \
+            && echo "CWB_AVBTOOL=$RUNNER_TEMP/avbtool.py" >> "$GITHUB_ENV" || true
           sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
           sudo modprobe gfs2 || true
 

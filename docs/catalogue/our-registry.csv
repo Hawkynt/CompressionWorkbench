@@ -26,9 +26,11 @@ format,Ampk,AMPK (Amiga Pack),Archive,,.ampk,Y,Y,Y,Y
 format,Amr,3GPP AMR,Audio,,.amr;.awb;.3ga,Y,Y,Y,
 format,AmrNb,AMR-NB,Audio,,.amr,,,,
 format,AmrWb,AMR-WB,Audio,,.amr,,,,
+format,AndroidBootImage,Android boot image,Archive,,.bootimg,Y,Y,Y,Y
 format,AndroidBundle,Android App Bundle / split-APK set,Archive,,.aab;.apks,Y,Y,Y,Y
 format,AndroidOta,Android OTA payload,Archive,,,Y,Y,Y,
 format,AndroidSparse,Android Sparse Image,Archive,,.simg;.sparse,Y,Y,Y,
+format,AndroidVbmeta,Android Verified Boot (vbmeta),Archive,,.avb,Y,Y,Y,Y
 format,Ani,ANI (animated cursor),Archive,,.ani,Y,Y,Y,
 format,Aomei,AOMEI Backupper Image (ADI/AFI),Archive,,.adi;.afi,Y,Y,Y,Y
 format,Apc,CRYO APC,Audio,,.apc,Y,Y,Y,
@@ -185,6 +187,7 @@ format,FlacArchive,FLAC (archive view),Audio,,,Y,Y,,
 format,Fli,FLI/FLC (Autodesk animation),Archive,,.fli;.flc,Y,Y,,
 format,Flv,Flash Video (FLV),Video,,.flv,Y,Y,Y,
 format,Fmod,FMOD Sample Bank,Archive,,.fsb,Y,Y,,
+format,Fossil,Fossil (Plan 9),Archive,Y,.fossil,Y,Y,,
 format,FreeArc,FreeArc,Archive,,.arc,Y,Y,Y,Y
 format,Freeze,Freeze,Stream,,.f;.freeze,,Y,Y,
 format,Fsg,FSG (Win32 PE),Archive,,,Y,Y,,
@@ -237,6 +240,7 @@ format,Iceberg,Apache Iceberg metadata,Archive,,,Y,Y,,
 format,IcePacker,ICE Packer,Stream,,.ice,,Y,Y,
 format,Icns,ICNS (Apple icon),Archive,,.icns,Y,Y,,
 format,Ico,Windows ICO/CUR,Archive,,.ico,Y,Y,Y,Y
+format,IExpress,IExpress self-extractor,Archive,,,Y,Y,,
 format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
 format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
 format,InnoSetup,Inno Setup,Archive,,,Y,Y,Y,
@@ -332,6 +336,7 @@ format,Msa,MSA (Magic Shadow Archiver),Archive,Y,.msa,Y,Y,Y,Y
 format,Msg,MSG,Archive,,.msg,Y,Y,Y,Y
 format,Msi,MSI (OLE Compound File),Archive,,.msi;.msp;.mst,Y,Y,Y,Y
 format,Msix,MSIX,Archive,,.msix;.msixbundle,Y,Y,Y,Y
+format,Msu,Windows Update package (MSU),Archive,,.msu,Y,Y,,
 format,Mtm,MTM (MultiTracker),Audio,,.mtm,Y,Y,,
 format,Mtree,mtree,Archive,,.mtree,Y,,Y,
 format,Mus,DMX/Doom MUS,Audio,,.mus,Y,Y,,
@@ -353,7 +358,7 @@ format,Nrbf,.NET BinaryFormatter / NRBF object graph,Archive,,.nrbf,Y,Y,Y,
 format,Nrg,NRG,Archive,,.nrg,Y,Y,Y,Y
 format,Nsa,NSA,Archive,,.nsa,Y,Y,Y,Y
 format,Nsf,NES Sound Format,Audio,,.nsf;.nsfe,Y,Y,,
-format,Nsis,NSIS,Archive,,,Y,Y,Y,
+format,Nsis,NSIS,Archive,,,Y,Y,,
 format,NsPack,NsPack (Win32 PE),Archive,,,Y,Y,,
 format,Nss,NSS (Novell Storage Services),Archive,Y,.nss,Y,Y,Y,
 format,Ntfs,NTFS,Archive,Y,.ntfs;.img,Y,Y,Y,Y
@@ -395,7 +400,7 @@ format,Paragon,Paragon Backup,Archive,,.pbf,Y,Y,Y,Y
 format,ParallelsHdd,Parallels Disk (HDS),Archive,,.hds,Y,Y,,
 format,Parquet,Apache Parquet,Archive,,.parquet,Y,Y,,
 format,Partclone,partclone (Clonezilla),Archive,,.aa;.img,Y,Y,Y,
-format,PartitionedDisk,Partitioned disk image,Archive,,,Y,Y,,
+format,PartitionedDisk,Partitioned disk image,Archive,,,Y,Y,Y,Y
 format,Pbp,PSP PBP Archive,Archive,,.pbp,Y,Y,Y,
 format,Pc98,NEC PC-98 DOS,Archive,Y,.hdm;.fdi;.d88,Y,Y,Y,Y
 format,Pcap,PCAP (libpcap capture),Archive,,.pcap;.cap,Y,Y,,
@@ -734,6 +739,7 @@ block,bb:BB_Shoco,Shoco,Dictionary,,,,Y,Y,
 block,bb:BB_Shrink,Shrink,Dictionary,,,,Y,Y,
 block,bb:BB_Snappy,Snappy,Dictionary,,,,Y,Y,
 block,bb:BB_Sqx,SQX,Dictionary,,,,Y,Y,
+block,bb:BB_StackerSd4,Stacker SD-4,Dictionary,,,,Y,Y,
 block,bb:BB_SuffixTree,Suffix Tree Compression,Dictionary,,,,Y,Y,
 block,bb:BB_tANS,tANS,Entropy,,,,Y,Y,
 block,bb:BB_Tunstall,Tunstall Coding,Entropy,,,,Y,Y,
