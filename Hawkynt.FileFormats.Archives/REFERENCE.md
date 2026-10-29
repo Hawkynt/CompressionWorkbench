@@ -12604,6 +12604,37 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes supported non-solid pages directly through the RAR5 block remover. Unsupported encryption, recovery/quick-open, solid dependency and RAR4 cases are rejected before the first byte move and therefore safely fall back to the verified rebuild without an O(total bytes) transaction snapshot. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: gaps not covered by a live extent in the RAR layout map (markers, block headers, packed data and ENDARC are live and preserved). Cluster-tip wiping is N/A (RAR packs blocks back to back). |
 
+### Namespace `FileFormat.Cbt`
+
+[`CbtFormatDescriptor`](#cbtformatdescriptor)
+
+#### `CbtFormatDescriptor`
+
+Comic book archive — a POSIX tar container of sequentially named page images, conventionally suffixed .cbt. Byte-identical to a tar archive, so it is identified by extension only and every operation is the tar one. References: `https://en.wikipedia.org/wiki/Comic_book_archive` — the .cbt/.cbz/.cbr naming convention`https://pubs.opengroup.org/onlinepubs/9799919799/utilities/pax.html` — POSIX ustar/pax interchange format — the underlying container
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CbtFormatDescriptor` | `CbtFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
 ### Namespace `FileFormat.Cbz`
 
 [`CbzFormatDescriptor`](#cbzformatdescriptor)

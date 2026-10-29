@@ -6,7 +6,7 @@ Enterprise Archive (EAR),ear,archive,,,,,,,Y,1,https://jakarta.ee/specifications
 Android Package (APK),apk,package,,,,,,fmt/2041,Y,2,https://developer.android.com/guide/components/fundamentals,Apk,Y,Y,Y,OK,,
 Android App Bundle,aab;apks,package,,,,,,fmt/2042,,1,https://developer.android.com/guide/app-bundle/app-bundle-format,AndroidBundle,Y,Y,Y,OK,,
 Android Archive (AAR library),aar,package,,,,,,fmt/2043,,1,https://developer.android.com/studio/projects/android-library#aar-contents,,,,,MISSING,,
-Comic Book Archive,cbz;cbr;cb7;cbt;cba,archive,,,,,,fmt/1462,,1,https://en.wikipedia.org/wiki/Comic_book_archive,Cbz;Cbr;Cb7,Y,Y,Y,PARTIAL,,.cbt (tar) and .cba (ACE) have no descriptor
+Comic Book Archive,cbz;cbr;cb7;cbt;cba,archive,,,,,,fmt/1462,,1,https://en.wikipedia.org/wiki/Comic_book_archive,Cbz;Cbr;Cb7;Cbt,Y,Y,Y,PARTIAL,,".cba (ACE) has no descriptor: the ACE reader/writer is not conformant (acefile and unar reject its output), so a CBA view would inherit wrong bytes"
 Chrome extension (CRX),crx,package,,,,,,,Y,1,https://en.wikipedia.org/wiki/Google_Chrome#Extensions,Crx,Y,Y,,OK,,
 MSIX / APPX,msix;appx;msixbundle;appxbundle;emsix;emsixbundle,package,,,,,,,Y,1,https://learn.microsoft.com/windows/msix/overview,Appx;Msix,Y,Y,Y,OK,,
 7z,7z;s7z;001;exe,archive,RW,RW,R,R,R,fmt/484,RW,7,https://www.7-zip.org/7z.html,SevenZip,Y,Y,Y,PARTIAL,,external header references (kAdditionalStreamsInfo) unsupported; no known writer emits them (SevenZipHeaderCodec.cs)
