@@ -33,14 +33,13 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 |---|---|---|
 | A | 20 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
-| C | 2 | specifications: `docs/IT-SAMPLE-COMPRESSION-SPEC.md`, `docs/FDS-EXPANSION-SOUND-SPEC.md` |
-| R | 9 | |
+| C | 1 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
+| R | 10 | |
 
 ## C — incompatible, must be rewritten clean-room
 
 | Claim site | Upstream | Licence | Specification for the rewrite | Status |
 |---|---|---|---|---|
-| `Hawkynt.FileFormats.Audio/Codecs/Codec.TrackerXmIt/ItSampleDecompressor.cs` | Schism Tracker `fmt/compression.c` (`it_decompress8/16`) | GPL-2.0-or-later | [`IT-SAMPLE-COMPRESSION-SPEC.md`](IT-SAMPLE-COMPRESSION-SPEC.md) | to do |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Nes2a03/Expansion/FdsAudio.cs` | NSFPlay `xgm/devices/Sound/nes_fds.cpp` (Brezza / Brad Smith) | none — the readme only presumes redistribution is allowed | [`FDS-EXPANSION-SOUND-SPEC.md`](FDS-EXPANSION-SOUND-SPEC.md) | to do |
 
 ## B — compatible, notice added
@@ -94,6 +93,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Claim site | What the comment refers to | Note |
 |---|---|---|
+| `Hawkynt.FileFormats.Audio/Codecs/Codec.TrackerXmIt/ItSampleDecompressor.cs` | [`IT-SAMPLE-COMPRESSION-SPEC.md`](IT-SAMPLE-COMPRESSION-SPEC.md); libxmp 4.6.3 and libopenmpt as black-box oracles | independent rewrite from the specification replaces the former Schism Tracker-derived decoder; checked-in IT214/IT215 modules and libxmp PCM digests record the oracle |
 | `Compression.Core/FileSystems/Cvf/CvfLzCodec.cs`, `Compression.Core/FileSystems/Cvf/MsdblLzCodec.cs`, `Compression.Core/FileSystems/Cvf/Sd4Codec.cs` | the measured format description in [`CVF-CODECS-ON-DISK.md`](CVF-CODECS-ON-DISK.md); dmsdos (GPL-2.0) as a black-box oracle | independent rewrite from the format description and reference vectors replaces the former dmsdos-derived bit reader and DS/JM decoders |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.G722/G722Codec.cs` | ITU-T G.722 (09/2012), via [`G722-SPEC.md`](G722-SPEC.md); FFmpeg 8.1.2 as a black-box oracle | independent implementation from the specification replaces the former SpanDSP-derived codec; checked-in encoder and decoder vectors record the oracle |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/PcePsg.cs`, `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/CpuHuC6280.cs` | Mednafen `pce_psg.cpp`, `huc6280.cpp` (GPL-2.0-or-later), formerly named as behavioural references | reviewed 2026-10-23: no structural correspondence. Mednafen's PSG uses an 18-bit five-tap LFSR, integer dB tables and frequency caches; PcePsg uses a 17-bit two-tap LFSR, a floating-point taper and an additive LFO. Mednafen's CPU is opcode macros; CpuHuC6280 is a plain switch and shares only instruction-set facts. The Mednafen wording was removed from both files |
