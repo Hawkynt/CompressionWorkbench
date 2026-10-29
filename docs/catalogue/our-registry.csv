@@ -129,6 +129,7 @@ format,Cxfs,SGI CXFS (Cluster XFS),Archive,Y,.cxfs,Y,Y,Y,Y
 format,D64,D64,Archive,Y,.d64,Y,Y,Y,Y
 format,D71,D71,Archive,Y,.d71,Y,Y,Y,Y
 format,D81,D81,Archive,Y,.d81,Y,Y,Y,Y
+format,Daa,DAA (PowerISO),Archive,,.daa,Y,Y,Y,Y
 format,Dar,Disk ARchive (DAR),Archive,,.dar,Y,Y,Y,
 format,Dbm,DBM (DigiBooster Pro),Audio,,.dbm,Y,Y,,
 format,Dcx,DCX (multi-image PCX),Archive,,.dcx,Y,Y,,
@@ -240,6 +241,7 @@ format,Iceberg,Apache Iceberg metadata,Archive,,,Y,Y,,
 format,IcePacker,ICE Packer,Stream,,.ice,,Y,Y,
 format,Icns,ICNS (Apple icon),Archive,,.icns,Y,Y,,
 format,Ico,Windows ICO/CUR,Archive,,.ico,Y,Y,Y,Y
+format,IExpress,IExpress self-extractor,Archive,,,Y,Y,,
 format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
 format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
 format,InnoSetup,Inno Setup,Archive,,,Y,Y,Y,
@@ -335,6 +337,7 @@ format,Msa,MSA (Magic Shadow Archiver),Archive,Y,.msa,Y,Y,Y,Y
 format,Msg,MSG,Archive,,.msg,Y,Y,Y,Y
 format,Msi,MSI (OLE Compound File),Archive,,.msi;.msp;.mst,Y,Y,Y,Y
 format,Msix,MSIX,Archive,,.msix;.msixbundle,Y,Y,Y,Y
+format,Msu,Windows Update package (MSU),Archive,,.msu,Y,Y,,
 format,Mtm,MTM (MultiTracker),Audio,,.mtm,Y,Y,,
 format,Mtree,mtree,Archive,,.mtree,Y,,Y,
 format,Mus,DMX/Doom MUS,Audio,,.mus,Y,Y,,

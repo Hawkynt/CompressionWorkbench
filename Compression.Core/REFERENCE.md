@@ -390,6 +390,7 @@ Decompresses data in the DEFLATE format (RFC 1951).
 | `Decompress` | `int Decompress(Span<byte> output)` | Decompresses data into `output`, filling it unless the DEFLATE stream ends first. |
 | `Decompress` | `int Decompress(byte[] output, int offset, int count)` | Decompresses data from the input stream into the provided buffer. Returns the number of bytes written. Returns 0 when decompression is complete. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressedData)` | Decompresses DEFLATE data in one shot. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressedData, ReadOnlySpan<byte> dictionary)` | Decompresses DEFLATE data whose matches may reach back into `dictionary`, the bytes that precede it (MSZIP keeps the previous block's output as history). |
 | `ReadRemainder` | `int ReadRemainder(Span<byte> destination)` | Reads bytes that follow the end of the DEFLATE data — a container's trailer, or the next member — taking the decompressor's read-ahead first and then the underlying stream. |
 
 #### `DeflateHuffmanTable`
@@ -433,6 +434,7 @@ Decompresses data in the MSZIP format: a sequence of "CK"-prefixed Deflate block
 | --- | --- | --- |
 | `BlockSize` | `const int BlockSize` | The uncompressed block size limit: 32 768 bytes. |
 | `DecompressBlock` | `static byte[] DecompressBlock(ReadOnlySpan<byte> block)` | Decompresses a single MSZIP block (including its "CK" prefix) and returns the uncompressed bytes. |
+| `DecompressBlock` | `static byte[] DecompressBlock(ReadOnlySpan<byte> block, ReadOnlySpan<byte> history)` | Decompresses one MSZIP block of a folder: the Deflate data may refer back up to 32 KiB into `history`, the output of the folder's previous blocks ([MS-MCI] 2.2: the history buffer is not reset between blocks). |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int uncompressedSize = -1)` | Decompresses an MSZIP byte stream. |
 
 #### `RawDeflateStream`
@@ -1076,6 +1078,7 @@ Decompresses data in the LZ4 block format.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `DecompressAfterPrefix` | `static int DecompressAfterPrefix(ReadOnlySpan<byte> source, Span<byte> window, int prefixLength)` | Decompresses a block whose matches may reach back into history: `window` holds `prefixLength` bytes of already-decoded output (the linked-block dictionary of the LZ4 frame format) followed by room for this block. Returns the bytes written after the prefix. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> source, int originalSize)` | Decompresses an LZ4-compressed block. |
 | `Decompress` | `static int Decompress(ReadOnlySpan<byte> source, Span<byte> dest)` | Decompresses into a destination buffer, returning bytes written. |
 
