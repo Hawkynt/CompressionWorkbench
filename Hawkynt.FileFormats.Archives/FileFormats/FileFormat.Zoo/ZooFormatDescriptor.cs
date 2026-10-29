@@ -108,7 +108,7 @@ public sealed class ZooFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzw", "LZW"), new("store", "Store")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzw", "LZW"), new("lzh", "LZH"), new("store", "Store")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -177,6 +177,7 @@ public sealed class ZooFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var zooMethod = options.MethodName switch {
       "store" => ZooCompressionMethod.Store,
+      "lzh" => ZooCompressionMethod.Lzh,
       _ => ZooCompressionMethod.Lzw,
     };
     var w = new ZooWriter(output, defaultMethod: zooMethod);

@@ -157,7 +157,8 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new IsoReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, e.LastModified
+      i, e.Name, e.Size, e.Zisofs is null ? e.Size : e.StoredSize, e.Zisofs is null ? "Stored" : "zisofs",
+      e.IsDirectory, false, e.LastModified, IsSymlink: e.IsSymlink, LinkTarget: e.LinkTarget
     )).ToList();
   }
 

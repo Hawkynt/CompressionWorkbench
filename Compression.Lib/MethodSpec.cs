@@ -85,6 +85,7 @@ public readonly record struct MethodSpec(string Name, bool Optimize) {
     "lzma" => (FileFormat.Zip.ZipCompressionMethod.Lzma, Compression.Core.Deflate.DeflateCompressionLevel.Default),
     "ppmd" => (FileFormat.Zip.ZipCompressionMethod.Ppmd, Compression.Core.Deflate.DeflateCompressionLevel.Default),
     "zstd" => (FileFormat.Zip.ZipCompressionMethod.Zstd, Compression.Core.Deflate.DeflateCompressionLevel.Default),
+    "xz" => (FileFormat.Zip.ZipCompressionMethod.Xz, Compression.Core.Deflate.DeflateCompressionLevel.Default),
     // deflate or default
     _ => (FileFormat.Zip.ZipCompressionMethod.Deflate,
           Optimize ? Compression.Core.Deflate.DeflateCompressionLevel.Maximum
