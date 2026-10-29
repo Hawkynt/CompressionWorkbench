@@ -157,12 +157,14 @@ public sealed class Lz4FrameReader {
     if (isUncompressed) {
       output.Write(blockData);
     } else {
-      // Need to know uncompressed size. We'll decompress incrementally.
-      var existingLen = (int)output.Length;
-      // Use a large enough buffer — worst case is blockMaxSize
-      var decompBuf = new byte[header.BlockMaxSize];
-      var written = Lz4BlockDecompressor.Decompress(blockData, decompBuf);
-      output.Write(decompBuf, 0, written);
+      // Linked blocks (block-independence flag clear) may match up to 64 KiB back into the
+      // frame's earlier output, so that history is placed in front of the block's buffer.
+      var prefix = header.BlockIndependence ? 0 : (int)Math.Min(output.Length, 64 * 1024);
+      var window = new byte[prefix + header.BlockMaxSize];
+      if (prefix > 0)
+        output.GetBuffer().AsSpan((int)output.Length - prefix, prefix).CopyTo(window);
+      var written = Lz4BlockDecompressor.DecompressAfterPrefix(blockData, window, prefix);
+      output.Write(window, prefix, written);
     }
 
     return dataSize;
