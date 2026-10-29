@@ -504,6 +504,9 @@ public static partial class FormatDetector {
       var buf = new byte[2];
       var isPe = fs.Read(buf, 0, 2) >= 2 && buf[0] == 'M' && buf[1] == 'Z';
 
+      // IExpress / wextract: the cabinet lives in the RT_RCDATA resource "CABINET".
+      if (isPe && FileFormat.IExpress.IExpressFormatDescriptor.IsIExpress(fs)) return Format.IExpress;
+
       // An NSIS first header sits right after the exe stub, at a multiple of 512 bytes (the
       // exehead itself only looks there), so a large installer keeps it far from the tail.
       if (HasNsisFirstHeader(fs)) return Format.Nsis;

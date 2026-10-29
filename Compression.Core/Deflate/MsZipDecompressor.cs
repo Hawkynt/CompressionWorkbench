@@ -108,4 +108,18 @@ public static class MsZipDecompressor {
 
     return DeflateDecompressor.Decompress(block[2..]);
   }
+
+  /// <summary>
+  /// Decompresses one MSZIP block of a folder: the Deflate data may refer back up to 32 KiB
+  /// into <paramref name="history"/>, the output of the folder's previous blocks ([MS-MCI] 2.2:
+  /// the history buffer is not reset between blocks).
+  /// </summary>
+  /// <param name="block">The block, including its "CK" prefix.</param>
+  /// <param name="history">The folder's output so far (only the last 32 KiB matter).</param>
+  /// <returns>The block's uncompressed bytes.</returns>
+  public static byte[] DecompressBlock(ReadOnlySpan<byte> block, ReadOnlySpan<byte> history) {
+    if (block.Length < 2 || block[0] != MsZipCompressor.SignatureByte0 || block[1] != MsZipCompressor.SignatureByte1)
+      throw new InvalidDataException("MSZIP: invalid block signature.");
+    return DeflateDecompressor.Decompress(block[2..], history);
+  }
 }
