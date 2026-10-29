@@ -51,6 +51,10 @@ internal static class BcacheFsExtentCodec {
     return table;
   }
 
+  /// <summary>Splits an extent value into its entries, by the entry sizes this package knows.</summary>
+  internal static bool TryParseEntries(ReadOnlySpan<byte> value, out IReadOnlyList<BcacheFsExtentEntry> entries, out string error)
+    => TryParseEntries(value, CurrentEntryU64s, false, out entries, out error);
+
   internal static bool TryParseEntries(
       ReadOnlySpan<byte> value,
       BcacheFsSuperblockRecord superblock,
@@ -58,9 +62,16 @@ internal static class BcacheFsExtentCodec {
       out string error,
       bool? bigEndian = null) {
     ArgumentNullException.ThrowIfNull(superblock);
-    var storageBigEndian = bigEndian ?? superblock.BigEndian;
+    return TryParseEntries(value, EntryU64s(superblock), bigEndian ?? superblock.BigEndian, out entries, out error);
+  }
+
+  private static bool TryParseEntries(
+      ReadOnlySpan<byte> value,
+      IReadOnlyList<byte> sizes,
+      bool storageBigEndian,
+      out IReadOnlyList<BcacheFsExtentEntry> entries,
+      out string error) {
     var result = new List<BcacheFsExtentEntry>();
-    var sizes = EntryU64s(superblock);
     var cursor = 0;
 
     while (cursor < value.Length) {

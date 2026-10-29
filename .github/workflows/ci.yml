@@ -246,6 +246,26 @@ jobs:
           --filter "FullyQualifiedName~Compression.Tests.Reiser4.Reiser4ProfileExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4MutationExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4NativeTreeExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4FeatureExternalTests"
           --logger "trx;LogFileName=reiser4-oracle-tests.trx"
 
+      # The kernel that judges bcachefs runs in the libguestfs appliance: 24.04's
+      # generic 6.8 kernel carries bcachefs as a module, the runner's own Azure
+      # kernel need not. supermin is pointed at it so the appliance does not boot
+      # the newest kernel in /boot.
+      - name: Install a kernel with bcachefs (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y libguestfs-tools
+          kver=$(apt-cache depends linux-image-generic | sed -n 's/^ *Depends: linux-image-\(.*-generic\)$/\1/p' | head -n 1)
+          test -n "$kver" || { echo "::error::cannot resolve the generic kernel version"; exit 1; }
+          sudo apt-get install -y --no-install-recommends "linux-image-$kver" "linux-modules-$kver" "linux-modules-extra-$kver"
+          sudo chmod 0644 /boot/vmlinuz-*
+          sudo chmod 0666 /dev/kvm || echo "::warning::no /dev/kvm; the appliance runs without acceleration"
+          echo "SUPERMIN_KERNEL=/boot/vmlinuz-$kver" >> "$GITHUB_ENV"
+          echo "SUPERMIN_MODULES=/lib/modules/$kver" >> "$GITHUB_ENV"
+          echo "SUPERMIN_KERNEL_VERSION=$kver" >> "$GITHUB_ENV"
+          find "/lib/modules/$kver" -name 'bcachefs.ko*' | grep -q . \
+            || { echo "::error::linux-modules(-extra)-$kver has no bcachefs module"; exit 1; }
+
       # Hard gate, both directions: PowerISO for Linux (freeware, checksum-pinned, used as a black
       # box) converts our DAA images back to identical ISOs, and we read the DAA images it writes.
       - name: DAA oracle
@@ -276,19 +296,24 @@ jobs:
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the
-      # pointers that carry them. Hard gate rather than our own reader agreeing
-      # with our own writer.
+      # pointers that carry them. The kernel's driver mounts the volumes
+      # read-write, and what it writes is read and edited here. Hard gate rather
+      # than our own reader agreeing with our own writer.
       #
       # The package writes metadata version 1.3, which is what Ubuntu's
-      # bcachefs-tools (1.3.4) writes and checks. The tests skip only when the
-      # tool is missing or older than that; a checker that reads the image and
-      # then objects fails the step, and that is never downgraded to a skip.
+      # bcachefs-tools (1.3.4) writes and checks. CWB_REQUIRE_BCACHEFS and
+      # CWB_REQUIRE_BCACHEFS_KERNEL turn a missing tool or driver into a failure
+      # instead of a skip: on this runner both are expected, and a gate that
+      # quietly skips when the image changes under it is no gate.
       - name: bcachefs oracle
-        if: matrix.os == 'ubuntu-latest'
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
+        env:
+          CWB_REQUIRE_BCACHEFS: "1"
+          CWB_REQUIRE_BCACHEFS_KERNEL: "1"
         run: >
           dotnet test Compression.Tests
           --configuration Release --no-build
-          --filter "FullyQualifiedName~Compression.Tests.BcacheFs.BcacheFsBucketGenerationExternalTests|FullyQualifiedName~Compression.Tests.BcacheFs.BcacheFsExternalConformanceTests"
+          --filter "FullyQualifiedName~Compression.Tests.BcacheFs.BcacheFsBucketGenerationExternalTests|FullyQualifiedName~Compression.Tests.BcacheFs.BcacheFsExternalConformanceTests|FullyQualifiedName~Compression.Tests.BcacheFs.BcacheFsKernelMountTests"
           --logger "trx;LogFileName=bcachefs-oracle-tests.trx"
 
       # python-msgpack is the one oracle below that is not already on both runner images. Advisory
