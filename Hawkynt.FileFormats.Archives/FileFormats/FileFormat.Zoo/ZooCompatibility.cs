@@ -38,6 +38,7 @@ public static class ZooCompatibility {
   /// <summary>Returns the minimum Zoo version required to extract an emitted packing method.</summary>
   public static (byte Major, byte Minor) GetExtractVersion(ZooCompressionMethod method) => method switch {
     ZooCompressionMethod.Store or ZooCompressionMethod.Lzw => (1, 0),
+    ZooCompressionMethod.Lzh => (2, 1), // MAJOR_LZH_VER / MINOR_LZH_VER in Zoo 2.10
     _ => throw new NotSupportedException($"Zoo packing method {(byte)method} has no known extraction compatibility level."),
   };
 }

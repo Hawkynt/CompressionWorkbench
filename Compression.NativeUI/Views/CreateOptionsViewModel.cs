@@ -335,6 +335,9 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
           "Zstd: Fast modern compression with good ratio. Requires extractors supporting ZIP method 93. "
           + "Not yet widely supported.\n"
           + "Opens with: 7-Zip 21+, PeaZip, NanaZip (very limited support elsewhere)",
+        (F.Zip, "xz") =>
+          "XZ: LZMA2 in a complete .xz stream (ZIP method 95). Ratio close to LZMA.\n"
+          + "Opens with: 7-Zip, PeaZip, NanaZip, WinZip (not Windows Explorer)",
         (F.Zip, "shrink") =>
           "Shrink: Legacy LZW method from PKZIP 1.0 (1989). Use only for vintage compatibility. "
           + "Very limited compression ratio by modern standards.\n"
@@ -384,12 +387,6 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
         (F.Lzh, "lh1") =>
           "lh1: Adaptive Huffman with 4 KB sliding window. The original LHA method from 1988.\n"
           + "Opens with: LHA/lha, 7-Zip (read), Unlha32.dll",
-        (F.Lzh, "lh2") =>
-          "lh2: Adaptive Huffman variant. Rarely used — lh5 or lh7 are generally preferred.\n"
-          + "Opens with: LHA/lha (some builds), Unlha32.dll",
-        (F.Lzh, "lh3") =>
-          "lh3: Adaptive Huffman with 8 KB window. Transitional method.\n"
-          + "Opens with: LHA/lha (some builds), Unlha32.dll",
         (F.Lzh, "lh4") =>
           "lh4: Static Huffman with 4 KB window. Older format, good compatibility with vintage tools.\n"
           + "Opens with: 7-Zip, LHA/lha, PeaZip, Unlha32.dll",
@@ -410,12 +407,6 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
           + "Opens with: LHA/lha, LArc, Unlha32.dll",
         (F.Lzh, "pm0") =>
           "pm0: PMA store mode — no compression. PMA-compatible container format.\n"
-          + "Opens with: PMarc, Unlha32.dll",
-        (F.Lzh, "pm1") =>
-          "pm1: PMA with PPMd order-2 prediction. Good for text files.\n"
-          + "Opens with: PMarc, Unlha32.dll",
-        (F.Lzh, "pm2") =>
-          "pm2: PMA with PPMd order-3 prediction. Best LHA method for text and source code.\n"
           + "Opens with: PMarc, Unlha32.dll",
         (F.Lzh, _) =>
           "lh5 (8 KB) is the standard default. lh7 (64 KB) gives best general compression. "
@@ -558,10 +549,8 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
       F.Lzh => [
         "lh5  (default, 8 KB)", "lh7  (64 KB)", "lh6  (32 KB)",
         "lh4  (4 KB)", "lh1  (adaptive Huffman 4 KB)",
-        "lh2  (adaptive Huffman)", "lh3  (adaptive Huffman 8 KB)",
         "lh0  (store)", "lzs  (LZSS 2 KB)", "lz5  (LZSS 4 KB)",
-        "pm0  (PMA store)", "pm1  (PMA PPMd order-2)", "pm2  (PMA PPMd order-3)",
-        "pm2  (PPMd order-3)", "pm1  (PPMd order-2)", "pm0  (PMA store)"],
+        "pm0  (PMA store)"],
       F.Arj => [
         "Method 1 (default, best)", "Method 2", "Method 3  (fastest)", "Store"],
       F.Arc => [

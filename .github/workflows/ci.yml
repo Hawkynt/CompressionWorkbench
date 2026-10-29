@@ -174,6 +174,14 @@ jobs:
           # reiser4progs owns Reiser4: fsck.reiser4 and debugfs.reiser4 judge every volume the
           # Reiser4 writer creates or edits, in the gate below.
           sudo apt-get install -y reiser4progs
+          # mkbootimg is AOSP's own boot image tool pair: the Android boot image writer must
+          # reproduce mkbootimg's bytes, and unpack_bootimg must read back what it writes.
+          sudo apt-get install -y mkbootimg
+          # avbtool judges vbmeta images; no distribution packages it, so the script is fetched
+          # at a pinned AOSP revision.
+          curl -sSfL "https://android.googlesource.com/platform/external/avb/+/c5066a96caa7bf4150c0a8cc8cc14ab81733fdc7/avbtool.py?format=TEXT" \
+            | base64 -d > "$RUNNER_TEMP/avbtool.py" \
+            && echo "CWB_AVBTOOL=$RUNNER_TEMP/avbtool.py" >> "$GITHUB_ENV" || true
           sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
           sudo modprobe gfs2 || true
 
@@ -234,6 +242,20 @@ jobs:
           --configuration Release --no-build
           --filter "FullyQualifiedName~Compression.Tests.Reiser4.Reiser4ProfileExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4MutationExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4NativeTreeExternalTests"
           --logger "trx;LogFileName=reiser4-oracle-tests.trx"
+
+      # Hard gate, both directions: PowerISO for Linux (freeware, checksum-pinned, used as a black
+      # box) converts our DAA images back to identical ISOs, and we read the DAA images it writes.
+      - name: DAA oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_POWERISO: "1"
+        run: |
+          curl -sfL -o "$RUNNER_TEMP/poweriso.tgz" https://www.poweriso.com/poweriso-1.3.tar.gz
+          echo "605ae3fceb93952422b42d868f1317d1c6d48d2bdbaee700dcf17e99dbe65fc0  $RUNNER_TEMP/poweriso.tgz" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/poweriso.tgz" -C "$RUNNER_TEMP"
+          CWB_POWERISO="$RUNNER_TEMP/poweriso" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Daa.DaaExternalConformanceTests" \
+            --logger "trx;LogFileName=daa-oracle-tests.trx"
 
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are

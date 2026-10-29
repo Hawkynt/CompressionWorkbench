@@ -46,11 +46,19 @@ public static class ZooModifier {
     // Locate the last entry header (or detect empty archive).
     var tail = FindTailEntry(zoo);
 
-    // Append the new entry at end-of-stream.
+    // A trailing end-of-directory entry is replaced by the new member, and written again after it.
+    if (tail.TerminatorOffset >= 0 && tail.TerminatorOffset + ZooConstants.EndOfDirectory.Length == zoo.Length)
+      zoo.SetLength(tail.TerminatorOffset);
+
+    // Append the new entry at end-of-stream, linked to a fresh end-of-directory entry.
     var newHeaderOffset = zoo.Length;
     zoo.Position = newHeaderOffset;
     WriteStoredEntry(zoo, name, data);
+    var terminatorOffset = zoo.Position;
+    zoo.Write(ZooConstants.EndOfDirectory);
     zoo.SetLength(zoo.Position);
+    zoo.Position = newHeaderOffset + FieldNextOffset;
+    WriteUInt32Le(zoo, (uint)terminatorOffset);
 
     // Patch the previous tail's nextOffset (or the archive header).
     if (tail.LinkFieldOffset >= 0) {
@@ -150,8 +158,8 @@ public static class ZooModifier {
     long DataOffsetValue   // value stored in this entry's dataOffset field
   );
 
-  /// <summary>Result of locating the tail (last entry's nextOffset link).</summary>
-  private readonly record struct TailInfo(long LinkFieldOffset);
+  /// <summary>Result of locating the tail: the link field to patch, and Zoo's end-of-directory entry if present (else -1).</summary>
+  private readonly record struct TailInfo(long LinkFieldOffset, long TerminatorOffset = -1);
 
   private static TailInfo FindTailEntry(Stream zoo) {
     EnsureValidArchive(zoo);
@@ -161,11 +169,16 @@ public static class ZooModifier {
     if (first == 0)
       return new TailInfo(ArchiveFieldFirstEntryOffset); // empty: patch firstEntryOffset.
 
+    if (IsTerminator(zoo, first))
+      return new TailInfo(ArchiveFieldFirstEntryOffset, first);
+
     var current = (long)first;
     while (true) {
       var (nextOff, _, _) = ReadEntryFields(zoo, current);
       if (nextOff == 0)
         return new TailInfo(current + FieldNextOffset);
+      if (IsTerminator(zoo, nextOff))
+        return new TailInfo(current + FieldNextOffset, nextOff);
       current = nextOff;
     }
   }
@@ -179,13 +192,19 @@ public static class ZooModifier {
     if (first == 0) return result;
 
     var current = (long)first;
-    while (current != 0) {
+    while (current != 0 && !IsTerminator(zoo, current)) {
       var (nextOff, dataOff, name) = ReadEntryFields(zoo, current);
       var physicalEnd = ComputePhysicalEnd(zoo, current, dataOff, nextOff);
       result.Add(new WalkedEntry(name, current, physicalEnd, nextOff, dataOff));
       current = nextOff;
     }
     return result;
+  }
+
+  /// <summary>Whether the entry at <paramref name="headerOffset"/> is Zoo's end-of-directory entry (link 0, no data, no name).</summary>
+  private static bool IsTerminator(Stream zoo, long headerOffset) {
+    var (nextOff, dataOff, name) = ReadEntryFields(zoo, headerOffset);
+    return nextOff == 0 && dataOff == 0 && name.Length == 0;
   }
 
   /// <summary>
