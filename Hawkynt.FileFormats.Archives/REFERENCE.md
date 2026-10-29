@@ -21328,6 +21328,77 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Flushes the outer/inner headers, all payloads, and the resource directory to the underlying stream. |
 
+### Namespace `FileFormat.Mht`
+
+[`MhtFormatDescriptor`](#mhtformatdescriptor) · [`MhtPart`](#mhtpart) · [`MhtReader`](#mhtreader) · [`MhtWriter`](#mhtwriter)
+
+#### `MhtFormatDescriptor`
+
+MHTML web archive (`.mht` / `.mhtml`) — a saved web page with its resources, as written by Chromium ("Save as single file"), Internet Explorer and Word. References: `https://www.rfc-editor.org/rfc/rfc2557` — RFC 2557, MIME Encapsulation of Aggregate Documents (MHTML)`https://www.rfc-editor.org/rfc/rfc2045` / `rfc2046` — MIME transfer encodings and multipart bodies
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MhtFormatDescriptor` | `MhtFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `MhtPart`
+
+One resource of an MHTML document: its MIME headers, where its bytes sit, and the archive name it maps to.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BodyLength` | `int BodyLength { get; }` | Length of the encoded body. |
+| `BodyStart` | `int BodyStart { get; }` | Offset of the (still transfer-encoded) body in the document. |
+| `Headers` | `IReadOnlyDictionary<string, string> Headers { get; }` | Unfolded headers, keyed case-insensitively. |
+| `IsTopLevel` | `bool IsTopLevel { get; }` | Whether the part is a direct child of the root multipart (only those can be edited in place). |
+| `Location` | `string Location { get; }` | The Content-Location header, if any. |
+| `MediaType` | `string MediaType { get; }` | The media type, lower-cased, without parameters. |
+| `Name` | `string Name { get; }` | The archive name assigned by `MhtReader`. |
+| `TransferEncoding` | `string TransferEncoding { get; }` | The Content-Transfer-Encoding, lower-cased; "7bit" when absent. |
+| `Header` | `string Header(string name)` | Header value by name, or null. |
+
+#### `MhtReader`
+
+Reads an MHTML document (RFC 2557, "MIME Encapsulation of Aggregate Documents"): a MIME message, normally `multipart/related`, whose parts are the page and its resources, each identified by a `Content-Location` URL (or a `Content-ID` referenced through `cid:`).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MhtReader` | `MhtReader(byte[] data)` |  |
+| `Boundary` | `string Boundary { get; }` | The root multipart boundary, or null for a single-resource document. |
+| `Headers` | `IReadOnlyDictionary<string, string> Headers { get; }` | Top-level message headers. |
+| `LineBreak` | `string LineBreak { get; }` | The document's line break ("\r\n" or "\n"). |
+| `Parts` | `IReadOnlyList<MhtPart> Parts { get; }` | Every leaf resource, in document order (nested multiparts flattened). |
+| `RootOrigin` | `string RootOrigin { get; }` | The origin (scheme + authority) of the root resource's location, e.g. `https://example.com`; resources on that origin are named by their path alone. |
+| `Extract` | `byte[] Extract(MhtPart part)` | Decodes a part's body. |
+
+#### `MhtWriter`
+
+Writes MHTML documents: a `multipart/related` message whose first part is the root page and every part carries a `Content-Location` under one base URL, so relative references in the page resolve to the archived resources (RFC 2557 §8).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultBaseUrl` | `const string DefaultBaseUrl` | The URL every created resource is located under. |
+| `DefaultBoundary` | `const string DefaultBoundary` | The fixed boundary of documents this writer creates. |
+| `Write` | `static void Write(Stream output, IReadOnlyList<ValueTuple<string, byte[]>> files, string subject = null, string baseUrl = "https://mhtml.invalid/")` |  |
+
 ### Namespace `FileFormat.Midi`
 
 [`MidiFormatDescriptor`](#midiformatdescriptor)

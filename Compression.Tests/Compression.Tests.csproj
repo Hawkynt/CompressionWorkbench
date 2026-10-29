@@ -170,6 +170,10 @@
     <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">
       <LogicalName>VdfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- MHTML saved by Chromium and built by Python's email package; see Mht/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Mht\ReferenceVectors\*.mht;Mht\ReferenceVectors\*.mhtml;Mht\ReferenceVectors\*.txt">
+      <LogicalName>MhtVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- ZIP archives written by third-party archivers; see Zip/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
       <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>
