@@ -18427,6 +18427,36 @@ Writes a big-endian GameCube `.hps` (HAL HALPST) carrying DSP-ADPCM, laid out pe
 | `HpsWriter` | `HpsWriter()` |  |
 | `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate, int loopStart = 0)` | Encodes per-channel mono PCM16 to DSP-ADPCM and serialises a complete HPS. All channels must share the same sample count. |
 
+### Namespace `FileFormat.IExpress`
+
+[`IExpressFormatDescriptor`](#iexpressformatdescriptor)
+
+#### `IExpressFormatDescriptor`
+
+IExpress self-extractor (Windows' iexpress.exe / wextract.exe stub): a PE whose RT_RCDATA resource "CABINET" holds a Microsoft Cabinet with the payload, next to text resources that configure the run (TITLE, RUNPROGRAM, POSTRUNPROGRAM, LICENSE, FINISHMSG, ...). References: `https://learn.microsoft.com/windows/win32/msi/cabinet-files` — the cabinet format`https://learn.microsoft.com/previous-versions/windows/it-pro/windows-server-2003/cc782932(v=ws.10)` — IExpress
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IExpressFormatDescriptor` | `IExpressFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `IsIExpress` | `static bool IsIExpress(Stream stream)` | True when the PE carries an RT_RCDATA "CABINET" resource that starts with "MSCF". |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `ReadCabinet` | `static byte[] ReadCabinet(Stream stream)` | Returns the embedded cabinet's bytes, or null when there is none. |
+
 ### Namespace `FileFormat.IcePacker`
 
 [`IcePackerFormatDescriptor`](#icepackerformatdescriptor) · [`IcePackerStream`](#icepackerstream)
@@ -22167,6 +22197,34 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries via `ZipModifier`. The synthetic `metadata.ini` listing entry is a derived view and is skipped. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the package: gaps between entries not covered by a live extent in the ZIP layout map. Local headers, entry data, the central directory and EOCD are live and preserved. Cluster-tip wiping is N/A (ZIP packs entries back to back with no per-file slack). |
 
+### Namespace `FileFormat.Msu`
+
+[`MsuFormatDescriptor`](#msuformatdescriptor)
+
+#### `MsuFormatDescriptor`
+
+Windows Update standalone package (.msu): a Microsoft Cabinet holding the update's own cabinet(s), its applicability XML, a properties text and the WSUS scan cabinet; recent packages may be WIM containers instead. The container is recognised by its magic and the listing is the container's own, read by our Cab or WIM reader. References: `https://learn.microsoft.com/troubleshoot/windows-client/installing-updates-features-roles/description-of-windows-update-standalone-installer` — the package and its parts
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MsuFormatDescriptor` | `MsuFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Mtm`
 
 [`MtmFormatDescriptor`](#mtmformatdescriptor)
@@ -25010,7 +25068,28 @@ Writes a minimal PDF 1.7 file containing the input files as embedded file attach
 
 ### Namespace `FileFormat.PeResources`
 
-[`PeResourcesFormatDescriptor`](#peresourcesformatdescriptor)
+[`PeResourceLocator`](#peresourcelocator) · [`PeResourceLocator.Location`](#peresourcelocatorlocation) · [`PeResourcesFormatDescriptor`](#peresourcesformatdescriptor)
+
+#### `PeResourceLocator`
+
+Finds one resource in a PE image without reading any resource data: walks the IMAGE_RESOURCE_DIRECTORY tree (type → name → first language) and returns where the bytes are.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Find` | `static Location? Find(Stream stream, ushort type, string name)` | Finds a resource by numeric type and string name (e.g. RT_RCDATA "CABINET"). |
+| `Find` | `static Location? Find(Stream stream, ushort type, ushort id)` | Finds a resource by numeric type and numeric id. |
+
+#### `PeResourceLocator.Location`
+
+File offset and size of a located resource.
+
+Implements `IEquatable<Location>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Location` | `Location(long Offset, int Size)` | File offset and size of a located resource. |
+| `Offset` | `long Offset { get; init; }` |  |
+| `Size` | `int Size { get; init; }` |  |
 
 #### `PeResourcesFormatDescriptor`
 

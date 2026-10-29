@@ -126,6 +126,33 @@ internal static class SevenZipConstants {
   /// <summary>Codec ID for AES-256 + SHA-256 encryption.</summary>
   public static ReadOnlySpan<byte> CodecAes => [0x06, 0xF1, 0x07, 0x01];
 
+  /// <summary>Codec ID for Deflate64 (enhanced deflate, 64 KiB window).</summary>
+  public static ReadOnlySpan<byte> CodecDeflate64 => [0x04, 0x01, 0x09];
+
+  /// <summary>Codec ID for the ARM64 branch filter (7-Zip 23+; optional 4-byte start-offset property).</summary>
+  public static ReadOnlySpan<byte> CodecArm64 => [0x0A];
+
+  /// <summary>Codec ID for the RISC-V branch filter (7-Zip 24+; optional 4-byte start-offset property).</summary>
+  public static ReadOnlySpan<byte> CodecRiscV => [0x0B];
+
+  /// <summary>Codec ID 0x04F71101: Zstandard, as registered by 7-Zip-zstd (also written by py7zr).</summary>
+  public static ReadOnlySpan<byte> CodecZstd => [0x04, 0xF7, 0x11, 0x01];
+
+  /// <summary>Codec ID 0x04F71102: Brotli, as registered by 7-Zip-zstd (also written by py7zr).</summary>
+  public static ReadOnlySpan<byte> CodecBrotli => [0x04, 0xF7, 0x11, 0x02];
+
+  /// <summary>Codec ID 0x04F71104: LZ4 frames, as registered by 7-Zip-zstd.</summary>
+  public static ReadOnlySpan<byte> CodecLz4 => [0x04, 0xF7, 0x11, 0x04];
+
+  /// <summary>
+  /// Skippable-frame magic (the zstd/LZ4 frame-format value 0x184D2A50) with which the 7-Zip-zstd
+  /// Brotli and LZ4 coders prefix each independently compressed chunk.
+  /// </summary>
+  public const uint MtSkippableFrameMagic = 0x184D2A50;
+
+  /// <summary>The "BR" marker inside a 7-Zip-zstd Brotli skippable-frame header.</summary>
+  public const ushort BrotliMtMarker = 0x5242;
+
   /// <summary>Size of the signature header in bytes.</summary>
   public const int SignatureHeaderSize = 32;
 

@@ -547,6 +547,60 @@ Writes PSP CSO v1/v2 and ZSO compressed-ISO containers.
 | `DefaultBlockSize` | `const int DefaultBlockSize` | Default block size — one cooked ISO 9660 sector. |
 | `Build` | `static byte[] Build(ReadOnlySpan<byte> uncompressedData, int blockSize = 2048)` | Builds a canonical CSO v1 stream around `uncompressedData`. |
 
+### Namespace `FileFormat.Daa`
+
+[`DaaFormatDescriptor`](#daaformatdescriptor) · [`DaaImage`](#daaimage)
+
+#### `DaaFormatDescriptor`
+
+PowerISO DAA ("Direct Access Archive") compressed CD/DVD image, format version 0x100: exposes the ISO as `image.iso` plus a synthetic `metadata.ini`; creates and rewrites version 0x100 images PowerISO reads. Version 0x110, split, password-protected and gBurner GBI images are refused.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DaaFormatDescriptor` | `DaaFormatDescriptor()` |  |
+| `ImageName` | `const string ImageName` |  |
+| `MetadataName` | `const string MetadataName` |  |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | DAA requires an ISO image payload, so it has no empty container for purge to leave behind. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Replaces `image.iso`, keeping the chunk size. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `DaaImage`
+
+PowerISO DAA image, format version 0x100 (single volume, unencrypted): a 76-byte header, a table of 3-byte compressed chunk lengths and raw-deflate chunks. Implemented from `docs/DAA-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DaaImage` | `DaaImage()` |  |
+| `DefaultChunkSize` | `const int DefaultChunkSize` |  |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `Version100` | `const uint Version100` |  |
+| `Version110` | `const uint Version110` |  |
+| `ChunkSize` | `uint ChunkSize { get; }` |  |
+| `Chunks` | `IReadOnlyList<ValueTuple<long, int>> Chunks { get; }` |  |
+| `IsoSize` | `long IsoSize { get; }` |  |
+| `Version` | `uint Version { get; }` |  |
+| `CopyIsoTo` | `void CopyIsoTo(Stream source, Stream output)` |  |
+| `Read` | `static DaaImage Read(Stream stream)` |  |
+| `Write` | `static void Write(Stream output, ReadOnlySpan<byte> iso, int chunkSize = 65536, DeflateCompressionLevel level = 6)` | Writes a version 0x100 image: header, 3-byte length table, raw-deflate chunks each followed by its CRC-32. |
+
 ### Namespace `FileFormat.Dmg`
 
 [`DmgEntry`](#dmgentry) · [`DmgFormatDescriptor`](#dmgformatdescriptor) · [`DmgReader`](#dmgreader) · [`DmgWriter`](#dmgwriter)
@@ -7080,6 +7134,104 @@ Builds Microsoft Xbox / Xbox 360 FATX filesystem images from scratch per the rev
 | `Build` | `byte[] Build(int sectorsPerCluster = 0, uint volumeId = 0)` | Builds a complete FATX image containing the previously-added files. |
 | `WriteTo` | `void WriteTo(Stream output, int sectorsPerCluster = 0, uint volumeId = 0)` | Writes the image into `output`: the superblock and FAT, then every cluster payload at its offset. Only a non-seekable target has to materialise the image, so a seekable one is bounded by the disk rather than by what a byte[] can address. |
 
+### Namespace `FileSystem.Fossil`
+
+[`FossilEntry`](#fossilentry) · [`FossilFormatDescriptor`](#fossilformatdescriptor) · [`FossilReader`](#fossilreader) · [`FossilSourceEntry`](#fossilsourceentry)
+
+#### `FossilEntry`
+
+One file or directory of a Fossil volume.
+
+Implements `IEquatable<FossilEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilEntry` | `FossilEntry(string Path, bool IsDirectory, long Size, uint Mode, string Uid, string Gid, uint MTime, FossilSourceEntry Source)` | One file or directory of a Fossil volume. |
+| `Gid` | `string Gid { get; init; }` | Group. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | True for a directory. |
+| `MTime` | `uint MTime { get; init; }` | Modification time (UNIX seconds). |
+| `Mode` | `uint Mode { get; init; }` | Plan 9 mode word: permission bits plus `ModeDir` (1<<15) and friends. |
+| `Path` | `string Path { get; init; }` | Slash-separated path from the Fossil root (`active/…`, `snapshot/…`). |
+| `Size` | `long Size { get; init; }` | File size from the data source's entry. |
+| `Source` | `FossilSourceEntry Source { get; init; }` | The entry of the file's data source. |
+| `Uid` | `string Uid { get; init; }` | Owner. |
+
+#### `FossilFormatDescriptor`
+
+Fossil — the Plan 9 file server's on-disk format (Quinlan, McKie, Cox, 2002), as plan9port's `flfmt` and `fossil` write it. Header magic `0x3776ae89` at 128 KiB.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilFormatDescriptor` | `FossilFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+
+#### `FossilReader`
+
+Reads a Fossil volume (Plan 9's file server, as `flfmt` lays it out and the `fossil` server writes it): header at 128 KiB, superblock, label and data partitions; files are trees of local blocks addressed by their block number. Blocks already archived to Venti are refused — this reader has no Venti. See `docs/FOSSIL-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilReader` | `FossilReader(Stream stream)` | Opens a Fossil volume; throws `InvalidDataException` for anything it cannot read faithfully. |
+| `DirMagic` | `const uint DirMagic` |  |
+| `EntrySize` | `const int EntrySize` |  |
+| `HeaderMagic` | `const uint HeaderMagic` |  |
+| `HeaderOffset` | `const int HeaderOffset` |  |
+| `MaxDepth` | `const int MaxDepth` |  |
+| `MetaMagic` | `const uint MetaMagic` |  |
+| `ModeDir` | `const uint ModeDir` |  |
+| `ModeLink` | `const uint ModeLink` |  |
+| `ModeSnapshot` | `const uint ModeSnapshot` |  |
+| `ScoreSize` | `const int ScoreSize` |  |
+| `SuperMagic` | `const uint SuperMagic` |  |
+| `Active` | `uint Active { get; }` | Block address of the active root. |
+| `BlockSize` | `int BlockSize { get; }` | Bytes per block. |
+| `DataEnd` | `uint DataEnd { get; }` | End of the data partition. |
+| `DataStart` | `uint DataStart { get; }` | First block of the data partition. |
+| `Entries` | `IReadOnlyList<FossilEntry> Entries { get; }` | Every file and directory, parents first. |
+| `Epochs` | `ValueTuple<uint, uint> Epochs { get; }` | Superblock epochs. |
+| `Name` | `string Name { get; }` | Superblock name (the volume label). |
+| `Extract` | `byte[] Extract(FossilEntry entry)` | Reads a file's bytes; refuses blocks that are not local or lie outside the data partition. |
+
+#### `FossilSourceEntry`
+
+A source ("stream") entry as stored in a directory block (40 bytes).
+
+Implements `IEquatable<FossilSourceEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilSourceEntry` | `FossilSourceEntry(uint Gen, ushort PSize, ushort DSize, byte Flags, byte Depth, long Size, uint Address, bool IsLocal, bool IsZero, uint Tag, uint Snap)` | A source ("stream") entry as stored in a directory block (40 bytes). |
+| `Address` | `uint Address { get; init; }` |  |
+| `DSize` | `ushort DSize { get; init; }` |  |
+| `Depth` | `byte Depth { get; init; }` |  |
+| `Flags` | `byte Flags { get; init; }` |  |
+| `Gen` | `uint Gen { get; init; }` |  |
+| `IsActive` | `bool IsActive { get; }` | Entry in use. |
+| `IsDir` | `bool IsDir { get; }` | Source holds entries (a directory stream). |
+| `IsLocal` | `bool IsLocal { get; init; }` |  |
+| `IsZero` | `bool IsZero { get; init; }` |  |
+| `PSize` | `ushort PSize { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `Snap` | `uint Snap { get; init; }` |  |
+| `Tag` | `uint Tag { get; init; }` |  |
+
 ### Namespace `FileSystem.Gemdos`
 
 [`GemdosBpb`](#gemdosbpb) · [`GemdosExtentMap`](#gemdosextentmap) · [`GemdosFormatDescriptor`](#gemdosformatdescriptor) · [`GemdosInPlaceModifier`](#gemdosinplacemodifier) · [`GemdosOptimizer`](#gemdosoptimizer) · [`GemdosOptimizer.GemdosGeometry`](#gemdosoptimizergemdosgeometry) · [`GemdosReader`](#gemdosreader) · [`GemdosWriter`](#gemdoswriter)
@@ -13251,7 +13403,7 @@ Builds a genuine Stac Electronics STACVOL — the on-disk shape a real Stacker d
 | `GenuineStackerWriter` | `GenuineStackerWriter()` |  |
 | `CompressionLevel` | `int CompressionLevel { get; init; }` | Codec effort (search depth). Higher = better ratio, slower. |
 | `CompressionMethod` | `CvfLzMethod CompressionMethod { get; init; }` | Per-cluster compression: Stored (default), Sd3 (Stacker 3), Sd4 (Stacker 4), Ds, or Auto (smallest of Ds/Sd3/Sd4 per cluster). The Stacker driver tells them apart by the payload's first word — 0x0081 SD-4, 0x5344 ("DS") the DoubleSpace codec, anything else SD-3. JM/SQ map to Ds. |
-| `ForceCompress` | `bool ForceCompress { get; init; }` | Keep a compressed cluster even if it does not shrink (auto-best off). |
+| `ForceCompress` | `bool ForceCompress { get; init; }` | Keep a compressed cluster even if it does not shrink (auto-best off). Stacker cannot record a compressed run that fills a whole cluster — such a run reads as stored — so a payload that needs every sector of its cluster is stored raw regardless; any shorter payload is kept compressed either way, which leaves this option without effect on Stacker volumes. |
 | `Timestamp` | `DateTime Timestamp { get; init; }` | Creation/modification timestamp stamped on every file entry. Default (before 1980) leaves the FAT date/time fields zero. |
 | `Version` | `int Version { get; init; }` | Stacker major version recorded in the decoded superblock (< 410 ⇒ v3). |
 | `VolumeLabel` | `string VolumeLabel { get; init; }` | Optional inner-volume label (≤11 chars). Empty = no label entry. |
