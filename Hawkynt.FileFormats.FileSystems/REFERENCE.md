@@ -3747,6 +3747,7 @@ Implements `IDisposable`.
 | `BcacheFsReader` | `BcacheFsReader(Stream stream, bool leaveOpen = true)` | Initializes a new instance of `BcacheFsReader`. |
 | `Directories` | `IReadOnlyList<string> Directories { get; }` | Directories the volume holds, by full path. |
 | `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Every file and symbolic link the volume holds, by full path. |
+| `ExtendedAttributes` | `IReadOnlyDictionary<string, IReadOnlyDictionary<string, byte[]>> ExtendedAttributes { get; }` | Extended attributes, by the full path of the file, link or directory that carries them (the empty path is the root), each by its full name such as `user.comment`. Nodes without any are absent. |
 | `Label` | `string Label { get; }` | The label the superblock carries. |
 | `Length` | `long Length { get; }` | The volume's length in bytes. |
 | `Status` | `string Status { get; }` | Why the volume did not read, when it did not. |
@@ -3796,6 +3797,7 @@ Writes a bcachefs volume: a superblock, the b-trees that describe the files, and
 | `BcachefsMagic` | `static readonly byte[] BcachefsMagic` | BCHFS_MAGIC, in storage byte order. |
 | `MinImageSize` | `const long MinImageSize` | Smallest volume this writes. A bcachefs device needs at least 512 buckets, and the two superblock slots at the front already claim thirty-three of them. |
 | `AddDirectory` | `void AddDirectory(string name)` | Adds a directory, which may stay empty. |
+| `AddExtendedAttribute` | `void AddExtendedAttribute(string path, string name, byte[] value)` | Gives the file, link or directory at `path` an extended attribute, named with its namespace (`user.`, `trusted.` or `security.`); the empty path is the root directory. |
 | `AddFile` | `void AddFile(string name, byte[] data, ArchiveEntryMetadata metadata = null)` | Adds a file, held in memory, with the times, ownership and mode it should carry. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream, ArchiveEntryMetadata metadata = null)` | Adds a file whose bytes are read as the volume is written. |
 | `AddSymlink` | `void AddSymlink(string name, string target)` | Adds a symbolic link pointing at `target`. |

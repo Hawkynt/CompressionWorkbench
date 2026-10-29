@@ -79,7 +79,7 @@
       <LogicalName>BtrfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- Volumes bcachefs-tools wrote; see BcacheFs/ReferenceVectors/README.md. -->
-    <EmbeddedResource Include="BcacheFs\ReferenceVectors\*.gz;BcacheFs\ReferenceVectors\manifest.txt">
+    <EmbeddedResource Include="BcacheFs\ReferenceVectors\*.gz;BcacheFs\ReferenceVectors\manifest*.txt">
       <LogicalName>BcacheFsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- A package built by Windows iexpress.exe, plus expand.exe's extraction; see IExpress/ReferenceVectors/README.md. -->
