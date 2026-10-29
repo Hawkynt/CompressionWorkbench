@@ -37,6 +37,24 @@ public static class FirmwareArchive {
     }
   }
 
+  /// <summary>
+  /// The input set a single-payload container is created from: when exactly one input carries a
+  /// name <paramref name="isKnown"/> does not recognise and no input is already named
+  /// <paramref name="primary"/>, that input is the payload and is renamed to it. Any other set
+  /// comes back unchanged, so the writer still refuses names it does not know.
+  /// </summary>
+  public static IReadOnlyList<ArchiveInputInfo> FoldLonePayload(IReadOnlyList<ArchiveInputInfo> inputs, Func<string, bool> isKnown, string primary) {
+    ArgumentNullException.ThrowIfNull(inputs);
+    var files = inputs.Where(i => !i.IsDirectory && !string.IsNullOrEmpty(i.ArchiveName)).ToList();
+    var unknown = files.FindAll(i => !isKnown(LeafName(i.ArchiveName)));
+    if (unknown.Count != 1 || files.Exists(i => LeafName(i.ArchiveName).Equals(primary, StringComparison.OrdinalIgnoreCase)))
+      return inputs;
+    return [.. inputs.Select(i => ReferenceEquals(i, unknown[0]) ? i with { ArchiveName = primary } : i)];
+  }
+
+  /// <summary>The last path segment of an archive name, either separator.</summary>
+  public static string LeafName(string name) => name.Replace('\\', '/').TrimEnd('/').Split('/')[^1];
+
   /// <summary>A NUL-terminated field as text: everything before the first NUL, Latin-1 so no byte is lost.</summary>
   public static string CString(ReadOnlySpan<byte> field) {
     var end = field.IndexOf((byte)0);

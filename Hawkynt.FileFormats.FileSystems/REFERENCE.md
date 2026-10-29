@@ -925,7 +925,9 @@ The list / extract plumbing every firmware pseudo-archive shares: a firmware ima
 | `MetadataName` | `const string MetadataName` |  |
 | `CString` | `static string CString(ReadOnlySpan<byte> field)` | A NUL-terminated field as text: everything before the first NUL, Latin-1 so no byte is lost. |
 | `Extract` | `static void Extract(IReadOnlyList<FirmwareEntry> entries, string outputDir, string[] files)` |  |
+| `FoldLonePayload` | `static IReadOnlyList<ArchiveInputInfo> FoldLonePayload(IReadOnlyList<ArchiveInputInfo> inputs, Func<string, bool> isKnown, string primary)` | The input set a single-payload container is created from: when exactly one input carries a name `isKnown` does not recognise and no input is already named `primary`, that input is the payload and is renamed to it. Any other set comes back unchanged, so the writer still refuses names it does not know. |
 | `Hex` | `static string Hex(ulong value)` |  |
+| `LeafName` | `static string LeafName(string name)` | The last path segment of an archive name, either separator. |
 | `List` | `static List<ArchiveEntryInfo> List(IReadOnlyList<FirmwareEntry> entries)` |  |
 | `ParseIni` | `static Dictionary<string, string> ParseIni(ReadOnlySpan<byte> ini)` | Parses the `key = value` lines of an INI rendering into section-qualified keys (`section.key`); keys before any section are unqualified. The value keeps its exact text after the single blank that follows the `=`. |
 | `ReadAll` | `static byte[] ReadAll(Stream stream)` |  |
@@ -1218,6 +1220,70 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<MdfEntry> Entries { get; }` | Gets all file and directory entries found in the ISO 9660 file system. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(MdfEntry entry)` | Extracts the raw data for a file entry. |
+
+### Namespace `FileFormat.NetgearChk`
+
+[`NetgearChkFormatDescriptor`](#netgearchkformatdescriptor) · [`NetgearChkImage`](#netgearchkimage)
+
+#### `NetgearChkFormatDescriptor`
+
+NETGEAR `.chk` firmware as a pseudo-archive: `kernel.bin`, `rootfs.bin`, `metadata.ini` with the board id, region and the four checksums checked.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NetgearChkFormatDescriptor` | `NetgearChkFormatDescriptor()` |  |
+| `FullImage` | `const string FullImage` |  |
+| `KernelName` | `const string KernelName` |  |
+| `RootfsName` | `const string RootfsName` |  |
+| `TrailerName` | `const string TrailerName` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | An image from `kernel.bin`, an optional `rootfs.bin` and the board id and region of a `metadata.ini` (mkchkimg's defaults otherwise). A single input under any other name is the payload and becomes `kernel.bin`, as `mkchkimg -k` would take it. |
+| `Entries` | `static List<FirmwareEntry> Entries(byte[] data)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `NetgearChkImage`
+
+A NETGEAR `.chk` firmware image: a big-endian header (magic 0x2A23245E, header length, an 8-byte reserved block whose first byte is the region, checksums and lengths of kernel and rootfs, an image checksum and a header checksum) followed by the board-id string, the kernel and the optional rootfs. The layout and checksum are specified in `docs/NETGEAR-CHK-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NetgearChkImage` | `NetgearChkImage()` |  |
+| `DefaultBoardId` | `const string DefaultBoardId` |  |
+| `FixedHeaderSize` | `const int FixedHeaderSize` |  |
+| `Magic` | `const uint Magic` |  |
+| `BoardId` | `byte[] BoardId { get; set; }` |  |
+| `ChecksumsValid` | `bool ChecksumsValid { get; }` |  |
+| `ComputedHeaderChecksum` | `uint ComputedHeaderChecksum { get; }` |  |
+| `Kernel` | `byte[] Kernel { get; set; }` |  |
+| `Region` | `byte Region { get; set; }` |  |
+| `Reserved` | `byte[] Reserved { get; set; }` | The 8 reserved bytes, raw; byte 0 is the region (1 = worldwide, 2 = North America). |
+| `Rootfs` | `byte[] Rootfs { get; set; }` |  |
+| `StoredHeaderChecksum` | `uint StoredHeaderChecksum { get; }` |  |
+| `StoredImageChecksum` | `uint StoredImageChecksum { get; }` |  |
+| `StoredKernelChecksum` | `uint StoredKernelChecksum { get; }` |  |
+| `StoredRootfsChecksum` | `uint StoredRootfsChecksum { get; }` |  |
+| `Trailer` | `byte[] Trailer { get; set; }` |  |
+| `Checksum` | `static uint Checksum(ReadOnlySpan<byte> data)` | NETGEAR's Fletcher-style checksum: over every byte, `c0 += b; c1 += c0` in 32 bits; each sum is then folded to 16 bits with end-around carry and the result is `c1 << 16 \| c0`. |
+| `Parse` | `static NetgearChkImage Parse(ReadOnlySpan<byte> d)` |  |
+| `ToBytes` | `byte[] ToBytes()` |  |
 
 ### Namespace `FileFormat.Nrg`
 
@@ -1542,6 +1608,73 @@ Writes canonical self-contained QCOW2 v2 images with 64 KiB clusters and 16-bit 
 | `WriteTo` | `void WriteTo(Stream output)` | Writes a canonical sparse QCOW2 image. |
 | `WriteTo` | `void WriteTo(Stream output, bool sparse)` | Writes a canonical QCOW2 image. |
 
+### Namespace `FileFormat.Seama`
+
+[`SeamaEntity`](#seamaentity) · [`SeamaFormatDescriptor`](#seamaformatdescriptor) · [`SeamaImage`](#seamaimage)
+
+#### `SeamaEntity`
+
+One SEAMA header with its meta strings and, when it carries an image, the image and its MD5.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SeamaEntity` | `SeamaEntity()` |  |
+| `Image` | `byte[] Image { get; set; }` |  |
+| `Md5Valid` | `bool Md5Valid { get; }` |  |
+| `Meta` | `List<string> Meta { get; set; }` |  |
+| `StoredMd5` | `byte[] StoredMd5 { get; set; }` |  |
+
+#### `SeamaFormatDescriptor`
+
+D-Link SEAMA firmware (single entity, or a seal of entities — binwalk's DLOB) as a pseudo-archive: `image.bin` for a single entity, `entity_NN.bin` for each entity of a seal, and `metadata.ini` carrying every meta string and the MD5 check.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SeamaFormatDescriptor` | `SeamaFormatDescriptor()` |  |
+| `FullImage` | `const string FullImage` |  |
+| `ImageName` | `const string ImageName` |  |
+| `TrailerName` | `const string TrailerName` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | A single entity from `image.bin`, or a seal from `entity_00.bin`, `entity_01.bin`…; meta strings come from a `metadata.ini` (`meta_0`, `meta_1`… under `[seama]` for the image or the seal, under `[entity_NN]` for each sealed entity). A single input under any other name is the payload and becomes `image.bin`, as `seama -i` would take it. |
+| `EntityName` | `static string EntityName(int index)` |  |
+| `Entries` | `static List<FirmwareEntry> Entries(byte[] data)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` | Empties the image (single entity) or drops every entity (seal), keeping the meta strings. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `SeamaImage`
+
+A D-Link SEAMA image (magic 0x5EA3A417): either a single entity — header, MD5 of the image, NUL-separated `key=value` meta strings, image — or a seal, a header with an empty image whose meta (typically the firmware `signature=`) is followed by one or more entities. The seal is what binwalk reports as a DLOB header.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SeamaImage` | `SeamaImage()` |  |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `Magic` | `const uint Magic` |  |
+| `BigEndian` | `bool BigEndian { get; set; }` |  |
+| `Entities` | `List<SeamaEntity> Entities { get; set; }` |  |
+| `IsSeal` | `bool IsSeal { get; }` |  |
+| `SealMeta` | `List<string> SealMeta { get; set; }` | Null for a single entity; the seal's own meta otherwise. |
+| `Trailer` | `byte[] Trailer { get; set; }` |  |
+| `Parse` | `static SeamaImage Parse(ReadOnlySpan<byte> d)` |  |
+| `ToBytes` | `byte[] ToBytes()` | Writes the image as `seama` writes it: meta strings NUL-terminated and padded to four bytes, MD5 recomputed. |
+
 ### Namespace `FileFormat.Tap`
 
 [`TapBlockMover`](#tapblockmover) · [`TapEntry`](#tapentry) · [`TapFormatDescriptor`](#tapformatdescriptor) · [`TapModifier`](#tapmodifier) · [`TapReader`](#tapreader) · [`TapWriter`](#tapwriter)
@@ -1633,6 +1766,71 @@ Implements `IDisposable`.
 | `AddFile` | `void AddFile(string name, byte[] data, byte fileType = 3)` | Queues a file to be written as a header+data block pair. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `Finish` | `void Finish()` | Writes all queued files to the output stream as sequential block pairs. |
+
+### Namespace `FileFormat.Trx`
+
+[`TrxFormatDescriptor`](#trxformatdescriptor) · [`TrxImage`](#trximage)
+
+#### `TrxFormatDescriptor`
+
+Broadcom TRX firmware image (`HDR0`) as a pseudo-archive: `partition_N.bin` per partition (the names binwalk's extractor gives them), `metadata.ini` for the header and CRC check, `trailer.bin` for anything after the declared length.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TrxFormatDescriptor` | `TrxFormatDescriptor()` |  |
+| `FullImage` | `const string FullImage` |  |
+| `TrailerName` | `const string TrailerName` |  |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | A TRX must carry partition data — its length has to exceed the header — so there is no empty image to purge to. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds an image from `partition_0.bin`… (contiguous from 0), an optional `trailer.bin` and the version, flags and alignments of a `metadata.ini`. A single input under any other name is the payload and becomes `partition_0.bin`, as `trx -f` would take it. |
+| `Entries` | `static List<FirmwareEntry> Entries(byte[] data)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `PartitionName` | `static string PartitionName(int index)` |  |
+| `Purge` | `void Purge(Stream archive)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `TrxImage`
+
+A Broadcom TRX firmware image (magic `HDR0`): a little-endian header carrying the total length, a CRC-32 over everything after the CRC field, flags, a version (1 or 2) and three (v1) or four (v2) partition offsets, followed by the partitions — typically loader, kernel, rootfs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TrxImage` | `TrxImage()` |  |
+| `CrcStart` | `const int CrcStart` |  |
+| `Magic` | `const uint Magic` |  |
+| `Alignments` | `List<int> Alignments { get; set; }` | The alignment each partition's start keeps when the image is laid out again. |
+| `ComputedCrc` | `uint ComputedCrc { get; }` |  |
+| `CrcValid` | `bool CrcValid { get; }` |  |
+| `Flags` | `ushort Flags { get; set; }` |  |
+| `HeaderSize` | `int HeaderSize { get; }` |  |
+| `LengthAlignment` | `int LengthAlignment { get; set; }` | What the length is rounded up to: OpenWrt's `trx` and `otrx` round to 4 KiB (the zero fill belongs to the last partition); an existing image keeps the power of two its length has. |
+| `Length` | `uint Length { get; }` |  |
+| `MaxPartitions` | `int MaxPartitions { get; }` |  |
+| `Offsets` | `uint[] Offsets { get; }` |  |
+| `Partitions` | `List<byte[]> Partitions { get; set; }` | Partition contents, in offset order. |
+| `StoredCrc` | `uint StoredCrc { get; }` |  |
+| `Trailer` | `byte[] Trailer { get; set; }` | Bytes after the length the header declares. |
+| `Version` | `ushort Version { get; set; }` |  |
+| `AlignmentOf` | `static int AlignmentOf(uint offset)` | The largest power of two up to 64 KiB dividing `offset`, at least 4. |
+| `HeaderSizeOf` | `static int HeaderSizeOf(int version)` |  |
+| `Parse` | `static TrxImage Parse(ReadOnlySpan<byte> d)` |  |
+| `ToBytes` | `byte[] ToBytes()` | Writes the image: header, then each partition at the next offset its alignment allows, the gaps zero, the length running to the end of the last partition rounded up to `LengthAlignment`, and the CRC computed over bytes 12..length. |
 
 ### Namespace `FileFormat.UImage`
 

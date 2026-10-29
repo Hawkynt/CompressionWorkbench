@@ -349,6 +349,7 @@ format,Nelly,Nellymoser Asao (Flash audio stream),Audio,,.nelly,Y,Y,,
 format,Nes,NES ROM (iNES / NES 2.0),Archive,,.nes,Y,Y,,
 format,NetAssembly,.NET assembly,Archive,,,Y,Y,,
 format,NetCdf,NetCDF (Classic),Archive,,.nc;.cdf,Y,Y,,
+format,NetgearChk,CHK firmware header (NETGEAR),Archive,,.chk,Y,Y,Y,Y
 format,Nib,NIB (Commodore nibble dump),Archive,Y,.nib,Y,Y,Y,Y
 format,Nifti,NIfTI,Archive,,.nii;.nii.gz,Y,Y,,
 format,Nilfs1,NILFS v1,Archive,Y,.nilfs1;.nilfs,Y,Y,Y,Y
@@ -463,6 +464,7 @@ format,Sarc,Nintendo SARC,Archive,,.sarc;.pack;.bars,Y,Y,Y,Y
 format,Sbc,Bluetooth SBC / mSBC,Audio,,.sbc;.msbc,Y,Y,,
 format,Sdat,SDAT (Nintendo DS sound archive),Audio,,.sdat,Y,Y,,
 format,Sds,SDS (MIDI Sample Dump),Audio,,.sds,Y,Y,,
+format,Seama,SEAMA firmware,Archive,,.seama;.dlob,Y,Y,Y,Y
 format,SevenZip,7z,Archive,,.7z,Y,Y,Y,Y
 format,Sf2,SoundFont 2,Audio,,.sf2,Y,Y,,
 format,Sfar,BioWare SFAR,Archive,,.sfar,Y,Y,Y,
@@ -537,6 +539,7 @@ format,TiTxt,TI-TXT (MSP430),Archive,,,Y,Y,Y,Y
 format,Tnef,MS-TNEF (winmail.dat),Archive,,.dat;.tnef,Y,Y,Y,Y
 format,TrDos,TR-DOS,Archive,Y,.trd,Y,Y,Y,Y
 format,Trsdos,TRSDOS / LDOS,Archive,Y,.trsdos;.dmk;.jv1;.jv3,Y,Y,Y,Y
+format,Trx,TRX firmware,Archive,,.trx,Y,Y,Y,Y
 format,Tta,True Audio (TTA),Audio,,.tta,Y,Y,Y,
 format,Ttc,TTC (TrueType collection),Archive,,.ttc,Y,Y,Y,
 format,Ttf,TTF (TrueType font — glyphs),Archive,,.ttf,Y,Y,,
