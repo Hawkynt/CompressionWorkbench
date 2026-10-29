@@ -1078,6 +1078,7 @@ Decompresses data in the LZ4 block format.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `DecompressAfterPrefix` | `static int DecompressAfterPrefix(ReadOnlySpan<byte> source, Span<byte> window, int prefixLength)` | Decompresses a block whose matches may reach back into history: `window` holds `prefixLength` bytes of already-decoded output (the linked-block dictionary of the LZ4 frame format) followed by room for this block. Returns the bytes written after the prefix. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> source, int originalSize)` | Decompresses an LZ4-compressed block. |
 | `Decompress` | `static int Decompress(ReadOnlySpan<byte> source, Span<byte> dest)` | Decompresses into a destination buffer, returning bytes written. |
 
