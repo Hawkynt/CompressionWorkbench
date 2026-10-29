@@ -25789,6 +25789,102 @@ Reads a PyInstaller CArchive — the package that a "onefile" build appends to t
 | `ReadPyzModuleNames` | `static IReadOnlyList<string> ReadPyzModuleNames(ReadOnlySpan<byte> pyz)` | Parses a PYZ blob (`PYZ\0` magic, 4-byte Python magic, u32 BE TOC offset, then a marshalled list of `(name, (typecode, offset, length))` tuples) and returns the module names. |
 | `ReadToc` | `IReadOnlyList<PyInstallerEntry> ReadToc()` | Parses and returns every entry in the table of contents. |
 
+### Namespace `FileFormat.Qm`
+
+[`QmCatalog`](#qmcatalog) · [`QmFormatDescriptor`](#qmformatdescriptor) · [`QmMessage`](#qmmessage) · [`TsDocument`](#tsdocument) · [`TsMessage`](#tsmessage)
+
+#### `QmCatalog`
+
+A compiled Qt translation catalog (`.qm`), the binary form `QTranslator` loads and `lrelease` writes. Reading follows QTranslator's section and record rules; see docs/QM-ON-DISK.md for the layout.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `QmCatalog` | `QmCatalog(string language, IReadOnlyList<string> dependencies, IReadOnlyList<QmMessage> messages, byte[] numerusRules = null, bool hasContextTable = false)` |  |
+| `Dependencies` | `IReadOnlyList<string> Dependencies { get; }` |  |
+| `HasContextTable` | `bool HasContextTable { get; }` | Whether the file carries the context hash table that `lrelease -compress` adds. |
+| `IsStripped` | `bool IsStripped { get; }` | Whether some record omits its source text or comment (an `lrelease -compress` file). |
+| `Language` | `string Language { get; }` |  |
+| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The 16-byte QM magic. |
+| `Messages` | `IReadOnlyList<QmMessage> Messages { get; }` |  |
+| `NumerusRules` | `byte[] NumerusRules { get; }` |  |
+| `HasMagic` | `static bool HasMagic(ReadOnlySpan<byte> data)` |  |
+| `Read` | `static QmCatalog Read(byte[] data)` |  |
+| `Write` | `byte[] Write()` | Writes the catalog the way `lrelease` does in its default mode: records sorted by (context, source, comment) bytes, each carrying comment, source and context, the hash table sorted by (hash, offset). Every message must have context, source and comment set. |
+
+#### `QmFormatDescriptor`
+
+Qt compiled translation catalog (`.qm`), the file `QTranslator` loads. References: `https://doc.qt.io/qt-6/linguist-ts-file-format.html` — the TS source format`docs/QM-ON-DISK.md` — the QM layout and the rules lrelease applies
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `QmFormatDescriptor` | `QmFormatDescriptor()` |  |
+| `EntryName` | `const string EntryName` | The single entry a catalog lists as. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `QmMessage`
+
+One compiled message. Null fields were not stored in the record (see docs/QM-ON-DISK.md).
+
+Implements `IEquatable<QmMessage>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `QmMessage` | `QmMessage(string Context, string SourceText, string Comment, IReadOnlyList<string> Translations)` | One compiled message. Null fields were not stored in the record (see docs/QM-ON-DISK.md). |
+| `Comment` | `string Comment { get; init; }` |  |
+| `Context` | `string Context { get; init; }` |  |
+| `SourceText` | `string SourceText { get; init; }` |  |
+| `Translations` | `IReadOnlyList<string> Translations { get; init; }` | One entry per plural form; a null entry is a null string. |
+
+#### `TsDocument`
+
+Qt Linguist source catalogs (`.ts` XML): parsed for compiling to QM, and written back from a QM file. Only the elements that reach a QM file are kept: context names, source, disambiguation comment, translations and plural forms (length variants joined by U+009C, as Qt does), the translation type, the language and the dependencies.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TsDocument` | `TsDocument(string language, IReadOnlyList<string> dependencies, IReadOnlyList<TsMessage> messages)` |  |
+| `LengthVariantSeparator` | `const char LengthVariantSeparator` | Qt's separator between the length variants of one translation. |
+| `Dependencies` | `IReadOnlyList<string> Dependencies { get; }` |  |
+| `Language` | `string Language { get; }` |  |
+| `Messages` | `IReadOnlyList<TsMessage> Messages { get; }` |  |
+| `Compile` | `QmCatalog Compile()` | Compiles to a QM catalog, applying lrelease's message selection, comment dropping and plural padding. |
+| `FromCatalog` | `static TsDocument FromCatalog(QmCatalog qm)` | A TS document holding a QM catalog's messages, grouped by context in file order. A plural message is one with more than one form, or — for a one-form language — one whose source contains `%n`; trailing null forms are left out because compiling pads them back. |
+| `Parse` | `static TsDocument Parse(byte[] xml)` |  |
+| `ToXml` | `byte[] ToXml()` | Serializes as TS 2.1 XML in Qt Linguist's layout. |
+
+#### `TsMessage`
+
+A Qt Linguist TS message (only what reaches a QM file).
+
+Implements `IEquatable<TsMessage>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TsMessage` | `TsMessage(string Context, string Source, string Comment, IReadOnlyList<string> Translations, bool Numerus, string Type, string Id)` | A Qt Linguist TS message (only what reaches a QM file). |
+| `Comment` | `string Comment { get; init; }` |  |
+| `Context` | `string Context { get; init; }` |  |
+| `Id` | `string Id { get; init; }` |  |
+| `Numerus` | `bool Numerus { get; init; }` |  |
+| `Source` | `string Source { get; init; }` |  |
+| `Stripped` | `bool Stripped { get; init; }` | Set when the QM record this came from did not store its source text. |
+| `Translations` | `IReadOnlyList<string> Translations { get; init; }` |  |
+| `Type` | `string Type { get; init; }` |  |
+
 ### Namespace `FileFormat.Qoa`
 
 [`QoaFormatDescriptor`](#qoaformatdescriptor)
