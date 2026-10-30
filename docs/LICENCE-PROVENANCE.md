@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 22 | |
+| A | 23 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 1 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 10 | |
@@ -90,6 +90,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Vorbis/VorbisCodec.cs` | stb_vorbis 1.22 (structural reference) | public domain / MIT | none needed |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ba2/BethesdaLookup3.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Balz/BalzStream.cs`, `Compression.Core/Entropy/Ppmd/PpmdModelH.cs` | Bob Jenkins lookup3; BALZ max-parser score; Shkarin's PPMd rescale constant | public domain / constants | none needed |
 | `Hawkynt.FileFormats.Audio/Codecs/VENDORED_AUDIO_CODECS.md` | Concentus, .NET Ogg Vorbis Encoder, GroovyCodecs, AmrWbLib (vendored whole) | BSD-3 / MIT / LGPL-3.0 / BSD-3 | `THIRD-PARTY-NOTICES.md` and the vendored `LICENSE.txt` files |
+| `Compression.Core/Transforms/BranchConverter.cs`, `Compression.Core/Transforms/Bcj2Filter.cs` | LZMA SDK 9.20 (Igor Pavlov) `C/Bra.c`, `C/Bra86.c`, `C/BraIA64.c`, `C/Bcj2.c`; the BCJ2 encoder from 7-Zip 9.20 `CPP/7zip/Compress/Bcj2Coder.cpp`; ARM64 / RISC-V restated from the liblzma conversions | public domain; LGPL-2.1-or-later (7-Zip CPP) — taken under LGPL-3.0; 0BSD | `Compression.Core/Transforms/THIRD-PARTY-NOTICE.lzma-sdk.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Aomei/AomeiFormatDescriptor.cs` | this repository's reverse-engineered AOMEI Backupper container layout | own work | none needed |
 
 ## R — not a code port
