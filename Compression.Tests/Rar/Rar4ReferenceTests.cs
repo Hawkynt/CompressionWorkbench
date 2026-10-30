@@ -90,6 +90,26 @@ public class Rar4ReferenceTests {
     }
   }
 
+  [TestCase("rar624-enc-stored.rar")]
+  [TestCase("rar624-enc-lz.rar")]
+  [TestCase("rar624-enc-solid.rar")]
+  [TestCase("rar624-enc-headers.rar")]
+  [Category("Spec")]
+  public void EncryptedVector_ExtractsWithPassword(string name) {
+    using var reader = new RarReader(new MemoryStream(Vector(name)), "secret");
+    Assert.That(reader.Entries, Is.Not.Empty);
+    for (var i = 0; i < reader.Entries.Count; ++i)
+      if (!reader.Entries[i].IsDirectory)
+        Assert.DoesNotThrow(() => reader.Extract(i), $"{name}: {reader.Entries[i].Name}");
+  }
+
+  [Test, Category("Exception")]
+  public void EncryptedVector_WrongPassword_Throws()
+    => Assert.That(() => {
+      using var reader = new RarReader(new MemoryStream(Vector("rar624-enc-lz.rar")), "wrong");
+      reader.Extract(0);
+    }, Throws.InstanceOf<Exception>());
+
   [Test, Category("Exception")]
   public void Decoder_TruncatedData_Throws() {
     var f = Files(Vector("rar624-lz.rar"))[0];
@@ -127,7 +147,7 @@ public class Rar4ReferenceTests {
   }
 }
 
-/// <summary>unrar and bsdtar must read the RAR 4 archives we write.</summary>
+/// <summary>unrar 7 and 7-Zip must read the RAR 4 archives we write, encrypted or not.</summary>
 [TestFixture]
 [Category("ExternalInterop")]
 public class Rar4WriterUnrarInteropTests {
@@ -136,9 +156,16 @@ public class Rar4WriterUnrarInteropTests {
     return FsInteropToolbox.WslHasTool("unrar") ? null : "'unrar' is required (apt install unrar).";
   }
 
-  [TestCase(false)]
-  [TestCase(true)]
-  public void OurArchive_TestsOkAndExtractsIdentically(bool solid) {
+  /// <summary>7-Zip only reads RAR when its RAR codec is installed (Debian: 7zip-rar).</summary>
+  private static bool SevenZipReadsRar()
+    => FsInteropToolbox.WslHasTool("7z") && FsInteropToolbox.RunWsl("7z i | grep -qi rar").ExitCode == 0;
+
+  [TestCase(false, null, RarConstants.Rar4MethodNormal)]
+  [TestCase(true, null, RarConstants.Rar4MethodNormal)]
+  [TestCase(false, "secret", RarConstants.Rar4MethodNormal)]
+  [TestCase(true, "secret", RarConstants.Rar4MethodNormal)]
+  [TestCase(false, "secret", RarConstants.Rar4MethodStore)]
+  public void OurArchive_TestsOkAndExtractsIdentically(bool solid, string? password, byte method) {
     if (Missing() is { } why) Assert.Ignore(why);
     var rnd = new Random(8);
     var files = new Dictionary<string, byte[]> {
@@ -151,13 +178,22 @@ public class Rar4WriterUnrarInteropTests {
     try {
       var archive = Path.Combine(dir, "ours.rar");
       using (var fs = File.Create(archive))
-      using (var writer = new Rar4Writer(fs, method: RarConstants.Rar4MethodNormal, windowBits: 20, solid: solid))
+      using (var writer = new Rar4Writer(fs, method: method, windowBits: 20, solid: solid, password: password))
         foreach (var (name, data) in files) writer.AddFile(name, data);
+      var pass = password == null ? "-p-" : $"-p{password}";
       var outDir = Path.Combine(dir, "out");
-      var r = FsInteropToolbox.RunWsl($"unrar t -idq {FsInteropToolbox.WinToWsl(archive)} && mkdir -p {FsInteropToolbox.WinToWsl(outDir)} && unrar x -idq {FsInteropToolbox.WinToWsl(archive)} {FsInteropToolbox.WinToWsl(outDir)}/");
+      var r = FsInteropToolbox.RunWsl($"unrar t -idq {pass} {FsInteropToolbox.WinToWsl(archive)} && mkdir -p {FsInteropToolbox.WinToWsl(outDir)} && unrar x -idq {pass} {FsInteropToolbox.WinToWsl(archive)} {FsInteropToolbox.WinToWsl(outDir)}/");
       Assert.That(r.ExitCode, Is.EqualTo(0), r.StdOut + r.StdErr);
       foreach (var (name, data) in files)
         Assert.That(File.ReadAllBytes(Path.Combine(outDir, name)), Is.EqualTo(data), name);
+
+      if (!SevenZipReadsRar()) return;
+      var outDir7 = Path.Combine(dir, "out7");
+      var sevenPass = password == null ? "" : $"-p{password}";
+      r = FsInteropToolbox.RunWsl($"7z x -y {sevenPass} -o{FsInteropToolbox.WinToWsl(outDir7)} {FsInteropToolbox.WinToWsl(archive)}");
+      Assert.That(r.ExitCode, Is.EqualTo(0), r.StdOut + r.StdErr);
+      foreach (var (name, data) in files)
+        Assert.That(File.ReadAllBytes(Path.Combine(outDir7, name)), Is.EqualTo(data), "7z: " + name);
     } finally {
       try { Directory.Delete(dir, true); } catch { /* best effort */ }
     }

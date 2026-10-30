@@ -23,6 +23,17 @@ rar $A -m3 -mct- -mcI+ itanium.rar ia64.bin
 rar $A -m3 -mct+ ppmd.rar text.txt
 ```
 
+The encrypted archives use the password `secret`. They were written on 2026-10-30 with
+the same RAR 6.24 build:
+
+```sh
+A="a -ma4 -ep -idq -ts- -psecret"
+rar $A -m0 enc-stored.rar text.txt
+rar $A -m3 -mct- enc-lz.rar text.txt table.bin
+rar $A -m3 -mct- -s enc-solid.rar text.txt x86.bin
+rar a -ma4 -ep -idq -ts- -hpsecret -m3 -mct- enc-headers.rar text.txt
+```
+
 ## `libarchive-*.rar`
 
 From libarchive's test suite (`libarchive/test/`, tag v3.7.7, BSD-2-Clause), decoded from

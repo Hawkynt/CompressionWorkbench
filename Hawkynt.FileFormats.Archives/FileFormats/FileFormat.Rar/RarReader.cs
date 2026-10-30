@@ -32,6 +32,7 @@ public sealed class RarReader : IDisposable {
   private int _lastSolidDictSize;
   private Rar3Decoder? _solidRar3Decoder;
   private Rar2Decoder? _solidRar2Decoder;
+  private readonly Dictionary<string, (byte[] Key, byte[] Iv)> _rar4HeaderKeys = [];
 
   // Recovery record state
   private long _recoveryHeaderOffset; // start of recovery service header
@@ -67,20 +68,9 @@ public sealed class RarReader : IDisposable {
   /// <param name="stream">A seekable stream containing the RAR archive.</param>
   /// <param name="password">The password for encrypted entries, or <see langword="null"/> for unencrypted archives.</param>
   /// <param name="leaveOpen">Whether to leave the stream open when this reader is disposed.</param>
-  public RarReader(Stream stream, string? password, bool leaveOpen = false)
-    : this(stream, leaveOpen) {
+  public RarReader(Stream stream, string? password, bool leaveOpen = false) {
+    // The password is needed while the headers are read: RAR4 -hp archives encrypt them.
     this._password = password;
-  }
-
-  /// <summary>
-  /// Initializes a new <see cref="RarReader"/> from a seekable stream containing a RAR archive.
-  /// </summary>
-  /// <param name="stream">A seekable stream containing the RAR archive.</param>
-  /// <param name="leaveOpen">Whether to leave the stream open when this reader is disposed.</param>
-  /// <exception cref="ArgumentNullException"><paramref name="stream"/> is <see langword="null"/>.</exception>
-  /// <exception cref="ArgumentException">The stream is not seekable.</exception>
-  /// <exception cref="InvalidDataException">The stream does not contain a valid RAR archive.</exception>
-  public RarReader(Stream stream, bool leaveOpen = false) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanSeek)
       throw new ArgumentException("Stream must be seekable.", nameof(stream));
@@ -112,6 +102,17 @@ public sealed class RarReader : IDisposable {
       ReadHeaders();
     else
       ReadRar4Headers();
+  }
+
+  /// <summary>
+  /// Initializes a new <see cref="RarReader"/> from a seekable stream containing a RAR archive.
+  /// </summary>
+  /// <param name="stream">A seekable stream containing the RAR archive.</param>
+  /// <param name="leaveOpen">Whether to leave the stream open when this reader is disposed.</param>
+  /// <exception cref="ArgumentNullException"><paramref name="stream"/> is <see langword="null"/>.</exception>
+  /// <exception cref="ArgumentException">The stream is not seekable.</exception>
+  /// <exception cref="InvalidDataException">The stream does not contain a valid RAR archive.</exception>
+  public RarReader(Stream stream, bool leaveOpen = false) : this(stream, null, leaveOpen) {
   }
 
   /// <summary>
@@ -416,25 +417,27 @@ public sealed class RarReader : IDisposable {
     // The first header is the marker block (type 0x72), already consumed as part of signature.
     // Next is the main archive header (type 0x73).
 
+    var headersEncrypted = false;
     while (this._stream.Position < this._stream.Length) {
-      // Read RAR4 block header: HEAD_CRC(2) + HEAD_TYPE(1) + HEAD_FLAGS(2) + HEAD_SIZE(2)
-      var headerBuf = new byte[7];
-      if (!TryReadExact(this._stream, headerBuf, 0, 7))
+      // RAR4 block header: HEAD_CRC(2) + HEAD_TYPE(1) + HEAD_FLAGS(2) + HEAD_SIZE(2), then the rest of the block header.
+      var block = headersEncrypted ? this.ReadEncryptedRar4Header() : ReadPlainRar4Header(this._stream);
+      if (block == null)
         break;
 
-      var headType = headerBuf[2];
-      var headFlags = BinaryPrimitives.ReadUInt16LittleEndian(headerBuf.AsSpan(3));
-      var headSize = BinaryPrimitives.ReadUInt16LittleEndian(headerBuf.AsSpan(5));
-
-      // Read additional data size if ADD_SIZE flag is set
-      long addSize = 0;
-      if ((headFlags & RarConstants.Rar4FlagAddSize) != 0 && headSize > 7) {
-        // ADD_SIZE is stored as 4 bytes after the basic 7-byte header in some block types
-        // For file headers, it's part of the extended header
-      }
+      var headType = block[2];
+      var headFlags = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(3));
+      var headSize = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(5));
 
       if (headType == RarConstants.Rar4TypeEnd)
         break;
+
+      if (headType == RarConstants.Rar4TypeMain && (headFlags & RarConstants.Rar4MainFlagPassword) != 0) {
+        // Every block after the main header is AES-encrypted under its own salt (rar -hp).
+        if (this._password == null)
+          throw new InvalidOperationException("Encrypted RAR archive requires a password.");
+        headersEncrypted = true;
+        continue;
+      }
 
       if (headType == RarConstants.Rar4TypeFile) {
         // RAR4 file header: after the 7-byte common header:
@@ -442,14 +445,10 @@ public sealed class RarReader : IDisposable {
         // UNP_VER(1) + METHOD(1) + NAME_SIZE(2) + ATTR(4)
         // = 25 more bytes minimum
         var remaining = headSize - 7;
-        if (remaining < 25) {
-          // Skip malformed header
-          this._stream.Position += remaining;
-          continue;
-        }
+        if (remaining < 25)
+          continue; // malformed header
 
-        var fileBuf = new byte[remaining];
-        this._stream.ReadExactly(fileBuf, 0, remaining);
+        var fileBuf = block.AsSpan(7, remaining).ToArray();
 
         var packSize = (long)BinaryPrimitives.ReadUInt32LittleEndian(fileBuf);
         var unpSize = (long)BinaryPrimitives.ReadUInt32LittleEndian(fileBuf.AsSpan(4));
@@ -528,24 +527,51 @@ public sealed class RarReader : IDisposable {
         // Skip past compressed data
         if (packSize > 0)
           this._stream.Position = dataOffset + packSize;
-      } else {
-        // Skip other header types
-        var remaining = headSize - 7;
-
-        // For headers with ADD_SIZE, read the additional data size
-        if ((headFlags & RarConstants.Rar4FlagAddSize) != 0 && remaining >= 4) {
-          var addSizeBuf = new byte[4];
-          this._stream.ReadExactly(addSizeBuf, 0, 4);
-          addSize = BinaryPrimitives.ReadUInt32LittleEndian(addSizeBuf);
-          remaining -= 4;
-        }
-
-        if (remaining > 0)
-          this._stream.Position += remaining;
-        if (addSize > 0)
-          this._stream.Position += addSize;
+      } else if ((headFlags & RarConstants.Rar4FlagAddSize) != 0 && headSize >= 11) {
+        // Other blocks: skip their data area (ADD_SIZE follows the 7-byte common header).
+        this._stream.Position += BinaryPrimitives.ReadUInt32LittleEndian(block.AsSpan(7));
       }
     }
+  }
+
+  /// <summary>One whole RAR4 block header, or null at the end of the stream.</summary>
+  private static byte[]? ReadPlainRar4Header(Stream stream) {
+    var common = new byte[7];
+    if (!TryReadExact(stream, common, 0, 7))
+      return null;
+    var headSize = Math.Max((int)BinaryPrimitives.ReadUInt16LittleEndian(common.AsSpan(5)), 7);
+    var block = new byte[headSize];
+    common.CopyTo(block, 0);
+    if (!TryReadExact(stream, block, 7, headSize - 7))
+      return null;
+    return block;
+  }
+
+  /// <summary>
+  /// A block header of an archive written with encrypted headers: an 8-byte salt, then the
+  /// header AES-128-CBC encrypted (RAR 3.x key derivation), padded to 16 bytes.
+  /// </summary>
+  /// <remarks>
+  /// Hypothesis: RAR's technote does not describe this layout. It is confirmed only by the RAR
+  /// 6.24 -hp archive among the test vectors.
+  /// </remarks>
+  private byte[]? ReadEncryptedRar4Header() {
+    var salt = new byte[8];
+    var first = new byte[16];
+    if (!TryReadExact(this._stream, salt, 0, 8) || !TryReadExact(this._stream, first, 0, 16))
+      return null;
+    if (!this._rar4HeaderKeys.TryGetValue(Convert.ToHexString(salt), out var keyIv)) {
+      keyIv = KeyDerivation.Rar3DeriveKey(this._password!, salt);
+      this._rar4HeaderKeys[Convert.ToHexString(salt)] = keyIv;
+    }
+    var head = AesCryptor.DecryptCbcNoPaddingAny(first, keyIv.Key, keyIv.Iv);
+    var headSize = Math.Max((int)BinaryPrimitives.ReadUInt16LittleEndian(head.AsSpan(5)), 7);
+    var padded = (headSize + 15) & ~15;
+    var cipher = new byte[padded];
+    first.CopyTo(cipher, 0);
+    if (!TryReadExact(this._stream, cipher, 16, padded - 16))
+      return null;
+    return AesCryptor.DecryptCbcNoPaddingAny(cipher, keyIv.Key, keyIv.Iv).AsSpan(0, headSize).ToArray();
   }
 
   private static bool TryReadExact(Stream stream, byte[] buffer, int offset, int count) {
