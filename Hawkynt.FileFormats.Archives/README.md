@@ -376,6 +376,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [Apache Parquet](https://en.wikipedia.org/wiki/Apache_Parquet) | `Parquet` | `.parquet` | R | ✅ | — |  | [GitHub](https://github.com/apache/parquet-format) |
 | [PLY (Stanford polygon)](https://en.wikipedia.org/wiki/PLY_(file_format)) | `Ply` | `.ply` | R | ✅ | — |  | [paulbourke.net](http://paulbourke.net/dataformats/ply/) |
 | [SQLite 3 Database](https://en.wikipedia.org/wiki/SQLite) | `Sqlite` | `.sqlite` `.sqlite3` `.db3` | R | ✅ | — |  | [sqlite.org](https://www.sqlite.org/fileformat2.html) |
+| [SQLite Archive](https://sqlite.org/sqlar.html) | `Sqlar` | `.sqlar` | R/W | ✅ | — | The `sqlar` table of a SQLite database (zlib or stored rows); SQLite reads what we write and edits, and we read what the sqlite3 shell writes; databases with other tables refuse edits | [sqlite.org](https://sqlite.org/sqlar.html) |
 | [STL (stereolithography)](https://en.wikipedia.org/wiki/STL_(file_format)) | `Stl` | `.stl` | R | ✅ | — |  | [fabbers.com](https://www.fabbers.com/tech/STL_Format) |
 | [Autodesk 3DS](https://en.wikipedia.org/wiki/.3ds) | `Tds` | `.3ds` | R | ✅ | — |  | [paulbourke.net](http://paulbourke.net/dataformats/3ds/) |
 | [TFRecord](https://en.wikipedia.org/wiki/TensorFlow) | `TfRecord` | `.tfrecord` `.tfrecords` | WORM | ✅ | defrag · wipe | Entries are record_NNNNN.bin | [tensorflow.org](https://www.tensorflow.org/tutorials/load_data/tfrecord) |
