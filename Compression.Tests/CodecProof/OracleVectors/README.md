@@ -26,5 +26,7 @@ Most of our blocks put a 4-byte little-endian uncompressed length in front of th
 | emmanuel-marty/salvador (1.4.2) | `1662b625a8dcd6f3f7e3491c88840611776533f5` | zlib / CC0 |
 | emmanuel-marty/apultra (1.4.8, aPLib-compatible) | `8f340057d7402c10da3d9c76c599f9ab83b8a22d` | zlib / CC0 |
 | UCL 1.03 (Markus Oberhumer), NRV2B/D/E with a 32-bit LE bit buffer | release tarball | GPL-2.0 (oracle only; no code taken) |
+| clzip 1.14 (Antonio Diaz Diaz), lzip format | release tarball | GPL-2.0 (oracle only) |
+| rnc_propack 1.8 (lab313ru), RNC ProPack method 1 | `lab313ru/rnc_propack_source` master | own terms (oracle only) |
 
-The Python oracles were brotli 1.2.1, lz4 4.4.5, zstandard 0.25.0, cramjam 2.14.0 (snappy raw format), ncompress 1.0.2, inflate64 1.0.4 and lzallright 0.3.0 (LZO1X-1). CPython's zlib, bz2 and lzma were used too.
+The Python oracles were brotli 1.2.1, lz4 4.4.5, zstandard 0.25.0, cramjam 2.14.0 (snappy raw format), ncompress 1.0.2, inflate64 1.0.4 and lzallright 0.3.0 (LZO1X-1). CPython's zlib, bz2 and lzma were used too, and for the second batch ndspy 4.2.0 (`lz10`), oead 1.3.0 (`yaz0`) and packbits 0.6.
