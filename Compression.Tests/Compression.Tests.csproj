@@ -12,6 +12,10 @@
     <EmbeddedResource Include="IaArc/ReferenceVectors/*.arc;IaArc/ReferenceVectors/*.arc.gz;IaArc/ReferenceVectors/warcio-listing.txt">
       <LogicalName>IaArcVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- mkfs.bfs volume filled by the Linux bfs driver; see Svr4Bfs/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Svr4Bfs/ReferenceVectors/*.gz;Svr4Bfs/ReferenceVectors/*.manifest">
+      <LogicalName>Svr4BfsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- The image tests build FileFormat.Core.RawImage / FileFormat.Png values and
          hand them to the FileFormat.PngCrushAdapters surface in Compression.Lib, which
          keeps the package's compile assets private. Referenced under the `images` alias
