@@ -12362,6 +12362,35 @@ Builds a Nintendo Switch `.bwav` from one or more mono PCM16 channels, DSP-ADPCM
 | `BwavWriter` | `BwavWriter()` |  |
 | `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate)` | Writes a non-looping DSP-ADPCM BWAV from the given mono channels. |
 
+### Namespace `FileFormat.C64Sfx`
+
+[`C64SfxFormatDescriptor`](#c64sfxformatdescriptor)
+
+#### `C64SfxFormatDescriptor`
+
+Commodore 64/128 self-extracting LHA archive (Chris Smeets' SFX): a BASIC/machine-code extractor of 3711 or 3721 bytes followed by an ordinary LHA archive (-lh1- on the C64). Reading skips the stub, up to two bytes before the first "-lh?-" marker, and reads the rest as LHA. Writing would mean redistributing Smeets' extractor, so the format is read-only. References: `http://unusedino.de/ec64/technical/formats/sfx.html` — Peter Schepers' SFX.TXT (rev 1.3)`http://fileformats.archiveteam.org/wiki/SFX` — format overview and samples
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `C64SfxFormatDescriptor` | `C64SfxFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Payload` | `static MemoryStream Payload(Stream stream)` | Returns the embedded LHA archive (everything from two bytes before the first -lh?- marker). |
+
 ### Namespace `FileFormat.Cab`
 
 [`CabCompressionType`](#cabcompressiontype) · [`CabConstants`](#cabconstants) · [`CabEntry`](#cabentry) · [`CabFormatDescriptor`](#cabformatdescriptor) · [`CabLayoutMap`](#cablayoutmap) · [`CabReader`](#cabreader) · [`CabWriter`](#cabwriter)

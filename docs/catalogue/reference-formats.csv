@@ -83,7 +83,7 @@ PIM,pim,archive,,,,,,,Y,1,,,,,,MISSING,,
 Quadruple D,qda,archive,,,,,,,Y,1,,,,,,MISSING,,
 RK / WinRK,rk,archive,,,,,,,Y,1,,,,,,MISSING,,
 Self Dissolving ARChive,sda,archive,,,,,,,Y,1,,,,,,MISSING,,
-C64/C128 self-extracting archive,sfx,archive,,,,,,,Y,1,,,,,,MISSING,,
+C64/C128 self-extracting archive,sfx,archive,,,,,,,Y,1,http://unusedino.de/ec64/technical/formats/sfx.html,C64Sfx,Y,,,PARTIAL,,"read-only: the payload is LHA -lh1- (unar-verified); creating one would mean redistributing Chris Smeets' extractor stub"
 UltraCompressor II,uc;uc0;uc2;ucn;ur2;ue2,archive,,,,,,,Y,1,,,,,,MISSING,,
 PerfectCompress,uca,archive,,,,,,,Y,1,,,,,,MISSING,,
 YZ1,yz1,archive,,,,,,,Y,1,,,,,,MISSING,,

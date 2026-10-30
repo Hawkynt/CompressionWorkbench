@@ -201,6 +201,10 @@
     <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
       <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Real C64/C128 SFX archives from zimmers.net; see C64Sfx/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="C64Sfx\ReferenceVectors\*.sfx">
+      <LogicalName>C64SfxVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar itself (2.4.24 to 2.8.6); see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
