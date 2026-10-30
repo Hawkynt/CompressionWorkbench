@@ -459,7 +459,7 @@ LogFS,logfs,filesystem,,,,D,,,Y,2,,,,,,MISSING,,
 NVFS (Palm),palm,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 WAFL (NetApp),netapp,filesystem,,,,,,,Y,1,,Wafl,Y,,,OK,,
 emFile (SEGGER),segger,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-SPIFFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+SPIFFS,spiffs,filesystem,,,,,,,Y,1,https://github.com/pellepl/spiffs,Spiffs,Y,Y,,OK,mkspiffs / spiffsgen.py,"read (geometry detected from the per-block magic and index tables) and created fresh (WORM) for the ESP-IDF/Arduino ESP32, Arduino ESP8266 and mkspiffs generic profiles; in-place edits are not implemented; big-endian images are not read"
 TFAT,tfat,filesystem,,,,,,,Y,1,,TFat,Y,Y,Y,OK,,
 TrueFFS,m-systems,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 UBI / UBIFS,ubi;ubifs,filesystem,,,,R,,,Y,2,,Ubifs,Y,Y,Y,OK,,
