@@ -60,8 +60,8 @@ ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpa
 PAQ (paq6/7/8 family),paq6;paq7;paq8;paq8l,archive,,,,,,,Y,1,https://mattmahoney.net/dc/paq.html,Paq8,Y,Y,,PARTIAL,,a single PAQ8 variant (.paq8l); the other PAQ versions are mutually incompatible
 KGB Archiver,kgb;kge,archive,,,,,R,,RW,2,,,,,,MISSING,,
 PEA (PeaZip),pea,archive,,,,,R,fmt/1095,Y,3,,,,,,MISSING,,https://peazip.github.io/pea-file-format.html
-DGCA,dgc,archive,,,,,R,,Y,2,,,,,,MISSING,,
-GCA,gca,archive,,,,,,,Y,1,,,,,,MISSING,,
+DGCA,dgc,archive,,,,,R,,Y,2,,,,,,MISSING,,"refused: closed format (Shin-ichi Tsuruta's DGCA); no published specification and no licensable implementation; Universal Extractor only drives the closed dgcac.exe"
+GCA,gca,archive,,,,,,,Y,1,,,,,,MISSING,,"refused: closed format (Shin-ichi Tsuruta's GCA); no published specification and no licensable implementation"
 BGA,bza;gza,archive,,,,,R,,,1,,,,,,MISSING,,
 DAR (Disk ARchive),dar,archive,,,,,,,RW,1,http://dar.linux.free.fr/doc/,Dar,Y,Y,,OK,,
 Electron asar,asar,archive,,,,,R,,,1,https://github.com/electron/asar,Asar,Y,Y,,OK,,
@@ -70,15 +70,15 @@ Split file (.001),001;002,archive,R,,R,,R,,,3,,SplitFile,Y,Y,,OK,,
 Apple Archive (.aar),aar,archive,,,,,,,Y,1,,,,,,MISSING,,https://developer.apple.com/documentation/applearchive
 Mozilla ARchive (MAR),mar;mac,archive,,,,,,fmt/1483,Y,2,https://wiki.mozilla.org/Software_Update:MAR,Mar,Y,Y,Y,OK,,
 SeqBox,sbx,archive,,,,,,,Y,1,,,,,,MISSING,,https://github.com/MarcoPon/SeqBox
-AFA,afa,archive,,,,,,,Y,1,,,,,,MISSING,,
+AFA,afa,archive,,,,,,,Y,1,,,,,,MISSING,,"refused: closed format; no published specification, implementation or sample with provenance"
 B1,b1,archive,,,,,,,Y,1,,,,,,MISSING,,
-B6Z,b6z,archive,,,,,,,Y,1,,,,,,MISSING,,
+B6Z,b6z,archive,,,,,,,Y,1,,,,,,MISSING,,"refused: closed format; no published specification, implementation or sample with provenance"
 Scifer,ba;sen,archive,,,,,,,Y,1,,,,,,MISSING,,
 BlakHole,bh,archive,,,,,,,Y,1,,,,,,MISSING,,
-Compressia,car,archive,,,,,,,Y,1,,,,,,MISSING,,
-Compact File Set,cfs,archive,,,,,,,Y,1,,,,,,MISSING,,
+Compressia,car,archive,,,,,,,Y,1,,,,,,MISSING,,"refused: closed format (Compressia archiver); no published specification, implementation or sample with provenance"
+Compact File Set,cfs,archive,,,,,,,Y,1,,,,,,MISSING,,"refused: closed format; no published specification, implementation or sample with provenance"
 WinHKI,hki,archive,,,,,,,Y,1,,,,,,MISSING,,
-ICE (archiver),ice,archive,,,,,,,Y,1,,,,,,MISSING,,
+ICE (archiver),ice,archive,,,,,,,Y,1,,,,,,MISSING,,"refused: closed format (ICEOWS by Raphael Mounier, signature 49 43 01 02); no published specification, implementation or sample with provenance. LHice .ice files are plain LHA archives (Lzh)"
 PIM,pim,archive,,,,,,,Y,1,,,,,,MISSING,,
 Quadruple D,qda,archive,,,,,,,Y,1,,,,,,MISSING,,
 RK / WinRK,rk,archive,,,,,,,Y,1,,,,,,MISSING,,
@@ -303,7 +303,7 @@ Zoom (Amiga),,disk-image,,,R,,,,,1,,,,,,MISSING,,
 xDisk (Amiga),xdsk,disk-image,,,R,,,,,1,,,,,,MISSING,,"our earlier descriptor used an invented layout and was removed; the real format packs every cylinder with XPK, no decoder here implements XPK, and unar leaves libxad's client for it out"
 AMPK,ampk,archive,,,R,,,,,1,,Ampk,Y,Y,Y,OK,,
 LhF,lhf,archive,,,R,,,,,1,,LhF,Y,Y,Y,OK,,
-MDC (Amiga),mdc,archive,,,R,,,,,1,,,,,,MISSING,,
+MDC (Amiga),mdc,archive,,,R,,,,,1,,,,,,MISSING,,"not implemented: every cylinder is an XPK-packed chunk (libxad MDC.c, LGPL), so reading needs XPK sub-libraries, and no MDC sample with provenance was found to prove one"
 MXM-SimpleArc,,archive,,,R,,,,,1,,,,,,MISSING,,
 UEFI firmware volume / capsule,fv;fd;cap;bios;uefi;uefif,firmware,R,,,R,,,,2,https://uefi.org/specifications,UefiFv,Y,Y,Y,OK,,
 Android Verified Boot (vbmeta),img;avb,firmware,R,,,,,,,1,https://android.googlesource.com/platform/external/avb/+/main/README.md,AndroidVbmeta,Y,Y,Y,OK,,hash + RSA signature verified on read; unsigned (NONE) images written byte-identical to avbtool; signed images read-only
