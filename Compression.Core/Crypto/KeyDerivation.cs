@@ -96,32 +96,50 @@ public static class KeyDerivation {
 
   /// <summary>
   /// Derives a 16-byte AES-128 key and 16-byte IV for RAR3/4 decryption.
-  /// RAR3 iterates SHA-1 262144 times over (salt + password_utf16le + counter).
+  /// RAR3 iterates SHA-1 262144 times over (password_utf16le + salt + 3-byte counter); the IV takes
+  /// byte 19 of every 16384th intermediate digest and the key is the first four digest words with
+  /// their bytes reversed.
   /// </summary>
+  /// <remarks>
+  /// Converted from 7-Zip's <c>CPP/7zip/Crypto/RarAes.cpp</c> (<c>CDecoder::CalcKey</c>, Igor Pavlov,
+  /// LGPL-2.1-or-later), including the quirk of RAR 3.x's own SHA-1, which overwrote the password
+  /// buffer with expanded message words whenever one update spanned more than a whole 64-byte
+  /// block (passwords longer than 28 characters with salt). At most 127 password characters count.
+  /// </remarks>
   /// <param name="password">The password string.</param>
-  /// <param name="salt">The 8-byte salt from the file header.</param>
+  /// <param name="salt">The 8-byte salt from the file header, or empty when the header carries none.</param>
   /// <returns>A tuple of (16-byte key, 16-byte IV).</returns>
   public static (byte[] Key, byte[] Iv) Rar3DeriveKey(string password, ReadOnlySpan<byte> salt) {
     ArgumentNullException.ThrowIfNull(password);
+    const int maxPasswordChars = 127;
+    const int blockSize = 64;
 
-    var passwordBytes = Encoding.Unicode.GetBytes(password); // UTF-16LE
-    var input = new byte[salt.Length + passwordBytes.Length];
-    salt.CopyTo(input);
-    passwordBytes.CopyTo(input.AsSpan(salt.Length));
+    var passwordBytes = Encoding.Unicode.GetBytes(password.Length > maxPasswordChars ? password[..maxPasswordChars] : password);
+    var buffer = new byte[passwordBytes.Length + salt.Length + blockSize];
+    passwordBytes.CopyTo(buffer, 0);
+    salt.CopyTo(buffer.AsSpan(passwordBytes.Length));
+    var rawSize = passwordBytes.Length + salt.Length;
 
     const int iterations = 0x40000; // 262144
     var iv = new byte[16];
-
     var sha1 = new Checksums.Sha1();
-
+    var pos = 0u;
     for (var i = 0; i < iterations; ++i) {
-      sha1.Update(input);
+      sha1.Update(buffer.AsSpan(0, rawSize));
+      var endPos = (pos + (uint)rawSize) & ~(uint)(blockSize - 1);
+      if (endPos > pos + blockSize) {
+        var curPos = (pos & ~(uint)(blockSize - 1)) + blockSize;
+        do {
+          ExpandSha1Block(buffer.AsSpan((int)(curPos - pos), blockSize));
+          curPos += blockSize;
+        } while (curPos != endPos);
+      }
+      pos += (uint)rawSize;
 
-      // Append 3-byte little-endian iteration counter
       ReadOnlySpan<byte> counter = [(byte)i, (byte)(i >> 8), (byte)(i >> 16)];
       sha1.Update(counter);
+      pos += 3;
 
-      // Every 0x4000 iterations, clone state and finalize to get IV byte
       if (i % 0x4000 == 0) {
         var clone = sha1.Clone();
         clone.Finish();
@@ -130,9 +148,26 @@ public static class KeyDerivation {
     }
 
     sha1.Finish();
-    var key = sha1.Hash[..16];
-
+    var digest = sha1.Hash;
+    var key = new byte[16];
+    for (var w = 0; w < 4; ++w)
+      for (var j = 0; j < 4; ++j)
+        key[w * 4 + j] = digest[w * 4 + 3 - j];
     return (key, iv);
+  }
+
+  /// <summary>
+  /// RAR 3.x's SHA-1 expanded the message schedule in place: the block's 16 words are replaced by
+  /// words 64..79 of the expansion, stored little-endian.
+  /// </summary>
+  private static void ExpandSha1Block(Span<byte> block) {
+    Span<uint> w = stackalloc uint[80];
+    for (var i = 0; i < 16; ++i)
+      w[i] = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(block[(i * 4)..]);
+    for (var i = 16; i < 80; ++i)
+      w[i] = BitOperations.RotateLeft(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
+    for (var i = 0; i < 16; ++i)
+      System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(block[(i * 4)..], w[64 + i]);
   }
 
 }
