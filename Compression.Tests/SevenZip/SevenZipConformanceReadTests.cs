@@ -217,6 +217,56 @@ public sealed class SevenZipConformanceReadTests {
   }
 
   [Test]
+  [Explicit("Writes a 4.5 GiB file and a 7z of it; run on demand.")]
+  [Category("Performance")]
+  public void Given_7ZipArchiveOfAFileLargerThan4GiB_When_Extracted_Then_TheCrcMatchesWithBoundedMemory() {
+    var source = Path.Combine(this._root, "large");
+    Directory.CreateDirectory(source);
+    var big = Path.Combine(source, "big.bin");
+    const long size = (9L << 29) + 12345; // 4.5 GiB and change
+    using (var file = File.Create(big)) {
+      var chunk = new byte[1 << 20];
+      for (var i = 0; i < chunk.Length; i += 4096)
+        chunk[i] = (byte)i;
+      for (long written = 0; written < size; written += chunk.Length)
+        file.Write(chunk, 0, (int)Math.Min(chunk.Length, size - written));
+    }
+    var archive = Path.Combine(this._root, "large.7z");
+    SevenZipOracle.RunOk(source, ["a", "-y", "-mx1", "-mmt=4", archive, "big.bin"]);
+    File.Delete(big);
+
+    var before = GC.GetTotalMemory(forceFullCollection: true);
+    var peak = 0L;
+    using (var stream = File.OpenRead(archive))
+    using (var reader = new SevenZipReader(stream)) {
+      Assert.That(reader.Entries[0].Size, Is.EqualTo(size));
+      var counting = new CountingStream(() => peak = Math.Max(peak, GC.GetTotalMemory(false)));
+      reader.Extract(0, counting);
+      Assert.That(counting.Count, Is.EqualTo(size));
+    }
+    Assert.That(peak - before, Is.LessThan(512L << 20), "extraction must not hold the file in memory");
+  }
+
+  /// <summary>Counts what is written and samples memory now and then.</summary>
+  private sealed class CountingStream(Action sample) : Stream {
+    public long Count { get; private set; }
+    public override void Write(byte[] buffer, int offset, int count) {
+      if ((this.Count >> 26) != ((this.Count + count) >> 26))
+        sample();
+      this.Count += count;
+    }
+    public override bool CanRead => false;
+    public override bool CanSeek => false;
+    public override bool CanWrite => true;
+    public override long Length => this.Count;
+    public override long Position { get => this.Count; set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+  }
+
+  [Test]
   public void Given_7ZipSfx_When_Read_Then_TheArchiveBehindTheStubExtracts() {
     var module = Path.Combine(Path.GetDirectoryName(SevenZipOracle.Require())!, "7zCon.sfx");
     if (!File.Exists(module))

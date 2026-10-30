@@ -18,10 +18,11 @@ namespace FileFormat.SevenZip;
 /// or <c>Finish(maxThreads, maxBlockSize)</c> for parallel multi-block.
 /// </para>
 /// <para>
-/// Every folder is written the way 7-Zip itself lays it out: one output per coder, the unpack
-/// sizes in coder order, the packed streams listed explicitly when a folder has several. With a
-/// password every packed stream goes through its own AES-256 coder (one key per archive, a fresh
-/// IV per coder); BCJ2 folders carry the four BCJ2 streams of 7-Zip's coder.
+/// Every folder is written the way 7-Zip 26 lays it out: coders from the packed side to the
+/// output, one output per coder, the unpack sizes in coder order, the packed streams listed
+/// explicitly when a folder has several. With a password every packed stream goes through its
+/// own AES-256 coder (one key per archive, a fresh IV per coder); BCJ2 folders carry the four
+/// BCJ2 streams of 7-Zip's coder.
 /// </para>
 /// </remarks>
 public sealed class SevenZipWriter : IDisposable {
@@ -278,100 +279,89 @@ public sealed class SevenZipWriter : IDisposable {
     foreach (var entry in emptyEntries)
       fileInfos.Add(MakeFileInfo(entry));
 
+    // Attributes for all or for none, as 7-Zip writes them: libarchive misreads a partly defined
+    // attribute vector. A file that has none gets FILE_ATTRIBUTE_ARCHIVE, 7-Zip's plain file.
+    if (fileInfos.Exists(static f => f.Attributes.HasValue))
+      foreach (var info in fileInfos)
+        info.Attributes ??= 0x20u;
+
     var packInfo = new SevenZipPackInfo { PackPos = 0, PackSizes = [.. packSizes], PackCrcs = new uint?[packSizes.Count] };
     var subStreams = new SevenZipSubStreamsInfo { NumUnpackStreams = [.. numUnpack], UnpackSizes = [.. unpackSizes], Digests = [.. digests] };
     this.FinalizeHeader(packInfo, folders, subStreams, fileInfos);
   }
 
   /// <summary>Filters, compresses and (with a password) encrypts one block. Thread-safe.</summary>
+  /// <remarks>
+  /// Coders are listed from the packed side to the output, each bound to the one before — the
+  /// order 7-Zip 26 writes (<c>[7zAES,] compressor[, filter]</c>, bind pairs sorted by the coder
+  /// that feeds them). Any order is valid 7z; libarchive reads filter chains only in this one.
+  /// </remarks>
   private EncodedBlock EncodeBlock(PlannedBlock plan) {
     var solid = ConcatenateBlock(plan.Files);
-    var folder = new SevenZipFolder();
-    var packStreams = new List<byte[]>();
-
     if (plan.Filter == SevenZipFilter.Bcj2)
-      this.BuildBcj2Folder(solid, plan, folder, packStreams);
-    else {
-      // Coder 0 is the folder's output: the filter when there is one, else the compressor.
-      var data = solid;
-      if (plan.Filter != SevenZipFilter.None) {
-        data = this.ApplyFilter(solid, plan.Filter, out var filterCoder);
-        folder.Coders.Add(filterCoder);
-      }
-      var compressed = this.Compress(data, plan.Codec, plan.DictionarySize, out var compressor);
-      var compressorIndex = folder.Coders.Count;
-      folder.Coders.Add(compressor);
-      if (compressorIndex > 0)
-        folder.BindPairs.Add((0, compressorIndex)); // the filter's input is the compressor's output
-      var sizes = new List<long>();
-      if (compressorIndex > 0)
-        sizes.Add(solid.Length);
-      sizes.Add(data.Length);
-      folder.UnpackSizes = [.. sizes];
-      this.AddPackedStream(folder, InputOf(folder, compressorIndex), compressed, packStreams);
-    }
+      return this.EncodeBcj2Block(solid, plan);
 
-    folder.UnpackCrc = null;
-    return new EncodedBlock([.. packStreams], folder, plan);
-  }
+    var folder = new SevenZipFolder();
+    var sizes = new List<long>();
+    var data = solid;
+    SevenZipCoder? filterCoder = null;
+    if (plan.Filter != SevenZipFilter.None)
+      data = this.ApplyFilter(solid, plan.Filter, out filterCoder);
+    var packed = this.Compress(data, plan.Codec, plan.DictionarySize, out var compressor);
 
-  /// <summary>The in-stream index of input 0 of coder <paramref name="coder"/>.</summary>
-  private static int InputOf(SevenZipFolder folder, int coder) {
-    var index = 0;
-    for (var i = 0; i < coder; ++i)
-      index += folder.Coders[i].NumInStreams;
-    return index;
-  }
-
-  /// <summary>
-  /// Makes <paramref name="data"/> the packed stream feeding in-stream <paramref name="inIndex"/>,
-  /// through an AES coder of its own when the archive is encrypted.
-  /// </summary>
-  private void AddPackedStream(SevenZipFolder folder, int inIndex, byte[] data, List<byte[]> packStreams) {
     if (this._password != null) {
-      var encrypted = this.EncryptAes(data, out var aes);
-      var aesIndex = folder.Coders.Count;
+      var plain = packed;
+      packed = this.EncryptAes(plain, out var aes);
       folder.Coders.Add(aes);
-      folder.BindPairs.Add((inIndex, aesIndex));
-      folder.UnpackSizes = [.. folder.UnpackSizes, data.Length];
-      inIndex = InputOf(folder, aesIndex);
-      data = encrypted;
+      sizes.Add(plain.Length);
     }
-    folder.PackedStreams = [.. folder.PackedStreams, inIndex];
-    packStreams.Add(data);
+    folder.Coders.Add(compressor);
+    sizes.Add(data.Length);
+    if (filterCoder != null) {
+      folder.Coders.Add(filterCoder);
+      sizes.Add(solid.Length);
+    }
+    for (var i = 1; i < folder.Coders.Count; ++i)
+      folder.BindPairs.Add((i, i - 1)); // coder i's input is coder i-1's output
+    folder.UnpackSizes = [.. sizes];
+    folder.PackedStreams = [0];
+    return new EncodedBlock([packed], folder, plan);
   }
 
   /// <summary>
-  /// The BCJ2 graph 7-Zip writes: coder 0 is BCJ2 with four inputs; the main stream goes through
-  /// the block's compressor, the call and jump streams through LZMA, the range-coded stream is
-  /// stored as it is.
+  /// The BCJ2 folder exactly as 7-Zip 26 lays it out: LZMA for the jump and call streams, the
+  /// block's compressor for the main stream, BCJ2 last with inputs main, call, jump, range coder;
+  /// packed streams in the order main, range coder, call, jump. With a password one AES coder per
+  /// packed stream comes first (jump, call, range coder, main), as 7-Zip writes them.
   /// </summary>
-  private void BuildBcj2Folder(byte[] solid, PlannedBlock plan, SevenZipFolder folder, List<byte[]> packStreams) {
+  private EncodedBlock EncodeBcj2Block(byte[] solid, PlannedBlock plan) {
     var (main, call, jump, rangeCoded) = Bcj2Filter.Encode(solid);
-    folder.Coders.Add(new SevenZipCoder { CodecId = SevenZipConstants.CodecBcj2.ToArray(), NumInStreams = 4, NumOutStreams = 1 });
-    var sizes = new List<long> { solid.Length };
+    var packedMain = this.Compress(main, plan.Codec, plan.DictionarySize, out var mainCoder);
+    var packedCall = this.Compress(call, SevenZipCodec.Lzma, 1 << 20, out var callCoder);
+    var packedJump = this.Compress(jump, SevenZipCodec.Lzma, 1 << 20, out var jumpCoder);
+    var bcj2 = new SevenZipCoder { CodecId = SevenZipConstants.CodecBcj2.ToArray(), NumInStreams = 4, NumOutStreams = 1 };
+    var folder = new SevenZipFolder();
 
-    var compressedMain = this.Compress(main, plan.Codec, plan.DictionarySize, out var mainCoder);
-    folder.Coders.Add(mainCoder);
-    folder.BindPairs.Add((0, 1));
-    sizes.Add(main.Length);
+    if (this._password == null) {
+      // Coders: 0 LZMA (jump), 1 LZMA (call), 2 main compressor, 3 BCJ2 (in-streams 3..6).
+      folder.Coders.AddRange([jumpCoder, callCoder, mainCoder, bcj2]);
+      folder.BindPairs.AddRange([(5, 0), (4, 1), (3, 2)]);
+      folder.PackedStreams = [2, 6, 1, 0];
+      folder.UnpackSizes = [jump.Length, call.Length, main.Length, solid.Length];
+      return new EncodedBlock([packedMain, rangeCoded, packedCall, packedJump], folder, plan);
+    }
 
-    var compressedCall = this.Compress(call, SevenZipCodec.Lzma, 1 << 20, out var callCoder);
-    folder.Coders.Add(callCoder);
-    folder.BindPairs.Add((1, 2));
-    sizes.Add(call.Length);
-
-    var compressedJump = this.Compress(jump, SevenZipCodec.Lzma, 1 << 20, out var jumpCoder);
-    folder.Coders.Add(jumpCoder);
-    folder.BindPairs.Add((2, 3));
-    sizes.Add(jump.Length);
-    folder.UnpackSizes = [.. sizes];
-
-    // In-streams: BCJ2 0..3, main compressor 4, call LZMA 5, jump LZMA 6.
-    this.AddPackedStream(folder, 4, compressedMain, packStreams);
-    this.AddPackedStream(folder, 5, compressedCall, packStreams);
-    this.AddPackedStream(folder, 6, compressedJump, packStreams);
-    this.AddPackedStream(folder, 3, rangeCoded, packStreams);
+    // Coders: 0-3 AES (jump, call, range coder, main), 4 LZMA (jump), 5 LZMA (call),
+    // 6 main compressor, 7 BCJ2 (in-streams 7..10).
+    var encJump = this.EncryptAes(packedJump, out var aesJump);
+    var encCall = this.EncryptAes(packedCall, out var aesCall);
+    var encRange = this.EncryptAes(rangeCoded, out var aesRange);
+    var encMain = this.EncryptAes(packedMain, out var aesMain);
+    folder.Coders.AddRange([aesJump, aesCall, aesRange, aesMain, jumpCoder, callCoder, mainCoder, bcj2]);
+    folder.BindPairs.AddRange([(4, 0), (5, 1), (10, 2), (6, 3), (9, 4), (8, 5), (7, 6)]);
+    folder.PackedStreams = [3, 2, 1, 0];
+    folder.UnpackSizes = [packedJump.Length, packedCall.Length, rangeCoded.Length, packedMain.Length, jump.Length, call.Length, main.Length, solid.Length];
+    return new EncodedBlock([encMain, encRange, encCall, encJump], folder, plan);
   }
 
   private void FinalizeHeader(SevenZipPackInfo packInfo, List<SevenZipFolder> folders,
@@ -383,14 +373,14 @@ public sealed class SevenZipWriter : IDisposable {
     if (this._encryptHeaders) {
       this.EnsureKey();
       // The header is packed with LZMA and encrypted, the folder 7-Zip's -mhe writes:
-      // coder 0 LZMA (the output), coder 1 AES feeding it, the header's CRC on the folder.
+      // coder 0 AES, coder 1 LZMA fed by it (the output), the header's CRC on the folder.
       var compressed = this.Compress(headerData, SevenZipCodec.Lzma, 1 << 20, out var lzmaCoder);
       var encrypted = this.EncryptAes(compressed, out var aesCoder);
-      var headerFolder = new SevenZipFolder { UnpackCrc = Crc32.Compute(headerData) };
-      headerFolder.Coders.Add(lzmaCoder);
+      var headerFolder = new SevenZipFolder { UnpackCrc = Crc32.Compute(headerData), PackedStreams = [0] };
       headerFolder.Coders.Add(aesCoder);
-      headerFolder.BindPairs.Add((0, 1));
-      headerFolder.UnpackSizes = [headerData.Length, compressed.Length];
+      headerFolder.Coders.Add(lzmaCoder);
+      headerFolder.BindPairs.Add((1, 0));
+      headerFolder.UnpackSizes = [compressed.Length, headerData.Length];
 
       var packedDataPos = this._stream.Position - SevenZipConstants.SignatureHeaderSize;
       this._stream.Write(encrypted);
@@ -420,7 +410,9 @@ public sealed class SevenZipWriter : IDisposable {
     LastWriteTime = entry.LastWriteTime,
     CreationTime = entry.CreationTime,
     LastAccessTime = entry.LastAccessTime,
-    Attributes = entry.Attributes,
+    // A directory always carries FILE_ATTRIBUTE_DIRECTORY, as 7-Zip writes it: readers such as
+    // py7zr tell directories from empty files by that bit, not by the empty-stream vectors.
+    Attributes = entry.IsDirectory ? (entry.Attributes ?? 0) | 0x10u : entry.Attributes,
   };
 
   /// <summary>
