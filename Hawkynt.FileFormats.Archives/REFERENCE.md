@@ -11191,6 +11191,73 @@ A ZXAYEMUL (`.ay`) tune player. It builds a 64 KB Z80 RAM image, loads the chose
 | `SongCount` | `int SongCount { get; }` | The number of songs the file declares. |
 | `Render` | `short[] Render(double seconds, int outputRate = 44100)` | Renders `seconds` of interleaved stereo 16-bit PCM at 44.1 kHz. |
 
+### Namespace `FileFormat.B1`
+
+[`B1Entry`](#b1entry) · [`B1FormatDescriptor`](#b1formatdescriptor) · [`B1Reader`](#b1reader) · [`B1Writer`](#b1writer)
+
+#### `B1Entry`
+
+A file or folder of a B1 archive.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `B1Entry` | `B1Entry()` |  |
+| `FileName` | `string FileName { get; init; }` | Gets the full path, '/'-separated. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets whether this is a folder. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | Gets the modification time (UTC), when recorded. |
+| `Size` | `long Size { get; init; }` | Gets the file size (0 for folders). |
+
+#### `B1FormatDescriptor`
+
+B1 archive (b1.org; the B1 Free Archiver's format): a record stream of catalog and complete records in plain or LZMA blocks, optionally AES-256-GCM encrypted. Single-volume archives only. References: `https://github.com/b1-pack/b1-pack` — b1-pack (Apache-2.0), converted for the reader and writer, and the oracle`http://dev.b1.org/standard/archive-format.html` — B1 Pack Format, schema 0.4 (archived)
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `B1FormatDescriptor` | `B1FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by path) files in an unencrypted archive; other members keep names, folders and times. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes members (a folder with everything below it) from an unencrypted archive. |
+
+#### `B1Reader`
+
+Reads a single-volume B1 archive (b1-pack's format, schema up to 0.4): plain and LZMA blocks, AES-256-GCM encryption. The whole archive stream is decoded once; records are then read through the record pointers exactly as b1-pack follows them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `B1Reader` | `B1Reader(Stream input, string password = null)` | Opens a B1 volume. |
+| `Entries` | `IReadOnlyList<B1Entry> Entries { get; }` | Gets the files and folders, in catalog order. |
+| `IsCompressed` | `bool IsCompressed { get; }` | Gets whether any block is LZMA-compressed. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether the archive is encrypted. |
+| `Method` | `string Method { get; }` | Gets the head's compression method label ("m:"), when present. |
+| `Extract` | `byte[] Extract(B1Entry entry)` | Returns a file's content (empty for folders). |
+
+#### `B1Writer`
+
+Writes a single-volume B1 archive. The archive stream holds every complete record (folders before their contents) followed by one catalog group pointing back at them and the null record. It is stored as one LZMA chunk (with end marker) split into blocks of at most 1 MiB, or as plain blocks. Every record pointer addresses the first block, with the record's offset in the archive stream; b1-pack's reader skips across block boundaries to reach it. With a password, every block is AES-256-GCM encrypted as b1-pack does.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `B1Writer` | `B1Writer()` |  |
+| `AddFile` | `void AddFile(string path, byte[] data, DateTime? modifiedUtc = null)` | Adds a file; missing parent folders are created. |
+| `AddFolder` | `void AddFolder(string path, DateTime? modifiedUtc = null)` | Adds a folder. |
+| `ToArray` | `byte[] ToArray(bool compress = true, string password = null)` | Returns the archive. |
+
 ### Namespace `FileFormat.Ba2`
 
 [`Ba2Entry`](#ba2entry) · [`Ba2FormatDescriptor`](#ba2formatdescriptor) · [`Ba2Reader`](#ba2reader) · [`Ba2Writer`](#ba2writer) · [`BethesdaLookup3`](#bethesdalookup3)
