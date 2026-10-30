@@ -202,6 +202,7 @@ format,GameMaker,GameMaker data file,Archive,,.win;.unx;.ios,Y,Y,Y,
 format,Gar,Nintendo 3DS GAR,Archive,,.gar,Y,Y,Y,Y
 format,Gb,Game Boy / GBC ROM,Archive,,.gb;.gbc,Y,Y,,
 format,Gbs,Game Boy Sound,Audio,,.gbs,Y,Y,,
+format,Gdi,Dreamcast GDI,Archive,,.gdi,Y,Y,,
 format,Gem,Ruby Gem,Archive,,.gem,Y,Y,Y,
 format,Gemdos,GEMDOS (Atari ST),Archive,Y,.st;.stx;.dim,Y,Y,Y,Y
 format,Gfs1,"GFS (Sistina/Red Hat, original)",Archive,Y,.gfs;.gfs1,Y,Y,Y,Y
