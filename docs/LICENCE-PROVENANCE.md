@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 21 | |
+| A | 23 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 1 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 10 | |
@@ -80,6 +80,8 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/DiskDoublerReader.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/DiskDoublerAdDecoder.cs` | XADMaster `XADDiskDoublerParser.m` and `XADDiskDoublerADnHandle.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Compression.Core/Dictionary/Lzh/Lh2Decoder.cs`, `Compression.Core/Dictionary/Lzh/Lh3Decoder.cs`, `Compression.Core/Dictionary/Lzh/LhaLegacyBitReader.cs` | XADMaster `XADLZHOldHandles.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Compression.Core/Dictionary/Lzh/Lh1Tree.cs`, `Compression.Core/Dictionary/Lzh/Lh1Decoder.cs`, `Compression.Core/Dictionary/Lzh/LzsDecoder.cs`, `Compression.Core/Dictionary/Lzh/Lz5Decoder.cs`, `Compression.Core/Dictionary/Lzh/Pm1Decoder.cs`, `Compression.Core/Dictionary/Lzh/Pm2Decoder.cs`, `Compression.Core/Dictionary/Lzh/PmaHistory.cs`, `Compression.Core/Dictionary/Lzh/LhaBitInput.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Lzh/LhaHeaderParser.cs` | lhasa (Simon Howard), revision `75ed83559f23e9538e0045c62f53f77ab03d03d6` | ISC | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.lhasa.txt`; `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Lzh/THIRD-PARTY-NOTICE.lhasa.txt` |
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.InnoSetup/` | innoextract 1.10-dev (Daniel Scharrer), master as of 2026-10-19; layouts 6.4.2 to 7.0.0.3 from Inno Setup's own `Shared.Struct.pas`, `Setup.MainFunc.pas`, `Compression.Base.pas`, tags `is-6_4_2` through `is-7_1_0` | zlib (innoextract); Inno Setup License | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.InnoSetup/THIRD-PARTY-NOTICE.InnoSetup.txt` |
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Nsis/` | NSIS `Source/exehead/fileform.h`, `fileform.c`, `util.c`, `Source/bzip2/decompress.c` (master as of 2026-10-19); 7-Zip `CPP/7zip/Archive/Nsis/NsisIn.cpp`, `NsisDecode.cpp` | zlib/libpng (NSIS); LGPL-2.1-or-later (7-Zip) | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Nsis/THIRD-PARTY-NOTICE.NSIS.txt` |
 | `Compression.Core/Streams/Lzfse/` | Apple lzfse reference | BSD-3-Clause | `THIRD-PARTY-NOTICE.lzfse.txt`; `LzfseFseDecoder.cs` also carries the header inline |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Nellymoser/NellymoserCodec.cs`, `Hawkynt.FileFormats.Audio/Codecs/Codec.Nellymoser/NellymoserTables.cs` | FFmpeg `nellymoserdec.c`, `nellymoser.c` | MIT | `THIRD-PARTY-NOTICES.md` § Nellymoser |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Alac/` | Apple ALAC reference | Apache-2.0 | `THIRD-PARTY-NOTICES.md` § ALAC |

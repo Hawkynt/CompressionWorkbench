@@ -516,6 +516,10 @@ public static partial class FormatDetector {
       // exehead itself only looks there), so a large installer keeps it far from the tail.
       if (HasNsisFirstHeader(fs)) return Format.Nsis;
 
+      // Inno Setup: the setup loader's offset table (at 0x30 or in RCDATA #11111) points at the
+      // setup-0 version tag, wherever in the file that is.
+      if (isPe && FileFormat.InnoSetup.InnoSetupReader.IsInnoSetup(fs)) return Format.InnoSetup;
+
       // Other installer markers can live anywhere in the file, so scan the whole file when it
       // is small and the tail otherwise — independent of the MZ check, so a stub-less
       // installer image still re-detects as its own format.
@@ -526,7 +530,6 @@ public static partial class FormatDetector {
         var tail = new byte[scanLen];
         var bytesRead = fs.Read(tail, 0, tail.Length);
         var tailSpan = tail.AsSpan(0, bytesRead);
-        if (ContainsBytes(tailSpan, "Inno Setup"u8)) return Format.InnoSetup;
         // PyInstaller "onefile" build: the CArchive MEI cookie sits near EOF,
         // after the PE image (and before any appended Authenticode signature).
         if (ContainsBytes(tailSpan, PyInstallerCookie)) return Format.PyInstaller;
