@@ -201,6 +201,10 @@
     <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
       <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Apple Archives macOS aa wrote, and ours that aa verified; see AppleArchive/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="AppleArchive\ReferenceVectors\*.aar">
+      <LogicalName>AppleArchiveVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar itself (2.4.24 to 2.8.6); see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
