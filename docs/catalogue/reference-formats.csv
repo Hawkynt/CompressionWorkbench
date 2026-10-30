@@ -285,7 +285,7 @@ SafeGuard encrypted virtual disk,hdr;vol,disk-image,,,,,,fmt/887,,1,,,,,,MISSING
 DMS (Disk Masher),dms,disk-image,,,R,,,,,1,https://github.com/MacPaw/XADMaster/blob/master/libxad/clients/DMS.c,Dms,Y,Y,,OK,,"all modes decoded (libxad conversion); Medium/Heavy2 proven on Aminet samples against xdms, Quick/Deep/Heavy1 guarded by the track checksum; writer emits stored/RLE tracks xdms accepts"
 G64 (Commodore GCR),g64;g41;g71,disk-image,,,,,,fmt/821,,1,,G64,Y,Y,Y,OK,,
 Magic Shadow Archiver (MSA),msa,disk-image,,,,,,fmt/1472,,1,,Msa,Y,Y,Y,OK,,
-Pasti (STX),stx,disk-image,,,,,,fmt/1904,,1,,,,,,MISSING,,
+Pasti (STX),stx,disk-image,,,,,,fmt/1904,,1,http://pasti.fxatari.com,Pasti,Y,,,OK,,"read-only: sector IDs, FDC status, timing, fuzzy masks, track images; disk.st only for clean standard disks; no free tool writes Pasti, so no writer"
 HxC Floppy Emulator (HFE),hfe,disk-image,,,,,,fmt/2031;fmt/2038,,1,,Hfe,Y,,,READ-ONLY-BUT-SOURCES-WRITE,HxC Floppy Emulator tool,
 HxC stream image,hfe,disk-image,,,,,,fmt/2039,,1,https://hxc2001.com/floppy_drive_emulator/,StreamHfe,Y,Y,Y,OK,,"magic-detected (the .hfe extension belongs to the bit-cell HFE); LZ4 pulse streams read and written, rebuilds and track edits decoded by hxcfe to the expected sectors (docs/STREAMHFE-ON-DISK.md)"
 A2R flux image,a2r,disk-image,,,,,,fmt/2057;fmt/2058,,1,https://applesaucefdc.com/a2r/,A2r,Y,Y,Y,OK,,A2R2 and A2R3 chunks and captures read and written; Greaseweazle decodes our A2R3 rebuilds and capture edits to the expected sectors and a2rchery rewrites our A2R2 byte for byte
