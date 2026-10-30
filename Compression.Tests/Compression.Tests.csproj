@@ -122,6 +122,10 @@
     <EmbeddedResource Include="BuildingBlocks\LzfVectors\*.lzf">
       <LogicalName>LzfVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Streams third-party encoders wrote for the codec proof ledger; see CodecProof/OracleVectors/README.md. -->
+    <EmbeddedResource Include="CodecProof\OracleVectors\*.bin;CodecProof\OracleVectors\manifest.tsv">
+      <LogicalName>OracleVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="StructuredPseudoArchives\ReferenceVectors\*"
                       Exclude="StructuredPseudoArchives\ReferenceVectors\*.py;StructuredPseudoArchives\ReferenceVectors\*.pl;StructuredPseudoArchives\ReferenceVectors\*.ps1;StructuredPseudoArchives\ReferenceVectors\README.md">
       <LogicalName>ReferenceVectors.%(Filename)%(Extension)</LogicalName>
