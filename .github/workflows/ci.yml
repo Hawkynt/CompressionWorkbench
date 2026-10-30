@@ -341,6 +341,22 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Dar.DarExternalConformanceTests" \
             --logger "trx;LogFileName=dar-286-oracle-tests.trx"
 
+      # Hard gate: MAME floptool loads the complete Union Demo (the sample the Pasti authors
+      # publish, hash-pinned) and its ST writer recovers the standard track 0 sectors, which must be
+      # the bytes our reader takes from the Pasti records.
+      - name: Pasti oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_FLOPTOOL: "1"
+        run: |
+          sudo apt-get install -y mame-tools
+          curl -sfL -o "$RUNNER_TEMP/UnionDemo.zip" http://pasti.fxatari.com/downloads/UnionDemo.zip
+          echo "c6dd827ad17f1b6076eafcc246e09913511c0a532f1beec4ace6ce59352af388  $RUNNER_TEMP/UnionDemo.zip" | sha256sum -c -
+          unzip -o -q "$RUNNER_TEMP/UnionDemo.zip" -d "$RUNNER_TEMP"
+          CWB_UNIONDEMO="$RUNNER_TEMP/UnionDemo.stx" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Pasti.PastiExternalConformanceTests" \
+            --logger "trx;LogFileName=pasti-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the
