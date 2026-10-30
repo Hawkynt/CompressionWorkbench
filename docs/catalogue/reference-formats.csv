@@ -10,8 +10,9 @@ Comic Book Archive,cbz;cbr;cb7;cbt;cba,archive,,,,,,fmt/1462,,1,https://en.wikip
 Chrome extension (CRX),crx,package,,,,,,,Y,1,https://en.wikipedia.org/wiki/Google_Chrome#Extensions,Crx,Y,Y,,OK,,
 MSIX / APPX,msix;appx;msixbundle;appxbundle;emsix;emsixbundle,package,,,,,,,Y,1,https://learn.microsoft.com/windows/msix/overview,Appx;Msix,Y,Y,Y,OK,,
 7z,7z;s7z;001;exe,archive,RW,RW,R,R,R,fmt/484,RW,7,https://www.7-zip.org/7z.html,SevenZip,Y,Y,Y,PARTIAL,,external header references (kAdditionalStreamsInfo) unsupported; no known writer emits them (SevenZipHeaderCodec.cs)
-RAR (1.5-4.x),rar;r00;part1.rar,archive,R,R,R,R,R,fmt/411;fmt/613;x-fmt/264,RW,7,https://www.rarlab.com/technote.htm,Rar,Y,Y,Y,OK,,
-RAR5,rar,archive,R,R,R,,,fmt/411;fmt/613;x-fmt/264,RW,5,https://www.rarlab.com/technote.htm,Rar,Y,Y,Y,OK,,
+RAR (1.5-4.x),rar;r00;part1.rar,archive,R,R,R,R,R,fmt/411;fmt/613;x-fmt/264,RW,7,https://www.rarlab.com/technote.htm,Rar,Y,Y,Y,OK,,"Archives from DOS RAR 1.55-3.93 (DOSBox) and rar 6.24 -ma4 extract byte-exact: methods, solid, volumes in both namings, SFX, -p, -hp, Unicode names, extended times, NTFS streams, comments (Rar/Conformance). We write RAR 1.5 (stored) and RAR 2.9 archives with volumes and AES; unrar 7.12, rar 7.12, 7-Zip and DOS RAR 3.93 test and extract them; DOS RAR 1.55-2.50 accept the RAR 1.5 target. Recovery records are read past, not written"
+RAR5,rar,archive,R,R,R,,,fmt/411;fmt/613;x-fmt/264,RW,5,https://www.rarlab.com/technote.htm,Rar,Y,Y,Y,OK,,"rar 7.12 archives extract byte-exact (all methods, solid groups, dictionaries to 4 GB, filters, -p, -hp, BLAKE2sp, links, file copies, -ver, volumes incl. encrypted and with .rev); libarchive's RAR 5 suite agrees with unrar. We write stored/compressed, solid, AES-256 data and headers, and volume sets that unrar, rar and 7-Zip extract byte-exact; >4 GiB files stream. RAR 7 algorithm version 1 (dictionaries over 4 GB) is refused: no reference stream; recovery records are not written"
+RAR 1.3/1.4 (RE~^),rar,archive,,,,,,,Y,1,,Rar,Y,,,OK,,"Read only, from RAR 1.40's own TECHNOTE.DOC: DOS RAR 1.40 archives (methods, solid, -p, volumes, SFX) extract with their 16-bit checksums verified"
 tar (ustar/pax/GNU/v7),tar;ustar;pax;ctar;tbz;tgz;txz,archive,RW,RW,R,R,R,x-fmt/265,RW,7,https://pubs.opengroup.org/onlinepubs/9799919799/utilities/pax.html,Tar,Y,Y,Y,OK,,
 tar + compression (tar.gz/.bz2/.xz/.zst/.lz/.lz4/.br),tgz;tar.gz;tbz2;tar.bz2;txz;tar.xz;tar.zst;tlz;tar.lz;tar.lz4;tar.br;tar.z,archive,,,,,,,Y,1,https://www.gnu.org/software/tar/manual/,TarGz;TarBz2;TarXz;TarZst;TarLzip;TarLz4;TarBr;TarZ;TarLzma;TarLzo,Y,Y,,OK,,
 Slackware package,tgz;txz,package,,,,,,,Y,1,https://www.slackware.com/,TarGz;TarXz,Y,Y,,OK,,
@@ -92,7 +93,7 @@ WinMount,mou,archive,,,,,,,Y,1,,,,,,MISSING,,
 BagIt,,archive,,,,,,,Y,1,,,,,,MISSING,,https://www.rfc-editor.org/rfc/rfc8493
 PHP archive (PHAR),phar,package,,,,,R,,Y,2,,,,,,MISSING,,https://www.php.net/manual/en/phar.fileformat.php
 Parchive (PAR/PAR2),par;par2;par.par2,other,,,,,,,Y,1,https://parchive.github.io/,Par2,Y,,,READ-ONLY-BUT-SOURCES-WRITE,par2cmdline,
-WinRAR recovery volume,rev,other,,,,,,,Y,1,,,,,,MISSING,,
+WinRAR recovery volume,rev,other,,,,,,,Y,1,,,,,,MISSING,,"Volume sets read with their .rev files beside them; the .rev files themselves are not read or rebuilt (their format is documented only in unrar's source)"
 dvdisaster ECC file,ecc,other,,,,,,,Y,1,,,,,,MISSING,,
 Error-correcting SeqBox,ecsbx,other,,,,,,,Y,1,,,,,,MISSING,,
 lziprecover FEC file,fec,other,,,,,,,Y,1,,,,,,MISSING,,
@@ -145,9 +146,9 @@ Quantum,quantum,codec,R,,R,,,,,2,,bb:BB_Quantum,Y,Y,,OK,,
 XPRESS (Huffman),xpress,codec,R,,,,,,,1,https://learn.microsoft.com/openspecs/windows_protocols/ms-xca/,bb:BB_Xpress,Y,Y,,OK,,
 LZFSE (method),lzfse,codec,R,,,,,,,1,,bb:BB_Lzfse,Y,Y,,OK,,
 RAR 1.5 method,rar1,codec,R,,R,,,,,2,,Rar,Y,Y,Y,OK,,
-RAR 2.x method,rar2,codec,R,,R,,,,,2,docs/RAR20-ON-DISK.md,Rar,Y,Y,Y,OK,,"WinRAR 2.90 archives decode to their CRC-32s. Audio blocks are implemented from the spec, but no vector is known to use them. Read only; writing uses the 2.9 method"
+RAR 2.x method,rar2,codec,R,,R,,,,,2,,Rar,Y,Y,Y,OK,,"XADMaster conversion (XADRAR20Handle.m); WinRAR 2.90 archives decode to their CRC-32s. Read only; writing uses the 2.9 method"
 "RAR 3.x method (incl. PPMd, VM filters)",rar3,codec,R,,R,,,,,2,,bb:BB_Rar3,Y,Y,,OK,,"LZ, PPMd var.H and filters decode RAR 6.24 and libarchive archives; unrar 7.00 tests and extracts what we write (LZ only)"
-RAR 5 method,rar5,codec,R,,R,,,,,2,,bb:BB_Rar,Y,Y,,OK,,
+RAR 5 method,rar5,codec,R,,R,,,,,2,,bb:BB_Rar,Y,Y,,OK,,"Decoder converted from libarchive v3.8.10 (BSD-2); encoder written to that bitstream; unrar 7.12 and 7-Zip extract what it writes"
 RAR audio / VM filters,,codec,,,R,,,,,1,,Rar,Y,Y,Y,OK,,"The six standard RarVM programs are recognised by CRC-32 and length, as unrar does. E8/E8E9, delta, RGB and audio decode RAR 6.24 and libarchive archives to their CRCs; IA-64 is implemented but no vector exercises it. A general RarVM is refused: unrar 7.x runs no other programs either (rarvm.cpp)"
 LZH methods (lh1-lh7),lh5;lh6;lh7;lzh,codec,R,,R,,,,,2,,bb:BB_Lzh,Y,Y,,OK,,
 LZW,lzw,codec,,,R,,,,,1,,bb:BB_Lzw,Y,Y,,OK,,
@@ -199,8 +200,9 @@ WinZip AES,wzaes,encryption,RW,,R,,,,,2,https://www.winzip.com/en/support/aes-en
 ZipCrypto (traditional PKWARE),zipcrypto,encryption,RW,,R,,,,,2,,Zip,Y,Y,Y,OK,,
 PKWARE Strong Encryption,zipstrong,encryption,R,,,,,,,1,,,,,,MISSING,,
 RAR 3.x AES-128,rar3aes,encryption,R,,,,,,,1,,Rar,Y,Y,Y,OK,,
-RAR5 AES-256,rar5aes,encryption,R,,,,,,,1,,Rar,Y,Y,Y,OK,,
-RAR 2.0 encryption,rar20,encryption,R,,,,,,,1,https://github.com/ip7z/7zip/blob/main/CPP/7zip/Crypto/Rar20Crypto.cpp,Rar,Y,Y,Y,OK,,"decrypted (unpack versions 20-28, checked on WinRAR 2.90 archives); writing uses AES; RAR 1.5 encryption refused"
+RAR5 AES-256,rar5aes,encryption,R,,,,,,,1,,Rar,Y,Y,Y,OK,,"PBKDF2-HMAC-SHA256 key, password check value and checksum tweak (7-Zip Rar5Aes.cpp, LGPL); wrong passwords are detected before any data; -hp both directions"
+RAR 2.0 encryption,rar20,encryption,R,,,,,,,1,https://github.com/ip7z/7zip/blob/main/CPP/7zip/Crypto/Rar20Crypto.cpp,Rar,Y,Y,Y,OK,,"decrypted (unpack versions 20-28, checked on WinRAR 2.90 and DOS RAR 2.00/2.50 archives); writing uses AES"
+RAR 1.3/1.5 encryption,rar15,encryption,,,R,,,,,1,https://github.com/MacPaw/XADMaster,Rar,Y,,,OK,,"Read: XADMaster conversion of both keystreams; DOS RAR 1.40 and 1.55 -p archives decrypt to their checksums"
 RC4,rc4,encryption,,,R,,,,,1,,,,,,MISSING,,
 uuencode,uu;uue,encoding,,RW,,,,fmt/1102,,2,https://pubs.opengroup.org/onlinepubs/9799919799/utilities/uuencode.html,UuEncoding,Y,Y,,OK,,
 Base64,b64;base64,encoding,R,W,,,,,,2,https://www.rfc-editor.org/rfc/rfc4648,B64Encoding,Y,Y,,OK,,
