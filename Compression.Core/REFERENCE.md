@@ -3535,7 +3535,7 @@ Implements `IBuildingBlock`.
 
 #### `ImplodeDecoder`
 
-Decodes ZIP Implode (method 6) compressed data.
+Decodes ZIP Implode (method 6): LZ77 over a 4 or 8 KB window with Shannon-Fano coded literals (optional), lengths and the high distance bits.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3544,7 +3544,7 @@ Decodes ZIP Implode (method 6) compressed data.
 
 #### `ImplodeEncoder`
 
-Encodes data using the ZIP Implode (method 6) algorithm.
+Encodes data with ZIP Implode (method 6), in the stream layout PKZIP 1.x reads: optional literal tree, length tree and distance tree as run-length coded code lengths, then flag bit, literal or (low distance bits, distance code, length code, extra length byte) per item.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3568,7 +3568,7 @@ Implements `IBuildingBlock`.
 
 #### `ReduceDecoder`
 
-Decodes ZIP Reduce (methods 2-5) compressed data.
+Decodes ZIP Reduce (methods 2-5, compression factor 1-4): a byte stream coded through per-predecessor "follower sets", carrying LZ77 back-references behind the escape byte 144.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3577,7 +3577,7 @@ Decodes ZIP Reduce (methods 2-5) compressed data.
 
 #### `ReduceEncoder`
 
-Encodes data using the ZIP Reduce (methods 2-5) algorithm.
+Encodes data with ZIP Reduce (methods 2-5): LZ77 back-references escaped by byte 144 inside a byte stream, which is then coded through per-predecessor follower sets.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3601,7 +3601,7 @@ Implements `IBuildingBlock`.
 
 #### `ShrinkDecoder`
 
-Decodes ZIP Shrink (method 1) compressed data.
+Decodes ZIP Shrink (method 1): LZW with 9- to 13-bit codes, where control code 256 followed by 1 widens the codes and followed by 2 partially clears the table (frees every code that is not a prefix of another).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3610,7 +3610,7 @@ Decodes ZIP Shrink (method 1) compressed data.
 
 #### `ShrinkEncoder`
 
-Encodes data using the ZIP Shrink (method 1) algorithm.
+Encodes data with ZIP Shrink (method 1), the way PKZIP 1.x does: LZW with codes widened from 9 to 13 bits on demand (control code 256, 1) and a partial clear (256, 2) once all 8192 codes are used.
 
 | Member | Signature | Summary |
 | --- | --- | --- |

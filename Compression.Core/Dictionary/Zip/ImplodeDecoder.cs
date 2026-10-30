@@ -1,14 +1,14 @@
 namespace Compression.Core.Dictionary.Zip;
 
 /// <summary>
-/// Decodes ZIP Implode (method 6) compressed data.
+/// Decodes ZIP Implode (method 6): LZ77 over a 4 or 8 KB window with Shannon-Fano coded literals
+/// (optional), lengths and the high distance bits.
 /// </summary>
 /// <remarks>
-/// Implode uses LZ77 + Shannon-Fano trees (actually reversed canonical Huffman).
-/// 2 or 3 trees: distance tree, length tree, and optional literal tree.
-/// The flag bits in the general-purpose bit field control:
-/// - Bit 1: 8KB dictionary (1) or 4KB dictionary (0)
-/// - Bit 2: 3 trees with literal tree (1) or 2 trees (0)
+/// Converted from hwexplode in hwzip 2.4's implode.c (Hans Wennborg, public domain), see
+/// THIRD-PARTY-NOTICE.hwzip.txt. Each tree arrives as run-length coded code lengths; the code is the
+/// canonical code for those lengths with every bit inverted, sent first bit first. A back-reference
+/// that reaches before the start of the data yields zero bytes, as PKZIP's decoder does.
 /// </remarks>
 public static class ImplodeDecoder {
   /// <summary>
@@ -16,185 +16,166 @@ public static class ImplodeDecoder {
   /// </summary>
   /// <param name="compressed">The compressed data.</param>
   /// <param name="originalSize">The expected uncompressed size.</param>
-  /// <param name="hasLiteralTree">Whether a literal tree is present (bit 2 of GP flags).</param>
-  /// <param name="is8kDictionary">Whether an 8KB dictionary is used (bit 1 of GP flags).</param>
+  /// <param name="hasLiteralTree">General-purpose bit 2: literals are Shannon-Fano coded.</param>
+  /// <param name="is8kDictionary">General-purpose bit 1: the window is 8 KB rather than 4 KB.</param>
   /// <returns>The decompressed data.</returns>
-  public static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize, bool hasLiteralTree, bool is8kDictionary)
-    => Decode(compressed.ToArray(), originalSize, hasLiteralTree, is8kDictionary);
+  public static byte[] Decode(byte[] compressed, int originalSize, bool hasLiteralTree, bool is8kDictionary)
+    => Decode(compressed.AsSpan(), originalSize, hasLiteralTree, is8kDictionary);
 
   /// <summary>
   /// Decompresses ZIP Implode data.
   /// </summary>
   /// <param name="compressed">The compressed data.</param>
   /// <param name="originalSize">The expected uncompressed size.</param>
-  /// <param name="hasLiteralTree">Whether a literal tree is present (bit 2 of GP flags).</param>
-  /// <param name="is8kDictionary">Whether an 8KB dictionary is used (bit 1 of GP flags).</param>
+  /// <param name="hasLiteralTree">General-purpose bit 2: literals are Shannon-Fano coded.</param>
+  /// <param name="is8kDictionary">General-purpose bit 1: the window is 8 KB rather than 4 KB.</param>
   /// <returns>The decompressed data.</returns>
-  public static byte[] Decode(byte[] compressed, int originalSize, bool hasLiteralTree, bool is8kDictionary) {
-    var bitPos = 0L;
-    var distanceBits = is8kDictionary ? 7 : 6;
-    var minMatchLen = hasLiteralTree ? 3 : 2;
+  /// <exception cref="InvalidDataException">The data is not a valid Implode stream of that size.</exception>
+  public static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize, bool hasLiteralTree, bool is8kDictionary) {
+    ArgumentOutOfRangeException.ThrowIfNegative(originalSize);
+    var dst = new byte[originalSize];
+    var reader = new ZipLegacyBitReader(compressed);
 
-    // Read Shannon-Fano trees
-    int[]? literalTree = null;
-    if (hasLiteralTree)
-      literalTree = ReadSfTree(compressed, ref bitPos, 256);
+    var literalCode = hasLiteralTree ? ReadTree(ref reader, 256) : null;
+    var lengthCode = ReadTree(ref reader, 64);
+    var distanceCode = ReadTree(ref reader, 64);
 
-    var lengthTree = ReadSfTree(compressed, ref bitPos, 64);
-    var distanceTree = ReadSfTree(compressed, ref bitPos, 64);
-
-    var output = new byte[originalSize];
-    var outPos = 0;
-
-    while (outPos < originalSize) {
-      var flag = ReadBit(compressed, ref bitPos);
-
-      if (flag == 1) {
-        // Literal byte
-        byte b;
-        if (hasLiteralTree && literalTree != null) {
-          b = (byte)DecodeSymbol(compressed, ref bitPos, literalTree);
+    var minLength = hasLiteralTree ? 3 : 2;
+    var lowDistanceBits = is8kDictionary ? 7 : 6;
+    var pos = 0;
+    while (pos < originalSize) {
+      var bits = reader.Bits();
+      if ((bits & 1) == 1) {
+        bits >>= 1;
+        int literal, used;
+        if (literalCode != null) {
+          literal = literalCode.Decode(bits, out used);
+        } else {
+          literal = (int)(bits & 0xFF);
+          used = 8;
         }
-        else {
-          b = (byte)ReadBitsReversed(compressed, ref bitPos, 8);
-        }
-        output[outPos++] = b;
+
+        if (!reader.Advance(1 + used))
+          throw new InvalidDataException("Implode data ended early.");
+
+        dst[pos++] = (byte)literal;
+        continue;
       }
-      else {
-        // Length-distance pair
-        var distLow = ReadBitsReversed(compressed, ref bitPos, distanceBits);
-        var distHigh = DecodeSymbol(compressed, ref bitPos, distanceTree);
-        var distance = (distHigh << distanceBits) | distLow;
 
-        var lenCode = DecodeSymbol(compressed, ref bitPos, lengthTree);
-        var length = lenCode + minMatchLen;
+      var usedTotal = 1;
+      bits >>= 1;
+      var distance = (int)ZipLegacyBitReader.Low(bits, lowDistanceBits);
+      bits >>= lowDistanceBits;
+      usedTotal += lowDistanceBits;
 
-        if (lenCode == 63) {
-          // Extended length
-          var extra = ReadBitsReversed(compressed, ref bitPos, 8);
-          length += extra;
-        }
+      var high = distanceCode.Decode(bits, out var usedDistance);
+      bits >>= usedDistance;
+      usedTotal += usedDistance;
+      distance = (distance | high << lowDistanceBits) + 1;
 
-        var srcPos = outPos - distance - 1;
-        for (var i = 0; i < length && outPos < originalSize; ++i) {
-          if (srcPos + i >= 0 && srcPos + i < outPos)
-            output[outPos] = output[srcPos + i];
-          else
-            output[outPos] = 0;
-          ++outPos;
+      var lengthSymbol = lengthCode.Decode(bits, out var usedLength);
+      bits >>= usedLength;
+      usedTotal += usedLength;
+      var length = lengthSymbol + minLength;
+      if (lengthSymbol == 63) {
+        length += (int)(bits & 0xFF);
+        usedTotal += 8;
+      }
+
+      if (!reader.Advance(usedTotal))
+        throw new InvalidDataException("Implode data ended early.");
+      if (length > originalSize - pos)
+        throw new InvalidDataException("Implode back-reference runs past the expected size.");
+
+      for (var i = 0; i < length; ++i, ++pos)
+        dst[pos] = distance > pos ? (byte)0 : dst[pos - distance];
+    }
+
+    return dst;
+  }
+
+  private static ImplodeCode ReadTree(ref ZipLegacyBitReader reader, int symbols) {
+    var byteCount = (int)(reader.Bits() & 0xFF) + 1;
+    if (!reader.Advance(8))
+      throw new InvalidDataException("Implode tree cut off.");
+
+    var lengths = new int[symbols];
+    var at = 0;
+    for (var i = 0; i < byteCount; ++i) {
+      var value = (int)(reader.Bits() & 0xFF);
+      if (!reader.Advance(8))
+        throw new InvalidDataException("Implode tree cut off.");
+
+      var length = (value & 0xF) + 1;
+      var run = (value >> 4) + 1;
+      if (at + run > symbols)
+        throw new InvalidDataException("Implode tree lists too many code lengths.");
+
+      for (var r = 0; r < run; ++r)
+        lengths[at++] = length;
+    }
+
+    if (at < symbols)
+      throw new InvalidDataException("Implode tree lists too few code lengths.");
+
+    return new(lengths);
+  }
+
+  /// <summary>
+  /// A complete prefix code over 1- to 16-bit lengths, canonical in the Deflate sense but with every
+  /// bit inverted, read first bit first from a least-significant-bit-first stream.
+  /// </summary>
+  internal sealed class ImplodeCode {
+    private const int MaxBits = 16;
+    private readonly int[] _firstCode = new int[MaxBits + 2];
+    private readonly int[] _count = new int[MaxBits + 1];
+    private readonly int[] _offset = new int[MaxBits + 1];
+    private readonly int[] _symbols;
+
+    public ImplodeCode(int[] lengths) {
+      foreach (var length in lengths)
+        ++this._count[length];
+
+      // PKZIP only accepts a full tree.
+      var available = 1L;
+      for (var length = 1; length <= MaxBits; ++length) {
+        available = available * 2 - this._count[length];
+        if (available < 0)
+          throw new InvalidDataException("Implode tree is over-subscribed.");
+      }
+
+      if (available != 0)
+        throw new InvalidDataException("Implode tree is not complete.");
+
+      var code = 0;
+      var index = 0;
+      for (var length = 1; length <= MaxBits; ++length) {
+        code = (code + this._count[length - 1]) << 1;
+        this._firstCode[length] = code;
+        this._offset[length] = index;
+        index += this._count[length];
+      }
+
+      this._symbols = new int[lengths.Length];
+      var next = (int[])this._offset.Clone();
+      for (var symbol = 0; symbol < lengths.Length; ++symbol)
+        this._symbols[next[lengths[symbol]]++] = symbol;
+    }
+
+    /// <summary>Decodes the symbol at the start of <paramref name="bits"/>.</summary>
+    public int Decode(ulong bits, out int used) {
+      var code = 0;
+      for (var length = 1; length <= MaxBits; ++length) {
+        code = code << 1 | (int)(~bits & 1);
+        bits >>= 1;
+        var index = code - this._firstCode[length];
+        if (index >= 0 && index < this._count[length]) {
+          used = length;
+          return this._symbols[this._offset[length] + index];
         }
       }
+
+      throw new InvalidDataException("Invalid Implode code.");
     }
-
-    return output;
-  }
-
-  private static int[] ReadSfTree(byte[] data, ref long bitPos, int maxSymbol) {
-    // Read code lengths via RLE
-    var numEntries = ReadBitsReversed(data, ref bitPos, 8) + 1;
-    var codeLengths = new int[maxSymbol];
-
-    var idx = 0;
-    for (var i = 0; i < numEntries && idx < maxSymbol; ++i) {
-      var val = ReadBitsReversed(data, ref bitPos, 8);
-      var len = (val & 0x0F) + 1;
-      var count = (val >> 4) + 1;
-      for (var j = 0; j < count && idx < maxSymbol; ++j)
-        codeLengths[idx++] = len;
-    }
-
-    // Build decode table: code → symbol (max 16 bits)
-    return BuildDecodeTable(codeLengths, maxSymbol);
-  }
-
-  private static int[] BuildDecodeTable(int[] codeLengths, int maxSymbol) {
-    var maxLen = 0;
-    for (var i = 0; i < maxSymbol; ++i)
-      if (codeLengths[i] > maxLen) maxLen = codeLengths[i];
-
-    if (maxLen == 0) maxLen = 1;
-
-    // Build canonical Huffman codes (reversed bit order for Shannon-Fano)
-    var blCount = new int[maxLen + 1];
-    for (var i = 0; i < maxSymbol; ++i)
-      if (codeLengths[i] > 0) ++blCount[codeLengths[i]];
-
-    var nextCode = new int[maxLen + 1];
-    var code = 0;
-    for (var bits = 1; bits <= maxLen; ++bits) {
-      code = (code + blCount[bits - 1]) << 1;
-      nextCode[bits] = code;
-    }
-
-    // Build lookup table: indexed by code (up to 2^maxLen entries)
-    var tableSize = 1 << maxLen;
-    var table = new int[tableSize];
-    Array.Fill(table, -1);
-
-    for (var sym = 0; sym < maxSymbol; ++sym) {
-      var len = codeLengths[sym];
-      if (len == 0) continue;
-
-      // Codes are transmitted LSB-first, so reverse the canonical (MSB-first)
-      // code to obtain the value that appears in the low `len` bits of the
-      // stream. The encoder applies the identical reversal when emitting codes.
-      var c = ReverseBits(nextCode[len]++, len);
-      // Fill all table entries: code in low bits, don't-care bits in high bits
-      // (matches LSB-first bit reading order)
-      var fill = 1 << (maxLen - len);
-      for (var j = 0; j < fill; ++j)
-        table[c | (j << len)] = sym | (len << 16);
-    }
-
-    return table;
-  }
-
-  private static int ReverseBits(int value, int count) {
-    var result = 0;
-    for (var i = 0; i < count; ++i) {
-      result = (result << 1) | (value & 1);
-      value >>= 1;
-    }
-    return result;
-  }
-
-  private static int DecodeSymbol(byte[] data, ref long bitPos, int[] table) {
-    var tableSize = table.Length;
-    var maxBits = 0;
-    while ((1 << maxBits) < tableSize) ++maxBits;
-
-    var code = ReadBitsReversed(data, ref bitPos, maxBits);
-    if (code >= tableSize || table[code] == -1)
-      throw new InvalidDataException($"Invalid Implode Huffman code at bit position {bitPos}.");
-
-    var entry = table[code];
-    var symbol = entry & 0xFFFF;
-    var usedBits = entry >> 16;
-
-    // Return unused bits
-    bitPos -= (maxBits - usedBits);
-
-    return symbol;
-  }
-
-  private static int ReadBit(byte[] data, ref long bitPos) {
-    var byteIdx = bitPos / 8;
-    var bitIdx = (int)(bitPos % 8);
-    if (byteIdx >= data.Length) return 0;
-    ++bitPos;
-    return (data[byteIdx] >> bitIdx) & 1;
-  }
-
-  private static int ReadBitsReversed(byte[] data, ref long bitPos, int count) {
-    // Read bits LSB-first (natural order)
-    var result = 0;
-    for (var i = 0; i < count; ++i) {
-      var byteIdx = bitPos / 8;
-      var bitIdx = (int)(bitPos % 8);
-      if (byteIdx >= data.Length) break;
-      result |= ((data[byteIdx] >> bitIdx) & 1) << i;
-      ++bitPos;
-    }
-    return result;
   }
 }
