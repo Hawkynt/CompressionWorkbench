@@ -62,6 +62,9 @@ public class UfsSymlinkTests {
     BinaryPrimitives.WriteUInt32LittleEndian(sb[120..], BlockSize / InodeSize); // fs_inopb
     BinaryPrimitives.WriteUInt32LittleEndian(sb[184..], 2048);       // fs_ipg
     BinaryPrimitives.WriteInt32LittleEndian(sb[188..], 16384);       // fs_fpg
+    BinaryPrimitives.WriteInt32LittleEndian(sb[44..], 1);            // fs_ncg
+    BinaryPrimitives.WriteInt32LittleEndian(sb[1320..], 60);         // fs_maxsymlinklen
+    BinaryPrimitives.WriteInt32LittleEndian(sb[1324..], 2);          // fs_old_inodefmt = FS_44INODEFMT
     BinaryPrimitives.WriteUInt32LittleEndian(sb[1372..], Ufs1Magic); // fs_magic @ end
 
     // Inode table @ frag Iblkno (byte 2048); ino N at 2048 + N*128.

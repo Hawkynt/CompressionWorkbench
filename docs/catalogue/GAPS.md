@@ -192,7 +192,7 @@ running real-world samples. The file named at the end of each row is where the l
 | PAQ (paq6/7/8 family) | `Paq8` | 1 | a single PAQ8 variant (.paq8l); the other PAQ versions are mutually incompatible |
 | RAR audio / VM filters | `Rar` | 1 | RAR3 filters matched to the six standard programs only; no general RarVM (Rar3Decoder.cs) |
 | RPG Maker archives | `Rgss` | 1 | RGSSAD v1-3 only; MV/MZ asset encryption (.rpgmv*) has no descriptor |
-| UFS / FFS (BSD), UFS2 | `Ufs` | 1 | UFS1 only; UFS2 (magic 0x19540119) is not recognised |
+| UFS / FFS (BSD), UFS2 | `Ufs` | 1 | UFS2 and big-endian volumes are read only; creating and editing is UFS1 little-endian |
 | Unity assets / bundles | `UnityBundle` | 1 | UnityFS bundles only; .unitypackage (tar.gz) and serialized-file internals are not handled |
 | Windows thumbnail cache | `ThumbsDb` | 1 | Thumbs.db only; thumbcache_*.db has no descriptor |
 | tar + compression (tar.gz/.bz2/.xz/.zst/.lz/.lz4/.br) | `TarGz`, `TarBz2`, `TarXz`, `TarZst`, `TarLzip`, `TarLz4`, `TarBr` | 1 | tar.Z / tar.lzma / tar.lzo have no compound descriptor (open via the stream format) |
