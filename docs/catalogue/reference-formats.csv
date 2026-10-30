@@ -68,7 +68,7 @@ Electron asar,asar,archive,,,,,R,,,1,https://github.com/electron/asar,Asar,Y,Y,,
 BCM,bcm,compression,,,,,R,,,1,https://github.com/encode84/bcm,Bcm,Y,Y,,OK,,
 Split file (.001),001;002,archive,R,,R,,R,,,3,,SplitFile,Y,Y,,OK,,
 Apple Archive (.aar),aar,archive,,,,,,,Y,1,,,,,,MISSING,,https://developer.apple.com/documentation/applearchive
-Mozilla ARchive (MAR),mar;mac,archive,,,,,,fmt/1483,Y,2,,,,,,MISSING,,https://wiki.mozilla.org/Software_Update:MAR
+Mozilla ARchive (MAR),mar;mac,archive,,,,,,fmt/1483,Y,2,https://wiki.mozilla.org/Software_Update:MAR,Mar,Y,Y,Y,OK,,
 SeqBox,sbx,archive,,,,,,,Y,1,,,,,,MISSING,,https://github.com/MarcoPon/SeqBox
 AFA,afa,archive,,,,,,,Y,1,,,,,,MISSING,,
 B1,b1,archive,,,,,,,Y,1,,,,,,MISSING,,
