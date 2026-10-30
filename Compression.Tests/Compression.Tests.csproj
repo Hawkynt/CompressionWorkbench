@@ -71,6 +71,10 @@
          where a content file failed to deploy, and checked in rather than downloaded so it cannot
          pass on a runner with no network. See ReferenceVectors/README.md for provenance; the
          generator scripts beside them are documentation, not build inputs. -->
+    <!-- LZF streams liblzf 3.6 wrote; see BuildingBlocks/LzfVectors/README.md. -->
+    <EmbeddedResource Include="BuildingBlocks\LzfVectors\*.lzf">
+      <LogicalName>LzfVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="StructuredPseudoArchives\ReferenceVectors\*"
                       Exclude="StructuredPseudoArchives\ReferenceVectors\*.py;StructuredPseudoArchives\ReferenceVectors\*.pl;StructuredPseudoArchives\ReferenceVectors\*.ps1;StructuredPseudoArchives\ReferenceVectors\README.md">
       <LogicalName>ReferenceVectors.%(Filename)%(Extension)</LogicalName>

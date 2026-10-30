@@ -14,7 +14,7 @@ public sealed class LzfBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
   public string DisplayName => "LZF";
   /// <inheritdoc/>
-  public string Description => "Extremely fast hash-based LZ77 with a 2-byte minimum match and literal runs";
+  public string Description => "Marc Lehmann's LZF, as liblzf writes it: hash-matched LZ77 with 3-byte minimum matches, an 8 KiB window and literal runs";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
