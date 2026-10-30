@@ -139,6 +139,10 @@
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- 7-Zip's own help file and 7-Zip's extraction listing of it; see Chm/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Chm\ReferenceVectors\*.chm;Chm\ReferenceVectors\7zip-listing.txt">
+      <LogicalName>ChmVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Sparsebundles written by Apple's hdiutil (keramics, ewfprobe test corpora); see
          AppleSparse/ReferenceVectors/README.md. The tests rebuild each bundle directory from these. -->
     <EmbeddedResource Include="AppleSparse\ReferenceVectors\**\*"

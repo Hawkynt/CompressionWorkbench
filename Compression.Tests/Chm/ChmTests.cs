@@ -127,10 +127,10 @@ public sealed class ChmTests {
     WriteLE32(itsf, 20, 0x0409);                    // languageId = en-US
     // GUID1 at 24 (16 bytes) — zeroed
     // GUID2 at 40 (16 bytes) — zeroed
-    WriteLE64(itsf, 56, (ulong)dirOffset);          // dirSectionOffset
-    WriteLE64(itsf, 64, (ulong)dirLength);          // dirSectionLength
-    WriteLE64(itsf, 72, (ulong)contentOffset);      // contentOffset (version >= 3)
-    // Remaining 8 bytes: padding, left zero
+    // Header section table: section 0 (none here), then the directory; then the content offset.
+    WriteLE64(itsf, 72, (ulong)dirOffset);          // dirSectionOffset
+    WriteLE64(itsf, 80, (ulong)dirLength);          // dirSectionLength
+    WriteLE64(itsf, 88, (ulong)contentOffset);      // contentOffset (version >= 3)
 
     // ---- Assemble file content section ----
     var contentData = new byte[contentCursor];

@@ -1,0 +1,3 @@
+# Fixture bytes are the test: never let a checkout rewrite line endings.
+*.chm -text
+7zip-listing.txt -text
