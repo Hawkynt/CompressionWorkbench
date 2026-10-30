@@ -799,6 +799,44 @@ Writer for tightly packed Flattened Device Tree Blob (FDT v17) images.
 | `SanitisePropertyName` | `static string SanitisePropertyName(string archiveName)` |  |
 | `Write` | `static void Write(Stream output, IReadOnlyList<ValueTuple<string, byte[]>> inputs)` |  |
 
+### Namespace `FileFormat.Ecm`
+
+[`EcmCodec`](#ecmcodec) · [`EcmFormatDescriptor`](#ecmformatdescriptor)
+
+#### `EcmCodec`
+
+Encoder and decoder for the Error Code Modeler (ECM) container: CD-ROM sectors whose sync pattern, header, EDC and ECC can be regenerated are stored without them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The four-byte file magic `"ECM\0"`. |
+| `Decode` | `static void Decode(Stream input, Stream output)` | Decodes an ECM stream, verifying the trailing EDC of the reconstructed data. |
+| `Encode` | `static void Encode(Stream input, Stream output)` | Encodes `input` as an ECM stream. |
+
+#### `EcmFormatDescriptor`
+
+Error Code Modeler (ECM): a CD image with every regenerable sync, header, EDC and ECC field removed. Decoding rebuilds the original image byte for byte and verifies the trailing checksum; encoding produces streams the reference `unecm` accepts.
+
+Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EcmFormatDescriptor` | `EcmFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Compress` | `void Compress(Stream input, Stream output)` |  |
+| `Decompress` | `void Decompress(Stream input, Stream output)` |  |
+
 ### Namespace `FileFormat.Ewf`
 
 [`EwfFormatDescriptor`](#ewfformatdescriptor) · [`EwfReader`](#ewfreader) · [`EwfReader.EwfImage`](#ewfreaderewfimage) · [`EwfReader.Section`](#ewfreadersection) · [`EwfWriter`](#ewfwriter)
