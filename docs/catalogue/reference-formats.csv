@@ -425,7 +425,7 @@ NeXT file system,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Next3,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 NILFS / NILFS2,nilfs;nilfs2,filesystem,,,,,,,Y,1,,Nilfs1;Nilfs2,Y,Y,Y,OK,,
 Novell Storage Services (NSS),,filesystem,,,,,,,Y,1,,Nss,Y,Y,,OK,,
-NTFS,ntfs,filesystem,R,,,R,,,Y,3,,Ntfs,Y,Y,Y,PARTIAL,,WOF (XPRESS/LZX) compressed files not decoded; LZNT1 is
+NTFS,ntfs,filesystem,R,,,R,,,Y,3,,Ntfs,Y,Y,Y,OK,,"LZNT1 and WOF (XPRESS4K/8K/16K, LZX) compressed files decoded, WOF checked against ntfs3; WIM-backed WOF refused"
 OneFS (Isilon),isilon,filesystem,,,,,,,Y,1,,OneFs,Y,,,OK,,
 OS-9 RBF,os9;rbf,filesystem,,,,,,,Y,1,,Os9Rbf,Y,Y,Y,OK,,
 Amiga PFS,pfs;pfs2;pfs3,filesystem,,,,,,,Y,1,,AmigaPfs,Y,Y,Y,OK,,
