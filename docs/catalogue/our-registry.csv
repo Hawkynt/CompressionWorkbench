@@ -1,4 +1,5 @@
 kind,id,display_name,category,filesystem,extensions,list,extract,create,modify
+format,A2r,Applesauce A2R,Archive,,.a2r,Y,Y,Y,Y
 format,Aac,AAC (ADTS),Audio,,.aac,Y,Y,Y,
 format,Ac3,AC-3 / E-AC-3,Audio,,.ac3;.eac3,Y,Y,Y,
 format,Ace,ACE,Archive,,.ace,Y,Y,Y,Y
