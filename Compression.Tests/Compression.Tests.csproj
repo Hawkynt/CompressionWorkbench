@@ -118,6 +118,10 @@
     <EmbeddedResource Include="Firmware\ReferenceVectors\*" Exclude="Firmware\ReferenceVectors\README.md">
       <LogicalName>FirmwareVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- ZIP method 98 (PPMd var.I) entries 7-Zip 26.04 wrote; see Zip/ZipPpmdOracleTests.cs. -->
+    <EmbeddedResource Include="Zip\PpmdVectors\*.zip">
+      <LogicalName>ZipPpmdVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Archives FreeArc 0.67's Arc.exe wrote; see FreeArc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="FreeArc\ReferenceVectors\*.arc">
       <LogicalName>FreeArcVectors.%(Filename)%(Extension)</LogicalName>

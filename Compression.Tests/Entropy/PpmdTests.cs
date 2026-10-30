@@ -128,7 +128,7 @@ public class PpmdTests {
   [Category("EdgeCase")]
   [Category("RoundTrip")]
   [Test]
-  public void ModelI_RoundTrip_SingleByte() {
+  public void Ppmd8_RoundTrip_SingleByte() {
     byte[] data = [99];
     var result = CompressDecompressI(data);
     Assert.That(result, Is.EqualTo(data));
@@ -137,8 +137,8 @@ public class PpmdTests {
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]
-  public void ModelI_RoundTrip_TextData() {
-    var data = System.Text.Encoding.UTF8.GetBytes("Hello, World! PPMd Model I test.");
+  public void Ppmd8_RoundTrip_TextData() {
+    var data = System.Text.Encoding.UTF8.GetBytes("Hello, World! PPMd var.I test.");
     var result = CompressDecompressI(data);
     Assert.That(result, Is.EqualTo(data));
   }
@@ -146,7 +146,7 @@ public class PpmdTests {
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]
-  public void ModelI_RoundTrip_RepetitiveData() {
+  public void Ppmd8_RoundTrip_RepetitiveData() {
     var data = new byte[500];
     for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 4);
@@ -157,7 +157,7 @@ public class PpmdTests {
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]
-  public void ModelI_RoundTrip_RandomData() {
+  public void Ppmd8_RoundTrip_RandomData() {
     var data = new byte[1024];
     new Random(42).NextBytes(data);
     var result = CompressDecompressI(data);
@@ -167,7 +167,7 @@ public class PpmdTests {
   [Category("EdgeCase")]
   [Category("RoundTrip")]
   [Test]
-  public void ModelI_RoundTrip_EmptyData() {
+  public void Ppmd8_RoundTrip_EmptyData() {
     byte[] data = [];
     var result = CompressDecompressI(data);
     Assert.That(result, Is.EqualTo(data));
@@ -365,26 +365,20 @@ public class PpmdTests {
   }
 
   private static byte[] CompressDecompressI(byte[] data, int order = PpmdConstants.DefaultOrder) {
-    var compressedMs = new MemoryStream();
-    compressedMs.Write(BitConverter.GetBytes(data.Length));
-
-    var encModel = new PpmdModelI(order, PpmdConstants.DefaultMemorySize);
-    var encoder = new PpmdRangeEncoder(compressedMs);
+    var compressed = new MemoryStream();
+    var encoder = new Ppmd8(1 << 20, order, Ppmd8RestoreMethod.Restart);
+    encoder.StartEncoding(compressed);
     foreach (var b in data)
-      encModel.EncodeSymbol(encoder, b);
-    encoder.Finish();
+      encoder.EncodeSymbol(b);
+    encoder.EncodeSymbol(Ppmd8.EndMarker);
+    encoder.FlushEncoder();
 
-    var inputMs = new MemoryStream(compressedMs.ToArray());
-    var lenBytes = new byte[4];
-    _ = inputMs.Read(lenBytes, 0, 4);
-    var originalLen = BitConverter.ToInt32(lenBytes);
+    var decoder = new Ppmd8(1 << 20, order, Ppmd8RestoreMethod.Restart);
+    Assert.That(decoder.StartDecoding(compressed.ToArray(), 0), Is.True);
+    var result = new List<byte>();
+    for (int symbol; (symbol = decoder.DecodeSymbol()) >= 0;)
+      result.Add((byte)symbol);
 
-    var decModel = new PpmdModelI(order, PpmdConstants.DefaultMemorySize);
-    var decoder = new PpmdRangeDecoder(inputMs);
-    var result = new byte[originalLen];
-    for (var i = 0; i < originalLen; ++i)
-      result[i] = decModel.DecodeSymbol(decoder);
-
-    return result;
+    return [.. result];
   }
 }
