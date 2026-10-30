@@ -290,7 +290,7 @@ HxC Floppy Emulator (HFE),hfe,disk-image,,,,,,fmt/2031;fmt/2038,,1,,Hfe,Y,,,READ
 HxC stream image,hfe,disk-image,,,,,,fmt/2039,,1,https://hxc2001.com/floppy_drive_emulator/,StreamHfe,Y,Y,Y,OK,,"magic-detected (the .hfe extension belongs to the bit-cell HFE); LZ4 pulse streams read and written, rebuilds and track edits decoded by hxcfe to the expected sectors (docs/STREAMHFE-ON-DISK.md)"
 A2R flux image,a2r,disk-image,,,,,,fmt/2057;fmt/2058,,1,https://applesaucefdc.com/a2r/,A2r,Y,Y,Y,OK,,A2R2 and A2R3 chunks and captures read and written; Greaseweazle decodes our A2R3 rebuilds and capture edits to the expected sectors and a2rchery rewrites our A2R2 byte for byte
 WOZ (Apple II),woz,disk-image,,,,,,fmt/2059;fmt/2060,,1,https://applesaucefdc.com/woz/reference2/,Woz,Y,,,READ-ONLY-BUT-SOURCES-WRITE,Applesauce,
-MOOF (Macintosh flux),moof,disk-image,,,,,,fmt/2061,,1,,,,,,MISSING,,
+MOOF (Macintosh flux),moof,disk-image,,,,,,fmt/2061,,1,https://applesaucefdc.com/moof-reference/,Moof,Y,Y,Y,OK,,INFO/TMAP/TRKS/FLUX/META read and written; rebuilds and track edits decoded by MAME floptool to the expected sectors
 SuperCard Pro flux image,scp,disk-image,,,,,,fmt/2071,,1,,,,,,MISSING,,
 T64 (C64 tape),t64,disk-image,,,,,,fmt/820,,1,,T64,Y,Y,Y,OK,,
 TAP (C64 tape),tap,disk-image,,,,,,fmt/802,,1,http://unusedino.de/ec64/technical/formats/tap.html,C64Tap,Y,Y,Y,OK,,versions 0-2 pulse streams read/written; pulse semantics checked against MAME castool
