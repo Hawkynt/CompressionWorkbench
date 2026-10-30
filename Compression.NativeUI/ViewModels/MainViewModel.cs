@@ -75,6 +75,56 @@ internal sealed class MainViewModel : ViewModelBase {
   public ObservableCollection<BreadcrumbSegment> Breadcrumbs { get; } = [];
 
   public string ArchivePath { get => _archivePath; set => SetField(ref _archivePath, value); }
+
+  /// <summary>
+  /// The password of the open archive: asked for the first time an operation needs it, kept for
+  /// the archive's next reads, forgotten when another archive is opened.
+  /// </summary>
+  internal string? ArchivePassword { get; set; }
+
+  /// <summary>
+  /// Asks the user for a password: (archive name, whether the last one was wrong) to the password,
+  /// or null when they cancel. Replaceable so the prompt can be driven without a window.
+  /// </summary>
+  internal Func<string, bool, string?> PasswordPrompt { get; set; } = PasswordDialog.Ask;
+
+  /// <summary>
+  /// Runs <paramref name="operation"/> with the archive's password, asking for one (again) while
+  /// the archive says it needs one; rethrows when the user cancels.
+  /// </summary>
+  internal T WithPassword<T>(string archiveName, Func<string?, T> operation) {
+    for (;;) {
+      try {
+        return operation(this.ArchivePassword);
+      } catch (ArchivePasswordException e) {
+        var password = this.PasswordPrompt(archiveName, e.PasswordWasSupplied);
+        if (password == null)
+          throw;
+        this.ArchivePassword = password;
+      }
+    }
+  }
+
+  /// <summary>
+  /// <see cref="RunAsync"/> for reads that may need the password: the work runs in the
+  /// background, the prompt on the UI thread between tries. False when the user cancelled.
+  /// </summary>
+  private async Task<bool> RunWithPasswordAsync(string status, Action<string?> work) {
+    for (;;) {
+      try {
+        await RunAsync(status, () => work(this.ArchivePassword));
+        return true;
+      } catch (ArchivePasswordException e) {
+        IsBusy = false;
+        var password = this.PasswordPrompt(Path.GetFileName(ArchivePath), e.PasswordWasSupplied);
+        if (password == null) {
+          StatusText = $"{Path.GetFileName(ArchivePath)} needs a password; nothing was read.";
+          return false;
+        }
+        this.ArchivePassword = password;
+      }
+    }
+  }
   public string Format { get => _format; set => SetField(ref _format, value); }
   public string StatusText { get => _statusText; set => SetField(ref _statusText, value); }
   public bool IsBusy { get => _isBusy; set { SetField(ref _isBusy, value); OnPropertyChanged(nameof(IsNotBusy)); } }
@@ -507,7 +557,7 @@ internal sealed class MainViewModel : ViewModelBase {
     try {
       var data = source.BrowsingDisk
         ? File.ReadAllBytes(entry.Path)
-        : ArchiveOperations.ExtractEntry(source.ArchivePath, entry.Path, password: null);
+        : ArchiveOperations.ExtractEntry(source.ArchivePath, entry.Path, password: ArchivePassword);
       return (data, entry.Name);
     } catch (Exception ex) {
       // A preview is a glance: whatever stopped the read - a locked file, a damaged entry, a codec
@@ -883,7 +933,7 @@ internal sealed class MainViewModel : ViewModelBase {
 
     var format = FormatDetector.Format.Unknown;
     try {
-      using var stream = ArchiveOperations.OpenEntry(ArchivePath, entry.Path, password: null);
+      using var stream = ArchiveOperations.OpenEntry(ArchivePath, entry.Path, password: ArchivePassword);
       if (stream.CanSeek) {
         format = FormatDetector.DetectByContent(stream);
       } else {
@@ -961,7 +1011,7 @@ internal sealed class MainViewModel : ViewModelBase {
 
     if (entry != null) {
       try {
-        var bytes = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: null);
+        var bytes = WithPassword(Path.GetFileName(ArchivePath), pw => ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, pw));
         var temp = Path.Combine(Path.GetTempPath(), $"cwb_maint_{Guid.NewGuid():N}_{Path.GetFileName(entry.Name)}");
         File.WriteAllBytes(temp, bytes);
 
@@ -1037,7 +1087,7 @@ internal sealed class MainViewModel : ViewModelBase {
     } else if (entry != null) {
       // Nested archive entry: materialise → reconfigure → write back into host.
       try {
-        var bytes = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: null);
+        var bytes = WithPassword(Path.GetFileName(ArchivePath), pw => ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, pw));
         var temp = Path.Combine(Path.GetTempPath(),
           $"cwb_reconfig_{Guid.NewGuid():N}_{Path.GetFileName(entry.Name)}");
         File.WriteAllBytes(temp, bytes);
@@ -1136,8 +1186,11 @@ internal sealed class MainViewModel : ViewModelBase {
       IsBusy = true;
       StatusText = $"Opening {Path.GetFileName(path)}...";
 
-      var format = FormatDetector.Detect(path);
-      var entries = ArchiveOperations.List(path, password: null);
+      var format = ArchiveVolumes.Detect(path);
+      // A different archive does not share the last one's password.
+      if (!fromNestedDescent && !string.Equals(path, ArchivePath, StringComparison.OrdinalIgnoreCase))
+        ArchivePassword = null;
+      var entries = WithPassword(Path.GetFileName(path), pw => ArchiveOperations.List(path, pw));
 
       // Top-level Open clears the parent-archive stack and any leftover nested
       // temp files. Nested descents skip this cleanup so the back-stack survives.
@@ -1629,9 +1682,10 @@ internal sealed class MainViewModel : ViewModelBase {
     var dlg = new FolderBrowserDialog { Title = "Select output folder" };
     if (dlg.ShowDialog() != DialogResult.OK) return;
 
-    await RunAsync($"Extracting to {dlg.SelectedPath}...", () => {
-      ArchiveOperations.Extract(ArchivePath, dlg.SelectedPath, password: null, files: null);
-    });
+    if (!await RunWithPasswordAsync($"Extracting to {dlg.SelectedPath}...", pw => {
+      ArchiveOperations.Extract(ArchivePath, dlg.SelectedPath, password: pw, files: null);
+    }))
+      return;
     StatusText = $"Extracted to {dlg.SelectedPath}";
   }
 
@@ -1733,8 +1787,8 @@ internal sealed class MainViewModel : ViewModelBase {
     }
 
     var files = filePaths.Distinct().ToArray();
-    await RunAsync($"Extracting {files.Length} file(s)...", () => {
-      ArchiveOperations.Extract(ArchivePath, dlg.SelectedPath, password: null, files: files);
+    await RunWithPasswordAsync($"Extracting {files.Length} file(s)...", pw => {
+      ArchiveOperations.Extract(ArchivePath, dlg.SelectedPath, password: pw, files: files);
     });
     StatusText = $"Extracted {files.Length} file(s) to {dlg.SelectedPath}";
   }
@@ -1745,9 +1799,10 @@ internal sealed class MainViewModel : ViewModelBase {
     var sw = Stopwatch.StartNew();
 
     try {
-      await RunAsync("Testing archive integrity...", () => {
-        ok = ArchiveOperations.Test(ArchivePath, password: null);
-      });
+      if (!await RunWithPasswordAsync("Testing archive integrity...", pw => {
+        ok = ArchiveOperations.Test(ArchivePath, password: pw);
+      }))
+        return;
     } catch (Exception ex) {
       ok = false;
       errorDetail = ex.Message;
@@ -1809,7 +1864,7 @@ internal sealed class MainViewModel : ViewModelBase {
           StatusText = $"Cannot preview: missing archive context.";
           return;
         }
-        data = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: null);
+        data = WithPassword(Path.GetFileName(ArchivePath), pw => ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, pw));
       }
 
       // Before showing the preview, check if the extracted bytes are themselves
@@ -1993,7 +2048,7 @@ internal sealed class MainViewModel : ViewModelBase {
     if (!entry.IsDirectory) {
       try {
         StatusText = $"Loading {entry.Name}...";
-        data = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: null);
+        data = WithPassword(Path.GetFileName(ArchivePath), pw => ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, pw));
         StatusText = "Ready";
       }
       catch {
@@ -2027,7 +2082,7 @@ internal sealed class MainViewModel : ViewModelBase {
 
     try {
       StatusText = $"Loading {entry.Name}...";
-      var data = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: null);
+      var data = WithPassword(Path.GetFileName(ArchivePath), pw => ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, pw));
       StatusText = "Ready";
 
       var win = new AnalysisWindow();
@@ -2134,7 +2189,7 @@ internal sealed class MainViewModel : ViewModelBase {
     HashSet<string> existing;
     try {
       existing = new HashSet<string>(
-        ArchiveOperations.List(archivePath, password: null).Select(e => e.Name),
+        WithPassword(Path.GetFileName(archivePath), pw => ArchiveOperations.List(archivePath, pw)).Select(e => e.Name),
         StringComparer.OrdinalIgnoreCase);
     } catch (Exception ex) {
       MessageBox.Show($"Failed to read archive contents: {ex.Message}",
@@ -2278,6 +2333,8 @@ internal sealed class MainViewModel : ViewModelBase {
       Exception? err = null;
       try {
         ArchiveOperations.Create(outputPath, inputs, opts, format);
+        if (opts.VolumeSize > 0)
+          outputPath = ArchiveVolumes.VolumePath(outputPath, 1); // the set opens from its first volume
 
         if (makeSfx) {
           var sfxPath = Path.ChangeExtension(outputPath, ".exe");

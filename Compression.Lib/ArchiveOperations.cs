@@ -10,7 +10,7 @@ namespace Compression.Lib;
 public static class ArchiveOperations {
 
   public static List<ArchiveEntry> List(string path, string? password) {
-    var format = FormatDetector.Detect(path);
+    var format = ArchiveVolumes.Detect(path);
 
     // Handle SFX: extract embedded archive info and delegate to the inner format
     if (format == F.Sfx) {
@@ -21,7 +21,7 @@ public static class ArchiveOperations {
       return ListArchiveStream(sfxInfo.Value.ArchiveFormat, sub, password);
     }
 
-    using var fs = File.OpenRead(path);
+    using var fs = ArchiveVolumes.OpenRead(path);
     return ListArchiveStream(format, fs, password, path);
   }
 
@@ -40,7 +40,7 @@ public static class ArchiveOperations {
   }
 
   public static void Extract(string path, string outputDir, string? password, string[]? files) {
-    var format = FormatDetector.Detect(path);
+    var format = ArchiveVolumes.Detect(path);
     Directory.CreateDirectory(outputDir);
 
     // Handle SFX: extract embedded archive info and delegate to the inner format
@@ -58,7 +58,7 @@ public static class ArchiveOperations {
     FormatRegistration.EnsureInitialized();
     var archiveOps = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
     if (archiveOps != null) {
-      using var fs = File.OpenRead(path);
+      using var fs = ArchiveVolumes.OpenRead(path);
       archiveOps.Extract(fs, outputDir, password, files);
       return;
     }
@@ -160,6 +160,7 @@ public static class ArchiveOperations {
       if (files.Length != 1)
         throw new ArgumentException("Stream compression formats require exactly one input file.");
       CompressStream(files[0].FullPath, outputPath, format, method, registryOpts);
+      SplitIfAsked(outputPath, opts);
       return;
     }
 
@@ -191,10 +192,21 @@ public static class ArchiveOperations {
 
       AtomicFileWriter.WriteAtomic(outputPath,
         fs => creator.CreateFromStreams(fs, streamingInputs, registryOpts));
+      SplitIfAsked(outputPath, opts);
       return;
     }
 
     AtomicFileWriter.WriteAtomic(outputPath, fs => creator.Create(fs, registryInputs, registryOpts));
+    SplitIfAsked(outputPath, opts);
+  }
+
+  /// <summary>
+  /// With <see cref="CompressionOptions.VolumeSize"/> set, cuts the finished archive into
+  /// 7-Zip-style volumes (<c>name.001</c>, <c>name.002</c>, …) and removes the single file.
+  /// </summary>
+  private static void SplitIfAsked(string outputPath, CompressionOptions opts) {
+    if (opts.VolumeSize > 0)
+      ArchiveVolumes.Split(outputPath, opts.VolumeSize);
   }
 
   /// <summary>
@@ -607,7 +619,7 @@ public static class ArchiveOperations {
   /// simply has no verifier for it.
   /// </remarks>
   public static ArchiveTestResult TestDetailed(string path, string? password) {
-    var format = FormatDetector.Detect(path);
+    var format = ArchiveVolumes.Detect(path);
     if (format == F.Unknown) return ArchiveTestResult.NotTestable;
 
     FormatRegistration.EnsureInitialized();
@@ -618,7 +630,7 @@ public static class ArchiveOperations {
       return ArchiveTestResult.NotTestable;
 
     try {
-      using var fs = File.OpenRead(path);
+      using var fs = ArchiveVolumes.OpenRead(path);
 
       if (isStream) {
         DecompressToNull(fs, format);
@@ -641,6 +653,10 @@ public static class ArchiveOperations {
       // The format is registered but this particular container is beyond the reader -- an
       // unsupported codec or variant, not damage.
       return ArchiveTestResult.NotTestable;
+    }
+    catch (Compression.Registry.ArchivePasswordException) {
+      // Not a verdict on the archive: the caller has to ask for a (different) password.
+      throw;
     }
     catch {
       return ArchiveTestResult.Corrupt;
@@ -1406,12 +1422,12 @@ public static class ArchiveOperations {
   /// </remarks>
   public static Stream OpenEntry(string archivePath, string entryPath, string? password = null) {
     ArgumentException.ThrowIfNullOrWhiteSpace(entryPath);
-    var format = FormatDetector.Detect(archivePath);
+    var format = ArchiveVolumes.Detect(archivePath);
     FormatRegistration.EnsureInitialized();
     if (Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString()) is not { } ops)
       return new MemoryStream(ExtractEntry(archivePath, entryPath, password), writable: false);
 
-    var archive = File.OpenRead(archivePath);
+    var archive = ArchiveVolumes.OpenRead(archivePath);
     try {
       return new EntryOwningStream(ops.OpenEntry(archive, entryPath, password), archive);
     } catch {
