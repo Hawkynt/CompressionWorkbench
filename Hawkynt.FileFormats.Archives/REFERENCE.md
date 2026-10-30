@@ -18839,6 +18839,62 @@ Writes a minimal Inno Setup header. No PE stub is emitted; the reader scans from
 | `InnoSetupWriter` | `InnoSetupWriter()` |  |
 | `WriteTo` | `void WriteTo(Stream output, byte[] embeddedData = null)` | Writes the to to the supplied output. |
 
+### Namespace `FileFormat.InstallShield`
+
+[`InstallShieldCabEntry`](#installshieldcabentry) · [`InstallShieldCabFormatDescriptor`](#installshieldcabformatdescriptor) · [`InstallShieldCabReader`](#installshieldcabreader)
+
+#### `InstallShieldCabEntry`
+
+A file of an InstallShield cabinet set.
+
+Implements `IEquatable<InstallShieldCabEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `InstallShieldCabEntry` | `InstallShieldCabEntry(string FileName, int Index, long Size, long CompressedSize)` | A file of an InstallShield cabinet set. |
+| `CompressedSize` | `long CompressedSize { get; init; }` | The stored size. |
+| `FileName` | `string FileName { get; init; }` | The path as unshield writes it: file group, directory, name. |
+| `Index` | `int Index { get; init; }` | The file's index in the cabinet's file table. |
+| `Size` | `long Size { get; init; }` | The expanded size. |
+
+#### `InstallShieldCabFormatDescriptor`
+
+InstallShield cabinet set: data1.hdr (the header) with data1.cab, data2.cab, ... (the volumes), all starting with "ISc(". Open the .hdr (or a data1.cab that carries the header); the volumes are found beside it. References: `https://github.com/twogood/unshield` — unshield (MIT), the reader this one was converted from and is checked against
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `InstallShieldCabFormatDescriptor` | `InstallShieldCabFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Open` | `static InstallShieldCabReader Open(Stream stream)` | Opens a cabinet set; volumes are looked up beside a file stream's path. |
+
+#### `InstallShieldCabReader`
+
+Reads InstallShield cabinet sets (data1.hdr + data1.cab, data2.cab, ...; "ISc(" signature), InstallShield 5 to 2012+.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `InstallShieldCabReader` | `InstallShieldCabReader(Stream header, int headerIndex, Func<int, Stream> openVolume, Func<string, Stream> openExternal = null)` | Opens a cabinet set from its header (data1.hdr, or data1.cab when it carries the header). |
+| `Components` | `IReadOnlyList<string> Components { get; }` | Gets the components. |
+| `Entries` | `IReadOnlyList<InstallShieldCabEntry> Entries { get; }` | Gets the files, grouped and named as unshield extracts them. |
+| `FileGroups` | `IReadOnlyList<string> FileGroups { get; }` | Gets the file groups, in cabinet order. |
+| `MajorVersion` | `int MajorVersion { get; }` | Gets the major InstallShield version the header was written by (0 for 5.x-era v0). |
+| `Extract` | `byte[] Extract(InstallShieldCabEntry entry)` | Returns the file's bytes. Compressed files are tried in the chunk layout with 16-bit lengths first and the 00 00 FF FF-terminated layout second; both are checked against the expanded size, and against the stored MD5 from InstallShield 6 on. |
+
 ### Namespace `FileFormat.Ipa`
 
 [`IpaFormatDescriptor`](#ipaformatdescriptor)

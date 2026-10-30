@@ -290,6 +290,13 @@ public static partial class FormatDetector {
     // PowerPoint template to the catalogue reader on the other. ResolveSharedExtension below
     // cannot settle it: it only consults a claimant's own signatures, and no view of the CFB
     // container claims that signature, because every CFB-based format shares it.
+    // ".cab" is a Microsoft cabinet unless it starts with "ISc(": an InstallShield cabinet volume.
+    if (singleExt == ".cab" && File.Exists(path)) {
+      var head = ReadHeader(path);
+      if (head.Length >= 4 && head[0] == 'I' && head[1] == 'S' && head[2] == 'c' && head[3] == '(')
+        return Format.InstallShieldCab;
+    }
+
     if (singleExt == ".pot")
       return DetectPotByContent(path);
 
