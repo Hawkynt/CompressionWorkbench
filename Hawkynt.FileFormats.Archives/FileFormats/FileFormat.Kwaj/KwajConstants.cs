@@ -52,12 +52,12 @@ public static class KwajConstants {
   public const ushort MethodXor = 1;
 
   /// <summary>
-  /// Method 2 — SZDD-style LZSS compression (not supported by this library).
+  /// Method 2 — SZDD-style LZSS compression (QBasic ring origin, 4096 − 18).
   /// </summary>
   public const ushort MethodLzss = 2;
 
   /// <summary>
-  /// Method 3 — LZ + Huffman compression, similar to LZH (not supported by this library).
+  /// Method 3 — LZ + Huffman compression (five canonical Huffman tables over a 4 KiB LZSS window).
   /// </summary>
   public const ushort MethodLzHuffman = 3;
 
