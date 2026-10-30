@@ -648,7 +648,7 @@ Implements `IBuildingBlock`.
 
 #### `BriefLzBuildingBlock`
 
-BriefLZ — Jørgen Ibsen's byte-oriented LZ77 compressor with an interleaved single-bit-per-token tag stream and Elias-gamma coded match parameters.
+Exposes Jørgen Ibsen's BriefLZ as a benchmarkable building block.
 
 Implements `IBuildingBlock`.
 
@@ -1051,7 +1051,7 @@ Implements `IBuildingBlock`.
 
 #### `LizardBuildingBlock`
 
-Lizard (formerly LZ5) — Przemysław Skibiński's LZ4 derivative. The reference codec offers several parsers ranging from an LZ4-compatible fast mode up to full-search modes with a Huffman/FSE entropy stage for maximum ratio; this building block implements the baseline LZ4-compatible block parser (the fastest of Lizard's modes) — the entropy-coded high-ratio modes are out of scope for a single building block.
+Exposes Przemysław Skibiński's Lizard (formerly LZ5) as a benchmarkable building block.
 
 Implements `IBuildingBlock`.
 
@@ -1478,7 +1478,7 @@ Decodes the LZFX block format produced by `LzfxCompressor`. Format reference: ht
 
 #### `LzgBuildingBlock`
 
-LZG — Marcus Geelnard's liblzg LZ77 codec: an escape-byte (0xFF) token stream over a small 2 KiB sliding window, tuned for a simple, fast, dependency-free decoder rather than maximal ratio.
+Exposes Marcus Geelnard's LZG as a benchmarkable building block.
 
 Implements `IBuildingBlock`.
 
@@ -9376,6 +9376,24 @@ Implements `IEquatable<StreamingArchiveInput>`.
 | `OpenStream` | `Func<Stream> OpenStream { get; init; }` | Factory that returns the entry's bytes as a `Stream` — typically a `BoundedEntryStream`. Ignored when `IsDirectory` is `true`. |
 | `Size` | `long Size { get; init; }` | The entry's logical byte size, used by two-pass writers to compute geometry before any data is read. `0` for directory placeholders. |
 
+### Namespace `FileFormat.BriefLz`
+
+[`BriefLzStream`](#brieflzstream)
+
+#### `BriefLzStream`
+
+Reads and writes the `blzpack` container used by the BriefLZ reference distribution.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultBlockSize` | `const int DefaultBlockSize` | The reference `blzpack` default block size. |
+| `MaximumCompressionLevel` | `const int MaximumCompressionLevel` | Highest managed encoder effort. |
+| `MinimumCompressionLevel` | `const int MinimumCompressionLevel` | Fastest managed encoder effort. |
+| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Tries every managed effort level and writes the smallest complete `blzpack` stream. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses with the reference-compatible fast parser (level 1). |
+| `Compress` | `static void Compress(Stream input, Stream output, int level)` | Compresses using a managed BriefLZ effort level from 1 (fastest) through 10 (deepest candidate search). |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses all concatenated `blzpack` blocks from `input` into `output`. |
+
 ### Namespace `FileFormat.Bzip2`
 
 [`Bzip2BuildingBlock`](#bzip2buildingblock) · [`Bzip2FormatDescriptor`](#bzip2formatdescriptor) · [`Bzip2Stream`](#bzip2stream)
@@ -9513,6 +9531,20 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Decompresses data from the inner stream into the provided buffer. |
 | `FinishCompression` | `protected override void FinishCompression()` | Called when the stream is being closed in Compress mode. Implementations should flush any remaining compressed data. |
 
+### Namespace `FileFormat.Lizard`
+
+[`LizardStream`](#lizardstream)
+
+#### `LizardStream`
+
+Managed Lizard (formerly LZ5) frame codec covering all four Lizard v2 method families: fastLZ4, LIZv1, fastLZ4+HUF, and LIZv1+HUF (levels 10-49).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static void Compress(Stream input, Stream output)` |  |
+| `Compress` | `static void Compress(Stream input, Stream output, int compressionLevel, int blockSize)` |  |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` |  |
+
 ### Namespace `FileFormat.Lynx`
 
 [`LynxFormatDescriptor`](#lynxformatdescriptor)
@@ -9591,6 +9623,20 @@ Provides static methods for compressing and decompressing data using Apple's LZF
 | `DecodeLzvn` | `static byte[] DecodeLzvn(ReadOnlySpan<byte> stream, int length)` | Decodes a bare LZVN stream that expands to exactly `length` bytes. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an Apple LZFSE stream from `input` to `output`. |
 | `EncodeLzvn` | `static byte[] EncodeLzvn(ReadOnlySpan<byte> data)` | Encodes `data` as a bare LZVN stream — the payload of a `bvxn` block, and the form HFS+/APFS transparent compression (decmpfs methods 7/8) stores — ending with the eight-byte end-of-stream instruction. |
+
+### Namespace `FileFormat.Lzg`
+
+[`LzgStream`](#lzgstream)
+
+#### `LzgStream`
+
+Provides managed LZG compression and decompression compatible with liblzg's 16-byte container header and LZG1 marker-coded data stream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` to `output` with the liblzg-compatible default encoder settings (level 5, fast match lookup). |
+| `Compress` | `static void Compress(Stream input, Stream output, int level, bool fast)` | Compresses `input` to `output`. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses one complete LZG stream from `input` to `output`. |
 
 ### Namespace `FileFormat.Lzma`
 
