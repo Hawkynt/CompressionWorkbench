@@ -110,6 +110,10 @@
     <EmbeddedResource Include="BuildingBlocks/LzavVectors/*.lzav">
       <LogicalName>LzavVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- BriefLZ, LZG and Lizard streams the reference tools wrote; see BuildingBlocks/FormatBlockVectors/README.md. -->
+    <EmbeddedResource Include="BuildingBlocks\FormatBlockVectors\*.bin">
+      <LogicalName>FormatBlockVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="StructuredPseudoArchives\ReferenceVectors\*"
                       Exclude="StructuredPseudoArchives\ReferenceVectors\*.py;StructuredPseudoArchives\ReferenceVectors\*.pl;StructuredPseudoArchives\ReferenceVectors\*.ps1;StructuredPseudoArchives\ReferenceVectors\README.md">
       <LogicalName>ReferenceVectors.%(Filename)%(Extension)</LogicalName>
