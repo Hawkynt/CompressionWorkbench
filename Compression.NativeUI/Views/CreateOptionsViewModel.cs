@@ -95,12 +95,30 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   public string Password { get; set; } = "";
   public bool EncryptFilenames { get; set; }
 
+  /// <summary>Split sizes offered for 7z, as 7-Zip's own dialog offers them; the first means one file.</summary>
+  public string[] VolumeSizeOptions { get; } = ["No split", "10 MB", "100 MB", "650 MB (CD)", "700 MB (CD)", "1000 MB", "4092 MB (FAT32)", "4480 MB (DVD)", "8128 MB (DVD DL)"];
+  private string _selectedVolumeSize = "No split";
+  public string SelectedVolumeSize { get => _selectedVolumeSize; set => SetField(ref _selectedVolumeSize, value); }
+
+  /// <summary>The chosen split size in bytes, 0 for a single file.</summary>
+  internal long VolumeSizeBytes {
+    get {
+      var digits = new string([.. (_selectedVolumeSize ?? "").TakeWhile(char.IsDigit)]);
+      return long.TryParse(digits, out var mb) ? mb * 1024 * 1024 : 0;
+    }
+  }
+
   public string[] EncryptionMethodOptions { get; private set; } = [];
   public string SelectedEncryptionMethod { get => _selectedEncryptionMethod; set => SetField(ref _selectedEncryptionMethod, value); }
 
   public bool MakeSfx {
     get => _makeSfx;
-    set { if (SetField(ref _makeSfx, value)) OnPropertyChanged(nameof(ShowSfxOptions)); }
+    set {
+      if (SetField(ref _makeSfx, value)) {
+        OnPropertyChanged(nameof(ShowSfxOptions));
+        OnPropertyChanged(nameof(ShowVolumeSize));
+      }
+    }
   }
 
   public string[] SfxTypeOptions { get; }
@@ -129,6 +147,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   public bool PasswordEnabled => SupportsEncryption();
   public bool ShowEncryptionMethod => _format is F.Zip;
   public bool ShowEncryptFilenames => _format is F.SevenZip or F.Rar;
+  public bool ShowVolumeSize => _format is F.SevenZip && !_makeSfx;
   public bool ShowSfx => _format is F.SevenZip or F.Zip or F.Rar;
   public bool ShowSfxOptions => _makeSfx && ShowSfx;
   public bool ShowMemoryEstimate => !string.IsNullOrEmpty(MemoryEstimate);
@@ -838,6 +857,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
       EncryptFilenames = EncryptFilenames,
       ZipEncryption = SelectedEncryptionMethod?.Contains("ZipCrypto") == true ? "zipcrypto" : null,
       FormatSpecific = formatSpecific,
+      VolumeSize = ShowVolumeSize ? VolumeSizeBytes : 0,
     };
   }
 

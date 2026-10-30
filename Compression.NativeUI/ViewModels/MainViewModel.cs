@@ -2278,6 +2278,8 @@ internal sealed class MainViewModel : ViewModelBase {
       Exception? err = null;
       try {
         ArchiveOperations.Create(outputPath, inputs, opts, format);
+        if (opts.VolumeSize > 0)
+          outputPath = ArchiveVolumes.VolumePath(outputPath, 1); // the set opens from its first volume
 
         if (makeSfx) {
           var sfxPath = Path.ChangeExtension(outputPath, ".exe");

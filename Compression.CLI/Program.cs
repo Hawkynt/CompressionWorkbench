@@ -131,6 +131,7 @@ var dictSizeOpt = new Option<string?>("--dict-size", "-d") { Description = "LZMA
 var wordSizeOpt = new Option<int?>("--word-size", "-w") { Description = "LZMA fast bytes: 5-273 (default 32). PPMd model order: 2-32 (default 6)" };
 var levelOpt = new Option<int?>("--level", "-l") { Description = "Level 0-9. Deflate: 0=none,6=default,9=best. LZMA: 1=fast,5=normal,9=best" };
 var encryptHeadersOpt = new Option<bool>("--encrypt-headers", "-eh") { Description = "Encrypt file names and headers (7z, RAR5). Requires --password" };
+var volumeSizeOpt = new Option<string?>("--volume-size", "-v") { Description = "Split the archive into volumes of this size, named like 7-Zip's (backup.7z.001, .002, ...): e.g. 100m, 4480m, 650m" };
 var headerCompressionOpt = new Option<bool>("--header-compression", "-hc") { Description = "7z: store the header LZMA-packed (7-Zip's -mhc=on) when that is smaller" };
 var zipEncryptionOpt = new Option<string?>("--zip-encryption") { Description = "ZIP encryption method: aes256 (default, strong) or zipcrypto (weak, legacy compatible)" };
 var sfxOpt = new Option<bool>("--sfx") { Description = "Create a self-extracting archive (console stub, no runtime needed)" };
@@ -154,6 +155,8 @@ var createCmd = new Command("create", """
     cwb create backup.7z src/ -p secret                 7z with AES-256 encryption
     cwb create backup.7z src/ -p secret -eh             7z, file names encrypted too
     cwb create backup.7z src/ -hc                       7z with a packed header (7-Zip -mhc=on)
+    cwb create backup.7z src/ -v 100m                   7z in 100 MB volumes: backup.7z.001, .002, ...
+    cwb extract backup.7z.001 -o out                    any volume of a split archive opens the whole set
     cwb create backup.zip *.txt -m deflate+ -t 4        Zopfli optimal, 4 threads
 
   Methods by format:
@@ -171,7 +174,7 @@ var createCmd = new Command("create", """
     --solid-size  Max solid block: 0=single block, 64m=64MB blocks, 1g=1GB blocks.
     --level       0-9: 1=fast, 5=normal, 9=best.
     --threads     Parallel compression (7z splits into solid blocks, ZIP per-entry).
-  """) { createArchiveArg, createFilesArg, passwordOpt, methodOpt, forceCompressOpt, threadsOpt, solidSizeOpt, dictSizeOpt, wordSizeOpt, levelOpt, encryptHeadersOpt, headerCompressionOpt, zipEncryptionOpt, sfxOpt, sfxUiOpt, sfxTargetOpt };
+  """) { createArchiveArg, createFilesArg, passwordOpt, methodOpt, forceCompressOpt, threadsOpt, solidSizeOpt, dictSizeOpt, wordSizeOpt, levelOpt, encryptHeadersOpt, headerCompressionOpt, volumeSizeOpt, zipEncryptionOpt, sfxOpt, sfxUiOpt, sfxTargetOpt };
 createCmd.Aliases.Add("c");
 createCmd.SetAction((ParseResult ctx) => {
   var archive = ctx.GetValue(createArchiveArg)!;
@@ -186,6 +189,12 @@ createCmd.SetAction((ParseResult ctx) => {
   var level = ctx.GetValue(levelOpt);
   var encryptHeaders = ctx.GetValue(encryptHeadersOpt);
   var headerCompression = ctx.GetValue(headerCompressionOpt);
+  var volumeSizeText = ctx.GetValue(volumeSizeOpt);
+  var volumeSize = volumeSizeText == null ? 0 : ParseSizeGeneric(volumeSizeText);
+  if (volumeSizeText != null && volumeSize <= 0) {
+    Console.Error.WriteLine($"--volume-size: '{volumeSizeText}' is not a size (e.g. 100m).");
+    return 1;
+  }
   var zipEncryption = ctx.GetValue(zipEncryptionOpt);
   var makeSfx = ctx.GetValue(sfxOpt);
   var makeSfxUi = ctx.GetValue(sfxUiOpt);
@@ -213,7 +222,12 @@ createCmd.SetAction((ParseResult ctx) => {
     ForceCompress = forceCompress, Password = password, EncryptFilenames = encryptHeaders,
     ZipEncryption = zipEncryption,
     FormatSpecific = headerCompression ? new Dictionary<string, string> { ["HeaderCompression"] = "true" } : null,
+    VolumeSize = volumeSize,
   };
+  if (volumeSize > 0 && (ctx.GetValue(sfxOpt) || ctx.GetValue(sfxUiOpt))) {
+    Console.Error.WriteLine("--volume-size and --sfx are alternatives: a self-extractor is one file.");
+    return 1;
+  }
   var methodLabel = method.IsDefault ? "" : $" [{method}]";
   var threadLabel = threads > 1 ? $" ({threads} threads)" : "";
   Console.Write($"Creating {archive.Name} with {countLabel}{methodLabel}{threadLabel}...");
@@ -223,6 +237,11 @@ createCmd.SetAction((ParseResult ctx) => {
   Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
   if (autoStored > 0)
     Console.WriteLine($"  {autoStored} file(s) auto-stored as incompressible (use --force-compress to override)");
+  if (volumeSize > 0) {
+    var volumes = ArchiveVolumes.VolumesOf(ArchiveVolumes.VolumePath(archive.FullName, 1));
+    Console.WriteLine($"Archive size: {FormatSize(volumes.Sum(static v => new FileInfo(v).Length))} in {volumes.Count} volume(s): {Path.GetFileName(volumes[0])} .. {Path.GetFileName(volumes[^1])}");
+    return 0;
+  }
   Console.WriteLine($"Archive size: {FormatSize(new FileInfo(archive.FullName).Length)}");
 
   if (makeSfx && makeSfxUi) {

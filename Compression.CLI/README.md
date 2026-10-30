@@ -139,6 +139,10 @@ Append `+` to any method for optimal encoding:
 - `--level N` — Compression level 0-9
 - `--threads N` — Parallel compression threads
 - `--solid-size SIZE` — 7z solid block size
+- `--volume-size SIZE` / `-v` — Split the archive into volumes named like 7-Zip's (`backup.7z.001`, `.002`, …);
+  `list`, `extract` and `test` open a split archive from any of its volumes, and name a missing one
+- `--header-compression` / `-hc` — 7z: store the header LZMA-packed (7-Zip's `-mhc=on`)
+- `--encrypt-headers` / `-eh` — 7z, RAR5: encrypt the file names too (needs `--password`)
 - `--force-compress` — Override incompressibility detection
 - `--sfx` / `--sfx-ui` — Create a self-extracting archive. `--sfx` is a console stub; `--sfx-ui`
   shows a small window with a folder picker. Both are NativeAOT binaries, so the recipient needs
