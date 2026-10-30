@@ -281,6 +281,8 @@ public sealed class NtfsReader : IDisposable {
         case 0x80: // $DATA
           if (attrName == null || attrName.Length == 0) // default data stream only
             ParseDataAttribute(record, attrPos, nonResident, mft);
+          else if (attrName == NtfsWof.StreamName)
+            ParseWofStream(record, attrPos, nonResident, mft);
           break;
         case 0x90: // $INDEX_ROOT
           ParseIndexRoot(record, attrPos, mft);
@@ -408,6 +410,24 @@ public sealed class NtfsReader : IDisposable {
     }
   }
 
+  // The named stream "WofCompressedData" of a WOF-compressed file.
+  private static void ParseWofStream(byte[] record, int attrPos, byte nonResident, MftRecord mft) {
+    if (nonResident == 0) {
+      var valueLen = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(attrPos + 16));
+      var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 20));
+      var dataStart = attrPos + valueOffset;
+      if (dataStart + valueLen <= record.Length) {
+        mft.WofResident = record.AsSpan(dataStart, (int)valueLen).ToArray();
+        mft.WofSize = valueLen;
+      }
+      return;
+    }
+    if (attrPos + 56 > record.Length) return;
+    mft.WofSize = BinaryPrimitives.ReadInt64LittleEndian(record.AsSpan(attrPos + 48));
+    var dataRunsOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 32));
+    mft.WofRuns = ParseDataRuns(record, attrPos + dataRunsOffset);
+  }
+
   // Reparse tags whose buffer follows the MS-REPARSE symlink layout.
   private const uint IoReparseTagSymlink = 0xA000000Cu;
   private const uint IoReparseTagMountPoint = 0xA0000003u; // junction / mount point
@@ -428,6 +448,12 @@ public sealed class NtfsReader : IDisposable {
     if (dataStart + 8 > record.Length || valueLen < 8) return;
 
     var tag = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(dataStart));
+    if (tag == NtfsWof.ReparseTag) {
+      var length = (int)Math.Min(valueLen - 8, record.Length - (dataStart + 8));
+      (mft.WofAlgorithm, mft.WofRefusal) = NtfsWof.ParseReparseData(record.AsSpan(dataStart + 8, Math.Max(0, length)));
+      mft.IsWof = true;
+      return;
+    }
     if (tag != IoReparseTagSymlink && tag != IoReparseTagMountPoint) return;
 
     var bufStart = dataStart + 8; // past ReparseTag + ReparseDataLength + Reserved
@@ -690,6 +716,9 @@ public sealed class NtfsReader : IDisposable {
     if (!_mftRecords.TryGetValue(entry.MftRecord, out var mft))
       return [];
 
+    if (mft.IsWof)
+      return ExtractWof(mft, entry.Size);
+
     if (mft.IsResident && mft.ResidentData != null)
       return mft.ResidentData;
 
@@ -723,6 +752,40 @@ public sealed class NtfsReader : IDisposable {
     if (mft.DataSize > 0 && result.Length > mft.DataSize)
       return result.AsSpan(0, (int)mft.DataSize).ToArray();
     return result;
+  }
+
+  // A WOF ("system compression") file: decode WofCompressedData, or refuse — its
+  // unnamed $DATA is sparse, so reading that would return zeros for the file.
+  private byte[] ExtractWof(MftRecord mft, long size) {
+    if (mft.WofRefusal is { } refusal)
+      throw new NotSupportedException("NTFS: " + refusal);
+    byte[] stream;
+    if (mft.WofResident is { } resident) {
+      stream = resident;
+    } else if (mft.WofRuns is { } runs) {
+      if (mft.WofSize is < 0 or > int.MaxValue)
+        throw new NotSupportedException("NTFS: WofCompressedData is beyond the buffered extraction limit.");
+      using var ms = new MemoryStream();
+      foreach (var run in runs) {
+        var runBytes = run.ClusterCount * _clusterSize;
+        if (run.Sparse) {
+          ms.Write(new byte[(int)Math.Min(runBytes, Math.Max(0, mft.WofSize - ms.Length))]);
+          if (ms.Length >= mft.WofSize) break;
+          continue;
+        }
+        var clusterOffset = run.Lcn * _clusterSize;
+        if (clusterOffset < 0 || clusterOffset + runBytes > _data.Length)
+          throw new InvalidDataException("NTFS: WofCompressedData run lies outside the volume.");
+        _data.CopyTo(clusterOffset, ms, runBytes);
+        if (ms.Length >= mft.WofSize) break;
+      }
+      if (ms.Length < mft.WofSize)
+        throw new InvalidDataException("NTFS: WofCompressedData runs are shorter than the stream.");
+      stream = ms.GetBuffer().AsSpan(0, (int)mft.WofSize).ToArray();
+    } else {
+      throw new InvalidDataException("NTFS: WOF reparse point without a WofCompressedData stream.");
+    }
+    return NtfsWof.Decode(stream, size, mft.WofAlgorithm!.Value);
   }
 
   // Extracts an LZNT1-compressed $DATA stream. The runs are walked VCN-by-VCN in
@@ -833,6 +896,14 @@ public sealed class NtfsReader : IDisposable {
     public List<DataRun>? DataRuns;
     public bool Compressed;
     public int CompressionUnitClusters;
+
+    // Windows Overlay Filter system compression
+    public bool IsWof;
+    public uint? WofAlgorithm;
+    public string? WofRefusal;
+    public byte[]? WofResident;
+    public List<DataRun>? WofRuns;
+    public long WofSize;
 
     // Index
     public List<uint>? IndexEntryRefs;

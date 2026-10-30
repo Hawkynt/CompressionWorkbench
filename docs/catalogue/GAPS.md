@@ -171,7 +171,6 @@ running real-world samples. The file named at the end of each row is where the l
 | APFS | `Apfs` | 3 | no decmpfs (LZVN/LZFSE) compressed files, no encryption (ApfsReader.cs) |
 | Compiled HTML Help (CHM) | `Chm` | 3 | content sections above 1 unsupported (ChmReader.cs) |
 | FreeArc | `FreeArc` | 3 | only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs) |
-| NTFS | `Ntfs` | 3 | WOF (XPRESS/LZX) compressed files not decoded; LZNT1 is |
 | QCOW / QCOW2 | `Qcow2` | 3 | no encryption, backing files, zstd clusters or extended L2 (Qcow2Structures.cs) |
 | SquashFS | `SquashFs` | 3 | SquashFS v4 only; v1-v3 rejected (SquashFsSuperblock.cs) |
 | UDF | `Udf` | 3 | type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs) |

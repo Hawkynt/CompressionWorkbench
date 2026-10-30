@@ -135,6 +135,10 @@
     <EmbeddedResource Include="Aff4\ReferenceVectors\*.aff4;Aff4\ReferenceVectors\*.tsv">
       <LogicalName>Aff4Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- NTFS volume with WOF files, read back by ntfs3; see Ntfs/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Ntfs\ReferenceVectors\*.gz;Ntfs\ReferenceVectors\manifest.txt">
+      <LogicalName>NtfsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- OneNote sections from the Apache Tika test corpus; see OneNote/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
