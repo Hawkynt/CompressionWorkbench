@@ -1,158 +1,114 @@
 #pragma warning disable CS1591
+using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Uharc;
 
 /// <summary>
-/// UHARC high-compression archive (PPM/LZP/delta) by Uwe Herklotz.
+/// UHARC 0.6 archive (Uwe Herklotz, 1997–2005): read-only. Lists every 0.6/0.6a/0.6b archive and
+/// extracts the store, LZP (<c>-mz</c>) and ALZ (<c>-m1</c>..<c>-m3</c>, including the multimedia
+/// predictors) modes, password-protected archives and self-extractors; the PPM mode (<c>-mx</c>)
+/// and the legacy RLE/LZ78 modes are refused.
 ///
 /// References:
 /// <list type="bullet">
-///   <item><description>UHARC by Uwe Herklotz — closed-source archiver; the bundled UHARC documentation is the only official description</description></item>
-///   <item><description>no public format specification; container layout reverse-engineered from the DOS/Win32 binaries</description></item>
+///   <item><description><c>docs/UHARC-ON-DISK.md</c> — the layout and codecs as implemented, with how each part was established</description></item>
+///   <item><description><c>http://fileformats.archiveteam.org/wiki/UHARC</c> — format overview and sample archives</description></item>
+///   <item><description>UHARC 0.6b documentation (<c>UHARC.DOC</c>, 01 Oct 2005) — modes, switches and dictionary sizes</description></item>
 /// </list>
 /// </summary>
-public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
+public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 
-  /// <summary>Rebuild-based defrag: extracts then re-creates the UHARC archive in listing order.</summary>
-  public void Defragment(Stream archive)
-    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
-
-  /// <summary>Rebuild-based defrag: extracts then re-creates the UHARC archive per the requested mode.</summary>
-  public void Defragment(Stream archive, DefragOptions options) {
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new UharcReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FileName, r.Extract(e)));
-      },
-      buildImage: files => {
-        using var ms = new MemoryStream();
-        using (var w = new UharcWriter(ms, leaveOpen: true)) {
-          foreach (var (n, d) in files) w.AddFile(n, d, DateTime.Now);
-        }
-        return ms.ToArray();
-      });
-  }
-
-
-  /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
-    archive.Position = 0;
-    yield return new DefragBlockInfo(0, UharcConstants.HeaderSize, DefragBlockKind.MetadataReserved, FileName: "UHARC Header");
-    UharcReader r;
-    try {
-      r = new UharcReader(archive, leaveOpen: true);
-    } catch {
-      yield break;
-    }
-    foreach (var e in r.Entries) {
-      // Entry header: 1+4+4+4+4+2+nameLen+1 bytes before DataOffset
-      var hdrLen = 1 + 4 + 4 + 4 + 4 + 2 + System.Text.Encoding.UTF8.GetByteCount(e.FileName) + 1;
-      var hdrStart = e.DataOffset - hdrLen;
-      if (hdrStart >= 0)
-        yield return new DefragBlockInfo(hdrStart, hdrLen, DefragBlockKind.MetadataReserved, FileName: "Header: " + e.FileName);
-      if (e.CompressedSize > 0)
-        yield return new DefragBlockInfo(e.DataOffset, e.CompressedSize, DefragBlockKind.Used, FileName: e.FileName);
-    }
-  }
-
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "Uharc";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "UHARC";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
-  // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
-  // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
+  // Read-only: nothing here writes the format, and no writer could be verified against uharc.exe.
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanModify |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".uha";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
   public IReadOnlyList<string> Extensions => [".uha"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'U', (byte)'H', (byte)'A'], Confidence: 0.90)];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("uharc", "UHARC")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
+  public IReadOnlyList<MagicSignature> MagicSignatures => [new("UHA"u8.ToArray(), Confidence: 0.85)];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("store", "Store"), new("lzp", "LZP"), new("alz", "ALZ"),
+  ];
   public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
-  public string Description => "UHARC high-compression archive (PPM/LZP/delta)";
+  public string Description =>
+    "UHARC 0.6 archive. Lists all archives; extracts the store, LZP and ALZ modes (with multimedia " +
+    "and executable filters, passwords and SFX stubs). PPM-mode archives list but do not extract.";
 
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new UharcReader(stream);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.OriginalSize,
-      e.CompressedSize, e.Method == 255 ? "Store" : "LZP", e.IsDirectory, false, e.LastModified)).ToList();
+    if (TryOpen(stream, password, out var reader, out var image) is { } failure)
+      return [
+        new(0, "FULL.uha", image.LongLength, image.LongLength, "stored", false, false, null),
+        new(1, "metadata.ini", Metadata(failure).Length, Metadata(failure).Length, "stored", false, false, null),
+      ];
+
+    var method = reader!.MethodName;
+    return reader.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.Size, -1,
+      e.IsDirectory ? "dir" : method, e.IsDirectory, reader.IsEncrypted, e.LastModified)).ToList();
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new UharcReader(stream);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(outputDir, e.FileName, r.Extract(e));
+    if (TryOpen(stream, password, out var reader, out var image) is { } failure) {
+      WriteIfMatch(outputDir, "FULL.uha", image, files);
+      WriteIfMatch(outputDir, "metadata.ini", Metadata(failure), files);
+      return;
+    }
+
+    foreach (var e in reader!.Entries) {
+      if (files != null && !MatchesFilter(e.FileName, files))
+        continue;
+      if (e.IsDirectory)
+        Directory.CreateDirectory(Path.Combine(outputDir, e.FileName));
+      else
+        WriteFile(outputDir, e.FileName, reader.Extract(e));
     }
   }
 
-  /// <summary>
-  /// Performs the create operation.
-  /// </summary>
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    using var w = new UharcWriter(output, leaveOpen: true);
-    foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
-      w.AddFile(name, data, DateTime.Now);
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+    ArgumentNullException.ThrowIfNull(entryName);
+    ArgumentNullException.ThrowIfNull(output);
+    if (input.CanSeek)
+      input.Position = 0;
+    var reader = new UharcReader(input, password);
+    var entry = reader.Entries.FirstOrDefault(e => !e.IsDirectory && string.Equals(e.FileName, entryName, StringComparison.OrdinalIgnoreCase))
+      ?? throw new FileNotFoundException($"UHARC: no entry named '{entryName}'.");
+    output.Write(reader.Extract(entry));
   }
 
   /// <summary>
-  /// Zeros every dead byte in the archive: any byte not covered by a live extent
-  /// in the layout map (headers, entry data and directory structures are live and
-  /// preserved, so the archive still lists and extracts identically). Cluster-tip
-  /// wiping is N/A (entries are stored byte-exact with no per-file slack).
+  /// Opens the archive, or reports why it cannot be read: unsupported versions and damaged
+  /// headers fall back to a raw listing instead of throwing. A missing or wrong password still
+  /// throws, so the caller can ask for one.
   /// </summary>
-  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
-    ArgumentNullException.ThrowIfNull(image);
-    image.Position = 0;
-    var imageSize = image.Length;
-    var extents = this.EnumerateLayout(image);
-    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+  private static string? TryOpen(Stream stream, string? password, out UharcReader? reader, out byte[] image) {
+    using (var copy = new MemoryStream()) {
+      if (stream.CanSeek)
+        stream.Position = 0;
+      stream.CopyTo(copy);
+      image = copy.ToArray();
+    }
+
+    try {
+      reader = new UharcReader(new MemoryStream(image, writable: false), password);
+      return null;
+    } catch (InvalidDataException e) when (!e.Data.Contains(UharcReader.WrongPasswordKey)) {
+      reader = null;
+      return e.Message;
+    }
+  }
+
+  private static byte[] Metadata(string reason)
+    => Encoding.UTF8.GetBytes($"parse_status=partial\nreason={reason.Replace('\n', ' ')}\n");
+
+  private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? files) {
+    if (files != null && files.Length > 0 && !MatchesFilter(name, files))
+      return;
+    WriteFile(outputDir, name, data);
   }
 }
