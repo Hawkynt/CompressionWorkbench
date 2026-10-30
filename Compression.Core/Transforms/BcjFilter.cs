@@ -160,7 +160,7 @@ public static class BcjFilter {
       if ((offset & 0x800000) != 0)
         offset |= unchecked((int)0xFF000000);
 
-      var currentAddr = (startOffset + i) >> 2; // word address
+      var currentAddr = (startOffset + i + 8) >> 2; // ARM's PC is two instructions ahead.
       if (encode)
         offset += currentAddr;
       else
