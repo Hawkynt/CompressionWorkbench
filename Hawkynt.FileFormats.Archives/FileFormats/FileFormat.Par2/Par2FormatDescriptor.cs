@@ -22,7 +22,13 @@ namespace FileFormat.Par2;
 /// (recovery-set id, packet count, block size, protected-file count), a
 /// <c>files.ini</c> listing each protected file's name and length parsed from the
 /// FileDesc packets, and one raw entry per packet under <c>packets/NNNN_&lt;type&gt;.bin</c>.
-/// Read-only; malformed input degrades to FULL + partial metadata without throwing.</para>
+/// Malformed input degrades to FULL + partial metadata without throwing.</para>
+///
+/// <para>Create (write-once) builds a recovery set for the input files — one .par2 holding the
+/// main, file-description, slice-checksum, recovery-slice and creator packets — that par2cmdline
+/// verifies against those files and repairs them from (see <see cref="Par2Writer"/>). Options:
+/// <c>slicesize</c> (bytes, multiple of 4) and <c>recoveryslices</c> (count; default 5 % of the
+/// input slices).</para>
 ///
 /// References:
 /// <list type="bullet">
@@ -31,7 +37,7 @@ namespace FileFormat.Par2;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Parchive</c> — Wikipedia</description></item>
 /// </list>
 /// </summary>
-public sealed class Par2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class Par2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -48,7 +54,7 @@ public sealed class Par2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
@@ -145,6 +151,18 @@ public sealed class Par2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       Array.Copy(data, p.Offset, slab, 0, p.Length);
       WriteFile(outputDir, name, slab);
     }
+  }
+
+  /// <summary>Writes a recovery set protecting the input files.</summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(options);
+    var files = FilesOnly(inputs)
+      .Select(f => new Par2Writer.SourceFile(f.Name.Replace('\\', '/').TrimStart('/'), f.Data))
+      .ToList();
+    long sliceSize = options.TryGetInt("slicesize", out var s) ? s : 0;
+    var recovery = options.TryGetInt("recoveryslices", out var r) ? r : -1;
+    Par2Writer.Write(output, files, sliceSize, recovery);
   }
 
   private static bool Wants(string[]? files, string name)

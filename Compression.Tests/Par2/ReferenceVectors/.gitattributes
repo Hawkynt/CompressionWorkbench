@@ -1,0 +1,4 @@
+# Fixture bytes are the test: never let a checkout rewrite line endings.
+*.par2 -text
+a.txt -text
+b.bin -text

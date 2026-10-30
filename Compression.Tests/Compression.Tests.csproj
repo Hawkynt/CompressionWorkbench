@@ -139,6 +139,10 @@
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- A recovery set written by par2cmdline 0.8.1 and its two source files; see Par2/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Par2\ReferenceVectors\*.par2;Par2\ReferenceVectors\a.txt;Par2\ReferenceVectors\b.bin">
+      <LogicalName>Par2Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Sparsebundles written by Apple's hdiutil (keramics, ewfprobe test corpora); see
          AppleSparse/ReferenceVectors/README.md. The tests rebuild each bundle directory from these. -->
     <EmbeddedResource Include="AppleSparse\ReferenceVectors\**\*"
