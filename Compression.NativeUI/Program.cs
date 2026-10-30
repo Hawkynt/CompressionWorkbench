@@ -165,8 +165,19 @@ internal static class Program {
   }
 
   static int ExtractTo(string archivePath, string destination, string caption = "Extract") {
+    string? password = null;
     try {
-      ArchiveOperations.Extract(archivePath, destination, password: null, files: null);
+      // An encrypted archive asks for its password, again after a wrong one, until cancelled.
+      for (var attempt = 0; ; ++attempt) {
+        try {
+          ArchiveOperations.Extract(archivePath, destination, password: password, files: null);
+          break;
+        } catch (Exception ex) when (ViewModels.MainViewModel.IsPasswordProblem(ex) && attempt < 5) {
+          var dialog = new Views.PasswordDialog(Path.GetFileName(archivePath), previousWasWrong: password != null);
+          if (dialog.ShowDialog() != DialogResult.OK) throw;
+          password = dialog.Password;
+        }
+      }
       MessageBox.Show($"Extracted to {destination} successfully.", caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
       return 0;
     } catch (Exception ex) {
