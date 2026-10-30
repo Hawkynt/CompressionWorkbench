@@ -953,7 +953,7 @@ DoubleSpace/DriveSpace LZ77 decompressor. Sister of `DsLz77Compressor`; thin pas
 
 #### `FastLzBuildingBlock`
 
-Exposes FastLZ level-1 compression as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support. Reference: Ariya Hidayat, "FastLZ", https://ariya.github.io/FastLZ/.
+Exposes FastLZ as a benchmarkable building block: a 4-byte LE uncompressed size, then the block `fastlz_compress` writes (level 1 below 64 KiB, level 2 from there on). Reference: Ariya Hidayat, "FastLZ", https://ariya.github.io/FastLZ/.
 
 Implements `IBuildingBlock`.
 
@@ -969,19 +969,20 @@ Implements `IBuildingBlock`.
 
 #### `FastLzCompressor`
 
-Implements FastLZ Level 1 compression from the public block-format specification: Ariya Hidayat, "FastLZ — free, open-source, portable real-time compression library", https://ariya.github.io/FastLZ/ (block format section) and https://github.com/ariya/FastLZ.
+FastLZ compression exactly as Ariya Hidayat's FastLZ library performs it, at level 1 and level 2.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` using the FastLZ level-1 block format. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` the way `fastlz_compress` does: level 1 below 64 KiB, level 2 from there on. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, int level)` | Compresses `data` at FastLZ level `level` (1 or 2). |
 
 #### `FastLzDecompressor`
 
-Decodes the FastLZ level-1 block format produced by `FastLzCompressor`. Format reference: https://ariya.github.io/FastLZ/ (block format section).
+FastLZ decompression exactly as `fastlz_decompress` performs it, at both levels.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses a FastLZ level-1 stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses a FastLZ block that expands to `originalLength` bytes. |
 
 ### Namespace `Compression.Core.Dictionary.GbaLz77`
 
