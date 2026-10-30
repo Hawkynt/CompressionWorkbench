@@ -60,7 +60,7 @@ public class JpegLazyMetadataTests {
     Assert.That(meta, Is.EqualTo(new FrameMetadata(0, 0, 24, false)));
   }
 
-  [Test]
+  [Test, Category("Performance")]
   public void List_PaddedJpeg_CompletesUnderHundredMs_AndDoesNotDecodePixels() {
     // The legacy code path called JpegReader.FromStream from List(), which
     // forces a full pixel decode. To prove that path is dead, we build a JPEG

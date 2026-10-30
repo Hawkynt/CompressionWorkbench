@@ -32024,6 +32024,94 @@ WORM writer for Web Bundle (`.wbn`) files. Emits the canonical 10-byte CBOR-arra
 | `DefaultVersion` | `const string DefaultVersion` | Default version tag emitted when none is supplied via options. |
 | `Write` | `static void Write(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a Web Bundle from `inputs` to `output`. |
 
+### Namespace `FileFormat.WebArchive`
+
+[`BinaryPlist`](#binaryplist) · [`PlistSet`](#plistset) · [`PlistUid`](#plistuid) · [`WebArchiveDocument`](#webarchivedocument) · [`WebArchiveFormatDescriptor`](#webarchiveformatdescriptor) · [`WebArchiveResource`](#webarchiveresource)
+
+#### `BinaryPlist`
+
+Apple binary property lists (`bplist00`). Values map to `null`, `Boolean`, `Int64`, `Int128` (the 16-byte integers), `Double`, `DateTime` (UTC), `byte[]`, `String`, `PlistUid`, `List<object?>`, `PlistSet` and `OrderedDictionary<string, object?>` (key order is kept, so a rewrite preserves it).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsBinaryPlist` | `static bool IsBinaryPlist(ReadOnlySpan<byte> data)` | Whether `data` starts with the `bplist00` header. |
+| `Read` | `static object Read(byte[] data)` |  |
+| `Write` | `static byte[] Write(object root)` |  |
+
+#### `PlistSet`
+
+A set (`0xCn` marker), kept apart from arrays so a rewrite writes it back as a set.
+
+Implements `IEquatable<PlistSet>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PlistSet` | `PlistSet(List<object> Items)` | A set (`0xCn` marker), kept apart from arrays so a rewrite writes it back as a set. |
+| `Items` | `List<object> Items { get; init; }` |  |
+
+#### `PlistUid`
+
+An NSKeyedArchiver object reference (`0x8n` marker).
+
+Implements `IEquatable<PlistUid>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PlistUid` | `PlistUid(ulong Value)` | An NSKeyedArchiver object reference (`0x8n` marker). |
+| `Value` | `ulong Value { get; init; }` |  |
+
+#### `WebArchiveDocument`
+
+A Safari / WebKit web archive: a binary property list whose root dictionary holds `WebMainResource` (the page), optional `WebSubresources` (images, stylesheets, scripts) and optional `WebSubframeArchives` (nested web archives, one per frame). Each resource dictionary carries `WebResourceURL`, `WebResourceMIMEType`, `WebResourceData` and optionally `WebResourceTextEncodingName`, `WebResourceFrameName` and `WebResourceResponse` (an archived NSURLResponse, kept opaque).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WebArchiveDocument` | `WebArchiveDocument(byte[] data)` |  |
+| `Resources` | `IReadOnlyList<WebArchiveResource> Resources { get; }` | Every resource, page first, in document order (subframes after the root's subresources). |
+| `RootOrigin` | `string RootOrigin { get; }` | The root page's origin (scheme + authority), when it has one. |
+| `ToBytes` | `byte[] ToBytes()` | Serializes the (possibly edited) document. |
+
+#### `WebArchiveFormatDescriptor`
+
+Safari / WebKit web archive (`.webarchive`) — a saved page with its subresources and frames, stored as a binary property list. References: `https://developer.apple.com/documentation/webkit/webarchive` — WebKit's WebArchive / WebResource classes (the dictionary keys)`https://opensource.apple.com/source/CF/CF-1153.18/CFBinaryPList.c` — the bplist00 layout description
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WebArchiveFormatDescriptor` | `WebArchiveFormatDescriptor()` |  |
+| `BaseUrl` | `const string BaseUrl` | The URL created resources are located under (RFC 2606 reserved TLD). |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | A web archive requires its main resource, so no valid empty purge result exists. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `WebArchiveResource`
+
+One resource of a web archive and the archive name it maps to.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Data` | `byte[] Data { get; }` |  |
+| `IsMain` | `bool IsMain { get; }` | Whether this is a (sub)frame's WebMainResource rather than one of its WebSubresources. |
+| `MimeType` | `string MimeType { get; }` |  |
+| `Name` | `string Name { get; }` | Archive name. |
+| `Url` | `string Url { get; }` |  |
+
 ### Namespace `FileFormat.WebAssembly`
 
 [`WasmFormatDescriptor`](#wasmformatdescriptor) · [`WasmReader`](#wasmreader) · [`WasmReader.Module`](#wasmreadermodule) · [`WasmReader.Section`](#wasmreadersection)
