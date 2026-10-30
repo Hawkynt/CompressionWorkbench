@@ -27174,6 +27174,64 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.Sda`
+
+[`SdaArchive`](#sdaarchive) · [`SdaEntry`](#sdaentry) · [`SdaFormatDescriptor`](#sdaformatdescriptor)
+
+#### `SdaArchive`
+
+Reads Chris Smeets' Commodore 64/128 ARC archives and their self-dissolving form (SDA): stored, run-length packed, Huffman squeezed, LZW crunched and the combined modes, each entry checked against its 16-bit checksum. The layout is described in docs/C64-ARC-ON-DISK.md.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Extract` | `static byte[] Extract(ReadOnlySpan<byte> file, SdaEntry entry)` | Decodes one entry and checks its checksum. |
+| `FindFirstEntry` | `static long FindFirstEntry(ReadOnlySpan<byte> file)` | Offset of the first entry: 0 for a plain archive, after the extractor for an SDA; -1 when neither. |
+| `List` | `static List<SdaEntry> List(ReadOnlySpan<byte> file)` | Lists every entry. |
+
+#### `SdaEntry`
+
+One file of a C64/C128 ARC or SDA archive.
+
+Implements `IEquatable<SdaEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SdaEntry` | `SdaEntry(string Name, byte[] CbmName, char CbmType, int Mode, int Version, long Size, long StoredSize, long Offset, DateTime? LastModified)` | One file of a C64/C128 ARC or SDA archive. |
+| `CbmName` | `byte[] CbmName { get; init; }` | The raw PETSCII name. |
+| `CbmType` | `char CbmType { get; init; }` | CBM file type: P, S, U or R. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | The entry's date (version 2), or null. |
+| `MethodName` | `string MethodName { get; }` | Name of the storage mode. |
+| `Mode` | `int Mode { get; init; }` | Storage mode 0-5. |
+| `Name` | `string Name { get; init; }` | Host name: the PETSCII name in ASCII plus the CBM type as extension. |
+| `Offset` | `long Offset { get; init; }` | Offset of the entry header in the file. |
+| `Size` | `long Size { get; init; }` | Original size in bytes. |
+| `StoredSize` | `long StoredSize { get; init; }` | Bytes the entry occupies in the archive, header included. |
+| `Version` | `int Version { get; init; }` | ARC entry version, 1 or 2. |
+
+#### `SdaFormatDescriptor`
+
+Self Dissolving ARChive (.sda): Chris Smeets' Commodore 64/128 ARC archive behind its 6502 extractor. Read-only: writing one would mean shipping that extractor, which is not ours to redistribute.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SdaFormatDescriptor` | `SdaFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Sdat`
 
 [`SdatFormatDescriptor`](#sdatformatdescriptor) · [`SdatReader`](#sdatreader) · [`SdatReader.FileEntry`](#sdatreaderfileentry) · [`SdatReader.ParsedSdat`](#sdatreaderparsedsdat)

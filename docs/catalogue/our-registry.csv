@@ -465,6 +465,7 @@ format,S3m,S3M (Scream Tracker 3),Audio,,.s3m,Y,Y,,
 format,Sar,SAR,Archive,,.sar,Y,Y,Y,Y
 format,Sarc,Nintendo SARC,Archive,,.sarc;.pack;.bars,Y,Y,Y,Y
 format,Sbc,Bluetooth SBC / mSBC,Audio,,.sbc;.msbc,Y,Y,,
+format,Sda,Self Dissolving ARChive (C64),Archive,,.sda,Y,Y,,
 format,Sdat,SDAT (Nintendo DS sound archive),Audio,,.sdat,Y,Y,,
 format,Sds,SDS (MIDI Sample Dump),Audio,,.sds,Y,Y,,
 format,Seama,SEAMA firmware,Archive,,.seama;.dlob,Y,Y,Y,Y
