@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- ARC crawl fixtures; see IaArc/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="IaArc/ReferenceVectors/*.arc;IaArc/ReferenceVectors/*.arc.gz;IaArc/ReferenceVectors/warcio-listing.txt">
+      <LogicalName>IaArcVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- The image tests build FileFormat.Core.RawImage / FileFormat.Png values and
          hand them to the FileFormat.PngCrushAdapters surface in Compression.Lib, which
          keeps the package's compile assets private. Referenced under the `images` alias
@@ -67,12 +71,19 @@
                       Exclude="StructuredPseudoArchives\ReferenceVectors\*.py;StructuredPseudoArchives\ReferenceVectors\*.pl;StructuredPseudoArchives\ReferenceVectors\*.ps1;StructuredPseudoArchives\ReferenceVectors\README.md">
       <LogicalName>ReferenceVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Volumes a Reiser4 kernel wrote under mkfs.reiser4 plugin profiles, with the kernel's read-back;
+         see Reiser4/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Reiser4\ReferenceVectors\*.gz;Reiser4\ReferenceVectors\*.manifest">
+      <LogicalName>Reiser4Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- The QEMU harness that lets a Reiser4 kernel judge what the writer produces. -->
+    <None Include="Reiser4\KernelOracle\*.sh" CopyToOutputDirectory="PreserveNewest" LinkBase="Reiser4\KernelOracle" />
     <!-- Volumes the Linux btrfs driver wrote with compress-force; see Btrfs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Btrfs\ReferenceVectors\*.gz;Btrfs\ReferenceVectors\manifest.txt">
       <LogicalName>BtrfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- Volumes bcachefs-tools wrote; see BcacheFs/ReferenceVectors/README.md. -->
-    <EmbeddedResource Include="BcacheFs\ReferenceVectors\*.gz;BcacheFs\ReferenceVectors\manifest.txt">
+    <EmbeddedResource Include="BcacheFs\ReferenceVectors\*.gz;BcacheFs\ReferenceVectors\manifest*.txt">
       <LogicalName>BcacheFsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- A package built by Windows iexpress.exe, plus expand.exe's extraction; see IExpress/ReferenceVectors/README.md. -->
@@ -106,6 +117,10 @@
     <!-- Archives FreeArc 0.67's Arc.exe wrote; see FreeArc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="FreeArc\ReferenceVectors\*.arc">
       <LogicalName>FreeArcVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Archives the reference zpaq 7.15 wrote, with a manifest of their contents; see Zpaq/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Zpaq\ReferenceVectors\*.zpaq;Zpaq\ReferenceVectors\manifest.tsv">
+      <LogicalName>ZpaqVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- CVF cluster payloads the dmsdos compressors wrote; see Cvf/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Cvf\ReferenceVectors\*.bin">
@@ -170,6 +185,10 @@
     <EmbeddedResource Include="Zoo\ReferenceVectors\*.zoo">
       <LogicalName>ZooVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- MARs from mardor's test data and written by mardor; see Mar/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Mar\ReferenceVectors\*.mar;Mar\ReferenceVectors\mardor-listing.txt">
+      <LogicalName>MarVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- VDF volumes from GothicVDFS, VDFSTool and ZenKit, with ZenKit's listings; see Vdfs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">
       <LogicalName>VdfsVectors.%(Filename)%(Extension)</LogicalName>
@@ -178,13 +197,17 @@
     <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
       <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
-    <!-- DAR slices written by dar 2.8.6; see Dar/ReferenceVectors/README.md. -->
+    <!-- DAR slices written by dar itself (2.4.24 to 2.8.6); see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- Archives the open-source ARJ port wrote with each method; see Arj/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Arj\ReferenceVectors\*.arj">
       <LogicalName>ArjVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Real IT modules with compressed samples plus libxmp's PCM digests; see Codecs/TrackerXmIt/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Codecs\TrackerXmIt\ReferenceVectors\*.it;Codecs\TrackerXmIt\ReferenceVectors\*.sha256.txt">
+      <LogicalName>ItVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- XAR archives libarchive's bsdtar wrote with each encoding; see Xar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Xar\ReferenceVectors\*.xar">

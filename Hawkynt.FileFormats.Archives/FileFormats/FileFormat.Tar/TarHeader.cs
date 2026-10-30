@@ -29,6 +29,14 @@ internal static class TarHeader {
   // Real size of the original file (stored in "realsize" area, offset 483 in GNU headers)
   private const int GnuRealSizeOffset = 483;
   private const int GnuRealSizeLength = 12;
+  // GNU old-style sparse map: four (offset, numbytes) pairs of 12-byte numbers at 386,
+  // then the "isextended" flag at 482 announcing 512-byte extension blocks.
+  private const int GnuSparseOffset = 386;
+  private const int GnuSparseHeaderEntries = 4;
+  private const int GnuSparseEntryLength = 24;
+  private const int GnuIsExtendedOffset = 482;
+  /// <summary>Entries per GNU sparse extension block (21 × 24 bytes, flag at 504).</summary>
+  internal const int GnuSparseExtensionEntries = 21;
 
   /// <summary>
   /// Reads a 512-byte header block from the stream and parses it into a <see cref="TarEntry"/>.
@@ -74,7 +82,9 @@ internal static class TarHeader {
     var prefix = ParseString(header.AsSpan(PrefixOffset, TarConstants.PrefixLength));
     var name = ParseString(header.AsSpan(NameOffset, TarConstants.NameLength));
 
-    if (prefix.Length > 0)
+    // GNU headers ("ustar  \0") reuse the prefix area for atime/ctime/offset/sparse fields.
+    var isGnu = header.AsSpan(MagicOffset, 8).SequenceEqual("ustar  \0"u8);
+    if (prefix.Length > 0 && !isGnu)
       name = prefix + "/" + name;
 
     var typeFlag = header[TypeFlagOffset];
@@ -99,7 +109,27 @@ internal static class TarHeader {
       entry.RealSize = ParseOctalLong(header.AsSpan(GnuRealSizeOffset, GnuRealSizeLength));
     }
 
+    if (typeFlag == TarConstants.TypeGnuSparse) {
+      entry.RealSize = ParseOctalLong(header.AsSpan(GnuRealSizeOffset, GnuRealSizeLength));
+      entry.SparseMap = [];
+      ParseGnuSparseEntries(header.AsSpan(GnuSparseOffset, GnuSparseHeaderEntries * GnuSparseEntryLength), entry.SparseMap);
+      entry.SparseHeaderExtended = header[GnuIsExtendedOffset] != 0;
+    }
+
     return entry;
+  }
+
+  /// <summary>
+  /// Appends the non-empty (offset, numbytes) pairs of a GNU sparse map slice to
+  /// <paramref name="map"/>; an all-zero pair ends the slice.
+  /// </summary>
+  internal static void ParseGnuSparseEntries(ReadOnlySpan<byte> slice, List<TarSparseSegment> map) {
+    for (var i = 0; i + GnuSparseEntryLength <= slice.Length; i += GnuSparseEntryLength) {
+      var pair = slice.Slice(i, GnuSparseEntryLength);
+      if (pair[0] == 0 && pair[12] == 0)
+        break;
+      map.Add(new(ParseOctalLong(pair[..12]), ParseOctalLong(pair[12..])));
+    }
   }
 
   /// <summary>
@@ -200,6 +230,14 @@ internal static class TarHeader {
   /// <param name="data">The raw bytes containing the octal string.</param>
   /// <returns>The parsed value.</returns>
   internal static long ParseOctalLong(ReadOnlySpan<byte> data) {
+    // GNU/star base-256: a set high bit on the first byte marks a big-endian binary
+    // number (0x80 positive, 0xFF negative) for values the octal digits cannot hold.
+    if (data.Length > 0 && (data[0] & 0x80) != 0) {
+      long value = data[0] == 0xFF ? -1 : data[0] & 0x7F;
+      for (var i = 1; i < data.Length; ++i)
+        value = (value << 8) | data[i];
+      return value;
+    }
     var octalStr = ParseOctal(data);
     if (octalStr.Length == 0)
       return 0;

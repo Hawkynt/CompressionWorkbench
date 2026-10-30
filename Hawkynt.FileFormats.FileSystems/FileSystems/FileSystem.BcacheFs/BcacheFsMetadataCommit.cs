@@ -23,7 +23,7 @@ internal static class BcacheFsMetadataCommit {
 
   /// <summary>The order trees are laid down in, and the trees this profile owns.</summary>
   internal static readonly int[] TreeOrder = [
-    BtreeExtents, BtreeInodes, BtreeDirents,
+    BtreeExtents, BtreeInodes, BtreeDirents, BtreeXattrs,
     BtreeSubvolumes, BtreeSnapshots, BtreeSnapshotTrees,
     BtreeAlloc, BtreeBucketGens, BtreeFreespace, BtreeLru, BtreeBackpointers,
   ];
@@ -86,11 +86,19 @@ internal static class BcacheFsMetadataCommit {
     BcacheFsAllocationBuilder.Result derived = null!;
     Dictionary<long, BucketState> final = [];
 
+    var history = new List<string>();
+    // Buckets offered to the new generation at any attempt. One of them left empty
+    // by the final layout keeps its generation: bumping it would add a bucket_gens
+    // key, which can add a node, which takes the bucket back - a layout that never
+    // settles. Nothing can point into it stale: every key was re-published.
+    var offered = new HashSet<long>();
     for (var attempt = 0; ; ++attempt) {
       if (attempt == 16)
-        throw new InvalidOperationException("bcachefs metadata layout did not reach a fixed point.");
+        throw new InvalidOperationException("bcachefs metadata layout did not reach a fixed point: "
+          + string.Join(" | ", history));
 
       placement = place(shapes);
+      foreach (var buckets in placement.Values) offered.UnionWith(buckets);
       var nodes = new List<BcacheFsAllocationBuilder.Node>();
       foreach (var (id, treeShapes) in shapes) {
         var buckets = placement[id];
@@ -110,7 +118,7 @@ internal static class BcacheFsMetadataCommit {
         var before = previous.GetValueOrDefault(b);
         var gen = before.Generation;
         var oldest = before.OldestGeneration;
-        if (before.DataType != DataFree && types[b] == DataFree) {
+        if (before.DataType != DataFree && types[b] == DataFree && !offered.Contains(b)) {
           gen = unchecked((byte)(gen + 1));
           oldest = gen;
         }
@@ -127,6 +135,8 @@ internal static class BcacheFsMetadataCommit {
       trees[BtreeBucketGens] = derived.BucketGens;
 
       var next = Describe();
+      history.Add(string.Join(",", next.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value.Count}"))
+        + " @" + string.Join(",", placement.Values.SelectMany(b => b).Order()));
       if (Signature(next) == Signature(shapes)) break;
       shapes = next;
     }
@@ -150,13 +160,19 @@ internal static class BcacheFsMetadataCommit {
 
   /// <summary>Stamps the generation of the bucket an extent's data sits in into its pointer.</summary>
   private static void StampGeneration(Key extent, IReadOnlyDictionary<long, BucketState> states) {
-    for (var at = 0; at + 8 <= extent.Value.Length; at += 8) {
-      var word = BinaryPrimitives.ReadUInt64LittleEndian(extent.Value.AsSpan(at));
-      if (!IsPointer(word)) continue;
-      var gen = states.GetValueOrDefault(PointerSector(word) / BucketSectors).Generation;
-      word = (word & ~(0xFFUL << 56)) | ((ulong)gen << 56);
-      BinaryPrimitives.WriteUInt64LittleEndian(extent.Value.AsSpan(at), word);
+    if (extent.Type != KeyExtent
+        || !BcacheFsExtentCodec.TryParseEntries(extent.Value, out var entries, out _))
       return;
+    var at = 0;
+    foreach (var entry in entries) {
+      if (entry.KnownType == BcacheFsExtentEntryType.Pointer) {
+        var word = BinaryPrimitives.ReadUInt64LittleEndian(extent.Value.AsSpan(at));
+        var gen = states.GetValueOrDefault(PointerSector(word) / BucketSectors).Generation;
+        word = (word & ~(0xFFUL << 56)) | ((ulong)gen << 56);
+        BinaryPrimitives.WriteUInt64LittleEndian(extent.Value.AsSpan(at), word);
+        return;
+      }
+      at += entry.RawBytes.Length;
     }
   }
 

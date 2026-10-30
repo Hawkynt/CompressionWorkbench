@@ -47,11 +47,35 @@ public sealed class BcacheFsReader : IDisposable {
   /// <summary>Directories the volume holds, by full path.</summary>
   public IReadOnlyList<string> Directories { get; } = [];
 
+  /// <summary>
+  /// Extended attributes, by the full path of the file, link or directory that
+  /// carries them (the empty path is the root), each by its full name such as
+  /// <c>user.comment</c>. Nodes without any are absent.
+  /// </summary>
+  public IReadOnlyDictionary<string, IReadOnlyDictionary<string, byte[]>> ExtendedAttributes => this._xattrs;
+
+  private readonly Dictionary<string, IReadOnlyDictionary<string, byte[]>> _xattrs = new(StringComparer.Ordinal);
+
   /// <summary>One run of sectors belonging to a file.</summary>
   /// <param name="FirstSector">Where its live data starts on the device.</param>
   /// <param name="Sectors">How long it is.</param>
   /// <param name="FileOffset">Which byte of the file it begins at.</param>
-  public readonly record struct Extent(long FirstSector, int Sectors, long FileOffset);
+  public readonly record struct Extent(long FirstSector, int Sectors, long FileOffset) {
+
+    /// <summary>
+    /// How the bytes are stored when they are not plain sectors: checksummed,
+    /// compressed, or inline in the key. Null for plain unchecksummed sectors.
+    /// </summary>
+    internal BcacheFsStoredExtent? Stored { get; init; }
+
+    /// <summary>
+    /// Sectors the extent occupies on the device: the compressed region for a
+    /// compressed extent, nothing for inline data, otherwise its live length.
+    /// </summary>
+    internal int DeviceSectors => this.Stored is { } stored && (stored.Inline != null || stored.Compressed)
+      ? stored.PhysicalSectors
+      : this.Sectors;
+  }
 
   /// <summary>One file: its path, its length, where its bytes are, and its times, owner and mode.</summary>
   public sealed record Entry(string Name, long Size, ulong Inode, IReadOnlyList<Extent> Extents,
@@ -146,11 +170,38 @@ public sealed class BcacheFsReader : IDisposable {
         ReadMetadata(key.Value, timeBase, precision));
     }
 
+    // Extended attributes, per inode.
+    var xattrs = new Dictionary<ulong, Dictionary<string, byte[]>>();
+    foreach (var key in Keys(BcacheFsBtreeId.Xattrs)) {
+      if (key.RawType != KeyXattr || key.Position.Snapshot != snapshot) continue;
+      if (!BcacheFsXattrCodec.TryParse(key.Value, out var type, out var name, out var data)) {
+        problems.Add($"inode {key.Position.Inode}: malformed xattr at offset {key.Position.Offset}");
+        continue;
+      }
+      if (BcacheFsXattrCodec.FullName(type, name) is not { } fullName) continue;
+      if (!xattrs.TryGetValue(key.Position.Inode, out var map))
+        xattrs[key.Position.Inode] = map = new(StringComparer.Ordinal);
+      map[fullName] = data;
+    }
+
+    void Attach(string path, ulong inode) {
+      if (xattrs.TryGetValue(inode, out var map)) this._xattrs[path] = map;
+    }
+    Attach(string.Empty, RootInode);
+
     // Then the extents, gathered per inode and ordered by where they land in the file.
     var extents = new Dictionary<ulong, List<Extent>>();
     var unreadable = new Dictionary<ulong, string>();
     foreach (var key in Keys(BcacheFsBtreeId.Extents)) {
       if (key.Position.Snapshot != snapshot) continue;
+      // A stretch of a small file can live in the key itself.
+      if (key.RawType == KeyInlineData) {
+        AddExtent(key, new Extent(0, (int)key.Size, ((long)key.Position.Offset - key.Size) * SectorSize) {
+          Stored = new BcacheFsStoredExtent(0, null, key.Value),
+        });
+        continue;
+      }
+
       // A reservation is space promised and never written: it reads as zeroes, like a hole.
       if (key.RawType != KeyExtent) {
         if (key.RawType is not (KeyReservation or KeyDeleted or KeyWhiteout))
@@ -158,16 +209,20 @@ public sealed class BcacheFsReader : IDisposable {
         continue;
       }
 
-      if (!TryLocate(core, key, out var sector, out var reason)) {
+      if (!TryLocate(core, key, out var sector, out var stored, out var reason)) {
         unreadable.TryAdd(key.Position.Inode, reason);
         continue;
       }
 
       // A key names the sector one past its end, so its start is that less its size.
       var start = (long)key.Position.Offset - key.Size;
+      AddExtent(key, new Extent(sector, (int)key.Size, start * SectorSize) { Stored = stored });
+    }
+
+    void AddExtent(BcacheFsRawKey key, Extent extent) {
       if (!extents.TryGetValue(key.Position.Inode, out var list))
         extents[key.Position.Inode] = list = [];
-      list.Add(new Extent(sector, (int)key.Size, start * SectorSize));
+      list.Add(extent);
     }
 
     foreach (var list in extents.Values)
@@ -187,10 +242,12 @@ public sealed class BcacheFsReader : IDisposable {
         if (type == DtDir) {
           if (!seen.Add(target)) continue;
           directories.Add(full);
+          Attach(full, target);
           pending.Enqueue((target, full));
           continue;
         }
 
+        Attach(full, target);
         var info = inodes.GetValueOrDefault(target);
         var runs = extents.TryGetValue(target, out var found) ? found : [];
         var entry = new Entry(full, info.Size, target, runs, info.Metadata ?? new ArchiveEntryMetadata()) {
@@ -210,12 +267,21 @@ public sealed class BcacheFsReader : IDisposable {
     return problems;
   }
 
+  /// <summary>Inline data: the value of the key is the extent's bytes.</summary>
+  private const byte KeyInlineData = 17;
+
   /// <summary>
-  /// Where an extent's live data starts: its pointer, advanced by the checksummed
-  /// region's offset when the extent is the live part of a larger one.
+  /// Where an extent's data is and how it is stored. An uncompressed extent's live
+  /// data starts at its pointer, advanced by the checksummed region's offset when
+  /// the extent is the live part of a larger one; a compressed one starts at the
+  /// region it decodes from. A checksummed or compressed extent also yields how to
+  /// verify and decode it.
   /// </summary>
-  private static bool TryLocate(BcacheFsCoreVolume core, BcacheFsRawKey key, out long sector, out string reason) {
+  private static bool TryLocate(BcacheFsCoreVolume core, BcacheFsRawKey key, out long sector,
+      out BcacheFsStoredExtent? stored, out string reason) {
     sector = -1;
+    stored = null;
+    BcacheFsExtentCrc? current = null;
     if (!BcacheFsExtentCodec.TryParseEntries(key.Value, core.Superblock, out var entries, out reason))
       return false;
 
@@ -224,20 +290,17 @@ public sealed class BcacheFsReader : IDisposable {
       switch (entry.KnownType) {
         case BcacheFsExtentEntryType.Crc32 or BcacheFsExtentEntryType.Crc64 or BcacheFsExtentEntryType.Crc128:
           if (!BcacheFsExtentCodec.TryReadExtentCrc(entry, out var crc, out reason)) return false;
-          if (crc!.Compressed) {
-            reason = $"extent compressed with {crc.CompressionType} is not read here";
-            return false;
-          }
-          if (crc.Nonce != 0 || crc.ChecksumType is BcacheFsChecksumType.ChaCha20Poly1305_80 or BcacheFsChecksumType.ChaCha20Poly1305_128) {
-            reason = "encrypted extent is not read here";
-            return false;
-          }
-          offset = crc.Offset;
+          if (!BcacheFsExtentData.CanDecode(crc!, out reason)) return false;
+          current = crc;
+          offset = crc!.Offset;
           break;
         case BcacheFsExtentEntryType.Pointer: {
           var word = BinaryPrimitives.ReadUInt64LittleEndian(entry.RawBytes);
           if ((word & (1UL << 1)) != 0) break;                                // a cached copy is not the data
-          sector = PointerSector(word) + offset;
+          var region = PointerSector(word);
+          if (current is { } encoded && (encoded.Compressed || encoded.ChecksumType != BcacheFsChecksumType.None))
+            stored = new BcacheFsStoredExtent(region, encoded, null);
+          sector = current?.Compressed == true ? region : region + offset;
           reason = string.Empty;
           return true;
         }
@@ -343,6 +406,15 @@ public sealed class BcacheFsReader : IDisposable {
       var skip = written - extent.FileOffset;
       var want = Math.Min((long)extent.Sectors * SectorSize - skip, entry.Size - written);
       if (want <= 0) continue;
+
+      // Checksummed, compressed or inline: verified and decoded as a whole, then cut.
+      if (extent.Stored is { } stored) {
+        var live = BcacheFsExtentData.ReadLive(this._stream, stored, extent.Sectors);
+        output.Write(live, (int)skip, (int)want);
+        written += want;
+        continue;
+      }
+
       this._stream.Position = extent.FirstSector * SectorSize + skip;
       while (want > 0) {
         var chunk = (int)Math.Min(buffer.Length, want);

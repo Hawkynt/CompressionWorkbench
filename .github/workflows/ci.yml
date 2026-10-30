@@ -174,6 +174,9 @@ jobs:
           # reiser4progs owns Reiser4: fsck.reiser4 and debugfs.reiser4 judge every volume the
           # Reiser4 writer creates or edits, in the gate below.
           sudo apt-get install -y reiser4progs
+          # zpaq (7.15) owns ZPAQ: it must list and extract what the ZPAQ writer produces, and the
+          # reader must decode every method zpaq writes, in the gate below.
+          sudo apt-get install -y zpaq
           # mkbootimg is AOSP's own boot image tool pair: the Android boot image writer must
           # reproduce mkbootimg's bytes, and unpack_bootimg must read back what it writes.
           sudo apt-get install -y mkbootimg
@@ -240,8 +243,28 @@ jobs:
         run: >
           dotnet test Compression.Tests
           --configuration Release --no-build
-          --filter "FullyQualifiedName~Compression.Tests.Reiser4.Reiser4ProfileExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4MutationExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4NativeTreeExternalTests"
+          --filter "FullyQualifiedName~Compression.Tests.Reiser4.Reiser4ProfileExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4MutationExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4NativeTreeExternalTests|FullyQualifiedName~Compression.Tests.Reiser4.Reiser4FeatureExternalTests"
           --logger "trx;LogFileName=reiser4-oracle-tests.trx"
+
+      # The kernel that judges bcachefs runs in the libguestfs appliance: 24.04's
+      # generic 6.8 kernel carries bcachefs as a module, the runner's own Azure
+      # kernel need not. supermin is pointed at it so the appliance does not boot
+      # the newest kernel in /boot.
+      - name: Install a kernel with bcachefs (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y libguestfs-tools
+          kver=$(apt-cache depends linux-image-generic | sed -n 's/^ *Depends: linux-image-\(.*-generic\)$/\1/p' | head -n 1)
+          test -n "$kver" || { echo "::error::cannot resolve the generic kernel version"; exit 1; }
+          sudo apt-get install -y --no-install-recommends "linux-image-$kver" "linux-modules-$kver" "linux-modules-extra-$kver"
+          sudo chmod 0644 /boot/vmlinuz-*
+          sudo chmod 0666 /dev/kvm || echo "::warning::no /dev/kvm; the appliance runs without acceleration"
+          echo "SUPERMIN_KERNEL=/boot/vmlinuz-$kver" >> "$GITHUB_ENV"
+          echo "SUPERMIN_MODULES=/lib/modules/$kver" >> "$GITHUB_ENV"
+          echo "SUPERMIN_KERNEL_VERSION=$kver" >> "$GITHUB_ENV"
+          find "/lib/modules/$kver" -name 'bcachefs.ko*' | grep -q . \
+            || { echo "::error::linux-modules(-extra)-$kver has no bcachefs module"; exit 1; }
 
       # Hard gate, both directions: PowerISO for Linux (freeware, checksum-pinned, used as a black
       # box) converts our DAA images back to identical ISOs, and we read the DAA images it writes.
@@ -257,22 +280,71 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Daa.DaaExternalConformanceTests" \
             --logger "trx;LogFileName=daa-oracle-tests.trx"
 
-      # bcachefs-tools' own checker judges every volume this package writes or
-      # edits: the allocation information, the usage totals and the namespace are
-      # cross-examined against each other, and bucket generations against the
-      # pointers that carry them. Hard gate rather than our own reader agreeing
-      # with our own writer.
-      #
-      # The package writes metadata version 1.3, which is what Ubuntu's
-      # bcachefs-tools (1.3.4) writes and checks. The tests skip only when the
-      # tool is missing or older than that; a checker that reads the image and
-      # then objects fails the step, and that is never downgraded to a skip.
-      - name: bcachefs oracle
+      # Hard gate, both directions: zpaq must list and extract byte for byte what the ZPAQ writer
+      # produces (every method), the reader must decode what zpaq writes (every method, versions,
+      # deduplication, streaming), and our compressed data blocks must equal zpaq 7.15's.
+      - name: ZPAQ oracle
         if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_ZPAQ: "1"
         run: >
           dotnet test Compression.Tests
           --configuration Release --no-build
-          --filter "FullyQualifiedName~Compression.Tests.BcacheFs.BcacheFsBucketGenerationExternalTests|FullyQualifiedName~Compression.Tests.BcacheFs.BcacheFsExternalConformanceTests"
+          --filter "FullyQualifiedName~Compression.Tests.Zpaq.ZpaqExternalOracleTests"
+          --logger "trx;LogFileName=zpaq-oracle-tests.trx"
+
+      # The DAR oracle again, judged by the newest dar release built from its source tarball (Ubuntu
+      # only packages 2.7). The build is cached; when SourceForge cannot be reached and nothing is
+      # cached the step says so and skips, but a dar that runs and refuses fails it.
+      - name: Cache dar 2.8.6
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/cache@v4
+        with:
+          path: /opt/cwb-dar/2.8.6
+          key: dar-2.8.6-${{ runner.os }}-v1
+      - name: DAR oracle (dar 2.8.6)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          if [ ! -x /opt/cwb-dar/2.8.6/bin/dar ]; then
+            sudo apt-get install -y libz-dev libbz2-dev liblzo2-dev liblzma-dev libzstd-dev liblz4-dev
+            sudo mkdir -p /opt/cwb-dar && sudo chown "$(id -u)" /opt/cwb-dar
+            if ! curl -fsSL -o /tmp/dar-2.8.6.tar.gz "https://sourceforge.net/projects/dar/files/dar/2.8.6/dar-2.8.6.tar.gz/download"; then
+              echo "::notice::dar 2.8.6 source unavailable and not cached; skipping the 2.8.6 oracle"
+              exit 0
+            fi
+            echo "d56caeb6c86f751cb454d8fef45f3daecc508f208290d9f51e8c75bba5dc46c5  /tmp/dar-2.8.6.tar.gz" | sha256sum -c -
+            tar xzf /tmp/dar-2.8.6.tar.gz -C /tmp
+            (cd /tmp/dar-2.8.6 && ./configure --prefix=/opt/cwb-dar/2.8.6 --disable-shared --disable-dar-static \
+              --disable-python-binding --disable-gpgme-linking --disable-libcurl-linking --disable-librsync-linking \
+              --disable-libargon2-linking --disable-threadar --disable-upx --disable-build-html --disable-libgcrypt-linking \
+              > /dev/null && make -j"$(nproc)" > /dev/null && make install > /dev/null)
+          fi
+          /opt/cwb-dar/2.8.6/bin/dar -V 2>&1 | head -1 || true
+          CWB_DAR=/opt/cwb-dar/2.8.6/bin/dar dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Dar.DarExternalConformanceTests" \
+            --logger "trx;LogFileName=dar-286-oracle-tests.trx"
+
+      # bcachefs-tools' own checker judges every volume this package writes or
+      # edits: the allocation information, the usage totals and the namespace are
+      # cross-examined against each other, and bucket generations against the
+      # pointers that carry them. The kernel's driver mounts the volumes
+      # read-write, and what it writes is read and edited here. Hard gate rather
+      # than our own reader agreeing with our own writer.
+      #
+      # The package writes metadata version 1.3, which is what Ubuntu's
+      # bcachefs-tools (1.3.4) writes and checks. CWB_REQUIRE_BCACHEFS and
+      # CWB_REQUIRE_BCACHEFS_KERNEL turn a missing tool or driver into a failure
+      # instead of a skip: on this runner both are expected, and a gate that
+      # quietly skips when the image changes under it is no gate.
+      - name: bcachefs oracle
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
+        env:
+          CWB_REQUIRE_BCACHEFS: "1"
+          CWB_REQUIRE_BCACHEFS_KERNEL: "1"
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "FullyQualifiedName~Compression.Tests.BcacheFs.BcacheFsBucketGenerationExternalTests|FullyQualifiedName~Compression.Tests.BcacheFs.BcacheFsExternalConformanceTests|FullyQualifiedName~Compression.Tests.BcacheFs.BcacheFsKernelMountTests"
           --logger "trx;LogFileName=bcachefs-oracle-tests.trx"
 
       # python-msgpack is the one oracle below that is not already on both runner images. Advisory
