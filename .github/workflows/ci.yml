@@ -324,6 +324,20 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Dar.DarExternalConformanceTests" \
             --logger "trx;LogFileName=dar-286-oracle-tests.trx"
 
+      # Hard gate, both directions: cryptsetup opens the LUKS1 volumes we write (its device-mapper
+      # view is our plaintext), and we decrypt what cryptsetup formats and writes through its own
+      # mapping — LUKS1 XTS/CBC-ESSIV, LUKS2 with PBKDF2, Argon2i and Argon2id key slots.
+      - name: LUKS oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_CRYPTSETUP: "1"
+        run: |
+          sudo apt-get install -y cryptsetup-bin
+          sudo modprobe dm-crypt || true
+          dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Luks.LuksExternalConformanceTests" \
+            --logger "trx;LogFileName=luks-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the

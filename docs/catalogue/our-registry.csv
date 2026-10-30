@@ -282,6 +282,7 @@ format,Lizard,Lizard (LZ5),Stream,,.liz,,Y,Y,
 format,Lnk,Windows Shell Link,Archive,,.lnk,Y,Y,Y,
 format,Lpc10,FS-1015 LPC-10,Audio,,.lpc10;.lpc,Y,Y,Y,
 format,Lrzip,Long Range Zip,Archive,,.lrz,Y,Y,Y,
+format,Luks,LUKS,Archive,,.luks,Y,Y,Y,
 format,Lustre,Lustre,Archive,Y,.lustre;.ost;.mdt,Y,Y,,
 format,Lynx,Commodore Lynx archive,Archive,,.lnx,Y,Y,Y,Y
 format,Lz4,LZ4,Stream,,.lz4,,Y,Y,
