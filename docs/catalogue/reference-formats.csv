@@ -266,7 +266,7 @@ BIN/CUE,bin;cue,disk-image,,,,,R,fmt/1069,Y,3,https://en.wikipedia.org/wiki/Cue_
 Alcohol MDF/MDS,mdf;mds,disk-image,,,,,R,,Y,2,,Mdf,Y,Y,Y,OK,,
 CloneCD (CCD/IMG/SUB),ccd;sub;img,disk-image,,,,,R,,Y,2,,CloneCd,Y,,,READ-ONLY-BUT-SOURCES-WRITE,CloneCD,
 DiscJuggler CDI,cdi,disk-image,,,,,R,,Y,2,,Cdi,Y,Y,Y,OK,,
-Dreamcast GDI,gdi,disk-image,,,,,R,,,1,,,,,,MISSING,,
+Dreamcast GDI,gdi,disk-image,,,,,R,,,1,https://en.wikipedia.org/wiki/GD-ROM,Gdi,Y,,,OK,,track table parsed (quoted names supported); sibling track files listed and extracted byte for byte; read-only because a single stream cannot write the sibling files
 ECM (Error Code Modeler),ecm,disk-image,,,,,R,,,1,https://github.com/alucryd/ecm-tools,Ecm,Y,Y,,OK,,spec docs/ECM-ON-DISK.md; both directions verified against bin2ecm/ecm2bin
 gBurner image,gbi,disk-image,,,,,R,,,1,,,,,,MISSING,,
 ISZ (compressed ISO),isz,disk-image,,,,,R,,Y,2,,,,,,MISSING,,
