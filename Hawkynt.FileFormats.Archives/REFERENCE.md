@@ -27430,7 +27430,7 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SevenZipWriter` | `SevenZipWriter(Stream stream, SevenZipCodec codec, bool leaveOpen = false, int dictionarySize = 8388608, int ppmdOrder = 6, int ppmdMemorySize = 16777216, SevenZipFilter filter = 0, int deltaDistance = 1, string password = null, bool encryptHeaders = false)` | Initializes a new `SevenZipWriter` with an explicit codec. |
+| `SevenZipWriter` | `SevenZipWriter(Stream stream, SevenZipCodec codec, bool leaveOpen = false, int dictionarySize = 8388608, int ppmdOrder = 6, int ppmdMemorySize = 16777216, SevenZipFilter filter = 0, int deltaDistance = 1, string password = null, bool encryptHeaders = false, bool compressHeaders = false)` | Initializes a new `SevenZipWriter` with an explicit codec. |
 | `SevenZipWriter` | `SevenZipWriter(Stream stream, bool leaveOpen = false, int dictionarySize = 8388608)` | Initializes a new `SevenZipWriter`. |
 | `AddDirectory` | `void AddDirectory(SevenZipEntry entry)` | Adds a directory entry carrying its own times and attributes. |
 | `AddDirectory` | `void AddDirectory(string name)` | Adds a directory entry. |

@@ -102,6 +102,8 @@ public sealed class SevenZipConformanceWriteTests {
     yield return P("password-headers", new FormatCreateOptions { Password = Password, EncryptFilenames = true });
     yield return P("password-mt", new FormatCreateOptions { Password = Password, SolidSize = 64 << 10, Threads = 4 });
     yield return P("schema-password", new FormatCreateOptions { FormatSpecific = new() { ["Password"] = Password, ["Method"] = "lzma" } });
+    yield return P("header-compression", new FormatCreateOptions { FormatSpecific = new() { ["HeaderCompression"] = "true" } });
+    yield return P("header-compression-password", new FormatCreateOptions { Password = Password, FormatSpecific = new() { ["HeaderCompression"] = "true" } });
   }
 
   [TestCaseSource(nameof(DescriptorProfiles))]
@@ -167,6 +169,28 @@ public sealed class SevenZipConformanceWriteTests {
     Assert.That(reader.Entries.Single(static e => e.Name == "secret.txt").UnixMode, Is.EqualTo(0x8180));
     var (exit, output) = SevenZipOracle.Run(this._root, "t", WriteTemp(this._root, "modes.7z", stream.ToArray()));
     Assert.That(exit, Is.Zero, output);
+  }
+
+  [TestCase(false)]
+  [TestCase(true)]
+  public void Given_OurWriterWithHeaderCompression_When_7ZipReadsIt_Then_TheHeaderIsPackedAndEverythingExtracts(bool encrypt) {
+    var archive = Path.Combine(this._root, $"hc-{encrypt}.7z");
+    using (var file = File.Create(archive))
+    using (var writer = new SevenZipWriter(file, SevenZipCodec.Lzma2, password: encrypt ? Password : null, compressHeaders: true)) {
+      foreach (var (path, data) in this._tree)
+        if (data == null)
+          writer.AddDirectory(path);
+        else
+          writer.AddEntry(new SevenZipEntry { Name = path, LastWriteTime = new DateTime(2024, 5, 6, 7, 8, 9, DateTimeKind.Utc) }, data);
+      writer.Finish();
+    }
+
+    var bytes = File.ReadAllBytes(archive);
+    var nextHeader = SevenZipConstants.SignatureHeaderSize + BitConverter.ToInt64(bytes, 12);
+    Assert.That(bytes[nextHeader], Is.EqualTo(SevenZipConstants.IdEncodedHeader), "the header should be packed");
+    using (var reader = new SevenZipReader(new MemoryStream(bytes), password: encrypt ? Password : null))
+      Assert.That(reader.IsHeaderEncrypted, Is.False);
+    this.AssertSevenZipAccepts($"hc-{encrypt}", archive, encrypt ? Password : null);
   }
 
   private static string WriteTemp(string root, string name, byte[] bytes) {

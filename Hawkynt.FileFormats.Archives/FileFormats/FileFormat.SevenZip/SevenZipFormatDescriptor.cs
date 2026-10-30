@@ -30,6 +30,8 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       AllowedValues: ["0", "1048576", "16777216", "67108864", "1073741824"],
       Description: "Max solid block size in bytes. 0 = non-solid (each file independent)."),
     new("Password", "Password", FormatOptionKind.String, ""),
+    new("HeaderCompression", "Compress the header", FormatOptionKind.Boolean, "false",
+      Description: "Store the header LZMA-packed, as 7-Zip's -mhc=on does, when that is smaller. A plain header keeps the archive open to in-place edits; an encrypted header is always packed."),
   ];
 
   /// <summary>
@@ -454,7 +456,8 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
     var w = new SevenZipWriter(output, defaultCodec, dictionarySize: dictSize,
       ppmdOrder: ppmdOrder, ppmdMemorySize: ppmdMem, password: password,
-      encryptHeaders: options.EncryptFilenames);
+      encryptHeaders: options.EncryptFilenames,
+      compressHeaders: options.GetOption("HeaderCompression", "false").Trim().ToLowerInvariant() is "true" or "on" or "1" or "yes");
 
     foreach (var i in inputs)
       if (i.IsDirectory) w.AddDirectory(EntryFor(i));

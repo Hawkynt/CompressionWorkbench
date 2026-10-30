@@ -39,6 +39,7 @@ public sealed class SevenZipWriter : IDisposable {
   private readonly int _ppmdMemorySize;
   private readonly string? _password;
   private readonly bool _encryptHeaders;
+  private readonly bool _compressHeaders;
   private readonly List<(SevenZipEntry Entry, byte[] Data)> _entries = [];
   private (byte[] Salt, byte[] Key)? _aesKey;
   private bool _finished;
@@ -66,10 +67,15 @@ public sealed class SevenZipWriter : IDisposable {
   /// <param name="deltaDistance">Delta filter distance (1-256). Only used when filter is Delta.</param>
   /// <param name="password">Optional password for AES-256 encryption.</param>
   /// <param name="encryptHeaders">When true and password is set, also encrypt the archive header (file names).</param>
+  /// <param name="compressHeaders">
+  /// When true, store the header LZMA-packed (<c>kEncodedHeader</c>) as 7-Zip's <c>-mhc=on</c> does
+  /// whenever that is smaller. An encrypted header is always packed. A plain header (the default)
+  /// keeps the archive open to in-place appends and removals.
+  /// </param>
   public SevenZipWriter(Stream stream, SevenZipCodec codec, bool leaveOpen = false,
       int dictionarySize = 1 << 23, int ppmdOrder = 6, int ppmdMemorySize = 1 << 24,
       SevenZipFilter filter = SevenZipFilter.None, int deltaDistance = 1,
-      string? password = null, bool encryptHeaders = false) {
+      string? password = null, bool encryptHeaders = false, bool compressHeaders = false) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanSeek)
       throw new ArgumentException("Stream must be seekable.", nameof(stream));
@@ -88,6 +94,7 @@ public sealed class SevenZipWriter : IDisposable {
     this._ppmdMemorySize = ppmdMemorySize;
     this._password = string.IsNullOrEmpty(password) ? null : password;
     this._encryptHeaders = encryptHeaders && this._password != null;
+    this._compressHeaders = compressHeaders;
 
     // Write placeholder signature header (32 zero bytes)
     var placeholder = new byte[SevenZipConstants.SignatureHeaderSize];
@@ -369,6 +376,22 @@ public sealed class SevenZipWriter : IDisposable {
     using var headerStream = new MemoryStream();
     SevenZipHeaderCodec.WriteHeader(headerStream, packInfo, folders, subStreams, fileInfos);
     var headerData = headerStream.ToArray();
+
+    if (!this._encryptHeaders && this._compressHeaders) {
+      // 7-Zip's -mhc: the header LZMA-packed in a folder of its own, carrying the header's CRC,
+      // kept only when it comes out smaller than the plain header.
+      var compressed = this.Compress(headerData, SevenZipCodec.Lzma, 1 << 20, out var lzmaCoder);
+      var headerFolder = new SevenZipFolder { UnpackCrc = Crc32.Compute(headerData), PackedStreams = [0] };
+      headerFolder.Coders.Add(lzmaCoder);
+      headerFolder.UnpackSizes = [headerData.Length];
+      var encPackInfo = new SevenZipPackInfo { PackPos = this._stream.Position - SevenZipConstants.SignatureHeaderSize, PackSizes = [compressed.Length], PackCrcs = [null] };
+      using var ehStream = new MemoryStream();
+      SevenZipHeaderCodec.WriteEncodedHeader(ehStream, encPackInfo, [headerFolder]);
+      if (compressed.Length + ehStream.Length < headerData.Length) {
+        this._stream.Write(compressed);
+        headerData = ehStream.ToArray();
+      }
+    }
 
     if (this._encryptHeaders) {
       this.EnsureKey();

@@ -131,6 +131,7 @@ var dictSizeOpt = new Option<string?>("--dict-size", "-d") { Description = "LZMA
 var wordSizeOpt = new Option<int?>("--word-size", "-w") { Description = "LZMA fast bytes: 5-273 (default 32). PPMd model order: 2-32 (default 6)" };
 var levelOpt = new Option<int?>("--level", "-l") { Description = "Level 0-9. Deflate: 0=none,6=default,9=best. LZMA: 1=fast,5=normal,9=best" };
 var encryptHeadersOpt = new Option<bool>("--encrypt-headers", "-eh") { Description = "Encrypt file names and headers (7z, RAR5). Requires --password" };
+var headerCompressionOpt = new Option<bool>("--header-compression", "-hc") { Description = "7z: store the header LZMA-packed (7-Zip's -mhc=on) when that is smaller" };
 var zipEncryptionOpt = new Option<string?>("--zip-encryption") { Description = "ZIP encryption method: aes256 (default, strong) or zipcrypto (weak, legacy compatible)" };
 var sfxOpt = new Option<bool>("--sfx") { Description = "Create a self-extracting archive (console stub, no runtime needed)" };
 var sfxUiOpt = new Option<bool>("--sfx-ui") { Description = "Create a self-extracting archive (GUI stub with folder picker; Windows and Linux)" };
@@ -151,6 +152,8 @@ var createCmd = new Command("create", """
     cwb create app.7z src/ --sfx                        Self-extracting 7z (console)
     cwb create app.7z src/ --sfx --sfx-target linux-x64 SFX for Linux x64
     cwb create backup.7z src/ -p secret                 7z with AES-256 encryption
+    cwb create backup.7z src/ -p secret -eh             7z, file names encrypted too
+    cwb create backup.7z src/ -hc                       7z with a packed header (7-Zip -mhc=on)
     cwb create backup.zip *.txt -m deflate+ -t 4        Zopfli optimal, 4 threads
 
   Methods by format:
@@ -168,7 +171,7 @@ var createCmd = new Command("create", """
     --solid-size  Max solid block: 0=single block, 64m=64MB blocks, 1g=1GB blocks.
     --level       0-9: 1=fast, 5=normal, 9=best.
     --threads     Parallel compression (7z splits into solid blocks, ZIP per-entry).
-  """) { createArchiveArg, createFilesArg, passwordOpt, methodOpt, forceCompressOpt, threadsOpt, solidSizeOpt, dictSizeOpt, wordSizeOpt, levelOpt, encryptHeadersOpt, zipEncryptionOpt, sfxOpt, sfxUiOpt, sfxTargetOpt };
+  """) { createArchiveArg, createFilesArg, passwordOpt, methodOpt, forceCompressOpt, threadsOpt, solidSizeOpt, dictSizeOpt, wordSizeOpt, levelOpt, encryptHeadersOpt, headerCompressionOpt, zipEncryptionOpt, sfxOpt, sfxUiOpt, sfxTargetOpt };
 createCmd.Aliases.Add("c");
 createCmd.SetAction((ParseResult ctx) => {
   var archive = ctx.GetValue(createArchiveArg)!;
@@ -182,6 +185,7 @@ createCmd.SetAction((ParseResult ctx) => {
   var wordSize = ctx.GetValue(wordSizeOpt);
   var level = ctx.GetValue(levelOpt);
   var encryptHeaders = ctx.GetValue(encryptHeadersOpt);
+  var headerCompression = ctx.GetValue(headerCompressionOpt);
   var zipEncryption = ctx.GetValue(zipEncryptionOpt);
   var makeSfx = ctx.GetValue(sfxOpt);
   var makeSfxUi = ctx.GetValue(sfxUiOpt);
@@ -208,6 +212,7 @@ createCmd.SetAction((ParseResult ctx) => {
     DictSize = dictSize, WordSize = wordSize, Level = level,
     ForceCompress = forceCompress, Password = password, EncryptFilenames = encryptHeaders,
     ZipEncryption = zipEncryption,
+    FormatSpecific = headerCompression ? new Dictionary<string, string> { ["HeaderCompression"] = "true" } : null,
   };
   var methodLabel = method.IsDefault ? "" : $" [{method}]";
   var threadLabel = threads > 1 ? $" ({threads} threads)" : "";
