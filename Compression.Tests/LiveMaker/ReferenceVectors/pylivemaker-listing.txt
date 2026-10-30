@@ -1,0 +1,12 @@
+pylm-v102.dat	hello.txt	13	none	0ba904eae8773b70c75333db4de2f3ac45a8ad4ddba1b242f0b3cfc199391dd8
+pylm-v102.dat	sub/data.bin	4096	zlib	c8f5d0341d54d951a71b136e6e2afcb14d11ed8489a7ae126a8fee0df6ecf193
+pylm-v102.dat	日本語.txt	220	zlib	0edae70024ea67ef595a6c832a9ff8321a34ec98a7b94c3b131e87c933276332
+pylm-scrambled.dat	plain.txt	680	none	9587a4e965a53c28558a6bce471c605387e21ddd6a859c18ffe7f178767ee181
+pylm-scrambled.dat	scr.bin	4096	encrypted	c8f5d0341d54d951a71b136e6e2afcb14d11ed8489a7ae126a8fee0df6ecf193
+pylm-scrambled.dat	scrz.txt	680	encrypted_zlib	9587a4e965a53c28558a6bce471c605387e21ddd6a859c18ffe7f178767ee181
+cwb-v102.dat	hello.txt	13	none	0ba904eae8773b70c75333db4de2f3ac45a8ad4ddba1b242f0b3cfc199391dd8
+cwb-v102.dat	sub/data.bin	4096	zlib	c8f5d0341d54d951a71b136e6e2afcb14d11ed8489a7ae126a8fee0df6ecf193
+cwb-v102.dat	日本語.txt	320	zlib	bf7633318d02fdb7b52f34a3225cace83d5b0e526aef3c73a6ce3b97ea62270c
+cwb-v102-stored.dat	hello.txt	13	none	0ba904eae8773b70c75333db4de2f3ac45a8ad4ddba1b242f0b3cfc199391dd8
+cwb-v102-stored.dat	sub/data.bin	4096	none	c8f5d0341d54d951a71b136e6e2afcb14d11ed8489a7ae126a8fee0df6ecf193
+cwb-v102-stored.dat	日本語.txt	320	none	bf7633318d02fdb7b52f34a3225cace83d5b0e526aef3c73a6ce3b97ea62270c

@@ -193,6 +193,10 @@
     <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">
       <LogicalName>VdfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- LiveMaker VF archives from pylivemaker and ours read by it and GARbro; see LiveMaker/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="LiveMaker\ReferenceVectors\*.dat;LiveMaker\ReferenceVectors\*.txt">
+      <LogicalName>LiveMakerVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- ZIP archives written by third-party archivers; see Zip/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
       <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>
