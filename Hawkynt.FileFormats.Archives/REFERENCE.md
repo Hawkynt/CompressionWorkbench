@@ -9554,6 +9554,78 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Emits the ELF stub followed by the SquashFS image holding the queued entries. |
 
+### Namespace `FileFormat.AppleArchive`
+
+[`AppleArchiveEntry`](#applearchiveentry) · [`AppleArchiveFormatDescriptor`](#applearchiveformatdescriptor) · [`AppleArchiveReader`](#applearchivereader) · [`AppleArchiveWriter`](#applearchivewriter)
+
+#### `AppleArchiveEntry`
+
+One item of an Apple Archive (an AA01/YAA1 header and its blobs).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AppleArchiveEntry` | `AppleArchiveEntry()` |  |
+| `FieldKeys` | `IReadOnlyList<string> FieldKeys { get; init; }` | Gets the three-letter keys of every field, in header order. |
+| `Gid` | `long? Gid { get; init; }` | Gets the group id (GID), when present. |
+| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether this item is a directory. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | Gets the modification time (MTM), in UTC, when present. |
+| `LinkTarget` | `string LinkTarget { get; init; }` | Gets the symlink target (LNK), when present. |
+| `Mode` | `int? Mode { get; init; }` | Gets the POSIX permission bits (MOD), when present. |
+| `Path` | `string Path { get; init; }` | Gets the path (the PAT field), '/'-separated; empty for the archive root directory. |
+| `Size` | `long Size { get; init; }` | Gets the length of the file data blob (DAT); 0 when the item has none. |
+| `Type` | `char Type { get; init; }` | Gets the entry type (TYP): 'F' file, 'D' directory, 'L' symlink, 'B'/'C' devices, 'P' FIFO, 'S' socket, 'M' metadata. |
+| `Uid` | `long? Uid { get; init; }` | Gets the owner id (UID), when present. |
+
+#### `AppleArchiveFormatDescriptor`
+
+Apple Archive (.aar; the older YAA1 variant too): AA01 item headers with typed fields, plain or in a pbz container (LZFSE, zlib, xz, LZ4, LZBITMAP). References: `https://github.com/0xilis/libNeoAppleArchive` — libNeoAppleArchive (MIT), converted for the item header layout`https://developer.apple.com/documentation/applearchive` — Apple's framework documentation; macOS `aa` is the oracle
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AppleArchiveFormatDescriptor` | `AppleArchiveFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by path) files; every other item is copied byte for byte. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes items by path; every other item is copied byte for byte. |
+
+#### `AppleArchiveReader`
+
+Reads an Apple Archive: a plain AA01/YAA1 item stream, or one wrapped in a pbz (LZFSE, zlib, xz, LZ4 or LZBITMAP) container.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AppleArchiveReader` | `AppleArchiveReader(Stream stream)` | Reads an Apple Archive from `stream` (from offset 0). |
+| `Compression` | `string Compression { get; }` | Gets the container compression: "raw", "lzfse", "zlib", "lzma", "lz4" or "lzbitmap". |
+| `Entries` | `IReadOnlyList<AppleArchiveEntry> Entries { get; }` | Gets the items in archive order. |
+| `IsTruncated` | `bool IsTruncated { get; }` | Gets whether an item header did not parse; `Entries` holds those before it. |
+| `Extract` | `byte[] Extract(AppleArchiveEntry entry)` | Returns a file item's data (empty for items without a DAT blob). |
+
+#### `AppleArchiveWriter`
+
+Writes an Apple Archive as `aa archive` lays one out: AA01 items with TYP, PAT, MOD, MTM and DAT fields (integers in their smallest width), optionally wrapped in a pbz LZFSE or zlib container.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AppleArchiveWriter` | `AppleArchiveWriter()` |  |
+| `AddDirectory` | `void AddDirectory(string path, DateTime? modifiedUtc = null, int mode = 493)` | Adds a directory. |
+| `AddFile` | `void AddFile(string path, ReadOnlySpan<byte> data, DateTime? modifiedUtc = null, int mode = 420)` | Adds a regular file. |
+| `ToArray` | `byte[] ToArray(string compression = "lzfse")` | Returns the archive: plain for "raw", else a pbz LZFSE ('lzfse') or zlib ('zlib') container. |
+
 ### Namespace `FileFormat.AppleSingle`
 
 [`AppleDoubleFormatDescriptor`](#appledoubleformatdescriptor) · [`AppleSingleFormatDescriptor`](#applesingleformatdescriptor) · [`AppleSingleInPlaceModifier`](#applesingleinplacemodifier) · [`AppleSingleReader`](#applesinglereader) · [`AppleSingleReader.Container`](#applesinglereadercontainer) · [`AppleSingleReader.Entry`](#applesinglereaderentry) · [`AppleSingleWriter`](#applesinglewriter)
