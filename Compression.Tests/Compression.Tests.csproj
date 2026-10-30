@@ -102,6 +102,10 @@
     <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
       <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- The 1975 UNIX V6 root volume from TUHS; see UnixV6/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="UnixV6\ReferenceVectors\v6root.gz;UnixV6\ReferenceVectors\manifest.txt">
+      <LogicalName>UnixV6Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>
