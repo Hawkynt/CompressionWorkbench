@@ -1,0 +1,13 @@
+Ppmd7 (PPMd variant H) — converted
+
+Source:   Ppmd7.c / Ppmd7.h / Ppmd.h by Igor Pavlov, 2010-03-12, as carried in libarchive
+          (libarchive/archive_ppmd7.c, archive_ppmd7_private.h, archive_ppmd_private.h)
+Revision: libarchive v3.7.7 (b439d586f53911c84be5e380445a8a259e19114c)
+Authors:  Igor Pavlov, based on PPMd var.H (2001) by Dmitry Shkarin
+Licence:  Public domain ("2010-03-12 : Igor Pavlov : Public domain. This code is based
+          on PPMd var.H (2001): Dmitry Shkarin : Public domain")
+
+Ppmd7.cs converts the model, the sub-allocator and the symbol decoder, plus the
+carry-less range decoder RAR 3.x uses. The C version keeps its heap behind a base
+pointer. Here it is a byte array addressed by offset, with the same layout, so the
+model behaves bit for bit like the C one.

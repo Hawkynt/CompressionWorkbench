@@ -145,10 +145,10 @@ Quantum,quantum,codec,R,,R,,,,,2,,bb:BB_Quantum,Y,Y,,OK,,
 XPRESS (Huffman),xpress,codec,R,,,,,,,1,https://learn.microsoft.com/openspecs/windows_protocols/ms-xca/,bb:BB_Xpress,Y,Y,,OK,,
 LZFSE (method),lzfse,codec,R,,,,,,,1,,bb:BB_Lzfse,Y,Y,,OK,,
 RAR 1.5 method,rar1,codec,R,,R,,,,,2,,Rar,Y,Y,Y,OK,,
-RAR 2.x method,rar2,codec,R,,R,,,,,2,,Rar,Y,Y,Y,OK,,
-"RAR 3.x method (incl. PPMd, VM filters)",rar3,codec,R,,R,,,,,2,,bb:BB_Rar3,Y,Y,,OK,,
+RAR 2.x method,rar2,codec,R,,R,,,,,2,docs/RAR20-ON-DISK.md,Rar,Y,Y,Y,OK,,"WinRAR 2.90 archives decode to their CRC-32s. Audio blocks are implemented from the spec, but no vector is known to use them. Read only; writing uses the 2.9 method"
+"RAR 3.x method (incl. PPMd, VM filters)",rar3,codec,R,,R,,,,,2,,bb:BB_Rar3,Y,Y,,OK,,"LZ, PPMd var.H and filters decode RAR 6.24 and libarchive archives; unrar 7.00 tests and extracts what we write (LZ only)"
 RAR 5 method,rar5,codec,R,,R,,,,,2,,bb:BB_Rar,Y,Y,,OK,,
-RAR audio / VM filters,,codec,,,R,,,,,1,,Rar,Y,Y,Y,PARTIAL,,RAR3 filters matched to the six standard programs only; no general RarVM (Rar3Decoder.cs)
+RAR audio / VM filters,,codec,,,R,,,,,1,,Rar,Y,Y,Y,OK,,"The six standard RarVM programs are recognised by CRC-32 and length, as unrar does. E8/E8E9, delta, RGB and audio decode RAR 6.24 and libarchive archives to their CRCs; IA-64 is implemented but no vector exercises it. A general RarVM is refused: unrar 7.x runs no other programs either (rarvm.cpp)"
 LZH methods (lh1-lh7),lh5;lh6;lh7;lzh,codec,R,,R,,,,,2,,bb:BB_Lzh,Y,Y,,OK,,
 LZW,lzw,codec,,,R,,,,,1,,bb:BB_Lzw,Y,Y,,OK,,
 LZC (compress method),z,codec,R,,,,,,,1,,bb:BB_Lzc,Y,Y,,OK,,
@@ -178,7 +178,7 @@ StuffIt Arsenic (method 15),,codec,,,R,,,,,1,,,,,,MISSING,,
 StuffIt method 13,,codec,,,R,,,,,1,,,,,,MISSING,,
 StuffIt Huffman (method 3),,codec,,,R,,,,,1,,,,,,MISSING,,
 StuffIt LZW (method 2),,codec,,,R,,,,,1,,,,,,MISSING,,
-StuffIt DES encryption,,encryption,,,R,,,,,1,,,,,,MISSING,,
+StuffIt DES encryption,,encryption,,,R,,,,,1,,,,,,MISSING,,"refused for now: no DES-encrypted StuffIt archive is available to prove a decoder against (only StuffIt Deluxe writes them), and the StuffIt reader is being rewritten in #504"
 StuffIt X Blend,,codec,,,R,,,,,1,,,,,,MISSING,,
 StuffIt X Cyanide,,codec,,,R,,,,,1,,,,,,MISSING,,
 StuffIt X Darkhorse,,codec,,,R,,,,,1,,,,,,MISSING,,
@@ -200,7 +200,7 @@ ZipCrypto (traditional PKWARE),zipcrypto,encryption,RW,,R,,,,,2,,Zip,Y,Y,Y,OK,,
 PKWARE Strong Encryption,zipstrong,encryption,R,,,,,,,1,,,,,,MISSING,,
 RAR 3.x AES-128,rar3aes,encryption,R,,,,,,,1,,Rar,Y,Y,Y,OK,,
 RAR5 AES-256,rar5aes,encryption,R,,,,,,,1,,Rar,Y,Y,Y,OK,,
-RAR 2.0 encryption,rar20,encryption,R,,,,,,,1,,,,,,MISSING,,
+RAR 2.0 encryption,rar20,encryption,R,,,,,,,1,https://github.com/ip7z/7zip/blob/main/CPP/7zip/Crypto/Rar20Crypto.cpp,Rar,Y,Y,Y,OK,,"decrypted (unpack versions 20-28, checked on WinRAR 2.90 archives); writing uses AES; RAR 1.5 encryption refused"
 RC4,rc4,encryption,,,R,,,,,1,,,,,,MISSING,,
 uuencode,uu;uue,encoding,,RW,,,,fmt/1102,,2,https://pubs.opengroup.org/onlinepubs/9799919799/utilities/uuencode.html,UuEncoding,Y,Y,,OK,,
 Base64,b64;base64,encoding,R,W,,,,,,2,https://www.rfc-editor.org/rfc/rfc4648,B64Encoding,Y,Y,,OK,,

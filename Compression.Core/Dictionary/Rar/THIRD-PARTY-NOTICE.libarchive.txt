@@ -1,0 +1,40 @@
+libarchive — RAR 2.9 (RAR 3.x/4.x) decoder, converted
+
+Source:   https://github.com/libarchive/libarchive
+          libarchive/archive_read_support_format_rar.c
+Revision: v3.7.7 (b439d586f53911c84be5e380445a8a259e19114c)
+Authors:  Tim Kientzle, Andres Mejia and the libarchive contributors
+Licence:  BSD-2-Clause (reproduced below)
+
+Rar3Decoder.cs was converted from that file. It covers the bit stream, the table and
+precode reading, the LZ symbol set, filter parsing, the RarVM program fingerprints, and
+the delta, E8/E8E9, RGB and audio filters. Rar3Encoder.cs writes the same format.
+libarchive does not cover three behaviours: the IA-64 filter, the end-of-file
+marker in solid streams, and the low-offset reset when tables are read. Each was
+written down from reading unrar 7.0.9 (rarvm.cpp, unpack30.cpp). The unRAR licence
+rules out its code, so that is sourcing rung 2 and no code was carried across. They
+were then implemented independently and checked against RAR 6.24 archives.
+
+Copyright (c) 2003-2007 Tim Kientzle
+Copyright (c) 2011 Andres Mejia
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) ``AS IS'' AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE AUTHOR(S) BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

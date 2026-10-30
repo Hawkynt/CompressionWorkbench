@@ -140,12 +140,14 @@ public sealed class Rar4Writer : IDisposable {
     if (this._solid && !this._isFirstFile)
       fileFlags |= RarConstants.Rar4FlagSolid;
     if (this._password != null)
-      fileFlags |= RarConstants.Rar4FlagEncrypted;
+      fileFlags |= RarConstants.Rar4FlagEncrypted | RarConstants.Rar4FlagSalt;
     this._isFirstFile = false;
 
+    // AES-encrypted members must declare 2.9: readers pick the cipher by unpack version, and
+    // version 20 means the RAR 2.0 cipher.
     var unpackVer = this._targetCompatibility == RarCompatibility.Rar1_5
       ? (byte)15
-      : actualMethod == RarConstants.Rar4MethodStore ? (byte)20 : (byte)29;
+      : actualMethod == RarConstants.Rar4MethodStore && this._password == null ? (byte)20 : (byte)29;
 
     // RAR 1.5 has only the 64 KiB-era dictionary semantics and stored members do not need
     // the later window-size bits. RAR 2.9+ records the selected dictionary in bits 5-7.
