@@ -138,6 +138,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [NuFX / ShrinkIt](https://en.wikipedia.org/wiki/ShrinkIt) | `NuFx` | `.shk` `.sdk` `.bxy` | R/W | ✅ | defrag · shrink · wipe |  | [nulib.com](https://nulib.com/library/FTN.e08002.htm) |
 | PackIt | `PackIt` | `.pit` | R/W | ✅ | defrag · wipe | Reads stored and Huffman entries, writes stored; encrypted entries are refused | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [PEA](https://peazip.github.io/pea-file-format.html) | `Pea` | `.pea` | WORM | ✅ | — | Single-volume, unencrypted streams; every compression level and check algorithm | [peazip.github.io](https://peazip.github.io/pea-file-format.html) |
+| Quadruple D | `QuadrupleD` | `.qda` | R | ✅ | — | Read-only QDA0 game archives: stored or byte-pair-encoded (Gage BPE, 32-bit block lengths) files | [Wikipedia (byte pair encoding)](https://en.wikipedia.org/wiki/Byte_pair_encoding) |
 | [RAR](https://en.wikipedia.org/wiki/RAR_(file_format)) | `Rar` | `.rar` | R/W | ✅ | wipe | v1–v5 readers; creation and edits emit RAR4/RAR5 without claiming WinRAR encoder parity | [rarlab.com](https://www.rarlab.com/technote.htm) |
 | [SeqBox](https://github.com/MarcoPon/SeqBox) | `SeqBox` | `.sbx` | WORM | ✅ | — | Single-file recoverable container; versions 1-4, metadata block optional | [GitHub](https://github.com/MarcoPon/SeqBox) |
 | [7z](https://en.wikipedia.org/wiki/7z) | `SevenZip` | `.7z` | R/W | ✅ | compress · wipe |  | [7-zip.org](https://www.7-zip.org/7z.html) |
