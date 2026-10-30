@@ -214,22 +214,22 @@ NSIS installer,exe;nsis,installer,R,,R,,R,,,3,https://nsis.sourceforge.io/,Nsis,
 Inno Setup,exe,installer,,,,,R,,,1,https://jrsoftware.org/isinfo.php,InnoSetup,Y,Y,,PARTIAL,,listing only; file extraction throws for every Inno version (InnoSetupReader.cs)
 InstallShield (cab / exe),exe;cab;ex_;hdr,installer,,,,,R,fmt/1466,,2,,,,,,MISSING,,
 Wise Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-Setup Factory,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-Smart Install Maker,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-Clickteam Install Creator,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-Ghost Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-Gentee installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-install4j,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-InstallAware,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-Installer VISE,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-InstallForge,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-InstallScript,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-Actual Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-Advanced Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-Create Install,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-Excelsior Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
+Setup Factory,exe,installer,,,,,R,,,1,,,,,,MISSING,,"open: sfextract (MIT) descends from SFUnpacker, which carries no licence; no redistributable Setup Factory 7-9 sample with a runnable oracle found"
+Smart Install Maker,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, no published specification and no sample found"
+Clickteam Install Creator,exe,installer,,,,,R,,,1,,,,,,MISSING,,"open: cicdec (BSD-3-Clause) can be converted. But the only public sample cicdec accepts extracts as empty files; the Install Creator setup is a multi-product installer cicdec does not support; and making a sample needs Install Creator installed, which means running its installer"
+Ghost Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, no published specification and no sample found"
+Gentee installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation or specification of the setup container, and no extractor, found"
+install4j,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, no published specification and no extractor found that does not run the installer"
+InstallAware,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, specification or extractor of the setup container found"
+Installer VISE,exe,installer,,,,,R,,,1,,,,,,MISSING,,"open, rung 1 available: unvise (MIT, with FORMAT.md) and viseunpack (MIT) cover VISE 3.0 to 8.5, with catalog CRC-32s as the check. Samples are classic Mac OS archives (MacBinary/BinHex, several behind StuffIt)"
+InstallForge,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: closed source (the public repository is an issue tracker); no specification or extractor found"
+InstallScript,exe,installer,,,,,R,,,1,,,,,,MISSING,,"not a container: InstallScript is InstallShield's compiled setup script (setup.inx); the files it installs are in the InstallShield cabinets (InstallShieldCab)"
+Actual Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: the only extractor found (aiunp) carries no licence, so rung 2 at best; no specification or sample found"
+Advanced Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: the only extractor found (AdvancedInstallerExtractory, Rust) carries no licence; no specification or sample found"
+Create Install,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, no published specification and no sample found"
+Excelsior Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, no published specification and no sample found"
 BitRock InstallBuilder,exe,installer,,,,,R,,,1,https://installbuilder.com/,BitRock,Y,,,READ-ONLY-BUT-SOURCES-WRITE,InstallBuilder,
-Netopsystems FEAD,exe,installer,,,,,R,,,1,,,,,,MISSING,,
+Netopsystems FEAD,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, no published specification and no extractor found"
 PyInstaller,exe,installer,,,,,R,,,1,https://pyinstaller.org/,PyInstaller,Y,Y,,OK,,
 Spoon Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 SuperDAT updater,exe,installer,,,,,R,,,1,,,,,,MISSING,,
