@@ -361,7 +361,7 @@ MIME HTML archive (MHT),mht;mhtml,document,,,,,R,,,1,,,,,,MISSING,,
 Outlook Express mailbox (DBX),dbx,document,,,,,R,,,1,,,,,,MISSING,,
 Qt message catalog (QM),qm,document,,,,,R,,,1,,,,,,MISSING,,
 SQLite database,sqlite;sqlite3;db,document,,,,,R,,,1,,Sqlite,Y,,,READ-ONLY-BUT-SOURCES-WRITE,sqlite3,
-Windows thumbnail cache,db;thumbs.db,document,,,,,R,,,1,,ThumbsDb,Y,Y,Y,PARTIAL,,Thumbs.db only; thumbcache_*.db has no descriptor
+Windows thumbnail cache,db;thumbs.db,document,,,,,R,,,1,https://github.com/libyal/documentation/blob/main/Windows%20Explorer%20Thumbnail%20Cache%20database%20format.asciidoc,ThumbsDb;Thumbcache,Y,Y,Y,OK,,"Thumbs.db (ThumbsDb, R/W) and thumbcache_*.db (Thumbcache, read-only, Vista-11, checked against dissect.thumbcache)"
 Safari webarchive,webarchive,document,,,,,,fmt/866,,1,,,,,,MISSING,,
 Compressed MusicXML (MXL),mxl,document,,,,,,fmt/2005;fmt/897,,1,,,,,,MISSING,,
 OneNote package (ONEPKG),onepkg,document,,,,,,fmt/987,,1,,,,,,MISSING,,

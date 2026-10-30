@@ -102,6 +102,10 @@
     <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
       <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Empty thumbcache headers Windows wrote and dissect.thumbcache's corpus listing; see Thumbcache/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Thumbcache\ReferenceVectors\*.db;Thumbcache\ReferenceVectors\dissect-listing.txt">
+      <LogicalName>ThumbcacheVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>
