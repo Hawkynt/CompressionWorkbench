@@ -341,6 +341,18 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Dar.DarExternalConformanceTests" \
             --logger "trx;LogFileName=dar-286-oracle-tests.trx"
 
+      # Hard gate: MAME castool renders our Commodore TAP files to audio, and the audio has to last as
+      # long as our decoding of the pulses says (version 1 long pulses, version 0 overflow bytes).
+      - name: C64 TAP oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_FLOPTOOL: "1"
+        run: |
+          sudo apt-get install -y mame-tools
+          dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.C64Tap.C64TapExternalConformanceTests" \
+            --logger "trx;LogFileName=c64tap-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the
