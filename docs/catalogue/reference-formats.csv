@@ -490,7 +490,7 @@ lnfs,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 romfs,romfs,filesystem,,,,R,,,Y,2,,RomFs,Y,Y,Y,OK,,
 SquashFS,squashfs;sqfs,filesystem,R,,,R,,,Y,3,https://dr-emann.github.io/squashfs/squashfs.html,SquashFs,Y,Y,,PARTIAL,,SquashFS v4 read/written; v1.0-v3.1 (either byte order; zlib) read as unsquashfs extracts them and read-only; the LZMA builds of 3.x refused (SquashFsLegacyReader.cs)
 EROFS,erofs,filesystem,,,,,,,Y,1,,Erofs,Y,Y,Y,OK,,
-UMSDOS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,deferred: a FAT volume plus a --LINUX-.--- metadata file per directory; the driver was removed in Linux 2.6.11 and no maintained tool exists; ZipSlack distributions carry real metadata files that could serve as oracle; not attempted in this round
+UMSDOS,,filesystem,,,,,,,Y,1,https://en.wikipedia.org/wiki/UMSDOS,Umsdos,Y,,,OK,,"read-only view of a FAT volume through its --linux-.--- files (long names, modes, owners, symlinks, pseudo hard links); checked against Slackware 8.1 ZipSlack and its package logs; no maintained kernel mounts UMSDOS, so nothing is written"
 UVFAT,,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: no specification, implementation or image located"
 Venti (Plan 9),,filesystem,,,,,,,Y,1,,,,,,MISSING,,"deferred: a content-addressed block store (arenas, index sections), not a file tree; plan9port (MIT) builds the venti tools that could serve as oracle; not attempted in this round"
 DECtape,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
