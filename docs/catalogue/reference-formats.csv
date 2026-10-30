@@ -358,7 +358,7 @@ GNU gettext catalog (MO),mo,document,,,,,R,,,1,,Mo,Y,Y,,OK,,
 Microsoft Reader (LIT),lit,document,,,,,R,,,1,,Lit,Y,,,OK,,
 Windows Help (HLP),hlp,document,,,,,R,fmt/474,,2,,,,,,MISSING,,
 MIME HTML archive (MHT),mht;mhtml,document,,,,,R,,,1,,,,,,MISSING,,
-Outlook Express mailbox (DBX),dbx,document,,,,,R,,,1,,,,,,MISSING,,
+Outlook Express mailbox (DBX),dbx,document,,,,,R,,,1,http://fileformats.archiveteam.org/wiki/Outlook_Express_Database,Dbx,Y,,,OK,,read-only: messages as .eml match undbx; no Outlook Express to prove a written mailbox
 Qt message catalog (QM),qm,document,,,,,R,,,1,,,,,,MISSING,,
 SQLite database,sqlite;sqlite3;db,document,,,,,R,,,1,,Sqlite,Y,,,READ-ONLY-BUT-SOURCES-WRITE,sqlite3,
 Windows thumbnail cache,db;thumbs.db,document,,,,,R,,,1,,ThumbsDb,Y,Y,Y,PARTIAL,,Thumbs.db only; thumbcache_*.db has no descriptor
