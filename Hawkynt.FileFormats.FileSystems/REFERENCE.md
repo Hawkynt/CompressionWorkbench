@@ -7,6 +7,87 @@
 > Every public and protected type and member, read from the built assembly and merged
 > with its XML documentation. Generated — edit the XML docs in source, not this file.
 
+### Namespace `FileFormat.Aff`
+
+[`AffFormatDescriptor`](#affformatdescriptor) · [`AffImage`](#affimage) · [`AffSegment`](#affsegment)
+
+#### `AffFormatDescriptor`
+
+AFF (Advanced Forensic Format, AFFLIB v3) single-file evidence image. Exposes the acquired media as `disk.img`, verified against the stored md5/sha1/sha256, and the acquisition metadata as a synthetic `metadata.ini`. Creating writes zlib/ZERO pages that AFFLIB's tools accept; replacing `disk.img` rewrites the pages and hashes and keeps every acquisition segment. Encrypted images are listed but refused; signed images are not modified (their signatures would no longer verify). AFD (directory) and AFM (raw plus sidecar) are multi-file layouts and outside this single-stream descriptor.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AffFormatDescriptor` | `AffFormatDescriptor()` |  |
+| `DiskName` | `const string DiskName` |  |
+| `MetadataName` | `const string MetadataName` |  |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | A single-file AFF requires its image payload and cannot be purged to an empty container. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Replaces `disk.img`; acquisition segments are kept, pages and hashes regenerated. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a fresh AFF from the single image input (`disk.img` or any one file). |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | The image itself cannot be removed from an evidence container. |
+
+#### `AffImage`
+
+Reader/writer for single-file AFF (Advanced Forensic Format, AFFLIB v3 `.aff`). Implemented from `docs/AFF-ON-DISK.md`; AFFLIB's tools are the oracle only.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultPageSize` | `const int DefaultPageSize` |  |
+| `PageAlgorithmLzma` | `const uint PageAlgorithmLzma` |  |
+| `PageAlgorithmMask` | `const uint PageAlgorithmMask` |  |
+| `PageAlgorithmZero` | `const uint PageAlgorithmZero` |  |
+| `PageAlgorithmZlib` | `const uint PageAlgorithmZlib` |  |
+| `PageCompressedMax` | `const uint PageCompressedMax` |  |
+| `PageCompressed` | `const uint PageCompressed` |  |
+| `QuadwordFlag` | `const uint QuadwordFlag` |  |
+| `FileMagic` | `static ReadOnlySpan<byte> FileMagic { get; }` |  |
+| `ImageSize` | `long ImageSize { get; }` |  |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | True when any segment is encrypted (AFFLIB's `/aes256` suffix or a stored key). |
+| `IsSigned` | `bool IsSigned { get; }` | True when the image carries signature segments (`/sha256`) or a signing certificate. |
+| `PageCount` | `int PageCount { get; }` |  |
+| `PageSize` | `uint PageSize { get; }` |  |
+| `SectorSize` | `uint SectorSize { get; }` |  |
+| `Segments` | `IReadOnlyList<AffSegment> Segments { get; }` |  |
+| `CopyImageTo` | `void CopyImageTo(Stream output)` | Reconstructs the whole image; absent pages read as zeros (as AFFLIB does without bad-block fill). |
+| `DecodeQuad` | `static long DecodeQuad(ReadOnlySpan<byte> data)` | AFFLIB's 64-bit "quad": low 32 bits then high 32 bits, each big-endian. |
+| `EncodeQuad` | `static byte[] EncodeQuad(long value)` |  |
+| `Find` | `AffSegment Find(string name)` |  |
+| `IsDerived` | `static bool IsDerived(string name)` | Segments that describe the image's content or geometry and must be regenerated, not copied, on rewrite. |
+| `ReadVerifiedImage` | `byte[] ReadVerifiedImage()` | The reconstructed image, verified against the stored md5/sha1/sha256 segments when present. |
+| `Read` | `static AffImage Read(Stream stream)` | Parses every segment; empty-name (ignored / free-space) segments are skipped. |
+| `RenderMetadata` | `byte[] RenderMetadata()` | `metadata.ini`: the geometry plus every non-page segment rendered as text, hex or a number. |
+| `TryPageNumber` | `static bool TryPageNumber(string name, out long page)` | Page number of a `page%d` (or legacy `seg%d`) segment name. |
+| `Write` | `static void Write(Stream output, byte[] image, IEnumerable<AffSegment> metadata = null, int pageSize = 16777216, uint sectorSize = 512)` | Writes an AFF for `image`: the given leading metadata segments, then pagesize/sectorsize/imagesize/devicesectors, the pages (all-zero pages as ZERO, others zlib-compressed when that is smaller), and md5/sha1 of the image. |
+
+#### `AffSegment`
+
+One segment of an AFF file: name, 32-bit argument and data.
+
+Implements `IEquatable<AffSegment>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AffSegment` | `AffSegment(string Name, uint Argument, byte[] Data)` | One segment of an AFF file: name, 32-bit argument and data. |
+| `Argument` | `uint Argument { get; init; }` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+
 ### Namespace `FileFormat.AndroidBootImage`
 
 [`AndroidBootImage`](#androidbootimage) · [`AndroidBootImageFormatDescriptor`](#androidbootimageformatdescriptor) · [`AndroidBootImageMetadata`](#androidbootimagemetadata) · [`VendorRamdisk`](#vendorramdisk)
