@@ -13744,6 +13744,173 @@ Emits a Stacker STACVOL that `StackerReader` round-trips byte-exact. The contain
 | `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
 | `Build` | `byte[] Build()` | Performs the build operation. |
 
+### Namespace `FileSystem.Svr4Bfs`
+
+[`Svr4BfsEntry`](#svr4bfsentry) · [`Svr4BfsFormatDescriptor`](#svr4bfsformatdescriptor) · [`Svr4BfsInode`](#svr4bfsinode) · [`Svr4BfsLayout`](#svr4bfslayout) · [`Svr4BfsModifier`](#svr4bfsmodifier) · [`Svr4BfsReader`](#svr4bfsreader) · [`Svr4BfsSuperblock`](#svr4bfssuperblock) · [`Svr4BfsWriter`](#svr4bfswriter)
+
+#### `Svr4BfsEntry`
+
+One name in the BFS root directory.
+
+Implements `IEquatable<Svr4BfsEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Svr4BfsEntry` | `Svr4BfsEntry(string Name, int Ino, long Size, DateTime LastModified, Svr4BfsInode Inode, long DirentOffset)` | One name in the BFS root directory. |
+| `DirentOffset` | `long DirentOffset { get; init; }` | Byte offset of the directory entry inside the image. |
+| `Ino` | `int Ino { get; init; }` | The inode the name points at. |
+| `Inode` | `Svr4BfsInode Inode { get; init; }` | The inode itself. |
+| `LastModified` | `DateTime LastModified { get; init; }` | Inode modification time. |
+| `Name` | `string Name { get; init; }` | The directory-entry name (at most 14 bytes). |
+| `Size` | `long Size { get; init; }` | File size in bytes. |
+
+#### `Svr4BfsFormatDescriptor`
+
+Read/write descriptor for the SVR4 / UnixWare Boot File System — the flat, contiguous-file volume UnixWare boots from (`/stand`). Magic `0x1BADFACE` little-endian at offset 0.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Svr4BfsFormatDescriptor` | `Svr4BfsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces root-level files in place; all inputs land or none do. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named files in place, zeroing their blocks; unknown names are ignored. |
+
+#### `Svr4BfsInode`
+
+One 64-byte BFS inode.
+
+Implements `IEquatable<Svr4BfsInode>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Svr4BfsInode` | `Svr4BfsInode(ushort Ino, uint StartBlock, uint EndBlock, uint EndOffset, uint VType, uint Mode, uint Uid, uint Gid, uint Nlink, uint Atime, uint Mtime, uint Ctime)` | One 64-byte BFS inode. |
+| `Atime` | `uint Atime { get; set; }` |  |
+| `Ctime` | `uint Ctime { get; set; }` |  |
+| `EndBlock` | `uint EndBlock { get; set; }` |  |
+| `EndOffset` | `uint EndOffset { get; set; }` |  |
+| `Gid` | `uint Gid { get; set; }` |  |
+| `HasNoBlocks` | `bool HasNoBlocks { get; }` | True when the inode owns no data blocks (an empty file stores start block 0). |
+| `Ino` | `ushort Ino { get; set; }` |  |
+| `IsFree` | `bool IsFree { get; }` | True when the slot is free. |
+| `Mode` | `uint Mode { get; set; }` |  |
+| `Mtime` | `uint Mtime { get; set; }` |  |
+| `Nlink` | `uint Nlink { get; set; }` |  |
+| `Size` | `long Size { get; }` | File size in bytes: the end offset names the last byte, relative to the volume. |
+| `StartBlock` | `uint StartBlock { get; set; }` |  |
+| `Uid` | `uint Uid { get; set; }` |  |
+| `VType` | `uint VType { get; set; }` |  |
+| `BlocksFor` | `static uint BlocksFor(long size)` | Blocks needed for `size` bytes. |
+| `EndOffsetFor` | `static uint EndOffsetFor(uint startBlock, long size)` | The end offset an inode stores for `size` bytes from `startBlock`. |
+| `Parse` | `static Svr4BfsInode Parse(ReadOnlySpan<byte> raw)` | Parses one inode. |
+| `WriteTo` | `void WriteTo(Span<byte> raw)` | Serialises the inode into a 64-byte slot (padding zeroed). |
+
+#### `Svr4BfsLayout`
+
+On-disk constants and structures of the SVR4 / UnixWare Boot File System (`/stand`). Every value here is documented in `docs/SVR4-BFS-ON-DISK.md` together with the measurement that confirmed it.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockSize` | `const int BlockSize` | The only block size the format knows. |
+| `DirentSize` | `const int DirentSize` | Bytes per directory entry: a 16-bit inode number and a 14-byte name. |
+| `InodeSize` | `const int InodeSize` | Bytes per inode. |
+| `InodesPerBlock` | `const int InodesPerBlock` | Inodes per 512-byte block. |
+| `Magic` | `const uint Magic` | Superblock magic, little-endian at offset 0. |
+| `NameMax` | `const int NameMax` | Longest name a directory entry holds. |
+| `NoCompaction` | `const uint NoCompaction` | Value of the compaction fields (`s_from`, `s_to`, …) on a clean volume. |
+| `RootIno` | `const int RootIno` | Inode number of the root (and only) directory; inode slot 0. |
+| `VDir` | `const uint VDir` | `i_vtype` of a directory. |
+| `VReg` | `const uint VReg` | `i_vtype` of a regular file. |
+| `DecodeName` | `static string DecodeName(ReadOnlySpan<byte> raw)` | Decodes a NUL-padded directory-entry name. |
+| `EncodeName` | `static byte[] EncodeName(string name)` | Encodes a name as stored in a directory entry, or returns null when it cannot be stored. |
+| `InodeOffset` | `static long InodeOffset(int ino)` | Byte offset of inode `ino` inside the image. |
+| `LastInode` | `static int LastInode(uint start)` | Highest inode number an inode area ending at `start` can hold. |
+
+#### `Svr4BfsModifier`
+
+Edits an SVR4 BFS volume in place, the way the Linux `bfs` driver does: a new file takes a free inode slot, a free root-directory slot and one contiguous run of free blocks; a removed name clears its directory slot and, with the last link, its inode and data blocks.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddFile` | `static void AddFile(Stream image, string name, byte[] data, ArchiveEntryMetadata metadata = null, DateTimeOffset? now = null)` | Adds `name`, replacing an existing file of that name. |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string name, DateTimeOffset? now = null)` | Removes `name`; returns false when the root directory has no such name. |
+
+#### `Svr4BfsReader`
+
+Reads an SVR4 / UnixWare Boot File System image: superblock, inode table and the single root directory. BFS has no subdirectories, so every entry is a root-level file.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Svr4BfsReader` | `Svr4BfsReader(Stream stream)` | Opens `stream`; throws `InvalidDataException` when it is not BFS. |
+| `Entries` | `IReadOnlyList<Svr4BfsEntry> Entries { get; }` | Every file name the root directory lists, in directory order. |
+| `Inodes` | `IReadOnlyList<Svr4BfsInode> Inodes { get; }` | Every inode slot from the root (2) to `LastInode`, indexed by `ino - 2`. |
+| `LastInode` | `int LastInode { get; }` | Highest inode number the inode area holds. |
+| `Root` | `Svr4BfsInode Root { get; }` | The root directory inode. |
+| `Superblock` | `Svr4BfsSuperblock Superblock { get; }` | The parsed superblock. |
+| `Extract` | `byte[] Extract(Svr4BfsEntry entry)` | Returns the bytes of `entry`; refuses an inode whose extent is inconsistent. |
+| `GetInode` | `Svr4BfsInode? GetInode(int ino)` | The inode with number `ino`, or null when it is out of range or free. |
+| `IsReadable` | `bool IsReadable(Svr4BfsInode inode)` | True when the inode's blocks lie inside the data area and its size fits them — the condition under which its bytes can be returned without guessing. |
+
+#### `Svr4BfsSuperblock`
+
+The 512-byte BFS superblock.
+
+Implements `IEquatable<Svr4BfsSuperblock>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Svr4BfsSuperblock` | `Svr4BfsSuperblock(uint Start, uint End, uint From, uint To, uint BFrom, uint BTo, string FsName, string Volume)` | The 512-byte BFS superblock. |
+| `BFrom` | `uint BFrom { get; init; }` | Compaction backup source (`s_bfrom`). |
+| `BTo` | `uint BTo { get; init; }` | Compaction backup target (`s_bto`). |
+| `End` | `uint End { get; init; }` | Byte offset of the last byte of the volume. |
+| `FirstDataBlock` | `uint FirstDataBlock { get; }` | First block a file may occupy. |
+| `From` | `uint From { get; init; }` | Compaction source (`s_from`); all ones when clean. |
+| `FsName` | `string FsName { get; init; }` | Six-byte file-system name, space padded. |
+| `IsClean` | `bool IsClean { get; }` | True when no compaction was interrupted; only a clean volume is edited. |
+| `LastBlock` | `uint LastBlock { get; }` | Last whole block inside the volume. |
+| `Start` | `uint Start { get; init; }` | Byte offset of the first data block (end of the inode area). |
+| `To` | `uint To { get; init; }` | Compaction target (`s_to`); all ones when clean. |
+| `Volume` | `string Volume { get; init; }` | Six-byte volume name, space padded. |
+| `TryParse` | `static Svr4BfsSuperblock TryParse(ReadOnlySpan<byte> block)` | Parses block 0, or returns null when it is not a BFS superblock. |
+| `WriteTo` | `void WriteTo(Span<byte> block)` | Serialises the superblock into a zeroed 512-byte block. |
+
+#### `Svr4BfsWriter`
+
+Builds a fresh SVR4 / UnixWare Boot File System volume in the shape `mkfs.bfs` produces — superblock, inode area, a root directory with `.` and `..` — with the given files laid out contiguously behind the root directory, as the Linux `bfs` driver itself allocates them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Svr4BfsWriter` | `Svr4BfsWriter()` |  |
+| `MaximumVolumeSize` | `const long MaximumVolumeSize` | Largest volume the 32-bit `s_end` byte offset can describe. |
+| `MinimumInodes` | `const int MinimumInodes` | Fewest inodes a volume gets — the count `mkfs.bfs` gives a small volume. |
+| `SpareInodes` | `const int SpareInodes` | Inode slots and directory slots left free beyond the files written, for later adds. |
+| `FsName` | `string FsName { get; set; }` | Six-character file-system name (`s_fsname`); padded with spaces. |
+| `InodeCount` | `int? InodeCount { get; set; }` | Inode count; null picks enough for the files plus `SpareInodes`. |
+| `Now` | `DateTimeOffset Now { get; set; }` | Timestamp used where an input carries none; defaults to now. |
+| `VolumeLabel` | `string VolumeLabel { get; set; }` | Six-character volume name (`s_volume`); padded with spaces. |
+| `VolumeSize` | `long? VolumeSize { get; set; }` | Volume size in bytes; null picks the used size plus a quarter (at least 64 KiB of free space). |
+| `AddFile` | `void AddFile(string name, byte[] data, ArchiveEntryMetadata metadata = null)` | Queues a root-level file. |
+| `Build` | `static byte[] Build(IEnumerable<ValueTuple<string, byte[]>> files)` | Builds a volume from `files` with default geometry. |
+| `WriteTo` | `void WriteTo(Stream output)` | Writes the volume to `output` from its current position. |
+
 ### Namespace `FileSystem.SysV`
 
 [`SysVBlockMover`](#sysvblockmover) · [`SysVEntry`](#sysventry) · [`SysVExtentMap`](#sysvextentmap) · [`SysVFormatDescriptor`](#sysvformatdescriptor) · [`SysVInPlaceModifier`](#sysvinplacemodifier) · [`SysVModifier`](#sysvmodifier) · [`SysVReader`](#sysvreader) · [`SysVWriter`](#sysvwriter)
