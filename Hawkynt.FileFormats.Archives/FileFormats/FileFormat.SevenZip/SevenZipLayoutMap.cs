@@ -5,144 +5,115 @@ namespace FileFormat.SevenZip;
 
 /// <summary>
 /// Walks a 7z archive and emits the byte-level layout: signature header,
-/// each solid block (packed data), and the compressed metadata at the end.
+/// each solid block (packed data), the packed header when the header is stored
+/// compressed or encrypted, and the header at the end.
 /// </summary>
+/// <remarks>
+/// Whatever this map does not cover is dead space a wipe may zero, so it errs on the side of
+/// keeping: a header it cannot decode (encrypted, no password) marks all packed data as used
+/// rather than leaving it unclaimed.
+/// </remarks>
 public static class SevenZipLayoutMap {
 
   /// <summary>
-  /// Enumerates the value.
+  /// Enumerates the live regions of the archive in <paramref name="archive"/>.
   /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
+    return Collect(archive);
+  }
+
+  private static List<DefragBlockInfo> Collect(Stream archive) {
+    var blocks = new List<DefragBlockInfo>();
     archive.Position = 0;
-
     if (archive.Length < SevenZipConstants.SignatureHeaderSize)
-      yield break;
+      return blocks;
 
-    // 32-byte signature header → MetadataReserved
-    yield return new DefragBlockInfo(
-      0,
-      SevenZipConstants.SignatureHeaderSize,
-      DefragBlockKind.MetadataReserved,
-      FileName: "7z Signature Header");
+    blocks.Add(new(0, SevenZipConstants.SignatureHeaderSize, DefragBlockKind.MetadataReserved, FileName: "7z Signature Header"));
 
-    SevenZipHeader? sigHeader = null;
+    SevenZipHeader sigHeader;
     try {
       archive.Position = 0;
       sigHeader = SevenZipHeader.Read(archive);
-    } catch {
-      // Cannot yield inside catch.
+    } catch (Exception e) when (e is InvalidDataException or EndOfStreamException) {
+      return blocks;
     }
+    if (sigHeader.NextHeaderSize <= 0)
+      return blocks;
 
-    if (sigHeader == null)
-      yield break;
-
-    // Parse the header to get pack info and folder structure
-    SevenZipPackInfo? packInfo = null;
-    List<SevenZipFolder>? folders = null;
-    SevenZipSubStreamsInfo? subStreams = null;
-    List<SevenZipFileInfo>? fileInfos = null;
-    var parseFailed = false;
+    var nextHeaderPos = SevenZipConstants.SignatureHeaderSize + sigHeader.NextHeaderOffset;
+    var header = new DefragBlockInfo(nextHeaderPos, sigHeader.NextHeaderSize, DefragBlockKind.MetadataReserved, FileName: "7z Metadata");
+    byte[] raw;
     try {
-      var nextHeaderPos = SevenZipConstants.SignatureHeaderSize + sigHeader.NextHeaderOffset;
       archive.Position = nextHeaderPos;
-      var nextHeaderData = new byte[sigHeader.NextHeaderSize];
-      archive.ReadExactly(nextHeaderData);
-      using var headerStream = new MemoryStream(nextHeaderData);
-      (packInfo, folders, subStreams, fileInfos) =
-        SevenZipHeaderCodec.ReadHeader(headerStream, null, archiveStream: archive);
-    } catch {
-      parseFailed = true;
+      raw = new byte[sigHeader.NextHeaderSize];
+      archive.ReadExactly(raw);
+    } catch (Exception e) when (e is EndOfStreamException or ArgumentException or OverflowException or OutOfMemoryException) {
+      blocks.Add(header);
+      return blocks;
     }
 
-    if (parseFailed) {
-      // Still emit the next header tile even if parse fails
-      if (sigHeader.NextHeaderSize > 0) {
-        var nextPos = SevenZipConstants.SignatureHeaderSize + sigHeader.NextHeaderOffset;
-        yield return new DefragBlockInfo(
-          nextPos,
-          sigHeader.NextHeaderSize,
-          DefragBlockKind.MetadataReserved,
-          FileName: "7z Metadata (parse failed)");
+    // A packed header lives among the packed streams; it is metadata a wipe must keep.
+    try {
+      if (SevenZipHeaderCodec.ReadEncodedHeaderPackInfo(raw) is { } encoded) {
+        var offsets = SevenZipHeaderCodec.PackStreamOffsets(encoded);
+        for (var i = 0; i < offsets.Length; ++i)
+          blocks.Add(new(SevenZipConstants.SignatureHeaderSize + offsets[i], encoded.PackSizes[i], DefragBlockKind.MetadataReserved, FileName: "7z Packed Header"));
       }
-      yield break;
+    } catch (Exception e) when (e is InvalidDataException or EndOfStreamException or NotSupportedException) {
+      // Unreadable even as a descriptor: keep everything below the header.
+      blocks.Add(new(SevenZipConstants.SignatureHeaderSize, sigHeader.NextHeaderOffset, DefragBlockKind.Used, FileName: "7z packed data (layout unknown)"));
+      blocks.Add(header);
+      return blocks;
     }
 
-    // Emit solid blocks (packed data regions)
-    var packBaseOffset = (long)SevenZipConstants.SignatureHeaderSize + packInfo!.PackPos;
+    SevenZipDatabase database;
+    try {
+      database = SevenZipHeaderCodec.ReadDatabase(new MemoryStream(raw, writable: false), archive, new object(), new SevenZipKeyCache(null));
+    } catch (Exception e) when (e is InvalidDataException or EndOfStreamException or NotSupportedException or UnauthorizedAccessException or ArgumentException) {
+      // An encrypted or damaged header hides the folders: keep all packed data.
+      blocks.Add(new(SevenZipConstants.SignatureHeaderSize, sigHeader.NextHeaderOffset, DefragBlockKind.Used, FileName: "7z packed data (layout unknown)"));
+      blocks.Add(header);
+      return blocks;
+    }
+
+    var (packInfo, folders, subStreams, fileInfos) = database;
+    var packOffsets = SevenZipHeaderCodec.PackStreamOffsets(packInfo);
     var packStreamIndex = 0;
-    for (var fi = 0; fi < folders!.Count; fi++) {
+    var subStreamIndex = 0;
+    var withData = fileInfos.Where(static f => !f.IsEmptyStream).ToList();
+    for (var fi = 0; fi < folders.Count; fi++) {
       var folder = folders[fi];
-      var totalIn = folder.Coders.Sum(c => c.NumInStreams);
-      var numPack = totalIn - folder.BindPairs.Count;
+      var numPack = folder.NumPackStreams;
+      var fileCount = subStreams.NumUnpackStreams[fi];
+      var names = withData.Skip(subStreamIndex).Take(fileCount).Select(static f => f.Name).ToList();
+      var blockName = names.Count switch {
+        0 => $"Solid block {fi}",
+        1 => names[0],
+        _ => $"Solid block {fi} ({names.Count} files)",
+      };
 
-      // Calculate actual offset for this folder's pack streams
-      var folderOffset = packBaseOffset;
-      for (var p = 0; p < packStreamIndex && p < packInfo.PackSizes.Length; p++)
-        folderOffset += packInfo.PackSizes[p];
-
-      long totalPackedSize = 0;
-      var fileCount = fi < subStreams!.NumUnpackStreams.Length
-        ? subStreams.NumUnpackStreams[fi]
-        : 1;
-      for (var p = 0; p < numPack && packStreamIndex + p < packInfo.PackSizes.Length; p++)
-        totalPackedSize += packInfo.PackSizes[packStreamIndex + p];
-
-      if (totalPackedSize > 0) {
-        // Collect file names for this solid block
-        var names = new List<string>();
-        var ssIdx = 0;
-        for (var f = 0; f < fi; f++)
-          ssIdx += f < subStreams.NumUnpackStreams.Length ? subStreams.NumUnpackStreams[f] : 1;
-
-        var fileIdx = 0;
-        var nonEmptyIdx = 0;
-        foreach (var info in fileInfos!) {
-          if (info.IsEmptyStream) { fileIdx++; continue; }
-          if (nonEmptyIdx >= ssIdx && nonEmptyIdx < ssIdx + fileCount)
-            names.Add(info.Name);
-          nonEmptyIdx++;
-          fileIdx++;
-          if (nonEmptyIdx >= ssIdx + fileCount) break;
-        }
-
-        var blockName = names.Count switch {
-          0 => $"Solid block {fi}",
-          1 => names[0],
-          _ => $"Solid block {fi} ({names.Count} files)"
-        };
-
-        yield return new DefragBlockInfo(
-          folderOffset,
-          totalPackedSize,
-          DefragBlockKind.Used,
-          FileName: blockName,
-          Classification: ClassifyFolder(folder));
+      for (var p = 0; p < numPack && packStreamIndex + p < packInfo.PackSizes.Length; p++) {
+        var size = packInfo.PackSizes[packStreamIndex + p];
+        if (size > 0)
+          blocks.Add(new(SevenZipConstants.SignatureHeaderSize + packOffsets[packStreamIndex + p], size, DefragBlockKind.Used,
+            FileName: numPack == 1 ? blockName : $"{blockName} [stream {p}]", Classification: ClassifyFolder(folder)));
       }
 
       packStreamIndex += numPack;
+      subStreamIndex += fileCount;
     }
 
-    // Compressed metadata at end → MetadataReserved
-    if (sigHeader.NextHeaderSize > 0) {
-      var nextHeaderPos = SevenZipConstants.SignatureHeaderSize + sigHeader.NextHeaderOffset;
-      yield return new DefragBlockInfo(
-        nextHeaderPos,
-        sigHeader.NextHeaderSize,
-        DefragBlockKind.MetadataReserved,
-        FileName: "7z Metadata");
-    }
+    blocks.Add(header);
+    return blocks;
   }
 
   private static DefragBlockClass ClassifyFolder(SevenZipFolder folder) {
     foreach (var coder in folder.Coders) {
-      var id = coder.CodecId;
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecLzma2)) return DefragBlockClass.Hot;
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecLzma)) return DefragBlockClass.Hot;
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecPpmd)) return DefragBlockClass.Hot;
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecBzip2)) return DefragBlockClass.Cold;
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecDeflate)) return DefragBlockClass.Normal;
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecCopy)) return DefragBlockClass.Frozen;
+      if (coder.Is(SevenZipConstants.CodecLzma2) || coder.Is(SevenZipConstants.CodecLzma) || coder.Is(SevenZipConstants.CodecPpmd)) return DefragBlockClass.Hot;
+      if (coder.Is(SevenZipConstants.CodecBzip2)) return DefragBlockClass.Cold;
+      if (coder.Is(SevenZipConstants.CodecDeflate)) return DefragBlockClass.Normal;
+      if (coder.Is(SevenZipConstants.CodecCopy)) return DefragBlockClass.Frozen;
     }
     return DefragBlockClass.Normal;
   }

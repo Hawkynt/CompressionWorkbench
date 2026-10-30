@@ -78,6 +78,9 @@ internal static class SevenZipConstants {
   /// <summary>Property ID: encoded (compressed) header.</summary>
   public const byte IdEncodedHeader = 0x17;
 
+  /// <summary>Property ID: start position of each file inside its original (<c>kStartPos</c>).</summary>
+  public const byte IdStartPos = 0x18;
+
   /// <summary>Property ID: dummy/padding.</summary>
   public const byte IdDummy = 0x19;
 

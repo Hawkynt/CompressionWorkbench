@@ -1,9 +1,5 @@
 using Compression.Core.Checksums;
-using Compression.Core.Crypto;
-using Compression.Core.Dictionary.Lzma;
-using Compression.Core.Entropy.Ppmd;
-using Compression.Core.Streams;
-using Compression.Core.Transforms;
+using Compression.Registry;
 
 namespace FileFormat.SevenZip;
 
@@ -11,38 +7,64 @@ namespace FileFormat.SevenZip;
 /// Reads entries from a 7z archive.
 /// </summary>
 /// <remarks>
-/// 7z archives use solid compression: multiple files are packed into a single
-/// compressed block (folder). Extracting a single file may require decompressing
-/// the entire folder.
+/// <para>
+/// 7z archives use solid compression: multiple files are packed into a single compressed block
+/// (folder), so a file is reached by decoding its folder from the start. The reader decodes
+/// folders as streams — memory stays bounded by the coders' windows, not by the folder's size —
+/// and keeps the folder it decoded last open, so extracting the entries of a folder in order
+/// decodes it once.
+/// </para>
+/// <para>
+/// An archive behind a self-extractor stub is found by its signature. Every file's CRC is
+/// checked; a data error in an encrypted folder is reported as a probable wrong password.
+/// </para>
 /// </remarks>
 public sealed class SevenZipReader : IDisposable {
-  private readonly Stream _stream;
-  private readonly bool _leaveOpen;
-  private readonly string? _password;
-  private readonly List<SevenZipEntry> _entries;
-  private readonly SevenZipPackInfo _packInfo;
-  private readonly List<SevenZipFolder> _folders;
-  private readonly SevenZipSubStreamsInfo _subStreams;
-  private readonly List<SevenZipFileInfo> _fileInfos;
-  private bool _disposed;
+  /// <summary>How far into a file the reader looks for the signature of an archive behind an SFX stub.</summary>
+  private const int MaxSfxStubSize = 1 << 22;
 
-  // Map from entry index to (folderIndex, fileIndexWithinFolder)
-  private readonly (int FolderIndex, int FileIndex)[] _entryToFolder;
+  private readonly Stream _stream;
+  private readonly Stream _archive;
+  private readonly object _gate = new();
+  private readonly bool _leaveOpen;
+  private readonly SevenZipKeyCache _keys;
+  private readonly SevenZipDatabase _database;
+  private readonly List<SevenZipEntry> _entries = [];
+  private readonly long[] _packOffsets;
+
+  // Per entry: (folder, index of its sub-stream within the folder); -1 when it has no data.
+  private readonly (int Folder, int InFolder)[] _entryToStream;
+  private readonly int[] _folderFirstSubStream;
+
+  private FolderCursor? _cursor;
+  private bool _disposed;
 
   /// <summary>
   /// Gets the entries in the 7z archive.
   /// </summary>
   public IReadOnlyList<SevenZipEntry> Entries => this._entries;
 
+  /// <summary>Whether the archive's header (file names included) is encrypted.</summary>
+  public bool IsHeaderEncrypted => this._database.HeaderEncrypted;
+
+  /// <summary>Where the archive starts in the stream: 0, or the size of a self-extractor stub.</summary>
+  public long ArchiveOffset { get; }
+
   /// <summary>
   /// What this archive's header holds that <see cref="Entries"/> does not carry, so that a
-  /// rewrite from the entries would drop it: the header properties the reader skips. Empty
-  /// when a rewrite can keep everything.
+  /// rewrite from the entries would drop it: the header properties the reader skips, and
+  /// anti-items. Empty when a rewrite can keep everything.
   /// </summary>
-  internal IReadOnlyList<string> UncarriedMetadata
-    => this._fileInfos.FirstOrDefault()?.SkippedProperties is { Count: > 0 } skipped
-      ? [.. skipped.Order(StringComparer.Ordinal)]
-      : [];
+  internal IReadOnlyList<string> UncarriedMetadata {
+    get {
+      var list = this._database.Files.FirstOrDefault()?.SkippedProperties is { Count: > 0 } skipped
+        ? skipped.Order(StringComparer.Ordinal).ToList()
+        : [];
+      if (this._database.Files.Exists(static f => f.IsAnti))
+        list.Add("anti-items");
+      return list;
+    }
+  }
 
   /// <summary>
   /// Initializes a new <see cref="SevenZipReader"/> from a seekable stream.
@@ -50,36 +72,140 @@ public sealed class SevenZipReader : IDisposable {
   /// <param name="stream">A seekable stream containing the 7z archive.</param>
   /// <param name="leaveOpen">Whether to leave the stream open on dispose.</param>
   /// <param name="password">Optional password for encrypted archives.</param>
+  /// <exception cref="ArchivePasswordException">The header is encrypted and no password, or the wrong one, was given.</exception>
   public SevenZipReader(Stream stream, bool leaveOpen = false, string? password = null) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanSeek)
       throw new ArgumentException("Stream must be seekable.", nameof(stream));
     this._leaveOpen = leaveOpen;
-    this._password = password;
-    this._entries = [];
+    this._keys = new SevenZipKeyCache(string.IsNullOrEmpty(password) ? null : password);
 
-    // Read signature header
-    var sigHeader = SevenZipHeader.Read(this._stream);
+    this.ArchiveOffset = FindSignature(stream);
+    this._archive = this.ArchiveOffset == 0 ? stream : new SevenZipOffsetStream(stream, this.ArchiveOffset);
 
-    // Read next header
-    var nextHeaderPos = SevenZipConstants.SignatureHeaderSize + sigHeader.NextHeaderOffset;
-    this._stream.Position = nextHeaderPos;
+    this._archive.Position = 0;
+    var signature = SevenZipHeader.Read(this._archive);
+    if (signature.MajorVersion != 0)
+      throw new NotSupportedException($"7z: format version {signature.MajorVersion}.{signature.MinorVersion} is not supported.");
 
-    var nextHeaderData = new byte[sigHeader.NextHeaderSize];
-    ReadExact(nextHeaderData, 0, (int)sigHeader.NextHeaderSize);
+    if (signature.NextHeaderSize == 0) {
+      // An archive with nothing in it: 7-Zip writes no header at all.
+      this._database = new SevenZipDatabase();
+    } else {
+      var headerStart = SevenZipConstants.SignatureHeaderSize + signature.NextHeaderOffset;
+      if (signature.NextHeaderOffset < 0 || signature.NextHeaderSize is < 0 or > 1L << 30)
+        throw new InvalidDataException("7z: the start header points outside any plausible archive.");
+      if (headerStart + signature.NextHeaderSize > this._archive.Length)
+        throw new InvalidDataException(
+          $"7z: the archive is truncated or a volume is missing: its header lies at {headerStart}..{headerStart + signature.NextHeaderSize}, the data ends at {this._archive.Length}.");
 
-    // Verify next header CRC
-    var nextHeaderCrc = Crc32.Compute(nextHeaderData);
-    if (nextHeaderCrc != sigHeader.NextHeaderCrc)
-      throw new InvalidDataException("7z next header CRC mismatch.");
+      var header = new byte[signature.NextHeaderSize];
+      this._archive.Position = headerStart;
+      this._archive.ReadExactly(header);
+      if (Crc32.Compute(header) != signature.NextHeaderCrc)
+        throw new InvalidDataException("7z next header CRC mismatch.");
 
-    // Parse header
-    using var headerStream = new MemoryStream(nextHeaderData);
-    (this._packInfo, this._folders, this._subStreams, this._fileInfos) =
-      SevenZipHeaderCodec.ReadHeader(headerStream, password, archiveStream: this._stream);
+      this._database = SevenZipHeaderCodec.ReadDatabase(new MemoryStream(header, writable: false), this._archive, this._gate, this._keys);
+    }
 
-    // Build entries from file infos and sub-stream sizes
-    _entryToFolder = BuildEntries();
+    this._packOffsets = SevenZipHeaderCodec.PackStreamOffsets(this._database.PackInfo);
+    (this._entryToStream, this._folderFirstSubStream) = this.BuildEntries();
+  }
+
+  /// <summary>
+  /// The archive's offset in <paramref name="stream"/>: 0 when it starts with the signature,
+  /// else the first signature (with a valid start-header CRC) within the first 4 MiB — the archive
+  /// behind a self-extractor stub.
+  /// </summary>
+  private static long FindSignature(Stream stream) {
+    stream.Position = 0;
+    var probe = new byte[(int)Math.Min(stream.Length, MaxSfxStubSize + SevenZipConstants.SignatureHeaderSize)];
+    stream.ReadExactly(probe);
+    var signature = SevenZipConstants.Signature;
+    if (probe.AsSpan().StartsWith(signature))
+      return 0;
+
+    for (var at = probe.AsSpan().IndexOf(signature); at >= 0;) {
+      if (at + SevenZipConstants.SignatureHeaderSize <= probe.Length
+          && Crc32.Compute(probe.AsSpan(at + 12, 20)) == BitConverter.ToUInt32(probe, at + 8))
+        return at;
+      var next = probe.AsSpan(at + 1).IndexOf(signature);
+      at = next < 0 ? -1 : at + 1 + next;
+    }
+    throw new InvalidDataException("Invalid 7z signature.");
+  }
+
+  private ((int, int)[] Map, int[] FolderFirst) BuildEntries() {
+    var db = this._database;
+    var folderFirst = new int[db.Folders.Count];
+    for (int f = 0, s = 0; f < db.Folders.Count; s += db.SubStreams.NumUnpackStreams[f], ++f)
+      folderFirst[f] = s;
+
+    var map = new (int, int)[db.Files.Count];
+    var folder = 0;
+    var inFolder = 0;
+    var subStream = 0;
+    var firstPack = 0;
+    for (var i = 0; i < db.Files.Count; ++i) {
+      var file = db.Files[i];
+      var entry = new SevenZipEntry {
+        Name = file.Name,
+        IsDirectory = file.IsDirectory,
+        IsAnti = file.IsAnti,
+        LastWriteTime = file.LastWriteTime,
+        CreationTime = file.CreationTime,
+        LastAccessTime = file.LastAccessTime,
+        Attributes = file.Attributes,
+      };
+
+      if (file.IsEmptyStream) {
+        map[i] = (-1, -1);
+        entry.Size = 0;
+        entry.CompressedSize = 0;
+        this._entries.Add(entry);
+        continue;
+      }
+
+      while (folder < db.Folders.Count && inFolder >= db.SubStreams.NumUnpackStreams[folder]) {
+        firstPack += db.Folders[folder].NumPackStreams;
+        ++folder;
+        inFolder = 0;
+      }
+      if (folder >= db.Folders.Count)
+        throw new InvalidDataException("7z: more files with data than the folders hold.");
+
+      map[i] = (folder, inFolder);
+      var f = db.Folders[folder];
+      entry.Size = db.SubStreams.UnpackSizes[subStream];
+      entry.Crc = db.SubStreams.Digests[subStream];
+      entry.Method = SevenZipCoderNames.MethodOf(f);
+      entry.IsEncrypted = f.IsEncrypted;
+      var folderSize = f.MainUnpackSize;
+      var packed = 0L;
+      for (var k = 0; k < f.NumPackStreams; ++k)
+        packed += db.PackInfo.PackSizes[firstPack + k];
+      entry.CompressedSize = folderSize > 0 ? (long)(packed * ((double)entry.Size / folderSize)) : 0;
+      this._entries.Add(entry);
+      ++inFolder;
+      ++subStream;
+    }
+    return (map, folderFirst);
+  }
+
+  private SevenZipFolderDecoder DecoderFor(int folderIndex) {
+    var db = this._database;
+    var firstPack = 0;
+    for (var k = 0; k < folderIndex; ++k)
+      firstPack += db.Folders[k].NumPackStreams;
+    return new SevenZipFolderDecoder(db.Folders[folderIndex], p => {
+      var index = firstPack + p;
+      var start = SevenZipConstants.SignatureHeaderSize + this._packOffsets[index];
+      var length = db.PackInfo.PackSizes[index];
+      if (start + length > this._archive.Length)
+        throw new InvalidDataException(
+          $"7z: the archive is truncated or a volume is missing: packed stream {index} lies at {start}..{start + length}, the data ends at {this._archive.Length}.");
+      return new SevenZipWindowStream(this._archive, this._gate, start, length);
+    }, this._keys);
   }
 
   /// <summary>
@@ -88,626 +214,248 @@ public sealed class SevenZipReader : IDisposable {
   /// <param name="entryIndex">The zero-based index of the entry to extract.</param>
   /// <returns>The decompressed file data.</returns>
   public byte[] Extract(int entryIndex) {
-    if (entryIndex < 0 || entryIndex >= this._entries.Count)
-      throw new ArgumentOutOfRangeException(nameof(entryIndex));
-
-    var entry = this._entries[entryIndex];
-    if (entry.IsDirectory || entry.Size == 0)
-      return [];
-
-    var (folderIndex, fileIndex) = _entryToFolder[entryIndex];
-    if (folderIndex < 0)
-      return [];
-
-    // Decompress the entire folder
-    var folderData = DecompressFolder(folderIndex);
-
-    // Extract the file's portion
-    var offset = 0L;
-    var sizeIndexBase = 0;
-    for (var f = 0; f < folderIndex; ++f)
-      sizeIndexBase += this._subStreams.NumUnpackStreams[f];
-
-    for (var i = 0; i < fileIndex; ++i)
-      offset += this._subStreams.UnpackSizes[sizeIndexBase + i];
-
-    var size = this._subStreams.UnpackSizes[sizeIndexBase + fileIndex];
-    var result = new byte[size];
-    folderData.AsSpan((int)offset, (int)size).CopyTo(result);
-
-    // Verify CRC if available
-    if (entry.Crc.HasValue) {
-      var computedCrc = Crc32.Compute(result);
-      if (computedCrc != entry.Crc.Value)
-        throw new InvalidDataException(
-          $"CRC-32 mismatch for '{entry.Name}': expected 0x{entry.Crc.Value:X8}, computed 0x{computedCrc:X8}.");
-    }
-
-    return result;
+    using var output = new MemoryStream();
+    this.Extract(entryIndex, output);
+    return output.ToArray();
   }
 
   /// <summary>
-  /// Extracts the decompressed data for an entry into a stream.
+  /// Extracts the decompressed data for an entry into a stream, checking its CRC. On a data
+  /// error the stream may hold a partial file; the caller discards it.
   /// </summary>
   /// <param name="entryIndex">The zero-based index of the entry to extract.</param>
   /// <param name="output">The stream to write the decompressed data to.</param>
   public void Extract(int entryIndex, Stream output) {
-    var data = Extract(entryIndex);
-    output.Write(data, 0, data.Length);
-  }
+    ObjectDisposedException.ThrowIf(this._disposed, this);
+    ArgumentOutOfRangeException.ThrowIfNegative(entryIndex);
+    ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(entryIndex, this._entries.Count);
+    ArgumentNullException.ThrowIfNull(output);
 
-  private (int FolderIndex, int FileIndex)[] BuildEntries() {
-    var mapping = new (int FolderIndex, int FileIndex)[this._fileInfos.Count];
+    var (folder, inFolder) = this._entryToStream[entryIndex];
+    if (folder < 0)
+      return;
 
-    // Precompute per-folder: total packed size, total unpacked size, method name
-    var folderPackedSize = new long[this._folders.Count];
-    var folderUnpackedTotal = new long[this._folders.Count];
-    var folderMethod = new string[this._folders.Count];
-
-    var packIdx = 0;
-    for (var fi = 0; fi < this._folders.Count; fi++) {
-      var folder = this._folders[fi];
-      var totalIn = folder.Coders.Sum(c => c.NumInStreams);
-      var numPack = totalIn - folder.BindPairs.Count;
-
-      long packed = 0;
-      for (var p = 0; p < numPack && packIdx < this._packInfo.PackSizes.Length; p++)
-        packed += this._packInfo.PackSizes[packIdx++];
-      folderPackedSize[fi] = packed;
-
-      // Total unpacked size for this folder
-      var numStreams = fi < this._subStreams.NumUnpackStreams.Length
-        ? this._subStreams.NumUnpackStreams[fi] : 1;
-      // We'll accumulate while assigning entries below
-      folderUnpackedTotal[fi] = 0;
-
-      // Method name from primary coder (last in chain, or first non-filter)
-      folderMethod[fi] = GetMethodName(folder);
+    var entry = this._entries[entryIndex];
+    var cursor = this._cursor;
+    if (cursor == null || cursor.Folder != folder || cursor.NextInFolder > inFolder) {
+      cursor?.Dispose();
+      this._cursor = null;
+      cursor = new FolderCursor(folder, this.Guard(folder, () => this.DecoderFor(folder).OpenMain()));
+      this._cursor = cursor;
     }
 
-    // First pass: accumulate unpacked totals per folder
-    {
-      var curFolder = 0;
-      var curFile = 0;
-      var ssIdx = 0;
-      for (var i = 0; i < this._fileInfos.Count; ++i) {
-        if (this._fileInfos[i].IsEmptyStream) continue;
-        if (curFolder < this._folders.Count) {
-          if (ssIdx < this._subStreams.UnpackSizes.Length)
-            folderUnpackedTotal[curFolder] += this._subStreams.UnpackSizes[ssIdx];
-          ++ssIdx;
-          ++curFile;
-          if (curFolder < this._subStreams.NumUnpackStreams.Length &&
-              curFile >= this._subStreams.NumUnpackStreams[curFolder]) {
-            ++curFolder;
-            curFile = 0;
-          }
-        }
+    this.Guard(folder, () => {
+      // Skip the files before this one, then copy it out with its CRC.
+      var first = this._folderFirstSubStream[folder];
+      while (cursor.NextInFolder < inFolder) {
+        CopyExactly(cursor.Stream, Stream.Null, this._database.SubStreams.UnpackSizes[first + cursor.NextInFolder], null);
+        ++cursor.NextInFolder;
       }
-    }
-
-    // Second pass: build entries with proportional compressed sizes
-    var currentFolder = 0;
-    var currentFileInFolder = 0;
-    var subStreamSizeIndex = 0;
-
-    for (var i = 0; i < this._fileInfos.Count; ++i) {
-      var fileInfo = this._fileInfos[i];
-      var entry = new SevenZipEntry {
-        Name = fileInfo.Name,
-        IsDirectory = fileInfo.IsDirectory,
-        LastWriteTime = fileInfo.LastWriteTime,
-        CreationTime = fileInfo.CreationTime,
-        LastAccessTime = fileInfo.LastAccessTime,
-        Attributes = fileInfo.Attributes,
-      };
-
-      if (fileInfo.IsEmptyStream) {
-        entry.Size = 0;
-        entry.CompressedSize = 0;
-        mapping[i] = (-1, -1);
-      }
-      else {
-        if (currentFolder < this._folders.Count) {
-          mapping[i] = (currentFolder, currentFileInFolder);
-
-          if (subStreamSizeIndex < this._subStreams.UnpackSizes.Length)
-            entry.Size = this._subStreams.UnpackSizes[subStreamSizeIndex];
-
-          if (subStreamSizeIndex < this._subStreams.Digests.Length)
-            entry.Crc = this._subStreams.Digests[subStreamSizeIndex];
-
-          // Proportional compressed size
-          var totalUnpacked = folderUnpackedTotal[currentFolder];
-          entry.CompressedSize = totalUnpacked > 0
-            ? (long)(folderPackedSize[currentFolder] * ((double)entry.Size / totalUnpacked))
-            : 0;
-
-          entry.Method = folderMethod[currentFolder];
-
-          ++subStreamSizeIndex;
-          ++currentFileInFolder;
-
-          if (currentFolder < this._subStreams.NumUnpackStreams.Length &&
-            currentFileInFolder >= this._subStreams.NumUnpackStreams[currentFolder]) {
-            ++currentFolder;
-            currentFileInFolder = 0;
-          }
-        }
-        else
-          mapping[i] = (-1, -1);
-      }
-
-      this._entries.Add(entry);
-    }
-
-    return mapping;
-  }
-
-  private static string GetMethodName(SevenZipFolder folder) {
-    // Find the primary compression coder (skip filters like BCJ, Delta, AES)
-    foreach (var coder in folder.Coders) {
-      var id = coder.CodecId;
-      if (id.Length == 0) continue;
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecLzma2)) return "LZMA2";
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecLzma)) return "LZMA";
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecDeflate)) return "Deflate";
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecBzip2)) return "BZip2";
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecPpmd)) return "PPMd";
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecCopy)) return "Copy";
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecDeflate64)) return "Deflate64";
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecZstd)) return "Zstd";
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecBrotli)) return "Brotli";
-      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecLz4)) return "LZ4";
-    }
-    return "7z";
+      var crc = new Crc32();
+      ++cursor.NextInFolder;
+      CopyExactly(cursor.Stream, output, entry.Size, crc);
+      if (entry.Crc is { } expected && crc.Value != expected)
+        throw new InvalidDataException(
+          $"CRC-32 mismatch for '{entry.Name}': expected 0x{expected:X8}, computed 0x{crc.Value:X8}.");
+      return 0;
+    }, () => {
+      cursor.Dispose();
+      this._cursor = null;
+    });
   }
 
   /// <summary>
-  /// Calculates the global pack stream index for a given folder.
-  /// Each folder consumes (total input streams - bind pairs) pack streams.
+  /// Extracts several entries in one pass per folder: <paramref name="open"/> returns the stream
+  /// for an entry (or <see langword="null"/> to skip it) and <paramref name="close"/> receives it
+  /// back once the entry is complete and its CRC checked. Folders without a wanted entry are not
+  /// decoded. Entries without data are not offered.
   /// </summary>
-  private int GetFirstPackStreamIndex(int folderIndex) {
-    var packStreamIndex = 0;
-    for (var i = 0; i < folderIndex; ++i) {
-      var f = this._folders[i];
-      var totalIn = f.Coders.Sum(c => c.NumInStreams);
-      packStreamIndex += totalIn - f.BindPairs.Count;
-    }
-    return packStreamIndex;
-  }
+  public void ExtractMany(Func<int, Stream?> open, Action<int, Stream> close) {
+    ArgumentNullException.ThrowIfNull(open);
+    ArgumentNullException.ThrowIfNull(close);
+    ObjectDisposedException.ThrowIf(this._disposed, this);
 
-  /// <summary>
-  /// Reads the pack streams for a folder and returns them as an array.
-  /// </summary>
-  private byte[][] ReadFolderPackStreams(int folderIndex) {
-    var folder = this._folders[folderIndex];
-    var totalIn = folder.Coders.Sum(c => c.NumInStreams);
-    var numPackStreams = totalIn - folder.BindPairs.Count;
-
-    var firstPackIndex = GetFirstPackStreamIndex(folderIndex);
-
-    // Calculate base offset for the first pack stream
-    var baseOffset = SevenZipConstants.SignatureHeaderSize + this._packInfo.PackPos;
-    for (var i = 0; i < firstPackIndex; ++i)
-      baseOffset += this._packInfo.PackSizes[i];
-
-    var packStreams = new byte[numPackStreams][];
-    var offset = baseOffset;
-    for (var i = 0; i < numPackStreams; ++i) {
-      var size = (int)this._packInfo.PackSizes[firstPackIndex + i];
-      this._stream.Position = offset;
-      packStreams[i] = new byte[size];
-      ReadExact(packStreams[i], 0, size);
-      offset += size;
-    }
-
-    return packStreams;
-  }
-
-  private byte[] DecompressFolder(int folderIndex) {
-    var folder = this._folders[folderIndex];
-    if (folder.Coders.Count == 0)
-      throw new InvalidDataException("Folder has no coders.");
-
-    var packStreams = ReadFolderPackStreams(folderIndex);
-
-    if (folder.Coders.Count == 1) {
-      var unpackSize = folder.UnpackSizes.Length > 0 ? folder.UnpackSizes[0] : -1;
-      return DecompressSingleCoder(folder.Coders[0], packStreams[0], unpackSize);
-    }
-
-    // Check for BCJ2 multi-stream coder
-    var bcj2CoderIndex = -1;
-    for (var i = 0; i < folder.Coders.Count; ++i) {
-      if (folder.Coders[i].CodecId.AsSpan().SequenceEqual(SevenZipConstants.CodecBcj2)) {
-        bcj2CoderIndex = i;
-        break;
+    var byFolder = new SortedDictionary<int, List<int>>();
+    for (var i = 0; i < this._entries.Count; ++i)
+      if (this._entryToStream[i].Folder is var f and >= 0) {
+        if (!byFolder.TryGetValue(f, out var list))
+          byFolder[f] = list = [];
+        list.Add(i);
       }
-    }
 
-    if (bcj2CoderIndex >= 0)
-      return DecompressBcj2Folder(folder, packStreams, bcj2CoderIndex);
-
-    // Simple coder chain: single pack stream, sequential processing
-    var data = packStreams[0];
-    var coderOrder = BuildCoderOrder(folder);
-
-    foreach (var coderIdx in coderOrder) {
-      // Pass unpack size for the last coder in the chain (the final output)
-      var unpackSize = coderIdx == coderOrder[^1] && folder.UnpackSizes.Length > 0
-        ? folder.UnpackSizes[^1] : -1;
-      data = DecompressSingleCoder(folder.Coders[coderIdx], data, unpackSize);
-    }
-
-    return data;
-  }
-
-  /// <summary>
-  /// Decompresses a folder that uses the BCJ2 multi-stream filter.
-  /// BCJ2 has 4 input streams: main, call, jump, range (from separate coders).
-  /// </summary>
-  private byte[] DecompressBcj2Folder(SevenZipFolder folder, byte[][] packStreams,
-      int bcj2CoderIndex) {
-    var bcj2Coder = folder.Coders[bcj2CoderIndex];
-
-    // BCJ2 has 4 input streams. Each input stream is either:
-    // - Bound from another coder's output (via bind pair)
-    // - A direct pack stream
-    // Build a map: for each coder, determine which pack stream it reads
-    // and what its output feeds into.
-
-    // Calculate stream index offsets for each coder
-    var coderInStreamBase = new int[folder.Coders.Count];
-    var coderOutStreamBase = new int[folder.Coders.Count];
-    var inStreamIdx = 0;
-    var outStreamIdx = 0;
-    for (var i = 0; i < folder.Coders.Count; ++i) {
-      coderInStreamBase[i] = inStreamIdx;
-      coderOutStreamBase[i] = outStreamIdx;
-      inStreamIdx += folder.Coders[i].NumInStreams;
-      outStreamIdx += folder.Coders[i].NumOutStreams;
-    }
-
-    // Find which input streams are bound (fed by another coder's output)
-    var boundInStreams = new HashSet<int>();
-    foreach (var (inIdx, _) in folder.BindPairs)
-      boundInStreams.Add(inIdx);
-
-    // Map pack streams to unbound input streams
-    var packStreamMap = new Dictionary<int, int>(); // inStreamIndex -> packStream index
-    var packIdx = 0;
-    for (var i = 0; i < inStreamIdx; ++i) {
-      if (!boundInStreams.Contains(i))
-        packStreamMap[i] = packIdx++;
-    }
-
-    // Decompress non-BCJ2 coders first (they produce streams for BCJ2)
-    var coderOutputs = new Dictionary<int, byte[]>(); // outStreamIndex -> data
-    for (var i = 0; i < folder.Coders.Count; ++i) {
-      if (i == bcj2CoderIndex)
+    foreach (var (folder, entries) in byFolder) {
+      var outputs = new Stream?[this._database.SubStreams.NumUnpackStreams[folder]];
+      var owners = new int[outputs.Length];
+      var any = false;
+      foreach (var entry in entries) {
+        var inFolder = this._entryToStream[entry].InFolder;
+        owners[inFolder] = entry;
+        outputs[inFolder] = open(entry);
+        any |= outputs[inFolder] != null;
+      }
+      if (!any)
         continue;
 
-      // This coder reads from a pack stream
-      var coderInStream = coderInStreamBase[i];
-      byte[] input;
-      if (packStreamMap.TryGetValue(coderInStream, out var psi))
-        input = packStreams[psi];
-      else {
-        // Input is bound from another coder — find which
-        var found = false;
-        input = [];
-        foreach (var (inIndex, outIndex) in folder.BindPairs) {
-          if (inIndex == coderInStream && coderOutputs.ContainsKey(outIndex)) {
-            input = coderOutputs[outIndex];
-            found = true;
-            break;
-          }
-        }
-        if (!found)
-          throw new InvalidDataException("Could not resolve input for coder.");
-      }
-
-      var output = DecompressSingleCoder(folder.Coders[i], input, -1);
-      coderOutputs[coderOutStreamBase[i]] = output;
+      var sink = new SplitterSink(this, folder, owners, outputs, close);
+      this.Guard(folder, () => {
+        this.DecoderFor(folder).DecodeMain(sink);
+        sink.Finish();
+        return 0;
+      });
     }
-
-    // Now resolve BCJ2's 4 input streams
-    var bcj2InBase = coderInStreamBase[bcj2CoderIndex];
-    var bcj2Inputs = new byte[4][];
-    for (var i = 0; i < 4; ++i) {
-      var streamIdx = bcj2InBase + i;
-      if (packStreamMap.TryGetValue(streamIdx, out var psi))
-        bcj2Inputs[i] = packStreams[psi];
-      else {
-        // Find which coder output feeds this input
-        foreach (var (inIndex, outIndex) in folder.BindPairs) {
-          if (inIndex == streamIdx && coderOutputs.TryGetValue(outIndex, out var data)) {
-            bcj2Inputs[i] = data;
-            break;
-          }
-        }
-      }
-      bcj2Inputs[i] ??= [];
-    }
-
-    // BCJ2 streams: 0=main, 1=call, 2=jump, 3=range
-    // Output size is the final unpack size of the folder
-    var outputSize = (int)folder.UnpackSizes[^1];
-    return Bcj2Filter.Decode(bcj2Inputs[0], bcj2Inputs[1], bcj2Inputs[2],
-      bcj2Inputs[3], outputSize);
-  }
-
-  private static List<int> BuildCoderOrder(SevenZipFolder folder) {
-    var numCoders = folder.Coders.Count;
-
-    // Find which coders are fed by other coders (via bind pairs)
-    var fedByOtherCoder = new HashSet<int>();
-    foreach (var (inIndex, _) in folder.BindPairs)
-      fedByOtherCoder.Add(inIndex);
-
-    // The pack stream coder is the one NOT fed by another coder's output
-    // For simple chains, this is coder 0
-    var order = new List<int>();
-
-    // Start with coder whose input comes from the pack stream
-    // (the coder whose in-stream is not a bind pair target)
-    var firstCoder = 0;
-    for (var i = 0; i < numCoders; ++i) {
-      if (!fedByOtherCoder.Contains(i)) {
-        firstCoder = i;
-        break;
-      }
-    }
-
-    order.Add(firstCoder);
-
-    // Follow bind pairs: after processing firstCoder, find which coder
-    // consumes firstCoder's output
-    var processed = new HashSet<int> { firstCoder };
-    while (order.Count < numCoders) {
-      var found = false;
-      var lastProcessed = order[^1];
-
-      // Find bind pair where outIndex matches the output stream of lastProcessed
-      foreach (var (inIndex, outIndex) in folder.BindPairs) {
-        // outIndex is the output stream index (typically = coder index for simple coders)
-        // inIndex is the input stream index consumed by the next coder
-        if (outIndex == lastProcessed && !processed.Contains(inIndex)) {
-          // For simple 1-in-1-out coders, stream index == coder index
-          order.Add(inIndex);
-          processed.Add(inIndex);
-          found = true;
-          break;
-        }
-      }
-
-      if (!found) {
-        // Add remaining coders in order
-        for (var i = 0; i < numCoders; ++i) {
-          if (!processed.Contains(i)) {
-            order.Add(i);
-            processed.Add(i);
-          }
-        }
-        break;
-      }
-    }
-
-    return order;
-  }
-
-  private byte[] DecompressSingleCoder(SevenZipCoder coder, byte[] data, long unpackSize = -1) {
-    var codecId = coder.CodecId;
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecLzma2)) {
-      var dictByte = coder.Properties != null && coder.Properties.Length > 0
-        ? coder.Properties[0]
-        : (byte)0;
-      var dictSize = DecodeDictionarySize(dictByte);
-      using var stream = new MemoryStream(data);
-      var decoder = new Lzma2Decoder(stream, dictSize);
-      return decoder.Decode();
-    }
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecLzma)) {
-      if (coder.Properties == null || coder.Properties.Length < 5)
-        throw new InvalidDataException("LZMA coder missing properties.");
-      using var stream = new MemoryStream(data);
-      var decoder = new LzmaDecoder(stream, coder.Properties, -1);
-      return decoder.Decode();
-    }
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecDeflate))
-      return Compression.Core.Deflate.DeflateDecompressor.Decompress(data);
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecBzip2)) {
-      using var input = new MemoryStream(data);
-      using var bz2 = new FileFormat.Bzip2.Bzip2Stream(input,
-        CompressionStreamMode.Decompress);
-      using var output = new MemoryStream();
-      bz2.CopyTo(output);
-      return output.ToArray();
-    }
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecPpmd)) {
-      if (coder.Properties == null || coder.Properties.Length < 5)
-        throw new InvalidDataException("PPMd coder missing properties.");
-      int order = coder.Properties[0];
-      var memSize = coder.Properties[1] | (coder.Properties[2] << 8) |
-                    (coder.Properties[3] << 16) | (coder.Properties[4] << 24);
-      using var stream = new MemoryStream(data);
-      var rangeDecoder = new PpmdRangeDecoder(stream);
-      var model = new PpmdModelH(order, memSize);
-      if (unpackSize >= 0) {
-        var result = new byte[unpackSize];
-        for (long i = 0; i < unpackSize; ++i)
-          result[i] = model.DecodeSymbol(rangeDecoder);
-        return result;
-      }
-      using var output = new MemoryStream();
-      try {
-        while (true)
-          output.WriteByte(model.DecodeSymbol(rangeDecoder));
-      } catch (EndOfStreamException) { }
-      return output.ToArray();
-    }
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecBcj))
-      return BcjFilter.DecodeX86(data);
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecBcjPpc))
-      return BcjFilter.DecodePowerPC(data);
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecBcjIa64))
-      return BcjFilter.DecodeIA64(data);
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecBcjArm))
-      return BcjFilter.DecodeArm(data);
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecBcjArmThumb))
-      return BcjFilter.DecodeArmThumb(data);
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecBcjSparc))
-      return BcjFilter.DecodeSparc(data);
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecDelta)) {
-      var distance = coder.Properties != null && coder.Properties.Length > 0
-        ? coder.Properties[0] + 1
-        : 1;
-      return DeltaFilter.Decode(data, distance);
-    }
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecSwap2))
-      return ByteSwapFilter.Swap2(data);
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecSwap4))
-      return ByteSwapFilter.Swap4(data);
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecCopy))
-      return data;
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecAes))
-      return DecryptAes(coder, data);
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecDeflate64))
-      return Compression.Core.Deflate.Deflate64Decompressor.Decompress(data);
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecArm64))
-      return BcjFilter.DecodeArm64(data, BranchStartOffset(coder, 4));
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecRiscV))
-      return BcjFilter.DecodeRiscV(data, BranchStartOffset(coder, 2));
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecZstd))
-      return SevenZipZstdFamilyCoders.DecodeZstd(data);
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecBrotli))
-      return SevenZipZstdFamilyCoders.DecodeBrotli(data);
-
-    if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecLz4))
-      return SevenZipZstdFamilyCoders.DecodeLz4(data);
-
-    throw new NotSupportedException(
-      $"Unsupported 7z codec: [{string.Join(", ", codecId.Select(b => $"0x{b:X2}"))}]");
   }
 
   /// <summary>
-  /// The start offset ("pc") of an ARM64 / RISC-V branch filter: absent properties mean 0, otherwise
-  /// a little-endian UInt32 that must be a multiple of the instruction alignment (7-Zip refuses
-  /// anything else the same way).
+  /// Runs <paramref name="body"/>, translating what a decoder throws on corrupt input into a 7z
+  /// data error — or, in an encrypted folder, into a probable wrong password.
   /// </summary>
-  private static int BranchStartOffset(SevenZipCoder coder, uint alignment) {
-    var props = coder.Properties;
-    if (props == null || props.Length == 0)
-      return 0;
-    if (props.Length != 4)
-      throw new NotSupportedException($"Unsupported 7z branch-filter property size {props.Length}.");
-    var pc = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(props);
-    if (pc % alignment != 0)
-      throw new NotSupportedException($"Unaligned 7z branch-filter start offset 0x{pc:X8}.");
-    return unchecked((int)pc);
+  private T Guard<T>(int folder, Func<T> body, Action? onFailure = null) {
+    try {
+      return body();
+    } catch (Exception e) when (SevenZipHeaderCodec.IsDataError(e) && e is not NotSupportedException) {
+      onFailure?.Invoke();
+      if (this._database.Folders[folder].IsEncrypted)
+        throw new ArchivePasswordException($"7z: data error in encrypted folder {folder} ({e.Message}). Wrong password?", passwordWasSupplied: true);
+      if (e is InvalidDataException)
+        throw;
+      throw new InvalidDataException($"7z: data error in folder {folder}: {e.Message}", e);
+    } catch {
+      onFailure?.Invoke();
+      throw;
+    }
   }
 
-  private static int DecodeDictionarySize(byte encoded) {
-    if (encoded == 0) return 4096;
-    var bits = encoded / 2 + 12;
-    if ((encoded & 1) == 0) return 1 << bits;
-    return 3 << (bits - 1);
+  private static void CopyExactly(Stream source, Stream destination, long count, Crc32? crc) {
+    var buffer = new byte[(int)Math.Clamp(count, 1, 1 << 16)];
+    while (count > 0) {
+      var read = source.Read(buffer, 0, (int)Math.Min(buffer.Length, count));
+      if (read <= 0)
+        throw new InvalidDataException("7z: a folder ended before its files did.");
+      crc?.Update(buffer.AsSpan(0, read));
+      destination.Write(buffer, 0, read);
+      count -= read;
+    }
   }
 
-  private byte[] DecryptAes(SevenZipCoder coder, byte[] data) {
-    if (this._password == null)
-      throw new InvalidOperationException("Archive is encrypted but no password was provided.");
-
-    if (coder.Properties == null || coder.Properties.Length < 1)
-      throw new InvalidDataException("7z AES coder missing properties.");
-
-    // Parse properties: firstByte, optional sizes byte, salt, IV
-    var props = coder.Properties;
-    var firstByte = props[0];
-    var numCyclesPower = firstByte & 0x3F;
-    var hasSalt = (firstByte & 0x40) != 0;
-    var hasIv = (firstByte & 0x80) != 0;
-
-    var saltSize = 0;
-    var ivSize = 0;
-    var pos = 1;
-
-    if (hasSalt || hasIv) {
-      if (pos >= props.Length)
-        throw new InvalidDataException("7z AES properties truncated.");
-      var sizesByte = props[pos++];
-      saltSize = hasSalt ? (sizesByte >> 4) + 1 : 0;
-      ivSize = hasIv ? (sizesByte & 0x0F) + 1 : 0;
-    }
-
-    var salt = new byte[saltSize];
-    if (saltSize > 0) {
-      if (pos + saltSize > props.Length)
-        throw new InvalidDataException("7z AES salt truncated.");
-      Array.Copy(props, pos, salt, 0, saltSize);
-      pos += saltSize;
-    }
-
-    var iv = new byte[16]; // AES IV is always 16 bytes, pad with zeros
-    if (ivSize > 0) {
-      if (pos + ivSize > props.Length)
-        throw new InvalidDataException("7z AES IV truncated.");
-      Array.Copy(props, pos, iv, 0, ivSize);
-    }
-
-    // Derive key
-    var key = KeyDerivation.SevenZipDeriveKey(this._password, salt, numCyclesPower);
-
-    // Decrypt using AES-256-CBC with no padding (7z handles padding itself)
-    // Data must be aligned to 16 bytes
-    var alignedLen = (data.Length + 15) & ~15;
-    if (data.Length < alignedLen) {
-      var padded = new byte[alignedLen];
-      data.CopyTo(padded, 0);
-      data = padded;
-    }
-
-    return AesCryptor.DecryptCbcNoPadding(data, key, iv);
+  /// <summary>The folder decoded last, positioned before its <see cref="NextInFolder"/>-th file.</summary>
+  private sealed class FolderCursor(int folder, Stream stream) : IDisposable {
+    public int Folder { get; } = folder;
+    public Stream Stream { get; } = stream;
+    public int NextInFolder { get; set; }
+    public void Dispose() => this.Stream.Dispose();
   }
 
-  private void ReadExact(byte[] buffer, int offset, int count) {
-    var totalRead = 0;
-    while (totalRead < count) {
-      var read = this._stream.Read(buffer, offset + totalRead, count - totalRead);
-      if (read == 0)
-        throw new EndOfStreamException("Unexpected end of 7z stream.");
-      totalRead += read;
+  /// <summary>Divides a folder's output among its files, checking the CRC of every file someone wants.</summary>
+  private sealed class SplitterSink : Stream {
+    private readonly SevenZipReader _reader;
+    private readonly int[] _owners;
+    private readonly Stream?[] _outputs;
+    private readonly Action<int, Stream> _close;
+    private readonly long[] _sizes;
+    private readonly Crc32 _crc = new();
+    private int _subStream = -1;
+    private long _remaining;
+
+    public SplitterSink(SevenZipReader reader, int folder, int[] owners, Stream?[] outputs, Action<int, Stream> close) {
+      this._reader = reader;
+      this._owners = owners;
+      this._outputs = outputs;
+      this._close = close;
+      var first = reader._folderFirstSubStream[folder];
+      this._sizes = reader._database.SubStreams.UnpackSizes.AsSpan(first, outputs.Length).ToArray();
+      this.Advance();
     }
+
+    private void Advance() {
+      for (;;) {
+        ++this._subStream;
+        this._crc.Reset();
+        if (this._subStream >= this._sizes.Length)
+          return;
+        this._remaining = this._sizes[this._subStream];
+        if (this._remaining > 0)
+          return;
+        this.CompleteFile(); // an empty sub-stream (7-Zip never writes one, but it is legal)
+        return;
+      }
+    }
+
+    private void CompleteFile() {
+      if (this._outputs[this._subStream] is { } output) {
+        var entry = this._reader._entries[this._owners[this._subStream]];
+        if (entry.Crc is { } expected && this._crc.Value != expected)
+          throw new InvalidDataException(
+            $"CRC-32 mismatch for '{entry.Name}': expected 0x{expected:X8}, computed 0x{this._crc.Value:X8}.");
+        this._close(this._owners[this._subStream], output);
+      }
+      this.Advance();
+    }
+
+    public override void Write(byte[] buffer, int offset, int count) => this.Write(buffer.AsSpan(offset, count));
+
+    public override void WriteByte(byte value) => this.Write([value]);
+
+    public override void Write(ReadOnlySpan<byte> data) {
+      while (!data.IsEmpty) {
+        if (this._subStream >= this._sizes.Length)
+          throw new InvalidDataException("7z: a folder holds more data than its files.");
+        var n = (int)Math.Min(data.Length, this._remaining);
+        var slice = data[..n];
+        if (this._outputs[this._subStream] is { } output) {
+          this._crc.Update(slice);
+          output.Write(slice);
+        }
+        this._remaining -= n;
+        data = data[n..];
+        if (this._remaining == 0)
+          this.CompleteFile();
+      }
+    }
+
+    /// <summary>Checks that every file of the folder was completed.</summary>
+    public void Finish() {
+      if (this._subStream < this._sizes.Length)
+        throw new InvalidDataException("7z: a folder ended before its files did.");
+    }
+
+    public override bool CanRead => false;
+    public override bool CanSeek => false;
+    public override bool CanWrite => true;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
   }
 
   /// <inheritdoc />
   public void Dispose() {
-    if (!this._disposed) {
-      this._disposed = true;
-      if (!this._leaveOpen)
-        this._stream.Dispose();
-    }
+    if (this._disposed)
+      return;
+    this._disposed = true;
+    this._cursor?.Dispose();
+    this._cursor = null;
+    if (!this._leaveOpen)
+      this._stream.Dispose();
   }
+}
+
+/// <summary>A seekable read-only view of <paramref name="inner"/> from <paramref name="offset"/> on.</summary>
+internal sealed class SevenZipOffsetStream(Stream inner, long offset) : Stream {
+  public override bool CanRead => true;
+  public override bool CanSeek => true;
+  public override bool CanWrite => false;
+  public override long Length => inner.Length - offset;
+  public override long Position { get => inner.Position - offset; set => inner.Position = value + offset; }
+  public override int Read(byte[] buffer, int off, int count) => inner.Read(buffer, off, count);
+  public override int Read(Span<byte> buffer) => inner.Read(buffer);
+  public override long Seek(long position, SeekOrigin origin) => origin switch {
+    SeekOrigin.Begin => inner.Seek(position + offset, SeekOrigin.Begin) - offset,
+    SeekOrigin.Current => inner.Seek(position, SeekOrigin.Current) - offset,
+    _ => inner.Seek(position, SeekOrigin.End) - offset,
+  };
+  public override void Flush() { }
+  public override void SetLength(long value) => throw new NotSupportedException();
+  public override void Write(byte[] buffer, int off, int count) => throw new NotSupportedException();
 }

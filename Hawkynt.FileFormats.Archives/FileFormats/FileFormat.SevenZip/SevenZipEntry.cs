@@ -33,4 +33,14 @@ public sealed class SevenZipEntry {
 
   /// <summary>Gets or sets the Windows file attributes.</summary>
   public uint? Attributes { get; set; }
+
+  /// <summary>
+  /// Gets or sets whether this is an anti-item (<c>kAnti</c>): a deletion marker a differential
+  /// update archive carries for a file or directory that no longer exists. It has no data and is
+  /// never extracted.
+  /// </summary>
+  public bool IsAnti { get; set; }
+
+  /// <summary>Gets or sets whether the entry's data is AES-encrypted.</summary>
+  public bool IsEncrypted { get; set; }
 }

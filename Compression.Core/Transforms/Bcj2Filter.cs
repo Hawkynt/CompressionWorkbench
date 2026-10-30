@@ -1,190 +1,211 @@
-using System.Buffers.Binary;
+using Compression.Core.Entropy.RangeCoding;
 
 namespace Compression.Core.Transforms;
 
 /// <summary>
-/// BCJ2 filter for 7z: splits x86 code into 4 sub-streams.
+/// The 7z BCJ2 coder (method <c>0303011B</c>): x86 code split into four streams — the main stream with
+/// every byte that is not a converted branch operand, the big-endian absolute targets of the
+/// converted CALLs (E8) and of the converted JMPs and conditional jumps (E9, 0F 8x), and a range
+/// coded bit per branch candidate saying whether it was converted.
 /// </summary>
+/// <remarks>
+/// Converted from the LZMA SDK by Igor Pavlov (public domain): the decoder from C/Bcj2.c
+/// (<c>Bcj2_Decode</c>, SDK 9.20), the encoder from CPP/7zip/Compress/Bcj2Coder.cpp
+/// (<c>CEncoder::CodeReal</c>, 9.20). The probability contexts are the SDK's: one per preceding
+/// byte for E8, one for E9, one for the conditional jumps; the range coder is the LZMA one
+/// (11-bit probabilities, 5 move bits). 7-Zip's later BCJ2 coder (15.00 onwards) reads and writes
+/// the same streams. See THIRD-PARTY-NOTICE.lzma-sdk.txt.
+/// </remarks>
 public static class Bcj2Filter {
-  private const int NumMoveBits = 5;
+  /// <summary>The probability contexts: 256 for E8 by preceding byte, then E9, then Jcc.</summary>
+  private const int NumContexts = 256 + 2;
 
-  /// <summary>
-  /// Decodes BCJ2-filtered data from 4 input streams.
-  /// </summary>
+  private static bool IsJcc(byte previous, byte current) => previous == 0x0F && (current & 0xF0) == 0x80;
+
+  private static bool IsJ(byte previous, byte current) => (current & 0xFE) == 0xE8 || IsJcc(previous, current);
+
+  private static int ContextOf(byte previous, byte current) => current == 0xE8 ? previous : current == 0xE9 ? 256 : 257;
+
+  /// <summary>Decodes BCJ2 by pulling from its four input streams; exactly the declared number of bytes come out.</summary>
+  public sealed class DecodeStream : Stream {
+    private readonly Stream _main;
+    private readonly Stream _call;
+    private readonly Stream _jump;
+    private readonly RangeDecoder _rc;
+    private readonly long _length;
+    private readonly int[] _probs = new int[NumContexts];
+    private readonly byte[] _mainBuffer = new byte[1 << 16];
+    private int _mainPos;
+    private int _mainEnd;
+    private long _outPos;
+    private byte _prevByte;
+    private uint _pending;
+    private int _pendingCount;
+
+    /// <summary>Opens the decoder over its four inputs.</summary>
+    public DecodeStream(Stream main, Stream call, Stream jump, Stream rangeCoded, long length) {
+      this._main = main;
+      this._call = new BufferedStream(call, 1 << 12);
+      this._jump = new BufferedStream(jump, 1 << 12);
+      this._rc = new RangeDecoder(new BufferedStream(rangeCoded, 1 << 12));
+      this._length = length;
+      this._probs.AsSpan().Fill(RangeEncoder.ProbInitValue);
+    }
+
+    /// <inheritdoc />
+    public override bool CanRead => true;
+    /// <inheritdoc />
+    public override bool CanSeek => false;
+    /// <inheritdoc />
+    public override bool CanWrite => false;
+    /// <inheritdoc />
+    public override long Length => this._length;
+    /// <inheritdoc />
+    public override long Position { get => this._outPos; set => throw new NotSupportedException(); }
+
+    /// <inheritdoc />
+    public override int Read(byte[] buffer, int offset, int count) => this.Read(buffer.AsSpan(offset, count));
+
+    /// <inheritdoc />
+    public override int Read(Span<byte> destination) {
+      var written = 0;
+      while (written < destination.Length && this._outPos < this._length) {
+        if (this._pendingCount > 0) {
+          destination[written++] = (byte)this._pending;
+          this._pending >>= 8;
+          --this._pendingCount;
+          ++this._outPos;
+          continue;
+        }
+
+        var b = this.NextMainByte();
+        destination[written++] = b;
+        ++this._outPos;
+        if (!IsJ(this._prevByte, b)) {
+          this._prevByte = b;
+          continue;
+        }
+        // A candidate as the very last byte is never followed by its bit.
+        if (this._outPos == this._length)
+          break;
+
+        if (this._rc.DecodeBit(ref this._probs[ContextOf(this._prevByte, b)]) == 0) {
+          this._prevByte = b;
+          continue;
+        }
+
+        var target = ReadBigEndian(b == 0xE8 ? this._call : this._jump);
+        var relative = target - (uint)(this._outPos + 4);
+        this._pending = relative;
+        this._pendingCount = 4;
+        this._prevByte = (byte)(relative >> 24);
+      }
+      return written;
+    }
+
+    private byte NextMainByte() {
+      if (this._mainPos == this._mainEnd) {
+        this._mainEnd = this._main.Read(this._mainBuffer, 0, this._mainBuffer.Length);
+        this._mainPos = 0;
+        if (this._mainEnd <= 0)
+          throw new InvalidDataException("BCJ2: the main stream ended before the declared size.");
+      }
+      return this._mainBuffer[this._mainPos++];
+    }
+
+    private static uint ReadBigEndian(Stream stream) {
+      var value = 0u;
+      for (var i = 0; i < 4; ++i) {
+        var b = stream.ReadByte();
+        if (b < 0)
+          throw new InvalidDataException("BCJ2: a call/jump stream ended early.");
+        value = (value << 8) | (uint)b;
+      }
+      return value;
+    }
+
+    /// <inheritdoc />
+    public override void Flush() { }
+    /// <inheritdoc />
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    /// <inheritdoc />
+    public override void SetLength(long value) => throw new NotSupportedException();
+    /// <inheritdoc />
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+  }
+
+  /// <summary>Decodes BCJ2 from its four streams held in memory.</summary>
   public static byte[] Decode(ReadOnlySpan<byte> mainStream, ReadOnlySpan<byte> callStream,
-    ReadOnlySpan<byte> jumpStream, ReadOnlySpan<byte> rangeStream, int outputSize) {
+      ReadOnlySpan<byte> jumpStream, ReadOnlySpan<byte> rangeStream, int outputSize) {
+    using var decoder = new DecodeStream(new MemoryStream(mainStream.ToArray()), new MemoryStream(callStream.ToArray()),
+      new MemoryStream(jumpStream.ToArray()), new MemoryStream(rangeStream.ToArray()), outputSize);
     var output = new byte[outputSize];
-    if (rangeStream.Length < 5)
-      throw new InvalidDataException("BCJ2 range stream too short.");
-
-    var range = 0xFFFFFFFF;
-    uint code = 0;
-    var rcPos = 1;
-    for (var i = 0; i < 4; ++i)
-      code = (code << 8) | (rcPos < rangeStream.Length ? rangeStream[rcPos++] : 0u);
-
-    var probs = new ushort[2 * 256];
-    probs.AsSpan().Fill(1024);
-
-    int mainPos = 0, callPos = 0, jumpPos = 0, outPos = 0;
-    byte prevByte = 0;
-    while (outPos < outputSize) {
-      if (mainPos >= mainStream.Length) break;
-      var b = mainStream[mainPos++];
-      if (b != 0xE8 && b != 0xE9) {
-        output[outPos++] = b;
-        prevByte = b;
-        continue;
-      }
-
-      var probIndex = (b == 0xE8 ? 0 : 256) + prevByte;
-      ref var prob = ref probs[probIndex];
-      var bound = (range >> 11) * prob;
-      bool isInstruction;
-      if (code < bound) {
-        range = bound;
-        prob += (ushort)((2048 - prob) >> Bcj2Filter.NumMoveBits);
-        isInstruction = false;
-      } else {
-        range -= bound;
-        code -= bound;
-        prob -= (ushort)(prob >> Bcj2Filter.NumMoveBits);
-        isInstruction = true;
-      }
-      
-      while (range < 0x01000000) {
-        range <<= 8;
-        code = (code << 8) | (rcPos < rangeStream.Length ? rangeStream[rcPos++] : 0u);
-      }
-      
-      if (!isInstruction) {
-        output[outPos++] = b;
-        prevByte = b;
-        continue;
-      }
-
-      output[outPos++] = b;
-      uint target;
-      if (b == 0xE8) {
-        if (callPos + 4 > callStream.Length)
-          throw new InvalidDataException("BCJ2 call stream underflow.");
-
-        target = BinaryPrimitives.ReadUInt32LittleEndian(callStream[callPos..]);
-        callPos += 4;
-      } else {
-        if (jumpPos + 4 > jumpStream.Length)
-          throw new InvalidDataException("BCJ2 jump stream underflow.");
-
-        target = BinaryPrimitives.ReadUInt32LittleEndian(jumpStream[jumpPos..]);
-        jumpPos += 4;
-      }
-      var currentPos = (uint)(outPos + 4);
-      var relTarget = target - currentPos;
-      if (outPos + 4 > outputSize)
-        throw new InvalidDataException("BCJ2 output overflow.");
-
-      BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(outPos), relTarget);
-      outPos += 4;
-      prevByte = (byte)(relTarget >> 24);
+    var done = 0;
+    while (done < outputSize) {
+      var n = decoder.Read(output, done, outputSize - done);
+      if (n <= 0)
+        throw new InvalidDataException("BCJ2: the streams end before the declared size.");
+      done += n;
     }
     return output;
   }
 
   /// <summary>
-  /// Encodes data using the BCJ2 filter, producing 4 output streams.
+  /// Splits <paramref name="data"/> into the four BCJ2 streams. A branch is converted when its
+  /// operand's top byte is 0x00 or 0xFF, the SDK encoder's rule without sub-stream bounds; any
+  /// choice decodes, this one keeps the target streams to genuine near branches.
   /// </summary>
-  public static (byte[] Main, byte[] Call, byte[] Jump, byte[] Range) Encode(ReadOnlySpan<byte> data) {
-    var main = new List<byte>();
-    var call = new List<byte>();
-    var jump = new List<byte>();
-    var rcOutput = new MemoryStream();
-    var rcRange = 0xFFFFFFFF;
-    ulong rcLow = 0;
-    var rcCacheSize = 1;
-    byte rcCache = 0;
-    var probs = new ushort[2 * 256];
-    probs.AsSpan().Fill(1024);
+  public static (byte[] Main, byte[] Call, byte[] Jump, byte[] RangeCoded) Encode(ReadOnlySpan<byte> data) {
+    using var main = new MemoryStream(data.Length);
+    using var call = new MemoryStream();
+    using var jump = new MemoryStream();
+    using var rangeCoded = new MemoryStream();
+    var rc = new RangeEncoder(rangeCoded);
+    var probs = new int[NumContexts];
+    probs.AsSpan().Fill(RangeEncoder.ProbInitValue);
 
     byte prevByte = 0;
-    var i = 0;
-    while (i < data.Length) {
-      var b = data[i];
-      if (b != 0xE8 && b != 0xE9 || i + 4 >= data.Length) {
-        main.Add(b);
+    var pos = 0;
+    var limit = data.Length - 5;
+    while (pos <= limit) {
+      var b = data[pos];
+      main.WriteByte(b);
+      if (!IsJ(prevByte, b)) {
         prevByte = b;
-        ++i;
+        ++pos;
         continue;
       }
 
-      var rel = BinaryPrimitives.ReadInt32LittleEndian(data[(i + 1)..]);
-      var absTarget = rel + (i + 5);
-      var isReal = absTarget >= 0 && absTarget < data.Length;
-      var probIndex = (b == 0xE8 ? 0 : 256) + prevByte;
-      if (isReal) {
-        RcEncodeBit(ref probs[probIndex], true);
-        main.Add(b);
-        var absTargetU = (uint)absTarget;
-        var t0 = (byte)absTargetU;
-        var t1 = (byte)(absTargetU >> 8);
-        var t2 = (byte)(absTargetU >> 16);
-        var t3 = (byte)(absTargetU >> 24);
-        if (b == 0xE8) {
-          call.Add(t0); 
-          call.Add(t1); 
-          call.Add(t2); 
-          call.Add(t3);
-        } else {
-          jump.Add(t0); 
-          jump.Add(t1); 
-          jump.Add(t2); 
-          jump.Add(t3);
-        }
-        prevByte = data[i + 4];
-        i += 5;
+      var context = ContextOf(prevByte, b);
+      var next = data[pos + 4];
+      if (next is 0x00 or 0xFF) {
+        rc.EncodeBit(ref probs[context], 1);
+        var src = (uint)data[pos + 1] | (uint)data[pos + 2] << 8 | (uint)data[pos + 3] << 16 | (uint)next << 24;
+        var dest = (uint)(pos + 5) + src;
+        var target = b == 0xE8 ? call : jump;
+        target.WriteByte((byte)(dest >> 24));
+        target.WriteByte((byte)(dest >> 16));
+        target.WriteByte((byte)(dest >> 8));
+        target.WriteByte((byte)dest);
+        prevByte = next;
+        pos += 5;
       } else {
-        RcEncodeBit(ref probs[probIndex], false);
-        main.Add(b);
+        rc.EncodeBit(ref probs[context], 0);
         prevByte = b;
-        ++i;
+        ++pos;
       }
     }
 
-    for (var f = 0; f < 5; ++f) 
-      RcShiftLow();
-
-    return ([.. main], [.. call], [.. jump], rcOutput.ToArray());
-
-    void RcEncodeBit(ref ushort prob, bool bit) {
-      var bound = (rcRange >> 11) * prob;
-      if (!bit) {
-        rcRange = bound;
-        prob += (ushort)((2048 - prob) >> Bcj2Filter.NumMoveBits);
-      } else {
-        rcRange -= bound;
-        rcLow += bound;
-        prob -= (ushort)(prob >> Bcj2Filter.NumMoveBits);
-      }
-      RcNormalize();
+    // The last four bytes cannot hold a whole operand: candidates there are written unconverted.
+    for (; pos < data.Length; ++pos) {
+      var b = data[pos];
+      main.WriteByte(b);
+      if (IsJ(prevByte, b))
+        rc.EncodeBit(ref probs[ContextOf(prevByte, b)], 0);
+      prevByte = b;
     }
 
-    void RcNormalize() {
-      while (rcRange < 0x01000000) {
-        rcRange <<= 8;
-        RcShiftLow();
-      }
-    }
-
-    void RcShiftLow() {
-      if ((uint)rcLow < 0xFF000000u || (rcLow >> 32) != 0) {
-        var temp = rcCache;
-        do {
-          rcOutput.WriteByte((byte)(temp + (byte)(rcLow >> 32)));
-          temp = 0xFF;
-        } while (--rcCacheSize > 0);
-        rcCache = (byte)((uint)rcLow >> 24);
-      }
-      ++rcCacheSize;
-      rcLow = (uint)(rcLow << 8);
-    }
+    rc.Finish();
+    return (main.ToArray(), call.ToArray(), jump.ToArray(), rangeCoded.ToArray());
   }
 }
