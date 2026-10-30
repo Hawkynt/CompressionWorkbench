@@ -20592,6 +20592,104 @@ Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable
 | `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
 | `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
+### Namespace `FileFormat.Mar`
+
+[`MarAdditionalSection`](#maradditionalsection) · [`MarEntry`](#marentry) · [`MarFormatDescriptor`](#marformatdescriptor) · [`MarReader`](#marreader) · [`MarSignature`](#marsignature) · [`MarWriter`](#marwriter)
+
+#### `MarAdditionalSection`
+
+An additional-section block entry; id 1 is the product-information block.
+
+Implements `IEquatable<MarAdditionalSection>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MarAdditionalSection` | `MarAdditionalSection(uint Id, byte[] Data)` | An additional-section block entry; id 1 is the product-information block. |
+| `ProductInformationId` | `const uint ProductInformationId` | Product-information block id. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Id` | `uint Id { get; init; }` |  |
+
+#### `MarEntry`
+
+One file of a Mozilla ARchive: where its bytes sit, how many there are, and its permission bits.
+
+Implements `IEquatable<MarEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MarEntry` | `MarEntry(string Name, uint Offset, uint Size, uint Flags)` | One file of a Mozilla ARchive: where its bytes sit, how many there are, and its permission bits. |
+| `Flags` | `uint Flags { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Offset` | `uint Offset { get; init; }` |  |
+| `Size` | `uint Size { get; init; }` |  |
+
+#### `MarFormatDescriptor`
+
+Mozilla ARchive (MAR) — the container of Firefox / Thunderbird update packages. References: `https://wiki.mozilla.org/Software_Update:MAR` — Mozilla's format description`https://github.com/mozilla-releng/build-mar` — mardor, Mozilla release engineering's MAR reader/writer (the oracle)
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MarFormatDescriptor` | `MarFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `MarReader`
+
+Reads a Mozilla ARchive (MAR), the container of Firefox/Thunderbird update packages.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MarReader` | `MarReader(Stream stream)` |  |
+| `AdditionalSections` | `IReadOnlyList<MarAdditionalSection> AdditionalSections { get; }` | Additional sections (product information and any unknown ones), in file order. |
+| `DeclaredFileSize` | `ulong? DeclaredFileSize { get; }` | The total file size the signature block declares, when present. |
+| `Entries` | `IReadOnlyList<MarEntry> Entries { get; }` | Files in index order. |
+| `HasSignatureBlock` | `bool HasSignatureBlock { get; }` | Whether the archive carries the signature/additional-section header blocks. |
+| `IndexOffset` | `uint IndexOffset { get; }` | Offset of the index. |
+| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The "MAR1" magic. |
+| `ProductInformation` | `ValueTuple<string, string>? ProductInformation { get; }` | Channel and product version of the product-information block, when present. |
+| `Signatures` | `IReadOnlyList<MarSignature> Signatures { get; }` | Signatures; empty for unsigned or old-style archives. |
+| `DescribeStoredData` | `static string DescribeStoredData(ReadOnlySpan<byte> head)` | Names the compression the update tooling applied to a member ("xz", "bzip2") by its magic, or "stored" — informational only: extraction always returns the stored bytes. |
+| `Extract` | `byte[] Extract(MarEntry entry)` | Returns a member's stored bytes. |
+
+#### `MarSignature`
+
+A signature block entry (algorithm 1 = RSA-PKCS1-SHA1, 2 = RSA-PKCS1-SHA384).
+
+Implements `IEquatable<MarSignature>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MarSignature` | `MarSignature(uint AlgorithmId, byte[] Data)` | A signature block entry (algorithm 1 = RSA-PKCS1-SHA1, 2 = RSA-PKCS1-SHA384). |
+| `AlgorithmId` | `uint AlgorithmId { get; init; }` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+
+#### `MarWriter`
+
+Writes an unsigned Mozilla ARchive. Without an additional-section list it writes the original layout (header, data, index); with one (even empty) — e.g. a product-information block — it writes the signed-era layout with an empty signature block, exactly as Mozilla's `mar -H channel -V version -c` and mardor do for unsigned packages.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultFlags` | `const uint DefaultFlags` | Default permission bits for a member with none supplied (rw-r--r--). |
+| `ProductInformation` | `static MarAdditionalSection ProductInformation(string channel, string productVersion)` | Builds the product-information section payload (channel and version, each NUL-terminated). |
+| `Write` | `static void Write(Stream output, IReadOnlyList<ValueTuple<string, byte[], uint>> files, IReadOnlyList<MarAdditionalSection> additionalSections = null)` |  |
+
 ### Namespace `FileFormat.Matlab`
 
 [`MatlabArrayInfo`](#matlabarrayinfo) · [`MatlabConstants`](#matlabconstants) · [`MatlabFormatDescriptor`](#matlabformatdescriptor) · [`MatlabReader`](#matlabreader)

@@ -177,6 +177,10 @@
     <EmbeddedResource Include="Zoo\ReferenceVectors\*.zoo">
       <LogicalName>ZooVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- MARs from mardor's test data and written by mardor; see Mar/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Mar\ReferenceVectors\*.mar;Mar\ReferenceVectors\mardor-listing.txt">
+      <LogicalName>MarVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- VDF volumes from GothicVDFS, VDFSTool and ZenKit, with ZenKit's listings; see Vdfs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">
       <LogicalName>VdfsVectors.%(Filename)%(Extension)</LogicalName>
