@@ -60,6 +60,17 @@ public sealed class Lzma2Decoder {
   /// <returns>The decompressed data.</returns>
   public byte[] Decode() {
     using var output = new MemoryStream();
+    this.Decode(output);
+    return output.ToArray();
+  }
+
+  /// <summary>
+  /// Decodes the entire LZMA2 stream into <paramref name="output"/> chunk by chunk, so memory
+  /// stays bounded by the dictionary whatever the stream's length.
+  /// </summary>
+  /// <param name="output">The stream to write the decompressed data to.</param>
+  public void Decode(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
 
     // One LZMA decoder for the whole stream: it owns the dictionary, the probability model,
     // the state machine, the rep distances and the uncompressed position counter, and each
@@ -154,8 +165,6 @@ public sealed class Lzma2Decoder {
         ArrayPool<byte>.Shared.Return(packed);
       }
     }
-
-    return output.ToArray();
   }
 
   private int ReadByte() {

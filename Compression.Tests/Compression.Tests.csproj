@@ -122,6 +122,10 @@
     <EmbeddedResource Include="Firmware\ReferenceVectors\*" Exclude="Firmware\ReferenceVectors\README.md">
       <LogicalName>FirmwareVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- 7z archives 7-Zip 26.04 wrote for the conformance matrix; see SevenZip/ConformanceVectors/README.md. -->
+    <EmbeddedResource Include="SevenZip\ConformanceVectors\*.7z;SevenZip\ConformanceVectors\manifest.tsv">
+      <LogicalName>SevenZipConformanceVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- 7z archives from libarchive's test suite; see SevenZip/LibarchiveVectors/README.md. -->
     <EmbeddedResource Include="SevenZip\LibarchiveVectors\*.7z;SevenZip\LibarchiveVectors\manifest-*.tsv">
       <LogicalName>SevenZipLibarchiveVectors.%(Filename)%(Extension)</LogicalName>
