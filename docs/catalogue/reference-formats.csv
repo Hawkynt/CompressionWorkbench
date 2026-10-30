@@ -429,7 +429,7 @@ NTFS,ntfs,filesystem,R,,,R,,,Y,3,,Ntfs,Y,Y,Y,PARTIAL,,WOF (XPRESS/LZX) compresse
 OneFS (Isilon),isilon,filesystem,,,,,,,Y,1,,OneFs,Y,,,OK,,
 OS-9 RBF,os9;rbf,filesystem,,,,,,,Y,1,,Os9Rbf,Y,Y,Y,OK,,
 Amiga PFS,pfs;pfs2;pfs3,filesystem,,,,,,,Y,1,,AmigaPfs,Y,Y,Y,OK,,
-ProDOS,po,filesystem,,,,,,,Y,1,,ProDos,Y,Y,Y,OK,,
+ProDOS,po,filesystem,,,,,,,Y,1,,ProDos,Y,Y,Y,OK,,140 KB DOS-order (.dsk/.do) images are read but not edited
 QNX4 FS,qnx4;qnx4fs,filesystem,,,,,,,Y,1,,Qnx4,Y,Y,Y,OK,,
 ReFS,refs,filesystem,,,,,,,Y,1,,Refs,Y,,Y,READ-ONLY-BUT-SOURCES-WRITE,format /fs:refs (Windows),
 Reiser4,,filesystem,,,,,,,Y,1,,Reiser4,Y,Y,Y,OK,,
@@ -514,7 +514,7 @@ MicroDOS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 PolyServe FS,psfs,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 eCryptfs,,filesystem,,,,,,,Y,1,,Ecryptfs,Y,Y,Y,OK,,
 EncFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-SOS file system (Apple III),,filesystem,,,R,,,,,1,,,,,,MISSING,,
+SOS file system (Apple III),,filesystem,,,R,,,,,1,https://www.apple3.org/iiimanuals.html,ProDos,Y,Y,Y,OK,,"SOS volumes are ProDOS-format and are read through ProDos, in block order and in the DOS 3.3 sector order their .dsk images use (checked against CiderPress II); DOS-order images are read-only; .dsk is claimed by CP/M, so select ProDos explicitly"
 Lustre,,filesystem,,,,,,,Y,1,,Lustre,Y,,,READ-ONLY-BUT-SOURCES-WRITE,mkfs.lustre,
 BeeGFS,,filesystem,,,,,,,Y,1,,BeeGfs,,,,READ-ONLY-BUT-SOURCES-WRITE,beegfs-setup-storage,
 GlusterFS,,filesystem,,,,,,,Y,1,,GlusterFs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,gluster volume create,

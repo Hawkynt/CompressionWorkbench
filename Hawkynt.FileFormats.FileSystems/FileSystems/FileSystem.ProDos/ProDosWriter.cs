@@ -237,9 +237,8 @@ public sealed class ProDosWriter {
   /// </summary>
   private static void AllocateSubDirBlocks(DirNode dir, bool[] used, ref int nextFreeBlock) {
     foreach (var sub in dir.SubDirOrder) {
-      // First block holds the 43-byte subdir header + (EntriesPerBlock - 2)
-      // file slots = 11 file slots; subsequent blocks hold EntriesPerBlock = 13
-      // file slots each.
+      // The key block holds the subdirectory header in slot 0 and twelve file
+      // entries; each further block holds thirteen.
       var firstBlockFileSlots = ProDosReader.SlotsInBlock(isFirstBlockOfChain: true) - 1;
       var remaining = Math.Max(0, sub.ChildCount - firstBlockFileSlots);
       var extraBlocks = (remaining + EntriesPerBlock - 1) / EntriesPerBlock;
@@ -282,16 +281,16 @@ public sealed class ProDosWriter {
     image[headerOff + 0] = (byte)((0xF << 4) | (volName.Length & 0x0F));
     for (var i = 0; i < volName.Length; i++) image[headerOff + 1 + i] = (byte)volName[i];
     // ProDOS timestamps (creation date/time) at offset 0x18 — left zero.
-    image[headerOff + 0x1F] = 0x00;  // version
-    image[headerOff + 0x20] = 0x00;  // min_version
-    image[headerOff + 0x21] = 0xE3;  // access: destroy/rename/write/read bits
-    image[headerOff + 0x22] = (byte)EntrySize;         // entry_length
-    image[headerOff + 0x23] = (byte)EntriesPerBlock;   // entries_per_block
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(headerOff + 0x24),
+    image[headerOff + ProDosReader.HeaderVersion] = 0x00;  // version
+    image[headerOff + ProDosReader.HeaderMinVersion] = 0x00;  // min_version
+    image[headerOff + ProDosReader.HeaderAccess] = 0xE3;  // access: destroy/rename/write/read bits
+    image[headerOff + ProDosReader.HeaderEntryLength] = (byte)EntrySize;         // entry_length
+    image[headerOff + ProDosReader.HeaderEntriesPerBlock] = (byte)EntriesPerBlock;   // entries_per_block
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(headerOff + ProDosReader.HeaderFileCount),
       (ushort)root.ChildCount);                        // file_count
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(headerOff + 0x26),
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(headerOff + ProDosReader.HeaderBitmapOrParentPointer),
       (ushort)BitmapStartBlock);                       // bit_map_pointer
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(headerOff + 0x28),
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(headerOff + ProDosReader.HeaderTotalBlocksOrParentEntry),
       (ushort)totalBlocks);                            // total_blocks
 
     // Write children starting at slot 1 of block 2 (slot 0 is the header), then into blocks 3/4/5.
@@ -315,11 +314,8 @@ public sealed class ProDosWriter {
     var slot = firstSlot;
 
     (int Offset, int Block, int SlotInBlock) PlaceEntry() {
-      // The first block of the chain has fewer file slots than subsequent blocks
-      // because the 43-byte Volume/Subdir Header occupies slot 0 and the next
-      // slot starts at byte 47 (4 + 43), not 43. So slot capacity by block is:
-      //   first block: ProDosReader.SlotsInBlock(true) = 12  (1 header + 11 file)
-      //   later block: ProDosReader.SlotsInBlock(false) = 13 (13 file)
+      // Every block of the chain holds thirteen 39-byte slots; in the key block
+      // slot 0 is the Volume/Subdir Header, so it carries twelve file entries.
       // `slot` is a 0-based logical entry index where 0 is the header.
       var firstBlockSlots = ProDosReader.SlotsInBlock(isFirstBlockOfChain: true);
       int dirBlockIndex;
@@ -429,15 +425,15 @@ public sealed class ProDosWriter {
       for (var i = 0; i < sub.Name.Length && i < 15; i++) image[hdr + 1 + i] = (byte)sub.Name[i];
       image[hdr + 0x10] = 0x75;  // reserved magic byte ($75) ProDOS expects in subdir headers
       // creation date/time at 0x18-0x1B = 0.
-      image[hdr + 0x1F] = 0x00;  // version
-      image[hdr + 0x20] = 0x00;  // min_version
-      image[hdr + 0x21] = 0xE3;  // access
-      image[hdr + 0x22] = (byte)EntrySize;         // entry_length
-      image[hdr + 0x23] = (byte)EntriesPerBlock;   // entries_per_block
-      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(hdr + 0x24), (ushort)sub.ChildCount);  // file_count
-      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(hdr + 0x26), (ushort)sub.ParentBlock);  // parent_pointer
-      image[hdr + 0x28] = (byte)sub.ParentEntryNumber;  // parent_entry_number
-      image[hdr + 0x29] = (byte)EntrySize;              // parent_entry_length
+      image[hdr + ProDosReader.HeaderVersion] = 0x00;  // version
+      image[hdr + ProDosReader.HeaderMinVersion] = 0x00;  // min_version
+      image[hdr + ProDosReader.HeaderAccess] = 0xE3;  // access
+      image[hdr + ProDosReader.HeaderEntryLength] = (byte)EntrySize;         // entry_length
+      image[hdr + ProDosReader.HeaderEntriesPerBlock] = (byte)EntriesPerBlock;   // entries_per_block
+      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(hdr + ProDosReader.HeaderFileCount), (ushort)sub.ChildCount);  // file_count
+      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(hdr + ProDosReader.HeaderBitmapOrParentPointer), (ushort)sub.ParentBlock);  // parent_pointer
+      image[hdr + ProDosReader.HeaderTotalBlocksOrParentEntry] = (byte)sub.ParentEntryNumber;  // parent_entry_number
+      image[hdr + ProDosReader.HeaderParentEntryLength] = (byte)EntrySize;              // parent_entry_length
 
       // Write this subdirectory's children across its block chain (slot 0 is the header).
       WriteDirectoryChildren(image, sub, sub.Blocks, firstSlot: 1);
