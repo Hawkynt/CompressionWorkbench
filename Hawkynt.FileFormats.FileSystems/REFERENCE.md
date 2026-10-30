@@ -1121,6 +1121,53 @@ In-place modifier for Apple IPSW packages. An IPSW is just a ZIP file with an Ap
 | `AddEntry` | `static void AddEntry(Stream ipsw, string zipPath, byte[] data)` | Adds (or replaces by ZIP path) a single entry inside the IPSW. The previous entry's bytes are wiped via `RemoveFile` before the new entry is appended. |
 | `RemoveEntry` | `static bool RemoveEntry(Stream ipsw, string zipPath)` | Removes a single entry by ZIP path. Returns true if removed. |
 
+### Namespace `FileFormat.LinuxKernelImage`
+
+[`LinuxKernelImage`](#linuxkernelimage) · [`LinuxKernelImageFormatDescriptor`](#linuxkernelimageformatdescriptor)
+
+#### `LinuxKernelImage`
+
+A bootable Linux kernel image, recognised by the header its architecture's boot protocol defines, and split into the parts that protocol names: the x86 real-mode setup and the compressed payload of a `bzImage`, the payload of an EFI `zboot` image, the decompressor-wrapped payload of an ARM `zImage`; the uncompressed arm64 / RISC-V `Image` is described but has no inner payload.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LinuxKernelImage` | `LinuxKernelImage()` |  |
+| `ArmZImageMagic` | `const uint ArmZImageMagic` |  |
+| `Fields` | `List<ValueTuple<string, string>> Fields { get; }` |  |
+| `Kind` | `string Kind { get; }` |  |
+| `Parts` | `List<FirmwareEntry> Parts { get; }` |  |
+| `LooksLikeArm64` | `static bool LooksLikeArm64(ReadOnlySpan<byte> d)` |  |
+| `LooksLikeArmZImage` | `static bool LooksLikeArmZImage(ReadOnlySpan<byte> d)` |  |
+| `LooksLikeRiscV` | `static bool LooksLikeRiscV(ReadOnlySpan<byte> d)` |  |
+| `LooksLikeX86` | `static bool LooksLikeX86(ReadOnlySpan<byte> d)` |  |
+| `LooksLikeZboot` | `static bool LooksLikeZboot(ReadOnlySpan<byte> d)` |  |
+| `Parse` | `static LinuxKernelImage Parse(ReadOnlyMemory<byte> data)` |  |
+
+#### `LinuxKernelImageFormatDescriptor`
+
+Linux kernel boot image — x86 `bzImage`, ARM `zImage`, arm64 / RISC-V `Image`, EFI `zboot` — as a read-only pseudo-archive: `metadata.ini` carries the boot-protocol header and the version banner, and the members are the parts the protocol defines plus the decompressed kernel where the payload decodes (`vmlinux` for x86, `Image` otherwise).
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LinuxKernelImageFormatDescriptor` | `LinuxKernelImageFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Entries` | `static List<FirmwareEntry> Entries(byte[] data)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Mdf`
 
 [`MdfEntry`](#mdfentry) · [`MdfFormatDescriptor`](#mdfformatdescriptor) · [`MdfInPlaceModifier`](#mdfinplacemodifier) · [`MdfInPlaceModifier.SectorGeometry`](#mdfinplacemodifiersectorgeometry) · [`MdfLayoutMap`](#mdflayoutmap) · [`MdfReader`](#mdfreader)
