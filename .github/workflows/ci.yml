@@ -341,6 +341,20 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Dar.DarExternalConformanceTests" \
             --logger "trx;LogFileName=dar-286-oracle-tests.trx"
 
+      # Hard gate: Greaseweazle (public domain, pinned release) decodes the A2R3 images we build from its
+      # own flux, rebuilt and with one capture replaced, to exactly the expected sectors; a2rchery (MIT,
+      # pinned commit) verifies our A2R2 and rewrites it from its own parse byte for byte.
+      - name: A2R oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_A2R: "1"
+        run: |
+          python3 -m pip install --user --break-system-packages "git+https://github.com/keirf/greaseweazle@v1.23"
+          curl -fsSL -o "$RUNNER_TEMP/a2rchery.py" https://raw.githubusercontent.com/a2-4am/a2rchery/4aff749cb1a8e162249cedea6b34a31386ea05a6/a2rchery.py
+          CWB_GW="$HOME/.local/bin/gw" CWB_A2RCHERY="$RUNNER_TEMP/a2rchery.py" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.A2r.A2rExternalConformanceTests" \
+            --logger "trx;LogFileName=a2r-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the
