@@ -285,7 +285,7 @@ DMS (Disk Masher),dms,disk-image,,,R,,,,,1,,Dms,Y,Y,,PARTIAL,,NONE/SIMPLE/QUICK 
 G64 (Commodore GCR),g64;g41;g71,disk-image,,,,,,fmt/821,,1,,G64,Y,Y,Y,OK,,
 Magic Shadow Archiver (MSA),msa,disk-image,,,,,,fmt/1472,,1,,Msa,Y,Y,Y,OK,,
 Pasti (STX),stx,disk-image,,,,,,fmt/1904,,1,,,,,,MISSING,,
-HxC Floppy Emulator (HFE),hfe,disk-image,,,,,,fmt/2031;fmt/2038,,1,,Hfe,Y,,,READ-ONLY-BUT-SOURCES-WRITE,HxC Floppy Emulator tool,
+HxC Floppy Emulator (HFE),hfe,disk-image,,,,,,fmt/2031;fmt/2038,,1,https://github.com/keirf/greaseweazle/blob/master/src/greaseweazle/image/hfe.py,Hfe,Y,Y,Y,OK,HxC Floppy Emulator tool,create from tracks + metadata.ini and track edits; rebuilds decoded by Greaseweazle to the expected sectors
 HxC stream image,hfe,disk-image,,,,,,fmt/2039,,1,,,,,,MISSING,,
 A2R flux image,a2r,disk-image,,,,,,fmt/2057;fmt/2058,,1,,,,,,MISSING,,
 WOZ (Apple II),woz,disk-image,,,,,,fmt/2059;fmt/2060,,1,https://applesaucefdc.com/woz/reference2/,Woz,Y,,,READ-ONLY-BUT-SOURCES-WRITE,Applesauce,

@@ -229,7 +229,7 @@ format,Hdf4,HDF4,Archive,,.hdf;.hdf4;.h4,Y,Y,,
 format,Hdf5,HDF5,Archive,,.h5;.hdf5,Y,Y,,
 format,Heif,HEIF / HEIC,Image,,.heic;.heif;.heix;.hif,Y,Y,,
 format,Hes,PC Engine HES,Audio,,.hes,Y,Y,,
-format,Hfe,HxC Floppy Emulator (HFE),Archive,,.hfe,Y,Y,,
+format,Hfe,HxC Floppy Emulator (HFE),Archive,,.hfe,Y,Y,Y,Y
 format,Hfs,HFS (Classic),Archive,Y,.hfs,Y,Y,Y,Y
 format,HfsPlus,HFS+,Archive,Y,.dmg;.hfsx;.hfs,Y,Y,Y,Y
 format,Hog,HOG,Archive,,.hog,Y,Y,Y,Y
