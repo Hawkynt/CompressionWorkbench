@@ -10997,12 +10997,12 @@ Writes the NSS container described in `NssLayout`.
 
 #### `Lznt1`
 
-LZNT1 compression used by NTFS for compressed files. Operates on 4KB compression units. Each unit is independently compressed.
+LZNT1, the codec of NTFS compressed files ([MS-XCA] section 2.5): a sequence of chunks of at most 4096 uncompressed bytes, each behind a 16-bit header (bit 15 compressed, bits 12-14 the signature 3, bits 0-11 the chunk's stored size - 3). A compressed chunk is flag bytes, each governing eight literals or 16-bit back-references whose displacement field grows with the position in the chunk: at least 4 bits, as many as the position needs, the rest is length.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input)` | Compresses data using LZNT1. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> input, int uncompressedSize)` | Decompresses LZNT1-compressed data. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input)` | Compresses data as LZNT1: each 4096-byte chunk compressed, or stored when that is not smaller. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> input, int uncompressedSize)` | Decompresses LZNT1 data into exactly `uncompressedSize` bytes (zero-padded when the data ends early). |
 
 #### `NtfsBlockMover`
 
