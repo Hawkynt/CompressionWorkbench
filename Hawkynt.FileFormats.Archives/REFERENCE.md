@@ -12820,6 +12820,60 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
+### Namespace `FileFormat.CommodoreLbr`
+
+[`CommodoreLbr`](#commodorelbr) · [`CommodoreLbrEntry`](#commodorelbrentry) · [`CommodoreLbrFormatDescriptor`](#commodorelbrformatdescriptor)
+
+#### `CommodoreLbr`
+
+Reads and writes the Commodore 64 LBR container of Mike Swanson's "Library" (DWB signature): a CR-terminated ASCII directory (count, then name, type and size per member) followed by the members' bytes back to back, uncompressed.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Read` | `static List<CommodoreLbrEntry> Read(ReadOnlySpan<byte> data)` | Parses the directory; data offsets follow from the sizes. |
+| `Write` | `static byte[] Write(IReadOnlyList<ValueTuple<string, char, byte[]>> members)` | Writes a container the way Library writes one. |
+
+#### `CommodoreLbrEntry`
+
+One member of a Commodore LBR container.
+
+Implements `IEquatable<CommodoreLbrEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CommodoreLbrEntry` | `CommodoreLbrEntry(string Name, char FileType, long Offset, long Length)` | One member of a Commodore LBR container. |
+| `FileType` | `char FileType { get; init; }` | The CBM DOS file type letter: P (PRG), S (SEQ), U (USR). |
+| `Length` | `long Length { get; init; }` | Length of the member's data. |
+| `Name` | `string Name { get; init; }` | The PETSCII file name (read as Latin-1). |
+| `Offset` | `long Offset { get; init; }` | Offset of the member's data. |
+
+#### `CommodoreLbrFormatDescriptor`
+
+Commodore 64 LBR library container (Library 7.0–10.0, "DWB" signature). The extension .lbr is the CP/M library's, so this one is recognised by its signature. References: `http://unusedino.de/ec64/technical/formats/lbr.html` — Peter Schepers' LBR.TXT (rev 1.3, samples by Joe Forster/STA)`http://fileformats.archiveteam.org/wiki/LBR_(Commodore)` — format overview and the sample corpus
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CommodoreLbrFormatDescriptor` | `CommodoreLbrFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) PRG members; every other member keeps its name, type and bytes. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes members by name; every other member keeps its name, type and bytes. |
+
 ### Namespace `FileFormat.CompactPro`
 
 [`CompactProEntry`](#compactproentry) · [`CompactProFormatDescriptor`](#compactproformatdescriptor) · [`CompactProReader`](#compactproreader) · [`CompactProWriter`](#compactprowriter)
