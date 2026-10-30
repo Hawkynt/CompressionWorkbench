@@ -122,10 +122,15 @@ public static class SzddStream {
     Array.Fill(head, -1);
     Array.Fill(prev, -1);
 
-    // Seed the hash chains for the initial window content (all spaces).
-    // The initial window is filled with 0x20 so every 3-byte hash is the same.
+    // Seed the hash chains for the initial window content (all spaces), except the 16 slots
+    // from the write position on, whose initial content decoders disagree about (see
+    // SzddConstants.OldestKnownPrefill). Those stay unknown until written.
+    var known = new bool[SzddConstants.WindowSize];
     var initHash = ((SzddConstants.WindowFill << 4) ^ (SzddConstants.WindowFill << 2) ^ SzddConstants.WindowFill) & 0xFFF;
     for (var i = 0; i < SzddConstants.WindowSize; ++i) {
+      if (((i - wpos) & (SzddConstants.WindowSize - 1)) < SzddConstants.WindowSize + SzddConstants.OldestKnownPrefill)
+        continue;
+      known[i] = true;
       prev[i] = head[initHash];
       head[initHash] = i;
     }
@@ -150,7 +155,7 @@ public static class SzddStream {
         // going backwards through the window.
         var bestLen = 0;
         var bestOff = 0;
-        FindLongestMatch(input, srcPos, srcLen, window, wpos, head, prev, ref bestLen, ref bestOff);
+        FindLongestMatch(input, srcPos, srcLen, window, known, wpos, head, prev, ref bestLen, ref bestOff);
 
         if (bestLen >= SzddConstants.MinMatchLength) {
           // Back-reference: encode as 2 bytes.
@@ -163,6 +168,7 @@ public static class SzddStream {
           // Copy matched bytes into ring buffer and advance, updating hash chains.
           for (var i = 0; i < bestLen; ++i) {
             window[wpos] = input[srcPos];
+            known[wpos] = true;
             UpdateHashChain(input, srcPos, srcLen, wpos, head, prev);
             wpos = (wpos + 1) & (SzddConstants.WindowSize - 1);
             ++srcPos;
@@ -173,6 +179,7 @@ public static class SzddStream {
           var b = input[srcPos];
           body.WriteByte(b);
           window[wpos] = b;
+          known[wpos] = true;
           UpdateHashChain(input, srcPos, srcLen, wpos, head, prev);
           wpos = (wpos + 1) & (SzddConstants.WindowSize - 1);
           ++srcPos;
@@ -225,7 +232,7 @@ public static class SzddStream {
   /// </summary>
   private static void FindLongestMatch(
     ReadOnlySpan<byte> input, int srcPos, int srcLen,
-    byte[] window, int wpos,
+    byte[] window, bool[] known, int wpos,
     int[] head, int[] prev,
     ref int bestLen, ref int bestOff) {
 
@@ -244,12 +251,12 @@ public static class SzddStream {
         continue;
       }
 
-      // How many bytes match starting at window[candidate]?
+      // How many bytes match starting at window[candidate]? A decoder copies byte by byte
+      // through the ring, so once the copy reaches a slot it has itself just written, it
+      // reads the new byte there, not the old one.
       var matchLen = 0;
-      while (matchLen < maxMatch &&
-             window[(candidate + matchLen) & (SzddConstants.WindowSize - 1)] == input[srcPos + matchLen]) {
+      while (matchLen < maxMatch && RingByte(input, srcPos, window, known, wpos, candidate + matchLen, matchLen) == input[srcPos + matchLen])
         ++matchLen;
-      }
 
       if (matchLen > bestLen) {
         bestLen = matchLen;
@@ -260,6 +267,19 @@ public static class SzddStream {
 
       candidate = prev[candidate];
     }
+  }
+
+  /// <summary>
+  /// The byte a ring decoder reads at <paramref name="slot"/> after it has written
+  /// <paramref name="written"/> bytes of the current match, starting at <paramref name="wpos"/>.
+  /// </summary>
+  /// <returns>The byte, or -1 for a slot whose initial content is not agreed on.</returns>
+  private static int RingByte(ReadOnlySpan<byte> input, int srcPos, byte[] window, bool[] known, int wpos, int slot, int written) {
+    var ahead = (slot - wpos) & (SzddConstants.WindowSize - 1);
+    if (ahead < written)
+      return input[srcPos + ahead];
+    slot &= SzddConstants.WindowSize - 1;
+    return known[slot] ? window[slot] : -1;
   }
 
   /// <summary>
