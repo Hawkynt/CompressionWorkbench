@@ -17934,83 +17934,92 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 
 #### `HaEntry`
 
-Represents a single entry in an Ha archive.
+One member record of an HA archive (docs/HA-ON-DISK.md §1.1).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `HaEntry` | `HaEntry()` |  |
-| `CompressedSize` | `uint CompressedSize { get; init; }` | Gets the compressed size in bytes. |
-| `Crc32` | `uint Crc32 { get; init; }` | Gets the CRC-32 (IEEE polynomial) of the uncompressed data. |
-| `FileName` | `string FileName { get; init; }` | Gets the filename stored in the archive (may include path with '/' separators). |
-| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether this entry is a directory. |
-| `LastModified` | `DateTime LastModified { get; init; }` | Gets the last-modification date/time. |
-| `Method` | `int Method { get; init; }` | Gets the compression method byte (0=Store, 1=HSC, 2=ASC, 14=Directory). |
-| `OriginalSize` | `uint OriginalSize { get; init; }` | Gets the uncompressed size in bytes. |
+| `MethodAsc` | `const int MethodAsc` | LZ77 with arithmetic-coded tokens (ASC). |
+| `MethodCpy` | `const int MethodCpy` | Stored data (CPY). |
+| `MethodDirectory` | `const int MethodDirectory` | Directory record. |
+| `MethodHsc` | `const int MethodHsc` | Order-4 finite-context model (HSC). |
+| `MethodSpecial` | `const int MethodSpecial` | Unix special file (device, FIFO or symlink data). |
+| `CompressedSize` | `uint CompressedSize { get; init; }` | Gets the stored (compressed) length. |
+| `Crc32` | `uint Crc32 { get; init; }` | Gets the CRC-32 of the original data (0 for directories). |
+| `FileName` | `string FileName { get; init; }` | Gets the full name, directories separated by '/'. |
+| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether this is a directory record. |
+| `LastModified` | `DateTime LastModified { get; init; }` | Gets the modification time (stored as Unix seconds), in UTC. |
+| `MachineInfo` | `byte[] MachineInfo { get; init; }` | Gets the machine-specific information bytes (first byte: 1 MS-DOS, 2 Unix). |
+| `MethodName` | `string MethodName { get; }` | Gets the method's name as HA lists it. |
+| `Method` | `int Method { get; init; }` | Gets the record type (method): 0 CPY, 1 ASC, 2 HSC, 14 directory, 15 special. |
+| `OriginalSize` | `uint OriginalSize { get; init; }` | Gets the original length. |
 
 #### `HaFormatDescriptor`
 
-HA archive (Harri Hirvola) with ASC (sliding-window LZ + arithmetic coding) and HSC (context modelling + arithmetic coding) methods. References: HA.DOC shipped with the HA 0.999 archiver (Harri Hirvola) — the canonical format and method descriptionNo online specification — the format is known from the archiver's released source code
+HA (Harri Hirvola, 1993–1995): CPY, ASC (LZ77 + arithmetic coding) and HSC (order-4 context model + arithmetic coding) members. References: `docs/HA-ON-DISK.md` — the specification this is implemented from, written from HA 0.999 beta (GPL-2.0, read only)`https://github.com/val-khokhlov/ha` — HA 0.999b, whose `ha.exe` is the oracle in both directions
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `HaFormatDescriptor` | `HaFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing HA archive. Uses `HaModifier` — Add appends a Stored entry at EOF; Remove walks the entry chain and shifts trailing bytes (no central directory). |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the HA archive in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the HA archive per the requested mode. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files; every other record is copied byte for byte. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Compacts away records `ha d` marked deleted, as `ha` does on its next write. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `HaModifier`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named members; every other record is copied byte for byte. |
 
 #### `HaModifier`
 
-Random-access in-place modifier for HA (Harri Hirvola) archives. The HA format is a 2-byte "HA" magic followed by chained per-entry blocks; there is no central directory and no explicit end-of-archive marker — the reader simply walks until EOF. Add appends a new Stored entry at the end of the file; Remove walks the chain, locates the target by name, and shifts trailing bytes forward to compact.
+Edits an HA archive by rewriting it: every member that stays is copied byte for byte, deleted records are compacted away (as `ha` itself does on its next write), new members are appended.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream ha, string name, byte[] data)` | Appends a Stored entry to the archive. Walks the existing entry chain to find the EOF position, writes a new entry at that offset, and truncates. I/O cost is one full sequential header walk plus the new entry's bytes. |
-| `RemoveFile` | `static bool RemoveFile(Stream ha, string name, bool wipeData = true)` | Removes the named entry. Returns true if found. Walks the chain to locate the entry, then shifts trailing bytes forward to compact (HA has no central directory, so compaction is required). The "HA" magic at offset 0 is preserved. |
+| `Add` | `static void Add(Stream archive, IReadOnlyList<ValueTuple<string, byte[], DateTime?>> files)` | Adds files, replacing members of the same name. |
+| `Remove` | `static int Remove(Stream archive, IEnumerable<string> names)` | Removes members by name (a directory record by its own name). |
 
 #### `HaReader`
 
-Reads entries from an Ha archive.
+Reads an HA archive (Harri Hirvola, 1993–1995): CPY, ASC and HSC members, directory records, deleted records skipped. Layout and methods: docs/HA-ON-DISK.md.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `HaReader` | `HaReader(Stream stream, bool leaveOpen = false)` | Initializes a new `HaReader` and parses the archive directory. |
-| `Entries` | `IReadOnlyList<HaEntry> Entries { get; }` | Gets the entries present in the archive. |
+| `HaReader` | `HaReader(Stream stream, bool leaveOpen = false)` | Opens an HA archive and reads its records. |
+| `DeclaredCount` | `int DeclaredCount { get; }` | Gets the member count the archive header announces. |
+| `Entries` | `IReadOnlyList<HaEntry> Entries { get; }` | Gets the live members, in archive order. |
+| `IsTruncated` | `bool IsTruncated { get; }` | Gets whether a record could not be parsed; `Entries` holds those before it. |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(HaEntry entry)` | Extracts and decompresses the data for the given entry. |
+| `Extract` | `byte[] Extract(HaEntry entry)` | Decodes a member and checks its CRC-32. |
 
 #### `HaWriter`
 
-Creates an Ha archive.
+Writes an HA archive as HA 0.999 does: version-2 records, MS-DOS machine information, HSC members (stored as CPY when HSC does not shrink them), 0xFF-separated paths.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `HaWriter` | `HaWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `HaWriter`. |
-| `AddDirectory` | `void AddDirectory(string name, DateTime? lastModified = null)` | Adds a directory entry to the archive (method 14, zero size). |
-| `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? lastModified = null)` | Adds a file entry to the archive using Store compression (method 0). |
+| `HaWriter` | `HaWriter(Stream stream, bool leaveOpen = false)` | Starts an archive at the stream's current position. |
+| `AddDirectory` | `void AddDirectory(string name, DateTime? modifiedUtc = null)` | Adds a directory record. |
+| `AddFile` | `void AddFile(string name, ReadOnlySpan<byte> data, DateTime? modifiedUtc = null)` | Adds a file. |
 | `Dispose` | `void Dispose()` |  |
+| `Finish` | `void Finish()` | Writes the member count into the archive header. |
 
 ### Namespace `FileFormat.Hca`
 

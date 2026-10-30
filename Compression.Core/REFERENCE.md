@@ -1019,6 +1019,27 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
+### Namespace `Compression.Core.Dictionary.Ha`
+
+[`HaAsc`](#haasc) · [`HaHsc`](#hahsc)
+
+#### `HaAsc`
+
+Decoder for HA's ASC method: LZ77 over a 31 200-byte window whose literals, lengths and distances are coded with adaptive frequency trees and HA's arithmetic coder.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlyMemory<byte> source, int expectedLength)` | Decodes one ASC stream. |
+
+#### `HaHsc`
+
+HA's HSC method: an order-4 context model with exclusion, a fixed pool of 10 000 contexts and 32 760 frequency nodes recycled by least-recent use, and an order −1 fallback.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlyMemory<byte> source, int expectedLength)` | Decodes one HSC stream. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes `data` as one HSC stream. |
+
 ### Namespace `Compression.Core.Dictionary.Ibm842`
 
 [`Ibm842BuildingBlock`](#ibm842buildingblock)
