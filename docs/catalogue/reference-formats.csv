@@ -40,7 +40,7 @@ ARC (SEA),arc;ark,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ARC_(file_f
 PAK (NoGate ARC extension),pak,archive,,,R,,,,Y,2,,,,,,MISSING,,
 zoo,zoo,archive,,,R,,R,x-fmt/269,Y,4,https://en.wikipedia.org/wiki/Zoo_(file_format),Zoo,Y,Y,Y,OK,,
 LBR (CP/M library),lbr;lqr;lzr,archive,,,R,,R,,Y,3,https://en.wikipedia.org/wiki/LBR_(file_format),Lbr,Y,Y,Y,OK,,
-LBR (Commodore library),lbr,archive,,,,,,,Y,1,,,,,,MISSING,,
+LBR (Commodore library),lbr,archive,,,,,,,Y,1,http://unusedino.de/ec64/technical/formats/lbr.html,CommodoreLbr,Y,Y,Y,OK,,"signature-detected (.lbr is the CP/M library's); real Library containers read and their directories rewritten byte-identically"
 ALZip,alz,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ALZip,AlZip,Y,Y,Y,PARTIAL,,store and deflate only (AlZipReader.cs)
 EGG (ALZip),egg,archive,,,R,,,,,1,https://en.wikipedia.org/wiki/ALZip,Egg,Y,Y,,PARTIAL,,"store and deflate only; bzip2/LZMA/AZO, encryption and split archives unsupported (EggReader.cs)"
 StuffIt (classic + 5),sit;sea,archive,,,R,,R,fmt/1459;fmt/1460;fmt/639,RW,4,https://en.wikipedia.org/wiki/StuffIt,StuffIt,Y,Y,Y,PARTIAL,,store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs)
