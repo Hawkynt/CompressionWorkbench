@@ -39,6 +39,8 @@ public sealed class WebArchiveFormatDescriptor : IFormatDescriptor, IArchiveForm
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
+  /// <summary>A web archive requires its main resource, so no valid empty purge result exists.</summary>
+  public bool CanPurgeToEmpty => false;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "Safari/WebKit saved page (binary plist). Resources are named by URL; create puts the first HTML file " +

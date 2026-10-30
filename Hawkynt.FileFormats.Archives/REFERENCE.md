@@ -3168,12 +3168,12 @@ A parsed IT sample (IMPS header) with its PCM expanded to signed 16-bit. Handles
 
 #### `ItSampleDecompressor`
 
-Decodes Impulse Tracker compressed sample data (IT214 / IT215) into raw signed PCM.
+Decoder for Impulse Tracker compressed samples (IT 2.14 single-delta and IT 2.15 double-delta packing, 8- and 16-bit), written from `docs/IT-SAMPLE-COMPRESSION-SPEC.md`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress16` | `static short[] Decompress16(ReadOnlySpan<byte> compressed, int lengthSamples, bool it215)` | Decodes a 16-bit IT-compressed sample to signed 16-bit samples. |
-| `Decompress8` | `static sbyte[] Decompress8(ReadOnlySpan<byte> compressed, int lengthSamples, bool it215)` | Decodes an 8-bit IT-compressed sample to signed bytes. |
+| `Decompress16` | `static short[] Decompress16(ReadOnlySpan<byte> compressed, int lengthSamples, bool it215)` | Decodes an IT214/IT215-compressed 16-bit sample. |
+| `Decompress8` | `static sbyte[] Decompress8(ReadOnlySpan<byte> compressed, int lengthSamples, bool it215)` | Decodes an IT214/IT215-compressed 8-bit sample. |
 
 #### `TrackerRender`
 
@@ -12604,6 +12604,37 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes supported non-solid pages directly through the RAR5 block remover. Unsupported encryption, recovery/quick-open, solid dependency and RAR4 cases are rejected before the first byte move and therefore safely fall back to the verified rebuild without an O(total bytes) transaction snapshot. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: gaps not covered by a live extent in the RAR layout map (markers, block headers, packed data and ENDARC are live and preserved). Cluster-tip wiping is N/A (RAR packs blocks back to back). |
 
+### Namespace `FileFormat.Cbt`
+
+[`CbtFormatDescriptor`](#cbtformatdescriptor)
+
+#### `CbtFormatDescriptor`
+
+Comic book archive — a POSIX tar container of sequentially named page images, conventionally suffixed .cbt. Byte-identical to a tar archive, so it is identified by extension only and every operation is the tar one. References: `https://en.wikipedia.org/wiki/Comic_book_archive` — the .cbt/.cbz/.cbr naming convention`https://pubs.opengroup.org/onlinepubs/9799919799/utilities/pax.html` — POSIX ustar/pax interchange format — the underlying container
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CbtFormatDescriptor` | `CbtFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
 ### Namespace `FileFormat.Cbz`
 
 [`CbzFormatDescriptor`](#cbzformatdescriptor)
@@ -13243,7 +13274,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 #### `DarArchive`
 
-Reader for a DAR archive (archive format 9 through 11.3; verified on 11.3): the version trailer and catalogue located through the two terminators at the end of the archive, and file data read back through the escape, compression and sparse layers. Layout in `docs/DAR-ON-DISK.md`.
+Reader for a DAR archive (archive formats 8.1 through 11.3, each verified on archives the dar release that writes it produced): the version trailer and catalogue located through the two terminators at the end of the archive, and file data read back through the escape, compression and sparse layers. Layout in `docs/DAR-ON-DISK.md`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13253,6 +13284,7 @@ Reader for a DAR archive (archive format 9 through 11.3; verified on 11.3): the 
 | `InPlace` | `string InPlace { get; }` | The `-R` root path recorded at backup time. |
 | `Trailer` | `DarVersionHeader Trailer { get; }` | The version trailer that describes the archive's layers. |
 | `AlgorithmName` | `static string AlgorithmName(char a)` | A display name for a catalogue compression letter. |
+| `CopyData` | `void CopyData(DarEntry entry, Stream destination)` | Streams the data of `entry` into `destination` through the escape, compression and sparse layers, in constant memory whatever its size, and checks its size and checksum at the end. |
 | `ReadData` | `byte[] ReadData(DarEntry entry)` | Reads, decompresses, expands and checks the data of `entry`. |
 | `Read` | `static DarArchive Read(Stream archive)` | Reads the archive-level stream (slice headers and trailers already removed). |
 
@@ -13304,13 +13336,17 @@ What a catalogue entry describes (the low five bits of its signature byte).
 
 #### `DarFormatDescriptor`
 
-DAR (Disk ARchive), the archive format of `dar`/libdar. Every slice file starts with a slice header (`DarSliceHeader`) and ends with a one-byte trailer; the bytes between, glued across all slices, hold a version header, the file data, the catalogue and, at the end, two terminators that lead back to the version trailer and the catalogue (`DarArchive`). Reading: archive formats 9 to 11.3, single or multi-slice (the sibling `basename.N.dar` files are picked up from the slice's directory), with or without tape marks, uncompressed or gzip, bzip2, xz, zstd, lz4 or lzo compressed in streaming or block mode, sparse files expanded, hard links resolved, every data and catalogue checksum checked. Directories and regular files are extracted; symlinks, devices, pipes and sockets are listed but not materialised. Encrypted archives, unknown compression and newer formats are refused: listing then falls back to the raw slice (`FULL.dar`) and a `metadata.ini` naming the reason, and never throws.Writing: a single-slice format-11.3 archive without tape marks — what `dar -at` produces — stored or compressed with gzip, bzip2, xz, zstd or lz4. `dar -t` accepts it and `dar -x` restores the input byte for byte (dar 2.7.13; see `Compression.Tests/Dar/DarExternalConformanceTests.cs`).Layout derived from dar's documentation and from archives written by dar 2.7.13 and 2.8.6: `docs/DAR-ON-DISK.md`.
+DAR (Disk ARchive), the archive format of `dar`/libdar. Every slice file starts with a slice header (`DarSliceHeader`) and ends with a one-byte trailer; the bytes between, glued across all slices, hold a version header, the file data, the catalogue and, at the end, two terminators that lead back to the version trailer and the catalogue (`DarArchive`). Reading: archive formats 8.1 to 11.3, single or multi-slice (the sibling `basename.N.dar` files are picked up from the slice's directory), with or without tape marks, uncompressed or gzip, bzip2, xz, zstd, lz4 or lzo compressed in streaming or block mode, sparse files expanded, hard links resolved, every data and catalogue checksum checked, members of any size streamed to disk. Directories and regular files are extracted; symlinks, devices, pipes and sockets are listed but not materialised. Encrypted archives, unknown compression and newer formats are refused: listing then falls back to the raw slice (`FULL.dar`) and a `metadata.ini` naming the reason, and never throws.Writing: format 11.3, stored or compressed with gzip, bzip2, xz, zstd or lz4, in one slice or cut at `SliceSizeOption` / `FirstSliceSizeOption` (dar's `-s` / `-S`), with or without `TapeMarksOption`; file data is streamed, symlinks and uid/gid/permissions/times are kept. dar 2.7.13 and 2.8.6 accept it (`dar -t`, also sequentially) and restore the input byte for byte (see `Compression.Tests/Dar/DarExternalConformanceTests.cs`).Layout derived from dar's documentation and from archives written by dar 2.4.24 to 2.8.6: `docs/DAR-ON-DISK.md`.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DarFormatDescriptor` | `DarFormatDescriptor()` |  |
+| `CompressionBlockSizeOption` | `const string CompressionBlockSizeOption` | Option key: dar's block-mode compression block size (`-z algo:level:size`). |
+| `FirstSliceSizeOption` | `const string FirstSliceSizeOption` | Option key: size of the first slice when it differs (dar's `-S`). |
+| `SliceSizeOption` | `const string SliceSizeOption` | Option key: size of every slice file in bytes (dar's `-s`); `k`, `M`, `G` and `T` suffixes count in 1024s. Empty or 0 writes one slice. |
+| `TapeMarksOption` | `const string TapeMarksOption` | Option key: write tape marks, the escape layer dar's sequential reading needs (dar's default; `false` is `dar -at`). |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
@@ -13322,6 +13358,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
@@ -18457,6 +18494,93 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `ReadCabinet` | `static byte[] ReadCabinet(Stream stream)` | Returns the embedded cabinet's bytes, or null when there is none. |
 
+### Namespace `FileFormat.IaArc`
+
+[`IaArcFormatDescriptor`](#iaarcformatdescriptor) · [`IaArcReader`](#iaarcreader) · [`IaArcRecord`](#iaarcrecord) · [`IaArcWriter`](#iaarcwriter) · [`IaArcWriter.Record`](#iaarcwriterrecord)
+
+#### `IaArcFormatDescriptor`
+
+Internet Archive ARC — the crawl container that preceded WARC (ISO 28500). Each entry is one captured URL; its bytes are the record body exactly as archived (HTTP response headers included). References: `https://archive.org/web/researcher/ArcFileFormat.php` — the Internet Archive's ARC 1.0 / 2.0 specification`https://github.com/webrecorder/warcio` — warcio, the reader used as oracle
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IaArcFormatDescriptor` | `IaArcFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `IaArcReader`
+
+Reads an uncompressed Internet Archive ARC crawl file (versions 1 and 2). An `.arc.gz` is a sequence of gzip members, one per record; it decompresses to exactly this stream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IaArcReader` | `IaArcReader(Stream stream)` |  |
+| `FileDescription` | `IaArcRecord FileDescription { get; }` | The `filedesc://` record. |
+| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The magic every ARC file starts with. |
+| `Records` | `IReadOnlyList<IaArcRecord> Records { get; }` | The URL records, in file order. |
+| `VersionBlock` | `byte[] VersionBlock { get; }` | The filedesc record's body: the version block plus any metadata that follows it. |
+| `Version` | `int Version { get; }` | ARC version, 1 or 2. |
+| `ReadBody` | `byte[] ReadBody(IaArcRecord record)` |  |
+
+#### `IaArcRecord`
+
+One record of an Internet Archive ARC file.
+
+Implements `IEquatable<IaArcRecord>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IaArcRecord` | `IaArcRecord(long RecordOffset, string HeaderLine, string Url, string IpAddress, string ArchiveDate, string ContentType, long BodyOffset, long BodyLength)` | One record of an Internet Archive ARC file. |
+| `ArchiveDate` | `string ArchiveDate { get; init; }` | Archive date, 14 digits (YYYYMMDDhhmmss). |
+| `BodyLength` | `long BodyLength { get; init; }` | Body length (the line's last field). |
+| `BodyOffset` | `long BodyOffset { get; init; }` | Offset of the body (the captured response, HTTP headers included). |
+| `ContentType` | `string ContentType { get; init; }` | Content type field. |
+| `HeaderLine` | `string HeaderLine { get; init; }` | The record's header line, without its line terminator. |
+| `IpAddress` | `string IpAddress { get; init; }` | IP address field. |
+| `RecordOffset` | `long RecordOffset { get; init; }` | Offset of the record's header line. |
+| `Url` | `string Url { get; init; }` | The URL (may contain spaces; the remaining fields are taken from the right). |
+
+#### `IaArcWriter`
+
+Writes uncompressed version-1 Internet Archive ARC files and appends records to existing ones.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WriteRecord` | `static void WriteRecord(Stream output, Record r)` | Writes one record: header line, body, LF separator. |
+| `Write` | `static void Write(Stream output, string arcFileName, DateTime createdUtc, IEnumerable<Record> records)` | Writes a new version-1 ARC: the filedesc record, then one URL record per entry. |
+
+#### `IaArcWriter.Record`
+
+Field values for a record this writer emits.
+
+Implements `IEquatable<Record>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Record` | `Record(string Url, byte[] Body, DateTime ArchiveDateUtc, string ContentType = "application/octet-stream", string IpAddress = "0.0.0.0")` | Field values for a record this writer emits. |
+| `ArchiveDateUtc` | `DateTime ArchiveDateUtc { get; init; }` |  |
+| `Body` | `byte[] Body { get; init; }` |  |
+| `ContentType` | `string ContentType { get; init; }` |  |
+| `IpAddress` | `string IpAddress { get; init; }` |  |
+| `Url` | `string Url { get; init; }` |  |
+
 ### Namespace `FileFormat.IcePacker`
 
 [`IcePackerFormatDescriptor`](#icepackerformatdescriptor) · [`IcePackerStream`](#icepackerstream)
@@ -19039,8 +19163,8 @@ Constants for the Microsoft KWAJ compressed file format, produced by COMPRESS.EX
 | `FlagUnknown2` | `const ushort FlagUnknown2` | Header flag bit 2: two unknown bytes are present. |
 | `FlagsOffset` | `const int FlagsOffset` | Offset of the header flags field (uint16 LE). |
 | `MagicLength` | `const int MagicLength` | Length of the magic signature in bytes. |
-| `MethodLzHuffman` | `const ushort MethodLzHuffman` | Method 3 — LZ + Huffman compression, similar to LZH (not supported by this library). |
-| `MethodLzss` | `const ushort MethodLzss` | Method 2 — SZDD-style LZSS compression (not supported by this library). |
+| `MethodLzHuffman` | `const ushort MethodLzHuffman` | Method 3 — LZ + Huffman compression (five canonical Huffman tables over a 4 KiB LZSS window). |
+| `MethodLzss` | `const ushort MethodLzss` | Method 2 — SZDD-style LZSS compression (QBasic ring origin, 4096 − 18). |
 | `MethodMsZip` | `const ushort MethodMsZip` | Method 4 — MSZIP (Deflate with 32 KB block reset), identical to the algorithm used inside Microsoft Cabinet files. |
 | `MethodOffset` | `const int MethodOffset` | Offset of the compression method field (uint16 LE). |
 | `MethodStore` | `const ushort MethodStore` | Method 0 — no compression; data is stored verbatim. |
@@ -20554,6 +20678,104 @@ Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable
 | `Description` | `override string Description { get; }` | Gets the description. |
 | `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
 | `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
+
+### Namespace `FileFormat.Mar`
+
+[`MarAdditionalSection`](#maradditionalsection) · [`MarEntry`](#marentry) · [`MarFormatDescriptor`](#marformatdescriptor) · [`MarReader`](#marreader) · [`MarSignature`](#marsignature) · [`MarWriter`](#marwriter)
+
+#### `MarAdditionalSection`
+
+An additional-section block entry; id 1 is the product-information block.
+
+Implements `IEquatable<MarAdditionalSection>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MarAdditionalSection` | `MarAdditionalSection(uint Id, byte[] Data)` | An additional-section block entry; id 1 is the product-information block. |
+| `ProductInformationId` | `const uint ProductInformationId` | Product-information block id. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Id` | `uint Id { get; init; }` |  |
+
+#### `MarEntry`
+
+One file of a Mozilla ARchive: where its bytes sit, how many there are, and its permission bits.
+
+Implements `IEquatable<MarEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MarEntry` | `MarEntry(string Name, uint Offset, uint Size, uint Flags)` | One file of a Mozilla ARchive: where its bytes sit, how many there are, and its permission bits. |
+| `Flags` | `uint Flags { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Offset` | `uint Offset { get; init; }` |  |
+| `Size` | `uint Size { get; init; }` |  |
+
+#### `MarFormatDescriptor`
+
+Mozilla ARchive (MAR) — the container of Firefox / Thunderbird update packages. References: `https://wiki.mozilla.org/Software_Update:MAR` — Mozilla's format description`https://github.com/mozilla-releng/build-mar` — mardor, Mozilla release engineering's MAR reader/writer (the oracle)
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MarFormatDescriptor` | `MarFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `MarReader`
+
+Reads a Mozilla ARchive (MAR), the container of Firefox/Thunderbird update packages.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MarReader` | `MarReader(Stream stream)` |  |
+| `AdditionalSections` | `IReadOnlyList<MarAdditionalSection> AdditionalSections { get; }` | Additional sections (product information and any unknown ones), in file order. |
+| `DeclaredFileSize` | `ulong? DeclaredFileSize { get; }` | The total file size the signature block declares, when present. |
+| `Entries` | `IReadOnlyList<MarEntry> Entries { get; }` | Files in index order. |
+| `HasSignatureBlock` | `bool HasSignatureBlock { get; }` | Whether the archive carries the signature/additional-section header blocks. |
+| `IndexOffset` | `uint IndexOffset { get; }` | Offset of the index. |
+| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The "MAR1" magic. |
+| `ProductInformation` | `ValueTuple<string, string>? ProductInformation { get; }` | Channel and product version of the product-information block, when present. |
+| `Signatures` | `IReadOnlyList<MarSignature> Signatures { get; }` | Signatures; empty for unsigned or old-style archives. |
+| `DescribeStoredData` | `static string DescribeStoredData(ReadOnlySpan<byte> head)` | Names the compression the update tooling applied to a member ("xz", "bzip2") by its magic, or "stored" — informational only: extraction always returns the stored bytes. |
+| `Extract` | `byte[] Extract(MarEntry entry)` | Returns a member's stored bytes. |
+
+#### `MarSignature`
+
+A signature block entry (algorithm 1 = RSA-PKCS1-SHA1, 2 = RSA-PKCS1-SHA384).
+
+Implements `IEquatable<MarSignature>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MarSignature` | `MarSignature(uint AlgorithmId, byte[] Data)` | A signature block entry (algorithm 1 = RSA-PKCS1-SHA1, 2 = RSA-PKCS1-SHA384). |
+| `AlgorithmId` | `uint AlgorithmId { get; init; }` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+
+#### `MarWriter`
+
+Writes an unsigned Mozilla ARchive. Without an additional-section list it writes the original layout (header, data, index); with one (even empty) — e.g. a product-information block — it writes the signed-era layout with an empty signature block, exactly as Mozilla's `mar -H channel -V version -c` and mardor do for unsigned packages.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultFlags` | `const uint DefaultFlags` | Default permission bits for a member with none supplied (rw-r--r--). |
+| `ProductInformation` | `static MarAdditionalSection ProductInformation(string channel, string productVersion)` | Builds the product-information section payload (channel and version, each NUL-terminated). |
+| `Write` | `static void Write(Stream output, IReadOnlyList<ValueTuple<string, byte[], uint>> files, IReadOnlyList<MarAdditionalSection> additionalSections = null)` |  |
 
 ### Namespace `FileFormat.Matlab`
 
@@ -27097,6 +27319,8 @@ Specifies an optional pre-filter applied before compression when writing a 7z ar
 | `BcjIA64` | `7` | BCJ IA-64 filter (codec 0x03030401). |
 | `Delta` | `8` | Delta filter (codec 0x03). |
 | `Bcj2` | `9` | BCJ2 x86 filter with 4 sub-streams (codec 0x0303011B). |
+| `Swap2` | `10` | SWAP2 filter, byte-swaps each 16-bit group (codec 0x020302). |
+| `Swap4` | `11` | SWAP4 filter, byte-reverses each 32-bit group (codec 0x020304). |
 
 #### `SevenZipFormatDescriptor`
 
@@ -29118,7 +29342,7 @@ Reader and writer for the Microsoft SZDD / COMPRESS.EXE file format. SZDD uses a
 
 ### Namespace `FileFormat.Tar`
 
-[`TarEntry`](#tarentry) · [`TarFormatDescriptor`](#tarformatdescriptor) · [`TarHeaderFormat`](#tarheaderformat) · [`TarLayoutMap`](#tarlayoutmap) · [`TarModifier`](#tarmodifier) · [`TarReader`](#tarreader) · [`TarWriter`](#tarwriter)
+[`TarEntry`](#tarentry) · [`TarFormatDescriptor`](#tarformatdescriptor) · [`TarHeaderFormat`](#tarheaderformat) · [`TarLayoutMap`](#tarlayoutmap) · [`TarModifier`](#tarmodifier) · [`TarReader`](#tarreader) · [`TarSparseSegment`](#tarsparsesegment) · [`TarWriter`](#tarwriter)
 
 #### `TarEntry`
 
@@ -29131,6 +29355,7 @@ Represents a single entry in a TAR archive.
 | `GroupName` | `string GroupName { get; set; }` | Gets or sets the group name of the owner. |
 | `IsDirectory` | `bool IsDirectory { get; }` | Gets whether this entry represents a directory. |
 | `IsFile` | `bool IsFile { get; }` | Gets whether this entry represents a regular file. |
+| `IsSparse` | `bool IsSparse { get; }` | Gets whether this member is a sparse file whose holes the reader re-creates. |
 | `LinkName` | `string LinkName { get; set; }` | Gets or sets the link target name for hard or symbolic links. |
 | `Mode` | `int Mode { get; set; }` | Gets or sets the file mode (Unix permissions). |
 | `ModifiedTime` | `DateTimeOffset ModifiedTime { get; set; }` | Gets or sets the last modification time. |
@@ -29138,6 +29363,8 @@ Represents a single entry in a TAR archive.
 | `Offset` | `long Offset { get; set; }` | Gets or sets the byte offset within the original file for multi-volume entries. |
 | `RealSize` | `long RealSize { get; set; }` | Gets or sets the real size of the file for multi-volume continuation entries. |
 | `Size` | `long Size { get; set; }` | Gets or sets the uncompressed size in bytes. |
+| `SparseMap` | `List<TarSparseSegment> SparseMap { get; set; }` | The data segments of a sparse member (GNU 'S' or PAX GNU.sparse.*), in file order; everything between them is a hole that reads as zeros. `null` for non-sparse members. When set, `Size` is the reconstructed (logical) size and `StoredSize` the bytes the archive actually holds. |
+| `StoredSize` | `long StoredSize { get; set; }` | Gets or sets the number of data bytes stored in the archive for this member. |
 | `TypeFlag` | `byte TypeFlag { get; set; }` | Gets or sets the type flag indicating the entry type. |
 | `Uid` | `int Uid { get; set; }` | Gets or sets the user ID of the owner. |
 | `UserName` | `string UserName { get; set; }` | Gets or sets the user name of the owner. |
@@ -29221,6 +29448,18 @@ Implements `IDisposable`.
 | `GetEntryStream` | `Stream GetEntryStream()` | Returns a stream for reading the data of the current entry. |
 | `GetNextEntry` | `TarEntry GetNextEntry()` | Reads the next entry from the archive. |
 | `Skip` | `void Skip()` | Skips past the data of the current entry. |
+
+#### `TarSparseSegment`
+
+One stored data segment of a sparse tar member.
+
+Implements `IEquatable<TarSparseSegment>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TarSparseSegment` | `TarSparseSegment(long Offset, long Length)` | One stored data segment of a sparse tar member. |
+| `Length` | `long Length { get; init; }` | Number of stored bytes in the segment. |
+| `Offset` | `long Offset { get; init; }` | Logical offset of the segment within the reconstructed file. |
 
 #### `TarWriter`
 
@@ -29923,6 +30162,34 @@ Clean-room UnityFS writer for modern Unity Asset Bundles. The writer emits versi
 | --- | --- | --- |
 | `Write` | `static void Write(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a complete UnityFS bundle. |
 
+### Namespace `FileFormat.UnixPack`
+
+[`UnixPackFormatDescriptor`](#unixpackformatdescriptor)
+
+#### `UnixPackFormatDescriptor`
+
+System V `pack` files (`.z`, magic `1F 1E`), see `UnixPackBuildingBlock`.
+
+Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UnixPackFormatDescriptor` | `UnixPackFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Compress` | `void Compress(Stream input, Stream output)` |  |
+| `Decompress` | `void Decompress(Stream input, Stream output)` |  |
+
 ### Namespace `FileFormat.UnrealPak`
 
 [`UnrealPakFormatDescriptor`](#unrealpakformatdescriptor) · [`UnrealPakReader`](#unrealpakreader) · [`UnrealPakReader.CompressionBlock`](#unrealpakreadercompressionblock) · [`UnrealPakReader.UnrealPakEntry`](#unrealpakreaderunrealpakentry)
@@ -30257,7 +30524,7 @@ Implements `IEquatable<PeSection>`.
 
 ### Namespace `FileFormat.UuEncoding`
 
-[`B64EncodingFormatDescriptor`](#b64encodingformatdescriptor) · [`UuEncoder`](#uuencoder) · [`UuEncodingFormatDescriptor`](#uuencodingformatdescriptor)
+[`B64EncodingFormatDescriptor`](#b64encodingformatdescriptor) · [`UuEncoder`](#uuencoder) · [`UuEncodingFormatDescriptor`](#uuencodingformatdescriptor) · [`XxEncoder`](#xxencoder) · [`XxEncodingFormatDescriptor`](#xxencodingformatdescriptor)
 
 #### `B64EncodingFormatDescriptor`
 
@@ -30318,6 +30585,40 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+#### `XxEncoder`
+
+XXencode: the uuencode envelope (`begin mode name` … `end`) with a 64-character alphabet that avoids the punctuation EBCDIC gateways mangled.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Alphabet` | `const string Alphabet` | The XXencode alphabet; index is the 6-bit value. |
+| `Decode` | `static ValueTuple<string, int, byte[]> Decode(Stream input)` | Decodes XXencoded text. Lines before `begin` (mail headers, prose) are skipped; the body ends at the zero-length line, at `end`, or at end of input. |
+| `Encode` | `static void Encode(Stream input, Stream output, string filename, int mode = 420)` | Encodes `input` as XXencoded text. |
+
+#### `XxEncodingFormatDescriptor`
+
+XXencode binary-to-text wrapper (`.xx` / `.xxe`).
+
+Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XxEncodingFormatDescriptor` | `XxEncodingFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Compress` | `void Compress(Stream input, Stream output)` |  |
+| `Decompress` | `void Decompress(Stream input, Stream output)` |  |
 
 ### Namespace `FileFormat.Vag`
 
@@ -31780,6 +32081,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`
 | --- | --- | --- |
 | `WebArchiveFormatDescriptor` | `WebArchiveFormatDescriptor()` |  |
 | `BaseUrl` | `const string BaseUrl` | The URL created resources are located under (RFC 2606 reserved TLD). |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | A web archive requires its main resource, so no valid empty purge result exists. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
@@ -33302,43 +33604,11 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.Zpaq`
 
-[`Component`](#component) · [`ComponentType`](#componenttype) · [`ZpaqBuildingBlock`](#zpaqbuildingblock) · [`ZpaqConstants`](#zpaqconstants) · [`ZpaqEntry`](#zpaqentry) · [`ZpaqFormatDescriptor`](#zpaqformatdescriptor) · [`ZpaqRangeCoder`](#zpaqrangecoder) · [`ZpaqRangeDecoder`](#zpaqrangedecoder) · [`ZpaqRangeEncoder`](#zpaqrangeencoder) · [`ZpaqReader`](#zpaqreader) · [`ZpaqWriter`](#zpaqwriter) · [`ZpaqlVm`](#zpaqlvm)
-
-#### `Component`
-
-Represents a single prediction component in the ZPAQL context-mixing model.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Component` | `Component()` |  |
-| `Aux` | `int Aux { get; set; }` | Auxiliary state (match length, mixer weights, etc.). |
-| `Context` | `int Context { get; set; }` | Current hashed context value. |
-| `Memory` | `int[] Memory { get; set; }` | Component memory (CM counters, ICM byte histories, etc.). |
-| `Param1` | `int Param1 { get; set; }` | First parameter (meaning depends on type, e.g. log2 of table size). |
-| `Param2` | `int Param2 { get; set; }` | Second parameter (meaning depends on type). |
-| `Param3` | `int Param3 { get; set; }` | Third parameter (meaning depends on type). |
-| `Prediction` | `int Prediction { get; set; }` | Current prediction (0..65535, probability of next bit being 1). |
-| `Type` | `ComponentType Type { get; set; }` | The component type. |
-
-#### `ComponentType`
-
-Component type identifiers for the ZPAQL context-mixing prediction model.
-
-| Value | Numeric | Summary |
-| --- | --- | --- |
-| `Const` | `0` | Constant prediction (always predicts 50/50). |
-| `Cm` | `1` | Context model — 2^n counters indexed by hashed context. |
-| `Icm` | `2` | Indirect context model — byte history maps to a counter. |
-| `Match` | `3` | Match model — predicts by finding a previous matching context. |
-| `Avg` | `4` | Average of two component predictions. |
-| `Mix2` | `5` | Two-input adaptive mixer. |
-| `Mix` | `6` | N-input adaptive mixer. |
-| `Isse` | `7` | Indirect secondary symbol estimation. |
-| `Sse` | `8` | Direct secondary symbol estimation. |
+[`ZpaqBuildingBlock`](#zpaqbuildingblock) · [`ZpaqEntry`](#zpaqentry) · [`ZpaqFormatDescriptor`](#zpaqformatdescriptor) · [`ZpaqReader`](#zpaqreader) · [`ZpaqWriter`](#zpaqwriter)
 
 #### `ZpaqBuildingBlock`
 
-Exposes the ZPAQ context-mixing codec — the compression stage that the ZPAQ journaling archiver wraps — as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support.
+ZPAQ compression as a building block: the input coded as a plain ZPAQ stream (locator tag, blocks of one segment, SHA-1 trailers) with zpaq's method 4 — an order-0 ICM, an ISSE chain up to order 6, a match model and a mixer, all described in the block's own ZPAQL header.
 
 Implements `IBuildingBlock`.
 
@@ -33352,39 +33622,23 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-#### `ZpaqConstants`
-
-Constants for the ZPAQ archive format (level 1 journaling).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `BlockTypeCompressed` | `const byte BlockTypeCompressed` | Block type byte: compressed data block (contains ZPAQL program + compressed payload). |
-| `BlockTypeData` | `const byte BlockTypeData` | Block type byte: data block in a journaling transaction. Each data block holds the (ZPAQL-compressed) payload for one or more files. |
-| `BlockTypeHeader` | `const byte BlockTypeHeader` | Block type byte: comment/filename header block in a journaling transaction. In a level-1 journaling archive this block carries the transaction date, filenames and per-file attributes for one transaction. |
-| `BlockTypeIndex` | `const byte BlockTypeIndex` | Block type byte: hash/index block that closes a journaling transaction. Contains SHA-1 hashes of the uncompressed file data. |
-| `FileTimeSize` | `const int FileTimeSize` | Size of the Windows FILETIME timestamp stored in journaling header blocks (8 bytes). |
-| `Level1` | `const byte Level1` | Compression level byte for ZPAQ level 1 archives. |
-| `Level2` | `const byte Level2` | Compression level byte for ZPAQ level 2 archives. |
-| `MinBlockHeaderSize` | `const int MinBlockHeaderSize` | Minimum number of bytes in a valid block header (3-byte prefix + 1 level byte + 1 type byte = 5 bytes). |
-| `WindowsToUnixEpochTicks` | `const long WindowsToUnixEpochTicks` | Windows FILETIME ticks (100-nanosecond intervals) from the Windows epoch (1601-01-01) to the Unix epoch (1970-01-01), used when converting timestamps. |
-| `BlockPrefix` | `static ReadOnlySpan<byte> BlockPrefix { get; }` | The 3-byte block locator prefix present at the start of every ZPAQ block ("zPQ"). |
-
 #### `ZpaqEntry`
 
-Represents a single file entry recorded in a ZPAQ journaling archive.
+A file or directory as recorded in a ZPAQ archive.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompressedSize` | `long CompressedSize { get; }` | Gets the compressed size of the data block(s) that carry this file's data. This is the total byte count of the raw (still-compressed) data blocks associated with this entry. |
-| `FileName` | `string FileName { get; }` | Gets the filename as stored in the archive. Path separators are always forward slashes; directory entries end with '/'. |
-| `IsDirectory` | `bool IsDirectory { get; }` | Gets a value indicating whether this entry represents a directory. |
-| `LastModified` | `DateTime? LastModified { get; }` | Gets the last-modified timestamp decoded from the journal header, or `null` when the timestamp could not be recovered. |
-| `Size` | `long Size { get; }` | Gets the uncompressed size of the file in bytes as reported by the archive. This value is zero for directory entries and for files whose size could not be determined from the journal (e.g. when the header block is compressed). |
-| `Version` | `int Version { get; }` | Gets the zero-based transaction index in which this entry was recorded. Each append to a ZPAQ archive constitutes a new transaction; the most recent transaction with a given filename defines the file's current state. |
+| `Attributes` | `long Attributes { get; }` | Raw attribute bytes as stored (first byte 'w' = Windows attributes follow, 'u' = Unix mode follows), packed little-endian; 0 when none were stored. |
+| `CompressedSize` | `long CompressedSize { get; }` | Compressed size attributed to this entry: the share of the data blocks it references, proportional to its new (non-deduplicated) fragments. Zero for directories. |
+| `FileName` | `string FileName { get; }` | Path as stored, with forward slashes; directories end with '/'. |
+| `IsDirectory` | `bool IsDirectory { get; }` | Whether this entry is a directory. |
+| `LastModified` | `DateTime? LastModified { get; }` | Last-modified time (UTC) from the archive's decimal date, or `null`. |
+| `Size` | `long Size { get; }` | Uncompressed size in bytes, or -1 when the archive does not record it (streaming format). |
+| `Version` | `int Version { get; }` | 1-based version (transaction) that last wrote this entry. |
 
 #### `ZpaqFormatDescriptor`
 
-ZPAQ journaling archive with content-defined deduplication and configurable context-mixing compression. References: `http://mattmahoney.net/dc/zpaq.html` — official ZPAQ page and Level 2 format specification (Matt Mahoney)`https://github.com/zpaq/zpaq` — reference implementation`https://en.wikipedia.org/wiki/ZPAQ` — Wikipedia overview
+ZPAQ archive (journaling and streaming layouts) with deduplication and ZPAQL-described context-mixing compression. References: `https://mattmahoney.net/dc/zpaq206.pdf` — ZPAQ Level 2 specification (Matt Mahoney)`https://mattmahoney.net/dc/zpaq.html` — zpaq / libzpaq reference implementation (public domain)
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
@@ -33392,109 +33646,56 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | --- | --- | --- |
 | `ZpaqFormatDescriptor` | `ZpaqFormatDescriptor()` |  |
 | `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the ZPAQ archive in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the ZPAQ archive per the requested mode. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-
-#### `ZpaqRangeCoder`
-
-Shared constants and the safety argument of the ZPAQ binary range coder.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `CarryEdge` | `const uint CarryEdge` | Value at or above which the top byte of `low` may still be bumped by a carry. |
-| `FlushBytes` | `const int FlushBytes` | Number of `low` bytes the encoder pushes out when the message ends. |
-| `MaximumProbability` | `const int MaximumProbability` | Largest probability of a 1 bit the coder accepts. |
-| `MinimumProbability` | `const int MinimumProbability` | Smallest probability of a 1 bit the coder accepts. |
-| `ProbabilityBits` | `const int ProbabilityBits` | Number of fractional bits in a probability, so probabilities span 0..2^16. |
-| `RangeMinimum` | `const uint RangeMinimum` | Lower bound of the normalised range; the coder renormalises below this. |
-| `Split` | `static uint Split(uint range, int probabilityOfOne)` | Computes the split point between the 1 subrange and the 0 subrange. |
-
-#### `ZpaqRangeDecoder`
-
-Carry-propagating binary range decoder, the exact mirror of `ZpaqRangeEncoder`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `ZpaqRangeDecoder` | `ZpaqRangeDecoder(byte[] input, int offset)` | Creates a decoder reading from the given buffer, priming its code word from the first `FlushBytes` bytes. |
-| `Range` | `uint Range { get; }` | Gets the current range, for tests that assert the coder invariant. |
-| `DecodeBit` | `int DecodeBit(int probabilityOfOne)` | Decodes one bit against the given probability. |
-
-#### `ZpaqRangeEncoder`
-
-Carry-propagating binary range encoder. See `ZpaqRangeCoder` for the invariant that keeps both subranges non-empty.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `ZpaqRangeEncoder` | `ZpaqRangeEncoder(Stream output)` | Creates an encoder writing its bytes to the given stream. |
-| `Range` | `uint Range { get; }` | Gets the current range, for tests that assert the coder invariant. |
-| `EncodeBit` | `void EncodeBit(int bit, int probabilityOfOne)` | Codes one bit against the given probability. |
-| `Flush` | `void Flush()` | Pushes out the remaining bytes of `low`, ending the coded stream. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `ZpaqReader`
 
-Reads the journaling index of a ZPAQ archive, exposing the files recorded across all transactions.
+Reads ZPAQ archives in both layouts the format defines: the journaling layout of `zpaq` 6.x/7.x (versioned transactions of `c`/`d`/`h`/`i` blocks with deduplicated, SHA-1 checked fragments) and the plain streaming layout (one file per block or segment run).
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ZpaqReader` | `ZpaqReader(Stream stream, bool leaveOpen = false)` | Opens a ZPAQ archive stream and scans its journal. |
-| `Entries` | `IReadOnlyList<ZpaqEntry> Entries { get; }` | Gets the entries discovered by scanning the archive journal. The list reflects the last recorded state of each file across all transactions (i.e. later transactions that mention the same filename supersede earlier ones in the final view). |
+| `ZpaqReader` | `ZpaqReader(Stream stream, bool leaveOpen = false)` | Opens a ZPAQ archive and reads its index. |
+| `Entries` | `IReadOnlyList<ZpaqEntry> Entries { get; }` | Files and directories present in the latest version, ordered by name. |
+| `Errors` | `int Errors { get; }` | Number of blocks that failed to decode and were skipped while reading the index. |
+| `VersionCount` | `int VersionCount { get; }` | Number of versions (transactions) in the archive. |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `Stream Extract(ZpaqEntry entry)` | Returns the entry's uncompressed bytes as a stream when the data block was STORED (the layout this toolkit's `ZpaqWriter` emits). |
+| `ExtractBytes` | `byte[] ExtractBytes(ZpaqEntry entry)` | Decodes the entry's content, verifying every fragment's (or segment's) SHA-1. |
+| `Extract` | `Stream Extract(ZpaqEntry entry)` | Returns the entry's content as a read-only stream. |
+| `GetEntries` | `IReadOnlyList<ZpaqEntry> GetEntries(int version)` | The archive contents as of version `version` (1-based). |
+| `GetVersionDate` | `DateTime? GetVersionDate(int version)` | UTC date of version `version` (1-based), or `null` for a streaming archive. |
 
 #### `ZpaqWriter`
 
-Writes a ZPAQ level-1 journaling archive.
+Writes a ZPAQ journaling archive holding one version (transaction): the `c` header, the deduplicated and compressed `d` data blocks, their `h` fragment tables and the `i` index, exactly as `zpaq add` lays them out.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ZpaqWriter` | `ZpaqWriter(Stream stream, bool leaveOpen = false)` | Initializes a new ZPAQ writer that writes to the specified stream. |
-| `AddDirectory` | `void AddDirectory(string dirName, DateTime? lastModified = null)` | Adds a directory entry to the archive. |
-| `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? lastModified = null)` | Adds a file entry to the archive with the given name and data. |
+| `ZpaqWriter` | `ZpaqWriter(Stream stream, bool leaveOpen = false, string method = "1")` | Creates a writer that emits the archive to `stream` on dispose. |
+| `Method` | `string Method { get; }` | The zpaq compression method used for the data blocks. |
+| `TransactionDate` | `DateTime? TransactionDate { get; set; }` | Date of the transaction; defaults to the time of disposal. |
+| `AddDirectory` | `void AddDirectory(string dirName, DateTime? lastModified = null)` | Adds a directory entry. |
+| `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? lastModified = null)` | Adds (or replaces) a file. |
 | `Dispose` | `void Dispose()` |  |
-
-#### `ZpaqlVm`
-
-ZPAQL virtual machine for ZPAQ compression and decompression.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `ZpaqlVm` | `ZpaqlVm(ReadOnlySpan<byte> program)` | Parses a ZPAQL program header from a binary span and constructs the VM. |
-| `ZpaqlVm` | `ZpaqlVm(byte[] hcomp, byte[] pcomp, int hh, int hm, Component[] components = null)` | Creates a ZPAQL VM with the specified program and component configuration. |
-| `A` | `uint A { get; set; }` | Gets or sets register A (32-bit accumulator). |
-| `B` | `uint B { get; set; }` | Gets or sets register B (32-bit, also indexes M[]). |
-| `C` | `uint C { get; set; }` | Gets or sets register C (32-bit, also indexes M[]). |
-| `Components` | `Component[] Components { get; }` | Gets the context-mixing components. |
-| `D` | `uint D { get; set; }` | Gets or sets register D (32-bit, also indexes M[]). |
-| `F` | `bool F { get; set; }` | Gets or sets the flag register (1-bit). |
-| `H` | `uint[] H { get; }` | Gets the H[] context array. H values are set by the HCOMP program and used as context indices for the prediction components. |
-| `M` | `byte[] M { get; }` | Gets the M[] byte array used by the HCOMP/PCOMP programs. |
-| `OutputByte` | `Action<byte> OutputByte { get; set; }` | Event invoked when the PCOMP program executes an OUT instruction. |
-| `Predict` | `int Predict()` | Computes a combined prediction from all components. |
-| `Reset` | `void Reset()` | Resets the VM state (registers, arrays, components) without changing the program or component configuration. |
-| `RunHcomp` | `void RunHcomp(int input)` | Executes the HCOMP program with the given input byte. This should be called after each decoded byte to update the context hashes in H[]. |
-| `RunPcomp` | `void RunPcomp(int input)` | Executes the PCOMP (post-processing) program with the given input byte. |
-| `Squash` | `static int Squash(int x)` | Squash function: maps a logistic value (-2048..2047) to a probability (0..65535). squash(x) = 65536 / (1 + exp(-x / 64)). |
-| `Stretch` | `static int Stretch(int p)` | Stretch function: inverse of squash, maps probability (1..65534) to logistic. |
-| `Update` | `void Update(int bit)` | Updates all components after a decoded bit. |
 
 ### Namespace `FileFormat.ZxSnapshot`
 

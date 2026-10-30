@@ -31,16 +31,15 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 19 | |
+| A | 21 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
-| C | 2 | specifications: `docs/IT-SAMPLE-COMPRESSION-SPEC.md`, `docs/FDS-EXPANSION-SOUND-SPEC.md` |
-| R | 9 | |
+| C | 1 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
+| R | 10 | |
 
 ## C — incompatible, must be rewritten clean-room
 
 | Claim site | Upstream | Licence | Specification for the rewrite | Status |
 |---|---|---|---|---|
-| `Hawkynt.FileFormats.Audio/Codecs/Codec.TrackerXmIt/ItSampleDecompressor.cs` | Schism Tracker `fmt/compression.c` (`it_decompress8/16`) | GPL-2.0-or-later | [`IT-SAMPLE-COMPRESSION-SPEC.md`](IT-SAMPLE-COMPRESSION-SPEC.md) | to do |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Nes2a03/Expansion/FdsAudio.cs` | NSFPlay `xgm/devices/Sound/nes_fds.cpp` (Brezza / Brad Smith) | none — the readme only presumes redistribution is allowed | [`FDS-EXPANSION-SOUND-SPEC.md`](FDS-EXPANSION-SOUND-SPEC.md) | to do |
 
 ## B — compatible, notice added
@@ -69,12 +68,15 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Claim site | Upstream | Licence | Where the notice is |
 |---|---|---|---|
+| `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.Trx/TrxImage.cs`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.Seama/SeamaImage.cs` | binwalk v3 TRX, SEAMA and DLOB header layouts, revision `26713972e3f9f52dc37d4a421c4554b0bd9e82ef` | MIT | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.Trx/THIRD-PARTY-NOTICE.binwalk.txt`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.Seama/THIRD-PARTY-NOTICE.binwalk.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Fossil/FossilReader.cs` | plan9port Fossil `pack.c`, `vac.c`, `vac.h`, `source.c`, `file.c`, `dat.h`, revision `1f1396913fb5372408f442ed26933f5ae4b399cd` | MIT | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Fossil/THIRD-PARTY-NOTICE.Fossil.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidBootImage/AndroidBootImage.cs`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidBootImage/AndroidBootImageMetadata.cs` | AOSP mkbootimg `bootimg.h`, `mkbootimg.py` and `unpack_bootimg.py`, revision `d2bb0af5ba6d3198a3e99529c97eda1be0b5a093` | BSD-3-Clause and Apache-2.0 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidBootImage/THIRD-PARTY-NOTICE.mkbootimg.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidVbmeta/AvbVbmeta.cs`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidVbmeta/AvbDescriptorText.cs` | AOSP Android Verified Boot headers and `avbtool.py`, revision `c5066a96caa7bf4150c0a8cc8cc14ab81733fdc7` | MIT | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidVbmeta/THIRD-PARTY-NOTICE.avb.txt` |
+| `Compression.Core/Dictionary/KwajLzh/`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Kwaj/KwajStream.cs` | kwaj-lzh `src/kwaj.ts`, `src/bitreader.ts`, `src/lzss.ts` (yaodub), revision `f71544bc4f848420d8aedb46c2ae602b88a3e998` | MIT | `Compression.Core/Dictionary/KwajLzh/THIRD-PARTY-NOTICE.kwaj-lzh.txt`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Kwaj/THIRD-PARTY-NOTICE.kwaj-lzh.txt` |
 | `Compression.Core/Dictionary/Lzbitmap/` | libzbitmap (Ernesto A. Fernández, Corellium) | MIT | `THIRD-PARTY-NOTICE.libzbitmap.txt` |
 | `Compression.Core/Dictionary/Csc/` | libcsc (Fu Siyuan) | Unlicense | `THIRD-PARTY-NOTICE.libcsc.txt` |
 | `Compression.Core/Dictionary/Arj/ArjFastestDecoder.cs` | XADMaster `XADARJFastestHandle.m` (Dag Ågren, MacPaw), revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Arj/THIRD-PARTY-NOTICE.XADMaster.txt` |
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Zpaq/` | libzpaq / zpaq 7.15 (Matt Mahoney) | public domain (Unlicense) | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Zpaq/THIRD-PARTY-NOTICE.libzpaq.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/DiskDoublerReader.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/DiskDoublerAdDecoder.cs` | XADMaster `XADDiskDoublerParser.m` and `XADDiskDoublerADnHandle.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Compression.Core/Dictionary/Lzh/Lh2Decoder.cs`, `Compression.Core/Dictionary/Lzh/Lh3Decoder.cs`, `Compression.Core/Dictionary/Lzh/LhaLegacyBitReader.cs` | XADMaster `XADLZHOldHandles.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Compression.Core/Dictionary/Lzh/Lh1Tree.cs`, `Compression.Core/Dictionary/Lzh/Lh1Decoder.cs`, `Compression.Core/Dictionary/Lzh/LzsDecoder.cs`, `Compression.Core/Dictionary/Lzh/Lz5Decoder.cs`, `Compression.Core/Dictionary/Lzh/Pm1Decoder.cs`, `Compression.Core/Dictionary/Lzh/Pm2Decoder.cs`, `Compression.Core/Dictionary/Lzh/PmaHistory.cs`, `Compression.Core/Dictionary/Lzh/LhaBitInput.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Lzh/LhaHeaderParser.cs` | lhasa (Simon Howard), revision `75ed83559f23e9538e0045c62f53f77ab03d03d6` | ISC | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.lhasa.txt`; `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Lzh/THIRD-PARTY-NOTICE.lhasa.txt` |
@@ -93,6 +95,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Claim site | What the comment refers to | Note |
 |---|---|---|
+| `Hawkynt.FileFormats.Audio/Codecs/Codec.TrackerXmIt/ItSampleDecompressor.cs` | [`IT-SAMPLE-COMPRESSION-SPEC.md`](IT-SAMPLE-COMPRESSION-SPEC.md); libxmp 4.6.3 and libopenmpt as black-box oracles | independent rewrite from the specification replaces the former Schism Tracker-derived decoder; checked-in IT214/IT215 modules and libxmp PCM digests record the oracle |
 | `Compression.Core/FileSystems/Cvf/CvfLzCodec.cs`, `Compression.Core/FileSystems/Cvf/MsdblLzCodec.cs`, `Compression.Core/FileSystems/Cvf/Sd4Codec.cs` | the measured format description in [`CVF-CODECS-ON-DISK.md`](CVF-CODECS-ON-DISK.md); dmsdos (GPL-2.0) as a black-box oracle | independent rewrite from the format description and reference vectors replaces the former dmsdos-derived bit reader and DS/JM decoders |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.G722/G722Codec.cs` | ITU-T G.722 (09/2012), via [`G722-SPEC.md`](G722-SPEC.md); FFmpeg 8.1.2 as a black-box oracle | independent implementation from the specification replaces the former SpanDSP-derived codec; checked-in encoder and decoder vectors record the oracle |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/PcePsg.cs`, `Hawkynt.FileFormats.Audio/Codecs/Codec.HuC6280/CpuHuC6280.cs` | Mednafen `pce_psg.cpp`, `huc6280.cpp` (GPL-2.0-or-later), formerly named as behavioural references | reviewed 2026-10-23: no structural correspondence. Mednafen's PSG uses an 18-bit five-tap LFSR, integer dB tables and frequency caches; PcePsg uses a 17-bit two-tap LFSR, a floating-point taper and an additive LFO. Mednafen's CPU is opcode macros; CpuHuC6280 is a plain switch and shares only instruction-set facts. The Mednafen wording was removed from both files |

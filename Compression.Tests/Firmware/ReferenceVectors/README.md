@@ -29,3 +29,62 @@ avbtool make_vbmeta_image --output unsigned.vbmeta --algorithm NONE \
 |------|------:|-----------|-------------|
 | `signed.vbmeta` | 2048 | SHA256_RSA2048 | chain partition, property, kernel cmdline, hash |
 | `unsigned.vbmeta` | 576 | NONE | property, kernel cmdline, hash |
+
+## TRX (Broadcom)
+
+Written on 2026-10-19 by OpenWrt firmware-utils (<https://github.com/openwrt/firmware-utils>, revision
+`0179ab1e367f756ac108a485f26585661d4c528c`, GPL-2.0 — built locally with MinGW-w64 GCC and used only
+as a black-box oracle; none of its code is in this repository). The three inputs are generated, so
+the tests rebuild them: byte `i` of input `k` is `(i * (31 + 2k) + 7k + 1) & 0xFF`, for inputs of
+1001, 5000 and 77 bytes.
+
+```sh
+trx -o openwrt-trx-v1.trx -f p0 -f p1 -f p2
+otrx create openwrt-otrx-aligned.trx -f p0 -f p1 -a 0x10000 -f p2
+```
+
+`otrx check` accepts both. The images show the tools' layout: each input is padded to four bytes,
+an `-a` alignment pads the partition before it, and the total length is rounded up to 4 KiB.
+
+| File | Bytes | SHA-256 |
+|------|------:|---------|
+| `openwrt-trx-v1.trx` | 8192 | `11454da2f56805b463abf20adc818ec4d1e9bb7c2fa0da3987037c4615f8db52` |
+| `openwrt-otrx-aligned.trx` | 69632 | `f82e18091d0ab2996a3e0a83c2fed50459ce85554273a324e18c694d7314caac` |
+
+## SEAMA (D-Link)
+
+Written on 2026-10-19 by OpenWrt firmware-utils `seama` 0.20 (same revision and build as above),
+from the same generated inputs (`kernel.bin` = input 1, `rootfs.bin` = input 2):
+
+```sh
+seama -i kernel.bin -m dev=/dev/mtdblock/1 -m type=firmware        # -> openwrt-seama-entity.seama
+seama -i rootfs.bin -m dev=/dev/mtdblock/2 -m type=rootfs          # -> rootfs.seama
+seama -s openwrt-seama-seal.seama -m signature=wrgac01_dlink.2013gui_dir850 \
+      -i openwrt-seama-entity.seama -i rootfs.seama
+```
+
+`oseama info` lists the seal's two entities; `md5sum kernel.bin` is
+`e608e0f186f57bb08498b3ba3eb5b271`, the MD5 stored in the entity header.
+
+| File | Bytes | SHA-256 |
+|------|------:|---------|
+| `openwrt-seama-entity.seama` | 5064 | `6c199ea38ed43122e70fea38206ede9c5ad8043921068f4325de94e4bcdb3379` |
+| `openwrt-seama-seal.seama` | 5253 | `1fd9c0ca4276a2dd730306a3eb76221e3ef5b1d7dd09a08d9fa2af64e9729443` |
+
+## CHK (NETGEAR)
+
+Written on 2026-10-19 by OpenWrt firmware-utils `mkchkimg` v0.1 (same revision and build as above),
+kernel = input 1, rootfs = input 2:
+
+```sh
+mkchkimg -o openwrt-mkchkimg-kernel.chk        -k p1       -b U12H139T00_NETGEAR -r 1
+mkchkimg -o openwrt-mkchkimg-kernel-rootfs.chk -k p1 -f p2 -b U12H139T00_NETGEAR -r 2
+```
+
+The tool reported kernel checksum `0xb9b8ba25`, rootfs checksum `0xa3fe258d` and image checksum
+`0x5b10dfb2` (kernel and rootfs); the tests assert the same values.
+
+| File | Bytes | SHA-256 |
+|------|------:|---------|
+| `openwrt-mkchkimg-kernel.chk` | 5058 | `febe1c7bbb8224582a1603430cb850986f4aa61eb073922cbbb84d72a4512994` |
+| `openwrt-mkchkimg-kernel-rootfs.chk` | 5135 | `46e1e2e4eabda4771e71af0e61ab7646b0a6d76b8204df63df6b2b76c62c273a` |

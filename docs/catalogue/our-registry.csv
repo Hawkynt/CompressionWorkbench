@@ -99,6 +99,7 @@ format,Cab,CAB,Archive,,.cab,Y,Y,Y,Y
 format,Caf,CAF (Core Audio Format),Audio,,.caf,Y,Y,Y,
 format,Cb7,CB7,Archive,,.cb7,Y,Y,Y,Y
 format,Cbr,CBR,Archive,,.cbr,Y,Y,Y,Y
+format,Cbt,CBT,Archive,,.cbt,Y,Y,Y,Y
 format,Cbz,CBZ,Archive,,.cbz,Y,Y,Y,Y
 format,Cdi,CDI,Archive,,.cdi,Y,Y,Y,Y
 format,CephFs,CephFS / RADOS pool export,Archive,Y,.rados;.ceph,Y,Y,Y,Y
@@ -237,6 +238,7 @@ format,Hps,HPS (GameCube HALPST stream),Audio,,.hps,Y,Y,Y,
 format,Htfs,HTFS (SCO High Throughput File System),Archive,Y,.htfs;.s5,Y,Y,Y,Y
 format,Huan,Huan PE64 encrypted loader,Archive,,,Y,Y,,
 format,Human68k,Sharp X68000 Human68k,Archive,Y,.2hd;.dim,Y,Y,Y,Y
+format,IaArc,Internet Archive ARC,Archive,,,Y,Y,Y,Y
 format,Iceberg,Apache Iceberg metadata,Archive,,,Y,Y,,
 format,IcePacker,ICE Packer,Stream,,.ice,,Y,Y,
 format,Icns,ICNS (Apple icon),Archive,,.icns,Y,Y,,
@@ -300,6 +302,7 @@ format,Macrium,Macrium Reflect,Archive,,.mrimgx;.mrbakx;.mrimg,Y,Y,Y,
 format,MacriumPreX,Macrium Reflect pre-X (.mrimg/.mrbak),Archive,,.mrimg;.mrbak;.mrex;.mrsql,Y,Y,,
 format,MacSnd,Mac 'snd ' resource,Audio,,,Y,Y,,
 format,Maff,MAFF,Archive,,.maff,Y,Y,Y,Y
+format,Mar,MAR,Archive,,.mar,Y,Y,Y,Y
 format,Matlab,MATLAB MAT v5,Archive,,.mat,Y,Y,,
 format,MatlabV4,MATLAB MAT v4,Archive,,.mat,Y,Y,,
 format,Maud,IFF/MAUD (MacroSystem),Audio,,.maud,Y,Y,Y,
@@ -349,6 +352,7 @@ format,Nelly,Nellymoser Asao (Flash audio stream),Audio,,.nelly,Y,Y,,
 format,Nes,NES ROM (iNES / NES 2.0),Archive,,.nes,Y,Y,,
 format,NetAssembly,.NET assembly,Archive,,,Y,Y,,
 format,NetCdf,NetCDF (Classic),Archive,,.nc;.cdf,Y,Y,,
+format,NetgearChk,CHK firmware header (NETGEAR),Archive,,.chk,Y,Y,Y,Y
 format,Nib,NIB (Commodore nibble dump),Archive,Y,.nib,Y,Y,Y,Y
 format,Nifti,NIfTI,Archive,,.nii;.nii.gz,Y,Y,,
 format,Nilfs1,NILFS v1,Archive,Y,.nilfs1;.nilfs,Y,Y,Y,Y
@@ -463,6 +467,7 @@ format,Sarc,Nintendo SARC,Archive,,.sarc;.pack;.bars,Y,Y,Y,Y
 format,Sbc,Bluetooth SBC / mSBC,Audio,,.sbc;.msbc,Y,Y,,
 format,Sdat,SDAT (Nintendo DS sound archive),Audio,,.sdat,Y,Y,,
 format,Sds,SDS (MIDI Sample Dump),Audio,,.sds,Y,Y,,
+format,Seama,SEAMA firmware,Archive,,.seama;.dlob,Y,Y,Y,Y
 format,SevenZip,7z,Archive,,.7z,Y,Y,Y,Y
 format,Sf2,SoundFont 2,Audio,,.sf2,Y,Y,,
 format,Sfar,BioWare SFAR,Archive,,.sfar,Y,Y,Y,
@@ -537,6 +542,7 @@ format,TiTxt,TI-TXT (MSP430),Archive,,,Y,Y,Y,Y
 format,Tnef,MS-TNEF (winmail.dat),Archive,,.dat;.tnef,Y,Y,Y,Y
 format,TrDos,TR-DOS,Archive,Y,.trd,Y,Y,Y,Y
 format,Trsdos,TRSDOS / LDOS,Archive,Y,.trsdos;.dmk;.jv1;.jv3,Y,Y,Y,Y
+format,Trx,TRX firmware,Archive,,.trx,Y,Y,Y,Y
 format,Tta,True Audio (TTA),Audio,,.tta,Y,Y,Y,
 format,Ttc,TTC (TrueType collection),Archive,,.ttc,Y,Y,Y,
 format,Ttf,TTF (TrueType font — glyphs),Archive,,.ttf,Y,Y,,
@@ -553,6 +559,7 @@ format,UImage,U-Boot uImage,Archive,,,Y,Y,Y,Y
 format,Ult,UltraTracker,Audio,,.ult,Y,Y,,
 format,Umx,Unreal Music (UMX),Archive,,.umx,Y,Y,Y,
 format,UnityBundle,Unity Asset Bundle,Archive,,.bundle;.unity3d;.assetbundle,Y,Y,Y,Y
+format,UnixPack,pack (.z),Stream,,,,Y,Y,
 format,UnrealPak,Unreal Pak,Archive,,.pak,Y,Y,Y,
 format,Upx,UPX-packed executable,Archive,,,Y,Y,,
 format,UuEncoding,UUEncoding,Wrapper,,.uue;.uu,,Y,Y,
@@ -607,6 +614,7 @@ format,Xml,XML object graph,Archive,,.xml;.cwb.xml,Y,Y,Y,
 format,Xpi,XPI,Archive,,.xpi,Y,Y,Y,Y
 format,Xps,XPS / OpenXPS,Archive,,.xps;.oxps,Y,Y,Y,Y
 format,Xwb,XACT Wave Bank,Audio,,.xwb,Y,Y,,
+format,XxEncoding,XXEncoding,Wrapper,,.xxe;.xx,,Y,Y,
 format,Xz,XZ,Stream,,.xz,,Y,Y,
 format,Yaffs2,YAFFS2,Archive,Y,.yaffs2;.yaffs,Y,Y,Y,Y
 format,Yaz0,Yaz0,Stream,,.yaz0;.szs,,Y,Y,
@@ -675,6 +683,7 @@ block,bb:BB_Golomb,Golomb/Rice,Entropy,,,,Y,Y,
 block,bb:BB_GolombFixedM,Golomb/Rice (fixed M=2),Entropy,,,,Y,Y,
 block,bb:BB_Huffman,Huffman,Entropy,,,,Y,Y,
 block,bb:BB_Implode,Implode,Dictionary,,,,Y,Y,
+block,bb:BB_KwajLzh,KWAJ LZH,Classic,,,,Y,Y,
 block,bb:BB_Levenshtein,Levenshtein Coding,Entropy,,,,Y,Y,
 block,bb:BB_Lizard,Lizard,Dictionary,,,,Y,Y,
 block,bb:BB_Lz4,LZ4,Dictionary,,,,Y,Y,
@@ -742,9 +751,12 @@ block,bb:BB_Snappy,Snappy,Dictionary,,,,Y,Y,
 block,bb:BB_Sqx,SQX,Dictionary,,,,Y,Y,
 block,bb:BB_StackerSd4,Stacker SD-4,Dictionary,,,,Y,Y,
 block,bb:BB_SuffixTree,Suffix Tree Compression,Dictionary,,,,Y,Y,
+block,bb:BB_Swap2,Swap2,Transform,,,,Y,Y,
+block,bb:BB_Swap4,Swap4,Transform,,,,Y,Y,
 block,bb:BB_tANS,tANS,Entropy,,,,Y,Y,
 block,bb:BB_Tunstall,Tunstall Coding,Entropy,,,,Y,Y,
 block,bb:BB_Unary,Unary Coding,Entropy,,,,Y,Y,
+block,bb:BB_UnixPack,Unix pack,Classic,,,,Y,Y,
 block,bb:BB_Xpress,XPRESS Huffman,Dictionary,,,,Y,Y,
 block,bb:BB_Xz,XZ/LZMA2,Dictionary,,,,Y,Y,
 block,bb:BB_Yay0,Yay0,Dictionary,,,,Y,Y,

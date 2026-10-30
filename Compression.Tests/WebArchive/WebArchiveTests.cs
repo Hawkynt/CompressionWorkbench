@@ -36,6 +36,19 @@ public class WebArchiveTests {
 
   private static string Sha(byte[] data) => Convert.ToHexStringLower(SHA256.HashData(data));
 
+  [TestCase(0), TestCase(4096)]
+  public void GivenAMandatoryMainResource_WhenPurged_ThenRefusedWithoutChangingTheArchive(int size) {
+    var main = Enumerable.Range(0, size).Select(i => (byte)(i * 17)).ToArray();
+    var original = Create(("index.html", main), ("asset.bin", [1, 2, 3]));
+    using var archive = new MemoryStream(original.ToArray());
+    IArchivePurgeable purgeable = Descriptor;
+
+    Assert.Throws<NotSupportedException>(() => purgeable.Purge(archive));
+    Assert.That(purgeable.CanPurgeToEmpty, Is.False);
+    Assert.That(archive.ToArray(), Is.EqualTo(original));
+    Assert.That(new WebArchiveDocument(archive.ToArray()).Resources.Single(r => r.IsMain).Data, Is.EqualTo(main));
+  }
+
   [TestCase("dwlnetnl-example.webarchive", new[] { "index.html" })]
   [TestCase("ticky-crouton.webarchive", new[] { "index.html", "crouton.png" })]
   [TestCase("plistlib-frames.webarchive", new[] { "site/index.html", "site/style.css", "cdn.example.net/img/döt.png_v=1", "site/frame.html", "site/img/dot.png" })]

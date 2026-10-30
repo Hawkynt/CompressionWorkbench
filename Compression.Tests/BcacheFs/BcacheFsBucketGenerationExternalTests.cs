@@ -27,6 +27,8 @@ public sealed class BcacheFsBucketGenerationExternalTests {
         image.Position = 0;
         descriptor.Remove(image, ["first.bin"]);
 
+        // Never-reused buckets are taken first; fill them so the freed one is reused.
+        BcacheFsBucketGenerationTests.FillNeverReusedBuckets(descriptor, image, "filler.bin");
         image.Position = 0;
         descriptor.Add(image,
           [ArchiveInputInfo.InMemory("replacement.bin", Payload(23_456, 29))]);
@@ -105,10 +107,7 @@ public sealed class BcacheFsBucketGenerationExternalTests {
   /// and said no is never downgraded to a skip.</para>
   /// </remarks>
   private static void RequireCapableChecker() {
-    if (!FsInteropToolbox.WslAvailable)
-      Assert.Ignore("No Linux environment (WSL) to run bcachefs-tools in.");
-    if (!FsInteropToolbox.WslHasTool("bcachefs"))
-      Assert.Ignore("bcachefs-tools is not installed: `sudo apt install -y bcachefs-tools`.");
+    BcacheFsOracleGate.RequireBcachefsTools();
 
     var required = (Major: BcacheFsFormat.Version >> 10, Minor: BcacheFsFormat.Version & 0x3FF);
     var reported = FsInteropToolbox.RunWsl("bcachefs version").StdOut.Trim();
@@ -119,7 +118,7 @@ public sealed class BcacheFsBucketGenerationExternalTests {
       return;   // unreadable version: run the checker rather than silently skipping it
 
     if (major < required.Major || (major == required.Major && minor < required.Minor))
-      Assert.Ignore(
+      BcacheFsOracleGate.Missing(BcacheFsOracleGate.RequireTools,
         $"bcachefs-tools {reported} predates the metadata version this package writes "
         + $"({required.Major}.{required.Minor}) and refuses the superblock before reading any bucket.");
   }
