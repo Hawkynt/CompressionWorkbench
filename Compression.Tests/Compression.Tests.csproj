@@ -98,6 +98,10 @@
     <EmbeddedResource Include="Nsis\ReferenceVectors\*.gz;Nsis\ReferenceVectors\oracle.tsv">
       <LogicalName>NsisVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Packages the Symbian SDK's makesis / signsis made, from symdev's tests; see SymbianSis/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="SymbianSis\ReferenceVectors\*.sis;SymbianSis\ReferenceVectors\*.sisx;SymbianSis\ReferenceVectors\oracle.tsv">
+      <LogicalName>SymbianSisVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Disks qemu-img / qemu-io wrote; see Vmdk/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
       <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>

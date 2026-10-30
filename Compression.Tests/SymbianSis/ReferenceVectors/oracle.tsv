@@ -1,0 +1,6 @@
+# package	path	size	sha256 -- the input files makesis packed, from symdev testdata
+hello.sis	sys/bin/hello.exe	3588	1a25bc1dbc2c5aaed1333e8c606d0d3c6ad6ed5cc2ffd836e6b1a3e42c65b50b
+hello.sisx	sys/bin/hello.exe	3588	1a25bc1dbc2c5aaed1333e8c606d0d3c6ad6ed5cc2ffd836e6b1a3e42c65b50b
+gui.sis	sys/bin/gui.exe	4990	779bb1b8729bda119cec3f49ff271019e85683d0fe81b4f0bfb49ec82e9edfb9
+gui.sis	resource/apps/gui.rsc	109	31e7f9e40064f75ed7b7d2b0ce0c4ae71abc07cdcfdd212a53fe2c67be627fd8
+gui.sis	private/10003a3f/import/apps/gui_reg.rsc	85	12cddf81ae90b93712b35c10f08e76431c9fffa1165370a52d6c3cc0b37500c8

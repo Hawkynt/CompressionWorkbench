@@ -512,6 +512,7 @@ format,Svx8,IFF/8SVX (Amiga),Audio,,.8svx;.svx,Y,Y,Y,
 format,Swav,SWAV (Nintendo DS sample),Audio,,.swav,Y,Y,Y,
 format,Swf,SWF,Stream,,.swf,,Y,Y,
 format,Swm,Split WIM,Archive,,.swm;.swm2;.swm3;.swm4;.swm5;.swm6;.swm7;.swm8;.swm9,Y,Y,Y,
+format,SymbianSis,Symbian SIS package,Archive,,.sis;.sisx,Y,Y,Y,
 format,SysV,UNIX System V FS,Archive,Y,.s5;.sysv,Y,Y,Y,Y
 format,SzCompress,SZ (old MS COMPRESS),Stream,,,,Y,Y,
 format,Szdd,SZDD,Stream,,,,Y,Y,
