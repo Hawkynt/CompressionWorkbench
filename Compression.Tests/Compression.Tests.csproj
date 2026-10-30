@@ -139,6 +139,10 @@
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- A dvdisaster RS01 error-correction file; see Ecc/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Ecc\ReferenceVectors\*.ecc">
+      <LogicalName>EccVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Sparsebundles written by Apple's hdiutil (keramics, ewfprobe test corpora); see
          AppleSparse/ReferenceVectors/README.md. The tests rebuild each bundle directory from these. -->
     <EmbeddedResource Include="AppleSparse\ReferenceVectors\**\*"
