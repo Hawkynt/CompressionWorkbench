@@ -140,6 +140,7 @@ format,Dff,DSDIFF (.dff),Audio,,.dff;.dsdiff,Y,Y,Y,
 format,Dfpwm,DFPWM1a (ComputerCraft),Audio,,.dfpwm,Y,Y,Y,
 format,Dicom,DICOM,Archive,,.dcm;.dicom,Y,Y,,
 format,DicomDir,DICOMDIR (multi-study index),Archive,,.dcmdir,Y,Y,,
+format,DiskCopy42,Apple Disk Copy 4.2,Archive,,.dc42;.image,Y,Y,Y,Y
 format,DiskDoubler,DiskDoubler,Archive,,.dd;.sea,Y,Y,Y,
 format,Djvu,DjVu,Image,,.djvu;.djv,Y,Y,,
 format,Dls,DLS (Downloadable Sounds),Audio,,.dls,Y,Y,,
