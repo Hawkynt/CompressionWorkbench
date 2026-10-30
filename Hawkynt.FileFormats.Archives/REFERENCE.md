@@ -19076,8 +19076,8 @@ Constants for the Microsoft KWAJ compressed file format, produced by COMPRESS.EX
 | `FlagUnknown2` | `const ushort FlagUnknown2` | Header flag bit 2: two unknown bytes are present. |
 | `FlagsOffset` | `const int FlagsOffset` | Offset of the header flags field (uint16 LE). |
 | `MagicLength` | `const int MagicLength` | Length of the magic signature in bytes. |
-| `MethodLzHuffman` | `const ushort MethodLzHuffman` | Method 3 — LZ + Huffman compression, similar to LZH (not supported by this library). |
-| `MethodLzss` | `const ushort MethodLzss` | Method 2 — SZDD-style LZSS compression (not supported by this library). |
+| `MethodLzHuffman` | `const ushort MethodLzHuffman` | Method 3 — LZ + Huffman compression (five canonical Huffman tables over a 4 KiB LZSS window). |
+| `MethodLzss` | `const ushort MethodLzss` | Method 2 — SZDD-style LZSS compression (QBasic ring origin, 4096 − 18). |
 | `MethodMsZip` | `const ushort MethodMsZip` | Method 4 — MSZIP (Deflate with 32 KB block reset), identical to the algorithm used inside Microsoft Cabinet files. |
 | `MethodOffset` | `const int MethodOffset` | Offset of the compression method field (uint16 LE). |
 | `MethodStore` | `const ushort MethodStore` | Method 0 — no compression; data is stored verbatim. |
@@ -27134,6 +27134,8 @@ Specifies an optional pre-filter applied before compression when writing a 7z ar
 | `BcjIA64` | `7` | BCJ IA-64 filter (codec 0x03030401). |
 | `Delta` | `8` | Delta filter (codec 0x03). |
 | `Bcj2` | `9` | BCJ2 x86 filter with 4 sub-streams (codec 0x0303011B). |
+| `Swap2` | `10` | SWAP2 filter, byte-swaps each 16-bit group (codec 0x020302). |
+| `Swap4` | `11` | SWAP4 filter, byte-reverses each 32-bit group (codec 0x020304). |
 
 #### `SevenZipFormatDescriptor`
 
@@ -29155,7 +29157,7 @@ Reader and writer for the Microsoft SZDD / COMPRESS.EXE file format. SZDD uses a
 
 ### Namespace `FileFormat.Tar`
 
-[`TarEntry`](#tarentry) · [`TarFormatDescriptor`](#tarformatdescriptor) · [`TarHeaderFormat`](#tarheaderformat) · [`TarLayoutMap`](#tarlayoutmap) · [`TarModifier`](#tarmodifier) · [`TarReader`](#tarreader) · [`TarWriter`](#tarwriter)
+[`TarEntry`](#tarentry) · [`TarFormatDescriptor`](#tarformatdescriptor) · [`TarHeaderFormat`](#tarheaderformat) · [`TarLayoutMap`](#tarlayoutmap) · [`TarModifier`](#tarmodifier) · [`TarReader`](#tarreader) · [`TarSparseSegment`](#tarsparsesegment) · [`TarWriter`](#tarwriter)
 
 #### `TarEntry`
 
@@ -29168,6 +29170,7 @@ Represents a single entry in a TAR archive.
 | `GroupName` | `string GroupName { get; set; }` | Gets or sets the group name of the owner. |
 | `IsDirectory` | `bool IsDirectory { get; }` | Gets whether this entry represents a directory. |
 | `IsFile` | `bool IsFile { get; }` | Gets whether this entry represents a regular file. |
+| `IsSparse` | `bool IsSparse { get; }` | Gets whether this member is a sparse file whose holes the reader re-creates. |
 | `LinkName` | `string LinkName { get; set; }` | Gets or sets the link target name for hard or symbolic links. |
 | `Mode` | `int Mode { get; set; }` | Gets or sets the file mode (Unix permissions). |
 | `ModifiedTime` | `DateTimeOffset ModifiedTime { get; set; }` | Gets or sets the last modification time. |
@@ -29175,6 +29178,8 @@ Represents a single entry in a TAR archive.
 | `Offset` | `long Offset { get; set; }` | Gets or sets the byte offset within the original file for multi-volume entries. |
 | `RealSize` | `long RealSize { get; set; }` | Gets or sets the real size of the file for multi-volume continuation entries. |
 | `Size` | `long Size { get; set; }` | Gets or sets the uncompressed size in bytes. |
+| `SparseMap` | `List<TarSparseSegment> SparseMap { get; set; }` | The data segments of a sparse member (GNU 'S' or PAX GNU.sparse.*), in file order; everything between them is a hole that reads as zeros. `null` for non-sparse members. When set, `Size` is the reconstructed (logical) size and `StoredSize` the bytes the archive actually holds. |
+| `StoredSize` | `long StoredSize { get; set; }` | Gets or sets the number of data bytes stored in the archive for this member. |
 | `TypeFlag` | `byte TypeFlag { get; set; }` | Gets or sets the type flag indicating the entry type. |
 | `Uid` | `int Uid { get; set; }` | Gets or sets the user ID of the owner. |
 | `UserName` | `string UserName { get; set; }` | Gets or sets the user name of the owner. |
@@ -29258,6 +29263,18 @@ Implements `IDisposable`.
 | `GetEntryStream` | `Stream GetEntryStream()` | Returns a stream for reading the data of the current entry. |
 | `GetNextEntry` | `TarEntry GetNextEntry()` | Reads the next entry from the archive. |
 | `Skip` | `void Skip()` | Skips past the data of the current entry. |
+
+#### `TarSparseSegment`
+
+One stored data segment of a sparse tar member.
+
+Implements `IEquatable<TarSparseSegment>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TarSparseSegment` | `TarSparseSegment(long Offset, long Length)` | One stored data segment of a sparse tar member. |
+| `Length` | `long Length { get; init; }` | Number of stored bytes in the segment. |
+| `Offset` | `long Offset { get; init; }` | Logical offset of the segment within the reconstructed file. |
 
 #### `TarWriter`
 
@@ -29960,6 +29977,34 @@ Clean-room UnityFS writer for modern Unity Asset Bundles. The writer emits versi
 | --- | --- | --- |
 | `Write` | `static void Write(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a complete UnityFS bundle. |
 
+### Namespace `FileFormat.UnixPack`
+
+[`UnixPackFormatDescriptor`](#unixpackformatdescriptor)
+
+#### `UnixPackFormatDescriptor`
+
+System V `pack` files (`.z`, magic `1F 1E`), see `UnixPackBuildingBlock`.
+
+Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UnixPackFormatDescriptor` | `UnixPackFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Compress` | `void Compress(Stream input, Stream output)` |  |
+| `Decompress` | `void Decompress(Stream input, Stream output)` |  |
+
 ### Namespace `FileFormat.UnrealPak`
 
 [`UnrealPakFormatDescriptor`](#unrealpakformatdescriptor) · [`UnrealPakReader`](#unrealpakreader) · [`UnrealPakReader.CompressionBlock`](#unrealpakreadercompressionblock) · [`UnrealPakReader.UnrealPakEntry`](#unrealpakreaderunrealpakentry)
@@ -30294,7 +30339,7 @@ Implements `IEquatable<PeSection>`.
 
 ### Namespace `FileFormat.UuEncoding`
 
-[`B64EncodingFormatDescriptor`](#b64encodingformatdescriptor) · [`UuEncoder`](#uuencoder) · [`UuEncodingFormatDescriptor`](#uuencodingformatdescriptor)
+[`B64EncodingFormatDescriptor`](#b64encodingformatdescriptor) · [`UuEncoder`](#uuencoder) · [`UuEncodingFormatDescriptor`](#uuencodingformatdescriptor) · [`XxEncoder`](#xxencoder) · [`XxEncodingFormatDescriptor`](#xxencodingformatdescriptor)
 
 #### `B64EncodingFormatDescriptor`
 
@@ -30355,6 +30400,40 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+#### `XxEncoder`
+
+XXencode: the uuencode envelope (`begin mode name` … `end`) with a 64-character alphabet that avoids the punctuation EBCDIC gateways mangled.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Alphabet` | `const string Alphabet` | The XXencode alphabet; index is the 6-bit value. |
+| `Decode` | `static ValueTuple<string, int, byte[]> Decode(Stream input)` | Decodes XXencoded text. Lines before `begin` (mail headers, prose) are skipped; the body ends at the zero-length line, at `end`, or at end of input. |
+| `Encode` | `static void Encode(Stream input, Stream output, string filename, int mode = 420)` | Encodes `input` as XXencoded text. |
+
+#### `XxEncodingFormatDescriptor`
+
+XXencode binary-to-text wrapper (`.xx` / `.xxe`).
+
+Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XxEncodingFormatDescriptor` | `XxEncodingFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Compress` | `void Compress(Stream input, Stream output)` |  |
+| `Decompress` | `void Decompress(Stream input, Stream output)` |  |
 
 ### Namespace `FileFormat.Vag`
 

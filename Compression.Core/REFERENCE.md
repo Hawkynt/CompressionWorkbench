@@ -1039,6 +1039,28 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
+### Namespace `Compression.Core.Dictionary.KwajLzh`
+
+[`KwajLzhBuildingBlock`](#kwajlzhbuildingblock)
+
+#### `KwajLzhBuildingBlock`
+
+KWAJ method 3 ("LZ + Huffman"), the strongest mode of Microsoft's MS-DOS `COMPRESS.EXE -Z`: LZSS over a 4 KiB ring with five canonical Huffman tables.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `KwajLzhBuildingBlock` | `KwajLzhBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes a raw KWAJ method-3 stream (the bytes after the KWAJ header). |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes `data` as a raw KWAJ method-3 stream. |
+
 ### Namespace `Compression.Core.Dictionary.Lizard`
 
 [`LizardBuildingBlock`](#lizardbuildingblock)
@@ -5171,6 +5193,7 @@ Provides static methods for building Huffman trees and extracting code lengths.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BuildFromFrequencies` | `static HuffmanNode BuildFromFrequencies(long[] frequencies)` | Builds a Huffman tree from symbol frequencies. |
+| `CompleteCodeLengths` | `static void CompleteCodeLengths(int[] codeLengths, int maxLength)` | Shortens codes until the lengths fill the code space exactly (Kraft sum of one), for decoders that reject incomplete trees. Lengths of zero (absent symbols) stay zero; a single present symbol is left at length one. |
 | `GetCodeLengths` | `static int[] GetCodeLengths(HuffmanNode root, int maxSymbol)` | Extracts code lengths from a Huffman tree for each symbol. |
 | `LimitCodeLengths` | `static void LimitCodeLengths(int[] codeLengths, int maxLength)` | Limits code lengths to a maximum value using the package-merge algorithm variant. Redistributes code lengths to satisfy the Kraft inequality while staying within the limit. |
 
@@ -5382,6 +5405,29 @@ LZMA-style byte-aligned range encoder with adaptive binary probabilities.
 | `EncodeBit` | `void EncodeBit(ref int prob, int bit)` | Encodes a single bit using an adaptive probability model. |
 | `EncodeDirectBits` | `void EncodeDirectBits(int value, int count)` | Encodes bits without probability adaptation (fixed 50/50 split). Used for alignment bits and direct-coded distance extra bits. |
 | `Finish` | `void Finish()` | Finishes encoding by flushing remaining state to the output. |
+
+### Namespace `Compression.Core.Entropy.UnixPack`
+
+[`UnixPackBuildingBlock`](#unixpackbuildingblock)
+
+#### `UnixPackBuildingBlock`
+
+Unix `pack` (`.z`, magic `1F 1E`): one static Huffman code over the whole file, from System V and still decoded by GNU gzip.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UnixPackBuildingBlock` | `UnixPackBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The two magic bytes. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes a complete pack file. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes `data` as a pack file. |
 
 ### Namespace `Compression.Core.ExecutableUnpacking`
 
@@ -6318,7 +6364,7 @@ Utility for splitting archive data into fixed-size volumes.
 
 ### Namespace `Compression.Core.Transforms`
 
-[`Bcj2Filter`](#bcj2filter) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
+[`Bcj2Filter`](#bcj2filter) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`ByteSwapFilter`](#byteswapfilter) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`Swap2BuildingBlock`](#swap2buildingblock) · [`Swap4BuildingBlock`](#swap4buildingblock) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
 
 #### `Bcj2Filter`
 
@@ -6505,6 +6551,15 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
+#### `ByteSwapFilter`
+
+7-Zip's SWAP2 / SWAP4 filters (method ids `02 03 02` and `02 03 04`): reverse the byte order of every complete 2- or 4-byte group, leaving a trailing partial group as it is. Each filter is its own inverse.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Swap2` | `static byte[] Swap2(ReadOnlySpan<byte> data)` | Swaps the bytes of each complete 16-bit group. |
+| `Swap4` | `static byte[] Swap4(ReadOnlySpan<byte> data)` | Reverses the bytes of each complete 32-bit group. |
+
 #### `DeltaBuildingBlock`
 
 Exposes the Delta filter as a benchmarkable building block.
@@ -6645,6 +6700,38 @@ Run-Length Encoding (RLE) transform. Encodes runs of identical bytes as (count, 
 | --- | --- | --- |
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes RLE-encoded data back to the original. Input format: repeated pairs of (count, value) where count is 1-255. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes data using run-length encoding. Output format: repeated pairs of (count, value) where count is 1-255. Uses SIMD-accelerated run scanning when available. |
+
+#### `Swap2BuildingBlock`
+
+Exposes 7-Zip's SWAP2 filter as a building block.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Swap2BuildingBlock` | `Swap2BuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `Swap4BuildingBlock`
+
+Exposes 7-Zip's SWAP4 filter as a building block.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Swap4BuildingBlock` | `Swap4BuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
 #### `ZleBuildingBlock`
 
