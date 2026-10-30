@@ -1,0 +1,10 @@
+File: cp2-prodos.do
+Disk image (Unadorned, order=dos/sect) - 140KB ProDOS "NEWDISK", 121 blocks free
+Type Auxtyp Modified          Length  Storage *Name                             
+---- ------ --------------- -------- -------- ----------------------------------
+DIR         30-Oct-26 10:36      512      512  SUBDIR
+NON  $0000  30-Oct-26 10:36    70000    70656  SUBDIR:BIG
+NON  $0000  30-Oct-26 10:36       22      512  HELLO.TXT
+NON  $0000  30-Oct-26 10:36     5000     5632  SAPLING
+NON  $0000  30-Oct-26 10:36      512      512  SEEDLING
+

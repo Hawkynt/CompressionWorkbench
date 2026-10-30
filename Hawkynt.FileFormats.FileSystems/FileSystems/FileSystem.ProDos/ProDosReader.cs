@@ -5,7 +5,9 @@ using System.Text;
 namespace FileSystem.ProDos;
 
 /// <summary>
-/// Reader for Apple ProDOS <c>.po</c> (block-ordered) and <c>.2mg</c> images.
+/// Reader for Apple ProDOS <c>.po</c> (block-ordered) and <c>.2mg</c> images, and
+/// for 140 KB 5.25" images stored in DOS 3.3 sector order (<c>.dsk</c>, <c>.do</c>) —
+/// the usual container for Apple III SOS disks, whose file system is ProDOS's.
 /// </summary>
 /// <remarks>
 /// ProDOS is block-based (512-byte blocks). The volume directory starts at block 2
@@ -35,40 +37,40 @@ public sealed class ProDosReader : IDisposable {
 
   /// <summary>
   /// Size in bytes of the Volume Directory Header (storage type 0xF) and the
-  /// Subdirectory Header (storage type 0xE). The header occupies slot 0 of the
-  /// first block in a directory chain and is larger than a regular file entry
-  /// because it carries volume/subdirectory metadata (entry_length, file_count,
-  /// bit_map_pointer, total_blocks for the volume header; parent_pointer,
-  /// parent_entry_number, parent_entry_length for the subdirectory header).
-  /// Per the ProDOS spec, this is 43 bytes ($00..$2A inclusive) — three bytes
-  /// larger than the 39-byte (<see cref="EntrySize"/>) file-entry slot. The
-  /// next entry (slot 1 of the first block) therefore starts at byte
-  /// 4 + 43 = 47, not 4 + 39 = 43.
+  /// Subdirectory Header (storage type 0xE): one <see cref="EntrySize"/> slot.
+  /// The header fills slot 0 of the key block (block bytes $04..$2A), so the
+  /// first file entry starts at block byte $2B = 43, as in every ProDOS disk
+  /// (ProDOS 8 Technical Reference Manual, B.2.2; checked against CiderPress II).
   /// </summary>
-  public const int DirHeaderSize = 43;
+  public const int DirHeaderSize = EntrySize;
+
+  // Directory header fields, as offsets from the header's start (block byte 4).
+  public const int HeaderVersion = 0x1C;
+  public const int HeaderMinVersion = 0x1D;
+  public const int HeaderAccess = 0x1E;
+  public const int HeaderEntryLength = 0x1F;
+  public const int HeaderEntriesPerBlock = 0x20;
+  public const int HeaderFileCount = 0x21;
+  /// <summary>Volume header: bit_map_pointer. Subdirectory header: parent_pointer.</summary>
+  public const int HeaderBitmapOrParentPointer = 0x23;
+  /// <summary>Volume header: total_blocks (2 bytes). Subdirectory header: parent_entry_number (1 byte).</summary>
+  public const int HeaderTotalBlocksOrParentEntry = 0x25;
+  /// <summary>Subdirectory header: parent_entry_length.</summary>
+  public const int HeaderParentEntryLength = 0x26;
 
   /// <summary>
   /// Returns the byte offset within a directory block at which the entry at
-  /// <paramref name="slotIndex"/> begins. The first block of a directory chain
-  /// has its slot 0 carry the (43-byte) Volume/Subdir Header; subsequent slots
-  /// are 39-byte file entries starting at byte 47. Non-first blocks have all
-  /// 13 slots as 39-byte file entries starting at byte 4.
+  /// <paramref name="slotIndex"/> begins: entries are <see cref="EntrySize"/>
+  /// bytes apart from byte 4, and in a key block slot 0 is the directory header.
   /// </summary>
-  public static int EntryOffsetInBlock(bool isFirstBlockOfChain, int slotIndex) {
-    if (!isFirstBlockOfChain) return 4 + slotIndex * EntrySize;
-    return slotIndex == 0
-      ? 4
-      : 4 + DirHeaderSize + (slotIndex - 1) * EntrySize;
-  }
+  public static int EntryOffsetInBlock(bool isFirstBlockOfChain, int slotIndex)
+    => 4 + slotIndex * EntrySize;
 
   /// <summary>
-  /// Returns the number of usable entry slots (header + file slots) in a
-  /// directory block. The first block of a chain holds 12 entries (1 header
-  /// at slot 0 + 11 file slots at slots 1..11). Subsequent blocks hold 13
-  /// file slots at slots 0..12.
+  /// Returns the number of entry slots in a directory block: thirteen, the header
+  /// counting as slot 0 of the key block.
   /// </summary>
-  public static int SlotsInBlock(bool isFirstBlockOfChain)
-    => isFirstBlockOfChain ? 12 : EntriesPerBlock;
+  public static int SlotsInBlock(bool isFirstBlockOfChain) => EntriesPerBlock;
 
   /// <summary>.2mg header magic ("2IMG") at offset 0.</summary>
   private static readonly byte[] TwoImgMagic = "2IMG"u8.ToArray();
@@ -86,6 +88,56 @@ public sealed class ProDosReader : IDisposable {
   /// </summary>
   public string VolumeName { get; private set; } = "";
 
+  /// <summary>Whether the image is a 140 KB disk in DOS 3.3 sector order, read through
+  /// <see cref="DosOrderToProDosOrder"/>. Editing such an image in place would scramble
+  /// it, so the descriptor's editing entry points refuse it.</summary>
+  public bool IsDosOrder { get; private set; }
+
+  /// <summary>Bytes of a 35-track, 16-sector 5.25" disk image.</summary>
+  public const int FloppyImageLength = 35 * 16 * 256;
+
+  /// <summary>
+  /// The two DOS 3.3 logical sectors that hold each ProDOS block of a track, in order:
+  /// block <c>k</c> of track <c>t</c> is DOS sector <c>[k].First</c> then <c>[k].Second</c>
+  /// of that track. Derived from the two skew tables (ProDOS logical sector 2k and 2k+1
+  /// mapped through physical order back to DOS logical order).
+  /// </summary>
+  private static readonly (int First, int Second)[] DosSectorsOfBlock =
+    [(0, 14), (13, 12), (11, 10), (9, 8), (7, 6), (5, 4), (3, 2), (1, 15)];
+
+  /// <summary>Reorders a DOS-order 140 KB image into ProDOS block order.</summary>
+  public static byte[] DosOrderToProDosOrder(ReadOnlySpan<byte> dosOrder) {
+    if (dosOrder.Length != FloppyImageLength)
+      throw new ArgumentException("A DOS-order image is exactly 143 360 bytes.", nameof(dosOrder));
+    var result = new byte[FloppyImageLength];
+    for (var track = 0; track < 35; ++track)
+      for (var k = 0; k < 8; ++k) {
+        var (first, second) = DosSectorsOfBlock[k];
+        var block = (track * 8 + k) * BlockSize;
+        dosOrder.Slice((track * 16 + first) * 256, 256).CopyTo(result.AsSpan(block));
+        dosOrder.Slice((track * 16 + second) * 256, 256).CopyTo(result.AsSpan(block + 256));
+      }
+    return result;
+  }
+
+  /// <summary>A plausible volume directory header in block 2: no previous block, storage type 0xF, a name.</summary>
+  private static bool HasVolumeHeader(ReadOnlySpan<byte> image, int start) {
+    var at = start + VolumeDirStartBlock * BlockSize;
+    if (image.Length < at + BlockSize) return false;
+    var block = image.Slice(at, BlockSize);
+    return BinaryPrimitives.ReadUInt16LittleEndian(block) == 0
+      && (block[4] >> 4) == 0x0F && (block[4] & 0x0F) != 0
+      && block[4 + HeaderEntryLength] == EntrySize && block[4 + HeaderEntriesPerBlock] is > 0 and <= EntriesPerBlock;
+  }
+
+  /// <summary>
+  /// Whether <paramref name="image"/> is a 140 KB DOS-order disk: no ProDOS volume header
+  /// where block order puts it, but one once the sectors are reordered.
+  /// </summary>
+  public static bool LooksDosOrdered(ReadOnlySpan<byte> image)
+    => image.Length == FloppyImageLength && !HasVolumeHeader(image, 0)
+       && HasVolumeHeader(DosOrderToProDosOrder(image), 0);
+
   /// <summary>
   /// Initializes a new instance of <see cref="ProDosReader"/>.
   /// </summary>
@@ -93,7 +145,7 @@ public sealed class ProDosReader : IDisposable {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
-    _image = ms.ToArray();
+    _image = Normalise(ms.ToArray());
     _imageStart = DetectImageStart(_image);
     Parse();
   }
@@ -103,9 +155,15 @@ public sealed class ProDosReader : IDisposable {
   /// </summary>
   public ProDosReader(byte[] data) {
     ArgumentNullException.ThrowIfNull(data);
-    _image = data;
+    _image = Normalise(data);
     _imageStart = DetectImageStart(_image);
     Parse();
+  }
+
+  private byte[] Normalise(byte[] data) {
+    if (!LooksDosOrdered(data)) return data;
+    IsDosOrder = true;
+    return DosOrderToProDosOrder(data);
   }
 
   private static int DetectImageStart(byte[] data) {
@@ -149,19 +207,26 @@ public sealed class ProDosReader : IDisposable {
     var visited = new HashSet<int>();
     var block = startBlock;
     var firstBlock = true;
+    // The key block's header says how many entries a block of this directory holds
+    // (Apple III SOS writes twelve); anything implausible falls back to thirteen.
+    var perBlock = EntriesPerBlock;
+    if (BlockOffset(block) + BlockSize <= _image.Length) {
+      var key = Block(block);
+      if (key[4 + HeaderEntryLength] == EntrySize && key[4 + HeaderEntriesPerBlock] is > 0 and <= EntriesPerBlock)
+        perBlock = key[4 + HeaderEntriesPerBlock];
+    }
 
     while (block != 0 && visited.Add(block)) {
       if (BlockOffset(block) + BlockSize > _image.Length) break;
       var data = Block(block);
       var nextBlock = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(2, 2));
 
-      var slotsHere = SlotsInBlock(firstBlock);
+      var slotsHere = perBlock;
       for (var i = 0; i < slotsHere; i++) {
         // First entry in block 2 is Volume Directory Header (skip). First entry in a
         // subdirectory's first block is the Subdirectory Header (skip).
         if (firstBlock && i == 0) continue;
 
-        // Slot offset accounts for the 43-byte header in the first block.
         var eo = EntryOffsetInBlock(firstBlock, i);
 
         var storageNibble = (data[eo + 0] >> 4) & 0x0F;
