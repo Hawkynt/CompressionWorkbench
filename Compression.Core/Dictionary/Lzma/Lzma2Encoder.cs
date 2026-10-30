@@ -81,41 +81,76 @@ public sealed class Lzma2Encoder {
   }
 
   /// <summary>
-  /// Encodes data from a stream in LZMA2 format.
+  /// Encodes data from a stream in LZMA2 format, chunk by chunk: memory stays at one dictionary
+  /// of history plus one chunk, whatever the stream's length. The output is byte-identical to
+  /// <see cref="Encode(Stream, ReadOnlySpan{byte})"/> over the same bytes.
   /// </summary>
   /// <param name="output">The output stream.</param>
   /// <param name="input">The input stream.</param>
   /// <param name="length">The length to read, or -1 to read to end.</param>
   public void Encode(Stream output, Stream input, long length = -1) {
-    byte[] data;
-    if (length >= 0) {
-      var rented = ArrayPool<byte>.Shared.Rent((int)length);
-      try {
-        var totalRead = 0;
-        while (totalRead < length) {
-          var read = input.Read(rented, totalRead, (int)(length - totalRead));
-          if (read == 0) break;
-          totalRead += read;
-        }
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(input);
+    var history = this._dictionarySize;
+    var window = new byte[(int)Math.Min((long)history + Lzma2Encoder.MaxLzmaInputChunkSize, Array.MaxLength)];
+    history = window.Length - Lzma2Encoder.MaxLzmaInputChunkSize;
+    var filled = 0;          // bytes in the window
+    var offset = 0;          // where the next chunk starts in the window
+    var windowStart = 0L;    // stream position of window[0]
+    var remaining = length;  // bytes still to read, or -1
+    var inputEnded = false;
+    var needFullReset = true;
 
-        if (totalRead < length) {
-          data = rented.AsSpan(0, totalRead).ToArray();
-          ArrayPool<byte>.Shared.Return(rented);
-        } else {
-          data = rented.AsSpan(0, (int)length).ToArray();
-          ArrayPool<byte>.Shared.Return(rented);
+    for (;;) {
+      // Fill the window behind the next chunk.
+      while (!inputEnded && filled - offset < Lzma2Encoder.MaxLzmaInputChunkSize && filled < window.Length) {
+        var want = window.Length - filled;
+        if (remaining >= 0)
+          want = (int)Math.Min(want, remaining);
+        var read = want == 0 ? 0 : input.Read(window, filled, want);
+        if (read <= 0) {
+          inputEnded = true;
+          break;
         }
-      } catch {
-        ArrayPool<byte>.Shared.Return(rented);
-        throw;
+        filled += read;
+        if (remaining >= 0)
+          remaining -= read;
       }
-    } else {
-      using var ms = new MemoryStream();
-      input.CopyTo(ms);
-      data = ms.ToArray();
+
+      var chunkSize = Math.Min(Lzma2Encoder.MaxLzmaInputChunkSize, filled - offset);
+      if (chunkSize == 0)
+        break;
+
+      var historyStart = Math.Max(0, offset - this._dictionarySize);
+      var data = window.AsSpan(historyStart, offset - historyStart + chunkSize);
+      using var lzmaData = new MemoryStream();
+      var encoder = new LzmaEncoder(this._dictionarySize, level: this._level);
+      encoder.Encode(lzmaData, data, offset - historyStart, windowStart + historyStart, writeEndMarker: false);
+      var compressed = lzmaData.ToArray();
+
+      if (compressed.Length < chunkSize && compressed.Length <= Lzma2Encoder.MaxPackedSize) {
+        WriteLzmaChunk(output, window.AsSpan(offset, chunkSize), compressed, encoder.Properties, needFullReset);
+        needFullReset = false;
+      } else
+        for (var done = 0; done < chunkSize;) {
+          var blockSize = Math.Min(Lzma2Encoder.MaxUncompressedChunkSize, chunkSize - done);
+          WriteUncompressedChunk(output, window.AsSpan(offset + done, blockSize), needFullReset);
+          needFullReset = false;
+          done += blockSize;
+        }
+      offset += chunkSize;
+
+      // Slide: keep one dictionary of history before the next chunk.
+      var keepFrom = Math.Max(0, offset - history);
+      if (keepFrom > 0 && filled - offset < Lzma2Encoder.MaxLzmaInputChunkSize && !inputEnded) {
+        Buffer.BlockCopy(window, keepFrom, window, 0, filled - keepFrom);
+        filled -= keepFrom;
+        offset -= keepFrom;
+        windowStart += keepFrom;
+      }
     }
 
-    this.Encode(output, data);
+    output.WriteByte(0x00); // End marker
   }
 
   private static void WriteLzmaChunk(Stream output, ReadOnlySpan<byte> uncompressed,

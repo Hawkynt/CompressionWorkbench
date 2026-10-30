@@ -39,6 +39,12 @@ public sealed class CompressionOptions {
   /// keyed by <see cref="Compression.Registry.FormatOptionDescriptor.Key"/>.</summary>
   public IReadOnlyDictionary<string, string>? FormatSpecific { get; init; }
 
+  /// <summary>
+  /// When positive, the created archive is cut into volumes of this many bytes, named as 7-Zip
+  /// names them (<c>backup.7z.001</c>, <c>backup.7z.002</c>, …); 0 writes a single file.
+  /// </summary>
+  public long VolumeSize { get; init; }
+
   /// <summary>Resolves the ZIP encryption method enum from the string option.</summary>
   public FileFormat.Zip.ZipEncryptionMethod ResolveZipEncryption() => ZipEncryption switch {
     "zipcrypto" => FileFormat.Zip.ZipEncryptionMethod.PkzipTraditional,

@@ -127,8 +127,8 @@ public sealed class SevenZipEditLosslessTests {
 
   /// <summary>
   /// An update archive 7-Zip writes with <c>-u</c> records a deleted file as an anti-item —
-  /// a FilesInfo property this codec does not interpret. An edit cannot carry it to the right
-  /// entry after the file list changes, so it is refused and the archive left as it was.
+  /// a deletion marker that only means something inside that update chain. An edit cannot keep
+  /// the chain's meaning, so it is refused and the archive left as it was.
   /// </summary>
   [Test]
   public void Add_ToAnArchiveWithAntiItems_IsRefusedAndLeftUntouched() {
@@ -142,7 +142,7 @@ public sealed class SevenZipEditLosslessTests {
 
     Assert.Multiple(() => {
       Assert.That(() => Edit(diff, (d, s) => d.Add(s, [ArchiveInputInfo.InMemory("added.txt", "x"u8)])),
-        Throws.TypeOf<NotSupportedException>().With.Message.Contains("file property 0x10"));
+        Throws.TypeOf<NotSupportedException>().With.Message.Contains("anti-items"));
       Assert.That(() => Edit(diff, (d, s) => d.Remove(s, ["a.txt"])), Throws.TypeOf<NotSupportedException>());
       Assert.That(File.ReadAllBytes(diff), Is.EqualTo(original));
     });

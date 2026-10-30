@@ -169,8 +169,13 @@ internal static class Transfer {
   }
 
   /// <summary>Copies, or with <paramref name="move"/> moves, <paramref name="items"/> into <paramref name="target"/>.</summary>
+  /// <param name="items">What to transfer.</param>
+  /// <param name="target">Where to.</param>
+  /// <param name="move">Whether the sources go once every copy has landed.</param>
+  /// <param name="password">The password entries are read from their archive with, when it is encrypted.</param>
   /// <exception cref="InvalidOperationException">The transfer is refused; see <see cref="WhyNot"/>.</exception>
-  public static TransferResult Run(IReadOnlyList<TransferItem> items, Location target, bool move) {
+  /// <exception cref="ArchivePasswordException">A source archive needs a (different) password; nothing was changed.</exception>
+  public static TransferResult Run(IReadOnlyList<TransferItem> items, Location target, bool move, string? password = null) {
     if (WhyNot(items, target, move) is { } refusal) throw new InvalidOperationException(refusal);
 
     // Moving onto the folder something is already in changes nothing.
@@ -178,20 +183,20 @@ internal static class Transfer {
     if (moving.Count == 0) return new([]);
 
     return target.IsInArchive
-      ? IntoArchive(moving, target, move)
-      : IntoFolder(moving, target.HostPath, move);
+      ? IntoArchive(moving, target, move, password)
+      : IntoFolder(moving, target.HostPath, move, password);
   }
 
   // ── into a host folder ──────────────────────────────────────────────────────────────────────
 
-  private static TransferResult IntoFolder(IReadOnlyList<TransferItem> items, string folder, bool move) {
+  private static TransferResult IntoFolder(IReadOnlyList<TransferItem> items, string folder, bool move, string? password) {
     var created = new List<string>();
     var taken = new HashSet<string>(Directory.EnumerateFileSystemEntries(folder).Select(Path.GetFileName)!, StringComparer.OrdinalIgnoreCase);
 
     // Everything written here is written beside its destination, under a staging name, and renamed
     // into place once complete: an interrupted transfer never leaves a truncated file under the real
     // name, and nothing is first unpacked onto some other volume only to be copied across.
-    using var staging = new Staging(folder);
+    using var staging = new Staging(folder, password);
     foreach (var item in items) {
       var name = FreeName(item.Name, taken);
       var target = Path.Combine(folder, name);
@@ -209,13 +214,13 @@ internal static class Transfer {
       created.Add(name);
     }
 
-    if (move) RemoveSources(items.Where(i => i.From.IsInArchive || Exists(i.HostPath, i.IsFolder)));
+    if (move) RemoveSources(items.Where(i => i.From.IsInArchive || Exists(i.HostPath, i.IsFolder)), password);
     return new(created);
   }
 
   // ── into an archive ─────────────────────────────────────────────────────────────────────────
 
-  private static TransferResult IntoArchive(IReadOnlyList<TransferItem> items, Location target, bool move) {
+  private static TransferResult IntoArchive(IReadOnlyList<TransferItem> items, Location target, bool move, string? password) {
     var archive = target.HostPath;
     var folder = target.ArchiveFolder ?? "";
     var created = new List<string>();
@@ -240,7 +245,7 @@ internal static class Transfer {
     if (rest.Count == 0) return new(created);
 
     // Entries on their way into the archive are staged beside it, on the volume it is written to.
-    using var staging = new Staging(Path.GetDirectoryName(Path.GetFullPath(archive))!);
+    using var staging = new Staging(Path.GetDirectoryName(Path.GetFullPath(archive))!, password);
     var inputs = new List<ArchiveInput>();
     foreach (var item in rest) {
       var name = FreeName(item.Name, taken);
@@ -256,7 +261,7 @@ internal static class Transfer {
     // folder without complaint and stores nothing. Removing a moved source on the strength of Add
     // returning would lose it, so the archive is read back first.
     VerifyArrived(archive, inputs);
-    if (move) RemoveSources(rest);
+    if (move) RemoveSources(rest, password);
     return new(created);
   }
 
@@ -343,12 +348,12 @@ internal static class Transfer {
         " — this format stores no empty folders. Nothing was removed from where it came from.");
   }
 
-  private static void RemoveSources(IEnumerable<TransferItem> items) {
+  private static void RemoveSources(IEnumerable<TransferItem> items, string? password = null) {
     foreach (var group in items.GroupBy(i => i.From.IsInArchive ? i.From.HostPath : null)) {
       if (group.Key is { } archive) {
         // A folder goes with everything under it; Remove takes the folder name and deletes the lot.
         ArchiveOperations.Remove(archive, [.. group.Select(i => i.IsFolder ? i.EntryPath + "/" : i.EntryPath)
-          .Concat(group.Where(i => i.IsFolder).SelectMany(i => Descendants(archive, i.EntryPath)))]);
+          .Concat(group.Where(i => i.IsFolder).SelectMany(i => Descendants(archive, i.EntryPath, password)))]);
         continue;
       }
 
@@ -359,9 +364,9 @@ internal static class Transfer {
   }
 
   /// <summary>Every entry beneath a folder of an archive — native removers match entry names, not folders.</summary>
-  private static IEnumerable<string> Descendants(string archive, string folder) {
+  private static IEnumerable<string> Descendants(string archive, string folder, string? password = null) {
     var prefix = folder.TrimEnd('/') + "/";
-    return ArchiveOperations.List(archive, password: null)
+    return ArchiveOperations.List(archive, password)
       .Select(e => e.Name.Replace('\\', '/'))
       .Where(n => n.StartsWith(prefix, StringComparison.Ordinal) && n.Length > prefix.Length);
   }
@@ -420,7 +425,7 @@ internal static class Transfer {
   /// A hidden scratch folder beside a transfer's destination, on the same volume, so that what is
   /// staged there reaches its final name by a rename rather than a second copy.
   /// </summary>
-  private sealed class Staging(string beside) : IDisposable {
+  private sealed class Staging(string beside, string? password = null) : IDisposable {
     private readonly string _root = Path.Combine(beside, StagingPrefix + Guid.NewGuid().ToString("N")[..8]);
 
     /// <summary>A fresh, unused path inside the staging folder, created on first use.</summary>
@@ -442,10 +447,10 @@ internal static class Transfer {
     /// <summary>Extracts <paramref name="item"/> — a folder with everything beneath it — and returns where it landed.</summary>
     public string Materialize(TransferItem item) {
       var archive = item.From.HostPath;
-      var entries = item.IsFolder ? [.. Descendants(archive, item.EntryPath)] : new[] { item.EntryPath };
+      var entries = item.IsFolder ? [.. Descendants(archive, item.EntryPath, password)] : new[] { item.EntryPath };
       var into = this.NewPath();
       Directory.CreateDirectory(into);
-      ArchiveOperations.Extract(archive, into, password: null, files: [.. entries.Where(e => !e.EndsWith('/'))]);
+      ArchiveOperations.Extract(archive, into, password, files: [.. entries.Where(e => !e.EndsWith('/'))]);
 
       var landed = Path.Combine(into, item.EntryPath.Replace('/', Path.DirectorySeparatorChar));
       if (item.IsFolder) Directory.CreateDirectory(landed);

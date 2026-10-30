@@ -28,6 +28,7 @@ internal sealed class CreateOptionsWindow : Form {
   private readonly TextBox _password = new() { UseSystemPasswordChar = true };
   private readonly ComboBox _encryptionMethod = new() { DropDownStyle = ComboBoxStyle.DropDownList };
   private readonly CheckBox _encryptFilenames = new() { Text = "Encrypt file names" };
+  private readonly ComboBox _volumeSize = new() { DropDownStyle = ComboBoxStyle.DropDownList };
   private readonly CheckBox _makeSfx = new() { Text = "Self-extracting archive" };
   private readonly ComboBox _sfxType = new() { DropDownStyle = ComboBoxStyle.DropDownList };
   private readonly ComboBox _sfxTarget = new() { DropDownStyle = ComboBoxStyle.DropDownList };
@@ -87,6 +88,7 @@ internal sealed class CreateOptionsWindow : Form {
     Bind(this._threads, () => this.Options.ThreadOptions, v => this.Options.SelectedThreads = v);
     Bind(this._encryptionMethod, () => this.Options.EncryptionMethodOptions, v => this.Options.SelectedEncryptionMethod = v);
     Bind(this._sfxType, () => this.Options.SfxTypeOptions, v => this.Options.SelectedSfxType = v);
+    Bind(this._volumeSize, () => this.Options.VolumeSizeOptions, v => this.Options.SelectedVolumeSize = v);
     Bind(this._sfxTarget, () => this.Options.SfxTargetOptions, v => this.Options.SelectedSfxTarget = v);
 
     this._password.TextChanged += (_, _) => this.Options.Password = this._password.Text;
@@ -102,6 +104,7 @@ internal sealed class CreateOptionsWindow : Form {
     this.AddRow("Password:", this._password, () => this.Options.ShowPassword);
     this.AddRow("Encryption:", this._encryptionMethod, () => this.Options.ShowEncryptionMethod);
     this.AddRow("Headers:", this._encryptFilenames, () => this.Options.ShowEncryptFilenames);
+    this.AddRow("Split:", this._volumeSize, () => this.Options.ShowVolumeSize);
     this.AddRow("SFX:", this._makeSfx, () => this.Options.ShowSfx);
     this.AddRow("SFX type:", this._sfxType, () => this.Options.ShowSfxOptions);
     this.AddRow("SFX target:", this._sfxTarget, () => this.Options.ShowSfxOptions);
@@ -176,6 +179,7 @@ internal sealed class CreateOptionsWindow : Form {
       Fill(this._threads, this.Options.ThreadOptions, this.Options.SelectedThreads);
       Fill(this._encryptionMethod, this.Options.EncryptionMethodOptions, this.Options.SelectedEncryptionMethod);
       Fill(this._sfxType, this.Options.SfxTypeOptions, this.Options.SelectedSfxType);
+      Fill(this._volumeSize, this.Options.VolumeSizeOptions, this.Options.SelectedVolumeSize);
       Fill(this._sfxTarget, this.Options.SfxTargetOptions, this.Options.SelectedSfxTarget);
     } finally {
       this._suppressSync = false;
