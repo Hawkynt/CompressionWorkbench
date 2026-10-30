@@ -24,7 +24,7 @@ public class ArchiveModifyRoundTripTests {
     "CompactPro", "Deb", "Dmg", "Doc", "Dzip", "FreeArc", "Gar", "Gob", "GodotPck",
     "Grp", "Hpi", "LzxAmiga", "Mpq", "Msg", "Msi", "Msix", "Narc", "Nds", "Nsa",
     "Ppt", "Psarc", "Rgss", "Rpa", "Sar", "Sarc", "Slf", "Sqx", "StuffIt",
-    "ThumbsDb", "Tnef", "U8", "Uharc", "Vpk", "Vpp", "VppV2", "Vsdx", "Wad",
+    "ThumbsDb", "Tnef", "U8", "Vpk", "Vpp", "VppV2", "Vsdx", "Wad",
     "Xls", "Xps", "Ypf", "Zpaq",
     "SevenZip", "Zip", "Tar", "Rar", "Cab", "Arj", "Zoo", "Arc", "Appx", "Apk",
   ];
