@@ -135,6 +135,10 @@
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- PHARs from php-src's phar tests and written by PHP 8.4, plus PHP's listing; see Phar/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Phar\ReferenceVectors\*.phar;Phar\ReferenceVectors\php-listing.txt">
+      <LogicalName>PharVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Sparsebundles written by Apple's hdiutil (keramics, ewfprobe test corpora); see
          AppleSparse/ReferenceVectors/README.md. The tests rebuild each bundle directory from these. -->
     <EmbeddedResource Include="AppleSparse\ReferenceVectors\**\*"
