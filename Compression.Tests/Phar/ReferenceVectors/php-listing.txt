@@ -1,0 +1,47 @@
+# md5.phar sig=MD5:04a6c1ea281b8b4a1e82fbfa4e2b688c alias=- meta=-
+md5.phar hi 2 2 d8932aac 666 stored 8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4 -
+# sha1.phar sig=SHA-1:a1b12a7549bee67ec9c7d32b53edd9697f1e0963 alias=- meta=-
+sha1.phar hi 2 2 d8932aac 666 stored 8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4 -
+# sha256.phar sig=SHA-256:e4e37552c847be5e1e7e19ed9901e1c5635da79a7b96e20f03c240d43b11cfda alias=- meta=-
+sha256.phar hi 2 2 d8932aac 666 stored 8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4 -
+# sha512.phar sig=SHA-512:9a329cad342bbbcbbaeeb3d5df69c0e5c592f9b0cc3e1221bffc19f2a761b9eedb1fd99bd9bd4aaacab78e7cbe8184bd001d219c80f0962369d3a2a2ac5dfb9e alias=- meta=-
+sha512.phar hi 2 2 d8932aac 666 stored 8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4 -
+# openssl.phar sig=OpenSSL:2924b0a0415d2d98a549849cbd336859bb30c70c874734705bf52544d4beebbf68bd09b9ebbef84dd4f7abc876ed481178910f5f478b149769c5b19399668342b0f5dc78bdce4ae6272ff40ebbfad250a61af1c2bc2e82bb2e4fbf25ba35707828ba666f039a14e81c4256755fe0edfdb7c864edfa791537aaa4f6de5dad3435 alias=- meta=-
+openssl.phar b/ dir
+openssl.phar b/c.php 131 131 8fd63337 666 stored 29475d0d38ee251f565964978d29fdd048441698e22aa78beccadf2be9f5a01d -
+openssl.phar d 5 5 50f0634c 666 stored ee3c10faddb943b51ad62bb8987824f1923e9775c3700d12d6c9a086a093b4f1 -
+openssl.phar index.php 25 25 9cd90c45 666 stored 2f198da15531fd274623f3702d119a03874a3f471a295ac7c8d6f62e49076494 -
+openssl.phar web.php 19 19 97251f71 666 stored 588a2871058157a790c0772d2c158bf2a1faf55989af4e63ab48addc13f36062 -
+# blog.phar sig=SHA-1:30d81d5d29064967467cecfee01ecee2dc61f8af alias=- meta=-
+blog.phar index.php 145 145 fb999de5 666 stored e780b9d3df02e5ac0aa438d9e4757db571ddf2bb5af9ed0e89e1b1d86aacde69 -
+blog.phar install.php 26 26 bead3215 666 stored ca83694ca905f89d7abbf8723dee4238ec3723eecf05cb60a36df203d14a37b7 -
+# stuboflength1041.phar sig=SHA-1:ee2c13dd11a5ac27feb965b83acd11c4b0371a11 alias=- meta=-
+stuboflength1041.phar a.php 3 3 5c64935e 666 stored fc8edc701a9a956acf1c36513aabc5d3cc66b92c152ae5d29f43020cc1373c80 -
+stuboflength1041.phar b.php 3 3 c56dc2e4 666 stored 0251f1ec2880f67631b8d0b3a62cf71a17dfa31858a323e7fc38068fcfaeded0 -
+# gh20442.phar sig=SHA-256:d83c976909c28a016a286d1827af7d7195367288febbbea88e0bfd50ebf26b56 alias=- meta=-
+gh20442.phar src/ dir
+# php-sha256.phar sig=SHA-256:4a6ce82f778da863fe57e9529e53c02ef6f9d1090fd57788322fba47c32afbba alias=cwb-php-sha256.phar meta=YToxOntzOjk6ImdlbmVyYXRvciI7czozOiJwaHAiO30=
+php-sha256.phar a.txt 11 11 42969b85 666 stored d4186c0bfc378c2b351eb621a73d9d03fd673ac7ddc8787899f41533a0f66d44 czo0OiJub3RlIjs=
+php-sha256.phar dir/ dir
+php-sha256.phar dir/b.bin 1024 1024 b70b4c26 644 stored 785b0751fc2c53dc14a4ce3d800e69ef9ce1009eb327ccf458afe09c242c26c9 -
+php-sha256.phar empty/ dir
+# php-gz-sha1.phar sig=SHA-1:3e82387c443e381c6e08dcb32de34604a6c3d449 alias=cwb-php-gz-sha1.phar meta=YToxOntzOjk6ImdlbmVyYXRvciI7czozOiJwaHAiO30=
+php-gz-sha1.phar a.txt 11 13 42969b85 666 gz d4186c0bfc378c2b351eb621a73d9d03fd673ac7ddc8787899f41533a0f66d44 czo0OiJub3RlIjs=
+php-gz-sha1.phar dir/ dir
+php-gz-sha1.phar dir/b.bin 1024 280 b70b4c26 644 gz 785b0751fc2c53dc14a4ce3d800e69ef9ce1009eb327ccf458afe09c242c26c9 -
+php-gz-sha1.phar empty/ dir
+# php-md5.phar sig=MD5:b0680b93d83027aafba686ec96544f21 alias=cwb-php-md5.phar meta=YToxOntzOjk6ImdlbmVyYXRvciI7czozOiJwaHAiO30=
+php-md5.phar a.txt 11 11 42969b85 666 stored d4186c0bfc378c2b351eb621a73d9d03fd673ac7ddc8787899f41533a0f66d44 czo0OiJub3RlIjs=
+php-md5.phar dir/ dir
+php-md5.phar dir/b.bin 1024 1024 b70b4c26 644 stored 785b0751fc2c53dc14a4ce3d800e69ef9ce1009eb327ccf458afe09c242c26c9 -
+php-md5.phar empty/ dir
+# php-sha512-gz.phar sig=SHA-512:e317c9c6e6bc4115a7efd1d996d46c8df39c762339af46bf514a7546c83f6196635fcc25e737e702c5fe6e29495a42f744ad114c7125c11e7362825bacca6fea alias=cwb-php-sha512-gz.phar meta=YToxOntzOjk6ImdlbmVyYXRvciI7czozOiJwaHAiO30=
+php-sha512-gz.phar a.txt 11 13 42969b85 666 gz d4186c0bfc378c2b351eb621a73d9d03fd673ac7ddc8787899f41533a0f66d44 czo0OiJub3RlIjs=
+php-sha512-gz.phar dir/ dir
+php-sha512-gz.phar dir/b.bin 1024 280 b70b4c26 644 gz 785b0751fc2c53dc14a4ce3d800e69ef9ce1009eb327ccf458afe09c242c26c9 -
+php-sha512-gz.phar empty/ dir
+# php-bz2-sha256.phar sig=SHA-256:cca72a00f94527bdafb311ad8a976096e6ef76c1a2d219d13c335b5c0fa92e82 alias=cwb-php-bz2-sha256.phar meta=YToxOntzOjk6ImdlbmVyYXRvciI7czozOiJwaHAiO30=
+php-bz2-sha256.phar a.txt 11 51 42969b85 666 bz2 d4186c0bfc378c2b351eb621a73d9d03fd673ac7ddc8787899f41533a0f66d44 czo0OiJub3RlIjs=
+php-bz2-sha256.phar dir/ dir
+php-bz2-sha256.phar dir/b.bin 1024 558 b70b4c26 644 bz2 785b0751fc2c53dc14a4ce3d800e69ef9ce1009eb327ccf458afe09c242c26c9 -
+php-bz2-sha256.phar empty/ dir

@@ -90,7 +90,7 @@ YZ1,yz1,archive,,,,,,,Y,1,,,,,,MISSING,,
 Zzip,zz,archive,,,,,,,Y,1,,,,,,MISSING,,
 WinMount,mou,archive,,,,,,,Y,1,,,,,,MISSING,,
 BagIt,,archive,,,,,,,Y,1,,,,,,MISSING,,https://www.rfc-editor.org/rfc/rfc8493
-PHP archive (PHAR),phar,package,,,,,R,,Y,2,,,,,,MISSING,,https://www.php.net/manual/en/phar.fileformat.php
+PHP archive (PHAR),phar,package,,,,,R,,Y,2,https://www.php.net/manual/en/phar.fileformat.php,Phar,Y,Y,Y,OK,,native phar layout; tar/zip-based phars are refused
 Parchive (PAR/PAR2),par;par2;par.par2,other,,,,,,,Y,1,https://parchive.github.io/,Par2,Y,,,READ-ONLY-BUT-SOURCES-WRITE,par2cmdline,
 WinRAR recovery volume,rev,other,,,,,,,Y,1,,,,,,MISSING,,
 dvdisaster ECC file,ecc,other,,,,,,,Y,1,,,,,,MISSING,,
