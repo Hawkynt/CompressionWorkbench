@@ -134,6 +134,8 @@ var encryptHeadersOpt = new Option<bool>("--encrypt-headers", "-eh") { Descripti
 var zipEncryptionOpt = new Option<string?>("--zip-encryption") { Description = "ZIP encryption method: aes256 (default, strong) or zipcrypto (weak, legacy compatible)" };
 var sfxOpt = new Option<bool>("--sfx") { Description = "Create a self-extracting archive (console stub, no runtime needed)" };
 var sfxUiOpt = new Option<bool>("--sfx-ui") { Description = "Create a self-extracting archive (GUI stub with folder picker; Windows and Linux)" };
+var volumeSizeOpt = new Option<string?>("--volume-size", "-v") { Description = "Split into volumes of at most this size (e.g. 100m, 4g, 20000); formats with volume sets only (RAR)" };
+var createOptOpt = new Option<string[]>("--opt") { Description = "Format-specific option KEY=VALUE (repeatable), e.g. --opt TargetCompatibility=Rar4", AllowMultipleArgumentsPerToken = false };
 var sfxTargetOpt = new Option<string?>("--sfx-target") { Description = "SFX target platform, or a comma-separated list for one file that runs on all of them: " + string.Join(", ", SfxBuilder.SupportedTargets) };
 
 var createCmd = new Command("create", """
@@ -152,6 +154,8 @@ var createCmd = new Command("create", """
     cwb create app.7z src/ --sfx --sfx-target linux-x64 SFX for Linux x64
     cwb create backup.7z src/ -p secret                 7z with AES-256 encryption
     cwb create backup.zip *.txt -m deflate+ -t 4        Zopfli optimal, 4 threads
+    cwb create backup.part1.rar src/ -v 100m -p secret  RAR 5 volumes of 100 MB, AES-256
+    cwb create old.rar src/ --opt TargetCompatibility=Rar4  RAR 4 (2.9 format) archive
 
   Methods by format:
     ZIP:  store, shrink, reduce, implode, deflate(+), deflate64, bzip2, lzma, ppmd, zstd
@@ -168,7 +172,7 @@ var createCmd = new Command("create", """
     --solid-size  Max solid block: 0=single block, 64m=64MB blocks, 1g=1GB blocks.
     --level       0-9: 1=fast, 5=normal, 9=best.
     --threads     Parallel compression (7z splits into solid blocks, ZIP per-entry).
-  """) { createArchiveArg, createFilesArg, passwordOpt, methodOpt, forceCompressOpt, threadsOpt, solidSizeOpt, dictSizeOpt, wordSizeOpt, levelOpt, encryptHeadersOpt, zipEncryptionOpt, sfxOpt, sfxUiOpt, sfxTargetOpt };
+  """) { createArchiveArg, createFilesArg, passwordOpt, methodOpt, forceCompressOpt, threadsOpt, solidSizeOpt, dictSizeOpt, wordSizeOpt, levelOpt, encryptHeadersOpt, zipEncryptionOpt, sfxOpt, sfxUiOpt, sfxTargetOpt, volumeSizeOpt, createOptOpt };
 createCmd.Aliases.Add("c");
 createCmd.SetAction((ParseResult ctx) => {
   var archive = ctx.GetValue(createArchiveArg)!;
@@ -186,6 +190,15 @@ createCmd.SetAction((ParseResult ctx) => {
   var makeSfx = ctx.GetValue(sfxOpt);
   var makeSfxUi = ctx.GetValue(sfxUiOpt);
   var sfxTarget = ctx.GetValue(sfxTargetOpt);
+  var formatSpecific = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+  foreach (var raw in ctx.GetValue(createOptOpt) ?? []) {
+    if (string.IsNullOrEmpty(raw)) continue;
+    var eq = raw.IndexOf('=');
+    if (eq < 0) formatSpecific[raw] = "true";
+    else if (eq > 0) formatSpecific[raw[..eq]] = raw[(eq + 1)..];
+  }
+  if (ctx.GetValue(volumeSizeOpt) is { Length: > 0 } volumeSize)
+    formatSpecific[Compression.Registry.FormatOptionKeys.VolumeSize] = volumeSize;
 
   List<ArchiveInput> resolved;
   try { resolved = ArchiveInput.Resolve(files); }
@@ -208,6 +221,7 @@ createCmd.SetAction((ParseResult ctx) => {
     DictSize = dictSize, WordSize = wordSize, Level = level,
     ForceCompress = forceCompress, Password = password, EncryptFilenames = encryptHeaders,
     ZipEncryption = zipEncryption,
+    FormatSpecific = formatSpecific.Count > 0 ? formatSpecific : null,
   };
   var methodLabel = method.IsDefault ? "" : $" [{method}]";
   var threadLabel = threads > 1 ? $" ({threads} threads)" : "";

@@ -303,6 +303,8 @@ Examples:
 cwb list archive.zip
 cwb extract archive.7z -o ./output
 cwb x archive.rar -p mypassword
+cwb create backup.part1.rar myDir -v 100m -p secret   # RAR 5 volumes, AES-256
+cwb x backup.part1.rar -p secret                        # reads the whole volume set
 cwb create output.zip myDir file1.txt '*.txt'
 cwb create output.7z file.txt --method lzma2+
 cwb convert input.tar.gz output.tar.xz
