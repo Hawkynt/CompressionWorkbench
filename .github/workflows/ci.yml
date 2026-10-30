@@ -266,6 +266,23 @@ jobs:
           find "/lib/modules/$kver" -name 'bcachefs.ko*' | grep -q . \
             || { echo "::error::linux-modules(-extra)-$kver has no bcachefs module"; exit 1; }
 
+      # Hard gate, both directions: the reference ECM tool must restore what the ECM encoder
+      # writes, and our decoder must restore what it writes. No distribution packages it, so it is
+      # built from the pinned upstream revision (GPL-3.0; used as a black box, never shipped).
+      - name: ECM oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_ECM: "1"
+        run: |
+          git clone --quiet https://github.com/alucryd/ecm-tools "$RUNNER_TEMP/ecm-tools"
+          git -C "$RUNNER_TEMP/ecm-tools" checkout --quiet 2765930b79fff478a6a584a554c719b8bf041422
+          gcc -O2 -o "$RUNNER_TEMP/ecm-tools/bin2ecm" "$RUNNER_TEMP/ecm-tools/ecm.c"
+          sudo install -m 755 "$RUNNER_TEMP/ecm-tools/bin2ecm" /usr/local/bin/bin2ecm
+          sudo ln -sf bin2ecm /usr/local/bin/ecm2bin
+          dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Ecm.EcmExternalConformanceTests" \
+            --logger "trx;LogFileName=ecm-oracle-tests.trx"
+
       # Hard gate, both directions: PowerISO for Linux (freeware, checksum-pinned, used as a black
       # box) converts our DAA images back to identical ISOs, and we read the DAA images it writes.
       - name: DAA oracle

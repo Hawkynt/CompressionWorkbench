@@ -167,14 +167,17 @@ internal static class CdiCdSectorIntegrity {
       throw new ArgumentException("CD-ROM integrity regeneration requires a complete 2,352-byte raw sector.", nameof(rawSector));
   }
 
-  private static uint ComputeEdc(ReadOnlySpan<byte> bytes) {
-    var result = 0u;
+  internal static uint ComputeEdc(ReadOnlySpan<byte> bytes) => ComputeEdc(0u, bytes);
+
+  /// <summary>Continues an EDC computation from <paramref name="seed"/> over <paramref name="bytes"/>.</summary>
+  internal static uint ComputeEdc(uint seed, ReadOnlySpan<byte> bytes) {
+    var result = seed;
     foreach (var value in bytes)
       result = (result >> 8) ^ EdcTable[(byte)(result ^ value)];
     return result;
   }
 
-  private static void WriteEcc(Span<byte> rawSector, bool zeroAddressForParity) {
+  internal static void WriteEcc(Span<byte> rawSector, bool zeroAddressForParity) {
     Span<byte> savedAddress = stackalloc byte[4];
     Span<byte> data = stackalloc byte[43];
     if (zeroAddressForParity) {
