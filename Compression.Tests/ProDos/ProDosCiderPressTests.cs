@@ -29,7 +29,10 @@ public sealed class ProDosCiderPressTests {
       ["SEEDLING"] = Pattern(300, 1),
       ["SAPLING"] = Pattern(9_000, 2),
       ["TREE"] = Pattern(140_000, 3),
-      ["NOTE"] ="written by the writer\r"u8.ToArray(),
+      ["NOTE"] = "written by the writer\r"u8.ToArray(),
+      // Folders become real ProDOS subdirectories (storage type $D / header $E).
+      ["DOCS/README"] = "in a subdirectory\r"u8.ToArray(),
+      ["DOCS/DEEP/LEAF"] = Pattern(2_000, 5),
     };
     var dir = Path.Combine(Path.GetTempPath(), $"cwb_cp2_{Guid.NewGuid():N}");
     Directory.CreateDirectory(dir);
@@ -52,6 +55,7 @@ public sealed class ProDosCiderPressTests {
         Assert.That(File.Exists(path), Is.True, $"{name} not extracted:\n{r.StdOut}");
         Assert.That(SHA256.HashData(File.ReadAllBytes(path)), Is.EqualTo(SHA256.HashData(data)), name);
       }
+      Assert.That(r.StdOut, Does.Contain("DOCS:DEEP:LEAF"), "CiderPress sees the nested path as subdirectories");
       Assert.That(r.StdOut, Does.Not.Contain("damage").IgnoreCase.And.Not.Contain("warning").IgnoreCase, r.StdOut);
     } finally {
       try { Directory.Delete(dir, true); } catch { /* best effort */ }

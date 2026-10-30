@@ -250,7 +250,7 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
         $"ProDOS: combined input size {total} bytes exceeds 800 KB disk capacity ({cap} bytes).");
 
     var w = new ProDosWriter();
-    foreach (var (name, data) in FlatFiles(inputs))
+    foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
 
     // Honour an explicit volume size if the user picked one; otherwise use the
