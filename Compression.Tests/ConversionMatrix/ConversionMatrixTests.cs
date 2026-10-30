@@ -155,6 +155,7 @@ public class ConversionMatrixTests {
       { "Mo", "[other] GNU gettext .mo; entries renamed NNNN_<stem>.txt" },
       { "Npy", "[other] NumPy .npy; collapses to header.bin/array.bin (single array, names lost)" },
       { "Npz", "[other] NumPy .npz; entries suffixed .npy (HELLO.TXT.npy) so verbatim-name match fails" },
+      { "Par2", "[other] a PAR2 recovery set protects the files rather than containing them; it re-lists as FULL.par2 + metadata.ini + files.ini + packets/*, never the file bodies" },
       { "Paragon", "[other] Paragon backup; exposed as chunk_NNNNNN.bin not original names" },
       { "TfRecord", "[other] TensorFlow TFRecord; entries renamed record_NNNNN.bin" },
       { "UefiFv", "[other] UEFI firmware volume; an FFS file is identified by GUID, so the writer names each one <guid>_RAW.bin and the original filename has nowhere to live" },

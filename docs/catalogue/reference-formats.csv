@@ -91,7 +91,7 @@ Zzip,zz,archive,,,,,,,Y,1,,,,,,MISSING,,
 WinMount,mou,archive,,,,,,,Y,1,,,,,,MISSING,,
 BagIt,,archive,,,,,,,Y,1,,,,,,MISSING,,https://www.rfc-editor.org/rfc/rfc8493
 PHP archive (PHAR),phar,package,,,,,R,,Y,2,,,,,,MISSING,,https://www.php.net/manual/en/phar.fileformat.php
-Parchive (PAR/PAR2),par;par2;par.par2,other,,,,,,,Y,1,https://parchive.github.io/,Par2,Y,,,READ-ONLY-BUT-SOURCES-WRITE,par2cmdline,
+Parchive (PAR/PAR2),par;par2;par.par2,other,,,,,,,Y,1,https://parchive.github.io/,Par2,Y,Y,,OK,par2cmdline,PAR2 sets created write-once (packets identical to par2cmdline but the creator); PAR 1 not handled
 WinRAR recovery volume,rev,other,,,,,,,Y,1,,,,,,MISSING,,
 dvdisaster ECC file,ecc,other,,,,,,,Y,1,,,,,,MISSING,,
 Error-correcting SeqBox,ecsbx,other,,,,,,,Y,1,,,,,,MISSING,,
