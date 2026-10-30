@@ -181,6 +181,10 @@
     <EmbeddedResource Include="ProDos\ReferenceVectors\*.gz;ProDos\ReferenceVectors\manifest.txt">
       <LogicalName>ProDosVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- SPIFFS images mkspiffs and spiffsgen.py wrote; see Spiffs/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Spiffs\ReferenceVectors\*.gz;Spiffs\ReferenceVectors\manifest.txt">
+      <LogicalName>SpiffsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>
