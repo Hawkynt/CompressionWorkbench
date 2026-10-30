@@ -35,6 +35,7 @@ internal static class ZipOptionsResolver {
   /// <summary>Resolves the ZIP encryption method from the option string.</summary>
   public static ZipEncryptionMethod ResolveEncryption(string? method) => method switch {
     "zipcrypto" => ZipEncryptionMethod.PkzipTraditional,
+    "pkware-aes-256" => ZipEncryptionMethod.PkwareStrongAes256,
     _ => ZipEncryptionMethod.Aes256,
   };
 

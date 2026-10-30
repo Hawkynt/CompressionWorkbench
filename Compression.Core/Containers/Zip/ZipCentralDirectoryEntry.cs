@@ -68,7 +68,7 @@ internal static class ZipCentralDirectoryEntry {
     var flags = ZipConstants.FlagUtf8;
 
     if (entry.IsEncrypted)
-      flags |= ZipConstants.FlagEncrypted;
+      flags |= (ushort)(ZipConstants.FlagEncrypted | (entry.GeneralPurposeFlags & ZipStrongEncryption.FlagStrongEncryption));
     if (entry.CompressionMethod == ZipCompressionMethod.Implode)
       flags |= (ushort)(entry.GeneralPurposeFlags & 0x0006);
 

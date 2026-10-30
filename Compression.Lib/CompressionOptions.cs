@@ -42,6 +42,7 @@ public sealed class CompressionOptions {
   /// <summary>Resolves the ZIP encryption method enum from the string option.</summary>
   public FileFormat.Zip.ZipEncryptionMethod ResolveZipEncryption() => ZipEncryption switch {
     "zipcrypto" => FileFormat.Zip.ZipEncryptionMethod.PkzipTraditional,
+    "pkware-aes-256" => FileFormat.Zip.ZipEncryptionMethod.PkwareStrongAes256,
     _ => FileFormat.Zip.ZipEncryptionMethod.Aes256,
   };
 
