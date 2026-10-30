@@ -421,8 +421,8 @@ MFS (Macintosh File System),mfs;dsk;img,filesystem,,,,,,fmt/2068,Y,2,,Mfs,Y,Y,Y,
 MFS (TiVo Media File System),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Minix file system (V1/V2/V3),minix,filesystem,,,,,,,Y,1,,MinixFs;MinixV1;MinixV2,Y,Y,Y,OK,,
 NetWare File System (NWFS),,filesystem,,,,,,,Y,1,,Nwfs;Nwfs386,Y,Y,Y,OK,,
-NeXT file system,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-Next3,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+NeXT file system,,filesystem,,,,,,,Y,1,,,,,,MISSING,,deferred: NeXTSTEP's file system is 4.3BSD UFS behind a NeXT disk label; no redistributable NeXT disk image or tool that writes one was found to prove a reader against
+Next3,,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: ext3 plus snapshot extensions whose tools (an e2fsprogs fork) stopped in 2011; no image found; the plain ext3 parts are read by Ext
 NILFS / NILFS2,nilfs;nilfs2,filesystem,,,,,,,Y,1,,Nilfs1;Nilfs2,Y,Y,Y,OK,,
 Novell Storage Services (NSS),,filesystem,,,,,,,Y,1,,Nss,Y,Y,,OK,,
 NTFS,ntfs,filesystem,R,,,R,,,Y,3,,Ntfs,Y,Y,Y,PARTIAL,,WOF (XPRESS/LZX) compressed files not decoded; LZNT1 is
@@ -434,54 +434,54 @@ QNX4 FS,qnx4;qnx4fs,filesystem,,,,,,,Y,1,,Qnx4,Y,Y,Y,OK,,
 ReFS,refs,filesystem,,,,,,,Y,1,,Refs,Y,,Y,READ-ONLY-BUT-SOURCES-WRITE,format /fs:refs (Windows),
 Reiser4,,filesystem,,,,,,,Y,1,,Reiser4,Y,Y,Y,OK,,
 ReiserFS,,filesystem,,,,,,,Y,1,,ReiserFs,Y,Y,Y,OK,,
-Reliance / Reliance Nitro / Velocity / Edge (Datalight/Tuxera),datalight;tuxera,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-RFS (RTEMS),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-SkyFS,skyos,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+Reliance / Reliance Nitro / Velocity / Edge (Datalight/Tuxera),datalight;tuxera,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: proprietary except Reliance Edge (GPL-2.0), whose on-disk layout depends on build-time configuration; no image found"
+RFS (RTEMS),,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: images only come from an RTEMS target; no host tool or image located (the BSD-licensed RTEMS sources could serve as specification)
+SkyFS,skyos,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: SkyOS was discontinued in 2008; no specification, tool or image"
 Amiga SFS,sfs,filesystem,,,,,,,Y,1,,Sfs,Y,Y,Y,OK,,
-Newton Soup,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-Tux3,,filesystem,,,,,,,Y,1,,Tux3,Y,,,READ-ONLY-BUT-SOURCES-WRITE,tux3 mkfs,
+Newton Soup,,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: soups are Newton object-store entries inside the device's flash store and backups; no public layout specification, tool or image of the store"
+Tux3,,filesystem,,,,,,,Y,1,,Tux3,Y,,,READ-ONLY-BUT-SOURCES-WRITE,tux3 mkfs,read only; the tux3 userspace tools were not built or tried as a writer oracle in this round
 "VxFS (Veritas, incl. cluster CFS)",cfs,filesystem,,,,,,,Y,1,,VxFs,Y,Y,Y,OK,,
 XFS,xfs;sgi,filesystem,,,,,,,Y,1,,Xfs,Y,Y,,OK,,
 zFS (z/OS),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 ZFS,zfs,filesystem,,,,,,,Y,1,,Zfs,Y,,,OK,,
 bcachefs,,filesystem,,,,,,,Y,1,,BcacheFs,Y,Y,Y,OK,,
-NOVA,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+NOVA,,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: persistent-memory file system with only an out-of-tree kernel module; no userspace tool and no image
 3FS (Fire-Flyer),deepseek,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 CHFS (NetBSD),netbsd,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 exFAT,exfat;fat64;img,filesystem,,,,,,fmt/1609,Y,2,https://learn.microsoft.com/windows/win32/fileio/exfat-specification,ExFat,Y,Y,Y,OK,,
 ExtremeFFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 F2FS,f2fs,filesystem,,,,,,,Y,1,,F2fs,Y,Y,Y,OK,,
-Microsoft Flash File System 2,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+Microsoft Flash File System 2,,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: no published on-disk specification, no maintained reader or writer, and no linear-flash image was found"
 JFFS (v1),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 JFFS2,jffs2,filesystem,,,,R,,,Y,2,,Jffs2,Y,Y,Y,OK,,
 LSFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 LogFS,logfs,filesystem,,,,D,,,Y,2,,,,,,MISSING,,
-NVFS (Palm),palm,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+NVFS (Palm),palm,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: Palm OS NVFS internals are unpublished; no tool or image
 WAFL (NetApp),netapp,filesystem,,,,,,,Y,1,,Wafl,Y,,,OK,,
 emFile (SEGGER),segger,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 SPIFFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 TFAT,tfat,filesystem,,,,,,,Y,1,,TFat,Y,Y,Y,OK,,
-TrueFFS,m-systems,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+TrueFFS,m-systems,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: M-Systems DiskOnChip flash translation layer, not a file system (the volume behind it is FAT); no NFTL/INFTL dump found"
 UBI / UBIFS,ubi;ubifs,filesystem,,,,R,,,Y,2,,Ubifs,Y,Y,Y,OK,,
 YAFFS / YAFFS2,yaffs;yaffs2,filesystem,,,,R,,,Y,2,,Yaffs2,Y,Y,Y,OK,,
 JesFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-"Record-oriented mainframe FS (CMS, MTS, VSAM, Pick, z/OS access methods, ...)",bpam;bsam;qsam;sfs,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+"Record-oriented mainframe FS (CMS, MTS, VSAM, Pick, z/OS access methods, ...)",bpam;bsam;qsam;sfs,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: a family of dataset and record organisations on mainframe DASD, not one file-system format a single reader could prove"
 CXFS (Clustered XFS),sgi,filesystem,,,,,,,Y,1,,Cxfs,Y,Y,Y,OK,,
 Dell Fluid File System,exafs,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 BWFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-SAN File System (DataPlow),sfs,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+SAN File System (DataPlow),sfs,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: proprietary DataPlow SAN file system; no specification, tool or image"
 EMC Celerra HighRoad,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 GFS2,gfs2,filesystem,,,,,,,Y,1,,Gfs2,Y,Y,Y,OK,,
 GFS (v1),,filesystem,,,,,,,Y,1,,Gfs1,Y,Y,Y,OK,,
 GPFS / IBM Storage Scale,,filesystem,,,,,,,Y,1,,Gpfs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,mmcrfs,
-Nasan clustered FS,dataplow,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-Oracle ACFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+Nasan clustered FS,dataplow,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: proprietary DataPlow SAN file system; no specification, tool or image"
+Oracle ACFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: proprietary, ships only inside Oracle Grid Infrastructure; no specification or standalone tool"
 OCFS2,ocfs2,filesystem,,,,,,,Y,1,,Ocfs2,Y,Y,Y,OK,,
-OCFS (v1),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-QFS (Sun/Oracle),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-ScoutFS,versity,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-StorNext / Xsan,apple;cvfs;quantum,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-VMFS,vmfs;vmfs2;vmfs3;vmfs5;vmware,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+OCFS (v1),,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: ocfs-tools 1.x (2002-2005) no longer builds for current systems and no OCFS v1 image was found
+QFS (Sun/Oracle),,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: SAM-QFS tools were open-sourced only briefly under OpenSolaris and do not build for current systems; no image found
+ScoutFS,versity,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: needs the scoutfs kernel module with separate metadata and data devices; no image and no standalone tool
+StorNext / Xsan,apple;cvfs;quantum,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: proprietary (Quantum, Apple); no specification, standalone tool or image"
+VMFS,vmfs;vmfs2;vmfs3;vmfs5;vmware,filesystem,,,,,,,Y,1,,,,,,MISSING,,"deferred: the only public sample (the vmfs6-tools test image, VMFS3, GPL-2.0 repository) cannot be redistributed here and VMFS5/6 have no public sample; vmfs-tools/vmfs6-tools are read-only oracles"
 AXFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 CramFS,cramfs,filesystem,R,,,D,,,Y,3,,CramFs,Y,Y,Y,OK,,
 LTFS (Linear Tape),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
@@ -489,11 +489,11 @@ lnfs,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 romfs,romfs,filesystem,,,,R,,,Y,2,,RomFs,Y,Y,Y,OK,,
 SquashFS,squashfs;sqfs,filesystem,R,,,R,,,Y,3,https://dr-emann.github.io/squashfs/squashfs.html,SquashFs,Y,Y,,PARTIAL,,SquashFS v4 only; v1-v3 rejected (SquashFsSuperblock.cs)
 EROFS,erofs,filesystem,,,,,,,Y,1,,Erofs,Y,Y,Y,OK,,
-UMSDOS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-UVFAT,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-Venti (Plan 9),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+UMSDOS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,deferred: a FAT volume plus a --LINUX-.--- metadata file per directory; the driver was removed in Linux 2.6.11 and no maintained tool exists; ZipSlack distributions carry real metadata files that could serve as oracle; not attempted in this round
+UVFAT,,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: no specification, implementation or image located"
+Venti (Plan 9),,filesystem,,,,,,,Y,1,,,,,,MISSING,,"deferred: a content-addressed block store (arenas, index sections), not a file tree; plan9port (MIT) builds the venti tools that could serve as oracle; not attempted in this round"
 DECtape,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-OS/3x0 FS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+OS/3x0 FS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,deferred: IBM OS/360-OS/390 DASD volumes need a CKD container and VTOC/DSCB parsing; Hercules' dasdls (QPL) could serve as oracle; not attempted in this round
 Level-D (DEC),dec,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 George 3,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Version 6 Unix FS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
@@ -505,13 +505,13 @@ CBM DOS (D64/D71/D81),d64;d71;d81;commodore,filesystem,,,,,,,Y,1,,D64;D71;D81,Y,
 Atari DOS (ATR),atr,filesystem,,,,,,,Y,1,,Atari8,Y,Y,Y,OK,,
 Elektronika BK tape format,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 GEMDOS (Atari ST),st,filesystem,,,,,,,Y,1,,Gemdos,Y,Y,Y,OK,,
-Xiafs,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+Xiafs,,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: removed from Linux in 2.1.21 (1997); no mkfs/fsck builds and no image located
 JXFS,hp,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-UniFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+UniFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: no specification, implementation or image located"
 CASL,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-SpadFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-MicroDOS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-PolyServe FS,psfs,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+SpadFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: the author's mkspadfs/spadfsck and kernel module target old kernels; no image found to prove a reader
+MicroDOS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: the name covers several unrelated 1980s disk systems; no specification, maintained tool or image identifies one format"
+PolyServe FS,psfs,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: proprietary (PolyServe, then HP); no specification, tool or image"
 eCryptfs,,filesystem,,,,,,,Y,1,,Ecryptfs,Y,Y,Y,OK,,
 EncFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 SOS file system (Apple III),,filesystem,,,R,,,,,1,,,,,,MISSING,,
@@ -520,8 +520,8 @@ BeeGFS,,filesystem,,,,,,,Y,1,,BeeGfs,,,,READ-ONLY-BUT-SOURCES-WRITE,beegfs-setup
 GlusterFS,,filesystem,,,,,,,Y,1,,GlusterFs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,gluster volume create,
 OrangeFS,,filesystem,,,,,,,Y,1,,OrangeFs,Y,Y,Y,OK,,
 CephFS / BlueStore,ceph,filesystem,,,,,,,Y,1,,CephFs,Y,Y,Y,OK,,
-MooseFS,,filesystem,,,,,,,Y,1,,MooseFs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,mfschunkserver,
-Tahoe-LAFS,,filesystem,,,,,,,Y,1,,TahoeLafs,Y,,Y,READ-ONLY-BUT-SOURCES-WRITE,tahoe create-node,
+MooseFS,,filesystem,,,,,,,Y,1,,MooseFs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,mfschunkserver,"metadata.mfs is read; writing would mean NODE/EDGE/CHNK records a live master accepts, provable only with a running MooseFS cluster; not attempted"
+Tahoe-LAFS,,filesystem,,,,,,,Y,1,,TahoeLafs,Y,,Y,READ-ONLY-BUT-SOURCES-WRITE,tahoe create-node,capabilities and shares are read; writing needs a Tahoe grid to accept the shares; not attempted
 JuiceFS,,filesystem,,,,,,,Y,1,,JuiceFs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,juicefs format,
 KMZ (zipped KML),kmz,archive,,,,,,fmt/724,,1,https://developers.google.com/kml/documentation/kmzarchives,Kmz,Y,Y,Y,OK,,
 AAC (ADTS),aac,media,,,,,,,,0,,Aac,Y,Y,,OURS-ONLY,,
