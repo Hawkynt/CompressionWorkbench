@@ -503,10 +503,6 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
           "LBR: CP/M Library format (1982). One of the earliest micro archive formats. "
           + "No compression — just a directory with 128-byte sector alignment.\n"
           + "Opens with: LU, LAR, NULU (CP/M tools)",
-        (F.Uharc, _) =>
-          "UHARC: Ultra-high compression archiver (1997). "
-          + "Uses LZP (Lempel-Ziv Prediction) for excellent compression ratios.\n"
-          + "Opens with: UHARC (uharc.exe), PeaZip",
         (F.Wad, _) =>
           "WAD: id Software game archive (1993). Container for Doom/Heretic/Hexen game data. "
           + "No compression — stores lumps (data entries) with names up to 8 characters.\n"
@@ -568,7 +564,6 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
       F.CompactPro => ["Store (default)"],
       F.Spark => ["Crunch  (default, LZW)", "Store"],
       F.Lbr => ["Store"],
-      F.Uharc => ["LZP (default)"],
       F.Wad => ["Store"],
       F.TarGz => ["Deflate (default)", "Deflate+  (Zopfli optimal)"],
       F.TarBz2 => ["BZip2 (default)"],

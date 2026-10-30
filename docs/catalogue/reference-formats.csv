@@ -54,7 +54,7 @@ NuFX / ShrinkIt,shk;sdk;bxy,archive,,,,,,,Y,1,https://wiki.preterhuman.net/NuFX,
 Spark (Acorn),spk;arc,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/Spark_(archiver),Spark,Y,Y,Y,OK,,
 HA,ha,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/HA_(file_format),Ha,Y,Y,Y,PARTIAL,,stored only; HSC and ASC throw (HaReader.cs)
 SQX,sqx,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/SQX,Sqx,Y,Y,Y,OK,,
-UHARC,uha,archive,,,,,R,,Y,2,https://en.wikipedia.org/wiki/UHarc,Uharc,Y,Y,Y,PARTIAL,,stored and LZP only (UharcReader.cs)
+UHARC,uha,archive,,,,,R,,Y,2,https://en.wikipedia.org/wiki/UHarc,,,,,MISSING,,refused: closed-source (uharc.exe only); the header is scrambled and the ALZ/PPM codecs have no spec or open implementation
 FreeArc,arc;cdx,archive,,,,,R,fmt/1096,Y,3,https://en.wikipedia.org/wiki/FreeArc,FreeArc,Y,Y,Y,PARTIAL,,only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs)
 ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpaq,Y,Y,Y,PARTIAL,,"journaling and streaming archives at every method are read and zpaq 7.15 extracts what we write; encrypted (-key), multi-part and -index archives are refused, and modify rewrites a single version instead of appending one (ZpaqReader.cs, ZpaqWriter.cs)"
 PAQ (paq6/7/8 family),paq6;paq7;paq8;paq8l,archive,,,,,,,Y,1,https://mattmahoney.net/dc/paq.html,Paq8,Y,Y,,PARTIAL,,a single PAQ8 variant (.paq8l); the other PAQ versions are mutually incompatible

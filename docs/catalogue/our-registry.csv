@@ -555,7 +555,6 @@ format,Ubifs,UBIFS,Archive,Y,.ubifs;.ubi;.img,Y,Y,Y,Y
 format,Udf,UDF,Archive,Y,.udf,Y,Y,Y,Y
 format,UefiFv,UEFI Firmware Volume,Archive,,.fv;.fd,Y,Y,Y,Y
 format,Ufs,UFS,Archive,Y,.ufs,Y,Y,Y,Y
-format,Uharc,UHARC,Archive,,.uha,Y,Y,Y,Y
 format,UImage,U-Boot uImage,Archive,,,Y,Y,Y,Y
 format,Ult,UltraTracker,Audio,,.ult,Y,Y,,
 format,Umx,Unreal Music (UMX),Archive,,.umx,Y,Y,Y,

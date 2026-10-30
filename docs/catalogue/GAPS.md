@@ -181,7 +181,6 @@ running real-world samples. The file named at the end of each row is where the l
 | DiskDoubler | `DiskDoubler` | 2 | single files only (no DDAR/DDA2 archives); methods 0, 1, 6, 9 decoded and checked against unar on real files; 2-5, 7, 8, 10 and delta refused (DiskDoublerReader.cs) |
 | EnCase / Expert Witness (E01) | `Ewf` | 2 | single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs) |
 | PackIt | `PackIt` | 2 | encrypted PMa5/PMa6 entries refused; stored and Huffman entries verified on real archives against unar (PackItReader.cs) |
-| UHARC | `Uharc` | 2 | stored and LZP only (UharcReader.cs) |
 | Comic Book Archive | `Cbz`, `Cbr`, `Cb7` | 1 | .cbt (tar) and .cba (ACE) have no descriptor |
 | DMS (Disk Masher) | `Dms` | 1 | NONE/SIMPLE/QUICK only; MEDIUM/DEEP/HEAVY1/HEAVY2 throw (DmsReader.cs) |
 | EGG (ALZip) | `Egg` | 1 | store and deflate only; bzip2/LZMA/AZO, encryption and split archives unsupported (EggReader.cs) |
