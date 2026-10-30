@@ -482,7 +482,7 @@ OCFS (v1),,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: ocfs-tools 1.x (2002-2005
 QFS (Sun/Oracle),,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: SAM-QFS tools were open-sourced only briefly under OpenSolaris and do not build for current systems; no image found
 ScoutFS,versity,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: needs the scoutfs kernel module with separate metadata and data devices; no image and no standalone tool
 StorNext / Xsan,apple;cvfs;quantum,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: proprietary (Quantum, Apple); no specification, standalone tool or image"
-VMFS,vmfs;vmfs2;vmfs3;vmfs5;vmware,filesystem,,,,,,,Y,1,,,,,,MISSING,,"deferred: the only public sample (the vmfs6-tools test image, VMFS3, GPL-2.0 repository) cannot be redistributed here and VMFS5/6 have no public sample; vmfs-tools/vmfs6-tools are read-only oracles"
+VMFS,vmfs;vmfs2;vmfs3;vmfs5;vmware,filesystem,,,,,,,Y,1,https://github.com/glandium/vmfs-tools,Vmfs,Y,,,PARTIAL,ESXi (vmkfstools),"single-extent VMFS3 read (spec in docs/VMFS-ON-DISK.md, checked against an ESX-written volume); VMFS5/6 and spanned volumes are refused: no public volume proves them"
 AXFS,,filesystem,,,,,,,Y,1,https://github.com/jaredeh/axfs,Axfs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,mkfs.axfs,no reader outside this package to prove a writer
 CramFS,cramfs,filesystem,R,,,D,,,Y,3,,CramFs,Y,Y,Y,OK,,
 LTFS (Linear Tape),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
