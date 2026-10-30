@@ -69,7 +69,7 @@ internal static class ZipCentralDirectoryEntry {
 
     if (entry.IsEncrypted)
       flags |= ZipConstants.FlagEncrypted;
-    if (entry.CompressionMethod == ZipCompressionMethod.Implode)
+    if (entry.CompressionMethod is ZipCompressionMethod.Implode or ZipCompressionMethod.Lzma)
       flags |= (ushort)(entry.GeneralPurposeFlags & 0x0006);
 
     // 0xFFFFFFFF is the ZIP64 sentinel (APPNOTE.TXT 4.4.8/4.4.9/4.4.16), so a value of

@@ -67,8 +67,8 @@ internal static class ZipLocalFileHeader {
     var flags = ZipConstants.FlagUtf8;
     if (encrypted)
       flags |= ZipConstants.FlagEncrypted;
-    // Implode: set bits 1 (8K dict) and 2 (literal tree) when method is Implode
-    if (entry.CompressionMethod == ZipCompressionMethod.Implode)
+    // Implode: bits 1 (8K dict) and 2 (literal tree). LZMA: bit 1, the stream ends with an end marker.
+    if (entry.CompressionMethod is ZipCompressionMethod.Implode or ZipCompressionMethod.Lzma)
       flags |= (ushort)(entry.GeneralPurposeFlags & 0x0006);
 
     // A local header needs ZIP64 values only when one of its size fields overflows.

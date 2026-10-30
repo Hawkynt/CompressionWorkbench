@@ -118,6 +118,10 @@
     <EmbeddedResource Include="Firmware\ReferenceVectors\*" Exclude="Firmware\ReferenceVectors\README.md">
       <LogicalName>FirmwareVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- ZIP archives from libarchive's test suite; see Zip/LibarchiveVectors/README.md. -->
+    <EmbeddedResource Include="Zip\LibarchiveVectors\*.zipx">
+      <LogicalName>ZipLibarchiveVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Archives FreeArc 0.67's Arc.exe wrote; see FreeArc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="FreeArc\ReferenceVectors\*.arc">
       <LogicalName>FreeArcVectors.%(Filename)%(Extension)</LogicalName>

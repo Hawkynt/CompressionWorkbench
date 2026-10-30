@@ -149,7 +149,7 @@ public sealed partial class ZipReader : IDisposable {
         data = ZipBzip2Helper.Decompress(compressedData);
         break;
       case ZipCompressionMethod.Lzma:
-        data = ZipLzmaHelper.Decompress(compressedData);
+        data = ZipLzmaHelper.Decompress(compressedData, entry.UncompressedSize);
         break;
       case ZipCompressionMethod.Zstd:
         data = ZipZstdHelper.Decompress(compressedData);
