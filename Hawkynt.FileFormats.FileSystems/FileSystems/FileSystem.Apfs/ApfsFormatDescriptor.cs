@@ -446,14 +446,22 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       var blockSize = (long)reader.BlockSize;
       var first = long.MaxValue;
       foreach (var e in reader.Entries) {
-        if (e.IsDirectory || e.IsSymlink || e.Size <= 0 || e.FirstBlock == 0) continue;
-        var offset = (long)e.FirstBlock * blockSize;
-        if (offset < 0 || offset >= image.Length) continue;
-        // An extent is whole blocks; the tail of the last one is slack the
-        // wiper trims from the file's real length.
-        var length = Math.Min((e.Size + blockSize - 1) / blockSize * blockSize, image.Length - offset);
-        result.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, e.Name));
-        first = Math.Min(first, offset);
+        if (e.IsDirectory || e.IsSymlink) continue;
+        // Every extent a file owns — all of its data stream's, and a compressed
+        // file's resource fork — so none of them reads as free space.
+        var owned = e.Extents.Concat(e.ResourceForkExtents ?? []);
+        foreach (var x in owned) {
+          if (x.PhysBlock == 0 || x.Length <= 0) continue;
+          var offset = (long)x.PhysBlock * blockSize;
+          if (offset < 0 || offset >= image.Length) continue;
+          // An extent is whole blocks; the tail of the last one is slack the
+          // wiper trims from the file's real length.
+          var length = Math.Min((x.Length + blockSize - 1) / blockSize * blockSize, image.Length - offset);
+          if (e.FirstBlock != 0 && x.PhysBlock == e.FirstBlock)
+            length = Math.Min((e.Size + blockSize - 1) / blockSize * blockSize, image.Length - offset);
+          result.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, e.Name));
+          first = Math.Min(first, offset);
+        }
       }
       if (first == long.MaxValue) first = Math.Min(image.Length, 1L << 20);
       result.Add(new DefragBlockInfo(0, first, DefragBlockKind.MetadataReserved));

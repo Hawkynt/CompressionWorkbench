@@ -30,9 +30,26 @@ public sealed class ApfsEntry {
   /// </summary>
   public DateTime? LastModified { get; init; }
   internal ulong ObjectId { get; init; }
-  /// <summary>First physical block of the file's data extent (0 = no extent).</summary>
-  /// <summary>First block of the file's single extent, or 0 when it has none.</summary>
+  /// <summary>
+  /// First block of the file's data when it is one uncompressed extent covering the
+  /// whole file; 0 otherwise (no data, several extents, or transparent compression).
+  /// </summary>
   public ulong FirstBlock { get; init; }
-  /// <summary>Length in bytes of the file extent (0 = empty/none).</summary>
+  /// <summary>Length in bytes of that single extent (0 = empty/none).</summary>
   internal long ExtentLength { get; init; }
+  /// <summary>Every FILE_EXTENT of the data stream, in logical order.</summary>
+  internal IReadOnlyList<ApfsExtent> Extents { get; init; } = [];
+  /// <summary>The <c>com.apple.decmpfs</c> attribute of a transparently compressed file.</summary>
+  internal byte[]? Decmpfs { get; init; }
+  /// <summary>The <c>com.apple.ResourceFork</c> attribute, when stored inline.</summary>
+  internal byte[]? ResourceForkInline { get; init; }
+  /// <summary>The resource fork's extents, when stored as an attribute stream.</summary>
+  internal IReadOnlyList<ApfsExtent>? ResourceForkExtents { get; init; }
+  /// <summary>The resource fork's length, when stored as an attribute stream.</summary>
+  internal long ResourceForkSize { get; init; }
+  /// <summary>True when the file's bytes come from decmpfs rather than its data stream.</summary>
+  public bool IsCompressed => this.Decmpfs is not null;
 }
+
+/// <summary>One FILE_EXTENT record: logical offset, length in bytes, first physical block (0 = sparse).</summary>
+internal readonly record struct ApfsExtent(ulong Logical, long Length, ulong PhysBlock);

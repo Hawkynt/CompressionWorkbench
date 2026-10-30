@@ -388,7 +388,7 @@ Chromium resource pack (.pak),pak,game,,,,,R,,,1,,,,,,MISSING,,
 HMM Packfile,pak,game,,,,,,fmt/1876,,1,,,,,,MISSING,,
 Acorn ADFS,adf;adl;acorn,filesystem,,,,,,,Y,1,,Adfs,Y,Y,Y,OK,,
 AdvFS,tru64,filesystem,,,,,,,Y,1,,AdvFs,Y,Y,Y,OK,,
-APFS,apfs,filesystem,R,,,R,,,Y,3,https://developer.apple.com/support/downloads/Apple-File-System-Reference.pdf,Apfs,Y,Y,Y,PARTIAL,,"no decmpfs (LZVN/LZFSE) compressed files, no encryption (ApfsReader.cs)"
+APFS,apfs,filesystem,R,,,R,,,Y,3,https://developer.apple.com/support/downloads/Apple-File-System-Reference.pdf,Apfs,Y,Y,Y,PARTIAL,,"decmpfs (zlib/LZVN/LZFSE) and multi-extent files read, checked on a macOS-written volume; no encryption, snapshots or fusion (ApfsReader.cs)"
 AtheOS/Syllable AFS,afs;syllable,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Boot File System (SVR4 / UnixWare),bfs;unixware,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 BeFS (BFS),bfs;beos;haiku;openbfs,filesystem,,,,,,,Y,1,https://www.haiku-os.org/legacy-docs/practical-file-system-design.pdf,Bfs,Y,Y,Y,OK,,
