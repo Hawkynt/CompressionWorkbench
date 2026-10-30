@@ -112,7 +112,7 @@ public static class SevenZipInPlaceAdder {
     var newPackBytes = System.Array.Empty<byte>();
     long newBlockUnpackTotal = 0;
     var newSubSizes = new List<long>();
-    var newSubDigests = new List<uint>();
+    var newSubDigests = new List<uint?>();
 
     if (newFileEntries.Count > 0) {
       // Concatenate the new files into one solid block, mirroring the writer.
@@ -163,7 +163,7 @@ public static class SevenZipInPlaceAdder {
 
     var mergedNumUnpack = new List<int>(subStreams.NumUnpackStreams);
     var mergedSizes = new List<long>(subStreams.UnpackSizes);
-    var mergedDigests = new List<uint>(subStreams.Digests);
+    var mergedDigests = new List<uint?>(subStreams.Digests);
     if (newFolder != null) {
       mergedNumUnpack.Add(newFileEntries.Count);
       mergedSizes.AddRange(newSubSizes);
