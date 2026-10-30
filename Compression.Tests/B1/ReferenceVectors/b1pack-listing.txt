@@ -1,0 +1,72 @@
+== ours-lzma.b1
+docs
+D                      2024-05-06  09:08:10
+docs\report.txt
+F                6900  2024-05-06  09:08:10
+docs\deep
+D                    
+docs\deep\inner.bin
+F                5000  2024-05-06  09:08:10
+empty.txt
+F                   0  2024-05-06  09:08:10
+Done
+Creating x-ours-lzma\docs
+Creating x-ours-lzma\docs\deep
+Done
+c93f46ed9631db30ff783bd1d35a61330916f55354288dfdd3b98c6c0b99ef82 *./docs/deep/inner.bin
+8c66f9c766a2b1482cbb1baeba0b72f9157a421cbd49d4878b7ea30457c4ab05 *./docs/report.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 *./empty.txt
+== ours-store.b1
+docs
+D                      2024-05-06  09:08:10
+docs\report.txt
+F                6900  2024-05-06  09:08:10
+docs\deep
+D                    
+docs\deep\inner.bin
+F                5000  2024-05-06  09:08:10
+empty.txt
+F                   0  2024-05-06  09:08:10
+Done
+Creating x-ours-store\docs
+Creating x-ours-store\docs\deep
+Done
+c93f46ed9631db30ff783bd1d35a61330916f55354288dfdd3b98c6c0b99ef82 *./docs/deep/inner.bin
+8c66f9c766a2b1482cbb1baeba0b72f9157a421cbd49d4878b7ea30457c4ab05 *./docs/report.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 *./empty.txt
+== ours-aes.b1
+docs
+D                      2024-05-06  09:08:10
+docs\report.txt
+F                6900  2024-05-06  09:08:10
+docs\deep
+D                    
+docs\deep\inner.bin
+F                5000  2024-05-06  09:08:10
+empty.txt
+F                   0  2024-05-06  09:08:10
+Done
+Creating x-ours-aes\docs
+Creating x-ours-aes\docs\deep
+Done
+c93f46ed9631db30ff783bd1d35a61330916f55354288dfdd3b98c6c0b99ef82 *./docs/deep/inner.bin
+8c66f9c766a2b1482cbb1baeba0b72f9157a421cbd49d4878b7ea30457c4ab05 *./docs/report.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 *./empty.txt
+== ours-edited.b1
+docs
+D                      2026-10-30  10:10:16
+docs\notes.txt
+F               19036  2024-05-06  07:08:10
+empty.txt
+F                   0  2024-05-06  07:08:10
+noise.bin
+F                8000  2024-05-06  07:08:10
+added.txt
+F                   6  2026-10-30  10:12:48
+Done
+Creating x-ours-edited\docs
+Done
+3428719b7688c78a0cc8ba4b9e80b4e464c815fbccfd4b20695a15ffcefc22af *./added.txt
+db617d87bfdd8874584d5a7a4b3fa8cb740660e177a8c558d423d17aa119a790 *./docs/notes.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 *./empty.txt
+3777f85afaf9aa256f15fc76002ac271f8ecee69c876fcd295792d7e83f3412d *./noise.bin

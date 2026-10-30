@@ -109,6 +109,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [AR](https://en.wikipedia.org/wiki/Ar_(Unix)) | `Ar` | `.a` `.ar` `.deb` | R/W | ✅ | defrag · wipe |  | [freebsd.org](https://www.freebsd.org/cgi/man.cgi?query=ar&sektion=5) |
 | [ARC](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Arc` | `.arc` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/hyc/arc) |
 | [ARJ](https://en.wikipedia.org/wiki/ARJ) | `Arj` | `.arj` | R/W | ✅ | defrag · wipe |  | [arj.sourceforge.net](https://arj.sourceforge.net) |
+| [B1](https://en.wikipedia.org/wiki/B1_(file_format)) | `B1` | `.b1` | R/W | ✅ | — | Plain, LZMA and AES-256-GCM archives b1-pack wrote, and ours that it reads; single volume only | [GitHub](https://github.com/b1-pack/b1-pack) |
 | [Binary II](https://en.wikipedia.org/wiki/Binary_II) | `BinaryII` | `.bny` `.bqy` | R/W | ✅ | defrag · wipe |  | [mirrors.apple2.org.za](https://mirrors.apple2.org.za/ground.icaen.uiowa.edu/MiscInfo/Binary2/bin2.specs) |
 | BlakHole | `BlakHole` | `.bh` | R | ✅ | — | Read-only, Deflate members; layout measured on a real sample (every CRC-32 holds): [BLAKHOLE-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/BLAKHOLE-ON-DISK.md) | [Archive Team](http://fileformats.archiveteam.org/wiki/BlakHole) |
 | C64/C128 SFX | `C64Sfx` | `.sfx` | R | ✅ | — | Chris Smeets' self-extracting LHA (-lh1-); unar extracts the same bytes; read-only because the extractor stub is not ours to ship | [unusedino.de](http://unusedino.de/ec64/technical/formats/sfx.html) |
