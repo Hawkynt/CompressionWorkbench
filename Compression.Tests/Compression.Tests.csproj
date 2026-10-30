@@ -139,6 +139,10 @@
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Error-correcting SeqBox containers written by blkar; see EcSbx/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="EcSbx\ReferenceVectors\*.ecsbx;EcSbx\ReferenceVectors\fox.bin">
+      <LogicalName>EcSbxVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Sparsebundles written by Apple's hdiutil (keramics, ewfprobe test corpora); see
          AppleSparse/ReferenceVectors/README.md. The tests rebuild each bundle directory from these. -->
     <EmbeddedResource Include="AppleSparse\ReferenceVectors\**\*"
