@@ -328,6 +328,7 @@ format,Mng,MNG (multi-image PNG),Archive,,.mng,Y,Y,,
 format,Mo,MO (gettext binary catalog),Archive,,.mo,Y,Y,Y,
 format,Mobi,MOBI / AZW (Amazon eBook),Archive,,.mobi;.prc;.azw;.azw3,Y,Y,Y,
 format,Mod,MOD (ProTracker / SoundTracker),Audio,,.mod,Y,Y,,
+format,Moof,Applesauce MOOF,Archive,,.moof,Y,Y,Y,Y
 format,MooseFs,MooseFS,Archive,Y,.mfsm,Y,Y,,
 format,Mp3,MP3 (MPEG audio),Audio,,.mp3;.mp2,Y,Y,Y,
 format,Mp4,MP4 / MOV (demuxed),Video,,.mp4;.m4v;.m4a;.mov;.3gp;.3g2,Y,Y,Y,
