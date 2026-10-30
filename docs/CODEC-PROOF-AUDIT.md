@@ -14,12 +14,12 @@ Snapshot: 2026-10-30, `main` at `b3bbf782` plus the open pull requests named bel
 | 7-Zip 26.04 | 7z coders, ZIP methods, CAB, WIM, CHM, `.pmd`, `.lzma` |
 | Windows `ntdll` `RtlCompressBuffer` and `cabinet.dll` Compression API | LZNT1, XPRESS, XPRESS Huffman, MSZIP, LZMS |
 | `makecab` / `expand` (Windows) | CAB MSZIP and LZX, SZDD |
-| Python bindings of the reference libraries | brotli, lz4, zstd, snappy, ncompress, liblzfse, aPLib, LZO, Deflate64, PPMd (pyppmd), liblzma, zlib, bz2, dissect.util |
-| Reference C sources built with gcc | FastLZ, liblzf, BriefLZ, liblzg, LZAV, Lizard, Pithy, ZX0, salvador, apultra, UCL; revisions in `Compression.Tests/CodecProof/OracleVectors/README.md` |
+| Python bindings of the reference libraries | brotli, lz4, zstd, snappy, ncompress, liblzfse, aPLib, LZO, Deflate64, PPMd (pyppmd), liblzma, zlib, bz2, dissect.util, ndspy (LZ10), oead (Yaz0), packbits, Pillow (PackBits decoder) |
+| Reference C sources built with gcc | FastLZ, liblzf, BriefLZ, liblzg, LZAV, Lizard, Pithy, ZX0, salvador, apultra, UCL, clzip 1.14, rnc_propack 1.8; revisions in `Compression.Tests/CodecProof/OracleVectors/README.md` |
 | Original programs | Dmitry Shkarin's PPMd var.H/var.I, WinRAR 2.90, hwzip 2.4 |
 
 Pinned proofs:
-- `OracleVectorTests` decodes streams that the third-party encoders wrote (63 vectors).
+- `OracleVectorTests` decodes streams that the third-party encoders wrote (78 vectors).
 - `ArchiveCodecOracleTests` and `CompressionApiOracleTests` re-ask 7-Zip and Windows on every run where the tool is present.
 
 Tests named in the tables are the ones that pin each row.
@@ -68,6 +68,9 @@ Status words:
 | `BB_QuickLz` | decode | vectors from the independent quicklz crate 0.3.1 (`QuickLzTests`) |
 | `BB_BcjArm`, `BB_BcjArmThumb`, `BB_BcjArm64`, `BB_BcjPowerPc`, `BB_BcjRiscV` | both | 7-Zip 26.04 7z filters, both ways (probe run on `main`; 7z tests belong to the 7z owner) |
 | `BB_Swap2`, `BB_Swap4` | both | 7-Zip `Swap2`/`Swap4` coders, both ways (probe run on `main`) |
+| `BB_GbaLz77` | both | ndspy 4.2.0 `lz10` (GBA/DS BIOS LZ77) reads ours; its streams in `OracleVectorTests` |
+| `BB_Yaz0` | both | oead 1.3.0 `yaz0` reads ours; its streams in `OracleVectorTests` |
+| `BB_PackBits` | both | `packbits` 0.6 and Pillow's TIFF PackBits decoder read ours; `packbits` streams in `OracleVectorTests` |
 
 ### Fixed in open pull requests
 
@@ -79,31 +82,24 @@ Status words:
 | `BB_Implode`, `BB_Reduce`, `BB_Shrink` | #609 | Private variants; PKZIP 1.10/0.92 streams, hwzip, 7-Zip |
 | `BB_BcjX86`, `BB_BcjSparc`, `BB_BcjIa64` | #595 | Filter rules; liblzma 5.8.4 conversion and vectors |
 | `BB_Rar`, `BB_Rar3` | RAR owner (#553, #560) | Not touched here |
+| `BB_Lzf` | #636 | Private variant (back-references one byte short); liblzf 3.6 conversion, byte-identical to liblzf |
+| `BB_FastLz` | #637 | Private match encoding, no level 2; FastLZ conversion, byte-identical at levels 1 and 2 |
+| `BB_BriefLz`, `BB_Lzg`, `BB_Lizard` | #638 | Private codecs; the blocks are now the proven `BriefLz`, `Lzg` and `Lizard` format codecs |
+| `BB_Lzav` | #641 | No offset-carry bits, no final literals; LZAV 5.20 conversion, byte-identical to `lzav_compress_default` |
+| `BB_Nrv2b`, `BB_Nrv2d`, `BB_Nrv2e` | #640 | Encoders left out UCL's end-of-stream code; UCL 1.03 now restores every stream we write. Decoders already read UCL's (`OracleVectorTests`) |
 | `BB_Ppmd` | #623, then the 7z wiring | `PpmdModelH` is a private model; #623 adds 7-Zip's coder on #560's `Ppmd7` (byte-identical to pyppmd); the block moves over with the 7z wiring |
 
 ### Broken, open
 
-All found by this audit, with their oracle:
-
-| Block | Finding |
-|---|---|
-| `BB_Lzf` | liblzf 3.6 rejects every stream we write, and our decoder fails on every stream liblzf writes |
-| `BB_FastLz` | FastLZ level 1: matches and long literal runs on compressible data fail both ways (index out of range on FastLZ's text and zero streams; FastLZ rejects ours) |
-| `BB_BriefLz` | A private bit layout; BriefLZ (`blz_depack_safe`) rejects ours and we reject its. The `BriefLz` **format** is proven both ways against `blzpack` (see formats) |
-| `BB_Lzg` | Not LZG1 (no marker bytes); liblzg rejects ours and we reject its. The `Lzg` **format** is proven both ways |
-| `BB_Lizard` | An LZ4-style stream without Lizard's block header; `Lizard_decompress_safe` rejects ours, we reject its. The `Lizard` **format** is proven both ways |
-| `BB_Lzav` | LZAV 5.20 format 3: incompressible data works both ways; text, zero and short inputs fail both ways |
-| `BB_Nrv2b`, `BB_Nrv2d`, `BB_Nrv2e` | Decoders read UCL 1.03 LE32 streams (`OracleVectorTests`). UCL rejects every stream our encoders write (input overrun: no end-of-stream code, and divergence before it) |
+None left among the building blocks the audit found broken; see the fixes above.
 
 ### Claims a real format, unproven
 
 | Block | Why not yet |
 |---|---|
 | `BB_842` | No IBM 842 oracle built (Linux `lib/842`, NX hardware) |
-| `BB_Yaz0`, `BB_Yay0` | No Nintendo reference encoder or decoder run; only self-consistent vectors |
-| `BB_GbaLz77` | No GBA BIOS LZ77 oracle (e.g. grit, gbalzss) run |
+| `BB_Yay0` | No Yay0 reference run (oead has Yaz0 only) |
 | `BB_NuLzw` | nulib2 not run |
-| `BB_PackBits` | Checked only against the specification (Apple TN1023), not a program |
 | `BB_Lzh`, `BB_MsLzh`, `BB_Sqx` | Covered only as far as their archive formats' own tests go; not probed as blocks |
 | `BB_Lzrw1`, `BB_Lzrw3` | Ross Williams' reference code not run |
 | `BB_Balz`, `BB_Crush`, `BB_Zling`, `BB_Density`, `BB_Lzfx` | Reference programs exist (BALZ, CRUSH, zling, density, lzfx); not yet built |
@@ -128,11 +124,14 @@ Textbook primitives with no external bitstream to match. Round-trip and ratio te
 | `BriefLz` | both | `blzpack` (jibsen/brieflz); `OracleVectorTests` |
 | `Lzg` | both | `lzg`/`unlzg` (liblzg); `OracleVectorTests` |
 | `Lizard` | both | `lizard` 2.1.0 CLI; `OracleVectorTests` |
+| `Lzip` | both | clzip 1.14 reads ours and we read its; `OracleVectorTests` |
+| `Yaz0` | both | oead 1.3.0 `yaz0`; `OracleVectorTests` |
+| `Rnc` | encode, partly decode | rnc_propack 1.8 (lab313ru's ProPack reimplementation) unpacks our files; we unpack its method-1 text and zero files (`OracleVectorTests`). Its own unpacker crashes on its mixed and 23-byte outputs, so those prove nothing |
 | `UnixPack`, `UuEncoding`, `B64Encoding` | encode | `gzip -d`, `binascii.a2b_uu`, `base64` read ours |
-| `Lzma` (`.lzma`) | **broken** (writer) | We write an end marker *and* the uncompressed size. liblzma (CPython `lzma`) rejects that as corrupt; 7-Zip accepts it. LZMA SDK writes no end marker when the size is known. The reader is proven (liblzma-written files decode) |
-| `Szdd` | **broken** | `expand.exe` decodes our text sample differently (853 bytes wrong). The decoder resolves a match the way a linear history does, not the way the 4096-byte ring does, and the encoder relies on it: a match 4101 bytes back aliases a ring slot 5 bytes back. `SzCompress` shares the code |
+| `Lzma` (`.lzma`) | fixed #635 | We wrote an end marker *and* the uncompressed size. liblzma (CPython `lzma`) rejects that as corrupt; 7-Zip accepts it. LZMA SDK writes no end marker when the size is known. The reader is proven (liblzma-written files decode) |
+| `Szdd` | fixed #639 | `expand.exe` decoded our text sample differently (853 bytes wrong). The greedy encoder compared candidates against the ring as it was before the match; it now reads slots the match itself writes, and every encoder avoids the 16 initial slots `expand.exe` (zeros) and libmspack (spaces) disagree about. The decoder was already exact. `SzCompress` shares the code |
 | `Ppmd` (`.pmd`) | fixed #627 | Was a private wrapper. Now Shkarin's format: his PPMd var.H/var.I files decode, our files match his byte for byte apart from the time stamp, and 7-Zip extracts them |
-| `Lzop`, `Lzip`, `QuickLz`, `Density`, `Freeze`, `Squeeze`, `Crunch`, `IcePacker`, `PowerPacker`, `Rnc`, `RefPack`, `Rzip`, `Ecm`, `Flac`, `YEnc`, `XxEncoding`, `BinHex`, `MacBinary`, `Kwaj`, `SzCompress`, `Yaz0`, `Lzs`, `Lzham`, `Bsc`, `Bcm`, `Mcm`, `Paq8`, `Cmix`, `Balz`, `Zling`, `ApLib`, `PackBits` | not probed here | Several have proofs in their own test classes (`Lzop`: `LzopInteropTests`; `Kwaj`: `KwajLibmspackInteropTests`; `Ecm` (#489)). The rest are unproven by this audit |
+| `Lzop`, `QuickLz`, `Density`, `Freeze`, `Squeeze`, `Crunch`, `IcePacker`, `PowerPacker`, `RefPack`, `Rzip`, `Ecm`, `Flac`, `YEnc`, `XxEncoding`, `BinHex`, `MacBinary`, `Kwaj`, `SzCompress`, `Lzs`, `Lzham`, `Bsc`, `Bcm`, `Mcm`, `Paq8`, `Cmix`, `Balz`, `Zling`, `ApLib`, `PackBits` | not probed here | Several have proofs in their own test classes (`Lzop`: `LzopInteropTests`; `Kwaj`: `KwajLibmspackInteropTests`; `Ecm` (#489)). The rest are unproven by this audit |
 
 ## Containers with embedded codecs
 
