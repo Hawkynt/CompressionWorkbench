@@ -177,6 +177,10 @@
     <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\acefile-listing.txt">
       <LogicalName>AceVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- UHARC 0.6 archives UHARC 0.6b wrote from generated inputs; see Uharc/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Uharc\ReferenceVectors\*.uha;Uharc\ReferenceVectors\manifest.tsv">
+      <LogicalName>UharcVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- G.722 streams FFmpeg 8.1.2 encoded and decoded; see Codecs/G722/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Codecs\G722\ReferenceVectors\*.pcm;Codecs\G722\ReferenceVectors\*.g722">
       <LogicalName>G722Vectors.%(Filename)%(Extension)</LogicalName>

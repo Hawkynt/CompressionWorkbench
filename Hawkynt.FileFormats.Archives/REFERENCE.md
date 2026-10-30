@@ -29915,77 +29915,63 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.Uharc`
 
-[`UharcEntry`](#uharcentry) · [`UharcFormatDescriptor`](#uharcformatdescriptor) · [`UharcReader`](#uharcreader) · [`UharcWriter`](#uharcwriter)
+[`UharcEntry`](#uharcentry) · [`UharcFormatDescriptor`](#uharcformatdescriptor) · [`UharcReader`](#uharcreader)
 
 #### `UharcEntry`
 
-Represents a single entry in a UHARC archive.
+One file or directory of a UHARC 0.6 archive.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UharcEntry` | `UharcEntry()` |  |
-| `CompressedSize` | `uint CompressedSize { get; init; }` | Gets the compressed size in bytes. |
-| `Crc32` | `uint Crc32 { get; init; }` | Gets the CRC-32 (IEEE polynomial) of the uncompressed data. |
-| `FileName` | `string FileName { get; init; }` | Gets the filename stored in the archive (UTF-8, '/' separators). |
+| `Attributes` | `byte Attributes { get; init; }` | Gets the per-file attribute/method byte as stored in the directory. |
+| `Crc32` | `uint Crc32 { get; init; }` | Gets the CRC-32 (IEEE) of the uncompressed data. |
+| `FileName` | `string FileName { get; init; }` | Gets the stored path, with '/' separators. |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Gets whether this entry is a directory. |
-| `LastModified` | `DateTime LastModified { get; init; }` | Gets the last-modification date/time. |
-| `Method` | `byte Method { get; init; }` | Gets the compression method (0 = LZP, 255 = Store). |
-| `OriginalSize` | `uint OriginalSize { get; init; }` | Gets the uncompressed size in bytes. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | Gets the last-modification time, or null when the stored DOS stamp is invalid. |
+| `Size` | `long Size { get; init; }` | Gets the uncompressed size in bytes (0 for a directory). |
 
 #### `UharcFormatDescriptor`
 
-UHARC high-compression archive (PPM/LZP/delta) by Uwe Herklotz. References: UHARC by Uwe Herklotz — closed-source archiver; the bundled UHARC documentation is the only official descriptionno public format specification; container layout reverse-engineered from the DOS/Win32 binaries
+UHARC 0.6 archive (Uwe Herklotz, 1997–2005): read-only. Lists every 0.6/0.6a/0.6b archive and extracts the store, LZP (`-mz`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; the PPM mode (`-mx`) and the legacy RLE/LZ78 modes are refused. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with how each part was established`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UharcFormatDescriptor` | `UharcFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the UHARC archive in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the UHARC archive per the requested mode. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: any byte not covered by a live extent in the layout map (headers, entry data and directory structures are live and preserved, so the archive still lists and extracts identically). Cluster-tip wiping is N/A (entries are stored byte-exact with no per-file slack). |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `UharcReader`
 
-Reads entries from a UHARC archive.
-
-Implements `IDisposable`.
+Reads UHARC 0.6 archives (magic `UHA\x06`) as written by UHARC 0.6/0.6a/0.6b. Layout and codecs are described in docs/UHARC-ON-DISK.md.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `UharcReader` | `UharcReader(Stream stream, bool leaveOpen = false)` | Initializes a new `UharcReader` and parses the archive directory. |
-| `Entries` | `IReadOnlyList<UharcEntry> Entries { get; }` | Gets the entries present in the archive. |
-| `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(UharcEntry entry)` | Extracts and decompresses the data for the given entry. |
-
-#### `UharcWriter`
-
-Creates a UHARC archive.
-
-Implements `IDisposable`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `UharcWriter` | `UharcWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `UharcWriter` and writes the archive header. |
-| `AddDirectory` | `void AddDirectory(string name, DateTime? lastModified = null)` | Adds a directory entry to the archive (zero data). |
-| `AddFile` | `void AddFile(string fileName, byte[] data, DateTime? lastModified = null)` | Adds a file entry to the archive. Compresses with LZP, falling back to Store if the compressed output is not smaller. |
-| `Dispose` | `void Dispose()` |  |
+| `UharcReader` | `UharcReader(Stream stream, string password = null)` | Opens a UHARC 0.6 archive (optionally behind a self-extractor stub). |
+| `WrongPasswordKey` | `const string WrongPasswordKey` | Key in `Data` that marks an `InvalidDataException` as "wrong password". |
+| `CanDecodeMethod` | `bool CanDecodeMethod { get; }` | Gets whether the stream's method can be decoded by this reader. |
+| `DictionarySize` | `int DictionarySize { get; }` | Gets the dictionary size in bytes, 0 for the store method. |
+| `Entries` | `IReadOnlyList<UharcEntry> Entries { get; }` | Gets the entries of the archive in stored order. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether the archive was created with `-pw`. |
+| `MethodName` | `string MethodName { get; }` | Gets the name of the compression mode, as `uharc l` prints it. |
+| `Method` | `int Method { get; }` | Gets the stream method byte (see `MethodName`). |
+| `PackedSize` | `long PackedSize { get; }` | Gets the size of the packed solid stream. |
+| `Extract` | `byte[] Extract(UharcEntry entry)` | Extracts and CRC-verifies one file. |
 
 ### Namespace `FileFormat.Ult`
 
