@@ -190,7 +190,7 @@ Compact Pro LZH/RLE,,codec,,,R,,,,,1,,,,,,MISSING,,
 Squeeze (Huffman),,codec,,,R,,,,,1,,Squeeze,Y,Y,,OK,,
 Crunch CP/M (LZW),,codec,,,R,,,,,1,,Crunch,Y,Y,,OK,,
 Now Compress method,,codec,,,R,,,,,1,,,,,,MISSING,,
-WinZip JPEG (ZIP method 96),,codec,,,R,,,,,1,,,,,,MISSING,,
+WinZip JPEG (ZIP method 96),,codec,,,R,,,,,1,https://www.winzip.com/static/wz/docs/wz-jpg-comp.pdf,,,,,MISSING,,"Refused for lack of proof. XADMaster carries an LGPL decoder (WinZipJPEG), and WinZip documents only the properties header. But no method-96 archive could be found, and only the commercial WinZip writes them, so no decoder or encoder could be checked against real data."
 WinZip WavPack (ZIP method 97),,codec,,,R,,,,,1,,,,,,MISSING,,
 tar sparse files,,codec,,,R,,,,,1,,Tar,Y,Y,Y,OK,,"GNU old (S), PAX 0.0, 0.1 and 1.0 reconstructed; written dense"
 CAB data blocks,,codec,,,R,,,,,1,,Cab,Y,Y,Y,OK,,
