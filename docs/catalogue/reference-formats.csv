@@ -35,7 +35,7 @@ Compiled HTML Help (CHM),chm;chi;chq;chw;hxs,document,R,,,,R,fmt/634,,3,https://
 Windows Imaging (WIM/SWM/ESD),wim;swm;esd;ppkg,disk-image,RW,,,,R,,Y,3,https://learn.microsoft.com/windows-hardware/manufacture/desktop/wim-vs-ffu-image-file-formats,Wim;Swm;Esd,Y,Y,,OK,,
 ARJ,arj,archive,R,,R,D,R,fmt/610,RW,6,https://en.wikipedia.org/wiki/ARJ,Arj,Y,Y,Y,OK,,methods 0-4 decoded; method 4 verified on archives the open-source ARJ port wrote
 LHA / LZH,lzh;lha;lzs;exe;sfx,archive,R,R,R,,R,fmt/1558;fmt/626,RW,6,https://en.wikipedia.org/wiki/LHA_(file_format),Lzh,Y,Y,Y,PARTIAL,,"every method and header level of lhasa's test suite reads except LHARK's lk7; lh2, lh3, lhx, pm1 and pm2 are read-only; self-extracting executables are not opened (LhaReader.cs)"
-ACE,ace,archive,,,R,,R,fmt/2075;fmt/2076,RW,4,https://en.wikipedia.org/wiki/ACE_(compressed_file_format),Ace,Y,Y,Y,OK,,
+ACE,ace,archive,,,R,,R,fmt/2075;fmt/2076,RW,4,https://en.wikipedia.org/wiki/ACE_(compressed_file_format),Ace,Y,Y,Y,PARTIAL,,"multi-volume members are listed but not extracted; writer emits ACE 1.0 (stored/LZ77), not the 2.0 modes (AceReader.cs)"
 ARC (SEA),arc;ark,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ARC_(file_format),Arc,Y,Y,Y,OK,,
 PAK (NoGate ARC extension),pak,archive,,,R,,,,Y,2,,,,,,MISSING,,
 zoo,zoo,archive,,,R,,R,x-fmt/269,Y,4,https://en.wikipedia.org/wiki/Zoo_(file_format),Zoo,Y,Y,Y,OK,,

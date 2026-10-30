@@ -173,6 +173,10 @@
     <EmbeddedResource Include="SevenZip\ReferenceVectors\*.7z;SevenZip\ReferenceVectors\manifest.txt">
       <LogicalName>SevenZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- ACE archives from acefile's test corpus and ones our writer produced for acefile; see Ace/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\acefile-listing.txt">
+      <LogicalName>AceVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- G.722 streams FFmpeg 8.1.2 encoded and decoded; see Codecs/G722/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Codecs\G722\ReferenceVectors\*.pcm;Codecs\G722\ReferenceVectors\*.g722">
       <LogicalName>G722Vectors.%(Filename)%(Extension)</LogicalName>
