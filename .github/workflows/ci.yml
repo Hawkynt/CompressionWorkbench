@@ -341,6 +341,22 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Dar.DarExternalConformanceTests" \
             --logger "trx;LogFileName=dar-286-oracle-tests.trx"
 
+      # Hard gate: hxcfe (HxC Floppy Emulator command line, GPL, built at a pinned commit) writes a Stream
+      # HFE from a sector image, we rebuild it from its tracks (and edit one track), and hxcfe decodes our
+      # result back to exactly the expected sectors.
+      - name: Stream HFE oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_HXCFE: "1"
+        run: |
+          mkdir -p "$RUNNER_TEMP/hxc"
+          curl -fsSL https://github.com/jfdelnero/HxCFloppyEmulator/archive/b1f0465a4cebd25a90fb2d56534bf5d730f9f117.tar.gz \
+            | tar xz -C "$RUNNER_TEMP/hxc" --strip-components=1
+          make -C "$RUNNER_TEMP/hxc/build" -j4 HxCFloppyEmulator_cmdline > "$RUNNER_TEMP/hxc-build.log" 2>&1 || { tail -50 "$RUNNER_TEMP/hxc-build.log"; exit 1; }
+          CWB_HXCFE="$RUNNER_TEMP/hxc/build/hxcfe" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.StreamHfe.StreamHfeExternalConformanceTests" \
+            --logger "trx;LogFileName=streamhfe-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the
