@@ -1,5 +1,5 @@
 name,aliases_extensions,kind,src_7zip,src_libarchive,src_xad,src_binwalk,src_uniextract,src_pronom,src_wikipedia,source_count,reference_url,ours,ours_read,ours_create,ours_modify,gap,native_writer,notes
-ZIP,zip;zipx;z01;sfx-zip;apk;docx;ear;epub;exe;imz;jar;odt;pptx;war;wz;xlsx;xpi,archive,RW,RW,R,D,R,x-fmt/263,RW,7,https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT,Zip,Y,Y,Y,PARTIAL,,"methods JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs)"
+ZIP,zip;zipx;z01;sfx-zip;apk;docx;ear;epub;exe;imz;jar;odt;pptx;war;wz;xlsx;xpi,archive,RW,RW,R,D,R,x-fmt/263,RW,7,https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT,Zip,Y,Y,Y,PARTIAL,,"methods JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs); no method 96/97 sample archive was found to verify a decoder against"
 Java Archive (JAR),jar,archive,,,,,,x-fmt/412,Y,2,https://docs.oracle.com/en/java/javase/21/docs/specs/jar/jar.html,Jar,Y,Y,Y,OK,,
 Web Application Archive (WAR),war,archive,,,,,,,Y,1,https://jakarta.ee/specifications/servlet/,War,Y,Y,Y,OK,,
 Enterprise Archive (EAR),ear,archive,,,,,,,Y,1,https://jakarta.ee/specifications/platform/,Ear,Y,Y,Y,OK,,
@@ -37,7 +37,7 @@ ARJ,arj,archive,R,,R,D,R,fmt/610,RW,6,https://en.wikipedia.org/wiki/ARJ,Arj,Y,Y,
 LHA / LZH,lzh;lha;lzs;exe;sfx,archive,R,R,R,,R,fmt/1558;fmt/626,RW,6,https://en.wikipedia.org/wiki/LHA_(file_format),Lzh,Y,Y,Y,PARTIAL,,"every method and header level of lhasa's test suite reads except LHARK's lk7; lh2, lh3, lhx, pm1 and pm2 are read-only; self-extracting executables are not opened (LhaReader.cs)"
 ACE,ace,archive,,,R,,R,fmt/2075;fmt/2076,RW,4,https://en.wikipedia.org/wiki/ACE_(compressed_file_format),Ace,Y,Y,Y,OK,,
 ARC (SEA),arc;ark,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ARC_(file_format),Arc,Y,Y,Y,OK,,
-PAK (NoGate ARC extension),pak,archive,,,R,,,,Y,2,,,,,,MISSING,,
+PAK (NoGate ARC extension),pak,archive,,,R,,,,Y,2,,,,,,MISSING,,"not implemented: XADMaster decodes its Crushed/Distilled methods (10/11) but no NoGate PAK sample was found to verify against; the dexvert ""pakArchive"" samples are a different format"
 zoo,zoo,archive,,,R,,R,x-fmt/269,Y,4,https://en.wikipedia.org/wiki/Zoo_(file_format),Zoo,Y,Y,Y,OK,,
 LBR (CP/M library),lbr;lqr;lzr,archive,,,R,,R,,Y,3,https://en.wikipedia.org/wiki/LBR_(file_format),Lbr,Y,Y,Y,OK,,
 LBR (Commodore library),lbr,archive,,,,,,,Y,1,,,,,,MISSING,,
@@ -73,22 +73,22 @@ SeqBox,sbx,archive,,,,,,,Y,1,,,,,,MISSING,,https://github.com/MarcoPon/SeqBox
 AFA,afa,archive,,,,,,,Y,1,,,,,,MISSING,,
 B1,b1,archive,,,,,,,Y,1,,,,,,MISSING,,
 B6Z,b6z,archive,,,,,,,Y,1,,,,,,MISSING,,
-Scifer,ba;sen,archive,,,,,,,Y,1,,,,,,MISSING,,
+Scifer,ba;sen,archive,,,,,,,Y,1,,,,,,MISSING,,"not implemented: no specification, licence-compatible implementation or redistributable sample was found (searched 2026-10)"
 BlakHole,bh,archive,,,,,,,Y,1,,,,,,MISSING,,
 Compressia,car,archive,,,,,,,Y,1,,,,,,MISSING,,
 Compact File Set,cfs,archive,,,,,,,Y,1,,,,,,MISSING,,
-WinHKI,hki,archive,,,,,,,Y,1,,,,,,MISSING,,
+WinHKI,hki,archive,,,,,,,Y,1,,,,,,MISSING,,"not implemented: no specification, licence-compatible implementation or redistributable sample was found (searched 2026-10)"
 ICE (archiver),ice,archive,,,,,,,Y,1,,,,,,MISSING,,
-PIM,pim,archive,,,,,,,Y,1,,,,,,MISSING,,
+PIM,pim,archive,,,,,,,Y,1,,,,,,MISSING,,"not implemented: no specification, licence-compatible implementation or redistributable sample was found (searched 2026-10)"
 Quadruple D,qda,archive,,,,,,,Y,1,,,,,,MISSING,,
-RK / WinRK,rk,archive,,,,,,,Y,1,,,,,,MISSING,,
+RK / WinRK,rk,archive,,,,,,,Y,1,,,,,,MISSING,,"not implemented: no specification, licence-compatible implementation or redistributable sample was found (searched 2026-10)"
 Self Dissolving ARChive,sda,archive,,,,,,,Y,1,,,,,,MISSING,,
 C64/C128 self-extracting archive,sfx,archive,,,,,,,Y,1,,,,,,MISSING,,
 UltraCompressor II,uc;uc0;uc2;ucn;ur2;ue2,archive,,,,,,,Y,1,,,,,,MISSING,,
-PerfectCompress,uca,archive,,,,,,,Y,1,,,,,,MISSING,,
-YZ1,yz1,archive,,,,,,,Y,1,,,,,,MISSING,,
-Zzip,zz,archive,,,,,,,Y,1,,,,,,MISSING,,
-WinMount,mou,archive,,,,,,,Y,1,,,,,,MISSING,,
+PerfectCompress,uca,archive,,,,,,,Y,1,,,,,,MISSING,,"not implemented: no specification, licence-compatible implementation or redistributable sample was found (searched 2026-10)"
+YZ1,yz1,archive,,,,,,,Y,1,,,,,,MISSING,,"not implemented: no specification, licence-compatible implementation or redistributable sample was found (searched 2026-10)"
+Zzip,zz,archive,,,,,,,Y,1,,,,,,MISSING,,"not implemented: no specification, licence-compatible implementation or redistributable sample was found (searched 2026-10)"
+WinMount,mou,archive,,,,,,,Y,1,,,,,,MISSING,,"not implemented: no specification, licence-compatible implementation or redistributable sample was found (searched 2026-10)"
 BagIt,,archive,,,,,,,Y,1,,,,,,MISSING,,https://www.rfc-editor.org/rfc/rfc8493
 PHP archive (PHAR),phar,package,,,,,R,,Y,2,,,,,,MISSING,,https://www.php.net/manual/en/phar.fileformat.php
 Parchive (PAR/PAR2),par;par2;par.par2,other,,,,,,,Y,1,https://parchive.github.io/,Par2,Y,,,READ-ONLY-BUT-SOURCES-WRITE,par2cmdline,
@@ -304,7 +304,7 @@ xDisk (Amiga),xdsk,disk-image,,,R,,,,,1,,,,,,MISSING,,"our earlier descriptor us
 AMPK,ampk,archive,,,R,,,,,1,,Ampk,Y,Y,Y,OK,,
 LhF,lhf,archive,,,R,,,,,1,,LhF,Y,Y,Y,OK,,
 MDC (Amiga),mdc,archive,,,R,,,,,1,,,,,,MISSING,,
-MXM-SimpleArc,,archive,,,R,,,,,1,,,,,,MISSING,,
+MXM-SimpleArc,,archive,,,R,,,,,1,,,,,,MISSING,,not implemented: XADMaster has a stored-only reader for this Amiga self-extractor but no sample was found to verify against
 UEFI firmware volume / capsule,fv;fd;cap;bios;uefi;uefif,firmware,R,,,R,,,,2,https://uefi.org/specifications,UefiFv,Y,Y,Y,OK,,
 Android Verified Boot (vbmeta),img;avb,firmware,R,,,,,,,1,https://android.googlesource.com/platform/external/avb/+/main/README.md,AndroidVbmeta,Y,Y,Y,OK,,hash + RSA signature verified on read; unsigned (NONE) images written byte-identical to avbtool; signed images read-only
 Device tree blob,dtb;dtbo;fdt,firmware,,,,R,,,,1,https://www.devicetree.org/specifications/,Dtb,Y,Y,Y,OK,,
