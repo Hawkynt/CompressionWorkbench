@@ -118,6 +118,10 @@
     <EmbeddedResource Include="Firmware\ReferenceVectors\*" Exclude="Firmware\ReferenceVectors\README.md">
       <LogicalName>FirmwareVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- RAR 1.5 / 2.0 archives from other projects' test suites; see Rar/LegacyVectors/README.md. -->
+    <EmbeddedResource Include="Rar\LegacyVectors\*.rar;Rar\LegacyVectors\manifest.tsv">
+      <LogicalName>RarLegacyVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Archives FreeArc 0.67's Arc.exe wrote; see FreeArc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="FreeArc\ReferenceVectors\*.arc">
       <LogicalName>FreeArcVectors.%(Filename)%(Extension)</LogicalName>
