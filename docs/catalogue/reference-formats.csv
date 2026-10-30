@@ -284,7 +284,7 @@ SafeGuard encrypted virtual disk,hdr;vol,disk-image,,,,,,fmt/887,,1,,,,,,MISSING
 DMS (Disk Masher),dms,disk-image,,,R,,,,,1,,Dms,Y,Y,,PARTIAL,,NONE/SIMPLE/QUICK only; MEDIUM/DEEP/HEAVY1/HEAVY2 throw (DmsReader.cs)
 G64 (Commodore GCR),g64;g41;g71,disk-image,,,,,,fmt/821,,1,,G64,Y,Y,Y,OK,,
 Magic Shadow Archiver (MSA),msa,disk-image,,,,,,fmt/1472,,1,,Msa,Y,Y,Y,OK,,
-Pasti (STX),stx,disk-image,,,,,,fmt/1904,,1,,,,,,MISSING,,
+Pasti (STX),stx,disk-image,,,,,,fmt/1904,,1,http://pasti.fxatari.com,Pasti,Y,,,OK,,"read-only: sector IDs, FDC status, timing, fuzzy masks, track images; disk.st only for clean standard disks; no free tool writes Pasti, so no writer"
 HxC Floppy Emulator (HFE),hfe,disk-image,,,,,,fmt/2031;fmt/2038,,1,,Hfe,Y,,,READ-ONLY-BUT-SOURCES-WRITE,HxC Floppy Emulator tool,
 HxC stream image,hfe,disk-image,,,,,,fmt/2039,,1,,,,,,MISSING,,
 A2R flux image,a2r,disk-image,,,,,,fmt/2057;fmt/2058,,1,,,,,,MISSING,,
