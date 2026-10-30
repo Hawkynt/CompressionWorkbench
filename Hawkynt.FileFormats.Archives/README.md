@@ -345,8 +345,8 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [PAR2](https://en.wikipedia.org/wiki/Parchive) | `Par2` | `.par2` | R | ✅ | — |  | [parchive.sourceforge.net](https://parchive.sourceforge.net) |
 | [Motorola S-record](https://en.wikipedia.org/wiki/SREC_(file_format)) | `Srec` | `.s19` `.s28` `.s37` `.srec` … | WORM | ✅ | — | Entries are metadata.ini plus firmware.bin | [srecord.sourceforge.net](https://srecord.sourceforge.net) |
 | [Windows shell link](https://en.wikipedia.org/wiki/Shortcut_(computing)) | `Lnk` | `.lnk` | WORM | ✅ | — | Entries are header.bin / linkinfo.bin | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-shllink/) |
-| [PCAP](https://en.wikipedia.org/wiki/Pcap) | `Pcap` | `.pcap` `.cap` | R | ✅ | — |  | [tcpdump.org](https://www.tcpdump.org) |
-| [PCAPNG](https://en.wikipedia.org/wiki/Pcap) | `Pcapng` | `.pcapng` `.ntar` | R | ✅ | — |  | [GitHub](https://github.com/pcapng/pcapng) |
+| [PCAP](https://en.wikipedia.org/wiki/Pcap) | `Pcap` | `.pcap` `.cap` | R/W | ✅ | — | Entries are metadata.ini plus packet_NNNN.bin; creates captures tcpdump and Wireshark read; edits keep untouched records byte-identical | [tcpdump.org](https://www.tcpdump.org) |
+| [PCAPNG](https://en.wikipedia.org/wiki/Pcap) | `Pcapng` | `.pcapng` `.ntar` | R/W | ✅ | — | Entries are metadata.ini plus packet_NNNN.bin; timestamps honour if_tsresol; creates captures Wireshark reads; edits keep untouched blocks byte-identical | [GitHub](https://github.com/pcapng/pcapng) |
 
 ### 🧪 Scientific, data and CAD containers
 

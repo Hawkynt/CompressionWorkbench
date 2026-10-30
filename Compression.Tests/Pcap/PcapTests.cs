@@ -6,17 +6,13 @@ namespace Compression.Tests.Pcap;
 [TestFixture]
 public class PcapTests {
 
-  // Build a little-endian microsecond-resolution pcap with `packetCount` tiny packets.
-  //
-  // The magic constant identifies byte order by whether the raw bytes, read as a
-  // little-endian uint32, match 0xA1B2C3D4 (native BE) or 0xD4C3B2A1 (swap, LE).
-  // To produce an LE file we need the raw bytes to form 0xD4C3B2A1 when read LE,
-  // i.e. the file must literally start with A1 B2 C3 D4.
+  // Build a little-endian microsecond-resolution pcap with `packetCount` tiny packets: the
+  // magic 0xA1B2C3D4 written little-endian, as libpcap on x86 writes it (D4 C3 B2 A1).
   private static byte[] BuildPcap(int packetCount, int payloadSize = 8) {
     var ms = new MemoryStream();
     // Global header (24 bytes) — all multi-byte fields little-endian.
     var ghdr = new byte[24];
-    ghdr[0] = 0xA1; ghdr[1] = 0xB2; ghdr[2] = 0xC3; ghdr[3] = 0xD4;  // magic → LE/µs form
+    ghdr[0] = 0xD4; ghdr[1] = 0xC3; ghdr[2] = 0xB2; ghdr[3] = 0xA1;
     BinaryPrimitives.WriteUInt16LittleEndian(ghdr.AsSpan(4), 2);     // version major
     BinaryPrimitives.WriteUInt16LittleEndian(ghdr.AsSpan(6), 4);     // version minor
     // bytes 8..12 = thiszone, 12..16 = sigfigs — left zero

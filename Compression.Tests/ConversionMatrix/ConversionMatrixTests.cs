@@ -40,6 +40,9 @@ public class ConversionMatrixTests {
       // Mfs1 folds names to 7-char DFS slots (HELLO.TXT -> HELLO.T); it extracts the
       // exact stored bytes, so it round-trips by content, not by verbatim name.
       "Mfs1",
+      // A capture has no names: each file becomes one packet, listed as packet_NNNN.bin with the
+      // exact bytes.
+      "Pcap", "Pcapng",
     };
 
   // Case-folding targets (8.3 / uppercase) — compare names case-insensitively
