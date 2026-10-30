@@ -388,6 +388,13 @@ public sealed class UfsWriter {
     // ── superblock ──────────────────────────────────────────────────────────
     WriteSuperblock(disk, geom, dirCount, liveInodes, cg0DataEndFrag);
 
+    // ── superblock backups at cgbase + fs_sblkno, copied once the primary is final ──
+    // (copying while the cylinder groups were written left every backup zero, which
+    // fsck_ffs rejects: "VALUES IN SUPER BLOCK DISAGREE WITH THOSE IN FIRST ALTERNATE").
+    var primarySb = disk.Read(SuperblockOffset, SuperblockSize);
+    for (var cg = 0; cg < geom.Ncg; cg++)
+      disk.Write(((long)cg * geom.Fpg + SblkNo) * FragSize, primarySb);
+
     return disk;
   }
 
@@ -965,11 +972,6 @@ public sealed class UfsWriter {
     AccumulateRun(clusterSums, run);
     for (var i = 1; i <= ContigSumSize; i++)
       BinaryPrimitives.WriteInt32LittleEndian(cg0[(clustersumoff + i * 4)..], clusterSums[i]);
-
-    // ── superblock backup at cgbase + fs_sblkno ─────────────────────────────
-    var primarySb = disk.Read(SuperblockOffset, SuperblockSize);
-    var backupOffset = (cgbase + SblkNo) * FragSize;
-    disk.Write(backupOffset, primarySb);
 
     disk.Write(cgOffset, cg0Buffer);
   }
