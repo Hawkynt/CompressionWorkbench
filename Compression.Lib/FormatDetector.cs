@@ -516,6 +516,9 @@ public static partial class FormatDetector {
       // exehead itself only looks there), so a large installer keeps it far from the tail.
       if (HasNsisFirstHeader(fs)) return Format.Nsis;
 
+      // Enigma Virtual Box: the virtual filesystem's "EVB\0" header in the ".enigma1" section.
+      if (isPe && FileFormat.EnigmaVirtualBox.EnigmaVirtualBoxReader.IsEnigmaVirtualBox(fs)) return Format.EnigmaVirtualBox;
+
       // Other installer markers can live anywhere in the file, so scan the whole file when it
       // is small and the tail otherwise — independent of the MZ check, so a stub-less
       // installer image still re-detects as its own format.

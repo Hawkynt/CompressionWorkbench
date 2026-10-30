@@ -167,6 +167,7 @@ format,Efs,EFS (SGI Extent File System),Archive,Y,.efs;.efsimg,Y,Y,Y,Y
 format,Egg,EGG,Archive,,.egg,Y,Y,Y,
 format,Elf,ELF executable,Archive,,.elf;.so;.o;.ko,Y,Y,,
 format,Eml,EML (RFC 822 message),Archive,,.eml,Y,Y,Y,Y
+format,EnigmaVirtualBox,Enigma Virtual Box,Archive,,,Y,Y,,
 format,Epub,EPUB,Archive,,.epub,Y,Y,Y,Y
 format,Erofs,EROFS,Archive,Y,.erofs;.img,Y,Y,Y,Y
 format,Esd,ESD,Archive,,.esd,Y,Y,Y,
