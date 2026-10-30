@@ -374,7 +374,7 @@ Godot PCK,pck,game,,,,,R,,,1,,GodotPck,Y,Y,Y,OK,,
 KiriKiri XP3,xp3,game,,,,,R,,Y,2,,,,,,MISSING,,
 LiveMaker,gal,game,,,,,R,,,1,,,,,,MISSING,,
 Ren'Py archive (RPA),rpa,game,,,,,R,,,1,,Rpa,Y,Y,Y,OK,,
-RPG Maker archives,rgssad;rgss2a;rgss3a;rpgmvp;rpgmvo;rpgmvm,game,,,,,R,,,1,,Rgss,Y,Y,Y,PARTIAL,,RGSSAD v1-3 only; MV/MZ asset encryption (.rpgmv*) has no descriptor
+RPG Maker archives,rgssad;rgss2a;rgss3a;rpgmvp;rpgmvo;rpgmvm,game,,,,,R,,,1,,Rgss;RpgMakerMvAsset,Y,Y,Y,OK,,"RGSSAD v1-3 archives; MV/MZ encrypted assets (.rpgmv*/.png_/.ogg_/.m4a_) decrypt with the System.json key, PNG and Ogg without it"
 Smile Game Builder pack,sgbpack,game,,,,,R,,,1,,,,,,MISSING,,
 Telltale archive (TTARCH),ttarch,game,,,,,R,,,1,,,,,,MISSING,,
 Unity assets / bundles,unity3d;assets;unitypackage;resource,game,,,,,R,,,1,,UnityBundle,Y,Y,Y,PARTIAL,,UnityFS bundles only; .unitypackage (tar.gz) and serialized-file internals are not handled

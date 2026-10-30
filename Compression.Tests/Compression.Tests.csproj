@@ -139,6 +139,10 @@
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- RPG Maker MV assets encrypted by Petschko's decrypter, their media and the oracle; see RpgMakerMvAsset/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="RpgMakerMvAsset\ReferenceVectors\*.rpgmv*;RpgMakerMvAsset\ReferenceVectors\*.png;RpgMakerMvAsset\ReferenceVectors\*.ogg;RpgMakerMvAsset\ReferenceVectors\*.m4a;RpgMakerMvAsset\ReferenceVectors\*.js">
+      <LogicalName>RpgMakerMvVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Sparsebundles written by Apple's hdiutil (keramics, ewfprobe test corpora); see
          AppleSparse/ReferenceVectors/README.md. The tests rebuild each bundle directory from these. -->
     <EmbeddedResource Include="AppleSparse\ReferenceVectors\**\*"

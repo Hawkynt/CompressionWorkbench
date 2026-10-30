@@ -1,0 +1,7 @@
+# Fixture bytes are the test: never let a checkout rewrite line endings.
+*.rpgmvp -text
+*.rpgmvo -text
+*.rpgmvm -text
+*.png -text
+*.ogg -text
+*.m4a -text
