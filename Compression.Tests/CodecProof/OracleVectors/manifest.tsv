@@ -1,0 +1,63 @@
+BB_Brotli.text.bin	BB_Brotli	text	brotli 1.2.1 (Python binding of Google's brotli)
+BB_Brotli.mixed.bin	BB_Brotli	mixed	brotli 1.2.1 (Python binding of Google's brotli)
+BB_Brotli.small.bin	BB_Brotli	small	brotli 1.2.1 (Python binding of Google's brotli)
+BB_Lz4.text.bin	BB_Lz4	text	lz4 4.4.5 (Python binding of lz4 1.10), block API
+BB_Lz4.mixed.bin	BB_Lz4	mixed	lz4 4.4.5 (Python binding of lz4 1.10), block API
+BB_Lz4.small.bin	BB_Lz4	small	lz4 4.4.5 (Python binding of lz4 1.10), block API
+BB_Lz4Frame.text.bin	BB_Lz4Frame	text	lz4 4.4.5, frame API
+BB_Lz4Frame.mixed.bin	BB_Lz4Frame	mixed	lz4 4.4.5, frame API
+BB_Lz4Frame.small.bin	BB_Lz4Frame	small	lz4 4.4.5, frame API
+BB_Zstd.text.bin	BB_Zstd	text	zstandard 0.25.0 (libzstd), level 19
+BB_Zstd.mixed.bin	BB_Zstd	mixed	zstandard 0.25.0 (libzstd), level 19
+BB_Zstd.small.bin	BB_Zstd	small	zstandard 0.25.0 (libzstd), level 19
+BB_Snappy.text.bin	BB_Snappy	text	cramjam 2.14.0 (Rust snap crate), raw format
+BB_Snappy.mixed.bin	BB_Snappy	mixed	cramjam 2.14.0 (Rust snap crate), raw format
+BB_Snappy.small.bin	BB_Snappy	small	cramjam 2.14.0 (Rust snap crate), raw format
+BB_Lzc.text.bin	BB_Lzc	text	ncompress 1.0.2 (Python binding of ncompress 5.0)
+BB_Lzc.mixed.bin	BB_Lzc	mixed	ncompress 1.0.2 (Python binding of ncompress 5.0)
+BB_Lzc.small.bin	BB_Lzc	small	ncompress 1.0.2 (Python binding of ncompress 5.0)
+BB_Deflate.text.bin	BB_Deflate	text	zlib (CPython), level 9, raw
+BB_Deflate.mixed.bin	BB_Deflate	mixed	zlib (CPython), level 9, raw
+BB_Deflate.small.bin	BB_Deflate	small	zlib (CPython), level 9, raw
+BB_Deflate64.text.bin	BB_Deflate64	text	inflate64 1.0.4 (zlib's infback9 contrib)
+BB_Deflate64.mixed.bin	BB_Deflate64	mixed	inflate64 1.0.4 (zlib's infback9 contrib)
+BB_Deflate64.small.bin	BB_Deflate64	small	inflate64 1.0.4 (zlib's infback9 contrib)
+BB_Bzip2.text.bin	BB_Bzip2	text	bz2 (CPython, libbzip2)
+BB_Bzip2.mixed.bin	BB_Bzip2	mixed	bz2 (CPython, libbzip2)
+BB_Bzip2.small.bin	BB_Bzip2	small	bz2 (CPython, libbzip2)
+BB_Xz.text.bin	BB_Xz	text	lzma (CPython, liblzma)
+BB_Xz.mixed.bin	BB_Xz	mixed	lzma (CPython, liblzma)
+BB_Xz.small.bin	BB_Xz	small	lzma (CPython, liblzma)
+BB_Lzo.text.bin	BB_Lzo	text	lzallright 0.3.0 (Rust binding of LZO 2.10), LZO1X-1
+BB_Lzo.mixed.bin	BB_Lzo	mixed	lzallright 0.3.0 (Rust binding of LZO 2.10), LZO1X-1
+BB_Lzo.small.bin	BB_Lzo	small	lzallright 0.3.0 (Rust binding of LZO 2.10), LZO1X-1
+BB_Pithy.text.bin	BB_Pithy	text	pithy (johnezang/pithy) level 1
+BB_Pithy.mixed.bin	BB_Pithy	mixed	pithy (johnezang/pithy) level 1
+BB_Pithy.small.bin	BB_Pithy	small	pithy (johnezang/pithy) level 1
+BB_Zx0.text.bin	BB_Zx0	text	ZX0 2.2 (einar-saukas/ZX0) -c, classic format
+BB_Zx0.mixed.bin	BB_Zx0	mixed	ZX0 2.2 (einar-saukas/ZX0) -c, classic format
+BB_Zx0.small.bin	BB_Zx0	small	ZX0 2.2 (einar-saukas/ZX0) -c, classic format
+BB_Salvador.text.bin	BB_Salvador	text	salvador 1.4.2 (emmanuel-marty/salvador)
+BB_Salvador.mixed.bin	BB_Salvador	mixed	salvador 1.4.2 (emmanuel-marty/salvador)
+BB_Salvador.small.bin	BB_Salvador	small	salvador 1.4.2 (emmanuel-marty/salvador)
+BB_Aplib.text.bin	BB_Aplib	text	apultra 1.4.8 (emmanuel-marty/apultra), aPLib-compatible
+BB_Aplib.mixed.bin	BB_Aplib	mixed	apultra 1.4.8 (emmanuel-marty/apultra), aPLib-compatible
+BB_Aplib.small.bin	BB_Aplib	small	apultra 1.4.8 (emmanuel-marty/apultra), aPLib-compatible
+BB_Nrv2b.text.bin	BB_Nrv2b	text	UCL 1.03 ucl_nrv2b_99_compress, LE32 bit buffer
+BB_Nrv2b.mixed.bin	BB_Nrv2b	mixed	UCL 1.03 ucl_nrv2b_99_compress, LE32 bit buffer
+BB_Nrv2b.small.bin	BB_Nrv2b	small	UCL 1.03 ucl_nrv2b_99_compress, LE32 bit buffer
+BB_Nrv2d.text.bin	BB_Nrv2d	text	UCL 1.03 ucl_nrv2d_99_compress, LE32 bit buffer
+BB_Nrv2d.mixed.bin	BB_Nrv2d	mixed	UCL 1.03 ucl_nrv2d_99_compress, LE32 bit buffer
+BB_Nrv2d.small.bin	BB_Nrv2d	small	UCL 1.03 ucl_nrv2d_99_compress, LE32 bit buffer
+BB_Nrv2e.text.bin	BB_Nrv2e	text	UCL 1.03 ucl_nrv2e_99_compress, LE32 bit buffer
+BB_Nrv2e.mixed.bin	BB_Nrv2e	mixed	UCL 1.03 ucl_nrv2e_99_compress, LE32 bit buffer
+BB_Nrv2e.small.bin	BB_Nrv2e	small	UCL 1.03 ucl_nrv2e_99_compress, LE32 bit buffer
+fmt.BriefLz.text.bin	fmt.BriefLz	text	blzpack (jibsen/brieflz example)
+fmt.BriefLz.mixed.bin	fmt.BriefLz	mixed	blzpack (jibsen/brieflz example)
+fmt.BriefLz.small.bin	fmt.BriefLz	small	blzpack (jibsen/brieflz example)
+fmt.Lzg.text.bin	fmt.Lzg	text	lzg (mbitsnbites/liblzg tool)
+fmt.Lzg.mixed.bin	fmt.Lzg	mixed	lzg (mbitsnbites/liblzg tool)
+fmt.Lzg.small.bin	fmt.Lzg	small	lzg (mbitsnbites/liblzg tool)
+fmt.Lizard.text.bin	fmt.Lizard	text	lizard 2.1.0 CLI (inikep/lizard)
+fmt.Lizard.mixed.bin	fmt.Lizard	mixed	lizard 2.1.0 CLI (inikep/lizard)
+fmt.Lizard.small.bin	fmt.Lizard	small	lizard 2.1.0 CLI (inikep/lizard)
