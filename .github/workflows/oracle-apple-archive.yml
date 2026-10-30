@@ -1,0 +1,71 @@
+name: Apple Archive oracle
+
+# Produces Apple Archive reference vectors with Apple's own `aa` tool and checks archives this
+# repository's writer produced. Runs only on pushes to this utility branch; never merged.
+on:
+  push:
+    branches: [oracle/apple-archive]
+
+permissions:
+  contents: read
+
+jobs:
+  oracle:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build inputs
+        run: |
+          set -euo pipefail
+          mkdir -p work/in/sub
+          python3 - <<'EOF'
+          import os
+          text = b"".join(b"Apple Archive oracle line %d, value %d\n" % (i, i * 7 % 101) for i in range(700))
+          open("work/in/notes.txt", "wb").write(text)
+          state = 12345
+          data = bytearray()
+          for i in range(12000):
+              state = (state * 1103515245 + 12345) & 0x7FFFFFFF
+              data.append((state >> 16) & 0xFF if i % 3 else i & 0xFF)
+          open("work/in/sub/data.bin", "wb").write(bytes(data))
+          open("work/in/empty.txt", "wb").close()
+          open("work/in/sub/noise.bin", "wb").write(os.urandom(20000))
+          EOF
+          ln -s notes.txt work/in/link-to-notes
+          touch -t 202405060708.10 work/in/notes.txt work/in/sub/data.bin work/in/sub/noise.bin work/in/empty.txt work/in/sub work/in
+          touch -h -t 202405060708.10 work/in/link-to-notes
+          shasum -a 256 work/in/notes.txt work/in/sub/data.bin work/in/sub/noise.bin
+          mkdir -p out && cp work/in/sub/noise.bin out/noise.bin
+          sw_vers
+      - name: Archive with aa
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          for a in raw lzfse zlib lzma lz4 lzbitmap; do
+            aa archive -d work/in -o "out/aa-$a.aar" -a "$a"
+          done
+          aa archive -d work/in -o out/aa-lzfse-16k.aar -a lzfse -b 16k
+          aa archive -d work/in -o out/aa-zlib-16k.aar -a zlib -b 16k
+          for f in out/*.aar; do
+            echo "== $f"; head -c 32 "$f" | xxd
+            aa list -i "$f" -v > "$f.list.txt" 2>&1 || true
+            cat "$f.list.txt"
+          done
+      - name: Check our archives
+        run: |
+          set -euo pipefail
+          mkdir -p out/ours
+          for f in oracle/aar-ours/*.aar; do
+            [ -e "$f" ] || continue
+            n=$(basename "$f" .aar)
+            echo "== $f"
+            aa list -i "$f" -v > "out/ours/$n.list.txt" 2>&1 || echo "list failed" >> "out/ours/$n.list.txt"
+            mkdir -p "out/ours/$n"
+            if aa extract -i "$f" -d "out/ours/$n" > "out/ours/$n.extract.txt" 2>&1; then echo "extract ok" >> "out/ours/$n.extract.txt"; else echo "extract FAILED" >> "out/ours/$n.extract.txt"; fi
+            (cd "out/ours/$n" && find . -type f -exec shasum -a 256 {} + && find . -type l -exec ls -l {} +) >> "out/ours/$n.extract.txt" 2>&1 || true
+            cat "out/ours/$n.list.txt" "out/ours/$n.extract.txt"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apple-archive-oracle
+          path: out/
