@@ -293,6 +293,37 @@ jobs:
           --filter "FullyQualifiedName~Compression.Tests.Zpaq.ZpaqExternalOracleTests"
           --logger "trx;LogFileName=zpaq-oracle-tests.trx"
 
+      # The DAR oracle again, judged by the newest dar release built from its source tarball (Ubuntu
+      # only packages 2.7). The build is cached; when SourceForge cannot be reached and nothing is
+      # cached the step says so and skips, but a dar that runs and refuses fails it.
+      - name: Cache dar 2.8.6
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/cache@v4
+        with:
+          path: /opt/cwb-dar/2.8.6
+          key: dar-2.8.6-${{ runner.os }}-v1
+      - name: DAR oracle (dar 2.8.6)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          if [ ! -x /opt/cwb-dar/2.8.6/bin/dar ]; then
+            sudo apt-get install -y libz-dev libbz2-dev liblzo2-dev liblzma-dev libzstd-dev liblz4-dev
+            sudo mkdir -p /opt/cwb-dar && sudo chown "$(id -u)" /opt/cwb-dar
+            if ! curl -fsSL -o /tmp/dar-2.8.6.tar.gz "https://sourceforge.net/projects/dar/files/dar/2.8.6/dar-2.8.6.tar.gz/download"; then
+              echo "::notice::dar 2.8.6 source unavailable and not cached; skipping the 2.8.6 oracle"
+              exit 0
+            fi
+            echo "d56caeb6c86f751cb454d8fef45f3daecc508f208290d9f51e8c75bba5dc46c5  /tmp/dar-2.8.6.tar.gz" | sha256sum -c -
+            tar xzf /tmp/dar-2.8.6.tar.gz -C /tmp
+            (cd /tmp/dar-2.8.6 && ./configure --prefix=/opt/cwb-dar/2.8.6 --disable-shared --disable-dar-static \
+              --disable-python-binding --disable-gpgme-linking --disable-libcurl-linking --disable-librsync-linking \
+              --disable-libargon2-linking --disable-threadar --disable-upx --disable-build-html --disable-libgcrypt-linking \
+              > /dev/null && make -j"$(nproc)" > /dev/null && make install > /dev/null)
+          fi
+          /opt/cwb-dar/2.8.6/bin/dar -V 2>&1 | head -1 || true
+          CWB_DAR=/opt/cwb-dar/2.8.6/bin/dar dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Dar.DarExternalConformanceTests" \
+            --logger "trx;LogFileName=dar-286-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the
