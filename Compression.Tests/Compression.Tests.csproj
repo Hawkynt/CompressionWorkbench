@@ -173,6 +173,10 @@
     <EmbeddedResource Include="SevenZip\ReferenceVectors\*.7z;SevenZip\ReferenceVectors\manifest.txt">
       <LogicalName>SevenZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- ACE archives from acefile's test corpus and ones our writer produced for acefile; see Ace/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\acefile-listing.txt">
+      <LogicalName>AceVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- G.722 streams FFmpeg 8.1.2 encoded and decoded; see Codecs/G722/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Codecs\G722\ReferenceVectors\*.pcm;Codecs\G722\ReferenceVectors\*.g722">
       <LogicalName>G722Vectors.%(Filename)%(Extension)</LogicalName>
@@ -196,6 +200,10 @@
     <!-- ZIP archives written by third-party archivers; see Zip/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
       <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- A CBA our writer produced, verified by acefile; see ComicBook/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="ComicBook\ReferenceVectors\*.cba">
+      <LogicalName>CbaVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- DAR slices written by dar itself (2.4.24 to 2.8.6); see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">

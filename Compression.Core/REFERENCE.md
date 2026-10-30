@@ -471,11 +471,23 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Dictionary.Ace`
 
-[`AceBuildingBlock`](#acebuildingblock) · [`AceConstants`](#aceconstants) · [`AceDecoder`](#acedecoder) · [`AceEncoder`](#aceencoder) · [`AcePicFilter`](#acepicfilter) · [`AceSoundFilter`](#acesoundfilter)
+[`AceBlowfish`](#aceblowfish) · [`AceBuildingBlock`](#acebuildingblock) · [`AceCompressor`](#acecompressor) · [`AceConstants`](#aceconstants) · [`AceDecompressor`](#acedecompressor)
+
+#### `AceBlowfish`
+
+ACE's password encryption: Blowfish in CBC mode (zero IV, continued across calls) on little-endian 32-bit halves, keyed by one SHA-1 compression of the password with ACE's non-standard padding.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AceBlowfish` | `AceBlowfish(ReadOnlySpan<byte> password)` | Keys the cipher with raw password bytes. |
+| `AceBlowfish` | `AceBlowfish(string password)` | Keys the cipher with a UTF-8 password. |
+| `Decrypt` | `void Decrypt(Span<byte> data)` | Decrypts whole 8-byte blocks in place, chaining from the previous call. |
+| `DeriveKey` | `static uint[] DeriveKey(ReadOnlySpan<byte> password)` | The five SHA-1 state words ACE derives from a password (truncated to 50 bytes). |
+| `Encrypt` | `void Encrypt(Span<byte> data)` | Encrypts whole 8-byte blocks in place, chaining from the previous call. |
 
 #### `AceBuildingBlock`
 
-Exposes the ACE compression algorithm as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support.
+The ACE 1.0 LZ77 codec (the bit stream of an ACE compression-type-1 member) as a building block. A 4-byte little-endian length and the dictionary-bits byte precede the stream so it round-trips.
 
 Implements `IBuildingBlock`.
 
@@ -489,67 +501,39 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
+#### `AceCompressor`
+
+Writes ACE 1.0 LZ77 streams (compression type 1) that `AceDecompressor` and the reference decoders read: literals and explicit-distance matches over two block-wise Huffman trees. One instance per archive; with `solid` the dictionary carries over between members exactly as the decoder's does.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AceCompressor` | `AceCompressor(int dictionaryBits = 20, bool solid = false)` | Creates a compressor with a dictionary of 2^`dictionaryBits` bytes. |
+| `DictionaryBits` | `int DictionaryBits { get; }` | Dictionary size in bits (what the file header's parameter field records). |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses one member. |
+| `RegisterStored` | `void RegisterStored(ReadOnlySpan<byte> data)` | Tells a solid compressor about a member that was stored rather than compressed: the decoder adds stored bytes to its dictionary too. |
+
 #### `AceConstants`
 
-Constants for the ACE compression algorithm.
+Constants of ACE 1.0 / 2.0 compression (values per the ACE technical notes and acefile).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompAce10` | `const int CompAce10` | Compression type: ACE 1.0 (LZ77 + Huffman). |
-| `CompAce20` | `const int CompAce20` | Compression type: ACE 2.0 (blocked, multiple sub-modes). |
-| `CompStore` | `const int CompStore` | Compression type: stored (no compression). |
-| `DefaultDictBits` | `const int DefaultDictBits` | Default dictionary bits. |
-| `LenSymbols` | `const int LenSymbols` | Length tree: 255 symbols for extended match lengths. |
-| `LengthBase` | `static readonly int[] LengthBase` | Match length bases for symbols 257-283. |
-| `LengthExtra` | `static readonly int[] LengthExtra` | Extra bits for match length symbols 257-283. |
-| `MainSymbols` | `const int MainSymbols` | Main Huffman tree: 284 symbols (256 literals + 28 length codes). |
-| `MaxDictBits` | `const int MaxDictBits` | Maximum dictionary bits. |
-| `MinDictBits` | `const int MinDictBits` | Minimum dictionary bits. |
-| `NumRepOffsets` | `const int NumRepOffsets` | Number of repeated offsets maintained. |
-| `SymbolEndOfBlock` | `const int SymbolEndOfBlock` | Symbol 256: end of block marker. |
-| `SymbolMatchBase` | `const int SymbolMatchBase` | Symbol range 257-282: match length base codes (length 2..28+). |
-| `SymbolModeSwitch` | `const int SymbolModeSwitch` | Symbol 283: ACE 2.0 mode switch marker. |
+| `CompAce10` | `const int CompAce10` | Compression type: ACE 1.0 LZ77. |
+| `CompAce20` | `const int CompAce20` | Compression type: ACE 2.0 blocked (LZ77, delta, exe, sound and picture modes). |
+| `CompStore` | `const int CompStore` | Compression type: stored. |
+| `DefaultDictBits` | `const int DefaultDictBits` | Dictionary size the writer uses unless told otherwise, in bits. |
+| `MaxDictBits` | `const int MaxDictBits` | Largest dictionary, in bits. |
+| `MinDictBits` | `const int MinDictBits` | Smallest dictionary, in bits. |
 
-#### `AceDecoder`
+#### `AceDecompressor`
 
-Decodes ACE 1.0 and 2.0 compressed data (LZ77 + dual Huffman trees). Instance-based: the sliding window and repeat offsets persist across calls for solid archive support. ACE 2.0 adds blocked sub-modes: LZ77, EXE (E8/E9), DELTA, SOUND, PIC.
+Decompresses ACE members. One instance serves a whole archive: the LZ77 dictionary carries over from member to member, which is what solid archives rely on (members must then be decoded in order).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AceDecoder` | `AceDecoder(int dictBits = 15)` | Initializes a new `AceDecoder` with the specified dictionary size. |
-| `DecodeBlock` | `static byte[] DecodeBlock(ReadOnlySpan<byte> compressed, int originalSize, int dictBits = 15, int compressionType = 1)` | Static convenience method for non-solid decoding (creates a fresh decoder). |
-| `DecodeBlock` | `static byte[] DecodeBlock(byte[] compressed, int originalSize, int dictBits = 15, int compressionType = 1)` | Static convenience method for non-solid decoding (creates a fresh decoder). |
-| `Decode` | `byte[] Decode(byte[] compressed, int originalSize, int compressionType = 1)` | Decompresses ACE data, preserving window state for subsequent solid calls. |
-
-#### `AceEncoder`
-
-Encodes data using ACE 1.0 or 2.0 compression (LZ77 + dual Huffman trees). Instance-based: the sliding window persists across calls for solid archive support. ACE 2.0 adds sub-mode switching: LZ77, EXE, DELTA, SOUND, PIC.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `AceEncoder` | `AceEncoder(int dictBits = 15)` | Initializes a new `AceEncoder` with the specified dictionary size. |
-| `Encode20` | `byte[] Encode20(ReadOnlySpan<byte> data, int subMode = 0, int soundChannels = 1, int picWidth = 0, int picBytesPerPixel = 3)` | Compresses data using ACE 2.0 with a specified sub-mode applied as a preprocessing transform. |
-| `EncodeBlock20` | `static byte[] EncodeBlock20(ReadOnlySpan<byte> data, int dictBits = 15, int subMode = 0, int soundChannels = 1, int picWidth = 0, int picBytesPerPixel = 3)` | Static convenience method for non-solid ACE 2.0 encoding. |
-| `EncodeBlock` | `static byte[] EncodeBlock(ReadOnlySpan<byte> data, int dictBits = 15)` | Static convenience method for non-solid encoding (creates a fresh encoder). |
-| `Encode` | `byte[] Encode(ReadOnlySpan<byte> data)` | Compresses data using the ACE 1.0 algorithm, preserving window state for subsequent solid calls. |
-
-#### `AcePicFilter`
-
-ACE 2.0 PIC sub-mode filter. Decorrelates image data using Paeth-style prediction based on left and above neighbor bytes.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data, int stride = 0)` | Inverse transform: reconstructs pixels from prediction residuals. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int stride = 0)` | Forward transform: converts pixels to prediction residuals. |
-
-#### `AceSoundFilter`
-
-ACE 2.0 SOUND sub-mode filter. Decorrelates audio data using adaptive linear prediction with LMS weight updates.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data, int channels = 1)` | Inverse transform: reconstructs audio samples from prediction residuals. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int channels = 1)` | Forward transform: converts audio samples to prediction residuals. |
+| `AceDecompressor` | `AceDecompressor()` |  |
+| `DecompressComment` | `static byte[] DecompressComment(ReadOnlySpan<byte> packed)` | Decodes an archive or file comment: a 15-bit length, one LZ77-sized Huffman tree, then literals and copies whose source is found through a hash of the two preceding bytes. |
+| `Decompress` | `byte[] Decompress(ReadOnlyMemory<byte> packed, long size, int compressionType, int dictionaryBits)` | Decodes one member of `size` bytes compressed with `compressionType`. |
 
 ### Namespace `Compression.Core.Dictionary.Aplib`
 
