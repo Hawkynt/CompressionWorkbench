@@ -100,8 +100,16 @@ public sealed class Lzma2Decoder {
           ArrayPool<byte>.Shared.Return(uncompressed);
         }
 
-        // Raw bytes carry no coder state, so the next LZMA chunk has to reset it.
-        needStateReset = true;
+        // A dictionary-resetting copy chunk (0x01) obliges the next LZMA chunk to carry new
+        // properties and a state reset (control >= 0xC0); a continuing copy chunk (0x02) leaves
+        // the probability model, the state machine and the rep distances as they were, and an
+        // LZMA chunk may follow it without any reset (LZMA SDK Lzma2Dec.c, needInitLevel;
+        // liblzma lzma2_decoder.c, need_properties). 7-Zip writes such 0x02 + 0x80 sequences
+        // whenever it stores an incompressible stretch of a block.
+        if (controlByte == 0x01) {
+          hasProperties = false;
+          needStateReset = true;
+        }
         continue;
       }
 
