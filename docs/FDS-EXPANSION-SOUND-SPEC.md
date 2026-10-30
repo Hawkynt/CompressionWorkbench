@@ -1,7 +1,8 @@
 # Famicom Disk System (RP2C33) expansion audio — implementation specification
 
-Status: **specification for a clean-room replacement of
-`Hawkynt.FileFormats.Audio/Codecs/Codec.Nes2a03/Expansion/FdsAudio.cs`.**
+Status: **implemented.** `Hawkynt.FileFormats.Audio/Codecs/Codec.Nes2a03/Expansion/FdsAudio.cs`
+was rewritten clean-room from this document and the NESdev wiki page; §9 records where the
+implementation follows the wiki over the text below, and the oracle evidence.
 
 Why a replacement is needed: the current channel says its modulator phase handling, the
 modulation-table step table, the pitch-modulation arithmetic and the master-volume divisors
@@ -145,3 +146,32 @@ hardware-backed decision:
 3. **Edge cases**: mod pitch 0 (modulator idle), wave pitch 0, master envelope speed 0
    (envelopes frozen), a mod-table pass containing entry 4 (counter reset), a mod counter
    written to 0x40 (−64) with gain 63 (the wrap in step 3), wave halted while writing wave RAM.
+
+## 9. Decisions taken by the implementation
+
+The rewrite checked every rule against the NESdev wiki page (revision 22987, September 2025).
+Where the wiki's later findings disagree with the text above, the wiki was followed:
+
+| Topic | Above | Implemented (wiki) |
+|---|---|---|
+| Unit clocking | per-cycle adds into 22-bit accumulators | wave and modulation units tick every 16 CPU cycles: 20-bit modulated pitch into a 24-bit wave accumulator (position = bits 23..18); 12-bit mod pitch into an 18-bit mod accumulator (table index = bits 17..13, bit 12 the "ghost" bit). Same rates as §4 |
+| Pitch modulation | steps 1–5 of §4 (rounding after `>> 4`, wrap, rounding after `>> 6`) | the wiki's current pseudocode: `temp = counter × gain`; `+0x20` if the low nibble is non-zero and bit 11 is clear; `temp = ((temp + 0x400) >> 4) & 0xFF`; increment = `pitch × temp`. 64 means unmodulated; no second rounding |
+| Envelope period | `8 × (speed + 1) × masterSpeed` | `8 × (speed + 1) × (masterSpeed + 1)`; master speed 0 still freezes both envelopes |
+| Volume gain at the output | used directly | latched only while the wave position is 0 (PWM comparator latch); a direct write of gain 0 mutes at once |
+| `$4040`–`$407F` reads | the addressed entry | the addressed entry while write-enabled, otherwise the entry at the current wave position; bits 7..6 read `01` (open bus) |
+| `$4087` bit 6 | not described | forces a mod-table step on every tick |
+| Mod step | "apply that position's entry" | the entry at the position being left is applied, then the position advances (the wiki's `$4095` description) |
+
+Not implemented: the wiki's bit diagram for `$4083` also labels bit 7 "envelopes run 4× faster,
+also stops the mod table accumulator", which contradicts its own text (envelopes stop while
+the wave is halted); the text was followed. The analogue ≈2 kHz low-pass the wiki describes is
+left to the mixer, so `Output()` stays the linear level of §5. The mixing scale of §6 was kept:
+measured black-box against the replaced build, its peak (63 × 32, master volume 0) was exactly
+0.55, linear, unfiltered — the rewrite reproduces that. All four §7 divergences are corrected.
+
+Oracles: unit tests in `Compression.Tests/Codecs/Nes2a03/FdsAudioTests.cs` (the §8.1 formula
+table, hand-walked; register, envelope, table and boundary behaviour) and
+`FdsAudioOracleTests.cs`, which compares three homebrew FDS NSFs with Game Music Emu (ffmpeg's
+libgme demuxer, run as a black box) on loudness contour and spectra. The only disagreement
+found is that libgme stops applying the pitch-modulation formula while the modulator is halted;
+the wiki says it stays in effect, and the implementation follows the wiki.
