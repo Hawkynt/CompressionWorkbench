@@ -1,0 +1,32 @@
+LZAV — converted
+
+Source:   lzav.h from https://github.com/avaneev/lzav, revision b93c884dab90ac16112f78daed9ff6e07c3d2fac (LZAV 5.20)
+Author:   Aleksey Vaneev
+Licence:  MIT
+
+LzavCodec.cs converts lzav_compress (with lzav_compress_default's choice of minimum
+reference length), lzav_write_blk_3, lzav_write_fin_3, lzav_match_len, lzav_match_len_r1
+and lzav_decompress_3. Word-sized copies are replaced by byte copies; the stream is the
+same.
+
+MIT License
+
+Copyright (c) 2023-2026 Aleksey Vaneev
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
