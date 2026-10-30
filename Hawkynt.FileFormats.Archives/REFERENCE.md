@@ -11534,6 +11534,91 @@ Writes a WiiU/Switch `.bfstm` (FSTM) carrying DSP-ADPCM, laid out per the public
 | `BlockSize` | `const int BlockSize` | Per-channel block size in bytes (Nintendo's canonical 0x2000). |
 | `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate, bool bigEndian, bool loop = false, int loopStart = 0)` | Encodes per-channel mono PCM16 to DSP-ADPCM and serialises a complete FSTM in the requested endianness. WiiU uses `bigEndian` = `true`; Switch uses `false`. All channels must share the same sample count. |
 
+### Namespace `FileFormat.Bga`
+
+[`BgaArchive`](#bgaarchive) · [`BgaEntry`](#bgaentry) · [`BgaFormatDescriptorBase`](#bgaformatdescriptorbase) · [`BzaFormatDescriptor`](#bzaformatdescriptor) · [`GzaFormatDescriptor`](#gzaformatdescriptor)
+
+#### `BgaArchive`
+
+GZA and BZA archives (Toshinobu Kimura's BGA32.DLL): per-file headers with a signed-byte checksum, each followed by that file's gzip or bzip2 stream (or its bytes when stored). A self-extracting stub is skipped by searching the first 64 KiB for a header whose checksum holds.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BuildRecord` | `static byte[] BuildRecord(bool gzip, string name, ReadOnlySpan<byte> data, DateTime? modified, bool directory)` | Builds one member record the way BGA32.DLL writes it. |
+| `Extract` | `static byte[] Extract(ReadOnlySpan<byte> data, BgaEntry entry)` | Decodes a member, checking the gzip CRC-32 (bzip2 checks its own). |
+| `Read` | `static List<BgaEntry> Read(ReadOnlySpan<byte> data, out bool truncated)` | Lists the members, starting at the first valid header in the first 64 KiB. |
+
+#### `BgaEntry`
+
+One member of a GZA/BZA archive.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BgaEntry` | `BgaEntry()` |  |
+| `Attributes` | `byte Attributes { get; init; }` | Gets the DOS attribute byte. |
+| `CompressedSize` | `uint CompressedSize { get; init; }` | Gets the stored size. |
+| `FileName` | `string FileName { get; init; }` | Gets the stored name ('\' replaced by '/'; directories without the trailing separator). |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets whether this is a directory entry. |
+| `IsStored` | `bool IsStored { get; init; }` | Gets whether the data is stored uncompressed. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | Gets the DOS modification time (local time, as stored), when set. |
+| `Method` | `string Method { get; init; }` | Gets the method tag: "GZIP" or "BZ2". |
+| `OriginalSize` | `uint OriginalSize { get; init; }` | Gets the original size. |
+
+#### `BgaFormatDescriptorBase`
+
+Shared GZA/BZA operations; the two differ only in the per-file compressor.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BgaFormatDescriptorBase` | `protected BgaFormatDescriptorBase()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `abstract string DefaultExtension { get; }` |  |
+| `Description` | `abstract string Description { get; }` |  |
+| `DisplayName` | `abstract string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `abstract string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files; every other record is copied byte for byte. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes members by name; every other record is copied byte for byte. |
+
+#### `BzaFormatDescriptor`
+
+BZA archive (BGA32.DLL, Toshinobu Kimura): files compressed one by one as bzip2 streams. References: `http://www.kmonos.net/repos/qbga32` — QBga32 (NYSL), converted for the record layout and checksum`https://www.madobe.net/archiver/lib/bga32.html` — BGA32.DLL 0.37, the oracle
+
+Inherits `BgaFormatDescriptorBase`. Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BzaFormatDescriptor` | `BzaFormatDescriptor()` |  |
+| `DefaultExtension` | `override string DefaultExtension { get; }` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+
+#### `GzaFormatDescriptor`
+
+GZA archive (BGA32.DLL, Toshinobu Kimura): files compressed one by one as gzip members. References: `http://www.kmonos.net/repos/qbga32` — QBga32 (NYSL), converted for the record layout and checksum`https://www.madobe.net/archiver/lib/bga32.html` — BGA32.DLL 0.37, the oracle
+
+Inherits `BgaFormatDescriptorBase`. Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GzaFormatDescriptor` | `GzaFormatDescriptor()` |  |
+| `DefaultExtension` | `override string DefaultExtension { get; }` |  |
+| `Description` | `override string Description { get; }` |  |
+| `DisplayName` | `override string DisplayName { get; }` |  |
+| `Id` | `override string Id { get; }` |  |
+
 ### Namespace `FileFormat.Big`
 
 [`BigEntry`](#bigentry) · [`BigFormatDescriptor`](#bigformatdescriptor) · [`BigReader`](#bigreader) · [`BigWriter`](#bigwriter)
