@@ -1,0 +1,36 @@
+SPIFFS (Peter Andersson) — on-disk layout followed from the reference implementation
+
+Source:   https://github.com/pellepl/spiffs (src/spiffs_nucleus.h, src/spiffs_nucleus.c),
+          as vendored by https://github.com/igrr/mkspiffs
+Revision: spiffs f5e26c4e933189593a71c6b82cda381a7b21e41c
+          (mkspiffs f2482965703b9b4031a5d4797bfd7458016bf3d2), consulted 2026-10-30
+Author:   Peter Andersson
+Licence:  MIT (reproduced below)
+
+SpiffsGeometry.cs, SpiffsReader.cs and SpiffsWriter.cs follow SPIFFS' page,
+object lookup and object index layout: the lookup-page count, the magic and
+erase-count slots, the page header and object index header structures, the
+page flags and the span-index arithmetic of the index tables. The scanning,
+geometry detection and image building are this project's own; no SPIFFS
+function was transliterated.
+
+The MIT License (MIT)
+
+Copyright (c) 2013-2017 Peter Andersson (pelleplutt1976<at>gmail.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
