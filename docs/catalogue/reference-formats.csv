@@ -237,7 +237,7 @@ Symbian installer (SIS/SISX),sis;sisx,installer,,,,,R,,,1,,,,,,MISSING,,
 WiX Burn bundle,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 Enigma Virtual Box,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 MoleBox,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-UPX-packed executable,exe;dll,executable,,,,,R,,,1,https://upx.github.io/,Upx,Y,,,READ-ONLY-BUT-SOURCES-WRITE,upx,
+UPX-packed executable,exe;dll,executable,,,,,R,,,1,https://upx.github.io/,Upx,Y,,,READ-ONLY-BUT-SOURCES-WRITE,upx,"writing refused: upx -t/-d accept only files carrying UPX's own loader stubs and PackHeader, so a provable writer would have to ship UPX's GPL stubs; reading/unpacking stays"
 macOS Installer package (flat pkg),pkg;mpkg,installer,,,,,,,Y,1,,Xar,Y,Y,Y,OK,,
 ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet;mdf;nrg;toast,filesystem,R,RW,R,R,R,fmt/1739;fmt/1741;fmt/1757;fmt/468,RW,7,https://www.ecma-international.org/publications-and-standards/standards/ecma-119/,Iso,Y,Y,Y,PARTIAL,,"Rock Ridge names (NM+CE), symlinks (SL), relocated directories (RE/CL) and zisofs (ZF) decoded; PX/TF not surfaced; interleaved files throw (IsoReader.cs)"
 High Sierra format,iso;hsf,filesystem,,,,,,,Y,1,,,,,,MISSING,,
@@ -338,8 +338,8 @@ Autel obfuscated firmware,,firmware,,,,R,,,,1,,,,,,MISSING,,
 LUKS encrypted volume,luks,disk-image,,,,D,,,,1,,,,,,MISSING,,https://gitlab.com/cryptsetup/cryptsetup/-/wikis/home
 DirectX shader bytecode (DXBC),dxbc,executable,,,,R,,,,1,,,,,,MISSING,,
 ELF,elf;so;o,executable,R,,,D,,fmt/688;fmt/689;fmt/690;fmt/691,,3,https://refspecs.linuxfoundation.org/elf/elf.pdf,Elf,Y,,,OK,,
-Windows PE,exe;dll;sys,executable,R,,,D,,fmt/899;fmt/900;x-fmt/411,,3,,Mz;PeResources,Y,,,PARTIAL,,"archive view of resources/overlay, not a full PE section extractor"
-TE (Terse Executable),te,executable,R,,,,,,,1,,,,,,MISSING,,
+Windows PE,exe;dll;sys,executable,R,,,D,,fmt/899;fmt/900;x-fmt/411,,3,https://learn.microsoft.com/windows/win32/debug/pe-format,Mz;PeResources;PeSections,Y,,,OK,,"resources (PeResources), DOS stub/overlay (Mz) and sections/certificate/debug/symbols/gaps (PeSections), read-only like every source"
+TE (Terse Executable),te,executable,R,,,,,,,1,https://uefi.org/specifications,Te,Y,,,OK,,
 Mach-O (incl. fat/universal),macho;dylib,executable,R,,,,,,,1,,MachO,Y,,,OK,,
 Mach-O universal (7-Zip 'Mub'),mub,executable,R,,,,,,,1,,MachO,Y,,,OK,,
 Flash SWF (incl. compressed SWFc),swf,media,R,,R,,R,,,3,,Swf,Y,Y,,OK,,
