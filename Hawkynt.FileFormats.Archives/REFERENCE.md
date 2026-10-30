@@ -7214,84 +7214,90 @@ Implements `IEquatable<Ac3SyncFrame>`.
 
 #### `AceEntry`
 
-Represents a file entry in an ACE archive.
+One member of an ACE archive, as its file header describes it.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AceEntry` | `AceEntry()` |  |
-| `Attributes` | `uint Attributes { get; set; }` | Gets or sets the file attributes. |
-| `CompressedSize` | `long CompressedSize { get; set; }` | Gets or sets the compressed size in bytes. |
-| `CompressionType` | `int CompressionType { get; set; }` | Gets or sets the compression type (0=store, 1=ACE 1.0, 2=ACE 2.0). |
-| `Crc32` | `uint Crc32 { get; set; }` | Gets or sets the CRC-32 of the original data. |
-| `DictionaryBits` | `int DictionaryBits { get; set; }` | Gets or sets the dictionary bits (10-22). |
-| `FileName` | `string FileName { get; set; }` | Gets or sets the file name. |
-| `Flags` | `ushort Flags { get; set; }` | Gets or sets the file header flags. |
-| `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether the file is encrypted. |
-| `IsSolid` | `bool IsSolid { get; }` | Gets whether this entry is part of a solid block. |
-| `LastModified` | `DateTime LastModified { get; set; }` | Gets or sets the last modification time. |
-| `OriginalSize` | `long OriginalSize { get; set; }` | Gets or sets the original (uncompressed) size in bytes. |
-| `Quality` | `int Quality { get; set; }` | Gets or sets the compression quality/level. |
+| `Attributes` | `uint Attributes { get; init; }` |  |
+| `Comment` | `string Comment { get; init; }` |  |
+| `CompressedSize` | `long CompressedSize { get; init; }` |  |
+| `CompressionType` | `int CompressionType { get; init; }` | 0 stored, 1 ACE 1.0 LZ77, 2 ACE 2.0 blocked. |
+| `Crc32` | `uint Crc32 { get; init; }` | ACE CRC-32 (not inverted) of the uncompressed data. |
+| `DictionaryBits` | `int DictionaryBits { get; init; }` |  |
+| `FileName` | `string FileName { get; init; }` | Member path with '/' separators (ACE stores '\'). |
+| `Flags` | `ushort Flags { get; init; }` |  |
+| `IsContinued` | `bool IsContinued { get; }` | Whether the member is split across volumes of a multi-volume set. |
+| `IsDirectory` | `bool IsDirectory { get; }` |  |
+| `IsEncrypted` | `bool IsEncrypted { get; }` |  |
+| `IsSolid` | `bool IsSolid { get; }` |  |
+| `LastModified` | `DateTime LastModified { get; init; }` |  |
+| `OriginalSize` | `long OriginalSize { get; init; }` |  |
+| `Quality` | `int Quality { get; init; }` |  |
 
 #### `AceFormatDescriptor`
 
-ACE archive (Marcel Lemke / WinAce) — proprietary high-ratio DOS/Windows compressor of the late 1990s. References: `https://github.com/droe/acefile` — acefile — open-source ACE 1.0/2.0 reader/extractor, the de-facto format reference`https://en.wikipedia.org/wiki/ACE_(compressed_file_format)` — format overview and historyWinAce / unacev2.dll (Marcel Lemke) — the original closed-source implementation; no official spec was ever published
+ACE archive (Marcel Lemke / WinAce): reads ACE 1.0 and 2.0 archives — stored, LZ77 and the 2.0 blocked modes (delta, exe, sound, picture), solid and Blowfish-encrypted members, comments, SFX stubs — and writes ACE 1.0 archives (stored or LZ77, optionally solid and encrypted). References: `https://github.com/droe/acefile` — acefile (BSD-2-Clause), converted for the decoder and header layout, and the oracle for the writer`https://en.wikipedia.org/wiki/ACE_(compressed_file_format)` — format overview and history
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AceFormatDescriptor` | `AceFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the ACE archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the ACE archive per the requested mode. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single ACE entry as a bounded read-only `Stream`. The reader's per-entry extractor returns the fully-decompressed bytes; they are wrapped in a `BoundedEntryStream` sized to the entry's original size. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
 
 #### `AceReader`
 
-Reads entries from an ACE archive.
+Reads ACE 1.0 / 2.0 archives: main header (found within the first 512 KiB, so SFX stubs are skipped), file headers, stored / LZ77 / blocked members, Blowfish-encrypted members and comments. Members of a multi-volume set that continue into another volume are listed but refused.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AceReader` | `AceReader(Stream stream, bool leaveOpen = false, string password = null)` | Initializes a new `AceReader` from a stream. |
-| `Comment` | `string Comment { get; }` | Gets the archive comment, if present. |
-| `Entries` | `IReadOnlyList<AceEntry> Entries { get; }` | Gets the entries in the archive. |
-| `HasRecoveryRecord` | `bool HasRecoveryRecord { get; }` | Gets whether this archive has a recovery record. |
-| `IsSolid` | `bool IsSolid { get; }` | Gets whether this is a solid archive. |
-| `Version` | `byte Version { get; }` | Gets the ACE version. |
+| `AceReader` | `AceReader(Stream stream, bool leaveOpen = false, string password = null)` |  |
+| `ArchiveOffset` | `long ArchiveOffset { get; }` | Offset of the main header (non-zero for self-extracting archives). |
+| `Comment` | `string Comment { get; }` |  |
+| `CreatorVersion` | `byte CreatorVersion { get; }` |  |
+| `Entries` | `IReadOnlyList<AceEntry> Entries { get; }` |  |
+| `ExtractVersion` | `byte ExtractVersion { get; }` |  |
+| `HasRecoveryRecord` | `bool HasRecoveryRecord { get; }` |  |
+| `IsLocked` | `bool IsLocked { get; }` |  |
+| `IsMultiVolume` | `bool IsMultiVolume { get; }` |  |
+| `IsSolid` | `bool IsSolid { get; }` |  |
 | `Dispose` | `void Dispose()` |  |
-| `ExtractEntry` | `byte[] ExtractEntry(AceEntry entry)` | Extracts the data for an entry. |
-| `VerifyRecoveryRecord` | `bool VerifyRecoveryRecord()` | Verifies the recovery record against the archive's file data. Returns `true` if the parity matches. |
+| `ExtractEntry` | `byte[] ExtractEntry(AceEntry entry)` | Returns a member's decompressed bytes, verifying its CRC. |
 
 #### `AceWriter`
 
-Creates ACE archives.
+Writes single-volume ACE archives in the ACE 1.0 layout: stored or ACE 1.0 LZ77 members, optionally solid and/or Blowfish-encrypted, with directory entries. No comments, adverts or recovery records.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AceWriter` | `AceWriter(int dictionaryBits = 15, string password = null, bool solid = false, bool recoveryRecord = false, int compressionType = 1, int subMode = 0)` | Initializes a new `AceWriter`. |
-| `Comment` | `string Comment { get; set; }` | Gets or sets the archive comment. |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the archive. |
-| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, string password = null)` | Creates an ACE archive split into multiple volumes. |
-| `ToArray` | `byte[] ToArray()` | Creates an ACE archive as a byte array. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the archive to a stream. |
+| `AceWriter` | `AceWriter(int dictionaryBits = 20, string password = null, bool solid = false, bool store = false)` |  |
+| `CreatedTime` | `DateTime? CreatedTime { get; init; }` | Archive creation time recorded in the main header (defaults to now). |
+| `AddDirectory` | `void AddDirectory(string name, DateTime? modified = null)` |  |
+| `AddFile` | `void AddFile(string name, byte[] data, DateTime? modified = null)` |  |
+| `ToArray` | `byte[] ToArray()` |  |
+| `WriteTo` | `void WriteTo(Stream output)` |  |
 
 ### Namespace `FileFormat.Acm`
 
