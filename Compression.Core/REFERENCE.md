@@ -1309,11 +1309,11 @@ Encodes data using the LZAP (Lempel-Ziv-All-Prefixes) algorithm with variable-wi
 
 ### Namespace `Compression.Core.Dictionary.Lzav`
 
-[`LzavBuildingBlock`](#lzavbuildingblock)
+[`LzavBuildingBlock`](#lzavbuildingblock) · [`LzavCodec`](#lzavcodec)
 
 #### `LzavBuildingBlock`
 
-LZAV — Aleksey Vaneev's modern, byte-oriented (no bit-level packing) LZ77 compressor, tuned for very high throughput at a better ratio than LZ4.
+Exposes Aleksey Vaneev's LZAV as a benchmarkable building block: a 4-byte LE uncompressed size, then the format-3 stream that `lzav_compress_default` writes (see `LzavCodec`).
 
 Implements `IBuildingBlock`.
 
@@ -1326,6 +1326,15 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `LzavCodec`
+
+LZAV data format 3, exactly as Aleksey Vaneev's LZAV 5.20 writes and reads it.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` the way `lzav_compress_default` does. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> src, int length)` | Decompresses a format-3 LZAV stream to exactly `length` bytes. |
 
 ### Namespace `Compression.Core.Dictionary.Lzbitmap`
 
