@@ -324,6 +324,22 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Dar.DarExternalConformanceTests" \
             --logger "trx;LogFileName=dar-286-oracle-tests.trx"
 
+      # Hard gate, both directions: pzxtools (MIT, built from the pinned revision) — tap2pzx writes
+      # byte-identical PZX for the TAP files we encode, pzx2txt lists our tapes, and our reader
+      # returns the original TAP from tapes tap2pzx wrote.
+      - name: PZX oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_PZXTOOLS: "1"
+        run: |
+          sudo apt-get install -y zlib1g-dev
+          git clone --quiet https://github.com/raxoft/pzxtools "$RUNNER_TEMP/pzxtools"
+          git -C "$RUNNER_TEMP/pzxtools" checkout --quiet 7bc8ff6967c4db6c773399b0343ed4b2a0c0a8e7
+          make -C "$RUNNER_TEMP/pzxtools/src" tap2pzx pzx2txt
+          CWB_PZXTOOLS="$RUNNER_TEMP/pzxtools/src" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Pzx.PzxExternalConformanceTests" \
+            --logger "trx;LogFileName=pzx-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the
