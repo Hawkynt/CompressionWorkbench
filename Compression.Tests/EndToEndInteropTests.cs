@@ -1375,7 +1375,7 @@ public class EndToEndInteropTests {
     // Encoding wrappers
     "MacBinary", "BinHex", "UuEncoding", "YEnc",
     // Formats that require structured input
-    "Swf", "Yaz0",
+    "Swf", "Yaz0", "Um3",
     // Extremely slow neural/context-mixing compressors
     "Paq8", "Cmix", "Mcm",
     // Formats with known limitations on arbitrary data

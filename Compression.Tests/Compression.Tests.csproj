@@ -193,6 +193,10 @@
     <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
       <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- UM3 / UTAGE files and their plain originals, checked with GARbro; see GameAssetCiphers/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="GameAssetCiphers\ReferenceVectors\*.ogg;GameAssetCiphers\ReferenceVectors\*.png;GameAssetCiphers\ReferenceVectors\*.jpg;GameAssetCiphers\ReferenceVectors\*.um3;GameAssetCiphers\ReferenceVectors\*.utage;GameAssetCiphers\ReferenceVectors\*.txt">
+      <LogicalName>GameAssetCipherVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar itself (2.4.24 to 2.8.6); see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>

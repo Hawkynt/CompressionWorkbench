@@ -132,6 +132,7 @@ public class DescriptorValidationTests {
   // Formats that require format-specific input (e.g. SWF needs SWF header, FLAC is audio codec)
   private static readonly HashSet<string> _skipStreamRoundTrip = new(StringComparer.OrdinalIgnoreCase) {
     "Swf",   // requires valid SWF header (FWS/CWS/ZWS signature)
+    "Um3",   // wraps an Ogg stream; refuses any other input
     "Flac",  // audio codec — decompressed size differs from input
   };
 
