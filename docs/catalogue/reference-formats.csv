@@ -496,7 +496,7 @@ DECtape,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 OS/3x0 FS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Level-D (DEC),dec,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 George 3,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-Version 6 Unix FS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+Version 6 Unix FS,v6,filesystem,,,,,,,Y,1,https://www.tuhs.org/Archive/Distributions/Research/Dennis_v6/,UnixV6,Y,,,OK,,"read-only: no maintained kernel or tool reads a V6 volume, so a written one could not be checked; reader checked against the 1975 TUHS root volume and its independent tar extraction"
 Version 7 Unix FS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 RT-11 file system,rt11,filesystem,,,,,,,Y,1,,Rt11,Y,Y,Y,OK,,
 GEC DOS filing system,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
