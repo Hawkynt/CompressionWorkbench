@@ -600,7 +600,7 @@ format,Wem,Wwise Encoded Media,Audio,,.wem,Y,Y,,
 format,Wheel,Python Wheel,Archive,,.whl,Y,Y,Y,
 format,Wim,WIM,Archive,,.wim;.swm;.esd,Y,Y,Y,
 format,WordPerfect,WordPerfect,Archive,,.wpd;.wp;.wp5;.wp6;.wp7,Y,Y,,
-format,Woz,Apple II WOZ,Archive,,.woz,Y,Y,,
+format,Woz,Apple II WOZ,Archive,,.woz,Y,Y,Y,Y
 format,Wrapster,Wrapster,Archive,,,Y,Y,Y,
 format,WwiseBnk,Wwise SoundBank,Archive,,.bnk,Y,Y,,
 format,Xa,CD-XA audio (.xa),Audio,,.xa,Y,Y,Y,

@@ -288,7 +288,7 @@ Pasti (STX),stx,disk-image,,,,,,fmt/1904,,1,,,,,,MISSING,,
 HxC Floppy Emulator (HFE),hfe,disk-image,,,,,,fmt/2031;fmt/2038,,1,,Hfe,Y,,,READ-ONLY-BUT-SOURCES-WRITE,HxC Floppy Emulator tool,
 HxC stream image,hfe,disk-image,,,,,,fmt/2039,,1,,,,,,MISSING,,
 A2R flux image,a2r,disk-image,,,,,,fmt/2057;fmt/2058,,1,,,,,,MISSING,,
-WOZ (Apple II),woz,disk-image,,,,,,fmt/2059;fmt/2060,,1,https://applesaucefdc.com/woz/reference2/,Woz,Y,,,READ-ONLY-BUT-SOURCES-WRITE,Applesauce,
+WOZ (Apple II),woz,disk-image,,,,,,fmt/2059;fmt/2060,,1,https://applesaucefdc.com/woz/reference2/,Woz,Y,Y,Y,OK,Applesauce,"WOZ 1/2 read; WOZ 2 created from tracks + INFO/TMAP/META and track edits, decoded by MAME floptool to the expected sectors"
 MOOF (Macintosh flux),moof,disk-image,,,,,,fmt/2061,,1,,,,,,MISSING,,
 SuperCard Pro flux image,scp,disk-image,,,,,,fmt/2071,,1,,,,,,MISSING,,
 T64 (C64 tape),t64,disk-image,,,,,,fmt/820,,1,,T64,Y,Y,Y,OK,,
