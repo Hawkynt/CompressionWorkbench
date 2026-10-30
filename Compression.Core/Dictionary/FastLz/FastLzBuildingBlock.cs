@@ -4,8 +4,8 @@ using Compression.Registry;
 namespace Compression.Core.Dictionary.FastLz;
 
 /// <summary>
-/// Exposes FastLZ level-1 compression as a benchmarkable building block.
-/// Prepends a 4-byte LE uncompressed size header for round-trip support.
+/// Exposes FastLZ as a benchmarkable building block: a 4-byte LE uncompressed size, then the
+/// block <c>fastlz_compress</c> writes (level 1 below 64 KiB, level 2 from there on).
 /// Reference: Ariya Hidayat, "FastLZ", https://ariya.github.io/FastLZ/.
 /// </summary>
 public sealed class FastLzBuildingBlock : IBuildingBlock {
@@ -14,7 +14,7 @@ public sealed class FastLzBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
   public string DisplayName => "FastLZ";
   /// <inheritdoc/>
-  public string Description => "Byte-aligned LZ77 compression tuned for speed, 8KB hash-matched window";
+  public string Description => "Ariya Hidayat's FastLZ, as fastlz_compress writes it: byte-aligned LZ77 with an 8 KiB window, level 2 adding long lengths and 64 KiB far distances";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
