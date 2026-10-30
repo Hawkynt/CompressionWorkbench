@@ -1394,11 +1394,11 @@ Decodes the LZF wire format produced by `LzfCompressor`. Format reference: http:
 
 ### Namespace `Compression.Core.Dictionary.Lzfse`
 
-[`LzfseBuildingBlock`](#lzfsebuildingblock) · [`LzfseCompressor`](#lzfsecompressor) · [`LzfseConstants`](#lzfseconstants) · [`LzfseDecompressor`](#lzfsedecompressor)
+[`LzfseBuildingBlock`](#lzfsebuildingblock)
 
 #### `LzfseBuildingBlock`
 
-Exposes an LZFSE-inspired codec as a benchmarkable building block.
+Exposes Apple's LZFSE as a benchmarkable building block.
 
 Implements `IBuildingBlock`.
 
@@ -1411,30 +1411,6 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
-#### `LzfseCompressor`
-
-Compresses data using the LZFSE-inspired block format (see `LzfseConstants`).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> source)` | Compresses the input data. |
-
-#### `LzfseConstants`
-
-Constants for the LZFSE-inspired block format.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `MinMatch` | `const int MinMatch` | Minimum length of a dictionary match worth encoding. |
-
-#### `LzfseDecompressor`
-
-Decompresses data produced by `LzfseCompressor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses an LZFSE-inspired block. |
 
 ### Namespace `Compression.Core.Dictionary.Lzfx`
 
@@ -2235,11 +2211,11 @@ Decompresses data produced by `LzturboCompressor`.
 
 ### Namespace `Compression.Core.Dictionary.Lzvn`
 
-[`LzvnBuildingBlock`](#lzvnbuildingblock) · [`LzvnCompressor`](#lzvncompressor) · [`LzvnConstants`](#lzvnconstants) · [`LzvnDecompressor`](#lzvndecompressor)
+[`LzvnBuildingBlock`](#lzvnbuildingblock)
 
 #### `LzvnBuildingBlock`
 
-Exposes LZVN as a benchmarkable building block.
+Exposes Apple's LZVN as a benchmarkable building block.
 
 Implements `IBuildingBlock`.
 
@@ -2252,38 +2228,6 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
-#### `LzvnCompressor`
-
-Compresses data using the LZVN block format (see `LzvnConstants`).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> source)` | Compresses the input data using LZVN. |
-
-#### `LzvnConstants`
-
-Constants for the LZVN block format: a byte-oriented opcode LZ77 stream in the spirit of Apple's LZVN ("Lempel-Ziv Variable-length iNteger") codec shipped alongside LZFSE for fast, low-ratio compression of small buffers and Mach-O pages.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `DistanceTier1Max` | `const int DistanceTier1Max` | Distance tier 1 (1-byte) upper bound: distances 1..128. |
-| `DistanceTier2Max` | `const int DistanceTier2Max` | Distance tier 2 (2-byte) upper bound: distances 129..32640. |
-| `DistanceTier3Marker` | `const byte DistanceTier3Marker` | First byte value marking the 5-byte (raw 32-bit) distance tier. |
-| `LiteralExtended` | `const int LiteralExtended` | Literal-length nibble value meaning "read extended continuation bytes". |
-| `MatchExtended` | `const int MatchExtended` | Match-length nibble value meaning "read extended continuation bytes". |
-| `MatchNone` | `const int MatchNone` | Match-length nibble value meaning "no match follows" (trailing literal-only token). |
-| `MaxDirectLiteral` | `const int MaxDirectLiteral` | Maximum literal-length value directly encodable in the token nibble. |
-| `MaxDirectMatch` | `const int MaxDirectMatch` | Maximum match-length field value (relative to `MinMatch`) directly encodable in the token nibble. |
-| `MinMatch` | `const int MinMatch` | Minimum length of a dictionary match worth encoding. |
-
-#### `LzvnDecompressor`
-
-Decompresses data produced by `LzvnCompressor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses LZVN-compressed data. |
 
 ### Namespace `Compression.Core.Dictionary.Lzw`
 

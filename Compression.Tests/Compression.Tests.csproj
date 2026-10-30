@@ -102,6 +102,10 @@
     <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
       <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- LZFSE streams Apple's lzfse wrote; see Lzfse/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Lzfse\ReferenceVectors\*.lzfse;Lzfse\ReferenceVectors\manifest.tsv">
+      <LogicalName>LzfseVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>

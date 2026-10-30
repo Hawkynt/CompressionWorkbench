@@ -155,7 +155,34 @@ internal static class Lzvn {
   /// Thrown for an undefined opcode, a match reaching before the output's start, or an
   /// instruction cut off by the end of the source.
   /// </exception>
-  internal static int Decompress(ReadOnlySpan<byte> src, Span<byte> dst) {
+  internal static int Decompress(ReadOnlySpan<byte> src, Span<byte> dst) => Decode(src, dst, out _);
+
+  /// <summary>
+  /// Decompresses a bare LZVN stream whose length is not known in advance: the stream carries
+  /// its own end, the <c>eos</c> instruction, and decoding runs until it.
+  /// </summary>
+  /// <param name="src">An LZVN stream ending with <c>eos</c>.</param>
+  /// <returns>Everything the stream expands to.</returns>
+  /// <exception cref="InvalidDataException">The stream is malformed or ends before its <c>eos</c>.</exception>
+  internal static byte[] DecompressToEnd(ReadOnlySpan<byte> src) {
+    // No instruction expands by more than lrg_m's 271 bytes from two, so this bounds the output.
+    var limit = (long)src.Length * 136 + 16;
+    var capacity = (int)Math.Min(Math.Max(src.Length * 4L, 256), Math.Min(limit, Array.MaxLength));
+    while (true) {
+      var buffer = new byte[capacity];
+      var written = Decode(src, buffer, out var ended);
+      if (ended)
+        return buffer[..written];
+      if (written < capacity)
+        throw new InvalidDataException("LZVN stream ends without its end-of-stream instruction.");
+      if (capacity >= limit || capacity == Array.MaxLength)
+        throw new InvalidDataException("LZVN stream expands past what its instructions can produce.");
+      capacity = (int)Math.Min(Math.Min(capacity * 2L, limit), Array.MaxLength);
+    }
+  }
+
+  private static int Decode(ReadOnlySpan<byte> src, Span<byte> dst, out bool ended) {
+    ended = false;
     var si = 0;
     var di = 0;
     var d = 0;
@@ -165,6 +192,7 @@ internal static class Lzvn {
       int l, m, length;
       switch (op) {
         case 0x06:
+          ended = true;
           return di;                                   // eos (its padding is not data)
         case 0x0E or 0x16:
           ++si;                                        // nop
