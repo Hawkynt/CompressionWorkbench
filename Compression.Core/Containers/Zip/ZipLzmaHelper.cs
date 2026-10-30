@@ -10,7 +10,12 @@ internal static class ZipLzmaHelper {
   /// <summary>
   /// Decompresses LZMA-compressed data from a ZIP entry.
   /// </summary>
-  public static byte[] Decompress(byte[] compressedData) {
+  /// <param name="compressedData">The entry data: version, properties size, properties, LZMA stream.</param>
+  /// <param name="uncompressedSize">
+  /// The entry's uncompressed size. A writer that leaves general-purpose bit 1 clear ends the
+  /// stream without an end marker, so decoding has to stop at this size.
+  /// </param>
+  public static byte[] Decompress(byte[] compressedData, long uncompressedSize) {
     if (compressedData.Length < 9)
       throw new InvalidDataException("ZIP LZMA data too short.");
 
@@ -29,7 +34,7 @@ internal static class ZipLzmaHelper {
     offset += propsSize;
 
     using var input = new MemoryStream(compressedData, offset, compressedData.Length - offset);
-    var decoder = new LzmaDecoder(input, properties);
+    var decoder = new LzmaDecoder(input, properties, uncompressedSize);
     return decoder.Decode();
   }
 

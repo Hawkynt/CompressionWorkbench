@@ -178,7 +178,12 @@ public sealed class ZipWriter : IDisposable {
       LocalHeaderOffset = this._stream.Position,
       ExtraField = aesExtraField,
       IsEncrypted = encrypted,
-      GeneralPurposeFlags = (ushort)(method == ZipCompressionMethod.Implode ? 0x0006 : 0),
+      // Implode: 8 KB window + literal tree. LZMA: the stream ends with an end marker (APPNOTE 4.4.4 bit 1).
+      GeneralPurposeFlags = (ushort)(method switch {
+        ZipCompressionMethod.Implode => 0x0006,
+        ZipCompressionMethod.Lzma => 0x0002,
+        _ => 0,
+      }),
     };
 
     this.EnsureCompatible(entry, method);
