@@ -290,8 +290,11 @@ public class ZooTests {
   public void CrcMismatch_ThrowsInvalidDataException() {
     var archive = CreateArchive(w => w.AddEntry("f.txt", [1, 2, 3], ZooCompressionMethod.Store));
 
-    // Corrupt a byte of the compressed (stored) data — last byte of archive.
-    archive[^1] ^= 0xFF;
+    // Corrupt a byte of the stored data (the archive ends with Zoo's end-of-directory entry).
+    long dataOffset;
+    using (var probe = new ZooReader(new MemoryStream(archive)))
+      dataOffset = probe.Entries[0].DataOffset;
+    archive[dataOffset + 2] ^= 0xFF;
 
     using var reader = new ZooReader(new MemoryStream(archive));
     Assert.Throws<InvalidDataException>(() => reader.ExtractEntry(reader.Entries[0]));

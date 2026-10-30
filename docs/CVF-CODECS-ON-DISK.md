@@ -3,7 +3,8 @@
 The per-cluster compression formats of the DOS compressed-volume family: Microsoft
 DoubleSpace / DriveSpace (DS-0-x, JM-0-x), DriveSpace 3 (JM-0-1 "High", SQ-0-0 "Ultra") and
 Stac Stacker (SD-3, SD-4). `Compression.Core.FileSystems.Cvf` (`CvfLzCodec`, `Sd3Codec`,
-`Sd4Codec`) implements this document; the container layouts (MDFAT, AMAP, BitFAT) live in the
+`Sd4Codec`) implements this document — it was written from this document and the reference vectors
+alone, with dmsdos run only as a black box; the container layouts (MDFAT, AMAP, BitFAT) live in the
 `FORMAT-NOTES.md` beside each file-system reader.
 
 ## 📚 Provenance
@@ -45,8 +46,36 @@ its kind), together with whether the run fills a whole cluster:
 | 1 | 0 | **fragmented** (first sector starts `0xED`, piece count, 4-byte piece list) | stored (directory) |
 | 1 | 1 | **suballocated** (signature `0x1234` at the sector end) | suballocated |
 
-Fragmented and suballocated clusters are refused by `GenuineStackerReader` — no sample of either
-has been verified.
+A compressed cluster can therefore never occupy all of its cluster's sectors: a run that long reads
+as stored whatever its content (the table above). A writer whose
+compressed payload needs every sector stores the cluster raw instead.
+
+### Stacker fragmented clusters
+
+Measured with dmsdos as a black box: volumes were built with candidate layouts and kept only where
+`dcread` returned the cluster byte-exact (no Stac software or sample volume was available, so this is
+"as dmsdos reads it"; `StackerFragmentedClusterTests` keeps the comparison).
+
+* The AMAP entry (bit 7 set, bit 5 clear) names the **first piece**; its sector count covers that
+  piece only, header sector included. An AMAP count covering all pieces is rejected.
+* The first piece's first sector begins with a header:
+
+  | Offset | Size | Field |
+  |---|---|---|
+  | 0 | 1 | `0xED` |
+  | 1 | 1 | *n*, the number of further pieces |
+  | 2 | 2 | little-endian: the further pieces' sector counts summed, minus one (dmsdos refuses the cluster when this disagrees with the list) |
+  | 4 | 4·*n* | one entry per further piece: 16-bit little-endian sector, sector count − 1, one byte that was 0 in every accepted volume |
+
+* The compressed payload (chosen by its first word as for any Stacker cluster; SD-3 and SD-4 were
+  verified, a DS payload was not read by dmsdos in this position) starts right after the entries, at byte 4 + 4·*n* of the first piece, and continues through the
+  pieces in list order. A stored payload is not possible: dmsdos decompresses fragmented clusters.
+* Accepted: one to three further pieces, first pieces of one and two sectors, SD-3 and SD-4 payloads.
+  Not established: the meaning of the entries' fourth byte (perhaps the sector's high bits on volumes
+  past 65535 sectors) — `GenuineStackerReader` refuses an entry where it is non-zero.
+
+Suballocated clusters (bit 7 and bit 5 set) are refused by `GenuineStackerReader`; their layout has
+not been measured.
 
 ## 🔢 DS-0-x and JM-0-x
 
@@ -84,6 +113,17 @@ of the cluster (DS: `1 1 1` + 12 ones; JM: `1 0` + `1 1` + 12 ones). Stacker's u
 decoder does not require the final sync.
 
 Copies may overlap (distance shorter than length) and are performed byte by byte.
+
+**Measured: one sync per sector.** In all 16 DS/JM reference streams (8 KiB and 32 KiB clusters)
+the dmsdos compressors emit a sync after every 512 decoded bytes, not only after the last one, and
+no match runs across a 512-byte boundary (0 of all matches) — distances do reach back across
+boundaries (up to 4414). Our encoder writes the same shape. The decoder accepts syncs anywhere.
+
+**A cluster shorter than its nominal size** (a file's last cluster, MDFAT decoded size below the
+cluster) ends with a sync followed by nothing but zero padding; decoding stops there and the rest of
+the cluster reads as zero. A sync with non-zero bits behind it is a mid-stream marker and decoding
+continues. Stacker's use of the DS grammar also ends where the stream runs out or reaches its zero
+padding (a `0 0` token with distance 0).
 
 ## 🔢 SQ-0-0
 
@@ -166,6 +206,12 @@ is extended by 4 bits; if the sum is 36, by 8 more; at 291 by 12 more; at 4386 b
 not needed to recover the data). A match reaching before the cluster start is invalid; a final
 match longer than the space left is clipped.
 
+**Our encoder** emits short and long matches (all four length extensions), literals and the end
+token; it transmits the code lengths with all six run tokens and builds both codes with package-merge
+(optimal, length-limited, always complete). Measured: dmsdos reads main codes 15 bits deep
+(`GivenSd4CodesOf15Bits_WhenReadByDmsdos_ThenTheClusterIsByteExact`), so the encoder uses the format's
+full 15-bit limit for both codes.
+
 ## ✅ Verification
 
 * `Compression.Tests/Cvf/ReferenceVectors/` — 32 cluster payloads written by the dmsdos
@@ -179,8 +225,6 @@ match longer than the space left is clipped.
 
 ## ⚠️ Not covered
 
-* **Our SD-4 encoder emits literals only.** The decoder reads the whole format; an encoder that
-  emits match and run tokens has not been written.
 * **DriveSpace 3 fragmented clusters** (an MDFAT flag dmsdos itself describes as guessed) and
-  **Stacker fragmented / suballocated clusters** are not read.
+  **Stacker suballocated clusters** are not read: no layout has been measured for either.
 * No Microsoft or Stac tool has produced or read any of these streams on this machine.

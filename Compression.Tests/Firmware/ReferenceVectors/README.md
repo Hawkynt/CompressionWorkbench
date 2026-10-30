@@ -88,3 +88,20 @@ The tool reported kernel checksum `0xb9b8ba25`, rootfs checksum `0xa3fe258d` and
 |------|------:|---------|
 | `openwrt-mkchkimg-kernel.chk` | 5058 | `febe1c7bbb8224582a1603430cb850986f4aa61eb073922cbbb84d72a4512994` |
 | `openwrt-mkchkimg-kernel-rootfs.chk` | 5135 | `46e1e2e4eabda4771e71af0e61ab7646b0a6d76b8204df63df6b2b76c62c273a` |
+
+## Linux kernel reference samples
+
+Set `CWB_KERNEL_SAMPLES` to a directory containing the following filenames to run
+the real-image cases in `LinuxKernelImageTests`.
+
+| Local filename | Source | SHA-256 |
+| --- | --- | --- |
+| `tc-vmlinuz` | [TinyCore 15.x x86 vmlinuz](http://tinycorelinux.net/15.x/x86/release/distribution_files/vmlinuz) | `364eba4da3b791c0a5e2e32fadc4106fe0955638ad6ede07886b2ee887bf5c80` |
+| `owrt-armv7-kernel.bin` | [OpenWrt 23.05.5 ARMv7 generic kernel](https://downloads.openwrt.org/releases/23.05.5/targets/armsr/armv7/openwrt-23.05.5-armsr-armv7-generic-kernel.bin) | `b87d5c028a2ae8b4f6c46584a5e7dc8520176ca615af046cd22aefb27728026b` |
+| `owrt-armv8-kernel.bin` | [OpenWrt 23.05.5 ARMv8 generic kernel](https://downloads.openwrt.org/releases/23.05.5/targets/armsr/armv8/openwrt-23.05.5-armsr-armv8-generic-kernel.bin) | `89b6ebd23c971afa069889974ad9b4186332cdbde962312cc0e7d6599232760f` |
+
+The OpenWrt image hashes match the release indices. The ARMv7 image contains an XZ
+stream with the ARM BCJ filter at byte 55,942. CPython 3.13.1 `lzma` decodes it to
+13,189,772 bytes with SHA-256
+`ec361666d28405aa3bf1361fc67b47cdc2199e83096550622d633983ed721e43`;
+the test compares the complete extracted payload with this digest.

@@ -7,6 +7,251 @@
 > Every public and protected type and member, read from the built assembly and merged
 > with its XML documentation. Generated — edit the XML docs in source, not this file.
 
+### Namespace `FileFormat.AndroidBootImage`
+
+[`AndroidBootImage`](#androidbootimage) · [`AndroidBootImageFormatDescriptor`](#androidbootimageformatdescriptor) · [`AndroidBootImageMetadata`](#androidbootimagemetadata) · [`VendorRamdisk`](#vendorramdisk)
+
+#### `AndroidBootImage`
+
+An Android `boot.img` / `recovery.img` (magic `ANDROID!`, header v0–v4) or `vendor_boot.img` (magic `VNDRBOOT`, header v3–v4), parsed into its header fields and page-aligned components, and written back the way AOSP `mkbootimg` lays one out.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AndroidBootImage` | `AndroidBootImage()` |  |
+| `BoardIdWords` | `const int BoardIdWords` |  |
+| `BootArgsSize` | `const int BootArgsSize` |  |
+| `BootExtraArgsSize` | `const int BootExtraArgsSize` |  |
+| `BootMagic` | `const string BootMagic` |  |
+| `BootNameSize` | `const int BootNameSize` |  |
+| `BootV1HeaderSize` | `const uint BootV1HeaderSize` | Header lengths per version, as `mkbootimg` writes them into the header-size field. |
+| `BootV2HeaderSize` | `const uint BootV2HeaderSize` | Header lengths per version, as `mkbootimg` writes them into the header-size field. |
+| `BootV3ArgsSize` | `const int BootV3ArgsSize` |  |
+| `BootV3HeaderSize` | `const uint BootV3HeaderSize` | Header lengths per version, as `mkbootimg` writes them into the header-size field. |
+| `BootV4HeaderSize` | `const uint BootV4HeaderSize` | Header lengths per version, as `mkbootimg` writes them into the header-size field. |
+| `V3PageSize` | `const int V3PageSize` |  |
+| `VendorArgsSize` | `const int VendorArgsSize` |  |
+| `VendorBootMagic` | `const string VendorBootMagic` |  |
+| `VendorRamdiskEntrySize` | `const int VendorRamdiskEntrySize` |  |
+| `VendorRamdiskNameSize` | `const int VendorRamdiskNameSize` |  |
+| `VendorRamdiskTypePlatform` | `const uint VendorRamdiskTypePlatform` |  |
+| `VendorV3HeaderSize` | `const uint VendorV3HeaderSize` |  |
+| `VendorV4HeaderSize` | `const uint VendorV4HeaderSize` |  |
+| `Board` | `byte[] Board { get; set; }` |  |
+| `BootSignature` | `byte[] BootSignature { get; set; }` |  |
+| `Bootconfig` | `byte[] Bootconfig { get; set; }` |  |
+| `Cmdline` | `byte[] Cmdline { get; set; }` | The command-line field, raw: 512 bytes (boot v0–v2), 1536 (boot v3/v4), 2048 (vendor). |
+| `DtbAddress` | `ulong DtbAddress { get; set; }` |  |
+| `Dtb` | `byte[] Dtb { get; set; }` |  |
+| `EffectivePageSize` | `uint EffectivePageSize { get; }` |  |
+| `ExtraCmdline` | `byte[] ExtraCmdline { get; set; }` |  |
+| `HasAvbFooter` | `bool HasAvbFooter { get; }` | True when the trailer ends in an AVB footer (`AVBf` in the last 64 bytes). |
+| `HeaderSize` | `uint HeaderSize { get; set; }` | The header-size field (boot v1+, vendor); 0 where the version has none. |
+| `HeaderTail` | `byte[] HeaderTail { get; set; }` | Header-region bytes after the fields this parser knows, up to the first component. |
+| `HeaderVersion` | `uint HeaderVersion { get; set; }` |  |
+| `ImageIdValid` | `bool ImageIdValid { get; }` | True when the stored image id equals the SHA-1 `mkbootimg` computes (boot v0–v2). |
+| `ImageId` | `byte[] ImageId { get; set; }` |  |
+| `IsCanonical` | `bool IsCanonical { get; }` |  |
+| `IsVendor` | `bool IsVendor { get; set; }` |  |
+| `KernelAddress` | `uint KernelAddress { get; set; }` |  |
+| `Kernel` | `byte[] Kernel { get; set; }` |  |
+| `KnownHeaderLength` | `int KnownHeaderLength { get; }` |  |
+| `NonCanonicalReason` | `string NonCanonicalReason { get; }` |  |
+| `OsVersionPatchLevel` | `uint OsVersionPatchLevel { get; set; }` | `(os_version << 11) \| os_patch_level`, raw. |
+| `PageSize` | `uint PageSize { get; set; }` | Flash page size. Fixed at 4096 for boot v3/v4. |
+| `RamdiskAddress` | `uint RamdiskAddress { get; set; }` |  |
+| `Ramdisk` | `byte[] Ramdisk { get; set; }` |  |
+| `RecoveryDtbo` | `byte[] RecoveryDtbo { get; set; }` |  |
+| `Reserved` | `uint[] Reserved { get; set; }` |  |
+| `SecondAddress` | `uint SecondAddress { get; set; }` |  |
+| `Second` | `byte[] Second { get; set; }` |  |
+| `TagsAddress` | `uint TagsAddress { get; set; }` |  |
+| `Trailer` | `byte[] Trailer { get; set; }` | Bytes after the last component: partition padding, an AVB footer, anything appended. |
+| `VendorRamdisks` | `List<VendorRamdisk> VendorRamdisks { get; set; }` |  |
+| `ComputeImageId` | `byte[] ComputeImageId()` | The boot v0–v2 image id exactly as `mkbootimg` computes it: SHA-1 over each component followed by its 32-bit length (kernel, ramdisk, second, then recovery DTBO from v1 and DTB from v2), zero-extended to 32 bytes. |
+| `FormatOsPatchLevel` | `static string FormatOsPatchLevel(uint packed)` |  |
+| `FormatOsVersion` | `static string FormatOsVersion(uint packed)` |  |
+| `IsPowerOfTwoPage` | `static bool IsPowerOfTwoPage(uint page)` |  |
+| `Pages` | `static int Pages(long size, int page)` |  |
+| `Parse` | `static AndroidBootImage Parse(ReadOnlySpan<byte> data)` |  |
+| `TryParseOsPatchLevel` | `static bool TryParseOsPatchLevel(string text, out uint level)` | Parses `YYYY-MM[-DD]` as `mkbootimg --os_patch_level` does (7 bits of year past 2000, 4 of month). |
+| `TryParseOsVersion` | `static bool TryParseOsVersion(string text, out uint version)` | Parses `a[.b[.c]]`, 7 bits per field, as `mkbootimg --os_version` does. |
+| `Write` | `void Write(Stream output, bool recomputeImageId)` | Writes the image in `mkbootimg` order: header page(s), then each component padded to the page size. A boot v0–v2 image id is recomputed when `recomputeImageId` is set (a fresh image, or one whose stored id was valid), else kept as it was. |
+
+#### `AndroidBootImageFormatDescriptor`
+
+Android boot image — `boot.img` / `recovery.img` (magic `ANDROID!`, header v0–v4) and `vendor_boot.img` (magic `VNDRBOOT`, header v3–v4) — as a pseudo-archive whose members are the components `unpack_bootimg` extracts, under the names it gives them: `kernel`, `ramdisk`, `second`, `recovery_dtbo`, `dtb`, `boot_signature`, `vendor_ramdisk` / `vendor_ramdiskNN`, `bootconfig`. `metadata.ini` renders the header; bytes after the last component (partition padding, an AVB footer) surface as `trailer.bin`.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AndroidBootImageFormatDescriptor` | `AndroidBootImageFormatDescriptor()` |  |
+| `BootSignature` | `const string BootSignature` |  |
+| `Bootconfig` | `const string Bootconfig` |  |
+| `Dtb` | `const string Dtb` |  |
+| `FullImage` | `const string FullImage` |  |
+| `Kernel` | `const string Kernel` |  |
+| `Ramdisk` | `const string Ramdisk` |  |
+| `RecoveryDtbo` | `const string RecoveryDtbo` |  |
+| `Second` | `const string Second` |  |
+| `Trailer` | `const string Trailer` |  |
+| `VendorRamdisk` | `const string VendorRamdisk` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds an image from component files named as `unpack_bootimg` names them, with the header fields taken from a `metadata.ini` among the inputs (the rendering this descriptor lists) and `mkbootimg`'s defaults for every field it does not set. A single input under any other name is the payload a boot image exists to carry and becomes the kernel, as `mkbootimg --kernel` would take it; more than one such input is refused. |
+| `Entries` | `static List<FirmwareEntry> Entries(byte[] data)` | The members of `data`; an image that does not parse lists as itself plus the reason. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` | Empties every component and the trailer, keeping the header fields: a valid image with nothing in it. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `AndroidBootImageMetadata`
+
+The `metadata.ini` rendering of an Android boot / vendor_boot header, and the reverse: applying an edited rendering back onto an image. A key is applied only when its value differs from what the image itself renders, so handing back an untouched rendering changes nothing — not even the bytes past the NUL of a string field.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BootSection` | `const string BootSection` |  |
+| `VendorSection` | `const string VendorSection` |  |
+| `Apply` | `static void Apply(AndroidBootImage img, IReadOnlyDictionary<string, string> ini)` | Applies every key of `ini` whose value differs from the image's own rendering. |
+| `NewImage` | `static AndroidBootImage NewImage(IReadOnlyDictionary<string, string> ini, bool vendorHint)` | A fresh image of the kind and header version `ini` names (boot v0 when it names none), carrying `mkbootimg`'s defaults: base 0x10000000 with its standard offsets, 2048-byte pages, and the header size of the version. |
+| `RamdiskEntryName` | `static string RamdiskEntryName(int index)` |  |
+| `RenderPartial` | `static byte[] RenderPartial(string error)` |  |
+| `Render` | `static byte[] Render(AndroidBootImage img)` |  |
+
+#### `VendorRamdisk`
+
+One fragment of a vendor_boot ramdisk table (header v4) or the single vendor ramdisk (v3).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VendorRamdisk` | `VendorRamdisk()` |  |
+| `BoardId` | `uint[] BoardId { get; set; }` |  |
+| `Data` | `byte[] Data { get; set; }` |  |
+| `Name` | `byte[] Name { get; set; }` | The 32-byte NUL-padded name field, kept raw. |
+| `Type` | `uint Type { get; set; }` |  |
+
+### Namespace `FileFormat.AndroidVbmeta`
+
+[`AndroidVbmetaFormatDescriptor`](#androidvbmetaformatdescriptor) · [`AvbDescriptor`](#avbdescriptor) · [`AvbDescriptorText`](#avbdescriptortext) · [`AvbVbmeta`](#avbvbmeta)
+
+#### `AndroidVbmetaFormatDescriptor`
+
+Android Verified Boot 2.0 `vbmeta` image (magic `AVB0`) as a pseudo-archive: `metadata.ini` renders the header, the verification result and every descriptor's fields; each descriptor is a member under `descriptors/` as its exact encoded bytes; the public key, its metadata and the signature are members of their own.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveWriteConstraints`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AndroidVbmetaFormatDescriptor` | `AndroidVbmetaFormatDescriptor()` |  |
+| `DescriptorFolder` | `const string DescriptorFolder` |  |
+| `FullImage` | `const string FullImage` |  |
+| `PublicKeyMetadataName` | `const string PublicKeyMetadataName` |  |
+| `PublicKeyName` | `const string PublicKeyName` |  |
+| `SignatureName` | `const string SignatureName` |  |
+| `TrailerName` | `const string TrailerName` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | The members `Create` writes. A vbmeta holds structured AVB descriptors, not files, so an arbitrary blob has nowhere to go; a public key or signature needs the private key. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes an unsigned vbmeta image from descriptor blobs (`descriptors/NN_*.bin`, in `NN` order), an optional `public_key_metadata.bin`, an optional `trailer.bin` and the header fields of a `metadata.ini` — required libavb version, rollback index and location, flags and release string. A public key or signature among the inputs is refused: signing needs the private key. |
+| `Entries` | `static List<FirmwareEntry> Entries(byte[] data)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `RenderMetadata` | `static byte[] RenderMetadata(AvbVbmeta v)` |  |
+
+#### `AvbDescriptor`
+
+One AVB descriptor, kept as its exact encoded bytes (16-byte tag/length header, body, padding).
+
+Implements `IEquatable<AvbDescriptor>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AvbDescriptor` | `AvbDescriptor(ulong Tag, byte[] Encoded)` | One AVB descriptor, kept as its exact encoded bytes (16-byte tag/length header, body, padding). |
+| `ChainPartition` | `const ulong ChainPartition` |  |
+| `Hash` | `const ulong Hash` |  |
+| `Hashtree` | `const ulong Hashtree` |  |
+| `KernelCmdline` | `const ulong KernelCmdline` |  |
+| `Property` | `const ulong Property` |  |
+| `Body` | `ReadOnlySpan<byte> Body { get; }` |  |
+| `Encoded` | `byte[] Encoded { get; init; }` |  |
+| `Kind` | `string Kind { get; }` |  |
+| `Tag` | `ulong Tag { get; init; }` |  |
+
+#### `AvbDescriptorText`
+
+Human-readable renderings of AVB descriptors: the fields `avbtool info_image` prints, as `key = value` lines, and a short name for the descriptor's entry. Rendering never throws — a descriptor whose body does not match its declared lengths is reported as malformed.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EntryName` | `static string EntryName(int index, AvbDescriptor d)` |  |
+| `Render` | `static void Render(StringBuilder sb, AvbDescriptor d)` |  |
+| `Subject` | `static string Subject(AvbDescriptor d)` | The partition name, property key, or nothing — whatever names the descriptor's subject. |
+
+#### `AvbVbmeta`
+
+An Android Verified Boot 2.0 `vbmeta` image (magic `AVB0`): the 256-byte header, the authentication block (hash, signature) and the auxiliary block (descriptors, public key, public key metadata), parsed and verified, and written back the way `avbtool make_vbmeta_image` lays one out.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AvbVbmeta` | `AvbVbmeta()` |  |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `ReleaseStringSize` | `const int ReleaseStringSize` |  |
+| `ReservedSize` | `const int ReservedSize` |  |
+| `AlgorithmType` | `uint AlgorithmType { get; set; }` |  |
+| `Descriptors` | `List<AvbDescriptor> Descriptors { get; set; }` |  |
+| `Flags` | `uint Flags { get; set; }` |  |
+| `HashValid` | `bool? HashValid { get; }` | Null when the algorithm carries no hash. |
+| `Hash` | `byte[] Hash { get; set; }` |  |
+| `IsCanonical` | `bool IsCanonical { get; }` | True when the image is laid out as avbtool lays it out, so a rewrite reproduces it. |
+| `NonCanonicalReason` | `string NonCanonicalReason { get; }` |  |
+| `PublicKeyMetadata` | `byte[] PublicKeyMetadata { get; set; }` |  |
+| `PublicKey` | `byte[] PublicKey { get; set; }` |  |
+| `ReleaseString` | `byte[] ReleaseString { get; set; }` | The 48-byte release-string field, raw (avbtool writes 47 bytes plus a NUL). |
+| `Reserved` | `byte[] Reserved { get; set; }` |  |
+| `RollbackIndexLocation` | `uint RollbackIndexLocation { get; set; }` |  |
+| `RollbackIndex` | `ulong RollbackIndex { get; set; }` |  |
+| `SignatureValid` | `bool? SignatureValid { get; }` | Null when the algorithm carries no signature this reader can check. |
+| `Signature` | `byte[] Signature { get; set; }` |  |
+| `Trailer` | `byte[] Trailer { get; set; }` | Bytes after the vbmeta blob (partition padding). |
+| `VersionMajor` | `uint VersionMajor { get; set; }` |  |
+| `VersionMinor` | `uint VersionMinor { get; set; }` |  |
+| `AlgorithmName` | `static string AlgorithmName(uint type)` |  |
+| `FromEncoded` | `static AvbDescriptor FromEncoded(byte[] encoded)` |  |
+| `Parse` | `static AvbVbmeta Parse(ReadOnlySpan<byte> d)` |  |
+| `ReleaseText` | `static string ReleaseText(byte[] field)` |  |
+| `TryRsaKey` | `static RSAParameters? TryRsaKey(ReadOnlySpan<byte> key)` | AVB's public key encoding: big-endian bit count and n0inv, then the modulus and R², each bit-count/8 bytes. Exponent 65537. |
+| `Validate` | `static void Validate(AvbDescriptor desc)` | Checks an encoded descriptor's own length field, so a malformed blob is refused rather than written. |
+| `Write` | `void Write(Stream output)` | Writes the vbmeta blob as avbtool's `_generate_vbmeta_blob` does, then the trailer. Only the unsigned `NONE` algorithm can be written: anything else needs the private key. |
+
 ### Namespace `FileFormat.BinCue`
 
 [`BinCueEntry`](#bincueentry) · [`BinCueFormatDescriptor`](#bincueformatdescriptor) · [`BinCueInPlaceModifier`](#bincueinplacemodifier) · [`BinCueInPlaceModifier.SectorGeometry`](#bincueinplacemodifiersectorgeometry) · [`BinCueLayoutMap`](#bincuelayoutmap) · [`BinCueReader`](#bincuereader)
@@ -301,6 +546,60 @@ Writes PSP CSO v1/v2 and ZSO compressed-ISO containers.
 | `CsoWriter` | `CsoWriter()` |  |
 | `DefaultBlockSize` | `const int DefaultBlockSize` | Default block size — one cooked ISO 9660 sector. |
 | `Build` | `static byte[] Build(ReadOnlySpan<byte> uncompressedData, int blockSize = 2048)` | Builds a canonical CSO v1 stream around `uncompressedData`. |
+
+### Namespace `FileFormat.Daa`
+
+[`DaaFormatDescriptor`](#daaformatdescriptor) · [`DaaImage`](#daaimage)
+
+#### `DaaFormatDescriptor`
+
+PowerISO DAA ("Direct Access Archive") compressed CD/DVD image, format version 0x100: exposes the ISO as `image.iso` plus a synthetic `metadata.ini`; creates and rewrites version 0x100 images PowerISO reads. Version 0x110, split, password-protected and gBurner GBI images are refused.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DaaFormatDescriptor` | `DaaFormatDescriptor()` |  |
+| `ImageName` | `const string ImageName` |  |
+| `MetadataName` | `const string MetadataName` |  |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | DAA requires an ISO image payload, so it has no empty container for purge to leave behind. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Replaces `image.iso`, keeping the chunk size. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `DaaImage`
+
+PowerISO DAA image, format version 0x100 (single volume, unencrypted): a 76-byte header, a table of 3-byte compressed chunk lengths and raw-deflate chunks. Implemented from `docs/DAA-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DaaImage` | `DaaImage()` |  |
+| `DefaultChunkSize` | `const int DefaultChunkSize` |  |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `Version100` | `const uint Version100` |  |
+| `Version110` | `const uint Version110` |  |
+| `ChunkSize` | `uint ChunkSize { get; }` |  |
+| `Chunks` | `IReadOnlyList<ValueTuple<long, int>> Chunks { get; }` |  |
+| `IsoSize` | `long IsoSize { get; }` |  |
+| `Version` | `uint Version { get; }` |  |
+| `CopyIsoTo` | `void CopyIsoTo(Stream source, Stream output)` |  |
+| `Read` | `static DaaImage Read(Stream stream)` |  |
+| `Write` | `static void Write(Stream output, ReadOnlySpan<byte> iso, int chunkSize = 65536, DeflateCompressionLevel level = 6)` | Writes a version 0x100 image: header, 3-byte length table, raw-deflate chunks each followed by its CRC-32. |
 
 ### Namespace `FileFormat.Dmg`
 
@@ -603,6 +902,58 @@ Writer for EnCase Expert Witness Format (EWF / .E01) forensic images. Produces a
 | `Notes` | `string Notes { get; init; }` | Notes recorded in the acquisition header. |
 | `Build` | `byte[] Build(ReadOnlySpan<byte> media)` | Builds a single-segment E01 image from the supplied raw media bytes. |
 
+### Namespace `FileFormat.FirmwareCommon`
+
+[`EmbeddedPayload`](#embeddedpayload) · [`FirmwareArchive`](#firmwarearchive) · [`FirmwareCrc32`](#firmwarecrc32) · [`FirmwareEntry`](#firmwareentry)
+
+#### `EmbeddedPayload`
+
+Recognises and unpacks a compressed payload embedded in a firmware image by the magic of its stream format, using this repository's own stream codecs through the registry. A payload is only reported as decompressed when the codec decodes it without error, so nothing is ever guessed into existence.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Find` | `static ValueTuple<int, string, string, byte[]>? Find(ReadOnlyMemory<byte> data, int start, Func<byte[], bool> accept, int maxCandidates = 64)` | Scans `data` from `start` for the first known stream magic whose codec decodes and whose output satisfies `accept`. |
+| `Identify` | `static ValueTuple<string, string>? Identify(ReadOnlySpan<byte> data)` | The stream format whose magic starts `data`, or null. |
+| `TryDecompress` | `static byte[] TryDecompress(string formatId, ReadOnlyMemory<byte> data, long limit = 1073741824)` | Decodes `data` with the codec `formatId` names, giving up past `limit` output bytes. Null when the codec is not registered or rejects the stream. |
+
+#### `FirmwareArchive`
+
+The list / extract plumbing every firmware pseudo-archive shares: a firmware image is parsed into an ordered set of named slices, and listing and extracting both walk that set.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MetadataName` | `const string MetadataName` |  |
+| `CString` | `static string CString(ReadOnlySpan<byte> field)` | A NUL-terminated field as text: everything before the first NUL, Latin-1 so no byte is lost. |
+| `Extract` | `static void Extract(IReadOnlyList<FirmwareEntry> entries, string outputDir, string[] files)` |  |
+| `FoldLonePayload` | `static IReadOnlyList<ArchiveInputInfo> FoldLonePayload(IReadOnlyList<ArchiveInputInfo> inputs, Func<string, bool> isKnown, string primary)` | The input set a single-payload container is created from: when exactly one input carries a name `isKnown` does not recognise and no input is already named `primary`, that input is the payload and is renamed to it. Any other set comes back unchanged, so the writer still refuses names it does not know. |
+| `Hex` | `static string Hex(ulong value)` |  |
+| `LeafName` | `static string LeafName(string name)` | The last path segment of an archive name, either separator. |
+| `List` | `static List<ArchiveEntryInfo> List(IReadOnlyList<FirmwareEntry> entries)` |  |
+| `ParseIni` | `static Dictionary<string, string> ParseIni(ReadOnlySpan<byte> ini)` | Parses the `key = value` lines of an INI rendering into section-qualified keys (`section.key`); keys before any section are unqualified. The value keeps its exact text after the single blank that follows the `=`. |
+| `ReadAll` | `static byte[] ReadAll(Stream stream)` |  |
+| `TryParseNumber` | `static bool TryParseNumber(string text, out ulong value)` |  |
+
+#### `FirmwareCrc32`
+
+The reflected CRC-32 (polynomial 0xEDB88320) firmware headers use, exposed raw: initial value and final XOR are the caller's, because TRX for one stores the register without the final inversion.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compute` | `static uint Compute(ReadOnlySpan<byte> data)` | The standard CRC-32 (zlib, IEEE 802.3). |
+| `Update` | `static uint Update(uint crc, ReadOnlySpan<byte> data)` |  |
+
+#### `FirmwareEntry`
+
+One member a firmware container exposes: a slice of the image or a rendering of it.
+
+Implements `IEquatable<FirmwareEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FirmwareEntry` | `FirmwareEntry(string Name, ReadOnlyMemory<byte> Data)` | One member a firmware container exposes: a slice of the image or a rendering of it. |
+| `Data` | `ReadOnlyMemory<byte> Data { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+
 ### Namespace `FileFormat.FirmwareHex`
 
 [`FirmwareHexWriter`](#firmwarehexwriter) · [`FirmwareImage`](#firmwareimage) · [`IntelHexFormatDescriptor`](#intelhexformatdescriptor) · [`IntelHexReader`](#intelhexreader) · [`SRecordReader`](#srecordreader) · [`TiTxtFormatDescriptor`](#titxtformatdescriptor) · [`TiTxtReader`](#titxtreader)
@@ -770,6 +1121,53 @@ In-place modifier for Apple IPSW packages. An IPSW is just a ZIP file with an Ap
 | `AddEntry` | `static void AddEntry(Stream ipsw, string zipPath, byte[] data)` | Adds (or replaces by ZIP path) a single entry inside the IPSW. The previous entry's bytes are wiped via `RemoveFile` before the new entry is appended. |
 | `RemoveEntry` | `static bool RemoveEntry(Stream ipsw, string zipPath)` | Removes a single entry by ZIP path. Returns true if removed. |
 
+### Namespace `FileFormat.LinuxKernelImage`
+
+[`LinuxKernelImage`](#linuxkernelimage) · [`LinuxKernelImageFormatDescriptor`](#linuxkernelimageformatdescriptor)
+
+#### `LinuxKernelImage`
+
+A bootable Linux kernel image, recognised by the header its architecture's boot protocol defines, and split into the parts that protocol names: the x86 real-mode setup and the compressed payload of a `bzImage`, the payload of an EFI `zboot` image, the decompressor-wrapped payload of an ARM `zImage`; the uncompressed arm64 / RISC-V `Image` is described but has no inner payload.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LinuxKernelImage` | `LinuxKernelImage()` |  |
+| `ArmZImageMagic` | `const uint ArmZImageMagic` |  |
+| `Fields` | `List<ValueTuple<string, string>> Fields { get; }` |  |
+| `Kind` | `string Kind { get; }` |  |
+| `Parts` | `List<FirmwareEntry> Parts { get; }` |  |
+| `LooksLikeArm64` | `static bool LooksLikeArm64(ReadOnlySpan<byte> d)` |  |
+| `LooksLikeArmZImage` | `static bool LooksLikeArmZImage(ReadOnlySpan<byte> d)` |  |
+| `LooksLikeRiscV` | `static bool LooksLikeRiscV(ReadOnlySpan<byte> d)` |  |
+| `LooksLikeX86` | `static bool LooksLikeX86(ReadOnlySpan<byte> d)` |  |
+| `LooksLikeZboot` | `static bool LooksLikeZboot(ReadOnlySpan<byte> d)` |  |
+| `Parse` | `static LinuxKernelImage Parse(ReadOnlyMemory<byte> data)` |  |
+
+#### `LinuxKernelImageFormatDescriptor`
+
+Linux kernel boot image — x86 `bzImage`, ARM `zImage`, arm64 / RISC-V `Image`, EFI `zboot` — as a read-only pseudo-archive: `metadata.ini` carries the boot-protocol header and the version banner, and the members are the parts the protocol defines plus the decompressed kernel where the payload decodes (`vmlinux` for x86, `Image` otherwise).
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LinuxKernelImageFormatDescriptor` | `LinuxKernelImageFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Entries` | `static List<FirmwareEntry> Entries(byte[] data)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Mdf`
 
 [`MdfEntry`](#mdfentry) · [`MdfFormatDescriptor`](#mdfformatdescriptor) · [`MdfInPlaceModifier`](#mdfinplacemodifier) · [`MdfInPlaceModifier.SectorGeometry`](#mdfinplacemodifiersectorgeometry) · [`MdfLayoutMap`](#mdflayoutmap) · [`MdfReader`](#mdfreader)
@@ -869,6 +1267,70 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<MdfEntry> Entries { get; }` | Gets all file and directory entries found in the ISO 9660 file system. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(MdfEntry entry)` | Extracts the raw data for a file entry. |
+
+### Namespace `FileFormat.NetgearChk`
+
+[`NetgearChkFormatDescriptor`](#netgearchkformatdescriptor) · [`NetgearChkImage`](#netgearchkimage)
+
+#### `NetgearChkFormatDescriptor`
+
+NETGEAR `.chk` firmware as a pseudo-archive: `kernel.bin`, `rootfs.bin`, `metadata.ini` with the board id, region and the four checksums checked.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NetgearChkFormatDescriptor` | `NetgearChkFormatDescriptor()` |  |
+| `FullImage` | `const string FullImage` |  |
+| `KernelName` | `const string KernelName` |  |
+| `RootfsName` | `const string RootfsName` |  |
+| `TrailerName` | `const string TrailerName` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | An image from `kernel.bin`, an optional `rootfs.bin` and the board id and region of a `metadata.ini` (mkchkimg's defaults otherwise). A single input under any other name is the payload and becomes `kernel.bin`, as `mkchkimg -k` would take it. |
+| `Entries` | `static List<FirmwareEntry> Entries(byte[] data)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `NetgearChkImage`
+
+A NETGEAR `.chk` firmware image: a big-endian header (magic 0x2A23245E, header length, an 8-byte reserved block whose first byte is the region, checksums and lengths of kernel and rootfs, an image checksum and a header checksum) followed by the board-id string, the kernel and the optional rootfs. The layout and checksum are specified in `docs/NETGEAR-CHK-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NetgearChkImage` | `NetgearChkImage()` |  |
+| `DefaultBoardId` | `const string DefaultBoardId` |  |
+| `FixedHeaderSize` | `const int FixedHeaderSize` |  |
+| `Magic` | `const uint Magic` |  |
+| `BoardId` | `byte[] BoardId { get; set; }` |  |
+| `ChecksumsValid` | `bool ChecksumsValid { get; }` |  |
+| `ComputedHeaderChecksum` | `uint ComputedHeaderChecksum { get; }` |  |
+| `Kernel` | `byte[] Kernel { get; set; }` |  |
+| `Region` | `byte Region { get; set; }` |  |
+| `Reserved` | `byte[] Reserved { get; set; }` | The 8 reserved bytes, raw; byte 0 is the region (1 = worldwide, 2 = North America). |
+| `Rootfs` | `byte[] Rootfs { get; set; }` |  |
+| `StoredHeaderChecksum` | `uint StoredHeaderChecksum { get; }` |  |
+| `StoredImageChecksum` | `uint StoredImageChecksum { get; }` |  |
+| `StoredKernelChecksum` | `uint StoredKernelChecksum { get; }` |  |
+| `StoredRootfsChecksum` | `uint StoredRootfsChecksum { get; }` |  |
+| `Trailer` | `byte[] Trailer { get; set; }` |  |
+| `Checksum` | `static uint Checksum(ReadOnlySpan<byte> data)` | NETGEAR's Fletcher-style checksum: over every byte, `c0 += b; c1 += c0` in 32 bits; each sum is then folded to 16 bits with end-around carry and the result is `c1 << 16 \| c0`. |
+| `Parse` | `static NetgearChkImage Parse(ReadOnlySpan<byte> d)` |  |
+| `ToBytes` | `byte[] ToBytes()` |  |
 
 ### Namespace `FileFormat.Nrg`
 
@@ -1193,6 +1655,73 @@ Writes canonical self-contained QCOW2 v2 images with 64 KiB clusters and 16-bit 
 | `WriteTo` | `void WriteTo(Stream output)` | Writes a canonical sparse QCOW2 image. |
 | `WriteTo` | `void WriteTo(Stream output, bool sparse)` | Writes a canonical QCOW2 image. |
 
+### Namespace `FileFormat.Seama`
+
+[`SeamaEntity`](#seamaentity) · [`SeamaFormatDescriptor`](#seamaformatdescriptor) · [`SeamaImage`](#seamaimage)
+
+#### `SeamaEntity`
+
+One SEAMA header with its meta strings and, when it carries an image, the image and its MD5.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SeamaEntity` | `SeamaEntity()` |  |
+| `Image` | `byte[] Image { get; set; }` |  |
+| `Md5Valid` | `bool Md5Valid { get; }` |  |
+| `Meta` | `List<string> Meta { get; set; }` |  |
+| `StoredMd5` | `byte[] StoredMd5 { get; set; }` |  |
+
+#### `SeamaFormatDescriptor`
+
+D-Link SEAMA firmware (single entity, or a seal of entities — binwalk's DLOB) as a pseudo-archive: `image.bin` for a single entity, `entity_NN.bin` for each entity of a seal, and `metadata.ini` carrying every meta string and the MD5 check.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SeamaFormatDescriptor` | `SeamaFormatDescriptor()` |  |
+| `FullImage` | `const string FullImage` |  |
+| `ImageName` | `const string ImageName` |  |
+| `TrailerName` | `const string TrailerName` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | A single entity from `image.bin`, or a seal from `entity_00.bin`, `entity_01.bin`…; meta strings come from a `metadata.ini` (`meta_0`, `meta_1`… under `[seama]` for the image or the seal, under `[entity_NN]` for each sealed entity). A single input under any other name is the payload and becomes `image.bin`, as `seama -i` would take it. |
+| `EntityName` | `static string EntityName(int index)` |  |
+| `Entries` | `static List<FirmwareEntry> Entries(byte[] data)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` | Empties the image (single entity) or drops every entity (seal), keeping the meta strings. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `SeamaImage`
+
+A D-Link SEAMA image (magic 0x5EA3A417): either a single entity — header, MD5 of the image, NUL-separated `key=value` meta strings, image — or a seal, a header with an empty image whose meta (typically the firmware `signature=`) is followed by one or more entities. The seal is what binwalk reports as a DLOB header.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SeamaImage` | `SeamaImage()` |  |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `Magic` | `const uint Magic` |  |
+| `BigEndian` | `bool BigEndian { get; set; }` |  |
+| `Entities` | `List<SeamaEntity> Entities { get; set; }` |  |
+| `IsSeal` | `bool IsSeal { get; }` |  |
+| `SealMeta` | `List<string> SealMeta { get; set; }` | Null for a single entity; the seal's own meta otherwise. |
+| `Trailer` | `byte[] Trailer { get; set; }` |  |
+| `Parse` | `static SeamaImage Parse(ReadOnlySpan<byte> d)` |  |
+| `ToBytes` | `byte[] ToBytes()` | Writes the image as `seama` writes it: meta strings NUL-terminated and padded to four bytes, MD5 recomputed. |
+
 ### Namespace `FileFormat.Tap`
 
 [`TapBlockMover`](#tapblockmover) · [`TapEntry`](#tapentry) · [`TapFormatDescriptor`](#tapformatdescriptor) · [`TapModifier`](#tapmodifier) · [`TapReader`](#tapreader) · [`TapWriter`](#tapwriter)
@@ -1284,6 +1813,71 @@ Implements `IDisposable`.
 | `AddFile` | `void AddFile(string name, byte[] data, byte fileType = 3)` | Queues a file to be written as a header+data block pair. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `Finish` | `void Finish()` | Writes all queued files to the output stream as sequential block pairs. |
+
+### Namespace `FileFormat.Trx`
+
+[`TrxFormatDescriptor`](#trxformatdescriptor) · [`TrxImage`](#trximage)
+
+#### `TrxFormatDescriptor`
+
+Broadcom TRX firmware image (`HDR0`) as a pseudo-archive: `partition_N.bin` per partition (the names binwalk's extractor gives them), `metadata.ini` for the header and CRC check, `trailer.bin` for anything after the declared length.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TrxFormatDescriptor` | `TrxFormatDescriptor()` |  |
+| `FullImage` | `const string FullImage` |  |
+| `TrailerName` | `const string TrailerName` |  |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | A TRX must carry partition data — its length has to exceed the header — so there is no empty image to purge to. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds an image from `partition_0.bin`… (contiguous from 0), an optional `trailer.bin` and the version, flags and alignments of a `metadata.ini`. A single input under any other name is the payload and becomes `partition_0.bin`, as `trx -f` would take it. |
+| `Entries` | `static List<FirmwareEntry> Entries(byte[] data)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `PartitionName` | `static string PartitionName(int index)` |  |
+| `Purge` | `void Purge(Stream archive)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `TrxImage`
+
+A Broadcom TRX firmware image (magic `HDR0`): a little-endian header carrying the total length, a CRC-32 over everything after the CRC field, flags, a version (1 or 2) and three (v1) or four (v2) partition offsets, followed by the partitions — typically loader, kernel, rootfs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TrxImage` | `TrxImage()` |  |
+| `CrcStart` | `const int CrcStart` |  |
+| `Magic` | `const uint Magic` |  |
+| `Alignments` | `List<int> Alignments { get; set; }` | The alignment each partition's start keeps when the image is laid out again. |
+| `ComputedCrc` | `uint ComputedCrc { get; }` |  |
+| `CrcValid` | `bool CrcValid { get; }` |  |
+| `Flags` | `ushort Flags { get; set; }` |  |
+| `HeaderSize` | `int HeaderSize { get; }` |  |
+| `LengthAlignment` | `int LengthAlignment { get; set; }` | What the length is rounded up to: OpenWrt's `trx` and `otrx` round to 4 KiB (the zero fill belongs to the last partition); an existing image keeps the power of two its length has. |
+| `Length` | `uint Length { get; }` |  |
+| `MaxPartitions` | `int MaxPartitions { get; }` |  |
+| `Offsets` | `uint[] Offsets { get; }` |  |
+| `Partitions` | `List<byte[]> Partitions { get; set; }` | Partition contents, in offset order. |
+| `StoredCrc` | `uint StoredCrc { get; }` |  |
+| `Trailer` | `byte[] Trailer { get; set; }` | Bytes after the length the header declares. |
+| `Version` | `ushort Version { get; set; }` |  |
+| `AlignmentOf` | `static int AlignmentOf(uint offset)` | The largest power of two up to 64 KiB dividing `offset`, at least 4. |
+| `HeaderSizeOf` | `static int HeaderSizeOf(int version)` |  |
+| `Parse` | `static TrxImage Parse(ReadOnlySpan<byte> d)` |  |
+| `ToBytes` | `byte[] ToBytes()` | Writes the image: header, then each partition at the next offset its alignment allows, the gaps zero, the length running to the end of the last partition rounded up to `LengthAlignment`, and the CRC computed over bytes 12..length. |
 
 ### Namespace `FileFormat.UImage`
 
@@ -1844,7 +2438,7 @@ Implements `IEquatable<VhdxImage>`.
 
 #### `VhdxStream`
 
-Seekable read/write view of the logical disk stored in a standalone VHDX. Payload BAT entries are translated through the MS-VHDX chunk interleaving; sector-bitmap BAT entries are skipped because standalone fixed/dynamic VHDX files do not allocate sector bitmap blocks.
+Seekable view of the logical disk stored in a VHDX (MS-VHDX v1). Payload BAT entries are translated through the chunk interleaving of payload and sector-bitmap entries.
 
 Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
@@ -1854,15 +2448,17 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `CanSeek` | `override bool CanSeek { get; }` |  |
 | `CanWrite` | `override bool CanWrite { get; }` |  |
 | `HasAmbiguousPayloadBlocks` | `bool HasAmbiguousPayloadBlocks { get; }` | True when at least one payload BAT entry has a state other than ZERO or FULLY_PRESENT. Those states do not provide a single canonical byte value for a standalone rebuild, so maintenance must fail closed instead of converting them into explicit zero blocks. |
+| `IsDifferencing` | `bool IsDifferencing { get; }` | True when this is a differencing disk read through its parent chain. |
 | `Length` | `override long Length { get; }` |  |
 | `Position` | `override long Position { get; set; }` |  |
 | `Dispose` | `protected override void Dispose(bool disposing)` |  |
 | `Flush` | `override void Flush()` |  |
+| `OpenReadOnly` | `static VhdxStream OpenReadOnly(Stream stream, out string reason)` | Opens any VHDX guest disk for reading, following a differencing disk's parent chain. Returns `null` with the reason when the disk cannot be read faithfully. |
 | `Read` | `override int Read(Span<byte> buffer)` |  |
 | `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
 | `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
 | `SetLength` | `override void SetLength(long value)` |  |
-| `TryOpen` | `static VhdxStream TryOpen(Stream stream)` | Opens a standalone VHDX guest disk. Differencing images are deliberately rejected because resolving parent chains is outside this stream's contract. |
+| `TryOpen` | `static VhdxStream TryOpen(Stream stream)` | Opens a standalone (fixed or dynamic) VHDX guest disk for reading and in-place editing. Returns `null` for anything else, including differencing disks and files with a log awaiting replay; use `OpenReadOnly` to read those. |
 | `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
 | `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
@@ -1879,7 +2475,7 @@ Writes standalone dynamic VHDX images using the MS-VHDX layout and BAT semantics
 
 ### Namespace `FileFormat.Vmdk`
 
-[`VmdkEntry`](#vmdkentry) · [`VmdkFormatDescriptor`](#vmdkformatdescriptor) · [`VmdkLayoutMap`](#vmdklayoutmap) · [`VmdkReader`](#vmdkreader) · [`VmdkStream`](#vmdkstream) · [`VmdkWriter`](#vmdkwriter)
+[`VmdkEntry`](#vmdkentry) · [`VmdkFormatDescriptor`](#vmdkformatdescriptor) · [`VmdkLayoutMap`](#vmdklayoutmap) · [`VmdkReader`](#vmdkreader) · [`VmdkStream`](#vmdkstream) · [`VmdkVirtualDisk`](#vmdkvirtualdisk) · [`VmdkWriter`](#vmdkwriter)
 
 #### `VmdkEntry`
 
@@ -1944,7 +2540,7 @@ Implements `IDisposable`.
 | `VmdkReader` | `VmdkReader(Stream stream, bool leaveOpen = false)` |  |
 | `Entries` | `IReadOnlyList<VmdkEntry> Entries { get; }` |  |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(VmdkEntry entry)` |  |
+| `Extract` | `byte[] Extract(VmdkEntry entry)` | Reads the whole guest disk through `VmdkVirtualDisk`: compressed and stream-optimized grains, zeroed grain-table entries, multi-extent descriptors and delta disks over their parent. |
 
 #### `VmdkStream`
 
@@ -1966,6 +2562,29 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `SetLength` | `override void SetLength(long value)` | Sets the length. |
 | `TryOpen` | `static VmdkStream TryOpen(Stream stream)` | Tries to open a `VmdkStream` for a sparse VMDK. Returns `null` if the stream is not a valid sparse VMDK. |
 | `Write` | `override void Write(byte[] buffer, int offset, int count)` | Writes the value to the supplied output. |
+
+#### `VmdkVirtualDisk`
+
+Read-only view of the guest disk a VMDK describes, whatever its layout: a hosted sparse extent (monolithicSparse, the pieces of twoGbMaxExtentSparse), a streamOptimized extent (compressed grains, metadata at the end), flat and zero extents named by a text descriptor, and delta disks that defer unallocated grains to their parent.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Open` | `static VmdkVirtualDisk Open(Stream stream)` | Opens the guest disk of `stream`. Returns `null` when the stream is not a VMDK at all. |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `TryOpen` | `static VmdkVirtualDisk TryOpen(Stream stream, out string reason)` | As `Open`, but returns `null` instead of throwing. |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
 #### `VmdkWriter`
 
@@ -3175,6 +3794,7 @@ Implements `IDisposable`.
 | `BcacheFsReader` | `BcacheFsReader(Stream stream, bool leaveOpen = true)` | Initializes a new instance of `BcacheFsReader`. |
 | `Directories` | `IReadOnlyList<string> Directories { get; }` | Directories the volume holds, by full path. |
 | `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Every file and symbolic link the volume holds, by full path. |
+| `ExtendedAttributes` | `IReadOnlyDictionary<string, IReadOnlyDictionary<string, byte[]>> ExtendedAttributes { get; }` | Extended attributes, by the full path of the file, link or directory that carries them (the empty path is the root), each by its full name such as `user.comment`. Nodes without any are absent. |
 | `Label` | `string Label { get; }` | The label the superblock carries. |
 | `Length` | `long Length { get; }` | The volume's length in bytes. |
 | `Status` | `string Status { get; }` | Why the volume did not read, when it did not. |
@@ -3224,6 +3844,7 @@ Writes a bcachefs volume: a superblock, the b-trees that describe the files, and
 | `BcachefsMagic` | `static readonly byte[] BcachefsMagic` | BCHFS_MAGIC, in storage byte order. |
 | `MinImageSize` | `const long MinImageSize` | Smallest volume this writes. A bcachefs device needs at least 512 buckets, and the two superblock slots at the front already claim thirty-three of them. |
 | `AddDirectory` | `void AddDirectory(string name)` | Adds a directory, which may stay empty. |
+| `AddExtendedAttribute` | `void AddExtendedAttribute(string path, string name, byte[] value)` | Gives the file, link or directory at `path` an extended attribute, named with its namespace (`user.`, `trusted.` or `security.`); the empty path is the root directory. |
 | `AddFile` | `void AddFile(string name, byte[] data, ArchiveEntryMetadata metadata = null)` | Adds a file, held in memory, with the times, ownership and mode it should carry. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream, ArchiveEntryMetadata metadata = null)` | Adds a file whose bytes are read as the volume is written. |
 | `AddSymlink` | `void AddSymlink(string name, string target)` | Adds a symbolic link pointing at `target`. |
@@ -3469,7 +4090,7 @@ Modifier for Btrfs images produced by `BtrfsWriter`. `AddOrReplace` first attemp
 
 #### `BtrfsReader`
 
-Reads Btrfs filesystem images (single-device, non-RAID). Parses superblock, builds chunk map (logical-to-physical translation), traverses B-trees to enumerate files and extract uncompressed extents.
+Reads Btrfs filesystem images (single-device, non-RAID). Parses superblock, builds chunk map (logical-to-physical translation), traverses B-trees to enumerate files and extract their extents — inline, regular, preallocated, holes, and zlib / LZO / zstd compressed (see `BtrfsCompression`).
 
 Implements `IDisposable`.
 
@@ -3479,7 +4100,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<BtrfsEntry> Entries { get; }` | Gets the entries. |
 | `UsedRealChunkTree` | `bool UsedRealChunkTree { get; }` | Diagnostic: indicates whether the chunk map used during reading was non-empty, i.e. this image carries a real chunk tree as opposed to relying on identity-mapping fallback for synthetic test data. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `ExtractTo` | `void ExtractTo(BtrfsEntry entry, Stream destination)` | Writes `entry`'s bytes to `destination` without materialising them, truncating to the entry's recorded size. Required for a file larger than a byte[] can hold. |
+| `ExtractTo` | `void ExtractTo(BtrfsEntry entry, Stream destination)` | Writes `entry`'s bytes to `destination` without materialising them, exactly `Size` bytes long. Required for a file larger than a byte[] can hold. |
 | `Extract` | `byte[] Extract(BtrfsEntry entry)` | Decodes the supplied input. |
 
 #### `BtrfsWriter`
@@ -6760,6 +7381,104 @@ Builds Microsoft Xbox / Xbox 360 FATX filesystem images from scratch per the rev
 | `Build` | `byte[] Build(int sectorsPerCluster = 0, uint volumeId = 0)` | Builds a complete FATX image containing the previously-added files. |
 | `WriteTo` | `void WriteTo(Stream output, int sectorsPerCluster = 0, uint volumeId = 0)` | Writes the image into `output`: the superblock and FAT, then every cluster payload at its offset. Only a non-seekable target has to materialise the image, so a seekable one is bounded by the disk rather than by what a byte[] can address. |
 
+### Namespace `FileSystem.Fossil`
+
+[`FossilEntry`](#fossilentry) · [`FossilFormatDescriptor`](#fossilformatdescriptor) · [`FossilReader`](#fossilreader) · [`FossilSourceEntry`](#fossilsourceentry)
+
+#### `FossilEntry`
+
+One file or directory of a Fossil volume.
+
+Implements `IEquatable<FossilEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilEntry` | `FossilEntry(string Path, bool IsDirectory, long Size, uint Mode, string Uid, string Gid, uint MTime, FossilSourceEntry Source)` | One file or directory of a Fossil volume. |
+| `Gid` | `string Gid { get; init; }` | Group. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | True for a directory. |
+| `MTime` | `uint MTime { get; init; }` | Modification time (UNIX seconds). |
+| `Mode` | `uint Mode { get; init; }` | Plan 9 mode word: permission bits plus `ModeDir` (1<<15) and friends. |
+| `Path` | `string Path { get; init; }` | Slash-separated path from the Fossil root (`active/…`, `snapshot/…`). |
+| `Size` | `long Size { get; init; }` | File size from the data source's entry. |
+| `Source` | `FossilSourceEntry Source { get; init; }` | The entry of the file's data source. |
+| `Uid` | `string Uid { get; init; }` | Owner. |
+
+#### `FossilFormatDescriptor`
+
+Fossil — the Plan 9 file server's on-disk format (Quinlan, McKie, Cox, 2002), as plan9port's `flfmt` and `fossil` write it. Header magic `0x3776ae89` at 128 KiB.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilFormatDescriptor` | `FossilFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+
+#### `FossilReader`
+
+Reads a Fossil volume (Plan 9's file server, as `flfmt` lays it out and the `fossil` server writes it): header at 128 KiB, superblock, label and data partitions; files are trees of local blocks addressed by their block number. Blocks already archived to Venti are refused — this reader has no Venti. See `docs/FOSSIL-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilReader` | `FossilReader(Stream stream)` | Opens a Fossil volume; throws `InvalidDataException` for anything it cannot read faithfully. |
+| `DirMagic` | `const uint DirMagic` |  |
+| `EntrySize` | `const int EntrySize` |  |
+| `HeaderMagic` | `const uint HeaderMagic` |  |
+| `HeaderOffset` | `const int HeaderOffset` |  |
+| `MaxDepth` | `const int MaxDepth` |  |
+| `MetaMagic` | `const uint MetaMagic` |  |
+| `ModeDir` | `const uint ModeDir` |  |
+| `ModeLink` | `const uint ModeLink` |  |
+| `ModeSnapshot` | `const uint ModeSnapshot` |  |
+| `ScoreSize` | `const int ScoreSize` |  |
+| `SuperMagic` | `const uint SuperMagic` |  |
+| `Active` | `uint Active { get; }` | Block address of the active root. |
+| `BlockSize` | `int BlockSize { get; }` | Bytes per block. |
+| `DataEnd` | `uint DataEnd { get; }` | End of the data partition. |
+| `DataStart` | `uint DataStart { get; }` | First block of the data partition. |
+| `Entries` | `IReadOnlyList<FossilEntry> Entries { get; }` | Every file and directory, parents first. |
+| `Epochs` | `ValueTuple<uint, uint> Epochs { get; }` | Superblock epochs. |
+| `Name` | `string Name { get; }` | Superblock name (the volume label). |
+| `Extract` | `byte[] Extract(FossilEntry entry)` | Reads a file's bytes; refuses blocks that are not local or lie outside the data partition. |
+
+#### `FossilSourceEntry`
+
+A source ("stream") entry as stored in a directory block (40 bytes).
+
+Implements `IEquatable<FossilSourceEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FossilSourceEntry` | `FossilSourceEntry(uint Gen, ushort PSize, ushort DSize, byte Flags, byte Depth, long Size, uint Address, bool IsLocal, bool IsZero, uint Tag, uint Snap)` | A source ("stream") entry as stored in a directory block (40 bytes). |
+| `Address` | `uint Address { get; init; }` |  |
+| `DSize` | `ushort DSize { get; init; }` |  |
+| `Depth` | `byte Depth { get; init; }` |  |
+| `Flags` | `byte Flags { get; init; }` |  |
+| `Gen` | `uint Gen { get; init; }` |  |
+| `IsActive` | `bool IsActive { get; }` | Entry in use. |
+| `IsDir` | `bool IsDir { get; }` | Source holds entries (a directory stream). |
+| `IsLocal` | `bool IsLocal { get; init; }` |  |
+| `IsZero` | `bool IsZero { get; init; }` |  |
+| `PSize` | `ushort PSize { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `Snap` | `uint Snap { get; init; }` |  |
+| `Tag` | `uint Tag { get; init; }` |  |
+
 ### Namespace `FileSystem.Gemdos`
 
 [`GemdosBpb`](#gemdosbpb) · [`GemdosExtentMap`](#gemdosextentmap) · [`GemdosFormatDescriptor`](#gemdosformatdescriptor) · [`GemdosInPlaceModifier`](#gemdosinplacemodifier) · [`GemdosOptimizer`](#gemdosoptimizer) · [`GemdosOptimizer.GemdosGeometry`](#gemdosoptimizergemdosgeometry) · [`GemdosReader`](#gemdosreader) · [`GemdosWriter`](#gemdoswriter)
@@ -8271,7 +8990,9 @@ Represents an entry (file or directory) in an ISO 9660 image.
 | --- | --- | --- |
 | `IsoEntry` | `IsoEntry()` |  |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether the entry is a directory. |
+| `IsSymlink` | `bool IsSymlink { get; init; }` | Whether the entry is a Rock Ridge symbolic link (SL). |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Last modification timestamp. |
+| `LinkTarget` | `string LinkTarget { get; init; }` | The symbolic link's target, when `IsSymlink`. |
 | `Name` | `string Name { get; init; }` | Path of the entry within the image. |
 | `Size` | `long Size { get; init; }` | Size in bytes (0 for directories). |
 
@@ -12111,63 +12832,79 @@ Performs the bounded offline ReFS block-clone operation for two existing, equal-
 
 ### Namespace `FileSystem.Reiser4`
 
-[`Reiser4BlockMover`](#reiser4blockmover) · [`Reiser4FormatDescriptor`](#reiser4formatdescriptor) · [`Reiser4MasterSb`](#reiser4mastersb) · [`Reiser4Reader`](#reiser4reader) · [`Reiser4Reader.Entry`](#reiser4readerentry) · [`Reiser4Reader.FileMetadata`](#reiser4readerfilemetadata) · [`Reiser4Writer`](#reiser4writer)
+[`Reiser4BlockMover`](#reiser4blockmover) · [`Reiser4FileBody`](#reiser4filebody) · [`Reiser4FormatDescriptor`](#reiser4formatdescriptor) · [`Reiser4MasterSb`](#reiser4mastersb) · [`Reiser4Reader`](#reiser4reader) · [`Reiser4Reader.Entry`](#reiser4readerentry) · [`Reiser4Reader.EntryKind`](#reiser4readerentrykind) · [`Reiser4Reader.FileMetadata`](#reiser4readerfilemetadata) · [`Reiser4Writer`](#reiser4writer)
 
 #### `Reiser4BlockMover`
 
-Moves a file's blocks inside a Reiser4 payload area and rewrites the directory entry that said where it started.
+Moves the data blocks of a Reiser4 volume's extent files in place and repoints the extent units that name them, wherever in the tree their twig nodes sit.
 
 Implements `IFilesystemBlockMover`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Reiser4BlockMover` | `Reiser4BlockMover()` |  |
-| `BlockSize` | `int BlockSize { get; }` | A block, which is what the directory counts in. |
-| `FirstDataByte` | `long FirstDataByte { get; }` | First byte a file may occupy: past the reserved blocks and the directory, which is where the first file already sits. |
-| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call notes where one run has got to; a file split by the bitmaps it steps over is simply several calls. |
-| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
-| `Init` | `void Init(Stream image)` | Reads the directory once and notes where every file is. |
+| `BlockSize` | `int BlockSize { get; }` | A block, which is what an extent unit counts in. |
+| `FirstDataByte` | `long FirstDataByte { get; }` | First byte a file may occupy: past the jump area, the superblocks, the journal, the status and backup blocks and the first two nodes. |
+| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call notes where one unit's run has got to. |
+| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves. |
+| `Init` | `void Init(Stream image)` | Reads the tree once and notes where every extent unit is. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `SettleDirectory` | `void SettleDirectory(Stream image)` | Writes each file's new physical location into both the native extent40 item and the legacy workbench directory once the pass is over. |
+| `SettleDirectory` | `void SettleDirectory(Stream image)` | Writes every unit's new start into its twig and moves the allocator bits with it. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
+
+#### `Reiser4FileBody`
+
+How the body of a regular file this writer creates is stored.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Extents` | `0` | Extent items in twigs pointing at data blocks (`reg40`, "extents" formatting). |
+| `Tails` | `1` | Tail (`plain40`) items in leaves holding the bytes themselves (`reg40`, "tails" formatting). |
+| `Smart` | `2` | Tails up to four blocks, extents above that — the kernel's "smart" formatting. |
+| `Compressed` | `3` | A cryptcompress (`ccreg40`) file: compressed disk clusters in `ctail40` items. |
+| `Profile` | `4` | Whatever the volume's root plugin set says new files are: its create plugin, then its formatting. |
 
 #### `Reiser4FormatDescriptor`
 
-Descriptor for Reiser4 filesystem images (successor to ReiserFS 3.6 — completely different on-disk layout). Volumes whose node40 tree the reader walks completely list and extract their files and directories, and are created and edited through staged rebuilds that carry the volume's identity and every object's metadata across; other images surface the master superblock at offset 65536, the format40 superblock that follows it, a structured metadata bundle and the raw image. Magic: `"ReIsEr4"` at offset 65536 — master superblock `ms_magic[16]`. References: `https://archive.kernel.org/oldwiki/reiser4.wiki.kernel.org/` — archived Reiser4 wiki (format40 layout, plugin system)reiser4progs (`mkfs.reiser4` / `debugfs.reiser4`) — canonical userspace tooling`https://en.wikipedia.org/wiki/Reiser4` — Wikipedia article
+Descriptor for Reiser4 filesystem images (successor to ReiserFS 3.6 — completely different on-disk layout). Volumes whose node40/node41 tree the reader walks completely list and extract their files, directories, links and special files — after replaying a pending journal — and are created and edited through staged rebuilds that carry the volume's identity, plugin profile and every object's keys, metadata and body across; other images surface the master superblock at offset 65536, the format40 superblock that follows it, a structured metadata bundle and the raw image. Magic: `"ReIsEr4"` at offset 65536 — master superblock `ms_magic[16]`. References: `https://archive.kernel.org/oldwiki/reiser4.wiki.kernel.org/` — archived Reiser4 wiki (format40 layout, plugin system)reiser4progs (`mkfs.reiser4` / `debugfs.reiser4`) — canonical userspace tooling`https://en.wikipedia.org/wiki/Reiser4` — Wikipedia article
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Reiser4FormatDescriptor` | `Reiser4FormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` | Gets the min total archive size. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Knobs the empty-filesystem writer actually honours. `VolumeLabel` is written into the master superblock label field (and the backup record) and surfaces through `fsck.reiser4` / our metadata readback; `ImageSize` drives `BlockCount` (4 KB blocks, clamped to the writer minimum). The 4 KB block size is fixed — the embedded mkfs.reiser4 templates are byte-exact 4096-byte captures — so it is intentionally not exposed. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces members while retaining existing stat-data extensions. |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
-| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Creates the supported native node40 profile from input streams. Each source is consumed once into a temporary file, then copied in bounded chunks by `Reiser4Writer`; no complete file is staged in memory. Directory inputs retain empty directories and nested paths. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Knobs the writer honours. `VolumeLabel` is written into the master superblock label field (and the backup record); `ImageSize` drives `BlockCount` (4 KB blocks, clamped to the writer minimum); `FileBody` picks how regular files are stored (`Reiser4FileBody`). The 4 KB block size is fixed — the embedded mkfs.reiser4 templates are byte-exact 4096-byte captures — so it is intentionally not exposed. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `AddHardLink` | `void AddHardLink(Stream archive, string path, string existing)` | Adds `path` as a further name of the existing file `existing`. |
+| `AddSpecialFile` | `void AddSpecialFile(Stream archive, string path, ushort mode, ulong device = 0)` | Adds a device node (`device` = major << 20 \| minor), FIFO or socket. |
+| `AddSymlink` | `void AddSymlink(Stream archive, string path, string target)` | Adds a symbolic link at `path` pointing at `target`. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces members while retaining every existing object; new files are stored as extents. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, Reiser4FileBody body)` | Adds or replaces members, storing new regular files as `body` says. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Creates the volume from input streams. Each source is consumed once into a temporary file, then copied in bounded chunks by `Reiser4Writer`; no complete file is staged in memory. Directory inputs retain empty directories and nested paths. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a volume holding `inputs`. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rewrites the volume with every file laid out contiguously from the start of the payload area. Each entry is spilled to scratch and the writer pulls it back, so the rebuild is not bounded by what a byte[] can hold. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Reports the volume's layout: the reserved blocks and the payload directory chain as metadata, then each file's blocks. A file's blocks are consecutive apart from the block-allocator bitmaps they step over. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Defragments the volume: in place when the planner's moves can be written back as extent repoints (any tree height), otherwise by a staged rebuild that lays every file out contiguously at the same volume size. |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Reports the volume's layout: the reserved blocks, the tree nodes and the allocator bitmaps as metadata, then each file's extent runs. A volume whose journal still holds transactions to replay reports nothing: its blocks are not yet where the tree says. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Rebuilds the supported native profile while carrying existing metadata. |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Rebuilds the volume while carrying existing metadata, at the requested image size or the smallest that holds it. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes members and directory subtrees through a metadata-preserving rebuild. |
-| `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds tightly while retaining native metadata, or copies through on failure. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds tightly while retaining native metadata, or copies through when the volume cannot be rebuilt smaller. |
 | `UpdateMetadata` | `void UpdateMetadata(Stream archive, string name, FileMetadata metadata)` | Updates a native object's mode, owner and timestamps through a staged rebuild. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every byte no live file and no metadata block occupies. |
 
@@ -12204,7 +12941,7 @@ Parses the Reiser4 master superblock at byte offset 65536 (16 * 4 KB) and the ad
 
 #### `Reiser4Reader`
 
-Reads a Reiser4 image: the master superblock's label, UUID and block size, plus regular files represented by the native stat40/cde40/extent40 items emitted by `Reiser4Writer`. The older workbench payload directory remains a compatibility fallback for images written before native tree items became authoritative.
+Reads a Reiser4 image: the master superblock's label, UUID and block size, and every object of the node40/node41 tree after the journal is replayed — directories, regular files whose bodies are extents, tails or compressed clusters (holes included), symbolic links, device nodes, FIFOs, sockets and hard links. The older workbench payload directory remains a compatibility fallback for images written before native tree items became authoritative.
 
 Implements `IDisposable`.
 
@@ -12213,15 +12950,17 @@ Implements `IDisposable`.
 | `Reiser4Reader` | `Reiser4Reader(Stream stream, bool leaveOpen = true)` | Initializes a new instance of `Reiser4Reader`. |
 | `MasterOffset` | `const long MasterOffset` | Byte offset of the master superblock: block 16 at a 4 KB block size. |
 | `BlockSize` | `int BlockSize { get; }` | Filesystem block size from the master superblock. |
-| `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Files and directories found in the native tree, or files in the legacy payload directory. |
+| `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Files, directories, links and special files found in the native tree, or files in the legacy payload directory. |
 | `Label` | `string Label { get; }` | Volume label from the master superblock. |
 | `Length` | `long Length { get; }` | Total size of the backing image in bytes. |
-| `NativeTreeValid` | `bool NativeTreeValid { get; }` | True when the complete supported native namespace was decoded. |
+| `NativeProblem` | `string NativeProblem { get; }` | Why the native tree was not decoded, when it was not. |
+| `NativeTreeValid` | `bool NativeTreeValid { get; }` | True when the complete native namespace was decoded. |
+| `ReplayedTransactions` | `int ReplayedTransactions { get; }` | Journal transactions replayed before the tree was read (0 when the journal was clean). |
 | `RootMetadata` | `FileMetadata RootMetadata { get; }` | Root stat-data, including inherited plugin settings. |
 | `UuidHex` | `string UuidHex { get; }` | Volume UUID from the master superblock, as hex. |
 | `Valid` | `bool Valid { get; }` | True when the image carries a valid Reiser4 master superblock. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `EnumerateRuns` | `IEnumerable<ValueTuple<long, long>> EnumerateRuns(Entry entry)` | Where an entry's bytes live as physical byte runs. |
+| `EnumerateRuns` | `IEnumerable<ValueTuple<long, long>> EnumerateRuns(Entry entry)` | Where an entry's bytes live as physical byte runs (extent data only; tails and clusters live in tree nodes). |
 | `ExtractTo` | `long ExtractTo(Entry entry, Stream destination)` | Writes `entry`'s contents into `destination`. |
 | `Extract` | `byte[] Extract(Entry entry)` | Reads a file's contents. Only valid below the array limit. |
 
@@ -12234,11 +12973,30 @@ Implements `IEquatable<Entry>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Entry` | `Entry(string Name, ulong FirstBlock, long Size)` | One filesystem object and its physical extents. |
+| `Body` | `string Body { get; init; }` | How the body of a regular file is stored: "extent", "tail", "ctail" or "" for none. |
+| `Device` | `ulong Device { get; init; }` | The device number of a device node, as the kernel encodes it (major << 20 \| minor). |
 | `FirstBlock` | `ulong FirstBlock { get; init; }` |  |
+| `HardLinkOf` | `string HardLinkOf { get; init; }` | The path this entry is a further name of, when the object has more than one name. |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | True when this entry is a directory. |
+| `Kind` | `EntryKind Kind { get; init; }` | What kind of object this entry names. |
+| `LinkTarget` | `string LinkTarget { get; init; }` | The target of a symbolic link. |
 | `Metadata` | `FileMetadata Metadata { get; init; }` | On-disk stat-data fields retained for metadata-preserving rebuilds. |
 | `Name` | `string Name { get; init; }` |  |
 | `Size` | `long Size { get; init; }` |  |
+
+#### `Reiser4Reader.EntryKind`
+
+What kind of object an entry names.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `File` | `0` | A regular file. |
+| `Directory` | `1` | A directory. |
+| `Symlink` | `2` | A symbolic link; `LinkTarget` holds its target. |
+| `CharacterDevice` | `3` | A character device; `Device` holds its number. |
+| `BlockDevice` | `4` | A block device; `Device` holds its number. |
+| `Fifo` | `5` | A named pipe. |
+| `Socket` | `6` | A socket. |
 
 #### `Reiser4Reader.FileMetadata`
 
@@ -12260,11 +13018,12 @@ Implements `IEquatable<FileMetadata>`.
 | `RawStatData` | `byte[] RawStatData { get; init; }` |  |
 | `Size` | `long Size { get; init; }` |  |
 | `StatLocality` | `ulong StatLocality { get; init; }` | Locality of the object stat key. |
+| `StatOrdering` | `ulong StatOrdering { get; init; }` | Ordering word of the object stat key (the kernel derives it from the object's first name). |
 | `UserId` | `uint UserId { get; init; }` |  |
 
 #### `Reiser4Writer`
 
-Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy` from `reiser4progs 1.2.2` produces and adds directories and regular files through the native tree — stat data and directory entries in leaves, extents in twigs, as many internal levels above them as the tree needs — so that `fsck.reiser4` validates the result as `"FS is consistent."` with or without files. The image holds 25 reserved blocks at fixed positions (block size = 4 KB): 0..15 — jump-area / partition data (zero).16 — master superblock (`"ReIsEr4"` at offset 65536).17 — format40 superblock (`"ReIsEr40FoRmAt"` at offset 52).18 — block-allocator bitmap (4-byte adler32 + bit array).19..20 — journal header / footer (zero for an empty FS).21 — status block (`"ReiSeR4StATusBl"`).22 — superblock backup record.23 — storage-tree root (twig, level 2).24 — leaf containing the root-directory stat-data + ".", "..". Implementation strategy: we embed the seven non-zero reference blocks as resources captured byte-exact from a real `mkfs.reiser4` image, then patch in only the per-image fields: UUID (16 bytes, random)Label (≤ 16 bytes, optional)mkfs_id (4 bytes, random) — appears in 4 places: format40 SB, backup record, twig header, leaf header.block_count / free_blocks (in format40 SB and backup).Bitmap (block 18) — bits 0..24 set for the 25 reserved blocks plus filler bits for the unused tail of the bitmap range, then adler32 of the bitmap data prepended. Round-trips with `fsck.reiser4 -y` exit 0 and produces output identical to the reference image except for the random fields above.
+Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy` from `reiser4progs 1.2.2` produces and adds directories, regular files, symbolic links, device nodes, FIFOs, sockets and hard links through the native tree — stat data, directory entries and tails in leaves, extents in twigs, as many internal levels above them as the tree needs — so that `fsck.reiser4` validates the result as `"FS is consistent."` and a Reiser4 kernel mounts and reads it. The image holds 25 reserved blocks at fixed positions (block size = 4 KB): 0..15 — jump-area / partition data (zero).16 — master superblock (`"ReIsEr4"` at offset 65536).17 — format40 superblock (`"ReIsEr40FoRmAt"` at offset 52).18 — block-allocator bitmap (4-byte adler32 + bit array).19..20 — journal header / footer (zero for an unjournalled volume).21 — status block (`"ReiSeR4StATusBl"`).22 — superblock backup record.23 — storage-tree root (twig, level 2, or higher).24 — first leaf (the root directory's stat data and entries). The fixed blocks are byte-exact captures of a real `mkfs.reiser4` image with only the per-image fields patched in: UUID, label, mkfs id, block and free-block counts, the root, the next object id, the file count and the tree height. Regular files are written as extents by default; `FileBody` selects tails, the kernel's smart policy or compressed (cryptcompress) files instead.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12272,15 +13031,19 @@ Creator for a Reiser4 filesystem image that starts from what `mkfs.reiser4 -fffy
 | `BlockSize` | `const int BlockSize` | Filesystem block size — 4 KB is the only supported value. Reiser4 theoretically supports 512 / 1024 / 2048 / 4096 / 8192, but the embedded templates are 4096-byte exact captures. |
 | `MinBlockCount` | `const ulong MinBlockCount` | Minimum block count we'll emit. mkfs.reiser4 itself rejects images below ~750 blocks, but we round up to 4096 (= 16 MB) to match the reference capture and avoid bitmap-truncation edge cases. |
 | `BlockCount` | `ulong BlockCount { get; set; }` | Total filesystem size in 4 KB blocks. Clamped to `MinBlockCount`. |
+| `FileBody` | `Reiser4FileBody FileBody { get; set; }` | How regular files are stored. `Profile` follows the captured mkfs profile, whose root names cryptcompress for new files. |
 | `Label` | `string Label { get; set; }` | Customisable label written to the master SB (NUL-padded to 16 bytes; longer strings are truncated; null = empty/zero). |
 | `MkfsId` | `uint? MkfsId { get; set; }` | Optional 32-bit mkfs identifier. When null, a random value is drawn from `Shared`. |
 | `Uuid` | `byte[] Uuid { get; set; }` | Optional 16-byte UUID. When null, a random Guid is used. |
 | `AddDirectory` | `void AddDirectory(string name, FileMetadata metadata = null)` | Retains an explicit directory, including an empty directory. |
-| `AddFile` | `void AddFile(string name, byte[] data, FileMetadata metadata = null)` | Adds a regular file to the payload area. |
+| `AddFile` | `void AddFile(string name, byte[] data, FileMetadata metadata = null)` | Adds a regular file. |
+| `AddHardLink` | `void AddHardLink(string name, string existing)` | Adds `name` as a further name of the file at `existing`. |
+| `AddSpecialFile` | `void AddSpecialFile(string name, ushort mode, ulong device = 0, FileMetadata metadata = null)` | Adds a device node, FIFO or socket; `mode` carries the file type bits. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream, FileMetadata metadata = null)` | Adds a file whose bytes are pulled from `openStream` as the image is written. |
-| `Build` | `byte[] Build()` | Builds the image fully in memory and returns the byte array. For block counts above ~32 K the result will be tens of MB; prefer the streaming overload when caller-side allocation matters. |
-| `EstimateBlockCount` | `static ulong EstimateBlockCount(IEnumerable<long> fileSizes)` | Smallest block count that holds `fileSizes`: the reserved blocks, the directory chain, every file's data blocks, and the bitmap blocks interleaved among them. |
-| `Write` | `void Write(Stream output)` | Streams the full image into `output`. Writes `BlockCount`×4096 bytes and leaves the stream positioned at the end. |
+| `AddSymlink` | `void AddSymlink(string name, string target, FileMetadata metadata = null)` | Adds a symbolic link whose target is `target`. |
+| `Build` | `byte[] Build()` | Builds the image fully in memory and returns the byte array. |
+| `EstimateBlockCount` | `static ulong EstimateBlockCount(IEnumerable<long> fileSizes)` | Smallest block count that holds `fileSizes`: the reserved blocks, every file's data blocks, the tree, and the bitmap blocks interleaved among them. |
+| `Write` | `void Write(Stream output)` | Streams the full image into `output` and leaves the stream positioned at the end. |
 
 ### Namespace `FileSystem.ReiserFs`
 
@@ -12929,7 +13692,7 @@ Builds a genuine Stac Electronics STACVOL — the on-disk shape a real Stacker d
 | `GenuineStackerWriter` | `GenuineStackerWriter()` |  |
 | `CompressionLevel` | `int CompressionLevel { get; init; }` | Codec effort (search depth). Higher = better ratio, slower. |
 | `CompressionMethod` | `CvfLzMethod CompressionMethod { get; init; }` | Per-cluster compression: Stored (default), Sd3 (Stacker 3), Sd4 (Stacker 4), Ds, or Auto (smallest of Ds/Sd3/Sd4 per cluster). The Stacker driver tells them apart by the payload's first word — 0x0081 SD-4, 0x5344 ("DS") the DoubleSpace codec, anything else SD-3. JM/SQ map to Ds. |
-| `ForceCompress` | `bool ForceCompress { get; init; }` | Keep a compressed cluster even if it does not shrink (auto-best off). |
+| `ForceCompress` | `bool ForceCompress { get; init; }` | Keep a compressed cluster even if it does not shrink (auto-best off). Stacker cannot record a compressed run that fills a whole cluster — such a run reads as stored — so a payload that needs every sector of its cluster is stored raw regardless; any shorter payload is kept compressed either way, which leaves this option without effect on Stacker volumes. |
 | `Timestamp` | `DateTime Timestamp { get; init; }` | Creation/modification timestamp stamped on every file entry. Default (before 1980) leaves the FAT date/time fields zero. |
 | `Version` | `int Version { get; init; }` | Stacker major version recorded in the decoded superblock (< 410 ⇒ v3). |
 | `VolumeLabel` | `string VolumeLabel { get; init; }` | Optional inner-volume label (≤11 chars). Empty = no label entry. |
@@ -14457,43 +15220,48 @@ Writes a UFS1 (FreeBSD FFS) filesystem image that faithfully reproduces a `newfs
 
 ### Namespace `FileSystem.Vdfs`
 
-[`VdfsBlockMover`](#vdfsblockmover) · [`VdfsEntry`](#vdfsentry) · [`VdfsFormatDescriptor`](#vdfsformatdescriptor) · [`VdfsInPlaceModifier`](#vdfsinplacemodifier) · [`VdfsReader`](#vdfsreader) · [`VdfsWriter`](#vdfswriter)
+[`VdfsBlockMover`](#vdfsblockmover) · [`VdfsEntry`](#vdfsentry) · [`VdfsFormatDescriptor`](#vdfsformatdescriptor) · [`VdfsInPlaceModifier`](#vdfsinplacemodifier) · [`VdfsLayout`](#vdfslayout) · [`VdfsReader`](#vdfsreader) · [`VdfsWriter`](#vdfswriter) · [`VdfsZippedStream`](#vdfszippedstream) · [`VdfsZippedStream.Block`](#vdfszippedstreamblock) · [`VdfsZippedStream.Layout`](#vdfszippedstreamlayout)
 
 #### `VdfsBlockMover`
 
-Moves a file's payload inside a VDFS container and repoints its entry.
+Moves a file's payload inside a VDF volume and repoints its catalog entry.
 
 Implements `IFilesystemBlockMover`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `VdfsBlockMover` | `VdfsBlockMover()` |  |
-| `BlockSize` | `int BlockSize { get; }` | One byte. VDFS packs payloads end to end rather than on a grid, so the planner is free to place a file anywhere past the entry table. |
-| `FirstDataByte` | `long FirstDataByte { get; }` | First byte a payload may occupy: past the header and the table. |
-| `Init` | `void Init(Stream image)` | Reads the container's header. |
+| `BlockSize` | `int BlockSize { get; }` | One byte. Payloads are packed end to end rather than on a grid, so the planner is free to place a file anywhere past the catalog. |
+| `FirstDataByte` | `long FirstDataByte { get; }` | First byte a payload may occupy: past the header and the catalog. |
+| `Init` | `void Init(Stream image)` | Reads the volume's header. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `VdfsEntry`
 
-Represents a vdfs entry.
+One catalog entry of a VDF volume: a directory, or a file and where its payload lives.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `VdfsEntry` | `VdfsEntry()` |  |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets a value indicating whether is directory. |
-| `Name` | `string Name { get; init; }` | Gets or sets the name. |
-| `Size` | `long Size { get; init; }` | Gets or sets the size. |
+| `Attributes` | `uint Attributes { get; init; }` | Win32 attributes recorded in the entry. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether the entry is a directory. |
+| `IsZipped` | `bool IsZipped { get; init; }` | Whether the payload is a Union ZippedStream rather than the raw bytes. |
+| `Name` | `string Name { get; init; }` | Full path inside the volume, components joined by `/`. |
+| `Size` | `long Size { get; init; }` | Uncompressed size; 0 for a directory. |
+| `StoredSize` | `long StoredSize { get; init; }` | Bytes the payload occupies in the volume: the stream for a zipped file, else `Size`. |
 
 #### `VdfsFormatDescriptor`
 
-Descriptor for Gothic-engine VDFS archives (magic "PSVDSC_V2.00", .vdf) — the virtual-disk container used by Piranha Bytes' ZenGin games. References: `https://gothic-modding-community.github.io/gmc/` — Gothic Modding Community documentation`https://github.com/REGoth-project/REGoth` — REGoth engine reimplementation — includes a VDFS readerVdfsSharp — C# VDFS extractor/creator (GitHub)
+ZenGin VDF volumes (signature "PSVDSC_V2.00" at offset 256, .vdf/.mod) — the virtual disk Piranha Bytes' Gothic games load their data from — stored, or zipped the way Union zips them.
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `VdfsFormatDescriptor` | `VdfsFormatDescriptor()` |  |
+| `MethodStored` | `const string MethodStored` | Method name of a stored volume. |
+| `MethodZipped` | `const string MethodZipped` | Method name of a zipped (Union ZippedStream) volume. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -14503,59 +15271,148 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures: the signature follows the 256-byte comment. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces) files in a VDFS archive by appending the new data at end-of-stream and relocating the entry table past it — surviving file extents keep their original absolute byte offsets so their jump pointers stay valid without rewriting them. See `VdfsInPlaceModifier` for the full mutation strategy. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces) files in place: new payloads go to the end of the volume and the catalog is rewritten at 296; surviving payloads keep their bytes. See `VdfsInPlaceModifier`. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a volume of `inputs`, keeping their directories. Method `zipped` writes a Union zipped volume; "+" deflates at best effort. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the extents. |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | The header, the catalog where the header says it is, and each payload as stored — the whole ZippedStream for a zipped file. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries by zeroing each entry record on disk (an empty first byte makes the reader skip it) and zero-wiping each removed file's data extent. Neighbour entry positions and live data extents are not disturbed. See `VdfsInPlaceModifier`. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every byte of a VDFS container not claimed by the header/entry table or a live file extent — dead bytes left behind by editing or truncation. VDFS is a packed archive: each entry's data is contiguous and its extent length equals its logical size, so there is no cluster-tip slack to scrub (`wipeClusterTips` has no effect here). |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts the volume's files, keeping their directories. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the volume. Never throws: a stream with no VDF signature lists as the whole image plus a `metadata.ini` saying so, and a damaged catalog lists what it still names. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream of its decoded bytes. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named files (or directories) and zeroes their payloads. See `VdfsInPlaceModifier`. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every byte of a VDF volume not claimed by the header, the catalog or a live payload — dead bytes left behind by editing or truncation. Payloads are packed with no cluster grid, so there is no cluster-tip slack to scrub (`wipeClusterTips` has no effect here). |
 
 #### `VdfsInPlaceModifier`
 
-In-place VDFS modifier — true random-access editing without rebuilding the whole archive. Targets images produced by `VdfsWriter`: 16-byte magic, 20-byte header fields, 80-byte entries packed at `rootOffset`, contiguous stored-mode file data referenced by each entry's jump field. What it touches per `AddFile`: Appends the new file's data bytes at end-of-stream.Relocates the entry table to a fresh region past all live data — existing data byte ranges keep their original absolute offsets so every surviving entry's jump field remains valid without rewriting.Patches the header's entry count, file count, total data size, and root/entries offset in-place. The previously-occupied entry-table bytes become orphaned slack and are reclaimable through a defrag pass.`RemoveFile` zeroes the entry's name (first byte = 0) which the reader already skips as "empty name", and optionally wipes the file's data bytes. The entry record itself is left in the table so existing neighbour entries keep their byte offsets unchanged.`ReplaceFile` rewrites the file's data at its current offset when the new payload fits and updates the entry's size in-place; otherwise it falls back to remove-plus-add so the new payload lives at a fresh tail offset and no other entries are disturbed.Honest scope: this modifier handles VDFS stored mode only. The VDFS format spec leaves entry-type flags reserved for compressed variants but no production Gothic-engine image observed in REGoth/VdfsSharp corpora uses them — compression support is deferred until a real example surfaces.
+Edits a VDF volume in place: surviving payloads keep their bytes and, wherever the catalog leaves them room, their offsets.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream archive, string name, byte[] data)` | Adds (or replaces) a file in a VDFS archive. The new data bytes are appended at end-of-stream and a new entry-table region is written past them; existing live file data keeps its original absolute byte offset so every surviving entry's jump pointer remains valid. |
-| `RemoveFile` | `static bool RemoveFile(Stream archive, string name, bool wipeData = true)` | Removes a named file from a VDFS archive. The entry's first name byte is zeroed (the reader's existing "empty name → skip" rule turns it into a tombstone), all 80 entry bytes are cleared, and the file's data extent is optionally zero-wiped. Returns `true` when an entry was removed. |
-| `ReplaceFile` | `static bool ReplaceFile(Stream archive, string name, byte[] newData)` | Replaces an existing file's payload in-place when the new bytes fit inside the original extent (data written at the same offset, entry size trimmed). When the new payload is larger, falls back to remove-plus-add so the bytes land at a fresh tail offset. |
+| `AddFile` | `static void AddFile(Stream archive, string name, byte[] data)` | Adds a file, replacing any file of the same path. Existing payloads keep their bytes. |
+| `RemoveFile` | `static bool RemoveFile(Stream archive, string name, bool wipeData = true)` | Removes a file — or a directory and everything under it — and zeroes the payloads. Returns whether anything was removed. |
+| `ReplaceFile` | `static bool ReplaceFile(Stream archive, string name, byte[] newData)` | Replaces a file's contents, over its old extent when the new payload fits there and at the end of the volume otherwise. A missing file is added. |
+
+#### `VdfsLayout`
+
+On-disk constants of a ZenGin VDF volume, as `docs/VDFS-ON-DISK.md` describes them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CatalogOffsetOffset` | `const int CatalogOffsetOffset` | Header field: byte offset of the catalog. |
+| `CommentPad` | `const byte CommentPad` | Byte the comment is padded with, and where a reader stops reading it. |
+| `CommentSize` | `const int CommentSize` | Bytes of free-text comment at the start of the volume, padded with `0x1A`. |
+| `DataSizeOffset` | `const int DataSizeOffset` | Header field: the sum of every file's uncompressed size. |
+| `EntryAttributesField` | `const int EntryAttributesField` | Entry field: Win32 file attributes. |
+| `EntryCountOffset` | `const int EntryCountOffset` | Header field: number of catalog entries, directories included. |
+| `EntryOffsetField` | `const int EntryOffsetField` | Entry field: payload offset of a file, or first-child index of a directory. |
+| `EntrySizeField` | `const int EntrySizeField` | Entry field: uncompressed size of a file, 0 for a directory. |
+| `EntrySize` | `const int EntrySize` | Bytes per catalog entry. |
+| `EntryTypeField` | `const int EntryTypeField` | Entry field: type flags. |
+| `FileAttributes` | `const uint FileAttributes` | Attributes the reference tools give a file: `FILE_ATTRIBUTE_ARCHIVE`. |
+| `FileCountOffset` | `const int FileCountOffset` | Header field: number of files. |
+| `HeaderSize` | `const int HeaderSize` | Bytes of header before the catalog, which is also where every tool puts it. |
+| `NameSize` | `const int NameSize` | Bytes of entry name, space-padded. |
+| `SignatureOffset` | `const int SignatureOffset` | Where the 16-byte signature starts. |
+| `SignatureSize` | `const int SignatureSize` | Length of the signature. |
+| `TimestampOffset` | `const int TimestampOffset` | Header field: MS-DOS date and time the volume was written. |
+| `TypeDirectory` | `const uint TypeDirectory` | Type flag: the entry is a directory. |
+| `TypeLast` | `const uint TypeLast` | Type flag: the entry is the last one of its directory. |
+| `VolumeFlagsOffset` | `const int VolumeFlagsOffset` | Header field: volume flags (`VolumeNormal` or `VolumeZipped`). |
+| `VolumeNormal` | `const uint VolumeNormal` | Volume flags of a volume whose payloads are stored as-is. |
+| `VolumeZipped` | `const uint VolumeZipped` | Volume flags of a Union volume whose payloads are ZippedStreams. |
+| `NameEncoding` | `static Encoding NameEncoding { get; }` | Encoding of names and the comment: single-byte, every byte value round-trips. |
+| `SignatureGothic1` | `static ReadOnlySpan<byte> SignatureGothic1 { get; }` | Signature Gothic 1's tools write. |
+| `SignatureGothic2` | `static ReadOnlySpan<byte> SignatureGothic2 { get; }` | Signature Gothic 2's tools write. |
+| `SignaturePrefix` | `static ReadOnlySpan<byte> SignaturePrefix { get; }` | Shared prefix of every known signature. |
+| `SignatureVdfsTool` | `static ReadOnlySpan<byte> SignatureVdfsTool { get; }` | Signature VDFSTool writes. |
+| `FromDosTime` | `static DateTime? FromDosTime(uint dos)` | Unpacks the MS-DOS date/time word, or null when it names no valid date. |
+| `IsStoredRawWhenZipped` | `static bool IsStoredRawWhenZipped(string name)` | Whether a file is stored raw even in a zipped volume. Union streams sound straight from the volume, so its tools leave `.wav` and `.ogg` uncompressed. |
+| `ToDosTime` | `static uint ToDosTime(DateTime time)` | Packs a time into the MS-DOS date/time word the header carries. |
 
 #### `VdfsReader`
 
-Reads the entry table of a Gothic-engine VDFS archive and extracts the files it holds.
+Reads a ZenGin VDF volume: the 296-byte header, the catalog tree behind it, and each file's payload, stored or as a Union ZippedStream.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `VdfsReader` | `VdfsReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `VdfsReader`. |
-| `DefaultEntryTableOffset` | `const int DefaultEntryTableOffset` | Bytes of fixed header the entry table follows when the header names no offset of its own. |
-| `Entries` | `IReadOnlyList<VdfsEntry> Entries { get; }` | Gets the entries. |
-| `EntryTableLength` | `long EntryTableLength { get; }` | Bytes the entry table occupies. |
-| `EntryTableOffset` | `long EntryTableOffset { get; }` | Byte offset the entry table actually starts at. |
+| `VdfsReader` | `VdfsReader(Stream stream, bool leaveOpen = false)` | Opens `stream`, which must be seekable. |
+| `Comment` | `string Comment { get; }` | The volume comment, up to its first padding byte. |
+| `DeclaredEntryCount` | `int DeclaredEntryCount { get; }` | Catalog entries the header declares. |
+| `Entries` | `IReadOnlyList<VdfsEntry> Entries { get; }` | Directory and file entries, parents before their children. |
+| `EntryTableLength` | `long EntryTableLength { get; }` | Bytes the catalog occupies, as far as the volume holds it. |
+| `EntryTableOffset` | `long EntryTableOffset { get; }` | Byte offset the catalog starts at. |
+| `IsPartial` | `bool IsPartial { get; }` | Whether part of the catalog could not be followed or pointed outside the volume. |
+| `IsZippedVolume` | `bool IsZippedVolume { get; }` | Whether the volume flags mark it as a zipped (Union) volume. |
+| `Signature` | `byte[] Signature { get; }` | The 16 signature bytes as written. |
+| `Timestamp` | `DateTime? Timestamp { get; }` | When the header says the volume was written, if it names a valid date. |
+| `VolumeFlags` | `uint VolumeFlags { get; }` | Raw volume flags. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `ExtractTo` | `void ExtractTo(VdfsEntry entry, Stream destination)` | Copies an entry's bytes into `destination` a block at a time, so an entry larger than a byte[] can hold is extracted like any other. |
-| `Extract` | `byte[] Extract(VdfsEntry entry)` | Decodes the supplied input. |
+| `ExtractTo` | `void ExtractTo(VdfsEntry entry, Stream destination)` | Writes the decoded bytes of `entry` to `destination`, a block at a time, so an entry larger than a byte[] can hold is extracted like any other. |
+| `Extract` | `byte[] Extract(VdfsEntry entry)` | The decoded bytes of `entry`; empty for a directory. |
 
 #### `VdfsWriter`
 
-Builds a Gothic-engine VDFS archive from a set of files, writing the entry table and the file data behind it.
+Writes a ZenGin VDF volume — stored, or zipped the way Union zips one — from a set of files.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `VdfsWriter` | `VdfsWriter()` |  |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
-| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a file whose bytes are produced on demand. `size` must match what `openStream` yields; the descriptor table is laid out from it before a byte is read. |
-| `Build` | `byte[] Build()` | Materialises the whole descriptor container. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the container into `output`: the header and entry table, then each file's bytes at its recorded offset. Only the header is ever resident, so a container past what a byte[] can address is producible. |
+| `BlockSize` | `int BlockSize { get; init; }` | Bytes per ZippedStream block. |
+| `Comment` | `string Comment { get; init; }` | Free-text comment, at most 256 bytes. |
+| `Gothic1Signature` | `bool Gothic1Signature { get; init; }` | Whether to write Gothic 1's signature instead of Gothic 2's. |
+| `Level` | `DeflateCompressionLevel Level { get; init; }` | Deflate effort for zipped payloads. |
+| `Timestamp` | `DateTime Timestamp { get; init; }` | When the volume says it was written. Defaults to now. |
+| `UpperCaseNames` | `bool UpperCaseNames { get; init; }` | Whether names are upper-cased, as GothicVDFS and VDFSTool both write them. The engine looks names up without regard to case, so this changes nothing a game sees. |
+| `Zipped` | `bool Zipped { get; init; }` | Whether payloads are written as Union ZippedStreams (volume flags 0xA0). |
+| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file; a later file of the same path replaces an earlier one. |
+| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a file whose bytes are produced on demand. `size` must match what `openStream` yields. |
+| `Build` | `byte[] Build()` | Materialises the whole volume. |
+| `WriteTo` | `void WriteTo(Stream output)` | Writes the volume into `output`. Payloads are copied (or deflated) one at a time and the header and catalog written last, so only one block is ever resident. |
+
+#### `VdfsZippedStream`
+
+Union's ZippedStream: how a zipped VDF volume (`VolumeZipped`) stores one file's payload.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultBlockSize` | `const int DefaultBlockSize` | Block size this writer uses: ZenKit's, which it states is Union's default. |
+| `HeaderSize` | `const int HeaderSize` | Bytes of the stream header, and of each block header. |
+| `Decode` | `static void Decode(ImageAccessor data, Layout layout, Stream destination)` | Inflates every block of `layout` into `destination`. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int blockSize = 8192, DeflateCompressionLevel level = 6)` | Encodes a byte array; see `Encode`. |
+| `Encode` | `static long Encode(Stream source, long length, Stream destination, int blockSize = 8192, DeflateCompressionLevel level = 6)` | Writes `length` bytes of `source` as a ZippedStream and returns how many bytes that took. |
+| `TryParse` | `static Layout TryParse(ImageAccessor data, long offset, long expectedLength)` | Parses the stream at `offset` if it is a well-formed ZippedStream of `expectedLength` bytes, or returns null. |
+
+#### `VdfsZippedStream.Block`
+
+One block of a parsed stream.
+
+Implements `IEquatable<Block>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block` | `Block(long DataOffset, int SourceLength, int CompressedLength)` | One block of a parsed stream. |
+| `CompressedLength` | `int CompressedLength { get; init; }` | Bytes of zlib data. |
+| `DataOffset` | `long DataOffset { get; init; }` | Absolute offset of the block's zlib data. |
+| `SourceLength` | `int SourceLength { get; init; }` | Bytes the block inflates to. |
+
+#### `VdfsZippedStream.Layout`
+
+A parsed stream: where it ends and what its blocks are.
+
+Implements `IEquatable<Layout>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Layout` | `Layout(long StoredLength, int BlockSize, IReadOnlyList<Block> Blocks)` | A parsed stream: where it ends and what its blocks are. |
+| `BlockSize` | `int BlockSize { get; init; }` | The stream's nominal block size. |
+| `Blocks` | `IReadOnlyList<Block> Blocks { get; init; }` | Its blocks, in order. |
+| `StoredLength` | `long StoredLength { get; init; }` | Bytes the whole stream occupies, headers included. |
 
 ### Namespace `FileSystem.VxFs`
 

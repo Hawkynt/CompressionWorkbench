@@ -27,9 +27,19 @@ public static class Lz4BlockDecompressor {
   /// <param name="source">The compressed data.</param>
   /// <param name="dest">The output buffer.</param>
   /// <returns>Number of bytes written.</returns>
-  public static int Decompress(ReadOnlySpan<byte> source, Span<byte> dest) {
+  public static int Decompress(ReadOnlySpan<byte> source, Span<byte> dest) => DecompressAfterPrefix(source, dest, 0);
+
+  /// <summary>
+  /// Decompresses a block whose matches may reach back into history: <paramref name="window"/> holds
+  /// <paramref name="prefixLength"/> bytes of already-decoded output (the linked-block dictionary of the
+  /// LZ4 frame format) followed by room for this block. Returns the bytes written after the prefix.
+  /// </summary>
+  public static int DecompressAfterPrefix(ReadOnlySpan<byte> source, Span<byte> window, int prefixLength) {
+    ArgumentOutOfRangeException.ThrowIfNegative(prefixLength);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(prefixLength, window.Length);
+    var dest = window;
     var srcPos = 0;
-    var dstPos = 0;
+    var dstPos = prefixLength;
     var srcLen = source.Length;
     var dstLen = dest.Length;
 
@@ -98,6 +108,6 @@ public static class Lz4BlockDecompressor {
       dstPos += matchLen;
     }
 
-    return dstPos;
+    return dstPos - prefixLength;
   }
 }

@@ -156,6 +156,9 @@ public sealed class LinuxKernelImageTests {
     Assert.That(ini, Does.Contain("kind = ARM zImage"));
     Assert.That(files.ContainsKey("Image"), Is.True, ini);
     Assert.That(ini, Does.Contain("linux_banner = Linux version 5.15."));
+    // CPython 3.13.1 lzma decoded the XZ payload of the checksum-verified OpenWrt image.
+    Assert.That(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(files["Image"])),
+      Is.EqualTo("EC361666D28405AA3BF1361FC67B47CDC2199E83096550622D633983ED721E43"));
   }
 
   /// <summary>OpenWrt 23.05.5 armsr/armv8 generic kernel (arm64 Image).</summary>

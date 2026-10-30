@@ -37,12 +37,15 @@ public sealed class BcacheFsBucketGenerationTests {
       Assert.That(freed.BucketGensGeneration, Is.EqualTo(1));
     });
 
+    // Never-reused buckets are taken first, so every one of them is filled before
+    // the freed bucket can be handed out again.
+    FillNeverReusedBuckets(descriptor, image, "filler.bin");
     image.Position = 0;
     descriptor.Add(image, [ArchiveInputInfo.InMemory("replacement.bin", replacementPayload)]);
 
     var replacement = Entry(image, "replacement.bin");
     Assert.That(replacement.FirstSector, Is.EqualTo(firstSector),
-      "the first free data bucket should be reused, exercising a nonzero pointer generation");
+      "with every never-reused bucket taken, the freed bucket is reused at its advanced generation");
     Assert.That(ReadPayload(image, replacement), Is.EqualTo(replacementPayload));
 
     var live = BucketMetadata(image, reusedBucket);
@@ -61,6 +64,8 @@ public sealed class BcacheFsBucketGenerationTests {
     // A later unrelated metadata commit must preserve the nonzero generation and
     // must not move or reinterpret the already-live extent.
     image.Position = 0;
+    descriptor.Remove(image, ["filler.bin"]);
+    image.Position = 0;
     descriptor.Add(image, [ArchiveInputInfo.InMemory("other.bin", Payload(4_321, 41))]);
     var after = Entry(image, "replacement.bin");
     Assert.Multiple(() => {
@@ -69,6 +74,49 @@ public sealed class BcacheFsBucketGenerationTests {
       Assert.That(ExtentPointerGeneration(image, after.Inode, after.FirstSector), Is.EqualTo(1));
       Assert.That(BucketMetadata(image, reusedBucket).AllocGeneration, Is.EqualTo(1));
     });
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenAFreedBucket_WhenAFileIsAdded_ThenANeverReusedBucketIsTakenFirst() {
+    // A 1.3 backpointer cannot say which generation of its bucket it belongs to,
+    // so a newer bcachefs throws away the ones pointing into a reused bucket and
+    // rebuilds them; data in buckets still at generation zero leaves it nothing to
+    // rebuild.
+    var descriptor = new BcacheFsFormatDescriptor();
+    using var image = new MemoryStream();
+    descriptor.Create(image, [ArchiveInputInfo.InMemory("first.bin", Payload(12_345, 17))], new FormatCreateOptions());
+    var freedBucket = Entry(image, "first.bin").FirstSector / BucketSectors;
+    image.Position = 0;
+    descriptor.Remove(image, ["first.bin"]);
+    image.Position = 0;
+    descriptor.Add(image, [ArchiveInputInfo.InMemory("second.bin", Payload(23_456, 29))]);
+
+    var second = Entry(image, "second.bin");
+    Assert.Multiple(() => {
+      Assert.That(second.FirstSector / BucketSectors, Is.Not.EqualTo(freedBucket));
+      Assert.That(BucketMetadata(image, second.FirstSector / BucketSectors).AllocGeneration, Is.Zero);
+      Assert.That(BucketMetadata(image, freedBucket).AllocGeneration, Is.EqualTo(1), "the freed bucket keeps its advanced generation");
+    });
+  }
+
+  /// <summary>
+  /// Adds one file exactly as large as every free bucket still at generation zero,
+  /// so the next allocation has to reuse a bucket.
+  /// </summary>
+  internal static void FillNeverReusedBuckets(BcacheFsFormatDescriptor descriptor, Stream image, string name) {
+    image.Position = 0;
+    var volume = BcacheFsVolume.Open(image);
+    var taken = volume.Keys(BtreeAlloc)
+      .Where(k => k.Value[14] != DataFree || k.Value[12] != 0)
+      .Select(k => (long)k.Position.Offset)
+      .ToHashSet();
+    var first = (long)BcacheFsWriter.FirstMetadataBucket + BcacheFsWriter.MetadataBuckets;
+    var end = (volume.DeviceSectors - SbSlotSectors) / BucketSectors;
+    var fresh = 0L;
+    for (var bucket = first; bucket < end; ++bucket)
+      if (!taken.Contains(bucket)) ++fresh;
+    image.Position = 0;
+    descriptor.Add(image, [ArchiveInputInfo.InMemory(name, new byte[checked((int)(fresh * BucketBytes))])]);
   }
 
   private static global::FileSystem.BcacheFs.BcacheFsReader.Entry Entry(MemoryStream image, string name) {

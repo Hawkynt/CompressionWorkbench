@@ -187,7 +187,8 @@ public sealed class CabReader : IDisposable {
           break;
 
         case CabCompressionType.MsZip: {
-          var decompressed = MsZipDecompressor.DecompressBlock(abData);
+          // Blocks of a folder share the 32 KiB Deflate history ([MS-MCI] 2.2).
+          var decompressed = MsZipDecompressor.DecompressBlock(abData, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(output));
           output.AddRange(decompressed);
           break;
         }

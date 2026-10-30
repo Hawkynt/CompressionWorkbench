@@ -19,6 +19,12 @@ internal static class BcacheFsDefragmenter {
     if (!image.CanRead || !image.CanWrite || !image.CanSeek)
       throw new ArgumentException("bcachefs defragmentation needs a readable, writable, seekable stream.", nameof(image));
     BcacheFsInPlaceModifier.RequireWritableProfile(image);
+    // The layout pass moves runs by rewriting pointers in place, which it can only
+    // do in nodes laid out the way this package writes them and for extents that
+    // fill a bucket of their own; a volume the kernel wrote into is brought to that
+    // shape first.
+    if (!BcacheFsInPlaceModifier.IsCanonical(image))
+      BcacheFsInPlaceModifier.Canonicalize(image);
 
     options.OnProgress?.Invoke(new DefragProgressEvent(
       "metadata", 0, -1, -1, image.Length, null,
