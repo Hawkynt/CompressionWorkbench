@@ -341,6 +341,19 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Dar.DarExternalConformanceTests" \
             --logger "trx;LogFileName=dar-286-oracle-tests.trx"
 
+      # Hard gate: Greaseweazle (public domain, pinned release) writes an HFE from a sector image, we
+      # rebuild it from the parts we list (and edit one track), and Greaseweazle decodes our result
+      # back to exactly the expected sectors.
+      - name: HFE oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_GW: "1"
+        run: |
+          python3 -m pip install --user --break-system-packages "git+https://github.com/keirf/greaseweazle@v1.23"
+          CWB_GW="$HOME/.local/bin/gw" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Hfe.HfeExternalConformanceTests" \
+            --logger "trx;LogFileName=hfe-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the

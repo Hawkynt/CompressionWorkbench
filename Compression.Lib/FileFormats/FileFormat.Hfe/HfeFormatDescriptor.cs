@@ -28,7 +28,8 @@ namespace FileFormat.Hfe;
 ///   <item><description><c>https://github.com/jfdelnero/HxCFloppyEmulator</c> — canonical implementation and conversion tooling</description></item>
 /// </list>
 /// </summary>
-public sealed class HfeFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed partial class HfeFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
+    IArchiveModifiable, IArchiveWriteConstraints, ISyntheticEntryNames {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -46,7 +47,7 @@ public sealed class HfeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -87,6 +88,108 @@ public sealed class HfeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private static readonly string[] EncodingNames =
     ["ISOIBM_MFM", "AMIGA_MFM", "ISOIBM_FM", "EMU_FM", "UNKNOWN"];
 
+  internal static string[] EncodingNamesForWriter => EncodingNames;
+
+  private static readonly IReadOnlySet<string> Synthetic = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "FULL.hfe", "metadata.ini" };
+
+  /// <inheritdoc />
+  public IReadOnlySet<string> SyntheticEntryNames => Synthetic;
+
+  [System.Text.RegularExpressions.GeneratedRegex(@"^(?:.*/)?track(\d{3})\.bin$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+  private static partial System.Text.RegularExpressions.Regex TrackName();
+
+  /// <inheritdoc />
+  public long? MaxTotalArchiveSize => null;
+
+  /// <inheritdoc />
+  public string AcceptedInputsDescription => "accepts: tracks/trackNNN.bin (side-interleaved track blocks), metadata.ini, or one whole FULL.hfe";
+
+  /// <inheritdoc />
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    var name = input.ArchiveName.Replace('\\', '/');
+    var leaf = Path.GetFileName(name);
+    if (TrackName().IsMatch(name) || leaf.Equals("metadata.ini", StringComparison.OrdinalIgnoreCase) || leaf.Equals("FULL.hfe", StringComparison.OrdinalIgnoreCase)) {
+      reason = null;
+      return true;
+    }
+    reason = $"'{input.ArchiveName}' is not an HFE member; {this.AcceptedInputsDescription}";
+    return false;
+  }
+
+  /// <summary>
+  /// Builds an image from <c>tracks/trackNNN.bin</c> (consecutive from 000) and the header fields in
+  /// <c>metadata.ini</c>; a lone <c>FULL.hfe</c> is taken as the whole image.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    var (header, tracks, full) = this.Collect(new HfeWriter.Header(), [], inputs);
+    if (full is not null && tracks.Count == 0) {
+      if (!Parse(full, out _).Valid) throw new ArgumentException("FULL.hfe is not an HFE image.");
+      output.Write(full);
+      return;
+    }
+    HfeWriter.Write(output, header, Consecutive(tracks));
+  }
+
+  /// <summary>Replaces or appends tracks and header fields; the image is rebuilt with a fresh track list.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    var data = ReadAll(archive);
+    var info = Parse(data, out var existing);
+    if (!info.Valid) throw new InvalidDataException("HFE: not a valid image.");
+    var current = existing.ToDictionary(t => int.Parse(TrackName().Match(t.Name).Groups[1].Value, CultureInfo.InvariantCulture), t => t.Data);
+    var (header, tracks, _) = this.Collect(HfeWriter.Header.Parse(data), current, inputs);
+    var rebuilt = Consecutive(tracks);
+    Compression.Registry.WholeImageRebuildCommitter.Replace(archive, s => HfeWriter.Write(s, header, rebuilt), s => {
+      if (!Parse(ReadAll(s), out _).Valid) throw new InvalidDataException("HFE: rebuilt image does not parse.");
+    });
+  }
+
+  /// <summary>Only trailing tracks can be removed: an HFE track list has no holes.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    var data = ReadAll(archive);
+    var info = Parse(data, out var existing);
+    if (!info.Valid) throw new InvalidDataException("HFE: not a valid image.");
+    var tracks = existing.ToDictionary(t => int.Parse(TrackName().Match(t.Name).Groups[1].Value, CultureInfo.InvariantCulture), t => t.Data);
+    foreach (var raw in entryNames) {
+      var m = TrackName().Match(raw.Replace('\\', '/'));
+      if (m.Success) tracks.Remove(int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture));
+      else if (!Synthetic.Contains(Path.GetFileName(raw))) throw new NotSupportedException($"HFE has no entry '{raw}'.");
+    }
+    if (tracks.Count == 0) throw new NotSupportedException("HFE: an image needs at least one track.");
+    var rebuilt = Consecutive(tracks);
+    var header = HfeWriter.Header.Parse(data);
+    Compression.Registry.WholeImageRebuildCommitter.Replace(archive, s => HfeWriter.Write(s, header, rebuilt), null);
+  }
+
+  /// <summary>An HFE image has no empty instance (the track count is at least one).</summary>
+  public bool CanPurgeToEmpty => false;
+
+  private (HfeWriter.Header Header, Dictionary<int, byte[]> Tracks, byte[]? Full) Collect(
+      HfeWriter.Header header, Dictionary<int, byte[]> tracks, IReadOnlyList<ArchiveInputInfo> inputs) {
+    byte[]? full = null;
+    foreach (var input in inputs) {
+      if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName)) continue;
+      if (!this.CanAccept(input, out var reason)) throw new ArgumentException(reason);
+      var name = input.ArchiveName.Replace('\\', '/');
+      var leaf = Path.GetFileName(name);
+      if (leaf.Equals("metadata.ini", StringComparison.OrdinalIgnoreCase)) header = header.With(input.ReadContent());
+      else if (leaf.Equals("FULL.hfe", StringComparison.OrdinalIgnoreCase)) full = input.ReadContent();
+      else tracks[int.Parse(TrackName().Match(name).Groups[1].Value, CultureInfo.InvariantCulture)] = input.ReadContent();
+    }
+    return (header, tracks, full);
+  }
+
+  private static List<byte[]> Consecutive(Dictionary<int, byte[]> tracks) {
+    var ordered = tracks.OrderBy(kv => kv.Key).ToList();
+    for (var i = 0; i < ordered.Count; ++i)
+      if (ordered[i].Key != i)
+        throw new ArgumentException($"HFE tracks must be consecutive from track000; track{i:D3}.bin is missing.");
+    return ordered.Select(kv => kv.Value).ToList();
+  }
+
   private sealed record HfeInfo(
     int Version,
     byte FormatRevision,
@@ -97,7 +200,13 @@ public sealed class HfeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     int FloppyRpm,
     byte InterfaceMode,
     int TrackListOffset,
-    bool Valid);
+    bool Valid,
+    byte WriteAllowed = 0xFF,
+    byte SingleStep = 0xFF,
+    byte Track0Side0Alt = 0xFF,
+    byte Track0Side0Enc = 0xFF,
+    byte Track0Side1Alt = 0xFF,
+    byte Track0Side1Enc = 0xFF);
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -161,7 +270,8 @@ public sealed class HfeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var trackListOffsetBlocks = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(18, 2));
 
       var info = new HfeInfo(version, formatRevision, numTracks, numSides, trackEncoding,
-        bitRate, rpm, interfaceMode, trackListOffsetBlocks, Valid: true);
+        bitRate, rpm, interfaceMode, trackListOffsetBlocks, Valid: true,
+        data[20], data[21], data[22], data[23], data[24], data[25]);
 
       var lutPos = trackListOffsetBlocks * 512;
       if (numTracks == 0 || numTracks > 200 || lutPos <= 0 || lutPos + numTracks * 4 > data.Length)
@@ -204,6 +314,12 @@ public sealed class HfeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     sb.Append(CultureInfo.InvariantCulture, $"bit_rate_kbps={info.BitRate}\n");
     sb.Append(CultureInfo.InvariantCulture, $"floppy_rpm={info.FloppyRpm}\n");
     sb.Append(CultureInfo.InvariantCulture, $"interface_mode=0x{info.InterfaceMode:X2}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"write_allowed=0x{info.WriteAllowed:X2}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"single_step=0x{info.SingleStep:X2}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"track0_side0_alt_encoding=0x{info.Track0Side0Alt:X2}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"track0_side0_encoding=0x{info.Track0Side0Enc:X2}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"track0_side1_alt_encoding=0x{info.Track0Side1Alt:X2}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"track0_side1_encoding=0x{info.Track0Side1Enc:X2}\n");
     sb.Append("parse_status=ok\n");
     return sb.ToString();
   }
