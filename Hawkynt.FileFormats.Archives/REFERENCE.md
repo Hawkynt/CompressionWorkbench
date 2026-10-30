@@ -12575,6 +12575,37 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes pages directly when they comprise complete 7z solid folders (or empty-stream metadata). Unsupported partial-solid removals and non-trivial layouts are rejected before compaction and use the verified rebuild path. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: gaps between packed solid blocks and any junk before the compressed metadata or trailing the file. The signature header, solid blocks and end-of-archive metadata are live and preserved. Cluster-tip wiping is N/A (7z packs solid blocks with no per-file slack). |
 
+### Namespace `FileFormat.Cba`
+
+[`CbaFormatDescriptor`](#cbaformatdescriptor)
+
+#### `CbaFormatDescriptor`
+
+Comic book archive: an ACE container of sequentially named page images, conventionally suffixed .cba. It is byte-identical to an ACE archive, so it is identified by extension only and every operation is the ACE one. References: `https://en.wikipedia.org/wiki/Comic_book_archive` — the .cba/.cbz/.cbr naming convention`https://github.com/droe/acefile` — acefile, the ACE reference reader the container is verified against
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CbaFormatDescriptor` | `CbaFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
 ### Namespace `FileFormat.Cbr`
 
 [`CbrFormatDescriptor`](#cbrformatdescriptor)
