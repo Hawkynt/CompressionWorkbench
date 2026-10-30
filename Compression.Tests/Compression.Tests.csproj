@@ -98,6 +98,9 @@
     <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
       <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- unshield's CVE-2015-1386 cabinet pair; see InstallShield/ReferenceVectors/README.md. The
+         reader needs real files (volumes are found beside the header), so they are copied, not embedded. -->
+    <None Include="InstallShield\ReferenceVectors\data1.hdr;InstallShield\ReferenceVectors\data1.cab" CopyToOutputDirectory="PreserveNewest" />
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>

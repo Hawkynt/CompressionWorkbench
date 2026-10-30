@@ -247,6 +247,7 @@ format,IExpress,IExpress self-extractor,Archive,,,Y,Y,,
 format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
 format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
 format,InnoSetup,Inno Setup,Archive,,,Y,Y,Y,
+format,InstallShieldCab,InstallShield cabinet,Archive,,.hdr,Y,Y,,
 format,IntelHex,Intel HEX,Archive,,.hex;.ihex;.ihx;.h86,Y,Y,Y,Y
 format,Ipa,IPA,Archive,,.ipa,Y,Y,Y,Y
 format,Ipsw,Apple IPSW,Archive,,.ipsw;.otazip,Y,Y,Y,Y

@@ -212,7 +212,7 @@ Intel HEX,hex;ihex,firmware,R,,,,,,,1,https://en.wikipedia.org/wiki/Intel_HEX,In
 Motorola S-record,srec;s19;mot,firmware,,,,R,,,,1,https://en.wikipedia.org/wiki/SREC_(file_format),Srec,Y,Y,,OK,,
 NSIS installer,exe;nsis,installer,R,,R,,R,,,3,https://nsis.sourceforge.io/,Nsis,Y,,,READ-ONLY-BUT-SOURCES-WRITE,makensis,LZMA behind the x86 branch filter refused; uninstaller payload not listed (NsisReader.cs)
 Inno Setup,exe,installer,,,,,R,,,1,https://jrsoftware.org/isinfo.php,InnoSetup,Y,Y,,PARTIAL,,listing only; file extraction throws for every Inno version (InnoSetupReader.cs)
-InstallShield (cab / exe),exe;cab;ex_;hdr,installer,,,,,R,fmt/1466,,2,,,,,,MISSING,,
+InstallShield (cab / exe),exe;cab;ex_;hdr,installer,,,,,R,fmt/1466,,2,https://github.com/twogood/unshield,InstallShieldCab,Y,,,READ-ONLY-BUT-SOURCES-WRITE,InstallShield,"cabinet sets (data1.hdr + dataN.cab) only; the self-extracting setup.exe wrappers and InstallShield 3 .Z archives are not read (InstallShieldCabReader.cs)"
 Wise Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 Setup Factory,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 Smart Install Maker,exe,installer,,,,,R,,,1,,,,,,MISSING,,
