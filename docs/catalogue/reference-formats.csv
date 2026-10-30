@@ -360,7 +360,7 @@ Windows Help (HLP),hlp,document,,,,,R,fmt/474,,2,,,,,,MISSING,,
 MIME HTML archive (MHT),mht;mhtml,document,,,,,R,,,1,,,,,,MISSING,,
 Outlook Express mailbox (DBX),dbx,document,,,,,R,,,1,,,,,,MISSING,,
 Qt message catalog (QM),qm,document,,,,,R,,,1,,,,,,MISSING,,
-SQLite database,sqlite;sqlite3;db,document,,,,,R,,,1,,Sqlite,Y,,,READ-ONLY-BUT-SOURCES-WRITE,sqlite3,
+SQLite database,sqlite;sqlite3;db,document,,,,,R,,,1,https://www.sqlite.org/fileformat2.html,Sqlite;Sqlar,Y,Y,Y,PARTIAL,sqlite3,"SQLite Archives (.sqlar) read and written; other databases are read page by page, not written"
 Windows thumbnail cache,db;thumbs.db,document,,,,,R,,,1,,ThumbsDb,Y,Y,Y,PARTIAL,,Thumbs.db only; thumbcache_*.db has no descriptor
 Safari webarchive,webarchive,document,,,,,,fmt/866,,1,,,,,,MISSING,,
 Compressed MusicXML (MXL),mxl,document,,,,,,fmt/2005;fmt/897,,1,,,,,,MISSING,,
