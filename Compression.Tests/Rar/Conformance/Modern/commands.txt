@@ -1,0 +1,59 @@
+Rar.exe a -cfg- -idq -y -ma5 -m0 -r r5-m0.rar *
+Rar.exe a -cfg- -idq -y -ma4 -m0 -r r4-m0.rar *
+Rar.exe a -cfg- -idq -y -ma5 -m1 -r r5-m1.rar *
+Rar.exe a -cfg- -idq -y -ma4 -m1 -r r4-m1.rar *
+Rar.exe a -cfg- -idq -y -ma5 -m2 -r r5-m2.rar *
+Rar.exe a -cfg- -idq -y -ma4 -m2 -r r4-m2.rar *
+Rar.exe a -cfg- -idq -y -ma5 -m3 -r r5-m3.rar *
+Rar.exe a -cfg- -idq -y -ma4 -m3 -r r4-m3.rar *
+Rar.exe a -cfg- -idq -y -ma5 -m4 -r r5-m4.rar *
+Rar.exe a -cfg- -idq -y -ma4 -m4 -r r4-m4.rar *
+Rar.exe a -cfg- -idq -y -ma5 -m5 -r r5-m5.rar *
+Rar.exe a -cfg- -idq -y -ma4 -m5 -r r4-m5.rar *
+Rar.exe a -cfg- -idq -y -ma5 -s -r r5-solid.rar *
+Rar.exe a -cfg- -idq -y -ma4 -s -r r4-solid.rar *
+Rar.exe a -cfg- -idq -y -ma5 -s2 -r r5-solid-s2.rar *
+Rar.exe a -cfg- -idq -y -ma5 -se -r r5-solid-se.rar *
+Rar.exe a -cfg- -idq -y -ma5 -md128k -m5 r5-md128k.rar text.txt
+Rar.exe a -cfg- -idq -y -ma5 -md1g -m3 r5-md1g.rar text.txt
+Rar.exe a -cfg- -idq -y -ma5 -md4g -m3 -s r5-md4g.rar text.txt noise.bin
+Rar.exe a -cfg- -idq -y -ma4 -md64k -m3 r4-md64k.rar text.txt
+Rar.exe a -cfg- -idq -y -ma4 -md4m -m5 r4-md4m.rar text.txt
+Rar.exe a -cfg- -idq -y -ma5 -mt1 -m5 r5-mt1.rar text.txt
+Rar.exe a -cfg- -idq -y -ma5 -mt16 -m5 r5-mt16.rar text.txt
+Rar.exe a -cfg- -idq -y -ma5 -m3 r5-x86.rar x86.bin
+Rar.exe a -cfg- -idq -y -ma5 -m3 -mcD+ r5-delta.rar table.bin
+Rar.exe a -cfg- -idq -y -ma5 -m3 r5-audio.rar audio.wav image.bmp
+Rar.exe a -cfg- -idq -y -ma4 -m5 -mct+ r4-ppmd.rar text.txt
+Rar.exe a -cfg- -idq -y -ma5 -tsm4 -tsc4 -tsa4 -r r5-times.rar *
+Rar.exe a -cfg- -idq -y -ma4 -tsm4 -tsc4 -tsa4 -r r4-times.rar *
+Rar.exe a -cfg- -idq -y -ma5 -oh r5-hardlink.rar target.txt hard.txt
+Rar.exe a -cfg- -idq -y -ma5 -oi:1 r5-filecopy.rar one.txt two.txt
+Rar.exe a -cfg- -idq -y -ma5 -os r5-streams.rar host.txt
+Rar.exe a -cfg- -idq -y -ma4 -os r4-streams.rar host.txt
+Rar.exe a -cfg- -idq -y -ma5 -zcomment.txt r5-comment.rar text.txt
+Rar.exe a -cfg- -idq -y -ma4 -zcomment.txt r4-comment.rar text.txt
+Rar.exe a -cfg- -idq -y -ma5 -rr5% r5-rr.rar text.txt
+Rar.exe a -cfg- -idq -y -ma4 -rr5% r4-rr.rar text.txt
+Rar.exe a -cfg- -idq -y -ma5 -k r5-locked.rar text.txt
+Rar.exe a -cfg- -idq -y -ma4 -k r4-locked.rar text.txt
+Rar.exe a -cfg- -idq -y -ma5 -qo+ r5-qo.rar text.txt noise.bin
+Rar.exe a -cfg- -idq -y -ma5 -htb -r r5-blake2.rar *
+Rar.exe a -cfg- -idq -y -ma5 -psecret -r r5-enc.rar *
+Rar.exe a -cfg- -idq -y -ma5 -psecret -m0 r5-enc-store.rar text.txt noise.bin
+Rar.exe a -cfg- -idq -y -ma5 -psecret -s -r r5-enc-solid.rar *
+Rar.exe a -cfg- -idq -y -ma5 -hpsecret -r r5-enc-hp.rar *
+Rar.exe a -cfg- -idq -y -ma5 -psecret -htb r5-enc-blake2.rar text.txt
+Rar.exe a -cfg- -idq -y -ma4 -psecret -r r4-enc.rar *
+Rar.exe a -cfg- -idq -y -ma4 -hpsecret -r r4-enc-hp.rar *
+Rar.exe a -cfg- -idq -y -ma5 -pgrüße -m3 r5-enc-unicode.rar text.txt
+Rar.exe a -cfg- -idq -y -ma4 -pgrüße -m3 r4-enc-unicode.rar text.txt
+rar a -ma5 -ver r5-versions.rar doc.txt; (modify); rar u -ma5 -ver r5-versions.rar doc.txt
+Rar.exe a -cfg- -idq -y -ma5 -v20k -m3 r5-vol.rar random.bin text.txt
+Rar.exe a -cfg- -idq -y -ma5 -v20k -m3 -s r5-vol-solid.rar random.bin text.txt
+Rar.exe a -cfg- -idq -y -ma5 -v20k -m3 -psecret r5-vol-enc.rar random.bin text.txt
+Rar.exe a -cfg- -idq -y -ma5 -v20k -m0 -hpsecret r5-vol-hp.rar random.bin text.txt
+Rar.exe a -cfg- -idq -y -ma4 -v20k -m3 r4-vol.rar random.bin text.txt
+Rar.exe a -cfg- -idq -y -ma4 -v20k -m3 -vn r4-vol-old.rar random.bin text.txt
+Rar.exe a -cfg- -idq -y -ma4 -v20k -m3 -psecret r4-vol-enc.rar random.bin text.txt
+Rar.exe a -cfg- -idq -y -ma5 -v20k -m0 -rv1 r5-vol-rev.rar random.bin text.txt

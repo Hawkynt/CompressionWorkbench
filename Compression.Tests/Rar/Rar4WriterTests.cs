@@ -194,21 +194,19 @@ public class Rar4WriterTests {
   [Category("RoundTrip")]
   [Test]
   public void CreateSplit_RoundTrip() {
-    var d1 = new byte[100];
-    var d2 = new byte[200];
+    var d1 = new byte[1000];
+    var d2 = new byte[2000];
     for (var i = 0; i < d1.Length; ++i) d1[i] = (byte)(i % 10);
     for (var i = 0; i < d2.Length; ++i) d2[i] = (byte)(i % 7);
 
     var volumes = Rar4Writer.CreateSplit(
-      maxVolumeSize: 150,
+      maxVolumeSize: 1024,
       entries: [("a.bin", d1), ("b.bin", d2)],
       method: RarConstants.Rar4MethodStore);
 
     Assert.That(volumes.Length, Is.GreaterThan(1));
 
-    var streams = volumes.Select(v => (Stream)new MemoryStream(v)).ToArray();
-    using var cs = new Compression.Core.Streams.ConcatenatedStream(streams);
-    using var reader = new RarReader(cs, leaveOpen: true);
+    using var reader = new RarReader(volumes.Select(v => (Stream)new MemoryStream(v)).ToList(), null);
 
     Assert.That(reader.Entries, Has.Count.EqualTo(2));
     Assert.That(reader.Extract(0), Is.EqualTo(d1));

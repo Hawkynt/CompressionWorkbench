@@ -1,0 +1,3 @@
+test_read_format_rar5_bad_tables.rar	over-subscribed Huffman table, no checksum stored: unrar writes 64 unverifiable bytes, libarchive 3.8.10 and this reader refuse
+test_read_format_rar5_loop_bug.rar	stream ends 188 KB short of the declared size, no checksum stored: unrar pads, libarchive and this reader stop with an error
+test_read_format_rar5_extra_field_version.rar	-ver archive: unrar x overwrites bin/2to3 with its newer version; this reader lists and writes both, bin/2to3 and bin/2to3;1, as unrar l lists them

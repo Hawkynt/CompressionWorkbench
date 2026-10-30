@@ -106,6 +106,16 @@
     <EmbeddedResource Include="Rar\ReferenceVectors\*.rar">
       <LogicalName>RarVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- RAR conformance sets (RAR 7.12/6.24, DOS RAR 1.40-3.93, libarchive); see Rar/Conformance/README.md. -->
+    <EmbeddedResource Include="Rar\Conformance\Modern\*" Exclude="Rar\Conformance\Modern\*.txt">
+      <LogicalName>RarConfModern.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Rar\Conformance\Dos\*" Exclude="Rar\Conformance\Dos\*.txt">
+      <LogicalName>RarConfDos.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Rar\Conformance\Libarchive\*" Exclude="Rar\Conformance\Libarchive\*.txt">
+      <LogicalName>RarConfLibarchive.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>

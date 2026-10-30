@@ -108,15 +108,8 @@ public class RarEncryptionVectorTests {
     Assert.That(r.Extract(1), Is.EqualTo("data of bar.txt\n"u8.ToArray()));
   }
 
-  [Test, Category("EdgeCase")]
-  public void Given_Rar15EncryptedEntry_When_Extracted_Then_RefusedAsUnsupported() {
-    var bytes = Vector("winrar290-rar20-crypt-store.rar");
-    // first file header starts at 0x14; UNP_VER is at +24
-    Assert.That(bytes[0x14 + 24], Is.EqualTo(20));
-    bytes[0x14 + 24] = 15;
-    using var r = new RarReader(new MemoryStream(bytes), password: "password");
-    Assert.Throws<NotSupportedException>(() => r.Extract(0));
-  }
+  // RAR 1.3/1.5 encrypted archives that DOS RAR 1.40 and 1.55 wrote are in Rar/Conformance/Dos
+  // (rar140-pw*.rar, rar155-pw*.rar) and decrypt there; see RarConformanceTests.
 
   [Test, Category("Boundary")]
   public void Given_Rar20Cipher_When_EncryptedThenDecrypted_Then_RoundTripsAndLeavesAPartialTailAlone() {

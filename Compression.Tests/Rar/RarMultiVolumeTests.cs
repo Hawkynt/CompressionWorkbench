@@ -1,107 +1,76 @@
-using Compression.Core.Streams;
 using FileFormat.Rar;
 
 namespace Compression.Tests.Rar;
 
+/// <summary>
+/// Volume sets as RAR writes them: each volume its own archive with the volume flags, files
+/// cut across volumes with split-before/split-after headers. unrar and 7-Zip acceptance of the
+/// same output is in <see cref="RarToolInteropTests"/>; rar-made sets in <see cref="RarConformanceTests"/>.
+/// </summary>
 [TestFixture]
 public class RarMultiVolumeTests {
-  [Category("End2End")]
+  private static byte[] Data(int size, int seed) {
+    var d = new byte[size];
+    new Random(seed).NextBytes(d);
+    return d;
+  }
+
   [Category("RoundTrip")]
-  [Test]
-  public void SplitArchive_Read_TwoVolumes_Store() {
-    var archive = CreateTestArchive(RarConstants.MethodStore);
-
-    var splitPoint = archive.Length / 2;
-    var vol1 = archive[..splitPoint];
-    var vol2 = archive[splitPoint..];
-
-    using var cs = new ConcatenatedStream([new MemoryStream(vol1), new MemoryStream(vol2)]);
-    using var reader = new RarReader(cs, leaveOpen: true);
-
-    Assert.That(reader.Entries, Has.Count.EqualTo(2));
-    Assert.That(reader.Extract(0), Is.EqualTo(MakeTestData(100, 0x41)));
-    Assert.That(reader.Extract(1), Is.EqualTo(MakeTestData(200, 0x42)));
+  [TestCase(RarConstants.MethodStore, null)]
+  [TestCase(RarConstants.MethodNormal, null)]
+  [TestCase(RarConstants.MethodNormal, "secret")]
+  public void Given_Rar5Volumes_When_ReadAsASet_Then_FilesSpanningVolumesComeBack(int method, string? password) {
+    var d1 = Data(5000, 1);
+    var d2 = Data(9000, 2);
+    var volumes = RarWriter.CreateSplit(2048, [("a.bin", d1), ("b.bin", d2)], method, password);
+    Assert.That(volumes, Has.Length.GreaterThan(3));
+    Assert.That(volumes.All(v => v.Length <= 2048), Is.True, "no volume exceeds the size");
+    using var reader = new RarReader(volumes.Select(v => (Stream)new MemoryStream(v)).ToList(), password);
+    Assert.That(reader.IsVolume, Is.True);
+    Assert.That(reader.Entries.Select(e => e.Name), Is.EqualTo(new[] { "a.bin", "b.bin" }));
+    Assert.That(reader.Entries[1].VolumeCount, Is.GreaterThan(1));
+    Assert.That(reader.Extract(0), Is.EqualTo(d1));
+    Assert.That(reader.Extract(1), Is.EqualTo(d2));
   }
 
-  [Category("End2End")]
   [Category("RoundTrip")]
+  [TestCase(RarConstants.Rar4MethodStore, null)]
+  [TestCase(RarConstants.Rar4MethodNormal, null)]
+  [TestCase(RarConstants.Rar4MethodNormal, "secret")]
+  public void Given_Rar4Volumes_When_ReadAsASet_Then_FilesSpanningVolumesComeBack(byte method, string? password) {
+    var d1 = Data(5000, 3);
+    var d2 = Data(9000, 4);
+    var volumes = Rar4Writer.CreateSplit(2048, [("a.bin", d1), ("b.bin", d2)], method, password);
+    Assert.That(volumes, Has.Length.GreaterThan(3));
+    Assert.That(volumes.All(v => v.Length <= 2048), Is.True);
+    using var reader = new RarReader(volumes.Select(v => (Stream)new MemoryStream(v)).ToList(), password);
+    Assert.That(reader.Extract(0), Is.EqualTo(d1));
+    Assert.That(reader.Extract(1), Is.EqualTo(d2));
+  }
+
+  [Category("Exception")]
   [Test]
-  public void SplitArchive_Read_TwoVolumes_Compressed() {
-    var archive = CreateTestArchive(RarConstants.MethodNormal);
-
-    var splitPoint = archive.Length / 2;
-    var vol1 = archive[..splitPoint];
-    var vol2 = archive[splitPoint..];
-
-    using var cs = new ConcatenatedStream([new MemoryStream(vol1), new MemoryStream(vol2)]);
-    using var reader = new RarReader(cs, leaveOpen: true);
-
-    Assert.That(reader.Entries, Has.Count.EqualTo(2));
-    Assert.That(reader.Extract(0), Is.EqualTo(MakeTestData(100, 0x41)));
-    Assert.That(reader.Extract(1), Is.EqualTo(MakeTestData(200, 0x42)));
+  public void Given_AVolumeSetWithoutItsLastVolume_When_TheSplitFileIsExtracted_Then_ItIsRefused() {
+    var volumes = RarWriter.CreateSplit(2048, [("a.bin", Data(9000, 5))], RarConstants.MethodStore);
+    using var reader = new RarReader(volumes[..^1].Select(v => (Stream)new MemoryStream(v)).ToList(), null);
+    Assert.That(reader.Entries[0].IsIncomplete, Is.True);
+    Assert.Throws<InvalidDataException>(() => reader.Extract(0));
   }
 
-  [Category("End2End")]
-  [Category("RoundTrip")]
+  [Category("Boundary")]
   [Test]
-  public void SplitArchive_Read_ThreeVolumes() {
-    var archive = CreateTestArchive(RarConstants.MethodStore);
+  public void Given_AVolumeSizeBelow1K_When_Writing_Then_TheWriterRefusesIt()
+    => Assert.Throws<ArgumentOutOfRangeException>(() => RarWriter.CreateSplit(512, [("a", new byte[10])]));
 
-    var split1 = archive.Length / 3;
-    var split2 = 2 * archive.Length / 3;
-
-    using var cs = new ConcatenatedStream([
-      new MemoryStream(archive[..split1]),
-      new MemoryStream(archive[split1..split2]),
-      new MemoryStream(archive[split2..])
-    ]);
-    using var reader = new RarReader(cs, leaveOpen: true);
-
-    Assert.That(reader.Entries, Has.Count.EqualTo(2));
-    Assert.That(reader.Extract(0), Is.EqualTo(MakeTestData(100, 0x41)));
-    Assert.That(reader.Extract(1), Is.EqualTo(MakeTestData(200, 0x42)));
-  }
-
-  [Category("End2End")]
-  [Category("RoundTrip")]
-  [Test]
-  public void CreateSplit_Write_Read_RoundTrip() {
-    var data1 = MakeTestData(100, 0x30);
-    var data2 = MakeTestData(200, 0x50);
-
-    var volumes = RarWriter.CreateSplit(
-      maxVolumeSize: 200,
-      entries: [("file1.bin", data1), ("file2.bin", data2)],
-      method: RarConstants.MethodStore);
-
-    Assert.That(volumes.Length, Is.GreaterThan(1));
-    foreach (var vol in volumes)
-      Assert.That(vol.Length, Is.LessThanOrEqualTo(200));
-
-    var streams = volumes.Select(v => (Stream)new MemoryStream(v)).ToArray();
-    using var cs = new ConcatenatedStream(streams);
-    using var reader = new RarReader(cs, leaveOpen: true);
-
-    Assert.That(reader.Entries, Has.Count.EqualTo(2));
-    Assert.That(reader.Extract(0), Is.EqualTo(data1));
-    Assert.That(reader.Extract(1), Is.EqualTo(data2));
-  }
-
-  private static byte[] CreateTestArchive(int method) {
-    using var ms = new MemoryStream();
-    using (var writer = new RarWriter(ms, leaveOpen: true, method: method)) {
-      writer.AddFile("a.txt", MakeTestData(100, 0x41));
-      writer.AddFile("b.txt", MakeTestData(200, 0x42));
-      writer.Finish();
-    }
-
-    return ms.ToArray();
-  }
-
-  private static byte[] MakeTestData(int size, byte seed) {
-    var data = new byte[size];
-    for (var i = 0; i < size; ++i)
-      data[i] = (byte)((seed + i) % 256);
-    return data;
+  [TestCase("x.part1.rar", 0, "x.part1.rar")]
+  [TestCase("x.part1.rar", 1, "x.part2.rar")]
+  [TestCase("x.part01.rar", 9, "x.part10.rar")]
+  [TestCase("x.rar", 1, "x.r00")]
+  [TestCase("x.rar", 101, "x.s00")]
+  [TestCase("x.r05", 0, "x.rar")]
+  [TestCase("x.r05", 7, "x.r06")]
+  public void Given_AVolumeName_When_TheSetIsEnumerated_Then_RarsNamingSchemesAreFollowed(string name, int index, string expected) {
+    var seq = RarVolumeNames.SequenceOf(Path.Combine("d", name))!;
+    Assert.That(Path.GetFileName(seq(index)), Is.EqualTo(expected));
   }
 }
