@@ -435,6 +435,7 @@ format,Pst,PST / OST (Outlook mailbox),Archive,,.pst;.ost,Y,Y,,
 format,Ptm,PTM (PolyTracker),Audio,,.ptm,Y,Y,,
 format,Pvf,Portable Voice Format (mgetty),Audio,,.pvf,Y,Y,Y,
 format,PyInstaller,PyInstaller,Archive,,,Y,Y,Y,
+format,Pzx,PZX (ZX Spectrum tape),Archive,,.pzx,Y,Y,Y,
 format,Qcow2,QCOW2,Archive,,.qcow2;.qcow,Y,Y,Y,Y
 format,Qed,QEMU Enhanced Disk (QED),Archive,,.qed,Y,Y,,
 format,Qnx4,QNX4 FS,Archive,Y,.qnx4;.qnx,Y,Y,Y,Y

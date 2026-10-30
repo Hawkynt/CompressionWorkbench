@@ -293,7 +293,7 @@ MOOF (Macintosh flux),moof,disk-image,,,,,,fmt/2061,,1,,,,,,MISSING,,
 SuperCard Pro flux image,scp,disk-image,,,,,,fmt/2071,,1,,,,,,MISSING,,
 T64 (C64 tape),t64,disk-image,,,,,,fmt/820,,1,,T64,Y,Y,Y,OK,,
 TAP (C64 tape),tap,disk-image,,,,,,fmt/802,,1,,,,,,MISSING,,
-PZX (ZX tape),pzx,disk-image,,,,,,fmt/1898,,1,,,,,,MISSING,,
+PZX (ZX tape),pzx,disk-image,,,,,,fmt/1898,,1,https://github.com/raxoft/pzxtools,Pzx,Y,Y,,OK,,"every block listed losslessly, standard-loader data as TAP; writer byte-identical to tap2pzx"
 CrunchDisk (Amiga),,disk-image,,,R,,,,,1,,,,,,MISSING,,
 IFF-CDAF,cdaf,disk-image,,,R,,,,,1,,IffCdaf,Y,Y,Y,OK,,
 PackDev (Amiga),,disk-image,,,R,,,,,1,,,,,,MISSING,,
