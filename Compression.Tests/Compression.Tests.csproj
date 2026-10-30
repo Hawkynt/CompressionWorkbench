@@ -139,6 +139,10 @@
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- A Unity-exported package and Python tarfile's listing of it; see UnityPackage/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="UnityPackage\ReferenceVectors\*.unitypackage;UnityPackage\ReferenceVectors\morpeh-listing.txt">
+      <LogicalName>UnityPackageVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Sparsebundles written by Apple's hdiutil (keramics, ewfprobe test corpora); see
          AppleSparse/ReferenceVectors/README.md. The tests rebuild each bundle directory from these. -->
     <EmbeddedResource Include="AppleSparse\ReferenceVectors\**\*"
