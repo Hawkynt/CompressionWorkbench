@@ -1,0 +1,28 @@
+import sys, os, struct, zlib
+here = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(here, 'lmpkgs'))
+from livemaker.archive import LMArchive, LMCompressType
+from livemaker.scramble import LMScramble, decrypt, LIVEMAKER3_SCRAMBLE_KEY
+
+def scramble(plain, chunk, seed_raw):
+    n = (len(plain) - 1) // chunk + 1
+    seq = LMScramble.randseq(n, seed_raw ^ LIVEMAKER3_SCRAMBLE_KEY)
+    lengths = [min(chunk, len(plain) - i * chunk) for i in range(n)]   # stored chunk i length
+    stored = [None] * n
+    pos = 0
+    for k in range(n):
+        L = lengths[seq[k]]
+        stored[seq[k]] = plain[pos:pos + L]
+        pos += L
+    data = struct.pack('<iI', chunk, seed_raw) + b''.join(stored)
+    assert decrypt(data) == plain
+    return data
+
+out = sys.argv[1]
+text = ('scrambled member ' * 40).encode()
+binp = bytes(range(256)) * 16
+with LMArchive(out, mode='w') as a:
+    a.writebytes('plain.txt', text, compress_type=LMCompressType.NONE)
+    a.writebytes('scr.bin', scramble(binp, 256, 0x1234), compress_type=LMCompressType.ENCRYPTED)
+    a.writebytes('scrz.txt', scramble(zlib.compress(text), 37, 0xBEEF), compress_type=LMCompressType.ENCRYPTED_ZLIB)
+print('ok')

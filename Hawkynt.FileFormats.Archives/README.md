@@ -265,6 +265,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Descent HOG | `Hog` | `.hog` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/dxx-rebirth/dxx-rebirth) |
 | [Total Annihilation HPI](https://en.wikipedia.org/wiki/Total_Annihilation) | `Hpi` | `.hpi` `.ufo` `.ccx` `.gp3` | R/W | ✅ | defrag · wipe | Unencrypted / zlib subset | [units.tauniverse.com](https://units.tauniverse.com/tutorials/tadesign/tutorials/hpi.htm) |
 | LucasArts LFD | `Lfd` | `.lfd` | WORM | ✅ | defrag · wipe | Entries are DATA.<stem> and RMAP.resource | [GitHub](https://github.com/MikeG621/LfdReader) |
+| LiveMaker VF archive | `LiveMaker` |  | R/W | ✅ | — | game.dat, archives appended to the game exe, save files; zlib, stored and LiveMaker Pro scrambled members, CRC-32 checked; split .ext/.001 sets are not joined | [GitHub](https://github.com/morkt/GARbro) |
 | Minecraft region (MCA) | `Mca` | `.mca` `.mcr` | WORM | ✅ | — | Chunks are `chunk_X_Z.nbt`; gzip, zlib, stored and LZ4-Java block-stream creation; oversized (external `.mcc`) chunks are listed but not written or extracted | [minecraft.wiki](https://minecraft.wiki/w/Region_file_format) |
 | Cyan Mohawk | `Mhk` | `.mhk` | WORM | ✅ | defrag · wipe | Entries are typed tDAT_NNNN names | [GitHub](https://github.com/scummvm/scummvm) |
 | Westwood MIX | `Mix` | `.mix` | WORM | ✅ | defrag · wipe | Hash-keyed names; hex names are synthesised where the original is absent | [GitHub](https://github.com/OpenRA/OpenRA) |

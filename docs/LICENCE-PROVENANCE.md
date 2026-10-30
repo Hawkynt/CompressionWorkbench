@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 21 | |
+| A | 22 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 1 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 10 | |
@@ -74,6 +74,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidVbmeta/AvbVbmeta.cs`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidVbmeta/AvbDescriptorText.cs` | AOSP Android Verified Boot headers and `avbtool.py`, revision `c5066a96caa7bf4150c0a8cc8cc14ab81733fdc7` | MIT | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidVbmeta/THIRD-PARTY-NOTICE.avb.txt` |
 | `Compression.Core/Dictionary/KwajLzh/`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Kwaj/KwajStream.cs` | kwaj-lzh `src/kwaj.ts`, `src/bitreader.ts`, `src/lzss.ts` (yaodub), revision `f71544bc4f848420d8aedb46c2ae602b88a3e998` | MIT | `Compression.Core/Dictionary/KwajLzh/THIRD-PARTY-NOTICE.kwaj-lzh.txt`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Kwaj/THIRD-PARTY-NOTICE.kwaj-lzh.txt` |
 | `Compression.Core/Dictionary/Lzbitmap/` | libzbitmap (Ernesto A. Fernández, Corellium) | MIT | `THIRD-PARTY-NOTICE.libzbitmap.txt` |
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.LiveMaker/` | GARbro (morkt) `ArcFormats/LiveMaker/ArcVF.cs` | MIT | `THIRD-PARTY-NOTICE.GARbro.txt` |
 | `Compression.Core/Dictionary/Csc/` | libcsc (Fu Siyuan) | Unlicense | `THIRD-PARTY-NOTICE.libcsc.txt` |
 | `Compression.Core/Dictionary/Arj/ArjFastestDecoder.cs` | XADMaster `XADARJFastestHandle.m` (Dag Ågren, MacPaw), revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Arj/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Zpaq/` | libzpaq / zpaq 7.15 (Matt Mahoney) | public domain (Unlicense) | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Zpaq/THIRD-PARTY-NOTICE.libzpaq.txt` |
