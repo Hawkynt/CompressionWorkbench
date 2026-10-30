@@ -80,7 +80,7 @@ Compact File Set,cfs,archive,,,,,,,Y,1,,,,,,MISSING,,
 WinHKI,hki,archive,,,,,,,Y,1,,,,,,MISSING,,
 ICE (archiver),ice,archive,,,,,,,Y,1,,,,,,MISSING,,
 PIM,pim,archive,,,,,,,Y,1,,,,,,MISSING,,
-Quadruple D,qda,archive,,,,,,,Y,1,,,,,,MISSING,,
+Quadruple D,qda,archive,,,,,,,Y,1,,QuadrupleD,Y,,,OK,,read-only: no program that writes the format is available to verify a writer
 RK / WinRK,rk,archive,,,,,,,Y,1,,,,,,MISSING,,
 Self Dissolving ARChive,sda,archive,,,,,,,Y,1,,,,,,MISSING,,
 C64/C128 self-extracting archive,sfx,archive,,,,,,,Y,1,,,,,,MISSING,,

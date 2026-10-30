@@ -26044,6 +26044,60 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.QuadrupleD`
+
+[`QuadrupleDArchive`](#quadrupledarchive) · [`QuadrupleDEntry`](#quadrupledentry) · [`QuadrupleDFormatDescriptor`](#quadrupledformatdescriptor)
+
+#### `QuadrupleDArchive`
+
+Reads Quadruple D (QDA0) game archives: a 256-byte header, a directory of 268-byte records and the file data, either stored or compressed with byte pair encoding.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Signature` | `static ReadOnlySpan<byte> Signature { get; }` | The signature at offset 4. |
+| `Extract` | `static byte[] Extract(ReadOnlySpan<byte> data, QuadrupleDEntry entry)` | Extracts one file. |
+| `IsCompressed` | `static bool IsCompressed(ReadOnlySpan<byte> data)` | Whether the archive's files are byte pair encoded. |
+| `IsQuadrupleD` | `static bool IsQuadrupleD(ReadOnlySpan<byte> data)` | Whether `data` starts like a Quadruple D archive. |
+| `List` | `static List<QuadrupleDEntry> List(ReadOnlySpan<byte> data)` | Lists the archive's files. |
+
+#### `QuadrupleDEntry`
+
+One file of a Quadruple D archive.
+
+Implements `IEquatable<QuadrupleDEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `QuadrupleDEntry` | `QuadrupleDEntry(string Name, long Offset, long StoredSize, long Size)` | One file of a Quadruple D archive. |
+| `Name` | `string Name { get; init; }` | File name. |
+| `Offset` | `long Offset { get; init; }` | Offset of the file's data in the archive. |
+| `Size` | `long Size { get; init; }` | Original size in bytes. |
+| `StoredSize` | `long StoredSize { get; init; }` | Bytes the data occupies in the archive. |
+
+#### `QuadrupleDFormatDescriptor`
+
+Quadruple D (QDA0) game archive, read-only: stored or byte-pair-encoded files. No program that writes the format is available to check a writer against.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `QuadrupleDFormatDescriptor` | `QuadrupleDFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.QuickLz`
 
 [`QuickLzFormatDescriptor`](#quicklzformatdescriptor) · [`QuickLzStream`](#quicklzstream)
