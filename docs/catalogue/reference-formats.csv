@@ -89,7 +89,7 @@ PerfectCompress,uca,archive,,,,,,,Y,1,,,,,,MISSING,,
 YZ1,yz1,archive,,,,,,,Y,1,,,,,,MISSING,,
 Zzip,zz,archive,,,,,,,Y,1,,,,,,MISSING,,
 WinMount,mou,archive,,,,,,,Y,1,,,,,,MISSING,,
-BagIt,,archive,,,,,,,Y,1,,,,,,MISSING,,https://www.rfc-editor.org/rfc/rfc8493
+BagIt,,archive,,,,,,,Y,1,https://www.rfc-editor.org/rfc/rfc8493,BagIt,Y,Y,Y,OK,,"ZIP-serialized bags; manifests (md5/sha1/sha256/sha512) and tag manifests validated; bagit-python validates ours; tar serialization not read"
 PHP archive (PHAR),phar,package,,,,,R,,Y,2,,,,,,MISSING,,https://www.php.net/manual/en/phar.fileformat.php
 Parchive (PAR/PAR2),par;par2;par.par2,other,,,,,,,Y,1,https://parchive.github.io/,Par2,Y,,,READ-ONLY-BUT-SOURCES-WRITE,par2cmdline,
 WinRAR recovery volume,rev,other,,,,,,,Y,1,,,,,,MISSING,,
