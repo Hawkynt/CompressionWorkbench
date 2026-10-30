@@ -98,6 +98,10 @@
     <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
       <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Shader containers fxc wrote and edited; see Dxbc/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Dxbc\ReferenceVectors\*.dxbc">
+      <LogicalName>DxbcVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>
