@@ -335,7 +335,7 @@ SEAMA firmware header,seama,firmware,,,,D,,,,1,https://openwrt.org/docs/techref/
 SHRS encrypted firmware,shrs,firmware,,,,D,,,,1,,,,,,MISSING,,
 TP-Link firmware header,tplink,firmware,,,,D,,,,1,,,,,,MISSING,,
 Autel obfuscated firmware,,firmware,,,,R,,,,1,,,,,,MISSING,,
-LUKS encrypted volume,luks,disk-image,,,,D,,,,1,,,,,,MISSING,,https://gitlab.com/cryptsetup/cryptsetup/-/wikis/home
+LUKS encrypted volume,luks,disk-image,,,,D,,,,1,https://gitlab.com/cryptsetup/cryptsetup/-/wikis/home,Luks,Y,Y,,PARTIAL,,"LUKS1/LUKS2 read (PBKDF2 and Argon2i/id key slots, AES-XTS/CBC), LUKS1 create; both directions verified against cryptsetup; non-AES ciphers and editing refused; spec docs/LUKS-ON-DISK.md"
 DirectX shader bytecode (DXBC),dxbc,executable,,,,R,,,,1,,,,,,MISSING,,
 ELF,elf;so;o,executable,R,,,D,,fmt/688;fmt/689;fmt/690;fmt/691,,3,https://refspecs.linuxfoundation.org/elf/elf.pdf,Elf,Y,,,OK,,
 Windows PE,exe;dll;sys,executable,R,,,D,,fmt/899;fmt/900;x-fmt/411,,3,,Mz;PeResources,Y,,,PARTIAL,,"archive view of resources/overlay, not a full PE section extractor"
