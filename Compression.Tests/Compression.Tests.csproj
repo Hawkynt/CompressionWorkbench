@@ -201,6 +201,10 @@
     <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
       <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- GZA/BZA archives BGA32.DLL wrote, and ours it read; see Bga/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Bga\ReferenceVectors\*.gza;Bga\ReferenceVectors\*.bza">
+      <LogicalName>BgaVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar itself (2.4.24 to 2.8.6); see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
