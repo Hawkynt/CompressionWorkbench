@@ -41,6 +41,9 @@ internal sealed class RarLegacyBitReader(byte[] data) {
   /// <summary>Reads one bit.</summary>
   public bool ReadBit() => this.ReadBits(1) != 0;
 
+  /// <summary>Bits left before the end of the data (negative once reading ran past it).</summary>
+  public long RemainingBits => (long)data.Length * 8 - this._bitPos;
+
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   private int ByteAt(int index) => (uint)index < (uint)data.Length ? data[index] : 0;
 }

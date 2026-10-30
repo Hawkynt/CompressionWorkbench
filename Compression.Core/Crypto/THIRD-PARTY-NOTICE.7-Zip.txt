@@ -28,3 +28,7 @@ Converted:
                                        function, initial substitution table)
   CPP/7zip/Crypto/RarAes.cpp        -> KeyDerivation.Rar3DeriveKey (CalcKey,
                                        UpdatePswDataSha1)
+  CPP/7zip/Crypto/Rar5Aes.cpp       -> KeyDerivation.Rar5DeriveKeys (CalcKey_and_CheckPassword:
+                                       the key, the checksum key and the password check value
+                                       from one PBKDF2 chain); FileFormat.Rar/Rar5Crypto.cs
+                                       (check-value and checksum-tweak rules)

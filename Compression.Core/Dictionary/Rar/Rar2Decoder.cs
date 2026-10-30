@@ -69,9 +69,23 @@ public sealed class Rar2Decoder {
     this._outputPos = 0;
 
     // The tables travel once per solid stream, ahead of the first file's data.
-    if (!this._tablesRead && unpackedSize > 0) {
+    if (!this._tablesRead && (unpackedSize > 0 || compressed.Length > 0)) {
       this.ReadTables();
       this._tablesRead = true;
+    }
+
+    // An empty file of a solid stream can still carry packed data: RAR 2.0 switches to new
+    // tables there (symbol 269), and the next file decodes with them. DOS RAR 2.00 writes such
+    // files; the state they set up is what the following file needs.
+    if (unpackedSize == 0) {
+      while (this._input.RemainingBits >= 8) {
+        if (this._audioBlock) {
+          if (this._audioCodes[this._channel]!.Decode(this._input) != 256) break;
+        } else if (this._mainCode!.Decode(this._input) != 269)
+          break;
+        this.ReadTables();
+      }
+      return this._output;
     }
 
     while (this._outputPos < unpackedSize) {
