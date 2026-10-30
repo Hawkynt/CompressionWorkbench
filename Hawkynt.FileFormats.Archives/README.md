@@ -324,6 +324,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Format | Id | Extensions | State | Test | Maintenance | Notes | Reference |
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
 | [PE resources (.rsrc)](https://en.wikipedia.org/wiki/Portable_Executable) | `PeResources` | `.dll` `.exe` `.ocx` `.cpl` … | R | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/windows/win32/debug/pe-format) |
+| [DXBC (shader bytecode)](https://en.wikipedia.org/wiki/High-Level_Shader_Language) | `Dxbc` | `.dxbc` | R/W | ✅ | — | One entry per chunk (RDEF, ISGN, SHEX, STAT, …); writes the checksum fxc verifies; adding a PRIV chunk or dropping RDEF/STAT matches fxc `-setprivate`/`-Qstrip_reflect` byte for byte | [GitHub](https://github.com/microsoft/DirectXShaderCompiler/blob/main/include/dxc/DxilContainer/DxilContainer.h) |
 | [Resource-only DLL](https://en.wikipedia.org/wiki/Dynamic_link_library) | `ResourceDll` |  | WORM | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/windows/win32/debug/pe-format) |
 | [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) | `Elf` | `.elf` `.so` `.o` `.ko` | R | ✅ | — |  | [sco.com](https://www.sco.com/developers/gabi/) |
 | [Mach-O](https://en.wikipedia.org/wiki/Mach-O) | `MachO` | `.macho` `.dylib` `.bundle` `.o` | R | ✅ | — |  | [GitHub](https://github.com/apple-oss-distributions/xnu) |

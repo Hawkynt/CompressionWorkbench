@@ -336,7 +336,7 @@ SHRS encrypted firmware,shrs,firmware,,,,D,,,,1,,,,,,MISSING,,
 TP-Link firmware header,tplink,firmware,,,,D,,,,1,,,,,,MISSING,,
 Autel obfuscated firmware,,firmware,,,,R,,,,1,,,,,,MISSING,,
 LUKS encrypted volume,luks,disk-image,,,,D,,,,1,,,,,,MISSING,,https://gitlab.com/cryptsetup/cryptsetup/-/wikis/home
-DirectX shader bytecode (DXBC),dxbc,executable,,,,R,,,,1,,,,,,MISSING,,
+DirectX shader bytecode (DXBC),dxbc,executable,,,,R,,,,1,https://github.com/microsoft/DirectXShaderCompiler/blob/main/include/dxc/DxilContainer/DxilContainer.h,Dxbc,Y,Y,Y,OK,,
 ELF,elf;so;o,executable,R,,,D,,fmt/688;fmt/689;fmt/690;fmt/691,,3,https://refspecs.linuxfoundation.org/elf/elf.pdf,Elf,Y,,,OK,,
 Windows PE,exe;dll;sys,executable,R,,,D,,fmt/899;fmt/900;x-fmt/411,,3,,Mz;PeResources,Y,,,PARTIAL,,"archive view of resources/overlay, not a full PE section extractor"
 TE (Terse Executable),te,executable,R,,,,,,,1,,,,,,MISSING,,
