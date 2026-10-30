@@ -5239,7 +5239,36 @@ A clean-room neural compressor: an online-trained multi-layer perceptron (`Neura
 
 ### Namespace `Compression.Core.Entropy.Ppmd`
 
-[`PpmdBuildingBlock`](#ppmdbuildingblock) · [`PpmdContext`](#ppmdcontext) · [`PpmdModelBase`](#ppmdmodelbase) · [`PpmdModelBase.ContextKey`](#ppmdmodelbasecontextkey) · [`PpmdModelH`](#ppmdmodelh) · [`PpmdModelI`](#ppmdmodeli) · [`PpmdRangeDecoder`](#ppmdrangedecoder) · [`PpmdRangeEncoder`](#ppmdrangeencoder)
+[`Ppmd8`](#ppmd8) · [`Ppmd8RestoreMethod`](#ppmd8restoremethod) · [`PpmdBuildingBlock`](#ppmdbuildingblock) · [`PpmdContext`](#ppmdcontext) · [`PpmdModelBase`](#ppmdmodelbase) · [`PpmdModelBase.ContextKey`](#ppmdmodelbasecontextkey) · [`PpmdModelH`](#ppmdmodelh) · [`PpmdRangeDecoder`](#ppmdrangedecoder) · [`PpmdRangeEncoder`](#ppmdrangeencoder)
+
+#### `Ppmd8`
+
+PPMd variant I revision 1 (Dmitry Shkarin's PPMd var.I, 2002) with Dmitry Subbotin's carry-less range coder: the model ZIP compression method 98 uses.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ppmd8` | `Ppmd8(int memorySize, int maxOrder, Ppmd8RestoreMethod restoreMethod)` | Creates a model with `memorySize` bytes of context memory. |
+| `DataError` | `const int DataError` | The symbol `DecodeSymbol` returns for data no encoder can have written. |
+| `EndMarker` | `const int EndMarker` | The symbol `DecodeSymbol` returns for the end-of-data marker. |
+| `MaxOrderLimit` | `const int MaxOrderLimit` | Largest model order the format allows. |
+| `MinOrder` | `const int MinOrder` | Smallest model order the format allows. |
+| `DecoderFinishedOk` | `bool DecoderFinishedOk { get; }` | True once the decoder has consumed the encoder's final flush exactly. |
+| `InputOverrun` | `int InputOverrun { get; }` | Bytes the decoder read past the end of its input (each read as zero). |
+| `InputPosition` | `int InputPosition { get; }` | Position of the next unread input byte. |
+| `DecodeSymbol` | `int DecodeSymbol()` | Decodes one symbol: a byte, `EndMarker` or `DataError`. |
+| `EncodeSymbol` | `void EncodeSymbol(int symbol)` | Encodes a byte, or `EndMarker`. |
+| `FlushEncoder` | `void FlushEncoder()` | Writes the encoder's final four bytes. |
+| `StartDecoding` | `bool StartDecoding(byte[] input, int offset)` | Starts decoding `input` from `offset`. |
+| `StartEncoding` | `void StartEncoding(Stream output)` | Starts encoding to `output`. |
+
+#### `Ppmd8RestoreMethod`
+
+How a `Ppmd8` model recovers when its memory is exhausted.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Restart` | `0` | Discard the model and start over. |
+| `CutOff` | `1` | Cut the context tree back to the most recently used branches. |
 
 #### `PpmdBuildingBlock`
 
@@ -5317,18 +5346,6 @@ Inherits `PpmdModelBase`.
 | --- | --- | --- |
 | `PpmdModelH` | `PpmdModelH(int order)` | Initializes a new PPMd Model H with the specified order and default memory. |
 | `PpmdModelH` | `PpmdModelH(int order, int memorySize)` | Initializes a new PPMd Model H with the specified order and memory budget. |
-| `GetRescaleThreshold` | `protected override int GetRescaleThreshold()` | Gets the total frequency threshold at which a context should be rescaled. |
-
-#### `PpmdModelI`
-
-PPMd Model I — Prediction by Partial Matching, variant I. Used by RAR for PPMd compression. This variant uses interleaved context storage and different update rules compared to Model H.
-
-Inherits `PpmdModelBase`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `PpmdModelI` | `PpmdModelI(int order)` | Initializes a new PPMd Model I with the specified order and default memory. |
-| `PpmdModelI` | `PpmdModelI(int order, int memorySize)` | Initializes a new PPMd Model I with the specified order and memory budget. |
 | `GetRescaleThreshold` | `protected override int GetRescaleThreshold()` | Gets the total frequency threshold at which a context should be rescaled. |
 
 #### `PpmdRangeDecoder`

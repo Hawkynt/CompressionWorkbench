@@ -1,0 +1,17 @@
+Ppmd8 (PPMd variant I, revision 1) - converted to C#
+
+Source:   7-Zip 9.20 source package (https://www.7-zip.org/a/7z920.tar.bz2),
+          C/Ppmd8.c (2010-03-24), C/Ppmd8Dec.c and C/Ppmd8Enc.c (2010-04-16),
+          C/Ppmd8.h, C/Ppmd.h
+Authors:  Igor Pavlov, based on PPMd var.I (2002) by Dmitry Shkarin and the
+          carry-less range coder (1999) by Dmitry Subbotin
+Licence:  Public domain. Each file states: "Igor Pavlov : Public domain. This
+          code is based on PPMd var.I (2002): Dmitry Shkarin : Public domain"
+          (and "Carryless rangecoder (1999): Dmitry Subbotin : Public domain").
+
+Ppmd8.cs converts the model and its sub-allocator; Ppmd8.Coder.cs converts the
+range decoder/encoder and the symbol decoder/encoder. The C code keeps its
+memory block behind a base pointer and links it with 32-bit offsets; here the
+block is a byte array with the same layout, so allocation, restart and cut-off
+behave exactly as in the original. FREEZE restore mode is left out, as in
+7-Zip. Checked against 7-Zip 26.04 in both directions (ZipPpmdOracleTests).
