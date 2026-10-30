@@ -497,7 +497,7 @@ OS/3x0 FS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Level-D (DEC),dec,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 George 3,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Version 6 Unix FS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-Version 7 Unix FS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+Version 7 Unix FS,v7,filesystem,,,,,,,Y,1,https://www.tuhs.org/Archive/Distributions/Research/,UnixV7,Y,Y,,OK,Linux sysv driver (v7),"read, and created fresh (WORM); in-place edits are not implemented; checked by the Linux v7 driver both ways and against the SIMH 1979 distribution volume"
 RT-11 file system,rt11,filesystem,,,,,,,Y,1,,Rt11,Y,Y,Y,OK,,
 GEC DOS filing system,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 UCSD p-System,pvol,filesystem,,,,,,,Y,1,,ApplePascal,Y,Y,Y,OK,,
