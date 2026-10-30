@@ -1,0 +1,21 @@
+hwzip (ZIP Shrink, Reduce, Implode) - converted to C#
+
+Source:   hwzip 2.4 by Hans Wennborg, https://www.hanshq.net/zip2.html
+          (files/hwzip/hwzip-2.4.zip): shrink.c, reduce.c, implode.c,
+          bitstream.h
+Licence:  Public domain (Unlicense text in the package's LICENSE file):
+          "This is free and unencumbered software released into the public
+          domain."
+
+Converted:
+
+  shrink.c  hwunshrink -> ShrinkDecoder.cs   hwshrink  -> ShrinkEncoder.cs
+  reduce.c  hwexpand   -> ReduceDecoder.cs   hwreduce  -> ReduceEncoder.cs (layout and cost model)
+  implode.c hwexplode  -> ImplodeDecoder.cs  hwimplode -> ImplodeEncoder.cs (layout and code assignment)
+  bitstream.h          -> ZipLegacyBitStream.cs
+
+The encoders keep hwzip's stream layout and decisions but use their own LZ77
+match finder; the Implode encoder limits code lengths with the JPEG Annex K.3
+adjustment. Checked against streams PKZIP 1.10 and 0.92 wrote (from hwzip's
+test suite), archives hwzip writes, 7-Zip 26.04 (Shrink, Implode) and hwzip
+(Reduce) extracting what the encoders write.

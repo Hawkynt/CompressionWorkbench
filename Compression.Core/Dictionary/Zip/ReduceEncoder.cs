@@ -1,188 +1,154 @@
 namespace Compression.Core.Dictionary.Zip;
 
 /// <summary>
-/// Encodes data using the ZIP Reduce (methods 2-5) algorithm.
+/// Encodes data with ZIP Reduce (methods 2-5): LZ77 back-references escaped by byte 144 inside a
+/// byte stream, which is then coded through per-predecessor follower sets.
 /// </summary>
 /// <remarks>
-/// Two-pass: DLE/LZ77 encoding, then follower set probabilistic coding.
+/// The stream layout, the follower-set cost model and the minimum match of four bytes (so the byte
+/// after the escape is never 0) follow hwreduce in hwzip 2.4's reduce.c (Hans Wennborg, public
+/// domain), see THIRD-PARTY-NOTICE.hwzip.txt. Follower sets are chosen from the whole byte stream
+/// rather than its first 64 KB.
 /// </remarks>
 public static class ReduceEncoder {
-  private const byte Dle = 0x90;
+  private const int MinMatch = 4;
+  private const int HashBits = 14;
+  private const int MaxChain = 64;
 
   /// <summary>
   /// Compresses data using the ZIP Reduce algorithm.
   /// </summary>
   /// <param name="data">The data to compress.</param>
-  /// <param name="factor">Compression factor (1-4). Higher = fewer distance bits, more length bits.</param>
+  /// <param name="factor">The compression factor, 1-4 (method 2-5).</param>
   /// <returns>The compressed data.</returns>
   public static byte[] Encode(ReadOnlySpan<byte> data, int factor = 4) {
-    if (factor < 1 || factor > 4)
-      throw new ArgumentOutOfRangeException(nameof(factor));
+    ArgumentOutOfRangeException.ThrowIfLessThan(factor, 1);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(factor, 4);
 
-    // Pass 1: DLE/LZ77 encoding
-    var intermediate = DleEncode(data, factor);
+    var lengthBits = 8 - factor;
+    var lengthMask = (1 << lengthBits) - 1;
+    var maxLength = lengthMask + 255 + 3;
+    var maxDistance = ((1 << factor) - 1) * 256 + 255 + 1;
+    var stream = ToByteStream(data, lengthBits, lengthMask, maxLength, maxDistance);
 
-    // Pass 2: Build follower sets and encode probabilistically
-    var followers = BuildFollowerSets(intermediate);
-
-    // Serialize
-    var output = new List<byte>(intermediate.Length + 256 * 33);
-    var bitPos = 0;
-    byte currentByte = 0;
-
-    // Write follower sets (high byte first: 255 down to 0)
-    for (var i = 255; i >= 0; --i) {
-      WriteBits(output, ref bitPos, ref currentByte, followers[i].Length, 6);
-      for (var j = 0; j < followers[i].Length; ++j)
-        WriteBits(output, ref bitPos, ref currentByte, followers[i][j], 8);
+    // Follower counts over the byte stream, the first predecessor being zero.
+    var counts = new int[256, 256];
+    byte previous = 0;
+    foreach (var b in stream) {
+      ++counts[previous, b];
+      previous = b;
     }
 
-    // Write encoded data
-    byte lastByte = 0;
-    for (var i = 0; i < intermediate.Length; ++i) {
-      var b = intermediate[i];
-      var followerIdx = Array.IndexOf(followers[lastByte], b);
-
-      if (followers[lastByte].Length == 0) {
-        WriteBits(output, ref bitPos, ref currentByte, b, 8);
-      }
-      else if (followerIdx < 0) {
-        // Not in follower set: write 1 bit + 8-bit literal
-        WriteBits(output, ref bitPos, ref currentByte, 1, 1);
-        WriteBits(output, ref bitPos, ref currentByte, b, 8);
-      }
-      else {
-        // In follower set: write 0 bit + index
-        WriteBits(output, ref bitPos, ref currentByte, 0, 1);
-        var bitsNeeded = BitsForCount(followers[lastByte].Length);
-        WriteBits(output, ref bitPos, ref currentByte, followerIdx, bitsNeeded);
+    var writer = new ZipLegacyBitWriter(stream.Count + 1024);
+    var followerIndex = new int[256, 256];
+    var indexBits = new int[256];
+    for (var current = 255; current >= 0; --current) {
+      var order = Enumerable.Range(0, 256).OrderByDescending(b => counts[current, b]).ThenBy(b => b).ToArray();
+      var bestSize = 0;
+      var bestCost = Cost(counts, current, order, 0);
+      for (var size = 1; size <= 32; ++size) {
+        var cost = Cost(counts, current, order, size);
+        if (cost < bestCost) {
+          bestCost = cost;
+          bestSize = size;
+        }
       }
 
-      lastByte = b;
+      for (var b = 0; b < 256; ++b)
+        followerIndex[current, b] = -1;
+      for (var i = 0; i < bestSize; ++i)
+        followerIndex[current, order[i]] = i;
+
+      indexBits[current] = ReduceDecoder.IndexBits(bestSize);
+      writer.Write((ulong)bestSize, 6);
+      for (var i = 0; i < bestSize; ++i)
+        writer.Write((ulong)order[i], 8);
     }
 
-    // Flush remaining bits
-    if (bitPos > 0)
-      output.Add(currentByte);
+    previous = 0;
+    foreach (var b in stream) {
+      var index = followerIndex[previous, b];
+      var bits = indexBits[previous];
+      if (index >= 0)
+        writer.Write((ulong)index << 1, bits + 1);
+      else if (bits != 0)
+        writer.Write((ulong)b << 1 | 1, 9);
+      else
+        writer.Write(b, 8);
 
-    return [.. output];
+      previous = b;
+    }
+
+    return writer.ToArray();
   }
 
-  private static byte[] DleEncode(ReadOnlySpan<byte> data, int factor) {
-    var output = new List<byte>(data.Length);
-    var distanceBits = 8 - factor;
-    var lenBits = factor;
-    var maxLenField = (1 << lenBits) - 1;
-    var windowSize = 1 << (8 + distanceBits);
-
-    var i = 0;
-    while (i < data.Length) {
-      var bestLen = 0;
-      var bestDist = 0;
-
-      var searchStart = Math.Max(0, i - windowSize);
-      var maxMatchLen = maxLenField + 255 + 3;
-      for (var j = searchStart; j < i; ++j) {
-        var len = 0;
-        var maxLen = Math.Min(data.Length - i, maxMatchLen);
-        while (len < maxLen && data[j + (len % (i - j))] == data[i + len])
-          ++len;
-        if (len > bestLen && len >= 3) {
-          bestLen = len;
-          bestDist = i - j - 1;
-        }
-      }
-
-      if (bestLen >= 3) {
-        var adjLen = bestLen - 3;
-        var lenField = Math.Min(adjLen, maxLenField);
-        var extraLen = adjLen - lenField;
-
-        if (lenField == maxLenField && extraLen > 255) {
-          extraLen = 255;
-          bestLen = maxLenField + extraLen + 3;
-        }
-
-        var lowBits = bestDist & ((1 << distanceBits) - 1);
-        var highBits = bestDist >> distanceBits;
-
-        var v = (byte)((lenField << distanceBits) | lowBits);
-        // V=0 is reserved for literal DLE escape; skip this match if it would produce V=0
-        if (v == 0) {
-          output.Add(data[i++]);
-          if (data[i - 1] == Dle)
-            output.Add(0);
-          continue;
-        }
-
-        output.Add(Dle);
-        output.Add(v);
-        output.Add((byte)highBits);
-
-        if (lenField == maxLenField)
-          output.Add((byte)extraLen);
-
-        i += bestLen;
-      }
-      else {
-        var b = data[i++];
-        output.Add(b);
-        if (b == Dle)
-          output.Add(0); // Escape literal DLE
-      }
-    }
-
-    return [.. output];
-  }
-
-  private static byte[][] BuildFollowerSets(byte[] data) {
-    var pairCount = new int[256][];
-    for (var i = 0; i < 256; ++i)
-      pairCount[i] = new int[256];
-
-    for (var i = 1; i < data.Length; ++i)
-      ++pairCount[data[i - 1]][data[i]];
-
-    var followers = new byte[256][];
+  private static long Cost(int[,] counts, int current, int[] order, int size) {
+    long cost = size * 8L;
+    var bits = ReduceDecoder.IndexBits(size);
     for (var i = 0; i < 256; ++i) {
-      var sorted = new List<(int count, byte value)>();
-      for (var j = 0; j < 256; ++j) {
-        if (pairCount[i][j] > 0)
-          sorted.Add((pairCount[i][j], (byte)j));
-      }
-      // Most frequent follower first. Followers of equal count are ordered by
-      // ascending byte value, so which 32 followers survive the cut and the
-      // index each one gets are a function of the data alone and never of how
-      // the sort happens to arrange items its comparison calls equal.
-      sorted.Sort((a, b) => a.count != b.count ? b.count.CompareTo(a.count) : a.value.CompareTo(b.value));
-
-      var setSize = Math.Min(sorted.Count, 32);
-      followers[i] = new byte[setSize];
-      for (var j = 0; j < setSize; ++j)
-        followers[i][j] = sorted[j].value;
+      var count = counts[current, order[i]];
+      cost += i < size ? count * (1L + bits) : count * (size == 0 ? 8L : 9L);
     }
 
-    return followers;
+    return cost;
   }
 
-  private static void WriteBits(List<byte> output, ref int bitPos, ref byte currentByte, int value, int count) {
-    for (var i = 0; i < count; ++i) {
-      if (((value >> i) & 1) == 1)
-        currentByte |= (byte)(1 << bitPos);
-      ++bitPos;
-      if (bitPos == 8) {
-        output.Add(currentByte);
-        currentByte = 0;
-        bitPos = 0;
+  /// <summary>Literals (144 doubled as 144, 0) and back-references (144, V, [extra], W).</summary>
+  private static List<byte> ToByteStream(ReadOnlySpan<byte> data, int lengthBits, int lengthMask, int maxLength, int maxDistance) {
+    var stream = new List<byte>(data.Length + data.Length / 16);
+    var head = new int[1 << HashBits];
+    Array.Fill(head, -1);
+    var prev = new int[data.Length];
+    var pos = 0;
+    while (pos < data.Length) {
+      var bestLength = 0;
+      var bestDistance = 0;
+      if (pos + MinMatch <= data.Length) {
+        var steps = 0;
+        for (var candidate = head[Hash(data, pos)]; candidate >= 0 && pos - candidate <= maxDistance && steps < MaxChain; candidate = prev[candidate], ++steps) {
+          // Reduce back-references may not overlap the bytes they produce.
+          var room = Math.Min(Math.Min(maxLength, data.Length - pos), pos - candidate);
+          var length = 0;
+          while (length < room && data[candidate + length] == data[pos + length])
+            ++length;
+
+          if (length > bestLength) {
+            bestLength = length;
+            bestDistance = pos - candidate;
+          }
+        }
       }
+
+      int advance;
+      if (bestLength >= MinMatch) {
+        var length = bestLength - 3;
+        var distance = bestDistance - 1;
+        stream.Add(ReduceDecoder.Dle);
+        stream.Add((byte)(Math.Min(length, lengthMask) | (distance >> 8) << lengthBits));
+        if (length >= lengthMask)
+          stream.Add((byte)(length - lengthMask));
+
+        stream.Add((byte)distance);
+        advance = bestLength;
+      } else {
+        stream.Add(data[pos]);
+        if (data[pos] == ReduceDecoder.Dle)
+          stream.Add(0);
+
+        advance = 1;
+      }
+
+      for (var end = pos + advance; pos < end; ++pos)
+        if (pos + 3 <= data.Length) {
+          var h = Hash(data, pos);
+          prev[pos] = head[h];
+          head[h] = pos;
+        }
     }
+
+    return stream;
   }
 
-  private static int BitsForCount(int count) {
-    if (count <= 1) return 0;
-    var bits = 0;
-    var val = count - 1;
-    while (val > 0) { ++bits; val >>= 1; }
-    return bits;
-  }
+  private static int Hash(ReadOnlySpan<byte> data, int pos)
+    => (int)(((uint)(data[pos] << 16 | data[pos + 1] << 8 | data[pos + 2]) * 2654435761u) >> (32 - HashBits));
 }
