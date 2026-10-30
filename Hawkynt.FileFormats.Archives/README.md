@@ -111,6 +111,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [ARJ](https://en.wikipedia.org/wiki/ARJ) | `Arj` | `.arj` | R/W | ✅ | defrag · wipe |  | [arj.sourceforge.net](https://arj.sourceforge.net) |
 | [Binary II](https://en.wikipedia.org/wiki/Binary_II) | `BinaryII` | `.bny` `.bqy` | R/W | ✅ | defrag · wipe |  | [mirrors.apple2.org.za](https://mirrors.apple2.org.za/ground.icaen.uiowa.edu/MiscInfo/Binary2/bin2.specs) |
 | BlakHole | `BlakHole` | `.bh` | R | ✅ | — | Read-only, Deflate members; layout measured on a real sample (every CRC-32 holds): [BLAKHOLE-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/BLAKHOLE-ON-DISK.md) | [Archive Team](http://fileformats.archiveteam.org/wiki/BlakHole) |
+| C64/C128 SFX | `C64Sfx` | `.sfx` | R | ✅ | — | Chris Smeets' self-extracting LHA (-lh1-); unar extracts the same bytes; read-only because the extractor stub is not ours to ship | [unusedino.de](http://unusedino.de/ec64/technical/formats/sfx.html) |
 | [CAB](https://en.wikipedia.org/wiki/Cabinet_(file_format)) | `Cab` | `.cab` | R/W | ✅ | defrag · wipe |  | [cabextract.org.uk](https://www.cabextract.org.uk/libmspack/) |
 | [CB7](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cb7` | `.cb7` | R/W | ✅ | defrag · wipe | 7z-backed comic book archive | [7-zip.org](https://www.7-zip.org/7z.html) |
 | [CBR](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cbr` | `.cbr` | R/W | ✅ | defrag · wipe | RAR-backed comic book archive | [rarlab.com](https://www.rarlab.com/technote.htm) |
