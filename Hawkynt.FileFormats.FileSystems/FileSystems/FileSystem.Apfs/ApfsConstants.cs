@@ -148,6 +148,12 @@ internal static class ApfsConstants {
   public const ushort XATTR_DATA_STREAM = 0x0001;
   public const ushort XATTR_DATA_EMBEDDED = 0x0002;
   public const string SYMLINK_XATTR_NAME = "com.apple.fs.symlink";
+  /// <summary>Transparent compression header (xnu decmpfs, shared with HFS+).</summary>
+  public const string DECMPFS_XATTR_NAME = "com.apple.decmpfs";
+  /// <summary>Where the chunked decmpfs methods keep their payload.</summary>
+  public const string RESOURCE_FORK_XATTR_NAME = "com.apple.ResourceFork";
+  /// <summary>bsd_flags bit marking a transparently compressed file (UF_COMPRESSED, sys/stat.h).</summary>
+  public const uint UF_COMPRESSED = 0x00000020;
 
   // BTOFF_INVALID (ffff) used in TOC for absent entries.
   public const ushort BTOFF_INVALID = 0xFFFF;
