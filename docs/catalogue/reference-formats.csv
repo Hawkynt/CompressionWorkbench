@@ -234,7 +234,7 @@ PyInstaller,exe,installer,,,,,R,,,1,https://pyinstaller.org/,PyInstaller,Y,Y,,OK
 Spoon Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 SuperDAT updater,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 Symbian installer (SIS/SISX),sis;sisx,installer,,,,,R,,,1,,,,,,MISSING,,
-WiX Burn bundle,exe,installer,,,,,R,,,1,,,,,,MISSING,,
+WiX Burn bundle,exe,installer,,,,,R,,,1,https://wixtoolset.org/docs/tools/burn/,WixBurn,Y,,,READ-ONLY-BUT-SOURCES-WRITE,WiX light.exe / wix build,"detached and downloaded payloads are not in the bundle and are not listed (WixBurnReader.cs)"
 Enigma Virtual Box,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 MoleBox,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 UPX-packed executable,exe;dll,executable,,,,,R,,,1,https://upx.github.io/,Upx,Y,,,READ-ONLY-BUT-SOURCES-WRITE,upx,
