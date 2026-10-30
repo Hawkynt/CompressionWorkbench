@@ -11945,7 +11945,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 ### Namespace `FileFormat.BriefLz`
 
-[`BriefLzFormatDescriptor`](#brieflzformatdescriptor) · [`BriefLzStream`](#brieflzstream)
+[`BriefLzFormatDescriptor`](#brieflzformatdescriptor)
 
 #### `BriefLzFormatDescriptor`
 
@@ -11973,20 +11973,6 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes using the reference-compatible fast parser. |
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes using the requested managed effort level. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
-
-#### `BriefLzStream`
-
-Reads and writes the `blzpack` container used by the BriefLZ reference distribution.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `DefaultBlockSize` | `const int DefaultBlockSize` | The reference `blzpack` default block size. |
-| `MaximumCompressionLevel` | `const int MaximumCompressionLevel` | Highest managed encoder effort. |
-| `MinimumCompressionLevel` | `const int MinimumCompressionLevel` | Fastest managed encoder effort. |
-| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Tries every managed effort level and writes the smallest complete `blzpack` stream. |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses with the reference-compatible fast parser (level 1). |
-| `Compress` | `static void Compress(Stream input, Stream output, int level)` | Compresses using a managed BriefLZ effort level from 1 (fastest) through 10 (deepest candidate search). |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses all concatenated `blzpack` blocks from `input` into `output`. |
 
 ### Namespace `FileFormat.Brotli`
 
@@ -19515,7 +19501,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 ### Namespace `FileFormat.Lizard`
 
-[`LizardFormatDescriptor`](#lizardformatdescriptor) · [`LizardStream`](#lizardstream)
+[`LizardFormatDescriptor`](#lizardformatdescriptor)
 
 #### `LizardFormatDescriptor`
 
@@ -19543,16 +19529,6 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 | `Compress` | `void Compress(Stream input, Stream output)` |  |
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` |  |
 | `Decompress` | `void Decompress(Stream input, Stream output)` |  |
-
-#### `LizardStream`
-
-Managed Lizard (formerly LZ5) frame codec covering all four Lizard v2 method families: fastLZ4, LIZv1, fastLZ4+HUF, and LIZv1+HUF (levels 10-49).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` |  |
-| `Compress` | `static void Compress(Stream input, Stream output, int compressionLevel, int blockSize)` |  |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` |  |
 
 ### Namespace `FileFormat.Lnk`
 
@@ -19740,7 +19716,7 @@ Writes data in the LZ4 frame format (specification v1.6.1+).
 
 ### Namespace `FileFormat.Lzg`
 
-[`LzgFormatDescriptor`](#lzgformatdescriptor) · [`LzgStream`](#lzgstream)
+[`LzgFormatDescriptor`](#lzgformatdescriptor)
 
 #### `LzgFormatDescriptor`
 
@@ -19768,16 +19744,6 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input with the historical/default LZG settings. |
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with the selected LZG optimizer parameters. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
-
-#### `LzgStream`
-
-Provides managed LZG compression and decompression compatible with liblzg's 16-byte container header and LZG1 marker-coded data stream.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` to `output` with the liblzg-compatible default encoder settings (level 5, fast match lookup). |
-| `Compress` | `static void Compress(Stream input, Stream output, int level, bool fast)` | Compresses `input` to `output`. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses one complete LZG stream from `input` to `output`. |
 
 ### Namespace `FileFormat.Lzh`
 
