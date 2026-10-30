@@ -145,7 +145,7 @@ Quantum,quantum,codec,R,,R,,,,,2,,bb:BB_Quantum,Y,Y,,OK,,
 XPRESS (Huffman),xpress,codec,R,,,,,,,1,https://learn.microsoft.com/openspecs/windows_protocols/ms-xca/,bb:BB_Xpress,Y,Y,,OK,,
 LZFSE (method),lzfse,codec,R,,,,,,,1,,bb:BB_Lzfse,Y,Y,,OK,,
 RAR 1.5 method,rar1,codec,R,,R,,,,,2,,Rar,Y,Y,Y,OK,,
-RAR 2.x method,rar2,codec,R,,R,,,,,2,,Rar,Y,Y,Y,OK,,
+RAR 2.x method,rar2,codec,R,,R,,,,,2,docs/RAR20-ON-DISK.md,Rar,Y,Y,Y,OK,,"WinRAR 2.90 archives decode to their CRC-32s. Audio blocks are implemented from the spec, but no vector is known to use them. Read only; writing uses the 2.9 method"
 "RAR 3.x method (incl. PPMd, VM filters)",rar3,codec,R,,R,,,,,2,,bb:BB_Rar3,Y,Y,,OK,,"LZ, PPMd var.H and filters decode RAR 6.24 and libarchive archives; unrar 7.00 tests and extracts what we write (LZ only)"
 RAR 5 method,rar5,codec,R,,R,,,,,2,,bb:BB_Rar,Y,Y,,OK,,
 RAR audio / VM filters,,codec,,,R,,,,,1,,Rar,Y,Y,Y,OK,,"The six standard RarVM programs are recognised by CRC-32 and length, as unrar does. E8/E8E9, delta, RGB and audio decode RAR 6.24 and libarchive archives to their CRCs; IA-64 is implemented but no vector exercises it. A general RarVM is refused: unrar 7.x runs no other programs either (rarvm.cpp)"

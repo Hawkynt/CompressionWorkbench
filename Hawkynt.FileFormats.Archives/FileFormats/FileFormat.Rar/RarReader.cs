@@ -31,6 +31,7 @@ public sealed class RarReader : IDisposable {
   private Rar5Decoder? _solidDecoder;
   private int _lastSolidDictSize;
   private Rar3Decoder? _solidRar3Decoder;
+  private Rar2Decoder? _solidRar2Decoder;
 
   // Recovery record state
   private long _recoveryHeaderOffset; // start of recovery service header
@@ -270,9 +271,11 @@ public sealed class RarReader : IDisposable {
       if (unpackVer <= 15) {
         var decoder = new Rar1Decoder();
         decompressed = decoder.Decompress(compressed, (int)detail.UnpackedSize);
-      } else if (unpackVer <= 20) {
-        var decoder = new Rar2Decoder();
+      } else if (unpackVer is <= 20 or 26) {
+        // RAR 2.0 format (26 = RAR 2.x with files over 2 GB).
+        var decoder = detail.IsSolid && this._solidRar2Decoder != null ? this._solidRar2Decoder : new Rar2Decoder();
         decompressed = decoder.Decompress(compressed, (int)detail.UnpackedSize);
+        this._solidRar2Decoder = decoder;
       } else if (unpackVer <= 36) {
         Rar3Decoder decoder;
         if (detail.IsSolid && this._solidRar3Decoder != null)
