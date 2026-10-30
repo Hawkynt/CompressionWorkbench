@@ -283,6 +283,18 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Ecm.EcmExternalConformanceTests" \
             --logger "trx;LogFileName=ecm-oracle-tests.trx"
 
+      # Hard gate, both directions: MAME's floptool decodes our Disk Copy 4.2 images to the same
+      # sectors, and its own images (with its own checksums) pass our verification.
+      - name: Disk Copy 4.2 oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_FLOPTOOL: "1"
+        run: |
+          sudo apt-get install -y mame-tools
+          dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.DiskCopy42.DiskCopy42ExternalConformanceTests" \
+            --logger "trx;LogFileName=dc42-oracle-tests.trx"
+
       # Hard gate, both directions: PowerISO for Linux (freeware, checksum-pinned, used as a black
       # box) converts our DAA images back to identical ISOs, and we read the DAA images it writes.
       - name: DAA oracle
