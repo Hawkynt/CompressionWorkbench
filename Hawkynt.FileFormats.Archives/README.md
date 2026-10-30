@@ -280,6 +280,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [Portable Sound Format](https://en.wikipedia.org/wiki/Portable_Sound_Format) | `Psf` | `.psf` `.psf2` `.minipsf` `.minipsf2` … | WORM | ✅ | — |  | [web.archive.org](https://web.archive.org/web/20060212232218/http://wiki.neillcorlett.com/PSFFormat) |
 | Nintendo RARC | `Rarc` | `.arc` `.rarc` | WORM | ✅ | defrag · wipe | Entries are typed tDAT_NNNN names | [wiki.cloudmodding.com](https://wiki.cloudmodding.com/zgcn/ARC) |
 | RPG Maker RGSSAD | `Rgss` | `.rgssad` `.rgss2a` `.rgss3a` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/morkt/GARbro) |
+| RPG Maker MV/MZ encrypted asset | `RpgMakerMvAsset` | `.rpgmvp` `.rpgmvo` `.rpgmvm` `.png_` … | WORM | ✅ | — | One image or sound; password = System.json `encryptionKey` (PNG and Ogg decrypt without it); output byte-identical to Petschko's encrypter | [GitHub](https://github.com/Petschko/RPG-Maker-MV-Decrypter) |
 | Ren'Py RPA | `Rpa` | `.rpa` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/renpy/renpy) |
 | NScripter SAR | `Sar` | `.sar` | R/W | ✅ | defrag · wipe | Uncompressed NSA family | [nscripter.com](https://www.nscripter.com/) |
 | Nintendo SARC | `Sarc` | `.sarc` `.pack` `.bars` | R/W | ✅ | defrag · wipe | Endian-aware reader; hash-sorted writer | [zeldamods.org](https://zeldamods.org/wiki/SARC) |
