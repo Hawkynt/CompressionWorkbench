@@ -197,7 +197,7 @@ CAB data blocks,,codec,,,R,,,,,1,,Cab,Y,Y,Y,OK,,
 AES-256 (7z),7zaes,encryption,RW,,R,,,,,2,,SevenZip,Y,Y,Y,OK,,
 WinZip AES,wzaes,encryption,RW,,R,,,,,2,https://www.winzip.com/en/support/aes-encryption/,Zip,Y,Y,Y,OK,,
 ZipCrypto (traditional PKWARE),zipcrypto,encryption,RW,,R,,,,,2,,Zip,Y,Y,Y,OK,,
-PKWARE Strong Encryption,zipstrong,encryption,R,,,,,,,1,,,,,,MISSING,,
+PKWARE Strong Encryption,zipstrong,encryption,R,,,,,,,1,https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT,Zip,Y,Y,Y,OK,,"password-based AES-128/192/256 read, AES-256 written (EncryptionMethod pkware-aes-256), checked by 7-Zip; certificate and 3DES/RC2 variants refused"
 RAR 3.x AES-128,rar3aes,encryption,R,,,,,,,1,,Rar,Y,Y,Y,OK,,
 RAR5 AES-256,rar5aes,encryption,R,,,,,,,1,,Rar,Y,Y,Y,OK,,
 RAR 2.0 encryption,rar20,encryption,R,,,,,,,1,,,,,,MISSING,,

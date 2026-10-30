@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 21 | |
+| A | 22 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 1 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 10 | |
@@ -75,6 +75,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Compression.Core/Dictionary/KwajLzh/`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Kwaj/KwajStream.cs` | kwaj-lzh `src/kwaj.ts`, `src/bitreader.ts`, `src/lzss.ts` (yaodub), revision `f71544bc4f848420d8aedb46c2ae602b88a3e998` | MIT | `Compression.Core/Dictionary/KwajLzh/THIRD-PARTY-NOTICE.kwaj-lzh.txt`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Kwaj/THIRD-PARTY-NOTICE.kwaj-lzh.txt` |
 | `Compression.Core/Dictionary/Lzbitmap/` | libzbitmap (Ernesto A. Fernández, Corellium) | MIT | `THIRD-PARTY-NOTICE.libzbitmap.txt` |
 | `Compression.Core/Dictionary/Csc/` | libcsc (Fu Siyuan) | Unlicense | `THIRD-PARTY-NOTICE.libcsc.txt` |
+| `Compression.Core/Containers/Zip/ZipStrongEncryption.cs` | 7-Zip `CPP/7zip/Crypto/ZipStrong.cpp`, `Archive/Zip/ZipHandler.cpp` (Igor Pavlov) | LGPL-2.1-or-later — taken under LGPL-3.0 | `Compression.Core/Containers/Zip/THIRD-PARTY-NOTICE.7-Zip.txt` |
 | `Compression.Core/Dictionary/Arj/ArjFastestDecoder.cs` | XADMaster `XADARJFastestHandle.m` (Dag Ågren, MacPaw), revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Arj/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Zpaq/` | libzpaq / zpaq 7.15 (Matt Mahoney) | public domain (Unlicense) | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Zpaq/THIRD-PARTY-NOTICE.libzpaq.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/DiskDoublerReader.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/DiskDoublerAdDecoder.cs` | XADMaster `XADDiskDoublerParser.m` and `XADDiskDoublerADnHandle.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/THIRD-PARTY-NOTICE.XADMaster.txt` |

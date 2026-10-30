@@ -15,7 +15,10 @@ public enum ZipEncryptionMethod {
   Aes256,
 
   /// <summary>Traditional PKZIP encryption (weak, for compatibility).</summary>
-  PkzipTraditional
+  PkzipTraditional,
+
+  /// <summary>PKWARE Strong Encryption, password-based AES-256 (general-purpose bit 6).</summary>
+  PkwareStrongAes256,
 }
 
 /// <summary>

@@ -27,7 +27,7 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new("Password", "Password", FormatOptionKind.String, "",
       Description: "Optional ZipCrypto / AES password."),
     new("EncryptionMethod", "Encryption method", FormatOptionKind.Enum, "none",
-      AllowedValues: ["none", "zipcrypto", "aes-128", "aes-192", "aes-256"]),
+      AllowedValues: ["none", "zipcrypto", "aes-128", "aes-192", "aes-256", "pkware-aes-256"]),
   ];
 
   /// <summary>
