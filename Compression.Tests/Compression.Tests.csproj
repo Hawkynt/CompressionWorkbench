@@ -189,6 +189,10 @@
     <EmbeddedResource Include="Vdfs\ReferenceVectors\*.vdf;Vdfs\ReferenceVectors\*.tsv">
       <LogicalName>VdfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- WinterMute packages from PackMaker and ours run by the WME engine; see WinterMuteDcp/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="WinterMuteDcp\ReferenceVectors\*.dcp;WinterMuteDcp\ReferenceVectors\*.txt">
+      <LogicalName>WinterMuteDcpVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- ZIP archives written by third-party archivers; see Zip/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
       <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>

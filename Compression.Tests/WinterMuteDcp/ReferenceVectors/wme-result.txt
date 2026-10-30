@@ -1,0 +1,3 @@
+sub/c.txt=deep file
+sub/b.bin length=4096 sum=712247
+nope.txt=missing
