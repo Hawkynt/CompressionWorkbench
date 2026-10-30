@@ -118,6 +118,10 @@
     <EmbeddedResource Include="Firmware\ReferenceVectors\*" Exclude="Firmware\ReferenceVectors\README.md">
       <LogicalName>FirmwareVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- PKZIP Shrink/Reduce/Implode streams and hwzip archives; see Zip/LegacyMethodVectors/README.md. -->
+    <EmbeddedResource Include="Zip\LegacyMethodVectors\*.bin;Zip\LegacyMethodVectors\*.zip">
+      <LogicalName>ZipLegacyMethodVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Archives FreeArc 0.67's Arc.exe wrote; see FreeArc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="FreeArc\ReferenceVectors\*.arc">
       <LogicalName>FreeArcVectors.%(Filename)%(Extension)</LogicalName>

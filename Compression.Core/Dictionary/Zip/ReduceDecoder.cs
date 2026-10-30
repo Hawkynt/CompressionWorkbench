@@ -1,168 +1,133 @@
 namespace Compression.Core.Dictionary.Zip;
 
 /// <summary>
-/// Decodes ZIP Reduce (methods 2-5) compressed data.
+/// Decodes ZIP Reduce (methods 2-5, compression factor 1-4): a byte stream coded through
+/// per-predecessor "follower sets", carrying LZ77 back-references behind the escape byte 144.
 /// </summary>
 /// <remarks>
-/// Reduce is a two-pass algorithm:
-/// 1. LZ77 with DLE (0x90) encoding for length-distance pairs
-/// 2. Follower set probabilistic coding for byte prediction
-/// Methods 2-5 differ only in the compression factor (1-4), which controls
-/// the distance bit split: V byte has (8-factor) low bits for distance, factor high bits for length.
+/// Converted from hwexpand in hwzip 2.4's reduce.c (Hans Wennborg, public domain), see
+/// THIRD-PARTY-NOTICE.hwzip.txt. A back-reference before the start of the data yields zero bytes,
+/// as PKZIP's decoder does.
 /// </remarks>
 public static class ReduceDecoder {
-  private const byte Dle = 0x90;
+  internal const byte Dle = 144;
 
   /// <summary>
   /// Decompresses ZIP Reduce data.
   /// </summary>
   /// <param name="compressed">The compressed data.</param>
   /// <param name="originalSize">The expected uncompressed size.</param>
-  /// <param name="factor">The compression factor (1-4), derived from method - 1.</param>
+  /// <param name="factor">The compression factor, 1-4 (method 2-5).</param>
   /// <returns>The decompressed data.</returns>
-  public static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize, int factor)
-    => Decode(compressed.ToArray(), originalSize, factor);
+  public static byte[] Decode(byte[] compressed, int originalSize, int factor) => Decode(compressed.AsSpan(), originalSize, factor);
 
   /// <summary>
   /// Decompresses ZIP Reduce data.
   /// </summary>
   /// <param name="compressed">The compressed data.</param>
   /// <param name="originalSize">The expected uncompressed size.</param>
-  /// <param name="factor">The compression factor (1-4), derived from method - 1.</param>
+  /// <param name="factor">The compression factor, 1-4 (method 2-5).</param>
   /// <returns>The decompressed data.</returns>
-  public static byte[] Decode(byte[] compressed, int originalSize, int factor) {
-    if (factor < 1 || factor > 4)
-      throw new ArgumentOutOfRangeException(nameof(factor), "Compression factor must be 1-4.");
+  /// <exception cref="InvalidDataException">The data is not a valid Reduce stream of that size.</exception>
+  public static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize, int factor) {
+    ArgumentOutOfRangeException.ThrowIfLessThan(factor, 1);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(factor, 4);
+    ArgumentOutOfRangeException.ThrowIfNegative(originalSize);
 
-    // Bit position over the whole compressed stream: at 32-bit width it wraps
-    // negative once the stream passes 2^28 bytes, and the wrapped value makes the
-    // decode loop below exit immediately, returning an all-zero buffer of the
-    // right length with nothing thrown.
-    var pos = 0L;
+    var reader = new ZipLegacyBitReader(compressed);
+    var sets = ReadFollowerSets(ref reader);
+    var lengthBits = 8 - factor;
+    var dst = new byte[originalSize];
+    var pos = 0;
+    byte current = 0; // the first predecessor is implicitly zero
 
-    // Read follower sets
-    var followers = new byte[256][];
+    while (pos < originalSize) {
+      current = NextByte(ref reader, current, sets);
+      if (current != Dle) {
+        dst[pos++] = current;
+        continue;
+      }
+
+      current = NextByte(ref reader, current, sets);
+      if (current == 0) {
+        dst[pos++] = Dle;
+        continue;
+      }
+
+      var v = current;
+      var length = v & ((1 << lengthBits) - 1);
+      if (length == (1 << lengthBits) - 1) {
+        current = NextByte(ref reader, current, sets);
+        length += current;
+      }
+
+      length += 3;
+      current = NextByte(ref reader, current, sets);
+      var distance = (v >> lengthBits) * 256 + current + 1;
+      if (length > originalSize - pos)
+        throw new InvalidDataException("Reduce back-reference runs past the expected size.");
+
+      for (var i = 0; i < length; ++i, ++pos)
+        dst[pos] = distance > pos ? (byte)0 : dst[pos - distance];
+    }
+
+    return dst;
+  }
+
+  private static byte[][] ReadFollowerSets(ref ZipLegacyBitReader reader) {
+    var sets = new byte[256][];
     for (var i = 255; i >= 0; --i) {
-      var count = ReadBits(compressed, ref pos, 6);
-      followers[i] = new byte[count];
-      for (var j = 0; j < count; ++j)
-        followers[i][j] = (byte)ReadBits(compressed, ref pos, 8);
+      var n = (int)(reader.Bits() & 0x3F);
+      if (n > 32 || !reader.Advance(6))
+        throw new InvalidDataException("Invalid Reduce follower set.");
+
+      var set = new byte[n];
+      for (var j = 0; j < n; ++j) {
+        set[j] = (byte)reader.Bits();
+        if (!reader.Advance(8))
+          throw new InvalidDataException("Reduce follower sets cut off.");
+      }
+
+      sets[i] = set;
     }
 
-    // Decode the probabilistic stream to get intermediate DLE-encoded bytes
-    var intermediate = new List<byte>((int)Math.Min((long)originalSize * 2, Array.MaxLength));
-    byte lastByte = 0;
-
-    // We don't know the exact intermediate length, so decode until we've
-    // produced enough output after DLE decoding
-    var totalBits = (long)compressed.Length * 8;
-    while (pos < totalBits) {
-      byte b;
-      if (followers[lastByte].Length == 0) {
-        if (pos + 8 > totalBits)
-          break;
-        b = (byte)ReadBits(compressed, ref pos, 8);
-      }
-      else {
-        var bit = ReadBits(compressed, ref pos, 1);
-        if (bit == 1) {
-          if (pos + 8 > totalBits)
-            break;
-          b = (byte)ReadBits(compressed, ref pos, 8);
-        }
-        else {
-          var bitsNeeded = BitsForCount(followers[lastByte].Length);
-          if (bitsNeeded > 0 && pos + bitsNeeded > totalBits)
-            break;
-          var idx = bitsNeeded > 0 ? ReadBits(compressed, ref pos, bitsNeeded) : 0;
-          if (idx >= followers[lastByte].Length)
-            break;
-          b = followers[lastByte][idx];
-        }
-      }
-
-      intermediate.Add(b);
-      lastByte = b;
-    }
-
-    // Now undo the DLE/LZ77 encoding
-    var output = new byte[originalSize];
-    var outPos = 0;
-    var inPos = 0;
-
-    var distanceBits = 8 - factor;
-    var maxLenField = (1 << factor) - 1;
-
-    while (outPos < originalSize && inPos < intermediate.Count) {
-      var cur = intermediate[inPos++];
-
-      if (cur != Dle) {
-        output[outPos++] = cur;
-        continue;
-      }
-
-      if (inPos >= intermediate.Count)
-        break;
-
-      var v = intermediate[inPos++];
-      if (v == 0) {
-        // Literal DLE marker
-        output[outPos++] = Dle;
-        continue;
-      }
-
-      // Length-distance pair
-      if (inPos >= intermediate.Count)
-        break;
-      int distHigh = intermediate[inPos++];
-
-      var distLow = v & ((1 << distanceBits) - 1);
-      var distance = (distHigh << distanceBits) | distLow;
-      var lenField = v >> distanceBits;
-      var length = lenField;
-
-      if (lenField == maxLenField) {
-        // Extended length
-        if (inPos >= intermediate.Count)
-          break;
-        length += intermediate[inPos++];
-      }
-
-      length += 3; // minimum match length
-
-      // Copy from output history
-      var srcPos = outPos - distance - 1;
-      for (var j = 0; j < length && outPos < originalSize; ++j) {
-        var src = srcPos + j;
-        if (src >= 0 && src < outPos)
-          output[outPos] = output[src];
-        else
-          output[outPos] = 0;
-        ++outPos;
-      }
-    }
-
-    return output;
+    return sets;
   }
 
-  private static int ReadBits(byte[] data, ref long bitPos, int count) {
-    var result = 0;
-    for (var i = 0; i < count; ++i) {
-      var byteIdx = bitPos / 8;
-      var bitIdx = (int)(bitPos % 8);
-      if (byteIdx >= data.Length)
-        return result;
-      result |= ((data[byteIdx] >> bitIdx) & 1) << i;
-      ++bitPos;
+  private static byte NextByte(ref ZipLegacyBitReader reader, byte previous, byte[][] sets) {
+    var bits = reader.Bits();
+    var set = sets[previous];
+    if (set.Length == 0) {
+      if (!reader.Advance(8))
+        throw new InvalidDataException("Reduce data ended early.");
+
+      return (byte)bits;
     }
-    return result;
+
+    if ((bits & 1) == 1) {
+      if (!reader.Advance(9))
+        throw new InvalidDataException("Reduce data ended early.");
+
+      return (byte)(bits >> 1);
+    }
+
+    var indexBits = IndexBits(set.Length);
+    var index = (int)ZipLegacyBitReader.Low(bits >> 1, indexBits);
+    if (index >= set.Length)
+      throw new InvalidDataException("Reduce follower index out of range.");
+    if (!reader.Advance(1 + indexBits))
+      throw new InvalidDataException("Reduce data ended early.");
+
+    return set[index];
   }
 
-  private static int BitsForCount(int count) {
-    if (count <= 1) return 0;
-    var bits = 0;
-    var val = count - 1;
-    while (val > 0) { ++bits; val >>= 1; }
-    return bits;
-  }
+  /// <summary>Bits of a follower index into a set of <paramref name="n"/> bytes.</summary>
+  internal static int IndexBits(int n) => n switch {
+    > 16 => 5,
+    > 8 => 4,
+    > 4 => 3,
+    > 2 => 2,
+    > 0 => 1,
+    _ => 0,
+  };
 }
