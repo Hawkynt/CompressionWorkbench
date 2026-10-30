@@ -25538,7 +25538,7 @@ Compressor and decompressor for the Amiga PowerPacker (PP20) crunched file forma
 
 #### `PpmdFormatDescriptor`
 
-Describes ppmd format.
+Describes Dmitry Shkarin's PPMd file format (`.pmd`); see `PpmdStream`.
 
 Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
@@ -25556,7 +25556,7 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | PPMd-H model order. 7-Zip exposes orders 2 through 32; the optimizer searches the complete finite range because the best context depth depends on the input. The managed model's memory-size constructor parameter is not currently an effective capacity limit, so memory is deliberately not advertised as a knob. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | PPMd var.I model order of the member written. The header holds orders 2 through 16; the optimizer searches all of them because the best context depth depends on the input. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with format-specific PPMd tunables. |
@@ -25564,13 +25564,18 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 
 #### `PpmdStream`
 
-PPMd stream container format. Current layout: 4-byte magic (0x8F 0xAF 0xAC 0x84), 1-byte format version, then the raw output of `PpmdBuildingBlock` (1-byte order, 4-byte LE original size, range-coded data).
+Dmitry Shkarin's PPMd file format (`.pmd`), as his PPMd var.H and var.I programs write it.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input with the default PPMd-H model order. |
-| `Compress` | `static void Compress(Stream input, Stream output, int order)` | Encodes the supplied input with the requested PPMd-H model order. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `DefaultMemoryMb` | `const int DefaultMemoryMb` | Default model memory for writing, in MiB. |
+| `DefaultOrder` | `const int DefaultOrder` | Default model order for writing. |
+| `MaxOrder` | `const int MaxOrder` | Highest model order the header can carry. |
+| `MinOrder` | `const int MinOrder` | Lowest model order the header can carry. |
+| `Signature` | `const uint Signature` | The member signature. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Writes `input` as one var.I member with the default order and memory. |
+| `Compress` | `static void Compress(Stream input, Stream output, int order)` | Writes `input` as one var.I member of model order `order`. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes every member of a `.pmd` file, writing their data in order. |
 
 ### Namespace `FileFormat.Ppt`
 

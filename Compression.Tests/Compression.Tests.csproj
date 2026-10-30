@@ -102,6 +102,10 @@
     <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
       <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- .pmd files from Dmitry Shkarin's PPMd var.H and var.I; see Ppmd/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Ppmd\ReferenceVectors\*.pmd;Ppmd\ReferenceVectors\manifest.tsv">
+      <LogicalName>PmdVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A 7-Zip PPMd archive from libarchive's tests; see Entropy/PpmdVectors/README.md. -->
     <EmbeddedResource Include="Entropy\PpmdVectors\*.7z">
       <LogicalName>PpmdVectors.%(Filename)%(Extension)</LogicalName>

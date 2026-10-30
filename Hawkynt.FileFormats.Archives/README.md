@@ -80,7 +80,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [PackBits](https://en.wikipedia.org/wiki/PackBits) | `PackBits` | `.packbits` | ✅ | ✅ | ✅ |  | [developer.apple.com](https://developer.apple.com/library/archive/documentation/mac/pdf/MoreMacintoshToolbox.pdf) |
 | [PAQ8](https://en.wikipedia.org/wiki/PAQ) | `Paq8` | `.paq8l` `.paq8` | ✅ | ✅ | ✅ |  | [mattmahoney.net](https://mattmahoney.net/dc/paq.html) |
 | PowerPacker | `PowerPacker` | `.pp` `.pp20` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/PowerPacker) |
-| [PPMd](https://en.wikipedia.org/wiki/Prediction_by_partial_matching) | `Ppmd` | `.pmd` | ✅ | ✅ | ✅ |  | [7-zip.org](https://www.7-zip.org/sdk.html) |
+| [PPMd](https://en.wikipedia.org/wiki/Prediction_by_partial_matching) | `Ppmd` | `.pmd` | ✅ | ✅ | ✅ | Dmitry Shkarin's file format: reads var.H and var.I members (all of them, one after another); writes one var.I member named `data`; var.I's "freeze" method (`-r2`) is refused | [compression.ru/ds](https://www.compression.ru/ds/) |
 | QuickLZ | `QuickLz` | `.quicklz` | ✅ | ✅ | ✅ | Level 1 and level 3; the optimizer searches the level and the level-3 search depth | [quicklz.com](http://www.quicklz.com/) |
 | RefPack / QFS | `RefPack` | `.qfs` `.refpack` | ✅ | ✅ | ✅ | Optimizer searches the history window, the match-search depth and quick match indexing | [wiki.niotso.org](http://wiki.niotso.org/RefPack) |
 | RNC ProPack | `Rnc` | `.rnc` | ✅ | ✅ | ✅ |  | [segaretro.org](https://segaretro.org/Rob_Northen_compression) |
