@@ -481,7 +481,7 @@ OCFS (v1),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 QFS (Sun/Oracle),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 ScoutFS,versity,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 StorNext / Xsan,apple;cvfs;quantum,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-VMFS,vmfs;vmfs2;vmfs3;vmfs5;vmware,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+VMFS,vmfs;vmfs2;vmfs3;vmfs5;vmware,filesystem,,,,,,,Y,1,https://github.com/glandium/vmfs-tools,Vmfs,Y,,,PARTIAL,ESXi (vmkfstools),"single-extent VMFS3 read (spec in docs/VMFS-ON-DISK.md, checked against an ESX-written volume); VMFS5/6 and spanned volumes are refused: no public volume proves them"
 AXFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 CramFS,cramfs,filesystem,R,,,D,,,Y,3,,CramFs,Y,Y,Y,OK,,
 LTFS (Linear Tape),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
