@@ -74,7 +74,7 @@ AFA,afa,archive,,,,,,,Y,1,,,,,,MISSING,,
 B1,b1,archive,,,,,,,Y,1,,,,,,MISSING,,
 B6Z,b6z,archive,,,,,,,Y,1,,,,,,MISSING,,
 Scifer,ba;sen,archive,,,,,,,Y,1,,,,,,MISSING,,
-BlakHole,bh,archive,,,,,,,Y,1,,,,,,MISSING,,
+BlakHole,bh,archive,,,,,,,Y,1,docs/BLAKHOLE-ON-DISK.md,BlakHole,Y,,,PARTIAL,,"read-only, Deflate members only: layout measured on the one sample with provenance (all CRC-32s hold); no published format and no BlakHole program to check writes"
 Compressia,car,archive,,,,,,,Y,1,,,,,,MISSING,,
 Compact File Set,cfs,archive,,,,,,,Y,1,,,,,,MISSING,,
 WinHKI,hki,archive,,,,,,,Y,1,,,,,,MISSING,,
