@@ -130,6 +130,10 @@
     <EmbeddedResource Include="Cvf\ReferenceVectors\*.bin">
       <LogicalName>CvfVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Homebrew FDS test NSFs and libgme's render features; see Codecs/Nes2a03/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Codecs\Nes2a03\ReferenceVectors\*.nsf;Codecs\Nes2a03\ReferenceVectors\*.tsv;Codecs\Nes2a03\ReferenceVectors\*.spec">
+      <LogicalName>FdsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- AFF4 logical images from pyaff4 (its reference image dream.aff4 and two it wrote) plus pyaff4's
          own read-back listing; see Aff4/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Aff4\ReferenceVectors\*.aff4;Aff4\ReferenceVectors\*.tsv">

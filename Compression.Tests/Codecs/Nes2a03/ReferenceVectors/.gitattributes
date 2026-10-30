@@ -1,0 +1,3 @@
+*.nsf binary
+*.spec binary
+*.tsv text eol=lf
