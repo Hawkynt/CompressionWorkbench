@@ -1,6 +1,8 @@
 using System.Reflection;
 using Compression.Lib;
 using Compression.NativeUI;
+using Compression.NativeUI.Editing;
+using Compression.NativeUI.Navigation;
 using Compression.NativeUI.ViewModels;
 
 namespace Compression.Tests.NativeUI;
@@ -82,6 +84,75 @@ public class ShellPasswordTests {
     Assert.That(first, Has.Length.EqualTo(6000));
     Assert.That(second, Is.EqualTo(first));
     Assert.That(this._asked, Has.Count.EqualTo(1));
+  }
+
+  [Test]
+  public async Task Given_AnEncryptedEntry_When_CopiedToAFolder_Then_ThePasswordIsAskedAndItIsStagedInsideTheTarget() {
+    this.Answer("S3cret!");
+    var archive = this.Vector("aes.7z");
+    this._model.Open(archive);
+    var target = Path.Combine(this._root, "target");
+    Directory.CreateDirectory(target);
+    var staged = new List<string>();
+    void Record(string path) => staged.Add(path);
+    Transfer.StagingCreated += Record;
+    try {
+      var error = await this._model.TransferAsync([new TransferItem(Location.InArchive(archive, "code/"), "x86.bin", false)], Location.Folder(target), move: false);
+      Assert.That(error, Is.Null);
+    } finally {
+      Transfer.StagingCreated -= Record;
+    }
+
+    Assert.That(this._asked, Has.Count.EqualTo(1));
+    Assert.That(new FileInfo(Path.Combine(target, "x86.bin")).Length, Is.EqualTo(9000));
+    Assert.That(staged, Is.Not.Empty);
+    Assert.That(staged, Is.All.StartsWith(target), "extraction is staged beside the destination, never in %TEMP%");
+    Assert.That(Directory.EnumerateDirectories(target, Transfer.StagingPrefix + "*"), Is.Empty, "the staging folder is gone");
+  }
+
+  [Test]
+  public async Task Given_AnEncryptedEntry_When_ThePromptIsCancelled_Then_NothingIsCopied() {
+    this.Answer();
+    var archive = this.Vector("aes.7z");
+    this._model.Open(archive);
+    var target = Path.Combine(this._root, "target");
+    Directory.CreateDirectory(target);
+
+    var error = await this._model.TransferAsync([new TransferItem(Location.InArchive(archive, ""), "text.txt", false)], Location.Folder(target), move: false);
+
+    Assert.That(error, Does.Contain("password"));
+    Assert.That(Directory.EnumerateFileSystemEntries(target), Is.Empty);
+  }
+
+  [Test]
+  public void Given_AnEncryptedEntry_When_DraggedOut_Then_ThePasswordIsSettledFirstAndTheFileReadsBack() {
+    this.Answer("wrong", "S3cret!");
+    var archive = this.Vector("aes.7z");
+    this._model.Open(archive);
+    this._model.NavigateTo(Location.InArchive(archive, ""));
+    this._model.SelectedEntries.Clear();
+    this._model.SelectedEntries.Add(this._model.Entries.Single(e => e.Name == "text.txt"));
+
+    var payload = this._model.DragPayload([.. this._model.SelectedEntries]) as Hawkynt.NativeForms.VirtualFile[];
+
+    Assert.That(this._asked, Is.EqualTo(new[] { ("aes.7z", false), ("aes.7z", true) }));
+    Assert.That(payload, Has.Length.EqualTo(1));
+    using var stream = payload![0].OpenRead();
+    using var copy = new MemoryStream();
+    stream.CopyTo(copy);
+    Assert.That(copy.Length, Is.EqualTo(6000));
+  }
+
+  [Test]
+  public void Given_AnEncryptedEntry_When_TheDragPromptIsCancelled_Then_NothingIsDragged() {
+    this.Answer();
+    var archive = this.Vector("aes.7z");
+    this._model.Open(archive);
+    this._model.NavigateTo(Location.InArchive(archive, ""));
+    this._model.SelectedEntries.Clear();
+    this._model.SelectedEntries.Add(this._model.Entries.Single(e => e.Name == "text.txt"));
+
+    Assert.That(this._model.DragPayload([.. this._model.SelectedEntries]), Is.Null);
   }
 
   [Test]

@@ -474,10 +474,33 @@ internal sealed class MainViewModel : ViewModelBase {
   internal string? WhyNotTransfer(IReadOnlyList<TransferItem> items, Location target, bool move) {
     if (IsChanging) return "Another change is still running.";
     if (IsNestedCopy(target)) return "Nothing can be put inside a nested archive.";
-    if (items.FirstOrDefault(IsEncryptedHere) is { } locked)
-      return $"{locked.Name} is encrypted, and the shell has no password to read it with.";
     if (move && items.Any(i => IsNestedCopy(i.From))) return "Nothing can be moved out of a nested archive.";
     return Transfer.WhyNot(items, target, move);
+  }
+
+  /// <summary>The encrypted entries of the open archive that <paramref name="items"/> are or hold.</summary>
+  private IEnumerable<ArchiveEntryViewModel> EncryptedEntriesUnder(IEnumerable<TransferItem> items)
+    => items.SelectMany(item => _allEntries.Where(e => e.IsEncrypted && !e.IsDirectory
+      && (e.Path.TrimEnd('/') == item.EntryPath || e.Path.StartsWith(item.EntryPath + "/", StringComparison.Ordinal))));
+
+  /// <summary>
+  /// Makes sure the open archive's password opens <paramref name="entries"/>, asking for it until it
+  /// does: the smallest of them is read once as the check. False when the user cancels.
+  /// </summary>
+  internal bool EnsurePassword(IEnumerable<ArchiveEntryViewModel> entries) {
+    var probe = entries.OrderBy(static e => e.OriginalSize).FirstOrDefault();
+    if (probe == null)
+      return true;
+    try {
+      WithPassword(Path.GetFileName(ArchivePath), pw => {
+        using var stream = ArchiveOperations.OpenEntry(ArchivePath, probe.Path, pw);
+        stream.CopyTo(Stream.Null);
+        return 0;
+      });
+      return true;
+    } catch (ArchivePasswordException) {
+      return false;
+    }
   }
 
   /// <summary>Whether <paramref name="item"/> lies in the open archive and is, or holds, an encrypted entry.</summary>
@@ -495,12 +518,20 @@ internal sealed class MainViewModel : ViewModelBase {
   /// </summary>
   internal async Task<string?> TransferAsync(IReadOnlyList<TransferItem> items, Location target, bool move) {
     if (WhyNotTransfer(items, target, move) is { } refusal) return Fail(refusal);
+
+    // Encrypted entries are read with the archive's password, asked for here on the UI thread
+    // before anything is staged; the smallest one is read as the check.
+    var encrypted = items.Where(IsEncryptedHere).ToList();
+    if (encrypted.Count > 0 && !EnsurePassword(EncryptedEntriesUnder(encrypted)))
+      return Fail($"{Path.GetFileName(ArchivePath)} needs a password; nothing was copied.");
+
     if (BeginChange(TimeSpan.FromSeconds(10)) is { } busy) return Fail(busy);
 
     IsBusy = true;
     StatusText = $"{(move ? "Moving" : "Copying")} {items.Count} item(s)...";
     try {
-      var result = await Task.Run(() => Transfer.Run(items, target, move));
+      var password = ArchivePassword;
+      var result = await Task.Run(() => Transfer.Run(items, target, move, password));
 
       // What the list shows may have changed from either end: what arrived, or what left.
       if (HasArchive && !IsBrowsingOsFolder) ReloadArchiveInPlace();
@@ -1705,9 +1736,17 @@ internal sealed class MainViewModel : ViewModelBase {
       return paths.Length > 0 ? paths : null;
     }
 
-    if (!HasArchive || picked.Any(e => e.IsEncrypted)) return null;
+    if (!HasArchive) return null;
+
+    // The drop target pulls each entry later, from its own thread, where nothing can be asked:
+    // the password is settled now, before the drag starts.
+    var encrypted = picked.Where(static e => e.IsEncrypted && !e.IsDirectory)
+      .Concat(picked.Where(static e => e.IsDirectory).SelectMany(d => _allEntries.Where(e => e.IsEncrypted && !e.IsDirectory
+        && e.Path.StartsWith(d.Path.EndsWith('/') ? d.Path : d.Path + "/", StringComparison.Ordinal))));
+    if (!EnsurePassword(encrypted)) return null;
 
     var archive = ArchivePath;
+    var password = ArchivePassword;
     var files = new List<VirtualFile>();
     foreach (var entry in picked) {
       if (!entry.IsDirectory) {
@@ -1726,7 +1765,7 @@ internal sealed class MainViewModel : ViewModelBase {
     return files.Count > 0 ? files.ToArray() : null;
 
     VirtualFile Lazy(string relative, ArchiveEntryViewModel entry)
-      => new(relative, () => ArchiveOperations.OpenEntry(archive, entry.Path), entry.OriginalSize >= 0 ? entry.OriginalSize : null,
+      => new(relative, () => ArchiveOperations.OpenEntry(archive, entry.Path, password), entry.OriginalSize >= 0 ? entry.OriginalSize : null,
         entry.LastModified?.ToUniversalTime());
   }
 
