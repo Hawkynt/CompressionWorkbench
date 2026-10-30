@@ -11910,6 +11910,60 @@ Implements `IEquatable<Item>`.
 | `IsDirectory` | `bool IsDirectory { get; init; }` | True for an explicit directory entry. |
 | `Path` | `string Path { get; init; }` | Archive-relative path using `/` or `\` separators. |
 
+### Namespace `FileFormat.BlakHole`
+
+[`BlakHoleArchive`](#blakholearchive) · [`BlakHoleEntry`](#blakholeentry) · [`BlakHoleFormatDescriptor`](#blakholeformatdescriptor)
+
+#### `BlakHoleArchive`
+
+BlakHole archives (.bh), read from the layout measured on the one sample with provenance: back-to-back "BH" member records with raw-Deflate data and a CRC-32 (docs/BLAKHOLE-ON-DISK.md). Every field whose meaning is unknown must hold the value the sample has; anything else is refused rather than guessed. Read-only, because there is no BlakHole program to check writes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Extract` | `static byte[] Extract(ReadOnlySpan<byte> data, BlakHoleEntry entry)` | Decodes a member and checks its CRC-32. |
+| `Read` | `static List<BlakHoleEntry> Read(ReadOnlySpan<byte> data, out bool truncated)` | Parses the records. |
+
+#### `BlakHoleEntry`
+
+One member of a BlakHole archive.
+
+Implements `IEquatable<BlakHoleEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlakHoleEntry` | `BlakHoleEntry(string Name, int Method, uint CompressedSize, uint OriginalSize, uint Crc32, DateTime? LastModified, long DataOffset)` | One member of a BlakHole archive. |
+| `CompressedSize` | `uint CompressedSize { get; init; }` |  |
+| `Crc32` | `uint Crc32 { get; init; }` |  |
+| `DataOffset` | `long DataOffset { get; init; }` |  |
+| `LastModified` | `DateTime? LastModified { get; init; }` |  |
+| `Method` | `int Method { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `OriginalSize` | `uint OriginalSize { get; init; }` |  |
+
+#### `BlakHoleFormatDescriptor`
+
+BlakHole archive (.bh), read-only. References: `docs/BLAKHOLE-ON-DISK.md` — the layout measured on the Archive Team sample (no published specification exists)`http://sembiance.com/fileFormatSamples/archive/blakHole/` — the sample
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlakHoleFormatDescriptor` | `BlakHoleFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Bonk`
 
 [`BonkFormatDescriptor`](#bonkformatdescriptor)
