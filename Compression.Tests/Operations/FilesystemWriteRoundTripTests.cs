@@ -53,6 +53,9 @@ public sealed class FilesystemWriteRoundTripTests {
   private static readonly Dictionary<string, string> KnownGaps = new(StringComparer.Ordinal) {
     ["Refs"] = "edits existing volumes only — no creator, so there is no probe image to edit. "
              + "A ReFS corpus would have to come from Windows.",
+    ["Scp"] = "members are TRK flux blocks (tracks/track_NNN.bin); an arbitrary byte blob is not one, so the generic "
+            + "probe cannot be written. ScpTests round-trips tracks and ScpExternalConformanceTests proves rebuilds and "
+            + "edits against Greaseweazle.",
     ["TahoeLafs"] = "R/W is a live capability-backed namespace — no creator can synthesize a Tahoe grid endpoint and root write-capability. "
                    + "TahoeLafsClientTests exercise the gateway contract with an in-process HTTP oracle.",
     ["AndroidVbmeta"] = "members are structured AVB descriptors (descriptors/NN_*.bin), so an arbitrary byte blob is not one and the "
