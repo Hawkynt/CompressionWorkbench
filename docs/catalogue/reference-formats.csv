@@ -364,7 +364,7 @@ SQLite database,sqlite;sqlite3;db,document,,,,,R,,,1,,Sqlite,Y,,,READ-ONLY-BUT-S
 Windows thumbnail cache,db;thumbs.db,document,,,,,R,,,1,,ThumbsDb,Y,Y,Y,PARTIAL,,Thumbs.db only; thumbcache_*.db has no descriptor
 Safari webarchive,webarchive,document,,,,,,fmt/866,,1,,,,,,MISSING,,
 Compressed MusicXML (MXL),mxl,document,,,,,,fmt/2005;fmt/897,,1,,,,,,MISSING,,
-OneNote package (ONEPKG),onepkg,document,,,,,,fmt/987,,1,,,,,,MISSING,,
+OneNote package (ONEPKG),onepkg,document,,,,,,fmt/987,,1,,OnePkg,Y,,,OK,,read-only: a CAB of .onetoc2/.one sections; no OneNote available to prove that a package we build opens
 NScripter archive (NSA/NS2),nsa;ns2,game,,,R,,R,,,2,,Nsa,Y,Y,Y,OK,,
 NScripter SAR,sar,game,,,R,,R,,,2,,Sar,Y,Y,Y,OK,,
 Nintendo DS ROM,nds,game,,,R,,,,,1,,Nds,Y,Y,Y,OK,,
