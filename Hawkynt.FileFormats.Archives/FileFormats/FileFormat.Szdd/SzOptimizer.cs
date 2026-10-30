@@ -121,6 +121,8 @@ public static class SzOptimizer {
     var length = 0;
     while (length < maxLength) {
       var sourcePosition = candidate + length;
+      if (sourcePosition < SzddConstants.OldestKnownPrefill)
+        break;
       var source = sourcePosition < 0 ? SzddConstants.WindowFill : input[sourcePosition];
       if (source != input[position + length])
         break;

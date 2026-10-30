@@ -67,4 +67,14 @@ internal static class SzddConstants {
 
   /// <summary>Maximum match length encodable in the 4-bit length field.</summary>
   public const int MaxMatchLength = 18; // (0x0F) + MinMatchLength
+
+  /// <summary>
+  /// The oldest initial ring bytes a match may read, as a logical position before byte zero.
+  /// Decoders disagree about the 16 ring slots from the starting write position onwards:
+  /// libmspack fills them with spaces, but Windows' expand.exe leaves them zero, as Okumura's
+  /// LZSS does with its look-ahead area. An encoder must therefore not read them before they
+  /// are written. These are the logical positions -4096 to -4081, reachable only while
+  /// fewer than 16 bytes have been output.
+  /// </summary>
+  public const int OldestKnownPrefill = -(WindowSize - 16);
 }

@@ -57,7 +57,7 @@ internal static class SzddOptimizer {
     // Seed every logical position represented by the initially space-filled ring.
     // Positions close to zero may form legal overlapping matches into the output,
     // so their 3-byte prefixes are evaluated through VirtualByte as well.
-    for (var logicalPosition = -SzddConstants.WindowSize; logicalPosition < 0; ++logicalPosition) {
+    for (var logicalPosition = SzddConstants.OldestKnownPrefill; logicalPosition < 0; ++logicalPosition) {
       var hash = Hash3(input, logicalPosition);
       var index = logicalPosition + SzddConstants.WindowSize;
       previous[index] = head[hash];
@@ -245,8 +245,11 @@ internal static class SzddOptimizer {
     return hash & (MatchHashSize - 1);
   }
 
-  private static byte VirtualByte(ReadOnlySpan<byte> input, int logicalPosition) =>
-    logicalPosition < 0 ? SzddConstants.WindowFill : input[logicalPosition];
+  // -1 for the initial ring slots decoders disagree about (SzddConstants.OldestKnownPrefill).
+  private static int VirtualByte(ReadOnlySpan<byte> input, int logicalPosition) =>
+    logicalPosition >= 0 ? input[logicalPosition]
+    : logicalPosition >= SzddConstants.OldestKnownPrefill ? SzddConstants.WindowFill
+    : -1;
 
   private static byte GetChoice(ulong packedChoices, int slot) =>
     (byte)(packedChoices >> (slot * 8));
