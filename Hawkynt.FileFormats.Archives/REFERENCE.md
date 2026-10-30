@@ -18494,6 +18494,93 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `ReadCabinet` | `static byte[] ReadCabinet(Stream stream)` | Returns the embedded cabinet's bytes, or null when there is none. |
 
+### Namespace `FileFormat.IaArc`
+
+[`IaArcFormatDescriptor`](#iaarcformatdescriptor) · [`IaArcReader`](#iaarcreader) · [`IaArcRecord`](#iaarcrecord) · [`IaArcWriter`](#iaarcwriter) · [`IaArcWriter.Record`](#iaarcwriterrecord)
+
+#### `IaArcFormatDescriptor`
+
+Internet Archive ARC — the crawl container that preceded WARC (ISO 28500). Each entry is one captured URL; its bytes are the record body exactly as archived (HTTP response headers included). References: `https://archive.org/web/researcher/ArcFileFormat.php` — the Internet Archive's ARC 1.0 / 2.0 specification`https://github.com/webrecorder/warcio` — warcio, the reader used as oracle
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IaArcFormatDescriptor` | `IaArcFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `IaArcReader`
+
+Reads an uncompressed Internet Archive ARC crawl file (versions 1 and 2). An `.arc.gz` is a sequence of gzip members, one per record; it decompresses to exactly this stream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IaArcReader` | `IaArcReader(Stream stream)` |  |
+| `FileDescription` | `IaArcRecord FileDescription { get; }` | The `filedesc://` record. |
+| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The magic every ARC file starts with. |
+| `Records` | `IReadOnlyList<IaArcRecord> Records { get; }` | The URL records, in file order. |
+| `VersionBlock` | `byte[] VersionBlock { get; }` | The filedesc record's body: the version block plus any metadata that follows it. |
+| `Version` | `int Version { get; }` | ARC version, 1 or 2. |
+| `ReadBody` | `byte[] ReadBody(IaArcRecord record)` |  |
+
+#### `IaArcRecord`
+
+One record of an Internet Archive ARC file.
+
+Implements `IEquatable<IaArcRecord>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IaArcRecord` | `IaArcRecord(long RecordOffset, string HeaderLine, string Url, string IpAddress, string ArchiveDate, string ContentType, long BodyOffset, long BodyLength)` | One record of an Internet Archive ARC file. |
+| `ArchiveDate` | `string ArchiveDate { get; init; }` | Archive date, 14 digits (YYYYMMDDhhmmss). |
+| `BodyLength` | `long BodyLength { get; init; }` | Body length (the line's last field). |
+| `BodyOffset` | `long BodyOffset { get; init; }` | Offset of the body (the captured response, HTTP headers included). |
+| `ContentType` | `string ContentType { get; init; }` | Content type field. |
+| `HeaderLine` | `string HeaderLine { get; init; }` | The record's header line, without its line terminator. |
+| `IpAddress` | `string IpAddress { get; init; }` | IP address field. |
+| `RecordOffset` | `long RecordOffset { get; init; }` | Offset of the record's header line. |
+| `Url` | `string Url { get; init; }` | The URL (may contain spaces; the remaining fields are taken from the right). |
+
+#### `IaArcWriter`
+
+Writes uncompressed version-1 Internet Archive ARC files and appends records to existing ones.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WriteRecord` | `static void WriteRecord(Stream output, Record r)` | Writes one record: header line, body, LF separator. |
+| `Write` | `static void Write(Stream output, string arcFileName, DateTime createdUtc, IEnumerable<Record> records)` | Writes a new version-1 ARC: the filedesc record, then one URL record per entry. |
+
+#### `IaArcWriter.Record`
+
+Field values for a record this writer emits.
+
+Implements `IEquatable<Record>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Record` | `Record(string Url, byte[] Body, DateTime ArchiveDateUtc, string ContentType = "application/octet-stream", string IpAddress = "0.0.0.0")` | Field values for a record this writer emits. |
+| `ArchiveDateUtc` | `DateTime ArchiveDateUtc { get; init; }` |  |
+| `Body` | `byte[] Body { get; init; }` |  |
+| `ContentType` | `string ContentType { get; init; }` |  |
+| `IpAddress` | `string IpAddress { get; init; }` |  |
+| `Url` | `string Url { get; init; }` |  |
+
 ### Namespace `FileFormat.IcePacker`
 
 [`IcePackerFormatDescriptor`](#icepackerformatdescriptor) · [`IcePackerStream`](#icepackerstream)
