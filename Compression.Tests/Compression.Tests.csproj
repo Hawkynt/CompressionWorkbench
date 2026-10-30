@@ -139,6 +139,10 @@
     <EmbeddedResource Include="OneNote\ReferenceVectors\*.one">
       <LogicalName>OneNoteVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Chromium resource packs written by grit, grit's listing and the grit oracle; see ChromiumPak/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="ChromiumPak\ReferenceVectors\*.pak;ChromiumPak\ReferenceVectors\grit-listing.txt;ChromiumPak\ReferenceVectors\grit_oracle.py">
+      <LogicalName>ChromiumPakVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Sparsebundles written by Apple's hdiutil (keramics, ewfprobe test corpora); see
          AppleSparse/ReferenceVectors/README.md. The tests rebuild each bundle directory from these. -->
     <EmbeddedResource Include="AppleSparse\ReferenceVectors\**\*"
