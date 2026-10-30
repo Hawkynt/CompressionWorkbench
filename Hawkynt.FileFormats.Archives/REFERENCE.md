@@ -32319,6 +32319,67 @@ Writes a WIM (Windows Imaging) file to a stream.
 | `Write` | `void Write(IReadOnlyList<ValueTuple<string, byte[]>> files)` | Writes a complete WIM file holding one image of the given named files. |
 | `Write` | `void Write(IReadOnlyList<byte[]> resources)` | Writes a complete WIM file holding the given resources, naming them `resource_0`, `resource_1` and so on. |
 
+### Namespace `FileFormat.WixBurn`
+
+[`WixBurnEntry`](#wixburnentry) · [`WixBurnFormatDescriptor`](#wixburnformatdescriptor) · [`WixBurnReader`](#wixburnreader)
+
+#### `WixBurnEntry`
+
+A payload of a WiX Burn bundle.
+
+Implements `IEquatable<WixBurnEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WixBurnEntry` | `WixBurnEntry(string FileName, int Container, string SourcePath, long Size, byte[] Hash)` | A payload of a WiX Burn bundle. |
+| `Container` | `int Container { get; init; }` | Index of the attached container holding it (0 = the UX container). |
+| `FileName` | `string FileName { get; init; }` | "UX/..." for the bootstrapper application, "AttachedContainer/..." for the chained packages and their payloads, as WiX's dark.exe extracts them. |
+| `Hash` | `byte[] Hash { get; init; }` | The manifest's hash of it (SHA-1 in WiX 3, SHA-512 later), or null. |
+| `Size` | `long Size { get; init; }` | Its size as the manifest records it, or -1 when the manifest gives none. |
+| `SourcePath` | `string SourcePath { get; init; }` | The payload's name inside its container's cabinet ("u0", "a3", ...). |
+
+#### `WixBurnFormatDescriptor`
+
+WiX Burn bundle (the setup.exe WiX's light.exe / wix build makes from a <Bundle>): the bootstrapper application, the Burn manifest and the attached packages with their payloads. References: `https://wixtoolset.org/docs/tools/burn/` — Burn`docs/WIX-BURN-ON-DISK.md` — the layout as measured on bundles light.exe built
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WixBurnFormatDescriptor` | `WixBurnFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `IsWixBurn` | `static bool IsWixBurn(Stream stream)` | True when the PE carries a ".wixburn" section with the Burn magic. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `WixBurnReader`
+
+Reads WiX Burn bundles: the engine exe's ".wixburn" section names the containers appended to it; container 0 is the bootstrapper-application cabinet, whose entry "0" is the Burn manifest; the others hold the chained packages. The manifest maps every cabinet entry to the payload's real path and hash.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WixBurnReader` | `WixBurnReader(Stream stream)` | Opens a bundle. |
+| `SectionMagic` | `const uint SectionMagic` | BURN_SECTION_MAGIC. |
+| `BundleId` | `Guid BundleId { get; }` | Gets the bundle id from the section header. |
+| `ContainerCount` | `int ContainerCount { get; }` | Gets the number of containers (UX included). |
+| `Entries` | `IReadOnlyList<WixBurnEntry> Entries { get; }` | Gets the payloads, UX first. |
+| `Manifest` | `byte[] Manifest { get; }` | Gets the raw Burn manifest XML. |
+| `SectionVersion` | `uint SectionVersion { get; }` | Gets the section format version (2 for WiX 3 and later). |
+| `StubSize` | `long StubSize { get; }` | Gets the size of the engine stub the containers follow. |
+| `Extract` | `byte[] Extract(WixBurnEntry entry)` | Returns a payload's bytes, checked against the manifest's hash. |
+| `FindSection` | `static byte[] FindSection(Stream stream)` | Returns the raw bytes of the ".wixburn" PE section, or null. |
+
 ### Namespace `FileFormat.WordPerfect`
 
 [`WordPerfectFormatDescriptor`](#wordperfectformatdescriptor)

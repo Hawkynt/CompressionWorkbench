@@ -509,6 +509,9 @@ public static partial class FormatDetector {
       var buf = new byte[2];
       var isPe = fs.Read(buf, 0, 2) >= 2 && buf[0] == 'M' && buf[1] == 'Z';
 
+      // WiX Burn: the engine's ".wixburn" section lists the cabinets appended to it.
+      if (isPe && FileFormat.WixBurn.WixBurnFormatDescriptor.IsWixBurn(fs)) return Format.WixBurn;
+
       // IExpress / wextract: the cabinet lives in the RT_RCDATA resource "CABINET".
       if (isPe && FileFormat.IExpress.IExpressFormatDescriptor.IsIExpress(fs)) return Format.IExpress;
 

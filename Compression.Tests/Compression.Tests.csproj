@@ -102,6 +102,10 @@
     <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
       <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- A bundle built by WiX 3.14 candle/light, plus dark.exe's extraction; see WixBurn/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="WixBurn\ReferenceVectors\*.gz;WixBurn\ReferenceVectors\oracle.tsv">
+      <LogicalName>WixBurnVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>
