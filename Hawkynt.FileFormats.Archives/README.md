@@ -212,6 +212,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
 | [Adobe Illustrator](https://en.wikipedia.org/wiki/Adobe_Illustrator_Artwork) | `Ai` |  | R | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Adobe_Illustrator) |
 | [DOC](https://en.wikipedia.org/wiki/Doc_(computing)) | `Doc` | `.doc` | R/W | ✅ | wipe | CFB envelope; Word document streams are not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/) |
+| [Outlook Express DBX](http://fileformats.archiveteam.org/wiki/Outlook_Express_Database) | `Dbx` | `.dbx` | R | ✅ | — | Messages as message_NNNN.eml, byte-identical to undbx; Folders.dbx as folders.ini | [Archive Team](http://fileformats.archiveteam.org/wiki/Outlook_Express_Database) |
 | [DOCX](https://en.wikipedia.org/wiki/Office_Open_XML) | `Docx` | `.docx` | R/W | ✅ | defrag · wipe |  | [ecma-international.org](https://ecma-international.org/publications-and-standards/standards/ecma-376/) |
 | [EML](https://en.wikipedia.org/wiki/Email#Message_format) | `Eml` | `.eml` | R/W | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc5322) |
 | [EPUB](https://en.wikipedia.org/wiki/EPUB) | `Epub` | `.epub` | R/W | ✅ | defrag · wipe |  | [w3.org](https://www.w3.org/TR/epub-33/) |
