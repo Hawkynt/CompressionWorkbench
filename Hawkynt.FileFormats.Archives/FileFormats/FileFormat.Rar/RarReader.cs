@@ -31,6 +31,8 @@ public sealed class RarReader : IDisposable {
   private Rar5Decoder? _solidDecoder;
   private int _lastSolidDictSize;
   private Rar3Decoder? _solidRar3Decoder;
+  private object? _legacyDecoder;
+  private int _legacyNextIndex = -1;
 
   // Recovery record state
   private long _recoveryHeaderOffset; // start of recovery service header
@@ -259,12 +261,11 @@ public sealed class RarReader : IDisposable {
         : compressed;
     } else {
       var unpackVer = detail.Version;
-      if (unpackVer <= 15) {
-        var decoder = new Rar1Decoder();
-        decompressed = decoder.Decompress(compressed, (int)detail.UnpackedSize);
-      } else if (unpackVer <= 20) {
-        var decoder = new Rar2Decoder();
-        decompressed = decoder.Decompress(compressed, (int)detail.UnpackedSize);
+      if (unpackVer <= 26) {
+        if (detail.Salt != null)
+          throw new NotSupportedException($"Entry '{entry.Name}' uses RAR {(unpackVer <= 15 ? "1.5" : "2.0")} encryption, which is not supported.");
+
+        decompressed = this.DecodeLegacyRar(entryIndex, compressed);
       } else if (unpackVer <= 36) {
         Rar3Decoder decoder;
         if (detail.IsSolid && this._solidRar3Decoder != null)
@@ -287,6 +288,54 @@ public sealed class RarReader : IDisposable {
           $"CRC-32 mismatch for '{entry.Name}': expected 0x{entry.Crc.Value:X8}, computed 0x{computed:X8}.");
     }
   }
+
+  /// <summary>
+  /// Unpacks a RAR 1.5 or 2.0 entry. A solid entry continues the decoder of the entry before it;
+  /// when that is not the one decoded last, the solid run is replayed from its first entry.
+  /// </summary>
+  private byte[] DecodeLegacyRar(int entryIndex, byte[] compressed) {
+    var detail = this._rar4Details[entryIndex];
+    if (!detail.IsSolid || this._legacyDecoder == null || !this.ContinuesLegacyRun(entryIndex)) {
+      var start = entryIndex;
+      if (detail.IsSolid)
+        while (start > 0 && this._rar4Details[start].IsSolid)
+          --start;
+
+      this._legacyDecoder = detail.Version <= 15 ? new Rar1Decoder() : new Rar2Decoder();
+      for (var i = start; i < entryIndex; ++i) {
+        var earlier = this._rar4Details[i];
+        if (earlier.Method == RarConstants.Rar4MethodStore || earlier.UnpackedSize == 0)
+          continue;
+
+        this._stream.Position = earlier.DataOffset;
+        var packed = new byte[earlier.DataSize];
+        this._stream.ReadExactly(packed);
+        this.RunLegacyDecoder(packed, (int)earlier.UnpackedSize);
+      }
+    }
+
+    this._legacyNextIndex = entryIndex + 1;
+    return this.RunLegacyDecoder(compressed, (int)detail.UnpackedSize);
+  }
+
+  private bool ContinuesLegacyRun(int entryIndex) {
+    if (this._legacyNextIndex < 0 || this._legacyNextIndex > entryIndex)
+      return false;
+
+    for (var i = this._legacyNextIndex; i < entryIndex; ++i) {
+      var skipped = this._rar4Details[i];
+      if (skipped.UnpackedSize > 0 && skipped.Method != RarConstants.Rar4MethodStore)
+        return false;
+    }
+
+    return true;
+  }
+
+  private byte[] RunLegacyDecoder(byte[] packed, int unpackedSize) => this._legacyDecoder switch {
+    Rar1Decoder rar15 => rar15.Decompress(packed, unpackedSize),
+    Rar2Decoder rar20 => rar20.Decompress(packed, unpackedSize),
+    _ => throw new InvalidOperationException("No RAR 1.5/2.0 decoder is active."),
+  };
 
   /// <summary>
   /// Verifies the recovery record by checking Reed-Solomon parity data against archive contents.

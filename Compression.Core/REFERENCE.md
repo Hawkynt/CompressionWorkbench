@@ -2956,21 +2956,21 @@ Decodes QuickLZ 1.5.0 level-1 and level-3 payloads.
 
 #### `Rar1Decoder`
 
-Decompressor for RAR v1.x archives (UnPack 1.5 algorithm). Uses static Huffman tables and a 64 KB sliding window.
+Decompressor for RAR 1.5 packed data (unpack version 15): LZSS over a 64 KB window, coded with fixed Huffman tables picked by running averages, self-organising byte tables and a stored-run mode.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Rar1Decoder` | `Rar1Decoder()` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> compressed, int unpackedSize)` | Decompresses RAR v1.x data. |
+| `Rar1Decoder` | `Rar1Decoder()` | Starts a new solid stream. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> compressed, int unpackedSize)` | Decodes the next file of the stream. |
 
 #### `Rar2Decoder`
 
-Decompressor for RAR v2.x archives (UnPack 2.0 algorithm). Uses 3 adaptive Huffman tables (main, distance, length) and a sliding window.
+Decompressor for RAR 2.0 packed data (unpack version 20 and 26): LZSS over a window of up to 1 MB with three transmitted Huffman tables, or the multimedia mode that predicts up to four interleaved audio channels.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Rar2Decoder` | `Rar2Decoder()` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> compressed, int unpackedSize)` | Decompresses RAR v2.x data. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> compressed, int unpackedSize)` | Decodes the next file of the stream. |
 
 #### `Rar3BuildingBlock`
 
