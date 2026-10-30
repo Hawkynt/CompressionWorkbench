@@ -2673,6 +2673,7 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `DecompressRawByte` | `static byte[] DecompressRawByte(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2B 8-bit stream (no 4-byte size prefix). UPX compression method 6 uses this width — bits are packed into single bytes and consumed MSB-first; the decoder cursor advances by 1 on each bit-word refill. |
 | `DecompressRawLe16` | `static byte[] DecompressRawLe16(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2B LE16 stream (no 4-byte size prefix). UPX compression methods 4 and the LE16 variants use this width — bits are packed into 16-bit little-endian words and consumed MSB-first; the decoder cursor advances by 2 on each bit-word refill. |
+| `DecompressRawUpTo` | `static byte[] DecompressRawUpTo(ReadOnlySpan<byte> compressed, int maxOutputSize)` | Decompresses a bare NRV2B LE32 stream that may be shorter than `maxOutputSize`: decoding stops at the end-of-stream code and the result is trimmed to what was produced. For callers that only know an upper bound, such as section scanners. |
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2B LE32 stream (no 4-byte size prefix) into a freshly-allocated buffer of exactly `exactOutputSize` bytes. Exposed for callers parsing UPX binaries or other embedded NRV2B streams. |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
@@ -2696,6 +2697,7 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `DecompressRawByte` | `static byte[] DecompressRawByte(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2D 8-bit stream (no 4-byte size prefix). UPX compression method 7 uses this width — bits are packed into single bytes and consumed MSB-first. |
 | `DecompressRawLe16` | `static byte[] DecompressRawLe16(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2D LE16 stream (no 4-byte size prefix). UPX compression method 5 uses this width — bits are packed into 16-bit little-endian words and consumed MSB-first. |
+| `DecompressRawUpTo` | `static byte[] DecompressRawUpTo(ReadOnlySpan<byte> compressed, int maxOutputSize)` | Decompresses a bare NRV2D LE32 stream that may be shorter than `maxOutputSize`: decoding stops at the end-of-stream code and the result is trimmed to what was produced. For callers that only know an upper bound, such as section scanners. |
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2D LE32 stream (no 4-byte size prefix) into a freshly-allocated buffer of exactly `exactOutputSize` bytes. Exposed for callers parsing UPX binaries or other embedded NRV2D streams. |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
@@ -2719,6 +2721,7 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `DecompressRawByte` | `static byte[] DecompressRawByte(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2E 8-bit stream (no 4-byte size prefix). UPX compression method 10 uses this width — bits are packed into single bytes and consumed MSB-first. |
 | `DecompressRawLe16` | `static byte[] DecompressRawLe16(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2E LE16 stream (no 4-byte size prefix). UPX compression method 9 uses this width — bits are packed into 16-bit little-endian words and consumed MSB-first. |
+| `DecompressRawUpTo` | `static byte[] DecompressRawUpTo(ReadOnlySpan<byte> compressed, int maxOutputSize)` | Decompresses a bare NRV2E LE32 stream that may be shorter than `maxOutputSize`: decoding stops at the end-of-stream code and the result is trimmed to what was produced. For callers that only know an upper bound, such as section scanners. |
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int exactOutputSize)` | Decompresses a bare NRV2E LE32 stream (no 4-byte size prefix) into a freshly-allocated buffer of exactly `exactOutputSize` bytes. Exposed for callers parsing UPX binaries or other embedded NRV2E streams. |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 

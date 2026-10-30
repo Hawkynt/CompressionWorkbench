@@ -59,8 +59,6 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
     BinaryPrimitives.WriteInt32LittleEndian(header, data.Length);
     ms.Write(header);
 
-    if (data.Length == 0) return ms.ToArray();
-
     CompressBareInto(ms, data, refillWidthBytes: 4);
     return ms.ToArray();
   }
@@ -75,7 +73,7 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
   /// </summary>
   internal static byte[] CompressBare(ReadOnlySpan<byte> data, int refillWidthBytes) {
     using var ms = new MemoryStream();
-    if (data.Length > 0) CompressBareInto(ms, data, refillWidthBytes);
+    CompressBareInto(ms, data, refillWidthBytes);
     return ms.ToArray();
   }
 
@@ -135,6 +133,7 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
       }
     }
 
+    enc.EmitEnd();
     enc.Flush();
   }
 
@@ -172,7 +171,15 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
   public static byte[] DecompressRawByte(ReadOnlySpan<byte> compressed, int exactOutputSize) =>
     DecompressCore(compressed, exactOutputSize, refillWidthBytes: 1);
 
-  private static byte[] DecompressCore(ReadOnlySpan<byte> compressed, int targetSize, int refillWidthBytes = 4) {
+  /// <summary>
+  /// Decompresses a bare NRV2B LE32 stream that may be shorter than <paramref name="maxOutputSize"/>:
+  /// decoding stops at the end-of-stream code and the result is trimmed to what was produced.
+  /// For callers that only know an upper bound, such as section scanners.
+  /// </summary>
+  public static byte[] DecompressRawUpTo(ReadOnlySpan<byte> compressed, int maxOutputSize) =>
+    DecompressCore(compressed, maxOutputSize, refillWidthBytes: 4, exact: false);
+
+  private static byte[] DecompressCore(ReadOnlySpan<byte> compressed, int targetSize, int refillWidthBytes = 4, bool exact = true) {
     var output = new byte[targetSize];
     var reader = new Nrv2bDecoder(compressed, refillWidthBytes);
 
@@ -212,6 +219,14 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
       var totalToEmit = (int)mLen + 1;
       for (var i = 0; i < totalToEmit && op < output.Length; i++)
         output[op++] = output[src + i];
+    }
+
+    // The end-of-stream code arrived before the expected size: an exact caller has the
+    // wrong size, or the wrong codec.
+    if (op < output.Length) {
+      if (exact)
+        throw new InvalidDataException($"NRV2B: end of stream after {op} of {output.Length} bytes.");
+      return output[..op];
     }
 
     return output;
@@ -289,6 +304,18 @@ public sealed class Nrv2bBuildingBlock : IBuildingBlock {
         this.WriteBit(0);
         this.WriteVarInt((uint)(mLen - 2));
       }
+    }
+
+    /// <summary>
+    /// Ends the stream the way UCL does: a match whose offset varint is 0x1000002 and whose
+    /// offset byte is 0xFF, which the decoder reads as offset 0xFFFFFFFF. UCL's and UPX's
+    /// decoders stop only there; without it they run past the data.
+    /// </summary>
+    public void EmitEnd() {
+      this.WriteBit(0);
+      this.WriteVarIntExceptFinalContinue(0x1000002);
+      this._pendingBytes.Add(0xFF);
+      this.WriteBit(1);
     }
 
     public void Flush() {
