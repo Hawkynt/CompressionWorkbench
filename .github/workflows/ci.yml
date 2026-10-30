@@ -283,6 +283,17 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Ecm.EcmExternalConformanceTests" \
             --logger "trx;LogFileName=ecm-oracle-tests.trx"
 
+      # Hard gate: xdms verifies real samples and restores archives written here.
+      - name: DMS oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_XDMS: "1"
+        run: |
+          sudo apt-get install -y xdms
+          dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Dms.DmsExternalConformanceTests" \
+            --logger "trx;LogFileName=dms-oracle-tests.trx"
+
       # Hard gate, both directions: PowerISO for Linux (freeware, checksum-pinned, used as a black
       # box) converts our DAA images back to identical ISOs, and we read the DAA images it writes.
       - name: DAA oracle

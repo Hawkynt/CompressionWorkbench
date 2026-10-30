@@ -13860,11 +13860,11 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 ### Namespace `FileFormat.Dms`
 
-[`DmsFormatDescriptor`](#dmsformatdescriptor) · [`DmsHeader`](#dmsheader) · [`DmsReader`](#dmsreader) · [`DmsTrack`](#dmstrack) · [`DmsWriter`](#dmswriter)
+[`DmsFormatDescriptor`](#dmsformatdescriptor) · [`DmsHeader`](#dmsheader) · [`DmsReader`](#dmsreader) · [`DmsTrackHeader`](#dmstrackheader) · [`DmsWriter`](#dmswriter)
 
 #### `DmsFormatDescriptor`
 
-Amiga Disk Masher System (DMS) — track-based floppy-disk archiver ubiquitous in the Amiga scene. References: xDMS by Andre R. de la Rocha — open-source DMS extractor and de-facto format reference`https://en.wikipedia.org/wiki/Disk_Masher_System` — format overview
+Amiga Disk Masher System (DMS) — track-based floppy-disk archiver ubiquitous in the Amiga scene. References: libxad DMS client (Dirk Stöcker, LGPL-2.1-or-later) — converted for the decoders; see THIRD-PARTY-NOTICE.libxad.txtxDMS (public domain) and unar — black-box oracles in the tests`https://en.wikipedia.org/wiki/Disk_Masher_System` — format overview
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
@@ -13886,78 +13886,88 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts the disk image then re-emits the DMS file. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts the disk image then re-emits the DMS file. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the disk image (every track CRC- and sum-checked), the texts and the metadata. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists `metadata.ini`, `disk.adf` (the data tracks in file order) and any banner or FILE_ID.DIZ text tracks. Never throws: an unreadable archive lists as `FULL.dms`. |
 
 #### `DmsHeader`
 
-Represents the 56-byte file header of a DMS archive.
+The 56-byte DMS file header (big-endian).
+
+Implements `IEquatable<DmsHeader>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DmsHeader` | `DmsHeader()` |  |
-| `CompressionMode` | `ushort CompressionMode { get; init; }` | Overall compression mode used. |
-| `CpuSpeed` | `ushort CpuSpeed { get; init; }` | CPU speed indicator. |
-| `CpuType` | `ushort CpuType { get; init; }` | CPU type that created the archive. |
-| `CreatedDay` | `ushort CreatedDay { get; init; }` | Creation day (Amiga date format). |
-| `CreatedMinute` | `ushort CreatedMinute { get; init; }` | Creation minute within the day. |
-| `CreatedTick` | `ushort CreatedTick { get; init; }` | Creation tick within the minute (50ths of a second). |
-| `CreatorVersion` | `ushort CreatorVersion { get; init; }` | Creator version number. |
-| `DiskType` | `ushort DiskType { get; init; }` | Disk type (0 = standard Amiga DD). |
-| `From` | `ushort From { get; init; }` | First track number in the archive. |
-| `HighTrack` | `ushort HighTrack { get; init; }` | High track number (valid range end). |
-| `InfoFlags` | `uint InfoFlags { get; init; }` | Info flags (bit 0 = locked, bit 1 = noDMS, bit 4 = has info text, etc.). |
-| `LowTrack` | `ushort LowTrack { get; init; }` | Low track number (valid range start). |
-| `Magic` | `uint Magic { get; init; }` | Magic number (should be 0x444D5321 = "DMS!"). |
-| `NeededVersion` | `ushort NeededVersion { get; init; }` | Minimum version needed to extract. |
-| `PackedSize` | `uint PackedSize { get; init; }` | Total packed (compressed) data size. |
-| `To` | `ushort To { get; init; }` | Last track number in the archive. |
-| `UnpackedSize` | `uint UnpackedSize { get; init; }` | Total unpacked (uncompressed) data size. |
+| `DmsHeader` | `DmsHeader(uint Id, uint InfoFlags, uint Date, ushort LowTrack, ushort HighTrack, uint PackedSize, uint UnpackedSize, ushort OsVersion, ushort OsRevision, ushort Cpu, ushort Fpu, ushort Machine, ushort DiskType2, ushort CpuSpeed, uint CreationTime, ushort CreatorVersion, ushort NeededVersion, ushort DiskType, ushort CompressionMode)` | The 56-byte DMS file header (big-endian). |
+| `CompressionMode` | `ushort CompressionMode { get; init; }` |  |
+| `CpuSpeed` | `ushort CpuSpeed { get; init; }` |  |
+| `Cpu` | `ushort Cpu { get; init; }` |  |
+| `CreationTime` | `uint CreationTime { get; init; }` |  |
+| `CreatorVersion` | `ushort CreatorVersion { get; init; }` |  |
+| `Date` | `uint Date { get; init; }` | Creation time, Unix seconds. |
+| `DiskType2` | `ushort DiskType2 { get; init; }` |  |
+| `DiskType` | `ushort DiskType { get; init; }` |  |
+| `Fpu` | `ushort Fpu { get; init; }` |  |
+| `HighTrack` | `ushort HighTrack { get; init; }` |  |
+| `Id` | `uint Id { get; init; }` | Bytes 4–7: `" PRO"` or `"FILE"`. |
+| `InfoFlags` | `uint InfoFlags { get; init; }` | Bit 1 encrypted, bit 2 appended archives, bit 3 banner, bit 4 high density, bit 8 FILE_ID.DIZ. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` |  |
+| `LowTrack` | `ushort LowTrack { get; init; }` |  |
+| `Machine` | `ushort Machine { get; init; }` |  |
+| `NeededVersion` | `ushort NeededVersion { get; init; }` |  |
+| `OsRevision` | `ushort OsRevision { get; init; }` |  |
+| `OsVersion` | `ushort OsVersion { get; init; }` |  |
+| `PackedSize` | `uint PackedSize { get; init; }` |  |
+| `UnpackedSize` | `uint UnpackedSize { get; init; }` |  |
 
 #### `DmsReader`
 
-Reads and extracts tracks from an Amiga DMS (Disk Masher System) archive.
+Reads an Amiga DMS archive: verifies the header and track CRCs, decodes every track with one stateful `DmsDecoder` in file order, and checks each decoded track's sum.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DmsReader` | `DmsReader(Stream stream, bool leaveOpen = false)` | Initializes a new `DmsReader` and parses the archive. |
-| `Entries` | `IReadOnlyList<DmsTrack> Entries { get; }` | Gets the track entries present in the archive. |
-| `Header` | `DmsHeader Header { get; }` | Gets the file header. |
+| `DmsReader` | `DmsReader(Stream stream, bool leaveOpen = false, string password = null)` |  |
+| `DataTracks` | `IEnumerable<DmsTrackHeader> DataTracks { get; }` | The disk-data tracks (cylinders), in file order. |
+| `Entries` | `IReadOnlyList<DmsTrackHeader> Entries { get; }` | Every track in file order, text tracks included. |
+| `Header` | `DmsHeader Header { get; }` |  |
 | `Dispose` | `void Dispose()` |  |
-| `ExtractDisk` | `byte[] ExtractDisk()` | Extracts the entire disk image by concatenating all decompressed tracks in order. |
-| `Extract` | `byte[] Extract(DmsTrack track)` | Extracts and decompresses the data for the given track. |
+| `ExtractDisk` | `byte[] ExtractDisk()` | The disk image: every data track's bytes, in file order (as xDMS writes them). |
+| `Extract` | `byte[] Extract(DmsTrackHeader track)` | Decoded bytes of `track` (all earlier tracks are decoded first; DMS state is sequential). |
+| `TextEntries` | `IEnumerable<ValueTuple<string, byte[]>> TextEntries()` | Banner and FILE_ID.DIZ texts, keyed by a file name. |
 
-#### `DmsTrack`
+#### `DmsTrackHeader`
 
-Represents a track entry within a DMS archive.
+The 20-byte header in front of every DMS track (big-endian).
+
+Implements `IEquatable<DmsTrackHeader>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DmsTrack` | `DmsTrack()` |  |
-| `CompressedCrc` | `ushort CompressedCrc { get; init; }` | CRC-16 of the compressed data. |
-| `CompressedSize` | `ushort CompressedSize { get; init; }` | Size of the compressed track data in bytes. |
-| `CompressionMode` | `byte CompressionMode { get; init; }` | Compression mode used for this track. |
-| `DataOffset` | `long DataOffset { get; init; }` | Offset in the stream where the compressed track data starts. |
-| `Flags` | `byte Flags { get; init; }` | Flags byte. |
-| `TrackNumber` | `ushort TrackNumber { get; init; }` | Track number. |
-| `UncompressedCrc` | `ushort UncompressedCrc { get; init; }` | CRC-16 of the uncompressed data. |
-| `UncompressedSize` | `ushort UncompressedSize { get; init; }` | Size of the uncompressed track data in bytes (normally 11264 for a cylinder). |
+| `DmsTrackHeader` | `DmsTrackHeader(short Number, ushort PackedSize, ushort RuntimeSize, ushort UnpackedSize, byte Flags, byte Mode, ushort DataChecksum, ushort PackedCrc, long DataOffset)` | The 20-byte header in front of every DMS track (big-endian). |
+| `DataChecksum` | `ushort DataChecksum { get; init; }` | 16-bit sum of the decoded bytes. |
+| `DataOffset` | `long DataOffset { get; init; }` |  |
+| `Flags` | `byte Flags { get; init; }` |  |
+| `IsText` | `bool IsText { get; }` | Banner, FILE_ID.DIZ or the 1 KiB advertising pseudo boot block — text, not disk data. |
+| `Mode` | `byte Mode { get; init; }` |  |
+| `Number` | `short Number { get; init; }` | Signed: 0–79 cylinders, 80 FILE_ID.DIZ, negative banner text. |
+| `PackedCrc` | `ushort PackedCrc { get; init; }` | CRC-16 of the stored bytes. |
+| `PackedSize` | `ushort PackedSize { get; init; }` | Bytes stored in the file after the header. |
+| `RuntimeSize` | `ushort RuntimeSize { get; init; }` | Size after the first decompression stage (before RLE). |
+| `UnpackedSize` | `ushort UnpackedSize { get; init; }` | Decoded track size. |
 
 #### `DmsWriter`
 
-Creates an Amiga DMS (Disk Masher System) archive.
+Writes an Amiga DMS archive with stored (mode 0) or Simple RLE (mode 1) tracks. Both modes are stateless, so every track carries the reset flag of a standalone track, and the header's totals, track range and CRC are patched on dispose.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DmsWriter` | `DmsWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `DmsWriter`. |
+| `DmsWriter` | `DmsWriter(Stream stream, bool leaveOpen = false)` |  |
 | `Dispose` | `void Dispose()` |  |
-| `WriteDisk` | `void WriteDisk(byte[] diskImage, int compressionMode = 0, int trackSize = 11264)` | Convenience method: splits a disk image into tracks and writes all of them. |
-| `WriteHeader` | `void WriteHeader(DmsHeader header)` | Writes the 56-byte file header. Must be called before writing any tracks. The header will be updated on dispose with correct track ranges and sizes. |
-| `WriteTrack` | `void WriteTrack(int trackNumber, byte[] data, int compressionMode = 0)` | Compresses and writes one track to the archive. |
+| `WriteDisk` | `void WriteDisk(ReadOnlySpan<byte> image, int compressionMode = 0)` | Writes a disk image as consecutive 11 264-byte cylinders (the last may be shorter). |
+| `WriteTrack` | `void WriteTrack(int trackNumber, ReadOnlySpan<byte> data, int compressionMode = 0)` | Appends one track. `compressionMode` 0 stores, 1 RLE-codes (falling back to stored when RLE does not help). |
 
 ### Namespace `FileFormat.Doc`
 

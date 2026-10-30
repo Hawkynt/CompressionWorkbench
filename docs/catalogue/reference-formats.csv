@@ -281,7 +281,7 @@ Acronis True Image,tib;tibx,disk-image,,,,,,,Y,1,,AcronisTib;AcronisTibx,Y,,Y,RE
 PartImage,partimg,disk-image,,,,,,,Y,1,,,,,,MISSING,,
 SafeGuard encrypted virtual disk,hdr;vol,disk-image,,,,,,fmt/887,,1,,,,,,MISSING,,
 "Amiga Disk File (ADF, OFS/FFS)",adf;ffs2,filesystem,,,R,,R,fmt/1361,Y,4,https://en.wikipedia.org/wiki/Amiga_Fast_File_System,Adf,Y,Y,Y,OK,,
-DMS (Disk Masher),dms,disk-image,,,R,,,,,1,,Dms,Y,Y,,PARTIAL,,NONE/SIMPLE/QUICK only; MEDIUM/DEEP/HEAVY1/HEAVY2 throw (DmsReader.cs)
+DMS (Disk Masher),dms,disk-image,,,R,,,,,1,https://github.com/MacPaw/XADMaster/blob/master/libxad/clients/DMS.c,Dms,Y,Y,,OK,,"all modes decoded (libxad conversion); Medium/Heavy2 proven on Aminet samples against xdms, Quick/Deep/Heavy1 guarded by the track checksum; writer emits stored/RLE tracks xdms accepts"
 G64 (Commodore GCR),g64;g41;g71,disk-image,,,,,,fmt/821,,1,,G64,Y,Y,Y,OK,,
 Magic Shadow Archiver (MSA),msa,disk-image,,,,,,fmt/1472,,1,,Msa,Y,Y,Y,OK,,
 Pasti (STX),stx,disk-image,,,,,,fmt/1904,,1,,,,,,MISSING,,
