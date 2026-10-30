@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 22 | |
+| A | 23 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 1 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 10 | |
@@ -77,6 +77,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Compression.Core/Dictionary/Csc/` | libcsc (Fu Siyuan) | Unlicense | `THIRD-PARTY-NOTICE.libcsc.txt` |
 | `Compression.Core/Crypto/Rar20Cipher.cs`, `Compression.Core/Crypto/KeyDerivation.cs` | 7-Zip `CPP/7zip/Crypto/Rar20Crypto.cpp`, `RarAes.cpp` (Igor Pavlov) | LGPL-2.1-or-later — taken under LGPL-3.0 | `Compression.Core/Crypto/THIRD-PARTY-NOTICE.7-Zip.txt` |
 | `Compression.Core/Dictionary/Arj/ArjFastestDecoder.cs` | XADMaster `XADARJFastestHandle.m` (Dag Ågren, MacPaw), revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Arj/THIRD-PARTY-NOTICE.XADMaster.txt` |
+| `Compression.Core/Entropy/Ppmd/Ppmd7.cs`, `Compression.Core/Entropy/Ppmd/Ppmd7.Encoder.cs`, `Compression.Core/Entropy/Ppmd/SevenZipPpmdRangeCoder.cs` | Igor Pavlov `Ppmd7.c` (via libarchive v3.7.7), `Ppmd7Enc.c`, `Ppmd7Dec.c` (7-Zip 9.20) | public domain | `Compression.Core/Entropy/Ppmd/THIRD-PARTY-NOTICE.Ppmd7.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Zpaq/` | libzpaq / zpaq 7.15 (Matt Mahoney) | public domain (Unlicense) | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Zpaq/THIRD-PARTY-NOTICE.libzpaq.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/DiskDoublerReader.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/DiskDoublerAdDecoder.cs` | XADMaster `XADDiskDoublerParser.m` and `XADDiskDoublerADnHandle.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DiskDoubler/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Compression.Core/Dictionary/Lzh/Lh2Decoder.cs`, `Compression.Core/Dictionary/Lzh/Lh3Decoder.cs`, `Compression.Core/Dictionary/Lzh/LhaLegacyBitReader.cs` | XADMaster `XADLZHOldHandles.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.XADMaster.txt` |

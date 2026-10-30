@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesCryptor`](#aescryptor) · [`Blowfish`](#blowfish) · [`KeyDerivation`](#keyderivation)
+[`AesCryptor`](#aescryptor) · [`Blowfish`](#blowfish) · [`KeyDerivation`](#keyderivation) · [`Rar20Cipher`](#rar20cipher)
 
 #### `AesCryptor`
 
@@ -218,9 +218,21 @@ Key derivation functions for password-based encryption.
 | --- | --- | --- |
 | `Pbkdf2Sha1` | `static byte[] Pbkdf2Sha1(string password, ReadOnlySpan<byte> salt, int iterations, int keyLength)` | Derives a key using PBKDF2 with HMAC-SHA1. Used by older ZIP encryption and WinZip AE-1. |
 | `Pbkdf2Sha256` | `static byte[] Pbkdf2Sha256(string password, ReadOnlySpan<byte> salt, int iterations, int keyLength)` | Derives a key using PBKDF2 with HMAC-SHA256. Used by ZIP AES encryption (WinZip AE-1/AE-2). |
-| `Rar3DeriveKey` | `static ValueTuple<byte[], byte[]> Rar3DeriveKey(string password, ReadOnlySpan<byte> salt)` | Derives a 16-byte AES-128 key and 16-byte IV for RAR3/4 decryption. RAR3 iterates SHA-1 262144 times over (salt + password_utf16le + counter). |
+| `Rar3DeriveKey` | `static ValueTuple<byte[], byte[]> Rar3DeriveKey(string password, ReadOnlySpan<byte> salt)` | Derives a 16-byte AES-128 key and 16-byte IV for RAR3/4 decryption. RAR3 iterates SHA-1 262144 times over (password_utf16le + salt + 3-byte counter); the IV takes byte 19 of every 16384th intermediate digest and the key is the first four digest words with their bytes reversed. |
 | `Rar5DeriveKey` | `static byte[] Rar5DeriveKey(string password, ReadOnlySpan<byte> salt, int iterations)` | Derives a key using the RAR5 key derivation (PBKDF2-HMAC-SHA256 with specific parameters). |
 | `SevenZipDeriveKey` | `static byte[] SevenZipDeriveKey(string password, ReadOnlySpan<byte> salt, int numCyclesPower)` | Derives a key using the 7z AES key derivation (SHA-256 iterated). 7z uses: key = SHA256^(2^numCyclesPower)(salt + password_utf16le) |
+
+#### `Rar20Cipher`
+
+The RAR 2.0 file cipher: a 32-round, 128-bit-block Feistel network whose round function is a password-permuted byte substitution, with keys that absorb CRC-32 table words of every ciphertext block. Used by RAR 2.x archives (unpack versions 20 to 28); RAR 2.9 and later use AES.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Rar20Cipher` | `Rar20Cipher(ReadOnlySpan<byte> password)` | Keys the cipher with `password` (the archiver's OEM-code-page bytes). |
+| `BlockSize` | `const int BlockSize` | Cipher block size. |
+| `MaxPasswordLength` | `const int MaxPasswordLength` | Longest password prefix that takes part in the key schedule. |
+| `Decrypt` | `void Decrypt(Span<byte> data)` | Decrypts whole blocks in place; a trailing partial block is left as it is. |
+| `Encrypt` | `void Encrypt(Span<byte> data)` | Encrypts whole blocks in place; a trailing partial block is left as it is. |
 
 ### Namespace `Compression.Core.DataStructures`
 
@@ -2981,12 +2993,12 @@ Decompressor for RAR v1.x archives (UnPack 1.5 algorithm). Uses static Huffman t
 
 #### `Rar2Decoder`
 
-Decompressor for RAR v2.x archives (UnPack 2.0 algorithm). Uses 3 adaptive Huffman tables (main, distance, length) and a sliding window.
+Decoder for the RAR 2.0 compression format (RAR 2.x archives, unpack versions 20 and 26): LZ77 with three Huffman codes, and the multi-channel audio predictor.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Rar2Decoder` | `Rar2Decoder()` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> compressed, int unpackedSize)` | Decompresses RAR v2.x data. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> compressed, int unpackedSize)` | Decompresses the packed data of one file. |
 
 #### `Rar3BuildingBlock`
 
@@ -3006,21 +3018,21 @@ Implements `IBuildingBlock`.
 
 #### `Rar3Decoder`
 
-Decompressor for RAR v3.x/v4.x archives (UnPack 2.9 algorithm). Uses LZ77 + multi-table adaptive Huffman with repeated offsets and PPMd fallback. 4 Huffman tables: Main(299) + Dist(60) + LowDist(17) + RepLen(28).
+Decoder for the RAR 2.9 compression format (RAR 3.x/4.x archives, unpack version 29): LZ77 over a sliding window with four Huffman tables, PPMd variant H blocks, and the standard data filters.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Rar3Decoder` | `Rar3Decoder()` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> compressed, int unpackedSize, int windowBits = 22)` | Decompresses RAR v3.x/v4.x data. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> compressed, int unpackedSize, int windowBits = 22)` | Decompresses the packed data of one file. |
 
 #### `Rar3Encoder`
 
-RAR3 LZ+Huffman compression engine. Encodes data using adaptive multi-table Huffman coding with LZ77 match references, producing output compatible with `Rar3Decoder` and real WinRAR. 4 Huffman tables: Main(299) + Dist(60) + LowDist(17) + RepLen(28).
+Encoder for the RAR 2.9 compression format (RAR 3.x/4.x archives, unpack version 29), the counterpart of `Rar3Decoder`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Rar3Encoder` | `Rar3Encoder(int windowBits = 22)` | Initializes a new `Rar3Encoder` with the specified window size. |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the RAR3 algorithm. |
+| `Rar3Encoder` | `Rar3Encoder(int windowBits = 22)` | Creates an encoder for a dictionary of 2^`windowBits` bytes. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses one file; call again for the next file of a solid archive. |
 
 #### `Rar5Decoder`
 
@@ -5239,7 +5251,39 @@ A clean-room neural compressor: an online-trained multi-layer perceptron (`Neura
 
 ### Namespace `Compression.Core.Entropy.Ppmd`
 
-[`PpmdBuildingBlock`](#ppmdbuildingblock) · [`PpmdContext`](#ppmdcontext) · [`PpmdModelBase`](#ppmdmodelbase) · [`PpmdModelBase.ContextKey`](#ppmdmodelbasecontextkey) · [`PpmdModelH`](#ppmdmodelh) · [`PpmdModelI`](#ppmdmodeli) · [`PpmdRangeDecoder`](#ppmdrangedecoder) · [`PpmdRangeEncoder`](#ppmdrangeencoder)
+[`IPpmd7RangeDecoder`](#ippmd7rangedecoder) · [`IPpmd7RangeEncoder`](#ippmd7rangeencoder) · [`Ppmd7`](#ppmd7) · [`PpmdBuildingBlock`](#ppmdbuildingblock) · [`PpmdContext`](#ppmdcontext) · [`PpmdModelBase`](#ppmdmodelbase) · [`PpmdModelBase.ContextKey`](#ppmdmodelbasecontextkey) · [`PpmdModelH`](#ppmdmodelh) · [`PpmdModelI`](#ppmdmodeli) · [`PpmdRangeDecoder`](#ppmdrangedecoder) · [`PpmdRangeEncoder`](#ppmdrangeencoder) · [`RarPpmdRangeDecoder`](#rarppmdrangedecoder) · [`SevenZipPpmd`](#sevenzipppmd) · [`SevenZipPpmdRangeDecoder`](#sevenzipppmdrangedecoder) · [`SevenZipPpmdRangeEncoder`](#sevenzipppmdrangeencoder)
+
+#### `IPpmd7RangeDecoder`
+
+The range decoder a `Ppmd7` model draws its symbols from.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodeBit` | `uint DecodeBit(uint size0)` | Decodes one binary decision with probability `size0` / 2^14 for 0. |
+| `Decode` | `void Decode(uint start, uint size)` | Consumes the interval [`start`, `start` + `size`). |
+| `GetThreshold` | `uint GetThreshold(uint total)` | Scales the range to `total` and returns the current count. |
+
+#### `IPpmd7RangeEncoder`
+
+The range encoder a `Ppmd7` model writes its symbols to.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EncodeBit` | `void EncodeBit(uint size0, uint bit)` | Codes a binary decision of value `bit`, 0 having probability `size0` / 2^14. |
+| `Encode` | `void Encode(uint start, uint size, uint total)` | Codes the interval [`start`, `start` + `size`) of `total`. |
+
+#### `Ppmd7`
+
+PPMd variant H (Dmitry Shkarin) exactly as 7-Zip's Ppmd7 and RAR 3.x model it: the sub-allocator, the context tree, SEE and binary contexts, all in one byte heap.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ppmd7` | `Ppmd7()` | Builds the static tables. |
+| `InitEsc` | `uint InitEsc { get; set; }` | Escape frequency for new binary contexts; RAR may set it per block. |
+| `Allocate` | `void Allocate(uint size)` | Allocates (or keeps) a heap of `size` bytes. |
+| `DecodeSymbol` | `int DecodeSymbol(IPpmd7RangeDecoder rc)` | Decodes one symbol; -1 marks the end of the stream, -2 corrupt data. |
+| `EncodeSymbol` | `void EncodeSymbol(IPpmd7RangeEncoder rc, int symbol)` | Encodes one byte, or the end marker (-1), mirroring `DecodeSymbol`. |
+| `Initialize` | `void Initialize(int maxOrder)` | Resets the model for a new stream with the given maximum order. |
 
 #### `PpmdBuildingBlock`
 
@@ -5351,6 +5395,64 @@ Range encoder for PPMd, supporting multi-symbol frequency-based coding. Unlike t
 | `PpmdRangeEncoder` | `PpmdRangeEncoder(Stream output)` | Initializes a new `PpmdRangeEncoder` writing to the specified stream. |
 | `Encode` | `void Encode(uint lowCumFreq, uint freq, uint totalFreq)` | Encodes a symbol with the given cumulative frequency range. |
 | `Finish` | `void Finish()` | Flushes remaining state to the output, completing the encoding. |
+
+#### `RarPpmdRangeDecoder`
+
+The carry-less range decoder RAR 3.x uses for PPMd (Subbotin's coder, 15-bit bottom).
+
+Implements `IPpmd7RangeDecoder`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RarPpmdRangeDecoder` | `RarPpmdRangeDecoder(Func<byte> next)` | Starts decoding: reads the first four code bytes from `next`. |
+| `DecodeBit` | `uint DecodeBit(uint size0)` | Decodes one binary decision with probability `size0` / 2^14 for 0. |
+| `Decode` | `void Decode(uint start, uint size)` | Consumes the interval [`start`, `start` + `size`). |
+| `GetThreshold` | `uint GetThreshold(uint total)` | Scales the range to `total` and returns the current count. |
+
+#### `SevenZipPpmd`
+
+The 7z PPMd coder (method id `03 04 01`): PPMd variant H as `Ppmd7` models it, driven by 7-Zip's range coder.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MaxMemorySize` | `const uint MaxMemorySize` | The largest model memory 7-Zip accepts. |
+| `MaxOrder` | `const int MaxOrder` | The largest model order 7-Zip accepts. |
+| `MinMemorySize` | `const uint MinMemorySize` | The smallest model memory 7-Zip accepts (2 KiB). |
+| `MinOrder` | `const int MinOrder` | The smallest model order 7-Zip accepts. |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> props, byte[] packed, int unpackSize)` | Decompresses a 7z PPMd stream to exactly `unpackSize` bytes. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int order, uint memorySize)` | Compresses `data` the way 7-Zip does: no end marker, five flush bytes. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int order, uint memorySize, bool endMarker)` | Compresses `data`, optionally closing the stream with the end marker. |
+| `ParseProperties` | `static ValueTuple<int, uint> ParseProperties(ReadOnlySpan<byte> props)` | Reads order and memory size from the five coder-property bytes. |
+| `Properties` | `static byte[] Properties(int order, uint memorySize)` | Builds the five coder-property bytes for `order` and `memorySize`. |
+
+#### `SevenZipPpmdRangeDecoder`
+
+The range decoder 7-Zip pairs with PPMd variant H (7z coder 03 04 01): LZMA-style, 32-bit range, a leading zero byte, normalisation below 2^24.
+
+Implements `IPpmd7RangeDecoder`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SevenZipPpmdRangeDecoder` | `SevenZipPpmdRangeDecoder(byte[] input, int offset = 0)` | Starts decoding `input` at `offset`. |
+| `FinishedOk` | `bool FinishedOk { get; }` | True once the decoder stands exactly where the encoder's flush ended. |
+| `IsValidStart` | `bool IsValidStart { get; }` | False when the stream cannot have come from the encoder (non-zero first byte). |
+| `Overrun` | `int Overrun { get; }` | Bytes read past the end of the input (each read as zero). |
+| `DecodeBit` | `uint DecodeBit(uint size0)` | Decodes one binary decision with probability `size0` / 2^14 for 0. |
+| `Decode` | `void Decode(uint start, uint size)` | Consumes the interval [`start`, `start` + `size`). |
+| `GetThreshold` | `uint GetThreshold(uint total)` | Scales the range to `total` and returns the current count. |
+
+#### `SevenZipPpmdRangeEncoder`
+
+The range encoder matching `SevenZipPpmdRangeDecoder`.
+
+Implements `IPpmd7RangeEncoder`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SevenZipPpmdRangeEncoder` | `SevenZipPpmdRangeEncoder(Stream output)` | The range encoder matching `SevenZipPpmdRangeDecoder`. |
+| `EncodeBit` | `void EncodeBit(uint size0, uint bit)` | Codes a binary decision of value `bit`, 0 having probability `size0` / 2^14. |
+| `Encode` | `void Encode(uint start, uint size, uint total)` | Codes the interval [`start`, `start` + `size`) of `total`. |
+| `Flush` | `void Flush()` | Writes the final five bytes. |
 
 ### Namespace `Compression.Core.Entropy.RangeCoding`
 

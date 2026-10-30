@@ -11,3 +11,13 @@ Ppmd7.cs converts the model, the sub-allocator and the symbol decoder, plus the
 carry-less range decoder RAR 3.x uses. The C version keeps its heap behind a base
 pointer. Here it is a byte array addressed by offset, with the same layout, so the
 model behaves bit for bit like the C one.
+
+Ppmd7 encoder and 7z range coder — converted
+
+Source:   Ppmd7Enc.c and Ppmd7Dec.c by Igor Pavlov, 2010-03-12, from 7-Zip 9.20 (C/)
+Authors:  Igor Pavlov
+Licence:  Public domain ("2010-03-12 : Igor Pavlov : Public domain")
+
+Ppmd7.Encoder.cs converts Ppmd7_EncodeSymbol. SevenZipPpmdRangeCoder.cs converts
+the 7z range decoder (Ppmd7z_RangeDec) and encoder (Ppmd7z_RangeEnc), which 7-Zip's
+PPMd coder (method 03 04 01) uses instead of RAR's carry-less coder.

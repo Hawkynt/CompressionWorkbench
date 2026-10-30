@@ -68,7 +68,7 @@ public sealed class RarPpmdRangeDecoder : IPpmd7RangeDecoder {
 /// <c>archive_ppmd7.c</c>; see <c>THIRD-PARTY-NOTICE.Ppmd7.txt</c>. Heap references are byte
 /// offsets; offset 0 is the null reference.
 /// </remarks>
-public sealed class Ppmd7 {
+public sealed partial class Ppmd7 {
   internal const uint BinScale = 1 << (IntBits + PeriodBits);
   private const int IntBits = 7;
   private const int PeriodBits = 7;
