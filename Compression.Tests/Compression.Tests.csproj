@@ -201,6 +201,10 @@
     <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
       <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- B1 archives b1-pack wrote, and ours it read; see B1/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="B1\ReferenceVectors\*.b1">
+      <LogicalName>B1Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- DAR slices written by dar itself (2.4.24 to 2.8.6); see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
       <LogicalName>DarVectors.%(Filename)%(Extension)</LogicalName>
