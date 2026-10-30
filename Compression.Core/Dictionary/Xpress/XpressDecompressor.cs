@@ -6,28 +6,17 @@ using System.Runtime.CompilerServices;
 namespace Compression.Core.Dictionary.Xpress;
 
 /// <summary>
-/// Decompresses data compressed with the XPRESS (LZ Xpress plain) algorithm.
+/// Decompresses the plain LZ77 variant of XPRESS ([MS-XCA] section 2.4), as RtlCompressBuffer
+/// with COMPRESSION_FORMAT_XPRESS writes it.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Format: repeated flag groups. Each group starts with a 32-bit LE flag word.
-/// Bit 0 (LSB) is the flag for the first item; bit 31 for the last.
-/// A 0 bit = literal byte; a 1 bit = LZ match descriptor.
-/// </para>
-/// <para>
-/// Match descriptor (16-bit LE):
-/// <code>
-///   offset = value >> 3   (1-based distance into output history)
-///   length_header = value &amp; 7
-///   if length_header &lt; 7: length = length_header + 3
-///   if length_header == 7:
-///     extra = next byte
-///     if extra != 255: length = extra + 3
-///     else:
-///       len16 = next 16-bit LE
-///       if len16 != 0: length = len16
-///       else: length = next 32-bit LE
-/// </code>
+/// A 32-bit little-endian flag word governs the next 32 items, highest bit first: 0 is a literal
+/// byte, 1 a 16-bit match word holding (distance - 1) in its upper 13 bits and (length - 3) in its
+/// lower 3. A length field of 7 continues in a half byte; two consecutive long matches share one
+/// byte, the first taking its low nibble and the second its high nibble. A half byte of 15 continues
+/// in a full byte, and a byte of 255 in a 16-bit (then, if that is 0, a 32-bit) value that holds
+/// length - 3 outright.
 /// </para>
 /// </remarks>
 public static class XpressDecompressor {
@@ -47,78 +36,88 @@ public static class XpressDecompressor {
     var output = new byte[uncompressedSize];
     var inputPos = 0;
     var outputPos = 0;
+    var flags = 0u;
+    var flagCount = 0;
+    var halfByte = -1; // input position of a length byte whose high nibble is still unused
 
     while (outputPos < uncompressedSize) {
-      // Read 32-bit flag word
-      if (inputPos + 4 > input.Length)
+      if (flagCount == 0) {
+        if (inputPos + 4 > input.Length)
+          ThrowTruncated();
+
+        flags = BinaryPrimitives.ReadUInt32LittleEndian(input[inputPos..]);
+        inputPos += 4;
+        flagCount = 32;
+      }
+
+      --flagCount;
+      if ((flags & (1u << flagCount)) == 0) {
+        if (inputPos >= input.Length)
+          ThrowTruncated();
+
+        output[outputPos++] = input[inputPos++];
+        continue;
+      }
+
+      if (inputPos + 2 > input.Length)
         ThrowTruncated();
 
-      var flagWord = BinaryPrimitives.ReadUInt32LittleEndian(input[inputPos..]);
-      inputPos += 4;
-
-      for (var bit = 0; bit < XpressConstants.FlagGroupSize && outputPos < uncompressedSize; ++bit)
-        if ((flagWord & (1u << bit)) == 0) {
-          // Literal
+      var matchWord = BinaryPrimitives.ReadUInt16LittleEndian(input[inputPos..]);
+      inputPos += 2;
+      var length = matchWord & 7;
+      var distance = (matchWord >> 3) + 1;
+      if (length == 7) {
+        if (halfByte < 0) {
           if (inputPos >= input.Length)
             ThrowTruncated();
 
-          output[outputPos++] = input[inputPos++];
+          halfByte = inputPos++;
+          length = input[halfByte] & 0x0F;
         } else {
-          // Match
-          if (inputPos + 2 > input.Length)
+          length = input[halfByte] >> 4;
+          halfByte = -1;
+        }
+
+        if (length == 15) {
+          if (inputPos >= input.Length)
             ThrowTruncated();
 
-          var value = BinaryPrimitives.ReadUInt16LittleEndian(input[inputPos..]);
-          inputPos += 2;
-
-          var offset = value >> 3; // 1-based
-          var lengthHeader = value & 7;
-          int length;
-
-          if (offset == 0)
-            ThrowInvalidMatch();
-
-          if (lengthHeader < 7)
-            length = lengthHeader + XpressConstants.MinMatch;
-          else {
-            // Read extra length byte
-            if (inputPos >= input.Length)
+          length = input[inputPos++];
+          if (length == 255) {
+            if (inputPos + 2 > input.Length)
               ThrowTruncated();
 
-            var extra = input[inputPos++];
-            if (extra != XpressConstants.LengthSentinel8)
-              length = extra + XpressConstants.MinMatch;
-            else {
-              // Read 16-bit length
-              if (inputPos + 2 > input.Length)
+            length = BinaryPrimitives.ReadUInt16LittleEndian(input[inputPos..]);
+            inputPos += 2;
+            if (length == 0) {
+              if (inputPos + 4 > input.Length)
                 ThrowTruncated();
 
-              var len16 = BinaryPrimitives.ReadUInt16LittleEndian(input[inputPos..]);
-              inputPos += 2;
-
-              if (len16 != XpressConstants.LengthSentinel16)
-                length = len16;
-              else {
-                // Read 32-bit length
-                if (inputPos + 4 > input.Length)
-                  ThrowTruncated();
-
-                length = (int)BinaryPrimitives.ReadUInt32LittleEndian(input[inputPos..]);
-                inputPos += 4;
-              }
+              var length32 = BinaryPrimitives.ReadUInt32LittleEndian(input[inputPos..]);
+              inputPos += 4;
+              length = length32 > int.MaxValue ? int.MaxValue : (int)length32;
             }
+
+            if (length < 15 + 7)
+              ThrowInvalidMatch();
+
+            length -= 15 + 7;
           }
 
-          // Copy from output history (offset is 1-based)
-          var copyFrom = outputPos - offset;
-          if (copyFrom < 0)
-            ThrowInvalidMatch();
-
-          // Handle overlapping copy byte-by-byte
-          var copyEnd = Math.Min(outputPos + length, uncompressedSize);
-          while (outputPos < copyEnd)
-            output[outputPos++] = output[copyFrom++];
+          length += 15;
         }
+
+        length += 7;
+      }
+
+      length += XpressConstants.MinMatch;
+      var copyFrom = outputPos - distance;
+      if (copyFrom < 0)
+        ThrowInvalidMatch();
+
+      var copyEnd = (int)Math.Min((long)outputPos + length, uncompressedSize);
+      while (outputPos < copyEnd)
+        output[outputPos++] = output[copyFrom++];
     }
 
     return output;

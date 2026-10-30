@@ -3416,7 +3416,7 @@ Compression level for XPRESS (plain and Huffman variants).
 
 #### `XpressCompressor`
 
-Compresses data using the XPRESS (LZ Xpress plain) algorithm.
+Compresses data with the plain LZ77 variant of XPRESS ([MS-XCA] section 2.3), the format RtlDecompressBuffer reads as COMPRESSION_FORMAT_XPRESS.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3446,7 +3446,7 @@ Constants for the XPRESS (LZ Xpress) compression algorithm used in WIM images an
 
 #### `XpressDecompressor`
 
-Decompresses data compressed with the XPRESS (LZ Xpress plain) algorithm.
+Decompresses the plain LZ77 variant of XPRESS ([MS-XCA] section 2.4), as RtlCompressBuffer with COMPRESSION_FORMAT_XPRESS writes it.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
