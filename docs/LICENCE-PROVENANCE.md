@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 22 | |
+| A | 23 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 1 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 10 | |
@@ -91,6 +91,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ba2/BethesdaLookup3.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Balz/BalzStream.cs`, `Compression.Core/Entropy/Ppmd/PpmdModelH.cs` | Bob Jenkins lookup3; BALZ max-parser score; Shkarin's PPMd rescale constant | public domain / constants | none needed |
 | `Hawkynt.FileFormats.Audio/Codecs/VENDORED_AUDIO_CODECS.md` | Concentus, .NET Ogg Vorbis Encoder, GroovyCodecs, AmrWbLib (vendored whole) | BSD-3 / MIT / LGPL-3.0 / BSD-3 | `THIRD-PARTY-NOTICES.md` and the vendored `LICENSE.txt` files |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Aomei/AomeiFormatDescriptor.cs` | this repository's reverse-engineered AOMEI Backupper container layout | own work | none needed |
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.EnigmaVirtualBox/EnigmaVirtualBoxReader.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.EnigmaVirtualBox/EnigmaVirtualBoxFormatDescriptor.cs` | evbunpack (mos9527) `evbunpack/__main__.py`, `evbunpack/const.py`, revision `ee7b647acf2a46617b0c448dfa83d63132ea917b` | Apache-2.0 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.EnigmaVirtualBox/THIRD-PARTY-NOTICE.evbunpack.txt` |
 
 ## R — not a code port
 

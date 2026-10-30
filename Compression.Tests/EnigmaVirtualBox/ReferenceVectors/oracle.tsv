@@ -1,0 +1,12 @@
+# fixture	path	size	sha256 -- produced by evbunpack 0.2.3 (unpack_files)
+evb-compressed.exe	data/random.bin	70000	6ff3ab69ca186d4d9db570710c3ecc136718ace45e711621da0a27474f9cff4f
+evb-compressed.exe	data/sub/pattern.bin	210000	718103dccd470ede24292ddb1d6e1919f5e7459768e341b6d0773c22f8d87d46
+evb-compressed.exe	empty.txt	0	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+evb-compressed.exe	hello.txt	105	135775ad7db427c0b8936c0270896b83ef4ca64ecf2b528127de1647d3001f2f
+evb-stored.exe	data/random.bin	70000	6ff3ab69ca186d4d9db570710c3ecc136718ace45e711621da0a27474f9cff4f
+evb-stored.exe	data/sub/pattern.bin	210000	718103dccd470ede24292ddb1d6e1919f5e7459768e341b6d0773c22f8d87d46
+evb-stored.exe	empty.txt	0	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+evb-stored.exe	hello.txt	105	135775ad7db427c0b8936c0270896b83ef4ca64ecf2b528127de1647d3001f2f
+x64-evb1100.exe	README.txt	17	d2da67f66755dd1d0c3667b251aa0282c708ae3ae100f2bf0ea7a615d37dc190
+x86-evb780.exe	README.txt	17	d2da67f66755dd1d0c3667b251aa0282c708ae3ae100f2bf0ea7a615d37dc190
+x86-evb970.exe	README.txt	17	d2da67f66755dd1d0c3667b251aa0282c708ae3ae100f2bf0ea7a615d37dc190

@@ -14682,6 +14682,64 @@ WORM writer for RFC 2822 / MIME email messages. When a single input is provided 
 | `EmlWriter` | `EmlWriter()` |  |
 | `Write` | `static void Write(Stream output, IReadOnlyList<ValueTuple<string, byte[], string>> parts, IReadOnlyDictionary<string, string> headers = null)` | Writes a single .eml message to `output`. With zero or one input the message is single-part; with two or more inputs it becomes a `multipart/mixed` message and each input becomes one attachment. |
 
+### Namespace `FileFormat.EnigmaVirtualBox`
+
+[`EnigmaVirtualBoxEntry`](#enigmavirtualboxentry) · [`EnigmaVirtualBoxFormatDescriptor`](#enigmavirtualboxformatdescriptor) · [`EnigmaVirtualBoxReader`](#enigmavirtualboxreader)
+
+#### `EnigmaVirtualBoxEntry`
+
+A file or folder of an Enigma Virtual Box filesystem.
+
+Implements `IEquatable<EnigmaVirtualBoxEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnigmaVirtualBoxEntry` | `EnigmaVirtualBoxEntry(string FileName, bool IsDirectory, long Offset, long StoredSize, long Size)` | A file or folder of an Enigma Virtual Box filesystem. |
+| `FileName` | `string FileName { get; init; }` | Its path, "/"-separated; the "%DEFAULT FOLDER%" root (the folder of the boxed exe) is the empty prefix. |
+| `IsCompressed` | `bool IsCompressed { get; }` | True when the packer compressed it (stored and original sizes differ). |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | True for a folder. |
+| `Offset` | `long Offset { get; init; }` | Where its stored data starts in the file. |
+| `Size` | `long Size { get; init; }` | Its original size. |
+| `StoredSize` | `long StoredSize { get; init; }` | Its size as stored (the aPLib chunk table and chunks when compressed). |
+
+#### `EnigmaVirtualBoxFormatDescriptor`
+
+Enigma Virtual Box: the files and folders it boxes into an executable, stored or aPLib-compressed. References: `https://github.com/mos9527/evbunpack` — evbunpack, the unpacker this reader was converted from`https://enigmaprotector.com/en/aboutvb.html` — Enigma Virtual Box
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnigmaVirtualBoxFormatDescriptor` | `EnigmaVirtualBoxFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `EnigmaVirtualBoxReader`
+
+Reads the virtual filesystem Enigma Virtual Box embeds in the executables it boxes: the file table after the "EVB\0" header in the ".enigma1" section, and each file's data, stored or in aPLib-compressed chunks.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnigmaVirtualBoxReader` | `EnigmaVirtualBoxReader(Stream stream)` | Opens a boxed executable. |
+| `SectionName` | `const string SectionName` | The section the filesystem lives in. |
+| `Entries` | `IReadOnlyList<EnigmaVirtualBoxEntry> Entries { get; }` | Gets the files and folders, parents before their children. |
+| `HeaderOffset` | `long HeaderOffset { get; }` | Gets the file offset of the "EVB\0" header. |
+| `IsLegacyLayout` | `bool IsLegacyLayout { get; }` | Gets whether the box uses the legacy layout of EVB 7.80 and earlier. |
+| `Extract` | `byte[] Extract(EnigmaVirtualBoxEntry entry)` | Returns a file's contents. |
+| `IsEnigmaVirtualBox` | `static bool IsEnigmaVirtualBox(Stream stream)` | True when the stream is a PE whose ".enigma1" section holds an "EVB\0" header. |
+
 ### Namespace `FileFormat.Epub`
 
 [`EpubFormatDescriptor`](#epubformatdescriptor)

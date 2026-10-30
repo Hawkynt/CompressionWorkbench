@@ -235,7 +235,7 @@ Spoon Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 SuperDAT updater,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 Symbian installer (SIS/SISX),sis;sisx,installer,,,,,R,,,1,,,,,,MISSING,,
 WiX Burn bundle,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-Enigma Virtual Box,exe,installer,,,,,R,,,1,,,,,,MISSING,,
+Enigma Virtual Box,exe,installer,,,,,R,,,1,https://enigmaprotector.com/en/aboutvb.html,EnigmaVirtualBox,Y,,,READ-ONLY-BUT-SOURCES-WRITE,Enigma Virtual Box (enigmavbconsole),"the boxed files and folders, stored or aPLib-compressed, in the current and the legacy (EVB 7.80 and earlier) table layouts; virtual registry and external .dat packages are not read (EnigmaVirtualBoxReader.cs)"
 MoleBox,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 UPX-packed executable,exe;dll,executable,,,,,R,,,1,https://upx.github.io/,Upx,Y,,,READ-ONLY-BUT-SOURCES-WRITE,upx,
 macOS Installer package (flat pkg),pkg;mpkg,installer,,,,,,,Y,1,,Xar,Y,Y,Y,OK,,
