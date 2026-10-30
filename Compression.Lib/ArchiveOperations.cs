@@ -654,6 +654,10 @@ public static class ArchiveOperations {
       // unsupported codec or variant, not damage.
       return ArchiveTestResult.NotTestable;
     }
+    catch (Compression.Registry.ArchivePasswordException) {
+      // Not a verdict on the archive: the caller has to ask for a (different) password.
+      throw;
+    }
     catch {
       return ArchiveTestResult.Corrupt;
     }

@@ -76,6 +76,52 @@ public sealed class SevenZipCliTests {
     Assert.That(File.ReadAllBytes(Path.Combine(output, "text.txt")), Is.EqualTo(File.ReadAllBytes(Path.Combine(this._root, "src", "text.txt"))));
   }
 
+  private string Vector(string name) {
+    using var resource = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("SevenZipConformanceVectors." + name)!;
+    var path = Path.Combine(this._root, name);
+    using (var file = File.Create(path))
+      resource.CopyTo(file);
+    return path;
+  }
+
+  [Test]
+  [Category("HappyPath")]
+  public void Given_AnArchiveWithEncryptedNames_When_ListedWithoutPassword_Then_TheCliAsksAndLists() {
+    var cli = LocateCli();
+    var result = RunCli(cli, "S3cret!\n", "list", this.Vector("aes-mhe.7z"));
+    Assert.That(result.ExitCode, Is.Zero, result.StdErr);
+    Assert.That(result.StdErr, Does.Contain("is encrypted. Password:"));
+    Assert.That(result.StdOut, Does.Contain("text.txt"));
+  }
+
+  [Test]
+  [Category("HappyPath")]
+  public void Given_AContentEncryptedArchive_When_ExtractedWithoutPassword_Then_TheCliAsksAndExtracts() {
+    var cli = LocateCli();
+    var output = Path.Combine(this._root, "pw-out");
+    var result = RunCli(cli, "S3cret!\n", "extract", this.Vector("aes.7z"), "-o", output);
+    Assert.That(result.ExitCode, Is.Zero, result.StdErr);
+    Assert.That(new FileInfo(Path.Combine(output, "text.txt")).Length, Is.EqualTo(6000));
+  }
+
+  [Test]
+  [Category("EdgeCase")]
+  public void Given_ThreeWrongPasswords_When_Testing_Then_TheCliGivesUpWithItsOwnExitCode() {
+    var cli = LocateCli();
+    var result = RunCli(cli, "a\nb\nc\nS3cret!\n", "test", this.Vector("aes.7z"));
+    Assert.That(result.ExitCode, Is.EqualTo(3), result.StdOut + result.StdErr);
+    Assert.That(result.StdErr, Does.Contain("Wrong password"));
+  }
+
+  [Test]
+  [Category("EdgeCase")]
+  public void Given_AWrongPasswordOption_When_Listing_Then_TheCliDoesNotPromptAndFails() {
+    var cli = LocateCli();
+    var result = RunCli(cli, "S3cret!\n", "list", this.Vector("aes-mhe.7z"), "-p", "wrong");
+    Assert.That(result.ExitCode, Is.EqualTo(3));
+    Assert.That(result.StdErr, Does.Not.Contain("Password:"));
+  }
+
   [Test]
   [Category("EdgeCase")]
   public void Given_AVolumeSizeThatIsNotASize_When_Creating_Then_ItIsRefused() {

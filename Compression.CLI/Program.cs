@@ -26,11 +26,17 @@ listCmd.SetAction((ParseResult ctx) => {
 
   if (!archive.Exists) { Console.Error.WriteLine($"File not found: {archive.FullName}"); return 1; }
 
-  var format = FormatDetector.Detect(archive.FullName);
+  var format = ArchiveVolumes.Detect(archive.FullName);
   Console.WriteLine($"Archive: {archive.Name}  Format: {format}");
   Console.WriteLine();
 
-  var entries = ArchiveOperations.List(archive.FullName, password);
+  List<ArchiveEntry> entries;
+  try {
+    entries = WithPassword(archive.Name, password, pw => ArchiveOperations.List(archive.FullName, pw));
+  } catch (ArchivePasswordException e) {
+    Console.Error.WriteLine(e.Message);
+    return 3;
+  }
   if (entries.Count == 0) { Console.WriteLine("(empty archive)"); return 0; }
 
   // Column headers
@@ -112,7 +118,13 @@ extractCmd.SetAction((ParseResult ctx) => {
 
   Console.Write($"Extracting {archive.Name}...");
   var sw = Stopwatch.StartNew();
-  ArchiveOperations.Extract(archive.FullName, outputDir, password, fileFilter);
+  try {
+    WithPassword(archive.Name, password, pw => { ArchiveOperations.Extract(archive.FullName, outputDir, pw, fileFilter); return 0; });
+  } catch (ArchivePasswordException e) {
+    Console.Error.WriteLine();
+    Console.Error.WriteLine(e.Message);
+    return 3;
+  }
   sw.Stop();
   Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
   Console.WriteLine($"Output: {outputDir}");
@@ -306,7 +318,14 @@ testCmd.SetAction((ParseResult ctx) => {
 
   Console.Write($"Testing {archive.Name}...");
   var sw = Stopwatch.StartNew();
-  var result = ArchiveOperations.TestDetailed(archive.FullName, password);
+  ArchiveTestResult result;
+  try {
+    result = WithPassword(archive.Name, password, pw => ArchiveOperations.TestDetailed(archive.FullName, pw));
+  } catch (ArchivePasswordException e) {
+    Console.WriteLine(" NEEDS PASSWORD");
+    Console.Error.WriteLine(e.Message);
+    return 3;
+  }
   sw.Stop();
   // "not testable" is not a failed integrity check -- nothing is known to be wrong with the file,
   // there is just no verifier for it. It gets its own message and its own exit code so a script
@@ -2998,6 +3017,40 @@ static bool IsSystemDrive(string device) {
   // Mount points
   if (d == "/" || d == "/boot") return true;
   return false;
+}
+
+// Runs an archive read, asking on the console for a password when the archive turns out to need
+// one: up to three tries when none was given; a wrong --password is final, as it is for 7-Zip.
+static T WithPassword<T>(string archiveName, string? password, Func<string?, T> operation) {
+  for (var asked = 0; ; ++asked) {
+    try {
+      return operation(password);
+    } catch (ArchivePasswordException e) when ((password == null || asked > 0) && asked < 3) {
+      Console.Error.Write(e.PasswordWasSupplied ? $"Wrong password for {archiveName}. Password: " : $"{archiveName} is encrypted. Password: ");
+      password = ReadPassword();
+      if (password == null)
+        throw;
+    }
+  }
+}
+
+// A password from the console without echoing it, or one line from redirected input; null at the
+// end of the input.
+static string? ReadPassword() {
+  if (Console.IsInputRedirected)
+    return Console.In.ReadLine();
+  var typed = new System.Text.StringBuilder();
+  for (;;) {
+    var key = Console.ReadKey(intercept: true);
+    if (key.Key == ConsoleKey.Enter) {
+      Console.Error.WriteLine();
+      return typed.ToString();
+    }
+    if (key.Key == ConsoleKey.Backspace) {
+      if (typed.Length > 0) typed.Length--;
+    } else if (!char.IsControl(key.KeyChar))
+      typed.Append(key.KeyChar);
+  }
 }
 
 static long ParseSizeGeneric(string sizeStr) {
