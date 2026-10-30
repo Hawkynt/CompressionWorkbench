@@ -33,6 +33,13 @@ public static class FormatOptionKeys {
   /// UI, CLI and orchestration code can recognize a compatibility constraint consistently.
   /// </summary>
   public const string TargetCompatibility = "TargetCompatibility";
+
+  /// <summary>
+  /// Split the archive into volumes of at most this size: a byte count, optionally with a
+  /// k/m/g suffix (powers of 1024); empty or 0 writes one file. Formats with volume sets
+  /// declare it in their schema so UI and CLI can offer it.
+  /// </summary>
+  public const string VolumeSize = "VolumeSize";
 }
 
 /// <summary>How a <see cref="FormatOptionDescriptor"/> renders + parses.</summary>

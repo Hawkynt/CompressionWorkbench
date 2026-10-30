@@ -1,699 +1,570 @@
-using Compression.Core.Checksums;
 using Compression.Core.Crypto;
 using Compression.Core.Dictionary.Rar;
-using System.Buffers.Binary;
 using System.Text;
 
 namespace FileFormat.Rar;
 
 /// <summary>
-/// Reads entries from a RAR v4 or v5 archive.
+/// Reads RAR archives: RAR 5 (RAR 5.0-7.x, compression algorithm version 0) and RAR 1.5-4.x,
+/// single files or volume sets in either naming scheme, behind an SFX module or not, with
+/// encrypted data or headers.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Opening a <see cref="FileStream"/> of a volume brings the rest of its set from the same
+/// directory (<c>name.partN.rar</c>, or <c>name.rar</c>/<c>name.r00</c>/…); a volume that is
+/// missing leaves the entries that reach into it listed but <see cref="RarEntry.IsIncomplete"/>,
+/// and extracting one of those throws.
+/// </para>
+/// <para>
+/// Every extracted file is checked against its CRC-32 or BLAKE2sp (with RAR 5's key-dependent
+/// checksum tweak for encrypted files); a mismatch throws rather than returning wrong bytes.
+/// Solid archives decode in order and replay the start of a solid run when an entry is asked
+/// for out of order.
+/// </para>
+/// </remarks>
 public sealed class RarReader : IDisposable {
-  static RarReader() {
-    Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+  private const int SfxSearchLimit = 4 * 1024 * 1024;
+
+  private readonly List<Stream> _volumes = [];
+  private readonly List<Stream> _owned = [];
+  private readonly bool _leaveOpen;
+  private readonly Stream _first;
+  private readonly string? _password;
+  private readonly Rar5Crypto? _rar5Crypto;
+  private readonly List<RarItem> _items = [];
+  private readonly List<int> _entryItems = [];
+  private readonly List<RarEntry> _entries = [];
+  private readonly RarArchiveInfo _info = new();
+  private bool _disposed;
+
+  // Solid state: the decoder of the solid run in progress and the item it expects next.
+  private object? _solidDecoder;
+  private int _lastDecoded = -1;
+
+  static RarReader() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+  /// <summary>Opens a RAR archive (and, for a <see cref="FileStream"/>, the other volumes of its set).</summary>
+  /// <param name="stream">A seekable stream holding the archive or its first volume.</param>
+  /// <param name="password">The password for encrypted entries or headers, or <see langword="null"/>.</param>
+  /// <param name="leaveOpen">Whether to leave <paramref name="stream"/> open when this reader is disposed.</param>
+  /// <exception cref="InvalidDataException">The stream holds no RAR archive.</exception>
+  /// <exception cref="InvalidOperationException">The headers are encrypted and no password was given.</exception>
+  public RarReader(Stream stream, string? password, bool leaveOpen = false)
+    : this([stream ?? throw new ArgumentNullException(nameof(stream))], password, leaveOpen, discover: true) { }
+
+  /// <summary>Opens a RAR archive from a seekable stream.</summary>
+  public RarReader(Stream stream, bool leaveOpen = false) : this(stream, null, leaveOpen) { }
+
+  /// <summary>Opens the volumes of a RAR set given as streams, first volume first.</summary>
+  public RarReader(IReadOnlyList<Stream> volumes, string? password, bool leaveOpen = false)
+    : this(volumes, password, leaveOpen, discover: false) { }
+
+  private RarReader(IReadOnlyList<Stream> volumes, string? password, bool leaveOpen, bool discover) {
+    if (volumes.Count == 0) throw new ArgumentException("No volume given.", nameof(volumes));
+    foreach (var v in volumes)
+      if (!v.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(volumes));
+    this._first = volumes[0];
+    this._leaveOpen = leaveOpen;
+    this._password = password;
+    if (password != null) this._rar5Crypto = new Rar5Crypto(password);
+
+    if (discover && volumes.Count == 1 && volumes[0] is FileStream { Name: { Length: > 0 } path })
+      this.OpenSet(volumes[0], path);
+    else
+      for (var i = 0; i < volumes.Count; ++i)
+        this.ReadVolume(volumes[i], i == 0);
+
+    this.BuildEntries();
   }
 
-  private readonly Stream _stream;
-  private readonly bool _leaveOpen;
-  private readonly List<RarEntry> _entries = [];
-  private readonly List<(long DataOffset, long DataSize, RarFileHeader FileHeader)> _entryDetails = [];
-  private readonly List<(long DataOffset, long DataSize, int Method, long UnpackedSize, int WindowBits, bool IsSolid, int Version, byte[]? Salt)> _rar4Details = [];
-  private bool _disposed;
-  private readonly string? _password;
+  /// <summary>Opens the RAR archive or volume set at <paramref name="path"/>.</summary>
+  public static RarReader Open(string path, string? password = null)
+    => new(File.OpenRead(path), password, leaveOpen: false);
 
-  // Encryption state from encryption header
-  private byte[]? _encryptionSalt;
-  private int _encryptionKdfCount;
-  private byte[]? _derivedKey;
-
-  // Solid archive state: decoder persists across files in a solid block
-  private Rar5Decoder? _solidDecoder;
-  private int _lastSolidDictSize;
-  private Rar3Decoder? _solidRar3Decoder;
-  private Rar2Decoder? _solidRar2Decoder;
-  private readonly Dictionary<string, (byte[] Key, byte[] Iv)> _rar4HeaderKeys = [];
-
-  // Recovery record state
-  private long _recoveryHeaderOffset; // start of recovery service header
-  private long _recoveryDataOffset;   // start of recovery parity data (after header)
-  private long _recoveryDataSize;
-
-  /// <summary>
-  /// Gets the entries in the RAR archive.
-  /// </summary>
+  /// <summary>Gets the entries (files and directories; service records are not listed).</summary>
   public IReadOnlyList<RarEntry> Entries => this._entries;
 
-  /// <summary>
-  /// Gets a value indicating whether this is a RAR5 format archive.
-  /// </summary>
-  public bool IsRar5 { get; }
+  /// <summary>Gets a value indicating whether this is a RAR 5 archive.</summary>
+  public bool IsRar5 => this._info.Format == 5;
 
-  /// <summary>
-  /// Gets a value indicating whether this is a RAR4 (or earlier) format archive.
-  /// </summary>
-  public bool IsRar4 { get; }
+  /// <summary>Gets a value indicating whether this is a RAR 1.5-4.x archive.</summary>
+  public bool IsRar4 => this._info.Format == 4;
 
-  /// <summary>
-  /// Gets the RAR version (1-5) for the overall archive format.
-  /// </summary>
-  public int Version { get; }
+  /// <summary>Gets the archive format generation: 5, or 4 for RAR 1.5-4.x.</summary>
+  public int Version => this._info.Format;
 
-  /// <summary>Gets whether this archive has a recovery record.</summary>
-  public bool HasRecoveryRecord { get; private set; }
+  /// <summary>Gets whether the main header announces a recovery record.</summary>
+  public bool HasRecoveryRecord => this._info.HasRecoveryRecord;
 
-  /// <summary>
-  /// Initializes a new <see cref="RarReader"/> with a password for encrypted archives.
-  /// </summary>
-  /// <param name="stream">A seekable stream containing the RAR archive.</param>
-  /// <param name="password">The password for encrypted entries, or <see langword="null"/> for unencrypted archives.</param>
-  /// <param name="leaveOpen">Whether to leave the stream open when this reader is disposed.</param>
-  public RarReader(Stream stream, string? password, bool leaveOpen = false) {
-    // The password is needed while the headers are read: RAR4 -hp archives encrypt them.
-    this._password = password;
-    this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
-    if (!stream.CanSeek)
-      throw new ArgumentException("Stream must be seekable.", nameof(stream));
-    this._leaveOpen = leaveOpen;
+  /// <summary>Gets whether the archive is part of a volume set.</summary>
+  public bool IsVolume => this._info.IsVolume;
 
-    // Read and validate signature
-    var signature = new byte[8];
-    var sigRead = 0;
-    while (sigRead < 8) {
-      var read = this._stream.Read(signature, sigRead, 8 - sigRead);
-      if (read == 0)
-        throw new InvalidDataException("Stream too short to contain a RAR signature.");
-      sigRead += read;
-    }
+  /// <summary>Gets how many volumes were read.</summary>
+  public int VolumeCount => this._volumes.Count;
 
-    if (signature.AsSpan().SequenceEqual(RarConstants.Rar5Signature)) {
-      IsRar5 = true;
-      Version = 5;
-    } else if (signature.AsSpan(0, 7).SequenceEqual(RarConstants.Rar4Signature)) {
-      IsRar4 = true;
-      Version = 4; // Could be 1-4, determined by UnpVer in file headers
-      // RAR4 signature is 7 bytes; back up 1 byte since we read 8
-      this._stream.Position -= 1;
-    } else
-      throw new InvalidDataException("Not a valid RAR archive.");
+  /// <summary>Gets the name of the first missing volume, or null when the set is complete.</summary>
+  public string? MissingVolume => this._info.MissingVolume;
 
-    // Read headers
-    if (IsRar5)
-      ReadHeaders();
-    else
-      ReadRar4Headers();
-  }
+  /// <summary>Gets whether the archive is solid.</summary>
+  public bool IsSolid => this._info.IsSolid;
 
-  /// <summary>
-  /// Initializes a new <see cref="RarReader"/> from a seekable stream containing a RAR archive.
-  /// </summary>
-  /// <param name="stream">A seekable stream containing the RAR archive.</param>
-  /// <param name="leaveOpen">Whether to leave the stream open when this reader is disposed.</param>
-  /// <exception cref="ArgumentNullException"><paramref name="stream"/> is <see langword="null"/>.</exception>
-  /// <exception cref="ArgumentException">The stream is not seekable.</exception>
-  /// <exception cref="InvalidDataException">The stream does not contain a valid RAR archive.</exception>
-  public RarReader(Stream stream, bool leaveOpen = false) : this(stream, null, leaveOpen) {
-  }
+  /// <summary>Gets whether the archive is locked against changes.</summary>
+  public bool IsLocked => this._info.IsLocked;
 
-  /// <summary>
-  /// Extracts the data for the entry at the specified index.
-  /// </summary>
-  /// <param name="entryIndex">The zero-based index of the entry to extract.</param>
-  /// <returns>The decompressed data as a byte array.</returns>
-  /// <exception cref="ArgumentOutOfRangeException"><paramref name="entryIndex"/> is out of range.</exception>
-  /// <exception cref="InvalidDataException">The CRC-32 of the extracted data does not match.</exception>
-  /// <exception cref="NotSupportedException">The compression method is not supported.</exception>
+  /// <summary>Gets whether the headers (file names) are encrypted.</summary>
+  public bool HeadersEncrypted => this._info.HeadersEncrypted;
+
+  /// <summary>Gets the bytes of SFX module before the archive in the first volume.</summary>
+  public long SfxSize => this._info.SfxSize;
+
+  /// <summary>Gets the archive comment, when there is one.</summary>
+  public string? Comment => this._info.Comment ??= this.ReadComment();
+
+  /// <summary>Extracts the entry at <paramref name="entryIndex"/> into memory.</summary>
   public byte[] Extract(int entryIndex) {
     using var ms = new MemoryStream();
-    Extract(entryIndex, ms);
+    this.Extract(entryIndex, ms);
     return ms.ToArray();
   }
 
   /// <summary>
-  /// Extracts the data for the entry at the specified index into the given output stream.
+  /// Extracts the entry at <paramref name="entryIndex"/> into <paramref name="output"/>,
+  /// streaming; the data is checked against the stored CRC-32/BLAKE2sp at the end.
   /// </summary>
-  /// <param name="entryIndex">The zero-based index of the entry to extract.</param>
-  /// <param name="output">The stream to write the decompressed data to.</param>
-  /// <exception cref="ArgumentOutOfRangeException"><paramref name="entryIndex"/> is out of range.</exception>
-  /// <exception cref="ArgumentNullException"><paramref name="output"/> is <see langword="null"/>.</exception>
-  /// <exception cref="InvalidDataException">The CRC-32 of the extracted data does not match.</exception>
-  /// <exception cref="NotSupportedException">The compression method is not supported.</exception>
+  /// <exception cref="InvalidDataException">The data is damaged, the password is wrong, or a volume is missing.</exception>
+  /// <exception cref="InvalidOperationException">The entry is encrypted and no password was given.</exception>
+  /// <exception cref="NotSupportedException">The entry uses a method this reader refuses.</exception>
   public void Extract(int entryIndex, Stream output) {
     if ((uint)entryIndex >= (uint)this._entries.Count)
       throw new ArgumentOutOfRangeException(nameof(entryIndex));
     ArgumentNullException.ThrowIfNull(output);
-
-    var entry = this._entries[entryIndex];
-
-    if (entry.IsDirectory || entry.Size == 0)
+    var item = this._items[this._entryItems[entryIndex]];
+    if (item.IsDirectory || item.IsSymlinkLike())
       return;
-
-    if (IsRar4) {
-      ExtractRar4(entryIndex, output);
-      return;
-    }
-
-    var (dataOffset, dataSize, fileHeader) = this._entryDetails[entryIndex];
-
-    // Seek to data
-    this._stream.Position = dataOffset;
-
-    // If encrypted, read all data, decrypt, then wrap in a MemoryStream
-    var inputStream = this._stream;
-    var effectiveDataSize = dataSize;
-
-    if (fileHeader.IsEncrypted) {
-      if (fileHeader.EncryptionIv == null)
-        throw new InvalidDataException($"Entry '{entry.Name}' is encrypted but has no IV.");
-
-      var encryptedData = new byte[dataSize];
-      this._stream.ReadExactly(encryptedData);
-      var decryptedData = DecryptData(encryptedData, fileHeader.EncryptionIv);
-
-      // Decrypted data may have AES padding bytes; trim to unpacked compressed size
-      inputStream = new MemoryStream(decryptedData);
-      effectiveDataSize = decryptedData.Length;
-    }
-
-    // Determine whether to reuse the solid decoder.
-    // A file with IsSolid=true continues from the previous decoder state.
-    // A file with IsSolid=false starts a fresh decoder (beginning of a solid block or non-solid).
-    Rar5Decoder? existingDecoder = null;
-    var dictSize = fileHeader.CompressionMethod == RarConstants.MethodStore ? 0 : fileHeader.DictionarySize;
-
-    if (fileHeader.IsSolid && this._solidDecoder != null && this._lastSolidDictSize == dictSize)
-      existingDecoder = this._solidDecoder;
-    else {
-      // Not solid, or dictionary size changed — start fresh
-      this._solidDecoder = null;
-    }
-
-    // Create decompressor
-    var decompressor = new RarDecompressor(
-      inputStream,
-      fileHeader.CompressionMethod,
-      fileHeader.UnpackedSize,
-      dictSize,
-      effectiveDataSize,
-      existingDecoder);
-
-    // Read all decompressed data
-    var buffer = new byte[8192];
-    var totalWritten = 0L;
-    while (!decompressor.IsFinished) {
-      var read = decompressor.Read(buffer, 0, buffer.Length);
-      if (read == 0)
-        break;
-      output.Write(buffer, 0, read);
-      totalWritten += read;
-    }
-
-    // Preserve decoder state for subsequent solid files
-    if (decompressor.Decoder != null) {
-      this._solidDecoder = decompressor.Decoder;
-      this._lastSolidDictSize = dictSize;
-    }
-
-    // Verify CRC-32 if present
-    if (entry.Crc.HasValue && totalWritten > 0) {
-      output.Flush();
-      if (output is MemoryStream ms && ms.TryGetBuffer(out var seg)) {
-        var computed = Crc32.Compute(seg.AsSpan());
-        if (computed != entry.Crc.Value)
-          throw new InvalidDataException(
-            $"CRC-32 mismatch for '{entry.Name}': expected 0x{entry.Crc.Value:X8}, computed 0x{computed:X8}.");
-      }
-    }
-  }
-
-  private void ExtractRar4(int entryIndex, Stream output) {
-    var entry = this._entries[entryIndex];
-    var detail = this._rar4Details[entryIndex];
-
-    this._stream.Position = detail.DataOffset;
-    var compressed = new byte[detail.DataSize];
-    this._stream.ReadExactly(compressed);
-
-    // RAR 2.x (unpack versions 20-28) encrypts with its own cipher and stores no salt; RAR 1.5's
-    // cipher is not implemented, so those entries are refused rather than decoded as plaintext.
-    if (entry.IsEncrypted && detail.Version < 29) {
-      if (detail.Version < 20)
-        throw new NotSupportedException($"Entry '{entry.Name}' uses RAR 1.5 encryption, which is not supported.");
-      if (this._password == null)
-        throw new InvalidOperationException($"Entry '{entry.Name}' is encrypted but no password was provided.");
-      var cipher = new Rar20Cipher(Rar20Password(this._password));
-      cipher.Decrypt(compressed);
-    } else if (entry.IsEncrypted) {
-      if (this._password == null)
-        throw new InvalidOperationException($"Entry '{entry.Name}' is encrypted but no password was provided.");
-
-      var (key, iv) = KeyDerivation.Rar3DeriveKey(this._password, detail.Salt ?? []);
-      // RAR3 pads to 16-byte boundary
-      var alignedLen = (compressed.Length + 15) & ~15;
-      if (alignedLen > compressed.Length) {
-        var padded = new byte[alignedLen];
-        compressed.AsSpan().CopyTo(padded);
-        compressed = padded;
-      }
-      compressed = AesCryptor.DecryptCbcNoPaddingAny(compressed, key, iv);
-      // Trim to original packed size
-      if (compressed.Length > detail.DataSize)
-        compressed = compressed[..(int)detail.DataSize];
-    }
-
-    byte[] decompressed;
-    if (detail.Method == RarConstants.Rar4MethodStore) {
-      // Trim to unpack size — encrypted Store data may have AES padding
-      decompressed = compressed.Length > detail.UnpackedSize
-        ? compressed[..(int)detail.UnpackedSize]
-        : compressed;
-    } else {
-      var unpackVer = detail.Version;
-      if (unpackVer <= 15) {
-        var decoder = new Rar1Decoder();
-        decompressed = decoder.Decompress(compressed, (int)detail.UnpackedSize);
-      } else if (unpackVer is <= 20 or 26) {
-        // RAR 2.0 format (26 = RAR 2.x with files over 2 GB).
-        var decoder = detail.IsSolid && this._solidRar2Decoder != null ? this._solidRar2Decoder : new Rar2Decoder();
-        decompressed = decoder.Decompress(compressed, (int)detail.UnpackedSize);
-        this._solidRar2Decoder = decoder;
-      } else if (unpackVer <= 36) {
-        Rar3Decoder decoder;
-        if (detail.IsSolid && this._solidRar3Decoder != null)
-          decoder = this._solidRar3Decoder;
-        else
-          decoder = new Rar3Decoder();
-        decompressed = decoder.Decompress(compressed, (int)detail.UnpackedSize, detail.WindowBits);
-        this._solidRar3Decoder = decoder;
-      } else
-        throw new NotSupportedException($"RAR unpack version {unpackVer} is not supported in RAR4 archives.");
-    }
-
-    output.Write(decompressed, 0, decompressed.Length);
-
-    // Verify CRC-32
-    if (entry.Crc.HasValue) {
-      var computed = Crc32.Compute(decompressed);
-      if (computed != entry.Crc.Value)
-        throw new InvalidDataException(
-          $"CRC-32 mismatch for '{entry.Name}': expected 0x{entry.Crc.Value:X8}, computed 0x{computed:X8}.");
-    }
-  }
-
-  /// <summary>
-  /// Verifies the recovery record by checking Reed-Solomon parity data against archive contents.
-  /// Returns <see langword="true"/> if the parity is valid.
-  /// </summary>
-  public bool VerifyRecoveryRecord() {
-    if (!this.HasRecoveryRecord || this._recoveryDataSize == 0)
-      return false;
-
-    // Recovery data covers archive from position 0 to the start of the recovery service header
-    var archiveDataSize = this._recoveryHeaderOffset;
-    var sectorSize = RarConstants.RecoverySectorSize;
-    var dataSectors = (int)((archiveDataSize + sectorSize - 1) / sectorSize);
-
-    // Determine parity sector count
-    var paritySectors = (int)(this._recoveryDataSize / sectorSize);
-    if (paritySectors == 0) return false;
-
-    // Read all archive data as sectors
-    var dataShards = new byte[dataSectors][];
-    this._stream.Position = 0;
-    for (var i = 0; i < dataSectors; ++i) {
-      dataShards[i] = new byte[sectorSize];
-      var toRead = (int)Math.Min(sectorSize, archiveDataSize - (long)i * sectorSize);
-      var totalRead = 0;
-      while (totalRead < toRead) {
-        var n = this._stream.Read(dataShards[i], totalRead, toRead - totalRead);
-        if (n == 0) break;
-        totalRead += n;
-      }
-    }
-
-    // Recompute parity
-    var rs = new Compression.Core.Checksums.ReedSolomon(dataSectors, paritySectors);
-    var computedParity = rs.Encode(dataShards);
-
-    // Read stored parity
-    this._stream.Position = this._recoveryDataOffset;
-    var storedRecovery = new byte[this._recoveryDataSize];
-    var r = 0;
-    while (r < storedRecovery.Length) {
-      var n = this._stream.Read(storedRecovery, r, storedRecovery.Length - r);
-      if (n == 0) break;
-      r += n;
-    }
-
-    // Compare
-    for (var i = 0; i < paritySectors; ++i) {
-      if (!computedParity[i].AsSpan().SequenceEqual(
-          storedRecovery.AsSpan(i * sectorSize, sectorSize)))
-        return false;
-    }
-
-    return true;
+    this.ExtractItem(this._entryItems[entryIndex], output, depth: 0);
   }
 
   /// <inheritdoc />
   public void Dispose() {
-    if (!this._disposed) {
-      this._disposed = true;
-      if (!this._leaveOpen)
-        this._stream.Dispose();
+    if (this._disposed) return;
+    this._disposed = true;
+    foreach (var s in this._owned) s.Dispose();
+    if (!this._leaveOpen) this._first.Dispose();
+  }
+
+  // ---------------------------------------------------------------- opening
+
+  private void OpenSet(Stream given, string path) {
+    var full = Path.GetFullPath(path);
+    var first = this.ReadVolume(given, true);
+    if (!this._info.IsVolume) return;
+
+    var seq = RarVolumeNames.SequenceOf(full);
+    if (seq == null) return;
+    var own = -1;
+    for (var i = 0; i < 100_000; ++i) {
+      var candidate = Path.GetFullPath(seq(i));
+      if (string.Equals(candidate, full, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) { own = i; break; }
+      if (i > 0 && !File.Exists(candidate)) break;
+    }
+    if (own < 0) return;
+
+    if (own > 0 && File.Exists(seq(0))) {
+      // Started from a later volume: read the set from its first volume instead.
+      this._volumes.Clear();
+      this._items.Clear();
+      var info = this._info;
+      info.Comment = null;
+      var start = File.OpenRead(seq(0));
+      this._owned.Add(start);
+      first = this.ReadVolume(start, true);
+      for (var i = 1; ; ++i) {
+        if (first == false) return;
+        Stream next;
+        if (i == own) next = given;
+        else {
+          var name = seq(i);
+          if (!File.Exists(name)) { this.NoteMissing(name, first); return; }
+          next = File.OpenRead(name);
+          this._owned.Add(next);
+        }
+        first = this.ReadVolume(next, false);
+      }
+    }
+
+    for (var i = own + 1; ; ++i) {
+      if (first == false) return;
+      var name = seq(i);
+      if (!File.Exists(name)) { this.NoteMissing(name, first); return; }
+      var next = File.OpenRead(name);
+      this._owned.Add(next);
+      first = this.ReadVolume(next, false);
     }
   }
 
-  private void ReadHeaders() {
-    // First header should be the main archive header
-    var mainHeader = RarHeader.Read(this._stream);
-    if (mainHeader.HeaderType != RarConstants.HeaderTypeMain)
-      throw new InvalidDataException(
-        $"Expected main archive header (type {RarConstants.HeaderTypeMain}), got type {mainHeader.HeaderType}.");
-
-    // Skip data area of main header if present
-    if (mainHeader.HasDataArea && mainHeader.DataSize > 0)
-      this._stream.Position += mainHeader.DataSize;
-
-    // Read remaining headers
-    while (this._stream.Position < this._stream.Length) {
-      var headerStartPos = this._stream.Position;
-      RarHeader header;
-
-      try {
-        header = RarHeader.Read(this._stream);
-      }
-      catch (EndOfStreamException) {
-        break;
-      }
-
-      switch (header.HeaderType) {
-        case RarConstants.HeaderTypeFile:
-          ReadFileEntry(header);
-          break;
-
-        case RarConstants.HeaderTypeEndArchive:
-          return; // Done reading
-
-        case RarConstants.HeaderTypeEncryption:
-          ParseEncryptionHeader(header);
-          break;
-
-        case RarConstants.HeaderTypeService:
-          ParseServiceHeader(header, headerStartPos);
-          break;
-
-        default:
-          // Skip data area if present
-          if (header.HasDataArea && header.DataSize > 0)
-            this._stream.Position += header.DataSize;
-          break;
-      }
-    }
+  private void NoteMissing(string name, bool? moreExpected) {
+    if (moreExpected == true || this._items.Any(i => i.SplitAfter))
+      this._info.MissingVolume = name;
   }
 
-  private void ReadRar4Headers() {
-    // RAR4 starts after the 7-byte signature.
-    // The first header is the marker block (type 0x72), already consumed as part of signature.
-    // Next is the main archive header (type 0x73).
-
-    var headersEncrypted = false;
-    while (this._stream.Position < this._stream.Length) {
-      // RAR4 block header: HEAD_CRC(2) + HEAD_TYPE(1) + HEAD_FLAGS(2) + HEAD_SIZE(2), then the rest of the block header.
-      var block = headersEncrypted ? this.ReadEncryptedRar4Header() : ReadPlainRar4Header(this._stream);
-      if (block == null)
-        break;
-
-      var headType = block[2];
-      var headFlags = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(3));
-      var headSize = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(5));
-
-      if (headType == RarConstants.Rar4TypeEnd)
-        break;
-
-      if (headType == RarConstants.Rar4TypeMain && (headFlags & RarConstants.Rar4MainFlagPassword) != 0) {
-        // Every block after the main header is AES-encrypted under its own salt (rar -hp).
-        if (this._password == null)
-          throw new InvalidOperationException("Encrypted RAR archive requires a password.");
-        headersEncrypted = true;
-        continue;
-      }
-
-      if (headType == RarConstants.Rar4TypeFile) {
-        // RAR4 file header: after the 7-byte common header:
-        // PACK_SIZE(4) + UNP_SIZE(4) + HOST_OS(1) + FILE_CRC(4) + FTIME(4) +
-        // UNP_VER(1) + METHOD(1) + NAME_SIZE(2) + ATTR(4)
-        // = 25 more bytes minimum
-        var remaining = headSize - 7;
-        if (remaining < 25)
-          continue; // malformed header
-
-        var fileBuf = block.AsSpan(7, remaining).ToArray();
-
-        var packSize = (long)BinaryPrimitives.ReadUInt32LittleEndian(fileBuf);
-        var unpSize = (long)BinaryPrimitives.ReadUInt32LittleEndian(fileBuf.AsSpan(4));
-        var fileCrc = BinaryPrimitives.ReadUInt32LittleEndian(fileBuf.AsSpan(9));
-        var unpVer = fileBuf[17];
-        var method = fileBuf[18];
-        var nameSize = BinaryPrimitives.ReadUInt16LittleEndian(fileBuf.AsSpan(19));
-
-        // High 4 bytes of pack/unpack size for large files
-        if ((headFlags & RarConstants.Rar4FlagLargeFile) != 0 && remaining >= 25 + 8) {
-          var highPackSize = BinaryPrimitives.ReadUInt32LittleEndian(fileBuf.AsSpan(25));
-          var highUnpSize = BinaryPrimitives.ReadUInt32LittleEndian(fileBuf.AsSpan(29));
-          packSize |= (long)highPackSize << 32;
-          unpSize |= (long)highUnpSize << 32;
-        }
-
-        // Read filename
-        var nameOffset = 25;
-        if ((headFlags & RarConstants.Rar4FlagLargeFile) != 0)
-          nameOffset += 8;
-
-        var name = "";
-        if (nameSize > 0 && nameOffset + nameSize <= remaining) {
-          if ((headFlags & RarConstants.Rar4FlagUnicode) != 0) {
-            // Find the zero terminator between the OEM name and Unicode name
-            var zeroPos = Array.IndexOf(fileBuf, (byte)0, nameOffset, nameSize);
-            if (zeroPos >= 0)
-              name = Encoding.ASCII.GetString(fileBuf, nameOffset, zeroPos - nameOffset);
-            else
-              name = Encoding.ASCII.GetString(fileBuf, nameOffset, nameSize);
-          } else
-            name = Encoding.GetEncoding(437).GetString(fileBuf, nameOffset, nameSize);
-        }
-
-        // Normalize path separators
-        name = name.Replace('\\', '/');
-
-        var isDirectory = (headFlags & RarConstants.Rar4FlagDirectory) == RarConstants.Rar4FlagDirectory;
-        var isEncrypted = (headFlags & RarConstants.Rar4FlagEncrypted) != 0;
-
-        // Read 8-byte salt if file is encrypted
-        byte[]? salt = null;
-        if (isEncrypted && (headFlags & RarConstants.Rar4FlagSalt) != 0) {
-          var saltOffset = nameOffset + nameSize;
-          if (saltOffset + 8 <= remaining) {
-            salt = new byte[8];
-            fileBuf.AsSpan(saltOffset, 8).CopyTo(salt);
-          }
-        }
-
-        // Window bits: RAR3/4 encodes dict size in the flags
-        // For RAR3 (unpVer 29): dict size = 64KB * 2^((flags>>5)&7), max 4MB
-        var windowBits = 20; // Default 1MB
-        if (unpVer >= 29) {
-          var dictSizeShift = (headFlags >> 5) & 7;
-          windowBits = 16 + (int)dictSizeShift;
-          if (windowBits > 22) windowBits = 22; // Cap at 4MB for RAR3
-        }
-
-        var dataOffset = this._stream.Position;
-
-        var entry = new RarEntry {
-          Name = name,
-          Size = unpSize,
-          CompressedSize = packSize,
-          IsDirectory = isDirectory,
-          IsEncrypted = isEncrypted,
-          CompressionMethod = method - RarConstants.Rar4MethodStore, // Normalize to 0-5
-          Crc = fileCrc
-        };
-
-        this._entries.Add(entry);
-        this._rar4Details.Add((dataOffset, packSize, method,
-          unpSize, windowBits, (headFlags & RarConstants.Rar4FlagSolid) != 0, unpVer, salt));
-
-        // Skip past compressed data
-        if (packSize > 0)
-          this._stream.Position = dataOffset + packSize;
-      } else if ((headFlags & RarConstants.Rar4FlagAddSize) != 0 && headSize >= 11) {
-        // Other blocks: skip their data area (ADD_SIZE follows the 7-byte common header).
-        this._stream.Position += BinaryPrimitives.ReadUInt32LittleEndian(block.AsSpan(7));
-      }
-    }
-  }
-
-  /// <summary>One whole RAR4 block header, or null at the end of the stream.</summary>
-  private static byte[]? ReadPlainRar4Header(Stream stream) {
-    var common = new byte[7];
-    if (!TryReadExact(stream, common, 0, 7))
-      return null;
-    var headSize = Math.Max((int)BinaryPrimitives.ReadUInt16LittleEndian(common.AsSpan(5)), 7);
-    var block = new byte[headSize];
-    common.CopyTo(block, 0);
-    if (!TryReadExact(stream, block, 7, headSize - 7))
-      return null;
-    return block;
+  /// <summary>Reads one volume; returns whether more volumes follow (null when unknown).</summary>
+  private bool? ReadVolume(Stream s, bool first) {
+    var (sigPos, format) = FindSignature(s, first);
+    if (first) this._info.SfxSize = sigPos;
+    var index = this._volumes.Count;
+    this._volumes.Add(s);
+    if (format == 14)
+      return Rar14Parser.ReadVolume(s, sigPos, index, this._items, this._info, first);
+    if (format == 5)
+      return Rar5Parser.ReadVolume(s, sigPos + 8, index, this._rar5Crypto, this._items, this._info, first);
+    return Rar4Parser.ReadVolume(s, sigPos + 7, index, this._password, this._items, this._info, first);
   }
 
   /// <summary>
-  /// A block header of an archive written with encrypted headers: an 8-byte salt, then the
-  /// header AES-128-CBC encrypted (RAR 3.x key derivation), padded to 16 bytes.
+  /// Locates the archive signature: at offset 0, or after an SFX module within the first
+  /// megabytes (the technote's limit is 1 MB; RAR's own modules stay below it). A candidate
+  /// counts only when the header after it checks out.
   /// </summary>
-  /// <remarks>
-  /// Hypothesis: RAR's technote does not describe this layout. It is confirmed only by the RAR
-  /// 6.24 -hp archive among the test vectors.
-  /// </remarks>
-  private byte[]? ReadEncryptedRar4Header() {
-    var salt = new byte[8];
-    var first = new byte[16];
-    if (!TryReadExact(this._stream, salt, 0, 8) || !TryReadExact(this._stream, first, 0, 16))
-      return null;
-    if (!this._rar4HeaderKeys.TryGetValue(Convert.ToHexString(salt), out var keyIv)) {
-      keyIv = KeyDerivation.Rar3DeriveKey(this._password!, salt);
-      this._rar4HeaderKeys[Convert.ToHexString(salt)] = keyIv;
+  internal static (long Position, int Format) FindSignature(Stream s, bool allowSfx) {
+    var limit = (int)Math.Min(s.Length, allowSfx ? SfxSearchLimit : 64 * 1024);
+    var buf = new byte[limit];
+    s.Position = 0;
+    var got = 0;
+    while (got < limit) {
+      var n = s.Read(buf, got, limit - got);
+      if (n <= 0) break;
+      got += n;
     }
-    var head = AesCryptor.DecryptCbcNoPaddingAny(first, keyIv.Key, keyIv.Iv);
-    var headSize = Math.Max((int)BinaryPrimitives.ReadUInt16LittleEndian(head.AsSpan(5)), 7);
-    var padded = (headSize + 15) & ~15;
-    var cipher = new byte[padded];
-    first.CopyTo(cipher, 0);
-    if (!TryReadExact(this._stream, cipher, 16, padded - 16))
-      return null;
-    return AesCryptor.DecryptCbcNoPaddingAny(cipher, keyIv.Key, keyIv.Iv).AsSpan(0, headSize).ToArray();
-  }
-
-  private static bool TryReadExact(Stream stream, byte[] buffer, int offset, int count) {
-    var totalRead = 0;
-    while (totalRead < count) {
-      var read = stream.Read(buffer, offset + totalRead, count - totalRead);
-      if (read == 0) return false;
-      totalRead += read;
+    ReadOnlySpan<byte> sig = [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07];
+    ReadOnlySpan<byte> sig14 = [0x52, 0x45, 0x7E, 0x5E];
+    // RAR 1.3/1.4: its technote guarantees the SFX module never holds the signature.
+    var at14 = buf.AsSpan(0, got).IndexOf(sig14);
+    if (at14 >= 0 && (allowSfx || at14 == 0) && PlausibleRar14(buf, at14, got) && buf.AsSpan(0, at14).IndexOf(sig) < 0)
+      return (at14, 14);
+    var from = 0;
+    while (true) {
+      var at = buf.AsSpan(from, got - from).IndexOf(sig);
+      if (at < 0) break;
+      var pos = from + at;
+      if (pos + 7 <= got) {
+        if (buf[pos + 6] == 0x01 && pos + 8 <= got && buf[pos + 7] == 0x00 && PlausibleRar5(buf, pos + 8, got))
+          return (pos, 5);
+        if (buf[pos + 6] == 0x00 && PlausibleRar4(buf, pos + 7, got))
+          return (pos, 4);
+      }
+      if (!allowSfx) break;
+      from = pos + 1;
     }
-    return true;
+    throw new InvalidDataException("Not a valid RAR archive.");
   }
 
-  private void ReadFileEntry(RarHeader header) {
-    var fileHeader = RarFileHeader.Read(header.RawHeaderData!, header);
-
-    // Record data offset (current position, after header)
-    var dataOffset = this._stream.Position;
-    var dataSize = header.DataSize;
-
-    // Build public entry
-    var entry = new RarEntry {
-      Name = fileHeader.FileName,
-      Size = fileHeader.UnpackedSize,
-      CompressedSize = dataSize,
-      IsDirectory = fileHeader.IsDirectory,
-      CompressionMethod = fileHeader.CompressionMethod,
-      IsSolid = fileHeader.IsSolid,
-      IsEncrypted = fileHeader.IsEncrypted,
-    };
-
-    if (fileHeader.HasMtime)
-      entry.ModifiedTime = DateTimeOffset.FromUnixTimeSeconds(fileHeader.Mtime);
-
-    if (fileHeader.HasCrc)
-      entry.Crc = fileHeader.DataCrc;
-
-    this._entries.Add(entry);
-    this._entryDetails.Add((dataOffset, dataSize, fileHeader));
-
-    // Skip past data area
-    if (dataSize > 0)
-      this._stream.Position = dataOffset + dataSize;
+  private static bool PlausibleRar5(byte[] b, int p, int end) {
+    if (p + 7 > end) return false;
+    var crc = BitConverter.ToUInt32(b, p);
+    ulong size = 0;
+    int i;
+    for (i = 0; i < 3; ++i) {
+      var v = b[p + 4 + i];
+      size |= (ulong)(v & 0x7F) << (7 * i);
+      if ((v & 0x80) == 0) break;
+    }
+    if (i == 3) return false;
+    var len = 4 + i + 1 + (long)size;
+    if (size < 2 || p + len > end) return p + len > end && size >= 2; // header extends beyond the probe: accept
+    return Compression.Core.Checksums.Crc32.Compute(b.AsSpan(p + 4, (int)len - 4)) == crc;
   }
 
-  private void ParseServiceHeader(RarHeader header, long headerStartPos) {
-    if (header.RawHeaderData == null) {
-      if (header.HasDataArea && header.DataSize > 0)
-        this._stream.Position += header.DataSize;
+  private static bool PlausibleRar14(byte[] b, int p, int end) {
+    if (p + 7 > end) return false;
+    var len = BitConverter.ToUInt16(b, p + 4);
+    return len >= 7 && p + len <= end;
+  }
+
+  private static bool PlausibleRar4(byte[] b, int p, int end) {
+    if (p + 7 > end || b[p + 2] != 0x73) return false;
+    var size = BitConverter.ToUInt16(b, p + 5);
+    if (size < 7 || p + size > end) return false;
+    static ushort Crc(ReadOnlySpan<byte> h) => (ushort)(Compression.Core.Checksums.Crc32.Compute(h) & 0xFFFF);
+    var stored = BitConverter.ToUInt16(b, p);
+    return stored == Crc(b.AsSpan(p + 2, size - 2)) || (size > 13 && stored == Crc(b.AsSpan(p + 2, 11)));
+  }
+
+  private void BuildEntries() {
+    for (var i = 0; i < this._items.Count; ++i) {
+      var it = this._items[i];
+      if (it.IsService) {
+        if (it.ServiceName != "STM" || it.Owner < 0 || it.StreamName is not { Length: > 0 } stream)
+          continue;
+        // An NTFS alternate data stream of the file before it: listed as "file:stream".
+        var owner = this._items[it.Owner];
+        var streamName = stream.TrimStart(':');
+        this.AddEntry(i, owner.Name + ":" + streamName, it, streamName);
+        continue;
+      }
+      this.AddEntry(i, it.Name, it, null);
+    }
+  }
+
+  private void AddEntry(int itemIndex, string name, RarItem it, string? streamName) {
+    this._entryItems.Add(itemIndex);
+    this._entries.Add(new RarEntry {
+      Name = name,
+      Size = it.Size,
+      CompressedSize = it.PackedSize,
+      IsDirectory = it.IsDirectory,
+      ModifiedTime = it.Modified,
+      CreatedTime = it.Created,
+      AccessedTime = it.Accessed,
+      Crc = it.Crc,
+      Blake2sp = it.Blake2,
+      CompressionMethod = it.Method,
+      IsSolid = it.Solid,
+      IsEncrypted = it.IsEncrypted,
+      Attributes = it.Attributes,
+      HostOs = it.HostOs,
+      LinkKind = it.Link,
+      LinkTarget = it.LinkTarget,
+      FileVersion = it.FileVersion,
+      StreamName = streamName,
+      IsIncomplete = it.SplitBefore || it.SplitAfter,
+      VolumeCount = it.Parts.Select(p => p.Volume).Distinct().Count(),
+    });
+  }
+
+  private string? ReadComment() {
+    var cmt = this._items.FindIndex(i => i.IsService && i.ServiceName == "CMT");
+    if (cmt < 0) return null;
+    try {
+      using var ms = new MemoryStream();
+      this.ExtractItem(cmt, ms, 0);
+      var bytes = ms.ToArray();
+      return this._items[cmt].IsRar5
+        ? Encoding.UTF8.GetString(bytes).TrimEnd('\0')
+        : DecodeRar4Comment(bytes);
+    } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or InvalidOperationException) {
+      return null;
+    }
+  }
+
+  private static string DecodeRar4Comment(byte[] bytes) {
+    // RAR 3.x/4.x writes the comment as OEM text or, when it does not fit, as UTF-16LE with a BOM.
+    if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+      return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2).TrimEnd('\0');
+    return Encoding.GetEncoding(437).GetString(bytes).TrimEnd('\0');
+  }
+
+  // ---------------------------------------------------------------- extraction
+
+  private void ExtractItem(int itemIndex, Stream output, int depth) {
+    var item = this._items[itemIndex];
+    if (item.Link is RarLinkKind.HardLink or RarLinkKind.FileCopy && item.PackedSize == 0) {
+      if (depth > 16) throw new InvalidDataException("RAR link chain too long.");
+      var target = item.LinkTarget?.Replace('\\', '/');
+      var source = this._items.FindLastIndex(itemIndex - 1 < 0 ? 0 : itemIndex - 1, i => !i.IsService && i.Name == target);
+      if (source < 0)
+        throw new InvalidDataException($"RAR entry '{item.Name}' refers to '{target}', which the archive does not hold.");
+      this.ExtractItem(source, output, depth + 1);
       return;
     }
+    if (item.SplitBefore)
+      throw new InvalidDataException($"RAR entry '{item.Name}' starts in a volume that is not present.");
+    if (item.SplitAfter)
+      throw new InvalidDataException($"RAR entry '{item.Name}' continues in a volume that is not present ({this._info.MissingVolume ?? "next volume"}).");
+    if (item.Size == 0 && item.PackedSize == 0)
+      return;
 
-    // Try to read the service name from the header body
-    ReadOnlySpan<byte> data = header.RawHeaderData;
-    var offset = 0;
-
-    // Skip type + flags vints
-    _ = RarVint.Read(data[offset..], out var consumed); offset += consumed;
-    _ = RarVint.Read(data[offset..], out consumed); offset += consumed;
-    if (header.HasExtraArea) { _ = RarVint.Read(data[offset..], out consumed); offset += consumed; }
-    if (header.HasDataArea) { _ = RarVint.Read(data[offset..], out consumed); offset += consumed; }
-
-    // Remaining bytes are the service name
-    if (offset < data.Length) {
-      var name = System.Text.Encoding.UTF8.GetString(data[offset..]);
-      if (name == RarConstants.RecoveryRecordName && header.HasDataArea && header.DataSize > 0) {
-        this.HasRecoveryRecord = true;
-        this._recoveryHeaderOffset = headerStartPos;
-        this._recoveryDataOffset = this._stream.Position;
-        this._recoveryDataSize = header.DataSize;
+    if (UsesDecoder(item) && !item.IsService && item.Solid) {
+      // The decoder must hold the state after the compressed file before this one; replay
+      // the solid run from its start when it does not.
+      var previous = this.PreviousCompressed(itemIndex);
+      if (previous >= 0 && (this._solidDecoder == null || this._lastDecoded != previous)) {
+        var start = previous;
+        while (this._items[start].Solid && this.PreviousCompressed(start) is var p && p >= 0)
+          start = p;
+        this._solidDecoder = null;
+        this._lastDecoded = -1;
+        for (var i = start; i <= previous; ++i)
+          if (UsesDecoder(this._items[i]) && !this._items[i].IsService)
+            this.Decode(i, Stream.Null, verify: false);
       }
     }
-
-    // Skip data area
-    if (header.HasDataArea && header.DataSize > 0)
-      this._stream.Position += header.DataSize;
+    this.Decode(itemIndex, output, verify: true);
   }
 
-  private void ParseEncryptionHeader(RarHeader header) {
-    if (header.RawHeaderData == null) return;
-    ReadOnlySpan<byte> data = header.RawHeaderData;
-    var offset = 0;
+  /// <summary>Whether an item's data runs through the LZ decoder (and so through a solid window).</summary>
+  // An empty file can still carry packed data (RAR 2.0 solid archives write new tables for it),
+  // and that data moves the solid state on.
+  private static bool UsesDecoder(RarItem item) => item.Method != 0 && !item.IsDirectory && (item.Size != 0 || item.PackedSize > 0);
 
-    // Skip type + flags vints (already parsed)
-    _ = RarVint.Read(data[offset..], out var consumed); offset += consumed; // type
-    _ = RarVint.Read(data[offset..], out consumed); offset += consumed; // flags
-
-    // Skip extra area size and data area size if present
-    if (header.HasExtraArea) { _ = RarVint.Read(data[offset..], out consumed); offset += consumed; }
-    if (header.HasDataArea) { _ = RarVint.Read(data[offset..], out consumed); offset += consumed; }
-
-    // Encryption version (vint, must be 0 for AES-256)
-    var encVersion = (int)RarVint.Read(data[offset..], out consumed); offset += consumed;
-    if (encVersion != RarConstants.EncryptionVersionAes256) return;
-
-    // Encryption flags (vint)
-    var encFlags = (int)RarVint.Read(data[offset..], out consumed); offset += consumed;
-
-    // KDF count (1 byte, log2 of iteration count)
-    if (offset >= data.Length) return;
-    this._encryptionKdfCount = 1 << (data[offset] + 1);
-    offset += 1;
-
-    // Salt (16 bytes)
-    if (offset + 16 > data.Length) return;
-    this._encryptionSalt = data.Slice(offset, 16).ToArray();
-
-    // Skip data area if present
-    if (header.HasDataArea && header.DataSize > 0)
-      this._stream.Position += header.DataSize;
+  private int PreviousCompressed(int itemIndex) {
+    for (var i = itemIndex - 1; i >= 0; --i)
+      if (UsesDecoder(this._items[i]) && !this._items[i].IsService)
+        return i;
+    return -1;
   }
 
-  private byte[] DeriveKey() {
-    if (this._derivedKey != null)
-      return this._derivedKey;
+  /// <summary>Whether <paramref name="itemIndex"/> continues the decoder state now held.</summary>
+  private bool ContinuesSolid(int itemIndex, RarItem item)
+    => item.Solid && !item.IsService && this._solidDecoder != null && this._lastDecoded >= 0
+       && this._lastDecoded == this.PreviousCompressed(itemIndex);
 
-    if (this._password == null)
-      throw new InvalidOperationException("Encrypted RAR archive requires a password.");
-    if (this._encryptionSalt == null)
-      throw new InvalidDataException("No encryption header found in RAR archive.");
+  private void Decode(int itemIndex, Stream output, bool verify) {
+    var item = this._items[itemIndex];
+    if (item.IsRar5) this.DecodeRar5(itemIndex, item, output, verify);
+    else this.DecodeRar4(itemIndex, item, output, verify);
+    if (UsesDecoder(item) && !item.IsService)
+      this._lastDecoded = itemIndex;
+  }
 
-    this._derivedKey = KeyDerivation.Rar5DeriveKey(this._password, this._encryptionSalt, this._encryptionKdfCount);
-    return this._derivedKey;
+  private Stream PackedStream(RarItem item) => new RarPartsStream(this._volumes, item.Parts);
+
+  private void DecodeRar5(int itemIndex, RarItem item, Stream output, bool verify) {
+    var packed = this.PackedStream(item);
+    var packedSize = packed.Length;
+    byte[]? hashKey = null;
+    if (item.IsEncrypted && item.Crypt == null)
+      throw new NotSupportedException($"RAR entry '{item.Name}' uses an encryption record this reader does not know.");
+    if (item.Crypt is { } crypt) {
+      if (this._rar5Crypto == null)
+        throw new InvalidOperationException($"RAR entry '{item.Name}' is encrypted; a password is required.");
+      var keys = this._rar5Crypto.Keys(crypt.Salt, crypt.KdfLog);
+      if (Rar5Crypto.PasswordMatches(crypt.Check, keys.Check) == false)
+        throw new InvalidDataException($"The password is wrong for RAR entry '{item.Name}'.");
+      if (crypt.UseMac) hashKey = keys.HashKey;
+      packed = new RarCbcDecryptStream(packed, packedSize, keys.Key, crypt.Iv);
+      packedSize &= ~15L;
+    }
+
+    var hasher = new RarHashingStream(output, crc: verify && item.Crc != null, blake: verify && item.Blake2 != null);
+    if (item.Method == 0) {
+      CopyBounded(packed, hasher, item.Size < 0 ? long.MaxValue : item.Size);
+    } else {
+      if (item.AlgorithmVersion > 0)
+        throw new NotSupportedException($"RAR entry '{item.Name}' uses compression algorithm version {item.AlgorithmVersion} (RAR 7 dictionaries over 4 GB); no reference stream exists to prove a decoder for it, so it is refused.");
+      if (item.Method > 5)
+        throw new NotSupportedException($"RAR entry '{item.Name}' uses unknown method {item.Method}.");
+      var solid = this.ContinuesSolid(itemIndex, item) && this._solidDecoder is Rar5Unpacker;
+      Rar5Unpacker unpacker;
+      if (solid)
+        unpacker = (Rar5Unpacker)this._solidDecoder!;
+      else {
+        unpacker = new Rar5Unpacker(Rar5Unpacker.WindowFor(item.DictionarySize, this.SolidStreamSize(itemIndex)));
+        if (!item.IsService) this._solidDecoder = unpacker;
+      }
+      unpacker.Unpack(packed, packedSize, item.Size, hasher, solid);
+    }
+
+    if (!verify) return;
+    if (item.Size >= 0 && hasher.Written != item.Size)
+      throw new InvalidDataException($"RAR entry '{item.Name}' unpacked to {hasher.Written} bytes, not {item.Size}.");
+    if (item.Crc is { } crc) {
+      var got = hasher.Crc;
+      if (hashKey != null) got = Rar5Crypto.TweakCrc(hashKey, got);
+      if (got != crc)
+        throw this.ChecksumError(item, "CRC-32");
+    }
+    if (item.Blake2 is { } want) {
+      var got = hasher.Blake2sp!;
+      if (hashKey != null) got = Rar5Crypto.TweakDigest(hashKey, got);
+      if (!got.AsSpan().SequenceEqual(want))
+        throw this.ChecksumError(item, "BLAKE2sp");
+    }
+  }
+
+  private Exception ChecksumError(RarItem item, string kind)
+    => item.IsEncrypted
+      ? new InvalidDataException($"{kind} mismatch for encrypted RAR entry '{item.Name}': wrong password or damaged data.")
+      : new InvalidDataException($"{kind} mismatch for RAR entry '{item.Name}'.");
+
+  /// <summary>
+  /// Unpacked bytes of the solid run <paramref name="itemIndex"/> starts: it and the compressed
+  /// files after it that continue its window.
+  /// </summary>
+  private long SolidStreamSize(int itemIndex) {
+    var item = this._items[itemIndex];
+    if (item.Size < 0) return long.MaxValue / 4;
+    var total = item.Size;
+    if (item.IsService) return total;
+    for (var i = itemIndex + 1; i < this._items.Count; ++i) {
+      var it = this._items[i];
+      if (!UsesDecoder(it) || it.IsService) continue;
+      if (!it.Solid) break;
+      if (it.Size < 0) return long.MaxValue / 4;
+      total += it.Size;
+    }
+    return total;
+  }
+
+  private void DecodeRar4(int itemIndex, RarItem item, Stream output, bool verify) {
+    Stream packed = this.PackedStream(item);
+    var packedSize = packed.Length;
+    if (item.IsEncrypted) {
+      if (this._password == null)
+        throw new InvalidOperationException($"RAR entry '{item.Name}' is encrypted; a password is required.");
+      if (item.UnpackVersion >= 29) {
+        var (key, iv) = KeyDerivation.Rar3DeriveKey(this._password, item.Salt ?? []);
+        packed = new RarCbcDecryptStream(packed, (packedSize + 15) & ~15L, key, iv);
+      } else if (item.UnpackVersion >= 20) {
+        packed = new Rar20DecryptStream(packed, new Rar20Cipher(Rar20Password(this._password)));
+      } else
+        packed = new Rar15DecryptStream(packed, new Rar15Cipher(Rar20Password(this._password), item.CryptVersion != 0 ? item.CryptVersion : item.UnpackVersion));
+    }
+
+    var hasher = new RarHashingStream(output, crc: verify && item.Crc != null, blake: false, rar14: verify && item.Checksum14 != null);
+    if (item.Method == 0) {
+      CopyBounded(packed, hasher, item.Size);
+    } else {
+      if (item.Size > int.MaxValue || packedSize > int.MaxValue)
+        throw new NotSupportedException($"RAR entry '{item.Name}': compressed RAR 4 files over 2 GiB are not supported by the in-memory RAR 1.5-4.x decoders.");
+      var data = new byte[packedSize];
+      var got = 0;
+      while (got < data.Length) {
+        var n = packed.Read(data, got, data.Length - got);
+        if (n <= 0) break;
+        got += n;
+      }
+      var size = (int)item.Size;
+      byte[] unpacked;
+      var continueSolid = this.ContinuesSolid(itemIndex, item);
+      var ver = item.UnpackVersion;
+      if (ver <= 15) {
+        var d = continueSolid && this._solidDecoder is Rar1Decoder r1 ? r1 : new Rar1Decoder();
+        unpacked = d.Decompress(data.AsSpan(0, got), size);
+        if (!item.IsService) this._solidDecoder = d;
+      } else if (ver is <= 20 or 26) {
+        var d = continueSolid && this._solidDecoder is Rar2Decoder r2 ? r2 : new Rar2Decoder();
+        unpacked = d.Decompress(data.AsSpan(0, got), size);
+        if (!item.IsService) this._solidDecoder = d;
+      } else if (ver <= 36) {
+        var d = continueSolid && this._solidDecoder is Rar3Decoder r3 ? r3 : new Rar3Decoder();
+        unpacked = d.Decompress(data.AsSpan(0, got), size, Math.Min(item.WindowBits, 22));
+        if (!item.IsService) this._solidDecoder = d;
+      } else
+        throw new NotSupportedException($"RAR unpack version {ver} is not supported in RAR 4 archives.");
+      hasher.Write(unpacked);
+    }
+
+    if (!verify) return;
+    if (hasher.Written != item.Size)
+      throw new InvalidDataException($"RAR entry '{item.Name}' unpacked to {hasher.Written} bytes, not {item.Size}.");
+    if (item.Crc is { } crc && hasher.Crc != crc)
+      throw this.ChecksumError(item, "CRC-32");
+    if (item.Checksum14 is { } sum && hasher.Checksum14 != sum)
+      throw this.ChecksumError(item, "RAR 1.4 checksum");
+  }
+
+  private static void CopyBounded(Stream from, Stream to, long count) {
+    var buf = new byte[1 << 16];
+    while (count > 0) {
+      var n = from.Read(buf, 0, (int)Math.Min(buf.Length, count));
+      if (n <= 0) {
+        if (count == long.MaxValue || count < 0) return;
+        throw new InvalidDataException("RAR stored data ends early.");
+      }
+      to.Write(buf, 0, n);
+      count -= n;
+    }
   }
 
   /// <summary>
@@ -705,9 +576,63 @@ public sealed class RarReader : IDisposable {
     return bytes.Length > Rar20Cipher.MaxPasswordLength ? bytes[..Rar20Cipher.MaxPasswordLength] : bytes;
   }
 
-  private byte[] DecryptData(byte[] encryptedData, byte[] iv) {
-    var key = DeriveKey();
-    // RAR5 uses AES-256-CBC with no padding. Data is padded to 16-byte boundary.
-    return AesCryptor.DecryptCbcNoPadding(encryptedData, key, iv);
+  /// <summary>Decrypts a RAR 1.3/1.5 keystream cipher.</summary>
+  private sealed class Rar15DecryptStream(Stream source, Rar15Cipher cipher) : Stream {
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override int Read(byte[] buffer, int offset, int count) {
+      var n = source.Read(buffer, offset, count);
+      cipher.Decrypt(buffer.AsSpan(offset, n));
+      return n;
+    }
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
   }
+
+  /// <summary>Decrypts a RAR 2.0 cipher stream in 16-byte blocks.</summary>
+  private sealed class Rar20DecryptStream(Stream source, Rar20Cipher cipher) : Stream {
+    private readonly byte[] _buf = new byte[1 << 16];
+    private int _pos, _len;
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+    public override int Read(byte[] buffer, int offset, int count) {
+      if (this._pos == this._len) {
+        var got = 0;
+        while (got < this._buf.Length) {
+          var n = source.Read(this._buf, got, this._buf.Length - got);
+          if (n <= 0) break;
+          got += n;
+        }
+        if (got == 0) return 0;
+        var whole = (got + 15) & ~15;
+        if (whole > got) Array.Clear(this._buf, got, whole - got);
+        cipher.Decrypt(this._buf.AsSpan(0, whole));
+        this._pos = 0;
+        this._len = got;
+      }
+      var take = Math.Min(count, this._len - this._pos);
+      Buffer.BlockCopy(this._buf, this._pos, buffer, offset, take);
+      this._pos += take;
+      return take;
+    }
+
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+  }
+}
+
+internal static class RarItemExtensions {
+  public static bool IsSymlinkLike(this RarItem item) => item.Link is RarLinkKind.UnixSymlink or RarLinkKind.WindowsSymlink or RarLinkKind.WindowsJunction;
 }

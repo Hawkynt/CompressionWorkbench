@@ -1,253 +1,291 @@
 namespace Compression.Core.Dictionary.Rar;
 
 /// <summary>
-/// Decoder for the RAR 2.0 compression format (RAR 2.x archives, unpack versions 20 and 26):
-/// LZ77 with three Huffman codes, and the multi-channel audio predictor.
+/// Decompressor for RAR 2.0 packed data (unpack version 20 and 26): LZSS over a window of up to
+/// 1 MB with three transmitted Huffman tables, or the multimedia mode that predicts up to four
+/// interleaved audio channels.
 /// </summary>
 /// <remarks>
-/// Implemented from <c>docs/RAR20-ON-DISK.md</c> (sourcing rung 2, written from reading unrar);
-/// checked against archives WinRAR 2.90 wrote. One instance decodes one file, or the files
-/// of a solid archive in order.
+/// Converted from XADRAR20Handle.m and RARAudioDecoder.c of The Unarchiver's XADMaster
+/// (LGPL-2.1-or-later), see THIRD-PARTY-NOTICE.RarLegacy.txt. One instance decodes one solid
+/// stream: call <see cref="Decompress"/> once per file, in archive order, on the same instance for
+/// the files of a solid archive and on a new instance for a file that does not continue one.
 /// </remarks>
 public sealed class Rar2Decoder {
-  private const int MainCodeSize = 298;
-  private const int DistanceCodeSize = 48;
-  private const int RepeatCodeSize = 28;
-  private const int AudioCodeSize = 257;
-  private const int PrecodeSize = 19;
-  private const int WindowSize = 1 << 22;
-  private const int WindowMask = WindowSize - 1;
+  private const int WindowSize = 0x100000;
+  private const int WindowMask = Rar2Decoder.WindowSize - 1;
+  private const int MainSymbols = 298;
+  private const int OffsetSymbols = 48;
+  private const int LengthSymbols = 28;
+  private const int AudioSymbols = 257;
 
-  private static readonly byte[] LengthBases = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224];
-  private static readonly byte[] LengthBits = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5];
-  private static readonly int[] DistanceBases = [
+  private static readonly int[] LengthBases = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224];
+  private static readonly int[] LengthBits = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5];
+
+  private static readonly int[] OffsetBases = [
     0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144,
     8192, 12288, 16384, 24576, 32768, 49152, 65536, 98304, 131072, 196608, 262144, 327680, 393216, 458752, 524288,
-    589824, 655360, 720896, 786432, 851968, 917504, 983040];
-  private static readonly byte[] DistanceBits = [
-    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15,
-    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16];
-  private static readonly byte[] ShortBases = [0, 4, 8, 16, 32, 64, 128, 192];
-  private static readonly byte[] ShortBits = [2, 2, 3, 4, 5, 6, 6, 6];
+    589824, 655360, 720896, 786432, 851968, 917504, 983040,
+  ];
 
-  private readonly byte[] _window = new byte[WindowSize];
+  private static readonly int[] OffsetBits = [
+    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+  ];
+
+  private static readonly int[] ShortBases = [0, 4, 8, 16, 32, 64, 128, 192];
+  private static readonly int[] ShortBits = [2, 2, 3, 4, 5, 6, 6, 6];
+
+  private readonly byte[] _window = new byte[Rar2Decoder.WindowSize];
   private long _position;
-  private long _fileEnd;
 
-  private readonly byte[] _oldLengths = new byte[AudioCodeSize * 4];
+  private RarLegacyBitReader _input = new([]);
+  private byte[] _output = [];
+  private int _outputPos;
   private bool _tablesRead;
+
+  private RarLegacyPrefixCode? _mainCode, _offsetCode, _lengthCode;
+  private readonly RarLegacyPrefixCode?[] _audioCodes = new RarLegacyPrefixCode?[4];
+  private readonly int[] _lengthTable = new int[4 * Rar2Decoder.AudioSymbols];
+
+  private int _lastOffset, _lastLength;
+  private readonly int[] _oldOffsets = new int[4];
+  private int _oldOffsetIndex;
+
   private bool _audioBlock;
-  private int _channels = 1, _channel;
-  private int _channelDelta;
-  private Rar3Decoder.HuffmanTable? _mainCode, _distanceCode, _repeatCode;
-  private readonly Rar3Decoder.HuffmanTable?[] _audioCodes = new Rar3Decoder.HuffmanTable?[4];
-  private readonly AudioChannel[] _audio = [new(), new(), new(), new()];
+  private int _channel, _channelDelta, _channels;
+  private readonly AudioState[] _audio = [new(), new(), new(), new()];
 
-  private readonly int[] _oldDistances = new int[4];
-  private int _oldDistancePointer;
-  private int _lastDistance, _lastLength;
-
-  private sealed class AudioChannel {
-    public int K1, K2, K3, K4, K5;
-    public int D1, D2, D3, D4;
-    public int LastDelta, LastByte;
-    public uint ByteCount;
-    public readonly uint[] Errors = new uint[11];
-  }
-
-  /// <summary>Decompresses the packed data of one file.</summary>
-  /// <exception cref="InvalidDataException">The data is corrupt.</exception>
+  /// <summary>
+  /// Decodes the next file of the stream.
+  /// </summary>
+  /// <param name="compressed">The file's packed data.</param>
+  /// <param name="unpackedSize">The file's unpacked size.</param>
+  /// <returns>The unpacked bytes.</returns>
   public byte[] Decompress(ReadOnlySpan<byte> compressed, int unpackedSize) {
-    var fileStart = this._fileEnd;
-    var fileEnd = fileStart + unpackedSize;
-    this._fileEnd = fileEnd;
-    var output = new byte[unpackedSize];
-    for (var p = fileStart; p < Math.Min(this._position, fileEnd); ++p) output[p - fileStart] = this._window[p & WindowMask];
-    if (unpackedSize == 0 || this._position >= fileEnd) return output;
+    ArgumentOutOfRangeException.ThrowIfNegative(unpackedSize);
+    this._input = new(compressed.ToArray());
+    this._output = new byte[unpackedSize];
+    this._outputPos = 0;
 
-    var reader = new Rar3Decoder.BitReader(compressed.ToArray());
-    if (!this._tablesRead) this.ReadTables(reader);
+    // The tables travel once per solid stream, ahead of the first file's data.
+    if (!this._tablesRead && (unpackedSize > 0 || compressed.Length > 0)) {
+      this.ReadTables();
+      this._tablesRead = true;
+    }
 
-    while (this._position < fileEnd) {
+    // An empty file of a solid stream can still carry packed data: RAR 2.0 switches to new
+    // tables there (symbol 269), and the next file decodes with them. DOS RAR 2.00 writes such
+    // files; the state they set up is what the following file needs.
+    if (unpackedSize == 0) {
+      while (this._input.RemainingBits >= 8) {
+        if (this._audioBlock) {
+          if (this._audioCodes[this._channel]!.Decode(this._input) != 256) break;
+        } else if (this._mainCode!.Decode(this._input) != 269)
+          break;
+        this.ReadTables();
+      }
+      return this._output;
+    }
+
+    while (this._outputPos < unpackedSize) {
       if (this._audioBlock) {
-        var number = this._audioCodes[this._channel]!.Decode(reader);
-        if (number == 256) {
-          this.ReadTables(reader);
+        var symbol = this._audioCodes[this._channel]!.Decode(this._input);
+        if (symbol == 256) {
+          this.ReadTables();
           continue;
         }
-        this.Emit(this.DecodeAudio(number), output, fileStart, fileEnd);
-        if (++this._channel == this._channels) this._channel = 0;
+
+        var value = this._audio[this._channel].Decode(ref this._channelDelta, symbol);
+        if (++this._channel == this._channels)
+          this._channel = 0;
+
+        this.EmitByte((byte)value);
         continue;
       }
 
-      var symbol = this._mainCode!.Decode(reader);
-      if (symbol < 256) {
-        this.Emit((byte)symbol, output, fileStart, fileEnd);
-        continue;
-      }
-      if (symbol > 269) {
-        var index = symbol - 270;
-        var length = LengthBases[index] + 3 + reader.Bits(LengthBits[index]);
-        var d = this._distanceCode!.Decode(reader);
-        var distance = DistanceBases[d] + 1 + reader.Bits(DistanceBits[d]);
-        if (distance >= 0x2000) {
-          ++length;
-          if (distance >= 0x40000) ++length;
-        }
-        this.Copy(length, distance, output, fileStart, fileEnd);
-        continue;
-      }
-      if (symbol == 269) {
-        this.ReadTables(reader);
-        continue;
-      }
-      if (symbol == 256) {
-        this.Copy(this._lastLength, this._lastDistance, output, fileStart, fileEnd);
-        continue;
-      }
-      if (symbol < 261) {
-        var distance = this._oldDistances[(this._oldDistancePointer - (symbol - 256)) & 3];
-        var k = this._repeatCode!.Decode(reader);
-        var length = LengthBases[k] + 2 + reader.Bits(LengthBits[k]);
-        if (distance >= 0x101) {
-          ++length;
-          if (distance >= 0x2000) {
+      var main = this._mainCode!.Decode(this._input);
+      int offset, length;
+      switch (main) {
+        case < 256:
+          this.EmitByte((byte)main);
+          continue;
+        case 256:
+          offset = this._lastOffset;
+          length = this._lastLength;
+          break;
+        case <= 260: {
+          offset = this._oldOffsets[(this._oldOffsetIndex - (main - 256)) & 3];
+          var lengthSymbol = this._lengthCode!.Decode(this._input);
+          length = Rar2Decoder.LengthBases[lengthSymbol] + 2 + this._input.ReadBits(Rar2Decoder.LengthBits[lengthSymbol]);
+          if (offset >= 0x40000)
             ++length;
-            if (distance >= 0x40000) ++length;
-          }
+          if (offset >= 0x2000)
+            ++length;
+          if (offset >= 0x101)
+            ++length;
+          break;
         }
-        this.Copy(length, distance, output, fileStart, fileEnd);
-        continue;
+        case <= 268:
+          offset = Rar2Decoder.ShortBases[main - 261] + 1 + this._input.ReadBits(Rar2Decoder.ShortBits[main - 261]);
+          length = 2;
+          break;
+        case 269:
+          this.ReadTables();
+          continue;
+        default: {
+          length = Rar2Decoder.LengthBases[main - 270] + 3 + this._input.ReadBits(Rar2Decoder.LengthBits[main - 270]);
+          var offsetSymbol = this._offsetCode!.Decode(this._input);
+          offset = Rar2Decoder.OffsetBases[offsetSymbol] + 1 + this._input.ReadBits(Rar2Decoder.OffsetBits[offsetSymbol]);
+          if (offset >= 0x40000)
+            ++length;
+          if (offset >= 0x2000)
+            ++length;
+          break;
+        }
       }
-      var s = symbol - 261;
-      this.Copy(2, ShortBases[s] + 1 + reader.Bits(ShortBits[s]), output, fileStart, fileEnd);
+
+      this._lastOffset = this._oldOffsets[this._oldOffsetIndex++ & 3] = offset;
+      this._lastLength = length;
+      this.EmitMatch(offset, length);
     }
 
-    // A following solid file may need the tables announced right after this one.
-    if (reader.Remaining >= 5 * 8) {
-      try {
-        if (this._audioBlock ? this._audioCodes[this._channel]!.Decode(reader) == 256 : this._mainCode!.Decode(reader) == 269)
-          this.ReadTables(reader);
-      } catch (InvalidDataException) {
-        // padding
-      }
-    }
-    return output;
+    return this._output;
   }
 
-  private void Emit(byte value, byte[] output, long fileStart, long fileEnd) {
-    var p = this._position++;
-    this._window[p & WindowMask] = value;
-    if (p >= fileStart && p < fileEnd) output[p - fileStart] = value;
-  }
+  private void ReadTables() {
+    this._audioBlock = this._input.ReadBit();
+    if (!this._input.ReadBit())
+      Array.Clear(this._lengthTable);
 
-  private void Copy(int length, int distance, byte[] output, long fileStart, long fileEnd) {
-    this._lastDistance = distance;
-    this._oldDistances[this._oldDistancePointer] = distance;
-    this._oldDistancePointer = (this._oldDistancePointer + 1) & 3;
-    this._lastLength = length;
-    for (var i = 0; i < length; ++i) {
-      var p = this._position++;
-      var b = this._window[(p - distance) & WindowMask];
-      this._window[p & WindowMask] = b;
-      if (p >= fileStart && p < fileEnd) output[p - fileStart] = b;
-    }
-  }
-
-  private void ReadTables(Rar3Decoder.BitReader reader) {
-    this._audioBlock = reader.Bits(1) != 0;
-    if (reader.Bits(1) == 0) Array.Clear(this._oldLengths);
-    int tableSize;
+    int count;
     if (this._audioBlock) {
-      this._channels = reader.Bits(2) + 1;
-      if (this._channel >= this._channels) this._channel = 0;
-      tableSize = AudioCodeSize * this._channels;
+      this._channels = this._input.ReadBits(2) + 1;
+      count = this._channels * Rar2Decoder.AudioSymbols;
+      if (this._channel >= this._channels)
+        this._channel = 0;
     } else
-      tableSize = MainCodeSize + DistanceCodeSize + RepeatCodeSize;
+      count = Rar2Decoder.MainSymbols + Rar2Decoder.OffsetSymbols + Rar2Decoder.LengthSymbols;
 
-    Span<byte> precodeLengths = stackalloc byte[PrecodeSize];
-    for (var i = 0; i < PrecodeSize; ++i) precodeLengths[i] = (byte)reader.Bits(4);
-    var precode = new Rar3Decoder.HuffmanTable(precodeLengths);
+    Span<int> preLengths = stackalloc int[19];
+    for (var i = 0; i < preLengths.Length; ++i)
+      preLengths[i] = this._input.ReadBits(4);
 
-    var table = new byte[tableSize];
-    for (var i = 0; i < tableSize;) {
-      var number = precode.Decode(reader);
-      if (number < 16) {
-        table[i] = (byte)((number + this._oldLengths[i]) & 0xF);
-        ++i;
-      } else if (number == 16) {
-        if (i == 0) throw new InvalidDataException("RAR2: length repeat at the start of the tables.");
-        var n = reader.Bits(2) + 3;
-        for (; n > 0 && i < tableSize; --n, ++i) table[i] = table[i - 1];
-      } else {
-        var n = number == 17 ? reader.Bits(3) + 3 : reader.Bits(7) + 11;
-        for (; n > 0 && i < tableSize; --n) table[i++] = 0;
+    var preCode = RarLegacyPrefixCode.FromLengths(preLengths);
+    var table = this._lengthTable;
+    for (var i = 0; i < count;) {
+      var value = preCode.Decode(this._input);
+      switch (value) {
+        case < 16:
+          table[i] = (table[i] + value) & 0x0f;
+          ++i;
+          break;
+        case 16: {
+          if (i == 0)
+            throw new InvalidDataException("RAR 2.0 table repeats a length before the first one.");
+
+          var run = this._input.ReadBits(2) + 3;
+          for (var j = 0; j < run && i < count; ++j, ++i)
+            table[i] = table[i - 1];
+          break;
+        }
+        default: {
+          var run = value == 17 ? this._input.ReadBits(3) + 3 : this._input.ReadBits(7) + 11;
+          for (var j = 0; j < run && i < count; ++j)
+            table[i++] = 0;
+          break;
+        }
       }
     }
-    this._tablesRead = true;
 
-    var t = table.AsSpan();
-    if (this._audioBlock)
-      for (var c = 0; c < this._channels; ++c) this._audioCodes[c] = new(t.Slice(c * AudioCodeSize, AudioCodeSize));
-    else {
-      this._mainCode = new(t[..MainCodeSize]);
-      this._distanceCode = new(t.Slice(MainCodeSize, DistanceCodeSize));
-      this._repeatCode = new(t.Slice(MainCodeSize + DistanceCodeSize, RepeatCodeSize));
+    if (this._audioBlock) {
+      for (var i = 0; i < this._channels; ++i)
+        this._audioCodes[i] = RarLegacyPrefixCode.FromLengths(table.AsSpan(i * Rar2Decoder.AudioSymbols, Rar2Decoder.AudioSymbols));
+    } else {
+      this._mainCode = RarLegacyPrefixCode.FromLengths(table.AsSpan(0, Rar2Decoder.MainSymbols));
+      this._offsetCode = RarLegacyPrefixCode.FromLengths(table.AsSpan(Rar2Decoder.MainSymbols, Rar2Decoder.OffsetSymbols));
+      this._lengthCode = RarLegacyPrefixCode.FromLengths(table.AsSpan(Rar2Decoder.MainSymbols + Rar2Decoder.OffsetSymbols, Rar2Decoder.LengthSymbols));
     }
-    t.CopyTo(this._oldLengths);
   }
 
-  private byte DecodeAudio(int delta) {
-    var v = this._audio[this._channel];
-    ++v.ByteCount;
-    v.D4 = v.D3;
-    v.D3 = v.D2;
-    v.D2 = v.LastDelta - v.D1;
-    v.D1 = v.LastDelta;
-    var predicted = ((8 * v.LastByte + v.K1 * v.D1 + v.K2 * v.D2 + v.K3 * v.D3 + v.K4 * v.D4 + v.K5 * this._channelDelta) >> 3) & 0xFF;
-    var value = (byte)(predicted - delta);
+  private void EmitByte(byte value) {
+    this._window[(int)(this._position++ & Rar2Decoder.WindowMask)] = value;
+    this._output[this._outputPos++] = value;
+  }
 
-    var e = (sbyte)delta << 3;
-    var cd = this._channelDelta;
-    v.Errors[0] += (uint)Math.Abs(e);
-    v.Errors[1] += (uint)Math.Abs(e - v.D1);
-    v.Errors[2] += (uint)Math.Abs(e + v.D1);
-    v.Errors[3] += (uint)Math.Abs(e - v.D2);
-    v.Errors[4] += (uint)Math.Abs(e + v.D2);
-    v.Errors[5] += (uint)Math.Abs(e - v.D3);
-    v.Errors[6] += (uint)Math.Abs(e + v.D3);
-    v.Errors[7] += (uint)Math.Abs(e - v.D4);
-    v.Errors[8] += (uint)Math.Abs(e + v.D4);
-    v.Errors[9] += (uint)Math.Abs(e - cd);
-    v.Errors[10] += (uint)Math.Abs(e + cd);
+  private void EmitMatch(int offset, int length) {
+    var end = Math.Min(this._output.Length, this._outputPos + length);
+    while (this._outputPos < end)
+      this.EmitByte(this._window[(int)((this._position - offset) & Rar2Decoder.WindowMask)]);
+  }
 
-    this._channelDelta = v.LastDelta = (sbyte)(value - v.LastByte);
-    v.LastByte = value;
+  /// <summary>The adaptive linear predictor of one multimedia channel.</summary>
+  private sealed class AudioState {
+    private int _weight1, _weight2, _weight3, _weight4, _weight5;
+    private int _delta1, _delta2, _delta3, _delta4;
+    private int _lastDelta;
+    private readonly int[] _error = new int[11];
+    private int _count;
+    private int _lastByte;
 
-    if ((v.ByteCount & 0x1F) == 0) {
-      uint min = v.Errors[0];
-      var best = 0;
-      v.Errors[0] = 0;
-      for (var i = 1; i < v.Errors.Length; ++i) {
-        if (v.Errors[i] < min) {
-          min = v.Errors[i];
-          best = i;
-        }
-        v.Errors[i] = 0;
+    /// <summary>Turns the coded prediction error <paramref name="delta"/> into the next sample byte.</summary>
+    public int Decode(ref int channelDelta, int delta) {
+      ++this._count;
+
+      this._delta4 = this._delta3;
+      this._delta3 = this._delta2;
+      this._delta2 = this._lastDelta - this._delta1;
+      this._delta1 = this._lastDelta;
+
+      var predicted = ((8 * this._lastByte
+                        + this._weight1 * this._delta1
+                        + this._weight2 * this._delta2
+                        + this._weight3 * this._delta3
+                        + this._weight4 * this._delta4
+                        + this._weight5 * channelDelta) >> 3) & 0xff;
+
+      var value = (predicted - delta) & 0xff;
+
+      var error = (sbyte)delta << 3;
+      var errors = this._error;
+      errors[0] += Math.Abs(error);
+      errors[1] += Math.Abs(error - this._delta1);
+      errors[2] += Math.Abs(error + this._delta1);
+      errors[3] += Math.Abs(error - this._delta2);
+      errors[4] += Math.Abs(error + this._delta2);
+      errors[5] += Math.Abs(error - this._delta3);
+      errors[6] += Math.Abs(error + this._delta3);
+      errors[7] += Math.Abs(error - this._delta4);
+      errors[8] += Math.Abs(error + this._delta4);
+      errors[9] += Math.Abs(error - channelDelta);
+      errors[10] += Math.Abs(error + channelDelta);
+
+      channelDelta = this._lastDelta = (sbyte)(value - this._lastByte);
+      this._lastByte = value;
+
+      if ((this._count & 0x1f) != 0)
+        return value;
+
+      var minIndex = 0;
+      for (var i = 1; i < errors.Length; ++i)
+        if (errors[i] < errors[minIndex])
+          minIndex = i;
+
+      Array.Clear(errors);
+      switch (minIndex) {
+        case 1: if (this._weight1 >= -16) --this._weight1; break;
+        case 2: if (this._weight1 < 16) ++this._weight1; break;
+        case 3: if (this._weight2 >= -16) --this._weight2; break;
+        case 4: if (this._weight2 < 16) ++this._weight2; break;
+        case 5: if (this._weight3 >= -16) --this._weight3; break;
+        case 6: if (this._weight3 < 16) ++this._weight3; break;
+        case 7: if (this._weight4 >= -16) --this._weight4; break;
+        case 8: if (this._weight4 < 16) ++this._weight4; break;
+        case 9: if (this._weight5 >= -16) --this._weight5; break;
+        case 10: if (this._weight5 < 16) ++this._weight5; break;
       }
-      switch (best) {
-        case 1: if (v.K1 >= -16) --v.K1; break;
-        case 2: if (v.K1 < 16) ++v.K1; break;
-        case 3: if (v.K2 >= -16) --v.K2; break;
-        case 4: if (v.K2 < 16) ++v.K2; break;
-        case 5: if (v.K3 >= -16) --v.K3; break;
-        case 6: if (v.K3 < 16) ++v.K3; break;
-        case 7: if (v.K4 >= -16) --v.K4; break;
-        case 8: if (v.K4 < 16) ++v.K4; break;
-        case 9: if (v.K5 >= -16) --v.K5; break;
-        case 10: if (v.K5 < 16) ++v.K5; break;
-      }
+
+      return value;
     }
-    return value;
   }
 }

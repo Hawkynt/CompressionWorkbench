@@ -95,6 +95,48 @@ public static class KeyDerivation {
   public static byte[] Rar5DeriveKey(string password, ReadOnlySpan<byte> salt, int iterations) => Pbkdf2Sha256(password, salt, iterations, 32);
 
   /// <summary>
+  /// The three RAR 5 keys of one password and salt: one PBKDF2-HMAC-SHA256 chain run for
+  /// 2^<paramref name="kdfLog"/> iterations gives the AES-256 key, 16 more the key that tweaks
+  /// checksums (encryption flag 0x0002), 16 more the password check value, folded to 8 bytes.
+  /// </summary>
+  /// <remarks>
+  /// Converted from 7-Zip's <c>CPP/7zip/Crypto/Rar5Aes.cpp</c> (<c>CalcKey_and_CheckPassword</c>,
+  /// Igor Pavlov, LGPL-2.1-or-later, see <c>THIRD-PARTY-NOTICE.7-Zip.txt</c>). The password is
+  /// UTF-8, at most 127 characters, as RAR and 7-Zip use it.
+  /// </remarks>
+  /// <exception cref="NotSupportedException"><paramref name="kdfLog"/> exceeds 24, the bound
+  /// 7-Zip and RAR apply.</exception>
+  public static (byte[] Key, byte[] HashKey, byte[] PasswordCheck) Rar5DeriveKeys(string password, ReadOnlySpan<byte> salt, int kdfLog) {
+    ArgumentNullException.ThrowIfNull(password);
+    if (kdfLog is < 0 or > 24)
+      throw new NotSupportedException($"RAR 5 KDF count 2^{kdfLog} is out of range.");
+    var chars = password.Length > 127 ? password[..127] : password;
+    var pw = Encoding.UTF8.GetBytes(chars);
+    using var hmac = new HMACSHA256(pw);
+
+    var first = new byte[salt.Length + 4];
+    salt.CopyTo(first);
+    first[^1] = 1; // block index 1, big-endian
+    var u = hmac.ComputeHash(first);
+    var acc = (byte[])u.Clone();
+    var keys = new byte[3][];
+    var iterations = (1 << kdfLog) - 1;
+    for (var k = 0; k < 3; ++k) {
+      for (; iterations > 0; --iterations) {
+        u = hmac.ComputeHash(u);
+        for (var i = 0; i < acc.Length; ++i)
+          acc[i] ^= u[i];
+      }
+      keys[k] = (byte[])acc.Clone();
+      iterations = 16;
+    }
+    var check = new byte[8];
+    for (var i = 0; i < 32; ++i)
+      check[i & 7] ^= keys[2][i];
+    return (keys[0], keys[1], check);
+  }
+
+  /// <summary>
   /// Derives a 16-byte AES-128 key and 16-byte IV for RAR3/4 decryption.
   /// RAR3 iterates SHA-1 262144 times over (password_utf16le + salt + 3-byte counter); the IV takes
   /// byte 19 of every 16384th intermediate digest and the key is the first four digest words with

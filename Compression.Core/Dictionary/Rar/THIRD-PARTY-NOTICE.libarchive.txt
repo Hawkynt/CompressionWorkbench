@@ -15,6 +15,18 @@ written down from reading unrar 7.0.9 (rarvm.cpp, unpack30.cpp). The unRAR licen
 rules out its code, so that is sourcing rung 2 and no code was carried across. They
 were then implemented independently and checked against RAR 6.24 archives.
 
+libarchive — RAR 5 decoder, converted
+
+Source:   https://github.com/libarchive/libarchive
+          libarchive/archive_read_support_format_rar5.c
+Revision: v3.8.10
+Author:   Grzegorz Antoniak (Copyright (c) 2018), and the libarchive contributors
+Licence:  BSD-2-Clause (the same text, reproduced below)
+
+Rar5Unpacker.cs was converted from that file: block headers, table decoding, the symbol
+loop, filter scheduling and the delta, E8/E8E9 and ARM filters. Rar5Encoder.cs writes the
+bitstream that decoder reads. Checked against rar 7.12 archives and libarchive's RAR 5 tests.
+
 Copyright (c) 2003-2007 Tim Kientzle
 Copyright (c) 2011 Andres Mejia
 All rights reserved.

@@ -194,23 +194,16 @@ public class RarReaderTests {
     Assert.Throws<ArgumentOutOfRangeException>(() => reader.Extract(-1));
   }
 
-  [Category("HappyPath")]
+  [Category("Exception")]
   [Test]
-  public void Rar4_Signature_Accepted() {
+  public void Given_ARar4SignatureWithoutAMainHeader_When_Opened_Then_ItIsNotAnArchive() {
+    // RAR always writes the main header after the marker; a signature followed by anything
+    // else (here an end block with a dummy CRC) is not taken for an archive.
     var ms = new MemoryStream();
     ms.Write(RarConstants.Rar4Signature);
-    ms.WriteByte(0); // pad to 8 bytes for read
-    // Add end-of-archive marker so the reader terminates cleanly
-    ms.WriteByte(0x00); ms.WriteByte(0x00); // CRC placeholder
-    ms.WriteByte(RarConstants.Rar4TypeEnd);  // HEAD_TYPE = end
-    ms.WriteByte(0x00); ms.WriteByte(0x40); // HEAD_FLAGS
-    ms.WriteByte(0x07); ms.WriteByte(0x00); // HEAD_SIZE = 7
+    ms.Write([0x00, 0x00, RarConstants.Rar4TypeEnd, 0x00, 0x40, 0x07, 0x00]);
     ms.Position = 0;
-
-    using var reader = new RarReader(ms);
-    Assert.That(reader.IsRar4, Is.True);
-    Assert.That(reader.IsRar5, Is.False);
-    Assert.That(reader.Entries, Has.Count.EqualTo(0));
+    Assert.Throws<InvalidDataException>(() => _ = new RarReader(ms));
   }
 
   [Category("Exception")]
