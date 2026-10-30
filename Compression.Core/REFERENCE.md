@@ -1378,19 +1378,19 @@ Implements `IBuildingBlock`.
 
 #### `LzfCompressor`
 
-Implements LZF compression from the public liblzf wire-format specification: Marc Lehmann, "LZF: a very small data compression library", http://software.schmorp.de/pkg/liblzf.html.
+LZF compression exactly as liblzf's `lzf_compress` performs it.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` using the LZF wire format. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` into a bare LZF stream. |
 
 #### `LzfDecompressor`
 
-Decodes the LZF wire format produced by `LzfCompressor`. Format reference: http://software.schmorp.de/pkg/liblzf.html.
+LZF decompression exactly as liblzf's `lzf_decompress` performs it, with its input checks.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses an LZF stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses a bare LZF stream that expands to `originalLength` bytes. |
 
 ### Namespace `Compression.Core.Dictionary.Lzfse`
 
