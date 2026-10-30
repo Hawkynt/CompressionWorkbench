@@ -403,44 +403,12 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// recommends BCJ x86 filter for executables.
   /// </summary>
   /// <remarks>
-  /// This descriptor deliberately keeps the buffering
-  /// <see cref="IArchiveCreatable.CreateFromStreams"/> default and does NOT
-  /// override it. 7z uses solid compression: multiple files are concatenated
-  /// into a single compressed coder stream, and the header (written last)
-  /// encodes per-file unpack sizes and the block's total packed size, both of
-  /// which are only known after every member of the block has been read and
-  /// compressed. There is no per-entry append point at which a bounded
-  /// chunk-copy could write a file's bytes independently, so a streaming
-  /// override could not honor the bounded-memory contract without effectively
-  /// buffering each solid block anyway. Faking a per-entry streaming path here
-  /// would be dishonest, so the buffering default stands.
+  /// Inputs arrive as bytes here; <see cref="CreateFromStreams"/> takes them as streams and
+  /// encodes each solid block as a stream through its coders (the header, written last, records
+  /// the sizes and CRCs gathered on the way), so files larger than a buffer go in too.
   /// </remarks>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    // Three-tier fallback: FormatSpecific (schema) → direct property → hardcoded default.
-    var methodName = !string.IsNullOrEmpty(options.MethodName)
-      ? options.MethodName
-      : options.GetOption("Method", "lzma2");
-    var defaultCodec = SevenZipOptionsResolver.ResolveCodec(methodName);
-
-    var directDict = options.DictSize;
-    var schemaDict = options.GetOptionInt("DictSize", -1);
-    var effectiveDict = directDict > 0 ? directDict : (schemaDict > 0 ? schemaDict : 0L);
-
-    var dictSize = defaultCodec == SevenZipCodec.PPMd
-      ? SevenZipOptionsResolver.ResolvePpmdMemorySize(effectiveDict)
-      : defaultCodec == SevenZipCodec.BZip2
-        ? SevenZipOptionsResolver.ResolveBzip2BlockSize(effectiveDict) * 100 * 1024
-        : SevenZipOptionsResolver.ResolveLzmaDictSize(effectiveDict, options.Optimize);
-    var ppmdOrder = SevenZipOptionsResolver.ResolvePpmdOrder(options.WordSize);
-    var ppmdMem = SevenZipOptionsResolver.ResolvePpmdMemorySize(effectiveDict);
-    var directSolid = options.SolidSize;
-    var schemaSolid = (long)options.GetOptionInt("SolidSize", -1);
-    var solid = directSolid > 0 ? directSolid : (schemaSolid >= 0 ? schemaSolid : 0L);
-    var blockSize = solid > 0 ? solid : SolidBlockPlanner.DefaultMaxBlockSize;
-
-    var passwordFromSchema = options.GetOption("Password", "");
-    var password = !string.IsNullOrEmpty(options.Password) ? options.Password
-      : !string.IsNullOrEmpty(passwordFromSchema) ? passwordFromSchema : null;
+    var (defaultCodec, blockSize, newWriter) = ResolveWriter(options);
 
     // Detect incompressible files via entropy unless caller already passed a set
     // or explicitly disabled detection with ForceCompress.
@@ -454,10 +422,7 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       SolidBlockPlanner.RecommendCodec(b, defaultCodec) != defaultCodec ||
       SolidBlockPlanner.RecommendFilter(b) != SevenZipFilter.None);
 
-    var w = new SevenZipWriter(output, defaultCodec, dictionarySize: dictSize,
-      ppmdOrder: ppmdOrder, ppmdMemorySize: ppmdMem, password: password,
-      encryptHeaders: options.EncryptFilenames,
-      compressHeaders: options.GetOption("HeaderCompression", "false").Trim().ToLowerInvariant() is "true" or "on" or "1" or "yes");
+    var w = newWriter(output);
 
     foreach (var i in inputs)
       if (i.IsDirectory) w.AddDirectory(EntryFor(i));
@@ -487,6 +452,61 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     } else {
       w.Finish(maxThreads: options.Threads, maxBlockSize: options.Threads > 1 ? blockSize : 0);
     }
+  }
+
+  /// <summary>
+  /// The writer settings of <paramref name="options"/>: each knob from the direct property, else
+  /// the schema option, else the default; returns the default codec, the solid block size and a
+  /// factory for the configured writer.
+  /// </summary>
+  private static (SevenZipCodec Codec, long BlockSize, Func<Stream, SevenZipWriter> NewWriter) ResolveWriter(FormatCreateOptions options) {
+    var methodName = !string.IsNullOrEmpty(options.MethodName) ? options.MethodName : options.GetOption("Method", "lzma2");
+    var codec = SevenZipOptionsResolver.ResolveCodec(methodName);
+
+    var directDict = options.DictSize;
+    var schemaDict = options.GetOptionInt("DictSize", -1);
+    var effectiveDict = directDict > 0 ? directDict : (schemaDict > 0 ? schemaDict : 0L);
+    var dictSize = codec == SevenZipCodec.PPMd
+      ? SevenZipOptionsResolver.ResolvePpmdMemorySize(effectiveDict)
+      : codec == SevenZipCodec.BZip2
+        ? SevenZipOptionsResolver.ResolveBzip2BlockSize(effectiveDict) * 100 * 1024
+        : SevenZipOptionsResolver.ResolveLzmaDictSize(effectiveDict, options.Optimize);
+    var ppmdOrder = SevenZipOptionsResolver.ResolvePpmdOrder(options.WordSize);
+    var ppmdMem = SevenZipOptionsResolver.ResolvePpmdMemorySize(effectiveDict);
+
+    var directSolid = options.SolidSize;
+    var schemaSolid = (long)options.GetOptionInt("SolidSize", -1);
+    var solid = directSolid > 0 ? directSolid : (schemaSolid >= 0 ? schemaSolid : 0L);
+    var blockSize = solid > 0 ? solid : SolidBlockPlanner.DefaultMaxBlockSize;
+
+    var passwordFromSchema = options.GetOption("Password", "");
+    var password = !string.IsNullOrEmpty(options.Password) ? options.Password
+      : !string.IsNullOrEmpty(passwordFromSchema) ? passwordFromSchema : null;
+    var compressHeaders = options.GetOption("HeaderCompression", "false").Trim().ToLowerInvariant() is "true" or "on" or "1" or "yes";
+
+    return (codec, blockSize, output => new SevenZipWriter(output, codec, dictionarySize: dictSize,
+      ppmdOrder: ppmdOrder, ppmdMemorySize: ppmdMem, password: password,
+      encryptHeaders: options.EncryptFilenames, compressHeaders: compressHeaders));
+  }
+
+  /// <summary>
+  /// Streams the inputs into the archive: every file is read only when its solid block is
+  /// encoded, through the coders, so a file of any size — beyond the 2 GiB a buffer holds — goes
+  /// in with bounded memory (LZMA2, Deflate, BZip2, Copy; filters but BCJ2).
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var (_, blockSize, newWriter) = ResolveWriter(options);
+    var writer = newWriter(output);
+    foreach (var input in inputs) {
+      var entry = EntryFor(new ArchiveInputInfo("", input.Name, input.IsDirectory, Metadata: input.Metadata));
+      if (input.IsDirectory)
+        writer.AddDirectory(entry);
+      else
+        writer.AddEntry(entry, input.OpenStream, input.Size);
+    }
+    writer.Finish(options.Threads, options.Threads > 1 ? blockSize : 0);
   }
 
   /// <summary>

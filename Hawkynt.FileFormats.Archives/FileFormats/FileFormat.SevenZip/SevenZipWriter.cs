@@ -25,7 +25,7 @@ namespace FileFormat.SevenZip;
 /// BCJ2 streams of 7-Zip's coder.
 /// </para>
 /// </remarks>
-public sealed class SevenZipWriter : IDisposable {
+public sealed partial class SevenZipWriter : IDisposable {
   /// <summary>The key-derivation cost written into the AES properties: 2^19 SHA-256 rounds, 7-Zip's default.</summary>
   private const int AesCyclesPower = 19;
 
@@ -40,7 +40,10 @@ public sealed class SevenZipWriter : IDisposable {
   private readonly string? _password;
   private readonly bool _encryptHeaders;
   private readonly bool _compressHeaders;
-  private readonly List<(SevenZipEntry Entry, byte[] Data)> _entries = [];
+  private readonly List<SevenZipSource> _entries = [];
+
+  /// <summary>Solid blocks larger than this are streamed through the coders rather than assembled in memory.</summary>
+  internal const long InMemoryBlockLimit = 64L << 20;
   private (byte[] Salt, byte[] Key)? _aesKey;
   private bool _finished;
   private bool _disposed;
@@ -114,7 +117,7 @@ public sealed class SevenZipWriter : IDisposable {
     entry.Size = dataCopy.Length;
     entry.Crc = Crc32.Compute(dataCopy);
     entry.IsDirectory = false;
-    this._entries.Add((entry, dataCopy));
+    this._entries.Add(new(entry, dataCopy, null, dataCopy.Length));
   }
 
   /// <summary>
@@ -132,6 +135,26 @@ public sealed class SevenZipWriter : IDisposable {
   }
 
   /// <summary>
+  /// Adds a file entry whose bytes are read from <paramref name="open"/> only when its solid
+  /// block is encoded, so a file of any size goes into the archive with bounded memory. The
+  /// stream must deliver exactly <paramref name="size"/> bytes.
+  /// </summary>
+  /// <param name="entry">The entry metadata.</param>
+  /// <param name="open">Opens the file's content; called once, the stream is disposed after reading.</param>
+  /// <param name="size">The file's length in bytes.</param>
+  public void AddEntry(SevenZipEntry entry, Func<Stream> open, long size) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(open);
+    ArgumentOutOfRangeException.ThrowIfNegative(size);
+    if (this._finished)
+      throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
+    entry.Size = size;
+    entry.Crc = null; // computed while the block is encoded
+    entry.IsDirectory = false;
+    this._entries.Add(new(entry, null, open, size));
+  }
+
+  /// <summary>
   /// Adds a directory entry.
   /// </summary>
   /// <param name="name">The directory name.</param>
@@ -144,7 +167,7 @@ public sealed class SevenZipWriter : IDisposable {
       IsDirectory = true,
       Size = 0,
     };
-    this._entries.Add((entry, []));
+    this._entries.Add(new(entry, [], null, 0));
   }
 
   /// <summary>
@@ -157,7 +180,7 @@ public sealed class SevenZipWriter : IDisposable {
       throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
     entry.IsDirectory = true;
     entry.Size = 0;
-    this._entries.Add((entry, []));
+    this._entries.Add(new(entry, [], null, 0));
   }
 
   /// <summary>
@@ -182,7 +205,7 @@ public sealed class SevenZipWriter : IDisposable {
   }
 
   /// <summary>One solid block to encode: its files and how.</summary>
-  private sealed record PlannedBlock(List<(SevenZipEntry Entry, byte[] Data)> Files, SevenZipCodec Codec, SevenZipFilter Filter, int DictionarySize);
+  private sealed record PlannedBlock(List<SevenZipSource> Files, SevenZipCodec Codec, SevenZipFilter Filter, int DictionarySize);
 
   /// <summary>An encoded block: the packed streams in folder order, and the folder describing them.</summary>
   private sealed record EncodedBlock(byte[][] PackStreams, SevenZipFolder Folder, PlannedBlock Plan);
@@ -201,7 +224,7 @@ public sealed class SevenZipWriter : IDisposable {
     var claimed = new HashSet<int>();
     var blocks = new List<PlannedBlock>();
     foreach (var desc in blockDescs) {
-      var block = new List<(SevenZipEntry Entry, byte[] Data)>();
+      var block = new List<SevenZipSource>();
       foreach (var idx in desc.EntryIndices)
         if (idx >= 0 && idx < fileEntries.Count && claimed.Add(idx))
           block.Add(fileEntries[idx]);
@@ -209,7 +232,7 @@ public sealed class SevenZipWriter : IDisposable {
         blocks.Add(new(block, desc.Codec ?? this._codec, desc.Filter ?? this._filter, desc.DictionarySize ?? this._dictionarySize));
     }
 
-    var unclaimed = new List<(SevenZipEntry Entry, byte[] Data)>();
+    var unclaimed = new List<SevenZipSource>();
     for (var i = 0; i < fileEntries.Count; i++)
       if (!claimed.Contains(i))
         unclaimed.Add(fileEntries[i]);
@@ -239,14 +262,14 @@ public sealed class SevenZipWriter : IDisposable {
     this.WriteArchive(blocks, emptyEntries, maxThreads);
   }
 
-  private (List<(SevenZipEntry Entry, byte[] Data)> Files, List<SevenZipEntry> Empty) SplitEntries() {
-    var files = new List<(SevenZipEntry Entry, byte[] Data)>();
+  private (List<SevenZipSource> Files, List<SevenZipEntry> Empty) SplitEntries() {
+    var files = new List<SevenZipSource>();
     var empty = new List<SevenZipEntry>();
-    foreach (var (entry, data) in this._entries) {
-      if (entry.IsDirectory || data.Length == 0)
-        empty.Add(entry);
+    foreach (var source in this._entries) {
+      if (source.Entry.IsDirectory || source.Size == 0)
+        empty.Add(source.Entry);
       else
-        files.Add((entry, data));
+        files.Add(source);
     }
     return (files, empty);
   }
@@ -256,30 +279,51 @@ public sealed class SevenZipWriter : IDisposable {
     if (this._password != null && blocks.Count > 0)
       this.EnsureKey();
 
-    var encoded = new EncodedBlock[blocks.Count];
-    if (maxThreads > 1 && blocks.Count > 1)
-      Parallel.For(0, blocks.Count, new ParallelOptions { MaxDegreeOfParallelism = maxThreads }, i => encoded[i] = this.EncodeBlock(blocks[i]));
-    else
-      for (var i = 0; i < blocks.Count; ++i)
-        encoded[i] = this.EncodeBlock(blocks[i]);
-
     var packSizes = new List<long>();
     var folders = new List<SevenZipFolder>();
     var numUnpack = new List<int>();
     var unpackSizes = new List<long>();
     var digests = new List<uint?>();
     var fileInfos = new List<SevenZipFileInfo>();
-    foreach (var block in encoded) {
-      foreach (var stream in block.PackStreams) {
-        this._stream.Write(stream);
-        packSizes.Add(stream.Length);
+
+    void Record(PlannedBlock plan, SevenZipFolder folder) {
+      folders.Add(folder);
+      numUnpack.Add(plan.Files.Count);
+      foreach (var source in plan.Files) {
+        unpackSizes.Add(source.Size);
+        digests.Add(source.Entry.Crc ?? Crc32.Compute(source.Data ?? []));
+        fileInfos.Add(MakeFileInfo(source.Entry));
       }
-      folders.Add(block.Folder);
-      numUnpack.Add(block.Plan.Files.Count);
-      foreach (var (entry, data) in block.Plan.Files) {
-        unpackSizes.Add(data.Length);
-        digests.Add(entry.Crc ?? Crc32.Compute(data));
-        fileInfos.Add(MakeFileInfo(entry));
+    }
+
+    if (blocks.Exists(this.MustStream)) {
+      // A streamed block writes straight to the archive, so blocks go out one after another.
+      foreach (var plan in blocks)
+        if (this.MustStream(plan)) {
+          var (packed, folder) = this.StreamBlock(plan);
+          packSizes.Add(packed);
+          Record(plan, folder);
+        } else {
+          var block = this.EncodeBlock(plan);
+          foreach (var stream in block.PackStreams) {
+            this._stream.Write(stream);
+            packSizes.Add(stream.Length);
+          }
+          Record(plan, block.Folder);
+        }
+    } else {
+      var encoded = new EncodedBlock[blocks.Count];
+      if (maxThreads > 1 && blocks.Count > 1)
+        Parallel.For(0, blocks.Count, new ParallelOptions { MaxDegreeOfParallelism = maxThreads }, i => encoded[i] = this.EncodeBlock(blocks[i]));
+      else
+        for (var i = 0; i < blocks.Count; ++i)
+          encoded[i] = this.EncodeBlock(blocks[i]);
+      foreach (var block in encoded) {
+        foreach (var stream in block.PackStreams) {
+          this._stream.Write(stream);
+          packSizes.Add(stream.Length);
+        }
+        Record(block.Plan, block.Folder);
       }
     }
 
@@ -442,23 +486,23 @@ public sealed class SevenZipWriter : IDisposable {
   /// Splits file entries into solid blocks, each not exceeding maxBlockSize.
   /// If maxBlockSize is 0, all entries go into a single block.
   /// </summary>
-  private static List<List<(SevenZipEntry Entry, byte[] Data)>> SplitIntoBlocks(
-      List<(SevenZipEntry Entry, byte[] Data)> entries, long maxBlockSize) {
+  private static List<List<SevenZipSource>> SplitIntoBlocks(
+      List<SevenZipSource> entries, long maxBlockSize) {
     if (maxBlockSize <= 0)
       return [entries];
 
-    var blocks = new List<List<(SevenZipEntry Entry, byte[] Data)>>();
-    var current = new List<(SevenZipEntry Entry, byte[] Data)>();
+    var blocks = new List<List<SevenZipSource>>();
+    var current = new List<SevenZipSource>();
     long currentSize = 0;
 
     foreach (var entry in entries) {
-      if (current.Count > 0 && currentSize + entry.Data.Length > maxBlockSize) {
+      if (current.Count > 0 && currentSize + entry.Size > maxBlockSize) {
         blocks.Add(current);
         current = [];
         currentSize = 0;
       }
       current.Add(entry);
-      currentSize += entry.Data.Length;
+      currentSize += entry.Size;
     }
     if (current.Count > 0)
       blocks.Add(current);
@@ -466,19 +510,16 @@ public sealed class SevenZipWriter : IDisposable {
     return blocks;
   }
 
-  private static byte[] ConcatenateBlock(List<(SevenZipEntry Entry, byte[] Data)> block) {
+  private static byte[] ConcatenateBlock(List<SevenZipSource> block) {
     var totalSize = 0L;
-    foreach (var (_, data) in block)
-      totalSize += data.Length;
+    foreach (var source in block)
+      totalSize += source.Size;
     if (totalSize > Array.MaxLength)
-      throw new NotSupportedException($"7z: a solid block of {totalSize} bytes exceeds what this writer holds in memory; use a smaller solid block size.");
+      throw new NotSupportedException($"7z: a solid block of {totalSize} bytes can only be streamed with LZMA2, Deflate, BZip2 or Copy and without BCJ2; this one needs to be held in memory.");
 
     var solidData = new byte[totalSize];
-    var offset = 0;
-    foreach (var (_, data) in block) {
-      data.AsSpan().CopyTo(solidData.AsSpan(offset));
-      offset += data.Length;
-    }
+    using var reader = new SevenZipSourceStream(block);
+    reader.ReadExactly(solidData);
     return solidData;
   }
 

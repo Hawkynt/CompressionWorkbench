@@ -1746,7 +1746,7 @@ LZMA2 encoder that wraps LZMA data in chunked format with control bytes. Passes 
 | `Lzma2Encoder` | `Lzma2Encoder(int dictionarySize = 8388608, LzmaCompressionLevel level = 1)` | Initializes a new LZMA2 encoder. |
 | `DictionarySizeByte` | `byte DictionarySizeByte { get; }` | Gets the encoded dictionary size byte for XZ headers. |
 | `Encode` | `void Encode(Stream output, ReadOnlySpan<byte> data)` | Encodes data in LZMA2 format to the output stream. |
-| `Encode` | `void Encode(Stream output, Stream input, long length = -1)` | Encodes data from a stream in LZMA2 format. |
+| `Encode` | `void Encode(Stream output, Stream input, long length = -1)` | Encodes data from a stream in LZMA2 format, chunk by chunk: memory stays at one dictionary of history plus one chunk, whatever the stream's length. The output is byte-identical to `Encode` over the same bytes. |
 
 #### `LzmaBuildingBlock`
 

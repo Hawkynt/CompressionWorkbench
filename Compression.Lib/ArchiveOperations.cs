@@ -186,6 +186,9 @@ public static class ArchiveOperations {
         Size: i.IsDirectory ? 0
               : i.InMemoryContent?.LongLength ?? (File.Exists(i.FullPath) ? new FileInfo(i.FullPath).Length : 0),
         IsDirectory: i.IsDirectory,
+        Metadata: i.InMemoryContent == null && (i.IsDirectory ? Directory.Exists(i.FullPath) : File.Exists(i.FullPath))
+          ? new Compression.Registry.ArchiveEntryMetadata(LastWriteTimeUtc: i.IsDirectory ? Directory.GetLastWriteTimeUtc(i.FullPath) : File.GetLastWriteTimeUtc(i.FullPath))
+          : null,
         OpenStream: i.InMemoryContent is { } bytes
           ? () => new MemoryStream(bytes, writable: false)
           : () => File.OpenRead(i.FullPath))).ToList();

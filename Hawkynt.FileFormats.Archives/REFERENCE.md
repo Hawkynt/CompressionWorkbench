@@ -27368,6 +27368,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds new names through the genuine changed-byte append path: new files are compressed into one fresh solid block at the old next-header position and only the trailing descriptive header plus 32-byte signature header are replaced. Same-name updates and unsupported archive profiles fall back to verified rebuild. The in-place writer completes all profile checks and replacement-header serialization before its first archive write, so no O(total bytes) rollback snapshot is required around a supported append. |
+| `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Streams the inputs into the archive: every file is read only when its solid block is encoded, through the coders, so a file of any size — beyond the 2 GiB a buffer holds — goes in with bounded memory (LZMA2, Deflate, BZip2, Copy; filters but BCJ2). |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a 7z archive from `inputs`. Plans solid blocks by extension similarity, segregates incompressible files, and per-block recommends BCJ x86 filter for executables. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. Routed through the bounded `OpenEntry` so the per-entry isolation contract holds uniformly across descriptors. |
@@ -27434,6 +27435,7 @@ Implements `IDisposable`.
 | `SevenZipWriter` | `SevenZipWriter(Stream stream, bool leaveOpen = false, int dictionarySize = 8388608)` | Initializes a new `SevenZipWriter`. |
 | `AddDirectory` | `void AddDirectory(SevenZipEntry entry)` | Adds a directory entry carrying its own times and attributes. |
 | `AddDirectory` | `void AddDirectory(string name)` | Adds a directory entry. |
+| `AddEntry` | `void AddEntry(SevenZipEntry entry, Func<Stream> open, long size)` | Adds a file entry whose bytes are read from `open` only when its solid block is encoded, so a file of any size goes into the archive with bounded memory. The stream must deliver exactly `size` bytes. |
 | `AddEntry` | `void AddEntry(SevenZipEntry entry, ReadOnlySpan<byte> data)` | Adds a file entry from a byte span. |
 | `AddEntry` | `void AddEntry(SevenZipEntry entry, Stream data)` | Adds a file entry from a stream. |
 | `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, SevenZipCodec codec = 0, string password = null)` | Creates a 7z archive split into multiple volumes. |
