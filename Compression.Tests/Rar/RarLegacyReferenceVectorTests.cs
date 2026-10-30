@@ -32,6 +32,8 @@ public class RarLegacyReferenceVectorTests {
 
   [TestCase("sharpcompress-rar15.rar")]
   [TestCase("sharpcompress-rar20.rar")]
+  [TestCase("winrar290-solid.rar")]
+  [TestCase("winrar290-solid-mixed.rar")]
   public void Given_ARealArchive_When_EntriesAreExtractedInReverseOrder_Then_EachStillMatches(string archive) {
     var expected = ManifestRows().Select(r => r.Arguments).Where(a => (string)a[0]! == archive).ToList();
     using var reader = new RarReader(new MemoryStream(ReadResource(archive)));
@@ -60,8 +62,59 @@ public class RarLegacyReferenceVectorTests {
     Assert.That(() => reader.Extract(FindEntry(reader, entryName)), Throws.InstanceOf<InvalidDataException>());
   }
 
+  [TestCase("winrar290-audio.rar", "mono8.wav")]
+  [TestCase("winrar290-audio.rar", "stereo16.wav")]
+  [TestCase("winrar290-audio.rar", "quad8.wav")]
+  public void Given_AWinRar290MultimediaEntry_When_ItsStreamIsInspected_Then_ItOpensWithAnAudioBlock(string archive, string entryName) {
+    // The manifest pins the decoded bytes; this pins that the multimedia path is what decoded them.
+    var bytes = ReadResource(archive);
+    var header = FindFileHeader(bytes, archive, entryName);
+    var expected = ManifestRows().Select(r => r.Arguments).Single(a => (string)a[0]! == archive && (string)a[1]! == entryName);
+
+    var decoder = new Compression.Core.Dictionary.Rar.Rar2Decoder();
+    var data = decoder.Decompress(bytes.AsSpan(header.DataStart, header.PackSize), (int)(long)expected[2]!);
+
+    Assert.That(decoder.AudioTableCount, Is.GreaterThan(0));
+    Assert.That(Convert.ToHexStringLower(SHA256.HashData(data)), Is.EqualTo((string)expected[3]!));
+  }
+
+  [Test]
+  public void Given_TheSolidMixedArchive_When_ItsStreamIsDecodedInOrder_Then_ItSwitchesFromLzToAudioTables() {
+    const string archive = "winrar290-solid-mixed.rar";
+    var bytes = ReadResource(archive);
+    var decoder = new Compression.Core.Dictionary.Rar.Rar2Decoder();
+    var audioTablesBefore = new List<int>();
+    var rows = ManifestRows().Select(r => r.Arguments).Where(a => (string)a[0]! == archive).ToList();
+    using var reader = new RarReader(new MemoryStream(bytes));
+    var archiveOrder = reader.Entries.Select(e => e.Name).ToList();
+    foreach (var row in rows.OrderBy(r => archiveOrder.IndexOf((string)r[1]!))) {
+      var header = FindFileHeader(bytes, archive, (string)row[1]!);
+      audioTablesBefore.Add(decoder.AudioTableCount);
+      var data = decoder.Decompress(bytes.AsSpan(header.DataStart, header.PackSize), (int)(long)row[2]!);
+      Assert.That(Convert.ToHexStringLower(SHA256.HashData(data)), Is.EqualTo((string)row[3]!), (string)row[1]!);
+    }
+
+    Assert.That(audioTablesBefore[0], Is.Zero);
+    Assert.That(decoder.AudioTableCount, Is.GreaterThan(0));
+  }
+
+  [TestCase("winrar290-solid.rar")]
+  [TestCase("winrar290-solid-mixed.rar")]
+  public void Given_AWinRar290SolidArchive_When_HeadersAreRead_Then_EveryEntryAfterTheFirstContinuesTheStream(string archive) {
+    var bytes = ReadResource(archive);
+    using var reader = new RarReader(new MemoryStream(bytes));
+    var flags = reader.Entries.Select(e => FindFileHeader(bytes, archive, e.Name).Flags).ToList();
+    Assert.That(flags, Has.Count.GreaterThan(1));
+    Assert.That(flags.Skip(1).All(f => (f & 0x10) != 0), Is.True);
+  }
+
   private static int LocatePackedData(byte[] bytes, string archive, string entryName) {
-    // Walk the RAR 4 block chain to the entry's header; its packed data follows the header.
+    var header = FindFileHeader(bytes, archive, entryName);
+    return header.DataStart + header.PackSize / 2;
+  }
+
+  /// <summary>Walks the RAR 4 block chain to the entry's file header; its packed data follows it.</summary>
+  private static (int DataStart, int PackSize, ushort Flags) FindFileHeader(byte[] bytes, string archive, string entryName) {
     var position = 7;
     while (position + 7 <= bytes.Length) {
       var headType = bytes[position + 2];
@@ -72,7 +125,7 @@ public class RarLegacyReferenceVectorTests {
         var nameSize = BitConverter.ToUInt16(bytes, position + 26);
         var name = System.Text.Encoding.Latin1.GetString(bytes, position + 32, nameSize).Replace('\\', '/');
         if (string.Equals(name, entryName, StringComparison.OrdinalIgnoreCase))
-          return position + headSize + (int)(addSize / 2);
+          return (position + headSize, (int)addSize, headFlags);
       }
 
       position += headSize + (int)addSize;

@@ -139,8 +139,14 @@ public sealed class Rar2Decoder {
     return this._output;
   }
 
+  /// <summary>How many multimedia (audio) table sets the stream has carried so far.</summary>
+  internal int AudioTableCount { get; private set; }
+
   private void ReadTables() {
     this._audioBlock = this._input.ReadBit();
+    if (this._audioBlock)
+      ++this.AudioTableCount;
+
     if (!this._input.ReadBit())
       Array.Clear(this._lengthTable);
 
