@@ -125,6 +125,7 @@ public class ConversionMatrixTests {
       { "StuffItX", "[single-payload/whole-image target] writer emits an image that re-lists as 0 files" },
       { "Umx", "[single-payload/whole-image target] Unreal package; writer emits a blob that re-lists as 0 files" },
       { "Wbn", "[single-payload/whole-image target] WebBundle writer collapses tree to a single FULL.wbn" },
+      { "SeqBox", "[single-payload/whole-image target] a SeqBox container holds exactly one file; a tree of several is refused" },
       { "Wrapster", "[single-payload/whole-image target] Wrapster MP3 wrapper; one FULL.mp3 + 0/1 frame, not a tree" },
       // -- bucket: name/charset/size constraint --
       { "Bbc", "[name/charset/size constraint] BBC Micro DFS disk; name-synthesizing FS, payload not found by content" },
