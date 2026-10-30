@@ -29258,6 +29258,114 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Each entry's decoded byte buffer is produced by `BuildEntries` and wrapped in a `BoundedEntryStream` sized to its logical length. |
 
+### Namespace `FileFormat.SymbianSis`
+
+[`SymbianSisEntry`](#symbiansisentry) · [`SymbianSisFile`](#symbiansisfile) · [`SymbianSisFormatDescriptor`](#symbiansisformatdescriptor) · [`SymbianSisPackage`](#symbiansispackage) · [`SymbianSisReader`](#symbiansisreader) · [`SymbianSisWriter`](#symbiansiswriter)
+
+#### `SymbianSisEntry`
+
+A file a Symbian SIS package installs, runs or shows.
+
+Implements `IEquatable<SymbianSisEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SymbianSisEntry` | `SymbianSisEntry(string FileName, string Target, string MimeType, uint Operation, uint OperationOptions, long CompressedSize, long Size, int DataUnit, int FileIndex, byte[] Hash)` | A file a Symbian SIS package installs, runs or shows. |
+| `CompressedSize` | `long CompressedSize { get; init; }` | Its length as stored in the SIS file. |
+| `DataUnit` | `int DataUnit { get; init; }` | Absolute index of the SISDataUnit that holds it. |
+| `FileIndex` | `int FileIndex { get; init; }` | Index of its SISFileData inside that data unit. |
+| `FileName` | `string FileName { get; init; }` | The install target with its drive taken off ("sys/bin/app.exe"); "embeddedN/..." for a file of the Nth embedded package, "notarget/fileN" for one with no target. |
+| `Hash` | `byte[] Hash { get; init; }` | The SHA-1 the controller records for the uncompressed file, or null for an unknown hash algorithm. |
+| `MimeType` | `string MimeType { get; init; }` | The SISFileDescription MIME type, or empty. |
+| `OperationOptions` | `uint OperationOptions { get; init; }` | The operation's option bits. |
+| `Operation` | `uint Operation { get; init; }` | TSISFileOperation: 1 install, 2 run, 4 show as text. |
+| `Size` | `long Size { get; init; }` | Its uncompressed length. |
+| `Target` | `string Target { get; init; }` | The SISFileDescription target as stored ("!:\sys\bin\app.exe"), or empty. |
+
+#### `SymbianSisFile`
+
+A file a written package installs.
+
+Implements `IEquatable<SymbianSisFile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SymbianSisFile` | `SymbianSisFile(string Target, byte[] Data)` | A file a written package installs. |
+| `Data` | `byte[] Data { get; init; }` | Its contents. |
+| `Target` | `string Target { get; init; }` | The install target, "!:\sys\bin\app.exe" style ("!" lets the user pick the drive). |
+
+#### `SymbianSisFormatDescriptor`
+
+Symbian OS 9.x installation package (".sis" made by makesis, ".sisx" once signsis signed it): the files of the package and of every package embedded in it, checked against the controller's CRC-16s and SHA-1s. Creation writes an unsigned package the way makesis does. References: Symbian OS v9.X SIS File Format Specification, version 1.1 (Symbian, June 2006)
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SymbianSisFormatDescriptor` | `SymbianSisFormatDescriptor()` |  |
+| `CreatedPackageUid` | `const uint CreatedPackageUid` | Package UID 3 for created packages: the first UID of the unprotected test range. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes an unsigned package installing every input to "!:\<name>", named "package", version 1.0.0, stamped with the current time; `SymbianSisWriter` takes the rest. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `SymbianSisPackage`
+
+What `SymbianSisWriter` packs: the header of a makesis package file plus its file lines.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SymbianSisPackage` | `SymbianSisPackage()` |  |
+| `CreationTime` | `DateTime CreationTime { get; init; }` | The creation time recorded in SISInfo (UTC). |
+| `Files` | `IReadOnlyList<SymbianSisFile> Files { get; init; }` | The files to install, in package order. |
+| `LocalizedVendor` | `string LocalizedVendor { get; init; }` | The English vendor name (the .pkg "%{...}" line); the unique vendor name when null. |
+| `Name` | `string Name { get; init; }` | The package name (the .pkg "#{...}" line), in English. |
+| `Uid` | `uint Uid { get; init; }` | UID 3, the package UID. |
+| `Vendor` | `string Vendor { get; init; }` | The non-localised vendor name (the .pkg ":" line). |
+| `Version` | `ValueTuple<int, int, int> Version { get; init; }` | The package version. |
+
+#### `SymbianSisReader`
+
+Reads Symbian OS 9.x SIS packages (".sis", ".sisx"): the SISController's install blocks, conditional blocks, logo and embedded packages, and the files the SISData section holds for them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SymbianSisReader` | `SymbianSisReader(Stream stream)` | Opens a SIS package. |
+| `Uid1` | `const uint Uid1` | UID 1 of every Symbian OS 9 SIS file. |
+| `CreationTime` | `DateTime? CreationTime { get; }` | Gets the creation time SISInfo records (UTC), or null when it is not a valid date. |
+| `EmbeddedPackages` | `int EmbeddedPackages { get; }` | Gets the number of embedded packages, at any depth. |
+| `Entries` | `IReadOnlyList<SymbianSisEntry> Entries { get; }` | Gets the files, in controller order. |
+| `InstallType` | `byte InstallType { get; }` | Gets the top-level package's TInstallType (0 SA, 1 SP, 2 PU, 3 PA, 4 PP). |
+| `Names` | `IReadOnlyList<string> Names { get; }` | Gets the top-level package's names, one per supported language. |
+| `PackageUid` | `uint PackageUid { get; }` | Gets UID 3, the package UID. |
+| `SignatureChains` | `int SignatureChains { get; }` | Gets the number of signature certificate chains on the top-level controller (0 = unsigned). |
+| `VendorNames` | `IReadOnlyList<string> VendorNames { get; }` | Gets the top-level package's vendor names, one per supported language. |
+| `VendorUniqueName` | `string VendorUniqueName { get; }` | Gets the top-level package's non-localised vendor name. |
+| `Version` | `ValueTuple<int, int, int> Version { get; }` | Gets the top-level package's version. |
+| `Extract` | `byte[] Extract(SymbianSisEntry entry)` | Returns a file's contents, checked against the size and SHA-1 the controller records. |
+| `IsSis` | `static bool IsSis(ReadOnlySpan<byte> head)` | True when the header carries UID 1 0x10201A7A and a SISContents field follows it. |
+| `IsSis` | `static bool IsSis(Stream stream)` | True when the stream starts with the Symbian OS 9 SIS UID 1. |
+
+#### `SymbianSisWriter`
+
+Writes unsigned Symbian OS 9.x SIS packages the way makesis writes a .pkg with one English language, an S60 3rd Edition target device and plain install lines: the same fields in the same order, the controller and each smaller-when-compressed file deflated with the zlib level makesis uses, so that such a package comes out byte-identical to makesis's own.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `S60ProductUid` | `const uint S60ProductUid` | The S60 3rd Edition platform UID the .pkg "[0x102752AE], 0, 0, 0, {"S60ProductID"}" line names. |
+| `Write` | `static byte[] Write(SymbianSisPackage package)` | Writes a package. |
+
 ### Namespace `FileFormat.Szdd`
 
 [`SzCompressFormatDescriptor`](#szcompressformatdescriptor) · [`SzCompressOptimizer`](#szcompressoptimizer) · [`SzOptimizer`](#szoptimizer) · [`SzddFormatDescriptor`](#szddformatdescriptor) · [`SzddStream`](#szddstream)

@@ -233,7 +233,7 @@ Netopsystems FEAD,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 PyInstaller,exe,installer,,,,,R,,,1,https://pyinstaller.org/,PyInstaller,Y,Y,,OK,,
 Spoon Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 SuperDAT updater,exe,installer,,,,,R,,,1,,,,,,MISSING,,
-Symbian installer (SIS/SISX),sis;sisx,installer,,,,,R,,,1,,,,,,MISSING,,
+Symbian installer (SIS/SISX),sis;sisx,installer,,,,,R,,,1,https://www.cryer.co.uk/file-types/s/sis/softwareinstallsis.pdf,SymbianSis,Y,Y,,PARTIAL,Symbian SDK makesis / signsis,"Symbian OS 9 (SISX) only; pre-9 EPOC SIS (UID2 0x10000419) is a different format and is not read. Created packages are unsigned, one English language, S60 3rd Edition target, plain install lines; makesis's own packages are reproduced except for the controller's deflate bitstream. Embedded packages follow the specification, but no real embedded sample was available (SymbianSisReader.cs, SymbianSisWriter.cs)"
 WiX Burn bundle,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 Enigma Virtual Box,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 MoleBox,exe,installer,,,,,R,,,1,,,,,,MISSING,,
