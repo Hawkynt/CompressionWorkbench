@@ -1,0 +1,2 @@
+valid bag algorithms ['sha512'] payload ['data\\docs\\name with spaces.txt', 'data\\images\\pixel.bin', 'data\\report.txt'] info {'Bagging-Date': '2026-10-30', 'Payload-Oxum': '5113.3'}
+valid loc-sha256-sha512 algorithms ['sha256', 'sha512'] payload ['data\\added.txt', 'data\\docs\\notes with space.txt', 'data\\readme.txt'] info {'Bag-Software-Agent': 'bagit.py v0.0.dev0 <https://github.com/LibraryOfCongress/bagit-python>', 'Bagging-Date': '2026-10-30', 'Contact-Name': 'Reference Bag', 'External-Description': 'Made with bagit-python', 'Payload-Oxum': '1076.3'}

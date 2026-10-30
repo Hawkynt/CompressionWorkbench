@@ -11277,6 +11277,65 @@ Bob Jenkins' lookup3 hash, byte-stream variant. Bethesda hashes BA2 directory an
 | `HashLower` | `static uint HashLower(string text)` | Hashes the lowercase ASCII form of `text`. Used for both directory and basename hashes. |
 | `Hash` | `static uint Hash(ReadOnlySpan<byte> bytes)` | Hashes the given UTF-8/ASCII bytes with lookup3 (initval = 0). |
 
+### Namespace `FileFormat.BagIt`
+
+[`BagItBag`](#bagitbag) · [`BagItFormatDescriptor`](#bagitformatdescriptor) · [`BagItPayload`](#bagitpayload)
+
+#### `BagItBag`
+
+A BagIt bag (RFC 8493) serialized as a ZIP archive with one top-level directory: `bagit.txt`, payload under `data/`, `manifest-<algorithm>.txt` files and optional tag files. Opening validates the bag: every payload file must be in each payload manifest with a matching checksum, every manifest entry must exist, and tag manifests must match.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BagItBag` | `BagItBag(Stream zip)` | Opens and validates a ZIP-serialized bag. |
+| `BagInfo` | `string BagInfo { get; }` | Gets bag-info.txt (null when the bag has none). |
+| `ManifestAlgorithms` | `IReadOnlyList<string> ManifestAlgorithms { get; }` | Gets the payload manifest algorithms present. |
+| `OtherTagFiles` | `IReadOnlyList<ValueTuple<string, byte[]>> OtherTagFiles { get; }` | Gets every tag file other than bagit.txt, bag-info.txt and the (tag) manifests, named below the bag root. |
+| `Payload` | `IReadOnlyList<BagItPayload> Payload { get; }` | Gets the payload files, in manifest order. |
+| `RootName` | `string RootName { get; }` | Gets the name of the bag's top-level directory. |
+| `Version` | `string Version { get; }` | Gets the BagIt version from bagit.txt. |
+| `Read` | `byte[] Read(BagItPayload payload)` | Returns a payload file's bytes (already verified). |
+| `Write` | `static void Write(Stream output, IReadOnlyList<ValueTuple<string, byte[]>> payload, DateTime baggingDate, string root = "bag", string bagInfo = null, IReadOnlyList<ValueTuple<string, byte[]>> otherTagFiles = null, IReadOnlyList<string> algorithms = null)` | Serializes a bag as ZIP: root/bagit.txt, bag-info.txt, any further tag files, a payload manifest and a tag manifest per algorithm, and data/. `bagInfo` replaces the default bag-info.txt, with its Payload-Oxum rewritten to match the payload. |
+
+#### `BagItFormatDescriptor`
+
+BagIt (RFC 8493), the Library of Congress packaging convention, serialized as a ZIP archive with one top-level bag directory. Listing and extraction validate the bag's manifests. A serialized bag is an ordinary ZIP, so this format is chosen explicitly rather than detected. References: `https://www.rfc-editor.org/rfc/rfc8493` — The BagIt File Packaging Format (V1.0)`https://github.com/LibraryOfCongress/bagit-python` — the Library of Congress reference implementation, used as the oracle
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BagItFormatDescriptor` | `BagItFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by path) payload files; tag files are kept and manifests recomputed. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes payload files; tag files are kept and manifests recomputed. |
+
+#### `BagItPayload`
+
+A payload file of a bag.
+
+Implements `IEquatable<BagItPayload>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BagItPayload` | `BagItPayload(string Path, long Size)` | A payload file of a bag. |
+| `Path` | `string Path { get; init; }` | Path below `data/`, '/'-separated. |
+| `Size` | `long Size { get; init; }` | Length in bytes. |
+
 ### Namespace `FileFormat.Balz`
 
 [`BalzFormatDescriptor`](#balzformatdescriptor) · [`BalzStream`](#balzstream)
