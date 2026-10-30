@@ -23,7 +23,7 @@ RPM package,rpm;srpm;src.rpm,package,R,R,R,,R,fmt/793;fmt/794;fmt/795,Y,6,https:
 Shell archive (shar),shar;run;sh,archive,,W,,,,fmt/329,Y,3,https://www.gnu.org/software/sharutils/,Shar,Y,Y,Y,OK,,
 mtree manifest,mtree;spec,archive,,RW,,,,,,1,https://man.freebsd.org/mtree/5,Mtree,Y,Y,,OK,,
 WARC (Web ARChive),warc,archive,,RW,R,,R,fmt/1281;fmt/1355;fmt/289,,4,https://iipc.github.io/warc-specifications/,Warc,Y,Y,,OK,,
-Internet Archive ARC (crawl),arc,archive,,,,,,fmt/410;x-fmt/219,,1,https://archive.org/web/researcher/ArcFileFormat.php,,,,,MISSING,,
+Internet Archive ARC (crawl),arc,archive,,,,,,fmt/410;x-fmt/219,,1,https://archive.org/web/researcher/ArcFileFormat.php,IaArc,Y,Y,Y,OK,,
 XAR (eXtensible ARchive),xar;pkg;xip;mpkg,archive,R,RW,R,,,fmt/600,Y,5,https://github.com/mackyle/xar/wiki/xarformat,Xar,Y,Y,Y,OK,,"every xar encoding (none, gzip/zlib, bzip2, lzma, xz) decoded and checked against the TOC checksum; verified on bsdtar-written archives"
 Xar Image Format (PRONOM fmt/922),xar,archive,,,,,,fmt/922,,1,,,,,,MISSING,,PRONOM lists this separately from eXtensible ARchive
 Microsoft Cabinet (CAB),cab;exe;mscf,archive,R,R,R,R,,x-fmt/414,RW,6,https://learn.microsoft.com/previous-versions/bb417343(v=msdn.10),Cab,Y,Y,Y,OK,,
