@@ -15,7 +15,7 @@ namespace Compression.Tests.Rar;
 public class Rar4ReferenceTests {
 
   private static byte[] Vector(string name) {
-    using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Rar4Vectors.{name}")
+    using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream($"RarVectors.{name}")
       ?? throw new FileNotFoundException(name);
     using var ms = new MemoryStream();
     s.CopyTo(ms);

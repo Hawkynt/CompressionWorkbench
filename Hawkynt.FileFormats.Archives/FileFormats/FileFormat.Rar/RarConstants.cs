@@ -137,6 +137,9 @@ internal static class RarConstants {
   /// <summary>RAR4 file header flag: filename is Unicode.</summary>
   public const ushort Rar4FlagUnicode = 0x0200;
 
+  /// <summary>RAR4 file header flag (LHD_SALT): an 8-byte encryption salt follows the file name.</summary>
+  public const ushort Rar4FlagSalt = 0x0400;
+
   /// <summary>RAR4 compression method: Store.</summary>
   public const byte Rar4MethodStore = 0x30;
 

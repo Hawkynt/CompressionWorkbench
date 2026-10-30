@@ -232,12 +232,20 @@ public sealed class RarReader : IDisposable {
     var compressed = new byte[detail.DataSize];
     this._stream.ReadExactly(compressed);
 
-    // Decrypt if encrypted
-    if (detail.Salt != null) {
+    // RAR 2.x (unpack versions 20-28) encrypts with its own cipher and stores no salt; RAR 1.5's
+    // cipher is not implemented, so those entries are refused rather than decoded as plaintext.
+    if (entry.IsEncrypted && detail.Version < 29) {
+      if (detail.Version < 20)
+        throw new NotSupportedException($"Entry '{entry.Name}' uses RAR 1.5 encryption, which is not supported.");
+      if (this._password == null)
+        throw new InvalidOperationException($"Entry '{entry.Name}' is encrypted but no password was provided.");
+      var cipher = new Rar20Cipher(Rar20Password(this._password));
+      cipher.Decrypt(compressed);
+    } else if (entry.IsEncrypted) {
       if (this._password == null)
         throw new InvalidOperationException($"Entry '{entry.Name}' is encrypted but no password was provided.");
 
-      var (key, iv) = KeyDerivation.Rar3DeriveKey(this._password, detail.Salt);
+      var (key, iv) = KeyDerivation.Rar3DeriveKey(this._password, detail.Salt ?? []);
       // RAR3 pads to 16-byte boundary
       var alignedLen = (compressed.Length + 15) & ~15;
       if (alignedLen > compressed.Length) {
@@ -481,7 +489,7 @@ public sealed class RarReader : IDisposable {
 
         // Read 8-byte salt if file is encrypted
         byte[]? salt = null;
-        if (isEncrypted) {
+        if (isEncrypted && (headFlags & RarConstants.Rar4FlagSalt) != 0) {
           var saltOffset = nameOffset + nameSize;
           if (saltOffset + 8 <= remaining) {
             salt = new byte[8];
@@ -657,6 +665,15 @@ public sealed class RarReader : IDisposable {
 
     this._derivedKey = KeyDerivation.Rar5DeriveKey(this._password, this._encryptionSalt, this._encryptionKdfCount);
     return this._derivedKey;
+  }
+
+  /// <summary>
+  /// RAR 2.x keys its cipher with the password in the DOS/OEM code page (437, as for its file
+  /// names), at most 127 bytes; characters that page cannot hold become '?', as WinRAR did.
+  /// </summary>
+  private static byte[] Rar20Password(string password) {
+    var bytes = Encoding.GetEncoding(437, EncoderFallback.ReplacementFallback, DecoderFallback.ReplacementFallback).GetBytes(password);
+    return bytes.Length > Rar20Cipher.MaxPasswordLength ? bytes[..Rar20Cipher.MaxPasswordLength] : bytes;
   }
 
   private byte[] DecryptData(byte[] encryptedData, byte[] iv) {

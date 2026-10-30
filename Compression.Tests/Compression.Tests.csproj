@@ -102,9 +102,9 @@
     <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
       <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
-    <!-- RAR 4 archives written by RAR 6.24 and from libarchive's tests; see Rar/ReferenceVectors/README.md. -->
+    <!-- RAR archives from RAR 6.24, WinRAR 2.90 and libarchive (plain and encrypted); see Rar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Rar\ReferenceVectors\*.rar">
-      <LogicalName>Rar4Vectors.%(Filename)%(Extension)</LogicalName>
+      <LogicalName>RarVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
