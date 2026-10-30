@@ -75,9 +75,8 @@ public static class ProDosExtentMap {
         var nextBlock = BinaryPrimitives.ReadUInt16LittleEndian(blockSpan.Slice(2, 2));
 
         if (firstBlock) {
-          // Volume Directory Header is the first entry — capture bitmap pointer
-          // at 0x26 (matches the writer's offset; see ProDosWriter.WriteVolumeDirectory).
-          bitmapPointer = BinaryPrimitives.ReadUInt16LittleEndian(blockSpan.Slice(4 + 0x26, 2));
+          // Volume Directory Header is the first entry — capture bit_map_pointer ($23 in the header).
+          bitmapPointer = BinaryPrimitives.ReadUInt16LittleEndian(blockSpan.Slice(4 + ProDosReader.HeaderBitmapOrParentPointer, 2));
         }
         firstBlock = false;
         block = nextBlock;
