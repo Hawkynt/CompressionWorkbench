@@ -489,7 +489,7 @@ lnfs,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 romfs,romfs,filesystem,,,,R,,,Y,2,,RomFs,Y,Y,Y,OK,,
 SquashFS,squashfs;sqfs,filesystem,R,,,R,,,Y,3,https://dr-emann.github.io/squashfs/squashfs.html,SquashFs,Y,Y,,PARTIAL,,SquashFS v4 only; v1-v3 rejected (SquashFsSuperblock.cs)
 EROFS,erofs,filesystem,,,,,,,Y,1,,Erofs,Y,Y,Y,OK,,
-UMSDOS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+UMSDOS,,filesystem,,,,,,,Y,1,https://en.wikipedia.org/wiki/UMSDOS,Umsdos,Y,,,OK,,"read-only view of a FAT volume through its --linux-.--- files (long names, modes, owners, symlinks, pseudo hard links); checked against Slackware 8.1 ZipSlack and its package logs; no maintained kernel mounts UMSDOS, so nothing is written"
 UVFAT,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Venti (Plan 9),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 DECtape,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
