@@ -356,7 +356,7 @@ E-mail message (EML),eml,document,,,,,R,,,1,,Eml,Y,Y,Y,OK,,
 mbox,mbox,document,,,,,,fmt/720,,1,,Mbox,Y,Y,Y,OK,,
 GNU gettext catalog (MO),mo,document,,,,,R,,,1,,Mo,Y,Y,,OK,,
 Microsoft Reader (LIT),lit,document,,,,,R,,,1,,Lit,Y,,,OK,,
-Windows Help (HLP),hlp,document,,,,,R,fmt/474,,2,,,,,,MISSING,,
+Windows Help (HLP),hlp,document,,,,,R,fmt/474,,2,http://fileformats.archiveteam.org/wiki/HLP,Hlp,Y,,,OK,,read-only: internal files as stored (directory matches helpdeco); topic text is not decompiled
 MIME HTML archive (MHT),mht;mhtml,document,,,,,R,,,1,,,,,,MISSING,,
 Outlook Express mailbox (DBX),dbx,document,,,,,R,,,1,,,,,,MISSING,,
 Qt message catalog (QM),qm,document,,,,,R,,,1,,,,,,MISSING,,
