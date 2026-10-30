@@ -95,6 +95,7 @@ format,Btrfs,Btrfs Filesystem Image,Archive,Y,.btrfs;.img,Y,Y,Y,
 format,Bwav,BWAV (Switch stream),Audio,,.bwav,Y,Y,Y,
 format,Bzexe,bzexe executable wrapper,Archive,,,Y,Y,,
 format,Bzip2,BZip2,Stream,,.bz2;.bzip2,,Y,Y,
+format,C64Tap,Commodore raw tape (C64-TAPE-RAW),Archive,,,Y,Y,Y,Y
 format,Cab,CAB,Archive,,.cab,Y,Y,Y,Y
 format,Caf,CAF (Core Audio Format),Audio,,.caf,Y,Y,Y,
 format,Cb7,CB7,Archive,,.cb7,Y,Y,Y,Y

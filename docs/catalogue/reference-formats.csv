@@ -292,7 +292,7 @@ WOZ (Apple II),woz,disk-image,,,,,,fmt/2059;fmt/2060,,1,https://applesaucefdc.co
 MOOF (Macintosh flux),moof,disk-image,,,,,,fmt/2061,,1,,,,,,MISSING,,
 SuperCard Pro flux image,scp,disk-image,,,,,,fmt/2071,,1,,,,,,MISSING,,
 T64 (C64 tape),t64,disk-image,,,,,,fmt/820,,1,,T64,Y,Y,Y,OK,,
-TAP (C64 tape),tap,disk-image,,,,,,fmt/802,,1,,,,,,MISSING,,
+TAP (C64 tape),tap,disk-image,,,,,,fmt/802,,1,http://unusedino.de/ec64/technical/formats/tap.html,C64Tap,Y,Y,Y,OK,,versions 0-2 pulse streams read/written; pulse semantics checked against MAME castool
 PZX (ZX tape),pzx,disk-image,,,,,,fmt/1898,,1,,,,,,MISSING,,
 CrunchDisk (Amiga),,disk-image,,,R,,,,,1,,,,,,MISSING,,
 IFF-CDAF,cdaf,disk-image,,,R,,,,,1,,IffCdaf,Y,Y,Y,OK,,
