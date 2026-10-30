@@ -279,12 +279,23 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// Anti-items — the deletion markers of a differential update archive — are not listed: they
   /// name something that no longer exists and are never extracted.
   /// </remarks>
+  /// <remarks>
+  /// A Unix symbolic link (Unix mode type <c>S_IFLNK</c>, written by <c>7z a -snl</c> on Unix)
+  /// is listed as a link with its target, which is the entry's data.
+  /// </remarks>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new SevenZipReader(stream, leaveOpen: true, password: password);
-    return r.Entries.Select((e, i) => (Entry: e, Index: i)).Where(static p => !p.Entry.IsAnti)
-      .Select(p => new ArchiveEntryInfo(p.Index, p.Entry.Name, p.Entry.Size, p.Entry.CompressedSize,
-        string.IsNullOrEmpty(p.Entry.Method) ? "7z" : p.Entry.Method, p.Entry.IsDirectory, p.Entry.IsEncrypted || r.IsHeaderEncrypted, p.Entry.LastWriteTime))
-      .ToList();
+    var list = new List<ArchiveEntryInfo>();
+    for (var i = 0; i < r.Entries.Count; ++i) {
+      var e = r.Entries[i];
+      if (e.IsAnti)
+        continue;
+      var target = e.IsSymlink && e.Size <= 1 << 16 ? System.Text.Encoding.UTF8.GetString(r.Extract(i)) : null;
+      list.Add(new ArchiveEntryInfo(i, e.Name, e.Size, e.CompressedSize,
+        string.IsNullOrEmpty(e.Method) ? "7z" : e.Method, e.IsDirectory, e.IsEncrypted || r.IsHeaderEncrypted, e.LastWriteTime,
+        IsSymlink: e.IsSymlink, LinkTarget: target));
+    }
+    return list;
   }
 
   /// <summary>
@@ -446,7 +457,7 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       encryptHeaders: options.EncryptFilenames);
 
     foreach (var i in inputs)
-      if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
+      if (i.IsDirectory) w.AddDirectory(EntryFor(i));
 
     var fileEntryIndex = 0;
     var blockDescs = new List<SevenZipWriter.BlockDescriptor>();
@@ -454,7 +465,7 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       var indices = new int[block.Files.Count];
       for (var j = 0; j < block.Files.Count; j++) {
         var (input, data) = block.Files[j];
-        w.AddEntry(new SevenZipEntry { Name = input.ArchiveName, Size = data.Length }, data);
+        w.AddEntry(EntryFor(input), data);
         indices[j] = fileEntryIndex++;
       }
       if (needsMultiCodec) {
@@ -473,6 +484,29 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     } else {
       w.Finish(maxThreads: options.Threads, maxBlockSize: options.Threads > 1 ? blockSize : 0);
     }
+  }
+
+  /// <summary>
+  /// The 7z entry for an input, with the times and attributes 7-Zip would record: the input's
+  /// own metadata when it carries some, else what the file system says about the file; a Unix
+  /// mode goes into the high attribute bits as Unix 7-Zip writes it.
+  /// </summary>
+  private static SevenZipEntry EntryFor(ArchiveInputInfo input) {
+    var meta = input.Metadata;
+    var onDisk = input.InMemoryContent == null && (input.IsDirectory ? Directory.Exists(input.FullPath) : File.Exists(input.FullPath));
+    var entry = new SevenZipEntry {
+      Name = input.ArchiveName.Replace('\\', '/'),
+      IsDirectory = input.IsDirectory,
+      LastWriteTime = meta?.LastWriteTimeUtc?.UtcDateTime ?? (onDisk ? File.GetLastWriteTimeUtc(input.FullPath) : null),
+      CreationTime = meta?.CreationTimeUtc?.UtcDateTime,
+      LastAccessTime = meta?.LastAccessTimeUtc?.UtcDateTime,
+    };
+    if (meta?.UnixMode is { } mode)
+      entry.Attributes = SevenZipEntry.AttributesForUnixMode((input.IsDirectory ? 0x4000 : 0x8000) | (mode & 0xFFF));
+    else if (onDisk && OperatingSystem.IsWindows())
+      // Read-only, hidden, system, directory, archive: the attributes 7-Zip restores.
+      entry.Attributes = (uint)File.GetAttributes(input.FullPath) & 0x37u;
+    return entry;
   }
 
   // ── IFormatValidator ─────────────────────────────────────────────

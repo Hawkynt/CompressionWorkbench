@@ -43,4 +43,30 @@ public sealed class SevenZipEntry {
 
   /// <summary>Gets or sets whether the entry's data is AES-encrypted.</summary>
   public bool IsEncrypted { get; set; }
+
+  /// <summary>
+  /// The Unix mode (file type and permission bits) a Unix 7-Zip records in the high 16 bits of
+  /// the attributes, flagged by <see cref="UnixExtensionFlag"/>; <see langword="null"/> when the
+  /// archive was written without one.
+  /// </summary>
+  public int? UnixMode => this.Attributes is { } a && (a & UnixExtensionFlag) != 0 ? (int)(a >> 16) : null;
+
+  /// <summary>
+  /// Whether this is a Unix symbolic link (<c>7z a -snl</c> on Unix): its data is the link target,
+  /// UTF-8 encoded.
+  /// </summary>
+  public bool IsSymlink => this.UnixMode is { } mode && (mode & 0xF000) == 0xA000;
+
+  /// <summary>FILE_ATTRIBUTE_UNIX_EXTENSION: the attributes' high 16 bits hold a Unix mode.</summary>
+  public const uint UnixExtensionFlag = 0x8000;
+
+  /// <summary>The 7z attribute value for a Unix mode (type and permission bits), as Unix 7-Zip writes it.</summary>
+  public static uint AttributesForUnixMode(int mode) {
+    var attributes = UnixExtensionFlag | ((uint)(mode & 0xFFFF) << 16);
+    if ((mode & 0xF000) == 0x4000)
+      attributes |= 0x10; // FILE_ATTRIBUTE_DIRECTORY
+    if ((mode & 0x80) == 0)
+      attributes |= 0x01; // FILE_ATTRIBUTE_READONLY when the owner cannot write
+    return attributes;
+  }
 }

@@ -70,6 +70,25 @@ public class SevenZipConformanceVectorTests {
   }
 
   [Test]
+  public void Given_Unix7ZipVectorWithLinks_When_Listed_Then_LinksAndModesAreReported() {
+    using var stream = Resource("unix-links.7z");
+    var listed = new SevenZipFormatDescriptor().List(stream, null).ToDictionary(static e => e.Name);
+    Assert.That(listed["link.txt"].IsSymlink, Is.True);
+    Assert.That(listed["link.txt"].LinkTarget, Is.EqualTo("target.txt"));
+    Assert.That(listed["linkdir"].IsSymlink, Is.True);
+    Assert.That(listed["linkdir"].LinkTarget, Is.EqualTo("sub"));
+    Assert.That(listed["target.txt"].IsSymlink, Is.False);
+    Assert.That(listed["target.txt"].LinkTarget, Is.Null);
+
+    stream.Position = 0;
+    using var reader = new SevenZipReader(stream, leaveOpen: true);
+    var byName = reader.Entries.ToDictionary(static e => e.Name);
+    Assert.That(byName["target.txt"].UnixMode, Is.EqualTo(0x81A0)); // -rw-r-----
+    Assert.That(byName["sub"].UnixMode, Is.EqualTo(0x41E8));        // drwxr-x---
+    Assert.That(byName["link.txt"].UnixMode & 0xF000, Is.EqualTo(0xA000));
+  }
+
+  [Test]
   public void Given_7ZipVectorWithTimes_When_Read_Then_CreationAndAccessTimesAreThere() {
     using var reader = new SevenZipReader(Resource("times-all.7z"));
     var file = reader.Entries.First(static e => e.Name == "text.txt");

@@ -115,10 +115,68 @@ public sealed class SevenZipConformanceWriteTests {
       new SevenZipFormatDescriptor().Create(file, inputs, options);
 
     var password = options.Password ?? (options.FormatSpecific.TryGetValue("Password", out var p) ? p : null);
-    this.AssertSevenZipAccepts("descriptor-" + name, archive, password);
+    var output = this.AssertSevenZipAccepts("descriptor-" + name, archive, password);
+
+    // The times and attributes came from the files: 7-Zip must restore them.
+    foreach (var (path, data) in this._tree) {
+      if (data == null)
+        continue;
+      var original = Path.Combine(source, path);
+      var extracted = Path.Combine(output, path);
+      Assert.That(File.GetLastWriteTimeUtc(extracted), Is.EqualTo(File.GetLastWriteTimeUtc(original)), $"{name}: mtime of {path}");
+    }
   }
 
-  private void AssertSevenZipAccepts(string name, string archive, string? password) {
+  [Test]
+  public void Given_DescriptorCreateOfAReadOnlyHiddenFile_When_7ZipExtracts_Then_TheAttributesComeBack() {
+    if (!OperatingSystem.IsWindows())
+      Assert.Ignore("Windows attributes.");
+    var source = Path.Combine(this._root, "attr-src");
+    Directory.CreateDirectory(source);
+    var file = Path.Combine(source, "flagged.txt");
+    File.WriteAllText(file, "flags");
+    File.SetAttributes(file, FileAttributes.ReadOnly | FileAttributes.Hidden | FileAttributes.Archive);
+    var archive = Path.Combine(this._root, "attr.7z");
+    try {
+      using (var stream = File.Create(archive))
+        new SevenZipFormatDescriptor().Create(stream, [ArchiveInputInfo.FromFile(new FileInfo(file), "flagged.txt")], new FormatCreateOptions());
+    } finally {
+      File.SetAttributes(file, FileAttributes.Normal);
+    }
+
+    var output = Path.Combine(this._root, "attr.out");
+    SevenZipOracle.RunOk(this._root, "x", "-y", $"-o{output}", archive);
+    var extracted = Path.Combine(output, "flagged.txt");
+    var attributes = File.GetAttributes(extracted);
+    File.SetAttributes(extracted, FileAttributes.Normal);
+    Assert.That(attributes & (FileAttributes.ReadOnly | FileAttributes.Hidden), Is.EqualTo(FileAttributes.ReadOnly | FileAttributes.Hidden));
+  }
+
+  [Test]
+  public void Given_DescriptorCreateWithUnixModes_When_Read_Then_TheModesAreRecordedAsUnix7ZipDoes() {
+    var inputs = new[] {
+      ArchiveInputInfo.InMemory("script.sh", "#!/bin/sh"u8, new ArchiveEntryMetadata(UnixMode: 0x1ED)), // 0755
+      ArchiveInputInfo.InMemory("secret.txt", "s"u8, new ArchiveEntryMetadata(UnixMode: 0x180)),       // 0600
+    };
+    using var stream = new MemoryStream();
+    new SevenZipFormatDescriptor().Create(stream, inputs, new FormatCreateOptions());
+
+    stream.Position = 0;
+    using var reader = new SevenZipReader(stream, leaveOpen: true);
+    Assert.That(reader.Entries.Single(static e => e.Name == "script.sh").UnixMode, Is.EqualTo(0x81ED));
+    Assert.That(reader.Entries.Single(static e => e.Name == "secret.txt").UnixMode, Is.EqualTo(0x8180));
+    var (exit, output) = SevenZipOracle.Run(this._root, "t", WriteTemp(this._root, "modes.7z", stream.ToArray()));
+    Assert.That(exit, Is.Zero, output);
+  }
+
+  private static string WriteTemp(string root, string name, byte[] bytes) {
+    Directory.CreateDirectory(root);
+    var path = Path.Combine(root, name);
+    File.WriteAllBytes(path, bytes);
+    return path;
+  }
+
+  private string AssertSevenZipAccepts(string name, string archive, string? password) {
     var pw = password == null ? "-p-" : $"-p{password}";
     var (testExit, testOutput) = SevenZipOracle.Run(this._root, "t", pw, archive);
     var accepted = testExit == 0 && testOutput.Contains("Everything is Ok", StringComparison.Ordinal);
@@ -126,11 +184,13 @@ public sealed class SevenZipConformanceWriteTests {
     if (KnownGaps.TryGetValue(name, out var reason)) {
       Assert.That(accepted, Is.False, $"'{name}' now passes 7-Zip's test: remove it from KnownGaps ({reason}).");
       Assert.Ignore($"Known gap: {reason}");
+      return "";
     }
     Assert.That(accepted, Is.True, $"7z t rejects our '{name}' archive:\n{testOutput}");
 
     var output = Path.Combine(this._root, $"{Path.GetFileNameWithoutExtension(archive)}.out");
     SevenZipOracle.RunOk(this._root, "x", "-y", pw, $"-o{output}", archive);
     SevenZipOracle.AssertSameTree(this._tree, SevenZipOracle.ReadTree(output), $"{name} (7-Zip extraction)");
+    return output;
   }
 }

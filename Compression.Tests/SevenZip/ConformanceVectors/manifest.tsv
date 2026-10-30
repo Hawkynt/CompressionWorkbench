@@ -141,3 +141,8 @@ aes-mhe.7z	ünïcødé_日本語.txt	file	900	4823136348622af134ba14a13859a5bf49
 anti.7z	gone.txt	anti	0	
 anti.7z	gonedir	anti	0	
 anti.7z	new.txt	file	3	11507a0e2f5e69d5dfa40a62a1bd7b6ee57e6bcd85c67c9b8431b36fff21c437
+unix-links.7z	sub	dir	0	
+unix-links.7z	link.txt	file	10	199b3badd968634ea14e351d1134ada738894a90a2efa66983101ece99a33572
+unix-links.7z	linkdir	file	3	ddc6e2b224d0fd821669202258386936fc9ce2899e215eec6322b95f8dd96d6a
+unix-links.7z	sub/inner.txt	file	5	33bf6fbd7cd8379785a21e233d8e09f824e7bab459168a96312c1c882c1d7e1f
+unix-links.7z	target.txt	file	14	680e6dc591104c67aa8339e8c9530092367f1a1e201301437a8cfebdadf748ae

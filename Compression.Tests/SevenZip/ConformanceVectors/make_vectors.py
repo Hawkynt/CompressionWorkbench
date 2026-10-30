@@ -138,7 +138,12 @@ def main():
         manifest.append("anti.7z\tgonedir\tanti\t0\t")
         manifest.append(entry_line("anti", "new.txt", b"new"))
 
-        with open(os.path.join(HERE, "manifest.tsv"), "w", encoding="utf-8", newline="\n") as f:
+        # Rows of vectors made by hand (unix-links.7z, see README.md) are kept as they are.
+        path = os.path.join(HERE, "manifest.tsv")
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                manifest += [l.rstrip("\n") for l in f if l.startswith("unix-links.7z\t")]
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write("\n".join(manifest) + "\n")
     finally:
         shutil.rmtree(work, ignore_errors=True)

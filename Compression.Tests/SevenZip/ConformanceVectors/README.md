@@ -25,3 +25,4 @@ Produced with 7-Zip 26.04 (x64), Windows 11, 2026-10-30. Password archives use `
 | `aes-mhe.7z` | `-pS3cret! -mhe=on` | an encrypted, LZMA-packed header with its folder CRC |
 | `empty.7z` | `a` then `d` of the only file | an archive without a header (next-header size 0) |
 | `anti.7z` | `u -u- -up0q3r2x2y2z0w2!anti.7z` | anti-items for a deleted file and directory beside a new file |
+| `unix-links.7z` | 7-Zip 23.01 (Linux x64, in WSL Ubuntu): `7z a -snl` of `target.txt` (0640), `link.txt -> target.txt`, `sub/` (0750) with `inner.txt`, `linkdir -> sub` | Unix modes in the high attribute bits; symbolic links stored as their target (S_IFLNK). Not made by `make_vectors.py`: the commands are the ones in this row. |

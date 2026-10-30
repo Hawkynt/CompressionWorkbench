@@ -27309,6 +27309,7 @@ Represents a single entry (file or directory) in a 7z archive.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SevenZipEntry` | `SevenZipEntry()` |  |
+| `UnixExtensionFlag` | `const uint UnixExtensionFlag` | FILE_ATTRIBUTE_UNIX_EXTENSION: the attributes' high 16 bits hold a Unix mode. |
 | `Attributes` | `uint? Attributes { get; set; }` | Gets or sets the Windows file attributes. |
 | `CompressedSize` | `long CompressedSize { get; set; }` | Gets or sets the compressed size in bytes (-1 if unknown). |
 | `Crc` | `uint? Crc { get; set; }` | Gets or sets the CRC-32 of the uncompressed data. |
@@ -27316,11 +27317,14 @@ Represents a single entry (file or directory) in a 7z archive.
 | `IsAnti` | `bool IsAnti { get; set; }` | Gets or sets whether this is an anti-item (`kAnti`): a deletion marker a differential update archive carries for a file or directory that no longer exists. It has no data and is never extracted. |
 | `IsDirectory` | `bool IsDirectory { get; set; }` | Gets or sets whether this entry is a directory. |
 | `IsEncrypted` | `bool IsEncrypted { get; set; }` | Gets or sets whether the entry's data is AES-encrypted. |
+| `IsSymlink` | `bool IsSymlink { get; }` | Whether this is a Unix symbolic link (`7z a -snl` on Unix): its data is the link target, UTF-8 encoded. |
 | `LastAccessTime` | `DateTime? LastAccessTime { get; set; }` | Gets or sets the last access time in UTC (`kATime`, written by 7-Zip's `-mta=on`). |
 | `LastWriteTime` | `DateTime? LastWriteTime { get; set; }` | Gets or sets the last write time in UTC. |
 | `Method` | `string Method { get; set; }` | Gets or sets the compression method name. |
 | `Name` | `string Name { get; set; }` | Gets or sets the file name (including path within the archive). |
 | `Size` | `long Size { get; set; }` | Gets or sets the uncompressed size in bytes. |
+| `UnixMode` | `int? UnixMode { get; }` | The Unix mode (file type and permission bits) a Unix 7-Zip records in the high 16 bits of the attributes, flagged by `UnixExtensionFlag`; `null` when the archive was written without one. |
+| `AttributesForUnixMode` | `static uint AttributesForUnixMode(int mode)` | The 7z attribute value for a Unix mode (type and permission bits), as Unix 7-Zip writes it. |
 
 #### `SevenZipFilter`
 
