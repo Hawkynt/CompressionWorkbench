@@ -25337,6 +25337,94 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.Pea`
+
+[`PeaArchive`](#peaarchive) · [`PeaArchive.Check`](#peaarchivecheck) · [`PeaArchive.Input`](#peaarchiveinput) · [`PeaEntry`](#peaentry) · [`PeaFormatDescriptor`](#peaformatdescriptor)
+
+#### `PeaArchive`
+
+PEA (PeaZip's own format, version 1 revision 6): a 10-byte archive header, one stream with a 10-byte header naming the compression (stored or zlib at level 3/6/9 in independent 1 MiB blocks) and three integrity checks — per object, for the stream and for the volume — then objects (name, time, attributes, size, data) and an end-of-archive trigger. This covers single-volume archives with any of the hash or checksum controls; encrypted streams (EAX, HMAC, Twofish, Serpent and their cascades) are refused.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Read` | `static List<PeaEntry> Read(Stream stream)` | Reads and verifies a single-volume PEA archive. |
+| `Write` | `static void Write(Stream output, IEnumerable<Input> inputs, int compression = 2, Check objectCheck = 2, Check streamCheck = 19, Check volumeCheck = 2)` | Writes a single-volume PEA 1.6 archive the way PeaZip does on Unix: names are stored as absolute paths under `/`, times as Unix seconds, zlib blocks of 1 MiB (a block that does not shrink is stored), with the given object, stream and volume checks. |
+
+#### `PeaArchive.Check`
+
+A check algorithm by its PEA id.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` | No check. |
+| `Adler32` | `1` | Adler-32 (4 bytes, little-endian). |
+| `Crc32` | `2` | CRC-32 (4 bytes, little-endian). |
+| `Crc64` | `3` | CRC-64 ECMA-182, MSB-first, all-ones init and xor-out (8 bytes, little-endian). |
+| `Md5` | `16` | MD5. |
+| `Ripemd160` | `17` | RIPEMD-160. |
+| `Sha1` | `18` | SHA-1. |
+| `Sha256` | `19` | SHA-256. |
+| `Sha512` | `20` | SHA-512. |
+| `Whirlpool` | `21` | Whirlpool. |
+| `Sha3_256` | `22` | SHA3-256. |
+| `Sha3_512` | `23` | SHA3-512. |
+| `Blake2s` | `24` | BLAKE2s-256. |
+| `Blake2b` | `25` | BLAKE2b-512. |
+
+#### `PeaArchive.Input`
+
+An object to write.
+
+Implements `IEquatable<Input>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Input` | `Input(string Path, byte[] Data, DateTime LastModified)` | An object to write. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `LastModified` | `DateTime LastModified { get; init; }` |  |
+| `Path` | `string Path { get; init; }` |  |
+
+#### `PeaEntry`
+
+One object of a PEA archive.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PeaEntry` | `PeaEntry()` |  |
+| `Attributes` | `uint Attributes { get; init; }` | Gets the file attributes as stored. |
+| `Data` | `byte[] Data { get; init; }` | Gets the decoded content (empty for directories). |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets whether the object is a directory. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | Gets the modification time, when the archive's time encoding is known. |
+| `Path` | `string Path { get; init; }` | Gets the path relative to the archive's common root, '/'-separated. |
+| `Size` | `long Size { get; init; }` | Gets the uncompressed size. |
+| `StoredName` | `string StoredName { get; init; }` | Gets the qualified name as stored (PEA stores absolute names). |
+
+#### `PeaFormatDescriptor`
+
+PEA archive (.pea), PeaZip's native format.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PeaFormatDescriptor` | `PeaFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Pickle`
 
 [`PickleFormatDescriptor`](#pickleformatdescriptor)

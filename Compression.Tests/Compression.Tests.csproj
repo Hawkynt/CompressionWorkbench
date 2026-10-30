@@ -169,6 +169,10 @@
     <EmbeddedResource Include="Zfs\ReferenceVectors\*.gz;Zfs\ReferenceVectors\*.manifest">
       <LogicalName>ZfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- PEA archives written by PeaZip 11.4; see Pea/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Pea\ReferenceVectors\*.pea">
+      <LogicalName>PeaVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- 7z archives 7-Zip 26.03, 7-Zip-zstd 26.02 and py7zr wrote; see SevenZip/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="SevenZip\ReferenceVectors\*.7z;SevenZip\ReferenceVectors\manifest.txt">
       <LogicalName>SevenZipVectors.%(Filename)%(Extension)</LogicalName>

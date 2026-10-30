@@ -43,7 +43,9 @@ public static class Whirlpool {
     }
 
     var remaining = data.Length - offset;
-    var finalBlocks = remaining + 1 > 56 ? 128 : 64;
+    // Whirlpool appends 0x80, pads to 32 mod 64 and ends with a 256-bit length: a second block is
+    // needed once the tail and the 0x80 leave fewer than 32 bytes.
+    var finalBlocks = remaining + 1 > 32 ? 128 : 64;
     var final = new byte[finalBlocks];
     data[offset..].CopyTo(final);
     final[remaining] = 0x80;
