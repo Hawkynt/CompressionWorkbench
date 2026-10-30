@@ -80,7 +80,7 @@ public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Lists the entries in the supplied container.
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new PdfReader(stream);
+    var r = new PdfReader(stream, password: password);
     var all = r.Entries.Concat(r.PageEntries);
     return all.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, e.Filter, false, false, null
@@ -91,7 +91,7 @@ public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new PdfReader(stream);
+    var r = new PdfReader(stream, password: password);
     foreach (var e in r.Entries.Concat(r.PageEntries)) {
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
@@ -130,7 +130,17 @@ public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       attachments.Add((i.ArchiveName, i.ReadContent()));
     }
     if (attachments.Count == 0) return;
+    if (IsEncrypted(archive))
+      throw new NotSupportedException("PDF: adding attachments to an encrypted PDF is not supported (they would be stored unencrypted).");
     PdfInPlaceModifier.AddFiles(archive, attachments);
+  }
+
+  private static bool IsEncrypted(Stream archive) {
+    archive.Position = 0;
+    using var ms = new MemoryStream();
+    archive.CopyTo(ms);
+    archive.Position = 0;
+    return System.Text.RegularExpressions.Regex.IsMatch(System.Text.Encoding.Latin1.GetString(ms.GetBuffer(), 0, (int)ms.Length), @"/Encrypt\s+\d+\s+\d+\s+R");
   }
 
   /// <summary>

@@ -201,7 +201,7 @@ PKWARE Strong Encryption,zipstrong,encryption,R,,,,,,,1,,,,,,MISSING,,
 RAR 3.x AES-128,rar3aes,encryption,R,,,,,,,1,,Rar,Y,Y,Y,OK,,
 RAR5 AES-256,rar5aes,encryption,R,,,,,,,1,,Rar,Y,Y,Y,OK,,
 RAR 2.0 encryption,rar20,encryption,R,,,,,,,1,,,,,,MISSING,,
-RC4,rc4,encryption,,,R,,,,,1,,,,,,MISSING,,
+RC4,rc4,encryption,,,R,,,,,1,https://www.rfc-editor.org/rfc/rfc6229,Pdf,Y,Y,Y,OK,,"RC4 (and AES) of the PDF standard security handler: encrypted PDFs (revisions 2-6) list and extract with the user or owner password; checked on pypdf-written files"
 uuencode,uu;uue,encoding,,RW,,,,fmt/1102,,2,https://pubs.opengroup.org/onlinepubs/9799919799/utilities/uuencode.html,UuEncoding,Y,Y,,OK,,
 Base64,b64;base64,encoding,R,W,,,,,,2,https://www.rfc-editor.org/rfc/rfc4648,B64Encoding,Y,Y,,OK,,
 Encoded text (uu/xx/b64/BinHex/yEnc),xx;xxe;ntx;ync;b64;hqx;uu;uue,encoding,,,,,R,,,1,,UuEncoding;B64Encoding;BinHex;YEnc;XxEncoding,Y,Y,,OK,,

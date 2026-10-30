@@ -98,6 +98,10 @@
     <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
       <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Encrypted PDFs pypdf wrote; see Pdf/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Pdf\ReferenceVectors\*.pdf">
+      <LogicalName>PdfVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
       <LogicalName>MobiVectors.%(Filename)%(Extension)</LogicalName>
