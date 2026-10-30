@@ -333,10 +333,15 @@ public sealed class SevenZipReader : IDisposable {
     var data = packStreams[0];
     var coderOrder = BuildCoderOrder(folder);
 
+    // Every coder's output size is recorded (UnpackSizes is indexed by output stream). LZMA needs it:
+    // its stream carries no end marker, so a filter + LZMA chain cannot be decoded without it.
+    var outStreamBase = new int[folder.Coders.Count];
+    for (int i = 0, o = 0; i < folder.Coders.Count; o += folder.Coders[i].NumOutStreams, ++i)
+      outStreamBase[i] = o;
+
     foreach (var coderIdx in coderOrder) {
-      // Pass unpack size for the last coder in the chain (the final output)
-      var unpackSize = coderIdx == coderOrder[^1] && folder.UnpackSizes.Length > 0
-        ? folder.UnpackSizes[^1] : -1;
+      var outIndex = outStreamBase[coderIdx];
+      var unpackSize = outIndex < folder.UnpackSizes.Length ? folder.UnpackSizes[outIndex] : -1;
       data = DecompressSingleCoder(folder.Coders[coderIdx], data, unpackSize);
     }
 
@@ -408,7 +413,9 @@ public sealed class SevenZipReader : IDisposable {
           throw new InvalidDataException("Could not resolve input for coder.");
       }
 
-      var output = DecompressSingleCoder(folder.Coders[i], input, -1);
+      var producedIndex = coderOutStreamBase[i];
+      var output = DecompressSingleCoder(folder.Coders[i], input,
+        producedIndex < folder.UnpackSizes.Length ? folder.UnpackSizes[producedIndex] : -1);
       coderOutputs[coderOutStreamBase[i]] = output;
     }
 
@@ -514,7 +521,7 @@ public sealed class SevenZipReader : IDisposable {
       if (coder.Properties == null || coder.Properties.Length < 5)
         throw new InvalidDataException("LZMA coder missing properties.");
       using var stream = new MemoryStream(data);
-      var decoder = new LzmaDecoder(stream, coder.Properties, -1);
+      var decoder = new LzmaDecoder(stream, coder.Properties, unpackSize);
       return decoder.Decode();
     }
 

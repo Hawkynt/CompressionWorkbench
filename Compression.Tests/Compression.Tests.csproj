@@ -118,6 +118,10 @@
     <EmbeddedResource Include="Firmware\ReferenceVectors\*" Exclude="Firmware\ReferenceVectors\README.md">
       <LogicalName>FirmwareVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- 7z archives from libarchive's test suite; see SevenZip/LibarchiveVectors/README.md. -->
+    <EmbeddedResource Include="SevenZip\LibarchiveVectors\*.7z;SevenZip\LibarchiveVectors\manifest-*.tsv">
+      <LogicalName>SevenZipLibarchiveVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Archives FreeArc 0.67's Arc.exe wrote; see FreeArc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="FreeArc\ReferenceVectors\*.arc">
       <LogicalName>FreeArcVectors.%(Filename)%(Extension)</LogicalName>
