@@ -375,6 +375,14 @@ public static partial class FormatDetector {
           return Format.Pak;
       }
 
+      // A Chromium resource pack leads with a bare version word (4 or 5); its tables must end exactly
+      // where its first resource begins, which noise and the other two .pak layouts never satisfy.
+      var head = new byte[(int)Math.Min(fs.Length, 18)];
+      fs.Position = 0;
+      fs.ReadExactly(head);
+      if (FileFormat.ChromiumPak.ChromiumPak.IsPak(head, fs.Length))
+        return Format.ChromiumPak;
+
       // The footer is 44 bytes for the versions that keep the magic at its front;
       // later revisions prepend fields, so scan the tail rather than fix an offset.
       var tail = (int)Math.Min(fs.Length, 256);

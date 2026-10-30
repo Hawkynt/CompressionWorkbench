@@ -1,0 +1,15 @@
+# grit-v5-utf8.pak version=5 encoding=1 resources=6 aliases=1
+grit-v5-utf8.pak 101 9 1b4df9c4493ce921830c496b6a9e721a9abea14b926daa1e3b905a2b8b497819 -
+grit-v5-utf8.pak 102 520 e7f0893138aeb54e20f94006b6522ba8331876b1dd2313f77d6c1861cd7b8472 -
+grit-v5-utf8.pak 103 9 1b4df9c4493ce921830c496b6a9e721a9abea14b926daa1e3b905a2b8b497819 101
+grit-v5-utf8.pak 200 0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 -
+grit-v5-utf8.pak 4096 7 8285d1ad84c6b6e475d3b50dbf90389c8c7a07a278d9ae46d5698cbe872e3834 -
+grit-v5-utf8.pak 65535 4 3547cb112ac4489af2310c0626cdba6f3097a2ad5a3b42ddd3b59c76c7a079a3 -
+# grit-v5-binary.pak version=5 encoding=0 resources=2 aliases=0
+grit-v5-binary.pak 1 520 e7f0893138aeb54e20f94006b6522ba8331876b1dd2313f77d6c1861cd7b8472 -
+grit-v5-binary.pak 2 3 ae4b3280e56e2faf83f414a6e3dabe9d5fbe18976544c05fed121accb85b53fc -
+# grit-v5-empty.pak version=5 encoding=1 resources=0 aliases=0
+# grit-v4-utf8.pak version=4 encoding=1 resources=3 aliases=0
+grit-v4-utf8.pak 7 5 3ba8d02b16fd2a01c1a8ba1a1f036d7ce386ed953696fa57331c2ac48a80b255 -
+grit-v4-utf8.pak 8 0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 -
+grit-v4-utf8.pak 300 520 e7f0893138aeb54e20f94006b6522ba8331876b1dd2313f77d6c1861cd7b8472 -
