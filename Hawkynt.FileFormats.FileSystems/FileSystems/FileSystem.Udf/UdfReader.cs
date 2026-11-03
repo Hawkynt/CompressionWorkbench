@@ -34,13 +34,38 @@ public sealed class UdfReader : IDisposable {
   internal int LogicalBlockSize => _blockSize;
 
   /// <summary>Initializes a new UDF reader.</summary>
-  public UdfReader(Stream stream, bool leaveOpen = false) {
+  public UdfReader(Stream stream, bool leaveOpen = false) : this(stream, leaveOpen, partitionMapsOnly: false) { }
+
+  private UdfReader(Stream stream, bool leaveOpen, bool partitionMapsOnly) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek)
       stream.Position = 0;
     _img = new ImageAccessor(stream, leaveOpen);
     _len = _img.Length;
+    _partitionMapsOnly = partitionMapsOnly;
     Parse();
+  }
+
+  private readonly bool _partitionMapsOnly;
+
+  /// <summary>
+  /// Whether the volume addresses blocks through a virtual, sparable or metadata partition. The
+  /// in-place editors, the extent map and every maintenance operation assume plain Type 1
+  /// partitions, so callers refuse to change such a volume. Unreadable volumes report false and
+  /// fail on their own.
+  /// </summary>
+  public static bool UsesRemapping(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var position = image.CanSeek ? image.Position : 0;
+    try {
+      using var reader = new UdfReader(image, leaveOpen: true, partitionMapsOnly: true);
+      return reader.UsesRemappedPartitions;
+    } catch (Exception e) when (e is InvalidDataException or NotSupportedException or OverflowException or EndOfStreamException) {
+      return false;
+    } finally {
+      if (image.CanSeek)
+        image.Position = position;
+    }
   }
 
   private byte U8(long off) => off >= 0 && off < _len ? _img.ReadByte(off) : (byte)0;
@@ -171,6 +196,8 @@ public sealed class UdfReader : IDisposable {
       throw new InvalidDataException("UDF: no Partition Descriptor found.");
 
     ParsePartitionMaps(lvdOffset);
+    if (_partitionMapsOnly)
+      return;
 
     // UDF maps LogicalVolumeContentsUse to a long_ad naming the File Set Descriptor.
     var fsdLbn = U32(lvdOffset + 252);
@@ -187,6 +214,17 @@ public sealed class UdfReader : IDisposable {
     ReadDirectory(rootPartitionReference, rootIcbLbn, checked((int)rootIcbLen), "");
   }
 
+  /// <summary>Whether any partition map remaps blocks (virtual, sparable or metadata): such volumes are read-only here.</summary>
+  public bool UsesRemappedPartitions => _partitionMaps.Any(m => m.Kind != PartitionKind.Physical);
+
+  /// <summary>
+  /// Decodes the Logical Volume Descriptor's partition maps (ECMA-167 3/10.7, UDF 2.60 2.2.8–2.2.10).
+  /// Type 1 maps address a Partition Descriptor directly. Type 2 maps are identified by their
+  /// entity identifier: "*UDF Virtual Partition" (blocks go through the VAT, write-once media),
+  /// "*UDF Sparable Partition" (defective packets relocated by a sparing table, rewritable media)
+  /// and "*UDF Metadata Partition" (blocks live inside the metadata file, UDF 2.50+). Their
+  /// tables are loaded once all maps are known, since they live in the physical partitions.
+  /// </summary>
   private void ParsePartitionMaps(long lvdOffset) {
     var mapTableLength = U32(lvdOffset + 264);
     var mapCount = U32(lvdOffset + 268);
@@ -216,12 +254,11 @@ public sealed class UdfReader : IDisposable {
           : $"Type 1 partition map {reference} addresses volume sequence {volumeSequenceNumber}; multi-volume UDF sets are not supported.";
         if (!_partitions.ContainsKey(partitionNumber))
           limitation = $"Type 1 partition map {reference} names missing Partition Descriptor {partitionNumber}.";
-        _partitionMaps.Add(new(partitionNumber, limitation));
-      } else if (type == 2) {
-        _partitionMaps.Add(new(null,
-          $"UDF Type 2 partition map {reference} requires virtual/sparable/metadata remapping that is not implemented."));
+        _partitionMaps.Add(new PartitionMapInfo(PartitionKind.Physical, partitionNumber, limitation));
+      } else if (type == 2 && length == 64) {
+        _partitionMaps.Add(ParseType2Map(pos, reference));
       } else {
-        _partitionMaps.Add(new(null, $"UDF partition map {reference} has unsupported type {type}."));
+        _partitionMaps.Add(new PartitionMapInfo(PartitionKind.Physical, null, $"UDF partition map {reference} has unsupported type {type}."));
       }
 
       pos += length;
@@ -229,8 +266,197 @@ public sealed class UdfReader : IDisposable {
 
     if (pos > end)
       throw new InvalidDataException("UDF: partition map table is truncated.");
+
+    // Remapping tables are read through the physical maps, so they come last.
+    foreach (var map in _partitionMaps)
+      if (map.Limitation == null)
+        LoadRemapping(map);
   }
 
+  private PartitionMapInfo ParseType2Map(long pos, uint reference) {
+    var identifier = Encoding.ASCII.GetString(_img.Read(pos + 5, 23)).TrimEnd('\0');
+    var volumeSequenceNumber = U16(pos + 36);
+    var partitionNumber = U16(pos + 38);
+    string? limitation = null;
+    if (volumeSequenceNumber != 1)
+      limitation = $"Type 2 partition map {reference} addresses volume sequence {volumeSequenceNumber}; multi-volume UDF sets are not supported.";
+    else if (!_partitions.ContainsKey(partitionNumber))
+      limitation = $"Type 2 partition map {reference} names missing Partition Descriptor {partitionNumber}.";
+
+    switch (identifier) {
+      case "*UDF Virtual Partition":
+        return new PartitionMapInfo(PartitionKind.Virtual, partitionNumber, limitation);
+      case "*UDF Sparable Partition": {
+        var packetLength = U16(pos + 40);
+        var tableCount = U8(pos + 42);
+        var tableSize = U32(pos + 44);
+        var locations = new uint[Math.Min((int)tableCount, 4)];
+        for (var i = 0; i < locations.Length; ++i)
+          locations[i] = U32(pos + 48 + i * 4);
+        if (packetLength == 0 || (packetLength & (packetLength - 1)) != 0)
+          limitation ??= $"Sparable partition map {reference} has packet length {packetLength}, not a power of two.";
+        return new PartitionMapInfo(PartitionKind.Sparable, partitionNumber, limitation) {
+          PacketLength = packetLength, SparingTableLocations = locations, SparingTableSize = tableSize,
+        };
+      }
+      case "*UDF Metadata Partition":
+        return new PartitionMapInfo(PartitionKind.Metadata, partitionNumber, limitation) {
+          MetadataFileLocation = U32(pos + 40), MetadataMirrorLocation = U32(pos + 44),
+        };
+      default:
+        return new PartitionMapInfo(PartitionKind.Physical, null, $"UDF Type 2 partition map {reference} has unknown identifier '{identifier}'.");
+    }
+  }
+
+  /// <summary>The reference of the map that records <paramref name="partitionNumber"/> physically (Type 1 or sparable).</summary>
+  private ushort PhysicalReference(ushort partitionNumber) {
+    for (var i = 0; i < _partitionMaps.Count; ++i) {
+      var map = _partitionMaps[i];
+      if (map.Kind is PartitionKind.Physical or PartitionKind.Sparable && map.PartitionNumber == partitionNumber && map.Limitation == null)
+        return (ushort)i;
+    }
+    // A virtual or metadata map may stand alone over its partition: address it directly.
+    return ushort.MaxValue;
+  }
+
+  private void LoadRemapping(PartitionMapInfo map) {
+    try {
+      switch (map.Kind) {
+        case PartitionKind.Sparable:
+          LoadSparingTable(map);
+          break;
+        case PartitionKind.Virtual:
+          map.Vat = LoadVat(map.PartitionNumber!.Value);
+          break;
+        case PartitionKind.Metadata:
+          map.MetadataRuns = LoadMetadataFile(map);
+          break;
+      }
+    } catch (Exception e) when (e is InvalidDataException or NotSupportedException or OverflowException) {
+      map.Limitation = e.Message;
+    }
+  }
+
+  /// <summary>
+  /// Reads the sparing table (UDF 2.60 2.2.12): a tag, "*UDF Sparing Table", then map entries of
+  /// (original packet LBN within the partition, mapped absolute sector). Free (0xFFFFFFF0) and
+  /// defective (0xFFFFFFF1) entries map nothing. The first copy that reads cleanly is used.
+  /// </summary>
+  private void LoadSparingTable(PartitionMapInfo map) {
+    foreach (var location in map.SparingTableLocations) {
+      var offset = (long)location * _blockSize;
+      if (offset < 0 || offset + 56 > _len)
+        continue;
+      var id = Encoding.ASCII.GetString(_img.Read(offset + 17, 18));
+      if (id != "*UDF Sparing Table")
+        continue;
+      var entries = U16(offset + 48);
+      if (56L + entries * 8L > Math.Max(map.SparingTableSize, 56) || offset + 56 + entries * 8L > _len)
+        continue;
+      var table = new Dictionary<uint, uint>();
+      for (var i = 0; i < entries; ++i) {
+        var original = U32(offset + 56 + i * 8);
+        var mapped = U32(offset + 60 + i * 8);
+        if (original < 0xFFFFFFF0)
+          table[original] = mapped;
+      }
+      map.Sparing = table;
+      return;
+    }
+    throw new InvalidDataException("UDF: no readable sparing table for the sparable partition.");
+  }
+
+  /// <summary>
+  /// Finds and reads the Virtual Allocation Table (UDF 2.60 2.2.11): its File Entry is the last
+  /// one recorded, so the last blocks of the image are tried. A UDF 2.00+ VAT is a file of type
+  /// 248 with a header; a 1.50 VAT ends with "*UDF Virtual Alloc Tbl" and the previous VAT ICB.
+  /// </summary>
+  private uint[] LoadVat(ushort partitionNumber) {
+    var physical = PhysicalReference(partitionNumber);
+    var partition = _partitions[partitionNumber];
+    var lastBlock = _len / _blockSize - 1;
+    for (var absolute = lastBlock; absolute >= Math.Max(partition.StartBlock, lastBlock - 7); --absolute) {
+      var offset = absolute * _blockSize;
+      var tag = U16(offset);
+      if (tag is not (261 or 266) || !IsTagAt(offset, tag, (uint)(absolute - partition.StartBlock)))
+        continue;
+      var fileType = U8(offset + 27);
+      var size = U64(offset + 56);
+      if (size > 64L * 1024 * 1024)
+        continue;
+      var data = ReadFileEntryData(physical, offset, (long)size);
+      if (data == null)
+        continue;
+      if (fileType == 248 && data.Length >= 152) {
+        int headerLength = BinaryPrimitives.ReadUInt16LittleEndian(data);
+        if (headerLength < 152 || headerLength > data.Length)
+          continue;
+        return ToEntries(data.AsSpan(headerLength));
+      }
+      if (fileType == 0 && data.Length >= 36
+          && Encoding.ASCII.GetString(data, data.Length - 35, 22) == "*UDF Virtual Alloc Tbl")
+        return ToEntries(data.AsSpan(0, data.Length - 36));
+    }
+    throw new InvalidDataException("UDF: the Virtual Allocation Table was not found at the end of the image.");
+
+    static uint[] ToEntries(ReadOnlySpan<byte> bytes) {
+      var entries = new uint[bytes.Length / 4];
+      for (var i = 0; i < entries.Length; ++i)
+        entries[i] = BinaryPrimitives.ReadUInt32LittleEndian(bytes[(i * 4)..]);
+      return entries;
+    }
+  }
+
+  /// <summary>
+  /// Reads the metadata file's extents (UDF 2.60 2.2.13): the metadata partition's blocks are the
+  /// bytes of that file, which lies in the physical partition. The mirror is used when the main
+  /// copy cannot be read.
+  /// </summary>
+  private List<(long Logical, long Length, long Physical)> LoadMetadataFile(PartitionMapInfo map) {
+    var physical = PhysicalReference(map.PartitionNumber!.Value);
+    if (physical == ushort.MaxValue)
+      throw new InvalidDataException("UDF: the metadata partition has no physical partition map beneath it.");
+    Exception? last = null;
+    foreach (var location in new[] { map.MetadataFileLocation, map.MetadataMirrorLocation }) {
+      try {
+        var feOffset = PartitionOffset(physical, location);
+        var tag = U16(feOffset);
+        if (tag is not (261 or 266) || U8(feOffset + 27) is not (250 or 251))
+          throw new InvalidDataException("UDF: the metadata file location does not hold a metadata file.");
+        var size = (long)U64(feOffset + 56);
+        var layout = GetFileDataLayout(physical, location, size);
+        if (layout.Limitation is { } limitation)
+          throw new InvalidDataException(limitation);
+        var runs = new List<(long, long, long)>();
+        foreach (var segment in layout.Segments)
+          if (!segment.ZeroFill)
+            runs.Add((segment.LogicalOffset, segment.Length, segment.PhysicalOffset));
+        return runs;
+      } catch (Exception e) when (e is InvalidDataException or NotSupportedException or OverflowException) {
+        last = e;
+      }
+    }
+    throw new InvalidDataException("UDF: neither the metadata file nor its mirror can be read: " + last?.Message);
+  }
+
+  /// <summary>The contents of the File Entry at absolute byte <paramref name="feOffset"/>, or null when they cannot be read safely.</summary>
+  private byte[]? ReadFileEntryData(ushort containingPartitionReference, long feOffset, long size) {
+    var tag = U16(feOffset);
+    int lEa, lAd;
+    long adStart;
+    if (tag == 261) {
+      lEa = checked((int)U32(feOffset + 168));
+      lAd = checked((int)U32(feOffset + 172));
+      adStart = checked(feOffset + 176L + lEa);
+    } else {
+      lEa = checked((int)U32(feOffset + 208));
+      lAd = checked((int)U32(feOffset + 212));
+      adStart = checked(feOffset + 216L + lEa);
+    }
+    return ReadAllocData(containingPartitionReference, adStart, lAd, U16(feOffset + 34) & 0x07, size);
+  }
+
+  /// <summary>Translates one logical block of a partition reference to its absolute byte offset.</summary>
   private long PartitionOffset(ushort partitionReference, long lbn) {
     if (partitionReference >= _partitionMaps.Count)
       throw new InvalidDataException($"UDF: partition reference {partitionReference} is outside the Logical Volume Descriptor map table.");
@@ -242,20 +468,48 @@ public sealed class UdfReader : IDisposable {
       throw new NotSupportedException(limitation);
     if (map.PartitionNumber is not { } number || !_partitions.TryGetValue(number, out var partition))
       throw new InvalidDataException($"UDF: partition reference {partitionReference} cannot be resolved.");
+
+    switch (map.Kind) {
+      case PartitionKind.Virtual: {
+        var vat = map.Vat ?? throw new InvalidDataException("UDF: the virtual partition has no allocation table.");
+        if (lbn >= vat.Length || vat[lbn] == 0xFFFFFFFF)
+          throw new InvalidDataException($"UDF: virtual block {lbn} is not allocated in the VAT.");
+        var physical = PhysicalReference(number);
+        return physical == ushort.MaxValue
+          ? checked(((long)partition.StartBlock + vat[lbn]) * _blockSize)
+          : PartitionOffset(physical, vat[lbn]);
+      }
+      case PartitionKind.Metadata: {
+        var position = checked(lbn * _blockSize);
+        foreach (var (logical, length, physicalOffset) in map.MetadataRuns!)
+          if (position >= logical && position < logical + length)
+            return physicalOffset + (position - logical);
+        throw new InvalidDataException($"UDF: metadata block {lbn} lies outside the metadata file.");
+      }
+    }
+
     if ((ulong)lbn >= partition.BlockCount)
       throw new InvalidDataException(
         $"UDF: logical block {lbn} lies outside partition reference {partitionReference} ({partition.BlockCount} blocks). ");
-
+    if (map.Kind == PartitionKind.Sparable && map.Sparing is { Count: > 0 } sparing) {
+      var packet = (uint)(lbn & ~(map.PacketLength - 1L));
+      if (sparing.TryGetValue(packet, out var mapped))
+        return checked(((long)mapped + (lbn - packet)) * _blockSize);
+    }
     return checked(((long)partition.StartBlock + lbn) * _blockSize);
   }
 
+  /// <summary>
+  /// Maps a byte range of a partition to absolute image ranges. A plain partition gives one
+  /// range; remapped ones are walked block by block and contiguous blocks merged.
+  /// </summary>
   private bool TryPartitionRange(
       ushort partitionReference,
       uint block,
       long length,
-      out long physicalOffset,
+      out List<(long Offset, long Length)> runs,
       out string? limitation) {
-    physicalOffset = 0;
+    runs = [];
     limitation = null;
     try {
       if (partitionReference >= _partitionMaps.Count) {
@@ -271,20 +525,43 @@ public sealed class UdfReader : IDisposable {
         limitation = $"UDF partition reference {partitionReference} cannot be resolved.";
         return false;
       }
-      var partitionBytes = checked((long)partition.BlockCount * _blockSize);
-      var relative = checked((long)block * _blockSize);
-      if (length < 0 || relative < 0 || relative > partitionBytes || length > partitionBytes - relative) {
-        limitation = $"UDF extent [{block}, +{length} bytes] lies outside partition reference {partitionReference}.";
+      if (length < 0) {
+        limitation = $"UDF extent [{block}, {length} bytes] has a negative length.";
         return false;
       }
-      physicalOffset = checked((long)partition.StartBlock * _blockSize + relative);
-      if (physicalOffset < 0 || physicalOffset > _len || length > _len - physicalOffset) {
-        limitation = "UDF recorded extent lies outside the backing image.";
-        return false;
+
+      if (map.Kind == PartitionKind.Physical) {
+        var partitionBytes = checked((long)partition.BlockCount * _blockSize);
+        var relative = checked((long)block * _blockSize);
+        if (relative > partitionBytes || length > partitionBytes - relative) {
+          limitation = $"UDF extent [{block}, +{length} bytes] lies outside partition reference {partitionReference}.";
+          return false;
+        }
+        var physicalOffset = checked((long)partition.StartBlock * _blockSize + relative);
+        if (physicalOffset > _len || length > _len - physicalOffset) {
+          limitation = "UDF recorded extent lies outside the backing image.";
+          return false;
+        }
+        runs.Add((physicalOffset, length));
+        return true;
+      }
+
+      for (long done = 0, lbn = block; done < length; ++lbn) {
+        var take = Math.Min(_blockSize, length - done);
+        var offset = PartitionOffset(partitionReference, lbn);
+        if (offset < 0 || offset > _len - take) {
+          limitation = "UDF recorded extent lies outside the backing image.";
+          return false;
+        }
+        if (runs.Count > 0 && runs[^1].Offset + runs[^1].Length == offset)
+          runs[^1] = (runs[^1].Offset, runs[^1].Length + take);
+        else
+          runs.Add((offset, take));
+        done += take;
       }
       return true;
-    } catch (OverflowException) {
-      limitation = "UDF extent address overflows the image address space.";
+    } catch (Exception e) when (e is OverflowException or InvalidDataException or NotSupportedException) {
+      limitation = e is OverflowException ? "UDF extent address overflows the image address space." : e.Message;
       return false;
     }
   }
@@ -513,9 +790,13 @@ public sealed class UdfReader : IDisposable {
 
         var logicalLength = Math.Min(ad.Length, informationLength - logicalOffset);
         if (ad.ExtentType == 0) {
-          if (!TryPartitionRange(ad.PartitionReference, ad.Block, logicalLength, out var physicalOffset, out var limitation))
+          if (!TryPartitionRange(ad.PartitionReference, ad.Block, logicalLength, out var runs, out var limitation))
             return new(segments, limitation);
-          segments.Add(new(logicalOffset, logicalLength, physicalOffset, ZeroFill: false));
+          var runLogical = logicalOffset;
+          foreach (var (physicalOffset, runLength) in runs) {
+            segments.Add(new(runLogical, runLength, physicalOffset, ZeroFill: false));
+            runLogical += runLength;
+          }
         } else if (ad.ExtentType is 1 or 2) {
           segments.Add(new(logicalOffset, logicalLength, 0, ZeroFill: true));
         } else {
@@ -569,9 +850,10 @@ public sealed class UdfReader : IDisposable {
         continue;
 
       if (ad.ExtentType == 0) {
-        if (!TryPartitionRange(ad.PartitionReference, ad.Block, take, out var physical, out _))
+        if (!TryPartitionRange(ad.PartitionReference, ad.Block, take, out var runs, out _))
           return null;
-        _img.CopyTo(physical, ms, take);
+        foreach (var (physical, runLength) in runs)
+          _img.CopyTo(physical, ms, runLength);
       } else if (ad.ExtentType is 1 or 2) {
         var remaining = take;
         while (remaining > 0) {
@@ -639,7 +921,23 @@ public sealed class UdfReader : IDisposable {
   public void Dispose() => _img.Dispose();
 
   private readonly record struct PartitionDescriptorInfo(uint StartBlock, uint BlockCount);
-  private readonly record struct PartitionMapInfo(ushort? PartitionNumber, string? Limitation);
+
+  private enum PartitionKind { Physical, Virtual, Sparable, Metadata }
+
+  /// <summary>One partition map and, for the remapping kinds, the table it maps through.</summary>
+  private sealed class PartitionMapInfo(PartitionKind kind, ushort? partitionNumber, string? limitation) {
+    public PartitionKind Kind { get; } = kind;
+    public ushort? PartitionNumber { get; } = partitionNumber;
+    public string? Limitation { get; set; } = limitation;
+    public int PacketLength { get; init; }
+    public uint[] SparingTableLocations { get; init; } = [];
+    public uint SparingTableSize { get; init; }
+    public uint MetadataFileLocation { get; init; }
+    public uint MetadataMirrorLocation { get; init; }
+    public Dictionary<uint, uint>? Sparing { get; set; }
+    public uint[]? Vat { get; set; }
+    public List<(long Logical, long Length, long Physical)>? MetadataRuns { get; set; }
+  }
 
   private sealed record UdfFileDataLayout(
     IReadOnlyList<UdfDataSegment> Segments,

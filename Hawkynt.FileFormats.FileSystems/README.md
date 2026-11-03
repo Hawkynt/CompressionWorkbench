@@ -164,7 +164,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | Format | Id | State | Compact | Defrag | Sort | Wipe | Shrink | Geometry | Purge | Proof | Notes | Reference |
 | --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
 | [ISO 9660](https://en.wikipedia.org/wiki/ISO_9660) | `Iso` | R/W | ✅ | ✅ moving | — | ✅ | — | — | ✅ | host-kernel `iso9660` mount + [`isoinfo`](https://github.com/Distrotech/cdrkit) / [`xorriso`](https://www.gnu.org/software/xorriso) | ISO 9660 + Joliet (+ Rock Ridge read); in-place add/remove in the root directory only, in-place defrag; nested edits refused, never rebuilt | [ECMA-119](https://ecma-international.org/publications-and-standards/standards/ecma-119/) |
-| [UDF](https://en.wikipedia.org/wiki/Universal_Disk_Format) | `Udf` | R/W | ✅ | ✅ moving | — | ✅ | ✅ | — | ✅ | host-kernel `udf` mount + [`udfinfo` / `mkudffs`](https://github.com/pali/udftools) round-trip | Edits rebuild the image | [OSTA UDF](https://osta.org/specs/) |
+| [UDF](https://en.wikipedia.org/wiki/Universal_Disk_Format) | `Udf` | R/W | ✅ | ✅ moving | — | ✅ | ✅ | — | ✅ | host-kernel `udf` mount + [`udfinfo` / `mkudffs`](https://github.com/pali/udftools) round-trip | Edits rebuild the image; sparable, VAT and metadata partitions are read, and such volumes are not edited | [OSTA UDF](https://osta.org/specs/) |
 
 ### Compressed, embedded and flash
 
