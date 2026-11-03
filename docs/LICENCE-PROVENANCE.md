@@ -31,10 +31,10 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 24 | |
-| B | 17 | FFmpeg alone covers 38 codec folders |
+| A | 25 | |
+| B | 19 | FFmpeg alone covers 38 codec folders |
 | C | 1 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
-| R | 10 | |
+| R | 12 | |
 
 ## C — incompatible, must be rewritten clean-room
 
@@ -94,6 +94,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ba2/BethesdaLookup3.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Balz/BalzStream.cs`, `Compression.Core/Entropy/Ppmd/PpmdModelH.cs` | Bob Jenkins lookup3; BALZ max-parser score; Shkarin's PPMd rescale constant | public domain / constants | none needed |
 | `Hawkynt.FileFormats.Audio/Codecs/VENDORED_AUDIO_CODECS.md` | Concentus, .NET Ogg Vorbis Encoder, GroovyCodecs, AmrWbLib (vendored whole) | BSD-3 / MIT / LGPL-3.0 / BSD-3 | `THIRD-PARTY-NOTICES.md` and the vendored `LICENSE.txt` files |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Aomei/AomeiFormatDescriptor.cs` | this repository's reverse-engineered AOMEI Backupper container layout | own work | none needed |
+| `Compression.Core/FileSystems/SquashFs/SquashFsLegacyReader.cs` | 7-Zip 23.01 `CPP/7zip/Archive/SquashfsHandler.cpp` (Igor Pavlov) | LGPL-2.1-or-later — taken under LGPL-3.0 | `Compression.Core/FileSystems/SquashFs/THIRD-PARTY-NOTICE.7-Zip.txt` |
 
 ## R — not a code port
 
