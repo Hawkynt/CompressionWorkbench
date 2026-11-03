@@ -4766,19 +4766,19 @@ A clean-room implementation of the MCM architecture: several small context-mixer
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses data produced by the full reduced MCM profile. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed, McmCompressionProfile profile)` | Decompresses data produced by the selected reduced MCM profile. |
 
-### Namespace `Compression.Core.Entropy.ContextMixing.Paq8hp`
+### Namespace `Compression.Core.Entropy.ContextMixing.SelectedWeights`
 
-[`Paq8hpBuildingBlock`](#paq8hpbuildingblock) · [`Paq8hpCompressor`](#paq8hpcompressor)
+[`ContextMixingSelectedWeightsBuildingBlock`](#contextmixingselectedweightsbuildingblock) · [`ContextMixingSelectedWeightsCompressor`](#contextmixingselectedweightscompressor)
 
-#### `Paq8hpBuildingBlock`
+#### `ContextMixingSelectedWeightsBuildingBlock`
 
-Exposes the reduced PAQ8hp-style model set as a benchmarkable building block.
+Exposes `ContextMixingSelectedWeightsCompressor` (orders 0-6 and a match model, mixer weight sets selected by the previous byte, one SSE stage) as a benchmarkable building block.
 
 Implements `IBuildingBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Paq8hpBuildingBlock` | `Paq8hpBuildingBlock()` |  |
+| `ContextMixingSelectedWeightsBuildingBlock` | `ContextMixingSelectedWeightsBuildingBlock()` |  |
 | `Description` | `string Description { get; }` |  |
 | `DisplayName` | `string DisplayName { get; }` |  |
 | `Family` | `AlgorithmFamily Family { get; }` |  |
@@ -4786,14 +4786,14 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-#### `Paq8hpCompressor`
+#### `ContextMixingSelectedWeightsCompressor`
 
-A clean-room, deliberately reduced reimplementation of the PAQ8hp architecture: hashed byte-order contexts and a match model mixed by context-selected weight sets — one of PAQ8's signature techniques — refined by an SSE stage.
+A context-mixing coder of this repository's own design: hashed byte-history contexts and a match model mixed by weight sets that the previous byte selects, refined by one SSE stage.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the reduced PAQ8hp-style model set. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses reduced-PAQ8hp-style compressed data. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the context-selected-weight model. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses data written by `Compress`. |
 
 ### Namespace `Compression.Core.Entropy.ContextMixing.WordMatch`
 

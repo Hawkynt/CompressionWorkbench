@@ -1,12 +1,12 @@
 using System.Text;
-using Compression.Core.Entropy.ContextMixing.Paq8hp;
+using Compression.Core.Entropy.ContextMixing.SelectedWeights;
 
 namespace Compression.Tests.BuildingBlocks;
 
 [TestFixture]
-public class Paq8hpBuildingBlockTests {
+public class ContextMixingSelectedWeightsBuildingBlockTests {
 
-  private static readonly Paq8hpBuildingBlock Bb = new();
+  private static readonly ContextMixingSelectedWeightsBuildingBlock Bb = new();
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void Empty_RoundTrips() {
@@ -43,8 +43,8 @@ public class Paq8hpBuildingBlockTests {
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void EnglishText_RoundTripsAndCompresses() {
     var data = Encoding.ASCII.GetBytes(
-      "PAQ8hp mixes several fixed-order contexts with weight sets selected by context. " +
-      "PAQ8hp mixes several fixed-order contexts with weight sets selected by context.");
+      "Context mixing blends several fixed-order contexts with weight sets selected by context. " +
+      "Context mixing blends several fixed-order contexts with weight sets selected by context.");
     var compressed = Bb.Compress(data);
     var round = Bb.Decompress(compressed);
     Assert.That(round, Is.EqualTo(data).AsCollection);
@@ -54,8 +54,8 @@ public class Paq8hpBuildingBlockTests {
   [Test, Category("EdgeCase")]
   public void Registry_Metadata_IsStable() {
     Assert.Multiple(() => {
-      Assert.That(Bb.Id, Is.EqualTo("BB_Paq8hp"));
-      Assert.That(Bb.DisplayName, Is.EqualTo("PAQ8hp (reduced model set)"));
+      Assert.That(Bb.Id, Is.EqualTo("BB_ContextMixingSelectedWeights"));
+      Assert.That(Bb.DisplayName, Is.EqualTo("Context mixing with context-selected weights"));
       Assert.That(Bb.Family, Is.EqualTo(Compression.Registry.AlgorithmFamily.ContextMixing));
     });
   }
