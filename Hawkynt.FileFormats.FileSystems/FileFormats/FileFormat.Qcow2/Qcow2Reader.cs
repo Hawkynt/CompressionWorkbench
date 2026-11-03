@@ -7,8 +7,9 @@ namespace FileFormat.Qcow2;
 /// <summary>
 /// Reads self-contained QCOW2 v2/v3 disk images with standard L2 entries.
 /// Supports unallocated, zero, uncompressed and deflate-compressed guest clusters.
-/// Backing files, encryption and incompatible v3 feature profiles are rejected
-/// instead of being interpreted as zero-filled data.
+/// Other profiles (backing files, zstd, extended L2, AES or LUKS encryption with a password) are
+/// read through <see cref="Qcow2Stream"/>; what neither can decode is refused instead of being
+/// interpreted as zero-filled data.
 /// </summary>
 public sealed class Qcow2Reader : IDisposable {
   private readonly Stream _stream;
@@ -18,6 +19,7 @@ public sealed class Qcow2Reader : IDisposable {
   private readonly int _clusterSize;
   private readonly int _l2Entries;
   private readonly List<Qcow2Entry> _entries = [];
+  private readonly string? _password;
 
   /// <summary>
   /// Gets the entries.
@@ -27,12 +29,21 @@ public sealed class Qcow2Reader : IDisposable {
   /// <summary>Virtual disk size in bytes.</summary>
   public long VirtualSize => _header.VirtualSize;
 
+  /// <summary>Whether the guest data is encrypted (AES or LUKS).</summary>
+  public bool IsEncrypted => _header.CryptMethod != Qcow2Structures.CryptNone;
+
   /// <summary>
   /// Initializes a new instance of <see cref="Qcow2Reader"/>.
   /// </summary>
-  public Qcow2Reader(Stream stream, bool leaveOpen = false) {
+  public Qcow2Reader(Stream stream, bool leaveOpen = false) : this(stream, null, leaveOpen) { }
+
+  /// <summary>
+  /// Initializes a new instance of <see cref="Qcow2Reader"/> that unlocks an encrypted image with <paramref name="password"/>.
+  /// </summary>
+  public Qcow2Reader(Stream stream, string? password, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     _stream = stream;
+    _password = password;
     _streamLength = stream.Length;
     _header = Qcow2Structures.ReadHeader(stream);
     Qcow2Structures.ValidateReadableProfile(_header);
@@ -60,9 +71,9 @@ public sealed class Qcow2Reader : IDisposable {
 
     var result = new byte[(int)_header.VirtualSize];
     if (!Qcow2Structures.IsSelfContainedPlain(_header)) {
-      // Backing files, zstd clusters, extended L2 entries and dirty/corrupt marks: the stream
+      // Backing files, zstd clusters, extended L2 entries, encryption and dirty/corrupt marks: the stream
       // handles all of them (and explains what it cannot).
-      using var guest = Qcow2Stream.Open(_stream, leaveOpen: true);
+      using var guest = Qcow2Stream.Open(_stream, _password, leaveOpen: true);
       guest.ReadExactly(result);
       return result;
     }

@@ -18,3 +18,18 @@ bytes, a zero gap, a seeded pseudo-random block).
 guest disk as QEMU reads it, backing chain included. Each image also passed `qemu-img check`. The
 regeneration test rebuilds everything with QEMU and requires the same hashes (QEMU's output is
 deterministic for these inputs), then reads the fresh images with our reader as well.
+
+## Encrypted images
+
+`mkencrypted.sh` (documentation, not a build input) made these with `qemu-img convert` from a
+64 KiB guest disk (text-like bytes, a zero gap, a seeded pseudo-random block); the password is
+`Secr3t`. They are stored gzipped. `qemu-encrypted.sha256` holds the SHA-256 of the raw guest disk
+`qemu-img convert --image-opts ... encrypt.key-secret=...` decrypted from each.
+
+| File | Made with | What it covers |
+| --- | --- | --- |
+| `enc-aes.qcow2.gz` | `-o encrypt.format=aes,cluster_size=4096` | legacy AES encryption (crypt_method 1) |
+| `enc-luks-cbc-essiv.qcow2.gz` | `-o encrypt.format=luks,encrypt.cipher-alg=aes-128,encrypt.cipher-mode=cbc,encrypt.ivgen-alg=essiv,encrypt.ivgen-hash-alg=sha256,encrypt.hash-alg=sha1,encrypt.iter-time=10,cluster_size=4096` | LUKS encryption (crypt_method 2): the LUKS1 header behind the encryption header extension, AF-split key material, CBC with ESSIV over host sectors |
+
+The default LUKS profile (aes-256 xts-plain64, sha256) and further cipher profiles are checked
+live against qemu-img by `Qcow2EncryptionTests` in the ExternalInterop tier.

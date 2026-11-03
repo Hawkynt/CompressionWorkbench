@@ -6,7 +6,8 @@ namespace FileFormat.Qcow2;
 /// Seekable access to the active guest disk of a QCOW2 image.
 /// Reads resolve standard, zero, unallocated and compressed clusters (deflate or zstd),
 /// extended L2 entries with their 32 subclusters, and backing files (QCOW2 or raw), which
-/// supply every cluster or subcluster the image leaves unallocated.
+/// supply every cluster or subcluster the image leaves unallocated. AES- and LUKS-encrypted
+/// images are read when opened with their password (<see cref="Qcow2Encryption"/>).
 /// Writes are enabled only for flat standard-refcount profiles and honour QCOW2
 /// copy-on-write semantics for shared L2 and data clusters.
 /// </summary>
@@ -26,9 +27,10 @@ public sealed class Qcow2Stream : Stream {
   private readonly int _l2Entries;
   private readonly bool _writableProfile;
   private readonly Stream? _parent;
+  private readonly Qcow2Encryption? _encryption;
   private long _position;
 
-  private Qcow2Stream(Stream backing, Qcow2Header header, bool leaveOpen, Stream? parent) {
+  private Qcow2Stream(Stream backing, Qcow2Header header, bool leaveOpen, Stream? parent, Qcow2Encryption? encryption) {
     _backing = backing;
     _header = header;
     _clusterSize = header.ClusterSize;
@@ -36,16 +38,22 @@ public sealed class Qcow2Stream : Stream {
     _writableProfile = backing.CanWrite && Qcow2Structures.IsWritableProfile(header);
     _leaveOpen = leaveOpen;
     _parent = parent;
+    _encryption = encryption;
   }
 
   /// <summary>Attempts to open a supported QCOW2 image as a virtual guest-disk stream.</summary>
-  public static Qcow2Stream? TryOpen(Stream backing, bool leaveOpen = true) {
+  public static Qcow2Stream? TryOpen(Stream backing, bool leaveOpen = true) => TryOpen(backing, password: null, leaveOpen);
+
+  /// <summary>Attempts to open a supported QCOW2 image, unlocking an encrypted one with <paramref name="password"/>.</summary>
+  public static Qcow2Stream? TryOpen(Stream backing, string? password, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(backing);
     if (!backing.CanRead || !backing.CanSeek)
       return null;
     try {
-      return Open(backing, leaveOpen);
+      return Open(backing, password, leaveOpen);
     } catch (InvalidDataException) {
+      return null;
+    } catch (UnauthorizedAccessException) {
       return null;
     } catch (NotSupportedException) {
       return null;
@@ -57,18 +65,28 @@ public sealed class Qcow2Stream : Stream {
   /// <summary>Opens a QCOW2 image as a virtual guest-disk stream, or explains why it cannot.</summary>
   /// <exception cref="InvalidDataException">The image or its backing chain is malformed or missing.</exception>
   /// <exception cref="NotSupportedException">The image uses a feature this reader does not decode.</exception>
-  public static Qcow2Stream Open(Stream backing, bool leaveOpen = true) => Open(backing, leaveOpen, depth: 0);
+  public static Qcow2Stream Open(Stream backing, bool leaveOpen = true) => Open(backing, null, leaveOpen, depth: 0);
 
-  private static Qcow2Stream Open(Stream backing, bool leaveOpen, int depth) {
+  /// <summary>Opens a QCOW2 image, unlocking an encrypted one (and encrypted backing images) with <paramref name="password"/>.</summary>
+  /// <exception cref="UnauthorizedAccessException">The image is encrypted and the password is missing or wrong.</exception>
+  public static Qcow2Stream Open(Stream backing, string? password, bool leaveOpen = true) => Open(backing, password, leaveOpen, depth: 0);
+
+  private static Qcow2Stream Open(Stream backing, string? password, bool leaveOpen, int depth) {
     ArgumentNullException.ThrowIfNull(backing);
     var header = Qcow2Structures.ReadHeader(backing);
     Qcow2Structures.ValidateReadableProfile(header);
-    var parent = header.HasBackingFile ? OpenBackingFile(backing, header, depth) : null;
-    return new Qcow2Stream(backing, header, leaveOpen, parent);
+    var encryption = header.CryptMethod != Qcow2Structures.CryptNone ? Qcow2Encryption.Open(backing, header, password) : null;
+    try {
+      var parent = header.HasBackingFile ? OpenBackingFile(backing, header, password, depth) : null;
+      return new Qcow2Stream(backing, header, leaveOpen, parent, encryption);
+    } catch {
+      encryption?.Dispose();
+      throw;
+    }
   }
 
   /// <summary>Opens the image's backing file, QCOW2 (recursively) or raw.</summary>
-  private static Stream OpenBackingFile(Stream image, in Qcow2Header header, int depth) {
+  private static Stream OpenBackingFile(Stream image, in Qcow2Header header, string? password, int depth) {
     if (depth >= MaxBackingDepth)
       throw new InvalidDataException($"QCOW2: backing chain is deeper than {MaxBackingDepth} images.");
     if (header.BackingFileSize > 1023 || header.BackingFileOffset > (ulong)(image.Length - header.BackingFileSize))
@@ -90,7 +108,7 @@ public sealed class Qcow2Stream : Stream {
     try {
       var format = header.BackingFormat ?? (StartsWithMagic(parentFile) ? "qcow2" : "raw");
       return format switch {
-        "qcow2" => Open(parentFile, leaveOpen: false, depth + 1),
+        "qcow2" => Open(parentFile, password, leaveOpen: false, depth + 1),
         "raw" => parentFile,
         _ => throw new NotSupportedException($"QCOW2: backing file format '{format}' is not supported."),
       };
@@ -208,6 +226,7 @@ public sealed class Qcow2Stream : Stream {
   protected override void Dispose(bool disposing) {
     if (disposing) {
       _parent?.Dispose();
+      _encryption?.Dispose();
       if (!_leaveOpen)
         _backing.Dispose();
     }
@@ -220,6 +239,8 @@ public sealed class Qcow2Stream : Stream {
     var entry = ReadL2Entry(guestClusterIndex, out _, out var bitmap);
 
     if ((entry & Qcow2Structures.CompressedFlag) != 0) {
+      if (_encryption != null)
+        throw new InvalidDataException("QCOW2: an encrypted image cannot hold compressed clusters.");
       var cluster = new byte[_clusterSize];
       Qcow2Structures.InflateCompressedCluster(_backing, entry, _header.ClusterBits, _header.CompressionType, cluster);
       cluster.AsSpan(inClusterOffset, destination.Length).CopyTo(destination);
@@ -247,7 +268,7 @@ public sealed class Qcow2Stream : Stream {
         var length = Math.Min(destination.Length - done, (subcluster + 1) * subclusterSize - inCluster);
         var part = destination.Slice(done, length);
         if ((allocated & (1u << subcluster)) != 0)
-          Qcow2Structures.ReadExactlyAt(_backing, checked(hostOffset + inCluster), part);
+          this.ReadHost(hostOffset, guestOffset - inClusterOffset, inCluster, part);
         else if ((zero & (1u << subcluster)) == 0)
           this.ReadFromParent(checked(guestOffset + done), part);
         done += length;
@@ -264,7 +285,21 @@ public sealed class Qcow2Stream : Stream {
       return;
     }
 
-    Qcow2Structures.ReadExactlyAt(_backing, checked(hostOffset + inClusterOffset), destination);
+    this.ReadHost(hostOffset, guestOffset - inClusterOffset, inClusterOffset, destination);
+  }
+
+  /// <summary>Reads guest bytes stored in the host cluster at <paramref name="hostCluster"/>, decrypting whole sectors when the image is encrypted.</summary>
+  private void ReadHost(long hostCluster, long guestCluster, int inCluster, Span<byte> destination) {
+    if (_encryption == null) {
+      Qcow2Structures.ReadExactlyAt(_backing, checked(hostCluster + inCluster), destination);
+      return;
+    }
+    var start = inCluster & ~511;
+    var end = (inCluster + destination.Length + 511) & ~511;
+    var sectors = new byte[end - start];
+    Qcow2Structures.ReadExactlyAt(_backing, checked(hostCluster + start), sectors);
+    _encryption.Decrypt(hostCluster + start, guestCluster + start, sectors);
+    sectors.AsSpan(inCluster - start, destination.Length).CopyTo(destination);
   }
 
   /// <summary>Fills <paramref name="destination"/> from the backing file; zeros where it is shorter or absent.</summary>

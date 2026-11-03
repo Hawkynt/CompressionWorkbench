@@ -1858,21 +1858,23 @@ Walks the active QCOW2 mapping plus the refcount metadata and emits a fail-close
 
 #### `Qcow2Reader`
 
-Reads self-contained QCOW2 v2/v3 disk images with standard L2 entries. Supports unallocated, zero, uncompressed and deflate-compressed guest clusters. Backing files, encryption and incompatible v3 feature profiles are rejected instead of being interpreted as zero-filled data.
+Reads self-contained QCOW2 v2/v3 disk images with standard L2 entries. Supports unallocated, zero, uncompressed and deflate-compressed guest clusters. Other profiles (backing files, zstd, extended L2, AES or LUKS encryption with a password) are read through `Qcow2Stream`; what neither can decode is refused instead of being interpreted as zero-filled data.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Qcow2Reader` | `Qcow2Reader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `Qcow2Reader`. |
+| `Qcow2Reader` | `Qcow2Reader(Stream stream, string password, bool leaveOpen = false)` | Initializes a new instance of `Qcow2Reader` that unlocks an encrypted image with `password`. |
 | `Entries` | `IReadOnlyList<Qcow2Entry> Entries { get; }` | Gets the entries. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Whether the guest data is encrypted (AES or LUKS). |
 | `VirtualSize` | `long VirtualSize { get; }` | Virtual disk size in bytes. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `ExtractDisk` | `byte[] ExtractDisk()` | Extracts the full virtual disk image, resolving all active L1/L2 table entries. |
 
 #### `Qcow2Stream`
 
-Seekable access to the active guest disk of a QCOW2 image. Reads resolve standard, zero, unallocated and compressed clusters (deflate or zstd), extended L2 entries with their 32 subclusters, and backing files (QCOW2 or raw), which supply every cluster or subcluster the image leaves unallocated. Writes are enabled only for flat standard-refcount profiles and honour QCOW2 copy-on-write semantics for shared L2 and data clusters.
+Seekable access to the active guest disk of a QCOW2 image. Reads resolve standard, zero, unallocated and compressed clusters (deflate or zstd), extended L2 entries with their 32 subclusters, and backing files (QCOW2 or raw), which supply every cluster or subcluster the image leaves unallocated. AES- and LUKS-encrypted images are read when opened with their password (`Qcow2Encryption`). Writes are enabled only for flat standard-refcount profiles and honour QCOW2 copy-on-write semantics for shared L2 and data clusters.
 
 Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
@@ -1886,22 +1888,26 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `Dispose` | `protected override void Dispose(bool disposing)` |  |
 | `Flush` | `override void Flush()` |  |
 | `Open` | `static Qcow2Stream Open(Stream backing, bool leaveOpen = true)` | Opens a QCOW2 image as a virtual guest-disk stream, or explains why it cannot. |
+| `Open` | `static Qcow2Stream Open(Stream backing, string password, bool leaveOpen = true)` | Opens a QCOW2 image, unlocking an encrypted one (and encrypted backing images) with `password`. |
 | `Read` | `override int Read(Span<byte> buffer)` |  |
 | `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
 | `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
 | `SetLength` | `override void SetLength(long value)` |  |
 | `TryOpen` | `static Qcow2Stream TryOpen(Stream backing, bool leaveOpen = true)` | Attempts to open a supported QCOW2 image as a virtual guest-disk stream. |
+| `TryOpen` | `static Qcow2Stream TryOpen(Stream backing, string password, bool leaveOpen = true)` | Attempts to open a supported QCOW2 image, unlocking an encrypted one with `password`. |
 | `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
 | `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
 #### `Qcow2Writer`
 
-Writes canonical self-contained QCOW2 v2 images with 64 KiB clusters and 16-bit eager refcounts. Sparse mode leaves all-zero guest clusters unallocated; dense mode physically allocates every guest cluster without changing guest bytes.
+Writes canonical self-contained QCOW2 v2 images with 64 KiB clusters and 16-bit eager refcounts. Sparse mode leaves all-zero guest clusters unallocated; dense mode physically allocates every guest cluster without changing guest bytes. With a password the guest data is LUKS-encrypted (crypt_method 2): a LUKS1 header (aes-256 xts-plain64, sha256, key slot 0) in its own clusters behind the refcount blocks, each data cluster encrypted with the IV of its host sector.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Qcow2Writer` | `Qcow2Writer()` |  |
+| `DefaultKeySlotIterations` | `const int DefaultKeySlotIterations` | PBKDF2 iterations of the passphrase in the LUKS key slot unless `SetPassword` says otherwise. |
 | `SetDiskImage` | `void SetDiskImage(byte[] data)` | Sets the raw guest disk image to wrap. |
+| `SetPassword` | `void SetPassword(string password, int keySlotIterations = 500000)` | Encrypts the guest data with LUKS under `password` (null: no encryption). |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes a canonical sparse QCOW2 image. |
 | `WriteTo` | `void WriteTo(Stream output, bool sparse)` | Writes a canonical QCOW2 image. |
 

@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesCryptor`](#aescryptor) · [`Blowfish`](#blowfish) · [`KeyDerivation`](#keyderivation)
+[`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Blowfish`](#blowfish) · [`KeyDerivation`](#keyderivation) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher)
 
 #### `AesCryptor`
 
@@ -197,6 +197,15 @@ AES-256 encryption and decryption wrapper supporting CBC and CTR modes. Uses the
 | `EncryptCbcNoPadding` | `static byte[] EncryptCbcNoPadding(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv)` | Encrypts data using AES-256-CBC with no padding. Input length must be a multiple of 16 bytes. |
 | `EncryptCbc` | `static byte[] EncryptCbc(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv)` | Encrypts data using AES-256-CBC with PKCS7 padding. |
 | `TransformCtr` | `static byte[] TransformCtr(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> nonce)` | Encrypts or decrypts data using AES-256-CTR mode. CTR mode is symmetric — the same operation encrypts and decrypts. |
+
+#### `AntiForensicSplitter`
+
+The LUKS anti-forensic information splitter (AF-split / AF-merge with hash diffusion).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Merge` | `static byte[] Merge(ReadOnlySpan<byte> material, int keyBytes, int stripes, HashAlgorithmName hash)` | Recovers the key from `stripes` stripes of `keyBytes` bytes. |
+| `Split` | `static byte[] Split(byte[] key, int stripes, HashAlgorithmName hash)` | Splits `key` into `stripes` stripes, all but the last random. |
 
 #### `Blowfish`
 
@@ -221,6 +230,58 @@ Key derivation functions for password-based encryption.
 | `Rar3DeriveKey` | `static ValueTuple<byte[], byte[]> Rar3DeriveKey(string password, ReadOnlySpan<byte> salt)` | Derives a 16-byte AES-128 key and 16-byte IV for RAR3/4 decryption. RAR3 iterates SHA-1 262144 times over (salt + password_utf16le + counter). |
 | `Rar5DeriveKey` | `static byte[] Rar5DeriveKey(string password, ReadOnlySpan<byte> salt, int iterations)` | Derives a key using the RAR5 key derivation (PBKDF2-HMAC-SHA256 with specific parameters). |
 | `SevenZipDeriveKey` | `static byte[] SevenZipDeriveKey(string password, ReadOnlySpan<byte> salt, int numCyclesPower)` | Derives a key using the 7z AES key derivation (SHA-256 iterated). 7z uses: key = SHA256^(2^numCyclesPower)(salt + password_utf16le) |
+
+#### `Luks1Header`
+
+A LUKS1 partition header with its eight key slots, after the LUKS On-Disk Format Specification version 1.2.3 (Clemens Fruhwirth): unlocking a slot with a passphrase yields the master key, and `Create` lays out a new header around a master key.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HeaderSize` | `const int HeaderSize` | Size of the partition header proper (the key slots' material follows it). |
+| `CipherMode` | `string CipherMode { get; }` | Cipher mode with IV generator, e.g. `xts-plain64`. |
+| `CipherName` | `string CipherName { get; }` | Cipher name, e.g. `aes`. |
+| `DigestIterations` | `uint DigestIterations { get; }` | PBKDF2 iterations of `Digest`. |
+| `DigestSalt` | `byte[] DigestSalt { get; }` | Salt of `Digest`. |
+| `Digest` | `byte[] Digest { get; }` | PBKDF2 digest of the master key. |
+| `HashSpec` | `string HashSpec { get; }` | Hash for PBKDF2 and the anti-forensic splitter, e.g. `sha256`. |
+| `KeyBytes` | `int KeyBytes { get; }` | Master key length in bytes. |
+| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The LUKS magic: "LUKS" BA BE. |
+| `PayloadOffset` | `uint PayloadOffset { get; }` | Start of the payload in 512-byte sectors from the header. |
+| `Slots` | `IReadOnlyList<Luks1KeySlot> Slots { get; }` | The eight key slots. |
+| `Uuid` | `string Uuid { get; }` | The volume UUID as text. |
+| `CreateCipher` | `Luks1SectorCipher CreateCipher(byte[] masterKey)` | The payload cipher of this header keyed with `masterKey`. |
+| `Create` | `static byte[] Create(byte[] masterKey, byte[] passphrase, string cipherMode, string hashSpec, int slotIterations, int digestIterations, Guid uuid)` | Builds a LUKS1 header with key slot 0 holding `masterKey` under `passphrase`: `aes` in `cipherMode`, 4000 stripes per slot, each slot's material on a 4096-byte boundary, the payload after the last slot. |
+| `HashFor` | `static HashAlgorithmName HashFor(string spec)` | The PBKDF2/splitter hash a LUKS hash spec names. |
+| `Parse` | `static Luks1Header Parse(ReadOnlySpan<byte> header)` | Parses a header from its first 592 bytes. |
+| `Unlock` | `byte[] Unlock(byte[] passphrase, Func<long, int, byte[]> readKeyMaterial)` | Finds the master key: every active slot is tried with `passphrase`, its key material read through `readKeyMaterial` (offset in bytes from the header, length). |
+
+#### `Luks1KeySlot`
+
+One LUKS1 key slot.
+
+Implements `IEquatable<Luks1KeySlot>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Luks1KeySlot` | `Luks1KeySlot(bool Active, uint Iterations, byte[] Salt, uint KeyMaterialOffset, uint Stripes)` | One LUKS1 key slot. |
+| `Active` | `bool Active { get; init; }` | Whether the slot holds a key. |
+| `Iterations` | `uint Iterations { get; init; }` | PBKDF2 iterations of the passphrase. |
+| `KeyMaterialOffset` | `uint KeyMaterialOffset { get; init; }` | Start of the split key material, in sectors from the header. |
+| `Salt` | `byte[] Salt { get; init; }` | PBKDF2 salt. |
+| `Stripes` | `uint Stripes { get; init; }` | Anti-forensic stripes. |
+
+#### `Luks1SectorCipher`
+
+A sector cipher of the dm-crypt family: AES in XTS, CBC or ECB mode, 512-byte sectors, with the `plain` (32-bit sector number), `plain64` (64-bit) or `essiv:<hash>` IV.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Create` | `static Luks1SectorCipher Create(string cipherName, string cipherMode, byte[] key)` | Builds the cipher a LUKS header names, keyed with `key`. |
+| `Decrypt` | `void Decrypt(ulong firstSector, Span<byte> data)` | Decrypts whole sectors in place, the first numbered `firstSector`. |
+| `Dispose` | `void Dispose()` |  |
+| `Encrypt` | `void Encrypt(ulong firstSector, Span<byte> data)` | Encrypts whole sectors in place, the first numbered `firstSector`. |
 
 ### Namespace `Compression.Core.DataStructures`
 

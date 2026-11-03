@@ -253,7 +253,7 @@
       <LogicalName>SevenZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- QCOW2 images qemu-img / qemu-io wrote, with the raw hashes qemu-img converted them to; see Qcow2/ReferenceVectors/README.md. -->
-    <EmbeddedResource Include="Qcow2\ReferenceVectors\*.qcow2;Qcow2\ReferenceVectors\*.raw;Qcow2\ReferenceVectors\*.sha256">
+    <EmbeddedResource Include="Qcow2\ReferenceVectors\*.qcow2;Qcow2\ReferenceVectors\*.qcow2.gz;Qcow2\ReferenceVectors\*.raw;Qcow2\ReferenceVectors\*.sha256">
       <LogicalName>Qcow2Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- UDF volumes mkudffs formatted and the Linux udf driver filled (sparable, metadata, VAT); see Udf/ReferenceVectors/README.md. -->
