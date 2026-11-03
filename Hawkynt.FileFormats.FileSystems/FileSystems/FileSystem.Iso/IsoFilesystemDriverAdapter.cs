@@ -43,7 +43,7 @@ public sealed class IsoFilesystemDriverAdapter :
         [
           "File handles read directly from decoded ECMA-119 file sections, including multi-extent files and per-section extended-attribute prefixes.",
           "Node ids are deterministic for the mounted session; ISO 9660 has no inode number and durable identity across remount is not claimed.",
-          "Interleaved file sections fail closed until File Unit Size / Interleave Gap addressing is implemented.",
+          "Interleaved file sections are read unit by unit, skipping each interleave gap.",
           "Mounted writes remain disabled: the existing offline ISO modifier does not provide complete nested-directory, open-handle, truncate, and durability semantics.",
         ]);
     } catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException or ArgumentException or OverflowException) {

@@ -88,6 +88,7 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
+    RefuseInterleaved(image, "wiping");
     image.Position = 0;
     var imageSize = image.Length;
 
@@ -353,6 +354,7 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
     DefragSupport.Require(options, this.SupportedDefragFeatures, "ISO 9660");
+    RefuseInterleaved(archive, "defragmenting");
     if (!archive.CanSeek || archive.Length > MaxBufferedImageBytes)
       throw new NotSupportedException(
         $"ISO 9660: in-place defragmentation checks the result against a snapshot held in memory; images over {MaxBufferedImageBytes:N0} bytes are refused.");
@@ -362,6 +364,25 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       inPlace: () => DefragmentWithPlanner(archive, options),
       rebuild: () => throw new NotSupportedException(
         "ISO 9660: the image cannot be laid out in place; it was left unchanged."));
+  }
+
+  /// <summary>
+  /// The in-place editors treat every file section as one contiguous run; an interleaved section
+  /// would have its gaps (other files' data) moved or wiped, so such an image is left untouched.
+  /// </summary>
+  private static void RefuseInterleaved(Stream image, string operation) {
+    var position = image.Position;
+    image.Position = 0;
+    bool interleaved;
+    try {
+      using var reader = new IsoReader(image, leaveOpen: true);
+      interleaved = reader.Entries.Any(e => e.IsInterleaved);
+    } catch (Exception e) when (e is InvalidDataException or NotSupportedException) {
+      interleaved = false; // an image the reader cannot walk is judged by the editor itself
+    }
+    image.Position = position;
+    if (interleaved)
+      throw new NotSupportedException($"ISO 9660: {operation} an image with interleaved files is not supported; it was left unchanged.");
   }
 
   /// <summary>Largest image the in-place defragmentation snapshots.</summary>
@@ -393,6 +414,7 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// a name that is not there is reported, rather than either passing silently.
   /// </remarks>
   public void Remove(Stream archive, string[] entryNames) {
+    RefuseInterleaved(archive, "removing files from");
     foreach (var raw in entryNames ?? []) {
       var name = raw.Replace('\\', '/').Trim('/');
       if (name.Contains('/'))

@@ -9533,6 +9533,7 @@ Represents an entry (file or directory) in an ISO 9660 image.
 | --- | --- | --- |
 | `IsoEntry` | `IsoEntry()` |  |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether the entry is a directory. |
+| `IsInterleaved` | `bool IsInterleaved { get; init; }` | Whether a file section is recorded interleaved (File Unit Size and Interleave Gap Size). |
 | `IsSymlink` | `bool IsSymlink { get; init; }` | Whether the entry is a Rock Ridge symbolic link (SL). |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Last modification timestamp. |
 | `LinkTarget` | `string LinkTarget { get; init; }` | The symbolic link's target, when `IsSymlink`. |

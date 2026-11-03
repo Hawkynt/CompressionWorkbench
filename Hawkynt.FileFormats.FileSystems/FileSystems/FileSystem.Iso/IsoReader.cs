@@ -214,8 +214,11 @@ public sealed class IsoReader : IDisposable {
       }
 
       string? limitation = null;
-      if (fileUnitSize != 0 || interleaveGapSize != 0)
-        limitation = $"ISO9660 interleaved file section uses FileUnitSize={fileUnitSize}, InterleaveGapSize={interleaveGapSize}.";
+      var interleaved = fileUnitSize != 0;
+      if (fileUnitSize == 0 && interleaveGapSize != 0)
+        limitation = $"ISO9660 file section has an interleave gap of {interleaveGapSize} without a file unit size.";
+      else if (interleaved && extendedAttributeBlocks != 0)
+        limitation = "ISO9660 interleaved file section with an extended attribute record is not supported.";
 
       // SL: a symbolic link has no data of its own; its content is the target path.
       if (pending is null && rr?.SymlinkTarget is { } linkTarget) {
@@ -236,11 +239,14 @@ public sealed class IsoReader : IDisposable {
         limitation ??= $"Rock Ridge ZF compression '{algorithm}' is not supported.";
       if (zisofs is not null && (hasMoreExtents || pending is not null))
         limitation ??= "zisofs compression of a multi-extent file is not supported.";
+      if (zisofs is not null && interleaved)
+        limitation ??= "zisofs compression of an interleaved file is not supported.";
 
       if (pending is null) {
-        var segments = new List<IsoDataSegment> { new(0, physicalOffset, dataLength) };
+        var segments = new List<IsoDataSegment>();
+        AddSection(segments, 0, physicalOffset, dataLength, interleaved ? fileUnitSize : 0, interleaveGapSize);
         if (hasMoreExtents) {
-          pending = new PendingFile(fullPath, lastModified, segments, dataLength, limitation);
+          pending = new PendingFile(fullPath, lastModified, segments, dataLength, limitation) { Interleaved = interleaved };
         } else if (zisofs is { } zf && limitation is null) {
           _entries.Add(new IsoEntry {
             Name = fullPath,
@@ -252,18 +258,18 @@ public sealed class IsoReader : IDisposable {
             DataSegments = segments,
           });
         } else {
-          AddFile(fullPath, lastModified, segments, dataLength, limitation);
+          AddFile(fullPath, lastModified, segments, dataLength, limitation, interleaved);
         }
       } else {
         if (!string.Equals(pending.Name, fullPath, StringComparison.Ordinal))
           throw new InvalidDataException(
             $"ISO9660: multi-extent file '{pending.Name}' is followed by unrelated record '{fullPath}'.");
-        var segmentOffset = pending.Length;
-        pending.Segments.Add(new IsoDataSegment(segmentOffset, physicalOffset, dataLength));
+        AddSection(pending.Segments, pending.Length, physicalOffset, dataLength, interleaved ? fileUnitSize : 0, interleaveGapSize);
         pending.Length = checked(pending.Length + dataLength);
         pending.Limitation ??= limitation;
+        pending.Interleaved |= interleaved;
         if (!hasMoreExtents) {
-          AddFile(pending.Name, pending.LastModified, pending.Segments, pending.Length, pending.Limitation);
+          AddFile(pending.Name, pending.LastModified, pending.Segments, pending.Length, pending.Limitation, pending.Interleaved);
           pending = null;
         }
       }
@@ -280,7 +286,8 @@ public sealed class IsoReader : IDisposable {
       DateTime? lastModified,
       IReadOnlyList<IsoDataSegment> segments,
       long length,
-      string? limitation) {
+      string? limitation,
+      bool interleaved = false) {
     _entries.Add(new IsoEntry {
       Name = name,
       Size = length,
@@ -289,7 +296,24 @@ public sealed class IsoReader : IDisposable {
       DataOffset = segments.Count == 1 ? segments[0].PhysicalOffset : 0,
       DataSegments = segments,
       MountLimitation = limitation,
+      IsInterleaved = interleaved,
     });
+  }
+
+  /// <summary>
+  /// Adds one file section's data. An interleaved section (ECMA-119 6.4.3) is recorded in file
+  /// units of <paramref name="unitBlocks"/> logical blocks, each followed by
+  /// <paramref name="gapBlocks"/> blocks that belong to something else; a plain section is one run.
+  /// </summary>
+  internal static void AddSection(List<IsoDataSegment> segments, long logicalOffset, long physicalOffset, long length, int unitBlocks, int gapBlocks) {
+    if (unitBlocks == 0) {
+      segments.Add(new IsoDataSegment(logicalOffset, physicalOffset, length));
+      return;
+    }
+    var unitBytes = (long)unitBlocks * SectorSize;
+    var stride = (long)(unitBlocks + gapBlocks) * SectorSize;
+    for (long done = 0, at = physicalOffset; done < length; done += unitBytes, at += stride)
+      segments.Add(new IsoDataSegment(logicalOffset + done, at, Math.Min(unitBytes, length - done)));
   }
 
   private string DecodeName(long pos, int nameLen, RockRidgeInfo? rr) {
@@ -385,6 +409,7 @@ public sealed class IsoReader : IDisposable {
     public DateTime? LastModified { get; } = lastModified;
     public List<IsoDataSegment> Segments { get; } = segments;
     public long Length { get; set; } = length;
+    public bool Interleaved { get; set; }
     public string? Limitation { get; set; } = limitation;
   }
 }
