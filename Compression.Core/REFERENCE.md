@@ -10299,7 +10299,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `SquashFsReader`
 
-Reads a SquashFS version 4 filesystem image.
+Reads a SquashFS filesystem image: version 4, and versions 1 to 3 in either byte order (zlib-compressed, as mksquashfs 1.x-3.x wrote them).
 
 Implements `IDisposable`.
 
@@ -10307,6 +10307,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `SquashFsReader` | `SquashFsReader(Stream stream, bool leaveOpen = false)` | Opens a SquashFS image from the given stream. |
 | `Entries` | `IReadOnlyList<SquashFsEntry> Entries { get; }` | All entries found in the archive, in depth-first order. |
+| `LegacyVersion` | `string LegacyVersion { get; }` | Gets the image's version as "major.minor" when it is a SquashFS 1.x-3.x image, which this reader can list and extract but nothing here can edit; null for version 4. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(SquashFsEntry entry)` | Extracts the data of a regular file entry. |
 

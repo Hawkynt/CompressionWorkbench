@@ -106,6 +106,10 @@
     <EmbeddedResource Include="Aff\MultiFileVectors\*.gz;Aff\MultiFileVectors\oracle.tsv">
       <LogicalName>AffMultiFileVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- SquashFS 1.x-3.x images mksquashfs 1.3/2.2/3.0/3.4 wrote, plus unsquashfs 4.6.1's extraction; see SquashFs/LegacyVectors/README.md. -->
+    <EmbeddedResource Include="SquashFs\LegacyVectors\*.gz;SquashFs\LegacyVectors\oracle.tsv">
+      <LogicalName>SquashFsLegacyVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Disks qemu-img / qemu-io wrote; see Vmdk/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Vmdk\ReferenceVectors\*.gz;Vmdk\ReferenceVectors\manifest.txt">
       <LogicalName>VmdkVectors.%(Filename)%(Extension)</LogicalName>

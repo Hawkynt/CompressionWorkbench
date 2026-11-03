@@ -488,7 +488,7 @@ CramFS,cramfs,filesystem,R,,,D,,,Y,3,,CramFs,Y,Y,Y,OK,,
 LTFS (Linear Tape),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 lnfs,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 romfs,romfs,filesystem,,,,R,,,Y,2,,RomFs,Y,Y,Y,OK,,
-SquashFS,squashfs;sqfs,filesystem,R,,,R,,,Y,3,https://dr-emann.github.io/squashfs/squashfs.html,SquashFs,Y,Y,,PARTIAL,,SquashFS v4 only; v1-v3 rejected (SquashFsSuperblock.cs)
+SquashFS,squashfs;sqfs,filesystem,R,,,R,,,Y,3,https://dr-emann.github.io/squashfs/squashfs.html,SquashFs,Y,Y,,PARTIAL,,SquashFS v4 read/written; v1.0-v3.1 (either byte order; zlib) read as unsquashfs extracts them and read-only; the LZMA builds of 3.x refused (SquashFsLegacyReader.cs)
 EROFS,erofs,filesystem,,,,,,,Y,1,,Erofs,Y,Y,Y,OK,,
 UMSDOS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,deferred: a FAT volume plus a --LINUX-.--- metadata file per directory; the driver was removed in Linux 2.6.11 and no maintained tool exists; ZipSlack distributions carry real metadata files that could serve as oracle; not attempted in this round
 UVFAT,,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: no specification, implementation or image located"
