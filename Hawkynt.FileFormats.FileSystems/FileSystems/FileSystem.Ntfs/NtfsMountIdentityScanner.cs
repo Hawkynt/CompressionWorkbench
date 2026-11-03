@@ -468,6 +468,14 @@ internal sealed class NtfsMountIdentityScanner {
   /// $DATA attribute is not one of those cases and fails the probe.
   /// </returns>
   private NtfsMountedDataLayout? TryParseDataLayout(byte[] record, uint recordNumber, long decodedSize) {
+    // A WOF (system-compressed) file keeps its bytes in WofCompressedData; its unnamed
+    // $DATA is sparse, so reading that directly would return zeros.
+    foreach (var attribute in EnumerateAttributes(record, recordNumber)) {
+      if (attribute.Type != 0xC0 || attribute.NonResident) continue;
+      var value = ReadResidentValue(record, recordNumber, attribute);
+      if (value.Length >= 4 && BinaryPrimitives.ReadUInt32LittleEndian(value) == NtfsWof.ReparseTag) return null;
+    }
+
     foreach (var attribute in EnumerateAttributes(record, recordNumber)) {
       if (attribute.Type != AttributeTypeData || attribute.NameLength != 0) continue;
 
