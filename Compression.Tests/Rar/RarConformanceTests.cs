@@ -87,14 +87,27 @@ public class RarConformanceTests {
 
   private static RarEntry Entry(RarReader r, string name) => r.Entries.Single(e => e.Name == name);
 
-  [TestCase("r5-times.rar")]
-  [TestCase("r4-times.rar")]
-  public void Given_HighPrecisionTimes_When_Listed_Then_ModificationCreationAndAccessComeBackTo100ns(string name) {
-    using var r = Modern(name);
+  [Test]
+  public void Given_HighPrecisionTimes_When_ListedFromRar5_Then_ModificationCreationAndAccessComeBackTo100ns() {
+    using var r = Modern("r5-times.rar");
     var e = Entry(r, "empty.dat");
     Assert.That(e.ModifiedTime?.UtcDateTime, Is.EqualTo(new DateTime(2021, 2, 3, 4, 5, 6, DateTimeKind.Utc).AddTicks(1234567)));
     Assert.That(e.CreatedTime?.UtcDateTime, Is.EqualTo(new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc).AddTicks(7654321)));
     Assert.That(e.AccessedTime?.UtcDateTime, Is.EqualTo(new DateTime(2022, 3, 4, 5, 6, 7, DateTimeKind.Utc).AddTicks(1111111)));
+  }
+
+  /// <summary>
+  /// RAR 4 stores local wall-clock time (a DOS time plus the extended-time remainder), not UTC.
+  /// rar wrote the fixture on a machine at UTC+1 (CET), so the files' UTC times read back as these
+  /// wall-clock times wherever the test runs.
+  /// </summary>
+  [Test]
+  public void Given_HighPrecisionTimes_When_ListedFromRar4_Then_TheWallClockTimesComeBackTo100ns() {
+    using var r = Modern("r4-times.rar");
+    var e = Entry(r, "empty.dat");
+    Assert.That(e.ModifiedTime?.LocalDateTime, Is.EqualTo(new DateTime(2021, 2, 3, 5, 5, 6).AddTicks(1234567)));
+    Assert.That(e.CreatedTime?.LocalDateTime, Is.EqualTo(new DateTime(2020, 1, 2, 4, 4, 5).AddTicks(7654321)));
+    Assert.That(e.AccessedTime?.LocalDateTime, Is.EqualTo(new DateTime(2022, 3, 4, 6, 6, 7).AddTicks(1111111)));
   }
 
   [TestCase("r5-m3.rar")]

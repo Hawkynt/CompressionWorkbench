@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Numerics;
+using Hawkynt.Algorithms.Hashing;
 
 namespace Compression.Core.Checksums;
 
@@ -15,6 +16,9 @@ namespace Compression.Core.Checksums;
 /// schedule are copied from RFC 7693.
 /// </remarks>
 public sealed class Blake2sp {
+  /// <summary>Gets the supported hash-output sizes, in bits: BLAKE2sp as RAR uses it is 256-bit only.</summary>
+  public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits256;
+
   private const int BlockBytes = 64;
   private const int Leaves = 8;
   private const int OutBytes = 32;
