@@ -8,14 +8,20 @@ Authors:  Igor Pavlov, Lasse Collin and the XZ Utils contributors
 Licence:  0BSD (reproduced below; older releases placed these files in the
           public domain)
 
-BcjFilter.cs carries three conversions of liblzma filters into this codebase:
+BcjFilter.cs carries these conversions of liblzma filters into this codebase:
 
   src/liblzma/simple/armthumb.c   -> TransformArmThumb
   src/liblzma/simple/arm64.c      -> TransformArm64
   src/liblzma/simple/riscv.c      -> RiscVEncode / RiscVDecode
+  src/liblzma/simple/x86.c        -> TransformX86 (converted 2026-10-30 from tag
+                                     v5.8.4, d3e650e63c110e830fd5391e7f8b45df0b91d3da)
+  src/liblzma/simple/sparc.c      -> TransformSparc (same revision)
+  src/liblzma/simple/ia64.c       -> TransformIA64 (same revision)
 
-The x86, ARM, PowerPC, SPARC and IA-64 filters in the same file make no
-conversion claim; this notice records only the three conversions above.
+The ARM and PowerPC filters in the same file make no conversion claim; this
+notice records only the conversions above. The x86, SPARC and IA-64 filters
+were converted after they were found to disagree with liblzma and 7-Zip on
+real data (BcjLiblzmaVectorTests now pins them to liblzma's output).
 
 0BSD licence text:
 

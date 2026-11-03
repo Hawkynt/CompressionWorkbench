@@ -1,6 +1,4 @@
 using System.Buffers.Binary;
-using System.Numerics;
-using System.Runtime.Intrinsics;
 
 namespace Compression.Core.Transforms;
 
@@ -49,68 +47,67 @@ public static class BcjFilter {
   }
 
   private static void TransformX86(byte[] result, int startOffset, bool encode) {
-    // Last position whose opcode still has all four operand bytes inside the buffer.
+    // liblzma simple/x86.c: a CALL/JMP is converted only when its operand's top byte is 0x00 or
+    // 0xFF, and prev_mask remembers recent E8/E9 bytes so the encoder and decoder agree on which
+    // bytes are opcodes.
+    if (result.Length < 5)
+      return;
+
+    ReadOnlySpan<uint> maskToBitNumber = [0, 1, 2, 2, 3];
+    var nowPos = (uint)startOffset;
+    var prevMask = 0u;
+    var prevPos = nowPos - 5;
     var limit = result.Length - 5;
-    var i = 0;
-    // First position that may hold an opcode: a converted CALL/JMP owns the next four bytes,
-    // and that ownership must carry across the 32-byte SIMD windows exactly as it does in
-    // the scalar loop, or encode and decode disagree on which bytes are opcodes.
-    var next = 0;
+    var pos = 0;
+    while (pos <= limit) {
+      var skip = result.AsSpan(pos, limit - pos + 1).IndexOfAny((byte)0xE8, (byte)0xE9);
+      if (skip < 0)
+        break;
 
-    if (Vector256.IsHardwareAccelerated && limit >= 32) {
-      var e8 = Vector256.Create((byte)0xE8);
-      var e9 = Vector256.Create((byte)0xE9);
-      var simdLimit = limit - 31;
-
-      while (i < simdLimit) {
-        var chunk = Vector256.Create<byte>(result.AsSpan(i));
-        var matchE8 = Vector256.Equals(chunk, e8);
-        var matchE9 = Vector256.Equals(chunk, e9);
-        var match = matchE8 | matchE9;
-
-        var mask = match.ExtractMostSignificantBits();
-        if (mask == 0) {
-          i += 32;
-          continue;
+      pos += skip;
+      var offset = nowPos + (uint)pos - prevPos;
+      prevPos = nowPos + (uint)pos;
+      if (offset > 5)
+        prevMask = 0;
+      else
+        for (var i = 0u; i < offset; ++i) {
+          prevMask &= 0x77;
+          prevMask <<= 1;
         }
 
-        // Process matches within this 32-byte window, lowest position first
-        while (mask != 0) {
-          var offset = BitOperations.TrailingZeroCount(mask);
-          mask &= mask - 1;
-          var pos = i + offset;
-          if (pos < next)
-            continue; // operand byte of the previous CALL/JMP
+      var b = result[pos + 4];
+      if (IsX86MsByte(b) && (prevMask >> 1) <= 4 && (prevMask >> 1) != 3) {
+        var src = (uint)b << 24 | (uint)result[pos + 3] << 16 | (uint)result[pos + 2] << 8 | result[pos + 1];
+        uint dest;
+        for (;;) {
+          dest = encode ? src + (nowPos + (uint)pos + 5) : src - (nowPos + (uint)pos + 5);
+          if (prevMask == 0)
+            break;
 
-          var addr = BinaryPrimitives.ReadInt32LittleEndian(result.AsSpan(pos + 1));
-          if (encode)
-            addr += startOffset + pos + 5;
-          else
-            addr -= startOffset + pos + 5;
+          var index = maskToBitNumber[(int)(prevMask >> 1)];
+          b = (byte)(dest >> (int)(24 - index * 8));
+          if (!IsX86MsByte(b))
+            break;
 
-          BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(pos + 1), addr);
-          next = pos + 5;
+          src = dest ^ ((1u << (int)(32 - index * 8)) - 1);
         }
 
-        i += 32;
+        result[pos + 4] = (byte)~(((dest >> 24) & 1) - 1);
+        result[pos + 3] = (byte)(dest >> 16);
+        result[pos + 2] = (byte)(dest >> 8);
+        result[pos + 1] = (byte)dest;
+        pos += 5;
+        prevMask = 0;
+      } else {
+        ++pos;
+        prevMask |= 1;
+        if (IsX86MsByte(b))
+          prevMask |= 0x10;
       }
     }
-
-    // Scalar tail
-    i = Math.Max(i, next);
-    while (i <= limit)
-      if (result[i] == 0xE8 || result[i] == 0xE9) {
-        var addr = BinaryPrimitives.ReadInt32LittleEndian(result.AsSpan(i + 1));
-        if (encode)
-          addr += startOffset + i + 5;
-        else
-          addr -= startOffset + i + 5;
-        BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(i + 1), addr);
-        i += 5;
-      }
-      else
-        ++i;
   }
+
+  private static bool IsX86MsByte(byte b) => b is 0x00 or 0xFF;
 
   // -------------------------------------------------------------------------
   // ARM (32-bit) BCJ filter
@@ -342,29 +339,18 @@ public static class BcjFilter {
   }
 
   private static void TransformSparc(byte[] data, int startOffset, bool encode) {
-    // SPARC CALL instruction (big-endian, 4 bytes):
-    //   Bits 31-30 = 01 (format 1 = CALL)
-    //   Bits 29-0  = 30-bit word-aligned displacement (shifted left 2 gives byte offset)
-    for (var i = 0; i + 3 < data.Length; i += 4) {
-      var instr = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(i));
-      if ((instr >> 30) != 1)
+    // liblzma simple/sparc.c: a CALL whose 30-bit displacement fits in 23 signed bits.
+    var nowPos = (uint)startOffset;
+    var size = data.Length & ~3;
+    for (var i = 0; i < size; i += 4) {
+      if (!((data[i] == 0x40 && (data[i + 1] & 0xC0) == 0x00) || (data[i] == 0x7F && (data[i + 1] & 0xC0) == 0xC0)))
         continue;
 
-      // Extract 30-bit signed displacement (word-aligned)
-      var disp = (int)(instr & 0x3FFFFFFFu);
-      // Sign-extend from 30 bits
-      if ((disp & 0x20000000) != 0)
-        disp |= unchecked((int)0xC0000000);
-
-      var currentWord = (startOffset + i) >> 2;
-      if (encode)
-        disp += currentWord;
-      else
-        disp -= currentWord;
-
-      // Write back: preserve format bits (31-30 = 01)
-      instr = 0x40000000u | ((uint)disp & 0x3FFFFFFFu);
-      BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(i), instr);
+      var src = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(i)) << 2;
+      var dest = encode ? nowPos + (uint)i + src : src - (nowPos + (uint)i);
+      dest >>= 2;
+      dest = (((0 - ((dest >> 22) & 1)) << 22) & 0x3FFFFFFF) | (dest & 0x3FFFFF) | 0x40000000;
+      BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(i), dest);
     }
   }
 
@@ -415,82 +401,47 @@ public static class BcjFilter {
   ];
 
   private static void TransformIA64(byte[] data, int startOffset, bool encode) {
+    // liblzma simple/ia64.c: in each 16-byte bundle, the branch slots its template names whose
+    // opcode is 5 with btype 0 carry a 21-bit bundle displacement.
     var mask = BcjFilter.IA64BranchSlotMask;
-
-    for (var pos = 0; pos + 15 < data.Length; pos += 16) {
-      var templateByte = data[pos] & 0x1F;
-      int slotMask = mask[templateByte];
-      if (slotMask == 0)
-        continue;
-
-      for (var slot = 0; slot < 3; ++slot) {
-        if ((slotMask & (1 << slot)) == 0)
+    var nowPos = (uint)startOffset;
+    var size = data.Length & ~15;
+    for (var i = 0; i < size; i += 16) {
+      var slots = mask[data[i] & 0x1F];
+      var bitPos = 5;
+      for (var slot = 0; slot < 3; ++slot, bitPos += 41) {
+        if (((slots >> slot) & 1) == 0)
           continue;
 
-        // Each slot is 41 bits. Slot 0 starts at bit 5, slot 1 at bit 46, slot 2 at bit 87.
-        var bitOffset = 5 + 41 * slot;
+        var bytePos = i + (bitPos >> 3);
+        var bitRes = bitPos & 7;
+        var instruction = 0UL;
+        for (var j = 0; j < 6; ++j)
+          instruction += (ulong)data[bytePos + j] << (8 * j);
 
-        // Extract 41-bit instruction from the 128-bit bundle
-        var instr = ExtractIA64Bits(data, pos, bitOffset, 41);
-
-        // Check major opcode (bits 37-40 of the 41-bit instruction) == 4
-        var opcode = (uint)((instr >> 37) & 0xF);
-        if (opcode != 4)
+        var normalized = instruction >> bitRes;
+        if (((normalized >> 37) & 0xF) != 0x5 || ((normalized >> 9) & 0x7) != 0)
           continue;
 
-        // Extract imm20b (bits 13-32) and sign bit (bit 36)
-        var imm20b = (uint)((instr >> 13) & 0xFFFFF);
-        var signBit = (uint)((instr >> 36) & 1);
-
-        // Construct 25-bit byte offset: (signBit << 20 | imm20b) << 4
-        var target = (int)((signBit << 20) | imm20b);
-        // Sign-extend from 21 bits
-        if ((target & 0x100000) != 0)
-          target |= unchecked((int)0xFFE00000);
-        target <<= 4;
-
-        if (encode)
-          target += startOffset + pos;
-        else
-          target -= startOffset + pos;
-
-        // Write back: imm20b = (target >> 4) & 0xFFFFF, signBit = (target >> 24) & 1
-        imm20b = (uint)((target >> 4) & 0xFFFFF);
-        signBit = (uint)((target >> 24) & 1);
-
-        // Rebuild instruction with modified bits
-        instr &= ~((0xFFFFFUL << 13) | (1UL << 36));
-        instr |= (ulong)imm20b << 13;
-        instr |= (ulong)signBit << 36;
-
-        InsertIA64Bits(data, pos, bitOffset, 41, instr);
+        var src = (uint)((normalized >> 13) & 0xFFFFF);
+        src |= (uint)((normalized >> 36) & 1) << 20;
+        src <<= 4;
+        var dest = encode ? nowPos + (uint)i + src : src - (nowPos + (uint)i);
+        dest >>= 4;
+        normalized &= ~(0x8FFFFFUL << 13);
+        normalized |= (ulong)(dest & 0xFFFFF) << 13;
+        normalized |= (ulong)(dest & 0x100000) << (36 - 20);
+        instruction &= (1UL << bitRes) - 1;
+        instruction |= normalized << bitRes;
+        for (var j = 0; j < 6; ++j)
+          data[bytePos + j] = (byte)(instruction >> (8 * j));
       }
     }
   }
 
-  private static ulong ExtractIA64Bits(byte[] data, int bundlePos, int bitOffset, int bitCount) {
-    ulong result = 0;
-    for (var i = 0; i < bitCount; ++i) {
-      var absBit = bitOffset + i;
-      var byteIdx = bundlePos + (absBit >> 3);
-      var bitIdx = absBit & 7;
-      if ((data[byteIdx] & (1 << bitIdx)) != 0)
-        result |= 1UL << i;
-    }
-    return result;
-  }
+  
 
-  private static void InsertIA64Bits(byte[] data, int bundlePos, int bitOffset, int bitCount, ulong value) {
-    for (var i = 0; i < bitCount; ++i) {
-      var absBit = bitOffset + i;
-      var byteIdx = bundlePos + (absBit >> 3);
-      var bitIdx = absBit & 7;
-      if ((value & (1UL << i)) != 0)
-        data[byteIdx] |= (byte)(1 << bitIdx);
-      else
-        data[byteIdx] &= (byte)~(1 << bitIdx);
-    }
-  }
+  
 
   // -------------------------------------------------------------------------
   // ARM64 / AArch64 BCJ filter (liblzma filter id 0x0A)

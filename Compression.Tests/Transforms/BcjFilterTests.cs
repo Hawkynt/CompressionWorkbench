@@ -415,10 +415,10 @@ public class BcjFilterTests {
     var data = new byte[16];
     data[0] = 0x16; // template byte (low 5 bits = 0x16)
 
-    // Place a branch instruction (opcode 4) in slot 0 (bits 5..45)
-    // Opcode 4 = 0100 in bits 37-40 of the 41-bit instruction
-    // bit39 of slot0 = bundle bit 44 = byte 5, bit 4
-    data[5] |= 0x10; // opcode bit 39 = 1 → opcode = 0100 = 4
+    // Place an IP-relative branch (opcode 5, btype 0) in slot 0 (bits 5..45), the instruction
+    // liblzma's IA-64 filter converts. Opcode 5 = 0101 in bits 37-40 of the 41-bit instruction:
+    // bit 37 = bundle bit 42 = byte 5 bit 2, bit 39 = bundle bit 44 = byte 5 bit 4.
+    data[5] |= 0x14;
 
     // Set imm20b to a small value: slot bits 13-32 → bundle bits 18-37
     // Set bundle bit 18 (byte 2, bit 2) → imm20b bit 0 = 1
