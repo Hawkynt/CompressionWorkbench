@@ -9181,7 +9181,7 @@ Builds a fresh Sharp X68000 Human68k disk image from scratch. The format is FAT1
 
 ### Namespace `FileSystem.Iso`
 
-[`IsoBlockMover`](#isoblockmover) · [`IsoEntry`](#isoentry) · [`IsoExtentMap`](#isoextentmap) · [`IsoFilesystemDriverAdapter`](#isofilesystemdriveradapter) · [`IsoFormatDescriptor`](#isoformatdescriptor) · [`IsoModifier`](#isomodifier) · [`IsoReader`](#isoreader) · [`IsoWriter`](#isowriter)
+[`IsoBlockMover`](#isoblockmover) · [`IsoBoot`](#isoboot) · [`IsoBootEntry`](#isobootentry) · [`IsoEntry`](#isoentry) · [`IsoExtentMap`](#isoextentmap) · [`IsoFilesystemDriverAdapter`](#isofilesystemdriveradapter) · [`IsoFormatDescriptor`](#isoformatdescriptor) · [`IsoModifier`](#isomodifier) · [`IsoReader`](#isoreader) · [`IsoWriter`](#isowriter) · [`IsoWriter.BootEntry`](#isowriterbootentry)
 
 #### `IsoBlockMover`
 
@@ -9201,6 +9201,34 @@ Implements `IFilesystemBlockMover`.
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
 
+#### `IsoBoot`
+
+Boot information of an existing ISO image, so an edit can keep it booting: its El Torito entries (El Torito Bootable CD-ROM Format Specification 1.0), the catalog location, and whether the image is "hybrid" (bootable from a USB stick through a partition table in the system area).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HasBootInfoTable` | `static bool HasBootInfoTable(byte[] image, uint loadRba)` | True when an image carries a valid isolinux-style boot info table for this address. |
+| `IsHybrid` | `static bool IsHybrid(Stream s)` | An MBR partition table, a GPT header or an Apple partition map in the system area: the image boots from USB through absolute sector numbers that a rebuild would move. |
+| `ReadAt` | `static byte[] ReadAt(Stream s, long lba, int length)` | Reads `length` bytes starting at sector `lba`. |
+| `ReadElTorito` | `static ValueTuple<List<IsoBootEntry>, uint>? ReadElTorito(Stream s)` | The boot entries and the catalog sector, or null for an image that does not boot. |
+| `ReadVolumeId` | `static string ReadVolumeId(Stream s)` | The Volume Identifier of the Primary Volume Descriptor (the disc label). |
+
+#### `IsoBootEntry`
+
+One El Torito boot entry as found in an image's boot catalog.
+
+Implements `IEquatable<IsoBootEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsoBootEntry` | `IsoBootEntry(byte Platform, byte MediaType, ushort LoadSegment, byte SystemType, ushort SectorCount, uint LoadRba)` | One El Torito boot entry as found in an image's boot catalog. |
+| `LoadRba` | `uint LoadRba { get; init; }` |  |
+| `LoadSegment` | `ushort LoadSegment { get; init; }` |  |
+| `MediaType` | `byte MediaType { get; init; }` |  |
+| `Platform` | `byte Platform { get; init; }` |  |
+| `SectorCount` | `ushort SectorCount { get; init; }` |  |
+| `SystemType` | `byte SystemType { get; init; }` |  |
+
 #### `IsoEntry`
 
 Represents an entry (file or directory) in an ISO 9660 image.
@@ -9208,12 +9236,14 @@ Represents an entry (file or directory) in an ISO 9660 image.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `IsoEntry` | `IsoEntry()` |  |
+| `FirstSector` | `long FirstSector { get; }` | First sector of the entry's data, to match El Torito load addresses. |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether the entry is a directory. |
 | `IsSymlink` | `bool IsSymlink { get; init; }` | Whether the entry is a Rock Ridge symbolic link (SL). |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Last modification timestamp. |
 | `LinkTarget` | `string LinkTarget { get; init; }` | The symbolic link's target, when `IsSymlink`. |
 | `Name` | `string Name { get; init; }` | Path of the entry within the image. |
 | `Size` | `long Size { get; init; }` | Size in bytes (0 for directories). |
+| `UnixMode` | `int? UnixMode { get; init; }` | The POSIX mode (st_mode) from Rock Ridge PX, when the image has one. |
 
 #### `IsoExtentMap`
 
@@ -9263,6 +9293,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `SupportedDefragFeatures` | `DefragFeature SupportedDefragFeatures { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files at the root of an existing ISO 9660 image. Uses `IsoModifier` for true random-access I/O — only the PVD (sector 16), the root directory's existing extent, and the new file's data sectors are touched. The 32 KB system area, VDST, path tables, and existing file data sectors are left untouched. Names are sanitized to the ISO 9660 8.3 d-characters identifier set; ';1' versions are added automatically by the modifier. |
+| `BufferedWriterFor` | `static IsoWriter BufferedWriterFor(IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options = null)` | An ISO writer holding `inputs` in memory with folders, Rock Ridge and Joliet names and the boot options, for the CD image formats that wrap an ISO 9660 track (CDI, MDF, NRG, BIN). |
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming creation: the pre-known per-input sizes drive the ISO 9660 path table + directory + file-extent layout in pass 1 (identical to `Create`, which flattens to leaf filenames); pass 2 streams each file's bytes from its `OpenStream` factory into its data extent via 64 KB chunks — no file is ever buffered as a `byte[]`. Output is byte-identical to `Create` for the same inputs (the ECMA-119 volume/record timestamps are sampled once per `Build`). Falls back to a buffered build when the target stream is not seekable. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
@@ -9309,14 +9340,35 @@ Builds a minimal ISO 9660 (ECMA-119) disc image, optionally with a Joliet Supple
 | --- | --- | --- |
 | `IsoWriter` | `IsoWriter()` |  |
 | `ApplicationIdentifier` | `string ApplicationIdentifier { get; set; }` | ECMA-119 8.4.12 Application Identifier (a-characters, 128 bytes max). Empty by default. |
+| `BootCatalogPath` | `string BootCatalogPath { get; set; }` | A file of the image that is the boot catalog (e.g. "isolinux/boot.cat"). |
+| `BootEntries` | `List<BootEntry> BootEntries { get; }` | El Torito entries; none means an image that does not boot. |
 | `EnableJoliet` | `bool EnableJoliet { get; set; }` | Whether to emit a Joliet Supplementary Volume Descriptor and a parallel UCS-2 directory tree carrying the original long names. On by default. |
+| `EnableRockRidge` | `bool EnableRockRidge { get; set; }` | Adds Rock Ridge (RRIP 1.10 / IEEE P1282) to the primary tree: full POSIX names (NM), modes (PX) and modification times (TF), marked by SUSP "SP"/"ER" in the root. Off by default, so images stay byte-identical to before unless asked for. |
 | `PublisherIdentifier` | `string PublisherIdentifier { get; set; }` | ECMA-119 8.4.10 Publisher Identifier (a-characters, 128 bytes max). Empty by default. |
 | `SystemIdentifier` | `string SystemIdentifier { get; set; }` | ECMA-119 8.4.6 System Identifier (a-characters, 32 bytes max). Names the system that wrote the image. Empty by default. |
 | `VolumeIdentifier` | `string VolumeIdentifier { get; set; }` | ECMA-119 8.4.7 Volume Identifier (d-characters, 32 bytes max). Shown by most OS file managers and the iso9660 driver as the disc label. Default "CDROM". Truncated to 32 chars; upper-cased to fit the d-character set. |
+| `AddDirectory` | `void AddDirectory(string name, int? mode = null, DateTime? modified = null)` | Adds a directory, also an empty one. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the image. The name may contain '/' path separators, in which case the intermediate segments are created as directories. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a streaming file: `size` drives extent + path-table + directory-record sizing in pass 1; bytes are pulled from `openStream` in pass 2 of `BuildToStreaming`. Never buffered as `byte[]`. |
 | `BuildToStreaming` | `void BuildToStreaming(Stream output)` | Two-pass streaming Build: pass 1 lays out the identical ISO image (same descriptors, path tables, directory extents, and file-data extent placement as `Build`) with each streaming file's data extent left zero; pass 2 seeks to each file's extent byte offset and copies its bytes from the opener in 64 KB chunks. The sector tail past each file's logical size stays zero, exactly as the in-memory path leaves it. For the same inputs (and same wall-clock second for the volatile ECMA-119 timestamps) the output is byte-for-byte identical to `Build`. |
 | `Build` | `byte[] Build()` | Performs the build operation. |
+| `SetMetadata` | `void SetMetadata(string name, int? mode, DateTime? modified)` | Mode and modification time of a file or directory (for Rock Ridge and records). |
+
+#### `IsoWriter.BootEntry`
+
+An El Torito boot entry (the first one is the default entry).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BootEntry` | `BootEntry()` |  |
+| `ImageData` | `byte[] ImageData` | A boot image that is not a visible file. |
+| `ImagePath` | `string ImagePath` | The boot image as a file of the image (its extent is where the entry points). |
+| `LoadSegment` | `ushort LoadSegment` |  |
+| `MediaType` | `byte MediaType` | 0 = no emulation. |
+| `PatchBootInfoTable` | `bool PatchBootInfoTable` | Patch an isolinux-style boot info table (bytes 8–63) into the image. |
+| `Platform` | `byte Platform` | 0 = x86 BIOS, 0xEF = UEFI. |
+| `SectorCount` | `ushort SectorCount` | Virtual 512-byte sectors loaded at boot. |
+| `SystemType` | `byte SystemType` |  |
 
 ### Namespace `FileSystem.Jffs2`
 
