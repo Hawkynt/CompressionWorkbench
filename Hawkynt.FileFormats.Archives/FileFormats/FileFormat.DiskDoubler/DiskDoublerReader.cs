@@ -26,9 +26,11 @@ namespace FileFormat.DiskDoubler;
 /// <para>The file may sit inside a MacBinary wrapper, in which case the header follows its 128 bytes.
 /// The header holds no name: the entries take the name of the file being read, without ".dd".</para>
 /// <para>Decoded methods: 0 (stored), 1 (Unix <c>compress</c>, with its own header XOR-masked by 0x5A and
-/// a 16-bit byte-sum check), 6 and 9 ("AD" LZSS blocks, see <see cref="DiskDoublerAdDecoder"/>). Every
-/// other method — the DiskDoubler Huffman variants, RLE, Stac LZS, Compact Pro and "DD" — and any delta
-/// pre-processing is refused with <see cref="NotSupportedException"/> rather than returned undecoded.</para>
+/// a 16-bit byte-sum check), 2 and 5 (adaptive splay trees, 256 or a stored number of them, byte-sum
+/// check), 6 and 9 ("AD" LZSS blocks, see <see cref="DiskDoublerAdDecoder"/>), 7 (Stac LZS on
+/// bit-inverted data behind an 18-byte block table, XOR-sum check) and 8 (Compact Pro RLE, CRC-16 check,
+/// with or without its LZH layer). Delta type 1 (each byte plus the one before) is undone after
+/// decoding. Method 3 (RLE), 4 (Huffman), 10 ("DD") and other delta types are refused with <see cref="NotSupportedException"/> rather than returned undecoded.</para>
 /// <para>Sourcing: layout and methods from The Unarchiver's XADMaster (<c>XADDiskDoublerParser.m</c>,
 /// LGPL-2.1-or-later); verified on real DiskDoubler files against unar's output.</para>
 /// </remarks>
@@ -69,19 +71,34 @@ public sealed class DiskDoublerReader : IDisposable {
     ArgumentNullException.ThrowIfNull(entry);
     ObjectDisposedException.ThrowIf(this._disposed, this);
 
-    if (entry.DeltaType != 0)
+    if (entry.DeltaType is not (0 or 1))
       throw new NotSupportedException($"DiskDoubler fork '{entry.Name}' uses delta pre-processing type {entry.DeltaType}, which is not supported.");
 
     this._stream.Position = entry.DataOffset;
     var compressed = new byte[entry.CompressedSize];
     this._stream.ReadExactly(compressed);
 
+    var data = Decode(entry, compressed);
+    if (entry.DeltaType == 1)
+      DiskDoublerCodecs.UndoDelta(data);
+    return data;
+  }
+
+  private static byte[] Decode(DiskDoublerEntry entry, byte[] compressed) {
+    if (entry.OriginalSize > Array.MaxLength)
+      throw new NotSupportedException($"DiskDoubler fork '{entry.Name}' is larger than this reader handles.");
     return entry.Method switch {
       DiskDoublerConstants.MethodStored => entry.OriginalSize <= compressed.LongLength
         ? compressed[..(int)entry.OriginalSize]
         : throw new InvalidDataException($"DiskDoubler stored fork '{entry.Name}' is shorter than its size."),
       DiskDoublerConstants.MethodCompress => DecodeCompress(entry, compressed),
       DiskDoublerConstants.MethodAds or DiskDoublerConstants.MethodAd1 => DiskDoublerAdDecoder.Decode(compressed, entry.OriginalSize),
+      DiskDoublerConstants.MethodSplay => DecodeSplay(entry, compressed, 256),
+      DiskDoublerConstants.MethodSplayTrees => compressed.Length == 0
+        ? throw new InvalidDataException($"DiskDoubler fork '{entry.Name}' lacks its tree count.")
+        : DecodeSplay(entry, compressed.AsSpan(1).ToArray(), compressed[0] == 0 ? 256 : compressed[0]),
+      DiskDoublerConstants.MethodLzs => DecodeLzs(entry, compressed),
+      DiskDoublerConstants.MethodCompactPro => DecodeCompactPro(entry, compressed),
       _ => throw new NotSupportedException(
         $"DiskDoubler fork '{entry.Name}' uses method {entry.Method} ({MethodName(entry.Method)}), which is not supported."),
     };
@@ -147,6 +164,66 @@ public sealed class DiskDoublerReader : IDisposable {
     if ((sum & 0xFFFF) != expected)
       throw new InvalidDataException($"DiskDoubler compress fork '{entry.Name}' fails its checksum.");
     return output;
+  }
+
+  private static byte[] DecodeSplay(DiskDoublerEntry entry, byte[] compressed, int trees) {
+    var output = DiskDoublerCodecs.SplayDecode(compressed, entry.OriginalSize, trees);
+    var sum = 0;
+    for (var i = 0; i < output.Length; ++i) {
+      output[i] ^= entry.XorKey;
+      sum += output[i];
+    }
+    if ((sum & 0xFFFF) != entry.Checksum)
+      throw new InvalidDataException($"DiskDoubler fork '{entry.Name}' fails its checksum.");
+    return output;
+  }
+
+  /// <summary>Method 7: a block table (6 bytes, a 32-bit entry count, 8 bytes, 2 bytes per entry), then bit-inverted Stac LZS.</summary>
+  private static byte[] DecodeLzs(DiskDoublerEntry entry, byte[] compressed) {
+    if (compressed.Length < 18)
+      throw new InvalidDataException($"DiskDoubler LZS fork '{entry.Name}' is shorter than its table.");
+    var entries = BinaryPrimitives.ReadUInt32BigEndian(compressed.AsSpan(6));
+    var start = 18L + 2L * entries;
+    if (start > compressed.Length)
+      throw new InvalidDataException($"DiskDoubler LZS fork '{entry.Name}' has a table past its end.");
+    var inverted = compressed.AsSpan((int)start).ToArray();
+    for (var i = 0; i < inverted.Length; ++i)
+      inverted[i] ^= 0xFF;
+    var output = DiskDoublerCodecs.LzsDecode(inverted, entry.OriginalSize);
+    byte xor = 0;
+    for (var i = 0; i < output.Length; ++i)
+      xor ^= output[i] ^= 0xFF;
+    var expected = (byte)(entry.Checksum ^ ((output.Length & 1) == 0 ? 0xFF : 0));
+    if (xor != expected)
+      throw new InvalidDataException($"DiskDoubler LZS fork '{entry.Name}' fails its checksum.");
+    return output;
+  }
+
+  /// <summary>
+  /// Method 8: a 16-byte prefix, then Compact Pro's RLE, behind its LZH layer (with 0xFFF0-unit blocks)
+  /// when the prefix bytes are all zero; CRC-16 check.
+  /// </summary>
+  private static byte[] DecodeCompactPro(DiskDoublerEntry entry, byte[] compressed) {
+    if (compressed.Length < 16)
+      throw new InvalidDataException($"DiskDoubler Compact Pro fork '{entry.Name}' is shorter than its prefix.");
+    var sum = 0;
+    for (var i = 0; i < 16; ++i)
+      sum += compressed[i];
+    var output = FileFormat.CompactPro.CompactProCodec.DecodeFork(compressed.AsSpan(16), entry.OriginalSize, lzh: sum == 0, lzhBlockSize: 0xFFF0);
+    if (Crc16Arc(output) != entry.Checksum)
+      throw new InvalidDataException($"DiskDoubler Compact Pro fork '{entry.Name}' fails its CRC.");
+    return output;
+  }
+
+  /// <summary>CRC-16 with the reflected polynomial 0xA001, starting at 0 (the IBM CRC-16 Compact Pro uses).</summary>
+  internal static ushort Crc16Arc(ReadOnlySpan<byte> data) {
+    var crc = 0;
+    foreach (var b in data) {
+      crc ^= b;
+      for (var k = 0; k < 8; ++k)
+        crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xA001 : crc >> 1;
+    }
+    return (ushort)crc;
   }
 
   // ── Parsing ───────────────────────────────────────────────────────────────────

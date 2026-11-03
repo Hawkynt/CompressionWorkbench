@@ -37,7 +37,11 @@ public class DiskDoublerOracleTests {
     var r = FsInteropToolbox.RunWsl(
       $"unar -q -f -k skip -D -o {FsInteropToolbox.WinToWsl(into)} {FsInteropToolbox.WinToWsl(file)}");
     var files = Directory.GetFiles(into, "*", SearchOption.AllDirectories);
-    return (r.ExitCode == 0, files.Length == 1 ? File.ReadAllBytes(files[0]) : null);
+    if (r.ExitCode != 0 || files.Length != 1)
+      return (r.ExitCode == 0, null);
+    var data = File.ReadAllBytes(files[0]);
+    // Behind MacBinary, unar unwraps the DiskDoubler file but does not decompress it: ask it again.
+    return DiskDoublerReader.IsDiskDoubler(data) && files[0] != file ? this.UnarDataFork(files[0]) : (true, data);
   }
 
   [Test]
