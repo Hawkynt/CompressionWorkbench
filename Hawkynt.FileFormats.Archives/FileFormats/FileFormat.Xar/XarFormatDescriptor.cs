@@ -119,8 +119,12 @@ public sealed class XarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new XarReader(stream);
     foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
+      // Folders are created too, so an empty one survives extraction.
+      if (e.IsDirectory) {
+        CreateEntryDirectory(outputDir, e.FileName);
+        continue;
+      }
       WriteFile(outputDir, e.FileName, r.Extract(e));
     }
   }
@@ -132,8 +136,12 @@ public sealed class XarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // leaveOpen: true — caller owns the stream (e.g. AtomicFileWriter flushes
     // it to disk after we return; closing it here would break that contract).
     using var w = new XarWriter(output, leaveOpen: true);
-    foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
-      w.AddFile(name, data);
+    foreach (var i in inputs) {
+      if (string.IsNullOrEmpty(i.ArchiveName)) continue;
+      var mode = i.SourceUnixMode is { } unixMode ? (int)unixMode : (int?)null;
+      if (i.IsDirectory) w.AddDirectory(i.ArchiveName, i.SourceLastModifiedUtc, mode);
+      else w.AddFile(i.ArchiveName, i.ReadContent(), i.SourceLastModifiedUtc, mode);
+    }
   }
 
   /// <summary>
@@ -142,16 +150,26 @@ public sealed class XarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// the compressed XML TOC, the new entry's heap bytes, and (when the TOC
   /// changes size) the heap-shift delta are read or written.
   /// </summary>
+  /// <remarks>Folders are kept: a path puts the file into its folders, and a folder input
+  /// adds a folder (an empty one too). The TOC checksum is kept current.</remarks>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    foreach (var (name, data) in FlatFiles(inputs)) {
-      XarModifier.RemoveFile(archive, name, wipeData: true);
-      XarModifier.AddFile(archive, name, data);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var i in inputs) {
+      if (string.IsNullOrEmpty(i.ArchiveName)) continue;
+      var mode = i.SourceUnixMode is { } unixMode ? (int)unixMode : (int?)null;
+      if (i.IsDirectory) {
+        XarModifier.AddDirectory(archive, i.ArchiveName, i.SourceLastModifiedUtc, mode);
+        continue;
+      }
+      XarModifier.RemoveFile(archive, i.ArchiveName, wipeData: true);
+      XarModifier.AddFile(archive, i.ArchiveName, i.ReadContent(), i.SourceLastModifiedUtc, mode);
     }
   }
 
   /// <summary>
   /// Removes named entries from an existing XAR archive. Uses
-  /// <see cref="XarModifier"/> for random-access I/O on the TOC.
+  /// <see cref="XarModifier"/> for random-access I/O on the TOC. A name is the full path;
+  /// a folder goes with everything in it.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     foreach (var name in entryNames)
