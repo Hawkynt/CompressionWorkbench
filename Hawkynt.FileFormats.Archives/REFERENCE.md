@@ -11862,8 +11862,9 @@ In-place modifier for Microsoft NTBackup (.bkf) Microsoft Tape Format (MTF) cont
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `AddDirectory` | `static void AddDirectory(Stream archive, string folderName)` | Adds a folder: a DIRB naming it is appended (an empty folder is a DIRB with no FILE after it), unless the backup already has one for that path. |
 | `AddFile` | `static void AddFile(Stream archive, string fileName, byte[] data)` | Appends a new FILE DBLK carrying `data` at the position where the current EOTM block lives (or at EOF when EOTM is absent), then re-emits a fresh EOTM block at the new end. The TAPE / SSET / VOLB and any pre-existing FILE/DIRB blocks remain byte-identical at their original offsets. |
-| `RemoveFile` | `static bool RemoveFile(Stream archive, string fileName)` | Tombstones the first FILE DBLK whose FNAM matches `fileName`: the 4-byte type field becomes the `XXXX` sentinel and the rest of that FLB-aligned FILE block (CBH tail + every attached stream payload) is zero-wiped. Returns `true` when a tombstone was applied. |
+| `RemoveFile` | `static bool RemoveFile(Stream archive, string fileName)` | Tombstones the entry at exactly `fileName` — a path as the reader lists it, the folder taken from the DIRB before each FILE — or, for a folder, its DIRBs and every FILE beneath it: the 4-byte type field becomes the `XXXX` sentinel and the rest of that FLB-aligned block (CBH tail + every attached stream payload) is zero-wiped. Returns `true` when a tombstone was applied. |
 
 #### `BkfReader`
 
