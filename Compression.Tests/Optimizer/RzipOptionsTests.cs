@@ -7,7 +7,7 @@ namespace Compression.Tests.Optimizer;
 
 /// <summary>
 /// RZIP's match threshold and hash-bucket search depth are encoder-only choices:
-/// both can change the token parse without changing the wire grammar. The optimizer
+/// both can change the token parse, and every choice writes an rzip 2.x file. The optimizer
 /// therefore searches them per input and keeps the smallest complete stream.
 /// </summary>
 [TestFixture]
@@ -56,11 +56,11 @@ public class RzipOptionsTests {
   private static byte[] CandidateDepthSample() {
     ReadOnlySpan<byte> prefix = "ABCDEFGH"u8;
     ReadOnlySpan<byte> continuation = "THIS-IS-A-LONG-UNIQUE-CONTINUATION-"u8;
-    var target = new byte[prefix.Length + continuation.Length + 64];
+    // The tail is random so the bzip2 stage cannot hide a missed match.
+    var target = new byte[prefix.Length + continuation.Length + 2048];
     prefix.CopyTo(target);
     continuation.CopyTo(target.AsSpan(prefix.Length));
-    for (var i = 0; i < 64; ++i)
-      target[prefix.Length + continuation.Length + i] = (byte)i;
+    new Random(5).NextBytes(target.AsSpan(prefix.Length + continuation.Length));
 
     using var output = new MemoryStream();
     output.Write(target);
@@ -99,7 +99,7 @@ public class RzipOptionsTests {
     var data = ShortRepeatSample();
 
     var legacy = CompressDefault(data);
-    var parameterized = CompressAt(descriptor, data, minMatch: 16, candidates: 32);
+    var parameterized = CompressAt(descriptor, data, minMatch: 32, candidates: 32);
 
     Assert.That(parameterized, Is.EqualTo(legacy));
     Assert.That(Decompress(descriptor, parameterized), Is.EqualTo(data));

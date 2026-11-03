@@ -97,6 +97,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Claim site | What the comment refers to | Note |
 |---|---|---|
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Rzip/RzipStream.cs` | [`RZIP-ON-DISK.md`](RZIP-ON-DISK.md); rzip 2.1 (GPL-2.0-or-later) read as a format description and built as a black-box oracle | independent implementation from the description; rzip-written files and rzip round trips pin it |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.TrackerXmIt/ItSampleDecompressor.cs` | [`IT-SAMPLE-COMPRESSION-SPEC.md`](IT-SAMPLE-COMPRESSION-SPEC.md); libxmp 4.6.3 and libopenmpt as black-box oracles | independent rewrite from the specification replaces the former Schism Tracker-derived decoder; checked-in IT214/IT215 modules and libxmp PCM digests record the oracle |
 | `Compression.Core/FileSystems/Cvf/CvfLzCodec.cs`, `Compression.Core/FileSystems/Cvf/MsdblLzCodec.cs`, `Compression.Core/FileSystems/Cvf/Sd4Codec.cs` | the measured format description in [`CVF-CODECS-ON-DISK.md`](CVF-CODECS-ON-DISK.md); dmsdos (GPL-2.0) as a black-box oracle | independent rewrite from the format description and reference vectors replaces the former dmsdos-derived bit reader and DS/JM decoders |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.G722/G722Codec.cs` | ITU-T G.722 (09/2012), via [`G722-SPEC.md`](G722-SPEC.md); FFmpeg 8.1.2 as a black-box oracle | independent implementation from the specification replaces the former SpanDSP-derived codec; checked-in encoder and decoder vectors record the oracle |

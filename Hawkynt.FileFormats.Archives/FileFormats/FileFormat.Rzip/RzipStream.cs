@@ -1,45 +1,18 @@
+using System.Buffers.Binary;
+using Compression.Core.Streams;
+using FileFormat.Bzip2;
+
 namespace FileFormat.Rzip;
 
 /// <summary>
-/// Provides static methods for compressing and decompressing data in the RZIP format.
+/// Reads and writes Andrew Tridgell's rzip 2.x files (<c>.rz</c>), as laid out in
+/// <c>docs/RZIP-ON-DISK.md</c>: a 24-byte header, then chunks in which a control stream of
+/// literal/match tokens and a literal stream are multiplexed in bzip2 (or stored) blocks.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Two-stage design after Andrew Tridgell, "Efficient Algorithms for Sorting and
-/// Synchronization" (PhD thesis, ANU, 1999), chapter 5. Stage 1 indexes the whole input
-/// with a polynomial rolling hash over a configurable match window (16 bytes by default)
-/// and never discards a position solely because of distance, so a match can reach
-/// arbitrarily far back rather than only within a 32K or 64K sliding window - that reach
-/// is the entire point of rzip. Stage 2 entropy codes the literal bytes.
-/// </para>
-/// <para>
-/// Upstream rzip hands stage 2 to an external bzip2. This implementation carries its own
-/// order-0 canonical Huffman coder instead, so the format is self-contained: a reader
-/// needs nothing but this file, and the byte stream does not move whenever the bzip2
-/// encoder's heuristics change. The layout is therefore ours, not upstream rzip's, and
-/// the two are not interchangeable.
-/// </para>
-/// <para>
-/// Format layout:
-/// <code>
-/// Header:
-///   "RZIP"                4 bytes
-///   major, minor          1 byte each
-///   original size         4 bytes, big-endian
-/// Body:
-///   token count           LEB128 varint
-///   tokens, repeated:
-///     0x00 + length             literal run of that many bytes
-///     0x01 + distance + length  copy from that far back in the output
-///                               (all three values LEB128 varints)
-///   literal count         LEB128 varint
-///   literal mode          1 byte: 0 raw, 1 canonical Huffman
-///   mode 0: the literal bytes verbatim
-///   mode 1: 256 code lengths, one byte each, then the packed codes
-/// </code>
-/// The literal bytes of every literal run are concatenated and coded once, at the end,
-/// so a single Huffman table covers the whole input.
-/// </para>
+/// The encoder finds long-range matches with a polynomial rolling hash over the whole chunk,
+/// after Andrew Tridgell, "Efficient Algorithms for Sorting and Synchronization" (PhD thesis,
+/// ANU, 1999), chapter 5. Its settings affect only which valid tokens are written.
 /// </remarks>
 public static class RzipStream {
 
@@ -47,17 +20,15 @@ public static class RzipStream {
   private readonly record struct Token(bool IsLiteral, long Distance, long Length);
 
   /// <summary>
-  /// Compresses data into RZIP format using the default match-finder settings.
+  /// Compresses data into an rzip file using the default match-finder settings.
   /// </summary>
   /// <param name="input">The input stream containing data to compress.</param>
-  /// <param name="output">The output stream to write RZIP-compressed data to.</param>
+  /// <param name="output">The output stream to write the rzip file to.</param>
   public static void Compress(Stream input, Stream output)
     => Compress(input, output, RzipConstants.MinMatch, RzipConstants.CandidateSearchLimit);
 
   /// <summary>
-  /// Compresses data into RZIP format using explicit encoder-only match-finder settings.
-  /// These values do not alter the wire format: the decoder consumes only the emitted
-  /// literal and back-reference tokens.
+  /// Compresses data into an rzip file using explicit encoder-only match-finder settings.
   /// </summary>
   internal static void Compress(Stream input, Stream output, int minMatch, int candidateSearchLimit) {
     ArgumentNullException.ThrowIfNull(input);
@@ -72,126 +43,119 @@ public static class RzipStream {
     }
 
     Span<byte> header = stackalloc byte[RzipConstants.HeaderSize];
+    header.Clear();
     RzipConstants.Magic.CopyTo(header);
     header[4] = RzipConstants.VersionMajor;
     header[5] = RzipConstants.VersionMinor;
-    WriteUInt32BigEndian(header[6..], (uint)data.Length);
+    BinaryPrimitives.WriteUInt32BigEndian(header[6..], (uint)data.LongLength);
+    BinaryPrimitives.WriteUInt32BigEndian(header[10..], (uint)((ulong)data.LongLength >> 32));
     output.Write(header);
 
-    var body = new List<byte>(data.Length / 2 + 64);
-    var literals = new List<byte>(data.Length);
-    var tokens = Tokenize(data, literals, minMatch, candidateSearchLimit);
+    for (var start = 0; start < data.Length; start += RzipConstants.ChunkSize) {
+      var length = Math.Min(RzipConstants.ChunkSize, data.Length - start);
+      WriteChunk(output, data.AsSpan(start, length), minMatch, candidateSearchLimit);
+    }
+  }
 
-    WriteVarInt(body, tokens.Count);
-    foreach (var token in tokens) {
-      if (token.IsLiteral) {
-        body.Add(RzipConstants.TagLiteral);
-        WriteVarInt(body, token.Length);
-        continue;
+  private static void WriteChunk(Stream output, ReadOnlySpan<byte> chunk, int minMatch, int candidateSearchLimit) {
+    var writer = new ChunkWriter();
+    var position = 0;
+    foreach (var token in Tokenize(chunk, minMatch, candidateSearchLimit)) {
+      var remaining = token.Length;
+      while (remaining > 0) {
+        var n = (int)Math.Min(remaining, RzipConstants.MaxTokenLength);
+        if (token.IsLiteral) {
+          writer.Control(RzipConstants.TagLiteral, n);
+          writer.Literals(chunk.Slice(position, n));
+        } else {
+          writer.Control(RzipConstants.TagMatch, n);
+          writer.ControlUInt32((uint)token.Distance);
+        }
+
+        position += n;
+        remaining -= n;
       }
-
-      body.Add(RzipConstants.TagMatch);
-      WriteVarInt(body, token.Distance);
-      WriteVarInt(body, token.Length);
     }
 
-    WriteLiteralStream(body, literals);
-
-    var bodyArray = body.ToArray();
-    output.Write(bodyArray, 0, bodyArray.Length);
+    writer.Control(RzipConstants.TagLiteral, 0);
+    writer.ControlUInt32(Crc32(chunk));
+    writer.WriteTo(output);
   }
 
   /// <summary>
-  /// Decompresses an RZIP stream.
+  /// Decompresses an rzip file.
   /// </summary>
-  /// <param name="input">The input stream containing RZIP-compressed data.</param>
+  /// <param name="input">The input stream containing the rzip file.</param>
   /// <param name="output">The output stream to write decompressed data to.</param>
-  /// <exception cref="InvalidDataException">The stream does not contain valid RZIP data.</exception>
+  /// <exception cref="InvalidDataException">The stream is not a valid rzip file.</exception>
   public static void Decompress(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
     byte[] data;
     using (var buffer = new MemoryStream()) {
       input.CopyTo(buffer);
       data = buffer.ToArray();
     }
 
-    if (data.Length < RzipConstants.HeaderSize)
-      throw new InvalidDataException("Truncated RZIP header.");
-    if (!data.AsSpan(0, 4).SequenceEqual(RzipConstants.Magic))
-      throw new InvalidDataException("Invalid RZIP magic bytes.");
+    if (data.Length < RzipConstants.HeaderSize || !data.AsSpan(0, 4).SequenceEqual(RzipConstants.Magic))
+      throw new InvalidDataException("Not an rzip file.");
 
-    var major = data[4];
-    if (major != RzipConstants.VersionMajor)
-      throw new InvalidDataException($"Unsupported RZIP version: {major}.{data[5]}");
+    var expected = (long)BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(6)) | (long)BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(10)) << 32;
+    if (expected > Array.MaxLength)
+      throw new InvalidDataException($"rzip original size {expected} exceeds the managed decoder limit.");
 
-    var originalSize = ReadUInt32BigEndian(data.AsSpan(6, 4));
-    var position = RzipConstants.HeaderSize;
-
-    var tokenCount = ReadVarInt(data, ref position);
-    var tokens = new List<Token>((int)Math.Min(tokenCount, 1 << 20));
-    for (long i = 0; i < tokenCount; ++i) {
-      var tag = ReadByte(data, ref position);
-      if (tag == RzipConstants.TagLiteral) {
-        tokens.Add(new(true, 0, ReadVarInt(data, ref position)));
-        continue;
-      }
-
-      if (tag != RzipConstants.TagMatch)
-        throw new InvalidDataException($"Unknown RZIP token tag: {tag}");
-
-      var distance = ReadVarInt(data, ref position);
-      tokens.Add(new(false, distance, ReadVarInt(data, ref position)));
-    }
-
-    var literals = ReadLiteralStream(data, ref position);
-
-    var result = new byte[originalSize];
+    var result = new byte[expected];
     var produced = 0;
-    var literalPosition = 0;
+    var chunkStart = RzipConstants.HeaderSize;
+    while (produced < expected) {
+      if (chunkStart >= data.Length)
+        throw new InvalidDataException("rzip file ends before its original size was produced.");
+      chunkStart = ReadChunk(data, chunkStart, result, ref produced);
+    }
 
-    foreach (var token in tokens) {
-      if (token.IsLiteral) {
-        if (literalPosition + token.Length > literals.Length || produced + token.Length > result.Length)
-          throw new InvalidDataException("RZIP literal run overruns the stream.");
+    output.Write(result);
+  }
 
-        for (long i = 0; i < token.Length; ++i)
-          result[produced++] = literals[literalPosition++];
-
+  /// <summary>Decodes one chunk starting at <paramref name="start"/>; returns where the next one starts.</summary>
+  private static int ReadChunk(byte[] data, int start, byte[] result, ref int produced) {
+    var reader = new ChunkReader(data, start);
+    var chunkStart = produced;
+    while (true) {
+      var head = reader.ReadByte(0);
+      var length = reader.ReadByte(0) | reader.ReadByte(0) << 8;
+      if (head == 0 && length == 0)
+        break;
+      if (produced + length > result.Length)
+        throw new InvalidDataException("rzip chunk produces more than the original size.");
+      if (head == 0) {
+        reader.Read(1, result.AsSpan(produced, length));
+        produced += length;
         continue;
       }
 
-      if (token.Distance <= 0 || token.Distance > produced)
-        throw new InvalidDataException(
-          $"RZIP match distance {token.Distance} exceeds the {produced} bytes decoded so far.");
-      if (produced + token.Length > result.Length)
-        throw new InvalidDataException("RZIP match overruns the declared size.");
-
-      // Byte by byte: a match may overlap itself, which is how runs are encoded.
-      var source = produced - (int)token.Distance;
-      for (long i = 0; i < token.Length; ++i)
-        result[produced++] = result[source++];
+      var distance = reader.ReadUInt32(0);
+      if (distance == 0 || distance > produced)
+        throw new InvalidDataException($"rzip match distance {distance} points outside the output.");
+      var from = produced - (int)distance;
+      for (var i = 0; i < length; ++i)
+        result[produced + i] = result[from + i];
+      produced += length;
     }
 
-    if (produced != result.Length)
-      throw new InvalidDataException(
-        $"RZIP produced {produced} bytes but the header declared {result.Length}.");
-
-    output.Write(result, 0, result.Length);
+    var crc = reader.ReadUInt32(0);
+    if (crc != Crc32(result.AsSpan(chunkStart, produced - chunkStart)))
+      throw new InvalidDataException("rzip chunk CRC mismatch.");
+    return reader.End;
   }
 
   /// <summary>
-  /// Greedy long-range parse. Every position's rolling hash is recorded and never
-  /// expired by distance, so a match can reach back to the start of the input.
+  /// Splits the chunk into literal runs and long-range matches. Each hash value keeps enough
+  /// recent positions to satisfy <paramref name="candidateSearchLimit"/>; the newest are
+  /// examined first and a candidate must be strictly longer to win, so among equally long
+  /// matches the nearest is taken. Positions covered by an emitted match are not indexed.
   /// </summary>
-  /// <remarks>
-  /// Each hash value keeps enough recent positions to satisfy
-  /// <paramref name="candidateSearchLimit"/> (and never fewer than the historical default
-  /// bucket capacity). The newest requested candidates are examined newest first, and a
-  /// candidate must be strictly longer than the incumbent to displace it, so among equally
-  /// long matches the nearest wins. The current position joins its bucket after the search,
-  /// and positions covered by an emitted match are never indexed.
-  /// </remarks>
-  private static List<Token> Tokenize(
-      byte[] data, List<byte> literals, int minMatch, int candidateSearchLimit) {
+  private static List<Token> Tokenize(ReadOnlySpan<byte> data, int minMatch, int candidateSearchLimit) {
     var tokens = new List<Token>();
     var length = data.Length;
     if (length == 0)
@@ -199,7 +163,6 @@ public static class RzipStream {
 
     if (length < minMatch) {
       tokens.Add(new(true, 0, length));
-      literals.AddRange(data);
       return tokens;
     }
 
@@ -246,10 +209,8 @@ public static class RzipStream {
         bucket.RemoveAt(0);
 
       if (bestLength >= minMatch) {
-        if (position > literalStart) {
+        if (position > literalStart)
           tokens.Add(new(true, 0, position - literalStart));
-          literals.AddRange(data.AsSpan(literalStart, position - literalStart));
-        }
 
         tokens.Add(new(false, position - bestPosition, bestLength));
         position += bestLength;
@@ -265,15 +226,13 @@ public static class RzipStream {
       ++position;
     }
 
-    if (literalStart < length) {
+    if (literalStart < length)
       tokens.Add(new(true, 0, length - literalStart));
-      literals.AddRange(data.AsSpan(literalStart, length - literalStart));
-    }
 
     return tokens;
   }
 
-  private static uint HashAt(byte[] data, int position, int windowLength) {
+  private static uint HashAt(ReadOnlySpan<byte> data, int position, int windowLength) {
     var hash = 0u;
     for (var i = 0; i < windowLength; ++i)
       hash = unchecked(hash * RzipConstants.RollingHashBase + data[position + i]);
@@ -281,322 +240,193 @@ public static class RzipStream {
     return hash;
   }
 
-  /// <summary>
-  /// Orders the coded symbols the way the canonical assignment does - by code length,
-  /// then by symbol - which is the order a canonical decoder walks.
-  /// </summary>
-  private static (int[] CountPerLength, int[] SymbolsInCodeOrder) BuildDecodeTables(int[] codeLengths) {
-    var countPerLength = new int[RzipConstants.MaxCodeLength + 1];
-    foreach (var codeLength in codeLengths) {
-      if (codeLength == 0)
-        continue;
-
-      if (codeLength > RzipConstants.MaxCodeLength)
-        throw new InvalidDataException($"RZIP literal code length {codeLength} exceeds the maximum.");
-
-      ++countPerLength[codeLength];
+  /// <summary>CRC-32 (reflected polynomial 0xEDB88320) with initial value 0 and no final XOR, as rzip keeps it.</summary>
+  private static uint Crc32(ReadOnlySpan<byte> data) {
+    var crc = 0u;
+    foreach (var b in data) {
+      crc ^= b;
+      for (var i = 0; i < 8; ++i)
+        crc = (crc & 1) != 0 ? crc >> 1 ^ 0xEDB88320u : crc >> 1;
     }
 
-    var ordered = new List<int>();
-    for (var length = 1; length <= RzipConstants.MaxCodeLength; ++length)
-      for (var symbol = 0; symbol < codeLengths.Length; ++symbol)
-        if (codeLengths[symbol] == length)
-          ordered.Add(symbol);
-
-    return (countPerLength, ordered.ToArray());
+    return crc;
   }
 
-  private static void WriteLiteralStream(List<byte> output, List<byte> literals) {
-    WriteVarInt(output, literals.Count);
-    if (literals.Count == 0) {
-      output.Add(RzipConstants.LiteralModeRaw);
-      return;
+  /// <summary>Buffers the two streams of a chunk and lays out their linked blocks.</summary>
+  private sealed class ChunkWriter {
+    private readonly MemoryStream _chunk = new();
+    private readonly MemoryStream[] _buffers = [new(), new()];
+    private readonly long[] _lastHead = new long[RzipConstants.StreamCount];
+
+    public ChunkWriter() {
+      for (var s = 0; s < RzipConstants.StreamCount; ++s) {
+        this._lastHead[s] = this._chunk.Position + 9;
+        this.WriteBlockHeader(RzipConstants.BlockStored, 0, 0);
+      }
     }
 
-    var frequencies = new int[RzipConstants.LiteralAlphabetSize];
-    foreach (var literal in literals)
-      ++frequencies[literal];
-
-    var codeLengths = BuildHuffmanLengths(frequencies);
-    var longest = 0;
-    long codedBits = 0;
-    for (var symbol = 0; symbol < RzipConstants.LiteralAlphabetSize; ++symbol) {
-      if (codeLengths[symbol] > longest)
-        longest = codeLengths[symbol];
-
-      codedBits += (long)frequencies[symbol] * codeLengths[symbol];
+    public void Control(byte head, int length) {
+      this.Append(0, [head, (byte)length, (byte)(length >> 8)]);
     }
 
-    // The table costs a fixed 256 bytes, so coding only pays once the codes save more
-    // than that. Without this check a short literal run inflates: 256 literals of
-    // distinct bytes coded at 8 bits each cost 256 bytes of table for no gain at all.
-    var codedCost = RzipConstants.LiteralAlphabetSize + (codedBits + 7) / 8;
-
-    if (longest == 0 || longest > RzipConstants.MaxCodeLength || codedCost >= literals.Count) {
-      output.Add(RzipConstants.LiteralModeRaw);
-      output.AddRange(literals);
-      return;
+    public void ControlUInt32(uint value) {
+      Span<byte> bytes = stackalloc byte[4];
+      BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
+      this.Append(0, bytes);
     }
 
-    output.Add(RzipConstants.LiteralModeHuffman);
-    foreach (var codeLength in codeLengths)
-      output.Add((byte)codeLength);
+    public void Literals(ReadOnlySpan<byte> bytes) => this.Append(1, bytes);
 
-    var codes = BuildCanonicalCodes(codeLengths);
-    var writer = new BitWriter(output);
-    foreach (var literal in literals)
-      writer.WriteBits(codes[literal], codeLengths[literal]);
+    private void Append(int stream, ReadOnlySpan<byte> bytes) {
+      var buffer = this._buffers[stream];
+      while (!bytes.IsEmpty) {
+        var n = (int)Math.Min(RzipConstants.StreamBufferSize - buffer.Length, bytes.Length);
+        buffer.Write(bytes[..n]);
+        bytes = bytes[n..];
+        if (buffer.Length == RzipConstants.StreamBufferSize)
+          this.Flush(stream);
+      }
+    }
 
-    writer.Flush();
+    private void Flush(int stream) {
+      var buffer = this._buffers[stream];
+      var raw = buffer.ToArray();
+      buffer.SetLength(0);
+
+      var blockStart = this._chunk.Length;
+      this._chunk.Position = this._lastHead[stream];
+      Span<byte> link = stackalloc byte[4];
+      BinaryPrimitives.WriteUInt32LittleEndian(link, (uint)blockStart);
+      this._chunk.Write(link);
+      this._chunk.Position = blockStart;
+      this._lastHead[stream] = blockStart + 9;
+
+      var packed = Bzip2(raw);
+      if (packed.Length < raw.Length) {
+        this.WriteBlockHeader(RzipConstants.BlockBzip2, packed.Length, raw.Length);
+        this._chunk.Write(packed);
+      } else {
+        this.WriteBlockHeader(RzipConstants.BlockStored, raw.Length, raw.Length);
+        this._chunk.Write(raw);
+      }
+    }
+
+    private void WriteBlockHeader(byte type, int compressedLength, int uncompressedLength) {
+      Span<byte> header = stackalloc byte[RzipConstants.BlockHeaderSize];
+      header.Clear();
+      header[0] = type;
+      BinaryPrimitives.WriteUInt32LittleEndian(header[1..], (uint)compressedLength);
+      BinaryPrimitives.WriteUInt32LittleEndian(header[5..], (uint)uncompressedLength);
+      this._chunk.Write(header);
+    }
+
+    public void WriteTo(Stream output) {
+      for (var s = 0; s < RzipConstants.StreamCount; ++s)
+        if (this._buffers[s].Length > 0)
+          this.Flush(s);
+      this._chunk.Position = 0;
+      this._chunk.CopyTo(output);
+    }
+
+    private static byte[] Bzip2(byte[] data) {
+      using var packed = new MemoryStream();
+      using (var bzip2 = new Bzip2Stream(packed, CompressionStreamMode.Compress, blockSize100k: RzipConstants.Bzip2Level, leaveOpen: true))
+        bzip2.Write(data, 0, data.Length);
+      return packed.ToArray();
+    }
   }
 
-  private static byte[] ReadLiteralStream(byte[] data, ref int position) {
-    var count = ReadVarInt(data, ref position);
-    var mode = ReadByte(data, ref position);
-    if (count == 0)
-      return [];
+  /// <summary>Follows the linked blocks of a chunk's two streams.</summary>
+  private sealed class ChunkReader {
+    private readonly byte[] _data;
+    private readonly int _start;
+    private readonly long[] _nextHead = new long[RzipConstants.StreamCount];
+    private readonly byte[][] _buffers = [[], []];
+    private readonly int[] _positions = new int[RzipConstants.StreamCount];
+    private long _totalRead;
 
-    if (count > data.Length * 8L)
-      throw new InvalidDataException($"RZIP declares {count} literals, more than the stream can hold.");
-
-    var literals = new byte[count];
-    if (mode == RzipConstants.LiteralModeRaw) {
-      for (long i = 0; i < count; ++i)
-        literals[i] = ReadByte(data, ref position);
-
-      return literals;
-    }
-
-    if (mode != RzipConstants.LiteralModeHuffman)
-      throw new InvalidDataException($"Unknown RZIP literal mode: {mode}");
-
-    var codeLengths = new int[RzipConstants.LiteralAlphabetSize];
-    for (var symbol = 0; symbol < RzipConstants.LiteralAlphabetSize; ++symbol)
-      codeLengths[symbol] = ReadByte(data, ref position);
-
-    var (countPerLength, symbolsInCodeOrder) = BuildDecodeTables(codeLengths);
-    var reader = new BitReader(data, position);
-    for (long i = 0; i < count; ++i)
-      literals[i] = (byte)reader.DecodeSymbol(countPerLength, symbolsInCodeOrder);
-
-    position += reader.BytesConsumed;
-    return literals;
-  }
-
-  /// <summary>
-  /// Builds order-0 Huffman code lengths from observed frequencies. Symbols that never
-  /// occur keep length 0; a single distinct symbol is forced to length 1.
-  /// </summary>
-  /// <remarks>
-  /// Nodes are combined smallest first. Ties are broken by creation order - the source
-  /// symbols in ascending value, then each combined node as it is made - which makes the
-  /// resulting lengths a total function of the frequencies alone, with no dependence on
-  /// how the candidate set happens to be stored.
-  /// </remarks>
-  private static int[] BuildHuffmanLengths(int[] frequencies) {
-    var lengths = new int[RzipConstants.LiteralAlphabetSize];
-
-    var nodes = new List<Node>();
-    for (var symbol = 0; symbol < RzipConstants.LiteralAlphabetSize; ++symbol)
-      if (frequencies[symbol] > 0)
-        nodes.Add(new(frequencies[symbol], nodes.Count, symbol, null, null));
-
-    if (nodes.Count == 0)
-      return lengths;
-
-    if (nodes.Count == 1) {
-      lengths[nodes[0].Symbol] = 1;
-      return lengths;
-    }
-
-    var sequence = nodes.Count;
-    while (nodes.Count > 1) {
-      var first = IndexOfSmallest(nodes, -1);
-      var second = IndexOfSmallest(nodes, first);
-      var left = nodes[first];
-      var right = nodes[second];
-
-      nodes.RemoveAt(Math.Max(first, second));
-      nodes.RemoveAt(Math.Min(first, second));
-      nodes.Add(new(left.Frequency + right.Frequency, sequence++, -1, left, right));
-    }
-
-    AssignLengths(nodes[0], 0, lengths);
-    return lengths;
-  }
-
-  private sealed record Node(long Frequency, int Sequence, int Symbol, Node? Left, Node? Right);
-
-  private static int IndexOfSmallest(List<Node> nodes, int skip) {
-    var best = -1;
-    for (var i = 0; i < nodes.Count; ++i) {
-      if (i == skip)
-        continue;
-
-      if (best >= 0 && (nodes[i].Frequency > nodes[best].Frequency
-          || (nodes[i].Frequency == nodes[best].Frequency && nodes[i].Sequence > nodes[best].Sequence)))
-        continue;
-
-      best = i;
-    }
-
-    return best;
-  }
-
-  private static void AssignLengths(Node node, int depth, int[] lengths) {
-    if (node.Symbol >= 0) {
-      lengths[node.Symbol] = depth;
-      return;
-    }
-
-    AssignLengths(node.Left!, depth + 1, lengths);
-    AssignLengths(node.Right!, depth + 1, lengths);
-  }
-
-  /// <summary>
-  /// Assigns canonical codes: shorter codes first, and equal-length codes in ascending
-  /// symbol order.
-  /// </summary>
-  private static int[] BuildCanonicalCodes(int[] codeLengths) {
-    var longest = 0;
-    foreach (var codeLength in codeLengths)
-      if (codeLength > longest)
-        longest = codeLength;
-
-    var codes = new int[codeLengths.Length];
-    if (longest == 0)
-      return codes;
-
-    var countPerLength = new int[longest + 1];
-    foreach (var codeLength in codeLengths)
-      if (codeLength > 0)
-        ++countPerLength[codeLength];
-
-    var nextCode = new int[longest + 1];
-    var code = 0;
-    for (var bits = 1; bits <= longest; ++bits) {
-      code = (code + countPerLength[bits - 1]) * 2;
-      nextCode[bits] = code;
-    }
-
-    for (var symbol = 0; symbol < codeLengths.Length; ++symbol)
-      if (codeLengths[symbol] != 0)
-        codes[symbol] = nextCode[codeLengths[symbol]]++;
-
-    return codes;
-  }
-
-  /// <summary>Packs bits into bytes least-significant bit first; each code is written most-significant bit first.</summary>
-  private sealed class BitWriter(List<byte> output) {
-    private int _buffer;
-    private int _count;
-
-    public void WriteBits(int value, int length) {
-      for (var i = length - 1; i >= 0; --i) {
-        this._buffer |= ((value >> i) & 1) << this._count;
-        if (++this._count < 8)
+    public ChunkReader(byte[] data, int start) {
+      this._data = data;
+      while (true) {
+        var first = this.Header(start);
+        if (first is (RzipConstants.BlockStored, 0, 0, 0)) {
+          // rzip's stream close workaround: an all-zero leading header is skipped.
+          start += RzipConstants.BlockHeaderSize;
           continue;
+        }
 
-        output.Add((byte)this._buffer);
-        this._buffer = 0;
-        this._count = 0;
+        break;
+      }
+
+      this._start = start;
+      for (var s = 0; s < RzipConstants.StreamCount; ++s) {
+        var header = this.Header(start + s * RzipConstants.BlockHeaderSize);
+        if (header.Type != RzipConstants.BlockStored || header.CompressedLength != 0 || header.UncompressedLength != 0)
+          throw new InvalidDataException("rzip chunk does not start with empty stream headers.");
+        this._nextHead[s] = header.Next;
+        this._totalRead += RzipConstants.BlockHeaderSize;
       }
     }
 
-    public void Flush() {
-      if (this._count == 0)
-        return;
+    /// <summary>Where the next chunk starts: after every header and block this chunk read.</summary>
+    public int End => checked((int)(this._start + this._totalRead));
 
-      output.Add((byte)this._buffer);
-      this._buffer = 0;
-      this._count = 0;
+    public byte ReadByte(int stream) {
+      this.Ensure(stream);
+      return this._buffers[stream][this._positions[stream]++];
     }
-  }
 
-  /// <summary>Reads the bit packing produced by <see cref="BitWriter"/>.</summary>
-  private sealed class BitReader(byte[] data, int start) {
-    private int _bytePosition;
-    private int _buffer;
-    private int _bitPosition = 8;
+    public uint ReadUInt32(int stream)
+      => (uint)(this.ReadByte(stream) | this.ReadByte(stream) << 8 | this.ReadByte(stream) << 16 | this.ReadByte(stream) << 24);
 
-    public int BytesConsumed => this._bytePosition;
-
-    private int ReadBit() {
-      if (this._bitPosition == 8) {
-        if (start + this._bytePosition >= data.Length)
-          throw new InvalidDataException("Unexpected end of the RZIP literal bit stream.");
-
-        this._buffer = data[start + this._bytePosition++];
-        this._bitPosition = 0;
+    public void Read(int stream, Span<byte> destination) {
+      while (!destination.IsEmpty) {
+        this.Ensure(stream);
+        var available = this._buffers[stream].AsSpan(this._positions[stream]);
+        var n = Math.Min(available.Length, destination.Length);
+        available[..n].CopyTo(destination);
+        destination = destination[n..];
+        this._positions[stream] += n;
       }
-
-      return (this._buffer >> this._bitPosition++) & 1;
     }
 
-    /// <summary>
-    /// Walks the canonical code space one bit at a time. At each length the codes of
-    /// that length occupy one contiguous run, so the accumulated bits identify a symbol
-    /// as soon as they fall inside that run.
-    /// </summary>
-    public int DecodeSymbol(int[] countPerLength, int[] symbolsInCodeOrder) {
-      int code = 0, firstCode = 0, firstIndex = 0;
-      for (var length = 1; length <= RzipConstants.MaxCodeLength; ++length) {
-        code |= this.ReadBit();
-        var count = countPerLength[length];
-        if (code - firstCode < count)
-          return symbolsInCodeOrder[firstIndex + code - firstCode];
-
-        firstIndex += count;
-        firstCode = (firstCode + count) << 1;
-        code <<= 1;
+    private void Ensure(int stream) {
+      while (this._positions[stream] == this._buffers[stream].Length) {
+        if (this._nextHead[stream] == 0)
+          throw new InvalidDataException($"rzip stream {stream} ends early.");
+        var at = this._start + this._nextHead[stream];
+        var header = this.Header(at);
+        this._nextHead[stream] = header.Next;
+        var dataStart = at + RzipConstants.BlockHeaderSize;
+        if (dataStart + header.CompressedLength > this._data.Length)
+          throw new InvalidDataException("rzip block runs past the end of the file.");
+        var block = this._data.AsSpan((int)dataStart, (int)header.CompressedLength);
+        this._totalRead += RzipConstants.BlockHeaderSize + header.CompressedLength;
+        this._buffers[stream] = header.Type switch {
+          RzipConstants.BlockStored when header.CompressedLength == header.UncompressedLength => block.ToArray(),
+          RzipConstants.BlockBzip2 => Bunzip2(block, header.UncompressedLength),
+          _ => throw new InvalidDataException($"rzip block type {header.Type} with lengths {header.CompressedLength}/{header.UncompressedLength} is not valid."),
+        };
+        this._positions[stream] = 0;
       }
-
-      throw new InvalidDataException("Invalid Huffman code in the RZIP literal stream.");
     }
-  }
 
-  private static void WriteVarInt(List<byte> output, long value) {
-    for (var remaining = value;;) {
-      var chunk = (byte)(remaining & 0x7F);
-      remaining >>= 7;
-      if (remaining == 0) {
-        output.Add(chunk);
-        return;
-      }
-
-      output.Add((byte)(chunk | 0x80));
+    private (byte Type, long CompressedLength, long UncompressedLength, long Next) Header(long at) {
+      if (at < 0 || at + RzipConstants.BlockHeaderSize > this._data.Length)
+        throw new InvalidDataException("rzip block header lies outside the file.");
+      var span = this._data.AsSpan((int)at, RzipConstants.BlockHeaderSize);
+      return (span[0], BinaryPrimitives.ReadUInt32LittleEndian(span[1..]), BinaryPrimitives.ReadUInt32LittleEndian(span[5..]),
+        BinaryPrimitives.ReadUInt32LittleEndian(span[9..]));
     }
-  }
 
-  private static long ReadVarInt(byte[] data, ref int position) {
-    long result = 0;
-    var shift = 0;
-    for (;;) {
-      var current = ReadByte(data, ref position);
-      result |= (long)(current & 0x7F) << shift;
-      if ((current & 0x80) == 0)
-        return result;
-
-      shift += 7;
-      if (shift > 56)
-        throw new InvalidDataException("Overlong varint in the RZIP stream.");
+    private static byte[] Bunzip2(ReadOnlySpan<byte> packed, long expected) {
+      using var input = new MemoryStream(packed.ToArray());
+      using var bzip2 = new Bzip2Stream(input, CompressionStreamMode.Decompress, leaveOpen: true);
+      using var output = new MemoryStream();
+      bzip2.CopyTo(output);
+      if (output.Length != expected)
+        throw new InvalidDataException($"rzip bzip2 block holds {output.Length} bytes, its header says {expected}.");
+      return output.ToArray();
     }
-  }
-
-  private static byte ReadByte(byte[] data, ref int position) {
-    if (position >= data.Length)
-      throw new InvalidDataException("Unexpected end of the RZIP stream.");
-
-    return data[position++];
-  }
-
-  private static uint ReadUInt32BigEndian(ReadOnlySpan<byte> buffer)
-    => (uint)(buffer[0] << 24 | buffer[1] << 16 | buffer[2] << 8 | buffer[3]);
-
-  private static void WriteUInt32BigEndian(Span<byte> buffer, uint value) {
-    buffer[0] = (byte)(value >> 24);
-    buffer[1] = (byte)(value >> 16);
-    buffer[2] = (byte)(value >> 8);
-    buffer[3] = (byte)value;
   }
 }

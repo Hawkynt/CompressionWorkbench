@@ -3,26 +3,17 @@ using Compression.Registry;
 namespace FileFormat.Rzip;
 
 /// <summary>
-/// Exposes rzip as a benchmarkable building block.
-/// Produces a complete rzip stream — "RZIP" signature, version, the big-endian
-/// original size and the token stream — so the payload carries its own length and
-/// no extra uncompressed-size header is prepended.
+/// Exposes rzip as a benchmarkable building block. Produces a complete rzip 2.x file
+/// (see <see cref="RzipStream"/>), which carries its own length, so no extra
+/// uncompressed-size header is prepended.
 /// </summary>
-/// <remarks>
-/// Two-stage design after Andrew Tridgell, "Efficient Algorithms for Sorting and
-/// Synchronization" (PhD thesis, 1999), chapter 3: a rolling checksum indexes the
-/// whole input so matches can reach arbitrarily far back, well past a classic
-/// 32K/64K window, and the residual literals are then entropy coded. The concrete
-/// layout, and how it differs from upstream rzip, is documented on
-/// <see cref="RzipStream"/>.
-/// </remarks>
 public sealed class RzipBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
   public string Id => "BB_Rzip";
   /// <inheritdoc/>
   public string DisplayName => "rzip";
   /// <inheritdoc/>
-  public string Description => "Long-range rolling-hash match elimination over the whole input, with order-0 coded literals";
+  public string Description => "rzip 2.x: long-range rolling-hash matches over the whole input, then bzip2";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 

@@ -109,7 +109,7 @@ Zstandard,zst;zstd;tzst,compression,R,RW,,R,,,Y,4,https://www.rfc-editor.org/rfc
 "compress (.Z, LZW)",z;taz;lzw;tar.z;tz,compression,R,RW,R,D,R,fmt/1671,Y,7,https://en.wikipedia.org/wiki/Compress_(software),Compress,Y,Y,,OK,,
 "pack (.z, Huffman)",z,compression,,,,,,,Y,1,https://en.wikipedia.org/wiki/Pack_(compression),UnixPack;bb:BB_UnixPack,Y,Y,,OK,,gzip -d decodes our output
 Freeze,f;freeze;?xf,compression,,,,,,,Y,1,,Freeze,Y,Y,,OK,,
-rzip,rz,compression,,,,,,,Y,1,https://rzip.samba.org/,Rzip,Y,Y,,OK,,
+rzip,rz,compression,,,,,,,Y,1,https://rzip.samba.org/,Rzip,Y,Y,,OK,,rzip 2.1 reads ours and we read its (docs/RZIP-ON-DISK.md)
 lrzip,lrz,compression,,RW,,,,,,1,https://github.com/ckolivas/lrzip,Lrzip,Y,Y,,OK,,
 grzip,grz,compression,,RW,,,,,,1,,,,,,MISSING,,
 Brotli,br,compression,,,,,,,Y,1,https://www.rfc-editor.org/rfc/rfc7932,Brotli,Y,Y,,OK,,
@@ -644,7 +644,7 @@ Reduce,,codec,,,,,,,,0,,bb:BB_Reduce,Y,Y,,OURS-ONLY,,
 Re-Pair,,codec,,,,,,,,0,,bb:BB_RePair,Y,Y,,OURS-ONLY,,
 RLE,,codec,,,,,,,,0,,bb:BB_Rle,Y,Y,,OURS-ONLY,,
 ROLZ,,codec,,,,,,,,0,,bb:BB_ROLZ,Y,Y,,OURS-ONLY,,
-rzip (bb:BB_Rzip),,codec,,,,,,,,0,,bb:BB_Rzip,Y,Y,,OURS-ONLY,,
+rzip (bb:BB_Rzip),,codec,,,,,,,,0,https://rzip.samba.org/,bb:BB_Rzip,Y,Y,,OK,,a complete rzip 2.x file; rzip 2.1 reads ours and we read its
 Salvador,,codec,,,,,,,,0,,bb:BB_Salvador,Y,Y,,OURS-ONLY,,
 Sequitur,,codec,,,,,,,,0,,bb:BB_Sequitur,Y,Y,,OURS-ONLY,,
 Shannon-Fano,,codec,,,,,,,,0,,bb:BB_ShannonFano,Y,Y,,OURS-ONLY,,
