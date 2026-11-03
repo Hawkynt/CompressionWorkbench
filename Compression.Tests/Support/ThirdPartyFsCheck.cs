@@ -106,7 +106,11 @@ internal static class ThirdPartyFsCheck {
     // made against our own reader instead.
     ["Nilfs2"] = new(null, "", false, null, "", []),
     ["Ntfs"] = new("ntfs3", "", true, null, "", []),
-    ["Ocfs2"] = new("ocfs2", "", false, "fsck.ocfs2", "-fn {0}", [0]),
+    // The driver wants exactly one heartbeat mode on the mount, which mount.ocfs2 would normally
+    // supply. The writer makes local (-M local) volumes, which never heartbeat, so the mode is
+    // none. Without it the runner's 7.0 kernel refuses the mount ("Invalid heartbeat mount
+    // options"), while the 6.8 kernel in the guestfish appliance accepted a bare mount.
+    ["Ocfs2"] = new("ocfs2", "heartbeat=none", false, "fsck.ocfs2", "-fn {0}", [0]),
     ["Qnx4"] = new("qnx4", "", false, null, "", []),
     ["Qnx6"] = new("qnx6", "", false, null, "", []),
     // No reiser4 driver ships with mainline, so there is nothing to mount against;
