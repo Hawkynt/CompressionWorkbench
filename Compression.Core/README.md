@@ -39,6 +39,7 @@ This is a curated package-level map, not a hand-maintained claim to list every c
 | [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)) | Dictionary | R/W | Fast block compression | [Snappy format](https://github.com/google/snappy/blob/main/format_description.txt) |
 | [Brotli](https://en.wikipedia.org/wiki/Brotli) | Dictionary + entropy | R/W ⚠️ | Decoder accepts more of the format than the encoder chooses to emit | [RFC 7932](https://www.rfc-editor.org/rfc/rfc7932) |
 | [LZMA](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm) | Dictionary + range coding | R/W | LZMA primitive | [7-Zip LZMA SDK](https://www.7-zip.org/sdk.html) |
+| PKWARE DCL implode | Dictionary | R/W | `BB_PkwareDcl`: explode reads binary and ASCII streams at every dictionary size; StormLib explodes our output and we explode its | [StormLib pklib](https://github.com/ladislav-zezula/StormLib/tree/master/src/pklib) |
 | CSC (libcsc) | Dictionary + range coding | R/W | Byte-compatible with Fu Siyuan's libcsc: LZ77 up to a 1 GiB window, lazy/optimal parsing, text, x86 and delta filters | [libcsc](https://github.com/fusiyuan2010/CSC) |
 | [LZX](https://en.wikipedia.org/wiki/LZX) | Dictionary + Huffman | R/W | Used by CAB/CHM/WIM families | [Microsoft LZX](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-patch/) |
 | [Zstandard entropy stages](https://en.wikipedia.org/wiki/Zstd) | FSE / Huffman | R/W | Reusable entropy components | [RFC 8878](https://www.rfc-editor.org/rfc/rfc8878) |

@@ -12,6 +12,7 @@ namespace FileFormat.Mpq;
 /// </summary>
 internal static class MpqInPlaceModifier {
   private const string ListfileName = "(listfile)";
+  private const string AttributesName = "(attributes)";
   private const int HeaderSize = 32;
   private const int TableEntrySize = 16;
   private const int IoBufferSize = 64 * 1024;
@@ -60,7 +61,8 @@ internal static class MpqInPlaceModifier {
       if (string.Equals(input.ArchiveName, ListfileName, StringComparison.OrdinalIgnoreCase))
         throw new ArgumentException("'(listfile)' is reserved and regenerated automatically.", nameof(inputs));
       ValidateName(input.ArchiveName);
-      changes[input.ArchiveName] = (input.ArchiveName, input.ReadContent());
+      var mpqName = input.ArchiveName.Replace('/', '\\');
+      changes[mpqName] = (mpqName, input.ReadContent());
     }
     if (changes.Count == 0)
       return;
@@ -120,6 +122,7 @@ internal static class MpqInPlaceModifier {
     }
 
     ReplaceListfile(state.Header, hashes, blocks, refs, listNames, pending, wipes, wipedBlocks, ref cursor);
+    UpdateAttributes(archive, state.Header, hashes, blocks, refs, pending, wipes, wipedBlocks, state.Blocks.Length, ref cursor);
     ValidateWipes(state.Header, state.Blocks, refs, wipedBlocks, wipes);
     Commit(archive, state.Header, hashes, blocks, pending, wipes, cursor);
   }
@@ -139,7 +142,7 @@ internal static class MpqInPlaceModifier {
       if (string.IsNullOrEmpty(name) || string.Equals(name, ListfileName, StringComparison.OrdinalIgnoreCase))
         continue;
       ValidateName(name);
-      requested.Add(name);
+      requested.Add(name.Replace('/', '\\'));
     }
     if (requested.Count == 0)
       return;
@@ -179,6 +182,7 @@ internal static class MpqInPlaceModifier {
     var pending = new List<PendingPayload>(1);
     var cursor = (long)state.Header.HashTableOffset;
     ReplaceListfile(state.Header, hashes, blocks, refs, listNames, pending, wipes, wipedBlocks, ref cursor);
+    UpdateAttributes(archive, state.Header, hashes, blocks, refs, pending, wipes, wipedBlocks, state.Blocks.Length, ref cursor);
     ValidateWipes(state.Header, state.Blocks, refs, wipedBlocks, wipes);
     Commit(archive, state.Header, hashes, blocks, pending, wipes, cursor);
   }
@@ -281,6 +285,7 @@ internal static class MpqInPlaceModifier {
       var reader = new MpqReader(archive);
       data = reader.Extract(new MpqEntry {
         FileName = ListfileName,
+        NameBytes = Encoding.ASCII.GetBytes(ListfileName),
         OriginalSize = block.OriginalSize,
         CompressedSize = block.CompressedSize,
         Flags = block.Flags,
@@ -329,6 +334,134 @@ internal static class MpqInPlaceModifier {
     pending.Add(new PendingPayload(blockIndex, relativeOffset, bytes));
     blocks[blockIndex] = StoredBlock(relativeOffset, bytes.Length);
     cursor = checked(cursor + bytes.LongLength);
+  }
+
+  /// <summary>
+  /// Keeps "(attributes)" true after an edit: Storm records a CRC-32, a FILETIME and an MD5 per
+  /// block, so every block this edit rewrote gets fresh values, removed blocks get zeros and the
+  /// rest keep theirs. The rewritten file is stored like the listfile. An archive without the
+  /// file is left alone; one whose attributes cannot be parsed is refused rather than left stale.
+  /// </summary>
+  private static void UpdateAttributes(
+      Stream archive,
+      Header header,
+      HashEntry[] hashes,
+      List<BlockEntry> blocks,
+      List<int> refs,
+      List<PendingPayload> pending,
+      List<WipeRange> wipes,
+      HashSet<int> wipedBlocks,
+      int originalBlockCount,
+      ref long cursor) {
+    var slot = FindHashSlot(hashes, AttributesName);
+    if (slot < 0)
+      return;
+    var oldIndex = CheckedBlockIndex(hashes[slot].BlockIndex, blocks.Count, AttributesName);
+    var oldBlock = blocks[oldIndex];
+
+    byte[] old;
+    try {
+      archive.Position = 0;
+      old = new MpqReader(archive).Extract(new MpqEntry {
+        FileName = AttributesName,
+        NameBytes = Encoding.ASCII.GetBytes(AttributesName),
+        OriginalSize = oldBlock.OriginalSize,
+        CompressedSize = oldBlock.CompressedSize,
+        Flags = oldBlock.Flags,
+        FileOffset = oldBlock.FileOffset,
+      });
+    } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or EndOfStreamException) {
+      throw new NotSupportedException("MPQ '(attributes)' cannot be read, so an in-place edit would leave it stale.", ex);
+    }
+    if (old.Length < 8 || BinaryPrimitives.ReadUInt32LittleEndian(old) != 100)
+      throw new NotSupportedException("MPQ '(attributes)' is not version 100.");
+    var flags = BinaryPrimitives.ReadUInt32LittleEndian(old.AsSpan(4));
+    if ((flags & ~0xFu) != 0)
+      throw new NotSupportedException("MPQ '(attributes)' carries unknown columns.");
+    var oldCount = AttributeEntryCount(old.Length, flags, originalBlockCount)
+      ?? throw new NotSupportedException("MPQ '(attributes)' does not have one of the sizes Storm writes.");
+
+    int newIndex;
+    if (refs[oldIndex] == 1) {
+      newIndex = oldIndex;
+      ScheduleWipe(header, blocks[oldIndex], oldIndex, wipes, wipedBlocks);
+    } else {
+      --refs[oldIndex];
+      newIndex = AllocateBlock(blocks, refs);
+      refs[newIndex] = 1;
+      hashes[slot] = hashes[slot] with { BlockIndex = (uint)newIndex };
+    }
+
+    var count = blocks.Count;
+    var changed = pending.ToDictionary(p => p.BlockIndex, p => p.Data);
+    var now = (ulong)DateTime.UtcNow.ToFileTimeUtc();
+    using var output = new MemoryStream();
+    Span<byte> word = stackalloc byte[8];
+    BinaryPrimitives.WriteUInt32LittleEndian(word, 100);
+    BinaryPrimitives.WriteUInt32LittleEndian(word[4..], flags);
+    output.Write(word);
+
+    var position = 8;
+    if ((flags & 1) != 0) {
+      for (var i = 0; i < count; ++i) {
+        var crc = Column(i, 4, old, position, oldCount, changed, newIndex, blocks,
+          data => { var c = new byte[4]; BinaryPrimitives.WriteUInt32LittleEndian(c, Compression.Core.Checksums.Crc32.Compute(data)); return c; });
+        output.Write(crc);
+      }
+      position += 4 * oldCount;
+    }
+    if ((flags & 2) != 0) {
+      for (var i = 0; i < count; ++i)
+        output.Write(Column(i, 8, old, position, oldCount, changed, newIndex, blocks,
+          _ => { var t = new byte[8]; BinaryPrimitives.WriteUInt64LittleEndian(t, now); return t; }));
+      position += 8 * oldCount;
+    }
+    if ((flags & 4) != 0) {
+      for (var i = 0; i < count; ++i)
+        output.Write(Column(i, 16, old, position, oldCount, changed, newIndex, blocks, System.Security.Cryptography.MD5.HashData));
+      position += 16 * oldCount;
+    }
+    if ((flags & 8) != 0) {
+      var bits = new byte[(count + 6) / 8];
+      for (var i = 0; i < count && i < oldCount; ++i) {
+        var kept = !changed.ContainsKey(i) && i != newIndex && blocks[i].Exists;
+        if (kept && position + i / 8 < old.Length && (old[position + i / 8] & (0x80 >> (i % 8))) != 0)
+          bits[i / 8] |= (byte)(0x80 >> (i % 8));
+      }
+      output.Write(bits);
+    }
+
+    var bytes = output.ToArray();
+    var relativeOffset = CheckedUInt32(cursor, "MPQ attributes offset");
+    pending.Add(new PendingPayload(newIndex, relativeOffset, bytes));
+    blocks[newIndex] = StoredBlock(relativeOffset, bytes.Length);
+    cursor = checked(cursor + bytes.LongLength);
+  }
+
+  /// <summary>One column value for block <paramref name="index"/>: fresh for rewritten blocks, zero for removed ones and the attributes file itself, otherwise the old value.</summary>
+  private static byte[] Column(int index, int width, byte[] old, int columnStart, int oldCount,
+      Dictionary<int, byte[]> changed, int attributesIndex, List<BlockEntry> blocks, Func<byte[], byte[]> fresh) {
+    if (index == attributesIndex || !blocks[index].Exists)
+      return new byte[width];
+    if (changed.TryGetValue(index, out var data))
+      return fresh(data);
+    return index < oldCount ? old.AsSpan(columnStart + index * width, width).ToArray() : new byte[width];
+  }
+
+  /// <summary>The number of entries an attributes file of <paramref name="length"/> bytes holds, as Storm accepts them.</summary>
+  private static int? AttributeEntryCount(int length, uint flags, int blockCount) {
+    foreach (var count in new[] { blockCount, blockCount - 1 }) {
+      if (count < 0)
+        continue;
+      long size = 8;
+      if ((flags & 1) != 0) size += 4L * count;
+      if ((flags & 2) != 0) size += 8L * count;
+      if ((flags & 4) != 0) size += 16L * count;
+      var withBits = size + ((flags & 8) != 0 ? (blockCount + 6) / 8 : 0);
+      if (length == withBits || length == size)
+        return count;
+    }
+    return null;
   }
 
   private static void NormalizeListfileTail(List<string> names) {

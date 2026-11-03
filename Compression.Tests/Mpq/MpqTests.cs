@@ -165,12 +165,17 @@ public class MpqTests {
   [Test, Category("Exception")]
   [TestCase((byte)0x08, Description = "PKWare DCL")]
   [TestCase((byte)0x01, Description = "Huffman")]
-  [TestCase((byte)0x12, Description = "LZMA")]
-  [TestCase((byte)0x40, Description = "ADPCM mono")]
+  [TestCase((byte)0x12, Description = "LZMA bits read as bzip2 + zlib in a version-1 archive")]
   [TestCase((byte)0x22, Description = "sparse + zlib")]
   [TestCase((byte)0x0A, Description = "PKWare DCL + zlib")]
-  public void Block_UndecodedMask_IsRefusedNotReturnedRaw(byte mask) {
+  public void Block_GarbageUnderAKnownMask_IsRefusedNotReturnedRaw(byte mask) {
     var block = new byte[] { mask, 1, 2, 3, 4 };
+    Assert.Catch<Exception>(() => FileFormat.Mpq.MpqReader.DecompressMpqBlock(block, 64));
+  }
+
+  [Test, Category("Exception")]
+  public void Block_UnknownMaskBit_IsRefused() {
+    var block = new byte[] { 0x04, 1, 2, 3, 4 };
     Assert.Throws<NotSupportedException>(() => FileFormat.Mpq.MpqReader.DecompressMpqBlock(block, 64));
   }
 
