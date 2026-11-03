@@ -63,6 +63,35 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Description: "Emit a Joliet Supplementary Volume Descriptor with a parallel " +
         "UCS-2 directory tree preserving long/mixed-case filenames. Disable for " +
         "strict ECMA-119 8.3 uppercase only."),
+    new FormatOptionDescriptor(
+      Key: "RockRidge",
+      DisplayName: "Rock Ridge (POSIX names, modes, times)",
+      Kind: FormatOptionKind.Boolean,
+      Default: "true",
+      Description: "Record Rock Ridge (RRIP 1.10) in the primary tree: full POSIX names " +
+        "of any length, permissions and modification times, as Linux and the BSDs read them."),
+    new FormatOptionDescriptor(
+      Key: "BootImage",
+      DisplayName: "El Torito BIOS boot image",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Path of a file in the image to boot from on a PC BIOS (no emulation, " +
+        "4 sectors loaded, isolinux boot info table patched in), as mkisofs -b " +
+        "-no-emul-boot -boot-load-size 4 -boot-info-table does."),
+    new FormatOptionDescriptor(
+      Key: "EfiBootImage",
+      DisplayName: "El Torito UEFI boot image",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Path of a FAT image file in the image to boot from on UEFI (platform 0xEF, " +
+        "no emulation), as mkisofs -e does."),
+    new FormatOptionDescriptor(
+      Key: "BootCatalog",
+      DisplayName: "El Torito boot catalog file",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Path the boot catalog is visible under (as mkisofs -c); empty keeps it " +
+        "in a sector of its own that no directory lists."),
   ];
 
   /// <summary>
@@ -163,28 +192,77 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc/>
+  /// <remarks>
+  /// Folders are kept, empty ones included, with Rock Ridge names, permissions and times
+  /// (and Joliet names for Windows); El Torito boot entries come from the boot options.
+  /// </remarks>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = NewWriter(options);
+    foreach (var i in inputs) {
+      var name = EntryPath(i.ArchiveName);
+      if (name.Length == 0) continue;
+      var mode = i.SourceUnixMode is { } unixMode ? (int)unixMode : (int?)null;
+      if (i.IsDirectory) {
+        w.AddDirectory(name, mode, i.SourceLastModifiedUtc);
+        continue;
+      }
+      var info = i;
+      // Only the length is needed to lay the image out; reading a large input
+      // into a byte[] would cap the image at what an array can hold.
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(name, bytes);
+      else
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+      w.SetMetadata(name, mode, i.SourceLastModifiedUtc);
+    }
+    if (output.CanSeek) w.BuildToStreaming(output);
+    else output.Write(w.Build());
+  }
+
+  /// <summary>
+  /// An ISO writer holding <paramref name="inputs"/> in memory with folders, Rock Ridge and
+  /// Joliet names and the boot options, for the CD image formats that wrap an ISO 9660
+  /// track (CDI, MDF, NRG, BIN).
+  /// </summary>
+  public static IsoWriter BufferedWriterFor(IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions? options = null) {
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = NewWriter(options);
+    foreach (var i in inputs) {
+      var name = EntryPath(i.ArchiveName);
+      if (name.Length == 0) continue;
+      var mode = i.SourceUnixMode is { } unixMode ? (int)unixMode : (int?)null;
+      if (i.IsDirectory) {
+        w.AddDirectory(name, mode, i.SourceLastModifiedUtc);
+        continue;
+      }
+      w.AddFile(name, i.ReadContent());
+      w.SetMetadata(name, mode, i.SourceLastModifiedUtc);
+    }
+    return w;
+  }
+
+  private static IsoWriter NewWriter(FormatCreateOptions? options) {
     var w = new IsoWriter {
       VolumeIdentifier      = options?.GetOption("VolumeLabel", "CDROM") ?? "CDROM",
       SystemIdentifier      = options?.GetOption("SystemId", "") ?? "",
       PublisherIdentifier   = options?.GetOption("Publisher", "") ?? "",
       ApplicationIdentifier = options?.GetOption("Application", "") ?? "",
       EnableJoliet          = options?.GetOptionBool("Joliet", true) ?? true,
+      EnableRockRidge       = options?.GetOptionBool("RockRidge", true) ?? true,
     };
-    foreach (var i in inputs) {
-      if (i.IsDirectory) continue;
-      var info = i;
-      // Only the length is needed to lay the image out; reading a large input
-      // into a byte[] would cap the image at what an array can hold.
-      var name = Path.GetFileName(info.ArchiveName);
-      if (info.InMemoryContent is { } bytes)
-        w.AddFile(name, bytes);
-      else
-        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
-    }
-    if (output.CanSeek) w.BuildToStreaming(output);
-    else output.Write(w.Build());
+    if (EntryPath(options?.GetOption("BootImage", "") ?? "") is { Length: > 0 } bios)
+      // The isolinux / GRUB convention: no emulation, load 4 virtual sectors, boot info table.
+      w.BootEntries.Add(new IsoWriter.BootEntry { Platform = 0x00, SectorCount = 4, ImagePath = bios, PatchBootInfoTable = true });
+    if (EntryPath(options?.GetOption("EfiBootImage", "") ?? "") is { Length: > 0 } efi)
+      // SectorCount 0 lets the firmware take the whole FAT image the entry points at.
+      w.BootEntries.Add(new IsoWriter.BootEntry { Platform = 0xEF, ImagePath = efi });
+    if (EntryPath(options?.GetOption("BootCatalog", "") ?? "") is { Length: > 0 } catalog)
+      w.BootCatalogPath = catalog;
+    return w;
   }
+
+  /// <summary>An input name as a relative path with forward slashes and no trailing slash.</summary>
+  private static string EntryPath(string name) => (name ?? "").Replace('\\', '/').Trim('/');
 
   /// <summary>
   /// Two-pass streaming creation: the pre-known per-input sizes drive the
@@ -201,38 +279,40 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
-    var w = new IsoWriter {
-      VolumeIdentifier      = options?.GetOption("VolumeLabel", "CDROM") ?? "CDROM",
-      SystemIdentifier      = options?.GetOption("SystemId", "") ?? "",
-      PublisherIdentifier   = options?.GetOption("Publisher", "") ?? "",
-      ApplicationIdentifier = options?.GetOption("Application", "") ?? "",
-      EnableJoliet          = options?.GetOptionBool("Joliet", true) ?? true,
-    };
-    if (!output.CanSeek) {
-      foreach (var input in inputs) {
-        if (input.IsDirectory) continue;
+    var w = NewWriter(options);
+    foreach (var input in inputs) {
+      var name = EntryPath(input.Name);
+      if (name.Length == 0) continue;
+      var mode = input.Metadata?.UnixMode is { } unixMode ? unixMode & 0xFFF : (int?)null;
+      var modified = input.Metadata?.LastWriteTimeUtc?.UtcDateTime;
+      if (input.IsDirectory) {
+        w.AddDirectory(name, mode, modified);
+        continue;
+      }
+      if (output.CanSeek) {
+        w.AddStreamingFile(name, input.Size, input.OpenStream);
+      } else {
         using var src = input.OpenStream();
         using var ms = new MemoryStream();
         src.CopyTo(ms);
-        w.AddFile(Path.GetFileName(input.Name), ms.ToArray());
+        w.AddFile(name, ms.ToArray());
       }
-      output.Write(w.Build());
-      return;
+      w.SetMetadata(name, mode, modified);
     }
-    foreach (var input in inputs) {
-      if (input.IsDirectory) continue;
-      // Match Create's FlatFiles flattening: ISO records the leaf filename.
-      w.AddStreamingFile(Path.GetFileName(input.Name), input.Size, input.OpenStream);
-    }
-    w.BuildToStreaming(output);
+    if (output.CanSeek) w.BuildToStreaming(output);
+    else output.Write(w.Build());
   }
 
   /// <inheritdoc/>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new IsoReader(stream);
     foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
+      // Folders are created too, so an empty one survives extraction.
+      if (e.IsDirectory) {
+        ApplyEntryTime(CreateEntryDirectory(outputDir, e.Name), e.LastModified);
+        continue;
+      }
       // Streamed, not buffered: an ISO entry may be larger than a byte[] can hold.
       using var target = CreateEntryFile(outputDir, e.Name);
       r.ExtractTo(e, target);

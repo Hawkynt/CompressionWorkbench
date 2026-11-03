@@ -97,9 +97,8 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
 
-    var iso = new FileSystem.Iso.IsoWriter();
-    foreach (var input in inputs.Where(static input => !input.IsDirectory))
-      iso.AddFile(input.ArchiveName.Replace('\\', '/'), input.ReadContent());
+    // Folders, long names, modes and times are kept (Rock Ridge and Joliet), as in a plain ISO.
+    var iso = FileSystem.Iso.IsoFormatDescriptor.BufferedWriterFor(inputs, options);
 
     NrgWriter.Write(output, new NrgDiscDefinition([
       new NrgSessionDefinition([

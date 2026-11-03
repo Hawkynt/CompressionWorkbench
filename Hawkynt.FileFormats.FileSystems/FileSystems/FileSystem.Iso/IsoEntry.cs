@@ -17,6 +17,10 @@ public sealed class IsoEntry {
   public bool IsSymlink { get; init; }
   /// <summary>The symbolic link's target, when <see cref="IsSymlink" />.</summary>
   public string? LinkTarget { get; init; }
+  /// <summary>The POSIX mode (st_mode) from Rock Ridge PX, when the image has one.</summary>
+  public int? UnixMode { get; init; }
+  /// <summary>First sector of the entry's data, to match El Torito load addresses.</summary>
+  public long FirstSector => this.DataOffset / 2048;
   /// <summary>zisofs parameters when the file's data is zisofs-compressed (Rock Ridge ZF).</summary>
   internal ZisofsInfo? Zisofs { get; init; }
   /// <summary>Length of the bytes stored on the disc (differs from <see cref="Size" /> for zisofs).</summary>
