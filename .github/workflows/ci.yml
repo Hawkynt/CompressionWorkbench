@@ -177,6 +177,9 @@ jobs:
           # zpaq (7.15) owns ZPAQ: it must list and extract what the ZPAQ writer produces, and the
           # reader must decode every method zpaq writes, in the gate below.
           sudo apt-get install -y zpaq
+          # kgb (1.0b4+ds) owns KGB Archiver: it must extract what the KGB writer produces at
+          # every memory level, and the reader must extract what kgb writes.
+          sudo apt-get install -y kgb
           # mkbootimg is AOSP's own boot image tool pair: the Android boot image writer must
           # reproduce mkbootimg's bytes, and unpack_bootimg must read back what it writes.
           sudo apt-get install -y mkbootimg

@@ -169,6 +169,10 @@
     <EmbeddedResource Include="FreeArc\ReferenceVectors\*.arc">
       <LogicalName>FreeArcVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Archives Debian's kgb 1.0b4+ds wrote, with a manifest of their contents; see Kgb/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Kgb\ReferenceVectors\*.kgb;Kgb\ReferenceVectors\manifest.tsv">
+      <LogicalName>KgbVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Archives the reference zpaq 7.15 wrote, with a manifest of their contents; see Zpaq/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Zpaq\ReferenceVectors\*.zpaq;Zpaq\ReferenceVectors\manifest.tsv">
       <LogicalName>ZpaqVectors.%(Filename)%(Extension)</LogicalName>

@@ -19141,6 +19141,65 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
+### Namespace `FileFormat.Kgb`
+
+[`KgbArchive`](#kgbarchive) · [`KgbEntry`](#kgbentry) · [`KgbFormatDescriptor`](#kgbformatdescriptor)
+
+#### `KgbArchive`
+
+Reads and writes KGB Archiver 1.0 archives (docs/KGB-ON-DISK.md): a text header naming every file and its size, then one arithmetic-coded stream holding all files back to back.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultLevel` | `const int DefaultLevel` | The memory level the archive's default (header without a level digit) implies. |
+| `Signature` | `const string Signature` | The fixed start of the first header line. |
+| `DataOffset` | `long DataOffset { get; }` | Where the coded stream starts. |
+| `Entries` | `IReadOnlyList<KgbEntry> Entries { get; }` | The files, in stream order. |
+| `Level` | `int Level { get; }` | The memory level 0..9 that sizes the model. |
+| `Decode` | `void Decode(Stream stream, Func<KgbEntry, bool> wanted, Action<KgbEntry, byte[]> sink)` | Decodes the archive's files in order, handing each one to `sink`; the stream must be decoded through every earlier file to reach a later one. |
+| `Read` | `static KgbArchive Read(Stream stream)` | Parses the header of the archive in `stream`, from its start. |
+| `Write` | `static void Write(Stream output, int level, IEnumerable<ValueTuple<string, byte[]>> files)` | Writes an archive of `files` coded at memory level `level`. |
+
+#### `KgbEntry`
+
+One file of a KGB archive: its name as stored and its size.
+
+Implements `IEquatable<KgbEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `KgbEntry` | `KgbEntry(string Name, long Size)` | One file of a KGB archive: its name as stored and its size. |
+| `Name` | `string Name { get; init; }` | The name from the header line, '/'-separated. |
+| `Size` | `long Size { get; init; }` | The decoded size in bytes. |
+
+#### `KgbFormatDescriptor`
+
+KGB Archiver 1.0 (Tomasz Pawlak, 2005-2006): PAQ6 context mixing over every file of the archive as one stream, at memory levels 0 to 9.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `KgbFormatDescriptor` | `KgbFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
 ### Namespace `FileFormat.Kmz`
 
 [`KmzFormatDescriptor`](#kmzformatdescriptor)

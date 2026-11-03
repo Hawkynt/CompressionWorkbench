@@ -58,7 +58,7 @@ UHARC,uha,archive,,,,,R,,Y,2,https://en.wikipedia.org/wiki/UHarc,Uharc,Y,Y,Y,PAR
 FreeArc,arc;cdx,archive,,,,,R,fmt/1096,Y,3,https://en.wikipedia.org/wiki/FreeArc,FreeArc,Y,Y,Y,PARTIAL,,only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs)
 ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpaq,Y,Y,Y,PARTIAL,,"journaling and streaming archives at every method are read and zpaq 7.15 extracts what we write; encrypted (-key), multi-part and -index archives are refused, and modify rewrites a single version instead of appending one (ZpaqReader.cs, ZpaqWriter.cs)"
 PAQ (paq6/7/8 family),paq6;paq7;paq8;paq8l,archive,,,,,,,Y,1,https://mattmahoney.net/dc/paq.html,Paq8,Y,Y,,PARTIAL,,a single PAQ8 variant (.paq8l); the other PAQ versions are mutually incompatible
-KGB Archiver,kgb;kge,archive,,,,,R,,RW,2,,,,,,MISSING,,
+KGB Archiver,kgb;kge,archive,,,,,R,,RW,2,https://en.wikipedia.org/wiki/KGB_Archiver,Kgb,Y,Y,Y,PARTIAL,,KGB Archiver 1.0 (PAQ6) at memory levels 0-9 read and written; KGB Archiver 2 archives and .kge are not read
 PEA (PeaZip),pea,archive,,,,,R,fmt/1095,Y,3,https://peazip.github.io/pea-file-format.html,Pea,Y,Y,,PARTIAL,,encrypted streams (EAX/HMAC/Twofish/Serpent and cascades) and multi-volume archives unsupported; no in-place modify
 DGCA,dgc,archive,,,,,R,,Y,2,,,,,,MISSING,,
 GCA,gca,archive,,,,,,,Y,1,,,,,,MISSING,,
