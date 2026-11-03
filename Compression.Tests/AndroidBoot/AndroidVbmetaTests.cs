@@ -181,7 +181,8 @@ public sealed class AndroidVbmetaTests {
     candidates.Add(["avbtool"]);
     foreach (var c in candidates)
       try {
-        if (Run(c, ["version"]).ExitCode == 0) return c;
+        // An empty or truncated avbtool.py also exits 0, so the tool has to name itself.
+        if (Run(c, ["version"]) is { ExitCode: 0, StdOut: var version } && version.Contains("avbtool", StringComparison.Ordinal)) return c;
       } catch (Win32Exception) {
         // not there
       }
