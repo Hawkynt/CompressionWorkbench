@@ -12,7 +12,9 @@ them, and what `FileFormat.FreeArc` does with each part.
   file layout or identifier names were carried across.
 - **Sources read.** The SVN snapshot mirrored at `github.com/svn2github/freearc`: `Unarc/ArcStructure.h`
   (the C++ reader of footer and directory), `ArhiveStructure.hs`, `ArhiveDirectory.hs`,
-  `ByteStream.hs` and `Compression.hs` (the Haskell writer).
+  `ByteStream.hs` and `Compression.hs` (the Haskell writer). For the filter streams, the 0.67 source
+  snapshot mirrored at `github.com/mrkaban/FreeArc-0.67`: `Compression/REP/rep.cpp`,
+  `Compression/Delta/Delta.cpp` and `Compression/LZMA2/C_BCJ.cpp` (the decoders' input layout only).
 - **Oracle.** FreeArc 0.67 (2014-03-15) `Arc.exe` and `unarc.exe`, from the self-extracting
   `FreeArc-console-0.67-alpha-win32.exe` (Wayback Machine copy of freearc.org/download/testing),
   run on Windows 11. Every structure below was checked against hex dumps of archives it wrote; the
@@ -112,9 +114,43 @@ right on compression; extraction undoes them right to left. Seen from 0.67:
 |---------------|---------|------|
 | `storing` | Uncompressed. | ✅ read + write |
 | `lzma:32kb:normal:32[:pb1:lc4:lp1][:mc4]` | Raw LZMA1 range-coded stream, **no properties header**; the dictionary is the token with a size suffix, `lcN`/`lpN`/`pbN` override the defaults 3/0/2, everything else steers only the encoder. FreeArc shrinks the dictionary to the data size. | ✅ read + write (we write an end marker) |
+| `rep:96mb[:…]` | Long-range repeat filter, see *Filter streams*. The parameters only steer the encoder. | ✅ read |
+| `delta` | Binary-table filter, see *Filter streams*. | ✅ read |
+| `exe` | x86 CALL/JMP converter (the LZMA SDK's / liblzma's x86 BCJ), started at address 0 over the whole stage. | ✅ read |
 | `ppmd:10:48mb` | PPMd var. I (order, memory). Our PPMd I model is not verified against FreeArc's stream. | ❌ refused |
-| `tor:…`, `4x4:…`, `rep:…`, `lzp:…`, `grzip:…`, `dict:…`, `delta`, `exe`, `mm`, external compressors | FreeArc's own codecs and filters, no compatible implementation here. | ❌ refused |
+| `tor:…`, `4x4:…`, `lzp:…`, `grzip:…`, `dict:…`, `mm`, external compressors | FreeArc's own codecs, no compatible implementation here. `-m1`..`-m4` wrap their final stage in `4x4`, `-m1`/`-m2` use `tor`. | ❌ refused |
 | `…+aes-256/ctr:n1000:r0:i…:s…:c…` (also blowfish, serpent, twofish) | Encryption stage (`-p`, or `-hp` for headers too). | ❌ refused |
+
+Measured stage chains: `-mx` and `-m9x` write `rep:<block>+exe+delta+lzma:<block>:normal:bt4:128`
+(read here); `-m3` and `-m4` write `rep:…+4x4:tor:…` for text-like files and
+`rep:…+exe+delta+4x4:lzma:…` for the rest, `-m5x` `exe+delta+4x4:lzma:…` (refused until `4x4` is
+read).
+
+### Filter streams
+
+All integers are 32-bit little-endian.
+
+**rep.** A window size `W`, then frames until a frame length of 0. A frame is its length `L`
+(counting everything after the length word), then `n` (matches), then `lengths[n]`,
+`distances[n]` and `runs[n+1]`, then the literal bytes, `Σ runs` of them. Decoding emits `runs[0]`
+literals, a match, `runs[1]` literals, a match, …, ending with `runs[n]` literals. A match copies
+`lengths[i]` bytes from `distances[i]` bytes back in the output (copies may overlap, byte by byte);
+a distance is at least 1 and at most `W`. The encoder keeps a circular buffer of `W` bytes, so a
+match's source can be in the previous fill of the buffer, which in the decoded stream is still just
+`distance` bytes back. The last frame of a stream usually has `n = 0`.
+
+**delta.** Blocks until the stage input ends. A block is `size`, `t` (bytes per descriptor array),
+`skips[t/4]`, `types[t/4]`, `rows[t/4]`, then `size` data bytes. Each descriptor names a table of
+`rows` elements of `N` bytes starting `skip` bytes after the previous table's end (the first counts
+from the block start). `type` is `1 << N` plus bit `i` for every column `i` stored unchanged
+(`N` ≤ 30). Decoding a table: first the encoder's column reordering is undone — the unchanged
+columns of all rows come first, then the changed ones, each group row by row; then, row by row
+from the second, every changed column gets the byte above it added, with the carry passed to the
+next column only across adjacent changed columns (little-endian multi-byte values). Unchanged
+columns break the carry.
+
+**exe.** The whole stage is one x86 BCJ stream, the same conversion as 7-Zip's `BCJ` and xz's
+`--x86` with start offset 0 (the last four bytes are never converted).
 
 A refused method still lists: only extraction of that block fails, with `NotSupportedException`. An
 archive whose directory or footer is unreadable (`-hp`, or an unsupported `-dm` method) lists as
