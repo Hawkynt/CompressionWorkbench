@@ -992,7 +992,109 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 
 ### Namespace `FileFormat.Ewf`
 
-[`EwfFormatDescriptor`](#ewfformatdescriptor) · [`EwfMediaStream`](#ewfmediastream) · [`EwfReader`](#ewfreader) · [`EwfReader.EwfImage`](#ewfreaderewfimage) · [`EwfReader.Section`](#ewfreadersection) · [`EwfWriter`](#ewfwriter)
+[`Ewf2FormatDescriptor`](#ewf2formatdescriptor) · [`Ewf2Image`](#ewf2image) · [`Ewf2Image.Section`](#ewf2imagesection) · [`Ewf2MediaStream`](#ewf2mediastream) · [`Ewf2Writer`](#ewf2writer) · [`EwfFormatDescriptor`](#ewfformatdescriptor) · [`EwfMediaStream`](#ewfmediastream) · [`EwfReader`](#ewfreader) · [`EwfReader.EwfImage`](#ewfreaderewfimage) · [`EwfReader.Section`](#ewfreadersection) · [`EwfWriter`](#ewfwriter)
+
+#### `Ewf2FormatDescriptor`
+
+EnCase 7 Evidence File Format version 2 (EWF2-Ex01): the forensic image's media as `media.raw` plus its device information and case data as `metadata.ini`. Segment sets (.Ex02 onward) are followed when the image is opened from a file; extraction checks the stored MD5 and SHA-1. Create writes a single-segment Ex01.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ewf2FormatDescriptor` | `Ewf2FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `Ewf2Image`
+
+An EWF2-Ex01 segment set (EnCase 7 "Evidence File Format version 2"), after libyal's EWF 2 specification: a 32-byte file header, then sections whose 64-byte descriptor follows their data and points back at the previous descriptor, read from the end.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BytesPerSector` | `int BytesPerSector { get; }` | Bytes per sector. |
+| `CaseData` | `IReadOnlyDictionary<string, string> CaseData { get; }` | Case data values by tag (nm, cn, en, ex, nt, sb, ...). |
+| `CompressionMethod` | `ushort CompressionMethod { get; }` | The chunk compression method of the file header. |
+| `DeviceInformation` | `IReadOnlyDictionary<string, string> DeviceInformation { get; }` | Device information values by tag (sn, md, ts, bp, ...). |
+| `LogicalSignature` | `static ReadOnlySpan<byte> LogicalSignature { get; }` | "LEF2\r\n\x81\0" (Lx01, logical evidence). |
+| `Md5` | `byte[] Md5 { get; }` | The stored MD5 of the media, if any. |
+| `MediaSize` | `long MediaSize { get; }` | Media size in bytes. |
+| `Sections` | `IReadOnlyList<Section> Sections { get; }` | Every section of every segment, in file order. |
+| `SectorsPerChunk` | `int SectorsPerChunk { get; }` | Sectors per chunk. |
+| `SegmentCount` | `int SegmentCount { get; }` | Number of segment files in the set. |
+| `SetIdentifier` | `Guid SetIdentifier { get; }` | The segment file set identifier. |
+| `Sha1` | `byte[] Sha1 { get; }` | The stored SHA-1 of the media, if any. |
+| `Signature` | `static ReadOnlySpan<byte> Signature { get; }` | "EVF2\r\n\x81\0". |
+| `Dispose` | `void Dispose()` | Releases the segment files this set opened. |
+| `Open` | `static Ewf2Image Open(Stream first, bool leaveOpen = true)` | Opens the set `first` starts; further segments (.Ex02 ...) are looked up next to it when it was opened from a file. |
+| `SegmentPath` | `static string SegmentPath(string firstPath, int number)` | Path of segment `number` (1-based): .Ex01 ... .Ex99, .ExAA ... .ExZZ, .EyAA ... |
+
+#### `Ewf2Image.Section`
+
+One section: its type and where its data lies in its segment.
+
+Implements `IEquatable<Section>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Section` | `Section(int Segment, uint Type, uint Flags, long DataOffset, long DataSize, uint PaddingSize)` | One section: its type and where its data lies in its segment. |
+| `DataOffset` | `long DataOffset { get; init; }` |  |
+| `DataSize` | `long DataSize { get; init; }` |  |
+| `Flags` | `uint Flags { get; init; }` |  |
+| `PaddingSize` | `uint PaddingSize { get; init; }` |  |
+| `Segment` | `int Segment { get; init; }` |  |
+| `Type` | `uint Type { get; init; }` |  |
+
+#### `Ewf2MediaStream`
+
+Read-only access to the media of an `Ewf2Image`.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ewf2MediaStream` | `Ewf2MediaStream(Ewf2Image image)` | Wraps `image`; disposing the stream disposes the image. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `Ewf2Writer`
+
+Writes a single-segment EWF2-Ex01 image (libyal's EWF 2 specification): device information, case data, the chunks (zlib-compressed where that is smaller, else stored with an Adler-32 trailer), one sector table, the MD5 and SHA-1 of the media, and "done". Every section and chunk is 16-byte aligned. Chunks are never pattern-filled.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ewf2Writer` | `Ewf2Writer()` |  |
+| `AcquisitionTime` | `DateTimeOffset AcquisitionTime { get; init; }` | The acquisition time recorded in the case data. |
+| `Case` | `ValueTuple<string, string, string, string, string> Case { get; init; }` | Case name, case number, evidence number, examiner and notes. |
+| `Compress` | `bool Compress { get; init; }` | Whether chunks are zlib-compressed (when that makes them smaller). |
+| `SetIdentifier` | `Guid SetIdentifier { get; init; }` | The segment file set identifier. |
+| `Write` | `void Write(Stream output, ReadOnlySpan<byte> media)` | Writes `media` as an Ex01 image to `output`; a trailing partial sector is padded with zeros to a whole one, as EWF stores whole sectors. |
 
 #### `EwfFormatDescriptor`
 

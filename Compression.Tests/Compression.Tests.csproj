@@ -264,6 +264,10 @@
     <EmbeddedResource Include="Ewf\ReferenceVectors\*.gz">
       <LogicalName>EwfVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- EWF2-Ex01 images libewf-experimental's ewfacquire wrote (gzipped); see Ewf/Ex01Vectors/README.md. -->
+    <EmbeddedResource Include="Ewf\Ex01Vectors\*.gz;Ewf\Ex01Vectors\sources.sha256">
+      <LogicalName>Ex01Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- ACE archives from acefile's test corpus and ones our writer produced for acefile; see Ace/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\acefile-listing.txt">
       <LogicalName>AceVectors.%(Filename)%(Extension)</LogicalName>

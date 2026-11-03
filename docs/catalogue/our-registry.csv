@@ -175,6 +175,7 @@ format,Erofs,EROFS,Archive,Y,.erofs;.img,Y,Y,Y,Y
 format,Esd,ESD,Archive,,.esd,Y,Y,Y,
 format,EspsSd,ESPS sampled data (.sd),Audio,,.sd,Y,Y,,
 format,Ewf,EnCase EWF (E01),Archive,,.e01;.ewf;.l01,Y,Y,Y,Y
+format,Ewf2,EnCase EWF2 (Ex01),Archive,,.ex01,Y,Y,Y,
 format,ExFat,exFAT,Archive,Y,.img;.exfat,Y,Y,Y,Y
 format,Ext,ext2/3/4,Archive,Y,.ext2;.ext3;.ext4;.img,Y,Y,Y,Y
 format,Ext1,ext1,Archive,Y,.ext1,Y,Y,Y,Y
