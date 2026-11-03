@@ -1,12 +1,12 @@
 using System.Text;
-using Compression.Core.Entropy.ContextMixing.Bsc;
+using Compression.Core.Entropy.BwtMtf;
 
 namespace Compression.Tests.BuildingBlocks;
 
 [TestFixture]
-public class BscBuildingBlockTests {
+public class BwtMtfBitTreeBuildingBlockTests {
 
-  private static readonly BscBuildingBlock Bb = new();
+  private static readonly BwtMtfBitTreeBuildingBlock Bb = new();
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void Empty_RoundTrips() {
@@ -43,8 +43,8 @@ public class BscBuildingBlockTests {
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void EnglishText_RoundTripsAndCompresses() {
     var data = Encoding.ASCII.GetBytes(
-      "BSC sorts blocks and recodes them with Move-to-Front before a lightweight adaptive coder. " +
-      "BSC sorts blocks and recodes them with Move-to-Front before a lightweight adaptive coder.");
+      "Block sorting and recodes them with Move-to-Front before a lightweight adaptive coder. " +
+      "Block sorting and recodes them with Move-to-Front before a lightweight adaptive coder.");
     var compressed = Bb.Compress(data);
     var round = Bb.Decompress(compressed);
     Assert.That(round, Is.EqualTo(data).AsCollection);
@@ -54,9 +54,9 @@ public class BscBuildingBlockTests {
   [Test, Category("EdgeCase")]
   public void Registry_Metadata_IsStable() {
     Assert.Multiple(() => {
-      Assert.That(Bb.Id, Is.EqualTo("BB_Bsc"));
-      Assert.That(Bb.DisplayName, Is.EqualTo("BSC (reduced)"));
-      Assert.That(Bb.Family, Is.EqualTo(Compression.Registry.AlgorithmFamily.ContextMixing));
+      Assert.That(Bb.Id, Is.EqualTo("BB_BwtMtfBitTree"));
+      Assert.That(Bb.DisplayName, Is.EqualTo("BWT + MTF + bit-tree range coder"));
+      Assert.That(Bb.Family, Is.EqualTo(Compression.Registry.AlgorithmFamily.Transform));
     });
   }
 }

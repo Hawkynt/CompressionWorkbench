@@ -32,7 +32,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | Class | Upstream rows | Notes |
 |---|---|---|
 | A | 22 | |
-| B | 17 | FFmpeg alone covers 38 codec folders |
+| B | 18 | FFmpeg alone covers 38 codec folders |
 | C | 1 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 10 | |
 
@@ -58,6 +58,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Ym2413/` | emu2413 1.5.9 (Mitsutaka Okazaki) | MIT | `THIRD-PARTY-NOTICES.md` § emu2413 |
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.G72x/` | Sun Microsystems G.721/G.723/G.726 reference (`g72x.c` …) | permissive ("unrestricted use") | `THIRD-PARTY-NOTICES.md` § CCITT / Sun |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Bsc/` | libbsc (Ilya Grebnov) LZP, QLFC, range coder, tables | Apache-2.0 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Bsc/THIRD-PARTY-NOTICE.libbsc.txt` — the sources already pointed to it, but it had never been committed |
+| `Compression.Core/Transforms/SuffixArraySais.cs` | sais-lite 2.4.1 `sais.c` (Yuta Mori) | MIT | `Compression.Core/Transforms/THIRD-PARTY-NOTICE.sais-lite.txt` |
 | `Compression.Core/Transforms/BcjFilter.cs` (ARM-Thumb, ARM64, RISC-V) | XZ Utils liblzma `simple/armthumb.c`, `arm64.c`, `riscv.c` | 0BSD | `Compression.Core/Transforms/THIRD-PARTY-NOTICE.liblzma.txt` |
 | `Compression.Core/Dictionary/Zx0/Zx0BuildingBlock.cs` | ZX0 (Einar Saukas) `compress.c` stream format | BSD-3-Clause | `Compression.Core/Dictionary/Zx0/THIRD-PARTY-NOTICE.zx0.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ghost/` | `nyarime/gho` (Go) | MIT | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ghost/THIRD-PARTY-NOTICE.gho.txt` |

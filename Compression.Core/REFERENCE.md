@@ -4657,6 +4657,35 @@ Binary arithmetic encoder that encodes symbols bit-by-bit using adaptive probabi
 | `EncodeSymbol` | `void EncodeSymbol(uint cumFreq, uint symFreq, uint totalFreq)` | Encodes a symbol using a cumulative frequency table. |
 | `Finish` | `void Finish()` | Finalises the encoding and flushes remaining bits. |
 
+### Namespace `Compression.Core.Entropy.BwtMtf`
+
+[`BwtMtfBitTreeBuildingBlock`](#bwtmtfbittreebuildingblock) · [`BwtMtfBitTreeCompressor`](#bwtmtfbittreecompressor)
+
+#### `BwtMtfBitTreeBuildingBlock`
+
+Exposes `BwtMtfBitTreeCompressor` (cyclic BWT, Move-to-Front, adaptive bit-tree range coder) as a benchmarkable building block.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BwtMtfBitTreeBuildingBlock` | `BwtMtfBitTreeBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `BwtMtfBitTreeCompressor`
+
+A block-sorting coder of this repository's own design: the cyclic Burrows-Wheeler Transform, Move-to-Front recoding, and an adaptive binary range coder over the MTF ranks.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data via BWT, Move-to-Front, and adaptive bit-tree coding. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses data written by `Compress`. |
+
 ### Namespace `Compression.Core.Entropy.ContextMixing`
 
 [`Apm`](#apm) · [`CmBuildingBlock`](#cmbuildingblock) · [`CmCompressor`](#cmcompressor) · [`ContextMixer`](#contextmixer) · [`ContextModel`](#contextmodel) · [`Logistic`](#logistic) · [`MatchModel`](#matchmodel)
@@ -4769,35 +4798,6 @@ A clean-room implementation of the BCM architecture: a Burrows-Wheeler Transform
 | --- | --- | --- |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data via BWT followed by context-mixing entropy coding. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses BCM-style compressed data. |
-
-### Namespace `Compression.Core.Entropy.ContextMixing.Bsc`
-
-[`BscBuildingBlock`](#bscbuildingblock) · [`BscCompressor`](#bsccompressor)
-
-#### `BscBuildingBlock`
-
-Exposes the BSC-style BWT + Move-to-Front + adaptive coder as a benchmarkable building block.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `BscBuildingBlock` | `BscBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
-#### `BscCompressor`
-
-A clean-room implementation of the BSC architecture: a Burrows-Wheeler Transform, a Move-to-Front recoding, and a simple adaptive binary coder.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data via BWT, Move-to-Front, and adaptive bit-tree coding. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses BSC-style compressed data. |
 
 ### Namespace `Compression.Core.Entropy.ContextMixing.Cmix`
 
@@ -6348,7 +6348,7 @@ Utility for splitting archive data into fixed-size volumes.
 
 ### Namespace `Compression.Core.Transforms`
 
-[`Bcj2Filter`](#bcj2filter) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`ByteSwapFilter`](#byteswapfilter) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`Swap2BuildingBlock`](#swap2buildingblock) · [`Swap4BuildingBlock`](#swap4buildingblock) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
+[`Bcj2Filter`](#bcj2filter) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`ByteSwapFilter`](#byteswapfilter) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`SuffixArraySais`](#suffixarraysais) · [`SuffixBurrowsWheelerTransform`](#suffixburrowswheelertransform) · [`Swap2BuildingBlock`](#swap2buildingblock) · [`Swap4BuildingBlock`](#swap4buildingblock) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
 
 #### `Bcj2Filter`
 
@@ -6684,6 +6684,24 @@ Run-Length Encoding (RLE) transform. Encodes runs of identical bytes as (count, 
 | --- | --- | --- |
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes RLE-encoded data back to the original. Input format: repeated pairs of (count, value) where count is 1-255. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes data using run-length encoding. Output format: repeated pairs of (count, value) where count is 1-255. Uses SIMD-accelerated run scanning when available. |
+
+#### `SuffixArraySais`
+
+Suffix array construction by induced sorting (SA-IS, Nong, Zhang & Chan 2009).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Build` | `static int[] Build(ReadOnlySpan<byte> data)` | Builds the suffix array of `data`: the start of every suffix, in ascending order. |
+
+#### `SuffixBurrowsWheelerTransform`
+
+The Burrows-Wheeler Transform in its suffix-array form: the rows are the suffixes of the input followed by an implicit end sentinel that sorts below every byte, and the sentinel's own output cell is dropped. This is the transform libsais, divsufsort and sais-lite compute (`libsais_bwt`, `divbwt`, `sais_bwt`) and that libbsc and BCM store.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Forward` | `static ValueTuple<byte[], int, int[]> Forward(ReadOnlySpan<byte> data, int rate)` | Transforms `data` and samples the auxiliary indexes libsais' `libsais_bwt_aux` reports: entry `t` is the one-based output row of the suffix starting at `t * rate`, so entry 0 is the primary index. |
+| `Forward` | `static ValueTuple<byte[], int> Forward(ReadOnlySpan<byte> data)` | Transforms `data`. |
+| `Inverse` | `static byte[] Inverse(ReadOnlySpan<byte> transformed, int primaryIndex)` | Recovers the input from its transform. |
 
 #### `Swap2BuildingBlock`
 

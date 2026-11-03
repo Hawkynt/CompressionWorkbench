@@ -13,15 +13,11 @@ internal static class BscQlfcFast {
   private const int AlphabetSize = 256;
 
   /// <summary>Encodes one QLFC coder sub-block and wraps it in libbsc's serial coder framing.</summary>
-  public static byte[] Compress(ReadOnlySpan<byte> input) {
+  public static byte[]? Compress(ReadOnlySpan<byte> input) {
     if (input.IsEmpty)
       throw new ArgumentException("QLFC cannot encode an empty block", nameof(input));
 
-    var block = EncodeBlock(input);
-    var result = new byte[block.Length + 1];
-    result[0] = 1;
-    block.CopyTo(result, 1);
-    return result;
+    return BscCoderFraming.Compress(input, EncodeBlock);
   }
 
   /// <summary>Decodes libbsc's serial QLFC framing, including foreign multi-sub-block streams.</summary>
@@ -70,10 +66,10 @@ internal static class BscQlfcFast {
     return [.. output];
   }
 
-  private static byte[] EncodeBlock(ReadOnlySpan<byte> input) {
+  private static byte[]? EncodeBlock(ReadOnlySpan<byte> input, int outputSize) {
     var model = new FastModel();
     var rankArray = Transform(input, out var mtfTable);
-    var coder = new BscRangeEncoder(checked(input.Length + 64 * 1024));
+    var coder = new BscRangeEncoder(outputSize);
     coder.EncodeWord((uint)input.Length);
     EncodeMtfTable(mtfTable, coder);
 
@@ -81,7 +77,7 @@ internal static class BscQlfcFast {
     var inputOffset = 0;
     while (rankOffset < rankArray.Length) {
       if (coder.CheckEndOfBuffer)
-        throw new InvalidDataException("BSC: QLFC output exceeded its safety margin");
+        return null;
 
       var currentChar = input[inputOffset];
       var runStart = inputOffset++;

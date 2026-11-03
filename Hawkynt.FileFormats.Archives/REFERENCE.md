@@ -12237,7 +12237,23 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.Bsc`
 
-[`BscFormatDescriptor`](#bscformatdescriptor) · [`BscStream`](#bscstream)
+[`BscBuildingBlock`](#bscbuildingblock) · [`BscFormatDescriptor`](#bscformatdescriptor) · [`BscStream`](#bscstream)
+
+#### `BscBuildingBlock`
+
+libbsc as a building block: one memory block exactly as `bsc_compress` writes it, with the bsc tool's default parameters (LZP with a 15-bit hash and 72-byte minimum match, the Burrows-Wheeler Transform, the static QLFC coder, following contexts).
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BscBuildingBlock` | `BscBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
 #### `BscFormatDescriptor`
 

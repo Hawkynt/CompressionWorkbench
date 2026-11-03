@@ -2,37 +2,28 @@ using System.Buffers.Binary;
 using Compression.Core.Entropy.RangeCoding;
 using Compression.Core.Transforms;
 
-namespace Compression.Core.Entropy.ContextMixing.Bsc;
+namespace Compression.Core.Entropy.BwtMtf;
 
 /// <summary>
-/// A clean-room implementation of the BSC architecture: a Burrows-Wheeler
-/// Transform, a Move-to-Front recoding, and a simple adaptive binary coder.
+/// A block-sorting coder of this repository's own design: the cyclic Burrows-Wheeler
+/// Transform, Move-to-Front recoding, and an adaptive binary range coder over the MTF ranks.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Modelled after Ilya Grebnov's libbsc (<see href="https://github.com/IlyaGrebnov/libbsc"/>,
-/// discussed at <see href="https://encode.su/threads/586-bsc-new-block-sorting-compressor"/>),
-/// which follows the block sort with Move-to-Front and a lightweight adaptive
-/// entropy stage rather than a full context-mixing ensemble. See also
-/// Burrows &amp; Wheeler's original technical report and the general
-/// "Block Sorting and Compression" literature this family descends from.
+/// The input is transformed with <see cref="BurrowsWheelerTransform"/> (sorted rotations, as
+/// bzip2 does), recoded with <see cref="MoveToFrontTransform"/>, and every rank byte is coded
+/// MSB-first through an LZMA-style adaptive bit tree (<see cref="BitTreeEncoder"/> /
+/// <see cref="BitTreeDecoder"/> over <see cref="RangeEncoder"/> / <see cref="RangeDecoder"/>).
+/// Two bit trees are kept, one for the rank after a zero rank and one for the rest, because MTF
+/// output alternates between zero runs and scattered non-zero ranks; that split is the whole
+/// context model.
 /// </para>
 /// <para>
-/// This is a reduced, from-specification reimplementation: the BWT
-/// (<see cref="Transforms.BurrowsWheelerTransform"/>) output is recoded with
-/// Move-to-Front (<see cref="Transforms.MoveToFrontTransform"/>) and each
-/// resulting rank byte is entropy-coded MSB-first through an LZMA-style
-/// adaptive bit-tree (<see cref="BitTreeEncoder"/>/<see cref="BitTreeDecoder"/>
-/// over the validated <see cref="RangeEncoder"/>/<see cref="RangeDecoder"/>).
-/// Two bit-trees are kept — one for ranks that immediately follow a zero rank
-/// and one for the rest — since MTF output alternates between long zero runs
-/// and scattered non-zero ranks; this single order-1 split is the entire
-/// context model, deliberately far lighter than BCM's mixed context set,
-/// matching where libbsc's actual entropy stage sits relative to full CM
-/// coders.
+/// Layout: 4-byte little-endian length, 4-byte little-endian zero-based rotation index (absent
+/// for empty input), range-coded ranks. No other program reads or writes it.
 /// </para>
 /// </remarks>
-public static class BscCompressor {
+public static class BwtMtfBitTreeCompressor {
   /// <summary>
   /// Compresses data via BWT, Move-to-Front, and adaptive bit-tree coding.
   /// </summary>
@@ -69,7 +60,7 @@ public static class BscCompressor {
   }
 
   /// <summary>
-  /// Decompresses BSC-style compressed data.
+  /// Decompresses data written by <see cref="Compress"/>.
   /// </summary>
   /// <param name="compressed">The compressed data.</param>
   /// <returns>The decompressed data.</returns>
