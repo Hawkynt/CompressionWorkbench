@@ -225,6 +225,10 @@
     <EmbeddedResource Include="FreeArc\ReferenceVectors\*.arc;FreeArc\ReferenceVectors\filters.tsv">
       <LogicalName>FreeArcVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- DxLib archives DxaEncode 1.10 and 1.06 made, with the files they hold; see DxArchive/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="DxArchive\ReferenceVectors\*.dxa;DxArchive\ReferenceVectors\manifest.tsv">
+      <LogicalName>DxArchiveVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Archives the reference zpaq 7.15 wrote, with a manifest of their contents; see Zpaq/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Zpaq\ReferenceVectors\*.zpaq;Zpaq\ReferenceVectors\manifest.tsv">
       <LogicalName>ZpaqVectors.%(Filename)%(Extension)</LogicalName>

@@ -383,7 +383,7 @@ Unreal Engine PAK,pak,game,,,,,R,,,1,,UnrealPak,Y,Y,,OK,,
 UTAGE,utage,game,,,,,R,,,1,,,,,,MISSING,,
 Visionaire engine,vis;vc001;vv001,game,,,,,R,,,1,,,,,,MISSING,,"refused: VIS3/VIS5 archives hash their file names (the names live in the compiled game.veb) and XOR-encrypt members with per-file keys; only commercial games and the commercial editor produce them; no redistributable sample or free oracle"
 WinterMute DCP,dcp,game,,,,,R,,,1,,,,,,MISSING,,
-Wolf RPG Editor,wolf,game,,,,,R,,,1,,,,,,MISSING,,"not implemented yet: .wolf is a DxLib DXA archive under a per-version key (DXA v8 with its own key scheme from Editor 3); the free editor only packs through its GUI, so proof needs GARbro plus the editor's Game.exe"
+Wolf RPG Editor,wolf;dxa,game,,,,,R,,,1,https://dxlib.xsrv.jp/,DxArchive,Y,,,PARTIAL,,"read as DxLib archives (DxArchive): versions 6 and 8 extract to the files DxaEncode 1.06 and 1.10 were given; version 6 keys are recovered from the header so Editor 2 .wolf files need no password; version 8 needs the archive password unless the default was used and WOLF RPG Editor 3 passwords are not known here; version 7 and no real .wolf sample tested"
 YU-RIS (YPF),ypf;ycg,game,,,,,R,,,1,,Ypf,Y,Y,Y,OK,,
 Chromium resource pack (.pak),pak,game,,,,,R,,,1,,,,,,MISSING,,
 HMM Packfile,pak,game,,,,,,fmt/1876,,1,,,,,,MISSING,,"refused: HMMSYS PackFile of Haemimont games (Tzar, Celtic Kings); the implementations (ReTzar, Game Extractor) are GPL, so oracle-only, and every known archive ships with a commercial game; no redistributable sample to verify against"
