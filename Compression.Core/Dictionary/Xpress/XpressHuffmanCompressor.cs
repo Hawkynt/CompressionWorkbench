@@ -76,12 +76,12 @@ public sealed partial class XpressHuffmanCompressor {
     while (pos < input.Length) {
       var chunkSize = Math.Min(XpressConstants.HuffChunkSize, input.Length - pos);
       var chunk = input.Slice(pos, chunkSize);
-      this.CompressChunk(chunk, output);
+      this.CompressChunk(chunk, output, isLast: pos + chunkSize == input.Length);
       pos += chunkSize;
     }
   }
 
-  private void CompressChunk(ReadOnlySpan<byte> chunk, Stream output) {
+  private void CompressChunk(ReadOnlySpan<byte> chunk, Stream output, bool isLast) {
     // Pass 1: tokenize and gather symbol frequencies
     var matchFinder = new HashChainMatchFinder(XpressConstants.HuffWindowSize, this._maxChainDepth);
     var tokens = new List<HuffToken>(chunk.Length);
@@ -114,9 +114,9 @@ public sealed partial class XpressHuffmanCompressor {
       }
     }
 
-    // The shortest match symbol always gets a code, because the chunk ends with
-    // one — see the terminator written after the tokens below.
-    ++freq[MatchTerminatorSymbol];
+    // The last block ends on the end-of-stream symbol, so it always gets a code there.
+    if (isLast)
+      ++freq[MatchTerminatorSymbol];
 
     // Build Huffman tree and get code lengths (max 15 bits)
     var codeLengths = BuildLengths(freq);
@@ -162,17 +162,11 @@ public sealed partial class XpressHuffmanCompressor {
         bits.WriteBits((uint)(distance - (1 << offsetLog2)), offsetLog2);
     }
 
-    // One more symbol than the chunk needs, and a particular one.
-    //
-    // A decoder that stops the moment the output is full never reads this. Not
-    // every decoder does: one in wide use takes a symbol first and asks
-    // afterwards, and then a literal writes past the end of the chunk and a
-    // match with a long-length header reaches for bytes that are not there —
-    // either of which it reports as damaged data. The shortest match asks for
-    // nothing further and is simply clipped, so ending on it costs a few bits
-    // and leaves nothing for such a reader to trip over. Streams from the
-    // reference implementation end the same way.
-    bits.WriteBits(codes[MatchTerminatorSymbol], codeLengths[MatchTerminatorSymbol]);
+    // Only the last block ends on the end-of-stream symbol (256). A decoder changes to the next
+    // block's table once 65536 bytes are out, at the word its bit reader has fetched up to; a
+    // symbol after that point would shift every later table.
+    if (isLast)
+      bits.WriteBits(codes[MatchTerminatorSymbol], codeLengths[MatchTerminatorSymbol]);
 
     var payload = bits.Finish();
     output.Write(payload, 0, payload.Length);

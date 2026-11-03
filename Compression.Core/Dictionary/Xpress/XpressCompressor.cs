@@ -4,28 +4,14 @@ using Compression.Core.Dictionary.MatchFinders;
 namespace Compression.Core.Dictionary.Xpress;
 
 /// <summary>
-/// Compresses data using the XPRESS (LZ Xpress plain) algorithm.
+/// Compresses data with the plain LZ77 variant of XPRESS ([MS-XCA] section 2.3), the format
+/// RtlDecompressBuffer reads as COMPRESSION_FORMAT_XPRESS.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Data is organized in groups of up to 32 items. Each group begins with a 32-bit
-/// little-endian flag word: bit 0 (LSB) corresponds to the first item, bit 31 to the
-/// last. A 0 bit means the item is a literal byte; a 1 bit means it is an LZ match.
-/// </para>
-/// <para>
-/// Match encoding — a 16-bit LE value plus optional extra bytes:
-/// <code>
-///   value      = (offset &lt;&lt; 3) | lengthHeader
-///   lengthHeader = min(length - 3, 7)
-///
-///   if lengthHeader &lt; 7 : length = lengthHeader + 3   (lengths 3..9)
-///   if lengthHeader == 7:
-///     extra = length - 3          (write as one byte if 0..254)
-///     if length - 3 &lt;  255 : emit byte(length-3)
-///     if length - 3 >= 255 : emit byte(255) + uint16(length)   [lengths 258..65535]
-///     if length     == 0   : emit byte(255) + uint16(0) + uint32(length)
-/// </code>
-/// </para>
+/// Items are grouped under 32-bit flag words filled highest bit first (1 = match); the last word is
+/// padded with 1 bits. A match is a 16-bit word, (distance - 1) &lt;&lt; 3 | min(length - 3, 7), and a
+/// longer length continues in a shared half byte, then a byte, then a 16- or 32-bit value
+/// (see <see cref="XpressDecompressor"/>). Distances reach 8192 bytes.
 /// </remarks>
 public sealed class XpressCompressor {
   private readonly int _maxChainDepth;
@@ -75,72 +61,74 @@ public sealed class XpressCompressor {
       return;
 
     var matchFinder = new HashChainMatchFinder(XpressConstants.WindowSize, this._maxChainDepth);
-
-    // Per-group staging buffer:
-    //   4 bytes  flag word placeholder
-    //   up to 32 items, worst case 6 bytes each (2 header + 1 sentinel + 1 + 2 or 4 extra)
-    Span<byte> groupBuf = stackalloc byte[4 + XpressConstants.FlagGroupSize * 8];
+    // Worst case: every byte a literal, plus a flag word per 32 items.
+    var buffer = new byte[input.Length + input.Length / 8 + 16];
+    var outPos = 4;
+    var flagPos = 0;
+    var flags = 0u;
+    var flagCount = 0;
+    var halfByte = -1;
     var pos = 0;
 
     while (pos < input.Length) {
-      var flagWord = 0u;
-      var groupLen = 0; // bytes written into groupBuf after the 4-byte flag slot
-      var itemCount = 0;
-
-      while (itemCount < XpressConstants.FlagGroupSize && pos < input.Length) {
-        var (offset, length) = matchFinder.FindMatch(
-          input, pos,
-          XpressConstants.WindowSize,
-          XpressConstants.MaxMatch,
-          XpressConstants.MinMatch);
-
-        if (length >= XpressConstants.MinMatch) {
-          // Set corresponding flag bit (bit 0 = first item)
-          flagWord |= 1u << itemCount;
-
-          var lengthHeader = Math.Min(length - XpressConstants.MinMatch, 7);
-
-          // 16-bit match value: offset in upper 13 bits, lengthHeader in lower 3 bits
-          var value = (ushort)((offset << 3) | lengthHeader);
-          BinaryPrimitives.WriteUInt16LittleEndian(groupBuf.Slice(4 + groupLen, 2), value);
-          groupLen += 2;
-
-          if (lengthHeader == 7) {
-            // Encode the adjusted length: adj = length - MinMatch = length - 3
-            var adj = length - XpressConstants.MinMatch;  // 0-based extra
-            if (adj < XpressConstants.LengthSentinel8)
-              // Fits directly in one byte (adj 0..254 → lengths 3..257)
-              groupBuf[4 + groupLen++] = (byte)adj;
-            else if (length <= 65535) {
-              // Sentinel byte + 16-bit length
-              groupBuf[4 + groupLen++] = XpressConstants.LengthSentinel8;
-              BinaryPrimitives.WriteUInt16LittleEndian(groupBuf.Slice(4 + groupLen, 2), (ushort)length);
-              groupLen += 2;
-            } else {
-              // Sentinel byte + sentinel 16-bit + 32-bit length
-              groupBuf[4 + groupLen++] = XpressConstants.LengthSentinel8;
-              BinaryPrimitives.WriteUInt16LittleEndian(groupBuf.Slice(4 + groupLen, 2), XpressConstants.LengthSentinel16);
-              groupLen += 2;
-              BinaryPrimitives.WriteUInt32LittleEndian(groupBuf.Slice(4 + groupLen, 4), (uint)length);
-              groupLen += 4;
-            }
+      var (distance, length) = matchFinder.FindMatch(input, pos, XpressConstants.WindowSize, XpressConstants.MaxMatch, XpressConstants.MinMatch);
+      if (length >= XpressConstants.MinMatch) {
+        flags = flags << 1 | 1;
+        var extra = length - XpressConstants.MinMatch;
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(outPos), (ushort)((distance - 1) << 3 | Math.Min(extra, 7)));
+        outPos += 2;
+        if (extra >= 7) {
+          var nibble = Math.Min(extra - 7, 15);
+          if (halfByte < 0) {
+            halfByte = outPos;
+            buffer[outPos++] = (byte)nibble;
+          } else {
+            buffer[halfByte] |= (byte)(nibble << 4);
+            halfByte = -1;
           }
 
-          // Insert skipped positions into hash chain
-          for (var i = 1; i < length; ++i)
-            matchFinder.InsertPosition(input, pos + i);
+          if (extra - 7 >= 15) {
+            if (extra - 7 - 15 < 255)
+              buffer[outPos++] = (byte)(extra - 7 - 15);
+            else {
+              buffer[outPos++] = 255;
+              if (extra < 1 << 16) {
+                BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(outPos), (ushort)extra);
+                outPos += 2;
+              } else {
+                BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(outPos), 0);
+                BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(outPos + 2), (uint)extra);
+                outPos += 6;
+              }
+            }
+          }
+        }
 
-          pos += length;
-        } else
-          // Literal: flag bit stays 0
-          groupBuf[4 + groupLen++] = input[pos++];
+        for (var i = 1; i < length; ++i)
+          matchFinder.InsertPosition(input, pos + i);
 
-        ++itemCount;
+        pos += length;
+      } else {
+        flags <<= 1;
+        buffer[outPos++] = input[pos++];
       }
 
-      // Write the flag word, then the encoded items
-      BinaryPrimitives.WriteUInt32LittleEndian(groupBuf, flagWord);
-      output.Write(groupBuf[..(4 + groupLen)]);
+      if (++flagCount == 32) {
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(flagPos), flags);
+        flagPos = outPos;
+        outPos += 4;
+        flags = 0;
+        flagCount = 0;
+      }
+
+      if (outPos + 16 > buffer.Length)
+        Array.Resize(ref buffer, buffer.Length * 2);
     }
+
+    // Pad the last flag word with match bits: a decoder that runs out of input there stops.
+    var padding = 32 - flagCount;
+    flags = padding == 32 ? uint.MaxValue : flags << padding | (1u << padding) - 1;
+    BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(flagPos), flags);
+    output.Write(buffer, 0, outPos);
   }
 }

@@ -69,10 +69,10 @@ public static partial class XpressHuffmanDecompressor {
       var bitsAt = inputPos + XpressConstants.HuffTableHeaderBytes;
       var reader = new SpanBitReader(input, bitsAt);
 
-      var chunkUncompressedSize = Math.Min(XpressConstants.HuffChunkSize, uncompressedSize - outputPos);
-      var chunkEnd = outputPos + chunkUncompressedSize;
-
-      while (outputPos < chunkEnd) {
+      // A block covers 65536 bytes of output, counted with the whole of a match that crosses
+      // that boundary; the next block's table follows the last word the bit reader fetched.
+      var blockStart = outputPos;
+      while (outputPos < uncompressedSize && outputPos - blockStart < XpressConstants.HuffChunkSize) {
         var sym = DecodeSymbol(ref reader, decodeTable, maxCodeLength);
 
         if (sym < 256) {
@@ -85,14 +85,18 @@ public static partial class XpressHuffmanDecompressor {
 
         // Length first: its raw bytes come from between the words, and reading
         // them in the order they were written is what keeps the two in step.
-        int length;
+        long length;
         if (lengthHeader < 15)
           length = lengthHeader + XpressConstants.MinMatch;
         else {
           var beyondHeader = reader.ReadRawByte();
-          length = beyondHeader == XpressConstants.LengthSentinel8
-            ? reader.ReadRawUInt16() + XpressConstants.MinMatch
-            : beyondHeader + 15 + XpressConstants.MinMatch;
+          if (beyondHeader != XpressConstants.LengthSentinel8)
+            length = beyondHeader + 15 + XpressConstants.MinMatch;
+          else {
+            // A 16-bit length of 0 escapes to 32 bits; real lengths here are never below 270.
+            var length16 = reader.ReadRawUInt16();
+            length = (length16 != 0 ? length16 : reader.ReadRawUInt32()) + (long)XpressConstants.MinMatch;
+          }
         }
 
         var distance = (1 << offsetLog2) + (int)reader.ReadBits(offsetLog2);
@@ -101,7 +105,7 @@ public static partial class XpressHuffmanDecompressor {
         if (copyFrom < 0)
           ThrowInvalidMatch();
 
-        var copyEnd = Math.Min(outputPos + length, chunkEnd);
+        var copyEnd = (int)Math.Min(outputPos + length, uncompressedSize);
         while (outputPos < copyEnd)
           output[outputPos++] = output[copyFrom++];
       }
@@ -109,14 +113,6 @@ public static partial class XpressHuffmanDecompressor {
       if (outputPos >= uncompressedSize)
         break;
 
-      // Where the next chunk starts is not written down anywhere: a chunk is
-      // delimited by the size of what it decodes to, which a container carries
-      // and this stream does not. It can still be worked out, because the writer
-      // hands out its words and its raw bytes in a fixed order and the reader
-      // has just taken the same ones — but only if it has taken all of them, and
-      // one symbol is left after the output is full. That is the terminator
-      // every chunk written here ends with.
-      DecodeSymbol(ref reader, decodeTable, maxCodeLength);
       inputPos = bitsAt + reader.ChunkLength;
     }
 
@@ -192,6 +188,9 @@ public static partial class XpressHuffmanDecompressor {
 
       // The code occupies the top of the index; every value of the bits below
       // it decodes to the same symbol.
+      if (nextCode[len] >= 1u << len)
+        ThrowInvalidHuffmanCode();
+
       var start = (int)(nextCode[len]++ << (maxLen - len));
       var fillCount = 1 << (maxLen - len);
       var packed = sym | (len << 16);
