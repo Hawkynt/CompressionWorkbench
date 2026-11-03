@@ -11308,13 +11308,13 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IStreamFormatOperati
 
 #### `BalzStream`
 
-BALZ: ROLZ compressor by Ilya Muravyov. Format: 4-byte big-endian uncompressed size, then arithmetic-coded ROLZ bitstream.
+`.balz` files as Ilya Muravyov's BALZ 1.20 writes and reads them; the codec is `BalzCodec`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input with BALZ-style flexible look-ahead parsing and keeps it only when it is smaller than the normal greedy parse. |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the normal greedy parser. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Compresses `input` in the reference's maximum mode (`balz cx`) and keeps that file only when it is smaller than the normal one; both are BALZ files. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` as `balz c` does. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a `.balz` file. |
 
 ### Namespace `FileFormat.Bcm`
 
