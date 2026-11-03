@@ -13,6 +13,8 @@ internal sealed class RockRidgeInfo {
   public string? SymlinkTarget;
   /// <summary>PX: st_mode.</summary>
   public uint? Mode;
+  /// <summary>TF: the modification time, in UTC.</summary>
+  public DateTime? Modified;
   /// <summary>RE: this directory was relocated here; its real place holds a CL entry.</summary>
   public bool Relocated;
   /// <summary>CL: this placeholder file is really the directory at that logical block.</summary>
@@ -106,6 +108,9 @@ internal static class IsoRockRidge {
           case ('P', 'X') when len >= 12:
             info.Mode = data.ReadUInt32(pos + 4);
             break;
+          case ('T', 'F') when len >= 5:
+            info.Modified = ModificationTime(data, pos, len) ?? info.Modified;
+            break;
           case ('R', 'E'):
             info.Relocated = true;
             break;
@@ -139,6 +144,31 @@ internal static class IsoRockRidge {
   }
 
   /// <summary>Decodes a zisofs file's stored bytes to its uncompressed content.</summary>
+  /// <summary>
+  /// The modification time of a TF entry. Its flags say which stamps follow, in the order
+  /// creation, modify, access, attributes, …; bit 7 selects the 17-byte volume form
+  /// (ECMA-119 8.4.26.1) over the 7-byte directory-record form (9.1.5).
+  /// </summary>
+  private static DateTime? ModificationTime(ImageAccessor data, long pos, int len) {
+    var flags = data.ReadByte(pos + 4);
+    if ((flags & 0x02) == 0) return null;
+    var size = (flags & 0x80) != 0 ? 17 : 7;
+    var at = pos + 5 + ((flags & 0x01) != 0 ? size : 0);
+    if (at + size > pos + len) return null;
+    try {
+      if (size == 17) {
+        var text = Encoding.ASCII.GetString(data.Read(at, 14));
+        var local = DateTime.ParseExact(text, "yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture);
+        return DateTime.SpecifyKind(local.AddMinutes(-15 * (sbyte)data.ReadByte(at + 16)), DateTimeKind.Utc);
+      }
+      var t = new DateTime(data.ReadByte(at) + 1900, data.ReadByte(at + 1), data.ReadByte(at + 2),
+        data.ReadByte(at + 3), data.ReadByte(at + 4), data.ReadByte(at + 5), DateTimeKind.Utc);
+      return t.AddMinutes(-15 * (sbyte)data.ReadByte(at + 6));
+    } catch (Exception e) when (e is ArgumentOutOfRangeException or FormatException) {
+      return null;
+    }
+  }
+
   public static byte[] DecodeZisofs(ReadOnlySpan<byte> stored, ZisofsInfo zf, string name) {
     if (zf.BlockLog2 is < 15 or > 17)
       throw new InvalidDataException($"ISO9660: zisofs file '{name}' has block size 2^{zf.BlockLog2}.");

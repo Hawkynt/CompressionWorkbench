@@ -79,9 +79,8 @@ public sealed class CdiFormatDescriptor :
       throw new ArgumentException("CDI creation requires a writable, seekable stream.", nameof(output));
 
     var version = ParseTargetVersion(options.GetOption(FormatOptionKeys.TargetCompatibility, "3.5"));
-    var iso = new FileSystem.Iso.IsoWriter();
-    foreach (var (name, data) in FlatFiles(inputs))
-      iso.AddFile(name, data);
+    // Folders, long names, modes and times are kept (Rock Ridge and Joliet), as in a plain ISO.
+    var iso = FileSystem.Iso.IsoFormatDescriptor.BufferedWriterFor(inputs, options);
 
     var payload = iso.Build();
     output.Position = 0;

@@ -59,6 +59,9 @@ public sealed class IsoReader : IDisposable {
       throw new InvalidDataException("ISO9660: no Primary Volume Descriptor found.");
 
     var descOff = pvdOffset;
+    // Rock Ridge carries full POSIX names, modes and times; like Linux, prefer it over
+    // Joliet, whose names stop at 64 characters.
+    if (jolietOffset >= 0 && HasRockRidge(pvdOffset)) jolietOffset = -1;
     if (jolietOffset >= 0) {
       _joliet = true;
       descOff = jolietOffset;
@@ -105,6 +108,22 @@ public sealed class IsoReader : IDisposable {
         pos += recLen;
       }
     }
+  }
+
+  /// <summary>
+  /// Rock Ridge is in use when the first record of the primary root directory starts its
+  /// System Use area with the SUSP "SP" entry (IEEE P1281 5.3: check bytes BE EF).
+  /// </summary>
+  private bool HasRockRidge(long pvdOffset) {
+    var rootRec = pvdOffset + 156;
+    var root = DataOffset(_data.ReadUInt32(rootRec + 2), _data.ReadByte(rootRec + 1));
+    if (root < 0 || root + 40 > _data.Length) return false;
+    var recLen = _data.ReadByte(root);
+    var nameLen = _data.ReadByte(root + 32);
+    var su = root + 33 + nameLen + ((nameLen & 1) == 0 ? 1 : 0);
+    return recLen >= 40 && su + 7 <= root + recLen
+      && _data.ReadByte(su) == 'S' && _data.ReadByte(su + 1) == 'P'
+      && _data.ReadByte(su + 4) == 0xBE && _data.ReadByte(su + 5) == 0xEF;
   }
 
   private RockRidgeInfo? RockRidgeAt(long pos, int recLen, int nameLen) {
@@ -192,7 +211,8 @@ public sealed class IsoReader : IDisposable {
 
       var fullPath = string.IsNullOrEmpty(basePath) ? name : $"{basePath}/{name}";
       var physicalOffset = DataOffset(extentLba, extendedAttributeBlocks);
-      var lastModified = DecodeTimestamp(pos, end);
+      var lastModified = rr?.Modified ?? DecodeTimestamp(pos, end);
+      var mode = rr?.Mode is { } posixMode ? (int)posixMode : (int?)null;
 
       if (isDir) {
         if (pending is not null)
@@ -206,6 +226,7 @@ public sealed class IsoReader : IDisposable {
           Name = fullPath,
           IsDirectory = true,
           LastModified = lastModified,
+          UnixMode = mode,
           DataOffset = physicalOffset,
         });
         ReadDirectory(physicalOffset, dataLength, fullPath);
@@ -225,6 +246,7 @@ public sealed class IsoReader : IDisposable {
           IsSymlink = true,
           LinkTarget = linkTarget,
           LastModified = lastModified,
+          UnixMode = mode,
           DataOffset = physicalOffset,
         });
         pos += recLen;
@@ -240,7 +262,7 @@ public sealed class IsoReader : IDisposable {
       if (pending is null) {
         var segments = new List<IsoDataSegment> { new(0, physicalOffset, dataLength) };
         if (hasMoreExtents) {
-          pending = new PendingFile(fullPath, lastModified, segments, dataLength, limitation);
+          pending = new PendingFile(fullPath, lastModified, segments, dataLength, limitation) { Mode = mode };
         } else if (zisofs is { } zf && limitation is null) {
           _entries.Add(new IsoEntry {
             Name = fullPath,
@@ -248,11 +270,12 @@ public sealed class IsoReader : IDisposable {
             StoredSize = dataLength,
             Zisofs = zf,
             LastModified = lastModified,
+            UnixMode = mode,
             DataOffset = physicalOffset,
             DataSegments = segments,
           });
         } else {
-          AddFile(fullPath, lastModified, segments, dataLength, limitation);
+          AddFile(fullPath, lastModified, segments, dataLength, limitation, mode);
         }
       } else {
         if (!string.Equals(pending.Name, fullPath, StringComparison.Ordinal))
@@ -263,7 +286,7 @@ public sealed class IsoReader : IDisposable {
         pending.Length = checked(pending.Length + dataLength);
         pending.Limitation ??= limitation;
         if (!hasMoreExtents) {
-          AddFile(pending.Name, pending.LastModified, pending.Segments, pending.Length, pending.Limitation);
+          AddFile(pending.Name, pending.LastModified, pending.Segments, pending.Length, pending.Limitation, pending.Mode);
           pending = null;
         }
       }
@@ -280,12 +303,14 @@ public sealed class IsoReader : IDisposable {
       DateTime? lastModified,
       IReadOnlyList<IsoDataSegment> segments,
       long length,
-      string? limitation) {
+      string? limitation,
+      int? mode) {
     _entries.Add(new IsoEntry {
       Name = name,
       Size = length,
       IsDirectory = false,
       LastModified = lastModified,
+      UnixMode = mode,
       DataOffset = segments.Count == 1 ? segments[0].PhysicalOffset : 0,
       DataSegments = segments,
       MountLimitation = limitation,
@@ -386,5 +411,6 @@ public sealed class IsoReader : IDisposable {
     public List<IsoDataSegment> Segments { get; } = segments;
     public long Length { get; set; } = length;
     public string? Limitation { get; set; } = limitation;
+    public int? Mode { get; init; }
   }
 }

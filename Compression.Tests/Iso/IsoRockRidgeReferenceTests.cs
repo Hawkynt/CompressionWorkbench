@@ -54,6 +54,7 @@ public sealed class IsoRockRidgeReferenceTests {
 
   [TestCase("rr")]
   [TestCase("rr-moved")]
+  [TestCase("rr-joliet")] // Rock Ridge wins over Joliet, as it does for the kernel
   [Category("HappyPath")]
   public void GivenARockRidgeImage_WhenListedAndExtracted_ThenItMatchesTheKernelsView(string image) {
     using var stream = Image(image + ".iso.gz");
