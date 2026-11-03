@@ -3524,11 +3524,11 @@ Encodes data using the ZIP Shrink (method 1) algorithm.
 
 ### Namespace `Compression.Core.Dictionary.Zling`
 
-[`ZlingBuildingBlock`](#zlingbuildingblock)
+[`ZlingBuildingBlock`](#zlingbuildingblock) · [`ZlingCodec`](#zlingcodec)
 
 #### `ZlingBuildingBlock`
 
-Exposes a Zling-style LZ77 + Huffman hybrid as a benchmarkable building block. Zling (libzling, by Zhang Li / "richox") pairs an order-1 ROLZ dictionary stage with Huffman entropy coding to get most of LZMA's ratio at a fraction of its cost. This building block follows the same two-stage shape — a windowed LZ77 dictionary pass (see `ZlingLz`) followed by canonical Huffman coding of the resulting token stream — using plain LZ77 in place of ROLZ as a clean-room simplification of the offset-reduction scheme. Reference: https://github.com/richox/libzling (algorithm description); D. A. Huffman, "A Method for the Construction of Minimum-Redundancy Codes", 1952.
+zling — Zhang Li's ROLZ + Huffman compressor. The block's bytes are a zling stream exactly as the reference demo's `zling e` (level 0) writes it; see `ZlingCodec`.
 
 Implements `IBuildingBlock`.
 
@@ -3541,6 +3541,17 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `ZlingCodec`
+
+zling, Zhang Li's ROLZ + Huffman compressor, converted from libzling (https://github.com/richox/libzling, revision `6828e31517bf94fda8e1e8e15a583ab58acde637`, BSD-3-Clause; see `THIRD-PARTY-NOTICE.libzling.txt`). Output matches the reference's `zling_demo e0`..`e4` byte for byte when it is built with libstdc++.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultLevel` | `const int DefaultLevel` | Default level, the reference CLI's `zling e`. |
+| `MaxLevel` | `const int MaxLevel` | Highest level, `zling e4`. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, int level = 0)` | Compresses `data` into a zling stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses a zling stream. |
 
 ### Namespace `Compression.Core.Dictionary.Zstd`
 
