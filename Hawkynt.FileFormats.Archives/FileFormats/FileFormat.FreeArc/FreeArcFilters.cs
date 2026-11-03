@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 namespace FileFormat.FreeArc;
 
 /// <summary>
-/// Decoders for FreeArc's preprocessing stages <c>rep</c>, <c>delta</c>, <c>exe</c> and <c>lzp</c>, written from
+/// Decoders for FreeArc's preprocessing stages <c>rep</c>, <c>delta</c>, <c>exe</c>, <c>lzp</c> and <c>dict</c>, written from
 /// docs/FREEARC-ON-DISK.md (section "Filter streams"). Each takes the whole stage output and
 /// returns its input; every length and offset is checked, so damaged data is refused rather than
 /// returned.
@@ -180,6 +180,99 @@ internal static class FreeArcFilters {
     return output.ToArray();
   }
 
+  /// <summary>
+  /// <c>dict</c>: the LZP chunk framing around dictionary blocks. A block holds its dictionary —
+  /// one-byte word lengths, shared-prefix counts of the two-byte words, the one-byte words, a
+  /// separator, the two-byte words, an escape byte — and then the coded text. A block decodes to at
+  /// most <paramref name="blockSize"/> bytes.
+  /// </summary>
+  public static byte[] DecodeDict(ReadOnlySpan<byte> input, int blockSize) {
+    var p = new Reader(input, "dict");
+    var output = new Growable(input.Length * 2L);
+    while (!p.AtEnd) {
+      var length = (int)p.U32();
+      if (length < 0)
+        output.Append(p.Take((uint)-(long)length));
+      else
+        DecodeDictBlock(p.Take((uint)length), blockSize, output);
+    }
+    return output.ToArray();
+  }
+
+  private const int DictTwoByteCode = 1;
+
+  private static void DecodeDictBlock(ReadOnlySpan<byte> block, int blockSize, Growable output) {
+    var p = new Reader(block, "dict");
+    var singleLength = p.Take(256).ToArray();
+
+    // Every word lives in one buffer as (start, length); two-byte words are indexed [first * 256 + second].
+    var text = new List<byte>();
+    var singleStart = new int[256];
+    var pairStart = new int[256 * 256];
+    var pairLength = new int[256 * 256];
+
+    var shared = new Dictionary<int, byte[]>();
+    for (var c = 0; c < 256; ++c)
+      if (singleLength[c] == DictTwoByteCode)
+        shared[c] = p.Take(256).ToArray();
+
+    for (var c = 0; c < 256; ++c) {
+      if (singleLength[c] == DictTwoByteCode)
+        continue;
+      singleStart[c] = text.Count;
+      text.AddRange(p.Take(singleLength[c]));
+    }
+
+    var separator = p.Byte();
+    var previous = -1;
+    for (var c = 0; c < 256; ++c) {
+      if (!shared.TryGetValue(c, out var counts))
+        continue;
+      for (var d = 0; d < 256; ++d) {
+        var start = text.Count;
+        var count = counts[d];
+        if (count > 0 && previous < 0)
+          throw new InvalidDataException("FreeArc dict: the first two-byte word shares a prefix with no word.");
+        for (var k = 0; k < count; ++k)
+          text.Add(text[previous + k]); // may run on into this word's own bytes
+        for (byte b; (b = p.Byte()) != separator;)
+          text.Add(b);
+        pairStart[c * 256 + d] = start;
+        pairLength[c * 256 + d] = text.Count - start;
+        previous = start;
+      }
+    }
+
+    var escape = p.Byte();
+    singleLength[escape] = DictTwoByteCode;
+    for (var d = 0; d < 256; ++d) {
+      pairStart[escape * 256 + d] = text.Count;
+      pairLength[escape * 256 + d] = 1;
+      text.Add((byte)d);
+    }
+
+    var words = text.ToArray();
+    var produced = 0L;
+    void Put(ReadOnlySpan<byte> bytes) {
+      produced += bytes.Length;
+      if (produced > blockSize)
+        throw new InvalidDataException("FreeArc dict: block decodes past its block size.");
+      output.Append(bytes);
+    }
+
+    while (!p.AtEnd) {
+      var c = p.Byte();
+      var length = singleLength[c];
+      if (length == 0)
+        Put([c]);
+      else if (length == DictTwoByteCode) {
+        var index = c * 256 + p.Byte();
+        Put(words.AsSpan(pairStart[index], pairLength[index]));
+      } else
+        Put(words.AsSpan(singleStart[c], length));
+    }
+  }
+
   /// <summary>One LZP block at a time; the table and the output buffer are reused between blocks.</summary>
   private sealed class LzpBlockDecoder(int blockSize, int hashBits, int minLength, long barrier, int smallestLength) {
     private const byte Flag = 0xB5, Escape = 255;
@@ -280,6 +373,14 @@ internal static class FreeArcFilters {
         throw new InvalidDataException($"FreeArc {stage}: stream is truncated.");
       var v = BinaryPrimitives.ReadUInt32LittleEndian(this._rest);
       this._rest = this._rest[4..];
+      return v;
+    }
+
+    public byte Byte() {
+      if (this._rest.IsEmpty)
+        throw new InvalidDataException($"FreeArc {stage}: stream is truncated.");
+      var v = this._rest[0];
+      this._rest = this._rest[1..];
       return v;
     }
 

@@ -14,7 +14,7 @@ them, and what `FileFormat.FreeArc` does with each part.
   (the C++ reader of footer and directory), `ArhiveStructure.hs`, `ArhiveDirectory.hs`,
   `ByteStream.hs` and `Compression.hs` (the Haskell writer). For the filter streams, the 0.67 source
   snapshot mirrored at `github.com/mrkaban/FreeArc-0.67`: `Compression/REP/rep.cpp`,
-  `Compression/Delta/Delta.cpp`, `Compression/LZMA2/C_BCJ.cpp`, `Compression/4x4/C_4x4.cpp` and `Compression/LZP/C_LZP.cpp` (the decoders' input layout only).
+  `Compression/Delta/Delta.cpp`, `Compression/LZMA2/C_BCJ.cpp`, `Compression/4x4/C_4x4.cpp`, `Compression/LZP/C_LZP.cpp` and `Compression/Dict/C_Dict.cpp` with `dict.cpp` (the decoders' input layout only).
 - **Oracle.** FreeArc 0.67 (2014-03-15) `Arc.exe` and `unarc.exe`, from the self-extracting
   `FreeArc-console-0.67-alpha-win32.exe` (Wayback Machine copy of freearc.org/download/testing),
   run on Windows 11. Every structure below was checked against hex dumps of archives it wrote; the
@@ -122,14 +122,15 @@ right on compression; extraction undoes them right to left. Seen from 0.67:
 | `tor:N[:size][:hN]` | Tornado LZ77 with byte, bit, Huffman or arithmetic coding and differenced tables; layout in [FREEARC-TORNADO.md](FREEARC-TORNADO.md). The parameters only steer the encoder. | ✅ read |
 | `grzip:BLOCK:mN[:lN:hN][:l][:s][:a][:d]` | libGRZip blocks (Ilya Grebnov), see *GRZip blocks*: `m1` BWT + WFC, `m2` BWT + MTF, `m3` ST4 + WFC, `m4` ST4 + MTF; `lN`/`hN` LZP minimum match and hash bits (`l` alone disables LZP), `s` strong BWT sorting, `a` adaptive block size, `d` record filters. Every block header says how it was coded, so the parameters only steer the encoder. | ✅ read |
 | `lzp:BLOCK[:N%]:MINLEN:hBITS[:dSIZE][:sN]` | LZP, see *LZP stream*: minimum match length (`lN` or a bare number, default 64), hash bits (`hN`, default 18), barrier distance (`dSIZE`, default unlimited) and the minimum length beyond it (`sN`, default 32). `N%` and the block size steer only the encoder. | ✅ read |
-| `dict:…`, `mm`, external compressors | FreeArc's own codecs, no compatible implementation here. | ❌ refused |
+| `dict:BLOCK[:N%][:p\|:f][:cN][:lN][:mN][:sN][:rN]` | Word-dictionary substitution, see *Dict stream*. Only the block size bounds the decoder; the rest steer the encoder. | ✅ read |
+| `mm`, external compressors | FreeArc's own codecs, no compatible implementation here. | ❌ refused |
 | `…+aes-256/ctr:n1000:r0:i…:s…:c…` (also blowfish, serpent, twofish) | Encryption stage (`-p`, or `-hp` for headers too). | ❌ refused |
 
 Measured stage chains, all read here: `-mx` and `-m9x` write `rep:<block>+exe+delta+lzma:<block>:normal:bt4:128`;
 `-m1`..`-m4` write `rep:…+4x4:tor:…` for text-like files and `rep:…[+exe+delta]+4x4:tor:…` or
 `…+4x4:lzma:…` for the rest; `-m5x` `exe+delta+4x4:lzma:…`. Text-like files at `-m2`, `-m3` and
-`-m4` use `grzip:<block>:m4:l32:h15`, `…:m2:…` and `…:m1:…` (read), at `-m5`..`-mx`
-`dict+lzp+…ppmd` (refused until `dict` and `lzp` are read).
+`-m4` use `grzip:<block>:m4:l32:h15`, `…:m2:…` and `…:m1:…`, at `-m5`..`-mx`
+`dict:…+lzp:…+[4x4:]ppmd:…`, at `-m9x` `dict:…+lzma:…` (all read).
 
 ### Filter streams
 
@@ -225,6 +226,29 @@ Each step reads a token byte `b`:
 
 Constants: flag byte `0xB5`, run unit 254, escape 255, rotation 17, hash multipliers 5 and 3,
 stride limit 7, initial table value 5.
+
+### Dict stream
+
+The same chunk framing as LZP: a 32-bit little-endian signed length `n`, then `-n` stored bytes
+when negative, else one dictionary block of `n` bytes. A block decodes to at most the stage's block
+size. A block is a dictionary followed by the coded text:
+
+1. 256 bytes `len1[c]`: for each byte value `c`, 0 if `c` stands for itself, 1 if `c` starts a
+   two-byte code, otherwise the length of the word the single byte `c` stands for.
+2. For every `c` with `len1[c] = 1`, in increasing order, 256 bytes `shared[c][d]`, one per second
+   byte `d`.
+3. The text of every one-byte word, in increasing `c`, `len1[c]` bytes each (none for 0 or 1).
+4. One separator byte `sep`.
+5. The two-byte words, in increasing `c` (with `len1[c] = 1`) then `d`: each begins with the first
+   `shared[c][d]` bytes of the word before it (copied one byte at a time, so a count longer than
+   that word runs on into the bytes just copied; the very first word must have 0) and continues with
+   the bytes up to the next `sep`, which is not part of the word.
+6. One escape byte `e`. From here on `e` starts a two-byte code whose second byte is output as it
+   is, whatever `len1[e]` said.
+
+The rest of the block is the coded text, read to its end: a byte `c` with `len1[c] = 0` is output;
+one with `len1[c] = 1` (or the escape byte) is followed by a byte `d` and outputs the two-byte word
+`[c][d]`; any other outputs the one-byte word for `c`.
 
 ## ✍️ What our writer emits
 
