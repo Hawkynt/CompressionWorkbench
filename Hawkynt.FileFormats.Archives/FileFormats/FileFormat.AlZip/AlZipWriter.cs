@@ -1,124 +1,109 @@
+using System.Buffers.Binary;
 using Compression.Core.Checksums;
 using Compression.Core.Deflate;
 
 namespace FileFormat.AlZip;
 
 /// <summary>
-/// Creates ALZip (.alz) archive files.
+/// Writes single-volume ALZip archives as ALZip 8 lays them out: the "ALZ\x01" header with version
+/// 0x0A, one "BLZ\x01" local header per member (stored or deflated, size fields as narrow as the
+/// sizes allow, CP949 names, optional ZipCrypto), then the "CLZ\x01" and "CLZ\x02" end records.
 /// </summary>
 public sealed class AlZipWriter : IDisposable {
-
-  private const uint LocalSig = 0x015A4C42;
-  private const uint EndSig = 0x025A4C43;
-
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
+  private readonly string? _password;
+  private readonly bool _store;
+  private bool _finished;
 
-  /// <summary>
-  /// Creates a new ALZip writer over the given stream.
-  /// </summary>
-  public AlZipWriter(Stream stream, bool leaveOpen = false) {
-    _stream = stream ?? throw new ArgumentNullException(nameof(stream));
-    _leaveOpen = leaveOpen;
-
-    // Write archive magic
-    _stream.Write(AlZipReader.Magic);
+  public AlZipWriter(Stream stream, bool leaveOpen = false, string? password = null, bool store = false) {
+    this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
+    this._leaveOpen = leaveOpen;
+    this._password = string.IsNullOrEmpty(password) ? null : password;
+    this._store = store;
+    this._stream.Write("ALZ\x01\x0A\x00\x00\x00"u8);
   }
 
-  /// <summary>
-  /// Adds a file to the archive with deflate compression.
-  /// </summary>
-  public void AddFile(string fileName, byte[] data) {
+  private static int Width(long a, long b) {
+    var max = Math.Max(a, b);
+    return max <= byte.MaxValue ? 1 : max <= ushort.MaxValue ? 2 : max <= uint.MaxValue ? 4 : 8;
+  }
+
+  public void AddFile(string fileName, byte[] data, DateTime? modified = null) {
     ArgumentNullException.ThrowIfNull(fileName);
     ArgumentNullException.ThrowIfNull(data);
-
-    var nameBytes = System.Text.Encoding.UTF8.GetBytes(fileName);
     var crc = Crc32.Compute(data);
-    var compressed = data.Length > 0
-      ? DeflateCompressor.Compress(data)
-      : [];
-
-    // Use store if deflate doesn't help
-    var method = (byte)2; // Deflate
-    var compData = compressed;
-    if (compressed.Length >= data.Length) {
-      method = 0; // Store
-      compData = data;
+    byte method = 0;
+    var payload = data;
+    if (!this._store && data.Length > 0) {
+      var deflated = DeflateCompressor.Compress(data);
+      if (deflated.Length < data.Length) {
+        method = 2;
+        payload = deflated;
+      }
     }
-
-    WriteUInt32LE(LocalSig);
-    WriteUInt16LE((ushort)nameBytes.Length);
-    _stream.WriteByte(0x20); // Archive attribute
-    WriteUInt32LE(AlZipReader.DateTimeToDosTime(DateTime.Now));
-
-    // File descriptor: 0x20 = 4-byte sizes
-    _stream.WriteByte(0x20);
-
-    // Reserved
-    _stream.WriteByte(0);
-
-    // Method
-    _stream.WriteByte(method);
-
-    // CRC-32
-    WriteUInt32LE(crc);
-
-    // Compressed size (4 bytes)
-    WriteUInt32LE((uint)compData.Length);
-
-    // Uncompressed size (4 bytes)
-    WriteUInt32LE((uint)data.Length);
-
-    // Filename
-    _stream.Write(nameBytes);
-
-    // Data
-    _stream.Write(compData);
+    var dosTime = AlZipReader.DateTimeToDosTime(modified ?? DateTime.Now);
+    byte[]? header = null;
+    if (this._password != null) {
+      var crypto = new AlZipCrypto(AlZipReader.Cp949.GetBytes(this._password));
+      header = crypto.MakeHeader((byte)(crc >> 24));
+      payload = (byte[])payload.Clone();
+      crypto.Encrypt(payload);
+    }
+    this.WriteHeader(fileName, 0x20, dosTime, method, crc, payload.Length, data.Length, header);
+    this._stream.Write(payload);
   }
 
-  /// <summary>
-  /// Adds a directory entry to the archive.
-  /// </summary>
-  public void AddDirectory(string dirName) {
+  public void AddDirectory(string dirName, DateTime? modified = null) {
     ArgumentNullException.ThrowIfNull(dirName);
-
-    var nameBytes = System.Text.Encoding.UTF8.GetBytes(dirName);
-
-    WriteUInt32LE(LocalSig);
-    WriteUInt16LE((ushort)nameBytes.Length);
-    _stream.WriteByte(0x10); // Directory attribute
-    WriteUInt32LE(AlZipReader.DateTimeToDosTime(DateTime.Now));
-    _stream.WriteByte(0x20); // 4-byte sizes
-    _stream.WriteByte(0);    // Reserved
-    _stream.WriteByte(0);    // Store
-    WriteUInt32LE(0);        // CRC
-    WriteUInt32LE(0);        // Compressed size
-    WriteUInt32LE(0);        // Uncompressed size
-    _stream.Write(nameBytes);
+    this.WriteHeader(dirName.TrimEnd('/', '\\'), 0x10, AlZipReader.DateTimeToDosTime(modified ?? DateTime.Now), null, 0, 0, 0, null);
   }
 
-  /// <inheritdoc />
+  private void WriteHeader(string name, byte attributes, uint dosTime, byte? method, uint crc, long packed, long size, byte[]? encryptionHeader) {
+    var nameBytes = AlZipReader.Cp949.GetBytes(name.Replace('/', '\\'));
+    if (nameBytes.Length is 0 or > 4096)
+      throw new ArgumentException($"Invalid ALZip member name '{name}'.");
+    var width = method == null ? 0 : Width(packed, size);
+    var widthBits = width switch { 0 => 0x00, 1 => 0x10, 2 => 0x20, 4 => 0x40, _ => 0x80 };
+    var descriptor = (byte)(widthBits | (encryptionHeader != null ? 0x01 : 0));
+    var buf = new byte[4 + 9 + (width > 0 ? 6 + 2 * width : 0)];
+    BinaryPrimitives.WriteUInt32LittleEndian(buf, AlZipReader.LocalSig);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(4), (ushort)nameBytes.Length);
+    buf[6] = attributes;
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(7), dosTime);
+    buf[11] = descriptor;
+    buf[12] = 0;
+    if (width > 0) {
+      buf[13] = method!.Value;
+      buf[14] = 0;
+      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(15), crc);
+      Span<byte> v = stackalloc byte[8];
+      BinaryPrimitives.WriteUInt64LittleEndian(v, (ulong)packed);
+      v[..width].CopyTo(buf.AsSpan(19));
+      BinaryPrimitives.WriteUInt64LittleEndian(v, (ulong)size);
+      v[..width].CopyTo(buf.AsSpan(19 + width));
+    }
+    this._stream.Write(buf);
+    this._stream.Write(nameBytes);
+    if (encryptionHeader != null)
+      this._stream.Write(encryptionHeader);
+  }
+
+  /// <summary>Writes the end records; called by <see cref="Dispose"/>.</summary>
+  public void Finish() {
+    if (this._finished)
+      return;
+    this._finished = true;
+    Span<byte> tail = stackalloc byte[16];
+    tail.Clear();
+    BinaryPrimitives.WriteUInt32LittleEndian(tail, AlZipReader.CentralSig);
+    BinaryPrimitives.WriteUInt32LittleEndian(tail[12..], AlZipReader.EndSig);
+    this._stream.Write(tail);
+  }
+
   public void Dispose() {
-    // Write end-of-archive marker
-    WriteUInt32LE(EndSig);
-
-    if (!_leaveOpen)
-      _stream.Dispose();
-  }
-
-  private void WriteUInt16LE(ushort value) {
-    Span<byte> buf = stackalloc byte[2];
-    buf[0] = (byte)value;
-    buf[1] = (byte)(value >> 8);
-    _stream.Write(buf);
-  }
-
-  private void WriteUInt32LE(uint value) {
-    Span<byte> buf = stackalloc byte[4];
-    buf[0] = (byte)value;
-    buf[1] = (byte)(value >> 8);
-    buf[2] = (byte)(value >> 16);
-    buf[3] = (byte)(value >> 24);
-    _stream.Write(buf);
+    this.Finish();
+    if (!this._leaveOpen)
+      this._stream.Dispose();
   }
 }

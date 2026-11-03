@@ -23,6 +23,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- UltraCompressor II's built-in supermaster dictionary (SUPER.DAT, LGPL-3.0 UC2 release);
+         see FileFormats/FileFormat.Uc2/THIRD-PARTY-NOTICE.UltraCompressor2.txt. -->
+    <EmbeddedResource Include="FileFormats\FileFormat.Uc2\super.dat" LogicalName="FileFormat.Uc2.super.dat" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 

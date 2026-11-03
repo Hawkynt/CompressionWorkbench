@@ -71,7 +71,7 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -87,7 +87,10 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'S', (byte)'I', (byte)'T', (byte)'!'], Confidence: 0.95)];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    new([(byte)'S', (byte)'I', (byte)'T', (byte)'!'], Confidence: 0.95),
+    new("StuffIt (c)1997-"u8.ToArray(), Confidence: 0.95),
+  ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
@@ -103,25 +106,40 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Macintosh StuffIt archive, classic Mac compression";
+  public string Description => "Macintosh StuffIt archive (classic SIT! and StuffIt 5); reads methods None/RLE/Compress/Huffman/LZAH/LZ+Huffman/Arsenic, writes None/RLE";
+
+  /// <summary>Suffix under which a file's resource fork is listed and extracted.</summary>
+  public const string ResourceForkSuffix = ".rsrc";
+
+  private static IEnumerable<(StuffItEntry Entry, bool Resource, string Name)> Items(StuffItReader r) {
+    foreach (var e in r.Entries) {
+      if (e.IsDirectory) { yield return (e, false, e.FileName); continue; }
+      if (e.DataForkSize > 0 || !e.HasResourceFork) yield return (e, false, e.FileName);
+      if (e.HasResourceFork) yield return (e, true, e.FileName + ResourceForkSuffix);
+    }
+  }
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new StuffItReader(stream);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.DataForkSize,
-      e.CompressedDataSize, $"Method {e.DataMethod}", false, false, e.LastModified)).ToList();
+    var r = new StuffItReader(stream, leaveOpen: true);
+    return Items(r).Select((x, i) => new ArchiveEntryInfo(i, x.Name,
+      x.Entry.IsDirectory ? 0 : x.Resource ? x.Entry.ResourceForkSize : x.Entry.DataForkSize,
+      x.Entry.IsDirectory ? 0 : x.Resource ? x.Entry.CompressedResourceSize : x.Entry.CompressedDataSize,
+      x.Entry.IsDirectory ? "" : StuffItReader.MethodName(x.Resource ? x.Entry.ResourceMethod : x.Entry.DataMethod),
+      x.Entry.IsDirectory, x.Entry.IsEncrypted, x.Entry.LastModified)).ToList();
   }
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new StuffItReader(stream);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(outputDir, e.FileName, r.Extract(e));
+    var r = new StuffItReader(stream, leaveOpen: true);
+    foreach (var (e, resource, name) in Items(r)) {
+      if (files != null && !MatchesFilter(name, files)) continue;
+      if (e.IsDirectory) continue; // folders come into being with the files inside them
+      WriteFile(outputDir, name, resource ? r.ExtractResourceFork(e) : r.Extract(e));
     }
   }
 
@@ -136,9 +154,9 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
     var r = new StuffItReader(archive, leaveOpen: true);
-    foreach (var e in r.Entries) {
-      if (!string.Equals(e.FileName, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-      var bytes = r.Extract(e);
+    foreach (var (e, resource, name) in Items(r)) {
+      if (e.IsDirectory || !string.Equals(name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = resource ? r.ExtractResourceFork(e) : r.Extract(e);
       return new BoundedEntryStream(new MemoryStream(bytes, writable: false),
         bytes.Length, leaveOpen: false);
     }

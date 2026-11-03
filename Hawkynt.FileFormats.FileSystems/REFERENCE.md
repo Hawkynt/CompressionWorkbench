@@ -3811,6 +3811,73 @@ Builds a fresh Atari 8-bit AtariDOS 2.x `.atr` disk image from scratch (WORM).
 | `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
 | `Build` | `byte[] Build()` | Builds the complete SS/SD ATR image (92 176 bytes). |
 
+### Namespace `FileSystem.Axfs`
+
+[`AxfsEntry`](#axfsentry) · [`AxfsFormatDescriptor`](#axfsformatdescriptor) · [`AxfsReader`](#axfsreader)
+
+#### `AxfsEntry`
+
+One inode of an AXFS image.
+
+Implements `IEquatable<AxfsEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AxfsEntry` | `AxfsEntry(string Path, ulong Index, uint Mode, uint Uid, uint Gid, ulong Size)` | One inode of an AXFS image. |
+| `Gid` | `uint Gid { get; init; }` | Group. |
+| `Index` | `ulong Index { get; init; }` | Inode index (the root is 0). |
+| `IsDirectory` | `bool IsDirectory { get; }` | True for a directory. |
+| `IsFile` | `bool IsFile { get; }` | True for a regular file. |
+| `IsSymlink` | `bool IsSymlink { get; }` | True for a symbolic link. |
+| `Mode` | `uint Mode { get; init; }` | Full Unix mode word. |
+| `Path` | `string Path { get; init; }` | Slash-separated path from the root. |
+| `Size` | `ulong Size { get; init; }` | File size, symlink target length, or (special files) the encoded device number. |
+| `Uid` | `uint Uid { get; init; }` | Owner. |
+
+#### `AxfsFormatDescriptor`
+
+AXFS — the "Advanced XIP File System" for embedded Linux (Numonyx, 2008): a read-only, compressed, execute-in-place image. Magic `0x48A0E4CD` and the signature "Advanced XIP FS" at offset 0.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AxfsFormatDescriptor` | `AxfsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+
+#### `AxfsReader`
+
+Reads an AXFS ("Advanced XIP File System") image as `mkfs.axfs` writes it: a big-endian superblock pointing at region descriptors, byte tables that map inodes to names, modes and nodes, and data held in an XIP, a byte-aligned or a zlib-compressed region. See `docs/AXFS-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AxfsReader` | `AxfsReader(Stream stream)` | Opens `stream`; throws `InvalidDataException` for anything it cannot read faithfully. |
+| `Magic` | `const uint Magic` | Superblock magic, big-endian at offset 0. |
+| `CblockSize` | `uint CblockSize { get; }` | Largest uncompressed cblock. |
+| `Entries` | `IReadOnlyList<AxfsEntry> Entries { get; }` | Every inode below the root, parents before children. |
+| `Files` | `ulong Files { get; }` | Inodes in the image. |
+| `PageSize` | `int PageSize { get; }` | Page (node) size: `1 << page_shift`. |
+| `Signature` | `static ReadOnlySpan<byte> Signature { get; }` | Superblock signature at offset 4. |
+| `Timestamp` | `ulong Timestamp { get; }` | Build time (UNIX seconds; `mkfs.axfs` writes 0). |
+| `Version` | `ValueTuple<byte, byte, byte> Version { get; }` | Version as major.minor.sub. |
+| `CountNodes` | `ValueTuple<ulong, ulong, ulong> CountNodes()` | Distinct nodes the files and symlinks use, by kind (XIP, byte-aligned, compressed). |
+| `Extract` | `byte[] Extract(AxfsEntry entry)` | Returns a regular file's bytes, or a symlink's target bytes. |
+
 ### Namespace `FileSystem.Bbc`
 
 [`BbcBlockMover`](#bbcblockmover) · [`BbcEntry`](#bbcentry) · [`BbcExtentMap`](#bbcextentmap) · [`BbcFormatDescriptor`](#bbcformatdescriptor) · [`BbcModifier`](#bbcmodifier) · [`BbcReader`](#bbcreader) · [`BbcWriter`](#bbcwriter)
@@ -7600,6 +7667,105 @@ Builds Microsoft Xbox / Xbox 360 FATX filesystem images from scratch per the rev
 | `Build` | `byte[] Build(int sectorsPerCluster = 0, uint volumeId = 0)` | Builds a complete FATX image containing the previously-added files. |
 | `WriteTo` | `void WriteTo(Stream output, int sectorsPerCluster = 0, uint volumeId = 0)` | Writes the image into `output`: the superblock and FAT, then every cluster payload at its offset. Only a non-seekable target has to materialise the image, so a seekable one is bounded by the disk rather than by what a byte[] can address. |
 
+### Namespace `FileSystem.Flex`
+
+[`FlexDisk`](#flexdisk) · [`FlexEntry`](#flexentry) · [`FlexFormatDescriptor`](#flexformatdescriptor) · [`FlexWriter`](#flexwriter)
+
+#### `FlexDisk`
+
+The FLEX (Technical Systems Consultants, 6800/6809) disk layout over a raw `.dsk` image: 256-byte sectors, every track holding the same number of sector slots, sector numbers from 1. Track 0 holds the boot sectors (1, 2), the System Information Record (3), a reserved sector (4) and the directory chain from sector 5; all other sectors are file chains or the free chain. See `docs/FLEX-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlexDisk` | `FlexDisk(Stream stream)` | Opens a FLEX image; throws `InvalidDataException` when it is not one. |
+| `DataBytes` | `const int DataBytes` | Data bytes per sector after the link (2) and record number (2). |
+| `EntriesPerSector` | `const int EntriesPerSector` | Directory entries per directory sector, after its 16-byte header. |
+| `EntrySize` | `const int EntrySize` | Bytes per directory entry. |
+| `SectorSize` | `const int SectorSize` | Bytes per sector. |
+| `SirOffset` | `const int SirOffset` | Byte offset of the System Information Record (track 0, sector 3). |
+| `DirectorySectors` | `IReadOnlyList<ValueTuple<byte, byte>> DirectorySectors { get; }` | Directory sectors in chain order. |
+| `Entries` | `IReadOnlyList<FlexEntry> Entries { get; }` | Every live directory entry, in directory order. |
+| `FirstFree` | `ValueTuple<byte, byte> FirstFree { get; }` | Head of the free chain. |
+| `FreeSectors` | `ushort FreeSectors { get; }` | Sectors in the free chain, as the SIR records it. |
+| `Label` | `string Label { get; }` | Volume label (11 characters). |
+| `LastFree` | `ValueTuple<byte, byte> LastFree { get; }` | Tail of the free chain. |
+| `SectorsPerTrack` | `int SectorsPerTrack { get; }` | Sectors per track (SIR "highest sector number"). |
+| `Tracks` | `int Tracks { get; }` | Tracks (SIR "highest track number" + 1). |
+| `VolumeNumber` | `ushort VolumeNumber { get; }` | Volume number. |
+| `Chain` | `IEnumerable<ValueTuple<byte, byte, byte[]>> Chain(byte track, byte sector, int limit)` | Follows a link chain; throws on a loop or on more than `limit` sectors. |
+| `Extract` | `byte[] Extract(FlexEntry entry)` | The file's bytes: the 252 data bytes of every sector in its chain — a random file's two File Sector Map sectors included, exactly as they are stored. Refuses a chain that does not end at the directory's end address after the directory's sector count. |
+| `Offset` | `long Offset(int track, int sector)` | Byte offset of a sector; throws when it is outside the geometry or the image. |
+| `ReadSector` | `byte[] ReadSector(int track, int sector)` | Reads one sector. |
+
+#### `FlexEntry`
+
+One directory entry of a FLEX disk.
+
+Implements `IEquatable<FlexEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlexEntry` | `FlexEntry(string Name, string Extension, byte Attributes, byte StartTrack, byte StartSector, byte EndTrack, byte EndSector, ushort Sectors, bool IsRandom, byte Month, byte Day, byte Year, long EntryOffset)` | One directory entry of a FLEX disk. |
+| `Attributes` | `byte Attributes { get; init; }` | Protection bits: 0x80 write, 0x40 delete, 0x20 read, 0x10 catalog protect. |
+| `Created` | `DateTime? Created { get; }` | Creation date, when it is a valid one (years 00-74 read as 20xx, 75-99 as 19xx). |
+| `Day` | `byte Day { get; init; }` | Creation day. |
+| `EndSector` | `byte EndSector { get; init; }` | Sector of the last sector. |
+| `EndTrack` | `byte EndTrack { get; init; }` | Track of the last sector. |
+| `EntryOffset` | `long EntryOffset { get; init; }` | Byte offset of the entry in the image. |
+| `Extension` | `string Extension { get; init; }` | Extension (up to 3 characters). |
+| `FullName` | `string FullName { get; }` | NAME.EXT as FLEX shows it. |
+| `IsRandom` | `bool IsRandom { get; init; }` | File Sector Map indicator: a random file whose first two sectors are its sector map. |
+| `Month` | `byte Month { get; init; }` | Creation month. |
+| `Name` | `string Name { get; init; }` | File name (up to 8 characters). |
+| `Sectors` | `ushort Sectors { get; init; }` | Sectors in the file. |
+| `Size` | `long Size { get; }` | Bytes the file holds: every sector's 252 data bytes. |
+| `StartSector` | `byte StartSector { get; init; }` | Sector of the first sector. |
+| `StartTrack` | `byte StartTrack { get; init; }` | Track of the first sector. |
+| `Year` | `byte Year { get; init; }` | Creation year, tens and units only. |
+
+#### `FlexFormatDescriptor`
+
+FLEX disk images (Technical Systems Consultants' FLEX for the 6800/6809, 1976-): raw `.dsk` sector dumps with 256-byte linked sectors, a System Information Record on track 0 sector 3 and a directory chain from track 0 sector 5.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlexFormatDescriptor` | `FlexFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | FLEX has no magic number. What every FLEX disk shares: the SIR (track 0 sector 3) starts with 16 zero bytes, and the first directory sector (track 0 sector 5) links to track 0 sector 6 and has twelve zero bytes after its link and record number. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files in place; all inputs land or none do. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Formats a disk and writes the files by leaf name (FLEX has one flat directory). |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Deletes the named files in place; unknown names are ignored. |
+
+#### `FlexWriter`
+
+Formats FLEX disks the way NEWDISK does and edits them the way the File Management System does: files are written by taking sectors from the head of the free chain, deleted files have their name's first byte set to $FF (negative) and their chain appended to the tail of the free chain. The image is edited in memory; callers write it back.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Geometries` | `static readonly ValueTuple<int, int>[] Geometries` | Standard geometries tried, smallest first, when none is given. |
+| `AddFile` | `static void AddFile(byte[] img, string fileName, ReadOnlySpan<byte> data, DateTime? date = null)` | Adds (or replaces) a file in the image. |
+| `ChooseGeometry` | `static ValueTuple<int, int> ChooseGeometry(long sectorsNeeded, int directoryEntries)` | Picks the smallest standard geometry whose data area holds `sectorsNeeded` sectors. |
+| `EncodeName` | `static ValueTuple<byte[], byte[]> EncodeName(string fileName)` | Encodes a host name as FLEX name and extension, or throws `NotSupportedException`. |
+| `Format` | `static byte[] Format(int tracks, int sectorsPerTrack, string label = "", ushort volumeNumber = 0, DateTime? date = null)` | Formats an empty disk. |
+| `RemoveFile` | `static bool RemoveFile(byte[] img, string fileName)` | Deletes a file: name marked deleted, sectors zeroed and appended to the free chain. False when absent. |
+
 ### Namespace `FileSystem.Fossil`
 
 [`FossilEntry`](#fossilentry) · [`FossilFormatDescriptor`](#fossilformatdescriptor) · [`FossilReader`](#fossilreader) · [`FossilSourceEntry`](#fossilsourceentry)
@@ -8838,6 +9004,164 @@ Creates minimal HFS+ filesystem images per Apple TN1150 ("HFS Plus Volume Format
 | `BuildToStreaming` | `void BuildToStreaming(Stream output, uint blockSize = 4096)` | Two-pass streaming Build: pass 1 derives allocation-block geometry + catalog B-tree size from the declared sizes of `AddStreamingFile` entries; pass 2 emits the volume header + allocation bitmap + extents B-tree + catalog B-tree (with file records carrying fork descriptors pointing at the single-extent runs) + the alternate volume header, then streams each entry's bytes from its factory into its allocated block run via 64 KB chunks. Block tail past each entry's exact `Size` stays sparse-zero. |
 | `Build` | `byte[] Build(uint blockSize = 4096)` | Builds and returns the complete HFS+ volume image with the given allocation block size. |
 | `SetVolumeUuid` | `void SetVolumeUuid(ulong uuid)` | Fixes the volume's identity, for a build that has to come out the same twice. |
+
+### Namespace `FileSystem.HighSierra`
+
+[`HighSierraEntry`](#highsierraentry) · [`HighSierraExtent`](#highsierraextent) · [`HighSierraFormatDescriptor`](#highsierraformatdescriptor) · [`HighSierraLayout`](#highsierralayout) · [`HighSierraReader`](#highsierrareader) · [`HighSierraWriter`](#highsierrawriter)
+
+#### `HighSierraEntry`
+
+One file or directory on a High Sierra volume.
+
+Implements `IEquatable<HighSierraEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HighSierraEntry` | `HighSierraEntry(string Path, bool IsDirectory, long Size, DateTime? LastModified, IReadOnlyList<HighSierraExtent> Extents, bool IsHidden)` | One file or directory on a High Sierra volume. |
+| `Extents` | `IReadOnlyList<HighSierraExtent> Extents { get; init; }` | The file's extents in order. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | True for a directory. |
+| `IsHidden` | `bool IsHidden { get; init; }` | The Existence flag: the file need not be shown to a user. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | Recording date of the (first) Directory Record; null when unspecified. |
+| `Path` | `string Path { get; init; }` | Slash-separated path with the version suffix (`;1`) and an empty extension's FULL STOP removed. |
+| `Size` | `long Size { get; init; }` | Bytes of file data (sum over every extent of a multi-extent file). |
+
+#### `HighSierraExtent`
+
+One extent as a Directory Record describes it.
+
+Implements `IEquatable<HighSierraExtent>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HighSierraExtent` | `HighSierraExtent(uint Lbn, byte XarBlocks, uint Length, byte InterleaveSize, byte InterleaveSkip)` | One extent as a Directory Record describes it. |
+| `InterleaveSize` | `byte InterleaveSize { get; init; }` | Consecutive blocks per file unit; 0 when not interleaved. |
+| `InterleaveSkip` | `byte InterleaveSkip { get; init; }` | Blocks of other files between units. |
+| `Lbn` | `uint Lbn { get; init; }` | Logical block number of the extent's first block. |
+| `Length` | `uint Length { get; init; }` | Data bytes in the extent. |
+| `XarBlocks` | `byte XarBlocks { get; init; }` | Logical blocks of Extended Attribute Record before the data. |
+
+#### `HighSierraFormatDescriptor`
+
+High Sierra Group CD-ROM format — the 1986 predecessor of ISO 9660, recognised by the "CDROM" Volume Structure Standard Identifier at BP 10-14 of sector 16.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HighSierraFormatDescriptor` | `HighSierraFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+
+#### `HighSierraLayout`
+
+Constants and field codecs of the High Sierra Group format — the 1986 CD-ROM "Working Paper for Information Processing: Volume and File Structure of CD-ROM" that preceded ISO 9660. Byte positions (BP) below are the working paper's, 1-based; the code uses 0-based offsets. See `docs/HIGH-SIERRA-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DrDataLength` | `const int DrDataLength` |  |
+| `DrDate` | `const int DrDate` |  |
+| `DrExtent` | `const int DrExtent` |  |
+| `DrFlags` | `const int DrFlags` |  |
+| `DrInterleaveSize` | `const int DrInterleaveSize` |  |
+| `DrInterleaveSkip` | `const int DrInterleaveSkip` |  |
+| `DrLength` | `const int DrLength` |  |
+| `DrNameLength` | `const int DrNameLength` |  |
+| `DrName` | `const int DrName` |  |
+| `DrVolumeSequence` | `const int DrVolumeSequence` |  |
+| `DrXarLength` | `const int DrXarLength` |  |
+| `FirstDescriptorSector` | `const int FirstDescriptorSector` | Logical sector of the first volume descriptor (6.3.1). |
+| `FlagAssociated` | `const byte FlagAssociated` |  |
+| `FlagDirectory` | `const byte FlagDirectory` |  |
+| `FlagHidden` | `const byte FlagHidden` |  |
+| `FlagMultiExtent` | `const byte FlagMultiExtent` |  |
+| `FlagProtection` | `const byte FlagProtection` |  |
+| `FlagRecord` | `const byte FlagRecord` |  |
+| `PvdAbstractFile` | `const int PvdAbstractFile` |  |
+| `PvdApplicationId` | `const int PvdApplicationId` |  |
+| `PvdCopyrightFile` | `const int PvdCopyrightFile` |  |
+| `PvdCreation` | `const int PvdCreation` |  |
+| `PvdEffective` | `const int PvdEffective` |  |
+| `PvdExpiration` | `const int PvdExpiration` |  |
+| `PvdFileStructureVersion` | `const int PvdFileStructureVersion` |  |
+| `PvdLogicalBlockSize` | `const int PvdLogicalBlockSize` |  |
+| `PvdModification` | `const int PvdModification` |  |
+| `PvdPathTableL` | `const int PvdPathTableL` |  |
+| `PvdPathTableM` | `const int PvdPathTableM` |  |
+| `PvdPathTableSize` | `const int PvdPathTableSize` |  |
+| `PvdPreparerId` | `const int PvdPreparerId` |  |
+| `PvdPublisherId` | `const int PvdPublisherId` |  |
+| `PvdRootRecord` | `const int PvdRootRecord` |  |
+| `PvdSystemId` | `const int PvdSystemId` |  |
+| `PvdVolumeId` | `const int PvdVolumeId` |  |
+| `PvdVolumeSetId` | `const int PvdVolumeSetId` |  |
+| `PvdVolumeSetSequence` | `const int PvdVolumeSetSequence` |  |
+| `PvdVolumeSetSize` | `const int PvdVolumeSetSize` |  |
+| `PvdVolumeSpaceSize` | `const int PvdVolumeSpaceSize` |  |
+| `SectorSize` | `const int SectorSize` | Bytes per logical sector (6.1.2). |
+| `TypeStandard` | `const byte TypeStandard` | Volume Descriptor Type of the Standard File Structure Volume Descriptor (11.1.2). |
+| `TypeTerminator` | `const byte TypeTerminator` | Volume Descriptor Type of the Volume Descriptor Sequence Terminator (11.1.2). |
+| `VdId` | `const int VdId` |  |
+| `VdLbn` | `const int VdLbn` |  |
+| `VdType` | `const int VdType` |  |
+| `VdVersion` | `const int VdVersion` |  |
+| `StandardId` | `static ReadOnlySpan<byte> StandardId { get; }` | Volume Structure Standard Identifier, BP 10-14 (11.1.3). |
+| `DecodeRecordDate` | `static DateTime? DecodeRecordDate(ReadOnlySpan<byte> d)` | Decodes the 6-byte Directory Record date (13.1.5): years since 1900, month, day, hour, minute, second; no time zone. |
+| `DirectoryRecordLength` | `static int DirectoryRecordLength(int identifierLength)` | Length of a Directory Record with no system-use field: 33 bytes, the identifier, and a pad byte after an even-length identifier (13.1.13). |
+| `EncodeRecordDate` | `static void EncodeRecordDate(Span<byte> d, DateTime t)` | Encodes a 6-byte Directory Record date. |
+| `EncodeVolumeDate` | `static void EncodeVolumeDate(Span<byte> d, DateTime? t)` | Encodes the 16-digit volume date (11.4.30.1): YYYYMMDDHHMMSS and hundredths; all zero digits = not specified. |
+| `IsDCharacter` | `static bool IsDCharacter(char c)` | True for a d-character (10.4.1): A-Z, 0-9 and LOW LINE. |
+| `PathTableRecordLength` | `static int PathTableRecordLength(int identifierLength)` | Length of a Path Table Record: 8 bytes, the identifier, and a pad byte after an odd-length identifier (12.1.1.6). |
+| `ReadBoth16` | `static ushort ReadBoth16(ReadOnlySpan<byte> src)` | Reads the little-endian half of a both-byte-order 16-bit field. |
+| `ReadBoth32` | `static uint ReadBoth32(ReadOnlySpan<byte> src)` | Reads the little-endian half of a both-byte-order 32-bit field. |
+| `ReadPadded` | `static string ReadPadded(ReadOnlySpan<byte> field)` | Reads a space-padded identifier field. |
+| `WriteBoth16` | `static void WriteBoth16(Span<byte> dest, ushort value)` | Writes a 16-bit value in both byte orders (10.2.3). |
+| `WriteBoth32` | `static void WriteBoth32(Span<byte> dest, uint value)` | Writes a 32-bit value in both byte orders (10.3.3). |
+| `WritePadded` | `static void WritePadded(Span<byte> field, string value)` | Space-pads `value` into a fixed a/d-character field (10.4.3). |
+
+#### `HighSierraReader`
+
+Reads a High Sierra (pre-ISO 9660, "CDROM" signature) volume: the Standard File Structure Volume Descriptor and the directory hierarchy it roots.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HighSierraReader` | `HighSierraReader(Stream stream)` | Opens `stream`; throws `InvalidDataException` when no High Sierra descriptor is found. |
+| `Entries` | `IReadOnlyList<HighSierraEntry> Entries { get; }` | Every file and directory, parents before children. |
+| `LogicalBlockSize` | `int LogicalBlockSize { get; }` | Logical block size from the volume descriptor (11.4.13). |
+| `Problems` | `IReadOnlyList<string> Problems { get; }` | Directories whose records could not all be read; their listing may be incomplete. |
+| `SystemId` | `string SystemId { get; }` | System Identifier (11.4.6). |
+| `VolumeId` | `string VolumeId { get; }` | Volume Identifier (11.4.7). |
+| `VolumeSpaceSize` | `uint VolumeSpaceSize { get; }` | Volume Space Size in logical blocks (11.4.9). |
+| `Extract` | `byte[] Extract(HighSierraEntry entry)` | Returns the bytes of a file; refuses extents that leave the image. |
+
+#### `HighSierraWriter`
+
+Writes a High Sierra volume: system area, one Standard File Structure Volume Descriptor, a terminator, the two mandatory Path Tables (LSB- and MSB-first), the directories and the file data, with 2048-byte logical blocks.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HighSierraWriter` | `HighSierraWriter()` |  |
+| `MaxLevels` | `const int MaxLevels` | Directory levels the paper allows, the root counting as level 1 (8.1.1). |
+| `Now` | `DateTime Now { get; set; }` | Recording time used for the volume and for inputs without one. |
+| `VolumeId` | `string VolumeId { get; set; }` | Volume Identifier (d-characters, 32 bytes). |
+| `AddDirectory` | `void AddDirectory(string path, DateTime? modified = null)` | Adds an (empty) directory; missing parents are created. |
+| `AddFile` | `void AddFile(string path, byte[] data, DateTime? modified = null)` | Adds a file; missing parent directories are created. |
+| `Build` | `byte[] Build()` | Builds the volume image. |
 
 ### Namespace `FileSystem.Hpfs`
 
