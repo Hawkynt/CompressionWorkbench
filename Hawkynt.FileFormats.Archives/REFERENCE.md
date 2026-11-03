@@ -13168,7 +13168,7 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 
 #### `CrunchStream`
 
-Stream for reading and writing CP/M Crunch (.?Z?) format data. Uses LZW compression with variable-width codes (9-12 bits) in MSB-first order.
+Stream for reading and writing CP/M CRUNCH (.?Z?) files: reads CRUNCH 1.x and 2.x, writes 2.x.
 
 Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 

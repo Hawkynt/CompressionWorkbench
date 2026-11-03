@@ -117,7 +117,7 @@ Snappy (framed),sz;snappy,compression,,,,,,,Y,1,https://github.com/google/snappy
 genozip,genozip,compression,,,,,,,Y,1,,,,,,MISSING,,
 sfArk,sfark,compression,,,,,R,,Y,2,,,,,,MISSING,,
 Squeeze (SQ),sq;qqq;?q?,compression,,,R,,,,Y,2,,Squeeze,Y,Y,,OK,,
-Crunch (CP/M),cru;crunch;?z?,compression,,,R,,,,Y,2,,Crunch,Y,Y,,OK,,
+Crunch (CP/M),cru;crunch;?z?,compression,,,R,,,,Y,2,,Crunch,Y,Y,,OK,,CRUNCH 1.x/2.x read and 2.x written; lbrate agrees both ways (docs/CRUNCH-ON-DISK.md)
 MS-DOS COMPRESS (SZDD),szdd;??_;mslz,compression,R,,,,,fmt/462,Y,3,https://www.cabextract.org.uk/libmspack/doc/szdd_kwaj_format.html,Szdd;SzCompress,Y,Y,,OK,,
 MS-DOS COMPRESS (KWAJ),kwaj,compression,,,,,,fmt/469,,1,https://www.cabextract.org.uk/libmspack/doc/szdd_kwaj_format.html,Kwaj;bb:BB_KwajLzh,Y,Y,,OK,,"all five methods (store, XOR, LZSS, LZ+Huffman, MSZIP); libmspack msexpand expands our output"
 PPMd (standalone .pmd),pmd;ppmd,compression,R,,R,,,,,2,,Ppmd,Y,Y,,OK,,
