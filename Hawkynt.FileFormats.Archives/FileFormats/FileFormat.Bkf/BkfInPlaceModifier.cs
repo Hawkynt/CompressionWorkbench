@@ -49,26 +49,64 @@ public static class BkfInPlaceModifier {
   /// <param name="archive">Seekable, writable BKF stream.</param>
   /// <param name="fileName">File name written into the FILE DBLK's FNAM stream.</param>
   /// <param name="data">Payload written as the FILE's STAN data stream.</param>
+  /// <remarks>
+  /// A path with '/' puts the file into that folder: a FILE belongs to the folder of the
+  /// DIRB before it, so when the chain does not already end in that folder a DIRB naming it
+  /// (or the root, <c>\</c>) is appended first. Appending only the FILE put every new file
+  /// into whichever folder the backup happened to end with.
+  /// </remarks>
   public static void AddFile(Stream archive, string fileName, byte[] data) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(fileName);
     ArgumentNullException.ThrowIfNull(data);
 
+    var path = NormalizePath(fileName);
+    var slash = path.LastIndexOf('/');
+    var folder = slash < 0 ? "" : path[..slash];
+    var leaf = slash < 0 ? path : path[(slash + 1)..];
+    if (leaf.Length == 0) throw new ArgumentException("BKF: a file needs a name.", nameof(fileName));
+
     var raw = ReadAll(archive);
     var (eotmPos, flb) = LocateEotmAndFlb(raw);
+    var insertPos = RoundUpToFlb(eotmPos >= 0 ? eotmPos : raw.Length, flb);
 
-    var insertPos = eotmPos >= 0 ? eotmPos : raw.Length;
-    insertPos = RoundUpToFlb(insertPos, flb);
+    var blocks = new List<byte[]>();
+    if (FolderAt(raw, flb, insertPos) != folder)
+      blocks.Add(BuildDirbBlock(folder, flb));
+    blocks.Add(BuildFileBlock(leaf, data, flb));
+    Append(archive, raw, insertPos, blocks, flb);
+  }
 
-    var fileBlock = BuildFileBlock(fileName, data, flb);
+  /// <summary>
+  /// Adds a folder: a DIRB naming it is appended (an empty folder is a DIRB with no FILE
+  /// after it), unless the backup already has one for that path.
+  /// </summary>
+  public static void AddDirectory(Stream archive, string folderName) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(folderName);
+    var folder = NormalizePath(folderName);
+    if (folder.Length == 0) return;
+
+    var raw = ReadAll(archive);
+    var (eotmPos, flb) = LocateEotmAndFlb(raw);
+    foreach (var block in Walk(raw, flb))
+      if (block.Type == "DIRB" && block.Folder == folder) return;
+    var insertPos = RoundUpToFlb(eotmPos >= 0 ? eotmPos : raw.Length, flb);
+    Append(archive, raw, insertPos, [BuildDirbBlock(folder, flb)], flb);
+  }
+
+  // Writes head bytes (0..insertPos) + the new blocks + a fresh EOTM.
+  private static void Append(Stream archive, byte[] raw, int insertPos, List<byte[]> blocks, int flb) {
     var eotmBlock = BuildEotmBlock(flb);
-
-    // New layout: head bytes (0..insertPos) + new FILE DBLK + new EOTM.
-    var newLen = insertPos + fileBlock.Length + eotmBlock.Length;
+    var newLen = insertPos + blocks.Sum(b => b.Length) + eotmBlock.Length;
     var output = new byte[newLen];
-    Buffer.BlockCopy(raw, 0, output, 0, insertPos);
-    Buffer.BlockCopy(fileBlock, 0, output, insertPos, fileBlock.Length);
-    Buffer.BlockCopy(eotmBlock, 0, output, insertPos + fileBlock.Length, eotmBlock.Length);
+    Buffer.BlockCopy(raw, 0, output, 0, Math.Min(insertPos, raw.Length));
+    var at = insertPos;
+    foreach (var b in blocks) {
+      Buffer.BlockCopy(b, 0, output, at, b.Length);
+      at += b.Length;
+    }
+    Buffer.BlockCopy(eotmBlock, 0, output, at, eotmBlock.Length);
 
     archive.SetLength(0);
     archive.Position = 0;
@@ -76,48 +114,83 @@ public static class BkfInPlaceModifier {
   }
 
   /// <summary>
-  /// Tombstones the first FILE DBLK whose FNAM matches <paramref name="fileName"/>:
-  /// the 4-byte type field becomes the <c>XXXX</c> sentinel and the rest of that
-  /// FLB-aligned FILE block (CBH tail + every attached stream payload) is
-  /// zero-wiped. Returns <c>true</c> when a tombstone was applied.
+  /// Tombstones the entry at exactly <paramref name="fileName"/> — a path as the reader lists
+  /// it, the folder taken from the DIRB before each FILE — or, for a folder, its DIRBs and
+  /// every FILE beneath it: the 4-byte type field becomes the <c>XXXX</c> sentinel and the
+  /// rest of that FLB-aligned block (CBH tail + every attached stream payload) is zero-wiped.
+  /// Returns <c>true</c> when a tombstone was applied.
   /// </summary>
+  /// <remarks>
+  /// Names used to match the FILE name alone, so removing "a.txt" also removed "d/a.txt".
+  /// </remarks>
   public static bool RemoveFile(Stream archive, string fileName) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(fileName);
+    var target = NormalizePath(fileName);
+    if (target.Length == 0) return false;
 
     var raw = ReadAll(archive);
     var (_, flb) = LocateEotmAndFlb(raw);
+    var removed = false;
+    foreach (var block in Walk(raw, flb)) {
+      var path = block.Type switch {
+        "FILE" => block.Folder.Length == 0 ? block.Name : block.Folder + "/" + block.Name,
+        "DIRB" => block.Folder,
+        _ => null,
+      };
+      if (path == null || path.Length == 0) continue;
+      if (path != target && !path.StartsWith(target + "/", StringComparison.Ordinal)) continue;
+      // Tombstone: type → XXXX sentinel, zero the remainder of the block.
+      var tomb = new byte[block.Size];
+      tomb[0] = (byte)'X';
+      tomb[1] = (byte)'X';
+      tomb[2] = (byte)'X';
+      tomb[3] = (byte)'X';
+      archive.Position = block.Position;
+      archive.Write(tomb, 0, tomb.Length);
+      removed = true;
+    }
+    return removed;
+  }
 
+  private readonly record struct Dblk(int Position, int Size, string Type, string Folder, string Name);
+
+  /// <summary>
+  /// Every DBLK up to EOTM with the folder it belongs to, as the reader derives it: a DIRB
+  /// sets the folder for what follows, an SSET or VOLB resets it to the root.
+  /// </summary>
+  private static IEnumerable<Dblk> Walk(byte[] raw, int flb) {
+    var folder = "";
     var pos = 0;
     while (pos + CommonBlockHeaderSize <= raw.Length) {
-      var blockType = ReadAscii4(raw, pos);
-      if (blockType == "EOTM") break;
-
-      if (blockType != "FILE") {
-        pos = RoundUpToFlb(pos + flb, flb);
-        if (pos <= 0) break;
-        continue;
+      var type = ReadAscii4(raw, pos);
+      if (type == "EOTM") yield break;
+      var size = type is "FILE" or "DIRB" ? MeasureDblkSize(raw, pos, flb) : flb;
+      if (size <= 0) yield break;
+      var name = "";
+      if (type is "SSET" or "VOLB") folder = "";
+      if (type == "DIRB") {
+        var pnam = ExtractStream(raw, pos, size, "PNAM");
+        if (pnam.Length > 0) folder = NormalizePath(pnam);
+      } else if (type == "FILE") {
+        name = ExtractStream(raw, pos, size, "FNAM");
       }
-
-      var blockSize = MeasureDblkSize(raw, pos, flb);
-      var name = ExtractFnam(raw, pos, blockSize);
-      if (string.Equals(name, fileName, StringComparison.Ordinal)) {
-        // Tombstone: type → XXXX sentinel, zero the remainder of the FLB block.
-        var tomb = new byte[blockSize];
-        tomb[0] = (byte)'X';
-        tomb[1] = (byte)'X';
-        tomb[2] = (byte)'X';
-        tomb[3] = (byte)'X';
-        archive.Position = pos;
-        archive.Write(tomb, 0, tomb.Length);
-        return true;
-      }
-
-      pos += blockSize;
+      yield return new Dblk(pos, size, type, folder, name);
+      pos = RoundUpToFlb(pos + size, flb);
     }
-
-    return false;
   }
+
+  /// <summary>The folder a FILE appended at <paramref name="endPos"/> would belong to.</summary>
+  private static string FolderAt(byte[] raw, int flb, int endPos) {
+    var folder = "";
+    foreach (var block in Walk(raw, flb)) {
+      if (block.Position >= endPos) break;
+      folder = block.Type is "SSET" or "VOLB" ? "" : block.Folder;
+    }
+    return folder;
+  }
+
+  private static string NormalizePath(string raw) => raw.Replace('\\', '/').Trim('/');
 
   // ── Layout helpers ────────────────────────────────────────────────────
 
@@ -182,7 +255,7 @@ public static class BkfInPlaceModifier {
   /// (limited to <paramref name="blockSize"/> bytes) and returns the decoded
   /// string. Empty string when not present.
   /// </summary>
-  private static string ExtractFnam(byte[] raw, int dblkPos, int blockSize) {
+  private static string ExtractStream(byte[] raw, int dblkPos, int blockSize, string streamId) {
     var minStart = dblkPos + CommonBlockHeaderSize;
     var maxScan = dblkPos + blockSize - StreamHeaderSize;
     var cursor = -1;
@@ -201,7 +274,7 @@ public static class BkfInPlaceModifier {
       var alignedEnd = (payloadEnd + 3) & ~3L;
       if (payloadEnd > raw.Length) break;
 
-      if (id == "FNAM" && streamLen > 0) {
+      if (id == streamId && streamLen > 0) {
         var bytes = raw.AsSpan(dataStart, (int)streamLen);
         var end = bytes.Length;
         while (end > 0 && bytes[end - 1] == 0) end--;
@@ -231,6 +304,18 @@ public static class BkfInPlaceModifier {
     WriteCbh(block, "FILE", StringTypeAnsi);
     var afterFnam = WriteStream(block, CommonBlockHeaderSize, "FNAM", nameBytes);
     WriteStream(block, afterFnam, "STAN", data);
+    return block;
+  }
+
+  /// <summary>
+  /// A DIRB naming <paramref name="folder"/> ('/'-separated; empty for the root) with
+  /// back-slashes as ntbackup writes them, FLB-rounded.
+  /// </summary>
+  private static byte[] BuildDirbBlock(string folder, int flb) {
+    var nameBytes = Encoding.Latin1.GetBytes(folder.Length == 0 ? "\\" : folder.Replace('/', '\\'));
+    var block = new byte[RoundUpToFlb(CommonBlockHeaderSize + StreamFootprint(nameBytes.Length), flb)];
+    WriteCbh(block, "DIRB", StringTypeAnsi);
+    WriteStream(block, CommonBlockHeaderSize, "PNAM", nameBytes);
     return block;
   }
 

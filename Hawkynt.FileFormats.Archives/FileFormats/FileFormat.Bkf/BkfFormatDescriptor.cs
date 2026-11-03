@@ -150,13 +150,19 @@ public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// position (or EOF when EOTM is absent), then re-emits a fresh EOTM. All
   /// existing DBLKs stay byte-identical at their original offsets.
   /// </summary>
+  /// <remarks>
+  /// A path puts the file into its folder (a DIRB naming it is appended when needed) and a
+  /// folder input becomes a DIRB of its own; a file of the same path is replaced.
+  /// </remarks>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var input in inputs.Where(static i => i.IsDirectory && !string.IsNullOrEmpty(i.ArchiveName)))
+      BkfInPlaceModifier.AddDirectory(archive, input.ArchiveName);
     foreach (var (name, data) in FilesOnly(inputs)) {
-      var leaf = Path.GetFileName(name);
-      if (string.IsNullOrEmpty(leaf)) continue;
-      BkfInPlaceModifier.AddFile(archive, leaf, data);
+      if (string.IsNullOrEmpty(Path.GetFileName(name.Replace('\\', '/')))) continue;
+      BkfInPlaceModifier.RemoveFile(archive, name);
+      BkfInPlaceModifier.AddFile(archive, name, data);
     }
   }
 
@@ -169,10 +175,8 @@ public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
-    foreach (var name in entryNames) {
-      var leaf = Path.GetFileName(name);
-      if (string.IsNullOrEmpty(leaf)) continue;
-      BkfInPlaceModifier.RemoveFile(archive, leaf);
-    }
+    // A name is the full path; a folder goes with everything in it.
+    foreach (var name in entryNames)
+      BkfInPlaceModifier.RemoveFile(archive, name);
   }
 }

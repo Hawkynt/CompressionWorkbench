@@ -102,6 +102,9 @@ public static class BkfWriter {
     WriteFlbBlock(ms, BuildContainerBlock("SSET"), logicalBlockSize);
     WriteFlbBlock(ms, BuildContainerBlock("VOLB"), logicalBlockSize);
 
+    // The root has no DIRB of its own: its files must come before any other folder's,
+    // or they would land in that folder.
+    if (order.Remove("")) order.Insert(0, "");
     foreach (var dir in order) {
       if (dir.Length > 0)
         WriteFlbBlock(ms, BuildDirbBlock(dir), logicalBlockSize);
