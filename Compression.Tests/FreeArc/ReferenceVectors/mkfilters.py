@@ -36,7 +36,8 @@ write('empty.bin', b'')
 
 rows = ["# archive\tname\tsize\tsha256 -- produced by FreeArc 0.67 Arc.exe x"]
 for name, switch in [('filters-rep.arc', '-mrep:1mb'), ('filters-delta.arc', '-mdelta'),
-                     ('filters-exe.arc', '-mexe'), ('filters-mx.arc', '-mx')]:
+                     ('filters-exe.arc', '-mexe'), ('filters-mx.arc', '-mx'),
+                     ('filters-4x4.arc', '-m4x4:b64kb:lzma'), ('filters-m5x.arc', '-m5x')]:
     target = os.path.join(work, name)
     p = subprocess.run([arc, 'a', target, '-i0', '-cfg-', '-ep1', switch, os.path.join(src, '*')],
                        capture_output=True, text=True, errors='replace')

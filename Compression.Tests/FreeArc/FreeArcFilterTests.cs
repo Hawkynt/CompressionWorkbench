@@ -28,6 +28,8 @@ public sealed class FreeArcFilterTests {
   [TestCase("filters-delta", "delta")]
   [TestCase("filters-exe", "exe")]
   [TestCase("filters-mx", "rep:153kb+exe+delta+lzma:153kb:normal:bt4:128")]
+  [TestCase("filters-4x4", "4x4:b64kb:lzma:153kb:normal:32")]
+  [TestCase("filters-m5x", "exe+delta+4x4:lzma:153kb:normal:32:mc32")]
   public void GivenFreeArcArchive_WhenExtracted_ThenEveryFileMatchesArc(string vector, string method) {
     var expected = Manifest.Value.Where(r => r.Archive == vector + ".arc").ToArray();
     Assert.That(expected, Has.Length.EqualTo(5));
@@ -47,6 +49,32 @@ public sealed class FreeArcFilterTests {
   [Test]
   public void GivenTheDefaultMaximumChain_WhenCheckedForSupport_ThenItIsDecodable()
     => Assert.That(FreeArcMethods.IsSupported("rep:153kb+exe+delta+lzma:153kb:normal:bt4:128"), Is.True);
+
+  [TestCase("4x4:lzma:447kb:fast:32:mc4", true)]
+  [TestCase("4x4:b4mb:t2:lzma:1mb", true)]
+  [TestCase("4x4:tor:3:144kb", false)]
+  [TestCase("4x4:4x4:lzma", false)]
+  [TestCase("4x4:b4mb", false)]
+  public void GivenAFourByFourStage_WhenCheckedForSupport_ThenItsInnerMethodDecides(string method, bool supported)
+    => Assert.That(FreeArcMethods.IsSupported(method), Is.EqualTo(supported));
+
+  [Test]
+  public void GivenAFourByFourStreamWithAStoredChunk_WhenDecoded_ThenTheChunkIsCopied() {
+    var stream = Words(0, unchecked((int)0xFFFFFFFF), 3).Concat("abc"u8.ToArray()).ToArray();
+    Assert.That(FreeArcMethods.Decode("4x4:lzma", stream, 3), Is.EqualTo("abc"u8.ToArray()));
+  }
+
+  [Test]
+  public void GivenAFourByFourStreamOfAnUnknownVersion_WhenDecoded_ThenItIsRefused() {
+    var stream = Words(1, unchecked((int)0xFFFFFFFF), 3).Concat("abc"u8.ToArray()).ToArray();
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("4x4:lzma", stream, 3));
+  }
+
+  [Test]
+  public void GivenAFourByFourChunkCutShort_WhenDecoded_ThenItIsRefused() {
+    var stream = Words(0, unchecked((int)0xFFFFFFFF), 10).Concat("abc"u8.ToArray()).ToArray();
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("4x4:lzma", stream, 10));
+  }
 
   [Test]
   public void GivenTornadoBehindFourByFour_WhenCheckedForSupport_ThenItIsStillRefused()

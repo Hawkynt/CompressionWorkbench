@@ -128,6 +128,36 @@ internal static class FreeArcFilters {
     }
   }
 
+  /// <summary>
+  /// <c>4x4</c>: a 32-bit version (0), then chunks of <c>decodedSize, storedSize, bytes</c> until
+  /// the stage input ends. Each chunk is an independent stream of <paramref name="inner"/> that
+  /// decodes to exactly <c>decodedSize</c> bytes; <c>decodedSize</c> = 0xFFFFFFFF marks a chunk
+  /// stored as is.
+  /// </summary>
+  public static byte[] DecodeFourByFour(ReadOnlySpan<byte> input, string inner, Func<string, byte[], long, byte[]> decodeInner) {
+    var p = new Reader(input, "4x4");
+    var version = p.U32();
+    if (version != 0)
+      throw new InvalidDataException($"FreeArc 4x4: unknown format version {version}.");
+    using var output = new MemoryStream(input.Length * 2);
+    while (!p.AtEnd) {
+      var decoded = p.U32();
+      var stored = p.U32();
+      var chunk = p.Take(stored);
+      if (decoded == uint.MaxValue) {
+        output.Write(chunk);
+        continue;
+      }
+      if (decoded > int.MaxValue)
+        throw new InvalidDataException("FreeArc 4x4: chunk is larger than supported.");
+      var data = decodeInner(inner, chunk.ToArray(), decoded);
+      if (data.Length != decoded)
+        throw new InvalidDataException($"FreeArc 4x4: chunk decoded to {data.Length} bytes, expected {decoded}.");
+      output.Write(data);
+    }
+    return output.ToArray();
+  }
+
   /// <summary><c>exe</c>: the x86 CALL/JMP converter, started at address 0 over the whole stream.</summary>
   public static byte[] DecodeExe(ReadOnlySpan<byte> input) => Compression.Core.Transforms.BcjFilter.DecodeX86(input);
 
