@@ -297,7 +297,6 @@ format,Lzham,LZHAM,Stream,,.lzham,,Y,Y,
 format,Lzip,Lzip,Stream,,.lz;.lzip,,Y,Y,
 format,Lzma,LZMA,Stream,,.lzma,,Y,Y,
 format,Lzop,LZOP,Stream,,.lzo,,Y,Y,
-format,Lzs,LZS,Stream,,.lzs,,Y,Y,
 format,LzxAmiga,LZX (Amiga),Archive,,.lzx,Y,Y,Y,Y
 format,M3u8,HLS Playlist (M3U8),Archive,,.m3u8;.m3u,Y,Y,,
 format,MacBinary,MacBinary,Wrapper,,.bin;.macbin,,Y,Y,
