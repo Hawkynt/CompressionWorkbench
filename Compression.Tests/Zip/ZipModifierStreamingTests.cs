@@ -251,14 +251,19 @@ public class ZipModifierStreamingTests {
   }
 
   [Test, Category("RoundTrip")]
-  public void DescriptorAdd_GivenDirectoryInput_WhenAdded_ThenItIsSkipped() {
+  public void DescriptorAdd_GivenDirectoryInput_WhenAdded_ThenItBecomesAFolderEntry() {
     using var zip = SeedZip();
-    var before = zip.ToArray();
+    zip.Position = 0;
+    List<string> before;
+    using (var original = new SysZipArchive(zip, SysZipArchiveMode.Read, leaveOpen: true))
+      before = [.. original.Entries.Select(e => e.FullName)];
 
     ((IArchiveModifiable)new ZipFormatDescriptor()).Add(zip,
       [new ArchiveInputInfo(Path.GetTempPath(), "somedir", IsDirectory: true)]);
 
-    Assert.That(zip.ToArray(), Is.EqualTo(before));
+    zip.Position = 0;
+    using var archive = new SysZipArchive(zip, SysZipArchiveMode.Read, leaveOpen: true);
+    Assert.That(archive.Entries.Select(e => e.FullName), Is.EquivalentTo(before.Append("somedir/")));
   }
 
   [Test, Category("RoundTrip")]
