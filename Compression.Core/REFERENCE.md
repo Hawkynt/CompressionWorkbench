@@ -2073,7 +2073,7 @@ Decodes the LZRW1 control-word format produced by `Lzrw1Compressor`. Reference: 
 
 #### `Lzrw3BuildingBlock`
 
-Exposes LZRW3 compression as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support. Reference: Ross N. Williams, "LZRW3", http://ross.net/compression/lzrw3.html.
+Exposes LZRW3 compression as a benchmarkable building block. The block's bytes are exactly the stream Ross N. Williams' reference `lzrw3.c` writes, flag bytes included. Reference: Ross N. Williams, "LZRW3", http://ross.net/compression/lzrw3.html.
 
 Implements `IBuildingBlock`.
 
@@ -2089,19 +2089,19 @@ Implements `IBuildingBlock`.
 
 #### `Lzrw3Compressor`
 
-Implements LZRW3 compression from its public algorithm description: Ross N. Williams, "LZRW3: A Hash Table Index Variant of LZRW1", http://ross.net/compression/lzrw3.html — an LZRW1 derivative that transmits 4096-entry hash-table indices instead of raw offsets, so the decoder can resolve a match purely from a synchronized hash table (a "persistent phrase" table) rather than an explicit distance field.
+LZRW3 compressor, converted from Ross N. Williams' public-domain reference `lzrw3.c` (release 1, 30-Jun-1991). Output matches the reference byte for byte.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` using the LZRW3 control-word format. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> source)` | Compresses `source` into an LZRW3 stream. |
 
 #### `Lzrw3Decompressor`
 
-Decodes the LZRW3 control-word format produced by `Lzrw3Compressor`. Reference: Ross N. Williams, http://ross.net/compression/lzrw3.html. Mirrors the compressor's queued hash-table synchronization exactly (see remarks there): a position's hash entry only becomes visible once its 3-byte window is fully decoded.
+LZRW3 decompressor, converted from Ross N. Williams' public-domain reference `lzrw3.c`. See `Lzrw3Compressor` for the stream layout.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses an LZRW3 stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses an LZRW3 stream. |
 
 ### Namespace `Compression.Core.Dictionary.Lzs`
 

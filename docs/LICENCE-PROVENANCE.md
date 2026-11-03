@@ -68,6 +68,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Compression.Core/Dictionary/Zling/ZlingCodec.cs` | libzling (Zhang Li), revision `6828e31517bf94fda8e1e8e15a583ab58acde637` | BSD-3-Clause | `Compression.Core/Dictionary/Zling/THIRD-PARTY-NOTICE.libzling.txt` |
 | `Compression.Core/Dictionary/Balz/BalzCodec.cs` | Ilya Muravyov `balz.cpp` (BALZ 1.20) | public domain | `Compression.Core/Dictionary/Balz/THIRD-PARTY-NOTICE.BALZ.txt` |
 | `Compression.Core/Dictionary/Crush/CrushCodec.cs` | Ilya Muravyov `crush.cpp` (CRUSH 1.00) | public domain | `Compression.Core/Dictionary/Crush/THIRD-PARTY-NOTICE.CRUSH.txt` |
+| `Compression.Core/Dictionary/Lzrw3/` | Ross N. Williams `lzrw3.c` (release 1, 30-Jun-1991) | public domain | `Compression.Core/Dictionary/Lzrw3/THIRD-PARTY-NOTICE.LZRW3.txt` |
 
 ## A — compatible, notice already in place
 

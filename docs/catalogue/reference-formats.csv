@@ -622,7 +622,7 @@ LZP,,codec,,,,,,,,0,,bb:BB_Lzp,Y,Y,,OURS-ONLY,,
 LZRLE,,codec,,,,,,,,0,,bb:BB_Lzrle,Y,Y,,OURS-ONLY,,
 CRUSH (bb:BB_Crush),,codec,,,,,,,,0,https://sourceforge.net/projects/crush/,bb:BB_Crush,Y,Y,,OURS-ONLY,,byte-identical to CRUSH 1.00 cf/c/cx
 LZRW1,,codec,,,,,,,,0,,bb:BB_Lzrw1,Y,Y,,OURS-ONLY,,
-LZRW3,,codec,,,,,,,,0,,bb:BB_Lzrw3,Y,Y,,OURS-ONLY,,
+LZRW3,,codec,,,,,,,,0,http://www.ross.net/compression/lzrw3.html,bb:BB_Lzrw3,Y,Y,,OURS-ONLY,,byte-identical to Ross Williams' lzrw3.c
 LZTURBO,,codec,,,,,,,,0,,bb:BB_Lzturbo,Y,Y,,OURS-ONLY,,
 LZVN,,codec,,,,,,,,0,,bb:BB_Lzvn,Y,Y,,OURS-ONLY,,
 LZWL,,codec,,,,,,,,0,,bb:BB_Lzwl,Y,Y,,OURS-ONLY,,
