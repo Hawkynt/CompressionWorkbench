@@ -513,6 +513,10 @@ public static partial class FormatDetector {
       // IExpress / wextract: the cabinet lives in the RT_RCDATA resource "CABINET".
       if (isPe && FileFormat.IExpress.IExpressFormatDescriptor.IsIExpress(fs)) return Format.IExpress;
 
+      // Wise Installation System: its overlay header follows the 16- or 32-bit stub (or the stub
+      // a launcher carries as a resource), and its first stream must inflate to the size it gives.
+      if (isPe && FileFormat.WiseInstaller.WiseReader.IsWise(fs)) return Format.WiseInstaller;
+
       // An NSIS first header sits right after the exe stub, at a multiple of 512 bytes (the
       // exehead itself only looks there), so a large installer keeps it far from the tail.
       if (HasNsisFirstHeader(fs)) return Format.Nsis;
