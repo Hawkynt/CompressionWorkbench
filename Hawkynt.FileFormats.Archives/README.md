@@ -93,7 +93,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [uuencode](https://en.wikipedia.org/wiki/Uuencoding) | `UuEncoding` | `.uue` `.uu` | ✅ | ✅ | — |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/uuencode.html) |
 | [XXencode](https://en.wikipedia.org/wiki/Xxencoding) | `XxEncoding` | `.xxe` `.xx` | ✅ | ✅ | — | Detected by extension only (the `begin` header is uuencode's); uudeview cross-decodes both directions | [Archive Team](http://fileformats.archiveteam.org/wiki/XXencode) |
 | [XZ](https://en.wikipedia.org/wiki/XZ_Utils) | `Xz` | `.xz` | ✅ | ✅ | ✅ |  | [tukaani.org](https://tukaani.org/xz/xz-file-format.txt) |
-| [yEnc](https://en.wikipedia.org/wiki/YEnc) | `YEnc` | `.yenc` `.uu` | ✅ | ✅ | — |  | [yenc.org](http://www.yenc.org/yenc-draft.1.3.txt) |
+| [yEnc](https://en.wikipedia.org/wiki/YEnc) | `YEnc` | `.yenc` `.uu` | ✅ | ✅ | — | `=yend` size and CRC-32 checked; read as a file, so NNTP dot-doubling is not undone | [yenc.org](http://www.yenc.org/yenc-draft.1.3.txt) |
 | Yaz0 | `Yaz0` | `.yaz0` `.szs` | ✅ | ✅ | ✅ |  | [wiki.tockdom.com](https://wiki.tockdom.com/wiki/YAZ0) |
 | [zlib](https://en.wikipedia.org/wiki/Zlib) | `Zlib` | `.zlib` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1950) |
 | Zling | `Zling` | `.zling` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/richox/libzling) |
