@@ -1,13 +1,17 @@
 namespace FileFormat.Nsis;
 
 /// <summary>
-/// A file an NSIS installer extracts: one <c>File</c> instruction of the install script.
+/// A file an NSIS installer extracts: one <c>File</c> instruction of the install script, or the
+/// uninstaller a <c>WriteUninstaller</c> instruction writes.
 /// </summary>
 /// <param name="FileName">
 /// The target path as the script names it, with forward slashes. A leading <c>$INSTDIR</c> is
 /// dropped, as 7-Zip does; any other variable (<c>$PLUGINSDIR</c>, <c>$SYSDIR</c>, ...) stays.
 /// </param>
-/// <param name="DataOffset">Offset of the file's length-prefixed block within the data section.</param>
+/// <param name="DataOffset">
+/// Offset of the file's length-prefixed block within the data section. For a patched
+/// uninstaller this is the icon-patch block; the uninstaller's own header follows it.
+/// </param>
 /// <param name="LastModified">The file time the compiler recorded, in UTC, or <see langword="null"/> when none.</param>
 public sealed record NsisEntry(string FileName, uint DataOffset, DateTime? LastModified) {
 
@@ -20,6 +24,16 @@ public sealed record NsisEntry(string FileName, uint DataOffset, DateTime? LastM
   /// </summary>
   public long CompressedSize { get; internal set; } = -1;
 
-  /// <summary>Gets whether the entry is a directory; NSIS <c>File</c> entries never are.</summary>
+  /// <summary>Gets whether the entry is a directory; NSIS entries never are.</summary>
   public bool IsDirectory => false;
+
+  /// <summary>Gets whether the entry is the uninstaller a <c>WriteUninstaller</c> instruction writes.</summary>
+  public bool IsUninstaller { get; init; }
+
+  /// <summary>
+  /// Gets the size of the uninstaller's icon-patch block: when non-zero the uninstaller is the
+  /// installer's exe stub with that patch applied, followed by the block after the patch. Zero for
+  /// files, and for an uninstaller the compiler stored whole.
+  /// </summary>
+  public int UninstallerPatchSize { get; init; }
 }

@@ -10,15 +10,21 @@ r = random.Random(1234)
 open('payload/sub/random.bin', 'wb').write(bytes(r.getrandbits(8) for _ in range(3000)))
 open('payload/sub/repeat.txt', 'w').write('abcdefgh' * 4000)
 
-def script(comp, solid, uni, out):
+def script(comp, solid, uni, out, uninst=False):
     lines = []
     if uni:
         lines.append(f'Unicode {uni}')
     lines += ['Name "fixture"', f'OutFile "{out}"', 'RequestExecutionLevel user', 'InstallDir "$TEMP\\nsisfixture"',
-              f'SetCompressor /FINAL {"/SOLID " if solid else ""}{comp}', 'Page instfiles', 'Section',
+              'SetCompress off' if comp == 'stored' else f'SetCompressor /FINAL {"/SOLID " if solid else ""}{comp}',
+              'Page instfiles', 'Section',
               'SetOutPath "$INSTDIR"', 'File "payload\\readme.txt"', 'SetOutPath "$INSTDIR\\sub"',
               'File "payload\\sub\\random.bin"', 'File "payload\\sub\\repeat.txt"', 'File "payload\\sub\\readme-copy.txt"',
               'SectionEnd']
+    if uninst:
+        # WriteUninstaller stores the uninstaller's icon patch and its own header in the data
+        # section; the uninstaller is the exe stub with that patch applied, then that header.
+        lines[-1:-1] = ['WriteUninstaller "$INSTDIR\\uninst.exe"']
+        lines += ['Section "Uninstall"', 'Delete "$INSTDIR\\uninst.exe"', 'SectionEnd']
     return '\r\n'.join(lines) + '\r\n'
 
 jobs = []
@@ -29,8 +35,14 @@ for comp in ('zlib', 'bzip2', 'lzma'):
         jobs.append((NSIS2, comp, solid, None, f'nsis2-{comp}-{tag}.exe'))
 jobs.append((NSIS3, 'lzma', True, 'false', 'nsis3-lzma-solid-ansi.exe'))
 jobs.append((NSIS3, 'zlib', False, 'false', 'nsis3-zlib-nonsolid-ansi.exe'))
-for exe, comp, solid, uni, out in jobs:
+jobs = [job + (False,) for job in jobs]
+jobs.append((NSIS3, 'lzma', True, 'true', 'nsis3-lzma-solid-uninst.exe', True))
+jobs.append((NSIS3, 'zlib', False, 'true', 'nsis3-zlib-nonsolid-uninst.exe', True))
+jobs.append((NSIS2, 'bzip2', True, None, 'nsis2-bzip2-solid-uninst.exe', True))
+jobs.append((NSIS2, 'lzma', False, None, 'nsis2-lzma-nonsolid-uninst.exe', True))
+jobs.append((NSIS3, 'stored', False, 'true', 'nsis3-stored-uninst.exe', True))
+for exe, comp, solid, uni, out, uninst in jobs:
     nsi = out[:-4] + '.nsi'
-    open(nsi, 'w').write(script(comp, solid, uni, out))
+    open(nsi, 'w').write(script(comp, solid, uni, out, uninst))
     p = subprocess.run([exe, '-V1', nsi], capture_output=True, text=True)
     print(out, p.returncode, os.path.getsize(out) if os.path.exists(out) else -1, p.stdout[-300:], p.stderr[-300:])

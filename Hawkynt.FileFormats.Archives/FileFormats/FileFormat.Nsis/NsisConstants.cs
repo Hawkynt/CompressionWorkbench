@@ -32,14 +32,22 @@ internal static class NsisConstants {
   internal const int BlockLangTables = 4;
 
   // Opcodes that precede every optional one in the EW_* enum, so they hold in every NSIS 2/3 build.
+  internal const int OpNop = 2;          // EW_NOP: [jump target] (Nop / Goto)
+  internal const int OpAssignVar = 25;   // EW_ASSIGNVAR: [variable, string, max length, start]
   internal const int OpCreateDir = 11;   // EW_CREATEDIR: [path, ?SetOutPath, ?restrictAcl]
   internal const int OpExtractFile = 20; // EW_EXTRACTFILE: [overwrite, name, data offset, time low, time high, allow ignore]
+
+  // EW_WRITEUNINSTALLER: [name, data offset, icon-patch size, "$INSTDIR\name" (2.29+), 0, 0].
+  // Official NSIS 2 and 3 builds agree on this value; forks that insert opcodes before it shift
+  // it, so CollectEntries also checks the parameters' shape before trusting the instruction.
+  internal const int OpWriteUninstaller = 62;
 
   // String escape codes. NSIS 3 (ANSI and Unicode) uses NS_*_CODE 1..4; NSIS 2 ANSI used 252..255.
   internal const int Nsis3LangCode = 1, Nsis3ShellCode = 2, Nsis3VarCode = 3, Nsis3SkipCode = 4;
   internal const int Nsis2SkipCode = 252, Nsis2VarCode = 253, Nsis2ShellCode = 254, Nsis2LangCode = 255;
 
   // Variable indices (NSIS 2.26+ and 3.x): $0-$9 are 0-9, $R0-$R9 10-19, then these.
+  internal const int VarR4 = 14;
   internal const int VarInstDir = 21;
   internal const int VarOutDir = 22;
   internal const int VarExeDir = 23;
