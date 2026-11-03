@@ -458,7 +458,7 @@ checks.
 **Partition-table support.** `MbrParser`, `GptParser` and `PartitionTypeDatabase` feed recursive
 descent so `--recursive` can follow disk image → partition table → filesystem → nested format.
 Raw disk images (`PartitionedDisk`) read GPT (512- and 4096-byte LBAs), MBR with logical
-partitions, APM, BSD disklabels, Amiga RDB, Sun and SGI labels; files inside a partition are edited
+partitions, APM, BSD disklabels, Amiga RDB, Sun and SGI labels and Atari AHDI tables; files inside a partition are edited
 in place by that partition's filesystem editor, GPT/MBR partitions are added and removed, and new
 disks are created from partition images — see [ARCHITECTURE.md](ARCHITECTURE.md).
 
