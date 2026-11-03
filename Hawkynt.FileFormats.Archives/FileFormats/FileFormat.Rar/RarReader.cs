@@ -514,9 +514,16 @@ public sealed class RarReader : IDisposable {
     var hasher = new RarHashingStream(output, crc: verify && item.Crc != null, blake: false, rar14: verify && item.Checksum14 != null);
     if (item.Method == 0) {
       CopyBounded(packed, hasher, item.Size);
+    } else if (item.UnpackVersion is > 20 and <= 36 and not 26) {
+      // RAR 2.9 streams: any size, bounded memory.
+      var continueSolid = this.ContinuesSolid(itemIndex, item);
+      var d = continueSolid && this._solidDecoder is Rar3Decoder r3 ? r3 : new Rar3Decoder();
+      d.Decompress(packed, packedSize, item.Size, hasher, Math.Min(item.WindowBits, 22));
+      if (!item.IsService) this._solidDecoder = d;
     } else {
+      // RAR 1.5 and 2.0 could not store files this large; their decoders work in memory.
       if (item.Size > int.MaxValue || packedSize > int.MaxValue)
-        throw new NotSupportedException($"RAR entry '{item.Name}': compressed RAR 4 files over 2 GiB are not supported by the in-memory RAR 1.5-4.x decoders.");
+        throw new NotSupportedException($"RAR entry '{item.Name}': RAR 1.5/2.0 compressed files over 2 GiB are not supported.");
       var data = new byte[packedSize];
       var got = 0;
       while (got < data.Length) {
@@ -535,10 +542,6 @@ public sealed class RarReader : IDisposable {
       } else if (ver is <= 20 or 26) {
         var d = continueSolid && this._solidDecoder is Rar2Decoder r2 ? r2 : new Rar2Decoder();
         unpacked = d.Decompress(data.AsSpan(0, got), size);
-        if (!item.IsService) this._solidDecoder = d;
-      } else if (ver <= 36) {
-        var d = continueSolid && this._solidDecoder is Rar3Decoder r3 ? r3 : new Rar3Decoder();
-        unpacked = d.Decompress(data.AsSpan(0, got), size, Math.Min(item.WindowBits, 22));
         if (!item.IsService) this._solidDecoder = d;
       } else
         throw new NotSupportedException($"RAR unpack version {ver} is not supported in RAR 4 archives.");

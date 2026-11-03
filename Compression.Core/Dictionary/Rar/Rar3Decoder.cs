@@ -20,6 +20,10 @@ namespace Compression.Core.Dictionary.Rar;
 /// One instance decodes one file, or the files of a solid archive in order: the window,
 /// the tables, the repeat distances and pending filters carry over between calls.
 /// </para>
+/// <para>
+/// Packed data is read from a stream and output leaves the window as it is produced, filtered
+/// blocks once complete, so memory is bounded by the window whatever the file size.
+/// </para>
 /// </remarks>
 public sealed class Rar3Decoder {
   private const int MainCodeSize = 299;
@@ -31,6 +35,10 @@ public sealed class Rar3Decoder {
   private const int PrecodeSize = 20;
   private const int VmWorkSize = 0x3C000;
   private const int VmUserGlobalSize = 0x2000 - 0x40;
+  // RAR 2.9 decoders keep at least 4 MB: room for the largest dictionary, a filter block
+  // (up to VmWorkSize) waiting to complete, and output not yet handed on.
+  private const int MinWindow = 1 << 22;
+  private const int FlushThreshold = 1 << 20;
 
   private static readonly byte[] LengthBases = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224];
   private static readonly byte[] LengthBits = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5];
@@ -59,6 +67,9 @@ public sealed class Rar3Decoder {
   private int _mask;
   private long _position;
   private long _fileEnd;
+  private long _written;
+  private long _outStart;
+  private Stream? _out;
 
   private readonly byte[] _lengths = new byte[TableSize];
   private HuffmanTable? _mainCode, _offsetCode, _lowOffsetCode, _lengthCode;
@@ -100,7 +111,25 @@ public sealed class Rar3Decoder {
   /// <exception cref="InvalidDataException">The data is corrupt.</exception>
   /// <exception cref="NotSupportedException">A filter program unrar would not run either.</exception>
   public byte[] Decompress(ReadOnlySpan<byte> compressed, int unpackedSize, int windowBits = 22) {
-    var size = 1 << Math.Clamp(windowBits, 16, 26);
+    using var input = new MemoryStream(compressed.ToArray(), writable: false);
+    using var output = new MemoryStream(unpackedSize);
+    this.Decompress(input, compressed.Length, unpackedSize, output, windowBits);
+    return output.ToArray();
+  }
+
+  /// <summary>Decompresses the packed data of one file from a stream into a stream.</summary>
+  /// <param name="input">The packed data; exactly <paramref name="packedSize"/> bytes are read.</param>
+  /// <param name="packedSize">Length of the packed data.</param>
+  /// <param name="unpackedSize">The file's size.</param>
+  /// <param name="output">Receives the file's bytes.</param>
+  /// <param name="windowBits">Dictionary size as a power of two (16-22 for RAR 3.x/4.x).</param>
+  /// <exception cref="InvalidDataException">The data is corrupt.</exception>
+  /// <exception cref="NotSupportedException">A filter program unrar would not run either.</exception>
+  public void Decompress(Stream input, long packedSize, long unpackedSize, Stream output, int windowBits = 22) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentOutOfRangeException.ThrowIfNegative(unpackedSize);
+    var size = Math.Max(MinWindow, 1 << Math.Clamp(windowBits, 16, 26));
     if (this._window.Length < size) {
       var bigger = new byte[size];
       for (var p = Math.Max(0, this._position - this._window.Length); p < this._position; ++p)
@@ -112,34 +141,77 @@ public sealed class Rar3Decoder {
     var fileStart = this._fileEnd;
     var fileEnd = fileStart + unpackedSize;
     this._fileEnd = fileEnd;
-    var output = new byte[unpackedSize];
-
-    // Bytes a previous file's last match already produced belong to this file.
-    for (var p = fileStart; p < Math.Min(this._position, fileEnd); ++p) output[p - fileStart] = this._window[p & this._mask];
-
-    if (unpackedSize > 0 && this._position < fileEnd) {
-      var reader = this._source = new BitReader(compressed.ToArray());
-      if (!this._tablesRead) this.ReadTables(reader);
-      this.Expand(reader, output, fileStart, fileEnd);
+    this._out = output;
+    this._outStart = fileStart;
+    try {
+      // Bytes a previous file's last match already produced belong to this file; they are
+      // still in the window, past what was written.
+      if (unpackedSize > 0 && this._position < fileEnd) {
+        var reader = this._source = new BitReader(input, packedSize);
+        if (!this._tablesRead) this.ReadTables(reader);
+        this.Expand(reader, fileEnd);
+      }
+      if (this._position < fileEnd) throw new InvalidDataException("RAR3: packed data ends before the file does.");
+      this.Flush(fileEnd);
+      if (this._written < fileEnd) throw new InvalidDataException("RAR3: filter block lies outside the file.");
+    } finally {
+      this._out = null;
     }
-    if (this._position < fileEnd) throw new InvalidDataException("RAR3: packed data ends before the file does.");
+  }
 
-    this.RunFilters(output, fileStart, fileEnd);
-    return output;
+  /// <summary>
+  /// Hands decoded bytes up to <paramref name="fileEnd"/> to the output: plain runs as they are,
+  /// a filtered block once all of it is decoded.
+  /// </summary>
+  private void Flush(long fileEnd) {
+    var target = Math.Min(this._position, fileEnd);
+    while (this._written < target) {
+      var filter = this._filters.Count > 0 ? this._filters[0] : null;
+      if (filter == null || filter.BlockStart >= target) {
+        this.WriteWindow(this._written, target);
+        return;
+      }
+      if (filter.BlockStart < this._written) throw new InvalidDataException("RAR3: filter block lies outside the file.");
+      if (filter.BlockStart > this._written) {
+        this.WriteWindow(this._written, filter.BlockStart);
+        continue;
+      }
+      if (filter.BlockLength > VmWorkSize) throw new InvalidDataException("RAR3: filter block too large.");
+      var end = filter.BlockStart + filter.BlockLength;
+      if (end > fileEnd) throw new InvalidDataException("RAR3: filter block lies outside the file.");
+      if (end > this._position) return;   // not decoded yet
+      var block = new byte[filter.BlockLength];
+      for (var i = 0; i < block.Length; ++i) block[i] = this._window[(filter.BlockStart + i) & this._mask];
+      this.Execute(filter, block, (uint)(filter.BlockStart - this._outStart));
+      this._out!.Write(block);
+      this._written = end;
+      this._filters.RemoveAt(0);
+    }
+  }
+
+  private void WriteWindow(long from, long to) {
+    while (from < to) {
+      var at = (int)(from & this._mask);
+      var n = (int)Math.Min(to - from, this._window.Length - at);
+      this._out!.Write(this._window, at, n);
+      from += n;
+    }
+    this._written = to;
   }
 
   // ── LZ ───────────────────────────────────────────────────────────────
 
-  private void Expand(BitReader reader, byte[] output, long fileStart, long fileEnd) {
+  private void Expand(BitReader reader, long fileEnd) {
     while (this._position < fileEnd) {
+      if (this._position - this._written >= FlushThreshold) this.Flush(fileEnd);
       if (this._ppmBlock) {
-        if (!this.DecodePpm(reader, output, fileStart, fileEnd)) return;
+        if (!this.DecodePpm(reader)) return;
         continue;
       }
 
       var symbol = this._mainCode!.Decode(reader);
       if (symbol < 256) {
-        this.EmitLiteral((byte)symbol, output, fileStart, fileEnd);
+        this.EmitLiteral((byte)symbol);
         continue;
       }
 
@@ -211,7 +283,7 @@ public sealed class Rar3Decoder {
       }
       this._lastOffset = offset;
       this._lastLength = length;
-      this.EmitMatch(offset, length, output, fileStart, fileEnd);
+      this.EmitMatch(offset, length);
     }
     this.ConsumeEndOfFile(reader);
   }
@@ -261,10 +333,10 @@ public sealed class Rar3Decoder {
   }
 
   /// <summary>One PPMd step; false at the end of the file's data.</summary>
-  private bool DecodePpm(BitReader reader, byte[] output, long fileStart, long fileEnd) {
+  private bool DecodePpm(BitReader reader) {
     var symbol = this.PpmSymbol();
     if (symbol != this._ppmEscape) {
-      this.EmitLiteral((byte)symbol, output, fileStart, fileEnd);
+      this.EmitLiteral((byte)symbol);
       return true;
     }
     switch (this.PpmSymbol()) {
@@ -289,15 +361,15 @@ public sealed class Rar3Decoder {
         var distance = 0;
         for (var i = 0; i < 3; ++i) distance = (distance << 8) | this.PpmSymbol();
         var length = this.PpmSymbol();
-        this.EmitMatch(distance + 2, length + 32, output, fileStart, fileEnd);
+        this.EmitMatch(distance + 2, length + 32);
         return true;
       }
       case 5:
-        this.EmitMatch(1, this.PpmSymbol() + 4, output, fileStart, fileEnd);
+        this.EmitMatch(1, this.PpmSymbol() + 4);
         return true;
       default:
         // Escape followed by 1: the escape byte itself.
-        this.EmitLiteral((byte)symbol, output, fileStart, fileEnd);
+        this.EmitLiteral((byte)symbol);
         return true;
     }
   }
@@ -326,20 +398,14 @@ public sealed class Rar3Decoder {
     this._oldOffsets[0] = offset;
   }
 
-  private void EmitLiteral(byte value, byte[] output, long fileStart, long fileEnd) {
-    var p = this._position++;
-    this._window[p & this._mask] = value;
-    if (p >= fileStart && p < fileEnd) output[p - fileStart] = value;
-  }
+  private void EmitLiteral(byte value) => this._window[this._position++ & this._mask] = value;
 
-  private void EmitMatch(int offset, int length, byte[] output, long fileStart, long fileEnd) {
+  private void EmitMatch(int offset, int length) {
     var window = this._window;
     var mask = this._mask;
     for (var i = 0; i < length; ++i) {
       var p = this._position++;
-      var b = window[(p - offset) & mask];
-      window[p & mask] = b;
-      if (p >= fileStart && p < fileEnd) output[p - fileStart] = b;
+      window[p & mask] = window[(p - offset) & mask];
     }
   }
 
@@ -456,20 +522,6 @@ public sealed class Rar3Decoder {
     if (br.Overrun) throw new InvalidDataException("RAR3: truncated filter.");
 
     this._filters.Add(new(program, blockStart, blockLength, registers));
-  }
-
-  private void RunFilters(byte[] output, long fileStart, long fileEnd) {
-    var applied = 0;
-    foreach (var filter in this._filters) {
-      if (filter.BlockStart >= fileEnd) break;
-      ++applied;
-      var start = filter.BlockStart - fileStart;
-      if (start < 0 || start + filter.BlockLength > output.Length)
-        throw new InvalidDataException("RAR3: filter block lies outside the file.");
-      var block = output.AsSpan((int)start, (int)filter.BlockLength);
-      this.Execute(filter, block, (uint)start);
-    }
-    this._filters.RemoveRange(0, applied);
   }
 
   private void Execute(PendingFilter filter, Span<byte> block, uint filePosition) {
@@ -641,9 +693,45 @@ public sealed class Rar3Decoder {
   // ── bit input ────────────────────────────────────────────────────────
 
   /// <summary>Bits most significant first; reading past the end yields zeros up to a small slack.</summary>
-  internal sealed class BitReader(byte[] data) {
-    private readonly byte[] _data = data;
+  internal sealed class BitReader {
+    private readonly Stream _input;
+    private long _bytesLeft;
+    private readonly byte[] _buffer = new byte[1 << 16];
+    private int _bufferPos, _bufferLen;
+    private ulong _acc;          // pending bits, most significant first
+    private int _accBits;
     private long _bit;
+    private readonly long _totalBits;
+
+    public BitReader(byte[] data) : this(new MemoryStream(data, writable: false), data.Length) { }
+
+    public BitReader(Stream input, long length) {
+      this._input = input;
+      this._bytesLeft = length;
+      this._totalBits = length * 8;
+    }
+
+    private ulong NextByte() {
+      if (this._bufferPos == this._bufferLen) {
+        if (this._bytesLeft <= 0) return 0;
+        var n = this._input.Read(this._buffer, 0, (int)Math.Min(this._buffer.Length, this._bytesLeft));
+        if (n <= 0) {
+          this._bytesLeft = 0;
+          return 0;
+        }
+        this._bytesLeft -= n;
+        this._bufferPos = 0;
+        this._bufferLen = n;
+      }
+      return this._buffer[this._bufferPos++];
+    }
+
+    private void Fill() {
+      while (this._accBits <= 56) {
+        this._acc |= this.NextByte() << (56 - this._accBits);
+        this._accBits += 8;
+      }
+    }
 
     public int Bits(int n) {
       if (n == 0) return 0;
@@ -653,21 +741,22 @@ public sealed class Rar3Decoder {
     }
 
     public int Peek(int n) {
-      var at = (int)(this._bit >> 3);
-      uint word = 0;
-      for (var i = 0; i < 4; ++i) word = (word << 8) | (at + i < this._data.Length ? this._data[at + i] : 0u);
-      return (int)((word << (int)(this._bit & 7)) >> (32 - n));
+      if (this._accBits < n) this.Fill();
+      return (int)(this._acc >> (64 - n));
     }
 
     public void Skip(int n) {
+      if (this._accBits < n) this.Fill();
+      this._acc <<= n;
+      this._accBits -= n;
       this._bit += n;
-      if (this._bit > (long)this._data.Length * 8 + 64) throw new InvalidDataException("RAR3: unexpected end of packed data.");
+      if (this._bit > this._totalBits + 64) throw new InvalidDataException("RAR3: unexpected end of packed data.");
     }
 
-    public void AlignToByte() => this._bit = (this._bit + 7) & ~7L;
+    public void AlignToByte() => this.Skip((int)((8 - (this._bit & 7)) & 7));
 
     /// <summary>Bits left before the end of the data.</summary>
-    public long Remaining => (long)this._data.Length * 8 - this._bit;
+    public long Remaining => this._totalBits - this._bit;
   }
 
   /// <summary>Filter parameters are read from their own byte string, most significant bit first.</summary>

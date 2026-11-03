@@ -121,25 +121,23 @@ public sealed class Rar4Writer : IDisposable {
     if (method == RarConstants.Rar4MethodStore) {
       Copy(data, spill.Stream, length, crc);
     } else {
-      // The RAR 2.9 encoder works on whole files.
-      if (length > int.MaxValue) throw new NotSupportedException("RAR 4 compression of files over 2 GiB is not supported; store them (method 0).");
-      var bytes = new byte[length];
-      ReadExactly(data, bytes);
-      crc.Update(bytes);
+      // The RAR 2.9 encoder streams: memory stays bounded by its window whatever the size.
       Rar3Encoder encoder;
       if (this._solid) {
         solidFlag = this._anyCompressed;
         encoder = this._solidEncoder ??= new Rar3Encoder(this._windowBits);
       } else
         encoder = new Rar3Encoder(this._windowBits);
-      var packed = encoder.Compress(bytes);
+      encoder.Compress(new CrcReadStream(data, crc), length, spill.Stream);
       this._anyCompressed = true;
-      if (!this._solid && packed.Length >= bytes.Length) {
+      if (!this._solid && spill.Stream.Length >= length && data.CanSeek) {
         // Did not shrink: store (never in a solid stream, whose window must see every file).
-        spill.Stream.Write(bytes);
+        data.Position -= length;
+        spill.Stream.SetLength(0);
+        crc.Reset();
+        Copy(data, spill.Stream, length, crc);
         method = RarConstants.Rar4MethodStore;
-      } else
-        spill.Stream.Write(packed);
+      }
     }
 
     byte[]? salt = null;

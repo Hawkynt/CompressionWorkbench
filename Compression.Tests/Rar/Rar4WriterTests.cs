@@ -21,6 +21,104 @@ public class Rar4WriterTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  /// <summary>Text-like bytes with long and short repeats, plus a stretch of noise.</summary>
+  private static byte[] Mixed(int length, int seed) {
+    var rng = new Random(seed);
+    var data = new byte[length];
+    var words = new[] { "alpha ", "beta ", "gamma ", "delta\r\n", "epsilon ", "zeta " };
+    var p = 0;
+    while (p < length) {
+      if (rng.Next(40) == 0) {
+        var n = Math.Min(length - p, rng.Next(1, 3000));
+        rng.NextBytes(data.AsSpan(p, n));
+        p += n;
+        continue;
+      }
+      foreach (var c in words[rng.Next(words.Length)]) {
+        if (p == length) break;
+        data[p++] = (byte)c;
+      }
+    }
+    return data;
+  }
+
+  [Category("RoundTrip")]
+  [Category("Boundary")]
+  [TestCase(16, 300_000)]      // several blocks (one token per byte of noise), window slides
+  [TestCase(16, 3_000_000)]    // the 64 KB window slides many times
+  [TestCase(22, 6_000_000)]    // 4 MB window: the buffer slides once full
+  public void Given_DataSpanningSeveralBlocksAndWindowSlides_When_StreamedThroughTheRar3Codec_Then_ItRoundTrips(int windowBits, int length) {
+    var data = Mixed(length, length);
+    // Noise first forces block switches early: one literal token per byte.
+    new Random(1).NextBytes(data.AsSpan(0, Math.Min(length, Rar3Encoder.BlockTokens + 1000)));
+    using var packed = new MemoryStream();
+    new Rar3Encoder(windowBits).Compress(new MemoryStream(data, writable: false), data.Length, packed);
+    packed.Position = 0;
+    using var output = new MemoryStream();
+    new Rar3Decoder().Decompress(packed, packed.Length, data.Length, output, windowBits);
+    Assert.That(output.ToArray(), Is.EqualTo(data));
+  }
+
+  [Category("RoundTrip")]
+  [Test]
+  public void Given_ASolidSequence_When_EachFileSpansBlocks_Then_TheSolidStreamRoundTrips() {
+    var files = new[] { Mixed(400_000, 1), [], Mixed(5, 2), Mixed(700_000, 3) };
+    var encoder = new Rar3Encoder(18);
+    var decoder = new Rar3Decoder();
+    foreach (var f in files) {
+      var packed = encoder.Compress(f);
+      Assert.That(decoder.Decompress(packed, f.Length, 18), Is.EqualTo(f));
+    }
+  }
+
+  [Category("RoundTrip")]
+  [Test]
+  public void Given_AReadOnlyOnceInput_When_ItDoesNotShrink_Then_TheEntryStaysCompressedAndCorrect() {
+    // A non-seekable input cannot be re-read for the store fallback.
+    var data = new byte[200_000];
+    new Random(5).NextBytes(data);
+    using var ms = new MemoryStream();
+    using (var w = new Rar4Writer(ms, leaveOpen: true))
+      w.AddFile("noise.bin", new ForwardOnly(data), data.Length);
+    ms.Position = 0;
+    using var reader = new RarReader(ms, leaveOpen: true);
+    Assert.That(reader.Entries[0].CompressionMethod, Is.Not.Zero);
+    Assert.That(reader.Extract(0), Is.EqualTo(data));
+  }
+
+  [Category("RoundTrip")]
+  [Test]
+  public void Given_ASeekableInput_When_ItDoesNotShrink_Then_ItIsStored() {
+    var data = new byte[200_000];
+    new Random(6).NextBytes(data);
+    using var ms = new MemoryStream();
+    using (var w = new Rar4Writer(ms, leaveOpen: true))
+      w.AddFile("noise.bin", new MemoryStream(data), data.Length);
+    ms.Position = 0;
+    using var reader = new RarReader(ms, leaveOpen: true);
+    Assert.That(reader.Entries[0].CompressionMethod, Is.Zero);
+    Assert.That(reader.Extract(0), Is.EqualTo(data));
+  }
+
+  private sealed class ForwardOnly(byte[] data) : Stream {
+    private int _pos;
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override int Read(byte[] buffer, int offset, int count) {
+      var n = Math.Min(count, data.Length - this._pos);
+      Array.Copy(data, this._pos, buffer, offset, n);
+      this._pos += n;
+      return n;
+    }
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+  }
+
   [Category("End2End")]
   [Category("RoundTrip")]
   [Test]

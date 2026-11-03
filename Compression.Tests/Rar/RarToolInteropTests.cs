@@ -119,6 +119,32 @@ public class RarToolInteropTests {
   public void Given_ARar20TargetArchive_When_UnrarExtractsIt_Then_ItIsByteExact()
     => this.Given_AnOldTargetArchive_When_UnrarExtractsIt_Then_ItIsByteExact("Rar2_0");
 
+  /// <summary>
+  /// RAR 4 files long enough for the encoder to switch Huffman tables mid-file and to slide its
+  /// window, solid and not: rar, unrar and 7-Zip must follow the table switches.
+  /// </summary>
+  [TestCase(1L)]
+  [TestCase(0L)]
+  public void Given_Rar4FilesSpanningSeveralBlocks_When_ToolsExtractThem_Then_TheyAreByteExact(long solidSize) {
+    if (!Tools().Any()) Assert.Ignore("No rar, unrar or 7z found.");
+    var dir = RarTools.TempDir("rar4blocks");
+    try {
+      var rnd = new Random(42);
+      var noise = new byte[400_000];
+      rnd.NextBytes(noise);
+      var text = System.Text.Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 120_000).Select(i => $"row {i % 9973} value {i * 7 % 1013}\n")));
+      var files = new Dictionary<string, byte[]>(StringComparer.Ordinal) {
+        ["noise-then-text.bin"] = [.. noise, .. text],
+        ["text.txt"] = text,
+      };
+      var archive = WriteOurs(dir, "blocks.rar", files, new() { [FormatOptionKeys.TargetCompatibility] = "Rar4" },
+        solidSize: solidSize);
+      foreach (var tool in Tools()) AssertExtractsIn(tool, archive, null, files);
+    } finally {
+      RarTools.TryDelete(dir);
+    }
+  }
+
   private void Given_AnOldTargetArchive_When_UnrarExtractsIt_Then_ItIsByteExact(string target) {
     if (!Tools().Any()) Assert.Ignore("No rar, unrar or 7z found.");
     var dir = RarTools.TempDir("rar15");
@@ -187,36 +213,45 @@ public class RarToolInteropTests {
   }
 
   /// <summary>
-  /// A file past 4 GiB through the streaming paths: written by us without buffering it, read back
-  /// with the CRC check, and tested by unrar when present. Memory stays bounded.
+  /// A compressed file past 4 GiB through the streaming paths, as RAR 5 and as RAR 4 (2.9 format):
+  /// written by us without buffering it, read back with an independent CRC of the output, and
+  /// tested by unrar and rar when present (they check the CRC we recorded, which is the input's).
+  /// Memory stays bounded.
   /// </summary>
-  [Test]
+  [TestCase(5)]
+  [TestCase(4)]
   [Explicit("Writes about 4.3 GiB of input through the codec; run on demand.")]
   [Category("Slow")]
-  public void Given_AFileOver4GiB_When_WrittenAndReadBackStreaming_Then_ItRoundTripsInBoundedMemory() {
+  public void Given_AFileOver4GiB_When_WrittenAndReadBackStreaming_Then_ItRoundTripsInBoundedMemory(int generation) {
     const long size = (4L << 30) + 123_457;
     var dir = RarTools.TempDir("rarbig");
     try {
       var archive = Path.Combine(dir, "big.rar");
-      uint crc;
+      var input = new PatternStream(size);
       using (var fs = File.Create(archive))
-      using (var w = new RarWriter(fs, method: 1, dictionarySizeLog: 22)) {
-        var input = new PatternStream(size);
-        w.AddFile("big.bin", input, size);
-        crc = input.Crc;
-      }
+        if (generation == 5) {
+          using var w = new RarWriter(fs, method: 1, dictionarySizeLog: 22);
+          w.AddFile("big.bin", input, size);
+        } else {
+          using var w = new Rar4Writer(fs, method: RarConstants.Rar4MethodFastest, windowBits: 22);
+          w.AddFile("big.bin", input, size);
+        }
+      Assert.That(input.Position, Is.EqualTo(size));
       using (var reader = RarReader.Open(archive)) {
+        Assert.That(reader.IsRar5, Is.EqualTo(generation == 5));
         var e = reader.Entries.Single();
         Assert.That(e.Size, Is.EqualTo(size));
-        Assert.That(e.Crc, Is.EqualTo(crc));
+        Assert.That(e.Crc, Is.EqualTo(input.Crc));
+        Assert.That(e.CompressionMethod, Is.Not.Zero, "compressed");
         var sink = new CountingStream();
         reader.Extract(0, sink);
         Assert.That(sink.Count, Is.EqualTo(size));
+        Assert.That(sink.Crc, Is.EqualTo(input.Crc), "byte-exact output");
       }
       Assert.That(System.Diagnostics.Process.GetCurrentProcess().PeakWorkingSet64, Is.LessThan(2L << 30), "bounded memory");
-      if (RarTools.Unrar != null) {
-        var t = RarTools.Run(RarTools.Unrar, ["t", "-idq", "-cfg-", archive], null, timeoutMs: 3_600_000);
-        Assert.That(t.ExitCode, Is.Zero, t.Output);
+      foreach (var tool in new[] { RarTools.Unrar, RarTools.Rar }.OfType<string>()) {
+        var t = RarTools.Run(tool, ["t", "-idq", "-cfg-", archive], null, timeoutMs: 3_600_000);
+        Assert.That(t.ExitCode, Is.Zero, tool + ": " + t.Output);
       }
     } finally {
       RarTools.TryDelete(dir);
@@ -252,13 +287,18 @@ public class RarToolInteropTests {
 
   private sealed class CountingStream : Stream {
     public long Count;
+    private readonly Compression.Core.Checksums.Crc32 _crc = new();
+    public uint Crc => this._crc.Value;
     public override bool CanRead => false;
     public override bool CanSeek => false;
     public override bool CanWrite => true;
     public override long Length => this.Count;
     public override long Position { get => this.Count; set => throw new NotSupportedException(); }
-    public override void Write(byte[] buffer, int offset, int count) => this.Count += count;
-    public override void Write(ReadOnlySpan<byte> buffer) => this.Count += buffer.Length;
+    public override void Write(byte[] buffer, int offset, int count) => this.Write(buffer.AsSpan(offset, count));
+    public override void Write(ReadOnlySpan<byte> buffer) {
+      this._crc.Update(buffer);
+      this.Count += buffer.Length;
+    }
     public override void Flush() { }
     public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
