@@ -87,7 +87,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [Snappy](https://en.wikipedia.org/wiki/Snappy) | `Snappy` | `.sz` `.snappy` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/google/snappy/blob/main/framing_format.txt) |
 | Squeeze (SQ) | `Squeeze` | `.sqz` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SQ) |
 | [SWF](https://en.wikipedia.org/wiki/SWF) | `Swf` | `.swf` | ✅ | ✅ | ✅ | FWS/CWS/ZWS envelope optimizer; no tag-level parsing | [open-flash.github.io](https://open-flash.github.io/mirrors/swf-spec-19.pdf) |
-| SZ (MS COMPRESS, KWAJ-less) | `SzCompress` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
+| SZ (MS COMPRESS, KWAJ-less) | `SzCompress` |  | ✅ | ✅ | ✅ | libmspack reads ours (its QBasic SZDD variant); no real `SZ ` file was found to test reading against | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
 | SZDD | `Szdd` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
 | [uuencode](https://en.wikipedia.org/wiki/Uuencoding) | `UuEncoding` | `.uue` `.uu` | ✅ | ✅ | — |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/uuencode.html) |
 | [XXencode](https://en.wikipedia.org/wiki/Xxencoding) | `XxEncoding` | `.xxe` `.xx` | ✅ | ✅ | — | Detected by extension only (the `begin` header is uuencode's); uudeview cross-decodes both directions | [Archive Team](http://fileformats.archiveteam.org/wiki/XXencode) |
