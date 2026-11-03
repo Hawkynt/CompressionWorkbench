@@ -29527,6 +29527,7 @@ Random-access in-place modifier for TAR archives. Add appends a new entry just b
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `AddEntry` | `static void AddEntry(Stream tar, TarEntry entry, byte[] data)` | Appends `entry` (a file, or a directory with no data) as it is given: name, type, mode and time are the caller's; the size is that of `data`. |
 | `AddFile` | `static void AddFile(Stream tar, string name, byte[] data)` | Appends a regular file entry. Walks the existing header chain to find the trailing zero blocks, writes the new header + data + zero blocks in their place, and truncates to the new length. |
 | `RemoveFile` | `static bool RemoveFile(Stream tar, string name, bool wipeData = true)` | Removes the named entry. Returns true if found. The trailing portion of the file is shifted forward to close the gap (TAR has no central directory; readers walk headers sequentially, so we must compact). |
 
