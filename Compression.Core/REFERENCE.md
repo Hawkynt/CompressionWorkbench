@@ -2037,7 +2037,7 @@ Decompresses data produced by `LzrleCompressor`.
 
 #### `Lzrw1BuildingBlock`
 
-Exposes LZRW1 compression as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support. Reference: Ross N. Williams, "LZRW1", http://ross.net/compression/lzrw1.html.
+Exposes LZRW1 compression as a benchmarkable building block. The block's bytes are exactly the stream Ross N. Williams' reference `lzrw1_compress` writes, flag bytes included. Reference: Ross N. Williams, "LZRW1", http://ross.net/compression/lzrw1.html.
 
 Implements `IBuildingBlock`.
 
@@ -2053,19 +2053,19 @@ Implements `IBuildingBlock`.
 
 #### `Lzrw1Compressor`
 
-Implements LZRW1 compression from its public algorithm description: Ross N. Williams, "An Extremely Fast Ziv-Lempel Data Compression Algorithm", Data Compression Conference 1991, http://ross.net/compression/lzrw1.html — a hash-matched LZ77 variant grouping 16 items behind a control word, with a 4096-entry single-probe hash table and matches of length 3-18.
+LZRW1 compressor, converted from Ross N. Williams' public-domain reference `lzrw1.c` (31-Mar-1991, as printed in "An Extremely Fast Ziv-Lempel Data Compression Algorithm", DCC'91). Output matches the reference byte for byte when its hash table starts empty.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` using the LZRW1 control-word format. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> source)` | Compresses `source` into an LZRW1 stream. |
 
 #### `Lzrw1Decompressor`
 
-Decodes the LZRW1 control-word format produced by `Lzrw1Compressor`. Reference: Ross N. Williams, http://ross.net/compression/lzrw1.html.
+LZRW1 decompressor, converted from Ross N. Williams' public-domain reference `lzrw1.c`. See `Lzrw1Compressor` for the stream layout.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses an LZRW1 stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses an LZRW1 stream. |
 
 ### Namespace `Compression.Core.Dictionary.Lzrw3`
 

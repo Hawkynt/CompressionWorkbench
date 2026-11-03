@@ -1,0 +1,13 @@
+Lzrw1Compressor.cs and Lzrw1Decompressor.cs are a C# conversion of:
+
+  LZRW1.C, Ross N. Williams, 31-Mar-1991
+  http://www.ross.net/compression/download/original/old_lzrw1.c
+  (the code printed in "An Extremely Fast Ziv-Lempel Data Compression Algorithm",
+  Data Compression Conference 1991, pp. 362-371)
+
+Licence, as stated in the file: "This code is public domain."
+
+Local changes: the hash table starts empty instead of uninitialised (the original notes that
+its output is therefore not deterministic); the four flag bytes are written as 0 or 1 followed
+by three zero bytes; the decoder refuses unknown flags, truncated items and copies that reach
+before the start of the output instead of reading outside its buffers.
