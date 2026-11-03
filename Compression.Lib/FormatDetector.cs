@@ -56,7 +56,8 @@ public static partial class FormatDetector {
     var maxMagicExtent = FastProbeBytes;
 
     foreach (var desc in Reg.All) {
-      if (!Enum.TryParse<Format>(desc.Id, out var f)) 
+      // An id that differs from its generated enum member only in case is the same format.
+      if (!Enum.TryParse<Format>(desc.Id, ignoreCase: true, out var f))
         continue;
 
       idToFormat[desc.Id] = f;
@@ -740,7 +741,8 @@ public static partial class FormatDetector {
 
   public static Format Detect(string path) {
     var byExt = DetectByExtension(path);
-    if (byExt != Format.Unknown) return byExt;
+    if (byExt != Format.Unknown)
+      return GenericSuffixes.Contains(Path.GetExtension(path)) ? ClearSignatureBehindGenericSuffix(path, byExt) : byExt;
 
     // No extension, or one nobody claims: a disk image named "sda", "disk" or "backup.001" is
     // still recognisable by its partition table or its optical volume descriptors. Superblock
@@ -862,6 +864,51 @@ public static partial class FormatDetector {
       }
     }
     return best;
+  }
+
+  /// <summary>Suffixes many unrelated formats use; behind them a clear signature decides.</summary>
+  private static readonly HashSet<string> GenericSuffixes = new(StringComparer.OrdinalIgnoreCase) {
+    ".bin", ".dat", ".img", ".dsk", ".raw", ".data", ".dump", ".out", ".image",
+  };
+
+  /// <summary>How sure a signature must be to overrule the claimant of a generic suffix.</summary>
+  private const double ContentOverridesGenericSuffix = 0.8;
+
+  /// <summary>
+  /// The name decides, except behind a suffix that says nothing about the contents: there a
+  /// clear signature wins, so a ZIP saved as "backup.bin" (a suffix BIN/CUE claims, which has
+  /// no signature) is a ZIP. The claimant stays when its own signature matches, when the
+  /// disk-image content probe chose it, or when no signature is sure enough. Specific suffixes
+  /// are never overruled: a ".jar" or ".docx" is a ZIP underneath and opens as what it is named.
+  /// </summary>
+  private static Format ClearSignatureBehindGenericSuffix(string path, Format byExt) {
+    var header = ReadHeader(path);
+    if (header.Length == 0 || OwnMagicMatches(header, byExt)) return byExt;
+    if (DetectDiskImageByContent(path, includeSuperblocks: true) == byExt) return byExt;
+    var (byContent, confidence) = BestMagic(header);
+    return byContent != Format.Unknown && confidence >= ContentOverridesGenericSuffix ? byContent : byExt;
+  }
+
+  private static bool OwnMagicMatches(ReadOnlySpan<byte> header, Format format) {
+    if (GetDesc(format) is not { } desc) return false;
+    foreach (var sig in desc.MagicSignatures)
+      if (MatchesMagic(header, sig)) return true;
+    return false;
+  }
+
+  /// <summary>The registered format whose signature matches <paramref name="header"/> most confidently.</summary>
+  private static (Format Format, double Confidence) BestMagic(ReadOnlySpan<byte> header) {
+    var best = Format.Unknown;
+    var bestConfidence = 0.0;
+    foreach (var desc in Reg.All) {
+      if (!FormatDetector._idToFormat!.TryGetValue(desc.Id, out var format)) continue;
+      foreach (var sig in desc.MagicSignatures)
+        if (sig.Confidence > bestConfidence && MatchesMagic(header, sig)) {
+          bestConfidence = sig.Confidence;
+          best = format;
+        }
+    }
+    return (best, bestConfidence);
   }
 
   /// <summary>Reads as much of the file as the deepest registered signature needs.</summary>
