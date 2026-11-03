@@ -39,9 +39,10 @@ and stretch tables, the add() analysis divisor table, the locator tag, the
 ZPAQL opcode list and the generated ZPAQL programs for methods 0..5) are
 copied exactly, as the format requires.
 
-Not converted: the x86/x64 JIT, writing encrypted, multi-part or index
-archives (they are read), and appending a new version to an existing
-archive (the writer emits a single-version archive; modify rebuilds it).
+Not converted: the x86/x64 JIT and writing encrypted, multi-part or index
+archives (they are read). Appending a version (Jidac::add on an existing
+archive: fragment table carried over, dedup against it, removal records
+with date 0) is part of the ZpaqWriter conversion.
 
 ---------------------------------------------------------------------
 

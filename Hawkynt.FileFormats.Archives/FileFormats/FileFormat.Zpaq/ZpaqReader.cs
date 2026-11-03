@@ -107,6 +107,18 @@ public sealed class ZpaqReader : IDisposable {
   /// <summary>The next fragment number a following part of a multi-part archive would define.</summary>
   internal uint NextFragment => (uint)this._ht.Count;
 
+  /// <summary>Fragment table for appending: SHA-1 and size of fragments 1..N-1 (index 0 unused).</summary>
+  internal IReadOnlyList<(byte[] Sha1, int Usize)> FragmentTable => this._ht.Select(f => (f.Sha1, f.Usize)).ToList();
+
+  /// <summary>Decimal date of the newest version, or 0 for none.</summary>
+  internal long LatestVersionDate => this._versions.Count == 0 ? 0 : this._versions.Max(v => v.Date);
+
+  /// <summary>Whether a transaction at the end was left incomplete (its header says so).</summary>
+  internal bool HasIncompleteTransaction { get; private set; }
+
+  /// <summary>Whether any file is stored in the streaming layout rather than as journaling fragments.</summary>
+  internal bool HasStreamingEntries => this._log.Any(rec => rec.Segments.Count > 0);
+
   /// <summary>Gets whether the archive was read from part files other than the one opened (a multi-part set).</summary>
   public bool IsMultiPart => this._owned.Count > 0;
 
@@ -249,6 +261,7 @@ public sealed class ZpaqReader : IDisposable {
                     dataOffset = s.Position + 1 - d.Buffered;
                     var jmp = BinaryPrimitives.ReadInt64LittleEndian(os.Span);
                     if (jmp < 0) {
+                      this.HasIncompleteTransaction = true;
                       done = true;  // incomplete transaction: roll back to here
                       jumped = true;
                       break;

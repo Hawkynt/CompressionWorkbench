@@ -48,7 +48,8 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public FormatCategory Category => FormatCategory.Archive;
 
   // R/W: zpaq 7.15 lists and extracts what ZpaqWriter produces (ZpaqExternalOracleTests), and the
-  // reader decodes zpaq's own archives at every method. Modify goes through the default
+  // reader decodes zpaq's own archives at every method. Add and Remove append a version to a
+  // journaling archive as zpaq add does; only a streaming archive still goes through the default
   // extract -> edit -> re-create rebuild, which writes a fresh single-version archive.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
@@ -156,6 +157,19 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>Adds or replaces files by rebuilding a plain single-file archive; anything else is refused.</summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     RefuseUnlessPlain(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    if (TryAppendVersion(archive, writer => {
+          foreach (var input in inputs) {
+            if (string.IsNullOrEmpty(input.ArchiveName))
+              continue;
+            var time = input.Metadata?.LastWriteTimeUtc?.UtcDateTime;
+            if (input.IsDirectory)
+              writer.AddDirectory(input.ArchiveName, time);
+            else
+              writer.AddFile(input.ArchiveName, input.ReadContent(), time);
+          }
+        }, _ => true))
+      return;
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
       foreach (var input in inputs) {
         if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName))
@@ -172,7 +186,71 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>Removes files by rebuilding a plain single-file archive; anything else is refused.</summary>
   public void Remove(Stream archive, string[] entryNames) {
     RefuseUnlessPlain(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    if (TryAppendVersion(archive, null, reader => {
+          var names = reader.Entries.Select(e => e.FileName).ToList();
+          var gone = new List<string>();
+          foreach (var raw in entryNames) {
+            var n = raw.Replace('\\', '/').TrimStart('/').TrimEnd('/');
+            gone.AddRange(names.Where(e => e.TrimEnd('/') == n || e.StartsWith(n + "/", StringComparison.Ordinal)));
+          }
+          return gone.Distinct(StringComparer.Ordinal).ToList();
+        }))
+      return;
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => RebuildVerb.DeleteNamedEntries(tmpDir, entryNames ?? []));
+  }
+
+  /// <summary>
+  /// Edits a journaling archive the way <c>zpaq add</c> does: one more version is appended, so
+  /// every earlier version stays as it was and can still be extracted. New fragments are
+  /// deduplicated against the whole archive. Returns false for an archive this cannot append to
+  /// (streaming layout, an incomplete last transaction, not seekable), which then goes through the
+  /// rebuild. After appending, the archive is read back; on any mismatch it is cut back to its
+  /// old length, so it is never left half-written.
+  /// </summary>
+  private static bool TryAppendVersion(Stream archive, Action<ZpaqWriter>? add, Func<ZpaqReader, object>? removalsOrTrue) {
+    if (!archive.CanSeek || !archive.CanWrite)
+      return false;
+    archive.Position = 0;
+    ZpaqReader reader;
+    try {
+      reader = new ZpaqReader(archive, leaveOpen: true);
+    } catch (Exception e) when (e is InvalidDataException or EndOfStreamException or NotSupportedException) {
+      return false;
+    }
+    List<string> removals;
+    long latest;
+    IReadOnlyList<(byte[] Sha1, int Usize)> fragments;
+    using (reader) {
+      if (reader.VersionCount == 0 || reader.Errors > 0 || reader.HasIncompleteTransaction || reader.HasStreamingEntries)
+        return false;
+      removals = removalsOrTrue?.Invoke(reader) as List<string> ?? [];
+      latest = reader.LatestVersionDate;
+      fragments = reader.FragmentTable;
+    }
+    if (add == null && removals.Count == 0)
+      return true; // nothing named exists: nothing to record
+
+    var originalLength = archive.Length;
+    try {
+      archive.Position = originalLength;
+      using (var writer = ZpaqWriter.Appending(archive, fragments, latest)) {
+        add?.Invoke(writer);
+        foreach (var name in removals)
+          writer.RemoveEntry(name);
+      }
+      archive.Flush();
+      archive.Position = 0;
+      using var check = new ZpaqReader(archive, leaveOpen: true);
+      if (check.Errors > 0 || check.HasIncompleteTransaction)
+        throw new InvalidDataException("ZPAQ: the appended version does not read back.");
+      foreach (var e in check.Entries.Where(e => !e.IsDirectory))
+        check.ExtractBytes(e); // every fragment's SHA-1 is checked on the way
+    } catch {
+      archive.SetLength(originalLength);
+      throw;
+    }
+    return true;
   }
 
   /// <summary>
