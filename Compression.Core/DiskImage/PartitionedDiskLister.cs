@@ -302,6 +302,19 @@ public static class PartitionedDiskLister {
     // Stage every filesystem edit first: nothing reaches the disk until all of them succeed.
     var staged = innerAdds.Select(kv => StageInnerEdit(disk, kv.Key, "Add",
       (mod, window) => mod.Add(window, kv.Value))).ToList();
+    if (detection.Scheme == "APM") {
+      var apmPlan = newPartitions.Count > 0 ? PlanApmPartitions(disk, newPartitions) : [];
+      foreach (var window in staged) window.Commit();
+      if (apmPlan.Count > 0) {
+        var apm = ApmEditor.Open(disk);
+        foreach (var (input, start, length, type, label) in apmPlan) {
+          WritePartitionData(disk, input, start, length);
+          apm.AddPartition(start / apm.BlockSize, length / apm.BlockSize, ApmEditor.TypeFor(type), Truncate(label, 32));
+        }
+      }
+      disk.Flush();
+      return true;
+    }
     var plan = newPartitions.Count > 0 ? PlanNewPartitions(disk, detection, newPartitions) : [];
 
     foreach (var window in staged) window.Commit();
@@ -322,7 +335,8 @@ public static class PartitionedDiskLister {
   /// <c>PartitionN_Type/inner</c> removes a file — or a folder with everything beneath it —
   /// through the partition filesystem's own in-place editor; <c>PartitionN_Type</c> or
   /// <c>PartitionN_Type.raw</c> deletes the partition's table entry (GPT and MBR, including
-  /// logical partitions), leaving its sectors as they were.
+  /// logical partitions, and Apple Partition Map entries, which become free space), leaving its
+  /// sectors as they were.
   /// </summary>
   /// <remarks>
   /// A name that addresses nothing, a filesystem without a lossless in-place editor, or a
@@ -345,14 +359,28 @@ public static class PartitionedDiskLister {
         list.Add(innerPath);
         continue;
       }
-      if (detection.Scheme is not ("GPT" or "MBR") || target.IsBsdSlice)
+      if (detection.Scheme is not ("GPT" or "MBR" or "APM") || target.IsBsdSlice)
         throw new InvalidOperationException(
-          $"Deleting '{target.Prefix}' would need a {(target.IsBsdSlice ? "BSD disklabel" : detection.Scheme)} table writer; only GPT and MBR entries can be deleted.");
+          $"Deleting '{target.Prefix}' would need a {(target.IsBsdSlice ? "BSD disklabel" : detection.Scheme)} table writer; only GPT, MBR and APM entries can be deleted.");
       if (!deletions.Contains(target)) deletions.Add(target);
     }
 
     var staged = innerRemoves.Select(kv => StageInnerEdit(disk, kv.Key, "Remove",
       (mod, window) => mod.Remove(window, [.. kv.Value]))).ToList();
+
+    if (detection.Scheme == "APM") {
+      var apm = deletions.Count > 0 ? ApmEditor.Open(disk) : null;
+      if (apm is not null)
+        foreach (var target in deletions)
+          if (!apm.Entries.Any(e => !e.IsFree && !e.IsMap && e.Start * apm.BlockSize == target.Partition.StartOffset))
+            throw new InvalidOperationException($"'{target.Prefix}' has no entry in the partition map.");
+      foreach (var window in staged) window.Commit();
+      if (apm is not null)
+        foreach (var target in deletions)
+          apm.DeletePartition(target.Partition.StartOffset / apm.BlockSize);
+      disk.Flush();
+      return true;
+    }
 
     PartitionEditor? editor = null;
     var editorIndices = new List<int>();
@@ -443,6 +471,38 @@ public static class PartitionedDiskLister {
   }
 
   private const long MiB = 1024 * 1024;
+
+  /// <summary>New partitions on an Apple Partition Map: each in the first free run that holds it, MiB-aligned where it fits.</summary>
+  private static List<(ArchiveInputInfo Input, long Start, long Length, PartitionType Type, string? Label)> PlanApmPartitions(
+      Stream disk, List<ArchiveInputInfo> inputs) {
+    var probe = ApmEditor.Open(disk, planOnly: true);
+    var plan = new List<(ArchiveInputInfo, long, long, PartitionType, string?)>();
+    foreach (var input in inputs) {
+      using var content = OpenInput(input);
+      var type = DetectInputPartitionType(content);
+      var leaf = Path.GetFileName(input.ArchiveName);
+      var nameLooksLikeImage = leaf.EndsWith(".raw", StringComparison.OrdinalIgnoreCase)
+        || leaf.EndsWith(".img", StringComparison.OrdinalIgnoreCase) || leaf.StartsWith("Partition", StringComparison.Ordinal);
+      if (type == PartitionType.Unknown && !nameLooksLikeImage)
+        throw new InvalidOperationException(
+          $"'{input.ArchiveName}' is neither a filesystem image nor a raw partition image (*.raw/*.img); a disk holds partitions, not loose files.");
+      if (content.Length <= 0)
+        throw new InvalidOperationException($"'{input.ArchiveName}' is empty; a partition needs at least one sector.");
+      var blocks = (content.Length + probe.BlockSize - 1) / probe.BlockSize;
+      long start;
+      try {
+        start = probe.PlaceFree(blocks);
+        probe.AddPartition(start, blocks, ApmEditor.TypeFor(type), "x");
+      } catch (InvalidOperationException ex) {
+        throw new InvalidOperationException($"'{input.ArchiveName}' does not fit the partition map: {ex.Message} Nothing was changed.", ex);
+      }
+      plan.Add((input, start * probe.BlockSize, blocks * probe.BlockSize, type == PartitionType.Unknown ? PartitionType.Linux : type,
+        Path.GetFileNameWithoutExtension(input.ArchiveName)));
+    }
+    return plan;
+  }
+
+  private static string Truncate(string? text, int max) => text is null ? "" : text.Length > max ? text[..max] : text;
 
   private static Stream OpenInput(ArchiveInputInfo input)
     => input.InMemoryContent is { } bytes
