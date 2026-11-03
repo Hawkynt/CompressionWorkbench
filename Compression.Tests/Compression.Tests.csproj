@@ -32,6 +32,41 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.*" />
     <PackageReference Include="NUnit" Version="4.*" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.*" />
+
+    <!-- AXFS oracle fixtures; see Axfs/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Axfs\ReferenceVectors\*.gz;Axfs\ReferenceVectors\*.manifest">
+      <LogicalName>AxfsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+
+    <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
+    <EmbeddedResource Include="StuffIt\ReferenceVectors\*.sit">
+      <LogicalName>StuffItVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+
+    <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
+    <EmbeddedResource Include="Uc2\ReferenceVectors\*.uc2;Uc2\ReferenceVectors\sums.txt">
+      <LogicalName>Uc2Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+
+    <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
+    <EmbeddedResource Include="Pea\ReferenceVectors\*.pea">
+      <LogicalName>PeaVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+
+    <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
+    <EmbeddedResource Include="AlZip\ReferenceVectors\*.alz;AlZip\ReferenceVectors\unalz-listing.txt">
+      <LogicalName>AlZipVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+
+    <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
+    <EmbeddedResource Include="Flex\ReferenceVectors\*.gz;Flex\ReferenceVectors\*.manifest">
+      <LogicalName>FlexVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+
+    <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
+    <EmbeddedResource Include="Freeze\ReferenceVectors\*.F">
+      <LogicalName>FreezeVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>
@@ -117,6 +152,10 @@
     <!-- LZFSE streams Apple's lzfse wrote; see Lzfse/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Lzfse\ReferenceVectors\*.lzfse;Lzfse\ReferenceVectors\manifest.tsv">
       <LogicalName>LzfseVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Installers compiled by ISCC 5.6.1 / 6.0.5, plus innoextract's extraction; see InnoSetup/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="InnoSetup\ReferenceVectors\*.gz;InnoSetup\ReferenceVectors\oracle.tsv">
+      <LogicalName>InnoVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
@@ -228,6 +267,10 @@
     <!-- ACE archives from acefile's test corpus and ones our writer produced for acefile; see Ace/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\acefile-listing.txt">
       <LogicalName>AceVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Compact Pro archives from the Garbo Mac archive and ones our writer produced for unar; see CompactPro/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="CompactPro\ReferenceVectors\*.cpt;CompactPro\ReferenceVectors\unar-listing.txt">
+      <LogicalName>CompactProVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- G.722 streams FFmpeg 8.1.2 encoded and decoded; see Codecs/G722/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Codecs\G722\ReferenceVectors\*.pcm;Codecs\G722\ReferenceVectors\*.g722">

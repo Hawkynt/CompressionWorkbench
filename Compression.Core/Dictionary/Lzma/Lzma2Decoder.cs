@@ -84,8 +84,13 @@ public sealed class Lzma2Decoder {
       if (controlByte <= 0x02) {
         // Uncompressed chunk — 0x01 resets the dictionary, 0x02 continues it
         if (controlByte == 0x01) {
+          // A dictionary reset also invalidates properties and state: the next LZMA chunk
+          // must carry both (xz format 1.1.0, LZMA2 control byte 0x01; liblzma and the LZMA
+          // SDK both enforce it).
           lzma.ResetDictionary();
           needDictionaryReset = false;
+          hasProperties = false;
+          needStateReset = true;
         } else if (needDictionaryReset)
           throw new InvalidDataException("LZMA2: The first chunk must reset the dictionary.");
 
@@ -100,8 +105,8 @@ public sealed class Lzma2Decoder {
           ArrayPool<byte>.Shared.Return(uncompressed);
         }
 
-        // Raw bytes carry no coder state, so the next LZMA chunk has to reset it.
-        needStateReset = true;
+        // 0x02 leaves the coder state alone: a following LZMA chunk without a reset continues
+        // the state of the last LZMA chunk, with the raw bytes in its dictionary.
         continue;
       }
 

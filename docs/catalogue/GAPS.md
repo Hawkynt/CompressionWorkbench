@@ -23,10 +23,10 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 221 | a source lists it; no descriptor or building block covers it |
-| `READ-ONLY-BUT-SOURCES-WRITE` | 22 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 34 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 249 | covered with no known gap against what the sources list |
+| `MISSING` | 211 | a source lists it; no descriptor or building block covers it |
+| `READ-ONLY-BUT-SOURCES-WRITE` | 24 | we only read it; a source or the format's own tool writes it |
+| `PARTIAL` | 36 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 255 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 458 | in our registry, listed by none of the seven sources |
 
 ### Per source
@@ -134,6 +134,7 @@ Every catalogued row where a source records write support (7-Zip, libarchive, an
 | BeeGFS | `BeeGfs` | beegfs-setup-storage | Wikipedia |
 | BitRock InstallBuilder | `BitRock` | InstallBuilder | UniExtract |
 | NSIS installer | `Nsis` | makensis | 7-Zip, XADMaster, UniExtract |
+| Inno Setup | `InnoSetup` | ISCC | UniExtract |
 | GPFS / IBM Storage Scale | `Gpfs` | mmcrfs | Wikipedia |
 | GlusterFS | `GlusterFs` | gluster volume create | Wikipedia |
 | HxC Floppy Emulator (HFE) | `Hfe` | HxC Floppy Emulator tool | PRONOM |
@@ -186,7 +187,6 @@ running real-world samples. The file named at the end of each row is where the l
 | EGG (ALZip) | `Egg` | 1 | store and deflate only; bzip2/LZMA/AZO, encryption and split archives unsupported (EggReader.cs) |
 | Encoded text (uu/xx/b64/BinHex/yEnc) | `UuEncoding`, `B64Encoding`, `BinHex`, `YEnc` | 1 | no XXEncode descriptor |
 | HA | `Ha` | 1 | stored only; HSC and ASC throw (HaReader.cs) |
-| Inno Setup | `InnoSetup` | 1 | listing only; file extraction throws for every Inno version (InnoSetupReader.cs) |
 | MS-DOS COMPRESS (KWAJ) | `Kwaj` | 1 | methods 2 (LZSS) and 3 (LZ+Huffman) throw (KwajStream.cs) |
 | PAQ (paq6/7/8 family) | `Paq8` | 1 | a single PAQ8 variant (.paq8l); the other PAQ versions are mutually incompatible |
 | RAR audio / VM filters | `Rar` | 1 | RAR3 filters matched to the six standard programs only; no general RarVM (Rar3Decoder.cs) |

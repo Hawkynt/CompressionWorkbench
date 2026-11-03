@@ -1,17 +1,16 @@
 namespace FileFormat.InnoSetup;
 
 /// <summary>
-/// Represents a file or directory entry listed in an Inno Setup installer.
+/// A file an Inno Setup installer installs.
 /// </summary>
-/// <param name="FileName">The source filename or a generated name when parsing fails.</param>
-/// <param name="DestDir">The destination directory string from the installer header, or empty.</param>
-/// <param name="Size">The uncompressed file size in bytes, or -1 when unknown.</param>
-/// <param name="CompressedSize">The compressed size in bytes, or -1 when unknown.</param>
-/// <param name="IsDirectory">Whether this entry represents a directory rather than a file.</param>
-public sealed record InnoSetupEntry(
-  string FileName,
-  string DestDir,
-  long Size,
-  long CompressedSize,
-  bool IsDirectory
-);
+/// <param name="FileName">
+/// The destination path with Inno constants spelled as directories, as innoextract writes it:
+/// <c>{app}\bin\x.dll</c> becomes <c>app/bin/x.dll</c>.
+/// </param>
+/// <param name="Size">The uncompressed size in bytes.</param>
+/// <param name="LastModified">The file time the compiler recorded (UTC), or null.</param>
+/// <param name="DataIndex">Index of the file location (data entry) holding the bytes.</param>
+public sealed record InnoSetupEntry(string FileName, long Size, DateTime? LastModified, int DataIndex) {
+  /// <summary>Gets whether the entry is a directory; Inno [Files] entries never are.</summary>
+  public bool IsDirectory => false;
+}
