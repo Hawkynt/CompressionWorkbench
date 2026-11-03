@@ -14,7 +14,7 @@ them, and what `FileFormat.FreeArc` does with each part.
   (the C++ reader of footer and directory), `ArhiveStructure.hs`, `ArhiveDirectory.hs`,
   `ByteStream.hs` and `Compression.hs` (the Haskell writer). For the filter streams, the 0.67 source
   snapshot mirrored at `github.com/mrkaban/FreeArc-0.67`: `Compression/REP/rep.cpp`,
-  `Compression/Delta/Delta.cpp`, `Compression/LZMA2/C_BCJ.cpp` and `Compression/4x4/C_4x4.cpp` (the decoders' input layout only).
+  `Compression/Delta/Delta.cpp`, `Compression/LZMA2/C_BCJ.cpp`, `Compression/4x4/C_4x4.cpp` and `Compression/LZP/C_LZP.cpp` (the decoders' input layout only).
 - **Oracle.** FreeArc 0.67 (2014-03-15) `Arc.exe` and `unarc.exe`, from the self-extracting
   `FreeArc-console-0.67-alpha-win32.exe` (Wayback Machine copy of freearc.org/download/testing),
   run on Windows 11. Every structure below was checked against hex dumps of archives it wrote; the
@@ -121,7 +121,8 @@ right on compression; extraction undoes them right to left. Seen from 0.67:
 | `ppmd:order:mem[:r\|:rN]` | PPMd var. I (PPMII, Dmitry Shkarin) with the carryless range coder: order 2..128, model memory, restore method 0 restart / 1 cut-off (`:r`) / 2 freeze (`:r2`); the stream ends when the model escapes past order −1. A bare number is the order, a bare size the memory. `:cSIZE` (chunked) is not read. | ✅ read |
 | `tor:N[:size][:hN]` | Tornado LZ77 with byte, bit, Huffman or arithmetic coding and differenced tables; layout in [FREEARC-TORNADO.md](FREEARC-TORNADO.md). The parameters only steer the encoder. | ✅ read |
 | `grzip:BLOCK:mN[:lN:hN][:l][:s][:a][:d]` | libGRZip blocks (Ilya Grebnov), see *GRZip blocks*: `m1` BWT + WFC, `m2` BWT + MTF, `m3` ST4 + WFC, `m4` ST4 + MTF; `lN`/`hN` LZP minimum match and hash bits (`l` alone disables LZP), `s` strong BWT sorting, `a` adaptive block size, `d` record filters. Every block header says how it was coded, so the parameters only steer the encoder. | ✅ read |
-| `lzp:…`, `dict:…`, `mm`, external compressors | FreeArc's own codecs, no compatible implementation here. | ❌ refused |
+| `lzp:BLOCK[:N%]:MINLEN:hBITS[:dSIZE][:sN]` | LZP, see *LZP stream*: minimum match length (`lN` or a bare number, default 64), hash bits (`hN`, default 18), barrier distance (`dSIZE`, default unlimited) and the minimum length beyond it (`sN`, default 32). `N%` and the block size steer only the encoder. | ✅ read |
+| `dict:…`, `mm`, external compressors | FreeArc's own codecs, no compatible implementation here. | ❌ refused |
 | `…+aes-256/ctr:n1000:r0:i…:s…:c…` (also blowfish, serpent, twofish) | Encryption stage (`-p`, or `-hp` for headers too). | ❌ refused |
 
 Measured stage chains, all read here: `-mx` and `-m9x` write `rep:<block>+exe+delta+lzma:<block>:normal:bt4:128`;
@@ -187,6 +188,43 @@ rank decoding to the LZP output size rounded up to 8, the inverse BWT or ST4 wit
 then LZP (or a plain copy) to the original size. Record mode 1 (2-byte interleave) and 3 (16-bit
 delta) hold two nested blocks, 2 (4-byte interleave) and 4 (32-bit delta) hold four; the nested
 blocks decode one after another and the filter is undone over their concatenation.
+
+### LZP stream
+
+A sequence of chunks until the stream ends, each a 32-bit little-endian signed length `n` and its
+bytes. A negative `n` is `-n` stored bytes. A positive `n` is one LZP block of `n` bytes, decoded on
+its own with a fresh table; FreeArc writes only blocks longer than 12 bytes.
+
+An LZP block is read from both ends. Its first 12 bytes are output as they are. From byte 12 on, a
+forward cursor reads one token byte per step; match lengths are read by a backward cursor that
+starts at the end of the block and moves toward the front. Decoding stops when the forward cursor
+reaches the backward one.
+
+State: a table of `2^BITS` output positions, all initially 5; two counters `step` and `stride`,
+both 1. Writing `ctx(p)` for the 32-bit little-endian value of the four output bytes before
+position `p`, and `ror` for a 32-bit right rotation, the hash at output position `p` is
+`(ctx(p) + 5·ror(ctx(p), 17) + 3·ctx(p−1)) mod 2^BITS`. Before every step the decoder takes
+`c = ctx(pos)` and `slot = hash(pos)`, where `pos` is the current output length.
+
+Each step reads a token byte `b`:
+
+1. Let `q` be the table entry at `slot`. Decrement `step`; when it reaches 0, set the entry to `pos`
+   and `step` to `stride`.
+2. If `b` is not `0xB5`, output `b`.
+3. If `b` is `0xB5` and `ctx(q) ≠ c`, output `0xB5`.
+4. Otherwise read a length byte `t` from the back. `t = 255` means a literal `0xB5`. Otherwise this
+   is a match from `q`:
+   - set the entry at `slot` to `pos`; if `pos − q > (stride + 1)·2^BITS` and `stride < 7`,
+     increment `stride`;
+   - the length starts at `SMALLEST − 1` if `pos − q` exceeds the barrier, else `MINLEN − 1`; each
+     `t = 0` adds 254 and reads the next length byte from the back, and the final non-zero `t` is
+     added;
+   - copy that many bytes from `q` onward, one at a time (the source may overlap the output). A
+     countdown starts at `2·stride + 2`; before each copied byte it is decremented, and when it
+     reaches 0 it is reset to `2·stride + 1` and the table entry at `hash(pos)` is set to `pos`.
+
+Constants: flag byte `0xB5`, run unit 254, escape 255, rotation 17, hash multipliers 5 and 3,
+stride limit 7, initial table value 5.
 
 ## ✍️ What our writer emits
 
