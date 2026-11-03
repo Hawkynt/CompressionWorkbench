@@ -46,13 +46,7 @@ public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
 
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
-      foreach (var input in inputs) {
-        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName)) continue;
-        var dest = Path.Combine(tmpDir, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
-        var destDir = Path.GetDirectoryName(dest);
-        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
-        File.WriteAllBytes(dest, input.ReadContent());
-      }
+      RebuildVerb.StageInputs(tmpDir, inputs);
     });
   }
 
@@ -77,11 +71,7 @@ public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     var skip = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
-      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
-        var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
-        if (skip.Contains(rel) || skip.Contains(Path.GetFileName(rel)))
-          File.Delete(file);
-      }
+      RebuildVerb.DeleteNamedEntries(tmpDir, skip);
     });
   }
 

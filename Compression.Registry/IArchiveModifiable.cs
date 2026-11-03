@@ -28,15 +28,7 @@ public interface IArchiveModifiable : IArchivePurgeable {
     if (this is not IArchiveFormatOperations ops || this is not IArchiveCreatable creator)
       throw new System.NotSupportedException(
         "The default Add requires the descriptor to also implement IArchiveFormatOperations + IArchiveCreatable.");
-    RebuildVerb.EditViaRebuild(archive, ops, creator, tmpDir => {
-      foreach (var input in inputs) {
-        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName)) continue;
-        var dest = Path.Combine(tmpDir, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
-        var destDir = Path.GetDirectoryName(dest);
-        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
-        File.WriteAllBytes(dest, input.ReadContent());
-      }
-    });
+    RebuildVerb.EditViaRebuild(archive, ops, creator, tmpDir => RebuildVerb.StageInputs(tmpDir, inputs));
   }
 
   /// <summary>Adds or replaces files while supplying operation-scoped credentials.</summary>

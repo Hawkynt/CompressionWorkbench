@@ -221,11 +221,7 @@ public sealed class UnrealPakFormatDescriptor :
     EnsureRebuildable(archive);
     var remove = new HashSet<string>(entryNames ?? [], StringComparer.OrdinalIgnoreCase);
     RebuildVerb.EditViaRebuild(archive, this, this, temporaryDirectory => {
-      foreach (var file in Directory.GetFiles(temporaryDirectory, "*", SearchOption.AllDirectories)) {
-        var relative = Path.GetRelativePath(temporaryDirectory, file).Replace('\\', '/');
-        if (remove.Contains(relative) || remove.Contains(Path.GetFileName(relative)))
-          File.Delete(file);
-      }
+      RebuildVerb.DeleteNamedEntries(temporaryDirectory, remove);
     });
   }
 
