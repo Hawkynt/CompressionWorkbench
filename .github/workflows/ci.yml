@@ -250,8 +250,13 @@ jobs:
       # generic 6.8 kernel carries bcachefs as a module, the runner's own Azure
       # kernel need not. supermin is pointed at it so the appliance does not boot
       # the newest kernel in /boot.
+      #
+      # Same condition as the bcachefs oracle below, which runs even after an earlier step
+      # failed. Gated on success() this install was skipped whenever any test before it went
+      # red, and the oracle then failed for a missing guestfish -- on every pull request whose
+      # own failure lay somewhere else entirely.
       - name: Install a kernel with bcachefs (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
         run: |
           set -euo pipefail
           sudo apt-get install -y libguestfs-tools
