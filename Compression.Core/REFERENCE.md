@@ -760,15 +760,6 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-### Namespace `Compression.Core.Dictionary.Csc`
-
-[`CscBuildingBlock`](#cscbuildingblock) · [`CscCodec`](#csccodec) · [`CscEncoderOptions`](#cscencoderoptions) · [`CscStreamProperties`](#cscstreamproperties)
-
-#### `CscBuildingBlock`
-
-Exposes libcsc (Fu Siyuan's CSC) as a benchmarkable building block. The payload is a complete libcsc stream — the 10-byte property header plus the coded blocks — exactly as the reference `csc` tool writes it at its default level 2.
-
-Implements `IBuildingBlock`.
 #### `CrushCodec`
 
 CRUSH 1.00, Ilya Muravyov's LZ77 file compressor, converted from his public-domain `crush.cpp` (http://sourceforge.net/projects/crush/). Output matches the reference program byte for byte at each of its three levels.
@@ -779,6 +770,15 @@ CRUSH 1.00, Ilya Muravyov's LZ77 file compressor, converted from his public-doma
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, int level = 1)` | Compresses `data` into a CRUSH file. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses a CRUSH file. |
 
+### Namespace `Compression.Core.Dictionary.Csc`
+
+[`CscBuildingBlock`](#cscbuildingblock) · [`CscCodec`](#csccodec) · [`CscEncoderOptions`](#cscencoderoptions) · [`CscStreamProperties`](#cscstreamproperties)
+
+#### `CscBuildingBlock`
+
+Exposes libcsc (Fu Siyuan's CSC) as a benchmarkable building block. The payload is a complete libcsc stream — the 10-byte property header plus the coded blocks — exactly as the reference `csc` tool writes it at its default level 2.
+
+Implements `IBuildingBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
