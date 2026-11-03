@@ -18898,6 +18898,62 @@ Implements `IEquatable<InnoVersion>`.
 | `ToString` | `override string ToString()` |  |
 | `V` | `static uint V(int a, int b, int c, int d = 0)` | Packs a version number. |
 
+### Namespace `FileFormat.InstallerVise`
+
+[`InstallerViseFormatDescriptor`](#installerviseformatdescriptor) · [`ViseFork`](#visefork) · [`ViseInstaller`](#viseinstaller)
+
+#### `InstallerViseFormatDescriptor`
+
+Installer VISE (MindVision / Digital Wisdom), the classic Mac OS installer builder, VISE 3.0 to 8.5. Data forks are listed under their catalog paths, resource forks as `name.rsrc`.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `InstallerViseFormatDescriptor` | `InstallerViseFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `ViseFork`
+
+One fork an Installer VISE archive yields: catalog path, data (0) or resource (1) fork, bytes and dates.
+
+Implements `IEquatable<ViseFork>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ViseFork` | `ViseFork(string Path, int Fork, byte[] Data, DateTime? Modified, int Record)` | One fork an Installer VISE archive yields: catalog path, data (0) or resource (1) fork, bytes and dates. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Fork` | `int Fork { get; init; }` |  |
+| `Modified` | `DateTime? Modified { get; init; }` |  |
+| `Path` | `string Path { get; init; }` |  |
+| `Record` | `int Record { get; init; }` |  |
+
+#### `ViseInstaller`
+
+An Installer VISE application (classic Mac OS): the SVCT data fork holds the members and the catalog, the resource fork (or PEF application) the substitution table. Every self-contained file record is expanded and checked against its catalog CRC-32; directories, actions, base-dependent updates and members on absent media are listed in `Records`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Directories` | `IEnumerable<string> Directories { get; }` | Directory paths, in catalog order. |
+| `Records` | `IEnumerable<ValueTuple<string, string>> Records { get; }` | Every DVCT/FVCT record: path, kind and why a file is not extracted, if it is not. |
+| `Revision` | `byte Revision { get; }` | The catalog revision (low byte of the SVCT format field). |
+| `Extract` | `IReadOnlyList<ViseFork> Extract()` | Expands every extractable fork, in catalog order; identical alternatives at one path appear once. |
+| `LooksLikeVise` | `static bool LooksLikeVise(ReadOnlySpan<byte> head)` | Whether the bytes are an SVCT data fork (raw, or inside MacBinary). |
+| `Open` | `static ViseInstaller Open(byte[] input, byte[] resource = null, byte[] companion = null)` | Opens an installer from its data fork (or a MacBinary/BinHex file holding both forks), with the resource fork given separately when it is not inside, and the `Installer.data` payload companion when the members live there. |
+
 ### Namespace `FileFormat.Ipa`
 
 [`IpaFormatDescriptor`](#ipaformatdescriptor)
