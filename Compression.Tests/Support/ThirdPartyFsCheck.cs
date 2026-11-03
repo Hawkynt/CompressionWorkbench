@@ -245,7 +245,7 @@ internal static class ThirdPartyFsCheck {
         // long as it did. A driver that is not installed is a different thing,
         // and still says so.
         return new Collected(DriverIsLoaded(strategy.MountType!), [],
-          $"mount failed ({exit}): {Truncate(stderr)}");
+          $"mount failed ({exit}): {Truncate(stderr)}{KernelSays(strategy.MountType!)}");
 
       try {
         var payloads = new List<byte[]>();
@@ -412,6 +412,26 @@ internal static class ThirdPartyFsCheck {
   }
 
   private static string Quote(string path) => path;
+
+  /// <summary>
+  /// The kernel's own last words about a driver, appended to a refused mount. mount(8) only
+  /// says "wrong fs type, bad option, bad superblock" and points at dmesg; the reason the
+  /// driver gave is the part worth reading.
+  /// </summary>
+  private static string KernelSays(string mountType) {
+    try {
+      var (stdout, _, exit) = Sudo("dmesg");
+      if (exit != 0) return "";
+      var lines = stdout.Split('\n')
+        .Where(l => l.Contains(mountType, StringComparison.OrdinalIgnoreCase))
+        .TakeLast(4)
+        .Select(l => l.Trim())
+        .ToList();
+      return lines.Count == 0 ? "" : " -- kernel: " + string.Join(" | ", lines.Select(Truncate));
+    } catch {
+      return "";
+    }
+  }
 
   private static string Truncate(string text) {
     var trimmed = text.Replace('\n', ' ').Trim();
