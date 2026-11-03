@@ -221,7 +221,7 @@ Ghost Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compa
 Gentee installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation or specification of the setup container, and no extractor, found"
 install4j,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, no published specification and no extractor found that does not run the installer"
 InstallAware,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, specification or extractor of the setup container found"
-Installer VISE,exe,installer,,,,,R,,,1,,,,,,MISSING,,"open, rung 1 available: unvise (MIT, with FORMAT.md) and viseunpack (MIT) cover VISE 3.0 to 8.5, with catalog CRC-32s as the check. Samples are classic Mac OS archives (MacBinary/BinHex, several behind StuffIt)"
+Installer VISE,exe,installer,,,,,R,,,1,https://github.com/timdoug/unvise/blob/main/FORMAT.md,InstallerVise,Y,,,OK,,"converted from unvise (MIT): VISE 3.0-8.5 from MacBinary or BinHex or a data fork with its sidecar; every fork CRC-32-checked; actions, base-dependent updates, members on other media and Active Install payloads are not files"
 InstallForge,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: closed source (the public repository is an issue tracker); no specification or extractor found"
 InstallScript,exe,installer,,,,,R,,,1,,,,,,MISSING,,"not a container: InstallScript is InstallShield's compiled setup script (setup.inx); the files it installs are in the InstallShield cabinets (InstallShieldCab)"
 Actual Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: the only extractor found (aiunp) carries no licence, so rung 2 at best; no specification or sample found"
