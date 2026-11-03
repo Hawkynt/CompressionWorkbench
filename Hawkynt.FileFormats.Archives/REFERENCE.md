@@ -32740,6 +32740,65 @@ Writes a WIM (Windows Imaging) file to a stream.
 | `Write` | `void Write(IReadOnlyList<ValueTuple<string, byte[]>> files)` | Writes a complete WIM file holding one image of the given named files. |
 | `Write` | `void Write(IReadOnlyList<byte[]> resources)` | Writes a complete WIM file holding the given resources, naming them `resource_0`, `resource_1` and so on. |
 
+### Namespace `FileFormat.WiseInstaller`
+
+[`WiseEntry`](#wiseentry) · [`WiseInstallerFormatDescriptor`](#wiseinstallerformatdescriptor) · [`WiseReader`](#wisereader)
+
+#### `WiseEntry`
+
+One file a Wise installer carries.
+
+Implements `IEquatable<WiseEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WiseEntry` | `WiseEntry(string Path, long Offset, long StoredSize, long Size, uint Crc, DateTime? Modified)` | One file a Wise installer carries. |
+| `Crc` | `uint Crc { get; init; }` | CRC-32 of the inflated bytes. |
+| `Modified` | `DateTime? Modified { get; init; }` | Date the script records for an installed file, when it has one. |
+| `Offset` | `long Offset { get; init; }` | Offset of its stream in the installer. |
+| `Path` | `string Path { get; init; }` | Name, '/'-separated (see `docs/WISE-ON-DISK.md`). |
+| `Size` | `long Size { get; init; }` | Inflated size. |
+| `StoredSize` | `long StoredSize { get; init; }` | Stored size of the stream: DEFLATE data, pad byte if any, CRC-32. |
+
+#### `WiseInstallerFormatDescriptor`
+
+Wise Installation System setup executables (versions 5 to 9): the installed files, the installer's own support files and its script. Read-only; detected by the overlay header.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WiseInstallerFormatDescriptor` | `WiseInstallerFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `WiseReader`
+
+Wise Installation System setup executables (versions 5 to 9): a stub program followed by an overlay header and DEFLATE streams, each closed by the CRC-32 of its inflated bytes; the compiled script says where each installed file's stream starts and ends.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HeaderSearchLimit` | `const int HeaderSearchLimit` | How far into the file the overlay header is looked for. |
+| `DataBase` | `long DataBase { get; }` | Offset the script's stream offsets count from. |
+| `Entries` | `IReadOnlyList<WiseEntry> Entries { get; }` | The header streams, installed files, dialog sets, billboards and other streams. |
+| `HeaderOffset` | `long HeaderOffset { get; }` | Offset of the overlay header in the file. |
+| `UnavailableRecords` | `int UnavailableRecords { get; }` | Install records whose stream lies beyond the end of this file (later volumes). |
+| `Extract` | `byte[] Extract(WiseEntry entry)` | Inflates one entry and checks its size and CRC-32. |
+| `IsWise` | `static bool IsWise(Stream stream)` | Whether the stream holds a Wise overlay header within its first 512 KiB. |
+| `Open` | `static WiseReader Open(byte[] data)` | Opens a Wise installer held in memory. |
+
 ### Namespace `FileFormat.WordPerfect`
 
 [`WordPerfectFormatDescriptor`](#wordperfectformatdescriptor)
