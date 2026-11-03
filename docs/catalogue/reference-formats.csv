@@ -71,7 +71,7 @@ Apple Archive (.aar),aar,archive,,,,,,,Y,1,,,,,,MISSING,,https://developer.apple
 Mozilla ARchive (MAR),mar;mac,archive,,,,,,fmt/1483,Y,2,https://wiki.mozilla.org/Software_Update:MAR,Mar,Y,Y,Y,OK,,
 SeqBox,sbx,archive,,,,,,,Y,1,https://github.com/MarcoPon/SeqBox,SeqBox,Y,Y,,OK,,
 AFA,afa,archive,,,,,,,Y,1,,,,,,MISSING,,"refused: closed format; no published specification, implementation or sample with provenance"
-B1,b1,archive,,,,,,,Y,1,,,,,,MISSING,,
+B1,b1,archive,,,,,,,Y,1,https://github.com/b1-pack/b1-pack,B1,Y,Y,Y,PARTIAL,,"single volume only (multi-volume .partN.b1 refused); plain/LZMA/AES-256-GCM read and written, b1-pack reads ours"
 B6Z,b6z,archive,,,,,,,Y,1,,,,,,MISSING,,"refused: closed format; no published specification, implementation or sample with provenance"
 Scifer,ba;sen,archive,,,,,,,Y,1,,,,,,MISSING,,"not implemented: no specification, licence-compatible implementation or redistributable sample was found (searched 2026-10)"
 BlakHole,bh,archive,,,,,,,Y,1,docs/BLAKHOLE-ON-DISK.md,BlakHole,Y,,,PARTIAL,,"read-only, Deflate members only: layout measured on the one sample with provenance (all CRC-32s hold); no published format and no BlakHole program to check writes"
@@ -93,9 +93,9 @@ BagIt,,archive,,,,,,,Y,1,,,,,,MISSING,,https://www.rfc-editor.org/rfc/rfc8493
 PHP archive (PHAR),phar,package,,,,,R,,Y,2,,,,,,MISSING,,https://www.php.net/manual/en/phar.fileformat.php
 Parchive (PAR/PAR2),par;par2;par.par2,other,,,,,,,Y,1,https://parchive.github.io/,Par2,Y,,,READ-ONLY-BUT-SOURCES-WRITE,par2cmdline,
 WinRAR recovery volume,rev,other,,,,,,,Y,1,,,,,,MISSING,,
-dvdisaster ECC file,ecc,other,,,,,,,Y,1,,,,,,MISSING,,
-Error-correcting SeqBox,ecsbx,other,,,,,,,Y,1,,,,,,MISSING,,
-lziprecover FEC file,fec,other,,,,,,,Y,1,,,,,,MISSING,,
+dvdisaster ECC file,ecc,other,,,,,,,Y,1,https://dvdisaster.jcea.es/,DvdisasterEcc,Y,,,OK,,read-only: header and RS01 CRC/parity regions as dvdisaster reports them; creating ecc data is not offered
+Error-correcting SeqBox,ecsbx,other,,,,,,,Y,1,https://github.com/darrenldl/blockyarchive,EcSbx,Y,,,OK,,read-only: the protected file reassembled and hash-checked; Reed-Solomon repair and creation are not offered
+lziprecover FEC file,fec,other,,,,,,,Y,1,https://www.nongnu.org/lzip/manual/lziprecover_manual.html,LzipFec,Y,,,OK,,read-only: packets and CRCs checked; creating FEC data is not offered
 gzip,gz;gzip;z;ipk;tar.gz;tgz,compression,RW,RW,R,R,R,x-fmt/266,RW,7,https://www.rfc-editor.org/rfc/rfc1952,Gzip,Y,Y,,OK,,
 SVG compressed (svgz),svgz,compression,,,,,,x-fmt/109,,1,https://www.w3.org/TR/SVG11/minimize.html,Gzip,Y,Y,,OK,,
 bzip2,bz2;bzip2;tbz;tar.bz2;tbz2,compression,RW,RW,R,R,R,x-fmt/268,RW,7,https://sourceware.org/bzip2/,Bzip2,Y,Y,,OK,,
@@ -357,7 +357,7 @@ E-mail message (EML),eml,document,,,,,R,,,1,,Eml,Y,Y,Y,OK,,
 mbox,mbox,document,,,,,,fmt/720,,1,,Mbox,Y,Y,Y,OK,,
 GNU gettext catalog (MO),mo,document,,,,,R,,,1,,Mo,Y,Y,,OK,,
 Microsoft Reader (LIT),lit,document,,,,,R,,,1,,Lit,Y,,,OK,,
-Windows Help (HLP),hlp,document,,,,,R,fmt/474,,2,,,,,,MISSING,,
+Windows Help (HLP),hlp,document,,,,,R,fmt/474,,2,http://fileformats.archiveteam.org/wiki/HLP,Hlp,Y,,,OK,,read-only: internal files as stored (directory matches helpdeco); topic text is not decompiled
 MIME HTML archive (MHT),mht;mhtml,document,,,,,R,,,1,,,,,,MISSING,,
 Outlook Express mailbox (DBX),dbx,document,,,,,R,,,1,,,,,,MISSING,,
 Qt message catalog (QM),qm,document,,,,,R,,,1,,,,,,MISSING,,
@@ -430,7 +430,7 @@ NTFS,ntfs,filesystem,R,,,R,,,Y,3,,Ntfs,Y,Y,Y,OK,,"LZNT1 and WOF (XPRESS4K/8K/16K
 OneFS (Isilon),isilon,filesystem,,,,,,,Y,1,,OneFs,Y,,,OK,,
 OS-9 RBF,os9;rbf,filesystem,,,,,,,Y,1,,Os9Rbf,Y,Y,Y,OK,,
 Amiga PFS,pfs;pfs2;pfs3,filesystem,,,,,,,Y,1,,AmigaPfs,Y,Y,Y,OK,,
-ProDOS,po,filesystem,,,,,,,Y,1,,ProDos,Y,Y,Y,OK,,
+ProDOS,po,filesystem,,,,,,,Y,1,,ProDos,Y,Y,Y,OK,,140 KB DOS-order (.dsk/.do) images are read but not edited
 QNX4 FS,qnx4;qnx4fs,filesystem,,,,,,,Y,1,,Qnx4,Y,Y,Y,OK,,
 ReFS,refs,filesystem,,,,,,,Y,1,,Refs,Y,,Y,READ-ONLY-BUT-SOURCES-WRITE,format /fs:refs (Windows),
 Reiser4,,filesystem,,,,,,,Y,1,,Reiser4,Y,Y,Y,OK,,
@@ -460,7 +460,7 @@ LogFS,logfs,filesystem,,,,D,,,Y,2,,,,,,MISSING,,
 NVFS (Palm),palm,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: Palm OS NVFS internals are unpublished; no tool or image
 WAFL (NetApp),netapp,filesystem,,,,,,,Y,1,,Wafl,Y,,,OK,,
 emFile (SEGGER),segger,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-SPIFFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+SPIFFS,spiffs,filesystem,,,,,,,Y,1,https://github.com/pellepl/spiffs,Spiffs,Y,Y,,OK,mkspiffs / spiffsgen.py,"read (geometry detected from the per-block magic and index tables) and created fresh (WORM) for the ESP-IDF/Arduino ESP32, Arduino ESP8266 and mkspiffs generic profiles; in-place edits are not implemented; big-endian images are not read"
 TFAT,tfat,filesystem,,,,,,,Y,1,,TFat,Y,Y,Y,OK,,
 TrueFFS,m-systems,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: M-Systems DiskOnChip flash translation layer, not a file system (the volume behind it is FAT); no NFTL/INFTL dump found"
 UBI / UBIFS,ubi;ubifs,filesystem,,,,R,,,Y,2,,Ubifs,Y,Y,Y,OK,,
@@ -482,7 +482,7 @@ OCFS (v1),,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: ocfs-tools 1.x (2002-2005
 QFS (Sun/Oracle),,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: SAM-QFS tools were open-sourced only briefly under OpenSolaris and do not build for current systems; no image found
 ScoutFS,versity,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: needs the scoutfs kernel module with separate metadata and data devices; no image and no standalone tool
 StorNext / Xsan,apple;cvfs;quantum,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: proprietary (Quantum, Apple); no specification, standalone tool or image"
-VMFS,vmfs;vmfs2;vmfs3;vmfs5;vmware,filesystem,,,,,,,Y,1,,,,,,MISSING,,"deferred: the only public sample (the vmfs6-tools test image, VMFS3, GPL-2.0 repository) cannot be redistributed here and VMFS5/6 have no public sample; vmfs-tools/vmfs6-tools are read-only oracles"
+VMFS,vmfs;vmfs2;vmfs3;vmfs5;vmware,filesystem,,,,,,,Y,1,https://github.com/glandium/vmfs-tools,Vmfs,Y,,,PARTIAL,ESXi (vmkfstools),"single-extent VMFS3 read (spec in docs/VMFS-ON-DISK.md, checked against an ESX-written volume); VMFS5/6 and spanned volumes are refused: no public volume proves them"
 AXFS,,filesystem,,,,,,,Y,1,https://github.com/jaredeh/axfs,Axfs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,mkfs.axfs,no reader outside this package to prove a writer
 CramFS,cramfs,filesystem,R,,,D,,,Y,3,,CramFs,Y,Y,Y,OK,,
 LTFS (Linear Tape),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
@@ -490,15 +490,15 @@ lnfs,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 romfs,romfs,filesystem,,,,R,,,Y,2,,RomFs,Y,Y,Y,OK,,
 SquashFS,squashfs;sqfs,filesystem,R,,,R,,,Y,3,https://dr-emann.github.io/squashfs/squashfs.html,SquashFs,Y,Y,,PARTIAL,,SquashFS v4 read/written; v1.0-v3.1 (either byte order; zlib) read as unsquashfs extracts them and read-only; the LZMA builds of 3.x refused (SquashFsLegacyReader.cs)
 EROFS,erofs,filesystem,,,,,,,Y,1,,Erofs,Y,Y,Y,OK,,
-UMSDOS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,deferred: a FAT volume plus a --LINUX-.--- metadata file per directory; the driver was removed in Linux 2.6.11 and no maintained tool exists; ZipSlack distributions carry real metadata files that could serve as oracle; not attempted in this round
+UMSDOS,,filesystem,,,,,,,Y,1,https://en.wikipedia.org/wiki/UMSDOS,Umsdos,Y,,,OK,,"read-only view of a FAT volume through its --linux-.--- files (long names, modes, owners, symlinks, pseudo hard links); checked against Slackware 8.1 ZipSlack and its package logs; no maintained kernel mounts UMSDOS, so nothing is written"
 UVFAT,,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: no specification, implementation or image located"
 Venti (Plan 9),,filesystem,,,,,,,Y,1,,,,,,MISSING,,"deferred: a content-addressed block store (arenas, index sections), not a file tree; plan9port (MIT) builds the venti tools that could serve as oracle; not attempted in this round"
 DECtape,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 OS/3x0 FS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,deferred: IBM OS/360-OS/390 DASD volumes need a CKD container and VTOC/DSCB parsing; Hercules' dasdls (QPL) could serve as oracle; not attempted in this round
 Level-D (DEC),dec,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 George 3,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-Version 6 Unix FS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-Version 7 Unix FS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+Version 6 Unix FS,v6,filesystem,,,,,,,Y,1,https://www.tuhs.org/Archive/Distributions/Research/Dennis_v6/,UnixV6,Y,,,OK,,"read-only: no maintained kernel or tool reads a V6 volume, so a written one could not be checked; reader checked against the 1975 TUHS root volume and its independent tar extraction"
+Version 7 Unix FS,v7,filesystem,,,,,,,Y,1,https://www.tuhs.org/Archive/Distributions/Research/,UnixV7,Y,Y,,OK,Linux sysv driver (v7),"read, and created fresh (WORM); in-place edits are not implemented; checked by the Linux v7 driver both ways and against the SIMH 1979 distribution volume"
 RT-11 file system,rt11,filesystem,,,,,,,Y,1,,Rt11,Y,Y,Y,OK,,
 GEC DOS filing system,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 UCSD p-System,pvol,filesystem,,,,,,,Y,1,,ApplePascal,Y,Y,Y,OK,,
@@ -515,7 +515,7 @@ MicroDOS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: the name covers several u
 PolyServe FS,psfs,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: proprietary (PolyServe, then HP); no specification, tool or image"
 eCryptfs,,filesystem,,,,,,,Y,1,,Ecryptfs,Y,Y,Y,OK,,
 EncFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-SOS file system (Apple III),,filesystem,,,R,,,,,1,,,,,,MISSING,,
+SOS file system (Apple III),,filesystem,,,R,,,,,1,https://www.apple3.org/iiimanuals.html,ProDos,Y,Y,Y,OK,,"SOS volumes are ProDOS-format and are read through ProDos, in block order and in the DOS 3.3 sector order their .dsk images use (checked against CiderPress II); DOS-order images are read-only; .dsk is claimed by CP/M, so select ProDos explicitly"
 Lustre,,filesystem,,,,,,,Y,1,,Lustre,Y,,,READ-ONLY-BUT-SOURCES-WRITE,mkfs.lustre,
 BeeGFS,,filesystem,,,,,,,Y,1,,BeeGfs,,,,READ-ONLY-BUT-SOURCES-WRITE,beegfs-setup-storage,
 GlusterFS,,filesystem,,,,,,,Y,1,,GlusterFs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,gluster volume create,

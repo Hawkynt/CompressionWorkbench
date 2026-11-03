@@ -58,8 +58,8 @@ public sealed class ProDosBlockMover : IFilesystemBlockMover {
 
     // 2. Update volume bitmap: free old blocks, allocate new blocks.
     var volHeaderOff = imageStart + VolumeDirStartBlock * BlockSize;
-    var totalBlocks = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(volHeaderOff + 4 + 0x28));
-    var bitmapPtr = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(volHeaderOff + 4 + 0x26));
+    var totalBlocks = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(volHeaderOff + 4 + ProDosReader.HeaderTotalBlocksOrParentEntry));
+    var bitmapPtr = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(volHeaderOff + 4 + ProDosReader.HeaderBitmapOrParentPointer));
     if (bitmapPtr == 0) bitmapPtr = BitmapStartBlock;
 
     foreach (var b in oldBlocks) SetBitmapBit(data, imageStart, bitmapPtr, b, free: true);

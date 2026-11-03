@@ -68,6 +68,7 @@ format,Avro,Apache Avro OCF,Archive,,.avro,Y,Y,,
 format,Awb,CRI Audio Wave Bank,Archive,,.awb;.acb,Y,Y,Y,
 format,Axfs,AXFS (Advanced XIP File System),Archive,Y,.axfs,Y,Y,,
 format,Ay,ZX Spectrum AY,Audio,,.ay,Y,Y,,
+format,B1,B1,Archive,,.b1,Y,Y,Y,Y
 format,B64Encoding,Base64 (uuencode wrapper),Wrapper,,.b64;.base64,,Y,Y,
 format,Ba2,Bethesda Archive v2,Archive,,.ba2,Y,Y,Y,Y
 format,Balz,BALZ,Stream,,.balz,,Y,Y,
@@ -163,6 +164,7 @@ format,DriveSpace3,DriveSpace 3 CVF,Archive,Y,,Y,Y,Y,Y
 format,Dsf,DSF (DSD Stream File),Audio,,.dsf,Y,Y,Y,
 format,Dtb,Flattened Device Tree Blob,Archive,,.dtb;.dtbo,Y,Y,Y,Y
 format,Dts,DTS (Coherent Acoustics),Audio,,.dts;.dtshd,Y,Y,,
+format,DvdisasterEcc,dvdisaster ecc,Archive,,.ecc,Y,Y,,
 format,Dxf,DXF (AutoCAD Drawing Exchange),Archive,,.dxf,Y,Y,,
 format,Dzip,Bloodlines DZIP,Archive,,.dzip,Y,Y,Y,Y
 format,Ear,EAR,Archive,,.ear,Y,Y,Y,Y
@@ -170,6 +172,7 @@ format,EaSchl,Electronic Arts SCHl Stream,Audio,,.eam;.sng,Y,Y,Y,
 format,EaseUsPbd,EaseUS Todo Backup (.pbd),Archive,,.pbd,Y,Y,,
 format,Ecm,ECM,Stream,,.ecm,,Y,Y,
 format,Ecryptfs,eCryptfs,Archive,Y,.ecryptfs,Y,Y,Y,Y
+format,EcSbx,Error-correcting SeqBox,Archive,,.ecsbx,Y,Y,,
 format,Efs,EFS (SGI Extent File System),Archive,Y,.efs;.efsimg,Y,Y,Y,Y
 format,Egg,EGG,Archive,,.egg,Y,Y,Y,
 format,Elf,ELF executable,Archive,,.elf;.so;.o;.ko,Y,Y,,
@@ -241,6 +244,7 @@ format,Hfe,HxC Floppy Emulator (HFE),Archive,,.hfe,Y,Y,,
 format,Hfs,HFS (Classic),Archive,Y,.hfs,Y,Y,Y,Y
 format,HfsPlus,HFS+,Archive,Y,.dmg;.hfsx;.hfs,Y,Y,Y,Y
 format,HighSierra,High Sierra (CD-ROM),Archive,Y,.hsf,Y,Y,Y,
+format,Hlp,Windows Help (HLP),Archive,,.hlp,Y,Y,,
 format,Hog,HOG,Archive,,.hog,Y,Y,Y,Y
 format,Hpfs,HPFS,Archive,Y,.img;.hpfs,Y,Y,Y,Y
 format,Hpi,Total Annihilation HPI,Archive,,.hpi;.ufo;.ccx;.gp3,Y,Y,Y,Y
@@ -302,6 +306,7 @@ format,Lzg,LZG,Stream,,.lzg,,Y,Y,
 format,Lzh,LZH,Archive,,.lzh;.lha,Y,Y,Y,Y
 format,Lzham,LZHAM,Stream,,.lzham,,Y,Y,
 format,Lzip,Lzip,Stream,,.lz;.lzip,,Y,Y,
+format,LzipFec,lziprecover fec,Archive,,.fec,Y,Y,,
 format,Lzma,LZMA,Stream,,.lzma,,Y,Y,
 format,Lzop,LZOP,Stream,,.lzo,,Y,Y,
 format,LzxAmiga,LZX (Amiga),Archive,,.lzx,Y,Y,Y,Y
@@ -509,6 +514,7 @@ format,Sparsebundle,Apple Sparsebundle,Archive,,.sparsebundle,Y,Y,,
 format,Sparseimage,Apple Sparseimage,Archive,,.sparseimage,Y,Y,Y,Y
 format,Spc,SNES SPC700,Audio,,.spc,Y,Y,,
 format,Sphere,NIST SPHERE,Audio,,.sph;.nist,Y,Y,Y,
+format,Spiffs,SPIFFS,Archive,Y,.spiffs,Y,Y,Y,
 format,SplitFile,Split File (.001),Archive,,.001,Y,Y,Y,
 format,Sqlite,SQLite 3 Database,Archive,,.sqlite;.sqlite3;.db3,Y,Y,,
 format,SquashFs,SquashFS,Archive,Y,.sqfs;.squashfs;.snap;.appimage,Y,Y,Y,
@@ -575,9 +581,12 @@ format,Ufs,UFS,Archive,Y,.ufs,Y,Y,Y,Y
 format,Uharc,UHARC,Archive,,.uha,Y,Y,Y,Y
 format,UImage,U-Boot uImage,Archive,,,Y,Y,Y,Y
 format,Ult,UltraTracker,Audio,,.ult,Y,Y,,
+format,Umsdos,UMSDOS (Linux on FAT),Archive,Y,,Y,Y,,
 format,Umx,Unreal Music (UMX),Archive,,.umx,Y,Y,Y,
 format,UnityBundle,Unity Asset Bundle,Archive,,.bundle;.unity3d;.assetbundle,Y,Y,Y,Y
 format,UnixPack,pack (.z),Stream,,,,Y,Y,
+format,UnixV6,UNIX V6 file system,Archive,Y,.v6,Y,Y,,
+format,UnixV7,UNIX V7 file system,Archive,Y,.v7,Y,Y,Y,
 format,UnrealPak,Unreal Pak,Archive,,.pak,Y,Y,Y,
 format,Upx,UPX-packed executable,Archive,,,Y,Y,,
 format,UuEncoding,UUEncoding,Wrapper,,.uue;.uu,,Y,Y,
@@ -590,6 +599,7 @@ format,Vhd,VHD,Archive,,.vhd,Y,Y,Y,Y
 format,Vhdx,VHDX,Archive,,.vhdx,Y,Y,Y,Y
 format,Vib,vSphere Installation Bundle,Archive,,.vib,Y,Y,Y,
 format,Vmdk,VMDK,Archive,,.vmdk,Y,Y,Y,Y
+format,Vmfs,VMware VMFS,Archive,Y,.vmfs,Y,Y,,
 format,VmProtect,VMProtect (Win32 PE),Archive,,,Y,Y,,
 format,VobSub,VobSub DVD Subtitles,Archive,,.idx,Y,Y,Y,Y
 format,Voc,Creative Voice (.voc),Audio,,.voc,Y,Y,Y,

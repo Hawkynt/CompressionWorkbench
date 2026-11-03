@@ -109,6 +109,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [AR](https://en.wikipedia.org/wiki/Ar_(Unix)) | `Ar` | `.a` `.ar` `.deb` | R/W | ✅ | defrag · wipe |  | [freebsd.org](https://www.freebsd.org/cgi/man.cgi?query=ar&sektion=5) |
 | [ARC](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Arc` | `.arc` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/hyc/arc) |
 | [ARJ](https://en.wikipedia.org/wiki/ARJ) | `Arj` | `.arj` | R/W | ✅ | defrag · wipe |  | [arj.sourceforge.net](https://arj.sourceforge.net) |
+| [B1](https://en.wikipedia.org/wiki/B1_(file_format)) | `B1` | `.b1` | R/W | ✅ | — | Plain, LZMA and AES-256-GCM archives b1-pack wrote, and ours that it reads; single volume only | [GitHub](https://github.com/b1-pack/b1-pack) |
 | [Binary II](https://en.wikipedia.org/wiki/Binary_II) | `BinaryII` | `.bny` `.bqy` | R/W | ✅ | defrag · wipe |  | [mirrors.apple2.org.za](https://mirrors.apple2.org.za/ground.icaen.uiowa.edu/MiscInfo/Binary2/bin2.specs) |
 | BlakHole | `BlakHole` | `.bh` | R | ✅ | — | Read-only, Deflate members; layout measured on a real sample (every CRC-32 holds): [BLAKHOLE-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/BLAKHOLE-ON-DISK.md) | [Archive Team](http://fileformats.archiveteam.org/wiki/BlakHole) |
 | C64/C128 SFX | `C64Sfx` | `.sfx` | R | ✅ | — | Chris Smeets' self-extracting LHA (-lh1-); unar extracts the same bytes; read-only because the extractor stub is not ours to ship | [unusedino.de](http://unusedino.de/ec64/technical/formats/sfx.html) |
@@ -222,6 +223,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [EPUB](https://en.wikipedia.org/wiki/EPUB) | `Epub` | `.epub` | R/W | ✅ | defrag · wipe |  | [w3.org](https://www.w3.org/TR/epub-33/) |
 | [FB2](https://en.wikipedia.org/wiki/FictionBook) | `Fb2` | `.fb2` | R | ✅ | — |  | [GitHub](https://github.com/gribuser/fb2) |
 | [FLA](https://helpx.adobe.com/animate/desktop/introduction-to-animate/documents.html) | `Fla` |  | WORM | ✅ | wipe | Packs an XFL project folder (root `DOMDocument.xml` required) in the layout Flash CS6 saves: folder entries kept, DEFLATE or stored members, stored `mimetype` last. Reads Flash CS6 files and writes files that [xfl2svg](https://github.com/PluieElectrique/xfl2svg) reads as the same document (symbols, timelines, rendered frames, media); not verified in Adobe Animate, project XML not validated; legacy OLE2 FLA is read-only | [Adobe Animate](https://helpx.adobe.com/animate/desktop/introduction-to-animate/documents.html) · [MS-CFB](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/) |
+| [Windows Help (HLP)](https://en.wikipedia.org/wiki/WinHelp) | `Hlp` | `.hlp` | R | ✅ | — | Internal files of the help file system as stored (WinHelp's pipe-marked files listed with `#`, e.g. `#SYSTEM`), directory as helpdeco lists it; topic text is not decompiled | [Archive Team](http://fileformats.archiveteam.org/wiki/HLP) |
 | [KMZ](https://en.wikipedia.org/wiki/Keyhole_Markup_Language) | `Kmz` | `.kmz` | R/W | ✅ | defrag · wipe |  | [developers.google.com](https://developers.google.com/kml/documentation) |
 | [LIT (Microsoft Reader)](https://en.wikipedia.org/wiki/Microsoft_Reader) | `Lit` | `.lit` | R | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Microsoft_Reader) |
 | [MAFF](https://en.wikipedia.org/wiki/Mozilla_Archive_Format) | `Maff` | `.maff` | R/W | ✅ | defrag · wipe |  | [maf.mozdev.org](http://maf.mozdev.org/maff-specification.html) |
@@ -347,6 +349,9 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [AppleSingle](https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats) | `AppleSingle` | `.as` `.applesingle` | R/W | ✅ | — | Inputs must map to AppleSingle entry ids | [RFC](https://www.rfc-editor.org/rfc/rfc1740) |
 | [AppleDouble](https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats) | `AppleDouble` | `.appledouble` | R/W | ✅ | — | Same body as AppleSingle under the sidecar magic; a data fork is refused, it belongs in the sibling file | [RFC](https://www.rfc-editor.org/rfc/rfc1740) |
 | [PKCS #12](https://en.wikipedia.org/wiki/PKCS_12) | `Pkcs12` | `.p12` `.pfx` | R | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc7292) |
+| [dvdisaster ecc](https://dvdisaster.jcea.es/) | `DvdisasterEcc` | `.ecc` | R | ✅ | — | Header as metadata.ini (values as dvdisaster -t reports them), RS01 sector CRCs and parity; the ecc MD5 is checked | [dvdisaster.jcea.es](https://dvdisaster.jcea.es/) |
+| Error-correcting SeqBox | `EcSbx` | `.ecsbx` | R | ✅ | — | blkar versions 17/18/19: the protected file reassembled from its interleaved data blocks and checked against the stored hash; damaged data blocks are refused, not repaired | [GitHub](https://github.com/darrenldl/blockyarchive) |
+| [lziprecover fec](https://www.nongnu.org/lzip/manual/lziprecover_manual.html) | `LzipFec` | `.fec` | R | ✅ | — | metadata.ini, CRC32/CRC32-C arrays and FEC blocks, every packet CRC checked; values as lziprecover 1.25 lists them | [nongnu.org](https://www.nongnu.org/lzip/manual/lziprecover_manual.html) |
 | [PAR2](https://en.wikipedia.org/wiki/Parchive) | `Par2` | `.par2` | R | ✅ | — |  | [parchive.sourceforge.net](https://parchive.sourceforge.net) |
 | [Motorola S-record](https://en.wikipedia.org/wiki/SREC_(file_format)) | `Srec` | `.s19` `.s28` `.s37` `.srec` … | WORM | ✅ | — | Entries are metadata.ini plus firmware.bin | [srecord.sourceforge.net](https://srecord.sourceforge.net) |
 | [Windows shell link](https://en.wikipedia.org/wiki/Shortcut_(computing)) | `Lnk` | `.lnk` | WORM | ✅ | — | Entries are header.bin / linkinfo.bin | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-shllink/) |
@@ -556,7 +561,7 @@ Use it when a .NET process needs to enumerate, extract, test, create, edit or in
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 2603 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
+Every public and protected member of all 2617 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
 
 <!-- API:END -->
 

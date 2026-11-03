@@ -13114,7 +13114,7 @@ Random-access in-place modifier for Apple ProDOS block-ordered images (`.po` and
 
 #### `ProDosReader`
 
-Reader for Apple ProDOS `.po` (block-ordered) and `.2mg` images.
+Reader for Apple ProDOS `.po` (block-ordered) and `.2mg` images, and for 140 KB 5.25" images stored in DOS 3.3 sector order (`.dsk`, `.do`) — the usual container for Apple III SOS disks, whose file system is ProDOS's.
 
 Implements `IDisposable`.
 
@@ -13123,16 +13123,29 @@ Implements `IDisposable`.
 | `ProDosReader` | `ProDosReader(Stream stream)` | Initializes a new instance of `ProDosReader`. |
 | `ProDosReader` | `ProDosReader(byte[] data)` | Initializes a new instance of `ProDosReader`. |
 | `BlockSize` | `const int BlockSize` | Defines the block size constant value. |
-| `DirHeaderSize` | `const int DirHeaderSize` | Size in bytes of the Volume Directory Header (storage type 0xF) and the Subdirectory Header (storage type 0xE). The header occupies slot 0 of the first block in a directory chain and is larger than a regular file entry because it carries volume/subdirectory metadata (entry_length, file_count, bit_map_pointer, total_blocks for the volume header; parent_pointer, parent_entry_number, parent_entry_length for the subdirectory header). Per the ProDOS spec, this is 43 bytes ($00..$2A inclusive) — three bytes larger than the 39-byte (`EntrySize`) file-entry slot. The next entry (slot 1 of the first block) therefore starts at byte 4 + 43 = 47, not 4 + 39 = 43. |
+| `DirHeaderSize` | `const int DirHeaderSize` | Size in bytes of the Volume Directory Header (storage type 0xF) and the Subdirectory Header (storage type 0xE): one `EntrySize` slot. The header fills slot 0 of the key block (block bytes $04..$2A), so the first file entry starts at block byte $2B = 43, as in every ProDOS disk (ProDOS 8 Technical Reference Manual, B.2.2; checked against CiderPress II). |
 | `EntriesPerBlock` | `const int EntriesPerBlock` | Defines the entries per block constant value. |
 | `EntrySize` | `const int EntrySize` | Defines the entry size constant value. |
+| `FloppyImageLength` | `const int FloppyImageLength` | Bytes of a 35-track, 16-sector 5.25" disk image. |
+| `HeaderAccess` | `const int HeaderAccess` |  |
+| `HeaderBitmapOrParentPointer` | `const int HeaderBitmapOrParentPointer` | Volume header: bit_map_pointer. Subdirectory header: parent_pointer. |
+| `HeaderEntriesPerBlock` | `const int HeaderEntriesPerBlock` |  |
+| `HeaderEntryLength` | `const int HeaderEntryLength` |  |
+| `HeaderFileCount` | `const int HeaderFileCount` |  |
+| `HeaderMinVersion` | `const int HeaderMinVersion` |  |
+| `HeaderParentEntryLength` | `const int HeaderParentEntryLength` | Subdirectory header: parent_entry_length. |
+| `HeaderTotalBlocksOrParentEntry` | `const int HeaderTotalBlocksOrParentEntry` | Volume header: total_blocks (2 bytes). Subdirectory header: parent_entry_number (1 byte). |
+| `HeaderVersion` | `const int HeaderVersion` |  |
 | `VolumeDirStartBlock` | `const int VolumeDirStartBlock` | Defines the volume dir start block constant value. |
 | `Entries` | `IReadOnlyList<ProDosEntry> Entries { get; }` | Gets the entries. |
+| `IsDosOrder` | `bool IsDosOrder { get; }` | Whether the image is a 140 KB disk in DOS 3.3 sector order, read through `DosOrderToProDosOrder`. Editing such an image in place would scramble it, so the descriptor's editing entry points refuse it. |
 | `VolumeName` | `string VolumeName { get; }` | Gets or sets the volume name. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `EntryOffsetInBlock` | `static int EntryOffsetInBlock(bool isFirstBlockOfChain, int slotIndex)` | Returns the byte offset within a directory block at which the entry at `slotIndex` begins. The first block of a directory chain has its slot 0 carry the (43-byte) Volume/Subdir Header; subsequent slots are 39-byte file entries starting at byte 47. Non-first blocks have all 13 slots as 39-byte file entries starting at byte 4. |
+| `DosOrderToProDosOrder` | `static byte[] DosOrderToProDosOrder(ReadOnlySpan<byte> dosOrder)` | Reorders a DOS-order 140 KB image into ProDOS block order. |
+| `EntryOffsetInBlock` | `static int EntryOffsetInBlock(bool isFirstBlockOfChain, int slotIndex)` | Returns the byte offset within a directory block at which the entry at `slotIndex` begins: entries are `EntrySize` bytes apart from byte 4, and in a key block slot 0 is the directory header. |
 | `Extract` | `byte[] Extract(ProDosEntry entry)` | Decodes the supplied input. |
-| `SlotsInBlock` | `static int SlotsInBlock(bool isFirstBlockOfChain)` | Returns the number of usable entry slots (header + file slots) in a directory block. The first block of a chain holds 12 entries (1 header at slot 0 + 11 file slots at slots 1..11). Subsequent blocks hold 13 file slots at slots 0..12. |
+| `LooksDosOrdered` | `static bool LooksDosOrdered(ReadOnlySpan<byte> image)` | Whether `image` is a 140 KB DOS-order disk: no ProDOS volume header where block order puts it, but one once the sectors are reordered. |
+| `SlotsInBlock` | `static int SlotsInBlock(bool isFirstBlockOfChain)` | Returns the number of entry slots in a directory block: thirteen, the header counting as slot 0 of the key block. |
 
 #### `ProDosWriter`
 
@@ -14293,6 +14306,120 @@ Builds a SmartFS volume: a format sector, a root directory, and a sector chain p
 | `SectorSize` | `int SectorSize { get; init; }` | Bytes per sector. One of 256, 512, 1024, 2048 or 4096. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the volume. |
 | `Build` | `byte[] Build(int totalSectors = 0)` | Lays the volume out. `totalSectors` of zero sizes the image to what the files need; a larger count leaves the surplus erased, which is where a running system would put new files. |
+
+### Namespace `FileSystem.Spiffs`
+
+[`SpiffsEntry`](#spiffsentry) · [`SpiffsFormatDescriptor`](#spiffsformatdescriptor) · [`SpiffsGeometry`](#spiffsgeometry) · [`SpiffsReader`](#spiffsreader) · [`SpiffsWriter`](#spiffswriter)
+
+#### `SpiffsEntry`
+
+One SPIFFS object (a file; SPIFFS has no directories, names carry the path).
+
+Implements `IEquatable<SpiffsEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SpiffsEntry` | `SpiffsEntry(string Name, long Size, ushort ObjectId, int HeaderPage, byte Type)` | One SPIFFS object (a file; SPIFFS has no directories, names carry the path). |
+| `HeaderPage` | `int HeaderPage { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `ObjectId` | `ushort ObjectId { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `Type` | `byte Type { get; init; }` |  |
+
+#### `SpiffsFormatDescriptor`
+
+SPIFFS, the wear-levelled NOR-flash file system of ESP8266/ESP32 firmware: read, and created fresh (WORM). The geometry is not stored in the image, so reading detects it from the per-block magic and the index tables; writing takes it from a profile that matches the tool the firmware was built with. SPIFFS has no directories: a name is a path of at most 31 bytes. References:`https://github.com/pellepl/spiffs` — SPIFFS (MIT), `spiffs_nucleus.h` page and index layout`https://github.com/igrr/mkspiffs` — mkspiffs (MIT), the image tool; its oracleESP-IDF `components/spiffs/spiffsgen.py` (Apache-2.0) — the second image tool
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveWriteConstraints`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SpiffsFormatDescriptor` | `SpiffsFormatDescriptor()` |  |
+| `Profiles` | `static readonly IReadOnlyDictionary<string, SpiffsGeometry> Profiles` | Write profiles: the build configurations of the tools that make SPIFFS images. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `SpiffsGeometry`
+
+The build-time parameters a SPIFFS image depends on but does not record: logical page and block size, the length of the per-object metadata field, whether object index tables are 2-byte aligned, and whether the per-block magic folds in the block's distance from the end (`SPIFFS_USE_MAGIC_LENGTH`). Derived layout, as in SPIFFS' `spiffs_nucleus.h` (MIT, Peter Andersson, revision f5e26c4): every block starts with `max(1, pagesPerBlock·2 / pageSize)` object-lookup pages holding one 16-bit object id per remaining page of the block (0xFFFF free, 0 deleted, bit 15 set for index pages). The last two 16-bit slots of the lookup area hold the magic and the erase count. A page starts with a 5-byte header (`obj_id`, `span_ix`, `flags`), padded to 8 in index pages. The object index header page adds `size` (u32), `type` (u8), `name[32]` and `meta[metaLength]`, after which the 16-bit page indexes of the first data pages follow.
+
+Implements `IEquatable<SpiffsGeometry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SpiffsGeometry` | `SpiffsGeometry(int PageSize, int BlockSize, int MetaLength, bool AlignedIndexTables, bool MagicIncludesLength)` | The build-time parameters a SPIFFS image depends on but does not record: logical page and block size, the length of the per-object metadata field, whether object index tables are 2-byte aligned, and whether the per-block magic folds in the block's distance from the end (`SPIFFS_USE_MAGIC_LENGTH`). Derived layout, as in SPIFFS' `spiffs_nucleus.h` (MIT, Peter Andersson, revision f5e26c4): every block starts with `max(1, pagesPerBlock·2 / pageSize)` object-lookup pages holding one 16-bit object id per remaining page of the block (0xFFFF free, 0 deleted, bit 15 set for index pages). The last two 16-bit slots of the lookup area hold the magic and the erase count. A page starts with a 5-byte header (`obj_id`, `span_ix`, `flags`), padded to 8 in index pages. The object index header page adds `size` (u32), `type` (u8), `name[32]` and `meta[metaLength]`, after which the 16-bit page indexes of the first data pages follow. |
+| `Deleted` | `const ushort Deleted` |  |
+| `FlagDelete` | `const byte FlagDelete` |  |
+| `FlagFinal` | `const byte FlagFinal` |  |
+| `FlagIndex` | `const byte FlagIndex` |  |
+| `FlagIxDelete` | `const byte FlagIxDelete` |  |
+| `FlagUsed` | `const byte FlagUsed` |  |
+| `Free` | `const ushort Free` |  |
+| `IndexFlag` | `const ushort IndexFlag` |  |
+| `IndexPageHeaderSize` | `const int IndexPageHeaderSize` |  |
+| `NameLength` | `const int NameLength` |  |
+| `PageHeaderSize` | `const int PageHeaderSize` |  |
+| `AlignedIndexTables` | `bool AlignedIndexTables { get; init; }` |  |
+| `BlockSize` | `int BlockSize { get; init; }` |  |
+| `DataPerPage` | `int DataPerPage { get; }` |  |
+| `EraseCountOffsetInBlock` | `int EraseCountOffsetInBlock { get; }` |  |
+| `HeaderIndexEntries` | `int HeaderIndexEntries { get; }` |  |
+| `IndexEntries` | `int IndexEntries { get; }` |  |
+| `IndexHeaderSize` | `int IndexHeaderSize { get; }` | `sizeof(spiffs_page_object_ix_header)`: 8 + 4 + 1 + 32 + meta, rounded to 2 when aligned. |
+| `LookupEntries` | `int LookupEntries { get; }` |  |
+| `LookupPages` | `int LookupPages { get; }` |  |
+| `MagicIncludesLength` | `bool MagicIncludesLength { get; init; }` |  |
+| `MagicOffsetInBlock` | `int MagicOffsetInBlock { get; }` |  |
+| `MagicPossible` | `bool MagicPossible { get; }` | Whether the lookup area leaves room for the magic and erase count (`SPIFFS_CHECK_MAGIC_POSSIBLE`). |
+| `MetaLength` | `int MetaLength { get; init; }` |  |
+| `PageSize` | `int PageSize { get; init; }` |  |
+| `PagesPerBlock` | `int PagesPerBlock { get; }` |  |
+| `Valid` | `bool Valid { get; }` |  |
+| `Candidates` | `static IEnumerable<SpiffsGeometry> Candidates()` | The page sizes, block sizes and header variants tried when an image does not say; they cover mkspiffs' Arduino ESP8266/ESP32 builds and ESP-IDF's spiffsgen.py defaults. |
+| `MagicMatches` | `bool MagicMatches(ReadOnlySpan<byte> image)` | Whether every block of `image` carries this geometry's magic. |
+| `Magic` | `ushort Magic(int blockIndex, int blockCount)` |  |
+
+#### `SpiffsReader`
+
+Reads SPIFFS images (the NOR-flash file system of ESP8266/ESP32 firmware). The geometry is not stored; it is found by testing the per-block magic of every candidate in `Candidates` and, for the header variants the magic cannot tell apart, by which one makes every index entry point at a data page of the right object and span. A live page is written (`USED` clear), finalized (`FINAL` clear) and not deleted (`DELET` set); among several live index pages for one span the last found wins, as in SPIFFS' own scan.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SpiffsReader` | `SpiffsReader(byte[] image, SpiffsGeometry geometry = null)` |  |
+| `Entries` | `IReadOnlyList<SpiffsEntry> Entries { get; }` |  |
+| `Geometry` | `SpiffsGeometry Geometry { get; }` |  |
+| `Detect` | `static SpiffsGeometry Detect(byte[] image)` | The geometry whose magic every block carries, with the header variant that explains the index tables best. |
+| `Extract` | `byte[] Extract(SpiffsEntry entry)` | Returns the bytes of `entry`; a missing or stale data page is refused. |
+
+#### `SpiffsWriter`
+
+Builds a freshly formatted SPIFFS image holding the given files, in the state SPIFFS itself leaves after formatting and writing them: every block erased to 0xFF with its erase count (the block index, as `SPIFFS_format` counts them) and magic in the lookup area; per file one object index header page, the data pages, and further object index pages once the header's table is full, each recorded in its block's object lookup. Object ids are handed out from 1. Names are stored as SPIFFS tools store them, with a leading slash.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SpiffsWriter` | `SpiffsWriter(SpiffsGeometry geometry, long imageSize)` | Builds a freshly formatted SPIFFS image holding the given files, in the state SPIFFS itself leaves after formatting and writing them: every block erased to 0xFF with its erase count (the block index, as `SPIFFS_format` counts them) and magic in the lookup area; per file one object index header page, the data pages, and further object index pages once the header's table is full, each recorded in its block's object lookup. Object ids are handed out from 1. Names are stored as SPIFFS tools store them, with a leading slash. |
+| `Geometry` | `SpiffsGeometry Geometry { get; }` |  |
+| `AddFile` | `void AddFile(string name, byte[] data)` |  |
+| `Build` | `byte[] Build()` |  |
+| `Reject` | `static string Reject(string name)` | Why `name` cannot be stored, or null. |
 
 ### Namespace `FileSystem.Stacker`
 
@@ -16017,6 +16144,203 @@ Writes a UFS1 (FreeBSD FFS) filesystem image that faithfully reproduces a `newfs
 | `Build` | `byte[] Build()` | Materialises the whole volume. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
 
+### Namespace `FileSystem.Umsdos`
+
+[`UmsdosEntry`](#umsdosentry) · [`UmsdosFormatDescriptor`](#umsdosformatdescriptor) · [`UmsdosReader`](#umsdosreader)
+
+#### `UmsdosEntry`
+
+One file, directory or symbolic link as Linux saw it through UMSDOS.
+
+Implements `IEquatable<UmsdosEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UmsdosEntry` | `UmsdosEntry(string Name, long Size, bool IsDirectory, bool IsSymlink, string LinkTarget, DateTime? LastModified, ushort Mode, int Uid, int Gid)` | One file, directory or symbolic link as Linux saw it through UMSDOS. |
+| `Gid` | `int Gid { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `IsSymlink` | `bool IsSymlink { get; init; }` |  |
+| `LastModified` | `DateTime? LastModified { get; init; }` |  |
+| `LinkTarget` | `string LinkTarget { get; init; }` |  |
+| `Mode` | `ushort Mode { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `Uid` | `int Uid { get; init; }` |  |
+
+#### `UmsdosFormatDescriptor`
+
+UMSDOS — Linux on top of an MS-DOS FAT volume (Linux 1.1–2.6.10), read-only. The volume is a FAT volume, so the FAT descriptor claims it by content; this view is selected by id and shows what Linux saw: long names, modes, owners, symbolic links and pseudo hard links from the per-directory `--linux-.---` files. Read-only: no maintained kernel mounts UMSDOS, so a written volume could not be checked. References:Linux 2.4 `include/linux/umsdos_fs.h`, `fs/umsdos/mangle.c`, `fs/umsdos/dir.c` (read as specification)`https://en.wikipedia.org/wiki/UMSDOS`
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UmsdosFormatDescriptor` | `UmsdosFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `UmsdosReader`
+
+Reads UMSDOS, the Linux file system that lived on an MS-DOS FAT volume: every directory that Linux used holds a `--linux-.---` file (the EMD) whose 64-byte records carry the Linux name, mode, owner, times and link count of each entry. The record's position names the DOS file that holds the data. A name MS-DOS can store is used as is (upper-cased by DOS). Any other name is stored under a mangled DOS name whose extension encodes the record number: `"{_4"` is record 4. Symbolic links are DOS files holding the target. Pseudo hard links (flag 2) are DOS files holding the path of the real file, which sits in a hidden record (flag 1); hidden records are not listed. Devices, FIFOs and sockets have no DOS data and are not listed. Directories without an EMD are listed by their DOS names.Layout: Linux 2.4 `include/linux/umsdos_fs.h` (i386: 16-bit uid, gid, dev and mode, 32-bit times) and `fs/umsdos/mangle.c`, read as a specification; checked against Slackware 8.1's ZipSlack distribution, whose package logs name the files the volume must hold.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UmsdosReader` | `UmsdosReader(Stream stream, bool leaveOpen = true)` |  |
+| `EmdName` | `const string EmdName` |  |
+| `EmdDirectories` | `int EmdDirectories { get; }` | Number of directories that carried an EMD. |
+| `Entries` | `IReadOnlyList<UmsdosEntry> Entries { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(UmsdosEntry entry)` | Returns the bytes of `entry`: file data, or a symbolic link's target. |
+
+### Namespace `FileSystem.UnixV6`
+
+[`UnixV6Entry`](#unixv6entry) · [`UnixV6FormatDescriptor`](#unixv6formatdescriptor) · [`UnixV6Reader`](#unixv6reader)
+
+#### `UnixV6Entry`
+
+One file or directory of a V6 volume.
+
+Implements `IEquatable<UnixV6Entry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UnixV6Entry` | `UnixV6Entry(string Name, long Size, bool IsDirectory, DateTime? LastModified, int Inode)` | One file or directory of a V6 volume. |
+| `Inode` | `int Inode { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `LastModified` | `DateTime? LastModified { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `UnixV6FormatDescriptor`
+
+Sixth Edition UNIX file system (PDP-11, 1975), read-only. The volume has no magic number, so it is found by its `.v6` extension or selected by id rather than sniffed. Read-only because nothing outside this package can check a V6 volume written here: no maintained kernel or tool mounts the format. The reader is checked against the 1975 root volume Dennis Ritchie's tapes preserve (TUHS), whose files were independently extracted to a tar archive. References:V6 `/usr/sys/filsys.h`, `inode.h`, `ken/subr.c` (The Unix Heritage Society archive)John Lions, A Commentary on the Sixth Edition UNIX Operating System (1977)`https://en.wikipedia.org/wiki/Version_6_Unix`
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UnixV6FormatDescriptor` | `UnixV6FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `UnixV6Reader`
+
+Reads Sixth Edition UNIX volumes (PDP-11, 1975): 512-byte blocks, the superblock (`struct filsys`) in block 1, 32-byte inodes from block 2 for `s_isize` blocks, 16-byte directory entries, root inode 1. A small file addresses up to eight data blocks directly. A large file (`ILARG`) uses `i_addr[0..6]` as single-indirect blocks of 256 block numbers and `i_addr[7]` as a double-indirect block for logical blocks from 1792 on, the arithmetic of the V6 kernel's `bmap`. Sizes are 24 bits (`i_size0`:`i_size1`); times are PDP-11 longs (high word first). References: V6 `/usr/sys/filsys.h`, `inode.h`, `ken/subr.c` (TUHS); Lions, A Commentary on the Sixth Edition UNIX Operating System.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UnixV6Reader` | `UnixV6Reader(Stream stream, bool leaveOpen = true)` |  |
+| `Entries` | `IReadOnlyList<UnixV6Entry> Entries { get; }` |  |
+| `VolumeBlocks` | `int VolumeBlocks { get; }` | Size of the volume in blocks (`s_fsize`). |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(UnixV6Entry entry)` |  |
+
+### Namespace `FileSystem.UnixV7`
+
+[`UnixV7Entry`](#unixv7entry) · [`UnixV7FormatDescriptor`](#unixv7formatdescriptor) · [`UnixV7Reader`](#unixv7reader) · [`UnixV7Writer`](#unixv7writer)
+
+#### `UnixV7Entry`
+
+One file or directory of a V7 volume.
+
+Implements `IEquatable<UnixV7Entry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UnixV7Entry` | `UnixV7Entry(string Name, long Size, bool IsDirectory, DateTime? LastModified, int Inode, ushort Mode)` | One file or directory of a V7 volume. |
+| `Inode` | `int Inode { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `LastModified` | `DateTime? LastModified { get; init; }` |  |
+| `Mode` | `ushort Mode { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `UnixV7FormatDescriptor`
+
+Seventh Edition UNIX file system (PDP-11, 1979): read, and created fresh (WORM). The volume has no magic number, so it is never claimed by content sniffing: it is found by its `.v7` extension or selected by id. Regular files and directories are listed; device nodes carry no data and are skipped. References:V7 `sys/h/filsys.h`, `ino.h`, `dir.h`, `fblk.h` and `cmd/mkfs.c` (The Unix Heritage Society archive)Linux `fs/sysv` (`v7` file-system type) — the oracle the writer is checked against`https://en.wikipedia.org/wiki/Version_7_Unix`
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UnixV7FormatDescriptor` | `UnixV7FormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `UnixV7Reader`
+
+Reads Seventh Edition UNIX volumes. The superblock carries no magic number, so a volume is recognised the way Linux' `v7` driver recognises it: the free-list and inode caches within their bounds, an i-list inside the volume, and inode 2 a directory whose size is a whole number of entries.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UnixV7Reader` | `UnixV7Reader(Stream stream, bool leaveOpen = true)` |  |
+| `Entries` | `IReadOnlyList<UnixV7Entry> Entries { get; }` | Gets the files and directories, in directory order. |
+| `FirstDataBlock` | `int FirstDataBlock { get; }` | First data block (`s_isize`). |
+| `FreeBlocks` | `int FreeBlocks { get; }` | Free blocks the superblock reports (`s_tfree`). |
+| `VolumeBlocks` | `int VolumeBlocks { get; }` | Size of the volume in blocks (`s_fsize`). |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(UnixV7Entry entry)` | Returns the contents of `entry`. |
+
+#### `UnixV7Writer`
+
+Lays out a fresh V7 volume the way V7 `mkfs` does: boot block, superblock, i-list, then data. Inode 1 is the (empty) bad-block file, inode 2 the root. Files and directories are placed contiguously from `s_isize`; every block left over goes on the chained free list in descending order (each 50th freed block carries the previous cache, `struct fblk`), so the lowest free blocks are handed out first.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UnixV7Writer` | `UnixV7Writer()` |  |
+| `Now` | `DateTime Now { get; init; }` | Timestamp written where an input carries none. |
+| `AddDirectory` | `void AddDirectory(string path, DateTime? modified = null)` |  |
+| `AddFile` | `void AddFile(string path, byte[] data, DateTime? modified = null)` |  |
+| `Build` | `byte[] Build()` |  |
+| `Reject` | `static string Reject(string component)` | Validates a path component: 1–14 bytes, no NUL or slash, Latin-1. |
+
 ### Namespace `FileSystem.Vdfs`
 
 [`VdfsBlockMover`](#vdfsblockmover) · [`VdfsEntry`](#vdfsentry) · [`VdfsFormatDescriptor`](#vdfsformatdescriptor) · [`VdfsInPlaceModifier`](#vdfsinplacemodifier) · [`VdfsLayout`](#vdfslayout) · [`VdfsReader`](#vdfsreader) · [`VdfsWriter`](#vdfswriter) · [`VdfsZippedStream`](#vdfszippedstream) · [`VdfsZippedStream.Block`](#vdfszippedstreamblock) · [`VdfsZippedStream.Layout`](#vdfszippedstreamlayout)
@@ -16212,6 +16536,68 @@ Implements `IEquatable<Layout>`.
 | `BlockSize` | `int BlockSize { get; init; }` | The stream's nominal block size. |
 | `Blocks` | `IReadOnlyList<Block> Blocks { get; init; }` | Its blocks, in order. |
 | `StoredLength` | `long StoredLength { get; init; }` | Bytes the whole stream occupies, headers included. |
+
+### Namespace `FileSystem.Vmfs`
+
+[`VmfsEntry`](#vmfsentry) · [`VmfsFormatDescriptor`](#vmfsformatdescriptor) · [`VmfsReader`](#vmfsreader)
+
+#### `VmfsEntry`
+
+One file, directory or symlink of a VMFS volume.
+
+Implements `IEquatable<VmfsEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VmfsEntry` | `VmfsEntry(string Name, long Size, bool IsDirectory, bool IsSymlink, DateTime? LastModified, uint DescriptorId, uint Type)` | One file, directory or symlink of a VMFS volume. |
+| `DescriptorId` | `uint DescriptorId { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `IsSymlink` | `bool IsSymlink { get; init; }` |  |
+| `LastModified` | `DateTime? LastModified { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `Type` | `uint Type { get; init; }` |  |
+
+#### `VmfsFormatDescriptor`
+
+VMware VMFS3 datastore volumes, read-only. The layout follows `docs/VMFS-ON-DISK.md`, a specification derived from vmfs-tools (GPL-2.0, used as specification and oracle only) and checked against a volume VMware ESX wrote. Single-extent VMFS3 is read, unpartitioned or inside an MBR (type 0xFB) or GPT VMFS partition. VMFS5/6 and spanned volumes are refused: no public volume exists to prove a reader against. References:`https://github.com/glandium/vmfs-tools` — the oracle and specification source (GPL-2.0)`https://en.wikipedia.org/wiki/VMware_VMFS`
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VmfsFormatDescriptor` | `VmfsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `VmfsReader`
+
+Reads single-extent VMFS3 volumes, following `docs/VMFS-ON-DISK.md`: volume info and the logical address space, the file-system info, the bootstrap of the file-descriptor bitmap, inodes, the FB/SB/PB block addressing and directory records. VMFS5/6 and multi-extent volumes are refused: nothing public proves them.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VmfsReader` | `VmfsReader(Stream stream, bool leaveOpen = true)` |  |
+| `BlockSize` | `long BlockSize { get; }` |  |
+| `Entries` | `IReadOnlyList<VmfsEntry> Entries { get; }` |  |
+| `Label` | `string Label { get; }` |  |
+| `VolumeVersion` | `uint VolumeVersion { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `ExtractTo` | `void ExtractTo(VmfsEntry entry, Stream destination)` | Writes the contents of `entry` (a symlink's target) to `destination`. |
+| `Extract` | `byte[] Extract(VmfsEntry entry)` |  |
 
 ### Namespace `FileSystem.VxFs`
 

@@ -23,10 +23,10 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 203 | a source lists it; no descriptor or building block covers it |
+| `MISSING` | 192 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 24 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 38 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 261 | covered with no known gap against what the sources list |
+| `PARTIAL` | 40 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 270 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 458 | in our registry, listed by none of the seven sources |
 
 ### Per source

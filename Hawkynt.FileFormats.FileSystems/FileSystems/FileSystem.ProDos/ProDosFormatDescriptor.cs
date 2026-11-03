@@ -49,6 +49,29 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// master-index blocks are attributed to their owning file.
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => IsDosOrdered(image) ? [] : EnumerateBlockOrderedExtents(image);
+
+  /// <summary>
+  /// Whether <paramref name="image"/> is a 140 KB disk in DOS 3.3 sector order. It is read
+  /// through a reordered copy; every byte offset the editing paths compute assumes block
+  /// order, so they refuse it rather than scramble it.
+  /// </summary>
+  internal static bool IsDosOrdered(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (!image.CanSeek || image.Length != ProDosReader.FloppyImageLength) return false;
+    var bytes = new byte[ProDosReader.FloppyImageLength];
+    image.Position = 0;
+    image.ReadExactly(bytes);
+    image.Position = 0;
+    return ProDosReader.LooksDosOrdered(bytes);
+  }
+
+  private static void RequireBlockOrder(Stream image) {
+    if (IsDosOrdered(image))
+      throw new NotSupportedException("ProDOS: DOS-order (.dsk/.do) images are read-only; convert to a block-ordered .po image to edit.");
+  }
+
+  private static IEnumerable<DefragBlockInfo> EnumerateBlockOrderedExtents(Stream image)
     => ProDosExtentMap.Enumerate(image);
 
   // We cap at the 800 KB Mac-format floppy — the largest canonical size we emit.
@@ -100,6 +123,7 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// the file's index + data blocks are read or written.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    RequireBlockOrder(archive);
     foreach (var (name, data) in FilesOnly(inputs)) {
       ProDosModifier.RemoveFile(archive, name, wipeData: true);
       ProDosModifier.AddFile(archive, name, data);
@@ -111,6 +135,7 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// <c>ProDosModifier</c> for O(touched bytes) random-access I/O.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    RequireBlockOrder(archive);
     foreach (var name in entryNames)
       ProDosModifier.RemoveFile(archive, name, wipeData: true);
   }
@@ -225,7 +250,7 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
         $"ProDOS: combined input size {total} bytes exceeds 800 KB disk capacity ({cap} bytes).");
 
     var w = new ProDosWriter();
-    foreach (var (name, data) in FlatFiles(inputs))
+    foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
 
     // Honour an explicit volume size if the user picked one; otherwise use the
@@ -254,6 +279,7 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
+    RequireBlockOrder(image);
     image.Position = 0;
     var imageSize = image.Length;
 
@@ -285,12 +311,16 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
-    => new ProDosBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    RequireBlockOrder(image);
+    new ProDosBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  }
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
-    => new ProDosBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    RequireBlockOrder(image);
+    new ProDosBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  }
 
   /// <summary>
   /// Performs the defragment operation.
@@ -305,6 +335,7 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
+    RequireBlockOrder(archive);
     if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
       try {
         DefragmentWithPlanner(archive, options);

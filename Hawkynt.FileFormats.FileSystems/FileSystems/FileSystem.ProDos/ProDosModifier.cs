@@ -35,8 +35,8 @@ public static class ProDosModifier {
     var sanitized = SanitizeName(name);
 
     var volHeader = ReadBlock(image, imageStart, VolumeDirStartBlock);
-    var totalBlocks = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + 0x28));
-    var bitmapPtr = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + 0x26));
+    var totalBlocks = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderTotalBlocksOrParentEntry));
+    var bitmapPtr = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderBitmapOrParentPointer));
     if (bitmapPtr == 0) bitmapPtr = BitmapStartBlock;
 
     var bitmapBlocks = (totalBlocks + (BlockSize * 8) - 1) / (BlockSize * 8);
@@ -75,12 +75,8 @@ public static class ProDosModifier {
       throw new InvalidOperationException("ProDOS: volume directory full (no free entry slot).");
 
     var dirBuf = ReadBlock(image, imageStart, slot.Block);
-    // Honour the 43-byte Volume/Subdir Header in the first block of a chain
-    // — slot 1 starts at byte 47 (4 + 43), not byte 43 (4 + 39). Writing the
-    // first file entry at byte 43 used to overwrite bytes 44-45 of the volume
-    // header, where bit_map_pointer (4 + 0x26) and total_blocks (4 + 0x28)
-    // live; the second AddFile then read garbage and threw "out of free
-    // blocks".
+    // The directory header fills slot 0 (block bytes $04..$2A); file entries
+    // follow at $2B + n·$27, and the header's own fields end at $2A.
     var entryOff = ProDosReader.EntryOffsetInBlock(slot.IsFirstBlockOfChain, slot.IndexInBlock);
     dirBuf[entryOff + 0] = (byte)((storageType << 4) | (sanitized.Length & 0x0F));
     for (var i = 0; i < sanitized.Length && i < 15; i++)
@@ -101,13 +97,13 @@ public static class ProDosModifier {
     // Bump file_count. The header lives in block 2; if slot.Block == 2 we must
     // update the same buffer we're about to write, not a stale snapshot.
     if (slot.Block == VolumeDirStartBlock) {
-      var fc = BinaryPrimitives.ReadUInt16LittleEndian(dirBuf.AsSpan(4 + 0x24));
-      BinaryPrimitives.WriteUInt16LittleEndian(dirBuf.AsSpan(4 + 0x24), (ushort)(fc + 1));
+      var fc = BinaryPrimitives.ReadUInt16LittleEndian(dirBuf.AsSpan(4 + ProDosReader.HeaderFileCount));
+      BinaryPrimitives.WriteUInt16LittleEndian(dirBuf.AsSpan(4 + ProDosReader.HeaderFileCount), (ushort)(fc + 1));
       WriteBlock(image, imageStart, slot.Block, dirBuf);
     } else {
       WriteBlock(image, imageStart, slot.Block, dirBuf);
-      var fc = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + 0x24));
-      BinaryPrimitives.WriteUInt16LittleEndian(volHeader.AsSpan(4 + 0x24), (ushort)(fc + 1));
+      var fc = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderFileCount));
+      BinaryPrimitives.WriteUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderFileCount), (ushort)(fc + 1));
       WriteBlock(image, imageStart, VolumeDirStartBlock, volHeader);
     }
 
@@ -126,8 +122,8 @@ public static class ProDosModifier {
     var sanitized = SanitizeName(name);
 
     var volHeader = ReadBlock(image, imageStart, VolumeDirStartBlock);
-    var totalBlocks = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + 0x28));
-    var bitmapPtr = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + 0x26));
+    var totalBlocks = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderTotalBlocksOrParentEntry));
+    var bitmapPtr = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderBitmapOrParentPointer));
     if (bitmapPtr == 0) bitmapPtr = BitmapStartBlock;
     var bitmapBlocks = (totalBlocks + (BlockSize * 8) - 1) / (BlockSize * 8);
     var bitmap = ReadBitmap(image, imageStart, bitmapPtr, bitmapBlocks);
@@ -198,15 +194,15 @@ public static class ProDosModifier {
     dirBuf[entryOff + 0] = 0;
 
     if (locator.Block == VolumeDirStartBlock) {
-      var fc = BinaryPrimitives.ReadUInt16LittleEndian(dirBuf.AsSpan(4 + 0x24));
+      var fc = BinaryPrimitives.ReadUInt16LittleEndian(dirBuf.AsSpan(4 + ProDosReader.HeaderFileCount));
       if (fc > 0)
-        BinaryPrimitives.WriteUInt16LittleEndian(dirBuf.AsSpan(4 + 0x24), (ushort)(fc - 1));
+        BinaryPrimitives.WriteUInt16LittleEndian(dirBuf.AsSpan(4 + ProDosReader.HeaderFileCount), (ushort)(fc - 1));
       WriteBlock(image, imageStart, locator.Block, dirBuf);
     } else {
       WriteBlock(image, imageStart, locator.Block, dirBuf);
-      var fc = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + 0x24));
+      var fc = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderFileCount));
       if (fc > 0)
-        BinaryPrimitives.WriteUInt16LittleEndian(volHeader.AsSpan(4 + 0x24), (ushort)(fc - 1));
+        BinaryPrimitives.WriteUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderFileCount), (ushort)(fc - 1));
       WriteBlock(image, imageStart, VolumeDirStartBlock, volHeader);
     }
 

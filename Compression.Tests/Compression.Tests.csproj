@@ -122,6 +122,10 @@
     <EmbeddedResource Include="BuildingBlocks\LzfVectors\*.lzf">
       <LogicalName>LzfVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Streams third-party encoders wrote for the codec proof ledger; see CodecProof/OracleVectors/README.md. -->
+    <EmbeddedResource Include="CodecProof\OracleVectors\*.bin;CodecProof\OracleVectors\manifest.tsv">
+      <LogicalName>OracleVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="StructuredPseudoArchives\ReferenceVectors\*"
                       Exclude="StructuredPseudoArchives\ReferenceVectors\*.py;StructuredPseudoArchives\ReferenceVectors\*.pl;StructuredPseudoArchives\ReferenceVectors\*.ps1;StructuredPseudoArchives\ReferenceVectors\README.md">
       <LogicalName>ReferenceVectors.%(Filename)%(Extension)</LogicalName>
@@ -172,6 +176,18 @@
     <!-- Installers compiled by ISCC 5.6.1 / 6.0.5, plus innoextract's extraction; see InnoSetup/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="InnoSetup\ReferenceVectors\*.gz;InnoSetup\ReferenceVectors\oracle.tsv">
       <LogicalName>InnoVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- A DOS-order ProDOS disk CiderPress II wrote; see ProDos/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="ProDos\ReferenceVectors\*.gz;ProDos\ReferenceVectors\manifest.txt">
+      <LogicalName>ProDosVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- SPIFFS images mkspiffs and spiffsgen.py wrote; see Spiffs/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Spiffs\ReferenceVectors\*.gz;Spiffs\ReferenceVectors\manifest.txt">
+      <LogicalName>SpiffsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- The 1975 UNIX V6 root volume from TUHS; see UnixV6/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="UnixV6\ReferenceVectors\v6root.gz;UnixV6\ReferenceVectors\manifest.txt">
+      <LogicalName>UnixV6Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- A MOBI book written by calibre; see Mobi/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Mobi\ReferenceVectors\*.mobi">
@@ -233,6 +249,22 @@
     <!-- 7-Zip's own help file and 7-Zip's extraction listing of it; see Chm/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Chm\ReferenceVectors\*.chm;Chm\ReferenceVectors\7zip-listing.txt">
       <LogicalName>ChmVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Error-correcting SeqBox containers written by blkar; see EcSbx/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="EcSbx\ReferenceVectors\*.ecsbx;EcSbx\ReferenceVectors\fox.bin">
+      <LogicalName>EcSbxVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- lziprecover 1.25 fec files; see Fec/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Fec\ReferenceVectors\*.fec">
+      <LogicalName>FecVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- A dvdisaster RS01 error-correction file; see Ecc/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Ecc\ReferenceVectors\*.ecc">
+      <LogicalName>EccVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- PuTTY 0.60's help file, gzip-compressed; see Hlp/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Hlp\ReferenceVectors\*.gz">
+      <LogicalName>HlpVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- Sparsebundles written by Apple's hdiutil (keramics, ewfprobe test corpora); see
          AppleSparse/ReferenceVectors/README.md. The tests rebuild each bundle directory from these. -->
@@ -331,6 +363,10 @@
     <!-- Real C64/C128 SFX archives from zimmers.net; see C64Sfx/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="C64Sfx\ReferenceVectors\*.sfx">
       <LogicalName>C64SfxVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- B1 archives b1-pack wrote, and ours it read; see B1/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="B1\ReferenceVectors\*.b1">
+      <LogicalName>B1Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- DAR slices written by dar itself (2.4.24 to 2.8.6); see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">

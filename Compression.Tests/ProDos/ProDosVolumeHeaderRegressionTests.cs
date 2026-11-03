@@ -5,14 +5,11 @@ using FileSystem.ProDos;
 namespace Compression.Tests.ProDos;
 
 /// <summary>
-/// Regression: the Volume Directory Header is 43 bytes (per spec), three bytes
-/// larger than a regular 39-byte file entry. The first file slot of the volume
-/// directory therefore starts at byte 4 + 43 = 47 of block 2, not byte 4 + 39 =
-/// 43. The previous (buggy) layout placed slot 1 at byte 43, which overlapped
-/// the volume header's bit_map_pointer (at byte 4 + 0x26 = 42) and total_blocks
-/// (at byte 4 + 0x28 = 44) fields. The first AddFile silently corrupted those
-/// fields; the second AddFile read garbage for total_blocks and threw
-/// "ProDOS: out of free blocks" on AllocateBlock.
+/// Regression: the volume header's bit_map_pointer ($23) and total_blocks ($25)
+/// must survive file adds. The header fills slot 0 of block 2 (bytes $04..$2A) and
+/// the first file entry starts at $2B; an add that put the entry anywhere else, or
+/// read the header fields from shifted offsets, corrupted the free-block bookkeeping
+/// and the second add failed with "out of free blocks".
 /// </summary>
 [TestFixture]
 public class ProDosVolumeHeaderRegressionTests {
@@ -55,9 +52,9 @@ public class ProDosVolumeHeaderRegressionTests {
     // Capture the pre-add header fields.
     var imageBefore = ms.ToArray();
     var totalBlocksBefore = BinaryPrimitives.ReadUInt16LittleEndian(
-      imageBefore.AsSpan(VolumeDirStartBlock * BlockSize + 4 + 0x28, 2));
+      imageBefore.AsSpan(VolumeDirStartBlock * BlockSize + 4 + ProDosReader.HeaderTotalBlocksOrParentEntry, 2));
     var bitmapPointerBefore = BinaryPrimitives.ReadUInt16LittleEndian(
-      imageBefore.AsSpan(VolumeDirStartBlock * BlockSize + 4 + 0x26, 2));
+      imageBefore.AsSpan(VolumeDirStartBlock * BlockSize + 4 + ProDosReader.HeaderBitmapOrParentPointer, 2));
     Assert.That(totalBlocksBefore, Is.EqualTo(ProDosWriter.FloppyTotalBlocks),
       "fresh image has the canonical floppy block count");
     Assert.That(bitmapPointerBefore, Is.EqualTo(6),
@@ -66,14 +63,14 @@ public class ProDosVolumeHeaderRegressionTests {
     ProDosModifier.AddFile(ms, "FILE1", "content"u8.ToArray());
 
     // The first AddFile must not touch the volume header's total_blocks or
-    // bit_map_pointer fields, which live at bytes 4+0x26..4+0x29 of block 2 —
-    // bytes the buggy slot-1-at-byte-43 layout would have overwritten with the
+    // bit_map_pointer fields, which live at header offsets $23..$26 of block 2 —
+    // bytes a misplaced first entry would have overwritten with the
     // file name and storage-type byte.
     var imageAfter = ms.ToArray();
     var totalBlocksAfter = BinaryPrimitives.ReadUInt16LittleEndian(
-      imageAfter.AsSpan(VolumeDirStartBlock * BlockSize + 4 + 0x28, 2));
+      imageAfter.AsSpan(VolumeDirStartBlock * BlockSize + 4 + ProDosReader.HeaderTotalBlocksOrParentEntry, 2));
     var bitmapPointerAfter = BinaryPrimitives.ReadUInt16LittleEndian(
-      imageAfter.AsSpan(VolumeDirStartBlock * BlockSize + 4 + 0x26, 2));
+      imageAfter.AsSpan(VolumeDirStartBlock * BlockSize + 4 + ProDosReader.HeaderBitmapOrParentPointer, 2));
     Assert.That(totalBlocksAfter, Is.EqualTo(totalBlocksBefore),
       "AddFile must not corrupt total_blocks");
     Assert.That(bitmapPointerAfter, Is.EqualTo(bitmapPointerBefore),
