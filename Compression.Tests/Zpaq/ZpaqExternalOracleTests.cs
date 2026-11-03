@@ -91,6 +91,42 @@ public sealed class ZpaqExternalOracleTests {
     });
   }
 
+  [Test]
+  public void ZpaqArchive_WhenWeAddAndRemove_ThenZpaqSeesNewVersionsAndEveryOldOneUnchanged() {
+    var tool = RequireTool();
+    var root = this._tmp;
+    var a = CscSamples.Text(9000, 50);
+    var b = CscSamples.RandomBytes(5000, 51);
+    this.Materialise(root, [("v/a.txt", a), ("v/b.bin", b)]);
+    Assert.That(tool(root, ["a", "v.zpaq", "v"]).ExitCode, Is.Zero);
+    var path = Path.Combine(root, "v.zpaq");
+    var original = File.ReadAllBytes(path);
+
+    var c = CscSamples.Text(4000, 52);
+    var d = new ZpaqFormatDescriptor();
+    using (var fs = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))
+      d.Add(fs, [Compression.Registry.ArchiveInputInfo.InMemory("v/c.txt", c), Compression.Registry.ArchiveInputInfo.InMemory("v/b.bin", a)]);
+    using (var fs = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))
+      d.Remove(fs, ["v/a.txt"]);
+
+    var appended = File.ReadAllBytes(path);
+    var list = tool(root, ["l", "v.zpaq", "-all"]);
+    var x1 = tool(root, ["x", "v.zpaq", "-until", "1", "-to", "x1"]);
+    var x3 = tool(root, ["x", "v.zpaq", "-to", "x3"]);
+    Assert.Multiple(() => {
+      Assert.That(appended.AsSpan(0, original.Length).SequenceEqual(original), "the old versions are kept byte for byte");
+      Assert.That(list.ExitCode, Is.Zero, list.Output);
+      Assert.That(list.Output, Does.Contain("3 versions"), list.Output);
+      Assert.That(x1.ExitCode, Is.Zero, x1.Output);
+      Assert.That(File.ReadAllBytes(Path.Combine(root, "x1", "v", "a.txt")), Is.EqualTo(a));
+      Assert.That(File.ReadAllBytes(Path.Combine(root, "x1", "v", "b.bin")), Is.EqualTo(b));
+      Assert.That(x3.ExitCode, Is.Zero, x3.Output);
+      Assert.That(File.Exists(Path.Combine(root, "x3", "v", "a.txt")), Is.False, "removed in version 3");
+      Assert.That(File.ReadAllBytes(Path.Combine(root, "x3", "v", "b.bin")), Is.EqualTo(a), "replaced in version 2");
+      Assert.That(File.ReadAllBytes(Path.Combine(root, "x3", "v", "c.txt")), Is.EqualTo(c));
+    });
+  }
+
   // ── we read zpaq ─────────────────────────────────────────────────────────
 
   [Test, TestCaseSource(nameof(Methods))]
