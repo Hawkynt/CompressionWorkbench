@@ -88,4 +88,30 @@ public class RarCliTests {
       RarTools.TryDelete(dir);
     }
   }
+
+  [TestCase("Rar5")]
+  [TestCase("Rar4")]
+  public void Given_ARecoveryRecordOption_When_TheArchiveIsDamaged_Then_CwbRepairRestoresIt(string target) {
+    var cli = LocateCli();
+    var dir = RarTools.TempDir("rarclirr");
+    try {
+      var data = new byte[120_000];
+      new Random(3).NextBytes(data);
+      File.WriteAllBytes(Path.Combine(dir, "data.bin"), data);
+      var create = Cli(cli, dir, "create", "p.rar", "data.bin", "-m", "store", "--opt", "RecoveryRecord=5", "--opt", "TargetCompatibility=" + target);
+      Assert.That(create.Code, Is.Zero, create.Output);
+      var original = File.ReadAllBytes(Path.Combine(dir, "p.rar"));
+      Assert.That(Cli(cli, dir, "repair", "p.rar", "--check").Code, Is.Zero, "intact");
+
+      var damaged = (byte[])original.Clone();
+      for (var i = 3_000; i < 3_400; ++i) damaged[i] ^= 0x33;
+      File.WriteAllBytes(Path.Combine(dir, "p.rar"), damaged);
+      Assert.That(Cli(cli, dir, "repair", "p.rar", "--check").Code, Is.EqualTo(1), "damaged");
+      var repair = Cli(cli, dir, "repair", "p.rar");
+      Assert.That(repair.Code, Is.Zero, repair.Output);
+      Assert.That(File.ReadAllBytes(Path.Combine(dir, "fixed.p.rar")), Is.EqualTo(original));
+    } finally {
+      RarTools.TryDelete(dir);
+    }
+  }
 }

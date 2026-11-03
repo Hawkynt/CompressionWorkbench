@@ -288,6 +288,40 @@ createCmd.SetAction((ParseResult ctx) => {
 
 // ── test ─────────────────────────────────────────────────────────────
 
+// ── repair ───────────────────────────────────────────────────────────
+
+var repairArchiveArg = new Argument<FileInfo>("archive") { Description = "RAR archive with a recovery record" };
+var repairOutputOpt = new Option<string?>("--output", "-o") { Description = "Where to write the repaired archive (default: fixed.<name> beside it, as rar r names it)" };
+var repairCheckOpt = new Option<bool>("--check") { Description = "Only check the archive against its recovery record" };
+var repairCmd = new Command("repair", """
+  Repair a RAR archive from its recovery record (rar r), or only check it (--check).
+  RAR 4 records rebuild up to as many damaged 512-byte sectors as they hold parity
+  sectors, one per parity group; RAR 5 records rebuild as many damaged shards as they
+  hold recovery blocks. Damage must be in place (changed bytes, not inserted or lost).
+  Exit codes: 0 intact or repaired, 1 not repairable, 2 no recovery record.
+  Examples:
+    cwb repair backup.rar                 Writes fixed.backup.rar
+    cwb repair backup.rar --check         Reports damage without writing
+  """) { repairArchiveArg, repairOutputOpt, repairCheckOpt };
+repairCmd.SetAction((ParseResult ctx) => {
+  var archive = ctx.GetValue(repairArchiveArg)!;
+  if (!archive.Exists) { Console.Error.WriteLine($"File not found: {archive.FullName}"); return 1; }
+  if (ctx.GetValue(repairCheckOpt)) {
+    var check = FileFormat.Rar.RarRecovery.Verify(archive.FullName);
+    Console.WriteLine(check.Message);
+    return check.Kind == FileFormat.Rar.RarRecoveryKind.None ? 2 : check.Intact ? 0 : 1;
+  }
+  var output = ctx.GetValue(repairOutputOpt) ?? Path.Combine(archive.DirectoryName ?? ".", "fixed." + archive.Name);
+  var report = FileFormat.Rar.RarRecovery.Repair(archive.FullName, output);
+  Console.WriteLine(report.Message);
+  if (report.Repaired) {
+    Console.WriteLine($"Wrote {output}");
+    return 0;
+  }
+  File.Delete(output);
+  return report.Kind == FileFormat.Rar.RarRecoveryKind.None ? 2 : report.Intact ? 0 : 1;
+});
+
 var testCmd = new Command("test", "Test archive integrity") { archiveArg, passwordOpt };
 testCmd.Aliases.Add("t");
 testCmd.SetAction((ParseResult ctx) => {
@@ -2811,7 +2845,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, optimizeCmd, compressCmd, canonicalizeCmd, repackCmd, sortEntriesCmd, maintenanceCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, scrambleCmd, placeCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
+  listCmd, extractCmd, createCmd, testCmd, repairCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, optimizeCmd, compressCmd, canonicalizeCmd, repackCmd, sortEntriesCmd, maintenanceCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, scrambleCmd, placeCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
 };
 
 return root.Parse(args).Invoke();
