@@ -40,7 +40,9 @@ for name, switch in [('filters-rep.arc', '-mrep:1mb'), ('filters-delta.arc', '-m
                      ('filters-4x4.arc', '-m4x4:b64kb:lzma'), ('filters-m5x.arc', '-m5x'),
                      ('tor-1.arc', '-mtor:1'), ('tor-2.arc', '-mtor:2'), ('tor-3.arc', '-mtor:3'),
                      ('tor-5.arc', '-mtor:5'), ('tor-12.arc', '-mtor:12'),
-                     ('filters-m1.arc', '-m1'), ('filters-m2.arc', '-m2')]:
+                     ('filters-m1.arc', '-m1'), ('filters-m2.arc', '-m2'),
+                     ('ppmd-6.arc', '-mppmd:6:16mb'), ('ppmd-restart.arc', '-mppmd:12:256kb'),
+                     ('ppmd-cutoff.arc', '-mppmd:12:256kb:r'), ('ppmd-freeze.arc', '-mppmd:12:256kb:r2')]:
     target = os.path.join(work, name)
     p = subprocess.run([arc, 'a', target, '-i0', '-cfg-', '-ep1', switch, os.path.join(src, '*')],
                        capture_output=True, text=True, errors='replace')
