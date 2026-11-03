@@ -1,105 +1,144 @@
 namespace Compression.Core.Dictionary.Lzrw3;
 
 /// <summary>
-/// Implements LZRW3 compression from its public algorithm description:
-/// Ross N. Williams, "LZRW3: A Hash Table Index Variant of LZRW1", http://ross.net/compression/lzrw3.html —
-/// an LZRW1 derivative that transmits 4096-entry hash-table indices instead of raw offsets, so the
-/// decoder can resolve a match purely from a synchronized hash table (a "persistent phrase" table)
-/// rather than an explicit distance field.
+/// LZRW3 compressor, converted from Ross N. Williams' public-domain reference <c>lzrw3.c</c>
+/// (release 1, 30-Jun-1991). Output matches the reference byte for byte.
 /// </summary>
 /// <remarks>
-/// Because a match token carries a hash bucket index rather than a distance, the decoder's hash
-/// table must reach the exact same state as the encoder's at every point in the stream. Updates are
-/// therefore queued at the position they are discovered and only committed once the referenced 3-byte
-/// window lies fully inside already-produced output — the same rule applies symmetrically on the
-/// encoder side (even though it could resolve the window immediately) so that both sides observe
-/// identical table contents when a match is searched or resolved.
+/// The layout is LZRW1's (four flag bytes, 16-bit little-endian control words, two-byte copy
+/// items), but a copy item carries a 12-bit hash-table index instead of an offset, with
+/// length <c>C1[0..3] + 3</c> (3..18). Both sides keep the same 4096-entry table, which starts
+/// with every entry pointing at the constant string <c>"123456789012345678"</c>; positions
+/// that begin with literals are entered only once three bytes are known.
 /// </remarks>
 public static class Lzrw3Compressor {
-  private const int HashTableSize = 4096;
-  private const int HashMask = Lzrw3Compressor.HashTableSize - 1;
-  private const int MinMatch = 3;
-  private const int MaxMatch = 18;
-  private const int ItemsPerGroup = 16;
+  private const int FlagBytes = 4;
+  private const byte FlagCompress = 0;
+  private const byte FlagCopy = 1;
+  private const int MaxRawItem = 18;
+  private const uint TopWord = 0xFFFF0000u;
 
-  /// <summary>Compresses <paramref name="data"/> using the LZRW3 control-word format.</summary>
-  /// <param name="data">The uncompressed input bytes.</param>
-  /// <returns>The LZRW3-encoded byte stream.</returns>
-  public static byte[] Compress(ReadOnlySpan<byte> data) {
-    var n = data.Length;
-    var output = new List<byte>(Math.Max(16, n));
-    if (n == 0)
-      return [];
+  /// <summary>Compresses <paramref name="source"/> into an LZRW3 stream.</summary>
+  /// <param name="source">The bytes to compress.</param>
+  /// <returns>The LZRW3 stream, flag bytes included.</returns>
+  public static byte[] Compress(ReadOnlySpan<byte> source) {
+    var length = source.Length;
+    var output = new byte[length + 64];
+    output[0] = FlagCompress;
+    var outPos = FlagBytes;
+    var controlPos = outPos;
+    outPos += 2;
 
-    var hashTable = new int[Lzrw3Compressor.HashTableSize];
-    hashTable.AsSpan().Fill(-1);
-    var pending = new Queue<int>();
-
+    var hash = new int[Lzrw3Table.Length];
+    hash.AsSpan().Fill(Lzrw3Table.StartString);
+    var srcMax1 = length - MaxRawItem;
+    var srcMax16 = length - MaxRawItem * 16;
+    var control = TopWord;
+    var pending1 = -1; // table slot of the youngest literal still waiting for its hash
+    var pending2 = -1; // table slot of the second youngest
     var pos = 0;
-    while (pos < n) {
-      var controlWordPos = output.Count;
-      output.Add(0);
-      output.Add(0);
-      var controlWord = 0;
-      var itemCount = 0;
 
-      while (itemCount < Lzrw3Compressor.ItemsPerGroup && pos < n) {
-        FlushPending(pending, hashTable, data, pos);
+    while (true) {
+      if (outPos > length)
+        return Stored(source);
 
-        var matchLength = 0;
-        var matchHash = -1;
-
-        if (pos + Lzrw3Compressor.MinMatch <= n) {
-          var hash = Hash(data, pos);
-          var candidate = hashTable[hash];
-          if (candidate >= 0 && candidate < pos)
-            matchLength = MatchLength(data, candidate, pos, Math.Min(Lzrw3Compressor.MaxMatch, n - pos));
-          if (matchLength >= Lzrw3Compressor.MinMatch)
-            matchHash = hash;
-          pending.Enqueue(pos);
+      var unroll = 16;
+      var endgame = false;
+      if (pos > srcMax16) {
+        unroll = 1;
+        if (pos > srcMax1) {
+          if (pos == length)
+            break;
+          endgame = true;
         }
-
-        if (matchLength >= Lzrw3Compressor.MinMatch) {
-          controlWord |= 1 << itemCount;
-          var code = ((matchLength - Lzrw3Compressor.MinMatch) << 12) | matchHash;
-          output.Add((byte)(code >> 8));
-          output.Add((byte)code);
-          pos += matchLength;
-        } else {
-          output.Add(data[pos]);
-          ++pos;
-        }
-
-        ++itemCount;
       }
 
-      output[controlWordPos] = (byte)(controlWord >> 8);
-      output[controlWordPos + 1] = (byte)controlWord;
+      do {
+        if (endgame) {
+          // The reference jumps straight to its literal code here; the table entries it touches
+          // are never looked up again.
+          output[outPos++] = source[pos++];
+          control &= 0xFFFEFFFFu;
+        } else {
+          var index = Lzrw3Table.Hash(source, pos);
+          var candidate = hash[index];
+          var ziv = pos;
+          if (Lzrw3Table.At(source, candidate) != source[ziv]
+              || Lzrw3Table.At(source, candidate + 1) != source[ziv + 1]
+              || Lzrw3Table.At(source, candidate + 2) != source[ziv + 2]) {
+            output[outPos++] = source[pos++];
+            control &= 0xFFFEFFFFu;
+            if (pending2 >= 0)
+              hash[pending2] = ziv - 2;
+            pending2 = pending1;
+            pending1 = index;
+          } else {
+            var matched = 3;
+            while (matched < MaxRawItem && Lzrw3Table.At(source, candidate + matched) == source[ziv + matched])
+              ++matched;
+
+            output[outPos++] = (byte)(((index & 0xF00) >> 4) | (matched - 3));
+            output[outPos++] = (byte)index;
+            pos = ziv + matched;
+            if (pending1 >= 0) {
+              if (pending2 >= 0) {
+                hash[pending2] = ziv - 2;
+                pending2 = -1;
+              }
+
+              hash[pending1] = ziv - 1;
+              pending1 = -1;
+            }
+
+            hash[index] = ziv;
+          }
+        }
+
+        control >>= 1;
+      } while (--unroll > 0);
+
+      if ((control & TopWord) == 0) {
+        output[controlPos] = (byte)control;
+        output[controlPos + 1] = (byte)(control >> 8);
+        controlPos = outPos;
+        outPos += 2;
+        control = TopWord;
+      }
     }
 
-    return [.. output];
+    while ((control & TopWord) != 0)
+      control >>= 1;
+    output[controlPos++] = (byte)control;
+    output[controlPos++] = (byte)(control >> 8);
+    if (controlPos == outPos)
+      outPos -= 2;
+
+    return output.AsSpan(0, outPos).ToArray();
   }
 
-  /// <summary>
-  /// Commits queued hash-table updates whose 3-byte window is now fully available, using the same
-  /// "available once <c>position + 2 &lt; currentPos</c>" rule the decompressor applies.
-  /// </summary>
-  private static void FlushPending(Queue<int> pending, int[] hashTable, ReadOnlySpan<byte> buffer, int currentPos) {
-    while (pending.Count > 0 && pending.Peek() + 2 < currentPos) {
-      var p = pending.Dequeue();
-      hashTable[Hash(buffer, p)] = p;
-    }
+  private static byte[] Stored(ReadOnlySpan<byte> source) {
+    var output = new byte[FlagBytes + source.Length];
+    output[0] = FlagCopy;
+    source.CopyTo(output.AsSpan(FlagBytes));
+    return output;
   }
+}
 
-  private static int Hash(ReadOnlySpan<byte> data, int position) {
-    var value = data[position] | (data[position + 1] << 8) | (data[position + 2] << 16);
-    return (int)((uint)value * 2654435761u >> 20) & Lzrw3Compressor.HashMask;
-  }
+/// <summary>The hash table conventions LZRW3's compressor and decompressor share.</summary>
+internal static class Lzrw3Table {
+  /// <summary>Number of table entries.</summary>
+  internal const int Length = 4096;
 
-  private static int MatchLength(ReadOnlySpan<byte> data, int a, int b, int maxLength) {
-    var len = 0;
-    while (len < maxLength && data[a + len] == data[b + len])
-      ++len;
-    return len;
-  }
+  /// <summary>Position that stands for the reference's constant start string.</summary>
+  internal const int StartString = -18;
+
+  private static ReadOnlySpan<byte> Start => "123456789012345678"u8;
+
+  /// <summary>The byte at <paramref name="position"/>; negative positions are in the start string.</summary>
+  internal static byte At(ReadOnlySpan<byte> data, int position)
+    => position < 0 ? Start[position - StartString] : data[position];
+
+  /// <summary>The reference's <c>HASH</c> of the three bytes at <paramref name="position"/>.</summary>
+  internal static int Hash(ReadOnlySpan<byte> data, int position)
+    => (int)((40543u * (uint)((data[position] << 8) ^ (data[position + 1] << 4) ^ data[position + 2])) >> 4) & 0xFFF;
 }

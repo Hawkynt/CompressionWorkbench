@@ -1,0 +1,10 @@
+Lzrw3Compressor.cs and Lzrw3Decompressor.cs are a C# conversion of:
+
+  LZRW3.C, Ross N. Williams, release 1, 30-Jun-1991
+  http://www.ross.net/compression/download/original/old_lzrw3.c
+
+Licence, as stated in the file: "This algorithm is unpatented and the code is public domain."
+The identity record in the same file names the copyright as "Public Domain".
+
+Local changes: none to the stream; the decoder refuses unknown flags and truncated control
+words or items instead of reading past its input.

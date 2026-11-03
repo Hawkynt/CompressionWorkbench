@@ -620,7 +620,7 @@ LZO1X,,codec,,,,,,,,0,,bb:BB_Lzo,Y,Y,,OURS-ONLY,,
 LZP,,codec,,,,,,,,0,,bb:BB_Lzp,Y,Y,,OURS-ONLY,,
 LZRLE,,codec,,,,,,,,0,,bb:BB_Lzrle,Y,Y,,OURS-ONLY,,
 LZRW1,,codec,,,,,,,,0,,bb:BB_Lzrw1,Y,Y,,OURS-ONLY,,
-LZRW3,,codec,,,,,,,,0,,bb:BB_Lzrw3,Y,Y,,OURS-ONLY,,
+LZRW3,,codec,,,,,,,,0,http://www.ross.net/compression/lzrw3.html,bb:BB_Lzrw3,Y,Y,,OURS-ONLY,,byte-identical to Ross Williams' lzrw3.c
 LZTURBO,,codec,,,,,,,,0,,bb:BB_Lzturbo,Y,Y,,OURS-ONLY,,
 LZVN,,codec,,,,,,,,0,,bb:BB_Lzvn,Y,Y,,OURS-ONLY,,
 LZWL,,codec,,,,,,,,0,,bb:BB_Lzwl,Y,Y,,OURS-ONLY,,
