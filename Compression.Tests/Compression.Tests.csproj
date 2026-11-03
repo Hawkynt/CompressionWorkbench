@@ -134,6 +134,10 @@
     <EmbeddedResource Include="Zpaq\ReferenceVectors\*.zpaq;Zpaq\ReferenceVectors\manifest.tsv">
       <LogicalName>ZpaqVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Encrypted, multi-part and indexed archives zpaq 7.15 wrote; see Zpaq/ReferenceVectors/Sets/README.md. -->
+    <EmbeddedResource Include="Zpaq\ReferenceVectors\Sets\*.zpaq;Zpaq\ReferenceVectors\Sets\manifest.tsv">
+      <LogicalName>ZpaqSetVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- CVF cluster payloads the dmsdos compressors wrote; see Cvf/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Cvf\ReferenceVectors\*.bin">
       <LogicalName>CvfVectors.%(Filename)%(Extension)</LogicalName>
