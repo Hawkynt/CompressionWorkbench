@@ -25,3 +25,6 @@ Files converted:
 
   lib/lha_file_header.c, lib/ext_header.c -> LhaHeaderParser.cs (levels 0-3,
                                              extended headers 0x01 and 0x02)
+  lib/lha_file_header.c (LHARK rule)      -> LhaHeaderParser.cs (level-1 '-lh7-' with OS id ' '
+                                             is LHARK's, renamed '-lk7-')
+  lib/lha_input_stream.c (skip_sfx)       -> LhaReader.cs (self-extractor stub search)

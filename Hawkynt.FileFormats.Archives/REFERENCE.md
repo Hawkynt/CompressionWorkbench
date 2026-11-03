@@ -19824,6 +19824,7 @@ Constants for the LHA/LZH archive format.
 | `MethodLh7` | `const string MethodLh7` | Method: LZH compression with 64KB window. |
 | `MethodLhd` | `const string MethodLhd` | Method: directory marker. |
 | `MethodLhx` | `const string MethodLhx` | Method: lh5-style static Huffman with a 1 MiB window (UNLHA32), read-only. |
+| `MethodLk7` | `const string MethodLk7` | Method: LHARK's own "-lh7-" (64 KiB window, extended length and offset codes), read-only. Stored as "-lh7-" in the archive; recognised by a level-1 header with OS id ' ' and renamed, as lhasa does. |
 | `MethodLz4` | `const string MethodLz4` | Method: store (same as lh0, legacy). |
 | `MethodLz5` | `const string MethodLz5` | Method: LZSS with 4KB window (LArc variant). |
 | `MethodLzs` | `const string MethodLzs` | Method: LZSS with 4KB window (no Huffman). |
@@ -19876,9 +19877,11 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LhaReader` | `LhaReader(Stream stream, bool leaveOpen = false)` | Initializes a new `LhaReader` from a stream. |
+| `ArchiveOffset` | `long ArchiveOffset { get; }` | Gets the offset of the first member header: 0 for a plain archive, past the stub of a self-extractor. |
 | `Entries` | `IReadOnlyList<LhaEntry> Entries { get; }` | Gets the entries in the archive. |
 | `Dispose` | `void Dispose()` |  |
 | `ExtractEntry` | `byte[] ExtractEntry(LhaEntry entry)` | Extracts the data for an entry. |
+| `FindArchiveOffset` | `static long FindArchiveOffset(Stream stream)` | Finds the first member header the way lhasa does: a method id ("-lh?-", "-lz4/5/s-", "-pm?-" but not PMarc's "-pms-") two bytes in. DECLHA and Amiga LhASFX stubs carry a decoy header of their own, so after their banner one match is skipped. A candidate must also parse as a header with a valid checksum. |
 
 #### `LhaWriter`
 

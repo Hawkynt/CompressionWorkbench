@@ -3,13 +3,20 @@ using Compression.Core.BitIO;
 namespace Compression.Core.Dictionary.Lzh;
 
 /// <summary>
-/// Decodes LZH-compressed data (methods -lh5-, -lh6-, -lh7-).
+/// Decodes LZH-compressed data (methods -lh4- to -lh7-, -lhx-, and LHARK's -lk7-).
 /// Uses LZSS with Huffman-coded literals/lengths and positions.
 /// </summary>
+/// <remarks>
+/// The history starts filled with spaces, as LHA's own encoder and decoder (and lhasa) have it, so a
+/// match may legitimately reach before the first byte. The LHARK variant follows lhasa's
+/// <c>lk7_decoder.c</c> / <c>lh_new_decoder.c</c> (ISC; see <c>THIRD-PARTY-NOTICE.lhasa.txt</c>):
+/// 289 codes, six offset-count bits, and extra-bit length and offset codes.
+/// </remarks>
 public sealed class LzhDecoder {
   private readonly BitBuffer<MsbBitOrder> _bits;
   private readonly int _windowSize;
   private readonly int _pBit;
+  private readonly bool _lhark;
 
   // Current block state
   private int _blockRemaining;
@@ -25,10 +32,19 @@ public sealed class LzhDecoder {
   /// </summary>
   /// <param name="input">The stream containing compressed data.</param>
   /// <param name="positionBits">Number of position bits (13 for lh5, 15 for lh6, 16 for lh7, 20 for lhx).</param>
-  public LzhDecoder(Stream input, int positionBits = LzhConstants.Lh5PositionBits) {
+  public LzhDecoder(Stream input, int positionBits = LzhConstants.Lh5PositionBits) : this(input, positionBits, lhark: false) { }
+
+  /// <summary>
+  /// Initializes a new <see cref="LzhDecoder"/>, optionally for LHARK's -lh7- (listed as -lk7-).
+  /// </summary>
+  /// <param name="input">The stream containing compressed data.</param>
+  /// <param name="positionBits">Number of position bits (16 for LHARK).</param>
+  /// <param name="lhark">Decode LHARK's length and offset codes.</param>
+  public LzhDecoder(Stream input, int positionBits, bool lhark) {
     this._bits = new(input);
     this._windowSize = 1 << positionBits;
-    this._pBit = positionBits switch {
+    this._lhark = lhark;
+    this._pBit = lhark ? 6 : positionBits switch {
       12 => 4, // lh4
       13 => 4, // lh5
       15 => 5, // lh6
@@ -46,6 +62,7 @@ public sealed class LzhDecoder {
   public byte[] Decode(int originalSize) {
     var output = new byte[originalSize];
     var window = new byte[this._windowSize];
+    window.AsSpan().Fill((byte)' ');
     var windowPos = 0;
     var outPos = 0;
 
@@ -62,7 +79,7 @@ public sealed class LzhDecoder {
         window[windowPos] = b;
         windowPos = (windowPos + 1) & (this._windowSize - 1);
       } else {
-        var length = code - LzhConstants.NChar + LzhConstants.Threshold;
+        var length = this._lhark ? this.LharkCopyCount(code) : code - LzhConstants.NChar + LzhConstants.Threshold;
         var position = this.DecodePosition();
 
         var srcPos = (windowPos - position - 1 + this._windowSize) & (this._windowSize - 1);
@@ -276,11 +293,28 @@ public sealed class LzhDecoder {
 
   private int DecodePosition() {
     var slot = this._singlePosSymbol >= 0 ? this._singlePosSymbol : this.DecodeFromTable(this._posTable!, this._posTableBits);
+    if (this._lhark) {
+      if (slot < 4)
+        return slot;
+      var lowBits = (slot - 2) / 2;
+      return ((2 + slot % 2) << lowBits) + (int)this._bits.ReadBits(lowBits);
+    }
     if (slot <= 1)
       return slot;
 
     var extraBits = slot - 1;
     return (1 << extraBits) + (int)this._bits.ReadBits(extraBits);
+  }
+
+  /// <summary>LHARK's copy length: codes 264-287 carry extra bits, code 288 is a fixed 514.</summary>
+  private int LharkCopyCount(int code) {
+    if (code < 264)
+      return code - LzhConstants.NChar + LzhConstants.Threshold;
+    if (code < 288) {
+      var lowBits = (code - 260) / 4;
+      return ((4 + code % 4) << lowBits) + (int)this._bits.ReadBits(lowBits) + 3;
+    }
+    return 514;
   }
 
   private int DecodeFromTable(int[] table, int maxBits) {

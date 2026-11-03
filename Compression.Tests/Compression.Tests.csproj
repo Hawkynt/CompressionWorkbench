@@ -239,7 +239,7 @@
     </EmbeddedResource>
     <!-- -lh2- / -lh3- archives UNLHA32.DLL wrote, from lhasa's test suite; see Lzh/ReferenceVectors/README.md. -->
     <!-- Archives other LHA-family tools wrote, from lhasa's test suite; see Lzh/ReferenceVectors/README.md. -->
-    <EmbeddedResource Include="Lzh\ReferenceVectors\*.lzh;Lzh\ReferenceVectors\*.lzs;Lzh\ReferenceVectors\*.pma">
+    <EmbeddedResource Include="Lzh\ReferenceVectors\*.lzh;Lzh\ReferenceVectors\*.lzs;Lzh\ReferenceVectors\*.pma;Lzh\ReferenceVectors\*.exe">
       <LogicalName>LzhVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>

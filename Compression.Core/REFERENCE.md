@@ -1569,11 +1569,12 @@ Constants for LZH (LHA) compression methods.
 
 #### `LzhDecoder`
 
-Decodes LZH-compressed data (methods -lh5-, -lh6-, -lh7-). Uses LZSS with Huffman-coded literals/lengths and positions.
+Decodes LZH-compressed data (methods -lh4- to -lh7-, -lhx-, and LHARK's -lk7-). Uses LZSS with Huffman-coded literals/lengths and positions.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzhDecoder` | `LzhDecoder(Stream input, int positionBits = 13)` | Initializes a new `LzhDecoder`. |
+| `LzhDecoder` | `LzhDecoder(Stream input, int positionBits, bool lhark)` | Initializes a new `LzhDecoder`, optionally for LHARK's -lh7- (listed as -lk7-). |
 | `Decode` | `byte[] Decode(int originalSize)` | Decodes the compressed data. |
 
 #### `LzhEncoder`

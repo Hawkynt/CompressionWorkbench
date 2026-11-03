@@ -43,6 +43,13 @@ public static class LhaConstants {
   /// <summary>Method: lh5-style static Huffman with a 1 MiB window (UNLHA32), read-only.</summary>
   public const string MethodLhx = "-lhx-";
 
+  /// <summary>
+  /// Method: LHARK's own "-lh7-" (64 KiB window, extended length and offset codes), read-only.
+  /// Stored as "-lh7-" in the archive; recognised by a level-1 header with OS id ' ' and renamed,
+  /// as lhasa does.
+  /// </summary>
+  public const string MethodLk7 = "-lk7-";
+
   /// <summary>Method: store (same as lh0, legacy).</summary>
   public const string MethodLz4 = "-lz4-";
 
