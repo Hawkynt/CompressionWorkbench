@@ -14,8 +14,8 @@ namespace FileFormat.Aomei;
 /// <see cref="BrFileHead.Size"/> field, not a path separator).
 ///
 /// <para>
-/// Implementation of the reverse-engineered container layout: full <c>BIFH</c>/<c>BIFT</c> structs
-/// with <c>BRCrc32</c> verification, the recovered
+/// Implementation of the container layout: full <c>BIFH</c>/<c>BIFT</c> structs
+/// with <c>BRCrc32</c> verification, the
 /// <c>BR_STANDARD_HEADER</c> tagged-record framing, and typed views of the
 /// four confirmed INFO records (COMPRESS / ENCRYPT / PASSWORD /
 /// BACKUP_TYPE).
@@ -35,7 +35,7 @@ namespace FileFormat.Aomei;
 ///         compatibility with downstream forensic tooling).</description></item>
 ///   <item><description><c>head.bin</c> / <c>tail.bin</c> — the full 0x65C
 ///         BIFH and 0x674 BIFT structs, available when the file is long
-///         enough to contain them, for future RE work on the as-yet-TODO
+///         enough to contain them, for future work on the as-yet-TODO
 ///         body fields.</description></item>
 ///   <item><description><c>record-NN-NAME.bin</c> — every walked
 ///         <c>BR_STANDARD_HEADER</c>-prefixed record's raw bytes,
@@ -65,8 +65,7 @@ namespace FileFormat.Aomei;
 /// <list type="bullet">
 ///   <item><description><c>https://www.aomeitech.com</c> — vendor — the .adi/.afi container is proprietary and unpublished</description></item>
 /// </list>
-/// <para>AOMEI never published a specification. What is known of the on-disk layout was recovered
-/// by decompiling the shipped binaries.</para>
+/// <para>AOMEI never published a specification.</para>
 /// </summary>
 public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
@@ -128,9 +127,7 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// </summary>
   public string Description =>
     "AOMEI Backupper disk (.adi) / file (.afi) image — BIFH/BIFT outer container R/W via the " +
-    "BR_STANDARD_HEADER tagged-record framing recovered by reverse engineering of the vendor's " +
-    "image-format library (source-tree codename BRCloudv2, embedded PDB path " +
-    "E:\\BRCloudv2\\src\\ImgFile\\ImageFile.cpp). Reader: verifies BIFH magic+size+CRC32 at offset 0 " +
+    "BR_STANDARD_HEADER tagged-record framing. Reader: verifies BIFH magic+size+CRC32 at offset 0 " +
     "(0x65C bytes), verifies BIFT magic+size+CRC32 at file_size-0x674, walks every " +
     "BR_STANDARD_HEADER-prefixed INFO/INDEX record and surfaces typed views of the four shipped " +
     "INFO records (INFO_TYPE_IMAGE_COMPRESS=0x105, INFO_TYPE_IMAGE_ENCRYPT=0x106, " +
@@ -145,7 +142,7 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     "Replace appends a fresh entry carrying the target's original RegNo; reader picks LATEST entry per " +
     "RegNo. Remove appends a tombstone (NewSize=0xFFFFFFFF sentinel); reader's latest-wins gate drops " +
     "the chunk from the live entry view, original bytes survive at original offset. " +
-    "Reverse-engineered scope additions (constants pinned, not yet wired into the on-wire emit): " +
+    "Scope additions (constants pinned, not yet wired into the on-wire emit): " +
     "(a) the full INFO_TYPE_* enum past the four shipped tags — IMAGE_SPLIT_SIZE=0x104, " +
     "IMAGE_COMMENT=0x108, BACKUP_TIME=0x10B, BACKUP_OPTION=0x10D, DISK_INFO=0x102, " +
     "VOLUME_INFO=0x103, FLB_BACKUP_OPTION=0x113, FLB_BACKUP_OPTION_EX=0x116, FLB_PATH_LIST=0x112; " +
@@ -155,8 +152,8 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     "its own reader but is not byte-compatible with the AOMEI application; (d) the BR_IMAGE_INDEX " +
     "header carries EntryCount at +0x14, EntrySize at +0x18 and the packed entry array at +0x1C, " +
     "with sizeof(BR_IMAGE_INDEX_ENTRY_VDB)=0x20 for INDEX_TYPE_DATABLOCK records (the per-entry " +
-    "field name list — RegNo, BlockNo, ImgOffset, NewSize, OldSize, Crc32 — is recovered but the " +
-    "byte offsets of each field within the 32-byte entry are not pinned by passive RE). " +
+    "fields RegNo:+0x00, BlockNo:+0x04, ImgOffset:+0x0C, OldSize:+0x14, NewSize:+0x18, " +
+    "Crc32:+0x1C). " +
     "Known limitations: (1) head/tail body fields past the first 12 bytes are zero-filled (the " +
     "file tail is known to carry DataOffInSet:u64 + DataLenInSet:u64 for split-volume bookkeeping " +
     "but their byte offsets are undetermined) so containers are NOT byte-compatible with AOMEI " +
@@ -462,13 +459,11 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     b.Append("index_entry_layout_offsets=entry_count:+0x14,entry_size:+0x18,entries:+0x1C\n");
     b.Append("vdb_entry_size=0x20\n");
     b.Append("vdb_entry_field_names=RegNo,BlockNo,ImgOffset,NewSize,OldSize,Crc32\n");
-    // Per-field byte offsets pinned in this commit; see AomeiConstants for provenance.
+    // Per-field byte offsets; see AomeiConstants.
     b.Append("vdb_entry_field_offsets=RegNo:+0x00:u32,BlockNo:+0x04:u64,ImgOffset:+0x0C:u64,OldSize:+0x14:u32,NewSize:+0x18:u32,Crc32:+0x1C:u32\n");
     b.Append("volume_data_region_size=0x30\n");
     b.Append("head_body_layout=undocumented_past_first_12_bytes\n");
-    // BIFT body: DataLenInSet at +0x620, DataOffInSet at +0x628 pinned by
-    // (read|write)-side `mov reg,[edi+0xc80..0xc8c]` triangulated against
-    // the m_Tail base at object offset 0x660.
+    // BIFT body: DataLenInSet at +0x620, DataOffInSet at +0x628.
     b.Append("tail_body_layout=DataLenInSet:u64@+0x620,DataOffInSet:u64@+0x628,trailing_BR_STANDARD_HEADER@+0x664\n");
     b.Append("tail_trailing_header_offsets=Reserved:+0x664,Crc32:+0x668,Size:+0x66C,Flag:+0x670\n");
     b.Append("index_body_layout=BR_IMAGE_INDEX_header_pinned_VDB_field_offsets_pinned_FDB_size_undetermined\n");

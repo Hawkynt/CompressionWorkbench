@@ -8,7 +8,7 @@ using FileFormat.Acronis;
 namespace FileFormat.AcronisTibx;
 
 /// <summary>
-/// Whole-archive writer for Acronis True Image <c>.tibx</c> (2020+ libarchive3 LSM page store)
+/// Whole-archive writer for Acronis True Image <c>.tibx</c> (2020+ LSM page store)
 /// containers.
 /// </summary>
 /// <remarks>
@@ -33,7 +33,7 @@ namespace FileFormat.AcronisTibx;
 ///   <item><description><b>One DATA page per file</b> carrying the raw file content (frame
 ///     sentinel + tag 5 + BE32 CRC; payload at <c>+0x8</c>). DATA pages are forensic surface —
 ///     the reader does not yet resolve leaf-to-extent pointers, but the pages are valid frames
-///     that <c>ar_page_verify</c> accepts.</description></item>
+///     with a valid page frame.</description></item>
 ///   <item><description><b>One CI (commit-info) page</b> tagged <c>"ARCI"</c> closing the
 ///     container.</description></item>
 /// </list>

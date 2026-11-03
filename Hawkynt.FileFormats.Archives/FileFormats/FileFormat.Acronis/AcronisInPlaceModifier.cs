@@ -24,7 +24,7 @@ namespace FileFormat.Acronis;
 /// (<c>2C 8A E1 94</c>) at offset +8 of the 12-byte trailer block.
 /// </para>
 /// <para>
-/// <b>Record framing</b> (per the existing reverse-engineered shapes):
+/// <b>Record framing</b> (per the documented record shapes):
 /// </para>
 /// <list type="bullet">
 ///   <item><description><b>Listing(103)</b>, <b>FirstFileMetaRecord(102)</b>, <b>FileMetaA/B/C(1/2/5)</b>:

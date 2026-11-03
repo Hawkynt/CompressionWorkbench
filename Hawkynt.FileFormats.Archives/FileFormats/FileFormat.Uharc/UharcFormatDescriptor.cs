@@ -10,7 +10,7 @@ namespace FileFormat.Uharc;
 /// References:
 /// <list type="bullet">
 ///   <item><description>UHARC by Uwe Herklotz — closed-source archiver; the bundled UHARC documentation is the only official description</description></item>
-///   <item><description>no public format specification; container layout reverse-engineered from the DOS/Win32 binaries</description></item>
+///   <item><description>no public format specification</description></item>
 /// </list>
 /// </summary>
 public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {

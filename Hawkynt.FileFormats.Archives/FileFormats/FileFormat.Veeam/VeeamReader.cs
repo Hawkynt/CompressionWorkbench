@@ -286,7 +286,7 @@ public sealed class VeeamReader : IDisposable {
     bldr.Append("Veeam R&D forum thread t93873 documents only 'header + metadata bank pairs + data, ");
     bldr.Append("variable offsets due to compression' at block-diagram level - no byte layout. ");
     bldr.Append("SosRansomware's 2024 Backup Extractor tool ships proprietary without published spec. ");
-    bldr.Append("No public binary-level reverse engineering of VeeamAgent.exe or VeeamDataMover exists.\n");
+    bldr.Append("No public format documentation of the VeeamAgent / VeeamDataMover block layer exists.\n");
     bldr.Append("ro_promotion_reason_2=cbt_chain_replay_required - incremental (.vib) and reverse incremental (.vrb) ");
     bldr.Append("files carry only deltas against a predecessor; reconstructing a restorable image requires ");
     bldr.Append("walking the full chain via the .vbm metadata index.\n");

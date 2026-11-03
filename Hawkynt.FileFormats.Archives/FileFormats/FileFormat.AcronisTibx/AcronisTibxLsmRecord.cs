@@ -14,41 +14,30 @@ namespace FileFormat.AcronisTibx;
 /// </summary>
 /// <remarks>
 ///   <para>
-///     <b>Provenance.</b> The compression scheme on the leaf body is reverse-engineered from
-///     binary inspection of <c>libarchive3.so</c>:
+///     <b>Leaf-body compression.</b>
 ///     <list type="bullet">
-///       <item><description><c>lsm_sb_read</c> (file offset <c>0x58680</c>): validates the
-///         <c>"LSM-SB"</c> superblock magic (<c>0x42532d4c</c> at the start), reads
-///         <c>version</c> (byte ≤ 2), <c>nr_ctree</c> (byte ≤ 10) — pinning the per-archive
+///       <item><description>An LSM archive carries an <c>"LSM-SB"</c> superblock with a
+///         <c>version</c> byte (≤ 2) and an <c>nr_ctree</c> byte (≤ 10) — the per-archive
 ///         ctree count cap.</description></item>
-///       <item><description><c>lsm_dump_ctrees</c> (<c>0x58f50</c>): emits the JSON dump
-///         <c>"%s": {"offset": %llu, "magic": "%.*s", "version": %u, "encoding": "%02x",
-///         "count": %u, "len": %u, "zlen": %u, "seq": %u, "id": %u}</c> per leaf/dir page,
-///         pinning the LEAF/LDIR sub-header layout already encoded in
-///         <see cref="AcronisTibxLsmPageSubHeader"/>.</description></item>
-///       <item><description><c>lsm_page_read</c> (<c>0x56930</c>): reads a LEAF page,
-///         dispatches by the encoding byte at <c>+0xD</c>. Encoding <c>3</c> takes the LZ4
-///         chained-stream path at <c>0x54fb0</c>; encoding <c>4</c> takes an alternative path
-///         that we have not yet decoded.</description></item>
-///       <item><description><c>0x54fb0</c> (LZ4 chained-stream decoder, anchor symbol
-///         <c>golomb_ctx_free+0x340/+0x770</c> in the public binary): loops reading
+///       <item><description>Each LEAF/LDIR page carries the sub-header described by
+///         <see cref="AcronisTibxLsmPageSubHeader"/>; the encoding byte at <c>+0xD</c> selects
+///         the body codec. Encoding <c>3</c> is an LZ4 chained stream; encoding <c>4</c> is an
+///         alternative that we have not yet decoded.</description></item>
+///       <item><description>The LZ4 chained stream is a sequence of
 ///         <c>(BE32 compressed_chunk_size, BE32 uncompressed_chunk_size, LZ4_block bytes)</c>
-///         triples and calls <c>LZ4_decompress_safe_continue</c> for each. The total
-///         uncompressed length matches the leaf sub-header's <c>len</c> field, the total
-///         on-disk compressed length matches <c>zlen</c>. The chained-stream form preserves
-///         the LZ4 dictionary window across chunk boundaries — pure <c>LZ4_decompress_safe</c>
-///         per chunk works for the first chunk (where the dictionary is empty) but later
+///         triples. The total uncompressed length matches the leaf sub-header's <c>len</c>
+///         field, the total on-disk compressed length matches <c>zlen</c>. The chained-stream
+///         form preserves the LZ4 dictionary window across chunk boundaries — independent
+///         block decoding works for the first chunk (where the dictionary is empty) but later
 ///         chunks may reference the prior chunk's output as a match source.</description></item>
-///       <item><description>The leaf body offset is <c>+0x20</c> (right after the 0x14-byte
-///         sub-header at <c>+0xC..+0x1F</c>), confirmed by the disassembly of the LZ4 caller
-///         at <c>0x551ad</c> which reads <c>0xC(%esi) / 0xD(%esi) / 0x6(%esi) / 0x8(%esi)</c>
-///         from the page header before starting the LZ4 walk past <c>0x18(%esi)</c>.</description></item>
+///       <item><description>The leaf body starts at <c>+0x20</c>, right after the 0x14-byte
+///         sub-header at <c>+0xC..+0x1F</c>.</description></item>
 ///     </list>
 ///   </para>
 ///   <para>
 ///     <b>Per-record layout — what is decoded.</b> Once the LEAF body is LZ4-decompressed,
 ///     each of the <c>count</c> records lives in a sorted sequence. The exact key-value
-///     framing requires the <c>lsm_item.h</c> spec which is Acronis-internal. We surface two
+///     framing is Acronis-internal and unpublished. We surface two
 ///     best-effort views:
 ///     <list type="bullet">
 ///       <item><description><see cref="DecodeLeafBody"/> attempts LZ4 decompression of the
@@ -61,15 +50,13 @@ namespace FileFormat.AcronisTibx;
 ///         FILETIMEs in a sane range), the decoded attribute is surfaced as a candidate
 ///         filename. This is forensic-grade not deterministic — it relies on the fact that
 ///         the Acronis InputItem attribute-stream layout is shared between <c>.tib</c> and
-///         <c>.tibx</c> per the prior agent's note in the <see cref="AcronisTibxReader"/>
-///         stretch-goal comment.</description></item>
+///         <c>.tibx</c> (see the <see cref="AcronisTibxReader"/> stretch-goal note).</description></item>
 ///     </list>
 ///   </para>
 ///   <para>
 ///     <b>What is NOT decoded.</b> The full LSM record framing (key prefix-compression,
-///     value-pointer-to-DATA-extent layout, page-id refs in LDIR pages) — those bits live in
-///     <c>lsm_item.h</c> + <c>lsm_lookup.c</c> + <c>lsm_ctree_lookup.c</c> which are
-///     Acronis-internal. The scan path above is a forensic best-effort that picks out
+///     value-pointer-to-DATA-extent layout, page-id refs in LDIR pages) is Acronis-internal
+///     and unpublished. The scan path above is a forensic best-effort that picks out
 ///     readable filenames from the decompressed leaf bytes; it will MISS records whose names
 ///     have been dedup'd into a side table, records gated by AES wrap (which we don't peel),
 ///     and records whose attribute id has been moved to a different slot in a future format
@@ -81,17 +68,14 @@ namespace FileFormat.AcronisTibx;
 public static class AcronisTibxLsmRecord {
 
   /// <summary>
-  ///   Encoding byte value that means "LZ4 chained-stream compression" (the path at
-  ///   <c>libarchive3.so</c> 0x54fb0). Encoding <c>3</c> is the common production form per
-  ///   <c>cmp $0x3, %bl</c> at <c>0x55404</c>.
+  ///   Encoding byte value that means "LZ4 chained-stream compression" — the common
+  ///   production form.
   /// </summary>
   public const byte EncodingLz4ChainedStream = 3;
 
   /// <summary>
-  ///   Encoding byte value reserved for the alternative path (not yet decoded). Per
-  ///   <c>cmp $0x4, %bl</c> at <c>0x55404</c> the binary accepts <c>3</c> and <c>4</c> as
-  ///   the only valid encodings — anything else is rejected with the <c>"encoding (%d) at
-  ///   %llu%s is unknown"</c> log message at <c>lsm_golomb.c:32</c>.
+  ///   Encoding byte value reserved for the alternative path (not yet decoded). <c>3</c> and
+  ///   <c>4</c> are the only valid encodings; anything else is an unknown encoding.
   /// </summary>
   public const byte EncodingAlternative = 4;
 

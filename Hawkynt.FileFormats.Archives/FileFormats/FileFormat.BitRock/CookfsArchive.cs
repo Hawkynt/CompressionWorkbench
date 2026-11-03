@@ -11,7 +11,7 @@ namespace FileFormat.BitRock;
 /// Metakit VFS is a cookfs page store; reconstructing it yields the real deliverable (one or more
 /// gzip-wrapped tars laid end to end).
 ///
-/// <para><b>Layout (reverse-engineered from the runtime's own cookfs reader).</b> The archive ends,
+/// <para><b>Layout.</b> The archive ends,
 /// just before the Metakit VFS, with a 16-byte footer whose bytes 9..15 are the ASCII signature
 /// <c>CFS0002</c> and whose first 8 bytes are two big-endian int32s <c>idxsize</c> and <c>numpages</c>.
 /// Immediately before the footer sit, in order: a per-page 16-byte MD5/CRC table (<c>numpages*16</c>),

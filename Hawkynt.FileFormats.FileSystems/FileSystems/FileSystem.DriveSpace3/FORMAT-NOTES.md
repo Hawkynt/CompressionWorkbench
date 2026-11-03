@@ -155,7 +155,7 @@ DriveSpace 3 replaced the DOS-6.x DS-LZ77 codec with an LZ77 + Huffman
 images (`drvspace3.cvf`, `drvspace62.cvf`, `dblspace60.cvf`) contain a single
 compressed cluster** — every used cluster is a small stored run — so the
 genuine HiPack bit-stream layout (Huffman table framing, window/dictionary init,
-block-count bytes) could **not** be reverse-engineered from local resources.
+block-count bytes) could **not** be derived from local resources.
 
 `Compression.Core.Dictionary.MsLzh` implements a self-consistent, DEFLATE-shaped
 LZ77 + canonical-Huffman codec (4 KiB window, fixed + dynamic Huffman tiers)

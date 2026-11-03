@@ -15,8 +15,8 @@ namespace Compression.Tests.HfsPlus;
 /// <item>libyal's libfshfs through <c>pyfshfs</c> (<c>pip install libfshfs-python</c>) — reads
 /// files, decmpfs-compressed content and extended attributes.</item>
 /// <item>HFSExplorer's <c>unhfs</c> (GPL, run as a program only) — extracts a volume and resolves
-/// file and directory hard links. Found through HFSEXPLORER_HOME (its <c>lib/hfsx.jar</c>) or
-/// D:\re-tools\hfsexplorer, with Java from JAVA_HOME, the PATH, or D:\re-tools\jdk.</item>
+/// file and directory hard links. Found through HFSEXPLORER_HOME (its <c>lib/hfsx.jar</c>), with
+/// Java from JAVA_HOME, the PATH, or a <c>jdk</c> folder beside the HFSExplorer folder.</item>
 /// </list>
 /// </summary>
 internal static class HfsPlusOracles {
@@ -102,14 +102,15 @@ internal static class HfsPlusOracles {
   // ── unhfs ──────────────────────────────────────────────────────────
 
   private static readonly Lazy<(string Java, string Jar)?> HfsExplorer = new(() => {
-    var home = Environment.GetEnvironmentVariable("HFSEXPLORER_HOME") ?? @"D:\re-tools\hfsexplorer";
+    if (Environment.GetEnvironmentVariable("HFSEXPLORER_HOME") is not { Length: > 0 } home) return null;
     var jar = Path.Combine(home, "lib", "hfsx.jar");
     if (!File.Exists(jar)) return null;
     var candidates = new List<string>();
     if (Environment.GetEnvironmentVariable("JAVA_HOME") is { Length: > 0 } javaHome) candidates.Add(Path.Combine(javaHome, "bin", "java"));
     candidates.Add("java");
-    if (Directory.Exists(@"D:\re-tools\jdk"))
-      candidates.AddRange(Directory.GetDirectories(@"D:\re-tools\jdk").Select(static d => Path.Combine(d, "bin", "java")));
+    var jdkDir = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(home).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) ?? home, "jdk");
+    if (Directory.Exists(jdkDir))
+      candidates.AddRange(Directory.GetDirectories(jdkDir).Select(static d => Path.Combine(d, "bin", "java")));
     foreach (var java in candidates) {
       try {
         if (Run(java, ["-version"]).ExitCode == 0) return (java, jar);

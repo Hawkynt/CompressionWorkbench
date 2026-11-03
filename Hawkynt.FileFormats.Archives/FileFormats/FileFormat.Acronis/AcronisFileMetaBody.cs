@@ -6,22 +6,18 @@ namespace FileFormat.Acronis;
 
 /// <summary>
 /// Identifiers for resident attribute types found inside Acronis classic .tib FileMeta record
-/// bodies (record types 102, 1, 2, 5). Values are reverse-engineered from the attribute dispatch
-/// in <c>ti_tools.dll</c> 32-bit (Acronis True Image 2018), specifically the per-id
-/// <c>TakeAttribute*</c> / <c>PreloadAttribute*</c> handlers in
-/// <c>archive\ver2\file\item_supp.cpp</c>. The InputItem model wraps each backed-up entity as a
-/// stream of (id+flags, size, body) tuples and dispatches by id at load time.
+/// bodies (record types 102, 1, 2, 5). The InputItem model wraps each backed-up entity as a
+/// stream of (id+flags, size, body) tuples keyed by attribute id.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The attribute id is stored as a uint32 in which bit 23 (<c>0x00800000</c>) is reserved as the
 /// "deduplicated" / "stored-by-hash" flag — when set, the 16-byte body is an MD5 hash that names
 /// a deduplicated attribute body kept in a separate table. The effective id used for dispatch is
-/// <c>raw &amp; 0xff7fffff</c> (<see cref="AcronisAttributeRaw.UnmaskedId"/>). This mask matches
-/// the implementation of <c>ArchiveApi::InputResidentAttributeEnumerator::GetId</c>.
+/// <c>raw &amp; 0xff7fffff</c> (<see cref="AcronisAttributeRaw.UnmaskedId"/>).
 /// </para>
 /// <para>
-/// Only the ids whose body shape is decoded from the binary RE pass are enumerated below. Other
+/// Only the ids whose body shape is decoded are enumerated below. Other
 /// ids encountered in the wild are surfaced as raw <see cref="AcronisRawAttribute"/> entries so
 /// callers can still see them.
 /// </para>
@@ -30,50 +26,42 @@ public enum AcronisAttributeId : uint {
   /// <summary>
   /// File/directory common attributes — carries the entry's primary UTF-16LE name and optional
   /// alternate (8.3) name, plus a 44-byte fixed header that includes the two name lengths and
-  /// other still-undecoded fields. Source: <c>CommonAttributesImpl::TakeAttributeItemCommon</c>.
+  /// other still-undecoded fields.
   /// </summary>
   ItemCommon = 0x10,
   /// <summary>
   /// Hard-link group id (8-byte body, treated as a uint64 cookie). Two entries with the same
-  /// HardLinkId belong to the same hard-link group. Source:
-  /// <c>FileItemImpl::TakeAttributeHardLinkId</c>.
+  /// HardLinkId belong to the same hard-link group.
   /// </summary>
   HardLinkId = 0x14,
   /// <summary>
-  /// Replica handle (24-byte body, structure not fully decoded). Source:
-  /// <c>ReplicaItemImpl::TakeAttributeReplica</c>.
+  /// Replica handle (24-byte body, structure not fully decoded).
   /// </summary>
   Replica = 0x17,
   /// <summary>
   /// ItemCommon secondary — an 8-byte uint64 cookie tied to the ItemCommon record.
-  /// Source: tail branch of <c>CommonAttributesImpl::TakeAttributeItemCommon</c>.
   /// </summary>
   ItemCommonExtra = 0x18,
   /// <summary>
   /// Source-item path attribute — 8-byte fixed header (uint16 pathLength, uint16 kind, uint32
-  /// id) followed by <c>pathLength * 2</c> UTF-16LE bytes of source path. Source:
-  /// <c>SourceItemImpl::PreloadAttributeSourceItem</c>.
+  /// id) followed by <c>pathLength * 2</c> UTF-16LE bytes of source path.
   /// </summary>
   SourceItem = 0x40,
   /// <summary>
   /// Backup time (8 bytes, FILETIME-ish — same wall-clock semantics as Listing's
-  /// <see cref="AcronisFileEntry.Time"/> 48-bit timestamp). Source:
-  /// <c>BackupTimeItemImpl::PreloadAttributeBackupTime</c>.
+  /// <see cref="AcronisFileEntry.Time"/> 48-bit timestamp).
   /// </summary>
   BackupTime = 0x50,
   /// <summary>
-  /// Time-zone offset (4 bytes, int32 minutes-from-UTC). Source:
-  /// <c>TimeZoneItemImpl::PreloadAttributeTimeZone</c>.
+  /// Time-zone offset (4 bytes, int32 minutes-from-UTC).
   /// </summary>
   TimeZone = 0x60,
   /// <summary>
-  /// Slice-item attribute — 0x19-byte fixed header plus a UTF-16LE name. Source:
-  /// <c>SliceItemImpl::PreloadAttributes</c> id-0x80 branch.
+  /// Slice-item attribute — 0x19-byte fixed header plus a UTF-16LE name.
   /// </summary>
   SliceItem = 0x80,
   /// <summary>
-  /// Slice-item comment/blob (variable length). Source: <c>SliceItemImpl::PreloadAttributes</c>
-  /// id-0x90 branch.
+  /// Slice-item comment/blob (variable length).
   /// </summary>
   SliceItemBlob = 0x90,
 }
@@ -88,8 +76,7 @@ public enum AcronisAttributeId : uint {
 /// <param name="Size">Body length in bytes (uint16). Includes the body only, NOT the header.</param>
 public readonly record struct AcronisAttributeRaw(uint RawIdAndFlags, ushort Size) {
   /// <summary>
-  /// Logical attribute id with bit 23 masked off — matches the binary-RE'd
-  /// <c>InputResidentAttributeEnumerator::GetId</c> implementation.
+  /// Logical attribute id with bit 23 masked off.
   /// </summary>
   public uint UnmaskedId => this.RawIdAndFlags & 0xff7fffffu;
 
@@ -119,20 +106,17 @@ public sealed record AcronisRawAttribute(AcronisAttributeRaw Header, byte[] Body
 /// </summary>
 /// <remarks>
 /// <para>
-/// The 44-byte fixed header layout is reverse-engineered from
-/// <c>ArchiveApi::ItemBackuperImpl::BackupCommonAttributes</c> in <c>ti_tools.dll</c>
-/// (<c>k:\9202\archive\ver2\file\backup_operation.cpp</c>), which is the symmetric writer for
-/// the ItemCommon record. The writer emits the body via the following 11 contiguous writes:
+/// The ItemCommon body is laid out as follows:
 /// </para>
 /// <code>
 ///   offset 0  : uint16 nameLength      ; UTF-16 code units of primary name
 ///   offset 2  : uint16 altNameLength   ; UTF-16 code units of alt (8.3) name
 ///   offset 4  : uint32 dosAttributes   ; Windows file attribute bits (FILE_ATTRIBUTE_*)
-///   offset 8  : uint64 creationTime    ; FILETIME — written from FileItem vtable[0x18]
-///   offset 16 : uint64 lastWriteTime   ; FILETIME — written from FileItem vtable[0x5c]
-///   offset 24 : uint64 lastAccessTime  ; FILETIME — written from FileItem vtable[0x24]
-///   offset 32 : uint64 changeTime      ; FILETIME — written from FileItem vtable[0x28]
-///   offset 40 : uint32 trailer         ; final dword — written from FileItem vtable[0x34]
+///   offset 8  : uint64 creationTime    ; FILETIME
+///   offset 16 : uint64 lastWriteTime   ; FILETIME
+///   offset 24 : uint64 lastAccessTime  ; FILETIME
+///   offset 32 : uint64 changeTime      ; FILETIME
+///   offset 40 : uint32 trailer         ; final dword
 ///   offset 44 : UTF-16LE name (nameLength chars)
 ///   offset 44 + nameLength*2: UTF-16LE altName (altNameLength chars)
 /// </code>
@@ -143,9 +127,8 @@ public sealed record AcronisRawAttribute(AcronisAttributeRaw Header, byte[] Body
 /// </para>
 /// <para>
 /// The semantic order (CreationTime, LastWriteTime, LastAccessTime, ChangeTime) matches the
-/// NTFS <c>$STANDARD_INFORMATION</c> layout and the related
-/// <c>ContinuousAttributeWrapperImpl::ReadStandardAttributes</c> path which reads a 28-byte
-/// short form (DOS attributes + first 3 FILETIMEs).
+/// NTFS <c>$STANDARD_INFORMATION</c> layout; a related 28-byte short form carries the DOS
+/// attributes and the first 3 FILETIMEs.
 /// </para>
 /// </remarks>
 /// <param name="Name">Primary name (UTF-16LE, length <see cref="NameLength"/> chars).</param>
@@ -242,18 +225,17 @@ public sealed record AcronisSourceItemAttribute(
 /// </summary>
 /// <remarks>
 /// <para>
-/// Layout from <c>ArchiveApi::ReplicaItemImpl::TakeAttributeReplica</c>:
+/// Layout:
 /// </para>
 /// <code>
 ///   byte[16] guid          ; read directly, then byte-swapped to canonical GUID form
 ///                          ; (Data1 32-bit BE↔LE, Data2 16-bit BE↔LE, Data3 16-bit BE↔LE,
-///                          ;  Data4 8-byte tail untouched) — same conversion that
-///                          ;  FUN_00fed680 in ti_tools.dll applies on the read path
+///                          ;  Data4 8-byte tail untouched)
 ///   uint32   value1        ; semantics not fully decoded (cookie A)
 ///   uint32   value2        ; semantics not fully decoded (cookie B)
 /// </code>
 /// <para>
-/// Body size on the wire is 0x18 (24) bytes — the binary's reader throws on any other size.
+/// Body size on the wire is 0x18 (24) bytes.
 /// </para>
 /// </remarks>
 /// <param name="Guid">Replica's source GUID, canonicalized for display.</param>
@@ -269,15 +251,12 @@ public sealed record AcronisReplicaAttribute(
 
 /// <summary>
 /// Decoded ItemCommonExtra (id 0x18) attribute body — an 8-byte cookie tied to the ItemCommon
-/// record, written by <c>BackupCommonAttributes</c> via FileItem vtable[0x2c].
+/// record.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The body is exactly 8 bytes on the wire (the binary's reader throws on any other size).
-/// Treated as a uint64; the most likely semantics is a USN / change-id / object-id cookie
-/// (note: <c>FileItemImpl::TakeAttributeHardLinkId</c> uses a near-identical 8-byte read path
-/// for the hard-link group id stored at <c>+0xc8</c>; ItemCommonExtra writes to a different
-/// slot in the parent item struct).
+/// The body is exactly 8 bytes on the wire. Treated as a uint64; the most likely semantics is
+/// a USN / change-id / object-id cookie (distinct from the 8-byte HardLinkId).
 /// </para>
 /// </remarks>
 /// <param name="Value">8-byte cookie value, interpreted as uint64 little-endian.</param>
@@ -289,23 +268,22 @@ public sealed record AcronisItemCommonExtraAttribute(ulong Value);
 /// </summary>
 /// <remarks>
 /// <para>
-/// Layout from <c>ArchiveApi::SliceItemImpl::PreloadAttributes</c> id-0x80 branch:
+/// Layout:
 /// </para>
 /// <code>
 ///   byte[16] guid          ; 16-byte slice GUID, byte-swapped on read (same as Replica's)
-///   uint32   value1        ; cookie A — written to parent slot +0x10
-///   uint32   value2        ; cookie B — written to parent slot +0x14
-///   byte     flag          ; written to parent slot +0x30 as a bool
-///                          ;   (the reader uses (local_1c == 1) to coerce to bool)
+///   uint32   value1        ; cookie A
+///   uint32   value2        ; cookie B
+///   byte     flag          ; bool (1 = true)
 ///   ; --- 25-byte fixed body ends here ---
 ///   ; optional extended tail (when the body is longer than 25 bytes):
-///   uint8    pad           ; reader's local_1b sentinel slot
+///   uint8    pad           ; sentinel byte
 ///   uint16   nameLength    ; UTF-16 code units of the trailing name
 ///   byte[nameLength*2] name (UTF-16LE)
 /// </code>
 /// <para>
 /// In the common 25-byte short form, <see cref="Name"/> is <c>null</c>. When the body extends
-/// past 25 bytes and the reader's sentinel marker indicates an attached name, the name is
+/// past 25 bytes and the sentinel marker indicates an attached name, the name is
 /// surfaced verbatim.
 /// </para>
 /// </remarks>
@@ -313,7 +291,7 @@ public sealed record AcronisItemCommonExtraAttribute(ulong Value);
 /// <param name="RawGuidBytes">Verbatim 16-byte GUID block as it appears on disk (pre-swap).</param>
 /// <param name="Value1">First trailing uint32 — semantics not fully decoded.</param>
 /// <param name="Value2">Second trailing uint32 — semantics not fully decoded.</param>
-/// <param name="Flag">Single-byte flag at offset 24, written as a bool by the reader.</param>
+/// <param name="Flag">Single-byte bool flag at offset 24.</param>
 /// <param name="Name">Optional UTF-16LE trailing name when the body carries the extended tail.</param>
 /// <param name="NameLength">UTF-16 code units of <see cref="Name"/>, or zero when absent.</param>
 public sealed record AcronisSliceItemAttribute(
@@ -328,9 +306,8 @@ public sealed record AcronisSliceItemAttribute(
 
 /// <summary>
 /// Decoded SliceItemBlob (id 0x90) attribute body — a variable-length opaque payload, surfaced
-/// verbatim. The blob is read via <c>SliceItemImpl::PreloadAttributes</c>' id-0x90 branch with
-/// no internal framing decoded; consumers typically interpret it as a sequence of UTF-16 code
-/// units for slice-comment text but the binary's reader makes no such assumption.
+/// verbatim with no internal framing decoded; consumers typically interpret it as a sequence of
+/// UTF-16 code units for slice-comment text, but the format makes no such guarantee.
 /// </summary>
 /// <param name="Bytes">Verbatim blob bytes as they appear on the wire.</param>
 public sealed record AcronisSliceItemBlobAttribute(byte[] Bytes);
@@ -383,31 +360,25 @@ public sealed record AcronisFileMetaBody(
 ///   uint16 size          ; body length in bytes
 ///   byte[size] body      ; deduplicated path: 16-byte MD5 referring to a side table
 /// </code>
-/// <para>
-/// This shape is reverse-engineered from the InputItem/InputResidentAttributeEnumerator
-/// machinery in <c>ti_tools.dll</c> 32-bit (Acronis True Image 2018), specifically:
-/// </para>
 /// <list type="bullet">
 ///   <item><description>
-///   <c>InputItem::PreloadResidentAttributes</c> reads the leading 4-byte count then loops
-///   reading 6-byte headers; bit 0x800000 in the dword steers the dedup-by-hash vs. inline branch.
+///   A leading 4-byte count is followed by that many 6-byte headers, each followed by its body;
+///   bit 0x800000 in the dword selects a dedup-by-hash body instead of an inline one.
 ///   </description></item>
 ///   <item><description>
-///   <c>InputResidentAttributeEnumerator::GetId</c> returns <c>(raw &amp; 0xff7fffff)</c> — the
-///   id with the bit-23 dedup flag masked off.
+///   The logical id is <c>(raw &amp; 0xff7fffff)</c> — the id with the bit-23 dedup flag
+///   masked off.
 ///   </description></item>
 ///   <item><description>
-///   <c>InputResidentAttributeEnumerator::Read</c> copies <c>size</c> bytes from
-///   <c>body + 6</c> — i.e., right after the 6-byte header.
+///   The body is <c>size</c> bytes starting right after the 6-byte header.
 ///   </description></item>
 /// </list>
 /// <para>
 /// The per-id body layouts (<see cref="AcronisAttributeId.ItemCommon"/>,
 /// <see cref="AcronisAttributeId.SourceItem"/>, <see cref="AcronisAttributeId.HardLinkId"/>,
 /// <see cref="AcronisAttributeId.BackupTime"/>, <see cref="AcronisAttributeId.TimeZone"/>) are
-/// reverse-engineered from the per-id <c>TakeAttribute*</c> / <c>PreloadAttribute*</c> handlers
-/// in <c>archive\ver2\file\item_supp.cpp</c>. Ids that aren't recognized are surfaced as raw
-/// bodies so callers can still inspect them.
+/// documented on the decoders below. Ids that aren't recognized are surfaced as raw bodies so
+/// callers can still inspect them.
 /// </para>
 /// </remarks>
 public static class AcronisFileMetaBodyDecoder {
@@ -445,7 +416,7 @@ public static class AcronisFileMetaBodyDecoder {
       attrs.Add(new AcronisRawAttribute(new AcronisAttributeRaw(raw, size), body));
     }
 
-    // Decode the high-value ids that we have a binary-RE'd layout for.
+    // Decode the high-value ids whose layout is known.
     AcronisItemCommonAttribute? itemCommon = null;
     AcronisSourceItemAttribute? sourceItem = null;
     ulong? hardLink = null;
@@ -498,9 +469,7 @@ public static class AcronisFileMetaBodyDecoder {
   }
 
   /// <summary>
-  /// Decodes an ItemCommon (id 0x10) attribute body. Layout reverse-engineered from
-  /// <c>ArchiveApi::ItemBackuperImpl::BackupCommonAttributes</c> (the symmetric writer in
-  /// <c>ti_tools.dll</c> at <c>k:\9202\archive\ver2\file\backup_operation.cpp</c>):
+  /// Decodes an ItemCommon (id 0x10) attribute body. Layout:
   /// <code>
   ///   uint16 nameLength       ; UTF-16 code units of primary name
   ///   uint16 altNameLength    ; UTF-16 code units of alt (8.3) name
@@ -549,9 +518,7 @@ public static class AcronisFileMetaBodyDecoder {
   }
 
   /// <summary>
-  /// Decodes a Replica (id 0x17) attribute body. Layout reverse-engineered from
-  /// <c>ArchiveApi::ReplicaItemImpl::TakeAttributeReplica</c> in <c>ti_tools.dll</c>
-  /// (<c>k:\9202\archive\ver2\file\item_supp.cpp</c>):
+  /// Decodes a Replica (id 0x17) attribute body. Layout:
   /// <code>
   ///   byte[16] guid          ; 16-byte GUID — read raw, then byte-swapped to canonical
   ///                          ;   GUID form (Data1 32-bit BE↔LE, Data2 16-bit BE↔LE,
@@ -559,8 +526,8 @@ public static class AcronisFileMetaBodyDecoder {
   ///   uint32   value1        ; cookie A
   ///   uint32   value2        ; cookie B
   /// </code>
-  /// Returns <c>null</c> when the body is shorter than 24 bytes — the binary's reader throws
-  /// in that case; we surface a soft <c>null</c> so the outer attribute walk keeps going.
+  /// Returns <c>null</c> when the body is shorter than 24 bytes — a soft <c>null</c> so the
+  /// outer attribute walk keeps going.
   /// </summary>
   public static AcronisReplicaAttribute? DecodeReplica(ReadOnlySpan<byte> body) {
     const int Expected = 24;
@@ -573,9 +540,7 @@ public static class AcronisFileMetaBodyDecoder {
   }
 
   /// <summary>
-  /// Decodes a SliceItem (id 0x80) attribute body. Layout reverse-engineered from
-  /// <c>ArchiveApi::SliceItemImpl::PreloadAttributes</c> id-0x80 branch in <c>ti_tools.dll</c>
-  /// (<c>k:\9202\archive\ver2\file\item_supp.cpp</c>):
+  /// Decodes a SliceItem (id 0x80) attribute body. Layout:
   /// <code>
   ///   byte[16] guid          ; slice GUID, byte-swapped on read
   ///   uint32   value1        ; cookie A
@@ -583,7 +548,7 @@ public static class AcronisFileMetaBodyDecoder {
   ///   byte     flag          ; bool flag
   ///   ; 25-byte short form ends here
   ///   ; optional extended tail (when body.Length > 25):
-  ///   byte     pad           ; reader's local_1b sentinel
+  ///   byte     pad           ; sentinel byte
   ///   uint16   nameLength    ; UTF-16 code units of trailing name
   ///   byte[nameLength*2] name (UTF-16LE)
   /// </code>
@@ -612,9 +577,7 @@ public static class AcronisFileMetaBodyDecoder {
 
   /// <summary>
   /// Swaps the byte order of a 16-byte GUID block from on-disk encoding to canonical
-  /// .NET <see cref="Guid"/> form. Matches the conversion that
-  /// <c>FUN_00fed680</c> in <c>ti_tools.dll</c> applies on Replica / SliceItem GUID reads:
-  /// the 4-byte Data1 word is bit-rotated (BE↔LE), the two 2-byte words Data2/Data3 are
+  /// .NET <see cref="Guid"/> form for Replica / SliceItem GUIDs: the 4-byte Data1 word is bit-rotated (BE↔LE), the two 2-byte words Data2/Data3 are
   /// likewise bit-rotated, the trailing 8 bytes are copied verbatim.
   /// </summary>
   private static Guid SwapGuidByteOrder(ReadOnlySpan<byte> on_disk) {
@@ -637,8 +600,7 @@ public static class AcronisFileMetaBodyDecoder {
   }
 
   /// <summary>
-  /// Decodes a SourceItem (id 0x40) attribute body. Layout from
-  /// <c>SourceItemImpl::PreloadAttributeSourceItem</c>:
+  /// Decodes a SourceItem (id 0x40) attribute body. Layout:
   /// <code>
   ///   uint16 pathLength    ; characters
   ///   uint16 kind          ; semantics not fully decoded; preserved verbatim

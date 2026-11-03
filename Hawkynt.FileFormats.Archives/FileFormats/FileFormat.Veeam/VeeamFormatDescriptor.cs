@@ -182,8 +182,8 @@ public sealed class VeeamFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     "past the OibSummary trailer — exhaustive 2026 follow-up research (Veeam R&D forum t93873 documents only 'header + " +
     "metadata bank pairs + data, variable offsets due to compression' at block-diagram level; Synacktiv's pipeline calls " +
     "Veeam's own Extract.exe via Windows.Veeam.Extract.yaml rather than parsing chunks; SosRansomware's 2024 Backup " +
-    "Extractor tool ships proprietary without published spec; no public binary-level reverse engineering of VeeamAgent.exe " +
-    "or VeeamDataMover exists); (b) CBT chain replay requires the full .vbm metadata index plus every chain link; " +
+    "Extractor tool ships proprietary without published spec; no public format documentation of the VeeamAgent / " +
+    "VeeamDataMover block layer exists); (b) CBT chain replay requires the full .vbm metadata index plus every chain link; " +
     "(c) deduplication dehydrates block bodies against an external job-scoped pool (1 MiB default block size before " +
     "compression, ~300-700 KiB after); (d) AES-256 job encryption (PBKDF2-HMAC-SHA1 / 10000 iters / 64-byte salt per " +
     "hashcat issue #3623, but only the password-verification check blob algorithm is documented — the per-block " +

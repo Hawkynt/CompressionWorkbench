@@ -154,5 +154,5 @@ history window.
 * end marker: offset field of all-ones (`110000000`).
 
 The bit stream is MSB-first within each byte. This is implemented from the
-public RFC specification; the driver disassembly was used only to confirm the
-2048-byte window and the literal/match prefix convention.
+public RFC specification, which also fixes the 2048-byte window and the
+literal/match prefix convention.

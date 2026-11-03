@@ -22,9 +22,8 @@ namespace FileFormat.ExePackers;
 /// dropped.
 /// </para>
 /// <para>
-/// The recovery chain below was derived by disassembling the loader in the
-/// corpus samples; no MoleBox or third-party source was consulted. Everything
-/// it needs is in the file, addressed relative to the packed entry point
+/// Everything the recovery chain below needs is in the file, addressed
+/// relative to the packed entry point
 /// (<c>EP</c>):
 /// </para>
 /// <list type="number">

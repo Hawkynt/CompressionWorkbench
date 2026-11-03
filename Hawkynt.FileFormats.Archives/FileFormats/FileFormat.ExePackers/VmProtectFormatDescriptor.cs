@@ -75,7 +75,7 @@ public sealed class VmProtectFormatDescriptor : IFormatDescriptor, IArchiveForma
   public string Description =>
     "VMProtect Win32 PE virtualizing protector — surfaces the .vmp0/.vmp1/.vmp2 " +
     "section table and the embedded \"VMProtect\" literal. Decompression " +
-    "delegated to VMUnprotect / NoVmp / x64dbg (best-effort; virtualized " +
+    "delegated to VMUnprotect / NoVmp (best-effort; virtualized " +
     "bytecode cannot be losslessly recovered).";
 
   private static ReadOnlySpan<byte> VmProtectLiteral => "VMProtect"u8;
@@ -132,7 +132,7 @@ public sealed class VmProtectFormatDescriptor : IFormatDescriptor, IArchiveForma
     sb.Append(CultureInfo.InvariantCulture, $"section_count = {sections.Count}\n");
     foreach (var (name, chars) in sections)
       sb.Append(CultureInfo.InvariantCulture, $"section = {name} flags=0x{chars:X8}\n");
-    sb.Append("note = decompression delegated to VMUnprotect / NoVmp / x64dbg (best-effort; virtualized bytecode cannot be losslessly recovered)\n");
+    sb.Append("note = decompression delegated to VMUnprotect / NoVmp (best-effort; virtualized bytecode cannot be losslessly recovered)\n");
     return Encoding.UTF8.GetBytes(sb.ToString());
   }
 }

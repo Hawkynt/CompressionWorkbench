@@ -18,8 +18,8 @@ namespace FileFormat.Paragon;
 /// — vendor on-disk semantics past offset 8 (the <c>+0xC F12</c>
 /// discriminator, <c>+0x30</c> image-type / fork ID, <c>+0x34</c> volume
 /// name buffer, the segment-internal chunk-table offset, the bitmap chain
-/// encoding, the per-chunk Adler-32 verification site) are reverse-
-/// engineered at the architectural level but have never been byte-validated
+/// encoding, the per-chunk Adler-32 verification) are known at the
+/// architectural level but have never been byte-validated
 /// against a real Paragon-produced sample (HDM 16+ is restore-only; the
 /// Free Edition only writes pVHD). Vendor offsets <c>+0xC</c>, <c>+0x30</c>,
 /// <c>+0x34</c>, <c>+0xD8</c>, <c>+0xE8</c>, <c>+0xF1</c> are left zero by
@@ -34,13 +34,12 @@ namespace FileFormat.Paragon;
 ///     <b>Bytes <c>+0x00..+0x07</c> — vendor-real header prefix.</b>
 ///     <c>"PImg"</c> magic at <c>+0x00</c>, <c>Major = 0x0002</c> at
 ///     <c>+0x04</c>, <c>FormatVersion = 0x0003</c> at <c>+0x06</c>. These
-///     are the same literal values the vendor writer emits at HDM-18
-///     RVA <c>0x4a8dc4</c> (<c>MOV DWORD [rax+4], 0x00030002</c>) so a
-///     vendor reader at least passes the magic + version gate at
-///     RVA <c>0x4ae6e4</c>; everything past <c>+0x07</c> is our own layout.
+///     are the same values current vendor archives carry (the dword
+///     <c>0x00030002</c>), so the magic + version prefix is
+///     vendor-compatible; everything past <c>+0x07</c> is our own layout.
 ///   </description></item>
 ///   <item><description>
-///     <b>Bytes <c>+0x08..+0xF7</c> — zero-fill.</b> The reverse-engineered
+///     <b>Bytes <c>+0x08..+0xF7</c> — zero-fill.</b> The known
 ///     vendor fields at <c>+0x0C</c> (F12 discriminator), <c>+0x26</c>
 ///     (FlagsA), <c>+0x27</c> (FlagsB), <c>+0x30</c> (image-type / fork
 ///     ID), <c>+0x34</c> (volume name / GUID), <c>+0xD8</c> (ParentId u64),
@@ -63,8 +62,8 @@ namespace FileFormat.Paragon;
 ///     The fields are all little-endian. <c>ChunkCount u32</c> at
 ///     <c>+0x100</c>, <c>ChunkTableOffset u64</c> at <c>+0x104</c>,
 ///     <c>SectorsPerChunk u32</c> at <c>+0x10C</c> (default 256, so
-///     128 KiB per chunk at 512 B sectors — matches the
-///     "Sectors per chunk" debug field), <c>SegmentCount u32</c> at
+///     128 KiB per chunk at 512 B sectors — the vendor's
+///     sectors-per-chunk field), <c>SegmentCount u32</c> at
 ///     <c>+0x110</c> (we emit a single segment containing all chunks),
 ///     <c>TotalLogicalSize u64</c> at <c>+0x114</c>,
 ///     <c>HeaderSize u32</c> at <c>+0x11C</c> (the offset of the first
@@ -79,8 +78,8 @@ namespace FileFormat.Paragon;
 ///     (<see cref="FileFormat.Zlib.ZlibStream"/>); when not
 ///     compressed it is the raw bytes verbatim. Per-chunk integrity is
 ///     verified by Adler-32 (see <see cref="ParagonAdler32"/>) stored in the table entry — the
-///     vendor uses the same checksum ("Chunk is not valid, adler32
-///     checksum is wrong.") because the per-chunk codec is zlib/DEFLATE.
+///     vendor uses the same checksum because the per-chunk codec is
+///     zlib/DEFLATE.
 ///   </description></item>
 ///   <item><description>
 ///     <b>Chunk-offset table — at <c>ChunkTableOffset</c>.</b> An array of
@@ -90,21 +89,19 @@ namespace FileFormat.Paragon;
 ///     stream bytes), <c>ChunkIsCompress u8</c> (<c>'Y'</c> /
 ///     <c>'N'</c>), <c>3 bytes padding</c>, <c>LogicalSize u32</c> (the
 ///     decompressed byte size), <c>Adler32 u32</c> (zlib Adler-32 of the
-///     decompressed bytes), <c>Reserved u64</c>. This is exactly the
-///     architectural per-chunk struct the vendor's
-///     <c>"ChunkNumber: %d, ChunkOffSet: 0x%016I64x, ChunkSize: %d,
-///     ChunkIsCompress: %c"</c> debug-string round-trip emits.
+///     decompressed bytes), <c>Reserved u64</c>. The first four fields are
+///     the vendor's per-chunk field set (number, 64-bit offset, 32-bit size,
+///     compressed flag).
 ///   </description></item>
 /// </list>
 ///
 /// <para>
 /// <b>What is intentionally NOT emitted.</b> No allocation bitmap
-/// (<c>CPbfBitmapIO</c> chained blocks — encoding undocumented), no
+/// (chained blocks — encoding undocumented), no
 /// incremental-chain parent back-pointer (<c>+0xD8 ParentId u64</c> — we
 /// always write a base image), no per-segment split-archive trailer
 /// (<c>.000</c> / <c>.001</c> / ... — we always write a single segment),
-/// no PFI sidecar (<c>.pfi</c> magic loaded indirectly in the vendor
-/// binary, could not be statically resolved). These stay open for the
+/// no PFI sidecar (<c>.pfi</c> magic not known). These stay open for the
 /// next promotion pass once a real Paragon-produced sample is available
 /// to byte-validate against.
 /// </para>
@@ -119,10 +116,10 @@ public sealed class ParagonWriter : IDisposable {
   /// our reader to detect a file produced by our writer vs. a vendor one.</summary>
   public static readonly byte[] CwbpDiscriminator = "CWBPbpf1"u8.ToArray();
 
-  /// <summary>Vendor-literal Major value at <c>+0x04</c>: <c>0x0002</c>.</summary>
+  /// <summary>Vendor Major value at <c>+0x04</c>: <c>0x0002</c>.</summary>
   public const ushort Major = 0x0002;
 
-  /// <summary>Vendor-literal FormatVersion value at <c>+0x06</c>: <c>0x0003</c>.</summary>
+  /// <summary>Vendor FormatVersion value at <c>+0x06</c>: <c>0x0003</c>.</summary>
   public const ushort FormatVersion = 0x0003;
 
   /// <summary>Header size up to and including the CWBP table-of-contents.</summary>
@@ -185,8 +182,8 @@ public sealed class ParagonWriter : IDisposable {
   /// <param name="output">Target stream — must be writable and seekable.</param>
   /// <param name="compressChunks">Whether each chunk is zlib-compressed
   /// (<c>true</c>) or stored verbatim (<c>false</c>).</param>
-  /// <param name="chunkSize">Bytes per chunk. The vendor's debug strings
-  /// frame chunks as "N sectors per chunk"; <see cref="DefaultChunkSize"/>
+  /// <param name="chunkSize">Bytes per chunk. The vendor format frames
+  /// chunks as "N sectors per chunk"; <see cref="DefaultChunkSize"/>
   /// (128 KiB) matches the typical sector-times-256 value. The writer
   /// splits the payload at this granularity, except for the last chunk
   /// which may be shorter.</param>
@@ -340,7 +337,7 @@ public sealed class ParagonWriter : IDisposable {
     // +0x06 FormatVersion.
     BinaryPrimitives.WriteUInt16LittleEndian(hdr.Slice(6, 2), FormatVersion);
 
-    // +0x08..+0xF7 left zero — the reverse-engineered vendor fields at
+    // +0x08..+0xF7 left zero — the known vendor fields at
     // +0xC, +0x26, +0x27, +0x30, +0x34, +0xD8, +0xE8, +0xF1 are not
     // forged. See class XML doc.
 

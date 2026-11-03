@@ -74,8 +74,7 @@ ways to take it and the choice is not cosmetic:
   code, so every rule under "Code conventions" applies to it, including the current C# language
   version (C# 14) wherever that says the same thing more plainly. Do not restate those rules
   here or anywhere else: one stale copy of them is how this guide spent years asking for a brace
-  style the code had never used. A conversion that still reads like C, or like a decompiler's
-  output, is not finished.
+  style the code had never used. A conversion that still reads like C is not finished.
 
 Either way, record where it came from — a `THIRD_PARTY_NOTICES.md` in the package, or a
 `THIRD-PARTY-NOTICE.<Name>.txt` beside the code. Attribution is a licence term, not a courtesy.
@@ -134,29 +133,26 @@ cannot, commit the captured expected output with a note saying what produced it.
 
   Paraphrasing a vendored codec into our own namespace is the one thing this
   does not permit: take it whole and credit it, or write it from the spec.
-- **Reverse engineering produces a specification, never code.** Some formats
-  have no published bitstream and no vendorable implementation — the audio
-  ledger names a dozen. They are reachable, in this order:
-  1. **Behaviour first.** Drive the reference tool and read what it makes of
-     streams we choose. `cwb reverse-engineer` does this for a tool that runs;
+- **Specifications are derived from behaviour; code never comes from someone
+  else's binary.** Some formats have no published bitstream and no vendorable
+  implementation — the audio ledger names a dozen. They are reachable, in this
+  order:
+  1. **Behaviour.** Run the reference tool on inputs we choose and measure its
+     outputs. `cwb reverse-engineer` does this for a tool that runs;
      `StaticFormatAnalyzer` does it from (original, archived) pairs; a codec
      that only decodes is still an oracle, because it accepts or rejects.
      `docs/QUANTUM-ON-DISK.md` and `docs/LZMS-ON-DISK.md` were derived this
      way and are the template: every constant measured, refuted hypotheses
      kept alongside the confirmed ones.
-  2. **Static analysis only where behaviour cannot reach** — a table that no
-     input reveals, a decision rule that never varies. Disassembly and
-     decompiler output are derived from someone's binary: they are evidence,
-     not source. Read them to write down *what the format is*, put that in a
-     `docs/<FORMAT>-ON-DISK.md`, and implement from that document. Code
-     transliterated from a decompiler is a derivative work and is exactly what
-     the first rule forbids — the specification is the firewall, and a
-     conversion that still reads like decompiler output is not finished.
+  2. **Write the specification down.** Record *what the format is* in a
+     `docs/<FORMAT>-ON-DISK.md` and implement from that document. Code is
+     never taken from someone else's binary; the written specification is the
+     only bridge into our code.
   3. **Verify against the original.** A derived format is only proven when the
      reference accepts what we write, or we reproduce what it wrote, byte for
      byte. Say which, and pin it with a test.
 
-  Record provenance either way: which binary, which version, which tool, and
+  Record provenance either way: which tool, which version, which inputs, and
   what was measured rather than assumed. An unverifiable claim is worse than a
   missing codec — `docs/AUDIO-IDENTIFIER-REGISTRY.md` lists absences on
   purpose, and refusing to guess is a supported outcome.

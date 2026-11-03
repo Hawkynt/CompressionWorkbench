@@ -1,6 +1,6 @@
 # BitRock / InstallBuilder installer — format notes
 
-Clean-room notes recovered from binary inspection of real InstallBuilder installers
+Clean-room notes on real InstallBuilder installers
 (the `InCAMPro-2.0SP*` Windows installers). Extraction is static — files are recovered
 **without executing or installing** the package.
 
