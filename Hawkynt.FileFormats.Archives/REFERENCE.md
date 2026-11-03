@@ -7233,6 +7233,7 @@ One member of an ACE archive, as its file header describes it.
 | `DictionaryBits` | `int DictionaryBits { get; init; }` |  |
 | `FileName` | `string FileName { get; init; }` | Member path with '/' separators (ACE stores '\'). |
 | `Flags` | `ushort Flags { get; init; }` |  |
+| `IsComplete` | `bool IsComplete { get; init; }` | Whether every volume the member spans was found; an incomplete member is listed but not extracted. |
 | `IsContinued` | `bool IsContinued { get; }` | Whether the member is split across volumes of a multi-volume set. |
 | `IsDirectory` | `bool IsDirectory { get; }` |  |
 | `IsEncrypted` | `bool IsEncrypted { get; }` |  |
@@ -7240,6 +7241,7 @@ One member of an ACE archive, as its file header describes it.
 | `LastModified` | `DateTime LastModified { get; init; }` |  |
 | `OriginalSize` | `long OriginalSize { get; init; }` |  |
 | `Quality` | `int Quality { get; init; }` |  |
+| `VolumeCount` | `int VolumeCount { get; }` | Number of volumes the member's data spans (1 for an ordinary member). |
 
 #### `AceFormatDescriptor`
 
@@ -7262,6 +7264,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the ACE archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the ACE archive per the requested mode. |
@@ -7270,25 +7273,29 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
 
 #### `AceReader`
 
-Reads ACE 1.0 / 2.0 archives: main header (found within the first 512 KiB, so SFX stubs are skipped), file headers, stored / LZ77 / blocked members, Blowfish-encrypted members and comments. Members of a multi-volume set that continue into another volume are listed but refused.
+Reads ACE 1.0 / 2.0 archives: main header (found within the first 512 KiB, so SFX stubs are skipped), file headers, stored / LZ77 / blocked members, Blowfish-encrypted members and comments. A multi-volume set is read from its volumes in order (`.ace`, `.c00`, `.c01`, …): a member split across volumes is the concatenation of its parts, and its CRC is the one in the last part's header.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `AceReader` | `AceReader(IReadOnlyList<Stream> volumes, bool leaveOpen = false, string password = null)` | Reads the volumes of a multi-volume set, in order; a single stream is an ordinary archive. |
 | `AceReader` | `AceReader(Stream stream, bool leaveOpen = false, string password = null)` |  |
 | `ArchiveOffset` | `long ArchiveOffset { get; }` | Offset of the main header (non-zero for self-extracting archives). |
 | `Comment` | `string Comment { get; }` |  |
 | `CreatorVersion` | `byte CreatorVersion { get; }` |  |
 | `Entries` | `IReadOnlyList<AceEntry> Entries { get; }` |  |
 | `ExtractVersion` | `byte ExtractVersion { get; }` |  |
+| `FirstVolumeNumber` | `int FirstVolumeNumber { get; }` | The volume number recorded in the first volume read (0 for the `.ace` volume of a set). |
 | `HasRecoveryRecord` | `bool HasRecoveryRecord { get; }` |  |
 | `IsLocked` | `bool IsLocked { get; }` |  |
 | `IsMultiVolume` | `bool IsMultiVolume { get; }` |  |
 | `IsSolid` | `bool IsSolid { get; }` |  |
+| `VolumeCount` | `int VolumeCount { get; }` | How many volumes were read. |
 | `Dispose` | `void Dispose()` |  |
 | `ExtractEntry` | `byte[] ExtractEntry(AceEntry entry)` | Returns a member's decompressed bytes, verifying its CRC. |
 

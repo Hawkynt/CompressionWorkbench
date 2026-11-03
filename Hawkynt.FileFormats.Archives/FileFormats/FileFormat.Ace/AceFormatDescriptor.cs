@@ -28,6 +28,7 @@ public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new AceReader(stream, leaveOpen: true);
+        RefuseVolume(r);
         return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FileName, r.ExtractEntry(e))).ToList();
       },
       buildImage: files => {
@@ -44,6 +45,39 @@ public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var e in r.Entries)
       if (e.CompressedSize > 0)
         yield return new DefragBlockInfo(e.DataOffset, e.CompressedSize, DefragBlockKind.Used, FileName: e.FileName);
+  }
+
+  /// <summary>A volume of a multi-volume set is not rewritten: the rebuild would drop the other volumes' share of the set.</summary>
+  private static void RefuseVolume(AceReader r) {
+    if (r.IsMultiVolume)
+      throw new NotSupportedException("ACE: a volume of a multi-volume set cannot be edited; its members continue in the other volumes.");
+  }
+
+  private static void RefuseVolume(Stream archive) {
+    archive.Position = 0;
+    using (var r = new AceReader(archive, leaveOpen: true))
+      RefuseVolume(r);
+    archive.Position = 0;
+  }
+
+  /// <inheritdoc />
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    RefuseVolume(archive);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      foreach (var input in inputs) {
+        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName)) continue;
+        var dest = Path.Combine(tmpDir, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
+        var destDir = Path.GetDirectoryName(dest);
+        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
+        File.WriteAllBytes(dest, input.ReadContent());
+      }
+    });
+  }
+
+  /// <inheritdoc />
+  public void Remove(Stream archive, string[] entryNames) {
+    RefuseVolume(archive);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => RebuildVerb.DeleteNamedEntries(tmpDir, entryNames ?? []));
   }
 
   public string Id => "Ace";
@@ -64,7 +98,8 @@ public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "ACE archive. Reads ACE 1.0/2.0 (all compression modes, solid, encrypted, SFX); writes ACE 1.0 " +
-    "(stored or LZ77, solid, encrypted). Multi-volume members are listed but not extracted.";
+    "(stored or LZ77, solid, encrypted). Multi-volume sets are read from the volume files that follow " +
+    "the one opened (.c00, .c01, ...).";
 
   private static string MethodName(AceEntry e) => e.IsDirectory ? "dir" : e.CompressionType switch {
     CoreAce.CompStore => "store",
@@ -74,13 +109,13 @@ public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   };
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new AceReader(stream, leaveOpen: true, password: password);
+    using var r = AceVolumeSet.Open(stream, password);
     return r.Entries.Select(e => new ArchiveEntryInfo(e.Index, e.FileName, e.OriginalSize, e.CompressedSize,
       MethodName(e), e.IsDirectory, e.IsEncrypted, e.LastModified)).ToList();
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new AceReader(stream, leaveOpen: true, password: password);
+    using var r = AceVolumeSet.Open(stream, password);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
       if (e.IsDirectory) {
@@ -95,7 +130,7 @@ public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
-    var r = new AceReader(archive, leaveOpen: true, password: password);
+    using var r = AceVolumeSet.Open(archive, password);
     foreach (var e in r.Entries) {
       if (!string.Equals(e.FileName, entryName, StringComparison.OrdinalIgnoreCase)) continue;
       var bytes = r.ExtractEntry(e);

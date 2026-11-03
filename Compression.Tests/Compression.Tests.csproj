@@ -265,7 +265,7 @@
       <LogicalName>EwfVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- ACE archives from acefile's test corpus and ones our writer produced for acefile; see Ace/ReferenceVectors/README.md. -->
-    <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\acefile-listing.txt">
+    <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\*.c0?;Ace\ReferenceVectors\acefile-listing.txt;Ace\ReferenceVectors\volumes.tsv">
       <LogicalName>AceVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- Compact Pro archives from the Garbo Mac archive and ones our writer produced for unar; see CompactPro/ReferenceVectors/README.md. -->
