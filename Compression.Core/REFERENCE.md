@@ -4723,6 +4723,57 @@ A clean-room implementation of the Context Tree Weighting (CTW) method: a bounde
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data by driving a binary arithmetic coder with per-bit probabilities from a Context Tree Weighting model. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses data previously produced by `Compress`. |
 
+### Namespace `Compression.Core.Entropy.ContextMixing.Mcm`
+
+[`McmBuildingBlock`](#mcmbuildingblock) · [`McmContextMixer`](#mcmcontextmixer) · [`McmModelProfile`](#mcmmodelprofile) · [`McmWave16Coder`](#mcmwave16coder)
+
+#### `McmBuildingBlock`
+
+mcm 0.84's context-mixing coder as a building block, in the one framing mcm itself uses for a bare stream — its archive index: the LEB128 length, the mid-level (6-input) CM stream with the text model set, memory level 6 and LZP, then the LEB128 check value 1234.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `McmBuildingBlock` | `McmBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `McmContextMixer`
+
+mcm 0.84's context-mixing coder (`cm::CM`), reimplemented from `docs/MCM-ON-DISK.md`: hashed bit-history states, one adaptive probability map per input, a single mixer layer selected by an interval context, a match model with LZP and two SSE stages, over a 7-Zip range coder. One instance codes one stream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `McmContextMixer` | `McmContextMixer(int inputs, McmModelProfile profile, int memoryLevel, bool lzp)` | Creates a coder. |
+| `MaxMemoryLevel` | `const int MaxMemoryLevel` | Highest memory level the managed tables can hold (level 10 needs a hash table past 2 GiB). |
+| `UsedFastPath` | `bool UsedFastPath { get; }` | Whether any byte went through the binary fast path. mcm 0.84's own decoder returns the wrong byte from that path, so mcm cannot extract a block for which this is true. |
+| `Decode` | `byte[] Decode(byte[] source, int offset, int end, int count, out int consumed)` | Decodes `count` bytes from the stream starting at `offset`. |
+| `Encode` | `byte[] Encode(ReadOnlySpan<byte> data)` | Compresses `data` into a range-coded stream. |
+
+#### `McmModelProfile`
+
+Which of mcm's model sets drives the coder (fixed per stream in an mcm archive).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Text` | `0` | Text: word, bracket and interval contexts, text byte order. |
+| `Binary` | `1` | Binary: sparse contexts, binary byte order, fast path after long unmatched runs. |
+| `Simple` | `2` | The undocumented `-s` level: the text set outside matches, orders 0–9 inside. |
+
+#### `McmWave16Coder`
+
+mcm 0.84's stereo 16-bit PCM coder (compressor type 1), from `docs/MCM-ON-DISK.md`, "Wav16": per 4096-sample block a second-order-by-channel delta, then per sample a direct sign bit, eleven modelled bits and four direct bits. mcm's own decoder does not invert this encoder; `Decode` does.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(byte[] source, int offset, int end, int count, out int consumed)` | Decodes `count` bytes; mcm cannot have written an odd count it could restore. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes little-endian 16-bit samples; an odd final byte is dropped, as mcm does. |
+
 ### Namespace `Compression.Core.Entropy.ContextMixing.SelectedWeights`
 
 [`ContextMixingSelectedWeightsBuildingBlock`](#contextmixingselectedweightsbuildingblock) · [`ContextMixingSelectedWeightsCompressor`](#contextmixingselectedweightscompressor)

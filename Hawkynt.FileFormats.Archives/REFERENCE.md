@@ -21300,6 +21300,35 @@ Clean-room writer for Minecraft Anvil region containers.
 | --- | --- | --- |
 | `Write` | `static void Write(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 
+### Namespace `FileFormat.Mcm`
+
+[`McmFormatDescriptor`](#mcmformatdescriptor)
+
+#### `McmFormatDescriptor`
+
+MCM 0.84 — Mathieu Chartier's context-mixing archiver (`MCMARCHIVE`): solid blocks per detected content type (text with a word dictionary, binary with an x86 branch filter, stereo PCM), a compressed file list, and five CM levels. References: `https://github.com/mathieuchartier/mcm` — the reference program (GPL-3.0; used to derive the specification and as the oracle, no code taken)`docs/MCM-ON-DISK.md` — the specification this reader and writer were written from
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `McmFormatDescriptor` | `McmFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Mdb`
 
 [`MdbFormatDescriptor`](#mdbformatdescriptor)

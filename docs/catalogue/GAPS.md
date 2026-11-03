@@ -13,9 +13,9 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Measure | Value |
 | --- | ---: |
-| Catalogue rows | 980 |
+| Catalogue rows | 982 |
 | … formats listed by at least one source | 525 |
-| … registry ids no source lists (OURS-ONLY) | 455 |
+| … registry ids no source lists (OURS-ONLY) | 457 |
 | Source-listed rows mapped to something here | 285 / 525 (54.3 %) |
 | … of rows listed by ≥ 2 sources | 122 / 138 (88 %) |
 | … of rows listed by ≥ 3 sources | 66 / 67 (PEA is the one missing) |
@@ -27,7 +27,7 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | `READ-ONLY-BUT-SOURCES-WRITE` | 22 | we only read it; a source or the format's own tool writes it |
 | `PARTIAL` | 38 | covered, but the reader handles only part of the format (see the table below) |
 | `OK` | 235 | covered with no known gap against what the sources list |
-| `OURS-ONLY` | 455 | in our registry, listed by none of the seven sources |
+| `OURS-ONLY` | 457 | in our registry, listed by none of the seven sources |
 
 ### Per source
 
@@ -218,18 +218,17 @@ claims it.
 | --- | --- | --- |
 | [cmix](https://github.com/byronknoll/cmix) (Byron Knoll) | GPL-3.0, so only a clean-room rewrite from a derived specification would do; cmix v21 is some 22,000 lines of models including LSTM and other floating-point networks whose results depend on the C library's `exp`/`log`/`tanh`, so byte-exact output from managed code cannot be proven, and the reference needs about 32 GB of RAM to run as an oracle on this machine | `BB_ContextMixingWordMatch`; the `.cmix` descriptor, which wrote an order-0 stream under cmix's name, is removed |
 | [paq8hp12](http://mattmahoney.net/dc/text.html) (Rhatushnyak, Mahoney, Skibinski) | GPL, so only a clean-room rewrite from a derived specification would do, of some 5,500 lines (the PAQ8 model set tuned for English text plus its WRT word transform) whose mixer arithmetic follows its MMX/SSE2 code; and every stream depends on two data files it ships under the GPL, a 465 KB transform dictionary and a 465 KB model-training text, read at run time, which this LGPL repository cannot carry | `BB_ContextMixingSelectedWeights` |
-| [MCM](https://github.com/mathieuchartier/mcm) 0.84 (Mathieu Chartier) | not yet offered. GPL-3.0, so a clean-room rewrite from a derived specification is required, and the reader has to cover everything mcm writes: the multi-file archive with its compressed file list and solid blocks, the content detector, the dictionary (text), E8/E9 (x86) and Wav16 filters, LZP and five CM levels whose model sets differ by profile, some 15,000 lines in all | `BB_ContextMixingTwoLevel`; the `.mcm` descriptor, which wrote its own payload behind mcm's `MCMARCHIVE` id, is removed |
 | LZTURBO (powturbo) | closed format: the codec is distributed only as binaries and no description of its bitstream has been published, so there is nothing to convert, derive a specification from, or prove against beyond black-box output | removed: it was an LZ4-style byte-aligned LZ77 (4-bit literal and match lengths, 255-continued) with 3-byte offsets in a block header of our own, which `BB_Lz4` already covers with a real format |
 
 ## ➕ Ours only
 
-These 455 registry ids are listed by none of the seven sources:
+These 457 registry ids are listed by none of the seven sources:
 
 | Kind | Count | Typical members |
 | --- | ---: | --- |
-| archive | 185 | game archives (`Big`, `Gob`, `Grp`, `Hog`, `Mpq`, `Vpk`, `Wad`), document containers (`Docx`, `Odt`, `Epub`, `Xps`), scientific/data stores (`Hdf5`, `NetCdf`, `Parquet`, `Fits`), backup images (`Aomei`, `Macrium`, `Veeam`, `Paragon`), exe packers (`AsPack`, `Themida`, `VmProtect`) |
+| archive | 186 | game archives (`Big`, `Gob`, `Grp`, `Hog`, `Mpq`, `Vpk`, `Wad`), document containers (`Docx`, `Odt`, `Epub`, `Xps`), scientific/data stores (`Hdf5`, `NetCdf`, `Parquet`, `Fits`), backup images (`Aomei`, `Macrium`, `Veeam`, `Paragon`), exe packers (`AsPack`, `Themida`, `VmProtect`) |
 | media | 128 | audio codecs and containers, tracker modules, image and video demuxers |
-| codec | 96 | building blocks no source names as a method (LZ77 family, entropy coders, context mixers) |
+| codec | 97 | building blocks no source names as a method (LZ77 family, entropy coders, context mixers) |
 | filesystem | 28 | retro and niche filesystems (`TrDos`, `Ti99`, `Human68k`, `Pc98`, `Xenix`, `SysV`, `LittleFs`, `DoubleSpace`, `Stacker`, `Vdfs`) |
 | compression | 18 | stream formats such as `Lzham`, `Lizard`, `Density`, `Yaz0`, `RefPack`, `Rnc`, `BriefLz` |
 

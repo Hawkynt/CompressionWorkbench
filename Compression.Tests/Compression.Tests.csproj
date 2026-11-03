@@ -122,6 +122,10 @@
     <EmbeddedResource Include="Firmware\ReferenceVectors\*" Exclude="Firmware\ReferenceVectors\README.md">
       <LogicalName>FirmwareVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Archives mcm 0.84 wrote; see Mcm/Vectors/README.md. -->
+    <EmbeddedResource Include="Mcm\Vectors\*.mcm">
+      <LogicalName>McmVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A cabinet with a Quantum folder Microsoft's tools wrote; see Cab/QuantumVectors/README.md. -->
     <EmbeddedResource Include="Cab\QuantumVectors\*.cab">
       <LogicalName>CabQuantumVectors.%(Filename)%(Extension)</LogicalName>
