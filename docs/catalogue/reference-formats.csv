@@ -375,17 +375,17 @@ KiriKiri XP3,xp3,game,,,,,R,,Y,2,,,,,,MISSING,,
 LiveMaker,gal,game,,,,,R,,,1,,,,,,MISSING,,
 Ren'Py archive (RPA),rpa,game,,,,,R,,,1,,Rpa,Y,Y,Y,OK,,
 RPG Maker archives,rgssad;rgss2a;rgss3a;rpgmvp;rpgmvo;rpgmvm,game,,,,,R,,,1,,Rgss,Y,Y,Y,PARTIAL,,RGSSAD v1-3 only; MV/MZ asset encryption (.rpgmv*) has no descriptor
-Smile Game Builder pack,sgbpack,game,,,,,R,,,1,,,,,,MISSING,,
-Telltale archive (TTARCH),ttarch,game,,,,,R,,,1,,,,,,MISSING,,
+Smile Game Builder pack,sgbpack,game,,,,,R,,,1,,,,,,MISSING,,"refused: no specification or licence-compatible implementation is available (the sgbdec tool UniExtract2 used is gone), no redistributable sample and no free packer to test against"
+Telltale archive (TTARCH),ttarch,game,,,,,R,,,1,,,,,,MISSING,,"refused: the only implementation (ttarchext) is GPL, so oracle-only; archives are Blowfish-encrypted with per-game keys and use zlib or Oodle; no freely redistributable archive and no public packer to test against"
 Unity assets / bundles,unity3d;assets;unitypackage;resource,game,,,,,R,,,1,,UnityBundle,Y,Y,Y,PARTIAL,,UnityFS bundles only; .unitypackage (tar.gz) and serialized-file internals are not handled
 Unreal Engine PAK,pak,game,,,,,R,,,1,,UnrealPak,Y,Y,,OK,,
 UTAGE,utage,game,,,,,R,,,1,,,,,,MISSING,,
-Visionaire engine,vis;vc001;vv001,game,,,,,R,,,1,,,,,,MISSING,,
+Visionaire engine,vis;vc001;vv001,game,,,,,R,,,1,,,,,,MISSING,,"refused: VIS3/VIS5 archives hash their file names (the names live in the compiled game.veb) and XOR-encrypt members with per-file keys; only commercial games and the commercial editor produce them; no redistributable sample or free oracle"
 WinterMute DCP,dcp,game,,,,,R,,,1,,,,,,MISSING,,
-Wolf RPG Editor,wolf,game,,,,,R,,,1,,,,,,MISSING,,
+Wolf RPG Editor,wolf,game,,,,,R,,,1,,,,,,MISSING,,"not implemented yet: .wolf is a DxLib DXA archive under a per-version key (DXA v8 with its own key scheme from Editor 3); the free editor only packs through its GUI, so proof needs GARbro plus the editor's Game.exe"
 YU-RIS (YPF),ypf;ycg,game,,,,,R,,,1,,Ypf,Y,Y,Y,OK,,
 Chromium resource pack (.pak),pak,game,,,,,R,,,1,,,,,,MISSING,,
-HMM Packfile,pak,game,,,,,,fmt/1876,,1,,,,,,MISSING,,
+HMM Packfile,pak,game,,,,,,fmt/1876,,1,,,,,,MISSING,,"refused: HMMSYS PackFile of Haemimont games (Tzar, Celtic Kings); the implementations (ReTzar, Game Extractor) are GPL, so oracle-only, and every known archive ships with a commercial game; no redistributable sample to verify against"
 Acorn ADFS,adf;adl;acorn,filesystem,,,,,,,Y,1,,Adfs,Y,Y,Y,OK,,
 AdvFS,tru64,filesystem,,,,,,,Y,1,,AdvFs,Y,Y,Y,OK,,
 APFS,apfs,filesystem,R,,,R,,,Y,3,https://developer.apple.com/support/downloads/Apple-File-System-Reference.pdf,Apfs,Y,Y,Y,PARTIAL,,"no decmpfs (LZVN/LZFSE) compressed files, no encryption (ApfsReader.cs)"
