@@ -32,8 +32,8 @@ namespace FileFormat.PartitionedDisk;
 /// partition's own filesystem editor, working in place on a staged window over the partition —
 /// refused when the filesystem has no lossless in-place editor, and committed only when the whole
 /// edit succeeds. Whole partitions are added (a root-level filesystem or <c>*.raw</c> image) and
-/// deleted (<c>PartitionN_Type</c>) on GPT and MBR tables. <see cref="Create"/> lays partition
-/// images out on a fresh GPT or MBR disk.
+/// deleted (<c>PartitionN_Type</c>) on GPT, MBR and Apple Partition Map tables. <see cref="Create"/>
+/// lays partition images out on a fresh GPT, MBR or APM disk.
 /// </para>
 /// References:
 /// <list type="bullet">
@@ -217,8 +217,9 @@ public sealed class PartitionedDiskFormatDescriptor : IFormatDescriptor, IArchiv
   /// </para>
   /// <para>
   /// Options (<see cref="FormatCreateOptions.FormatSpecific"/>): <c>scheme</c> = <c>gpt</c>
-  /// (default, up to 128 partitions, named after the input) or <c>mbr</c> (up to 4 primaries,
-  /// below 2^32 sectors); <c>sectorSize</c> = <c>512</c> (default) or <c>4096</c> for a 4Kn disk.
+  /// (default, up to 128 partitions, named after the input), <c>mbr</c> (up to 4 primaries,
+  /// below 2^32 sectors) or <c>apm</c> (an Apple Partition Map of 63 entries, 512- or 2048-byte
+  /// blocks); <c>sectorSize</c> = <c>512</c> (default) or <c>4096</c> for a 4Kn disk, 2048 for APM.
   /// </para>
   /// </remarks>
   /// <exception cref="ArgumentException">No inputs, a loose file, or an unknown option value.</exception>
@@ -227,10 +228,15 @@ public sealed class PartitionedDiskFormatDescriptor : IFormatDescriptor, IArchiv
     ArgumentNullException.ThrowIfNull(inputs);
     options ??= new FormatCreateOptions();
 
-    var scheme = (options.GetString("scheme") ?? "gpt").ToLowerInvariant() switch {
+    var schemeName = (options.GetString("scheme") ?? "gpt").ToLowerInvariant();
+    if (schemeName is "apm" or "mac") {
+      CreateApm(output, inputs, options);
+      return;
+    }
+    var scheme = schemeName switch {
       "gpt" => PartitionScheme.Gpt,
       "mbr" or "dos" or "msdos" => PartitionScheme.Mbr,
-      var other => throw new ArgumentException($"Unknown partition scheme '{other}'; use gpt or mbr.", nameof(options)),
+      var other => throw new ArgumentException($"Unknown partition scheme '{other}'; use gpt, mbr or apm.", nameof(options)),
     };
     var sectorSize = int.TryParse(options.GetString("sectorSize") ?? "512", out var ss) ? ss : 0;
     if (!PartitionEditor.SupportedSectorSizes.Contains(sectorSize))
@@ -280,6 +286,58 @@ public sealed class PartitionedDiskFormatDescriptor : IFormatDescriptor, IArchiv
         content.CopyTo(output);
       }
       editor.AddPartition(start, length, type, scheme == PartitionScheme.Gpt ? GptLabel(input.ArchiveName) : null);
+    }
+    output.Flush();
+  }
+
+  /// <summary>
+  /// An Apple Partition Map disk: the descriptor record, a 63-entry map, then one partition per
+  /// image from 1 MiB on, each at the next 1 MiB boundary and typed after its filesystem
+  /// (<c>Apple_HFS</c>, <c>Apple_UFS</c>, otherwise <c>Apple_UNIX_SVR2</c>), named after the input.
+  /// </summary>
+  private static void CreateApm(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var blockSize = int.TryParse(options.GetString("sectorSize") ?? "512", out var bs) ? bs : 0;
+    if (blockSize is not (512 or 2048))
+      throw new ArgumentException("An Apple Partition Map uses 512- or 2048-byte blocks.", nameof(options));
+    var images = inputs.Where(i => !i.IsDirectory && !string.IsNullOrEmpty(i.ArchiveName)).ToList();
+    if (images.Count == 0)
+      throw new ArgumentException("A partitioned disk needs at least one partition image.", nameof(inputs));
+    if (images.All(i => PartitionName.IsMatch(Path.GetFileName(i.ArchiveName))))
+      images = [.. images.OrderBy(i => int.Parse(PartitionName.Match(Path.GetFileName(i.ArchiveName)).Groups[1].Value,
+        System.Globalization.CultureInfo.InvariantCulture))];
+    if (images.Count * 2 + 2 > ApmEditor.DefaultMapBlocks)
+      throw new ArgumentException($"An Apple Partition Map of {ApmEditor.DefaultMapBlocks} entries holds {(ApmEditor.DefaultMapBlocks - 2) / 2} aligned partitions.", nameof(inputs));
+
+    const long alignment = 1024 * 1024;
+    var layout = new List<(ArchiveInputInfo Input, long Start, long Length, PartitionType Type)>();
+    var cursor = alignment;
+    foreach (var image in images) {
+      using var content = OpenInput(image);
+      var type = DetectPartitionType(content);
+      if (type is null && !IsNamedPartitionImage(image.ArchiveName))
+        throw new ArgumentException(
+          $"'{image.ArchiveName}' is neither a filesystem image nor a raw partition image (*.raw/*.img); a disk holds partitions, not loose files.",
+          nameof(inputs));
+      if (content.Length == 0)
+        throw new ArgumentException($"'{image.ArchiveName}' is empty; a partition needs at least one sector.", nameof(inputs));
+      var length = (content.Length + blockSize - 1) / blockSize * blockSize;
+      layout.Add((image, cursor, length, type ?? PartitionType.Linux));
+      cursor = (cursor + length + alignment - 1) / alignment * alignment;
+    }
+    var diskLength = cursor;
+    if (diskLength / blockSize > uint.MaxValue)
+      throw new ArgumentException("The images need more than 2^32 blocks, which an Apple Partition Map cannot address.", nameof(inputs));
+
+    output.SetLength(0);
+    output.SetLength(diskLength);
+    var editor = ApmEditor.CreateEmpty(output, blockSize);
+    foreach (var (input, start, length, type) in layout) {
+      using (var content = OpenInput(input)) {
+        output.Position = start;
+        content.CopyTo(output);
+      }
+      var label = GptLabel(input.ArchiveName);
+      editor.AddPartition(start / blockSize, length / blockSize, ApmEditor.TypeFor(type), label.Length > 32 ? label[..32] : label);
     }
     output.Flush();
   }

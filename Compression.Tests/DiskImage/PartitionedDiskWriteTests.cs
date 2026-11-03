@@ -96,7 +96,7 @@ public class PartitionedDiskWriteTests {
     Assert.That(() => CreateDisk("mbr", 512, images[..4]), Throws.Nothing);
   }
 
-  [TestCase("scheme", "apm")]
+  [TestCase("scheme", "sun")]
   [TestCase("sectorSize", "1024")]
   [Category("ErrorHandling")]
   public void Given_UnknownOption_When_Created_Then_Refused(string key, string value) {
