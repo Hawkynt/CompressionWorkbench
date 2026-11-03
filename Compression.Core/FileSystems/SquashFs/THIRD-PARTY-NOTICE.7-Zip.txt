@@ -1,0 +1,16 @@
+7-Zip SquashFS handler — converted to C#
+
+Source:   7-Zip 23.01, 7z2301-src.7z from https://www.7-zip.org/a/7z2301-src.7z,
+          CPP/7zip/Archive/SquashfsHandler.cpp
+Author:   Igor Pavlov
+Licence:  GNU LGPL 2.1 or later (https://www.7-zip.org/license.txt); carried into this
+          LGPL-3.0-or-later code base as permitted by section 3 of the LGPL 2.1
+
+SquashFsLegacyReader.cs is a conversion of the parts of that handler that read SquashFS
+1.x, 2.x and 3.x images: the superblock fields per major version (CHeader::Parse3), the
+inode layouts and their big-endian bit-field order (CNode::Parse1/Parse2/Parse3), the
+metadata-block framing with the optional check byte (ReadMetadataBlock), the directory
+header and entry layouts (OpenDir), the fragment index (Open2), the block lists
+(GetPackSize), the mtime offsets and the uid/gid lookup with the "same as uid" gid index
+(GetProperty). The C++ structure was not kept; the reader is written against this
+code base's own zlib decoder, which also checks each block's Adler-32.
