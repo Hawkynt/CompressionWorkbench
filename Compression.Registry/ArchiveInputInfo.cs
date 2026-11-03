@@ -102,6 +102,17 @@ public sealed record ArchiveInputInfo(
   /// otherwise the file at <see cref="FullPath"/>. Descriptors should call this
   /// instead of <c>File.ReadAllBytes(FullPath)</c> so they transparently support
   /// in-memory (temp-free) creation and conversion.</summary>
-  public byte[] ReadContent()
-    => this.InMemoryContent ?? System.IO.File.ReadAllBytes(this.FullPath);
+  public byte[] ReadContent() {
+    if (this.InMemoryContent != null) return this.InMemoryContent;
+    var data = System.IO.File.ReadAllBytes(this.FullPath);
+    ReadObserver?.Invoke(data.LongLength);
+    return data;
+  }
+
+  /// <summary>
+  /// Told the byte count of every on-disk input as <see cref="ReadContent"/> reads it, so a host
+  /// can show progress while an archive is created or rebuilt. Null when nobody listens. It is
+  /// process-wide and may be called from several threads at once (parallel writers).
+  /// </summary>
+  public static Action<long>? ReadObserver { get; set; }
 }
