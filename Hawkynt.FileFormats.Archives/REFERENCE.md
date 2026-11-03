@@ -13241,6 +13241,81 @@ CSC: the stream format of Fu Siyuan's libcsc (https://github.com/fusiyuan2010/CS
 | `Compress` | `static void Compress(Stream input, Stream output, CscEncoderOptions options)` | Compresses with explicit encoder options. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a CSC stream. |
 
+### Namespace `FileFormat.Ctw`
+
+[`CtwBuildingBlock`](#ctwbuildingblock) · [`CtwFormatDescriptor`](#ctwformatdescriptor) · [`CtwSettings`](#ctwsettings) · [`CtwStream`](#ctwstream)
+
+#### `CtwBuildingBlock`
+
+CTW 0.1 (Context Tree Weighting, TU Eindhoven) as a building block: a complete `.ctw` file with the reference tool's default parameters (depth 6, 2^22 nodes, zero-redundancy estimator, strict pruning), byte-identical to what `ctw e` writes. The header records the parameters, so the block decodes on its own.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CtwBuildingBlock` | `CtwBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `CtwFormatDescriptor`
+
+Files of the CTW 0.1 compression utility (Context Tree Weighting; Franken & Peeters, TU Eindhoven, 2002), byte-identical to the reference tool. See `docs/CTW-ON-DISK.md`.
+
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CtwFormatDescriptor` | `CtwFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | None: the header starts 00 0C 00 00, too common to identify a file by. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The reference tool's tree depth (`-d`); every other parameter keeps its default. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Compress` | `void Compress(Stream input, Stream output)` |  |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Compresses with the selected tree depth. |
+| `Decompress` | `void Decompress(Stream input, Stream output)` |  |
+
+#### `CtwSettings`
+
+The parameters a CTW 0.1 file records in its header.
+
+Implements `IEquatable<CtwSettings>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CtwSettings` | `CtwSettings(int TreeDepth = 6, int Probes = 32, int NodeCountLog2 = 22, int FileBufferLog2 = 22, int MaxLogBetaLog2 = 10, bool StrictPruning = true, bool RootWeighting = false, bool ZeroRedundancy = true)` | The parameters a CTW 0.1 file records in its header. |
+| `FileBufferLog2` | `int FileBufferLog2 { get; init; }` |  |
+| `MaxLogBetaLog2` | `int MaxLogBetaLog2 { get; init; }` |  |
+| `NodeCountLog2` | `int NodeCountLog2 { get; init; }` |  |
+| `Probes` | `int Probes { get; init; }` |  |
+| `RootWeighting` | `bool RootWeighting { get; init; }` |  |
+| `StrictPruning` | `bool StrictPruning { get; init; }` |  |
+| `TreeDepth` | `int TreeDepth { get; init; }` |  |
+| `ZeroRedundancy` | `bool ZeroRedundancy { get; init; }` |  |
+| `Validate` | `void Validate()` | Throws when a value is outside what the format and the reference tool accept. |
+
+#### `CtwStream`
+
+Files of the CTW 0.1 compression utility (Franken & Peeters, TU Eindhoven, 2002): a 12-byte header with the model parameters, then the log-domain arithmetic code of the input.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses with the reference tool's default parameters. |
+| `Compress` | `static void Compress(Stream input, Stream output, CtwSettings settings)` | Compresses with the given parameters. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a CTW 0.1 file. |
+
 ### Namespace `FileFormat.Cvsd`
 
 [`CvsdFormatDescriptor`](#cvsdformatdescriptor)

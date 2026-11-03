@@ -13,9 +13,9 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Measure | Value |
 | --- | ---: |
-| Catalogue rows | 983 |
+| Catalogue rows | 984 |
 | … formats listed by at least one source | 525 |
-| … registry ids no source lists (OURS-ONLY) | 458 |
+| … registry ids no source lists (OURS-ONLY) | 459 |
 | Source-listed rows mapped to something here | 285 / 525 (54.3 %) |
 | … of rows listed by ≥ 2 sources | 122 / 138 (88 %) |
 | … of rows listed by ≥ 3 sources | 66 / 67 (PEA is the one missing) |
@@ -27,7 +27,7 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | `READ-ONLY-BUT-SOURCES-WRITE` | 22 | we only read it; a source or the format's own tool writes it |
 | `PARTIAL` | 38 | covered, but the reader handles only part of the format (see the table below) |
 | `OK` | 235 | covered with no known gap against what the sources list |
-| `OURS-ONLY` | 458 | in our registry, listed by none of the seven sources |
+| `OURS-ONLY` | 459 | in our registry, listed by none of the seven sources |
 
 ### Per source
 
@@ -210,7 +210,7 @@ running real-world samples. The file named at the end of each row is where the l
 
 ## ➕ Ours only
 
-These 458 registry ids are listed by none of the seven sources:
+These 459 registry ids are listed by none of the seven sources:
 
 | Kind | Count | Typical members |
 | --- | ---: | --- |
@@ -218,7 +218,7 @@ These 458 registry ids are listed by none of the seven sources:
 | media | 128 | audio codecs and containers, tracker modules, image and video demuxers |
 | codec | 97 | building blocks no source names as a method (LZ77 family, entropy coders, context mixers) |
 | filesystem | 28 | retro and niche filesystems (`TrDos`, `Ti99`, `Human68k`, `Pc98`, `Xenix`, `SysV`, `LittleFs`, `DoubleSpace`, `Stacker`, `Vdfs`) |
-| compression | 20 | stream formats such as `Lzham`, `Lizard`, `Density`, `Yaz0`, `RefPack`, `Rnc`, `BriefLz` |
+| compression | 21 | stream formats such as `Lzham`, `Lizard`, `Density`, `Yaz0`, `RefPack`, `Rnc`, `BriefLz` |
 
 A few of these are plain ZIP/OLE2 variants that 7-Zip opens as ZIP or Compound, without naming them
 separately: `Docx`, `Xlsx`, `Pptx`, `Odt`, `Epub`, `Xpi`, `Ipa`. They count as ours-only here only

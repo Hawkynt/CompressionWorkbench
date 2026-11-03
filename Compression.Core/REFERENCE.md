@@ -819,26 +819,6 @@ Implements `IEquatable<CscStreamProperties>`.
 | `Validate` | `void Validate()` | Rejects headers libcsc itself would refuse (window outside 32 KiB..1 GiB) and the empty block sizes it would then fail on, so a damaged stream fails up front instead of mid-decode. |
 | `Write` | `void Write(Span<byte> destination)` | Serializes the header. |
 
-### Namespace `Compression.Core.Dictionary.Ctw`
-
-[`CtwBuildingBlock`](#ctwbuildingblock)
-
-#### `CtwBuildingBlock`
-
-Exposes a most-frequent-symbol context predictor as a benchmarkable building block. Uses a byte-level context model with depth 2 (previous 2 bytes). For each byte, it predicts the most frequently observed byte in a context hierarchy (order 2, then 1, then 0) and records a hit/miss bitmap plus literal miss bytes. Header: 4-byte LE original size, 1-byte max depth, then bit-packed hit/miss flags followed by miss literal bytes.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `CtwBuildingBlock` | `CtwBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
 ### Namespace `Compression.Core.Dictionary.Density`
 
 [`DensityBuildingBlock`](#densitybuildingblock) · [`DensityChameleonCompressor`](#densitychameleoncompressor) · [`DensityChameleonDecompressor`](#densitychameleondecompressor) · [`DensityConstants`](#densityconstants)
@@ -3324,6 +3304,26 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SuffixTreeBuildingBlock` | `SuffixTreeBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+### Namespace `Compression.Core.Dictionary.SymbolPrediction`
+
+[`FrequentSymbolPredictorBuildingBlock`](#frequentsymbolpredictorbuildingblock)
+
+#### `FrequentSymbolPredictorBuildingBlock`
+
+A predictor of this repository's own design: for each byte it predicts the most frequent byte seen after the same two-byte context (falling back to one and zero bytes), and stores a hit/miss bitmap plus the missed bytes. Layout: 4-byte little-endian length, 1-byte depth (2), the bit-packed hit flags, then the miss literals. No other program reads or writes it.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FrequentSymbolPredictorBuildingBlock` | `FrequentSymbolPredictorBuildingBlock()` |  |
 | `Description` | `string Description { get; }` |  |
 | `DisplayName` | `string DisplayName { get; }` |  |
 | `Family` | `AlgorithmFamily Family { get; }` |  |

@@ -12,6 +12,10 @@
     <EmbeddedResource Include="IaArc/ReferenceVectors/*.arc;IaArc/ReferenceVectors/*.arc.gz;IaArc/ReferenceVectors/warcio-listing.txt">
       <LogicalName>IaArcVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Files the CTW 0.1 reference utility wrote; see Ctw/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Ctw/ReferenceVectors/*.ctw;Ctw/ReferenceVectors/manifest.tsv">
+      <LogicalName>CtwVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- mkfs.bfs volume filled by the Linux bfs driver; see Svr4Bfs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Svr4Bfs/ReferenceVectors/*.gz;Svr4Bfs/ReferenceVectors/*.manifest">
       <LogicalName>Svr4BfsVectors.%(Filename)%(Extension)</LogicalName>

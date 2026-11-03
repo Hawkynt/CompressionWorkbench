@@ -1,31 +1,26 @@
 using System.Buffers.Binary;
 using Compression.Registry;
 
-namespace Compression.Core.Dictionary.Ctw;
+namespace Compression.Core.Dictionary.SymbolPrediction;
 
 /// <summary>
-/// Exposes a most-frequent-symbol context predictor as a benchmarkable building block.
-/// Uses a byte-level context model with depth 2 (previous 2 bytes).
-/// For each byte, it predicts the most frequently observed byte in a context hierarchy
-/// (order 2, then 1, then 0) and records a hit/miss bitmap plus literal miss bytes.
-/// Header: 4-byte LE original size, 1-byte max depth, then bit-packed hit/miss flags
-/// followed by miss literal bytes.
+/// A predictor of this repository's own design: for each byte it predicts the most frequent byte
+/// seen after the same two-byte context (falling back to one and zero bytes), and stores a hit/miss
+/// bitmap plus the missed bytes. Layout: 4-byte little-endian length, 1-byte depth (2), the
+/// bit-packed hit flags, then the miss literals. No other program reads or writes it.
 /// </summary>
 /// <remarks>
-/// Despite the historical "CTW" name, this is <b>not</b> the Context Tree Weighting
-/// method of Willems, Shtarkov &amp; Tjalkens: it has no Krichevsky-Trofimov estimator,
-/// no binary context tree and no recursive weighting between a node's own estimate and
-/// its children — it is a simple order-2/1/0 most-frequent-symbol predictor with a
-/// hit/miss flag stream. See <see cref="Entropy.ContextMixing.Ctw.ContextTreeWeightingBuildingBlock"/>
-/// ("BB_ContextTreeWeighting") for a genuine implementation of the CTW method.
+/// It is not Context Tree Weighting: see <c>BB_CTW</c> for the CTW 0.1 reference coder and
+/// <see cref="Entropy.ContextMixing.Ctw.ContextTreeWeightingBuildingBlock"/> for this
+/// repository's own implementation of the CTW method.
 /// </remarks>
-public sealed class CtwBuildingBlock : IBuildingBlock {
+public sealed class FrequentSymbolPredictorBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_CTW";
+  public string Id => "BB_FrequentSymbolPredictor";
   /// <inheritdoc/>
-  public string DisplayName => "Context Predictor (order-2/1/0)";
+  public string DisplayName => "Most-frequent-symbol predictor (orders 2/1/0)";
   /// <inheritdoc/>
-  public string Description => "Most-frequent-symbol predictor over an order-2/1/0 byte context hierarchy with a hit/miss bitmap; not the Context Tree Weighting (CTW) method despite the legacy block name";
+  public string Description => "Predicts the most frequent byte after the last two, one or zero bytes and stores a hit/miss bitmap plus the missed bytes; this repository's own layout";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
