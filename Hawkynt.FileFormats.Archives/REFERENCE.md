@@ -32632,7 +32632,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from an existing XAR archive. Uses `XarModifier` for random-access I/O on the TOC. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from an existing XAR archive. Uses `XarModifier` for random-access I/O on the TOC. A name is the full path; a folder goes with everything in it. |
 
 #### `XarModifier`
 
@@ -32640,7 +32640,8 @@ Random-access in-place modifier for XAR archives. Reads the existing header + co
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream xar, string name, byte[] data, DateTime? lastModified = null)` | Adds a regular file entry to an existing XAR archive. The new entry's data is zlib-compressed and appended to the end of the heap; the TOC is then recompressed and rewritten at the start of the file with the heap shifted by the TOC-size delta. |
+| `AddDirectory` | `static void AddDirectory(Stream xar, string name, DateTime? lastModified = null, int? mode = null)` | Adds a folder (with any missing parents) to an existing XAR archive; a folder that is already there is left as it is. |
+| `AddFile` | `static void AddFile(Stream xar, string name, byte[] data, DateTime? lastModified = null, int? mode = null)` | Adds a regular file entry to an existing XAR archive. The new entry's data is zlib-compressed and appended to the end of the heap; the TOC is then recompressed and rewritten at the start of the file with the heap shifted by the TOC-size delta. |
 | `RemoveFile` | `static bool RemoveFile(Stream xar, string name, bool wipeData = true)` | Removes the named entry from a XAR archive. Returns true if the entry was found and dropped from the TOC. When `wipeData` is true (default) the orphan heap bytes are zeroed in place. The heap itself is not compacted: XAR readers locate entries by explicit `<offset>`, so leaving gaps is legal. |
 
 #### `XarReader`
@@ -32663,7 +32664,8 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `XarWriter` | `XarWriter(Stream output, bool leaveOpen = false)` | Creates a new XAR writer. |
-| `AddFile` | `void AddFile(string name, byte[] data, DateTime? modified = null)` | Adds a file to the archive. |
+| `AddDirectory` | `void AddDirectory(string name, DateTime? modified = null, int? mode = null)` | Adds a folder (and its parents); needed only for empty ones. |
+| `AddFile` | `void AddFile(string name, byte[] data, DateTime? modified = null, int? mode = null)` | Adds a file to the archive; a path with '/' puts it into folders. |
 | `Dispose` | `void Dispose()` | Writes the archive and flushes. |
 
 ### Namespace `FileFormat.Xi`
