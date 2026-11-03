@@ -73,6 +73,10 @@ internal sealed class QuantumRangeEncoder {
 
     var bits = new List<int>(this._bits);
     var shift = 0;
+    var rawCount = 0;
+    foreach (var (_, _, count) in this._rawBits)
+      rawCount += count;
+
     foreach (var (at, value, count) in this._rawBits) {
       var index = at + shift;
 
@@ -87,10 +91,12 @@ internal sealed class QuantumRangeEncoder {
       shift += count;
     }
 
-    while (bits.Count % 8 != 0)
-      bits.Add(0);
-
-    var data = new byte[bits.Count / 8 + QuantumConstants.TrailingSlackBytes];
+    // The decoder has read its sixteen priming bits, every coder and raw bit, and then at least
+    // two zero bits up to a byte boundary when the block ends; the block is exactly that long.
+    // (7-Zip insists on it; cabextract tolerates more.) Raw bits near the end can lie past the
+    // coder's last bit, but never past that point.
+    var totalBits = QuantumConstants.TrailingSlackBytes * 8 + this._shifts + rawCount + 2;
+    var data = new byte[(totalBits + 7) / 8];
     for (var i = 0; i < bits.Count; ++i)
       if (bits[i] != 0)
         data[i >> 3] |= (byte)(0x80 >> (i & 7));

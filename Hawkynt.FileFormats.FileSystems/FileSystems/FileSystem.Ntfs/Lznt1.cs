@@ -4,174 +4,189 @@ using System.Buffers.Binary;
 namespace FileSystem.Ntfs;
 
 /// <summary>
-/// LZNT1 compression used by NTFS for compressed files.
-/// Operates on 4KB compression units. Each unit is independently compressed.
+/// LZNT1, the codec of NTFS compressed files ([MS-XCA] section 2.5): a sequence of chunks of at
+/// most 4096 uncompressed bytes, each behind a 16-bit header (bit 15 compressed, bits 12-14 the
+/// signature 3, bits 0-11 the chunk's stored size - 3). A compressed chunk is flag bytes, each
+/// governing eight literals or 16-bit back-references whose displacement field grows with the
+/// position in the chunk: at least 4 bits, as many as the position needs, the rest is length.
 /// </summary>
 public static class Lznt1 {
-  private const int BlockSize = 4096;
+  private const int ChunkSize = 4096;
+  private const int MinMatch = 3;
+  private const ushort CompressedFlag = 0x8000;
+  private const ushort Signature = 0x3000;
+  private const int HashBits = 12;
+  private const int MaxChain = 64;
 
-  /// <summary>Decompresses LZNT1-compressed data.</summary>
+  /// <summary>Decompresses LZNT1 data into exactly <paramref name="uncompressedSize"/> bytes (zero-padded when the data ends early).</summary>
   public static byte[] Decompress(ReadOnlySpan<byte> input, int uncompressedSize) {
-    var output = new List<byte>(uncompressedSize);
+    var output = new byte[uncompressedSize];
+    var outPos = 0;
     var pos = 0;
 
-    while (pos + 2 <= input.Length && output.Count < uncompressedSize) {
+    while (pos + 2 <= input.Length && outPos < uncompressedSize) {
       var header = BinaryPrimitives.ReadUInt16LittleEndian(input[pos..]);
       pos += 2;
+      if (header == 0)
+        break;
 
-      if (header == 0) break;
+      var stored = (header & 0x0FFF) + 1;
+      if (pos + stored > input.Length)
+        throw new InvalidDataException("LZNT1 chunk runs past the end of the data.");
 
-      var chunkSize = (header & 0x0FFF) + 1;
-      var isCompressed = (header & 0x8000) != 0;
+      var chunk = input.Slice(pos, stored);
+      pos += stored;
 
-      if (!isCompressed) {
-        // Uncompressed chunk — copy raw bytes
-        var toCopy = Math.Min(chunkSize, input.Length - pos);
-        toCopy = Math.Min(toCopy, uncompressedSize - output.Count);
-        for (var i = 0; i < toCopy; i++)
-          output.Add(input[pos + i]);
-        pos += chunkSize;
+      if ((header & CompressedFlag) == 0) {
+        var copy = Math.Min(chunk.Length, uncompressedSize - outPos);
+        chunk[..copy].CopyTo(output.AsSpan(outPos));
+        outPos += copy;
         continue;
       }
 
-      // Compressed chunk
-      var chunkEnd = pos + chunkSize;
-      if (chunkEnd > input.Length) chunkEnd = input.Length;
-      var blockStart = output.Count;
-
-      while (pos < chunkEnd && output.Count < uncompressedSize) {
-        if (pos >= input.Length) break;
-        var flagByte = input[pos++];
-
-        for (var bit = 0; bit < 8 && pos < chunkEnd && output.Count < uncompressedSize; bit++) {
-          if ((flagByte & (1 << bit)) == 0) {
-            // Literal byte
-            if (pos < input.Length)
-              output.Add(input[pos++]);
-          } else {
-            // Match reference
-            if (pos + 2 > input.Length) break;
-            var token = BinaryPrimitives.ReadUInt16LittleEndian(input[pos..]);
-            pos += 2;
-
-            var posInBlock = output.Count - blockStart;
-            var offsetBits = GetOffsetBits(posInBlock);
-            var lengthBits = 16 - offsetBits;
-            var lengthMask = (1 << lengthBits) - 1;
-
-            var matchLength = (token & lengthMask) + 3;
-            var matchOffset = (token >> lengthBits) + 1;
-
-            for (var j = 0; j < matchLength && output.Count < uncompressedSize; j++) {
-              var srcIdx = output.Count - matchOffset;
-              output.Add(srcIdx >= 0 && srcIdx < output.Count ? output[srcIdx] : (byte)0);
-            }
-          }
-        }
-      }
-
-      pos = Math.Max(pos, chunkEnd);
+      outPos = DecompressChunk(chunk, output, outPos);
     }
 
-    return output.Count > uncompressedSize
-      ? output.GetRange(0, uncompressedSize).ToArray()
-      : [.. output];
+    return output;
   }
 
-  /// <summary>Compresses data using LZNT1.</summary>
-  public static byte[] Compress(ReadOnlySpan<byte> input) {
-    using var ms = new MemoryStream();
-
-    var offset = 0;
-    var hdrBuf = new byte[2];
-    while (offset < input.Length) {
-      var blockLen = Math.Min(BlockSize, input.Length - offset);
-      var block = input.Slice(offset, blockLen);
-      var compressed = CompressBlock(block);
-
-      if (compressed.Length < blockLen) {
-        // Write compressed chunk header
-        var header = (ushort)(0x8000 | (compressed.Length - 1));
-        BinaryPrimitives.WriteUInt16LittleEndian(hdrBuf, header);
-        ms.Write(hdrBuf);
-        ms.Write(compressed);
-      } else {
-        // Write uncompressed chunk header
-        var header = (ushort)(blockLen - 1);
-        BinaryPrimitives.WriteUInt16LittleEndian(hdrBuf, header);
-        ms.Write(hdrBuf);
-        ms.Write(block);
-      }
-
-      offset += blockLen;
-    }
-
-    return ms.ToArray();
-  }
-
-  private static byte[] CompressBlock(ReadOnlySpan<byte> block) {
-    using var ms = new MemoryStream();
+  private static int DecompressChunk(ReadOnlySpan<byte> chunk, byte[] output, int chunkStart) {
+    var outPos = chunkStart;
+    var limit = Math.Min(output.Length, chunkStart + ChunkSize);
     var pos = 0;
-
-    while (pos < block.Length) {
-      var flagPos = (int)ms.Position;
-      ms.WriteByte(0); // placeholder for flag byte
-      byte flags = 0;
-
-      for (var bit = 0; bit < 8 && pos < block.Length; bit++) {
-        var offsetBits = GetOffsetBits(pos);
-        var lengthBits = 16 - offsetBits;
-        var maxLength = (1 << lengthBits) - 1 + 3;
-        var maxOffset = (1 << offsetBits);
-
-        // Search for a match
-        var bestLen = 0;
-        var bestOff = 0;
-
-        if (pos >= 1) {
-          var searchStart = Math.Max(0, pos - maxOffset);
-          for (var s = pos - 1; s >= searchStart; s--) {
-            var len = 0;
-            while (pos + len < block.Length && len < maxLength && block[s + len] == block[pos + len])
-              len++;
-            if (len >= 3 && len > bestLen) {
-              bestLen = len;
-              bestOff = pos - s;
-              if (bestLen == maxLength) break;
-            }
-          }
+    while (pos < chunk.Length && outPos < limit) {
+      var flags = chunk[pos++];
+      for (var bit = 0; bit < 8 && pos < chunk.Length && outPos < limit; ++bit, flags >>= 1) {
+        if ((flags & 1) == 0) {
+          output[outPos++] = chunk[pos++];
+          continue;
         }
 
-        if (bestLen >= 3) {
-          // Match reference
-          flags |= (byte)(1 << bit);
-          var token = (ushort)(((bestOff - 1) << lengthBits) | (bestLen - 3));
-          var tb = new byte[2];
-          BinaryPrimitives.WriteUInt16LittleEndian(tb, token);
-          ms.Write(tb);
-          pos += bestLen;
-        } else {
-          // Literal
-          ms.WriteByte(block[pos++]);
-        }
+        if (pos + 2 > chunk.Length)
+          throw new InvalidDataException("LZNT1 back-reference cut off at the end of a chunk.");
+
+        var token = BinaryPrimitives.ReadUInt16LittleEndian(chunk[pos..]);
+        pos += 2;
+        var lengthBits = 16 - DisplacementBits(outPos - chunkStart);
+        var length = (token & ((1 << lengthBits) - 1)) + MinMatch;
+        var displacement = (token >> lengthBits) + 1;
+        if (displacement > outPos - chunkStart)
+          throw new InvalidDataException("LZNT1 back-reference points before the start of its chunk.");
+
+        var end = Math.Min(limit, outPos + length);
+        for (; outPos < end; ++outPos)
+          output[outPos] = output[outPos - displacement];
       }
+    }
 
-      // Patch flags
-      var savedPos = ms.Position;
-      ms.Position = flagPos;
-      ms.WriteByte(flags);
-      ms.Position = savedPos;
+    return outPos;
+  }
+
+  /// <summary>Compresses data as LZNT1: each 4096-byte chunk compressed, or stored when that is not smaller.</summary>
+  public static byte[] Compress(ReadOnlySpan<byte> input) {
+    using var ms = new MemoryStream(input.Length + input.Length / 16 + 16);
+    Span<byte> header = stackalloc byte[2];
+    var packed = new byte[ChunkSize + ChunkSize / 8 + 16];
+    var head = new int[1 << HashBits];
+    var prev = new int[ChunkSize];
+
+    for (var offset = 0; offset < input.Length; offset += ChunkSize) {
+      var chunk = input.Slice(offset, Math.Min(ChunkSize, input.Length - offset));
+      var size = CompressChunk(chunk, packed, head, prev);
+      if (size < chunk.Length) {
+        BinaryPrimitives.WriteUInt16LittleEndian(header, (ushort)(CompressedFlag | Signature | (size - 1)));
+        ms.Write(header);
+        ms.Write(packed, 0, size);
+      } else {
+        BinaryPrimitives.WriteUInt16LittleEndian(header, (ushort)(Signature | (chunk.Length - 1)));
+        ms.Write(header);
+        ms.Write(chunk);
+      }
     }
 
     return ms.ToArray();
   }
 
-  private static int GetOffsetBits(int posInBlock) {
-    if (posInBlock < 0x10) return 12;
-    // offset bits = 16 - ceil(log2(posInBlock))
-    var bits = 0;
-    var v = posInBlock - 1;
-    while (v > 0) { bits++; v >>= 1; }
-    return 16 - bits;
+  /// <summary>Compresses one chunk into <paramref name="packed"/>; returns its size (which may exceed the chunk).</summary>
+  private static int CompressChunk(ReadOnlySpan<byte> chunk, byte[] packed, int[] head, int[] prev) {
+    Array.Fill(head, -1);
+    var outPos = 0;
+    var pos = 0;
+    var inserted = 0;
+
+    while (pos < chunk.Length) {
+      var flagPos = outPos++;
+      var flags = 0;
+      for (var bit = 0; bit < 8 && pos < chunk.Length; ++bit) {
+        var lengthBits = 16 - DisplacementBits(pos);
+        var maxLength = Math.Min((1 << lengthBits) - 1 + MinMatch, chunk.Length - pos);
+        var maxDisplacement = 1 << (16 - lengthBits);
+
+        for (; inserted < pos; ++inserted)
+          Insert(chunk, inserted, head, prev);
+
+        var (bestLength, bestDisplacement) = FindMatch(chunk, pos, maxLength, maxDisplacement, head, prev);
+        if (bestLength >= MinMatch) {
+          flags |= 1 << bit;
+          var token = ((bestDisplacement - 1) << lengthBits) | (bestLength - MinMatch);
+          BinaryPrimitives.WriteUInt16LittleEndian(packed.AsSpan(outPos), (ushort)token);
+          outPos += 2;
+          pos += bestLength;
+        } else
+          packed[outPos++] = chunk[pos++];
+      }
+
+      packed[flagPos] = (byte)flags;
+    }
+
+    return outPos;
+  }
+
+  private static (int Length, int Displacement) FindMatch(ReadOnlySpan<byte> chunk, int pos, int maxLength, int maxDisplacement, int[] head, int[] prev) {
+    if (maxLength < MinMatch)
+      return (0, 0);
+
+    var bestLength = 0;
+    var bestDisplacement = 0;
+    var candidate = head[Hash(chunk, pos)];
+    for (var steps = 0; candidate >= 0 && steps < MaxChain; ++steps, candidate = prev[candidate]) {
+      var displacement = pos - candidate;
+      if (displacement > maxDisplacement)
+        break;
+
+      var length = 0;
+      while (length < maxLength && chunk[candidate + length] == chunk[pos + length])
+        ++length;
+
+      if (length > bestLength) {
+        bestLength = length;
+        bestDisplacement = displacement;
+        if (length == maxLength)
+          break;
+      }
+    }
+
+    return (bestLength, bestDisplacement);
+  }
+
+  private static void Insert(ReadOnlySpan<byte> chunk, int pos, int[] head, int[] prev) {
+    if (pos + MinMatch > chunk.Length)
+      return;
+
+    var h = Hash(chunk, pos);
+    prev[pos] = head[h];
+    head[h] = pos;
+  }
+
+  private static int Hash(ReadOnlySpan<byte> chunk, int pos)
+    => (int)(((uint)(chunk[pos] << 16 | chunk[pos + 1] << 8 | chunk[pos + 2]) * 2654435761u) >> (32 - HashBits));
+
+  /// <summary>Bits of a back-reference that hold the displacement at <paramref name="position"/> bytes into the chunk.</summary>
+  private static int DisplacementBits(int position) {
+    var bits = 4;
+    while (1 << bits < position)
+      ++bits;
+
+    return bits;
   }
 }

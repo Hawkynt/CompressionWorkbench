@@ -194,12 +194,13 @@ public sealed class GenericNrvPackedPeHandler : IExecutablePackerHandler {
     return best;
   }
 
-  private delegate byte[] NrvDecoder(ReadOnlySpan<byte> compressed, int exactOutputSize);
+  // The sizes here are estimates, so decoding stops at the stream's end code.
+  private delegate byte[] NrvDecoder(ReadOnlySpan<byte> compressed, int maxOutputSize);
 
   private static readonly (string Name, NrvDecoder Decode)[] Methods = [
-    ("nrv2b", Nrv2bBuildingBlock.DecompressRaw),
-    ("nrv2d", Nrv2dBuildingBlock.DecompressRaw),
-    ("nrv2e", Nrv2eBuildingBlock.DecompressRaw),
+    ("nrv2b", Nrv2bBuildingBlock.DecompressRawUpTo),
+    ("nrv2d", Nrv2dBuildingBlock.DecompressRawUpTo),
+    ("nrv2e", Nrv2eBuildingBlock.DecompressRawUpTo),
   ];
 
   private static bool LooksLikeRecoveredPayload(byte[] decoded, int compressedLength) {

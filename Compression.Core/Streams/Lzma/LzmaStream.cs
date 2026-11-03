@@ -54,8 +54,9 @@ public static class LzmaStream {
 
     output.Write(header);
 
-    // Write raw LZMA compressed data (end-of-stream marker included)
-    encoder.Encode(output, data);
+    // The header states the size, so the stream carries no end marker: that is what the
+    // LZMA SDK's encoder writes, and liblzma rejects a known size followed by a marker.
+    encoder.Encode(output, data, writeEndMarker: false);
   }
 
   /// <summary>

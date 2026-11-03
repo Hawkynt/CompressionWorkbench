@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 24 | |
+| A | 25 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 1 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 10 | |
@@ -68,6 +68,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Claim site | Upstream | Licence | Where the notice is |
 |---|---|---|---|
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.CompactPro/CompactProCodec.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.CompactPro/CompactProReader.cs` | XADMaster `XADCompactProParser.m`, `XADCompactProRLEHandle.m`, `XADCompactProLZHHandle.m`, fetched 2026-10-19 as recorded in the notice | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.CompactPro/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.Trx/TrxImage.cs`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.Seama/SeamaImage.cs` | binwalk v3 TRX, SEAMA and DLOB header layouts, revision `26713972e3f9f52dc37d4a421c4554b0bd9e82ef` | MIT | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.Trx/THIRD-PARTY-NOTICE.binwalk.txt`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.Seama/THIRD-PARTY-NOTICE.binwalk.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Fossil/FossilReader.cs` | plan9port Fossil `pack.c`, `vac.c`, `vac.h`, `source.c`, `file.c`, `dat.h`, revision `1f1396913fb5372408f442ed26933f5ae4b399cd` | MIT | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Fossil/THIRD-PARTY-NOTICE.Fossil.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidBootImage/AndroidBootImage.cs`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidBootImage/AndroidBootImageMetadata.cs` | AOSP mkbootimg `bootimg.h`, `mkbootimg.py` and `unpack_bootimg.py`, revision `d2bb0af5ba6d3198a3e99529c97eda1be0b5a093` | BSD-3-Clause and Apache-2.0 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.AndroidBootImage/THIRD-PARTY-NOTICE.mkbootimg.txt` |

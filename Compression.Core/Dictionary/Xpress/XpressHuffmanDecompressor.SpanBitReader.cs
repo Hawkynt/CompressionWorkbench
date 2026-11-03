@@ -78,6 +78,9 @@ public static partial class XpressHuffmanDecompressor {
       return (ushort)(low | (high << 8));
     }
 
+    /// <summary>Reads a raw 32-bit little-endian value from between the words.</summary>
+    public uint ReadRawUInt32() => this.ReadRawUInt16() | (uint)this.ReadRawUInt16() << 16;
+
     private ushort TakeWord() {
       var word = this._next + 2 <= this._input.Length
         ? BinaryPrimitives.ReadUInt16LittleEndian(this._input[this._next..])

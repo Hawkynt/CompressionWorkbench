@@ -116,8 +116,8 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [CBR](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cbr` | `.cbr` | R/W | ✅ | defrag · wipe | RAR-backed comic book archive | [rarlab.com](https://www.rarlab.com/technote.htm) |
 | [CBT](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cbt` | `.cbt` | R/W | ✅ | — | tar-backed comic book archive; 7-Zip reads ours and we read 7-Zip's | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9799919799/utilities/pax.html) |
 | [CBZ](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cbz` | `.cbz` | R/W | ✅ | defrag · wipe | ZIP-backed comic book archive | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
-| [CHM](https://en.wikipedia.org/wiki/Microsoft_Compiled_HTML_Help) | `Chm` | `.chm` | R/W | ✅ | defrag · wipe |  | [cabextract.org.uk](https://www.cabextract.org.uk/libmspack/) |
-| [Compact Pro](https://en.wikipedia.org/wiki/Compact_Pro) | `CompactPro` | `.cpt` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/MacPaw/XADMaster) |
+| [CHM](https://en.wikipedia.org/wiki/Microsoft_Compiled_HTML_Help) | `Chm` | `.chm` | R/W | ✅ | defrag · wipe | Reads HTML Help Workshop files as 7-Zip does (LZX window and reset interval from the control data); writes stored or LZX files 7-Zip extracts | [cabextract.org.uk](https://www.cabextract.org.uk/libmspack/) |
+| [Compact Pro](https://en.wikipedia.org/wiki/Compact_Pro) | `CompactPro` | `.cpt` | R/W | ✅ | wipe | Reads RLE and LZH+RLE forks (converted from XADMaster), resource forks as name.rsrc; writes RLE-only archives unar extracts | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [CPIO](https://en.wikipedia.org/wiki/Cpio) | `Cpio` | `.cpio` | R/W | ✅ | defrag · wipe | Reads and writes all four header variants — binary (both byte orders), `odc`, `newc` and `crc`, the last with its payload checksum verified; the `Format` option picks one and edits keep the archive's own | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html) |
 | [DAR (Disk ARchive)](https://en.wikipedia.org/wiki/Dar_(disk_archiver)) | `Dar` | `.dar` | WORM | ✅ | — | Reads formats 8.1–11.3, each verified on archives the dar release that writes it produced (2.4.24 to 2.8.6): single and multi-slice, tape marks, gzip / bzip2 / xz / zstd / lz4 / lzo in streaming or block mode, sparse files, hard links, members of any size streamed to disk; encrypted archives are refused. Writes 11.3 archives (stored, gzip, bzip2, xz, zstd, lz4), one slice or sliced at `SliceSize` / `FirstSliceSize`, with or without `TapeMarks`, streaming file data in bounded memory, with symlinks, uid/gid, permissions and times; dar 2.7.13 and 2.8.6 accept them (`dar -t`, `--sequential-read`) and restore them byte for byte. Layout: [DAR-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/DAR-ON-DISK.md) | [dar.linux.free.fr](http://dar.linux.free.fr) |
 | [DiskDoubler](https://en.wikipedia.org/wiki/DiskDoubler) | `DiskDoubler` | `.dd` `.sea` | WORM | — | wipe | Single-fork compressor: one payload per file. Reads methods 0, 1, 6 and 9, refuses the rest; writes stored | [GitHub](https://github.com/MacPaw/XADMaster) |
@@ -137,7 +137,8 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [NuFX / ShrinkIt](https://en.wikipedia.org/wiki/ShrinkIt) | `NuFx` | `.shk` `.sdk` `.bxy` | R/W | ✅ | defrag · shrink · wipe |  | [nulib.com](https://nulib.com/library/FTN.e08002.htm) |
 | PackIt | `PackIt` | `.pit` | R/W | ✅ | defrag · wipe | Reads stored and Huffman entries, writes stored; encrypted entries are refused | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [RAR](https://en.wikipedia.org/wiki/RAR_(file_format)) | `Rar` | `.rar` | R/W | ✅ | wipe | v1–v5 readers; creation and edits emit RAR4/RAR5 without claiming WinRAR encoder parity | [rarlab.com](https://www.rarlab.com/technote.htm) |
-| [7z](https://en.wikipedia.org/wiki/7z) | `SevenZip` | `.7z` | R/W | ✅ | compress · wipe | Also reads Deflate64, the ARM64 / RISC-V filters and 7-Zip-zstd's Zstandard / Brotli / LZ4 coders | [7-zip.org](https://www.7-zip.org/7z.html) |
+| [SeqBox](https://github.com/MarcoPon/SeqBox) | `SeqBox` | `.sbx` | WORM | ✅ | — | Single-file recoverable container; versions 1-4, metadata block optional | [GitHub](https://github.com/MarcoPon/SeqBox) |
+| [7z](https://en.wikipedia.org/wiki/7z) | `SevenZip` | `.7z` | R/W | ✅ | compress · wipe |  | [7-zip.org](https://www.7-zip.org/7z.html) |
 | [SHAR](https://en.wikipedia.org/wiki/Shar) | `Shar` | `.shar` `.sh` | R/W | ✅ | defrag | Add appends in place; Remove re-emits the script from the survivors | [gnu.org](https://www.gnu.org/software/sharutils/) |
 | [Spark (RISC OS)](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Spark` | `.spk` `.spark` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Spark) |
 | [Split File (.001)](https://en.wikipedia.org/wiki/File_spanning) | `SplitFile` | `.001` | WORM | ✅ | — |  | [Wikipedia](https://en.wikipedia.org/wiki/File_spanning) |
@@ -551,7 +552,7 @@ Use it when a .NET process needs to enumerate, extract, test, create, edit or in
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 2584 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
+Every public and protected member of all 2588 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
 
 <!-- API:END -->
 
