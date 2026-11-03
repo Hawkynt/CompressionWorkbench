@@ -33420,13 +33420,13 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 
 #### `ZlingStream`
 
-Zling: ROLZ + Huffman block compressor by Zhang Li. Format: blocks of (uint8 flag, uint32 LE encpos, uint32 LE rlen, uint32 LE olen, olen bytes). flag=1 means more data follows, flag=0 is the final block.
+`.zling` files as Zhang Li's libzling demo (`zling e0`..`e4`, `zling d`) writes and reads them; the codec is `ZlingCodec`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the historical maximum-depth search. |
-| `Compress` | `static void Compress(Stream input, Stream output, int level)` | Encodes the supplied input with a zling-style effort level from 0 through 4. Higher levels inspect more ROLZ candidates and are therefore slower but can find longer matches. Level 4 preserves the encoder's historical behaviour. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` at level 4, the deepest search. |
+| `Compress` | `static void Compress(Stream input, Stream output, int level)` | Compresses `input` at a libzling level from 0 (fastest) to 4 (deepest search, more lazy matching). |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a zling stream. |
 
 ### Namespace `FileFormat.Zoo`
 

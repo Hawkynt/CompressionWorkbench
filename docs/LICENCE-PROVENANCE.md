@@ -65,6 +65,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Hammer/HammerWriter.cs`, `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Hammer2/Hammer2Writer.cs` | DragonFly BSD `newfs_hammer`, `newfs_hammer2` and their on-disk helpers | BSD-3-Clause | `THIRD-PARTY-NOTICE.dragonfly.txt` in each folder |
 | `Compression.Core/Dictionary/Shoco/ShocoBuildingBlock.cs`, `Compression.Core/Dictionary/Shoco/ShocoModel.cs` | shoco `shoco.c`, `shoco_model.h` (Christian Schramm), revision `7c92fa9c4161ea97da90cc78e38cfb18476ba882` | MIT | `Compression.Core/Dictionary/Shoco/THIRD-PARTY-NOTICE.shoco.txt` |
 | `Compression.Core/Dictionary/Density/DensityCodec.cs` | density-rs 0.16.6 (Guillaume Voirin), revision `58938943bb0dfd85b186551a3d1d36cc286f9c1d` | MIT OR Apache-2.0 (used as MIT) | `Compression.Core/Dictionary/Density/THIRD-PARTY-NOTICE.density.txt` |
+| `Compression.Core/Dictionary/Zling/ZlingCodec.cs` | libzling (Zhang Li), revision `6828e31517bf94fda8e1e8e15a583ab58acde637` | BSD-3-Clause | `Compression.Core/Dictionary/Zling/THIRD-PARTY-NOTICE.libzling.txt` |
 
 ## A — compatible, notice already in place
 

@@ -13,8 +13,8 @@ namespace Compression.Tests.Optimizer;
 [TestFixture]
 public class ZlingOptionsTests {
 
-  private static byte[] DeepMatchSample() =>
-    "A0000000000000000A1111111111111111Aabcdefghijklmnopqrstuvwxyz0123456789Aabcdefghijklmnopqrstuvwxyz0123456789"u8.ToArray();
+  /// <summary>Varied text: level 4's deeper ROLZ search and extra lazy checks change the parse.</summary>
+  private static byte[] DeepMatchSample() => Compression.Tests.CodecProof.CodecProofData.Text(24_000);
 
   private static byte[] CompressibleSample() {
     using var ms = new MemoryStream();
