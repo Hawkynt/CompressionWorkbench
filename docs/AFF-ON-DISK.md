@@ -110,7 +110,23 @@ cannot be regenerated.
 
 ## AFD and AFM
 
-`.afd` is a directory of `.aff` files, each holding a run of pages. `.afm` is a
-raw image plus an `.aff` file that carries only the metadata. Both need more
-than one stream. The single-stream archive API refuses them; open each `.aff`
-on its own.
+Measured with `affconvert -s64k -M100k -o ev.afd` and `-M128k -o ev.afm`
+(afflib-tools 3.7.20):
+
+- **AFD.** A directory whose name ends in `.afd`, holding `file_000.aff`,
+  `file_001.aff`, … Each is a complete AFF file (header, segments, tails) and
+  repeats `pagesize`, `sectorsize` and the acquisition segments. The first has
+  `aff_file_type` = `AFD`, the later ones `AFF`. The pages are spread over the
+  files in order, and the last file closes with `imagesize`, `md5` and `sha1`.
+  The image is the union of all files' segments.
+- **AFM.** `name.afm` is an AFF file with no pages: `aff_file_type` = `AFM`,
+  `raw_image_file_extension` (`000`), `pages_per_raw_image_file` (a quad; 0
+  means one raw file holds everything), `imagesize`, `md5` and `sha1`. The image
+  is the raw files `name.000`, `name.001`, … concatenated, each but the last
+  exactly `pages_per_raw_image_file × pagesize` bytes, cut at `imagesize`.
+  `affcat` 3.7.20 stops after the first 256 KiB of such a set; the stored
+  hashes and the source medium are the reference instead.
+
+Opened from disk, any file of an AFD directory reads the whole directory and an
+AFM reads its raw files. Opened from memory, an AFM lists but refuses to extract.
+Neither layout is rewritten.

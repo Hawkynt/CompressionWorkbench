@@ -13,7 +13,7 @@
 
 #### `AffFormatDescriptor`
 
-AFF (Advanced Forensic Format, AFFLIB v3) single-file evidence image. Exposes the acquired media as `disk.img`, verified against the stored md5/sha1/sha256, and the acquisition metadata as a synthetic `metadata.ini`. Creating writes zlib/ZERO pages that AFFLIB's tools accept; replacing `disk.img` rewrites the pages and hashes and keeps every acquisition segment. Encrypted images are listed but refused; signed images are not modified (their signatures would no longer verify). AFD (directory) and AFM (raw plus sidecar) are multi-file layouts and outside this single-stream descriptor.
+AFF (Advanced Forensic Format, AFFLIB v3) single-file evidence image. Exposes the acquired media as `disk.img`, verified against the stored md5/sha1/sha256, and the acquisition metadata as a synthetic `metadata.ini`. Creating writes zlib/ZERO pages that AFFLIB's tools accept; replacing `disk.img` rewrites the pages and hashes and keeps every acquisition segment. Encrypted images are listed but refused; signed images are not modified (their signatures would no longer verify). The multi-file layouts are read when the image is opened from disk: a file of an AFD directory brings in every `file_NNN.aff` beside it, an AFM sidecar its split raw files; neither is rewritten.
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
 
@@ -57,8 +57,10 @@ Reader/writer for single-file AFF (Advanced Forensic Format, AFFLIB v3 `.aff`). 
 | `PageCompressed` | `const uint PageCompressed` |  |
 | `QuadwordFlag` | `const uint QuadwordFlag` |  |
 | `FileMagic` | `static ReadOnlySpan<byte> FileMagic { get; }` |  |
+| `FileType` | `string FileType { get; }` | The `aff_file_type` segment: `AFF`, `AFD` (first file of a directory) or `AFM`. |
 | `ImageSize` | `long ImageSize { get; }` |  |
 | `IsEncrypted` | `bool IsEncrypted { get; }` | True when any segment is encrypted (AFFLIB's `/aes256` suffix or a stored key). |
+| `IsMultiFile` | `bool IsMultiFile { get; }` | Whether the image's data lives in more than one file: an AFD directory of `file_NNN.aff`, or an AFM sidecar whose pages are split raw files. |
 | `IsSigned` | `bool IsSigned { get; }` | True when the image carries signature segments (`/sha256`) or a signing certificate. |
 | `PageCount` | `int PageCount { get; }` |  |
 | `PageSize` | `uint PageSize { get; }` |  |
@@ -69,6 +71,7 @@ Reader/writer for single-file AFF (Advanced Forensic Format, AFFLIB v3 `.aff`). 
 | `EncodeQuad` | `static byte[] EncodeQuad(long value)` |  |
 | `Find` | `AffSegment Find(string name)` |  |
 | `IsDerived` | `static bool IsDerived(string name)` | Segments that describe the image's content or geometry and must be regenerated, not copied, on rewrite. |
+| `ReadSet` | `static AffImage ReadSet(Stream stream)` | Reads `stream` and, when it is a file of a multi-file layout, the files that belong with it: AFD — a directory named `*.afd` of `file_000.aff`, `file_001.aff`, …; every file is an AFF whose segments (the pages, the closing imagesize and hashes) together make the image;AFM — `name.afm` holds only metadata (`aff_file_type` = AFM, `raw_image_file_extension`, `pages_per_raw_image_file`); the image is the raw files `name.000`, `name.001`, … in order, each holding that many pages (0 = one file holds all). |
 | `ReadVerifiedImage` | `byte[] ReadVerifiedImage()` | The reconstructed image, verified against the stored md5/sha1/sha256 segments when present. |
 | `Read` | `static AffImage Read(Stream stream)` | Parses every segment; empty-name (ignored / free-space) segments are skipped. |
 | `RenderMetadata` | `byte[] RenderMetadata()` | `metadata.ini`: the geometry plus every non-page segment rendered as text, hex or a number. |
