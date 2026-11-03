@@ -10,6 +10,7 @@ format,Adfs,Acorn ADFS,Archive,Y,.adl;.adf,Y,Y,Y,Y
 format,AdvFs,AdvFS (Tru64 UNIX),Archive,Y,.advfs,Y,Y,Y,Y
 format,Adx,CRI ADX,Audio,,.adx,Y,Y,Y,
 format,Aea,Sony ATRAC1 / MiniDisc (.aea),Audio,,.aea,Y,Y,Y,
+format,Aff,AFF (Advanced Forensic Format),Archive,,.aff,Y,Y,Y,Y
 format,Aff4,Advanced Forensic Format 4 (AFF4),Archive,,.aff4,Y,Y,Y,
 format,Afio,afio,Archive,,.afio,Y,Y,Y,
 format,Afs,Sega AFS,Archive,,.afs,Y,Y,Y,Y
