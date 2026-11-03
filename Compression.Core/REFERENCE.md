@@ -3112,7 +3112,7 @@ A clean-room implementation of Sequitur: an online algorithm that infers a strai
 
 #### `ShocoBuildingBlock`
 
-Exposes a Shoco-style short-string compressor as a benchmarkable building block. Shoco (Christian Schramm / "Ed-von-Schleck", 2014) compresses short ASCII strings by keeping a small alphabet of the most common characters and, for runs of consecutive alphabet characters, encoding each character after the first as the rank of its predecessor's most likely successors rather than the character itself — most natural-language digraphs need only a few bits to identify.
+Exposes shoco (Christian Schramm, 2014), the short-string compressor, as a benchmarkable building block. The stream is exactly what `shoco_compress` writes with the default model: a run of characters from a 32-character alphabet, each after the first named by its rank among its predecessor's most likely successors, is packed into 1, 2 or 4 bytes behind a unary tier header; any other ASCII byte is copied, and a byte with the top bit set is written behind a `0x00` sentinel.
 
 Implements `IBuildingBlock`.
 

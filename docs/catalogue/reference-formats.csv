@@ -648,7 +648,7 @@ rzip (bb:BB_Rzip),,codec,,,,,,,,0,,bb:BB_Rzip,Y,Y,,OURS-ONLY,,
 Salvador,,codec,,,,,,,,0,,bb:BB_Salvador,Y,Y,,OURS-ONLY,,
 Sequitur,,codec,,,,,,,,0,,bb:BB_Sequitur,Y,Y,,OURS-ONLY,,
 Shannon-Fano,,codec,,,,,,,,0,,bb:BB_ShannonFano,Y,Y,,OURS-ONLY,,
-Shoco,,codec,,,,,,,,0,,bb:BB_Shoco,Y,Y,,OURS-ONLY,,
+Shoco,,codec,,,,,,,,0,https://github.com/Ed-von-Schleck/shoco,bb:BB_Shoco,Y,Y,,OURS-ONLY,,shoco conversion with its default model; byte-identical to shoco c; zero bytes written behind the sentinel
 Snappy,,codec,,,,,,,,0,,bb:BB_Snappy,Y,Y,,OURS-ONLY,,
 SQX (bb:BB_Sqx),,codec,,,,,,,,0,,bb:BB_Sqx,Y,Y,,OURS-ONLY,,
 Suffix Tree Compression,,codec,,,,,,,,0,,bb:BB_SuffixTree,Y,Y,,OURS-ONLY,,

@@ -72,10 +72,9 @@ public class ShocoBuildingBlockTests {
 
   [Test, Category("EdgeCase"), Category("RoundTrip")]
   public void RepeatedCommonWords_ExercisesAllPackTiers() {
-    // Text drawn from the same vocabulary the model was trained on. The mix of
-    // long, highly predictable runs ("the day and the night") and shorter,
-    // less predictable joins between them exercises all three pack tiers.
-    const string text = "the day and the night and the day and the night";
+    // Common English words: long, predictable runs ("interesting", "conversation")
+    // and shorter joins between them exercise all three pack tiers of shoco's model.
+    const string text = "the interesting conversation at the station";
     var data = Encoding.ASCII.GetBytes(text);
     var compressed = Bb.Compress(data);
     var round = Bb.Decompress(compressed);
@@ -84,7 +83,7 @@ public class ShocoBuildingBlockTests {
     var sawPack0 = false;
     var sawPack1 = false;
     var sawPack2 = false;
-    var payload = compressed.AsSpan(4);
+    var payload = compressed.AsSpan();
     var i = 0;
     while (i < payload.Length) {
       var b = payload[i];
@@ -117,8 +116,8 @@ public class ShocoBuildingBlockTests {
   public void PlainAsciiText_DoesNotGrowMuch() {
     var data = Encoding.ASCII.GetBytes("the quick brown fox and the lazy dog");
     var compressed = Bb.Compress(data);
-    // 4-byte length header plus payload should still be competitive for common text.
-    Assert.That(compressed.Length, Is.LessThanOrEqualTo(data.Length + 4));
+    // Common text never grows.
+    Assert.That(compressed.Length, Is.LessThanOrEqualTo(data.Length));
   }
 
   [Test, Category("EdgeCase")]
