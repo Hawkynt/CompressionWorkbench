@@ -30,10 +30,15 @@ namespace FileFormat.Xar;
 /// element, optionally zeros the orphan heap bytes, recompresses the TOC,
 /// rewrites <c>header + TOC</c>. Heap is not compacted (gaps are legal in
 /// XAR — readers index by explicit offset).</para>
-/// <para>Limitations: only handles flat (non-nested) <c>&lt;file&gt;</c>
-/// entries; does not validate or update the optional TOC checksum block
-/// (the existing reader/writer don't emit one); added entries are stored
-/// with zlib compression at <see cref="DeflateCompressionLevel.Default"/>.</para>
+/// <para><b>Folders</b>: a path with '/' names <c>&lt;file&gt;</c> elements of type
+/// <c>directory</c> nested in each other, as xar writes them; missing folders are created,
+/// and removing a folder removes everything in it.</para>
+/// <para><b>TOC checksum</b>: when the TOC names one (<c>&lt;checksum style="sha1"&gt;</c>
+/// with its heap offset and size, as xar and libarchive write it), it is recomputed over the
+/// new compressed TOC; xar and libarchive reject an archive whose checksum is stale.</para>
+/// <para>Added entries are stored with zlib compression at
+/// <see cref="DeflateCompressionLevel.Default"/>; everything else in the TOC — owners,
+/// extended attributes, other entries' encodings — is left as it was.</para>
 /// </remarks>
 public static class XarModifier {
 
@@ -45,10 +50,12 @@ public static class XarModifier {
   /// is then recompressed and rewritten at the start of the file with the
   /// heap shifted by the TOC-size delta.
   /// </summary>
-  public static void AddFile(Stream xar, string name, byte[] data, DateTime? lastModified = null) {
+  public static void AddFile(Stream xar, string name, byte[] data, DateTime? lastModified = null, int? mode = null) {
     ArgumentNullException.ThrowIfNull(xar);
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
+    var segments = Segments(name);
+    if (segments.Length == 0) throw new ArgumentException("XAR: an entry needs a name.", nameof(name));
 
     var (oldTocCompSize, doc) = ReadHeaderAndToc(xar);
     var toc = RequireToc(doc);
@@ -66,6 +73,10 @@ public static class XarModifier {
     var heapStart = (long)HeaderSize + oldTocCompSize;
     var absoluteWriteOffset = heapStart + newOffset;
 
+    // The folders it goes into are resolved (and refused) before a byte is written.
+    var nextId = NextFreeId(toc);
+    var parent = EnsureDirectory(toc, segments[..^1], modified, ref nextId);
+
     // Write the new compressed payload at the absolute heap-end position
     // BEFORE we touch the TOC, so the heap grows in-place. The subsequent
     // TOC rewrite may shift this whole tail, but the bytes are correct.
@@ -75,12 +86,31 @@ public static class XarModifier {
       if (xar.Position > xar.Length) xar.SetLength(xar.Position);
     }
 
-    // Build and append the new <file> element.
-    var nextId = NextFreeId(toc);
-    var fileEl = BuildFileElement(nextId, name, modified, data.Length, compressed.Length, newOffset, origHash, compHash);
-    toc.Add(fileEl);
+    // Build and append the new <file> element, inside its folders.
+    var fileEl = BuildFileElement(nextId, segments[^1], modified, mode ?? DefaultFileMode, data.Length, compressed.Length, newOffset, origHash, compHash);
+    parent.Add(fileEl);
 
     RewriteHeaderAndTocWithHeapShift(xar, doc, oldTocCompSize, heapEnd + compressed.Length);
+  }
+
+  /// <summary>
+  /// Adds a folder (with any missing parents) to an existing XAR archive; a folder that is
+  /// already there is left as it is.
+  /// </summary>
+  public static void AddDirectory(Stream xar, string name, DateTime? lastModified = null, int? mode = null) {
+    ArgumentNullException.ThrowIfNull(xar);
+    ArgumentNullException.ThrowIfNull(name);
+    var segments = Segments(name);
+    if (segments.Length == 0) return;
+
+    var (oldTocCompSize, doc) = ReadHeaderAndToc(xar);
+    var toc = RequireToc(doc);
+    if (Resolve(toc, segments) != null) return;
+    var heapEnd = ComputeHeapEnd(toc);
+    var nextId = NextFreeId(toc);
+    var folder = EnsureDirectory(toc, segments, lastModified ?? DateTime.UtcNow, ref nextId);
+    if (mode is { } m) folder.SetElementValue("mode", FormatMode(m));
+    RewriteHeaderAndTocWithHeapShift(xar, doc, oldTocCompSize, heapEnd);
   }
 
   /// <summary>
@@ -98,31 +128,26 @@ public static class XarModifier {
     var toc = RequireToc(doc);
     var heapStart = (long)HeaderSize + oldTocCompSize;
 
-    XElement? victim = null;
-    long victimOffset = 0, victimLength = 0;
-    foreach (var fileEl in toc.Elements("file")) {
-      var nm = fileEl.Element("name")?.Value;
-      if (!string.Equals(nm, name, StringComparison.Ordinal)) continue;
-      var dataEl = fileEl.Element("data");
-      if (dataEl != null) {
-        victimOffset = ParseLong(dataEl.Element("offset")?.Value);
-        victimLength = ParseLong(dataEl.Element("length")?.Value);
-      }
-      victim = fileEl;
-      break;
-    }
+    // The entry at exactly that path; a folder goes with everything in it.
+    var victim = Resolve(toc, Segments(name));
     if (victim == null) return false;
 
     var heapEnd = ComputeHeapEnd(toc);
+    var orphans = victim.DescendantsAndSelf("file")
+      .Select(f => f.Element("data"))
+      .OfType<XElement>()
+      .Select(d => (Offset: ParseLong(d.Element("offset")?.Value), Length: ParseLong(d.Element("length")?.Value)))
+      .ToList();
     victim.Remove();
 
     // Wipe orphan heap bytes BEFORE the TOC rewrite shifts them around.
-    if (wipeData && victimLength > 0) {
-      var absStart = heapStart + victimOffset;
-      var absEnd = absStart + victimLength;
-      if (absStart >= heapStart && absEnd <= xar.Length)
-        ZeroRange(xar, absStart, victimLength);
-    }
+    if (wipeData)
+      foreach (var (offset, length) in orphans) {
+        if (length <= 0) continue;
+        var absStart = heapStart + offset;
+        if (absStart >= heapStart && absStart + length <= xar.Length)
+          ZeroRange(xar, absStart, length);
+      }
 
     RewriteHeaderAndTocWithHeapShift(xar, doc, oldTocCompSize, heapEnd);
     return true;
@@ -196,6 +221,12 @@ public static class XarModifier {
     BinaryPrimitives.WriteUInt64BigEndian(sizes[8..], (ulong)newTocBytes.Length);
     xar.Write(sizes);
 
+    // The TOC checksum in the heap covers the compressed TOC just written.
+    if (TocChecksum(RequireToc(doc), newTocCompressed) is { } checksum) {
+      xar.Position = newHeapStart + checksum.Offset;
+      xar.Write(checksum.Hash);
+    }
+
     // Truncate to the new total length (header + new TOC + heap).
     xar.SetLength(newHeapStart + heapBytes);
   }
@@ -234,9 +265,65 @@ public static class XarModifier {
 
   // ── TOC XML helpers ──────────────────────────────────────────────────
 
+  /// <summary>The TOC checksum's heap offset and the hash of <paramref name="compressedToc"/> in its style.</summary>
+  private static (long Offset, byte[] Hash)? TocChecksum(XElement toc, byte[] compressedToc) {
+    var checksum = toc.Element("checksum");
+    if (checksum == null) return null;
+    byte[]? hash = checksum.Attribute("style")?.Value.ToLowerInvariant() switch {
+      "sha1" => Sha1.Compute(compressedToc),
+      "md5" => Md5.Compute(compressedToc),
+      "sha256" => Sha256.Compute(compressedToc),
+      _ => null,
+    };
+    if (hash == null || ParseLong(checksum.Element("size")?.Value) != hash.Length) return null;
+    return (ParseLong(checksum.Element("offset")?.Value), hash);
+  }
+
+  private static string[] Segments(string name) => name.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+
+  private static XElement? Resolve(XElement toc, string[] segments) {
+    XElement? current = null;
+    var parent = toc;
+    foreach (var segment in segments) {
+      current = parent.Elements("file").FirstOrDefault(f => string.Equals(f.Element("name")?.Value, segment, StringComparison.Ordinal));
+      if (current == null) return null;
+      parent = current;
+    }
+    return current;
+  }
+
+  /// <summary>The folder element at <paramref name="segments"/>, created with its parents when missing.</summary>
+  private static XElement EnsureDirectory(XElement toc, string[] segments, DateTime modified, ref int nextId) {
+    var parent = toc;
+    foreach (var segment in segments) {
+      var child = parent.Elements("file").FirstOrDefault(f => string.Equals(f.Element("name")?.Value, segment, StringComparison.Ordinal));
+      if (child == null) {
+        child = new XElement("file",
+          new XAttribute("id", (nextId++).ToString()),
+          new XElement("name", segment),
+          new XElement("type", "directory"),
+          new XElement("mode", FormatMode(DefaultDirectoryMode)),
+          new XElement("mtime", modified.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")));
+        parent.Add(child);
+      } else if (child.Element("type")?.Value is { } type && type != "directory") {
+        throw new IOException($"XAR: '{segment}' is a {type}, not a folder.");
+      }
+      parent = child;
+    }
+    return parent;
+  }
+
+  private const int DefaultFileMode = 0x1A4;      // 0644
+  private const int DefaultDirectoryMode = 0x1ED; // 0755
+
+  private static string FormatMode(int mode) => "0" + Convert.ToString(mode & 0xFFF, 8);
+
   private static long ComputeHeapEnd(XElement toc) {
     long max = 0;
-    foreach (var fileEl in toc.Elements("file")) {
+    // The TOC checksum lives in the heap too (usually at offset 0).
+    if (toc.Element("checksum") is { } checksum)
+      max = ParseLong(checksum.Element("offset")?.Value) + ParseLong(checksum.Element("size")?.Value);
+    foreach (var fileEl in toc.Descendants("file")) {
       var dataEl = fileEl.Element("data");
       if (dataEl == null) continue;
       var off = ParseLong(dataEl.Element("offset")?.Value);
@@ -248,7 +335,7 @@ public static class XarModifier {
 
   private static int NextFreeId(XElement toc) {
     var max = -1;
-    foreach (var fileEl in toc.Elements("file")) {
+    foreach (var fileEl in toc.Descendants("file")) {
       var idAttr = fileEl.Attribute("id");
       if (idAttr == null) continue;
       if (int.TryParse(idAttr.Value, out var id) && id > max) max = id;
@@ -256,13 +343,14 @@ public static class XarModifier {
     return max + 1;
   }
 
-  private static XElement BuildFileElement(int id, string name, DateTime modified,
+  private static XElement BuildFileElement(int id, string name, DateTime modified, int mode,
       long origSize, long compSize, long offset, string origHash, string compHash) =>
     new("file",
       new XAttribute("id", id.ToString()),
       new XElement("name", name),
       new XElement("type", "file"),
-      new XElement("mtime", modified.ToString("yyyy-MM-ddTHH:mm:ssZ")),
+      new XElement("mode", FormatMode(mode)),
+      new XElement("mtime", modified.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")),
       new XElement("data",
         new XElement("size", origSize.ToString()),
         new XElement("length", compSize.ToString()),
