@@ -10,8 +10,9 @@ namespace FileFormat.Aff;
 /// metadata as a synthetic <c>metadata.ini</c>. Creating writes zlib/ZERO pages that AFFLIB's
 /// tools accept; replacing <c>disk.img</c> rewrites the pages and hashes and keeps every
 /// acquisition segment. Encrypted images are listed but refused; signed images are not
-/// modified (their signatures would no longer verify). AFD (directory) and AFM (raw plus
-/// sidecar) are multi-file layouts and outside this single-stream descriptor.
+/// modified (their signatures would no longer verify). The multi-file layouts are read when the
+/// image is opened from disk: a file of an AFD directory brings in every <c>file_NNN.aff</c>
+/// beside it, an AFM sidecar its split raw files; neither is rewritten.
 /// </summary>
 /// <remarks>Specification: <c>docs/AFF-ON-DISK.md</c>.</remarks>
 public sealed class AffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
@@ -28,7 +29,7 @@ public sealed class AffFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".aff";
-  public IReadOnlyList<string> Extensions => [".aff"];
+  public IReadOnlyList<string> Extensions => [".aff", ".afm"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [new("AFF10\r\n\0"u8.ToArray(), Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("zlib", "zlib pages"), new("lzma", "LZMA pages (read)"), new("zero", "zero pages")];
@@ -43,7 +44,7 @@ public sealed class AffFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     AffImage image;
     try {
-      image = AffImage.Read(stream);
+      image = AffImage.ReadSet(stream);
     } catch (InvalidDataException) {
       var length = stream.CanSeek ? stream.Length : 0;
       return [
@@ -60,7 +61,7 @@ public sealed class AffFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var image = AffImage.Read(stream);
+    var image = AffImage.ReadSet(stream);
     if (files is not { Length: > 0 } || MatchesFilter(MetadataName, files))
       WriteFile(outputDir, MetadataName, image.RenderMetadata());
     if (files is not { Length: > 0 } || MatchesFilter(DiskName, files))
@@ -78,9 +79,11 @@ public sealed class AffFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
-    var image = AffImage.Read(archive);
+    var image = AffImage.ReadSet(archive);
     if (image.IsEncrypted || image.IsSigned)
       throw new NotSupportedException("AFF: encrypted or signed images are not rewritten (keys/signatures cannot be regenerated).");
+    if (image.IsMultiFile)
+      throw new NotSupportedException("AFF: AFD directories and AFM raw sets are read, not rewritten; the files were left unchanged.");
     var replacement = SingleImage(inputs);
     if (replacement is null)
       return;
