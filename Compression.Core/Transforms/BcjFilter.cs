@@ -47,22 +47,47 @@ public static class BcjFilter {
   }
 
   private static void TransformX86(byte[] result, int startOffset, bool encode) {
+    var state = new X86State((uint)startOffset);
+    TransformX86(result, ref state, encode);
+  }
+
+  /// <summary>
+  /// The x86 filter's state between calls, as liblzma's <c>lzma_simple_x86</c> keeps it: the
+  /// position of the next unfiltered byte, the recent-E8/E9 mask and the last opcode position.
+  /// </summary>
+  internal struct X86State(uint startOffset) {
+    internal uint NowPos = startOffset;
+    internal uint PrevMask = 0;
+    internal uint PrevPos = startOffset - 5;
+  }
+
+  /// <summary>
+  /// Filters as much of <paramref name="result"/> as can be decided without the bytes after it
+  /// (everything but the last four, or more when a converted operand reaches further) and returns
+  /// how many bytes that was. The caller presents the rest again, followed by new data: liblzma's
+  /// <c>x86_code</c> contract, so a stream filtered in pieces matches the one-shot result.
+  /// </summary>
+  internal static int TransformX86(Span<byte> result, ref X86State state, bool encode) {
     // liblzma simple/x86.c: a CALL/JMP is converted only when its operand's top byte is 0x00 or
     // 0xFF, and prev_mask remembers recent E8/E9 bytes so the encoder and decoder agree on which
     // bytes are opcodes.
     if (result.Length < 5)
-      return;
+      return 0;
 
     ReadOnlySpan<uint> maskToBitNumber = [0, 1, 2, 2, 3];
-    var nowPos = (uint)startOffset;
-    var prevMask = 0u;
-    var prevPos = nowPos - 5;
+    var nowPos = state.NowPos;
+    var prevMask = state.PrevMask;
+    var prevPos = state.PrevPos;
+    if (nowPos - prevPos > 5)
+      prevPos = nowPos - 5;
     var limit = result.Length - 5;
     var pos = 0;
     while (pos <= limit) {
-      var skip = result.AsSpan(pos, limit - pos + 1).IndexOfAny((byte)0xE8, (byte)0xE9);
-      if (skip < 0)
+      var skip = result.Slice(pos, limit - pos + 1).IndexOfAny((byte)0xE8, (byte)0xE9);
+      if (skip < 0) {
+        pos = limit + 1;
         break;
+      }
 
       pos += skip;
       var offset = nowPos + (uint)pos - prevPos;
@@ -105,6 +130,11 @@ public static class BcjFilter {
           prevMask |= 0x10;
       }
     }
+
+    state.NowPos = nowPos + (uint)pos;
+    state.PrevMask = prevMask;
+    state.PrevPos = prevPos;
+    return pos;
   }
 
   private static bool IsX86MsByte(byte b) => b is 0x00 or 0xFF;
