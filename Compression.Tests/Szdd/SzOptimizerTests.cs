@@ -9,14 +9,16 @@ public class SzOptimizerTests {
   [Category("Optimizer")]
   [Category("RoundTrip")]
   [Test]
-  public void Compress_OverlappingMatch_BeatsGreedyAndRoundTrips() {
+  public void Compress_OverlappingMatch_IsUsedAndRoundTrips() {
+    // One literal, then a match at distance one that overlaps its own output. The greedy
+    // encoder finds it too, now that it reads the ring the way a decoder does.
     var input = "AAAAA"u8.ToArray();
 
     var greedy = SzddStream.CompressQBasic(input);
     var optimized = SzOptimizer.Compress(input);
 
     Assert.That(optimized.Length, Is.EqualTo(16));
-    Assert.That(optimized.Length, Is.LessThan(greedy.Length));
+    Assert.That(optimized.Length, Is.LessThanOrEqualTo(greedy.Length));
     Assert.That(optimized.AsSpan(12).ToArray(), Is.EqualTo(new byte[] { 0x01, 0x41, 0xEE, 0xF1 }));
     Assert.That(SzddStream.Decompress(optimized), Is.EqualTo(input));
   }
@@ -75,7 +77,8 @@ public class SzOptimizerTests {
   [Test]
   public void CompressionOptimizer_SelectsExactParserWhenItWins() {
     var descriptor = new SzCompressFormatDescriptor();
-    var input = "AAAAA"u8.ToArray();
+    // Greedy takes 21 bytes here, the exact parse 20.
+    var input = "AAABAAAAA"u8.ToArray();
 
     var result = CompressionOptimizer.OptimizeStream(input, descriptor, descriptor);
 

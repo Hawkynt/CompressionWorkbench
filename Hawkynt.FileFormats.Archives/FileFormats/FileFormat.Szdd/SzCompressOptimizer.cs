@@ -185,6 +185,8 @@ public static class SzCompressOptimizer {
 
         while (length < maximum) {
           var sourceIndex = sourcePosition + length;
+          if (sourceIndex < SzddConstants.OldestKnownPrefill)
+            break;
           var source = sourceIndex < 0 ? SzddConstants.WindowFill : input[sourceIndex];
           if (source != input[position + length])
             break;
