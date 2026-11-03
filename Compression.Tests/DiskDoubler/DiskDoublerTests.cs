@@ -220,12 +220,8 @@ public class DiskDoublerTests {
   }
 
   [Test, Category("Exception")]
-  [TestCase((byte)2)]
   [TestCase((byte)3)]
   [TestCase((byte)4)]
-  [TestCase((byte)5)]
-  [TestCase((byte)7)]
-  [TestCase((byte)8)]
   [TestCase((byte)10)]
   [TestCase((byte)11)]
   public void UndecodedMethods_AreRefusedNotReturnedRaw(byte method) {
@@ -235,9 +231,15 @@ public class DiskDoublerTests {
   }
 
   [Test, Category("Exception")]
-  public void DeltaPreprocessing_IsRefused() {
-    using var r = Open(BuildDdFile(0, [1, 2, 3], 3, dataDelta: 1));
+  public void DeltaPreprocessing_OtherThanType1_IsRefused() {
+    using var r = Open(BuildDdFile(0, [1, 2, 3], 3, dataDelta: 2));
     Assert.Throws<NotSupportedException>(() => r.Extract(r.Entries[0]));
+  }
+
+  [Test, Category("HappyPath")]
+  public void DeltaPreprocessing_Type1_AddsThePreviousByte() {
+    using var r = Open(BuildDdFile(0, [1, 2, 3], 3, dataDelta: 1));
+    Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(new byte[] { 1, 3, 6 }));
   }
 
   [Test, Category("HappyPath")]
