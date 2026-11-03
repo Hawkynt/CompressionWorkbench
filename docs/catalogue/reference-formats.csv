@@ -205,7 +205,7 @@ RC4,rc4,encryption,,,R,,,,,1,,,,,,MISSING,,
 uuencode,uu;uue,encoding,,RW,,,,fmt/1102,,2,https://pubs.opengroup.org/onlinepubs/9799919799/utilities/uuencode.html,UuEncoding,Y,Y,,OK,,
 Base64,b64;base64,encoding,R,W,,,,,,2,https://www.rfc-editor.org/rfc/rfc4648,B64Encoding,Y,Y,,OK,,
 Encoded text (uu/xx/b64/BinHex/yEnc),xx;xxe;ntx;ync;b64;hqx;uu;uue,encoding,,,,,R,,,1,,UuEncoding;B64Encoding;BinHex;YEnc;XxEncoding,Y,Y,,OK,,
-BinHex 4,hqx,encoding,,,R,,,x-fmt/416,,2,https://files.stairways.com/other/binhex-40-specs-info.txt,BinHex,Y,Y,,OK,,
+BinHex 4,hqx,encoding,,,R,,,x-fmt/416,,2,https://files.stairways.com/other/binhex-40-specs-info.txt,BinHex,Y,Y,,OK,,Convert::BinHex 1.125 both ways
 MacBinary,bin;macbin,encoding,,,R,,R,fmt/1761;fmt/1762;fmt/1763,,3,https://en.wikipedia.org/wiki/MacBinary,MacBinary,Y,Y,,OK,,
 AppleSingle / AppleDouble,as;adouble,encoding,,,R,,,fmt/967;fmt/968,,2,https://www.rfc-editor.org/rfc/rfc1740,AppleSingle;AppleDouble,Y,Y,Y,OK,,
 Intel HEX,hex;ihex,firmware,R,,,,,,,1,https://en.wikipedia.org/wiki/Intel_HEX,IntelHex,Y,Y,Y,OK,,

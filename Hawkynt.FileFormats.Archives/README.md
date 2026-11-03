@@ -51,7 +51,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | BALZ | `Balz` | `.balz` | ✅ | ✅ | ✅ | Flexible look-ahead parser; optimal mode keeps the greedy stream when it is smaller | [sourceforge.net](https://sourceforge.net/projects/balz/) |
 | Base64 (uuencode wrapper) | `B64Encoding` | `.b64` `.base64` | ✅ | ✅ | — | libarchive-compatible `begin-base64` / `====` wrapper; not bare RFC 4648 Base64 | [GitHub](https://github.com/libarchive/libarchive/blob/master/libarchive/archive_write_add_filter_b64encode.c) |
 | BCM | `Bcm` | `.bcm` | ✅ | ✅ | ✅ | Block-size search (16–128 KiB) | [GitHub](https://github.com/encode84/bcm) |
-| [BinHex](https://en.wikipedia.org/wiki/BinHex) | `BinHex` | `.hqx` | ✅ | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc1741) |
+| [BinHex](https://en.wikipedia.org/wiki/BinHex) | `BinHex` | `.hqx` | ✅ | ✅ | — | BinHex 4.0; Convert::BinHex reads ours and we read its files, every CRC checked | [RFC](https://www.rfc-editor.org/rfc/rfc1741) |
 | BriefLZ | `BriefLz` | `.blz` | ✅ | ✅ | ✅ | Reference-compatible blzpack stream; optimizer compares managed effort levels 1–10 | [GitHub](https://github.com/jibsen/brieflz) |
 | [Brotli](https://en.wikipedia.org/wiki/Brotli) | `Brotli` | `.br` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc7932) |
 | BSC | `Bsc` | `.bsc` | ✅ | ✅ | ✅ | Managed BWT+MTF+RLE payload; optimizer searches block size/context order; full libbsc QLFC/LZP parity remains open | [GitHub](https://github.com/IlyaGrebnov/libbsc) |
