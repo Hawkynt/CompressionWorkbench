@@ -3,27 +3,39 @@
 namespace FileFormat.Qcow2;
 
 /// <summary>
-/// Seekable access to the active guest disk of a self-contained QCOW2 image.
-/// Reads resolve standard, zero, unallocated and deflate-compressed clusters.
+/// Seekable access to the active guest disk of a QCOW2 image.
+/// Reads resolve standard, zero, unallocated and compressed clusters (deflate or zstd),
+/// extended L2 entries with their 32 subclusters, and backing files (QCOW2 or raw), which
+/// supply every cluster or subcluster the image leaves unallocated.
 /// Writes are enabled only for flat standard-refcount profiles and honour QCOW2
 /// copy-on-write semantics for shared L2 and data clusters.
 /// </summary>
+/// <remarks>
+/// Layout per QEMU's <c>docs/interop/qcow2.txt</c>. A backing file is found the way QEMU finds
+/// it: its name as stored, relative to the directory of the image, so the image must be opened
+/// from a <see cref="FileStream"/>; its format comes from the backing-format header extension,
+/// or from its magic when that is missing.
+/// </remarks>
 public sealed class Qcow2Stream : Stream {
+  private const int MaxBackingDepth = 16;
+
   private readonly Stream _backing;
   private readonly bool _leaveOpen;
   private readonly Qcow2Header _header;
   private readonly int _clusterSize;
   private readonly int _l2Entries;
   private readonly bool _writableProfile;
+  private readonly Stream? _parent;
   private long _position;
 
-  private Qcow2Stream(Stream backing, Qcow2Header header, bool leaveOpen) {
+  private Qcow2Stream(Stream backing, Qcow2Header header, bool leaveOpen, Stream? parent) {
     _backing = backing;
     _header = header;
     _clusterSize = header.ClusterSize;
     _l2Entries = header.L2Entries;
     _writableProfile = backing.CanWrite && Qcow2Structures.IsWritableProfile(header);
     _leaveOpen = leaveOpen;
+    _parent = parent;
   }
 
   /// <summary>Attempts to open a supported QCOW2 image as a virtual guest-disk stream.</summary>
@@ -32,9 +44,7 @@ public sealed class Qcow2Stream : Stream {
     if (!backing.CanRead || !backing.CanSeek)
       return null;
     try {
-      var header = Qcow2Structures.ReadHeader(backing);
-      Qcow2Structures.ValidateReadableProfile(header);
-      return new Qcow2Stream(backing, header, leaveOpen);
+      return Open(backing, leaveOpen);
     } catch (InvalidDataException) {
       return null;
     } catch (NotSupportedException) {
@@ -42,6 +52,58 @@ public sealed class Qcow2Stream : Stream {
     } catch (IOException) {
       return null;
     }
+  }
+
+  /// <summary>Opens a QCOW2 image as a virtual guest-disk stream, or explains why it cannot.</summary>
+  /// <exception cref="InvalidDataException">The image or its backing chain is malformed or missing.</exception>
+  /// <exception cref="NotSupportedException">The image uses a feature this reader does not decode.</exception>
+  public static Qcow2Stream Open(Stream backing, bool leaveOpen = true) => Open(backing, leaveOpen, depth: 0);
+
+  private static Qcow2Stream Open(Stream backing, bool leaveOpen, int depth) {
+    ArgumentNullException.ThrowIfNull(backing);
+    var header = Qcow2Structures.ReadHeader(backing);
+    Qcow2Structures.ValidateReadableProfile(header);
+    var parent = header.HasBackingFile ? OpenBackingFile(backing, header, depth) : null;
+    return new Qcow2Stream(backing, header, leaveOpen, parent);
+  }
+
+  /// <summary>Opens the image's backing file, QCOW2 (recursively) or raw.</summary>
+  private static Stream OpenBackingFile(Stream image, in Qcow2Header header, int depth) {
+    if (depth >= MaxBackingDepth)
+      throw new InvalidDataException($"QCOW2: backing chain is deeper than {MaxBackingDepth} images.");
+    if (header.BackingFileSize > 1023 || header.BackingFileOffset > (ulong)(image.Length - header.BackingFileSize))
+      throw new InvalidDataException("QCOW2: backing file name lies outside the image.");
+    var nameBytes = new byte[header.BackingFileSize];
+    Qcow2Structures.ReadExactlyAt(image, (long)header.BackingFileOffset, nameBytes);
+    var name = System.Text.Encoding.UTF8.GetString(nameBytes);
+    if (name.Contains(':') && !Path.IsPathRooted(name))
+      throw new NotSupportedException($"QCOW2: backing file '{name}' is a protocol URL, not a file.");
+    if (image is not FileStream file)
+      throw new NotSupportedException($"QCOW2: the image has the backing file '{name}'; open it from a file path so that file can be found.");
+
+    var directory = Path.GetDirectoryName(Path.GetFullPath(file.Name)) ?? ".";
+    var path = Path.IsPathRooted(name) ? name : Path.Combine(directory, name);
+    if (!File.Exists(path))
+      throw new InvalidDataException($"QCOW2: backing file '{name}' was not found next to the image.");
+
+    var parentFile = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+    try {
+      var format = header.BackingFormat ?? (StartsWithMagic(parentFile) ? "qcow2" : "raw");
+      return format switch {
+        "qcow2" => Open(parentFile, leaveOpen: false, depth + 1),
+        "raw" => parentFile,
+        _ => throw new NotSupportedException($"QCOW2: backing file format '{format}' is not supported."),
+      };
+    } catch {
+      parentFile.Dispose();
+      throw;
+    }
+  }
+
+  private static bool StartsWithMagic(Stream stream) {
+    Span<byte> magic = stackalloc byte[4];
+    stream.Position = 0;
+    return stream.Read(magic) == 4 && magic.SequenceEqual(Qcow2Structures.Magic);
   }
 
   public override bool CanRead => true;
@@ -144,36 +206,74 @@ public sealed class Qcow2Stream : Stream {
   public override void Flush() => _backing.Flush();
 
   protected override void Dispose(bool disposing) {
-    if (disposing && !_leaveOpen)
-      _backing.Dispose();
+    if (disposing) {
+      _parent?.Dispose();
+      if (!_leaveOpen)
+        _backing.Dispose();
+    }
     base.Dispose(disposing);
   }
 
   private void ReadGuestRange(long guestClusterIndex, int inClusterOffset, Span<byte> destination) {
     destination.Clear();
-    var entry = ReadL2Entry(guestClusterIndex, out _);
-    if (entry == 0)
-      return;
+    var guestOffset = checked(guestClusterIndex * _clusterSize + inClusterOffset);
+    var entry = ReadL2Entry(guestClusterIndex, out _, out var bitmap);
 
     if ((entry & Qcow2Structures.CompressedFlag) != 0) {
       var cluster = new byte[_clusterSize];
-      Qcow2Structures.InflateCompressedCluster(_backing, entry, _header.ClusterBits, cluster);
+      Qcow2Structures.InflateCompressedCluster(_backing, entry, _header.ClusterBits, _header.CompressionType, cluster);
       cluster.AsSpan(inClusterOffset, destination.Length).CopyTo(destination);
       return;
     }
 
-    ValidateStandardL2Entry(entry);
+    if (entry != 0)
+      ValidateStandardL2Entry(entry);
+    var hostOffset = Qcow2Structures.ReadClusterOffset(entry);
+
+    if (_header.ExtendedL2) {
+      // Each of the 32 subclusters is allocated (bit n), reads as zeros (bit 32 + n), or
+      // unallocated (neither), in which case the backing file supplies it.
+      var subclusterSize = _clusterSize / Qcow2Structures.Subclusters;
+      var allocated = (uint)bitmap;
+      var zero = (uint)(bitmap >> 32);
+      if ((allocated & zero) != 0)
+        throw new InvalidDataException("QCOW2: a subcluster is marked both allocated and zero.");
+      if (allocated != 0 && hostOffset == 0)
+        throw new InvalidDataException("QCOW2: allocated subclusters without a host cluster.");
+      var done = 0;
+      while (done < destination.Length) {
+        var inCluster = inClusterOffset + done;
+        var subcluster = inCluster / subclusterSize;
+        var length = Math.Min(destination.Length - done, (subcluster + 1) * subclusterSize - inCluster);
+        var part = destination.Slice(done, length);
+        if ((allocated & (1u << subcluster)) != 0)
+          Qcow2Structures.ReadExactlyAt(_backing, checked(hostOffset + inCluster), part);
+        else if ((zero & (1u << subcluster)) == 0)
+          this.ReadFromParent(checked(guestOffset + done), part);
+        done += length;
+      }
+      return;
+    }
+
     if (_header.Version >= 3 && (entry & Qcow2Structures.ZeroFlag) != 0)
       return;
-
-    var hostOffset = Qcow2Structures.ReadClusterOffset(entry);
     if (hostOffset == 0) {
       if ((entry & Qcow2Structures.CopiedFlag) != 0)
         throw new InvalidDataException("QCOW2: self-contained standard cluster has copied flag but zero host offset.");
+      this.ReadFromParent(guestOffset, destination);
       return;
     }
 
     Qcow2Structures.ReadExactlyAt(_backing, checked(hostOffset + inClusterOffset), destination);
+  }
+
+  /// <summary>Fills <paramref name="destination"/> from the backing file; zeros where it is shorter or absent.</summary>
+  private void ReadFromParent(long guestOffset, Span<byte> destination) {
+    if (_parent == null || guestOffset >= _parent.Length)
+      return;
+    var available = (int)Math.Min(destination.Length, _parent.Length - guestOffset);
+    _parent.Position = guestOffset;
+    _parent.ReadExactly(destination[..available]);
   }
 
   private void WriteGuestRange(long guestClusterIndex, int inClusterOffset, ReadOnlySpan<byte> source) {
@@ -271,7 +371,11 @@ public sealed class Qcow2Stream : Stream {
     return replacementOffset;
   }
 
-  private ulong ReadL2Entry(long guestClusterIndex, out long l2EntryOffset) {
+  private ulong ReadL2Entry(long guestClusterIndex, out long l2EntryOffset) => ReadL2Entry(guestClusterIndex, out l2EntryOffset, out _);
+
+  /// <summary>Reads a guest cluster's L2 descriptor and, for extended L2 entries, its subcluster bitmap.</summary>
+  private ulong ReadL2Entry(long guestClusterIndex, out long l2EntryOffset, out ulong bitmap) {
+    bitmap = 0;
     var l1Index = guestClusterIndex / _l2Entries;
     var l2Index = checked((int)(guestClusterIndex % _l2Entries));
     if (l1Index < 0 || l1Index >= _header.L1Size) {
@@ -288,7 +392,9 @@ public sealed class Qcow2Stream : Stream {
       return 0;
     }
 
-    l2EntryOffset = checked(l2TableOffset + l2Index * 8L);
+    l2EntryOffset = checked(l2TableOffset + l2Index * (long)_header.L2EntrySize);
+    if (_header.ExtendedL2)
+      bitmap = Qcow2Structures.ReadUInt64BigEndianAt(_backing, l2EntryOffset + 8);
     return Qcow2Structures.ReadUInt64BigEndianAt(_backing, l2EntryOffset);
   }
 
@@ -303,6 +409,8 @@ public sealed class Qcow2Stream : Stream {
   private void ValidateStandardL2Entry(ulong entry) {
     if ((entry & Qcow2Structures.StandardL2ReservedMask) != 0)
       throw new InvalidDataException("QCOW2: standard L2 entry uses reserved bits.");
+    if (_header.ExtendedL2 && (entry & Qcow2Structures.ZeroFlag) != 0)
+      throw new InvalidDataException("QCOW2: with extended L2 entries the all-zeros bit is reserved; the bitmap says which subclusters read as zeros.");
     if (_header.Version == 2 && (entry & Qcow2Structures.ZeroFlag) != 0)
       throw new InvalidDataException("QCOW2: version 2 L2 entry uses the version 3 zero flag.");
     var offset = Qcow2Structures.ReadClusterOffset(entry);

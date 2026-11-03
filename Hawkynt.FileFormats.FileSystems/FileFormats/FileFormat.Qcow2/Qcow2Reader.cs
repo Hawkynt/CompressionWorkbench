@@ -59,6 +59,13 @@ public sealed class Qcow2Reader : IDisposable {
         "Use Qcow2Stream for larger images.");
 
     var result = new byte[(int)_header.VirtualSize];
+    if (!Qcow2Structures.IsSelfContainedPlain(_header)) {
+      // Backing files, zstd clusters, extended L2 entries and dirty/corrupt marks: the stream
+      // handles all of them (and explains what it cannot).
+      using var guest = Qcow2Stream.Open(_stream, leaveOpen: true);
+      guest.ReadExactly(result);
+      return result;
+    }
     var totalClusters = checked((int)((_header.VirtualSize + _clusterSize - 1) / _clusterSize));
     Span<byte> entryBuffer = stackalloc byte[8];
 

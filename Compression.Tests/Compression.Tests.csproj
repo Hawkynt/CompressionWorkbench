@@ -193,6 +193,10 @@
     <EmbeddedResource Include="SevenZip\ReferenceVectors\*.7z;SevenZip\ReferenceVectors\manifest.txt">
       <LogicalName>SevenZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- QCOW2 images qemu-img / qemu-io wrote, with the raw hashes qemu-img converted them to; see Qcow2/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Qcow2\ReferenceVectors\*.qcow2;Qcow2\ReferenceVectors\*.raw;Qcow2\ReferenceVectors\*.sha256">
+      <LogicalName>Qcow2Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- ACE archives from acefile's test corpus and ones our writer produced for acefile; see Ace/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\acefile-listing.txt">
       <LogicalName>AceVectors.%(Filename)%(Extension)</LogicalName>

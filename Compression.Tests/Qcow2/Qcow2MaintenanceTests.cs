@@ -237,10 +237,13 @@ public sealed class Qcow2MaintenanceTests {
     WriteBe64(image, 8, 128);
     WriteBe32(image, 16, 4);
 
+    // Opened from memory there is no directory to find the backing file in: the guest disk is
+    // refused rather than read with the backing file's clusters as zeros.
     using var stream = new MemoryStream(image, writable: false);
     Assert.That(Qcow2Stream.TryOpen(stream), Is.Null);
     stream.Position = 0;
-    Assert.That(() => new Qcow2Reader(stream), Throws.TypeOf<NotSupportedException>());
+    using var reader = new Qcow2Reader(stream);
+    Assert.That(() => reader.ExtractDisk(), Throws.TypeOf<NotSupportedException>());
   }
 
   [Test, Category("ExternalFsInterop")]
