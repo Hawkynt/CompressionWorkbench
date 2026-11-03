@@ -113,6 +113,7 @@ public sealed class SupportedHashSizesContractTests {
       [typeof(XoodyakHash)] = static () => XoodyakHash.SupportedHashSizes,
       [typeof(XxHash3)] = static () => XxHash3.SupportedHashSizes,
       [typeof(Blake2b)] = static () => Blake2b.SupportedHashSizes,
+      [typeof(Blake2sp)] = static () => Blake2sp.SupportedHashSizes,
       [typeof(Md5)] = static () => Md5.SupportedHashSizes,
       [typeof(Sha1)] = static () => Sha1.SupportedHashSizes,
       [typeof(Sha256)] = static () => Sha256.SupportedHashSizes,

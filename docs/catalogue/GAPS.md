@@ -13,8 +13,8 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Measure | Value |
 | --- | ---: |
-| Catalogue rows | 984 |
-| … formats listed by at least one source | 526 |
+| Catalogue rows | 986 |
+| … formats listed by at least one source | 528 |
 | … registry ids no source lists (OURS-ONLY) | 458 |
 | Source-listed rows mapped to something here | 285 / 525 (54.3 %) |
 | … of rows listed by ≥ 2 sources | 122 / 138 (88 %) |
@@ -23,10 +23,10 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 185 | a source lists it; no descriptor or building block covers it |
+| `MISSING` | 182 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 24 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 43 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 274 | covered with no known gap against what the sources list |
+| `PARTIAL` | 44 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 278 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 458 | in our registry, listed by none of the seven sources |
 
 ### Per source

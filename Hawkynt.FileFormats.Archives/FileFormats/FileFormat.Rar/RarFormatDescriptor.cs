@@ -73,30 +73,78 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       DisplayName: "Target compatibility",
       Kind: FormatOptionKind.Enum,
       Default: nameof(RarCompatibility.Rar5),
-      AllowedValues: [nameof(RarCompatibility.Rar5), nameof(RarCompatibility.Rar4), nameof(RarCompatibility.Rar1_5)],
-      Description: "Select the oldest RAR generation that must read the archive. Rar1_5 currently writes stored, non-solid, unencrypted members; RAR 1.3 and older use a different RE~^ format and are not claimed here.",
+      AllowedValues: [nameof(RarCompatibility.Rar5), nameof(RarCompatibility.Rar4), nameof(RarCompatibility.Rar2_0), nameof(RarCompatibility.Rar1_5)],
+      Description: "Select the oldest RAR generation that must read the archive. Rar2_0 and Rar1_5 write stored, non-solid, unencrypted members without the RAR 2.9 extended-time field; RAR 1.3 and older use a different RE~^ format and are not claimed here.",
+      IsOptimizationAxis: false),
+    new FormatOptionDescriptor(
+      Key: FormatOptionKeys.VolumeSize,
+      DisplayName: "Volume size",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Split into volumes of at most this size (bytes, or with k/m/g, like rar -v). A target named name.partN.rar gets name.part2.rar, ...; any other name the older name.r00, name.r01, ... scheme. Empty writes one file.",
+      IsOptimizationAxis: false),
+    new FormatOptionDescriptor(
+      Key: RecoveryRecordOption,
+      DisplayName: "Recovery record (%)",
+      Kind: FormatOptionKind.Integer,
+      Default: "0",
+      Description: "Add a recovery record of this size in percent of the archive (1-100, like rar -rr); rar and this tool repair damage within its reach. Single-file archives only. 0 adds none.",
+      IsOptimizationAxis: false),
+    new FormatOptionDescriptor(
+      Key: RecoveryVolumesOption,
+      DisplayName: "Recovery volumes",
+      Kind: FormatOptionKind.Integer,
+      Default: "0",
+      Description: "Write this many recovery volumes (.rev, like rar -rv) beside a volume set; any as many missing or damaged volumes can then be rebuilt. Needs a volume size. 0 writes none.",
       IsOptimizationAxis: false),
   ];
+
+  /// <summary>Option key: recovery record size in percent (RAR 4 and RAR 5, single-file archives).</summary>
+  public const string RecoveryRecordOption = "RecoveryRecord";
+
+  /// <summary>Option key: number of recovery volumes (<c>.rev</c>) to write beside a volume set.</summary>
+  public const string RecoveryVolumesOption = "RecoveryVolumes";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new RarReader(stream, password: password);
+    using var r = new RarReader(stream, password: password, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Size, e.CompressedSize,
-      $"Method {e.CompressionMethod}", e.IsDirectory, e.IsEncrypted, e.ModifiedTime?.DateTime)).ToList();
+      MethodLabel(r, e), e.IsDirectory, e.IsEncrypted, e.ModifiedTime?.LocalDateTime,
+      IsSymlink: e.IsSymlink, LinkTarget: e.IsSymlink ? e.LinkTarget : null)).ToList();
+  }
+
+  private static string MethodLabel(RarReader r, RarEntry e) {
+    var m = e.CompressionMethod == 0 ? "Store" : $"m{e.CompressionMethod}";
+    return r.IsRar5 ? $"RAR5 {m}" : $"RAR4 {m}";
   }
 
   /// <summary>
-  /// Decodes the supplied input.
+  /// Extracts entries, streaming each to its file; a file whose checksum fails is deleted
+  /// and the failure thrown. Symbolic links are listed, not created; NTFS alternate streams
+  /// are written only when asked for by name.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new RarReader(stream, password: password);
+    using var r = new RarReader(stream, password: password, leaveOpen: true);
     for (var i = 0; i < r.Entries.Count; ++i) {
       var e = r.Entries[i];
       if (files != null && !MatchesFilter(e.Name, files)) continue;
+      if (e.StreamName != null && files == null) continue;
+      if (e.IsSymlink) continue;
       if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, e.Name)); continue; }
-      WriteFile(outputDir, e.Name, r.Extract(i));
+      string? path = null;
+      try {
+        using (var target = CreateEntryFile(outputDir, e.Name)) {
+          path = target.Name;
+          r.Extract(i, target);
+        }
+        if (e.ModifiedTime is { } mt)
+          try { File.SetLastWriteTimeUtc(path, mt.UtcDateTime); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+      } catch {
+        if (path != null) try { File.Delete(path); } catch (IOException) { }
+        throw;
+      }
     }
   }
 
@@ -111,10 +159,10 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
-    var r = new RarReader(archive, leaveOpen: true, password: password);
+    using var r = new RarReader(archive, leaveOpen: true, password: password);
     for (var i = 0; i < r.Entries.Count; ++i) {
       var e = r.Entries[i];
-      if (e.IsDirectory) continue;
+      if (e.IsDirectory || e.IsSymlink) continue;
       if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
       var bytes = r.Extract(i);
       return new BoundedEntryStream(new MemoryStream(bytes, writable: false),
@@ -139,70 +187,135 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// selects the container generation independently of compression level. Legacy MethodName values
   /// <c>rar5</c>, <c>rar4</c> and <c>rar15</c> remain compatibility aliases when the explicit option is absent.
   /// </summary>
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    => this.CreateCore(output, inputs.Select(ToStreaming).ToList(), options);
+
+  /// <summary>Streams each input into the archive, so files of any size need bounded memory.</summary>
+  public void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)
+    => this.CreateCore(target, inputs.ToList(), options);
+
+  private static StreamingArchiveInput ToStreaming(ArchiveInputInfo i) {
+    if (i.IsDirectory)
+      return new StreamingArchiveInput(i.ArchiveName, 0, true, () => Stream.Null, i.Metadata);
+    if (i.InMemoryContent is { } bytes)
+      return new StreamingArchiveInput(i.ArchiveName, bytes.LongLength, false, () => new MemoryStream(bytes, writable: false), i.Metadata);
+    var info = new FileInfo(i.FullPath);
+    var meta = i.Metadata ?? new ArchiveEntryMetadata(info.CreationTimeUtc, info.LastAccessTimeUtc, info.LastWriteTimeUtc);
+    return new StreamingArchiveInput(i.ArchiveName, info.Length, false, () => File.OpenRead(i.FullPath), meta);
+  }
+
+  /// <summary>
+  /// Volume size from the <see cref="FormatOptionKeys.VolumeSize"/> option: bytes, or a number with a
+  /// k/m/g suffix (powers of 1024), as rar's <c>-v</c> takes it; 0 or absent means one file.
+  /// </summary>
+  internal static long ParseVolumeSize(string? text) {
+    if (string.IsNullOrWhiteSpace(text)) return 0;
+    var t = text.Trim();
+    var shift = char.ToLowerInvariant(t[^1]) switch { 'k' => 10, 'm' => 20, 'g' => 30, 't' => 40, 'b' => 0, _ => -1 };
+    if (shift >= 0) t = t[..^1];
+    else shift = 0;
+    if (!long.TryParse(t, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var v) || v > long.MaxValue >> shift)
+      throw new ArgumentException($"RAR volume size '{text}' is not a size.");
+    return v << shift;
+  }
+
+  /// <summary>
+  /// The path the first volume is being written to, when <paramref name="output"/> is a file:
+  /// the target behind an atomic-write temp name (<c>name.tmp.xxxxxxxx</c>) is what the
+  /// other volumes are named after.
+  /// </summary>
+  private static string? OutputPath(Stream output) {
+    if (output is not FileStream { Name: { Length: > 0 } name }) return null;
+    var m = System.Text.RegularExpressions.Regex.Match(name, @"^(?<t>.+)\.tmp\.[0-9a-fA-F]{8}$");
+    return m.Success ? m.Groups["t"].Value : name;
+  }
+
+  private void CreateCore(Stream output, IReadOnlyList<StreamingArchiveInput> inputs, FormatCreateOptions options) {
     var target = ResolveCompatibility(options);
-    var useStore = target == RarCompatibility.Rar1_5 || options.MethodName is "store" or "copy";
+    var legacy = target is RarCompatibility.Rar1_5 or RarCompatibility.Rar2_0;
+    var useStore = legacy || options.MethodName is "store" or "copy";
     var rarLevel = useStore ? 0 : options.Level switch {
       0 => 0, 1 => 1, 2 => 2, 3 or 4 => 3, 5 or 6 => 4, >= 7 => 5, _ => 3,
     };
+    var volumeSize = ParseVolumeSize(options.GetString(FormatOptionKeys.VolumeSize));
+    Func<int, Stream>? openVolume = null;
+    Func<int, string>? volumeNames = null;
+    string? firstVolumePath = null;
+    var newNaming = false;
+    if (volumeSize > 0) {
+      var path = firstVolumePath = OutputPath(output) ?? throw new ArgumentException("A RAR volume set must be written to a file, so its other volumes can go beside it.");
+      newNaming = System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(path), @"\.part[0-9]+\.rar$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+      var names = volumeNames = RarVolumeNames.ForWriting(path, newNaming);
+      openVolume = n => File.Create(names(n));
+    }
+    var recoveryVolumes = options.GetOptionInt(RecoveryVolumesOption, 0);
+    if (recoveryVolumes < 0) throw new ArgumentException($"RAR recovery volume count {recoveryVolumes} is negative.");
+    if (recoveryVolumes > 0 && volumeSize <= 0)
+      throw new NotSupportedException("Recovery volumes protect a volume set; give a volume size too.");
+    var volumeCount = 1;
+    var solid = options.SolidSize == 0 && !useStore;
+    var recoveryPercent = options.GetOptionInt(RecoveryRecordOption, 0);
+    if (recoveryPercent is < 0 or > 100)
+      throw new ArgumentException($"RAR recovery record size {recoveryPercent}% is outside 0-100.");
+    if (legacy && (!string.IsNullOrEmpty(options.Password) || options.EncryptFilenames || !string.IsNullOrEmpty(options.EncryptionMethod)))
+      throw new NotSupportedException("RAR 1.5 and 2.0 compatibility support unencrypted archives only.");
+    if (target != RarCompatibility.Rar5 && options.EncryptFilenames && !string.IsNullOrEmpty(options.Password))
+      throw new NotSupportedException("Encrypted file names (rar -hp) are written for RAR 5 archives only.");
+
+    static RarWriter.ArchiveTimes Times(StreamingArchiveInput i)
+      => new(i.Metadata?.LastWriteTimeUtc, i.Metadata?.CreationTimeUtc, i.Metadata?.LastAccessTimeUtc);
 
     switch (target) {
       case RarCompatibility.Rar1_5:
-        if (!string.IsNullOrEmpty(options.Password) || options.EncryptFilenames || !string.IsNullOrEmpty(options.EncryptionMethod))
-          throw new NotSupportedException("RAR 1.5 compatibility currently supports unencrypted archives only.");
-
-        using (var w15 = new Rar4Writer(
-                 output,
-                 leaveOpen: true,
-                 method: RarConstants.Rar4MethodStore,
-                 windowBits: 16,
-                 solid: false,
-                 password: null,
-                 targetCompatibility: RarCompatibility.Rar1_5)) {
-          foreach (var i in inputs) {
-            if (i.IsDirectory) continue;
-            w15.AddFile(i.ArchiveName, i.ReadContent());
-          }
-          w15.Finish();
+      case RarCompatibility.Rar2_0:
+      case RarCompatibility.Rar4: {
+        var windowBits = options.DictSize > 0 ? Math.Clamp((int)Math.Log2(options.DictSize), 16, 22) : 22;
+        using var w4 = new Rar4Writer(output, leaveOpen: true,
+          method: legacy ? RarConstants.Rar4MethodStore : (byte)(0x30 + rarLevel),
+          windowBits: legacy ? 16 : windowBits,
+          solid: target == RarCompatibility.Rar4 && solid,
+          password: target == RarCompatibility.Rar4 ? options.Password : null,
+          targetCompatibility: target, volumeSize: volumeSize, openVolume: openVolume, newVolumeNaming: newNaming,
+          recoveryPercent: recoveryPercent);
+        foreach (var i in inputs) {
+          if (i.IsDirectory) { w4.AddDirectory(i.Name, Times(i)); continue; }
+          using var s = i.OpenStream();
+          w4.AddFile(i.Name, s, i.Size, Times(i));
         }
+        w4.Finish();
+        volumeCount = w4.VolumeCount;
         break;
-
-      case RarCompatibility.Rar4:
-        var windowBits = options.DictSize > 0
-          ? Math.Clamp((int)Math.Log2(options.DictSize), 15, 22) : 20;
-        var rar4Method = (byte)(0x30 + rarLevel);
-        using (var w4 = new Rar4Writer(
-                 output,
-                 leaveOpen: true,
-                 method: rar4Method,
-                 windowBits: windowBits,
-                 solid: options.SolidSize == 0,
-                 password: options.Password,
-                 targetCompatibility: RarCompatibility.Rar4)) {
-          foreach (var i in inputs) {
-            if (i.IsDirectory) continue;
-            w4.AddFile(i.ArchiveName, i.ReadContent());
-          }
-          w4.Finish();
-        }
-        break;
-
-      case RarCompatibility.Rar5:
+      }
+      case RarCompatibility.Rar5: {
         var dictLog = options.DictSize > 0
-          ? Math.Clamp((int)Math.Log2(options.DictSize), 17, 28) : 17;
-        using (var w = new RarWriter(output, leaveOpen: true, method: rarLevel, dictionarySizeLog: dictLog,
-                 solid: options.SolidSize == 0, password: options.Password,
-                 encryptHeaders: options.EncryptFilenames)) {
-          foreach (var i in inputs) {
-            if (i.IsDirectory) continue;
-            w.AddFile(i.ArchiveName, i.ReadContent());
-          }
-          w.Finish();
+          ? Math.Clamp((int)Math.Ceiling(Math.Log2(options.DictSize)), 17, 26)
+          : rarLevel switch { <= 1 => 20, 2 => 22, 3 => 22, 4 => 24, _ => 25 };
+        using var w = new RarWriter(output, leaveOpen: true, method: rarLevel, dictionarySizeLog: dictLog,
+          solid: solid, password: options.Password, encryptHeaders: options.EncryptFilenames,
+          volumeSize: volumeSize, openVolume: openVolume, recoveryPercent: recoveryPercent);
+        foreach (var i in inputs) {
+          if (i.IsDirectory) { w.AddDirectory(i.Name, Times(i)); continue; }
+          using var s = i.OpenStream();
+          w.AddFile(i.Name, s, i.Size, Times(i));
         }
+        w.Finish();
+        volumeCount = w.VolumeCount;
         break;
-
+      }
       default:
         throw new ArgumentOutOfRangeException(nameof(options), target, "Unknown RAR compatibility target.");
+    }
+
+    if (recoveryVolumes > 0) {
+      // The writers have closed the later volumes; the first is still the caller's stream.
+      output.Flush();
+      var streams = new List<Stream> { output };
+      try {
+        for (var n = 1; n < volumeCount; ++n) streams.Add(File.OpenRead(volumeNames!(n)));
+        RarRecoveryVolumes.Create(streams, firstVolumePath!, recoveryVolumes);
+      } finally {
+        for (var n = 1; n < streams.Count; ++n) streams[n].Dispose();
+      }
     }
   }
 
@@ -213,6 +326,7 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     return options.MethodName?.ToLowerInvariant() switch {
       "rar15" or "rar1.5" or "rar1_5" => RarCompatibility.Rar1_5,
+      "rar20" or "rar2.0" or "rar2_0" => RarCompatibility.Rar2_0,
       "rar4" => RarCompatibility.Rar4,
       _ => RarCompatibility.Rar5,
     };
@@ -249,13 +363,7 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
 
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
-      foreach (var input in inputs) {
-        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName)) continue;
-        var dest = Path.Combine(tmpDir, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
-        var destDir = Path.GetDirectoryName(dest);
-        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
-        File.WriteAllBytes(dest, input.ReadContent());
-      }
+      RebuildVerb.StageInputs(tmpDir, inputs);
     });
   }
 
@@ -281,11 +389,7 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     var skip = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
-      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
-        var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
-        if (skip.Contains(rel) || skip.Contains(Path.GetFileName(rel)))
-          File.Delete(file);
-      }
+      RebuildVerb.DeleteNamedEntries(tmpDir, skip);
     });
   }
 }

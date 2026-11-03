@@ -1,6 +1,4 @@
 using System.Text;
-using Compression.Core.Dictionary.Ppm;
-using Compression.Core.Entropy.Ppmd;
 using Compression.Lib;
 using Compression.Registry;
 using FileFormat.Ppmd;
@@ -8,7 +6,7 @@ using FileFormat.Ppmd;
 namespace Compression.Tests.Optimizer;
 
 /// <summary>
-/// The standalone PPMd format exposes the PPMd-H model order as a finite search
+/// The standalone PPMd format exposes the PPMd var.I model order as a finite search
 /// axis. Parameterized writes must honour that order, every candidate must still
 /// round-trip, and the generic compression optimizer must keep the smallest one.
 /// </summary>
@@ -51,10 +49,10 @@ public class PpmdOptionsTests {
 
     Assert.Multiple(() => {
       Assert.That(option.Key, Is.EqualTo("Order"));
-      Assert.That(option.Default, Is.EqualTo(PpmdBuildingBlock.DefaultOrder.ToString()));
-      Assert.That(option.AllowedValues, Has.Count.EqualTo(31));
+      Assert.That(option.Default, Is.EqualTo(PpmdStream.DefaultOrder.ToString()));
+      Assert.That(option.AllowedValues, Has.Count.EqualTo(15));
       Assert.That(option.AllowedValues, Does.Contain("2"));
-      Assert.That(option.AllowedValues, Does.Contain("32"));
+      Assert.That(option.AllowedValues, Does.Contain("16"));
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.True);
       Assert.That(descriptor.Methods.Single().SupportsOptimize, Is.True);
     });
@@ -69,9 +67,8 @@ public class PpmdOptionsTests {
     var order12 = Compress(descriptor, data, 12);
 
     Assert.Multiple(() => {
-      Assert.That(order2[4], Is.EqualTo(1), "standalone wrapper version");
-      Assert.That(order2[5], Is.EqualTo(2), "PPMd payload order");
-      Assert.That(order12[5], Is.EqualTo(12), "PPMd payload order");
+      Assert.That(order2[8] & 0x0F, Is.EqualTo(1), "header order - 1");
+      Assert.That(order12[8] & 0x0F, Is.EqualTo(11), "header order - 1");
       Assert.That(Decompress(descriptor, order2), Is.EqualTo(data));
       Assert.That(Decompress(descriptor, order12), Is.EqualTo(data));
     });
@@ -86,7 +83,7 @@ public class PpmdOptionsTests {
 
     Assert.Multiple(() => {
       Assert.That(result.Parameters, Does.ContainKey("Order"));
-      Assert.That(result.Probes, Is.EqualTo(31));
+      Assert.That(result.Probes, Is.EqualTo(15));
       Assert.That(result.Ratio, Is.LessThan(1.0));
       Assert.That(Decompress(descriptor, result.Bytes), Is.EqualTo(data));
     });
@@ -96,20 +93,8 @@ public class PpmdOptionsTests {
     Assert.That(result.Bytes, Is.EqualTo(replay));
   }
 
-  [Test, Category("Regression"), Category("RoundTrip")]
-  public void LegacyOrder3PpmPayload_RemainsReadable() {
-    var data = CompressibleSample();
-    var legacyPayload = new PpmBuildingBlock().Compress(data);
-    using var stream = new MemoryStream();
-    stream.Write([0x8F, 0xAF, 0xAC, 0x84]);
-    stream.Write(legacyPayload);
-
-    var descriptor = new PpmdFormatDescriptor();
-    Assert.That(Decompress(descriptor, stream.ToArray()), Is.EqualTo(data));
-  }
-
   [TestCase("1")]
-  [TestCase("33")]
+  [TestCase("17")]
   [TestCase("not-an-order")]
   [Category("Validation")]
   public void InvalidOrder_IsRejected(string value) {

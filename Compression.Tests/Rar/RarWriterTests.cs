@@ -400,30 +400,13 @@ public class RarWriterTests {
   }
 
   [Category("HappyPath")]
-  [Category("RoundTrip")]
   [Test]
-  public void RecoveryRecord_RoundTrip() {
-    var data1 = new byte[100];
-    var data2 = new byte[200];
-    for (var i = 0; i < data1.Length; ++i) data1[i] = (byte)(i % 10);
-    for (var i = 0; i < data2.Length; ++i) data2[i] = (byte)(i % 7);
-
-    byte[] archive;
-    using (var ms = new MemoryStream()) {
-      using var writer = new RarWriter(ms, leaveOpen: true, method: RarConstants.MethodStore,
-        recoveryPercent: 10);
-      writer.AddFile("a.txt", data1);
-      writer.AddFile("b.txt", data2);
-      writer.Finish();
-      archive = ms.ToArray();
-    }
-
-    using var ms2 = new MemoryStream(archive);
-    using var reader = new RarReader(ms2);
-    Assert.That(reader.HasRecoveryRecord, Is.True, "Recovery record should be detected");
-    Assert.That(reader.Extract(0), Is.EqualTo(data1));
-    Assert.That(reader.Extract(1), Is.EqualTo(data2));
-    Assert.That(reader.VerifyRecoveryRecord(), Is.True, "Recovery record should verify");
+  public void Given_ARarMadeRecoveryRecord_When_Read_Then_ItIsAnnouncedAndTheFilesExtract() {
+    // Writing recovery records is refused (their layout is documented only in unrar's source);
+    // reading archives that carry one must work.
+    using var reader = RarReader.Open(RarConformanceSet.PathOf(RarConformanceSet.Modern, "r5-rr.rar"));
+    Assert.That(reader.HasRecoveryRecord, Is.True);
+    Assert.That(reader.Extract(0), Has.Length.EqualTo(20000));
   }
 
   [Category("EdgeCase")]

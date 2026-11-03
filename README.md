@@ -264,6 +264,7 @@ filesystem maintenance and binary analysis.
 | `extract <archive> [files...]` | `x` | Extract files from an archive |
 | `create <archive> <files...>` | `c` | Create a new archive |
 | `test <archive>` | `t` | Test archive integrity |
+| `repair <archive>` | - | Repair a RAR archive from its recovery record (`rar r`) or rebuild missing volumes from `.rev` files (`rar rc`); `--check` only reports |
 | `add <archive> <files...>` | - | Add or replace files inside an existing archive |
 | `remove <archive> <names...>` | - | Remove named entries from an existing archive |
 | `replace <archive> <entry> <file>` | - | Replace a single entry with a new file |
@@ -303,6 +304,8 @@ Examples:
 cwb list archive.zip
 cwb extract archive.7z -o ./output
 cwb x archive.rar -p mypassword
+cwb create backup.part1.rar myDir -v 100m -p secret   # RAR 5 volumes, AES-256
+cwb x backup.part1.rar -p secret                        # reads the whole volume set
 cwb create output.zip myDir file1.txt '*.txt'
 cwb create output.7z file.txt --method lzma2+
 cwb convert input.tar.gz output.tar.xz

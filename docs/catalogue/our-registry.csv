@@ -284,6 +284,7 @@ format,JpegArchive,JPEG (archive view),Image,,,Y,Y,,
 format,Json,JSON object graph,Archive,,.json;.cwb.json,Y,Y,Y,
 format,JuiceFs,JuiceFS,Archive,Y,.juicefs,Y,Y,,
 format,Jxl,JPEG XL,Archive,,.jxl,Y,Y,,
+format,Kgb,KGB Archiver,Archive,,.kgb,Y,Y,Y,Y
 format,Kkrunchy,kkrunchy (Win32 PE 64K),Archive,,,Y,Y,,
 format,Kmz,KMZ,Archive,,.kmz,Y,Y,Y,Y
 format,Kss,KSS (MSX/SMS music),Audio,,.kss,Y,Y,,

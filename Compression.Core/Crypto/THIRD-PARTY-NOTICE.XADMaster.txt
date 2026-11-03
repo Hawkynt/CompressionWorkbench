@@ -1,0 +1,32 @@
+XADMaster (RAR 1.3/1.4 and RAR 1.5 ciphers) - converted to C#
+
+Source:   https://github.com/MacPaw/XADMaster (The Unarchiver's unarchiving engine)
+Revision: 7cb9ee0abbb163f261e4cb74501e15067032319c (master, 2026-09-21)
+Authors:  Dag Ågren (original author); MacPaw Way Ltd. (2017-present);
+          parts descend from libxad (Dirk Stöcker and contributors)
+Licence:  GNU Lesser General Public License, version 2.1 or (at your option)
+          any later version. This repository is LGPL-3.0-or-later, which the
+          "or any later version" grant permits; the full LGPL text is in the
+          repository's LICENSE file.
+
+Upstream notice, as carried in each XADMaster source file:
+
+  Copyright (c) 2017-present, MacPaw Way Ltd. All rights reserved.
+
+  This library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.
+
+Files converted:
+
+  XADRAR13CryptHandle.m  -> Rar15Cipher.cs (unpack version 13 keystream)
+  XADRAR15CryptHandle.m  -> Rar15Cipher.cs (unpack version 15 keystream)
+
+The key schedules and keystream steps are carried across; the CSHandle stream
+framework is not. Checked against archives written by DOS RAR 1.40 and 1.55.

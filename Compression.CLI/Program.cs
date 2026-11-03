@@ -134,6 +134,9 @@ var encryptHeadersOpt = new Option<bool>("--encrypt-headers", "-eh") { Descripti
 var zipEncryptionOpt = new Option<string?>("--zip-encryption") { Description = "ZIP encryption method: aes256 (default, strong) or zipcrypto (weak, legacy compatible)" };
 var sfxOpt = new Option<bool>("--sfx") { Description = "Create a self-extracting archive (console stub, no runtime needed)" };
 var sfxUiOpt = new Option<bool>("--sfx-ui") { Description = "Create a self-extracting archive (GUI stub with folder picker; Windows and Linux)" };
+var volumeSizeOpt = new Option<string?>("--volume-size", "-v") { Description = "Split into volumes of at most this size (e.g. 100m, 4g, 20000); formats with volume sets only (RAR)" };
+var includeHiddenOpt = new Option<bool>("--include-hidden") { Description = "Also take hidden and system files found in folders or by wildcards (skipped by default; files named explicitly are always taken)" };
+var createOptOpt = new Option<string[]>("--opt") { Description = "Format-specific option KEY=VALUE (repeatable), e.g. --opt TargetCompatibility=Rar4", AllowMultipleArgumentsPerToken = false };
 var sfxTargetOpt = new Option<string?>("--sfx-target") { Description = "SFX target platform, or a comma-separated list for one file that runs on all of them: " + string.Join(", ", SfxBuilder.SupportedTargets) };
 
 var createCmd = new Command("create", """
@@ -152,6 +155,9 @@ var createCmd = new Command("create", """
     cwb create app.7z src/ --sfx --sfx-target linux-x64 SFX for Linux x64
     cwb create backup.7z src/ -p secret                 7z with AES-256 encryption
     cwb create backup.zip *.txt -m deflate+ -t 4        Zopfli optimal, 4 threads
+    cwb create backup.part1.rar src/ -v 100m -p secret  RAR 5 volumes of 100 MB, AES-256
+    cwb create old.rar src/ --opt TargetCompatibility=Rar4  RAR 4 (2.9 format) archive
+    cwb create all.zip src/ --include-hidden            Keep hidden/system files and dot-files
 
   Methods by format:
     ZIP:  store, shrink, reduce, implode, deflate(+), deflate64, bzip2, lzma, ppmd, zstd
@@ -168,7 +174,7 @@ var createCmd = new Command("create", """
     --solid-size  Max solid block: 0=single block, 64m=64MB blocks, 1g=1GB blocks.
     --level       0-9: 1=fast, 5=normal, 9=best.
     --threads     Parallel compression (7z splits into solid blocks, ZIP per-entry).
-  """) { createArchiveArg, createFilesArg, passwordOpt, methodOpt, forceCompressOpt, threadsOpt, solidSizeOpt, dictSizeOpt, wordSizeOpt, levelOpt, encryptHeadersOpt, zipEncryptionOpt, sfxOpt, sfxUiOpt, sfxTargetOpt };
+  """) { createArchiveArg, createFilesArg, passwordOpt, methodOpt, forceCompressOpt, threadsOpt, solidSizeOpt, dictSizeOpt, wordSizeOpt, levelOpt, encryptHeadersOpt, zipEncryptionOpt, sfxOpt, sfxUiOpt, sfxTargetOpt, volumeSizeOpt, createOptOpt, includeHiddenOpt };
 createCmd.Aliases.Add("c");
 createCmd.SetAction((ParseResult ctx) => {
   var archive = ctx.GetValue(createArchiveArg)!;
@@ -186,9 +192,18 @@ createCmd.SetAction((ParseResult ctx) => {
   var makeSfx = ctx.GetValue(sfxOpt);
   var makeSfxUi = ctx.GetValue(sfxUiOpt);
   var sfxTarget = ctx.GetValue(sfxTargetOpt);
+  var formatSpecific = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+  foreach (var raw in ctx.GetValue(createOptOpt) ?? []) {
+    if (string.IsNullOrEmpty(raw)) continue;
+    var eq = raw.IndexOf('=');
+    if (eq < 0) formatSpecific[raw] = "true";
+    else if (eq > 0) formatSpecific[raw[..eq]] = raw[(eq + 1)..];
+  }
+  if (ctx.GetValue(volumeSizeOpt) is { Length: > 0 } volumeSize)
+    formatSpecific[Compression.Registry.FormatOptionKeys.VolumeSize] = volumeSize;
 
   List<ArchiveInput> resolved;
-  try { resolved = ArchiveInput.Resolve(files); }
+  try { resolved = ArchiveInput.Resolve(files, ctx.GetValue(includeHiddenOpt)); }
   catch (FileNotFoundException ex) { Console.Error.WriteLine(ex.Message); return 1; }
 
   // Detect incompressible files unless --force-compress is set
@@ -208,6 +223,7 @@ createCmd.SetAction((ParseResult ctx) => {
     DictSize = dictSize, WordSize = wordSize, Level = level,
     ForceCompress = forceCompress, Password = password, EncryptFilenames = encryptHeaders,
     ZipEncryption = zipEncryption,
+    FormatSpecific = formatSpecific.Count > 0 ? formatSpecific : null,
   };
   var methodLabel = method.IsDefault ? "" : $" [{method}]";
   var threadLabel = threads > 1 ? $" ({threads} threads)" : "";
@@ -272,6 +288,51 @@ createCmd.SetAction((ParseResult ctx) => {
 
 // ── test ─────────────────────────────────────────────────────────────
 
+// ── repair ───────────────────────────────────────────────────────────
+
+var repairArchiveArg = new Argument<FileInfo>("archive") { Description = "RAR archive with a recovery record" };
+var repairOutputOpt = new Option<string?>("--output", "-o") { Description = "Where to write the repaired archive (default: fixed.<name> beside it, as rar r names it)" };
+var repairCheckOpt = new Option<bool>("--check") { Description = "Only check the archive against its recovery record" };
+var repairCmd = new Command("repair", """
+  Repair a RAR archive from its recovery record (rar r), or rebuild the missing or
+  damaged volumes of a set from its .rev recovery volumes (rar rc); --check only reports.
+  Give any volume or .rev file of a set. A damaged volume is kept as name.bad.
+  RAR 4 records rebuild up to as many damaged 512-byte sectors as they hold parity
+  sectors, one per parity group; RAR 5 records rebuild as many damaged shards as they
+  hold recovery blocks. Damage must be in place (changed bytes, not inserted or lost).
+  Exit codes: 0 intact or repaired, 1 not repairable, 2 no recovery record.
+  Examples:
+    cwb repair backup.rar                 Writes fixed.backup.rar
+    cwb repair backup.rar --check         Reports damage without writing
+    cwb repair set.part1.rar              Rebuilds missing volumes from set.part*.rev
+    cwb create set.part1.rar src/ -v 100m --opt RecoveryVolumes=2   Writes 2 .rev files
+  """) { repairArchiveArg, repairOutputOpt, repairCheckOpt };
+repairCmd.SetAction((ParseResult ctx) => {
+  var archive = ctx.GetValue(repairArchiveArg)!;
+  // A volume set with recovery volumes beside it: check it, or rebuild what is missing (rar rc).
+  var volumes = FileFormat.Rar.RarRecoveryVolumes.Verify(archive.FullName);
+  if (volumes.Kind != FileFormat.Rar.RarRecoveryKind.None) {
+    var result = ctx.GetValue(repairCheckOpt) ? volumes : FileFormat.Rar.RarRecoveryVolumes.Reconstruct(archive.FullName);
+    Console.WriteLine(result.Message);
+    return result.Intact || result.Repaired ? 0 : 1;
+  }
+  if (!archive.Exists) { Console.Error.WriteLine($"File not found: {archive.FullName}"); return 1; }
+  if (ctx.GetValue(repairCheckOpt)) {
+    var check = FileFormat.Rar.RarRecovery.Verify(archive.FullName);
+    Console.WriteLine(check.Message);
+    return check.Kind == FileFormat.Rar.RarRecoveryKind.None ? 2 : check.Intact ? 0 : 1;
+  }
+  var output = ctx.GetValue(repairOutputOpt) ?? Path.Combine(archive.DirectoryName ?? ".", "fixed." + archive.Name);
+  var report = FileFormat.Rar.RarRecovery.Repair(archive.FullName, output);
+  Console.WriteLine(report.Message);
+  if (report.Repaired) {
+    Console.WriteLine($"Wrote {output}");
+    return 0;
+  }
+  File.Delete(output);
+  return report.Kind == FileFormat.Rar.RarRecoveryKind.None ? 2 : report.Intact ? 0 : 1;
+});
+
 var testCmd = new Command("test", "Test archive integrity") { archiveArg, passwordOpt };
 testCmd.Aliases.Add("t");
 testCmd.SetAction((ParseResult ctx) => {
@@ -314,14 +375,14 @@ var addCmd = new Command("add", """
   Examples:
     cwb add disk.d81 game.prg                     Add into 1581 disk
     cwb add archive.zip notes.txt -m deflate      Add with re-encoding
-  """) { addArchiveArg, addFilesArg, methodOpt, levelOpt, dictSizeOpt, passwordOpt };
+  """) { addArchiveArg, addFilesArg, methodOpt, levelOpt, dictSizeOpt, passwordOpt, includeHiddenOpt };
 addCmd.SetAction((ParseResult ctx) => {
   var archive = ctx.GetValue(addArchiveArg)!;
   var files = ctx.GetValue(addFilesArg)!;
   if (!archive.Exists) { Console.Error.WriteLine($"File not found: {archive.FullName}"); return 1; }
 
   List<ArchiveInput> resolved;
-  try { resolved = ArchiveInput.Resolve(files); }
+  try { resolved = ArchiveInput.Resolve(files, ctx.GetValue(includeHiddenOpt)); }
   catch (FileNotFoundException ex) { Console.Error.WriteLine(ex.Message); return 1; }
 
   var opts = new CompressionOptions {
@@ -2795,7 +2856,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, optimizeCmd, compressCmd, canonicalizeCmd, repackCmd, sortEntriesCmd, maintenanceCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, scrambleCmd, placeCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
+  listCmd, extractCmd, createCmd, testCmd, repairCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, optimizeCmd, compressCmd, canonicalizeCmd, repackCmd, sortEntriesCmd, maintenanceCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, scrambleCmd, placeCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
 };
 
 return root.Parse(args).Invoke();

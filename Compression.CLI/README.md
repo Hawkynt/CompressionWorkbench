@@ -19,6 +19,7 @@ dotnet build Compression.CLI
 | `extract <archive> [files...]` | `x` | Extract files from an archive |
 | `create <archive> <files...>` | `c` | Create a new archive |
 | `test <archive>` | `t` | Test archive integrity |
+| `repair <archive>` | - | Repair a RAR archive from its recovery record (`rar r`) or rebuild missing volumes from `.rev` files (`rar rc`); `--check` only reports |
 | `add <archive> <files...>` | - | Add or replace files inside an existing archive |
 | `remove <archive> <names...>` | `rm` | Remove named entries from an existing archive |
 | `replace <archive> <entry> <file>` | - | Replace a single entry with a new file |
@@ -140,6 +141,8 @@ Append `+` to any method for optimal encoding:
 - `--threads N` — Parallel compression threads
 - `--solid-size SIZE` — 7z solid block size
 - `--force-compress` — Override incompressibility detection
+- `--include-hidden` — `create`/`add` skip hidden and system files (dot-files on Unix) found in a folder
+  or by a wildcard; this takes them too. A file named explicitly is always taken.
 - `--sfx` / `--sfx-ui` — Create a self-extracting archive. `--sfx` is a console stub; `--sfx-ui`
   shows a small window with a folder picker. Both are NativeAOT binaries, so the recipient needs
   nothing installed.

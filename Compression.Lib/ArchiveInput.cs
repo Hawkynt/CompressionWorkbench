@@ -12,18 +12,26 @@ public readonly record struct ArchiveInput(string FullPath, string EntryName) {
   /// Resolves a mix of files, directories, and wildcards into archive inputs.
   /// Directories are recursed; their contents preserve relative paths.
   /// </summary>
-  public static List<ArchiveInput> Resolve(string[] inputs) {
+  /// <param name="inputs">Files, directories and wildcard patterns.</param>
+  /// <param name="includeHidden">
+  /// Also take hidden and system files (and directories) that a directory walk or a wildcard finds.
+  /// Off by default, so a folder's <c>Thumbs.db</c>, <c>desktop.ini</c> or (on Unix) dot-files stay out;
+  /// a file named explicitly is always taken.
+  /// </param>
+  public static List<ArchiveInput> Resolve(string[] inputs, bool includeHidden = false) {
+    var skip = includeHidden ? (FileAttributes)0 : FileAttributes.Hidden | FileAttributes.System;
     var result = new List<ArchiveInput>();
     foreach (var input in inputs) {
       if (input.Contains('*') || input.Contains('?')) {
         var dir = Path.GetDirectoryName(input);
         if (string.IsNullOrEmpty(dir)) dir = ".";
         var pattern = Path.GetFileName(input);
-        foreach (var match in Directory.GetFiles(dir, pattern))
+        var wildcard = new EnumerationOptions { MatchType = MatchType.Win32, AttributesToSkip = skip };
+        foreach (var match in Directory.GetFiles(dir, pattern, wildcard))
           result.Add(new(Path.GetFullPath(match), Path.GetFileName(match)));
       }
       else if (Directory.Exists(input)) {
-        AddDirectory(result, input);
+        AddDirectory(result, input, skip);
       }
       else if (File.Exists(input)) {
         result.Add(new(Path.GetFullPath(input), Path.GetFileName(input)));
@@ -35,7 +43,7 @@ public readonly record struct ArchiveInput(string FullPath, string EntryName) {
     return result;
   }
 
-  private static void AddDirectory(List<ArchiveInput> result, string dirPath) {
+  private static void AddDirectory(List<ArchiveInput> result, string dirPath, FileAttributes skip) {
     // Use the directory name itself as the root inside the archive
     var baseName = Path.GetFileName(Path.GetFullPath(dirPath));
     var parentDir = Path.GetDirectoryName(Path.GetFullPath(dirPath)) ?? ".";
@@ -51,6 +59,7 @@ public readonly record struct ArchiveInput(string FullPath, string EntryName) {
     var options = new EnumerationOptions {
       RecurseSubdirectories = true,
       IgnoreInaccessible = true,
+      AttributesToSkip = skip,
     };
 
     // Add all subdirectories

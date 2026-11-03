@@ -74,6 +74,78 @@ public class ArchiveInputTests {
     }
   }
 
+  /// <summary>
+  /// A folder with a visible file, a hidden file and a hidden subfolder: dot-names on Unix (which
+  /// .NET reports as hidden), the hidden attribute on Windows.
+  /// </summary>
+  private static string MakeTreeWithHidden(out string hiddenFile) {
+    var root = Path.Combine(Path.GetTempPath(), "cwb-ai-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    File.WriteAllText(Path.Combine(root, "shown.txt"), "a");
+    hiddenFile = Path.Combine(root, ".secret.txt");
+    File.WriteAllText(hiddenFile, "b");
+    var hiddenDir = Path.Combine(root, ".cache");
+    Directory.CreateDirectory(hiddenDir);
+    File.WriteAllText(Path.Combine(hiddenDir, "inner.txt"), "c");
+    if (OperatingSystem.IsWindows()) {
+      File.SetAttributes(hiddenFile, File.GetAttributes(hiddenFile) | FileAttributes.Hidden);
+      new DirectoryInfo(hiddenDir).Attributes |= FileAttributes.Hidden;
+    }
+    return root;
+  }
+
+  private static HashSet<string> Names(IEnumerable<ArchiveInput> entries)
+    => entries.Select(e => e.EntryName).ToHashSet(StringComparer.Ordinal);
+
+  [Test, Category("HappyPath")]
+  public void Given_AFolderWithHiddenEntries_When_ResolvedByDefault_Then_OnlyVisibleOnesAreTaken() {
+    var root = MakeTreeWithHidden(out _);
+    try {
+      var names = Names(ArchiveInput.Resolve([root]));
+      var b = Path.GetFileName(root);
+      Assert.That(names, Does.Contain(b + "/shown.txt"));
+      Assert.That(names, Does.Not.Contain(b + "/.secret.txt"));
+      Assert.That(names, Does.Not.Contain(b + "/.cache/"));
+      Assert.That(names, Does.Not.Contain(b + "/.cache/inner.txt"));
+    } finally {
+      TryDeleteTree(root);
+    }
+  }
+
+  [Test, Category("HappyPath")]
+  public void Given_AFolderWithHiddenEntries_When_ResolvedWithIncludeHidden_Then_EverythingIsTaken() {
+    var root = MakeTreeWithHidden(out _);
+    try {
+      var names = Names(ArchiveInput.Resolve([root], includeHidden: true));
+      var b = Path.GetFileName(root);
+      Assert.That(names, Is.SupersetOf(new[] { b + "/", b + "/shown.txt", b + "/.secret.txt", b + "/.cache/", b + "/.cache/inner.txt" }));
+    } finally {
+      TryDeleteTree(root);
+    }
+  }
+
+  [Test, Category("EdgeCase")]
+  public void Given_AHiddenFile_When_NamedExplicitly_Then_ItIsTakenWithoutTheOption() {
+    var root = MakeTreeWithHidden(out var hidden);
+    try {
+      Assert.That(Names(ArchiveInput.Resolve([hidden])), Is.EquivalentTo(new[] { ".secret.txt" }));
+    } finally {
+      TryDeleteTree(root);
+    }
+  }
+
+  [Test, Category("EdgeCase")]
+  public void Given_AWildcard_When_Resolved_Then_HiddenMatchesFollowTheOption() {
+    var root = MakeTreeWithHidden(out _);
+    try {
+      var pattern = Path.Combine(root, "*.txt");
+      Assert.That(Names(ArchiveInput.Resolve([pattern])), Is.EquivalentTo(new[] { "shown.txt" }));
+      Assert.That(Names(ArchiveInput.Resolve([pattern], includeHidden: true)), Is.EquivalentTo(new[] { "shown.txt", ".secret.txt" }));
+    } finally {
+      TryDeleteTree(root);
+    }
+  }
+
   private static void TryDeleteTree(string path) {
     try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); }
     catch { /* leftover temp dir — non-fatal */ }
