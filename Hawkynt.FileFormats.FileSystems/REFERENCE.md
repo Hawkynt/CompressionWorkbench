@@ -989,7 +989,7 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 
 ### Namespace `FileFormat.Ewf`
 
-[`EwfFormatDescriptor`](#ewfformatdescriptor) · [`EwfReader`](#ewfreader) · [`EwfReader.EwfImage`](#ewfreaderewfimage) · [`EwfReader.Section`](#ewfreadersection) · [`EwfWriter`](#ewfwriter)
+[`EwfFormatDescriptor`](#ewfformatdescriptor) · [`EwfMediaStream`](#ewfmediastream) · [`EwfReader`](#ewfreader) · [`EwfReader.EwfImage`](#ewfreaderewfimage) · [`EwfReader.Section`](#ewfreadersection) · [`EwfWriter`](#ewfwriter)
 
 #### `EwfFormatDescriptor`
 
@@ -1028,6 +1028,31 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Performs the shrink operation. |
 
+#### `EwfMediaStream`
+
+Read-only, seekable view of the media stored in an EWF-E01 segment file set (.E01, .E02, …, .E99, .EAA, …). Every segment's section chain is walked once; every "table" section adds its chunks (falling back to its "table2" mirror when the table's checksum fails), and chunks are decoded on demand: zlib when the entry's top bit is set, otherwise stored data followed by its Adler-32.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `ChunkSize` | `int ChunkSize { get; }` | Bytes per chunk (sectors per chunk times bytes per sector). |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `SegmentCount` | `int SegmentCount { get; }` | Number of segment files the set consists of. |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Open` | `static EwfMediaStream Open(Stream first, bool leaveOpen = true)` | Opens the media of the segment set `first` starts. When the first segment continues into others, they are looked up next to it by EWF's naming (E02 … E99, EAA …). |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SegmentPath` | `static string SegmentPath(string firstPath, int number)` | Path of segment `number` (1-based) of the set whose first file is `firstPath`. |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
 #### `EwfReader`
 
 Reader for EnCase Expert Witness Format (EWF) forensic images — the .e01/.ewf/.l01 family used by EnCase and libewf. Besides the raw section chain it reconstructs the logical media carried by the common single-segment EVF layout emitted by `EwfWriter`.
@@ -1039,7 +1064,7 @@ Reader for EnCase Expert Witness Format (EWF) forensic images — the .e01/.ewf/
 | `FileHeaderSize` | `const int FileHeaderSize` | Defines the file header size constant value. |
 | `LvfSignature` | `static readonly byte[] LvfSignature` | Provides the lvf signature value. |
 | `SectionDescriptorSize` | `const int SectionDescriptorSize` | Defines the section descriptor size constant value. |
-| `ExtractMedia` | `static byte[] ExtractMedia(EwfImage image)` | Reconstructs the logical raw media from a single EVF segment. Stored chunks have their trailing Adler-32 removed and verified; compressed chunks are decoded as zlib according to the table-entry MSB. |
+| `ExtractMedia` | `static byte[] ExtractMedia(EwfImage image)` | Reconstructs the raw media of a self-contained (single-segment) EVF image held in memory, through `EwfMediaStream`: every sectors/table group, stored chunks checked by their Adler-32, compressed chunks decoded as zlib. |
 | `Read` | `static EwfImage Read(ReadOnlySpan<byte> data)` | Reads one EWF segment and its section chain. |
 
 #### `EwfReader.EwfImage`
@@ -1050,8 +1075,10 @@ Implements `IEquatable<EwfImage>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EwfImage` | `EwfImage(bool IsLogical, ushort SegmentNumber, List<Section> Sections, long TotalFileSize)` | Represents an ewf image. |
+| `EwfImage` | `EwfImage(bool IsLogical, ushort SegmentNumber, List<Section> Sections, long TotalFileSize, byte[] Raw = null)` | Represents an ewf image. |
+| `ContinuesInNextSegment` | `bool ContinuesInNextSegment { get; }` | Whether this segment's chain ends in "next": the media continues in further segment files. |
 | `IsLogical` | `bool IsLogical { get; init; }` |  |
+| `Raw` | `byte[] Raw { get; init; }` |  |
 | `Sections` | `List<Section> Sections { get; init; }` |  |
 | `SegmentNumber` | `ushort SegmentNumber { get; init; }` |  |
 | `TotalFileSize` | `long TotalFileSize { get; init; }` |  |
