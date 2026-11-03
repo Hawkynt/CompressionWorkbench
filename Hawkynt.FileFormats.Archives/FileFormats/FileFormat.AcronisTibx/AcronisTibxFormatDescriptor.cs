@@ -14,13 +14,12 @@ namespace FileFormat.AcronisTibx;
 /// <list type="bullet">
 ///   <item><description><c>https://www.acronis.com</c> — vendor — the .tibx container is proprietary and unpublished</description></item>
 ///   <item><description><c>https://en.wikipedia.org/wiki/Acronis_True_Image</c> — product background (classic .tib vs 2020+ .tibx)</description></item>
-///   <item><description>On-disk layout (ARCH page-zero magic, LSM page store) recovered by community reverse engineering; no public specification exists</description></item>
+///   <item><description>On-disk layout (ARCH page-zero magic, LSM page store): no public specification exists</description></item>
 /// </list>
 /// </summary>
 /// <remarks>
 ///   <para>
-///     <c>.tibx</c> is the on-disk shape of Acronis's <c>libarchive3</c> / <c>archive3.dll</c>
-///     log-structured-merge page store — fixed 4 KiB pages, a page-zero archive header tagged
+///     <c>.tibx</c> is the on-disk shape of Acronis's log-structured-merge page store — fixed 4 KiB pages, a page-zero archive header tagged
 ///     with the ASCII string <c>"ARCH"</c>, commit-info pages tagged <c>"ARCI"</c>, LSM
 ///     directory/leaf pages tagged <c>"LDIR"</c>/<c>"LEAF"</c>, and data pages tagged
 ///     <c>"DATA"</c>. The container is completely incompatible with the classic
@@ -39,26 +38,19 @@ namespace FileFormat.AcronisTibx;
 ///         (version, mode word, UUID, dump-field cluster) plus a documented field-offset table
 ///         and the page-type magic catalogue.</description></item>
 ///       <item><description><c>acronis-tibx.bin</c> — the verbatim container bytes for
-///         downstream tooling (e.g. forensic walks of the LSM tree with Acronis's own
-///         <c>archive3</c> code).</description></item>
+///         downstream tooling (e.g. forensic walks of the LSM tree).</description></item>
 ///     </list>
 ///   </para>
 ///   <para>
 ///     <b>Why disk content stays Stage 1.</b> The page-zero header alone does not point at
-///     file content. Walking the LSM B+-tree to extract files requires reproducing roughly
-///     thirty C source files of Acronis-internal code (<c>lsm_ctree_lookup.c</c>,
-///     <c>lsm_data_map.c</c>, <c>lsm_item.h</c>, <c>page.c</c>, <c>page_cache.c</c>,
-///     <c>segment.c</c>, <c>checkpoint.c</c>, <c>compaction.c</c>,
-///     <c>dedup_short_index.c</c>, <c>archive_encr.c</c>, <c>crypto_aes.c</c>, etc.), none of
-///     which has a published spec. Promoting to file-level R/O is out of scope for this pass;
+///     file content. Walking the LSM B+-tree to extract files requires the record framing, the
+///     Golomb-coded index pages, the dedup index, the commit chain and the optional AES layer,
+///     none of which has a published spec. Promoting to file-level R/O is out of scope for this pass;
 ///     the metadata surface here is the load-bearing win.
 ///   </para>
 ///   <para>
-///     <b>RE provenance.</b> Header layout reverse-engineered from binary inspection of
-///     <c>archive3.dll</c> (Acronis True Image 2018, 32-bit Windows) and <c>libarchive3.so</c>
-///     (Acronis True Image 2021, 32-bit Linux). See <see cref="AcronisTibxReader"/> for the
-///     pinned offsets and the JSON-dump key map recovered from the vendor's
-///     <c>archive_dump_headers</c> diagnostic.
+///     See <see cref="AcronisTibxReader"/> for the pinned header offsets and the logical
+///     header field set.
 ///   </para>
 /// </remarks>
 public sealed class AcronisTibxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
@@ -94,10 +86,8 @@ public sealed class AcronisTibxFormatDescriptor : IFormatDescriptor, IArchiveFor
   public IReadOnlyList<string> CompoundExtensions => [];
 
   /// <summary>
-  ///   Single signature: ASCII <c>"ARCH"</c> at offset 0. High confidence — the vendor's
-  ///   <c>archive_hdr.c</c> writer always emits this tag as the first four bytes of every
-  ///   <c>.tibx</c> container, and the vendor's <c>ar_page_verify</c> rejects any page that
-  ///   doesn't start with <c>0x41</c>.
+  ///   Single signature: ASCII <c>"ARCH"</c> at offset 0. High confidence — every <c>.tibx</c>
+  ///   container starts with this tag, and every valid page starts with <c>0x41</c>.
   /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("ARCH"u8.ToArray(), Offset: 0, Confidence: 0.95),
@@ -122,29 +112,24 @@ public sealed class AcronisTibxFormatDescriptor : IFormatDescriptor, IArchiveFor
   public string Description =>
     "Acronis True Image .tibx (2020+ modern container) — Stage 2 R/O metadata + page-frame walk. "
     + "Detected by ASCII 'ARCH' (41 52 43 48) at offset 0 — the page-zero archive header magic "
-    + "emitted by Acronis's libarchive3 / archive3.dll log-structured-merge page store. "
+    + "of Acronis's log-structured-merge page store. "
     + "Distinct from classic .tib (magic CE 24 B9 A2 / 0xA2B924CE) which is handled by "
     + "FileFormat.Acronis.AcronisFormatDescriptor. "
-    + "Header layout reverse-engineered from binary inspection of archive3.dll (ATI 2018) and "
-    + "libarchive3.so (ATI 2021 initrd64): page-zero is a fixed 4096-byte header carrying a "
+    + "Page-zero is a fixed 4096-byte header carrying a "
     + "big-endian uint16 version code at +0x008, a uint32 mode discriminator at +0x174, an "
     + "8-word dump-field cluster at +0x1e0 (fsize / offset / aligned_size / size + commit ids), "
-    + "and a 16-byte archive UUID at +0x233. The vendor's archive_dump_headers JSON key map "
-    + "(libarchive3.so offset 0x888cc) pins the logical field set. "
+    + "and a 16-byte archive UUID at +0x233. "
     + "Stage 2 adds a page-frame walk: every 4 KiB page is classified by the page-type tag at "
-    + "+0x1 (1=HDR / 2=LSM_LEAF / 3=LSM_DIR / 4=GOLOMB / 5=DATA / 6=CI per the page-type table "
-    + "at libarchive3.so 0x963fa). The page-frame layout (sentinel 'A' at +0, type tag at +1, "
-    + "BE32 CRC at +4, content magic at +8) was recovered from ar_page_verify at 0x6bef0; the "
-    + "LSM-specific sub-header (version / encoding / count / len / zlen / seq / ctree-id at "
-    + "+0xC..+0x1C) was recovered from lsm_dump_ctrees at 0x590f7. "
+    + "+0x1 (1=HDR / 2=LSM_LEAF / 3=LSM_DIR / 4=GOLOMB / 5=DATA / 6=CI). The page frame carries "
+    + "sentinel 'A' at +0, type tag at +1, BE32 CRC at +4 and content magic at +8; the "
+    + "LSM-specific sub-header carries version / encoding / count / len / zlen / seq / ctree-id "
+    + "at +0xC..+0x1C. "
     + "metadata.ini surfaces parsed page-zero fields, per-page-type counts, aggregate LSM "
     + "record counts and ctree-id distribution, and documented blockers. pages.tsv surfaces "
     + "a per-page summary table for forensic inspection. "
     + "Disk content stays at page-frame granularity because the Golomb-coded LSM record stream "
-    + "inside LEAF pages (~30 Acronis-internal C source files including lsm_item.h's proprietary "
-    + "key encoding, adaptive Golomb-coded index pages, content-defined-chunking "
-    + "dedup_short_index, optional AES wrapping via archive_encr.c + crypto_aes.c) has no "
-    + "published spec. "
+    + "inside LEAF pages (proprietary key encoding, adaptive Golomb-coded index pages, "
+    + "content-defined-chunking dedup index, optional AES wrapping) has no published spec. "
     + "metadata-only at the file-listing level — page-frame-walk surfaces per-page summaries but "
     + "no LSM record-stream decoder is wired (next stage would reuse the InputItem "
     + "attribute-stream layout from FileFormat.Acronis via AcronisFileMetaBodyDecoder to expose "

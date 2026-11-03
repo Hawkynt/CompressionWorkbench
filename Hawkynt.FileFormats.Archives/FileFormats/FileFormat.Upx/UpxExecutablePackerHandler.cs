@@ -174,7 +174,7 @@ public sealed class UpxExecutablePackerHandler : IExecutablePackerHandler {
             artifacts.Add(new("reconstructed/reconstructed.exe", rebuilt, "stored"));
             level = ExecutableUnpackLevel.RebuiltExecutable;
             diagnostics.Add(new(ExecutableDiagnosticCode.RunnableRebuildNotGuaranteed,
-              "The PE rebuilder emitted a syntactically valid synthetic PE for static analysis; native loader runnability is not guaranteed."));
+              "The PE rebuilder emitted a syntactically valid synthetic PE; native loader runnability is not guaranteed."));
           } catch (Exception ex) when (ex is InvalidDataException or ArgumentException or OverflowException) {
             diagnostics.Add(new(ExecutableDiagnosticCode.ExecutableRebuildFailed, $"PE reconstruction failed: {ex.Message}", options.StrictRebuild));
           }

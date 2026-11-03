@@ -7,8 +7,7 @@ namespace FileFormat.Aomei;
 /// <c>BR_IMAGE_INDEX</c> — the index-record header layout that follows the
 /// 16-byte <c>BR_STANDARD_HEADER</c> for <see cref="AomeiConstants.IndexTypeDataBlock"/>
 /// (0x202), <see cref="AomeiConstants.IndexTypeDataArea"/> (0x301) and the
-/// other <c>INDEX_TYPE_*</c> record families recovered from
-/// <c>ImgFile.dll!ImageVolume.cpp</c>.
+/// other <c>INDEX_TYPE_*</c> record families.
 ///
 /// <para>
 /// Layout (relative to the start of the record, i.e. including the
@@ -22,10 +21,8 @@ namespace FileFormat.Aomei;
 ///   // BR_IMAGE_INDEX_ENTRY_xxx Entries[EntryCount];   // offset 0x1C+
 /// };
 /// </code>
-/// Pinned by the writer-side store <c>mov [esi+0x14], EntryCount</c> at the
-/// DATABLOCK emit site and the reader-side <c>cmp [edx+0x18], 0x20</c>
-/// preamble before the
-/// <c>pIndex-&gt;EntrySize==sizeof(BR_IMAGE_INDEX_ENTRY_VDB)</c> assert.
+/// For a DATABLOCK index, <c>EntrySize</c> must equal
+/// <c>sizeof(BR_IMAGE_INDEX_ENTRY_VDB)</c>.
 /// </para>
 ///
 /// <para>
@@ -141,12 +138,10 @@ public sealed class BrImageIndex {
 /// descriptor that populates an <see cref="AomeiConstants.IndexTypeDataBlock"/>
 /// record's entry array. Pinned size <see cref="AomeiConstants.VendorVdbEntrySize"/>
 /// = 0x20 bytes; per-field byte offsets pinned by the constants in
-/// <see cref="AomeiConstants"/> (see XML doc on each <c>VendorVdbEntry*</c>
-/// for the per-field disassembly provenance).
+/// <see cref="AomeiConstants"/> (see the XML doc on each <c>VendorVdbEntry*</c>).
 ///
 /// <para>
-/// Pinned layout (recovered by triangulating three independent code paths
-/// in <c>ImgFile.dll</c>):
+/// Pinned layout:
 /// <code>
 /// struct BR_IMAGE_INDEX_ENTRY_VDB {  // total 0x20 bytes
 ///   uint32_t RegNo;      // 0x00..0x03  — region index
@@ -160,12 +155,7 @@ public sealed class BrImageIndex {
 /// </para>
 ///
 /// <para>
-/// Field-name provenance from <c>ImgFile.dll!ImageVolume.cpp</c> via the
-/// assert-text xref strings
-/// <c>m_pConvert-&gt;Decode(pNew, vdb.NewSize, pOld, OldLen)</c>,
-/// <c>m_pImgSet-&gt;ReadData(vdb.ImgOffset, pNew, vdb.NewSize)</c>,
-/// <c>vdb.NewSize==vdb.OldSize</c>, <c>Crc32==vdb.Crc32</c> and
-/// <c>GetBlock(vdb.RegNo, vdb.BlockNo, Buff, BufLen, Bitmap, BmpLen, nCrc)</c>:
+/// Field semantics:
 /// </para>
 /// <list type="bullet">
 ///   <item><description><c>RegNo</c> — region index into the volume's
@@ -231,16 +221,14 @@ public sealed class BrImageIndexEntryVdb {
 
   /// <summary>
   /// One-line description of the pinned VDB layout. Used by the metadata
-  /// surface to broadcast the recovered facts to downstream forensic
-  /// tooling without requiring callers to read the XML docs. Updated as
-  /// of this commit to the disassembly-pinned ordering (was previously a
-  /// plausibility sketch).
+  /// surface to broadcast the layout to downstream forensic tooling without
+  /// requiring callers to read the XML docs.
   /// </summary>
   public const string PlausibleLayout =
     "RegNo:u32@0x00, BlockNo:u64@0x04, ImgOffset:u64@0x0C, OldSize:u32@0x14, NewSize:u32@0x18, Crc32:u32@0x1C";
 
-  /// <summary>Read a VDB entry from a 0x20-byte span at the disassembly-
-  /// pinned field offsets.</summary>
+  /// <summary>Read a VDB entry from a 0x20-byte span at the pinned field
+  /// offsets.</summary>
   /// <exception cref="ArgumentException">When <paramref name="entry"/> is
   /// shorter than <see cref="AomeiConstants.VendorVdbEntrySize"/>.</exception>
   public static BrImageIndexEntryVdb Read(ReadOnlySpan<byte> entry) {
@@ -258,8 +246,8 @@ public sealed class BrImageIndexEntryVdb {
     };
   }
 
-  /// <summary>Write this VDB entry into a 0x20-byte span at the
-  /// disassembly-pinned field offsets.</summary>
+  /// <summary>Write this VDB entry into a 0x20-byte span at the pinned
+  /// field offsets.</summary>
   /// <exception cref="ArgumentException">When <paramref name="entry"/> is
   /// shorter than <see cref="AomeiConstants.VendorVdbEntrySize"/>.</exception>
   public void Write(Span<byte> entry) {
@@ -279,9 +267,7 @@ public sealed class BrImageIndexEntryVdb {
 /// <summary>
 /// <c>BR_IMAGE_INDEX_ENTRY_FDB</c> — file-level data-block descriptor that
 /// populates an <see cref="AomeiConstants.IndexTypeDataArea"/> record's
-/// entry array. The vendor size is not directly pinned — there's no
-/// <c>cmp [reg+0x18], imm</c> for the FDB assert site visible — but the
-/// access pattern in <c>ImgFile.dll!FlbDataRegion.cpp</c> shows the same
+/// entry array. The entry size is not pinned, but it carries the same
 /// fields as VDB minus <c>RegNo</c> (file backups have no multi-region
 /// notion):
 /// <code>

@@ -2604,7 +2604,7 @@ Implements `IBuildingBlock`.
 
 #### `MsLzhCompressor`
 
-MS LZH compressor — DriveSpace 3 (Win95 Plus! Pack, 1995) family codec. LZ77 with 4 KiB window + canonical Huffman over a 286-symbol literal/length alphabet (DEFLATE-shaped) and a 30-symbol distance alphabet. Effort tiers (mirrors `DsLz77Compressor`): 0 — Greedy (default): bounded hash-chain depth (64), greedy match selection, fixed Huffman tables per RFC 1951 §3.2.6 shape — see `MsLzhFixedTables`. Fast. Matches the historical effort-0 behaviour bit-for-bit (modulo the new leading block-type bit).1 — Lazy (`+`): at each candidate match position, look ahead one byte; emit a literal when `(pos + 1)` would yield a strictly longer match. Hash chain deepened to 1024. Same fixed Huffman tables — encoder output stays self-consistent with the decoder. Roughly 5-10× slower, typically a few percent smaller on compressible inputs.2+ — Iterated + dynamic Huffman (`++`): runs the effort-1 lazy parse, then compares the cost of encoding the resulting token stream with the fixed tables vs. with per-block dynamic Huffman tables (RFC 1951 §3.2.7 layout — see `MsLzhDynamicHuffman`). The smaller of the two wins. Also sweeps the min-match floor (3, 4, 5) like the older effort-2 parse.Bit-stream format. Every block is prefixed by a single block-type bit: `0` = fixed Huffman tables (RFC 1951 §3.2.6 shape), `1` = dynamic per-block Huffman tables. Both paths share the same length / distance extra-bit conventions and the end-of-block marker (symbol 256). Termination invariant for iterated parsing: the candidate set has a fixed cap (4 passes max — baseline lazy plus three min-match sweeps), each pass produces a complete output, and we retain the smallest. This guarantees effort 2+ is monotone: `len(eff 2) ≤ len(eff 1) ≤ len(eff 0)` on compressible inputs, with strict equality possible for inputs where the effort-0 parse is already optimal. Not yet bit-compatible with Microsoft's reference decoder. The dynamic Huffman header layout matches RFC 1951 semantically but the MS LZH per-cluster framing (block-count bytes, dictionary-init values) has not been reverse-engineered from a real DRVSPACE.000 image. Self round-trip is the gating requirement; cross-tool compatibility remains a stretch goal.
+MS LZH compressor — DriveSpace 3 (Win95 Plus! Pack, 1995) family codec. LZ77 with 4 KiB window + canonical Huffman over a 286-symbol literal/length alphabet (DEFLATE-shaped) and a 30-symbol distance alphabet. Effort tiers (mirrors `DsLz77Compressor`): 0 — Greedy (default): bounded hash-chain depth (64), greedy match selection, fixed Huffman tables per RFC 1951 §3.2.6 shape — see `MsLzhFixedTables`. Fast. Matches the historical effort-0 behaviour bit-for-bit (modulo the new leading block-type bit).1 — Lazy (`+`): at each candidate match position, look ahead one byte; emit a literal when `(pos + 1)` would yield a strictly longer match. Hash chain deepened to 1024. Same fixed Huffman tables — encoder output stays self-consistent with the decoder. Roughly 5-10× slower, typically a few percent smaller on compressible inputs.2+ — Iterated + dynamic Huffman (`++`): runs the effort-1 lazy parse, then compares the cost of encoding the resulting token stream with the fixed tables vs. with per-block dynamic Huffman tables (RFC 1951 §3.2.7 layout — see `MsLzhDynamicHuffman`). The smaller of the two wins. Also sweeps the min-match floor (3, 4, 5) like the older effort-2 parse.Bit-stream format. Every block is prefixed by a single block-type bit: `0` = fixed Huffman tables (RFC 1951 §3.2.6 shape), `1` = dynamic per-block Huffman tables. Both paths share the same length / distance extra-bit conventions and the end-of-block marker (symbol 256). Termination invariant for iterated parsing: the candidate set has a fixed cap (4 passes max — baseline lazy plus three min-match sweeps), each pass produces a complete output, and we retain the smallest. This guarantees effort 2+ is monotone: `len(eff 2) ≤ len(eff 1) ≤ len(eff 0)` on compressible inputs, with strict equality possible for inputs where the effort-0 parse is already optimal. Not yet bit-compatible with Microsoft's reference decoder. The dynamic Huffman header layout matches RFC 1951 semantically but the MS LZH per-cluster framing (block-count bytes, dictionary-init values) has not been derived from a real DRVSPACE.000 image. Self round-trip is the gating requirement; cross-tool compatibility remains a stretch goal.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5331,7 +5331,36 @@ A clean-room neural compressor: an online-trained multi-layer perceptron (`Neura
 
 ### Namespace `Compression.Core.Entropy.Ppmd`
 
-[`PpmdBuildingBlock`](#ppmdbuildingblock) · [`PpmdContext`](#ppmdcontext) · [`PpmdModelBase`](#ppmdmodelbase) · [`PpmdModelBase.ContextKey`](#ppmdmodelbasecontextkey) · [`PpmdModelH`](#ppmdmodelh) · [`PpmdModelI`](#ppmdmodeli) · [`PpmdRangeDecoder`](#ppmdrangedecoder) · [`PpmdRangeEncoder`](#ppmdrangeencoder)
+[`Ppmd8`](#ppmd8) · [`Ppmd8RestoreMethod`](#ppmd8restoremethod) · [`PpmdBuildingBlock`](#ppmdbuildingblock) · [`PpmdContext`](#ppmdcontext) · [`PpmdModelBase`](#ppmdmodelbase) · [`PpmdModelBase.ContextKey`](#ppmdmodelbasecontextkey) · [`PpmdModelH`](#ppmdmodelh) · [`PpmdRangeDecoder`](#ppmdrangedecoder) · [`PpmdRangeEncoder`](#ppmdrangeencoder)
+
+#### `Ppmd8`
+
+PPMd variant I revision 1 (Dmitry Shkarin's PPMd var.I, 2002) with Dmitry Subbotin's carry-less range coder: the model ZIP compression method 98 uses.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ppmd8` | `Ppmd8(int memorySize, int maxOrder, Ppmd8RestoreMethod restoreMethod)` | Creates a model with `memorySize` bytes of context memory. |
+| `DataError` | `const int DataError` | The symbol `DecodeSymbol` returns for data no encoder can have written. |
+| `EndMarker` | `const int EndMarker` | The symbol `DecodeSymbol` returns for the end-of-data marker. |
+| `MaxOrderLimit` | `const int MaxOrderLimit` | Largest model order the format allows. |
+| `MinOrder` | `const int MinOrder` | Smallest model order the format allows. |
+| `DecoderFinishedOk` | `bool DecoderFinishedOk { get; }` | True once the decoder has consumed the encoder's final flush exactly. |
+| `InputOverrun` | `int InputOverrun { get; }` | Bytes the decoder read past the end of its input (each read as zero). |
+| `InputPosition` | `int InputPosition { get; }` | Position of the next unread input byte. |
+| `DecodeSymbol` | `int DecodeSymbol()` | Decodes one symbol: a byte, `EndMarker` or `DataError`. |
+| `EncodeSymbol` | `void EncodeSymbol(int symbol)` | Encodes a byte, or `EndMarker`. |
+| `FlushEncoder` | `void FlushEncoder()` | Writes the encoder's final four bytes. |
+| `StartDecoding` | `bool StartDecoding(byte[] input, int offset)` | Starts decoding `input` from `offset`. |
+| `StartEncoding` | `void StartEncoding(Stream output)` | Starts encoding to `output`. |
+
+#### `Ppmd8RestoreMethod`
+
+How a `Ppmd8` model recovers when its memory is exhausted.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Restart` | `0` | Discard the model and start over. |
+| `CutOff` | `1` | Cut the context tree back to the most recently used branches. |
 
 #### `PpmdBuildingBlock`
 
@@ -5409,18 +5438,6 @@ Inherits `PpmdModelBase`.
 | --- | --- | --- |
 | `PpmdModelH` | `PpmdModelH(int order)` | Initializes a new PPMd Model H with the specified order and default memory. |
 | `PpmdModelH` | `PpmdModelH(int order, int memorySize)` | Initializes a new PPMd Model H with the specified order and memory budget. |
-| `GetRescaleThreshold` | `protected override int GetRescaleThreshold()` | Gets the total frequency threshold at which a context should be rescaled. |
-
-#### `PpmdModelI`
-
-PPMd Model I — Prediction by Partial Matching, variant I. Used by RAR for PPMd compression. This variant uses interleaved context storage and different update rules compared to Model H.
-
-Inherits `PpmdModelBase`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `PpmdModelI` | `PpmdModelI(int order)` | Initializes a new PPMd Model I with the specified order and default memory. |
-| `PpmdModelI` | `PpmdModelI(int order, int memorySize)` | Initializes a new PPMd Model I with the specified order and memory budget. |
 | `GetRescaleThreshold` | `protected override int GetRescaleThreshold()` | Gets the total frequency threshold at which a context should be rescaled. |
 
 #### `PpmdRangeDecoder`

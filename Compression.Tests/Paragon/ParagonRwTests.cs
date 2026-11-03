@@ -33,10 +33,10 @@ public class ParagonRwTests {
       "Writer must emit the vendor-documented 'PImg' magic at offset 0.");
     Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(4, 2)),
       Is.EqualTo(ParagonWriter.Major),
-      "Writer must emit Major = 0x0002 at +4 (vendor literal from HDM-18 RVA 0x4a8dc4).");
+      "Writer must emit Major = 0x0002 at +4 (vendor value).");
     Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(6, 2)),
       Is.EqualTo(ParagonWriter.FormatVersion),
-      "Writer must emit FormatVersion = 0x0003 at +6 (vendor literal).");
+      "Writer must emit FormatVersion = 0x0003 at +6 (vendor value).");
   }
 
   [Test, Category("HappyPath")]
@@ -49,7 +49,7 @@ public class ParagonRwTests {
 
   [Test, Category("HappyPath")]
   public void Writer_LeavesVendorOffsetsZero() {
-    // The vendor reverse-engineered offsets (+0xC, +0x26, +0x27, +0x30,
+    // The known vendor offsets (+0xC, +0x26, +0x27, +0x30,
     // +0x34, +0xD8, +0xE8, +0xF1) must stay zero — forging them without a
     // real Paragon sample would produce an image the vendor rejects /
     // misreads silently.
@@ -315,9 +315,8 @@ public class ParagonRwTests {
 
   [Test, Category("HappyPath")]
   public void ChunkTable_Entries_ExposeArchitecturalLayout() {
-    // The per-chunk fields the reverse-engineered "ChunkNumber: %d,
-    // ChunkOffSet: 0x%016I64x, ChunkSize: %d, ChunkIsCompress: %c"
-    // debug-string round-trip emits must surface as ChunkTable entries
+    // The vendor's per-chunk fields (number, offset, size, compressed flag)
+    // must surface as ChunkTable entries
     // with the documented field types (u32 / u64 / u32 / bool).
     var payloads = new[] {
       Encoding.UTF8.GetBytes("first"),

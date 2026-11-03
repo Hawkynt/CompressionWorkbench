@@ -46,7 +46,7 @@ namespace Compression.Core.Dictionary.MsLzh;
 /// <b>Not yet bit-compatible with Microsoft's reference decoder.</b> The
 /// dynamic Huffman header layout matches RFC 1951 semantically but the
 /// MS LZH per-cluster framing (block-count bytes, dictionary-init values)
-/// has not been reverse-engineered from a real DRVSPACE.000 image. Self
+/// has not been derived from a real DRVSPACE.000 image. Self
 /// round-trip is the gating requirement; cross-tool compatibility remains a
 /// stretch goal.
 /// </para>

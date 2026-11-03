@@ -2,10 +2,8 @@
 namespace FileFormat.Paragon;
 
 /// <summary>
-/// Adler-32 checksum (RFC 1950) — the zlib stream checksum the vendor's
-/// PBF reader uses on each chunk ("Chunk is not valid, adler32 checksum is
-/// wrong." debug string from Wave-13 reverse-engineering of
-/// <c>hdmengine_hdmsdk.dll</c>). Local clean-room implementation kept
+/// Adler-32 checksum (RFC 1950) — the zlib stream checksum PBF uses on each
+/// chunk. Local clean-room implementation kept
 /// inside this project so the PBF format doesn't need to pull in
 /// <c>Compression.Core</c>.
 /// </summary>

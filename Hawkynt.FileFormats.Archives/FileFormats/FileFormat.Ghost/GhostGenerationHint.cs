@@ -37,7 +37,7 @@ public enum GhostGenerationHint {
   PossiblyModern8Plus = 2,
   /// <summary>
   /// Ghost 11.x / 12.x record container — the format <see cref="GhostReader"/>
-  /// is reverse-engineered against (via nyarime/gho). Parses fully when this
+  /// is documented against (via nyarime/gho). Parses fully when this
   /// hint is set.
   /// </summary>
   Modern11Plus = 3,

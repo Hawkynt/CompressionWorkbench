@@ -8,7 +8,7 @@ namespace FileFormat.BitRock;
 /// <summary>
 /// Reader for BitRock / InstallBuilder self-extracting installers.
 ///
-/// Layout (recovered by binary inspection of real installers):
+/// Layout (as found in real installers):
 ///   [PE stub] [content region] [embedded Metakit VFS] [16-byte trailer]
 ///   ["bitrock-lzma-4.0" 16 bytes] ["mFC3acAOJrQinu5aEHu0uH7N5XSQ3Z14" 32-byte magic]
 ///

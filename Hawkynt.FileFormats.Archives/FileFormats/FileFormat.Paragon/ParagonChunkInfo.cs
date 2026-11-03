@@ -2,10 +2,9 @@
 namespace FileFormat.Paragon;
 
 /// <summary>
-/// A single entry in the CWBP chunk-offset table — surfaces the exact
-/// per-chunk fields the vendor's
-/// <c>"ChunkNumber: %d, ChunkOffSet: 0x%016I64x, ChunkSize: %d,
-/// ChunkIsCompress: %c"</c> debug-string round-trip emits, plus the
+/// A single entry in the CWBP chunk-offset table — surfaces the vendor's
+/// per-chunk fields (number, 64-bit offset, 32-bit size, compressed flag),
+/// plus the
 /// additional <see cref="LogicalSize"/> and <see cref="Adler32"/> fields
 /// our writer stores so the reader can verify and decompress without
 /// guessing.

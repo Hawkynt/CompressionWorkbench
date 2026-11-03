@@ -513,13 +513,24 @@ public static partial class FormatDetector {
       // IExpress / wextract: the cabinet lives in the RT_RCDATA resource "CABINET".
       if (isPe && FileFormat.IExpress.IExpressFormatDescriptor.IsIExpress(fs)) return Format.IExpress;
 
+      // Wise Installation System: its overlay header follows the 16- or 32-bit stub (or the stub
+      // a launcher carries as a resource), and its first stream must inflate to the size it gives.
+      if (isPe && FileFormat.WiseInstaller.WiseReader.IsWise(fs)) return Format.WiseInstaller;
+
       // An NSIS first header sits right after the exe stub, at a multiple of 512 bytes (the
       // exehead itself only looks there), so a large installer keeps it far from the tail.
       if (HasNsisFirstHeader(fs)) return Format.Nsis;
 
+      // Setup Factory: its signature sits at a fixed offset (versions 5, 6) or where the PE
+      // overlay starts (7 to 9).
+      if (isPe && FileFormat.SetupFactory.SetupFactoryReader.IsSetupFactory(fs)) return Format.SetupFactory;
+
       // Inno Setup: the setup loader's offset table (at 0x30 or in RCDATA #11111) points at the
       // setup-0 version tag, wherever in the file that is.
       if (isPe && FileFormat.InnoSetup.InnoSetupReader.IsInnoSetup(fs)) return Format.InnoSetup;
+
+      // Clickteam Install Creator: its block overlay starts right after the PE sections.
+      if (isPe && FileFormat.ClickteamInstaller.ClickteamReader.IsClickteam(fs)) return Format.ClickteamInstaller;
 
       // Other installer markers can live anywhere in the file, so scan the whole file when it
       // is small and the tail otherwise — independent of the MZ check, so a stub-less

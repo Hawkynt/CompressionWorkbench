@@ -111,6 +111,7 @@ format,Cbz,CBZ,Archive,,.cbz,Y,Y,Y,Y
 format,Cdi,CDI,Archive,,.cdi,Y,Y,Y,Y
 format,CephFs,CephFS / RADOS pool export,Archive,Y,.rados;.ceph,Y,Y,Y,Y
 format,Chm,CHM,Archive,,.chm,Y,Y,Y,Y
+format,ClickteamInstaller,Clickteam Install Creator,Archive,,,Y,Y,,
 format,CloneCd,CloneCD CCD,Archive,,.ccd,Y,Y,,
 format,Cmf,Creative Music File (OPL),Audio,,.cmf,Y,Y,,
 format,Cmix,cmix,Stream,,.cmix,,Y,Y,
@@ -166,6 +167,7 @@ format,Dsf,DSF (DSD Stream File),Audio,,.dsf,Y,Y,Y,
 format,Dtb,Flattened Device Tree Blob,Archive,,.dtb;.dtbo,Y,Y,Y,Y
 format,Dts,DTS (Coherent Acoustics),Audio,,.dts;.dtshd,Y,Y,,
 format,DvdisasterEcc,dvdisaster ecc,Archive,,.ecc,Y,Y,,
+format,DxArchive,DxLib archive (DXA),Archive,,.dxa;.wolf,Y,Y,,
 format,Dxf,DXF (AutoCAD Drawing Exchange),Archive,,.dxf,Y,Y,,
 format,Dzip,Bloodlines DZIP,Archive,,.dzip,Y,Y,Y,Y
 format,Ear,EAR,Archive,,.ear,Y,Y,Y,Y
@@ -262,6 +264,7 @@ format,IExpress,IExpress self-extractor,Archive,,,Y,Y,,
 format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
 format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
 format,InnoSetup,Inno Setup,Archive,,,Y,Y,,
+format,InstallerVise,Installer VISE,Archive,,,Y,Y,,
 format,IntelHex,Intel HEX,Archive,,.hex;.ihex;.ihx;.h86,Y,Y,Y,Y
 format,Ipa,IPA,Archive,,.ipa,Y,Y,Y,Y
 format,Ipsw,Apple IPSW,Archive,,.ipsw;.otazip,Y,Y,Y,Y
@@ -490,6 +493,7 @@ format,Sdat,SDAT (Nintendo DS sound archive),Audio,,.sdat,Y,Y,,
 format,Sds,SDS (MIDI Sample Dump),Audio,,.sds,Y,Y,,
 format,Seama,SEAMA firmware,Archive,,.seama;.dlob,Y,Y,Y,Y
 format,SeqBox,SeqBox,Archive,,.sbx,Y,Y,Y,
+format,SetupFactory,Setup Factory,Archive,,,Y,Y,,
 format,SevenZip,7z,Archive,,.7z,Y,Y,Y,Y
 format,Sf2,SoundFont 2,Audio,,.sf2,Y,Y,,
 format,Sfar,BioWare SFAR,Archive,,.sfar,Y,Y,Y,
@@ -627,6 +631,7 @@ format,Webp,WebP,Image,,.webp,Y,Y,,
 format,Wem,Wwise Encoded Media,Audio,,.wem,Y,Y,,
 format,Wheel,Python Wheel,Archive,,.whl,Y,Y,Y,
 format,Wim,WIM,Archive,,.wim;.swm;.esd,Y,Y,Y,
+format,WiseInstaller,Wise Installer,Archive,,,Y,Y,,
 format,WordPerfect,WordPerfect,Archive,,.wpd;.wp;.wp5;.wp6;.wp7,Y,Y,,
 format,Woz,Apple II WOZ,Archive,,.woz,Y,Y,,
 format,Wrapster,Wrapster,Archive,,,Y,Y,Y,

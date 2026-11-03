@@ -146,8 +146,7 @@ public sealed class AcronisReader {
   /// <para>
   /// The body shape (attribute-stream layout) and the high-value id meanings (ItemCommon →
   /// filename + alt name, SourceItem → source path, HardLinkId, BackupTime, TimeZone) are
-  /// reverse-engineered from <c>ti_tools.dll</c> 32-bit (Acronis True Image 2018). See
-  /// <see cref="AcronisFileMetaBodyDecoder"/> for the format details.
+  /// documented on <see cref="AcronisFileMetaBodyDecoder"/>.
   /// </para>
   /// </remarks>
   public IReadOnlyList<AcronisFileMetaBody?> FileMetaBodiesByEntry { get; }
@@ -156,7 +155,7 @@ public sealed class AcronisReader {
   /// Per-entry filename decoded from the anchored FirstFileMetaRecord(102)'s ItemCommon
   /// attribute (id 0x10). <c>null</c> at index <c>i</c> when the body couldn't be decoded or
   /// didn't contain an ItemCommon attribute. When set, this is the authoritative filename per
-  /// the reverse-engineered InputItem model; the Listing record's
+  /// the InputItem model; the Listing record's
   /// <see cref="AcronisFileEntry.Name"/> may agree or disagree depending on whether the
   /// Listing was rewritten after the FileMeta was emitted.
   /// </summary>

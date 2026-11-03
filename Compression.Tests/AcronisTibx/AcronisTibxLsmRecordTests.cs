@@ -8,8 +8,7 @@ namespace Compression.Tests.AcronisTibx;
 
 /// <summary>
 ///   Stage-3 acceptance gate for the LSM record-stream decoder added on top of
-///   <see cref="AcronisTibxReader"/> — pins the LZ4-chained-stream body shape recovered from
-///   <c>libarchive3.so</c> <c>0x54fb0</c> and the forensic ItemCommon-attribute scanner that
+///   <see cref="AcronisTibxReader"/> — pins the LZ4-chained-stream body shape and the forensic ItemCommon-attribute scanner that
 ///   bridges to <see cref="AcronisFileMetaBodyDecoder"/> from <c>FileFormat.Acronis</c>.
 /// </summary>
 /// <remarks>
@@ -19,7 +18,7 @@ namespace Compression.Tests.AcronisTibx;
 ///     <c>(BE32 zchunk, BE32 chunk, LZ4-block)</c> at page <c>+0x20</c>, (b) the ItemCommon
 ///     attribute layout the scanner recognises (44-byte fixed header + UTF-16 name +
 ///     FILETIME sanity check), and (c) the Golomb-Rice <c>k=8</c> codec used by GOLOMB-page
-///     membership filters per <c>golomb_decode_mod256</c> / <c>golomb_encode_mod256</c>.
+///     membership filters.
 ///   </para>
 /// </remarks>
 [TestFixture]
@@ -72,10 +71,10 @@ public class AcronisTibxLsmRecordTests {
   [Test, Category("HappyPath")]
   public void Golomb_Constants_PinRiceParameters() {
     Assert.That(Golomb.RiceK, Is.EqualTo(8),
-      "Acronis golomb_*_mod256 family uses Rice k=8 (divisor 256).");
+      "Acronis .tibx Golomb coding uses Rice k=8 (divisor 256).");
     Assert.That(Golomb.Divisor, Is.EqualTo(256));
     Assert.That(Golomb.QuotientEscape, Is.EqualTo(8),
-      "Decoder caps quotient at 8 per cmp $0x8 at libarchive3.so 0x53f53.");
+      "Decoder caps the unary quotient at 8.");
   }
 
   [Test, Category("Sad")]
@@ -101,7 +100,7 @@ public class AcronisTibxLsmRecordTests {
     var r = new Golomb.BitReader([0x00]); // 8 zero bits
     Assert.That(r.ReadBits(8), Is.EqualTo(0UL));
     Assert.That(r.ReadBits(8), Is.EqualTo(0UL),
-      "Reading past the end returns zero (soft-fail; the binary's reader panics here).");
+      "Reading past the end returns zero (soft-fail).");
   }
 
   // ─── LSM record decoder — synthetic LEAF body ─────────────────────
@@ -112,8 +111,7 @@ public class AcronisTibxLsmRecordTests {
   /// </summary>
   private static byte[] BuildContainerWithLeafBody(byte[] leafBodyPlaintext, byte ctreeId = 0) {
     // Compress as a single chunk via Lz4BlockCompressor and pack as one (BE32 zlen, BE32 len)
-    // triple followed by the LZ4 block — the chained-stream format the binary's
-    // LZ4_decompress_safe_continue walk at 0x54fb0 consumes.
+    // triple followed by the LZ4 block — the chained-stream leaf-body format.
     var compressed = Lz4BlockCompressor.Compress(leafBodyPlaintext);
     var leafBody = new byte[8 + compressed.Length];
     BinaryPrimitives.WriteUInt32BigEndian(leafBody.AsSpan(0, 4), (uint)compressed.Length);
@@ -241,12 +239,6 @@ public class AcronisTibxLsmRecordTests {
       "Stage-3 metadata must surface the ItemCommon attribute scanner.");
     Assert.That(text, Does.Contain("decoded_7=golomb_rice_codec_mod256"),
       "Stage-3 metadata must surface the Golomb-Rice codec for GOLOMB-page filter bodies.");
-    Assert.That(text, Does.Contain("re_target_6=lsm_page_read"),
-      "RE provenance must cite the lsm_page_read entrypoint.");
-    Assert.That(text, Does.Contain("re_target_7=lz4_chained_stream_decoder"),
-      "RE provenance must cite the LZ4 chained-stream decoder.");
-    Assert.That(text, Does.Contain("re_target_8=golomb_decode_mod256"),
-      "RE provenance must cite the Golomb codec entrypoint.");
     Assert.That(text, Does.Contain("lsm_leaf_decode_attempts=1"));
     Assert.That(text, Does.Contain("lsm_leaf_decode_succeeded=1"));
     Assert.That(text, Does.Contain("lsm_scanned_item_name_count=1"));
@@ -335,12 +327,12 @@ public class AcronisTibxLsmRecordTests {
     Assert.That(hits[0].Name, Is.EqualTo("nested.bin"));
   }
 
-  // ─── Constants pinned to RE'd values ──────────────────────────────
+  // ─── Constants pinned to the format's values ──────────────────────
 
   [Test, Category("HappyPath")]
   public void LsmRecord_Constants_PinEncodingAndBodyOffset() {
     Assert.That(AcronisTibxLsmRecord.EncodingLz4ChainedStream, Is.EqualTo(3),
-      "Encoding byte 3 = LZ4 chained stream (libarchive3.so 0x55404).");
+      "Encoding byte 3 = LZ4 chained stream.");
     Assert.That(AcronisTibxLsmRecord.EncodingAlternative, Is.EqualTo(4),
       "Encoding byte 4 = alternative path (not yet decoded).");
     Assert.That(AcronisTibxLsmRecord.LeafBodyOffset, Is.EqualTo(0x20),

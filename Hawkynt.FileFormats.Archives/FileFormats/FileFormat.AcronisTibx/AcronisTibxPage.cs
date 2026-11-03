@@ -5,10 +5,8 @@ namespace FileFormat.AcronisTibx;
 
 /// <summary>
 ///   Page-type discriminator for a 4 KiB <c>.tibx</c> page. Values are the one-byte tag at
-///   page-frame offset <c>+0x1</c> recovered from binary RE of the page-type dispatch table
-///   in <c>libarchive3.so</c> at <c>archive_validate_pages</c> (offsets <c>0x154dc..0x155cb</c>)
-///   cross-referenced against the page-type string table at <c>libarchive3.so</c> offset
-///   <c>0x963fa</c> (<c>"UNKNOWN" / "HDR" / "LSM_LEAF" / "LSM_DIR" / "GOLOMB" / "DATA" / "CI"</c>).
+///   page-frame offset <c>+0x1</c>, named in table order
+///   <c>"UNKNOWN" / "HDR" / "LSM_LEAF" / "LSM_DIR" / "GOLOMB" / "DATA" / "CI"</c>.
 /// </summary>
 public enum AcronisTibxPageType : byte {
   /// <summary>Tag <c>0</c> — slot is unwritten / unallocated. String table position 0.</summary>
@@ -30,8 +28,8 @@ public enum AcronisTibxPageType : byte {
   /// </summary>
   LsmDir = 3,
   /// <summary>
-  ///   Tag <c>4</c> — Golomb-coded auxiliary index page. Used by the
-  ///   <c>golomb_index_*</c> family in <c>golomb.c</c> for the per-page item-id directory.
+  ///   Tag <c>4</c> — Golomb-coded auxiliary index page holding the per-page item-id
+  ///   directory.
   ///   String table position 4.
   /// </summary>
   Golomb = 4,
@@ -50,60 +48,47 @@ public enum AcronisTibxPageType : byte {
 
 /// <summary>
 ///   One parsed 4 KiB <c>.tibx</c> page. Carries the page-frame fields (type tag, stored CRC,
-///   content magic) recovered from binary RE of <c>ar_page_verify</c> (Linux
-///   <c>libarchive3.so</c> at <c>0x6bef0</c>), plus the LSM-specific sub-header fields
-///   (version, encoding, count, len, zlen, seq, id) that the diagnostic
-///   <c>"%s": {"offset": %llu, "magic": "%.*s", "version": %u, "encoding": "%02x", "count": %u, "len": %u, "zlen": %u, "seq": %u, "id": %u}</c>
-///   format string emits for every LEAF/LDIR page.
+///   content magic), plus the LSM-specific sub-header fields (version, encoding, count, len,
+///   zlen, seq, id) that every LEAF/LDIR page carries.
 /// </summary>
 /// <remarks>
 ///   <para>
-///     <b>Page-frame layout</b> (8 bytes, recovered from <c>ar_page_verify</c> at
-///     <c>0x6bef0..0x6bf60</c>):
+///     <b>Page-frame layout</b> (8 bytes):
 ///     <list type="table">
 ///       <listheader><term>Offset</term><description>Field</description></listheader>
 ///       <item><term>+0x0</term><description><c>byte</c> <c>0x41</c> ('A') sentinel — every
-///         typed page-frame leads with <c>'A'</c>. Recovered from <c>cmpb $0x41,(%esi)</c>
-///         at <c>0x6bf2e</c>.</description></item>
+///         typed page-frame leads with <c>'A'</c>.</description></item>
 ///       <item><term>+0x1</term><description><c>byte</c> page-type tag — see
-///         <see cref="AcronisTibxPageType"/>. The verifier rejects <c>0x00</c> here
-///         (<c>cmpb $0,0x1(%esi)</c> at <c>0x6bf37</c>).</description></item>
-///       <item><term>+0x2</term><description><c>byte</c> reserved — verifier requires
-///         <c>0x00</c> for typed pages (<c>cmpb $0,0x2(%esi)</c> at <c>0x6bf41</c>).</description></item>
-///       <item><term>+0x3</term><description><c>byte</c> page-frame minor — typically zero
-///         in observed binaries.</description></item>
+///         <see cref="AcronisTibxPageType"/>. <c>0x00</c> is not a valid typed page.</description></item>
+///       <item><term>+0x2</term><description><c>byte</c> reserved — <c>0x00</c> for typed
+///         pages.</description></item>
+///       <item><term>+0x3</term><description><c>byte</c> page-frame minor — typically zero.</description></item>
 ///       <item><term>+0x4..+0x7</term><description><c>uint32</c> BE — stored CRC32 (computed
-///         by <c>pcs_crc32</c> at <c>0xf410</c> over the full 4 KiB page with this field
-///         zeroed before computing).</description></item>
+///         over the full 4 KiB page with this field zeroed before computing).</description></item>
 ///     </list>
 ///     For the page-zero <c>HDR</c> page the byte at <c>+0x0</c> is also the first byte of
-///     the 4-byte ASCII <c>"ARCH"</c> magic (<c>0x41 0x52 0x43 0x48</c>), so the verifier's
-///     <c>cmpb $0x41,(%esi)</c> succeeds, but the page-type byte check at <c>+0x1</c> would
-///     read <c>'R' = 0x52</c>, which means the page-zero header takes the alternative verify
-///     path at <c>0x233bb</c> (<c>cmpl $0x48435241,(%ecx)</c>).
+///     the 4-byte ASCII <c>"ARCH"</c> magic (<c>0x41 0x52 0x43 0x48</c>), so the sentinel
+///     matches, but the page-type byte at <c>+0x1</c> reads <c>'R' = 0x52</c>: the page-zero
+///     header is recognised by its full <c>"ARCH"</c> magic instead.
 ///   </para>
 ///   <para>
-///     <b>LSM page sub-header</b> (LEAF / LDIR variants, layout from <c>lsm_dump_ctrees</c>
-///     leaf-format printer at <c>0x590f7..0x5912d</c>):
+///     <b>LSM page sub-header</b> (LEAF / LDIR variants):
 ///     <list type="table">
 ///       <listheader><term>Offset (from page-frame start)</term><description>Field</description></listheader>
 ///       <item><term>+0x8..+0xb</term><description>4-byte ASCII content magic
 ///         (<c>"LEAF"</c> = <c>0x4641454c</c>, <c>"LDIR"</c> = <c>0x5249444c</c>).</description></item>
-///       <item><term>+0xc</term><description><c>byte</c> version
-///         (<c>movzbl 0x4(%eax)</c>).</description></item>
+///       <item><term>+0xc</term><description><c>byte</c> version.</description></item>
 ///       <item><term>+0xd</term><description><c>byte</c> encoding (<c>3</c> = standard LSM,
-///         <c>4</c> = alternative; <c>cmp $0x3,%bl</c>/<c>cmp $0x4,%bl</c> at
-///         <c>0x55404</c>).</description></item>
-///       <item><term>+0xe..+0xf</term><description><c>uint16</c> BE <c>count</c>
-///         (<c>movzwl 0x6(%eax)</c> + <c>ror $0x8,%dx</c>).</description></item>
+///         <c>4</c> = alternative).</description></item>
+///       <item><term>+0xe..+0xf</term><description><c>uint16</c> BE <c>count</c>.</description></item>
 ///       <item><term>+0x10..+0x13</term><description><c>uint32</c> BE <c>len</c>
-///         (uncompressed body length) — <c>mov 0x8(%eax),%ecx</c> + <c>bswap %ecx</c>.</description></item>
+///         (uncompressed body length).</description></item>
 ///       <item><term>+0x14..+0x17</term><description><c>uint32</c> BE <c>zlen</c>
-///         (on-disk compressed body length) — <c>mov 0xc(%eax),%edx</c> + <c>bswap %edx</c>.</description></item>
+///         (on-disk compressed body length).</description></item>
 ///       <item><term>+0x18..+0x1b</term><description><c>uint32</c> BE <c>seq</c>
-///         (LSM-sequence ordinal) — <c>mov 0x10(%eax),%esi</c> + <c>bswap %esi</c>.</description></item>
+///         (LSM-sequence ordinal).</description></item>
 ///       <item><term>+0x1c</term><description><c>byte</c> <c>id</c> (ctree index this page
-///         belongs to, <c>0..nr_ctree-1</c>) — <c>movzbl 0x14(%eax)</c>.</description></item>
+///         belongs to, <c>0..nr_ctree-1</c>).</description></item>
 ///     </list>
 ///   </para>
 ///   <para>
@@ -113,13 +98,12 @@ public enum AcronisTibxPageType : byte {
 ///     bit-width parameters and gated by the optional per-page AES wrap. Reproducing that
 ///     decoder is the next stage and out of scope for this pass — the page-level summary
 ///     surfaced here lets a caller see what kinds of pages exist and where, but extracting
-///     filenames from a LEAF page requires the <c>lsm_lookup.c</c> + <c>golomb.c</c> code
-///     paths reverse-engineered separately.
+///     filenames from a LEAF page requires the record framing, which is not yet known.
 ///   </para>
 /// </remarks>
 public sealed class AcronisTibxPage {
 
-  /// <summary>Page-frame size in bytes (always 4096 in observed binaries).</summary>
+  /// <summary>Page-frame size in bytes (always 4096).</summary>
   public const int PageSize = 0x1000;
 
   /// <summary>Byte offset of the page-type tag within the page frame.</summary>
@@ -195,7 +179,7 @@ public sealed class AcronisTibxPage {
   /// <param name="fileOffset">Byte offset of this page within the container.</param>
   public static AcronisTibxPage? Parse(ReadOnlySpan<byte> page, long pageIndex, long fileOffset) {
     if (page.Length < PageSize) return null;
-    if (page[0] != 0x41) return null; // 'A' sentinel required by ar_page_verify
+    if (page[0] != 0x41) return null; // 'A' sentinel required on every typed page
 
     // Page-zero ARCH header path: bytes [0..3] are the 4-byte ASCII "ARCH" magic itself,
     // detected by sniffing all four bytes (rather than the +0x1 type tag, which is 'R' here).
@@ -233,10 +217,8 @@ public sealed class AcronisTibxPage {
 }
 
 /// <summary>
-///   Decoded LSM-specific sub-header carried by every LEAF / LDIR page. Layout recovered
-///   from binary RE of <c>lsm_dump_ctrees</c> at <c>libarchive3.so</c> offset
-///   <c>0x590f7..0x5912d</c>: each field is the same load the dumper emits into the
-///   <c>"version" / "encoding" / "count" / "len" / "zlen" / "seq" / "id"</c> JSON keys.
+///   Decoded LSM-specific sub-header carried by every LEAF / LDIR page: the
+///   <c>version / encoding / count / len / zlen / seq / id</c> fields.
 /// </summary>
 /// <param name="Version">Byte at <c>+0xC</c>.</param>
 /// <param name="Encoding">Byte at <c>+0xD</c> (<c>3</c> = standard, <c>4</c> = alternative).</param>

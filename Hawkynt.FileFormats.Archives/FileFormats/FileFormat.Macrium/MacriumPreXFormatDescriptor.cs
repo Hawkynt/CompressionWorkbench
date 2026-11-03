@@ -48,11 +48,9 @@ namespace FileFormat.Macrium;
 /// </summary>
 /// <remarks>
 /// <para>
-/// File-format facts established by binary reverse engineering of the
-/// official Macrium Reflect Free v8.0.7783 build (ReflectBin.exe,
-/// RShellEx.dll, MRVerify.exe, Consolidate.exe), cross-referenced against
-/// the community ccooper21/mrimg-tools project (MIT licence) and Macrium's
-/// own MIT-licensed Reflect X spec at github.com/macrium/mrimgx_file_layout:
+/// File-format facts, cross-referenced against the community
+/// ccooper21/mrimg-tools project (MIT licence) and Macrium's own
+/// MIT-licensed Reflect X spec at github.com/macrium/mrimgx_file_layout:
 /// </para>
 /// <list type="bullet">
 ///   <item>Recognised extensions: <c>.mrimg</c> (disk image),

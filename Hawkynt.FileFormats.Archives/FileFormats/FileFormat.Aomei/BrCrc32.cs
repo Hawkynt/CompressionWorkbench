@@ -8,9 +8,7 @@ namespace FileFormat.Aomei;
 /// file tail and every <c>BR_STANDARD_HEADER</c>-prefixed INFO/INDEX record.
 ///
 /// <para>
-/// Recovered via binary reverse engineering of <c>Encrypt.dll!BRCrc32</c> at offset
-/// <c>0x1800015c0</c> and the identical kernel-side reimplementation at
-/// <c>ammntdrv.sys!FUN_0002053c</c>. The reverse-engineered pseudocode reads:
+/// Algorithm:
 /// <code>
 /// uint BRCrc32(byte *p, uint n) {
 ///   uint c = 0;
@@ -35,8 +33,8 @@ public static class BrCrc32 {
   /// <summary>
   /// Computes the CRC over <paramref name="record"/> with the 4-byte
   /// <see cref="AomeiConstants.Crc32FieldOffset"/> field treated as zero —
-  /// matching the AOMEI reader's verification protocol:
-  /// <c>saved = Head.Crc32; Head.Crc32 = 0; ASSERT(BRCrc32(...) == saved);</c>.
+  /// i.e. the stored CRC is computed over the record with its own <c>Crc32</c> field
+  /// zeroed.
   /// </summary>
   /// <remarks>
   /// The record must be at least <see cref="AomeiConstants.StandardHeaderSize"/>

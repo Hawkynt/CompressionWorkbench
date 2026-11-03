@@ -1,0 +1,28 @@
+Observer (Setup Factory module) - converted to C#
+
+Source:   https://github.com/lazyhamster/Observer (compound content-extraction plugin
+          for the FAR file manager)
+Revision: ddbe6b6d13a51c09d14c565e110b3e6b8b06a69a
+Authors:  lazyhamster and the Observer contributors
+Licence:  GNU Lesser General Public License, version 3 or (at your option) any
+          later version (doc/license.txt and README.md of the upstream). This
+          repository is LGPL-3.0-or-later; the full LGPL text is in the
+          repository's LICENSE file.
+
+Upstream statement (README.md):
+
+  Observer is free software: you can redistribute it and/or modify it under
+  the terms of the GNU Lesser General Public License as published by the Free
+  Software Foundation, either version 3 of the License, or (at your option)
+  any later version.
+
+Files converted:
+
+  src/modules/sfact/SfFile.cpp, SetupFactory56.cpp, SetupFactory7.cpp,
+  SetupFactory8.cpp (signatures and their places, the installer's own file
+  table, the irsetup.exe XOR, the CFileInfo and CSetupFileData script records,
+  the compression detection, the runtime version from the manifest)
+    -> SetupFactoryReader.cs
+
+The PKWARE DCL, LZMA and LZMA2 decoders Observer links (blast, the LZMA SDK) are
+not taken; this repository's own decoders are used.

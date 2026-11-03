@@ -5,7 +5,7 @@ namespace FileFormat.Aomei;
 
 /// <summary>
 /// <c>BR_IMAGE_FILE_TAIL</c> — the 0x674-byte struct at offset
-/// <c>file_size - 0x674</c>. Layout sourced from <c>ammntdrv.sys!FUN_0001601c</c>.
+/// <c>file_size - 0x674</c>.
 ///
 /// <para>
 /// Only the first 12 bytes (Flag / Size / Crc32) are verifiably decoded — the

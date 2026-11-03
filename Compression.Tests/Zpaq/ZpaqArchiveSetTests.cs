@@ -185,25 +185,129 @@ public sealed class ZpaqArchiveSetTests {
     Assert.Throws<NotSupportedException>(() => reader.ExtractBytes(latest[0]));
   }
 
-  // ── edits are refused ──────────────────────────────────────────────────────
+  // ── edits ──────────────────────────────────────────────────────────────────
 
   [Test]
-  public void GivenAnEncryptedArchive_WhenAFileIsAdded_ThenItIsRefusedAndUnchanged() {
+  public void GivenAnEncryptedArchive_WhenAFileIsAddedWithoutThePassword_ThenItIsRefusedAndUnchanged() {
     var original = Load("enc.zpaq");
     var archive = new MemoryStream(original.ToArray());
 
-    Assert.Throws<NotSupportedException>(() => new ZpaqFormatDescriptor().Add(archive,
+    Assert.Throws<UnauthorizedAccessException>(() => new ZpaqFormatDescriptor().Add(archive,
       [ArchiveInputInfo.InMemory("x.txt", "x"u8.ToArray())]));
     Assert.That(archive.ToArray(), Is.EqualTo(original));
   }
 
   [Test]
-  public void GivenTheFirstPartOfAMultiPartArchive_WhenAFileIsRemoved_ThenItIsRefusedAndUnchanged() {
+  public void GivenAnEncryptedArchive_WhenAFileIsAddedWithThePassword_ThenANewVersionIsAppendedEncrypted() {
+    var original = Load("enc.zpaq");
+    var archive = new MemoryStream();
+    archive.Write(original);
+
+    new ZpaqFormatDescriptor().Add(archive, [ArchiveInputInfo.InMemory("v/added.txt", "added"u8.ToArray())],
+      new ArchiveMutationOptions { Password = Password });
+
+    var bytes = archive.ToArray();
+    Assert.That(bytes.AsSpan(0, original.Length).SequenceEqual(original), "the earlier versions stay as they were");
+    Assert.That(bytes.AsSpan(original.Length).IndexOf("added"u8), Is.EqualTo(-1), "the new version is encrypted");
+    using var reader = new ZpaqReader(new MemoryStream(bytes), Password);
+    Assert.That(reader.VersionCount, Is.EqualTo(3));
+    var added = reader.Entries.Single(e => e.FileName == "v/added.txt");
+    Assert.That(reader.ExtractBytes(added), Is.EqualTo("added"u8.ToArray()));
+    AssertVersionsUnchanged(reader, "enc.zpaq");
+  }
+
+  [Test]
+  public void GivenTheFirstPartOfAMultiPartArchive_WhenAFileIsRemoved_ThenTheNextPartRecordsIt() {
     var first = this.Place("part001.zpaq", "part002.zpaq");
     var before = File.ReadAllBytes(first);
     using (var file = new FileStream(first, FileMode.Open, FileAccess.ReadWrite))
-      Assert.Throws<NotSupportedException>(() => new ZpaqFormatDescriptor().Remove(file, ["v/notes.txt"]));
+      new ZpaqFormatDescriptor().Remove(file, ["v/notes.txt"]);
     Assert.That(File.ReadAllBytes(first), Is.EqualTo(before));
+    Assert.That(File.Exists(Path.Combine(this._dir, "part003.zpaq")));
+    using var stream = File.OpenRead(first);
+    using var reader = ZpaqArchiveSet.Open(stream, null);
+    Assert.That(reader.VersionCount, Is.EqualTo(3));
+    Assert.That(reader.Entries.Any(e => e.FileName == "v/notes.txt"), Is.False);
+    AssertVersionsUnchanged(reader, "part???.zpaq", upTo: 2);
+  }
+
+  [Test]
+  public void GivenEncryptedParts_WhenAFileIsAdded_ThenTheNextPartContinuesTheKeyStream() {
+    var first = this.Place("ep001.zpaq", "ep002.zpaq");
+    using (var file = new FileStream(first, FileMode.Open, FileAccess.ReadWrite))
+      new ZpaqFormatDescriptor().Add(file, [ArchiveInputInfo.InMemory("v/third.txt", "third part"u8.ToArray())],
+        new ArchiveMutationOptions { Password = Password });
+    var third = File.ReadAllBytes(Path.Combine(this._dir, "ep003.zpaq"));
+    Assert.That(third.AsSpan().IndexOf("third part"u8), Is.EqualTo(-1));
+    using var stream = File.OpenRead(first);
+    using var reader = ZpaqArchiveSet.Open(stream, Password);
+    Assert.That(reader.VersionCount, Is.EqualTo(3));
+    Assert.That(reader.ExtractBytes(reader.Entries.Single(e => e.FileName == "v/third.txt")), Is.EqualTo("third part"u8.ToArray()));
+    AssertVersionsUnchanged(reader, "ep???.zpaq", upTo: 2);
+  }
+
+  [Test]
+  public void GivenAnIndexFile_WhenAFileIsAdded_ThenTheNextPartIsWrittenBesideItAndTheIndexUpdated() {
+    var index = this.Place("ix000.zpaq");
+    using (var file = new FileStream(index, FileMode.Open, FileAccess.ReadWrite))
+      new ZpaqFormatDescriptor().Add(file, [ArchiveInputInfo.InMemory("v/remote.txt", "remote"u8.ToArray())]);
+    Assert.That(File.Exists(Path.Combine(this._dir, "ix003.zpaq")));
+    using (var stream = File.OpenRead(index)) {
+      using var reader = new ZpaqReader(stream);
+      Assert.That(reader.IsIndex);
+      Assert.That(reader.VersionCount, Is.EqualTo(3));
+    }
+    // With the parts the index was written for, the whole set reads.
+    File.WriteAllBytes(Path.Combine(this._dir, "ix001.zpaq"), Load("ix001.zpaq"));
+    File.WriteAllBytes(Path.Combine(this._dir, "ix002.zpaq"), Load("ix002.zpaq"));
+    using var set = File.OpenRead(index);
+    using var all = ZpaqArchiveSet.Open(set, null);
+    Assert.That(all.ExtractBytes(all.Entries.Single(e => e.FileName == "v/remote.txt")), Is.EqualTo("remote"u8.ToArray()));
+    AssertVersionsUnchanged(all, "ix???.zpaq", upTo: 2);
+  }
+
+  [Test]
+  public void GivenTheIndexedParts_WhenTheirIndexIsWritten_ThenItIsTheIndexZpaqWrote() {
+    var first = this.Place("ix001.zpaq", "ix002.zpaq");
+    using var file = File.OpenRead(first);
+    using var index = new MemoryStream();
+    ZpaqIndex.Write(file, index);
+    Assert.That(index.ToArray(), Is.EqualTo(Load("ix000.zpaq")));
+  }
+
+  [Test]
+  public void GivenEncryptedParts_WhenTheirIndexIsWritten_ThenItIsAnEncryptedIndex() {
+    var first = this.Place("ep001.zpaq", "ep002.zpaq");
+    using var file = File.OpenRead(first);
+    using var index = new MemoryStream();
+    ZpaqIndex.Write(file, index, Password);
+    var salt = File.ReadAllBytes(first).AsSpan(0, 32).ToArray();
+    salt[0] ^= (byte)('7' ^ 'z');
+    Assert.That(index.ToArray().AsSpan(0, 32).SequenceEqual(salt));
+    using var reader = new ZpaqReader(new MemoryStream(index.ToArray()), Password);
+    Assert.That(reader.IsIndex);
+    Assert.That(reader.VersionCount, Is.EqualTo(2));
+  }
+
+  [Test]
+  public void GivenAPassword_WhenCreated_ThenTheArchiveIsEncryptedAndReadsBack() {
+    using var ms = new MemoryStream();
+    new ZpaqFormatDescriptor().Create(ms, [ArchiveInputInfo.InMemory("secret.txt", "top secret text"u8.ToArray())],
+      new FormatCreateOptions { Password = Password });
+    var bytes = ms.ToArray();
+    Assert.That(bytes.AsSpan().IndexOf("top secret"u8), Is.EqualTo(-1));
+    Assert.That(bytes.AsSpan(0, 4).SequenceEqual("7kSt"u8), Is.False);
+    using var reader = new ZpaqReader(new MemoryStream(bytes), Password);
+    Assert.That(reader.ExtractBytes(reader.Entries.Single()), Is.EqualTo("top secret text"u8.ToArray()));
+    Assert.Throws<InvalidDataException>(() => _ = new ZpaqReader(new MemoryStream(bytes), "wrong"));
+  }
+
+  private static void AssertVersionsUnchanged(ZpaqReader reader, string set, int upTo = int.MaxValue) {
+    foreach (var version in Manifest.Value.Where(r => r.Set == set && r.Version <= upTo).Select(r => r.Version).Distinct()) {
+      var entries = reader.GetEntries(version).Where(e => !e.IsDirectory).ToDictionary(e => e.FileName);
+      foreach (var row in Manifest.Value.Where(r => r.Set == set && r.Version == version))
+        Assert.That(Convert.ToHexStringLower(SHA256.HashData(reader.ExtractBytes(entries[row.Name]))), Is.EqualTo(row.Sha256), $"v{version} {row.Name}");
+    }
   }
 
   [Test]

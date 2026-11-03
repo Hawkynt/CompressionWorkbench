@@ -9,13 +9,11 @@ namespace Compression.Tests.AcronisTibx;
 ///   Stage-1 R/O acceptance gate for <see cref="AcronisTibxFormatDescriptor"/>.
 ///
 ///   <para>
-///     Pins the binary-RE-recovered "ARCH" magic, the page-zero header layout
-///     (version BE16 at +0x008, mode BE32 at +0x174, dump-field cluster at +0x1e0,
-///     UUID at +0x233), the metadata.ini surface, the synthetic container entry,
-///     and the disjoint-from-classic-.tib invariant. .tibx is reverse-engineered
-///     from binary inspection of archive3.dll (ATI 2018) and libarchive3.so
-///     (ATI 2021 initrd64) — classic .tib uses an entirely separate codepath
-///     (magic CE 24 B9 A2) and is handled by FileFormat.Acronis.
+///     Pins the "ARCH" magic, the page-zero header layout (version BE16 at +0x008,
+///     mode BE32 at +0x174, dump-field cluster at +0x1e0, UUID at +0x233), the
+///     metadata.ini surface, the synthetic container entry, and the
+///     disjoint-from-classic-.tib invariant — classic .tib uses an entirely
+///     separate codepath (magic CE 24 B9 A2) and is handled by FileFormat.Acronis.
 ///   </para>
 /// </summary>
 [TestFixture]
@@ -26,9 +24,8 @@ public class AcronisTibxDetectionTests {
   /// <summary>
   ///   Builds a synthetic 4 KiB page-zero header with the "ARCH" magic and
   ///   user-supplied values for the parsed fields. Any field not specified is
-  ///   left as zero; the binary RE confirmed the writer zeroes the entire
-  ///   page-zero buffer before populating fields, so all-zero values are a
-  ///   realistic baseline.
+  ///   left as zero; unused page-zero bytes are zero in real containers, so
+  ///   all-zero values are a realistic baseline.
   /// </summary>
   private static byte[] BuildHeader(
     ushort version = 0x0008,
@@ -75,7 +72,7 @@ public class AcronisTibxDetectionTests {
     var sig = d.MagicSignatures[0];
     Assert.That(sig.Offset, Is.EqualTo(0));
     Assert.That(sig.Bytes, Is.EqualTo(new byte[] { 0x41, 0x52, 0x43, 0x48 }),
-      "Magic must be the ASCII 'ARCH' tag (41 52 43 48) recovered from binary RE.");
+      "Magic must be the ASCII 'ARCH' tag (41 52 43 48).");
     Assert.That(sig.Confidence, Is.GreaterThanOrEqualTo(0.90));
   }
 
@@ -120,13 +117,12 @@ public class AcronisTibxDetectionTests {
     using var ms = new MemoryStream(page);
     using var r = new AcronisTibxReader(ms);
     Assert.That(r.Version, Is.EqualTo(0x0008),
-      "Version is BE16 at +0x008 per the vendor writer (ror $8 + mov %ax, 0x8(%esi)).");
+      "Version is BE16 at +0x008.");
   }
 
   [Test, Category("HappyPath")]
   public void Reader_ParsesVersion0x0007_AlternativeWriterPath() {
-    // The vendor writer has two paths: the "flag matches 8" path emits 0x0008,
-    // the alternative emits 0x0007 or (0x0007 | 1) = 0x0008. Pin the alternative.
+    // Known version codes are 0x0008 and 0x0007. Pin the alternative.
     var page = BuildHeader(version: 0x0007);
     using var ms = new MemoryStream(page);
     using var r = new AcronisTibxReader(ms);
@@ -139,7 +135,7 @@ public class AcronisTibxDetectionTests {
     using var ms = new MemoryStream(page);
     using var r = new AcronisTibxReader(ms);
     Assert.That(r.ModeWord, Is.EqualTo(0xDEADBEEFu),
-      "Mode word is BE32 at +0x174 per the vendor's mov 0x174(%esi), %eax + bswap + ar_mode_to_string.");
+      "Mode word is BE32 at +0x174.");
   }
 
   [Test, Category("HappyPath")]
@@ -280,21 +276,6 @@ public class AcronisTibxDetectionTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Metadata_PinsReProvenance() {
-    var page = BuildHeader();
-    using var ms = new MemoryStream(page);
-    using var r = new AcronisTibxReader(ms);
-    var meta = r.Entries.Single(e => e.Name == "metadata.ini");
-    var text = Encoding.UTF8.GetString(meta.Data);
-    Assert.That(text, Does.Contain("re_target_1=archive3.dll"),
-      "RE provenance must cite the Windows binary (archive3.dll, ATI 2018).");
-    Assert.That(text, Does.Contain("re_target_2=libarchive3.so"),
-      "RE provenance must cite the Linux ELF (libarchive3.so, ATI 2021).");
-    Assert.That(text, Does.Contain("archive_hdr.c"),
-      "RE provenance must cite the source-tree path of the header writer/parser.");
-  }
-
-  [Test, Category("HappyPath")]
   public void Metadata_DocumentsBlockersOnLsmTreeWalk() {
     var page = BuildHeader();
     using var ms = new MemoryStream(page);
@@ -418,13 +399,9 @@ public class AcronisTibxDetectionTests {
   // ─── Description-level invariants (forensic surfacing) ───────────
 
   [Test, Category("Stub")]
-  public void Description_CitesReProvenanceAndDistinguishesFromClassicTib() {
+  public void Description_SurfacesMagicAndDistinguishesFromClassicTib() {
     var d = new AcronisTibxFormatDescriptor();
     var desc = d.Description;
-    Assert.That(desc, Does.Contain("archive3.dll"),
-      "Description must cite the Windows binary the RE was driven from.");
-    Assert.That(desc, Does.Contain("libarchive3.so"),
-      "Description must cite the Linux ELF the RE was driven from.");
     Assert.That(desc, Does.Contain("'ARCH'").Or.Contain("\"ARCH\""),
       "Description must surface the 'ARCH' magic tag for registry consumers.");
     Assert.That(desc, Does.Contain("41 52 43 48"),
@@ -443,7 +420,7 @@ public class AcronisTibxDetectionTests {
       "Description must honestly state the surface is metadata-only.");
     Assert.That(desc, Does.Contain("lsm"),
       "Description must cite the LSM B+-tree as the unspecified data structure.");
-    Assert.That(desc, Does.Contain("lsm_item.h"),
-      "Description must name the Acronis-internal header that gates further promotion.");
+    Assert.That(desc, Does.Contain("no published spec"),
+      "Description must state that the record stream gating further promotion is unpublished.");
   }
 }

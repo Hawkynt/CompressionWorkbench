@@ -7,8 +7,7 @@ namespace Compression.Tests.EaseUs;
 /// <summary>
 /// Self-round-trip acceptance gate for <see cref="EaseUsWriter"/>. The
 /// writer emits a <c>.pbd</c> container whose header / body / trailer
-/// framing matches the on-disk shape recovered from the EaseUS image
-/// engine (<c>ImgFile.dll</c>) and pinned in
+/// framing matches the on-disk shape pinned in
 /// <see cref="EaseUsContainerIndex"/>. These tests confirm:
 /// <list type="bullet">
 ///   <item><description>

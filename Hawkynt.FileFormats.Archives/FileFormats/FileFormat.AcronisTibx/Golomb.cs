@@ -3,30 +3,22 @@ namespace FileFormat.AcronisTibx;
 
 /// <summary>
 ///   Rice/Golomb codec with Rice parameter <c>k = 8</c> (divisor <c>m = 256</c>) — the
-///   <c>golomb_decode_mod256</c> / <c>golomb_encode_mod256</c> primitive used by
-///   <c>libarchive3</c> to encode the GOLOMB-page probabilistic membership filter.
+///   primitive Acronis <c>.tibx</c> uses to encode the GOLOMB-page probabilistic membership
+///   filter.
 /// </summary>
 /// <remarks>
 ///   <para>
-///     <b>Provenance.</b> The codec layout encoded here was reverse-engineered from binary
-///     inspection of <c>libarchive3.so</c> (32-bit Linux ELF, Acronis True Image 2021
-///     <c>initrd64/lib/</c>):
+///     <b>Code layout.</b>
 ///     <list type="bullet">
-///       <item><description><c>golomb_decode_mod256</c> at file offset <c>0x53ef0</c>: reads
-///         a unary-coded quotient (count of 1-bits ended by a 0-bit), caps the quotient at 8
-///         (an escape path for larger values), then reads an 8-bit remainder. The final value
-///         is <c>(quotient &lt;&lt; 8) | remainder</c>.</description></item>
-///       <item><description><c>golomb_encode_mod256</c> at <c>0x53d40</c>: the symmetric writer
-///         — emits <c>quotient</c> 1-bits, a terminating 0-bit, then an 8-bit remainder.</description></item>
-///       <item><description><c>golomb_init_decode_ctx</c> at <c>0x53e70</c> /
-///         <c>golomb_init_encode_ctx</c> at <c>0x53c50</c>: prime the bit-reader / bit-writer
-///         context (two 32-bit shift words + a bit-count) from a byte source.</description></item>
-///       <item><description>GOLOMB-page sub-header carries <c>hash_shift</c> and
-///         <c>golomb_limit</c> per the <c>"golomb": {"offset": %llu, "lvl": %u, "hash_shift": %u,
-///         "size": %llu, "golomb_limit": %llu, "nr_items": %llu, "nr_exts": %u}</c> JSON dumper
-///         emitted by <c>lsm_golomb.c</c> — those parameters tune the underlying hash
-///         distribution but the per-value bit shape is always
-///         <c>unary(q) || 0 || 8-bit(r)</c>.</description></item>
+///       <item><description>Decoding reads a unary-coded quotient (count of 1-bits ended by a
+///         0-bit), caps the quotient at 8 (an escape path for larger values), then reads an
+///         8-bit remainder. The final value is <c>(quotient &lt;&lt; 8) | remainder</c>.</description></item>
+///       <item><description>Encoding is symmetric — <c>quotient</c> 1-bits, a terminating
+///         0-bit, then an 8-bit remainder.</description></item>
+///       <item><description>The GOLOMB-page sub-header carries <c>offset</c>, <c>lvl</c>,
+///         <c>hash_shift</c>, <c>size</c>, <c>golomb_limit</c>, <c>nr_items</c> and
+///         <c>nr_exts</c> — those parameters tune the underlying hash distribution but the
+///         per-value bit shape is always <c>unary(q) || 0 || 8-bit(r)</c>.</description></item>
 ///     </list>
 ///   </para>
 ///   <para>
@@ -39,17 +31,14 @@ namespace FileFormat.AcronisTibx;
 ///     pass can decode the GCS to enumerate which item-ids a ctree contains.
 ///   </para>
 ///   <para>
-///     <b>Bit order.</b> Both the writer (<c>0x53c50..0x53cd0</c>) and reader load 32-bit words
-///     from the byte stream in <b>big-endian</b> form via <c>bswap</c>. Within a 32-bit word
-///     bits are consumed MSB-first — the reader's hot loop at <c>0x53f3f</c> does
-///     <c>shrd %cl, %edx, %eax; shr %cl, %edx; ... and $1, %eax</c> which extracts the high
-///     bit of the (<c>edx:eax</c>) pair and shifts the pair left. The encoder symmetrically
-///     places each new bit into the MSB.
+///     <b>Bit order.</b> The bit stream is packed into <b>big-endian</b> 32-bit words and
+///     bits are consumed MSB-first; the encoder symmetrically places each new bit into the
+///     MSB.
 ///   </para>
 ///   <para>
 ///     <b>Escape path for quotient ≥ 8.</b> When the unary quotient reaches 8, the decoder
-///     falls through to a 64-bit raw-value read (<c>call dedup_map_lookup_next+0x5b0</c> at
-///     <c>0x54002</c>) that consumes the next 64 bits of the bit stream verbatim. This caps
+///     falls through to a 64-bit raw-value read that consumes the next 64 bits of the bit
+///     stream verbatim. This caps
 ///     the per-value bit cost: small deltas use the cheap Rice form, but the rare large delta
 ///     pays the 64-bit literal. The decoder here mirrors that escape so a forged stream with
 ///     a huge gap still parses.
@@ -57,22 +46,19 @@ namespace FileFormat.AcronisTibx;
 /// </remarks>
 public static class Golomb {
 
-  /// <summary>Rice parameter <c>k</c> (the remainder field width in bits). Always 8 for the
-  /// Acronis <c>golomb_*_mod256</c> family.</summary>
+  /// <summary>Rice parameter <c>k</c> (the remainder field width in bits). Always 8 for
+  /// Acronis <c>.tibx</c>.</summary>
   public const int RiceK = 8;
 
   /// <summary>Divisor <c>m = 1 &lt;&lt; RiceK = 256</c>.</summary>
   public const int Divisor = 1 << RiceK;
 
-  /// <summary>Unary-quotient cap before the 64-bit escape path kicks in (recovered from
-  /// <c>cmp $0x8, %edx</c> at <c>0x53f53</c>).</summary>
+  /// <summary>Unary-quotient cap before the 64-bit escape path kicks in.</summary>
   public const int QuotientEscape = 8;
 
   /// <summary>
-  ///   Reader for an MSB-first bit stream packed byte-by-byte. Mirrors the
-  ///   <c>{u32 high, u32 low, byte bit_count}</c> context layout that
-  ///   <c>golomb_init_decode_ctx</c> establishes — the only externally observable bit
-  ///   ordering is <i>MSB-of-byte-first</i>, which is what this class produces.
+  ///   Reader for an MSB-first bit stream packed byte-by-byte — the externally observable
+  ///   bit ordering is <i>MSB-of-byte-first</i>, which is what this class produces.
   /// </summary>
   public sealed class BitReader {
     private readonly byte[] _data;
@@ -98,8 +84,7 @@ public static class Golomb {
     /// <summary>
     ///   Reads the next <paramref name="count"/> bits (0..56) MSB-first and returns them
     ///   right-aligned in the low bits of the returned value. When the underlying stream
-    ///   is exhausted the missing bits are returned as zeros — the binary's reader panics
-    ///   via <c>pcs_bug_at</c> on exhaustion but we surface a soft zero so callers can
+    ///   is exhausted the missing bits are returned as zeros — a soft zero so callers can
     ///   probe truncated buffers.
     /// </summary>
     public ulong ReadBits(int count) {
@@ -207,10 +192,9 @@ public static class Golomb {
   ///   <c>quotient</c> 1-bits, a 0-bit terminator, then an 8-bit remainder.
   /// </summary>
   /// <remarks>
-  ///   When <c>quotient &gt;= 8</c> the binary's writer takes an escape path that emits
-  ///   eight 1-bits as a sentinel followed by the full 64-bit value (no separator). This
-  ///   matches the decoder's <c>cmp $0x8, %edx</c> threshold at <c>0x53f53</c> + the
-  ///   subsequent 64-bit raw read.
+  ///   When <c>quotient &gt;= 8</c> the encoding takes an escape path that emits eight 1-bits
+  ///   as a sentinel followed by the full 64-bit value (no separator), matching the decoder's
+  ///   quotient cap and subsequent 64-bit raw read.
   /// </remarks>
   public static void EncodeMod256(BitWriter w, ulong value) {
     ArgumentNullException.ThrowIfNull(w);

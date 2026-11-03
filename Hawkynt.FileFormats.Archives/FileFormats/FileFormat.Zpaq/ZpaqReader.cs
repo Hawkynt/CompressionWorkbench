@@ -39,7 +39,14 @@ public sealed class ZpaqReader : IDisposable {
     public uint Frags;
   }
 
-  private sealed record VersionInfo(long Date, long CompressedSize);
+  private sealed record VersionInfo(long Date, long CompressedSize) {
+    /// <summary>Where the version's c block starts, in the (decrypted) archive.</summary>
+    public long Start { get; init; }
+    /// <summary>Where its data blocks start, right after the c block.</summary>
+    public long DataOffset { get; init; }
+    /// <summary>The fragment number the c block's name records.</summary>
+    public uint FragmentNumber { get; init; }
+  }
 
   private sealed record IndexRecord(int Version, string Name, long Date, long Attributes, List<uint> Fragments, List<(long, int)> Segments);
 
@@ -109,6 +116,37 @@ public sealed class ZpaqReader : IDisposable {
 
   /// <summary>Fragment table for appending: SHA-1 and size of fragments 1..N-1 (index 0 unused).</summary>
   internal IReadOnlyList<(byte[] Sha1, int Usize)> FragmentTable => this._ht.Select(f => (f.Sha1, f.Usize)).ToList();
+
+  /// <summary>
+  /// Per version: its c block's start, the end of that block, the data size it records, the end of
+  /// its fragment tables and file index (the next version's start, or the archive's end), its date
+  /// and the fragment number in its c block's name. Offsets are in the decrypted archive.
+  /// </summary>
+  internal IReadOnlyList<(long Start, long DataOffset, long CompressedSize, long End, long Date, uint FragmentNumber)> VersionLayout {
+    get {
+      var result = new List<(long, long, long, long, long, uint)>(this._versions.Count);
+      for (var i = 0; i < this._versions.Count; ++i) {
+        var v = this._versions[i];
+        var end = i + 1 < this._versions.Count ? this._versions[i + 1].Start : this._stream.Length;
+        result.Add((v.Start, v.DataOffset, v.CompressedSize, end, v.Date, v.FragmentNumber));
+      }
+      return result;
+    }
+  }
+
+  /// <summary>Bytes <paramref name="offset"/> .. + <paramref name="length"/> of the (decrypted) archive as stored.</summary>
+  internal byte[] ReadRaw(long offset, int length) {
+    var data = new byte[length];
+    this._stream.Position = offset;
+    this._stream.ReadExactly(data);
+    return data;
+  }
+
+  /// <summary>How many part files the archive was read from (1 for a single file).</summary>
+  internal int PartCount { get; set; } = 1;
+
+  /// <summary>The compressed size of all data blocks the fragment tables describe (zpaq's dhsize).</summary>
+  internal long DataBlockBytes => this._blocks.Sum(b => b.Bsize);
 
   /// <summary>Decimal date of the newest version, or 0 for none.</summary>
   internal long LatestVersionDate => this._versions.Count == 0 ? 0 : this._versions.Max(v => v.Date);
@@ -266,10 +304,11 @@ public sealed class ZpaqReader : IDisposable {
                       jumped = true;
                       break;
                     }
-                    this._versions.Add(new(fdate, jmp));
+                    this._versions.Add(new(fdate, jmp) { Start = blockOffset, DataOffset = dataOffset, FragmentNumber = (uint)num });
                     this._versionFirstFragment.Add(0);
                     if (jmp > 0) {
                       s.Position = dataOffset + jmp;
+                      blockOffset = s.Position;
                       jumped = true;
                     }
                     break;

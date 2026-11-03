@@ -70,8 +70,7 @@ public sealed class AomeiWriter {
 
   /// <summary>Optional password — when non-null an
   /// <see cref="AomeiConstants.InfoTypeImagePassword"/> record carrying
-  /// MD5(UTF-16LE(password)) is emitted, matching
-  /// <c>ImageWriter::AddPassword</c> at <c>ImgFile.dll!FUN_180014a30</c>.</summary>
+  /// MD5(UTF-16LE(password)) is emitted.</summary>
   public string? Password { get; init; }
 
   /// <summary>User-data payload records to embed between the head and the

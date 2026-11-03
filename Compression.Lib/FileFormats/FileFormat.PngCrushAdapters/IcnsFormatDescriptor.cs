@@ -10,7 +10,7 @@ namespace FileFormat.PngCrushAdapters;
 /// <list type="bullet">
 ///   <item><description><c>https://en.wikipedia.org/wiki/Apple_Icon_Image_format</c> — Wikipedia — documents the header and element types</description></item>
 ///   <item><description><c>https://sourceforge.net/projects/icns/</c> — libicns — open ICNS reader/writer</description></item>
-///   <item><description>format never published by Apple; layout reverse-engineered from the classic icon-family resource</description></item>
+///   <item><description>format never published by Apple; layout follows the classic icon-family resource</description></item>
 /// </list>
 /// </summary>
 public sealed class IcnsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {

@@ -176,8 +176,7 @@ The boundaries between the three are approximate. Entropy separates the table
 from the rest cleanly, but it does not separate dense x86 from compressed data:
 code here measures 5 to 6.5 against the payload's 7.9, and a threshold set low
 enough to catch the transition also fires inside the code. The two offsets above
-were confirmed by disassembling what is at them, which is the only reliable way
-to tell those two apart.
+were therefore confirmed individually rather than by threshold.
 
 Four more things hold across the corpus, counted rather than sampled:
 

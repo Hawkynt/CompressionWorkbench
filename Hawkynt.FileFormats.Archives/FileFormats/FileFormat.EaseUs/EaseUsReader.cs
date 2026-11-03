@@ -255,7 +255,7 @@ public sealed class EaseUsReader : IDisposable {
   /// <summary>
   /// True iff the file is at least <see cref="EaseUsContainerIndex.HeaderBlockSize"/>
   /// bytes long AND the size + version fields at file offsets 4 and 8 carry
-  /// the exact writer-side constants pinned by <c>TBImageExplorer.exe</c>
+  /// the exact expected constants
   /// (<see cref="EaseUsContainerIndex.HeaderSizeFieldExpectedValue"/> /
   /// <see cref="EaseUsContainerIndex.HeaderVersionFieldExpectedValue"/>).
   /// </summary>
@@ -270,9 +270,8 @@ public sealed class EaseUsReader : IDisposable {
 
   /// <summary>
   /// True iff a 0xC0-byte trailer block at <see cref="TrailerBlockOffset"/>
-  /// carries the writer-side size + version + magic words pinned by
-  /// <c>TBImageExplorer.exe</c> at binary offsets 0x000CE971..0x000CE991
-  /// (= a strict-form trailer match). Weaker than
+  /// carries the expected size + version + magic words (= a strict-form
+  /// trailer match). Weaker than
   /// <see cref="TrailerImgfPresent"/> — the lenient trailer-scan only
   /// requires "IMGF" somewhere in the last 4 KiB, the strict form
   /// requires the exact 0xC0-byte block shape.
@@ -317,14 +316,12 @@ public sealed class EaseUsReader : IDisposable {
     this.VersionMajor = (ushort)(this.VersionWord >> 16);
     this.VersionMinor = (ushort)(this.VersionWord & 0xFFFF);
 
-    // 2a) Strict-form header-block validation per the binary RE of
-    //     TBImageExplorer.exe: the writer-side init at binary offsets
-    //     0x000CE913..0x000CE933 pins the 0x4E8-byte header block with
-    //     {magic, header_size, version} = {"IMGF", 0x000004E8,
-    //     0x00010001}. The previous reader only checked the 12-byte
+    // 2a) Strict-form header-block validation: the 0x4E8-byte header
+    //     block carries {magic, header_size, version} = {"IMGF",
+    //     0x000004E8, 0x00010001}. The previous reader only checked the 12-byte
     //     magic + raw words — this strict form additionally requires
     //     the file to span the full 0x4E8 header block AND the size /
-    //     version fields to carry the exact writer-side constants.
+    //     version fields to carry the exact expected constants.
     //     EaseUsContainerIndex.LooksLikeWellFormedHeader pins the
     //     check against the documented offsets so the validation can't
     //     drift across reader edits.
@@ -509,11 +506,9 @@ public sealed class EaseUsReader : IDisposable {
     this.TrailerImgfPresent = window.IndexOf(ImgfMagic.AsSpan()) >= 0
                               || window.IndexOf(FimgMagic.AsSpan()) >= 0;
 
-    // Strict-form 0xC0-byte trailer-block validation per the binary RE
-    // of TBImageExplorer.exe (CImgFile::CheckHeader at file_off
-    // 0x000CE170 reads exactly 0xC0 bytes from EOF-0xC0 and checks
-    // [trailer+0xBC] == "IMGF"). Reproduce that exact placement check
-    // here so the strict form catches malformed trailers that the
+    // Strict-form 0xC0-byte trailer-block validation: the trailer is
+    // exactly 0xC0 bytes at EOF-0xC0 with [trailer+0xBC] == "IMGF".
+    // Check that exact placement here so the strict form catches malformed trailers that the
     // lenient marker-scan would still accept.
     var strictTrailerOffset = EaseUsContainerIndex.ComputeTrailerOffset(_data.Length, pad);
     if (strictTrailerOffset >= EaseUsContainerIndex.HeaderBlockSize
@@ -570,17 +565,17 @@ public sealed class EaseUsReader : IDisposable {
     }
     bldr.Append(CultureInfo.InvariantCulture, $"trailer_imgf_present={(this.TrailerImgfPresent ? "true" : "false")}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"trailing_ff_padding={this.TrailingFfPadding}\n");
-    // Strict-form RE-pinned header / trailer validation. These are the
+    // Strict-form header / trailer validation. These are the
     // load-bearing capability flags downstream consumers gate on when
     // deciding whether the file is a real .pbd or a fuzz hit. See
-    // EaseUsContainerIndex for the writer-side provenance.
+    // EaseUsContainerIndex for the layout.
     bldr.Append(CultureInfo.InvariantCulture, $"header_block_fully_validated={(this.HeaderBlockFullyValidated ? "true" : "false")}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"trailer_block_fully_validated={(this.TrailerBlockFullyValidated ? "true" : "false")}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"trailer_block_offset={this.TrailerBlockOffset}\n");
-    // Embed the reverse-engineered structure constants verbatim so
-    // forensic tools can diff them across reader edits without re-reading
-    // the C# source. EaseUsContainerIndex.DescribeStructure pins the
-    // exact wire-protocol numbers that TBImageExplorer.exe writes.
+    // Embed the structure constants verbatim so forensic tools can diff
+    // them across reader edits without re-reading the C# source.
+    // EaseUsContainerIndex.DescribeStructure pins the exact wire-protocol
+    // numbers.
     bldr.Append(EaseUsContainerIndex.DescribeStructure());
     bldr.Append("vendor=CHENGDU Yiwo Tech Development (EaseUS)\n");
     bldr.Append("product=EaseUS Todo Backup\n");

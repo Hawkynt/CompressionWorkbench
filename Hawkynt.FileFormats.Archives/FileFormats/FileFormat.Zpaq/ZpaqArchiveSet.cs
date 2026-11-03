@@ -33,11 +33,11 @@ internal static class ZpaqArchiveSet {
     return new ZpaqReader(stream, password, leaveOpen: true);
   }
 
-  private sealed record PartName(string Prefix, string Suffix, int Number, int Width) {
+  internal sealed record PartName(string Prefix, string Suffix, int Number, int Width) {
     public string Path(int number) => this.Prefix + number.ToString(new string('0', this.Width), CultureInfo.InvariantCulture) + this.Suffix;
   }
 
-  private static bool TryParse(string path, out PartName name) {
+  internal static bool TryParse(string path, out PartName name) {
     name = null!;
     var dir = System.IO.Path.GetDirectoryName(path) ?? string.Empty;
     var file = System.IO.Path.GetFileName(path);
@@ -101,6 +101,7 @@ internal static class ZpaqArchiveSet {
         return null;
       }
       accepted.Own(owned);
+      accepted.PartCount = parts.Count;
       return accepted;
     } catch {
       foreach (var s in owned)

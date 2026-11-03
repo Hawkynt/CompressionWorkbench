@@ -160,7 +160,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | ZAP (Amiga) | `Zap` | `.zap` | WORM | ✅ | wipe | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net/) |
 | [ZIP](https://en.wikipedia.org/wiki/ZIP_(file_format)) | `Zip` | `.zip` `.zipx` | R/W | ✅ | compress · repack · shrink · wipe | Store, Deflate, Deflate64, Shrink, Reduce, Implode, BZip2, LZMA, XZ, PPMd, Zstd, AES | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
 | [ZOO](https://en.wikipedia.org/wiki/Zoo_(file_format)) | `Zoo` | `.zoo` | R/W | ✅ | defrag · wipe | Store, LZW, LZH | [Archive Team](http://fileformats.archiveteam.org/wiki/ZOO) |
-| [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `Zpaq` | `.zpaq` | R/W | ✅ | defrag | Journaling (versions, deduplicated fragments) and streaming layouts, methods 0-5 and explicit `x` methods, full ZPAQL; zpaq 7.15 extracts what we write. Encrypted (`-key`) and multi-part (`arc???`) archives are read, an `-index` next to its parts reads the parts; those are not edited. Adding and removing append a version (earlier versions stay byte for byte) | [ZPAQ Level 2 spec](https://mattmahoney.net/dc/zpaq206.pdf) |
+| [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `Zpaq` | `.zpaq` | R/W | ✅ | defrag | Journaling (versions, deduplicated fragments) and streaming layouts, methods 0-5 and explicit `x` methods, full ZPAQL; zpaq 7.15 extracts what we write. Encrypted (`-key`), multi-part (`arc???`) and indexed (`-index`) archives are read and written: Create with a password encrypts; adding and removing append a version (earlier versions stay byte for byte), in place, as the next part of a set, or as the next part written from an index alone with the index updated; `ZpaqIndex.Write` writes the index zpaq writes | [ZPAQ Level 2 spec](https://mattmahoney.net/dc/zpaq206.pdf) |
 
 ### 🧬 Structured data and registry
 
@@ -191,11 +191,13 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | BitRock InstallBuilder | `BitRock` |  | R | ✅ | — | Metakit VFS with LZMA payloads | [installbuilder.com](https://installbuilder.com) |
 | [Rust crate](https://en.wikipedia.org/wiki/Cargo_(software)) | `Crate` | `.crate` | WORM | ✅ | — | tar.gz with the crate directory layout | [doc.rust-lang.org](https://doc.rust-lang.org/cargo/reference/registries.html#publish) |
 | [CRX](https://en.wikipedia.org/wiki/Google_Chrome#Extensions) | `Crx` | `.crx` | WORM | ✅ | defrag · wipe | CRX3 envelope creation is unsigned and not browser-trusted | [chromium.googlesource.com](https://chromium.googlesource.com/chromium/src/+/main/components/crx_file/) |
+| Clickteam Install Creator | `ClickteamInstaller` |  | R | — | — | Installed files of setup executables (file list layouts 2.0 to 4.0; stored, zlib or bzip2), zlib members checked against their Adler-32; converted from cicdec and checked against it on real installers. Encrypted and multi-product installers and external `.Dnn` data files are refused | [GitHub](https://github.com/Bioruebe/cicdec) |
 | [Debian .deb](https://en.wikipedia.org/wiki/Deb_(file_format)) | `Deb` | `.deb` | R/W | ✅ | defrag · wipe |  | [debian.org](https://www.debian.org/doc/debian-policy/) |
 | [EAR](https://en.wikipedia.org/wiki/EAR_(file_format)) | `Ear` | `.ear` | R/W | ✅ | defrag · wipe |  | [jakarta.ee](https://jakarta.ee/specifications/platform/) |
 | [Ruby gem](https://en.wikipedia.org/wiki/RubyGems) | `Gem` | `.gem` | WORM | ✅ | — | TAR with gzip-compressed metadata and data members | [docs.ruby-lang.org](https://docs.ruby-lang.org/en/3.0/Gem/Format.html) |
 | [IExpress](https://en.wikipedia.org/wiki/IExpress) | `IExpress` |  | R | ✅ | — | Files of the cabinet in the `CABINET` resource, plus the package text resources; checked against expand.exe | [Microsoft Learn](https://learn.microsoft.com/windows/win32/msi/cabinet-files) |
 | [Inno Setup](https://en.wikipedia.org/wiki/Inno_Setup) | `InnoSetup` |  | R | ✅ | — | [Files] of setup data 1.3 – 7.1, stored/zlib/bzip2/LZMA/LZMA2, embedded or setup-N.bin slices, every file checksum-verified; checked against innoextract up to 6.0 and by the stored SHA-256 of every file of the official 6.4.3 and 7.1.0 installers. Encrypted files refused | [jrsoftware.org](https://jrsoftware.org/isinfo.php) |
+| [Installer VISE](https://en.wikipedia.org/wiki/Installer_VISE) | `InstallerVise` |  | R | — | — | Classic Mac OS installers, VISE 3.0 to 8.5, from MacBinary or BinHex or a data fork with its `._name`/`.rsrc` sidecar; data forks under their catalog paths, resource forks as `name.rsrc`, each checked against its catalog CRC-32; converted from unvise and checked against it on 36 real installers | [GitHub](https://github.com/timdoug/unvise/blob/main/FORMAT.md) |
 | [IPA](https://en.wikipedia.org/wiki/.ipa) | `Ipa` | `.ipa` | R/W | ✅ | defrag · wipe |  | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
 | [JAR](https://en.wikipedia.org/wiki/JAR_(file_format)) | `Jar` | `.jar` | R/W | ✅ | defrag · wipe |  | [docs.oracle.com](https://docs.oracle.com/en-us/javase/8/docs/technotes/guides/jar/jar.html) |
 | [MSI](https://en.wikipedia.org/wiki/Windows_Installer) | `Msi` | `.msi` `.msp` `.mst` | R/W | ✅ | wipe | CFB envelope; a functional Installer database is not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/) |
@@ -209,6 +211,8 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [RPM](https://en.wikipedia.org/wiki/RPM_Package_Manager) | `Rpm` | `.rpm` | WORM | ✅ | defrag · wipe |  | [GitHub](https://github.com/rpm-software-management/rpm) |
 | [Snap](https://en.wikipedia.org/wiki/Snap_(software)) | `Snap` | `.snap` | WORM | ✅ | — | SquashFS package | [snapcraft.io](https://snapcraft.io/docs) |
 | [WAR](https://en.wikipedia.org/wiki/WAR_(file_format)) | `War` | `.war` | R/W | ✅ | defrag · wipe |  | [jakarta.ee](https://jakarta.ee/specifications/servlet/) |
+| Setup Factory | `SetupFactory` |  | R | — | — | Installers of Setup Factory 5 to 9: the runtime, the installer's own files and the installed files (stored, PKWARE DCL, LZMA or LZMA2), each checked against its recorded CRC-32; converted from Observer and checked against sfextract on real setups. Versions before 5 are not read | [GitHub](https://github.com/lazyhamster/Observer) |
+| [Wise Installer](https://en.wikipedia.org/wiki/Wise_Solutions) | `WiseInstaller` |  | R | — | — | Setup executables of the Wise Installation System 5.0 to 9.02: installed files under their script destinations, the installer's support files, script and dialogs; every stream checked against its CRC-32, and against WiseUnpacker on real setups. Multi-volume data and PKZIP-wrapped streams are not read | [WISE-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/WISE-ON-DISK.md) |
 | [Python wheel](https://en.wikipedia.org/wiki/Wheel_(software)) | `Wheel` | `.whl` | WORM | ✅ | wipe | ZIP plus dist-info | [peps.python.org](https://peps.python.org/pep-0427/) |
 | [XPI](https://en.wikipedia.org/wiki/XPInstall) | `Xpi` | `.xpi` | R/W | ✅ | defrag · wipe |  | [extensionworkshop.com](https://extensionworkshop.com/) |
 
@@ -263,6 +267,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Bethesda BA2 | `Ba2` | `.ba2` | R/W | ✅ | defrag · wipe | BTDX GNRL scope | [en.uesp.net](https://en.uesp.net/wiki/Skyrim_Mod:File_Formats/BA2) |
 | EA / Westwood BIG | `Big` | `.big` | R/W | ✅ | defrag · wipe |  | [MultimediaWiki](https://wiki.multimedia.cx/index.php/Electronic_Arts_Formats) |
 | Bethesda BSA | `Bsa` | `.bsa` | R/W | ✅ | defrag · wipe |  | [en.uesp.net](https://en.uesp.net/wiki/Skyrim_Mod:File_Formats/BSA) |
+| DxLib archive (DXA) | `DxArchive` | `.dxa` `.wolf` | R | — | — | DxLib game archives, also WOLF RPG Editor's `.wolf`: versions 6 and 8, XOR-keyed, LZ and Huffman coded; version 6 keys recovered from the header, version 8 with the archive password (default when none); checked against archives DxLib's own DxaEncode made. No checksum in the format | [DXA-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/DXA-ON-DISK.md) |
 | [Bloodlines DZIP](https://en.wikipedia.org/wiki/Vampire:_The_Masquerade_%E2%80%93Bloodlines) | `Dzip` | `.dzip` | R/W | ✅ | defrag · wipe |  | — |
 | [GameMaker data.win](https://en.wikipedia.org/wiki/GameMaker) | `GameMaker` | `.win` `.unx` `.ios` | WORM | ✅ | — | Entries are chunks/<TAG>.bin | [GitHub](https://github.com/UnderminersTeam/UndertaleModTool) |
 | Nintendo 3DS GAR | `Gar` | `.gar` | R/W | ✅ | defrag · wipe |  | [3dbrew.org](https://www.3dbrew.org/wiki/GAR) |
@@ -311,7 +316,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 
 | Format | Id | Extensions | State | Test | Maintenance | Notes | Reference |
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
-| [Acronis True Image .tib](https://en.wikipedia.org/wiki/Acronis_True_Image) | `AcronisTib` | `.tib` | R/W | — | — | FileMeta chain and InputItem attribute streams decoded from reverse-engineered evidence | [GitHub](https://github.com/dennisss/acronis-tib) |
+| [Acronis True Image .tib](https://en.wikipedia.org/wiki/Acronis_True_Image) | `AcronisTib` | `.tib` | R/W | — | — | FileMeta chain and InputItem attribute streams decoded | [GitHub](https://github.com/dennisss/acronis-tib) |
 | [Acronis .tibx](https://en.wikipedia.org/wiki/Acronis_Tibx) | `AcronisTibx` | `.tibx` | R | ✅ | — | Page-frame walk plus LSM sub-header; record-stream decode is bounded | [acronis.com](https://www.acronis.com) |
 | [AFF4](https://en.wikipedia.org/wiki/Advanced_Forensic_Format) | `Aff4` |  | WORM | ✅ | — | Logical images (AFF4-L and pyaff4's v1.1) list and extract as files from ZipSegments, ImageStreams (stored, Snappy, LZ4, Deflate, zlib) and in-metadata streams, matching pyaff4 on its reference images; Map-backed files and physical images list as raw members. Creates AFF4-L 2.1 ZipSegment volumes (stored or deflate, ZIP64 local headers, MD5/SHA-1/SHA-256/SHA-512 stream hashes) that pyaff4 reads byte for byte with every hash verified; pyaff4 predates AFF4-L 2.1, so its CLI `-l`/`-v` reject the version label, while its extraction and hashing code accept the volume | [GitHub](https://github.com/aff4/Standard) |
 | AOMEI Backupper .adi/.afi | `Aomei` | `.adi` `.afi` | R/W | ✅ | — | BIFH/BIFT and BR header/index structures; no vendor byte-compat claim for own output | [aomeitech.com](https://www.aomeitech.com) |
@@ -492,7 +497,7 @@ Measured against the [chesvectain/PackingData](https://github.com/chesvectain/Pa
 
 - **Media containers.** AVI, MPEG-TS, RealMedia and Smacker demux only; MP4, Matroska, ASF, Bink, FLV and MPEG-PS mux audio tracks only. This is a limit of what demuxing preserves, not of the container specs. The demuxers hand back each track as a codec elementary stream — AVC re-framed as Annex-B, AAC as ADTS, per-PID PES — and per-frame timestamps, interleaving order and the index live in the container layer that is dropped on the way out. Muxing those entries back would mean inventing presentation timing rather than restoring it, so the writers are not there. Closing this needs a demux surface that carries timed packets, not another writer. Bink, Smacker, RealMedia and ASF are additionally reverse-engineered rather than specified. M3U8, PGS `.sup` and VobSub are not container muxes at all: a playlist is a manifest referencing segments it does not contain, and the two subtitle formats are single streams. ISO-BMFF brands are parsed generically, without a brand registry.
 - **Whole-image and typed-input writers** (Amiga disk archivers, DMS, sparse images, PBP, ICO/CUR/ANI, TTC, AppleSingle/AppleDouble, Wrapster, OVA) create only what their format can hold; arbitrary file trees are refused with a message rather than mangled.
-- **Reverse-engineered backup formats** (Acronis, AOMEI, EaseUS, Macrium, Paragon, Veeam) are decoded to the depth the evidence supports; unknown encrypted or index layers stay unknown.
+- **Undocumented backup formats** (Acronis, AOMEI, EaseUS, Macrium, Paragon, Veeam) are decoded to the depth the evidence supports; unknown encrypted or index layers stay unknown.
 - **Executable packers** blocked at Locate are listed above with the reason; the manifest audit names the unmapped ones.
 
 ## 🚀 Quick start
@@ -562,7 +567,7 @@ Use it when a .NET process needs to enumerate, extract, test, create, edit or in
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 2622 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
+Every public and protected member of all 2639 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
 
 <!-- API:END -->
 
@@ -583,7 +588,7 @@ Every public and protected member of all 2622 types, generated from the built as
 - Media containers are demuxed at the container level; carried codecs are decoded only where the audio package provides them.
 - MPEG-TS elementary streams are emitted as raw PES; MPEG-PS strips PES headers. PyInstaller onefile builds for Linux are detected as ELF by the stronger magic.
 - Installer and package parsing is inspection only; no install logic or script is executed.
-- Reverse-engineered proprietary structures are documented only to the depth evidenced by code, tests and reference binaries. Unknown structure is not filled with guesses.
+- Undocumented proprietary structures are documented only to the depth evidenced by code, tests and reference files. Unknown structure is not filled with guesses.
 
 ## ❤️ Support
 If this project saves you time or money, consider supporting its development:

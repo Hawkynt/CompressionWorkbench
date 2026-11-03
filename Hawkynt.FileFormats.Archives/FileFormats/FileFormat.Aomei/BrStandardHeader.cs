@@ -5,9 +5,7 @@ namespace FileFormat.Aomei;
 
 /// <summary>
 /// Twelve-byte tagged-record header that prefixes every INFO/INDEX record in
-/// the AOMEI <c>.adi</c>/<c>.afi</c> payload. Recovered from access patterns
-/// <c>pHead-&gt;Type</c>, <c>pHead-&gt;Size</c>, <c>Head.Crc32</c> in the
-/// <c>ImgFile.dll</c> and <c>ammntdrv.sys</c>.
+/// the AOMEI <c>.adi</c>/<c>.afi</c> payload.
 ///
 /// <code>
 /// struct BR_STANDARD_HEADER {
@@ -20,9 +18,8 @@ namespace FileFormat.Aomei;
 ///
 /// <para>
 /// The on-disk layout treats Type as a 16-bit value followed by 16 bits of
-/// padding observed-zero in every recovered sample — the assert text in
-/// <c>ImgFile.dll</c> compares <c>pHead-&gt;Type</c> against 16-bit constants
-/// (0x105/0x106/0x107/0x10C) and never against 32-bit values, but the
+/// padding observed-zero in every recovered sample — the type tags are 16-bit
+/// constants (0x105/0x106/0x107/0x10C), but the
 /// <c>{Size, Type, Crc32}</c> layout in the spec section §3.1 shows the
 /// header itself is 12 bytes (4+4+4). We treat that middle 4-byte slot as
 /// <c>Type:u16</c> + <c>Reserved:u16</c> in code so the wire layout is
@@ -40,7 +37,7 @@ public readonly struct BrStandardHeader {
   public readonly ushort Type;
 
   /// <summary>Reserved/padding word at offsets 6..7. Observed zero in every
-  /// known sample; surfaced so future RE work can keep it round-tripping.</summary>
+  /// known sample; surfaced so future work can keep it round-tripping.</summary>
   public readonly ushort Reserved;
 
   /// <summary>CRC32 over the whole record with this field zeroed during the

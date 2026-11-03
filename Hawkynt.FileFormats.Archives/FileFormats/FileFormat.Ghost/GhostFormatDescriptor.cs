@@ -12,21 +12,20 @@ namespace FileFormat.Ghost;
 ///
 /// References:
 /// <list type="bullet">
-///   <item><description>No public specification — proprietary Symantec format; record layout reverse-engineered across Ghost 3.0 through 12.x images</description></item>
+///   <item><description>No public specification — proprietary Symantec format; record layout shared across Ghost 3.0 through 12.x images</description></item>
 ///   <item><description><c>https://en.wikipedia.org/wiki/Ghost_(disk_utility)</c> — Wikipedia on the Binary Research / Symantec / Norton lineage</description></item>
 /// </list>
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Scope.</b> The on-disk record container is reverse-engineered from
-/// Norton Ghost 11.5.1 binaries (ported from the MIT-licensed
-/// <c>nyarime/gho</c> Go implementation). Independent deep-RE confirms
-/// the same struct shape (FE EF magic + 0x012F18D8 record framing +
+/// <b>Scope.</b> The on-disk record container follows the MIT-licensed
+/// <c>nyarime/gho</c> Go implementation (Norton Ghost 11.5.1). The same
+/// struct shape (FE EF magic + 0x012F18D8 record framing +
 /// 512-byte file/partition headers + 32 KiB blocks with 2-byte length
 /// prefix + 0x01 raw-marker escape + Fast LZ Z1 codec) is shared across
 /// Ghost 2003.775 / 2003.789 / Ghost 8 / Ghost 11.x — confirmed by
 /// matching Forensic Focus's published byte patterns against the
-/// nyarime-reversed struct. Round trip is verified by self-write-then-read
+/// nyarime/gho struct. Round trip is verified by self-write-then-read
 /// for stored, Fast LZ (Z1), and zlib levels 3-9 — with and without
 /// password-based encryption.
 /// </para>
@@ -44,8 +43,7 @@ namespace FileFormat.Ghost;
 /// headers) so we keep the confidence modest and rely on the registry's
 /// extension hint (<c>.gho</c> / <c>.ghs</c>) to disambiguate.
 /// </para>
-/// <para>Symantec never published a specification. What is known of the on-disk layout was recovered
-/// by decompiling Ghost Explorer.</para>
+/// <para>Symantec never published a specification.</para>
 /// </remarks>
 public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
@@ -121,14 +119,12 @@ public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     "cipher seeded from the password (per spec) so appending new partitions " +
     "needs no end-of-stream cipher snapshot. Forensic-delete callers go through " +
     "the legacy rebuild-based GhostModifier instead. Format " +
-    "reverse-engineered from Norton Ghost 11.5.1 binaries (ported from " +
-    "MIT-licensed nyarime/gho) and independently cross-confirmed against " +
-    "Symantec Ghost Explorer 2003.789 — the Fast LZ \"123456789012345678\" hash " +
+    "per the MIT-licensed nyarime/gho port (Norton Ghost 11.5.1); the Fast LZ \"123456789012345678\" hash " +
     "sentinel, the 0x9E5F hash multiplier, the 4096-entry hash table init, the " +
     "0x01 first-byte raw escape, the 16-bit LSB control word, the 2-byte " +
     "(b0,b1) match token format, the 0x012F18D8 record magic, the 10-byte " +
     "record-header layout, the CRC-16-XMODEM/CCITT stream cipher and the " +
-    "None/Old/Fast/High compression dispatch are byte-identical between Ghost " +
+    "None/Old/Fast/High compression dispatch are identical in Ghost " +
     "2003.789 and Ghost 11.5.1. Writing is codec-validated against own reader; " +
     "byte-compat with Ghost Explorer has not yet been verified by an end-to-end " +
     "Wine round trip. Self-round-trip is test-covered for all supported " +
@@ -136,15 +132,12 @@ public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     "PRE-3.0 (Ghost 1.x / 2.x DOS-era, 1996-1998) images are R/O Stage-1 — the " +
     "pre-3.0 layout (FE EF magic + 512-byte dump head with a head-type byte at " +
     "offset 2: 0x01 disk descriptor, 0x02 partition, 0x03 boot record + " +
-    "uncompressed body) was reverse-engineered from the Ghost 1.6 GHOST.EXE " +
-    "binary (archive.org item ghost16, MD5 64cef43d0eb8d456de990cc95353fa05) by " +
-    "binary inspection of the WriteDumpHeader (file_off 0x897d) and " +
-    "ReadDumpHeader2 (file_off 0x8a6f) functions; the head magic + head-type " +
+    "uncompressed body) is the Ghost 1.6 dump format; the head magic + head-type " +
     "byte are surfaced via metadata.ini and the 512-byte dump head + body are " +
     "surfaced verbatim. Per-file extraction (FAT directory walk inside the " +
     "stored partition body) is out of scope for Stage-1 — pre-3.0 PKWARE-DCL " +
-    "\"Old\" compression at byte 3 of the head was confirmed irrecoverable by " +
-    "the cross-vendor binary RE; Ghost Explorer itself rejects it.";
+    "\"Old\" compression at byte 3 of the head is not recoverable; Ghost " +
+    "Explorer itself rejects it.";
 
   /// <summary>
   /// Lists the entries in the supplied container.

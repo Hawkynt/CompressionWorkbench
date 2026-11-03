@@ -5,62 +5,44 @@ using System.Text;
 namespace FileFormat.EaseUs;
 
 /// <summary>
-/// Reverse-engineered on-disk structure pin for the EaseUS Todo Backup
-/// (<c>.pbd</c>) container. Populated by binary-RE of the official
-/// <c>TBImageExplorer.exe</c> file-explorer utility (the standalone
-/// PBD reader EaseUS publishes for users who don't want to install the
-/// full backup engine; pulled from the EaseUS CDN at
-/// <c>download.easeus.com/free/TBImageExplorer.exe</c>). The
-/// 32-bit PE statically links zlib 1.2.3 and exposes its full
-/// PDB-rich symbol set (<c>F:\code\TBNet\FileBackup\mod.FlImgFile\TbFile.cpp</c>,
-/// <c>CImgFile</c>, <c>CFsDsReader</c>, <c>CImgFileHlp</c>, ...).
+/// On-disk structure pin for the EaseUS Todo Backup (<c>.pbd</c>)
+/// container.
 ///
 /// <para>
-/// <b>What we promoted in this pass.</b>
+/// <b>Pinned shapes.</b>
 /// Three concrete shapes that the previous chunk-stream-only reader
-/// treated as opaque are now pinned by binary analysis:
+/// treated as opaque:
 /// </para>
 /// <list type="bullet">
 ///   <item><description>
 ///     <see cref="HeaderBlockSize"/> = <c>0x4E8</c> (1256) bytes —
 ///     <b>not</b> the 12-byte top-of-file slice the previous reader
-///     assumed. The fixed-position <c>ReadFile</c> in
-///     <c>CImgFile::CheckHeader</c> (binary offset 0x000CE170 inside
-///     <c>TBImageExplorer.exe</c>, MD5 <c>b1810cddab25e4dadee0c20922a19f60</c>)
-///     issues a single <c>ReadFile(hFile, buf, 0x4E8, ...)</c> from
-///     file offset 0 and then verifies <c>buf[0..4] == "IMGF"</c>. The
-///     two community-known zlib substream headers at file offsets
-///     <c>0x98</c> and <c>0x10F</c> (Rune-Server thread 694189) are
-///     therefore <i>inside</i> the 1256-byte header block — they're
-///     header-bank sub-streams, not body chunks. The two header fields
-///     immediately after the magic
+///     assumed. The header block starts at file offset 0 with
+///     <c>"IMGF"</c>. The two community-known zlib substream headers at
+///     file offsets <c>0x98</c> and <c>0x10F</c> (Rune-Server thread
+///     694189) are therefore <i>inside</i> the 1256-byte header block —
+///     they're header-bank sub-streams, not body chunks. The two header
+///     fields immediately after the magic
 ///     (<see cref="HeaderSizeFieldOffset"/> = 4 and
-///     <see cref="HeaderVersionFieldOffset"/> = 8) are written by the
-///     writer at <c>TBImageExplorer.exe</c> binary offset 0x000CE913 as
+///     <see cref="HeaderVersionFieldOffset"/> = 8) carry
 ///     <c>{"IMGF", 0x000004E8, 0x00010001}</c>.
 ///   </description></item>
 ///   <item><description>
-///     <see cref="TrailerBlockSize"/> = <c>0xC0</c> (192) bytes — read
-///     by the same <c>CImgFile::CheckHeader</c> routine via a
-///     <c>SetFilePointerEx(EOF-0xC0); ReadFile(buf, 0xC0)</c> pair, with
-///     the second IMGF marker located at <c>trailer+0xBC</c> (i.e. the
-///     last four bytes of the file proper, immediately ahead of the
-///     0xFF padding run). The trailer body holds 188 structured bytes;
-///     the writer side at binary offset 0x000CE971 zero-fills the block
-///     and then writes <c>"IMGF"</c> at <see cref="TrailerMagicFieldOffset"/>,
-///     <c>0xC0</c> at <see cref="TrailerSizeFieldOffset"/>, and
-///     <c>0x00010001</c> at <see cref="TrailerVersionFieldOffset"/>.
+///     <see cref="TrailerBlockSize"/> = <c>0xC0</c> (192) bytes at
+///     <c>EOF-0xC0</c>, with the second IMGF marker located at
+///     <c>trailer+0xBC</c> (i.e. the last four bytes of the file proper,
+///     immediately ahead of the 0xFF padding run). The trailer body holds
+///     188 structured bytes, zero-filled except for <c>"IMGF"</c> at
+///     <see cref="TrailerMagicFieldOffset"/>, <c>0xC0</c> at
+///     <see cref="TrailerSizeFieldOffset"/>, and <c>0x00010001</c> at
+///     <see cref="TrailerVersionFieldOffset"/>.
 ///   </description></item>
 ///   <item><description>
-///     The in-memory <see cref="IndxBlockMagic"/> (<c>"INDX"</c>) record
-///     surfaced inside <c>CImgFile</c> at member offset <c>+0x14D4</c>:
-///     16-byte header (<c>"INDX"</c> + u32 current-offset + u32
-///     total-length + u32 reserved) followed by an array of
-///     <see cref="IndxEntrySize"/> = <c>0x18</c> (24-byte) entries. The
-///     iteration step in <c>CImgFile::ReadIndx</c> (binary offset
-///     0x000D1085) walks the array by advancing <c>+0x18</c> per entry
-///     and verifies the running offset stays under
-///     <c>[INDX+8]</c>. Each entry packs a 32-bit start key, a
+///     The <see cref="IndxBlockMagic"/> (<c>"INDX"</c>) record: 16-byte
+///     header (<c>"INDX"</c> + u32 current-offset + u32 total-length + u32
+///     reserved) followed by an array of <see cref="IndxEntrySize"/> =
+///     <c>0x18</c> (24-byte) entries, bounded by the running offset staying
+///     under <c>[INDX+8]</c>. Each entry packs a 32-bit start key, a
 ///     run-length field whose low 10 bits encode the entry length
 ///     (mask <c>0x3FF</c>), and three more u32 payload fields. This
 ///     is the proprietary block-allocation table — it's what maps
@@ -73,9 +55,9 @@ namespace FileFormat.EaseUs;
 ///     is the per-partition record referenced from the trailer
 ///     (offsets <c>+0x10..+0x40</c> hold u16 cluster-shift, u32
 ///     sector count, u16 magic-tag-2); <see cref="FdirBlockMagic"/>
-///     (<c>"FDIR"</c>) is a file-system-side directory record routed
-///     through the FsDsReader filesystem layer (NTFS / FAT / ext4
-///     walkers consume it after sector reconstruction).
+///     (<c>"FDIR"</c>) is a file-system-side directory record
+///     (NTFS / FAT / ext4 walkers consume it after sector
+///     reconstruction).
 ///   </description></item>
 /// </list>
 ///
@@ -87,28 +69,14 @@ namespace FileFormat.EaseUs;
 /// VOLM table but the per-entry payload fields haven't been
 /// disambiguated against a known-content sample (single-text-file v1
 /// vs v2 backup), (b) the AES-256 key envelope wraps every body chunk
-/// on encrypted backups and that key-derivation routine isn't
-/// reproduced here, and (c) the parent-chain / incremental-backup
-/// pointer chase across <c>.pbd</c> chain-mates lives inside the
-/// trailer's 180 structured bytes but only the magic + size + version
-/// fields at the tail (<c>+0xB4..+0xBF</c>) have been confirmed via
-/// the writer-side init. Promotion past <i>chunk-stream surfacing</i>
-/// to <i>filesystem walk</i> needs a real-world <c>.pbd</c> corpus
-/// plus a sample diff — neither is in the repo today.
-/// </para>
-///
-/// <para>
-/// <b>Provenance.</b> The <c>TBImageExplorer.exe</c> binary was pulled
-/// from the EaseUS CDN under the path documented in the
-/// <c>Hybrid-Analysis</c> report
-/// <c>5c5e6e4b7ca3e1762651fb6b</c> (i.e.
-/// <c>download.easeus.com/free/TBImageExplorer.exe</c>) and stays in
-/// the operator's local binary-RE workspace (never committed). MD5 of
-/// the analysed build:
-/// <c>b1810cddab25e4dadee0c20922a19f60</c>, 2,987,920 bytes, signed
-/// by EaseUS via DigiCert. All offsets cited below are file offsets
-/// inside that exact build — re-derive from scratch if EaseUS ships
-/// a newer build.
+/// on encrypted backups and that key derivation isn't reproduced here,
+/// and (c) the parent-chain / incremental-backup pointer chase across
+/// <c>.pbd</c> chain-mates lives inside the trailer's 180 structured
+/// bytes but only the magic + size + version fields at the tail
+/// (<c>+0xB4..+0xBF</c>) are confirmed. Promotion past
+/// <i>chunk-stream surfacing</i> to <i>filesystem walk</i> needs a
+/// real-world <c>.pbd</c> corpus plus a sample diff — neither is in the
+/// repo today.
 /// </para>
 /// </summary>
 public static class EaseUsContainerIndex {
@@ -117,7 +85,7 @@ public static class EaseUsContainerIndex {
   // Header block — at file offset 0, size 0x4E8 (1256) bytes.
   // ---------------------------------------------------------------------
 
-  /// <summary>Fixed header block size as enforced by <c>CImgFile::CheckHeader</c>'s single <c>ReadFile(buf, 0x4E8)</c> at file offset 0.</summary>
+  /// <summary>Fixed header block size at file offset 0.</summary>
   public const int HeaderBlockSize = 0x4E8;
 
   /// <summary>"IMGF" magic at file offset 0 (and at <c>HeaderMagicFieldOffset</c> in the in-memory struct).</summary>
@@ -126,13 +94,13 @@ public static class EaseUsContainerIndex {
   /// <summary>U32 header-size field at file offset 4; writer pins to <c>0x000004E8</c> (matches <see cref="HeaderBlockSize"/>).</summary>
   public const int HeaderSizeFieldOffset = 0x04;
 
-  /// <summary>U32 version-word field at file offset 8; writer pins to <c>0x00010001</c> (major=1 / minor=1 per the build inspected).</summary>
+  /// <summary>U32 version-word field at file offset 8; writer pins to <c>0x00010001</c> (major=1 / minor=1).</summary>
   public const int HeaderVersionFieldOffset = 0x08;
 
-  /// <summary>U32 header-size value written by <c>TBImageExplorer.exe</c> at binary offset 0x000CE933.</summary>
+  /// <summary>U32 header-size value expected at <see cref="HeaderSizeFieldOffset"/>.</summary>
   public const uint HeaderSizeFieldExpectedValue = 0x000004E8;
 
-  /// <summary>U32 version-word value written by <c>TBImageExplorer.exe</c> at binary offset 0x000CE923.</summary>
+  /// <summary>U32 version-word value expected at <see cref="HeaderVersionFieldOffset"/>.</summary>
   public const uint HeaderVersionFieldExpectedValue = 0x00010001;
 
   /// <summary>
@@ -158,58 +126,53 @@ public static class EaseUsContainerIndex {
   // nominal end.
   // ---------------------------------------------------------------------
 
-  /// <summary>Fixed trailer block size as enforced by <c>CImgFile::CheckHeader</c>'s <c>SetFilePointerEx(EOF-0xC0); ReadFile(buf, 0xC0)</c>.</summary>
+  /// <summary>Fixed trailer block size at <c>EOF-0xC0</c>.</summary>
   public const int TrailerBlockSize = 0xC0;
 
-  /// <summary>Offset (within the trailer block) of the trailer's <c>0x00010001</c> version word — writer pins this at binary offset 0x000CE981.</summary>
+  /// <summary>Offset (within the trailer block) of the trailer's <c>0x00010001</c> version word.</summary>
   public const int TrailerVersionFieldOffset = 0xB4;
 
-  /// <summary>Offset (within the trailer block) of the trailer's <c>0xC0</c> size word — writer pins this at binary offset 0x000CE991.</summary>
+  /// <summary>Offset (within the trailer block) of the trailer's <c>0xC0</c> size word.</summary>
   public const int TrailerSizeFieldOffset = 0xB8;
 
-  /// <summary>Offset (within the trailer block) of the trailer's second "IMGF" magic — checked by <c>CImgFile::CheckHeader</c> at binary offset 0x000CE2DA.</summary>
+  /// <summary>Offset (within the trailer block) of the trailer's second "IMGF" magic.</summary>
   public const int TrailerMagicFieldOffset = 0xBC;
 
-  /// <summary>U32 trailer-size value written by <c>TBImageExplorer.exe</c> at binary offset 0x000CE991.</summary>
+  /// <summary>U32 trailer-size value expected at <see cref="TrailerSizeFieldOffset"/>.</summary>
   public const uint TrailerSizeFieldExpectedValue = 0x000000C0;
 
-  /// <summary>U32 trailer-version value written by <c>TBImageExplorer.exe</c> at binary offset 0x000CE981.</summary>
+  /// <summary>U32 trailer-version value expected at <see cref="TrailerVersionFieldOffset"/>.</summary>
   public const uint TrailerVersionFieldExpectedValue = 0x00010001;
 
   // ---------------------------------------------------------------------
-  // In-memory block magics surfaced by CImgFile after the header-bank
-  // zlib sub-streams are inflated. These don't appear in the raw .pbd
-  // bytes; they identify the inflated tables that CImgFile loads from
-  // the header-bank substreams.
+  // Block magics that appear once the header-bank zlib sub-streams are
+  // inflated. These don't appear in the raw .pbd bytes; they identify the
+  // inflated tables carried by the header-bank substreams.
   // ---------------------------------------------------------------------
 
-  /// <summary>Block-allocation table magic — verified by <c>CImgFile::ReadIndx</c> at binary offsets 0x000D00BB, 0x000D1089, 0x000D234D.</summary>
+  /// <summary>Block-allocation table magic.</summary>
   public static readonly byte[] IndxBlockMagic = "INDX"u8.ToArray();
 
-  /// <summary>Per-partition / volume record magic — verified by <c>CImgFile::LoadVolm</c> at binary offsets 0x000CFE01, 0x000D06E2, 0x000D5D15.</summary>
+  /// <summary>Per-partition / volume record magic.</summary>
   public static readonly byte[] VolmBlockMagic = "VOLM"u8.ToArray();
 
-  /// <summary>File-system directory record magic — checked by <c>CFsDsReader::HandleFdir</c> at binary offset 0x0009949C.</summary>
+  /// <summary>File-system directory record magic.</summary>
   public static readonly byte[] FdirBlockMagic = "FDIR"u8.ToArray();
 
-  /// <summary>Reverse-index record magic — checked by <c>CImgFile::ReadRind</c> at binary offset 0x000D0AC3.</summary>
+  /// <summary>Reverse-index record magic.</summary>
   public static readonly byte[] RindBlockMagic = "RIND"u8.ToArray();
 
-  /// <summary>Filter-record magic — checked by <c>CImgFile::Mount</c> at binary offset 0x000D3D99 (used as a buffer-type tag, not a file-format magic).</summary>
+  /// <summary>Filter-record magic (a buffer-type tag, not a file-format magic).</summary>
   public static readonly byte[] FltrRecordMagic = "FLTR"u8.ToArray();
 
   /// <summary>
-  /// Size in bytes of one entry in the INDX block-allocation array. The
-  /// iterator step in <c>CImgFile::ReadIndx</c> at binary offset
-  /// 0x000D11C2 advances by exactly <c>0x18</c> bytes per entry.
+  /// Size in bytes of one entry in the INDX block-allocation array.
   /// </summary>
   public const int IndxEntrySize = 0x18;
 
   /// <summary>
   /// Bit mask applied to the low 32 bits of <c>entry[4..7]</c> in the
-  /// INDX array to extract the run-length: <c>(entry[4..7] &amp; 0x3FF)</c>
-  /// per the test at binary offset 0x000D11D6
-  /// (<c>and eax, 0x3FF</c>).
+  /// INDX array to extract the run-length: <c>(entry[4..7] &amp; 0x3FF)</c>.
   /// </summary>
   public const uint IndxEntryLengthMask = 0x3FF;
 
@@ -268,12 +231,12 @@ public static class EaseUsContainerIndex {
   }
 
   /// <summary>
-  /// Dumps the reverse-engineered structure constants as a key=value
+  /// Dumps the structure constants as a key=value
   /// block suitable for embedding in <c>metadata.ini</c>.
   /// </summary>
   public static string DescribeStructure() {
     var sb = new StringBuilder();
-    sb.Append("# EaseUS PBD reverse-engineered structure constants — see EaseUsContainerIndex.cs for provenance.\n");
+    sb.Append("# EaseUS PBD structure constants — see EaseUsContainerIndex.cs.\n");
     sb.Append("header_block_size=").Append(HeaderBlockSize).Append('\n');
     sb.Append("header_size_field_offset=").Append(HeaderSizeFieldOffset).Append('\n');
     sb.Append("header_version_field_offset=").Append(HeaderVersionFieldOffset).Append('\n');
