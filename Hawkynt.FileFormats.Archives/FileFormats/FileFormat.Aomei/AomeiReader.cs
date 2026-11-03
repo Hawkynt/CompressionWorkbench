@@ -5,9 +5,8 @@ namespace FileFormat.Aomei;
 
 /// <summary>
 /// Reader for AOMEI Backupper image files (<c>.adi</c> disk / partition /
-/// system image and <c>.afi</c> file backup), implementing the partial
-/// layout recovered from binary reverse engineering of the AOMEI
-/// Backupper binary stack.
+/// system image and <c>.afi</c> file backup), implementing the partially
+/// known container layout.
 ///
 /// <para>
 /// What this reader verifies and surfaces:
@@ -19,7 +18,7 @@ namespace FileFormat.Aomei;
 ///   <item><description>Full <c>BR_IMAGE_FILE_HEAD</c> at offset 0 (0x65C
 ///         bytes): Flag, Size and Crc32 fields verified; the
 ///         remaining 0x650 body bytes are surfaced as
-///         <see cref="HeadBody"/> for future RE work.</description></item>
+///         <see cref="HeadBody"/> for future work.</description></item>
 ///   <item><description>Full <c>BR_IMAGE_FILE_TAIL</c> at offset
 ///         <c>file_size - 0x674</c>: same Flag/Size/Crc32 verification, body
 ///         surfaced as <see cref="TailBody"/>.</description></item>

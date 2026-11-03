@@ -76,7 +76,7 @@ public sealed class ThemidaFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public string Description =>
     "Themida / WinLicense (Oreans) Win32 PE protector — best-effort detection " +
     "via embedded \"Themida\" / \"WinLicense\" literals or .themida sections. " +
-    "Decompression delegated to UnThemida / Themida-Unpacker / x64dbg ScyllaHide " +
+    "Decompression delegated to UnThemida / Themida-Unpacker " +
     "(no automated round-trip; protection is virtualization-based).";
 
   private static ReadOnlySpan<byte> ThemidaLiteral => "Themida"u8;
@@ -140,7 +140,7 @@ public sealed class ThemidaFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     sb.Append(CultureInfo.InvariantCulture, $"section_count = {sections.Count}\n");
     foreach (var (name, chars) in sections)
       sb.Append(CultureInfo.InvariantCulture, $"section = {name} flags=0x{chars:X8}\n");
-    sb.Append("note = decompression delegated to UnThemida / Themida-Unpacker / x64dbg ScyllaHide (best-effort; virtualization can't be undone)\n");
+    sb.Append("note = decompression delegated to UnThemida / Themida-Unpacker (best-effort; virtualization can't be undone)\n");
     return Encoding.UTF8.GetBytes(sb.ToString());
   }
 }

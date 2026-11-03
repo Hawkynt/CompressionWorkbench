@@ -304,7 +304,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 
 | Format | Id | Extensions | State | Test | Maintenance | Notes | Reference |
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
-| [Acronis True Image .tib](https://en.wikipedia.org/wiki/Acronis_True_Image) | `AcronisTib` | `.tib` | R/W | — | — | FileMeta chain and InputItem attribute streams decoded from reverse-engineered evidence | [GitHub](https://github.com/dennisss/acronis-tib) |
+| [Acronis True Image .tib](https://en.wikipedia.org/wiki/Acronis_True_Image) | `AcronisTib` | `.tib` | R/W | — | — | FileMeta chain and InputItem attribute streams decoded | [GitHub](https://github.com/dennisss/acronis-tib) |
 | [Acronis .tibx](https://en.wikipedia.org/wiki/Acronis_Tibx) | `AcronisTibx` | `.tibx` | R | ✅ | — | Page-frame walk plus LSM sub-header; record-stream decode is bounded | [acronis.com](https://www.acronis.com) |
 | [AFF4](https://en.wikipedia.org/wiki/Advanced_Forensic_Format) | `Aff4` |  | WORM | ✅ | — | Logical images (AFF4-L and pyaff4's v1.1) list and extract as files from ZipSegments, ImageStreams (stored, Snappy, LZ4, Deflate, zlib) and in-metadata streams, matching pyaff4 on its reference images; Map-backed files and physical images list as raw members. Creates AFF4-L 2.1 ZipSegment volumes (stored or deflate, ZIP64 local headers, MD5/SHA-1/SHA-256/SHA-512 stream hashes) that pyaff4 reads byte for byte with every hash verified; pyaff4 predates AFF4-L 2.1, so its CLI `-l`/`-v` reject the version label, while its extraction and hashing code accept the volume | [GitHub](https://github.com/aff4/Standard) |
 | AOMEI Backupper .adi/.afi | `Aomei` | `.adi` `.afi` | R/W | ✅ | — | BIFH/BIFT and BR header/index structures; no vendor byte-compat claim for own output | [aomeitech.com](https://www.aomeitech.com) |
@@ -482,7 +482,7 @@ Measured against the [chesvectain/PackingData](https://github.com/chesvectain/Pa
 
 - **Media containers.** AVI, MPEG-TS, RealMedia and Smacker demux only; MP4, Matroska, ASF, Bink, FLV and MPEG-PS mux audio tracks only. This is a limit of what demuxing preserves, not of the container specs. The demuxers hand back each track as a codec elementary stream — AVC re-framed as Annex-B, AAC as ADTS, per-PID PES — and per-frame timestamps, interleaving order and the index live in the container layer that is dropped on the way out. Muxing those entries back would mean inventing presentation timing rather than restoring it, so the writers are not there. Closing this needs a demux surface that carries timed packets, not another writer. Bink, Smacker, RealMedia and ASF are additionally reverse-engineered rather than specified. M3U8, PGS `.sup` and VobSub are not container muxes at all: a playlist is a manifest referencing segments it does not contain, and the two subtitle formats are single streams. ISO-BMFF brands are parsed generically, without a brand registry.
 - **Whole-image and typed-input writers** (Amiga disk archivers, DMS, sparse images, PBP, ICO/CUR/ANI, TTC, AppleSingle/AppleDouble, Wrapster, OVA) create only what their format can hold; arbitrary file trees are refused with a message rather than mangled.
-- **Reverse-engineered backup formats** (Acronis, AOMEI, EaseUS, Macrium, Paragon, Veeam) are decoded to the depth the evidence supports; unknown encrypted or index layers stay unknown.
+- **Undocumented backup formats** (Acronis, AOMEI, EaseUS, Macrium, Paragon, Veeam) are decoded to the depth the evidence supports; unknown encrypted or index layers stay unknown.
 - **Executable packers** blocked at Locate are listed above with the reason; the manifest audit names the unmapped ones.
 
 ## 🚀 Quick start
@@ -573,7 +573,7 @@ Every public and protected member of all 2588 types, generated from the built as
 - Media containers are demuxed at the container level; carried codecs are decoded only where the audio package provides them.
 - MPEG-TS elementary streams are emitted as raw PES; MPEG-PS strips PES headers. PyInstaller onefile builds for Linux are detected as ELF by the stronger magic.
 - Installer and package parsing is inspection only; no install logic or script is executed.
-- Reverse-engineered proprietary structures are documented only to the depth evidenced by code, tests and reference binaries. Unknown structure is not filled with guesses.
+- Undocumented proprietary structures are documented only to the depth evidenced by code, tests and reference files. Unknown structure is not filled with guesses.
 
 ## ❤️ Support
 If this project saves you time or money, consider supporting its development:

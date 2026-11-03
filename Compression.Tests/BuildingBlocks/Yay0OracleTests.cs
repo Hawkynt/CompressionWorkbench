@@ -7,7 +7,7 @@ namespace Compression.Tests.BuildingBlocks;
 
 /// <summary>
 /// Third-party proof for <c>BB_Yay0</c>. The oracle is crunch64 0.6.2 (decompals, MIT), the
-/// compressor the N64 decompilation projects use to rebuild byte-identical ROMs, so its Yay0
+/// compressor the N64 ROM-rebuild projects use to rebuild byte-identical ROMs, so its Yay0
 /// is the one Nintendo shipped. Its streams below decode with our block; where Python with
 /// crunch64 is installed, crunch64 decodes ours.
 /// </summary>

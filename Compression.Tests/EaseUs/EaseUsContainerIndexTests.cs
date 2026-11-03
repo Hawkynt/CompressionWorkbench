@@ -5,15 +5,14 @@ using FileFormat.EaseUs;
 namespace Compression.Tests.EaseUs;
 
 /// <summary>
-/// Acceptance gate for the reverse-engineered EaseUS PBD on-disk
-/// structure. Pins the four reverse-engineering deliverables that
-/// promoted the format past R/O chunk-stream:
+/// Acceptance gate for the EaseUS PBD on-disk structure. Pins the four
+/// structure facts that promoted the format past R/O chunk-stream:
 /// </summary>
 /// <list type="bullet">
 ///   <item><description>
 ///     Header block is <c>0x4E8</c> (1256) bytes — not 12 — and the
 ///     <c>{magic, header_size, version} == {"IMGF", 0x000004E8,
-///     0x00010001}</c> writer-side init must round-trip.
+///     0x00010001}</c> header words must round-trip.
 ///   </description></item>
 ///   <item><description>
 ///     Trailer block is <c>0xC0</c> (192) bytes ending with a second
@@ -37,23 +36,14 @@ namespace Compression.Tests.EaseUs;
 /// <para>
 /// Each fixture below builds the relevant block from hex-literal
 /// bytes so the test will fail loudly if a future edit drifts the
-/// offsets — the EaseUS engine itself enforces the exact same shape
-/// in <c>CImgFile::CheckHeader</c>.
+/// offsets.
 /// </para>
 [TestFixture]
 public class EaseUsContainerIndexTests {
 
-  // ---------------------------------------------------------------------
-  // Header structure constants — pinned to the writer-side init in
-  // TBImageExplorer.exe (binary offsets 0x000CE913..0x000CE933).
-  // ---------------------------------------------------------------------
 
   [Test, Category("HappyPath")]
-  public void HeaderBlockSize_Is_1256_Bytes_PerBinaryRe() {
-    // CImgFile::CheckHeader (file_off 0x000CE170) issues a single
-    // ReadFile(buf, 0x4E8) from file offset 0 then verifies
-    // buf[0..4] == "IMGF". The header block is therefore 1256 bytes
-    // — not the 12-byte slice the older reader assumed.
+  public void HeaderBlockSize_Is_1256_Bytes() {
     Assert.That(EaseUsContainerIndex.HeaderBlockSize, Is.EqualTo(0x4E8));
     Assert.That(EaseUsContainerIndex.HeaderBlockSize, Is.EqualTo(1256));
   }
@@ -68,26 +58,16 @@ public class EaseUsContainerIndexTests {
   }
 
   [Test, Category("HappyPath")]
-  public void HeaderExpectedValues_MatchWriterSideConstants() {
-    // Pinned by the c7 80 ... mov-imm32 sequence at binary offsets
-    // 0x000CE913 (magic via push imm32), 0x000CE923 (version),
-    // 0x000CE933 (header_size).
+  public void HeaderExpectedValues_MatchFormatConstants() {
     Assert.Multiple(() => {
       Assert.That(EaseUsContainerIndex.HeaderSizeFieldExpectedValue, Is.EqualTo(0x000004E8u));
       Assert.That(EaseUsContainerIndex.HeaderVersionFieldExpectedValue, Is.EqualTo(0x00010001u));
     });
   }
 
-  // ---------------------------------------------------------------------
-  // Trailer structure constants — pinned to writer-side init at binary
-  // offsets 0x000CE971 (magic), 0x000CE981 (version), 0x000CE991 (size).
-  // ---------------------------------------------------------------------
 
   [Test, Category("HappyPath")]
-  public void TrailerBlockSize_Is_192_Bytes_PerBinaryRe() {
-    // CImgFile::CheckHeader (file_off 0x000CE170) issues a
-    // SetFilePointerEx(EOF-0xC0); ReadFile(buf, 0xC0) pair and then
-    // verifies buf[0xBC..0xC0] == "IMGF".
+  public void TrailerBlockSize_Is_192_Bytes() {
     Assert.That(EaseUsContainerIndex.TrailerBlockSize, Is.EqualTo(0xC0));
     Assert.That(EaseUsContainerIndex.TrailerBlockSize, Is.EqualTo(192));
   }
@@ -102,18 +82,13 @@ public class EaseUsContainerIndexTests {
   }
 
   [Test, Category("HappyPath")]
-  public void TrailerExpectedValues_MatchWriterSideConstants() {
+  public void TrailerExpectedValues_MatchFormatConstants() {
     Assert.Multiple(() => {
       Assert.That(EaseUsContainerIndex.TrailerSizeFieldExpectedValue, Is.EqualTo(0x000000C0u));
       Assert.That(EaseUsContainerIndex.TrailerVersionFieldExpectedValue, Is.EqualTo(0x00010001u));
     });
   }
 
-  // ---------------------------------------------------------------------
-  // INDX / VOLM / FDIR / RIND / FLTR sub-record magics — surfaced via
-  // binary RE but not yet wired through the reader (they live behind
-  // the header-bank zlib sub-streams at 0x98 and 0x10F).
-  // ---------------------------------------------------------------------
 
   [Test, Category("HappyPath")]
   public void SubRecordMagics_PinFourCharacterCodes() {
@@ -127,10 +102,7 @@ public class EaseUsContainerIndexTests {
   }
 
   [Test, Category("HappyPath")]
-  public void IndxEntrySize_Is_24_Bytes_PerBinaryRe() {
-    // CImgFile::ReadIndx (file_off 0x000D1085) advances the iterator
-    // by exactly 0x18 bytes per entry and tests the new offset against
-    // [INDX_block + 8] (total-length cap).
+  public void IndxEntrySize_Is_24_Bytes() {
     Assert.That(EaseUsContainerIndex.IndxEntrySize, Is.EqualTo(0x18));
     Assert.That(EaseUsContainerIndex.IndxEntrySize, Is.EqualTo(24));
     Assert.That(EaseUsContainerIndex.IndxBlockHeaderSize, Is.EqualTo(0x10));
@@ -144,7 +116,7 @@ public class EaseUsContainerIndexTests {
   [Test, Category("HappyPath")]
   public void LooksLikeWellFormedHeader_AcceptsTheCanonicalWriterShape() {
     var header = new byte[EaseUsContainerIndex.HeaderBlockSize];
-    // {"IMGF", 0x000004E8, 0x00010001} per binary offsets 0x000CE913..0x000CE933.
+    // {"IMGF", 0x000004E8, 0x00010001}.
     Array.Copy("IMGF"u8.ToArray(), 0, header, 0, 4);
     BinaryPrimitives.WriteUInt32LittleEndian(
       header.AsSpan(EaseUsContainerIndex.HeaderSizeFieldOffset, 4),

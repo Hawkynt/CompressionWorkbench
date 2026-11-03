@@ -9,8 +9,7 @@ namespace FileFormat.EaseUs;
 
 /// <summary>
 /// Writer for the EaseUS Todo Backup container (<c>.pbd</c>). Emits a
-/// container whose framing matches the on-disk shape recovered from the
-/// EaseUS image engine (<c>ImgFile.dll</c>) and pinned in
+/// container whose framing matches the on-disk shape pinned in
 /// <see cref="EaseUsContainerIndex"/>:
 ///
 /// <list type="bullet">

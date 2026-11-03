@@ -22,7 +22,7 @@ namespace FileFormat.Paragon;
 /// </para>
 ///
 /// <para>
-/// <b>What the deep-RE research established:</b>
+/// <b>What the research established:</b>
 /// </para>
 /// <list type="number">
 ///   <item><description>
@@ -66,7 +66,7 @@ namespace FileFormat.Paragon;
 ///     HDM 16.
 ///   </description></item>
 ///   <item><description>
-///     <b>Deep-RE audit conclusion.</b> Twelve research vectors were pursued
+///     <b>Research audit conclusion.</b> Twelve research vectors were pursued
 ///     past the bare TrID signature on top of the Stage-0 -&gt; R/O baseline:
 ///     asmodean expimg (false lead, Japanese visual-novel format unrelated
 ///     to Paragon), Paragon HDM SDK (partitioning only), Paragon-Software-
@@ -88,7 +88,7 @@ namespace FileFormat.Paragon;
 ///     manuals — the earlier baseline's "optional AES with vendor KDF"
 ///     blocker was incorrect and is retired. Stage stays at R/O metadata;
 ///     the audit trail is persisted in <c>metadata.ini</c> as
-///     <c>re_audit_*</c> keys so the next maintainer doesn't repeat it.
+///     <c>research_audit_*</c> keys so the next maintainer doesn't repeat it.
 ///   </description></item>
 /// </list>
 ///
@@ -104,7 +104,7 @@ namespace FileFormat.Paragon;
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://www.paragon-software.com</c> — vendor site — the .pbf container is proprietary and undocumented</description></item>
-///   <item><description>No public specification — vendor images parsed from a reverse-engineered header layout</description></item>
+///   <item><description>No public specification — vendor images parsed from the known header layout</description></item>
 /// </list>
 /// </summary>
 public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
@@ -189,44 +189,41 @@ public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     "samples available for clean-room byte validation. Proprietary " +
     "Paragon Software backup container produced by Backup & Recovery / Hard Disk Manager / " +
     "Drive Backup. Detection magic 'PImg' (50 49 6D 67) at offset 0 per the TrID file-identifier " +
-    "database AND confirmed by Wave-13 binary reverse-engineering of the vendor's " +
-    "hdmengine_hdmsdk.dll from HDM 18.12.0.0744. The writer emits the vendor-literal Major " +
+    "database. The writer emits the format's Major " +
     "(0x0002) / FormatVersion (0x0003) values at offsets +4 / +6, leaves the documented vendor " +
     "offsets at +0xC / +0x26 / +0x27 / +0x30 / +0x34 / +0xD8 / +0xE8 / +0xF1 zero (forging " +
     "them without a real sample would produce an image the vendor reader either rejects or " +
-    "misreads silently), then installs an 8-byte CWBP discriminator at +0xF8 past the vendor's " +
-    "last initialised offset and trails a chunk-offset table whose per-entry layout is the " +
-    "reverse-engineered ChunkNumber u32 / ChunkOffSet u64 / ChunkSize u32 / ChunkIsCompress " +
+    "misreads silently), then installs an 8-byte CWBP discriminator at +0xF8 past the vendor " +
+    "header's last initialised offset and trails a chunk-offset table whose per-entry layout is " +
+    "the vendor's ChunkNumber u32 / ChunkOffSet u64 / ChunkSize u32 / ChunkIsCompress " +
     "byte tuple plus a LogicalSize / Adler-32 for round-trip verification. Per-chunk " +
     "compression is zlib (ZlibStream, default level) matching the vendor's " +
     "Adler-32-checked zlib pipeline. The reader parses the real structured " +
-    "+4 Major / +6 FormatVersion fields (writer emits 0x0002 / 0x0003; reader rejects > 3); " +
+    "+4 Major / +6 FormatVersion fields (0x0002 / 0x0003; versions > 3 are incompatible); " +
     "the +0xC / +0x30 / +0xD8 chained-archive identity fields, the +0x26 / +0x27 / +0xE8 flag " +
     "bytes, and the +0x34 string field are documented in metadata.ini for forensic triage. " +
     "Multi-file convention (.pbf main, .pfi index since HDM 11, .pfm Image Explorer sidecar, " +
-    ".000/.001/... split chunks at ~4 GB) per Paragon KB article 767. Deep-RE audit summary: " +
+    ".000/.001/... split chunks at ~4 GB) per Paragon KB article 767. Research audit summary: " +
     "twelve public-source vectors pursued past the bare TrID signature (asmodean expimg, " +
     "Paragon HDM SDK, Paragon-Software-Group + Paragon-Backup-Recovery GitHub orgs, USPTO patent " +
     "search, EnCase/X-Ways/FTK forensic suites, Russian Habr/Toster forums, paragon284 Drive " +
     "Backup forum mirror, Gary Kessler / SEARCH file-signatures table, Kaitai Struct + 010 " +
     "Editor template libraries, Paragon Scripting Language manual, Paragon ExtFS / NTFS3 / UFSD " +
     "open-source releases); all twelve dead-ended without surfacing chunk-framing detail. " +
-    "Wave-13 binary RE then succeeded: the structured header layout, the PBF C++ class " +
-    "hierarchy (PbfRWBlock / PbfLink / PbfArc / PbfPart / PbfRW / PbfDataFile / CPbfBitmapIO), " +
-    "the segments-of-chunks data layer (PbfDataFile + 'ChunkNumber: %d, ChunkOffSet: 0x%016I64x, " +
-    "ChunkSize: %d, ChunkIsCompress: %c' debug strings), the per-chunk zlib / DEFLATE + Adler-32 " +
-    "frame model, and the +0xD8 ParentId chain back-pointer (gated by FormatVersion >= 2) all " +
-    "recovered from .text + .rdata of the vendor's reader DLL. Material correction the audit " +
+    "Known structure: the header layout, the segments-of-chunks data layer (per-chunk number / " +
+    "64-bit offset / 32-bit size / compressed flag), the per-chunk zlib / DEFLATE + Adler-32 " +
+    "frame model, and the +0xD8 ParentId chain back-pointer (gated by FormatVersion >= 2). " +
+    "Material correction the audit " +
     "produced: legacy PBF is unencrypted - password protection, compression and splitting are " +
     "pVHD-only per the Backup & Recovery 17 / HDM 16 manuals (the earlier baseline incorrectly " +
-    "listed an AES blocker on legacy PBF). What stays unresolved after Wave 13: the exact " +
+    "listed an AES blocker on legacy PBF). What stays unresolved: the exact " +
     "on-disk offset of the chunk-table inside each segment, the bitmap-chain encoding, the .pfi " +
-    "magic bytes (loaded indirectly in the binary), and clean-room byte validation against real " +
+    "magic bytes, and byte validation against real " +
     "PBF samples (HDM 16+ is restore-only; the Free Edition only writes pVHD). The full image " +
     "is surfaced as an opaque blob alongside a synthetic metadata.ini that persists the " +
-    "re_audit_1..13 trail and the recovered struct_header_* / data_layer_* keys so the next " +
-    "promotion pass can extend the parser against a real sample without re-running the binary " +
-    "RE. Format is obsolete for creation since HDM 16; restore content with vendor tools.";
+    "research_audit_1..12 trail and the struct_header_* / data_layer_* keys so the next " +
+    "promotion pass can extend the parser against a real sample. " +
+    "Format is obsolete for creation since HDM 16; restore content with vendor tools.";
 
   /// <summary>
   /// Lists the entries in the supplied container.

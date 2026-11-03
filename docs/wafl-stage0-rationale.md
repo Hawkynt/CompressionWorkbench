@@ -146,7 +146,7 @@ A 2025 Tianjin University recovery patent, CN119739562B, independently reports i
 
 The commercial UFS Explorer implementation is useful only as a behavioural oracle: its public release notes advertise experimental WAFL metadata versions 2–4, including 32/64-bit and traditional/Flex profiles. No proprietary implementation code is used or translated here.
 
-The independent Aaru investigation is likewise used only as a feasibility cross-check. Its author mentions unpublished reverse-engineered parsing code; that unpublished code and any ONTAP disassembly are explicitly outside this clean-room implementation.
+The independent Aaru investigation is likewise used only as a feasibility cross-check. Its author mentions unpublished parsing code; that unpublished code is explicitly outside this clean-room implementation.
 
 ## Why R/W and maintenance still remain disabled
 
@@ -204,4 +204,4 @@ Public factual/specification sources:
 - Aaru issue #61, feasibility/oracle information only.
 - UFS Explorer public WAFL support notes, behavioural-oracle scope only.
 
-No NetApp binaries, disassembly, confidential material, unpublished reverse-engineering notes, or third-party WAFL parser implementation code are copied or translated. Numeric constants and structural relationships used here are public format facts required for interoperability.
+No NetApp code, confidential material, unpublished notes, or third-party WAFL parser implementation code are copied or translated. Numeric constants and structural relationships used here are public format facts required for interoperability.

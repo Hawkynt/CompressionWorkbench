@@ -4,23 +4,15 @@ using FileFormat.Aomei;
 namespace Compression.Tests.Aomei;
 
 /// <summary>
-/// Pinning tests for the AOMEI INDEX_TYPE_DATABLOCK / DATAAREA body layout
-/// reverse-engineered from ImgFile.dll (source-tree codename BRCloudv2,
-/// embedded PDB path E:\BRCloudv2\src\ImgFile\ImageFile.cpp).
+/// Pinning tests for the AOMEI INDEX_TYPE_DATABLOCK / DATAAREA body layout.
 ///
 /// Each test pins a recovered fact so a regression to the prior partial state
-/// — or a future refactor that breaks the layout — fails loudly. The
-/// constants pinned here are the result of correlating assert-string xrefs
-/// with `cmp r/m32, imm32` preambles and `push imm32` / `mov [...], imm32`
-/// instructions immediately preceding the matching vendor callsite, plus
-/// PDB-path inspection of the installer payload.
+/// — or a future refactor that breaks the layout — fails loudly.
 ///
 /// What these tests DO pin:
-/// - The 16-byte vendor BR_STANDARD_HEADER size (cmp ecx, 0x10 preamble).
+/// - The 16-byte vendor BR_STANDARD_HEADER size.
 /// - The five INDEX_TYPE_* numeric values: ROOT=0x200, VOLUME=0x201,
-///   DATABLOCK=0x202, DIRTREE=0x300, DATAAREA=0x301 — all five values
-///   pinned by cmp r/m32, imm32 preambles immediately before their
-///   matching `==Head.Type` assert string xrefs.
+///   DATABLOCK=0x202, DIRTREE=0x300, DATAAREA=0x301.
 /// - The complete INFO_TYPE_* enum past the four shipped tags:
 ///   DISK_INFO=0x102, VOLUME_INFO=0x103, IMAGE_SPLIT_SIZE=0x104,
 ///   IMAGE_COMMENT=0x108, BACKUP_TIME=0x10B, BACKUP_OPTION=0x10D,
@@ -28,15 +20,13 @@ namespace Compression.Tests.Aomei;
 ///   FLB_BACKUP_OPTION_EX=0x116.
 /// - The BR_IMAGE_INDEX layout: EntryCount at +0x14, EntrySize at +0x18,
 ///   entries packed starting at +0x1C, with sizeof(VDB entry) = 0x20.
-/// - The four-character vendor source-tree codename "BRCloudv2".
 /// - The plausible-but-unconfirmed natural-alignment field layout sketch
 ///   for BR_IMAGE_INDEX_ENTRY_VDB.
 ///
-/// What these tests do NOT pin (because the byte offsets aren't decided by
-/// passive RE):
+/// What these tests do NOT pin (not yet known):
 /// - The exact byte offset of each field within the 0x20-byte VDB entry.
 /// - The byte offsets of DataOffInSet / DataLenInSet within the file tail.
-/// - The size of BR_IMAGE_INDEX_ENTRY_FDB (no `cmp` preamble visible).
+/// - The size of BR_IMAGE_INDEX_ENTRY_FDB.
 /// - Disambiguation among the {0x110, 0x111, 0x128} multi-candidate
 ///   numeric values for INFO_TYPE_FLB_SUB_ENTRY_LIST and
 ///   INFO_TYPE_FLB_FILE_DATA_BLOCK_LIST.
@@ -220,8 +210,6 @@ public class AomeiDataBlockBodyTests {
 
   [Test, Category("HappyPath")]
   public void VendorStandardHeaderSize_PinsTo_16() {
-    // Recovered from `cmp ecx, 0x10` preamble at the
-    // `Length>=sizeof(BR_STANDARD_HEADER)` assert site in FlbImageWriter.cpp.
     Assert.That(AomeiConstants.VendorStandardHeaderSize, Is.EqualTo(16));
   }
 
@@ -255,9 +243,6 @@ public class AomeiDataBlockBodyTests {
 
   [Test, Category("HappyPath")]
   public void VdbEntrySize_PinsTo_0x20() {
-    // Recovered from `cmp dword ptr [edx+0x18], 0x20` preamble at the
-    // `pIndex->EntrySize==sizeof(BR_IMAGE_INDEX_ENTRY_VDB)` assert in
-    // ImageVolume.cpp.
     Assert.That(AomeiConstants.VendorVdbEntrySize, Is.EqualTo(0x20));
   }
 
@@ -403,13 +388,6 @@ public class AomeiDataBlockBodyTests {
   public void AomeiInfoRecord_TypeName_UnknownReportsHex() {
     var rec = MakeRecord(0xABCD);
     Assert.That(rec.TypeName, Is.EqualTo("UNKNOWN_0xABCD"));
-  }
-
-  // ─── Vendor codename ───────────────────────────────────────────────────
-
-  [Test, Category("HappyPath")]
-  public void VendorSourceTreeCodename_PinsToBRCloudv2() {
-    Assert.That(AomeiConstants.VendorSourceTreeCodename, Is.EqualTo("BRCloudv2"));
   }
 
   // ─── Reader metadata.ini surfaces the new enums ────────────────────────

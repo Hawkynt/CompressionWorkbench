@@ -12,27 +12,23 @@ namespace Compression.Tests.Acronis;
 /// <remarks>
 /// <para>
 /// The body shape — uint32 attribute count plus a stream of (uint32 idAndFlags, uint16 size,
-/// size-byte body) tuples — is reverse-engineered from the InputItem attribute-stream machinery
-/// in <c>ti_tools.dll</c> 32-bit (Acronis True Image 2018). Specifically:
+/// size-byte body) tuples — is the InputItem attribute stream:
 /// </para>
 /// <list type="bullet">
 ///   <item><description>
-///   <c>ArchiveApi::InputItem::PreloadResidentAttributes</c> reads a 4-byte count, then loops
-///   reading 6-byte headers; bit 0x800000 in the dword steers the dedup-by-hash vs.
-///   inline-body branch.
+///   A 4-byte count is followed by 6-byte headers, each followed by its body; bit 0x800000 in
+///   the dword selects a dedup-by-hash body instead of an inline one.
 ///   </description></item>
 ///   <item><description>
-///   <c>ArchiveApi::InputResidentAttributeEnumerator::GetId</c> returns the raw uint32 ANDed
-///   with <c>0xff7fffff</c> — i.e., the id with the bit-23 dedup flag masked off.
+///   The logical id is the raw uint32 ANDed with <c>0xff7fffff</c> — i.e., the id with the
+///   bit-23 dedup flag masked off.
 ///   </description></item>
 ///   <item><description>
-///   <c>ArchiveApi::InputResidentAttributeEnumerator::Read</c> copies <c>size</c> bytes from
-///   <c>body + 6</c> — i.e., right after the 6-byte header.
+///   The body is <c>size</c> bytes right after the 6-byte header.
 ///   </description></item>
 /// </list>
 /// <para>
-/// Per-id body shapes are taken from the <c>TakeAttribute*</c> / <c>PreloadAttribute*</c>
-/// handlers in <c>archive\ver2\file\item_supp.cpp</c>: ItemCommon (0x10, contains the
+/// Per-id body shapes: ItemCommon (0x10, contains the
 /// filename), SourceItem (0x40, contains the source path), HardLinkId (0x14, 8 bytes),
 /// BackupTime (0x50, 8 bytes), TimeZone (0x60, 4 bytes).
 /// </para>
@@ -670,8 +666,7 @@ public class AcronisFileMetaBodyTests {
 
   [Test, Category("HappyPath")]
   public void DecodeItemCommon_TypedFields_RoundTripDosAttributesAndFourFiletimes() {
-    // Synthetic values pinned at the wire layout reverse-engineered from
-    // ArchiveApi::ItemBackuperImpl::BackupCommonAttributes: offset 4 = DosAttributes,
+    // Synthetic values pinned at the ItemCommon wire layout: offset 4 = DosAttributes,
     // offset 8/16/24/32 = 4× FILETIME, offset 40 = trailer dword.
     const uint dosAttrs = 0x00000020u; // FILE_ATTRIBUTE_ARCHIVE
     const ulong creation = 0x01D9B79AAB000000UL;   // ~2023-04-09 UTC
@@ -736,8 +731,7 @@ public class AcronisFileMetaBodyTests {
 
   [Test, Category("HappyPath")]
   public void DecodeItemCommon_HexLiteralFixture_PinsFixedHeaderLayout() {
-    // Hand-rolled hex fixture pinning the exact byte offsets reverse-engineered from the
-    // BackupCommonAttributes writer. Any future regression that moves a field gets caught here.
+    // Hand-rolled hex fixture pinning the exact ItemCommon byte offsets. Any future regression that moves a field gets caught here.
     var fixture = new byte[] {
       0x03, 0x00,                                                 // nameLength = 3
       0x00, 0x00,                                                 // altNameLength = 0
@@ -824,7 +818,7 @@ public class AcronisFileMetaBodyTests {
     var body = AcronisFileMetaBodyDecoder.Decode(payload);
 
     Assert.That(body!.ItemCommonExtra, Is.Null,
-      "decoder must NOT surface a partial 7-byte body — binary's reader throws on size != 8");
+      "decoder must NOT surface a partial 7-byte body — the attribute is exactly 8 bytes");
   }
 
   // ===== SliceItem (0x80) decode =====

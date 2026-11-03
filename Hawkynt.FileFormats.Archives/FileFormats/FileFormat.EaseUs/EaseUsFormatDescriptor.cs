@@ -47,7 +47,7 @@ namespace FileFormat.EaseUs;
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://www.easeus.com</c> — vendor — the .pbd container is proprietary and unpublished</description></item>
-///   <item><description>IMGF header / zlib-substream layout recovered by community reverse engineering and binary RE of TBImageExplorer.exe (see remarks above); no public spec exists</description></item>
+///   <item><description>IMGF header / zlib-substream layout documented by community reverse engineering (see remarks above); no public spec exists</description></item>
 /// </list>
 /// </summary>
 public sealed class EaseUsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
@@ -109,17 +109,15 @@ public sealed class EaseUsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// </summary>
   public string Description =>
     "EaseUS Todo Backup (.pbd) — R/O metadata via IMGF-header parse + R/O chunk-stream via per-zlib " +
-    "trial inflate + binary-reverse-engineered container shape (0x4E8-byte header block + 0xC0-byte " +
-    "trailer block pinned by binary RE of TBImageExplorer.exe — CImgFile::CheckHeader at file_off " +
-    "0x000CE170 issues ReadFile(buf, 0x4E8) at offset 0 and SetFilePointerEx(EOF-0xC0); ReadFile(buf, " +
-    "0xC0) at the tail, then verifies buf[0xBC..0xC0] == 'IMGF') — proprietary closed-source Chinese " +
+    "trial inflate + pinned container shape (0x4E8-byte header block at offset 0 + 0xC0-byte " +
+    "trailer block at EOF-0xC0 with 'IMGF' at trailer+0xBC) — proprietary closed-source Chinese " +
     "backup container (CHENGDU Yiwo Tech Development); no public on-disk spec, no open-source " +
     "reader, vendor-only engine for sector reconstruction. Reader surfaces the IMGF/FIMG magic, " +
     "header + version words, embedded UTF-16LE source path, trailer IMGF + 0xFF padding count, the " +
     "strict-form 0x4E8 / 0xC0 block validations, AND a per-chunk forensic inventory of every " +
     "confirmed zlib substream (offset / compressed length / decompressed length / payload bytes " +
     "within the per-chunk retention cap) plus the in-memory INDX (block-allocation table — 0x18-byte " +
-    "entries behind 'INDX' magic at this+0x14D4), VOLM (per-partition record), FDIR / RIND / FLTR " +
+    "entries behind 'INDX' magic), VOLM (per-partition record), FDIR / RIND / FLTR " +
     "sub-record magics as a documented-but-not-yet-walked structure pin in EaseUsContainerIndex. " +
     "Chain holds full/incremental/differential snapshots behind the INDX block-allocation table and " +
     "optional AES-256 key envelope; sector reconstruction (offset-to-LBA mapping via the INDX " +

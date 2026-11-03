@@ -13,8 +13,8 @@ namespace FileFormat.Ghost;
 /// <para>
 /// <b>Scope.</b> This reader targets the Ghost 11.x / 12.x record container
 /// (FE EF file magic, 10-byte record headers with magic 0x012F18D8,
-/// 32 KB compressed blocks). The framing was reverse-engineered from
-/// Norton Ghost 11.5.1 binaries and ported from the MIT-licensed
+/// 32 KB compressed blocks) as used by Norton Ghost 11.5.1. The framing
+/// is ported from the MIT-licensed
 /// <c>nyarime/gho</c> Go implementation
 /// (<see href="https://github.com/nyarime/gho"/>).
 /// </para>
@@ -515,7 +515,7 @@ public sealed class GhostReader : IDisposable {
       b.Append(CultureInfo.InvariantCulture, $"is_encrypted={this._header.IsEncrypted}\n");
       b.Append(CultureInfo.InvariantCulture, $"partition_count={this._partitions.Count}\n");
       b.Append(CultureInfo.InvariantCulture, $"end_record_seen={this._endRecord != null}\n");
-      b.Append("note=Ghost 11.x/12.x record container parsed via reverse-engineered Fast LZ + zlib codec.\n");
+      b.Append("note=Ghost 11.x/12.x record container parsed via Fast LZ + zlib codec.\n");
     } else {
       b.Append("parse_status=detection-only\n");
       b.Append("stage=0\n");

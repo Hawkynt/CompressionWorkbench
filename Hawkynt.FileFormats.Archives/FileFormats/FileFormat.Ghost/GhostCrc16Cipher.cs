@@ -10,7 +10,7 @@ namespace FileFormat.Ghost;
 /// feeding the plaintext through <see cref="Update"/>.
 /// </summary>
 /// <remarks>
-/// Reverse-engineered from Norton Ghost 11.5.1 (via nyarime/gho). The
+/// As documented by nyarime/gho (Norton Ghost 11.5.1). The
 /// encryption indicator sits at byte 12, bit 1 of the file header (see
 /// <see cref="GhostFileHeader.IsEncrypted"/>).
 /// </remarks>

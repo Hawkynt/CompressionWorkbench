@@ -8896,7 +8896,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 #### `DbmFormatDescriptor`
 
-Exposes a DigiBooster Pro (DBM0) module as a read-only pseudo-archive. The big-endian IFF-like container (NAME, INFO, SONG, PATT, INST, SMPL, VENV chunks) is walked and surfaced under `chunks/<TAG>.bin`, with PATT patterns and SMPL samples additionally decomposed. The layout was recovered through binary inspection of the documented DigiBooster Pro file format and the OpenMPT loader. Every chunk read is clamped; a malformed module surfaces FULL + metadata(parse_status=partial) instead of throwing.
+Exposes a DigiBooster Pro (DBM0) module as a read-only pseudo-archive. The big-endian IFF-like container (NAME, INFO, SONG, PATT, INST, SMPL, VENV chunks) is walked and surfaced under `chunks/<TAG>.bin`, with PATT patterns and SMPL samples additionally decomposed. The layout follows the documented DigiBooster Pro file format and the OpenMPT loader. Every chunk read is clamped; a malformed module surfaces FULL + metadata(parse_status=partial) instead of throwing.
 
 Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 

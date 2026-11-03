@@ -15,14 +15,11 @@ namespace FileFormat.Ghost;
 /// fixed 512-byte header records ("dump heads") of three known types,
 /// each followed by a fixed-size body. There is no record framing magic
 /// (no 0x012F18D8 record markers — those were introduced with Ghost 3.0)
-/// and no compression in pre-3.0 images. The on-disk surface is exactly
-/// what the binary's <c>WriteDumpHeader</c> / <c>ReadDumpHeader2</c>
-/// emit and consume.
+/// and no compression in pre-3.0 images.
 /// </para>
 /// <para>
-/// <b>Header layout</b> (reverse-engineered from Ghost 1.6 GHOST.EXE
-/// binary inspection — see <see cref="GhostLegacyConstants"/> for the
-/// reverse-engineered constants):
+/// <b>Header layout</b> (see <see cref="GhostLegacyConstants"/> for the
+/// constants):
 /// </para>
 /// <list type="bullet">
 ///   <item><description>Bytes 0..1 — <c>FE EF</c> magic (identical to modern Ghost).</description></item>
@@ -34,27 +31,18 @@ namespace FileFormat.Ghost;
 /// <b>What this Stage-1 reader surfaces.</b>
 /// </para>
 /// <list type="bullet">
-///   <item><description><c>metadata.ini</c> with the head type, image size, parse status, and reference to the binary inspection that established the layout.</description></item>
+///   <item><description><c>metadata.ini</c> with the head type, image size and parse status.</description></item>
 ///   <item><description><c>dump-head.bin</c> — verbatim copy of the 512-byte file header.</description></item>
 ///   <item><description><c>dump-body.bin</c> — verbatim copy of the rest of the file (the disk image payload).</description></item>
 /// </list>
 /// <para>
-/// <b>What's deliberately NOT done.</b> The pre-3.0 binary itself stores
-/// uncompressed FAT directory + data sectors in a Binary-Research-internal
-/// layout that requires DOS-specific FAT walk semantics (the binary
-/// references the FAT root-dir / cluster chain directly). Without a real
+/// <b>What's deliberately NOT done.</b> Pre-3.0 images store uncompressed
+/// FAT directory + data sectors in a Binary-Research-internal layout that
+/// requires DOS-specific FAT walk semantics (the FAT root-dir / cluster
+/// chain is referenced directly). Without a real
 /// Ghost-1.6-produced corpus we cannot validate cluster-level extraction,
 /// so we surface the dump body verbatim and leave file listing to the
 /// vendor tool (Ghost 1.6 / Ghost Explorer).
-/// </para>
-/// <para>
-/// <b>References.</b> All constants below are taken from the Ghost 1.6
-/// GHOST.EXE binary (archive.org item <c>ghost16</c>, MD5
-/// <c>64cef43d0eb8d456de990cc95353fa05</c>). The function entry points,
-/// magic bytes, and head-type dispatch were located by reverse-engineering
-/// the DOS MZ executable's <c>WriteDumpHeader</c> /
-/// <c>ReadDumpHeader2</c> code via offset-tracing of the DS-relative
-/// string references (DS = 0x1ca4 in the binary).
 /// </para>
 /// </remarks>
 public sealed class GhostLegacyReader {
@@ -172,17 +160,13 @@ public sealed class GhostLegacyReader {
     foreach (var x in this.LeadingBytes) b.Append(CultureInfo.InvariantCulture, $"{x:X2}");
     b.Append('\n');
     b.Append(CultureInfo.InvariantCulture, $"dump_head_size={GhostLegacyConstants.DumpHeadSize}\n");
-    b.Append("re_source=Ghost 1.6 GHOST.EXE (archive.org ghost16, MD5 64cef43d0eb8d456de990cc95353fa05) — WriteDumpHeader at file_off 0x897d, ReadDumpHeader2 at file_off 0x8a6f; DS=0x1ca4.\n");
-    b.Append("re_method=binary inspection of WriteDumpHeader / ReadDumpHeader2 functions — magic bytes (FE EF) and head-type-byte at offset 2 confirmed from the encoder and decoder both.\n");
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 }
 
 /// <summary>
 /// On-disk constants for the pre-3.0 Ghost dump format (Binary Research
-/// Ghost 1.6 / 2.x DOS era, 1996-1998). Reverse-engineered from the Ghost
-/// 1.6 GHOST.EXE binary's <c>WriteDumpHeader</c> and
-/// <c>ReadDumpHeader2</c> functions.
+/// Ghost 1.6 / 2.x DOS era, 1996-1998).
 /// </summary>
 public static class GhostLegacyConstants {
 
@@ -192,27 +176,22 @@ public static class GhostLegacyConstants {
   /// <summary>The second byte of the magic — same as modern Ghost.</summary>
   public const byte MagicByte1 = 0xEF;
 
-  /// <summary>The dump head is exactly 512 bytes (256 words zeroed by the
-  /// binary's <c>rep stosw cx=0x100</c> at file_offset 0x899d).</summary>
+  /// <summary>The dump head is exactly 512 bytes, zero-filled past the
+  /// head-type byte.</summary>
   public const int DumpHeadSize = 512;
 
-  /// <summary>The head-type byte sits at offset 2 of the 512-byte head
-  /// (written by <c>mov es:[bx+2], al</c> at file_offset 0x89c2 and read
-  /// by <c>mov al, es:[bx+2]</c> at file_offset 0x8ac8).</summary>
+  /// <summary>The head-type byte sits at offset 2 of the 512-byte head.</summary>
   public const int HeadTypeOffset = 2;
 
-  /// <summary>Head type 1 — disk descriptor / first record. The binary's
-  /// CopyDiskToFile calls <c>WriteDumpHeader(1)</c> at file_offset 0x84df
-  /// then writes 2048 bytes of disk descriptor (1192 bytes from the
-  /// disk_drive_data struct + 856 bytes zero-pad).</summary>
+  /// <summary>Head type 1 — disk descriptor / first record, followed by 2048
+  /// bytes of disk descriptor (1192 bytes of drive data + 856 bytes
+  /// zero-pad).</summary>
   public const byte HeadTypeFirst = 0x01;
 
-  /// <summary>Head type 2 — partition data record (written by
-  /// <c>WriteDumpHeader(2)</c> at file_offset 0x8794).</summary>
+  /// <summary>Head type 2 — partition data record.</summary>
   public const byte HeadTypePartition = 0x02;
 
-  /// <summary>Head type 3 — boot record / trailer (written by
-  /// <c>WriteDumpHeader(3)</c> at file_offset 0x86a8).</summary>
+  /// <summary>Head type 3 — boot record / trailer.</summary>
   public const byte HeadTypeBoot = 0x03;
 
   /// <summary>How far into the file we scan for the modern 0x012F18D8

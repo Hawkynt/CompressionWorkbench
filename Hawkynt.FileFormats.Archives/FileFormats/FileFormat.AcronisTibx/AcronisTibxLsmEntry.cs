@@ -5,7 +5,7 @@ namespace FileFormat.AcronisTibx;
 ///   One logical entry surfaced from a Stage-2 LSM tree walk over a <c>.tibx</c> container.
 ///   This pass classifies pages by type (HDR / LSM_LEAF / LSM_DIR / GOLOMB / DATA / CI) and
 ///   surfaces a per-page summary; it does NOT yet decode the LSM record stream inside LEAF
-///   pages (the Golomb-coded key/value layout in <c>lsm_lookup.c</c> + <c>golomb.c</c> is the
+///   pages (the Golomb-coded key/value layout is the
 ///   next stage and would expose the actual filenames).
 /// </summary>
 /// <remarks>

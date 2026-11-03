@@ -8,11 +8,10 @@ namespace Compression.Tests.AcronisTibx;
 ///   Stage-2 acceptance gate for the page-frame walk added on top of <see cref="AcronisTibxReader"/>.
 ///
 ///   <para>
-///     Pins the page-frame layout recovered from binary RE of <c>ar_page_verify</c>
-///     (<c>libarchive3.so</c> at <c>0x6bef0</c>) — sentinel <c>'A'</c> at <c>+0x0</c>, page-type
-///     tag at <c>+0x1</c>, BE32 CRC at <c>+0x4</c>, content magic at <c>+0x8</c> — and the LSM
-///     sub-header at <c>+0xC..+0x1C</c> recovered from <c>lsm_dump_ctrees</c> at <c>0x590f7</c>
-///     (version, encoding, BE16 count, BE32 len/zlen/seq, byte ctree-id).
+///     Pins the page-frame layout — sentinel <c>'A'</c> at <c>+0x0</c>, page-type tag at
+///     <c>+0x1</c>, BE32 CRC at <c>+0x4</c>, content magic at <c>+0x8</c> — and the LSM
+///     sub-header at <c>+0xC..+0x1C</c> (version, encoding, BE16 count, BE32 len/zlen/seq,
+///     byte ctree-id).
 ///   </para>
 ///
 ///   <para>
@@ -202,7 +201,7 @@ public class AcronisTibxLsmWalkTests {
   [Test, Category("Sad")]
   public void Page_Parse_NonASentinel_ReturnsNull() {
     var page = new byte[PageSize];
-    page[0] = 0x42; // not 'A' (0x41) — fails ar_page_verify sentinel
+    page[0] = 0x42; // not 'A' (0x41) — fails the page-frame sentinel
     var p = AcronisTibxPage.Parse(page, pageIndex: 1, fileOffset: 0);
     Assert.That(p, Is.Null);
   }
@@ -426,9 +425,7 @@ public class AcronisTibxLsmWalkTests {
 
     Assert.That(text, Does.Contain("decoded_1=page_zero_header"));
     Assert.That(text, Does.Contain("decoded_2=page_frame (8-byte preamble"));
-    Assert.That(text, Does.Contain("ar_page_verify @ libarchive3.so 0x6bef0"));
     Assert.That(text, Does.Contain("decoded_3=lsm_page_sub_header"));
-    Assert.That(text, Does.Contain("lsm_dump_ctrees @ libarchive3.so 0x590f7"));
     Assert.That(text, Does.Contain("decoded_4=page_type_classification"));
   }
 

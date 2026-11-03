@@ -158,8 +158,7 @@ public sealed class AomeiInfoRecord {
   /// <summary>
   /// Builds an <see cref="AomeiConstants.InfoTypeImagePassword"/> record
   /// (0x20 bytes total) by MD5-hashing the supplied password's UTF-16LE
-  /// bytes, matching <c>ImageWriter::AddPassword</c> at
-  /// <c>ImgFile.dll!FUN_180014a30</c>. Passwords that match the literal
+  /// bytes. Passwords that match the literal
   /// <see cref="AomeiConstants.SchedulerMagicPassword"/> are <b>not</b>
   /// substituted here — the substitution requires the runtime scheduled-task
   /// context which is not available offline.

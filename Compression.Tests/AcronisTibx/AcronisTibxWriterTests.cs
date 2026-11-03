@@ -6,7 +6,7 @@ namespace Compression.Tests.AcronisTibx;
 
 /// <summary>
 ///   Self-round-trip acceptance gate for <see cref="AcronisTibxWriter"/> — the whole-archive
-///   writer for Acronis <c>.tibx</c> (libarchive3 LSM page-store) containers.
+///   writer for Acronis <c>.tibx</c> (LSM page-store) containers.
 ///
 ///   <para>
 ///     Given a set of files, when <see cref="AcronisTibxWriter.Build"/> emits a container, then

@@ -341,7 +341,7 @@ public class VeeamOibSummaryCanonicalSurfaceTests {
   public void Description_HonestlyStatesEncryptionPasswordVerificationOnly() {
     var d = new VeeamFormatDescriptor();
     var desc = d.Description.ToLowerInvariant();
-    // Honest deep-RE summary: the hashcat algorithm verifies the PASSWORD
+    // Honest research summary: the hashcat algorithm verifies the PASSWORD
     // against a stored check blob; it does NOT give us per-block decryption.
     // The Description must say so explicitly so consumers do not believe a
     // password-known VBK is decryptable through this reader.
@@ -352,9 +352,9 @@ public class VeeamOibSummaryCanonicalSurfaceTests {
 
   [Test, Category("Stub")]
   public void Description_CitesAllResearchFollowUpDeadEnds() {
-    // The deep-RE 2026 follow-up confirmed: (1) Synacktiv's pipeline uses
+    // The 2026 research follow-up confirmed: (1) Synacktiv's pipeline uses
     // Veeam's own Extract.exe; (2) SosRansomware's tool is closed-source;
-    // (3) no public binary-level reverse engineering of VeeamAgent.exe exists; (4) the Veeam
+    // (3) no public format documentation of the VeeamAgent block layer exists; (4) the Veeam
     // forum disclosure stays at block-diagram level. Description must cite
     // these so a future researcher does not redo the same searches.
     var d = new VeeamFormatDescriptor();
@@ -364,7 +364,7 @@ public class VeeamOibSummaryCanonicalSurfaceTests {
       "the canonical 'use the vendor tool' fallback.");
     Assert.That(desc, Does.Contain("SosRansomware"),
       "Description must note SosRansomware's proprietary tool as a closed-source dead-end.");
-    Assert.That(desc, Does.Contain("VeeamAgent.exe").Or.Contain("VeeamDataMover"),
-      "Description must note that no public binary-RE of VeeamAgent.exe / VeeamDataMover exists.");
+    Assert.That(desc, Does.Contain("VeeamAgent").Or.Contain("VeeamDataMover"),
+      "Description must note that no public format documentation of VeeamAgent / VeeamDataMover exists.");
   }
 }

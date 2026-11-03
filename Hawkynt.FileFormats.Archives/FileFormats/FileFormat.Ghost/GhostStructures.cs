@@ -3,7 +3,7 @@ namespace FileFormat.Ghost;
 
 /// <summary>
 /// On-disk constants for the Ghost 11.x / 12.x record container.
-/// Reverse-engineered from Norton Ghost 11.5.1 (see <see cref="GhostReader"/>
+/// Norton Ghost 11.5.1 layout (see <see cref="GhostReader"/>
 /// header comment for source attribution + scope notes).
 /// </summary>
 public static class GhostConstants {

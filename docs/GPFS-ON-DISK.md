@@ -6,8 +6,8 @@ This document is therefore the clean-room firewall for that work: it records wha
 IBM's own tools say about real file systems, what follows mechanically from those
 observations, and what is still unknown.
 
-No IBM implementation source, decompiler output, or proprietary binary structure
-has been copied into this repository. IBM's diagnostic tools are behavioral
+No IBM implementation source or proprietary material has been copied into this
+repository. IBM's diagnostic tools are behavioral
 oracles only. Numeric identifiers, disk addresses and map words below are factual
 interoperability data printed by those tools.
 
