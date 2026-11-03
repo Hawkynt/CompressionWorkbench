@@ -521,6 +521,9 @@ public static partial class FormatDetector {
       // setup-0 version tag, wherever in the file that is.
       if (isPe && FileFormat.InnoSetup.InnoSetupReader.IsInnoSetup(fs)) return Format.InnoSetup;
 
+      // Clickteam Install Creator: its block overlay starts right after the PE sections.
+      if (isPe && FileFormat.ClickteamInstaller.ClickteamReader.IsClickteam(fs)) return Format.ClickteamInstaller;
+
       // Other installer markers can live anywhere in the file, so scan the whole file when it
       // is small and the tail otherwise — independent of the MZ check, so a stub-less
       // installer image still re-detects as its own format.

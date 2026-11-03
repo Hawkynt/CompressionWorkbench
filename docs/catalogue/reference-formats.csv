@@ -216,7 +216,7 @@ InstallShield (cab / exe),exe;cab;ex_;hdr,installer,,,,,R,fmt/1466,,2,,,,,,MISSI
 Wise Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 Setup Factory,exe,installer,,,,,R,,,1,,,,,,MISSING,,"open: sfextract (MIT) descends from SFUnpacker, which carries no licence; no redistributable Setup Factory 7-9 sample with a runnable oracle found"
 Smart Install Maker,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, no published specification and no sample found"
-Clickteam Install Creator,exe,installer,,,,,R,,,1,,,,,,MISSING,,"open: cicdec (BSD-3-Clause) can be converted. But the only public sample cicdec accepts extracts as empty files; the Install Creator setup is a multi-product installer cicdec does not support; and making a sample needs Install Creator installed, which means running its installer"
+Clickteam Install Creator,exe,installer,,,,,R,,,1,https://github.com/Bioruebe/cicdec,ClickteamInstaller,Y,,,PARTIAL,,"converted from cicdec (BSD-3-Clause): file list layouts 2.0-4.0 with stored/zlib/bzip2 members extract as cicdec extracts them; encrypted installers, multi-product installers, external .Dnn data files and older overlays inside the PE image are refused"
 Ghost Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, no published specification and no sample found"
 Gentee installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation or specification of the setup container, and no extractor, found"
 install4j,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, no published specification and no extractor found that does not run the installer"
