@@ -517,6 +517,10 @@ public static partial class FormatDetector {
       // exehead itself only looks there), so a large installer keeps it far from the tail.
       if (HasNsisFirstHeader(fs)) return Format.Nsis;
 
+      // Setup Factory: its signature sits at a fixed offset (versions 5, 6) or where the PE
+      // overlay starts (7 to 9).
+      if (isPe && FileFormat.SetupFactory.SetupFactoryReader.IsSetupFactory(fs)) return Format.SetupFactory;
+
       // Inno Setup: the setup loader's offset table (at 0x30 or in RCDATA #11111) points at the
       // setup-0 version tag, wherever in the file that is.
       if (isPe && FileFormat.InnoSetup.InnoSetupReader.IsInnoSetup(fs)) return Format.InnoSetup;

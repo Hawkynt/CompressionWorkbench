@@ -27606,6 +27606,75 @@ Implements `IEquatable<SeqBoxMetadata>`.
 | `SbxName` | `string SbxName { get; init; }` | SNM: the container's own file name (UTF-8). |
 | `SbxTime` | `long? SbxTime { get; init; }` | SDT: when the container was made, seconds since the Unix epoch. |
 
+### Namespace `FileFormat.SetupFactory`
+
+[`SetupFactoryCompression`](#setupfactorycompression) · [`SetupFactoryEntry`](#setupfactoryentry) · [`SetupFactoryFormatDescriptor`](#setupfactoryformatdescriptor) · [`SetupFactoryReader`](#setupfactoryreader)
+
+#### `SetupFactoryCompression`
+
+How one Setup Factory member is stored.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` | Stored as is. |
+| `Pkware` | `1` | PKWARE Data Compression Library (implode). |
+| `Lzma` | `2` | LZMA: 5 property bytes, the 64-bit unpacked size, the raw stream. |
+| `Lzma2` | `3` | LZMA2: 1 property byte, the 64-bit unpacked size, the raw stream. |
+
+#### `SetupFactoryEntry`
+
+One file of a Setup Factory installer.
+
+Implements `IEquatable<SetupFactoryEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SetupFactoryEntry` | `SetupFactoryEntry(string Path, long Offset, long StoredSize, long Size, SetupFactoryCompression Compression, uint Crc, bool Xored)` | One file of a Setup Factory installer. |
+| `Compression` | `SetupFactoryCompression Compression { get; init; }` | How the member is stored. |
+| `Crc` | `uint Crc { get; init; }` | CRC-32 of the unpacked file, 0 when none is recorded. |
+| `Offset` | `long Offset { get; init; }` | Offset of the member in the installer. |
+| `Path` | `string Path { get; init; }` | Name: the installer's own files by their stored name, installed files as destination folder and file name, '/'-separated. |
+| `Size` | `long Size { get; init; }` | Unpacked size, -1 when only decoding tells. |
+| `StoredSize` | `long StoredSize { get; init; }` | Stored size of the member. |
+| `Xored` | `bool Xored { get; init; }` | The first 2000 bytes are XOR-ed with 0x07 (the embedded runtime, `irsetup.exe`). |
+
+#### `SetupFactoryFormatDescriptor`
+
+Setup Factory installers (Indigo Rose, versions 5 to 9): the runtime, the installer's own files and the installed files. Read-only; detected by the signature after the stub.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SetupFactoryFormatDescriptor` | `SetupFactoryFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `SetupFactoryReader`
+
+Setup Factory installers, versions 5 to 9 (Indigo Rose): a stub executable followed by a signature, the runtime `irsetup.exe`, the installer's own files (among them the script `irsetup.dat`) and the installed files the script's `CFileInfo` / `CSetupFileData` block lists, each PKWARE DCL, LZMA or LZMA2 compressed or stored.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entries` | `IReadOnlyList<SetupFactoryEntry> Entries { get; }` | The runtime, the installer's own files and the installed files. |
+| `MinorVersion` | `int MinorVersion { get; }` | Minor version, where the format depends on it (version 9). |
+| `Version` | `int Version { get; }` | Major version of the installer format (5 to 9). |
+| `Extract` | `byte[] Extract(SetupFactoryEntry entry)` | Unpacks one member and checks its size and CRC-32. |
+| `IsSetupFactory` | `static bool IsSetupFactory(Stream stream)` | Whether the stream carries a Setup Factory signature where a version 5 to 9 installer keeps it. |
+| `Open` | `static SetupFactoryReader Open(byte[] data)` | Opens a Setup Factory installer held in memory. |
+
 ### Namespace `FileFormat.SevenZip`
 
 [`SevenZipCodec`](#sevenzipcodec) · [`SevenZipEntry`](#sevenzipentry) · [`SevenZipFilter`](#sevenzipfilter) · [`SevenZipFormatDescriptor`](#sevenzipformatdescriptor) · [`SevenZipInPlaceAdder`](#sevenzipinplaceadder) · [`SevenZipInPlaceRemover`](#sevenzipinplaceremover) · [`SevenZipLayoutMap`](#sevenziplayoutmap) · [`SevenZipReader`](#sevenzipreader) · [`SevenZipWriter`](#sevenzipwriter) · [`SevenZipWriter.BlockDescriptor`](#sevenzipwriterblockdescriptor) · [`SolidBlockOptimizer`](#solidblockoptimizer) · [`SolidBlockOptimizer.DetailedProgress`](#solidblockoptimizerdetailedprogress) · [`SolidBlockOptimizer.OptimizeResult`](#solidblockoptimizeroptimizeresult) · [`SolidBlockOptimizer.ProgressCallback`](#solidblockoptimizerprogresscallback) · [`SolidBlockOptimizer.TrialResult`](#solidblockoptimizertrialresult) · [`SolidBlockPlanner`](#solidblockplanner) · [`SolidBlockPlanner.SolidBlock`](#solidblockplannersolidblock)
