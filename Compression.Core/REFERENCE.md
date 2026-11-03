@@ -6811,6 +6811,7 @@ Implements `IEquatable<ArchiveInputInfo>`.
 | `InMemoryContent` | `byte[] InMemoryContent { get; init; }` |  |
 | `IsDirectory` | `bool IsDirectory { get; init; }` |  |
 | `Metadata` | `ArchiveEntryMetadata Metadata { get; init; }` |  |
+| `ReadObserver` | `static Action<long> ReadObserver { get; set; }` | Told the byte count of every on-disk input as `ReadContent` reads it, so a host can show progress while an archive is created or rebuilt. Null when nobody listens. It is process-wide and may be called from several threads at once (parallel writers). |
 | `FromFile` | `static ArchiveInputInfo FromFile(FileInfo file, string archiveName = null)` | Creates an on-disk input from a `FileInfo`. Content is read lazily from the file via `ReadContent`; the archive name defaults to the file's leaf name. |
 | `InMemory` | `static ArchiveInputInfo InMemory(string archiveName, ReadOnlySpan<byte> content, ArchiveEntryMetadata metadata = null)` | Creates an in-memory input from a byte span (copied into the input, so the caller's buffer may be reused/stack-allocated). |
 | `InMemory` | `static ArchiveInputInfo InMemory(string archiveName, Stream content, ArchiveEntryMetadata metadata = null)` | Creates an in-memory input by reading `content` fully into memory. Reads from the stream's current position to its end. |
