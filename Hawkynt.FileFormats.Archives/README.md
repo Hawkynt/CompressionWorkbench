@@ -83,7 +83,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | QuickLZ | `QuickLz` | `.quicklz` | ✅ | ✅ | ✅ | Level 1 and level 3; the optimizer searches the level and the level-3 search depth | [quicklz.com](http://www.quicklz.com/) |
 | RefPack / QFS | `RefPack` | `.qfs` `.refpack` | ✅ | ✅ | ✅ | Optimizer searches the history window, the match-search depth and quick match indexing | [wiki.niotso.org](http://wiki.niotso.org/RefPack) |
 | RNC ProPack | `Rnc` | `.rnc` | ✅ | ✅ | ✅ |  | [segaretro.org](https://segaretro.org/Rob_Northen_compression) |
-| [rzip](https://en.wikipedia.org/wiki/Rzip) | `Rzip` | `.rz` `.rzip` | ✅ | ✅ | ✅ |  | [rzip.samba.org](https://rzip.samba.org/) |
+| [rzip](https://en.wikipedia.org/wiki/Rzip) | `Rzip` | `.rz` `.rzip` | ✅ | ✅ | ✅ | rzip 2.x files (matches + bzip2 streams) that rzip 2.1 reads and writes; layout: [RZIP-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/RZIP-ON-DISK.md) | [rzip.samba.org](https://rzip.samba.org/) |
 | [Snappy](https://en.wikipedia.org/wiki/Snappy) | `Snappy` | `.sz` `.snappy` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/google/snappy/blob/main/framing_format.txt) |
 | Squeeze (SQ) | `Squeeze` | `.sqz` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SQ) |
 | [SWF](https://en.wikipedia.org/wiki/SWF) | `Swf` | `.swf` | ✅ | ✅ | ✅ | FWS/CWS/ZWS envelope optimizer; no tag-level parsing | [open-flash.github.io](https://open-flash.github.io/mirrors/swf-spec-19.pdf) |

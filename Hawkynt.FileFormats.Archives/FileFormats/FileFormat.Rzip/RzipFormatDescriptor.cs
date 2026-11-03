@@ -56,18 +56,18 @@ public sealed class RzipFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Long-distance redundancy elimination, for large files";
+  public string Description => "Andrew Tridgell's rzip 2.x: long-distance matches, then bzip2";
 
   /// <summary>
   /// Encoder-only knobs searched by the generic compression optimizer. Neither value is
-  /// serialized: all resulting streams use the same token grammar and decoder.
+  /// serialized: every setting writes an rzip 2.x file.
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
       Key: "MinMatch",
       DisplayName: "Minimum match length",
       Kind: FormatOptionKind.Integer,
-      Default: "16",
+      Default: "32",
       AllowedValues: ["8", "12", "16", "32", "64"],
       Description: "Rolling-signature width and shortest accepted long-range match. Smaller values find finer repeats; larger values avoid token overhead."),
     new FormatOptionDescriptor(

@@ -26898,7 +26898,7 @@ Creates basic unsigned RPM packages.
 
 #### `RzipBuildingBlock`
 
-Exposes rzip as a benchmarkable building block. Produces a complete rzip stream — "RZIP" signature, version, the big-endian original size and the token stream — so the payload carries its own length and no extra uncompressed-size header is prepended.
+Exposes rzip as a benchmarkable building block. Produces a complete rzip 2.x file (see `RzipStream`), which carries its own length, so no extra uncompressed-size header is prepended.
 
 Implements `IBuildingBlock`.
 
@@ -26932,7 +26932,7 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Encoder-only knobs searched by the generic compression optimizer. Neither value is serialized: all resulting streams use the same token grammar and decoder. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Encoder-only knobs searched by the generic compression optimizer. Neither value is serialized: every setting writes an rzip 2.x file. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the selected match-finder settings. |
@@ -26940,12 +26940,12 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 
 #### `RzipStream`
 
-Provides static methods for compressing and decompressing data in the RZIP format.
+Reads and writes Andrew Tridgell's rzip 2.x files (`.rz`), as laid out in `docs/RZIP-ON-DISK.md`: a 24-byte header, then chunks in which a control stream of literal/match tokens and a literal stream are multiplexed in bzip2 (or stored) blocks.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data into RZIP format using the default match-finder settings. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an RZIP stream. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data into an rzip file using the default match-finder settings. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an rzip file. |
 
 ### Namespace `FileFormat.S3m`
 

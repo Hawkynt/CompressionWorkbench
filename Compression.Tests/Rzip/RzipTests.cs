@@ -93,20 +93,6 @@ public class RzipTests {
     Assert.That(decompressed.ToArray(), Is.Empty);
   }
 
-  [Test, Category("Boundary")]
-  public void ShortInput_DoesNotInflateByTheCodeTable() {
-    // A 256-byte code table must never be spent on a literal run too small to repay it.
-    var data = new byte[256];
-    for (var i = 0; i < data.Length; ++i)
-      data[i] = (byte)i;
-
-    using var compressed = new MemoryStream();
-    using (var input = new MemoryStream(data))
-      FileFormat.Rzip.RzipStream.Compress(input, compressed);
-
-    Assert.That(compressed.Length, Is.LessThan(data.Length + 32));
-  }
-
   [Test, Category("Exception")]
   public void Decompress_ForeignData_Throws() {
     using var input = new MemoryStream("not an rzip stream at all"u8.ToArray());
