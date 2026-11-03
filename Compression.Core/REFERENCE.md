@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesCryptor`](#aescryptor) · [`Blowfish`](#blowfish) · [`KeyDerivation`](#keyderivation)
+[`AesCryptor`](#aescryptor) · [`Blowfish`](#blowfish) · [`KeyDerivation`](#keyderivation) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher)
 
 #### `AesCryptor`
 
@@ -218,9 +218,31 @@ Key derivation functions for password-based encryption.
 | --- | --- | --- |
 | `Pbkdf2Sha1` | `static byte[] Pbkdf2Sha1(string password, ReadOnlySpan<byte> salt, int iterations, int keyLength)` | Derives a key using PBKDF2 with HMAC-SHA1. Used by older ZIP encryption and WinZip AE-1. |
 | `Pbkdf2Sha256` | `static byte[] Pbkdf2Sha256(string password, ReadOnlySpan<byte> salt, int iterations, int keyLength)` | Derives a key using PBKDF2 with HMAC-SHA256. Used by ZIP AES encryption (WinZip AE-1/AE-2). |
-| `Rar3DeriveKey` | `static ValueTuple<byte[], byte[]> Rar3DeriveKey(string password, ReadOnlySpan<byte> salt)` | Derives a 16-byte AES-128 key and 16-byte IV for RAR3/4 decryption. RAR3 iterates SHA-1 262144 times over (salt + password_utf16le + counter). |
+| `Rar3DeriveKey` | `static ValueTuple<byte[], byte[]> Rar3DeriveKey(string password, ReadOnlySpan<byte> salt)` | Derives a 16-byte AES-128 key and 16-byte IV for RAR3/4 decryption. RAR3 iterates SHA-1 262144 times over (password_utf16le + salt + 3-byte counter); the IV takes byte 19 of every 16384th intermediate digest and the key is the first four digest words with their bytes reversed. |
 | `Rar5DeriveKey` | `static byte[] Rar5DeriveKey(string password, ReadOnlySpan<byte> salt, int iterations)` | Derives a key using the RAR5 key derivation (PBKDF2-HMAC-SHA256 with specific parameters). |
+| `Rar5DeriveKeys` | `static ValueTuple<byte[], byte[], byte[]> Rar5DeriveKeys(string password, ReadOnlySpan<byte> salt, int kdfLog)` | The three RAR 5 keys of one password and salt: one PBKDF2-HMAC-SHA256 chain run for 2^`kdfLog` iterations gives the AES-256 key, 16 more the key that tweaks checksums (encryption flag 0x0002), 16 more the password check value, folded to 8 bytes. |
 | `SevenZipDeriveKey` | `static byte[] SevenZipDeriveKey(string password, ReadOnlySpan<byte> salt, int numCyclesPower)` | Derives a key using the 7z AES key derivation (SHA-256 iterated). 7z uses: key = SHA256^(2^numCyclesPower)(salt + password_utf16le) |
+
+#### `Rar15Cipher`
+
+The stream ciphers of RAR 1.3/1.4 and RAR 1.5 (archives with unpack version 13 and 15): byte-wise keystreams derived from the password. Both are weak; they are read only.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Rar15Cipher` | `Rar15Cipher(ReadOnlySpan<byte> password, int unpackVersion)` | Keys the cipher of `unpackVersion` (13 or 15) with `password`. |
+| `Decrypt` | `void Decrypt(Span<byte> data)` | Decrypts `data` in place, continuing the keystream. |
+
+#### `Rar20Cipher`
+
+The RAR 2.0 file cipher: a 32-round, 128-bit-block Feistel network whose round function is a password-permuted byte substitution, with keys that absorb CRC-32 table words of every ciphertext block. Used by RAR 2.x archives (unpack versions 20 to 28); RAR 2.9 and later use AES.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Rar20Cipher` | `Rar20Cipher(ReadOnlySpan<byte> password)` | Keys the cipher with `password` (the archiver's OEM-code-page bytes). |
+| `BlockSize` | `const int BlockSize` | Cipher block size. |
+| `MaxPasswordLength` | `const int MaxPasswordLength` | Longest password prefix that takes part in the key schedule. |
+| `Decrypt` | `void Decrypt(Span<byte> data)` | Decrypts whole blocks in place; a trailing partial block is left as it is. |
+| `Encrypt` | `void Encrypt(Span<byte> data)` | Encrypts whole blocks in place; a trailing partial block is left as it is. |
 
 ### Namespace `Compression.Core.DataStructures`
 
@@ -2968,7 +2990,7 @@ Decodes QuickLZ 1.5.0 level-1 and level-3 payloads.
 
 ### Namespace `Compression.Core.Dictionary.Rar`
 
-[`Rar1Decoder`](#rar1decoder) · [`Rar2Decoder`](#rar2decoder) · [`Rar3BuildingBlock`](#rar3buildingblock) · [`Rar3Decoder`](#rar3decoder) · [`Rar3Encoder`](#rar3encoder) · [`Rar5Decoder`](#rar5decoder) · [`Rar5Encoder`](#rar5encoder) · [`RarBuildingBlock`](#rarbuildingblock)
+[`Rar1Decoder`](#rar1decoder) · [`Rar2Decoder`](#rar2decoder) · [`Rar3BuildingBlock`](#rar3buildingblock) · [`Rar3Decoder`](#rar3decoder) · [`Rar3Encoder`](#rar3encoder) · [`Rar5Constants`](#rar5constants) · [`Rar5Decoder`](#rar5decoder) · [`Rar5Encoder`](#rar5encoder) · [`Rar5Unpacker`](#rar5unpacker) · [`RarBuildingBlock`](#rarbuildingblock)
 
 #### `Rar1Decoder`
 
@@ -3006,39 +3028,64 @@ Implements `IBuildingBlock`.
 
 #### `Rar3Decoder`
 
-Decompressor for RAR v3.x/v4.x archives (UnPack 2.9 algorithm). Uses LZ77 + multi-table adaptive Huffman with repeated offsets and PPMd fallback. 4 Huffman tables: Main(299) + Dist(60) + LowDist(17) + RepLen(28).
+Decoder for the RAR 2.9 compression format (RAR 3.x/4.x archives, unpack version 29): LZ77 over a sliding window with four Huffman tables, PPMd variant H blocks, and the standard data filters.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Rar3Decoder` | `Rar3Decoder()` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> compressed, int unpackedSize, int windowBits = 22)` | Decompresses RAR v3.x/v4.x data. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> compressed, int unpackedSize, int windowBits = 22)` | Decompresses the packed data of one file. |
+| `Decompress` | `void Decompress(Stream input, long packedSize, long unpackedSize, Stream output, int windowBits = 22)` | Decompresses the packed data of one file from a stream into a stream. |
 
 #### `Rar3Encoder`
 
-RAR3 LZ+Huffman compression engine. Encodes data using adaptive multi-table Huffman coding with LZ77 match references, producing output compatible with `Rar3Decoder` and real WinRAR. 4 Huffman tables: Main(299) + Dist(60) + LowDist(17) + RepLen(28).
+Encoder for the RAR 2.9 compression format (RAR 3.x/4.x archives, unpack version 29), the counterpart of `Rar3Decoder`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Rar3Encoder` | `Rar3Encoder(int windowBits = 22)` | Initializes a new `Rar3Encoder` with the specified window size. |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the RAR3 algorithm. |
+| `Rar3Encoder` | `Rar3Encoder(int windowBits = 22)` | Creates an encoder for a dictionary of 2^`windowBits` bytes. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses one file; call again for the next file of a solid archive. |
+| `Compress` | `void Compress(Stream input, long length, Stream output)` | Compresses `length` bytes of `input` into `output` as one file's packed data. |
+
+#### `Rar5Constants`
+
+Constants of the RAR 5.0 compression format.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MaxCodeLength` | `const int MaxCodeLength` | Longest Huffman code in a RAR 5 table. |
+| `MaxDictionarySize` | `const long MaxDictionarySize` | Largest dictionary of compression algorithm version 0 (4 GB). |
+| `MinDictionarySize` | `const int MinDictionarySize` | Smallest dictionary a RAR 5 header can declare (128 KB). |
 
 #### `Rar5Decoder`
 
-RAR5 LZ+Huffman decompression engine. Decodes compressed data using adaptive multi-table Huffman coding with LZ77 match references and optional post-processing filters.
+In-memory front end of `Rar5Unpacker`: decodes RAR 5 packed data held in a span. Successive calls continue one solid stream.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Rar5Decoder` | `Rar5Decoder(int dictionarySize)` | Initializes a new `Rar5Decoder` with the specified dictionary size. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> compressed, int uncompressedSize)` | Decompresses RAR5-compressed data. |
+| `Rar5Decoder` | `Rar5Decoder(int dictionarySize)` | Creates a decoder for a stream declaring `dictionarySize`. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> compressed, int uncompressedSize)` | Decodes one file of `uncompressedSize` bytes. |
 
 #### `Rar5Encoder`
 
-RAR5 LZ+Huffman compression engine. Encodes data using adaptive multi-table Huffman coding with LZ77 match references, producing output compatible with `Rar5Decoder` and 7z.
+Encoder for the RAR 5.0 compression format (algorithm version 0), the counterpart of `Rar5Unpacker`: LZ77 with hash-chain match finding, the four repeat distances and the repeat-last-match symbol, coded in blocks that each carry fresh Huffman tables.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Rar5Encoder` | `Rar5Encoder(int dictionarySize = 131072)` | Initializes a new `Rar5Encoder` with the specified dictionary size. |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the RAR5 algorithm. |
+| `Rar5Encoder` | `Rar5Encoder(int dictionarySize = 131072, int level = 3)` | Creates an encoder. |
+| `DictionarySize` | `int DictionarySize { get; }` | The dictionary size this encoder's matches stay within. |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses one file held in memory; call again for the next file of a solid stream. |
+| `Compress` | `void Compress(Stream input, long length, Stream output)` | Compresses `length` bytes of `input` into `output` as one file's packed data. |
+
+#### `Rar5Unpacker`
+
+Streaming decoder for the RAR 5.0 compression format (RAR 5.x-7.x archives, compression algorithm version 0): LZ77 over a sliding window, four Huffman tables per block, and the delta, x86 (E8, E8E9) and ARM filters.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Rar5Unpacker` | `Rar5Unpacker(long windowSize)` | Creates a decoder whose window holds `windowSize` bytes. |
+| `WindowSize` | `long WindowSize { get; }` | The allocated window size in bytes. |
+| `Unpack` | `long Unpack(Stream input, long packedSize, long unpackedSize, Stream output, bool solid)` | Decodes one file. `input` is read sequentially from its current position; at most `packedSize` bytes are consumed. |
+| `WindowFor` | `static long WindowFor(long dictionarySize, long streamSize)` | The window a stream needs: the dictionary it declares, capped by the bytes it holds (at least 4 MB, the longest filter, unless the stream is shorter). |
 
 #### `RarBuildingBlock`
 
@@ -5239,7 +5286,29 @@ A clean-room neural compressor: an online-trained multi-layer perceptron (`Neura
 
 ### Namespace `Compression.Core.Entropy.Ppmd`
 
-[`PpmdBuildingBlock`](#ppmdbuildingblock) · [`PpmdContext`](#ppmdcontext) · [`PpmdModelBase`](#ppmdmodelbase) · [`PpmdModelBase.ContextKey`](#ppmdmodelbasecontextkey) · [`PpmdModelH`](#ppmdmodelh) · [`PpmdModelI`](#ppmdmodeli) · [`PpmdRangeDecoder`](#ppmdrangedecoder) · [`PpmdRangeEncoder`](#ppmdrangeencoder)
+[`IPpmd7RangeDecoder`](#ippmd7rangedecoder) · [`Ppmd7`](#ppmd7) · [`PpmdBuildingBlock`](#ppmdbuildingblock) · [`PpmdContext`](#ppmdcontext) · [`PpmdModelBase`](#ppmdmodelbase) · [`PpmdModelBase.ContextKey`](#ppmdmodelbasecontextkey) · [`PpmdModelH`](#ppmdmodelh) · [`PpmdModelI`](#ppmdmodeli) · [`PpmdRangeDecoder`](#ppmdrangedecoder) · [`PpmdRangeEncoder`](#ppmdrangeencoder) · [`RarPpmdRangeDecoder`](#rarppmdrangedecoder)
+
+#### `IPpmd7RangeDecoder`
+
+The range decoder a `Ppmd7` model draws its symbols from.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodeBit` | `uint DecodeBit(uint size0)` | Decodes one binary decision with probability `size0` / 2^14 for 0. |
+| `Decode` | `void Decode(uint start, uint size)` | Consumes the interval [`start`, `start` + `size`). |
+| `GetThreshold` | `uint GetThreshold(uint total)` | Scales the range to `total` and returns the current count. |
+
+#### `Ppmd7`
+
+PPMd variant H (Dmitry Shkarin) exactly as 7-Zip's Ppmd7 and RAR 3.x model it: the sub-allocator, the context tree, SEE and binary contexts, all in one byte heap.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ppmd7` | `Ppmd7()` | Builds the static tables. |
+| `InitEsc` | `uint InitEsc { get; set; }` | Escape frequency for new binary contexts; RAR may set it per block. |
+| `Allocate` | `void Allocate(uint size)` | Allocates (or keeps) a heap of `size` bytes. |
+| `DecodeSymbol` | `int DecodeSymbol(IPpmd7RangeDecoder rc)` | Decodes one symbol; -1 marks the end of the stream, -2 corrupt data. |
+| `Initialize` | `void Initialize(int maxOrder)` | Resets the model for a new stream with the given maximum order. |
 
 #### `PpmdBuildingBlock`
 
@@ -5351,6 +5420,19 @@ Range encoder for PPMd, supporting multi-symbol frequency-based coding. Unlike t
 | `PpmdRangeEncoder` | `PpmdRangeEncoder(Stream output)` | Initializes a new `PpmdRangeEncoder` writing to the specified stream. |
 | `Encode` | `void Encode(uint lowCumFreq, uint freq, uint totalFreq)` | Encodes a symbol with the given cumulative frequency range. |
 | `Finish` | `void Finish()` | Flushes remaining state to the output, completing the encoding. |
+
+#### `RarPpmdRangeDecoder`
+
+The carry-less range decoder RAR 3.x uses for PPMd (Subbotin's coder, 15-bit bottom).
+
+Implements `IPpmd7RangeDecoder`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RarPpmdRangeDecoder` | `RarPpmdRangeDecoder(Func<byte> next)` | Starts decoding: reads the first four code bytes from `next`. |
+| `DecodeBit` | `uint DecodeBit(uint size0)` | Decodes one binary decision with probability `size0` / 2^14 for 0. |
+| `Decode` | `void Decode(uint start, uint size)` | Consumes the interval [`start`, `start` + `size`). |
+| `GetThreshold` | `uint GetThreshold(uint total)` | Scales the range to `total` and returns the current count. |
 
 ### Namespace `Compression.Core.Entropy.RangeCoding`
 
@@ -7890,6 +7972,7 @@ Well-known format-option keys shared by independently versioned formats.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `TargetCompatibility` | `const string TargetCompatibility` | Requested writer compatibility target. Values are format-specific, but the key is common so UI, CLI and orchestration code can recognize a compatibility constraint consistently. |
+| `VolumeSize` | `const string VolumeSize` | Split the archive into volumes of at most this size: a byte count, optionally with a k/m/g suffix (powers of 1024); empty or 0 writes one file. Formats with volume sets declare it in their schema so UI and CLI can offer it. |
 
 #### `FormatOptionKind`
 
