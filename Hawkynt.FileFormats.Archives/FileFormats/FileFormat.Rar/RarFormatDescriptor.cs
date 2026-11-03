@@ -83,7 +83,17 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Default: "",
       Description: "Split into volumes of at most this size (bytes, or with k/m/g, like rar -v). A target named name.partN.rar gets name.part2.rar, ...; any other name the older name.r00, name.r01, ... scheme. Empty writes one file.",
       IsOptimizationAxis: false),
+    new FormatOptionDescriptor(
+      Key: RecoveryRecordOption,
+      DisplayName: "Recovery record (%)",
+      Kind: FormatOptionKind.Integer,
+      Default: "0",
+      Description: "Add a recovery record of this size in percent of the archive (1-100, like rar -rr); rar and this tool repair damage within its reach. Single-file archives only. 0 adds none.",
+      IsOptimizationAxis: false),
   ];
+
+  /// <summary>Option key: recovery record size in percent (RAR 4 and RAR 5, single-file archives).</summary>
+  public const string RecoveryRecordOption = "RecoveryRecord";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -227,6 +237,9 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       openVolume = n => File.Create(names(n));
     }
     var solid = options.SolidSize == 0 && !useStore;
+    var recoveryPercent = options.GetOptionInt(RecoveryRecordOption, 0);
+    if (recoveryPercent is < 0 or > 100)
+      throw new ArgumentException($"RAR recovery record size {recoveryPercent}% is outside 0-100.");
     if (legacy && (!string.IsNullOrEmpty(options.Password) || options.EncryptFilenames || !string.IsNullOrEmpty(options.EncryptionMethod)))
       throw new NotSupportedException("RAR 1.5 and 2.0 compatibility support unencrypted archives only.");
     if (target != RarCompatibility.Rar5 && options.EncryptFilenames && !string.IsNullOrEmpty(options.Password))
@@ -245,7 +258,8 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           windowBits: legacy ? 16 : windowBits,
           solid: target == RarCompatibility.Rar4 && solid,
           password: target == RarCompatibility.Rar4 ? options.Password : null,
-          targetCompatibility: target, volumeSize: volumeSize, openVolume: openVolume, newVolumeNaming: newNaming);
+          targetCompatibility: target, volumeSize: volumeSize, openVolume: openVolume, newVolumeNaming: newNaming,
+          recoveryPercent: recoveryPercent);
         foreach (var i in inputs) {
           if (i.IsDirectory) { w4.AddDirectory(i.Name, Times(i)); continue; }
           using var s = i.OpenStream();
@@ -260,7 +274,7 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           : rarLevel switch { <= 1 => 20, 2 => 22, 3 => 22, 4 => 24, _ => 25 };
         using var w = new RarWriter(output, leaveOpen: true, method: rarLevel, dictionarySizeLog: dictLog,
           solid: solid, password: options.Password, encryptHeaders: options.EncryptFilenames,
-          volumeSize: volumeSize, openVolume: openVolume);
+          volumeSize: volumeSize, openVolume: openVolume, recoveryPercent: recoveryPercent);
         foreach (var i in inputs) {
           if (i.IsDirectory) { w.AddDirectory(i.Name, Times(i)); continue; }
           using var s = i.OpenStream();

@@ -39,6 +39,7 @@ public sealed class RarWriter : IDisposable {
   private readonly long _volumeSize;
   private readonly Func<int, Stream>? _openVolume;
   private readonly bool _locked;
+  private readonly int _recoveryPercent;
   private readonly List<Stream> _openedVolumes = [];
 
   private Stream _out;
@@ -67,10 +68,13 @@ public sealed class RarWriter : IDisposable {
   /// <param name="openVolume">Opens volume <c>n</c> (1-based after the first, which is
   /// <paramref name="stream"/>); required when <paramref name="volumeSize"/> is set.</param>
   /// <param name="locked">Set the "locked archive" flag.</param>
+  /// <param name="recoveryPercent">Add a recovery record of this size in percent (1-100) of the
+  /// archive, as <c>rar -rr</c> does; 0 for none. The output must then be readable and seekable,
+  /// since the record is computed over what was written.</param>
   public RarWriter(Stream stream, bool leaveOpen = false, int method = RarConstants.MethodNormal,
       int dictionarySizeLog = 17, bool solid = false, string? password = null,
       bool encryptHeaders = false, long volumeSize = 0, Func<int, Stream>? openVolume = null,
-      bool locked = false) {
+      bool locked = false, int recoveryPercent = 0) {
     this._first = stream ?? throw new ArgumentNullException(nameof(stream));
     this._out = stream;
     this._leaveOpen = leaveOpen;
@@ -80,6 +84,15 @@ public sealed class RarWriter : IDisposable {
     this._password = string.IsNullOrEmpty(password) ? null : password;
     this._encryptHeaders = encryptHeaders && this._password != null;
     this._locked = locked;
+    ArgumentOutOfRangeException.ThrowIfNegative(recoveryPercent);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(recoveryPercent, 100);
+    this._recoveryPercent = recoveryPercent;
+    if (recoveryPercent > 0) {
+      if (volumeSize > 0)
+        throw new NotSupportedException("Recovery records in RAR 5 volume sets are not written; protect a volume set with recovery volumes instead.");
+      if (!stream.CanSeek || !stream.CanRead)
+        throw new NotSupportedException("A recovery record is computed over the written archive; the output must be readable and seekable.");
+    }
     if (volumeSize > 0) {
       if (volumeSize < 1024)
         throw new ArgumentOutOfRangeException(nameof(volumeSize), "RAR volumes must hold at least 1 KB.");
@@ -174,8 +187,48 @@ public sealed class RarWriter : IDisposable {
     if (this._finished) return;
     this._finished = true;
     this.EnsureHeader();
+    if (this._recoveryPercent > 0) this.WriteRecoveryRecord();
     this.WriteHeader(this.EndHeader(moreVolumes: false));
     this._out.Flush();
+  }
+
+  /// <summary>
+  /// The recovery record: a service header named <c>RR</c> (its extra area holds the percentage),
+  /// then the blocks <see cref="Rar5RecoveryRecord"/> computes over everything before the header.
+  /// </summary>
+  private void WriteRecoveryRecord() {
+    var o = this._out;
+    if (this._volumeStart != 0)
+      throw new NotSupportedException("A recovery record protects the file from its first byte; write the archive at the start of the stream.");
+    var protectedSize = o.Position;
+    var (nd, nr, shard) = Rar5RecoveryRecord.Plan(protectedSize, this._recoveryPercent);
+    var dataSize = nr * Rar5RecoveryRecord.BlockSize(nd, shard);
+    var extra = new MemoryStream();
+    var rec = new MemoryStream();
+    RarVint.Write(rec, 7);                     // service data
+    RarVint.Write(rec, (ulong)this._recoveryPercent);
+    WriteRecord(extra, rec);
+    var extraBytes = extra.ToArray();
+    var body = new MemoryStream();
+    RarVint.Write(body, 3);                    // service header
+    RarVint.Write(body, 1 | 2 | 4);            // extra area, data area, skip if unknown
+    RarVint.Write(body, (ulong)extraBytes.Length);
+    RarVint.Write(body, (ulong)dataSize);
+    RarVint.Write(body, 0);                    // file flags
+    RarVint.Write(body, (ulong)dataSize);      // unpacked size
+    RarVint.Write(body, 0);                    // attributes
+    RarVint.Write(body, 0);                    // compression: stored
+    RarVint.Write(body, 0);                    // host OS
+    RarVint.Write(body, 2);
+    body.Write("RR"u8);
+    body.Write(extraBytes);
+    this.WriteHeader(body.ToArray());
+    var dataPosition = o.Position;
+    var zeros = new byte[1 << 16];
+    for (var left = dataSize; left > 0; left -= zeros.Length)
+      this.Raw(zeros.AsSpan(0, (int)Math.Min(zeros.Length, left)));
+    Rar5RecoveryRecord.Write(o, protectedSize, this._recoveryPercent, dataPosition);
+    o.Position = dataPosition + dataSize;
   }
 
   /// <summary>Creates a RAR 5 volume set in memory: one byte array per volume.</summary>
@@ -248,6 +301,7 @@ public sealed class RarWriter : IDisposable {
     if (this._volumeSize > 0) flags |= 1;
     if (this._volumeIndex > 0) flags |= 2;
     if (this._solid) flags |= 4;
+    if (this._recoveryPercent > 0) flags |= 8;
     if (this._locked) flags |= 0x10;
     RarVint.Write(main, flags);
     if (this._volumeIndex > 0) RarVint.Write(main, (ulong)this._volumeIndex);
@@ -257,7 +311,7 @@ public sealed class RarWriter : IDisposable {
   private byte[] EndHeader(bool moreVolumes) {
     var body = new MemoryStream();
     RarVint.Write(body, 5);
-    RarVint.Write(body, 0);
+    RarVint.Write(body, 4);         // skip if unknown, as rar writes it (and rebuilds it on repair)
     RarVint.Write(body, moreVolumes ? 1UL : 0UL);
     return body.ToArray();
   }

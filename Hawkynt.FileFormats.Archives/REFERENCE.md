@@ -26089,7 +26089,7 @@ Reads and writes non-streaming QuickLZ 1.5.0 level-1 and level-3 packets.
 
 ### Namespace `FileFormat.Rar`
 
-[`Rar4Writer`](#rar4writer) · [`RarCompatibility`](#rarcompatibility) · [`RarEntry`](#rarentry) · [`RarFormatDescriptor`](#rarformatdescriptor) · [`RarInPlaceAdder`](#rarinplaceadder) · [`RarInPlaceRemover`](#rarinplaceremover) · [`RarLayoutMap`](#rarlayoutmap) · [`RarLinkKind`](#rarlinkkind) · [`RarReader`](#rarreader) · [`RarVolumeNames`](#rarvolumenames) · [`RarWriter`](#rarwriter) · [`RarWriter.ArchiveTimes`](#rarwriterarchivetimes)
+[`Rar4Writer`](#rar4writer) · [`RarCompatibility`](#rarcompatibility) · [`RarEntry`](#rarentry) · [`RarFormatDescriptor`](#rarformatdescriptor) · [`RarInPlaceAdder`](#rarinplaceadder) · [`RarInPlaceRemover`](#rarinplaceremover) · [`RarLayoutMap`](#rarlayoutmap) · [`RarLinkKind`](#rarlinkkind) · [`RarReader`](#rarreader) · [`RarRecovery`](#rarrecovery) · [`RarRecoveryKind`](#rarrecoverykind) · [`RarRecoveryReport`](#rarrecoveryreport) · [`RarVolumeNames`](#rarvolumenames) · [`RarWriter`](#rarwriter) · [`RarWriter.ArchiveTimes`](#rarwriterarchivetimes)
 
 #### `Rar4Writer`
 
@@ -26099,7 +26099,7 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Rar4Writer` | `Rar4Writer(Stream stream, bool leaveOpen = false, byte method = 51, int windowBits = 20, bool solid = false, string password = null, RarCompatibility targetCompatibility = 1, long volumeSize = 0, Func<int, Stream> openVolume = null, bool newVolumeNaming = false)` | Initializes a writer for the RAR 1.5-4.x container family. |
+| `Rar4Writer` | `Rar4Writer(Stream stream, bool leaveOpen = false, byte method = 51, int windowBits = 20, bool solid = false, string password = null, RarCompatibility targetCompatibility = 1, long volumeSize = 0, Func<int, Stream> openVolume = null, bool newVolumeNaming = false, int recoveryPercent = 0)` | Initializes a writer for the RAR 1.5-4.x container family. |
 | `VolumeCount` | `int VolumeCount { get; }` | How many volumes were written. |
 | `AddDirectory` | `void AddDirectory(string name, ArchiveTimes times = null)` | Adds a directory. |
 | `AddFile` | `void AddFile(string fileName, ReadOnlySpan<byte> data, DateTimeOffset? modifiedTime = null)` | Adds a file held in memory. |
@@ -26157,6 +26157,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `RarFormatDescriptor` | `RarFormatDescriptor()` |  |
+| `RecoveryRecordOption` | `const string RecoveryRecordOption` | Option key: recovery record size in percent (RAR 4 and RAR 5, single-file archives). |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -26246,6 +26247,47 @@ Implements `IDisposable`.
 | `Extract` | `void Extract(int entryIndex, Stream output)` | Extracts the entry at `entryIndex` into `output`, streaming; the data is checked against the stored CRC-32/BLAKE2sp at the end. |
 | `Open` | `static RarReader Open(string path, string password = null)` | Opens the RAR archive or volume set at `path`. |
 
+#### `RarRecovery`
+
+Checks and repairs RAR archives from their recovery records, the counterpart of `rar t`'s recovery-record test and `rar r`. The layouts were measured from rar's output (docs/RAR-RECOVERY-ON-DISK.md); rar repairs what `RarWriter` and `Rar4Writer` protect, and this repairs what rar protects.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RepairInPlace` | `static RarRecoveryReport RepairInPlace(Stream archive)` | Repairs a readable, writable, seekable archive stream in place. |
+| `Repair` | `static RarRecoveryReport Repair(Stream source, Stream destination)` | Copies `source` to `destination` and repairs the copy from its recovery record. `destination` must be readable, writable and seekable. |
+| `Repair` | `static RarRecoveryReport Repair(string sourcePath, string destinationPath)` | Repairs `sourcePath` into `destinationPath` from its recovery record. |
+| `Verify` | `static RarRecoveryReport Verify(Stream archive)` | Checks a seekable archive stream against its recovery record. |
+| `Verify` | `static RarRecoveryReport Verify(string path)` | Checks the archive at `path` against its recovery record. |
+
+#### `RarRecoveryKind`
+
+Which kind of RAR recovery data a check or repair found.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` | No recovery data was found. |
+| `Rar4Record` | `1` | A RAR 2.x-4.x recovery record inside the archive (512-byte sectors, interleaved XOR parity). |
+| `Rar5Record` | `2` | A RAR 5 recovery record inside the archive (Reed-Solomon over GF(2^16)). |
+| `Rar3Volumes` | `3` | RAR 3.x-4.x recovery volumes (`.rev`, Reed-Solomon over GF(2^8)). |
+| `Rar5Volumes` | `4` | RAR 5 recovery volumes (`.rev`, Reed-Solomon over GF(2^16)). |
+
+#### `RarRecoveryReport`
+
+Outcome of checking or repairing RAR recovery data.
+
+Implements `IEquatable<RarRecoveryReport>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RarRecoveryReport` | `RarRecoveryReport(RarRecoveryKind Kind, bool Intact, int Damaged, int Recovery, bool Repairable, bool Repaired, string Message)` | Outcome of checking or repairing RAR recovery data. |
+| `Damaged` | `int Damaged { get; init; }` | Protected units (RAR 5 shards, RAR 4 sectors, volumes) that fail their check. |
+| `Intact` | `bool Intact { get; init; }` | Everything the recovery data protects checks out, the recovery data too. |
+| `Kind` | `RarRecoveryKind Kind { get; init; }` | The recovery data found. |
+| `Message` | `string Message { get; init; }` | What was found or done, in words. |
+| `Recovery` | `int Recovery { get; init; }` | Usable recovery units (RAR 5 blocks, RAR 4 parity sectors, recovery volumes). |
+| `Repairable` | `bool Repairable { get; init; }` | The damage is within what the recovery data can rebuild. |
+| `Repaired` | `bool Repaired { get; init; }` | A repair was asked for and every damaged unit was rebuilt and re-verified. |
+
 #### `RarVolumeNames`
 
 The file names of a RAR volume set. RAR 3.0 and later name volumes `name.part1.rar`, `name.part2.rar`, … with as many digits as the set needs (`part01`, `part001`); the older scheme, still written with `rar -vn`, is `name.rar`, `name.r00`, `name.r01`, … `name.r99`, `name.s00`, ….
@@ -26265,7 +26307,7 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `RarWriter` | `RarWriter(Stream stream, bool leaveOpen = false, int method = 3, int dictionarySizeLog = 17, bool solid = false, string password = null, bool encryptHeaders = false, long volumeSize = 0, Func<int, Stream> openVolume = null, bool locked = false)` | Creates a writer. |
+| `RarWriter` | `RarWriter(Stream stream, bool leaveOpen = false, int method = 3, int dictionarySizeLog = 17, bool solid = false, string password = null, bool encryptHeaders = false, long volumeSize = 0, Func<int, Stream> openVolume = null, bool locked = false, int recoveryPercent = 0)` | Creates a writer. |
 | `VolumeCount` | `int VolumeCount { get; }` | How many volumes were written (1 without volumes). |
 | `AddDirectory` | `void AddDirectory(string name, ArchiveTimes times = null)` | Adds a directory entry. |
 | `AddFile` | `void AddFile(string fileName, ReadOnlySpan<byte> data, DateTimeOffset? modifiedTime = null)` | Adds a file held in memory. |

@@ -109,6 +109,9 @@ internal static class RarConstants {
   /// <summary>RAR4 sub-block header.</summary>
   public const byte Rar4TypeSubBlock = 0x77;
 
+  /// <summary>RAR4 service ("new sub") header: comments, NTFS streams, the recovery record.</summary>
+  public const byte Rar4TypeNewSub = 0x7A;
+
   /// <summary>RAR4 end of archive header.</summary>
   public const byte Rar4TypeEnd = 0x7B;
 

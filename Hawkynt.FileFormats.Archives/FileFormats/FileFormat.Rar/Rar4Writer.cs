@@ -40,6 +40,7 @@ public sealed class Rar4Writer : IDisposable {
   private readonly long _volumeSize;
   private readonly Func<int, Stream>? _openVolume;
   private readonly bool _newVolumeNaming;
+  private readonly int _recoveryPercent;
   private readonly List<Stream> _opened = [];
   private Stream _out;
   private long _written;
@@ -61,12 +62,26 @@ public sealed class Rar4Writer : IDisposable {
   /// <param name="volumeSize">Split into volumes of at most this many bytes (0: one file).</param>
   /// <param name="openVolume">Opens volume <c>n</c> (1-based after the first).</param>
   /// <param name="newVolumeNaming">The set is named <c>.partN.rar</c> (sets <c>MHD_NEWNUMBERING</c>), not <c>.rar/.r00</c>.</param>
+  /// <param name="recoveryPercent">Add a recovery record of this size in percent (1-100) of the
+  /// archive, as <c>rar -rr</c> does; 0 for none. The output must then be readable and seekable.</param>
   public Rar4Writer(Stream stream, bool leaveOpen = false,
       byte method = RarConstants.Rar4MethodNormal,
       int windowBits = 20, bool solid = false, string? password = null,
       RarCompatibility targetCompatibility = RarCompatibility.Rar4,
-      long volumeSize = 0, Func<int, Stream>? openVolume = null, bool newVolumeNaming = false) {
+      long volumeSize = 0, Func<int, Stream>? openVolume = null, bool newVolumeNaming = false,
+      int recoveryPercent = 0) {
     this._first = stream ?? throw new ArgumentNullException(nameof(stream));
+    ArgumentOutOfRangeException.ThrowIfNegative(recoveryPercent);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(recoveryPercent, 100);
+    if (recoveryPercent > 0) {
+      if (volumeSize > 0)
+        throw new NotSupportedException("Recovery records in RAR 4 volume sets are not written; protect a volume set with recovery volumes instead.");
+      if (!stream.CanSeek || !stream.CanRead)
+        throw new NotSupportedException("A recovery record is computed over the written archive; the output must be readable and seekable.");
+      if (stream.Position != 0)
+        throw new NotSupportedException("A recovery record protects the file from its first byte; write the archive at the start of the stream.");
+    }
+    this._recoveryPercent = recoveryPercent;
     this._out = stream;
     this._leaveOpen = leaveOpen;
     this._targetCompatibility = targetCompatibility;
@@ -171,6 +186,14 @@ public sealed class Rar4Writer : IDisposable {
     if (this._finished) return;
     this._finished = true;
     this.EnsureHeader();
+    if (this._recoveryPercent > 0) {
+      // The record covers everything written so far; rar names it RR, a sub-block of its own.
+      this._out.Flush();
+      var protectedSize = this._out.Position;
+      var record = Rar4RecoveryRecord.Build(this._out, protectedSize, this._recoveryPercent, DosTime(DateTimeOffset.Now));
+      this._out.Position = protectedSize;
+      this.Raw(record);
+    }
     this.WriteEnd(moreVolumes: false);
     this._out.Flush();
   }
@@ -270,6 +293,7 @@ public sealed class Rar4Writer : IDisposable {
       if (this._volumeIndex == 0) flags |= 0x0100; // MHD_FIRSTVOLUME
     }
     if (this._solid) flags |= 0x0008;
+    if (this._recoveryPercent > 0) flags |= 0x0040;   // MHD_PROTECT
     var h = new byte[13];
     h[2] = RarConstants.Rar4TypeMain;
     BinaryPrimitives.WriteUInt16LittleEndian(h.AsSpan(3), flags);
