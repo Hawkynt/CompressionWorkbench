@@ -140,6 +140,8 @@ Append `+` to any method for optimal encoding:
 - `--threads N` — Parallel compression threads
 - `--solid-size SIZE` — 7z solid block size
 - `--force-compress` — Override incompressibility detection
+- `--include-hidden` — `create`/`add` skip hidden and system files (dot-files on Unix) found in a folder
+  or by a wildcard; this takes them too. A file named explicitly is always taken.
 - `--sfx` / `--sfx-ui` — Create a self-extracting archive. `--sfx` is a console stub; `--sfx-ui`
   shows a small window with a folder picker. Both are NativeAOT binaries, so the recipient needs
   nothing installed.

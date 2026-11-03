@@ -135,6 +135,7 @@ var zipEncryptionOpt = new Option<string?>("--zip-encryption") { Description = "
 var sfxOpt = new Option<bool>("--sfx") { Description = "Create a self-extracting archive (console stub, no runtime needed)" };
 var sfxUiOpt = new Option<bool>("--sfx-ui") { Description = "Create a self-extracting archive (GUI stub with folder picker; Windows and Linux)" };
 var volumeSizeOpt = new Option<string?>("--volume-size", "-v") { Description = "Split into volumes of at most this size (e.g. 100m, 4g, 20000); formats with volume sets only (RAR)" };
+var includeHiddenOpt = new Option<bool>("--include-hidden") { Description = "Also take hidden and system files found in folders or by wildcards (skipped by default; files named explicitly are always taken)" };
 var createOptOpt = new Option<string[]>("--opt") { Description = "Format-specific option KEY=VALUE (repeatable), e.g. --opt TargetCompatibility=Rar4", AllowMultipleArgumentsPerToken = false };
 var sfxTargetOpt = new Option<string?>("--sfx-target") { Description = "SFX target platform, or a comma-separated list for one file that runs on all of them: " + string.Join(", ", SfxBuilder.SupportedTargets) };
 
@@ -156,6 +157,7 @@ var createCmd = new Command("create", """
     cwb create backup.zip *.txt -m deflate+ -t 4        Zopfli optimal, 4 threads
     cwb create backup.part1.rar src/ -v 100m -p secret  RAR 5 volumes of 100 MB, AES-256
     cwb create old.rar src/ --opt TargetCompatibility=Rar4  RAR 4 (2.9 format) archive
+    cwb create all.zip src/ --include-hidden            Keep hidden/system files and dot-files
 
   Methods by format:
     ZIP:  store, shrink, reduce, implode, deflate(+), deflate64, bzip2, lzma, ppmd, zstd
@@ -172,7 +174,7 @@ var createCmd = new Command("create", """
     --solid-size  Max solid block: 0=single block, 64m=64MB blocks, 1g=1GB blocks.
     --level       0-9: 1=fast, 5=normal, 9=best.
     --threads     Parallel compression (7z splits into solid blocks, ZIP per-entry).
-  """) { createArchiveArg, createFilesArg, passwordOpt, methodOpt, forceCompressOpt, threadsOpt, solidSizeOpt, dictSizeOpt, wordSizeOpt, levelOpt, encryptHeadersOpt, zipEncryptionOpt, sfxOpt, sfxUiOpt, sfxTargetOpt, volumeSizeOpt, createOptOpt };
+  """) { createArchiveArg, createFilesArg, passwordOpt, methodOpt, forceCompressOpt, threadsOpt, solidSizeOpt, dictSizeOpt, wordSizeOpt, levelOpt, encryptHeadersOpt, zipEncryptionOpt, sfxOpt, sfxUiOpt, sfxTargetOpt, volumeSizeOpt, createOptOpt, includeHiddenOpt };
 createCmd.Aliases.Add("c");
 createCmd.SetAction((ParseResult ctx) => {
   var archive = ctx.GetValue(createArchiveArg)!;
@@ -201,7 +203,7 @@ createCmd.SetAction((ParseResult ctx) => {
     formatSpecific[Compression.Registry.FormatOptionKeys.VolumeSize] = volumeSize;
 
   List<ArchiveInput> resolved;
-  try { resolved = ArchiveInput.Resolve(files); }
+  try { resolved = ArchiveInput.Resolve(files, ctx.GetValue(includeHiddenOpt)); }
   catch (FileNotFoundException ex) { Console.Error.WriteLine(ex.Message); return 1; }
 
   // Detect incompressible files unless --force-compress is set
@@ -328,14 +330,14 @@ var addCmd = new Command("add", """
   Examples:
     cwb add disk.d81 game.prg                     Add into 1581 disk
     cwb add archive.zip notes.txt -m deflate      Add with re-encoding
-  """) { addArchiveArg, addFilesArg, methodOpt, levelOpt, dictSizeOpt, passwordOpt };
+  """) { addArchiveArg, addFilesArg, methodOpt, levelOpt, dictSizeOpt, passwordOpt, includeHiddenOpt };
 addCmd.SetAction((ParseResult ctx) => {
   var archive = ctx.GetValue(addArchiveArg)!;
   var files = ctx.GetValue(addFilesArg)!;
   if (!archive.Exists) { Console.Error.WriteLine($"File not found: {archive.FullName}"); return 1; }
 
   List<ArchiveInput> resolved;
-  try { resolved = ArchiveInput.Resolve(files); }
+  try { resolved = ArchiveInput.Resolve(files, ctx.GetValue(includeHiddenOpt)); }
   catch (FileNotFoundException ex) { Console.Error.WriteLine(ex.Message); return 1; }
 
   var opts = new CompressionOptions {

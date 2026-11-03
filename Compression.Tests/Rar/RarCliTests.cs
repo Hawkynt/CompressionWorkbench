@@ -63,4 +63,29 @@ public class RarCliTests {
       RarTools.TryDelete(dir);
     }
   }
+
+  [TestCase(false)]
+  [TestCase(true)]
+  public void Given_AFolderWithAHiddenFile_When_TheCliArchivesIt_Then_IncludeHiddenDecidesWhetherItIsTaken(bool includeHidden) {
+    var cli = LocateCli();
+    var dir = RarTools.TempDir("rarclihidden");
+    try {
+      var src = Path.Combine(dir, "src");
+      Directory.CreateDirectory(src);
+      File.WriteAllText(Path.Combine(src, "shown.txt"), "shown");
+      var hidden = Path.Combine(src, ".hidden.txt");
+      File.WriteAllText(hidden, "hidden");
+      File.SetAttributes(hidden, File.GetAttributes(hidden) | FileAttributes.Hidden);
+      var args = new List<string> { "create", "h.rar", "src" };
+      if (includeHidden) args.Add("--include-hidden");
+      var create = Cli(cli, dir, [.. args]);
+      Assert.That(create.Code, Is.Zero, create.Output);
+      using var reader = RarReader.Open(Path.Combine(dir, "h.rar"), null);
+      var names = reader.Entries.Select(e => e.Name.Replace('\\', '/')).ToList();
+      Assert.That(names, Does.Contain("src/shown.txt"));
+      Assert.That(names.Contains("src/.hidden.txt"), Is.EqualTo(includeHidden), string.Join(", ", names));
+    } finally {
+      RarTools.TryDelete(dir);
+    }
+  }
 }
