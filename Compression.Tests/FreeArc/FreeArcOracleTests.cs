@@ -85,6 +85,11 @@ public sealed class FreeArcOracleTests {
   [TestCase("-mlzma")]
   [TestCase("-mlzma:lc4:lp1:pb1")]
   [TestCase("-m5x")]
+  [TestCase("-mx")]
+  [TestCase("-m9x")]
+  [TestCase("-mrep:1mb")]
+  [TestCase("-mrep:1mb+delta+exe+lzma")]
+  [TestCase("-mexe+delta")]
   public void ArcArchive_WeExtractByteIdentical(string method) {
     var arc = Require(_arc, "Arc");
     var src = Path.Combine(this._tmp, "src");

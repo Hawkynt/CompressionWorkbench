@@ -29,3 +29,14 @@ Each archive was made with `Arc.exe a <archive> -i0 -cfg- <switches> <files>`:
 | `tornado.arc` | `-m1` | hello, lines | `rep:…+4x4:tor:…` — refused |
 | `encrypted.arc` | `-mlzma -pSecret` | hello | `lzma…+aes-256/ctr:…` data — refused |
 | `hdrenc.arc` | `-mlzma -hpSecret` | hello | encrypted directory — listed as `FULL.arc` + `metadata.ini` |
+
+`mkfilters.py` makes four more from generated inputs (text, a 24000-byte random run repeated 3000
+bytes later, a table of 8-byte records, x86-like code, an empty file), each with
+`Arc.exe a <archive> -i0 -cfg- -ep1 <switch>`; `filters.tsv` lists what `Arc.exe x` extracts:
+
+| File | Switch | Method FreeArc recorded |
+|------|--------|-------------------------|
+| `filters-rep.arc` | `-mrep:1mb` | `rep:153kb` |
+| `filters-delta.arc` | `-mdelta` | `delta` |
+| `filters-exe.arc` | `-mexe` | `exe` |
+| `filters-mx.arc` | `-mx` | `rep:153kb+exe+delta+lzma:153kb:normal:bt4:128` |

@@ -217,7 +217,9 @@ public class FreeArcTests {
   [TestCase("storing", true)]
   [TestCase("lzma:1mb:normal:bt4:32", true)]
   [TestCase("ppmd:10:48mb", false)]
-  [TestCase("delta+lzma:32kb", false)]
+  [TestCase("delta+lzma:32kb", true)]
+  [TestCase("rep:96mb+exe+delta+lzma:96mb:normal:bt4:128", true)]
+  [TestCase("rep:96mb+lzp:96mb+ppmd:12:192mb", false)]
   [TestCase("4x4:tor:3", false)]
   [TestCase("lzma+aes-256/ctr:n1000", false)]
   public void Methods_IsSupported(string method, bool supported) =>
