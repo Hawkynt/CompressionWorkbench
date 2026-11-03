@@ -3585,7 +3585,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.DiskImage`
 
-[`AmigaRdbParser`](#amigardbparser) · [`ApmParser`](#apmparser) · [`BsdDisklabelParser`](#bsddisklabelparser) · [`ClusterAllocator`](#clusterallocator) · [`DeferredPayloads`](#deferredpayloads) · [`ExtBlockGroupGeometry`](#extblockgroupgeometry) · [`ExtBlockGroupGeometry.ExtGeometry`](#extblockgroupgeometryextgeometry) · [`ExtentCopy`](#extentcopy) · [`FilePayload`](#filepayload) · [`GptParser`](#gptparser) · [`GptParser.HeaderInfo`](#gptparserheaderinfo) · [`ImageAccessor`](#imageaccessor) · [`MbrParser`](#mbrparser) · [`MbrWrapper`](#mbrwrapper) · [`MbrWrapper.PartitionType`](#mbrwrapperpartitiontype) · [`PartitionEditor`](#partitioneditor) · [`PartitionEntry`](#partitionentry) · [`PartitionScheme`](#partitionscheme) · [`PartitionTableDetector`](#partitiontabledetector) · [`PartitionTableDetector.DetectionResult`](#partitiontabledetectordetectionresult) · [`PartitionTableVerification`](#partitiontableverification) · [`PartitionType`](#partitiontype) · [`PartitionTypeDatabase`](#partitiontypedatabase) · [`PartitionTypeMapping`](#partitiontypemapping) · [`PartitionWindowStream`](#partitionwindowstream) · [`PartitionedDiskLister`](#partitioneddisklister) · [`PartitionedDiskLister.PartitionTarget`](#partitioneddisklisterpartitiontarget) · [`SgiDvhParser`](#sgidvhparser) · [`SparseBlockImage`](#sparseblockimage) · [`StagedWindowStream`](#stagedwindowstream) · [`SunVtocParser`](#sunvtocparser)
+[`AmigaRdbParser`](#amigardbparser) · [`ApmParser`](#apmparser) · [`AtariAhdiParser`](#atariahdiparser) · [`BsdDisklabelParser`](#bsddisklabelparser) · [`ClusterAllocator`](#clusterallocator) · [`DeferredPayloads`](#deferredpayloads) · [`ExtBlockGroupGeometry`](#extblockgroupgeometry) · [`ExtBlockGroupGeometry.ExtGeometry`](#extblockgroupgeometryextgeometry) · [`ExtentCopy`](#extentcopy) · [`FilePayload`](#filepayload) · [`GptParser`](#gptparser) · [`GptParser.HeaderInfo`](#gptparserheaderinfo) · [`ImageAccessor`](#imageaccessor) · [`MbrParser`](#mbrparser) · [`MbrWrapper`](#mbrwrapper) · [`MbrWrapper.PartitionType`](#mbrwrapperpartitiontype) · [`PartitionEditor`](#partitioneditor) · [`PartitionEntry`](#partitionentry) · [`PartitionScheme`](#partitionscheme) · [`PartitionTableDetector`](#partitiontabledetector) · [`PartitionTableDetector.DetectionResult`](#partitiontabledetectordetectionresult) · [`PartitionTableVerification`](#partitiontableverification) · [`PartitionType`](#partitiontype) · [`PartitionTypeDatabase`](#partitiontypedatabase) · [`PartitionTypeMapping`](#partitiontypemapping) · [`PartitionWindowStream`](#partitionwindowstream) · [`PartitionedDiskLister`](#partitioneddisklister) · [`PartitionedDiskLister.PartitionTarget`](#partitioneddisklisterpartitiontarget) · [`SgiDvhParser`](#sgidvhparser) · [`SparseBlockImage`](#sparseblockimage) · [`StagedWindowStream`](#stagedwindowstream) · [`SunVtocParser`](#sunvtocparser)
 
 #### `AmigaRdbParser`
 
@@ -3604,6 +3604,16 @@ Parses the Apple Partition Map (APM) as used on classic Mac OS 68k/PowerPC media
 | --- | --- | --- |
 | `IsApm` | `static bool IsApm(ReadOnlySpan<byte> data)` | Checks whether the given header carries an Apple Partition Map. The check looks for the `PM` entry signature at block 1 for both supported block sizes, honouring a DDR block size where one is present. |
 | `Parse` | `static List<PartitionEntry> Parse(Stream diskData)` | Parses every real partition from an APM disk image. |
+
+#### `AtariAhdiParser`
+
+Parses the Atari ST/TT hard-disk partition table (AHDI "root sector"), big-endian.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsAhdi` | `static bool IsAhdi(ReadOnlySpan<byte> sector0, long diskBytes)` | Reports whether `sector0` is an AHDI root sector: a disk size that fits the image, and at least one record in use whose id is three letters or digits and whose extent lies inside that size — with every record in use passing the same test. |
+| `IsKnownAhdi` | `static bool IsKnownAhdi(ReadOnlySpan<byte> sector0, long diskBytes)` | The stricter test used to recognise an image by content alone: `IsAhdi`, and every record in use carries one of the ids AHDI and the operating systems sharing its disks use. |
+| `Parse` | `static List<PartitionEntry> Parse(Stream disk)` | Lists the data partitions of the root sector and of the extended chain, in disk order. |
 
 #### `BsdDisklabelParser`
 
@@ -3869,7 +3879,7 @@ Result of partition table detection, including the scheme used and the discovere
 | --- | --- | --- |
 | `DetectionResult` | `DetectionResult()` |  |
 | `Partitions` | `List<PartitionEntry> Partitions { get; init; }` | Discovered partitions. Empty if no partition table was found. |
-| `Scheme` | `string Scheme { get; init; }` | The partition scheme detected: "GPT", "MBR", "APM", "BSD", "RDB", "Sun", "SGI", or "None". |
+| `Scheme` | `string Scheme { get; init; }` | The partition scheme detected: "GPT", "MBR", "APM", "BSD", "RDB", "Sun", "SGI", "AHDI", or "None". |
 | `SectorSize` | `int SectorSize { get; init; }` | Logical block size the table counts in (512 unless a 4Kn GPT was found). |
 
 #### `PartitionTableVerification`

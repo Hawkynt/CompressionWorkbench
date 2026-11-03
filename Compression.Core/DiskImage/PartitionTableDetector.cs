@@ -16,7 +16,8 @@ namespace Compression.Core.DiskImage;
 ///   <item><description>MBR, with its extended/logical (EBR) chain;</description></item>
 ///   <item><description>Apple Partition Map;</description></item>
 ///   <item><description>a stand-alone BSD disklabel (no MBR around it), both magics and its geometry verified;</description></item>
-///   <item><description>an Amiga Rigid Disk Block in the first 16 blocks, checksum verified.</description></item>
+///   <item><description>an Amiga Rigid Disk Block in the first 16 blocks, checksum verified;</description></item>
+///   <item><description>an Atari AHDI root sector, its records and disk size checked against the image.</description></item>
 /// </list>
 /// </remarks>
 public static class PartitionTableDetector {
@@ -25,7 +26,7 @@ public static class PartitionTableDetector {
   /// Result of partition table detection, including the scheme used and the discovered partitions.
   /// </summary>
   public sealed class DetectionResult {
-    /// <summary>The partition scheme detected: "GPT", "MBR", "APM", "BSD", "RDB", "Sun", "SGI", or "None".</summary>
+    /// <summary>The partition scheme detected: "GPT", "MBR", "APM", "BSD", "RDB", "Sun", "SGI", "AHDI", or "None".</summary>
     public required string Scheme { get; init; }
 
     /// <summary>Discovered partitions. Empty if no partition table was found.</summary>
@@ -112,6 +113,11 @@ public static class PartitionTableDetector {
         if (rdb.Partitions.Count > 0)
           return rdb;
       }
+      if (AtariAhdiParser.IsAhdi(head, diskData.Length)) {
+        var ahdi = Bounded("AHDI", AtariAhdiParser.Parse(diskData), diskData.Length);
+        if (ahdi.Partitions.Count > 0)
+          return ahdi;
+      }
     } catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException) {
       // An unreadable label holds nothing.
     } finally {
@@ -135,7 +141,8 @@ public static class PartitionTableDetector {
       disk.Position = 0;
       if (disk.ReadAtLeast(sector0, 512, throwOnEndOfStream: false) < 512) return false;
       return SgiDvhParser.IsDvh(sector0) || SunVtocParser.IsSunLabel(sector0)
-             || BsdDisklabelParser.IsStandaloneDisklabel(disk) || AmigaRdbParser.IsRdb(disk);
+             || BsdDisklabelParser.IsStandaloneDisklabel(disk) || AmigaRdbParser.IsRdb(disk)
+             || AtariAhdiParser.IsKnownAhdi(sector0, disk.Length);
     } catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException) {
       return false;
     } finally {
