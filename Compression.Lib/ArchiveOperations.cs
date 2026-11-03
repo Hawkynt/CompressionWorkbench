@@ -537,15 +537,14 @@ public static class ArchiveOperations {
       Directory.CreateDirectory(tempDir);
       Extract(archivePath, tempDir, password: opts.Password, files: null);
 
-      // Splat new inputs into the temp tree, preserving their entry names.
-      foreach (var i in inputs) {
-        if (i.IsDirectory || string.IsNullOrEmpty(i.FullPath)) continue;
-        var entryName = string.IsNullOrEmpty(i.EntryName) ? Path.GetFileName(i.FullPath) : i.EntryName;
-        var dest = Path.Combine(tempDir, entryName.Replace('/', Path.DirectorySeparatorChar));
-        var destDir = Path.GetDirectoryName(dest);
-        if (destDir != null) Directory.CreateDirectory(destDir);
-        File.Copy(i.FullPath, dest, overwrite: true);
-      }
+      // Splat new inputs into the temp tree, preserving their entry names; folders added on
+      // their own (empty ones included) become folders.
+      Compression.Registry.RebuildVerb.StageInputs(tempDir, inputs
+        .Where(static i => i.IsDirectory || !string.IsNullOrEmpty(i.FullPath))
+        .Select(static i => new Compression.Registry.ArchiveInputInfo(
+          i.FullPath,
+          string.IsNullOrEmpty(i.EntryName) ? Path.GetFileName(i.FullPath) : i.EntryName,
+          i.IsDirectory)));
 
       Create(archivePath, EnumerateTempInputs(tempDir), opts, format);
     }

@@ -26,13 +26,7 @@ public sealed class RgssFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
       DropSyntheticMetadata(tmpDir);
-      foreach (var input in inputs) {
-        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName)) continue;
-        var dest = Path.Combine(tmpDir, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
-        var destDir = Path.GetDirectoryName(dest);
-        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
-        File.WriteAllBytes(dest, input.ReadContent());
-      }
+      RebuildVerb.StageInputs(tmpDir, inputs);
     });
   }
 
@@ -45,11 +39,7 @@ public sealed class RgssFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var skip = new HashSet<string>(entryNames ?? [], StringComparer.OrdinalIgnoreCase);
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
       DropSyntheticMetadata(tmpDir);
-      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
-        var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
-        if (skip.Contains(rel) || skip.Contains(Path.GetFileName(rel)))
-          File.Delete(file);
-      }
+      RebuildVerb.DeleteNamedEntries(tmpDir, skip);
     });
   }
 

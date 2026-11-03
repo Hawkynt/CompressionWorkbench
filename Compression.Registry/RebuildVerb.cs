@@ -250,6 +250,37 @@ public static class RebuildVerb {
     static string RelativeEntryName(string root, string path) => Path.GetRelativePath(root, path).Replace('\\', '/');
   }
 
+  /// <summary>
+  /// Places inputs into an extracted tree, the add half of an extract → edit → re-create
+  /// rebuild: a file input is written at its entry path (replacing a file of that name) and
+  /// keeps its last-write time; a directory input becomes a directory, so an empty folder
+  /// survives the rebuild. Names that are empty or leave the tree are ignored.
+  /// </summary>
+  /// <remarks>
+  /// Directory inputs used to be skipped, so a folder added on its own vanished, and copied
+  /// files took the time of the copy, so a rebuilt archive reset every added entry's time.
+  /// </remarks>
+  public static void StageInputs(string extractedRoot, IEnumerable<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(extractedRoot);
+    foreach (var input in inputs ?? []) {
+      var name = (input.ArchiveName ?? "").Replace('\\', '/').Trim('/');
+      if (name.Length == 0 || name.Split('/').Any(static part => part is "" or "." or "..")) continue;
+      var dest = Path.Combine(extractedRoot, name.Replace('/', Path.DirectorySeparatorChar));
+      if (input.IsDirectory) {
+        Directory.CreateDirectory(dest);
+        continue;
+      }
+
+      var destDir = Path.GetDirectoryName(dest);
+      if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
+      if (input.InMemoryContent == null && File.Exists(input.FullPath))
+        File.Copy(input.FullPath, dest, overwrite: true);
+      else
+        File.WriteAllBytes(dest, input.ReadContent());
+      if (input.SourceLastModifiedUtc is { } modified) FormatHelpers.ApplyEntryTime(dest, modified);
+    }
+  }
+
   public static void EditViaRebuild(Stream archive, IArchiveFormatOperations ops,
       IArchiveCreatable creator, Action<string> mutate) {
     ArgumentNullException.ThrowIfNull(archive);

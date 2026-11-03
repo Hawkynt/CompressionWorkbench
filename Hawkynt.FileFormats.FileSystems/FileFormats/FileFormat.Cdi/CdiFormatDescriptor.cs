@@ -168,22 +168,14 @@ public sealed class CdiFormatDescriptor :
     var skip = new HashSet<string>(entryNames.Select(name => name.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase);
     if (CanPreserveOpticalLayout(archive)) {
       CdiEmbeddedIsoRebuilder.Rewrite(archive, this, tempDirectory => {
-        foreach (var file in Directory.GetFiles(tempDirectory, "*", SearchOption.AllDirectories)) {
-          var relative = Path.GetRelativePath(tempDirectory, file).Replace('\\', '/');
-          if (skip.Contains(relative) || skip.Contains(Path.GetFileName(relative)))
-            File.Delete(file);
-        }
+        RebuildVerb.DeleteNamedEntries(tempDirectory, skip);
       });
       return;
     }
 
     EnsureLegacyFooterOrThrow(archive);
     RebuildVerb.EditViaRebuild(archive, this, this, tempDirectory => {
-      foreach (var file in Directory.GetFiles(tempDirectory, "*", SearchOption.AllDirectories)) {
-        var relative = Path.GetRelativePath(tempDirectory, file).Replace('\\', '/');
-        if (skip.Contains(relative) || skip.Contains(Path.GetFileName(relative)))
-          File.Delete(file);
-      }
+      RebuildVerb.DeleteNamedEntries(tempDirectory, skip);
     });
   }
 
