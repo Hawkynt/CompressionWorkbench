@@ -25,26 +25,30 @@ public class SquashFsPlannedDefragTests {
     return data;
   }
 
-  private static MemoryStream Volume(out Dictionary<string, byte[]> files) {
-    var work = Path.Combine(Path.GetTempPath(), "cwb_sqfs_" + Guid.NewGuid().ToString("N")[..8]);
-    Directory.CreateDirectory(work);
+  /// <summary>
+  /// The times every inode of the probe image carries. They are part of the deflated inode
+  /// table, so whether the re-packed table still fits depends on them: pinned, every run
+  /// judges the same image. Built from the clock, about three seconds in a thousand made an
+  /// image whose table no longer fit once the data moved to the tail.
+  /// </summary>
+  private static readonly DateTime FixtureTime = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+  /// <summary>A time at which the probe image's inode table does not pack back after a move to the tail.</summary>
+  private static readonly DateTime UnfittingTime = DateTime.UnixEpoch.AddSeconds(0x697F2E00);
+
+  private static MemoryStream Volume(out Dictionary<string, byte[]> files) => Volume(FixtureTime, out files);
+
+  private static MemoryStream Volume(DateTime time, out Dictionary<string, byte[]> files) {
     files = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-    try {
-      var inputs = new List<ArchiveInputInfo>();
+    var image = new MemoryStream();
+    using (var writer = new SquashFsWriter(image, leaveOpen: true))
       for (var k = 0; k < 5; ++k) {
         var data = Payload(k, 9000 + k * 4000);
-        var path = Path.Combine(work, $"F{k}.BIN");
-        File.WriteAllBytes(path, data);
-        inputs.Add(new ArchiveInputInfo(path, $"F{k}.BIN", false));
+        writer.AddFile($"F{k}.BIN", data, time);
         files[$"F{k}.BIN"] = data;
       }
 
-      var image = new MemoryStream();
-      new SquashFsFormatDescriptor().Create(image, inputs, new FormatCreateOptions());
-      return image;
-    } finally {
-      try { Directory.Delete(work, true); } catch { /* scratch is gone already */ }
-    }
+    return image;
   }
 
   private static Dictionary<string, byte[]> ReadBack(MemoryStream image) {
@@ -110,5 +114,25 @@ public class SquashFsPlannedDefragTests {
     for (var field = 0x30; field <= 0x58; field += 8)
       Assert.That(BitConverter.ToInt64(after, field), Is.EqualTo(BitConverter.ToInt64(before, field)),
         $"the table offset at {field:X} must not move");
+  }
+
+  [Test, Category("EdgeCase")]
+  public void GivenAnInodeTableThatNoLongerFits_WhenConsolidatedAtTheEnd_ThenItIsRefusedAndTheImageIsUnchanged() {
+    using var image = Volume(UnfittingTime, out _);
+    var before = image.ToArray();
+
+    image.Position = 0;
+    Assert.Throws<NotSupportedException>(() => new SquashFsFormatDescriptor().Defragment(image,
+      new DefragOptions { Mode = DefragMode.ConsolidateAtEnd }));
+    Assert.That(image.ToArray(), Is.EqualTo(before), "a refused pass leaves the image byte for byte");
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenTheSameFilesAndTimes_WhenWrittenTwice_ThenTheImagesAreIdentical() {
+    using var first = Volume(out _);
+    Thread.Sleep(1100);
+    using var second = Volume(out _);
+    Assert.That(second.ToArray(), Is.EqualTo(first.ToArray()),
+      "a directory without a time of its own takes its newest file's, not the clock's");
   }
 }
