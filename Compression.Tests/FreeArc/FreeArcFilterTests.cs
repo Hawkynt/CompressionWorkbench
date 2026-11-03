@@ -37,6 +37,10 @@ public sealed class FreeArcFilterTests {
   [TestCase("tor-12", "tor:12:153kb:h1mb")]
   [TestCase("filters-m1", "rep:153kb:256+4x4:tor:3:153kb")]
   [TestCase("filters-m2", "*")]
+  [TestCase("ppmd-6", "ppmd:6:16mb")]
+  [TestCase("ppmd-restart", "ppmd:12:256kb")]
+  [TestCase("ppmd-cutoff", "ppmd:12:256kb:r")]
+  [TestCase("ppmd-freeze", "ppmd:12:256kb:r2")]
   public void GivenFreeArcArchive_WhenExtracted_ThenEveryFileMatchesArc(string vector, string method) {
     var expected = Manifest.Value.Where(r => r.Archive == vector + ".arc").ToArray();
     Assert.That(expected, Has.Length.EqualTo(5));

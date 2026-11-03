@@ -25,12 +25,12 @@ Each archive was made with `Arc.exe a <archive> -i0 -cfg- <switches> <files>`:
 | `lzma-lc4.arc` | `-mlzma:lc4:lp1:pb1` | hello, empty, lines | non-default literal/position bits |
 | `dirs.arc` | `-mlzma -s- -r` | emptydir, dир (recursive), hello | directory entries, UTF-8 names, three solid blocks |
 | `comment.arc` | `lzma.arc`, then `Arc.exe c comment.arc "--archive-comment=A FreeArc comment"` | | archive comment in the footer |
-| `ppmd.arc` | `-mppmd` | hello, lines | `ppmd:10:48mb` — refused |
+| `ppmd.arc` | `-mppmd` | hello, lines | `ppmd:10:48mb` |
 | `tornado.arc` | `-m1` | hello, lines | `rep:…+4x4:tor:…` |
 | `encrypted.arc` | `-mlzma -pSecret` | hello | `lzma…+aes-256/ctr:…` data — refused |
 | `hdrenc.arc` | `-mlzma -hpSecret` | hello | encrypted directory — listed as `FULL.arc` + `metadata.ini` |
 
-`mkfilters.py` makes thirteen more from generated inputs (text, a 24000-byte random run repeated 3000
+`mkfilters.py` makes seventeen more from generated inputs (text, a 24000-byte random run repeated 3000
 bytes later, a table of 8-byte records, x86-like code, an empty file), each with
 `Arc.exe a <archive> -i0 -cfg- -ep1 <switch>`; `filters.tsv` lists what `Arc.exe x` extracts:
 
@@ -45,3 +45,5 @@ bytes later, a table of 8-byte records, x86-like code, an empty file), each with
 | `tor-1.arc`, `tor-2.arc`, `tor-3.arc` | `-mtor:1`, `-mtor:2`, `-mtor:3` | Tornado byte, bit and Huffman coders |
 | `tor-5.arc`, `tor-12.arc` | `-mtor:5`, `-mtor:12` | arithmetic coder, lazy and optimal parsing |
 | `filters-m1.arc`, `filters-m2.arc` | `-m1`, `-m2` | `rep+4x4:tor:3`; `-m2` also `rep+exe+4x4:tor` in a second block |
+| `ppmd-6.arc` | `-mppmd:6:16mb` | PPMd var.I |
+| `ppmd-restart.arc`, `ppmd-cutoff.arc`, `ppmd-freeze.arc` | `-mppmd:12:256kb`, `:r`, `:r2` | a model too small for the data, so every restore method runs |

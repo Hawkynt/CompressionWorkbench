@@ -92,13 +92,14 @@ public class FreeArcTests {
     Assert.That(r.Extract(Entry(r, "sub/lines.txt")), Is.EqualTo(Lines()));
   }
 
-  [TestCase("ppmd", "ppmd:10:48mb")]
-  public void RealArchive_UnsupportedMethod_ListsButRefusesExtraction(string vector, string method) {
-    using var r = Open(Vector(vector));
+  [Test]
+  public void RealArchive_Ppmd_ExtractsByteIdentical() {
+    using var r = Open(Vector("ppmd"));
 
     Assert.That(r.Entries.Select(e => e.Name), Is.EquivalentTo(new[] { "hello.txt", "sub/lines.txt" }));
-    Assert.That(r.Entries[0].Method, Is.EqualTo(method));
-    Assert.That(() => r.Extract(Entry(r, "hello.txt")), Throws.TypeOf<NotSupportedException>());
+    Assert.That(r.Entries[0].Method, Is.EqualTo("ppmd:10:48mb"));
+    Assert.That(r.Extract(Entry(r, "hello.txt")), Is.EqualTo(Hello));
+    Assert.That(r.Extract(Entry(r, "sub/lines.txt")), Is.EqualTo(Lines()));
   }
 
   [Test]
@@ -224,7 +225,9 @@ public class FreeArcTests {
 
   [TestCase("storing", true)]
   [TestCase("lzma:1mb:normal:bt4:32", true)]
-  [TestCase("ppmd:10:48mb", false)]
+  [TestCase("ppmd:10:48mb", true)]
+  [TestCase("ppmd:8:96mb:c4mb", false)]
+  [TestCase("ppmd:1:48mb", false)]
   [TestCase("delta+lzma:32kb", true)]
   [TestCase("rep:96mb+exe+delta+lzma:96mb:normal:bt4:128", true)]
   [TestCase("rep:96mb+lzp:96mb+ppmd:12:192mb", false)]

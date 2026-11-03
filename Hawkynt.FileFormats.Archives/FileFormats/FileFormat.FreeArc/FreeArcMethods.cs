@@ -10,10 +10,10 @@ namespace FileFormat.FreeArc;
 /// <remarks>
 /// Only the stages our own codecs reproduce exactly are decoded: <c>storing</c>, <c>lzma</c>
 /// (a raw LZMA1 stream with no properties header; dictionary and lc/lp/pb come from the method
-/// string), <c>tor</c> (see <see cref="FreeArcTornado"/>), the wrapper <c>4x4</c> and the
-/// preprocessors <c>rep</c>, <c>delta</c> and <c>exe</c> (see <see cref="FreeArcFilters"/>).
-/// Everything else — lzp, ppmd, grzip, dict, mm, external compressors and encryption — is
-/// refused with <see cref="NotSupportedException"/>.
+/// string), <c>tor</c> (see <see cref="FreeArcTornado"/>), <c>ppmd</c> (see
+/// <see cref="FreeArcPpmd"/>), the wrapper <c>4x4</c> and the preprocessors <c>rep</c>,
+/// <c>delta</c> and <c>exe</c> (see <see cref="FreeArcFilters"/>). Everything else — lzp, grzip,
+/// dict, mm, external compressors and encryption — is refused with <see cref="NotSupportedException"/>.
 /// </remarks>
 public static partial class FreeArcMethods {
   /// <summary>The method name of an uncompressed stage.</summary>
@@ -30,6 +30,7 @@ public static partial class FreeArcMethods {
 
   private static bool IsDecodable(string stage) => StageName(stage) switch {
     Storing or "lzma" or "rep" or "delta" or "exe" or "tor" => true,
+    "ppmd" => PpmdParameters.TryParse(stage, out _),
     "4x4" => FourByFourInner(stage) is { } inner && StageName(inner) != "4x4" && IsDecodable(inner),
     _ => false,
   };
@@ -132,6 +133,11 @@ public static partial class FreeArcMethods {
         return FreeArcFilters.DecodeExe(input);
       case "tor":
         return FreeArcTornado.Decode(input, outputSize);
+      case "ppmd": {
+        if (!PpmdParameters.TryParse(stage, out var pp))
+          throw new NotSupportedException($"FreeArc: ppmd parameters \"{stage}\" are not supported.");
+        return FreeArcPpmd.Decode(input, pp.Order, pp.Memory, pp.Restore, outputSize);
+      }
       case "4x4":
         return FreeArcFilters.DecodeFourByFour(input, FourByFourInner(stage)!, DecodeStage);
     }
@@ -140,6 +146,54 @@ public static partial class FreeArcMethods {
     using var source = new MemoryStream(input, writable: false);
     var dictionary = (int)Math.Clamp(Math.Max(p.Dictionary, outputSize), 4096, int.MaxValue);
     return new LzmaDecoder(source, p.Lc, p.Lp, p.Pb, dictionary, outputSize).Decode();
+  }
+
+  /// <summary>
+  /// ppmd stage parameters, as FreeArc reads them: a bare number is the order, a bare size the
+  /// memory, <c>oN</c>/<c>mSIZE</c>/<c>memSIZE</c> name them, <c>r</c> or <c>rN</c> the restore
+  /// method (default 0, restart). Chunked streams (<c>cSIZE</c>) are not supported.
+  /// </summary>
+  private readonly record struct PpmdParameters(int Order, int Memory, int Restore) {
+    public static bool TryParse(string stage, out PpmdParameters p) {
+      int order = 10, restore = 0;
+      long memory = 48L << 20;
+      p = default;
+      foreach (var raw in stage.Split(':').Skip(1)) {
+        var token = raw.Trim().ToLowerInvariant();
+        if (token.StartsWith("mem", StringComparison.Ordinal))
+          token = token[2..];
+        if (token == "r") {
+          restore = 1;
+          continue;
+        }
+        if (token.Length > 1 && token[0] is 'm' or 'o' or 'r' or 'c') {
+          var value = token[1..];
+          switch (token[0]) {
+            case 'm' when LzmaParameters.IsSize(value) || int.TryParse(value, out _):
+              memory = LzmaParameters.SizeOf(value);
+              continue;
+            case 'o' when int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var o):
+              order = o;
+              continue;
+            case 'r' when int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var r):
+              restore = r;
+              continue;
+            case 'c':
+              return false;
+          }
+        }
+        if (int.TryParse(token, NumberStyles.None, CultureInfo.InvariantCulture, out var n))
+          order = n;
+        else if (LzmaParameters.IsSize(token))
+          memory = LzmaParameters.SizeOf(token);
+        else
+          return false;
+      }
+      if (order is < 2 or > 128 || memory is < 2048 or > int.MaxValue - 4096 || restore is < 0 or > 2)
+        return false;
+      p = new(order, (int)memory, restore);
+      return true;
+    }
   }
 
   /// <summary>lzma stage parameters: tokens with a size suffix are the dictionary, <c>lcN</c>/<c>lpN</c>/<c>pbN</c> the literal and position bits; mode, match finder, fast bytes and <c>mcN</c> only steer the encoder.</summary>
@@ -169,6 +223,10 @@ public static partial class FreeArcMethods {
     }
 
     public static bool IsSize(string token) => TrySize(token, out _);
+
+    /// <summary>A size token in bytes; a bare number counts in megabytes, as FreeArc's parseMem does.</summary>
+    public static long SizeOf(string token)
+      => TrySize(token, out var size) ? size : long.Parse(token, NumberStyles.None, CultureInfo.InvariantCulture) << 20;
 
     private static bool TrySize(string token, out long size) {
       size = 0;
