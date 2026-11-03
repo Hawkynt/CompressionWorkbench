@@ -752,7 +752,7 @@ HPS (GameCube HALPST stream),hps,media,,,,,,,,0,,Hps,Y,Y,,OURS-ONLY,,
 Huan PE64 encrypted loader,,archive,,,,,,,,0,,Huan,Y,,,OURS-ONLY,,
 Sharp X68000 Human68k,2hd;dim,filesystem,,,,,,,,0,,Human68k,Y,Y,Y,OURS-ONLY,,
 Apache Iceberg metadata,,archive,,,,,,,,0,,Iceberg,Y,,,OURS-ONLY,,
-ICE Packer,ice,compression,,,,,,,,0,,IcePacker,Y,Y,,OURS-ONLY,,
+ICE Packer,ice,compression,,,,,,,,0,,IcePacker,Y,Y,,OURS-ONLY,,decoder converted from ancient; ancient decodes ours
 ICNS (Apple icon),icns,archive,,,,,,,,0,,Icns,Y,,,OURS-ONLY,,
 Windows ICO/CUR,ico,archive,,,,,,,,0,,Ico,Y,Y,Y,OURS-ONLY,,
 ImageDisk (IMD),imd,archive,,,,,,,,0,,Imd,Y,,,OURS-ONLY,,

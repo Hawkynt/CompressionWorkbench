@@ -18620,17 +18620,17 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 
 #### `IcePackerStream`
 
-Compressor and decompressor for the Atari ST ICE Packer format (Axe of Delight, 1989). ICE is a stream format popular in the Atari demo scene that uses backward LZ77 with variable-length match encoding. Bits are read from end to start during decompression, and the output buffer is filled from end to start.
+Pack-Ice, the Atari ST cruncher of the demo scene. Reads every Pack-Ice generation and writes the 2.31+ format (`ICE!`).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DefaultSearchDepth` | `const int DefaultSearchDepth` | Match-chain depth used by the historical no-options compressor. |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses raw data into ICE Packer format. |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, int searchDepth)` | Compresses raw data into ICE Packer format using the requested LZ77 match search depth. |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses raw data from `input` in ICE Packer format and writes the result to `output`. |
-| `Compress` | `static void Compress(Stream input, Stream output, int searchDepth)` | Compresses raw data while controlling how many candidates each LZ77 hash chain may inspect. A larger search depth is slower but may find a better tokenization; the encoded stream itself does not store this encoder-only knob. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses ICE-packed data from a byte span. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses ICE-packed data from `input` and writes the original data to `output`. |
+| `DefaultSearchDepth` | `const int DefaultSearchDepth` | Hash-chain candidates the default compressor inspects per position. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` into a Pack-Ice 2.31+ file. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, int searchDepth)` | Compresses with the given hash-chain search depth. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` into a Pack-Ice 2.31+ file. |
+| `Compress` | `static void Compress(Stream input, Stream output, int searchDepth)` | Compresses with the given hash-chain search depth; deeper searches are slower and may find a smaller parse. The depth is not stored in the file. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses a Pack-Ice file. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a Pack-Ice file. |
 
 ### Namespace `FileFormat.Iceberg`
 

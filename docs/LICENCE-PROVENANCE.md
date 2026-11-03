@@ -63,6 +63,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ghost/` | `nyarime/gho` (Go) | MIT | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ghost/THIRD-PARTY-NOTICE.gho.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Macrium/MacriumPreXFormatDescriptor.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Macrium/MacriumPreXCodec.cs` | `ccooper21/mrimg-tools` (Christopher Cooper) | MIT | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Macrium/THIRD-PARTY-NOTICE.mrimg-tools.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Hammer/HammerWriter.cs`, `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Hammer2/Hammer2Writer.cs` | DragonFly BSD `newfs_hammer`, `newfs_hammer2` and their on-disk helpers | BSD-3-Clause | `THIRD-PARTY-NOTICE.dragonfly.txt` in each folder |
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.IcePacker/IcePackerStream.cs` (decoder) | ancient (Teemu Suutari) `IceDecompressor.cpp`, revision `61cd9088a218ce43fd389f3f3c48f35fc70f7834` | BSD-2-Clause | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.IcePacker/THIRD-PARTY-NOTICE.ancient.txt` |
 
 ## A — compatible, notice already in place
 
