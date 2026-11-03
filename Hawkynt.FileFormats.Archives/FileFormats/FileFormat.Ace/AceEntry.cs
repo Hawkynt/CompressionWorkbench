@@ -36,7 +36,17 @@ public sealed class AceEntry {
   /// <summary>Whether the member is split across volumes of a multi-volume set.</summary>
   public bool IsContinued => (this.Flags & (AceConstants.FileFlagContinuedFromPrevious | AceConstants.FileFlagContinuedInNext)) != 0;
 
+  /// <summary>Whether every volume the member spans was found; an incomplete member is listed but not extracted.</summary>
+  public bool IsComplete { get; init; } = true;
+
+  /// <summary>Number of volumes the member's data spans (1 for an ordinary member).</summary>
+  public int VolumeCount => this.Segments.Count;
+
   internal int Index { get; init; }
 
+  /// <summary>Offset of the member's data in the volume it starts in.</summary>
   internal long DataOffset { get; init; }
+
+  /// <summary>Where the member's packed bytes lie: volume number, offset and length, in order.</summary>
+  internal IReadOnlyList<(int Volume, long Offset, long Length)> Segments { get; init; } = [];
 }
