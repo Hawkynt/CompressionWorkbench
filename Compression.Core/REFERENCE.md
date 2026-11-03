@@ -624,11 +624,11 @@ Decodes ARJ method 4 ("fastest"), the LZ77 variant ARJ uses when asked for speed
 
 ### Namespace `Compression.Core.Dictionary.Balz`
 
-[`BalzBuildingBlock`](#balzbuildingblock)
+[`BalzBuildingBlock`](#balzbuildingblock) · [`BalzCodec`](#balzcodec)
 
 #### `BalzBuildingBlock`
 
-BALZ — Ilya Muravyov's ROLZ (reduced-offset LZ) compressor: matches are looked up in a small per-context table instead of the full sliding window, and every symbol is entropy-coded with a binary adaptive arithmetic coder.
+BALZ — Ilya Muravyov's ROLZ compressor (version 1.20). The block's bytes are a `.balz` file exactly as the reference program's `c` command writes it; see `BalzCodec`.
 
 Implements `IBuildingBlock`.
 
@@ -641,6 +641,15 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `BalzCodec`
+
+BALZ 1.20, Ilya Muravyov's ROLZ file compressor, converted from his public-domain `balz.cpp` (http://sourceforge.net/projects/balz/). Output matches the reference program byte for byte in both its normal (`c`) and maximum (`cx`) modes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, bool maximum = false)` | Compresses `data` into a `.balz` file. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses a `.balz` file. |
 
 ### Namespace `Compression.Core.Dictionary.BriefLz`
 

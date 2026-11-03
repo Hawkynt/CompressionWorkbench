@@ -48,7 +48,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Format | Id | Extensions | Compress | Decompress | Optimize | Notes | Reference |
 | --- | --- | --- | :---: | :---: | :---: | --- | --- |
 | aPLib | `ApLib` | `.aplib` | ✅ | ✅ | ✅ | AP32 (`aPsafe_pack`) files as aPLib 1.1.1's `appack` writes and reads them; empty input is refused, as aPLib does | [ibsensoftware.com](https://ibsensoftware.com/products_aPLib.html) |
-| BALZ | `Balz` | `.balz` | ✅ | ✅ | ✅ | Flexible look-ahead parser; optimal mode keeps the greedy stream when it is smaller | [sourceforge.net](https://sourceforge.net/projects/balz/) |
+| BALZ | `Balz` | `.balz` | ✅ | ✅ | ✅ | BALZ 1.20 files, byte-identical to the reference's `c` and `cx`; optimize keeps the smaller of the two | [sourceforge.net](https://sourceforge.net/projects/balz/) |
 | Base64 (uuencode wrapper) | `B64Encoding` | `.b64` `.base64` | ✅ | ✅ | — | libarchive-compatible `begin-base64` / `====` wrapper; not bare RFC 4648 Base64 | [GitHub](https://github.com/libarchive/libarchive/blob/master/libarchive/archive_write_add_filter_b64encode.c) |
 | BCM | `Bcm` | `.bcm` | ✅ | ✅ | ✅ | Block-size search (16–128 KiB) | [GitHub](https://github.com/encode84/bcm) |
 | [BinHex](https://en.wikipedia.org/wiki/BinHex) | `BinHex` | `.hqx` | ✅ | ✅ | — | BinHex 4.0; Convert::BinHex reads ours and we read its files, every CRC checked | [RFC](https://www.rfc-editor.org/rfc/rfc1741) |

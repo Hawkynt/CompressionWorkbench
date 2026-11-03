@@ -570,7 +570,7 @@ ACE (bb:BB_Ace),,codec,,,,,,,,0,,bb:BB_Ace,Y,Y,,OURS-ONLY,,
 Adaptive Huffman (FGK),,codec,,,,,,,,0,,bb:BB_AdaptiveHuffman,Y,Y,,OURS-ONLY,,
 aPLib (bb:BB_Aplib),,codec,,,,,,,,0,https://ibsensoftware.com/products_aPLib.html,bb:BB_Aplib,Y,Y,,OURS-ONLY,,apultra and the Python aplib depacker read ours; their streams decode (OracleVectorTests)
 Arithmetic Coding,,codec,,,,,,,,0,,bb:BB_Arithmetic,Y,Y,,OURS-ONLY,,
-BALZ (bb:BB_Balz),,codec,,,,,,,,0,,bb:BB_Balz,Y,Y,,OURS-ONLY,,
+BALZ (bb:BB_Balz),,codec,,,,,,,,0,https://sourceforge.net/projects/balz/,bb:BB_Balz,Y,Y,,OURS-ONLY,,byte-identical to BALZ 1.20 c/cx
 BCM (reduced),,codec,,,,,,,,0,,bb:BB_Bcm,Y,Y,,OURS-ONLY,,
 Byte Pair Encoding,,codec,,,,,,,,0,,bb:BB_BPE,Y,Y,,OURS-ONLY,,
 BriefLZ,,codec,,,,,,,,0,,bb:BB_BriefLz,Y,Y,,OURS-ONLY,,
