@@ -5,7 +5,7 @@ A codec whose encoder and decoder share the same mistake passes every round trip
 - a stream written by a third party decodes byte-exact, and/or
 - a third-party decoder accepts our output.
 
-Snapshot: 2026-10-30, `main` at `b3bbf782` plus the open pull requests named below. Re-run the probes before trusting a row that is older than the code it describes.
+Snapshot: 2026-10-30, `main` at `b3bbf782` plus the open pull requests named below; round 2 (the codecs this snapshot left unproven) on 2026-11-03. Re-run the probes before trusting a row that is older than the code it describes.
 
 ## How the proofs were made
 
@@ -17,6 +17,8 @@ Snapshot: 2026-10-30, `main` at `b3bbf782` plus the open pull requests named bel
 | Python bindings of the reference libraries | brotli, lz4, zstd, snappy, ncompress, liblzfse, aPLib, LZO, Deflate64, PPMd (pyppmd), liblzma, zlib, bz2, dissect.util, ndspy (LZ10), oead (Yaz0), packbits, Pillow (PackBits decoder) |
 | Reference C sources built with gcc | FastLZ, liblzf, BriefLZ, liblzg, LZAV, Lizard, Pithy, ZX0, salvador, apultra, UCL, clzip 1.14, rnc_propack 1.8; revisions in `Compression.Tests/CodecProof/OracleVectors/README.md` |
 | Original programs | Dmitry Shkarin's PPMd var.H/var.I, WinRAR 2.90, hwzip 2.4 |
+| Round 2, built from source | Linux `lib/842` (`sw842_compress`/`sw842_decompress` in user space), Ross Williams' `lzrw1.c`/`lzrw3.c`, QuickLZ 1.5.0, lzfx, libzling, density-rs 0.16.6, shoco, rzip 2.1 with bzip2 1.0.8, libmspack `msexpand`, ancient |
+| Round 2, original tools | CRUSH 1.00, BALZ 1.20, aPLib 1.1.1 `appack`, CiderPress II 1.2.0, lbrate 1.1, crunch64 0.6.2, refpack-rs, the Perl module Convert::BinHex 1.125, the Rust crate `yenc` 0.2.2 |
 
 Pinned proofs:
 - `OracleVectorTests` decodes streams that the third-party encoders wrote (78 vectors).
@@ -65,7 +67,11 @@ Status words:
 | `BB_Lzms` | both | Windows Compression API (`CompressionApiOracleTests`); WIM LZMS via 7-Zip |
 | `BB_Arj` | decode | open-source ARJ port (`ArjMethodVectorTests`, `ArjOracleTests`) |
 | `BB_Ace` | both | acefile (`AceTests`) |
-| `BB_QuickLz` | decode | vectors from the independent quicklz crate 0.3.1 (`QuickLzTests`) |
+| `BB_QuickLz` | both | QuickLZ 1.5.0 levels 1 and 3 both ways, level 2 refused (#664, `QuickLzReferenceTests`); vectors from the quicklz crate 0.3.1 (`QuickLzTests`) |
+| `BB_Yay0` | both | crunch64 0.6.2 both ways (#648, `Yay0OracleTests`) |
+| `BB_Lzfx` | both | lzfx both ways (#649, `LzfxOracleTests`) |
+| `BB_NuLzw` | both | CiderPress II 1.2.0 both ways and real ShrinkIt archives (#654, `NuFxCiderPressOracleTests`) |
+| `BB_Lzh` | both | the `-lh5-` stream of the LZH archive tests: lhasa reads ours and its suite archives read here (`LhaOracleTests`); the block adds a 4-byte length |
 | `BB_BcjArm`, `BB_BcjArmThumb`, `BB_BcjArm64`, `BB_BcjPowerPc`, `BB_BcjRiscV` | both | 7-Zip 26.04 7z filters, both ways (probe run on `main`; 7z tests belong to the 7z owner) |
 | `BB_Swap2`, `BB_Swap4` | both | 7-Zip `Swap2`/`Swap4` coders, both ways (probe run on `main`) |
 | `BB_GbaLz77` | both | ndspy 4.2.0 `lz10` (GBA/DS BIOS LZ77) reads ours; its streams in `OracleVectorTests` |
@@ -88,6 +94,14 @@ Status words:
 | `BB_Lzav` | #641 | No offset-carry bits, no final literals; LZAV 5.20 conversion, byte-identical to `lzav_compress_default` |
 | `BB_Nrv2b`, `BB_Nrv2d`, `BB_Nrv2e` | #640 | Encoders left out UCL's end-of-stream code; UCL 1.03 now restores every stream we write. Decoders already read UCL's (`OracleVectorTests`) |
 | `BB_Ppmd` | #623, then the 7z wiring | `PpmdModelH` is a private model; #623 adds 7-Zip's coder on #560's `Ppmd7` (byte-identical to pyppmd); the block moves over with the 7z wiring |
+| `BB_842` | #680 | Private format (length prefix, eight invented templates). Now the Linux `lib/842` stream from its description (`docs/IBM842-ON-DISK.md`); byte-identical to `sw842_compress`, which reads all of ours |
+| `BB_Lzrw1`, `BB_Lzrw3` | #650, #651 | Private variants; now byte-identical to Ross Williams' `lzrw1.c`/`lzrw3.c` both ways |
+| `BB_Crush` | #652 | Private variant; now byte-identical to CRUSH 1.00 at all three levels |
+| `BB_Balz` | #653 | Private variant; now byte-identical to BALZ 1.20 (`c`, `cx`); `.balz` is BALZ's own file |
+| `BB_Zling` | #673 | Private variant; libzling conversion, byte-identical to its demo at levels 0-4 |
+| `BB_Density` | #678 | Private Chameleon look-alike; density-rs 0.16.6 conversion, byte-identical Chameleon, Cheetah and Lion |
+| `BB_Shoco` | #702 | Own start-up-trained model and a length prefix; now shoco's default model (MIT), byte-identical to `shoco c` for input without zero bytes, which it writes behind shoco's sentinel |
+| `BB_Rzip` | #695 | A private body behind rzip's header; now real rzip 2.x files, which rzip 2.1 reads and writes |
 
 ### Broken, open
 
@@ -97,13 +111,8 @@ None left among the building blocks the audit found broken; see the fixes above.
 
 | Block | Why not yet |
 |---|---|
-| `BB_842` | No IBM 842 oracle built (Linux `lib/842`, NX hardware) |
-| `BB_Yay0` | No Yay0 reference run (oead has Yaz0 only) |
-| `BB_NuLzw` | nulib2 not run |
-| `BB_Lzh`, `BB_MsLzh`, `BB_Sqx` | Covered only as far as their archive formats' own tests go; not probed as blocks |
-| `BB_Lzrw1`, `BB_Lzrw3` | Ross Williams' reference code not run |
-| `BB_Balz`, `BB_Crush`, `BB_Zling`, `BB_Density`, `BB_Lzfx` | Reference programs exist (BALZ, CRUSH, zling, density, lzfx); not yet built |
-| `BB_Shoco` | Uses a locally trained model, so its output cannot match `shoco`'s default model by construction |
+| `BB_MsLzh` | Described as the DriveSpace 3 codec, but the volumes dmsdos verifies (`DriveSpace3GenuineDmsdosTests`) come from `GenuineDvr3Writer`, which does not use this block; no oracle reads its stream |
+| `BB_Sqx` | No SQX archiver run; only our own round trips (`SqxTests`) |
 
 ### Named after a codec, explicitly not its format
 
@@ -131,7 +140,29 @@ Textbook primitives with no external bitstream to match. Round-trip and ratio te
 | `Lzma` (`.lzma`) | fixed #635 | We wrote an end marker *and* the uncompressed size. liblzma (CPython `lzma`) rejects that as corrupt; 7-Zip accepts it. LZMA SDK writes no end marker when the size is known. The reader is proven (liblzma-written files decode) |
 | `Szdd` | fixed #639 | `expand.exe` decoded our text sample differently (853 bytes wrong). The greedy encoder compared candidates against the ring as it was before the match; it now reads slots the match itself writes, and every encoder avoids the 16 initial slots `expand.exe` (zeros) and libmspack (spaces) disagree about. The decoder was already exact. `SzCompress` shares the code |
 | `Ppmd` (`.pmd`) | fixed #627 | Was a private wrapper. Now Shkarin's format: his PPMd var.H/var.I files decode, our files match his byte for byte apart from the time stamp, and 7-Zip extracts them |
-| `Lzop`, `QuickLz`, `Density`, `Freeze`, `Squeeze`, `Crunch`, `IcePacker`, `PowerPacker`, `RefPack`, `Rzip`, `Ecm`, `Flac`, `YEnc`, `XxEncoding`, `BinHex`, `MacBinary`, `Kwaj`, `SzCompress`, `Lzs`, `Lzham`, `Bsc`, `Bcm`, `Mcm`, `Paq8`, `Cmix`, `Balz`, `Zling`, `ApLib`, `PackBits` | not probed here | Several have proofs in their own test classes (`Lzop`: `LzopInteropTests`; `Kwaj`: `KwajLibmspackInteropTests`; `Ecm` (#489)). The rest are unproven by this audit |
+| `QuickLz` | both | QuickLZ 1.5.0 levels 1 and 3 both ways; level 2 refused (#664) |
+| `Freeze` | both | ancient reads ours; freeze 1.x and 2.x files decode (#661) |
+| `Squeeze` | both | CiderPress II both ways on Binary II-wrapped files; lbrate tests ours; real CP/M `.?Q?` files decode (#666) |
+| `RefPack` | both | refpack-rs both ways (#665) |
+| `MacBinary` | both | CiderPress II both ways (#667) |
+| `BinHex` | both | Convert::BinHex 1.125 both ways; our reader checks every CRC of its files (#700) |
+| `XxEncoding` | both | uudeview both ways (`XxEncodingUudeviewInteropTests`) |
+| `ApLib` | both | aPLib 1.1.1 `appack` both ways; the private legacy dialect and empty files are refused (#682) |
+| `SzCompress` | encode | libmspack `msexpand` reads ours (both parsers); no real `SZ ` file was found to read (#697) |
+| `PowerPacker` | fixed #659 | The final literal flag after a closing match was missing; ancient now reads all of ours, and ancient's PP20 file decodes |
+| `IcePacker` | fixed #660 | Private format; now Pack-Ice 1.1-2.4 read (decoder converted from ancient) and `ICE!` 2.31 written, ancient reads ours |
+| `Crunch` | fixed #670 | Private format; now CRUNCH 1.x/2.x read and 2.x written, lbrate agrees both ways and real CP/M files decode (`docs/CRUNCH-ON-DISK.md`) |
+| `Rzip` | fixed #695 | rzip's header over a private body; now rzip 2.x files both ways (`docs/RZIP-ON-DISK.md`) |
+| `YEnc` | fixed #701 | The `=yend` CRC-32 and size were never checked; now they are. The Rust crate `yenc` reads ours and we read its files; its NNTP dot-doubling is transport, not yEnc, and is refused by the CRC instead of decoding wrongly |
+| `Balz` | fixed #653 | BALZ 1.20's own file |
+| `Zling` | fixed #673 | libzling's stream, byte-identical |
+| `Density` | fixed #678 | density-rs streams, byte-identical, in our own `DENS` container: density defines no file format |
+| `Lzs` | removed #696 | A private header (`1F 9D 8C 53`, which real `compress -b12` files can start with) around `BB_Lzs`; LZS has no file format. `BB_Lzs` stays |
+| `PackBits` | ours | Our own `PKBT` framing: PackBits has no file format. The payload is `BB_PackBits`, which is proven |
+| `Lzop`, `Kwaj`, `Ecm` | both | `LzopInteropTests`; `KwajLibmspackInteropTests`; `Ecm` (#489) |
+| `Flac` | not probed here | Audio; its own test classes |
+| `Lzham`, `Bsc`, `Bcm`, `Mcm`, `Cmix` | named-codec owner | Their own pull requests (#647, #658, #662, #663, #677) |
+| `Paq8` | not probed here | No paq8l run yet |
 
 ## Containers with embedded codecs
 
