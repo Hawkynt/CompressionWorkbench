@@ -294,7 +294,9 @@ var repairArchiveArg = new Argument<FileInfo>("archive") { Description = "RAR ar
 var repairOutputOpt = new Option<string?>("--output", "-o") { Description = "Where to write the repaired archive (default: fixed.<name> beside it, as rar r names it)" };
 var repairCheckOpt = new Option<bool>("--check") { Description = "Only check the archive against its recovery record" };
 var repairCmd = new Command("repair", """
-  Repair a RAR archive from its recovery record (rar r), or only check it (--check).
+  Repair a RAR archive from its recovery record (rar r), or rebuild the missing or
+  damaged volumes of a set from its .rev recovery volumes (rar rc); --check only reports.
+  Give any volume or .rev file of a set. A damaged volume is kept as name.bad.
   RAR 4 records rebuild up to as many damaged 512-byte sectors as they hold parity
   sectors, one per parity group; RAR 5 records rebuild as many damaged shards as they
   hold recovery blocks. Damage must be in place (changed bytes, not inserted or lost).
@@ -302,9 +304,18 @@ var repairCmd = new Command("repair", """
   Examples:
     cwb repair backup.rar                 Writes fixed.backup.rar
     cwb repair backup.rar --check         Reports damage without writing
+    cwb repair set.part1.rar              Rebuilds missing volumes from set.part*.rev
+    cwb create set.part1.rar src/ -v 100m --opt RecoveryVolumes=2   Writes 2 .rev files
   """) { repairArchiveArg, repairOutputOpt, repairCheckOpt };
 repairCmd.SetAction((ParseResult ctx) => {
   var archive = ctx.GetValue(repairArchiveArg)!;
+  // A volume set with recovery volumes beside it: check it, or rebuild what is missing (rar rc).
+  var volumes = FileFormat.Rar.RarRecoveryVolumes.Verify(archive.FullName);
+  if (volumes.Kind != FileFormat.Rar.RarRecoveryKind.None) {
+    var result = ctx.GetValue(repairCheckOpt) ? volumes : FileFormat.Rar.RarRecoveryVolumes.Reconstruct(archive.FullName);
+    Console.WriteLine(result.Message);
+    return result.Intact || result.Repaired ? 0 : 1;
+  }
   if (!archive.Exists) { Console.Error.WriteLine($"File not found: {archive.FullName}"); return 1; }
   if (ctx.GetValue(repairCheckOpt)) {
     var check = FileFormat.Rar.RarRecovery.Verify(archive.FullName);

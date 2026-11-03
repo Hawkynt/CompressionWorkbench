@@ -114,4 +114,27 @@ public class RarCliTests {
       RarTools.TryDelete(dir);
     }
   }
+
+  [TestCase("Rar5")]
+  [TestCase("Rar4")]
+  public void Given_RecoveryVolumes_When_AVolumeIsLost_Then_CwbRepairRebuildsIt(string target) {
+    var cli = LocateCli();
+    var dir = RarTools.TempDir("rarclirev");
+    try {
+      var data = new byte[90_000];
+      new Random(4).NextBytes(data);
+      File.WriteAllBytes(Path.Combine(dir, "data.bin"), data);
+      var create = Cli(cli, dir, "create", "s.part1.rar", "data.bin", "-m", "store", "-v", "20k", "--opt", "RecoveryVolumes=1", "--opt", "TargetCompatibility=" + target);
+      Assert.That(create.Code, Is.Zero, create.Output);
+      Assert.That(File.Exists(Path.Combine(dir, "s.part1.rev")), Is.True, create.Output);
+      var original = File.ReadAllBytes(Path.Combine(dir, "s.part2.rar"));
+      File.Delete(Path.Combine(dir, "s.part2.rar"));
+      Assert.That(Cli(cli, dir, "repair", "s.part1.rar", "--check").Code, Is.EqualTo(1));
+      var repair = Cli(cli, dir, "repair", "s.part1.rar");
+      Assert.That(repair.Code, Is.Zero, repair.Output);
+      Assert.That(File.ReadAllBytes(Path.Combine(dir, "s.part2.rar")), Is.EqualTo(original));
+    } finally {
+      RarTools.TryDelete(dir);
+    }
+  }
 }

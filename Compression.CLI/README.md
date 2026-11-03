@@ -19,7 +19,7 @@ dotnet build Compression.CLI
 | `extract <archive> [files...]` | `x` | Extract files from an archive |
 | `create <archive> <files...>` | `c` | Create a new archive |
 | `test <archive>` | `t` | Test archive integrity |
-| `repair <archive>` | - | Repair a RAR archive from its recovery record (`rar r`); `--check` only reports |
+| `repair <archive>` | - | Repair a RAR archive from its recovery record (`rar r`) or rebuild missing volumes from `.rev` files (`rar rc`); `--check` only reports |
 | `add <archive> <files...>` | - | Add or replace files inside an existing archive |
 | `remove <archive> <names...>` | `rm` | Remove named entries from an existing archive |
 | `replace <archive> <entry> <file>` | - | Replace a single entry with a new file |
