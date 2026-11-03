@@ -34300,7 +34300,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.Zpaq`
 
-[`ZpaqBuildingBlock`](#zpaqbuildingblock) · [`ZpaqEntry`](#zpaqentry) · [`ZpaqFormatDescriptor`](#zpaqformatdescriptor) · [`ZpaqReader`](#zpaqreader) · [`ZpaqWriter`](#zpaqwriter)
+[`ZpaqBuildingBlock`](#zpaqbuildingblock) · [`ZpaqEntry`](#zpaqentry) · [`ZpaqFormatDescriptor`](#zpaqformatdescriptor) · [`ZpaqIndex`](#zpaqindex) · [`ZpaqReader`](#zpaqreader) · [`ZpaqWriter`](#zpaqwriter)
 
 #### `ZpaqBuildingBlock`
 
@@ -34354,13 +34354,23 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files by rebuilding a plain single-file archive; anything else is refused. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, ArchiveMutationOptions options)` | Adds or replaces files the way `zpaq add` does, as one more version: appended to a single-file archive (encrypted ones with the password), written as the next part of a multi-part set or, opened from an index, as the next part beside it with the index updated. A plain archive that cannot take a version (streaming layout, damage) is rebuilt instead. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files by rebuilding a plain single-file archive; anything else is refused. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames, ArchiveMutationOptions options)` | Removes files as one more version (see `Add`). |
+
+#### `ZpaqIndex`
+
+The index of a zpaq archive (`zpaq extract arc -index F`).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static void Write(Stream archive, Stream index, string password = null)` | Writes to `index` the index of the archive in `archive`: every version's transaction header, fragment tables and file index, without the data. Opened from part 1 of a multi-part set (`arc001.zpaq`), the whole set is indexed. With an index, `zpaq add arc??? -index F` (or Add on the index) writes further parts without the earlier ones. |
 
 #### `ZpaqReader`
 

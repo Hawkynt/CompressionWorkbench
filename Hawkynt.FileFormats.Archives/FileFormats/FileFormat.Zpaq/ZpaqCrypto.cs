@@ -30,6 +30,37 @@ internal static class ZpaqCrypto {
     return Scrypt(hashed, salt, 1 << 14, 8, 1, 32);
   }
 
+  /// <summary>
+  /// XORs <paramref name="data"/>, which lies at <paramref name="fileOffset"/> of the (multi-part)
+  /// archive, with the AES-256-CTR key stream of <paramref name="key"/> and the salt's first eight
+  /// bytes: encryption and decryption are the same operation.
+  /// </summary>
+  public static void Transform(byte[] key, ReadOnlySpan<byte> salt, long fileOffset, Span<byte> data) {
+    using var aes = Aes.Create();
+    aes.Key = key;
+    Span<byte> counter = stackalloc byte[16];
+    Span<byte> stream = stackalloc byte[16];
+    salt[..8].CopyTo(counter);
+    var done = 0;
+    while (done < data.Length) {
+      var at = fileOffset + done;
+      BinaryPrimitives.WriteUInt64BigEndian(counter[8..], (ulong)(at / 16));
+      aes.EncryptEcb(counter, stream, PaddingMode.None);
+      var skip = (int)(at % 16);
+      var take = Math.Min(16 - skip, data.Length - done);
+      for (var k = 0; k < take; ++k)
+        data[done + k] ^= stream[skip + k];
+      done += take;
+    }
+  }
+
+  /// <summary>The salt of an index written for an archive with salt <paramref name="archiveSalt"/>, and back.</summary>
+  public static byte[] IndexSalt(ReadOnlySpan<byte> archiveSalt) {
+    var salt = archiveSalt.ToArray();
+    salt[0] ^= (byte)('7' ^ 'z');
+    return salt;
+  }
+
   /// <summary>scrypt (RFC 7914): PBKDF2-HMAC-SHA256 (one iteration), ROMix with Salsa20/8, PBKDF2 again.</summary>
   public static byte[] Scrypt(ReadOnlySpan<byte> password, ReadOnlySpan<byte> salt, int n, int r, int p, int length) {
     if (n < 2 || (n & (n - 1)) != 0)

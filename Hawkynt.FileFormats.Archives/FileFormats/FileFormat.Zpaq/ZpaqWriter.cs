@@ -73,14 +73,22 @@ public sealed class ZpaqWriter : IDisposable {
   /// <param name="existingFragments">The archive's fragment table (index 0 unused).</param>
   /// <param name="latestDate">Decimal date of the newest version; the new one is dated after it.</param>
   /// <param name="method">zpaq compression method for the new data blocks.</param>
-  internal static ZpaqWriter Appending(Stream stream, IReadOnlyList<(byte[] Sha1, int Usize)> existingFragments, long latestDate, string method = "1")
-    => new(stream, leaveOpen: true, method) { _existingFragments = [.. existingFragments], _minimumDate = latestDate };
+  /// <param name="index">Where to write the version as an index records it too, or null.</param>
+  internal static ZpaqWriter Appending(Stream stream, IReadOnlyList<(byte[] Sha1, int Usize)> existingFragments, long latestDate, string method = "1", Stream? index = null)
+    => new(stream, leaveOpen: true, method) { _existingFragments = [.. existingFragments], _minimumDate = latestDate, IndexStream = index };
 
   /// <summary>Records the removal of a file or directory entry (an index record with date 0).</summary>
   internal void RemoveEntry(string name) {
     ObjectDisposedException.ThrowIf(this._disposed, this);
     this._entries[name] = new(name, 0, 0, null);
   }
+
+  /// <summary>
+  /// When set, the transaction is also written to this stream as an index records it (zpaq's
+  /// <c>-index</c>): the c block with a data size of 0, then the same fragment tables and file
+  /// index, without the data blocks.
+  /// </summary>
+  internal Stream? IndexStream { get; init; }
 
   /// <summary>Date of the transaction; defaults to the time of disposal.</summary>
   public DateTime? TransactionDate { get; set; }
@@ -336,6 +344,15 @@ public sealed class ZpaqWriter : IDisposable {
     dataBlocks.Position = 0;
     dataBlocks.CopyTo(this._stream);
 
+    if (this.IndexStream != null) {
+      var indexHeader = new ZpaqBuffer();
+      PutLe(indexHeader, 0, 8);
+      ZpaqMethods.CompressBlock(indexHeader, new ZpaqStreamWriter(this.IndexStream), "0", "jDC" + ZpaqMethods.Itos(date, 14) + "c" + ZpaqMethods.Itos(htsize, 10), [.. JournalComment]);
+    }
+    // Fragment tables and file index go to the archive and, for an index, to it as well.
+    var tail = new MemoryStream();
+    output = new ZpaqStreamWriter(tail);
+
     // Fragment tables, one per data block.
     blocklist.Add(ht.Count);
     for (var i = 0; i < csize.Count; ++i) {
@@ -374,6 +391,12 @@ public sealed class ZpaqWriter : IDisposable {
       }
       if (k >= ordered.Count)
         break;
+    }
+    tail.Position = 0;
+    tail.CopyTo(this._stream);
+    if (this.IndexStream != null) {
+      tail.Position = 0;
+      tail.CopyTo(this.IndexStream);
     }
   }
 
