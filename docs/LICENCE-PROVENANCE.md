@@ -63,6 +63,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ghost/` | `nyarime/gho` (Go) | MIT | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ghost/THIRD-PARTY-NOTICE.gho.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Macrium/MacriumPreXFormatDescriptor.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Macrium/MacriumPreXCodec.cs` | `ccooper21/mrimg-tools` (Christopher Cooper) | MIT | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Macrium/THIRD-PARTY-NOTICE.mrimg-tools.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Hammer/HammerWriter.cs`, `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Hammer2/Hammer2Writer.cs` | DragonFly BSD `newfs_hammer`, `newfs_hammer2` and their on-disk helpers | BSD-3-Clause | `THIRD-PARTY-NOTICE.dragonfly.txt` in each folder |
+| `Compression.Core/Dictionary/Lzrw1/` | Ross N. Williams `lzrw1.c` (31-Mar-1991) | public domain | `Compression.Core/Dictionary/Lzrw1/THIRD-PARTY-NOTICE.LZRW1.txt` |
 
 ## A — compatible, notice already in place
 
