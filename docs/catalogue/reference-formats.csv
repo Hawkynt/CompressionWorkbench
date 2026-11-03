@@ -564,7 +564,7 @@ Apache Avro OCF,avro,archive,,,,,,,,0,,Avro,Y,,,OURS-ONLY,,
 CRI Audio Wave Bank,awb;acb,archive,,,,,,,,0,,Awb,Y,Y,,OURS-ONLY,,
 ZX Spectrum AY,ay,media,,,,,,,,0,,Ay,Y,,,OURS-ONLY,,
 BALZ,balz,compression,,,,,,,,0,,Balz,Y,Y,,OURS-ONLY,,
-842,,codec,,,,,,,,0,,bb:BB_842,Y,Y,,OURS-ONLY,,
+842,,codec,,,,,,,,0,https://github.com/torvalds/linux/blob/master/lib/842/842.h,bb:BB_842,Y,Y,,OK,,Linux lib/842 software stream; byte-identical to sw842_compress and read back by sw842_decompress (docs/IBM842-ON-DISK.md)
 ACE (bb:BB_Ace),,codec,,,,,,,,0,,bb:BB_Ace,Y,Y,,OURS-ONLY,,
 Adaptive Huffman (FGK),,codec,,,,,,,,0,,bb:BB_AdaptiveHuffman,Y,Y,,OURS-ONLY,,
 aPLib (bb:BB_Aplib),,codec,,,,,,,,0,,bb:BB_Aplib,Y,Y,,OURS-ONLY,,
