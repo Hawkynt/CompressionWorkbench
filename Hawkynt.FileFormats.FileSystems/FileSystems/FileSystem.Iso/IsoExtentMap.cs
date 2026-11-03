@@ -297,10 +297,23 @@ public static class IsoExtentMap {
         if (isDir) {
           subdirs.Add((extLba, dataLen, fullPath));
         } else {
-          // ISO 9660 files are ALWAYS single-extent contiguous — one Used run per file.
+          // One Used run per file section, or one per file unit when the section is interleaved
+          // (the gaps between units hold other data).
           var byteOff = (long)extLba * SectorSize;
-          if (byteOff + dataLen <= image.Length && dataLen > 0)
-            files.Add((byteOff, dataLen, fullPath));
+          var unit = dirBytes[pos + 26];
+          var gap = dirBytes[pos + 27];
+          if (unit == 0) {
+            if (byteOff + dataLen <= image.Length && dataLen > 0)
+              files.Add((byteOff, dataLen, fullPath));
+          } else {
+            var unitBytes = unit * SectorSize;
+            var stride = (long)(unit + gap) * SectorSize;
+            for (long done = 0, at = byteOff; done < dataLen; done += unitBytes, at += stride) {
+              var len = (int)Math.Min(unitBytes, dataLen - done);
+              if (at + len <= image.Length)
+                files.Add((at, len, fullPath));
+            }
+          }
         }
 
         pos += recLen;

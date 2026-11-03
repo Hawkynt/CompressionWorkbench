@@ -28,6 +28,8 @@ public sealed class IsoEntry {
   internal long DataOffset { get; init; }
   internal IReadOnlyList<IsoDataSegment> DataSegments { get; init; } = [];
   internal string? MountLimitation { get; init; }
+  /// <summary>Whether a file section is recorded interleaved (File Unit Size and Interleave Gap Size).</summary>
+  public bool IsInterleaved { get; init; }
 }
 
 /// <summary>
