@@ -86,6 +86,7 @@ format,BinCue,BIN/CUE,Archive,,.bin;.cue,Y,Y,Y,Y
 format,BinHex,BinHex,Wrapper,,.hqx,,Y,Y,
 format,BitRock,BitRock / InstallBuilder,Archive,,,Y,Y,,
 format,Bkf,Microsoft NTBackup (MTF),Archive,,.bkf,Y,Y,Y,Y
+format,BlakHole,BlakHole,Archive,,.bh,Y,Y,,
 format,BochsDisk,Bochs Redolog Disk,Archive,,.redolog,Y,Y,,
 format,Bonk,Bonk Audio,Audio,,.bonk,Y,Y,Y,
 format,BriefLz,BriefLZ,Stream,,.blz,,Y,Y,
@@ -98,6 +99,7 @@ format,Btrfs,Btrfs Filesystem Image,Archive,Y,.btrfs;.img,Y,Y,Y,
 format,Bwav,BWAV (Switch stream),Audio,,.bwav,Y,Y,Y,
 format,Bzexe,bzexe executable wrapper,Archive,,,Y,Y,,
 format,Bzip2,BZip2,Stream,,.bz2;.bzip2,,Y,Y,
+format,C64Sfx,C64/C128 SFX (self-extracting LHA),Archive,,.sfx,Y,Y,,
 format,C64Tap,Commodore raw tape (C64-TAPE-RAW),Archive,,,Y,Y,Y,Y
 format,Cab,CAB,Archive,,.cab,Y,Y,Y,Y
 format,Caf,CAF (Core Audio Format),Audio,,.caf,Y,Y,Y,
@@ -343,7 +345,7 @@ format,Mpc,Musepack (MPC),Audio,,.mpc;.mpp;.mp+,Y,Y,,
 format,MpegPs,MPEG Program Stream,Video,,.mpg;.mpeg;.vob;.m2p;.ps,Y,Y,Y,
 format,MpegTs,MPEG-2 Transport Stream,Archive,,.ts;.m2ts;.mts,Y,Y,Y,Y
 format,Mpo,MPO (stereoscopic JPEG),Archive,,.mpo,Y,Y,,
-format,Mpq,MPQ,Archive,,.mpq,Y,Y,Y,Y
+format,Mpq,MPQ,Archive,,.mpq;.w3m;.w3x,Y,Y,Y,Y
 format,MPress,MPRESS (Win32 PE / Linux ELF),Archive,,,Y,Y,,
 format,Msa,MSA (Magic Shadow Archiver),Archive,Y,.msa,Y,Y,Y,Y
 format,Msg,MSG,Archive,,.msg,Y,Y,Y,Y
@@ -448,11 +450,11 @@ format,Pvf,Portable Voice Format (mgetty),Audio,,.pvf,Y,Y,Y,
 format,PyInstaller,PyInstaller,Archive,,,Y,Y,Y,
 format,Qcow2,QCOW2,Archive,,.qcow2;.qcow,Y,Y,Y,Y
 format,Qed,QEMU Enhanced Disk (QED),Archive,,.qed,Y,Y,,
-format,QuadrupleD,Quadruple D,Archive,,.qda,Y,Y,,
 format,Qnx4,QNX4 FS,Archive,Y,.qnx4;.qnx,Y,Y,Y,Y
 format,Qnx6,QNX6 Neutrino FS,Archive,Y,.qnx6,Y,Y,Y,Y
 format,Qoa,Quite OK Audio (QOA),Audio,,.qoa,Y,Y,Y,
 format,Qoi,Quite OK Image (QOI),Archive,,.qoi,Y,Y,Y,
+format,QuadrupleD,Quadruple D,Archive,,.qda,Y,Y,,
 format,QuickLz,QuickLZ,Stream,,.quicklz,,Y,Y,
 format,Rar,RAR,Archive,,.rar,Y,Y,Y,Y
 format,Rarc,Nintendo RARC,Archive,,.arc;.rarc,Y,Y,Y,
@@ -745,6 +747,7 @@ block,bb:BB_Omega,Omega Coding,Entropy,,,,Y,Y,
 block,bb:BB_PackBits,PackBits,Transform,,,,Y,Y,
 block,bb:BB_Paq8hp,PAQ8hp (reduced model set),ContextMixing,,,,Y,Y,
 block,bb:BB_Pithy,Pithy,Dictionary,,,,Y,Y,
+block,bb:BB_PkwareDcl,PKWARE DCL Implode,Dictionary,,,,Y,Y,
 block,bb:BB_PPM,PPM,ContextMixing,,,,Y,Y,
 block,bb:BB_Ppmd,PPMd,ContextMixing,,,,Y,Y,
 block,bb:BB_Quantum,Quantum,Dictionary,,,,Y,Y,
