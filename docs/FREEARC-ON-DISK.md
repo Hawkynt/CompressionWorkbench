@@ -119,12 +119,13 @@ right on compression; extraction undoes them right to left. Seen from 0.67:
 | `exe` | x86 CALL/JMP converter (the LZMA SDK's / liblzma's x86 BCJ), started at address 0 over the whole stage. | ✅ read |
 | `4x4[:bN][:tN][:iN][:rN]:<method>` | Chunked wrapper, see *Filter streams*; read when `<method>` is. | ✅ read (inner `lzma`/`storing`) |
 | `ppmd:10:48mb` | PPMd var. I (order, memory). Our PPMd I model is not verified against FreeArc's stream. | ❌ refused |
-| `tor:…`, `lzp:…`, `grzip:…`, `dict:…`, `mm`, external compressors | FreeArc's own codecs, no compatible implementation here. `-m1`..`-m4` use `tor` for text-like files. | ❌ refused |
+| `tor:N[:size][:hN]` | Tornado LZ77 with byte, bit, Huffman or arithmetic coding and differenced tables; layout in [FREEARC-TORNADO.md](FREEARC-TORNADO.md). The parameters only steer the encoder. | ✅ read |
+| `lzp:…`, `grzip:…`, `dict:…`, `mm`, external compressors | FreeArc's own codecs, no compatible implementation here. | ❌ refused |
 | `…+aes-256/ctr:n1000:r0:i…:s…:c…` (also blowfish, serpent, twofish) | Encryption stage (`-p`, or `-hp` for headers too). | ❌ refused |
 
-Measured stage chains: `-mx` and `-m9x` write `rep:<block>+exe+delta+lzma:<block>:normal:bt4:128`
-(read here); `-m3` and `-m4` write `rep:…+4x4:tor:…` for text-like files and
-`rep:…+exe+delta+4x4:lzma:…` for the rest (read), `-m5x` `exe+delta+4x4:lzma:…` (read).
+Measured stage chains, all read here: `-mx` and `-m9x` write `rep:<block>+exe+delta+lzma:<block>:normal:bt4:128`;
+`-m1`..`-m4` write `rep:…+4x4:tor:…` for text-like files and `rep:…[+exe+delta]+4x4:tor:…` or
+`…+4x4:lzma:…` for the rest; `-m5x` `exe+delta+4x4:lzma:…`.
 
 ### Filter streams
 
