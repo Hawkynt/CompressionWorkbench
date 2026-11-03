@@ -1,0 +1,10 @@
+CrushCodec.cs is a C# conversion of:
+
+  crush.cpp, CRUSH 1.00, Ilya Muravyov (2013)
+  http://sourceforge.net/projects/crush/  (crush100src.zip)
+
+Licence, as stated in the file: "Written and placed in the public domain by Ilya Muravyov".
+
+Local changes: none to the file format. Small blocks keep the hash heads in a dictionary rather
+than the reference's 72 MiB table (same lookups, same results); the decoder refuses truncated
+input and matches that leave the block instead of writing past its buffer.

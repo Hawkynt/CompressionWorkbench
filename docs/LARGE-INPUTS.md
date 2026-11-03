@@ -91,9 +91,11 @@ length and failing with an unrelated message:
 
 ## Measured ceilings per algorithm
 
-At 4 MB of English text, 119 of 122 building blocks round-trip. The three that do not
-are time-bound, not size-bound: `BB_Crush`, `BB_RePair` and `BB_Zopfli` all exceed a
-90-second budget because their optimal parsers are super-linear.
+At 4 MB of English text, 119 of 122 building blocks round-trip. The three that did not
+were time-bound, not size-bound: `BB_Crush`, `BB_RePair` and `BB_Zopfli` exceeded a
+90-second budget because their optimal parsers are super-linear. `BB_Crush` has since
+become the reference CRUSH 1.00 codec, a hash-chain parser that compresses those 4 MB in
+under a second.
 
 Selected measurements at larger sizes (English text, one process each):
 
@@ -188,7 +190,7 @@ Two targeted cases run without configuration:
 - `Deflate_RatioIsStableAcrossThe256MegabyteBoundary` — compresses 268,435,455 and
   268,435,457 bytes and asserts the ratio does not move.
 
-Do not run the whole sweep at 256 MB casually: `BB_Crush`, `BB_RePair`, `BB_Zopfli`,
+Do not run the whole sweep at 256 MB casually: `BB_RePair`, `BB_Zopfli`,
 `BB_ContextTreeWeighting` and `BB_Neural` are super-linear and will take hours.
 
 ## Streaming
@@ -213,7 +215,7 @@ a fixed-size window and 64-bit positions — the same widening already done here
 a ring buffer.
 
 **Which blocks could not, without redesign.** BWT, the suffix-tree and suffix-array
-blocks, Re-Pair, Sequitur, Zopfli and Crush all need the whole input resident to
+blocks, Re-Pair, Sequitur and Zopfli all need the whole input resident to
 build their global structure. They would have to gain a blocking scheme, which
 changes their output format and would invalidate the committed vectors.
 
