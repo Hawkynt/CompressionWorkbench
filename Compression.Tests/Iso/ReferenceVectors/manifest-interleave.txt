@@ -1,0 +1,3 @@
+# image unit gap source-sha256 windows-cdfs-sha256 size -- DATA.BIN as genisoimage was given it and as Windows read it
+interleave-1-1 1 1 26a249da34d96c852164fe299ccf991dd52362c5ca2af48045e53c1f679474c6 26a249da34d96c852164fe299ccf991dd52362c5ca2af48045e53c1f679474c6 10940
+interleave-2-3 2 3 26a249da34d96c852164fe299ccf991dd52362c5ca2af48045e53c1f679474c6 26a249da34d96c852164fe299ccf991dd52362c5ca2af48045e53c1f679474c6 10940

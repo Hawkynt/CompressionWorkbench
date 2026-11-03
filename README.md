@@ -459,8 +459,8 @@ checks.
 descent so `--recursive` can follow disk image → partition table → filesystem → nested format.
 Raw disk images (`PartitionedDisk`) read GPT (512- and 4096-byte LBAs), MBR with logical
 partitions, APM, BSD disklabels, Amiga RDB, Sun and SGI labels and Atari AHDI tables; files inside a partition are edited
-in place by that partition's filesystem editor, GPT/MBR partitions are added and removed, and new
-disks are created from partition images — see [ARCHITECTURE.md](ARCHITECTURE.md).
+in place by that partition's filesystem editor, GPT/MBR/APM partitions are added and removed, and new
+disks (GPT, MBR or APM) are created from partition images — see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Analysis does not change format ownership: discovering JPEG data inside damaged storage does not make
 JPEG an archive format, and finding an ext superblock does not make `Compression.Analysis` the ext

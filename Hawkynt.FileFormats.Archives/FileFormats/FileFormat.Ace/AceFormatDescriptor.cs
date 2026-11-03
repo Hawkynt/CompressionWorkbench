@@ -9,7 +9,8 @@ namespace FileFormat.Ace;
 /// <summary>
 /// ACE archive (Marcel Lemke / WinAce): reads ACE 1.0 and 2.0 archives — stored, LZ77 and the 2.0
 /// blocked modes (delta, exe, sound, picture), solid and Blowfish-encrypted members, comments, SFX
-/// stubs — and writes ACE 1.0 archives (stored or LZ77, optionally solid and encrypted).
+/// stubs — and writes ACE 1.0 archives (stored or LZ77) or ACE 2.0 ones (LZ77 with repeat distances
+/// behind the EXE or DELTA filter), optionally solid and encrypted.
 ///
 /// References:
 /// <list type="bullet">
@@ -93,13 +94,13 @@ public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<string> Extensions => [".ace"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [new("**ACE**"u8.ToArray(), Offset: 7, Confidence: 0.95)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("ace1", "ACE 1.0 LZ77"), new("store", "Store")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("ace1", "ACE 1.0 LZ77"), new("ace2", "ACE 2.0 blocked"), new("store", "Store")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "ACE archive. Reads ACE 1.0/2.0 (all compression modes, solid, encrypted, SFX); writes ACE 1.0 " +
-    "(stored or LZ77, solid, encrypted). Multi-volume sets are read from the volume files that follow " +
-    "the one opened (.c00, .c01, ...).";
+    "(stored or LZ77) or ACE 2.0 (LZ77 behind the EXE or DELTA filter), solid and encrypted. Multi-volume " +
+    "sets are read from the volume files that follow the one opened (.c00, .c01, ...).";
 
   private static string MethodName(AceEntry e) => e.IsDirectory ? "dir" : e.CompressionType switch {
     CoreAce.CompStore => "store",
@@ -152,7 +153,8 @@ public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       : CoreAce.DefaultDictBits;
     var w = new AceWriter(dictionaryBits: dictBits, password: options.Password,
       solid: options.GetOptionBool("solid", false),
-      store: options.MethodName == "store");
+      store: options.MethodName == "store",
+      ace20: options.MethodName == "ace2");
     foreach (var input in inputs) {
       if (string.IsNullOrEmpty(input.ArchiveName)) continue;
       var modified = input.Metadata?.LastWriteTimeUtc?.LocalDateTime

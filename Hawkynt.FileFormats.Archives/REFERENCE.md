@@ -7245,7 +7245,7 @@ One member of an ACE archive, as its file header describes it.
 
 #### `AceFormatDescriptor`
 
-ACE archive (Marcel Lemke / WinAce): reads ACE 1.0 and 2.0 archives — stored, LZ77 and the 2.0 blocked modes (delta, exe, sound, picture), solid and Blowfish-encrypted members, comments, SFX stubs — and writes ACE 1.0 archives (stored or LZ77, optionally solid and encrypted). References: `https://github.com/droe/acefile` — acefile (BSD-2-Clause), converted for the decoder and header layout, and the oracle for the writer`https://en.wikipedia.org/wiki/ACE_(compressed_file_format)` — format overview and history
+ACE archive (Marcel Lemke / WinAce): reads ACE 1.0 and 2.0 archives — stored, LZ77 and the 2.0 blocked modes (delta, exe, sound, picture), solid and Blowfish-encrypted members, comments, SFX stubs — and writes ACE 1.0 archives (stored or LZ77) or ACE 2.0 ones (LZ77 with repeat distances behind the EXE or DELTA filter), optionally solid and encrypted. References: `https://github.com/droe/acefile` — acefile (BSD-2-Clause), converted for the decoder and header layout, and the oracle for the writer`https://en.wikipedia.org/wiki/ACE_(compressed_file_format)` — format overview and history
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
@@ -7301,11 +7301,11 @@ Implements `IDisposable`.
 
 #### `AceWriter`
 
-Writes single-volume ACE archives in the ACE 1.0 layout: stored or ACE 1.0 LZ77 members, optionally solid and/or Blowfish-encrypted, with directory entries. No comments, adverts or recovery records.
+Writes single-volume ACE archives: stored, ACE 1.0 LZ77 or (with `ace20`) ACE 2.0 blocked members (LZ77 with repeat distances, behind the EXE or DELTA filter where that is smaller), optionally solid and/or Blowfish-encrypted, with directory entries. No comments, adverts or recovery records.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AceWriter` | `AceWriter(int dictionaryBits = 20, string password = null, bool solid = false, bool store = false)` |  |
+| `AceWriter` | `AceWriter(int dictionaryBits = 20, string password = null, bool solid = false, bool store = false, bool ace20 = false)` |  |
 | `CreatedTime` | `DateTime? CreatedTime { get; init; }` | Archive creation time recorded in the main header (defaults to now). |
 | `AddDirectory` | `void AddDirectory(string name, DateTime? modified = null)` |  |
 | `AddFile` | `void AddFile(string name, byte[] data, DateTime? modified = null)` |  |
@@ -13603,6 +13603,83 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.Dbx`
+
+[`DbxFolder`](#dbxfolder) · [`DbxFormatDescriptor`](#dbxformatdescriptor) · [`DbxKind`](#dbxkind) · [`DbxMessage`](#dbxmessage) · [`DbxReader`](#dbxreader)
+
+#### `DbxFolder`
+
+One folder of Folders.dbx.
+
+Implements `IEquatable<DbxFolder>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DbxFolder` | `DbxFolder(uint Id, uint ParentId, string Name, string FileName)` | One folder of Folders.dbx. |
+| `FileName` | `string FileName { get; init; }` |  |
+| `Id` | `uint Id { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `ParentId` | `uint ParentId { get; init; }` |  |
+
+#### `DbxFormatDescriptor`
+
+Outlook Express 5/6 mailbox (`.dbx`), read-only. A mail or news folder lists its messages as `message_NNNN.eml` (the stored RFC 822 text, exactly as undbx saves it); `Folders.dbx` lists its folder tree as `folders.ini`. References: Arne Schloh, "Outlook Express DBX file format" — the reverse-engineered layout`https://github.com/jamesjohnmcguire/DbxOutlookExpress` — DbxOutlookExpress (MIT), whose reader this follows`https://sourceforge.net/projects/undbx/` — undbx, the extraction oracle
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DbxFormatDescriptor` | `DbxFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `DbxKind`
+
+What an Outlook Express DBX file holds, named by byte 4 of its signature.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Messages` | `197` | A mail or news folder: messages. |
+| `Folders` | `198` | Folders.dbx: the folder tree. |
+| `Pop3Uidl` | `199` | Pop3uidl.dbx. |
+| `Offline` | `48` | Offline.dbx. |
+
+#### `DbxMessage`
+
+One message of a DBX mail folder: its subject and its raw RFC 822 text.
+
+Implements `IEquatable<DbxMessage>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DbxMessage` | `DbxMessage(int Index, string Subject, byte[] Data)` | One message of a DBX mail folder: its subject and its raw RFC 822 text. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Index` | `int Index { get; init; }` |  |
+| `Subject` | `string Subject { get; init; }` |  |
+
+#### `DbxReader`
+
+Reads Outlook Express 5/6 DBX files: a 0x24BC-byte header, a B-tree of index nodes whose values point at "indexed items" (records of numbered attributes), and for mail folders the message texts as chains of data blocks.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DbxReader` | `DbxReader(byte[] file)` |  |
+| `Kind` | `DbxKind Kind { get; }` | What the file holds. |
+| `ReadFolders` | `IReadOnlyList<DbxFolder> ReadFolders()` | The folder tree of Folders.dbx, in index-tree order. |
+| `ReadMessages` | `IReadOnlyList<DbxMessage> ReadMessages()` | The messages of a mail folder, in index-tree order. |
+
 ### Namespace `FileFormat.Deb`
 
 [`DebCompression`](#debcompression) · [`DebConstants`](#debconstants) · [`DebEntry`](#debentry) · [`DebFormatDescriptor`](#debformatdescriptor) · [`DebReader`](#debreader) · [`DebWriter`](#debwriter)
@@ -13910,6 +13987,7 @@ Represents one fork of a DiskDoubler compressed file.
 | `DeltaType` | `int DeltaType { get; init; }` | Gets the fork's delta pre-processing type (0 = none). |
 | `FileType` | `string FileType { get; init; }` | Gets the Mac file type code. |
 | `IsDataFork` | `bool IsDataFork { get; init; }` | Gets whether this entry represents the data fork (as opposed to the resource fork). |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets whether this entry is a folder of a DDAR or DDA2 archive. |
 | `IsSupported` | `bool IsSupported { get; }` | Gets whether this reader can decode the entry's method. |
 | `Method` | `int Method { get; init; }` | Gets the compression method: 0 stored, 1 Unix compress, 2 and 5 DiskDoubler Huffman variants, 3 RLE, 4 Huffman, 6 and 9 "AD" LZSS, 7 Stac LZS, 8 Compact Pro, 10 "DD". The high bit is a flag and is masked off. |
 | `Modified` | `DateTime? Modified { get; init; }` | Gets the modification time, or `null` when the header holds zero. |
@@ -13934,7 +14012,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures: a single DiskDoubler file starts with 0xABCD0054. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures: a single DiskDoubler file starts with 0xABCD0054, an archive with "DDAR" or "DDA2". |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
@@ -13946,7 +14024,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 
 #### `DiskDoublerReader`
 
-Reads a single DiskDoubler compressed file and decodes its forks.
+Reads a DiskDoubler compressed file, or a DDAR or DDA2 archive of them, and decodes the forks.
 
 Implements `IDisposable`.
 
@@ -13954,6 +14032,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `DiskDoublerReader` | `DiskDoublerReader(Stream stream, bool leaveOpen = false, string name = null)` | Opens a DiskDoubler compressed file from the given stream and parses its header. |
 | `Entries` | `IReadOnlyList<DiskDoublerEntry> Entries { get; }` | Gets the forks parsed from the header: the data fork (if any), then the resource fork (if any). |
+| `UnreadTailOffset` | `long? UnreadTailOffset { get; }` | Gets where a DDAR archive continues with records that are not entries (null when it ends cleanly); the entries listed are the ones before that point. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(DiskDoublerEntry entry)` | Decodes the specified fork. |
 | `IsDiskDoubler` | `static bool IsDiskDoubler(ReadOnlySpan<byte> header)` | Returns whether `header` starts a DiskDoubler file (directly or behind MacBinary). |

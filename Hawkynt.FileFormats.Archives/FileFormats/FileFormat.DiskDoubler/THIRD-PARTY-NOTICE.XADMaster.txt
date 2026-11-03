@@ -26,9 +26,15 @@ Upstream notice, as carried in each XADMaster source file:
 Files converted:
 
   XADDiskDoublerParser.m    -> DiskDoublerReader.cs (header layout, method
-                               numbering, compress-method XOR and checksum)
+                               numbering, XOR masks, checksums, the method 7
+                               table, the method 8 prefix, and the DDAR and
+                               DDA2 archive layouts)
   XADDiskDoublerADnHandle.m -> DiskDoublerAdDecoder.cs
+  XADDiskDoublerMethod2Handle.m, XADStacLZSHandle.m, XADDeltaHandle.m
+                            -> DiskDoublerCodecs.cs (decoders; the encoders
+                               there are our own, written against them)
 
-Methods 2-5, 7, 8 and 10 and delta pre-processing are refused rather than
-decoded. The header CRC is CRC-16/XMODEM over the 82 bytes before it (XADMaster
+Methods 3, 4 and 10 and delta types other than 1 are refused rather than
+decoded. Method 8 uses the Compact Pro decoder in FileFormat.CompactPro with
+DiskDoubler's 0xFFF0-unit LZH blocks. The header CRC is CRC-16/XMODEM over the 82 bytes before it (XADMaster
 computes the same value through a bit-reversed table).

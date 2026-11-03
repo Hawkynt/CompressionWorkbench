@@ -35,7 +35,7 @@ Compiled HTML Help (CHM),chm;chi;chq;chw;hxs,document,R,,,,R,fmt/634,,3,https://
 Windows Imaging (WIM/SWM/ESD),wim;swm;esd;ppkg,disk-image,RW,,,,R,,Y,3,https://learn.microsoft.com/windows-hardware/manufacture/desktop/wim-vs-ffu-image-file-formats,Wim;Swm;Esd,Y,Y,,OK,,
 ARJ,arj,archive,R,,R,D,R,fmt/610,RW,6,https://en.wikipedia.org/wiki/ARJ,Arj,Y,Y,Y,OK,,methods 0-4 decoded; method 4 verified on archives the open-source ARJ port wrote
 LHA / LZH,lzh;lha;lzs;exe;sfx,archive,R,R,R,,R,fmt/1558;fmt/626,RW,6,https://en.wikipedia.org/wiki/LHA_(file_format),Lzh,Y,Y,Y,OK,,"every method and header level of lhasa's test suite reads, LHARK's lk7 included, and DOS self-extractors open behind their stub; lh2, lh3, lhx, lk7, pm1 and pm2 are read-only (LhaReader.cs)"
-ACE,ace,archive,,,R,,R,fmt/2075;fmt/2076,RW,4,https://en.wikipedia.org/wiki/ACE_(compressed_file_format),Ace,Y,Y,Y,PARTIAL,,"multi-volume sets are read from the volumes after the one opened (.c00 ...); writer emits ACE 1.0 (stored/LZ77), not the 2.0 modes (AceVolumeSet.cs)"
+ACE,ace,archive,,,R,,R,fmt/2075;fmt/2076,RW,4,https://en.wikipedia.org/wiki/ACE_(compressed_file_format),Ace,Y,Y,Y,PARTIAL,,"multi-volume sets are read from the volumes after the one opened (.c00 ...); writer emits ACE 1.0 (stored/LZ77) or ACE 2.0 (LZ77 behind EXE or DELTA) but not the SOUND/PIC modes (AceBlockedCompressor.cs)"
 ARC (SEA),arc;ark,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ARC_(file_format),Arc,Y,Y,Y,OK,,
 PAK (NoGate ARC extension),pak,archive,,,R,,,,Y,2,,,,,,MISSING,,"not implemented: XADMaster decodes its Crushed/Distilled methods (10/11) but no NoGate PAK sample was found to verify against; the dexvert ""pakArchive"" samples are a different format"
 zoo,zoo,archive,,,R,,R,x-fmt/269,Y,4,https://en.wikipedia.org/wiki/Zoo_(file_format),Zoo,Y,Y,Y,OK,,
@@ -45,7 +45,7 @@ ALZip,alz,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ALZip,AlZip,Y,Y,Y,P
 EGG (ALZip),egg,archive,,,R,,,,,1,https://en.wikipedia.org/wiki/ALZip,Egg,Y,Y,,PARTIAL,,"store and deflate only; bzip2/LZMA/AZO, encryption and split archives unsupported (EggReader.cs)"
 StuffIt (classic + 5),sit;sea,archive,,,R,,R,fmt/1459;fmt/1460;fmt/639,RW,4,https://en.wikipedia.org/wiki/StuffIt,StuffIt,Y,Y,Y,PARTIAL,,"methods 8 (MW), 14 (Installer) and encrypted forks (DES / StuffIt 5 RC4) unsupported; writer emits classic store/RLE only (StuffItReader.cs)"
 StuffIt X,sitx,archive,,,R,,R,fmt/399,RW,4,https://en.wikipedia.org/wiki/StuffIt,StuffItX,Y,Y,,PARTIAL,,stored and deflate only; Brimstone/Cyanide/Darkhorse/Iron throw (StuffItXReader.cs)
-DiskDoubler,dd,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/DiskDoubler,DiskDoubler,Y,Y,,PARTIAL,,"single files only (no DDAR/DDA2 archives); methods 0, 1, 6, 9 decoded and checked against unar on real files; 2-5, 7, 8, 10 and delta refused (DiskDoublerReader.cs)"
+DiskDoubler,dd,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/DiskDoubler,DiskDoubler,Y,Y,,PARTIAL,,"single files and DDAR/DDA2 archives (listings match lsar on real archives); methods 0, 1, 6, 8, 9 decoded and checked against unar on real files; 2, 5, 7 and delta 1 checked against unar on files we built; 3, 4, 10 refused (DiskDoublerReader.cs)"
 Compact Pro,cpt,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/Compact_Pro,CompactPro,Y,Y,Y,PARTIAL,,"multi-volume and encrypted archives refused; writer emits RLE-only forks (CompactProReader.cs)"
 PackIt,pit,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/PackIt,PackIt,Y,Y,Y,PARTIAL,,"real layout (PMag/PMa4, header and fork CRC-16) verified on real archives against unar; encrypted PMa5/PMa6 entries refused (PackItReader.cs)"
 Now Compress,now,archive,,,R,,,,,1,,,,,,MISSING,,
@@ -185,7 +185,7 @@ StuffIt X Darkhorse,,codec,,,R,,,,,1,,,,,,MISSING,,
 StuffIt X Iron,,codec,,,R,,,,,1,,,,,,MISSING,,
 StuffIt X English dictionary preprocessor,,codec,,,R,,,,,1,,,,,,MISSING,,
 StuffIt X x86 filter,,filter,,,R,,,,,1,,,,,,MISSING,,
-DiskDoubler methods (ADn/DDn/Method2),,codec,,,R,,,,,1,,DiskDoubler,Y,Y,,PARTIAL,,"ADn (6, 9) decoded; DDn and Method 2 refused (DiskDoublerAdDecoder.cs)"
+DiskDoubler methods (ADn/DDn/Method2),,codec,,,R,,,,,1,,DiskDoubler,Y,Y,,PARTIAL,,"ADn (6, 9), Method 2/5 splay trees and Stac LZS (7) decoded; DDn refused (DiskDoublerCodecs.cs)"
 Compact Pro LZH/RLE,,codec,,,R,,,,,1,,CompactPro,Y,Y,Y,PARTIAL,,"decoded inside the CompactPro descriptor (no building block); no LZH encoder"
 Squeeze (Huffman),,codec,,,R,,,,,1,,Squeeze,Y,Y,,OK,,
 Crunch CP/M (LZW),,codec,,,R,,,,,1,,Crunch,Y,Y,,OK,,
@@ -239,11 +239,11 @@ Enigma Virtual Box,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 MoleBox,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 UPX-packed executable,exe;dll,executable,,,,,R,,,1,https://upx.github.io/,Upx,Y,,,READ-ONLY-BUT-SOURCES-WRITE,upx,
 macOS Installer package (flat pkg),pkg;mpkg,installer,,,,,,,Y,1,,Xar,Y,Y,Y,OK,,
-ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet;mdf;nrg;toast,filesystem,R,RW,R,R,R,fmt/1739;fmt/1741;fmt/1757;fmt/468,RW,7,https://www.ecma-international.org/publications-and-standards/standards/ecma-119/,Iso,Y,Y,Y,PARTIAL,,"Rock Ridge names (NM+CE), symlinks (SL), relocated directories (RE/CL), modes (PX), times (TF) and zisofs (ZF) read; Rock Ridge NM (CE for long names)/PX/TF and El Torito BIOS/UEFI boot entries written; interleaved files throw (IsoReader.cs)"
+ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet;mdf;nrg;toast,filesystem,R,RW,R,R,R,fmt/1739;fmt/1741;fmt/1757;fmt/468,RW,7,https://www.ecma-international.org/publications-and-standards/standards/ecma-119/,Iso,Y,Y,Y,PARTIAL,,"Rock Ridge names (NM+CE), symlinks (SL), relocated directories (RE/CL), modes (PX), times (TF) and zisofs (ZF) read; Rock Ridge NM (CE for long names)/PX/TF and El Torito BIOS/UEFI boot entries written; interleaved files read unit by unit while wipe/defrag/remove refuse images holding them (IsoReader.cs)"
 High Sierra format,iso;hsf,filesystem,,,,,,,Y,1,http://www.os2museum.com/files/docs/cdrom/hsg_wp.html,HighSierra,Y,Y,,OK,,
 UDF,udf;cdr;dmg;iso;toast,filesystem,R,,,,,fmt/1738;fmt/1739;fmt/1757,Y,3,https://www.osta.org/specs/,Udf,Y,Y,Y,OK,,"type 1, sparable (CD-RW/DVD-RW), virtual/VAT (CD-R, BD-R) and metadata (UDF 2.50, over a VAT) partitions read; volumes with remapped partitions are read-only; multi-volume sets refused (UdfReader.cs)"
 Roxio Toast image,toast,disk-image,,,,,,,Y,1,,Iso;Hfs,Y,Y,Y,OK,,
-Apple Partition Map,apm;bin;cdr;dmg;img;iso;toast,partition-table,R,,,,,fmt/1740;fmt/1741;fmt/1757,,2,https://en.wikipedia.org/wiki/Apple_Partition_Map,PartitionedDisk,Y,Y,Y,PARTIAL,pdisk / hdiutil,APM tables are read and their partitions' filesystems edited in place; APM entries cannot be created; added or removed
+Apple Partition Map,apm;bin;cdr;dmg;img;iso;toast,partition-table,R,,,,,fmt/1740;fmt/1741;fmt/1757,,2,https://en.wikipedia.org/wiki/Apple_Partition_Map,PartitionedDisk,Y,Y,Y,OK,parted / partx,create/add/remove checked with parted print and partx (libblkid); entries kept sorted with Apple_Free runs; driver and boot fields of untouched entries kept
 MBR partition table,mbr,partition-table,R,,,R,,,,2,https://en.wikipedia.org/wiki/Master_boot_record,PartitionedDisk,Y,Y,Y,OK,fdisk / sfdisk,incl. EBR logical partitions; create/modify checked with sfdisk --verify and fsck
 GUID Partition Table (GPT),gpt,partition-table,R,,,D,,,,2,https://uefi.org/specifications,PartitionedDisk,Y,Y,Y,OK,sgdisk / gdisk,512- and 4096-byte LBAs; create/modify checked with sgdisk -v; sfdisk --verify and fdisk -b 4096
 Raw disk image,img;raw;dd;bin,disk-image,,,,,,,Y,1,,PartitionedDisk,Y,Y,Y,OK,dd,files inside partitions are edited in place by the partition filesystem's own editor
@@ -311,7 +311,7 @@ Android Verified Boot (vbmeta),img;avb,firmware,R,,,,,,,1,https://android.google
 Device tree blob,dtb;dtbo;fdt,firmware,,,,R,,,,1,https://www.devicetree.org/specifications/,Dtb,Y,Y,Y,OK,,
 U-Boot uImage,uimage,firmware,,,,R,,,,1,,UImage,Y,Y,Y,OK,,
 TRX firmware,trx,firmware,,,,R,,,,1,https://openwrt.org/docs/techref/headers,Trx,Y,Y,Y,OK,,byte-identical to OpenWrt trx/otrx; CRC verified on read; otrx check + binwalk accept our output
-Linux kernel image (zImage/Image),zimage;image,firmware,,,,R,,,,1,,,,,,MISSING,,
+Linux kernel image (zImage/Image),zimage;image,firmware,,,,R,,,,1,https://www.kernel.org/doc/html/latest/arch/x86/boot.html,LinuxKernelImage,Y,,,OK,,x86 bzImage / ARM zImage / arm64 + RISC-V Image / EFI zboot; payload decoded with own codecs; read-only (built by the kernel build)
 VxWorks image,,firmware,,,,R,,,,1,,,,,,MISSING,,
 Windows CE image (B000FF),bin;nb0;wince,firmware,,,,R,,,,1,,,,,,MISSING,,
 QNX IFS,ifs;dumpifs,firmware,,,,R,,,,1,,,,,,MISSING,,
@@ -359,7 +359,7 @@ GNU gettext catalog (MO),mo,document,,,,,R,,,1,,Mo,Y,Y,,OK,,
 Microsoft Reader (LIT),lit,document,,,,,R,,,1,,Lit,Y,,,OK,,
 Windows Help (HLP),hlp,document,,,,,R,fmt/474,,2,http://fileformats.archiveteam.org/wiki/HLP,Hlp,Y,,,OK,,read-only: internal files as stored (directory matches helpdeco); topic text is not decompiled
 MIME HTML archive (MHT),mht;mhtml,document,,,,,R,,,1,,,,,,MISSING,,
-Outlook Express mailbox (DBX),dbx,document,,,,,R,,,1,,,,,,MISSING,,
+Outlook Express mailbox (DBX),dbx,document,,,,,R,,,1,http://fileformats.archiveteam.org/wiki/Outlook_Express_Database,Dbx,Y,,,OK,,read-only: messages as .eml match undbx; no Outlook Express to prove a written mailbox
 Qt message catalog (QM),qm,document,,,,,R,,,1,,,,,,MISSING,,
 SQLite database,sqlite;sqlite3;db,document,,,,,R,,,1,,Sqlite,Y,,,READ-ONLY-BUT-SOURCES-WRITE,sqlite3,
 Windows thumbnail cache,db;thumbs.db,document,,,,,R,,,1,,ThumbsDb,Y,Y,Y,PARTIAL,,Thumbs.db only; thumbcache_*.db has no descriptor

@@ -22,6 +22,15 @@ internal static class DiskDoublerConstants {
   /// <summary>Compression method: Unix <c>compress</c> LZW.</summary>
   public const int MethodCompress = 1;
 
+  /// <summary>Compression method: adaptive splay trees, 256 of them.</summary>
+  public const int MethodSplay = 2;
+
+  /// <summary>Compression method: adaptive splay trees, their number in the first byte (0 = 256).</summary>
+  public const int MethodSplayTrees = 5;
+
+  /// <summary>Compression method: Stac LZS.</summary>
+  public const int MethodLzs = 7;
+
   /// <summary>Compression method: "AD" / "ADS" LZSS blocks (DiskDoubler 3.x/4.x, AutoDoubler).</summary>
   public const int MethodAds = 6;
 

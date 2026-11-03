@@ -21,6 +21,9 @@ public sealed class DiskDoublerEntry {
   /// <summary>Gets the absolute byte offset of the compressed data within the source stream.</summary>
   public long DataOffset { get; init; }
 
+  /// <summary>Gets whether this entry is a folder of a DDAR or DDA2 archive.</summary>
+  public bool IsDirectory { get; init; }
+
   /// <summary>Gets whether this entry represents the data fork (as opposed to the resource fork).</summary>
   public bool IsDataFork { get; init; }
 
@@ -40,9 +43,10 @@ public sealed class DiskDoublerEntry {
   public DateTime? Modified { get; init; }
 
   /// <summary>Gets whether this reader can decode the entry's method.</summary>
-  public bool IsSupported => this.DeltaType == 0 && this.Method is
+  public bool IsSupported => this.DeltaType is 0 or 1 && this.Method is
     DiskDoublerConstants.MethodStored or DiskDoublerConstants.MethodCompress or
-    DiskDoublerConstants.MethodAds or DiskDoublerConstants.MethodAd1;
+    DiskDoublerConstants.MethodSplay or DiskDoublerConstants.MethodSplayTrees or DiskDoublerConstants.MethodLzs or
+    DiskDoublerConstants.MethodAds or DiskDoublerConstants.MethodAd1 or DiskDoublerConstants.MethodCompactPro;
 
   /// <summary>The XOR key the encoder applied to compress output (0 or 0x5A), from the header's version bytes.</summary>
   internal byte XorKey { get; init; }

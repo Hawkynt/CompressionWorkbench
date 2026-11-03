@@ -489,7 +489,19 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Dictionary.Ace`
 
-[`AceBlowfish`](#aceblowfish) · [`AceBuildingBlock`](#acebuildingblock) · [`AceCompressor`](#acecompressor) · [`AceConstants`](#aceconstants) · [`AceDecompressor`](#acedecompressor)
+[`AceBlockedCompressor`](#aceblockedcompressor) · [`AceBlowfish`](#aceblowfish) · [`AceBuildingBlock`](#acebuildingblock) · [`AceCompressor`](#acecompressor) · [`AceConstants`](#aceconstants) · [`AceDecompressor`](#acedecompressor)
+
+#### `AceBlockedCompressor`
+
+Writes ACE 2.0 blocked streams (compression type 2): LZ77 with the four repeat-distance codes, optionally behind the EXE filter (x86 CALL targets made absolute) or the DELTA filter (bytes split into planes and differenced), chosen per member by trial. One instance per archive; with `solid` the dictionary carries over between members as the decoder's does.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AceBlockedCompressor` | `AceBlockedCompressor(int dictionaryBits = 20, bool solid = false)` | Creates a compressor with a dictionary of 2^`dictionaryBits` bytes. |
+| `DictionaryBits` | `int DictionaryBits { get; }` | Dictionary size in bits (what the file header's parameter field records). |
+| `LastMode` | `string LastMode { get; }` | The filter the last `Compress` call chose: "lz77", "exe" or "delta:N". |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses one member, trying the plain, EXE and DELTA layouts and keeping the smallest. |
+| `RegisterStored` | `void RegisterStored(ReadOnlySpan<byte> data)` | Tells a solid compressor about a member that was stored: the decoder adds stored bytes to its dictionary too. |
 
 #### `AceBlowfish`
 
@@ -3690,7 +3702,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.DiskImage`
 
-[`AmigaRdbParser`](#amigardbparser) · [`ApmParser`](#apmparser) · [`AtariAhdiParser`](#atariahdiparser) · [`BsdDisklabelParser`](#bsddisklabelparser) · [`ClusterAllocator`](#clusterallocator) · [`DeferredPayloads`](#deferredpayloads) · [`ExtBlockGroupGeometry`](#extblockgroupgeometry) · [`ExtBlockGroupGeometry.ExtGeometry`](#extblockgroupgeometryextgeometry) · [`ExtentCopy`](#extentcopy) · [`FilePayload`](#filepayload) · [`GptParser`](#gptparser) · [`GptParser.HeaderInfo`](#gptparserheaderinfo) · [`ImageAccessor`](#imageaccessor) · [`MbrParser`](#mbrparser) · [`MbrWrapper`](#mbrwrapper) · [`MbrWrapper.PartitionType`](#mbrwrapperpartitiontype) · [`PartitionEditor`](#partitioneditor) · [`PartitionEntry`](#partitionentry) · [`PartitionScheme`](#partitionscheme) · [`PartitionTableDetector`](#partitiontabledetector) · [`PartitionTableDetector.DetectionResult`](#partitiontabledetectordetectionresult) · [`PartitionTableVerification`](#partitiontableverification) · [`PartitionType`](#partitiontype) · [`PartitionTypeDatabase`](#partitiontypedatabase) · [`PartitionTypeMapping`](#partitiontypemapping) · [`PartitionWindowStream`](#partitionwindowstream) · [`PartitionedDiskLister`](#partitioneddisklister) · [`PartitionedDiskLister.PartitionTarget`](#partitioneddisklisterpartitiontarget) · [`SgiDvhParser`](#sgidvhparser) · [`SparseBlockImage`](#sparseblockimage) · [`StagedWindowStream`](#stagedwindowstream) · [`SunVtocParser`](#sunvtocparser)
+[`AmigaRdbParser`](#amigardbparser) · [`ApmEditor`](#apmeditor) · [`ApmEditor.Entry`](#apmeditorentry) · [`ApmParser`](#apmparser) · [`AtariAhdiParser`](#atariahdiparser) · [`BsdDisklabelParser`](#bsddisklabelparser) · [`ClusterAllocator`](#clusterallocator) · [`DeferredPayloads`](#deferredpayloads) · [`ExtBlockGroupGeometry`](#extblockgroupgeometry) · [`ExtBlockGroupGeometry.ExtGeometry`](#extblockgroupgeometryextgeometry) · [`ExtentCopy`](#extentcopy) · [`FilePayload`](#filepayload) · [`GptParser`](#gptparser) · [`GptParser.HeaderInfo`](#gptparserheaderinfo) · [`ImageAccessor`](#imageaccessor) · [`MbrParser`](#mbrparser) · [`MbrWrapper`](#mbrwrapper) · [`MbrWrapper.PartitionType`](#mbrwrapperpartitiontype) · [`PartitionEditor`](#partitioneditor) · [`PartitionEntry`](#partitionentry) · [`PartitionScheme`](#partitionscheme) · [`PartitionTableDetector`](#partitiontabledetector) · [`PartitionTableDetector.DetectionResult`](#partitiontabledetectordetectionresult) · [`PartitionTableVerification`](#partitiontableverification) · [`PartitionType`](#partitiontype) · [`PartitionTypeDatabase`](#partitiontypedatabase) · [`PartitionTypeMapping`](#partitiontypemapping) · [`PartitionWindowStream`](#partitionwindowstream) · [`PartitionedDiskLister`](#partitioneddisklister) · [`PartitionedDiskLister.PartitionTarget`](#partitioneddisklisterpartitiontarget) · [`SgiDvhParser`](#sgidvhparser) · [`SparseBlockImage`](#sparseblockimage) · [`StagedWindowStream`](#stagedwindowstream) · [`SunVtocParser`](#sunvtocparser)
 
 #### `AmigaRdbParser`
 
@@ -3700,6 +3712,40 @@ Parses the Amiga Rigid Disk Block (RDB) partition scheme. Big-endian throughout.
 | --- | --- | --- |
 | `IsRdb` | `static bool IsRdb(Stream disk)` | Reports whether a checksummed `RDSK` block sits in the first 16 blocks. |
 | `Parse` | `static List<PartitionEntry> Parse(Stream disk)` | Parses every partition the RDB's `PART` chain describes. |
+
+#### `ApmEditor`
+
+Creates Apple Partition Maps and adds or deletes their entries in place.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultMapBlocks` | `const int DefaultMapBlocks` | Entries the default map has room for (including the map's own). |
+| `BlockSize` | `int BlockSize { get; }` | The block size (512 or 2048). |
+| `Capacity` | `int Capacity { get; }` | How many entries the map partition has room for. |
+| `Entries` | `IReadOnlyList<Entry> Entries { get; }` | The map's entries, in order. |
+| `AddPartition` | `void AddPartition(long start, long blocks, string type, string name)` | Adds a partition over `blocks` blocks from `start`, which must lie inside one free run. |
+| `CreateEmpty` | `static ApmEditor CreateEmpty(Stream disk, int blockSize = 512, int mapBlocks = 63)` | Writes an empty map to `disk`: the descriptor record, the map entry and one free run. |
+| `DeletePartition` | `void DeletePartition(long start)` | Turns the partition starting at `start` into free space, merging it with free neighbours. |
+| `Open` | `static ApmEditor Open(Stream disk, bool planOnly = false)` | Reads the map of `disk` for editing. |
+| `PlaceFree` | `long PlaceFree(long blocks)` | Where a partition of `blocks` blocks goes: the free run after the last partition when it holds it, otherwise the last earlier one that does; from a 1 MiB boundary when the run still fits it there. |
+| `TypeFor` | `static string TypeFor(PartitionType type)` | The partition type an APM entry carries for a filesystem. |
+
+#### `ApmEditor.Entry`
+
+One partition-map entry.
+
+Implements `IEquatable<Entry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entry` | `Entry(long Start, long Blocks, string Name, string Type, uint Status)` | One partition-map entry. |
+| `Blocks` | `long Blocks { get; init; }` | Length in blocks. |
+| `IsFree` | `bool IsFree { get; }` | Whether the entry is free space. |
+| `IsMap` | `bool IsMap { get; }` | Whether the entry is the map's own. |
+| `Name` | `string Name { get; init; }` | Partition name (at most 32 bytes). |
+| `Start` | `long Start { get; init; }` | First block. |
+| `Status` | `uint Status { get; init; }` | Status word. |
+| `Type` | `string Type { get; init; }` | Partition type (at most 32 bytes), e.g. `Apple_HFS`. |
 
 #### `ApmParser`
 
@@ -4082,7 +4128,7 @@ Partition-aware archive surface for raw disk image streams (VHD/VHDX/VMDK/Qcow2/
 | `MakePartitionPrefix` | `static string MakePartitionPrefix(PartitionEntry part)` | The directory name a partition is listed under: `Partition{N}_{TypeName}`, with N one-based and the type name reduced to letters, digits, '-' and '_'. |
 | `Resolve` | `static PartitionTarget Resolve(IEnumerable<PartitionTarget> targets, string entryName, out string innerPath)` | Finds the partition an entry name addresses. `innerPath` is the rest of the name below the partition's prefix — empty when the name is the partition itself (`PartitionN_Type` or `PartitionN_Type.raw`). |
 | `TryAdd` | `static bool TryAdd(Stream disk, IReadOnlyList<ArchiveInputInfo> inputs)` | Partition-aware `Add`. Returns `false` when no partition table exists (or the stream is read-only) so the caller can fall through to its single-filesystem path. |
-| `TryRemove` | `static bool TryRemove(Stream disk, string[] entryNames)` | Partition-aware `Remove`. Returns `false` when no partition table exists (or the stream is read-only). Entry name shapes: `PartitionN_Type/inner` removes a file — or a folder with everything beneath it — through the partition filesystem's own in-place editor; `PartitionN_Type` or `PartitionN_Type.raw` deletes the partition's table entry (GPT and MBR, including logical partitions), leaving its sectors as they were. |
+| `TryRemove` | `static bool TryRemove(Stream disk, string[] entryNames)` | Partition-aware `Remove`. Returns `false` when no partition table exists (or the stream is read-only). Entry name shapes: `PartitionN_Type/inner` removes a file — or a folder with everything beneath it — through the partition filesystem's own in-place editor; `PartitionN_Type` or `PartitionN_Type.raw` deletes the partition's table entry (GPT and MBR, including logical partitions, and Apple Partition Map entries, which become free space), leaving its sectors as they were. |
 
 #### `PartitionedDiskLister.PartitionTarget`
 

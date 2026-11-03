@@ -11,10 +11,14 @@ internal static class CompactProCodec {
   private const int LzhWindow = 8192;
 
   /// <summary>Decodes a fork: LZH (when <paramref name="lzh"/>) feeding RLE, until <paramref name="size"/> bytes.</summary>
-  public static byte[] DecodeFork(ReadOnlySpan<byte> packed, long size, bool lzh) {
+  /// <param name="packed">The fork's stored bytes.</param>
+  /// <param name="size">The decoded size.</param>
+  /// <param name="lzh">Whether the LZH layer is present.</param>
+  /// <param name="lzhBlockSize">The LZH block length in cost units: 0x1FFF0 in Compact Pro, 0xFFF0 in DiskDoubler's method 8.</param>
+  public static byte[] DecodeFork(ReadOnlySpan<byte> packed, long size, bool lzh, int lzhBlockSize = LzhBlockSize) {
     if (size > int.MaxValue)
       throw new NotSupportedException("Compact Pro forks larger than 2 GiB are not supported.");
-    IEnumerator<byte> source = lzh ? new LzhDecoder(packed.ToArray()).GetEnumerator() : Bytes(packed.ToArray()).GetEnumerator();
+    IEnumerator<byte> source = lzh ? new LzhDecoder(packed.ToArray(), lzhBlockSize).GetEnumerator() : Bytes(packed.ToArray()).GetEnumerator();
     try {
       return Rle(source, (int)size);
     } catch (InvalidOperationException e) {
@@ -80,7 +84,7 @@ internal static class CompactProCodec {
   /// 0x1FFF0 "cost units"; between blocks the stream skips to a byte boundary and then 2 or 3 bytes,
   /// depending on the parity of the block's byte length — a quirk of the original implementation.
   /// </summary>
-  private sealed class LzhDecoder(byte[] data) : IEnumerable<byte> {
+  private sealed class LzhDecoder(byte[] data, int blockSize) : IEnumerable<byte> {
     private long _bitPos;
 
     private int BytePos => (int)((this._bitPos + 7) >> 3);
@@ -149,7 +153,7 @@ internal static class CompactProCodec {
     public IEnumerator<byte> GetEnumerator() {
       var window = new byte[LzhWindow];
       long pos = 0;
-      var blockCount = LzhBlockSize;
+      var blockCount = blockSize;
       var blockStart = 0;
       Dictionary<(int, int), int>? literals = null, lengths = null, offsets = null;
       while (true) {
@@ -157,7 +161,7 @@ internal static class CompactProCodec {
         bool isLiteral;
         int literal = 0;
         try {
-          if (blockCount >= LzhBlockSize) {
+          if (blockCount >= blockSize) {
             if (blockStart != 0) {
               this.SkipToByteBoundary();
               var skip = ((this.BytePos - blockStart) & 1) != 0 ? 3 : 2;

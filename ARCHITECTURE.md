@@ -120,11 +120,11 @@ Tables: GPT at 512- or 4096-byte logical blocks (the block size is the one at wh
 | Operation | How | Refused when |
 |-----------|-----|--------------|
 | Add/remove `PartitionN_Type/path` | The partition's own filesystem editor runs in place on a `StagedWindowStream`: writes are staged and reach the disk only when every edit in the call succeeded | No recognised filesystem; its editor is only the generic re-create default; the filesystem refuses (full, unsupported case); it would grow past the partition |
-| Add a root-level filesystem or `*.raw`/`*.img` image | New GPT/MBR entry after the last partition, 1 MiB-aligned where room allows, inside the usable LBA range | No free space; table full; not a partition image |
-| Remove `PartitionN_Type` | `PartitionEditor.DeletePartition` (GPT, MBR, logical); the sectors stay | BSD/RDB/Sun/SGI/APM/AHDI tables |
-| `Create` | Partition images on a fresh GPT (`scheme=gpt`, default) or MBR, `sectorSize=512`/`4096`, partitions 1 MiB-aligned | A loose file; more than 128 (GPT) / 4 (MBR) images |
+| Add a root-level filesystem or `*.raw`/`*.img` image | New GPT/MBR entry after the last partition, 1 MiB-aligned where room allows, inside the usable LBA range; on an APM, `ApmEditor` takes a free run (the last one that fits, 1 MiB-aligned where it fits) and splits it | No free space; table full; not a partition image |
+| Remove `PartitionN_Type` | `PartitionEditor.DeletePartition` (GPT, MBR, logical); `ApmEditor.DeletePartition` turns an APM entry into `Apple_Free`, merged with free neighbours; the sectors stay | BSD/RDB/Sun/SGI/AHDI tables |
+| `Create` | Partition images on a fresh GPT (`scheme=gpt`, default), MBR or APM (`scheme=apm`, 63-entry map), `sectorSize=512`/`4096` (APM: `512`/`2048`), partitions 1 MiB-aligned | A loose file; more than 128 (GPT) / 4 (MBR) / 30 (APM) images |
 
-Every refusal leaves the image byte-identical. `sgdisk -v`, `sfdisk --verify`, `parted`, `fdisk -b 4096`, `fsck.vfat` and `e2fsck` check the results (`PartitionedDiskExternalTests`). Resizing a partition is not an archive operation; the partition editor window does it through `PartitionEditor.ResizePartition` and the registered filesystem resizers.
+Every refusal leaves the image byte-identical. `sgdisk -v`, `sfdisk --verify`, `parted`, `fdisk -b 4096`, `fsck.vfat` and `e2fsck` check the results (`PartitionedDiskExternalTests`); `parted` and `partx` check APM maps (`ApmEditorTests`). Resizing a partition is not an archive operation; the partition editor window does it through `PartitionEditor.ResizePartition` and the registered filesystem resizers.
 
 `FormatDetector.DetectByContent(Stream)` runs the same probe over a seekable stream, such as an entry inside a container, without a file on disk. `FormatDetector.DetectCached(path)` is `Detect` with a cache keyed on path, length and last-write time, for UI state that is re-evaluated on every repaint.
 
