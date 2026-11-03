@@ -1,4 +1,4 @@
-"""Builds the FreeArc 0.67 archives that exercise the filter, tor, ppmd and grzip stages.
+"""Builds the FreeArc 0.67 archives that exercise the filter, tor, ppmd, grzip and lzp stages.
 
 Usage: python -I mkfilters.py <Arc.exe> <workdir> <outdir>
 The inputs are generated deterministically; the archives and filters.tsv (name, size, SHA-256
@@ -57,7 +57,9 @@ for name, switch, *inputs in [('filters-rep.arc', '-mrep:1mb'), ('filters-delta.
                      ('grzip-m3.arc', '-mgrzip:m3'), ('grzip-m4.arc', '-mgrzip:m4'),
                      ('grzip-strong.arc', '-mgrzip:m1:s'), ('grzip-nolzp.arc', '-mgrzip:m3:l'),
                      ('grzip-delta.arc', '-mgrzip:m2:d:b64kb'),
-                     ('text-m3.arc', '-m3', prose), ('text-m4.arc', '-m4', prose)]:
+                     ('text-m3.arc', '-m3', prose), ('text-m4.arc', '-m4', prose),
+                     ('lzp.arc', '-mlzp'), ('lzp-short.arc', '-mlzp:b64kb:12:h12:d8kb:s20'),
+                     ('lzp-tor.arc', '-mlzp:16:h16+tor:3')]:
     target = os.path.join(work, name)
     p = subprocess.run([arc, 'a', target, '-i0', '-cfg-', '-ep1', switch, os.path.join(inputs[0] if inputs else src, '*')],
                        capture_output=True, text=True, errors='replace')

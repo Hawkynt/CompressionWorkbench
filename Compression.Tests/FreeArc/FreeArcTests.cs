@@ -230,7 +230,7 @@ public class FreeArcTests {
   [TestCase("ppmd:1:48mb", false)]
   [TestCase("delta+lzma:32kb", true)]
   [TestCase("rep:96mb+exe+delta+lzma:96mb:normal:bt4:128", true)]
-  [TestCase("rep:96mb+lzp:96mb+ppmd:12:192mb", false)]
+  [TestCase("rep:96mb+lzp:96mb+ppmd:12:192mb", true)]
   [TestCase("4x4:tor:3", true)]
   [TestCase("exe+delta+4x4:lzma:299kb:normal:32:mc32", true)]
   [TestCase("lzma+aes-256/ctr:n1000", false)]

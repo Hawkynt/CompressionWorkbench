@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 namespace FileFormat.FreeArc;
 
 /// <summary>
-/// Decoders for FreeArc's preprocessing stages <c>rep</c>, <c>delta</c> and <c>exe</c>, written from
+/// Decoders for FreeArc's preprocessing stages <c>rep</c>, <c>delta</c>, <c>exe</c> and <c>lzp</c>, written from
 /// docs/FREEARC-ON-DISK.md (section "Filter streams"). Each takes the whole stage output and
 /// returns its input; every length and offset is checked, so damaged data is refused rather than
 /// returned.
@@ -160,6 +160,115 @@ internal static class FreeArcFilters {
 
   /// <summary><c>exe</c>: the x86 CALL/JMP converter, started at address 0 over the whole stream.</summary>
   public static byte[] DecodeExe(ReadOnlySpan<byte> input) => Compression.Core.Transforms.BcjFilter.DecodeX86(input);
+
+  /// <summary>
+  /// <c>lzp</c>: chunks of a signed 32-bit length, negative for stored bytes, positive for an LZP
+  /// block whose tokens run forward from byte 12 while its match lengths run backward from its end.
+  /// A block decodes to at most <paramref name="blockSize"/> bytes.
+  /// </summary>
+  public static byte[] DecodeLzp(ReadOnlySpan<byte> input, int blockSize, int minLength, int hashBits, long barrier, int smallestLength) {
+    var p = new Reader(input, "lzp");
+    var output = new Growable(input.Length * 2L);
+    var block = new LzpBlockDecoder(blockSize, hashBits, minLength, barrier, smallestLength);
+    while (!p.AtEnd) {
+      var length = (int)p.U32();
+      if (length < 0)
+        output.Append(p.Take((uint)-(long)length));
+      else
+        output.Append(block.Decode(p.Take((uint)length)));
+    }
+    return output.ToArray();
+  }
+
+  /// <summary>One LZP block at a time; the table and the output buffer are reused between blocks.</summary>
+  private sealed class LzpBlockDecoder(int blockSize, int hashBits, int minLength, long barrier, int smallestLength) {
+    private const byte Flag = 0xB5, Escape = 255;
+    private const int RunUnit = 254, HeadBytes = 12, InitialPosition = 5, MaxStride = 7;
+
+    private readonly int[] _table = new int[1 << hashBits];
+    private readonly uint _mask = (1u << hashBits) - 1;
+    private byte[] _output = [];
+    private int _pos;
+
+    public ReadOnlySpan<byte> Decode(ReadOnlySpan<byte> coded) {
+      if (coded.Length <= HeadBytes || blockSize < HeadBytes)
+        throw new InvalidDataException("FreeArc lzp: block is shorter than its 12-byte head.");
+      Array.Fill(this._table, InitialPosition);
+      this._pos = 0;
+      this.Reserve(Math.Min(blockSize, Math.Max(coded.Length * 4L, 1 << 16)));
+      this.Append(coded[..HeadBytes]);
+      int front = HeadBytes, back = coded.Length;
+      int step = 1, stride = 1;
+      do {
+        var context = this.Context(this._pos);
+        var slot = this.Slot(this._pos);
+        var token = coded[front++];
+        var source = this._table[slot];
+        if (--step == 0) {
+          this._table[slot] = this._pos;
+          step = stride;
+        }
+        if (token != Flag || this.Context(source) != context) {
+          this.Put(token);
+          continue;
+        }
+        if (back <= front)
+          throw new InvalidDataException("FreeArc lzp: match lengths run into the tokens.");
+        var t = coded[--back];
+        if (t == Escape) {
+          this.Put(Flag);
+          continue;
+        }
+        this._table[slot] = this._pos;
+        var distance = this._pos - source;
+        if (distance > (stride + 1L) * this._table.Length && stride < MaxStride)
+          ++stride;
+        long count = (distance > barrier ? smallestLength : minLength) - 1;
+        for (; t == 0; t = coded[--back]) {
+          count += RunUnit;
+          if (back <= front)
+            throw new InvalidDataException("FreeArc lzp: match lengths run into the tokens.");
+        }
+        count += t;
+        this.Reserve(count);
+        for (var countdown = 2 * stride + 2; count > 0; --count) {
+          if (--countdown == 0) {
+            countdown = 2 * stride + 1;
+            this._table[this.Slot(this._pos)] = this._pos;
+          }
+          this._output[this._pos++] = this._output[source++];
+        }
+      } while (front < back);
+      return this._output.AsSpan(0, this._pos);
+    }
+
+    /// <summary>The four output bytes before <paramref name="at"/>, little-endian.</summary>
+    private uint Context(int at) => BinaryPrimitives.ReadUInt32LittleEndian(this._output.AsSpan(at - 4));
+
+    private int Slot(int at) {
+      var c = this.Context(at);
+      return (int)((c + 5 * uint.RotateRight(c, 17) + 3 * this.Context(at - 1)) & this._mask);
+    }
+
+    private void Append(ReadOnlySpan<byte> bytes) {
+      this.Reserve(bytes.Length);
+      bytes.CopyTo(this._output.AsSpan(this._pos));
+      this._pos += bytes.Length;
+    }
+
+    private void Put(byte value) {
+      this.Reserve(1);
+      this._output[this._pos++] = value;
+    }
+
+    private void Reserve(long more) {
+      var need = this._pos + more;
+      if (need > blockSize)
+        throw new InvalidDataException("FreeArc lzp: block decodes past its block size.");
+      if (need > this._output.Length)
+        Array.Resize(ref this._output, (int)Math.Min(blockSize, Math.Max(need, this._output.Length * 2L)));
+    }
+  }
 
   private ref struct Reader(ReadOnlySpan<byte> data, string stage) {
     private ReadOnlySpan<byte> _rest = data;

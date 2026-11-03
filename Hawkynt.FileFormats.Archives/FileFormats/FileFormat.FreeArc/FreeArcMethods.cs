@@ -12,9 +12,9 @@ namespace FileFormat.FreeArc;
 /// (a raw LZMA1 stream with no properties header; dictionary and lc/lp/pb come from the method
 /// string), <c>tor</c> (see <see cref="FreeArcTornado"/>), <c>ppmd</c> (see
 /// <see cref="FreeArcPpmd"/>), <c>grzip</c> (see <see cref="FreeArcGrzip"/>), the wrapper
-/// <c>4x4</c> and the preprocessors <c>rep</c>, <c>delta</c> and <c>exe</c> (see
-/// <see cref="FreeArcFilters"/>). Everything else — lzp, dict, mm, external compressors and
-/// encryption — is refused with <see cref="NotSupportedException"/>.
+/// <c>4x4</c> and the preprocessors <c>rep</c>, <c>delta</c>, <c>exe</c> and <c>lzp</c> (see
+/// <see cref="FreeArcFilters"/>). Everything else — dict, mm, external compressors and encryption —
+/// is refused with <see cref="NotSupportedException"/>.
 /// </remarks>
 public static partial class FreeArcMethods {
   /// <summary>The method name of an uncompressed stage.</summary>
@@ -33,6 +33,7 @@ public static partial class FreeArcMethods {
     Storing or "lzma" or "rep" or "delta" or "exe" or "tor" => true,
     "ppmd" => PpmdParameters.TryParse(stage, out _),
     "grzip" => stage.Split(':').Skip(1).All(t => GrzipOption().IsMatch(t.Trim())),
+    "lzp" => LzpParameters.TryParse(stage, out _),
     "4x4" => FourByFourInner(stage) is { } inner && StageName(inner) != "4x4" && IsDecodable(inner),
     _ => false,
   };
@@ -151,6 +152,11 @@ public static partial class FreeArcMethods {
       }
       case "grzip":
         return FreeArcGrzip.Decode(input, outputSize);
+      case "lzp": {
+        if (!LzpParameters.TryParse(stage, out var lp))
+          throw new NotSupportedException($"FreeArc: lzp parameters \"{stage}\" are not supported.");
+        return FreeArcFilters.DecodeLzp(input, lp.BlockSize, lp.MinLength, lp.HashBits, lp.Barrier, lp.SmallestLength);
+      }
       case "4x4":
         return FreeArcFilters.DecodeFourByFour(input, FourByFourInner(stage)!, DecodeStage);
     }
@@ -206,6 +212,60 @@ public static partial class FreeArcMethods {
         return false;
       p = new(order, (int)memory, restore);
       return true;
+    }
+  }
+
+  /// <summary>
+  /// lzp stage parameters, as FreeArc reads them: <c>bSIZE</c> or a bare size the block size,
+  /// <c>lN</c> or a bare number the minimum match length, <c>hN</c> the hash bits, <c>dSIZE</c> the
+  /// barrier and <c>sN</c> the minimum length beyond it; <c>N%</c> steers only the encoder.
+  /// </summary>
+  private readonly record struct LzpParameters(int BlockSize, int MinLength, int HashBits, long Barrier, int SmallestLength) {
+    public static bool TryParse(string stage, out LzpParameters p) {
+      long blockSize = 8L << 20, barrier = int.MaxValue;
+      int minLength = 64, hashBits = 18, smallest = 32;
+      p = default;
+      foreach (var raw in stage.Split(':').Skip(1)) {
+        var token = raw.Trim().ToLowerInvariant();
+        if (token.Length == 0)
+          return false;
+        var value = token[1..];
+        bool ok;
+        switch (token[0]) {
+          case 'b': ok = TryMemory(value, out blockSize); break;
+          case 'l': ok = TryInt(value, out minLength); break;
+          case 'h': ok = TryInt(value, out hashBits); break;
+          case 'd': ok = TryMemory(value, out barrier); break;
+          case 's': ok = TryInt(value, out smallest); break;
+          default:
+            if (token.EndsWith('%'))
+              ok = TryInt(token[..^1], out _); // minimum compression ratio: encoder only
+            else if (TryInt(token, out var n)) {
+              minLength = n;
+              ok = true;
+            } else
+              ok = TryMemory(token, out blockSize);
+            break;
+        }
+        if (!ok)
+          return false;
+      }
+      if (blockSize is < 1 or > int.MaxValue || hashBits is < 1 or > 26 || minLength is < 1 or > 1 << 20 || smallest is < 1 or > 1 << 20 || barrier < 0)
+        return false;
+      p = new((int)blockSize, minLength, hashBits, barrier, smallest);
+      return true;
+    }
+
+    private static bool TryInt(string token, out int value)
+      => int.TryParse(token, NumberStyles.None, CultureInfo.InvariantCulture, out value);
+
+    private static bool TryMemory(string token, out long value) {
+      value = 0;
+      if (LzmaParameters.IsSize(token) || TryInt(token, out _)) {
+        value = LzmaParameters.SizeOf(token);
+        return true;
+      }
+      return false;
     }
   }
 

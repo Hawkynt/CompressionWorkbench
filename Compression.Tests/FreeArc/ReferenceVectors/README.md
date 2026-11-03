@@ -30,7 +30,7 @@ Each archive was made with `Arc.exe a <archive> -i0 -cfg- <switches> <files>`:
 | `encrypted.arc` | `-mlzma -pSecret` | hello | `lzma…+aes-256/ctr:…` data — refused |
 | `hdrenc.arc` | `-mlzma -hpSecret` | hello | encrypted directory — listed as `FULL.arc` + `metadata.ini` |
 
-`mkfilters.py` makes twenty-six more from generated inputs (text, a 24000-byte random run repeated 3000
+`mkfilters.py` makes twenty-nine more from generated inputs (text, a 24000-byte random run repeated 3000
 bytes later, a table of 8-byte records, x86-like code, an empty file; the `text-*` archives hold one
 file of sentences on lines instead), each with
 `Arc.exe a <archive> -i0 -cfg- -ep1 <switch>`; `filters.tsv` lists what `Arc.exe x` extracts:
@@ -52,3 +52,6 @@ file of sentences on lines instead), each with
 | `grzip-strong.arc`, `grzip-nolzp.arc` | `-mgrzip:m1:s`, `-mgrzip:m3:l` | strong-sorted BWT; ST4 without LZP |
 | `grzip-delta.arc` | `-mgrzip:m2:d:b64kb` | three blocks; the last is record-filtered into four nested blocks, two of them stored after LZP |
 | `text-m3.arc`, `text-m4.arc` | `-m3`, `-m4` | the text chains `grzip:…:m2:l32:h15` and `grzip:…:m1:l32:h15` |
+| `lzp.arc` | `-mlzp` | LZP with the default parameters (minimum match 64, 2^18 table) |
+| `lzp-short.arc` | `-mlzp:b64kb:12:h12:d8kb:s20` | short matches, a 2^12 table, an 8 KiB barrier and three blocks |
+| `lzp-tor.arc` | `-mlzp:16:h16+tor:3` | LZP in front of tor, as FreeArc chains it |

@@ -50,6 +50,9 @@ public sealed class FreeArcFilterTests {
   [TestCase("grzip-delta", "grzip:64kb:m2:l32:h15:d")]
   [TestCase("text-m3", "grzip:168kb:m2:l32:h15")]
   [TestCase("text-m4", "grzip:168kb:m1:l32:h15")]
+  [TestCase("lzp", "lzp:153kb:64:h18")]
+  [TestCase("lzp-short", "lzp:64kb:12:h12:d8kb:s20")]
+  [TestCase("lzp-tor", "lzp:153kb:16:h16+tor:3:153kb")]
   public void GivenFreeArcArchive_WhenExtracted_ThenEveryFileMatchesArc(string vector, string method) {
     var expected = Manifest.Value.Where(r => r.Archive == vector + ".arc").ToArray();
     Assert.That(expected, Is.Not.Empty);
@@ -159,6 +162,49 @@ public sealed class FreeArcFilterTests {
     BitConverter.TryWriteBytes(block.AsSpan(16), payload.Length);
     payload.CopyTo(block.AsSpan(28));
     return block;
+  }
+
+  [TestCase("lzp:153kb:64:h18", true)]
+  [TestCase("lzp:160mb:145:h23:d1gb", true)]
+  [TestCase("lzp:3346kb:90%:65:h22:d1mb:s24", true)]
+  [TestCase("lzp:b64kb:l12:h12", true)]
+  [TestCase("lzp:h40", false)]
+  [TestCase("lzp:x1", false)]
+  public void GivenAnLzpStage_WhenCheckedForSupport_ThenFreeArcsParametersAreRead(string method, bool supported)
+    => Assert.That(FreeArcMethods.IsSupported(method), Is.EqualTo(supported));
+
+  [Test]
+  public void GivenAStoredLzpChunk_WhenDecoded_ThenItsBytesAreCopied() {
+    var stream = new byte[] { 0xFD, 0xFF, 0xFF, 0xFF, (byte)'a', (byte)'b', (byte)'c' };
+    Assert.That(FreeArcMethods.Decode("lzp:64:h10", stream, 3), Is.EqualTo("abc"u8.ToArray()));
+  }
+
+  [Test]
+  public void GivenAnLzpBlockOfOnlyItsHead_WhenDecoded_ThenItIsRefused() {
+    var stream = new byte[16];
+    stream[0] = 12;
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("lzp:64:h10", stream, 12));
+  }
+
+  [Test]
+  public void GivenAnLzpBlockOfLiterals_WhenDecoded_ThenTheyAreOutputInOrder() {
+    // 12 head bytes and four literal tokens; no 0xB5, so no match length is read from the back.
+    var body = "0123456789abcdef"u8.ToArray();
+    var stream = new byte[] { 16, 0, 0, 0 }.Concat(body).ToArray();
+    Assert.That(FreeArcMethods.Decode("lzp:64:h10", stream, 16), Is.EqualTo(body));
+  }
+
+  [Test]
+  public void GivenAnLzpBlockLargerThanItsBlockSize_WhenDecoded_ThenItIsRefused() {
+    var body = "0123456789abcdef"u8.ToArray();
+    var stream = new byte[] { 16, 0, 0, 0 }.Concat(body).ToArray();
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("lzp:b15b:64:h10", stream, 16));
+  }
+
+  [Test]
+  public void GivenAnLzpChunkCutShort_WhenDecoded_ThenItIsRefused() {
+    var stream = new byte[] { 20, 0, 0, 0, 1, 2, 3 };
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("lzp:64:h10", stream, 20));
   }
 
   [Test]
