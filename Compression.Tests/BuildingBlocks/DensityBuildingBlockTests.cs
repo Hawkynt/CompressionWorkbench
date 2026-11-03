@@ -39,7 +39,8 @@ public class DensityBuildingBlockTests {
     var compressed = Bb.Compress(data);
     var round = Bb.Decompress(compressed);
     Assert.That(round, Is.EqualTo(data).AsCollection);
-    Assert.That(compressed.Length, Is.LessThan(data.Length / 4));
+    // Chameleon replaces a repeated 4-byte quad by its 2-byte hash: at best a little over half.
+    Assert.That(compressed.Length, Is.LessThan(data.Length * 6 / 10));
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
@@ -51,7 +52,8 @@ public class DensityBuildingBlockTests {
     var compressed = Bb.Compress(data);
     var round = Bb.Decompress(compressed);
     Assert.That(round, Is.EqualTo(data).AsCollection);
-    Assert.That(compressed.Length, Is.LessThan(data.Length / 4));
+    // Chameleon replaces a repeated 4-byte quad by its 2-byte hash: at best a little over half.
+    Assert.That(compressed.Length, Is.LessThan(data.Length * 6 / 10));
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]

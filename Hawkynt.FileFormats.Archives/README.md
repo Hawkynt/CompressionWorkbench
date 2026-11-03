@@ -60,7 +60,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [Unix compress (.Z)](https://en.wikipedia.org/wiki/Compress_(software)) | `Compress` | `.z` | ✅ | ✅ | ✅ |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/compress.html) |
 | CP/M Crunch | `Crunch` | `.cru` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Crunch) |
 | CSC | `Csc` | `.csc` | ✅ | ✅ | ✅ | libcsc stream; the reference `csc` tool decodes ours and we decode its output, at every level (1–5), window and filter switch; optimizer searches the five levels | [GitHub](https://github.com/fusiyuan2010/CSC) |
-| Density | `Density` | `.density` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/k0dai/density) |
+| Density | `Density` | `.density` | ✅ | ✅ | ✅ | density-rs 0.16 Chameleon/Cheetah/Lion streams (byte-identical) in our own `DENS` container, since density defines no file format | [GitHub](https://github.com/g1mv/density) |
 | Freeze | `Freeze` | `.f` `.freeze` | ✅ | ✅ | ✅ | Optimizer searches the parse strategy, the match-search depth and the position Huffman table | [Archive Team](http://fileformats.archiveteam.org/wiki/Freeze) |
 | [gzip](https://en.wikipedia.org/wiki/Gzip) | `Gzip` | `.gz` `.gzip` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1952) |
 | ICE Packer | `IcePacker` | `.ice` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/ICE) |
