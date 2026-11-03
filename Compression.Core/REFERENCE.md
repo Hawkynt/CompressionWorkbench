@@ -6811,6 +6811,8 @@ Implements `IEquatable<ArchiveInputInfo>`.
 | `InMemoryContent` | `byte[] InMemoryContent { get; init; }` |  |
 | `IsDirectory` | `bool IsDirectory { get; init; }` |  |
 | `Metadata` | `ArchiveEntryMetadata Metadata { get; init; }` |  |
+| `SourceLastModifiedUtc` | `DateTime? SourceLastModifiedUtc { get; }` | The last-write time the entry should carry: `Metadata`'s when given, else that of the file or directory at `FullPath`; null for an in-memory input without metadata. Creators store it, so a rebuild (extract, edit, re-create) does not reset every entry's time. |
+| `SourceUnixMode` | `UnixFileMode? SourceUnixMode { get; }` | The Unix permission bits (the low 12 bits of the mode) the entry should carry: `Metadata`'s when given, else the source file's on a Unix host; null when unknown. |
 | `FromFile` | `static ArchiveInputInfo FromFile(FileInfo file, string archiveName = null)` | Creates an on-disk input from a `FileInfo`. Content is read lazily from the file via `ReadContent`; the archive name defaults to the file's leaf name. |
 | `InMemory` | `static ArchiveInputInfo InMemory(string archiveName, ReadOnlySpan<byte> content, ArchiveEntryMetadata metadata = null)` | Creates an in-memory input from a byte span (copied into the input, so the caller's buffer may be reused/stack-allocated). |
 | `InMemory` | `static ArchiveInputInfo InMemory(string archiveName, Stream content, ArchiveEntryMetadata metadata = null)` | Creates an in-memory input by reading `content` fully into memory. Reads from the stream's current position to its end. |
@@ -7775,6 +7777,7 @@ Shared utility methods for format descriptors (path sanitization, filtering, etc
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `ApplyEntryTime` | `static void ApplyEntryTime(string path, DateTime? lastModified)` | Gives an extracted file or folder the time its entry carries. A missing time, a Unix epoch or DOS "no date" placeholder (1970 / 1980-01-01 00:00:00) or one the host cannot represent is left alone; the file then keeps its extraction time. A time of unspecified kind is taken as local, as the DOS-dated formats store it. |
 | `CreateEntryFile` | `static FileStream CreateEntryFile(string baseDir, string entryName)` | Opens the destination file for `entryName` under `baseDir`, applying the same traversal sanitising as `WriteFile`. Lets a caller stream an entry straight to disk instead of materialising it, which an entry larger than a byte[] requires. |
 | `FilesOnly` | `static IEnumerable<ValueTuple<string, byte[]>> FilesOnly(IReadOnlyList<ArchiveInputInfo> inputs)` | Returns only file entries (non-directories) with their data, preserving paths. |
 | `FlatFiles` | `static IEnumerable<ValueTuple<string, byte[]>> FlatFiles(IReadOnlyList<ArchiveInputInfo> inputs)` | Flattens all entries to root level (filename only) with their data. For formats without path support. |
@@ -8854,6 +8857,7 @@ Generic, round-trip-verified extract → re-create engine shared by maintenance 
 | `PurgeViaModifier` | `static void PurgeViaModifier(Stream archive, IArchiveFormatOperations ops, IArchiveModifiable modifier)` | Transactional purge for a mutable container. The modifier operates on a staged copy and the caller's stream is replaced only after the result lists successfully with every original live entry gone. |
 | `RebuildInPlace` | `static void RebuildInPlace(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null)` | Rebuilds into a scratch file, verifies it, and only then replaces the caller-supplied stream. Cancellation is honoured until commit starts; once commit begins it runs to completion so a cancellation cannot leave the original half-overwritten. |
 | `RebuildToStream` | `static int RebuildToStream(Stream input, Stream output, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, IReadOnlySet<string> syntheticNames = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null)` | Extracts every live entry, re-creates the container in `output`, verifies the exact live-name multiset, and reports block-map/read/write-head progress suitable for the maintenance UI. |
+| `StageInputs` | `static void StageInputs(string extractedRoot, IEnumerable<ArchiveInputInfo> inputs)` | Places inputs into an extracted tree, the add half of an extract → edit → re-create rebuild: a file input is written at its entry path (replacing a file of that name) and keeps its last-write time; a directory input becomes a directory, so an empty folder survives the rebuild. Names that are empty or leave the tree are ignored. |
 
 #### `ScrambleOptions`
 
