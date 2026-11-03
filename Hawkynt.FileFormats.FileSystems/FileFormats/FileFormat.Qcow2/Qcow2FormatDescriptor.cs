@@ -128,7 +128,7 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// Performs the create operation.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var fatImage = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
+    var fatImage = FileSystem.Fat.FatWriter.BuildFromInputs(inputs);
     var writer = new Qcow2Writer();
     writer.SetDiskImage(fatImage);
     writer.WriteTo(output);

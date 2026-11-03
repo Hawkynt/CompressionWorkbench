@@ -71,6 +71,12 @@ public sealed class FatWriter {
   /// </summary>
   public void AddFile(string name, byte[] data, DateTime? modTime = null) => _files.Add((name, data, modTime));
 
+  // Directories added on their own, so empty ones exist too.
+  private readonly List<string> _dirs = [];
+
+  /// <summary>Adds a directory (and its parents); needed only for empty ones.</summary>
+  public void AddDirectory(string name) => _dirs.Add(name);
+
   /// <summary>
   /// Adds a streaming file: its <paramref name="size"/> is known up front
   /// (so the writer can plan the cluster geometry), but its bytes are
@@ -1109,6 +1115,10 @@ public sealed class FatWriter {
   /// deferring data materialisation to the write phase.</summary>
   private DirNode BuildTree() {
     var root = new DirNode("");
+    foreach (var name in _dirs) {
+      var dir = root;
+      foreach (var part in name.Split('/', '\\', StringSplitOptions.RemoveEmptyEntries)) dir = dir.GetOrAddDir(part);
+    }
     foreach (var (name, data, modTime) in _files) {
       var parts = name.Split('/', '\\', StringSplitOptions.RemoveEmptyEntries);
       if (parts.Length == 0) continue;
@@ -1736,6 +1746,25 @@ public sealed class FatWriter {
     }
     // Auto-size: data + ~50% overhead, minimum 1.44 MB.
     var neededBytes = Math.Max(totalData * 3 / 2 + 32768, 1440 * 1024);
+    var totalSectors = Math.Max(2880, (int)((neededBytes + 511) / 512));
+    return w.Build(totalSectors);
+  }
+
+  /// <summary>
+  /// Builds a FAT image for a disk-image container from archive inputs: folders (empty ones
+  /// too), long names and modification times are kept.
+  /// </summary>
+  public static byte[] BuildFromInputs(IReadOnlyList<Compression.Registry.ArchiveInputInfo> inputs) {
+    var w = new FatWriter();
+    var totalData = 0L;
+    foreach (var i in inputs) {
+      if (i.IsDirectory) { w.AddDirectory(i.ArchiveName); continue; }
+      var data = i.ReadContent();
+      w.AddFile(i.ArchiveName, data, i.SourceLastModifiedUtc?.ToLocalTime()); // FAT times are local
+      totalData += data.Length;
+    }
+    // Auto-size: data + ~50% overhead (directories, long names), minimum 1.44 MB.
+    var neededBytes = Math.Max(totalData * 3 / 2 + 32768 + inputs.Count * 4096L, 1440 * 1024);
     var totalSectors = Math.Max(2880, (int)((neededBytes + 511) / 512));
     return w.Build(totalSectors);
   }
