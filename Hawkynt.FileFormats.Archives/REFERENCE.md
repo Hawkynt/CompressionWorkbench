@@ -23303,19 +23303,21 @@ Identifies the compressor an NSIS installer was built with (`SetCompressor`).
 
 #### `NsisEntry`
 
-A file an NSIS installer extracts: one `File` instruction of the install script.
+A file an NSIS installer extracts: one `File` instruction of the install script, or the uninstaller a `WriteUninstaller` instruction writes.
 
 Implements `IEquatable<NsisEntry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `NsisEntry` | `NsisEntry(string FileName, uint DataOffset, DateTime? LastModified)` | A file an NSIS installer extracts: one `File` instruction of the install script. |
+| `NsisEntry` | `NsisEntry(string FileName, uint DataOffset, DateTime? LastModified)` | A file an NSIS installer extracts: one `File` instruction of the install script, or the uninstaller a `WriteUninstaller` instruction writes. |
 | `CompressedSize` | `long CompressedSize { get; }` | Gets the stored size of the file's block, or -1 when the block lives inside a solid stream and therefore has no size of its own. |
-| `DataOffset` | `uint DataOffset { get; init; }` | Offset of the file's length-prefixed block within the data section. |
+| `DataOffset` | `uint DataOffset { get; init; }` | Offset of the file's length-prefixed block within the data section. For a patched uninstaller this is the icon-patch block; the uninstaller's own header follows it. |
 | `FileName` | `string FileName { get; init; }` | The target path as the script names it, with forward slashes. A leading `$INSTDIR` is dropped, as 7-Zip does; any other variable (`$PLUGINSDIR`, `$SYSDIR`, ...) stays. |
-| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether the entry is a directory; NSIS `File` entries never are. |
+| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether the entry is a directory; NSIS entries never are. |
+| `IsUninstaller` | `bool IsUninstaller { get; init; }` | Gets whether the entry is the uninstaller a `WriteUninstaller` instruction writes. |
 | `LastModified` | `DateTime? LastModified { get; init; }` | The file time the compiler recorded, in UTC, or `null` when none. |
 | `Size` | `long Size { get; }` | Gets the uncompressed size in bytes, or -1 until the size has been resolved. |
+| `UninstallerPatchSize` | `int UninstallerPatchSize { get; init; }` | Gets the size of the uninstaller's icon-patch block: when non-zero the uninstaller is the installer's exe stub with that patch applied, followed by the block after the patch. Zero for files, and for an uninstaller the compiler stored whole. |
 
 #### `NsisFormatDescriptor`
 
@@ -23357,7 +23359,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<NsisEntry> Entries { get; }` | Gets the files the install script extracts, in script order. |
 | `FirstHeaderFlags` | `int FirstHeaderFlags { get; }` | Gets `firstheader.flags` (FH_FLAGS_*: 1 = uninstaller, 2 = silent, 4 = no CRC, 8 = force CRC). |
 | `FirstHeaderOffset` | `long FirstHeaderOffset { get; }` | Gets the file offset of `firstheader`. |
-| `HasFilterFlag` | `bool HasFilterFlag { get; }` | Gets whether the LZMA stream carries the x86 branch-filter flag byte. |
+| `HasFilterFlag` | `bool HasFilterFlag { get; }` | Gets whether each LZMA stream starts with the x86 branch-filter flag byte (the NSIS build 7-Zip's own installers use); streams whose flag is 1 are un-filtered after decoding. |
 | `HeaderLength` | `int HeaderLength { get; }` | Gets the uncompressed size of the script header. |
 | `Is64Bit` | `bool Is64Bit { get; }` | Gets whether the header was written for a 64-bit exehead. |
 | `IsNsis3` | `bool IsNsis3 { get; }` | Gets whether the strings use the NSIS 3 escape codes rather than NSIS 2's. |

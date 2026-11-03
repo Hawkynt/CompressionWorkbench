@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Text;
 using Compression.Core.Deflate;
 using Compression.Core.Dictionary.Lzma;
+using Compression.Core.Transforms;
 using FileFormat.Bzip2;
 
 namespace FileFormat.Nsis;
@@ -57,7 +58,10 @@ public sealed class NsisReader : IDisposable {
   /// <summary>Gets whether the header was written for a 64-bit exehead.</summary>
   public bool Is64Bit { get; }
 
-  /// <summary>Gets whether the LZMA stream carries the x86 branch-filter flag byte.</summary>
+  /// <summary>
+  /// Gets whether each LZMA stream starts with the x86 branch-filter flag byte (the NSIS build
+  /// 7-Zip's own installers use); streams whose flag is 1 are un-filtered after decoding.
+  /// </summary>
   public bool HasFilterFlag { get; }
 
   /// <summary>Gets the file offset of <c>firstheader</c>.</summary>
@@ -78,7 +82,6 @@ public sealed class NsisReader : IDisposable {
   /// <param name="stream">A seekable stream holding the whole installer executable.</param>
   /// <param name="leaveOpen">Whether to leave <paramref name="stream"/> open on dispose.</param>
   /// <exception cref="InvalidDataException">No NSIS first header, or a header that does not parse.</exception>
-  /// <exception cref="NotSupportedException">An LZMA stream behind the x86 branch filter.</exception>
   public NsisReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek)
@@ -170,25 +173,43 @@ public sealed class NsisReader : IDisposable {
     ObjectDisposedException.ThrowIf(this._disposed, this);
     ArgumentNullException.ThrowIfNull(entries);
     ArgumentNullException.ThrowIfNull(sink);
-    var byOffset = entries.GroupBy(e => e.DataOffset).ToDictionary(g => (long)g.Key, g => g.ToArray());
-    if (byOffset.Count == 0)
+    var requested = entries.ToList();
+    // Plain files are handed on as their block arrives. A patched uninstaller is assembled from
+    // two blocks (icon patch, then its header), so those blocks are held until both are in.
+    var direct = requested.Where(e => !IsPatchedUninstaller(e))
+      .GroupBy(e => (long)e.DataOffset).ToDictionary(g => g.Key, g => g.ToArray());
+    var uninstallers = requested.Where(IsPatchedUninstaller)
+      .Select(e => (Entry: e, Patch: (long)e.DataOffset, Payload: this.UninstallerPayloadOffset(e))).ToList();
+    var held = new Dictionary<long, byte[]>();
+    var holdOffsets = uninstallers.SelectMany(u => new[] { u.Patch, u.Payload }).ToHashSet();
+    var wanted = direct.Keys.Concat(holdOffsets).ToHashSet();
+    if (wanted.Count == 0)
       return;
 
-    if (!this.IsSolid) {
-      foreach (var (offset, group) in byOffset.OrderBy(kv => kv.Key)) {
-        var data = this.ReadBlock(this._nonSolidDataStart + offset);
+    void Take(long offset, byte[] data) {
+      if (direct.TryGetValue(offset, out var group))
         foreach (var e in group)
           sink(e, data);
-      }
+      if (!holdOffsets.Contains(offset))
+        return;
+      held[offset] = data;
+      foreach (var u in uninstallers)
+        if (held.TryGetValue(u.Patch, out var patch) && held.TryGetValue(u.Payload, out var payload)
+            && (u.Patch == offset || u.Payload == offset))
+          sink(u.Entry, this.BuildUninstaller(u.Entry, patch, payload));
+    }
+
+    if (!this.IsSolid) {
+      foreach (var offset in wanted.Order())
+        Take(offset, this.ReadBlock(this._nonSolidDataStart + offset));
       return;
     }
 
-    var pending = byOffset.Count;
+    var pending = wanted.Count;
     this.WalkSolid(
-      wants: (offset, _) => byOffset.ContainsKey(offset),
+      wants: (offset, _) => wanted.Contains(offset),
       deliver: (offset, data) => {
-        foreach (var e in byOffset[offset])
-          sink(e, data);
+        Take(offset, data);
         return --pending > 0;
       });
     if (pending > 0)
@@ -204,30 +225,104 @@ public sealed class NsisReader : IDisposable {
     if (this._sizesResolved)
       return;
 
-    var byOffset = this._entries.GroupBy(e => (long)e.DataOffset).ToDictionary(g => g.Key, g => g.ToArray());
+    // A file's size is its block's; a patched uninstaller is the exe stub plus the block after
+    // its icon patch, whose own length must be the patch size the instruction records.
+    var measure = new Dictionary<long, List<(NsisEntry Entry, long Extra)>>();
+    var patchChecks = new Dictionary<long, int>();
+    foreach (var e in this._entries) {
+      var offset = (long)e.DataOffset;
+      var extra = 0L;
+      if (IsPatchedUninstaller(e)) {
+        patchChecks[offset] = e.UninstallerPatchSize;
+        offset = this.UninstallerPayloadOffset(e);
+        extra = this.FirstHeaderOffset;
+      }
+      if (!measure.TryGetValue(offset, out var list))
+        measure[offset] = list = [];
+      list.Add((e, extra));
+    }
+
     if (!this.IsSolid) {
-      foreach (var (offset, group) in byOffset) {
+      foreach (var (offset, list) in measure) {
         var (stored, compressed) = this.MeasureBlock(this._nonSolidDataStart + offset);
-        foreach (var e in group) {
-          e.Size = stored;
+        foreach (var (e, extra) in list) {
+          e.Size = stored + extra;
           e.CompressedSize = compressed;
         }
       }
-    } else if (byOffset.Count > 0) {
-      var pending = byOffset.Count;
+    } else if (measure.Count > 0) {
+      var pending = measure.Count + patchChecks.Count;
       this.WalkSolid(
         wants: (offset, length) => {
-          if (!byOffset.TryGetValue(offset, out var group))
-            return false;
-          foreach (var e in group)
-            e.Size = length;
-          if (--pending == 0)
+          if (patchChecks.TryGetValue(offset, out var patchSize)) {
+            if (length != patchSize)
+              throw new InvalidDataException($"NSIS uninstaller icon patch holds {length} bytes, the script says {patchSize}.");
+            --pending;
+          }
+          if (measure.TryGetValue(offset, out var list)) {
+            foreach (var (e, extra) in list)
+              e.Size = length + extra;
+            --pending;
+          }
+          if (pending == 0)
             throw new StopDecoding();
           return false;
         },
         deliver: (_, _) => true);
     }
     this._sizesResolved = true;
+  }
+
+  private static bool IsPatchedUninstaller(NsisEntry e) => e.IsUninstaller && e.UninstallerPatchSize != 0;
+
+  /// <summary>
+  /// The block after a patched uninstaller's icon patch: NSIS reads it as "the next block"
+  /// (<c>GetCompressedDataFromDataBlock(-1, ...)</c>), so it starts where the patch block ends.
+  /// </summary>
+  private long UninstallerPayloadOffset(NsisEntry e) {
+    if (this.IsSolid)
+      return (long)e.DataOffset + 4 + e.UninstallerPatchSize;
+    var (_, length) = this.ReadLengthWord(this._nonSolidDataStart + e.DataOffset);
+    return (long)e.DataOffset + 4 + length;
+  }
+
+  /// <summary>
+  /// Rebuilds the uninstaller as NSIS's <c>EW_WRITEUNINSTALLER</c> writes it: the installer's
+  /// exe stub (everything before <c>firstheader</c>) with the icon patch applied, then the
+  /// uninstaller's own data. The patch is a list of (size, offset, bytes) records ended by a zero
+  /// size; anything that does not fit the stub exactly is refused rather than written.
+  /// </summary>
+  private byte[] BuildUninstaller(NsisEntry entry, byte[] patch, byte[] payload) {
+    if (patch.Length != entry.UninstallerPatchSize)
+      throw new InvalidDataException($"NSIS uninstaller icon patch holds {patch.Length} bytes, the script says {entry.UninstallerPatchSize}.");
+    var stubLength = (int)this.FirstHeaderOffset;
+    var result = new byte[stubLength + payload.Length];
+    this._stream.Position = 0;
+    this._stream.ReadExactly(result, 0, stubLength);
+
+    var stub = result.AsSpan(0, stubLength);
+    var p = patch.AsSpan();
+    while (true) {
+      if (p.Length < 4)
+        throw new InvalidDataException("NSIS uninstaller icon patch is truncated.");
+      var size = BinaryPrimitives.ReadUInt32LittleEndian(p);
+      if (size == 0) {
+        if (p.Length != 4)
+          throw new InvalidDataException("NSIS uninstaller icon patch has data after its end marker.");
+        break;
+      }
+      if (p.Length < 8)
+        throw new InvalidDataException("NSIS uninstaller icon patch is truncated.");
+      var at = BinaryPrimitives.ReadUInt32LittleEndian(p[4..]);
+      p = p[8..];
+      if (size > (uint)p.Length || at > (uint)stubLength || size > (uint)stubLength - at)
+        throw new InvalidDataException("NSIS uninstaller icon patch does not fit the exe stub.");
+      if (stubLength > 0)
+        p[..(int)size].CopyTo(stub[(int)at..]);
+      p = p[(int)size..];
+    }
+    payload.CopyTo(result, stubLength);
+    return result;
   }
 
   /// <inheritdoc/>
@@ -337,18 +432,27 @@ public sealed class NsisReader : IDisposable {
   private void Decode(Stream input, Stream output, bool nsisDeflate) {
     switch (this.Compression) {
       case NsisCompression.Lzma: {
+        var filtered = false;
         if (this.HasFilterFlag) {
           var flag = input.ReadByte();
           if (flag < 0)
             throw new InvalidDataException("NSIS LZMA stream is truncated.");
           if (flag > 1)
             throw new InvalidDataException($"Invalid NSIS LZMA filter flag {flag}.");
-          if (flag == 1)
-            throw new NotSupportedException("NSIS LZMA streams behind the x86 branch filter (seen only in 7-Zip's own installer) are not supported.");
+          filtered = flag == 1;
         }
         var props = new byte[5];
         input.ReadExactly(props);
-        new LzmaDecoder(input, props).Decode(output);
+        if (!filtered) {
+          new LzmaDecoder(input, props).Decode(output);
+          break;
+        }
+        // Flag 1 (the NSIS build 7-Zip's own installers use): the decoded stream went through
+        // the x86 branch filter, restarted at address 0 for every LZMA stream. Not disposed on
+        // purpose: a sink that stops early must not get the filter's tail written after it.
+        var unfilter = new BcjX86DecodingStream(output, leaveOpen: true);
+        new LzmaDecoder(input, props).Decode(unfilter);
+        unfilter.Finish();
         break;
       }
       case NsisCompression.Zlib: {
@@ -490,6 +594,8 @@ public sealed class NsisReader : IDisposable {
         }
         case NsisConstants.OpExtractFile: {
           var name = this.RenderString(p[1], out var leadingVar);
+          if (name == "$R0" && this.InstallLibTarget(entriesOffset, i) is { } target)
+            name = this.RenderString(target, out leadingVar);
           var absolute = leadingVar is NsisConstants.VarInstDir or NsisConstants.VarOutDir or NsisConstants.VarExeDir
                            or NsisConstants.VarTemp or NsisConstants.VarPluginsDir or ShellFolderMarker
                          || IsAbsolutePath(name);
@@ -503,8 +609,48 @@ public sealed class NsisReader : IDisposable {
           this._entries.Add(new NsisEntry(full, offset, ToFileTime(p[3], p[4])));
           break;
         }
+        case NsisConstants.OpWriteUninstaller when p[0] > 0 && p[1] >= 0 && p[2] >= 0 && p[4] == 0 && p[5] == 0: {
+          // NSIS writes to the name when it is absolute and to p[3] ("$INSTDIR\name") when not;
+          // either way 7-Zip shows it without the $INSTDIR prefix and so do we.
+          var name = this.RenderString(p[0], out var leadingVar);
+          if (name.Length == 0)
+            break;
+          if (p[3] != 0 && this.RenderString(p[3], out var altVar) is var alt
+              && (altVar != NsisConstants.VarInstDir || !string.Equals(alt, "$INSTDIR\\" + name, StringComparison.Ordinal)))
+            break; // not the shape NSIS gives this instruction: a fork's renumbered opcode
+          if (name.StartsWith("$INSTDIR\\", StringComparison.OrdinalIgnoreCase))
+            name = name["$INSTDIR\\".Length..].TrimStart('\\');
+          // A patched uninstaller needs the exe stub; without one 7-Zip names it "*.nsis".
+          if (p[2] != 0 && this.FirstHeaderOffset == 0)
+            name += ".nsis";
+          name = name.Replace('\\', '/');
+          if (!seen.Add((name, (uint)p[1])))
+            break;
+          this._entries.Add(new NsisEntry(name, (uint)p[1], null) { IsUninstaller = true, UninstallerPatchSize = p[2] });
+          break;
+        }
       }
     }
+  }
+
+  /// <summary>
+  /// NSIS's <c>Library.nsh</c> <c>InstallLib</c> macro extracts the library as <c>File /oname=$R0</c>
+  /// to a temporary name and records the real destination earlier with <c>StrCpy $R4 dest</c>.
+  /// Following 7-Zip's NSIS handler (LGPL-2.1+), that destination is the instruction 28 places
+  /// back (26 in the macro's older form, which ends in a <c>Goto</c>), when it is that
+  /// assignment; it returns the destination's string index, or null when the pattern is absent.
+  /// </summary>
+  private int? InstallLibTarget(int entriesOffset, int index) {
+    var back = index > 1 && ReadInt32(this._header, entriesOffset + (index - 1) * NsisConstants.EntrySize) == NsisConstants.OpNop ? 26 : 28;
+    if (index <= back)
+      return null;
+    var at = entriesOffset + (index - back) * NsisConstants.EntrySize;
+    if (ReadInt32(this._header, at) != NsisConstants.OpAssignVar
+        || ReadInt32(this._header, at + 4) != NsisConstants.VarR4
+        || ReadInt32(this._header, at + 12) != 0
+        || ReadInt32(this._header, at + 16) != 0)
+      return null;
+    return ReadInt32(this._header, at + 8);
   }
 
   private static bool IsAbsolutePath(string s)

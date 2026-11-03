@@ -27,3 +27,18 @@ The NSIS reader in this directory was written from these sources:
    NSIS 2 / NSIS 3 string-dialect check, the NSIS 2 stored-block rule (LEN without NLEN), the
    shell-folder name table and the rule for naming files relative to $INSTDIR. Adapted into
    this LGPL-3.0-or-later code base.
+
+   Added 2026-11-03 from 7-Zip 23.01 (7z2301-src.7z, the same files plus NsisHandler.cpp):
+   the WriteUninstaller item (name from parameter 0, or parameter 3 when that is
+   "$INSTDIR\" + name; "*.nsis" without an exe stub), the strict reading of the icon-patch
+   records, and the InstallLib naming rule (File $R0 named by the "StrCpy $R4" 28, or 26,
+   instructions back).
+
+3. NSIS 3.10 (nsis-3.10-src.tar.bz2), Source/exehead/exec.c EW_WRITEUNINSTALLER and
+   Source/build.cpp: the uninstaller is the installer's exe stub (everything before
+   firstheader) with the icon patch applied, followed by the data block after the patch;
+   an icon-patch size of 0 means the block holds the whole uninstaller. Same zlib/libpng
+   licence as item 1.
+
+The x86 branch filter that 7-Zip's installers apply to their LZMA stream is decoded with
+Compression.Core's liblzma conversion (Compression.Core/Transforms/THIRD-PARTY-NOTICE.liblzma.txt).
