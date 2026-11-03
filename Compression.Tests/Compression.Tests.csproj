@@ -165,6 +165,10 @@
     <!-- Macrium's MIT-licensed Reflect X metadata schema, the oracle for the writer's $JSON block.
          Provenance in Macrium/VendorSchema/THIRD-PARTY-NOTICE.MacriumSchema.txt. -->
     <EmbeddedResource Include="Macrium\VendorSchema\required_schema.json" LogicalName="MacriumVendor.required_schema.json" />
+    <!-- freeze 1.x and 2.x files from ancient's test corpus; see Freeze/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Freeze\ReferenceVectors\*.F">
+      <LogicalName>FreezeVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- keramics' HFS+ volume written on macOS (decmpfs files); see HfsPlus/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="HfsPlus\ReferenceVectors\*.gz">
       <LogicalName>HfsPlusVectors.%(Filename)%(Extension)</LogicalName>

@@ -108,7 +108,7 @@ lzop / LZO,lzo,compression,,RW,,R,R,,Y,4,https://www.lzop.org/,Lzop,Y,Y,,OK,,
 Zstandard,zst;zstd;tzst,compression,R,RW,,R,,,Y,4,https://www.rfc-editor.org/rfc/rfc8878,Zstd,Y,Y,,OK,,
 "compress (.Z, LZW)",z;taz;lzw;tar.z;tz,compression,R,RW,R,D,R,fmt/1671,Y,7,https://en.wikipedia.org/wiki/Compress_(software),Compress,Y,Y,,OK,,
 "pack (.z, Huffman)",z,compression,,,,,,,Y,1,https://en.wikipedia.org/wiki/Pack_(compression),UnixPack;bb:BB_UnixPack,Y,Y,,OK,,gzip -d decodes our output
-Freeze,f;freeze;?xf,compression,,,,,,,Y,1,,Freeze,Y,Y,,OK,,
+Freeze,f;freeze;?xf,compression,,,,,,,Y,1,,Freeze,Y,Y,,OK,,freeze 1.x and 2.x files decode; ancient decodes ours
 rzip,rz,compression,,,,,,,Y,1,https://rzip.samba.org/,Rzip,Y,Y,,OK,,
 lrzip,lrz,compression,,RW,,,,,,1,https://github.com/ckolivas/lrzip,Lrzip,Y,Y,,OK,,
 grzip,grz,compression,,RW,,,,,,1,,,,,,MISSING,,
