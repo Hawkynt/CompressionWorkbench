@@ -46,8 +46,8 @@ public class BcmOptionsTests {
 
     var option = descriptor.OptionsSchema.Single(option => option.Key == "BlockSize");
     Assert.Multiple(() => {
-      Assert.That(option.Default, Is.EqualTo("64"));
-      Assert.That(option.AllowedValues, Is.EqualTo(new[] { "16", "32", "64", "128" }));
+      Assert.That(option.Default, Is.EqualTo("16"));
+      Assert.That(option.AllowedValues, Is.EqualTo(new[] { "1", "2", "4", "8", "16", "32", "64" }));
       Assert.That(descriptor.Methods.Single().SupportsOptimize, Is.True);
     });
   }
@@ -55,15 +55,18 @@ public class BcmOptionsTests {
   [Test, Category("Spec")]
   public void Bcm_HonoursBlockSizeOption_AndRoundTrips() {
     var descriptor = new BcmFormatDescriptor();
-    var data = CompressibleSample();
+    var data = new byte[3 << 19];
+    var phrase = "compression workbench bcm block-size optimizer test data\n"u8;
+    for (var i = 0; i < data.Length; ++i)
+      data[i] = phrase[i % phrase.Length];
 
-    var smallBlocks = CompressAt(descriptor, data, "16");
-    var largeBlocks = CompressAt(descriptor, data, "128");
+    var smallBlocks = CompressAt(descriptor, data, "1");
+    var largeBlocks = CompressAt(descriptor, data, "2");
 
     Assert.Multiple(() => {
       Assert.That(smallBlocks, Is.Not.EqualTo(largeBlocks), "different block partitioning must change the encoded stream");
-      Assert.That(Decompress(descriptor, smallBlocks), Is.EqualTo(data), "16 KiB block output round-trips");
-      Assert.That(Decompress(descriptor, largeBlocks), Is.EqualTo(data), "128 KiB block output round-trips");
+      Assert.That(Decompress(descriptor, smallBlocks), Is.EqualTo(data), "1 MiB block output round-trips");
+      Assert.That(Decompress(descriptor, largeBlocks), Is.EqualTo(data), "2 MiB block output round-trips");
     });
   }
 
@@ -85,6 +88,6 @@ public class BcmOptionsTests {
 
     foreach (var blockSize in candidates)
       Assert.That(result.CompressedSize, Is.LessThanOrEqualTo(CompressAt(descriptor, data, blockSize).Length),
-        $"optimizer result must be <= {blockSize} KiB candidate");
+        $"optimizer result must be <= {blockSize} MiB candidate");
   }
 }

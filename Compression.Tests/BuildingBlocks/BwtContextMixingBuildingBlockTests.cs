@@ -1,12 +1,12 @@
 using System.Text;
-using Compression.Core.Entropy.ContextMixing.Bcm;
+using Compression.Core.Entropy.ContextMixing.BwtCm;
 
 namespace Compression.Tests.BuildingBlocks;
 
 [TestFixture]
-public class BcmBuildingBlockTests {
+public class BwtContextMixingBuildingBlockTests {
 
-  private static readonly BcmBuildingBlock Bb = new();
+  private static readonly BwtContextMixingBuildingBlock Bb = new();
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void Empty_RoundTrips() {
@@ -43,8 +43,8 @@ public class BcmBuildingBlockTests {
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void EnglishText_RoundTripsAndCompresses() {
     var data = Encoding.ASCII.GetBytes(
-      "BCM pairs a block sort with a compact context-mixing back end. " +
-      "BCM pairs a block sort with a compact context-mixing back end. " +
+      "A block sort pairs with a compact context-mixing back end. " +
+      "A block sort pairs with a compact context-mixing back end. " +
       "The quick brown fox jumps over the lazy dog.");
     var compressed = Bb.Compress(data);
     var round = Bb.Decompress(compressed);
@@ -55,8 +55,8 @@ public class BcmBuildingBlockTests {
   [Test, Category("EdgeCase")]
   public void Registry_Metadata_IsStable() {
     Assert.Multiple(() => {
-      Assert.That(Bb.Id, Is.EqualTo("BB_Bcm"));
-      Assert.That(Bb.DisplayName, Is.EqualTo("BCM (reduced)"));
+      Assert.That(Bb.Id, Is.EqualTo("BB_BwtContextMixing"));
+      Assert.That(Bb.DisplayName, Is.EqualTo("BWT + context mixing (orders 0-2)"));
       Assert.That(Bb.Family, Is.EqualTo(Compression.Registry.AlgorithmFamily.ContextMixing));
     });
   }

@@ -16,6 +16,10 @@
     <EmbeddedResource Include="Bsc/ReferenceVectors/*.bsc;Bsc/ReferenceVectors/manifest.tsv">
       <LogicalName>BscVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Files Ilya Muravyov's bcm wrote; see Bcm/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Bcm/ReferenceVectors/*.bcm;Bcm/ReferenceVectors/manifest.tsv">
+      <LogicalName>BcmVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- mkfs.bfs volume filled by the Linux bfs driver; see Svr4Bfs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Svr4Bfs/ReferenceVectors/*.gz;Svr4Bfs/ReferenceVectors/*.manifest">
       <LogicalName>Svr4BfsVectors.%(Filename)%(Extension)</LogicalName>

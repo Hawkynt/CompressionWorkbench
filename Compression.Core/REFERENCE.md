@@ -4770,19 +4770,19 @@ Tracks the longest recent repeat of the byte stream and predicts the next byte b
 | `PredictedByte` | `int PredictedByte { get; }` | Gets the predicted next byte, or -1 when no match is active. |
 | `Append` | `void Append(byte value)` | Records the actual next byte, extending or breaking the active match and updating the context hash table for future lookups. |
 
-### Namespace `Compression.Core.Entropy.ContextMixing.Bcm`
+### Namespace `Compression.Core.Entropy.ContextMixing.BwtCm`
 
-[`BcmBuildingBlock`](#bcmbuildingblock) · [`BcmCompressor`](#bcmcompressor)
+[`BwtContextMixingBuildingBlock`](#bwtcontextmixingbuildingblock) · [`BwtContextMixingCompressor`](#bwtcontextmixingcompressor)
 
-#### `BcmBuildingBlock`
+#### `BwtContextMixingBuildingBlock`
 
-Exposes the BCM-style BWT + context-mixing compressor as a benchmarkable building block.
+Exposes `BwtContextMixingCompressor` (cyclic BWT, order-0..2 context mixing with one SSE stage) as a benchmarkable building block.
 
 Implements `IBuildingBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `BcmBuildingBlock` | `BcmBuildingBlock()` |  |
+| `BwtContextMixingBuildingBlock` | `BwtContextMixingBuildingBlock()` |  |
 | `Description` | `string Description { get; }` |  |
 | `DisplayName` | `string DisplayName { get; }` |  |
 | `Family` | `AlgorithmFamily Family { get; }` |  |
@@ -4790,14 +4790,14 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-#### `BcmCompressor`
+#### `BwtContextMixingCompressor`
 
-A clean-room implementation of the BCM architecture: a Burrows-Wheeler Transform followed by a small logistic-domain context-mixing back end.
+A block-sorting coder of this repository's own design: the cyclic Burrows-Wheeler Transform followed by a small logistic-domain context-mixing back end.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data via BWT followed by context-mixing entropy coding. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses BCM-style compressed data. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses data written by `Compress`. |
 
 ### Namespace `Compression.Core.Entropy.ContextMixing.Cmix`
 

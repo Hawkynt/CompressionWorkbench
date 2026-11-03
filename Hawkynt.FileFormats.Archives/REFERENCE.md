@@ -11318,11 +11318,27 @@ BALZ: ROLZ compressor by Ilya Muravyov. Format: 4-byte big-endian uncompressed s
 
 ### Namespace `FileFormat.Bcm`
 
-[`BcmFormatDescriptor`](#bcmformatdescriptor) · [`BcmStream`](#bcmstream)
+[`BcmBuildingBlock`](#bcmbuildingblock) · [`BcmFormatDescriptor`](#bcmformatdescriptor) · [`BcmStream`](#bcmstream)
+
+#### `BcmBuildingBlock`
+
+BCM (Ilya Muravyov) as a building block: the BCM 1.x coded stream with bcm's default 16 MiB blocks, i.e. a `.bcm` file without its 4-byte `BCM!` id.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BcmBuildingBlock` | `BcmBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
 #### `BcmFormatDescriptor`
 
-Describes bcm format.
+Describes the BCM 1.x format (`BCM!`), byte-compatible with BCM 1.65. BCM 2.x files (`BCM2`) are refused: their format was never published.
 
 Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
@@ -11340,21 +11356,22 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Finite BWT block-size search space for the generic compression optimizer. The default remains 64 KiB for byte-compatible behaviour with streams produced by previous versions. The search is intentionally capped at 128 KiB because the current managed rotation sort becomes expensive as the block grows; callers can still use the lower-level stream overload directly. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | bcm's one creation parameter, the block size (`-b#`, whole MiB). The default is bcm's own, 16 MiB; the optimizer may also try smaller blocks. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
-| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the selected BWT block size. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the selected block size. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `BcmStream`
 
-BCM: Ilya Muravyov's BWT + MTF + Context Mixing compressor. Format: 4-byte magic "BCM!" (raw), then all data (block sizes, BWT primary index, bytes, EOF marker, CRC32) encoded through an arithmetic coder.
+BCM by Ilya Muravyov, the open-source 1.x format (`BCM!`): blocks transformed by the suffix-array Burrows-Wheeler Transform and coded bit by bit with a small context-mixing model and a 32-bit binary arithmetic coder.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the compatibility-default 64 KiB block size. |
-| `Compress` | `static void Compress(Stream input, Stream output, int blockSize)` | Encodes the supplied input using the requested BWT block size. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `DefaultBlockSize` | `const int DefaultBlockSize` | bcm's default block size, 16 MiB (`-b16`). |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses with bcm's default 16 MiB blocks. |
+| `Compress` | `static void Compress(Stream input, Stream output, int blockSize)` | Compresses with the given block size, as `bcm -b` does. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a BCM 1.x file. |
 
 ### Namespace `FileFormat.Bcstm`
 

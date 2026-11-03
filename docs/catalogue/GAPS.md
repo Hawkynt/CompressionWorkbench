@@ -25,8 +25,8 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | --- | ---: | --- |
 | `MISSING` | 230 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 22 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 38 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 235 | covered with no known gap against what the sources list |
+| `PARTIAL` | 39 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 234 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 458 | in our registry, listed by none of the seven sources |
 
 ### Per source
@@ -40,7 +40,7 @@ read-only rows.
 | libarchive (formats + filters) | 28 | 27 | 96.4 | 23 |
 | XADMaster / The Unarchiver | 126 | 95 | 75.4 | 78 |
 | binwalk v3 | 79 | 48 | 60.8 | 38 |
-| Universal Extractor 2 | 124 | 71 | 57.3 | 48 |
+| Universal Extractor 2 | 124 | 71 | 57.3 | 47 |
 | PRONOM | 87 | 63 | 72.4 | 43 |
 | Wikipedia | 266 | 156 | 58.6 | 118 |
 
@@ -167,6 +167,7 @@ running real-world samples. The file named at the end of each row is where the l
 | StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |
 | StuffIt X | `StuffItX` | 4 | stored and deflate only; Brimstone/Cyanide/Darkhorse/Iron throw (StuffItXReader.cs) |
 | zoo | `Zoo` | 4 | LZH method (2) unsupported (ZooReader.cs) |
+| BCM | `Bcm` | 1 | BCM 2.x files (`BCM2`) refused: bcm 2.03 is exe-only and its format unpublished; BCM 1.x reads and writes (BcmStream.cs) |
 | ALZip | `AlZip` | 3 | store and deflate only (AlZipReader.cs) |
 | APFS | `Apfs` | 3 | no decmpfs (LZVN/LZFSE) compressed files, no encryption (ApfsReader.cs) |
 | Compiled HTML Help (CHM) | `Chm` | 3 | content sections above 1 unsupported (ChmReader.cs) |

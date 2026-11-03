@@ -2,35 +2,23 @@ using System.Buffers.Binary;
 using Compression.Core.Entropy.Arithmetic;
 using Compression.Core.Transforms;
 
-namespace Compression.Core.Entropy.ContextMixing.Bcm;
+namespace Compression.Core.Entropy.ContextMixing.BwtCm;
 
 /// <summary>
-/// A clean-room implementation of the BCM architecture: a Burrows-Wheeler
+/// A block-sorting coder of this repository's own design: the cyclic Burrows-Wheeler
 /// Transform followed by a small logistic-domain context-mixing back end.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Modelled after Ilya Muravyov's BCM ("Big brother of BZip2"), which pairs a
-/// block sort with a compact context-mixing coder instead of BWT's classic
-/// MTF+Huffman/arithmetic pipeline. See
-/// <see href="https://github.com/encode84/bcm"/>,
-/// Burrows &amp; Wheeler, "A Block-sorting Lossless Data Compression Algorithm"
-/// (SRC-RR-124, 1994), and Mahoney, "Data Compression Explained"
-/// (<see href="http://mattmahoney.net/dc/dce.html"/>) for the general
-/// block-sort + context-mixing family this belongs to.
-/// </para>
-/// <para>
-/// This is a reduced, from-specification reimplementation, not a port of the
-/// reference source: after the forward BWT, the sorted string is coded
-/// bit-by-bit with three hashed byte-history context models (orders 0, 1, 2)
-/// mixed in the stretch domain and refined by one adaptive probability map
-/// (SSE) keyed on the previous BWT byte, then entropy-coded with a binary
-/// arithmetic coder. BWT output clusters bytes that share a following
-/// context, so low orders already carry most of the redundancy — matching
-/// the compact model set the real BCM uses.
+/// After the forward <see cref="BurrowsWheelerTransform"/> (sorted rotations), the sorted string
+/// is coded bit by bit with three hashed byte-history context models (orders 0, 1 and 2 over
+/// the transformed bytes) mixed in the stretch domain, refined by one adaptive probability map
+/// (SSE) keyed on the previous transformed byte, and coded with a binary arithmetic coder. The
+/// layout (4-byte length, 4-byte zero-based rotation index, coded bits) is read by no other
+/// program. For the BCM file format itself see <c>FileFormat.Bcm</c>.
 /// </para>
 /// </remarks>
-public static class BcmCompressor {
+public static class BwtContextMixingCompressor {
   // Orders modelled directly over the BWT output: order-0 (bit position only),
   // order-1 (previous BWT byte) and order-2 (previous two BWT bytes).
   private static readonly int[] _Orders = [0, 1, 2];
@@ -61,7 +49,7 @@ public static class BcmCompressor {
     output.Write(indexHeader);
 
     var encoder = new ArithmeticEncoder(output);
-    var state = new BcmState();
+    var state = new BwtCmState();
     var contexts = new int[state.ModelCount];
 
     foreach (int value in bwt) {
@@ -71,7 +59,7 @@ public static class BcmCompressor {
 
         state.ComputeContexts(contexts, c0);
         var prob1 = state.Predict(contexts, c0);
-        encoder.EncodeBit(bitVal, (1 << BcmCompressor.ProbabilityScaleBits) - prob1);
+        encoder.EncodeBit(bitVal, (1 << BwtContextMixingCompressor.ProbabilityScaleBits) - prob1);
         state.Update(contexts, bitVal);
 
         c0 = (c0 << 1) | bitVal;
@@ -85,7 +73,7 @@ public static class BcmCompressor {
   }
 
   /// <summary>
-  /// Decompresses BCM-style compressed data.
+  /// Decompresses data written by <see cref="Compress"/>.
   /// </summary>
   /// <param name="compressed">The compressed data.</param>
   /// <returns>The decompressed data.</returns>
@@ -98,7 +86,7 @@ public static class BcmCompressor {
 
     using var input = new MemoryStream(compressed[8..].ToArray());
     var decoder = new ArithmeticDecoder(input);
-    var state = new BcmState();
+    var state = new BwtCmState();
     var contexts = new int[state.ModelCount];
 
     var bwt = new byte[size];
@@ -107,7 +95,7 @@ public static class BcmCompressor {
       for (var bit = 7; bit >= 0; --bit) {
         state.ComputeContexts(contexts, c0);
         var prob1 = state.Predict(contexts, c0);
-        var bitVal = decoder.DecodeBit((1 << BcmCompressor.ProbabilityScaleBits) - prob1);
+        var bitVal = decoder.DecodeBit((1 << BwtContextMixingCompressor.ProbabilityScaleBits) - prob1);
         state.Update(contexts, bitVal);
 
         c0 = (c0 << 1) | bitVal;
@@ -125,20 +113,20 @@ public static class BcmCompressor {
   /// Model set, mixer and APM shared identically by the encoder and decoder,
   /// operating over the BWT-transformed byte stream.
   /// </summary>
-  private sealed class BcmState {
+  private sealed class BwtCmState {
     private readonly ContextModel[] _models;
     private readonly ContextMixer _mixer;
     private readonly Apm _apm;
     private readonly int[] _history;
 
-    public BcmState() {
-      var count = BcmCompressor._Orders.Length;
+    public BwtCmState() {
+      var count = BwtContextMixingCompressor._Orders.Length;
       this._models = new ContextModel[count];
       for (var i = 0; i < count; ++i)
-        this._models[i] = new ContextModel(BcmCompressor._OrderTableBits[i]);
+        this._models[i] = new ContextModel(BwtContextMixingCompressor._OrderTableBits[i]);
 
       this._mixer = new ContextMixer(this._models);
-      this._apm = new Apm(BcmCompressor.ApmContexts);
+      this._apm = new Apm(BwtContextMixingCompressor.ApmContexts);
       this._history = new int[4];
     }
 
@@ -146,12 +134,12 @@ public static class BcmCompressor {
 
     public void ComputeContexts(int[] contexts, int c0) {
       for (var i = 0; i < this._models.Length; ++i) {
-        var order = BcmCompressor._Orders[i];
+        var order = BwtContextMixingCompressor._Orders[i];
         var h = (uint)(order * 0x9E3779B1u);
         for (var k = 0; k < order; ++k)
-          h = BcmState.Mix(h, (uint)this._history[k]);
+          h = BwtCmState.Mix(h, (uint)this._history[k]);
 
-        h = BcmState.Mix(h, (uint)c0);
+        h = BwtCmState.Mix(h, (uint)c0);
         contexts[i] = (int)(h & 0x7FFFFFFF);
       }
     }
@@ -159,14 +147,14 @@ public static class BcmCompressor {
     public int Predict(int[] contexts, int c0) {
       _ = c0;
       var mixed16 = this._mixer.Predict(contexts);
-      var mixed12 = mixed16 >> (BcmCompressor.ProbabilityScaleBits - Logistic.ProbabilityBits);
+      var mixed12 = mixed16 >> (BwtContextMixingCompressor.ProbabilityScaleBits - Logistic.ProbabilityBits);
 
       var refined12 = this._apm.Refine(mixed12, this._history[0]);
       var blended12 = (mixed12 + refined12) >> 1;
       blended12 = Math.Clamp(blended12, 1, Logistic.ProbabilityScale - 1);
 
-      var p16 = blended12 << (BcmCompressor.ProbabilityScaleBits - Logistic.ProbabilityBits);
-      return Math.Clamp(p16, 1, (1 << BcmCompressor.ProbabilityScaleBits) - 1);
+      var p16 = blended12 << (BwtContextMixingCompressor.ProbabilityScaleBits - Logistic.ProbabilityBits);
+      return Math.Clamp(p16, 1, (1 << BwtContextMixingCompressor.ProbabilityScaleBits) - 1);
     }
 
     public void Update(int[] contexts, int bit) {
