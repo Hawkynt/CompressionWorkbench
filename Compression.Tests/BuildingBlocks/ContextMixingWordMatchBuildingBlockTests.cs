@@ -1,12 +1,12 @@
 using System.Text;
-using Compression.Core.Entropy.ContextMixing.Cmix;
+using Compression.Core.Entropy.ContextMixing.WordMatch;
 
 namespace Compression.Tests.BuildingBlocks;
 
 [TestFixture]
-public class CmixBuildingBlockTests {
+public class ContextMixingWordMatchBuildingBlockTests {
 
-  private static readonly CmixBuildingBlock Bb = new();
+  private static readonly ContextMixingWordMatchBuildingBlock Bb = new();
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void Empty_RoundTrips() {
@@ -53,8 +53,8 @@ public class CmixBuildingBlockTests {
   [Test, Category("EdgeCase")]
   public void Registry_Metadata_IsStable() {
     Assert.Multiple(() => {
-      Assert.That(Bb.Id, Is.EqualTo("BB_Cmix"));
-      Assert.That(Bb.DisplayName, Is.EqualTo("CMIX (reduced model set)"));
+      Assert.That(Bb.Id, Is.EqualTo("BB_ContextMixingWordMatch"));
+      Assert.That(Bb.DisplayName, Is.EqualTo("Context mixing with word and match models"));
       Assert.That(Bb.Family, Is.EqualTo(Compression.Registry.AlgorithmFamily.ContextMixing));
     });
   }

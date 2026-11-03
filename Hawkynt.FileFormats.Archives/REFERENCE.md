@@ -12751,46 +12751,6 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
-### Namespace `FileFormat.Cmix`
-
-[`CmixFormatDescriptor`](#cmixformatdescriptor) · [`CmixStream`](#cmixstream)
-
-#### `CmixFormatDescriptor`
-
-Describes cmix format.
-
-Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `CmixFormatDescriptor` | `CmixFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Arithmetic-coder endings exposed to the shared optimizer. Legacy preserves historical managed output; Compact omits up to three redundant trailing bytes. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes with the compact arithmetic finalization. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
-| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the requested optimizer parameters. |
-| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
-
-#### `CmixStream`
-
-cmix file format by Byron Knoll. Format: Byte 0: bit7=dict flag (0), bits 0-6 = upper 7 bits of 39-bit file size Bytes 1-4: lower 32 bits of file size (big-endian) If size >= 10000: 32-byte vocabulary bitmap Then: arithmetic-coded bitstream (order-0 adaptive model, bit-tree 255 nodes)
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the historical four-byte finalization. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
-
 ### Namespace `FileFormat.Collada`
 
 [`ColladaFormatDescriptor`](#colladaformatdescriptor)

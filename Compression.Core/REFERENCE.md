@@ -4746,35 +4746,6 @@ A clean-room implementation of the BSC architecture: a Burrows-Wheeler Transform
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data via BWT, Move-to-Front, and adaptive bit-tree coding. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses BSC-style compressed data. |
 
-### Namespace `Compression.Core.Entropy.ContextMixing.Cmix`
-
-[`CmixBuildingBlock`](#cmixbuildingblock) · [`CmixCompressor`](#cmixcompressor)
-
-#### `CmixBuildingBlock`
-
-Exposes the reduced cmix-style model set as a benchmarkable building block.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `CmixBuildingBlock` | `CmixBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
-#### `CmixCompressor`
-
-A clean-room, deliberately reduced reimplementation of the cmix architecture: hashed byte-order contexts, a word context, and a match model, mixed by one logistic-domain mixer and refined by a two-stage SSE chain.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the reduced cmix-style model set. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses reduced-cmix-style compressed data. |
-
 ### Namespace `Compression.Core.Entropy.ContextMixing.Ctw`
 
 [`ContextTreeWeightingBuildingBlock`](#contexttreeweightingbuildingblock) · [`ContextTreeWeightingCompressor`](#contexttreeweightingcompressor)
@@ -4876,6 +4847,35 @@ A clean-room, deliberately reduced reimplementation of the PAQ8hp architecture: 
 | --- | --- | --- |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the reduced PAQ8hp-style model set. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses reduced-PAQ8hp-style compressed data. |
+
+### Namespace `Compression.Core.Entropy.ContextMixing.WordMatch`
+
+[`ContextMixingWordMatchBuildingBlock`](#contextmixingwordmatchbuildingblock) · [`ContextMixingWordMatchCompressor`](#contextmixingwordmatchcompressor)
+
+#### `ContextMixingWordMatchBuildingBlock`
+
+Exposes `ContextMixingWordMatchCompressor` (orders 0-6, a word model and a match model, one mixer, two SSE stages) as a benchmarkable building block.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ContextMixingWordMatchBuildingBlock` | `ContextMixingWordMatchBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `ContextMixingWordMatchCompressor`
+
+A context-mixing coder of this repository's own design: hashed byte-history contexts, a word context and a match model, mixed by one logistic-domain mixer and refined by a two-stage SSE chain.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the word and match context-mixing model. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses data written by `Compress`. |
 
 ### Namespace `Compression.Core.Entropy.ContextModeling`
 

@@ -9,7 +9,7 @@ namespace Compression.Core.Entropy.ContextMixing;
 /// Wraps <see cref="CmCompressor"/>: hashed order-0..6 bit models mixed in the
 /// stretch domain, an adaptive probability map (SSE) refinement stage, and a
 /// binary arithmetic coder. This is the clean-room PAQ/lpaq-style primitive
-/// underlying formats such as ZPAQ, PAQ8 and cmix.
+/// underlying formats such as ZPAQ and PAQ8.
 /// </remarks>
 public sealed class CmBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>

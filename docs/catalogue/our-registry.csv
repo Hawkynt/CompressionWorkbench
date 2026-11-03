@@ -107,7 +107,6 @@ format,CephFs,CephFS / RADOS pool export,Archive,Y,.rados;.ceph,Y,Y,Y,Y
 format,Chm,CHM,Archive,,.chm,Y,Y,Y,Y
 format,CloneCd,CloneCD CCD,Archive,,.ccd,Y,Y,,
 format,Cmf,Creative Music File (OPL),Audio,,.cmf,Y,Y,,
-format,Cmix,cmix,Stream,,.cmix,,Y,Y,
 format,Coherent,Coherent FS,Archive,Y,.coh;.coherent,Y,Y,Y,Y
 format,Collada,Collada (.dae),Archive,,.dae,Y,Y,,
 format,CompactPro,Compact Pro,Archive,,.cpt,Y,Y,Y,Y
@@ -659,8 +658,8 @@ block,bb:BB_Brotli,Brotli,Dictionary,,,,Y,Y,
 block,bb:BB_Bsc,BSC (reduced),ContextMixing,,,,Y,Y,
 block,bb:BB_Bwt,BWT,Transform,,,,Y,Y,
 block,bb:BB_Bzip2,bzip2,Classic,,,,Y,Y,
-block,bb:BB_Cmix,CMIX (reduced model set),ContextMixing,,,,Y,Y,
 block,bb:BB_ContextMixing,Context Mixing,ContextMixing,,,,Y,Y,
+block,bb:BB_ContextMixingWordMatch,Context mixing with word and match models,ContextMixing,,,,Y,Y,
 block,bb:BB_ContextTreeWeighting,Context Tree Weighting,ContextMixing,,,,Y,Y,
 block,bb:BB_Crush,Crush,Dictionary,,,,Y,Y,
 block,bb:BB_Csc,CSC,Dictionary,,,,Y,Y,

@@ -13,9 +13,9 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Measure | Value |
 | --- | ---: |
-| Catalogue rows | 983 |
+| Catalogue rows | 982 |
 | … formats listed by at least one source | 525 |
-| … registry ids no source lists (OURS-ONLY) | 458 |
+| … registry ids no source lists (OURS-ONLY) | 457 |
 | Source-listed rows mapped to something here | 285 / 525 (54.3 %) |
 | … of rows listed by ≥ 2 sources | 122 / 138 (88 %) |
 | … of rows listed by ≥ 3 sources | 66 / 67 (PEA is the one missing) |
@@ -27,7 +27,7 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | `READ-ONLY-BUT-SOURCES-WRITE` | 22 | we only read it; a source or the format's own tool writes it |
 | `PARTIAL` | 38 | covered, but the reader handles only part of the format (see the table below) |
 | `OK` | 235 | covered with no known gap against what the sources list |
-| `OURS-ONLY` | 458 | in our registry, listed by none of the seven sources |
+| `OURS-ONLY` | 457 | in our registry, listed by none of the seven sources |
 
 ### Per source
 
@@ -208,9 +208,19 @@ running real-world samples. The file named at the end of each row is where the l
 - **Stale comments.** The "(not supported)" comments in `ArcConstants.cs` describe methods the
   reader does decode.
 
+## 🚫 Refused: named codecs that cannot be made real
+
+Codecs this repository once offered under a real codec's name without being that codec. Their own
+algorithms were renamed; the real codec is refused for the reason given, so no descriptor or block
+claims it.
+
+| Codec | Why it is refused | The old code is now |
+| --- | --- | --- |
+| [cmix](https://github.com/byronknoll/cmix) (Byron Knoll) | GPL-3.0, so only a clean-room rewrite from a derived specification would do; cmix v21 is some 22,000 lines of models including LSTM and other floating-point networks whose results depend on the C library's `exp`/`log`/`tanh`, so byte-exact output from managed code cannot be proven, and the reference needs about 32 GB of RAM to run as an oracle on this machine | `BB_ContextMixingWordMatch`; the `.cmix` descriptor, which wrote an order-0 stream under cmix's name, is removed |
+
 ## ➕ Ours only
 
-These 458 registry ids are listed by none of the seven sources:
+These 457 registry ids are listed by none of the seven sources:
 
 | Kind | Count | Typical members |
 | --- | ---: | --- |
@@ -218,7 +228,7 @@ These 458 registry ids are listed by none of the seven sources:
 | media | 128 | audio codecs and containers, tracker modules, image and video demuxers |
 | codec | 97 | building blocks no source names as a method (LZ77 family, entropy coders, context mixers) |
 | filesystem | 28 | retro and niche filesystems (`TrDos`, `Ti99`, `Human68k`, `Pc98`, `Xenix`, `SysV`, `LittleFs`, `DoubleSpace`, `Stacker`, `Vdfs`) |
-| compression | 20 | stream formats such as `Lzham`, `Lizard`, `Density`, `Yaz0`, `RefPack`, `Rnc`, `BriefLz` |
+| compression | 19 | stream formats such as `Lzham`, `Lizard`, `Density`, `Yaz0`, `RefPack`, `Rnc`, `BriefLz` |
 
 A few of these are plain ZIP/OLE2 variants that 7-Zip opens as ZIP or Compound, without naming them
 separately: `Docx`, `Xlsx`, `Pptx`, `Odt`, `Epub`, `Xpi`, `Ipa`. They count as ours-only here only
