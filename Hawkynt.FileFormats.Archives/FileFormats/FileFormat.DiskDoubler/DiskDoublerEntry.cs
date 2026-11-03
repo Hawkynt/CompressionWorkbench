@@ -21,6 +21,9 @@ public sealed class DiskDoublerEntry {
   /// <summary>Gets the absolute byte offset of the compressed data within the source stream.</summary>
   public long DataOffset { get; init; }
 
+  /// <summary>Gets whether this entry is a folder of a DDAR or DDA2 archive.</summary>
+  public bool IsDirectory { get; init; }
+
   /// <summary>Gets whether this entry represents the data fork (as opposed to the resource fork).</summary>
   public bool IsDataFork { get; init; }
 

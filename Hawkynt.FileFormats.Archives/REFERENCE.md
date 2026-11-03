@@ -13760,6 +13760,7 @@ Represents one fork of a DiskDoubler compressed file.
 | `DeltaType` | `int DeltaType { get; init; }` | Gets the fork's delta pre-processing type (0 = none). |
 | `FileType` | `string FileType { get; init; }` | Gets the Mac file type code. |
 | `IsDataFork` | `bool IsDataFork { get; init; }` | Gets whether this entry represents the data fork (as opposed to the resource fork). |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets whether this entry is a folder of a DDAR or DDA2 archive. |
 | `IsSupported` | `bool IsSupported { get; }` | Gets whether this reader can decode the entry's method. |
 | `Method` | `int Method { get; init; }` | Gets the compression method: 0 stored, 1 Unix compress, 2 and 5 DiskDoubler Huffman variants, 3 RLE, 4 Huffman, 6 and 9 "AD" LZSS, 7 Stac LZS, 8 Compact Pro, 10 "DD". The high bit is a flag and is masked off. |
 | `Modified` | `DateTime? Modified { get; init; }` | Gets the modification time, or `null` when the header holds zero. |
@@ -13784,7 +13785,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures: a single DiskDoubler file starts with 0xABCD0054. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures: a single DiskDoubler file starts with 0xABCD0054, an archive with "DDAR" or "DDA2". |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
@@ -13796,7 +13797,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 
 #### `DiskDoublerReader`
 
-Reads a single DiskDoubler compressed file and decodes its forks.
+Reads a DiskDoubler compressed file, or a DDAR or DDA2 archive of them, and decodes the forks.
 
 Implements `IDisposable`.
 
@@ -13804,6 +13805,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `DiskDoublerReader` | `DiskDoublerReader(Stream stream, bool leaveOpen = false, string name = null)` | Opens a DiskDoubler compressed file from the given stream and parses its header. |
 | `Entries` | `IReadOnlyList<DiskDoublerEntry> Entries { get; }` | Gets the forks parsed from the header: the data fork (if any), then the resource fork (if any). |
+| `UnreadTailOffset` | `long? UnreadTailOffset { get; }` | Gets where a DDAR archive continues with records that are not entries (null when it ends cleanly); the entries listed are the ones before that point. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(DiskDoublerEntry entry)` | Decodes the specified fork. |
 | `IsDiskDoubler` | `static bool IsDiskDoubler(ReadOnlySpan<byte> header)` | Returns whether `header` starts a DiskDoubler file (directly or behind MacBinary). |
