@@ -42,6 +42,20 @@ Taken from `test/archives/` of lhasa at `75ed83559f23e9538e0045c62f53f77ab03d03d
 The oracle for each member is the CRC-16 its archiver recorded. Several hold the same GPL-2 text, and
 the tests check that `-lh1-`, `-lz5-`, `-lzs-`, `-lh5-` and `-lhx-` all decode it identically.
 
+## LHARK and a DOS self-extractor
+
+From the same lhasa revision (`75ed83559f23e9538e0045c62f53f77ab03d03d6`):
+
+| File | Written by | What it covers | SHA-256 |
+|------|------------|----------------|---------|
+| `lhark04d_lh7.lzh` | LHARK-A 0.4d (Kerwin Medina) | LHARK's own `-lh7-` (lhasa: `-lk7-`), level-1 header, OS id `' '`; the GPL-2 text | `bc123c7d9b75e5d4eb2c41c8d561b29fb60e8f0a0fba1b7d9a3eaf7ed280a1fc` |
+| `lhark04d_lh7_long.lzh` | LHARK-A 0.4d | `-lk7-` over 399,527 bytes (long copies and far offsets), CRC-16 `6dc1` | `cfde86b2111bd5145557551c7a10d0c42c498296d54cafb9ce72f7ab1bd7772a` |
+| `lha255e_sfx.exe` | LHA 2.55e (`lha s`) | DOS self-extractor: a 1,702-byte MZ stub, then an `-lh5-` archive of the GPL-2 text | `9398cc96ddee38464b4da67aa4b8d544a83b10adaa47d90470b4d51c4089cbc7` |
+
+Besides the CRC-16s, lhasa's expected listings (`test/output/lhark04d/*`, `test/output/lha255e/sfx.exe-*`)
+name the same members and CRCs, and the gated `LhaLharkAndSfxTests` extract all three with lhasa
+(`lha xq` in WSL) and compare its bytes with ours.
+
 ISC licence (lhasa):
 
 ```

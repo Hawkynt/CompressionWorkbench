@@ -14,7 +14,11 @@ public static class LzhLayoutMap {
   /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
-    archive.Position = 0;
+    // A self-extractor's stub is kept whole: it is the program that unpacks the members.
+    var start = LhaReader.FindArchiveOffset(archive);
+    if (start > 0)
+      yield return new DefragBlockInfo(0, start, DefragBlockKind.MetadataReserved, FileName: "Self-extractor stub");
+    archive.Position = start;
 
     while (archive.Position < archive.Length) {
       LhaHeader? header;
