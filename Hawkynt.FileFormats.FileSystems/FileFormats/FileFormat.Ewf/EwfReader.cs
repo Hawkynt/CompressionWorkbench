@@ -50,7 +50,11 @@ public sealed class EwfReader {
     bool IsLogical,
     ushort SegmentNumber,
     List<Section> Sections,
-    long TotalFileSize);
+    long TotalFileSize,
+    byte[]? Raw = null) {
+    /// <summary>Whether this segment's chain ends in "next": the media continues in further segment files.</summary>
+    public bool ContinuesInNextSegment => this.Sections.Count > 0 && this.Sections[^1].Type == "next";
+  }
 
   /// <summary>Reads one EWF segment and its section chain.</summary>
   /// <summary>
@@ -108,100 +112,27 @@ public sealed class EwfReader {
       }
     }
 
-    return new EwfImage(isLogical, segment, sections, data.Length);
+    return new EwfImage(isLogical, segment, sections, data.Length, data.ToArray());
   }
 
   /// <summary>
-  /// Reconstructs the logical raw media from a single EVF segment. Stored chunks
-  /// have their trailing Adler-32 removed and verified; compressed chunks are
-  /// decoded as zlib according to the table-entry MSB.
+  /// Reconstructs the raw media of a self-contained (single-segment) EVF image held in memory,
+  /// through <see cref="EwfMediaStream"/>: every sectors/table group, stored chunks checked by
+  /// their Adler-32, compressed chunks decoded as zlib.
   /// </summary>
+  /// <exception cref="NotSupportedException">The image is logical (LVF) or continues in further segment files.</exception>
   public static byte[] ExtractMedia(EwfImage image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.IsLogical)
       throw new NotSupportedException("EWF: LVF logical-evidence payload reconstruction is not implemented yet.");
-
-    var volume = image.Sections.FirstOrDefault(s => s.Type is "volume" or "data")
-      ?? throw new InvalidDataException("EWF: missing volume/data section.");
-    var sectors = image.Sections.FirstOrDefault(s => s.Type == "sectors")
-      ?? throw new InvalidDataException("EWF: missing sectors section.");
-    var table = image.Sections.FirstOrDefault(s => s.Type is "table" or "table2")
-      ?? throw new InvalidDataException("EWF: missing chunk table section.");
-
-    if (volume.Payload.Length < 20)
-      throw new InvalidDataException("EWF: volume section is too short.");
-    if (table.Payload.Length < 28)
-      throw new InvalidDataException("EWF: table section is too short.");
-
-    var volumeChunkCount = BinaryPrimitives.ReadUInt32LittleEndian(volume.Payload.AsSpan(4));
-    var sectorsPerChunk = BinaryPrimitives.ReadUInt32LittleEndian(volume.Payload.AsSpan(8));
-    var bytesPerSector = BinaryPrimitives.ReadUInt32LittleEndian(volume.Payload.AsSpan(12));
-    var totalSectors = BinaryPrimitives.ReadUInt32LittleEndian(volume.Payload.AsSpan(16));
-    var chunkCount = BinaryPrimitives.ReadUInt32LittleEndian(table.Payload.AsSpan(0));
-    var baseOffset = BinaryPrimitives.ReadUInt64LittleEndian(table.Payload.AsSpan(8));
-
-    if (volumeChunkCount != 0 && chunkCount != volumeChunkCount)
-      throw new InvalidDataException($"EWF: volume/table chunk-count mismatch ({volumeChunkCount} vs {chunkCount}).");
-    if (chunkCount > 0x01000000)
-      throw new InvalidDataException($"EWF: implausible chunk count {chunkCount}.");
-    if (bytesPerSector == 0 || bytesPerSector > 1024 * 1024 || sectorsPerChunk == 0)
-      throw new InvalidDataException("EWF: invalid sector/chunk geometry.");
-
-    var entriesBytes = checked((long)chunkCount * sizeof(uint));
-    if (24L + entriesBytes + 4 > table.Payload.LongLength)
-      throw new InvalidDataException("EWF: chunk table is truncated.");
-
-    var offsets = new uint[checked((int)chunkCount)];
-    for (var i = 0; i < offsets.Length; ++i)
-      offsets[i] = BinaryPrimitives.ReadUInt32LittleEndian(table.Payload.AsSpan(24 + i * 4));
-
-    using var media = new MemoryStream();
-    var sectorsPayloadAbsolute = checked((ulong)sectors.DescriptorOffset + SectionDescriptorSize);
-    var sectorsEndAbsolute = checked((ulong)sectors.DescriptorOffset +
-      (sectors.SectionSize >= SectionDescriptorSize
-        ? sectors.SectionSize
-        : (ulong)(SectionDescriptorSize + sectors.Payload.Length)));
-
-    for (var i = 0; i < offsets.Length; ++i) {
-      var rawEntry = offsets[i];
-      var compressed = (rawEntry & 0x80000000U) != 0;
-      var absoluteStart = checked(baseOffset + (rawEntry & 0x7FFFFFFFU));
-      var absoluteEnd = i + 1 < offsets.Length
-        ? checked(baseOffset + (offsets[i + 1] & 0x7FFFFFFFU))
-        : sectorsEndAbsolute;
-
-      if (absoluteStart < sectorsPayloadAbsolute || absoluteEnd < absoluteStart || absoluteEnd > sectorsEndAbsolute)
-        throw new InvalidDataException($"EWF: chunk {i} points outside the sectors section.");
-
-      var payloadStart = checked((long)(absoluteStart - sectorsPayloadAbsolute));
-      var payloadLength = checked((long)(absoluteEnd - absoluteStart));
-      if (payloadStart < 0 || payloadLength < 0 || payloadStart + payloadLength > sectors.Payload.LongLength)
-        throw new InvalidDataException($"EWF: chunk {i} range is invalid.");
-      if (payloadLength > int.MaxValue)
-        throw new NotSupportedException("EWF: one chunk exceeds the in-memory decoder limit.");
-
-      var chunk = sectors.Payload.AsSpan((int)payloadStart, (int)payloadLength);
-      if (compressed) {
-        media.Write(ZlibStream.Decompress(chunk));
-      } else {
-        if (chunk.Length < 4)
-          throw new InvalidDataException($"EWF: stored chunk {i} has no Adler-32 trailer.");
-        var data = chunk[..^4];
-        var expected = BinaryPrimitives.ReadUInt32LittleEndian(chunk[^4..]);
-        var actual = Adler32.Compute(data);
-        if (expected != actual)
-          throw new InvalidDataException(
-            $"EWF: stored chunk {i} Adler-32 mismatch (expected 0x{expected:X8}, got 0x{actual:X8}).");
-        media.Write(data);
-      }
-    }
-
-    var declaredLength = checked((long)totalSectors * bytesPerSector);
-    if (declaredLength > media.Length)
-      throw new InvalidDataException(
-        $"EWF: decoded chunks are shorter than declared media ({media.Length} < {declaredLength}).");
-    media.SetLength(declaredLength);
-    return media.ToArray();
+    if (image.Raw == null)
+      throw new InvalidOperationException("EWF: the image was not read from its bytes.");
+    using var media = EwfMediaStream.Open(new MemoryStream(image.Raw, writable: false), leaveOpen: false);
+    if (media.Length > Array.MaxLength)
+      throw new NotSupportedException("EWF: the media is larger than one array; read it through EwfMediaStream.");
+    var result = new byte[media.Length];
+    media.ReadExactly(result);
+    return result;
   }
 
   private static string ReadAsciiType(ReadOnlySpan<byte> raw) {

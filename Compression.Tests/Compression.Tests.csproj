@@ -217,6 +217,10 @@
     <EmbeddedResource Include="Udf\ReferenceVectors\*.img.gz">
       <LogicalName>UdfVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- EWF-E01 segment sets ewfacquire wrote (gzipped); see Ewf/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Ewf\ReferenceVectors\*.gz">
+      <LogicalName>EwfVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- ACE archives from acefile's test corpus and ones our writer produced for acefile; see Ace/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\acefile-listing.txt">
       <LogicalName>AceVectors.%(Filename)%(Extension)</LogicalName>
