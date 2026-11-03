@@ -16864,7 +16864,7 @@ FreeArc compression method strings: `name:param:param...` stages joined by `+`, 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Storing` | `const string Storing` | The method name of an uncompressed stage. |
-| `Decode` | `static byte[] Decode(string compressor, byte[] input, long outputSize)` | Decodes `input` produced by `compressor` into exactly `outputSize` bytes. |
+| `Decode` | `static byte[] Decode(string compressor, byte[] input, long outputSize, string password = null)` | Decodes `input` produced by `compressor` into exactly `outputSize` bytes. |
 | `Encode` | `static byte[] Encode(string compressor, ReadOnlySpan<byte> input)` | Encodes `input` with a single supported stage. |
 | `IsEncrypted` | `static bool IsEncrypted(string compressor)` | Gets whether `compressor` contains an encryption stage. |
 | `IsSupported` | `static bool IsSupported(string compressor)` | Gets whether every stage of `compressor` can be decoded. |
@@ -16879,7 +16879,7 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FreeArcReader` | `FreeArcReader(Stream stream, bool leaveOpen = false)` | Opens a FreeArc archive and reads its footer and directory blocks. |
+| `FreeArcReader` | `FreeArcReader(Stream stream, bool leaveOpen = false, string password = null)` | Opens a FreeArc archive and reads its footer and directory blocks. |
 | `Comment` | `string Comment { get; }` | Gets the archive comment, or an empty string. |
 | `Entries` | `IReadOnlyList<FreeArcEntry> Entries { get; }` | Gets all files and directories recorded in the archive's directory blocks, in archive order. |
 | `IsLocked` | `bool IsLocked { get; }` | Gets whether the archive is locked against further modification. |

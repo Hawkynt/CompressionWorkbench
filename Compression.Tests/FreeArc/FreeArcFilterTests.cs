@@ -270,6 +270,74 @@ public sealed class FreeArcFilterTests {
     Assert.That(FreeArcMethods.Decode("dict", stream, 2), Is.EqualTo("ok"u8.ToArray()));
   }
 
+  [TestCase("crypt-aes", "Secret", "aes-256/ctr")]
+  [TestCase("crypt-aes128-cfb", "Secret", "aes-128/cfb")]
+  [TestCase("crypt-blowfish", "Secret", "blowfish-448/ctr")]
+  [TestCase("crypt-serpent", "Secret", "serpent-256/ctr")]
+  [TestCase("crypt-twofish", "Secret", "twofish-256/ctr")]
+  [TestCase("crypt-chain", "Secret", "blowfish-448/cfb")]
+  [TestCase("crypt-headers", "Secret", "aes-256/ctr")]
+  [TestCase("crypt-latin1", "P\u00e4sswort", "aes-256/ctr")]
+  public void GivenAnEncryptedArchive_WhenExtractedWithThePassword_ThenEveryFileMatchesArc(string vector, string password, string cipher) {
+    var expected = Manifest.Value.Where(r => r.Archive == vector + ".arc").ToArray();
+    Assert.That(expected, Has.Length.EqualTo(5));
+    using var reader = new FreeArcReader(new MemoryStream(FreeArcTests.Vector(vector)), password: password);
+
+    Assert.That(reader.Entries.Where(e => !e.IsDirectory).All(e => e.Method.Contains("+" + cipher + ":")), Is.True, string.Join(", ", reader.Entries.Select(e => e.Method).Distinct()));
+    Assert.Multiple(() => {
+      foreach (var row in expected) {
+        var data = reader.Extract(reader.Entries.Single(e => e.Name == row.Name));
+        Assert.That(Convert.ToHexStringLower(SHA256.HashData(data)), Is.EqualTo(row.Sha256), row.Name);
+      }
+    });
+  }
+
+  [TestCase("crypt-aes")]
+  [TestCase("crypt-serpent")]
+  public void GivenAnEncryptedArchive_WhenExtractedWithAWrongPassword_ThenItIsRefusedBeforeDecoding(string vector) {
+    using var reader = new FreeArcReader(new MemoryStream(FreeArcTests.Vector(vector)), password: "secret");
+    var entry = reader.Entries.First(e => e.Size > 0);
+    Assert.That(() => reader.Extract(entry), Throws.TypeOf<InvalidDataException>().With.Message.Contains("wrong password"));
+  }
+
+  [Test]
+  public void GivenAnEncryptedArchive_WhenExtractedWithoutAPassword_ThenItIsRefused() {
+    using var reader = new FreeArcReader(new MemoryStream(FreeArcTests.Vector("crypt-twofish")));
+    var entry = reader.Entries.First(e => e.Size > 0);
+    Assert.That(() => reader.Extract(entry), Throws.TypeOf<NotSupportedException>().With.Message.Contains("password"));
+  }
+
+  [Test]
+  public void GivenEncryptedHeaders_WhenOpenedWithoutAPassword_ThenTheDescriptorListsTheRawArchive() {
+    var descriptor = new FreeArcFormatDescriptor();
+    var listed = descriptor.List(new MemoryStream(FreeArcTests.Vector("crypt-headers")), null);
+    Assert.That(listed.Select(e => e.Name), Is.EqualTo(new[] { "FULL.arc", "metadata.ini" }));
+    var withPassword = descriptor.List(new MemoryStream(FreeArcTests.Vector("crypt-headers")), "Secret");
+    Assert.That(withPassword.Select(e => e.Name), Is.EquivalentTo(Manifest.Value.Where(r => r.Archive == "crypt-headers.arc").Select(r => r.Name)));
+    Assert.That(withPassword.All(e => e.IsEncrypted), Is.True);
+  }
+
+  [Test]
+  public void GivenAnEncryptedArchive_WhenAFileIsAddedWithoutThePassword_ThenTheEditIsRefusedAndTheArchiveIsUntouched() {
+    var original = FreeArcTests.Vector("crypt-aes");
+    var stream = new MemoryStream();
+    stream.Write(original);
+    var inputs = new[] { new Compression.Registry.ArchiveInputInfo("new.txt", "new.txt", false, "x"u8.ToArray()) };
+    Assert.That(() => ((Compression.Registry.IArchiveModifiable)new FreeArcFormatDescriptor()).Add(stream, inputs), Throws.Exception);
+    Assert.That(stream.ToArray(), Is.EqualTo(original));
+  }
+
+  [TestCase("aes-256/ctr:n1000:r0:i00112233445566778899aabbccddeeff:s00", true)]
+  [TestCase("serpent-128/cfb:n10:r0:i00112233445566778899aabbccddeeff:s00:c0000", true)]
+  [TestCase("blowfish/ctr:n1000:r0:i0011223344556677:s00", true)]
+  [TestCase("aes-256/ctr:n1000:r12:i00112233445566778899aabbccddeeff:s00", false)]
+  [TestCase("aes-256/ofb:n1000:r0:i00112233445566778899aabbccddeeff:s00", false)]
+  [TestCase("aes-100/ctr:n1000:r0:i00112233445566778899aabbccddeeff:s00", false)]
+  [TestCase("twofish-256/ctr:n1000:r0:i0011:s00", false)]
+  [TestCase("aes-256/ctr:n1000:r0:i00112233445566778899aabbccddeeff", false)]
+  public void GivenAnEncryptionStage_WhenCheckedForSupport_ThenOnlyWellFormedOnesAreAccepted(string stage, bool supported)
+    => Assert.That(FreeArcMethods.IsSupported("storing+" + stage), Is.EqualTo(supported));
+
   [Test]
   public void GivenTornadoBehindFourByFour_WhenCheckedForSupport_ThenItIsDecodable()
     => Assert.That(FreeArcMethods.IsSupported("rep:144kb+4x4:tor:3:144kb"), Is.True);

@@ -1,4 +1,4 @@
-"""Builds the FreeArc 0.67 archives that exercise the filter, tor, ppmd, grzip, lzp and dict stages.
+"""Builds the FreeArc 0.67 archives that exercise the filter, tor, ppmd, grzip, lzp, dict and encryption stages.
 
 Usage: python -I mkfilters.py <Arc.exe> <workdir> <outdir>
 The inputs are generated deterministically; the archives and filters.tsv (name, size, SHA-256
@@ -61,21 +61,27 @@ for name, switch, *inputs in [('filters-rep.arc', '-mrep:1mb'), ('filters-delta.
                      ('lzp.arc', '-mlzp'), ('lzp-short.arc', '-mlzp:b64kb:12:h12:d8kb:s20'),
                      ('lzp-tor.arc', '-mlzp:16:h16+tor:3'),
                      ('dict.arc', '-mdict', prose), ('dict-p.arc', '-mdict:p:b64kb', prose),
-                     ('text-m5.arc', '-m5', prose), ('text-mx.arc', '-mx', prose), ('text-m9x.arc', '-m9x', prose)]:
+                     ('text-m5.arc', '-m5', prose), ('text-mx.arc', '-mx', prose), ('text-m9x.arc', '-m9x', prose),
+                     ('crypt-aes.arc', '-mlzma -pSecret'), ('crypt-aes128-cfb.arc', '-mlzma -pSecret -ae=aes-128/cfb'),
+                     ('crypt-blowfish.arc', '-mlzma -pSecret -ae=blowfish'), ('crypt-serpent.arc', '-mlzma -pSecret -ae=serpent'),
+                     ('crypt-twofish.arc', '-mlzma -pSecret -ae=twofish'),
+                     ('crypt-chain.arc', '-mlzma -pSecret -ae=blowfish/cfb+twofish/cfb+serpent'),
+                     ('crypt-headers.arc', '-mlzma -hpSecret'), ('crypt-latin1.arc', '-mlzma -pP\u00e4sswort')]:
     target = os.path.join(work, name)
-    p = subprocess.run([arc, 'a', target, '-i0', '-cfg-', '-ep1', switch, os.path.join(inputs[0] if inputs else src, '*')],
+    passwords = [t[t.index('p') + 1:] for t in switch.split() if t.startswith(('-p', '-hp'))]
+    p = subprocess.run([arc, 'a', target, '-i0', '-cfg-', '-ep1', *switch.split(), os.path.join(inputs[0] if inputs else src, '*')],
                        capture_output=True, text=True, errors='replace')
     if p.returncode != 0:
         raise SystemExit(f"{name}: {p.stdout}\n{p.stderr}")
     x = os.path.join(work, 'x-' + name)
-    p = subprocess.run([arc, 'x', target, '-i0', '-cfg-', '-dp' + x], capture_output=True, text=True, errors='replace')
+    p = subprocess.run([arc, 'x', target, '-i0', '-cfg-', *['-p' + w for w in passwords], '-dp' + x], capture_output=True, text=True, errors='replace')
     if p.returncode != 0:
         raise SystemExit(f"x {name}: {p.stdout}\n{p.stderr}")
     for f in sorted(os.listdir(x)):
         data = open(os.path.join(x, f), 'rb').read()
         rows.append(f"{name}\t{f}\t{len(data)}\t{hashlib.sha256(data).hexdigest()}")
     shutil.copy(target, out)
-    q = subprocess.run([arc, 'lt', target, '-i0', '-cfg-'], capture_output=True, text=True, errors='replace')
+    q = subprocess.run([arc, 'lt', target, '-i0', '-cfg-', *['-p' + w for w in passwords]], capture_output=True, text=True, errors='replace')
     print(name, os.path.getsize(target), [l.strip() for l in q.stdout.splitlines() if l.strip()[:1].isdigit()])
 
 with open(os.path.join(out, 'filters.tsv'), 'w', newline='\n') as f:
