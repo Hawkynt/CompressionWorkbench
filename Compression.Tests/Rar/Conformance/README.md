@@ -44,8 +44,8 @@ Emulator: DOSBox-X 2026.10.01 (`dosbox-x-vsbuild-win64-2026.10.01-portable.zip`,
 `commands-dos.txt` lists the commands. Per version: `-m0`, `-m3`, `-m5`, solid, a
 subdirectory, `-p` (compressed and stored), volumes (`.rar` + `.r00`), SFX (1.55-2.50),
 multimedia compression `-mm` (2.00, 2.50), and for 3.93 `-hp`, PPMd and the audio filter.
-RAR 3.93 for DOS did not write volumes under DOSBox (it stops at the next-volume prompt), so
-3.93 volumes are covered by `Modern/r4-vol*`.
+RAR 3.93 names volumes `NAME.partN.rar` by default, which an 8.3 DOS drive cannot hold, and
+then writes nothing; its volumes are made with `-vn` (`.rar` + `.r00`).
 
 ## `Libarchive/`: libarchive's RAR test suite
 

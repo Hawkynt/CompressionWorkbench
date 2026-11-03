@@ -1,5 +1,5 @@
 # Generate RAR fixtures with the DOS RAR releases under DOSBox-X, and test them with unrar 7.12.
-# usage: gendos.py <out>
+# usage: gendos.py <out> [version...]   (with versions: only those, appended to the manifest in <out>)
 import hashlib, os, random, shutil, subprocess, sys
 S = os.environ["RAR_FIXTURE_WORK"]  # work directory holding the tools and inputs (see README)
 DBX = os.path.join(S, "dosbox", "x", "bin", "x64", "Release", "dosbox-x.exe")
@@ -13,6 +13,7 @@ EXE = {
     "250": os.path.join(S, "dos", "rar250", "RAR.EXE"),
     "393": os.path.join(S, "dos", "rarx393", "rar", "rar32.exe"),
 }
+ONLY = sys.argv[2:]
 SFX = {"155": "IDOS.SFX", "200": "IDOS.SFX", "250": "IDOS.SFX"}
 
 text = open(os.path.join(S, "fxin", "tree", "text.txt"), "rb").read()[:8000]
@@ -34,6 +35,7 @@ def dos(work, cmds, timeout=120):
 
 manifest, log = [], []
 for ver, exe in EXE.items():
+    if ONLY and ver not in ONLY: continue
     work = os.path.join(S, "dosrun", "g" + ver)
     if os.path.exists(work): shutil.rmtree(work, onerror=lambda f, p, e: (os.chmod(p, 0o777), f(p)))
     os.makedirs(os.path.join(work, "SUB"))
@@ -55,7 +57,10 @@ for ver, exe in EXE.items():
     jobs.append(("TREE.RAR", f"{R} a -r TREE.RAR TEXT.TXT SUB\\SMALL.TXT", ["TEXT.TXT", "SUB/SMALL.TXT"], None))
     jobs.append(("PW.RAR", f"{R} a -psecret PW.RAR {files}", files.split(), "secret"))
     jobs.append(("PWS.RAR", f"{R} a -m0 -psecret PWS.RAR {files}", files.split(), "secret"))
-    jobs.append(("VOL.RAR", f"{R} a -v10 VOL.RAR BIG.BIN TEXT.TXT", ["BIG.BIN", "TEXT.TXT"], None))
+    # RAR 3.x defaults to NAME.partN.rar, which an 8.3 DOS drive cannot hold: rar32 then
+    # writes nothing. -vn selects the .rar/.r00 naming its predecessors use.
+    vn = "-vn " if ver == "393" else ""
+    jobs.append(("VOL.RAR", f"{R} a {vn}-v10 VOL.RAR BIG.BIN TEXT.TXT", ["BIG.BIN", "TEXT.TXT"], None))
     if ver in ("200", "250"):
         jobs.append(("MM.RAR", f"{R} a -mm MM.RAR AUDIO.WAV TEXT.TXT", ["AUDIO.WAV", "TEXT.TXT"], None))
         jobs.append(("SOLMM.RAR", f"{R} a -s -mm SOLMM.RAR AUDIO.WAV TEXT.TXT NOISE.BIN", ["AUDIO.WAV", "TEXT.TXT", "NOISE.BIN"], None))
@@ -85,5 +90,6 @@ for ver, exe in EXE.items():
             d = INPUTS[e]
             manifest.append("\t".join([tag, e, "f", str(len(d)), hashlib.sha256(d).hexdigest(), pw or ""]))
         log.append(f"RAR {ver}: {cmd}")
-open(os.path.join(OUT, "manifest-dos.tsv"), "w", newline="\n").write("\n".join(manifest) + "\n")
-open(os.path.join(OUT, "commands-dos.txt"), "w", newline="\n").write("\n".join(log) + "\n")
+mode = "a" if ONLY else "w"
+open(os.path.join(OUT, "manifest-dos.tsv"), mode, newline="\n").write("\n".join(manifest) + "\n")
+open(os.path.join(OUT, "commands-dos.txt"), mode, newline="\n").write("\n".join(log) + "\n")

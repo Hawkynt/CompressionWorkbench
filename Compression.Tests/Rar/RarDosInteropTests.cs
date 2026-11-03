@@ -71,18 +71,24 @@ public class RarDosInteropTests {
         $"{x} a -m0 M0.RAR {list} > NUL",
         $"{x} a -s SOLID.RAR {list} > NUL",
         $"{x} a -psecret PW.RAR {list} > NUL",
-        $"{x} a -v5 VOL.RAR NOISE.BIN TEXT.TXT > NUL",
+        // RAR 3.x names volumes NAME.partN.rar by default, which 8.3 DOS cannot hold (rar32
+        // then writes nothing); -vn selects the .rar/.r00 naming.
+        $"{x} a {(version == "393" ? "-vn " : "")}-v5 VOL.RAR NOISE.BIN TEXT.TXT > NUL",
+        $"{x} t -y VOL.RAR > VOLT.LOG",
       ]);
       foreach (var (archive, password) in new[] { ("M3.RAR", (string?)null), ("M0.RAR", null), ("SOLID.RAR", null), ("PW.RAR", "secret"), ("VOL.RAR", null) }) {
         var path = Path.Combine(drive, archive);
-        if (!File.Exists(path)) {
-          Assert.That(archive, Is.EqualTo("VOL.RAR"), $"RAR {version} wrote no {archive}");
-          continue;   // RAR 3.93 for DOS stops at its next-volume prompt under DOSBox
-        }
+        Assert.That(path, Does.Exist, $"RAR {version} wrote no {archive}");
         using var r = RarReader.Open(path, password);
         var got = RarConformanceSet.ExtractAll(r);
         foreach (var name in archive == "VOL.RAR" ? ["NOISE.BIN", "TEXT.TXT"] : files.Keys.ToArray())
           Assert.That(got[name], Is.EqualTo(files[name]), $"RAR {version} {archive}: {name}");
+      }
+      Assert.That(Directory.GetFiles(drive, "VOL.R0*"), Is.Not.Empty, $"RAR {version} made one volume only");
+      // RAR 1.40 prints nothing to a redirected stdout, so only later versions leave a log to check.
+      if (version != "140") {
+        var volLog = File.ReadAllText(Path.Combine(drive, "VOLT.LOG"), Encoding.Latin1);
+        Assert.That(volLog, Does.Contain("All OK"), $"RAR {version} t VOL.RAR:\n{volLog}");
       }
     } finally {
       RarTools.TryDelete(drive);

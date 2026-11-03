@@ -48,3 +48,4 @@ RAR 393: rar32 a -hpsecret HP.RAR TEXT.TXT NOISE.BIN EMPTY.DAT
 RAR 393: rar32 a -mct+ -m5 PPM.RAR TEXT.TXT
 RAR 393: rar32 a -mcA+ AUD.RAR AUDIO.WAV
 RAR 200: RAR a -s SOLID.RAR TEXT.TXT NOISE.BIN EMPTY.DAT  (as rar200-solid-empty.rar: RAR orders them NOISE.BIN, EMPTY.DAT, TEXT.TXT; the empty file carries 15 packed bytes of new tables)
+RAR 393: rar32 a -vn -v10 VOL.RAR BIG.BIN TEXT.TXT
