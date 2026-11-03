@@ -53,6 +53,11 @@ public sealed class FreeArcFilterTests {
   [TestCase("lzp", "lzp:153kb:64:h18")]
   [TestCase("lzp-short", "lzp:64kb:12:h12:d8kb:s20")]
   [TestCase("lzp-tor", "lzp:153kb:16:h16+tor:3:153kb")]
+  [TestCase("dict", "dict:168kb")]
+  [TestCase("dict-p", "dict:64kb:l8192:m400:s100")]
+  [TestCase("text-m5", "dict:168kb:80%:l8192:m400:s100+lzp:168kb:90%:65:h18:d1mb+4x4:b7mb:ppmd:8:96mb")]
+  [TestCase("text-mx", "dict:168kb:80%:l8192:m400:s100+lzp:168kb:92%:145:h18:d1mb+ppmd:16:384mb")]
+  [TestCase("text-m9x", "dict:168kb:75%+lzma:168kb:normal:bt4:128")]
   public void GivenFreeArcArchive_WhenExtracted_ThenEveryFileMatchesArc(string vector, string method) {
     var expected = Manifest.Value.Where(r => r.Archive == vector + ".arc").ToArray();
     Assert.That(expected, Is.Not.Empty);
@@ -205,6 +210,64 @@ public sealed class FreeArcFilterTests {
   public void GivenAnLzpChunkCutShort_WhenDecoded_ThenItIsRefused() {
     var stream = new byte[] { 20, 0, 0, 0, 1, 2, 3 };
     Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("lzp:64:h10", stream, 20));
+  }
+
+  [TestCase("dict:168kb", true)]
+  [TestCase("dict:p:64mb:85%", true)]
+  [TestCase("dict:3346kb:80%:l8192:m400:s100", true)]
+  [TestCase("dict:f:c30:r2:b1mb", true)]
+  [TestCase("dict:q7", false)]
+  public void GivenADictStage_WhenCheckedForSupport_ThenFreeArcsParametersAreRead(string method, bool supported)
+    => Assert.That(FreeArcMethods.IsSupported(method), Is.EqualTo(supported));
+
+  [Test]
+  public void GivenADictBlock_WhenDecoded_ThenWordsLiteralsAndEscapesAreExpanded() {
+    // Byte 'A' is the one-byte word "the", byte 'B' starts two-byte codes; 'B',0 is "hello" and
+    // 'B',1 shares 3 bytes with it: "help". The escape byte 'Z' passes 'A' through literally.
+    var dictionary = new List<byte>();
+    var single = new byte[256];
+    single['A'] = 3;
+    single['B'] = 1;
+    dictionary.AddRange(single);
+    var shared = new byte[256];
+    shared[1] = 3;
+    dictionary.AddRange(shared);
+    dictionary.AddRange("the"u8.ToArray());
+    dictionary.Add(0); // separator
+    dictionary.AddRange("hello"u8.ToArray());
+    dictionary.Add(0);
+    dictionary.AddRange("p"u8.ToArray());
+    dictionary.Add(0);
+    for (var d = 2; d < 256; ++d)
+      dictionary.Add(0);
+    dictionary.Add((byte)'Z'); // escape
+    dictionary.AddRange(new byte[] { (byte)'A', (byte)' ', (byte)'B', 0, (byte)' ', (byte)'B', 1, (byte)'!', (byte)'Z', (byte)'A' });
+    var block = dictionary.ToArray();
+    var stream = BitConverter.GetBytes(block.Length).Concat(block).ToArray();
+
+    Assert.That(FreeArcMethods.Decode("dict", stream, 16), Is.EqualTo("the hello help!A"u8.ToArray()));
+  }
+
+  [Test]
+  public void GivenADictBlockWhoseFirstWordSharesAPrefix_WhenDecoded_ThenItIsRefused() {
+    var block = new byte[256 + 256 + 2];
+    block['B'] = 1;
+    block[256] = 2; // the first two-byte word claims 2 shared bytes
+    var stream = BitConverter.GetBytes(block.Length).Concat(block).ToArray();
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("dict", stream, 0));
+  }
+
+  [Test]
+  public void GivenADictBlockCutInsideItsDictionary_WhenDecoded_ThenItIsRefused() {
+    var block = new byte[100];
+    var stream = BitConverter.GetBytes(block.Length).Concat(block).ToArray();
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("dict", stream, 0));
+  }
+
+  [Test]
+  public void GivenAStoredDictChunk_WhenDecoded_ThenItsBytesAreCopied() {
+    var stream = new byte[] { 0xFE, 0xFF, 0xFF, 0xFF, (byte)'o', (byte)'k' };
+    Assert.That(FreeArcMethods.Decode("dict", stream, 2), Is.EqualTo("ok"u8.ToArray()));
   }
 
   [Test]

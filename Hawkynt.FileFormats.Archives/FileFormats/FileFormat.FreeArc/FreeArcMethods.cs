@@ -12,8 +12,8 @@ namespace FileFormat.FreeArc;
 /// (a raw LZMA1 stream with no properties header; dictionary and lc/lp/pb come from the method
 /// string), <c>tor</c> (see <see cref="FreeArcTornado"/>), <c>ppmd</c> (see
 /// <see cref="FreeArcPpmd"/>), <c>grzip</c> (see <see cref="FreeArcGrzip"/>), the wrapper
-/// <c>4x4</c> and the preprocessors <c>rep</c>, <c>delta</c>, <c>exe</c> and <c>lzp</c> (see
-/// <see cref="FreeArcFilters"/>). Everything else — dict, mm, external compressors and encryption —
+/// <c>4x4</c> and the preprocessors <c>rep</c>, <c>delta</c>, <c>exe</c>, <c>lzp</c> and <c>dict</c>
+/// (see <see cref="FreeArcFilters"/>). Everything else — mm, external compressors and encryption —
 /// is refused with <see cref="NotSupportedException"/>.
 /// </remarks>
 public static partial class FreeArcMethods {
@@ -34,6 +34,7 @@ public static partial class FreeArcMethods {
     "ppmd" => PpmdParameters.TryParse(stage, out _),
     "grzip" => stage.Split(':').Skip(1).All(t => GrzipOption().IsMatch(t.Trim())),
     "lzp" => LzpParameters.TryParse(stage, out _),
+    "dict" => TryDictBlockSize(stage, out _),
     "4x4" => FourByFourInner(stage) is { } inner && StageName(inner) != "4x4" && IsDecodable(inner),
     _ => false,
   };
@@ -152,6 +153,10 @@ public static partial class FreeArcMethods {
       }
       case "grzip":
         return FreeArcGrzip.Decode(input, outputSize);
+      case "dict":
+        if (!TryDictBlockSize(stage, out var dictBlock))
+          throw new NotSupportedException($"FreeArc: dict parameters \"{stage}\" are not supported.");
+        return FreeArcFilters.DecodeDict(input, dictBlock);
       case "lzp": {
         if (!LzpParameters.TryParse(stage, out var lp))
           throw new NotSupportedException($"FreeArc: lzp parameters \"{stage}\" are not supported.");
@@ -213,6 +218,43 @@ public static partial class FreeArcMethods {
       p = new(order, (int)memory, restore);
       return true;
     }
+  }
+
+  /// <summary>
+  /// The block size of a dict stage (default 64 MiB): <c>bSIZE</c> or a bare size. <c>p</c>,
+  /// <c>f</c>, <c>cN</c>, <c>lN</c>, <c>mN</c>, <c>sN</c>, <c>rN</c>, <c>N%</c> and a bare number
+  /// steer only the encoder.
+  /// </summary>
+  private static bool TryDictBlockSize(string stage, out int blockSize) {
+    long size = 64L << 20;
+    blockSize = 0;
+    foreach (var raw in stage.Split(':').Skip(1)) {
+      var token = raw.Trim().ToLowerInvariant();
+      if (token is "p" or "f")
+        continue;
+      if (token.Length > 1 && token[0] is 'c' or 'l' or 'm' or 's' or 'r') {
+        if (!int.TryParse(token.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out _))
+          return false;
+        continue;
+      }
+      if (token.Length > 1 && token[0] == 'b') {
+        if (!LzmaParameters.IsSize(token[1..]) && !int.TryParse(token.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out _))
+          return false;
+        size = LzmaParameters.SizeOf(token[1..]);
+        continue;
+      }
+      if (token.EndsWith('%') && int.TryParse(token.AsSpan(0, token.Length - 1), NumberStyles.None, CultureInfo.InvariantCulture, out _))
+        continue;
+      if (int.TryParse(token, NumberStyles.None, CultureInfo.InvariantCulture, out _))
+        continue;
+      if (!LzmaParameters.IsSize(token))
+        return false;
+      size = LzmaParameters.SizeOf(token);
+    }
+    if (size is < 1 or > int.MaxValue)
+      return false;
+    blockSize = (int)size;
+    return true;
   }
 
   /// <summary>
