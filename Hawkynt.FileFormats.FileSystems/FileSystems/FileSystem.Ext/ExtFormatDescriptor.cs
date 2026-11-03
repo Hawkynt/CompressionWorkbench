@@ -322,13 +322,16 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new ExtWriter();
     foreach (var i in inputs) {
-      if (i.IsDirectory) continue;
+      // Folders are kept, empty ones included: the writer builds the tree from the paths.
+      if (i.IsDirectory) {
+        w.AddDirectory(i.ArchiveName);
+        continue;
+      }
       var info = i;
       // Only the length is needed to lay the volume out. Reading a large input
       // into a byte[] just to hand it over would cap the volume at 2 GB even
       // though the writer places file data by seek.
-      // Names are flattened to their leaf, as this path has always done.
-      var name = Path.GetFileName(info.ArchiveName);
+      var name = info.ArchiveName.Replace('\\', '/').TrimStart('/');
       if (info.InMemoryContent is { } bytes)
         w.AddFile(name, bytes);
       else
@@ -376,7 +379,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(inputs);
     var w = new ExtWriter();
     foreach (var input in inputs) {
-      if (input.IsDirectory) continue;
+      if (input.IsDirectory) {
+        w.AddDirectory(input.Name);
+        continue;
+      }
       w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
     }
     var versionStr = options.GetOption("Version", "ext4");
@@ -408,8 +414,12 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ExtReader(stream);
     foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
+      // Folders are created too, so an empty one survives extraction.
+      if (e.IsDirectory) {
+        if (e.Name != "lost+found") CreateEntryDirectory(outputDir, e.Name);
+        continue;
+      }
       // Streamed, not buffered: ext records i_size as a uint32, so an entry can
       // approach 4 GB -- more than the byte[] Extract returns could hold.
       using var target = CreateEntryFile(outputDir, e.Name);
@@ -431,6 +441,14 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// file's mode, owner, times, links and extended attributes.
   /// </remarks>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    // Folders added on their own (empty ones too) are created in place as well.
+    foreach (var folder in inputs.Where(static i => i.IsDirectory && !string.IsNullOrEmpty(i.ArchiveName))) {
+      try {
+        ExtModifier.AddDirectory(archive, folder.ArchiveName);
+      } catch (ExtModifier.InPlaceUnsupportedException ex) {
+        throw new NotSupportedException($"ext: folder '{folder.ArchiveName}' cannot be added in place ({ex.Message}).", ex);
+      }
+    }
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs)) {
       try {
         ExtModifier.AddFile(archive, name, data);

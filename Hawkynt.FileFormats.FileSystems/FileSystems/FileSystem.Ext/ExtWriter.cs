@@ -83,6 +83,24 @@ public sealed class ExtWriter {
   /// </summary>
   public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
 
+  // Directories added on their own, so empty ones exist too (paths, '/'-separated).
+  private readonly List<string> _dirs = [];
+
+  /// <summary>Adds a directory (and its parents); needed only for empty ones.</summary>
+  public void AddDirectory(string name) {
+    var path = string.Join('/', name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries));
+    if (path.Length > 0) _dirs.Add(path);
+  }
+
+  // Every directory path the explicit directories imply, parents first.
+  private IEnumerable<string> ExplicitDirPrefixes() {
+    foreach (var dir in _dirs) {
+      var segments = dir.Split('/');
+      for (var s = 1; s <= segments.Length; ++s)
+        yield return string.Join('/', segments.Take(s));
+    }
+  }
+
   /// <summary>
   /// Reads a file once and says which of its blocks hold nothing but zeros.
   /// </summary>
@@ -220,6 +238,12 @@ public sealed class ExtWriter {
       }
       // The leaf file adds an entry to its immediate parent directory.
       dirEntryCount[prefix] = dirEntryCount.GetValueOrDefault(prefix) + 1;
+    }
+    foreach (var dir in this.ExplicitDirPrefixes()) {
+      var slash = dir.LastIndexOf('/');
+      var parent = slash < 0 ? "" : dir[..slash];
+      if (dirPaths.Add(dir))
+        dirEntryCount[parent] = dirEntryCount.GetValueOrDefault(parent) + 1;
     }
 
     // Each directory needs enough data blocks to hold its entries (its own
@@ -664,6 +688,18 @@ public sealed class ExtWriter {
       linksOfInode[fileInode] = 1;
       fileInodes.Add((fileInode, dir, leaf, data, streamingSize, opener, fileOrdinalForContent));
       dir.Files.Add((leaf, fileInode));
+    }
+
+    // Directories added on their own (empty ones among them).
+    foreach (var path in _dirs) {
+      var dir = root;
+      foreach (var segment in path.Split('/')) {
+        if (!dir.Subdirs.TryGetValue(segment, out var child)) {
+          child = new DirNode { Inode = nextInode++, Parent = dir.Inode, Name = segment };
+          dir.Subdirs.Add(segment, child);
+        }
+        dir = child;
+      }
     }
 
     if (nextInode > (uint)inodesPerGroup * (uint)groupCount)
@@ -1408,6 +1444,7 @@ public sealed class ExtWriter {
         dirs.Add(prefix);
       }
     }
+    foreach (var dir in this.ExplicitDirPrefixes()) dirs.Add(dir);
     return dirs.Count;
   }
 
