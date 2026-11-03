@@ -14188,6 +14188,61 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.DxArchive`
+
+[`DxArchiveEntry`](#dxarchiveentry) · [`DxArchiveFormatDescriptor`](#dxarchiveformatdescriptor) · [`DxArchiveReader`](#dxarchivereader)
+
+#### `DxArchiveEntry`
+
+One file of a DxLib archive.
+
+Implements `IEquatable<DxArchiveEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DxArchiveEntry` | `DxArchiveEntry(string Path, long Size, long StoredSize, DateTime? Modified)` | One file of a DxLib archive. |
+| `Modified` | `DateTime? Modified { get; init; }` | Last-write time, when recorded. |
+| `Path` | `string Path { get; init; }` | '/'-separated path. |
+| `Size` | `long Size { get; init; }` | Expanded size. |
+| `StoredSize` | `long StoredSize { get; init; }` | Bytes the file occupies in the archive. |
+
+#### `DxArchiveFormatDescriptor`
+
+DxLib archives (`.dxa`; WOLF RPG Editor's `.wolf` data archives), versions 6 and 8. The password is the archiver's default unless given; version 6 keys are also recovered from the header, so those archives open without one.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DxArchiveFormatDescriptor` | `DxArchiveFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `DxArchiveReader`
+
+DxLib archives (`.dxa`, and WOLF RPG Editor `.wolf` data archives), versions 6 and 8, after docs/DXA-ON-DISK.md: XOR-keyed index and file data, LZ- and Huffman-coded files.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultPassword` | `static ReadOnlySpan<byte> DefaultPassword { get; }` | The bytes the archiver uses when no password is given (version 8). |
+| `Entries` | `IReadOnlyList<DxArchiveEntry> Entries { get; }` | The files, depth first in index order. |
+| `Version` | `int Version { get; }` | The archive version (6 or 8). |
+| `Extract` | `byte[] Extract(DxArchiveEntry entry)` | The expanded bytes of `entry`. |
+| `LooksLikeDxa` | `static bool LooksLikeDxa(ReadOnlySpan<byte> head)` | Whether the bytes start like a DxLib archive of a version this reader handles. |
+| `Open` | `static DxArchiveReader Open(byte[] data, string password = null)` | Opens an archive; `password` is the archive password (null: the archiver's default, or a key recovered from a version 6 header). |
+
 ### Namespace `FileFormat.Dxf`
 
 [`DxfFormatDescriptor`](#dxfformatdescriptor)
