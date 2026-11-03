@@ -79,7 +79,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [pack (.z)](https://en.wikipedia.org/wiki/Pack_(compression)) | `UnixPack` |  | ✅ | ✅ | — | System V static-Huffman `pack`; detected by its `1F 1E` magic (`.z` belongs to `compress`); GNU gzip decodes our output | [Wikipedia](https://en.wikipedia.org/wiki/Pack_(compression)) |
 | [PackBits](https://en.wikipedia.org/wiki/PackBits) | `PackBits` | `.packbits` | ✅ | ✅ | ✅ |  | [developer.apple.com](https://developer.apple.com/library/archive/documentation/mac/pdf/MoreMacintoshToolbox.pdf) |
 | [PAQ8](https://en.wikipedia.org/wiki/PAQ) | `Paq8` | `.paq8l` `.paq8` | ✅ | ✅ | ✅ |  | [mattmahoney.net](https://mattmahoney.net/dc/paq.html) |
-| PowerPacker | `PowerPacker` | `.pp` `.pp20` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/PowerPacker) |
+| PowerPacker | `PowerPacker` | `.pp` `.pp20` | ✅ | ✅ | ✅ | PP20 at all five efficiencies; encrypted PX20 and game-renamed headers are refused, and so is an empty file, which PP20 cannot hold | [Archive Team](http://fileformats.archiveteam.org/wiki/PowerPacker) |
 | [PPMd](https://en.wikipedia.org/wiki/Prediction_by_partial_matching) | `Ppmd` | `.pmd` | ✅ | ✅ | ✅ |  | [7-zip.org](https://www.7-zip.org/sdk.html) |
 | QuickLZ | `QuickLz` | `.quicklz` | ✅ | ✅ | ✅ | Level 1 and level 3; the optimizer searches the level and the level-3 search depth | [quicklz.com](http://www.quicklz.com/) |
 | RefPack / QFS | `RefPack` | `.qfs` `.refpack` | ✅ | ✅ | ✅ | Optimizer searches the history window, the match-search depth and quick match indexing | [wiki.niotso.org](http://wiki.niotso.org/RefPack) |

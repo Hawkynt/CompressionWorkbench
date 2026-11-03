@@ -126,7 +126,7 @@ Softdisk Text Compressor,ctx,compression,,,,,,fmt/1359,,1,,,,,,MISSING,,
 WRAptor,wr3;wra,compression,,,,,,fmt/1611,,1,,,,,,MISSING,,
 LZFSE,lzfse,compression,,,,R,,,,1,https://github.com/lzfse/lzfse,Lzfse,Y,Y,,OK,,
 zlib,zlib,compression,RW,,,R,,,,2,https://www.rfc-editor.org/rfc/rfc1950,Zlib,Y,Y,,OK,,
-PowerPacker,pp;pp20,compression,,,R,,,,,1,,PowerPacker,Y,Y,,OK,,
+PowerPacker,pp;pp20,compression,,,R,,,,,1,,PowerPacker,Y,Y,,OK,,ancient decodes ours; ancient's PP20 test file decodes
 XPK (Amiga),xpk,compression,,,R,,,,,1,,,,,,MISSING,,
 xMash (Amiga),xmsh,compression,,,R,,,,,1,,,,,,MISSING,,"our earlier descriptor used an invented layout and was removed; the real format packs every cylinder with XPK, no decoder here implements XPK, and unar leaves libxad's client for it out"
 DCS (Amiga Disk Archiver),dcs,compression,,,R,,,,,1,,,,,,MISSING,,"our earlier descriptor used an invented layout and was removed; the real format packs every cylinder with XPK, no decoder here implements XPK, and unar leaves libxad's client for it out"
