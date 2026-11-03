@@ -41,6 +41,7 @@ public sealed class Rar4Writer : IDisposable {
   private readonly Func<int, Stream>? _openVolume;
   private readonly bool _newVolumeNaming;
   private readonly int _recoveryPercent;
+  private readonly Crc32 _volumeCrc = new();
   private readonly List<Stream> _opened = [];
   private Stream _out;
   private long _written;
@@ -285,6 +286,7 @@ public sealed class Rar4Writer : IDisposable {
 
   private void StartVolume() {
     this._written = 0;
+    this._volumeCrc.Reset();
     this.Raw(RarConstants.Rar4Signature);
     ushort flags = 0;
     if (this._volumeSize > 0) {
@@ -301,11 +303,26 @@ public sealed class Rar4Writer : IDisposable {
     this.Raw(Seal(h));
   }
 
+  /// <summary>
+  /// RAR 2.9 volumes end the way rar 3.x+ ends them: the CRC-32 of the volume so far, the volume
+  /// number and 7 spare bytes, which RAR 3 recovery volumes leave uncovered and rar's <c>rc</c>
+  /// restores as zeros. Older targets keep the plain 7-byte block they understand.
+  /// </summary>
+  private bool VolumeEnd => this._volumeSize > 0 && !this.IsLegacyTarget;
+
+  private int EndSize => this.VolumeEnd ? 20 : 7;
+
   private void WriteEnd(bool moreVolumes) {
-    var h = new byte[7];
+    var h = new byte[this.EndSize];
     h[2] = RarConstants.Rar4TypeEnd;
-    BinaryPrimitives.WriteUInt16LittleEndian(h.AsSpan(3), (ushort)(moreVolumes ? 0x0001 : 0));
-    BinaryPrimitives.WriteUInt16LittleEndian(h.AsSpan(5), 7);
+    var flags = moreVolumes ? 0x0001 : 0;
+    if (this.VolumeEnd) {
+      flags |= 0x4000 | 0x0002 | 0x0004 | 0x0008;   // skip if unknown, data CRC, space for a .rev trailer, volume number
+      BinaryPrimitives.WriteUInt32LittleEndian(h.AsSpan(7), this._volumeCrc.Value);
+      BinaryPrimitives.WriteUInt16LittleEndian(h.AsSpan(11), (ushort)this._volumeIndex);
+    }
+    BinaryPrimitives.WriteUInt16LittleEndian(h.AsSpan(3), (ushort)flags);
+    BinaryPrimitives.WriteUInt16LittleEndian(h.AsSpan(5), (ushort)h.Length);
     this.Raw(Seal(h));
   }
 
@@ -316,6 +333,7 @@ public sealed class Rar4Writer : IDisposable {
 
   private void Raw(ReadOnlySpan<byte> b) {
     this._out.Write(b);
+    this._volumeCrc.Update(b);
     this._written += b.Length;
   }
 
@@ -411,7 +429,7 @@ public sealed class Rar4Writer : IDisposable {
       var splitAfter = false;
       if (this._volumeSize > 0) {
         var header = this.FileHeader(f, left, f.Crc, splitBefore, false).Length;
-        var room = this._volumeSize - this._written - 7;
+        var room = this._volumeSize - this._written - this.EndSize;
         if (header + left > room) {
           var dataRoom = room - this.FileHeader(f, Math.Max(room, 0), 0, splitBefore, true).Length;
           if (dataRoom < 16 || left == 0) {
@@ -435,7 +453,7 @@ public sealed class Rar4Writer : IDisposable {
         crc = f.Crc;
       this.Raw(this.FileHeader(f, part, crc, splitBefore, splitAfter));
       spill.Position = offset;
-      CopyTo(spill, this._out, part, buf, null);
+      CopyTo(spill, this._out, part, buf, this._volumeCrc);
       this._written += part;
       offset += part;
       if (!splitAfter) return;
