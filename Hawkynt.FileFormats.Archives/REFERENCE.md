@@ -14255,6 +14255,59 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.DvdisasterEcc`
+
+[`DvdisasterEccFormatDescriptor`](#dvdisastereccformatdescriptor) · [`DvdisasterEccHeader`](#dvdisastereccheader)
+
+#### `DvdisasterEccFormatDescriptor`
+
+dvdisaster error-correction file (`.ecc`), read-only: the parity a disc image is repaired from. It holds no files, so the view is its header as `metadata.ini` and, for the RS01 method, the per-sector CRC table and the Reed-Solomon parity layers; RS03 files list their header and raw data. Test checks the ecc MD5 the header records. References: `https://dvdisaster.jcea.es/` — dvdisaster documentation, RS01/RS03 methods and the ecc header
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DvdisasterEccFormatDescriptor` | `DvdisasterEccFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `EccDataIntact` | `static bool EccDataIntact(ReadOnlySpan<byte> file)` | Whether the data after the header still has the MD5 the header records. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `DvdisasterEccHeader`
+
+The fixed header of a dvdisaster error-correction file.
+
+Implements `IEquatable<DvdisasterEccHeader>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DvdisasterEccHeader` | `DvdisasterEccHeader(string Method, byte[] MethodFlags, byte[] MediumFingerprint, byte[] MediumMd5, byte[] EccMd5, long Sectors, int DataBytes, int EccBytes, int CreatorVersion, int NeededVersion, int FingerprintSector)` | The fixed header of a dvdisaster error-correction file. |
+| `Size` | `const int Size` | Header size: the ecc data starts after one 4 KiB block. |
+| `CreatorVersion` | `int CreatorVersion { get; init; }` |  |
+| `DataBytes` | `int DataBytes { get; init; }` |  |
+| `EccBytes` | `int EccBytes { get; init; }` |  |
+| `EccMd5` | `byte[] EccMd5 { get; init; }` |  |
+| `FingerprintSector` | `int FingerprintSector { get; init; }` |  |
+| `MediumFingerprint` | `byte[] MediumFingerprint { get; init; }` |  |
+| `MediumMd5` | `byte[] MediumMd5 { get; init; }` |  |
+| `MethodFlags` | `byte[] MethodFlags { get; init; }` |  |
+| `Method` | `string Method { get; init; }` |  |
+| `NeededVersion` | `int NeededVersion { get; init; }` |  |
+| `Sectors` | `long Sectors { get; init; }` |  |
+| `Read` | `static DvdisasterEccHeader Read(ReadOnlySpan<byte> file)` |  |
+| `Version` | `static string Version(int v)` | Formats a dvdisaster version number (7910 = 0.79.10). |
+
 ### Namespace `FileFormat.Dxf`
 
 [`DxfFormatDescriptor`](#dxfformatdescriptor)
@@ -14617,6 +14670,53 @@ Linear scanner that locates zlib substreams inside an EaseUS Todo Backup `.pbd` 
 | `DefaultMaxRetainedPayloadBytes` | `const int DefaultMaxRetainedPayloadBytes` | Maximum decompressed bytes retained per chunk before `InflatedOverCap` kicks in. |
 | `Scan` | `static List<EaseUsZlibChunk> Scan(byte[] data, int startOffset = 12, int maxRetainedPayloadBytes = 65536, int maxCandidates = 4096, bool onlyOverlapping = false)` | Walks `data` from offset `startOffset` onward, locating each `0x78 {0x01\|0x9C\|0xDA}` candidate header and running a trial inflate. Returns the full chunk inventory in scan order. |
 | `TryInflate` | `static EaseUsZlibChunk TryInflate(byte[] data, int offset, int maxRetainedPayloadBytes = 65536)` | Attempts to inflate the candidate zlib substream starting at `offset` in `data`. The decoder reads ahead, but on a seekable stream `ZlibStream` hands the read-ahead back once the Adler-32 trailer is checked, so the stream position afterwards is the exact compressed length that multi-stream scanning needs. |
+
+### Namespace `FileFormat.EcSbx`
+
+[`EcSbxContent`](#ecsbxcontent) · [`EcSbxFormatDescriptor`](#ecsbxformatdescriptor)
+
+#### `EcSbxContent`
+
+The decoded content of an error-correcting SeqBox container.
+
+Implements `IEquatable<EcSbxContent>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EcSbxContent` | `EcSbxContent(int Version, string FileName, DateTime? Modified, int DataShards, int ParityShards, byte[] Data)` | The decoded content of an error-correcting SeqBox container. |
+| `DataShards` | `int DataShards { get; init; }` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `FileName` | `string FileName { get; init; }` |  |
+| `Modified` | `DateTime? Modified { get; init; }` |  |
+| `ParityShards` | `int ParityShards { get; init; }` |  |
+| `Version` | `int Version { get; init; }` |  |
+
+#### `EcSbxFormatDescriptor`
+
+Error-correcting SeqBox (`.ecsbx`, blkar's SBX versions 17/18/19), read-only. Every block carries its sequence number, so the protected file is reassembled from the data blocks wherever the burst interleaving put them, and checked against the stored hash. A container whose data blocks are damaged or missing needs a Reed-Solomon repair, which is refused rather than guessed. References: `https://github.com/darrenldl/blockyarchive/blob/master/SBX_FORMAT.md` — blkar's SBX/EC-SBX specification (MIT)`https://github.com/MarcoPon/SeqBox` — the original SeqBox format
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EcSbxFormatDescriptor` | `EcSbxFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `BlockCrc` | `static ushort BlockCrc(ReadOnlySpan<byte> block)` | CRC-16-CCITT (polynomial 0x1021, MSB first) seeded with the block's version byte. |
+| `BlockSize` | `static int BlockSize(int version)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Read` | `static EcSbxContent Read(ReadOnlySpan<byte> file)` |  |
 
 ### Namespace `FileFormat.Egg`
 
@@ -18369,6 +18469,61 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.Hlp`
+
+[`HlpFormatDescriptor`](#hlpformatdescriptor) · [`HlpInternalFile`](#hlpinternalfile) · [`HlpReader`](#hlpreader)
+
+#### `HlpFormatDescriptor`
+
+Windows Help (`.hlp`), read-only: the internal files of the help file system (`|SYSTEM`, `|TOPIC`, `|FONT`, `|CONTEXT`, embedded bitmaps, baggage) exactly as stored. The leading `|` that marks WinHelp's own files cannot appear in a file name, so it is shown as `#` (`#SYSTEM`); topic text is not decompressed into RTF. References: Manfred Winterhoff, "Windows Help File Format" (helpdeco's `helpfile.txt`) — the format description`https://github.com/pmachapman/helpdeco` — helpdeco, the oracle (`-d` directory listing, internal-file dumps)
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HlpFormatDescriptor` | `HlpFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `EntryName` | `static string EntryName(string internalName)` | The entry name of an internal file: WinHelp's '\|' marker becomes '#'. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `HlpInternalFile`
+
+One internal file of a WinHelp file: its name, where its FILEHEADER sits and its used bytes.
+
+Implements `IEquatable<HlpInternalFile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HlpInternalFile` | `HlpInternalFile(string Name, int HeaderOffset, int ReservedSpace, int UsedSpace, byte Flags)` | One internal file of a WinHelp file: its name, where its FILEHEADER sits and its used bytes. |
+| `Flags` | `byte Flags { get; init; }` |  |
+| `HeaderOffset` | `int HeaderOffset { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `ReservedSpace` | `int ReservedSpace { get; init; }` |  |
+| `UsedSpace` | `int UsedSpace { get; init; }` |  |
+
+#### `HlpReader`
+
+Reads the internal file system of a Windows Help file (`.hlp`, WinHelp 3.x/4.x, and Multimedia Viewer `.mvb`): the internal directory, a B+ tree of names and offsets, and the internal files it points to (`|SYSTEM`, `|TOPIC`, `|FONT`, bitmaps, baggage), returned as stored.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HlpReader` | `HlpReader(byte[] file)` |  |
+| `Magic` | `const uint Magic` |  |
+| `Files` | `IReadOnlyList<HlpInternalFile> Files { get; }` | Internal files in the directory's (sorted) order. |
+| `Extract` | `byte[] Extract(HlpInternalFile file)` | An internal file's used bytes. |
+
 ### Namespace `FileFormat.Hog`
 
 [`HogEntry`](#hogentry) · [`HogFormatDescriptor`](#hogformatdescriptor) · [`HogModifier`](#hogmodifier) · [`HogReader`](#hogreader) · [`HogWriter`](#hogwriter)
@@ -20208,6 +20363,66 @@ Provides static methods for reading and writing Lzip (.lz) format members.
 | --- | --- | --- |
 | `Compress` | `static void Compress(Stream input, Stream output, int dictionarySize = 8388608, LzmaCompressionLevel level = 1)` | Compresses all data from `input` and writes a single Lzip member to `output`. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a single Lzip member from `input` and writes the uncompressed data to `output`. |
+
+### Namespace `FileFormat.LzipFec`
+
+[`LzipFecBlock`](#lzipfecblock) · [`LzipFecFile`](#lzipfecfile) · [`LzipFecFormatDescriptor`](#lzipfecformatdescriptor)
+
+#### `LzipFecBlock`
+
+One fec packet: its block number and its FEC bytes.
+
+Implements `IEquatable<LzipFecBlock>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LzipFecBlock` | `LzipFecBlock(int Number, byte[] Data)` | One fec packet: its block number and its FEC bytes. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Number` | `int Number { get; init; }` |  |
+
+#### `LzipFecFile`
+
+A parsed lziprecover fec file.
+
+Implements `IEquatable<LzipFecFile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LzipFecFile` | `LzipFecFile(bool Gf16, long FecBlockSize, long ProtectedSize, byte[] ProtectedMd5, uint[] Crc32s, uint[] Crc32Cs, IReadOnlyList<LzipFecBlock> Blocks)` | A parsed lziprecover fec file. |
+| `Blocks` | `IReadOnlyList<LzipFecBlock> Blocks { get; init; }` |  |
+| `Crc32Cs` | `uint[] Crc32Cs { get; init; }` |  |
+| `Crc32s` | `uint[] Crc32s { get; init; }` |  |
+| `DataBlocks` | `long DataBlocks { get; }` | Number of data blocks the protected file is divided into. |
+| `FecBlockSize` | `long FecBlockSize { get; init; }` |  |
+| `Gf16` | `bool Gf16 { get; init; }` |  |
+| `ProtectedMd5` | `byte[] ProtectedMd5 { get; init; }` |  |
+| `ProtectedSize` | `long ProtectedSize { get; init; }` |  |
+
+#### `LzipFecFormatDescriptor`
+
+lziprecover forward-error-correction file (`.fec`), read-only: the parity lziprecover repairs a file from. It holds no files, so the view is `metadata.ini`, the CRC arrays of the chksum packets and one entry per FEC block (`fec_NNNNN.bin`); every packet's header and payload CRC is checked. References: lziprecover manual, "Fec file format" (`https://www.nongnu.org/lzip/manual/lziprecover_manual.html`)
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LzipFecFormatDescriptor` | `LzipFecFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `DecodeFbs` | `static long DecodeFbs(ushort coded)` | Decodes the 16-bit floating-point block size. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Read` | `static LzipFecFile Read(ReadOnlySpan<byte> file)` | Parses and checks a fec file. |
 
 ### Namespace `FileFormat.Lzop`
 
