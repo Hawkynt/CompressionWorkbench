@@ -1,0 +1,23 @@
+7-Zip (RAR archive handlers) - structure carried into C#
+
+Source:   https://github.com/ip7z/7zip (7-Zip by Igor Pavlov), main, 2026-10-30
+          CPP/7zip/Archive/Rar/Rar5Handler.cpp, CPP/7zip/Archive/Rar/RarHandler.cpp
+Licence:  GNU Lesser General Public License, version 2.1 or (at your option) any later
+          version (7-Zip's DOC/License.txt; the unRAR restriction there covers only
+          CPP/7zip/Compress/Rar* files, none of which was used). This repository is
+          LGPL-3.0-or-later, which the "or any later version" grant permits.
+
+  7-Zip Copyright (C) 1999-2026 Igor Pavlov.
+
+  This library is free software; you can redistribute it and/or modify it under the terms
+  of the GNU Lesser General Public License as published by the Free Software Foundation;
+  either version 2.1 of the License, or (at your option) any later version.
+
+Converted:
+
+  Rar5Handler.cpp  -> Rar5Parser.cs (encrypted-header layout, extra records, time record,
+                      split parts, the last part's encryption record deciding the checksum
+                      tweak), RarReader.cs (CRC/BLAKE2sp checks of joined parts)
+  RarHandler.cpp   -> Rar4Parser.cs (DecodeUnicodeFileName, ReadTime, the -hp block layout,
+                      the 13-byte main-header CRC), Rar4Writer.cs (the inverse Unicode name
+                      encoding)

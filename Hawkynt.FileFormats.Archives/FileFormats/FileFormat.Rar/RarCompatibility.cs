@@ -13,4 +13,10 @@ public enum RarCompatibility {
   /// The current writer deliberately supports stored members only for this target.
   /// </summary>
   Rar1_5,
+
+  /// <summary>
+  /// RAR 2.0 compatibility: stored members with <c>UNP_VER=20</c>, OEM names, MS-DOS host and no
+  /// extended-time field (a RAR 2.9 addition that RAR 2.x reports as a broken file header).
+  /// </summary>
+  Rar2_0,
 }

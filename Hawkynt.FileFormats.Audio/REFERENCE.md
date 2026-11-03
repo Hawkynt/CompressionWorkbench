@@ -4949,6 +4949,7 @@ Well-known format-option keys shared by independently versioned formats.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `TargetCompatibility` | `const string TargetCompatibility` | Requested writer compatibility target. Values are format-specific, but the key is common so UI, CLI and orchestration code can recognize a compatibility constraint consistently. |
+| `VolumeSize` | `const string VolumeSize` | Split the archive into volumes of at most this size: a byte count, optionally with a k/m/g suffix (powers of 1024); empty or 0 writes one file. Formats with volume sets declare it in their schema so UI and CLI can offer it. |
 
 #### `FormatOptionKind`
 

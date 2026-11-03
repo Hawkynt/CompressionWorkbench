@@ -128,19 +128,14 @@ public class RarInPlaceRemoveTests {
 
   [Test]
   public void RecoveryRecord_FallsBackWithNotSupported() {
-    var ms = new MemoryStream();
-    using (var w = new RarWriter(ms, leaveOpen: true, method: RarConstants.MethodStore, recoveryPercent: 10)) {
-      w.AddFile("a.txt", Enc("with recovery"));
-      w.AddFile("b.txt", Enc("second"));
-      w.Finish();
-    }
-    var original = ms.ToArray();
+    // rar 7.12 -rr5%: a real RAR 5 recovery record (Rar/Conformance/Modern).
+    var original = File.ReadAllBytes(RarConformanceSet.PathOf(RarConformanceSet.Modern, "r5-rr.rar"));
 
     using var work = new MemoryStream();
     work.Write(original, 0, original.Length);
     work.Position = 0;
     Assert.Throws<System.NotSupportedException>(() =>
-      RarInPlaceRemover.Remove(work, ["a.txt"]));
+      RarInPlaceRemover.Remove(work, ["text.txt"]));
   }
 
   [Test]

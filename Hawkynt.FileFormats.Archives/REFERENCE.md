@@ -4949,6 +4949,7 @@ Well-known format-option keys shared by independently versioned formats.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `TargetCompatibility` | `const string TargetCompatibility` | Requested writer compatibility target. Values are format-specific, but the key is common so UI, CLI and orchestration code can recognize a compatibility constraint consistently. |
+| `VolumeSize` | `const string VolumeSize` | Split the archive into volumes of at most this size: a byte count, optionally with a k/m/g suffix (powers of 1024); empty or 0 writes one file. Formats with volume sets declare it in their schema so UI and CLI can offer it. |
 
 #### `FormatOptionKind`
 
@@ -19691,6 +19692,65 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
+### Namespace `FileFormat.Kgb`
+
+[`KgbArchive`](#kgbarchive) · [`KgbEntry`](#kgbentry) · [`KgbFormatDescriptor`](#kgbformatdescriptor)
+
+#### `KgbArchive`
+
+Reads and writes KGB Archiver 1.0 archives (docs/KGB-ON-DISK.md): a text header naming every file and its size, then one arithmetic-coded stream holding all files back to back.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultLevel` | `const int DefaultLevel` | The memory level the archive's default (header without a level digit) implies. |
+| `Signature` | `const string Signature` | The fixed start of the first header line. |
+| `DataOffset` | `long DataOffset { get; }` | Where the coded stream starts. |
+| `Entries` | `IReadOnlyList<KgbEntry> Entries { get; }` | The files, in stream order. |
+| `Level` | `int Level { get; }` | The memory level 0..9 that sizes the model. |
+| `Decode` | `void Decode(Stream stream, Func<KgbEntry, bool> wanted, Action<KgbEntry, byte[]> sink)` | Decodes the archive's files in order, handing each one to `sink`; the stream must be decoded through every earlier file to reach a later one. |
+| `Read` | `static KgbArchive Read(Stream stream)` | Parses the header of the archive in `stream`, from its start. |
+| `Write` | `static void Write(Stream output, int level, IEnumerable<ValueTuple<string, byte[]>> files)` | Writes an archive of `files` coded at memory level `level`. |
+
+#### `KgbEntry`
+
+One file of a KGB archive: its name as stored and its size.
+
+Implements `IEquatable<KgbEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `KgbEntry` | `KgbEntry(string Name, long Size)` | One file of a KGB archive: its name as stored and its size. |
+| `Name` | `string Name { get; init; }` | The name from the header line, '/'-separated. |
+| `Size` | `long Size { get; init; }` | The decoded size in bytes. |
+
+#### `KgbFormatDescriptor`
+
+KGB Archiver 1.0 (Tomasz Pawlak, 2005-2006): PAQ6 context mixing over every file of the archive as one stream, at memory levels 0 to 9.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `KgbFormatDescriptor` | `KgbFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
 ### Namespace `FileFormat.Kmz`
 
 [`KmzFormatDescriptor`](#kmzformatdescriptor)
@@ -26273,7 +26333,7 @@ Compressor and decompressor for the Amiga PowerPacker (PP20) crunched file forma
 
 #### `PpmdFormatDescriptor`
 
-Describes ppmd format.
+Describes Dmitry Shkarin's PPMd file format (`.pmd`); see `PpmdStream`.
 
 Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
@@ -26291,7 +26351,7 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | PPMd-H model order. 7-Zip exposes orders 2 through 32; the optimizer searches the complete finite range because the best context depth depends on the input. The managed model's memory-size constructor parameter is not currently an effective capacity limit, so memory is deliberately not advertised as a knob. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | PPMd var.I model order of the member written. The header holds orders 2 through 16; the optimizer searches all of them because the best context depth depends on the input. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with format-specific PPMd tunables. |
@@ -26299,13 +26359,18 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 
 #### `PpmdStream`
 
-PPMd stream container format. Current layout: 4-byte magic (0x8F 0xAF 0xAC 0x84), 1-byte format version, then the raw output of `PpmdBuildingBlock` (1-byte order, 4-byte LE original size, range-coded data).
+Dmitry Shkarin's PPMd file format (`.pmd`), as his PPMd var.H and var.I programs write it.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input with the default PPMd-H model order. |
-| `Compress` | `static void Compress(Stream input, Stream output, int order)` | Encodes the supplied input with the requested PPMd-H model order. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `DefaultMemoryMb` | `const int DefaultMemoryMb` | Default model memory for writing, in MiB. |
+| `DefaultOrder` | `const int DefaultOrder` | Default model order for writing. |
+| `MaxOrder` | `const int MaxOrder` | Highest model order the header can carry. |
+| `MinOrder` | `const int MinOrder` | Lowest model order the header can carry. |
+| `Signature` | `const uint Signature` | The member signature. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Writes `input` as one var.I member with the default order and memory. |
+| `Compress` | `static void Compress(Stream input, Stream output, int order)` | Writes `input` as one var.I member of model order `order`. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes every member of a `.pmd` file, writing their data in order. |
 
 ### Namespace `FileFormat.Ppt`
 
@@ -26877,21 +26942,24 @@ Reads and writes non-streaming QuickLZ 1.5.0 level-1 and level-3 packets.
 
 ### Namespace `FileFormat.Rar`
 
-[`Rar4Writer`](#rar4writer) · [`RarCompatibility`](#rarcompatibility) · [`RarEntry`](#rarentry) · [`RarFormatDescriptor`](#rarformatdescriptor) · [`RarInPlaceAdder`](#rarinplaceadder) · [`RarInPlaceRemover`](#rarinplaceremover) · [`RarLayoutMap`](#rarlayoutmap) · [`RarReader`](#rarreader) · [`RarWriter`](#rarwriter)
+[`Rar4Writer`](#rar4writer) · [`RarCompatibility`](#rarcompatibility) · [`RarEntry`](#rarentry) · [`RarFormatDescriptor`](#rarformatdescriptor) · [`RarInPlaceAdder`](#rarinplaceadder) · [`RarInPlaceRemover`](#rarinplaceremover) · [`RarLayoutMap`](#rarlayoutmap) · [`RarLinkKind`](#rarlinkkind) · [`RarReader`](#rarreader) · [`RarRecovery`](#rarrecovery) · [`RarRecoveryKind`](#rarrecoverykind) · [`RarRecoveryReport`](#rarrecoveryreport) · [`RarRecoveryVolumes`](#rarrecoveryvolumes) · [`RarVolumeNames`](#rarvolumenames) · [`RarWriter`](#rarwriter) · [`RarWriter.ArchiveTimes`](#rarwriterarchivetimes)
 
 #### `Rar4Writer`
 
-Creates archives in the shared RAR 1.5-4.x container family. RAR4 targets support Store and compressed (LZ+Huffman) methods with optional AES-128-CBC encryption; RAR 1.5 compatibility deliberately emits stored, non-solid, unencrypted members with `UNP_VER=15`.
+Creates archives in the RAR 1.5-4.x block format: RAR 4 targets store or compress (RAR 2.9 format, `Rar3Encoder`), solid or not, optionally AES-128 encrypted, as one file or as a volume set; the RAR 1.5 target writes stored, unencrypted members with `UNP_VER=15`.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Rar4Writer` | `Rar4Writer(Stream stream, bool leaveOpen = false, byte method = 51, int windowBits = 20, bool solid = false, string password = null, RarCompatibility targetCompatibility = 1)` | Initializes a writer for the RAR 1.5-4.x container family. |
-| `AddFile` | `void AddFile(string fileName, ReadOnlySpan<byte> data, DateTimeOffset? modifiedTime = null)` | Adds a file entry to the archive. |
-| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, byte method = 51, string password = null)` | Creates a RAR4 archive split into multiple volumes. |
+| `Rar4Writer` | `Rar4Writer(Stream stream, bool leaveOpen = false, byte method = 51, int windowBits = 20, bool solid = false, string password = null, RarCompatibility targetCompatibility = 1, long volumeSize = 0, Func<int, Stream> openVolume = null, bool newVolumeNaming = false, int recoveryPercent = 0)` | Initializes a writer for the RAR 1.5-4.x container family. |
+| `VolumeCount` | `int VolumeCount { get; }` | How many volumes were written. |
+| `AddDirectory` | `void AddDirectory(string name, ArchiveTimes times = null)` | Adds a directory. |
+| `AddFile` | `void AddFile(string fileName, ReadOnlySpan<byte> data, DateTimeOffset? modifiedTime = null)` | Adds a file held in memory. |
+| `AddFile` | `void AddFile(string fileName, Stream data, long length, ArchiveTimes times = null, uint attributes = 32)` | Adds `length` bytes of `data` as a file. |
+| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, byte method = 51, string password = null)` | Creates a RAR 4 volume set in memory, one array per volume (old `.r00` naming). |
 | `Dispose` | `void Dispose()` |  |
-| `Finish` | `void Finish()` | Writes the end-of-archive header and flushes. |
+| `Finish` | `void Finish()` | Writes the end-of-archive block and flushes. |
 
 #### `RarCompatibility`
 
@@ -26902,6 +26970,7 @@ Writer generation targeted by RAR archive creation.
 | `Rar5` | `0` | RAR 5.x container and codec generation. |
 | `Rar4` | `1` | RAR 2.9-4.x container/codec generation written by the managed RAR4 writer. |
 | `Rar1_5` | `2` | RAR 1.50 compatibility: classic `Rar! 1A 07 00` container with `UNP_VER=15`. The current writer deliberately supports stored members only for this target. |
+| `Rar2_0` | `3` | RAR 2.0 compatibility: stored members with `UNP_VER=20`, OEM names, MS-DOS host and no extended-time field (a RAR 2.9 addition that RAR 2.x reports as a broken file header). |
 
 #### `RarEntry`
 
@@ -26910,15 +26979,27 @@ Represents an entry in a RAR archive.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `RarEntry` | `RarEntry()` |  |
-| `CompressedSize` | `long CompressedSize { get; set; }` | Gets or sets the compressed size in bytes. |
+| `AccessedTime` | `DateTimeOffset? AccessedTime { get; set; }` | Gets or sets the last access time, or `null` if not stored. |
+| `Attributes` | `uint Attributes { get; set; }` | Gets or sets the host file attributes (Windows attributes, or the Unix mode for Unix archives). |
+| `Blake2sp` | `byte[] Blake2sp { get; set; }` | Gets or sets the BLAKE2sp hash RAR 5 stores instead of (or beside) the CRC-32. |
+| `CompressedSize` | `long CompressedSize { get; set; }` | Gets or sets the compressed size in bytes, summed over every volume the entry spans. |
 | `CompressionMethod` | `int CompressionMethod { get; set; }` | Gets or sets the compression method used (0 = Store, 1-5 = compressed). |
 | `Crc` | `uint? Crc { get; set; }` | Gets or sets the CRC-32 of the uncompressed data, or `null` if not stored. |
+| `CreatedTime` | `DateTimeOffset? CreatedTime { get; set; }` | Gets or sets the creation time, or `null` if not stored. |
+| `FileVersion` | `long? FileVersion { get; set; }` | Gets or sets the `rar -ver` file version, when the archive keeps several. |
+| `HostOs` | `int HostOs { get; set; }` | Gets or sets the host the entry was archived on (0 Windows/DOS, 1 Unix for RAR 5; the RAR 4 host byte otherwise). |
 | `IsDirectory` | `bool IsDirectory { get; set; }` | Gets or sets a value indicating whether this entry is a directory. |
 | `IsEncrypted` | `bool IsEncrypted { get; set; }` | Gets or sets a value indicating whether this entry is encrypted. |
+| `IsIncomplete` | `bool IsIncomplete { get; set; }` | Gets or sets a value indicating whether part of the entry lies in a volume that is not present. |
 | `IsSolid` | `bool IsSolid { get; set; }` | Gets or sets a value indicating whether this entry uses solid compression (dictionary carries over from previous file). |
+| `IsSymlink` | `bool IsSymlink { get; }` | Gets a value indicating whether the entry is a symbolic link or junction (listed, not extracted as a file). |
+| `LinkKind` | `RarLinkKind LinkKind { get; set; }` | Gets or sets what the entry is a link to, if anything. |
+| `LinkTarget` | `string LinkTarget { get; set; }` | Gets or sets the stored link target of a link entry. |
 | `ModifiedTime` | `DateTimeOffset? ModifiedTime { get; set; }` | Gets or sets the last modification time, or `null` if not stored. |
 | `Name` | `string Name { get; set; }` | Gets or sets the entry name (including path within the archive). |
-| `Size` | `long Size { get; set; }` | Gets or sets the uncompressed size in bytes. |
+| `Size` | `long Size { get; set; }` | Gets or sets the uncompressed size in bytes (-1 when the archive leaves it unknown). |
+| `StreamName` | `string StreamName { get; set; }` | Gets or sets the name of the NTFS alternate stream this entry is (`file:stream`), if it is one. |
+| `VolumeCount` | `int VolumeCount { get; set; }` | Gets or sets how many volumes the entry's data spans. |
 
 #### `RarFormatDescriptor`
 
@@ -26929,6 +27010,8 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `RarFormatDescriptor` | `RarFormatDescriptor()` |  |
+| `RecoveryRecordOption` | `const string RecoveryRecordOption` | Option key: recovery record size in percent (RAR 4 and RAR 5, single-file archives). |
+| `RecoveryVolumesOption` | `const string RecoveryVolumesOption` | Option key: number of recovery volumes (`.rev`) to write beside a volume set. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -26943,10 +27026,11 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Writer-generation constraint shown independently of the compression method. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends new files directly to supported RAR5 archives. The in-place adder validates the complete block profile and all name collisions before its first write, so an unsupported profile can safely fall back without taking a whole-archive transaction snapshot. Same-name updates deliberately take the rebuild path because remove+add is a two-step transaction. |
+| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Streams each input into the archive, so files of any size need bounded memory. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a RAR archive from `inputs`. `TargetCompatibility` selects the container generation independently of compression level. Legacy MethodName values `rar5`, `rar4` and `rar15` remain compatibility aliases when the explicit option is absent. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction — routed through the bounded `OpenEntry` so the per-entry isolation contract holds uniformly. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts entries, streaming each to its file; a file whose checksum fails is deleted and the failure thrown. Symbolic links are listed, not created; NTFS alternate streams are written only when asked for by name. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single RAR entry as a bounded read-only `Stream`. The reader's per-entry extractor returns the fully-decompressed bytes; they are wrapped in a `BoundedEntryStream` sized to the entry's uncompressed size so the universal per-entry isolation contract holds even though RAR's decoder produces a byte[]. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes non-solid RAR5 FILE blocks directly. The remover performs all format, recovery/quick-open, encryption, ENDARC and solid-chain checks before its first byte move, so unsupported archives can fall back without cloning the entire container first. Cost is proportional to block headers plus the tail physically shifted after removed blocks. |
@@ -26975,39 +27059,139 @@ Walks RAR5 or RAR4 block headers and emits the byte-level layout of the archive 
 | --- | --- | --- |
 | `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream archive)` | Enumerates the value. |
 
+#### `RarLinkKind`
+
+How a RAR entry refers to something else instead of holding data.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` | An ordinary file or directory. |
+| `UnixSymlink` | `1` | A Unix symbolic link (RAR 5 redirection type 1; RAR 4 Unix link). |
+| `WindowsSymlink` | `2` | A Windows symbolic link (RAR 5 redirection type 2). |
+| `WindowsJunction` | `3` | A Windows junction (RAR 5 redirection type 3). |
+| `HardLink` | `4` | A hard link to an earlier entry (RAR 5 redirection type 4). |
+| `FileCopy` | `5` | A copy of an earlier entry, stored once (RAR 5 redirection type 5, `rar -oi`). |
+
 #### `RarReader`
 
-Reads entries from a RAR v4 or v5 archive.
+Reads RAR archives: RAR 5 (RAR 5.0-7.x, compression algorithm version 0) and RAR 1.5-4.x, single files or volume sets in either naming scheme, behind an SFX module or not, with encrypted data or headers.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `RarReader` | `RarReader(Stream stream, bool leaveOpen = false)` | Initializes a new `RarReader` from a seekable stream containing a RAR archive. |
-| `RarReader` | `RarReader(Stream stream, string password, bool leaveOpen = false)` | Initializes a new `RarReader` with a password for encrypted archives. |
-| `Entries` | `IReadOnlyList<RarEntry> Entries { get; }` | Gets the entries in the RAR archive. |
-| `HasRecoveryRecord` | `bool HasRecoveryRecord { get; }` | Gets whether this archive has a recovery record. |
-| `IsRar4` | `bool IsRar4 { get; }` | Gets a value indicating whether this is a RAR4 (or earlier) format archive. |
-| `IsRar5` | `bool IsRar5 { get; }` | Gets a value indicating whether this is a RAR5 format archive. |
-| `Version` | `int Version { get; }` | Gets the RAR version (1-5) for the overall archive format. |
+| `RarReader` | `RarReader(IReadOnlyList<Stream> volumes, string password, bool leaveOpen = false)` | Opens the volumes of a RAR set given as streams, first volume first. |
+| `RarReader` | `RarReader(Stream stream, bool leaveOpen = false)` | Opens a RAR archive from a seekable stream. |
+| `RarReader` | `RarReader(Stream stream, string password, bool leaveOpen = false)` | Opens a RAR archive (and, for a `FileStream`, the other volumes of its set). |
+| `Comment` | `string Comment { get; }` | Gets the archive comment, when there is one. |
+| `Entries` | `IReadOnlyList<RarEntry> Entries { get; }` | Gets the entries (files and directories; service records are not listed). |
+| `HasRecoveryRecord` | `bool HasRecoveryRecord { get; }` | Gets whether the main header announces a recovery record. |
+| `HeadersEncrypted` | `bool HeadersEncrypted { get; }` | Gets whether the headers (file names) are encrypted. |
+| `IsLocked` | `bool IsLocked { get; }` | Gets whether the archive is locked against changes. |
+| `IsRar4` | `bool IsRar4 { get; }` | Gets a value indicating whether this is a RAR 1.5-4.x archive. |
+| `IsRar5` | `bool IsRar5 { get; }` | Gets a value indicating whether this is a RAR 5 archive. |
+| `IsSolid` | `bool IsSolid { get; }` | Gets whether the archive is solid. |
+| `IsVolume` | `bool IsVolume { get; }` | Gets whether the archive is part of a volume set. |
+| `MissingVolume` | `string MissingVolume { get; }` | Gets the name of the first missing volume, or null when the set is complete. |
+| `SfxSize` | `long SfxSize { get; }` | Gets the bytes of SFX module before the archive in the first volume. |
+| `Version` | `int Version { get; }` | Gets the archive format generation: 5, or 4 for RAR 1.5-4.x. |
+| `VolumeCount` | `int VolumeCount { get; }` | Gets how many volumes were read. |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(int entryIndex)` | Extracts the data for the entry at the specified index. |
-| `Extract` | `void Extract(int entryIndex, Stream output)` | Extracts the data for the entry at the specified index into the given output stream. |
-| `VerifyRecoveryRecord` | `bool VerifyRecoveryRecord()` | Verifies the recovery record by checking Reed-Solomon parity data against archive contents. Returns `true` if the parity is valid. |
+| `Extract` | `byte[] Extract(int entryIndex)` | Extracts the entry at `entryIndex` into memory. |
+| `Extract` | `void Extract(int entryIndex, Stream output)` | Extracts the entry at `entryIndex` into `output`, streaming; the data is checked against the stored CRC-32/BLAKE2sp at the end. |
+| `Open` | `static RarReader Open(string path, string password = null)` | Opens the RAR archive or volume set at `path`. |
+
+#### `RarRecovery`
+
+Checks and repairs RAR archives from their recovery records, the counterpart of `rar t`'s recovery-record test and `rar r`. The layouts were measured from rar's output (docs/RAR-RECOVERY-ON-DISK.md); rar repairs what `RarWriter` and `Rar4Writer` protect, and this repairs what rar protects.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RepairInPlace` | `static RarRecoveryReport RepairInPlace(Stream archive)` | Repairs a readable, writable, seekable archive stream in place. |
+| `Repair` | `static RarRecoveryReport Repair(Stream source, Stream destination)` | Copies `source` to `destination` and repairs the copy from its recovery record. `destination` must be readable, writable and seekable. |
+| `Repair` | `static RarRecoveryReport Repair(string sourcePath, string destinationPath)` | Repairs `sourcePath` into `destinationPath` from its recovery record. |
+| `Verify` | `static RarRecoveryReport Verify(Stream archive)` | Checks a seekable archive stream against its recovery record. |
+| `Verify` | `static RarRecoveryReport Verify(string path)` | Checks the archive at `path` against its recovery record. |
+
+#### `RarRecoveryKind`
+
+Which kind of RAR recovery data a check or repair found.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` | No recovery data was found. |
+| `Rar4Record` | `1` | A RAR 2.x-4.x recovery record inside the archive (512-byte sectors, interleaved XOR parity). |
+| `Rar5Record` | `2` | A RAR 5 recovery record inside the archive (Reed-Solomon over GF(2^16)). |
+| `Rar3Volumes` | `3` | RAR 3.x-4.x recovery volumes (`.rev`, Reed-Solomon over GF(2^8)). |
+| `Rar5Volumes` | `4` | RAR 5 recovery volumes (`.rev`, Reed-Solomon over GF(2^16)). |
+
+#### `RarRecoveryReport`
+
+Outcome of checking or repairing RAR recovery data.
+
+Implements `IEquatable<RarRecoveryReport>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RarRecoveryReport` | `RarRecoveryReport(RarRecoveryKind Kind, bool Intact, int Damaged, int Recovery, bool Repairable, bool Repaired, string Message)` | Outcome of checking or repairing RAR recovery data. |
+| `Damaged` | `int Damaged { get; init; }` | Protected units (RAR 5 shards, RAR 4 sectors, volumes) that fail their check. |
+| `Intact` | `bool Intact { get; init; }` | Everything the recovery data protects checks out, the recovery data too. |
+| `Kind` | `RarRecoveryKind Kind { get; init; }` | The recovery data found. |
+| `Message` | `string Message { get; init; }` | What was found or done, in words. |
+| `Recovery` | `int Recovery { get; init; }` | Usable recovery units (RAR 5 blocks, RAR 4 parity sectors, recovery volumes). |
+| `Repairable` | `bool Repairable { get; init; }` | The damage is within what the recovery data can rebuild. |
+| `Repaired` | `bool Repaired { get; init; }` | A repair was asked for and every damaged unit was rebuilt and re-verified. |
+
+#### `RarRecoveryVolumes`
+
+RAR recovery volumes (`.rev`): creating them for a volume set (`rar -rv`), checking a set against them and rebuilding missing or damaged volumes (`rar rc`). RAR 5 sets get Reed-Solomon over GF(2^16) with a table of every volume's size and CRC-32; RAR 3/4 sets get the classic systematic Reed-Solomon over GF(2^8) of RAR 3. Both layouts were measured from rar's output (docs/RAR-RECOVERY-ON-DISK.md).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Create` | `static IReadOnlyList<string> Create(string firstVolume, int count)` | Writes `count` recovery volumes beside the set whose first volume is `firstVolume`; any `count` missing or damaged volumes can then be rebuilt. Returns the paths written. |
+| `Reconstruct` | `static RarRecoveryReport Reconstruct(string anyVolume)` | Rebuilds the missing or damaged volumes of a set from its recovery volumes. A damaged volume is first renamed to `name.bad`. |
+| `Verify` | `static RarRecoveryReport Verify(string anyVolume)` | Checks a volume set (named by any of its volumes or recovery volumes) against its recovery volumes. |
+
+#### `RarVolumeNames`
+
+The file names of a RAR volume set. RAR 3.0 and later name volumes `name.part1.rar`, `name.part2.rar`, … with as many digits as the set needs (`part01`, `part001`); the older scheme, still written with `rar -vn`, is `name.rar`, `name.r00`, `name.r01`, … `name.r99`, `name.s00`, ….
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ForWriting` | `static Func<int, string> ForWriting(string firstPath, bool newStyle, int digits = 0)` | The sequence for the volumes written after the first one at `firstPath`: new-style names when the path ends in `.partN.rar` or when `newStyle` asks for them, the old `.r00` scheme otherwise. |
+| `IsRecoveryVolume` | `static bool IsRecoveryVolume(string path)` | Whether `path` names a recovery volume (`.rev`). |
+| `OldSuffix` | `static string OldSuffix(int index, bool upper)` | The extension of old-style volume `index` + 2 (index 0 is `r00`, the second volume). |
+| `SequenceOf` | `static Func<int, string> SequenceOf(string path)` | The volume name sequence `path` belongs to: index 0 is the first volume. Returns null when the name follows neither scheme. |
 
 #### `RarWriter`
 
-Creates RAR5 archives. Supports Store and compressed (LZ+Huffman) methods, optional solid mode, and optional AES-256 encryption.
+Writes RAR 5 archives (technote `https://www.rarlab.com/technote.htm`): stored or compressed files, directories, solid mode, AES-256 encryption of data (`-p`) or of data and headers (`-hp`), and volume sets.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `RarWriter` | `RarWriter(Stream stream, bool leaveOpen = false, int method = 3, int dictionarySizeLog = 17, bool solid = false, string password = null, int recoveryPercent = 0, bool encryptHeaders = false)` | Initializes a new `RarWriter`. |
-| `AddFile` | `void AddFile(string fileName, ReadOnlySpan<byte> data, DateTimeOffset? modifiedTime = null)` | Adds a file entry to the archive. |
-| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, int method = 3, string password = null)` | Creates a RAR5 archive split into multiple volumes. |
+| `RarWriter` | `RarWriter(Stream stream, bool leaveOpen = false, int method = 3, int dictionarySizeLog = 17, bool solid = false, string password = null, bool encryptHeaders = false, long volumeSize = 0, Func<int, Stream> openVolume = null, bool locked = false, int recoveryPercent = 0)` | Creates a writer. |
+| `VolumeCount` | `int VolumeCount { get; }` | How many volumes were written (1 without volumes). |
+| `AddDirectory` | `void AddDirectory(string name, ArchiveTimes times = null)` | Adds a directory entry. |
+| `AddFile` | `void AddFile(string fileName, ReadOnlySpan<byte> data, DateTimeOffset? modifiedTime = null)` | Adds a file held in memory. |
+| `AddFile` | `void AddFile(string fileName, Stream data, long length, ArchiveTimes times = null, uint? attributes = null)` | Adds `length` bytes of `data` as a file. |
+| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, int method = 3, string password = null)` | Creates a RAR 5 volume set in memory: one byte array per volume. |
 | `Dispose` | `void Dispose()` |  |
-| `Finish` | `void Finish()` | Writes the end-of-archive header and flushes. |
+| `Finish` | `void Finish()` | Writes the end of archive header and flushes. |
+
+#### `RarWriter.ArchiveTimes`
+
+Creation, access and modification time of an entry, any of which may be absent.
+
+Implements `IEquatable<ArchiveTimes>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ArchiveTimes` | `ArchiveTimes(DateTimeOffset? Modified, DateTimeOffset? Created, DateTimeOffset? Accessed)` | Creation, access and modification time of an entry, any of which may be absent. |
+| `Accessed` | `DateTimeOffset? Accessed { get; init; }` |  |
+| `Created` | `DateTimeOffset? Created { get; init; }` |  |
+| `Modified` | `DateTimeOffset? Modified { get; init; }` |  |
 
 ### Namespace `FileFormat.Rarc`
 

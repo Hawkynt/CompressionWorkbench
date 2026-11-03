@@ -9,7 +9,7 @@
 
 ### Namespace `Compression.Core.Checksums`
 
-[`Blake2b`](#blake2b) · [`Blake2bHashSizeExtensions`](#blake2bhashsizeextensions) · [`Md5`](#md5) · [`Md5HashSizeExtensions`](#md5hashsizeextensions) · [`Sha1`](#sha1) · [`Sha1HashSizeExtensions`](#sha1hashsizeextensions) · [`Sha256`](#sha256) · [`Sha256HashSizeExtensions`](#sha256hashsizeextensions) · [`XxHash32`](#xxhash32) · [`XxHash32HashSizeExtensions`](#xxhash32hashsizeextensions) · [`XxHash64`](#xxhash64) · [`XxHash64HashSizeExtensions`](#xxhash64hashsizeextensions)
+[`Blake2b`](#blake2b) · [`Blake2bHashSizeExtensions`](#blake2bhashsizeextensions) · [`Blake2sp`](#blake2sp) · [`Md5`](#md5) · [`Md5HashSizeExtensions`](#md5hashsizeextensions) · [`Sha1`](#sha1) · [`Sha1HashSizeExtensions`](#sha1hashsizeextensions) · [`Sha256`](#sha256) · [`Sha256HashSizeExtensions`](#sha256hashsizeextensions) · [`XxHash32`](#xxhash32) · [`XxHash32HashSizeExtensions`](#xxhash32hashsizeextensions) · [`XxHash64`](#xxhash64) · [`XxHash64HashSizeExtensions`](#xxhash64hashsizeextensions)
 
 #### `Blake2b`
 
@@ -32,6 +32,18 @@ Provides supported hash-output size metadata for `Blake2b`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `get_SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> get_SupportedHashSizes()` | Gets the supported hash-output sizes, in bits. |
+
+#### `Blake2sp`
+
+BLAKE2sp: eight BLAKE2s-256 leaves hashing interleaved 64-byte blocks, combined by a BLAKE2s root (the BLAKE2 specification, "BLAKE2sp", parallelism degree 8). RAR 5 stores it as the optional file hash. Incremental: `Update` any number of times, then `Finish`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Blake2sp` | `Blake2sp()` | Creates a fresh BLAKE2sp state. |
+| `SupportedHashSizes` | `static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; }` | Gets the supported hash-output sizes, in bits: BLAKE2sp as RAR uses it is 256-bit only. |
+| `Compute` | `static byte[] Compute(ReadOnlySpan<byte> data)` | Computes BLAKE2sp-256 of `data`. |
+| `Finish` | `byte[] Finish()` | Returns the 32-byte digest. |
+| `Update` | `void Update(ReadOnlySpan<byte> data)` | Adds bytes to the hash. |
 
 #### `Md5`
 

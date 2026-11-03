@@ -79,7 +79,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [PackBits](https://en.wikipedia.org/wiki/PackBits) | `PackBits` | `.packbits` | ✅ | ✅ | ✅ |  | [developer.apple.com](https://developer.apple.com/library/archive/documentation/mac/pdf/MoreMacintoshToolbox.pdf) |
 | [PAQ8](https://en.wikipedia.org/wiki/PAQ) | `Paq8` | `.paq8l` `.paq8` | ✅ | ✅ | ✅ |  | [mattmahoney.net](https://mattmahoney.net/dc/paq.html) |
 | PowerPacker | `PowerPacker` | `.pp` `.pp20` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/PowerPacker) |
-| [PPMd](https://en.wikipedia.org/wiki/Prediction_by_partial_matching) | `Ppmd` | `.pmd` | ✅ | ✅ | ✅ |  | [7-zip.org](https://www.7-zip.org/sdk.html) |
+| [PPMd](https://en.wikipedia.org/wiki/Prediction_by_partial_matching) | `Ppmd` | `.pmd` | ✅ | ✅ | ✅ | Dmitry Shkarin's file format: reads var.H and var.I members (all of them, one after another); writes one var.I member named `data`; var.I's "freeze" method (`-r2`) is refused | [compression.ru/ds](https://www.compression.ru/ds/) |
 | QuickLZ | `QuickLz` | `.quicklz` | ✅ | ✅ | ✅ | Level 1 and level 3; the optimizer searches the level and the level-3 search depth | [quicklz.com](http://www.quicklz.com/) |
 | RefPack / QFS | `RefPack` | `.qfs` `.refpack` | ✅ | ✅ | ✅ | Optimizer searches the history window, the match-search depth and quick match indexing | [wiki.niotso.org](http://wiki.niotso.org/RefPack) |
 | RNC ProPack | `Rnc` | `.rnc` | ✅ | ✅ | ✅ |  | [segaretro.org](https://segaretro.org/Rob_Northen_compression) |
@@ -129,6 +129,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [FreeArc](https://en.wikipedia.org/wiki/FreeArc) | `FreeArc` | `.arc` | R/W | ✅ | defrag · wipe | Reads FreeArc 0.67 archives; decodes storing, lzma, Tornado, PPMd and GRZip blocks, also behind the rep, delta, exe, LZP and dict filters and inside 4x4, so every default mode extracts, and decrypts AES, Blowfish, Serpent and Twofish stages (data and `-hp` headers) given the password; `mm` and external compressors are refused. Writes storing/lzma archives that FreeArc 0.67 extracts byte-identically. Layout: [FREEARC-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/FREEARC-ON-DISK.md) | [GitHub](https://github.com/Bulat-Ziganshin/FA) |
 | HA | `Ha` | `.ha` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/HA) |
 | [IFF CDAF](https://en.wikipedia.org/wiki/Interchange_File_Format) | `IffCdaf` | `.cdaf` | R/W | ✅ | defrag · wipe |  | [Aminet](https://aminet.net) |
+| [KGB Archiver](https://en.wikipedia.org/wiki/KGB_Archiver) | `Kgb` | `.kgb` | R/W | — | — | KGB Archiver 1.0: PAQ6 context mixing at memory levels 0-9; Debian's kgb extracts what we write and our encoder reproduces its archives byte for byte. The format stores no checksum | [KGB-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/KGB-ON-DISK.md) |
 | [LBR](https://en.wikipedia.org/wiki/LBR_(file_format)) | `Lbr` | `.lbr` | R/W | ✅ | defrag · wipe |  | [gaby.de](http://www.gaby.de/cpm/manuals/archive/lbr.txt) |
 | LhF (LhFloppy) | `LhF` | `.lhf` | R/W | ✅ | defrag · wipe | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
 | [lrzip](https://en.wikipedia.org/wiki/Rzip#lrzip) | `Lrzip` | `.lrz` | WORM | ✅ | defrag | LZMA-wrapped subtype only; other lrzip subtypes are rejected; single data member | [GitHub](https://github.com/ckolivas/lrzip) |
@@ -140,9 +141,9 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | PackIt | `PackIt` | `.pit` | R/W | ✅ | defrag · wipe | Reads stored and Huffman entries, writes stored; encrypted entries are refused | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [PEA](https://peazip.github.io/pea-file-format.html) | `Pea` | `.pea` | WORM | ✅ | — | Single-volume, unencrypted streams; every compression level and check algorithm | [peazip.github.io](https://peazip.github.io/pea-file-format.html) |
 | Quadruple D | `QuadrupleD` | `.qda` | R | ✅ | — | Read-only QDA0 game archives: stored or byte-pair-encoded (Gage BPE, 32-bit block lengths) files | [Wikipedia (byte pair encoding)](https://en.wikipedia.org/wiki/Byte_pair_encoding) |
-| [RAR](https://en.wikipedia.org/wiki/RAR_(file_format)) | `Rar` | `.rar` | R/W | ✅ | wipe | v1–v5 readers; creation and edits emit RAR4/RAR5 without claiming WinRAR encoder parity | [rarlab.com](https://www.rarlab.com/technote.htm) |
+| [RAR](https://en.wikipedia.org/wiki/RAR_(file_format)) | `Rar` | `.rar` `.partN.rar` `.r00` | R/W | ✅ | wipe | Reads RAR 1.3/1.4 (`RE~^`), 1.5-4.x and RAR 5 incl. volume sets, SFX, all four ciphers (RAR 1.3/1.5, 2.0, AES-128, AES-256 with `-hp`), BLAKE2sp, links and NTFS streams, checked against archives from DOS RAR 1.40 to rar 7.12; writes RAR 5, RAR 4 (2.9 format), RAR 2.0 and RAR 1.5 (stored) archives, volumes and AES encryption that unrar, rar and 7-Zip extract. Recovery records and recovery volumes (`.rev`) are written, checked and used for repair (`RarRecovery`, `RarRecoveryVolumes`; rar repairs ours and we repair rar's). RAR 7 large-dictionary streams are not written; algorithm v1 is refused on read | [rarlab.com](https://www.rarlab.com/technote.htm) |
 | [SeqBox](https://github.com/MarcoPon/SeqBox) | `SeqBox` | `.sbx` | WORM | ✅ | — | Single-file recoverable container; versions 1-4, metadata block optional | [GitHub](https://github.com/MarcoPon/SeqBox) |
-| [7z](https://en.wikipedia.org/wiki/7z) | `SevenZip` | `.7z` | R/W | ✅ | compress · wipe |  | [7-zip.org](https://www.7-zip.org/7z.html) |
+| [7z](https://en.wikipedia.org/wiki/7z) | `SevenZip` | `.7z` | R/W | ✅ | compress · wipe | Also reads Deflate64, the ARM64 / RISC-V filters and 7-Zip-zstd's Zstandard / Brotli / LZ4 coders | [7-zip.org](https://www.7-zip.org/7z.html) |
 | [SHAR](https://en.wikipedia.org/wiki/Shar) | `Shar` | `.shar` `.sh` | R/W | ✅ | defrag | Add appends in place; Remove re-emits the script from the survivors | [gnu.org](https://www.gnu.org/software/sharutils/) |
 | [Spark (RISC OS)](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Spark` | `.spk` `.spark` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Spark) |
 | [Split File (.001)](https://en.wikipedia.org/wiki/File_spanning) | `SplitFile` | `.001` | WORM | ✅ | — |  | [Wikipedia](https://en.wikipedia.org/wiki/File_spanning) |
@@ -567,7 +568,7 @@ Use it when a .NET process needs to enumerate, extract, test, create, edit or in
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 2639 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
+Every public and protected member of all 2649 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
 
 <!-- API:END -->
 
