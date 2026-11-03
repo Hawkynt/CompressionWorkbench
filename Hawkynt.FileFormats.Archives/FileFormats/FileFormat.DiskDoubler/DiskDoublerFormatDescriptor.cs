@@ -20,7 +20,7 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
     archive.Position = 0;
     var r = new DiskDoublerReader(archive);
     foreach (var e in r.Entries) {
-      if (e.CompressedSize > 0)
+      if (!e.IsDirectory && e.CompressedSize > 0)
         yield return new DefragBlockInfo(e.DataOffset, e.CompressedSize, DefragBlockKind.Used, FileName: e.Name);
     }
   }
@@ -42,7 +42,7 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -56,9 +56,13 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
-  /// Gets the magic signatures: a single DiskDoubler file starts with 0xABCD0054.
+  /// Gets the magic signatures: a single DiskDoubler file starts with 0xABCD0054, an archive with "DDAR" or "DDA2".
   /// </summary>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0xAB, 0xCD, 0x00, 0x54], Confidence: 0.8)];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    new([0xAB, 0xCD, 0x00, 0x54], Confidence: 0.8),
+    new("DDAR"u8.ToArray(), Confidence: 0.7),
+    new("DDA2"u8.ToArray(), Confidence: 0.7),
+  ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
@@ -74,7 +78,7 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "DiskDoubler compressed Macintosh file (Salient Software, 1989-1993)";
+  public string Description => "DiskDoubler compressed Macintosh file or DDAR/DDA2 archive (Salient Software, 1989-1993)";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -87,8 +91,8 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
         e.Name,
         e.OriginalSize,
         e.CompressedSize,
-        DiskDoublerReader.MethodName(e.Method),
-        false,
+        e.IsDirectory ? "dir" : DiskDoublerReader.MethodName(e.Method),
+        e.IsDirectory,
         false,
         e.Modified ?? DateTime.MinValue))
       .ToList();
@@ -101,7 +105,10 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
     var r = new DiskDoublerReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      if (e.IsDirectory)
+        Directory.CreateDirectory(Path.Combine(outputDir, e.Name.Replace('/', Path.DirectorySeparatorChar)));
+      else
+        WriteFile(outputDir, e.Name, r.Extract(e));
     }
   }
 
@@ -117,7 +124,7 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
     if (archive.CanSeek) archive.Position = 0;
     var r = new DiskDoublerReader(archive, leaveOpen: true);
     foreach (var e in r.Entries) {
-      if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      if (e.IsDirectory || !string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
       var bytes = r.Extract(e);
       return new Compression.Registry.Streaming.BoundedEntryStream(
         new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);

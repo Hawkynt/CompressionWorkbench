@@ -27,7 +27,8 @@ Files converted:
 
   XADDiskDoublerParser.m    -> DiskDoublerReader.cs (header layout, method
                                numbering, XOR masks, checksums, the method 7
-                               table and the method 8 prefix)
+                               table, the method 8 prefix, and the DDAR and
+                               DDA2 archive layouts)
   XADDiskDoublerADnHandle.m -> DiskDoublerAdDecoder.cs
   XADDiskDoublerMethod2Handle.m, XADStacLZSHandle.m, XADDeltaHandle.m
                             -> DiskDoublerCodecs.cs (decoders; the encoders
