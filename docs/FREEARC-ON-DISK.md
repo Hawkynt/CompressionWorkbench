@@ -15,6 +15,7 @@ them, and what `FileFormat.FreeArc` does with each part.
   `ByteStream.hs` and `Compression.hs` (the Haskell writer). For the filter streams, the 0.67 source
   snapshot mirrored at `github.com/mrkaban/FreeArc-0.67`: `Compression/REP/rep.cpp`,
   `Compression/Delta/Delta.cpp`, `Compression/LZMA2/C_BCJ.cpp`, `Compression/4x4/C_4x4.cpp`, `Compression/LZP/C_LZP.cpp` and `Compression/Dict/C_Dict.cpp` with `dict.cpp` (the decoders' input layout only).
+  For encryption, `Encryption.hs`, `Compression/EncryptionLib.hs`, `Compression/_Encryption/C_Encryption.cpp` and the hex helpers in `Compression/Common.h`.
 - **Oracle.** FreeArc 0.67 (2014-03-15) `Arc.exe` and `unarc.exe`, from the self-extracting
   `FreeArc-console-0.67-alpha-win32.exe` (Wayback Machine copy of freearc.org/download/testing),
   run on Windows 11. Every structure below was checked against hex dumps of archives it wrote; the
@@ -124,7 +125,7 @@ right on compression; extraction undoes them right to left. Seen from 0.67:
 | `lzp:BLOCK[:N%]:MINLEN:hBITS[:dSIZE][:sN]` | LZP, see *LZP stream*: minimum match length (`lN` or a bare number, default 64), hash bits (`hN`, default 18), barrier distance (`dSIZE`, default unlimited) and the minimum length beyond it (`sN`, default 32). `N%` and the block size steer only the encoder. | ✅ read |
 | `dict:BLOCK[:N%][:p\|:f][:cN][:lN][:mN][:sN][:rN]` | Word-dictionary substitution, see *Dict stream*. Only the block size bounds the decoder; the rest steer the encoder. | ✅ read |
 | `mm`, external compressors | FreeArc's own codecs, no compatible implementation here. | ❌ refused |
-| `…+aes-256/ctr:n1000:r0:i…:s…:c…` (also blowfish, serpent, twofish) | Encryption stage (`-p`, or `-hp` for headers too). | ❌ refused |
+| `…+aes-256/ctr:n1000:r0:i…:s…:c…` (also blowfish, serpent, twofish; `/cfb`) | Encryption stage (`-p`, or `-hp` for headers too), see *Encryption*. | ✅ read with the password |
 
 Measured stage chains, all read here: `-mx` and `-m9x` write `rep:<block>+exe+delta+lzma:<block>:normal:bt4:128`;
 `-m1`..`-m4` write `rep:…+4x4:tor:…` for text-like files and `rep:…[+exe+delta]+4x4:tor:…` or
@@ -249,6 +250,44 @@ size. A block is a dictionary followed by the coded text:
 The rest of the block is the coded text, read to its end: a byte `c` with `len1[c] = 0` is output;
 one with `len1[c] = 1` (or the escape byte) is followed by a byte `d` and outputs the two-byte word
 `[c][d]`; any other outputs the one-byte word for `c`.
+
+### Encryption
+
+An encryption stage is the last stage of a method (`-ae=a+b` appends several, each with its own
+salt and vector, undone right to left like any other stage) and covers the block's whole stored
+bytes. Its text is `cipher[-bits][/mode]` and then parameters:
+
+| Parameter | Meaning |
+|---|---|
+| cipher | `aes` (default 256 bits), `blowfish` (default 448), `serpent` or `twofish` (default 256) |
+| mode | `ctr` (default) or `cfb` |
+| `nN` | PBKDF2 iterations (1000) |
+| `rN` | cipher rounds; FreeArc writes 0, the cipher's own |
+| `iHEX` | initial vector, one cipher block |
+| `sHEX` | salt, as long as the key |
+| `cHEX` | check code, 2 bytes |
+| `f` | (later versions) password and hex fields in the corrected encoding below |
+
+Key: PBKDF2-HMAC-SHA-512 over the password and the salt, producing key length + 2 bytes; the first
+part is the key and the last 2 bytes must equal the check code (a wrong password stops here). The
+password is taken one byte per character (`ä` is 0xE4), or UTF-8 with `f`.
+
+Without `f`, the key and the initial vector reach the cipher through a hex round trip that reads the
+digits `a`..`f` as 0..5: each key byte `b` becomes `g(b >> 4)·16 + g(b & 15)` with `g(d) = d` below
+10 and `d − 10` above, and the stored `i` digits are read the same way. The salt and the check code
+are read correctly.
+
+Modes, for a cipher with block size `n` (16, or 8 for Blowfish), both encrypting only:
+
+- `ctr`: the keystream is the encryption of a little-endian counter that starts at the initial
+  vector. For AES the counter is first decremented across all 16 bytes and then, before each block,
+  incremented in its low 8 bytes only; for the other ciphers it is incremented after each block
+  with the carry running across the whole block.
+- `cfb`: full-block cipher feedback; each keystream block is the encryption of the previous
+  ciphertext block, the first of the initial vector.
+
+Blowfish loads its halves big-endian; Serpent (the bitslice description, little-endian words, as in
+the NESSIE vectors) and Twofish little-endian.
 
 ## ✍️ What our writer emits
 

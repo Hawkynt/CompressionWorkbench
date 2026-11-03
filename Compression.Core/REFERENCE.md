@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesCryptor`](#aescryptor) · [`Blowfish`](#blowfish) · [`KeyDerivation`](#keyderivation)
+[`AesCryptor`](#aescryptor) · [`Blowfish`](#blowfish) · [`KeyDerivation`](#keyderivation) · [`Serpent`](#serpent) · [`Twofish`](#twofish)
 
 #### `AesCryptor`
 
@@ -221,6 +221,24 @@ Key derivation functions for password-based encryption.
 | `Rar3DeriveKey` | `static ValueTuple<byte[], byte[]> Rar3DeriveKey(string password, ReadOnlySpan<byte> salt)` | Derives a 16-byte AES-128 key and 16-byte IV for RAR3/4 decryption. RAR3 iterates SHA-1 262144 times over (salt + password_utf16le + counter). |
 | `Rar5DeriveKey` | `static byte[] Rar5DeriveKey(string password, ReadOnlySpan<byte> salt, int iterations)` | Derives a key using the RAR5 key derivation (PBKDF2-HMAC-SHA256 with specific parameters). |
 | `SevenZipDeriveKey` | `static byte[] SevenZipDeriveKey(string password, ReadOnlySpan<byte> salt, int numCyclesPower)` | Derives a key using the 7z AES key derivation (SHA-256 iterated). 7z uses: key = SHA256^(2^numCyclesPower)(salt + password_utf16le) |
+
+#### `Serpent`
+
+The Serpent block cipher (Ross Anderson, Eli Biham, Lars Knudsen), 128-bit blocks and keys of up to 256 bits, in its bitslice description with little-endian 32-bit words — the byte order of the NESSIE test vectors.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Serpent` | `Serpent(ReadOnlySpan<byte> key)` | Expands `key` (1 to 32 bytes) into the 33 round keys. |
+| `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 16-byte block in place. |
+
+#### `Twofish`
+
+The Twofish block cipher (Bruce Schneier, John Kelsey, Doug Whiting, David Wagner, Chris Hall, Niels Ferguson), 128-bit blocks and 128-, 192- or 256-bit keys.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Twofish` | `Twofish(ReadOnlySpan<byte> key)` | Expands a 16-, 24- or 32-byte `key`. |
+| `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 16-byte block in place. |
 
 ### Namespace `Compression.Core.DataStructures`
 

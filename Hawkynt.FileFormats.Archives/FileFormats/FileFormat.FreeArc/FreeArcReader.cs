@@ -17,6 +17,7 @@ namespace FileFormat.FreeArc;
 public sealed class FreeArcReader : IDisposable {
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
+  private readonly string? _password;
   private readonly List<FreeArcEntry> _entries = [];
   private FreeArcDataBlock? _cachedBlock;
   private byte[]? _cachedData;
@@ -36,20 +37,22 @@ public sealed class FreeArcReader : IDisposable {
   /// <summary>Opens a FreeArc archive and reads its footer and directory blocks.</summary>
   /// <param name="stream">A readable, seekable stream holding the archive.</param>
   /// <param name="leaveOpen"><see langword="true"/> to leave <paramref name="stream"/> open on dispose.</param>
-  /// <exception cref="InvalidDataException">The stream is not a FreeArc archive or its structure is corrupt.</exception>
-  /// <exception cref="NotSupportedException">A directory block is encrypted or compressed with an unsupported method.</exception>
-  public FreeArcReader(Stream stream, bool leaveOpen = false) {
+  /// <param name="password">The password for encrypted blocks (data and, with <c>-hp</c>, the directory), or null.</param>
+  /// <exception cref="InvalidDataException">The stream is not a FreeArc archive, its structure is corrupt, or the password is wrong.</exception>
+  /// <exception cref="NotSupportedException">A directory block is encrypted and no password was given, or is compressed with an unsupported method.</exception>
+  public FreeArcReader(Stream stream, bool leaveOpen = false, string? password = null) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanRead || !stream.CanSeek)
       throw new ArgumentException("FreeArc needs a readable, seekable stream.", nameof(stream));
     this._stream = stream;
     this._leaveOpen = leaveOpen;
+    this._password = password;
     this.ReadStructure();
   }
 
   /// <summary>Extracts the contents of <paramref name="entry"/>, verifying its CRC-32.</summary>
-  /// <exception cref="NotSupportedException">The entry's solid block uses an unsupported or encrypted method.</exception>
-  /// <exception cref="InvalidDataException">The data is corrupt.</exception>
+  /// <exception cref="NotSupportedException">The entry's solid block uses an unsupported method, or is encrypted and no password was given.</exception>
+  /// <exception cref="InvalidDataException">The data is corrupt or the password is wrong.</exception>
   public byte[] Extract(FreeArcEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory || entry.Size == 0)
@@ -76,7 +79,7 @@ public sealed class FreeArcReader : IDisposable {
       return this._cachedData!;
 
     var compressed = this.ReadAt(block.Position, block.CompressedSize);
-    var data = FreeArcMethods.Decode(block.Compressor, compressed, block.OriginalSize);
+    var data = FreeArcMethods.Decode(block.Compressor, compressed, block.OriginalSize, this._password);
     this._cachedBlock = block;
     this._cachedData = data;
     return data;
@@ -262,7 +265,7 @@ public sealed class FreeArcReader : IDisposable {
     if (block.Original > int.MaxValue || block.Compressed > int.MaxValue)
       throw new InvalidDataException("FreeArc: control block too large.");
     var compressed = this.ReadAt(block.Position, block.Compressed);
-    var data = FreeArcMethods.Decode(block.Compressor, compressed, block.Original);
+    var data = FreeArcMethods.Decode(block.Compressor, compressed, block.Original, this._password);
     if (Crc32.Compute(data) != block.Crc)
       throw new InvalidDataException($"FreeArc: control block at {block.Position} failed its CRC check.");
     return data;

@@ -13,14 +13,13 @@ namespace FileFormat.FreeArc;
 /// string), <c>tor</c> (see <see cref="FreeArcTornado"/>), <c>ppmd</c> (see
 /// <see cref="FreeArcPpmd"/>), <c>grzip</c> (see <see cref="FreeArcGrzip"/>), the wrapper
 /// <c>4x4</c> and the preprocessors <c>rep</c>, <c>delta</c>, <c>exe</c>, <c>lzp</c> and <c>dict</c>
-/// (see <see cref="FreeArcFilters"/>). Everything else — mm, external compressors and encryption —
-/// is refused with <see cref="NotSupportedException"/>.
+/// (see <see cref="FreeArcFilters"/>), and the AES, Blowfish, Serpent and Twofish encryption stages
+/// given the password (see <see cref="FreeArcCrypto"/>). Everything else — mm and external
+/// compressors — is refused with <see cref="NotSupportedException"/>.
 /// </remarks>
 public static partial class FreeArcMethods {
   /// <summary>The method name of an uncompressed stage.</summary>
   public const string Storing = "storing";
-
-  private static readonly string[] EncryptionNames = ["aes", "blowfish", "serpent", "twofish"];
 
   /// <summary>Splits a method string into its stages.</summary>
   public static string[] Stages(string compressor) => compressor.Split('+');
@@ -29,7 +28,7 @@ public static partial class FreeArcMethods {
   public static bool IsSupported(string compressor) =>
     Stages(compressor).All(IsDecodable);
 
-  private static bool IsDecodable(string stage) => StageName(stage) switch {
+  private static bool IsDecodable(string stage) => FreeArcCrypto.IsEncryption(stage) ? FreeArcCrypto.IsDecodable(stage) : StageName(stage) switch {
     Storing or "lzma" or "rep" or "delta" or "exe" or "tor" => true,
     "ppmd" => PpmdParameters.TryParse(stage, out _),
     "grzip" => stage.Split(':').Skip(1).All(t => GrzipOption().IsMatch(t.Trim())),
@@ -70,14 +69,18 @@ public static partial class FreeArcMethods {
 
   /// <summary>Gets whether <paramref name="compressor"/> contains an encryption stage.</summary>
   public static bool IsEncrypted(string compressor) =>
-    Stages(compressor).Any(stage => EncryptionNames.Any(e => StageName(stage).StartsWith(e, StringComparison.OrdinalIgnoreCase)));
+    Stages(compressor).Any(FreeArcCrypto.IsEncryption);
 
   /// <summary>Decodes <paramref name="input"/> produced by <paramref name="compressor"/> into exactly <paramref name="outputSize"/> bytes.</summary>
-  /// <exception cref="NotSupportedException">A stage is encrypted or uses a codec this library does not implement.</exception>
-  /// <exception cref="InvalidDataException">The stream does not decode to the expected size.</exception>
-  public static byte[] Decode(string compressor, byte[] input, long outputSize) {
-    if (IsEncrypted(compressor))
-      throw new NotSupportedException($"FreeArc: encrypted data (method \"{compressor}\") is not supported.");
+  /// <param name="compressor">The method string the block was written with.</param>
+  /// <param name="input">The stored bytes.</param>
+  /// <param name="outputSize">The decoded size the archive records.</param>
+  /// <param name="password">The password for encrypted stages, or null.</param>
+  /// <exception cref="NotSupportedException">A stage is encrypted and no password was given, or uses a codec this library does not implement.</exception>
+  /// <exception cref="InvalidDataException">The password is wrong, or the stream does not decode to the expected size.</exception>
+  public static byte[] Decode(string compressor, byte[] input, long outputSize, string? password = null) {
+    if (password is null && IsEncrypted(compressor))
+      throw new NotSupportedException($"FreeArc: encrypted data (method \"{compressor}\") needs a password.");
 
     var stages = Stages(compressor);
     foreach (var stage in stages)
@@ -86,7 +89,9 @@ public static partial class FreeArcMethods {
 
     var data = input;
     for (var i = stages.Length - 1; i >= 0; --i)
-      data = DecodeStage(stages[i], data, i == 0 ? outputSize : -1);
+      data = FreeArcCrypto.IsEncryption(stages[i])
+        ? FreeArcCrypto.Decrypt(stages[i], data, password!)
+        : DecodeStage(stages[i], data, i == 0 ? outputSize : -1);
 
     if (data.LongLength != outputSize)
       throw new InvalidDataException($"FreeArc: \"{compressor}\" decoded to {data.LongLength} bytes, expected {outputSize}.");

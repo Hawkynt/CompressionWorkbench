@@ -111,6 +111,18 @@ public class FreeArcTests {
   }
 
   [Test]
+  public void RealArchive_EncryptedData_ExtractsWithThePassword() {
+    using var r = new FreeArcReader(new MemoryStream(Vector("encrypted")), password: "Secret");
+    Assert.That(r.Extract(Entry(r, "hello.txt")), Is.EqualTo(Hello));
+  }
+
+  [Test]
+  public void RealArchive_EncryptedHeaders_OpenWithThePassword() {
+    using var r = new FreeArcReader(new MemoryStream(Vector("hdrenc")), password: "Secret");
+    Assert.That(r.Extract(Entry(r, "hello.txt")), Is.EqualTo(Hello));
+  }
+
+  [Test]
   public void RealArchive_EncryptedHeaders_ReaderRefuses_DescriptorFallsBack() {
     var archive = Vector("hdrenc");
     Assert.That(() => Open(archive), Throws.TypeOf<NotSupportedException>());

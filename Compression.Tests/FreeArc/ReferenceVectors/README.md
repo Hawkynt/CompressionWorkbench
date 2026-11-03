@@ -27,10 +27,10 @@ Each archive was made with `Arc.exe a <archive> -i0 -cfg- <switches> <files>`:
 | `comment.arc` | `lzma.arc`, then `Arc.exe c comment.arc "--archive-comment=A FreeArc comment"` | | archive comment in the footer |
 | `ppmd.arc` | `-mppmd` | hello, lines | `ppmd:10:48mb` |
 | `tornado.arc` | `-m1` | hello, lines | `rep:…+4x4:tor:…` |
-| `encrypted.arc` | `-mlzma -pSecret` | hello | `lzma…+aes-256/ctr:…` data — refused |
-| `hdrenc.arc` | `-mlzma -hpSecret` | hello | encrypted directory — listed as `FULL.arc` + `metadata.ini` |
+| `encrypted.arc` | `-mlzma -pSecret` | hello | `lzma…+aes-256/ctr:…` data — refused without the password, read with it |
+| `hdrenc.arc` | `-mlzma -hpSecret` | hello | encrypted directory — listed as `FULL.arc` + `metadata.ini` without the password, read with it |
 
-`mkfilters.py` makes thirty-four more from generated inputs (text, a 24000-byte random run repeated 3000
+`mkfilters.py` makes forty-two more from generated inputs (text, a 24000-byte random run repeated 3000
 bytes later, a table of 8-byte records, x86-like code, an empty file; the `text-*` archives hold one
 file of sentences on lines instead), each with
 `Arc.exe a <archive> -i0 -cfg- -ep1 <switch>`; `filters.tsv` lists what `Arc.exe x` extracts:
@@ -58,3 +58,8 @@ file of sentences on lines instead), each with
 | `dict.arc`, `dict-p.arc` | `-mdict`, `-mdict:p` | word dictionaries over the generated inputs; blocks that do not shrink are stored |
 | `text-m5.arc`, `text-mx.arc` | `-m5`, `-mx` | the text chains `dict+lzp+4x4:ppmd` and `dict+lzp+ppmd` |
 | `text-m9x.arc` | `-m9x` | the text chain `dict+lzma` |
+| `crypt-aes.arc`, `crypt-aes128-cfb.arc` | `-mlzma -pSecret`, `-ae=aes-128/cfb` | AES in counter and feedback mode |
+| `crypt-blowfish.arc`, `crypt-serpent.arc`, `crypt-twofish.arc` | `-ae=blowfish`, `serpent`, `twofish` | the other ciphers, counter mode |
+| `crypt-chain.arc` | `-ae=blowfish/cfb+twofish/cfb+serpent` | three encryption stages in a row |
+| `crypt-headers.arc` | `-mlzma -hpSecret` | encrypted directory as well |
+| `crypt-latin1.arc` | `-pPässwort` | a password outside ASCII |
