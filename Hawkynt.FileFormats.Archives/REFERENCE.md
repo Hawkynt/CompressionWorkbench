@@ -12862,6 +12862,62 @@ Writes a Microsoft Compiled HTML Help (.chm) file. Supports two modes: Stored (d
 | `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
 | `WriteTo` | `void WriteTo(Stream output, bool useLzx = false)` | Writes the to to the supplied output. |
 
+### Namespace `FileFormat.ClickteamInstaller`
+
+[`ClickteamEntry`](#clickteamentry) · [`ClickteamInstallerFormatDescriptor`](#clickteaminstallerformatdescriptor) · [`ClickteamReader`](#clickteamreader)
+
+#### `ClickteamEntry`
+
+One file of a Clickteam Install Creator installer.
+
+Implements `IEquatable<ClickteamEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ClickteamEntry` | `ClickteamEntry(string Path, uint Offset, uint CompressedSize, uint Size, DateTime? Modified)` | One file of a Clickteam Install Creator installer. |
+| `CompressedSize` | `uint CompressedSize { get; init; }` | Stored member size. |
+| `Modified` | `DateTime? Modified { get; init; }` | Last-write time, when recorded. |
+| `Offset` | `uint Offset { get; init; }` | Offset of its member in the file data block. |
+| `Path` | `string Path { get; init; }` | Install path, '/'-separated. |
+| `Size` | `uint Size { get; init; }` | Expanded size. |
+
+#### `ClickteamInstallerFormatDescriptor`
+
+Clickteam Install Creator setup executables (file list layouts 2.0 to 4.0): the installed files, read from the overlay after the PE image. Read-only; detected by the overlay signature.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ClickteamInstallerFormatDescriptor` | `ClickteamInstallerFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `ClickteamReader`
+
+Clickteam Install Creator installers (versions 2.0 to 4.0 of the file list): a PE stub followed by an overlay that starts with `77 77 67 54 29 48` and holds typed blocks; the file list block (0x143A) describes the files, the file data block (0x7F7F) holds their members, each stored, zlib or bzip2 compressed.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entries` | `IReadOnlyList<ClickteamEntry> Entries { get; }` | The installer's files. |
+| `Signature` | `static ReadOnlySpan<byte> Signature { get; }` | The overlay signature. |
+| `Version` | `int Version { get; }` | The file list layout the installer was read with (20, 24, 30, 35 or 40). |
+| `Extract` | `byte[] Extract(ClickteamEntry entry)` | The expanded bytes of `entry`. |
+| `IsClickteam` | `static bool IsClickteam(Stream stream)` | Whether a PE image carries the Install Creator overlay right after its sections. |
+| `Open` | `static ClickteamReader Open(byte[] data)` | Reads the installer's file list. |
+
 ### Namespace `FileFormat.Cmf`
 
 [`CmfFormatDescriptor`](#cmfformatdescriptor)
