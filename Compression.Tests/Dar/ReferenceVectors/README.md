@@ -45,3 +45,32 @@ Built by `make-fixtures.sh` (run inside WSL / Linux). The source tree, rebuilt b
 | `encrypted.1.dar` | `dar -c encrypted -K aes:cwb-fixture -R /tmp/cwbdar/empty` | an encrypted archive the reader must refuse |
 
 `dar -t` accepts every one of them (the encrypted one with `-K aes:cwb-fixture`).
+
+## Older dar releases, and 2.8.6, built from source
+
+Built by `make-legacy-fixtures.sh` with dar releases compiled from the SourceForge source
+tarballs (`./configure --prefix=/opt/cwb-dar/<release> --disable-shared …`, Ubuntu 24.04, g++ 13)
+from the same source tree as above (rebuilt under `/tmp/cwbdar-legacy/src`). Each release writes
+the archive format it was released with:
+
+| Release | Format | Files |
+| --- | --- | --- |
+| 2.4.24 | 8.1 | `dar-2.4.24*.dar` |
+| 2.5.22 | 9.0 | `dar-2.5.22*.dar` |
+| 2.6.0 | 10.0 | `dar-2.6.0*.dar` |
+| 2.6.16 | 10.1 | `dar-2.6.16*.dar` |
+| 2.7.0 | 11.0 | `dar-2.7.0*.dar` |
+| 2.7.1 | 11.1 | `dar-2.7.1.*.dar`, `dar-2.7.1-*.dar` |
+| 2.7.10 | 11.2 | `dar-2.7.10*.dar` |
+| 2.8.6 | 11.3 | `dar-2.8.6*.dar` |
+
+Per release (`-R /tmp/cwbdar-legacy/src`):
+
+| File(s) | Command |
+| --- | --- |
+| `dar-<r>.1.dar` | `dar -c dar-<r>` (tape marks) |
+| `dar-<r>-at.1.dar` | `dar -c dar-<r>-at -at` |
+| `dar-<r>-gzip.1.dar`, `dar-<r>-bzip2.1.dar` | `dar -c … -zgzip`, `-zbzip2` |
+| `dar-<r>-sliced.1.dar` … `.3.dar` | `dar -c … -S 3k -s 2k` |
+
+The release that wrote each set accepts it with `dar -t`.

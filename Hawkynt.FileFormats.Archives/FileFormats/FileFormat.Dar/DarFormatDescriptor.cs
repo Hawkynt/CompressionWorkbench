@@ -12,24 +12,27 @@ namespace FileFormat.Dar;
 /// across all slices, hold a version header, the file data, the catalogue and, at the end, two
 /// terminators that lead back to the version trailer and the catalogue (<see cref="DarArchive"/>).
 ///
-/// <para>Reading: archive formats 9 to 11.3, single or multi-slice (the sibling
+/// <para>Reading: archive formats 8.1 to 11.3, single or multi-slice (the sibling
 /// <c>basename.N.dar</c> files are picked up from the slice's directory), with or without tape
 /// marks, uncompressed or gzip, bzip2, xz, zstd, lz4 or lzo compressed in streaming or block mode,
-/// sparse files expanded, hard links resolved, every data and catalogue checksum checked.
+/// sparse files expanded, hard links resolved, every data and catalogue checksum checked, members
+/// of any size streamed to disk.
 /// Directories and regular files are extracted; symlinks, devices, pipes and sockets are listed
 /// but not materialised. Encrypted archives, unknown compression and newer formats are refused:
 /// listing then falls back to the raw slice (<c>FULL.dar</c>) and a <c>metadata.ini</c> naming the
 /// reason, and never throws.</para>
 ///
-/// <para>Writing: a single-slice format-11.3 archive without tape marks — what <c>dar -at</c>
-/// produces — stored or compressed with gzip, bzip2, xz, zstd or lz4. <c>dar -t</c> accepts it and
-/// <c>dar -x</c> restores the input byte for byte (dar 2.7.13; see
+/// <para>Writing: format 11.3, stored or compressed with gzip, bzip2, xz, zstd or lz4, in one slice
+/// or cut at <see cref="SliceSizeOption"/> / <see cref="FirstSliceSizeOption"/> (dar's <c>-s</c> /
+/// <c>-S</c>), with or without <see cref="TapeMarksOption"/>; file data is streamed, symlinks and
+/// uid/gid/permissions/times are kept. dar 2.7.13 and 2.8.6 accept it (<c>dar -t</c>, also
+/// sequentially) and restore the input byte for byte (see
 /// <c>Compression.Tests/Dar/DarExternalConformanceTests.cs</c>).</para>
 ///
-/// <para>Layout derived from dar's documentation and from archives written by dar 2.7.13 and 2.8.6:
+/// <para>Layout derived from dar's documentation and from archives written by dar 2.4.24 to 2.8.6:
 /// <c>docs/DAR-ON-DISK.md</c>.</para>
 /// </summary>
-public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
   public string Id => "Dar";
   public string DisplayName => "Disk ARchive (DAR)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -52,9 +55,9 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "Disk ARchive (dar / libdar), formats 9-11.3: single and multi-slice, tape marks, " +
+    "Disk ARchive (dar / libdar), formats 8.1-11.3: single and multi-slice, tape marks, " +
     "gzip/bzip2/xz/zstd/lz4/lzo streaming and block compression, sparse files and hard links; " +
-    "writes dar-compatible format-11.3 single-slice archives.";
+    "writes dar-compatible format-11.3 archives, sliced or not, with or without tape marks.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var seekable = stream.CanSeek ? stream : Buffer(stream);
@@ -91,22 +94,118 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>Option key: size of every slice file in bytes (dar's <c>-s</c>); <c>k</c>, <c>M</c>,
+  /// <c>G</c> and <c>T</c> suffixes count in 1024s. Empty or 0 writes one slice.</summary>
+  public const string SliceSizeOption = "SliceSize";
+
+  /// <summary>Option key: size of the first slice when it differs (dar's <c>-S</c>).</summary>
+  public const string FirstSliceSizeOption = "FirstSliceSize";
+
+  /// <summary>Option key: write tape marks, the escape layer dar's sequential reading needs (dar's
+  /// default; <c>false</c> is <c>dar -at</c>).</summary>
+  public const string TapeMarksOption = "TapeMarks";
+
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+    new(SliceSizeOption, "Slice size", FormatOptionKind.String, "",
+      Description: "Cut the archive into slice files of this size (dar -s), named basename.1.dar, basename.2.dar, ... "
+                 + "The output must then be a file named basename.1.dar. Suffixes k, M, G, T count in 1024s; empty writes one slice.",
+      IsOptimizationAxis: false),
+    new(FirstSliceSizeOption, "First slice size", FormatOptionKind.String, "",
+      Description: "A different size for the first slice (dar -S); needs a slice size.",
+      DependsOn: null, IsOptimizationAxis: false),
+    new(TapeMarksOption, "Tape marks", FormatOptionKind.Boolean, "false",
+      Description: "Write the escape marks that let dar read the archive sequentially, from a pipe or tape "
+                 + "(dar's default; off is dar -at).",
+      IsOptimizationAxis: false),
+    new(CompressionBlockSizeOption, "Compression block size", FormatOptionKind.String, "",
+      Description: "Compress in independent blocks of this many clear bytes (dar -z algo:level:size); empty is "
+                 + "streaming compression. xz and zstd files over 64 MiB always use 8 MiB blocks.",
+      IsOptimizationAxis: false),
+  ];
+
+  /// <summary>Option key: dar's block-mode compression block size (<c>-z algo:level:size</c>).</summary>
+  public const string CompressionBlockSizeOption = "CompressionBlockSize";
+
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
-    var algorithm = DarWriter.AlgorithmFor(options.MethodName);
-    var items = new List<DarWriter.Item>(inputs.Count);
-    foreach (var input in inputs) {
-      var onDisk = input.InMemoryContent == null && (input.IsDirectory ? Directory.Exists(input.FullPath) : File.Exists(input.FullPath));
-      var modified = onDisk ? File.GetLastWriteTimeUtc(input.FullPath) : DateTime.UtcNow;
-      var accessed = onDisk ? File.GetLastAccessTimeUtc(input.FullPath) : modified;
-      var permissions = input.IsDirectory ? (ushort)0x1ED : (ushort)0x1A4;
-      if (onDisk && !OperatingSystem.IsWindows())
-        permissions = (ushort)((int)File.GetUnixFileMode(input.FullPath) & 0xFFF);
-      items.Add(new(input.ArchiveName, input.IsDirectory, input.IsDirectory ? [] : input.ReadContent(), permissions, modified, accessed));
+    var blockSize = ParseSize(options.GetString(CompressionBlockSizeOption), CompressionBlockSizeOption);
+    if (blockSize > 64 << 20)
+      throw new ArgumentException($"DAR option {CompressionBlockSizeOption} is limited to 64 MiB.");
+    var settings = new DarWriter.Settings(
+      DarWriter.AlgorithmFor(options.MethodName),
+      options.Level,
+      options.GetOptionBool(TapeMarksOption, false),
+      ParseSize(options.GetString(SliceSizeOption), SliceSizeOption),
+      ParseSize(options.GetString(FirstSliceSizeOption), FirstSliceSizeOption),
+      (int)blockSize);
+    if (settings.FirstSliceSize > 0 && settings.SliceSize == 0)
+      throw new ArgumentException($"DAR option {FirstSliceSizeOption} needs {SliceSizeOption} as well.");
+    var items = inputs.Select(ToItem).ToList();
+    if (settings.SliceSize == 0) {
+      DarWriter.Write(output, items, settings);
+      return;
     }
-    DarWriter.Write(output, items, algorithm, options.Level);
+    // Slices after the first go next to the first, which must be named the way dar names slices.
+    var baseName = output is FileStream { Name: { Length: > 0 } name } && name.EndsWith(".1.dar", StringComparison.OrdinalIgnoreCase)
+      ? name[..^".1.dar".Length]
+      : throw new ArgumentException("A sliced DAR archive must be written to a file named basename.1.dar, so its other slices can go beside it.");
+    DarWriter.Write(n => n == 1 ? output : File.Create($"{baseName}.{n.ToString(CultureInfo.InvariantCulture)}.dar"), items, settings);
+  }
+
+  /// <summary>Parses a dar-style size: digits with an optional k/M/G/T suffix in powers of 1024.</summary>
+  internal static long ParseSize(string? text, string option) {
+    if (string.IsNullOrWhiteSpace(text))
+      return 0;
+    var t = text.Trim();
+    var shift = char.ToLowerInvariant(t[^1]) switch { 'k' => 10, 'm' => 20, 'g' => 30, 't' => 40, _ => 0 };
+    if (shift > 0)
+      t = t[..^1];
+    if (!long.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var value) || value > long.MaxValue >> shift)
+      throw new ArgumentException($"DAR option {option} '{text}' is not a size.");
+    return value << shift;
+  }
+
+  private static DarWriter.Item ToItem(ArchiveInputInfo input) {
+    var meta = input.Metadata;
+    var inMemory = input.InMemoryContent;
+    FileSystemInfo? info = null;
+    if (inMemory == null && !string.IsNullOrEmpty(input.FullPath)) {
+      info = input.IsDirectory ? new DirectoryInfo(input.FullPath) : new FileInfo(input.FullPath);
+      if (!info.Exists && info.LinkTarget == null)
+        info = null;
+    }
+    var link = info?.LinkTarget;
+    var kind = link != null ? DarWriter.ItemKind.Symlink : input.IsDirectory ? DarWriter.ItemKind.Directory : DarWriter.ItemKind.File;
+    var now = DateTime.UtcNow;
+    var modified = meta?.LastWriteTimeUtc?.UtcDateTime ?? info?.LastWriteTimeUtc ?? now;
+    var accessed = meta?.LastAccessTimeUtc?.UtcDateTime ?? info?.LastAccessTimeUtc ?? modified;
+    var changed = meta?.StatusChangeTimeUtc?.UtcDateTime ?? modified;
+    ushort permissions = kind switch {
+      DarWriter.ItemKind.Symlink => 0x1FF,
+      DarWriter.ItemKind.Directory => 0x1ED,
+      _ => 0x1A4,
+    };
+    if (meta?.UnixMode is { } mode)
+      permissions = (ushort)(mode & 0xFFF);
+    else if (info != null && link == null && !OperatingSystem.IsWindows())
+      permissions = (ushort)((int)File.GetUnixFileMode(input.FullPath) & 0xFFF);
+    var item = new DarWriter.Item(input.ArchiveName, kind, permissions, modified, accessed) {
+      Changed = changed,
+      Uid = meta?.UnixUserId ?? 0,
+      Gid = meta?.UnixGroupId ?? 0,
+      LinkTarget = link,
+    };
+    if (kind != DarWriter.ItemKind.File)
+      return item;
+    if (inMemory != null)
+      return item with { Open = () => new MemoryStream(inMemory, writable: false), Length = inMemory.LongLength };
+    var path = input.FullPath;
+    return item with {
+      Open = () => new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 16, FileOptions.SequentialScan),
+      Length = info is FileInfo file ? file.Length : 0,
+    };
   }
 
   private static ArchiveEntryInfo ToInfo(int index, DarEntry e) => new(
@@ -147,9 +246,8 @@ public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           Directory.CreateDirectory(SafeDirectory(outputDir, entry.Path));
           continue;
         case DarEntryKind.File or DarEntryKind.Door when entry.HasData: {
-          var data = archive.ReadData(entry);
           using (var target = CreateEntryFile(outputDir, entry.Path))
-            target.Write(data);
+            archive.CopyData(entry, target);
           ApplyMetadata(Path.Combine(outputDir, entry.Path.Replace('/', Path.DirectorySeparatorChar)), entry);
           continue;
         }

@@ -123,6 +123,12 @@ internal static class SevenZipConstants {
   /// <summary>Codec ID for Delta filter.</summary>
   public static ReadOnlySpan<byte> CodecDelta => [0x03];
 
+  /// <summary>Codec ID for the SWAP2 filter.</summary>
+  public static ReadOnlySpan<byte> CodecSwap2 => [0x02, 0x03, 0x02];
+
+  /// <summary>Codec ID for the SWAP4 filter.</summary>
+  public static ReadOnlySpan<byte> CodecSwap4 => [0x02, 0x03, 0x04];
+
   /// <summary>Codec ID for AES-256 + SHA-256 encryption.</summary>
   public static ReadOnlySpan<byte> CodecAes => [0x06, 0xF1, 0x07, 0x01];
 

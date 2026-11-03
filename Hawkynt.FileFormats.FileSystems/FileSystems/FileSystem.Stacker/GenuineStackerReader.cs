@@ -162,6 +162,48 @@ public sealed class GenuineStackerReader : IDisposable {
     };
   }
 
+  // A fragmented cluster (docs/CVF-CODECS-ON-DISK.md, "Stacker fragmented clusters"): the AMAP run is
+  // the first piece; its first sector starts 0xED, the number n of further pieces, a 16-bit total of
+  // their sectors minus one, and n entries (16-bit sector, sectors - 1, a byte that must be 0). The
+  // compressed payload starts right after the entries and continues through the pieces in order.
+  private byte[] FragmentedPayload(int cluster, int phys, int sectors) {
+    var first = phys * Ss;
+    if (first + sectors * Ss > this._data.Length)
+      throw new InvalidDataException($"Stacker (genuine): fragmented cluster {cluster} lies past the end of the volume.");
+    if (this._data[first] != 0xED)
+      throw new InvalidDataException($"Stacker (genuine): fragmented cluster {cluster} lacks its 0xED piece list.");
+
+    var pieces = this._data[first + 1];
+    var headerBytes = 4 + 4 * pieces;
+    if (headerBytes > sectors * Ss)
+      throw new InvalidDataException($"Stacker (genuine): fragmented cluster {cluster} has a piece list longer than its first run.");
+
+    var listed = new List<(int Sector, int Count)>(pieces);
+    var sum = 0;
+    for (var i = 0; i < pieces; ++i) {
+      var e = first + 4 + 4 * i;
+      if (this._data[e + 3] != 0)
+        throw new NotSupportedException($"Stacker (genuine): fragmented cluster {cluster} uses a piece entry whose fourth byte is set; its meaning has not been verified.");
+      var count = this._data[e + 2] + 1;
+      listed.Add((this._data[e] | this._data[e + 1] << 8, count));
+      sum += count;
+    }
+    if (BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(first + 2)) != sum - 1)
+      throw new InvalidDataException($"Stacker (genuine): fragmented cluster {cluster} piece total does not match its piece list.");
+
+    var payload = new byte[sectors * Ss - headerBytes + sum * Ss];
+    this._data.AsSpan(first + headerBytes, sectors * Ss - headerBytes).CopyTo(payload);
+    var at = sectors * Ss - headerBytes;
+    foreach (var (sector, count) in listed) {
+      var off = (long)sector * Ss;
+      if (sector == 0 || off + count * Ss > this._data.Length)
+        throw new InvalidDataException($"Stacker (genuine): fragmented cluster {cluster} names a piece past the end of the volume.");
+      this._data.AsSpan((int)off, count * Ss).CopyTo(payload.AsSpan(at));
+      at += count * Ss;
+    }
+    return payload;
+  }
+
   private int NextCluster(int cluster) {
     var fatOff = this._fatStart * Ss;
     if (this._fat16)
@@ -205,9 +247,15 @@ public sealed class GenuineStackerReader : IDisposable {
             }
             break;
           }
+          case ClusterKind.Fragmented: {
+            var payload = this.FragmentedPayload(cluster, phys, sectors);
+            var full = Compression.Core.FileSystems.Cvf.CvfLzCodec.DecompressStacker(payload, payload.Length, clusterBytes);
+            Array.Copy(full, 0, output, written, want);
+            break;
+          }
           case var kind:
-            // Fragmented and suballocated runs exist on real volumes, but no sample of either has
-            // been verified, so they are refused rather than guessed at.
+            // Suballocated runs exist on real volumes, but their layout has not been verified, so
+            // they are refused rather than guessed at.
             throw new NotSupportedException($"Stacker (genuine): cluster {cluster} of '{entry.Name}' is {kind.ToString().ToLowerInvariant()}; reading such clusters is not supported.");
         }
         written += want;

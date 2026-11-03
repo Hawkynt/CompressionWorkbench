@@ -1,528 +1,272 @@
-using Compression.Core.Checksums;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using Compression.Core.Dictionary.Ace;
-using Compression.Core.Entropy.GolombRice;
+using Compression.Registry;
 using FileFormat.Ace;
-using CoreAceConstants = Compression.Core.Dictionary.Ace.AceConstants;
+using AceConstants = Compression.Core.Dictionary.Ace.AceConstants;
 
 namespace Compression.Tests.Ace;
 
+/// <summary>
+/// ACE, against acefile (the reference reader the decoder is converted from). Fixtures: two archives
+/// from acefile's own test corpus (one an ACE 2.0 solid archive WinAce wrote, cut after its first 35
+/// members) and archives our writer produced that acefile verified; <c>acefile-listing.txt</c> is
+/// acefile's reading of every one. See ReferenceVectors/README.md.
+/// </summary>
 [TestFixture]
-public class AceEncoderDecoderTests {
-  [Category("End2End")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Store_RoundTrip() {
-    var writer = new AceWriter();
-    var data = "Hello, ACE!"u8.ToArray();
-    writer.AddFile("test.txt", data);
-    var archive = writer.ToArray();
+public class AceTests {
 
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms);
-
-    Assert.That(reader.Entries, Has.Count.EqualTo(1));
-    Assert.That(reader.Entries[0].FileName, Is.EqualTo("test.txt"));
-    var extracted = reader.ExtractEntry(reader.Entries[0]);
-    Assert.That(extracted, Is.EqualTo(data));
+  private static byte[] Vector(string name) {
+    using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"AceVectors.{name}")
+      ?? throw new FileNotFoundException($"Embedded ACE vector '{name}' is missing from the test assembly.");
+    using var ms = new MemoryStream();
+    stream.CopyTo(ms);
+    return ms.ToArray();
   }
 
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Compressed_RoundTrip() {
-    var writer = new AceWriter();
-    var data = new byte[1000];
-    for (var i = 0; i < data.Length; ++i)
-      data[i] = (byte)(i % 10);
-    writer.AddFile("pattern.bin", data);
-    var archive = writer.ToArray();
+  private static List<string[]> Listing(string vector)
+    => Encoding.UTF8.GetString(Vector("acefile-listing.txt"))
+      .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+      .Select(l => l.TrimEnd('\r').Split('\t'))
+      .Where(p => p[0] == vector)
+      .ToList();
 
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms);
+  // ── the archives our writer produced for acefile (regenerate with OursFixtures.Write) ──────────
 
-    Assert.That(reader.Entries, Has.Count.EqualTo(1));
-    var extracted = reader.ExtractEntry(reader.Entries[0]);
-    Assert.That(extracted, Is.EqualTo(data));
+  internal static readonly DateTime FixedTime = new(2024, 5, 6, 7, 8, 10);
+  internal static readonly byte[] Text = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 400).Select(i => $"line {i % 37} of the ACE writer test, repeated often enough to compress\r\n")));
+  internal static readonly byte[] Noise = [.. Enumerable.Range(0, 9000).Select(i => (byte)((i * 2654435761u) >> 24))];
+
+  internal static byte[] OursArchive(string name) {
+    var (solid, store, password) = name switch {
+      "ours-lz77.ace" => (false, false, (string?)null),
+      "ours-store.ace" => (false, true, null),
+      "ours-solid.ace" => (true, false, null),
+      "ours-encrypted.ace" => (false, false, "secret"),
+      _ => throw new ArgumentOutOfRangeException(nameof(name)),
+    };
+    var w = new AceWriter(dictionaryBits: 16, password: password, solid: solid, store: store) { CreatedTime = FixedTime };
+    w.AddDirectory("docs", FixedTime);
+    w.AddFile("docs/text.txt", Text, FixedTime);
+    w.AddFile("noise.bin", Noise, FixedTime);
+    w.AddFile("empty.txt", [], FixedTime);
+    w.AddFile("again.txt", Text, FixedTime);
+    return w.ToArray();
   }
 
-  [Category("End2End")]
-  [Category("RoundTrip")]
-  [Test]
-  public void MultipleFiles_RoundTrip() {
-    var writer = new AceWriter();
-    var data1 = "First file"u8.ToArray();
-    var data2 = new byte[500];
-    for (var i = 0; i < data2.Length; ++i)
-      data2[i] = (byte)(i % 13);
+  private static readonly string[] OursNames = ["ours-lz77.ace", "ours-store.ace", "ours-solid.ace", "ours-encrypted.ace"];
 
-    writer.AddFile("file1.txt", data1);
-    writer.AddFile("file2.bin", data2);
-
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms);
-
-    Assert.That(reader.Entries, Has.Count.EqualTo(2));
-    Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(data1));
-    Assert.That(reader.ExtractEntry(reader.Entries[1]), Is.EqualTo(data2));
-  }
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Ace20_LZ77Only_SameAsAce10() {
-    // ACE 2.0 with no mode switches should produce same output as ACE 1.0
-    var data = new byte[500];
-    for (var i = 0; i < data.Length; ++i)
-      data[i] = (byte)(i % 10);
-
-    var compressed = AceEncoder.EncodeBlock(data);
-    var decoded10 = AceDecoder.DecodeBlock(compressed, data.Length,
-      CoreAceConstants.DefaultDictBits, CoreAceConstants.CompAce10);
-    var decoded20 = AceDecoder.DecodeBlock(compressed, data.Length,
-      CoreAceConstants.DefaultDictBits, CoreAceConstants.CompAce20);
-
-    Assert.That(decoded10, Is.EqualTo(data));
-    Assert.That(decoded20, Is.EqualTo(data));
-  }
-
-  [Category("EdgeCase")]
-  [Category("RoundTrip")]
-  [Test]
-  public void EmptyFile_RoundTrip() {
-    var writer = new AceWriter();
-    writer.AddFile("empty.txt", []);
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms);
-
-    Assert.That(reader.Entries, Has.Count.EqualTo(1));
-    Assert.That(reader.Entries[0].OriginalSize, Is.EqualTo(0));
-    var extracted = reader.ExtractEntry(reader.Entries[0]);
-    Assert.That(extracted, Is.Empty);
-  }
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void ArchiveComment_RoundTrip() {
-    var writer = new AceWriter();
-    writer.Comment = "Test archive";
-    writer.AddFile("test.txt", "data"u8.ToArray());
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms);
-
-    Assert.That(reader.Comment, Is.EqualTo("Test archive"));
-  }
-  // ── Encryption tests ──────────────────────────────────────────────────
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Encrypted_Store_RoundTrip() {
-    var data = "Secret ACE data!"u8.ToArray();
-    var writer = new AceWriter(password: "mypass");
-    writer.AddFile("secret.txt", data);
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms, password: "mypass");
-
-    Assert.That(reader.Entries, Has.Count.EqualTo(1));
-    Assert.That(reader.Entries[0].IsEncrypted, Is.True);
-    var extracted = reader.ExtractEntry(reader.Entries[0]);
-    Assert.That(extracted, Is.EqualTo(data));
-  }
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Encrypted_Compressed_RoundTrip() {
-    var data = new byte[1000];
-    for (var i = 0; i < data.Length; ++i)
-      data[i] = (byte)(i % 10);
-
-    var writer = new AceWriter(password: "secret123");
-    writer.AddFile("pattern.bin", data);
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms, password: "secret123");
-
-    Assert.That(reader.Entries[0].IsEncrypted, Is.True);
-    var extracted = reader.ExtractEntry(reader.Entries[0]);
-    Assert.That(extracted, Is.EqualTo(data));
-  }
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Encrypted_MultipleFiles_RoundTrip() {
-    var f1 = "first encrypted file"u8.ToArray();
-    var f2 = new byte[200];
-    for (var i = 0; i < f2.Length; ++i) f2[i] = (byte)(i % 13);
-
-    var writer = new AceWriter(password: "pw");
-    writer.AddFile("f1.txt", f1);
-    writer.AddFile("f2.bin", f2);
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms, password: "pw");
-
-    Assert.That(reader.Entries.Count, Is.EqualTo(2));
-    Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(f1));
-    Assert.That(reader.ExtractEntry(reader.Entries[1]), Is.EqualTo(f2));
-  }
-
-  // ── Solid archive tests ─────────────────────────────────────────────
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Solid_RoundTrip_MultipleFiles() {
-    var data1 = new byte[500];
-    for (var i = 0; i < data1.Length; ++i) data1[i] = (byte)(i % 10);
-    var data2 = new byte[500];
-    for (var i = 0; i < data2.Length; ++i) data2[i] = (byte)(i % 10); // same pattern — solid should help
-
-    var writer = new AceWriter(solid: true);
-    writer.AddFile("f1.bin", data1);
-    writer.AddFile("f2.bin", data2);
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms);
-
-    Assert.That(reader.IsSolid, Is.True);
-    Assert.That(reader.Entries.Count, Is.EqualTo(2));
-    Assert.That(reader.Entries[1].IsSolid, Is.True);
-
-    var extracted1 = reader.ExtractEntry(reader.Entries[0]);
-    var extracted2 = reader.ExtractEntry(reader.Entries[1]);
-    Assert.That(extracted1, Is.EqualTo(data1));
-    Assert.That(extracted2, Is.EqualTo(data2));
-  }
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Solid_ThreeFiles_DifferentContent() {
-    var d1 = "AAABBBCCC"u8.ToArray();
-    var d2 = "DDDEEEFFF"u8.ToArray();
-    var d3 = "GGGHHHIII"u8.ToArray();
-
-    var writer = new AceWriter(solid: true);
-    writer.AddFile("a.txt", d1);
-    writer.AddFile("b.txt", d2);
-    writer.AddFile("c.txt", d3);
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms);
-
-    Assert.That(reader.IsSolid, Is.True);
-    Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(d1));
-    Assert.That(reader.ExtractEntry(reader.Entries[1]), Is.EqualTo(d2));
-    Assert.That(reader.ExtractEntry(reader.Entries[2]), Is.EqualTo(d3));
-  }
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Solid_Encrypted_RoundTrip() {
-    var d1 = new byte[200];
-    var d2 = new byte[200];
-    for (var i = 0; i < 200; ++i) { d1[i] = (byte)(i % 7); d2[i] = (byte)(i % 13); }
-
-    var writer = new AceWriter(solid: true, password: "solidpass");
-    writer.AddFile("s1.bin", d1);
-    writer.AddFile("s2.bin", d2);
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms, password: "solidpass");
-
-    Assert.That(reader.IsSolid, Is.True);
-    Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(d1));
-    Assert.That(reader.ExtractEntry(reader.Entries[1]), Is.EqualTo(d2));
-  }
-
-  [Category("Exception")]
-  [Test]
-  public void Encrypted_NoPassword_Throws() {
-    var data = "encrypted"u8.ToArray();
-    var writer = new AceWriter(password: "pass");
-    writer.AddFile("test.bin", data);
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms);
-
-    Assert.That(reader.Entries[0].IsEncrypted, Is.True);
-    Assert.Throws<InvalidOperationException>(() => reader.ExtractEntry(reader.Entries[0]));
-  }
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void RecoveryRecord_RoundTrip() {
-    var writer = new AceWriter(recoveryRecord: true);
-    var data1 = new byte[100];
-    var data2 = new byte[200];
-    for (var i = 0; i < data1.Length; ++i) data1[i] = (byte)(i % 10);
-    for (var i = 0; i < data2.Length; ++i) data2[i] = (byte)(i % 7);
-    writer.AddFile("a.txt", data1);
-    writer.AddFile("b.txt", data2);
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    using var reader = new AceReader(ms);
-
-    Assert.That(reader.HasRecoveryRecord, Is.True);
-    Assert.That(reader.VerifyRecoveryRecord(), Is.True);
-    Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(data1));
-    Assert.That(reader.ExtractEntry(reader.Entries[1]), Is.EqualTo(data2));
-  }
-
-  [Category("EdgeCase")]
-  [Test]
-  public void RecoveryRecord_NotPresent() {
-    var writer = new AceWriter();
-    writer.AddFile("a.txt", [1, 2, 3]);
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    using var reader = new AceReader(ms);
-
-    Assert.That(reader.HasRecoveryRecord, Is.False);
-    Assert.That(reader.VerifyRecoveryRecord(), Is.False);
-  }
-
-  // ── ACE 2.0 sub-mode tests ────────────────────────────────────────
-
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Ace20_Exe_RoundTrip() {
-    // Simulated x86 code with E8/E9 call instructions
-    var data = new byte[500];
-    var rng = new Random(42);
-    rng.NextBytes(data);
-    // Insert some E8 call instructions
-    for (var i = 0; i < data.Length - 5; i += 20) {
-      data[i] = 0xE8;
-      data[i + 1] = (byte)(i & 0xFF);
-      data[i + 2] = (byte)((i >> 8) & 0xFF);
-      data[i + 3] = 0;
-      data[i + 4] = 0;
+  [TestCase("cafe.ace")]
+  [TestCase("winappdbg-head.ace")]
+  [TestCase("ours-lz77.ace")]
+  [TestCase("ours-store.ace")]
+  [TestCase("ours-solid.ace")]
+  [TestCase("ours-encrypted.ace")]
+  [Category("ThirdPartyVector")]
+  public void Given_Archive_When_Read_Then_MatchesAcefile(string vector) {
+    var expected = Listing(vector).Where(p => !p[0].StartsWith('#')).ToList();
+    using var reader = new AceReader(new MemoryStream(Vector(vector)), password: vector == "ours-encrypted.ace" ? "secret" : null);
+    Assert.That(reader.Entries.Select(e => e.FileName), Is.EqualTo(expected.Select(p => p[1])));
+    for (var i = 0; i < expected.Count; ++i) {
+      var e = reader.Entries[i];
+      var p = expected[i];
+      Assert.That(e.OriginalSize, Is.EqualTo(long.Parse(p[2])), e.FileName);
+      Assert.That(e.CompressionType, Is.EqualTo(int.Parse(p[3])), e.FileName);
+      Assert.That(e.DictionaryBits, Is.EqualTo(int.Parse(p[5])), e.FileName);
+      Assert.That(e.IsDirectory, Is.EqualTo(p[6] == "1"), e.FileName);
+      if (!e.IsDirectory)
+        Assert.That(Convert.ToHexStringLower(SHA256.HashData(reader.ExtractEntry(e))), Is.EqualTo(p[7]), e.FileName);
     }
-
-    var writer = new AceWriter(compressionType: CoreAceConstants.CompAce20, subMode: 1);
-    writer.AddFile("code.bin", data);
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms);
-    var extracted = reader.ExtractEntry(reader.Entries[0]);
-    Assert.That(extracted, Is.EqualTo(data));
   }
 
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Ace20_Delta_RoundTrip() {
-    var data = new byte[500];
-    for (var i = 0; i < data.Length; ++i)
-      data[i] = (byte)(i * 3); // Smooth gradient — delta filter helps
+  [TestCaseSource(nameof(OursNames))]
+  [Category("ThirdPartyVector")]
+  public void Given_SameInputs_When_Written_Then_ByteIdenticalToWhatAcefileVerified(string vector)
+    => Assert.That(OursArchive(vector), Is.EqualTo(Vector(vector)));
 
-    var writer = new AceWriter(compressionType: CoreAceConstants.CompAce20, subMode: 2);
-    writer.AddFile("gradient.bin", data);
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms);
-    var extracted = reader.ExtractEntry(reader.Entries[0]);
-    Assert.That(extracted, Is.EqualTo(data));
+  [Test, Category("ThirdPartyVector")]
+  public void Given_WinAceSolidArchive_When_Read_Then_HeaderFieldsMatch() {
+    using var reader = new AceReader(new MemoryStream(Vector("winappdbg-head.ace")));
+    Assert.That(reader.IsSolid, Is.True);
+    Assert.That(reader.Comment, Is.EqualTo("default"));
+    Assert.That(reader.ExtractVersion, Is.EqualTo(20));
   }
 
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Ace20_Sound_RoundTrip() {
-    // Simulated mono audio: sine wave quantized to bytes
-    var data = new byte[500];
-    for (var i = 0; i < data.Length; ++i)
-      data[i] = (byte)(128 + (int)(50 * Math.Sin(i * 0.1)));
-
-    var writer = new AceWriter(compressionType: CoreAceConstants.CompAce20, subMode: 3);
-    writer.AddFile("audio.raw", data);
-    var archive = writer.ToArray();
-
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms);
-    var extracted = reader.ExtractEntry(reader.Entries[0]);
-    Assert.That(extracted, Is.EqualTo(data));
+  [Test, Category("ThirdPartyVector")]
+  public void Given_SolidArchive_When_ExtractedOutOfOrder_Then_StillCorrect() {
+    var expected = Listing("winappdbg-head.ace").Where(p => !p[0].StartsWith('#') && p[6] == "0").ToList();
+    using var reader = new AceReader(new MemoryStream(Vector("winappdbg-head.ace")));
+    var files = reader.Entries.Where(e => !e.IsDirectory).ToList();
+    var last = files[^1];
+    Assert.That(Convert.ToHexStringLower(SHA256.HashData(reader.ExtractEntry(last))), Is.EqualTo(expected[^1][7]));
+    Assert.That(Convert.ToHexStringLower(SHA256.HashData(reader.ExtractEntry(files[0]))), Is.EqualTo(expected[0][7]));
   }
 
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Ace20_Pic_RoundTrip() {
-    // Simulated 10x10 RGB image with smooth gradients
-    int width = 10, bpp = 3;
-    var data = new byte[width * 10 * bpp];
-    for (var y = 0; y < 10; ++y)
-      for (var x = 0; x < width; ++x) {
-        var idx = (y * width + x) * bpp;
-        data[idx] = (byte)(x * 25); // R
-        data[idx + 1] = (byte)(y * 25); // G
-        data[idx + 2] = (byte)((x + y) * 12); // B
-      }
+  // ── reference vectors from acefile's doctests ────────────────────────────────────────────────
 
-    var writer = new AceWriter(compressionType: CoreAceConstants.CompAce20, subMode: 4);
-    writer.AddFile("image.raw", data);
-    var archive = writer.ToArray();
+  [Test, Category("ThirdPartyVector")]
+  public void Given_Password_When_KeyDerived_Then_MatchesAcefile()
+    => Assert.That(AceBlowfish.DeriveKey("123456789"u8), Is.EqualTo(new uint[] { 3071200156, 3325860325, 4058316933, 1308772094, 896611998 }));
 
-    using var ms = new MemoryStream(archive);
-    var reader = new AceReader(ms);
-    var extracted = reader.ExtractEntry(reader.Entries[0]);
-    Assert.That(extracted, Is.EqualTo(data));
+  [Test, Category("ThirdPartyVector")]
+  public void Given_Ciphertext_When_Decrypted_Then_MatchesAcefileWithChaining() {
+    var bf = new AceBlowfish("123456789");
+    var a = Enumerable.Repeat((byte)0xFF, 8).ToArray();
+    bf.Decrypt(a);
+    Assert.That(a, Is.EqualTo(new byte[] { 0xB7, 0x77, 0x46, 0x40, 0x35, 0x2E, 0x65, 0x72 }));
+    var b = Enumerable.Repeat((byte)0xC7, 8).ToArray();
+    bf.Decrypt(b);
+    Assert.That(b, Is.EqualTo(new byte[] { 0x65, 0x45, 0x05, 0xC4, 0xA5, 0x85, 0x29, 0xBC }));
   }
 
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void Ace20_Sound_Stereo_RoundTrip() {
-    // Stereo audio data — direct filter round-trip
-    var data = new byte[400];
-    for (var i = 0; i < data.Length; i += 2) {
-      data[i] = (byte)(128 + (int)(40 * Math.Sin(i * 0.05)));
-      data[i + 1] = (byte)(128 + (int)(30 * Math.Cos(i * 0.07)));
+  [Test, Category("RoundTrip")]
+  public void Given_Plaintext_When_EncryptedThenDecrypted_Then_Restored() {
+    var plain = Enumerable.Range(0, 64).Select(i => (byte)i).ToArray();
+    var data = (byte[])plain.Clone();
+    new AceBlowfish("pw").Encrypt(data);
+    Assert.That(data, Is.Not.EqualTo(plain));
+    new AceBlowfish("pw").Decrypt(data);
+    Assert.That(data, Is.EqualTo(plain));
+  }
+
+  [Test, Category("ThirdPartyVector")]
+  public void Given_DoctestKeysAndValues_When_Quicksorted_Then_AcefileOrder() {
+    int[] keys = [1, 0, 0, 1, 2, 0, 0];
+    int[] values = [0, 1, 2, 3, 4, 5, 6];
+    AceHuffman.Quicksort(keys, values);
+    Assert.That(keys, Is.EqualTo(new[] { 2, 1, 1, 0, 0, 0, 0 }));
+    Assert.That(values, Is.EqualTo(new[] { 4, 0, 3, 5, 6, 2, 1 }));
+  }
+
+  [Test, Category("ThirdPartyVector")]
+  public void Given_DoctestBytes_When_BitStreamRead_Then_AcefileValues() {
+    var bs = new AceBitStream("01234567"u8.ToArray());
+    Assert.That(bs.PeekBits(31), Is.EqualTo(429463704u));
+    Assert.That(bs.ReadBits(31), Is.EqualTo(429463704u));
+    bs.SkipBits(3);
+    Assert.That(bs.ReadBits(5), Is.EqualTo(27u));
+    Assert.That(bs.ReadGolombRice(3), Is.EqualTo(20));
+    Assert.That(bs.ReadGolombRice(2, signed: true), Is.EqualTo(-2));
+    Assert.That(bs.ReadKnownWidthUInt(10), Is.EqualTo(618u));
+    Assert.That(bs.ReadBits(7), Is.EqualTo(52u));
+    Assert.That(bs.PeekBits(31), Is.Zero);
+    Assert.Throws<EndOfStreamException>(() => bs.ReadBits(1));
+  }
+
+  [Test, Category("ThirdPartyVector")]
+  public void Given_CheckString_When_Checksummed_Then_AceCrcValues() {
+    Assert.That(~Compression.Core.Checksums.Crc32.Compute("123456789"u8), Is.EqualTo(873187033u));
+    Assert.That((ushort)~Compression.Core.Checksums.Crc32.Compute("123456789"u8), Is.EqualTo((ushort)50905));
+  }
+
+  // ── round trips, boundaries, malformed input ─────────────────────────────────────────────────
+
+  private static IEnumerable<TestCaseData> Payloads() {
+    yield return new TestCaseData(Array.Empty<byte>()).SetName("Empty");
+    yield return new TestCaseData(new byte[] { 42 }).SetName("OneByte");
+    yield return new TestCaseData(Enumerable.Repeat((byte)'a', 70000).ToArray()).SetName("LongRun");
+    yield return new TestCaseData(Enumerable.Range(0, 256).Select(i => (byte)i).ToArray()).SetName("AllByteValues");
+    yield return new TestCaseData(Text).SetName("Text");
+    var rnd = new Random(7);
+    var big = new byte[300_000];
+    rnd.NextBytes(big);
+    yield return new TestCaseData(big).SetName("Random300K");
+    var mixed = new byte[200_000];
+    for (var i = 0; i < mixed.Length; ++i)
+      mixed[i] = (byte)(i % 1000 < 500 ? rnd.Next(4) : i / 1000);
+    yield return new TestCaseData(mixed).SetName("MixedPatterns");
+  }
+
+  [TestCaseSource(nameof(Payloads)), Category("RoundTrip")]
+  public void Given_Payload_When_Lz77CompressedAndDecoded_Then_Identical(byte[] payload) {
+    foreach (var bits in new[] { AceConstants.MinDictBits, 15, AceConstants.MaxDictBits }) {
+      var packed = new AceCompressor(bits).Compress(payload);
+      Assert.That(packed.Length % 4, Is.Zero);
+      var restored = new AceDecompressor().Decompress(packed, payload.Length, AceConstants.CompAce10, bits);
+      Assert.That(restored, Is.EqualTo(payload), $"dictionary bits {bits}");
     }
-
-    var encoded = AceSoundFilter.Encode(data, 2);
-    var decoded = AceSoundFilter.Decode(encoded, 2);
-    Assert.That(decoded, Is.EqualTo(data));
   }
 
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void SoundFilter_RoundTrip_Direct() {
-    var data = new byte[200];
-    for (var i = 0; i < data.Length; ++i)
-      data[i] = (byte)(100 + (int)(30 * Math.Sin(i * 0.2)));
-
-    var encoded = AceSoundFilter.Encode(data, 1);
-    var decoded = AceSoundFilter.Decode(encoded, 1);
-    Assert.That(decoded, Is.EqualTo(data));
+  [Test, Category("RoundTrip")]
+  public void Given_SolidMembers_When_Written_Then_LaterMembersMatchIntoEarlierOnes() {
+    var solid = new AceWriter(solid: true);
+    var plain = new AceWriter();
+    foreach (var w in new[] { solid, plain }) {
+      w.AddFile("a.txt", Text);
+      w.AddFile("b.txt", Text);
+    }
+    var solidBytes = solid.ToArray();
+    Assert.That(solidBytes.Length, Is.LessThan(plain.ToArray().Length), "the second member should be nearly free in a solid archive");
+    using var reader = new AceReader(new MemoryStream(solidBytes));
+    Assert.That(reader.IsSolid, Is.True);
+    Assert.That(reader.ExtractEntry(reader.Entries[1]), Is.EqualTo(Text));
+    Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(Text));
   }
 
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void PicFilter_RoundTrip_Direct() {
-    int width = 8, bpp = 3;
-    var stride = width * bpp;
-    var data = new byte[stride * 6];
-    for (var y = 0; y < 6; ++y)
-      for (var x = 0; x < width; ++x) {
-        var idx = y * stride + x * bpp;
-        data[idx] = (byte)(x * 30);
-        data[idx + 1] = (byte)(y * 40);
-        data[idx + 2] = (byte)128;
-      }
-
-    var encoded = AcePicFilter.Encode(data, stride);
-    var decoded = AcePicFilter.Decode(encoded, stride);
-    Assert.That(decoded, Is.EqualTo(data));
-  }
-}
-
-[TestFixture]
-public class Sha1Tests {
-  [Category("ThemVsUs")]
-  [Test]
-  public void EmptyString() {
-    var hash = Sha1.Compute([]);
-    // SHA-1("") = da39a3ee 5e6b4b0d 3255bfef 95601890 afd80709
-    Assert.That(hash, Is.EqualTo(new byte[] {
-      0xDA, 0x39, 0xA3, 0xEE, 0x5E, 0x6B, 0x4B, 0x0D,
-      0x32, 0x55, 0xBF, 0xEF, 0x95, 0x60, 0x18, 0x90,
-      0xAF, 0xD8, 0x07, 0x09 }));
+  [Test, Category("RoundTrip")]
+  public void Given_Descriptor_When_CreatedWithOptions_Then_ListsAndExtracts() {
+    var d = new AceFormatDescriptor();
+    using var ms = new MemoryStream();
+    d.Create(ms, [ArchiveInputInfo.InMemory("dir/a.txt", Text), ArchiveInputInfo.InMemory("b.bin", Noise)],
+      new FormatCreateOptions { Password = "pw", FormatSpecific = new() { ["solid"] = "true" } });
+    ms.Position = 0;
+    var list = d.List(ms, "pw");
+    Assert.That(list.Select(e => e.Name), Is.EqualTo(new[] { "dir/a.txt", "b.bin" }));
+    Assert.That(list.All(e => e.IsEncrypted), Is.True);
+    ms.Position = 0;
+    Assert.That(d.ExtractEntryToMemory(ms, "b.bin", "pw"), Is.EqualTo(Noise));
   }
 
-  [Category("ThemVsUs")]
-  [Test]
-  public void Abc() {
-    var hash = Sha1.Compute("abc"u8);
-    // SHA-1("abc") = a9993e36 4706816a ba3e2571 7850c26c 9cd0d89d
-    Assert.That(hash, Is.EqualTo(new byte[] {
-      0xA9, 0x99, 0x3E, 0x36, 0x47, 0x06, 0x81, 0x6A,
-      0xBA, 0x3E, 0x25, 0x71, 0x78, 0x50, 0xC2, 0x6C,
-      0x9C, 0xD0, 0xD8, 0x9D }));
+  [Test, Category("EdgeCase")]
+  public void Given_EncryptedMember_When_WrongOrNoPassword_Then_Refused() {
+    var bytes = Vector("ours-encrypted.ace");
+    using var none = new AceReader(new MemoryStream(bytes));
+    Assert.Throws<InvalidOperationException>(() => none.ExtractEntry(none.Entries[1]));
+    using var wrong = new AceReader(new MemoryStream(bytes), password: "nope");
+    Assert.Throws<InvalidDataException>(() => wrong.ExtractEntry(wrong.Entries[1]));
   }
 
-  [Category("ThemVsUs")]
-  [Test]
-  public void LongMessage() {
-    // SHA-1("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
-    var hash = Sha1.Compute("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"u8);
-    Assert.That(hash, Is.EqualTo(new byte[] {
-      0x84, 0x98, 0x3E, 0x44, 0x1C, 0x3B, 0xD2, 0x6E,
-      0xBA, 0xAE, 0x4A, 0xA1, 0xF9, 0x51, 0x29, 0xE5,
-      0xE5, 0x46, 0x70, 0xF1 }));
-  }
-}
-
-[TestFixture]
-public class GolombRiceTests {
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void RoundTrip_K0() {
-    var encoder = new GolombRiceEncoder(0);
-    for (var i = 0; i < 10; ++i)
-      encoder.Encode(i);
-    var encoded = encoder.ToArray();
-
-    var decoder = new GolombRiceDecoder(encoded, 0);
-    for (var i = 0; i < 10; ++i)
-      Assert.That(decoder.Decode(), Is.EqualTo(i));
+  [Test, Category("EdgeCase")]
+  public void Given_FlippedHeaderByte_When_Read_Then_InvalidData() {
+    var header = Vector("ours-lz77.ace");
+    header[40] ^= 0x10; // inside the first file header (the main header is bytes 0..30)
+    Assert.Throws<InvalidDataException>(() => _ = new AceReader(new MemoryStream(header)));
   }
 
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void RoundTrip_K3() {
-    var encoder = new GolombRiceEncoder(3);
-    int[] values = [0, 1, 7, 8, 15, 16, 100];
-    foreach (var v in values)
-      encoder.Encode(v);
-    var encoded = encoder.ToArray();
-
-    var decoder = new GolombRiceDecoder(encoded, 3);
-    foreach (var v in values)
-      Assert.That(decoder.Decode(), Is.EqualTo(v));
+  [Test, Category("EdgeCase")]
+  public void Given_CorruptCompressedData_When_Extracted_Then_InvalidData() {
+    var bytes = Vector("ours-lz77.ace");
+    using var probe = new AceReader(new MemoryStream(bytes));
+    var e = probe.Entries.First(x => x.FileName == "docs/text.txt");
+    bytes[(int)e.DataOffset + 10] ^= 0xFF;
+    using var reader = new AceReader(new MemoryStream(bytes));
+    Assert.Throws<InvalidDataException>(() => reader.ExtractEntry(reader.Entries.First(x => x.FileName == "docs/text.txt")));
   }
 
-  [Category("HappyPath")]
-  [Category("RoundTrip")]
-  [Test]
-  public void SignedRoundTrip() {
-    var encoder = new GolombRiceEncoder(2);
-    int[] values = [0, -1, 1, -2, 2, -10, 10];
-    foreach (var v in values)
-      encoder.EncodeSigned(v);
-    var encoded = encoder.ToArray();
+  [Test, Category("EdgeCase")]
+  public void Given_NoMainHeader_When_Read_Then_InvalidData()
+    => Assert.Throws<InvalidDataException>(() => _ = new AceReader(new MemoryStream(Encoding.ASCII.GetBytes("not an ACE archive at all, just text"))));
 
-    var decoder = new GolombRiceDecoder(encoded, 2);
-    foreach (var v in values)
-      Assert.That(decoder.DecodeSigned(), Is.EqualTo(v));
+  [Test, Category("EdgeCase")]
+  public void Given_SfxStub_When_Read_Then_MainHeaderFound() {
+    var archive = Vector("ours-store.ace");
+    var withStub = new byte[3000].Concat(archive).ToArray();
+    using var reader = new AceReader(new MemoryStream(withStub));
+    Assert.That(reader.ArchiveOffset, Is.EqualTo(3000));
+    Assert.That(reader.ExtractEntry(reader.Entries.First(x => x.FileName == "noise.bin")), Is.EqualTo(Noise));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void Given_TruncatedArchive_When_Read_Then_InvalidData() {
+    var bytes = Vector("ours-lz77.ace");
+    Assert.Throws<InvalidDataException>(() => _ = new AceReader(new MemoryStream(bytes[..(bytes.Length - 5)])));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Given_BuildingBlock_When_RoundTripped_Then_Identical() {
+    var bb = new AceBuildingBlock();
+    Assert.That(bb.Decompress(bb.Compress(Text)), Is.EqualTo(Text));
+    Assert.That(bb.Decompress(bb.Compress([])), Is.Empty);
   }
 }

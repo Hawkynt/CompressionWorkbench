@@ -64,7 +64,7 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
       image.ReadExactly(node);
 
       var found = false;
-      foreach (var (fieldOffset, extentSector, sectors, position) in EnumeratePointers(node)) {
+      foreach (var (fieldOffset, extentSector, sectors, position, _) in EnumeratePointers(node)) {
         this._slots.Add(new Slot {
           NodeOffset = offset, FieldOffset = fieldOffset,
           OriginalSector = extentSector, Sector = extentSector, Sectors = sectors,
@@ -78,7 +78,7 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
   }
 
   /// <summary>Every extent pointer in a node: where its word is, and what it says.</summary>
-  private static IEnumerable<(int FieldOffset, long Sector, int Sectors, Bpos Position)> EnumeratePointers(
+  private static IEnumerable<(int FieldOffset, long Sector, int Sectors, Bpos Position, int DiskSectors)> EnumeratePointers(
       byte[] node) {
     var offset = BcacheFsNodeBuilder.KeysOffset;
     var words = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(158));
@@ -95,13 +95,22 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
       // Only keys written unpacked are moved: those are the ones this project
       // writes, and a volume it did not write is not one it rearranges.
       if ((node[offset + 1] & 0x7F) == KeyFormatCurrent && node[offset + 2] == KeyExtent) {
-        var size = (int)BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(offset + 16));
+        var size = (uint)BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(offset + 16));
         var position = ReadBpos(node.AsSpan(offset + 20));
-        for (var value = offset + BkeyBytes; value + 8 <= offset + bytes; value += 8) {
-          var word = BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(value));
-          if (!IsPointer(word)) continue;
-          yield return (value, PointerSector(word), size, position);
-          break;
+        var value = node[(offset + BkeyBytes)..(offset + bytes)];
+        // The pointer is found by walking the entries, not by testing every word:
+        // the second word of a crc64 entry can have its low bit set too.
+        if (BcacheFsAllocationBuilder.Footprint(new Key(KeyExtent, position, size, value)) is { } at
+            && BcacheFsExtentCodec.TryParseEntries(value, out var entries, out _)) {
+          var at8 = 0;
+          foreach (var entry in entries) {
+            if (entry.KnownType == BcacheFsExtentEntryType.Pointer
+                && PointerSector(BinaryPrimitives.ReadUInt64LittleEndian(entry.RawBytes)) == at.Sector) {
+              yield return (offset + BkeyBytes + at8, at.Sector, (int)size, position, at.DiskSectors);
+              break;
+            }
+            at8 += entry.RawBytes.Length;
+          }
         }
       }
 
@@ -305,7 +314,7 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
 
       image.Position = nodeOffset;
       image.ReadExactly(node);
-      foreach (var (_, extentSector, sectors, _) in EnumeratePointers(node)) {
+      foreach (var (_, extentSector, _, _, sectors) in EnumeratePointers(node)) {
         var bucket = extentSector / bucketSectors;
         claimed.TryGetValue(bucket, out var already);
         claimed[bucket] = (uint)Math.Min(bucketSectors, already + sectors);

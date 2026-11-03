@@ -50,8 +50,32 @@ A compressed cluster can therefore never occupy all of its cluster's sectors: a 
 as stored whatever its content (the table above). A writer whose
 compressed payload needs every sector stores the cluster raw instead.
 
-Fragmented and suballocated clusters are refused by `GenuineStackerReader` — no sample of either
-has been verified.
+### Stacker fragmented clusters
+
+Measured with dmsdos as a black box: volumes were built with candidate layouts and kept only where
+`dcread` returned the cluster byte-exact (no Stac software or sample volume was available, so this is
+"as dmsdos reads it"; `StackerFragmentedClusterTests` keeps the comparison).
+
+* The AMAP entry (bit 7 set, bit 5 clear) names the **first piece**; its sector count covers that
+  piece only, header sector included. An AMAP count covering all pieces is rejected.
+* The first piece's first sector begins with a header:
+
+  | Offset | Size | Field |
+  |---|---|---|
+  | 0 | 1 | `0xED` |
+  | 1 | 1 | *n*, the number of further pieces |
+  | 2 | 2 | little-endian: the further pieces' sector counts summed, minus one (dmsdos refuses the cluster when this disagrees with the list) |
+  | 4 | 4·*n* | one entry per further piece: 16-bit little-endian sector, sector count − 1, one byte that was 0 in every accepted volume |
+
+* The compressed payload (chosen by its first word as for any Stacker cluster; SD-3 and SD-4 were
+  verified, a DS payload was not read by dmsdos in this position) starts right after the entries, at byte 4 + 4·*n* of the first piece, and continues through the
+  pieces in list order. A stored payload is not possible: dmsdos decompresses fragmented clusters.
+* Accepted: one to three further pieces, first pieces of one and two sectors, SD-3 and SD-4 payloads.
+  Not established: the meaning of the entries' fourth byte (perhaps the sector's high bits on volumes
+  past 65535 sectors) — `GenuineStackerReader` refuses an entry where it is non-zero.
+
+Suballocated clusters (bit 7 and bit 5 set) are refused by `GenuineStackerReader`; their layout has
+not been measured.
 
 ## 🔢 DS-0-x and JM-0-x
 
@@ -202,5 +226,5 @@ full 15-bit limit for both codes.
 ## ⚠️ Not covered
 
 * **DriveSpace 3 fragmented clusters** (an MDFAT flag dmsdos itself describes as guessed) and
-  **Stacker fragmented / suballocated clusters** are not read.
+  **Stacker suballocated clusters** are not read: no layout has been measured for either.
 * No Microsoft or Stac tool has produced or read any of these streams on this machine.

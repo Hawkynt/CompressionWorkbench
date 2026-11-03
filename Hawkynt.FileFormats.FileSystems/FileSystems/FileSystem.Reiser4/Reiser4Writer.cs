@@ -1,8 +1,5 @@
 #pragma warning disable CS1591
-using System.Buffers.Binary;
-using System.Reflection;
 using System.Text;
-using Compression.Core.Checksums;
 using Compression.Core.DiskImage;
 
 namespace FileSystem.Reiser4;
@@ -10,10 +7,10 @@ namespace FileSystem.Reiser4;
 /// <summary>
 /// Creator for a Reiser4 filesystem image that starts from what
 /// <c>mkfs.reiser4 -fffy</c> from <c>reiser4progs 1.2.2</c> produces and adds
-/// directories and regular files through the native tree — stat data and directory
-/// entries in leaves, extents in twigs, as many internal levels above them as the
-/// tree needs — so that <c>fsck.reiser4</c> validates the result as
-/// <c>"FS is consistent."</c> with or without files.
+/// directories, regular files, symbolic links, device nodes, FIFOs, sockets and hard links
+/// through the native tree — stat data, directory entries and tails in leaves, extents in twigs,
+/// as many internal levels above them as the tree needs — so that <c>fsck.reiser4</c> validates
+/// the result as <c>"FS is consistent."</c> and a Reiser4 kernel mounts and reads it.
 ///
 /// <para>
 /// The image holds 25 reserved blocks at fixed positions (block size = 4 KB):
@@ -22,33 +19,20 @@ namespace FileSystem.Reiser4;
 ///   <item><description>16 — master superblock (<c>"ReIsEr4"</c> at offset 65536).</description></item>
 ///   <item><description>17 — format40 superblock (<c>"ReIsEr40FoRmAt"</c> at offset 52).</description></item>
 ///   <item><description>18 — block-allocator bitmap (4-byte adler32 + bit array).</description></item>
-///   <item><description>19..20 — journal header / footer (zero for an empty FS).</description></item>
+///   <item><description>19..20 — journal header / footer (zero for an unjournalled volume).</description></item>
 ///   <item><description>21 — status block (<c>"ReiSeR4StATusBl"</c>).</description></item>
 ///   <item><description>22 — superblock backup record.</description></item>
-///   <item><description>23 — storage-tree root (twig, level 2).</description></item>
-///   <item><description>24 — leaf containing the root-directory stat-data + ".", "..".</description></item>
+///   <item><description>23 — storage-tree root (twig, level 2, or higher).</description></item>
+///   <item><description>24 — first leaf (the root directory's stat data and entries).</description></item>
 /// </list>
 /// </para>
 ///
 /// <para>
-/// Implementation strategy: we embed the seven non-zero reference blocks as
-/// resources captured byte-exact from a real <c>mkfs.reiser4</c> image, then
-/// patch in only the per-image fields:
-/// </para>
-/// <list type="number">
-///   <item><description>UUID (16 bytes, random)</description></item>
-///   <item><description>Label (≤ 16 bytes, optional)</description></item>
-///   <item><description>mkfs_id (4 bytes, random) — appears in 4 places: format40
-///   SB, backup record, twig header, leaf header.</description></item>
-///   <item><description>block_count / free_blocks (in format40 SB and backup).</description></item>
-///   <item><description>Bitmap (block 18) — bits 0..24 set for the 25 reserved
-///   blocks plus filler bits for the unused tail of the bitmap range, then
-///   adler32 of the bitmap data prepended.</description></item>
-/// </list>
-///
-/// <para>
-/// Round-trips with <c>fsck.reiser4 -y</c> exit 0 and produces output identical
-/// to the reference image except for the random fields above.
+/// The fixed blocks are byte-exact captures of a real <c>mkfs.reiser4</c> image with only the
+/// per-image fields patched in: UUID, label, mkfs id, block and free-block counts, the root, the
+/// next object id, the file count and the tree height. Regular files are written as extents by
+/// default; <see cref="FileBody" /> selects tails, the kernel's smart policy or compressed
+/// (cryptcompress) files instead.
 /// </para>
 /// </summary>
 public sealed class Reiser4Writer {
@@ -62,65 +46,12 @@ public sealed class Reiser4Writer {
   /// reference capture and avoid bitmap-truncation edge cases.</summary>
   public const ulong MinBlockCount = 4096;
 
-  /// <summary>Number of blocks the empty filesystem permanently occupies
-  /// (jump area + master + format40 + bitmap + journal pair + status + backup
-  /// + twig root + leaf).</summary>
   private const ulong ReservedBlockCount = 25;
 
-  // Field offsets — captured by inspecting the reference image with xxd.
-  private const int MasterMagicOff = 0;     // "ReIsEr4"
-  private const int MasterFormatOff = 16;   // d16 disk plugin id (= 0)
-  private const int MasterBlksizeOff = 18;  // d16 = 4096
-  private const int MasterUuidOff = 20;     // 16 bytes
-  private const int MasterLabelOff = 36;    // 16 bytes
-
-  private const int F40BlockCountOff = 0;
-  private const int F40FreeBlocksOff = 8;
-  private const int F40RootBlockOff = 16;
-  private const int F40OidNextOff = 24;
-  private const int F40OidFileCountOff = 32;
-  private const int F40FlushesOff = 40;
-  private const int F40MkfsIdOff = 48;
-  private const int F40MagicOff = 52;       // "ReIsEr40FoRmAt"
-  private const int F40TreeHeightOff = 68;
-  private const int F40PolicyOff = 70;
-  private const int F40FlagsOff = 72;
-  private const int F40VersionOff = 80;
-
-  // Backup record (block 22) — packed format-specific struct (not a direct copy of
-  // master + format40 SBs). Reverse-engineered from the reference image:
-  //   0x00      pad (1 byte)
-  //   0x01-0x10 master ms_magic[16] ("ReIsEr4" + zeros)
-  //   0x11-0x12 master ms_format (d16 = 0)
-  //   0x13-0x14 master ms_blksize (d16 LE = 4096 → 00 10)
-  //   0x15-0x24 master ms_uuid[16]
-  //   0x25-0x34 master ms_label[16]
-  //   0x35-0x3C reserved zeros
-  //   0x3D-0x4C format40 sb_magic[16] ("ReIsEr40FoRmAt" + 2 NUL)
-  //   0x4D-0x54 sb_block_count (d64)
-  //   0x55-0x58 sb_mkfs_id (d32)
-  //   0x59-0x5A sb_policy (d16)
-  //   0x5B-0x62 sb_flags (d64)
-  //   0x63-0x6F more — including a "PsEt" magic at 0x6F (PSET = plugin-set sentinel)
-  // Note: backup struct does NOT carry sb_free_blocks — only block_count.
-  private const int BackupUuidOff = 0x15;       // 21
-  private const int BackupBlkSizeOff = 0x13;    // 19 — d16 (was master+18)
-  private const int BackupLabelOff = 0x25;      // 37
-  private const int BackupF40BlockCountOff = 0x4D; // 77 — d64
-  private const int BackupF40MkfsIdOff = 0x55;     // 85 — d32
-
-  // Tree-node header offsets — same for twig (block 23) and leaf (block 24).
-  private const int NodeMkfsIdOff = 12;     // d32
-
-  /// <summary>The root directory's own object id, and the locality above it.</summary>
-  /// <remarks>Fixed: the tree this writer starts from is a byte-exact mkfs capture.</remarks>
-  private const ulong RootLocality = 0x29;
-  private const ulong RootObjectId = 0x2a;
-
-  // Bitmap (block 18)
-  private const int BitmapAdlerOff = 0;     // d32 adler32 over bytes 4..4095
-  private const int BitmapDataOff = 4;
-  private const int BitmapDataLength = BlockSize - 4; // 4092 bytes = 32736 bits
+  private const int MasterUuidOff = 20;
+  private const int MasterLabelOff = 36;
+  private const int BackupUuidOff = 0x15;
+  private const int BackupLabelOff = 0x25;
 
   /// <summary>Customisable label written to the master SB (NUL-padded to 16
   /// bytes; longer strings are truncated; null = empty/zero).</summary>
@@ -137,13 +68,11 @@ public sealed class Reiser4Writer {
   /// <see cref="MinBlockCount"/>.</summary>
   public ulong BlockCount { get; set; } = MinBlockCount;
 
-  // Native stat40/cde40 items live in leaves; extent40 items live in twigs.
-  // Reiser4Tree packs additional nodes as needed, and allocator accounting covers
-  // both file data and tree blocks. Derived layout and oracle evidence are in
-  // docs/REISER4-NATIVE-PROFILE.md. The legacy constants below are retained only
-  // for reading images made by the earlier private-directory writer.
+  /// <summary>How regular files are stored. <see cref="Reiser4FileBody.Profile" /> follows the
+  /// captured mkfs profile, whose root names cryptcompress for new files.</summary>
+  public Reiser4FileBody FileBody { get; set; } = Reiser4FileBody.Extents;
 
-  /// <summary>Marker written at <see cref="MasterPayloadMarkerOff" /> of the master superblock.</summary>
+  /// <summary>Marker written at <see cref="MasterPayloadMarkerOff" /> of the master superblock by the earliest workbench writer.</summary>
   /// <remarks>The value spells nothing: a marker that reads as words names whoever chose them.</remarks>
   internal static readonly byte[] PayloadMarker =
     [0x8D, 0x17, 0x0C, 0xE1, 0x93, 0x1A, 0x0F, 0xB6, 0x81];
@@ -154,14 +83,11 @@ public sealed class Reiser4Writer {
   /// <summary>Offset in the master superblock of the first directory block number (d64).</summary>
   internal const int MasterPayloadDirOff = MasterPayloadMarkerOff + 12;
 
-  /// <summary>Magic at the head of every payload directory block.</summary>
+  /// <summary>Magic at the head of every legacy payload directory block.</summary>
   internal static readonly byte[] DirMagic =
     [0x9E, 0x0B, 0x14, 0xA7, 0x02, 0xDB, 0x18, 0x8F];
 
-  /// <summary>Directory block head: magic, next-block link, entry count.</summary>
   internal const int DirHeadSize = 8 + 8 + 4;
-
-  /// <summary>One directory entry: a 224-byte name, then the first data block and the byte length.</summary>
   internal const int DirNameLength = 224;
   internal const int DirEntrySize = DirNameLength + 8 + 8;
   internal const int DirEntriesPerBlock = (BlockSize - DirHeadSize) / DirEntrySize;
@@ -172,20 +98,56 @@ public sealed class Reiser4Writer {
   /// </summary>
   internal const ulong BlocksPerBitmap = (ulong)(BlockSize - 4) * 8;
 
-  private readonly List<(string Name, FilePayload Payload, Reiser4Reader.FileMetadata? Metadata)> _files = [];
+  private readonly List<Action<Reiser4Plan>> _edits = [];
+  private readonly HashSet<string> _names = new(StringComparer.Ordinal);
 
-  /// <summary>Adds a regular file to the payload area.</summary>
+  /// <summary>Adds a regular file.</summary>
   public void AddFile(string name, byte[] data, Reiser4Reader.FileMetadata? metadata = null) {
-    ValidateName(name);
     ArgumentNullException.ThrowIfNull(data);
-    this._files.Add((name, FilePayload.FromBytes(data), metadata));
+    this.Claim(name);
+    this._edits.Add(plan => plan.AddFile(name, FilePayload.FromBytes(data), metadata));
   }
 
   /// <summary>Adds a file whose bytes are pulled from <paramref name="openStream" /> as the image is written.</summary>
   public void AddStreamingFile(string name, long size, Func<Stream> openStream, Reiser4Reader.FileMetadata? metadata = null) {
-    ValidateName(name);
     ArgumentNullException.ThrowIfNull(openStream);
-    this._files.Add((name, FilePayload.FromStream(size, openStream), metadata));
+    this.Claim(name);
+    this._edits.Add(plan => plan.AddFile(name, FilePayload.FromStream(size, openStream), metadata));
+  }
+
+  /// <summary>Retains an explicit directory, including an empty directory.</summary>
+  public void AddDirectory(string name, Reiser4Reader.FileMetadata? metadata = null) {
+    var normalized = name.Replace('\\', '/').TrimEnd('/');
+    if (normalized.Length > 0 && RejectName(normalized) is { } reason)
+      throw new NotSupportedException("Reiser4: " + reason + ".");
+    this._edits.Add(plan => plan.AddDirectory(normalized, metadata));
+  }
+
+  /// <summary>Adds a symbolic link whose target is <paramref name="target" />.</summary>
+  public void AddSymlink(string name, string target, Reiser4Reader.FileMetadata? metadata = null) {
+    ArgumentNullException.ThrowIfNull(target);
+    this.Claim(name);
+    this._edits.Add(plan => plan.AddSymlink(name, target, metadata));
+  }
+
+  /// <summary>Adds a device node, FIFO or socket; <paramref name="mode" /> carries the file type bits.</summary>
+  public void AddSpecialFile(string name, ushort mode, ulong device = 0, Reiser4Reader.FileMetadata? metadata = null) {
+    this.Claim(name);
+    this._edits.Add(plan => plan.AddSpecial(name, mode, device, metadata));
+  }
+
+  /// <summary>Adds <paramref name="name" /> as a further name of the file at <paramref name="existing" />.</summary>
+  public void AddHardLink(string name, string existing) {
+    ArgumentNullException.ThrowIfNull(existing);
+    this.Claim(name);
+    this._edits.Add(plan => plan.AddHardLink(name, existing));
+  }
+
+  private void Claim(string name) {
+    if (RejectName(name) is { } reason)
+      throw new NotSupportedException("Reiser4: " + reason + ".");
+    if (!this._names.Add(name.Replace('\\', '/')))
+      throw new ArgumentException($"Reiser4: '{name}' is already in the root directory.", nameof(name));
   }
 
   /// <summary>Validates the path components supported by the native namespace writer.</summary>
@@ -197,30 +159,13 @@ public sealed class Reiser4Writer {
       return "path components must be non-empty and cannot be dot entries";
     if (name.Contains('\0') || name.Contains(':') || name.Any(static c => c > 127))
       return "this profile requires ASCII names without NUL or colon";
+    if (components.Any(static component => component.Length > 255)) return "a name is longer than 255 bytes";
     return null;
   }
 
-  private readonly Dictionary<string, Reiser4Reader.FileMetadata?> _directories = new(StringComparer.Ordinal);
-
-  /// <summary>Retains an explicit directory, including an empty directory.</summary>
-  public void AddDirectory(string name, Reiser4Reader.FileMetadata? metadata = null) {
-    var normalized = name.Replace('\\', '/').TrimEnd('/');
-    if (normalized.Length > 0 && RejectName(normalized) is { } reason)
-      throw new NotSupportedException("Reiser4: " + reason + ".");
-    this._directories[normalized] = metadata;
-  }
-
-  private void ValidateName(string name) {
-    if (RejectName(name) is { } reason)
-      throw new NotSupportedException("Reiser4: " + reason + ".");
-    if (this._files.Any(f => f.Name.Replace('\\', '/').Equals(name.Replace('\\', '/'), StringComparison.Ordinal)))
-      throw new ArgumentException($"Reiser4: '{name}' is already in the root directory.", nameof(name));
-  }
-
   /// <summary>
-  /// Smallest block count that holds <paramref name="fileSizes" />: the reserved
-  /// blocks, the directory chain, every file's data blocks, and the bitmap blocks
-  /// interleaved among them.
+  /// Smallest block count that holds <paramref name="fileSizes" />: the reserved blocks, every
+  /// file's data blocks, the tree, and the bitmap blocks interleaved among them.
   /// </summary>
   public static ulong EstimateBlockCount(IEnumerable<long> fileSizes) {
     ArgumentNullException.ThrowIfNull(fileSizes);
@@ -229,26 +174,18 @@ public sealed class Reiser4Writer {
     blocks += (ulong)((sizes.Count + DirEntriesPerBlock - 1) / Math.Max(1, DirEntriesPerBlock));
     foreach (var size in sizes)
       blocks += (ulong)((size + BlockSize - 1) / BlockSize);
-    blocks += blocks / BlocksPerBitmap + 2;   // the strided bitmap blocks
+    blocks += blocks / BlocksPerBitmap + 2;
     return Math.Max(MinBlockCount, blocks + blocks / 20);
   }
 
-  /// <summary>True when <paramref name="block" /> holds a block-allocator bitmap.</summary>
-  private static bool IsBitmapBlock(ulong block)
-    => block == 18 || (block != 0 && block % BlocksPerBitmap == 0);
-
-  /// <summary>Builds the image fully in memory and returns the byte array.
-  /// For block counts above ~32 K the result will be tens of MB; prefer the
-  /// streaming overload when caller-side allocation matters.</summary>
+  /// <summary>Builds the image fully in memory and returns the byte array.</summary>
   public byte[] Build() {
     using var ms = new MemoryStream();
     this.Write(ms);
     return ms.ToArray();
   }
 
-  /// <summary>Streams the full image into <paramref name="output"/>. Writes
-  /// <see cref="BlockCount"/>×4096 bytes and leaves the stream positioned at
-  /// the end.</summary>
+  /// <summary>Streams the full image into <paramref name="output"/> and leaves the stream positioned at the end.</summary>
   public void Write(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanSeek) {
@@ -259,204 +196,33 @@ public sealed class Reiser4Writer {
       output.Flush();
       return;
     }
-    var blocks = Math.Max(this.BlockCount, MinBlockCount);
-    var totalBytes = checked((long)blocks * BlockSize);
+    var plan = this.CreatePlan();
+    foreach (var edit in this._edits) edit(plan);
+    plan.Write(output);
+  }
 
+  /// <summary>The empty volume: the captured mkfs blocks with this writer's identity patched in.</summary>
+  internal Reiser4Plan CreatePlan() {
     var uuid = this.Uuid ?? Guid.NewGuid().ToByteArray(bigEndian: true);
     if (uuid.Length != 16)
       throw new ArgumentException("UUID must be exactly 16 bytes.", nameof(this.Uuid));
     var mkfsId = this.MkfsId ?? unchecked((uint)Random.Shared.Next(int.MinValue, int.MaxValue));
     var label = TrimLabel(this.Label);
 
-    // Templates are byte-exact 4 KB captures from `mkfs.reiser4 -fffy` on a 4096-block
-    // image, so the patches below are pure overrides of variable fields.
-    var blk16 = LoadTemplate(16);
-    var blk17 = LoadTemplate(17);
-    var blk18 = LoadTemplate(18);
-    var blk21 = LoadTemplate(21);
-    var blk22 = LoadTemplate(22);
-    var blk23 = LoadTemplate(23);
-    var blk24 = LoadTemplate(24);
+    var master = LoadTemplate(16);
+    uuid.AsSpan().CopyTo(master.AsSpan(MasterUuidOff, 16));
+    Array.Clear(master, MasterLabelOff, 16);
+    label.AsSpan().CopyTo(master.AsSpan(MasterLabelOff, 16));
 
-    // ── Master superblock (block 16) ─────────────────────────────────────
-    uuid.AsSpan().CopyTo(blk16.AsSpan(MasterUuidOff, 16));
-    Array.Clear(blk16, MasterLabelOff, 16);
-    label.AsSpan().CopyTo(blk16.AsSpan(MasterLabelOff, 16));
+    var backup = LoadTemplate(22);
+    uuid.AsSpan().CopyTo(backup.AsSpan(BackupUuidOff, 16));
+    Array.Clear(backup, BackupLabelOff, 16);
+    label.AsSpan().CopyTo(backup.AsSpan(BackupLabelOff, 16));
 
-    // ── Format40 SB (block 17) ───────────────────────────────────────────
-    BinaryPrimitives.WriteUInt64LittleEndian(blk17.AsSpan(F40BlockCountOff, 8), blocks);
-    BinaryPrimitives.WriteUInt64LittleEndian(blk17.AsSpan(F40FreeBlocksOff, 8), blocks - ReservedBlockCount);
-    BinaryPrimitives.WriteUInt32LittleEndian(blk17.AsSpan(F40MkfsIdOff, 4), mkfsId);
-
-
-    // ── Backup record (block 22) ─────────────────────────────────────────
-    uuid.AsSpan().CopyTo(blk22.AsSpan(BackupUuidOff, 16));
-    Array.Clear(blk22, BackupLabelOff, 16);
-    label.AsSpan().CopyTo(blk22.AsSpan(BackupLabelOff, 16));
-    BinaryPrimitives.WriteUInt64LittleEndian(blk22.AsSpan(BackupF40BlockCountOff, 8), blocks);
-    BinaryPrimitives.WriteUInt32LittleEndian(blk22.AsSpan(BackupF40MkfsIdOff, 4), mkfsId);
-
-    // ── Tree nodes — twig (block 23) and leaf (block 24) ─────────────────
-    BinaryPrimitives.WriteUInt32LittleEndian(blk23.AsSpan(NodeMkfsIdOff, 4), mkfsId);
-    BinaryPrimitives.WriteUInt32LittleEndian(blk24.AsSpan(NodeMkfsIdOff, 4), mkfsId);
-
-    // ── Native file data blocks ─────────────────────────────────────────
-    // Allocations step over the strided bitmap blocks, which the bitmap pass below then
-    // marks along with everything else in use.
-    var cursor = ReservedBlockCount;
-    ulong Alloc() {
-      while (IsBitmapBlock(cursor)) ++cursor;
-      blocks = Math.Max(blocks, checked(cursor + 1));
-      return cursor++;
-    }
-
-    // No private directory chain any more: the native tree names every file, and
-    // blocks that the tree does not reach but the bitmap marks used are exactly
-    // what fsck.reiser4 reports as a bitmap mismatch. Readers keep understanding
-    // the chain in images written before.
-    var payloads = new DeferredPayloads();
-    // The same runs the payload area is made of become the extents of the file in
-    // the tree — one file's bytes, described twice, sitting in one place.
-    var treeFiles = new List<Reiser4Tree.Entry>(this._files.Count);
-    var nextObjectId = RootObjectId + 1;
-    foreach (var (name, payload, metadata) in this._files) {
-      var need = (payload.Size + BlockSize - 1) / BlockSize;
-      var first = need > 0 ? Alloc() : 0UL;
-      // A file's blocks are consecutive apart from any bitmap they straddle, so
-      // the body is recorded as one payload per contiguous stretch.
-      var runs = new List<Reiser4Tree.Run>();
-      var runStart = first;
-      var runBlocks = need > 0 ? 1L : 0L;
-      var written = 0L;
-      for (var i = 1L; i < need; ++i) {
-        var next = Alloc();
-        if (next == runStart + (ulong)runBlocks) { ++runBlocks; continue; }
-        AddRun(payloads, payload, runStart, runBlocks, ref written);
-        runs.Add(new Reiser4Tree.Run(runStart, (ulong)runBlocks));
-        runStart = next;
-        runBlocks = 1;
-      }
-      if (runBlocks > 0) {
-        AddRun(payloads, payload, runStart, runBlocks, ref written);
-        runs.Add(new Reiser4Tree.Run(runStart, (ulong)runBlocks));
-      }
-
-      treeFiles.Add(new Reiser4Tree.Entry {
-        Name = name, ParentObjectId = RootObjectId, ObjectId = nextObjectId++, Size = payload.Size, Runs = runs, Metadata = metadata,
-      });
-    }
-
-    // ── The tree itself ──────────────────────────────────────────────────
-    // Every file gets a stat data and its extents, and the root directory an entry
-    // naming it — so what the volume holds is what a reader of the format finds,
-    // not only what our own reader knows to look for.
-    var tree = Reiser4Tree.Build(blk24, BlockSize, mkfsId, (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-      RootLocality, RootObjectId, treeFiles, this._directories, Alloc);
-    blk23 = tree.Nodes[23];
-    blk24 = tree.Nodes[24];
-    BinaryPrimitives.WriteUInt16LittleEndian(blk17.AsSpan(F40TreeHeightOff), tree.Height);
-    BinaryPrimitives.WriteUInt64LittleEndian(blk17.AsSpan(F40OidNextOff), tree.NextObjectId);
-    BinaryPrimitives.WriteUInt64LittleEndian(blk17.AsSpan(F40OidFileCountOff), tree.ObjectCount);
-    totalBytes = checked((long)blocks * BlockSize);
-    BinaryPrimitives.WriteUInt64LittleEndian(blk17.AsSpan(F40BlockCountOff), blocks);
-    BinaryPrimitives.WriteUInt64LittleEndian(blk22.AsSpan(BackupF40BlockCountOff), blocks);
-
-    var usedBlocks = cursor;   // every block below the cursor is reserved or payload
-
-    // ── Free-block accounting and the bitmap blocks ──────────────────────
-    var tailBitmapBlocks = (blocks - 1) / BlocksPerBitmap - (usedBlocks - 1) / BlocksPerBitmap;
-    BinaryPrimitives.WriteUInt64LittleEndian(blk17.AsSpan(F40FreeBlocksOff, 8), blocks - usedBlocks - tailBitmapBlocks);
-    var bitmaps = BuildBitmaps(blocks, usedBlocks, blk18);
-
-    // ── Emit the metadata prefix, then the payload ───────────────────────
-    var basePosition = output.CanSeek ? output.Position : 0;
-    var firstDataBlock = ReservedBlockCount;
-    var zero = new byte[BlockSize];
-    for (var b = 0UL; b < firstDataBlock; b++) {
-      var buf = b switch {
-        16 => blk16,
-        17 => blk17,
-        18 => blk18,
-        21 => blk21,
-        22 => blk22,
-        23 => blk23,
-        24 => blk24,
-        _ => zero,
-      };
-      output.Write(buf, 0, BlockSize);
-    }
-    output.Flush();
-
-    output.SetLength(basePosition + totalBytes);
-    foreach (var (block, bytes) in bitmaps) {
-      if (block < firstDataBlock) continue;   // already emitted in the prefix
-      output.Position = basePosition + (long)block * BlockSize;
-      output.Write(bytes);
-    }
-    foreach (var (block, node) in tree.Nodes) {
-      if (block is 23 or 24) continue;
-      output.Position = basePosition + checked((long)block * BlockSize);
-      output.Write(node);
-    }
-    payloads.FlushTo(output, basePosition);
-    output.Position = basePosition + totalBytes;
-    output.Flush();
-  }
-
-  /// <summary>Records one contiguous run of a file's blocks as a payload to copy.</summary>
-  private static void AddRun(DeferredPayloads payloads, FilePayload payload,
-    ulong firstBlock, long blockCount, ref long written) {
-    var length = Math.Min(blockCount * BlockSize, payload.Size - written);
-    if (length <= 0) return;
-    var skip = written;
-    payloads.Add((long)firstBlock * BlockSize,
-      FilePayload.FromStream(length, () => SkipTo(payload.Open(), skip)));
-    written += blockCount * BlockSize;
-  }
-
-  /// <summary>Advances <paramref name="source" /> to <paramref name="offset" />, reading through when it cannot seek.</summary>
-  private static Stream SkipTo(Stream source, long offset) {
-    if (offset <= 0) return source;
-    if (source.CanSeek) {
-      source.Position = offset;
-      return source;
-    }
-    var buffer = new byte[64 * 1024];
-    var remaining = offset;
-    while (remaining > 0) {
-      var n = source.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
-      if (n <= 0) break;
-      remaining -= n;
-    }
-    return source;
-  }
-
-  /// <summary>
-  /// Builds every block-allocator bitmap. Bitmap <c>i</c> covers blocks
-  /// <c>[i × BlocksPerBitmap, (i+1) × BlocksPerBitmap)</c>; the first lives at the
-  /// reserved block 18 and the rest at the stride boundaries. Blocks below
-  /// <paramref name="usedBlocks" /> are allocated, as is every bitmap block and
-  /// everything past the end of the filesystem — an out-of-range bit must read as
-  /// 1 or the allocator would hand out a block that is not there.
-  /// </summary>
-  private static List<(ulong Block, byte[] Bytes)> BuildBitmaps(ulong blocks, ulong usedBlocks, byte[] first) {
-    var result = new List<(ulong Block, byte[] Bytes)>();
-    var count = (blocks + BlocksPerBitmap - 1) / BlocksPerBitmap;
-    for (var i = 0UL; i < count; ++i) {
-      var block = i == 0 ? 18UL : i * BlocksPerBitmap;
-      var buf = i == 0 ? first : new byte[BlockSize];
-      Array.Clear(buf, 0, buf.Length);
-      var baseBlock = i * BlocksPerBitmap;
-      for (var bit = 0UL; bit < BlocksPerBitmap; ++bit) {
-        var target = baseBlock + bit;
-        if (target >= usedBlocks && target < blocks && !IsBitmapBlock(target)) continue;
-        buf[BitmapDataOff + (int)(bit >> 3)] |= (byte)(1 << (int)(bit & 7));
-      }
-      var adler = Adler32.Compute(buf.AsSpan(BitmapDataOff, BitmapDataLength));
-      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(BitmapAdlerOff, 4), adler);
-      result.Add((block, buf));
-    }
-    return result;
+    var plan = Reiser4Plan.Fresh(master, LoadTemplate(17), LoadTemplate(21), backup, LoadTemplate(24), mkfsId,
+      Math.Max(this.BlockCount, MinBlockCount));
+    plan.FileBody = this.FileBody;
+    return plan;
   }
 
   private static byte[] TrimLabel(string? label) {
@@ -465,51 +231,7 @@ public sealed class Reiser4Writer {
     return bytes.Length <= 16 ? bytes : bytes[..16];
   }
 
-  /// <summary>
-  /// Why the fixed blocks of an existing volume describe something this writer would not
-  /// write back, or <see langword="null" /> when a rebuild reproduces them.
-  /// </summary>
-  /// <remarks>
-  /// <para>A rebuild writes the captured mkfs prefix again with only the volume's identity
-  /// patched in, so every other byte of those blocks has to be what the source already
-  /// holds. That is where a volume made with another profile shows: the format40 tail
-  /// policy, and the plugin set the backup record keeps of the root directory's — hash,
-  /// fibration, formatting. Writing the default profile over them leaves the root's own
-  /// plugin set disagreeing with its backup, which <c>fsck.reiser4</c> reports, and names
-  /// keyed with a hash the volume does not use, which nothing can look up.</para>
-  /// <para>A status block other than "consistent" marks a volume the tools found damaged,
-  /// and a journal header or footer that is not blank belongs to a volume the kernel
-  /// wrote, whose transactions this reader does not replay. Both are left alone rather
-  /// than silently rewritten.</para>
-  /// </remarks>
-  internal static string? ProfileMismatch(Func<int, byte[]> readBlock) {
-    ArgumentNullException.ThrowIfNull(readBlock);
-    static bool SameOutside(ReadOnlySpan<byte> actual, ReadOnlySpan<byte> template, params (int Start, int End)[] volatileRanges) {
-      if (actual.Length != template.Length) return false;
-      for (var i = 0; i < template.Length; ++i)
-        if (actual[i] != template[i] && !volatileRanges.Any(range => i >= range.Start && i < range.End))
-          return false;
-      return true;
-    }
-
-    // Master: uuid, label and the legacy payload marker and pointer that follow them.
-    if (!SameOutside(readBlock(16), LoadTemplate(16), (MasterUuidOff, MasterPayloadDirOff + 8)))
-      return "the master superblock carries fields this writer does not reproduce";
-    // Format40: the counters, the root, the mkfs id and the tree height move; magic,
-    // tail policy, flags and version are the profile.
-    if (!SameOutside(readBlock(17), LoadTemplate(17), (F40BlockCountOff, F40MagicOff), (F40TreeHeightOff, F40PolicyOff)))
-      return "the volume uses a tail policy or format40 flags other than the default profile";
-    if (readBlock(19).Any(static b => b != 0) || readBlock(20).Any(static b => b != 0))
-      return "the journal is not blank, and its transactions are not replayed";
-    if (!SameOutside(readBlock(21), LoadTemplate(21)))
-      return "the status block does not mark the volume consistent";
-    if (!SameOutside(readBlock(22), LoadTemplate(22), (BackupUuidOff, BackupLabelOff + 16),
-          (BackupF40BlockCountOff, BackupF40MkfsIdOff + 4)))
-      return "the root directory's plugin set (hash, fibration or formatting) is not the default profile";
-    return null;
-  }
-
-  private static byte[] LoadTemplate(int blockNumber) {
+  internal static byte[] LoadTemplate(int blockNumber) {
     var resource = $"FileSystem.Reiser4.Templates.block_{blockNumber}.bin";
     var asm = typeof(Reiser4Writer).Assembly;
     using var stream = asm.GetManifestResourceStream(resource)

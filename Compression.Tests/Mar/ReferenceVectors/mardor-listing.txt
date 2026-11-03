@@ -1,0 +1,21 @@
+# test-xz.mar sigs=0 product=thunderbird-comm-esr|100.0
+test-xz.mar Contents/MacOS/defaults/pref/channel-prefs.js 96 644 7ba5d20884bb59191e5788122495bd2226d28751e96dbdc886c22946e806da83
+test-xz.mar Contents/MacOS/update-settings.ini 180 644 9c29428fe4c81b8d541c8364de8a4109ee5321dd40e0d29368c7421ecda5ef3c
+test-xz.mar defaults/pref/channel-prefs.js 96 644 7ba5d20884bb59191e5788122495bd2226d28751e96dbdc886c22946e806da83
+test-xz.mar update.manifest 164 644 a96c569df98462269f2bf04b842bf7f7a0a3461844d3181dc2561a2b9b6558fa
+test-xz.mar update-settings.ini 180 644 9c29428fe4c81b8d541c8364de8a4109ee5321dd40e0d29368c7421ecda5ef3c
+# test-bz2.mar sigs=1 product=thunderbird-comm-esr|100.0
+test-bz2.mar update.manifest 141 664 c717714abe8bb1cf173837f4592f8bf229c9884d71621bf8e5709e968ac929f3
+test-bz2.mar defaults/pref/channel-prefs.js 76 664 cdcb59e3add3e34b239316f365970b666383a07fca4e4595652b843dda53dc07
+test-bz2.mar Contents/MacOS/defaults/pref/channel-prefs.js 76 664 cdcb59e3add3e34b239316f365970b666383a07fca4e4595652b843dda53dc07
+test-bz2.mar update-settings.ini 152 664 6c4d6d9824a6846ce95d4fddcee9e177c0f90ad052fa683bffe3167abc358bb9
+test-bz2.mar Contents/MacOS/update-settings.ini 152 664 6c4d6d9824a6846ce95d4fddcee9e177c0f90ad052fa683bffe3167abc358bb9
+# mardor-old.mar sigs=-1 product=-
+mardor-old.mar a.txt 10 666 4ea8280daa0d618b98c4b85e6db2fff92b19b99318603d0037b426342fbb1e13
+mardor-old.mar dir/b.bin 1024 666 785b0751fc2c53dc14a4ce3d800e69ef9ce1009eb327ccf458afe09c242c26c9
+# mardor-product.mar sigs=0 product=release|130.0
+mardor-product.mar a.txt 10 666 4ea8280daa0d618b98c4b85e6db2fff92b19b99318603d0037b426342fbb1e13
+mardor-product.mar dir/b.bin 1024 666 785b0751fc2c53dc14a4ce3d800e69ef9ce1009eb327ccf458afe09c242c26c9
+# mardor-xz.mar sigs=0 product=release|130.0
+mardor-xz.mar a.txt 68 666 2ae9565f7893f85690c7c067e260c0b6051e46a07a3f9b11d9e48933a26e7b27
+mardor-xz.mar dir/b.bin 308 666 24ab21bc489b17266f9f380ce392136d380e05d12725f2e1eddab587ef73ba2c

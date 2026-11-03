@@ -73,7 +73,7 @@ public sealed record DarEntry(
 }
 
 /// <summary>
-/// Reader for a DAR archive (archive format 9 through 11.3; verified on 11.3): the version
+/// Reader for a DAR archive (archive formats 8.1 through 11.3, each verified on archives the dar release that writes it produced): the version
 /// trailer and catalogue located through the two terminators at the end of the archive, and file
 /// data read back through the escape, compression and sparse layers. Layout in
 /// <c>docs/DAR-ON-DISK.md</c>.
@@ -159,8 +159,8 @@ public sealed class DarArchive {
   }
 
   private static void Refuse(DarVersionHeader v) {
-    if (v.Major < 9 || (v.Major, v.Minor).CompareTo(NewestFormat) > 0)
-      throw new NotSupportedException($"DAR archive format {v.Major}.{v.Minor} is outside the supported range 9.0 to {NewestFormat.Major}.{NewestFormat.Minor}.");
+    if (v.Major < 8 || (v.Major, v.Minor).CompareTo(NewestFormat) > 0)
+      throw new NotSupportedException($"DAR archive format {v.Major}.{v.Minor} is outside the supported range 8.0 to {NewestFormat.Major}.{NewestFormat.Minor}.");
     if ((v.Flags & FlagScrambled) != 0 || (v.Flags & FlagCryptedKey) != 0)
       throw new NotSupportedException("The DAR archive is encrypted.");
     if ((v.Flags & ~KnownFlags) != 0)
@@ -187,34 +187,79 @@ public sealed class DarArchive {
   /// <exception cref="InvalidDataException">The data does not decode, or its checksum differs.</exception>
   /// <exception cref="NotSupportedException">The entry has no data in this archive.</exception>
   public byte[] ReadData(DarEntry entry) {
+    if (entry.HasData && entry.Size > (ulong)Array.MaxLength)
+      throw new NotSupportedException($"'{entry.Path}' is {entry.Size} bytes, more than an array holds; use CopyData.");
+    using var ms = new MemoryStream(entry.HasData ? (int)Math.Min(entry.Size, 1 << 24) : 0);
+    this.CopyData(entry, ms);
+    return ms.ToArray();
+  }
+
+  /// <summary>
+  /// Streams the data of <paramref name="entry"/> into <paramref name="destination"/> through the
+  /// escape, compression and sparse layers, in constant memory whatever its size, and checks its
+  /// size and checksum at the end.
+  /// </summary>
+  /// <exception cref="InvalidDataException">The data does not decode, or its size or checksum differs.</exception>
+  /// <exception cref="NotSupportedException">The entry has no data in this archive.</exception>
+  public void CopyData(DarEntry entry, Stream destination) {
     if (!entry.HasData)
       throw new NotSupportedException($"'{entry.Path}' has no data in this archive ({entry.Status}).");
-    if (entry.Size > (ulong)Array.MaxLength || entry.StorageSize > (ulong)Array.MaxLength)
-      throw new NotSupportedException($"'{entry.Path}' is {entry.Size} bytes, more than this reader holds in memory.");
     if (entry.Offset > (ulong)this._limit || entry.StorageSize > (ulong)this._limit)
       throw new InvalidDataException($"'{entry.Path}' points outside the archive.");
     if (!IsKnownAlgorithm(entry.Algorithm))
       throw new NotSupportedException($"'{entry.Path}' uses DAR compression '{entry.Algorithm}'.");
-    byte[] stored;
-    if (this.Trailer.HasTapeMarks)
-      stored = DarPrimitives.ReadUnescaped(this._archive, (long)entry.Offset, (long)entry.StorageSize, this._limit);
-    else {
-      if (entry.Offset + entry.StorageSize > (ulong)this._limit)
-        throw new InvalidDataException($"'{entry.Path}' runs past the catalogue.");
-      stored = new byte[entry.StorageSize];
-      this._archive.Position = (long)entry.Offset;
-      this._archive.ReadExactly(stored);
+    if (!this.Trailer.HasTapeMarks && entry.Offset + entry.StorageSize > (ulong)this._limit)
+      throw new InvalidDataException($"'{entry.Path}' runs past the catalogue.");
+    Stream stored = this.Trailer.HasTapeMarks
+      ? new DarDataStreams.Unescape(this._archive, (long)entry.Offset, (long)entry.StorageSize, this._limit)
+      : new DarDataStreams.Range(this._archive, (long)entry.Offset, (long)entry.StorageSize);
+    var checksum = entry.Checksum is { } expected ? new DarChecksum(expected.Length) : null;
+    var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(1 << 20);
+    try {
+      using var clear = OpenDecoder(entry.Algorithm, entry.Algorithm == 'n' ? 0 : this.Trailer.BlockSize, stored);
+      using var data = entry.IsSparse ? new DarDataStreams.Unsparse(clear, entry.Size) : clear;
+      ulong total = 0;
+      int read;
+      while ((read = data.Read(buffer, 0, buffer.Length)) > 0) {
+        total += (ulong)read;
+        if (total > entry.Size)
+          throw new InvalidDataException($"'{entry.Path}' decodes to more than the {entry.Size} bytes the catalogue says.");
+        checksum?.Update(buffer.AsSpan(0, read));
+        destination.Write(buffer, 0, read);
+      }
+      if (total != entry.Size)
+        throw new InvalidDataException($"'{entry.Path}' decodes to {total} bytes, the catalogue says {entry.Size}.");
+    } catch (Exception e) when (e is not (InvalidDataException or NotSupportedException or OutOfMemoryException or IOException)) {
+      throw new InvalidDataException($"DAR {AlgorithmName(entry.Algorithm)} data of '{entry.Path}' does not decode: {e.Message}", e);
+    } finally {
+      System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
     }
-    var data = Decompress(entry.Algorithm, entry.Algorithm == 'n' ? 0 : this.Trailer.BlockSize, stored,
-      entry.IsSparse ? -1 : (long)entry.Size);
-    if (entry.IsSparse)
-      data = DarPrimitives.Unsparse(data, entry.Size);
-    if ((ulong)data.LongLength != entry.Size)
-      throw new InvalidDataException($"'{entry.Path}' decodes to {data.LongLength} bytes, the catalogue says {entry.Size}.");
-    if (entry.Checksum is { } expected && !DarPrimitives.Checksum(data, expected.Length).AsSpan().SequenceEqual(expected))
+    if (checksum != null && !checksum.Value.AsSpan().SequenceEqual(entry.Checksum))
       throw new InvalidDataException($"'{entry.Path}' fails its DAR data checksum.");
-    return data;
   }
+
+  /// <summary>A forward-only decoder for one compression unit read from <paramref name="stored"/>.</summary>
+  private static Stream OpenDecoder(char algorithm, ulong blockSize, Stream stored) {
+    if (algorithm == 'n')
+      return stored;
+    // lz4 and lzo always travel in dar's block framing; the others only when the archive header
+    // records a compression block size.
+    if (blockSize > 0 || algorithm is 'q' or 'l' or 'j' or 'k') {
+      var clear = blockSize > 0 ? blockSize : StreamingBlockSize;
+      if (clear > MaxBlock)
+        throw new NotSupportedException($"DAR compression block size {clear} exceeds this reader's limit.");
+      return new DarDataStreams.Blocks(stored, algorithm, (int)clear);
+    }
+    return algorithm switch {
+      'z' => new ZlibStream(stored, CompressionStreamMode.Decompress),
+      'y' => new Bzip2Stream(stored, CompressionStreamMode.Decompress),
+      'x' => new XzStream(new DarDataStreams.SeekBack(stored), CompressionStreamMode.Decompress),
+      'd' => new ZstdStream(stored, CompressionStreamMode.Decompress),
+      _ => throw new NotSupportedException($"DAR compression '{algorithm}' is not supported."),
+    };
+  }
+
+  internal static byte[] DecompressStreamToArray(char algorithm, byte[] stored) => DecompressStream(algorithm, stored);
 
   internal static byte[] Decompress(char algorithm, ulong blockSize, byte[] stored, long expected) {
     try {
@@ -476,7 +521,8 @@ public sealed class DarArchive {
     public byte[] Checksum() => DarPrimitives.ReadChecksum(data, ref this.Pos);
 
     public DateTime? Date() {
-      var unit = (char)this.Byte();
+      // Format 8 has no unit byte: a bare infinint count of seconds.
+      var unit = version.AtLeast(9, 0) ? (char)this.Byte() : 's';
       var seconds = this.Infinint();
       ulong fraction = 0;
       long ticksPerUnit;

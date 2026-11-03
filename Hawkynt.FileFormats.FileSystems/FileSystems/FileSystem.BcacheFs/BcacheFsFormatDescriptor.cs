@@ -559,10 +559,10 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
       var files = new List<DefragBlockInfo>();
       foreach (var entry in reader.Entries)
-        foreach (var extent in entry.Extents)
+        foreach (var extent in entry.Extents.Where(e => e.DeviceSectors > 0))
           files.Add(new DefragBlockInfo(
             extent.FirstSector * BcacheFsFormat.SectorSize,
-            (long)extent.Sectors * BcacheFsFormat.SectorSize,
+            (long)extent.DeviceSectors * BcacheFsFormat.SectorSize,
             DefragBlockKind.Used, entry.Name));
 
       result.Add(new DefragBlockInfo(0, BcacheFsFormat.MetadataEndBytes,
@@ -609,6 +609,10 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
         var live = Math.Min(remaining, allocated);
         remaining -= live;
         if (remaining != 0 || live >= allocated) continue;
+        // Compressed or inline bytes are not laid out by file offset, and a checksum
+        // covers the tail too: zero it only where the checksum was taken over zeroes.
+        if (extent.Stored is { } stored
+            && !BcacheFsExtentData.ZeroingTailKeepsChecksum(image, stored, live, allocated)) continue;
         wiped += ZeroNonZeroRange(image,
           extent.FirstSector * BcacheFsFormat.SectorSize + live,
           allocated - live, zeros);

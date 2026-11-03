@@ -68,8 +68,8 @@ public sealed class KwajFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
       DisplayName: "Compression method",
       Kind: FormatOptionKind.Enum,
       Default: "MSZIP",
-      AllowedValues: ["Store", "XOR", "MSZIP"],
-      Description: "KWAJ method: Store writes the payload verbatim; XOR applies the format's 0xFF transform; MSZIP uses Deflate."),
+      AllowedValues: ["Store", "XOR", "LZSS", "LZH", "MSZIP"],
+      Description: "KWAJ method: Store writes the payload verbatim; XOR applies the format's 0xFF transform; LZSS is method 2 (COMPRESS -Z without Huffman); LZH is method 3 (LZ + Huffman); MSZIP uses Deflate."),
     new(
       Key: "Level",
       DisplayName: "MSZIP compression level",
@@ -87,6 +87,8 @@ public sealed class KwajFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
     return method.ToLowerInvariant() switch {
       "store" => KwajConstants.MethodStore,
       "xor" => KwajConstants.MethodXor,
+      "lzss" => KwajConstants.MethodLzss,
+      "lzh" => KwajConstants.MethodLzHuffman,
       "mszip" => KwajConstants.MethodMsZip,
       _ => throw new ArgumentException($"Unsupported KWAJ compression method '{method}'.", nameof(options)),
     };

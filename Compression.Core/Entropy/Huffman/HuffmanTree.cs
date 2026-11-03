@@ -152,6 +152,31 @@ public static class HuffmanTree {
       codeLengths[symbols[i].Symbol] = symbols[i].Length;
   }
 
+  /// <summary>
+  /// Shortens codes until the lengths fill the code space exactly (Kraft sum of one),
+  /// for decoders that reject incomplete trees. Lengths of zero (absent symbols) stay
+  /// zero; a single present symbol is left at length one.
+  /// </summary>
+  /// <param name="codeLengths">The code lengths to complete (modified in place).</param>
+  /// <param name="maxLength">The longest permitted code length.</param>
+  public static void CompleteCodeLengths(int[] codeLengths, int maxLength) {
+    var full = 1L << maxLength;
+    var kraft = 0L;
+    foreach (var l in codeLengths)
+      if (l > 0) kraft += 1L << (maxLength - l);
+    while (kraft < full) {
+      // The longest code's unit always divides the remaining space, so shortening it fits.
+      var pick = -1;
+      for (var s = 0; s < codeLengths.Length; ++s)
+        if (codeLengths[s] > 1 && (pick < 0 || codeLengths[s] > codeLengths[pick]))
+          pick = s;
+      if (pick < 0)
+        return;
+      kraft += 1L << (maxLength - codeLengths[pick]);
+      --codeLengths[pick];
+    }
+  }
+
   private static void AssignLengths(HuffmanNode node, int depth, int[] lengths) {
     if (node.IsLeaf) {
       if (node.Symbol >= 0 && node.Symbol < lengths.Length)

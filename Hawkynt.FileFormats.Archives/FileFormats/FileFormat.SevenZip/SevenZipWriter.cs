@@ -738,6 +738,12 @@ public sealed class SevenZipWriter : IDisposable {
           Properties = [(byte)(this._deltaDistance - 1)],
         };
         return DeltaFilter.Encode(data, this._deltaDistance);
+      case SevenZipFilter.Swap2:
+        coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecSwap2.ToArray() };
+        return ByteSwapFilter.Swap2(data);
+      case SevenZipFilter.Swap4:
+        coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecSwap4.ToArray() };
+        return ByteSwapFilter.Swap4(data);
       default:
         throw new NotSupportedException($"Unsupported filter: {this._filter}");
     }

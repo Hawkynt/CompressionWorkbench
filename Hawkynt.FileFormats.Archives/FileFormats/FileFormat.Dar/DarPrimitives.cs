@@ -70,6 +70,13 @@ internal static class DarPrimitives {
     return ring;
   }
 
+  /// <summary>Writes a checksum as an infinint width followed by the ring, into a new array.</summary>
+  public static byte[] EncodeChecksum(ReadOnlySpan<byte> ring) {
+    using var ms = new MemoryStream(ring.Length + 5);
+    WriteChecksum(ms, ring);
+    return ms.ToArray();
+  }
+
   /// <summary>The checksum width dar picks for file data of <paramref name="size"/> bytes: 1 when
   /// empty, else 4 bytes per started GiB.</summary>
   public static int DataChecksumWidth(ulong size) => size == 0 ? 1 : checked((int)(4 * ((size + (1UL << 30) - 1) >> 30)));

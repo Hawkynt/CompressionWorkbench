@@ -117,12 +117,15 @@ internal static class BcacheFsAllocationBuilder {
       backpointers.Add(BackpointerKey(node.Sector, node.Btree, node.Level + 1, DataBtree, BucketSectors, node.MaxKey));
     }
 
+    // An extent costs what it occupies on the device: its own size, or for a
+    // compressed one that share of the compressed region. Its backpointer adds the
+    // offset into the checksummed region below the shifted sector, so two keys
+    // left pointing into one region by a partial overwrite stay distinct.
     foreach (var extent in extents) {
-      if (extent.Type != KeyExtent) continue;
-      var sector = ExtentDataSector(extent);
-      Mark(sector, extent.Size, DataUser);
-      usage.UserSectors += extent.Size;
-      backpointers.Add(BackpointerKey(sector, BtreeExtents, 0, DataUser, (int)extent.Size, extent.Position));
+      if (Footprint(extent) is not { } at) continue;
+      Mark(at.Sector, at.DiskSectors, DataUser);
+      usage.UserSectors += (ulong)at.DiskSectors;
+      backpointers.Add(BackpointerKey(at.Sector, BtreeExtents, 0, DataUser, at.DiskSectors, extent.Position, at.RegionOffset));
     }
 
     var alloc = new List<Key>();
@@ -182,8 +185,58 @@ internal static class BcacheFsAllocationBuilder {
     return new Result(alloc, freespace, lru, backpointers, gens, usage, type, dirty);
   }
 
+  /// <summary>
+  /// Where one extent sits on the device and what it costs there.
+  /// </summary>
+  /// <param name="Sector">The sector its pointer names: the start of its checksummed region.</param>
+  /// <param name="RegionOffset">How far into that region, in uncompressed sectors, its live data starts.</param>
+  /// <param name="RegionSectors">How long the region is on the device (the compressed size).</param>
+  /// <param name="DiskSectors">The sectors it is charged with: its size, or its share of a compressed region.</param>
+  /// <param name="Compressed">Whether the region is compressed.</param>
+  /// <param name="Encrypted">Whether the region is encrypted (a nonce, or a ChaCha20/Poly1305 checksum).</param>
+  internal readonly record struct ExtentFootprint(
+    long Sector, int RegionOffset, int RegionSectors, int DiskSectors, bool Compressed, bool Encrypted);
+
+  /// <summary>
+  /// The footprint of a <c>KEY_TYPE_extent</c> with one dirty pointer, or null for
+  /// any other key (inline data, reservations) or an extent with none.
+  /// </summary>
+  /// <remarks>
+  /// The disk cost is <c>ptr_disk_sectors</c>: the key's size, or for a compressed
+  /// region its size scaled by compressed over uncompressed, rounded up.
+  /// </remarks>
+  internal static ExtentFootprint? Footprint(Key extent) {
+    if (extent.Type != KeyExtent) return null;
+    if (!BcacheFsExtentCodec.TryParseEntries(extent.Value, out var entries, out var error))
+      throw new InvalidDataException($"bcachefs extent at {extent.Position}: {error}");
+
+    BcacheFsExtentCrc? crc = null;
+    foreach (var entry in entries) {
+      switch (entry.KnownType) {
+        case BcacheFsExtentEntryType.Crc32 or BcacheFsExtentEntryType.Crc64 or BcacheFsExtentEntryType.Crc128:
+          if (!BcacheFsExtentCodec.TryReadExtentCrc(entry, out crc, out error))
+            throw new InvalidDataException($"bcachefs extent at {extent.Position}: {error}");
+          break;
+        case BcacheFsExtentEntryType.Pointer: {
+          var word = BinaryPrimitives.ReadUInt64LittleEndian(entry.RawBytes);
+          if ((word & (1UL << 1)) != 0) continue;                             // a cached copy
+          var compressed = crc?.Compressed ?? false;
+          var disk = compressed
+            ? (int)(((ulong)extent.Size * crc!.CompressedSize + crc.UncompressedSize - 1) / crc.UncompressedSize)
+            : (int)extent.Size;
+          var encrypted = crc is { } c && (c.Nonce != 0
+            || c.ChecksumType is BcacheFsChecksumType.ChaCha20Poly1305_80 or BcacheFsChecksumType.ChaCha20Poly1305_128);
+          return new ExtentFootprint(PointerSector(word), (int)(crc?.Offset ?? 0),
+            (int)(crc?.CompressedSize ?? extent.Size), disk, compressed, encrypted);
+        }
+      }
+    }
+    return null;
+  }
+
   /// <summary>Where an extent's data starts on the device.</summary>
   internal static long ExtentDataSector(Key extent) {
+    if (extent.Type == KeyExtent && Footprint(extent) is { } footprint) return footprint.Sector;
     for (var at = 0; at + 8 <= extent.Value.Length; at += 8) {
       var word = BinaryPrimitives.ReadUInt64LittleEndian(extent.Value.AsSpan(at));
       if (IsPointer(word)) return PointerSector(word);
@@ -231,16 +284,17 @@ internal static class BcacheFsAllocationBuilder {
   /// the same units, says which tree and level hold the pointer, how many sectors
   /// it covers, and the position of the key that holds it.
   /// </remarks>
-  internal static Key BackpointerKey(long sector, int btree, int level, byte dataType, int sectors, Bpos target) {
+  internal static Key BackpointerKey(long sector, int btree, int level, byte dataType, int sectors, Bpos target,
+      int regionOffset = 0) {
     var value = new byte[32];
     value[0] = (byte)btree;
     value[1] = (byte)level;
     value[2] = dataType;
-    var bucketOffset = (ulong)(sector % BucketSectors) << BackpointerShift;
+    var bucketOffset = ((ulong)(sector % BucketSectors) << BackpointerShift) + (ulong)regionOffset;
     for (var i = 0; i < 5; ++i) value[3 + i] = (byte)(bucketOffset >> (8 * i));
     BinaryPrimitives.WriteUInt32LittleEndian(value.AsSpan(8), (uint)sectors);
     WriteBpos(value.AsSpan(12), target);
-    return new Key(KeyBackpointer, new Bpos(0, (ulong)sector << BackpointerShift, 0), 0, value);
+    return new Key(KeyBackpointer, new Bpos(0, ((ulong)sector << BackpointerShift) + (ulong)regionOffset, 0), 0, value);
   }
 
   /// <summary>A run of free buckets: the freespace tree keys a range by where it ends.</summary>

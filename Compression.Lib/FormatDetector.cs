@@ -468,6 +468,11 @@ public static partial class FormatDetector {
         return Format.FreeArc;
       if (magic[0] == 0x1A)
         return Format.Arc;
+      // Internet Archive crawl files share the extension and open with a "filedesc://" record.
+      Span<byte> crawl = stackalloc byte[11];
+      fs.Position = 0;
+      if (fs.Read(crawl) == crawl.Length && crawl.SequenceEqual("filedesc://"u8))
+        return Format.IaArc;
     } catch {
       /* ignore detection failure */
     }

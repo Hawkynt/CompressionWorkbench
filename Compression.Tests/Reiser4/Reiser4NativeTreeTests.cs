@@ -422,13 +422,10 @@ public sealed class Reiser4NativeTreeTests {
     });
   }
 
-  // Offsets inside the fixed blocks that carry the profile rather than the identity:
-  // the format40 tail policy (block 17, byte 70), the backup of the root directory's
-  // plugin set (block 22, from byte 127 on), the status block (21) and the journal (19, 20).
-  [TestCase(17, 70, (byte)1, TestName = "GivenATailsOnlyPolicy_WhenEditing_ThenTheEditIsRefusedAndTheImageIsUntouched")]
-  [TestCase(22, 131, (byte)2, TestName = "GivenANonDefaultHashInTheBackedUpPluginSet_WhenEditing_ThenTheEditIsRefusedAndTheImageIsUntouched")]
+  // A status block not marked consistent belongs to a volume the tools found damaged, and a journal
+  // header naming a transaction that is not there cannot be replayed: neither is rewritten.
   [TestCase(21, 16, (byte)2, TestName = "GivenAStatusBlockNotMarkedConsistent_WhenEditing_ThenTheEditIsRefusedAndTheImageIsUntouched")]
-  [TestCase(19, 0, (byte)1, TestName = "GivenAJournalHeaderThatIsNotBlank_WhenEditing_ThenTheEditIsRefusedAndTheImageIsUntouched")]
+  [TestCase(19, 0, (byte)1, TestName = "GivenAJournalHeaderNamingNoTransaction_WhenEditing_ThenTheEditIsRefusedAndTheImageIsUntouched")]
   public void VolumeOutsideTheWriterProfile_IsRefusedForEveryRebuild(int block, int offset, byte value) {
     var writer = new Reiser4Writer();
     writer.AddFile("d/f.bin", Payload(3_000, 32));
@@ -453,6 +450,28 @@ public sealed class Reiser4NativeTreeTests {
     });
   }
 
+  // The format40 tail policy (block 17, byte 70) and the backed-up plugin set (block 22) are the
+  // volume's profile: an edit carries them byte for byte.
+  [TestCase(17, 70, (byte)1, TestName = "GivenATailsOnlyPolicy_WhenEditing_ThenThePolicyIsCarried")]
+  [TestCase(22, 131, (byte)2, TestName = "GivenANonDefaultHashInTheBackedUpPluginSet_WhenEditing_ThenTheBackupIsCarried")]
+  public void ProfileBytesOfTheFixedBlocks_AreCarriedAcrossEdits(int block, int offset, byte value) {
+    var writer = new Reiser4Writer();
+    writer.AddFile("d/f.bin", Payload(3_000, 32));
+    var original = writer.Build();
+    original[block * Reiser4Writer.BlockSize + offset] = value;
+    using var image = new MemoryStream(original.ToArray());
+    var descriptor = new Reiser4FormatDescriptor();
+    descriptor.Add(image, [ArchiveInputInfo.InMemory("x.bin", Payload(10, 33))]);
+    descriptor.Remove(image, ["d/f.bin"]);
+    descriptor.Defragment(image);
+    using var reader = new Reiser4Reader(image);
+    Assert.Multiple(() => {
+      Assert.That(image.ToArray()[block * Reiser4Writer.BlockSize + offset], Is.EqualTo(value));
+      Assert.That(reader.Entries.Select(static e => e.Name), Is.EquivalentTo(new[] { "d", "x.bin" }));
+      Assert.That(reader.Extract(reader.Entries.Single(static e => e.Name == "x.bin")), Is.EqualTo(Payload(10, 33)));
+    });
+  }
+
   private static Reiser4Reader.FileMetadata MetadataOfOneFile() {
     var writer = new Reiser4Writer();
     writer.AddFile("f.bin", Payload(100, 39));
@@ -468,7 +487,7 @@ public sealed class Reiser4NativeTreeTests {
     Assert.Throws<NotSupportedException>(() => writer.Build());
   }
 
-  [TestCase(3, TestName = "GivenASymlinkStatExtension_WhenWriting_ThenItIsRefused")]
+  [TestCase(6, TestName = "GivenAnUnassignedStatExtension_WhenWriting_ThenItIsRefused")]
   [TestCase(7, TestName = "GivenACryptoStatExtension_WhenWriting_ThenItIsRefused")]
   [TestCase(15, TestName = "GivenAChainedExtensionMask_WhenWriting_ThenItIsRefused")]
   public void UnsupportedStatExtension_IsRefused(int bit) {

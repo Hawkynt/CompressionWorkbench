@@ -184,6 +184,29 @@ public class BcjFilterTests {
 
   // ---- ARM ----
 
+  // CPython 3.13.1 lzma/liblzma reference: ARM + LZMA2, 4 KiB dictionary, CRC32.
+  private static readonly byte[] ArmInstructions = Convert.FromHexString("000000EB010000EBFFFF7FEBFFFF80EB");
+  private static readonly byte[] ArmFiltered = Convert.FromHexString("020000EB040000EB030080EB040081EB");
+
+  [Test, Category("Spec")]
+  public void EncodeArm_MatchesLiblzmaProgramCounterBias()
+    => Assert.That(BcjFilter.EncodeArm(ArmInstructions), Is.EqualTo(ArmFiltered));
+
+  [Test, Category("Spec")]
+  public void DecodeArm_MatchesLiblzmaProgramCounterBias()
+    => Assert.That(BcjFilter.DecodeArm(ArmFiltered), Is.EqualTo(ArmInstructions));
+
+  [Test, Category("Spec")]
+  public void XzArmReferenceStream_DecodesWithItsOriginalChecksum() {
+    // lzma.compress(ArmInstructions, check=lzma.CHECK_CRC32, filters=[
+    //   {'id': lzma.FILTER_ARM}, {'id': lzma.FILTER_LZMA2, 'dict_size': 4096}])
+    var packed = Convert.FromHexString("FD377A585A0000016922DE3602010700210100007441398501000F020000EB040000EB030080EB040081EB004DCCE6FB00012410E944D9CC9042990D010000000001595A");
+    using var input = new MemoryStream(packed);
+    using var output = new MemoryStream();
+    new FileFormat.Xz.XzFormatDescriptor().Decompress(input, output);
+    Assert.That(output.ToArray(), Is.EqualTo(ArmInstructions));
+  }
+
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]

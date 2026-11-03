@@ -1,0 +1,5 @@
+# Volumes a Reiser4 kernel wrote, gzip-compressed: the bytes are the fixture.
+*.gz -text
+# Manifests and scripts are read by Linux tools and compared byte for byte.
+*.manifest text eol=lf
+*.sh text eol=lf

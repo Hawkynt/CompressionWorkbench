@@ -29,8 +29,9 @@ namespace Compression.Tests.BcacheFs;
 /// and judge every volume as well.</para>
 ///
 /// <para>Each test skips with an install hint when no Linux environment or no
-/// bcachefs-tools is present. A checker that runs and objects fails the test; that
-/// is never downgraded to a skip.</para>
+/// bcachefs-tools is present — or fails, where <c>CWB_REQUIRE_BCACHEFS=1</c> says the
+/// tool is expected. A checker that runs and objects fails the test; that is never
+/// downgraded to a skip.</para>
 /// </remarks>
 [TestFixture]
 [Category("ExternalFsInterop")]
@@ -50,12 +51,7 @@ public sealed class BcacheFsExternalConformanceTests {
 
   // ── The judges ───────────────────────────────────────────────────────────
 
-  private static void RequireBcachefsTools() {
-    if (!FsInteropToolbox.WslAvailable)
-      Assert.Ignore("No Linux environment (WSL) to run bcachefs-tools in.");
-    if (!FsInteropToolbox.WslHasTool("bcachefs"))
-      Assert.Ignore("bcachefs-tools is not installed: `sudo apt install -y bcachefs-tools`.");
-  }
+  private static void RequireBcachefsTools() => BcacheFsOracleGate.RequireBcachefsTools();
 
   /// <summary>The distribution's bcachefs first, then any extra build named in the environment.</summary>
   private static IReadOnlyList<string> Checkers() {
@@ -200,6 +196,74 @@ public sealed class BcacheFsExternalConformanceTests {
     }
 
     AssertFsckClean(path);
+  }
+
+  /// <summary>
+  /// A bcachefs new enough to keep bucket generations in its backpointers (1.14 and
+  /// later) upgrades a volume this package wrote, and edited in place, and finds no
+  /// backpointer of ours to rebuild: the only bucket its upgrade pass counts as
+  /// having none is the node of the accounting tree it has just created itself,
+  /// exactly as on a volume <c>bcachefs format</c> wrote.
+  /// </summary>
+  /// <remarks>
+  /// <para>The pass reads a pre-1.14 backpointer's generation and flags from bytes
+  /// that held the low 40 bits of its in-bucket offset, and throws away any whose
+  /// generation does not match the bucket's or whose flags are not zero, then
+  /// rebuilds them from the extents. A backpointer into a bucket at generation zero,
+  /// at the bucket's first sector, survives. So this package lays new data into
+  /// buckets still at generation zero first.</para>
+  ///
+  /// <para>Runs where a build of 1.14 or later is named in <c>CWB_BCACHEFS_EXTRA</c>.</para>
+  /// </remarks>
+  [Test, Category("HappyPath")]
+  public void GivenOurVolumeEditedInPlace_WhenANewerToolUpgradesIt_ThenItRebuildsNoBackpointerOfOurs() {
+    RequireBcachefsTools();
+    // What the tool reports on its own formatter's volume of the same geometry,
+    // which also says which checker upgrades past 1.14: release builds may not
+    // know their own version number, but they name the version they upgrade to.
+    var theirs = Path.Combine(this._tmpDir, "theirs.img");
+    var format = FsInteropToolbox.RunWsl(
+      $"truncate -s 128M {FsInteropToolbox.WinToWsl(theirs)} && bcachefs format -q --force --bucket=64k {FsInteropToolbox.WinToWsl(theirs)}");
+    Assert.That(format.ExitCode, Is.EqualTo(0), Combined(format));
+    var newer = Checkers().Skip(1).FirstOrDefault(c => {
+      var probe = Combined(FsInteropToolbox.RunWsl($"{c} fsck -n {FsInteropToolbox.WinToWsl(theirs)}"));
+      var match = System.Text.RegularExpressions.Regex.Match(probe, @"upgrade from .* to \S+ \((\d+)\.(\d+)\)");
+      return match.Success && (int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) > 1
+        || int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture) >= 14);
+    });
+    if (newer == null)
+      Assert.Ignore("No bcachefs-tools that upgrades to 1.14 or later: name one in CWB_BCACHEFS_EXTRA.");
+
+    int BucketsWithoutBackpointers(string path) {
+      var copy = $"/tmp/cwb-bp-{Guid.NewGuid():N}.img";
+      var result = FsInteropToolbox.RunWsl($"cp {FsInteropToolbox.WinToWsl(path)} {copy} && {newer} fsck -n {copy}; rm -f {copy}");
+      var output = Combined(result);
+      TestContext.Out.WriteLine($"$ {newer} fsck -n {Path.GetFileName(path)}\n{output}");
+      Assert.That(output, Does.Not.Contain("fixing"), output);
+      var match = System.Text.RegularExpressions.Regex.Match(output, @"(\d+) buckets with no backpointers");
+      return match.Success ? int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
+    }
+
+    var control = BucketsWithoutBackpointers(theirs);
+
+    var path = Path.Combine(this._tmpDir, "upgraded.img");
+    var descriptor = new BcacheFsFormatDescriptor();
+    using (var image = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite)) {
+      descriptor.Create(image, [
+        ArchiveInputInfo.InMemory("keep.bin", Payload(300_000, 12)),
+        ArchiveInputInfo.InMemory("gone.bin", Payload(200_000, 13)),
+      ], new FormatCreateOptions());
+      image.Position = 0;
+      descriptor.Remove(image, ["gone.bin"]);
+      image.Position = 0;
+      descriptor.Add(image, [ArchiveInputInfo.InMemory("added.bin", Payload(150_000, 14))]);
+    }
+
+    Assert.Multiple(() => {
+      Assert.That(control, Is.LessThanOrEqualTo(1), "the formatter's volume: only the tool's own new node");
+      Assert.That(BucketsWithoutBackpointers(path), Is.EqualTo(control),
+        "our edited volume: nothing beyond what the tool reports on its own formatter's volume");
+    });
   }
 
   /// <summary>

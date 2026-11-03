@@ -87,8 +87,20 @@ public sealed class KwajOptionsTests {
 
     Assert.That(MethodOf(compressed), Is.EqualTo(KwajConstants.MethodMsZip));
     Assert.That(PayloadOf(compressed).ToArray(),
-      Is.EqualTo(MsZipCompressor.Compress(data, expectedLevel)));
+      Is.EqualTo(KwajFramed(MsZipCompressor.CompressBlocks(data, expectedLevel))));
     Assert.That(Decompress(descriptor, compressed), Is.EqualTo(data));
+  }
+
+  /// <summary>KWAJ frames each MSZIP block with its 16-bit length and ends with a zero length.</summary>
+  private static byte[] KwajFramed(List<(byte[] CompressedData, int UncompressedSize)> blocks) {
+    var framed = new List<byte>();
+    foreach (var (block, _) in blocks) {
+      framed.Add((byte)block.Length);
+      framed.Add((byte)(block.Length >> 8));
+      framed.AddRange(block);
+    }
+    framed.AddRange([0, 0]);
+    return [.. framed];
   }
 
   [Test, Category("Spec")]
