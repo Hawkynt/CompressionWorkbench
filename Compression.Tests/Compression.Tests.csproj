@@ -169,6 +169,10 @@
     <!-- Macrium's MIT-licensed Reflect X metadata schema, the oracle for the writer's $JSON block.
          Provenance in Macrium/VendorSchema/THIRD-PARTY-NOTICE.MacriumSchema.txt. -->
     <EmbeddedResource Include="Macrium\VendorSchema\required_schema.json" LogicalName="MacriumVendor.required_schema.json" />
+    <!-- NuFX archives from the CiderPress II test corpus (LZW/1 and LZW/2); see NuFx/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="NuFx\ReferenceVectors\*.shk">
+      <LogicalName>NuFxVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- keramics' HFS+ volume written on macOS (decmpfs files); see HfsPlus/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="HfsPlus\ReferenceVectors\*.gz">
       <LogicalName>HfsPlusVectors.%(Filename)%(Extension)</LogicalName>
