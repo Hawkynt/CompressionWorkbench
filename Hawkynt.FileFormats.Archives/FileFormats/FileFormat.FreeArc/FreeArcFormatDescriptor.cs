@@ -17,8 +17,8 @@ namespace FileFormat.FreeArc;
 /// </summary>
 /// <remarks>
 /// Reads real FreeArc archives; extracts solid blocks compressed with <c>storing</c>, <c>lzma</c>,
-/// <c>tor</c> or <c>ppmd</c>, also behind <c>rep</c>/<c>delta</c>/<c>exe</c> and inside <c>4x4</c>,
-/// and refuses the other methods (lzp, grzip, dict, ...) and encryption.
+/// <c>tor</c>, <c>ppmd</c> or <c>grzip</c>, also behind <c>rep</c>/<c>delta</c>/<c>exe</c> and inside
+/// <c>4x4</c>, and refuses the other methods (lzp, dict, ...) and encryption.
 /// Writes <c>storing</c>/<c>lzma</c> archives that FreeArc 0.67's <c>unarc</c> and <c>arc</c>
 /// test and extract byte-identically.
 /// </remarks>

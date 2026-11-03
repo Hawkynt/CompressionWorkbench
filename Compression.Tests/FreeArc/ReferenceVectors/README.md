@@ -30,8 +30,9 @@ Each archive was made with `Arc.exe a <archive> -i0 -cfg- <switches> <files>`:
 | `encrypted.arc` | `-mlzma -pSecret` | hello | `lzma…+aes-256/ctr:…` data — refused |
 | `hdrenc.arc` | `-mlzma -hpSecret` | hello | encrypted directory — listed as `FULL.arc` + `metadata.ini` |
 
-`mkfilters.py` makes seventeen more from generated inputs (text, a 24000-byte random run repeated 3000
-bytes later, a table of 8-byte records, x86-like code, an empty file), each with
+`mkfilters.py` makes twenty-six more from generated inputs (text, a 24000-byte random run repeated 3000
+bytes later, a table of 8-byte records, x86-like code, an empty file; the `text-*` archives hold one
+file of sentences on lines instead), each with
 `Arc.exe a <archive> -i0 -cfg- -ep1 <switch>`; `filters.tsv` lists what `Arc.exe x` extracts:
 
 | File | Switch | Method FreeArc recorded |
@@ -47,3 +48,7 @@ bytes later, a table of 8-byte records, x86-like code, an empty file), each with
 | `filters-m1.arc`, `filters-m2.arc` | `-m1`, `-m2` | `rep+4x4:tor:3`; `-m2` also `rep+exe+4x4:tor` in a second block |
 | `ppmd-6.arc` | `-mppmd:6:16mb` | PPMd var.I |
 | `ppmd-restart.arc`, `ppmd-cutoff.arc`, `ppmd-freeze.arc` | `-mppmd:12:256kb`, `:r`, `:r2` | a model too small for the data, so every restore method runs |
+| `grzip-m1.arc` .. `grzip-m4.arc` | `-mgrzip:m1` .. `:m4` | BWT or ST4 with WFC or MTF ranks, LZP on |
+| `grzip-strong.arc`, `grzip-nolzp.arc` | `-mgrzip:m1:s`, `-mgrzip:m3:l` | strong-sorted BWT; ST4 without LZP |
+| `grzip-delta.arc` | `-mgrzip:m2:d:b64kb` | three blocks; the last is record-filtered into four nested blocks, two of them stored after LZP |
+| `text-m3.arc`, `text-m4.arc` | `-m3`, `-m4` | the text chains `grzip:…:m2:l32:h15` and `grzip:…:m1:l32:h15` |

@@ -1,0 +1,27 @@
+libGRZip — converted to C#
+
+Source:   FreeArc 0.67 snapshot, github.com/mrkaban/FreeArc-0.67,
+          Compression/GRZip/C_GRZip.cpp, BWT.c, ST4.c, MTF_Ari.c, WFC_Ari.c,
+          LZP.c, Rec_Flt.c, WFC_MTF.h, libGRZip.h
+Author:   Ilya Grebnov (GRZipII/libGRZip, 2002-2004)
+Licence:  GNU Lesser General Public License, version 2.1 or (at your option)
+          any later version — "This library is free software; you can
+          redistribute it and/or modify it under the terms of the GNU Lesser
+          General Public License as published by the Free Software Foundation;
+          either version 2.1 of the License, or (at your option) any later
+          version." Taken under LGPL-3.0-or-later, this repository's licence.
+
+          Copyright (C) 2002-2004 Grebnov Ilya. All rights reserved.
+
+          This program is based on (at least) the work of: Juergen Abel,
+          Jon L. Bentley, Edgar Binder, Charles Bloom, Mike Burrows, Andrey
+          Cadach, Damien Debin, Sebastian Deorowicz, Peter Fenwick, George
+          Plechanov, Michael Schindler, Robert Sedgewick, Julian Seward, David
+          Wheeler, Vadim Yoockin.
+
+FreeArcGrzip.cs is a conversion of the decoding half of that code: the block
+decoder (stored, record-filtered and sorted blocks), the inverse BWT (fast and
+strong sorting), the inverse ST4, the MTF and WFC rank decoders with their
+arithmetic coder and model constants, the LZP decoder and the record filter
+decoder. FreeArc's multi-threaded stream wrapper around it was not taken; the
+block sequence it reads is documented in docs/FREEARC-ON-DISK.md.

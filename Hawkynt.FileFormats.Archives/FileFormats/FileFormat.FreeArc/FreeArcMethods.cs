@@ -11,9 +11,10 @@ namespace FileFormat.FreeArc;
 /// Only the stages our own codecs reproduce exactly are decoded: <c>storing</c>, <c>lzma</c>
 /// (a raw LZMA1 stream with no properties header; dictionary and lc/lp/pb come from the method
 /// string), <c>tor</c> (see <see cref="FreeArcTornado"/>), <c>ppmd</c> (see
-/// <see cref="FreeArcPpmd"/>), the wrapper <c>4x4</c> and the preprocessors <c>rep</c>,
-/// <c>delta</c> and <c>exe</c> (see <see cref="FreeArcFilters"/>). Everything else — lzp, grzip,
-/// dict, mm, external compressors and encryption — is refused with <see cref="NotSupportedException"/>.
+/// <see cref="FreeArcPpmd"/>), <c>grzip</c> (see <see cref="FreeArcGrzip"/>), the wrapper
+/// <c>4x4</c> and the preprocessors <c>rep</c>, <c>delta</c> and <c>exe</c> (see
+/// <see cref="FreeArcFilters"/>). Everything else — lzp, dict, mm, external compressors and
+/// encryption — is refused with <see cref="NotSupportedException"/>.
 /// </remarks>
 public static partial class FreeArcMethods {
   /// <summary>The method name of an uncompressed stage.</summary>
@@ -31,6 +32,7 @@ public static partial class FreeArcMethods {
   private static bool IsDecodable(string stage) => StageName(stage) switch {
     Storing or "lzma" or "rep" or "delta" or "exe" or "tor" => true,
     "ppmd" => PpmdParameters.TryParse(stage, out _),
+    "grzip" => stage.Split(':').Skip(1).All(t => GrzipOption().IsMatch(t.Trim())),
     "4x4" => FourByFourInner(stage) is { } inner && StageName(inner) != "4x4" && IsDecodable(inner),
     _ => false,
   };
@@ -54,6 +56,15 @@ public static partial class FreeArcMethods {
   /// <summary>A 4x4 option: block size <c>b</c>, threads <c>t</c>, extra buffers <c>i</c>, ratio <c>r</c>, or a bare number or size.</summary>
   [System.Text.RegularExpressions.GeneratedRegex(@"^[btir]?\d+(\.\d+)?([kmg]b?|b)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
   private static partial System.Text.RegularExpressions.Regex FourByFourOption();
+
+  /// <summary>
+  /// A grzip option: the switches <c>s</c>, <c>a</c>, <c>l</c>, <c>d</c>, <c>p</c>, a method
+  /// <c>mN</c>, block size <c>bSIZE</c>, LZP length <c>lN</c>, hash bits <c>hN</c>, threads
+  /// <c>tN</c>, buffers <c>iN</c>, or a bare number (LZP length) or size (block size). They steer
+  /// the compressor only; every block header says how it was coded.
+  /// </summary>
+  [System.Text.RegularExpressions.GeneratedRegex(@"^([saldp]|[mlhti]\d+|b?\d+(\.\d+)?([kmg]b?|b)?)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+  private static partial System.Text.RegularExpressions.Regex GrzipOption();
 
   /// <summary>Gets whether <paramref name="compressor"/> contains an encryption stage.</summary>
   public static bool IsEncrypted(string compressor) =>
@@ -138,6 +149,8 @@ public static partial class FreeArcMethods {
           throw new NotSupportedException($"FreeArc: ppmd parameters \"{stage}\" are not supported.");
         return FreeArcPpmd.Decode(input, pp.Order, pp.Memory, pp.Restore, outputSize);
       }
+      case "grzip":
+        return FreeArcGrzip.Decode(input, outputSize);
       case "4x4":
         return FreeArcFilters.DecodeFourByFour(input, FourByFourInner(stage)!, DecodeStage);
     }
