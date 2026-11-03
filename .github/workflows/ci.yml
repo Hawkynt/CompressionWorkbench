@@ -207,6 +207,9 @@ jobs:
           # zpaq (7.15) owns ZPAQ: it must list and extract what the ZPAQ writer produces, and the
           # reader must decode every method zpaq writes, in the gate below.
           sudo apt-get install -y zpaq
+          # unace 2.5 is ACE Compression Software's own extractor: it must test and extract what
+          # the ACE 2.0 writer produces. Multiverse; skipped by the test when unavailable.
+          sudo apt-get install -y unace-nonfree || true
           # mkbootimg is AOSP's own boot image tool pair: the Android boot image writer must
           # reproduce mkbootimg's bytes, and unpack_bootimg must read back what it writes.
           sudo apt-get install -y mkbootimg

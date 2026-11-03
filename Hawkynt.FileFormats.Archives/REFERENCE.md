@@ -7245,7 +7245,7 @@ One member of an ACE archive, as its file header describes it.
 
 #### `AceFormatDescriptor`
 
-ACE archive (Marcel Lemke / WinAce): reads ACE 1.0 and 2.0 archives — stored, LZ77 and the 2.0 blocked modes (delta, exe, sound, picture), solid and Blowfish-encrypted members, comments, SFX stubs — and writes ACE 1.0 archives (stored or LZ77, optionally solid and encrypted). References: `https://github.com/droe/acefile` — acefile (BSD-2-Clause), converted for the decoder and header layout, and the oracle for the writer`https://en.wikipedia.org/wiki/ACE_(compressed_file_format)` — format overview and history
+ACE archive (Marcel Lemke / WinAce): reads ACE 1.0 and 2.0 archives — stored, LZ77 and the 2.0 blocked modes (delta, exe, sound, picture), solid and Blowfish-encrypted members, comments, SFX stubs — and writes ACE 1.0 archives (stored or LZ77) or ACE 2.0 ones (LZ77 with repeat distances behind the EXE or DELTA filter), optionally solid and encrypted. References: `https://github.com/droe/acefile` — acefile (BSD-2-Clause), converted for the decoder and header layout, and the oracle for the writer`https://en.wikipedia.org/wiki/ACE_(compressed_file_format)` — format overview and history
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
@@ -7301,11 +7301,11 @@ Implements `IDisposable`.
 
 #### `AceWriter`
 
-Writes single-volume ACE archives in the ACE 1.0 layout: stored or ACE 1.0 LZ77 members, optionally solid and/or Blowfish-encrypted, with directory entries. No comments, adverts or recovery records.
+Writes single-volume ACE archives: stored, ACE 1.0 LZ77 or (with `ace20`) ACE 2.0 blocked members (LZ77 with repeat distances, behind the EXE or DELTA filter where that is smaller), optionally solid and/or Blowfish-encrypted, with directory entries. No comments, adverts or recovery records.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AceWriter` | `AceWriter(int dictionaryBits = 20, string password = null, bool solid = false, bool store = false)` |  |
+| `AceWriter` | `AceWriter(int dictionaryBits = 20, string password = null, bool solid = false, bool store = false, bool ace20 = false)` |  |
 | `CreatedTime` | `DateTime? CreatedTime { get; init; }` | Archive creation time recorded in the main header (defaults to now). |
 | `AddDirectory` | `void AddDirectory(string name, DateTime? modified = null)` |  |
 | `AddFile` | `void AddFile(string name, byte[] data, DateTime? modified = null)` |  |

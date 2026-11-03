@@ -489,7 +489,19 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Dictionary.Ace`
 
-[`AceBlowfish`](#aceblowfish) · [`AceBuildingBlock`](#acebuildingblock) · [`AceCompressor`](#acecompressor) · [`AceConstants`](#aceconstants) · [`AceDecompressor`](#acedecompressor)
+[`AceBlockedCompressor`](#aceblockedcompressor) · [`AceBlowfish`](#aceblowfish) · [`AceBuildingBlock`](#acebuildingblock) · [`AceCompressor`](#acecompressor) · [`AceConstants`](#aceconstants) · [`AceDecompressor`](#acedecompressor)
+
+#### `AceBlockedCompressor`
+
+Writes ACE 2.0 blocked streams (compression type 2): LZ77 with the four repeat-distance codes, optionally behind the EXE filter (x86 CALL targets made absolute) or the DELTA filter (bytes split into planes and differenced), chosen per member by trial. One instance per archive; with `solid` the dictionary carries over between members as the decoder's does.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AceBlockedCompressor` | `AceBlockedCompressor(int dictionaryBits = 20, bool solid = false)` | Creates a compressor with a dictionary of 2^`dictionaryBits` bytes. |
+| `DictionaryBits` | `int DictionaryBits { get; }` | Dictionary size in bits (what the file header's parameter field records). |
+| `LastMode` | `string LastMode { get; }` | The filter the last `Compress` call chose: "lz77", "exe" or "delta:N". |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses one member, trying the plain, EXE and DELTA layouts and keeping the smallest. |
+| `RegisterStored` | `void RegisterStored(ReadOnlySpan<byte> data)` | Tells a solid compressor about a member that was stored: the decoder adds stored bytes to its dictionary too. |
 
 #### `AceBlowfish`
 

@@ -6,17 +6,26 @@ using CoreAce = Compression.Core.Dictionary.Ace.AceConstants;
 namespace FileFormat.Ace;
 
 /// <summary>
-/// Writes single-volume ACE archives in the ACE 1.0 layout: stored or ACE 1.0 LZ77 members, optionally
-/// solid and/or Blowfish-encrypted, with directory entries. No comments, adverts or recovery records.
+/// Writes single-volume ACE archives: stored, ACE 1.0 LZ77 or (with <c>ace20</c>) ACE 2.0 blocked
+/// members (LZ77 with repeat distances, behind the EXE or DELTA filter where that is smaller),
+/// optionally solid and/or Blowfish-encrypted, with directory entries. No comments, adverts or
+/// recovery records.
 /// </summary>
 public sealed class AceWriter {
   private readonly int _dictBits;
   private readonly string? _password;
   private readonly bool _solid;
   private readonly bool _store;
+  private readonly bool _ace20;
   private readonly List<(string Name, byte[] Data, DateTime Modified, bool IsDirectory)> _members = [];
 
-  public AceWriter(int dictionaryBits = CoreAce.DefaultDictBits, string? password = null, bool solid = false, bool store = false) {
+  /// <param name="dictionaryBits">Dictionary size in bits (10 to 22).</param>
+  /// <param name="password">Blowfish password, or null.</param>
+  /// <param name="solid">Whether members share one dictionary.</param>
+  /// <param name="store">Whether members are stored uncompressed.</param>
+  /// <param name="ace20">Whether to write ACE 2.0 blocked members (version 2.0 needed to extract) instead of ACE 1.0 LZ77.</param>
+  public AceWriter(int dictionaryBits = CoreAce.DefaultDictBits, string? password = null, bool solid = false, bool store = false, bool ace20 = false) {
+    this._ace20 = ace20;
     this._dictBits = Math.Clamp(dictionaryBits, CoreAce.MinDictBits, CoreAce.MaxDictBits);
     this._password = string.IsNullOrEmpty(password) ? null : password;
     this._solid = solid;
@@ -61,7 +70,7 @@ public sealed class AceWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(u16, this._solid ? AceConstants.FlagSolid : (ushort)0);
     main.Write(u16);
     main.Write(Encoding.ASCII.GetBytes(AceConstants.Magic));
-    main.WriteByte(10);                        // version needed to extract: ACE 1.0
+    main.WriteByte(this._ace20 && !this._store ? (byte)20 : (byte)10); // version needed to extract
     main.WriteByte(20);                        // version that created it
     main.WriteByte(AceConstants.HostWin32);
     main.WriteByte(0);                         // volume number
@@ -72,6 +81,7 @@ public sealed class AceWriter {
     WriteHeader(output, main.ToArray());
 
     var compressor = new AceCompressor(this._dictBits, this._solid);
+    var blocked = new AceBlockedCompressor(this._dictBits, this._solid);
     var first = true;
     foreach (var (name, data, modified, isDirectory) in this._members) {
       byte[] packed;
@@ -85,6 +95,11 @@ public sealed class AceWriter {
         compType = CoreAce.CompStore;
         quality = 0;
         compressor.RegisterStored(data);
+        blocked.RegisterStored(data);
+      } else if (this._ace20) {
+        packed = blocked.Compress(data);
+        compType = CoreAce.CompAce20;
+        quality = 3;
       } else {
         packed = compressor.Compress(data);
         compType = CoreAce.CompAce10;
