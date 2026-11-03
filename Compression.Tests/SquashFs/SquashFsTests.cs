@@ -158,4 +158,38 @@ public class SquashFsTests {
     Assert.That(files, Has.Count.EqualTo(1));
     Assert.That(r.Extract(files[0]), Is.EqualTo(data));
   }
+
+  [Test, Category("HappyPath")]
+  public void GivenADirectoryWithATime_WhenWritten_ThenItKeepsThatTime() {
+    var dirTime = new DateTime(2020, 5, 6, 7, 8, 9, DateTimeKind.Utc);
+    var fileTime = new DateTime(2024, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+    using var ms = new MemoryStream();
+    using (var w = new SquashFsWriter(ms, leaveOpen: true)) {
+      w.AddDirectory("docs", dirTime);
+      w.AddFile("docs/a.txt", "a"u8.ToArray(), fileTime);
+    }
+
+    ms.Position = 0;
+    var docs = new SquashFsReader(ms, leaveOpen: true).Entries.Single(e => e.IsDirectory && e.Name == "docs");
+    Assert.That(docs.ModifiedTime, Is.EqualTo(dirTime));
+  }
+
+  [Test, Category("HappyPath")]
+  public void GivenDirectoriesWithoutATime_WhenWritten_ThenEachTakesTheNewestTimeItHolds() {
+    var older = new DateTime(2021, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    var newer = new DateTime(2023, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+    using var ms = new MemoryStream();
+    using (var w = new SquashFsWriter(ms, leaveOpen: true)) {
+      w.AddFile("a/old.txt", "o"u8.ToArray(), older);
+      w.AddFile("a/b/new.txt", "n"u8.ToArray(), newer);
+      w.AddFile("c/old.txt", "o"u8.ToArray(), older);
+    }
+
+    ms.Position = 0;
+    var dirs = new SquashFsReader(ms, leaveOpen: true).Entries.Where(e => e.IsDirectory)
+      .ToDictionary(e => e.Name, e => e.ModifiedTime);
+    Assert.That(dirs["a"], Is.EqualTo(newer), "a holds b, which holds the newest file");
+    Assert.That(dirs["b"], Is.EqualTo(newer));
+    Assert.That(dirs["c"], Is.EqualTo(older));
+  }
 }

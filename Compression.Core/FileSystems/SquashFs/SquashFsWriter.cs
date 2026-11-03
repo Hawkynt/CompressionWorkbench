@@ -15,7 +15,8 @@ public sealed class SquashFsWriter : IDisposable {
   private readonly bool _leaveOpen;
   private bool _disposed;
   private readonly List<PendingFile> _files = [];
-  private readonly HashSet<string> _directories = new(StringComparer.Ordinal);
+  /// <summary>Every directory, with the time it was given; null for one that only holds others.</summary>
+  private readonly Dictionary<string, DateTime?> _directories = new(StringComparer.Ordinal);
 
   /// <summary>Default data block size (128 KiB) — the mksquashfs default.</summary>
   public const uint DefaultBlockSize = 131072;
@@ -53,10 +54,12 @@ public sealed class SquashFsWriter : IDisposable {
   }
 
   /// <summary>Adds an explicit directory entry to the image.</summary>
+  /// <param name="path">The directory.</param>
+  /// <param name="lastModified">Its time; without one it takes the newest time of what it holds.</param>
   public void AddDirectory(string path, DateTime? lastModified = null) {
     ObjectDisposedException.ThrowIf(_disposed, this);
     path = NormalizePath(path);
-    _directories.Add(path);
+    if (lastModified is not null || !_directories.ContainsKey(path)) _directories[path] = lastModified;
     EnsureParentDirs(path);
   }
 
@@ -77,7 +80,8 @@ public sealed class SquashFsWriter : IDisposable {
     public string FullPath = "";
     public bool IsFile;
     public byte[] Data = [];
-    public DateTime Modified = DateTime.UtcNow;
+    public DateTime Modified;
+    public bool HasTime;
     public Dictionary<string, Node> Children = new(StringComparer.Ordinal);
     public int InodeNumber;
     public int InodeRawOffset;   // byte offset in raw inode stream
@@ -187,9 +191,28 @@ public sealed class SquashFsWriter : IDisposable {
 
   private Node BuildTree() {
     var root = new Node();
-    foreach (var d in _directories) Ensure(root, d, false, [], DateTime.UtcNow);
+    foreach (var (d, modified) in _directories) {
+      var node = Ensure(root, d, false, [], default);
+      if (modified is { } m) { node.Modified = m; node.HasTime = true; }
+    }
     foreach (var f in _files) Ensure(root, f.Path, true, f.Data, f.Modified);
+    ResolveDirectoryTimes(root, DateTime.UtcNow);
     return root;
+  }
+
+  /// <summary>
+  /// Gives every directory without a time of its own the newest time of what it holds, so the
+  /// same files make the same image; only a directory with nothing in it falls back to the clock.
+  /// </summary>
+  private static DateTime ResolveDirectoryTimes(Node n, DateTime fallback) {
+    if (n.IsFile) return n.Modified;
+    DateTime? newest = null;
+    foreach (var ch in n.Children.Values) {
+      var t = ResolveDirectoryTimes(ch, fallback);
+      if (newest is null || t > newest) newest = t;
+    }
+    if (!n.HasTime) n.Modified = newest ?? fallback;
+    return n.Modified;
   }
 
   private static Node Ensure(Node root, string path, bool isFile, byte[] data, DateTime mod) {
@@ -200,7 +223,7 @@ public sealed class SquashFsWriter : IDisposable {
         ch = new Node { Name = parts[i], FullPath = string.Join('/', parts[..(i + 1)]) };
         cur.Children[parts[i]] = ch;
       }
-      if (i == parts.Length - 1 && isFile) { ch.IsFile = true; ch.Data = data; ch.Modified = mod; }
+      if (i == parts.Length - 1 && isFile) { ch.IsFile = true; ch.Data = data; ch.Modified = mod; ch.HasTime = true; }
       cur = ch;
     }
     return cur;
@@ -442,7 +465,7 @@ public sealed class SquashFsWriter : IDisposable {
   private void EnsureParentDirs(string path) {
     var parts = path.Split('/');
     for (var i = 1; i < parts.Length; i++)
-      _directories.Add(string.Join('/', parts[..i]));
+      _directories.TryAdd(string.Join('/', parts[..i]), null);
   }
 
   private static void Collect(Node n, List<Node> list) {
