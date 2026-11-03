@@ -3900,8 +3900,11 @@ Random-access in-place modifier for BBC Micro Acorn DFS `.ssd` images. The DFS c
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `AddEntry` | `static void AddEntry(Stream image, string catalogName, byte[] data, char directory = '$', uint loadAddr = 6400, uint execAddr = 6400, bool locked = false)` | Adds a file under a catalogue name the caller has already made valid (at most seven printable characters) — for the Acorn DFS family members whose names follow their own rules, such as MFS-1. |
 | `AddFile` | `static void AddFile(Stream image, string name, byte[] data, char directory = '$', uint loadAddr = 6400, uint execAddr = 6400, bool locked = false)` | Adds a file to an existing single-sided DFS image. Caller is responsible for ensuring the name does not already exist (use `RemoveFile` first for replace-by-name semantics). The file is placed in the lowest contiguous gap large enough to hold it. |
+| `RemoveEntry` | `static bool RemoveEntry(Stream image, string catalogName, char directory, bool wipeData = true)` | Removes the file stored under exactly `catalogName` in `directory` (case-insensitively, as DFS compares); true when found. |
 | `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes a named file from the image. Returns true if found and removed. When `wipeData` is true, the data sectors are zeroed. |
+| `SplitName` | `static ValueTuple<char, string> SplitName(string name)` | Directory and catalogue name of a published name: "D.NAME" (what List shows, and what Create accepts) or a bare name in the default directory '$'. |
 
 #### `BbcReader`
 
@@ -10259,7 +10262,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `Mfs1InPlaceModifier`
 
-In-place modifier for Acorn MFS-1 (DFS-tier) disk images. MFS-1's catalog is a flat fixed-offset region — sector 0 (names) + sector 1 (metadata) — that we can shift in place; files live contiguously from sector 2 onwards. On `AddFiles` the existing catalog is parsed via `Mfs1Reader`, the new file is appended at the next free sector, the catalog is re-serialised via `Mfs1Writer`, and the buffer is written back to the underlying stream. The outer image size (sector count) is preserved. On `RemoveFiles` the catalog is re-built without the dropped names. The data area previously occupied by the removed file is zeroed so no forensic trace remains.
+In-place modifier for Acorn MFS-1 (DFS-tier) disk images. MFS-1's catalog is the Acorn DFS one — sector 0 (title and names) + sector 1 (title tail, counts, boot option and metadata) — so edits go through `BbcModifier`: only the two catalogue sectors and the file's own sectors are written, and every other file keeps its name, directory letter, lock, load and execution address and sectors.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10297,6 +10300,7 @@ Builds Acorn MFS-1 (Master File System v1) disk images. MFS-1 inherits the DFS o
 | `SectorSize` | `const int SectorSize` | Defines the sector size constant value. |
 | `AddFile` | `void AddFile(string name, byte[] data, char directory = '$', bool locked = false, uint loadAddress = 0, uint execAddress = 0)` | Adds a file to the volume. |
 | `Build` | `byte[] Build(string diskTitle = "WORM", int totalSectors = 800)` | Builds the MFS-1 image. The catalog is laid out per the DFS convention: entries are sorted by descending start-sector so the most recently added file appears at index 0. |
+| `CatalogName` | `static ValueTuple<string, char> CatalogName(string name)` | MFS-1 file names are 7 ASCII characters from a printable subset (32..126) padded with spaces. The directory letter defaults to `$`; callers may pass a path of the form "X.NAME" to set the directory. |
 
 ### Namespace `FileSystem.MinixFs`
 
