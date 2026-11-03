@@ -65,6 +65,7 @@ format,Avif,AVIF,Image,,.avif;.avifs,Y,Y,,
 format,Avr,AVR (Audio Visual Research),Audio,,.avr,Y,Y,Y,
 format,Avro,Apache Avro OCF,Archive,,.avro,Y,Y,,
 format,Awb,CRI Audio Wave Bank,Archive,,.awb;.acb,Y,Y,Y,
+format,Axfs,AXFS (Advanced XIP File System),Archive,Y,.axfs,Y,Y,,
 format,Ay,ZX Spectrum AY,Audio,,.ay,Y,Y,,
 format,B64Encoding,Base64 (uuencode wrapper),Wrapper,,.b64;.base64,,Y,Y,
 format,Ba2,Bethesda Archive v2,Archive,,.ba2,Y,Y,Y,Y
@@ -189,6 +190,7 @@ format,Fits,FITS,Archive,,.fits;.fit;.fts,Y,Y,Y,
 format,Fla,Flash/Animate FLA,Archive,,.fla,Y,Y,Y,
 format,Flac,FLAC,Stream,,.flac;.fla,Y,Y,Y,
 format,FlacArchive,FLAC (archive view),Audio,,,Y,Y,,
+format,Flex,FLEX disk (6800/6809),Archive,Y,.flx;.dsk,Y,Y,Y,Y
 format,Fli,FLI/FLC (Autodesk animation),Archive,,.fli;.flc,Y,Y,,
 format,Flv,Flash Video (FLV),Video,,.flv,Y,Y,Y,
 format,Fmod,FMOD Sample Bank,Archive,,.fsb,Y,Y,,
@@ -234,6 +236,7 @@ format,Hes,PC Engine HES,Audio,,.hes,Y,Y,,
 format,Hfe,HxC Floppy Emulator (HFE),Archive,,.hfe,Y,Y,,
 format,Hfs,HFS (Classic),Archive,Y,.hfs,Y,Y,Y,Y
 format,HfsPlus,HFS+,Archive,Y,.dmg;.hfsx;.hfs,Y,Y,Y,Y
+format,HighSierra,High Sierra (CD-ROM),Archive,Y,.hsf,Y,Y,Y,
 format,Hog,HOG,Archive,,.hog,Y,Y,Y,Y
 format,Hpfs,HPFS,Archive,Y,.img;.hpfs,Y,Y,Y,Y
 format,Hpi,Total Annihilation HPI,Archive,,.hpi;.ufo;.ccx;.gp3,Y,Y,Y,Y
@@ -249,7 +252,7 @@ format,Ico,Windows ICO/CUR,Archive,,.ico,Y,Y,Y,Y
 format,IExpress,IExpress self-extractor,Archive,,,Y,Y,,
 format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
 format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
-format,InnoSetup,Inno Setup,Archive,,,Y,Y,Y,
+format,InnoSetup,Inno Setup,Archive,,,Y,Y,,
 format,IntelHex,Intel HEX,Archive,,.hex;.ihex;.ihx;.h86,Y,Y,Y,Y
 format,Ipa,IPA,Archive,,.ipa,Y,Y,Y,Y
 format,Ipsw,Apple IPSW,Archive,,.ipsw;.otazip,Y,Y,Y,Y
@@ -415,6 +418,7 @@ format,Pc98,NEC PC-98 DOS,Archive,Y,.hdm;.fdi;.d88,Y,Y,Y,Y
 format,Pcap,PCAP (libpcap capture),Archive,,.pcap;.cap,Y,Y,,
 format,Pcapng,PCAP Next Generation,Archive,,.pcapng;.ntar,Y,Y,,
 format,Pdf,PDF (Image Extraction),Archive,,.pdf,Y,Y,Y,Y
+format,Pea,PEA (PeaZip),Archive,,.pea,Y,Y,Y,
 format,PeResources,PE Resources (Windows binary),Archive,,.dll;.exe;.ocx;.cpl;.sys;.mui;.mun,Y,Y,,
 format,Petite,Petite (Win32 PE),Archive,,,Y,Y,,
 format,Pfs0,Nintendo PartitionFS,Archive,,.nsp;.pfs0,Y,Y,Y,Y
@@ -556,6 +560,7 @@ format,Tux2,TUX2,Archive,Y,.tux2,Y,Y,Y,Y
 format,Tux3,TUX3,Archive,Y,.tux3,Y,Y,,
 format,Txw,TXW (Yamaha TX16W),Audio,,.txw,Y,Y,Y,
 format,U8,Nintendo U8,Archive,,.u8;.arc,Y,Y,Y,Y
+format,Uc2,UltraCompressor II,Archive,,.uc2;.pu2,Y,Y,Y,
 format,Ubifs,UBIFS,Archive,Y,.ubifs;.ubi;.img,Y,Y,Y,Y
 format,Udf,UDF,Archive,Y,.udf,Y,Y,Y,Y
 format,UefiFv,UEFI Firmware Volume,Archive,,.fv;.fd,Y,Y,Y,Y

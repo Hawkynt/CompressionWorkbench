@@ -108,7 +108,7 @@ public class AlZipTests {
     using var r = new FileFormat.AlZip.AlZipReader(archive, leaveOpen: true);
     Assert.That(r.Entries, Has.Count.EqualTo(2));
     Assert.That(r.Entries[0].IsDirectory, Is.True);
-    Assert.That(r.Entries[0].FileName, Is.EqualTo("mydir/"));
+    Assert.That(r.Entries[0].FileName, Is.EqualTo("mydir"), "ALZip stores directory names without a trailing separator (unalz dir_tree.alz)");
     Assert.That(r.Entries[1].IsDirectory, Is.False);
     Assert.That(r.Extract(r.Entries[1]), Is.EqualTo("hello"u8.ToArray()));
   }

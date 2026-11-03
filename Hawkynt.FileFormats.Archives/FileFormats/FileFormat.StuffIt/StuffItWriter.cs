@@ -76,6 +76,9 @@ public sealed class StuffItWriter : IDisposable {
     ArgumentNullException.ThrowIfNull(fileName);
     ArgumentNullException.ThrowIfNull(dataFork);
     ArgumentNullException.ThrowIfNull(resourceFork);
+    if (Encoding.Latin1.GetByteCount(fileName) is 0 or > StuffItConstants.FileNameMaxLength)
+      throw new NotSupportedException(
+        $"A classic StuffIt name holds 1-{StuffItConstants.FileNameMaxLength} bytes; '{fileName}' would be truncated.");
 
     byte dataMethod;
     var compressedData = CompressFork(dataFork, out dataMethod);
@@ -157,7 +160,7 @@ public sealed class StuffItWriter : IDisposable {
 
     // [2] name length, [3..66] filename (Latin-1, null-padded)
     var nameBytes = Encoding.Latin1.GetBytes(entry.FileName);
-    var nameLen = Math.Min(nameBytes.Length, StuffItConstants.FileNameMaxLength);
+    var nameLen = nameBytes.Length;
     hdr[2] = (byte)nameLen;
     nameBytes.AsSpan(0, nameLen).CopyTo(hdr.Slice(StuffItConstants.FileNameOffset, nameLen));
 
@@ -212,7 +215,7 @@ public sealed class StuffItWriter : IDisposable {
       return [];
     }
 
-    var rleEncoded = StuffItRle.Encode(data);
+    var rleEncoded = StuffItRle90.Encode(data);
     if (rleEncoded.Length < data.Length) {
       method = StuffItConstants.MethodRle;
       return rleEncoded;
@@ -222,28 +225,8 @@ public sealed class StuffItWriter : IDisposable {
     return data;
   }
 
-  // ── CRC-16/CCITT (forward, non-reflected, init=0) ───────────────────────
-
-  private static readonly ushort[] Crc16Table = BuildCrc16Table();
-
-  private static ushort[] BuildCrc16Table() {
-    const ushort poly = StuffItConstants.Crc16Polynomial;
-    var table = new ushort[256];
-    for (var i = 0; i < 256; ++i) {
-      var crc = (ushort)(i << 8);
-      for (var j = 0; j < 8; ++j)
-        crc = (crc & 0x8000) != 0 ? (ushort)((crc << 1) ^ poly) : (ushort)(crc << 1);
-      table[i] = crc;
-    }
-    return table;
-  }
-
-  private static ushort ComputeCrc16(ReadOnlySpan<byte> data) {
-    ushort crc = 0;
-    foreach (var b in data)
-      crc = (ushort)((crc << 8) ^ Crc16Table[(byte)(crc >> 8) ^ b]);
-    return crc;
-  }
+  // StuffIt checks headers and forks with CRC-16/ARC (reflected 0xA001, init 0), as every reader does.
+  private static ushort ComputeCrc16(ReadOnlySpan<byte> data) => Compression.Core.Checksums.Crc16.Compute(data);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 

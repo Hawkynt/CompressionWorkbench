@@ -1,0 +1,17 @@
+# fixture	path	size	sha256 -- produced by innoextract 1.9 "innoextract -e"
+inno561a-lzma2-solid.exe	app/readme.txt	46	62981db4724efbd958840214ca8eb0a9a45f06a565a9254ad5890b0a68d3491b
+inno561a-lzma2-solid.exe	app/sub/random.bin	3000	ea9a04acd72963e6c050896f128a26ced2a8a41696550c6cf4a81fb57f530a91
+inno561a-lzma2-solid.exe	app/sub/readme-copy.txt	46	62981db4724efbd958840214ca8eb0a9a45f06a565a9254ad5890b0a68d3491b
+inno561a-lzma2-solid.exe	app/sub/repeat.txt	32000	755a009b306c9e7bedbb976fbf50710eb9dddd63e9e17ac59ca8d32769fd7627
+inno561a-zip.exe	app/readme.txt	46	62981db4724efbd958840214ca8eb0a9a45f06a565a9254ad5890b0a68d3491b
+inno561a-zip.exe	app/sub/random.bin	3000	ea9a04acd72963e6c050896f128a26ced2a8a41696550c6cf4a81fb57f530a91
+inno561a-zip.exe	app/sub/readme-copy.txt	46	62981db4724efbd958840214ca8eb0a9a45f06a565a9254ad5890b0a68d3491b
+inno561a-zip.exe	app/sub/repeat.txt	32000	755a009b306c9e7bedbb976fbf50710eb9dddd63e9e17ac59ca8d32769fd7627
+inno561u-lzma-solid.exe	app/readme.txt	46	62981db4724efbd958840214ca8eb0a9a45f06a565a9254ad5890b0a68d3491b
+inno561u-lzma-solid.exe	app/sub/random.bin	3000	ea9a04acd72963e6c050896f128a26ced2a8a41696550c6cf4a81fb57f530a91
+inno561u-lzma-solid.exe	app/sub/readme-copy.txt	46	62981db4724efbd958840214ca8eb0a9a45f06a565a9254ad5890b0a68d3491b
+inno561u-lzma-solid.exe	app/sub/repeat.txt	32000	755a009b306c9e7bedbb976fbf50710eb9dddd63e9e17ac59ca8d32769fd7627
+inno605-bzip.exe	app/readme.txt	46	62981db4724efbd958840214ca8eb0a9a45f06a565a9254ad5890b0a68d3491b
+inno605-bzip.exe	app/sub/random.bin	3000	ea9a04acd72963e6c050896f128a26ced2a8a41696550c6cf4a81fb57f530a91
+inno605-bzip.exe	app/sub/readme-copy.txt	46	62981db4724efbd958840214ca8eb0a9a45f06a565a9254ad5890b0a68d3491b
+inno605-bzip.exe	app/sub/repeat.txt	32000	755a009b306c9e7bedbb976fbf50710eb9dddd63e9e17ac59ca8d32769fd7627

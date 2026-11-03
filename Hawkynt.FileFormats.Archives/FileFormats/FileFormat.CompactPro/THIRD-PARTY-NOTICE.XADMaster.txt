@@ -1,0 +1,23 @@
+The Compact Pro directory parser (CompactProReader.cs) and the RLE and LZH fork decoders
+(CompactProCodec.cs) are converted to C# from XADMaster, the archive library of The Unarchiver:
+
+  Upstream: https://github.com/MacPaw/XADMaster
+  Files:    XADCompactProParser.m, XADCompactProRLEHandle.m, XADCompactProLZHHandle.m
+            (branch master, fetched 2026-10-19)
+  Licence:  GNU Lesser General Public License, version 2.1 or (at your option) any later version
+
+  Copyright (c) 2017-present, MacPaw Way Ltd. All rights reserved.
+
+  This library is free software; you can redistribute it and/or modify it under the terms of the
+  GNU Lesser General Public License as published by the Free Software Foundation; either version
+  2.1 of the License, or (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+  without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the GNU Lesser General Public License for more details.
+
+This repository is LGPL-3.0-or-later; LGPL-2.1-or-later code is used here under version 3.
+
+The writer (CompactProWriter.cs and CompactProCodec.EncodeRle) is our own, written against that
+decoder. The combined resource-then-data-fork CRC that the reader verifies follows macutils'
+macunpack (cpt.c), which XADMaster does not check.

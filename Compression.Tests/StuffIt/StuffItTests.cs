@@ -19,11 +19,12 @@ public class StuffItTests {
     uint dataForkOriginalSize,
     byte[] resourceForkCompressed,
     uint resourceForkOriginalSize,
-    uint macModDate = 0) {
+    uint macModDate = 0,
+    byte[]? dataForkOriginal = null) {
 
     var nameBytes = Encoding.ASCII.GetBytes(fileName);
-    if (nameBytes.Length > 63)
-      Array.Resize(ref nameBytes, 63);
+    if (nameBytes.Length > 31)
+      Array.Resize(ref nameBytes, 31);
 
     // ── Entry header (112 bytes) ──────────────────────────────────────────────
     var entryHeader = new byte[112];
@@ -45,11 +46,11 @@ public class StuffItTests {
     BinaryPrimitives.WriteUInt32BigEndian(entryHeader.AsSpan(92, 4), (uint)resourceForkCompressed.Length);
     BinaryPrimitives.WriteUInt32BigEndian(entryHeader.AsSpan(96, 4), (uint)dataForkCompressed.Length);
 
-    // CRC-16 = 0 (no checksum stored — reader skips verification when 0)
-    // [100..102] resource fork CRC-16 = 0
-    // [102..104] data fork CRC-16 = 0
-    // [104..110] reserved
-    // [110..112] header CRC-16 = 0 (not verified by reader)
+    // Fork CRCs and the header CRC are CRC-16/ARC, as StuffIt and every reader use them.
+    var dataOriginal = dataForkOriginal ?? (dataMethod == 0 ? dataForkCompressed : []);
+    BinaryPrimitives.WriteUInt16BigEndian(entryHeader.AsSpan(100, 2), Compression.Core.Checksums.Crc16.Compute(resourceForkCompressed));
+    BinaryPrimitives.WriteUInt16BigEndian(entryHeader.AsSpan(102, 2), Compression.Core.Checksums.Crc16.Compute(dataOriginal));
+    BinaryPrimitives.WriteUInt16BigEndian(entryHeader.AsSpan(110, 2), Compression.Core.Checksums.Crc16.Compute(entryHeader.AsSpan(0, 110)));
 
     // ── Archive header (22 bytes) ─────────────────────────────────────────────
     var archiveHeader = new byte[22];
@@ -241,9 +242,11 @@ public class StuffItTests {
         ++runEnd;
       var runLength = runEnd - i;
       output.Add(value);
-      if (runLength >= 2) {
+      if (runLength >= 3) {
         output.Add(0x90);
-        output.Add((byte)(runLength - 1));
+        output.Add((byte)runLength); // RLE90: the run is n long including the byte before the marker
+      } else if (runLength == 2) {
+        output.Add(value);
       }
       i += runLength;
     }
@@ -258,7 +261,7 @@ public class StuffItTests {
     Array.Fill(original, (byte)'A');
     var compressed = RleEncode(original);
 
-    var archive = BuildSitArchive("rle.txt", 1, compressed, (uint)original.Length, [], 0);
+    var archive = BuildSitArchive("rle.txt", 1, compressed, (uint)original.Length, [], 0, dataForkOriginal: original);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -275,7 +278,7 @@ public class StuffItTests {
     byte[] original = [0x90, 0x41, 0x90];
     byte[] compressed = [0x90, 0x00, 0x41, 0x90, 0x00];
 
-    var archive = BuildSitArchive("esc.bin", 1, compressed, (uint)original.Length, [], 0);
+    var archive = BuildSitArchive("esc.bin", 1, compressed, (uint)original.Length, [], 0, dataForkOriginal: original);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -291,7 +294,7 @@ public class StuffItTests {
     byte[] original = [0x41, 0x41, 0x41, 0x42, 0x43, 0x43];
     var compressed = RleEncode(original);
 
-    var archive = BuildSitArchive("mixed.bin", 1, compressed, (uint)original.Length, [], 0);
+    var archive = BuildSitArchive("mixed.bin", 1, compressed, (uint)original.Length, [], 0, dataForkOriginal: original);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -406,8 +409,8 @@ public class StuffItTests {
   [Category("ErrorHandling")]
   [Test]
   public void Extract_UnsupportedMethod_Throws() {
-    // Method 2 = LZC — not supported.
-    var archive = BuildSitArchive("f.bin", 2, [0xAB, 0xCD], 100, [], 0);
+    // Method 8 = MW — not supported.
+    var archive = BuildSitArchive("f.bin", 8, [0xAB, 0xCD], 100, [], 0);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -443,7 +446,7 @@ public class StuffItTests {
 
   [Category("HappyPath")]
   [Test]
-  public void Entry_IsDirectory_AlwaysFalse() {
+  public void Entry_IsDirectory_FalseForAFile() {
     var archive = BuildStoredArchive("myfile.txt", [0x41]);
 
     using var ms = new MemoryStream(archive);
@@ -544,7 +547,7 @@ public class StuffItTests {
     uint macModDate) {
 
     var nameBytes = Encoding.ASCII.GetBytes(fileName);
-    if (nameBytes.Length > 63) Array.Resize(ref nameBytes, 63);
+    if (nameBytes.Length > 31) Array.Resize(ref nameBytes, 31);
 
     var hdr = new byte[112];
     hdr[0] = 0;                       // resource method = Store
@@ -560,6 +563,9 @@ public class StuffItTests {
     BinaryPrimitives.WriteUInt32BigEndian(hdr.AsSpan(88, 4), (uint)dataForkOrigSize);
     BinaryPrimitives.WriteUInt32BigEndian(hdr.AsSpan(92, 4), (uint)resourceFork.Length); // rsrc compressed
     BinaryPrimitives.WriteUInt32BigEndian(hdr.AsSpan(96, 4), (uint)dataFork.Length);     // data compressed
+    BinaryPrimitives.WriteUInt16BigEndian(hdr.AsSpan(100, 2), Compression.Core.Checksums.Crc16.Compute(resourceFork));
+    BinaryPrimitives.WriteUInt16BigEndian(hdr.AsSpan(102, 2), Compression.Core.Checksums.Crc16.Compute(dataFork));
+    BinaryPrimitives.WriteUInt16BigEndian(hdr.AsSpan(110, 2), Compression.Core.Checksums.Crc16.Compute(hdr.AsSpan(0, 110)));
 
     ms.Write(hdr);
     ms.Write(resourceFork);

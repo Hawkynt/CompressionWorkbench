@@ -1,0 +1,21 @@
+UltraCompressor II support in this folder is converted from klauspost/uc2, a Go implementation of
+the UltraCompressor II archive format derived from the UC2 source code that its author released.
+
+Upstream:  https://github.com/klauspost/uc2
+Revision:  53622f89ada1cf0d4a69f91b653bdd44ec5b0f92
+Files:     internal/ultra/{ultra,decode,turbo}.go, internal/format/{format,cdir}.go, reader.go,
+           docs/format.md (the format specification the conversion follows)
+Licence:   GNU Lesser General Public License v3.0 (LGPL-3.0); this repository is
+           LGPL-3.0-or-later.
+
+super.dat (embedded as FileFormat.Uc2.super.dat) is UltraCompressor II's built-in "supermaster"
+dictionary, 49,152 bytes, SHA-256 4f2e3fb48a288f66a76b0e26cb2830f3f0297f3686752853de65b82e646e840e,
+copied verbatim from internal/super/super.dat of the same revision. It is part of the
+UltraCompressor II release by Nico de Vries / Ad Infinitum Programs (AIP-NL), released under the
+GNU LGPL v3 in 2015.
+
+UltraCompressor II (c) 1994-1996 Ad Infinitum Programs (AIP-NL), Nico de Vries. Released under the
+GNU Lesser General Public License, version 3.
+
+The default code lengths, the delta-code matrices and the distance/length tables are the format's
+own constants; the encoder in Uc2Ultra (default trees, greedy hash-chain matcher) is original.
