@@ -19934,7 +19934,23 @@ Walks an LHA/LZH archive and emits the byte-level layout: each entry's variable-
 
 ### Namespace `FileFormat.Lzham`
 
-[`LzhamFormatDescriptor`](#lzhamformatdescriptor) · [`LzhamStream`](#lzhamstream)
+[`LzhamBuildingBlock`](#lzhambuildingblock) · [`LzhamFormatDescriptor`](#lzhamformatdescriptor) · [`LzhamStream`](#lzhamstream)
+
+#### `LzhamBuildingBlock`
+
+LZHAM (Rich Geldreich) as a building block. A raw LZHAM stream cannot be decoded without its parameters, so the block carries the ones LZHAM's own tool records: the `LZH0` header with the dictionary size (the smallest that covers the input) and the decompressed size, followed by the stream. The Huffman table update rate is LZHAM's default (8).
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LzhamBuildingBlock` | `LzhamBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
 #### `LzhamFormatDescriptor`
 
@@ -19956,22 +19972,22 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Encoder-only match-finder tunables. Neither value changes the bitstream grammar, so every candidate is decoded by the same decoder. The generic compression optimizer can therefore exhaustively try all 24 combinations and keep the smallest result for the actual input. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The dictionary size is the one LZHAM stream parameter the file records; "auto" picks the smallest that covers the input. The table update rate is not recorded by the file layout, so files are always written with LZHAM's default. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes using the strongest built-in match finder. Schema-aware callers use the generic optimizer to compare every candidate on the actual payload. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
-| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using format-specific optimizer tunables. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with the selected dictionary size. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `LzhamStream`
 
-LZHAM stream format: 4-byte magic "LZHM" followed by the raw LZHAM building block output (4-byte LE original size + compressed data).
+The LZHAM file layout of LZHAM's own command-line tool (`lzhamtest c`): the id `LZH0`, one byte with the log2 of the dictionary size, the decompressed size as 8 bytes little-endian, then one raw LZHAM stream.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
-| `Compress` | `static void Compress(Stream input, Stream output, int windowSize, int searchDepth)` | Encodes the supplied input using explicit match-finder limits. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses with the smallest dictionary that covers the input and the default table update rate. |
+| `Compress` | `static void Compress(Stream input, Stream output, int dictSizeLog2, int tableUpdateRate = 8)` | Compresses with the given dictionary size (log2, 15..29; 0 = smallest that covers the input). |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses, assuming LZHAM's default table update rate. |
+| `Decompress` | `static void Decompress(Stream input, Stream output, int tableUpdateRate)` | Decompresses with the table update rate the file was written with (`lzhamtest -h#`). |
 
 ### Namespace `FileFormat.Lzip`
 

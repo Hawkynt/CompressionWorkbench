@@ -1,53 +1,72 @@
 #pragma warning disable CS1591
-using Compression.Core.Dictionary.Lzham;
+using System.Buffers.Binary;
 
 namespace FileFormat.Lzham;
 
 /// <summary>
-/// LZHAM stream format: 4-byte magic "LZHM" followed by the raw LZHAM building block output
-/// (4-byte LE original size + compressed data).
+/// The LZHAM file layout of LZHAM's own command-line tool (<c>lzhamtest c</c>): the id
+/// <c>LZH0</c>, one byte with the log2 of the dictionary size, the decompressed size as 8 bytes
+/// little-endian, then one raw LZHAM stream.
 /// </summary>
+/// <remarks>
+/// The layout does not record LZHAM's Huffman table update rate, which the decoder must know; it is
+/// LZHAM's default (8) unless the caller says otherwise, as with <c>lzhamtest -h#</c>.
+/// </remarks>
 public static class LzhamStream {
+  private static readonly byte[] Magic = "LZH0"u8.ToArray();
+  internal const int HeaderSize = 13;
 
-  private static readonly byte[] Magic = [0x4C, 0x5A, 0x48, 0x4D]; // "LZHM"
+  /// <summary>Compresses with the smallest dictionary that covers the input and the default table update rate.</summary>
+  public static void Compress(Stream input, Stream output) => Compress(input, output, dictSizeLog2: 0);
 
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
-  public static void Compress(Stream input, Stream output)
-    => Compress(input, output, LzhamEncoder.DefaultWindowSize, LzhamEncoder.DefaultSearchDepth);
-
-  /// <summary>
-  /// Encodes the supplied input using explicit match-finder limits.
-  /// </summary>
-  public static void Compress(Stream input, Stream output, int windowSize, int searchDepth) {
-    using var ms = new MemoryStream();
-    input.CopyTo(ms);
-    var data = ms.ToArray();
-
-    output.Write(Magic);
-
-    var bb = new LzhamBuildingBlock();
-    var compressed = bb.Compress(data, windowSize, searchDepth);
-    output.Write(compressed);
+  /// <summary>Compresses with the given dictionary size (log2, 15..29; 0 = smallest that covers the input).</summary>
+  public static void Compress(Stream input, Stream output, int dictSizeLog2, int tableUpdateRate = LzhamTables.DefaultTableUpdateRate) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    using var buffer = new MemoryStream();
+    input.CopyTo(buffer);
+    output.Write(CompressFile(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), dictSizeLog2, tableUpdateRate));
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
-  public static void Decompress(Stream input, Stream output) {
-    Span<byte> magicBuf = stackalloc byte[4];
-    input.ReadExactly(magicBuf);
-    if (magicBuf[0] != Magic[0] || magicBuf[1] != Magic[1] ||
-        magicBuf[2] != Magic[2] || magicBuf[3] != Magic[3])
-      throw new InvalidDataException("Not an LZHAM stream (bad magic).");
+  /// <summary>Decompresses, assuming LZHAM's default table update rate.</summary>
+  public static void Decompress(Stream input, Stream output) => Decompress(input, output, LzhamTables.DefaultTableUpdateRate);
 
-    using var ms = new MemoryStream();
-    input.CopyTo(ms);
-    var payload = ms.ToArray();
+  /// <summary>Decompresses with the table update rate the file was written with (<c>lzhamtest -h#</c>).</summary>
+  public static void Decompress(Stream input, Stream output, int tableUpdateRate) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    using var buffer = new MemoryStream();
+    input.CopyTo(buffer);
+    output.Write(DecompressFile(buffer.ToArray(), tableUpdateRate));
+  }
 
-    var bb = new LzhamBuildingBlock();
-    var decompressed = bb.Decompress(payload);
-    output.Write(decompressed);
+  /// <summary>The smallest dictionary (log2, at least 15) that covers <paramref name="length"/> bytes.</summary>
+  internal static int FittingDictSizeLog2(int length) {
+    var log2 = LzhamTables.MinDictSizeLog2;
+    while (log2 < LzhamTables.MaxDictSizeLog2 && 1L << log2 < length)
+      ++log2;
+    return log2;
+  }
+
+  internal static byte[] CompressFile(ReadOnlySpan<byte> data, int dictSizeLog2, int tableUpdateRate) {
+    if (dictSizeLog2 == 0)
+      dictSizeLog2 = FittingDictSizeLog2(data.Length);
+    var stream = LzhamEncoder.Encode(data, dictSizeLog2, tableUpdateRate);
+    var file = new byte[HeaderSize + stream.Length];
+    Magic.CopyTo(file, 0);
+    file[4] = (byte)dictSizeLog2;
+    BinaryPrimitives.WriteUInt64LittleEndian(file.AsSpan(5), (ulong)data.Length);
+    stream.CopyTo(file, HeaderSize);
+    return file;
+  }
+
+  internal static byte[] DecompressFile(byte[] file, int tableUpdateRate) {
+    if (file.Length < HeaderSize || !file.AsSpan(0, 4).SequenceEqual(Magic))
+      throw new InvalidDataException("Not an LZHAM file (no LZH0 header).");
+    var dictSizeLog2 = file[4];
+    var size = BinaryPrimitives.ReadUInt64LittleEndian(file.AsSpan(5));
+    if (size > int.MaxValue - 64)
+      throw new NotSupportedException($"LZHAM: a {size}-byte payload is larger than this decoder handles in memory.");
+    return LzhamDecoder.Decode(file[HeaderSize..], (int)size, dictSizeLog2, tableUpdateRate);
   }
 }

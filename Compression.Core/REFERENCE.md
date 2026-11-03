@@ -1619,48 +1619,6 @@ Decodes PMarc `-pm2-`: LZSS over an 8 KiB window with literals coded against a m
 | --- | --- | --- |
 | `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decodes `originalSize` bytes of `-pm2-` data. |
 
-### Namespace `Compression.Core.Dictionary.Lzham`
-
-[`LzhamBuildingBlock`](#lzhambuildingblock) · [`LzhamDecoder`](#lzhamdecoder) · [`LzhamEncoder`](#lzhamencoder)
-
-#### `LzhamBuildingBlock`
-
-Exposes LZHAM (LZ + Huffman) as a benchmarkable building block. Inspired by Valve's open-source LZHAM codec used in Steam.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `LzhamBuildingBlock` | `LzhamBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data, int windowSize, int searchDepth)` | Compresses with explicit match-finder limits. The limits affect only how aggressively matches are searched; they are not stored in or required by the decoder. |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
-#### `LzhamDecoder`
-
-LZHAM decoder: reconstructs data from Huffman-coded LZ77 token stream.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `LzhamDecoder` | `LzhamDecoder()` |  |
-| `Decode` | `byte[] Decode(byte[] compressed, int originalSize)` | Decompresses LZHAM-encoded data. |
-
-#### `LzhamEncoder`
-
-LZHAM encoder: LZ77 with Huffman-coded literals, lengths, and distances. Inspired by Valve's LZHAM codec.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `LzhamEncoder` | `LzhamEncoder(int windowSize = 32768, int searchDepth = 64)` | Creates an encoder with the requested match-finder limits. These affect only compression decisions; the resulting stream remains self-contained and is decoded without knowing the selected values. |
-| `DefaultSearchDepth` | `const int DefaultSearchDepth` | Historical/default number of hash-chain candidates inspected per position. |
-| `DefaultWindowSize` | `const int DefaultWindowSize` | Historical/default match window used by the managed encoder. |
-| `MaxWindowSize` | `const int MaxWindowSize` | Largest distance representable by the encoder's 30 distance codes. |
-| `Encode` | `byte[] Encode(ReadOnlySpan<byte> data)` | Compresses data using LZ77 + Huffman. Returns the serialized bitstream including embedded frequency tables. |
-
 ### Namespace `Compression.Core.Dictionary.Lzjb`
 
 [`LzjbBuildingBlock`](#lzjbbuildingblock) · [`LzjbCompressor`](#lzjbcompressor) · [`LzjbDecompressor`](#lzjbdecompressor)
