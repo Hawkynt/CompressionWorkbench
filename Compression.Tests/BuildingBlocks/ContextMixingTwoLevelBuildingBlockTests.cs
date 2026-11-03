@@ -1,12 +1,12 @@
 using System.Text;
-using Compression.Core.Entropy.ContextMixing.Mcm;
+using Compression.Core.Entropy.ContextMixing.TwoLevel;
 
 namespace Compression.Tests.BuildingBlocks;
 
 [TestFixture]
-public class McmBuildingBlockTests {
+public class ContextMixingTwoLevelBuildingBlockTests {
 
-  private static readonly McmBuildingBlock Bb = new();
+  private static readonly ContextMixingTwoLevelBuildingBlock Bb = new();
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void Empty_RoundTrips() {
@@ -43,8 +43,8 @@ public class McmBuildingBlockTests {
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void EnglishText_RoundTripsAndCompresses() {
     var data = Encoding.ASCII.GetBytes(
-      "MCM mixes several specialised context maps through a network of mixers. " +
-      "MCM mixes several specialised context maps through a network of mixers.");
+      "Two levels of mixers combine several specialised context maps. " +
+      "Two levels of mixers combine several specialised context maps through a network of mixers.");
     var compressed = Bb.Compress(data);
     var round = Bb.Decompress(compressed);
     Assert.That(round, Is.EqualTo(data).AsCollection);
@@ -64,8 +64,8 @@ public class McmBuildingBlockTests {
   [Test, Category("EdgeCase")]
   public void Registry_Metadata_IsStable() {
     Assert.Multiple(() => {
-      Assert.That(Bb.Id, Is.EqualTo("BB_Mcm"));
-      Assert.That(Bb.DisplayName, Is.EqualTo("MCM (reduced)"));
+      Assert.That(Bb.Id, Is.EqualTo("BB_ContextMixingTwoLevel"));
+      Assert.That(Bb.DisplayName, Is.EqualTo("Two-level context-mixing network"));
       Assert.That(Bb.Family, Is.EqualTo(Compression.Registry.AlgorithmFamily.ContextMixing));
     });
   }

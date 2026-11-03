@@ -21300,60 +21300,6 @@ Clean-room writer for Minecraft Anvil region containers.
 | --- | --- | --- |
 | `Write` | `static void Write(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 
-### Namespace `FileFormat.Mcm`
-
-[`McmCompressionMode`](#mcmcompressionmode) · [`McmFormatDescriptor`](#mcmformatdescriptor) · [`McmStream`](#mcmstream)
-
-#### `McmCompressionMode`
-
-Compression modes available to the managed MCM stream writer.
-
-| Value | Numeric | Summary |
-| --- | --- | --- |
-| `Legacy` | `0` |  |
-| `Turbo` | `1` |  |
-| `Fast` | `2` |  |
-| `Mid` | `3` |  |
-| `High` | `4` |  |
-| `Max` | `5` |  |
-
-#### `McmFormatDescriptor`
-
-Describes mcm format.
-
-Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `McmFormatDescriptor` | `McmFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Searchable MCM modes. Legacy preserves the writer's historical payload; the remaining modes progressively enable more of the reduced clean-room context-mixing graph and therefore trade CPU/memory for coding density. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes with the highest-effort managed MCM profile. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
-| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with the selected profile. |
-| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
-
-#### `McmStream`
-
-Represents a mcm stream.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the historical managed payload. |
-| `Compress` | `static void Compress(Stream input, Stream output, McmCompressionMode mode)` | Encodes the supplied input using the selected managed MCM mode. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
-
 ### Namespace `FileFormat.Mdb`
 
 [`MdbFormatDescriptor`](#mdbformatdescriptor)

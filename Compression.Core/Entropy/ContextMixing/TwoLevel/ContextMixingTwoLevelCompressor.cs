@@ -1,38 +1,24 @@
 using System.Buffers.Binary;
 using Compression.Core.Entropy.Arithmetic;
 
-namespace Compression.Core.Entropy.ContextMixing.Mcm;
+namespace Compression.Core.Entropy.ContextMixing.TwoLevel;
 
 /// <summary>
-/// A clean-room implementation of the MCM architecture: several small
-/// context-mixers, each specialised on a group of related contexts, combined
-/// by a final mixing stage into one prediction — a two-level mixing network.
+/// A context-mixing coder of this repository's own design: several small mixers, each specialised on
+/// a group of related contexts, combined by a final mixing stage: a two-level mixing network.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Modelled after Mathieu Chartier's MCM (<see href="https://github.com/mathieuchartier/mcm"/>),
-/// discussed at <see href="https://encode.su/threads/2121-MCM-new-compressor-by-Mathieu-Chartier"/>),
-/// which mixes multiple specialised context maps through a network of mixers
-/// rather than one flat mixer over every model. See also
-/// <see href="https://en.wikipedia.org/wiki/Context_mixing"/> for the general
-/// technique.
-/// </para>
-/// <para>
-/// This is a reduced, from-specification reimplementation. The public
-/// <see cref="McmCompressionProfile"/> modes progressively enable more of the
-/// independently designed model graph: local contexts, medium contexts, wide
-/// and sparse contexts, then one or two SSE/APM refinement stages. The profile
-/// names follow MCM's documented command-line modes; no upstream implementation
-/// code is copied or translated.
-/// </para>
-/// <para>
-/// At the maximum profile the model graph is the historical managed MCM graph:
-/// local orders 0, 1 and 2; medium orders 3 and 4; a wide order-6 context plus
-/// a sparse skip-1 context; a second-level mixer; and two chained
+/// The <see cref="ContextMixingTwoLevelProfile"/> values enable progressively more of the model
+/// graph: local contexts, medium contexts, wide and sparse contexts, then one or two SSE/APM
+/// refinement stages. At the fullest profile the graph is: local orders 0, 1 and 2; medium orders 3
+/// and 4; a wide order-6 context plus a sparse skip-1 context; a second-level mixer; and two chained
 /// <see cref="Apm"/> refinement stages.
 /// </para>
+/// <para>Layout: 4-byte little-endian length, then the arithmetic-coded bits. No other program reads
+/// or writes it.</para>
 /// </remarks>
-public static class McmCompressor {
+public static class ContextMixingTwoLevelCompressor {
   private const int ProbabilityScaleBits = 16;
   private const int WeightShift = 16;
   private const int LearningRate = 3;
@@ -42,7 +28,7 @@ public static class McmCompressor {
   /// </summary>
   /// <param name="data">The data to compress.</param>
   /// <returns>The compressed data.</returns>
-  public static byte[] Compress(ReadOnlySpan<byte> data) => Compress(data, McmCompressionProfile.Max);
+  public static byte[] Compress(ReadOnlySpan<byte> data) => Compress(data, ContextMixingTwoLevelProfile.WideDoubleSse);
 
   /// <summary>
   /// Compresses data using the selected reduced MCM profile.
@@ -50,7 +36,7 @@ public static class McmCompressor {
   /// <param name="data">The data to compress.</param>
   /// <param name="profile">Amount of model structure to enable.</param>
   /// <returns>The compressed data.</returns>
-  public static byte[] Compress(ReadOnlySpan<byte> data, McmCompressionProfile profile) {
+  public static byte[] Compress(ReadOnlySpan<byte> data, ContextMixingTwoLevelProfile profile) {
     ValidateProfile(profile);
 
     using var output = new MemoryStream();
@@ -63,14 +49,14 @@ public static class McmCompressor {
       return output.ToArray();
 
     var encoder = new ArithmeticEncoder(output);
-    var state = new McmState(profile);
+    var state = new TwoLevelState(profile);
 
     foreach (int value in data) {
       var c0 = 1;
       for (var bit = 7; bit >= 0; --bit) {
         var bitVal = (value >> bit) & 1;
         var prob1 = state.Predict(c0);
-        encoder.EncodeBit(bitVal, (1 << McmCompressor.ProbabilityScaleBits) - prob1);
+        encoder.EncodeBit(bitVal, (1 << ContextMixingTwoLevelCompressor.ProbabilityScaleBits) - prob1);
         state.Update(bitVal);
         c0 = (c0 << 1) | bitVal;
       }
@@ -87,7 +73,7 @@ public static class McmCompressor {
   /// </summary>
   /// <param name="compressed">The compressed data.</param>
   /// <returns>The decompressed data.</returns>
-  public static byte[] Decompress(ReadOnlySpan<byte> compressed) => Decompress(compressed, McmCompressionProfile.Max);
+  public static byte[] Decompress(ReadOnlySpan<byte> compressed) => Decompress(compressed, ContextMixingTwoLevelProfile.WideDoubleSse);
 
   /// <summary>
   /// Decompresses data produced by the selected reduced MCM profile.
@@ -95,7 +81,7 @@ public static class McmCompressor {
   /// <param name="compressed">The compressed data.</param>
   /// <param name="profile">Profile that was used for compression.</param>
   /// <returns>The decompressed data.</returns>
-  public static byte[] Decompress(ReadOnlySpan<byte> compressed, McmCompressionProfile profile) {
+  public static byte[] Decompress(ReadOnlySpan<byte> compressed, ContextMixingTwoLevelProfile profile) {
     ValidateProfile(profile);
     if (compressed.Length < sizeof(int))
       throw new InvalidDataException("Truncated reduced MCM stream: missing size header.");
@@ -108,14 +94,14 @@ public static class McmCompressor {
 
     using var input = new MemoryStream(compressed[4..].ToArray());
     var decoder = new ArithmeticDecoder(input);
-    var state = new McmState(profile);
+    var state = new TwoLevelState(profile);
 
     var result = new byte[size];
     for (var i = 0; i < size; ++i) {
       var c0 = 1;
       for (var bit = 7; bit >= 0; --bit) {
         var prob1 = state.Predict(c0);
-        var bitVal = decoder.DecodeBit((1 << McmCompressor.ProbabilityScaleBits) - prob1);
+        var bitVal = decoder.DecodeBit((1 << ContextMixingTwoLevelCompressor.ProbabilityScaleBits) - prob1);
         state.Update(bitVal);
         c0 = (c0 << 1) | bitVal;
       }
@@ -128,7 +114,7 @@ public static class McmCompressor {
     return result;
   }
 
-  private static void ValidateProfile(McmCompressionProfile profile) {
+  private static void ValidateProfile(ContextMixingTwoLevelProfile profile) {
     if (!Enum.IsDefined(profile))
       throw new ArgumentOutOfRangeException(nameof(profile), profile, "Unknown MCM compression profile.");
   }
@@ -138,7 +124,7 @@ public static class McmCompressor {
   /// SSE/APM refinement stages so the caller can trade CPU/memory for coding
   /// density without changing the entropy-coder contract.
   /// </summary>
-  private sealed class McmState {
+  private sealed class TwoLevelState {
     private static readonly int[] _LocalOrders = [0, 1, 2];
     private static readonly int[] _MediumOrders = [3, 4];
 
@@ -159,30 +145,30 @@ public static class McmCompressor {
 
     private readonly int[] _history = new int[8];
 
-    public McmState(McmCompressionProfile profile) {
+    public TwoLevelState(ContextMixingTwoLevelProfile profile) {
       var local = new ContextModel[] { new(9), new(16), new(20) };
       this._localMixer = new ContextMixer(local);
 
       var rank = (int)profile;
-      if (rank >= (int)McmCompressionProfile.Fast) {
+      if (rank >= (int)ContextMixingTwoLevelProfile.Medium) {
         var medium = new ContextModel[] { new(21), new(22) };
         this._mediumMixer = new ContextMixer(medium);
       }
 
-      if (rank >= (int)McmCompressionProfile.Mid) {
+      if (rank >= (int)ContextMixingTwoLevelProfile.Wide) {
         var wide = new ContextModel[] { new(22), new(18) };
         this._wideMixer = new ContextMixer(wide);
       }
 
-      if (rank >= (int)McmCompressionProfile.High)
+      if (rank >= (int)ContextMixingTwoLevelProfile.WideSse)
         this._apm1 = new Apm(256);
-      if (rank >= (int)McmCompressionProfile.Max)
+      if (rank >= (int)ContextMixingTwoLevelProfile.WideDoubleSse)
         this._apm2 = new Apm(1 << 12);
 
       var groupCount = 1 + (this._mediumMixer is null ? 0 : 1) + (this._wideMixer is null ? 0 : 1);
       this._networkWeights = new int[groupCount];
       this._networkStretch = new int[groupCount];
-      this._networkWeights.AsSpan().Fill((1 << McmCompressor.WeightShift) / groupCount);
+      this._networkWeights.AsSpan().Fill((1 << ContextMixingTwoLevelCompressor.WeightShift) / groupCount);
     }
 
     public int Predict(int c0) {
@@ -190,21 +176,21 @@ public static class McmCompressor {
 
       var group = 0;
       this._networkStretch[group++] = Logistic.Stretch(
-        this._localMixer.Predict(this._localCtx) >> (McmCompressor.ProbabilityScaleBits - Logistic.ProbabilityBits));
+        this._localMixer.Predict(this._localCtx) >> (ContextMixingTwoLevelCompressor.ProbabilityScaleBits - Logistic.ProbabilityBits));
 
       if (this._mediumMixer is { } mediumMixer)
         this._networkStretch[group++] = Logistic.Stretch(
-          mediumMixer.Predict(this._mediumCtx) >> (McmCompressor.ProbabilityScaleBits - Logistic.ProbabilityBits));
+          mediumMixer.Predict(this._mediumCtx) >> (ContextMixingTwoLevelCompressor.ProbabilityScaleBits - Logistic.ProbabilityBits));
 
       if (this._wideMixer is { } wideMixer)
         this._networkStretch[group] = Logistic.Stretch(
-          wideMixer.Predict(this._wideCtx) >> (McmCompressor.ProbabilityScaleBits - Logistic.ProbabilityBits));
+          wideMixer.Predict(this._wideCtx) >> (ContextMixingTwoLevelCompressor.ProbabilityScaleBits - Logistic.ProbabilityBits));
 
       long dot = 0;
       for (var i = 0; i < this._networkWeights.Length; ++i)
         dot += (long)this._networkWeights[i] * this._networkStretch[i];
 
-      var logit = (int)(dot >> McmCompressor.WeightShift);
+      var logit = (int)(dot >> ContextMixingTwoLevelCompressor.WeightShift);
       var p12 = Logistic.Squash(logit);
       this._preApmProbability12 = p12;
 
@@ -221,8 +207,8 @@ public static class McmCompressor {
       }
 
       blended = Math.Clamp(blended, 1, Logistic.ProbabilityScale - 1);
-      var p16 = blended << (McmCompressor.ProbabilityScaleBits - Logistic.ProbabilityBits);
-      return Math.Clamp(p16, 1, (1 << McmCompressor.ProbabilityScaleBits) - 1);
+      var p16 = blended << (ContextMixingTwoLevelCompressor.ProbabilityScaleBits - Logistic.ProbabilityBits);
+      return Math.Clamp(p16, 1, (1 << ContextMixingTwoLevelCompressor.ProbabilityScaleBits) - 1);
     }
 
     public void Update(int bit) {
@@ -232,7 +218,7 @@ public static class McmCompressor {
 
       var error = (bit << Logistic.ProbabilityBits) - this._preApmProbability12;
       for (var i = 0; i < this._networkWeights.Length; ++i) {
-        var grad = McmCompressor.LearningRate * error * this._networkStretch[i];
+        var grad = ContextMixingTwoLevelCompressor.LearningRate * error * this._networkStretch[i];
         this._networkWeights[i] += grad >> Logistic.ProbabilityBits;
       }
 
@@ -247,18 +233,18 @@ public static class McmCompressor {
     }
 
     private void ComputeContexts(int c0) {
-      for (var i = 0; i < McmState._LocalOrders.Length; ++i)
-        this._localCtx[i] = this.HashOrder(McmState._LocalOrders[i], c0);
+      for (var i = 0; i < TwoLevelState._LocalOrders.Length; ++i)
+        this._localCtx[i] = this.HashOrder(TwoLevelState._LocalOrders[i], c0);
 
       if (this._mediumMixer is not null)
-        for (var i = 0; i < McmState._MediumOrders.Length; ++i)
-          this._mediumCtx[i] = this.HashOrder(McmState._MediumOrders[i], c0);
+        for (var i = 0; i < TwoLevelState._MediumOrders.Length; ++i)
+          this._mediumCtx[i] = this.HashOrder(TwoLevelState._MediumOrders[i], c0);
 
       if (this._wideMixer is not null) {
         this._wideCtx[0] = this.HashOrder(6, c0);
         var sparseSeed = 0xC2B2AE35u;
-        var h = McmState.Mix(sparseSeed, (uint)this._history[1]);
-        h = McmState.Mix(h, (uint)c0);
+        var h = TwoLevelState.Mix(sparseSeed, (uint)this._history[1]);
+        h = TwoLevelState.Mix(h, (uint)c0);
         this._wideCtx[1] = (int)(h & 0x7FFFFFFF);
       }
     }
@@ -266,9 +252,9 @@ public static class McmCompressor {
     private int HashOrder(int order, int c0) {
       var h = (uint)(order * 0x9E3779B1u);
       for (var k = 0; k < order; ++k)
-        h = McmState.Mix(h, (uint)this._history[k]);
+        h = TwoLevelState.Mix(h, (uint)this._history[k]);
 
-      h = McmState.Mix(h, (uint)c0);
+      h = TwoLevelState.Mix(h, (uint)c0);
       return (int)(h & 0x7FFFFFFF);
     }
 

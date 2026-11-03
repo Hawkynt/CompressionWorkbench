@@ -4723,49 +4723,6 @@ A clean-room implementation of the Context Tree Weighting (CTW) method: a bounde
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data by driving a binary arithmetic coder with per-bit probabilities from a Context Tree Weighting model. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses data previously produced by `Compress`. |
 
-### Namespace `Compression.Core.Entropy.ContextMixing.Mcm`
-
-[`McmBuildingBlock`](#mcmbuildingblock) · [`McmCompressionProfile`](#mcmcompressionprofile) · [`McmCompressor`](#mcmcompressor)
-
-#### `McmBuildingBlock`
-
-Exposes the MCM-style two-level context-mixing network as a benchmarkable building block.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `McmBuildingBlock` | `McmBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
-#### `McmCompressionProfile`
-
-Selects the amount of model structure used by the reduced clean-room MCM implementation. The names mirror MCM's public command-line compression modes, but the managed implementation is independent rather than a port of the GPL implementation.
-
-| Value | Numeric | Summary |
-| --- | --- | --- |
-| `Turbo` | `1` | Local byte contexts only; lowest memory and CPU cost. |
-| `Fast` | `2` | Adds the medium-order context group. |
-| `Mid` | `3` | Adds the wide and sparse context group. |
-| `High` | `4` | Adds one secondary-symbol-estimation refinement stage. |
-| `Max` | `5` | Uses the full reduced model with both refinement stages. |
-
-#### `McmCompressor`
-
-A clean-room implementation of the MCM architecture: several small context-mixers, each specialised on a group of related contexts, combined by a final mixing stage into one prediction — a two-level mixing network.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the full reduced two-level context-mixing network. |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, McmCompressionProfile profile)` | Compresses data using the selected reduced MCM profile. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses data produced by the full reduced MCM profile. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed, McmCompressionProfile profile)` | Decompresses data produced by the selected reduced MCM profile. |
-
 ### Namespace `Compression.Core.Entropy.ContextMixing.SelectedWeights`
 
 [`ContextMixingSelectedWeightsBuildingBlock`](#contextmixingselectedweightsbuildingblock) · [`ContextMixingSelectedWeightsCompressor`](#contextmixingselectedweightscompressor)
@@ -4794,6 +4751,49 @@ A context-mixing coder of this repository's own design: hashed byte-history cont
 | --- | --- | --- |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the context-selected-weight model. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses data written by `Compress`. |
+
+### Namespace `Compression.Core.Entropy.ContextMixing.TwoLevel`
+
+[`ContextMixingTwoLevelBuildingBlock`](#contextmixingtwolevelbuildingblock) · [`ContextMixingTwoLevelCompressor`](#contextmixingtwolevelcompressor) · [`ContextMixingTwoLevelProfile`](#contextmixingtwolevelprofile)
+
+#### `ContextMixingTwoLevelBuildingBlock`
+
+Exposes `ContextMixingTwoLevelCompressor` (three grouped mixers combined by a top-level mixer, two SSE stages) as a benchmarkable building block.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ContextMixingTwoLevelBuildingBlock` | `ContextMixingTwoLevelBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `ContextMixingTwoLevelCompressor`
+
+A context-mixing coder of this repository's own design: several small mixers, each specialised on a group of related contexts, combined by a final mixing stage: a two-level mixing network.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the full reduced two-level context-mixing network. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, ContextMixingTwoLevelProfile profile)` | Compresses data using the selected reduced MCM profile. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses data produced by the full reduced MCM profile. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed, ContextMixingTwoLevelProfile profile)` | Decompresses data produced by the selected reduced MCM profile. |
+
+#### `ContextMixingTwoLevelProfile`
+
+How much of the model graph of `ContextMixingTwoLevelCompressor` is enabled. Each step adds to the one before it.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Local` | `1` | Local byte contexts only (orders 0-2); lowest memory and CPU cost. |
+| `Medium` | `2` | Adds the medium-order context group (orders 3-4). |
+| `Wide` | `3` | Adds the wide and sparse context group (order 6, skip-1). |
+| `WideSse` | `4` | Adds one secondary-symbol-estimation refinement stage. |
+| `WideDoubleSse` | `5` | The full model with both refinement stages. |
 
 ### Namespace `Compression.Core.Entropy.ContextMixing.WordMatch`
 
