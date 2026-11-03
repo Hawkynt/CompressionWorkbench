@@ -2156,59 +2156,6 @@ Encodes LZ77 tokens to a stream using LZSS flag-bit format. Each group of 8 toke
 | `MaxLength` | `int MaxLength { get; }` | Gets the maximum match length supported by the current configuration. |
 | `Encode` | `void Encode(ReadOnlySpan<byte> data, IMatchFinder matchFinder)` | Encodes input data to the output stream. |
 
-### Namespace `Compression.Core.Dictionary.Lzturbo`
-
-[`LzturboBuildingBlock`](#lzturbobuildingblock) · [`LzturboCompressor`](#lzturbocompressor) · [`LzturboConstants`](#lzturboconstants) · [`LzturboDecompressor`](#lzturbodecompressor)
-
-#### `LzturboBuildingBlock`
-
-Exposes an LZTURBO-inspired codec as a benchmarkable building block.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `LzturboBuildingBlock` | `LzturboBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
-#### `LzturboCompressor`
-
-Compresses data using the LZTURBO-inspired block format (see `LzturboConstants`).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> source)` | Compresses the input data. |
-
-#### `LzturboConstants`
-
-Constants for the LZTURBO-inspired block format.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `DistanceBytes` | `const int DistanceBytes` | Width, in bytes, of the little-endian window offset following a match token. |
-| `HeaderSize` | `const int HeaderSize` | Size, in bytes, of the block header (magic + method + original length + body length). |
-| `LiteralExtended` | `const int LiteralExtended` | Literal-length nibble value meaning "read extended continuation bytes". |
-| `Magic` | `static readonly byte[] Magic` | 4-byte block magic identifying this format. |
-| `MatchExtended` | `const int MatchExtended` | Match-length nibble value meaning "read extended continuation bytes". |
-| `MatchNone` | `const int MatchNone` | Match-length nibble value meaning "no match follows" (trailing literal-only token). |
-| `MaxDirectLiteral` | `const int MaxDirectLiteral` | Maximum literal-length value directly encodable in the token nibble. |
-| `MaxDirectMatch` | `const int MaxDirectMatch` | Maximum match-length field value (relative to `MinMatch`) directly encodable in the token nibble. |
-| `Method` | `const byte Method` | Method byte for the only implemented variant: fast-LZ front end, no entropy back end. |
-| `MinMatch` | `const int MinMatch` | Minimum length of a dictionary match worth encoding. |
-
-#### `LzturboDecompressor`
-
-Decompresses data produced by `LzturboCompressor`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses an LZTURBO-inspired block. |
-
 ### Namespace `Compression.Core.Dictionary.Lzvn`
 
 [`LzvnBuildingBlock`](#lzvnbuildingblock)
