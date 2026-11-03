@@ -140,6 +140,7 @@ format,D81,D81,Archive,Y,.d81,Y,Y,Y,Y
 format,Daa,DAA (PowerISO),Archive,,.daa,Y,Y,Y,Y
 format,Dar,Disk ARchive (DAR),Archive,,.dar,Y,Y,Y,
 format,Dbm,DBM (DigiBooster Pro),Audio,,.dbm,Y,Y,,
+format,Dbx,Outlook Express DBX,Archive,,.dbx,Y,Y,,
 format,Dcx,DCX (multi-image PCX),Archive,,.dcx,Y,Y,,
 format,Deb,DEB,Archive,,.deb,Y,Y,Y,Y
 format,Density,Density,Stream,,.density,,Y,Y,

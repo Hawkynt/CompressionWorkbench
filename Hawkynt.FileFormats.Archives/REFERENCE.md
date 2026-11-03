@@ -13603,6 +13603,83 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.Dbx`
+
+[`DbxFolder`](#dbxfolder) · [`DbxFormatDescriptor`](#dbxformatdescriptor) · [`DbxKind`](#dbxkind) · [`DbxMessage`](#dbxmessage) · [`DbxReader`](#dbxreader)
+
+#### `DbxFolder`
+
+One folder of Folders.dbx.
+
+Implements `IEquatable<DbxFolder>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DbxFolder` | `DbxFolder(uint Id, uint ParentId, string Name, string FileName)` | One folder of Folders.dbx. |
+| `FileName` | `string FileName { get; init; }` |  |
+| `Id` | `uint Id { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `ParentId` | `uint ParentId { get; init; }` |  |
+
+#### `DbxFormatDescriptor`
+
+Outlook Express 5/6 mailbox (`.dbx`), read-only. A mail or news folder lists its messages as `message_NNNN.eml` (the stored RFC 822 text, exactly as undbx saves it); `Folders.dbx` lists its folder tree as `folders.ini`. References: Arne Schloh, "Outlook Express DBX file format" — the reverse-engineered layout`https://github.com/jamesjohnmcguire/DbxOutlookExpress` — DbxOutlookExpress (MIT), whose reader this follows`https://sourceforge.net/projects/undbx/` — undbx, the extraction oracle
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DbxFormatDescriptor` | `DbxFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `DbxKind`
+
+What an Outlook Express DBX file holds, named by byte 4 of its signature.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Messages` | `197` | A mail or news folder: messages. |
+| `Folders` | `198` | Folders.dbx: the folder tree. |
+| `Pop3Uidl` | `199` | Pop3uidl.dbx. |
+| `Offline` | `48` | Offline.dbx. |
+
+#### `DbxMessage`
+
+One message of a DBX mail folder: its subject and its raw RFC 822 text.
+
+Implements `IEquatable<DbxMessage>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DbxMessage` | `DbxMessage(int Index, string Subject, byte[] Data)` | One message of a DBX mail folder: its subject and its raw RFC 822 text. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Index` | `int Index { get; init; }` |  |
+| `Subject` | `string Subject { get; init; }` |  |
+
+#### `DbxReader`
+
+Reads Outlook Express 5/6 DBX files: a 0x24BC-byte header, a B-tree of index nodes whose values point at "indexed items" (records of numbered attributes), and for mail folders the message texts as chains of data blocks.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DbxReader` | `DbxReader(byte[] file)` |  |
+| `Kind` | `DbxKind Kind { get; }` | What the file holds. |
+| `ReadFolders` | `IReadOnlyList<DbxFolder> ReadFolders()` | The folder tree of Folders.dbx, in index-tree order. |
+| `ReadMessages` | `IReadOnlyList<DbxMessage> ReadMessages()` | The messages of a mail folder, in index-tree order. |
+
 ### Namespace `FileFormat.Deb`
 
 [`DebCompression`](#debcompression) · [`DebConstants`](#debconstants) · [`DebEntry`](#debentry) · [`DebFormatDescriptor`](#debformatdescriptor) · [`DebReader`](#debreader) · [`DebWriter`](#debwriter)
