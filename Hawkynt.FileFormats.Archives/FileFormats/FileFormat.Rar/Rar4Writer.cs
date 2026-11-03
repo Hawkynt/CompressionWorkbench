@@ -70,7 +70,7 @@ public sealed class Rar4Writer : IDisposable {
     this._out = stream;
     this._leaveOpen = leaveOpen;
     this._targetCompatibility = targetCompatibility;
-    if (targetCompatibility is not (RarCompatibility.Rar4 or RarCompatibility.Rar1_5))
+    if (targetCompatibility is not (RarCompatibility.Rar4 or RarCompatibility.Rar1_5 or RarCompatibility.Rar2_0))
       throw new ArgumentOutOfRangeException(nameof(targetCompatibility), targetCompatibility,
         "Rar4Writer can emit only the shared RAR 1.5-4.x container family.");
     if (volumeSize > 0) {
@@ -80,13 +80,14 @@ public sealed class Rar4Writer : IDisposable {
       this._newVolumeNaming = newVolumeNaming;
     }
 
-    if (targetCompatibility == RarCompatibility.Rar1_5) {
+    if (this.IsLegacyTarget) {
+      var label = targetCompatibility == RarCompatibility.Rar1_5 ? "RAR 1.5" : "RAR 2.0";
       if (method != RarConstants.Rar4MethodStore)
-        throw new NotSupportedException("RAR 1.5 target currently supports stored members only; Unpack15 compression is not implemented yet.");
+        throw new NotSupportedException($"{label} target supports stored members only; its compression generation is not implemented.");
       if (solid)
-        throw new NotSupportedException("RAR 1.5 target does not use the later solid-archive semantics.");
+        throw new NotSupportedException($"{label} target writes stored, non-solid members only.");
       if (password != null)
-        throw new NotSupportedException("RAR 1.5 target cannot use RAR3/4 AES encryption.");
+        throw new NotSupportedException($"{label} target cannot use RAR3/4 AES encryption.");
       this._method = RarConstants.Rar4MethodStore;
       this._windowBits = 16;
       return;
@@ -151,8 +152,8 @@ public sealed class Rar4Writer : IDisposable {
 
     // AES-encrypted members must declare 2.9: readers pick the cipher by unpack version, and
     // version 20 means the RAR 2.0 cipher.
-    var unpackVer = this._targetCompatibility == RarCompatibility.Rar1_5
-      ? (byte)15
+    var unpackVer = this._targetCompatibility == RarCompatibility.Rar1_5 ? (byte)15
+      : this._targetCompatibility == RarCompatibility.Rar2_0 ? (byte)20
       : method == RarConstants.Rar4MethodStore && salt == null ? (byte)20 : (byte)29;
 
     var rec = new FileRecord(name, unicode, IsDirectory: false, length, crc.Value, method, unpackVer, solidFlag, salt, attributes, times);
@@ -200,17 +201,20 @@ public sealed class Rar4Writer : IDisposable {
 
   // ---------------------------------------------------------------- internals
 
+  /// <summary>Targets older than RAR 2.9: stored members, OEM names, no extended time.</summary>
+  private bool IsLegacyTarget => this._targetCompatibility is RarCompatibility.Rar1_5 or RarCompatibility.Rar2_0;
+
   private sealed record FileRecord(byte[] Name, bool Unicode, bool IsDirectory, long Size, uint Crc, byte Method, byte UnpackVer,
     bool Solid, byte[]? Salt, uint Attributes, RarWriter.ArchiveTimes Times);
 
   private byte[] EncodeName(string fileName, out bool unicode) {
     var name = fileName.Replace('/', '\\').TrimStart('\\');
     unicode = false;
-    if (this._targetCompatibility == RarCompatibility.Rar1_5) {
+    if (this.IsLegacyTarget) {
       try {
         return Oem.GetBytes(name);
       } catch (EncoderFallbackException e) {
-        throw new NotSupportedException($"Filename '{fileName}' cannot be represented by the RAR 1.5 OEM code page.", e);
+        throw new NotSupportedException($"Filename '{fileName}' cannot be represented by the OEM code page old RAR versions use.", e);
       }
     }
     if (name.All(c => c is >= ' ' and < (char)0x7F))
@@ -305,7 +309,7 @@ public sealed class Rar4Writer : IDisposable {
     if (f.Salt != null) flags |= 0x0004 | 0x0400;
     if (f.Solid) flags |= 0x0010;
     if (f.IsDirectory) flags |= 0x00E0;
-    else if (this._targetCompatibility != RarCompatibility.Rar1_5) flags |= (ushort)(((this._windowBits - 16) & 7) << 5);
+    else if (!this.IsLegacyTarget) flags |= (ushort)(((this._windowBits - 16) & 7) << 5);
     if (large) flags |= 0x0100;
     if (f.Unicode) flags |= 0x0200;
     if (hasExt) flags |= 0x1000;
@@ -315,7 +319,7 @@ public sealed class Rar4Writer : IDisposable {
     var p = h.AsSpan(7);
     BinaryPrimitives.WriteUInt32LittleEndian(p, (uint)partSize);
     BinaryPrimitives.WriteUInt32LittleEndian(p[4..], (uint)f.Size);
-    p[8] = (byte)(this._targetCompatibility == RarCompatibility.Rar1_5 ? 0 : 2); // host OS: MS-DOS / Win32
+    p[8] = (byte)(this.IsLegacyTarget ? 0 : 2); // host OS: MS-DOS / Win32
     BinaryPrimitives.WriteUInt32LittleEndian(p[9..], crc);
     BinaryPrimitives.WriteUInt32LittleEndian(p[13..], DosTime(f.Times.Modified ?? DateTimeOffset.Now));
     p[17] = f.UnpackVer;
@@ -344,7 +348,8 @@ public sealed class Rar4Writer : IDisposable {
   /// </summary>
   private byte[] TimeField(RarWriter.ArchiveTimes t, out bool present) {
     present = false;
-    if (this._targetCompatibility == RarCompatibility.Rar1_5 || t.Modified is null && t.Created is null && t.Accessed is null)
+    // RAR 2.x knows no extended time and reports a header carrying one as broken.
+    if (this.IsLegacyTarget || t.Modified is null && t.Created is null && t.Accessed is null)
       return [];
     present = true;
     var body = new List<byte>();

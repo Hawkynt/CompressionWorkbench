@@ -91,9 +91,13 @@ public class RarDosInteropTests {
 
   public static IEnumerable<TestCaseData> OursForOldRar() {
     var r15 = new Dictionary<string, string> { [FormatOptionKeys.TargetCompatibility] = "Rar1_5" };
+    var r20 = new Dictionary<string, string> { [FormatOptionKeys.TargetCompatibility] = "Rar2_0" };
     var r4 = new Dictionary<string, string> { [FormatOptionKeys.TargetCompatibility] = "Rar4" };
     foreach (var v in new[] { "155", "200", "250", "393" })
       yield return new TestCaseData(v, "OURS15.RAR", r15, null, 1L).SetName($"Rar{v}_Tests_OurRar15Target");
+    foreach (var v in new[] { "200", "250", "393" })
+      yield return new TestCaseData(v, "OURS20.RAR", r20, null, 1L).SetName($"Rar{v}_Tests_OurRar20Target");
+    yield return new TestCaseData("250", "OURS20V.RAR", new Dictionary<string, string>(r20) { [FormatOptionKeys.VolumeSize] = "8k" }, null, 1L).SetName("Rar250_Tests_OurRar20Target_Volumes");
     yield return new TestCaseData("393", "OURS29.RAR", r4, null, 1L).SetName("Rar393_Tests_OurRar4");
     yield return new TestCaseData("393", "OURS29S.RAR", r4, null, 0L).SetName("Rar393_Tests_OurRar4_Solid");
     yield return new TestCaseData("393", "OURS29P.RAR", r4, "secret", 1L).SetName("Rar393_Tests_OurRar4_Password");
@@ -107,7 +111,10 @@ public class RarDosInteropTests {
     var drive = RarTools.TempDir("dosours");
     try {
       var files = Inputs();
-      var inputs = files.Select(kv => ArchiveInputInfo.InMemory(kv.Key, kv.Value)).ToList();
+      // Real timestamps: a writer that emits the RAR 2.9 extended-time field for them makes
+      // RAR 2.x report the file header as broken.
+      var when = new DateTimeOffset(2024, 5, 6, 7, 8, 9, TimeSpan.Zero).AddTicks(1234567);
+      var inputs = files.Select(kv => ArchiveInputInfo.InMemory(kv.Key, kv.Value, new ArchiveEntryMetadata(when, when, when))).ToList();
       using (var fs = File.Create(Path.Combine(drive, name)))
         new RarFormatDescriptor().Create(fs, inputs, new FormatCreateOptions {
           Password = password, SolidSize = solidSize, FormatSpecific = new Dictionary<string, string>(fmt, StringComparer.OrdinalIgnoreCase),

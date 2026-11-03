@@ -73,8 +73,8 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       DisplayName: "Target compatibility",
       Kind: FormatOptionKind.Enum,
       Default: nameof(RarCompatibility.Rar5),
-      AllowedValues: [nameof(RarCompatibility.Rar5), nameof(RarCompatibility.Rar4), nameof(RarCompatibility.Rar1_5)],
-      Description: "Select the oldest RAR generation that must read the archive. Rar1_5 currently writes stored, non-solid, unencrypted members; RAR 1.3 and older use a different RE~^ format and are not claimed here.",
+      AllowedValues: [nameof(RarCompatibility.Rar5), nameof(RarCompatibility.Rar4), nameof(RarCompatibility.Rar2_0), nameof(RarCompatibility.Rar1_5)],
+      Description: "Select the oldest RAR generation that must read the archive. Rar2_0 and Rar1_5 write stored, non-solid, unencrypted members without the RAR 2.9 extended-time field; RAR 1.3 and older use a different RE~^ format and are not claimed here.",
       IsOptimizationAxis: false),
     new FormatOptionDescriptor(
       Key: FormatOptionKeys.VolumeSize,
@@ -212,7 +212,8 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   private void CreateCore(Stream output, IReadOnlyList<StreamingArchiveInput> inputs, FormatCreateOptions options) {
     var target = ResolveCompatibility(options);
-    var useStore = target == RarCompatibility.Rar1_5 || options.MethodName is "store" or "copy";
+    var legacy = target is RarCompatibility.Rar1_5 or RarCompatibility.Rar2_0;
+    var useStore = legacy || options.MethodName is "store" or "copy";
     var rarLevel = useStore ? 0 : options.Level switch {
       0 => 0, 1 => 1, 2 => 2, 3 or 4 => 3, 5 or 6 => 4, >= 7 => 5, _ => 3,
     };
@@ -226,8 +227,8 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       openVolume = n => File.Create(names(n));
     }
     var solid = options.SolidSize == 0 && !useStore;
-    if (target == RarCompatibility.Rar1_5 && (!string.IsNullOrEmpty(options.Password) || options.EncryptFilenames || !string.IsNullOrEmpty(options.EncryptionMethod)))
-      throw new NotSupportedException("RAR 1.5 compatibility currently supports unencrypted archives only.");
+    if (legacy && (!string.IsNullOrEmpty(options.Password) || options.EncryptFilenames || !string.IsNullOrEmpty(options.EncryptionMethod)))
+      throw new NotSupportedException("RAR 1.5 and 2.0 compatibility support unencrypted archives only.");
     if (target != RarCompatibility.Rar5 && options.EncryptFilenames && !string.IsNullOrEmpty(options.Password))
       throw new NotSupportedException("Encrypted file names (rar -hp) are written for RAR 5 archives only.");
 
@@ -236,11 +237,12 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     switch (target) {
       case RarCompatibility.Rar1_5:
+      case RarCompatibility.Rar2_0:
       case RarCompatibility.Rar4: {
         var windowBits = options.DictSize > 0 ? Math.Clamp((int)Math.Log2(options.DictSize), 16, 22) : 22;
         using var w4 = new Rar4Writer(output, leaveOpen: true,
-          method: target == RarCompatibility.Rar1_5 ? RarConstants.Rar4MethodStore : (byte)(0x30 + rarLevel),
-          windowBits: target == RarCompatibility.Rar1_5 ? 16 : windowBits,
+          method: legacy ? RarConstants.Rar4MethodStore : (byte)(0x30 + rarLevel),
+          windowBits: legacy ? 16 : windowBits,
           solid: target == RarCompatibility.Rar4 && solid,
           password: target == RarCompatibility.Rar4 ? options.Password : null,
           targetCompatibility: target, volumeSize: volumeSize, openVolume: openVolume, newVolumeNaming: newNaming);
@@ -279,6 +281,7 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     return options.MethodName?.ToLowerInvariant() switch {
       "rar15" or "rar1.5" or "rar1_5" => RarCompatibility.Rar1_5,
+      "rar20" or "rar2.0" or "rar2_0" => RarCompatibility.Rar2_0,
       "rar4" => RarCompatibility.Rar4,
       _ => RarCompatibility.Rar5,
     };

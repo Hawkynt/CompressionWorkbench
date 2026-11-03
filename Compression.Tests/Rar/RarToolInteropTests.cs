@@ -112,12 +112,19 @@ public class RarToolInteropTests {
   }
 
   [Test]
-  public void Given_ARar15TargetArchive_When_UnrarExtractsIt_Then_ItIsByteExact() {
+  public void Given_ARar15TargetArchive_When_UnrarExtractsIt_Then_ItIsByteExact()
+    => this.Given_AnOldTargetArchive_When_UnrarExtractsIt_Then_ItIsByteExact("Rar1_5");
+
+  [Test]
+  public void Given_ARar20TargetArchive_When_UnrarExtractsIt_Then_ItIsByteExact()
+    => this.Given_AnOldTargetArchive_When_UnrarExtractsIt_Then_ItIsByteExact("Rar2_0");
+
+  private void Given_AnOldTargetArchive_When_UnrarExtractsIt_Then_ItIsByteExact(string target) {
     if (!Tools().Any()) Assert.Ignore("No rar, unrar or 7z found.");
     var dir = RarTools.TempDir("rar15");
     try {
       var files = Inputs().Where(kv => kv.Key.All(c => c < 0x80)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
-      var archive = WriteOurs(dir, "r15.rar", files, new() { [FormatOptionKeys.TargetCompatibility] = "Rar1_5" });
+      var archive = WriteOurs(dir, "old.rar", files, new() { [FormatOptionKeys.TargetCompatibility] = target });
       foreach (var tool in Tools()) AssertExtractsIn(tool, archive, null, files);
     } finally {
       RarTools.TryDelete(dir);
