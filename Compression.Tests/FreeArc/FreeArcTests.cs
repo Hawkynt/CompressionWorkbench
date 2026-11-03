@@ -83,8 +83,16 @@ public class FreeArcTests {
 
   // ── Real archives: methods we refuse ───────────────────────────────────────
 
+  [Test]
+  public void RealArchive_Tornado_ExtractsByteIdentical() {
+    using var r = Open(Vector("tornado"));
+
+    Assert.That(r.Entries[0].Method, Is.EqualTo("rep:3kb:256+4x4:tor:3:3kb:h16kb"));
+    Assert.That(r.Extract(Entry(r, "hello.txt")), Is.EqualTo(Hello));
+    Assert.That(r.Extract(Entry(r, "sub/lines.txt")), Is.EqualTo(Lines()));
+  }
+
   [TestCase("ppmd", "ppmd:10:48mb")]
-  [TestCase("tornado", "rep:3kb:256+4x4:tor:3:3kb:h16kb")]
   public void RealArchive_UnsupportedMethod_ListsButRefusesExtraction(string vector, string method) {
     using var r = Open(Vector(vector));
 
@@ -220,7 +228,7 @@ public class FreeArcTests {
   [TestCase("delta+lzma:32kb", true)]
   [TestCase("rep:96mb+exe+delta+lzma:96mb:normal:bt4:128", true)]
   [TestCase("rep:96mb+lzp:96mb+ppmd:12:192mb", false)]
-  [TestCase("4x4:tor:3", false)]
+  [TestCase("4x4:tor:3", true)]
   [TestCase("exe+delta+4x4:lzma:299kb:normal:32:mc32", true)]
   [TestCase("lzma+aes-256/ctr:n1000", false)]
   public void Methods_IsSupported(string method, bool supported) =>

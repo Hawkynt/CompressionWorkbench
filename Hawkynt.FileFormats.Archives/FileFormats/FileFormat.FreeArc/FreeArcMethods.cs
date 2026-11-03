@@ -10,9 +10,10 @@ namespace FileFormat.FreeArc;
 /// <remarks>
 /// Only the stages our own codecs reproduce exactly are decoded: <c>storing</c>, <c>lzma</c>
 /// (a raw LZMA1 stream with no properties header; dictionary and lc/lp/pb come from the method
-/// string) and the preprocessors <c>rep</c>, <c>delta</c> and <c>exe</c> (see
-/// <see cref="FreeArcFilters"/>). Everything else — tornado, 4x4, lzp, ppmd, grzip, dict, mm,
-/// external compressors and encryption — is refused with <see cref="NotSupportedException"/>.
+/// string), <c>tor</c> (see <see cref="FreeArcTornado"/>), the wrapper <c>4x4</c> and the
+/// preprocessors <c>rep</c>, <c>delta</c> and <c>exe</c> (see <see cref="FreeArcFilters"/>).
+/// Everything else — lzp, ppmd, grzip, dict, mm, external compressors and encryption — is
+/// refused with <see cref="NotSupportedException"/>.
 /// </remarks>
 public static partial class FreeArcMethods {
   /// <summary>The method name of an uncompressed stage.</summary>
@@ -28,7 +29,7 @@ public static partial class FreeArcMethods {
     Stages(compressor).All(IsDecodable);
 
   private static bool IsDecodable(string stage) => StageName(stage) switch {
-    Storing or "lzma" or "rep" or "delta" or "exe" => true,
+    Storing or "lzma" or "rep" or "delta" or "exe" or "tor" => true,
     "4x4" => FourByFourInner(stage) is { } inner && StageName(inner) != "4x4" && IsDecodable(inner),
     _ => false,
   };
@@ -129,6 +130,8 @@ public static partial class FreeArcMethods {
         return FreeArcFilters.DecodeDelta(input);
       case "exe":
         return FreeArcFilters.DecodeExe(input);
+      case "tor":
+        return FreeArcTornado.Decode(input, outputSize);
       case "4x4":
         return FreeArcFilters.DecodeFourByFour(input, FourByFourInner(stage)!, DecodeStage);
     }

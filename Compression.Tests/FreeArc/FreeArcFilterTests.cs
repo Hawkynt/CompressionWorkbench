@@ -30,12 +30,20 @@ public sealed class FreeArcFilterTests {
   [TestCase("filters-mx", "rep:153kb+exe+delta+lzma:153kb:normal:bt4:128")]
   [TestCase("filters-4x4", "4x4:b64kb:lzma:153kb:normal:32")]
   [TestCase("filters-m5x", "exe+delta+4x4:lzma:153kb:normal:32:mc32")]
+  [TestCase("tor-1", "tor:1:153kb")]
+  [TestCase("tor-2", "tor:2:153kb")]
+  [TestCase("tor-3", "tor:3:153kb")]
+  [TestCase("tor-5", "tor:153kb:h1mb")]
+  [TestCase("tor-12", "tor:12:153kb:h1mb")]
+  [TestCase("filters-m1", "rep:153kb:256+4x4:tor:3:153kb")]
+  [TestCase("filters-m2", "*")]
   public void GivenFreeArcArchive_WhenExtracted_ThenEveryFileMatchesArc(string vector, string method) {
     var expected = Manifest.Value.Where(r => r.Archive == vector + ".arc").ToArray();
     Assert.That(expected, Has.Length.EqualTo(5));
     using var reader = new FreeArcReader(new MemoryStream(FreeArcTests.Vector(vector)));
 
-    Assert.That(reader.Entries.Select(e => e.Method).Distinct(), Is.EqualTo(new[] { method }));
+    if (method != "*")
+      Assert.That(reader.Entries.Select(e => e.Method).Distinct(), Is.EqualTo(new[] { method }));
     Assert.That(reader.Entries.Select(e => e.Name), Is.EquivalentTo(expected.Select(r => r.Name)));
     Assert.Multiple(() => {
       foreach (var row in expected) {
@@ -52,7 +60,7 @@ public sealed class FreeArcFilterTests {
 
   [TestCase("4x4:lzma:447kb:fast:32:mc4", true)]
   [TestCase("4x4:b4mb:t2:lzma:1mb", true)]
-  [TestCase("4x4:tor:3:144kb", false)]
+  [TestCase("4x4:tor:3:144kb", true)]
   [TestCase("4x4:4x4:lzma", false)]
   [TestCase("4x4:b4mb", false)]
   public void GivenAFourByFourStage_WhenCheckedForSupport_ThenItsInnerMethodDecides(string method, bool supported)
@@ -77,8 +85,21 @@ public sealed class FreeArcFilterTests {
   }
 
   [Test]
-  public void GivenTornadoBehindFourByFour_WhenCheckedForSupport_ThenItIsStillRefused()
-    => Assert.That(FreeArcMethods.IsSupported("rep:144kb+4x4:tor:3:144kb"), Is.False);
+  public void GivenTornadoBehindFourByFour_WhenCheckedForSupport_ThenItIsDecodable()
+    => Assert.That(FreeArcMethods.IsSupported("rep:144kb+4x4:tor:3:144kb"), Is.True);
+
+  [TestCase(new byte[] { 9, 3, 0, 0, 1, 0 })]
+  [TestCase(new byte[] { 1, 3, 0 })]
+  public void GivenABrokenTornadoHeader_WhenDecoded_ThenItIsRefused(byte[] stream)
+    => Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("tor:3", stream, 10));
+
+  [Test]
+  public void GivenATornadoStreamCutShort_WhenDecoded_ThenItIsRefused() {
+    var full = FreeArcTests.Vector("tor-3");
+    // The block starts after the 31-byte archive header; cut its tornado stream in the middle.
+    var stream = full.AsSpan(31, 2000).ToArray();
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("tor:3:153kb", stream, 153796));
+  }
 
   // ── damaged and malformed stage streams are refused ──────────────────────
 
