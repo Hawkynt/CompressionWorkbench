@@ -24,7 +24,7 @@ Shell archive (shar),shar;run;sh,archive,,W,,,,fmt/329,Y,3,https://www.gnu.org/s
 mtree manifest,mtree;spec,archive,,RW,,,,,,1,https://man.freebsd.org/mtree/5,Mtree,Y,Y,,OK,,
 WARC (Web ARChive),warc,archive,,RW,R,,R,fmt/1281;fmt/1355;fmt/289,,4,https://iipc.github.io/warc-specifications/,Warc,Y,Y,,OK,,
 Internet Archive ARC (crawl),arc,archive,,,,,,fmt/410;x-fmt/219,,1,https://archive.org/web/researcher/ArcFileFormat.php,IaArc,Y,Y,Y,OK,,
-XAR (eXtensible ARchive),xar;pkg;xip;mpkg,archive,R,RW,R,,,fmt/600,Y,5,https://github.com/mackyle/xar/wiki/xarformat,Xar,Y,Y,Y,OK,,"every xar encoding (none, gzip/zlib, bzip2, lzma, xz) decoded and checked against the TOC checksum; verified on bsdtar-written archives"
+XAR (eXtensible ARchive),xar;pkg;xip;mpkg,archive,R,RW,R,,,fmt/600,Y,5,https://github.com/mackyle/xar/wiki/xarformat,Xar,Y,Y,Y,OK,,"every xar encoding (none, gzip/zlib, bzip2, lzma, xz) decoded and checked against the TOC checksum; verified on bsdtar-written archives; writes and in-place edits keep folders, modes and a valid SHA-1 TOC checksum (bsdtar accepts ours and our edits of its archives)"
 Xar Image Format (PRONOM fmt/922),xar,archive,,,,,,fmt/922,,1,,,,,,MISSING,,PRONOM lists this separately from eXtensible ARchive
 Microsoft Cabinet (CAB),cab;exe;mscf,archive,R,R,R,R,,x-fmt/414,RW,6,https://learn.microsoft.com/previous-versions/bb417343(v=msdn.10),Cab,Y,Y,Y,OK,,
 CAB self-extractor (IExpress / MSCF SFX),exe,installer,,,,,R,,,1,https://learn.microsoft.com/windows/win32/msi/cabinet-files,IExpress,Y,,,READ-ONLY-BUT-SOURCES-WRITE,iexpress.exe,"cabinets appended as a PE overlay are read through the generic self-extractor path"
@@ -34,7 +34,7 @@ Windows Update package (MSU),msu,installer,,,,,R,,,1,https://learn.microsoft.com
 Compiled HTML Help (CHM),chm;chi;chq;chw;hxs,document,R,,,,R,fmt/634,,3,https://www.nongnu.org/chmspec/latest/,Chm,Y,Y,Y,OK,,"real HTML Help Workshop files read as 7-Zip reads them; sections beyond MSCompressed (none in 76 real files) and Intel E8 LZX are refused"
 Windows Imaging (WIM/SWM/ESD),wim;swm;esd;ppkg,disk-image,RW,,,,R,,Y,3,https://learn.microsoft.com/windows-hardware/manufacture/desktop/wim-vs-ffu-image-file-formats,Wim;Swm;Esd,Y,Y,,OK,,
 ARJ,arj,archive,R,,R,D,R,fmt/610,RW,6,https://en.wikipedia.org/wiki/ARJ,Arj,Y,Y,Y,OK,,methods 0-4 decoded; method 4 verified on archives the open-source ARJ port wrote
-LHA / LZH,lzh;lha;lzs;exe;sfx,archive,R,R,R,,R,fmt/1558;fmt/626,RW,6,https://en.wikipedia.org/wiki/LHA_(file_format),Lzh,Y,Y,Y,PARTIAL,,"every method and header level of lhasa's test suite reads except LHARK's lk7; lh2, lh3, lhx, pm1 and pm2 are read-only; self-extracting executables are not opened (LhaReader.cs)"
+LHA / LZH,lzh;lha;lzs;exe;sfx,archive,R,R,R,,R,fmt/1558;fmt/626,RW,6,https://en.wikipedia.org/wiki/LHA_(file_format),Lzh,Y,Y,Y,OK,,"every method and header level of lhasa's test suite reads, LHARK's lk7 included, and DOS self-extractors open behind their stub; lh2, lh3, lhx, lk7, pm1 and pm2 are read-only (LhaReader.cs)"
 ACE,ace,archive,,,R,,R,fmt/2075;fmt/2076,RW,4,https://en.wikipedia.org/wiki/ACE_(compressed_file_format),Ace,Y,Y,Y,PARTIAL,,"multi-volume members are listed but not extracted; writer emits ACE 1.0 (stored/LZ77), not the 2.0 modes (AceReader.cs)"
 ARC (SEA),arc;ark,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ARC_(file_format),Arc,Y,Y,Y,OK,,
 PAK (NoGate ARC extension),pak,archive,,,R,,,,Y,2,,,,,,MISSING,,"not implemented: XADMaster decodes its Crushed/Distilled methods (10/11) but no NoGate PAK sample was found to verify against; the dexvert ""pakArchive"" samples are a different format"
@@ -55,8 +55,8 @@ Spark (Acorn),spk;arc,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/Spark_(arc
 HA,ha,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/HA_(file_format),Ha,Y,Y,Y,PARTIAL,,stored only; HSC and ASC throw (HaReader.cs)
 SQX,sqx,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/SQX,Sqx,Y,Y,Y,OK,,
 UHARC,uha,archive,,,,,R,,Y,2,https://en.wikipedia.org/wiki/UHarc,Uharc,Y,Y,Y,PARTIAL,,stored and LZP only (UharcReader.cs)
-FreeArc,arc;cdx,archive,,,,,R,fmt/1096,Y,3,https://en.wikipedia.org/wiki/FreeArc,FreeArc,Y,Y,Y,PARTIAL,,only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs)
-ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpaq,Y,Y,Y,PARTIAL,,"journaling and streaming archives at every method are read and zpaq 7.15 extracts what we write; encrypted (-key), multi-part and -index archives are refused, and modify rewrites a single version instead of appending one (ZpaqReader.cs, ZpaqWriter.cs)"
+FreeArc,arc;cdx,archive,,,,,R,fmt/1096,Y,3,https://en.wikipedia.org/wiki/FreeArc,FreeArc,Y,Y,Y,PARTIAL,,storing/lzma/tornado blocks decode behind rep/delta/exe and inside 4x4 (every -m1..-m9 and -mx default); ppmd/lzp/grzip and encryption are refused (FreeArcMethods.cs)
+ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpaq,Y,Y,Y,PARTIAL,,"journaling and streaming archives at every method are read and zpaq 7.15 extracts what we write; encrypted (-key) and multi-part archives are read and an -index next to its parts reads the parts (an index alone lists but cannot extract); they are not edited; adding and removing append a version to a journaling archive as zpaq add does (ZpaqReader.cs, ZpaqWriter.cs)"
 PAQ (paq6/7/8 family),paq6;paq7;paq8;paq8l,archive,,,,,,,Y,1,https://mattmahoney.net/dc/paq.html,Paq8,Y,Y,,PARTIAL,,a single PAQ8 variant (.paq8l); the other PAQ versions are mutually incompatible
 KGB Archiver,kgb;kge,archive,,,,,R,,RW,2,,,,,,MISSING,,
 PEA (PeaZip),pea,archive,,,,,R,fmt/1095,Y,3,https://peazip.github.io/pea-file-format.html,Pea,Y,Y,,PARTIAL,,encrypted streams (EAX/HMAC/Twofish/Serpent and cascades) and multi-volume archives unsupported; no in-place modify
@@ -109,7 +109,7 @@ Zstandard,zst;zstd;tzst,compression,R,RW,,R,,,Y,4,https://www.rfc-editor.org/rfc
 "compress (.Z, LZW)",z;taz;lzw;tar.z;tz,compression,R,RW,R,D,R,fmt/1671,Y,7,https://en.wikipedia.org/wiki/Compress_(software),Compress,Y,Y,,OK,,
 "pack (.z, Huffman)",z,compression,,,,,,,Y,1,https://en.wikipedia.org/wiki/Pack_(compression),UnixPack;bb:BB_UnixPack,Y,Y,,OK,,gzip -d decodes our output
 Freeze,f;freeze;?xf,compression,,,,,,,Y,1,,Freeze,Y,Y,,OK,,freeze 1.x and 2.x files decode; ancient decodes ours
-rzip,rz,compression,,,,,,,Y,1,https://rzip.samba.org/,Rzip,Y,Y,,OK,,
+rzip,rz,compression,,,,,,,Y,1,https://rzip.samba.org/,Rzip,Y,Y,,OK,,rzip 2.1 reads ours and we read its (docs/RZIP-ON-DISK.md)
 lrzip,lrz,compression,,RW,,,,,,1,https://github.com/ckolivas/lrzip,Lrzip,Y,Y,,OK,,
 grzip,grz,compression,,RW,,,,,,1,,,,,,MISSING,,
 Brotli,br,compression,,,,,,,Y,1,https://www.rfc-editor.org/rfc/rfc7932,Brotli,Y,Y,,OK,,
@@ -118,7 +118,7 @@ genozip,genozip,compression,,,,,,,Y,1,,,,,,MISSING,,
 sfArk,sfark,compression,,,,,R,,Y,2,,,,,,MISSING,,
 Squeeze (SQ),sq;qqq;?q?,compression,,,R,,,,Y,2,,Squeeze,Y,Y,,OK,,
 Crunch (CP/M),cru;crunch;?z?,compression,,,R,,,,Y,2,,Crunch,Y,Y,,OK,,
-MS-DOS COMPRESS (SZDD),szdd;??_;mslz,compression,R,,,,,fmt/462,Y,3,https://www.cabextract.org.uk/libmspack/doc/szdd_kwaj_format.html,Szdd;SzCompress,Y,Y,,OK,,
+MS-DOS COMPRESS (SZDD),szdd;??_;mslz,compression,R,,,,,fmt/462,Y,3,https://www.cabextract.org.uk/libmspack/doc/szdd_kwaj_format.html,Szdd;SzCompress,Y,Y,,OK,,SZ variant: libmspack msexpand reads ours; no real SZ file found to test reading
 MS-DOS COMPRESS (KWAJ),kwaj,compression,,,,,,fmt/469,,1,https://www.cabextract.org.uk/libmspack/doc/szdd_kwaj_format.html,Kwaj;bb:BB_KwajLzh,Y,Y,,OK,,"all five methods (store, XOR, LZSS, LZ+Huffman, MSZIP); libmspack msexpand expands our output"
 PPMd (standalone .pmd),pmd;ppmd,compression,R,,R,,,,,2,,Ppmd,Y,Y,,OK,,
 IBM TERSE,tersed,compression,,,,,,,Y,1,,,,,,MISSING,,
@@ -159,7 +159,7 @@ ARJ methods 1-4,,codec,,,R,,,,,1,,bb:BB_Arj,Y,Y,,OK,,
 LArc methods (lz4/lz5/lzs),,codec,,,R,,,,,1,,Lzh,Y,Y,Y,OK,,
 PMArc methods (pm0-pm2),pma,codec,,,R,,,,,1,,Lzh,Y,Y,Y,OK,,
 ARC Crunch / Squash (LZW),,codec,,,R,,,,,1,,Arc,Y,Y,Y,OK,,
-ARC Crush,,codec,,,R,,,,,1,,bb:BB_Crush,Y,Y,,OK,,
+ARC Crush,,codec,,,R,,,,,1,,,,,,MISSING,,XAD's ARC Crushed method; BB_Crush is Muravyov's unrelated CRUSH
 ARC Distill,,codec,,,R,,,,,1,,,,,,MISSING,,
 Stac LZS,lzs,codec,,,R,,,,,1,,bb:BB_Lzs,Y,Y,,OK,,
 Delta filter,delta,filter,RW,,R,,,,,2,,bb:BB_Delta,Y,Y,,OK,,
@@ -205,12 +205,12 @@ RC4,rc4,encryption,,,R,,,,,1,,,,,,MISSING,,
 uuencode,uu;uue,encoding,,RW,,,,fmt/1102,,2,https://pubs.opengroup.org/onlinepubs/9799919799/utilities/uuencode.html,UuEncoding,Y,Y,,OK,,
 Base64,b64;base64,encoding,R,W,,,,,,2,https://www.rfc-editor.org/rfc/rfc4648,B64Encoding,Y,Y,,OK,,
 Encoded text (uu/xx/b64/BinHex/yEnc),xx;xxe;ntx;ync;b64;hqx;uu;uue,encoding,,,,,R,,,1,,UuEncoding;B64Encoding;BinHex;YEnc;XxEncoding,Y,Y,,OK,,
-BinHex 4,hqx,encoding,,,R,,,x-fmt/416,,2,https://files.stairways.com/other/binhex-40-specs-info.txt,BinHex,Y,Y,,OK,,
+BinHex 4,hqx,encoding,,,R,,,x-fmt/416,,2,https://files.stairways.com/other/binhex-40-specs-info.txt,BinHex,Y,Y,,OK,,Convert::BinHex 1.125 both ways
 MacBinary,bin;macbin,encoding,,,R,,R,fmt/1761;fmt/1762;fmt/1763,,3,https://en.wikipedia.org/wiki/MacBinary,MacBinary,Y,Y,,OK,,
 AppleSingle / AppleDouble,as;adouble,encoding,,,R,,,fmt/967;fmt/968,,2,https://www.rfc-editor.org/rfc/rfc1740,AppleSingle;AppleDouble,Y,Y,Y,OK,,
 Intel HEX,hex;ihex,firmware,R,,,,,,,1,https://en.wikipedia.org/wiki/Intel_HEX,IntelHex,Y,Y,Y,OK,,
 Motorola S-record,srec;s19;mot,firmware,,,,R,,,,1,https://en.wikipedia.org/wiki/SREC_(file_format),Srec,Y,Y,,OK,,
-NSIS installer,exe;nsis,installer,R,,R,,R,,,3,https://nsis.sourceforge.io/,Nsis,Y,,,READ-ONLY-BUT-SOURCES-WRITE,makensis,LZMA behind the x86 branch filter refused; uninstaller payload not listed (NsisReader.cs)
+NSIS installer,exe;nsis,installer,R,,R,,R,,,3,https://nsis.sourceforge.io/,Nsis,Y,,,READ-ONLY-BUT-SOURCES-WRITE,makensis,LZMA behind the x86 branch filter (7-Zip's own installers) and the WriteUninstaller uninstaller read as 7-Zip extracts them; forks that renumber opcodes (NSIS Park) list no uninstaller (NsisReader.cs)
 Inno Setup,exe,installer,,,,,R,,,1,https://jrsoftware.org/isinfo.php,InnoSetup,Y,,,READ-ONLY-BUT-SOURCES-WRITE,ISCC,"encrypted files and 16-bit 1.2.x refused (InnoSetupReader.cs)"
 InstallShield (cab / exe),exe;cab;ex_;hdr,installer,,,,,R,fmt/1466,,2,,,,,,MISSING,,
 Wise Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,
@@ -239,14 +239,15 @@ Enigma Virtual Box,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 MoleBox,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 UPX-packed executable,exe;dll,executable,,,,,R,,,1,https://upx.github.io/,Upx,Y,,,READ-ONLY-BUT-SOURCES-WRITE,upx,
 macOS Installer package (flat pkg),pkg;mpkg,installer,,,,,,,Y,1,,Xar,Y,Y,Y,OK,,
-ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet;mdf;nrg;toast,filesystem,R,RW,R,R,R,fmt/1739;fmt/1741;fmt/1757;fmt/468,RW,7,https://www.ecma-international.org/publications-and-standards/standards/ecma-119/,Iso,Y,Y,Y,PARTIAL,,"Rock Ridge names (NM+CE), symlinks (SL), relocated directories (RE/CL) and zisofs (ZF) decoded; PX/TF not surfaced; interleaved files throw (IsoReader.cs)"
+ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet;mdf;nrg;toast,filesystem,R,RW,R,R,R,fmt/1739;fmt/1741;fmt/1757;fmt/468,RW,7,https://www.ecma-international.org/publications-and-standards/standards/ecma-119/,Iso,Y,Y,Y,PARTIAL,,"Rock Ridge names (NM+CE), symlinks (SL), relocated directories (RE/CL), modes (PX), times (TF) and zisofs (ZF) read; Rock Ridge NM (CE for long names)/PX/TF and El Torito BIOS/UEFI boot entries written; interleaved files throw (IsoReader.cs)"
 High Sierra format,iso;hsf,filesystem,,,,,,,Y,1,http://www.os2museum.com/files/docs/cdrom/hsg_wp.html,HighSierra,Y,Y,,OK,,
-UDF,udf;cdr;dmg;iso;toast,filesystem,R,,,,,fmt/1738;fmt/1739;fmt/1757,Y,3,https://www.osta.org/specs/,Udf,Y,Y,Y,PARTIAL,,type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs)
+UDF,udf;cdr;dmg;iso;toast,filesystem,R,,,,,fmt/1738;fmt/1739;fmt/1757,Y,3,https://www.osta.org/specs/,Udf,Y,Y,Y,OK,,"type 1, sparable (CD-RW/DVD-RW), virtual/VAT (CD-R, BD-R) and metadata (UDF 2.50, over a VAT) partitions read; volumes with remapped partitions are read-only; multi-volume sets refused (UdfReader.cs)"
 Roxio Toast image,toast,disk-image,,,,,,,Y,1,,Iso;Hfs,Y,Y,Y,OK,,
 Apple Partition Map,apm;bin;cdr;dmg;img;iso;toast,partition-table,R,,,,,fmt/1740;fmt/1741;fmt/1757,,2,https://en.wikipedia.org/wiki/Apple_Partition_Map,PartitionedDisk,Y,Y,Y,PARTIAL,pdisk / hdiutil,APM tables are read and their partitions' filesystems edited in place; APM entries cannot be created; added or removed
 MBR partition table,mbr,partition-table,R,,,R,,,,2,https://en.wikipedia.org/wiki/Master_boot_record,PartitionedDisk,Y,Y,Y,OK,fdisk / sfdisk,incl. EBR logical partitions; create/modify checked with sfdisk --verify and fsck
 GUID Partition Table (GPT),gpt,partition-table,R,,,D,,,,2,https://uefi.org/specifications,PartitionedDisk,Y,Y,Y,OK,sgdisk / gdisk,512- and 4096-byte LBAs; create/modify checked with sgdisk -v; sfdisk --verify and fdisk -b 4096
 Raw disk image,img;raw;dd;bin,disk-image,,,,,,,Y,1,,PartitionedDisk,Y,Y,Y,OK,dd,files inside partitions are edited in place by the partition filesystem's own editor
+Atari AHDI partition table,ahd;img,partition-table,,,,,,,Y,1,https://en.wikipedia.org/wiki/Atari_TOS,PartitionedDisk,Y,Y,Y,PARTIAL,parted (atari label),"root sector records and the XGM extended chain read at the offsets parted and partx report; the ICD extension records are not read and the table is not created or edited (AtariAhdiParser.cs)"
 Linux LVM2,lvm,partition-table,R,,,,,,,1,,,,,,MISSING,,https://man7.org/linux/man-pages/man8/lvm.8.html
 Android logical partitions (super.img),img;lp,partition-table,R,,,,,,,1,,,,,,MISSING,,https://source.android.com/docs/core/ota/dynamic_partitions
 Apple Disk Image (UDIF),dmg;smi;img,disk-image,R,,,R,R,fmt/1071,Y,5,https://en.wikipedia.org/wiki/Apple_Disk_Image,Dmg,Y,Y,Y,OK,,
@@ -256,11 +257,11 @@ VHD,vhd,disk-image,R,,,,R,,Y,3,https://learn.microsoft.com/windows/win32/vstor/a
 VHDX,vhdx;avhdx,disk-image,R,,,,,,Y,2,https://learn.microsoft.com/openspecs/windows_protocols/ms-vhdx/,Vhdx,Y,Y,Y,OK,,"differencing disks read through the parent locator and sector bitmaps (checked against libvhdi); an unreplayed log is refused"
 VMDK,vmdk,disk-image,R,,,,R,,Y,3,https://developer.broadcom.com/,Vmdk,Y,Y,Y,OK,,"reads streamOptimized, monolithic/split sparse, flat and delta disks (checked against qemu-img); in-place edits only on plain monolithicSparse"
 VirtualBox VDI,vdi,disk-image,R,,,,R,fmt/726,Y,4,https://www.virtualbox.org/,Vdi,Y,Y,Y,OK,,
-QCOW / QCOW2,qcow;qcow2;qcow2c,disk-image,R,,,D,,,Y,3,https://gitlab.com/qemu-project/qemu/-/blob/master/docs/interop/qcow2.txt,Qcow2,Y,Y,Y,PARTIAL,,"no encryption, backing files, zstd clusters or extended L2 (Qcow2Structures.cs)"
+QCOW / QCOW2,qcow;qcow2;qcow2c,disk-image,R,,,D,,,Y,3,https://gitlab.com/qemu-project/qemu/-/blob/master/docs/interop/qcow2.txt,Qcow2,Y,Y,Y,PARTIAL,,"zstd clusters, extended L2 (subclusters) and QCOW2/raw backing files read as qemu-img converts them; encryption (AES, LUKS) and external data files refused; edits only on self-contained images (Qcow2Structures.cs)"
 Android sparse image,simg;sparse,disk-image,R,,,R,,,,2,https://android.googlesource.com/platform/system/core/+/master/libsparse/sparse_format.h,AndroidSparse,Y,Y,,OK,,
 Android boot image,img;bootimg,firmware,,,,D,R,,,2,https://source.android.com/docs/core/architecture/bootloader/boot-image-header,AndroidBootImage,Y,Y,Y,OK,,mkbootimg/unpack_bootimg byte-identical oracle; vendor_boot v3/v4 included
-EnCase / Expert Witness (E01),e01;ex01;l01,disk-image,,,,,,fmt/803,Y,2,https://github.com/libyal/libewf/blob/main/documentation/Expert%20Witness%20Compression%20Format%20(EWF).asciidoc,Ewf,Y,Y,Y,PARTIAL,,"single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs)"
-AFF (Advanced Forensic Format v1-3),aff;afd;afm,disk-image,,,,,,,Y,1,https://github.com/sshock/AFFLIBv3,Aff,Y,Y,Y,PARTIAL,,"single-file .aff only (AFD/AFM are multi-file); encrypted images refused; spec docs/AFF-ON-DISK.md, verified against afflib-tools"
+EnCase / Expert Witness (E01),e01;ex01;l01,disk-image,,,,,,fmt/803,Y,2,https://github.com/libyal/libewf/blob/main/documentation/Expert%20Witness%20Compression%20Format%20(EWF).asciidoc,Ewf,Y,Y,Y,PARTIAL,,"segment sets (.E01, .E02 ... .EAA) in the EnCase 5 and 6 table layouts read as ewfacquire wrote them; multi-segment sets are read-only; no L01 logical evidence, no Ex01 (EwfMediaStream.cs)"
+AFF (Advanced Forensic Format v1-3),aff;afd;afm,disk-image,,,,,,,Y,1,https://github.com/sshock/AFFLIBv3,Aff,Y,Y,Y,PARTIAL,,"single-file .aff read and written; AFD directories and AFM raw sets read from disk and not rewritten; encrypted images refused; spec docs/AFF-ON-DISK.md, verified against afflib-tools"
 Nero image (NRG),nrg,disk-image,,,,,R,fmt/1743,Y,3,,Nrg,Y,Y,Y,OK,,
 BIN/CUE,bin;cue,disk-image,,,,,R,fmt/1069,Y,3,https://en.wikipedia.org/wiki/Cue_sheet_(computing),BinCue,Y,Y,Y,OK,,
 Alcohol MDF/MDS,mdf;mds,disk-image,,,,,R,,Y,2,,Mdf,Y,Y,Y,OK,,
@@ -487,7 +488,7 @@ CramFS,cramfs,filesystem,R,,,D,,,Y,3,,CramFs,Y,Y,Y,OK,,
 LTFS (Linear Tape),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 lnfs,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 romfs,romfs,filesystem,,,,R,,,Y,2,,RomFs,Y,Y,Y,OK,,
-SquashFS,squashfs;sqfs,filesystem,R,,,R,,,Y,3,https://dr-emann.github.io/squashfs/squashfs.html,SquashFs,Y,Y,,PARTIAL,,SquashFS v4 only; v1-v3 rejected (SquashFsSuperblock.cs)
+SquashFS,squashfs;sqfs,filesystem,R,,,R,,,Y,3,https://dr-emann.github.io/squashfs/squashfs.html,SquashFs,Y,Y,,PARTIAL,,SquashFS v4 read/written; v1.0-v3.1 (either byte order; zlib) read as unsquashfs extracts them and read-only; the LZMA builds of 3.x refused (SquashFsLegacyReader.cs)
 EROFS,erofs,filesystem,,,,,,,Y,1,,Erofs,Y,Y,Y,OK,,
 UMSDOS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,deferred: a FAT volume plus a --LINUX-.--- metadata file per directory; the driver was removed in Linux 2.6.11 and no maintained tool exists; ZipSlack distributions carry real metadata files that could serve as oracle; not attempted in this round
 UVFAT,,filesystem,,,,,,,Y,1,,,,,,MISSING,,"refused: no specification, implementation or image located"
@@ -548,7 +549,7 @@ AOMEI Backupper Image (ADI/AFI),adi;afi,archive,,,,,,,,0,,Aomei,Y,Y,Y,OURS-ONLY,
 CRYO APC,apc,media,,,,,,,,0,,Apc,Y,Y,,OURS-ONLY,,
 Monkey's Audio (.ape),ape;mac,media,,,,,,,,0,,Ape,Y,Y,,OURS-ONLY,,
 APK native libraries,,archive,,,,,,,,0,,ApkNativeLibs,Y,Y,,OURS-ONLY,,
-aPLib,aplib,compression,,,,,,,,0,,ApLib,Y,Y,,OURS-ONLY,,
+aPLib,aplib,compression,,,,,,,,0,https://ibsensoftware.com/products_aPLib.html,ApLib,Y,Y,,OURS-ONLY,,aPLib 1.1.1 appack files decode; appack unpacks ours
 AppImage,AppImage,archive,,,,,,,,0,,AppImage,Y,Y,,OURS-ONLY,,
 Apache Arrow IPC,arrow;feather,archive,,,,,,,,0,,Arrow,Y,,,OURS-ONLY,,
 Android Resources (ARSC),arsc,archive,,,,,,,,0,,Arsc,Y,,,OURS-ONLY,,
@@ -564,12 +565,12 @@ Apache Avro OCF,avro,archive,,,,,,,,0,,Avro,Y,,,OURS-ONLY,,
 CRI Audio Wave Bank,awb;acb,archive,,,,,,,,0,,Awb,Y,Y,,OURS-ONLY,,
 ZX Spectrum AY,ay,media,,,,,,,,0,,Ay,Y,,,OURS-ONLY,,
 BALZ,balz,compression,,,,,,,,0,,Balz,Y,Y,,OURS-ONLY,,
-842,,codec,,,,,,,,0,,bb:BB_842,Y,Y,,OURS-ONLY,,
+842,,codec,,,,,,,,0,https://github.com/torvalds/linux/blob/master/lib/842/842.h,bb:BB_842,Y,Y,,OURS-ONLY,,Linux lib/842 software stream; byte-identical to sw842_compress and read back by sw842_decompress (docs/IBM842-ON-DISK.md)
 ACE (bb:BB_Ace),,codec,,,,,,,,0,,bb:BB_Ace,Y,Y,,OURS-ONLY,,
 Adaptive Huffman (FGK),,codec,,,,,,,,0,,bb:BB_AdaptiveHuffman,Y,Y,,OURS-ONLY,,
-aPLib (bb:BB_Aplib),,codec,,,,,,,,0,,bb:BB_Aplib,Y,Y,,OURS-ONLY,,
+aPLib (bb:BB_Aplib),,codec,,,,,,,,0,https://ibsensoftware.com/products_aPLib.html,bb:BB_Aplib,Y,Y,,OURS-ONLY,,apultra and the Python aplib depacker read ours; their streams decode (OracleVectorTests)
 Arithmetic Coding,,codec,,,,,,,,0,,bb:BB_Arithmetic,Y,Y,,OURS-ONLY,,
-BALZ (bb:BB_Balz),,codec,,,,,,,,0,,bb:BB_Balz,Y,Y,,OURS-ONLY,,
+BALZ (bb:BB_Balz),,codec,,,,,,,,0,https://sourceforge.net/projects/balz/,bb:BB_Balz,Y,Y,,OURS-ONLY,,byte-identical to BALZ 1.20 c/cx
 BCM (reduced),,codec,,,,,,,,0,,bb:BB_Bcm,Y,Y,,OURS-ONLY,,
 Byte Pair Encoding,,codec,,,,,,,,0,,bb:BB_BPE,Y,Y,,OURS-ONLY,,
 BriefLZ,,codec,,,,,,,,0,,bb:BB_BriefLz,Y,Y,,OURS-ONLY,,
@@ -582,7 +583,7 @@ Context Tree Weighting,,codec,,,,,,,,0,,bb:BB_ContextTreeWeighting,Y,Y,,OURS-ONL
 CSC,,codec,,,,,,,,0,,bb:BB_Csc,Y,Y,,OURS-ONLY,,
 Context Predictor (order-2/1/0),,codec,,,,,,,,0,,bb:BB_CTW,Y,Y,,OURS-ONLY,,
 Delta + RLE,,codec,,,,,,,,0,,bb:BB_DeltaRle,Y,Y,,OURS-ONLY,,
-Density (Chameleon),,codec,,,,,,,,0,,bb:BB_Density,Y,Y,,OURS-ONLY,,
+Density (Chameleon),,codec,,,,,,,,0,https://github.com/g1mv/density,bb:BB_Density,Y,Y,,OURS-ONLY,,density-rs 0.16.6 conversion; byte-identical Chameleon
 DMC,,codec,,,,,,,,0,,bb:BB_Dmc,Y,Y,,OURS-ONLY,,
 DNA Sequence Compression,,codec,,,,,,,,0,,bb:BB_Dna,Y,Y,,OURS-ONLY,,
 DoubleSpace JM,,codec,,,,,,,,0,,bb:BB_DoubleSpace,Y,Y,,OURS-ONLY,,
@@ -619,8 +620,9 @@ LZMW,,codec,,,,,,,,0,,bb:BB_Lzmw,Y,Y,,OURS-ONLY,,
 LZO1X,,codec,,,,,,,,0,,bb:BB_Lzo,Y,Y,,OURS-ONLY,,
 LZP,,codec,,,,,,,,0,,bb:BB_Lzp,Y,Y,,OURS-ONLY,,
 LZRLE,,codec,,,,,,,,0,,bb:BB_Lzrle,Y,Y,,OURS-ONLY,,
-LZRW1,,codec,,,,,,,,0,,bb:BB_Lzrw1,Y,Y,,OURS-ONLY,,
-LZRW3,,codec,,,,,,,,0,,bb:BB_Lzrw3,Y,Y,,OURS-ONLY,,
+CRUSH (bb:BB_Crush),,codec,,,,,,,,0,https://sourceforge.net/projects/crush/,bb:BB_Crush,Y,Y,,OURS-ONLY,,byte-identical to CRUSH 1.00 cf/c/cx
+LZRW1,,codec,,,,,,,,0,http://www.ross.net/compression/lzrw1.html,bb:BB_Lzrw1,Y,Y,,OURS-ONLY,,byte-identical to Ross Williams' lzrw1.c
+LZRW3,,codec,,,,,,,,0,http://www.ross.net/compression/lzrw3.html,bb:BB_Lzrw3,Y,Y,,OURS-ONLY,,byte-identical to Ross Williams' lzrw3.c
 LZTURBO,,codec,,,,,,,,0,,bb:BB_Lzturbo,Y,Y,,OURS-ONLY,,
 LZVN,,codec,,,,,,,,0,,bb:BB_Lzvn,Y,Y,,OURS-ONLY,,
 LZWL,,codec,,,,,,,,0,,bb:BB_Lzwl,Y,Y,,OURS-ONLY,,
@@ -644,11 +646,11 @@ Reduce,,codec,,,,,,,,0,,bb:BB_Reduce,Y,Y,,OURS-ONLY,,
 Re-Pair,,codec,,,,,,,,0,,bb:BB_RePair,Y,Y,,OURS-ONLY,,
 RLE,,codec,,,,,,,,0,,bb:BB_Rle,Y,Y,,OURS-ONLY,,
 ROLZ,,codec,,,,,,,,0,,bb:BB_ROLZ,Y,Y,,OURS-ONLY,,
-rzip (bb:BB_Rzip),,codec,,,,,,,,0,,bb:BB_Rzip,Y,Y,,OURS-ONLY,,
+rzip (bb:BB_Rzip),,codec,,,,,,,,0,https://rzip.samba.org/,bb:BB_Rzip,Y,Y,,OURS-ONLY,,a complete rzip 2.x file; rzip 2.1 reads ours and we read its
 Salvador,,codec,,,,,,,,0,,bb:BB_Salvador,Y,Y,,OURS-ONLY,,
 Sequitur,,codec,,,,,,,,0,,bb:BB_Sequitur,Y,Y,,OURS-ONLY,,
 Shannon-Fano,,codec,,,,,,,,0,,bb:BB_ShannonFano,Y,Y,,OURS-ONLY,,
-Shoco,,codec,,,,,,,,0,,bb:BB_Shoco,Y,Y,,OURS-ONLY,,
+Shoco,,codec,,,,,,,,0,https://github.com/Ed-von-Schleck/shoco,bb:BB_Shoco,Y,Y,,OURS-ONLY,,shoco conversion with its default model; byte-identical to shoco c; zero bytes written behind the sentinel
 Snappy,,codec,,,,,,,,0,,bb:BB_Snappy,Y,Y,,OURS-ONLY,,
 SQX (bb:BB_Sqx),,codec,,,,,,,,0,,bb:BB_Sqx,Y,Y,,OURS-ONLY,,
 Suffix Tree Compression,,codec,,,,,,,,0,,bb:BB_SuffixTree,Y,Y,,OURS-ONLY,,
@@ -657,7 +659,7 @@ Tunstall Coding,,codec,,,,,,,,0,,bb:BB_Tunstall,Y,Y,,OURS-ONLY,,
 Unary Coding,,codec,,,,,,,,0,,bb:BB_Unary,Y,Y,,OURS-ONLY,,
 Yay0,,codec,,,,,,,,0,,bb:BB_Yay0,Y,Y,,OURS-ONLY,,
 Yaz0,,codec,,,,,,,,0,,bb:BB_Yaz0,Y,Y,,OURS-ONLY,,
-Zling,,codec,,,,,,,,0,,bb:BB_Zling,Y,Y,,OURS-ONLY,,
+Zling,,codec,,,,,,,,0,https://github.com/richox/libzling,bb:BB_Zling,Y,Y,,OURS-ONLY,,libzling conversion; byte-identical to zling e
 Zopfli,,codec,,,,,,,,0,,bb:BB_Zopfli,Y,Y,,OURS-ONLY,,
 ZPAQ (bb:BB_Zpaq),,codec,,,,,,,,0,,bb:BB_Zpaq,Y,Y,,OURS-ONLY,,
 ZX0,,codec,,,,,,,,0,,bb:BB_Zx0,Y,Y,,OURS-ONLY,,
@@ -691,7 +693,7 @@ Windows CUR cursor,cur,archive,,,,,,,,0,,Cur,Y,Y,,OURS-ONLY,,
 Raw CVSD,cvsd,media,,,,,,,,0,,Cvsd,Y,Y,,OURS-ONLY,,
 DBM (DigiBooster Pro),dbm,media,,,,,,,,0,,Dbm,Y,,,OURS-ONLY,,
 DCX (multi-image PCX),dcx,archive,,,,,,,,0,,Dcx,Y,,,OURS-ONLY,,
-Density,density,compression,,,,,,,,0,,Density,Y,Y,,OURS-ONLY,,
+Density,density,compression,,,,,,,,0,https://github.com/g1mv/density,Density,Y,Y,,OURS-ONLY,,our DENS container (density has no file format) around byte-identical density-rs streams
 DSDIFF (.dff),dff;dsdiff,media,,,,,,,,0,,Dff,Y,Y,,OURS-ONLY,,
 DFPWM1a (ComputerCraft),dfpwm,media,,,,,,,,0,,Dfpwm,Y,Y,,OURS-ONLY,,
 DICOM,dcm;dicom,archive,,,,,,,,0,,Dicom,Y,,,OURS-ONLY,,
@@ -780,7 +782,6 @@ Commodore Lynx archive,lnx,archive,,,,,,,,0,,Lynx,Y,Y,Y,OURS-ONLY,,
 LZEXE (DOS exe),,archive,,,,,,,,0,,LzExe,Y,,,OURS-ONLY,,
 LZG (Lzg),lzg,compression,,,,,,,,0,,Lzg,Y,Y,,OURS-ONLY,,
 LZHAM (Lzham),lzham,compression,,,,,,,,0,,Lzham,Y,Y,,OURS-ONLY,,
-LZS,lzs,compression,,,,,,,,0,,Lzs,Y,Y,,OURS-ONLY,,
 HLS Playlist (M3U8),m3u8;m3u,archive,,,,,,,,0,,M3u8,Y,,,OURS-ONLY,,
 Macrium Reflect,mrimgx;mrbakx;mrimg,archive,,,,,,,,0,,Macrium,Y,Y,,OURS-ONLY,,
 Macrium Reflect pre-X (.mrimg/.mrbak),mrimg;mrbak;mrex;mrsql,archive,,,,,,,,0,,MacriumPreX,Y,,,OURS-ONLY,,
@@ -979,6 +980,6 @@ Yaz0 (Yaz0),yaz0;szs,compression,,,,,,,,0,,Yaz0,Y,Y,,OURS-ONLY,,
 Yoda's Crypter (Win32 PE),,archive,,,,,,,,0,,YodaCrypter,Y,,,OURS-ONLY,,
 ZAP (Amiga Disk Archiver),zap,archive,,,,,,,,0,,Zap,Y,Y,,OURS-ONLY,,
 Zarr array metadata,,archive,,,,,,,,0,,Zarr,Y,,,OURS-ONLY,,
-Zling (Zling),zling,compression,,,,,,,,0,,Zling,Y,Y,,OURS-ONLY,,
+Zling (Zling),zling,compression,,,,,,,,0,https://github.com/richox/libzling,Zling,Y,Y,,OURS-ONLY,,byte-identical to zling e0-e4
 SCL (ZX Spectrum),scl,filesystem,,,,,,,,0,,ZxScl,Y,Y,Y,OURS-ONLY,,
 ZX Spectrum Snapshot / Tape,sna;z80;tap;tzx,archive,,,,,,,,0,,ZxSnapshot,Y,,,OURS-ONLY,,

@@ -105,10 +105,84 @@ public sealed class AffImage {
     return new AffImage(segments);
   }
 
+  /// <summary>The <c>aff_file_type</c> segment: <c>AFF</c>, <c>AFD</c> (first file of a directory) or <c>AFM</c>.</summary>
+  public string FileType => this.Find("aff_file_type") is { } t ? Encoding.ASCII.GetString(t.Data).TrimEnd('\0') : "AFF";
+
+  /// <summary>
+  /// Whether the image's data lives in more than one file: an AFD directory of <c>file_NNN.aff</c>,
+  /// or an AFM sidecar whose pages are split raw files.
+  /// </summary>
+  public bool IsMultiFile => this._directoryMembers > 1 || this.FileType is "AFD" or "AFM";
+
+  private List<string> _rawParts = [];
+  private int _directoryMembers;
+
+  /// <summary>
+  /// Reads <paramref name="stream"/> and, when it is a file of a multi-file layout, the files that
+  /// belong with it:
+  /// <list type="bullet">
+  ///   <item><description>AFD — a directory named <c>*.afd</c> of <c>file_000.aff</c>,
+  ///   <c>file_001.aff</c>, …; every file is an AFF whose segments (the pages, the closing
+  ///   imagesize and hashes) together make the image;</description></item>
+  ///   <item><description>AFM — <c>name.afm</c> holds only metadata (<c>aff_file_type</c> = AFM,
+  ///   <c>raw_image_file_extension</c>, <c>pages_per_raw_image_file</c>); the image is the raw
+  ///   files <c>name.000</c>, <c>name.001</c>, … in order, each holding that many pages (0 = one
+  ///   file holds all).</description></item>
+  /// </list>
+  /// </summary>
+  /// <exception cref="InvalidDataException">A file of the set is missing or not AFF.</exception>
+  public static AffImage ReadSet(Stream stream) {
+    var first = Read(stream);
+    if (stream is not FileStream file)
+      return first;
+    var path = file.Name;
+    var dir = Path.GetDirectoryName(path) ?? ".";
+    if (dir.EndsWith(".afd", StringComparison.OrdinalIgnoreCase)
+        && Path.GetFileName(path).StartsWith("file_", StringComparison.OrdinalIgnoreCase)) {
+      var members = Directory.GetFiles(dir, "file_*.aff").OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+      var segments = new List<AffSegment>();
+      string? leadType = null;
+      foreach (var member in members) {
+        AffImage part;
+        if (string.Equals(Path.GetFullPath(member), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
+          part = first;
+        else {
+          using var s = File.OpenRead(member);
+          part = Read(s);
+        }
+        leadType ??= part.FileType;
+        segments.AddRange(part.Segments);
+      }
+      if (leadType != "AFD")
+        throw new InvalidDataException("AFF: the first file of the .afd directory is not marked AFD.");
+      return new AffImage(segments) { _directoryMembers = members.Count };
+    }
+    if (first.FileType == "AFM") {
+      var ext = first.Find("raw_image_file_extension") is { } e ? Encoding.ASCII.GetString(e.Data).TrimEnd('\0') : "000";
+      if (ext.Length == 0 || ext.Any(c => !char.IsAsciiDigit(c)))
+        throw new InvalidDataException($"AFF: AFM raw file extension '{ext}' is not numeric.");
+      var stem = Path.Combine(dir, Path.GetFileNameWithoutExtension(path));
+      var number = int.Parse(ext, CultureInfo.InvariantCulture);
+      var parts = new List<string>();
+      for (var n = number; ; ++n) {
+        var candidate = stem + "." + n.ToString(new string('0', ext.Length), CultureInfo.InvariantCulture);
+        if (!File.Exists(candidate))
+          break;
+        parts.Add(candidate);
+      }
+      first._rawParts = parts;
+    }
+    return first;
+  }
+
   /// <summary>Reconstructs the whole image; absent pages read as zeros (as AFFLIB does without bad-block fill).</summary>
   public void CopyImageTo(Stream output) {
     if (this.IsEncrypted)
       throw new NotSupportedException("AFF: encrypted images need AFFLIB's key handling, which is not implemented.");
+    if (this.FileType == "AFM") {
+      this.CopyRawImageTo(output);
+      return;
+    }
     var remaining = this.ImageSize;
     var zero = Array.Empty<byte>();
     for (long page = 0; remaining > 0; ++page) {
@@ -124,6 +198,35 @@ public sealed class AffImage {
         WriteZeros(output, want, ref zero);
       remaining -= want;
     }
+  }
+
+  /// <summary>AFM: the raw files in order, each a whole number of pages but the last, cut at <c>imagesize</c>.</summary>
+  private void CopyRawImageTo(Stream output) {
+    if (this._rawParts.Count == 0)
+      throw new NotSupportedException("AFF: this AFM holds only metadata; its raw image files (name.000, ...) were not found next to it.");
+    if (this.Find("imagesize") is not { Data.Length: 8 })
+      throw new InvalidDataException("AFF: the AFM has no imagesize segment.");
+    var perFile = this.Find("pages_per_raw_image_file") is { Data.Length: 8 } q ? DecodeQuad(q.Data) : 0;
+    var partBytes = perFile > 0 ? perFile * this.PageSize : long.MaxValue;
+    var remaining = this.ImageSize;
+    for (var i = 0; i < this._rawParts.Count && remaining > 0; ++i) {
+      using var part = File.OpenRead(this._rawParts[i]);
+      var isLast = i == this._rawParts.Count - 1 || remaining <= partBytes;
+      if (!isLast && part.Length != partBytes)
+        throw new InvalidDataException($"AFF: raw file {Path.GetFileName(this._rawParts[i])} holds {part.Length} bytes, expected {partBytes}.");
+      var take = Math.Min(remaining, part.Length);
+      var buffer = new byte[81920];
+      for (var left = take; left > 0;) {
+        var n = part.Read(buffer, 0, (int)Math.Min(buffer.Length, left));
+        if (n <= 0)
+          throw new InvalidDataException("AFF: raw file ended early.");
+        output.Write(buffer, 0, n);
+        left -= n;
+      }
+      remaining -= take;
+    }
+    if (remaining > 0)
+      throw new InvalidDataException($"AFF: the raw files end {remaining} bytes before imagesize.");
   }
 
   /// <summary>The reconstructed image, verified against the stored md5/sha1/sha256 segments when present.</summary>

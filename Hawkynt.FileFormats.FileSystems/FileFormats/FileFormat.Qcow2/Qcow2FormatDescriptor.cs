@@ -307,7 +307,8 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     try {
       var header = Qcow2Structures.ReadHeader(image);
       Qcow2Structures.ValidateReadableProfile(header);
-      return header.SnapshotCount == 0
+      return Qcow2Structures.IsSelfContainedPlain(header)
+          && header.SnapshotCount == 0
           && header.SnapshotsOffset == 0
           && header.CompatibleFeatures == 0
           && header.AutoclearFeatures == 0

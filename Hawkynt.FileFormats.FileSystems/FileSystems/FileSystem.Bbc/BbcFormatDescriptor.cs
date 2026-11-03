@@ -92,7 +92,9 @@ public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     foreach (var (name, data) in FilesOnly(inputs)) {
       BbcModifier.RemoveFile(archive, name, wipeData: true);
-      BbcModifier.AddFile(archive, name, data);
+      // "D.NAME" goes into directory D, as Create does it.
+      var (dir, bare) = BbcModifier.SplitName(name);
+      BbcModifier.AddFile(archive, bare, data, dir);
     }
   }
 
@@ -180,10 +182,10 @@ public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var r = new BbcReader(stream, doubleSided: false);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.FullName, files)) continue;
-      // Translate BBC "$.NAME" to a filesystem-safe "NAME" (or keep dir prefix as subdir
-      // if it's not the default '$').
-      var outName = e.Directory == '$' ? e.Name : $"{e.Directory}/{e.Name}";
-      WriteFile(outputDir, outName, r.Extract(e));
+      // A file of another directory is written under the name List publishes ("D.NAME"),
+      // which Create reads back into directory D; a "D/NAME" folder landed in '$' on the
+      // next rebuild. Files of the default directory '$' keep their bare name.
+      WriteFile(outputDir, e.Directory == '$' ? e.Name : e.FullName, r.Extract(e));
     }
   }
 

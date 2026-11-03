@@ -58,10 +58,61 @@ public sealed record ArchiveInputInfo(
       IsDirectory: false, Metadata: metadata);
   }
 
+  /// <summary>
+  /// The last-write time the entry should carry: <see cref="Metadata"/>'s when given, else
+  /// that of the file or directory at <see cref="FullPath"/>; null for an in-memory input
+  /// without metadata. Creators store it, so a rebuild (extract, edit, re-create) does not
+  /// reset every entry's time.
+  /// </summary>
+  public DateTime? SourceLastModifiedUtc {
+    get {
+      if (this.Metadata?.LastWriteTimeUtc is { } stated) return stated.UtcDateTime;
+      if (this.InMemoryContent != null || string.IsNullOrEmpty(this.FullPath)) return null;
+      try {
+        if (System.IO.File.Exists(this.FullPath) || System.IO.Directory.Exists(this.FullPath))
+          return System.IO.File.GetLastWriteTimeUtc(this.FullPath);
+      } catch (System.IO.IOException) {
+      } catch (UnauthorizedAccessException) {
+      }
+      return null;
+    }
+  }
+
+  /// <summary>
+  /// The Unix permission bits (the low 12 bits of the mode) the entry should carry:
+  /// <see cref="Metadata"/>'s when given, else the source file's on a Unix host; null when unknown.
+  /// </summary>
+  public System.IO.UnixFileMode? SourceUnixMode {
+    get {
+      if (this.Metadata?.UnixMode is { } stated) return (System.IO.UnixFileMode)(stated & 0xFFF);
+      if (OperatingSystem.IsWindows() || this.InMemoryContent != null || string.IsNullOrEmpty(this.FullPath)) return null;
+      try {
+        return System.IO.File.Exists(this.FullPath) || System.IO.Directory.Exists(this.FullPath)
+          ? System.IO.File.GetUnixFileMode(this.FullPath)
+          : null;
+      } catch (System.IO.IOException) {
+        return null;
+      } catch (UnauthorizedAccessException) {
+        return null;
+      }
+    }
+  }
+
   /// <summary>Returns the input's bytes: the in-memory content when present,
   /// otherwise the file at <see cref="FullPath"/>. Descriptors should call this
   /// instead of <c>File.ReadAllBytes(FullPath)</c> so they transparently support
   /// in-memory (temp-free) creation and conversion.</summary>
-  public byte[] ReadContent()
-    => this.InMemoryContent ?? System.IO.File.ReadAllBytes(this.FullPath);
+  public byte[] ReadContent() {
+    if (this.InMemoryContent != null) return this.InMemoryContent;
+    var data = System.IO.File.ReadAllBytes(this.FullPath);
+    ReadObserver?.Invoke(data.LongLength);
+    return data;
+  }
+
+  /// <summary>
+  /// Told the byte count of every on-disk input as <see cref="ReadContent"/> reads it, so a host
+  /// can show progress while an archive is created or rebuilt. Null when nobody listens. It is
+  /// process-wide and may be called from several threads at once (parallel writers).
+  /// </summary>
+  public static Action<long>? ReadObserver { get; set; }
 }

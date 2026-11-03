@@ -1,11 +1,10 @@
-using System.Buffers.Binary;
 using Compression.Registry;
 
 namespace Compression.Core.Dictionary.Lzrw3;
 
 /// <summary>
-/// Exposes LZRW3 compression as a benchmarkable building block.
-/// Prepends a 4-byte LE uncompressed size header for round-trip support.
+/// Exposes LZRW3 compression as a benchmarkable building block. The block's bytes are exactly
+/// the stream Ross N. Williams' reference <c>lzrw3.c</c> writes, flag bytes included.
 /// Reference: Ross N. Williams, "LZRW3", http://ross.net/compression/lzrw3.html.
 /// </summary>
 public sealed class Lzrw3BuildingBlock : IBuildingBlock {
@@ -14,22 +13,13 @@ public sealed class Lzrw3BuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
   public string DisplayName => "LZRW3";
   /// <inheritdoc/>
-  public string Description => "LZRW1 derivative that transmits synchronized hash-table indices instead of offsets";
+  public string Description => "Ross Williams' LZRW1 variant whose copy items name a hash-table slot instead of an offset; both sides keep the table";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
-    var compressed = Lzrw3Compressor.Compress(data);
-    var result = new byte[4 + compressed.Length];
-    BinaryPrimitives.WriteInt32LittleEndian(result, data.Length);
-    compressed.CopyTo(result.AsSpan(4));
-    return result;
-  }
+  public byte[] Compress(ReadOnlySpan<byte> data) => Lzrw3Compressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
-    var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
-    return originalSize == 0 ? [] : Lzrw3Decompressor.Decompress(data[4..], originalSize);
-  }
+  public byte[] Decompress(ReadOnlySpan<byte> data) => Lzrw3Decompressor.Decompress(data);
 }

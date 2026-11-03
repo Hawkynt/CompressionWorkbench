@@ -158,6 +158,36 @@ jobs:
           dotnet pack Hawkynt.FileFormats.FileSystems/Hawkynt.FileFormats.FileSystems.csproj --configuration Release --output dist-nuget -p:Version=0.0.0-ci
           ls -la dist-nuget/
 
+      # avbtool judges vbmeta images; no distribution packages it, so the script is fetched at a
+      # pinned AOSP revision and checked against that revision's SHA-256. googlesource answers
+      # runners with the odd 503, and the old one-liner piped the failed download into base64,
+      # which turned an empty response into an empty avbtool.py that "ran" and wrote nothing. The
+      # script is cached, retried, and only offered to the tests when its hash matches.
+      - name: Cache avbtool
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/avbtool
+          key: avbtool-c5066a96caa7bf4150c0a8cc8cc14ab81733fdc7-v1
+      - name: Fetch avbtool (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          dir="$RUNNER_TEMP/avbtool"
+          sum="5698656733ef5077d62ee30395b5ad34295a0f170fb1ba570026c760ead83782  $dir/avbtool.py"
+          mkdir -p "$dir"
+          if ! echo "$sum" | sha256sum -c --status 2>/dev/null; then
+            curl -sSfL --retry 5 --retry-all-errors --retry-delay 15 -o "$dir/avbtool.b64" \
+              "https://android.googlesource.com/platform/external/avb/+/c5066a96caa7bf4150c0a8cc8cc14ab81733fdc7/avbtool.py?format=TEXT" \
+              && base64 -d "$dir/avbtool.b64" > "$dir/avbtool.py" || true
+            rm -f "$dir/avbtool.b64"
+          fi
+          if echo "$sum" | sha256sum -c --status 2>/dev/null; then
+            echo "CWB_AVBTOOL=$dir/avbtool.py" >> "$GITHUB_ENV"
+          else
+            rm -f "$dir/avbtool.py"
+            echo "::warning::avbtool could not be fetched at the pinned revision; the vbmeta oracle test reports itself as not run"
+          fi
+
       - name: Install interop tools (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -180,11 +210,6 @@ jobs:
           # mkbootimg is AOSP's own boot image tool pair: the Android boot image writer must
           # reproduce mkbootimg's bytes, and unpack_bootimg must read back what it writes.
           sudo apt-get install -y mkbootimg
-          # avbtool judges vbmeta images; no distribution packages it, so the script is fetched
-          # at a pinned AOSP revision.
-          curl -sSfL "https://android.googlesource.com/platform/external/avb/+/c5066a96caa7bf4150c0a8cc8cc14ab81733fdc7/avbtool.py?format=TEXT" \
-            | base64 -d > "$RUNNER_TEMP/avbtool.py" \
-            && echo "CWB_AVBTOOL=$RUNNER_TEMP/avbtool.py" >> "$GITHUB_ENV" || true
           sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
           sudo modprobe gfs2 || true
 
@@ -250,8 +275,13 @@ jobs:
       # generic 6.8 kernel carries bcachefs as a module, the runner's own Azure
       # kernel need not. supermin is pointed at it so the appliance does not boot
       # the newest kernel in /boot.
+      #
+      # Same condition as the bcachefs oracle below, which runs even after an earlier step
+      # failed. Gated on success() this install was skipped whenever any test before it went
+      # red, and the oracle then failed for a missing guestfish -- on every pull request whose
+      # own failure lay somewhere else entirely.
       - name: Install a kernel with bcachefs (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
         run: |
           set -euo pipefail
           sudo apt-get install -y libguestfs-tools

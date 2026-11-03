@@ -28,16 +28,21 @@ verbatim copy:
   zpaq.cpp Jidac::read_archive,
            extract                     -> ZpaqReader.cs
   zpaq.cpp Jidac::add                  -> ZpaqWriter.cs
+  libzpaq.cpp AES_CTR::encrypt, stretchKey,
+              scrypt, smix, blockmix,
+              salsa8                   -> ZpaqCrypto.cs (the AES block cipher
+                                          and PBKDF2-HMAC-SHA256 are .NET's)
+  zpaq.cpp InputArchive, subpart       -> ZpaqCrypto.cs, ZpaqArchiveSet.cs
 
 Constant tables (bit-history state table, CM/MATCH divisor tables, squash
 and stretch tables, the add() analysis divisor table, the locator tag, the
 ZPAQL opcode list and the generated ZPAQL programs for methods 0..5) are
 copied exactly, as the format requires.
 
-Not converted: the x86/x64 JIT, AES-256 encryption and scrypt key stretching
-(encrypted archives are refused), multi-part and index (-index) archives,
-and appending a new version to an existing archive (the writer emits a
-single-version archive; modify rebuilds it).
+Not converted: the x86/x64 JIT and writing encrypted, multi-part or index
+archives (they are read). Appending a version (Jidac::add on an existing
+archive: fragment table carried over, dedup against it, removal records
+with date 0) is part of the ZpaqWriter conversion.
 
 ---------------------------------------------------------------------
 

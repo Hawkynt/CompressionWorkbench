@@ -25,6 +25,7 @@ public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the LHA archive per the requested mode.</summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    RefuseSelfExtractor(archive);
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new LhaReader(stream);
@@ -64,6 +65,7 @@ public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Remove walks the chain and shifts trailing bytes (no central directory).
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    RefuseSelfExtractor(archive);
     foreach (var (name, data) in FilesOnly(inputs)) {
       LhaModifier.RemoveFile(archive, name, wipeData: true);
       LhaModifier.AddFile(archive, name, data);
@@ -72,8 +74,20 @@ public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <summary>Removes named entries; uses <see cref="LhaModifier"/>.</summary>
   public void Remove(Stream archive, string[] entryNames) {
+    RefuseSelfExtractor(archive);
     foreach (var name in entryNames)
       LhaModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
+  /// <summary>
+  /// Self-extracting archives are read here but not edited: no tool has confirmed that a stub
+  /// still extracts an archive changed behind it, and a rebuild would drop the stub.
+  /// </summary>
+  private static void RefuseSelfExtractor(Stream archive) {
+    if (archive.CanSeek && LhaReader.FindArchiveOffset(archive) > 0)
+      throw new NotSupportedException("Self-extracting LHA archives are read-only: editing them behind their stub is not proven.");
+    if (archive.CanSeek)
+      archive.Position = 0;
   }
 
   /// <summary>

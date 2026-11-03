@@ -288,11 +288,32 @@ public static class ModifyRebuilder {
           if (!input.IsDirectory)
             replaced.Add(Norm(input.ArchiveName));
 
+      // A name drops that entry and, for a folder, everything below it. Only the full path
+      // counts: matching the leaf as well dropped "sub/a.txt" along with "a.txt".
+      bool Dropped(string name) {
+        if (drop == null) return false;
+        var parts = name.Split('/');
+        for (var n = 1; n <= parts.Length; ++n)
+          if (drop.Contains(string.Join('/', parts[..n]))) return true;
+        return false;
+      }
+
       var carried = new System.Collections.Generic.List<ArchiveInputInfo>();
+      // Folders stay, empty ones included; new folders are added.
+      foreach (var dir in System.IO.Directory.EnumerateDirectories(
+          unpacked, "*", System.IO.SearchOption.AllDirectories)) {
+        var name = Norm(System.IO.Path.GetRelativePath(unpacked, dir));
+        if (name.Length > 0 && !Dropped(name) && (syntheticNames == null || !syntheticNames.Contains(name)))
+          carried.Add(new ArchiveInputInfo("", name + "/", true));
+      }
+      if (extra != null)
+        foreach (var input in extra)
+          if (input.IsDirectory && Norm(input.ArchiveName).Length > 0)
+            carried.Add(input);
       foreach (var file in System.IO.Directory.EnumerateFiles(
           unpacked, "*", System.IO.SearchOption.AllDirectories)) {
         var name = Norm(System.IO.Path.GetRelativePath(unpacked, file));
-        if (drop != null && (drop.Contains(name) || drop.Contains(Norm(System.IO.Path.GetFileName(file)))))
+        if (Dropped(name))
           continue;
         // A reader that also surfaces the raw image must not have it written
         // back as a file: the volume would carry a copy of its own former self.
@@ -374,7 +395,8 @@ public static class ModifyRebuilder {
     }
   }
 
-  // Path-normalised name key for add/remove matching: forward slashes, no leading
-  // slash — so a reader reporting "/dir/x" and a caller passing "dir/x" agree.
-  private static string Norm(string name) => name.Replace('\\', '/').TrimStart('/');
+  // Path-normalised name key for add/remove matching: forward slashes, no leading or
+  // trailing slash — so a reader reporting "/dir/x", a caller passing "dir/x" and a folder
+  // named "dir/" agree.
+  private static string Norm(string name) => name.Replace('\\', '/').Trim('/');
 }

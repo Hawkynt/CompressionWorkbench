@@ -73,6 +73,46 @@ public static class PeOverlay {
   }
 
   /// <summary>
+  /// Returns where the data appended to an MS-DOS executable begins — the end of the load image
+  /// the MZ header declares (pages of 512 bytes, the last one partly used) — or -1 when the file
+  /// is not an MZ executable, is a PE image, or has nothing appended. DOS self-extractors (LHA,
+  /// ARJ, PKZIP) put their archive there.
+  /// </summary>
+  public static long FindDosOverlayOffset(Stream stream) {
+    try {
+      Span<byte> header = stackalloc byte[6];
+      stream.Position = 0;
+      if (stream.Read(header) < 6 || header[0] != 0x4D || header[1] != 0x5A)
+        return -1;
+      if (HasNewExecutableHeader(stream))
+        return -1;
+      var lastPage = BinaryPrimitives.ReadUInt16LittleEndian(header[2..]);
+      var pages = BinaryPrimitives.ReadUInt16LittleEndian(header[4..]);
+      if (pages == 0 || lastPage >= 512)
+        return -1;
+      var imageEnd = pages * 512L - (lastPage == 0 ? 0 : 512 - lastPage);
+      return imageEnd > 0 && imageEnd < stream.Length ? imageEnd : -1;
+    } catch (IOException) {
+      return -1;
+    }
+  }
+
+  /// <summary>Whether e_lfanew points at a PE, NE, LE or LX header: then the MZ image is only a stub.</summary>
+  private static bool HasNewExecutableHeader(Stream stream) {
+    Span<byte> buf = stackalloc byte[4];
+    stream.Position = 0x3C;
+    if (stream.Read(buf) < 4)
+      return false;
+    var offset = BinaryPrimitives.ReadUInt32LittleEndian(buf);
+    if (offset < 0x40 || offset + 2 > stream.Length)
+      return false;
+    stream.Position = offset;
+    if (stream.Read(buf[..2]) < 2)
+      return false;
+    return (buf[0], buf[1]) is ((byte)'P', (byte)'E') or ((byte)'N', (byte)'E') or ((byte)'L', (byte)'E') or ((byte)'L', (byte)'X');
+  }
+
+  /// <summary>
   /// Scans from the given start offset for known archive signatures.
   /// Returns the (format, offset) of the first match, or null if none found.
   /// Scans up to maxScan bytes (default 1MB) to avoid scanning entire large executables.
@@ -150,6 +190,8 @@ public static class PeOverlay {
     try {
       using var fs = File.OpenRead(path);
       var overlayOffset = FindOverlayOffset(fs);
+      if (overlayOffset < 0)
+        overlayOffset = FindDosOverlayOffset(fs);
       if (overlayOffset < 0) return null;
       return ScanForArchive(fs, overlayOffset);
     }

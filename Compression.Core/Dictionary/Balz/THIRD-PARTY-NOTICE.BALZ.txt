@@ -1,0 +1,11 @@
+BalzCodec.cs is a C# conversion of:
+
+  balz.cpp, BALZ 1.20, Ilya Muravyov (2015)
+  http://sourceforge.net/projects/balz/  (balz120src.zip)
+
+Licence, as stated in the file: "balz.cpp is written and placed in the public domain by Ilya
+Muravyov".
+
+Local changes: none to the file format. The per-context position tables are allocated on first
+use rather than as one 32 MiB array; the decoder refuses truncated input and matches that point
+outside the block decoded so far instead of reading past its buffer.

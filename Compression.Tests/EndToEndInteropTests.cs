@@ -482,6 +482,18 @@ public class EndToEndInteropTests {
     // PyInstaller CArchive: ".pkg" is shared by too many formats to route by extension, so this
     // grid cannot reach the writer. PyInstallerTests and the CArchive oracle tests do.
     ".pkg",
+    // Forensic and optical image containers: each wraps exactly one image and refuses a second
+    // input, so three loose files cannot go in. AffTests, DaaTests, DiskCopy42Tests, IszTests and
+    // their external conformance tests round-trip a single image.
+    ".aff", ".daa", ".dc42", ".isz",
+    // SeqBox: one protected file per container. SeqBoxTests round-trips it.
+    ".sbx",
+    // Component containers whose members are named by their role, not by the caller: an Android
+    // boot image takes kernel/ramdisk/..., vbmeta takes descriptors/NN_*.bin, and the firmware
+    // headers take kernel.bin/rootfs.bin (CHK), image.bin/entity_NN.bin (SEAMA) and
+    // partition_N.bin (TRX). AndroidBootImageTests, AndroidVbmetaTests, NetgearChkTests,
+    // SeamaTests and TrxTests round-trip them.
+    ".bootimg", ".avb", ".chk", ".seama", ".trx",
   };
 
   private static IEnumerable<string> RoundTripFormats() {

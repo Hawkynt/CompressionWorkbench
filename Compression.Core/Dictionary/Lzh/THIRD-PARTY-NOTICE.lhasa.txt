@@ -30,6 +30,9 @@ Files converted (decoders only; lhasa has no encoders):
   lib/pm2_decoder.c, tree_decode.c  -> Pm2Decoder.cs (tables copied exactly)
   lib/pma_common.c                  -> PmaHistory.cs
   lib/bit_stream_reader.c           -> LhaBitInput.cs
+  lib/lk7_decoder.c, lh_new_decoder.c (LHARK parts)
+                                    -> LzhDecoder.cs (LHARK copy-length and offset codes,
+                                       289 codes, 6 offset-count bits; history filled with spaces)
 
 The -lh1-, -lzs- and -lz5- encoders (Lh1Encoder.cs, LzsEncoder.cs, Lz5Encoder.cs)
 are our own, built to the bit streams these decoders read and verified by lhasa

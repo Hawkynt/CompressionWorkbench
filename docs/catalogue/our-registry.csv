@@ -10,7 +10,7 @@ format,Adfs,Acorn ADFS,Archive,Y,.adl;.adf,Y,Y,Y,Y
 format,AdvFs,AdvFS (Tru64 UNIX),Archive,Y,.advfs,Y,Y,Y,Y
 format,Adx,CRI ADX,Audio,,.adx,Y,Y,Y,
 format,Aea,Sony ATRAC1 / MiniDisc (.aea),Audio,,.aea,Y,Y,Y,
-format,Aff,AFF (Advanced Forensic Format),Archive,,.aff,Y,Y,Y,Y
+format,Aff,AFF (Advanced Forensic Format),Archive,,.aff;.afm,Y,Y,Y,Y
 format,Aff4,Advanced Forensic Format 4 (AFF4),Archive,,.aff4,Y,Y,Y,
 format,Afio,afio,Archive,,.afio,Y,Y,Y,
 format,Afs,Sega AFS,Archive,,.afs,Y,Y,Y,Y
@@ -300,7 +300,6 @@ format,Lzham,LZHAM,Stream,,.lzham,,Y,Y,
 format,Lzip,Lzip,Stream,,.lz;.lzip,,Y,Y,
 format,Lzma,LZMA,Stream,,.lzma,,Y,Y,
 format,Lzop,LZOP,Stream,,.lzo,,Y,Y,
-format,Lzs,LZS,Stream,,.lzs,,Y,Y,
 format,LzxAmiga,LZX (Amiga),Archive,,.lzx,Y,Y,Y,Y
 format,M3u8,HLS Playlist (M3U8),Archive,,.m3u8;.m3u,Y,Y,,
 format,MacBinary,MacBinary,Wrapper,,.bin;.macbin,,Y,Y,
@@ -560,8 +559,8 @@ format,Tux2,TUX2,Archive,Y,.tux2,Y,Y,Y,Y
 format,Tux3,TUX3,Archive,Y,.tux3,Y,Y,,
 format,Txw,TXW (Yamaha TX16W),Audio,,.txw,Y,Y,Y,
 format,U8,Nintendo U8,Archive,,.u8;.arc,Y,Y,Y,Y
-format,Uc2,UltraCompressor II,Archive,,.uc2;.pu2,Y,Y,Y,
 format,Ubifs,UBIFS,Archive,Y,.ubifs;.ubi;.img,Y,Y,Y,Y
+format,Uc2,UltraCompressor II,Archive,,.uc2;.pu2,Y,Y,Y,
 format,Udf,UDF,Archive,Y,.udf,Y,Y,Y,Y
 format,UefiFv,UEFI Firmware Volume,Archive,,.fv;.fd,Y,Y,Y,Y
 format,Ufs,UFS,Archive,Y,.ufs,Y,Y,Y,Y

@@ -47,11 +47,11 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 
 | Format | Id | Extensions | Compress | Decompress | Optimize | Notes | Reference |
 | --- | --- | --- | :---: | :---: | :---: | --- | --- |
-| aPLib | `ApLib` | `.aplib` | ✅ | ✅ | ✅ | Standard 24-byte AP32 wrapper around a bare aPLib stream; older self-framed streams still read | [ibsensoftware.com](https://ibsensoftware.com/products_aPLib.html) |
-| BALZ | `Balz` | `.balz` | ✅ | ✅ | ✅ | Flexible look-ahead parser; optimal mode keeps the greedy stream when it is smaller | [sourceforge.net](https://sourceforge.net/projects/balz/) |
+| aPLib | `ApLib` | `.aplib` | ✅ | ✅ | ✅ | AP32 (`aPsafe_pack`) files as aPLib 1.1.1's `appack` writes and reads them; empty input is refused, as aPLib does | [ibsensoftware.com](https://ibsensoftware.com/products_aPLib.html) |
+| BALZ | `Balz` | `.balz` | ✅ | ✅ | ✅ | BALZ 1.20 files, byte-identical to the reference's `c` and `cx`; optimize keeps the smaller of the two | [sourceforge.net](https://sourceforge.net/projects/balz/) |
 | Base64 (uuencode wrapper) | `B64Encoding` | `.b64` `.base64` | ✅ | ✅ | — | libarchive-compatible `begin-base64` / `====` wrapper; not bare RFC 4648 Base64 | [GitHub](https://github.com/libarchive/libarchive/blob/master/libarchive/archive_write_add_filter_b64encode.c) |
 | BCM | `Bcm` | `.bcm` | ✅ | ✅ | ✅ | Block-size search (16–128 KiB) | [GitHub](https://github.com/encode84/bcm) |
-| [BinHex](https://en.wikipedia.org/wiki/BinHex) | `BinHex` | `.hqx` | ✅ | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc1741) |
+| [BinHex](https://en.wikipedia.org/wiki/BinHex) | `BinHex` | `.hqx` | ✅ | ✅ | — | BinHex 4.0; Convert::BinHex reads ours and we read its files, every CRC checked | [RFC](https://www.rfc-editor.org/rfc/rfc1741) |
 | BriefLZ | `BriefLz` | `.blz` | ✅ | ✅ | ✅ | Reference-compatible blzpack stream; optimizer compares managed effort levels 1–10 | [GitHub](https://github.com/jibsen/brieflz) |
 | [Brotli](https://en.wikipedia.org/wiki/Brotli) | `Brotli` | `.br` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc7932) |
 | BSC | `Bsc` | `.bsc` | ✅ | ✅ | ✅ | Managed BWT+MTF+RLE payload; optimizer searches block size/context order; full libbsc QLFC/LZP parity remains open | [GitHub](https://github.com/IlyaGrebnov/libbsc) |
@@ -60,7 +60,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [Unix compress (.Z)](https://en.wikipedia.org/wiki/Compress_(software)) | `Compress` | `.z` | ✅ | ✅ | ✅ |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/compress.html) |
 | CP/M Crunch | `Crunch` | `.cru` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Crunch) |
 | CSC | `Csc` | `.csc` | ✅ | ✅ | ✅ | libcsc stream; the reference `csc` tool decodes ours and we decode its output, at every level (1–5), window and filter switch; optimizer searches the five levels | [GitHub](https://github.com/fusiyuan2010/CSC) |
-| Density | `Density` | `.density` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/k0dai/density) |
+| Density | `Density` | `.density` | ✅ | ✅ | ✅ | density-rs 0.16 Chameleon/Cheetah/Lion streams (byte-identical) in our own `DENS` container, since density defines no file format | [GitHub](https://github.com/g1mv/density) |
 | Freeze | `Freeze` | `.f` `.freeze` | ✅ | ✅ | ✅ | Optimizer searches the parse strategy, the match-search depth and the position Huffman table | [Archive Team](http://fileformats.archiveteam.org/wiki/Freeze) |
 | [gzip](https://en.wikipedia.org/wiki/Gzip) | `Gzip` | `.gz` `.gzip` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1952) |
 | ICE Packer | `IcePacker` | `.ice` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/ICE) |
@@ -73,7 +73,6 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [Lzip](https://en.wikipedia.org/wiki/Lzip) | `Lzip` | `.lz` `.lzip` | ✅ | ✅ | ✅ |  | [nongnu.org](https://www.nongnu.org/lzip/manual/lzip_manual.html#File-format) |
 | [LZMA (.lzma)](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm) | `Lzma` | `.lzma` | ✅ | ✅ | ✅ |  | [7-zip.org](https://www.7-zip.org/sdk.html) |
 | [lzop](https://en.wikipedia.org/wiki/Lzop) | `Lzop` | `.lzo` | ✅ | ✅ | ✅ |  | [lzop.org](https://www.lzop.org/) |
-| [LZS](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Stac) | `Lzs` | `.lzs` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc2395) |
 | [MacBinary](https://en.wikipedia.org/wiki/MacBinary) | `MacBinary` | `.bin` `.macbin` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1740) |
 | MCM | `Mcm` | `.mcm` | ✅ | ✅ | ✅ | Optimizer searches Legacy plus reduced Turbo/Fast/Mid/High/Max managed profiles | [GitHub](https://github.com/mathieuchartier/mcm) |
 | [pack (.z)](https://en.wikipedia.org/wiki/Pack_(compression)) | `UnixPack` |  | ✅ | ✅ | — | System V static-Huffman `pack`; detected by its `1F 1E` magic (`.z` belongs to `compress`); GNU gzip decodes our output | [Wikipedia](https://en.wikipedia.org/wiki/Pack_(compression)) |
@@ -84,19 +83,19 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | QuickLZ | `QuickLz` | `.quicklz` | ✅ | ✅ | ✅ | Level 1 and level 3; the optimizer searches the level and the level-3 search depth | [quicklz.com](http://www.quicklz.com/) |
 | RefPack / QFS | `RefPack` | `.qfs` `.refpack` | ✅ | ✅ | ✅ | Optimizer searches the history window, the match-search depth and quick match indexing | [wiki.niotso.org](http://wiki.niotso.org/RefPack) |
 | RNC ProPack | `Rnc` | `.rnc` | ✅ | ✅ | ✅ |  | [segaretro.org](https://segaretro.org/Rob_Northen_compression) |
-| [rzip](https://en.wikipedia.org/wiki/Rzip) | `Rzip` | `.rz` `.rzip` | ✅ | ✅ | ✅ |  | [rzip.samba.org](https://rzip.samba.org/) |
+| [rzip](https://en.wikipedia.org/wiki/Rzip) | `Rzip` | `.rz` `.rzip` | ✅ | ✅ | ✅ | rzip 2.x files (matches + bzip2 streams) that rzip 2.1 reads and writes; layout: [RZIP-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/RZIP-ON-DISK.md) | [rzip.samba.org](https://rzip.samba.org/) |
 | [Snappy](https://en.wikipedia.org/wiki/Snappy) | `Snappy` | `.sz` `.snappy` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/google/snappy/blob/main/framing_format.txt) |
 | Squeeze (SQ) | `Squeeze` | `.sqz` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SQ) |
 | [SWF](https://en.wikipedia.org/wiki/SWF) | `Swf` | `.swf` | ✅ | ✅ | ✅ | FWS/CWS/ZWS envelope optimizer; no tag-level parsing | [open-flash.github.io](https://open-flash.github.io/mirrors/swf-spec-19.pdf) |
-| SZ (MS COMPRESS, KWAJ-less) | `SzCompress` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
+| SZ (MS COMPRESS, KWAJ-less) | `SzCompress` |  | ✅ | ✅ | ✅ | libmspack reads ours (its QBasic SZDD variant); no real `SZ ` file was found to test reading against | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
 | SZDD | `Szdd` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
 | [uuencode](https://en.wikipedia.org/wiki/Uuencoding) | `UuEncoding` | `.uue` `.uu` | ✅ | ✅ | — |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/uuencode.html) |
 | [XXencode](https://en.wikipedia.org/wiki/Xxencoding) | `XxEncoding` | `.xxe` `.xx` | ✅ | ✅ | — | Detected by extension only (the `begin` header is uuencode's); uudeview cross-decodes both directions | [Archive Team](http://fileformats.archiveteam.org/wiki/XXencode) |
 | [XZ](https://en.wikipedia.org/wiki/XZ_Utils) | `Xz` | `.xz` | ✅ | ✅ | ✅ |  | [tukaani.org](https://tukaani.org/xz/xz-file-format.txt) |
-| [yEnc](https://en.wikipedia.org/wiki/YEnc) | `YEnc` | `.yenc` `.uu` | ✅ | ✅ | — |  | [yenc.org](http://www.yenc.org/yenc-draft.1.3.txt) |
+| [yEnc](https://en.wikipedia.org/wiki/YEnc) | `YEnc` | `.yenc` `.uu` | ✅ | ✅ | — | `=yend` size and CRC-32 checked; read as a file, so NNTP dot-doubling is not undone | [yenc.org](http://www.yenc.org/yenc-draft.1.3.txt) |
 | Yaz0 | `Yaz0` | `.yaz0` `.szs` | ✅ | ✅ | ✅ |  | [wiki.tockdom.com](https://wiki.tockdom.com/wiki/YAZ0) |
 | [zlib](https://en.wikipedia.org/wiki/Zlib) | `Zlib` | `.zlib` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1950) |
-| Zling | `Zling` | `.zling` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/richox/libzling) |
+| Zling | `Zling` | `.zling` | ✅ | ✅ | ✅ | libzling streams, byte-identical to its demo at levels 0-4 | [GitHub](https://github.com/richox/libzling) |
 | [Zstandard](https://en.wikipedia.org/wiki/Zstd) | `Zstd` | `.zst` `.zstd` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc8878) |
 
 ### 🗜️ Archive containers
@@ -124,14 +123,14 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [DMS](https://en.wikipedia.org/wiki/Disk_Masher_System) | `Dms` | `.dms` | WORM | ✅ | defrag | Reads every mode (stored, Simple, Quick, Medium, Deep, Heavy 1/2) with the decompressor state carried from track to track, plus password decryption, banner and FILE_ID.DIZ texts; Medium and Heavy 2 match xdms on real Aminet archives. Writes stored and RLE tracks that `xdms t` accepts | [GitHub](https://github.com/MacPaw/XADMaster/blob/master/libxad/clients/DMS.c) |
 | [EGG (ALZip)](https://en.wikipedia.org/wiki/EGG_(file_format)) | `Egg` | `.egg` | WORM | ✅ | defrag |  | [GitHub](https://github.com/alkegi/docs/blob/master/egg.md) |
 | [ESD](https://en.wikipedia.org/wiki/Windows_Imaging_Format) | `Esd` | `.esd` | WORM | ✅ | wipe | Solid LZMS WIM; created images carry a metadata resource but entries re-list as resources | [Microsoft Learn](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview) |
-| [FreeArc](https://en.wikipedia.org/wiki/FreeArc) | `FreeArc` | `.arc` | R/W | ✅ | defrag · wipe | Reads FreeArc 0.67 archives; decodes storing and lzma blocks only (tornado, ppmd, lzp, grzip, rep, delta, exe and encryption are refused). Writes storing/lzma archives that FreeArc 0.67 extracts byte-identically. Layout: [FREEARC-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/FREEARC-ON-DISK.md) | [GitHub](https://github.com/Bulat-Ziganshin/FA) |
+| [FreeArc](https://en.wikipedia.org/wiki/FreeArc) | `FreeArc` | `.arc` | R/W | ✅ | defrag · wipe | Reads FreeArc 0.67 archives; decodes storing, lzma and Tornado blocks, also behind the rep, delta and exe filters and inside 4x4 (the `-m1`..`-m9`/`-mx` chains); ppmd, lzp, grzip and encryption are refused. Writes storing/lzma archives that FreeArc 0.67 extracts byte-identically. Layout: [FREEARC-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/FREEARC-ON-DISK.md) | [GitHub](https://github.com/Bulat-Ziganshin/FA) |
 | HA | `Ha` | `.ha` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/HA) |
 | [IFF CDAF](https://en.wikipedia.org/wiki/Interchange_File_Format) | `IffCdaf` | `.cdaf` | R/W | ✅ | defrag · wipe |  | [Aminet](https://aminet.net) |
 | [LBR](https://en.wikipedia.org/wiki/LBR_(file_format)) | `Lbr` | `.lbr` | R/W | ✅ | defrag · wipe |  | [gaby.de](http://www.gaby.de/cpm/manuals/archive/lbr.txt) |
 | LhF (LhFloppy) | `LhF` | `.lhf` | R/W | ✅ | defrag · wipe | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net) |
 | [lrzip](https://en.wikipedia.org/wiki/Rzip#lrzip) | `Lrzip` | `.lrz` | WORM | ✅ | defrag | LZMA-wrapped subtype only; other lrzip subtypes are rejected; single data member | [GitHub](https://github.com/ckolivas/lrzip) |
 | Lynx (Commodore) | `Lynx` | `.lnx` | R/W | ✅ | defrag · shrink · wipe | Stored entries only | [Archive Team](http://fileformats.archiveteam.org/wiki/Lynx_(Commodore_64)) |
-| [LHA / LZH](https://en.wikipedia.org/wiki/LHA_(file_format)) | `Lzh` | `.lzh` `.lha` | R/W | ✅ | defrag · wipe | -lh2-, -lh3-, -lhx-, -pm1- and -pm2- are read-only | [GitHub](https://github.com/jca02266/lha) |
+| [LHA / LZH](https://en.wikipedia.org/wiki/LHA_(file_format)) | `Lzh` | `.lzh` `.lha` | R/W | ✅ | defrag · wipe | -lh2-, -lh3-, -lhx-, LHARK's -lk7-, -pm1- and -pm2- are read-only; self-extractors (DOS `.exe`) open behind their stub and are not edited | [GitHub](https://github.com/jca02266/lha) |
 | [LZX (Amiga)](https://en.wikipedia.org/wiki/LZX) | `LzxAmiga` | `.lzx` | R/W | ✅ | defrag · wipe |  | [Aminet](https://aminet.net) |
 | [mtree](https://man.freebsd.org/cgi/man.cgi?query=mtree&sektion=5) | `Mtree` | `.mtree` | WORM | ✅ | — | Filesystem metadata manifest; does not embed file bodies, so CWB does not dereference `contents=` host paths | [FreeBSD mtree(5)](https://man.freebsd.org/cgi/man.cgi?query=mtree&sektion=5) |
 | [NuFX / ShrinkIt](https://en.wikipedia.org/wiki/ShrinkIt) | `NuFx` | `.shk` `.sdk` `.bxy` | R/W | ✅ | defrag · shrink · wipe |  | [nulib.com](https://nulib.com/library/FTN.e08002.htm) |
@@ -157,7 +156,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | ZAP (Amiga) | `Zap` | `.zap` | WORM | ✅ | wipe | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net/) |
 | [ZIP](https://en.wikipedia.org/wiki/ZIP_(file_format)) | `Zip` | `.zip` `.zipx` | R/W | ✅ | compress · repack · shrink · wipe | Store, Deflate, Deflate64, Shrink, Reduce, Implode, BZip2, LZMA, XZ, PPMd, Zstd, AES | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
 | [ZOO](https://en.wikipedia.org/wiki/Zoo_(file_format)) | `Zoo` | `.zoo` | R/W | ✅ | defrag · wipe | Store, LZW, LZH | [Archive Team](http://fileformats.archiveteam.org/wiki/ZOO) |
-| [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `Zpaq` | `.zpaq` | R/W | ✅ | defrag | Journaling (versions, deduplicated fragments) and streaming layouts, methods 0-5 and explicit `x` methods, full ZPAQL; zpaq 7.15 extracts what we write. Encrypted, multi-part and `-index` archives are refused; modify rewrites one version | [ZPAQ Level 2 spec](https://mattmahoney.net/dc/zpaq206.pdf) |
+| [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `Zpaq` | `.zpaq` | R/W | ✅ | defrag | Journaling (versions, deduplicated fragments) and streaming layouts, methods 0-5 and explicit `x` methods, full ZPAQL; zpaq 7.15 extracts what we write. Encrypted (`-key`) and multi-part (`arc???`) archives are read, an `-index` next to its parts reads the parts; those are not edited. Adding and removing append a version (earlier versions stay byte for byte) | [ZPAQ Level 2 spec](https://mattmahoney.net/dc/zpaq206.pdf) |
 
 ### 🧬 Structured data and registry
 
@@ -198,7 +197,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [MSI](https://en.wikipedia.org/wiki/Windows_Installer) | `Msi` | `.msi` `.msp` `.mst` | R/W | ✅ | wipe | CFB envelope; a functional Installer database is not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/) |
 | [MSIX](https://en.wikipedia.org/wiki/MSIX) | `Msix` | `.msix` `.msixbundle` | R/W | ✅ | defrag · wipe | Unsigned fresh package output | [Microsoft Learn](https://learn.microsoft.com/en-us/windows/msix/) |
 | Windows Update package | `Msu` | `.msu` | R | ✅ | — | The package cabinet (or WIM) and its parts; checked against 7-Zip | [Microsoft Learn](https://learn.microsoft.com/troubleshoot/windows-client/installing-updates-features-roles/description-of-windows-update-standalone-installer) |
-| [NSIS](https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System) | `Nsis` |  | R | ✅ | — | Files of the install script, zlib/bzip2/LZMA, solid or not, NSIS 2 and 3; checked against 7-Zip. LZMA behind the x86 branch filter is refused | [nsis.sourceforge.io](https://nsis.sourceforge.io/Docs/) |
+| [NSIS](https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System) | `Nsis` |  | R | ✅ | — | Files of the install script, zlib/bzip2/LZMA, solid or not, NSIS 2 and 3; LZMA behind the x86 branch filter (7-Zip's own installers); the uninstaller `WriteUninstaller` writes, rebuilt byte for byte as the installer writes it; checked against 7-Zip | [nsis.sourceforge.io](https://nsis.sourceforge.io/Docs/) |
 | [NuGet .nupkg](https://en.wikipedia.org/wiki/NuGet) | `NuPkg` | `.nupkg` | R/W | ✅ | defrag · wipe |  | [Microsoft Learn](https://learn.microsoft.com/nuget/reference/nuspec) |
 | [OVA](https://en.wikipedia.org/wiki/Open_Virtualization_Format) | `Ova` | `.ova` | WORM | ✅ | — | Stays WORM: the manifest must cover every member | [dmtf.org](https://www.dmtf.org/standards/ovf) |
 | [Pack200](https://en.wikipedia.org/wiki/Pack200) | `Pack200` | `.pack` | R | ✅ | — | Listing only: class names are decoded from a subset of bands; full `.class` reconstruction and creation are not implemented | [docs.oracle.com](https://docs.oracle.com/javase/8/docs/technotes/guides/pack200/pack-spec.html) |
@@ -554,7 +553,7 @@ Use it when a .NET process needs to enumerate, extract, test, create, edit or in
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 2599 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
+Every public and protected member of all 2597 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
 
 <!-- API:END -->
 

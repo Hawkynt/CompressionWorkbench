@@ -207,6 +207,27 @@ public class PartitionedDiskExternalTests {
     Assert.That(Compression.Lib.FormatDetector.Detect(this.PathOf("disk.img")).ToString(), Is.EqualTo("PartitionedDisk"));
   }
 
+  [Test]
+  public void Given_PartedAtariLabelWithAnXgmChain_When_Detected_Then_PartitionsMatchPartx() {
+    RequireTools("parted", "partx");
+    this.Bash(
+      "truncate -s 64M disk.img; parted -s disk.img mklabel atari " +
+      "mkpart primary 2048s 10239s mkpart primary 10240s 20479s mkpart extended 20480s 120000s " +
+      "mkpart logical 22528s 40959s mkpart logical 43008s 60000s mkpart logical 62000s 80000s 2>/dev/null");
+    var partx = this.Bash("partx -g -o START,SECTORS disk.img")
+      .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+      .Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+      .Select(f => (long.Parse(f[0], CultureInfo.InvariantCulture) * 512, long.Parse(f[1], CultureInfo.InvariantCulture) * 512))
+      .ToList();
+    Assert.That(partx, Has.Count.EqualTo(5));
+
+    var detection = PartitionTableDetector.Detect(File.ReadAllBytes(this.PathOf("disk.img")));
+
+    Assert.That(detection.Scheme, Is.EqualTo("AHDI"));
+    Assert.That(detection.Partitions.Select(p => (p.StartOffset, p.Size)), Is.EqualTo(partx));
+    Assert.That(Compression.Lib.FormatDetector.Detect(this.PathOf("disk.img")).ToString(), Is.EqualTo("PartitionedDisk"));
+  }
+
   // ── Edit in place, verified by fsck ────────────────────────────────
 
   [Test]

@@ -26,9 +26,19 @@ public static class BbcModifier {
   /// </summary>
   public static void AddFile(Stream image, string name, byte[] data,
                              char directory = '$', uint loadAddr = 0x1900,
-                             uint execAddr = 0x1900, bool locked = false) {
+                             uint execAddr = 0x1900, bool locked = false)
+    => AddEntry(image, SanitizeName(name), data, directory, loadAddr, execAddr, locked);
+
+  /// <summary>
+  /// Adds a file under a catalogue name the caller has already made valid (at most seven
+  /// printable characters) — for the Acorn DFS family members whose names follow their own
+  /// rules, such as MFS-1.
+  /// </summary>
+  public static void AddEntry(Stream image, string catalogName, byte[] data,
+                              char directory = '$', uint loadAddr = 0x1900,
+                              uint execAddr = 0x1900, bool locked = false) {
     ArgumentNullException.ThrowIfNull(image);
-    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(catalogName);
     ArgumentNullException.ThrowIfNull(data);
 
     var totalSectors = ImageTotalSectors(image);
@@ -39,7 +49,7 @@ public static class BbcModifier {
     if (entries.Count >= MaxEntries)
       throw new InvalidOperationException("BBC DFS: catalog full (31 entries).");
 
-    var sanitized = SanitizeName(name);
+    var sanitized = catalogName;
     var sectorsNeeded = Math.Max(1, (data.Length + SectorSize - 1) / SectorSize);
     var startSector = FindContiguousGap(entries, sectorsNeeded, totalSectors);
     if (startSector < 0)
@@ -68,6 +78,15 @@ public static class BbcModifier {
   }
 
   /// <summary>
+  /// Directory and catalogue name of a published name: "D.NAME" (what List shows, and
+  /// what Create accepts) or a bare name in the default directory '$'.
+  /// </summary>
+  public static (char Directory, string Name) SplitName(string name) =>
+    name.Length >= 3 && name[1] == '.' && name.IndexOf('.', 2) < 0
+      ? (name[0], SanitizeName(name[2..]))
+      : ('$', SanitizeName(name));
+
+  /// <summary>
   /// Removes a named file from the image. Returns true if found and removed.
   /// When <paramref name="wipeData"/> is true, the data sectors are zeroed.
   /// </summary>
@@ -75,25 +94,35 @@ public static class BbcModifier {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(name);
 
-    var totalSectors = ImageTotalSectors(image);
-    var sec0 = ReadSector(image, 0);
-    var sec1 = ReadSector(image, 1);
-    var entries = ParseCatalog(sec0, sec1);
-
     // Accept both the bare short name ("SECRET") and the "DIR.NAME" form that
     // List/FullName emits ("$.SECRET") — SanitizeName treats the latter's ".NAME"
     // as an extension and would otherwise reduce it to the directory char, making
     // a delete-by-listed-name silently no-op (leaving a forensic remnant).
-    var sanitizedRaw = SanitizeName(name);
-    var dirStripped = name.Length >= 2 && name[1] == '.' ? name[2..] : name;
-    var sanitizedStripped = SanitizeName(dirStripped);
+    // The directory counts: "A.TXT" and "C.TXT" are different files, and a bare name
+    // means the default directory '$'.
+    var (wantDir, wantName) = SplitName(name);
+    return RemoveEntry(image, wantName, wantDir, wipeData);
+  }
+
+  /// <summary>
+  /// Removes the file stored under exactly <paramref name="catalogName"/> in
+  /// <paramref name="directory"/> (case-insensitively, as DFS compares); true when found.
+  /// </summary>
+  public static bool RemoveEntry(Stream image, string catalogName, char directory, bool wipeData = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(catalogName);
+    var (wantDir, wantName) = (directory, catalogName);
+
+    var totalSectors = ImageTotalSectors(image);
+    var sec0 = ReadSector(image, 0);
+    var sec1 = ReadSector(image, 1);
+    var entries = ParseCatalog(sec0, sec1);
     var match = -1;
     for (var i = 0; i < entries.Count; i++) {
       var e = entries[i];
       var bare = e.Name.TrimEnd();
-      var full = $"{e.Directory}.{bare}";
-      if (bare == sanitizedRaw || bare == sanitizedStripped
-          || string.Equals(full, name, StringComparison.OrdinalIgnoreCase)) { match = i; break; }
+      if (char.ToUpperInvariant(e.Directory) == char.ToUpperInvariant(wantDir)
+          && string.Equals(bare, wantName, StringComparison.OrdinalIgnoreCase)) { match = i; break; }
     }
     if (match < 0) return false;
 

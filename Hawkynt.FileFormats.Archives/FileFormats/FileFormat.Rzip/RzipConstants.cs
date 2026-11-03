@@ -1,13 +1,12 @@
 namespace FileFormat.Rzip;
 
 /// <summary>
-/// Constants for the RZIP format plus defaults for encoder-only search settings.
-/// Wire-format constants must agree between encoder and decoder; match-finder settings
-/// only affect which valid token sequence the encoder chooses.
+/// Constants of the rzip 2.x file layout (<c>docs/RZIP-ON-DISK.md</c>) plus defaults for the
+/// encoder-only match-finder settings.
 /// </summary>
 internal static class RzipConstants {
 
-  /// <summary>Magic bytes: "RZIP" (0x52, 0x5A, 0x49, 0x50).</summary>
+  /// <summary>Magic bytes: "RZIP".</summary>
   public static ReadOnlySpan<byte> Magic => "RZIP"u8;
 
   /// <summary>Major version number.</summary>
@@ -16,42 +15,51 @@ internal static class RzipConstants {
   /// <summary>Minor version number.</summary>
   public const byte VersionMinor = 1;
 
-  /// <summary>Header size in bytes: magic (4) + version (2) + original size (4).</summary>
-  public const int HeaderSize = 10;
+  /// <summary>File header size: magic, version, 64-bit big-endian size, zero padding.</summary>
+  public const int HeaderSize = 24;
 
-  /// <summary>Tag byte introducing a run of literal bytes in the token stream.</summary>
+  /// <summary>Input bytes per chunk: rzip's default level 6 times 100 MiB.</summary>
+  public const int ChunkSize = 6 * 100 * 1024 * 1024;
+
+  /// <summary>Streams multiplexed in a chunk: control tokens, then literal bytes.</summary>
+  public const int StreamCount = 2;
+
+  /// <summary>Size of a stream block header: type, compressed length, uncompressed length, next.</summary>
+  public const int BlockHeaderSize = 13;
+
+  /// <summary>Block type: data stored.</summary>
+  public const byte BlockStored = 3;
+
+  /// <summary>Block type: data is one bzip2 stream.</summary>
+  public const byte BlockBzip2 = 4;
+
+  /// <summary>bzip2 level rzip uses at its default level 6.</summary>
+  public const int Bzip2Level = 9;
+
+  /// <summary>Bytes buffered per stream before a block is written: 100 KiB per bzip2 level.</summary>
+  public const int StreamBufferSize = Bzip2Level * 100 * 1024;
+
+  /// <summary>Longest literal run or match one token can carry.</summary>
+  public const int MaxTokenLength = 0xFFFF;
+
+  /// <summary>Token type of a literal run (and, with length 0, of the end of a chunk).</summary>
   public const byte TagLiteral = 0;
 
-  /// <summary>Tag byte introducing a copy from earlier output in the token stream.</summary>
+  /// <summary>Token type of a match.</summary>
   public const byte TagMatch = 1;
 
   /// <summary>
   /// Default rolling-signature width and shortest run accepted as a match.
   /// This is an encoder setting, not a field in the stream.
   /// </summary>
-  public const int MinMatch = 16;
+  public const int MinMatch = 32;
 
   /// <summary>Multiplier of the polynomial rolling hash used by the encoder.</summary>
   public const uint RollingHashBase = 257;
 
-  /// <summary>Historical minimum number of candidate positions retained per hash value.</summary>
+  /// <summary>Minimum number of candidate positions retained per hash value.</summary>
   public const int HashBucketCapacity = 64;
 
   /// <summary>Default maximum number of candidate positions examined per input position.</summary>
   public const int CandidateSearchLimit = 32;
-
-  /// <summary>
-  /// Longest Huffman code the literal stage will emit. A frequency distribution needing
-  /// longer codes falls back to raw storage rather than widening the code table.
-  /// </summary>
-  public const int MaxCodeLength = 24;
-
-  /// <summary>Literal stream stored as raw bytes.</summary>
-  public const byte LiteralModeRaw = 0;
-
-  /// <summary>Literal stream stored as canonical Huffman codes preceded by a length table.</summary>
-  public const byte LiteralModeHuffman = 1;
-
-  /// <summary>Number of entries in the literal code-length table.</summary>
-  public const int LiteralAlphabetSize = 256;
 }

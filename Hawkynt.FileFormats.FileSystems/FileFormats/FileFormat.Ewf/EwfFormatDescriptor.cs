@@ -107,8 +107,10 @@ public sealed class EwfFormatDescriptor :
     var index = 0;
     if (!image.IsLogical) {
       try {
-        var media = EwfReader.ExtractMedia(image);
-        result.Add(new ArchiveEntryInfo(index++, "media.raw", media.LongLength, MediaStoredBytes(image),
+        // The media may continue in further segment files (.E02, ...): read its geometry through
+        // the whole set, which needs the image to come from a file.
+        using var media = EwfMediaStream.Open(stream, leaveOpen: true);
+        result.Add(new ArchiveEntryInfo(index++, "media.raw", media.Length, MediaStoredBytes(image),
           HasCompressedChunks(image) ? "mixed/zlib" : "stored", false, false, null, "media"));
       } catch (NotSupportedException) {
         // Keep diagnostics available even when this EWF profile cannot expose media.raw.
@@ -135,7 +137,11 @@ public sealed class EwfFormatDescriptor :
       // Same tolerance List applies: a header-only or truncated EWF has no
       // reconstructable medium, and that must not cost the caller the metadata
       // and section blobs that are the whole point of opening such an image.
-      try { WriteFile(outputDir, "media.raw", EwfReader.ExtractMedia(image)); }
+      try {
+        using var media = EwfMediaStream.Open(stream, leaveOpen: true);
+        using var target = CreateEntryFile(outputDir, "media.raw");
+        media.CopyTo(target);
+      }
       catch (NotSupportedException) { }
       catch (InvalidDataException) { }
     }
@@ -154,9 +160,11 @@ public sealed class EwfFormatDescriptor :
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     var image = ReadImage(archive);
     byte[] data;
-    if (string.Equals(entryName, "media.raw", StringComparison.OrdinalIgnoreCase))
-      data = EwfReader.ExtractMedia(image);
-    else if (string.Equals(entryName, "metadata.ini", StringComparison.OrdinalIgnoreCase))
+    if (string.Equals(entryName, "media.raw", StringComparison.OrdinalIgnoreCase)) {
+      var media = EwfMediaStream.Open(archive, leaveOpen: true);
+      return new Compression.Registry.Streaming.BoundedEntryStream(media, media.Length, leaveOpen: false);
+    }
+    if (string.Equals(entryName, "metadata.ini", StringComparison.OrdinalIgnoreCase))
       data = BuildMetadata(image);
     else {
       data = [];
@@ -211,6 +219,7 @@ public sealed class EwfFormatDescriptor :
     var existing = ReadImage(archive);
     if (existing.IsLogical)
       throw new NotSupportedException("LVF logical-evidence mutation is not implemented; physical EVF/E01 is R/W.");
+    RefuseSegmentSet(existing);
     RewriteMedia(archive, files[0].ReadContent(), existing, HasCompressedChunks(existing));
   }
 
@@ -228,6 +237,7 @@ public sealed class EwfFormatDescriptor :
     var existing = ReadImage(archive);
     if (existing.IsLogical)
       throw new NotSupportedException("LVF logical-evidence mutation is not implemented; physical EVF/E01 is R/W.");
+    RefuseSegmentSet(existing);
     RewriteMedia(archive, [], existing, HasCompressedChunks(existing));
   }
 
@@ -239,6 +249,7 @@ public sealed class EwfFormatDescriptor :
     var existing = ReadImage(archive);
     if (existing.IsLogical)
       throw new NotSupportedException("LVF logical-evidence purge is not implemented; physical EVF/E01 is purgeable.");
+    RefuseSegmentSet(existing);
     RewriteMedia(archive, [], existing, HasCompressedChunks(existing));
   }
 
@@ -254,6 +265,7 @@ public sealed class EwfFormatDescriptor :
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     var existing = ReadImage(archive);
+    RefuseSegmentSet(existing);
     var media = EwfReader.ExtractMedia(existing);
     options.OnProgress?.Invoke(new DefragProgressEvent(
       "scanning", 0, 0, -1, archive.Length, this.EnumerateLayout(archive).ToList(),
@@ -361,6 +373,15 @@ public sealed class EwfFormatDescriptor :
 
   private static bool MatchesRequested(string name, string[]? files)
     => files == null || files.Length == 0 || MatchesFilter(name, files);
+
+  /// <summary>
+  /// Every edit rewrites one segment file; on a set that continues in .E02 and onwards that would
+  /// orphan the other segments, so it is refused with the image untouched.
+  /// </summary>
+  private static void RefuseSegmentSet(EwfReader.EwfImage image) {
+    if (image.ContinuesInNextSegment)
+      throw new NotSupportedException("EWF: the image continues in further segment files; multi-segment sets are read-only.");
+  }
 
   private static EwfReader.EwfImage ReadImage(Stream stream)
     => EwfReader.Read(ReadAll(stream));

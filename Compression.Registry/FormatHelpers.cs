@@ -15,19 +15,57 @@ public static class FormatHelpers {
   }
 
   /// <summary>
+  /// Gives an extracted file or folder the time its entry carries. A missing time, a Unix
+  /// epoch or DOS "no date" placeholder (1970 / 1980-01-01 00:00:00) or one the host cannot
+  /// represent is left alone; the file then keeps its extraction time. A time of unspecified
+  /// kind is taken as local, as the DOS-dated formats store it.
+  /// </summary>
+  public static void ApplyEntryTime(string path, DateTime? lastModified) {
+    if (lastModified is not { } t || t.Year < 1971 || t is { Year: 1980, Month: 1, Day: 1, TimeOfDay.Ticks: 0 }) return;
+    try {
+      if (Directory.Exists(path)) {
+        if (t.Kind == DateTimeKind.Utc) Directory.SetLastWriteTimeUtc(path, t);
+        else Directory.SetLastWriteTime(path, t);
+      } else if (t.Kind == DateTimeKind.Utc) {
+        File.SetLastWriteTimeUtc(path, t);
+      } else {
+        File.SetLastWriteTime(path, t);
+      }
+    } catch (IOException) {
+    } catch (UnauthorizedAccessException) {
+    } catch (ArgumentOutOfRangeException) {
+    }
+  }
+
+  /// <summary>
   /// Opens the destination file for <paramref name="entryName"/> under
   /// <paramref name="baseDir"/>, applying the same traversal sanitising as
   /// <see cref="WriteFile" />. Lets a caller stream an entry straight to disk
   /// instead of materialising it, which an entry larger than a byte[] requires.
   /// </summary>
   public static FileStream CreateEntryFile(string baseDir, string entryName) {
-    var safeName = entryName.Replace('\\', '/').TrimStart('/');
-    if (safeName.Contains("..")) safeName = Path.GetFileName(safeName);
-    safeName = string.Join('/', safeName.Split('/').Select(static s => HostFileName(s, OperatingSystem.IsWindows())));
-    var fullPath = Path.Combine(baseDir, safeName);
+    var fullPath = SafeEntryPath(baseDir, entryName);
     var dir = Path.GetDirectoryName(fullPath);
     if (dir != null) Directory.CreateDirectory(dir);
     return File.Create(fullPath);
+  }
+
+  /// <summary>
+  /// Creates the folder an entry names under <paramref name="baseDir"/>, with the same
+  /// traversal sanitising as <see cref="CreateEntryFile" />, and returns its path; an empty
+  /// folder of an archive then survives extraction.
+  /// </summary>
+  public static string CreateEntryDirectory(string baseDir, string entryName) {
+    var fullPath = SafeEntryPath(baseDir, entryName.Replace('\\', '/').TrimEnd('/'));
+    Directory.CreateDirectory(fullPath);
+    return fullPath;
+  }
+
+  private static string SafeEntryPath(string baseDir, string entryName) {
+    var safeName = entryName.Replace('\\', '/').TrimStart('/');
+    if (safeName.Contains("..")) safeName = Path.GetFileName(safeName);
+    safeName = string.Join('/', safeName.Split('/').Select(static s => HostFileName(s, OperatingSystem.IsWindows())));
+    return Path.Combine(baseDir, safeName);
   }
 
   private static readonly HashSet<string> WindowsDeviceNames = new(StringComparer.OrdinalIgnoreCase) {

@@ -204,11 +204,7 @@ public sealed class UnityBundleFormatDescriptor :
     EnsureRebuildableUnityFs(archive);
     var remove = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
-      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
-        var relative = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
-        if (remove.Contains(relative) || remove.Contains(Path.GetFileName(relative)))
-          File.Delete(file);
-      }
+      RebuildVerb.DeleteNamedEntries(tmpDir, remove);
     });
   }
 

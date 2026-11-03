@@ -79,9 +79,8 @@ public sealed class CdiFormatDescriptor :
       throw new ArgumentException("CDI creation requires a writable, seekable stream.", nameof(output));
 
     var version = ParseTargetVersion(options.GetOption(FormatOptionKeys.TargetCompatibility, "3.5"));
-    var iso = new FileSystem.Iso.IsoWriter();
-    foreach (var (name, data) in FlatFiles(inputs))
-      iso.AddFile(name, data);
+    // Folders, long names, modes and times are kept (Rock Ridge and Joliet), as in a plain ISO.
+    var iso = FileSystem.Iso.IsoFormatDescriptor.BufferedWriterFor(inputs, options);
 
     var payload = iso.Build();
     output.Position = 0;
@@ -168,22 +167,14 @@ public sealed class CdiFormatDescriptor :
     var skip = new HashSet<string>(entryNames.Select(name => name.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase);
     if (CanPreserveOpticalLayout(archive)) {
       CdiEmbeddedIsoRebuilder.Rewrite(archive, this, tempDirectory => {
-        foreach (var file in Directory.GetFiles(tempDirectory, "*", SearchOption.AllDirectories)) {
-          var relative = Path.GetRelativePath(tempDirectory, file).Replace('\\', '/');
-          if (skip.Contains(relative) || skip.Contains(Path.GetFileName(relative)))
-            File.Delete(file);
-        }
+        RebuildVerb.DeleteNamedEntries(tempDirectory, skip);
       });
       return;
     }
 
     EnsureLegacyFooterOrThrow(archive);
     RebuildVerb.EditViaRebuild(archive, this, this, tempDirectory => {
-      foreach (var file in Directory.GetFiles(tempDirectory, "*", SearchOption.AllDirectories)) {
-        var relative = Path.GetRelativePath(tempDirectory, file).Replace('\\', '/');
-        if (skip.Contains(relative) || skip.Contains(Path.GetFileName(relative)))
-          File.Delete(file);
-      }
+      RebuildVerb.DeleteNamedEntries(tempDirectory, skip);
     });
   }
 

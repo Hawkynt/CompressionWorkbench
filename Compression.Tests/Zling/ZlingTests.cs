@@ -54,8 +54,9 @@ public class ZlingTests {
     using var compressed = new MemoryStream();
     ZlingStream.Compress(input, compressed);
     compressed.Position = 0;
-    // First byte is flag: 0 for final block
-    var flag = compressed.ReadByte();
-    Assert.That(flag, Is.EqualTo(0));
+    // A sub-block starts with flag 1; the input block ends with flag 0.
+    var bytes = compressed.ToArray();
+    Assert.That(bytes[0], Is.EqualTo(1));
+    Assert.That(bytes[^1], Is.EqualTo(0));
   }
 }

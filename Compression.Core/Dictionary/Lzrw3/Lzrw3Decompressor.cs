@@ -1,71 +1,79 @@
 namespace Compression.Core.Dictionary.Lzrw3;
 
 /// <summary>
-/// Decodes the LZRW3 control-word format produced by <see cref="Lzrw3Compressor"/>.
-/// Reference: Ross N. Williams, http://ross.net/compression/lzrw3.html.
-/// Mirrors the compressor's queued hash-table synchronization exactly (see remarks there):
-/// a position's hash entry only becomes visible once its 3-byte window is fully decoded.
+/// LZRW3 decompressor, converted from Ross N. Williams' public-domain reference
+/// <c>lzrw3.c</c>. See <see cref="Lzrw3Compressor"/> for the stream layout.
 /// </summary>
 public static class Lzrw3Decompressor {
-  private const int HashTableSize = 4096;
-  private const int MinMatch = 3;
-  private const int ItemsPerGroup = 16;
+  private const int FlagBytes = 4;
+  private const byte FlagCompress = 0;
+  private const byte FlagCopy = 1;
 
   /// <summary>Decompresses an LZRW3 stream.</summary>
-  /// <param name="data">The compressed byte stream.</param>
-  /// <param name="originalLength">The exact length of the decompressed output.</param>
-  /// <returns>The reconstructed original bytes.</returns>
-  public static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength) {
-    var output = new byte[originalLength];
-    var hashTable = new int[Lzrw3Decompressor.HashTableSize];
-    var pending = new Queue<int>();
+  /// <param name="data">The whole stream, flag bytes included.</param>
+  /// <returns>The decompressed bytes.</returns>
+  /// <exception cref="InvalidDataException">The stream is truncated or has an unknown flag.</exception>
+  public static byte[] Decompress(ReadOnlySpan<byte> data) {
+    if (data.Length < FlagBytes)
+      throw new InvalidDataException("LZRW3 stream is shorter than its flag bytes.");
+    if (data[0] == FlagCopy)
+      return data[FlagBytes..].ToArray();
+    if (data[0] != FlagCompress)
+      throw new InvalidDataException($"LZRW3 flag {data[0]} is neither compressed (0) nor copied (1).");
 
-    var op = 0;
-    var ip = 0;
+    // At most 18 output bytes per two input bytes.
+    var output = new byte[Math.Max(18, (data.Length - FlagBytes) * 9)];
+    var hash = new int[Lzrw3Table.Length];
+    hash.AsSpan().Fill(Lzrw3Table.StartString);
+    var literals = 0;
+    var outPos = 0;
+    var inPos = FlagBytes;
+    var control = 1u;
+    while (inPos < data.Length) {
+      if (control == 1) {
+        if (inPos + 2 > data.Length)
+          throw new InvalidDataException("LZRW3 stream ends inside a control word.");
+        control = 0x10000u | data[inPos] | (uint)data[inPos + 1] << 8;
+        inPos += 2;
+        if (inPos == data.Length)
+          throw new InvalidDataException("LZRW3 control word is not followed by an item.");
+      }
 
-    while (op < originalLength) {
-      var controlWord = (data[ip] << 8) | data[ip + 1];
-      ip += 2;
+      if ((control & 1) != 0) {
+        if (inPos + 2 > data.Length)
+          throw new InvalidDataException("LZRW3 stream ends inside a copy item.");
+        var index = (data[inPos] & 0xF0) << 4 | data[inPos + 1];
+        var length = (data[inPos] & 0xF) + 3;
+        inPos += 2;
+        var from = hash[index];
+        var ziv = outPos;
+        for (var i = 0; i < length; ++i)
+          output[outPos++] = from + i < 0 ? Lzrw3Table.At(output, from + i) : output[from + i];
 
-      for (var i = 0; i < Lzrw3Decompressor.ItemsPerGroup && op < originalLength; ++i) {
-        FlushPending(pending, hashTable, output, op);
+        if (literals > 0) {
+          var r = ziv - literals;
+          hash[Lzrw3Table.Hash(output, r)] = r;
+          if (literals == 2) {
+            ++r;
+            hash[Lzrw3Table.Hash(output, r)] = r;
+          }
 
-        if ((controlWord & (1 << i)) != 0) {
-          var code = (data[ip] << 8) | data[ip + 1];
-          ip += 2;
-          var length = (code >> 12) + Lzrw3Decompressor.MinMatch;
-          var hashIndex = code & 0xFFF;
+          literals = 0;
+        }
 
-          var refPos = hashTable[hashIndex];
-          var phraseStart = op;
-          for (var j = 0; j < length; ++j)
-            output[op + j] = output[refPos + j];
-          op += length;
-
-          if (phraseStart + Lzrw3Decompressor.MinMatch <= originalLength)
-            pending.Enqueue(phraseStart);
-        } else {
-          var bytePos = op;
-          output[op++] = data[ip++];
-          if (bytePos + Lzrw3Decompressor.MinMatch <= originalLength)
-            pending.Enqueue(bytePos);
+        hash[index] = ziv;
+      } else {
+        output[outPos++] = data[inPos++];
+        if (++literals == 3) {
+          var p = outPos - 3;
+          hash[Lzrw3Table.Hash(output, p)] = p;
+          literals = 2;
         }
       }
+
+      control >>= 1;
     }
 
-    return output;
-  }
-
-  /// <summary>Commits queued hash-table updates whose 3-byte window has fully materialized in <paramref name="output"/>.</summary>
-  private static void FlushPending(Queue<int> pending, int[] hashTable, byte[] output, int currentPos) {
-    while (pending.Count > 0 && pending.Peek() + 2 < currentPos) {
-      var p = pending.Dequeue();
-      hashTable[Hash(output, p)] = p;
-    }
-  }
-
-  private static int Hash(ReadOnlySpan<byte> data, int position) {
-    var value = data[position] | (data[position + 1] << 8) | (data[position + 2] << 16);
-    return (int)((uint)value * 2654435761u >> 20) & (Lzrw3Decompressor.HashTableSize - 1);
+    return output.AsSpan(0, outPos).ToArray();
   }
 }

@@ -207,6 +207,7 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
     DefragSupport.Require(options, this.SupportedDefragFeatures, "SquashFS");
+    RefuseLegacy(archive);
     if (!archive.CanSeek || archive.Length > PlannerImageCap)
       throw new NotSupportedException(
         $"SquashFS: in-place defragmentation checks the result against a snapshot held in memory; images over {PlannerImageCap:N0} bytes are refused.");
@@ -216,6 +217,21 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       rebuild: () => throw new NotSupportedException("SquashFS: the image cannot be laid out in place; it was left unchanged."));
   }
 
+
+  /// <summary>
+  /// SquashFS 1.x-3.x images are read, never re-laid out: the block mover and the inode-table
+  /// rewrite know only the version 4 layout. Refused with the image untouched.
+  /// </summary>
+  private static void RefuseLegacy(Stream archive) {
+    if (!archive.CanSeek)
+      return;
+    var start = archive.Position;
+    Span<byte> head = stackalloc byte[0x20];
+    var got = archive.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
+    archive.Position = start;
+    if (got == head.Length && SquashFsLegacyReader.Handles(head))
+      throw new NotSupportedException("SquashFS 1.x-3.x images are read-only here; only version 4 can be defragmented.");
+  }
 
   /// <summary>
   /// Largest image the in-place pass is offered for. Its guard holds a copy of

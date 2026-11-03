@@ -8,12 +8,14 @@ namespace FileFormat.FreeArc;
 /// left to right when compressing and therefore undone right to left when extracting.
 /// </summary>
 /// <remarks>
-/// Only the stages our own codecs reproduce exactly are decoded: <c>storing</c> and <c>lzma</c>
+/// Only the stages our own codecs reproduce exactly are decoded: <c>storing</c>, <c>lzma</c>
 /// (a raw LZMA1 stream with no properties header; dictionary and lc/lp/pb come from the method
-/// string). Everything else — tornado, lzp, ppmd, grzip, rep, dict, delta, exe, mm, external
-/// compressors and encryption — is refused with <see cref="NotSupportedException"/>.
+/// string), <c>tor</c> (see <see cref="FreeArcTornado"/>), the wrapper <c>4x4</c> and the
+/// preprocessors <c>rep</c>, <c>delta</c> and <c>exe</c> (see <see cref="FreeArcFilters"/>).
+/// Everything else — lzp, ppmd, grzip, dict, mm, external compressors and encryption — is
+/// refused with <see cref="NotSupportedException"/>.
 /// </remarks>
-public static class FreeArcMethods {
+public static partial class FreeArcMethods {
   /// <summary>The method name of an uncompressed stage.</summary>
   public const string Storing = "storing";
 
@@ -24,7 +26,33 @@ public static class FreeArcMethods {
 
   /// <summary>Gets whether every stage of <paramref name="compressor"/> can be decoded.</summary>
   public static bool IsSupported(string compressor) =>
-    Stages(compressor).All(stage => StageName(stage) is Storing or "lzma");
+    Stages(compressor).All(IsDecodable);
+
+  private static bool IsDecodable(string stage) => StageName(stage) switch {
+    Storing or "lzma" or "rep" or "delta" or "exe" or "tor" => true,
+    "4x4" => FourByFourInner(stage) is { } inner && StageName(inner) != "4x4" && IsDecodable(inner),
+    _ => false,
+  };
+
+  /// <summary>
+  /// The method a <c>4x4</c> stage applies to each chunk: everything after its own options
+  /// (<c>bN</c>, <c>tN</c>, <c>iN</c>, <c>rN</c> and bare numbers), or null when none is named.
+  /// </summary>
+  private static string? FourByFourInner(string stage) {
+    var tokens = stage.Split(':');
+    for (var i = 1; i < tokens.Length; ++i) {
+      var t = tokens[i];
+      if (t.Length > 0 && !char.IsAsciiDigit(t[0]) && !(t.Length > 1 && char.IsAsciiDigit(t[1])))
+        return string.Join(':', tokens[i..]);
+      if (!FourByFourOption().IsMatch(t))
+        return null; // neither an option nor a method: FreeArc rejects the whole stage
+    }
+    return null;
+  }
+
+  /// <summary>A 4x4 option: block size <c>b</c>, threads <c>t</c>, extra buffers <c>i</c>, ratio <c>r</c>, or a bare number or size.</summary>
+  [System.Text.RegularExpressions.GeneratedRegex(@"^[btir]?\d+(\.\d+)?([kmg]b?|b)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+  private static partial System.Text.RegularExpressions.Regex FourByFourOption();
 
   /// <summary>Gets whether <paramref name="compressor"/> contains an encryption stage.</summary>
   public static bool IsEncrypted(string compressor) =>
@@ -39,7 +67,7 @@ public static class FreeArcMethods {
 
     var stages = Stages(compressor);
     foreach (var stage in stages)
-      if (StageName(stage) is not (Storing or "lzma"))
+      if (!IsDecodable(stage))
         throw new NotSupportedException($"FreeArc: compression method \"{StageName(stage)}\" (in \"{compressor}\") is not supported.");
 
     var data = input;
@@ -93,8 +121,20 @@ public static class FreeArcMethods {
   }
 
   private static byte[] DecodeStage(string stage, byte[] input, long outputSize) {
-    if (StageName(stage) == Storing)
-      return input;
+    switch (StageName(stage)) {
+      case Storing:
+        return input;
+      case "rep":
+        return FreeArcFilters.DecodeRep(input, outputSize);
+      case "delta":
+        return FreeArcFilters.DecodeDelta(input);
+      case "exe":
+        return FreeArcFilters.DecodeExe(input);
+      case "tor":
+        return FreeArcTornado.Decode(input, outputSize);
+      case "4x4":
+        return FreeArcFilters.DecodeFourByFour(input, FourByFourInner(stage)!, DecodeStage);
+    }
 
     var p = LzmaParameters.Parse(stage, outputSize);
     using var source = new MemoryStream(input, writable: false);

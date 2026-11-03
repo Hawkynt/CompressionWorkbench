@@ -164,6 +164,12 @@ public sealed class Mfs1Writer {
   /// (32..126) padded with spaces. The directory letter defaults to <c>$</c>;
   /// callers may pass a path of the form "X.NAME" to set the directory.
   /// </summary>
+  /// <summary>
+  /// The catalogue name and directory letter a published name ("NAME" or "D.NAME") is stored
+  /// under, as <see cref="AddFile"/> stores it.
+  /// </summary>
+  public static (string Name, char Directory) CatalogName(string name) => SanitizeName(name, '$');
+
   private static (string Name, char Dir) SanitizeName(string raw, char dir) {
     // Strip any path; MFS-1 has no nesting beyond the 1-char directory letter.
     var s = Path.GetFileName(raw).ToUpperInvariant();

@@ -3934,6 +3934,9 @@ Implements `IEquatable<ArchiveInputInfo>`.
 | `InMemoryContent` | `byte[] InMemoryContent { get; init; }` |  |
 | `IsDirectory` | `bool IsDirectory { get; init; }` |  |
 | `Metadata` | `ArchiveEntryMetadata Metadata { get; init; }` |  |
+| `ReadObserver` | `static Action<long> ReadObserver { get; set; }` | Told the byte count of every on-disk input as `ReadContent` reads it, so a host can show progress while an archive is created or rebuilt. Null when nobody listens. It is process-wide and may be called from several threads at once (parallel writers). |
+| `SourceLastModifiedUtc` | `DateTime? SourceLastModifiedUtc { get; }` | The last-write time the entry should carry: `Metadata`'s when given, else that of the file or directory at `FullPath`; null for an in-memory input without metadata. Creators store it, so a rebuild (extract, edit, re-create) does not reset every entry's time. |
+| `SourceUnixMode` | `UnixFileMode? SourceUnixMode { get; }` | The Unix permission bits (the low 12 bits of the mode) the entry should carry: `Metadata`'s when given, else the source file's on a Unix host; null when unknown. |
 | `FromFile` | `static ArchiveInputInfo FromFile(FileInfo file, string archiveName = null)` | Creates an on-disk input from a `FileInfo`. Content is read lazily from the file via `ReadContent`; the archive name defaults to the file's leaf name. |
 | `InMemory` | `static ArchiveInputInfo InMemory(string archiveName, ReadOnlySpan<byte> content, ArchiveEntryMetadata metadata = null)` | Creates an in-memory input from a byte span (copied into the input, so the caller's buffer may be reused/stack-allocated). |
 | `InMemory` | `static ArchiveInputInfo InMemory(string archiveName, Stream content, ArchiveEntryMetadata metadata = null)` | Creates an in-memory input by reading `content` fully into memory. Reads from the stream's current position to its end. |
@@ -4898,6 +4901,8 @@ Shared utility methods for format descriptors (path sanitization, filtering, etc
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `ApplyEntryTime` | `static void ApplyEntryTime(string path, DateTime? lastModified)` | Gives an extracted file or folder the time its entry carries. A missing time, a Unix epoch or DOS "no date" placeholder (1970 / 1980-01-01 00:00:00) or one the host cannot represent is left alone; the file then keeps its extraction time. A time of unspecified kind is taken as local, as the DOS-dated formats store it. |
+| `CreateEntryDirectory` | `static string CreateEntryDirectory(string baseDir, string entryName)` | Creates the folder an entry names under `baseDir`, with the same traversal sanitising as `CreateEntryFile`, and returns its path; an empty folder of an archive then survives extraction. |
 | `CreateEntryFile` | `static FileStream CreateEntryFile(string baseDir, string entryName)` | Opens the destination file for `entryName` under `baseDir`, applying the same traversal sanitising as `WriteFile`. Lets a caller stream an entry straight to disk instead of materialising it, which an entry larger than a byte[] requires. |
 | `FilesOnly` | `static IEnumerable<ValueTuple<string, byte[]>> FilesOnly(IReadOnlyList<ArchiveInputInfo> inputs)` | Returns only file entries (non-directories) with their data, preserving paths. |
 | `FlatFiles` | `static IEnumerable<ValueTuple<string, byte[]>> FlatFiles(IReadOnlyList<ArchiveInputInfo> inputs)` | Flattens all entries to root level (filename only) with their data. For formats without path support. |
@@ -5977,6 +5982,7 @@ Generic, round-trip-verified extract → re-create engine shared by maintenance 
 | `PurgeViaModifier` | `static void PurgeViaModifier(Stream archive, IArchiveFormatOperations ops, IArchiveModifiable modifier)` | Transactional purge for a mutable container. The modifier operates on a staged copy and the caller's stream is replaced only after the result lists successfully with every original live entry gone. |
 | `RebuildInPlace` | `static void RebuildInPlace(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null)` | Rebuilds into a scratch file, verifies it, and only then replaces the caller-supplied stream. Cancellation is honoured until commit starts; once commit begins it runs to completion so a cancellation cannot leave the original half-overwritten. |
 | `RebuildToStream` | `static int RebuildToStream(Stream input, Stream output, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, IReadOnlySet<string> syntheticNames = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null)` | Extracts every live entry, re-creates the container in `output`, verifies the exact live-name multiset, and reports block-map/read/write-head progress suitable for the maintenance UI. |
+| `StageInputs` | `static void StageInputs(string extractedRoot, IEnumerable<ArchiveInputInfo> inputs)` | Places inputs into an extracted tree, the add half of an extract → edit → re-create rebuild: a file input is written at its entry path (replacing a file of that name) and keeps its last-write time; a directory input becomes a directory, so an empty folder survives the rebuild. Names that are empty or leave the tree are ignored. |
 
 #### `ScrambleOptions`
 
@@ -9371,7 +9377,7 @@ Reads and writes the standard aPLib AP32 safe-wrapper format.
 | --- | --- | --- |
 | `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Compresses `input` into a standard AP32 stream using the cost-based aPLib optimizer. |
 | `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` into a standard AP32 stream. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a standard AP32 stream, or a legacy CompressionWorkbench AP32 stream. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a standard AP32 stream. |
 
 ### Namespace `FileFormat.Apc`
 
@@ -11298,13 +11304,13 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IStreamFormatOperati
 
 #### `BalzStream`
 
-BALZ: ROLZ compressor by Ilya Muravyov. Format: 4-byte big-endian uncompressed size, then arithmetic-coded ROLZ bitstream.
+`.balz` files as Ilya Muravyov's BALZ 1.20 writes and reads them; the codec is `BalzCodec`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input with BALZ-style flexible look-ahead parsing and keeps it only when it is smaller than the normal greedy parse. |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the normal greedy parser. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Compresses `input` in the reference's maximum mode (`balz cx`) and keeps that file only when it is smaller than the normal one; both are BALZ files. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` as `balz c` does. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a `.balz` file. |
 
 ### Namespace `FileFormat.Bcm`
 
@@ -11852,8 +11858,9 @@ In-place modifier for Microsoft NTBackup (.bkf) Microsoft Tape Format (MTF) cont
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `AddDirectory` | `static void AddDirectory(Stream archive, string folderName)` | Adds a folder: a DIRB naming it is appended (an empty folder is a DIRB with no FILE after it), unless the backup already has one for that path. |
 | `AddFile` | `static void AddFile(Stream archive, string fileName, byte[] data)` | Appends a new FILE DBLK carrying `data` at the position where the current EOTM block lives (or at EOF when EOTM is absent), then re-emits a fresh EOTM block at the new end. The TAPE / SSET / VOLB and any pre-existing FILE/DIRB blocks remain byte-identical at their original offsets. |
-| `RemoveFile` | `static bool RemoveFile(Stream archive, string fileName)` | Tombstones the first FILE DBLK whose FNAM matches `fileName`: the 4-byte type field becomes the `XXXX` sentinel and the rest of that FLB-aligned FILE block (CBH tail + every attached stream payload) is zero-wiped. Returns `true` when a tombstone was applied. |
+| `RemoveFile` | `static bool RemoveFile(Stream archive, string fileName)` | Tombstones the entry at exactly `fileName` — a path as the reader lists it, the folder taken from the DIRB before each FILE — or, for a folder, its DIRBs and every FILE beneath it: the 4-byte type field becomes the `XXXX` sentinel and the rest of that FLB-aligned block (CBH tail + every attached stream payload) is zero-wiped. Returns `true` when a tombstone was applied. |
 
 #### `BkfReader`
 
@@ -13580,12 +13587,12 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 
 #### `DensityStream`
 
-Density compression with three algorithms: Chameleon (fastest), Cheetah (balanced), Lion (best ratio).
+density streams (Chameleon, Cheetah, Lion) in a small container of ours. density itself has no file format: its streams carry neither the algorithm nor the length, so this container records both. The payload is exactly what density-rs 0.16.6 writes; see `DensityCodec`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Compress` | `static void Compress(Stream input, Stream output, Algorithm algorithm = 2)` | Compresses data with the specified algorithm. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses density-compressed data. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a container written by `Compress`. |
 
 #### `DensityStream.Algorithm`
 
@@ -13593,9 +13600,9 @@ Compression algorithm.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Chameleon` | `1` | Hash-based direct replacement. Fastest, lowest ratio. |
-| `Cheetah` | `2` | Dual-hash with predictions. Balanced speed/ratio. |
-| `Lion` | `3` | LZ + entropy coding. Best ratio, still fast. |
+| `Chameleon` | `1` | One 16-bit hash dictionary. Fastest, lowest ratio. |
+| `Cheetah` | `2` | Two dictionary slots per hash plus one predicted successor. Balanced. |
+| `Lion` | `3` | Two dictionary slots per hash plus five predicted successors. Best ratio. |
 
 ### Namespace `FileFormat.Dff`
 
@@ -19870,6 +19877,7 @@ Constants for the LHA/LZH archive format.
 | `MethodLh7` | `const string MethodLh7` | Method: LZH compression with 64KB window. |
 | `MethodLhd` | `const string MethodLhd` | Method: directory marker. |
 | `MethodLhx` | `const string MethodLhx` | Method: lh5-style static Huffman with a 1 MiB window (UNLHA32), read-only. |
+| `MethodLk7` | `const string MethodLk7` | Method: LHARK's own "-lh7-" (64 KiB window, extended length and offset codes), read-only. Stored as "-lh7-" in the archive; recognised by a level-1 header with OS id ' ' and renamed, as lhasa does. |
 | `MethodLz4` | `const string MethodLz4` | Method: store (same as lh0, legacy). |
 | `MethodLz5` | `const string MethodLz5` | Method: LZSS with 4KB window (LArc variant). |
 | `MethodLzs` | `const string MethodLzs` | Method: LZSS with 4KB window (no Huffman). |
@@ -19922,9 +19930,11 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LhaReader` | `LhaReader(Stream stream, bool leaveOpen = false)` | Initializes a new `LhaReader` from a stream. |
+| `ArchiveOffset` | `long ArchiveOffset { get; }` | Gets the offset of the first member header: 0 for a plain archive, past the stub of a self-extractor. |
 | `Entries` | `IReadOnlyList<LhaEntry> Entries { get; }` | Gets the entries in the archive. |
 | `Dispose` | `void Dispose()` |  |
 | `ExtractEntry` | `byte[] ExtractEntry(LhaEntry entry)` | Extracts the data for an entry. |
+| `FindArchiveOffset` | `static long FindArchiveOffset(Stream stream)` | Finds the first member header the way lhasa does: a method id ("-lh?-", "-lz4/5/s-", "-pm?-" but not PMarc's "-pms-") two bytes in. DECLHA and Amiga LhASFX stubs carry a decoy header of their own, so after their banner one match is skipped. A candidate must also parse as a header with a valid checksum. |
 
 #### `LhaWriter`
 
@@ -20139,48 +20149,6 @@ Writes data to the LZOP file format.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, string fileName = null, LzoCompressionLevel level = 0)` | Compresses the given data and returns it wrapped in an LZOP container. |
-
-### Namespace `FileFormat.Lzs`
-
-[`LzsFormatDescriptor`](#lzsformatdescriptor) · [`LzsStream`](#lzsstream)
-
-#### `LzsFormatDescriptor`
-
-Describes lzs format.
-
-Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `LzsFormatDescriptor` | `LzsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The finite parsing-effort axis searched by `CompressionOptimizer`. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Tries every available LZS parsing effort and writes the smallest result. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input with the balanced encoder. |
-| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input honoring the format-specific compression level. |
-| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
-
-#### `LzsStream`
-
-LZS stream format: 4-byte magic header followed by LZS building block output (4-byte LE uncompressed size + RFC 2395 compressed bitstream).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Tries every managed LZS parsing effort and writes the smallest complete stream. This hard comparison makes optimization non-regressing even when a deeper greedy search changes token boundaries unfavourably for a particular input. |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input with the balanced encoder. |
-| `Compress` | `static void Compress(Stream input, Stream output, LzsCompressionLevel level)` | Encodes the supplied input with the requested encoder effort. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 ### Namespace `FileFormat.Lzx`
 
@@ -23339,19 +23307,21 @@ Identifies the compressor an NSIS installer was built with (`SetCompressor`).
 
 #### `NsisEntry`
 
-A file an NSIS installer extracts: one `File` instruction of the install script.
+A file an NSIS installer extracts: one `File` instruction of the install script, or the uninstaller a `WriteUninstaller` instruction writes.
 
 Implements `IEquatable<NsisEntry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `NsisEntry` | `NsisEntry(string FileName, uint DataOffset, DateTime? LastModified)` | A file an NSIS installer extracts: one `File` instruction of the install script. |
+| `NsisEntry` | `NsisEntry(string FileName, uint DataOffset, DateTime? LastModified)` | A file an NSIS installer extracts: one `File` instruction of the install script, or the uninstaller a `WriteUninstaller` instruction writes. |
 | `CompressedSize` | `long CompressedSize { get; }` | Gets the stored size of the file's block, or -1 when the block lives inside a solid stream and therefore has no size of its own. |
-| `DataOffset` | `uint DataOffset { get; init; }` | Offset of the file's length-prefixed block within the data section. |
+| `DataOffset` | `uint DataOffset { get; init; }` | Offset of the file's length-prefixed block within the data section. For a patched uninstaller this is the icon-patch block; the uninstaller's own header follows it. |
 | `FileName` | `string FileName { get; init; }` | The target path as the script names it, with forward slashes. A leading `$INSTDIR` is dropped, as 7-Zip does; any other variable (`$PLUGINSDIR`, `$SYSDIR`, ...) stays. |
-| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether the entry is a directory; NSIS `File` entries never are. |
+| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether the entry is a directory; NSIS entries never are. |
+| `IsUninstaller` | `bool IsUninstaller { get; init; }` | Gets whether the entry is the uninstaller a `WriteUninstaller` instruction writes. |
 | `LastModified` | `DateTime? LastModified { get; init; }` | The file time the compiler recorded, in UTC, or `null` when none. |
 | `Size` | `long Size { get; }` | Gets the uncompressed size in bytes, or -1 until the size has been resolved. |
+| `UninstallerPatchSize` | `int UninstallerPatchSize { get; init; }` | Gets the size of the uninstaller's icon-patch block: when non-zero the uninstaller is the installer's exe stub with that patch applied, followed by the block after the patch. Zero for files, and for an uninstaller the compiler stored whole. |
 
 #### `NsisFormatDescriptor`
 
@@ -23393,7 +23363,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<NsisEntry> Entries { get; }` | Gets the files the install script extracts, in script order. |
 | `FirstHeaderFlags` | `int FirstHeaderFlags { get; }` | Gets `firstheader.flags` (FH_FLAGS_*: 1 = uninstaller, 2 = silent, 4 = no CRC, 8 = force CRC). |
 | `FirstHeaderOffset` | `long FirstHeaderOffset { get; }` | Gets the file offset of `firstheader`. |
-| `HasFilterFlag` | `bool HasFilterFlag { get; }` | Gets whether the LZMA stream carries the x86 branch-filter flag byte. |
+| `HasFilterFlag` | `bool HasFilterFlag { get; }` | Gets whether each LZMA stream starts with the x86 branch-filter flag byte (the NSIS build 7-Zip's own installers use); streams whose flag is 1 are un-filtered after decoding. |
 | `HeaderLength` | `int HeaderLength { get; }` | Gets the uncompressed size of the script header. |
 | `Is64Bit` | `bool Is64Bit { get; }` | Gets whether the header was written for a 64-bit exehead. |
 | `IsNsis3` | `bool IsNsis3 { get; }` | Gets whether the strings use the NSIS 3 escape codes rather than NSIS 2's. |
@@ -27056,7 +27026,7 @@ Creates basic unsigned RPM packages.
 
 #### `RzipBuildingBlock`
 
-Exposes rzip as a benchmarkable building block. Produces a complete rzip stream — "RZIP" signature, version, the big-endian original size and the token stream — so the payload carries its own length and no extra uncompressed-size header is prepended.
+Exposes rzip as a benchmarkable building block. Produces a complete rzip 2.x file (see `RzipStream`), which carries its own length, so no extra uncompressed-size header is prepended.
 
 Implements `IBuildingBlock`.
 
@@ -27090,7 +27060,7 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Encoder-only knobs searched by the generic compression optimizer. Neither value is serialized: all resulting streams use the same token grammar and decoder. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Encoder-only knobs searched by the generic compression optimizer. Neither value is serialized: every setting writes an rzip 2.x file. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the selected match-finder settings. |
@@ -27098,12 +27068,12 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 
 #### `RzipStream`
 
-Provides static methods for compressing and decompressing data in the RZIP format.
+Reads and writes Andrew Tridgell's rzip 2.x files (`.rz`), as laid out in `docs/RZIP-ON-DISK.md`: a 24-byte header, then chunks in which a control stream of literal/match tokens and a literal stream are multiplexed in bzip2 (or stored) blocks.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data into RZIP format using the default match-finder settings. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an RZIP stream. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data into an rzip file using the default match-finder settings. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an rzip file. |
 
 ### Namespace `FileFormat.S3m`
 
@@ -32874,7 +32844,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from an existing XAR archive. Uses `XarModifier` for random-access I/O on the TOC. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from an existing XAR archive. Uses `XarModifier` for random-access I/O on the TOC. A name is the full path; a folder goes with everything in it. |
 
 #### `XarModifier`
 
@@ -32882,7 +32852,8 @@ Random-access in-place modifier for XAR archives. Reads the existing header + co
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream xar, string name, byte[] data, DateTime? lastModified = null)` | Adds a regular file entry to an existing XAR archive. The new entry's data is zlib-compressed and appended to the end of the heap; the TOC is then recompressed and rewritten at the start of the file with the heap shifted by the TOC-size delta. |
+| `AddDirectory` | `static void AddDirectory(Stream xar, string name, DateTime? lastModified = null, int? mode = null)` | Adds a folder (with any missing parents) to an existing XAR archive; a folder that is already there is left as it is. |
+| `AddFile` | `static void AddFile(Stream xar, string name, byte[] data, DateTime? lastModified = null, int? mode = null)` | Adds a regular file entry to an existing XAR archive. The new entry's data is zlib-compressed and appended to the end of the heap; the TOC is then recompressed and rewritten at the start of the file with the heap shifted by the TOC-size delta. |
 | `RemoveFile` | `static bool RemoveFile(Stream xar, string name, bool wipeData = true)` | Removes the named entry from a XAR archive. Returns true if the entry was found and dropped from the TOC. When `wipeData` is true (default) the orphan heap bytes are zeroed in place. The heap itself is not compacted: XAR readers locate entries by explicit `<offset>`, so leaving gaps is legal. |
 
 #### `XarReader`
@@ -32905,7 +32876,8 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `XarWriter` | `XarWriter(Stream output, bool leaveOpen = false)` | Creates a new XAR writer. |
-| `AddFile` | `void AddFile(string name, byte[] data, DateTime? modified = null)` | Adds a file to the archive. |
+| `AddDirectory` | `void AddDirectory(string name, DateTime? modified = null, int? mode = null)` | Adds a folder (and its parents); needed only for empty ones. |
+| `AddFile` | `void AddFile(string name, byte[] data, DateTime? modified = null, int? mode = null)` | Adds a file to the archive; a path with '/' puts it into folders. |
 | `Dispose` | `void Dispose()` | Writes the archive and flushes. |
 
 ### Namespace `FileFormat.Xi`
@@ -33655,13 +33627,13 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 
 #### `ZlingStream`
 
-Zling: ROLZ + Huffman block compressor by Zhang Li. Format: blocks of (uint8 flag, uint32 LE encpos, uint32 LE rlen, uint32 LE olen, olen bytes). flag=1 means more data follows, flag=0 is the final block.
+`.zling` files as Zhang Li's libzling demo (`zling e0`..`e4`, `zling d`) writes and reads them; the codec is `ZlingCodec`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the historical maximum-depth search. |
-| `Compress` | `static void Compress(Stream input, Stream output, int level)` | Encodes the supplied input with a zling-style effort level from 0 through 4. Higher levels inspect more ROLZ candidates and are therefore slower but can find longer matches. Level 4 preserves the encoder's historical behaviour. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` at level 4, the deepest search. |
+| `Compress` | `static void Compress(Stream input, Stream output, int level)` | Compresses `input` at a libzling level from 0 (fastest) to 4 (deepest search, more lazy matching). |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a zling stream. |
 
 ### Namespace `FileFormat.Zoo`
 
@@ -33869,11 +33841,13 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files by rebuilding a plain single-file archive; anything else is refused. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files by rebuilding a plain single-file archive; anything else is refused. |
 
 #### `ZpaqReader`
 
@@ -33884,8 +33858,12 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ZpaqReader` | `ZpaqReader(Stream stream, bool leaveOpen = false)` | Opens a ZPAQ archive and reads its index. |
+| `ZpaqReader` | `ZpaqReader(Stream stream, string password, bool leaveOpen = false)` | Opens a ZPAQ archive, decrypting it with `password` when one is given. |
 | `Entries` | `IReadOnlyList<ZpaqEntry> Entries { get; }` | Files and directories present in the latest version, ordered by name. |
 | `Errors` | `int Errors { get; }` | Number of blocks that failed to decode and were skipped while reading the index. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether the archive was opened with a password (an encrypted archive). |
+| `IsIndex` | `bool IsIndex { get; }` | Gets whether this is an index written with `-index`: transaction headers, fragment tables and file indexes, but no data. Its files can be listed; their bytes are in the archive parts the index was written for. |
+| `IsMultiPart` | `bool IsMultiPart { get; }` | Gets whether the archive was read from part files other than the one opened (a multi-part set). |
 | `VersionCount` | `int VersionCount { get; }` | Number of versions (transactions) in the archive. |
 | `Dispose` | `void Dispose()` |  |
 | `ExtractBytes` | `byte[] ExtractBytes(ZpaqEntry entry)` | Decodes the entry's content, verifying every fragment's (or segment's) SHA-1. |

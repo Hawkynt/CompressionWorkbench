@@ -28,6 +28,7 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the archive as a single version.</summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    RefuseUnlessPlain(archive);
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         using var r = new ZpaqReader(stream, leaveOpen: true);
@@ -47,7 +48,8 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public FormatCategory Category => FormatCategory.Archive;
 
   // R/W: zpaq 7.15 lists and extracts what ZpaqWriter produces (ZpaqExternalOracleTests), and the
-  // reader decodes zpaq's own archives at every method. Modify goes through the default
+  // reader decodes zpaq's own archives at every method. Add and Remove append a version to a
+  // journaling archive as zpaq add does; only a streaming archive still goes through the default
   // extract -> edit -> re-create rebuild, which writes a fresh single-version archive.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
@@ -81,7 +83,7 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var seekable = Seekable(stream);
     try {
-      var (reader, _) = TryOpen(seekable);
+      var (reader, _) = TryOpen(seekable, password);
       if (reader == null) {
         var length = seekable.Length;
         return [
@@ -101,7 +103,7 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var seekable = Seekable(stream);
     try {
-      var (reader, problem) = TryOpen(seekable);
+      var (reader, problem) = TryOpen(seekable, password);
       if (reader == null) {
         if (Wants(files, "FULL.zpaq")) {
           seekable.Position = 0;
@@ -152,10 +154,138 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return "1";
   }
 
-  private static (ZpaqReader? Reader, string? Problem) TryOpen(Stream stream) {
+  /// <summary>Adds or replaces files by rebuilding a plain single-file archive; anything else is refused.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    RefuseUnlessPlain(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    if (TryAppendVersion(archive, writer => {
+          foreach (var input in inputs) {
+            if (string.IsNullOrEmpty(input.ArchiveName))
+              continue;
+            var time = input.Metadata?.LastWriteTimeUtc?.UtcDateTime;
+            if (input.IsDirectory)
+              writer.AddDirectory(input.ArchiveName, time);
+            else
+              writer.AddFile(input.ArchiveName, input.ReadContent(), time);
+          }
+        }, _ => true))
+      return;
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      foreach (var input in inputs) {
+        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName))
+          continue;
+        var dest = Path.Combine(tmpDir, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
+        var destDir = Path.GetDirectoryName(dest);
+        if (!string.IsNullOrEmpty(destDir))
+          Directory.CreateDirectory(destDir);
+        File.WriteAllBytes(dest, input.ReadContent());
+      }
+    });
+  }
+
+  /// <summary>Removes files by rebuilding a plain single-file archive; anything else is refused.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    RefuseUnlessPlain(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    if (TryAppendVersion(archive, null, reader => {
+          var names = reader.Entries.Select(e => e.FileName).ToList();
+          var gone = new List<string>();
+          foreach (var raw in entryNames) {
+            var n = raw.Replace('\\', '/').TrimStart('/').TrimEnd('/');
+            gone.AddRange(names.Where(e => e.TrimEnd('/') == n || e.StartsWith(n + "/", StringComparison.Ordinal)));
+          }
+          return gone.Distinct(StringComparer.Ordinal).ToList();
+        }))
+      return;
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => RebuildVerb.DeleteNamedEntries(tmpDir, entryNames ?? []));
+  }
+
+  /// <summary>
+  /// Edits a journaling archive the way <c>zpaq add</c> does: one more version is appended, so
+  /// every earlier version stays as it was and can still be extracted. New fragments are
+  /// deduplicated against the whole archive. Returns false for an archive this cannot append to
+  /// (streaming layout, an incomplete last transaction, not seekable), which then goes through the
+  /// rebuild. After appending, the archive is read back; on any mismatch it is cut back to its
+  /// old length, so it is never left half-written.
+  /// </summary>
+  private static bool TryAppendVersion(Stream archive, Action<ZpaqWriter>? add, Func<ZpaqReader, object>? removalsOrTrue) {
+    if (!archive.CanSeek || !archive.CanWrite)
+      return false;
+    archive.Position = 0;
+    ZpaqReader reader;
+    try {
+      reader = new ZpaqReader(archive, leaveOpen: true);
+    } catch (Exception e) when (e is InvalidDataException or EndOfStreamException or NotSupportedException) {
+      return false;
+    }
+    List<string> removals;
+    long latest;
+    IReadOnlyList<(byte[] Sha1, int Usize)> fragments;
+    using (reader) {
+      if (reader.VersionCount == 0 || reader.Errors > 0 || reader.HasIncompleteTransaction || reader.HasStreamingEntries)
+        return false;
+      removals = removalsOrTrue?.Invoke(reader) as List<string> ?? [];
+      latest = reader.LatestVersionDate;
+      fragments = reader.FragmentTable;
+    }
+    if (add == null && removals.Count == 0)
+      return true; // nothing named exists: nothing to record
+
+    var originalLength = archive.Length;
+    try {
+      archive.Position = originalLength;
+      using (var writer = ZpaqWriter.Appending(archive, fragments, latest)) {
+        add?.Invoke(writer);
+        foreach (var name in removals)
+          writer.RemoveEntry(name);
+      }
+      archive.Flush();
+      archive.Position = 0;
+      using var check = new ZpaqReader(archive, leaveOpen: true);
+      if (check.Errors > 0 || check.HasIncompleteTransaction)
+        throw new InvalidDataException("ZPAQ: the appended version does not read back.");
+      foreach (var e in check.Entries.Where(e => !e.IsDirectory))
+        check.ExtractBytes(e); // every fragment's SHA-1 is checked on the way
+    } catch {
+      archive.SetLength(originalLength);
+      throw;
+    }
+    return true;
+  }
+
+  /// <summary>
+  /// The rebuild writes one unencrypted file. An encrypted archive, an index or a multi-part set
+  /// would lose its key, its parts or its meaning, so those are refused with the input unchanged.
+  /// </summary>
+  private static void RefuseUnlessPlain(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!archive.CanSeek)
+      return;
+    archive.Position = 0;
+    Span<byte> head = stackalloc byte[4];
+    var n = archive.ReadAtLeast(head, 4, throwOnEndOfStream: false);
+    archive.Position = 0;
+    if (n == 4 && !head.SequenceEqual("7kSt"u8) && !head[..3].SequenceEqual("zPQ"u8))
+      throw new NotSupportedException("ZPAQ: encrypted archives are read, not edited; the archive was left unchanged.");
+    ZpaqReader reader;
+    try {
+      reader = ZpaqArchiveSet.Open(archive, null);
+    } catch (Exception e) when (e is InvalidDataException or EndOfStreamException) {
+      return; // the rebuild reports what it cannot read
+    }
+    using (reader) {
+      if (reader.IsIndex)
+        throw new NotSupportedException("ZPAQ: an index (-index) holds no data and is not edited; the archive was left unchanged.");
+      if (reader.IsMultiPart)
+        throw new NotSupportedException("ZPAQ: multi-part archives are read, not edited; the parts were left unchanged.");
+    }
+    archive.Position = 0;
+  }
+
+  private static (ZpaqReader? Reader, string? Problem) TryOpen(Stream stream, string? password) {
     try {
       stream.Position = 0;
-      return (new ZpaqReader(stream, leaveOpen: true), null);
+      return (ZpaqArchiveSet.Open(stream, string.IsNullOrEmpty(password) ? null : password), null);
     } catch (Exception e) when (e is InvalidDataException or NotSupportedException or EndOfStreamException or IOException
                                   or OverflowException or ArgumentException or IndexOutOfRangeException) {
       return (null, e.Message);

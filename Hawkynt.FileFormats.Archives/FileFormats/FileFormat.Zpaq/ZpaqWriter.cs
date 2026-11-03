@@ -60,6 +60,28 @@ public sealed class ZpaqWriter : IDisposable {
   /// <summary>The zpaq compression method used for the data blocks.</summary>
   public string Method { get; }
 
+  private List<(byte[] Sha1, int Usize)>? _existingFragments;
+  private long _minimumDate;
+
+  /// <summary>
+  /// A writer that appends one more version to an existing journaling archive, as
+  /// <c>zpaq add</c> does: <paramref name="stream"/> is positioned at the archive's end, new
+  /// fragments are numbered after <paramref name="existingFragments"/> and identical ones are
+  /// not stored again, and only the added, replaced and removed names get index records.
+  /// </summary>
+  /// <param name="stream">The archive, positioned at its end.</param>
+  /// <param name="existingFragments">The archive's fragment table (index 0 unused).</param>
+  /// <param name="latestDate">Decimal date of the newest version; the new one is dated after it.</param>
+  /// <param name="method">zpaq compression method for the new data blocks.</param>
+  internal static ZpaqWriter Appending(Stream stream, IReadOnlyList<(byte[] Sha1, int Usize)> existingFragments, long latestDate, string method = "1")
+    => new(stream, leaveOpen: true, method) { _existingFragments = [.. existingFragments], _minimumDate = latestDate };
+
+  /// <summary>Records the removal of a file or directory entry (an index record with date 0).</summary>
+  internal void RemoveEntry(string name) {
+    ObjectDisposedException.ThrowIf(this._disposed, this);
+    this._entries[name] = new(name, 0, 0, null);
+  }
+
   /// <summary>Date of the transaction; defaults to the time of disposal.</summary>
   public DateTime? TransactionDate { get; set; }
 
@@ -105,6 +127,11 @@ public sealed class ZpaqWriter : IDisposable {
 
   private void WriteTransaction() {
     var date = ZpaqDate.FromDateTime(this.TransactionDate ?? DateTime.UtcNow);
+    if (date <= this._minimumDate) {
+      // A version must not predate the one before it: take the next second after it.
+      var after = ZpaqDate.ToDateTime(this._minimumDate) ?? throw new InvalidOperationException("ZPAQ: the archive's latest version date is invalid.");
+      date = ZpaqDate.FromDateTime(after.AddSeconds(1));
+    }
     if (date is < 19000000000000L or >= 30000000000000L)
       throw new InvalidOperationException("ZPAQ dates must lie in the years 1900..2999.");
 
@@ -148,9 +175,12 @@ public sealed class ZpaqWriter : IDisposable {
     vf.Sort((a, b) => a.SortKey != b.SortKey ? a.SortKey.CompareTo(b.SortKey) : CompareUtf8(a.Name, b.Name));
 
     // Fragment table: index 0 is unused, IDs start at 1.
-    var ht = new List<(byte[] Sha1, int Usize)> { ([], -2) };
+    var ht = this._existingFragments ?? [([], -2)];
     var htIndex = new Dictionary<string, uint>(StringComparer.Ordinal);
-    const uint htsize = 1;
+    for (var i = 1; i < ht.Count; ++i)
+      if (ht[i].Usize >= 0 && ht[i].Sha1.Length == 20)
+        htIndex.TryAdd(Convert.ToHexString(ht[i].Sha1), (uint)i);
+    var htsize = (uint)ht.Count;
 
     var dataBlocks = new MemoryStream();
     var csize = new List<int>();
@@ -330,11 +360,13 @@ public sealed class ZpaqWriter : IDisposable {
         PutLe(index, (ulong)e.Date, 8);
         index.Write(Encoding.UTF8.GetBytes(e.Name));
         index.Put(0);
-        PutLe(index, 5, 4);
-        PutLe(index, (ulong)e.Attr, 5);
-        PutLe(index, (ulong)e.Ptr.Count, 4);
-        foreach (var p in e.Ptr)
-          PutLe(index, p, 4);
+        if (e.Date != 0) { // a removal (date 0) carries no attributes and no fragments
+          PutLe(index, 5, 4);
+          PutLe(index, (ulong)e.Attr, 5);
+          PutLe(index, (ulong)e.Ptr.Count, 4);
+          foreach (var p in e.Ptr)
+            PutLe(index, p, 4);
+        }
       }
       if (index.Size > 16000 || (index.Size > 0 && k >= ordered.Count)) {
         ZpaqMethods.CompressBlock(index, output, "1", "jDC" + ZpaqMethods.Itos(date) + "i" + ZpaqMethods.Itos(++dtcount, 10), [.. JournalComment]);

@@ -50,6 +50,7 @@ internal static class LhaHeaderParser {
   private const int Level3Length = 32;
   private const int Level3MaxLength = 1024 * 1024;
   private const byte OsTypeOs9_68k = (byte)'K';
+  private const byte OsTypeLhark = (byte)' ';
 
   /// <summary>
   /// Reads the header at the stream's position. Returns <see langword="null"/> at the end-of-archive
@@ -186,6 +187,9 @@ internal static class LhaHeaderParser {
   private static LhaHeader Build(long start, long dataOffset, long compressed, List<byte> raw, string name,
       string? directory, ushort crc, byte level, byte os, DateTime modified) {
     var method = Encoding.ASCII.GetString([raw[2], raw[3], raw[4], raw[5], raw[6]]);
+    // LHARK writes its incompatible -lh7- under level-1 headers with OS id ' ' (lhasa's rule).
+    if (level == 1 && os == OsTypeLhark && method == LhaConstants.MethodLh7)
+      method = LhaConstants.MethodLk7;
     var path = name;
     if (!string.IsNullOrEmpty(directory))
       path = directory.EndsWith('/') ? directory + name : directory + "/" + name;

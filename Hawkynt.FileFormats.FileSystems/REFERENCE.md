@@ -13,7 +13,7 @@
 
 #### `AffFormatDescriptor`
 
-AFF (Advanced Forensic Format, AFFLIB v3) single-file evidence image. Exposes the acquired media as `disk.img`, verified against the stored md5/sha1/sha256, and the acquisition metadata as a synthetic `metadata.ini`. Creating writes zlib/ZERO pages that AFFLIB's tools accept; replacing `disk.img` rewrites the pages and hashes and keeps every acquisition segment. Encrypted images are listed but refused; signed images are not modified (their signatures would no longer verify). AFD (directory) and AFM (raw plus sidecar) are multi-file layouts and outside this single-stream descriptor.
+AFF (Advanced Forensic Format, AFFLIB v3) single-file evidence image. Exposes the acquired media as `disk.img`, verified against the stored md5/sha1/sha256, and the acquisition metadata as a synthetic `metadata.ini`. Creating writes zlib/ZERO pages that AFFLIB's tools accept; replacing `disk.img` rewrites the pages and hashes and keeps every acquisition segment. Encrypted images are listed but refused; signed images are not modified (their signatures would no longer verify). The multi-file layouts are read when the image is opened from disk: a file of an AFD directory brings in every `file_NNN.aff` beside it, an AFM sidecar its split raw files; neither is rewritten.
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `ISyntheticEntryNames`.
 
@@ -57,8 +57,10 @@ Reader/writer for single-file AFF (Advanced Forensic Format, AFFLIB v3 `.aff`). 
 | `PageCompressed` | `const uint PageCompressed` |  |
 | `QuadwordFlag` | `const uint QuadwordFlag` |  |
 | `FileMagic` | `static ReadOnlySpan<byte> FileMagic { get; }` |  |
+| `FileType` | `string FileType { get; }` | The `aff_file_type` segment: `AFF`, `AFD` (first file of a directory) or `AFM`. |
 | `ImageSize` | `long ImageSize { get; }` |  |
 | `IsEncrypted` | `bool IsEncrypted { get; }` | True when any segment is encrypted (AFFLIB's `/aes256` suffix or a stored key). |
+| `IsMultiFile` | `bool IsMultiFile { get; }` | Whether the image's data lives in more than one file: an AFD directory of `file_NNN.aff`, or an AFM sidecar whose pages are split raw files. |
 | `IsSigned` | `bool IsSigned { get; }` | True when the image carries signature segments (`/sha256`) or a signing certificate. |
 | `PageCount` | `int PageCount { get; }` |  |
 | `PageSize` | `uint PageSize { get; }` |  |
@@ -69,6 +71,7 @@ Reader/writer for single-file AFF (Advanced Forensic Format, AFFLIB v3 `.aff`). 
 | `EncodeQuad` | `static byte[] EncodeQuad(long value)` |  |
 | `Find` | `AffSegment Find(string name)` |  |
 | `IsDerived` | `static bool IsDerived(string name)` | Segments that describe the image's content or geometry and must be regenerated, not copied, on rewrite. |
+| `ReadSet` | `static AffImage ReadSet(Stream stream)` | Reads `stream` and, when it is a file of a multi-file layout, the files that belong with it: AFD — a directory named `*.afd` of `file_000.aff`, `file_001.aff`, …; every file is an AFF whose segments (the pages, the closing imagesize and hashes) together make the image;AFM — `name.afm` holds only metadata (`aff_file_type` = AFM, `raw_image_file_extension`, `pages_per_raw_image_file`); the image is the raw files `name.000`, `name.001`, … in order, each holding that many pages (0 = one file holds all). |
 | `ReadVerifiedImage` | `byte[] ReadVerifiedImage()` | The reconstructed image, verified against the stored md5/sha1/sha256 segments when present. |
 | `Read` | `static AffImage Read(Stream stream)` | Parses every segment; empty-name (ignored / free-space) segments are skipped. |
 | `RenderMetadata` | `byte[] RenderMetadata()` | `metadata.ini`: the geometry plus every non-page segment rendered as text, hex or a number. |
@@ -989,7 +992,7 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 
 ### Namespace `FileFormat.Ewf`
 
-[`EwfFormatDescriptor`](#ewfformatdescriptor) · [`EwfReader`](#ewfreader) · [`EwfReader.EwfImage`](#ewfreaderewfimage) · [`EwfReader.Section`](#ewfreadersection) · [`EwfWriter`](#ewfwriter)
+[`EwfFormatDescriptor`](#ewfformatdescriptor) · [`EwfMediaStream`](#ewfmediastream) · [`EwfReader`](#ewfreader) · [`EwfReader.EwfImage`](#ewfreaderewfimage) · [`EwfReader.Section`](#ewfreadersection) · [`EwfWriter`](#ewfwriter)
 
 #### `EwfFormatDescriptor`
 
@@ -1028,6 +1031,31 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Performs the shrink operation. |
 
+#### `EwfMediaStream`
+
+Read-only, seekable view of the media stored in an EWF-E01 segment file set (.E01, .E02, …, .E99, .EAA, …). Every segment's section chain is walked once; every "table" section adds its chunks (falling back to its "table2" mirror when the table's checksum fails), and chunks are decoded on demand: zlib when the entry's top bit is set, otherwise stored data followed by its Adler-32.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `ChunkSize` | `int ChunkSize { get; }` | Bytes per chunk (sectors per chunk times bytes per sector). |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `SegmentCount` | `int SegmentCount { get; }` | Number of segment files the set consists of. |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Open` | `static EwfMediaStream Open(Stream first, bool leaveOpen = true)` | Opens the media of the segment set `first` starts. When the first segment continues into others, they are looked up next to it by EWF's naming (E02 … E99, EAA …). |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SegmentPath` | `static string SegmentPath(string firstPath, int number)` | Path of segment `number` (1-based) of the set whose first file is `firstPath`. |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
 #### `EwfReader`
 
 Reader for EnCase Expert Witness Format (EWF) forensic images — the .e01/.ewf/.l01 family used by EnCase and libewf. Besides the raw section chain it reconstructs the logical media carried by the common single-segment EVF layout emitted by `EwfWriter`.
@@ -1039,7 +1067,7 @@ Reader for EnCase Expert Witness Format (EWF) forensic images — the .e01/.ewf/
 | `FileHeaderSize` | `const int FileHeaderSize` | Defines the file header size constant value. |
 | `LvfSignature` | `static readonly byte[] LvfSignature` | Provides the lvf signature value. |
 | `SectionDescriptorSize` | `const int SectionDescriptorSize` | Defines the section descriptor size constant value. |
-| `ExtractMedia` | `static byte[] ExtractMedia(EwfImage image)` | Reconstructs the logical raw media from a single EVF segment. Stored chunks have their trailing Adler-32 removed and verified; compressed chunks are decoded as zlib according to the table-entry MSB. |
+| `ExtractMedia` | `static byte[] ExtractMedia(EwfImage image)` | Reconstructs the raw media of a self-contained (single-segment) EVF image held in memory, through `EwfMediaStream`: every sectors/table group, stored chunks checked by their Adler-32, compressed chunks decoded as zlib. |
 | `Read` | `static EwfImage Read(ReadOnlySpan<byte> data)` | Reads one EWF segment and its section chain. |
 
 #### `EwfReader.EwfImage`
@@ -1050,8 +1078,10 @@ Implements `IEquatable<EwfImage>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EwfImage` | `EwfImage(bool IsLogical, ushort SegmentNumber, List<Section> Sections, long TotalFileSize)` | Represents an ewf image. |
+| `EwfImage` | `EwfImage(bool IsLogical, ushort SegmentNumber, List<Section> Sections, long TotalFileSize, byte[] Raw = null)` | Represents an ewf image. |
+| `ContinuesInNextSegment` | `bool ContinuesInNextSegment { get; }` | Whether this segment's chain ends in "next": the media continues in further segment files. |
 | `IsLogical` | `bool IsLogical { get; init; }` |  |
+| `Raw` | `byte[] Raw { get; init; }` |  |
 | `Sections` | `List<Section> Sections { get; init; }` |  |
 | `SegmentNumber` | `ushort SegmentNumber { get; init; }` |  |
 | `TotalFileSize` | `long TotalFileSize { get; init; }` |  |
@@ -1842,7 +1872,7 @@ Implements `IDisposable`.
 
 #### `Qcow2Stream`
 
-Seekable access to the active guest disk of a self-contained QCOW2 image. Reads resolve standard, zero, unallocated and deflate-compressed clusters. Writes are enabled only for flat standard-refcount profiles and honour QCOW2 copy-on-write semantics for shared L2 and data clusters.
+Seekable access to the active guest disk of a QCOW2 image. Reads resolve standard, zero, unallocated and compressed clusters (deflate or zstd), extended L2 entries with their 32 subclusters, and backing files (QCOW2 or raw), which supply every cluster or subcluster the image leaves unallocated. Writes are enabled only for flat standard-refcount profiles and honour QCOW2 copy-on-write semantics for shared L2 and data clusters.
 
 Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
@@ -1855,6 +1885,7 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `Position` | `override long Position { get; set; }` |  |
 | `Dispose` | `protected override void Dispose(bool disposing)` |  |
 | `Flush` | `override void Flush()` |  |
+| `Open` | `static Qcow2Stream Open(Stream backing, bool leaveOpen = true)` | Opens a QCOW2 image as a virtual guest-disk stream, or explains why it cannot. |
 | `Read` | `override int Read(Span<byte> buffer)` |  |
 | `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
 | `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
@@ -3963,8 +3994,11 @@ Random-access in-place modifier for BBC Micro Acorn DFS `.ssd` images. The DFS c
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `AddEntry` | `static void AddEntry(Stream image, string catalogName, byte[] data, char directory = '$', uint loadAddr = 6400, uint execAddr = 6400, bool locked = false)` | Adds a file under a catalogue name the caller has already made valid (at most seven printable characters) — for the Acorn DFS family members whose names follow their own rules, such as MFS-1. |
 | `AddFile` | `static void AddFile(Stream image, string name, byte[] data, char directory = '$', uint loadAddr = 6400, uint execAddr = 6400, bool locked = false)` | Adds a file to an existing single-sided DFS image. Caller is responsible for ensuring the name does not already exist (use `RemoveFile` first for replace-by-name semantics). The file is placed in the lowest contiguous gap large enough to hold it. |
+| `RemoveEntry` | `static bool RemoveEntry(Stream image, string catalogName, char directory, bool wipeData = true)` | Removes the file stored under exactly `catalogName` in `directory` (case-insensitively, as DFS compares); true when found. |
 | `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes a named file from the image. Returns true if found and removed. When `wipeData` is true, the data sectors are zeroed. |
+| `SplitName` | `static ValueTuple<char, string> SplitName(string name)` | Directory and catalogue name of a published name: "D.NAME" (what List shows, and what Create accepts) or a bare name in the default directory '$'. |
 
 #### `BbcReader`
 
@@ -9505,7 +9539,7 @@ Builds a fresh Sharp X68000 Human68k disk image from scratch. The format is FAT1
 
 ### Namespace `FileSystem.Iso`
 
-[`IsoBlockMover`](#isoblockmover) · [`IsoEntry`](#isoentry) · [`IsoExtentMap`](#isoextentmap) · [`IsoFilesystemDriverAdapter`](#isofilesystemdriveradapter) · [`IsoFormatDescriptor`](#isoformatdescriptor) · [`IsoModifier`](#isomodifier) · [`IsoReader`](#isoreader) · [`IsoWriter`](#isowriter)
+[`IsoBlockMover`](#isoblockmover) · [`IsoBoot`](#isoboot) · [`IsoBootEntry`](#isobootentry) · [`IsoEntry`](#isoentry) · [`IsoExtentMap`](#isoextentmap) · [`IsoFilesystemDriverAdapter`](#isofilesystemdriveradapter) · [`IsoFormatDescriptor`](#isoformatdescriptor) · [`IsoModifier`](#isomodifier) · [`IsoReader`](#isoreader) · [`IsoWriter`](#isowriter) · [`IsoWriter.BootEntry`](#isowriterbootentry)
 
 #### `IsoBlockMover`
 
@@ -9525,6 +9559,34 @@ Implements `IFilesystemBlockMover`.
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
 
+#### `IsoBoot`
+
+Boot information of an existing ISO image, so an edit can keep it booting: its El Torito entries (El Torito Bootable CD-ROM Format Specification 1.0), the catalog location, and whether the image is "hybrid" (bootable from a USB stick through a partition table in the system area).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HasBootInfoTable` | `static bool HasBootInfoTable(byte[] image, uint loadRba)` | True when an image carries a valid isolinux-style boot info table for this address. |
+| `IsHybrid` | `static bool IsHybrid(Stream s)` | An MBR partition table, a GPT header or an Apple partition map in the system area: the image boots from USB through absolute sector numbers that a rebuild would move. |
+| `ReadAt` | `static byte[] ReadAt(Stream s, long lba, int length)` | Reads `length` bytes starting at sector `lba`. |
+| `ReadElTorito` | `static ValueTuple<List<IsoBootEntry>, uint>? ReadElTorito(Stream s)` | The boot entries and the catalog sector, or null for an image that does not boot. |
+| `ReadVolumeId` | `static string ReadVolumeId(Stream s)` | The Volume Identifier of the Primary Volume Descriptor (the disc label). |
+
+#### `IsoBootEntry`
+
+One El Torito boot entry as found in an image's boot catalog.
+
+Implements `IEquatable<IsoBootEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsoBootEntry` | `IsoBootEntry(byte Platform, byte MediaType, ushort LoadSegment, byte SystemType, ushort SectorCount, uint LoadRba)` | One El Torito boot entry as found in an image's boot catalog. |
+| `LoadRba` | `uint LoadRba { get; init; }` |  |
+| `LoadSegment` | `ushort LoadSegment { get; init; }` |  |
+| `MediaType` | `byte MediaType { get; init; }` |  |
+| `Platform` | `byte Platform { get; init; }` |  |
+| `SectorCount` | `ushort SectorCount { get; init; }` |  |
+| `SystemType` | `byte SystemType { get; init; }` |  |
+
 #### `IsoEntry`
 
 Represents an entry (file or directory) in an ISO 9660 image.
@@ -9532,12 +9594,14 @@ Represents an entry (file or directory) in an ISO 9660 image.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `IsoEntry` | `IsoEntry()` |  |
+| `FirstSector` | `long FirstSector { get; }` | First sector of the entry's data, to match El Torito load addresses. |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether the entry is a directory. |
 | `IsSymlink` | `bool IsSymlink { get; init; }` | Whether the entry is a Rock Ridge symbolic link (SL). |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Last modification timestamp. |
 | `LinkTarget` | `string LinkTarget { get; init; }` | The symbolic link's target, when `IsSymlink`. |
 | `Name` | `string Name { get; init; }` | Path of the entry within the image. |
 | `Size` | `long Size { get; init; }` | Size in bytes (0 for directories). |
+| `UnixMode` | `int? UnixMode { get; init; }` | The POSIX mode (st_mode) from Rock Ridge PX, when the image has one. |
 
 #### `IsoExtentMap`
 
@@ -9587,6 +9651,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `SupportedDefragFeatures` | `DefragFeature SupportedDefragFeatures { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files at the root of an existing ISO 9660 image. Uses `IsoModifier` for true random-access I/O — only the PVD (sector 16), the root directory's existing extent, and the new file's data sectors are touched. The 32 KB system area, VDST, path tables, and existing file data sectors are left untouched. Names are sanitized to the ISO 9660 8.3 d-characters identifier set; ';1' versions are added automatically by the modifier. |
+| `BufferedWriterFor` | `static IsoWriter BufferedWriterFor(IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options = null)` | An ISO writer holding `inputs` in memory with folders, Rock Ridge and Joliet names and the boot options, for the CD image formats that wrap an ISO 9660 track (CDI, MDF, NRG, BIN). |
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming creation: the pre-known per-input sizes drive the ISO 9660 path table + directory + file-extent layout in pass 1 (identical to `Create`, which flattens to leaf filenames); pass 2 streams each file's bytes from its `OpenStream` factory into its data extent via 64 KB chunks — no file is ever buffered as a `byte[]`. Output is byte-identical to `Create` for the same inputs (the ECMA-119 volume/record timestamps are sampled once per `Build`). Falls back to a buffered build when the target stream is not seekable. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
@@ -9633,14 +9698,35 @@ Builds a minimal ISO 9660 (ECMA-119) disc image, optionally with a Joliet Supple
 | --- | --- | --- |
 | `IsoWriter` | `IsoWriter()` |  |
 | `ApplicationIdentifier` | `string ApplicationIdentifier { get; set; }` | ECMA-119 8.4.12 Application Identifier (a-characters, 128 bytes max). Empty by default. |
+| `BootCatalogPath` | `string BootCatalogPath { get; set; }` | A file of the image that is the boot catalog (e.g. "isolinux/boot.cat"). |
+| `BootEntries` | `List<BootEntry> BootEntries { get; }` | El Torito entries; none means an image that does not boot. |
 | `EnableJoliet` | `bool EnableJoliet { get; set; }` | Whether to emit a Joliet Supplementary Volume Descriptor and a parallel UCS-2 directory tree carrying the original long names. On by default. |
+| `EnableRockRidge` | `bool EnableRockRidge { get; set; }` | Adds Rock Ridge (RRIP 1.10 / IEEE P1282) to the primary tree: full POSIX names (NM), modes (PX) and modification times (TF), marked by SUSP "SP"/"ER" in the root. Off by default, so images stay byte-identical to before unless asked for. |
 | `PublisherIdentifier` | `string PublisherIdentifier { get; set; }` | ECMA-119 8.4.10 Publisher Identifier (a-characters, 128 bytes max). Empty by default. |
 | `SystemIdentifier` | `string SystemIdentifier { get; set; }` | ECMA-119 8.4.6 System Identifier (a-characters, 32 bytes max). Names the system that wrote the image. Empty by default. |
 | `VolumeIdentifier` | `string VolumeIdentifier { get; set; }` | ECMA-119 8.4.7 Volume Identifier (d-characters, 32 bytes max). Shown by most OS file managers and the iso9660 driver as the disc label. Default "CDROM". Truncated to 32 chars; upper-cased to fit the d-character set. |
+| `AddDirectory` | `void AddDirectory(string name, int? mode = null, DateTime? modified = null)` | Adds a directory, also an empty one. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the image. The name may contain '/' path separators, in which case the intermediate segments are created as directories. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a streaming file: `size` drives extent + path-table + directory-record sizing in pass 1; bytes are pulled from `openStream` in pass 2 of `BuildToStreaming`. Never buffered as `byte[]`. |
 | `BuildToStreaming` | `void BuildToStreaming(Stream output)` | Two-pass streaming Build: pass 1 lays out the identical ISO image (same descriptors, path tables, directory extents, and file-data extent placement as `Build`) with each streaming file's data extent left zero; pass 2 seeks to each file's extent byte offset and copies its bytes from the opener in 64 KB chunks. The sector tail past each file's logical size stays zero, exactly as the in-memory path leaves it. For the same inputs (and same wall-clock second for the volatile ECMA-119 timestamps) the output is byte-for-byte identical to `Build`. |
 | `Build` | `byte[] Build()` | Performs the build operation. |
+| `SetMetadata` | `void SetMetadata(string name, int? mode, DateTime? modified)` | Mode and modification time of a file or directory (for Rock Ridge and records). |
+
+#### `IsoWriter.BootEntry`
+
+An El Torito boot entry (the first one is the default entry).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BootEntry` | `BootEntry()` |  |
+| `ImageData` | `byte[] ImageData` | A boot image that is not a visible file. |
+| `ImagePath` | `string ImagePath` | The boot image as a file of the image (its extent is where the entry points). |
+| `LoadSegment` | `ushort LoadSegment` |  |
+| `MediaType` | `byte MediaType` | 0 = no emulation. |
+| `PatchBootInfoTable` | `bool PatchBootInfoTable` | Patch an isolinux-style boot info table (bytes 8–63) into the image. |
+| `Platform` | `byte Platform` | 0 = x86 BIOS, 0xEF = UEFI. |
+| `SectorCount` | `ushort SectorCount` | Virtual 512-byte sectors loaded at boot. |
+| `SystemType` | `byte SystemType` |  |
 
 ### Namespace `FileSystem.Jffs2`
 
@@ -10527,7 +10613,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `Mfs1InPlaceModifier`
 
-In-place modifier for Acorn MFS-1 (DFS-tier) disk images. MFS-1's catalog is a flat fixed-offset region — sector 0 (names) + sector 1 (metadata) — that we can shift in place; files live contiguously from sector 2 onwards. On `AddFiles` the existing catalog is parsed via `Mfs1Reader`, the new file is appended at the next free sector, the catalog is re-serialised via `Mfs1Writer`, and the buffer is written back to the underlying stream. The outer image size (sector count) is preserved. On `RemoveFiles` the catalog is re-built without the dropped names. The data area previously occupied by the removed file is zeroed so no forensic trace remains.
+In-place modifier for Acorn MFS-1 (DFS-tier) disk images. MFS-1's catalog is the Acorn DFS one — sector 0 (title and names) + sector 1 (title tail, counts, boot option and metadata) — so edits go through `BbcModifier`: only the two catalogue sectors and the file's own sectors are written, and every other file keeps its name, directory letter, lock, load and execution address and sectors.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10565,6 +10651,7 @@ Builds Acorn MFS-1 (Master File System v1) disk images. MFS-1 inherits the DFS o
 | `SectorSize` | `const int SectorSize` | Defines the sector size constant value. |
 | `AddFile` | `void AddFile(string name, byte[] data, char directory = '$', bool locked = false, uint loadAddress = 0, uint execAddress = 0)` | Adds a file to the volume. |
 | `Build` | `byte[] Build(string diskTitle = "WORM", int totalSectors = 800)` | Builds the MFS-1 image. The catalog is laid out per the DFS convention: entries are sorted by descending start-sector so the most recently added file appears at index 0. |
+| `CatalogName` | `static ValueTuple<string, char> CatalogName(string name)` | MFS-1 file names are 7 ASCII characters from a printable subset (32..126) padded with spaces. The directory letter defaults to `$`; callers may pass a path of the form "X.NAME" to set the directory. |
 
 ### Namespace `FileSystem.MinixFs`
 
@@ -15789,9 +15876,11 @@ Implements `IDisposable`.
 | `UdfReader` | `UdfReader(Stream stream, bool leaveOpen = false)` | Initializes a new UDF reader. |
 | `Entries` | `IReadOnlyList<UdfEntry> Entries { get; }` | Gets the entries. |
 | `Length` | `long Length { get; }` | Total size of the backing image in bytes. |
+| `UsesRemappedPartitions` | `bool UsesRemappedPartitions { get; }` | Whether any partition map remaps blocks (virtual, sparable or metadata): such volumes are read-only here. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `ExtractTo` | `long ExtractTo(UdfEntry entry, Stream destination)` | Writes `entry`'s logical bytes into `destination`. |
 | `Extract` | `byte[] Extract(UdfEntry entry)` | Decodes the supplied entry into one byte array. |
+| `UsesRemapping` | `static bool UsesRemapping(Stream image)` | Whether the volume addresses blocks through a virtual, sparable or metadata partition. The in-place editors, the extent map and every maintenance operation assume plain Type 1 partitions, so callers refuse to change such a volume. Unreadable volumes report false and fail on their own. |
 
 #### `UdfWriter`
 

@@ -67,18 +67,13 @@ public class BalzTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Header_IsBigEndianSize() {
+  public void Header_IsMagicThenLittleEndian64BitSize() {
     var data = new byte[1000];
     using var input = new MemoryStream(data);
     using var compressed = new MemoryStream();
     BalzStream.Compress(input, compressed);
-    compressed.Position = 0;
-    var b0 = compressed.ReadByte();
-    var b1 = compressed.ReadByte();
-    var b2 = compressed.ReadByte();
-    var b3 = compressed.ReadByte();
-    var size = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
-    Assert.That(size, Is.EqualTo(1000));
+    var header = compressed.ToArray()[..9];
+    Assert.That(header, Is.EqualTo(new byte[] { 0xBA, 0xE8, 0x03, 0, 0, 0, 0, 0, 0 }));
   }
 
   /// <summary>

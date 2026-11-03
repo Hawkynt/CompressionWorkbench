@@ -56,7 +56,7 @@ wrapped, because `(long)x * 8 == x * 8` exactly while `x * 8` still fits.
 | `Dictionary/Brotli/BrotliCompressor.cs` | whole-stream `BitLength()` | 256 MB of output | wrong byte-alignment padding on later uncompressed meta-blocks |
 | `Dictionary/Brotli/BrotliBitReader.cs` | `BitPosition` | 256 MB compressed | wrong reported position |
 | `Entropy/Fse/FseDecoder.cs` | `lastByteIndex * 8 + highBit` | 256 MB | negative start position; garbage or exception |
-| `Dictionary/Lzs`, `Lzwl`, `Lzham`, `Sqx`, `Ibm842`, `Zip/ImplodeDecoder` | decoder bit positions | 256 MB compressed | `IndexOutOfRangeException` |
+| `Dictionary/Lzs`, `Lzwl`, `Lzham`, `Sqx`, `Zip/ImplodeDecoder` | decoder bit positions | 256 MB compressed | `IndexOutOfRangeException` |
 | `Entropy/ExpGolomb`, `Entropy/GolombRice` | decoder bit positions | 256 MB compressed | `IndexOutOfRangeException` |
 | `Simd/SimdBitPack.cs` | `symbolCount * bitsPerSymbol` | 2^28 symbols at 8 bits | undersized or negative buffer size |
 
@@ -91,9 +91,11 @@ length and failing with an unrelated message:
 
 ## Measured ceilings per algorithm
 
-At 4 MB of English text, 119 of 122 building blocks round-trip. The three that do not
-are time-bound, not size-bound: `BB_Crush`, `BB_RePair` and `BB_Zopfli` all exceed a
-90-second budget because their optimal parsers are super-linear.
+At 4 MB of English text, 119 of 122 building blocks round-trip. The three that did not
+were time-bound, not size-bound: `BB_Crush`, `BB_RePair` and `BB_Zopfli` exceeded a
+90-second budget because their optimal parsers are super-linear. `BB_Crush` has since
+become the reference CRUSH 1.00 codec, a hash-chain parser that compresses those 4 MB in
+under a second.
 
 Selected measurements at larger sizes (English text, one process each):
 
@@ -188,7 +190,7 @@ Two targeted cases run without configuration:
 - `Deflate_RatioIsStableAcrossThe256MegabyteBoundary` — compresses 268,435,455 and
   268,435,457 bytes and asserts the ratio does not move.
 
-Do not run the whole sweep at 256 MB casually: `BB_Crush`, `BB_RePair`, `BB_Zopfli`,
+Do not run the whole sweep at 256 MB casually: `BB_RePair`, `BB_Zopfli`,
 `BB_ContextTreeWeighting` and `BB_Neural` are super-linear and will take hours.
 
 ## Streaming
@@ -213,7 +215,7 @@ a fixed-size window and 64-bit positions — the same widening already done here
 a ring buffer.
 
 **Which blocks could not, without redesign.** BWT, the suffix-tree and suffix-array
-blocks, Re-Pair, Sequitur, Zopfli and Crush all need the whole input resident to
+blocks, Re-Pair, Sequitur and Zopfli all need the whole input resident to
 build their global structure. They would have to gain a blocking scheme, which
 changes their output format and would invalidate the committed vectors.
 

@@ -624,11 +624,11 @@ Decodes ARJ method 4 ("fastest"), the LZ77 variant ARJ uses when asked for speed
 
 ### Namespace `Compression.Core.Dictionary.Balz`
 
-[`BalzBuildingBlock`](#balzbuildingblock)
+[`BalzBuildingBlock`](#balzbuildingblock) · [`BalzCodec`](#balzcodec)
 
 #### `BalzBuildingBlock`
 
-BALZ — Ilya Muravyov's ROLZ (reduced-offset LZ) compressor: matches are looked up in a small per-context table instead of the full sliding window, and every symbol is entropy-coded with a binary adaptive arithmetic coder.
+BALZ — Ilya Muravyov's ROLZ compressor (version 1.20). The block's bytes are a `.balz` file exactly as the reference program's `c` command writes it; see `BalzCodec`.
 
 Implements `IBuildingBlock`.
 
@@ -641,6 +641,15 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `BalzCodec`
+
+BALZ 1.20, Ilya Muravyov's ROLZ file compressor, converted from his public-domain `balz.cpp` (http://sourceforge.net/projects/balz/). Output matches the reference program byte for byte in both its normal (`c`) and maximum (`cx`) modes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, bool maximum = false)` | Compresses `data` into a `.balz` file. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses a `.balz` file. |
 
 ### Namespace `Compression.Core.Dictionary.BriefLz`
 
@@ -733,11 +742,11 @@ Decompresses data in the Brotli format (RFC 7932).
 
 ### Namespace `Compression.Core.Dictionary.Crush`
 
-[`CrushBuildingBlock`](#crushbuildingblock)
+[`CrushBuildingBlock`](#crushbuildingblock) · [`CrushCodec`](#crushcodec)
 
 #### `CrushBuildingBlock`
 
-Crush — Ilya Muravyov's fast LZ77 compressor, distinguished from simpler LZ77 variants (such as BriefLZ) by parsing the input with a bounded dynamic-program instead of a purely greedy longest-match choice.
+CRUSH — Ilya Muravyov's LZ77 file compressor (version 1.00). The block's bytes are a CRUSH file exactly as the reference program's `c` command writes it; see `CrushCodec`.
 
 Implements `IBuildingBlock`.
 
@@ -750,6 +759,16 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `CrushCodec`
+
+CRUSH 1.00, Ilya Muravyov's LZ77 file compressor, converted from his public-domain `crush.cpp` (http://sourceforge.net/projects/crush/). Output matches the reference program byte for byte at each of its three levels.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultLevel` | `const int DefaultLevel` | Default level, the reference's `c` command. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, int level = 1)` | Compresses `data` into a CRUSH file. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses a CRUSH file. |
 
 ### Namespace `Compression.Core.Dictionary.Csc`
 
@@ -841,11 +860,21 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Dictionary.Density`
 
-[`DensityBuildingBlock`](#densitybuildingblock) · [`DensityChameleonCompressor`](#densitychameleoncompressor) · [`DensityChameleonDecompressor`](#densitychameleondecompressor) · [`DensityConstants`](#densityconstants)
+[`DensityAlgorithm`](#densityalgorithm) · [`DensityBuildingBlock`](#densitybuildingblock) · [`DensityCodec`](#densitycodec)
+
+#### `DensityAlgorithm`
+
+The three density algorithms.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Chameleon` | `1` | One 16-bit hash dictionary; a quad is either its hash or itself. |
+| `Cheetah` | `2` | Two dictionary slots per hash plus one predicted successor per previous quad. |
+| `Lion` | `3` | Two dictionary slots per hash plus five predicted successors per previous quad. |
 
 #### `DensityBuildingBlock`
 
-Exposes the Density "Chameleon" algorithm as a benchmarkable building block.
+density's Chameleon algorithm as a building block. The block's bytes are exactly what density-rs 0.16.6's `Chameleon::encode` writes (no header; the stream ends with its input); see `DensityCodec`.
 
 Implements `IBuildingBlock`.
 
@@ -859,33 +888,14 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-#### `DensityChameleonCompressor`
+#### `DensityCodec`
 
-Compresses data using the Density "Chameleon" predictive-dictionary format (see `DensityConstants`).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> source)` | Compresses the input data using Chameleon. |
-
-#### `DensityChameleonDecompressor`
-
-Decompresses data produced by `DensityChameleonCompressor`.
+density, Guillaume Voirin's 4-byte-unit compressor, converted from density-rs 0.16.6 (https://github.com/g1mv/density, revision `58938943bb0dfd85b186551a3d1d36cc286f9c1d`, MIT OR Apache-2.0; see `THIRD-PARTY-NOTICE.density.txt`). Streams match the reference's `Chameleon/Cheetah/Lion::encode` byte for byte; like the reference, a stream carries no header and ends with its input.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses Chameleon-compressed data. |
-
-#### `DensityConstants`
-
-Constants for the Density "Chameleon" block format.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `ChunkSize` | `const int ChunkSize` | Size, in bytes, of one dictionary unit (chunk). |
-| `ChunksPerBlock` | `const int ChunksPerBlock` | Number of chunks covered by a single 32-bit signature word. |
-| `HashBits` | `const int HashBits` | Log2 of the prediction dictionary size. |
-| `HashMultiplier` | `const uint HashMultiplier` | Multiplicative hash constant (Knuth's 32-bit golden-ratio constant). |
-| `HashSize` | `const int HashSize` | Number of entries in the prediction dictionary. |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data, DensityAlgorithm algorithm, int sizeHint = 0)` | Decodes a stream written with `algorithm`. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, DensityAlgorithm algorithm)` | Encodes `data` with the given algorithm. |
 
 ### Namespace `Compression.Core.Dictionary.Dna`
 
@@ -1005,11 +1015,11 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Dictionary.Ibm842`
 
-[`Ibm842BuildingBlock`](#ibm842buildingblock)
+[`Ibm842BuildingBlock`](#ibm842buildingblock) · [`Ibm842Codec`](#ibm842codec)
 
 #### `Ibm842BuildingBlock`
 
-Exposes IBM 842 hardware compression as a benchmarkable building block. A fixed-dictionary LZ scheme that encodes data using templates of 2, 4, and 8-byte patterns. Each group of 8 bytes is encoded as a template index followed by a mix of literals and references to a recent-history dictionary.
+Exposes IBM 842 as a benchmarkable building block: the raw stream the Linux kernel's `sw842_compress`/`sw842_decompress` write and read (templates of 2-, 4- and 8-byte literals and ring-buffer indexes over 8-byte groups, ended by a CRC-32), with no length prefix. See `docs/IBM842-ON-DISK.md`.
 
 Implements `IBuildingBlock`.
 
@@ -1022,6 +1032,15 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `Ibm842Codec`
+
+IBM 842 as the Linux kernel's software implementation (`lib/842`) reads and writes it, implemented from `docs/IBM842-ON-DISK.md`: 5-bit templates over 8-byte groups with 2-, 4- and 8-byte ring-buffer indexes, repeat, zeros and short-data codes, an end code, a CRC-32 and padding to a multiple of 8 bytes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` into an 842 stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses an 842 stream. |
 
 ### Namespace `Compression.Core.Dictionary.KwajLzh`
 
@@ -1569,11 +1588,12 @@ Constants for LZH (LHA) compression methods.
 
 #### `LzhDecoder`
 
-Decodes LZH-compressed data (methods -lh5-, -lh6-, -lh7-). Uses LZSS with Huffman-coded literals/lengths and positions.
+Decodes LZH-compressed data (methods -lh4- to -lh7-, -lhx-, and LHARK's -lk7-). Uses LZSS with Huffman-coded literals/lengths and positions.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzhDecoder` | `LzhDecoder(Stream input, int positionBits = 13)` | Initializes a new `LzhDecoder`. |
+| `LzhDecoder` | `LzhDecoder(Stream input, int positionBits, bool lhark)` | Initializes a new `LzhDecoder`, optionally for LHARK's -lh7- (listed as -lk7-). |
 | `Decode` | `byte[] Decode(int originalSize)` | Decodes the compressed data. |
 
 #### `LzhEncoder`
@@ -2017,7 +2037,7 @@ Decompresses data produced by `LzrleCompressor`.
 
 #### `Lzrw1BuildingBlock`
 
-Exposes LZRW1 compression as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support. Reference: Ross N. Williams, "LZRW1", http://ross.net/compression/lzrw1.html.
+Exposes LZRW1 compression as a benchmarkable building block. The block's bytes are exactly the stream Ross N. Williams' reference `lzrw1_compress` writes, flag bytes included. Reference: Ross N. Williams, "LZRW1", http://ross.net/compression/lzrw1.html.
 
 Implements `IBuildingBlock`.
 
@@ -2033,19 +2053,19 @@ Implements `IBuildingBlock`.
 
 #### `Lzrw1Compressor`
 
-Implements LZRW1 compression from its public algorithm description: Ross N. Williams, "An Extremely Fast Ziv-Lempel Data Compression Algorithm", Data Compression Conference 1991, http://ross.net/compression/lzrw1.html — a hash-matched LZ77 variant grouping 16 items behind a control word, with a 4096-entry single-probe hash table and matches of length 3-18.
+LZRW1 compressor, converted from Ross N. Williams' public-domain reference `lzrw1.c` (31-Mar-1991, as printed in "An Extremely Fast Ziv-Lempel Data Compression Algorithm", DCC'91). Output matches the reference byte for byte when its hash table starts empty.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` using the LZRW1 control-word format. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> source)` | Compresses `source` into an LZRW1 stream. |
 
 #### `Lzrw1Decompressor`
 
-Decodes the LZRW1 control-word format produced by `Lzrw1Compressor`. Reference: Ross N. Williams, http://ross.net/compression/lzrw1.html.
+LZRW1 decompressor, converted from Ross N. Williams' public-domain reference `lzrw1.c`. See `Lzrw1Compressor` for the stream layout.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses an LZRW1 stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses an LZRW1 stream. |
 
 ### Namespace `Compression.Core.Dictionary.Lzrw3`
 
@@ -2053,7 +2073,7 @@ Decodes the LZRW1 control-word format produced by `Lzrw1Compressor`. Reference: 
 
 #### `Lzrw3BuildingBlock`
 
-Exposes LZRW3 compression as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support. Reference: Ross N. Williams, "LZRW3", http://ross.net/compression/lzrw3.html.
+Exposes LZRW3 compression as a benchmarkable building block. The block's bytes are exactly the stream Ross N. Williams' reference `lzrw3.c` writes, flag bytes included. Reference: Ross N. Williams, "LZRW3", http://ross.net/compression/lzrw3.html.
 
 Implements `IBuildingBlock`.
 
@@ -2069,19 +2089,19 @@ Implements `IBuildingBlock`.
 
 #### `Lzrw3Compressor`
 
-Implements LZRW3 compression from its public algorithm description: Ross N. Williams, "LZRW3: A Hash Table Index Variant of LZRW1", http://ross.net/compression/lzrw3.html — an LZRW1 derivative that transmits 4096-entry hash-table indices instead of raw offsets, so the decoder can resolve a match purely from a synchronized hash table (a "persistent phrase" table) rather than an explicit distance field.
+LZRW3 compressor, converted from Ross N. Williams' public-domain reference `lzrw3.c` (release 1, 30-Jun-1991). Output matches the reference byte for byte.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` using the LZRW3 control-word format. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> source)` | Compresses `source` into an LZRW3 stream. |
 
 #### `Lzrw3Decompressor`
 
-Decodes the LZRW3 control-word format produced by `Lzrw3Compressor`. Reference: Ross N. Williams, http://ross.net/compression/lzrw3.html. Mirrors the compressor's queued hash-table synchronization exactly (see remarks there): a position's hash entry only becomes visible once its 3-byte window is fully decoded.
+LZRW3 decompressor, converted from Ross N. Williams' public-domain reference `lzrw3.c`. See `Lzrw3Compressor` for the stream layout.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses an LZRW3 stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses an LZRW3 stream. |
 
 ### Namespace `Compression.Core.Dictionary.Lzs`
 
@@ -3112,7 +3132,7 @@ A clean-room implementation of Sequitur: an online algorithm that infers a strai
 
 #### `ShocoBuildingBlock`
 
-Exposes a Shoco-style short-string compressor as a benchmarkable building block. Shoco (Christian Schramm / "Ed-von-Schleck", 2014) compresses short ASCII strings by keeping a small alphabet of the most common characters and, for runs of consecutive alphabet characters, encoding each character after the first as the rank of its predecessor's most likely successors rather than the character itself — most natural-language digraphs need only a few bits to identify.
+Exposes shoco (Christian Schramm, 2014), the short-string compressor, as a benchmarkable building block. The stream is exactly what `shoco_compress` writes with the default model: a run of characters from a 32-character alphabet, each after the first named by its rank among its predecessor's most likely successors, is packed into 1, 2 or 4 bytes behind a unary tier header; any other ASCII byte is copied, and a byte with the top bit set is written behind a `0x00` sentinel.
 
 Implements `IBuildingBlock`.
 
@@ -3524,11 +3544,11 @@ Encodes data using the ZIP Shrink (method 1) algorithm.
 
 ### Namespace `Compression.Core.Dictionary.Zling`
 
-[`ZlingBuildingBlock`](#zlingbuildingblock)
+[`ZlingBuildingBlock`](#zlingbuildingblock) · [`ZlingCodec`](#zlingcodec)
 
 #### `ZlingBuildingBlock`
 
-Exposes a Zling-style LZ77 + Huffman hybrid as a benchmarkable building block. Zling (libzling, by Zhang Li / "richox") pairs an order-1 ROLZ dictionary stage with Huffman entropy coding to get most of LZMA's ratio at a fraction of its cost. This building block follows the same two-stage shape — a windowed LZ77 dictionary pass (see `ZlingLz`) followed by canonical Huffman coding of the resulting token stream — using plain LZ77 in place of ROLZ as a clean-room simplification of the offset-reduction scheme. Reference: https://github.com/richox/libzling (algorithm description); D. A. Huffman, "A Method for the Construction of Minimum-Redundancy Codes", 1952.
+zling — Zhang Li's ROLZ + Huffman compressor. The block's bytes are a zling stream exactly as the reference demo's `zling e` (level 0) writes it; see `ZlingCodec`.
 
 Implements `IBuildingBlock`.
 
@@ -3541,6 +3561,17 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `ZlingCodec`
+
+zling, Zhang Li's ROLZ + Huffman compressor, converted from libzling (https://github.com/richox/libzling, revision `6828e31517bf94fda8e1e8e15a583ab58acde637`, BSD-3-Clause; see `THIRD-PARTY-NOTICE.libzling.txt`). Output matches the reference's `zling_demo e0`..`e4` byte for byte when it is built with libstdc++.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultLevel` | `const int DefaultLevel` | Default level, the reference CLI's `zling e`. |
+| `MaxLevel` | `const int MaxLevel` | Highest level, `zling e4`. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, int level = 0)` | Compresses `data` into a zling stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses a zling stream. |
 
 ### Namespace `Compression.Core.Dictionary.Zstd`
 
@@ -3585,7 +3616,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.DiskImage`
 
-[`AmigaRdbParser`](#amigardbparser) · [`ApmParser`](#apmparser) · [`BsdDisklabelParser`](#bsddisklabelparser) · [`ClusterAllocator`](#clusterallocator) · [`DeferredPayloads`](#deferredpayloads) · [`ExtBlockGroupGeometry`](#extblockgroupgeometry) · [`ExtBlockGroupGeometry.ExtGeometry`](#extblockgroupgeometryextgeometry) · [`ExtentCopy`](#extentcopy) · [`FilePayload`](#filepayload) · [`GptParser`](#gptparser) · [`GptParser.HeaderInfo`](#gptparserheaderinfo) · [`ImageAccessor`](#imageaccessor) · [`MbrParser`](#mbrparser) · [`MbrWrapper`](#mbrwrapper) · [`MbrWrapper.PartitionType`](#mbrwrapperpartitiontype) · [`PartitionEditor`](#partitioneditor) · [`PartitionEntry`](#partitionentry) · [`PartitionScheme`](#partitionscheme) · [`PartitionTableDetector`](#partitiontabledetector) · [`PartitionTableDetector.DetectionResult`](#partitiontabledetectordetectionresult) · [`PartitionTableVerification`](#partitiontableverification) · [`PartitionType`](#partitiontype) · [`PartitionTypeDatabase`](#partitiontypedatabase) · [`PartitionTypeMapping`](#partitiontypemapping) · [`PartitionWindowStream`](#partitionwindowstream) · [`PartitionedDiskLister`](#partitioneddisklister) · [`PartitionedDiskLister.PartitionTarget`](#partitioneddisklisterpartitiontarget) · [`SgiDvhParser`](#sgidvhparser) · [`SparseBlockImage`](#sparseblockimage) · [`StagedWindowStream`](#stagedwindowstream) · [`SunVtocParser`](#sunvtocparser)
+[`AmigaRdbParser`](#amigardbparser) · [`ApmParser`](#apmparser) · [`AtariAhdiParser`](#atariahdiparser) · [`BsdDisklabelParser`](#bsddisklabelparser) · [`ClusterAllocator`](#clusterallocator) · [`DeferredPayloads`](#deferredpayloads) · [`ExtBlockGroupGeometry`](#extblockgroupgeometry) · [`ExtBlockGroupGeometry.ExtGeometry`](#extblockgroupgeometryextgeometry) · [`ExtentCopy`](#extentcopy) · [`FilePayload`](#filepayload) · [`GptParser`](#gptparser) · [`GptParser.HeaderInfo`](#gptparserheaderinfo) · [`ImageAccessor`](#imageaccessor) · [`MbrParser`](#mbrparser) · [`MbrWrapper`](#mbrwrapper) · [`MbrWrapper.PartitionType`](#mbrwrapperpartitiontype) · [`PartitionEditor`](#partitioneditor) · [`PartitionEntry`](#partitionentry) · [`PartitionScheme`](#partitionscheme) · [`PartitionTableDetector`](#partitiontabledetector) · [`PartitionTableDetector.DetectionResult`](#partitiontabledetectordetectionresult) · [`PartitionTableVerification`](#partitiontableverification) · [`PartitionType`](#partitiontype) · [`PartitionTypeDatabase`](#partitiontypedatabase) · [`PartitionTypeMapping`](#partitiontypemapping) · [`PartitionWindowStream`](#partitionwindowstream) · [`PartitionedDiskLister`](#partitioneddisklister) · [`PartitionedDiskLister.PartitionTarget`](#partitioneddisklisterpartitiontarget) · [`SgiDvhParser`](#sgidvhparser) · [`SparseBlockImage`](#sparseblockimage) · [`StagedWindowStream`](#stagedwindowstream) · [`SunVtocParser`](#sunvtocparser)
 
 #### `AmigaRdbParser`
 
@@ -3604,6 +3635,16 @@ Parses the Apple Partition Map (APM) as used on classic Mac OS 68k/PowerPC media
 | --- | --- | --- |
 | `IsApm` | `static bool IsApm(ReadOnlySpan<byte> data)` | Checks whether the given header carries an Apple Partition Map. The check looks for the `PM` entry signature at block 1 for both supported block sizes, honouring a DDR block size where one is present. |
 | `Parse` | `static List<PartitionEntry> Parse(Stream diskData)` | Parses every real partition from an APM disk image. |
+
+#### `AtariAhdiParser`
+
+Parses the Atari ST/TT hard-disk partition table (AHDI "root sector"), big-endian.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsAhdi` | `static bool IsAhdi(ReadOnlySpan<byte> sector0, long diskBytes)` | Reports whether `sector0` is an AHDI root sector: a disk size that fits the image, and at least one record in use whose id is three letters or digits and whose extent lies inside that size — with every record in use passing the same test. |
+| `IsKnownAhdi` | `static bool IsKnownAhdi(ReadOnlySpan<byte> sector0, long diskBytes)` | The stricter test used to recognise an image by content alone: `IsAhdi`, and every record in use carries one of the ids AHDI and the operating systems sharing its disks use. |
+| `Parse` | `static List<PartitionEntry> Parse(Stream disk)` | Lists the data partitions of the root sector and of the extended chain, in disk order. |
 
 #### `BsdDisklabelParser`
 
@@ -3869,7 +3910,7 @@ Result of partition table detection, including the scheme used and the discovere
 | --- | --- | --- |
 | `DetectionResult` | `DetectionResult()` |  |
 | `Partitions` | `List<PartitionEntry> Partitions { get; init; }` | Discovered partitions. Empty if no partition table was found. |
-| `Scheme` | `string Scheme { get; init; }` | The partition scheme detected: "GPT", "MBR", "APM", "BSD", "RDB", "Sun", "SGI", or "None". |
+| `Scheme` | `string Scheme { get; init; }` | The partition scheme detected: "GPT", "MBR", "APM", "BSD", "RDB", "Sun", "SGI", "AHDI", or "None". |
 | `SectorSize` | `int SectorSize { get; init; }` | Logical block size the table counts in (512 unless a 4Kn GPT was found). |
 
 #### `PartitionTableVerification`
@@ -6295,7 +6336,7 @@ Utility for splitting archive data into fixed-size volumes.
 
 ### Namespace `Compression.Core.Transforms`
 
-[`Bcj2Filter`](#bcj2filter) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`ByteSwapFilter`](#byteswapfilter) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`Swap2BuildingBlock`](#swap2buildingblock) · [`Swap4BuildingBlock`](#swap4buildingblock) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
+[`Bcj2Filter`](#bcj2filter) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BcjX86DecodingStream`](#bcjx86decodingstream) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`ByteSwapFilter`](#byteswapfilter) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`Swap2BuildingBlock`](#swap2buildingblock) · [`Swap4BuildingBlock`](#swap4buildingblock) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
 
 #### `Bcj2Filter`
 
@@ -6456,6 +6497,29 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `BcjX86DecodingStream`
+
+Write-side x86 BCJ decoder: bytes written to it are un-filtered (absolute CALL/JMP targets back to relative) and passed on to the inner stream. The result equals `DecodeX86` over the whole stream, without holding the stream in memory.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BcjX86DecodingStream` | `BcjX86DecodingStream(Stream inner, bool leaveOpen = false, uint startOffset = 0)` | Write-side x86 BCJ decoder: bytes written to it are un-filtered (absolute CALL/JMP targets back to relative) and passed on to the inner stream. The result equals `DecodeX86` over the whole stream, without holding the stream in memory. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Finish` | `void Finish()` | Decodes and writes out everything, including the last bytes the filter leaves unchanged. |
+| `Flush` | `override void Flush()` | Passes on every byte the filter can already decide; the undecided tail stays. |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `Write` | `override void Write(ReadOnlySpan<byte> data)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
 #### `BurrowsWheelerTransform`
 
@@ -6811,6 +6875,9 @@ Implements `IEquatable<ArchiveInputInfo>`.
 | `InMemoryContent` | `byte[] InMemoryContent { get; init; }` |  |
 | `IsDirectory` | `bool IsDirectory { get; init; }` |  |
 | `Metadata` | `ArchiveEntryMetadata Metadata { get; init; }` |  |
+| `ReadObserver` | `static Action<long> ReadObserver { get; set; }` | Told the byte count of every on-disk input as `ReadContent` reads it, so a host can show progress while an archive is created or rebuilt. Null when nobody listens. It is process-wide and may be called from several threads at once (parallel writers). |
+| `SourceLastModifiedUtc` | `DateTime? SourceLastModifiedUtc { get; }` | The last-write time the entry should carry: `Metadata`'s when given, else that of the file or directory at `FullPath`; null for an in-memory input without metadata. Creators store it, so a rebuild (extract, edit, re-create) does not reset every entry's time. |
+| `SourceUnixMode` | `UnixFileMode? SourceUnixMode { get; }` | The Unix permission bits (the low 12 bits of the mode) the entry should carry: `Metadata`'s when given, else the source file's on a Unix host; null when unknown. |
 | `FromFile` | `static ArchiveInputInfo FromFile(FileInfo file, string archiveName = null)` | Creates an on-disk input from a `FileInfo`. Content is read lazily from the file via `ReadContent`; the archive name defaults to the file's leaf name. |
 | `InMemory` | `static ArchiveInputInfo InMemory(string archiveName, ReadOnlySpan<byte> content, ArchiveEntryMetadata metadata = null)` | Creates an in-memory input from a byte span (copied into the input, so the caller's buffer may be reused/stack-allocated). |
 | `InMemory` | `static ArchiveInputInfo InMemory(string archiveName, Stream content, ArchiveEntryMetadata metadata = null)` | Creates an in-memory input by reading `content` fully into memory. Reads from the stream's current position to its end. |
@@ -7775,6 +7842,8 @@ Shared utility methods for format descriptors (path sanitization, filtering, etc
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `ApplyEntryTime` | `static void ApplyEntryTime(string path, DateTime? lastModified)` | Gives an extracted file or folder the time its entry carries. A missing time, a Unix epoch or DOS "no date" placeholder (1970 / 1980-01-01 00:00:00) or one the host cannot represent is left alone; the file then keeps its extraction time. A time of unspecified kind is taken as local, as the DOS-dated formats store it. |
+| `CreateEntryDirectory` | `static string CreateEntryDirectory(string baseDir, string entryName)` | Creates the folder an entry names under `baseDir`, with the same traversal sanitising as `CreateEntryFile`, and returns its path; an empty folder of an archive then survives extraction. |
 | `CreateEntryFile` | `static FileStream CreateEntryFile(string baseDir, string entryName)` | Opens the destination file for `entryName` under `baseDir`, applying the same traversal sanitising as `WriteFile`. Lets a caller stream an entry straight to disk instead of materialising it, which an entry larger than a byte[] requires. |
 | `FilesOnly` | `static IEnumerable<ValueTuple<string, byte[]>> FilesOnly(IReadOnlyList<ArchiveInputInfo> inputs)` | Returns only file entries (non-directories) with their data, preserving paths. |
 | `FlatFiles` | `static IEnumerable<ValueTuple<string, byte[]>> FlatFiles(IReadOnlyList<ArchiveInputInfo> inputs)` | Flattens all entries to root level (filename only) with their data. For formats without path support. |
@@ -8854,6 +8923,7 @@ Generic, round-trip-verified extract → re-create engine shared by maintenance 
 | `PurgeViaModifier` | `static void PurgeViaModifier(Stream archive, IArchiveFormatOperations ops, IArchiveModifiable modifier)` | Transactional purge for a mutable container. The modifier operates on a staged copy and the caller's stream is replaced only after the result lists successfully with every original live entry gone. |
 | `RebuildInPlace` | `static void RebuildInPlace(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null)` | Rebuilds into a scratch file, verifies it, and only then replaces the caller-supplied stream. Cancellation is honoured until commit starts; once commit begins it runs to completion so a cancellation cannot leave the original half-overwritten. |
 | `RebuildToStream` | `static int RebuildToStream(Stream input, Stream output, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, IReadOnlySet<string> syntheticNames = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null)` | Extracts every live entry, re-creates the container in `output`, verifies the exact live-name multiset, and reports block-map/read/write-head progress suitable for the maintenance UI. |
+| `StageInputs` | `static void StageInputs(string extractedRoot, IEnumerable<ArchiveInputInfo> inputs)` | Places inputs into an extracted tree, the add half of an extract → edit → re-create rebuild: a file input is written at its entry path (replacing a file of that name) and keeps its last-write time; a directory input becomes a directory, so an empty folder survives the rebuild. Names that are empty or leave the tree are ignored. |
 
 #### `ScrambleOptions`
 
@@ -10269,7 +10339,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `SquashFsReader`
 
-Reads a SquashFS version 4 filesystem image.
+Reads a SquashFS filesystem image: version 4, and versions 1 to 3 in either byte order (zlib-compressed, as mksquashfs 1.x-3.x wrote them).
 
 Implements `IDisposable`.
 
@@ -10277,6 +10347,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `SquashFsReader` | `SquashFsReader(Stream stream, bool leaveOpen = false)` | Opens a SquashFS image from the given stream. |
 | `Entries` | `IReadOnlyList<SquashFsEntry> Entries { get; }` | All entries found in the archive, in depth-first order. |
+| `LegacyVersion` | `string LegacyVersion { get; }` | Gets the image's version as "major.minor" when it is a SquashFS 1.x-3.x image, which this reader can list and extract but nothing here can edit; null for version 4. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(SquashFsEntry entry)` | Extracts the data of a regular file entry. |
 

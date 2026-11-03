@@ -8,7 +8,8 @@ using Compression.Core.Dictionary.Lzo;
 namespace FileSystem.SquashFs;
 
 /// <summary>
-/// Reads a SquashFS version 4 filesystem image.
+/// Reads a SquashFS filesystem image: version 4, and versions 1 to 3 in either byte order
+/// (zlib-compressed, as mksquashfs 1.x-3.x wrote them).
 /// </summary>
 public sealed class SquashFsReader : IDisposable {
   private readonly Stream _stream;
@@ -34,14 +35,34 @@ public sealed class SquashFsReader : IDisposable {
     _stream = stream;
     _leaveOpen = leaveOpen;
 
+    // Versions 1 to 3 (either byte order) have their own layouts and reader.
+    var start = stream.Position;
+    Span<byte> head = stackalloc byte[0x20];
+    var got = stream.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
+    stream.Position = start;
+    if (got == head.Length && SquashFsLegacyReader.Handles(head)) {
+      _legacy = new SquashFsLegacyReader(stream);
+      _entries = _legacy.Entries;
+      _sb = null!;
+      return;
+    }
+
     _sb = SquashFsSuperblock.Read(stream);
     LoadIdTable();
     LoadFragmentTable();
     WalkDirectory();
   }
 
+  private readonly SquashFsLegacyReader? _legacy;
+
   /// <summary>All entries found in the archive, in depth-first order.</summary>
   public IReadOnlyList<SquashFsEntry> Entries => _entries;
+
+  /// <summary>
+  /// Gets the image's version as "major.minor" when it is a SquashFS 1.x-3.x image, which this
+  /// reader can list and extract but nothing here can edit; null for version 4.
+  /// </summary>
+  public string? LegacyVersion => _legacy?.Version;
 
   /// <summary>
   /// Extracts the data of a regular file entry.
@@ -54,7 +75,7 @@ public sealed class SquashFsReader : IDisposable {
     if (entry.IsSymlink)
       throw new ArgumentException("Cannot extract a symlink entry.", nameof(entry));
 
-    return ExtractFile(entry);
+    return _legacy?.Extract(entry) ?? ExtractFile(entry);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
