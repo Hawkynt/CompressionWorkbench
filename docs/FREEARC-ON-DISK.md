@@ -14,7 +14,7 @@ them, and what `FileFormat.FreeArc` does with each part.
   (the C++ reader of footer and directory), `ArhiveStructure.hs`, `ArhiveDirectory.hs`,
   `ByteStream.hs` and `Compression.hs` (the Haskell writer). For the filter streams, the 0.67 source
   snapshot mirrored at `github.com/mrkaban/FreeArc-0.67`: `Compression/REP/rep.cpp`,
-  `Compression/Delta/Delta.cpp` and `Compression/LZMA2/C_BCJ.cpp` (the decoders' input layout only).
+  `Compression/Delta/Delta.cpp`, `Compression/LZMA2/C_BCJ.cpp` and `Compression/4x4/C_4x4.cpp` (the decoders' input layout only).
 - **Oracle.** FreeArc 0.67 (2014-03-15) `Arc.exe` and `unarc.exe`, from the self-extracting
   `FreeArc-console-0.67-alpha-win32.exe` (Wayback Machine copy of freearc.org/download/testing),
   run on Windows 11. Every structure below was checked against hex dumps of archives it wrote; the
@@ -117,14 +117,14 @@ right on compression; extraction undoes them right to left. Seen from 0.67:
 | `rep:96mb[:…]` | Long-range repeat filter, see *Filter streams*. The parameters only steer the encoder. | ✅ read |
 | `delta` | Binary-table filter, see *Filter streams*. | ✅ read |
 | `exe` | x86 CALL/JMP converter (the LZMA SDK's / liblzma's x86 BCJ), started at address 0 over the whole stage. | ✅ read |
+| `4x4[:bN][:tN][:iN][:rN]:<method>` | Chunked wrapper, see *Filter streams*; read when `<method>` is. | ✅ read (inner `lzma`/`storing`) |
 | `ppmd:10:48mb` | PPMd var. I (order, memory). Our PPMd I model is not verified against FreeArc's stream. | ❌ refused |
-| `tor:…`, `4x4:…`, `lzp:…`, `grzip:…`, `dict:…`, `mm`, external compressors | FreeArc's own codecs, no compatible implementation here. `-m1`..`-m4` wrap their final stage in `4x4`, `-m1`/`-m2` use `tor`. | ❌ refused |
+| `tor:…`, `lzp:…`, `grzip:…`, `dict:…`, `mm`, external compressors | FreeArc's own codecs, no compatible implementation here. `-m1`..`-m4` use `tor` for text-like files. | ❌ refused |
 | `…+aes-256/ctr:n1000:r0:i…:s…:c…` (also blowfish, serpent, twofish) | Encryption stage (`-p`, or `-hp` for headers too). | ❌ refused |
 
 Measured stage chains: `-mx` and `-m9x` write `rep:<block>+exe+delta+lzma:<block>:normal:bt4:128`
 (read here); `-m3` and `-m4` write `rep:…+4x4:tor:…` for text-like files and
-`rep:…+exe+delta+4x4:lzma:…` for the rest, `-m5x` `exe+delta+4x4:lzma:…` (refused until `4x4` is
-read).
+`rep:…+exe+delta+4x4:lzma:…` for the rest (read), `-m5x` `exe+delta+4x4:lzma:…` (read).
 
 ### Filter streams
 
@@ -148,6 +148,12 @@ columns of all rows come first, then the changed ones, each group row by row; th
 from the second, every changed column gets the byte above it added, with the carry passed to the
 next column only across adjacent changed columns (little-endian multi-byte values). Unchanged
 columns break the carry.
+
+**4x4.** A version word (0), then chunks until the stage input ends: `decoded`, `stored`, then
+`stored` bytes. Each chunk is an independent stream of the inner method (the stage string after the
+4x4 options) that decodes to exactly `decoded` bytes; `decoded` = `0xFFFFFFFF` marks a chunk
+copied as is (FreeArc stores chunks it judges incompressible). The options `bN` (chunk size),
+`tN`, `iN` and `rN` only steer the encoder.
 
 **exe.** The whole stage is one x86 BCJ stream, the same conversion as 7-Zip's `BCJ` and xz's
 `--x86` with start offset 0 (the last four bytes are never converted).

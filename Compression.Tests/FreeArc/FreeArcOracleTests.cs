@@ -85,6 +85,8 @@ public sealed class FreeArcOracleTests {
   [TestCase("-mlzma")]
   [TestCase("-mlzma:lc4:lp1:pb1")]
   [TestCase("-m5x")]
+  [TestCase("-m4x4:lzma")]
+  [TestCase("-m4x4:b64kb:rep+exe+lzma")]
   [TestCase("-mx")]
   [TestCase("-m9x")]
   [TestCase("-mrep:1mb")]
