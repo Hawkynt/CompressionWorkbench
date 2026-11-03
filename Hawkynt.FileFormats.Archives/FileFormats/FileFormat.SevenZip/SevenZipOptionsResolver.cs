@@ -31,10 +31,18 @@ internal static class SevenZipOptionsResolver {
     return defaultOrder;
   }
 
+  /// <summary>
+  /// The PPMd model memory for a requested dictionary size, within what the writer accepts
+  /// (1 MiB .. 1 GiB). Dictionaries are offered down to 64 KiB; below 1 MiB the writer used
+  /// to refuse the whole archive, whatever the method.
+  /// </summary>
   public static int ResolvePpmdMemorySize(long dictSize) {
-    if (dictSize > 0) return (int)Math.Min(dictSize, 1L << 30);
+    if (dictSize > 0) return (int)Math.Clamp(dictSize, MinPpmdMemorySize, 1L << 30);
     return 1 << 24;
   }
+
+  /// <summary>The smallest PPMd model memory the 7z writer takes.</summary>
+  public const int MinPpmdMemorySize = 1 << 20;
 
   public static int ResolveBzip2BlockSize(long dictSize) {
     if (dictSize > 0) return (int)Math.Clamp(dictSize / (100 * 1024), 1, 9);
