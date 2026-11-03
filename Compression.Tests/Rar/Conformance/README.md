@@ -57,6 +57,34 @@ for archives it refuses at least in part (we must not produce anything it did no
 `known-differences.tsv` for the three cases where this reader deliberately differs, with the
 reason.
 
+## Deliberate refusals
+
+These are decisions, not gaps, and each is pinned by a test.
+
+- **`test_read_format_rar5_bad_tables.rar`, `test_read_format_rar5_loop_bug.rar`.** Both are
+  damaged and **store no checksum**. In the first, a Huffman table is over-subscribed. In the
+  second, the stream ends 188 KB short of the declared size. unrar 7.12 writes something anyway
+  (64 bytes for the first, and it pads the second). libarchive 3.8.10 refuses both, and so does
+  this reader. With no CRC or BLAKE2 value, nothing can show that unrar's bytes are the file's
+  bytes, so producing them would report a success no third party can confirm. Listing still works;
+  extraction ends with `InvalidDataException`. Should a checksummed sample of either kind turn up,
+  the checksum decides.
+- **RAR 7 dictionaries over 4 GB (compression algorithm version 1, "v70").** Refused with
+  `NotSupportedException`. Measured with rar 7.12: `-md8g` and `-mdx8g` on a 600 KB file both
+  record `RAR 5.0(v50) -md=1m`. rar shrinks the recorded dictionary to the data, so a real v70
+  stream needs more than 4 GB of input compressed with a dictionary over 4 GB. rar's compressor
+  holds a dictionary of that size in memory. A decoder needs a window of
+  min(dictionary, file size), here over 4 GB, beyond a single .NET array and beyond what the
+  shared test machine (32 GB, about 14 GB free) can give both sides. No such archive could be
+  made, so no decoder for version 1 can be proven, and none is claimed. Version-1 flags over a
+  version-0 stream (bit 20) are read as version 0, as rar does.
+- **Hidden and system files in folder inputs** (`cwb create`/`add`, `ArchiveInput.Resolve`) are
+  skipped by default. That is .NET's own `EnumerationOptions` default, and on Unix it covers
+  dot-files. It keeps `Thumbs.db`, `desktop.ini` and `.git` out of archives built from a folder,
+  which is what a user archiving a folder expects. A file named explicitly is always taken, and
+  `--include-hidden` takes everything. rar takes hidden files by default; matching it would
+  quietly change what every other format's `create` collects.
+
 ## Tool-gated tests
 
 `RarToolInteropTests` and `RarDosInteropTests` run the real programs when they are present:

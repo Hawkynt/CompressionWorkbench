@@ -103,4 +103,61 @@ public class Rar5CodecTests {
     Assert.That(a.Key, Is.EqualTo(System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("secret"u8.ToArray(), salt, 1024,
       System.Security.Cryptography.HashAlgorithmName.SHA256, 32)));
   }
+
+  /// <summary>
+  /// Compression algorithm version 1 (RAR 7 dictionaries over 4 GB) is refused on extraction, while
+  /// the entry still lists. The archive is ours with the version field set to 1: no real one can be
+  /// made (see Conformance/README.md, "Deliberate refusals").
+  /// </summary>
+  [Test]
+  public void Given_AlgorithmVersion1_When_Extracted_Then_ItIsRefusedButListed() {
+    using var ms = new MemoryStream();
+    using (var w = new FileFormat.Rar.RarWriter(ms, leaveOpen: true, method: 3))
+      w.AddFile("big-dictionary.txt", Text(10_000));
+    var bytes = ms.ToArray();
+    SetAlgorithmVersion(bytes, 1);
+    using var reader = new FileFormat.Rar.RarReader(new MemoryStream(bytes), leaveOpen: false);
+    Assert.That(reader.Entries.Single().Name, Is.EqualTo("big-dictionary.txt"));
+    Assert.That(() => reader.Extract(0), Throws.TypeOf<NotSupportedException>().With.Message.Contains("version 1"));
+  }
+
+  private static (ulong Value, int Length) Vint(byte[] b, int p) {
+    ulong v = 0;
+    for (var i = 0; ; ++i) {
+      v |= (ulong)(b[p + i] & 0x7F) << (7 * i);
+      if ((b[p + i] & 0x80) == 0) return (v, i + 1);
+    }
+  }
+
+  /// <summary>Walks the RAR 5 headers to the first file header and rewrites its compression version.</summary>
+  private static void SetAlgorithmVersion(byte[] b, int version) {
+    var pos = 8;
+    while (true) {
+      var (size, sizeLen) = Vint(b, pos + 4);
+      var body = pos + 4 + sizeLen;
+      var end = body + (int)size;
+      var p = body;
+      var (type, l) = Vint(b, p); p += l;
+      var (flags, l2) = Vint(b, p); p += l2;
+      if (type != 2) {
+        var skip = (flags & 1) != 0 ? Vint(b, p) : (0UL, 0);
+        ulong data = 0;
+        if ((flags & 1) != 0) p += skip.Item2;
+        if ((flags & 2) != 0) { var d = Vint(b, p); data = d.Value; }
+        pos = end + (int)data;
+        continue;
+      }
+      if ((flags & 1) != 0) p += Vint(b, p).Length;          // extra area size
+      if ((flags & 2) != 0) p += Vint(b, p).Length;          // data size
+      var (fileFlags, l3) = Vint(b, p); p += l3;
+      p += Vint(b, p).Length;                                 // unpacked size
+      p += Vint(b, p).Length;                                 // attributes
+      if ((fileFlags & 2) != 0) p += 4;                       // mtime
+      if ((fileFlags & 4) != 0) p += 4;                       // data CRC32
+      b[p] = (byte)((b[p] & ~0x3F) | version);                // compression info: bits 0-5
+      var crc = Crc32.Compute(b.AsSpan(pos + 4, end - (pos + 4)));
+      System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(pos), crc);
+      return;
+    }
+  }
 }
