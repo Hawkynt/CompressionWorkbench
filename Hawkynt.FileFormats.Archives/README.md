@@ -154,7 +154,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | ZAP (Amiga) | `Zap` | `.zap` | WORM | ✅ | wipe | Whole-disk archiver: entries are track_NNN.raw | [Aminet](https://aminet.net/) |
 | [ZIP](https://en.wikipedia.org/wiki/ZIP_(file_format)) | `Zip` | `.zip` `.zipx` | R/W | ✅ | compress · repack · shrink · wipe | Store, Deflate, Deflate64, Shrink, Reduce, Implode, BZip2, LZMA, XZ, PPMd, Zstd, AES | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
 | [ZOO](https://en.wikipedia.org/wiki/Zoo_(file_format)) | `Zoo` | `.zoo` | R/W | ✅ | defrag · wipe | Store, LZW, LZH | [Archive Team](http://fileformats.archiveteam.org/wiki/ZOO) |
-| [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `Zpaq` | `.zpaq` | R/W | ✅ | defrag | Journaling (versions, deduplicated fragments) and streaming layouts, methods 0-5 and explicit `x` methods, full ZPAQL; zpaq 7.15 extracts what we write. Encrypted, multi-part and `-index` archives are refused; modify rewrites one version | [ZPAQ Level 2 spec](https://mattmahoney.net/dc/zpaq206.pdf) |
+| [ZPAQ](https://en.wikipedia.org/wiki/ZPAQ) | `Zpaq` | `.zpaq` | R/W | ✅ | defrag | Journaling (versions, deduplicated fragments) and streaming layouts, methods 0-5 and explicit `x` methods, full ZPAQL; zpaq 7.15 extracts what we write. Encrypted (`-key`) and multi-part (`arc???`) archives are read, an `-index` next to its parts reads the parts; those are not edited, and modify rewrites one version | [ZPAQ Level 2 spec](https://mattmahoney.net/dc/zpaq206.pdf) |
 
 ### 🧬 Structured data and registry
 

@@ -46,27 +46,72 @@ public sealed class ZpaqReader : IDisposable {
   /// <summary>Opens a ZPAQ archive and reads its index.</summary>
   /// <param name="stream">A readable stream positioned at the start of the archive.</param>
   /// <param name="leaveOpen">Whether to leave <paramref name="stream"/> open on dispose.</param>
-  /// <exception cref="InvalidDataException">The data is not a ZPAQ archive.</exception>
-  /// <exception cref="NotSupportedException">The archive is encrypted.</exception>
-  public ZpaqReader(Stream stream, bool leaveOpen = false) {
+  /// <exception cref="InvalidDataException">The data is not a ZPAQ archive, or an encrypted one.</exception>
+  public ZpaqReader(Stream stream, bool leaveOpen = false) : this(stream, password: null, leaveOpen) { }
+
+  /// <summary>Opens a ZPAQ archive, decrypting it with <paramref name="password"/> when one is given.</summary>
+  /// <param name="stream">A readable stream positioned at the start of the archive.</param>
+  /// <param name="password">The <c>-key</c> the archive was written with, or null for a plain archive.</param>
+  /// <param name="leaveOpen">Whether to leave <paramref name="stream"/> open on dispose.</param>
+  /// <exception cref="InvalidDataException">
+  /// The data is not a ZPAQ archive, or (with a password) the password does not decrypt it.
+  /// </exception>
+  public ZpaqReader(Stream stream, string? password, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanRead)
       throw new ArgumentException("Stream must be readable.", nameof(stream));
     this._leaveOpen = leaveOpen;
+    Stream source;
     if (stream.CanSeek)
-      this._stream = stream;
+      source = stream;
     else {
       var copy = new MemoryStream();
       stream.CopyTo(copy);
       copy.Position = 0;
-      this._stream = copy;
+      source = copy;
       if (!leaveOpen)
         stream.Dispose();
       this._leaveOpen = false;
     }
+    if (password != null) {
+      // The decrypting view owns the source only when this reader does.
+      this._stream = new ZpaqDecryptingStream(source, password, leaveOpen: this._leaveOpen);
+      this._leaveOpen = false;
+      this.IsEncrypted = true;
+    } else
+      this._stream = source;
     this.ReadArchive();
     this._entries.AddRange(this.Snapshot(int.MaxValue));
   }
+
+  /// <summary>Gets whether the archive was opened with a password (an encrypted archive).</summary>
+  public bool IsEncrypted { get; }
+
+  /// <summary>
+  /// Gets whether this is an index written with <c>-index</c>: transaction headers, fragment
+  /// tables and file indexes, but no data. Its files can be listed; their bytes are in the
+  /// archive parts the index was written for.
+  /// </summary>
+  public bool IsIndex => this._versions.Count > 0 && this._blocks.Count > 0 && this._versions.All(v => v.CompressedSize == 0);
+
+  /// <summary>
+  /// The first fragment number each version's fragment tables define, or 0 for a version that
+  /// added no data. A later part of a multi-part archive continues the numbering of the parts
+  /// before it; a separate archive starts again at 1.
+  /// </summary>
+  internal IReadOnlyList<uint> VersionFirstFragments => this._versionFirstFragment;
+
+  private readonly List<uint> _versionFirstFragment = [];
+  private readonly List<IDisposable> _owned = [];
+
+  /// <summary>The next fragment number a following part of a multi-part archive would define.</summary>
+  internal uint NextFragment => (uint)this._ht.Count;
+
+  /// <summary>Gets whether the archive was read from part files other than the one opened (a multi-part set).</summary>
+  public bool IsMultiPart => this._owned.Count > 0;
+
+  /// <summary>Hands this reader further streams (the later parts of a set) to dispose with itself.</summary>
+  internal void Own(IEnumerable<IDisposable> streams) => this._owned.AddRange(streams);
 
   /// <summary>Files and directories present in the latest version, ordered by name.</summary>
   public IReadOnlyList<ZpaqEntry> Entries => this._entries;
@@ -101,6 +146,8 @@ public sealed class ZpaqReader : IDisposable {
     ObjectDisposedException.ThrowIf(this._disposed, this);
     if (entry.IsDirectory)
       return [];
+    if (this.IsIndex && entry.Size != 0)
+      throw new NotSupportedException("ZPAQ: this is an index (-index); the file data is in the archive parts it was written for, which were not found.");
     return entry.Segments.Count > 0 ? this.ExtractStreaming(entry) : this.ExtractJournaling(entry);
   }
 
@@ -111,6 +158,8 @@ public sealed class ZpaqReader : IDisposable {
     this._disposed = true;
     if (!this._leaveOpen)
       this._stream.Dispose();
+    foreach (var owned in this._owned)
+      owned.Dispose();
   }
 
   // ── index ──────────────────────────────────────────────────────────────────
@@ -123,7 +172,9 @@ public sealed class ZpaqReader : IDisposable {
     if (nr > 0 && !head[..nr].SequenceEqual("7kSt"u8[..nr]) && (nr < 4 || !head[..3].SequenceEqual("zPQ"u8) || head[3] < 1)) {
       if (nr == 4 && head[..3].SequenceEqual("zPQ"u8))
         throw new InvalidDataException("ZPAQ: unsupported block level.");
-      throw new InvalidDataException("Not a ZPAQ archive (or an encrypted one, which needs the password-derived key).");
+      if (this.IsEncrypted)
+        throw new InvalidDataException("ZPAQ: password incorrect (the decrypted archive does not start with a block).");
+      throw new InvalidDataException("Not a ZPAQ archive (or an encrypted one, which needs its password).");
     }
     s.Position = 0;
 
@@ -203,6 +254,7 @@ public sealed class ZpaqReader : IDisposable {
                       break;
                     }
                     this._versions.Add(new(fdate, jmp));
+                    this._versionFirstFragment.Add(0);
                     if (jmp > 0) {
                       s.Position = dataOffset + jmp;
                       jumped = true;
@@ -217,6 +269,8 @@ public sealed class ZpaqReader : IDisposable {
                     var n = (uint)((os.Size - 4) / 24);
                     if (num < 1 || num + n > 0xffffffff)
                       ZpaqError.Throw("bad h fragment");
+                    if (this._versionFirstFragment.Count > 0 && this._versionFirstFragment[^1] == 0)
+                      this._versionFirstFragment[^1] = (uint)num;
                     var span = os.Span;
                     var bsize = BinaryPrimitives.ReadUInt32LittleEndian(span);
                     var p = 4;
@@ -253,8 +307,10 @@ public sealed class ZpaqReader : IDisposable {
                 break;
             } else {
               // Streaming format: each segment is (a part of) a file.
-              if (this._versions.Count == 0)
+              if (this._versions.Count == 0) {
                 this._versions.Add(new(0, -1));
+                this._versionFirstFragment.Add(0);
+              }
               d.ReadSegmentEnd();
               skip = true;
               var fn = lastFile;

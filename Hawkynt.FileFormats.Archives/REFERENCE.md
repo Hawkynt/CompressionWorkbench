@@ -33622,11 +33622,13 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files by rebuilding a plain single-file archive; anything else is refused. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the archive as a single version. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files by rebuilding a plain single-file archive; anything else is refused. |
 
 #### `ZpaqReader`
 
@@ -33637,8 +33639,12 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ZpaqReader` | `ZpaqReader(Stream stream, bool leaveOpen = false)` | Opens a ZPAQ archive and reads its index. |
+| `ZpaqReader` | `ZpaqReader(Stream stream, string password, bool leaveOpen = false)` | Opens a ZPAQ archive, decrypting it with `password` when one is given. |
 | `Entries` | `IReadOnlyList<ZpaqEntry> Entries { get; }` | Files and directories present in the latest version, ordered by name. |
 | `Errors` | `int Errors { get; }` | Number of blocks that failed to decode and were skipped while reading the index. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether the archive was opened with a password (an encrypted archive). |
+| `IsIndex` | `bool IsIndex { get; }` | Gets whether this is an index written with `-index`: transaction headers, fragment tables and file indexes, but no data. Its files can be listed; their bytes are in the archive parts the index was written for. |
+| `IsMultiPart` | `bool IsMultiPart { get; }` | Gets whether the archive was read from part files other than the one opened (a multi-part set). |
 | `VersionCount` | `int VersionCount { get; }` | Number of versions (transactions) in the archive. |
 | `Dispose` | `void Dispose()` |  |
 | `ExtractBytes` | `byte[] ExtractBytes(ZpaqEntry entry)` | Decodes the entry's content, verifying every fragment's (or segment's) SHA-1. |

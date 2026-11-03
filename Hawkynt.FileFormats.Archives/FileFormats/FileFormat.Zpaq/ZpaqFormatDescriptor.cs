@@ -28,6 +28,7 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the archive as a single version.</summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    RefuseUnlessPlain(archive);
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         using var r = new ZpaqReader(stream, leaveOpen: true);
@@ -81,7 +82,7 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var seekable = Seekable(stream);
     try {
-      var (reader, _) = TryOpen(seekable);
+      var (reader, _) = TryOpen(seekable, password);
       if (reader == null) {
         var length = seekable.Length;
         return [
@@ -101,7 +102,7 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var seekable = Seekable(stream);
     try {
-      var (reader, problem) = TryOpen(seekable);
+      var (reader, problem) = TryOpen(seekable, password);
       if (reader == null) {
         if (Wants(files, "FULL.zpaq")) {
           seekable.Position = 0;
@@ -152,10 +153,61 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return "1";
   }
 
-  private static (ZpaqReader? Reader, string? Problem) TryOpen(Stream stream) {
+  /// <summary>Adds or replaces files by rebuilding a plain single-file archive; anything else is refused.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    RefuseUnlessPlain(archive);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      foreach (var input in inputs) {
+        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName))
+          continue;
+        var dest = Path.Combine(tmpDir, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
+        var destDir = Path.GetDirectoryName(dest);
+        if (!string.IsNullOrEmpty(destDir))
+          Directory.CreateDirectory(destDir);
+        File.WriteAllBytes(dest, input.ReadContent());
+      }
+    });
+  }
+
+  /// <summary>Removes files by rebuilding a plain single-file archive; anything else is refused.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    RefuseUnlessPlain(archive);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => RebuildVerb.DeleteNamedEntries(tmpDir, entryNames ?? []));
+  }
+
+  /// <summary>
+  /// The rebuild writes one unencrypted file. An encrypted archive, an index or a multi-part set
+  /// would lose its key, its parts or its meaning, so those are refused with the input unchanged.
+  /// </summary>
+  private static void RefuseUnlessPlain(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!archive.CanSeek)
+      return;
+    archive.Position = 0;
+    Span<byte> head = stackalloc byte[4];
+    var n = archive.ReadAtLeast(head, 4, throwOnEndOfStream: false);
+    archive.Position = 0;
+    if (n == 4 && !head.SequenceEqual("7kSt"u8) && !head[..3].SequenceEqual("zPQ"u8))
+      throw new NotSupportedException("ZPAQ: encrypted archives are read, not edited; the archive was left unchanged.");
+    ZpaqReader reader;
+    try {
+      reader = ZpaqArchiveSet.Open(archive, null);
+    } catch (Exception e) when (e is InvalidDataException or EndOfStreamException) {
+      return; // the rebuild reports what it cannot read
+    }
+    using (reader) {
+      if (reader.IsIndex)
+        throw new NotSupportedException("ZPAQ: an index (-index) holds no data and is not edited; the archive was left unchanged.");
+      if (reader.IsMultiPart)
+        throw new NotSupportedException("ZPAQ: multi-part archives are read, not edited; the parts were left unchanged.");
+    }
+    archive.Position = 0;
+  }
+
+  private static (ZpaqReader? Reader, string? Problem) TryOpen(Stream stream, string? password) {
     try {
       stream.Position = 0;
-      return (new ZpaqReader(stream, leaveOpen: true), null);
+      return (ZpaqArchiveSet.Open(stream, string.IsNullOrEmpty(password) ? null : password), null);
     } catch (Exception e) when (e is InvalidDataException or NotSupportedException or EndOfStreamException or IOException
                                   or OverflowException or ArgumentException or IndexOutOfRangeException) {
       return (null, e.Message);
