@@ -996,11 +996,11 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Dictionary.Ibm842`
 
-[`Ibm842BuildingBlock`](#ibm842buildingblock)
+[`Ibm842BuildingBlock`](#ibm842buildingblock) · [`Ibm842Codec`](#ibm842codec)
 
 #### `Ibm842BuildingBlock`
 
-Exposes IBM 842 hardware compression as a benchmarkable building block. A fixed-dictionary LZ scheme that encodes data using templates of 2, 4, and 8-byte patterns. Each group of 8 bytes is encoded as a template index followed by a mix of literals and references to a recent-history dictionary.
+Exposes IBM 842 as a benchmarkable building block: the raw stream the Linux kernel's `sw842_compress`/`sw842_decompress` write and read (templates of 2-, 4- and 8-byte literals and ring-buffer indexes over 8-byte groups, ended by a CRC-32), with no length prefix. See `docs/IBM842-ON-DISK.md`.
 
 Implements `IBuildingBlock`.
 
@@ -1013,6 +1013,15 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `Ibm842Codec`
+
+IBM 842 as the Linux kernel's software implementation (`lib/842`) reads and writes it, implemented from `docs/IBM842-ON-DISK.md`: 5-bit templates over 8-byte groups with 2-, 4- and 8-byte ring-buffer indexes, repeat, zeros and short-data codes, an end code, a CRC-32 and padding to a multiple of 8 bytes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` into an 842 stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses an 842 stream. |
 
 ### Namespace `Compression.Core.Dictionary.KwajLzh`
 
