@@ -120,13 +120,15 @@ right on compression; extraction undoes them right to left. Seen from 0.67:
 | `4x4[:bN][:tN][:iN][:rN]:<method>` | Chunked wrapper, see *Filter streams*; read when `<method>` is. | ✅ read (inner `lzma`/`storing`) |
 | `ppmd:order:mem[:r\|:rN]` | PPMd var. I (PPMII, Dmitry Shkarin) with the carryless range coder: order 2..128, model memory, restore method 0 restart / 1 cut-off (`:r`) / 2 freeze (`:r2`); the stream ends when the model escapes past order −1. A bare number is the order, a bare size the memory. `:cSIZE` (chunked) is not read. | ✅ read |
 | `tor:N[:size][:hN]` | Tornado LZ77 with byte, bit, Huffman or arithmetic coding and differenced tables; layout in [FREEARC-TORNADO.md](FREEARC-TORNADO.md). The parameters only steer the encoder. | ✅ read |
-| `lzp:…`, `grzip:…`, `dict:…`, `mm`, external compressors | FreeArc's own codecs, no compatible implementation here. | ❌ refused |
+| `grzip:BLOCK:mN[:lN:hN][:l][:s][:a][:d]` | libGRZip blocks (Ilya Grebnov), see *GRZip blocks*: `m1` BWT + WFC, `m2` BWT + MTF, `m3` ST4 + WFC, `m4` ST4 + MTF; `lN`/`hN` LZP minimum match and hash bits (`l` alone disables LZP), `s` strong BWT sorting, `a` adaptive block size, `d` record filters. Every block header says how it was coded, so the parameters only steer the encoder. | ✅ read |
+| `lzp:…`, `dict:…`, `mm`, external compressors | FreeArc's own codecs, no compatible implementation here. | ❌ refused |
 | `…+aes-256/ctr:n1000:r0:i…:s…:c…` (also blowfish, serpent, twofish) | Encryption stage (`-p`, or `-hp` for headers too). | ❌ refused |
 
 Measured stage chains, all read here: `-mx` and `-m9x` write `rep:<block>+exe+delta+lzma:<block>:normal:bt4:128`;
 `-m1`..`-m4` write `rep:…+4x4:tor:…` for text-like files and `rep:…[+exe+delta]+4x4:tor:…` or
-`…+4x4:lzma:…` for the rest; `-m5x` `exe+delta+4x4:lzma:…`. Text-like files at `-m2`..`-m4` use
-`grzip`, at `-m5`..`-mx` `dict+lzp+…ppmd` (refused until `grzip`, `dict` and `lzp` are read).
+`…+4x4:lzma:…` for the rest; `-m5x` `exe+delta+4x4:lzma:…`. Text-like files at `-m2`, `-m3` and
+`-m4` use `grzip:<block>:m4:l32:h15`, `…:m2:…` and `…:m1:…` (read), at `-m5`..`-mx`
+`dict+lzp+…ppmd` (refused until `dict` and `lzp` are read).
 
 ### Filter streams
 
@@ -163,6 +165,28 @@ copied as is (FreeArc stores chunks it judges incompressible). The options `bN` 
 A refused method still lists: only extraction of that block fails, with `NotSupportedException`. An
 archive whose directory or footer is unreadable (`-hp`, or an unsupported `-dm` method) lists as
 `FULL.arc` + `metadata.ini` with `parse_status=partial`.
+
+### GRZip blocks
+
+A `grzip` stage is a sequence of blocks until the stream ends. Each block is a 28-byte header of
+32-bit little-endian words, then `packed` bytes:
+
+| Offset | Field |
+|-------:|-------|
+| 0 | original size of the block (at most 8 MiB − 512) |
+| 4 | mode: −1 stored, −2 record-filtered, otherwise coding flags |
+| 8 | LZP output size; for −1 the LZP mode (0 = plain copy); for −2 the record mode |
+| 12 | BWT/ST4 primary index; bit 30 set for a strong-sorted BWT |
+| 16 | `packed` |
+| 20, 24 | reserved, 0 |
+
+Coding flags: `0x2` ST4 (else BWT), `0x4` MTF ranks (else weighted frequency count), `0x8` fast
+sorting and `0x1` record filters disabled (encoder only), LZP hash bits in bits 8..15 and the LZP
+minimum match length in bits 16 and up; LZP is off when bits 8 and up are 0. A block decodes as:
+rank decoding to the LZP output size rounded up to 8, the inverse BWT or ST4 with the primary index,
+then LZP (or a plain copy) to the original size. Record mode 1 (2-byte interleave) and 3 (16-bit
+delta) hold two nested blocks, 2 (4-byte interleave) and 4 (32-bit delta) hold four; the nested
+blocks decode one after another and the filter is undone over their concatenation.
 
 ## ✍️ What our writer emits
 

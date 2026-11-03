@@ -234,6 +234,8 @@ public class FreeArcTests {
   [TestCase("4x4:tor:3", true)]
   [TestCase("exe+delta+4x4:lzma:299kb:normal:32:mc32", true)]
   [TestCase("lzma+aes-256/ctr:n1000", false)]
+  [TestCase("grzip:8mb:m1:l32:h15", true)]
+  [TestCase("dict:p:64mb:85%+lzp:160mb:145:h23:d1gb+ppmd:16:384mb", false)]
   public void Methods_IsSupported(string method, bool supported) =>
     Assert.That(FreeArcMethods.IsSupported(method) && !FreeArcMethods.IsEncrypted(method), Is.EqualTo(supported));
 

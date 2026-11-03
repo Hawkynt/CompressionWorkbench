@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 25 | |
+| A | 26 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 1 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 10 | |
@@ -68,6 +68,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Claim site | Upstream | Licence | Where the notice is |
 |---|---|---|---|
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.FreeArc/FreeArcGrzip.cs` | libGRZip (Ilya Grebnov), the copy in FreeArc 0.67 `Compression/GRZip` | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.FreeArc/THIRD-PARTY-NOTICE.GRZip.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.FreeArc/FreeArcPpmd.cs` | PPMd var.I (Dmitry Shkarin) and the carryless range coder (Dmitry Subbotin), the copy in FreeArc 0.67 `Compression/PPMD` | public domain | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.FreeArc/THIRD-PARTY-NOTICE.PPMd.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.Trx/TrxImage.cs`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.Seama/SeamaImage.cs` | binwalk v3 TRX, SEAMA and DLOB header layouts, revision `26713972e3f9f52dc37d4a421c4554b0bd9e82ef` | MIT | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.Trx/THIRD-PARTY-NOTICE.binwalk.txt`, `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.Seama/THIRD-PARTY-NOTICE.binwalk.txt` |
 | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Fossil/FossilReader.cs` | plan9port Fossil `pack.c`, `vac.c`, `vac.h`, `source.c`, `file.c`, `dat.h`, revision `1f1396913fb5372408f442ed26933f5ae4b399cd` | MIT | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Fossil/THIRD-PARTY-NOTICE.Fossil.txt` |

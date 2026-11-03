@@ -5,8 +5,8 @@ using FileFormat.FreeArc;
 namespace Compression.Tests.FreeArc;
 
 /// <summary>
-/// The rep, delta and exe stages against archives FreeArc 0.67 wrote with <c>-mrep:1mb</c>,
-/// <c>-mdelta</c>, <c>-mexe</c> and its <c>-mx</c> default chain <c>rep+exe+delta+lzma</c>
+/// The rep, delta, exe, 4x4, tor, ppmd and grzip stages against archives FreeArc 0.67 wrote with
+/// <c>-mrep:1mb</c>, <c>-mdelta</c>, <c>-mexe</c>, <c>-mgrzip:mN</c>, its default chains and more
 /// (ReferenceVectors/mkfilters.py; expected bytes in filters.tsv are what <c>Arc.exe x</c> extracted).
 /// </summary>
 [TestFixture]
@@ -41,9 +41,18 @@ public sealed class FreeArcFilterTests {
   [TestCase("ppmd-restart", "ppmd:12:256kb")]
   [TestCase("ppmd-cutoff", "ppmd:12:256kb:r")]
   [TestCase("ppmd-freeze", "ppmd:12:256kb:r2")]
+  [TestCase("grzip-m1", "grzip:153kb:m1:l32:h15")]
+  [TestCase("grzip-m2", "grzip:153kb:m2:l32:h15")]
+  [TestCase("grzip-m3", "grzip:153kb:m3:l32:h15")]
+  [TestCase("grzip-m4", "grzip:153kb:m4:l32:h15")]
+  [TestCase("grzip-strong", "grzip:153kb:m1:l32:h15:s")]
+  [TestCase("grzip-nolzp", "grzip:153kb:m3:l")]
+  [TestCase("grzip-delta", "grzip:64kb:m2:l32:h15:d")]
+  [TestCase("text-m3", "grzip:168kb:m2:l32:h15")]
+  [TestCase("text-m4", "grzip:168kb:m1:l32:h15")]
   public void GivenFreeArcArchive_WhenExtracted_ThenEveryFileMatchesArc(string vector, string method) {
     var expected = Manifest.Value.Where(r => r.Archive == vector + ".arc").ToArray();
-    Assert.That(expected, Has.Length.EqualTo(5));
+    Assert.That(expected, Is.Not.Empty);
     using var reader = new FreeArcReader(new MemoryStream(FreeArcTests.Vector(vector)));
 
     if (method != "*")
@@ -86,6 +95,70 @@ public sealed class FreeArcFilterTests {
   public void GivenAFourByFourChunkCutShort_WhenDecoded_ThenItIsRefused() {
     var stream = Words(0, unchecked((int)0xFFFFFFFF), 10).Concat("abc"u8.ToArray()).ToArray();
     Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("4x4:lzma", stream, 10));
+  }
+
+  [TestCase("grzip:153kb:m1:l32:h15", true)]
+  [TestCase("grzip:64kb:m2:l32:h15:d:t2:i0", true)]
+  [TestCase("grzip:m3:l:s:a", true)]
+  [TestCase("grzip:8mb:m4:24", true)]
+  [TestCase("grzip:m3:x7", false)]
+  public void GivenAGrzipStage_WhenCheckedForSupport_ThenOnlyFreeArcsOptionsAreAccepted(string method, bool supported)
+    => Assert.That(FreeArcMethods.IsSupported(method), Is.EqualTo(supported));
+
+  [Test]
+  public void GivenAGrzipStoredBlock_WhenDecoded_ThenItsBytesAreCopied() {
+    var stream = GrzipBlock(size: 3, mode: -1, aux: 0, "abc"u8);
+    Assert.That(FreeArcMethods.Decode("grzip", stream, 3), Is.EqualTo("abc"u8.ToArray()));
+  }
+
+  [Test]
+  public void GivenAGrzipBlockWithAReservedFieldSet_WhenDecoded_ThenItIsRefused() {
+    var stream = GrzipBlock(size: 3, mode: -1, aux: 0, "abc"u8);
+    stream[24] = 1;
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("grzip", stream, 3));
+  }
+
+  [Test]
+  public void GivenAGrzipBlockCutShort_WhenDecoded_ThenItIsRefused() {
+    var stream = GrzipBlock(size: 3, mode: -1, aux: 0, "abc"u8);
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("grzip", stream[..^1], 3));
+  }
+
+  [Test]
+  public void GivenAGrzipBlockWhoseSizeDisagreesWithItsData_WhenDecoded_ThenItIsRefused() {
+    var stream = GrzipBlock(size: 4, mode: -1, aux: 0, "abc"u8);
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("grzip", stream, 4));
+  }
+
+  [TestCase(-2, 9)]
+  [TestCase(-3, 0)]
+  public void GivenAGrzipBlockOfAnUnknownMode_WhenDecoded_ThenItIsRefused(int mode, int aux) {
+    var stream = GrzipBlock(size: 0, mode, aux, []);
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("grzip", stream, 0));
+  }
+
+  [Test]
+  public void GivenAGrzipArchiveWithOneByteFlipped_WhenExtracted_ThenItNeverYieldsTheWrongBytesSilently() {
+    var data = FreeArcTests.Vector("grzip-m2");
+    var expected = Manifest.Value.Single(r => r.Archive == "grzip-m2.arc" && r.Name == "text.txt");
+    data[data.Length / 2] ^= 0x40;
+    try {
+      using var reader = new FreeArcReader(new MemoryStream(data));
+      var text = reader.Extract(reader.Entries.Single(e => e.Name == "text.txt"));
+      Assert.That(Convert.ToHexStringLower(SHA256.HashData(text)), Is.Not.EqualTo(expected.Sha256));
+    } catch (InvalidDataException) {
+      // refused: the block no longer decodes to its recorded size or CRC
+    }
+  }
+
+  private static byte[] GrzipBlock(int size, int mode, int aux, ReadOnlySpan<byte> payload) {
+    var block = new byte[28 + payload.Length];
+    BitConverter.TryWriteBytes(block.AsSpan(0), size);
+    BitConverter.TryWriteBytes(block.AsSpan(4), mode);
+    BitConverter.TryWriteBytes(block.AsSpan(8), aux);
+    BitConverter.TryWriteBytes(block.AsSpan(16), payload.Length);
+    payload.CopyTo(block.AsSpan(28));
+    return block;
   }
 
   [Test]

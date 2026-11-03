@@ -1,4 +1,4 @@
-"""Builds the FreeArc 0.67 archives that exercise the rep, delta and exe stages.
+"""Builds the FreeArc 0.67 archives that exercise the filter, tor, ppmd and grzip stages.
 
 Usage: python -I mkfilters.py <Arc.exe> <workdir> <outdir>
 The inputs are generated deterministically; the archives and filters.tsv (name, size, SHA-256
@@ -34,17 +34,32 @@ while len(code) < 20000:
 write('code.exe', bytes(code))
 write('empty.bin', b'')
 
+# Sentences on lines, which FreeArc's -m2..-m4 recognise as text and give to grzip.
+prose = os.path.join(work, 'p')
+os.makedirs(prose)
+sentence_words = (b"the quick brown fox jumps over a lazy dog while archivers compress every sentence "
+                  b"of this document into fewer bytes and readers decode them again later on").split()
+with open(os.path.join(prose, 'book.txt'), 'wb') as f:
+    lines = (b" ".join(r.choice(sentence_words) for _ in range(r.randint(5, 14))).capitalize() + b"."
+             for _ in range(3000))
+    f.write(bytes([13, 10]).join(lines))
+
 rows = ["# archive\tname\tsize\tsha256 -- produced by FreeArc 0.67 Arc.exe x"]
-for name, switch in [('filters-rep.arc', '-mrep:1mb'), ('filters-delta.arc', '-mdelta'),
+for name, switch, *inputs in [('filters-rep.arc', '-mrep:1mb'), ('filters-delta.arc', '-mdelta'),
                      ('filters-exe.arc', '-mexe'), ('filters-mx.arc', '-mx'),
                      ('filters-4x4.arc', '-m4x4:b64kb:lzma'), ('filters-m5x.arc', '-m5x'),
                      ('tor-1.arc', '-mtor:1'), ('tor-2.arc', '-mtor:2'), ('tor-3.arc', '-mtor:3'),
                      ('tor-5.arc', '-mtor:5'), ('tor-12.arc', '-mtor:12'),
                      ('filters-m1.arc', '-m1'), ('filters-m2.arc', '-m2'),
                      ('ppmd-6.arc', '-mppmd:6:16mb'), ('ppmd-restart.arc', '-mppmd:12:256kb'),
-                     ('ppmd-cutoff.arc', '-mppmd:12:256kb:r'), ('ppmd-freeze.arc', '-mppmd:12:256kb:r2')]:
+                     ('ppmd-cutoff.arc', '-mppmd:12:256kb:r'), ('ppmd-freeze.arc', '-mppmd:12:256kb:r2'),
+                     ('grzip-m1.arc', '-mgrzip:m1'), ('grzip-m2.arc', '-mgrzip:m2'),
+                     ('grzip-m3.arc', '-mgrzip:m3'), ('grzip-m4.arc', '-mgrzip:m4'),
+                     ('grzip-strong.arc', '-mgrzip:m1:s'), ('grzip-nolzp.arc', '-mgrzip:m3:l'),
+                     ('grzip-delta.arc', '-mgrzip:m2:d:b64kb'),
+                     ('text-m3.arc', '-m3', prose), ('text-m4.arc', '-m4', prose)]:
     target = os.path.join(work, name)
-    p = subprocess.run([arc, 'a', target, '-i0', '-cfg-', '-ep1', switch, os.path.join(src, '*')],
+    p = subprocess.run([arc, 'a', target, '-i0', '-cfg-', '-ep1', switch, os.path.join(inputs[0] if inputs else src, '*')],
                        capture_output=True, text=True, errors='replace')
     if p.returncode != 0:
         raise SystemExit(f"{name}: {p.stdout}\n{p.stderr}")
