@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 22 | |
+| A | 23 | |
 | B | 17 | FFmpeg alone covers 38 codec folders |
 | C | 1 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 10 | |
@@ -90,6 +90,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 | `Hawkynt.FileFormats.Audio/Codecs/Codec.Vorbis/VorbisCodec.cs` | stb_vorbis 1.22 (structural reference) | public domain / MIT | none needed |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ba2/BethesdaLookup3.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Balz/BalzStream.cs`, `Compression.Core/Entropy/Ppmd/PpmdModelH.cs` | Bob Jenkins lookup3; BALZ max-parser score; Shkarin's PPMd rescale constant | public domain / constants | none needed |
 | `Hawkynt.FileFormats.Audio/Codecs/VENDORED_AUDIO_CODECS.md` | Concentus, .NET Ogg Vorbis Encoder, GroovyCodecs, AmrWbLib (vendored whole) | BSD-3 / MIT / LGPL-3.0 / BSD-3 | `THIRD-PARTY-NOTICES.md` and the vendored `LICENSE.txt` files |
+| `Compression.Core/Dictionary/PkwareDcl/`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Mpq/MpqHuffman.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Mpq/MpqAdpcm.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Mpq/MpqSparse.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Mpq/MpqCompression.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Mpq/MpqCrypto.cs` | StormLib (Ladislav Zezula) `pklib/explode.c`, `pklib/implode.c`, `huffman/huff.cpp`, `adpcm/adpcm.cpp`, `sparse/sparse.cpp`, `SCompression.cpp`, `SBaseCommon.cpp`, revision `116135c27e8c0dcf8ea0a0c549a6d737ce10fc73` | MIT | `Compression.Core/Dictionary/PkwareDcl/THIRD-PARTY-NOTICE.StormLib.txt`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Mpq/THIRD-PARTY-NOTICE.StormLib.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Aomei/AomeiFormatDescriptor.cs` | this repository's reverse-engineered AOMEI Backupper container layout | own work | none needed |
 
 ## R — not a code port

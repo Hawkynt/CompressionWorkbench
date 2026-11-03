@@ -1,29 +1,41 @@
+using System.Buffers.Binary;
 using System.Text;
 
 namespace FileFormat.Mpq;
 
 /// <summary>
-/// Reads Blizzard MPQ (Mike O'Brien Pack) archives.
-/// Supports v1 format. Read-only — MPQ creation is extremely complex.
-/// Used by Diablo, StarCraft, Warcraft III, World of Warcraft.
+/// Reads Blizzard MPQ (Mike O'Brien Pack) archives: format versions 1 and 2 (and the classic
+/// tables of 3 and 4), files stored, compressed with any MPQ compression mask, PKWARE-imploded,
+/// encrypted (with or without the adjusted key), single-unit or split into sectors, with or
+/// without sector checksums. Used by Diablo, StarCraft, Warcraft III and World of Warcraft.
 /// </summary>
+/// <remarks>
+/// Layout and behaviour follow Ladislav Zezula's MPQ documentation and StormLib (MIT), which
+/// also serves as the oracle: archives StormLib writes extract here to the bytes StormLib
+/// extracts. Where StormLib tolerates damage by filling zeros, this reader refuses.
+/// </remarks>
 public sealed class MpqReader {
   /// <summary>MPQ header magic.</summary>
   public const uint HeaderMagic = 0x1A51504D; // "MPQ\x1A"
   /// <summary>User data magic.</summary>
   public const uint UserDataMagic = 0x1B51504D; // "MPQ\x1B"
 
+  private const uint HashFree = 0xFFFFFFFF;
+  private const uint HashDeleted = 0xFFFFFFFE;
+  private const string ListfileName = "(listfile)";
+  private static readonly string[] InternalNames = ["(listfile)", "(attributes)", "(signature)", "(user data)", "(patch_metadata)"];
+
   private readonly Stream _stream;
   private readonly List<MpqEntry> _entries = [];
   private readonly long _headerOffset;
-  private readonly uint[] _hashTableA;
-  private readonly uint[] _hashTableB;
-  private readonly uint[] _hashBlockIndex;
-  private readonly uint[] _blockOffsets;
-  private readonly uint[] _blockCompSizes;
-  private readonly uint[] _blockOrigSizes;
-  private readonly uint[] _blockFlags;
+  private readonly int _formatVersion;
   private readonly uint _sectorSize;
+  private readonly HashSlot[] _hashes;
+  private readonly BlockRecord[] _blocks;
+  private uint[]? _attributeCrc32;
+
+  private readonly record struct HashSlot(uint NameA, uint NameB, ushort Locale, uint BlockIndex);
+  private readonly record struct BlockRecord(long Offset, uint CompressedSize, uint OriginalSize, uint Flags);
 
   /// <summary>
   /// Gets the entries.
@@ -33,239 +45,418 @@ public sealed class MpqReader {
   /// <summary>Gets the byte offset of the MPQ header within the stream.</summary>
   public long HeaderOffset => _headerOffset;
 
+  /// <summary>Gets the header's format version (0 = MPQ v1, 1 = v2, ...).</summary>
+  public int FormatVersion => _formatVersion;
+
+  /// <summary>Gets the sector size in bytes.</summary>
+  public int SectorSize => (int)_sectorSize;
+
   /// <summary>
   /// Initializes a new instance of <see cref="MpqReader"/>.
   /// </summary>
+  /// <exception cref="InvalidDataException">No MPQ header is found or its tables lie outside the stream.</exception>
+  /// <exception cref="NotSupportedException">The archive keeps its file table only in HET/BET form.</exception>
   public MpqReader(Stream stream) {
     _stream = stream;
-    using var br = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
+    _headerOffset = FindHeader(stream);
 
-    // Find header (may have user data block before it)
-    var magic = br.ReadUInt32();
-    _headerOffset = 0;
+    var header = new byte[0x2C];
+    stream.Position = _headerOffset;
+    var headerRead = stream.ReadAtLeast(header, 0x20, throwOnEndOfStream: false);
+    if (headerRead < 0x20)
+      throw new InvalidDataException("MPQ header is truncated.");
 
-    if (magic == UserDataMagic) {
-      // User data block: skip to real header
-      br.ReadUInt32(); // user data size
-      var headerOffset = br.ReadUInt32();
-      _headerOffset = headerOffset;
-      stream.Position = headerOffset;
-      magic = br.ReadUInt32();
+    var headerSize = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(4));
+    var formatVersion = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(12));
+    var sectorShift = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(14));
+    long hashTableOffset = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(16));
+    long blockTableOffset = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(20));
+    var hashTableEntries = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(24));
+    var blockTableEntries = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(28));
+
+    // A version-2+ header must be long enough to carry the 64-bit fields; anything else
+    // (notably protected Warcraft III maps) is read as version 1, as Storm does.
+    long hiBlockTableOffset = 0;
+    if (formatVersion >= 1 && headerSize >= 0x2C && headerRead >= 0x2C) {
+      _formatVersion = formatVersion;
+      hiBlockTableOffset = (long)BinaryPrimitives.ReadUInt64LittleEndian(header.AsSpan(0x20));
+      hashTableOffset |= (long)BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(0x28)) << 32;
+      blockTableOffset |= (long)BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(0x2A)) << 32;
     }
 
-    if (magic != HeaderMagic)
-      throw new InvalidDataException($"Not an MPQ file (magic: 0x{magic:X8})");
+    if (sectorShift > 23)
+      throw new InvalidDataException($"MPQ sector size shift {sectorShift} is implausible.");
+    _sectorSize = 512u << sectorShift;
 
-    var headerSize = br.ReadUInt32();
-    var archiveSize = br.ReadUInt32();
-    var formatVersion = br.ReadUInt16();
-    var sectorSizeShift = br.ReadUInt16();
-    var hashTableOffset = br.ReadUInt32();
-    var blockTableOffset = br.ReadUInt32();
-    var hashTableEntries = br.ReadUInt32();
-    var blockTableEntries = br.ReadUInt32();
+    if (hashTableEntries == 0 && _formatVersion >= 2)
+      throw new NotSupportedException("MPQ archives that keep their file table only as HET/BET tables are not supported.");
 
-    _sectorSize = (uint)(512 << sectorSizeShift);
-
-    // Read hash table
-    stream.Position = _headerOffset + hashTableOffset;
-    var hashData = br.ReadBytes((int)(hashTableEntries * 16));
-    MpqCrypto.DecryptBlock(hashData, MpqCrypto.HashString("(hash table)", MpqCrypto.HashTypeFileKey));
-
-    _hashTableA = new uint[hashTableEntries];
-    _hashTableB = new uint[hashTableEntries];
-    _hashBlockIndex = new uint[hashTableEntries];
-
-    using (var hbr = new BinaryReader(new MemoryStream(hashData))) {
-      for (var i = 0; i < hashTableEntries; i++) {
-        _hashTableA[i] = hbr.ReadUInt32();
-        _hashTableB[i] = hbr.ReadUInt32();
-        hbr.ReadUInt16(); // locale
-        hbr.ReadUInt16(); // platform
-        _hashBlockIndex[i] = hbr.ReadUInt32();
-      }
+    var hashBytes = ReadTable(hashTableOffset, hashTableEntries, MpqCrypto.HashTableKey);
+    _hashes = new HashSlot[hashBytes.Length / 16];
+    for (var i = 0; i < _hashes.Length; ++i) {
+      var s = hashBytes.AsSpan(i * 16, 16);
+      _hashes[i] = new(
+        BinaryPrimitives.ReadUInt32LittleEndian(s),
+        BinaryPrimitives.ReadUInt32LittleEndian(s[4..]),
+        BinaryPrimitives.ReadUInt16LittleEndian(s[8..]),
+        BinaryPrimitives.ReadUInt32LittleEndian(s[12..]));
     }
 
-    // Read block table
-    stream.Position = _headerOffset + blockTableOffset;
-    var blockData = br.ReadBytes((int)(blockTableEntries * 16));
-    MpqCrypto.DecryptBlock(blockData, MpqCrypto.HashString("(block table)", MpqCrypto.HashTypeFileKey));
-
-    _blockOffsets = new uint[blockTableEntries];
-    _blockCompSizes = new uint[blockTableEntries];
-    _blockOrigSizes = new uint[blockTableEntries];
-    _blockFlags = new uint[blockTableEntries];
-
-    using (var bbr = new BinaryReader(new MemoryStream(blockData))) {
-      for (var i = 0; i < blockTableEntries; i++) {
-        _blockOffsets[i] = bbr.ReadUInt32();
-        _blockCompSizes[i] = bbr.ReadUInt32();
-        _blockOrigSizes[i] = bbr.ReadUInt32();
-        _blockFlags[i] = bbr.ReadUInt32();
-      }
+    var blockBytes = ReadTable(blockTableOffset, blockTableEntries, MpqCrypto.BlockTableKey);
+    var hiBlocks = new ushort[blockBytes.Length / 16];
+    if (hiBlockTableOffset != 0) {
+      var raw = ReadRaw(hiBlockTableOffset, hiBlocks.Length * 2L);
+      for (var i = 0; i < raw.Length / 2; ++i)
+        hiBlocks[i] = BinaryPrimitives.ReadUInt16LittleEndian(raw.AsSpan(i * 2));
+    }
+    _blocks = new BlockRecord[blockBytes.Length / 16];
+    for (var i = 0; i < _blocks.Length; ++i) {
+      var s = blockBytes.AsSpan(i * 16, 16);
+      _blocks[i] = new(
+        BinaryPrimitives.ReadUInt32LittleEndian(s) | ((long)hiBlocks[i] << 32),
+        BinaryPrimitives.ReadUInt32LittleEndian(s[4..]),
+        BinaryPrimitives.ReadUInt32LittleEndian(s[8..]),
+        BinaryPrimitives.ReadUInt32LittleEndian(s[12..]));
     }
 
-    // Try to read (listfile) to get filenames
-    var listfileNames = TryReadListfile();
-
-    // Build entries from block table
-    if (listfileNames != null) {
-      foreach (var name in listfileNames) {
-        var blockIndex = FindFile(name);
-        if (blockIndex < 0 || blockIndex >= blockTableEntries) continue;
-        if ((_blockFlags[blockIndex] & 0x80000000) == 0) continue;
-        _entries.Add(new MpqEntry {
-          FileName = name,
-          OriginalSize = _blockOrigSizes[blockIndex],
-          CompressedSize = _blockCompSizes[blockIndex],
-          Flags = _blockFlags[blockIndex],
-          FileOffset = _blockOffsets[blockIndex],
-        });
-      }
+    var names = ReadNames();
+    for (var slot = 0; slot < _hashes.Length; ++slot) {
+      var hash = _hashes[slot];
+      if (hash.BlockIndex >= (uint)_blocks.Length)
+        continue;
+      var block = _blocks[hash.BlockIndex];
+      if ((block.Flags & 0x80000000) == 0)
+        continue;
+      names.TryGetValue((hash.NameA, hash.NameB), out var nameBytes);
+      _entries.Add(new MpqEntry {
+        FileName = nameBytes != null ? DecodeName(nameBytes) : $"File{hash.BlockIndex:D5}",
+        NameBytes = nameBytes,
+        IsNameKnown = nameBytes != null,
+        Locale = hash.Locale,
+        OriginalSize = block.OriginalSize,
+        CompressedSize = block.CompressedSize,
+        Flags = block.Flags,
+        FileOffset = block.Offset,
+        BlockIndex = (int)hash.BlockIndex,
+      });
     }
 
-    // Add any remaining blocks without names
-    for (var i = 0; i < blockTableEntries; i++) {
-      if ((_blockFlags[i] & 0x80000000) == 0) continue;
-      var alreadyListed = false;
-      foreach (var e in _entries) {
-        if (e.FileOffset == _blockOffsets[i]) { alreadyListed = true; break; }
-      }
-      if (!alreadyListed) {
-        _entries.Add(new MpqEntry {
-          FileName = $"File{i:D5}",
-          OriginalSize = _blockOrigSizes[i],
-          CompressedSize = _blockCompSizes[i],
-          Flags = _blockFlags[i],
-          FileOffset = _blockOffsets[i],
-        });
-      }
-    }
+    _attributeCrc32 = ReadAttributeChecksums();
   }
 
   /// <summary>Extracts a file by entry.</summary>
+  /// <exception cref="NotSupportedException">The entry is a patch file, or encrypted without a recoverable key.</exception>
+  /// <exception cref="InvalidDataException">The entry's data is damaged.</exception>
   public byte[] Extract(MpqEntry entry) {
-    if (entry.IsEncrypted)
-      throw new NotSupportedException("Encrypted MPQ files are not supported.");
-    if ((entry.Flags & 0x00000100) != 0 && (entry.Flags & 0x00000200) == 0)
-      throw new NotSupportedException($"MPQ file '{entry.FileName}' is PKWare DCL imploded, which is not supported.");
-
-    _stream.Position = _headerOffset + entry.FileOffset;
-
-    if (!entry.IsCompressed) {
-      var data = new byte[entry.OriginalSize];
-      _stream.ReadExactly(data);
-      return data;
+    ArgumentNullException.ThrowIfNull(entry);
+    var lossy = false;
+    var data = ExtractCore(entry, ref lossy);
+    // (attributes) carries the CRC-32 of each file's original bytes; ADPCM is lossy, so those
+    // files cannot match it and are not checked (StormLib reports them as mismatches too).
+    if (!lossy && _attributeCrc32 != null && entry.BlockIndex >= 0 && entry.BlockIndex < _attributeCrc32.Length) {
+      var expected = _attributeCrc32[entry.BlockIndex];
+      if (expected != 0 && Compression.Core.Checksums.Crc32.Compute(data) != expected)
+        throw new InvalidDataException($"MPQ file '{entry.FileName}' does not match the CRC-32 recorded in (attributes).");
     }
+    return data;
+  }
 
-    if (entry.IsSingleUnit) {
-      var compData = new byte[entry.CompressedSize];
-      _stream.ReadExactly(compData);
-      return DecompressMpqBlock(compData, (int)entry.OriginalSize);
-    }
+  private byte[] ExtractCore(MpqEntry entry, ref bool lossy) {
+    if (entry.IsPatchFile)
+      throw new NotSupportedException($"MPQ file '{entry.FileName}' is an incremental patch, not file content.");
+    if (entry.IsDeleteMarker || entry.OriginalSize == 0)
+      return [];
+    if (entry.OriginalSize > int.MaxValue)
+      throw new NotSupportedException($"MPQ file '{entry.FileName}' is larger than 2 GiB.");
 
-    // Sector-based decompression
-    var numSectors = (int)((entry.OriginalSize + _sectorSize - 1) / _sectorSize);
-    using var br = new BinaryReader(_stream, Encoding.UTF8, leaveOpen: true);
+    var originalSize = (int)entry.OriginalSize;
+    var start = _headerOffset + entry.FileOffset;
+    var compressedMask = entry.Flags & 0x0000FF00;
+    var key = entry.IsEncrypted ? FileKey(entry) : 0;
 
-    // Read sector offset table
-    var sectorOffsets = new uint[numSectors + 1];
-    for (var i = 0; i <= numSectors; i++)
-      sectorOffsets[i] = br.ReadUInt32();
+    if (entry.IsSingleUnit)
+      return this.ExtractSingleUnit(entry, start, originalSize, ref key, ref lossy);
 
-    using var output = new MemoryStream();
-    for (var i = 0; i < numSectors; i++) {
-      var sectorStart = _headerOffset + entry.FileOffset + sectorOffsets[i];
-      var sectorLen = (int)(sectorOffsets[i + 1] - sectorOffsets[i]);
-      var expectedSize = (int)Math.Min(_sectorSize, entry.OriginalSize - i * (long)_sectorSize);
+    var sectorCount = (int)((entry.OriginalSize + _sectorSize - 1) / _sectorSize);
+    var output = new byte[originalSize];
 
-      _stream.Position = sectorStart;
-      var sectorData = br.ReadBytes(sectorLen);
-
-      if (sectorLen < expectedSize) {
-        var decompressed = DecompressMpqBlock(sectorData, expectedSize);
-        output.Write(decompressed);
-      } else {
-        output.Write(sectorData);
+    if (compressedMask == 0) {
+      // Stored: sectors follow each other at sector size, each encrypted with key + index.
+      var raw = ReadRaw(start, originalSize);
+      if (raw.Length < originalSize)
+        throw new InvalidDataException($"MPQ file '{entry.FileName}' is truncated.");
+      if (entry.IsEncrypted) {
+        if (key == 0)
+          key = MpqCrypto.DetectKeyByContent(raw, entry.OriginalSize > uint.MaxValue ? 0 : (uint)entry.OriginalSize);
+        RequireKey(entry, key);
+        for (var i = 0; i < sectorCount; ++i) {
+          var length = (int)Math.Min(_sectorSize, originalSize - (long)i * _sectorSize);
+          MpqCrypto.DecryptBlock(raw.AsSpan((int)(i * _sectorSize), length), unchecked(key + (uint)i));
+        }
       }
+      return raw;
     }
 
-    return output.ToArray();
+    var tableEntries = sectorCount + 1 + (entry.HasSectorChecksums ? 1 : 0);
+    var table = ReadRaw(start, tableEntries * 4L);
+    if (table.Length < tableEntries * 4)
+      throw new InvalidDataException($"MPQ file '{entry.FileName}' has a truncated sector table.");
+    if (entry.IsEncrypted) {
+      if (key == 0)
+        key = MpqCrypto.DetectKeyBySectorTable(table, (uint)(tableEntries * 4), _sectorSize);
+      RequireKey(entry, key);
+      MpqCrypto.DecryptBlock(table, unchecked(key - 1));
+    }
+    var offsets = new uint[tableEntries];
+    for (var i = 0; i < tableEntries; ++i)
+      offsets[i] = BinaryPrimitives.ReadUInt32LittleEndian(table.AsSpan(i * 4));
+    for (var i = 0; i < sectorCount; ++i)
+      if (offsets[i + 1] < offsets[i] || offsets[i + 1] - offsets[i] > _sectorSize)
+        throw new InvalidDataException($"MPQ file '{entry.FileName}' has a corrupt sector table.");
+
+    var checksums = entry.HasSectorChecksums ? this.ReadSectorChecksums(start, offsets, sectorCount) : null;
+
+    for (var i = 0; i < sectorCount; ++i) {
+      var expected = (int)Math.Min(_sectorSize, originalSize - (long)i * _sectorSize);
+      var sector = ReadRaw(start + offsets[i], offsets[i + 1] - offsets[i]);
+      if (sector.Length < offsets[i + 1] - offsets[i])
+        throw new InvalidDataException($"MPQ file '{entry.FileName}' sector {i} is truncated.");
+      if (entry.IsEncrypted)
+        MpqCrypto.DecryptBlock(sector, unchecked(key + (uint)i));
+      if (checksums != null && checksums[i] != 0 && checksums[i] != 0xFFFFFFFF
+          && SectorAdler32(sector) != checksums[i])
+        throw new InvalidDataException($"MPQ file '{entry.FileName}' sector {i} fails its Adler-32 checksum.");
+      DecodeSector(entry, sector, expected, ref lossy).CopyTo(output, (long)i * _sectorSize);
+    }
+    return output;
+  }
+
+  private byte[] ExtractSingleUnit(MpqEntry entry, long start, int originalSize, ref uint key, ref bool lossy) {
+    var raw = ReadRaw(start, entry.CompressedSize);
+    if (raw.Length < entry.CompressedSize)
+      throw new InvalidDataException($"MPQ file '{entry.FileName}' is truncated.");
+    if (entry.IsEncrypted) {
+      if (key == 0)
+        key = MpqCrypto.DetectKeyByContent(raw, (uint)originalSize);
+      RequireKey(entry, key);
+      MpqCrypto.DecryptBlock(raw, key);
+    }
+    if ((entry.Flags & 0x0000FF00) == 0) {
+      if (raw.Length < originalSize)
+        throw new InvalidDataException($"MPQ file '{entry.FileName}' is truncated.");
+      return raw[..originalSize];
+    }
+    return DecodeSector(entry, raw, originalSize, ref lossy);
+  }
+
+  /// <summary>Decodes one sector (or a whole single-unit file) that is stored, compressed or imploded.</summary>
+  private byte[] DecodeSector(MpqEntry entry, byte[] sector, int expected, ref bool lossy) {
+    if (sector.Length >= expected)
+      return sector.Length == expected ? sector : sector[..expected];
+    if (!entry.IsImploded && (sector[0] & (MpqCompression.AdpcmMono | MpqCompression.AdpcmStereo)) != 0)
+      lossy = true;
+    if (entry.IsImploded)
+      return Compression.Core.Dictionary.PkwareDcl.PkwareDclDecoder.Decompress(sector, expected);
+    return MpqCompression.Decompress(sector, expected, _formatVersion);
   }
 
   /// <summary>
-  /// Decodes one MPQ block (a sector, or a whole single-unit file). A block no shorter than its expected
-  /// size is stored; otherwise its first byte is the compression mask. Only zlib (0x02) and bzip2 (0x10)
-  /// on their own are decoded: every other mask — PKWare DCL (0x08), Huffman (0x01), ADPCM (0x40/0x80),
-  /// sparse (0x20), LZMA (0x12) and any combination — is refused rather than returned undecoded.
+  /// The CRC-32 column of "(attributes)", indexed by block, when the file is present, readable
+  /// and of one of the sizes Storm writes (all blocks, or all but its own); otherwise null.
   /// </summary>
-  /// <exception cref="NotSupportedException">The mask names a method this reader does not decode.</exception>
+  private uint[]? ReadAttributeChecksums() {
+    var entry = _entries.FirstOrDefault(e => e.IsNameKnown && e.FileName == "(attributes)");
+    if (entry == null)
+      return null;
+    byte[] data;
+    var ignored = false;
+    try {
+      data = this.ExtractCore(entry, ref ignored);
+    } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or EndOfStreamException) {
+      return null;
+    }
+    if (data.Length < 8 || BinaryPrimitives.ReadUInt32LittleEndian(data) != 100)
+      return null;
+    var flags = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4));
+    if ((flags & 1) == 0 || (flags & ~0xFu) != 0)
+      return null;
+    foreach (var count in new[] { _blocks.Length, _blocks.Length - 1 }) {
+      if (count <= 0)
+        continue;
+      long size = 8 + 4L * count;
+      if ((flags & 2) != 0) size += 8L * count;
+      if ((flags & 4) != 0) size += 16L * count;
+      var withBits = size + ((flags & 8) != 0 ? (_blocks.Length + 6) / 8 : 0);
+      if (data.Length != withBits && data.Length != size)
+        continue;
+      var crcs = new uint[count];
+      for (var i = 0; i < count; ++i)
+        crcs[i] = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(8 + i * 4));
+      return crcs;
+    }
+    return null;
+  }
+
+  private uint[]? ReadSectorChecksums(long start, uint[] offsets, int sectorCount) {
+    // The table only exists when the offset table has exactly one extra entry; its size is
+    // then the gap between the last two offsets, and it is itself a compressed block.
+    var tableStart = offsets[sectorCount];
+    var tableEnd = offsets[sectorCount + 1];
+    if (offsets[0] != (sectorCount + 2) * 4u || tableEnd <= tableStart)
+      return null;
+    var stored = tableEnd - tableStart;
+    var size = sectorCount * 4;
+    if (stored < 4 || stored > _sectorSize)
+      return null;
+    var raw = ReadRaw(start + tableStart, stored);
+    byte[] decoded;
+    try {
+      decoded = raw.Length >= size ? raw[..size] : MpqCompression.Decompress(raw, size, _formatVersion);
+    } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException) {
+      return null; // like StormLib, an unreadable checksum table is ignored rather than trusted
+    }
+    var result = new uint[sectorCount];
+    for (var i = 0; i < sectorCount; ++i)
+      result[i] = BinaryPrimitives.ReadUInt32LittleEndian(decoded.AsSpan(i * 4));
+    return result;
+  }
+
+  /// <summary>Adler-32 as Storm computes sector checksums: zlib's adler32 started from 0, not 1.</summary>
+  internal static uint SectorAdler32(ReadOnlySpan<byte> data) {
+    uint a = 0, b = 0;
+    foreach (var value in data) {
+      a = (a + value) % 65521;
+      b = (b + a) % 65521;
+    }
+    return (b << 16) | a;
+  }
+
+  private static void RequireKey(MpqEntry entry, uint key) {
+    if (key == 0)
+      throw new NotSupportedException($"MPQ file '{entry.FileName}' is encrypted and its name is unknown; the key could not be recovered.");
+  }
+
+  private static uint FileKey(MpqEntry entry)
+    => entry.NameBytes == null
+      ? 0
+      : MpqCrypto.FileKey(entry.NameBytes, (uint)entry.FileOffset, (uint)entry.OriginalSize, entry.Flags);
+
+  /// <summary>
+  /// Decodes one MPQ block (a sector, or a whole single-unit file) of a version-1 archive. A block
+  /// no shorter than its expected size is stored; otherwise its first byte is the compression mask.
+  /// </summary>
+  /// <exception cref="NotSupportedException">The mask names an unknown method.</exception>
   /// <exception cref="InvalidDataException">The compressed block is damaged or decodes to the wrong size.</exception>
   internal static byte[] DecompressMpqBlock(byte[] data, int expectedSize) {
     if (data.Length == 0) return [];
     if (data.Length >= expectedSize) return data[..expectedSize];
-
-    var method = data[0];
-    byte[] result;
-    switch (method) {
-      case 0x02:
-        try {
-          result = FileFormat.Zlib.ZlibStream.Decompress(data.AsSpan(1));
-        } catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException) {
-          // Some writers omit the zlib wrapper and store a bare deflate stream.
-          result = Compression.Core.Deflate.DeflateDecompressor.Decompress(data.AsSpan(1));
-        }
-        break;
-      case 0x10: {
-        using var ms = new MemoryStream(data, 1, data.Length - 1, writable: false);
-        using var bz = new FileFormat.Bzip2.Bzip2Stream(ms, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
-        using var decompressed = new MemoryStream();
-        bz.CopyTo(decompressed);
-        result = decompressed.ToArray();
-        break;
-      }
-      default:
-        throw new NotSupportedException($"MPQ compression mask 0x{method:X2} is not supported (only zlib 0x02 and bzip2 0x10 are).");
-    }
-
-    if (result.Length != expectedSize)
-      throw new InvalidDataException($"MPQ block decoded to {result.Length} bytes; {expectedSize} were expected.");
-    return result;
+    return MpqCompression.Decompress(data, expectedSize, 0);
   }
 
-  private string[]? TryReadListfile() {
-    var blockIndex = FindFile("(listfile)");
-    if (blockIndex < 0 || blockIndex >= _blockOffsets.Length) return null;
-    if ((_blockFlags[blockIndex] & 0x80000000) == 0) return null;
+  private static long FindHeader(Stream stream) {
+    var buffer = new byte[16];
+    for (long offset = 0; offset + 32 <= stream.Length; offset += 0x200) {
+      stream.Position = offset;
+      if (stream.ReadAtLeast(buffer, 16, throwOnEndOfStream: false) < 16)
+        break;
+      var magic = BinaryPrimitives.ReadUInt32LittleEndian(buffer);
+      if (magic == HeaderMagic)
+        return offset;
+      if (magic != UserDataMagic)
+        continue;
+      var target = offset + BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(8));
+      if (target + 32 > stream.Length)
+        continue;
+      stream.Position = target;
+      if (stream.ReadAtLeast(buffer, 4, throwOnEndOfStream: false) >= 4 && BinaryPrimitives.ReadUInt32LittleEndian(buffer) == HeaderMagic)
+        return target;
+    }
+    stream.Position = 0;
+    var head = new byte[4];
+    var got = stream.ReadAtLeast(head, 4, throwOnEndOfStream: false);
+    throw new InvalidDataException(got < 4 ? "Not an MPQ file (too short)." : $"Not an MPQ file (magic: 0x{BinaryPrimitives.ReadUInt32LittleEndian(head):X8})");
+  }
 
-    var tempEntry = new MpqEntry {
-      FileName = "(listfile)",
-      OriginalSize = _blockOrigSizes[blockIndex],
-      CompressedSize = _blockCompSizes[blockIndex],
-      Flags = _blockFlags[blockIndex],
-      FileOffset = _blockOffsets[blockIndex],
-    };
+  /// <summary>Reads and decrypts a hash or block table, keeping only entries that lie inside the stream.</summary>
+  private byte[] ReadTable(long relativeOffset, uint entries, uint key) {
+    var bytes = ReadRaw(relativeOffset, Math.Min(entries, 0x8000000u) * 16L, relative: true);
+    var whole = bytes.Length / 16 * 16;
+    var table = bytes[..whole];
+    MpqCrypto.DecryptBlock(table, key);
+    return table;
+  }
 
+  private byte[] ReadRaw(long offset, long length, bool relative = false) {
+    var absolute = relative ? _headerOffset + offset : offset;
+    if (absolute < 0 || absolute >= _stream.Length || length <= 0)
+      return [];
+    var available = Math.Min(length, _stream.Length - absolute);
+    var data = new byte[available];
+    _stream.Position = absolute;
+    _stream.ReadExactly(data);
+    return data;
+  }
+
+  /// <summary>Maps (hash A, hash B) to name bytes for every name in the listfile plus the internal names.</summary>
+  private Dictionary<(uint, uint), byte[]> ReadNames() {
+    var names = new Dictionary<(uint, uint), byte[]>();
+    void Add(byte[] name) {
+      if (name.Length == 0) return;
+      names.TryAdd((MpqCrypto.HashString(name, MpqCrypto.HashTypeNameA), MpqCrypto.HashString(name, MpqCrypto.HashTypeNameB)), name);
+    }
+    foreach (var internalName in InternalNames)
+      Add(Encoding.ASCII.GetBytes(internalName));
+
+    var listfile = this.FindSlot(Encoding.ASCII.GetBytes(ListfileName));
+    if (listfile < 0)
+      return names;
+    var hash = _hashes[listfile];
+    if (hash.BlockIndex >= (uint)_blocks.Length)
+      return names;
+    var block = _blocks[hash.BlockIndex];
+    byte[] data;
     try {
-      var data = Extract(tempEntry);
-      var text = Encoding.UTF8.GetString(data);
-      return text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
-    } catch {
-      return null;
+      data = this.Extract(new MpqEntry {
+        FileName = ListfileName,
+        NameBytes = Encoding.ASCII.GetBytes(ListfileName),
+        OriginalSize = block.OriginalSize,
+        CompressedSize = block.CompressedSize,
+        Flags = block.Flags,
+        FileOffset = block.Offset,
+      });
+    } catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or EndOfStreamException) {
+      return names;
     }
+
+    var start = 0;
+    for (var i = 0; i <= data.Length; ++i) {
+      if (i < data.Length && data[i] is not ((byte)'\r' or (byte)'\n' or (byte)';' or 0))
+        continue;
+      Add(data[start..i]);
+      start = i + 1;
+    }
+    return names;
   }
 
-  private int FindFile(string filename) {
-    var hashA = MpqCrypto.HashString(filename, MpqCrypto.HashTypeNameA);
-    var hashB = MpqCrypto.HashString(filename, MpqCrypto.HashTypeNameB);
-    var start = MpqCrypto.HashString(filename, MpqCrypto.HashTypeOffset) % (uint)_hashTableA.Length;
+  private int FindSlot(byte[] name) {
+    if (_hashes.Length == 0) return -1;
+    var hashA = MpqCrypto.HashString(name, MpqCrypto.HashTypeNameA);
+    var hashB = MpqCrypto.HashString(name, MpqCrypto.HashTypeNameB);
+    var start = (int)(MpqCrypto.HashString(name, MpqCrypto.HashTypeOffset) % (uint)_hashes.Length);
+    for (var n = 0; n < _hashes.Length; ++n) {
+      var i = (start + n) % _hashes.Length;
+      var slot = _hashes[i];
+      if (slot.BlockIndex == HashFree) return -1;
+      if (slot.BlockIndex != HashDeleted && slot.NameA == hashA && slot.NameB == hashB) return i;
+    }
+    return -1;
+  }
 
-    for (var i = start; ; ) {
-      if (_hashBlockIndex[i] == 0xFFFFFFFF) return -1; // empty slot
-      if (_hashTableA[i] == hashA && _hashTableB[i] == hashB)
-        return (int)_hashBlockIndex[i];
-      i = (i + 1) % (uint)_hashTableA.Length;
-      if (i == start) return -1;
+  private static string DecodeName(byte[] name) {
+    try {
+      return new UTF8Encoding(false, throwOnInvalidBytes: true).GetString(name);
+    } catch (DecoderFallbackException) {
+      return Encoding.Latin1.GetString(name);
     }
   }
 }

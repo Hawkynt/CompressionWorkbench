@@ -31,8 +31,11 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         var list = new List<(string Name, byte[] Data)>();
         foreach (var e in r.Entries) {
           if (!e.Exists) continue;
-          if (string.Equals(e.FileName, "(listfile)", StringComparison.OrdinalIgnoreCase)) continue;
-          try { list.Add((e.FileName, r.Extract(e))); } catch { /* skip unreadable */ }
+          if (IsRegenerated(e.FileName)) continue;
+          try { list.Add((e.FileName, r.Extract(e))); }
+          catch (Exception ex) when (ex is InvalidDataException or NotSupportedException) {
+            throw new NotSupportedException($"MPQ rebuild refused: '{e.FileName}' cannot be read back, so it would be lost.", ex);
+          }
         }
         return list;
       },
@@ -121,9 +124,18 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     });
   }
 
+  /// <summary>
+  /// Internal files a rebuild cannot carry over: the listfile is written anew, and the
+  /// attributes and signature describe the old block table, so they would be wrong.
+  /// </summary>
+  private static bool IsRegenerated(string name)
+    => name.Equals("(listfile)", StringComparison.OrdinalIgnoreCase)
+       || name.Equals("(attributes)", StringComparison.OrdinalIgnoreCase)
+       || name.Equals("(signature)", StringComparison.OrdinalIgnoreCase);
+
   private static void DropGeneratedListfile(string tmpDir) {
     foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories))
-      if (Path.GetFileName(file).Equals("(listfile)", StringComparison.OrdinalIgnoreCase))
+      if (IsRegenerated(Path.GetFileName(file)))
         File.Delete(file);
   }
 
@@ -155,7 +167,7 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the extensions.
   /// </summary>
-  public IReadOnlyList<string> Extensions => [".mpq"];
+  public IReadOnlyList<string> Extensions => [".mpq", ".w3m", ".w3x"];
   /// <summary>
   /// Gets the compound extensions.
   /// </summary>
@@ -166,11 +178,15 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'M', (byte)'P', (byte)'Q', 0x1A], Confidence: 0.95),
     new([(byte)'M', (byte)'P', (byte)'Q', 0x1B], Confidence: 0.95),
+    // Warcraft III maps: a 512-byte "HM3W" header in front of the archive.
+    new([(byte)'H', (byte)'M', (byte)'3', (byte)'W'], Confidence: 0.9),
   ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("mpq", "MPQ")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("zlib", "zlib"), new("pkware", "PKWARE DCL"), new("bzip2", "bzip2"), new("lzma", "LZMA"), new("store", "Store"),
+  ];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -189,8 +205,8 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new MpqReader(stream);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.OriginalSize, e.CompressedSize,
-      e.IsCompressed ? "Compressed" : "Stored", false, e.IsEncrypted, null)).ToList();
+    return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, EntryName(e), e.OriginalSize, e.CompressedSize,
+      MethodName(e), false, e.IsEncrypted, null)).ToList();
   }
 
   /// <summary>
@@ -198,11 +214,20 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new MpqReader(stream);
+    var refused = new List<string>();
     foreach (var e in r.Entries) {
       if (!e.Exists) continue;
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      try { WriteFile(outputDir, e.FileName, r.Extract(e)); } catch { }
+      var name = EntryName(e);
+      if (files != null && !MatchesFilter(name, files)) continue;
+      try {
+        WriteFile(outputDir, name, r.Extract(e));
+      } catch (NotSupportedException ex) {
+        // e.g. an encrypted file nothing names: the others still come out, the refusal is reported.
+        refused.Add($"{name}: {ex.Message}");
+      }
     }
+    if (refused.Count > 0)
+      throw new NotSupportedException("MPQ entries not extracted:" + Environment.NewLine + string.Join(Environment.NewLine, refused));
   }
 
   /// <summary>
@@ -219,15 +244,21 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var r = new MpqReader(archive);
     foreach (var e in r.Entries) {
       if (!e.Exists) continue;
-      if (!string.Equals(e.FileName, entryName, StringComparison.OrdinalIgnoreCase)) continue;
-      byte[] bytes;
-      try { bytes = r.Extract(e); }
-      catch { bytes = System.Array.Empty<byte>(); }
+      if (!string.Equals(EntryName(e), entryName.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = r.Extract(e);
       return new Compression.Registry.Streaming.BoundedEntryStream(
         new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
     }
-    return new Compression.Registry.Streaming.BoundedEntryStream(
-      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+    throw new FileNotFoundException($"MPQ archive has no entry '{entryName}'.", entryName);
+  }
+
+  /// <summary>An entry's name with MPQ's backslash separators shown as '/'.</summary>
+  private static string EntryName(MpqEntry e) => e.FileName.Replace('\\', '/');
+
+  private static string MethodName(MpqEntry e) {
+    if (e.IsImploded) return "PKWARE DCL (imploded)";
+    if (!e.IsCompressed) return "Stored";
+    return "Compressed";
   }
 
   /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
@@ -242,11 +273,15 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Performs the create operation.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    // WORM: produce a v1 MPQ with stored (uncompressed) file entries plus an
-    // auto-generated "(listfile)" so file names roundtrip. Compression isn't
-    // emitted -- the existing per-method decoders (zlib/bzip2/PKWARE/Huffman)
-    // don't have paired encoders here, and stored files are valid MPQ entries.
-    var w = new MpqWriter();
+    var compression = options.MethodName?.ToLowerInvariant() switch {
+      null or "" or "zlib" or "deflate" => MpqCompression.Zlib,
+      "pkware" or "dcl" or "implode" => MpqCompression.Pkware,
+      "bzip2" => MpqCompression.Bzip2,
+      "lzma" => MpqCompression.Lzma,
+      "store" or "none" or "mpq" => (byte)0,
+      var other => throw new NotSupportedException($"MPQ has no compression method '{other}'."),
+    };
+    var w = new MpqWriter(new MpqFileOptions(Compression: compression));
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       w.AddFile(i.ArchiveName, i.ReadContent());

@@ -22207,7 +22207,24 @@ Implements `IEquatable<TransportStream>`.
 
 ### Namespace `FileFormat.Mpq`
 
-[`MpqEntry`](#mpqentry) · [`MpqFormatDescriptor`](#mpqformatdescriptor) · [`MpqReader`](#mpqreader) · [`MpqWriter`](#mpqwriter)
+[`MpqCompression`](#mpqcompression) · [`MpqEntry`](#mpqentry) · [`MpqFileOptions`](#mpqfileoptions) · [`MpqFormatDescriptor`](#mpqformatdescriptor) · [`MpqReader`](#mpqreader) · [`MpqWriter`](#mpqwriter)
+
+#### `MpqCompression`
+
+The MPQ compression mask: the first byte of every compressed sector names the methods that were applied, and the reader undoes them in a fixed order.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AdpcmMono` | `const byte AdpcmMono` | IMA ADPCM, one channel (lossy). |
+| `AdpcmStereo` | `const byte AdpcmStereo` | IMA ADPCM, two channels (lossy). |
+| `Bzip2` | `const byte Bzip2` | bzip2 (Warcraft III onwards). |
+| `Huffman` | `const byte Huffman` | Huffman (WAVE sectors, after ADPCM). |
+| `Lzma` | `const byte Lzma` | LZMA (StarCraft II); not a combination of bits, version 2+ archives only. |
+| `Pkware` | `const byte Pkware` | PKWARE Data Compression Library implode (Diablo, StarCraft). |
+| `Sparse` | `const byte Sparse` | Sparse zero-run coding (StarCraft II). |
+| `Zlib` | `const byte Zlib` | zlib (Warcraft III onwards). |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, byte mask)` | Compresses one sector with `mask`, applying the methods in StormLib's order (sparse, ADPCM, Huffman, zlib, PKWARE, bzip2). A method that does not save at least two bytes is skipped; when none helps, the sector is returned unchanged (stored). |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int expectedSize, int formatVersion)` | Decodes one compressed sector (mask byte first) to exactly `expectedSize` bytes. |
 
 #### `MpqEntry`
 
@@ -22221,10 +22238,31 @@ Entry in an MPQ archive.
 | `FileName` | `string FileName { get; init; }` | Gets or sets the file name. |
 | `FileOffset` | `long FileOffset { get; init; }` | Gets or sets the file offset. |
 | `Flags` | `uint Flags { get; init; }` | Gets or sets the flags. |
+| `HasAdjustedKey` | `bool HasAdjustedKey { get; }` | The encryption key is adjusted by offset and size. |
+| `HasSectorChecksums` | `bool HasSectorChecksums { get; }` | File carries an Adler-32 per sector. |
 | `IsCompressed` | `bool IsCompressed { get; }` | File is compressed. |
+| `IsDeleteMarker` | `bool IsDeleteMarker { get; }` | File is a deletion marker from a patch archive. |
 | `IsEncrypted` | `bool IsEncrypted { get; }` | File is encrypted. |
+| `IsImploded` | `bool IsImploded { get; }` | File is PKWARE DCL imploded (no per-sector mask byte). |
+| `IsNameKnown` | `bool IsNameKnown { get; init; }` | Gets whether `FileName` came from the listfile rather than being made up for an unnamed entry. |
+| `IsPatchFile` | `bool IsPatchFile { get; }` | File is a patch (incremental update) rather than file content. |
 | `IsSingleUnit` | `bool IsSingleUnit { get; }` | File is a single unit (not sector-based). |
+| `Locale` | `ushort Locale { get; init; }` | Gets the locale the hash-table entry was stored under (0 = neutral). |
 | `OriginalSize` | `long OriginalSize { get; init; }` | Gets or sets the original size. |
+
+#### `MpqFileOptions`
+
+How the `MpqWriter` stores one file.
+
+Implements `IEquatable<MpqFileOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MpqFileOptions` | `MpqFileOptions(byte Compression = 0, bool Implode = false, bool Encrypt = false, bool AdjustedKey = false)` | How the `MpqWriter` stores one file. |
+| `AdjustedKey` | `bool AdjustedKey { get; init; }` | Adjust the key by the file's offset and size (`MPQ_FILE_KEY_V2`). |
+| `Compression` | `byte Compression { get; init; }` | An MPQ compression mask (`MpqCompression`), 0 to store. |
+| `Encrypt` | `bool Encrypt { get; init; }` | Encrypt the file with the key derived from its name. |
+| `Implode` | `bool Implode { get; init; }` | Use the PKWARE "imploded file" flag (Diablo style) instead of a compression mask. |
 
 #### `MpqFormatDescriptor`
 
@@ -22260,7 +22298,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `MpqReader`
 
-Reads Blizzard MPQ (Mike O'Brien Pack) archives. Supports v1 format. Read-only — MPQ creation is extremely complex. Used by Diablo, StarCraft, Warcraft III, World of Warcraft.
+Reads Blizzard MPQ (Mike O'Brien Pack) archives: format versions 1 and 2 (and the classic tables of 3 and 4), files stored, compressed with any MPQ compression mask, PKWARE-imploded, encrypted (with or without the adjusted key), single-unit or split into sectors, with or without sector checksums. Used by Diablo, StarCraft, Warcraft III and World of Warcraft.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -22268,17 +22306,21 @@ Reads Blizzard MPQ (Mike O'Brien Pack) archives. Supports v1 format. Read-only �
 | `HeaderMagic` | `const uint HeaderMagic` | MPQ header magic. |
 | `UserDataMagic` | `const uint UserDataMagic` | User data magic. |
 | `Entries` | `IReadOnlyList<MpqEntry> Entries { get; }` | Gets the entries. |
+| `FormatVersion` | `int FormatVersion { get; }` | Gets the header's format version (0 = MPQ v1, 1 = v2, ...). |
 | `HeaderOffset` | `long HeaderOffset { get; }` | Gets the byte offset of the MPQ header within the stream. |
+| `SectorSize` | `int SectorSize { get; }` | Gets the sector size in bytes. |
 | `Extract` | `byte[] Extract(MpqEntry entry)` | Extracts a file by entry. |
 
 #### `MpqWriter`
 
-Writes Blizzard MPQ v1 archives. WORM creation only; existing archives are not modified in place. Files are stored uncompressed (no method negotiation, no sector splitting). A "(listfile)" stream is auto-generated so file names roundtrip through `MpqReader`.
+Writes Blizzard MPQ archives that Storm and StormLib open: format version 1, or version 2 when a file uses LZMA. Files are split into sectors, each compressed with the chosen mask (or imploded) and kept stored where compression does not help, optionally encrypted. A "(listfile)" naming every file is added so names survive.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `MpqWriter` | `MpqWriter()` |  |
+| `MpqWriter` | `MpqWriter()` | Creates a writer whose files are stored (no compression, no encryption). |
+| `MpqWriter` | `MpqWriter(MpqFileOptions defaults)` | Creates a writer that applies `defaults` to every file added without options. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
+| `AddFile` | `void AddFile(string name, byte[] data, MpqFileOptions options)` | Adds a file stored as `options` describe. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
 
 ### Namespace `FileFormat.Msg`

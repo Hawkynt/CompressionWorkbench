@@ -2760,6 +2760,52 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
+### Namespace `Compression.Core.Dictionary.PkwareDcl`
+
+[`PkwareDclBuildingBlock`](#pkwaredclbuildingblock) · [`PkwareDclDecoder`](#pkwaredcldecoder) · [`PkwareDclEncoder`](#pkwaredclencoder) · [`PkwareDclMode`](#pkwaredclmode)
+
+#### `PkwareDclBuildingBlock`
+
+PKWARE Data Compression Library "implode" (binary literals, 4 KiB dictionary) as a building block. The stream is self-terminating, so no size prefix is added.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PkwareDclBuildingBlock` | `PkwareDclBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `PkwareDclDecoder`
+
+Decodes the PKWARE Data Compression Library "implode" format ("explode"), as used by MPQ archives (method 0x08 and imploded files), InstallShield 3 and many DOS-era programs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> input)` | Decodes a complete stream up to its end marker. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> input, int expectedSize)` | Decodes a complete stream and checks that it yields exactly `expectedSize` bytes. |
+
+#### `PkwareDclEncoder`
+
+Encodes the PKWARE Data Compression Library "implode" format, readable by every "explode" (StormLib, Storm.dll, blast.c).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input, PkwareDclMode mode = 0, int dictionarySize = 4096)` | Compresses `input` into a complete stream with header and end marker. |
+
+#### `PkwareDclMode`
+
+Literal coding of a PKWARE DCL stream, from the first header byte.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Binary` | `0` | Literals are stored as plain 8-bit values. |
+| `Ascii` | `1` | Literals use the fixed Huffman-style ASCII code table. |
+
 ### Namespace `Compression.Core.Dictionary.Ppm`
 
 [`PpmBuildingBlock`](#ppmbuildingblock) · [`PpmCompressor`](#ppmcompressor)
