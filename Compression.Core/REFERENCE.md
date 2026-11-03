@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesCryptor`](#aescryptor) · [`Blowfish`](#blowfish) · [`KeyDerivation`](#keyderivation)
+[`AesCryptor`](#aescryptor) · [`Blowfish`](#blowfish) · [`KeyDerivation`](#keyderivation) · [`Serpent`](#serpent) · [`Twofish`](#twofish)
 
 #### `AesCryptor`
 
@@ -221,6 +221,24 @@ Key derivation functions for password-based encryption.
 | `Rar3DeriveKey` | `static ValueTuple<byte[], byte[]> Rar3DeriveKey(string password, ReadOnlySpan<byte> salt)` | Derives a 16-byte AES-128 key and 16-byte IV for RAR3/4 decryption. RAR3 iterates SHA-1 262144 times over (salt + password_utf16le + counter). |
 | `Rar5DeriveKey` | `static byte[] Rar5DeriveKey(string password, ReadOnlySpan<byte> salt, int iterations)` | Derives a key using the RAR5 key derivation (PBKDF2-HMAC-SHA256 with specific parameters). |
 | `SevenZipDeriveKey` | `static byte[] SevenZipDeriveKey(string password, ReadOnlySpan<byte> salt, int numCyclesPower)` | Derives a key using the 7z AES key derivation (SHA-256 iterated). 7z uses: key = SHA256^(2^numCyclesPower)(salt + password_utf16le) |
+
+#### `Serpent`
+
+The Serpent block cipher (Ross Anderson, Eli Biham, Lars Knudsen), 128-bit blocks and keys of up to 256 bits, in its bitslice description with little-endian 32-bit words — the byte order of the NESSIE test vectors.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Serpent` | `Serpent(ReadOnlySpan<byte> key)` | Expands `key` (1 to 32 bytes) into the 33 round keys. |
+| `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 16-byte block in place. |
+
+#### `Twofish`
+
+The Twofish block cipher (Bruce Schneier, John Kelsey, Doug Whiting, David Wagner, Chris Hall, Niels Ferguson), 128-bit blocks and 128-, 192- or 256-bit keys.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Twofish` | `Twofish(ReadOnlySpan<byte> key)` | Expands a 16-, 24- or 32-byte `key`. |
+| `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 16-byte block in place. |
 
 ### Namespace `Compression.Core.DataStructures`
 
@@ -657,7 +675,7 @@ BALZ 1.20, Ilya Muravyov's ROLZ file compressor, converted from his public-domai
 
 #### `BriefLzBuildingBlock`
 
-BriefLZ — Jørgen Ibsen's byte-oriented LZ77 compressor with an interleaved single-bit-per-token tag stream and Elias-gamma coded match parameters.
+Exposes Jørgen Ibsen's BriefLZ as a benchmarkable building block.
 
 Implements `IBuildingBlock`.
 
@@ -963,7 +981,7 @@ DoubleSpace/DriveSpace LZ77 decompressor. Sister of `DsLz77Compressor`; thin pas
 
 #### `FastLzBuildingBlock`
 
-Exposes FastLZ level-1 compression as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support. Reference: Ariya Hidayat, "FastLZ", https://ariya.github.io/FastLZ/.
+Exposes FastLZ as a benchmarkable building block: a 4-byte LE uncompressed size, then the block `fastlz_compress` writes (level 1 below 64 KiB, level 2 from there on). Reference: Ariya Hidayat, "FastLZ", https://ariya.github.io/FastLZ/.
 
 Implements `IBuildingBlock`.
 
@@ -979,19 +997,20 @@ Implements `IBuildingBlock`.
 
 #### `FastLzCompressor`
 
-Implements FastLZ Level 1 compression from the public block-format specification: Ariya Hidayat, "FastLZ — free, open-source, portable real-time compression library", https://ariya.github.io/FastLZ/ (block format section) and https://github.com/ariya/FastLZ.
+FastLZ compression exactly as Ariya Hidayat's FastLZ library performs it, at level 1 and level 2.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` using the FastLZ level-1 block format. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` the way `fastlz_compress` does: level 1 below 64 KiB, level 2 from there on. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, int level)` | Compresses `data` at FastLZ level `level` (1 or 2). |
 
 #### `FastLzDecompressor`
 
-Decodes the FastLZ level-1 block format produced by `FastLzCompressor`. Format reference: https://ariya.github.io/FastLZ/ (block format section).
+FastLZ decompression exactly as `fastlz_decompress` performs it, at both levels.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses a FastLZ level-1 stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses a FastLZ block that expands to `originalLength` bytes. |
 
 ### Namespace `Compression.Core.Dictionary.GbaLz77`
 
@@ -1070,7 +1089,7 @@ Implements `IBuildingBlock`.
 
 #### `LizardBuildingBlock`
 
-Lizard (formerly LZ5) — Przemysław Skibiński's LZ4 derivative. The reference codec offers several parsers ranging from an LZ4-compatible fast mode up to full-search modes with a Huffman/FSE entropy stage for maximum ratio; this building block implements the baseline LZ4-compatible block parser (the fastest of Lizard's modes) — the entropy-coded high-ratio modes are out of scope for a single building block.
+Exposes Przemysław Skibiński's Lizard (formerly LZ5) as a benchmarkable building block.
 
 Implements `IBuildingBlock`.
 
@@ -1328,11 +1347,11 @@ Encodes data using the LZAP (Lempel-Ziv-All-Prefixes) algorithm with variable-wi
 
 ### Namespace `Compression.Core.Dictionary.Lzav`
 
-[`LzavBuildingBlock`](#lzavbuildingblock)
+[`LzavBuildingBlock`](#lzavbuildingblock) · [`LzavCodec`](#lzavcodec)
 
 #### `LzavBuildingBlock`
 
-LZAV — Aleksey Vaneev's modern, byte-oriented (no bit-level packing) LZ77 compressor, tuned for very high throughput at a better ratio than LZ4.
+Exposes Aleksey Vaneev's LZAV as a benchmarkable building block: a 4-byte LE uncompressed size, then the format-3 stream that `lzav_compress_default` writes (see `LzavCodec`).
 
 Implements `IBuildingBlock`.
 
@@ -1345,6 +1364,15 @@ Implements `IBuildingBlock`.
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `LzavCodec`
+
+LZAV data format 3, exactly as Aleksey Vaneev's LZAV 5.20 writes and reads it.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` the way `lzav_compress_default` does. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> src, int length)` | Decompresses a format-3 LZAV stream to exactly `length` bytes. |
 
 ### Namespace `Compression.Core.Dictionary.Lzbitmap`
 
@@ -1397,19 +1425,19 @@ Implements `IBuildingBlock`.
 
 #### `LzfCompressor`
 
-Implements LZF compression from the public liblzf wire-format specification: Marc Lehmann, "LZF: a very small data compression library", http://software.schmorp.de/pkg/liblzf.html.
+LZF compression exactly as liblzf's `lzf_compress` performs it.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` using the LZF wire format. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` into a bare LZF stream. |
 
 #### `LzfDecompressor`
 
-Decodes the LZF wire format produced by `LzfCompressor`. Format reference: http://software.schmorp.de/pkg/liblzf.html.
+LZF decompression exactly as liblzf's `lzf_decompress` performs it, with its input checks.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses an LZF stream. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses a bare LZF stream that expands to `originalLength` bytes. |
 
 ### Namespace `Compression.Core.Dictionary.Lzfse`
 
@@ -1473,7 +1501,7 @@ Decodes the LZFX block format produced by `LzfxCompressor`. Format reference: ht
 
 #### `LzgBuildingBlock`
 
-LZG — Marcus Geelnard's liblzg LZ77 codec: an escape-byte (0xFF) token stream over a small 2 KiB sliding window, tuned for a simple, fast, dependency-free decoder rather than maximal ratio.
+Exposes Marcus Geelnard's LZG as a benchmarkable building block.
 
 Implements `IBuildingBlock`.
 
@@ -2780,6 +2808,52 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
+### Namespace `Compression.Core.Dictionary.PkwareDcl`
+
+[`PkwareDclBuildingBlock`](#pkwaredclbuildingblock) · [`PkwareDclDecoder`](#pkwaredcldecoder) · [`PkwareDclEncoder`](#pkwaredclencoder) · [`PkwareDclMode`](#pkwaredclmode)
+
+#### `PkwareDclBuildingBlock`
+
+PKWARE Data Compression Library "implode" (binary literals, 4 KiB dictionary) as a building block. The stream is self-terminating, so no size prefix is added.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PkwareDclBuildingBlock` | `PkwareDclBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `PkwareDclDecoder`
+
+Decodes the PKWARE Data Compression Library "implode" format ("explode"), as used by MPQ archives (method 0x08 and imploded files), InstallShield 3 and many DOS-era programs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> input)` | Decodes a complete stream up to its end marker. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> input, int expectedSize)` | Decodes a complete stream and checks that it yields exactly `expectedSize` bytes. |
+
+#### `PkwareDclEncoder`
+
+Encodes the PKWARE Data Compression Library "implode" format, readable by every "explode" (StormLib, Storm.dll, blast.c).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input, PkwareDclMode mode = 0, int dictionarySize = 4096)` | Compresses `input` into a complete stream with header and end marker. |
+
+#### `PkwareDclMode`
+
+Literal coding of a PKWARE DCL stream, from the first header byte.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Binary` | `0` | Literals are stored as plain 8-bit values. |
+| `Ascii` | `1` | Literals use the fixed Huffman-style ASCII code table. |
+
 ### Namespace `Compression.Core.Dictionary.Ppm`
 
 [`PpmBuildingBlock`](#ppmbuildingblock) · [`PpmCompressor`](#ppmcompressor)
@@ -3461,7 +3535,7 @@ Implements `IBuildingBlock`.
 
 #### `ImplodeDecoder`
 
-Decodes ZIP Implode (method 6) compressed data.
+Decodes ZIP Implode (method 6): LZ77 over a 4 or 8 KB window with Shannon-Fano coded literals (optional), lengths and the high distance bits.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3470,7 +3544,7 @@ Decodes ZIP Implode (method 6) compressed data.
 
 #### `ImplodeEncoder`
 
-Encodes data using the ZIP Implode (method 6) algorithm.
+Encodes data with ZIP Implode (method 6), in the stream layout PKZIP 1.x reads: optional literal tree, length tree and distance tree as run-length coded code lengths, then flag bit, literal or (low distance bits, distance code, length code, extra length byte) per item.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3494,7 +3568,7 @@ Implements `IBuildingBlock`.
 
 #### `ReduceDecoder`
 
-Decodes ZIP Reduce (methods 2-5) compressed data.
+Decodes ZIP Reduce (methods 2-5, compression factor 1-4): a byte stream coded through per-predecessor "follower sets", carrying LZ77 back-references behind the escape byte 144.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3503,7 +3577,7 @@ Decodes ZIP Reduce (methods 2-5) compressed data.
 
 #### `ReduceEncoder`
 
-Encodes data using the ZIP Reduce (methods 2-5) algorithm.
+Encodes data with ZIP Reduce (methods 2-5): LZ77 back-references escaped by byte 144 inside a byte stream, which is then coded through per-predecessor follower sets.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3527,7 +3601,7 @@ Implements `IBuildingBlock`.
 
 #### `ShrinkDecoder`
 
-Decodes ZIP Shrink (method 1) compressed data.
+Decodes ZIP Shrink (method 1): LZW with 9- to 13-bit codes, where control code 256 followed by 1 widens the codes and followed by 2 partially clears the table (frees every code that is not a prefix of another).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3536,7 +3610,7 @@ Decodes ZIP Shrink (method 1) compressed data.
 
 #### `ShrinkEncoder`
 
-Encodes data using the ZIP Shrink (method 1) algorithm.
+Encodes data with ZIP Shrink (method 1), the way PKZIP 1.x does: LZW with codes widened from 9 to 13 bits on demand (control code 256, 1) and a partial clear (256, 2) once all 8192 codes are used.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9393,6 +9467,24 @@ Implements `IEquatable<StreamingArchiveInput>`.
 | `OpenStream` | `Func<Stream> OpenStream { get; init; }` | Factory that returns the entry's bytes as a `Stream` — typically a `BoundedEntryStream`. Ignored when `IsDirectory` is `true`. |
 | `Size` | `long Size { get; init; }` | The entry's logical byte size, used by two-pass writers to compute geometry before any data is read. `0` for directory placeholders. |
 
+### Namespace `FileFormat.BriefLz`
+
+[`BriefLzStream`](#brieflzstream)
+
+#### `BriefLzStream`
+
+Reads and writes the `blzpack` container used by the BriefLZ reference distribution.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultBlockSize` | `const int DefaultBlockSize` | The reference `blzpack` default block size. |
+| `MaximumCompressionLevel` | `const int MaximumCompressionLevel` | Highest managed encoder effort. |
+| `MinimumCompressionLevel` | `const int MinimumCompressionLevel` | Fastest managed encoder effort. |
+| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Tries every managed effort level and writes the smallest complete `blzpack` stream. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses with the reference-compatible fast parser (level 1). |
+| `Compress` | `static void Compress(Stream input, Stream output, int level)` | Compresses using a managed BriefLZ effort level from 1 (fastest) through 10 (deepest candidate search). |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses all concatenated `blzpack` blocks from `input` into `output`. |
+
 ### Namespace `FileFormat.Bzip2`
 
 [`AlzBzip2`](#alzbzip2) · [`Bzip2BuildingBlock`](#bzip2buildingblock) · [`Bzip2FormatDescriptor`](#bzip2formatdescriptor) · [`Bzip2Stream`](#bzip2stream)
@@ -9538,6 +9630,20 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` | Decompresses data from the inner stream into the provided buffer. |
 | `FinishCompression` | `protected override void FinishCompression()` | Called when the stream is being closed in Compress mode. Implementations should flush any remaining compressed data. |
 
+### Namespace `FileFormat.Lizard`
+
+[`LizardStream`](#lizardstream)
+
+#### `LizardStream`
+
+Managed Lizard (formerly LZ5) frame codec covering all four Lizard v2 method families: fastLZ4, LIZv1, fastLZ4+HUF, and LIZv1+HUF (levels 10-49).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static void Compress(Stream input, Stream output)` |  |
+| `Compress` | `static void Compress(Stream input, Stream output, int compressionLevel, int blockSize)` |  |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` |  |
+
 ### Namespace `FileFormat.Lynx`
 
 [`LynxFormatDescriptor`](#lynxformatdescriptor)
@@ -9616,6 +9722,20 @@ Provides static methods for compressing and decompressing data using Apple's LZF
 | `DecodeLzvn` | `static byte[] DecodeLzvn(ReadOnlySpan<byte> stream, int length)` | Decodes a bare LZVN stream that expands to exactly `length` bytes. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an Apple LZFSE stream from `input` to `output`. |
 | `EncodeLzvn` | `static byte[] EncodeLzvn(ReadOnlySpan<byte> data)` | Encodes `data` as a bare LZVN stream — the payload of a `bvxn` block, and the form HFS+/APFS transparent compression (decmpfs methods 7/8) stores — ending with the eight-byte end-of-stream instruction. |
+
+### Namespace `FileFormat.Lzg`
+
+[`LzgStream`](#lzgstream)
+
+#### `LzgStream`
+
+Provides managed LZG compression and decompression compatible with liblzg's 16-byte container header and LZG1 marker-coded data stream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` to `output` with the liblzg-compatible default encoder settings (level 5, fast match lookup). |
+| `Compress` | `static void Compress(Stream input, Stream output, int level, bool fast)` | Compresses `input` to `output`. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses one complete LZG stream from `input` to `output`. |
 
 ### Namespace `FileFormat.Lzma`
 

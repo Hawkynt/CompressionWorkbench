@@ -1,0 +1,90 @@
+Agricola.sfx: Self-extracting Commodore 64 LhA
+     Flags  File size   Ratio  Mode  Date       Time   Name
+     =====  ==========  =====  ====  ========== =====  ====
+  0. -----         163  19.0%  lh1   1993-12-01 14:48  agricola        
+  1. -----        8194  62.4%  lh1   1993-12-01 14:48  a
+  2. -----        2002  42.8%  lh1   1993-12-01 14:48  b
+  3. -----       32700  50.3%  lh1   1993-12-01 14:48  c
+  4. -----        1714  21.4%  lh1   1993-12-01 14:48  d
+  5. -----        6018  46.5%  lh1   1993-12-01 14:48  e
+  6. -----        2050  42.6%  lh1   1993-12-01 14:48  f
+  7. -----         450  58.9%  lh1   1993-12-01 14:48  g
+     File comment: S
+(Flags: D=Directory, R=Resource fork, L=Link, E=Encrypted, @=Extended attributes)
+(Mode: lh1=-lh1-)
+Agricola.sfx: Self-extracting Commodore 64 LhA
+agricola        ... OK.
+a... OK.
+b... OK.
+c... OK.
+d... OK.
+e... OK.
+f... OK.
+g... OK.
+8 passed, 0 failed.
+Backgammon.sfx: Self-extracting Commodore 64 LhA
+     Flags  File size   Ratio  Mode  Date       Time   Name
+     =====  ==========  =====  ====  ========== =====  ====
+  0. -----        4107   6.6%  lh1   1993-10-28 11:46  backgammon
+     File comment: P
+  1. -----        2367  55.4%  lh1   1993-10-28 11:46  backgammon.doc
+     File comment: S
+  2. -----       11415   5.1%  lh1   1993-10-28 11:46  backgammon2
+     File comment: P
+(Flags: D=Directory, R=Resource fork, L=Link, E=Encrypted, @=Extended attributes)
+(Mode: lh1=-lh1-)
+Backgammon.sfx: Self-extracting Commodore 64 LhA
+backgammon... OK.
+backgammon.doc... OK.
+backgammon2... OK.
+3 passed, 0 failed.
+Draughts.sfx: Self-extracting Commodore 64 LhA
+     Flags  File size   Ratio  Mode  Date       Time   Name
+     =====  ==========  =====  ====  ========== =====  ====
+  0. -----        4174   6.7%  lh1   1993-12-02 12:50  draughts
+     File comment: P
+  1. -----        2758  51.9%  lh1   1993-10-28 11:46  draughts.doc
+     File comment: S
+  2. -----        9634   5.7%  lh1   1993-10-28 11:46  draughts2
+     File comment: P
+(Flags: D=Directory, R=Resource fork, L=Link, E=Encrypted, @=Extended attributes)
+(Mode: lh1=-lh1-)
+Draughts.sfx: Self-extracting Commodore 64 LhA
+draughts... OK.
+draughts.doc... OK.
+draughts2... OK.
+3 passed, 0 failed.
+Whitewash.sfx: Self-extracting Commodore 64 LhA
+     Flags  File size   Ratio  Mode  Date       Time   Name
+     =====  ==========  =====  ====  ========== =====  ====
+  0. -----        4108   6.7%  lh1   1993-10-28 11:46  whitewash
+     File comment: P
+  1. -----        3799  52.8%  lh1   1993-10-28 11:46  whitewash.doc
+     File comment: S
+  2. -----        8412   5.3%  lh1   1993-10-28 11:46  whitewash2
+     File comment: P
+(Flags: D=Directory, R=Resource fork, L=Link, E=Encrypted, @=Extended attributes)
+(Mode: lh1=-lh1-)
+Whitewash.sfx: Self-extracting Commodore 64 LhA
+whitewash... OK.
+whitewash.doc... OK.
+whitewash2... OK.
+3 passed, 0 failed.
+068e2bfbdb0affad9c28d891bb9e98d349039848df613345f1cb5a285def905f  ./Agricola/a
+7bbcabbeac5a53086b508e2bfbba74a8e7231af33db5a8b6eb1ba374c614d806  ./Agricola/agricola        
+9b61e786118c242829f7152fc3d8778b919ef41b2487acbf49d3364327716a3d  ./Agricola/b
+ab6a574aafa89331cd58e0882e7908121434a9a33eaa4cd1fdbbae46dfdade28  ./Agricola/c
+4b6721d810824417582c5315f50ebcf765e17f787af6d7167413dc62318353d5  ./Agricola/d
+71a8c295de95153de7e36eb208b84fe838c36c4058528cf227d0391183341540  ./Agricola/e
+cd7e815381fea058afdd26ebbaf0cbb760c978348e24ac80a8767b6c2fae9987  ./Agricola/f
+f99740c29b17b5192d5ced06eb2412ad930c4a30cff7d9efb4cbd4a378c798a8  ./Agricola/g
+ecc18a45bcdf442dac5413fc2ecc74ecdeb565227fb6e4d9b9639e342197b157  ./Backgammon/backgammon
+e66a92bf2c27eb6a2b37e73b325e3bb1fd33282d3b75e251ac39cf192b7d068e  ./Backgammon/backgammon.doc
+3ca72550c3e8ba7e97b89eb81becf2b0fb2fe45e4a42e0d7c19fb4f2774950fe  ./Backgammon/backgammon2
+4060b5f1ebc37676292caa77bab145a3125b74019fe0f0da46f1b64bff3d5525  ./Draughts/draughts
+894662d644dbd55ef3580f0fb1958e552e214afd5d6f6841961ca894744b09c8  ./Draughts/draughts.doc
+6927b9ee55b577a1851d89734f7f65e684e5933f5742365deacf52274e0d729a  ./Draughts/draughts2
+31e3544aa5789bdd088390295421dfdb117466a15ba74ad5ce212cae90374d31  ./Whitewash/whitewash
+0d29430d9dc230dca178220f64cdfbabd9491f8a78a5ebcb114a710b96bd50cf  ./Whitewash/whitewash.doc
+568703583cc0cc3cd1577535452abe2f23dfb5c154d4aa699c96f684b437ab52  ./Whitewash/whitewash2
+

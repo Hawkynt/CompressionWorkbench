@@ -1,51 +1,66 @@
 namespace Compression.Core.Dictionary.Lzf;
 
 /// <summary>
-/// Decodes the LZF wire format produced by <see cref="LzfCompressor"/>.
-/// Format reference: http://software.schmorp.de/pkg/liblzf.html.
+/// LZF decompression exactly as liblzf's <c>lzf_decompress</c> performs it, with its input
+/// checks.
 /// </summary>
+/// <remarks>
+/// Converted from Marc Lehmann's liblzf 3.6 <c>lzf_d.c</c> (BSD-2-Clause; see
+/// THIRD-PARTY-NOTICE.liblzf.txt). See <see cref="LzfCompressor"/> for the format.
+/// </remarks>
 public static class LzfDecompressor {
-  /// <summary>Decompresses an LZF stream.</summary>
-  /// <param name="data">The compressed byte stream.</param>
-  /// <param name="originalLength">The exact length of the decompressed output.</param>
-  /// <returns>The reconstructed original bytes.</returns>
+  /// <summary>Decompresses a bare LZF stream that expands to <paramref name="originalLength"/> bytes.</summary>
+  /// <param name="data">The LZF stream.</param>
+  /// <param name="originalLength">The exact uncompressed size.</param>
+  /// <returns>The decompressed bytes.</returns>
+  /// <exception cref="InvalidDataException">
+  /// The stream is truncated, references data before its start, overflows
+  /// <paramref name="originalLength"/>, or expands to fewer bytes.
+  /// </exception>
   public static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength) {
+    ArgumentOutOfRangeException.ThrowIfNegative(originalLength);
     var output = new byte[originalLength];
-    var op = 0;
     var ip = 0;
+    var op = 0;
 
-    while (op < originalLength) {
-      var ctrl = data[ip++];
-
-      if (ctrl < 32) {
-        var length = ctrl + 1;
-        data.Slice(ip, length).CopyTo(output.AsSpan(op));
-        ip += length;
-        op += length;
+    while (ip < data.Length) {
+      var control = (int)data[ip++];
+      if (control < 1 << 5) {
+        ++control;
+        if (op + control > output.Length)
+          throw new InvalidDataException("LZF: literal run overflows the output.");
+        if (ip + control > data.Length)
+          throw new InvalidDataException("LZF: literal run is truncated.");
+        data.Slice(ip, control).CopyTo(output.AsSpan(op));
+        ip += control;
+        op += control;
         continue;
       }
 
-      var lengthField = ctrl >> 5;
-      int length2;
-      int offset;
-
-      if (lengthField == 7) {
-        length2 = data[ip++] + 7;
-        offset = ((ctrl & 0x1F) << 8) | data[ip++];
-      } else {
-        length2 = lengthField;
-        offset = ((ctrl & 0x1F) << 8) | data[ip++];
+      var length = control >> 5;
+      var reference = op - ((control & 0x1F) << 8) - 1;
+      if (ip >= data.Length)
+        throw new InvalidDataException("LZF: back-reference is truncated.");
+      if (length == 7) {
+        length += data[ip++];
+        if (ip >= data.Length)
+          throw new InvalidDataException("LZF: back-reference is truncated.");
       }
 
-      length2 += 1;
-      offset += 1;
+      reference -= data[ip++];
+      length += 2;
+      if (op + length > output.Length)
+        throw new InvalidDataException("LZF: back-reference overflows the output.");
+      if (reference < 0)
+        throw new InvalidDataException("LZF: back-reference points before the start.");
 
-      var refPos = op - offset;
-      for (var i = 0; i < length2; ++i)
-        output[op + i] = output[refPos + i];
-      op += length2;
+      // Byte by byte: an overlapping reference repeats what it has just written.
+      for (var i = 0; i < length; ++i)
+        output[op++] = output[reference++];
     }
 
+    if (op != output.Length)
+      throw new InvalidDataException($"LZF stream expanded to {op} bytes, expected {output.Length}.");
     return output;
   }
 }

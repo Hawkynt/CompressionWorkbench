@@ -7233,6 +7233,7 @@ One member of an ACE archive, as its file header describes it.
 | `DictionaryBits` | `int DictionaryBits { get; init; }` |  |
 | `FileName` | `string FileName { get; init; }` | Member path with '/' separators (ACE stores '\'). |
 | `Flags` | `ushort Flags { get; init; }` |  |
+| `IsComplete` | `bool IsComplete { get; init; }` | Whether every volume the member spans was found; an incomplete member is listed but not extracted. |
 | `IsContinued` | `bool IsContinued { get; }` | Whether the member is split across volumes of a multi-volume set. |
 | `IsDirectory` | `bool IsDirectory { get; }` |  |
 | `IsEncrypted` | `bool IsEncrypted { get; }` |  |
@@ -7240,6 +7241,7 @@ One member of an ACE archive, as its file header describes it.
 | `LastModified` | `DateTime LastModified { get; init; }` |  |
 | `OriginalSize` | `long OriginalSize { get; init; }` |  |
 | `Quality` | `int Quality { get; init; }` |  |
+| `VolumeCount` | `int VolumeCount { get; }` | Number of volumes the member's data spans (1 for an ordinary member). |
 
 #### `AceFormatDescriptor`
 
@@ -7262,6 +7264,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the ACE archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the ACE archive per the requested mode. |
@@ -7270,25 +7273,29 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
 
 #### `AceReader`
 
-Reads ACE 1.0 / 2.0 archives: main header (found within the first 512 KiB, so SFX stubs are skipped), file headers, stored / LZ77 / blocked members, Blowfish-encrypted members and comments. Members of a multi-volume set that continue into another volume are listed but refused.
+Reads ACE 1.0 / 2.0 archives: main header (found within the first 512 KiB, so SFX stubs are skipped), file headers, stored / LZ77 / blocked members, Blowfish-encrypted members and comments. A multi-volume set is read from its volumes in order (`.ace`, `.c00`, `.c01`, …): a member split across volumes is the concatenation of its parts, and its CRC is the one in the last part's header.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `AceReader` | `AceReader(IReadOnlyList<Stream> volumes, bool leaveOpen = false, string password = null)` | Reads the volumes of a multi-volume set, in order; a single stream is an ordinary archive. |
 | `AceReader` | `AceReader(Stream stream, bool leaveOpen = false, string password = null)` |  |
 | `ArchiveOffset` | `long ArchiveOffset { get; }` | Offset of the main header (non-zero for self-extracting archives). |
 | `Comment` | `string Comment { get; }` |  |
 | `CreatorVersion` | `byte CreatorVersion { get; }` |  |
 | `Entries` | `IReadOnlyList<AceEntry> Entries { get; }` |  |
 | `ExtractVersion` | `byte ExtractVersion { get; }` |  |
+| `FirstVolumeNumber` | `int FirstVolumeNumber { get; }` | The volume number recorded in the first volume read (0 for the `.ace` volume of a set). |
 | `HasRecoveryRecord` | `bool HasRecoveryRecord { get; }` |  |
 | `IsLocked` | `bool IsLocked { get; }` |  |
 | `IsMultiVolume` | `bool IsMultiVolume { get; }` |  |
 | `IsSolid` | `bool IsSolid { get; }` |  |
+| `VolumeCount` | `int VolumeCount { get; }` | How many volumes were read. |
 | `Dispose` | `void Dispose()` |  |
 | `ExtractEntry` | `byte[] ExtractEntry(AceEntry entry)` | Returns a member's decompressed bytes, verifying its CRC. |
 
@@ -11907,6 +11914,60 @@ Implements `IEquatable<Item>`.
 | `IsDirectory` | `bool IsDirectory { get; init; }` | True for an explicit directory entry. |
 | `Path` | `string Path { get; init; }` | Archive-relative path using `/` or `\` separators. |
 
+### Namespace `FileFormat.BlakHole`
+
+[`BlakHoleArchive`](#blakholearchive) · [`BlakHoleEntry`](#blakholeentry) · [`BlakHoleFormatDescriptor`](#blakholeformatdescriptor)
+
+#### `BlakHoleArchive`
+
+BlakHole archives (.bh), read from the layout measured on the one sample with provenance: back-to-back "BH" member records with raw-Deflate data and a CRC-32 (docs/BLAKHOLE-ON-DISK.md). Every field whose meaning is unknown must hold the value the sample has; anything else is refused rather than guessed. Read-only, because there is no BlakHole program to check writes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Extract` | `static byte[] Extract(ReadOnlySpan<byte> data, BlakHoleEntry entry)` | Decodes a member and checks its CRC-32. |
+| `Read` | `static List<BlakHoleEntry> Read(ReadOnlySpan<byte> data, out bool truncated)` | Parses the records. |
+
+#### `BlakHoleEntry`
+
+One member of a BlakHole archive.
+
+Implements `IEquatable<BlakHoleEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlakHoleEntry` | `BlakHoleEntry(string Name, int Method, uint CompressedSize, uint OriginalSize, uint Crc32, DateTime? LastModified, long DataOffset)` | One member of a BlakHole archive. |
+| `CompressedSize` | `uint CompressedSize { get; init; }` |  |
+| `Crc32` | `uint Crc32 { get; init; }` |  |
+| `DataOffset` | `long DataOffset { get; init; }` |  |
+| `LastModified` | `DateTime? LastModified { get; init; }` |  |
+| `Method` | `int Method { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `OriginalSize` | `uint OriginalSize { get; init; }` |  |
+
+#### `BlakHoleFormatDescriptor`
+
+BlakHole archive (.bh), read-only. References: `docs/BLAKHOLE-ON-DISK.md` — the layout measured on the Archive Team sample (no published specification exists)`http://sembiance.com/fileFormatSamples/archive/blakHole/` — the sample
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlakHoleFormatDescriptor` | `BlakHoleFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
 ### Namespace `FileFormat.Bonk`
 
 [`BonkFormatDescriptor`](#bonkformatdescriptor)
@@ -11942,7 +12003,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 ### Namespace `FileFormat.BriefLz`
 
-[`BriefLzFormatDescriptor`](#brieflzformatdescriptor) · [`BriefLzStream`](#brieflzstream)
+[`BriefLzFormatDescriptor`](#brieflzformatdescriptor)
 
 #### `BriefLzFormatDescriptor`
 
@@ -11970,20 +12031,6 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes using the reference-compatible fast parser. |
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes using the requested managed effort level. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
-
-#### `BriefLzStream`
-
-Reads and writes the `blzpack` container used by the BriefLZ reference distribution.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `DefaultBlockSize` | `const int DefaultBlockSize` | The reference `blzpack` default block size. |
-| `MaximumCompressionLevel` | `const int MaximumCompressionLevel` | Highest managed encoder effort. |
-| `MinimumCompressionLevel` | `const int MinimumCompressionLevel` | Fastest managed encoder effort. |
-| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Tries every managed effort level and writes the smallest complete `blzpack` stream. |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses with the reference-compatible fast parser (level 1). |
-| `Compress` | `static void Compress(Stream input, Stream output, int level)` | Compresses using a managed BriefLZ effort level from 1 (fastest) through 10 (deepest candidate search). |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses all concatenated `blzpack` blocks from `input` into `output`. |
 
 ### Namespace `FileFormat.Brotli`
 
@@ -12358,6 +12405,35 @@ Builds a Nintendo Switch `.bwav` from one or more mono PCM16 channels, DSP-ADPCM
 | --- | --- | --- |
 | `BwavWriter` | `BwavWriter()` |  |
 | `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate)` | Writes a non-looping DSP-ADPCM BWAV from the given mono channels. |
+
+### Namespace `FileFormat.C64Sfx`
+
+[`C64SfxFormatDescriptor`](#c64sfxformatdescriptor)
+
+#### `C64SfxFormatDescriptor`
+
+Commodore 64/128 self-extracting LHA archive (Chris Smeets' SFX): a BASIC/machine-code extractor of 3711 or 3721 bytes followed by an ordinary LHA archive (-lh1- on the C64). Reading skips the stub, up to two bytes before the first "-lh?-" marker, and reads the rest as LHA. Writing would mean redistributing Smeets' extractor, so the format is read-only. References: `http://unusedino.de/ec64/technical/formats/sfx.html` — Peter Schepers' SFX.TXT (rev 1.3)`http://fileformats.archiveteam.org/wiki/SFX` — format overview and samples
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `C64SfxFormatDescriptor` | `C64SfxFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Payload` | `static MemoryStream Payload(Stream stream)` | Returns the embedded LHA archive (everything from two bytes before the first -lh?- marker). |
 
 ### Namespace `FileFormat.Cab`
 
@@ -16864,7 +16940,7 @@ FreeArc compression method strings: `name:param:param...` stages joined by `+`, 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Storing` | `const string Storing` | The method name of an uncompressed stage. |
-| `Decode` | `static byte[] Decode(string compressor, byte[] input, long outputSize)` | Decodes `input` produced by `compressor` into exactly `outputSize` bytes. |
+| `Decode` | `static byte[] Decode(string compressor, byte[] input, long outputSize, string password = null)` | Decodes `input` produced by `compressor` into exactly `outputSize` bytes. |
 | `Encode` | `static byte[] Encode(string compressor, ReadOnlySpan<byte> input)` | Encodes `input` with a single supported stage. |
 | `IsEncrypted` | `static bool IsEncrypted(string compressor)` | Gets whether `compressor` contains an encryption stage. |
 | `IsSupported` | `static bool IsSupported(string compressor)` | Gets whether every stage of `compressor` can be decoded. |
@@ -16879,7 +16955,7 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FreeArcReader` | `FreeArcReader(Stream stream, bool leaveOpen = false)` | Opens a FreeArc archive and reads its footer and directory blocks. |
+| `FreeArcReader` | `FreeArcReader(Stream stream, bool leaveOpen = false, string password = null)` | Opens a FreeArc archive and reads its footer and directory blocks. |
 | `Comment` | `string Comment { get; }` | Gets the archive comment, or an empty string. |
 | `Entries` | `IReadOnlyList<FreeArcEntry> Entries { get; }` | Gets all files and directories recorded in the archive's directory blocks, in archive order. |
 | `IsLocked` | `bool IsLocked { get; }` | Gets whether the archive is locked against further modification. |
@@ -19568,7 +19644,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 ### Namespace `FileFormat.Lizard`
 
-[`LizardFormatDescriptor`](#lizardformatdescriptor) · [`LizardStream`](#lizardstream)
+[`LizardFormatDescriptor`](#lizardformatdescriptor)
 
 #### `LizardFormatDescriptor`
 
@@ -19596,16 +19672,6 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 | `Compress` | `void Compress(Stream input, Stream output)` |  |
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` |  |
 | `Decompress` | `void Decompress(Stream input, Stream output)` |  |
-
-#### `LizardStream`
-
-Managed Lizard (formerly LZ5) frame codec covering all four Lizard v2 method families: fastLZ4, LIZv1, fastLZ4+HUF, and LIZv1+HUF (levels 10-49).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` |  |
-| `Compress` | `static void Compress(Stream input, Stream output, int compressionLevel, int blockSize)` |  |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` |  |
 
 ### Namespace `FileFormat.Lnk`
 
@@ -19793,7 +19859,7 @@ Writes data in the LZ4 frame format (specification v1.6.1+).
 
 ### Namespace `FileFormat.Lzg`
 
-[`LzgFormatDescriptor`](#lzgformatdescriptor) · [`LzgStream`](#lzgstream)
+[`LzgFormatDescriptor`](#lzgformatdescriptor)
 
 #### `LzgFormatDescriptor`
 
@@ -19821,16 +19887,6 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input with the historical/default LZG settings. |
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with the selected LZG optimizer parameters. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
-
-#### `LzgStream`
-
-Provides managed LZG compression and decompression compatible with liblzg's 16-byte container header and LZG1 marker-coded data stream.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` to `output` with the liblzg-compatible default encoder settings (level 5, fast match lookup). |
-| `Compress` | `static void Compress(Stream input, Stream output, int level, bool fast)` | Compresses `input` to `output`. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses one complete LZG stream from `input` to `output`. |
 
 ### Namespace `FileFormat.Lzh`
 
@@ -22221,7 +22277,24 @@ Implements `IEquatable<TransportStream>`.
 
 ### Namespace `FileFormat.Mpq`
 
-[`MpqEntry`](#mpqentry) · [`MpqFormatDescriptor`](#mpqformatdescriptor) · [`MpqReader`](#mpqreader) · [`MpqWriter`](#mpqwriter)
+[`MpqCompression`](#mpqcompression) · [`MpqEntry`](#mpqentry) · [`MpqFileOptions`](#mpqfileoptions) · [`MpqFormatDescriptor`](#mpqformatdescriptor) · [`MpqReader`](#mpqreader) · [`MpqWriter`](#mpqwriter)
+
+#### `MpqCompression`
+
+The MPQ compression mask: the first byte of every compressed sector names the methods that were applied, and the reader undoes them in a fixed order.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AdpcmMono` | `const byte AdpcmMono` | IMA ADPCM, one channel (lossy). |
+| `AdpcmStereo` | `const byte AdpcmStereo` | IMA ADPCM, two channels (lossy). |
+| `Bzip2` | `const byte Bzip2` | bzip2 (Warcraft III onwards). |
+| `Huffman` | `const byte Huffman` | Huffman (WAVE sectors, after ADPCM). |
+| `Lzma` | `const byte Lzma` | LZMA (StarCraft II); not a combination of bits, version 2+ archives only. |
+| `Pkware` | `const byte Pkware` | PKWARE Data Compression Library implode (Diablo, StarCraft). |
+| `Sparse` | `const byte Sparse` | Sparse zero-run coding (StarCraft II). |
+| `Zlib` | `const byte Zlib` | zlib (Warcraft III onwards). |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, byte mask)` | Compresses one sector with `mask`, applying the methods in StormLib's order (sparse, ADPCM, Huffman, zlib, PKWARE, bzip2). A method that does not save at least two bytes is skipped; when none helps, the sector is returned unchanged (stored). |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int expectedSize, int formatVersion)` | Decodes one compressed sector (mask byte first) to exactly `expectedSize` bytes. |
 
 #### `MpqEntry`
 
@@ -22235,10 +22308,31 @@ Entry in an MPQ archive.
 | `FileName` | `string FileName { get; init; }` | Gets or sets the file name. |
 | `FileOffset` | `long FileOffset { get; init; }` | Gets or sets the file offset. |
 | `Flags` | `uint Flags { get; init; }` | Gets or sets the flags. |
+| `HasAdjustedKey` | `bool HasAdjustedKey { get; }` | The encryption key is adjusted by offset and size. |
+| `HasSectorChecksums` | `bool HasSectorChecksums { get; }` | File carries an Adler-32 per sector. |
 | `IsCompressed` | `bool IsCompressed { get; }` | File is compressed. |
+| `IsDeleteMarker` | `bool IsDeleteMarker { get; }` | File is a deletion marker from a patch archive. |
 | `IsEncrypted` | `bool IsEncrypted { get; }` | File is encrypted. |
+| `IsImploded` | `bool IsImploded { get; }` | File is PKWARE DCL imploded (no per-sector mask byte). |
+| `IsNameKnown` | `bool IsNameKnown { get; init; }` | Gets whether `FileName` came from the listfile rather than being made up for an unnamed entry. |
+| `IsPatchFile` | `bool IsPatchFile { get; }` | File is a patch (incremental update) rather than file content. |
 | `IsSingleUnit` | `bool IsSingleUnit { get; }` | File is a single unit (not sector-based). |
+| `Locale` | `ushort Locale { get; init; }` | Gets the locale the hash-table entry was stored under (0 = neutral). |
 | `OriginalSize` | `long OriginalSize { get; init; }` | Gets or sets the original size. |
+
+#### `MpqFileOptions`
+
+How the `MpqWriter` stores one file.
+
+Implements `IEquatable<MpqFileOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MpqFileOptions` | `MpqFileOptions(byte Compression = 0, bool Implode = false, bool Encrypt = false, bool AdjustedKey = false)` | How the `MpqWriter` stores one file. |
+| `AdjustedKey` | `bool AdjustedKey { get; init; }` | Adjust the key by the file's offset and size (`MPQ_FILE_KEY_V2`). |
+| `Compression` | `byte Compression { get; init; }` | An MPQ compression mask (`MpqCompression`), 0 to store. |
+| `Encrypt` | `bool Encrypt { get; init; }` | Encrypt the file with the key derived from its name. |
+| `Implode` | `bool Implode { get; init; }` | Use the PKWARE "imploded file" flag (Diablo style) instead of a compression mask. |
 
 #### `MpqFormatDescriptor`
 
@@ -22274,7 +22368,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `MpqReader`
 
-Reads Blizzard MPQ (Mike O'Brien Pack) archives. Supports v1 format. Read-only — MPQ creation is extremely complex. Used by Diablo, StarCraft, Warcraft III, World of Warcraft.
+Reads Blizzard MPQ (Mike O'Brien Pack) archives: format versions 1 and 2 (and the classic tables of 3 and 4), files stored, compressed with any MPQ compression mask, PKWARE-imploded, encrypted (with or without the adjusted key), single-unit or split into sectors, with or without sector checksums. Used by Diablo, StarCraft, Warcraft III and World of Warcraft.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -22282,17 +22376,21 @@ Reads Blizzard MPQ (Mike O'Brien Pack) archives. Supports v1 format. Read-only �
 | `HeaderMagic` | `const uint HeaderMagic` | MPQ header magic. |
 | `UserDataMagic` | `const uint UserDataMagic` | User data magic. |
 | `Entries` | `IReadOnlyList<MpqEntry> Entries { get; }` | Gets the entries. |
+| `FormatVersion` | `int FormatVersion { get; }` | Gets the header's format version (0 = MPQ v1, 1 = v2, ...). |
 | `HeaderOffset` | `long HeaderOffset { get; }` | Gets the byte offset of the MPQ header within the stream. |
+| `SectorSize` | `int SectorSize { get; }` | Gets the sector size in bytes. |
 | `Extract` | `byte[] Extract(MpqEntry entry)` | Extracts a file by entry. |
 
 #### `MpqWriter`
 
-Writes Blizzard MPQ v1 archives. WORM creation only; existing archives are not modified in place. Files are stored uncompressed (no method negotiation, no sector splitting). A "(listfile)" stream is auto-generated so file names roundtrip through `MpqReader`.
+Writes Blizzard MPQ archives that Storm and StormLib open: format version 1, or version 2 when a file uses LZMA. Files are split into sectors, each compressed with the chosen mask (or imploded) and kept stored where compression does not help, optionally encrypted. A "(listfile)" naming every file is added so names survive.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `MpqWriter` | `MpqWriter()` |  |
+| `MpqWriter` | `MpqWriter()` | Creates a writer whose files are stored (no compression, no encryption). |
+| `MpqWriter` | `MpqWriter(MpqFileOptions defaults)` | Creates a writer that applies `defaults` to every file added without options. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
+| `AddFile` | `void AddFile(string name, byte[] data, MpqFileOptions options)` | Adds a file stored as `options` describe. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
 
 ### Namespace `FileFormat.Msg`
@@ -26153,6 +26251,60 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.QuadrupleD`
+
+[`QuadrupleDArchive`](#quadrupledarchive) · [`QuadrupleDEntry`](#quadrupledentry) · [`QuadrupleDFormatDescriptor`](#quadrupledformatdescriptor)
+
+#### `QuadrupleDArchive`
+
+Reads Quadruple D (QDA0) game archives: a 256-byte header, a directory of 268-byte records and the file data, either stored or compressed with byte pair encoding.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Signature` | `static ReadOnlySpan<byte> Signature { get; }` | The signature at offset 4. |
+| `Extract` | `static byte[] Extract(ReadOnlySpan<byte> data, QuadrupleDEntry entry)` | Extracts one file. |
+| `IsCompressed` | `static bool IsCompressed(ReadOnlySpan<byte> data)` | Whether the archive's files are byte pair encoded. |
+| `IsQuadrupleD` | `static bool IsQuadrupleD(ReadOnlySpan<byte> data)` | Whether `data` starts like a Quadruple D archive. |
+| `List` | `static List<QuadrupleDEntry> List(ReadOnlySpan<byte> data)` | Lists the archive's files. |
+
+#### `QuadrupleDEntry`
+
+One file of a Quadruple D archive.
+
+Implements `IEquatable<QuadrupleDEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `QuadrupleDEntry` | `QuadrupleDEntry(string Name, long Offset, long StoredSize, long Size)` | One file of a Quadruple D archive. |
+| `Name` | `string Name { get; init; }` | File name. |
+| `Offset` | `long Offset { get; init; }` | Offset of the file's data in the archive. |
+| `Size` | `long Size { get; init; }` | Original size in bytes. |
+| `StoredSize` | `long StoredSize { get; init; }` | Bytes the data occupies in the archive. |
+
+#### `QuadrupleDFormatDescriptor`
+
+Quadruple D (QDA0) game archive, read-only: stored or byte-pair-encoded files. No program that writes the format is available to check a writer against.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `QuadrupleDFormatDescriptor` | `QuadrupleDFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 ### Namespace `FileFormat.QuickLz`
 

@@ -16,9 +16,10 @@ namespace FileFormat.FreeArc;
 /// </list>
 /// </summary>
 /// <remarks>
-/// Reads real FreeArc archives; extracts solid blocks compressed with <c>storing</c>, <c>lzma</c> or
-/// <c>tor</c>, also behind <c>rep</c>/<c>delta</c>/<c>exe</c> and inside <c>4x4</c>, and refuses
-/// the other methods (ppmd, lzp, grzip, ...) and encryption.
+/// Reads real FreeArc archives; extracts solid blocks compressed with <c>storing</c>, <c>lzma</c>,
+/// <c>tor</c>, <c>ppmd</c> or <c>grzip</c>, also behind <c>rep</c>/<c>delta</c>/<c>exe</c>/<c>lzp</c>/<c>dict</c>
+/// and inside <c>4x4</c>, decrypts encrypted blocks and directories given the password, and refuses
+/// the other methods (mm, external compressors).
 /// Writes <c>storing</c>/<c>lzma</c> archives that FreeArc 0.67's <c>unarc</c> and <c>arc</c>
 /// test and extract byte-identically.
 /// </remarks>
@@ -97,7 +98,7 @@ public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <inheritdoc/>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     try {
-      using var r = new FreeArcReader(stream, leaveOpen: true);
+      using var r = new FreeArcReader(stream, leaveOpen: true, password);
       return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Size, e.CompressedSize, e.Method,
         e.IsDirectory, FreeArcMethods.IsEncrypted(e.Method), e.LastModified)).ToList();
     } catch (Exception ex) when (ex is NotSupportedException or InvalidDataException) {
@@ -113,7 +114,7 @@ public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     FreeArcReader r;
     try {
-      r = new FreeArcReader(stream, leaveOpen: true);
+      r = new FreeArcReader(stream, leaveOpen: true, password);
     } catch (Exception ex) when (ex is NotSupportedException or InvalidDataException) {
       stream.Position = 0;
       using var raw = new MemoryStream();

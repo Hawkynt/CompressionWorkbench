@@ -1,0 +1,15 @@
+PPMd var.I (PPMII) — converted to C#
+
+Source:   FreeArc 0.67 snapshot, github.com/mrkaban/FreeArc-0.67,
+          Compression/PPMD/Model.cpp, SubAlloc.hpp, Coder.hpp, PPMd.h, PPMdType.h
+Authors:  Dmitry Shkarin (model and sub-allocator, 1997, 1999-2001);
+          Dmitry Subbotin (carryless range coder, 1999)
+Licence:  public domain — "Written and distributed to public domain by Dmitry
+          Shkarin"; the range coder "is claimed to be a public domain".
+
+FreeArcPpmd.cs is a conversion of the decoding half of that code: the PPMII
+model (contexts, SEE, binary contexts, model restoration by restart, cut-off
+and freeze), the sub-allocator with its 32-bit memory layout reproduced in a
+byte array, and the range decoder. FreeArc's own stream wrapper (C_PPMD.cpp,
+GPL-2.0) was not taken; the method-string rules are documented in
+docs/FREEARC-ON-DISK.md.

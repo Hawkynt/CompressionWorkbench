@@ -418,6 +418,76 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Aff.AffExternalConformanceTests" \
             --logger "trx;LogFileName=aff-oracle-tests.trx"
 
+      # Hard gate: hxcfe (HxC Floppy Emulator command line, GPL, built at a pinned commit) writes a Stream
+      # HFE from a sector image, we rebuild it from its tracks (and edit one track), and hxcfe decodes our
+      # result back to exactly the expected sectors.
+      - name: Stream HFE oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_HXCFE: "1"
+        run: |
+          mkdir -p "$RUNNER_TEMP/hxc"
+          curl -fsSL https://github.com/jfdelnero/HxCFloppyEmulator/archive/b1f0465a4cebd25a90fb2d56534bf5d730f9f117.tar.gz \
+            | tar xz -C "$RUNNER_TEMP/hxc" --strip-components=1
+          make -C "$RUNNER_TEMP/hxc/build" -j4 HxCFloppyEmulator_cmdline > "$RUNNER_TEMP/hxc-build.log" 2>&1 || { tail -50 "$RUNNER_TEMP/hxc-build.log"; exit 1; }
+          CWB_HXCFE="$RUNNER_TEMP/hxc/build/hxcfe" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.StreamHfe.StreamHfeExternalConformanceTests" \
+            --logger "trx;LogFileName=streamhfe-oracle-tests.trx"
+
+      # Hard gate: Greaseweazle (public domain, pinned release) decodes the A2R3 images we build from its
+      # own flux, rebuilt and with one capture replaced, to exactly the expected sectors; a2rchery (MIT,
+      # pinned commit) verifies our A2R2 and rewrites it from its own parse byte for byte.
+      - name: A2R oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_A2R: "1"
+        run: |
+          python3 -m pip install --user --break-system-packages "git+https://github.com/keirf/greaseweazle@v1.23"
+          curl -fsSL -o "$RUNNER_TEMP/a2rchery.py" https://raw.githubusercontent.com/a2-4am/a2rchery/4aff749cb1a8e162249cedea6b34a31386ea05a6/a2rchery.py
+          CWB_GW="$HOME/.local/bin/gw" CWB_A2RCHERY="$RUNNER_TEMP/a2rchery.py" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.A2r.A2rExternalConformanceTests" \
+            --logger "trx;LogFileName=a2r-oracle-tests.trx"
+
+      # Hard gate: MAME castool renders our Commodore TAP files to audio, and the audio has to last as
+      # long as our decoding of the pulses says (version 1 long pulses, version 0 overflow bytes).
+      - name: C64 TAP oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_FLOPTOOL: "1"
+        run: |
+          sudo apt-get install -y mame-tools
+          dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.C64Tap.C64TapExternalConformanceTests" \
+            --logger "trx;LogFileName=c64tap-oracle-tests.trx"
+
+      # Hard gate: MAME floptool loads the complete Union Demo (the sample the Pasti authors
+      # publish, hash-pinned) and its ST writer recovers the standard track 0 sectors, which must be
+      # the bytes our reader takes from the Pasti records.
+      - name: Pasti oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_FLOPTOOL: "1"
+        run: |
+          sudo apt-get install -y mame-tools
+          curl -sfL -o "$RUNNER_TEMP/UnionDemo.zip" http://pasti.fxatari.com/downloads/UnionDemo.zip
+          echo "c6dd827ad17f1b6076eafcc246e09913511c0a532f1beec4ace6ce59352af388  $RUNNER_TEMP/UnionDemo.zip" | sha256sum -c -
+          unzip -o -q "$RUNNER_TEMP/UnionDemo.zip" -d "$RUNNER_TEMP"
+          CWB_UNIONDEMO="$RUNNER_TEMP/UnionDemo.stx" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Pasti.PastiExternalConformanceTests" \
+            --logger "trx;LogFileName=pasti-oracle-tests.trx"
+
+      # Hard gate: MAME floptool turns an 800K Apple GCR image into MOOF, we rebuild a MOOF from the
+      # parts we list (and edit one track), and floptool decodes our result to the expected sectors.
+      - name: MOOF oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_FLOPTOOL: "1"
+        run: |
+          sudo apt-get install -y mame-tools
+          dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Moof.MoofExternalConformanceTests" \
+            --logger "trx;LogFileName=moof-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the

@@ -5,8 +5,8 @@ using FileFormat.FreeArc;
 namespace Compression.Tests.FreeArc;
 
 /// <summary>
-/// The rep, delta and exe stages against archives FreeArc 0.67 wrote with <c>-mrep:1mb</c>,
-/// <c>-mdelta</c>, <c>-mexe</c> and its <c>-mx</c> default chain <c>rep+exe+delta+lzma</c>
+/// The rep, delta, exe, 4x4, tor, ppmd and grzip stages against archives FreeArc 0.67 wrote with
+/// <c>-mrep:1mb</c>, <c>-mdelta</c>, <c>-mexe</c>, <c>-mgrzip:mN</c>, its default chains and more
 /// (ReferenceVectors/mkfilters.py; expected bytes in filters.tsv are what <c>Arc.exe x</c> extracted).
 /// </summary>
 [TestFixture]
@@ -37,9 +37,30 @@ public sealed class FreeArcFilterTests {
   [TestCase("tor-12", "tor:12:153kb:h1mb")]
   [TestCase("filters-m1", "rep:153kb:256+4x4:tor:3:153kb")]
   [TestCase("filters-m2", "*")]
+  [TestCase("ppmd-6", "ppmd:6:16mb")]
+  [TestCase("ppmd-restart", "ppmd:12:256kb")]
+  [TestCase("ppmd-cutoff", "ppmd:12:256kb:r")]
+  [TestCase("ppmd-freeze", "ppmd:12:256kb:r2")]
+  [TestCase("grzip-m1", "grzip:153kb:m1:l32:h15")]
+  [TestCase("grzip-m2", "grzip:153kb:m2:l32:h15")]
+  [TestCase("grzip-m3", "grzip:153kb:m3:l32:h15")]
+  [TestCase("grzip-m4", "grzip:153kb:m4:l32:h15")]
+  [TestCase("grzip-strong", "grzip:153kb:m1:l32:h15:s")]
+  [TestCase("grzip-nolzp", "grzip:153kb:m3:l")]
+  [TestCase("grzip-delta", "grzip:64kb:m2:l32:h15:d")]
+  [TestCase("text-m3", "grzip:168kb:m2:l32:h15")]
+  [TestCase("text-m4", "grzip:168kb:m1:l32:h15")]
+  [TestCase("lzp", "lzp:153kb:64:h18")]
+  [TestCase("lzp-short", "lzp:64kb:12:h12:d8kb:s20")]
+  [TestCase("lzp-tor", "lzp:153kb:16:h16+tor:3:153kb")]
+  [TestCase("dict", "dict:168kb")]
+  [TestCase("dict-p", "dict:64kb:l8192:m400:s100")]
+  [TestCase("text-m5", "dict:168kb:80%:l8192:m400:s100+lzp:168kb:90%:65:h18:d1mb+4x4:b7mb:ppmd:8:96mb")]
+  [TestCase("text-mx", "dict:168kb:80%:l8192:m400:s100+lzp:168kb:92%:145:h18:d1mb+ppmd:16:384mb")]
+  [TestCase("text-m9x", "dict:168kb:75%+lzma:168kb:normal:bt4:128")]
   public void GivenFreeArcArchive_WhenExtracted_ThenEveryFileMatchesArc(string vector, string method) {
     var expected = Manifest.Value.Where(r => r.Archive == vector + ".arc").ToArray();
-    Assert.That(expected, Has.Length.EqualTo(5));
+    Assert.That(expected, Is.Not.Empty);
     using var reader = new FreeArcReader(new MemoryStream(FreeArcTests.Vector(vector)));
 
     if (method != "*")
@@ -83,6 +104,239 @@ public sealed class FreeArcFilterTests {
     var stream = Words(0, unchecked((int)0xFFFFFFFF), 10).Concat("abc"u8.ToArray()).ToArray();
     Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("4x4:lzma", stream, 10));
   }
+
+  [TestCase("grzip:153kb:m1:l32:h15", true)]
+  [TestCase("grzip:64kb:m2:l32:h15:d:t2:i0", true)]
+  [TestCase("grzip:m3:l:s:a", true)]
+  [TestCase("grzip:8mb:m4:24", true)]
+  [TestCase("grzip:m3:x7", false)]
+  public void GivenAGrzipStage_WhenCheckedForSupport_ThenOnlyFreeArcsOptionsAreAccepted(string method, bool supported)
+    => Assert.That(FreeArcMethods.IsSupported(method), Is.EqualTo(supported));
+
+  [Test]
+  public void GivenAGrzipStoredBlock_WhenDecoded_ThenItsBytesAreCopied() {
+    var stream = GrzipBlock(size: 3, mode: -1, aux: 0, "abc"u8);
+    Assert.That(FreeArcMethods.Decode("grzip", stream, 3), Is.EqualTo("abc"u8.ToArray()));
+  }
+
+  [Test]
+  public void GivenAGrzipBlockWithAReservedFieldSet_WhenDecoded_ThenItIsRefused() {
+    var stream = GrzipBlock(size: 3, mode: -1, aux: 0, "abc"u8);
+    stream[24] = 1;
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("grzip", stream, 3));
+  }
+
+  [Test]
+  public void GivenAGrzipBlockCutShort_WhenDecoded_ThenItIsRefused() {
+    var stream = GrzipBlock(size: 3, mode: -1, aux: 0, "abc"u8);
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("grzip", stream[..^1], 3));
+  }
+
+  [Test]
+  public void GivenAGrzipBlockWhoseSizeDisagreesWithItsData_WhenDecoded_ThenItIsRefused() {
+    var stream = GrzipBlock(size: 4, mode: -1, aux: 0, "abc"u8);
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("grzip", stream, 4));
+  }
+
+  [TestCase(-2, 9)]
+  [TestCase(-3, 0)]
+  public void GivenAGrzipBlockOfAnUnknownMode_WhenDecoded_ThenItIsRefused(int mode, int aux) {
+    var stream = GrzipBlock(size: 0, mode, aux, []);
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("grzip", stream, 0));
+  }
+
+  [Test]
+  public void GivenAGrzipArchiveWithOneByteFlipped_WhenExtracted_ThenItNeverYieldsTheWrongBytesSilently() {
+    var data = FreeArcTests.Vector("grzip-m2");
+    var expected = Manifest.Value.Single(r => r.Archive == "grzip-m2.arc" && r.Name == "text.txt");
+    data[data.Length / 2] ^= 0x40;
+    try {
+      using var reader = new FreeArcReader(new MemoryStream(data));
+      var text = reader.Extract(reader.Entries.Single(e => e.Name == "text.txt"));
+      Assert.That(Convert.ToHexStringLower(SHA256.HashData(text)), Is.Not.EqualTo(expected.Sha256));
+    } catch (InvalidDataException) {
+      // refused: the block no longer decodes to its recorded size or CRC
+    }
+  }
+
+  private static byte[] GrzipBlock(int size, int mode, int aux, ReadOnlySpan<byte> payload) {
+    var block = new byte[28 + payload.Length];
+    BitConverter.TryWriteBytes(block.AsSpan(0), size);
+    BitConverter.TryWriteBytes(block.AsSpan(4), mode);
+    BitConverter.TryWriteBytes(block.AsSpan(8), aux);
+    BitConverter.TryWriteBytes(block.AsSpan(16), payload.Length);
+    payload.CopyTo(block.AsSpan(28));
+    return block;
+  }
+
+  [TestCase("lzp:153kb:64:h18", true)]
+  [TestCase("lzp:160mb:145:h23:d1gb", true)]
+  [TestCase("lzp:3346kb:90%:65:h22:d1mb:s24", true)]
+  [TestCase("lzp:b64kb:l12:h12", true)]
+  [TestCase("lzp:h40", false)]
+  [TestCase("lzp:x1", false)]
+  public void GivenAnLzpStage_WhenCheckedForSupport_ThenFreeArcsParametersAreRead(string method, bool supported)
+    => Assert.That(FreeArcMethods.IsSupported(method), Is.EqualTo(supported));
+
+  [Test]
+  public void GivenAStoredLzpChunk_WhenDecoded_ThenItsBytesAreCopied() {
+    var stream = new byte[] { 0xFD, 0xFF, 0xFF, 0xFF, (byte)'a', (byte)'b', (byte)'c' };
+    Assert.That(FreeArcMethods.Decode("lzp:64:h10", stream, 3), Is.EqualTo("abc"u8.ToArray()));
+  }
+
+  [Test]
+  public void GivenAnLzpBlockOfOnlyItsHead_WhenDecoded_ThenItIsRefused() {
+    var stream = new byte[16];
+    stream[0] = 12;
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("lzp:64:h10", stream, 12));
+  }
+
+  [Test]
+  public void GivenAnLzpBlockOfLiterals_WhenDecoded_ThenTheyAreOutputInOrder() {
+    // 12 head bytes and four literal tokens; no 0xB5, so no match length is read from the back.
+    var body = "0123456789abcdef"u8.ToArray();
+    var stream = new byte[] { 16, 0, 0, 0 }.Concat(body).ToArray();
+    Assert.That(FreeArcMethods.Decode("lzp:64:h10", stream, 16), Is.EqualTo(body));
+  }
+
+  [Test]
+  public void GivenAnLzpBlockLargerThanItsBlockSize_WhenDecoded_ThenItIsRefused() {
+    var body = "0123456789abcdef"u8.ToArray();
+    var stream = new byte[] { 16, 0, 0, 0 }.Concat(body).ToArray();
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("lzp:b15b:64:h10", stream, 16));
+  }
+
+  [Test]
+  public void GivenAnLzpChunkCutShort_WhenDecoded_ThenItIsRefused() {
+    var stream = new byte[] { 20, 0, 0, 0, 1, 2, 3 };
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("lzp:64:h10", stream, 20));
+  }
+
+  [TestCase("dict:168kb", true)]
+  [TestCase("dict:p:64mb:85%", true)]
+  [TestCase("dict:3346kb:80%:l8192:m400:s100", true)]
+  [TestCase("dict:f:c30:r2:b1mb", true)]
+  [TestCase("dict:q7", false)]
+  public void GivenADictStage_WhenCheckedForSupport_ThenFreeArcsParametersAreRead(string method, bool supported)
+    => Assert.That(FreeArcMethods.IsSupported(method), Is.EqualTo(supported));
+
+  [Test]
+  public void GivenADictBlock_WhenDecoded_ThenWordsLiteralsAndEscapesAreExpanded() {
+    // Byte 'A' is the one-byte word "the", byte 'B' starts two-byte codes; 'B',0 is "hello" and
+    // 'B',1 shares 3 bytes with it: "help". The escape byte 'Z' passes 'A' through literally.
+    var dictionary = new List<byte>();
+    var single = new byte[256];
+    single['A'] = 3;
+    single['B'] = 1;
+    dictionary.AddRange(single);
+    var shared = new byte[256];
+    shared[1] = 3;
+    dictionary.AddRange(shared);
+    dictionary.AddRange("the"u8.ToArray());
+    dictionary.Add(0); // separator
+    dictionary.AddRange("hello"u8.ToArray());
+    dictionary.Add(0);
+    dictionary.AddRange("p"u8.ToArray());
+    dictionary.Add(0);
+    for (var d = 2; d < 256; ++d)
+      dictionary.Add(0);
+    dictionary.Add((byte)'Z'); // escape
+    dictionary.AddRange(new byte[] { (byte)'A', (byte)' ', (byte)'B', 0, (byte)' ', (byte)'B', 1, (byte)'!', (byte)'Z', (byte)'A' });
+    var block = dictionary.ToArray();
+    var stream = BitConverter.GetBytes(block.Length).Concat(block).ToArray();
+
+    Assert.That(FreeArcMethods.Decode("dict", stream, 16), Is.EqualTo("the hello help!A"u8.ToArray()));
+  }
+
+  [Test]
+  public void GivenADictBlockWhoseFirstWordSharesAPrefix_WhenDecoded_ThenItIsRefused() {
+    var block = new byte[256 + 256 + 2];
+    block['B'] = 1;
+    block[256] = 2; // the first two-byte word claims 2 shared bytes
+    var stream = BitConverter.GetBytes(block.Length).Concat(block).ToArray();
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("dict", stream, 0));
+  }
+
+  [Test]
+  public void GivenADictBlockCutInsideItsDictionary_WhenDecoded_ThenItIsRefused() {
+    var block = new byte[100];
+    var stream = BitConverter.GetBytes(block.Length).Concat(block).ToArray();
+    Assert.Throws<InvalidDataException>(() => FreeArcMethods.Decode("dict", stream, 0));
+  }
+
+  [Test]
+  public void GivenAStoredDictChunk_WhenDecoded_ThenItsBytesAreCopied() {
+    var stream = new byte[] { 0xFE, 0xFF, 0xFF, 0xFF, (byte)'o', (byte)'k' };
+    Assert.That(FreeArcMethods.Decode("dict", stream, 2), Is.EqualTo("ok"u8.ToArray()));
+  }
+
+  [TestCase("crypt-aes", "Secret", "aes-256/ctr")]
+  [TestCase("crypt-aes128-cfb", "Secret", "aes-128/cfb")]
+  [TestCase("crypt-blowfish", "Secret", "blowfish-448/ctr")]
+  [TestCase("crypt-serpent", "Secret", "serpent-256/ctr")]
+  [TestCase("crypt-twofish", "Secret", "twofish-256/ctr")]
+  [TestCase("crypt-chain", "Secret", "blowfish-448/cfb")]
+  [TestCase("crypt-headers", "Secret", "aes-256/ctr")]
+  [TestCase("crypt-latin1", "P\u00e4sswort", "aes-256/ctr")]
+  public void GivenAnEncryptedArchive_WhenExtractedWithThePassword_ThenEveryFileMatchesArc(string vector, string password, string cipher) {
+    var expected = Manifest.Value.Where(r => r.Archive == vector + ".arc").ToArray();
+    Assert.That(expected, Has.Length.EqualTo(5));
+    using var reader = new FreeArcReader(new MemoryStream(FreeArcTests.Vector(vector)), password: password);
+
+    Assert.That(reader.Entries.Where(e => !e.IsDirectory).All(e => e.Method.Contains("+" + cipher + ":")), Is.True, string.Join(", ", reader.Entries.Select(e => e.Method).Distinct()));
+    Assert.Multiple(() => {
+      foreach (var row in expected) {
+        var data = reader.Extract(reader.Entries.Single(e => e.Name == row.Name));
+        Assert.That(Convert.ToHexStringLower(SHA256.HashData(data)), Is.EqualTo(row.Sha256), row.Name);
+      }
+    });
+  }
+
+  [TestCase("crypt-aes")]
+  [TestCase("crypt-serpent")]
+  public void GivenAnEncryptedArchive_WhenExtractedWithAWrongPassword_ThenItIsRefusedBeforeDecoding(string vector) {
+    using var reader = new FreeArcReader(new MemoryStream(FreeArcTests.Vector(vector)), password: "secret");
+    var entry = reader.Entries.First(e => e.Size > 0);
+    Assert.That(() => reader.Extract(entry), Throws.TypeOf<InvalidDataException>().With.Message.Contains("wrong password"));
+  }
+
+  [Test]
+  public void GivenAnEncryptedArchive_WhenExtractedWithoutAPassword_ThenItIsRefused() {
+    using var reader = new FreeArcReader(new MemoryStream(FreeArcTests.Vector("crypt-twofish")));
+    var entry = reader.Entries.First(e => e.Size > 0);
+    Assert.That(() => reader.Extract(entry), Throws.TypeOf<NotSupportedException>().With.Message.Contains("password"));
+  }
+
+  [Test]
+  public void GivenEncryptedHeaders_WhenOpenedWithoutAPassword_ThenTheDescriptorListsTheRawArchive() {
+    var descriptor = new FreeArcFormatDescriptor();
+    var listed = descriptor.List(new MemoryStream(FreeArcTests.Vector("crypt-headers")), null);
+    Assert.That(listed.Select(e => e.Name), Is.EqualTo(new[] { "FULL.arc", "metadata.ini" }));
+    var withPassword = descriptor.List(new MemoryStream(FreeArcTests.Vector("crypt-headers")), "Secret");
+    Assert.That(withPassword.Select(e => e.Name), Is.EquivalentTo(Manifest.Value.Where(r => r.Archive == "crypt-headers.arc").Select(r => r.Name)));
+    Assert.That(withPassword.All(e => e.IsEncrypted), Is.True);
+  }
+
+  [Test]
+  public void GivenAnEncryptedArchive_WhenAFileIsAddedWithoutThePassword_ThenTheEditIsRefusedAndTheArchiveIsUntouched() {
+    var original = FreeArcTests.Vector("crypt-aes");
+    var stream = new MemoryStream();
+    stream.Write(original);
+    var inputs = new[] { new Compression.Registry.ArchiveInputInfo("new.txt", "new.txt", false, "x"u8.ToArray()) };
+    Assert.That(() => ((Compression.Registry.IArchiveModifiable)new FreeArcFormatDescriptor()).Add(stream, inputs), Throws.Exception);
+    Assert.That(stream.ToArray(), Is.EqualTo(original));
+  }
+
+  [TestCase("aes-256/ctr:n1000:r0:i00112233445566778899aabbccddeeff:s00", true)]
+  [TestCase("serpent-128/cfb:n10:r0:i00112233445566778899aabbccddeeff:s00:c0000", true)]
+  [TestCase("blowfish/ctr:n1000:r0:i0011223344556677:s00", true)]
+  [TestCase("aes-256/ctr:n1000:r12:i00112233445566778899aabbccddeeff:s00", false)]
+  [TestCase("aes-256/ofb:n1000:r0:i00112233445566778899aabbccddeeff:s00", false)]
+  [TestCase("aes-100/ctr:n1000:r0:i00112233445566778899aabbccddeeff:s00", false)]
+  [TestCase("twofish-256/ctr:n1000:r0:i0011:s00", false)]
+  [TestCase("aes-256/ctr:n1000:r0:i00112233445566778899aabbccddeeff", false)]
+  public void GivenAnEncryptionStage_WhenCheckedForSupport_ThenOnlyWellFormedOnesAreAccepted(string stage, bool supported)
+    => Assert.That(FreeArcMethods.IsSupported("storing+" + stage), Is.EqualTo(supported));
 
   [Test]
   public void GivenTornadoBehindFourByFour_WhenCheckedForSupport_ThenItIsDecodable()

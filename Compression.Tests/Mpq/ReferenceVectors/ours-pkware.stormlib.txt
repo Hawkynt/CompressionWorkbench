@@ -1,0 +1,6 @@
+Data\noise.bin	5000	80000200	OK
+empty.bin	0	80000000	OK
+war3map.j	14000	80000200	OK
+(listfile)	76	80000200	OK
+Units\sparse.bin	9000	80000200	OK
+tiny.txt	3	80000200	OK

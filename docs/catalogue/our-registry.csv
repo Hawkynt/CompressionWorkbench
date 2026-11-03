@@ -1,4 +1,5 @@
 kind,id,display_name,category,filesystem,extensions,list,extract,create,modify
+format,A2r,Applesauce A2R,Archive,,.a2r,Y,Y,Y,Y
 format,Aac,AAC (ADTS),Audio,,.aac,Y,Y,Y,
 format,Ac3,AC-3 / E-AC-3,Audio,,.ac3;.eac3,Y,Y,Y,
 format,Ace,ACE,Archive,,.ace,Y,Y,Y,Y
@@ -85,6 +86,7 @@ format,BinCue,BIN/CUE,Archive,,.bin;.cue,Y,Y,Y,Y
 format,BinHex,BinHex,Wrapper,,.hqx,,Y,Y,
 format,BitRock,BitRock / InstallBuilder,Archive,,,Y,Y,,
 format,Bkf,Microsoft NTBackup (MTF),Archive,,.bkf,Y,Y,Y,Y
+format,BlakHole,BlakHole,Archive,,.bh,Y,Y,,
 format,BochsDisk,Bochs Redolog Disk,Archive,,.redolog,Y,Y,,
 format,Bonk,Bonk Audio,Audio,,.bonk,Y,Y,Y,
 format,BriefLz,BriefLZ,Stream,,.blz,,Y,Y,
@@ -97,6 +99,8 @@ format,Btrfs,Btrfs Filesystem Image,Archive,Y,.btrfs;.img,Y,Y,Y,
 format,Bwav,BWAV (Switch stream),Audio,,.bwav,Y,Y,Y,
 format,Bzexe,bzexe executable wrapper,Archive,,,Y,Y,,
 format,Bzip2,BZip2,Stream,,.bz2;.bzip2,,Y,Y,
+format,C64Sfx,C64/C128 SFX (self-extracting LHA),Archive,,.sfx,Y,Y,,
+format,C64Tap,Commodore raw tape (C64-TAPE-RAW),Archive,,,Y,Y,Y,Y
 format,Cab,CAB,Archive,,.cab,Y,Y,Y,Y
 format,Caf,CAF (Core Audio Format),Audio,,.caf,Y,Y,Y,
 format,Cb7,CB7,Archive,,.cb7,Y,Y,Y,Y
@@ -333,6 +337,7 @@ format,Mng,MNG (multi-image PNG),Archive,,.mng,Y,Y,,
 format,Mo,MO (gettext binary catalog),Archive,,.mo,Y,Y,Y,
 format,Mobi,MOBI / AZW (Amazon eBook),Archive,,.mobi;.prc;.azw;.azw3,Y,Y,Y,
 format,Mod,MOD (ProTracker / SoundTracker),Audio,,.mod,Y,Y,,
+format,Moof,Applesauce MOOF,Archive,,.moof,Y,Y,Y,Y
 format,MooseFs,MooseFS,Archive,Y,.mfsm,Y,Y,,
 format,Mp3,MP3 (MPEG audio),Audio,,.mp3;.mp2,Y,Y,Y,
 format,Mp4,MP4 / MOV (demuxed),Video,,.mp4;.m4v;.m4a;.mov;.3gp;.3g2,Y,Y,Y,
@@ -340,7 +345,7 @@ format,Mpc,Musepack (MPC),Audio,,.mpc;.mpp;.mp+,Y,Y,,
 format,MpegPs,MPEG Program Stream,Video,,.mpg;.mpeg;.vob;.m2p;.ps,Y,Y,Y,
 format,MpegTs,MPEG-2 Transport Stream,Archive,,.ts;.m2ts;.mts,Y,Y,Y,Y
 format,Mpo,MPO (stereoscopic JPEG),Archive,,.mpo,Y,Y,,
-format,Mpq,MPQ,Archive,,.mpq,Y,Y,Y,Y
+format,Mpq,MPQ,Archive,,.mpq;.w3m;.w3x,Y,Y,Y,Y
 format,MPress,MPRESS (Win32 PE / Linux ELF),Archive,,,Y,Y,,
 format,Msa,MSA (Magic Shadow Archiver),Archive,Y,.msa,Y,Y,Y,Y
 format,Msg,MSG,Archive,,.msg,Y,Y,Y,Y
@@ -412,6 +417,7 @@ format,ParallelsHdd,Parallels Disk (HDS),Archive,,.hds,Y,Y,,
 format,Parquet,Apache Parquet,Archive,,.parquet,Y,Y,,
 format,Partclone,partclone (Clonezilla),Archive,,.aa;.img,Y,Y,Y,
 format,PartitionedDisk,Partitioned disk image,Archive,,,Y,Y,Y,Y
+format,Pasti,Pasti (Atari ST STX),Archive,,.stx,Y,Y,,
 format,Pbp,PSP PBP Archive,Archive,,.pbp,Y,Y,Y,
 format,Pc98,NEC PC-98 DOS,Archive,Y,.hdm;.fdi;.d88,Y,Y,Y,Y
 format,Pcap,PCAP (libpcap capture),Archive,,.pcap;.cap,Y,Y,,
@@ -448,6 +454,7 @@ format,Qnx4,QNX4 FS,Archive,Y,.qnx4;.qnx,Y,Y,Y,Y
 format,Qnx6,QNX6 Neutrino FS,Archive,Y,.qnx6,Y,Y,Y,Y
 format,Qoa,Quite OK Audio (QOA),Audio,,.qoa,Y,Y,Y,
 format,Qoi,Quite OK Image (QOI),Archive,,.qoi,Y,Y,Y,
+format,QuadrupleD,Quadruple D,Archive,,.qda,Y,Y,,
 format,QuickLz,QuickLZ,Stream,,.quicklz,,Y,Y,
 format,Rar,RAR,Archive,,.rar,Y,Y,Y,Y
 format,Rarc,Nintendo RARC,Archive,,.arc;.rarc,Y,Y,Y,
@@ -512,6 +519,7 @@ format,Stacker,Stacker CVF,Archive,Y,.sta;.stk,Y,Y,Y,Y
 format,Stl,STL (stereolithography),Archive,,.stl,Y,Y,,
 format,Stm,STM (Scream Tracker 2),Audio,,.stm,Y,Y,,
 format,Storable,Perl Storable object graph,Archive,,.storable;.sto,Y,Y,Y,
+format,StreamHfe,HxC Stream HFE,Archive,,,Y,Y,Y,Y
 format,StuffIt,StuffIt,Archive,,.sit,Y,Y,Y,Y
 format,StuffItX,StuffIt X,Archive,,.sitx,Y,Y,Y,
 format,Sup,Blu-ray PGS Subtitles,Archive,,.sup,Y,Y,Y,Y
@@ -739,6 +747,7 @@ block,bb:BB_Omega,Omega Coding,Entropy,,,,Y,Y,
 block,bb:BB_PackBits,PackBits,Transform,,,,Y,Y,
 block,bb:BB_Paq8hp,PAQ8hp (reduced model set),ContextMixing,,,,Y,Y,
 block,bb:BB_Pithy,Pithy,Dictionary,,,,Y,Y,
+block,bb:BB_PkwareDcl,PKWARE DCL Implode,Dictionary,,,,Y,Y,
 block,bb:BB_PPM,PPM,ContextMixing,,,,Y,Y,
 block,bb:BB_Ppmd,PPMd,ContextMixing,,,,Y,Y,
 block,bb:BB_Quantum,Quantum,Dictionary,,,,Y,Y,

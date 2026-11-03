@@ -106,6 +106,22 @@
          where a content file failed to deploy, and checked in rather than downloaded so it cannot
          pass on a runner with no network. See ReferenceVectors/README.md for provenance; the
          generator scripts beside them are documentation, not build inputs. -->
+    <!-- LZAV streams the reference library wrote; see BuildingBlocks/LzavVectors/README.md. -->
+    <EmbeddedResource Include="BuildingBlocks/LzavVectors/*.lzav">
+      <LogicalName>LzavVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- BriefLZ, LZG and Lizard streams the reference tools wrote; see BuildingBlocks/FormatBlockVectors/README.md. -->
+    <EmbeddedResource Include="BuildingBlocks\FormatBlockVectors\*.bin">
+      <LogicalName>FormatBlockVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- FastLZ blocks the reference library wrote; see BuildingBlocks/FastLzVectors/README.md. -->
+    <EmbeddedResource Include="BuildingBlocks/FastLzVectors/*.flz">
+      <LogicalName>FastLzVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- LZF streams liblzf 3.6 wrote; see BuildingBlocks/LzfVectors/README.md. -->
+    <EmbeddedResource Include="BuildingBlocks\LzfVectors\*.lzf">
+      <LogicalName>LzfVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="StructuredPseudoArchives\ReferenceVectors\*"
                       Exclude="StructuredPseudoArchives\ReferenceVectors\*.py;StructuredPseudoArchives\ReferenceVectors\*.pl;StructuredPseudoArchives\ReferenceVectors\*.ps1;StructuredPseudoArchives\ReferenceVectors\README.md">
       <LogicalName>ReferenceVectors.%(Filename)%(Extension)</LogicalName>
@@ -176,6 +192,14 @@
     <!-- A cabinet with a Quantum folder Microsoft's tools wrote; see Cab/QuantumVectors/README.md. -->
     <EmbeddedResource Include="Cab\QuantumVectors\*.cab">
       <LogicalName>CabQuantumVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- ZIP archives from libarchive's test suite; see Zip/LibarchiveVectors/README.md. -->
+    <EmbeddedResource Include="Zip\LibarchiveVectors\*.zipx">
+      <LogicalName>ZipLibarchiveVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- PKZIP Shrink/Reduce/Implode streams and hwzip archives; see Zip/LegacyMethodVectors/README.md. -->
+    <EmbeddedResource Include="Zip\LegacyMethodVectors\*.bin;Zip\LegacyMethodVectors\*.zip">
+      <LogicalName>ZipLegacyMethodVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- Archives FreeArc 0.67's Arc.exe wrote; see FreeArc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="FreeArc\ReferenceVectors\*.arc;FreeArc\ReferenceVectors\filters.tsv">
@@ -264,8 +288,12 @@
     <EmbeddedResource Include="Ewf\ReferenceVectors\*.gz">
       <LogicalName>EwfVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- MPQ archives StormLib wrote and the bytes StormLib extracts from them; see Mpq/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Mpq\ReferenceVectors\*.mpq;Mpq\ReferenceVectors\*.manifest;Mpq\ReferenceVectors\*.txt;Mpq\ReferenceVectors\*.bin">
+      <LogicalName>MpqVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- ACE archives from acefile's test corpus and ones our writer produced for acefile; see Ace/ReferenceVectors/README.md. -->
-    <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\acefile-listing.txt">
+    <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\*.c0?;Ace\ReferenceVectors\acefile-listing.txt;Ace\ReferenceVectors\volumes.tsv">
       <LogicalName>AceVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- Compact Pro archives from the Garbo Mac archive and ones our writer produced for unar; see CompactPro/ReferenceVectors/README.md. -->
@@ -295,6 +323,14 @@
     <!-- ZIP archives written by third-party archivers; see Zip/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Zip\ReferenceVectors\*.zip">
       <LogicalName>ZipVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- The BlakHole sample from the Archive Team corpus; see BlakHole/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="BlakHole\ReferenceVectors\*.bh">
+      <LogicalName>BlakHoleVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Real C64/C128 SFX archives from zimmers.net; see C64Sfx/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="C64Sfx\ReferenceVectors\*.sfx">
+      <LogicalName>C64SfxVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- DAR slices written by dar itself (2.4.24 to 2.8.6); see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">

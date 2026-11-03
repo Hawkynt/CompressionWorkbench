@@ -102,7 +102,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 
 | Format | Id | Extensions | State | Test | Maintenance | Notes | Reference |
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
-| [ACE](https://en.wikipedia.org/wiki/ACE_(compressed_file_format)) | `Ace` | `.ace` | R/W | ✅ | defrag · wipe | Reads ACE 1.0/2.0 (all modes, solid, encrypted, SFX; converted from acefile); writes ACE 1.0 stored/LZ77, solid and encrypted archives acefile reads; multi-volume members are refused | [GitHub](https://github.com/droe/acefile) |
+| [ACE](https://en.wikipedia.org/wiki/ACE_(compressed_file_format)) | `Ace` | `.ace` | R/W | ✅ | defrag · wipe | Reads ACE 1.0/2.0 (all modes, solid, encrypted, SFX; converted from acefile); reads multi-volume sets from the volumes after the one opened (`.c00`, `.c01`, …); writes ACE 1.0 stored/LZ77, solid and encrypted archives acefile reads | [GitHub](https://github.com/droe/acefile) |
 | [afio](https://en.wikipedia.org/wiki/Afio) | `Afio` | `.afio` | WORM | ✅ | — | Writes stored members only; the per-file gzip extension is read but not written | [GitHub](https://github.com/kholtman/afio) |
 | [ALZip](https://en.wikipedia.org/wiki/ALZip) | `AlZip` | `.alz` | R/W | ✅ | wipe | Reads stored, deflate and ALZ-bzip2 members, ZipCrypto, CP949 names; writes stored/deflate (optionally encrypted) archives unalz extracts; split archives are refused | [GitHub](https://github.com/alkegi/unalz) |
 | AMPK (Amiga Pack) | `Ampk` | `.ampk` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/AmiPack) |
@@ -110,6 +110,8 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [ARC](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Arc` | `.arc` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/hyc/arc) |
 | [ARJ](https://en.wikipedia.org/wiki/ARJ) | `Arj` | `.arj` | R/W | ✅ | defrag · wipe |  | [arj.sourceforge.net](https://arj.sourceforge.net) |
 | [Binary II](https://en.wikipedia.org/wiki/Binary_II) | `BinaryII` | `.bny` `.bqy` | R/W | ✅ | defrag · wipe |  | [mirrors.apple2.org.za](https://mirrors.apple2.org.za/ground.icaen.uiowa.edu/MiscInfo/Binary2/bin2.specs) |
+| BlakHole | `BlakHole` | `.bh` | R | ✅ | — | Read-only, Deflate members; layout measured on a real sample (every CRC-32 holds): [BLAKHOLE-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/BLAKHOLE-ON-DISK.md) | [Archive Team](http://fileformats.archiveteam.org/wiki/BlakHole) |
+| C64/C128 SFX | `C64Sfx` | `.sfx` | R | ✅ | — | Chris Smeets' self-extracting LHA (-lh1-); unar extracts the same bytes; read-only because the extractor stub is not ours to ship | [unusedino.de](http://unusedino.de/ec64/technical/formats/sfx.html) |
 | [CAB](https://en.wikipedia.org/wiki/Cabinet_(file_format)) | `Cab` | `.cab` | R/W | ✅ | defrag · wipe |  | [cabextract.org.uk](https://www.cabextract.org.uk/libmspack/) |
 | [CB7](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cb7` | `.cb7` | R/W | ✅ | defrag · wipe | 7z-backed comic book archive | [7-zip.org](https://www.7-zip.org/7z.html) |
 | [CBR](https://en.wikipedia.org/wiki/Comic_book_archive) | `Cbr` | `.cbr` | R/W | ✅ | defrag · wipe | RAR-backed comic book archive | [rarlab.com](https://www.rarlab.com/technote.htm) |
@@ -123,7 +125,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [DMS](https://en.wikipedia.org/wiki/Disk_Masher_System) | `Dms` | `.dms` | WORM | ✅ | defrag | Reads every mode (stored, Simple, Quick, Medium, Deep, Heavy 1/2) with the decompressor state carried from track to track, plus password decryption, banner and FILE_ID.DIZ texts; Medium and Heavy 2 match xdms on real Aminet archives. Writes stored and RLE tracks that `xdms t` accepts | [GitHub](https://github.com/MacPaw/XADMaster/blob/master/libxad/clients/DMS.c) |
 | [EGG (ALZip)](https://en.wikipedia.org/wiki/EGG_(file_format)) | `Egg` | `.egg` | WORM | ✅ | defrag |  | [GitHub](https://github.com/alkegi/docs/blob/master/egg.md) |
 | [ESD](https://en.wikipedia.org/wiki/Windows_Imaging_Format) | `Esd` | `.esd` | WORM | ✅ | wipe | Solid LZMS WIM; created images carry a metadata resource but entries re-list as resources | [Microsoft Learn](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview) |
-| [FreeArc](https://en.wikipedia.org/wiki/FreeArc) | `FreeArc` | `.arc` | R/W | ✅ | defrag · wipe | Reads FreeArc 0.67 archives; decodes storing, lzma and Tornado blocks, also behind the rep, delta and exe filters and inside 4x4 (the `-m1`..`-m9`/`-mx` chains); ppmd, lzp, grzip and encryption are refused. Writes storing/lzma archives that FreeArc 0.67 extracts byte-identically. Layout: [FREEARC-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/FREEARC-ON-DISK.md) | [GitHub](https://github.com/Bulat-Ziganshin/FA) |
+| [FreeArc](https://en.wikipedia.org/wiki/FreeArc) | `FreeArc` | `.arc` | R/W | ✅ | defrag · wipe | Reads FreeArc 0.67 archives; decodes storing, lzma, Tornado, PPMd and GRZip blocks, also behind the rep, delta, exe, LZP and dict filters and inside 4x4, so every default mode extracts, and decrypts AES, Blowfish, Serpent and Twofish stages (data and `-hp` headers) given the password; `mm` and external compressors are refused. Writes storing/lzma archives that FreeArc 0.67 extracts byte-identically. Layout: [FREEARC-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/FREEARC-ON-DISK.md) | [GitHub](https://github.com/Bulat-Ziganshin/FA) |
 | HA | `Ha` | `.ha` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/HA) |
 | [IFF CDAF](https://en.wikipedia.org/wiki/Interchange_File_Format) | `IffCdaf` | `.cdaf` | R/W | ✅ | defrag · wipe |  | [Aminet](https://aminet.net) |
 | [LBR](https://en.wikipedia.org/wiki/LBR_(file_format)) | `Lbr` | `.lbr` | R/W | ✅ | defrag · wipe |  | [gaby.de](http://www.gaby.de/cpm/manuals/archive/lbr.txt) |
@@ -136,6 +138,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [NuFX / ShrinkIt](https://en.wikipedia.org/wiki/ShrinkIt) | `NuFx` | `.shk` `.sdk` `.bxy` | R/W | ✅ | defrag · shrink · wipe |  | [nulib.com](https://nulib.com/library/FTN.e08002.htm) |
 | PackIt | `PackIt` | `.pit` | R/W | ✅ | defrag · wipe | Reads stored and Huffman entries, writes stored; encrypted entries are refused | [GitHub](https://github.com/MacPaw/XADMaster) |
 | [PEA](https://peazip.github.io/pea-file-format.html) | `Pea` | `.pea` | WORM | ✅ | — | Single-volume, unencrypted streams; every compression level and check algorithm | [peazip.github.io](https://peazip.github.io/pea-file-format.html) |
+| Quadruple D | `QuadrupleD` | `.qda` | R | ✅ | — | Read-only QDA0 game archives: stored or byte-pair-encoded (Gage BPE, 32-bit block lengths) files | [Wikipedia (byte pair encoding)](https://en.wikipedia.org/wiki/Byte_pair_encoding) |
 | [RAR](https://en.wikipedia.org/wiki/RAR_(file_format)) | `Rar` | `.rar` | R/W | ✅ | wipe | v1–v5 readers; creation and edits emit RAR4/RAR5 without claiming WinRAR encoder parity | [rarlab.com](https://www.rarlab.com/technote.htm) |
 | [SeqBox](https://github.com/MarcoPon/SeqBox) | `SeqBox` | `.sbx` | WORM | ✅ | — | Single-file recoverable container; versions 1-4, metadata block optional | [GitHub](https://github.com/MarcoPon/SeqBox) |
 | [7z](https://en.wikipedia.org/wiki/7z) | `SevenZip` | `.7z` | R/W | ✅ | compress · wipe |  | [7-zip.org](https://www.7-zip.org/7z.html) |
@@ -270,7 +273,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Minecraft region (MCA) | `Mca` | `.mca` `.mcr` | WORM | ✅ | — | Chunks are `chunk_X_Z.nbt`; gzip, zlib, stored and LZ4-Java block-stream creation; oversized (external `.mcc`) chunks are listed but not written or extracted | [minecraft.wiki](https://minecraft.wiki/w/Region_file_format) |
 | Cyan Mohawk | `Mhk` | `.mhk` | WORM | ✅ | defrag · wipe | Entries are typed tDAT_NNNN names | [GitHub](https://github.com/scummvm/scummvm) |
 | Westwood MIX | `Mix` | `.mix` | WORM | ✅ | defrag · wipe | Hash-keyed names; hex names are synthesised where the original is absent | [GitHub](https://github.com/OpenRA/OpenRA) |
-| [Blizzard MPQ](https://en.wikipedia.org/wiki/MPQ) | `Mpq` | `.mpq` | R/W | ✅ | defrag · wipe | Reads zlib and bzip2 sectors; other compression methods are refused | [zezula.net](http://www.zezula.net/en/mpq/main.html) |
+| [Blizzard MPQ](https://en.wikipedia.org/wiki/MPQ) | `Mpq` | `.mpq` `.w3m` `.w3x` | R/W | ✅ | defrag · wipe | Every compression mask (PKWARE DCL, zlib, bzip2, Huffman, ADPCM, sparse, LZMA), imploded and encrypted files, versions 1 and 2; StormLib extracts what we write, and in-place edits keep `(attributes)` valid. HET/BET-only archives are refused | [zezula.net](http://www.zezula.net/en/mpq/main.html) |
 | Nintendo NARC | `Narc` | `.narc` `.carc` | R/W | ✅ | defrag · wipe |  | [problemkaputt.de](https://problemkaputt.de/gbatek.htm) |
 | [Nintendo DS ROM](https://en.wikipedia.org/wiki/Nintendo_DS) | `Nds` | `.nds` | R/W | ✅ | defrag · wipe | NitroFS-oriented output, not ARM boot-code synthesis | [problemkaputt.de](https://problemkaputt.de/gbatek.htm) |
 | [NES ROM](https://en.wikipedia.org/wiki/INES) | `Nes` | `.nes` | R | ✅ | — |  | [nesdev.org](https://www.nesdev.org/wiki/INES) |
@@ -553,7 +556,7 @@ Use it when a .NET process needs to enumerate, extract, test, create, edit or in
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 2597 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
+Every public and protected member of all 2603 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
 
 <!-- API:END -->
 

@@ -25,13 +25,14 @@ Each archive was made with `Arc.exe a <archive> -i0 -cfg- <switches> <files>`:
 | `lzma-lc4.arc` | `-mlzma:lc4:lp1:pb1` | hello, empty, lines | non-default literal/position bits |
 | `dirs.arc` | `-mlzma -s- -r` | emptydir, dир (recursive), hello | directory entries, UTF-8 names, three solid blocks |
 | `comment.arc` | `lzma.arc`, then `Arc.exe c comment.arc "--archive-comment=A FreeArc comment"` | | archive comment in the footer |
-| `ppmd.arc` | `-mppmd` | hello, lines | `ppmd:10:48mb` — refused |
+| `ppmd.arc` | `-mppmd` | hello, lines | `ppmd:10:48mb` |
 | `tornado.arc` | `-m1` | hello, lines | `rep:…+4x4:tor:…` |
-| `encrypted.arc` | `-mlzma -pSecret` | hello | `lzma…+aes-256/ctr:…` data — refused |
-| `hdrenc.arc` | `-mlzma -hpSecret` | hello | encrypted directory — listed as `FULL.arc` + `metadata.ini` |
+| `encrypted.arc` | `-mlzma -pSecret` | hello | `lzma…+aes-256/ctr:…` data — refused without the password, read with it |
+| `hdrenc.arc` | `-mlzma -hpSecret` | hello | encrypted directory — listed as `FULL.arc` + `metadata.ini` without the password, read with it |
 
-`mkfilters.py` makes thirteen more from generated inputs (text, a 24000-byte random run repeated 3000
-bytes later, a table of 8-byte records, x86-like code, an empty file), each with
+`mkfilters.py` makes forty-two more from generated inputs (text, a 24000-byte random run repeated 3000
+bytes later, a table of 8-byte records, x86-like code, an empty file; the `text-*` archives hold one
+file of sentences on lines instead), each with
 `Arc.exe a <archive> -i0 -cfg- -ep1 <switch>`; `filters.tsv` lists what `Arc.exe x` extracts:
 
 | File | Switch | Method FreeArc recorded |
@@ -45,3 +46,20 @@ bytes later, a table of 8-byte records, x86-like code, an empty file), each with
 | `tor-1.arc`, `tor-2.arc`, `tor-3.arc` | `-mtor:1`, `-mtor:2`, `-mtor:3` | Tornado byte, bit and Huffman coders |
 | `tor-5.arc`, `tor-12.arc` | `-mtor:5`, `-mtor:12` | arithmetic coder, lazy and optimal parsing |
 | `filters-m1.arc`, `filters-m2.arc` | `-m1`, `-m2` | `rep+4x4:tor:3`; `-m2` also `rep+exe+4x4:tor` in a second block |
+| `ppmd-6.arc` | `-mppmd:6:16mb` | PPMd var.I |
+| `ppmd-restart.arc`, `ppmd-cutoff.arc`, `ppmd-freeze.arc` | `-mppmd:12:256kb`, `:r`, `:r2` | a model too small for the data, so every restore method runs |
+| `grzip-m1.arc` .. `grzip-m4.arc` | `-mgrzip:m1` .. `:m4` | BWT or ST4 with WFC or MTF ranks, LZP on |
+| `grzip-strong.arc`, `grzip-nolzp.arc` | `-mgrzip:m1:s`, `-mgrzip:m3:l` | strong-sorted BWT; ST4 without LZP |
+| `grzip-delta.arc` | `-mgrzip:m2:d:b64kb` | three blocks; the last is record-filtered into four nested blocks, two of them stored after LZP |
+| `text-m3.arc`, `text-m4.arc` | `-m3`, `-m4` | the text chains `grzip:…:m2:l32:h15` and `grzip:…:m1:l32:h15` |
+| `lzp.arc` | `-mlzp` | LZP with the default parameters (minimum match 64, 2^18 table) |
+| `lzp-short.arc` | `-mlzp:b64kb:12:h12:d8kb:s20` | short matches, a 2^12 table, an 8 KiB barrier and three blocks |
+| `lzp-tor.arc` | `-mlzp:16:h16+tor:3` | LZP in front of tor, as FreeArc chains it |
+| `dict.arc`, `dict-p.arc` | `-mdict`, `-mdict:p` | word dictionaries over the generated inputs; blocks that do not shrink are stored |
+| `text-m5.arc`, `text-mx.arc` | `-m5`, `-mx` | the text chains `dict+lzp+4x4:ppmd` and `dict+lzp+ppmd` |
+| `text-m9x.arc` | `-m9x` | the text chain `dict+lzma` |
+| `crypt-aes.arc`, `crypt-aes128-cfb.arc` | `-mlzma -pSecret`, `-ae=aes-128/cfb` | AES in counter and feedback mode |
+| `crypt-blowfish.arc`, `crypt-serpent.arc`, `crypt-twofish.arc` | `-ae=blowfish`, `serpent`, `twofish` | the other ciphers, counter mode |
+| `crypt-chain.arc` | `-ae=blowfish/cfb+twofish/cfb+serpent` | three encryption stages in a row |
+| `crypt-headers.arc` | `-mlzma -hpSecret` | encrypted directory as well |
+| `crypt-latin1.arc` | `-pPässwort` | a password outside ASCII |
