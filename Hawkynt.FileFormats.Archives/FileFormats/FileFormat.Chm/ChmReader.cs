@@ -42,10 +42,12 @@ public sealed class ChmReader {
   private readonly long   _chunksStart;   // byte offset of first directory chunk in stream
 
   // LZX decompression state (lazily loaded)
-  private bool   _lzxLoaded;
+  private const uint LzxcMagic = 0x43585A4C; // "LZXC" LE
+  private bool    _lzxLoaded;
   private byte[]? _lzxUncompressed;
-  private long    _lzxUncompressedSize;
-  private int     _lzxWindowBits = 15;
+  private bool    _lzxControlValid;
+  private long    _lzxResetIntervalBytes;
+  private int     _lzxWindowBits;
 
   // -------------------------------------------------------------------------
   // Public API
@@ -84,11 +86,15 @@ public sealed class ChmReader {
     // Two GUIDs (16 bytes each)
     br.ReadBytes(GuidSize);
     br.ReadBytes(GuidSize);
-    // Directory section descriptor
+    // Header section table: section 0 (file size record), then the directory (ITSP + chunks).
+    /* hs0Offset */      br.ReadUInt64();
+    /* hs0Length */      br.ReadUInt64();
     this._dirSectionOffset = (long)br.ReadUInt64();
     this._dirSectionLength = (long)br.ReadUInt64();
-    // Content offset (version >= 3)
-    this._contentOffset = this._itsfVersion >= 3 ? (long)br.ReadUInt64() : (long)headerSize;
+    // Version 3 records where content section 0 starts; before it, the content follows the directory.
+    this._contentOffset = this._itsfVersion >= 3 && headerSize >= 0x60
+      ? (long)br.ReadUInt64()
+      : this._dirSectionOffset + this._dirSectionLength;
 
     // ---- Parse ITSP header (at dirSectionOffset) ----
     stream.Position = this._dirSectionOffset;
@@ -228,27 +234,27 @@ public sealed class ChmReader {
   // -------------------------------------------------------------------------
 
   private void TryReadLzxControlData() {
-    // "::DataSpace/Storage/MSCompressed/ControlData"
+    // ::DataSpace/Storage/MSCompressed/ControlData is LZXC control data, little-endian dwords:
+    //   [0] count of dwords that follow   [1] "LZXC"   [2] version
+    //   [3] reset interval                [4] window size   [5] cache size   [6] unknown
+    // Version 2 counts the interval and the window in 32 KiB units, version 1 in bytes.
     var ctrl = this.Entries.FirstOrDefault(
       e => e.Path.Equals("::DataSpace/Storage/MSCompressed/ControlData",
                           StringComparison.OrdinalIgnoreCase));
-    if (ctrl == null || ctrl.Size < 28 || ctrl.Section != 0)
+    if (ctrl == null || ctrl.Size < 20 || ctrl.Section != 0)
       return;
 
     var data = this.ExtractSection0(ctrl);
-    // ControlData is an array of uint32 LE words
-    // word[0] = number of words following (should be 6)
-    // word[6] = LZX window size (e.g. 2 = 2^(x+15) — actually stored as a value like 2 meaning window = 2^(2+15) = 2^17)
-    //   Microsoft docs: the 7th uint32 (index 6) contains the window bits as: bits 0-4
-    if (data.Length >= 28) {
-      // word[6] (bytes 24-27)
-      var word6 = BitConverter.ToUInt32(data, 24);
-      // The window size is encoded as: 2^(word6 + 15) ... but many CHMs use word6 directly as window bits
-      // In practice CHM files store the window size directly in the lower 5 bits, ranging 15-21
-      var windowBits = (int)(word6 & 0x1F);
-      if (windowBits is >= 15 and <= 21)
-        this._lzxWindowBits = windowBits;
-    }
+    if (data.Length < 20 || BitConverter.ToUInt32(data, 4) != LzxcMagic)
+      return;
+    var version = BitConverter.ToUInt32(data, 8);
+    var unit = version >= 2 ? 0x8000L : 1L;
+    this._lzxResetIntervalBytes = BitConverter.ToUInt32(data, 12) * unit;
+    var windowBytes = BitConverter.ToUInt32(data, 16) * unit;
+    for (var bits = 15; bits <= 21; ++bits)
+      if (windowBytes == 1L << bits)
+        this._lzxWindowBits = bits;
+    this._lzxControlValid = this._lzxWindowBits > 0 && this._lzxResetIntervalBytes > 0;
   }
 
   private void EnsureLzxDecompressed() {
@@ -256,7 +262,6 @@ public sealed class ChmReader {
       return;
     this._lzxLoaded = true;
 
-    // Find the reset table and compressed content entries
     var resetTableEntry = this.Entries.FirstOrDefault(
       e => e.Path.StartsWith("::DataSpace/Storage/MSCompressed/Transform/",
                               StringComparison.OrdinalIgnoreCase) &&
@@ -270,92 +275,65 @@ public sealed class ChmReader {
            e.Section == 0);
 
     if (contentEntry == null || contentEntry.Size == 0)
-      return;
+      throw new InvalidDataException("CHM: section 1 has no MSCompressed/Content stream.");
+    if (!this._lzxControlValid)
+      throw new InvalidDataException("CHM: MSCompressed/ControlData is missing or names no valid LZX window and reset interval.");
+    if (resetTableEntry == null || resetTableEntry.Size < 40)
+      throw new InvalidDataException("CHM: section 1 has no LZX reset table, so its uncompressed length is unknown.");
 
-    // Read compressed content blob
-    var compressedData = this.ExtractSection0(contentEntry);
-
-    if (resetTableEntry != null && resetTableEntry.Size >= 32) {
-      this.DecompressLzxWithResetTable(compressedData, resetTableEntry);
-    } else {
-      // No reset table — decompress entire blob as a single LZX stream
-      // We need the uncompressed size; without reset table we attempt a best-effort decompression
-      // using a generous output buffer estimate (4x compressed)
-      var estimatedSize = (int)Math.Min(compressedData.Length * 4L, 64 * 1024 * 1024);
-      try {
-        using var ms   = new MemoryStream(compressedData);
-        var decompressor = new LzxDecompressor(ms, this._lzxWindowBits);
-        this._lzxUncompressed     = decompressor.Decompress(estimatedSize);
-        this._lzxUncompressedSize = this._lzxUncompressed.Length;
-      } catch {
-        this._lzxUncompressed     = null;
-        this._lzxUncompressedSize = 0;
-      }
-    }
+    this._lzxUncompressed = this.DecompressLzxWithResetTable(this.ExtractSection0(contentEntry), resetTableEntry);
   }
 
-  private void DecompressLzxWithResetTable(byte[] compressedData, ChmEntry resetTableEntry) {
+  private byte[] DecompressLzxWithResetTable(byte[] compressedData, ChmEntry resetTableEntry) {
     // ResetTable layout (all LE):
-    //   uint32 version
-    //   uint32 numEntries
-    //   uint32 entrySize (should be 8 — each entry is a uint64 offset)
-    //   uint32 tableHeaderSize
-    //   uint64 uncompressedSize
-    //   uint64 compressedSize
-    //   uint32 blockSize  (reset interval in uncompressed bytes, typically 0x8000 = 32 KB)
-    //   uint64[] resetOffsets  (compressed-data offsets of each reset point)
+    //   uint32 version, uint32 numEntries, uint32 entrySize (8), uint32 tableHeaderSize (40)
+    //   uint64 uncompressedSize, uint64 compressedSize, uint64 blockSize (the LZX frame, 0x8000)
+    //   uint64[numEntries] compressed offset at which each frame starts
+    // The decoder state carries across frames and is reset only every reset interval; a frame
+    // that starts a reset interval starts a fresh LZX stream.
     var rtData = this.ExtractSection0(resetTableEntry);
-    if (rtData.Length < 32)
-      return;
-
     var numEntries       = BitConverter.ToUInt32(rtData, 4);
     var entrySize        = BitConverter.ToUInt32(rtData, 8);
     var tableHeaderSize  = BitConverter.ToUInt32(rtData, 12);
     var uncompressedSize = (long)BitConverter.ToUInt64(rtData, 16);
-    /* compressedSize */
-    var blockSize        = BitConverter.ToUInt32(rtData, 28);
+    var frameSize        = (long)BitConverter.ToUInt64(rtData, 32);
 
-    if (blockSize == 0 || entrySize != 8)
-      return;
+    if (entrySize != 8 || frameSize <= 0 || frameSize > int.MaxValue)
+      throw new InvalidDataException($"CHM: LZX reset table with entry size {entrySize} and frame size {frameSize}.");
+    if (uncompressedSize < 0 || uncompressedSize > int.MaxValue)
+      throw new InvalidDataException($"CHM: LZX section of {uncompressedSize} bytes.");
+    if (this._lzxResetIntervalBytes % frameSize != 0)
+      throw new InvalidDataException($"CHM: LZX reset interval {this._lzxResetIntervalBytes} is not a whole number of {frameSize}-byte frames.");
+    var framesPerReset = (int)(this._lzxResetIntervalBytes / frameSize);
+    var frames = (int)((uncompressedSize + frameSize - 1) / frameSize);
+    if (numEntries < frames || tableHeaderSize + (long)numEntries * 8 > rtData.Length)
+      throw new InvalidDataException($"CHM: LZX reset table lists {numEntries} frames, the section needs {frames}.");
 
-    if (uncompressedSize <= 0 || uncompressedSize > 512 * 1024 * 1024)
-      return; // safety guard
-
-    this._lzxUncompressedSize = uncompressedSize;
     var output = new byte[uncompressedSize];
     var outPos = 0;
-
-    // Parse reset offsets
-    var offsetTableStart = (int)tableHeaderSize;
-    var resetOffsets     = new long[numEntries];
-    for (var i = 0; i < numEntries && offsetTableStart + i * 8 + 8 <= rtData.Length; i++)
-      resetOffsets[i] = (long)BitConverter.ToUInt64(rtData, offsetTableStart + i * 8);
-
-    // Decompress each reset interval independently
-    for (var i = 0; i < numEntries; i++) {
-      var compStart = resetOffsets[i];
-      var compEnd   = i + 1 < numEntries ? resetOffsets[i + 1] : compressedData.Length;
-      if (compStart >= compressedData.Length || compStart >= compEnd)
-        continue;
-
-      var compLen    = (int)(compEnd - compStart);
-      var outLen     = (int)Math.Min(blockSize, uncompressedSize - outPos);
-      if (outLen <= 0)
-        break;
-
-      try {
-        using var blockStream  = new MemoryStream(compressedData, (int)compStart, compLen);
-        var decompressor       = new LzxDecompressor(blockStream, this._lzxWindowBits);
-        var decompressed       = decompressor.Decompress(outLen);
-        decompressed.AsSpan().CopyTo(output.AsSpan(outPos));
-        outPos += decompressed.Length;
-      } catch {
-        // If a block fails, leave remaining bytes as zero and stop
-        break;
+    for (var frame = 0; frame < frames; frame += framesPerReset) {
+      var compStart = (long)BitConverter.ToUInt64(rtData, (int)tableHeaderSize + frame * 8);
+      if (compStart >= compressedData.Length)
+        throw new InvalidDataException($"CHM: LZX frame {frame} starts past the compressed data.");
+      // The first bit of a stream says whether x86 call targets were rewritten; CHM compilers do
+      // not do that, and decoding such a stream without the translation would return wrong bytes.
+      if (compStart + 1 < compressedData.Length && (compressedData[compStart + 1] & 0x80) != 0)
+        throw new NotSupportedException("CHM: an LZX stream with Intel E8 preprocessing is not supported.");
+      var decoder = new LzxDecompressor(new MemoryStream(compressedData, (int)compStart, compressedData.Length - (int)compStart),
+        this._lzxWindowBits, e8Translation: false, LzxStreamFormat.Cab);
+      for (var f = frame; f < Math.Min(frame + framesPerReset, frames); ++f) {
+        var outLen = (int)Math.Min(frameSize, uncompressedSize - outPos);
+        byte[] decoded;
+        try {
+          decoded = decoder.Decompress(outLen);
+        } catch (Exception e) when (e is not InvalidDataException) {
+          throw new InvalidDataException($"CHM: LZX frame {f} does not decode: {e.Message}", e);
+        }
+        decoded.AsSpan().CopyTo(output.AsSpan(outPos));
+        outPos += decoded.Length;
       }
     }
-
-    this._lzxUncompressed = output;
+    return output;
   }
 
   private byte[] ExtractSection1(ChmEntry entry) {
