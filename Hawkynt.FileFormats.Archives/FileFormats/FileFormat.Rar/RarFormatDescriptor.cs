@@ -90,10 +90,20 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Default: "0",
       Description: "Add a recovery record of this size in percent of the archive (1-100, like rar -rr); rar and this tool repair damage within its reach. Single-file archives only. 0 adds none.",
       IsOptimizationAxis: false),
+    new FormatOptionDescriptor(
+      Key: RecoveryVolumesOption,
+      DisplayName: "Recovery volumes",
+      Kind: FormatOptionKind.Integer,
+      Default: "0",
+      Description: "Write this many recovery volumes (.rev, like rar -rv) beside a volume set; any as many missing or damaged volumes can then be rebuilt. Needs a volume size. 0 writes none.",
+      IsOptimizationAxis: false),
   ];
 
   /// <summary>Option key: recovery record size in percent (RAR 4 and RAR 5, single-file archives).</summary>
   public const string RecoveryRecordOption = "RecoveryRecord";
+
+  /// <summary>Option key: number of recovery volumes (<c>.rev</c>) to write beside a volume set.</summary>
+  public const string RecoveryVolumesOption = "RecoveryVolumes";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -229,13 +239,20 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     };
     var volumeSize = ParseVolumeSize(options.GetString(FormatOptionKeys.VolumeSize));
     Func<int, Stream>? openVolume = null;
+    Func<int, string>? volumeNames = null;
+    string? firstVolumePath = null;
     var newNaming = false;
     if (volumeSize > 0) {
-      var path = OutputPath(output) ?? throw new ArgumentException("A RAR volume set must be written to a file, so its other volumes can go beside it.");
+      var path = firstVolumePath = OutputPath(output) ?? throw new ArgumentException("A RAR volume set must be written to a file, so its other volumes can go beside it.");
       newNaming = System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(path), @"\.part[0-9]+\.rar$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-      var names = RarVolumeNames.ForWriting(path, newNaming);
+      var names = volumeNames = RarVolumeNames.ForWriting(path, newNaming);
       openVolume = n => File.Create(names(n));
     }
+    var recoveryVolumes = options.GetOptionInt(RecoveryVolumesOption, 0);
+    if (recoveryVolumes < 0) throw new ArgumentException($"RAR recovery volume count {recoveryVolumes} is negative.");
+    if (recoveryVolumes > 0 && volumeSize <= 0)
+      throw new NotSupportedException("Recovery volumes protect a volume set; give a volume size too.");
+    var volumeCount = 1;
     var solid = options.SolidSize == 0 && !useStore;
     var recoveryPercent = options.GetOptionInt(RecoveryRecordOption, 0);
     if (recoveryPercent is < 0 or > 100)
@@ -266,6 +283,7 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           w4.AddFile(i.Name, s, i.Size, Times(i));
         }
         w4.Finish();
+        volumeCount = w4.VolumeCount;
         break;
       }
       case RarCompatibility.Rar5: {
@@ -281,10 +299,23 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           w.AddFile(i.Name, s, i.Size, Times(i));
         }
         w.Finish();
+        volumeCount = w.VolumeCount;
         break;
       }
       default:
         throw new ArgumentOutOfRangeException(nameof(options), target, "Unknown RAR compatibility target.");
+    }
+
+    if (recoveryVolumes > 0) {
+      // The writers have closed the later volumes; the first is still the caller's stream.
+      output.Flush();
+      var streams = new List<Stream> { output };
+      try {
+        for (var n = 1; n < volumeCount; ++n) streams.Add(File.OpenRead(volumeNames!(n)));
+        RarRecoveryVolumes.Create(streams, firstVolumePath!, recoveryVolumes);
+      } finally {
+        for (var n = 1; n < streams.Count; ++n) streams[n].Dispose();
+      }
     }
   }
 

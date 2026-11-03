@@ -57,3 +57,4 @@ Rar.exe a -cfg- -idq -y -ma4 -v20k -m3 r4-vol.rar random.bin text.txt
 Rar.exe a -cfg- -idq -y -ma4 -v20k -m3 -vn r4-vol-old.rar random.bin text.txt
 Rar.exe a -cfg- -idq -y -ma4 -v20k -m3 -psecret r4-vol-enc.rar random.bin text.txt
 Rar.exe a -cfg- -idq -y -ma5 -v20k -m0 -rv1 r5-vol-rev.rar random.bin text.txt
+Rar.exe a -cfg- -idq -y -ma4 -v20k -m0 -vn -rv1 r4-vol-rev.rar random.bin text.txt

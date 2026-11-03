@@ -93,7 +93,7 @@ WinMount,mou,archive,,,,,,,Y,1,,,,,,MISSING,,
 BagIt,,archive,,,,,,,Y,1,,,,,,MISSING,,https://www.rfc-editor.org/rfc/rfc8493
 PHP archive (PHAR),phar,package,,,,,R,,Y,2,,,,,,MISSING,,https://www.php.net/manual/en/phar.fileformat.php
 Parchive (PAR/PAR2),par;par2;par.par2,other,,,,,,,Y,1,https://parchive.github.io/,Par2,Y,,,READ-ONLY-BUT-SOURCES-WRITE,par2cmdline,
-WinRAR recovery volume,rev,other,,,,,,,Y,1,,,,,,MISSING,,"Volume sets read with their .rev files beside them; the .rev files themselves are not read or rebuilt (their format is documented only in unrar's source)"
+WinRAR recovery volume,rev,other,,,,,,,Y,1,,Rar,Y,Y,Y,PARTIAL,,"Written beside RAR 5 and RAR 3/4 volume sets (RecoveryVolumes option, like rar -rv) and used to rebuild missing or damaged volumes (RarRecoveryVolumes, cwb repair, like rar rc); rar rc rebuilds from ours and we rebuild from rar's, byte-exact (docs/RAR-RECOVERY-ON-DISK.md). A .rev is not opened as an archive itself"
 dvdisaster ECC file,ecc,other,,,,,,,Y,1,,,,,,MISSING,,
 Error-correcting SeqBox,ecsbx,other,,,,,,,Y,1,,,,,,MISSING,,
 lziprecover FEC file,fec,other,,,,,,,Y,1,,,,,,MISSING,,

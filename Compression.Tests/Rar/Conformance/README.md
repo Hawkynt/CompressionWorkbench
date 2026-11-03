@@ -24,7 +24,7 @@ high-precision times (`-tsm4 -tsc4 -tsa4`), hard links (`-oh`), identical-file r
 (`-oi`), NTFS streams (`-os`), comments, recovery records (`-rr5%`), locked archives (`-k`),
 quick-open data (`-qo+`), BLAKE2sp (`-htb`), passwords (`-p`, `-hp`, a Unicode password),
 file versions (`-ver`), and volume sets in both naming schemes, solid, encrypted, with
-encrypted headers and with a recovery volume (`.rev`). `r4-prefixed.exe` and
+encrypted headers and with a recovery volume (`.rev`, RAR 5 and RAR 3 style; `r4-vol-rev` was added later with the same command scheme). `r4-prefixed.exe` and
 `r5-prefixed.exe` put a 4 KB non-RAR stub in front of an archive (SFX search); real
 `rar -sfx` archives are made at test time by the tool-gated test.
 

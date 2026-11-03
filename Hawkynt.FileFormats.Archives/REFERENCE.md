@@ -26089,7 +26089,7 @@ Reads and writes non-streaming QuickLZ 1.5.0 level-1 and level-3 packets.
 
 ### Namespace `FileFormat.Rar`
 
-[`Rar4Writer`](#rar4writer) · [`RarCompatibility`](#rarcompatibility) · [`RarEntry`](#rarentry) · [`RarFormatDescriptor`](#rarformatdescriptor) · [`RarInPlaceAdder`](#rarinplaceadder) · [`RarInPlaceRemover`](#rarinplaceremover) · [`RarLayoutMap`](#rarlayoutmap) · [`RarLinkKind`](#rarlinkkind) · [`RarReader`](#rarreader) · [`RarRecovery`](#rarrecovery) · [`RarRecoveryKind`](#rarrecoverykind) · [`RarRecoveryReport`](#rarrecoveryreport) · [`RarVolumeNames`](#rarvolumenames) · [`RarWriter`](#rarwriter) · [`RarWriter.ArchiveTimes`](#rarwriterarchivetimes)
+[`Rar4Writer`](#rar4writer) · [`RarCompatibility`](#rarcompatibility) · [`RarEntry`](#rarentry) · [`RarFormatDescriptor`](#rarformatdescriptor) · [`RarInPlaceAdder`](#rarinplaceadder) · [`RarInPlaceRemover`](#rarinplaceremover) · [`RarLayoutMap`](#rarlayoutmap) · [`RarLinkKind`](#rarlinkkind) · [`RarReader`](#rarreader) · [`RarRecovery`](#rarrecovery) · [`RarRecoveryKind`](#rarrecoverykind) · [`RarRecoveryReport`](#rarrecoveryreport) · [`RarRecoveryVolumes`](#rarrecoveryvolumes) · [`RarVolumeNames`](#rarvolumenames) · [`RarWriter`](#rarwriter) · [`RarWriter.ArchiveTimes`](#rarwriterarchivetimes)
 
 #### `Rar4Writer`
 
@@ -26158,6 +26158,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | --- | --- | --- |
 | `RarFormatDescriptor` | `RarFormatDescriptor()` |  |
 | `RecoveryRecordOption` | `const string RecoveryRecordOption` | Option key: recovery record size in percent (RAR 4 and RAR 5, single-file archives). |
+| `RecoveryVolumesOption` | `const string RecoveryVolumesOption` | Option key: number of recovery volumes (`.rev`) to write beside a volume set. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -26287,6 +26288,16 @@ Implements `IEquatable<RarRecoveryReport>`.
 | `Recovery` | `int Recovery { get; init; }` | Usable recovery units (RAR 5 blocks, RAR 4 parity sectors, recovery volumes). |
 | `Repairable` | `bool Repairable { get; init; }` | The damage is within what the recovery data can rebuild. |
 | `Repaired` | `bool Repaired { get; init; }` | A repair was asked for and every damaged unit was rebuilt and re-verified. |
+
+#### `RarRecoveryVolumes`
+
+RAR recovery volumes (`.rev`): creating them for a volume set (`rar -rv`), checking a set against them and rebuilding missing or damaged volumes (`rar rc`). RAR 5 sets get Reed-Solomon over GF(2^16) with a table of every volume's size and CRC-32; RAR 3/4 sets get the classic systematic Reed-Solomon over GF(2^8) of RAR 3. Both layouts were measured from rar's output (docs/RAR-RECOVERY-ON-DISK.md).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Create` | `static IReadOnlyList<string> Create(string firstVolume, int count)` | Writes `count` recovery volumes beside the set whose first volume is `firstVolume`; any `count` missing or damaged volumes can then be rebuilt. Returns the paths written. |
+| `Reconstruct` | `static RarRecoveryReport Reconstruct(string anyVolume)` | Rebuilds the missing or damaged volumes of a set from its recovery volumes. A damaged volume is first renamed to `name.bad`. |
+| `Verify` | `static RarRecoveryReport Verify(string anyVolume)` | Checks a volume set (named by any of its volumes or recovery volumes) against its recovery volumes. |
 
 #### `RarVolumeNames`
 
