@@ -841,11 +841,21 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Dictionary.Density`
 
-[`DensityBuildingBlock`](#densitybuildingblock) · [`DensityChameleonCompressor`](#densitychameleoncompressor) · [`DensityChameleonDecompressor`](#densitychameleondecompressor) · [`DensityConstants`](#densityconstants)
+[`DensityAlgorithm`](#densityalgorithm) · [`DensityBuildingBlock`](#densitybuildingblock) · [`DensityCodec`](#densitycodec)
+
+#### `DensityAlgorithm`
+
+The three density algorithms.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Chameleon` | `1` | One 16-bit hash dictionary; a quad is either its hash or itself. |
+| `Cheetah` | `2` | Two dictionary slots per hash plus one predicted successor per previous quad. |
+| `Lion` | `3` | Two dictionary slots per hash plus five predicted successors per previous quad. |
 
 #### `DensityBuildingBlock`
 
-Exposes the Density "Chameleon" algorithm as a benchmarkable building block.
+density's Chameleon algorithm as a building block. The block's bytes are exactly what density-rs 0.16.6's `Chameleon::encode` writes (no header; the stream ends with its input); see `DensityCodec`.
 
 Implements `IBuildingBlock`.
 
@@ -859,33 +869,14 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-#### `DensityChameleonCompressor`
+#### `DensityCodec`
 
-Compresses data using the Density "Chameleon" predictive-dictionary format (see `DensityConstants`).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> source)` | Compresses the input data using Chameleon. |
-
-#### `DensityChameleonDecompressor`
-
-Decompresses data produced by `DensityChameleonCompressor`.
+density, Guillaume Voirin's 4-byte-unit compressor, converted from density-rs 0.16.6 (https://github.com/g1mv/density, revision `58938943bb0dfd85b186551a3d1d36cc286f9c1d`, MIT OR Apache-2.0; see `THIRD-PARTY-NOTICE.density.txt`). Streams match the reference's `Chameleon/Cheetah/Lion::encode` byte for byte; like the reference, a stream carries no header and ends with its input.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses Chameleon-compressed data. |
-
-#### `DensityConstants`
-
-Constants for the Density "Chameleon" block format.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `ChunkSize` | `const int ChunkSize` | Size, in bytes, of one dictionary unit (chunk). |
-| `ChunksPerBlock` | `const int ChunksPerBlock` | Number of chunks covered by a single 32-bit signature word. |
-| `HashBits` | `const int HashBits` | Log2 of the prediction dictionary size. |
-| `HashMultiplier` | `const uint HashMultiplier` | Multiplicative hash constant (Knuth's 32-bit golden-ratio constant). |
-| `HashSize` | `const int HashSize` | Number of entries in the prediction dictionary. |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data, DensityAlgorithm algorithm, int sizeHint = 0)` | Decodes a stream written with `algorithm`. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, DensityAlgorithm algorithm)` | Encodes `data` with the given algorithm. |
 
 ### Namespace `Compression.Core.Dictionary.Dna`
 

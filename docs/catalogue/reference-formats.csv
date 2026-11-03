@@ -583,7 +583,7 @@ Context Tree Weighting,,codec,,,,,,,,0,,bb:BB_ContextTreeWeighting,Y,Y,,OURS-ONL
 CSC,,codec,,,,,,,,0,,bb:BB_Csc,Y,Y,,OURS-ONLY,,
 Context Predictor (order-2/1/0),,codec,,,,,,,,0,,bb:BB_CTW,Y,Y,,OURS-ONLY,,
 Delta + RLE,,codec,,,,,,,,0,,bb:BB_DeltaRle,Y,Y,,OURS-ONLY,,
-Density (Chameleon),,codec,,,,,,,,0,,bb:BB_Density,Y,Y,,OURS-ONLY,,
+Density (Chameleon),,codec,,,,,,,,0,https://github.com/g1mv/density,bb:BB_Density,Y,Y,,OURS-ONLY,,density-rs 0.16.6 conversion; byte-identical Chameleon
 DMC,,codec,,,,,,,,0,,bb:BB_Dmc,Y,Y,,OURS-ONLY,,
 DNA Sequence Compression,,codec,,,,,,,,0,,bb:BB_Dna,Y,Y,,OURS-ONLY,,
 DoubleSpace JM,,codec,,,,,,,,0,,bb:BB_DoubleSpace,Y,Y,,OURS-ONLY,,
@@ -692,7 +692,7 @@ Windows CUR cursor,cur,archive,,,,,,,,0,,Cur,Y,Y,,OURS-ONLY,,
 Raw CVSD,cvsd,media,,,,,,,,0,,Cvsd,Y,Y,,OURS-ONLY,,
 DBM (DigiBooster Pro),dbm,media,,,,,,,,0,,Dbm,Y,,,OURS-ONLY,,
 DCX (multi-image PCX),dcx,archive,,,,,,,,0,,Dcx,Y,,,OURS-ONLY,,
-Density,density,compression,,,,,,,,0,,Density,Y,Y,,OURS-ONLY,,
+Density,density,compression,,,,,,,,0,https://github.com/g1mv/density,Density,Y,Y,,OURS-ONLY,,our DENS container (density has no file format) around byte-identical density-rs streams
 DSDIFF (.dff),dff;dsdiff,media,,,,,,,,0,,Dff,Y,Y,,OURS-ONLY,,
 DFPWM1a (ComputerCraft),dfpwm,media,,,,,,,,0,,Dfpwm,Y,Y,,OURS-ONLY,,
 DICOM,dcm;dicom,archive,,,,,,,,0,,Dicom,Y,,,OURS-ONLY,,

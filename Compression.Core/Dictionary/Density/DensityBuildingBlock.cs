@@ -3,26 +3,23 @@ using Compression.Registry;
 namespace Compression.Core.Dictionary.Density;
 
 /// <summary>
-/// Exposes the Density "Chameleon" algorithm as a benchmarkable building block.
+/// density's Chameleon algorithm as a building block. The block's bytes are exactly what
+/// density-rs 0.16.6's <c>Chameleon::encode</c> writes (no header; the stream ends with its input);
+/// see <see cref="DensityCodec"/>.
 /// </summary>
-/// <remarks>
-/// See <see cref="DensityConstants"/> for the format layout and provenance notes.
-/// </remarks>
 public sealed class DensityBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
   public string Id => "BB_Density";
   /// <inheritdoc/>
   public string DisplayName => "Density (Chameleon)";
   /// <inheritdoc/>
-  public string Description => "Predictive 4-byte-chunk dictionary coder: a hash of the previous chunk predicts the next one at zero bit cost when correct";
+  public string Description => "density-rs Chameleon: each 4-byte quad is either its 16-bit hash in a dictionary or the quad itself";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) =>
-    DensityChameleonCompressor.Compress(data);
+  public byte[] Compress(ReadOnlySpan<byte> data) => DensityCodec.Encode(data, DensityAlgorithm.Chameleon);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) =>
-    DensityChameleonDecompressor.Decompress(data);
+  public byte[] Decompress(ReadOnlySpan<byte> data) => DensityCodec.Decode(data, DensityAlgorithm.Chameleon);
 }

@@ -13590,12 +13590,12 @@ Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema
 
 #### `DensityStream`
 
-Density compression with three algorithms: Chameleon (fastest), Cheetah (balanced), Lion (best ratio).
+density streams (Chameleon, Cheetah, Lion) in a small container of ours. density itself has no file format: its streams carry neither the algorithm nor the length, so this container records both. The payload is exactly what density-rs 0.16.6 writes; see `DensityCodec`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Compress` | `static void Compress(Stream input, Stream output, Algorithm algorithm = 2)` | Compresses data with the specified algorithm. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses density-compressed data. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a container written by `Compress`. |
 
 #### `DensityStream.Algorithm`
 
@@ -13603,9 +13603,9 @@ Compression algorithm.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Chameleon` | `1` | Hash-based direct replacement. Fastest, lowest ratio. |
-| `Cheetah` | `2` | Dual-hash with predictions. Balanced speed/ratio. |
-| `Lion` | `3` | LZ + entropy coding. Best ratio, still fast. |
+| `Chameleon` | `1` | One 16-bit hash dictionary. Fastest, lowest ratio. |
+| `Cheetah` | `2` | Two dictionary slots per hash plus one predicted successor. Balanced. |
+| `Lion` | `3` | Two dictionary slots per hash plus five predicted successors. Best ratio. |
 
 ### Namespace `FileFormat.Dff`
 
