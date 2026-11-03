@@ -43,8 +43,21 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// FSD, and every File Entry sector surface as MetadataReserved; file
   /// data extents surface as Used. Adjacent same-run extents are coalesced.
   /// </summary>
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
-    => UdfExtentMap.Enumerate(image);
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    RefuseRemapped(image);
+    return UdfExtentMap.Enumerate(image);
+  }
+
+  /// <summary>
+  /// The extent map, the block mover, the in-place editors and the rebuilds all address plain
+  /// Type 1 partitions. A volume that maps blocks through a VAT, a sparing table or a metadata
+  /// file is read but never changed: a wrong map would wipe or move live data.
+  /// </summary>
+  private static void RefuseRemapped(Stream image) {
+    if (UdfReader.UsesRemapping(image))
+      throw new NotSupportedException(
+        "UDF volumes with virtual (VAT), sparable or metadata partitions are read-only: editing them is not supported.");
+  }
 
   /// <summary>
   /// Zeros all unused space in a UDF image: every sector not claimed by the
@@ -64,6 +77,7 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
+    RefuseRemapped(image);
     image.Position = 0;
     var imageSize = image.Length;
 
@@ -90,12 +104,16 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
-    => new UdfBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    RefuseRemapped(image);
+    new UdfBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  }
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
-    => new UdfBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    RefuseRemapped(image);
+    new UdfBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  }
 
   // WORM write constraints — UDF has no inherent ceiling; minimum viable image ~1 MB.
   /// <summary>
@@ -165,6 +183,7 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// The 32 KiB system area, VRS, AVDP, LVD, and FSD are left untouched.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    RefuseRemapped(archive);
     foreach (var (name, data) in FilesOnly(inputs))
       UdfModifier.AddFile(archive, name, data);
   }
@@ -177,6 +196,7 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// extents are zero-wiped.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    RefuseRemapped(archive);
     foreach (var name in entryNames)
       UdfModifier.RemoveFile(archive, name, wipeData: true);
   }
@@ -384,6 +404,7 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// + root FE and a packed file-data region.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    RefuseRemapped(archive);
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 

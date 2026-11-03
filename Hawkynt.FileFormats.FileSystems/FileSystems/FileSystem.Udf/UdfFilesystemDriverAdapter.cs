@@ -46,7 +46,7 @@ public sealed class UdfFilesystemDriverAdapter :
         CanMountWritable: false,
         [
           "Regular-file handles read directly across decoded short_ad/long_ad extents and embedded data; unrecorded extents are exposed as zero-filled ranges.",
-          "Type 1 ECMA-167 partition maps and continuation allocation-descriptor chains are resolved natively; UDF Type 2 virtual/sparable/metadata maps remain fail-closed until their remapping semantics are implemented.",
+          "Type 1 ECMA-167 partition maps, UDF Type 2 virtual (VAT), sparable and metadata maps, and continuation allocation-descriptor chains are resolved natively.",
           "Mounted writes remain disabled: existing UDF modification/defragmentation APIs do not provide complete open-handle, arbitrary-directory, truncate, and durability semantics.",
         ]);
     } catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException or ArgumentException or OverflowException) {

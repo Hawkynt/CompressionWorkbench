@@ -213,6 +213,10 @@
     <EmbeddedResource Include="Qcow2\ReferenceVectors\*.qcow2;Qcow2\ReferenceVectors\*.raw;Qcow2\ReferenceVectors\*.sha256">
       <LogicalName>Qcow2Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- UDF volumes mkudffs formatted and the Linux udf driver filled (sparable, metadata, VAT); see Udf/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Udf\ReferenceVectors\*.img.gz">
+      <LogicalName>UdfVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- ACE archives from acefile's test corpus and ones our writer produced for acefile; see Ace/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Ace\ReferenceVectors\*.ace;Ace\ReferenceVectors\acefile-listing.txt">
       <LogicalName>AceVectors.%(Filename)%(Extension)</LogicalName>

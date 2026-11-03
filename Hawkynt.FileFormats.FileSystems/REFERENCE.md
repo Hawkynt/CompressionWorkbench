@@ -15469,9 +15469,11 @@ Implements `IDisposable`.
 | `UdfReader` | `UdfReader(Stream stream, bool leaveOpen = false)` | Initializes a new UDF reader. |
 | `Entries` | `IReadOnlyList<UdfEntry> Entries { get; }` | Gets the entries. |
 | `Length` | `long Length { get; }` | Total size of the backing image in bytes. |
+| `UsesRemappedPartitions` | `bool UsesRemappedPartitions { get; }` | Whether any partition map remaps blocks (virtual, sparable or metadata): such volumes are read-only here. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `ExtractTo` | `long ExtractTo(UdfEntry entry, Stream destination)` | Writes `entry`'s logical bytes into `destination`. |
 | `Extract` | `byte[] Extract(UdfEntry entry)` | Decodes the supplied entry into one byte array. |
+| `UsesRemapping` | `static bool UsesRemapping(Stream image)` | Whether the volume addresses blocks through a virtual, sparable or metadata partition. The in-place editors, the extent map and every maintenance operation assume plain Type 1 partitions, so callers refuse to change such a volume. Unreadable volumes report false and fail on their own. |
 
 #### `UdfWriter`
 
