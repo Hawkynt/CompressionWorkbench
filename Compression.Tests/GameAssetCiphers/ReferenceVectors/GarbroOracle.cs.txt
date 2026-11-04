@@ -1,0 +1,101 @@
+// Black-box driver for GARbro v1.5.44 (GameRes.dll / ArcFormats.dll). Prints what GARbro reads.
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Security.Cryptography;
+using GameRes;
+
+static class GarbroOracle {
+  static string Hex(byte[] h) { return BitConverter.ToString(h).Replace("-", "").ToLowerInvariant(); }
+
+  static int Main(string[] args) {
+    var app = Environment.GetEnvironmentVariable("GARBRO_DIR") ?? AppDomain.CurrentDomain.BaseDirectory;
+    AppDomain.CurrentDomain.AssemblyResolve += (s, e) => {
+      var p = Path.Combine(app, new AssemblyName(e.Name).Name + ".dll");
+      return File.Exists(p) ? Assembly.LoadFrom(p) : null;
+    };
+    Console.OutputEncoding = new System.Text.UTF8Encoding(false);
+    try { return Run(args); }
+    catch (Exception ex) { Console.WriteLine("ERROR " + ex.GetType().Name + ": " + ex.Message); return 2; }
+  }
+
+  static int Run(string[] args) {
+    var cat = FormatCatalog.Instance;
+    // Answer GARbro's "which encryption?" prompt the way its dialog does with no title picked: no encryption.
+    cat.ParametersRequest += (s, e) => {
+      var f = s as ArchiveFormat;
+      e.Options = f != null ? f.GetDefaultOptions() : null;
+      var scheme = e.Options != null ? e.Options.GetType().GetProperty("Scheme") : null;
+      if (scheme != null) {
+        var getScheme = f.GetType().GetMethod("GetScheme", BindingFlags.Public | BindingFlags.Static);
+        if (getScheme != null) scheme.SetValue(e.Options, getScheme.Invoke(null, new object[] { Environment.GetEnvironmentVariable("GARBRO_SCHEME") ?? "" }), null);
+      }
+      e.InputResult = true;
+    };
+    switch (args[0]) {
+      case "list": {
+        using (var arc = ArcFile.TryOpen(args[1])) {
+          if (arc == null) { Console.WriteLine("NOT-RECOGNISED " + (cat.LastError != null ? cat.LastError.Message : "")); return 1; }
+          Console.WriteLine("# " + arc.Tag + " " + arc.Dir.Count());
+          foreach (var e in arc.Dir) {
+            byte[] data;
+            using (var s = arc.OpenEntry(e)) using (var ms = new MemoryStream()) { s.CopyTo(ms); data = ms.ToArray(); }
+            var pe = e as PackedEntry;
+            Console.WriteLine(e.Name + "\t" + data.Length + "\t" + (pe != null && pe.IsPacked ? "packed" : "stored") + "\t" + Hex(SHA256.Create().ComputeHash(data)));
+          }
+        }
+        return 0;
+      }
+      case "audio": {
+        using (var f = BinaryStream.FromFile(args[1])) {
+          var snd = AudioFormat.Read(f);
+          if (snd == null) { Console.WriteLine("NOT-RECOGNISED"); return 1; }
+          byte[] pcm;
+          using (var ms = new MemoryStream()) { snd.CopyTo(ms); pcm = ms.ToArray(); }
+          Console.WriteLine("# " + snd.SourceFormat + " " + snd.Format.SamplesPerSecond + "Hz " + snd.Format.Channels + "ch pcm=" + pcm.Length + " " + Hex(SHA256.Create().ComputeHash(pcm)));
+          snd.Dispose();
+        }
+        return 0;
+      }
+      case "image": {
+        using (var f = BinaryStream.FromFile(args[1])) {
+          var img = ImageFormat.Read(f);
+          if (img == null) { Console.WriteLine("NOT-RECOGNISED"); return 1; }
+          var bmp = new System.Windows.Media.Imaging.FormatConvertedBitmap(img.Bitmap, System.Windows.Media.PixelFormats.Bgra32, null, 0);
+          var stride = bmp.PixelWidth * 4;
+          var px = new byte[stride * bmp.PixelHeight];
+          bmp.CopyPixels(px, stride, 0);
+          Console.WriteLine("# " + img.Width + "x" + img.Height + " bgra32 " + Hex(SHA256.Create().ComputeHash(px)));
+        }
+        return 0;
+      }
+      case "create": { // create <tag> <out> <srcdir> key=value...
+        var fmt = cat.ArcFormats.First(a => a.Tag == args[1]);
+        var opts = fmt.GetDefaultOptions();
+        foreach (var kv in args.Skip(4)) {
+          var p = kv.Split('=');
+          var prop = opts.GetType().GetProperty(p[0]);
+          object v = prop.PropertyType == typeof(bool) ? (object)bool.Parse(p[1])
+                   : prop.PropertyType == typeof(int) ? (object)int.Parse(p[1]) : p[1];
+          prop.SetValue(opts, v, null);
+        }
+        var scheme = opts.GetType().GetProperty("Scheme");
+        if (scheme != null && args.Skip(4).All(a => !a.StartsWith("Scheme="))) {
+          var getScheme = fmt.GetType().GetMethod("GetScheme", BindingFlags.Public | BindingFlags.Static);
+          scheme.SetValue(opts, getScheme.Invoke(null, new object[] { "" }), null);
+        }
+        var src = Path.GetFullPath(args[3]);
+        var outPath = Path.GetFullPath(args[2]);
+        Directory.SetCurrentDirectory(src);
+        var entries = Directory.GetFiles(src, "*", SearchOption.AllDirectories).OrderBy(x => x, StringComparer.Ordinal)
+          .Select(f => new Entry { Name = f.Substring(src.Length + 1), Type = "" }).ToList();
+        using (var o = File.Create(outPath)) fmt.Create(o, entries, opts, null);
+        Console.WriteLine("created " + entries.Count);
+        return 0;
+      }
+    }
+    return 3;
+  }
+}

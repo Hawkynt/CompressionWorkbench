@@ -1,5 +1,4 @@
 #pragma warning disable CS1591
-using Compression.Core.Dictionary.Lzham;
 using Compression.Registry;
 
 namespace FileFormat.Lzham;
@@ -42,7 +41,7 @@ public sealed class LzhamFormatDescriptor : IFormatDescriptor, IStreamFormatOper
   /// Gets the magic signatures.
   /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    new([0x4C, 0x5A, 0x48, 0x4D], Confidence: 0.90)
+    new([0x4C, 0x5A, 0x48, 0x30], Confidence: 0.90)
   ];
   /// <summary>
   /// Gets the methods.
@@ -59,44 +58,25 @@ public sealed class LzhamFormatDescriptor : IFormatDescriptor, IStreamFormatOper
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "LZHAM container, LZ77 + Huffman (Valve-inspired codec)";
+  public string Description => "LZHAM (Rich Geldreich) in the LZH0 file layout of LZHAM's lzhamtest tool";
 
   /// <summary>
-  /// Encoder-only match-finder tunables. Neither value changes the bitstream
-  /// grammar, so every candidate is decoded by the same decoder. The generic
-  /// compression optimizer can therefore exhaustively try all 24 combinations
-  /// and keep the smallest result for the actual input.
+  /// The dictionary size is the one LZHAM stream parameter the file records; "auto" picks the
+  /// smallest that covers the input. The table update rate is not recorded by the file layout, so
+  /// files are always written with LZHAM's default.
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
-      Key: "WindowSize",
-      DisplayName: "Match window (bytes)",
-      Kind: FormatOptionKind.Integer,
-      Default: "32768",
-      AllowedValues: ["4096", "8192", "16384", "32768"],
-      Description: "Maximum backward distance considered for an LZ match. Smaller windows reduce search work; larger windows can find distant repetition."),
-    new FormatOptionDescriptor(
-      Key: "SearchDepth",
-      DisplayName: "Match search depth",
-      Kind: FormatOptionKind.Integer,
-      Default: "64",
-      AllowedValues: ["8", "16", "32", "64", "128", "256"],
-      Description: "Maximum hash-chain candidates tested at each position. Deeper searches cost CPU and may find longer matches."),
+      Key: "DictionarySize",
+      DisplayName: "Dictionary size (log2)",
+      Kind: FormatOptionKind.Enum,
+      Default: "auto",
+      AllowedValues: ["auto", "15", "16", "18", "20", "22", "24", "26"],
+      Description: "log2 of the LZHAM dictionary size, as lzhamtest -d. Larger dictionaries reach farther back but enlarge the match-slot alphabet."),
   ];
 
-  internal static int ParseWindowSize(FormatCreateOptions options) {
-    var raw = options.GetString("WindowSize");
-    return int.TryParse(raw, out var value) && value is 4096 or 8192 or 16384 or 32768
-      ? value
-      : LzhamEncoder.DefaultWindowSize;
-  }
-
-  internal static int ParseSearchDepth(FormatCreateOptions options) {
-    var raw = options.GetString("SearchDepth");
-    return int.TryParse(raw, out var value) && value is 8 or 16 or 32 or 64 or 128 or 256
-      ? value
-      : LzhamEncoder.DefaultSearchDepth;
-  }
+  internal static int ParseDictionarySize(FormatCreateOptions options)
+    => int.TryParse(options.GetString("DictionarySize"), out var value) && value is >= 15 and <= 29 ? value : 0;
 
   /// <summary>
   /// Decodes the supplied input.
@@ -107,14 +87,8 @@ public sealed class LzhamFormatDescriptor : IFormatDescriptor, IStreamFormatOper
   /// </summary>
   public void Compress(Stream input, Stream output) => LzhamStream.Compress(input, output);
   /// <summary>
-  /// Encodes the supplied input using format-specific optimizer tunables.
+  /// Encodes the supplied input with the selected dictionary size.
   /// </summary>
   public void Compress(Stream input, Stream output, FormatCreateOptions options)
-    => LzhamStream.Compress(input, output, ParseWindowSize(options), ParseSearchDepth(options));
-  /// <summary>
-  /// Encodes using the strongest built-in match finder. Schema-aware callers use
-  /// the generic optimizer to compare every candidate on the actual payload.
-  /// </summary>
-  public void CompressOptimal(Stream input, Stream output)
-    => LzhamStream.Compress(input, output, LzhamEncoder.MaxWindowSize, searchDepth: 256);
+    => LzhamStream.Compress(input, output, ParseDictionarySize(options));
 }

@@ -291,6 +291,13 @@ public static partial class FormatDetector {
     // PowerPoint template to the catalogue reader on the other. ResolveSharedExtension below
     // cannot settle it: it only consults a claimant's own signatures, and no view of the CFB
     // container claims that signature, because every CFB-based format shares it.
+    // ".cab" is a Microsoft cabinet unless it starts with "ISc(": an InstallShield cabinet volume.
+    if (singleExt == ".cab" && File.Exists(path)) {
+      var head = ReadHeader(path);
+      if (head.Length >= 4 && head[0] == 'I' && head[1] == 'S' && head[2] == 'c' && head[3] == '(')
+        return Format.InstallShieldCab;
+    }
+
     if (singleExt == ".pot")
       return DetectPotByContent(path);
 
@@ -311,6 +318,13 @@ public static partial class FormatDetector {
       var arc = DetectArcByMagic(path);
       if (arc != Format.Unknown)
         return arc;
+    }
+
+    // CP/M LBR has no magic signature. Retain it as the default while letting
+    // the Commodore DWB signature select the other .lbr reader.
+    if (singleExt == ".lbr") {
+      var library = ResolveSharedExtension(path, [Format.Lbr, Format.CommodoreLbr]);
+      return library != Format.Unknown ? library : Format.Lbr;
     }
 
     // Single extension lookup from registry
@@ -375,6 +389,14 @@ public static partial class FormatDetector {
         if (magic[0] == 'P' && magic[1] == 'A' && magic[2] == 'C' && magic[3] == 'K')
           return Format.Pak;
       }
+
+      // A Chromium resource pack leads with a bare version word (4 or 5); its tables must end exactly
+      // where its first resource begins, which noise and the other two .pak layouts never satisfy.
+      var head = new byte[(int)Math.Min(fs.Length, 18)];
+      fs.Position = 0;
+      fs.ReadExactly(head);
+      if (FileFormat.ChromiumPak.ChromiumPak.IsPak(head, fs.Length))
+        return Format.ChromiumPak;
 
       // The footer is 44 bytes for the versions that keep the magic at its front;
       // later revisions prepend fields, so scan the tail rather than fix an offset.
@@ -510,6 +532,9 @@ public static partial class FormatDetector {
       var buf = new byte[2];
       var isPe = fs.Read(buf, 0, 2) >= 2 && buf[0] == 'M' && buf[1] == 'Z';
 
+      // WiX Burn: the engine's ".wixburn" section lists the cabinets appended to it.
+      if (isPe && FileFormat.WixBurn.WixBurnFormatDescriptor.IsWixBurn(fs)) return Format.WixBurn;
+
       // IExpress / wextract: the cabinet lives in the RT_RCDATA resource "CABINET".
       if (isPe && FileFormat.IExpress.IExpressFormatDescriptor.IsIExpress(fs)) return Format.IExpress;
 
@@ -531,6 +556,8 @@ public static partial class FormatDetector {
 
       // Clickteam Install Creator: its block overlay starts right after the PE sections.
       if (isPe && FileFormat.ClickteamInstaller.ClickteamReader.IsClickteam(fs)) return Format.ClickteamInstaller;
+      // Enigma Virtual Box: the virtual filesystem's "EVB\0" header in the ".enigma1" section.
+      if (isPe && FileFormat.EnigmaVirtualBox.EnigmaVirtualBoxReader.IsEnigmaVirtualBox(fs)) return Format.EnigmaVirtualBox;
 
       // Other installer markers can live anywhere in the file, so scan the whole file when it
       // is small and the tail otherwise — independent of the MZ check, so a stub-less

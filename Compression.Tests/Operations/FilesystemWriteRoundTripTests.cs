@@ -59,6 +59,9 @@ public sealed class FilesystemWriteRoundTripTests {
     ["DiskCopy42"] = "holds one floppy of a standard geometry (400K/800K GCR, 720K/1440K MFM) or one whose "
                    + "encoding metadata.ini names; a 512-byte probe is neither. DiskCopy42Tests round-trips every "
                    + "geometry and DiskCopy42ExternalConformanceTests checks both directions against MAME floptool.",
+    ["Scp"] = "members are TRK flux blocks (tracks/track_NNN.bin); an arbitrary byte blob is not one, so the generic "
+            + "probe cannot be written. ScpTests round-trips tracks and ScpExternalConformanceTests proves rebuilds and "
+            + "edits against Greaseweazle.",
     ["TahoeLafs"] = "R/W is a live capability-backed namespace — no creator can synthesize a Tahoe grid endpoint and root write-capability. "
                    + "TahoeLafsClientTests exercise the gateway contract with an in-process HTTP oracle.",
     ["AndroidVbmeta"] = "members are structured AVB descriptors (descriptors/NN_*.bin), so an arbitrary byte blob is not one and the "

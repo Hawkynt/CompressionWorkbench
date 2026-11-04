@@ -23,7 +23,7 @@ namespace Compression.Core.Entropy.ContextMixing;
 /// decoding stops exactly. Decoding is the symmetric inverse — it reproduces
 /// the same predictions because every model, weight and APM update is
 /// deterministic integer arithmetic. This is the algorithmic foundation for
-/// formats like ZPAQ, PAQ8 and cmix.
+/// formats like ZPAQ and PAQ8.
 /// </para>
 /// </remarks>
 public static class CmCompressor {

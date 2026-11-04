@@ -35,7 +35,7 @@ public class IcePackerTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Magic_IsIce() {
+  public void Magic_IsIce231() {
     var data = new byte[256];
     Random.Shared.NextBytes(data);
 
@@ -45,8 +45,8 @@ public class IcePackerTests {
 
     compressed.Position = 0;
     Assert.That(compressed.ReadByte(), Is.EqualTo(0x49)); // 'I'
-    Assert.That(compressed.ReadByte(), Is.EqualTo(0x63)); // 'c'
-    Assert.That(compressed.ReadByte(), Is.EqualTo(0x65)); // 'e'
+    Assert.That(compressed.ReadByte(), Is.EqualTo(0x43)); // 'C'
+    Assert.That(compressed.ReadByte(), Is.EqualTo(0x45)); // 'E'
     Assert.That(compressed.ReadByte(), Is.EqualTo(0x21)); // '!'
   }
 

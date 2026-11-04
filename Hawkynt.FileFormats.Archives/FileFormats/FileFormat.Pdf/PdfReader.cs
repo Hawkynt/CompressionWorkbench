@@ -22,6 +22,7 @@ public sealed partial class PdfReader : IDisposable {
   private readonly List<PdfEntry> _pages = [];
   private readonly Dictionary<int, ImageInfo> _images = [];
   private readonly Dictionary<int, AttachInfo> _attachments = [];
+  private readonly PdfStandardSecurity? _security;
 
   /// <summary>
   /// Gets the entries.
@@ -38,15 +39,24 @@ public sealed partial class PdfReader : IDisposable {
   /// <summary>
   /// Initializes a new instance of <see cref="PdfReader"/>.
   /// </summary>
-  public PdfReader(Stream stream, bool leaveOpen = false) {
+  /// <param name="stream">The PDF.</param>
+  /// <param name="leaveOpen">Unused; the PDF is read into memory.</param>
+  /// <param name="password">User or owner password of an encrypted PDF; null tries the empty user password.</param>
+  /// <exception cref="UnauthorizedAccessException">The PDF is encrypted and the password does not open it.</exception>
+  public PdfReader(Stream stream, bool leaveOpen = false, string? password = null) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
+    _security = PdfStandardSecurity.Open(Encoding.Latin1.GetString(_data), password);
     Parse();
   }
 
+  /// <summary>The standard security handler of an encrypted PDF; null when the PDF is not encrypted.</summary>
+  public PdfStandardSecurity? Security => _security;
+
   private sealed class AttachInfo {
     public int ObjectNumber;
+    public int Generation;
     public string FileName = "";
     public long StreamOffset;
     public long StreamLength;
@@ -54,6 +64,7 @@ public sealed partial class PdfReader : IDisposable {
 
   private sealed class ImageInfo {
     public int ObjectNumber;
+    public int Generation;
     public long StreamOffset;
     public long StreamLength;
     public string Filter = "";
@@ -66,7 +77,10 @@ public sealed partial class PdfReader : IDisposable {
   private void Parse() {
     var text = Encoding.Latin1.GetString(_data);
 
-    this.ParsePages();
+    // Page slices copy objects verbatim; from an encrypted PDF they would carry ciphertext
+    // without its /Encrypt dictionary, so encrypted PDFs list no page entries.
+    if (_security == null)
+      this.ParsePages();
 
     // Find all objects with image XObjects
     var objMatches = ObjPattern().Matches(text);
@@ -78,7 +92,7 @@ public sealed partial class PdfReader : IDisposable {
       if (!objBody.Contains("/Subtype") || !objBody.Contains("/Image"))
         continue;
 
-      var info = new ImageInfo { ObjectNumber = objNum };
+      var info = new ImageInfo { ObjectNumber = objNum, Generation = GenerationOf(m) };
 
       // Parse filter
       var filterMatch = FilterPattern().Match(objBody);
@@ -160,9 +174,14 @@ public sealed partial class PdfReader : IDisposable {
       var objBody = m.Groups[2].Value;
       if (!objBody.Contains("/Type") || !objBody.Contains("/Filespec")) continue;
       if (liveObjects != null && !liveObjects.Contains(objNum)) continue;
-      var fnMatch = FilespecFnPattern().Match(objBody);
-      if (!fnMatch.Success) continue;
-      var fn = fnMatch.Groups[1].Value.Replace("\\(", "(").Replace("\\)", ")").Replace("\\\\", "\\");
+      string fn;
+      if (_security != null) {
+        fn = DecryptedFileName(objBody, objNum, GenerationOf(m)) ?? "";
+      } else {
+        var fnMatch = FilespecFnPattern().Match(objBody);
+        if (!fnMatch.Success) continue;
+        fn = fnMatch.Groups[1].Value.Replace("\\(", "(").Replace("\\)", ")").Replace("\\\\", "\\");
+      }
       // Skip filespecs with empty names — defensive against any in-place
       // tombstone scheme that might null out the name without xref tracking.
       if (string.IsNullOrEmpty(fn)) continue;
@@ -194,7 +213,7 @@ public sealed partial class PdfReader : IDisposable {
       }
       if (streamLen <= 0) continue;
 
-      var ai = new AttachInfo { ObjectNumber = objNum, FileName = fileName, StreamOffset = streamStart, StreamLength = streamLen };
+      var ai = new AttachInfo { ObjectNumber = objNum, Generation = GenerationOf(m), FileName = fileName, StreamOffset = streamStart, StreamLength = streamLen };
       _attachments[objNum] = ai;
       _entries.Add(new PdfEntry {
         Name = fileName,
@@ -295,13 +314,17 @@ public sealed partial class PdfReader : IDisposable {
       return pageBytes;
 
     // Check attachments first.
-    if (_attachments.TryGetValue(entry.ObjectNumber, out var attach))
-      return _data.AsSpan((int)attach.StreamOffset, (int)attach.StreamLength).ToArray();
+    if (_attachments.TryGetValue(entry.ObjectNumber, out var attach)) {
+      var stored = _data.AsSpan((int)attach.StreamOffset, (int)attach.StreamLength);
+      return _security != null ? _security.Decrypt(stored, attach.ObjectNumber, attach.Generation) : stored.ToArray();
+    }
 
     if (!_images.TryGetValue(entry.ObjectNumber, out var info))
       throw new InvalidDataException($"PDF: object {entry.ObjectNumber} not found.");
 
     var rawStream = _data.AsSpan((int)info.StreamOffset, (int)info.StreamLength).ToArray();
+    if (_security != null)
+      rawStream = _security.Decrypt(rawStream, info.ObjectNumber, info.Generation);
 
     return info.Filter switch {
       "/DCTDecode" => rawStream, // JPEG — return as-is
@@ -370,6 +393,31 @@ public sealed partial class PdfReader : IDisposable {
     }
   }
 
+  private static int GenerationOf(Match objectMatch) {
+    var g = GenerationPattern().Match(objectMatch.Value);
+    return g.Success ? int.Parse(g.Groups[1].Value) : 0;
+  }
+
+  /// <summary>
+  /// The /UF or /F file name of an encrypted Filespec: the string is decrypted with its object's
+  /// key, then read as UTF-16BE (with BOM) or PDFDocEncoding (Latin-1 for the printable range).
+  /// </summary>
+  private string? DecryptedFileName(string objBody, int objNum, int generation) {
+    foreach (var key in new[] { "/UF", "/F" }) {
+      var m = Regex.Match(objBody, Regex.Escape(key) + @"\s*([(<])");
+      if (!m.Success) continue;
+      var start = m.Groups[1].Index;
+      var raw = objBody[start] == '<'
+        ? PdfStandardSecurity.ParseHexString(objBody, start, out _)
+        : PdfStandardSecurity.ParseLiteralString(objBody, start, out _);
+      var plain = _security!.Decrypt(raw, objNum, generation);
+      return plain.Length >= 2 && plain[0] == 0xFE && plain[1] == 0xFF
+        ? Encoding.BigEndianUnicode.GetString(plain, 2, plain.Length - 2)
+        : Encoding.Latin1.GetString(plain);
+    }
+    return null;
+  }
+
   /// <summary>
   /// Releases resources held by this instance.
   /// </summary>
@@ -401,6 +449,9 @@ public sealed partial class PdfReader : IDisposable {
 
   [GeneratedRegex(@"/EF\s*<<\s*/F\s+(\d+)\s+0\s+R")]
   private static partial Regex EfRefPattern();
+
+  [GeneratedRegex(@"^\d+\s+(\d+)\s+obj")]
+  private static partial Regex GenerationPattern();
 
   [GeneratedRegex(@"/Prev\s+(\d+)")]
   private static partial Regex PrevPattern();

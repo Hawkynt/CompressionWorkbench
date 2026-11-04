@@ -50,6 +50,7 @@ public static class ZipCompatibility {
       ZipEncryptionMethod.None => result,
       ZipEncryptionMethod.PkzipTraditional => Max(result, ZipConstants.VersionNeeded20),
       ZipEncryptionMethod.Aes256 => Max(result, ZipConstants.VersionNeeded51),
+      ZipEncryptionMethod.PkwareStrongAes256 => Max(result, ZipConstants.VersionNeeded51),
       _ => throw new ArgumentOutOfRangeException(nameof(encryption), encryption, "Unknown ZIP encryption method."),
     };
 
@@ -88,6 +89,7 @@ public static class ZipCompatibility {
     var method = entry.WrappedCompressionMethod ?? entry.CompressionMethod;
     var encryption = entry.CompressionMethod == ZipCompressionMethod.WinZipAes
       ? ZipEncryptionMethod.Aes256
+      : entry.IsEncrypted && (entry.GeneralPurposeFlags & ZipStrongEncryption.FlagStrongEncryption) != 0 ? ZipEncryptionMethod.PkwareStrongAes256
       : entry.IsEncrypted ? ZipEncryptionMethod.PkzipTraditional : ZipEncryptionMethod.None;
 
     return GetVersionNeeded(method, encryption, entry.IsZip64, entry.IsDirectory);

@@ -67,6 +67,141 @@
     <EmbeddedResource Include="Freeze\ReferenceVectors\*.F">
       <LogicalName>FreezeVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+
+    <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
+    <EmbeddedResource Include="Bsc/ReferenceVectors/*.bsc;Bsc/ReferenceVectors/manifest.tsv">
+      <LogicalName>BscVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Bcm/ReferenceVectors/*.bcm;Bcm/ReferenceVectors/manifest.tsv">
+      <LogicalName>BcmVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Egg\ReferenceVectors\*.egg">
+      <LogicalName>EggVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="StuffItX\ReferenceVectors\*.sitx">
+      <LogicalName>StuffItXVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Aar\ReferenceVectors\*.aar">
+      <LogicalName>AarVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Mxl\ReferenceVectors\*.mxl">
+      <LogicalName>MxlVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Mht\ReferenceVectors\*.mht;Mht\ReferenceVectors\*.mhtml;Mht\ReferenceVectors\*.txt">
+      <LogicalName>MhtVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="WebArchive\ReferenceVectors\*.webarchive;WebArchive\ReferenceVectors\*.txt">
+      <LogicalName>WebArchiveVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Xp3\ReferenceVectors\*.xp3;Xp3\ReferenceVectors\*.txt">
+      <LogicalName>Xp3Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Qm\ReferenceVectors\*.ts;Qm\ReferenceVectors\*.qm">
+      <LogicalName>QmVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Apfs\ReferenceVectors\*.gz">
+      <LogicalName>ApfsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Phar\ReferenceVectors\*.phar;Phar\ReferenceVectors\php-listing.txt">
+      <LogicalName>PharVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <None Include="InstallShield\ReferenceVectors\data1.hdr;InstallShield\ReferenceVectors\data1.cab" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Te\ReferenceVectors\*.te;Te\ReferenceVectors\7zip-listing.txt">
+      <LogicalName>TeVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="PeSections\ReferenceVectors\*.exe;PeSections\ReferenceVectors\7zip-listing.txt">
+      <LogicalName>PeSectionsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Thumbcache\ReferenceVectors\*.db;Thumbcache\ReferenceVectors\dissect-listing.txt">
+      <LogicalName>ThumbcacheVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Dxbc\ReferenceVectors\*.dxbc">
+      <LogicalName>DxbcVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Pdf\ReferenceVectors\*.pdf">
+      <LogicalName>PdfVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ha\ReferenceVectors\*.ha">
+      <LogicalName>HaVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="ChromiumPak\ReferenceVectors\*.pak;ChromiumPak\ReferenceVectors\grit-listing.txt;ChromiumPak\ReferenceVectors\grit_oracle.py">
+      <LogicalName>ChromiumPakVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="WinterMuteDcp\ReferenceVectors\*.dcp;WinterMuteDcp\ReferenceVectors\*.txt">
+      <LogicalName>WinterMuteDcpVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="ComicBook\ReferenceVectors\*.cba">
+      <LogicalName>CbaVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="RpgMakerMvAsset\ReferenceVectors\*.rpgmv*;RpgMakerMvAsset\ReferenceVectors\*.png;RpgMakerMvAsset\ReferenceVectors\*.ogg;RpgMakerMvAsset\ReferenceVectors\*.m4a;RpgMakerMvAsset\ReferenceVectors\*.js">
+      <LogicalName>RpgMakerMvVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UnityPackage\ReferenceVectors\*.unitypackage;UnityPackage\ReferenceVectors\morpeh-listing.txt">
+      <LogicalName>UnityPackageVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="WixBurn\ReferenceVectors\*.gz;WixBurn\ReferenceVectors\oracle.tsv">
+      <LogicalName>WixBurnVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="OnePkg\ReferenceVectors\*.onepkg">
+      <LogicalName>OnePkgVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="LiveMaker\ReferenceVectors\*.dat;LiveMaker\ReferenceVectors\*.txt">
+      <LogicalName>LiveMakerVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Pcap\ReferenceVectors\*.pcap;Pcap\ReferenceVectors\*.pcapng;Pcap\ReferenceVectors\*.bin">
+      <LogicalName>PcapVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="AppleArchive\ReferenceVectors\*.aar">
+      <LogicalName>AppleArchiveVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="CommodoreLbr\ReferenceVectors\*.lbr">
+      <LogicalName>CommodoreLbrVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Par2\ReferenceVectors\*.par2;Par2\ReferenceVectors\a.txt;Par2\ReferenceVectors\b.bin">
+      <LogicalName>Par2Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ufs\ReferenceVectors\*.gz;Ufs\ReferenceVectors\manifest.txt">
+      <LogicalName>UfsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Sqlar\ReferenceVectors\*.sqlar">
+      <LogicalName>SqlarVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="BagIt\ReferenceVectors\*.zip">
+      <LogicalName>BagItVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="PowerPacker\ReferenceVectors\*.pp">
+      <LogicalName>PowerPackerVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="IcePacker\ReferenceVectors\*" Exclude="IcePacker\ReferenceVectors\README.md">
+      <LogicalName>IcePackerVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Lzham/ReferenceVectors/*.lzham;Lzham/ReferenceVectors/manifest.tsv">
+      <LogicalName>LzhamVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Crunch\ReferenceVectors\*" Exclude="Crunch\ReferenceVectors\README.md">
+      <LogicalName>CrunchVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Ctw/ReferenceVectors/*.ctw;Ctw/ReferenceVectors/manifest.tsv">
+      <LogicalName>CtwVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Dictionary/ReferenceVectors/*.xz">
+      <LogicalName>DictionaryVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="EnigmaVirtualBox\ReferenceVectors\*.gz;EnigmaVirtualBox\ReferenceVectors\oracle.tsv">
+      <LogicalName>EnigmaVirtualBoxVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="SymbianSis\ReferenceVectors\*.sis;SymbianSis\ReferenceVectors\*.sisx;SymbianSis\ReferenceVectors\oracle.tsv">
+      <LogicalName>SymbianSisVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Codecs\Nes2a03\ReferenceVectors\*.nsf;Codecs\Nes2a03\ReferenceVectors\*.tsv;Codecs\Nes2a03\ReferenceVectors\*.spec">
+      <LogicalName>FdsVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Jffs1\ReferenceVectors\*.gz;Jffs1\ReferenceVectors\*.manifest">
+      <LogicalName>Jffs1Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="GameAssetCiphers\ReferenceVectors\*.ogg;GameAssetCiphers\ReferenceVectors\*.png;GameAssetCiphers\ReferenceVectors\*.jpg;GameAssetCiphers\ReferenceVectors\*.um3;GameAssetCiphers\ReferenceVectors\*.utage;GameAssetCiphers\ReferenceVectors\*.txt">
+      <LogicalName>GameAssetCipherVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>

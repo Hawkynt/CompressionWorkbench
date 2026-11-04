@@ -40,6 +40,24 @@ internal static class ApfsDrecKey {
     return key;
   }
 
+  /// <summary>Bytes before the name in a key that carries length and hash (j_drec_hashed_key_t).</summary>
+  internal const int HashedHeaderLength = 12;
+
+  /// <summary>
+  /// Reads the name out of a key of either form: <paramref name="hashed" /> is true on a
+  /// volume whose incompatible features fold names (case- or normalization-insensitive),
+  /// whose keys hold <c>name_len_and_hash</c> — length in the low 10 bits — then the name.
+  /// </summary>
+  internal static bool TryReadName(ReadOnlySpan<byte> key, bool hashed, out string name) {
+    if (!hashed) return TryReadName(key, out name);
+    name = string.Empty;
+    if (key.Length < HashedHeaderLength) return false;
+    var nameLength = (int)(BinaryPrimitives.ReadUInt32LittleEndian(key[8..]) & 0x3FF);
+    if (nameLength <= 0 || HashedHeaderLength + nameLength > key.Length) return false;
+    name = Encoding.UTF8.GetString(key.Slice(HashedHeaderLength, nameLength)).TrimEnd('\0');
+    return true;
+  }
+
   /// <summary>Reads the name out of a key, or returns false when the key is not one.</summary>
   internal static bool TryReadName(ReadOnlySpan<byte> key, out string name) {
     name = string.Empty;

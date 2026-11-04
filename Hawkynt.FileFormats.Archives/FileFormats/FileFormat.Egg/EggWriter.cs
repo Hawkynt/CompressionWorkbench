@@ -103,7 +103,9 @@ public sealed class EggWriter : IDisposable {
         WriteWindowsInfo(writer, entry.LastModifiedUtc, entry.IsDirectory);
       writer.Write(EggReader.EndMarker); // end of file sub-headers
 
-      if (!entry.IsDirectory)
+      // ALZip writes no block for a directory or an empty file, and readers (EggDotNet among them)
+      // only look for blocks when the file header announces a non-zero size.
+      if (!entry.IsDirectory && entry.Data.Length > 0)
         WriteBlock(writer, entry.Data, entry.Method, entry.Level);
     }
 

@@ -1,345 +1,283 @@
-#pragma warning disable CS1591
+// Converted from BCM 1.65 bcm.cpp (Apache-2.0).
+// Copyright (C) 2008-2021 Ilya Muravyov
+// See THIRD-PARTY-NOTICE.bcm.txt in this directory.
+using Compression.Core.Checksums;
 using Compression.Core.Transforms;
 
 namespace FileFormat.Bcm;
 
 /// <summary>
-/// BCM: Ilya Muravyov's BWT + MTF + Context Mixing compressor.
-/// Format: 4-byte magic "BCM!" (raw), then all data (block sizes, BWT primary index, bytes,
-/// EOF marker, CRC32) encoded through an arithmetic coder.
+/// BCM by Ilya Muravyov, the open-source 1.x format (<c>BCM!</c>): blocks transformed by the
+/// suffix-array Burrows-Wheeler Transform and coded bit by bit with a small context-mixing model
+/// and a 32-bit binary arithmetic coder.
 /// </summary>
+/// <remarks>
+/// <para>Layout: the 4-byte id <c>BCM!</c>, then one arithmetic-coded stream holding, per block,
+/// its length and one-based BWT primary index as 32-bit values at probability 1/2 followed by its
+/// transformed bytes; a zero length ends the blocks and the CRC-32 of the whole input follows.</para>
+/// <para>BCM 1.10 to 1.65 write identical files. BCM 2.x writes a different format (<c>BCM2</c>)
+/// whose source was never published; it is recognised and refused.</para>
+/// </remarks>
 public static class BcmStream {
 
-  private static readonly byte[] Magic = [0x42, 0x43, 0x4D, 0x21]; // "BCM!"
-  internal const int DefaultBlockSize = 64 * 1024;
-  internal const int MaximumOptimizedBlockSize = 128 * 1024;
+  /// <summary>The id BCM 1.x writes first: "BCM!".</summary>
+  internal static readonly byte[] Magic = "BCM!"u8.ToArray();
 
-  // ── Public API ────────────────────────────────────────────────────────────
+  /// <summary>The id BCM 2.x writes first: "BCM2".</summary>
+  internal static readonly byte[] Magic2 = "BCM2"u8.ToArray();
 
-  /// <summary>
-  /// Encodes the supplied input using the compatibility-default 64 KiB block size.
-  /// </summary>
+  /// <summary>bcm's default block size, 16 MiB (<c>-b16</c>).</summary>
+  public const int DefaultBlockSize = 1 << 24;
+
+  // bcm takes -b# in MiB as an int: 2047 MiB is the largest it can express.
+  internal const int MaximumBlockSize = 2047 << 20;
+
+  /// <summary>Compresses with bcm's default 16 MiB blocks.</summary>
   public static void Compress(Stream input, Stream output) => Compress(input, output, DefaultBlockSize);
 
-  /// <summary>
-  /// Encodes the supplied input using the requested BWT block size.
-  /// </summary>
-  /// <param name="input">Raw input stream.</param>
-  /// <param name="output">Destination BCM stream.</param>
-  /// <param name="blockSize">BWT block size in bytes. Must be positive.</param>
+  /// <summary>Compresses with the given block size, as <c>bcm -b</c> does.</summary>
   public static void Compress(Stream input, Stream output, int blockSize) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
     ArgumentOutOfRangeException.ThrowIfNegativeOrZero(blockSize);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(blockSize, MaximumBlockSize);
 
-    using var ms = new MemoryStream();
-    input.CopyTo(ms);
-    var data = ms.ToArray();
-
+    using var buffer = new MemoryStream();
+    input.CopyTo(buffer);
     output.Write(Magic);
+    output.Write(CompressPayload(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), blockSize));
+  }
 
-    var enc = new BcmEncoder(output);
-    uint rawCrc = 0xFFFFFFFFu; // incremental raw CRC (not yet finalized)
-    var pos = 0;
+  /// <summary>Decompresses a BCM 1.x file.</summary>
+  public static void Decompress(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
 
-    while (pos < data.Length) {
-      var len = Math.Min(blockSize, data.Length - pos);
-      var block = data.AsSpan(pos, len);
+    Span<byte> id = stackalloc byte[4];
+    input.ReadExactly(id);
+    if (id.SequenceEqual(Magic2))
+      throw new NotSupportedException("BCM: this file was written by BCM 2.x, whose format is unpublished; only the BCM 1.x format (\"BCM!\") is supported.");
+    if (!id.SequenceEqual(Magic))
+      throw new InvalidDataException("Not a BCM stream (bad magic).");
 
-      rawCrc = Crc32Accumulate(rawCrc, block);
+    DecompressPayload(input, output);
+  }
 
-      var (bwtData, primaryIndex) = BurrowsWheelerTransform.Forward(block);
-      var mtfData = MtfEncode(bwtData);
+  /// <summary>The coded stream after the id: blocks, end marker and CRC-32, flushed.</summary>
+  internal static byte[] CompressPayload(ReadOnlySpan<byte> data, int blockSize) {
+    // bcm shrinks the block size to the file size before it reads anything.
+    if (blockSize > data.Length)
+      blockSize = data.Length;
 
-      enc.EncodeUint32((uint)len);
-      enc.EncodeUint32((uint)primaryIndex);
-      foreach (var b in mtfData)
-        enc.EncodeByte(b);
-
-      pos += len;
+    using var output = new MemoryStream();
+    var model = new Model(output, null);
+    var crc = new Crc32();
+    for (var offset = 0; offset < data.Length; offset += blockSize) {
+      var block = data.Slice(offset, Math.Min(blockSize, data.Length - offset));
+      crc.Update(block);
+      var (transformed, primaryIndex) = SuffixBurrowsWheelerTransform.Forward(block);
+      model.Put32((uint)block.Length);
+      model.Put32((uint)primaryIndex);
+      foreach (var value in transformed)
+        model.Put(value);
     }
 
-    // EOF marker + finalized CRC32 of the original data
-    enc.EncodeUint32(0u);
-    enc.EncodeUint32(Crc32Finalize(rawCrc));
-    enc.Flush();
+    model.Put32(0);
+    model.Put32(crc.Value);
+    model.Flush();
+    return output.ToArray();
+  }
+
+  /// <summary>Decodes the coded stream after the id.</summary>
+  internal static void DecompressPayload(Stream input, Stream output) {
+    var model = new Model(null, input);
+    model.Init();
+    var crc = new Crc32();
+    var blockSize = 0;
+    int n;
+    while ((n = (int)model.Get32()) > 0) {
+      if (blockSize == 0) {
+        if (n > MaximumBlockSize)
+          throw new InvalidDataException($"BCM: block size {n} is larger than bcm can write.");
+        blockSize = n;
+      }
+
+      var primaryIndex = (int)model.Get32();
+      if (n > blockSize || primaryIndex < 1 || primaryIndex > n)
+        throw new InvalidDataException("BCM: corrupt input (block size or BWT index out of range).");
+
+      var transformed = new byte[n];
+      for (var i = 0; i < n; ++i)
+        transformed[i] = (byte)model.Get();
+
+      var block = SuffixBurrowsWheelerTransform.Inverse(transformed, primaryIndex);
+      crc.Update(block);
+      output.Write(block);
+    }
+
+    if (n < 0)
+      throw new InvalidDataException("BCM: corrupt input (negative block size).");
+    if (model.Get32() != crc.Value)
+      throw new InvalidDataException("BCM: CRC error.");
   }
 
   /// <summary>
-  /// Decodes the supplied input.
+  /// bcm's coder and model: a 32-bit carryless binary arithmetic coder, three adaptive bit
+  /// counters (order 0, the previous byte, the byte before it) and an SSE stage interpolated
+  /// over 17 buckets and keyed on whether the last three bytes were a run.
   /// </summary>
-  public static void Decompress(Stream input, Stream output) {
-    Span<byte> magicBuf = stackalloc byte[4];
-    input.ReadExactly(magicBuf);
-    if (magicBuf[0] != Magic[0] || magicBuf[1] != Magic[1] ||
-        magicBuf[2] != Magic[2] || magicBuf[3] != Magic[3])
-      throw new InvalidDataException("Not a BCM stream (bad magic).");
+  private sealed class Model(Stream? output, Stream? input) {
+    private uint _low;
+    private uint _high = 0xFFFFFFFF;
+    private uint _code;
 
-    var dec = new BcmDecoder(input);
-    uint rawCrc = 0xFFFFFFFFu; // incremental raw CRC (not yet finalized)
+    private readonly ushort[] _counter0 = InitialCounters(256);
+    private readonly ushort[] _counter1 = InitialCounters(256 * 256);
+    private readonly ushort[] _counter2 = InitialSse();
+    private int _run;
+    private int _c1;
+    private int _c2;
 
-    using var result = new MemoryStream();
-
-    while (true) {
-      var blockLen = dec.DecodeUint32();
-      if (blockLen == 0)
-        break;
-
-      var primaryIndex = (int)dec.DecodeUint32();
-
-      var mtfData = new byte[blockLen];
-      for (var i = 0; i < (int)blockLen; i++)
-        mtfData[i] = dec.DecodeByte();
-
-      var bwtData = MtfDecode(mtfData);
-      var block = BurrowsWheelerTransform.Inverse(bwtData, primaryIndex);
-
-      rawCrc = Crc32Accumulate(rawCrc, block);
-      result.Write(block);
+    private static ushort[] InitialCounters(int count) {
+      var counters = new ushort[count];
+      Array.Fill(counters, (ushort)(1 << 15));
+      return counters;
     }
 
-    var storedCrc = dec.DecodeUint32();
-    var computedCrc = Crc32Finalize(rawCrc);
-    if (storedCrc != computedCrc)
-      throw new InvalidDataException($"BCM CRC32 mismatch: stored=0x{storedCrc:X8}, computed=0x{computedCrc:X8}.");
-
-    result.Position = 0;
-    result.CopyTo(output);
-  }
-
-  // ── MTF (Move-to-Front) ───────────────────────────────────────────────────
-
-  private static byte[] MtfEncode(ReadOnlySpan<byte> data) {
-    var table = new byte[256];
-    for (var i = 0; i < 256; i++) table[i] = (byte)i;
-    var result = new byte[data.Length];
-    for (var i = 0; i < data.Length; i++) {
-      var sym = data[i];
-      int rank = 0;
-      while (table[rank] != sym) rank++;
-      result[i] = (byte)rank;
-      for (var j = rank; j > 0; j--)
-        table[j] = table[j - 1];
-      table[0] = sym;
-    }
-    return result;
-  }
-
-  private static byte[] MtfDecode(byte[] data) {
-    var table = new byte[256];
-    for (var i = 0; i < 256; i++) table[i] = (byte)i;
-    var result = new byte[data.Length];
-    for (var i = 0; i < data.Length; i++) {
-      var rank = data[i];
-      var sym = table[rank];
-      result[i] = sym;
-      for (var j = rank; j > 0; j--)
-        table[j] = table[j - 1];
-      table[0] = sym;
-    }
-    return result;
-  }
-
-  // ── CRC32 ─────────────────────────────────────────────────────────────────
-  // Incremental CRC: pass raw (unfinalized) crc into Crc32Accumulate, then call
-  // Crc32Finalize once at the end.  Starting raw value is 0xFFFFFFFF.
-
-  private static readonly uint[] Crc32Table = BuildCrc32Table();
-
-  private static uint[] BuildCrc32Table() {
-    var table = new uint[256];
-    for (uint i = 0; i < 256; i++) {
-      var c = i;
-      for (var j = 0; j < 8; j++)
-        c = (c & 1) != 0 ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
-      table[i] = c;
-    }
-    return table;
-  }
-
-  // Accumulate bytes into a running raw CRC (no XOR wrap applied here).
-  private static uint Crc32Accumulate(uint rawCrc, ReadOnlySpan<byte> data) {
-    foreach (var b in data)
-      rawCrc = Crc32Table[(rawCrc ^ b) & 0xFF] ^ (rawCrc >> 8);
-    return rawCrc;
-  }
-
-  // Finalize a raw CRC into the standard IEEE CRC32 value.
-  private static uint Crc32Finalize(uint rawCrc) => rawCrc ^ 0xFFFFFFFFu;
-}
-
-// ── Arithmetic Encoder ────────────────────────────────────────────────────────
-// 32-bit carryless range coder. Uses (low, high) representation with
-// normalization: while top byte of low == top byte of high, emit low>>24 and shift.
-//
-// Context model for data bytes: 256 contexts (prev byte), each with a 255-node
-// bit-tree for adaptive byte-level probability estimation (8-bit binary trie).
-//
-// uint32 fields are encoded using a flat bit-tree (single context, balanced init).
-
-internal sealed class BcmEncoder {
-  private readonly Stream _stream;
-  private uint _low;
-  private uint _high = 0xFFFFFFFF;
-
-  // context bit-trees: _btree[ctx] is an array of 256 nodes (index 1..255 used)
-  // for encoding a byte in context ctx.
-  private readonly int[,] _btree = new int[256, 256]; // [ctx, node]
-
-  // Flat bit-tree for raw uint32 fields (32 independent bits, each with own prob node)
-  private readonly int[] _u32tree = new int[33]; // nodes 1..32 used
-
-  private byte _prevByte;
-
-  public BcmEncoder(Stream stream) {
-    _stream = stream;
-    // Initialise bit-tree probabilities to balanced (2048 = 0.5 at 12-bit scale)
-    for (var c = 0; c < 256; c++)
-      for (var n = 1; n < 256; n++)
-        _btree[c, n] = 2048;
-    for (var n = 1; n <= 32; n++)
-      _u32tree[n] = 2048;
-  }
-
-  public void EncodeByte(byte b) {
-    var ctx = _prevByte;
-    _prevByte = b;
-
-    // Walk the bit-tree from MSB to LSB
-    var node = 1;
-    for (var i = 7; i >= 0; i--) {
-      var bit = (b >> i) & 1;
-      EncodeBit(bit, _btree[ctx, node]);
-      _btree[ctx, node] = UpdateProb(_btree[ctx, node], bit);
-      node = (node << 1) | bit;
-    }
-  }
-
-  public void EncodeUint32(uint value) {
-    // Each bit of the uint32 uses its own independent probability node
-    for (var i = 0; i < 32; i++) {
-      var bit = (int)(value >> (31 - i)) & 1;
-      EncodeBit(bit, _u32tree[i + 1]);
-      _u32tree[i + 1] = UpdateProb(_u32tree[i + 1], bit);
-    }
-  }
-
-  private void EncodeBit(int bit, int p0) {
-    // p0: 12-bit probability that bit == 0
-    var range = (ulong)(_high - _low) + 1;
-    var mid = _low + (uint)((range * (ulong)p0) >> 12) - 1;
-    if (mid < _low) mid = _low; // clamp when p0 near 0
-
-    if (bit == 0)
-      _high = (uint)mid;
-    else
-      _low = (uint)mid + 1;
-
-    Normalize();
-  }
-
-  private void Normalize() {
-    while ((_low ^ _high) < 0x01000000u) {
-      _stream.WriteByte((byte)(_low >> 24));
-      _low <<= 8;
-      _high = (_high << 8) | 0xFF;
-    }
-  }
-
-  public void Flush() {
-    for (var i = 0; i < 4; i++) {
-      _stream.WriteByte((byte)(_low >> 24));
-      _low <<= 8;
-    }
-  }
-
-  private static int UpdateProb(int prob, int bit) {
-    // Exponential moving average: fast convergence
-    return bit == 0 ? prob + ((4096 - prob) >> 5) : prob - (prob >> 5);
-  }
-}
-
-// ── Arithmetic Decoder ────────────────────────────────────────────────────────
-
-internal sealed class BcmDecoder {
-  private readonly Stream _stream;
-  private uint _low;
-  private uint _high = 0xFFFFFFFF;
-  private uint _code;
-
-  private readonly int[,] _btree = new int[256, 256];
-  private readonly int[] _u32tree = new int[33];
-
-  private byte _prevByte;
-
-  public BcmDecoder(Stream stream) {
-    _stream = stream;
-    for (var c = 0; c < 256; c++)
-      for (var n = 1; n < 256; n++)
-        _btree[c, n] = 2048;
-    for (var n = 1; n <= 32; n++)
-      _u32tree[n] = 2048;
-
-    // Prime code with 4 bytes
-    for (var i = 0; i < 4; i++)
-      _code = (_code << 8) | (uint)ReadByte();
-  }
-
-  public byte DecodeByte() {
-    var ctx = _prevByte;
-    var node = 1;
-    for (var i = 7; i >= 0; i--) {
-      var bit = DecodeBit(_btree[ctx, node]);
-      _btree[ctx, node] = UpdateProb(_btree[ctx, node], bit);
-      node = (node << 1) | bit;
-    }
-    var sym = (byte)(node - 256);
-    _prevByte = sym;
-    return sym;
-  }
-
-  public uint DecodeUint32() {
-    uint value = 0;
-    for (var i = 0; i < 32; i++) {
-      var bit = DecodeBit(_u32tree[i + 1]);
-      _u32tree[i + 1] = UpdateProb(_u32tree[i + 1], bit);
-      value = (value << 1) | (uint)bit;
-    }
-    return value;
-  }
-
-  private int DecodeBit(int p0) {
-    var range = (ulong)(_high - _low) + 1;
-    var mid = _low + (uint)((range * (ulong)p0) >> 12) - 1;
-    if (mid < _low) mid = _low;
-
-    int bit;
-    if (_code <= (uint)mid) {
-      bit = 0;
-      _high = (uint)mid;
-    } else {
-      bit = 1;
-      _low = (uint)mid + 1;
+    private static ushort[] InitialSse() {
+      var counters = new ushort[2 * 256 * 17];
+      for (var i = 0; i < 2 * 256; ++i)
+        for (var k = 0; k <= 16; ++k)
+          counters[i * 17 + k] = (ushort)((k << 12) - (k == 16 ? 1 : 0));
+      return counters;
     }
 
-    Normalize();
-    return bit;
-  }
+    private static void Update1(ushort[] counters, int index, int rate) => counters[index] += (ushort)((counters[index] ^ 0xFFFF) >> rate);
 
-  private void Normalize() {
-    while ((_low ^ _high) < 0x01000000u) {
-      _low <<= 8;
-      _high = (_high << 8) | 0xFF;
-      _code = (_code << 8) | (uint)ReadByte();
+    private static void Update0(ushort[] counters, int index, int rate) => counters[index] -= (ushort)(counters[index] >> rate);
+
+    public void Flush() {
+      for (var i = 0; i < 4; ++i) {
+        output!.WriteByte((byte)(_low >> 24));
+        _low <<= 8;
+      }
     }
-  }
 
-  private int ReadByte() {
-    var b = _stream.ReadByte();
-    return b < 0 ? 0xFF : b;
-  }
+    public void Init() {
+      for (var i = 0; i < 4; ++i)
+        _code = _code << 8 | ReadByte();
+    }
 
-  private static int UpdateProb(int prob, int bit) {
-    return bit == 0 ? prob + ((4096 - prob) >> 5) : prob - (prob >> 5);
+    // getc: EOF is -1, which ORs in as all ones.
+    private uint ReadByte() {
+      var value = input!.ReadByte();
+      return value < 0 ? 0xFFFFFFFF : (uint)value;
+    }
+
+    private void EncodeBit(int bit, uint p, int pLog) {
+      var mid = _low + (uint)(((ulong)(_high - _low) * p) >> pLog);
+      if (bit != 0)
+        _high = mid;
+      else
+        _low = mid + 1;
+
+      while ((_low ^ _high) < 1u << 24) {
+        output!.WriteByte((byte)(_low >> 24));
+        _low <<= 8;
+        _high = _high << 8 | 255;
+      }
+    }
+
+    private int DecodeBit(uint p, int pLog) {
+      var mid = _low + (uint)(((ulong)(_high - _low) * p) >> pLog);
+      var bit = _code <= mid ? 1 : 0;
+      if (bit != 0)
+        _high = mid;
+      else
+        _low = mid + 1;
+
+      while ((_low ^ _high) < 1u << 24) {
+        _low <<= 8;
+        _high = _high << 8 | 255;
+        _code = _code << 8 | ReadByte();
+      }
+
+      return bit;
+    }
+
+    public void Put32(uint x) {
+      for (var i = 1u << 31; i > 0; i >>= 1)
+        EncodeBit((x & i) != 0 ? 1 : 0, 1, 1);
+    }
+
+    public uint Get32() {
+      var x = 0u;
+      for (var i = 0; i < 32; ++i)
+        x += x + (uint)DecodeBit(1, 1);
+      return x;
+    }
+
+    // The probability of a one at this bit, out of 2^18, and the SSE cells it interpolated.
+    private uint Predict(int ctx, int f, out int sse) {
+      int p0 = _counter0[ctx];
+      int p1 = _counter1[_c1 << 8 | ctx];
+      int p2 = _counter1[_c2 << 8 | ctx];
+      var p = ((p0 + p1) * 7 + p2 + p2) >> 4;
+
+      var j = p >> 12;
+      sse = (f * 256 + ctx) * 17 + j;
+      int x1 = _counter2[sse];
+      int x2 = _counter2[sse + 1];
+      var ssep = x1 + (((x2 - x1) * (p & 4095)) >> 12);
+      return (uint)(p + ssep + ssep + ssep);
+    }
+
+    private void Update(int ctx, int sse, int bit) {
+      if (bit != 0) {
+        Update1(_counter0, ctx, 2);
+        Update1(_counter1, _c1 << 8 | ctx, 4);
+        Update1(_counter2, sse, 6);
+        Update1(_counter2, sse + 1, 6);
+      } else {
+        Update0(_counter0, ctx, 2);
+        Update0(_counter1, _c1 << 8 | ctx, 4);
+        Update0(_counter2, sse, 6);
+        Update0(_counter2, sse + 1, 6);
+      }
+    }
+
+    private void EndByte(int ctx) {
+      _c2 = _c1;
+      _c1 = ctx - 256;
+      _run = _c1 == _c2 ? _run + 1 : 0;
+    }
+
+    public void Put(int c) {
+      var f = _run > 2 ? 1 : 0;
+      var ctx = 1;
+      for (var i = 128; i > 0; i >>= 1) {
+        var p = Predict(ctx, f, out var sse);
+        var bit = (c & i) != 0 ? 1 : 0;
+        EncodeBit(bit, p, 18);
+        Update(ctx, sse, bit);
+        ctx += ctx + bit;
+      }
+
+      EndByte(ctx);
+    }
+
+    public int Get() {
+      var f = _run > 2 ? 1 : 0;
+      var ctx = 1;
+      while (ctx < 256) {
+        var p = Predict(ctx, f, out var sse);
+        var bit = DecodeBit(p, 18);
+        Update(ctx, sse, bit);
+        ctx += ctx + bit;
+      }
+
+      EndByte(ctx);
+      return _c1;
+    }
   }
 }

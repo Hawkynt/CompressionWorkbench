@@ -7,12 +7,13 @@ namespace Compression.Tests.PowerPacker;
 [TestFixture]
 public class PowerPackerTests {
 
-  // These vectors are constructed from the published PP20 bitstream rules, not
-  // from PowerPackerStream. They pin reverse LSB-first bit order, extended
-  // literal counts, and class-3 short offsets independently of our writer.
+  // The first two vectors were built by hand from the PP20 bitstream rules; the
+  // third, which ends with a match and therefore with a final literal flag of 1,
+  // is our encoder's. ancient decodes all three. They pin reverse LSB-first bit
+  // order, extended literal counts, and class-3 short offsets.
   [TestCase("50503230090A0B0B8242C24000000305", "ABC")]
   [TestCase("50503230090A0B0B8242C222A262E23C00000701", "ABCDEFG")]
-  [TestCase("50503230090A0B0B881C12161200000000000918", "ABCABCABC")]
+  [TestCase("50503230090A0B0BC40E090B0900000000000917", "ABCABCABC")]
   [Category("HappyPath")]
   public void Decompress_SpecDerivedVectors(string packedHex, string expected) {
     var packed = Convert.FromHexString(packedHex);
@@ -42,8 +43,9 @@ public class PowerPackerTests {
     AssertRoundTrip(data, PowerPackerEfficiency.Good);
   }
 
-  [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void RoundTrip_EmptyData() => AssertRoundTrip([], PowerPackerEfficiency.Good);
+  [Test, Category("ExceptionalCase")]
+  public void EmptyData_IsRefused()
+    => Assert.That(() => PowerPackerStream.Compress([], PowerPackerEfficiency.Good), Throws.ArgumentException);
 
   [TestCase(PowerPackerEfficiency.Fast, "09090909")]
   [TestCase(PowerPackerEfficiency.Mediocre, "090A0A0A")]

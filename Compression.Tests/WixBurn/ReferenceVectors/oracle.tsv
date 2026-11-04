@@ -1,0 +1,11 @@
+# fixture	path	size	sha256 -- produced by WiX 3.14 "dark.exe -x"
+burn-v3.exe	AttachedContainer/data/random.bin	3000	ea9a04acd72963e6c050896f128a26ced2a8a41696550c6cf4a81fb57f530a91
+burn-v3.exe	AttachedContainer/data/repeat.txt	32000	755a009b306c9e7bedbb976fbf50710eb9dddd63e9e17ac59ca8d32769fd7627
+burn-v3.exe	AttachedContainer/docs/readme.txt	46	1028d9a4f0f20b40614d8d2333fcce034b0ef3c48cd5849b04b36ce665f02607
+burn-v3.exe	AttachedContainer/package.exe	512	a5b8697c566fe911e9ec7bcbca82b04327d4b5135c47524db0969fad8a184830
+burn-v3.exe	UX/BootstrapperApplicationData.xml	2818	2041f0d7f4d5bcba835f06e2ba68783efca4e11545f89754da10d7a196052f04
+burn-v3.exe	UX/logo.png	852	cd2e8ed1fbb308d9d166f49794d323a9b22efba1033cdf906d1f4b030319e01b
+burn-v3.exe	UX/manifest.xml	3431	64caf322023be72deef105c443c0fdc4071e824c7a1895e76fae66cf54ea633d
+burn-v3.exe	UX/thm.wxl	4509	8fbeb7f0b546d394d99b49d678d516402e8f54e5dea590cc91733f502f288019
+burn-v3.exe	UX/thm.xml	8373	8d67851408a62b0f04dbaaddc588cd98499cf3630ec5df9f7c0699f0d367f79c
+burn-v3.exe	UX/wixstdba.dll	210200	b7de0a0ca3a94738747abd708e30ba1f9638a8c8b7d8173c76d4f39fae3d9346

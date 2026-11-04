@@ -93,7 +93,14 @@ public sealed class EggReader : IDisposable {
   public bool IsSplit { get; private set; }
 
   /// <summary>True when a global (archive-level) encryption header is present.</summary>
-  public bool IsGloballyEncrypted { get; private set; }
+  public bool IsGloballyEncrypted => this.GlobalEncryption != null;
+
+  /// <summary>True when the members are compressed as one solid stream.</summary>
+  public bool IsSolid { get; private set; }
+
+  internal EggEncryption? GlobalEncryption { get; private set; }
+
+  private byte[]? _solidData;
 
   private void _ReadArchive() {
     _stream.Position = 0;
@@ -107,11 +114,11 @@ public sealed class EggReader : IDisposable {
     _ = _reader.ReadUInt32(); // reserved
 
     // EGG-header extra fields (split / solid / global encryption) up to the end-marker.
-    _SkipExtraFields((field, _, _, _) => {
+    _SkipExtraFields((field, _, size, dataStart) => {
       switch (field) {
         case SplitMagic: this.IsSplit = true; break;
-        case SolidMagic: break;
-        case EncryptMagic: this.IsGloballyEncrypted = true; break;
+        case SolidMagic: this.IsSolid = true; break;
+        case EncryptMagic: this.GlobalEncryption = EggEncryption.Parse(_ReadField(size, dataStart)); break;
       }
     });
 
@@ -120,6 +127,10 @@ public sealed class EggReader : IDisposable {
       var token = _reader.ReadUInt32();
       if (token == EndMarker)
         break; // end of archive
+      if (token == CommentMagic) {
+        this._SkipOneField(); // archive comment record
+        continue;
+      }
 
       if (token != FileHeaderMagic)
         throw new InvalidDataException($"Unexpected token 0x{token:X8} where a file header was expected.");
@@ -139,7 +150,10 @@ public sealed class EggReader : IDisposable {
           case FilenameMagic: _ParseFilename(bitFlag, size, dataStart, entry); break;
           case WindowsInfoMagic: _ParseWindowsInfo(entry); break;
           case PosixInfoMagic: _ParsePosixInfo(entry); break;
-          case EncryptMagic: entry.IsEncrypted = true; break;
+          case EncryptMagic:
+            entry.IsEncrypted = true;
+            entry.Encryption = EggEncryption.Parse(_ReadField(size, dataStart));
+            break;
         }
       });
 
@@ -157,6 +171,10 @@ public sealed class EggReader : IDisposable {
   private void _ReadBlocks(EggEntry entry) {
     while (_stream.Position + 4 <= _stream.Length) {
       var token = _reader.ReadUInt32();
+      if (token == CommentMagic) {
+        this._SkipOneField(); // a comment record between the file header and its blocks
+        continue;
+      }
       if (token != BlockHeaderMagic) {
         _stream.Position -= 4; // belongs to the next file header or the archive end-marker
         break;
@@ -185,48 +203,35 @@ public sealed class EggReader : IDisposable {
   }
 
   /// <summary>
-  /// Extracts and decompresses an entry into a byte array. Store and Deflate blocks
-  /// are decoded natively; any other algorithm, or an encrypted / split-volume entry,
-  /// raises <see cref="NotSupportedException"/> rather than returning wrong bytes.
-  /// Every decoded block is checked against its declared size and CRC-32.
+  /// Extracts and decompresses an entry: stored, deflate, bzip2, AZO and LZMA blocks, ZIP 2.0 / AES /
+  /// LEA encryption, solid archives. Split (multi-volume) members raise
+  /// <see cref="NotSupportedException"/> rather than returning wrong bytes. Every decoded block is
+  /// checked against its declared size and CRC-32.
   /// </summary>
-  public byte[] Extract(EggEntry entry) {
+  public byte[] Extract(EggEntry entry, string? password = null) {
     ArgumentNullException.ThrowIfNull(entry);
 
-    if (entry.IsDirectory)
+    if (entry.IsDirectory || entry.UncompressedSize == 0 && entry.Blocks.Count == 0 && !this.IsSolid)
       return [];
     if (this.IsSplit)
       throw new NotSupportedException("EGG split (multi-volume) archives are not supported for extraction.");
-    if (entry.IsEncrypted)
-      throw new NotSupportedException($"EGG entry '{entry.Name}' is encrypted; extraction is not supported.");
 
-    using var output = new MemoryStream();
-    var crc = new Crc32();
-    foreach (var block in entry.Blocks) {
-      if (block.CompressedSize > int.MaxValue)
-        throw new InvalidDataException($"EGG entry '{entry.Name}' has a block too large for in-memory extraction.");
-      _stream.Position = block.DataOffset;
-      var compressed = new byte[(int)block.CompressedSize];
-      _ReadExactly(compressed);
-
-      var plain = block.Algorithm switch {
-        0 => compressed, // Store
-        1 => DeflateDecompressor.Decompress(compressed), // Deflate (raw)
-        _ => throw new NotSupportedException(
-          $"EGG entry '{entry.Name}' uses unsupported compression '{new EggEntry { PrimaryAlgorithm = block.Algorithm }.MethodName}'."),
-      };
-
-      if (plain.LongLength != block.UncompressedSize)
-        throw new InvalidDataException(
-          $"EGG entry '{entry.Name}' block expands to {plain.LongLength} bytes; header declares {block.UncompressedSize}.");
-      crc.Reset();
-      crc.Update(plain);
-      if (crc.Value != block.Crc32)
-        throw new InvalidDataException(
-          $"EGG entry '{entry.Name}' failed CRC-32 validation (stored 0x{block.Crc32:X8}, computed 0x{crc.Value:X8}).");
-
-      output.Write(plain, 0, plain.Length);
+    if (this.IsSolid) {
+      this._solidData ??= this._DecodeSolid(password);
+      var offset = 0L;
+      foreach (var e in this._entries) {
+        if (ReferenceEquals(e, entry))
+          return this._solidData.AsSpan((int)offset, (int)e.UncompressedSize).ToArray();
+        if (!e.IsDirectory)
+          offset += e.UncompressedSize;
+      }
+      throw new ArgumentException("Entry does not belong to this archive.", nameof(entry));
     }
+
+    var encryption = entry.Encryption ?? this.GlobalEncryption;
+    using var output = new MemoryStream();
+    foreach (var block in entry.Blocks)
+      output.Write(this._DecodeBlock(entry.Name, block, encryption, password));
 
     if (output.Length != entry.UncompressedSize)
       throw new InvalidDataException(
@@ -234,7 +239,91 @@ public sealed class EggReader : IDisposable {
     return output.ToArray();
   }
 
+  /// <summary>Decodes the one compressed stream of a solid archive (the blocks after the last file header).</summary>
+  private byte[] _DecodeSolid(string? password) {
+    var total = this._entries.Where(e => !e.IsDirectory).Sum(e => e.UncompressedSize);
+    var holder = this._entries.LastOrDefault(e => e.Blocks.Count > 0)
+      ?? throw new InvalidDataException("EGG solid archive has no data block.");
+    var encryption = this._entries.Select(e => e.Encryption).FirstOrDefault(e => e != null) ?? this.GlobalEncryption;
+    using var output = new MemoryStream();
+    foreach (var block in holder.Blocks)
+      output.Write(this._DecodeBlock("solid stream", block, encryption, password));
+    if (output.Length != total)
+      throw new InvalidDataException($"EGG solid stream expands to {output.Length} bytes; the file headers declare {total}.");
+    return output.ToArray();
+  }
+
+  private byte[] _DecodeBlock(string name, EggBlock block, EggEncryption? encryption, string? password) {
+    if (block.CompressedSize > int.MaxValue || block.UncompressedSize > int.MaxValue)
+      throw new NotSupportedException($"EGG entry '{name}' has a block too large for in-memory extraction.");
+    _stream.Position = block.DataOffset;
+    var packed = new byte[(int)block.CompressedSize];
+    _ReadExactly(packed);
+
+    if (encryption != null) {
+      if (string.IsNullOrEmpty(password))
+        throw new InvalidOperationException($"EGG entry '{name}' is encrypted ({encryption.MethodName}); a password is required.");
+      packed = encryption.Decrypt(packed, password);
+    }
+
+    byte[] plain;
+    try {
+      plain = block.Algorithm switch {
+        0 => packed,
+        1 => DeflateDecompressor.Decompress(packed),
+        2 => _Bzip2(packed),
+        3 => Compression.Core.Dictionary.Azo.AzoDecoder.Decompress(packed, block.UncompressedSize),
+        4 => _Lzma(packed, block.UncompressedSize),
+        _ => throw new NotSupportedException($"EGG entry '{name}' uses unknown compression method {block.Algorithm}."),
+      };
+    } catch (Exception e) when (e is not (NotSupportedException or InvalidDataException or InvalidOperationException)) {
+      throw new InvalidDataException($"EGG entry '{name}': corrupt compressed data.", e);
+    }
+
+    if (plain.LongLength != block.UncompressedSize)
+      throw new InvalidDataException(
+        $"EGG entry '{name}' block expands to {plain.LongLength} bytes; header declares {block.UncompressedSize}.");
+    if (Crc32.Compute(plain) != block.Crc32)
+      throw new InvalidDataException(
+        $"EGG entry '{name}' failed CRC-32 validation{(encryption != null ? " (wrong password?)" : "")}.");
+    return plain;
+  }
+
+  private static byte[] _Bzip2(byte[] packed) {
+    using var input = new MemoryStream(packed, writable: false);
+    using var bz = new FileFormat.Bzip2.Bzip2Stream(input, Compression.Core.Streams.CompressionStreamMode.Decompress);
+    using var output = new MemoryStream();
+    bz.CopyTo(output);
+    return output.ToArray();
+  }
+
+  /// <summary>EGG's LZMA block: 4 bytes (version and property size), the 5 LZMA properties, then raw LZMA.</summary>
+  private static byte[] _Lzma(byte[] packed, long size) {
+    if (packed.Length < 9)
+      throw new InvalidDataException("Truncated EGG LZMA block.");
+    using var input = new MemoryStream(packed, 9, packed.Length - 9, writable: false);
+    return new Compression.Core.Dictionary.Lzma.LzmaDecoder(input, packed[4..9], size).Decode();
+  }
+
+  private byte[] _ReadField(long size, long dataStart) {
+    if (size > 1 << 20)
+      throw new InvalidDataException("EGG extra field too large.");
+    _stream.Position = dataStart;
+    var data = new byte[size];
+    _ReadExactly(data);
+    return data;
+  }
+
   // ── Extra-field iteration ────────────────────────────────────────────────
+
+  /// <summary>Skips one record whose magic was just read: flag byte, 2- or 4-byte size, data.</summary>
+  private void _SkipOneField() {
+    var bitFlag = _reader.ReadByte();
+    long size = (bitFlag & 0x01) != 0 ? _reader.ReadUInt32() : _reader.ReadUInt16();
+    if (_stream.Position > _stream.Length - size)
+      throw new InvalidDataException("EGG record extends beyond the input stream.");
+    _stream.Position += size;
+  }
 
   private void _SkipExtraFields(Action<uint, byte, long, long>? onField) {
     while (true) {
@@ -252,12 +341,15 @@ public sealed class EggReader : IDisposable {
         throw new InvalidDataException("EGG archive ends inside an extra-field size.");
       var size = sizeWidth == 4 ? _reader.ReadUInt32() : _reader.ReadUInt16();
       var dataStart = _stream.Position;
-      if (dataStart > _stream.Length - size)
+      // A filename field's size counts the name only; the code page (flag 0x08) and the parent-path
+      // id (flag 0x10) precede it uncounted, as ALZip writes them (and EggDotNet reads them).
+      var uncounted = field == FilenameMagic ? ((bitFlag & 0x08) != 0 ? 2 : 0) + ((bitFlag & 0x10) != 0 ? 4 : 0) : 0;
+      if (dataStart > _stream.Length - size - uncounted)
         throw new InvalidDataException($"EGG extra field 0x{field:X8} extends beyond the input stream.");
 
       onField?.Invoke(field, bitFlag, size, dataStart);
 
-      _stream.Position = dataStart + size; // resync to the field end regardless of handling
+      _stream.Position = dataStart + size + uncounted; // resync to the field end regardless of handling
     }
   }
 
@@ -281,7 +373,7 @@ public sealed class EggReader : IDisposable {
     if (parentLen == 4)
       _ = _reader.ReadUInt32(); // parent-path id (relative-path linkage; not resolved here)
 
-    var nameLen = size - localeLen - parentLen;
+    var nameLen = size;
     if (nameLen < 0 || nameLen > int.MaxValue)
       throw new InvalidDataException("EGG filename field has an invalid length.");
     var nameBytes = _reader.ReadBytes((int)nameLen);

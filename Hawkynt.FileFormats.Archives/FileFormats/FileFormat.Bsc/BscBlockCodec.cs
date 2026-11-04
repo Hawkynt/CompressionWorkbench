@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Compression.Core.Transforms;
 
 namespace FileFormat.Bsc;
@@ -39,10 +40,11 @@ internal static class BscBlockCodec {
     if (requestedContexts == BscSortingContexts.Preceding)
       Array.Reverse(contextData);
 
-    // libbsc stores tiny/non-compressible blocks verbatim and, at the file layer,
-    // resets their context marker to Following because no reversal remains to undo.
+    // bsc_compress stores a block of 28 bytes or less as it is given, so a preceding-context
+    // block is stored reversed and keeps its marker. A block that does not compress (below) is
+    // stored by the bsc tool instead, from the original bytes and marked following.
     if (contextData.Length <= 28)
-      return Store(logicalData);
+      return new(contextData, 0, 0, Adler32(contextData), requestedContexts);
 
     var lzpEnabled = BscLzp.TryCompress(
       contextData,
@@ -51,20 +53,25 @@ internal static class BscBlockCodec {
       out var lzpData);
     ReadOnlySpan<byte> bwtInput = lzpEnabled ? lzpData : contextData;
 
-    var (bwtData, zeroBasedPrimaryIndex) = BurrowsWheelerTransform.Forward(bwtInput);
+    // bsc_bwt_encode always samples auxiliary indexes (they let the inverse BWT run in parallel);
+    // bsc_compress keeps them only for blocks of 64 KiB and more.
+    var (bwtData, primaryIndex, samples) = SuffixBurrowsWheelerTransform.Forward(bwtInput, AuxiliaryIndexRate(bwtInput.Length));
+    var auxiliaryIndexCount = logicalData.Length < 64 * 1024 ? 0 : (byte)((bwtInput.Length - 1) / AuxiliaryIndexRate(bwtInput.Length));
     var coderData = entropyCoder switch {
       BscEntropyCoder.Static => BscQlfcModel.Compress(bwtData, adaptive: false),
       BscEntropyCoder.Adaptive => BscQlfcModel.Compress(bwtData, adaptive: true),
       BscEntropyCoder.Fast => BscQlfcFast.Compress(bwtData),
       _ => throw new ArgumentOutOfRangeException(nameof(entropyCoder)),
     };
+    if (coderData is null)
+      return Store(logicalData);
 
-    // libbsc appends zero or more little-endian BWT auxiliary indexes followed
-    // by their one-byte count. They accelerate inverse BWT only; emitting zero
-    // indexes is fully conforming and keeps the managed representation compact.
-    var payload = new byte[coderData.Length + 1];
+    // libbsc appends the auxiliary indexes (zero-based, little-endian) and their one-byte count.
+    var payload = new byte[coderData.Length + 4 * auxiliaryIndexCount + 1];
     coderData.CopyTo(payload, 0);
-    payload[^1] = 0;
+    for (var t = 0; t < auxiliaryIndexCount; ++t)
+      BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(coderData.Length + 4 * t), samples[t + 1] - 1);
+    payload[^1] = (byte)auxiliaryIndexCount;
 
     if (payload.Length >= logicalData.Length)
       return Store(logicalData);
@@ -76,7 +83,7 @@ internal static class BscBlockCodec {
     return new(
       payload,
       mode,
-      checked(zeroBasedPrimaryIndex + 1), // libbsc's BWT index is one-based
+      primaryIndex,
       Adler32(contextData),
       requestedContexts);
   }
@@ -103,8 +110,8 @@ internal static class BscBlockCodec {
     var lzpMinimumLength = mode >> 8 & 0xff;
     var lzpHashSize = mode >> 16 & 0xff;
 
-    if (blockSorter != BlockSorterBwt)
-      throw new NotSupportedException($"BSC: block sorter {blockSorter} is not supported yet");
+    if (blockSorter is not (BlockSorterBwt or >= 3 and <= 8))
+      throw new InvalidDataException($"BSC: unknown block sorter {blockSorter}");
     if (coder is not (CoderQlfcStatic or CoderQlfcAdaptive or CoderQlfcFast))
       throw new NotSupportedException($"BSC: QLFC coder {coder} is not supported");
     if ((lzpMinimumLength == 0) != (lzpHashSize == 0))
@@ -128,10 +135,16 @@ internal static class BscBlockCodec {
     };
     if (bwtData.Length == 0)
       throw new InvalidDataException("BSC: compressed block decoded to no BWT data");
-    if (primaryIndex <= 0 || primaryIndex > bwtData.Length)
-      throw new InvalidDataException($"BSC: invalid one-based BWT primary index {primaryIndex}");
-
-    var lzpOrOriginal = BurrowsWheelerTransform.Inverse(bwtData, primaryIndex - 1);
+    byte[] lzpOrOriginal;
+    if (blockSorter == BlockSorterBwt) {
+      if (primaryIndex <= 0 || primaryIndex > bwtData.Length)
+        throw new InvalidDataException($"BSC: invalid one-based BWT primary index {primaryIndex}");
+      lzpOrOriginal = SuffixBurrowsWheelerTransform.Inverse(bwtData, primaryIndex);
+    } else {
+      // Sort Transform of order 3..8: the index is zero-based.
+      BscSortTransform.Decode(bwtData, blockSorter, primaryIndex);
+      lzpOrOriginal = bwtData;
+    }
     if (lzpHashSize == 0) {
       if (lzpOrOriginal.Length != dataSize)
         throw new InvalidDataException($"BSC: decoded {lzpOrOriginal.Length} bytes, expected {dataSize}");
@@ -139,6 +152,18 @@ internal static class BscBlockCodec {
     }
 
     return BscLzp.Decompress(lzpOrOriginal, lzpHashSize, lzpMinimumLength, dataSize);
+  }
+
+  // bsc_bwt_encode's sampling rate: the largest power of two not above n / 8 (1 below 16 bytes).
+  private static int AuxiliaryIndexRate(int n) {
+    var mod = n / 8;
+    mod |= mod >> 1;
+    mod |= mod >> 2;
+    mod |= mod >> 4;
+    mod |= mod >> 8;
+    mod |= mod >> 16;
+    mod >>= 1;
+    return mod + 1;
   }
 
   internal static uint Adler32(ReadOnlySpan<byte> data) {

@@ -17,11 +17,14 @@ internal sealed class BscRangeEncoder {
   private uint _cache;
   private uint _range = uint.MaxValue;
 
-  public BscRangeEncoder(int capacity) {
-    if (capacity < 32)
-      capacity = 32;
-    _output = new byte[capacity];
-    _eob = capacity - 16;
+  /// <summary>
+  /// An encoder for an output of <paramref name="outputSize"/> bytes. As in libbsc,
+  /// <see cref="CheckEndOfBuffer"/> trips 16 bytes before that; the buffer behind it is larger
+  /// (libbsc's own is the block plus 4 KiB), so the writes before a check never overrun it.
+  /// </summary>
+  public BscRangeEncoder(int outputSize) {
+    _output = new byte[Math.Max(outputSize, 0) + 4096];
+    _eob = outputSize - 16;
   }
 
   public bool CheckEndOfBuffer => _position >= _eob;

@@ -23,11 +23,11 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 182 | a source lists it; no descriptor or building block covers it |
-| `READ-ONLY-BUT-SOURCES-WRITE` | 24 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 44 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 278 | covered with no known gap against what the sources list |
-| `OURS-ONLY` | 458 | in our registry, listed by none of the seven sources |
+| `MISSING` | 153 | a source lists it; no descriptor or building block covers it |
+| `READ-ONLY-BUT-SOURCES-WRITE` | 22 | we only read it; a source or the format's own tool writes it |
+| `PARTIAL` | 43 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 310 | covered with no known gap against what the sources list |
+| `OURS-ONLY` | 455 | in our registry, listed by none of the seven sources |
 
 ### Per source
 
@@ -40,7 +40,7 @@ read-only rows.
 | libarchive (formats + filters) | 28 | 27 | 96.4 | 23 |
 | XADMaster / The Unarchiver | 126 | 95 | 75.4 | 78 |
 | binwalk v3 | 79 | 48 | 60.8 | 38 |
-| Universal Extractor 2 | 124 | 71 | 57.3 | 48 |
+| Universal Extractor 2 | 124 | 71 | 57.3 | 47 |
 | PRONOM | 87 | 63 | 72.4 | 43 |
 | Wikipedia | 266 | 156 | 58.6 | 118 |
 
@@ -166,10 +166,11 @@ running real-world samples. The file named at the end of each row is where the l
 | ZIP | `Zip` | 7 | methods xz (95), JPEG (96), WavPack (97) and PKWARE strong encryption unsupported (ZipReader.cs) |
 | LHA / LZH | `Lzh` | 6 | every method and header level of lhasa's test suite reads except LHARK's lk7; lh2, lh3, lhx, pm1 and pm2 are read-only; self-extracting executables are not opened (LhaReader.cs) |
 | StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |
-| StuffIt X | `StuffItX` | 4 | stored and deflate only; Brimstone/Cyanide/Darkhorse/Iron throw (StuffItXReader.cs) |
+| StuffIt X | `StuffItX` | 4 | Darkhorse, Deflate, Blend, method 7, the English/x86 preprocessors and encryption throw (StuffItXReader.cs) |
 | zoo | `Zoo` | 4 | LZH method (2) unsupported (ZooReader.cs) |
+| BCM | `Bcm` | 1 | BCM 2.x files (`BCM2`) refused: bcm 2.03 is exe-only and its format unpublished; BCM 1.x reads and writes (BcmStream.cs) |
 | ALZip | `AlZip` | 3 | store and deflate only (AlZipReader.cs) |
-| APFS | `Apfs` | 3 | no decmpfs (LZVN/LZFSE) compressed files, no encryption (ApfsReader.cs) |
+| APFS | `Apfs` | 3 | no encryption, snapshots or fusion containers (ApfsReader.cs) |
 | Compiled HTML Help (CHM) | `Chm` | 3 | content sections above 1 unsupported (ChmReader.cs) |
 | FreeArc | `FreeArc` | 3 | only storing and lzma blocks decode; tornado/ppmd/lzp/grzip/rep/delta/exe and encryption are refused (FreeArcMethods.cs) |
 | QCOW / QCOW2 | `Qcow2` | 3 | no encryption, backing files, zstd clusters or extended L2 (Qcow2Structures.cs) |
@@ -181,7 +182,6 @@ running real-world samples. The file named at the end of each row is where the l
 | DiskDoubler | `DiskDoubler` | 2 | single files only (no DDAR/DDA2 archives); methods 0, 1, 6, 9 decoded and checked against unar on real files; 2-5, 7, 8, 10 and delta refused (DiskDoublerReader.cs) |
 | EnCase / Expert Witness (E01) | `Ewf` | 2 | single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs) |
 | PackIt | `PackIt` | 2 | encrypted PMa5/PMa6 entries refused; stored and Huffman entries verified on real archives against unar (PackItReader.cs) |
-| UHARC | `Uharc` | 2 | stored and LZP only (UharcReader.cs) |
 | Comic Book Archive | `Cbz`, `Cbr`, `Cb7` | 1 | .cbt (tar) and .cba (ACE) have no descriptor |
 | DMS (Disk Masher) | `Dms` | 1 | NONE/SIMPLE/QUICK only; MEDIUM/DEEP/HEAVY1/HEAVY2 throw (DmsReader.cs) |
 | EGG (ALZip) | `Egg` | 1 | store and deflate only; bzip2/LZMA/AZO, encryption and split archives unsupported (EggReader.cs) |
@@ -191,7 +191,7 @@ running real-world samples. The file named at the end of each row is where the l
 | PAQ (paq6/7/8 family) | `Paq8` | 1 | a single PAQ8 variant (.paq8l); the other PAQ versions are mutually incompatible |
 | RAR audio / VM filters | `Rar` | 1 | RAR3 filters matched to the six standard programs only; no general RarVM (Rar3Decoder.cs) |
 | RPG Maker archives | `Rgss` | 1 | RGSSAD v1-3 only; MV/MZ asset encryption (.rpgmv*) has no descriptor |
-| UFS / FFS (BSD), UFS2 | `Ufs` | 1 | UFS1 only; UFS2 (magic 0x19540119) is not recognised |
+| UFS / FFS (BSD), UFS2 | `Ufs` | 1 | UFS2 and big-endian volumes are read only; creating and editing is UFS1 little-endian |
 | Unity assets / bundles | `UnityBundle` | 1 | UnityFS bundles only; .unitypackage (tar.gz) and serialized-file internals are not handled |
 | Windows thumbnail cache | `ThumbsDb` | 1 | Thumbs.db only; thumbcache_*.db has no descriptor |
 | tar + compression (tar.gz/.bz2/.xz/.zst/.lz/.lz4/.br) | `TarGz`, `TarBz2`, `TarXz`, `TarZst`, `TarLzip`, `TarLz4`, `TarBr` | 1 | tar.Z / tar.lzma / tar.lzo have no compound descriptor (open via the stream format) |
@@ -208,17 +208,30 @@ running real-world samples. The file named at the end of each row is where the l
 - **Stale comments.** The "(not supported)" comments in `ArcConstants.cs` describe methods the
   reader does decode.
 
+## 🚫 Refused: named codecs that cannot be made real
+
+Codecs this repository once offered under a real codec's name without being that codec. Their own
+algorithms were renamed; the real codec is refused for the reason given, so no descriptor or block
+claims it.
+
+| Codec | Why it is refused | The old code is now |
+| --- | --- | --- |
+| [cmix](https://github.com/byronknoll/cmix) (Byron Knoll) | GPL-3.0, so only a clean-room rewrite from a derived specification would do; cmix v21 is some 22,000 lines of models including LSTM and other floating-point networks whose results depend on the C library's `exp`/`log`/`tanh`, so byte-exact output from managed code cannot be proven, and the reference needs about 32 GB of RAM to run as an oracle on this machine | `BB_ContextMixingWordMatch`; the `.cmix` descriptor, which wrote an order-0 stream under cmix's name, is removed |
+| [paq8hp12](http://mattmahoney.net/dc/text.html) (Rhatushnyak, Mahoney, Skibinski) | GPL, so only a clean-room rewrite from a derived specification would do, of some 5,500 lines (the PAQ8 model set tuned for English text plus its WRT word transform) whose mixer arithmetic follows its MMX/SSE2 code; and every stream depends on two data files it ships under the GPL, a 465 KB transform dictionary and a 465 KB model-training text, read at run time, which this LGPL repository cannot carry | `BB_ContextMixingSelectedWeights` |
+| [MCM](https://github.com/mathieuchartier/mcm) 0.84 (Mathieu Chartier) | not yet offered. GPL-3.0, so a clean-room rewrite from a derived specification is required, and the reader has to cover everything mcm writes: the multi-file archive with its compressed file list and solid blocks, the content detector, the dictionary (text), E8/E9 (x86) and Wav16 filters, LZP and five CM levels whose model sets differ by profile, some 15,000 lines in all | `BB_ContextMixingTwoLevel`; the `.mcm` descriptor, which wrote its own payload behind mcm's `MCMARCHIVE` id, is removed |
+| LZTURBO (powturbo) | closed format: the codec is distributed only as binaries and no description of its bitstream has been published, so there is nothing to convert, derive a specification from, or prove against beyond black-box output | removed: it was an LZ4-style byte-aligned LZ77 (4-bit literal and match lengths, 255-continued) with 3-byte offsets in a block header of our own, which `BB_Lz4` already covers with a real format |
+
 ## ➕ Ours only
 
-These 458 registry ids are listed by none of the seven sources:
+These 455 registry ids are listed by none of the seven sources:
 
 | Kind | Count | Typical members |
 | --- | ---: | --- |
 | archive | 185 | game archives (`Big`, `Gob`, `Grp`, `Hog`, `Mpq`, `Vpk`, `Wad`), document containers (`Docx`, `Odt`, `Epub`, `Xps`), scientific/data stores (`Hdf5`, `NetCdf`, `Parquet`, `Fits`), backup images (`Aomei`, `Macrium`, `Veeam`, `Paragon`), exe packers (`AsPack`, `Themida`, `VmProtect`) |
 | media | 128 | audio codecs and containers, tracker modules, image and video demuxers |
-| codec | 97 | building blocks no source names as a method (LZ77 family, entropy coders, context mixers) |
+| codec | 96 | building blocks no source names as a method (LZ77 family, entropy coders, context mixers) |
 | filesystem | 28 | retro and niche filesystems (`TrDos`, `Ti99`, `Human68k`, `Pc98`, `Xenix`, `SysV`, `LittleFs`, `DoubleSpace`, `Stacker`, `Vdfs`) |
-| compression | 20 | stream formats such as `Lzham`, `Lizard`, `Density`, `Yaz0`, `RefPack`, `Rnc`, `BriefLz` |
+| compression | 18 | stream formats such as `Lzham`, `Lizard`, `Density`, `Yaz0`, `RefPack`, `Rnc`, `BriefLz` |
 
 A few of these are plain ZIP/OLE2 variants that 7-Zip opens as ZIP or Compound, without naming them
 separately: `Docx`, `Xlsx`, `Pptx`, `Odt`, `Epub`, `Xpi`, `Ipa`. They count as ours-only here only

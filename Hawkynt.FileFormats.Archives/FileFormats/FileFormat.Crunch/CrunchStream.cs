@@ -1,16 +1,13 @@
-using Compression.Core.BitIO;
-using Compression.Core.Dictionary.Lzw;
 using Compression.Core.Streams;
 
 namespace FileFormat.Crunch;
 
 /// <summary>
-/// Stream for reading and writing CP/M Crunch (.?Z?) format data.
-/// Uses LZW compression with variable-width codes (9-12 bits) in MSB-first order.
+/// Stream for reading and writing CP/M CRUNCH (.?Z?) files: reads CRUNCH 1.x and 2.x, writes 2.x.
 /// </summary>
 /// <remarks>
-/// The Crunch format header is: magic (0x76 0xFE), followed by a null-terminated
-/// original filename. The LZW bitstream follows with clear codes and stop codes enabled.
+/// A file is the magic <c>76 FE</c>, the original name and four header bytes, an RLE-then-LZW
+/// code stream and a 16-bit checksum; see <c>docs/CRUNCH-ON-DISK.md</c>.
 /// </remarks>
 public sealed class CrunchStream : CompressionStream {
   private byte[]? _decompressedData;
@@ -19,7 +16,6 @@ public sealed class CrunchStream : CompressionStream {
   private bool _finished;
   private MemoryStream? _compressBuffer;
   private readonly string? _originalName;
-  private readonly LzwCompressionLevel _compressionLevel;
 
   /// <summary>
   /// Gets the original filename stored in the Crunch header (only set during decompression).
@@ -35,13 +31,8 @@ public sealed class CrunchStream : CompressionStream {
   /// <param name="leaveOpen">Whether to leave the inner stream open.</param>
   public CrunchStream(Stream stream, CompressionStreamMode mode,
     string? originalName = null, bool leaveOpen = false)
-    : this(stream, mode, originalName, leaveOpen, LzwCompressionLevel.FirstMatch) { }
-
-  internal CrunchStream(Stream stream, CompressionStreamMode mode,
-    string? originalName, bool leaveOpen, LzwCompressionLevel compressionLevel)
     : base(stream, mode, leaveOpen) {
     _originalName = originalName;
-    _compressionLevel = compressionLevel;
     if (mode == CompressionStreamMode.Compress)
       _compressBuffer = new MemoryStream();
   }
@@ -73,61 +64,15 @@ public sealed class CrunchStream : CompressionStream {
   }
 
   /// <inheritdoc />
-  protected override void FinishCompression() {
-    var data = _compressBuffer!.ToArray();
-
-    // Write magic
-    InnerStream.WriteByte(CrunchConstants.Magic1);
-    InnerStream.WriteByte(CrunchConstants.Magic2);
-
-    // Write original filename (null-terminated)
-    var name = _originalName ?? "";
-    foreach (var c in name)
-      InnerStream.WriteByte((byte)c);
-    InnerStream.WriteByte(0); // null terminator
-
-    // LZW compress: 9-12 bits, MSB-first, clear+stop codes
-    var encoder = new LzwEncoder(
-      InnerStream,
-      minBits: CrunchConstants.MinBits,
-      maxBits: CrunchConstants.MaxBits,
-      useClearCode: true,
-      useStopCode: true,
-      bitOrder: BitOrder.MsbFirst,
-      level: _compressionLevel);
-    encoder.Encode(data);
-  }
+  protected override void FinishCompression()
+    => InnerStream.Write(CrunchCodec.Encode(_compressBuffer!.ToArray(), _originalName));
 
   private void ReadAndDecompress() {
-    var b1 = InnerStream.ReadByte();
-    var b2 = InnerStream.ReadByte();
-
-    if (b1 < 0 || b2 < 0)
+    using var file = new MemoryStream();
+    InnerStream.CopyTo(file);
+    if (file.Length < 2)
       throw new InvalidDataException("Truncated Crunch header.");
-
-    if (b1 != CrunchConstants.Magic1 || b2 != CrunchConstants.Magic2)
-      throw new InvalidDataException("Invalid Crunch magic bytes.");
-
-    // Read null-terminated original filename
-    var nameBytes = new List<byte>();
-    int b;
-    while ((b = InnerStream.ReadByte()) > 0)
-      nameBytes.Add((byte)b);
-
-    OriginalName = nameBytes.Count > 0
-      ? System.Text.Encoding.ASCII.GetString([.. nameBytes])
-      : null;
-
-    // LZW decompress: 9-12 bits, MSB-first, clear+stop codes
-    var decoder = new LzwDecoder(
-      InnerStream,
-      minBits: CrunchConstants.MinBits,
-      maxBits: CrunchConstants.MaxBits,
-      useClearCode: true,
-      useStopCode: true,
-      bitOrder: BitOrder.MsbFirst);
-
-    _decompressedData = decoder.Decode();
+    (OriginalName, _decompressedData) = CrunchCodec.Decode(file.GetBuffer().AsSpan(0, (int)file.Length));
     _decompressPos = 0;
   }
 }

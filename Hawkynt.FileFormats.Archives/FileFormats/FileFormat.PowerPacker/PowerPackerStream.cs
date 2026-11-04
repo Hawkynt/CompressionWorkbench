@@ -93,15 +93,18 @@ public static class PowerPackerStream {
     if (skipBits > packed.Length * 8)
       throw new InvalidDataException("PP20 skip-bit count exceeds the packed bitstream.");
 
+    // PowerPacker never writes an empty file and its decrunchers reject a zero size.
     if (originalSize == 0)
-      return [];
+      throw new InvalidDataException("PP20 original size is zero.");
 
     var output = new byte[originalSize];
     var outPos = originalSize;
     var bits = new ReverseBitReader(packed);
     bits.SkipBits(skipBits);
 
-    while (outPos > 0) {
+    // Every pass reads the literal flag first, even after a match that filled the output:
+    // a stream that ends with a match carries a final 1 bit.
+    while (true) {
       var hasLiteralRun = bits.ReadBit() == 0;
       if (hasLiteralRun) {
         var literalCount = 1;
@@ -116,10 +119,10 @@ public static class PowerPackerStream {
 
         for (var i = 0; i < literalCount; ++i)
           output[--outPos] = (byte)bits.ReadBits(8);
-
-        if (outPos == 0)
-          break;
       }
+
+      if (outPos == 0)
+        break;
 
       var offsetClass = bits.ReadBits(2);
       var offsetBits = efficiency[offsetClass];
@@ -160,7 +163,7 @@ public static class PowerPackerStream {
 
     var efficiency = PowerPackerConstants.GetEfficiency(efficiencyPreset);
     if (input.IsEmpty)
-      return BuildPp20File(efficiency, new byte[sizeof(uint)], 0, 0);
+      throw new ArgumentException("PP20 cannot hold an empty file: its decrunchers reject an original size of zero.", nameof(input));
 
     var reversed = input.ToArray();
     Array.Reverse(reversed);
@@ -203,6 +206,9 @@ public static class PowerPackerStream {
     if (pendingLiterals.Count > 0) {
       bitWriter.WriteBit(0);
       WriteLiteralRun(bitWriter, pendingLiterals);
+    } else {
+      // The decruncher reads the literal flag once more after the last match.
+      bitWriter.WriteBit(1);
     }
 
     var packed = bitWriter.ToArray(out var skipBits);
