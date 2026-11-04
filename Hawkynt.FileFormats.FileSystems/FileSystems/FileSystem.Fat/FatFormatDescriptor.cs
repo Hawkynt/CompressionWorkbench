@@ -768,8 +768,12 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new FatReader(stream);
     foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
+      // Folders are created too, so an empty one survives extraction.
+      if (e.IsDirectory) {
+        CreateEntryDirectory(outputDir, e.Name);
+        continue;
+      }
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
   }
@@ -824,6 +828,9 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
 
     var w = new FatWriter();
+    // Folders added on their own are kept, empty ones included.
+    foreach (var input in inputs.Where(i => i.IsDirectory))
+      w.AddDirectory(input.ArchiveName);
     foreach (var input in inputs.Where(i => !i.IsDirectory))
       w.AddFile(input.ArchiveName, input.ReadContent(),
                 input.InMemoryContent != null ? null : File.GetLastWriteTime(input.FullPath));
@@ -842,7 +849,10 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(inputs);
     var w = new FatWriter();
     foreach (var input in inputs) {
-      if (input.IsDirectory) continue;
+      if (input.IsDirectory) {
+        w.AddDirectory(input.Name);
+        continue;
+      }
       w.AddStreamingFile(input.Name, input.Size, input.OpenStream, null);
     }
     BuildAndWrite(output, w, options, streaming: true);
@@ -996,6 +1006,9 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
                     Mtime: i.InMemoryContent != null ? (DateTime?)null : File.GetLastWriteTime(i.FullPath)))
       .ToList();
     var work = LoadForInPlaceEdit(archive);
+    // Folders added on their own (empty ones too) are created in place as well.
+    foreach (var folder in inputs.Where(i => i.IsDirectory && !string.IsNullOrEmpty(i.ArchiveName)))
+      FatModifier.AddDirectory(work, folder.ArchiveName, folder.SourceLastModifiedUtc?.ToLocalTime());
     foreach (var (name, data, mtime) in items)
       FatModifier.AddFile(work, name, data, mtime);
     Commit(archive, work);
@@ -1103,7 +1116,10 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       IReadOnlyList<ArchiveInputInfo> inputs) {
     var result = new List<Compression.Registry.Streaming.StreamingArchiveInput>();
     foreach (var i in inputs) {
-      if (i.IsDirectory) continue;
+      if (i.IsDirectory) {
+        result.Add(new Compression.Registry.Streaming.StreamingArchiveInput(i.ArchiveName, 0, true, static () => Stream.Null));
+        continue;
+      }
       var info = i;
       var size = info.InMemoryContent?.LongLength
                  ?? (File.Exists(info.FullPath) ? new FileInfo(info.FullPath).Length : 0L);

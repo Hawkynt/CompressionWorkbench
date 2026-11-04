@@ -129,7 +129,7 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Performs the create operation.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var fatImage = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
+    var fatImage = FileSystem.Fat.FatWriter.BuildFromInputs(inputs);
     using var w = new VdiWriter(output, leaveOpen: true, virtualSize: fatImage.Length);
     w.Write(fatImage);
   }

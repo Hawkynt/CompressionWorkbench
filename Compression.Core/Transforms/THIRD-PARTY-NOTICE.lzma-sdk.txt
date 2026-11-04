@@ -1,0 +1,30 @@
+LZMA SDK branch converters — converted to C#
+
+Source:   LZMA SDK by Igor Pavlov, https://www.7-zip.org/sdk.html
+          version 9.20 (C/Bra.c, C/Bra86.c, C/BraIA64.c); the same converters
+          ship unchanged in behaviour in every later SDK and 7-Zip release.
+Authors:  Igor Pavlov
+Licence:  public domain ("LZMA SDK is placed in the public domain."; no
+          notice is required, this file records the provenance)
+
+BranchConverter.cs carries these conversions:
+
+  C/Bra86.c   x86_Convert      -> BranchConverter.X86
+  C/Bra.c     ARM_Convert      -> BranchConverter.Arm
+  C/Bra.c     ARMT_Convert     -> BranchConverter.ArmThumb
+  C/Bra.c     PPC_Convert      -> BranchConverter.PowerPC
+  C/Bra.c     SPARC_Convert    -> BranchConverter.Sparc
+  C/BraIA64.c IA64_Convert     -> BranchConverter.IA64
+
+Bcj2Filter.cs carries the BCJ2 coder:
+
+  C/Bcj2.c (9.20)                           Bcj2_Decode        -> Bcj2Filter.DecodeStream
+  CPP/7zip/Compress/Bcj2Coder.cpp (9.20)    CEncoder::CodeReal -> Bcj2Filter.Encode
+    (7-Zip's CPP tree is LGPL-2.1-or-later; the encoder is restated from it
+    under this repository's LGPL-3.0-or-later. The conversion criterion for a
+    branch is the SDK's own without sub-stream bounds.)
+
+The ARM64 and RISC-V converters in the same file are the liblzma
+conversions already recorded in THIRD-PARTY-NOTICE.liblzma.txt
+(src/liblzma/simple/arm64.c and riscv.c, 0BSD), restated in streaming form:
+they return how many bytes are final so a stream converts piece by piece.

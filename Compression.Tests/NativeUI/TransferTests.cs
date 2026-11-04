@@ -358,14 +358,14 @@ public sealed class TransferTests {
   // ── what the audit found ────────────────────────────────────────────────────────────────────
 
   [Test]
-  public void GivenAnEmptyFolder_WhenMovedIntoAZipThatStoresNoBareFolders_ThenItIsRefusedAfterTheFactAndTheSourceStays() {
+  public void GivenAnEmptyFolder_WhenMovedIntoAZip_ThenTheFolderArrivesAndTheSourceIsRemoved() {
     var empty = Path.Combine(this._disk, "empty");
     Directory.CreateDirectory(empty);
 
-    var failure = Assert.Throws<IOException>(() => Transfer.Run([Item(this.Disk(), "empty", folder: true)], Location.InArchive(this._b, ""), move: true));
+    Transfer.Run([Item(this.Disk(), "empty", folder: true)], Location.InArchive(this._b, ""), move: true);
 
-    Assert.That(failure!.Message, Does.Contain("empty"));
-    Assert.That(Directory.Exists(empty), Is.True, "a move whose copy did not arrive must not remove the source");
+    Assert.That(ArchiveOperations.List(this._b, password: null).Any(e => e.IsDirectory && e.Name.TrimEnd('/') == "empty"), Is.True);
+    Assert.That(Directory.Exists(empty), Is.False, "the source is removed only after the folder arrived");
   }
 
   [Test]

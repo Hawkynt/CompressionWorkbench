@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesCryptor`](#aescryptor) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`Blowfish`](#blowfish) · [`KeyDerivation`](#keyderivation) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Serpent`](#serpent) · [`Twofish`](#twofish)
+[`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`Blowfish`](#blowfish) · [`KeyDerivation`](#keyderivation) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Serpent`](#serpent) · [`Twofish`](#twofish)
 
 #### `AesCryptor`
 
@@ -197,6 +197,15 @@ AES-256 encryption and decryption wrapper supporting CBC and CTR modes. Uses the
 | `EncryptCbcNoPadding` | `static byte[] EncryptCbcNoPadding(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv)` | Encrypts data using AES-256-CBC with no padding. Input length must be a multiple of 16 bytes. |
 | `EncryptCbc` | `static byte[] EncryptCbc(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv)` | Encrypts data using AES-256-CBC with PKCS7 padding. |
 | `TransformCtr` | `static byte[] TransformCtr(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> nonce)` | Encrypts or decrypts data using AES-256-CTR mode. CTR mode is symmetric — the same operation encrypts and decrypts. |
+
+#### `AntiForensicSplitter`
+
+The LUKS anti-forensic information splitter (AF-split / AF-merge with hash diffusion).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Merge` | `static byte[] Merge(ReadOnlySpan<byte> material, int keyBytes, int stripes, HashAlgorithmName hash)` | Recovers the key from `stripes` stripes of `keyBytes` bytes. |
+| `Split` | `static byte[] Split(byte[] key, int stripes, HashAlgorithmName hash)` | Splits `key` into `stripes` stripes, all but the last random. |
 
 #### `Argon2`
 
@@ -238,6 +247,58 @@ Key derivation functions for password-based encryption.
 | `Rar5DeriveKey` | `static byte[] Rar5DeriveKey(string password, ReadOnlySpan<byte> salt, int iterations)` | Derives a key using the RAR5 key derivation (PBKDF2-HMAC-SHA256 with specific parameters). |
 | `Rar5DeriveKeys` | `static ValueTuple<byte[], byte[], byte[]> Rar5DeriveKeys(string password, ReadOnlySpan<byte> salt, int kdfLog)` | The three RAR 5 keys of one password and salt: one PBKDF2-HMAC-SHA256 chain run for 2^`kdfLog` iterations gives the AES-256 key, 16 more the key that tweaks checksums (encryption flag 0x0002), 16 more the password check value, folded to 8 bytes. |
 | `SevenZipDeriveKey` | `static byte[] SevenZipDeriveKey(string password, ReadOnlySpan<byte> salt, int numCyclesPower)` | Derives a key using the 7z AES key derivation (SHA-256 iterated). 7z uses: key = SHA256^(2^numCyclesPower)(salt + password_utf16le) |
+
+#### `Luks1Header`
+
+A LUKS1 partition header with its eight key slots, after the LUKS On-Disk Format Specification version 1.2.3 (Clemens Fruhwirth): unlocking a slot with a passphrase yields the master key, and `Create` lays out a new header around a master key.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HeaderSize` | `const int HeaderSize` | Size of the partition header proper (the key slots' material follows it). |
+| `CipherMode` | `string CipherMode { get; }` | Cipher mode with IV generator, e.g. `xts-plain64`. |
+| `CipherName` | `string CipherName { get; }` | Cipher name, e.g. `aes`. |
+| `DigestIterations` | `uint DigestIterations { get; }` | PBKDF2 iterations of `Digest`. |
+| `DigestSalt` | `byte[] DigestSalt { get; }` | Salt of `Digest`. |
+| `Digest` | `byte[] Digest { get; }` | PBKDF2 digest of the master key. |
+| `HashSpec` | `string HashSpec { get; }` | Hash for PBKDF2 and the anti-forensic splitter, e.g. `sha256`. |
+| `KeyBytes` | `int KeyBytes { get; }` | Master key length in bytes. |
+| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The LUKS magic: "LUKS" BA BE. |
+| `PayloadOffset` | `uint PayloadOffset { get; }` | Start of the payload in 512-byte sectors from the header. |
+| `Slots` | `IReadOnlyList<Luks1KeySlot> Slots { get; }` | The eight key slots. |
+| `Uuid` | `string Uuid { get; }` | The volume UUID as text. |
+| `CreateCipher` | `Luks1SectorCipher CreateCipher(byte[] masterKey)` | The payload cipher of this header keyed with `masterKey`. |
+| `Create` | `static byte[] Create(byte[] masterKey, byte[] passphrase, string cipherMode, string hashSpec, int slotIterations, int digestIterations, Guid uuid)` | Builds a LUKS1 header with key slot 0 holding `masterKey` under `passphrase`: `aes` in `cipherMode`, 4000 stripes per slot, each slot's material on a 4096-byte boundary, the payload after the last slot. |
+| `HashFor` | `static HashAlgorithmName HashFor(string spec)` | The PBKDF2/splitter hash a LUKS hash spec names. |
+| `Parse` | `static Luks1Header Parse(ReadOnlySpan<byte> header)` | Parses a header from its first 592 bytes. |
+| `Unlock` | `byte[] Unlock(byte[] passphrase, Func<long, int, byte[]> readKeyMaterial)` | Finds the master key: every active slot is tried with `passphrase`, its key material read through `readKeyMaterial` (offset in bytes from the header, length). |
+
+#### `Luks1KeySlot`
+
+One LUKS1 key slot.
+
+Implements `IEquatable<Luks1KeySlot>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Luks1KeySlot` | `Luks1KeySlot(bool Active, uint Iterations, byte[] Salt, uint KeyMaterialOffset, uint Stripes)` | One LUKS1 key slot. |
+| `Active` | `bool Active { get; init; }` | Whether the slot holds a key. |
+| `Iterations` | `uint Iterations { get; init; }` | PBKDF2 iterations of the passphrase. |
+| `KeyMaterialOffset` | `uint KeyMaterialOffset { get; init; }` | Start of the split key material, in sectors from the header. |
+| `Salt` | `byte[] Salt { get; init; }` | PBKDF2 salt. |
+| `Stripes` | `uint Stripes { get; init; }` | Anti-forensic stripes. |
+
+#### `Luks1SectorCipher`
+
+A sector cipher of the dm-crypt family: AES in XTS, CBC or ECB mode, 512-byte sectors, with the `plain` (32-bit sector number), `plain64` (64-bit) or `essiv:<hash>` IV.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Create` | `static Luks1SectorCipher Create(string cipherName, string cipherMode, byte[] key)` | Builds the cipher a LUKS header names, keyed with `key`. |
+| `Decrypt` | `void Decrypt(ulong firstSector, Span<byte> data)` | Decrypts whole sectors in place, the first numbered `firstSector`. |
+| `Dispose` | `void Dispose()` |  |
+| `Encrypt` | `void Encrypt(ulong firstSector, Span<byte> data)` | Encrypts whole sectors in place, the first numbered `firstSector`. |
 
 #### `Rar15Cipher`
 
@@ -653,6 +714,28 @@ Which aPLib bit-stream dialect a decoder should expect.
 | --- | --- | --- |
 | `Standard` | `0` | Ibsen's aPLib as documented: the "10" token's γ-coded offset is biased by the last-was-match flag (−3 after a literal, −2 after a match) and the previous offset is reused only when the flag is clear and the γ value is exactly 2. |
 | `NoLastWasMatch` | `1` | The simplified dialect emitted by packers whose in-stub depacker never tracks last-was-match: the γ offset is always biased by −3 and the reuse case always triggers at γ = 2. Streams differ from `Standard` the moment a normal match directly follows another match, so the two are not interchangeable. Observed in JDPack 1.x stubs (bit layout read off the packed samples' own depacker; see `JdpackExecutablePackerHandler`). |
+
+### Namespace `Compression.Core.Dictionary.ArcDistill`
+
+[`ArcDistillBuildingBlock`](#arcdistillbuildingblock)
+
+#### `ArcDistillBuildingBlock`
+
+PAK "Distill" (ARC/PAK method 11, NoGate PAK 2.x): LZSS over an 8 KiB window with one transmitted Huffman tree for literals, lengths and the end code, and a fixed prefix code for offset high bits whose low-bit count grows with the output position.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ArcDistillBuildingBlock` | `ArcDistillBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data, int maxOutput)` | Decodes a Distill stream, stopping at its end code or after `maxOutput` bytes, whichever comes first. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes `data` as a Distill stream. |
 
 ### Namespace `Compression.Core.Dictionary.Arj`
 
@@ -1790,6 +1873,7 @@ LZMA2 decoder that reads chunked LZMA2 format data.
 | `Lzma2Decoder` | `Lzma2Decoder(Stream input, int dictionarySize)` | Initializes a new LZMA2 decoder. |
 | `IsFinished` | `bool IsFinished { get; }` | Gets whether the stream has been fully decoded. |
 | `Decode` | `byte[] Decode()` | Decodes the entire LZMA2 stream. |
+| `Decode` | `void Decode(Stream output)` | Decodes the entire LZMA2 stream into `output` chunk by chunk, so memory stays bounded by the dictionary whatever the stream's length. |
 
 #### `Lzma2Encoder`
 
@@ -1800,7 +1884,7 @@ LZMA2 encoder that wraps LZMA data in chunked format with control bytes. Passes 
 | `Lzma2Encoder` | `Lzma2Encoder(int dictionarySize = 8388608, LzmaCompressionLevel level = 1)` | Initializes a new LZMA2 encoder. |
 | `DictionarySizeByte` | `byte DictionarySizeByte { get; }` | Gets the encoded dictionary size byte for XZ headers. |
 | `Encode` | `void Encode(Stream output, ReadOnlySpan<byte> data)` | Encodes data in LZMA2 format to the output stream. |
-| `Encode` | `void Encode(Stream output, Stream input, long length = -1)` | Encodes data from a stream in LZMA2 format. |
+| `Encode` | `void Encode(Stream output, Stream input, long length = -1)` | Encodes data from a stream in LZMA2 format, chunk by chunk: memory stays at one dictionary of history plus one chunk, whatever the stream's length. The output is byte-identical to `Encode` over the same bytes. |
 
 #### `LzmaBuildingBlock`
 
@@ -3448,6 +3532,68 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
+### Namespace `Compression.Core.Dictionary.Terse`
+
+[`TerseCodec`](#tersecodec) · [`TerseCodec.Header`](#tersecodecheader) · [`TersePackBuildingBlock`](#tersepackbuildingblock)
+
+#### `TerseCodec`
+
+IBM TERSE (z/OS `AMATERSE` / `TRSMAIN`, TERSE/PC): PACK, an LZW variant with least-recently-used dictionary recycling, and SPACK, a pair-tree coder; both send 12-bit codes packed big-endian.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes a complete TERSE file to its binary-mode content. |
+| `EncodePack` | `static byte[] EncodePack(ReadOnlySpan<byte> data)` | Encodes `data` as a host-header PACK file holding one fixed-length record (RECFM=FB, LRECL = the data length), the shape AMATERSE gives a binary dataset. |
+| `ReadHeader` | `static Header ReadHeader(ReadOnlySpan<byte> data)` | Reads and validates the header. |
+
+#### `TerseCodec.Header`
+
+Parsed TERSE header.
+
+Implements `IEquatable<Header>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Header` | `Header(bool IsHost, bool IsSpack, bool IsVariable, int RecordLength, int HeaderLength)` | Parsed TERSE header. |
+| `HeaderLength` | `int HeaderLength { get; init; }` | Bytes before the coded data. |
+| `IsHost` | `bool IsHost { get; init; }` | Host (z/OS) header rather than native (PC). |
+| `IsSpack` | `bool IsSpack { get; init; }` | SPACK rather than PACK coding. |
+| `IsVariable` | `bool IsVariable { get; init; }` | Variable-length records (RECFM=V). |
+| `RecordLength` | `int RecordLength { get; init; }` | Logical record length. |
+
+#### `TersePackBuildingBlock`
+
+TERSE PACK as a building block: host-header PACK in, binary content out.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TersePackBuildingBlock` | `TersePackBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+### Namespace `Compression.Core.Dictionary.Xpk`
+
+[`XpkSubLibraries`](#xpksublibraries)
+
+#### `XpkSubLibraries`
+
+Decoders for XPK sub-library chunks (one packed chunk in, its raw bytes out).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Supported` | `static readonly IReadOnlySet<string> Supported` | Sub-library ids this class decodes. |
+| `DecodeNuke` | `static byte[] DecodeNuke(byte[] chunk, int rawSize, bool delta)` | XPK-NUKE: LZ77 with literal bytes read backwards from the chunk end and four interleaved bit readers (1-bit, 2-bit, 4-bit LSB-first and free-width) fed forwards. DUKE adds a running-sum delta pass. |
+| `DecodeRlen` | `static byte[] DecodeRlen(byte[] chunk, int rawSize)` | XPK-RLEN: a count byte below 128 copies that many literals; 128 and above repeats the next byte `256 − count` times. |
+| `DecodeSqsh` | `static byte[] DecodeSqsh(byte[] chunk, int rawSize)` | XPK-SQSH: delta-coded samples with adaptive bit widths and LZ repeats. |
+| `Decode` | `static byte[] Decode(string type, byte[] chunk, int rawSize)` | Decodes one packed chunk of sub-library `type`. |
+| `EncodeRlen` | `static byte[] EncodeRlen(ReadOnlySpan<byte> data)` | Encodes `data` as an XPK-RLEN chunk. |
+
 ### Namespace `Compression.Core.Dictionary.Xpress`
 
 [`XpressBuildingBlock`](#xpressbuildingblock) · [`XpressCompressionLevel`](#xpresscompressionlevel) · [`XpressCompressor`](#xpresscompressor) · [`XpressConstants`](#xpressconstants) · [`XpressDecompressor`](#xpressdecompressor) · [`XpressHuffmanCompressor`](#xpresshuffmancompressor) · [`XpressHuffmanDecompressor`](#xpresshuffmandecompressor)
@@ -4948,6 +5094,57 @@ A clean-room implementation of the Context Tree Weighting (CTW) method: a bounde
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data by driving a binary arithmetic coder with per-bit probabilities from a Context Tree Weighting model. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses data previously produced by `Compress`. |
 
+### Namespace `Compression.Core.Entropy.ContextMixing.Mcm`
+
+[`McmBuildingBlock`](#mcmbuildingblock) · [`McmContextMixer`](#mcmcontextmixer) · [`McmModelProfile`](#mcmmodelprofile) · [`McmWave16Coder`](#mcmwave16coder)
+
+#### `McmBuildingBlock`
+
+mcm 0.84's context-mixing coder as a building block, in the one framing mcm itself uses for a bare stream — its archive index: the LEB128 length, the mid-level (6-input) CM stream with the text model set, memory level 6 and LZP, then the LEB128 check value 1234.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `McmBuildingBlock` | `McmBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `McmContextMixer`
+
+mcm 0.84's context-mixing coder (`cm::CM`), reimplemented from `docs/MCM-ON-DISK.md`: hashed bit-history states, one adaptive probability map per input, a single mixer layer selected by an interval context, a match model with LZP and two SSE stages, over a 7-Zip range coder. One instance codes one stream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `McmContextMixer` | `McmContextMixer(int inputs, McmModelProfile profile, int memoryLevel, bool lzp)` | Creates a coder. |
+| `MaxMemoryLevel` | `const int MaxMemoryLevel` | Highest memory level the managed tables can hold (level 10 needs a hash table past 2 GiB). |
+| `UsedFastPath` | `bool UsedFastPath { get; }` | Whether any byte went through the binary fast path. mcm 0.84's own decoder returns the wrong byte from that path, so mcm cannot extract a block for which this is true. |
+| `Decode` | `byte[] Decode(byte[] source, int offset, int end, int count, out int consumed)` | Decodes `count` bytes from the stream starting at `offset`. |
+| `Encode` | `byte[] Encode(ReadOnlySpan<byte> data)` | Compresses `data` into a range-coded stream. |
+
+#### `McmModelProfile`
+
+Which of mcm's model sets drives the coder (fixed per stream in an mcm archive).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Text` | `0` | Text: word, bracket and interval contexts, text byte order. |
+| `Binary` | `1` | Binary: sparse contexts, binary byte order, fast path after long unmatched runs. |
+| `Simple` | `2` | The undocumented `-s` level: the text set outside matches, orders 0–9 inside. |
+
+#### `McmWave16Coder`
+
+mcm 0.84's stereo 16-bit PCM coder (compressor type 1), from `docs/MCM-ON-DISK.md`, "Wav16": per 4096-sample block a second-order-by-channel delta, then per sample a direct sign bit, eleven modelled bits and four direct bits. mcm's own decoder does not invert this encoder; `Decode` does.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(byte[] source, int offset, int end, int count, out int consumed)` | Decodes `count` bytes; mcm cannot have written an odd count it could restore. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes little-endian 16-bit samples; an odd final byte is dropped, as mcm does. |
+
 ### Namespace `Compression.Core.Entropy.ContextMixing.SelectedWeights`
 
 [`ContextMixingSelectedWeightsBuildingBlock`](#contextmixingselectedweightsbuildingblock) · [`ContextMixingSelectedWeightsCompressor`](#contextmixingselectedweightscompressor)
@@ -5211,6 +5408,36 @@ Encodes values using Golomb-Rice coding.
 | `EncodeSigned` | `void EncodeSigned(int value)` | Encodes a signed value using zig-zag mapping: 0→0, -1→1, 1→2, -2→3, ... |
 | `Encode` | `void Encode(int value)` | Encodes a non-negative value. |
 | `ToArray` | `byte[] ToArray()` | Returns the encoded data and resets the encoder. |
+
+### Namespace `Compression.Core.Entropy.Grzip`
+
+[`GrzipBuildingBlock`](#grzipbuildingblock) · [`GrzipCodec`](#grzipcodec)
+
+#### `GrzipBuildingBlock`
+
+GRZipII as a building block: a complete `.grz` stream.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GrzipBuildingBlock` | `GrzipBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `GrzipCodec`
+
+GRZipII (`grzip` 0.3.0, `.grz`): block-sorting compression — optional LZP, then BWT or Schindler ST4, then MTF or weighted-frequency-count ranking coded by an adaptive binary/multi-symbol range coder, with an optional record (delta) pre-filter.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Signature` | `static ReadOnlySpan<byte> Signature { get; }` | The 12-byte file signature. |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes a complete `.grz` file. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes `data` as a `.grz` file (LZP + BWT + MTF blocks). |
 
 ### Namespace `Compression.Core.Entropy.Huffman`
 
@@ -6572,6 +6799,35 @@ Utility for splitting archive data into fixed-size volumes.
 | `SplitIntoVolumes` | `static byte[][] SplitIntoVolumes(byte[] data, long maxVolumeSize)` | Splits a byte array into volumes of the specified maximum size. |
 | `WriteVolumes` | `static void WriteVolumes(byte[] data, long maxVolumeSize, Stream[] volumeStreams)` | Writes volumes to a set of streams. |
 
+### Namespace `Compression.Core.Streams.Bzip021`
+
+[`Bzip021BuildingBlock`](#bzip021buildingblock) · [`Bzip021Codec`](#bzip021codec)
+
+#### `Bzip021BuildingBlock`
+
+bzip 0.21 as a building block.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Bzip021BuildingBlock` | `Bzip021BuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `Bzip021Codec`
+
+bzip 0.21 (`.bz`, magic `BZ0`): Julian Seward's arithmetic-coded predecessor of bzip2 — run-length pre-pass, "spotting", Burrows-Wheeler transform, move-to-front with RUNA/RUNB zero runs, and a structured adaptive model driving a 26-bit range coder.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes a complete bzip 0.21 file. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int blockSize100k = 9)` | Encodes `data` as a bzip 0.21 file with block size 9 (900 k). |
+
 ### Namespace `Compression.Core.Streams.SfArk`
 
 [`SfArkBuildingBlock`](#sfarkbuildingblock) · [`SfArkCodec`](#sfarkcodec) · [`SfArkInfo`](#sfarkinfo)
@@ -6621,16 +6877,37 @@ Implements `IEquatable<SfArkInfo>`.
 
 ### Namespace `Compression.Core.Transforms`
 
-[`Bcj2Filter`](#bcj2filter) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BcjX86DecodingStream`](#bcjx86decodingstream) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`ByteSwapFilter`](#byteswapfilter) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`SuffixArraySais`](#suffixarraysais) · [`SuffixBurrowsWheelerTransform`](#suffixburrowswheelertransform) · [`Swap2BuildingBlock`](#swap2buildingblock) · [`Swap4BuildingBlock`](#swap4buildingblock) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
+[`Bcj2Filter`](#bcj2filter) · [`Bcj2Filter.DecodeStream`](#bcj2filterdecodestream) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BcjX86DecodingStream`](#bcjx86decodingstream) · [`BranchArchitecture`](#brancharchitecture) · [`BranchConverter`](#branchconverter) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`ByteSwapFilter`](#byteswapfilter) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`SuffixArraySais`](#suffixarraysais) · [`SuffixBurrowsWheelerTransform`](#suffixburrowswheelertransform) · [`Swap2BuildingBlock`](#swap2buildingblock) · [`Swap4BuildingBlock`](#swap4buildingblock) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
 
 #### `Bcj2Filter`
 
-BCJ2 filter for 7z: splits x86 code into 4 sub-streams.
+The 7z BCJ2 coder (method `0303011B`): x86 code split into four streams — the main stream with every byte that is not a converted branch operand, the big-endian absolute targets of the converted CALLs (E8) and of the converted JMPs and conditional jumps (E9, 0F 8x), and a range coded bit per branch candidate saying whether it was converted.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> mainStream, ReadOnlySpan<byte> callStream, ReadOnlySpan<byte> jumpStream, ReadOnlySpan<byte> rangeStream, int outputSize)` | Decodes BCJ2-filtered data from 4 input streams. |
-| `Encode` | `static ValueTuple<byte[], byte[], byte[], byte[]> Encode(ReadOnlySpan<byte> data)` | Encodes data using the BCJ2 filter, producing 4 output streams. |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> mainStream, ReadOnlySpan<byte> callStream, ReadOnlySpan<byte> jumpStream, ReadOnlySpan<byte> rangeStream, int outputSize)` | Decodes BCJ2 from its four streams held in memory. |
+| `Encode` | `static ValueTuple<byte[], byte[], byte[], byte[]> Encode(ReadOnlySpan<byte> data)` | Splits `data` into the four BCJ2 streams. A branch is converted when its operand's top byte is 0x00 or 0xFF, the SDK encoder's rule without sub-stream bounds; any choice decodes, this one keeps the target streams to genuine near branches. |
+
+#### `Bcj2Filter.DecodeStream`
+
+Decodes BCJ2 by pulling from its four input streams; exactly the declared number of bytes come out.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodeStream` | `DecodeStream(Stream main, Stream call, Stream jump, Stream rangeCoded, long length)` | Opens the decoder over its four inputs. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(Span<byte> destination)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
 #### `BcjArm64BuildingBlock`
 
@@ -6805,6 +7082,34 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `SetLength` | `override void SetLength(long value)` |  |
 | `Write` | `override void Write(ReadOnlySpan<byte> data)` |  |
 | `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `BranchArchitecture`
+
+The instruction sets `BranchConverter` knows.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `X86` | `0` | x86 / x86-64 CALL and JMP (7z BCJ, 0x03030103; xz 0x04). |
+| `PowerPC` | `1` | PowerPC big-endian (7z 0x03030205; xz 0x05). |
+| `IA64` | `2` | IA-64 Itanium (7z 0x03030401; xz 0x06). |
+| `Arm` | `3` | ARM little-endian (7z 0x03030501; xz 0x07). |
+| `ArmThumb` | `4` | ARM Thumb (7z 0x03030701; xz 0x08). |
+| `Sparc` | `5` | SPARC (7z 0x03030805; xz 0x09). |
+| `Arm64` | `6` | ARM64 / AArch64 (7z and xz 0x0A). |
+| `RiscV` | `7` | RISC-V (7z and xz 0x0B). |
+
+#### `BranchConverter`
+
+The branch-call-jump converters of the 7z and xz formats in their streaming form: each instance carries the running position and whatever state the instruction set needs across buffer boundaries, so a stream of any length is converted piece by piece with bounded memory.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BranchConverter` | `protected BranchConverter(bool decoding, uint startOffset)` | Initializes a converter starting at virtual address `startOffset`. |
+| `Decoding` | `protected bool Decoding { get; }` | Whether this instance restores the original code (decoding) rather than filtering it. |
+| `ConvertAll` | `static void ConvertAll(BranchArchitecture architecture, Span<byte> data, bool decoding, uint startOffset = 0)` | Converts a whole buffer in place, leaving the undecidable tail as it is. |
+| `ConvertCore` | `protected abstract int ConvertCore(Span<byte> data, uint ip)` | Converts `data`, which starts at virtual address `ip`. |
+| `Convert` | `int Convert(Span<byte> data)` | Converts `data` in place and returns the number of leading bytes that are final; the remainder must be presented again, followed by the next input. |
+| `Create` | `static BranchConverter Create(BranchArchitecture architecture, bool decoding, uint startOffset = 0)` | The 7z coder or xz filter this converter implements, by its 7z method name. |
 
 #### `BurrowsWheelerTransform`
 
@@ -7060,7 +7365,7 @@ ZLE, the zero-length encoding ZFS offers as `compression=zle`: runs of zero byte
 
 ### Namespace `Compression.Registry`
 
-[`AlgorithmFamily`](#algorithmfamily) · [`ApeTagReader`](#apetagreader) · [`ApeTagReader.ApeTag`](#apetagreaderapetag) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveEntryMetadata`](#archiveentrymetadata) · [`ArchiveFormatOperationsExtensions`](#archiveformatoperationsextensions) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveMutationOptions`](#archivemutationoptions) · [`ArchiveRename`](#archiverename) · [`ArchiveRenames`](#archiverenames) · [`ArchiveSemanticManifest`](#archivesemanticmanifest) · [`ArchiveSemanticManifest.Entry`](#archivesemanticmanifestentry) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`ContentPreservation`](#contentpreservation) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragFeature`](#defragfeature) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`DefragSupport`](#defragsupport) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemAllocationMapCompleter`](#filesystemallocationmapcompleter) · [`FilesystemBlockMoverAttribute`](#filesystemblockmoverattribute) · [`FilesystemCompressionParameter`](#filesystemcompressionparameter) · [`FilesystemCompressionProfile`](#filesystemcompressionprofile) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemOptimization`](#filesystemoptimization) · [`FilesystemOptimizationAdapters`](#filesystemoptimizationadapters) · [`FilesystemOptimizationAdapters.HardLinkDeduplicator`](#filesystemoptimizationadaptershardlinkdeduplicator) · [`FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`](#filesystemoptimizationadapterssymboliclinkdeduplicator) · [`FilesystemOptimizationExtensions`](#filesystemoptimizationextensions) · [`FilesystemOptimizationFeatures`](#filesystemoptimizationfeatures) · [`FilesystemOptimizationOptions`](#filesystemoptimizationoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FilesystemSourceRole`](#filesystemsourcerole) · [`FilesystemStreamSet`](#filesystemstreamset) · [`FilesystemStreamSource`](#filesystemstreamsource) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatDetectionSignature`](#formatdetectionsignature) · [`FormatHeaderMatch`](#formatheadermatch) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKeys`](#formatoptionkeys) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`HardLinkDeduplicationSemantics`](#hardlinkdeduplicationsemantics) · [`IArchiveCanonicalizable`](#iarchivecanonicalizable) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveRenamable`](#iarchiverenamable) · [`IArchiveRepackable`](#iarchiverepackable) · [`IArchiveSemanticMetadataProvider`](#iarchivesemanticmetadataprovider) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`ICompressionOptimizable`](#icompressionoptimizable) · [`IContainerRemuxable`](#icontainerremuxable) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDirectoryOrderer`](#ifilesystemdirectoryorderer) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtendedAttributeReader`](#ifilesystemextendedattributereader) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatDetectionSource`](#iformatdetectionsource) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IMultiStreamFilesystemDriverProvider`](#imultistreamfilesystemdriverprovider) · [`IMultiStreamFilesystemDriverReadinessProvider`](#imultistreamfilesystemdriverreadinessprovider) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`IStreamFormatOperations`](#istreamformatoperations) · [`ISymbolicLinkDeduplicationLayout`](#isymboliclinkdeduplicationlayout) · [`ISyntheticEntryNames`](#isyntheticentrynames) · [`IWipeEmpty`](#iwipeempty) · [`InPlacePatchJournal`](#inplacepatchjournal) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MaintenanceCapabilities`](#maintenancecapabilities) · [`MaintenanceCapability`](#maintenancecapability) · [`MaintenanceProfile`](#maintenanceprofile) · [`MaintenanceResult`](#maintenanceresult) · [`MaintenanceVerbs`](#maintenanceverbs) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`MutableRebuildFilesystemSession`](#mutablerebuildfilesystemsession) · [`MutableRebuildFilesystemSession.RebuildImage`](#mutablerebuildfilesystemsessionrebuildimage) · [`MutableRebuildFilesystemSession.ValidateImage`](#mutablerebuildfilesystemsessionvalidateimage) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawDiskShrinkRebuilder`](#rawdiskshrinkrebuilder) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildFilesystemEntry`](#rebuildfilesystementry) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SfxTrailer`](#sfxtrailer) · [`SfxTrailer.Location`](#sfxtrailerlocation) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SubStream`](#substream) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult) · [`WholeImageRebuildCommitter`](#wholeimagerebuildcommitter)
+[`AlgorithmFamily`](#algorithmfamily) · [`ApeTagReader`](#apetagreader) · [`ApeTagReader.ApeTag`](#apetagreaderapetag) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveEntryMetadata`](#archiveentrymetadata) · [`ArchiveFormatOperationsExtensions`](#archiveformatoperationsextensions) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveMutationOptions`](#archivemutationoptions) · [`ArchivePasswordException`](#archivepasswordexception) · [`ArchiveRename`](#archiverename) · [`ArchiveRenames`](#archiverenames) · [`ArchiveSemanticManifest`](#archivesemanticmanifest) · [`ArchiveSemanticManifest.Entry`](#archivesemanticmanifestentry) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`ContentPreservation`](#contentpreservation) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragFeature`](#defragfeature) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`DefragSupport`](#defragsupport) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemAllocationMapCompleter`](#filesystemallocationmapcompleter) · [`FilesystemBlockMoverAttribute`](#filesystemblockmoverattribute) · [`FilesystemCompressionParameter`](#filesystemcompressionparameter) · [`FilesystemCompressionProfile`](#filesystemcompressionprofile) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemOptimization`](#filesystemoptimization) · [`FilesystemOptimizationAdapters`](#filesystemoptimizationadapters) · [`FilesystemOptimizationAdapters.HardLinkDeduplicator`](#filesystemoptimizationadaptershardlinkdeduplicator) · [`FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`](#filesystemoptimizationadapterssymboliclinkdeduplicator) · [`FilesystemOptimizationExtensions`](#filesystemoptimizationextensions) · [`FilesystemOptimizationFeatures`](#filesystemoptimizationfeatures) · [`FilesystemOptimizationOptions`](#filesystemoptimizationoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FilesystemSourceRole`](#filesystemsourcerole) · [`FilesystemStreamSet`](#filesystemstreamset) · [`FilesystemStreamSource`](#filesystemstreamsource) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatDetectionSignature`](#formatdetectionsignature) · [`FormatHeaderMatch`](#formatheadermatch) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKeys`](#formatoptionkeys) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`HardLinkDeduplicationSemantics`](#hardlinkdeduplicationsemantics) · [`IArchiveCanonicalizable`](#iarchivecanonicalizable) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveRenamable`](#iarchiverenamable) · [`IArchiveRepackable`](#iarchiverepackable) · [`IArchiveSemanticMetadataProvider`](#iarchivesemanticmetadataprovider) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`ICompressionOptimizable`](#icompressionoptimizable) · [`IContainerRemuxable`](#icontainerremuxable) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDirectoryOrderer`](#ifilesystemdirectoryorderer) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtendedAttributeReader`](#ifilesystemextendedattributereader) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatDetectionSource`](#iformatdetectionsource) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IMultiStreamFilesystemDriverProvider`](#imultistreamfilesystemdriverprovider) · [`IMultiStreamFilesystemDriverReadinessProvider`](#imultistreamfilesystemdriverreadinessprovider) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`IStreamFormatOperations`](#istreamformatoperations) · [`ISymbolicLinkDeduplicationLayout`](#isymboliclinkdeduplicationlayout) · [`ISyntheticEntryNames`](#isyntheticentrynames) · [`IWipeEmpty`](#iwipeempty) · [`InPlacePatchJournal`](#inplacepatchjournal) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MaintenanceCapabilities`](#maintenancecapabilities) · [`MaintenanceCapability`](#maintenancecapability) · [`MaintenanceProfile`](#maintenanceprofile) · [`MaintenanceResult`](#maintenanceresult) · [`MaintenanceVerbs`](#maintenanceverbs) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`MutableRebuildFilesystemSession`](#mutablerebuildfilesystemsession) · [`MutableRebuildFilesystemSession.RebuildImage`](#mutablerebuildfilesystemsessionrebuildimage) · [`MutableRebuildFilesystemSession.ValidateImage`](#mutablerebuildfilesystemsessionvalidateimage) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawDiskShrinkRebuilder`](#rawdiskshrinkrebuilder) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildFilesystemEntry`](#rebuildfilesystementry) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SfxTrailer`](#sfxtrailer) · [`SfxTrailer.Location`](#sfxtrailerlocation) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SubStream`](#substream) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult) · [`WholeImageRebuildCommitter`](#wholeimagerebuildcommitter)
 
 #### `AlgorithmFamily`
 
@@ -7195,6 +7500,17 @@ Per-operation options for mutating an existing archive or filesystem image.
 | --- | --- | --- |
 | `ArchiveMutationOptions` | `ArchiveMutationOptions()` |  |
 | `Password` | `string Password { get; init; }` | Password or passphrase required to unlock the existing container. |
+
+#### `ArchivePasswordException`
+
+Thrown when an archive cannot be read without a password, or with the one given: the caller should ask for a (different) password and try again. Nothing was extracted.
+
+Inherits `UnauthorizedAccessException`. Implements `ISerializable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ArchivePasswordException` | `ArchivePasswordException(string message, bool passwordWasSupplied)` | Thrown when an archive cannot be read without a password, or with the one given: the caller should ask for a (different) password and try again. Nothing was extracted. |
+| `PasswordWasSupplied` | `bool PasswordWasSupplied { get; }` | Whether a password was given (and is wrong) rather than missing. |
 
 #### `ArchiveRename`
 
@@ -10279,7 +10595,7 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 ### Namespace `FileFormat.Zip`
 
-[`ParallelZipCreator`](#parallelzipcreator) · [`ZipCompatibility`](#zipcompatibility) · [`ZipCompatibilityProfile`](#zipcompatibilityprofile) · [`ZipCompressionMethod`](#zipcompressionmethod) · [`ZipEncryptionMethod`](#zipencryptionmethod) · [`ZipEntry`](#zipentry) · [`ZipFormatDescriptor`](#zipformatdescriptor) · [`ZipLayoutMap`](#ziplayoutmap) · [`ZipModifier`](#zipmodifier) · [`ZipReader`](#zipreader) · [`ZipWriter`](#zipwriter)
+[`ParallelZipCreator`](#parallelzipcreator) · [`ZipCompatibility`](#zipcompatibility) · [`ZipCompatibilityProfile`](#zipcompatibilityprofile) · [`ZipCompressionMethod`](#zipcompressionmethod) · [`ZipEncryptionMethod`](#zipencryptionmethod) · [`ZipEntry`](#zipentry) · [`ZipFormatDescriptor`](#zipformatdescriptor) · [`ZipLayoutMap`](#ziplayoutmap) · [`ZipMethodCodecs`](#zipmethodcodecs) · [`ZipMethodCodecs.Decoder`](#zipmethodcodecsdecoder) · [`ZipModifier`](#zipmodifier) · [`ZipReader`](#zipreader) · [`ZipWriter`](#zipwriter)
 
 #### `ParallelZipCreator`
 
@@ -10332,6 +10648,7 @@ ZIP compression methods.
 | `Lzma` | `14` | LZMA compression. |
 | `Zstd` | `93` | Zstandard compression. |
 | `Xz` | `95` | XZ compression (a complete .xz stream, APPNOTE 4.4.5 method 95). |
+| `WavPack` | `97` | WinZip WavPack (a wrapped WavPack image of a WAV file); decoded through `ZipMethodCodecs`. |
 | `Ppmd` | `98` | PPMd version I, Rev 1 compression. |
 | `WinZipAes` | `99` | WinZip AES encryption (actual method stored in extra field). |
 
@@ -10414,6 +10731,23 @@ Walks a ZIP central directory and emits a fail-closed byte-level layout of local
 | --- | --- | --- |
 | `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream archive)` |  |
 
+#### `ZipMethodCodecs`
+
+Decoders for ZIP compression methods whose codec lives outside this assembly (WinZip's media methods: 97 WavPack). Assemblies that implement such a codec register it here, and `ZipReader` consults this table for any method it does not decode itself.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Register` | `static void Register(ushort method, Decoder decoder)` | Registers (or replaces) the decoder for `method`. |
+| `TryGetDecoder` | `static bool TryGetDecoder(ushort method, out Decoder decoder)` | Looks up the decoder for `method`. |
+
+#### `ZipMethodCodecs.Decoder`
+
+Decodes an entry's compressed bytes; the second argument is the declared uncompressed size.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decoder` | `byte[] ZipMethodCodecs.Decoder(byte[] compressed, long uncompressedSize)` | Decodes an entry's compressed bytes; the second argument is the declared uncompressed size. |
+
 #### `ZipModifier`
 
 Random-access in-place modifier for ZIP archives. Reads and writes only the central directory, the EOCD record, and (for new files) the appended local file header + compressed data — never the entire archive payload. Lets callers operate on multi-GB ZIP files without rebuild cost.
@@ -10422,7 +10756,7 @@ Random-access in-place modifier for ZIP archives. Reads and writes only the cent
 | --- | --- | --- |
 | `AddFile` | `static void AddFile(Stream zip, string name, Stream data, DateTime? lastModified = null)` | Adds a file to an existing ZIP archive, streaming `data` from its current position to its end through Deflate straight into the archive. Memory use is bounded by the copy buffer, not by the file size, so files larger than 2 GiB are fine. If an entry with the same name already exists the caller should `RemoveFile` it first; this method just appends. |
 | `AddFile` | `static void AddFile(Stream zip, string name, byte[] data, DateTime? lastModified = null)` | Adds a file to an existing ZIP archive, encoding it with Deflate. If an entry with the same name already exists the caller should `RemoveFile` it first; this method just appends. |
-| `AddOrReplace` | `static void AddOrReplace(Stream zip, IReadOnlyList<ArchiveInputInfo> inputs, Func<string, bool> include = null)` | Adds or replaces (by name) every file input in `inputs`, streaming on-disk files instead of loading them and stamping them with their last-write time. Directory inputs are skipped, as are file inputs rejected by `include`. |
+| `AddOrReplace` | `static void AddOrReplace(Stream zip, IReadOnlyList<ArchiveInputInfo> inputs, Func<string, bool> include = null)` | Adds or replaces (by name) every file input in `inputs`, streaming on-disk files instead of loading them and stamping them with their last-write time. A directory input becomes a folder entry (a name ending in '/'), so an empty folder added to an existing archive is kept. Inputs rejected by `include` are skipped. |
 | `RemoveFile` | `static bool RemoveFile(Stream zip, string name, bool wipeData = true)` | Removes a named entry from a ZIP archive. Returns true if found and removed. When `wipeData` is true (default) the orphan LFH+data bytes are zeroed; otherwise they remain readable in-place but are no longer referenced by any CD entry. |
 
 #### `ZipReader`

@@ -347,8 +347,10 @@ public sealed class FilesystemWriteRoundTripTests {
       modifier.Remove(archive, entryNames, new ArchiveMutationOptions { Password = password });
   }
 
+  // QCOW2 edits support the plain profile. Qcow2EncryptionTests separately proves
+  // encrypted create/read and rejection of maintenance with unchanged image bytes.
   private static string? PasswordFor(string formatId)
-    => (FormatRegistry.GetArchiveOps(formatId) as IFormatDescriptor)?.Capabilities
+    => formatId != "Qcow2" && (FormatRegistry.GetArchiveOps(formatId) as IFormatDescriptor)?.Capabilities
          .HasFlag(FormatCapabilities.SupportsPassword) == true
       ? TestPassword
       : null;

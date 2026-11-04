@@ -75,6 +75,27 @@ internal sealed class MainViewModel : ViewModelBase {
   public ObservableCollection<BreadcrumbSegment> Breadcrumbs { get; } = [];
 
   public string ArchivePath { get => _archivePath; set => SetField(ref _archivePath, value); }
+
+  /// <summary>
+  /// <see cref="RunAsync"/> for reads that may need the password: the work runs in the
+  /// background, the prompt on the UI thread between tries. False when the user cancelled.
+  /// </summary>
+  private async Task<bool> RunWithPasswordAsync(string status, Action<string?> work) {
+    for (;;) {
+      try {
+        await RunAsync(status, () => work(this.ArchivePassword));
+        return true;
+      } catch (Exception e) when (IsPasswordProblem(e)) {
+        IsBusy = false;
+        var password = this.AskPassword(ArchivePath, previousWasWrong: this.ArchivePassword != null);
+        if (password == null) {
+          StatusText = $"{Path.GetFileName(ArchivePath)} needs a password; nothing was read.";
+          return false;
+        }
+        this.ArchivePassword = password;
+      }
+    }
+  }
   public string Format { get => _format; set => SetField(ref _format, value); }
   public string StatusText { get => _statusText; set => SetField(ref _statusText, value); }
   public bool IsBusy { get => _isBusy; set { SetField(ref _isBusy, value); OnPropertyChanged(nameof(IsNotBusy)); } }
@@ -206,7 +227,7 @@ internal sealed class MainViewModel : ViewModelBase {
   /// <summary>Whether <paramref name="ex"/> (or an inner exception) says a password is missing or wrong.</summary>
   internal static bool IsPasswordProblem(Exception? ex) {
     for (; ex != null; ex = ex.InnerException)
-      if (ex is InvalidOperationException or InvalidDataException && ex.Message.Contains("password", StringComparison.OrdinalIgnoreCase))
+      if (ex is ArchivePasswordException || (ex is InvalidOperationException or InvalidDataException && ex.Message.Contains("password", StringComparison.OrdinalIgnoreCase)))
         return true;
     return false;
   }
@@ -472,10 +493,33 @@ internal sealed class MainViewModel : ViewModelBase {
   internal string? WhyNotTransfer(IReadOnlyList<TransferItem> items, Location target, bool move) {
     if (IsChanging) return "Another change is still running.";
     if (IsNestedCopy(target)) return "Nothing can be put inside a nested archive.";
-    if (items.FirstOrDefault(IsEncryptedHere) is { } locked)
-      return $"{locked.Name} is encrypted, and the shell has no password to read it with.";
     if (move && items.Any(i => IsNestedCopy(i.From))) return "Nothing can be moved out of a nested archive.";
     return Transfer.WhyNot(items, target, move);
+  }
+
+  /// <summary>The encrypted entries of the open archive that <paramref name="items"/> are or hold.</summary>
+  private IEnumerable<ArchiveEntryViewModel> EncryptedEntriesUnder(IEnumerable<TransferItem> items)
+    => items.SelectMany(item => _allEntries.Where(e => e.IsEncrypted && !e.IsDirectory
+      && (e.Path.TrimEnd('/') == item.EntryPath || e.Path.StartsWith(item.EntryPath + "/", StringComparison.Ordinal))));
+
+  /// <summary>
+  /// Makes sure the open archive's password opens <paramref name="entries"/>, asking for it until it
+  /// does: the smallest of them is read once as the check. False when the user cancels.
+  /// </summary>
+  internal bool EnsurePassword(IEnumerable<ArchiveEntryViewModel> entries) {
+    var probe = entries.OrderBy(static e => e.OriginalSize).FirstOrDefault();
+    if (probe == null)
+      return true;
+    try {
+      WithPassword(Path.GetFileName(ArchivePath), pw => {
+        using var stream = ArchiveOperations.OpenEntry(ArchivePath, probe.Path, pw);
+        stream.CopyTo(Stream.Null);
+        return 0;
+      });
+      return true;
+    } catch (ArchivePasswordException) {
+      return false;
+    }
   }
 
   /// <summary>Whether <paramref name="item"/> lies in the open archive and is, or holds, an encrypted entry.</summary>
@@ -493,12 +537,20 @@ internal sealed class MainViewModel : ViewModelBase {
   /// </summary>
   internal async Task<string?> TransferAsync(IReadOnlyList<TransferItem> items, Location target, bool move) {
     if (WhyNotTransfer(items, target, move) is { } refusal) return Fail(refusal);
+
+    // Encrypted entries are read with the archive's password, asked for here on the UI thread
+    // before anything is staged; the smallest one is read as the check.
+    var encrypted = items.Where(IsEncryptedHere).ToList();
+    if (encrypted.Count > 0 && !EnsurePassword(EncryptedEntriesUnder(encrypted)))
+      return Fail($"{Path.GetFileName(ArchivePath)} needs a password; nothing was copied.");
+
     if (BeginChange(TimeSpan.FromSeconds(10)) is { } busy) return Fail(busy);
 
     IsBusy = true;
     StatusText = $"{(move ? "Moving" : "Copying")} {items.Count} item(s)...";
     try {
-      var result = await Task.Run(() => Transfer.Run(items, target, move));
+      var password = ArchivePassword;
+      var result = await Task.Run(() => Transfer.Run(items, target, move, password));
 
       // What the list shows may have changed from either end: what arrived, or what left.
       if (HasArchive && !IsBrowsingOsFolder) ReloadArchiveInPlace();
@@ -555,7 +607,7 @@ internal sealed class MainViewModel : ViewModelBase {
     try {
       var data = source.BrowsingDisk
         ? File.ReadAllBytes(entry.Path)
-        : ArchiveOperations.ExtractEntry(source.ArchivePath, entry.Path, password: null);
+        : ArchiveOperations.ExtractEntry(source.ArchivePath, entry.Path, password: ArchivePassword);
       return (data, entry.Name);
     } catch (Exception ex) {
       // A preview is a glance: whatever stopped the read - a locked file, a damaged entry, a codec
@@ -1009,7 +1061,7 @@ internal sealed class MainViewModel : ViewModelBase {
 
     if (entry != null) {
       try {
-        var bytes = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: ArchivePassword);
+        var bytes = WithPassword(Path.GetFileName(ArchivePath), pw => ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, pw));
         var temp = Path.Combine(Path.GetTempPath(), $"cwb_maint_{Guid.NewGuid():N}_{Path.GetFileName(entry.Name)}");
         File.WriteAllBytes(temp, bytes);
 
@@ -1085,7 +1137,7 @@ internal sealed class MainViewModel : ViewModelBase {
     } else if (entry != null) {
       // Nested archive entry: materialise → reconfigure → write back into host.
       try {
-        var bytes = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: ArchivePassword);
+        var bytes = WithPassword(Path.GetFileName(ArchivePath), pw => ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, pw));
         var temp = Path.Combine(Path.GetTempPath(),
           $"cwb_reconfig_{Guid.NewGuid():N}_{Path.GetFileName(entry.Name)}");
         File.WriteAllBytes(temp, bytes);
@@ -1184,10 +1236,11 @@ internal sealed class MainViewModel : ViewModelBase {
       IsBusy = true;
       StatusText = $"Opening {Path.GetFileName(path)}...";
 
-      var format = FormatDetector.Detect(path);
+      var format = ArchiveVolumes.Detect(path);
+      // A different archive does not share the last one's password.
       if (!fromNestedDescent && !string.Equals(path, ArchivePath, StringComparison.OrdinalIgnoreCase))
         ArchivePassword = null;
-      var entries = WithPassword(path, pw => ArchiveOperations.List(path, password: pw));
+      var entries = WithPassword(Path.GetFileName(path), pw => ArchiveOperations.List(path, pw));
 
       // Top-level Open clears the parent-archive stack and any leftover nested
       // temp files. Nested descents skip this cleanup so the back-stack survives.
@@ -1679,10 +1732,10 @@ internal sealed class MainViewModel : ViewModelBase {
     var dlg = new FolderBrowserDialog { Title = "Select output folder" };
     if (dlg.ShowDialog() != DialogResult.OK) return;
 
-    EnsurePassword();
-    await RunAsync($"Extracting to {dlg.SelectedPath}...", () => {
-      ArchiveOperations.Extract(ArchivePath, dlg.SelectedPath, password: ArchivePassword, files: null);
-    });
+    if (!await RunWithPasswordAsync($"Extracting to {dlg.SelectedPath}...", pw => {
+      ArchiveOperations.Extract(ArchivePath, dlg.SelectedPath, password: pw, files: null);
+    }))
+      return;
     StatusText = $"Extracted to {dlg.SelectedPath}";
   }
 
@@ -1702,9 +1755,17 @@ internal sealed class MainViewModel : ViewModelBase {
       return paths.Length > 0 ? paths : null;
     }
 
-    if (!HasArchive || picked.Any(e => e.IsEncrypted)) return null;
+    if (!HasArchive) return null;
+
+    // The drop target pulls each entry later, from its own thread, where nothing can be asked:
+    // the password is settled now, before the drag starts.
+    var encrypted = picked.Where(static e => e.IsEncrypted && !e.IsDirectory)
+      .Concat(picked.Where(static e => e.IsDirectory).SelectMany(d => _allEntries.Where(e => e.IsEncrypted && !e.IsDirectory
+        && e.Path.StartsWith(d.Path.EndsWith('/') ? d.Path : d.Path + "/", StringComparison.Ordinal))));
+    if (!EnsurePassword(encrypted)) return null;
 
     var archive = ArchivePath;
+    var password = ArchivePassword;
     var files = new List<VirtualFile>();
     foreach (var entry in picked) {
       if (!entry.IsDirectory) {
@@ -1723,7 +1784,7 @@ internal sealed class MainViewModel : ViewModelBase {
     return files.Count > 0 ? files.ToArray() : null;
 
     VirtualFile Lazy(string relative, ArchiveEntryViewModel entry)
-      => new(relative, () => ArchiveOperations.OpenEntry(archive, entry.Path), entry.OriginalSize >= 0 ? entry.OriginalSize : null,
+      => new(relative, () => ArchiveOperations.OpenEntry(archive, entry.Path, password), entry.OriginalSize >= 0 ? entry.OriginalSize : null,
         entry.LastModified?.ToUniversalTime());
   }
 
@@ -1784,9 +1845,8 @@ internal sealed class MainViewModel : ViewModelBase {
     }
 
     var files = filePaths.Distinct().ToArray();
-    EnsurePassword();
-    await RunAsync($"Extracting {files.Length} file(s)...", () => {
-      ArchiveOperations.Extract(ArchivePath, dlg.SelectedPath, password: ArchivePassword, files: files);
+    await RunWithPasswordAsync($"Extracting {files.Length} file(s)...", pw => {
+      ArchiveOperations.Extract(ArchivePath, dlg.SelectedPath, password: pw, files: files);
     });
     StatusText = $"Extracted {files.Length} file(s) to {dlg.SelectedPath}";
   }
@@ -1797,10 +1857,10 @@ internal sealed class MainViewModel : ViewModelBase {
     var sw = Stopwatch.StartNew();
 
     try {
-      EnsurePassword();
-      await RunAsync("Testing archive integrity...", () => {
-        ok = ArchiveOperations.Test(ArchivePath, password: ArchivePassword);
-      });
+      if (!await RunWithPasswordAsync("Testing archive integrity...", pw => {
+        ok = ArchiveOperations.Test(ArchivePath, password: pw);
+      }))
+        return;
     } catch (Exception ex) {
       ok = false;
       errorDetail = ex.Message;
@@ -1862,7 +1922,7 @@ internal sealed class MainViewModel : ViewModelBase {
           StatusText = $"Cannot preview: missing archive context.";
           return;
         }
-        data = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: ArchivePassword);
+        data = WithPassword(Path.GetFileName(ArchivePath), pw => ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, pw));
       }
 
       // Before showing the preview, check if the extracted bytes are themselves
@@ -2046,7 +2106,7 @@ internal sealed class MainViewModel : ViewModelBase {
     if (!entry.IsDirectory) {
       try {
         StatusText = $"Loading {entry.Name}...";
-        data = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: ArchivePassword);
+        data = WithPassword(Path.GetFileName(ArchivePath), pw => ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, pw));
         StatusText = "Ready";
       }
       catch {
@@ -2080,7 +2140,7 @@ internal sealed class MainViewModel : ViewModelBase {
 
     try {
       StatusText = $"Loading {entry.Name}...";
-      var data = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: ArchivePassword);
+      var data = WithPassword(Path.GetFileName(ArchivePath), pw => ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, pw));
       StatusText = "Ready";
 
       var win = new AnalysisWindow();
@@ -2187,7 +2247,7 @@ internal sealed class MainViewModel : ViewModelBase {
     HashSet<string> existing;
     try {
       existing = new HashSet<string>(
-        ArchiveOperations.List(archivePath, password: null).Select(e => e.Name),
+        WithPassword(Path.GetFileName(archivePath), pw => ArchiveOperations.List(archivePath, pw)).Select(e => e.Name),
         StringComparer.OrdinalIgnoreCase);
     } catch (Exception ex) {
       MessageBox.Show($"Failed to read archive contents: {ex.Message}",
@@ -2331,6 +2391,8 @@ internal sealed class MainViewModel : ViewModelBase {
       Exception? err = null;
       try {
         ArchiveOperations.Create(outputPath, inputs, opts, format);
+        if (opts.VolumeSize > 0)
+          outputPath = ArchiveVolumes.VolumePath(outputPath, 1); // the set opens from its first volume
 
         if (makeSfx) {
           var sfxPath = Path.ChangeExtension(outputPath, ".exe");

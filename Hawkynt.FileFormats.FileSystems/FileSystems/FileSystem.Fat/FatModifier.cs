@@ -29,6 +29,28 @@ public static class FatModifier {
   /// Throws <see cref="IOException"/> when the volume, or FAT12/16's fixed root
   /// directory, has no room.
   /// </summary>
+  /// <summary>
+  /// Creates a folder, with any missing parents, in place; a folder that is already there is
+  /// left as it is and a file of that name is refused. An empty folder added this way survives.
+  /// </summary>
+  public static void AddDirectory(byte[] image, string name, DateTime? modTime = null) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(name);
+    var segments = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+    var fs = ParseBootSector(image);
+    var parentCluster = 0;
+    for (var i = 0; i < segments.Length; ++i) {
+      var path = string.Join('/', segments[..(i + 1)]);
+      if (FatRemover.Lookup(image, path) is { } entry) {
+        if ((entry.Attr & 0x10) == 0)
+          throw new IOException($"FAT: '{path}' is a file, not a folder.");
+        parentCluster = entry.FirstCluster;
+      } else {
+        parentCluster = MakeDirectory(image, fs, parentCluster, segments[i], modTime);
+      }
+    }
+  }
+
   public static void AddFile(byte[] image, string name, byte[] data, DateTime? modTime = null, bool forceLfn = false) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(name);

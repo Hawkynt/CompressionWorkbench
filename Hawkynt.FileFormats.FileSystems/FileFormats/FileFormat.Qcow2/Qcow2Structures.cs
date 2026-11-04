@@ -24,7 +24,9 @@ internal readonly record struct Qcow2Header(
   uint RefcountOrder,
   uint HeaderLength,
   byte CompressionType = 0,
-  string? BackingFormat = null
+  string? BackingFormat = null,
+  long FdeOffset = 0,
+  long FdeLength = 0
 ) {
   public int ClusterSize => 1 << this.ClusterBits;
   /// <summary>Whether L2 entries carry a 64-bit subcluster bitmap (128-bit entries).</summary>
@@ -62,6 +64,12 @@ internal static class Qcow2Structures {
   // Header extension types.
   private const uint ExtensionEnd = 0;
   private const uint ExtensionBackingFormat = 0xE2792ACA;
+  private const uint ExtensionFullDiskEncryption = 0x0537BE77;
+
+  // crypt_method values (qcow2.txt).
+  internal const uint CryptNone = 0;
+  internal const uint CryptAes = 1;
+  internal const uint CryptLuks = 2;
 
   /// <summary>Number of subclusters per cluster when extended L2 entries are enabled.</summary>
   internal const int Subclusters = 32;
@@ -143,6 +151,7 @@ internal static class Qcow2Structures {
     // compression_type (v3, header_length > 104) and the header extensions behind the header.
     byte compressionType = 0;
     string? backingFormat = null;
+    long fdeOffset = 0, fdeLength = 0;
     var extensionsStart = version == 3 ? headerLength : 72U;
     var headerAreaEnd = Math.Min(clusterSize, stream.Length);
     if (version == 3 && headerLength > 104 && headerLength <= headerAreaEnd) {
@@ -162,6 +171,14 @@ internal static class Qcow2Structures {
           throw new InvalidDataException("QCOW2: header extension runs past the first cluster.");
         if (type == ExtensionBackingFormat)
           backingFormat = System.Text.Encoding.ASCII.GetString(area, at + 8, (int)length);
+        else if (type == ExtensionFullDiskEncryption && length >= 16) {
+          var offset = BinaryPrimitives.ReadUInt64BigEndian(area.AsSpan(at + 8));
+          var size = BinaryPrimitives.ReadUInt64BigEndian(area.AsSpan(at + 16));
+          if (offset > long.MaxValue || size > int.MaxValue)
+            throw new InvalidDataException("QCOW2: the encryption header pointer is out of range.");
+          fdeOffset = (long)offset;
+          fdeLength = (long)size;
+        }
         at += 8 + (int)((length + 7) & ~7U);
       }
     }
@@ -185,18 +202,23 @@ internal static class Qcow2Structures {
       refcountOrder,
       headerLength,
       compressionType,
-      backingFormat);
+      backingFormat,
+      fdeOffset,
+      fdeLength);
   }
 
   /// <summary>
-  /// Refuses what the reader cannot decode: encryption, an external data file, unknown
-  /// incompatible features and unknown compression types. Dirty and corrupt images are read
+  /// Refuses what the reader cannot decode: unknown encryption methods, an external data file,
+  /// unknown incompatible features and unknown compression types. AES and LUKS images are read
+  /// with a password (<see cref="Qcow2Encryption"/>). Dirty and corrupt images are read
   /// (QEMU reads them too; neither bit changes what the guest clusters contain), zstd clusters
   /// and extended L2 entries are decoded, and backing files are followed by <see cref="Qcow2Stream"/>.
   /// </summary>
   internal static void ValidateReadableProfile(in Qcow2Header header) {
-    if (header.CryptMethod != 0)
-      throw new NotSupportedException("QCOW2: encrypted images are not supported.");
+    if (header.CryptMethod is not (CryptNone or CryptAes or CryptLuks))
+      throw new NotSupportedException($"QCOW2: encryption method {header.CryptMethod} is not supported.");
+    if (header.CryptMethod == CryptLuks && header.FdeLength < Compression.Core.Crypto.Luks1Header.HeaderSize)
+      throw new InvalidDataException("QCOW2: a LUKS-encrypted image without its encryption header pointer.");
     var unknown = header.IncompatibleFeatures & ~KnownIncompatible;
     if (unknown != 0)
       throw new NotSupportedException($"QCOW2: unsupported incompatible feature mask 0x{unknown:X16}.");

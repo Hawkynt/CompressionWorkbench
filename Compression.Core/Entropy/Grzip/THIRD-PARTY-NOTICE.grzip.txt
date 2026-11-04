@@ -1,0 +1,21 @@
+grzip 0.3.0 / libGRZip (GRZipII) — converted to C#
+
+Source:   grzip 0.3.0 (Jean-Pierre Demailly's packaging of GRZipII), as mirrored in
+          https://github.com/mistydemeo/quickbms/tree/5752a6a2a38e16211952553fcffa59570855ac42/libs/grzip
+Files:    libgrzip.c (block format), LZP.c, BWT.c (GRZip_FastBWT_Decode,
+          GRZip_StrongBWT_Decode), ST4.c (GRZip_ST4_Decode), MTF_Ari.c,
+          WFC_Ari.c (GRZip_WFC_Ari_Decode), Rec_Flt.c (GRZip_Rec_Decode), WFC_MTF.h,
+          main.c (file signature)
+Author:   Copyright (C) 2002-2004 Grebnov Ilya
+Licence:  GNU Lesser General Public License, version 2.1 or (at your option) any
+          later version. This repository is LGPL-3.0-or-later.
+
+GrzipCodec is a conversion of the functions above; the constants (signature,
+model rates, WFC weights and positions, group tables) are copied exactly. The
+encoder follows libgrzip's LZP + BWT + MTF path, using this repository's own
+Burrows-Wheeler transform for the sort.
+
+Modifications: converted to C#; malformed input raises InvalidDataException
+instead of reading past buffers.
+
+The full LGPL-2.1 text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt

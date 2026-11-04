@@ -52,7 +52,8 @@ public class CbaTests {
     d.Add(ms, [ArchiveInputInfo.InMemory("page03.png", Page3)]);
     d.Remove(ms, ["page01.png"]);
     ms.Position = 0;
-    Assert.That(d.List(ms, null).Select(e => e.Name), Is.EqualTo(new[] { "page02.png", "page03.png" }));
+    Assert.That(d.List(ms, null).Select(e => e.Name), Is.EquivalentTo(new[] { "page02.png", "page03.png" }));
+    Assert.That(Read(d, ms, "page02.png"), Is.EqualTo(Page2));
     Assert.That(Read(d, ms, "page03.png"), Is.EqualTo(Page3));
   }
 

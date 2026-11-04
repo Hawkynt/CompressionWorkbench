@@ -36,14 +36,10 @@ namespace FileSystem.Ntfs;
 /// its own USA fixup) tracked by a named $BITMAP. The $INDEX_ROOT then holds
 /// routing pointer entries (subnode VCN flag 0x01 + 8-byte child VCN at the
 /// entry tail) into those INDX leaves, and the FILE_NAME entries live in the
-/// leaves sorted by NTFS file-name collation. A single B+tree level is built:
-/// the resident root points directly at leaf blocks. To keep all routing
-/// pointers resident, the INDX block size is grown (power-of-two, 4 KiB..64 KiB)
-/// as the entry count rises. With the default 1024-byte MFT record this handles
-/// tens of thousands of short-named entries per directory; only a directory
-/// whose routing pointers would overflow even a 64 KiB block (hundreds of
-/// thousands of entries) would need a second tree level, which is not yet
-/// implemented.
+/// leaves sorted by NTFS file-name collation. All INDX blocks are 4 KiB, the size
+/// the boot sector announces. When the routing pointers to the leaves no longer fit
+/// in the record either, they go into INDX blocks of their own, one level up, until
+/// the root holds them: a B-tree of any depth, as NTFS builds it.
 /// </para>
 /// <para>
 /// 8.3 short names: by default every $FILE_NAME is recorded in the Win32&amp;DOS
@@ -92,6 +88,15 @@ public sealed class NtfsWriter {
   private int _clusterSize = DefaultClusterSize;
   private int _mftRecordSize = DefaultMftRecordSize;
 
+  // The time every $FILE_NAME of this build carries, in the records and in the index
+  // keys that repeat them.
+  private readonly long _fileNameTime = DateTime.UtcNow.ToFileTimeUtc();
+
+  // What the index keys repeat of each record's $FILE_NAME: whether it is a folder,
+  // and its size. Readers take a listed entry's type from the key (Linux's ntfs3 lists
+  // a folder whose key lacks the folder flag as a file); Windows shows sizes from it.
+  private readonly Dictionary<uint, (bool Directory, long Size)> _indexKeys = [];
+
   // Per-build LZNT1 compression toggle. When enabled, every non-resident file's
   // $DATA is stored as an NTFS compressed attribute (16-cluster compression
   // units, the 0x0001 compressed flag, and sparse runs for the clusters a unit
@@ -132,10 +137,11 @@ public sealed class NtfsWriter {
          this._mftRecordSize, this.UsaOffset, BytesPerSector,
          this._version.StandardInformationLength(), fileName.Length);
 
-  // Size of the $LogFile data region in bytes. Real NTFS typically uses
-  // ≥2 MiB; for our minimal images we size proportionally to the volume
-  // but always allocate at least one cluster.
-  private const int LogFileBytes = 64 * 1024; // 64 KiB — enough for a clean log
+  // Size of the $LogFile data region in bytes (all 0xFF: a log never written to). Real
+  // NTFS typically uses ≥2 MiB. Linux's ntfs3 mounts a volume read-write only when the log
+  // holds two restart pages and 48 record pages of 4 KiB (200 KiB); a smaller one fails
+  // with "failed to replay log file. Can't mount rw!".
+  private const int LogFileBytes = 256 * 1024;
 
   // Size of the $UpCase data stream: 65 536 UTF-16 code units = 128 KiB.
   private const int UpCaseBytes = 65536 * 2;
@@ -274,6 +280,16 @@ public sealed class NtfsWriter {
       throw new ArgumentOutOfRangeException(nameof(version), version, "NTFS version must be 1.2, 3.0 or 3.1.");
 
     this._version = version;
+  }
+
+  // Directories added on their own, so empty ones exist too ('/'-separated paths).
+  private readonly List<string> _dirs = [];
+
+  /// <summary>Adds a directory (and its parents); needed only for empty ones.</summary>
+  public void AddDirectory(string name) {
+    ArgumentNullException.ThrowIfNull(name);
+    var path = string.Join('/', name.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries));
+    if (path.Length > 0) this._dirs.Add(path);
   }
 
   /// <summary>Adds a file to the NTFS image.</summary>
@@ -568,19 +584,26 @@ public sealed class NtfsWriter {
     var mftMirrClusters = (4 * this._mftRecordSize + this._clusterSize - 1) / this._clusterSize;
     // Reserve that region before placing other files.
 
-    var logFileCluster = nextCluster;
+    // The system files that follow skip the $MFTMirr region like every other
+    // allocation: an $MFT reaching past the volume midpoint pushes the mirror right
+    // behind it, and $LogFile laid over the mirror carried four MFT records instead
+    // of its clean 0xFF pages, so Linux's ntfs3 refused to mount the volume read-write.
     var logFileClusters = (LogFileBytes + this._clusterSize - 1) / this._clusterSize;
+    SkipMftMirror(ref nextCluster, logFileClusters, mftMirrCluster, mftMirrClusters);
+    var logFileCluster = nextCluster;
     nextCluster += logFileClusters;
 
-    var upCaseCluster = nextCluster;
     var upCaseClusters = (UpCaseBytes + this._clusterSize - 1) / this._clusterSize;
+    SkipMftMirror(ref nextCluster, upCaseClusters, mftMirrCluster, mftMirrClusters);
+    var upCaseCluster = nextCluster;
     nextCluster += upCaseClusters;
 
     // Rounded to a whole 64-bit word: a driver reads the cluster bitmap in words and
     // measures the attribute against that, so a byte-exact size is short.
     var bitmapBytes = (totalClusters + 63) / 64 * 8;
-    var bitmapCluster = nextCluster;
     var bitmapClusters = (int)((bitmapBytes + this._clusterSize - 1) / this._clusterSize);
+    SkipMftMirror(ref nextCluster, bitmapClusters, mftMirrCluster, mftMirrClusters);
+    var bitmapCluster = nextCluster;
     nextCluster += bitmapClusters;
 
     // $MFT's own $BITMAP attribute (type 0xB0) — tracks which MFT records are
@@ -588,9 +611,10 @@ public sealed class NtfsWriter {
     // 16-record image needs a real cluster-backed bitmap. Bit i set ⇔ record i
     // is allocated. Stored non-resident in its own cluster.
     var mftBitmapBitsBytes = (totalMftRecords + 7) / 8;
-    var mftBitmapCluster = nextCluster;
     var mftBitmapClusters = (mftBitmapBitsBytes + this._clusterSize - 1) / this._clusterSize;
     if (mftBitmapClusters < 1) mftBitmapClusters = 1;
+    SkipMftMirror(ref nextCluster, mftBitmapClusters, mftMirrCluster, mftMirrClusters);
+    var mftBitmapCluster = nextCluster;
     nextCluster += mftBitmapClusters;
 
     // $AttrDef, when it does not fit inside its record, gets its clusters here with
@@ -600,10 +624,11 @@ public sealed class NtfsWriter {
     // reads the attribute definitions before anything else called the volume corrupt.
     var attrDefTable = BuildAttrDefTable(this._version);
     var attrDefIsResident = attrDefTable.Length <= ResidentThreshold;
-    var attrDefCluster = nextCluster;
     var attrDefClusters = attrDefIsResident
       ? 0
       : (attrDefTable.Length + this._clusterSize - 1) / this._clusterSize;
+    SkipMftMirror(ref nextCluster, attrDefClusters, mftMirrCluster, mftMirrClusters);
+    var attrDefCluster = nextCluster;
     nextCluster += attrDefClusters;
 
     // Skip over the $MFTMirr region if we've grown into it.
@@ -1186,6 +1211,26 @@ public sealed class NtfsWriter {
       nodes.Add(fileNode);
     }
 
+    // Directories added on their own (empty ones among them).
+    foreach (var path in this._dirs) {
+      var dir = root;
+      foreach (var segment in path.Split('/')) {
+        if (!dir.ChildByName.TryGetValue(segment, out var child)) {
+          child = new TreeNode {
+            Name = segment,
+            RecordNumber = nextRecord++,
+            ParentRecord = dir.RecordNumber,
+            IsDirectory = true,
+          };
+          dir.Children.Add(child);
+          dir.ChildByName[segment] = child;
+          nodes.Add(child);
+        }
+        if (!child.IsDirectory) break;
+        dir = child;
+      }
+    }
+
     return (root, nodes);
   }
 
@@ -1598,9 +1643,8 @@ public sealed class NtfsWriter {
     BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v),
       (long)parentRecord | ((long)SequenceOf(parentRecord) << 48));
 
-    var now = DateTime.UtcNow.ToFileTimeUtc();
     for (var t = 0; t < 4; t++)
-      BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v + 8 + t * 8), now);
+      BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v + 8 + t * 8), this._fileNameTime);
 
     // Allocated size (offset 40) and real size (offset 48) — helps chkdsk
     // cross-check against $DATA's sizes.
@@ -1908,8 +1952,10 @@ public sealed class NtfsWriter {
     if (includeSystemEntries)
       indexed.Add((9, this._version.Record9Name())); // ntfs_open_secure() does pathname_to_inode("$Secure")
 
-    foreach (var child in dir.Children)
+    foreach (var child in dir.Children) {
       indexed.Add((child.RecordNumber, child.Name));
+      this._indexKeys[child.RecordNumber] = (child.IsDirectory, child.IsDirectory ? 0 : child.EffectiveLength);
+    }
 
     // NTFS file-name collation: case-insensitive Unicode code-point order via
     // $UpCase. char.ToUpperInvariant matches our $UpCase table for all of the
@@ -1927,29 +1973,8 @@ public sealed class NtfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(0), 0x30); // $FILE_NAME collation key
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(4), 1);     // FILENAME collation
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8), (uint)indexBlockSize); // bytes per index block
-    header[12] = (byte)Math.Max(1, indexBlockSize / this._clusterSize); // clusters per index block
+    header[12] = (byte)this.VcnsPerIndexBlock(indexBlockSize); // clusters (or sectors) per index block
     ms.Write(header);
-  }
-
-  // Picks the smallest power-of-two INDX block size (≥ 4 KiB, ≥ one cluster)
-  // such that the directory's entries split into at most maxLeaves leaf blocks,
-  // keeping the resident pointer $INDEX_ROOT within the MFT record. Caps at
-  // 64 KiB; beyond that a multi-level tree would be needed (not implemented).
-  private int ChooseIndexBlockSize(List<(uint Record, string Name)> indexed, int maxLeaves) {
-    var totalEntryBytes = 0;
-    foreach (var (_, name) in indexed)
-      totalEntryBytes += IndexEntryLength(name);
-
-    for (var size = Math.Max(IndexBlockSize, this._clusterSize); size <= 64 * 1024; size *= 2) {
-      var usaBytes = (1 + size / BytesPerSector) * 2;
-      var leafEntriesStart = (40 /*usa_ofs*/ + usaBytes + 7) & ~7;
-      var capacity = size - leafEntriesStart - 16;
-      if (capacity <= 0) continue;
-      // Worst case one extra leaf from per-block packing rounding.
-      var leaves = (totalEntryBytes + capacity - 1) / capacity + 1;
-      if (leaves <= maxLeaves) return size;
-    }
-    return 64 * 1024; // best effort; very large directories may still overflow
   }
 
   // Builds a directory's resident $INDEX_ROOT ($I30) payload listing one index
@@ -2001,7 +2026,7 @@ public sealed class NtfsWriter {
 
     var fileNameValue = 66 + dir.Name.Length * 2;
     var fileNameAttr = (24 + fileNameValue + 7) & ~7;
-    var stdInfoAttr = (24 + 48 + 7) & ~7;
+    var stdInfoAttr = (24 + this._version.StandardInformationLength() + 7) & ~7;
     var indexRootAttrOverhead = ((24 + 8 + 7) & ~7) /*hdr + "$I30"*/ + 8 /*end marker + pad*/;
     var residentBudget = this._mftRecordSize - this.AttrStart - stdInfoAttr - fileNameAttr - indexRootAttrOverhead;
 
@@ -2011,20 +2036,13 @@ public sealed class NtfsWriter {
       return;
     }
 
-    // Spill into $INDEX_ALLOCATION. A single B+tree level is used: the resident
-    // $INDEX_ROOT holds one routing pointer per leaf and each leaf is one INDX
-    // block. The number of leaves must be small enough that all pointer entries
-    // fit in the resident root, so the INDX block size is grown (a power-of-two
-    // multiple of the sector size) until the leaf count fits that budget. With
-    // the default 1024-byte MFT record this comfortably handles tens of
-    // thousands of short-named entries; see the type docs for the cap.
-    var maxPointerEntryBytes = 0;
-    foreach (var (_, name) in indexed)
-      maxPointerEntryBytes = Math.Max(maxPointerEntryBytes, ((16 + 66 + name.Length * 2 + 7) & ~7) + 8);
-    if (maxPointerEntryBytes == 0) maxPointerEntryBytes = 24;
-    var maxPointers = Math.Max(1, (residentBudget - 24 /*end pointer*/) / maxPointerEntryBytes);
-
-    var indexBlockSize = this.ChooseIndexBlockSize(indexed, maxPointers);
+    // Spill into $INDEX_ALLOCATION: the entries go into INDX leaf blocks and the
+    // resident $INDEX_ROOT routes to them. Every INDX block has the size the boot
+    // sector announces: readers refuse others (Linux's ntfs3 cannot read a folder
+    // whose blocks are bigger). Leaves that need more routing entries than fit in the
+    // record are routed through further levels of INDX blocks, as NTFS does itself.
+    var indexBlockSize = IndexBlockSize;
+    var vcnPerBlock = this.VcnsPerIndexBlock(indexBlockSize);
 
     // INDEX_BLOCK layout per the NTFS spec / ntfs-3g: NTFS_RECORD (8) + LSN (8) +
     // index_block_vcn (8) = 24, then the 16-byte INDEX_HEADER sub-header at the
@@ -2038,6 +2056,7 @@ public sealed class NtfsWriter {
     var usaBytes = usaEntries * 2;
     var leafEntriesStart = (usaOffset + usaBytes + 7) & ~7;        // entries after the USA, 8-byte aligned
     var leafCapacity = indexBlockSize - leafEntriesStart - 16;     // reserve 16 for the end-marker entry
+    var nodeCapacity = indexBlockSize - leafEntriesStart - 24;     // an end marker with a subnode is 24
 
     var leaves = new List<List<(uint Record, string Name)>>();
     var current = new List<(uint Record, string Name)>();
@@ -2055,41 +2074,99 @@ public sealed class NtfsWriter {
     if (current.Count > 0) leaves.Add(current);
     if (leaves.Count == 0) leaves.Add([]); // empty directory still gets one (empty) leaf
 
-    // Render each leaf as an INDX block (with USA fixups) and collect the
-    // separator key (the last entry's name + record) for the root pointer.
-    using var alloc = new MemoryStream();
-    var pointers = new List<(uint Record, string Name, long Vcn)>();
-    var clustersPerBlock = Math.Max(1, indexBlockSize / this._clusterSize);
+    // Render each leaf as an INDX block (with USA fixups). One level of the tree is its
+    // blocks, each with the key moved up from it: the separator moves up rather than
+    // being copied. A key that stays in its block and appears above as well is two
+    // entries for one file — a reader lists the name twice, or once and pointing at
+    // nothing. The last block of a level needs no separator: the end marker above
+    // reaches it.
+    var blocks = new List<byte[]>();
+    var level = new List<(long Vcn, (uint Record, string Name)? Sep)>();
     for (var i = 0; i < leaves.Count; i++) {
-      var vcn = (long)i * clustersPerBlock;
-
-      // The separator moves up rather than being copied. A key that stays in its
-      // leaf and appears in the root as well is two entries for one file, and the
-      // one in the root names no record — a reader lists the name twice, or once
-      // and pointing at nothing. The last leaf needs no separator: the root's end
-      // marker reaches it.
       (uint Record, string Name)? separator = null;
       if (i < leaves.Count - 1 && leaves[i].Count > 0) {
         separator = leaves[i][^1];
         leaves[i].RemoveAt(leaves[i].Count - 1);
       }
-
-      var block = this.BuildIndexBlock(leaves[i], dir.RecordNumber, vcn, leafEntriesStart, subHeaderOffset, indexBlockSize);
-      alloc.Write(block);
-      pointers.Add((separator?.Record ?? 0u, separator?.Name ?? string.Empty, vcn));
+      using var es = new MemoryStream();
+      foreach (var (recNum, name) in leaves[i])
+        WriteIndexEntry(es, recNum, name, dir.RecordNumber);
+      var vcn = (long)blocks.Count * vcnPerBlock;
+      blocks.Add(BuildIndexBlock(es, hasChildren: false, vcn, leafEntriesStart, subHeaderOffset, indexBlockSize));
+      level.Add((vcn, separator));
     }
+
+    // While the level's routing entries do not fit in the record, they go into INDX
+    // blocks of their own, one level up. A block's last child is reached through its
+    // end marker; that child's key moves up as the block's separator.
+    int RoutingBytes(List<(long Vcn, (uint Record, string Name)? Sep)> nodes) {
+      var bytes = 16 /*index-root header*/ + 16 /*index header*/ + 24 /*end marker*/;
+      foreach (var n in nodes)
+        if (n.Sep is { } sep) bytes += PointerEntryLength(sep.Name);
+      return bytes;
+    }
+    int SpilledRootBudget() {
+      // The same record also carries the named non-resident allocation attribute
+      // and its resident bitmap. One mapping pair can use eight bytes each for
+      // its cluster count and LCN, plus its header and terminator.
+      const int allocationAttrBudget = (64 + 8 + 18 + 7) & ~7;
+      var bitmapBytes = Math.Max(8, ((blocks.Count + 63) / 64) * 8);
+      var bitmapAttrBytes = (24 + 8 + bitmapBytes + 7) & ~7;
+      return residentBudget - allocationAttrBudget - bitmapAttrBytes;
+    }
+    while (level.Count > 1 && RoutingBytes(level) > SpilledRootBudget()) {
+      var next = new List<(long Vcn, (uint Record, string Name)? Sep)>();
+      var group = new List<(long Vcn, (uint Record, string Name)? Sep)>();
+      var groupBytes = 0;
+      void Flush() {
+        using var es = new MemoryStream();
+        for (var k = 0; k < group.Count - 1; k++)
+          WritePointerEntry(es, group[k].Sep!.Value.Record, group[k].Sep!.Value.Name, dir.RecordNumber, group[k].Vcn, isEnd: false);
+        WritePointerEntry(es, 0, string.Empty, dir.RecordNumber, group[^1].Vcn, isEnd: true);
+        var vcn = (long)blocks.Count * vcnPerBlock;
+        blocks.Add(BuildIndexBlock(es, hasChildren: true, vcn, leafEntriesStart, subHeaderOffset, indexBlockSize));
+        next.Add((vcn, group[^1].Sep));
+        group = [];
+        groupBytes = 0;
+      }
+      foreach (var n in level) {
+        var len = n.Sep is { } sep ? PointerEntryLength(sep.Name) : 0;
+        if (group.Count > 0 && groupBytes + len > nodeCapacity)
+          Flush();
+        group.Add(n);
+        groupBytes += len;
+      }
+      Flush();
+      level = next;
+    }
+
+    if (RoutingBytes(level) > SpilledRootBudget())
+      throw new NotSupportedException("The directory name leaves too little space for its NTFS index attributes in the MFT record.");
+
+    var pointers = level.Select(n => (n.Sep?.Record ?? 0u, n.Sep?.Name ?? string.Empty, n.Vcn)).ToList();
+    using var alloc = new MemoryStream();
+    foreach (var b in blocks)
+      alloc.Write(b);
 
     dir.IndexSpilled = true;
     dir.IndexAllocationBytes = alloc.ToArray();
     dir.IndexRootBytes = BuildPointerIndexRoot(pointers, dir.RecordNumber, indexBlockSize);
 
     // $BITMAP: one bit per INDX block, rounded up to 8 bytes (NTFS minimum).
-    var bitmapBytes = Math.Max(8, ((leaves.Count + 63) / 64) * 8);
+    var bitmapBytes = Math.Max(8, ((blocks.Count + 63) / 64) * 8);
     var bitmap = new byte[bitmapBytes];
-    for (var i = 0; i < leaves.Count; i++)
+    for (var i = 0; i < blocks.Count; i++)
       bitmap[i / 8] |= (byte)(1 << (i % 8));
     dir.IndexBitmapBytes = bitmap;
   }
+
+  // 8-byte-aligned length of a routing entry: a FILE_NAME entry plus the child VCN.
+  private static int PointerEntryLength(string name) => IndexEntryLength(name) + 8;
+
+  // How many VCNs one INDX block spans: clusters when a block holds whole clusters,
+  // else 512-byte units (what ntfs3 and Windows expect for blocks below a cluster).
+  private int VcnsPerIndexBlock(int indexBlockSize)
+    => indexBlockSize >= this._clusterSize ? indexBlockSize / this._clusterSize : indexBlockSize / BytesPerSector;
 
   // 8-byte-aligned length of one FILE_NAME index entry for the given name.
   private static int IndexEntryLength(string name) => (16 + 66 + name.Length * 2 + 7) & ~7;
@@ -2097,7 +2174,7 @@ public sealed class NtfsWriter {
   // Builds a single INDX leaf block: standard "INDX" record header, USA, an
   // index sub-header, the leaf's FILE_NAME entries (sorted) and an end-marker
   // entry. USA fixups are applied so the reader can detect torn writes.
-  private byte[] BuildIndexBlock(List<(uint Record, string Name)> entries, uint parentRecord, long vcn,
+  private byte[] BuildIndexBlock(MemoryStream es, bool hasChildren, long vcn,
     int entriesStart, int subHeaderOffset, int indexBlockSize) {
     var block = new byte[indexBlockSize];
 
@@ -2109,14 +2186,14 @@ public sealed class NtfsWriter {
     BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(8), 0);                                   // LSN
     BinaryPrimitives.WriteInt64LittleEndian(block.AsSpan(16), vcn);                                 // this block's VCN
 
-    // Render the entry stream (entries + end marker).
-    using var es = new MemoryStream();
-    foreach (var (recNum, name) in entries)
-      WriteIndexEntry(es, recNum, name, parentRecord);
-    var end = new byte[16];
-    BinaryPrimitives.WriteUInt16LittleEndian(end.AsSpan(8), 16);
-    BinaryPrimitives.WriteUInt16LittleEndian(end.AsSpan(12), 0x02); // last entry, no subnode
-    es.Write(end);
+    // The entry stream ends with an end marker; a routing block's (written by the
+    // caller) carries the last child's VCN.
+    if (!hasChildren) {
+      var end = new byte[16];
+      BinaryPrimitives.WriteUInt16LittleEndian(end.AsSpan(8), 16);
+      BinaryPrimitives.WriteUInt16LittleEndian(end.AsSpan(12), 0x02); // last entry, no subnode
+      es.Write(end);
+    }
     var entryStream = es.ToArray();
 
     // Index sub-header (relative to its own start at subHeaderOffset).
@@ -2125,7 +2202,7 @@ public sealed class NtfsWriter {
     BinaryPrimitives.WriteInt32LittleEndian(block.AsSpan(subHeaderOffset + 0), entriesRel);                  // entries offset
     BinaryPrimitives.WriteInt32LittleEndian(block.AsSpan(subHeaderOffset + 4), totalSize);                   // index content size
     BinaryPrimitives.WriteInt32LittleEndian(block.AsSpan(subHeaderOffset + 8), indexBlockSize - subHeaderOffset); // allocated size
-    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(subHeaderOffset + 12), 0);                         // flags: leaf (no children)
+    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(subHeaderOffset + 12), hasChildren ? 1u : 0u);      // flags: has children
     entryStream.CopyTo(block, entriesStart);
 
     ApplyIndexBlockUsaFixup(block);
@@ -2208,6 +2285,7 @@ public sealed class NtfsWriter {
 
     BinaryPrimitives.WriteInt64LittleEndian(pointer.AsSpan(16),
       (long)parentRecord | ((long)SequenceOf(parentRecord) << 48));
+    this.WriteIndexKeyInfo(pointer, mftRecordNum);
     var nameBytes = Encoding.Unicode.GetBytes(fileName);
     pointer[16 + 64] = (byte)nameChars;
     pointer[16 + 65] = this._fileNameNamespace;
@@ -2257,12 +2335,13 @@ public sealed class NtfsWriter {
     // Index root with only the end-marker entry.
     using var ms = new MemoryStream();
 
-    var blockSize = Math.Max(IndexBlockSize, this._clusterSize);
+    // The block size the boot sector announces, as for every other index.
+    var blockSize = IndexBlockSize;
     var header = new byte[16];
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(0), keyType);
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(4), collationRule);
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8), (uint)blockSize);
-    header[12] = (byte)Math.Max(1, blockSize / this._clusterSize);
+    header[12] = (byte)this.VcnsPerIndexBlock(blockSize);
     ms.Write(header);
 
     var last = new byte[16];
@@ -2297,11 +2376,23 @@ public sealed class NtfsWriter {
     // this index, so the entry is self-consistent with the child's own record.
     BinaryPrimitives.WriteInt64LittleEndian(entry.AsSpan(16),
       (long)parentRecord | ((long)SequenceOf(parentRecord) << 48));
+    this.WriteIndexKeyInfo(entry, mftRecordNum);
     entry[16 + 64] = (byte)nameChars;
     entry[16 + 65] = this._fileNameNamespace;
     nameBytes.CopyTo(entry, 16 + 66);
 
     ms.Write(entry);
+  }
+
+  // The times, sizes and folder flag of an index key, as the record's $FILE_NAME has them.
+  private void WriteIndexKeyInfo(byte[] entry, uint mftRecordNum) {
+    const int v = 16; // the key ($FILE_NAME value) follows the 16-byte entry header
+    for (var t = 0; t < 4; t++)
+      BinaryPrimitives.WriteInt64LittleEndian(entry.AsSpan(v + 8 + t * 8), this._fileNameTime);
+    if (!this._indexKeys.TryGetValue(mftRecordNum, out var info)) return;
+    BinaryPrimitives.WriteInt64LittleEndian(entry.AsSpan(v + 40), info.Size);
+    BinaryPrimitives.WriteInt64LittleEndian(entry.AsSpan(v + 48), info.Size);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry.AsSpan(v + 56), info.Directory ? 0x10000000u : 0u);
   }
 
   // ── $Volume attributes ──────────────────────────────────────────────────

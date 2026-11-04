@@ -134,6 +134,7 @@ public sealed class ArcWriter : IDisposable {
     ArcCompressionMethod.Crunched7 => CompressLzw12(data, useClearCode: true),
     ArcCompressionMethod.Crunched => CompressLzw(data, useClearCode: true),
     ArcCompressionMethod.Squashed => CompressLzw(data, useClearCode: false),
+    ArcCompressionMethod.Distilled => Compression.Core.Dictionary.ArcDistill.ArcDistillBuildingBlock.Encode(data),
     _ => throw new NotSupportedException($"ARC compression method {(byte)method} is not supported for writing."),
   };
 

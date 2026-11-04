@@ -31,10 +31,13 @@ internal static class ZipCentralDirectoryEntry {
     var externalAttrs = reader.ReadUInt32();
     var localHeaderOffset = reader.ReadUInt32();
 
-    var encoding = (flags & ZipConstants.FlagUtf8) != 0 ? Encoding.UTF8 : Encoding.Latin1;
-    var fileName = encoding.GetString(reader.ReadBytes(fileNameLen));
+    var utf8 = (flags & ZipConstants.FlagUtf8) != 0;
+    var rawName = reader.ReadBytes(fileNameLen);
     var extra = extraLen > 0 ? reader.ReadBytes(extraLen) : null;
-    var comment = commentLen > 0 ? encoding.GetString(reader.ReadBytes(commentLen)) : null;
+    var fileName = ZipNameEncoding.Decode(rawName, flags, extra);
+    var comment = commentLen > 0
+      ? (utf8 ? Encoding.UTF8.GetString(reader.ReadBytes(commentLen)) : ZipNameEncoding.DecodeWithoutFlag(reader.ReadBytes(commentLen)))
+      : null;
 
     var entry = new ZipEntry {
       FileName = fileName,

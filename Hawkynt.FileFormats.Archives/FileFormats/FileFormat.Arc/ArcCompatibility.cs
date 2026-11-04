@@ -51,6 +51,8 @@ public static class ArcCompatibility {
         or ArcCompatibilityProfile.Extended,
       ArcCompressionMethod.Squashed => profile is ArcCompatibilityProfile.PkArc
         or ArcCompatibilityProfile.Extended,
+      // NoGate PAK 2.x's method 11; plain ARC readers do not know it.
+      ArcCompressionMethod.Distilled => profile is ArcCompatibilityProfile.Extended,
       _ => false,
     };
   }

@@ -992,7 +992,112 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 
 ### Namespace `FileFormat.Ewf`
 
-[`EwfFormatDescriptor`](#ewfformatdescriptor) · [`EwfMediaStream`](#ewfmediastream) · [`EwfReader`](#ewfreader) · [`EwfReader.EwfImage`](#ewfreaderewfimage) · [`EwfReader.Section`](#ewfreadersection) · [`EwfWriter`](#ewfwriter)
+[`Ewf2FormatDescriptor`](#ewf2formatdescriptor) · [`Ewf2Image`](#ewf2image) · [`Ewf2Image.Section`](#ewf2imagesection) · [`Ewf2MediaStream`](#ewf2mediastream) · [`Ewf2Writer`](#ewf2writer) · [`EwfFormatDescriptor`](#ewfformatdescriptor) · [`EwfMediaStream`](#ewfmediastream) · [`EwfReader`](#ewfreader) · [`EwfReader.EwfImage`](#ewfreaderewfimage) · [`EwfReader.Section`](#ewfreadersection) · [`EwfWriter`](#ewfwriter)
+
+#### `Ewf2FormatDescriptor`
+
+EnCase 7 Evidence File Format version 2 (EWF2-Ex01): the forensic image's media as `media.raw` plus its device information and case data as `metadata.ini`. Segment sets (.Ex02 onward) are followed when the image is opened from a file; extraction checks the stored MD5 and SHA-1. Create writes a single-segment Ex01.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ewf2FormatDescriptor` | `Ewf2FormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `Ewf2Image`
+
+An EWF2-Ex01 segment set (EnCase 7 "Evidence File Format version 2"), after libyal's EWF 2 specification: a 32-byte file header, then sections whose 64-byte descriptor follows their data and points back at the previous descriptor, read from the end.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BytesPerSector` | `int BytesPerSector { get; }` | Bytes per sector. |
+| `CaseData` | `IReadOnlyDictionary<string, string> CaseData { get; }` | Case data values by tag (nm, cn, en, ex, nt, sb, ...). |
+| `CompressionMethod` | `ushort CompressionMethod { get; }` | The chunk compression method of the file header. |
+| `DeviceInformation` | `IReadOnlyDictionary<string, string> DeviceInformation { get; }` | Device information values by tag (sn, md, ts, bp, ...). |
+| `LogicalSignature` | `static ReadOnlySpan<byte> LogicalSignature { get; }` | "LEF2\r\n\x81\0" (Lx01, logical evidence). |
+| `Md5` | `byte[] Md5 { get; }` | The stored MD5 of the media, if any. |
+| `MediaSize` | `long MediaSize { get; }` | Media size in bytes. |
+| `Sections` | `IReadOnlyList<Section> Sections { get; }` | Every section of every segment, in file order. |
+| `SectorsPerChunk` | `int SectorsPerChunk { get; }` | Sectors per chunk. |
+| `SegmentCount` | `int SegmentCount { get; }` | Number of segment files in the set. |
+| `SetIdentifier` | `Guid SetIdentifier { get; }` | The segment file set identifier. |
+| `Sha1` | `byte[] Sha1 { get; }` | The stored SHA-1 of the media, if any. |
+| `Signature` | `static ReadOnlySpan<byte> Signature { get; }` | "EVF2\r\n\x81\0". |
+| `Dispose` | `void Dispose()` | Releases the segment files this set opened. |
+| `Open` | `static Ewf2Image Open(Stream first, bool leaveOpen = true)` | Opens the set `first` starts; further segments (.Ex02 ...) are looked up next to it when it was opened from a file. |
+| `SegmentPath` | `static string SegmentPath(string firstPath, int number)` | Path of segment `number` (1-based): .Ex01 ... .Ex99, .ExAA ... .ExZZ, .EyAA ... |
+
+#### `Ewf2Image.Section`
+
+One section: its type and where its data lies in its segment.
+
+Implements `IEquatable<Section>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Section` | `Section(int Segment, uint Type, uint Flags, long DataOffset, long DataSize, uint PaddingSize)` | One section: its type and where its data lies in its segment. |
+| `DataOffset` | `long DataOffset { get; init; }` |  |
+| `DataSize` | `long DataSize { get; init; }` |  |
+| `Flags` | `uint Flags { get; init; }` |  |
+| `PaddingSize` | `uint PaddingSize { get; init; }` |  |
+| `Segment` | `int Segment { get; init; }` |  |
+| `Type` | `uint Type { get; init; }` |  |
+
+#### `Ewf2MediaStream`
+
+Read-only access to the media of an `Ewf2Image`.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ewf2MediaStream` | `Ewf2MediaStream(Ewf2Image image)` | Wraps `image`; disposing the stream disposes the image. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `Ewf2Writer`
+
+Writes a single-segment EWF2-Ex01 image (libyal's EWF 2 specification): device information, case data, the chunks (zlib-compressed where that is smaller, else stored with an Adler-32 trailer), one sector table, the MD5 and SHA-1 of the media, and "done". Every section and chunk is 16-byte aligned. Chunks are never pattern-filled.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ewf2Writer` | `Ewf2Writer()` |  |
+| `AcquisitionTime` | `DateTimeOffset AcquisitionTime { get; init; }` | The acquisition time recorded in the case data. |
+| `Case` | `ValueTuple<string, string, string, string, string> Case { get; init; }` | Case name, case number, evidence number, examiner and notes. |
+| `Compress` | `bool Compress { get; init; }` | Whether chunks are zlib-compressed (when that makes them smaller). |
+| `SetIdentifier` | `Guid SetIdentifier { get; init; }` | The segment file set identifier. |
+| `Write` | `void Write(Stream output, ReadOnlySpan<byte> media)` | Writes `media` as an Ex01 image to `output`; a trailing partial sector is padded with zeros to a whole one, as EWF stores whole sectors. |
 
 #### `EwfFormatDescriptor`
 
@@ -2118,21 +2223,23 @@ Walks the active QCOW2 mapping plus the refcount metadata and emits a fail-close
 
 #### `Qcow2Reader`
 
-Reads self-contained QCOW2 v2/v3 disk images with standard L2 entries. Supports unallocated, zero, uncompressed and deflate-compressed guest clusters. Backing files, encryption and incompatible v3 feature profiles are rejected instead of being interpreted as zero-filled data.
+Reads self-contained QCOW2 v2/v3 disk images with standard L2 entries. Supports unallocated, zero, uncompressed and deflate-compressed guest clusters. Other profiles (backing files, zstd, extended L2, AES or LUKS encryption with a password) are read through `Qcow2Stream`; what neither can decode is refused instead of being interpreted as zero-filled data.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Qcow2Reader` | `Qcow2Reader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `Qcow2Reader`. |
+| `Qcow2Reader` | `Qcow2Reader(Stream stream, string password, bool leaveOpen = false)` | Initializes a new instance of `Qcow2Reader` that unlocks an encrypted image with `password`. |
 | `Entries` | `IReadOnlyList<Qcow2Entry> Entries { get; }` | Gets the entries. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Whether the guest data is encrypted (AES or LUKS). |
 | `VirtualSize` | `long VirtualSize { get; }` | Virtual disk size in bytes. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `ExtractDisk` | `byte[] ExtractDisk()` | Extracts the full virtual disk image, resolving all active L1/L2 table entries. |
 
 #### `Qcow2Stream`
 
-Seekable access to the active guest disk of a QCOW2 image. Reads resolve standard, zero, unallocated and compressed clusters (deflate or zstd), extended L2 entries with their 32 subclusters, and backing files (QCOW2 or raw), which supply every cluster or subcluster the image leaves unallocated. Writes are enabled only for flat standard-refcount profiles and honour QCOW2 copy-on-write semantics for shared L2 and data clusters.
+Seekable access to the active guest disk of a QCOW2 image. Reads resolve standard, zero, unallocated and compressed clusters (deflate or zstd), extended L2 entries with their 32 subclusters, and backing files (QCOW2 or raw), which supply every cluster or subcluster the image leaves unallocated. AES- and LUKS-encrypted images are read when opened with their password (`Qcow2Encryption`). Writes are enabled only for flat standard-refcount profiles and honour QCOW2 copy-on-write semantics for shared L2 and data clusters.
 
 Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
@@ -2146,22 +2253,26 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `Dispose` | `protected override void Dispose(bool disposing)` |  |
 | `Flush` | `override void Flush()` |  |
 | `Open` | `static Qcow2Stream Open(Stream backing, bool leaveOpen = true)` | Opens a QCOW2 image as a virtual guest-disk stream, or explains why it cannot. |
+| `Open` | `static Qcow2Stream Open(Stream backing, string password, bool leaveOpen = true)` | Opens a QCOW2 image, unlocking an encrypted one (and encrypted backing images) with `password`. |
 | `Read` | `override int Read(Span<byte> buffer)` |  |
 | `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
 | `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
 | `SetLength` | `override void SetLength(long value)` |  |
 | `TryOpen` | `static Qcow2Stream TryOpen(Stream backing, bool leaveOpen = true)` | Attempts to open a supported QCOW2 image as a virtual guest-disk stream. |
+| `TryOpen` | `static Qcow2Stream TryOpen(Stream backing, string password, bool leaveOpen = true)` | Attempts to open a supported QCOW2 image, unlocking an encrypted one with `password`. |
 | `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
 | `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
 #### `Qcow2Writer`
 
-Writes canonical self-contained QCOW2 v2 images with 64 KiB clusters and 16-bit eager refcounts. Sparse mode leaves all-zero guest clusters unallocated; dense mode physically allocates every guest cluster without changing guest bytes.
+Writes canonical self-contained QCOW2 v2 images with 64 KiB clusters and 16-bit eager refcounts. Sparse mode leaves all-zero guest clusters unallocated; dense mode physically allocates every guest cluster without changing guest bytes. With a password the guest data is LUKS-encrypted (crypt_method 2): a LUKS1 header (aes-256 xts-plain64, sha256, key slot 0) in its own clusters behind the refcount blocks, each data cluster encrypted with the IV of its host sector.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Qcow2Writer` | `Qcow2Writer()` |  |
+| `DefaultKeySlotIterations` | `const int DefaultKeySlotIterations` | PBKDF2 iterations of the passphrase in the LUKS key slot unless `SetPassword` says otherwise. |
 | `SetDiskImage` | `void SetDiskImage(byte[] data)` | Sets the raw guest disk image to wrap. |
+| `SetPassword` | `void SetPassword(string password, int keySlotIterations = 500000)` | Encrypts the guest data with LUKS under `password` (null: no encryption). |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes a canonical sparse QCOW2 image. |
 | `WriteTo` | `void WriteTo(Stream output, bool sparse)` | Writes a canonical QCOW2 image. |
 
@@ -7256,7 +7367,8 @@ In-place ext2/3/4 modifier. Performs O(touched bytes) random-access I/O against 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream image, string path, byte[] data)` | Adds a file at `path` (separated by `/` or `\`) to an existing ext2/3/4 image, genuinely in place. Missing folders on the way are created. An existing regular file of the same name is replaced: the new content gets its own inode, the directory entry is repointed at it, and only then is the old inode released — so a replace that cannot be completed leaves the old file as it was. |
+| `AddDirectory` | `static void AddDirectory(Stream image, string path)` | Adds a file at `path` (separated by `/` or `\`) to an existing ext2/3/4 image, genuinely in place. Missing folders on the way are created. An existing regular file of the same name is replaced: the new content gets its own inode, the directory entry is repointed at it, and only then is the old inode released — so a replace that cannot be completed leaves the old file as it was. |
+| `AddFile` | `static void AddFile(Stream image, string path, byte[] data)` |  |
 | `RemoveFile` | `static bool RemoveFile(Stream image, string path, bool wipeData = true)` | Removes the entry at `path` from an existing ext image, in place. Returns false when no such entry exists. A directory must be empty; a file with further hard links only loses this name. |
 
 #### `ExtModifier.InPlaceUnsupportedException`
@@ -7321,6 +7433,7 @@ Builds minimal ext2 filesystem images from scratch. Uses 1024-byte blocks by def
 | `ExtWriter` | `ExtWriter()` |  |
 | `DeduplicateWithLinks` | `bool DeduplicateWithLinks { get; set; }` | Store one copy of files whose bytes are identical and give the rest a second name for it. |
 | `MakeSparse` | `bool MakeSparse { get; set; }` | Store a file's runs of zeros as holes rather than allocating blocks for them. |
+| `AddDirectory` | `void AddDirectory(string name)` | Adds a directory (and its parents); needed only for empty ones. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a streaming file: `size` drives extent + inode + block-group sizing in pass 1; bytes are pulled from `openStream` in pass 2 of `BuildToStreaming`. Never buffered as `byte[]`. |
 | `BuildAutoSized` | `byte[] BuildAutoSized(int requestedBlockSize = 0)` | Builds the image with the block size chosen by `FilesystemLayoutOptimizer` to minimise slack + metadata overhead, and the block count sized to exactly hold the files. |
@@ -7726,7 +7839,8 @@ Genuine in-place add for FAT12/16/32 images — the inverse of `FatRemover`. All
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(byte[] image, string name, byte[] data, DateTime? modTime = null, bool forceLfn = false)` | Adds (or replaces by path) `name` — a path separated by `/` or `\` — in the in-memory FAT image. Missing folders are created, and a folder stored as a cluster chain grows by a cluster when its slots run out. Throws `IOException` when the volume, or FAT12/16's fixed root directory, has no room. |
+| `AddDirectory` | `static void AddDirectory(byte[] image, string name, DateTime? modTime = null)` | Adds (or replaces by path) `name` — a path separated by `/` or `\` — in the in-memory FAT image. Missing folders are created, and a folder stored as a cluster chain grows by a cluster when its slots run out. Throws `IOException` when the volume, or FAT12/16's fixed root directory, has no room. |
+| `AddFile` | `static void AddFile(byte[] image, string name, byte[] data, DateTime? modTime = null, bool forceLfn = false)` |  |
 
 #### `FatReader`
 
@@ -7808,10 +7922,12 @@ Builds FAT12 / FAT16 / FAT32 filesystem images from scratch per the Microsoft FA
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FatWriter` | `FatWriter()` |  |
+| `AddDirectory` | `void AddDirectory(string name)` | Adds a directory (and its parents); needed only for empty ones. |
 | `AddFile` | `void AddFile(string name, byte[] data, DateTime? modTime = null)` | Adds a file to the image. Long names (mixed case, > 8.3, non-ASCII, multiple dots) are written as VFAT/LFN entries with an auto-generated 8.3 short-name alias. Plain 8.3 names are written as a single dirent. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? modTime = null)` | Adds a streaming file: its `size` is known up front (so the writer can plan the cluster geometry), but its bytes are fetched on demand from `openStream` during the second-pass write — never buffered in memory by the writer. |
 | `BuildAutoSized` | `byte[] BuildAutoSized(int bytesPerSector = 512, int requestedClusterSize = 0, string volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false, int requestedRootEntries = 0, bool forceLfn = false, bool minimal = false)` | Builds the FAT image using the smallest sector count that fits all file data and directory entries. Automatically selects FAT32 (≥ 200 000 sectors) when the file count or total data would overflow the fixed root directory of a FAT12/FAT16 image. Prefer this over `Build` when the caller does not know the file count ahead of time (e.g. from a directory walk). |
 | `BuildFromFiles` | `static byte[] BuildFromFiles(IEnumerable<ValueTuple<string, byte[]>> files)` | Convenience: builds a FAT image from a list of files, auto-sizing to fit. Used by virtual-disk writers (QCOW2, VHD, VMDK, VDI) to embed a filesystem inside a disk container so that Create() produces a usable volume. |
+| `BuildFromInputs` | `static byte[] BuildFromInputs(IReadOnlyList<ArchiveInputInfo> inputs)` | Builds a FAT image for a disk-image container from archive inputs: folders (empty ones too), long names and modification times are kept. |
 | `BuildToStreaming` | `void BuildToStreaming(Stream output, int bytesPerSector = 512, int requestedClusterSize = 0, string volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false, int requestedRootEntries = 0, bool forceLfn = false, int requestedTotalSectors = 0)` | Two-pass streaming Build: pass 1 computes layout from `AddStreamingFile` sizes, pass 2 writes boot/FAT/root metadata then streams each entry's bytes from its `Func<Stream>` factory straight into its allocated cluster run via 64 KB chunks. Peak memory cost is bounded by (cluster_size + dirent_blob + 64 KB) — independent of total image size or per-file size. |
 | `BuildTo` | `void BuildTo(Stream output, int totalSectors = 2880, int bytesPerSector = 512, int requestedClusterSize = 0, string volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false, int requestedRootEntries = 0, bool forceLfn = false)` | Streams a FAT image to `output` without ever materialising the whole volume in memory, enabling images of any size (e.g. multi-TB FAT32). Requires a writable, seekable stream: free space is left as sparse zeros via `SetLength`, so only metadata + actual file data is physically written. Produces byte-for-byte identical output to `Build` (verified by parity tests) for any configuration both can express. Peak memory is bounded by O(sector + 64 KB FAT chunk + largest file + largest dirent blob) — independent of total image size. |
 | `Build` | `byte[] Build(int totalSectors = 2880, int bytesPerSector = 512, int requestedClusterSize = 0, string volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false, int requestedRootEntries = 0, bool forceLfn = false, int requestedFatSize = 0)` | Builds the FAT filesystem image. |
@@ -12140,6 +12256,7 @@ Genuine in-place add for NTFS images — the inverse of `NtfsRemover`. Inserts a
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `AddDirectory` | `static void AddDirectory(byte[] image, string name)` | Adds a folder, with any missing parents, to the in-memory NTFS image; a folder that is already there is left as it is. An empty folder added this way survives. |
 | `AddFile` | `static void AddFile(byte[] image, string name, byte[] data)` | Adds (or replaces by name) `name` into the root directory of the in-memory NTFS image. Throws `NotSupportedException` / `IOException` for the structural cases above so the caller can rebuild instead. |
 | `MftRecordByteOffset` | `static long MftRecordByteOffset(byte[] image, int slot)` | Public façade over the run-list-aware MFT record mapping for callers that scan the MFT (e.g. `NtfsRemover`). Returns the physical byte offset of record `slot`, following $MFT:$DATA's VCN→LCN run list so a grown, non-contiguous MFT (common on real mkfs.ntfs images after several adds) is read correctly. Returns -1 when the slot is past the MFT's mapped clusters. |
 | `MftRecordSlotCount` | `static int MftRecordSlotCount(byte[] image)` | Number of record slots the MFT's $DATA currently spans (allocated bytes / record size). Lets a scanner bound its loop to the MFT's real extent rather than the whole image. |
@@ -12222,12 +12339,13 @@ What a declared `NtfsVersion` obliges the volume's content to be.
 
 #### `NtfsWriter`
 
-Builds spec-compliant NTFS filesystem images. All reserved system MFT records (0-15) are populated with real content: $MFT, $MFTMirr, $LogFile, $Volume, $AttrDef, root $., $Bitmap, $Boot, $BadClus, $UpCase, and — on a volume declaring NTFS 3.0 or later — $Secure at record 9 and the $Extend directory at record 11. A 1.2 volume names record 9 $Quota and leaves 11 reserved. Every record carries the mandatory $STANDARD_INFORMATION and $FILE_NAME attributes, the Update Sequence Array (USA) fixup is applied at sector boundaries, and the on-disk cluster bitmap reflects which clusters are actually allocated. Small files (<700 bytes) use a resident $DATA attribute where the record has room for it beside $STANDARD_INFORMATION and a $FILE_NAME that grows with the name; everything else uses non-resident cluster runs. Images produced by this writer carry all the structure that chkdsk and the Linux ntfs-3g driver check at mount time: volume serial, valid boot signature, every system file has its "FILE" magic, USA fixup at `record[510..512]` and `record[1022..1024]`, $Volume carries a valid $VOLUME_INFORMATION (version 3.1 by default; see `SetNtfsVersion`, which also selects the FILE record header layout, the metadata file set, the $AttrDef table and the $STANDARD_INFORMATION shape that go with it), the $UpCase data stream is 128 KiB long (65 536 UTF-16 upper-case mappings) and $Bitmap only marks clusters that hold actual filesystem metadata/data. Large directories: when a directory's $I30 file-name index no longer fits in the resident $INDEX_ROOT inside its MFT record, it spills into a non-resident $INDEX_ALLOCATION (a stream of "INDX" index records, each with its own USA fixup) tracked by a named $BITMAP. The $INDEX_ROOT then holds routing pointer entries (subnode VCN flag 0x01 + 8-byte child VCN at the entry tail) into those INDX leaves, and the FILE_NAME entries live in the leaves sorted by NTFS file-name collation. A single B+tree level is built: the resident root points directly at leaf blocks. To keep all routing pointers resident, the INDX block size is grown (power-of-two, 4 KiB..64 KiB) as the entry count rises. With the default 1024-byte MFT record this handles tens of thousands of short-named entries per directory; only a directory whose routing pointers would overflow even a 64 KiB block (hundreds of thousands of entries) would need a second tree level, which is not yet implemented. 8.3 short names: by default every $FILE_NAME is recorded in the Win32&DOS namespace (3) so the long name also serves as the 8.3 short name, the way a freshly formatted Windows volume does. Passing `generateShortNames: false` records names in the Win32-only namespace (1) and emits no DOS short name — the equivalent of `fsutil behavior set disable8dot3`.
+Builds spec-compliant NTFS filesystem images. All reserved system MFT records (0-15) are populated with real content: $MFT, $MFTMirr, $LogFile, $Volume, $AttrDef, root $., $Bitmap, $Boot, $BadClus, $UpCase, and — on a volume declaring NTFS 3.0 or later — $Secure at record 9 and the $Extend directory at record 11. A 1.2 volume names record 9 $Quota and leaves 11 reserved. Every record carries the mandatory $STANDARD_INFORMATION and $FILE_NAME attributes, the Update Sequence Array (USA) fixup is applied at sector boundaries, and the on-disk cluster bitmap reflects which clusters are actually allocated. Small files (<700 bytes) use a resident $DATA attribute where the record has room for it beside $STANDARD_INFORMATION and a $FILE_NAME that grows with the name; everything else uses non-resident cluster runs. Images produced by this writer carry all the structure that chkdsk and the Linux ntfs-3g driver check at mount time: volume serial, valid boot signature, every system file has its "FILE" magic, USA fixup at `record[510..512]` and `record[1022..1024]`, $Volume carries a valid $VOLUME_INFORMATION (version 3.1 by default; see `SetNtfsVersion`, which also selects the FILE record header layout, the metadata file set, the $AttrDef table and the $STANDARD_INFORMATION shape that go with it), the $UpCase data stream is 128 KiB long (65 536 UTF-16 upper-case mappings) and $Bitmap only marks clusters that hold actual filesystem metadata/data. Large directories: when a directory's $I30 file-name index no longer fits in the resident $INDEX_ROOT inside its MFT record, it spills into a non-resident $INDEX_ALLOCATION (a stream of "INDX" index records, each with its own USA fixup) tracked by a named $BITMAP. The $INDEX_ROOT then holds routing pointer entries (subnode VCN flag 0x01 + 8-byte child VCN at the entry tail) into those INDX leaves, and the FILE_NAME entries live in the leaves sorted by NTFS file-name collation. All INDX blocks are 4 KiB, the size the boot sector announces. When the routing pointers to the leaves no longer fit in the record either, they go into INDX blocks of their own, one level up, until the root holds them: a B-tree of any depth, as NTFS builds it. 8.3 short names: by default every $FILE_NAME is recorded in the Win32&DOS namespace (3) so the long name also serves as the 8.3 short name, the way a freshly formatted Windows volume does. Passing `generateShortNames: false` records names in the Win32-only namespace (1) and emits no DOS short name — the equivalent of `fsutil behavior set disable8dot3`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `NtfsWriter` | `NtfsWriter(string volumeLabel = "", bool generateShortNames = true)` | Creates a new NTFS writer. The volume label is stored in $Volume's $VOLUME_NAME attribute. |
 | `DeclaredVolumeBytes` | `long DeclaredVolumeBytes { get; }` | Declared volume size in bytes of the most recent build. |
+| `AddDirectory` | `void AddDirectory(string name)` | Adds a directory (and its parents); needed only for empty ones. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the NTFS image. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a streaming file: `size` drives MFT-record + cluster sizing in pass 1; bytes are pulled from `openStream` in pass 2 of `BuildToStreaming`. Files larger than the resident threshold (~700 bytes) get a single-run non-resident $DATA whose clusters are filled from the source via 64 KB chunks; smaller files remain resident and are buffered up-front (the size-clamped bounded read still satisfies the isolation contract). |
 | `BuildAutoSized` | `byte[] BuildAutoSized(int requestedClusterSize = 0, int requestedMftRecordSize = 0)` | Builds the image with the cluster size and MFT record size chosen by `FilesystemLayoutOptimizer` to minimise file slack + MFT-zone reservation + per-file MFT-record waste, and the volume sized to exactly hold the files plus structural overhead. |

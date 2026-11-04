@@ -202,6 +202,39 @@
     <EmbeddedResource Include="GameAssetCiphers\ReferenceVectors\*.ogg;GameAssetCiphers\ReferenceVectors\*.png;GameAssetCiphers\ReferenceVectors\*.jpg;GameAssetCiphers\ReferenceVectors\*.um3;GameAssetCiphers\ReferenceVectors\*.utage;GameAssetCiphers\ReferenceVectors\*.txt">
       <LogicalName>GameAssetCipherVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+
+    <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
+    <EmbeddedResource Include="SevenZip\ConformanceVectors\*.7z;SevenZip\ConformanceVectors\manifest.tsv">
+      <LogicalName>SevenZipConformanceVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+
+    <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
+    <EmbeddedResource Include="Ewf\Ex01Vectors\*.gz;Ewf\Ex01Vectors\sources.sha256">
+      <LogicalName>Ex01Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+
+    <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
+    <EmbeddedResource Include="Bga\ReferenceVectors\*.gza;Bga\ReferenceVectors\*.bza">
+      <LogicalName>BgaVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+
+    <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
+    <EmbeddedResource Include="Rev\ReferenceVectors\*.rev">
+      <LogicalName>RevVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+
+    <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
+    <EmbeddedResource Include="Uharc\ReferenceVectors\*.uha;Uharc\ReferenceVectors\manifest.tsv">
+      <LogicalName>UharcVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+
+    <!-- Captured format fixtures; provenance is recorded beside each fixture set. -->
+    <EmbeddedResource Include="Xpk\ReferenceVectors\*.xpkf;Xpk\ReferenceVectors\*.gz">
+      <LogicalName>XpkVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Terse\ReferenceVectors\*.PACK;Terse\ReferenceVectors\*.SPACK;Terse\ReferenceVectors\*.expected">
+      <LogicalName>TerseVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>
@@ -362,6 +395,10 @@
     <EmbeddedResource Include="Firmware\ReferenceVectors\*" Exclude="Firmware\ReferenceVectors\README.md">
       <LogicalName>FirmwareVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Archives mcm 0.84 wrote; see Mcm/Vectors/README.md. -->
+    <EmbeddedResource Include="Mcm\Vectors\*.mcm">
+      <LogicalName>McmVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- A cabinet with a Quantum folder Microsoft's tools wrote; see Cab/QuantumVectors/README.md. -->
     <EmbeddedResource Include="Cab\QuantumVectors\*.cab">
       <LogicalName>CabQuantumVectors.%(Filename)%(Extension)</LogicalName>
@@ -490,7 +527,7 @@
       <LogicalName>SevenZipVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- QCOW2 images qemu-img / qemu-io wrote, with the raw hashes qemu-img converted them to; see Qcow2/ReferenceVectors/README.md. -->
-    <EmbeddedResource Include="Qcow2\ReferenceVectors\*.qcow2;Qcow2\ReferenceVectors\*.raw;Qcow2\ReferenceVectors\*.sha256">
+    <EmbeddedResource Include="Qcow2\ReferenceVectors\*.qcow2;Qcow2\ReferenceVectors\*.qcow2.gz;Qcow2\ReferenceVectors\*.raw;Qcow2\ReferenceVectors\*.sha256">
       <LogicalName>Qcow2Vectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- UDF volumes mkudffs formatted and the Linux udf driver filled (sparable, metadata, VAT); see Udf/ReferenceVectors/README.md. -->

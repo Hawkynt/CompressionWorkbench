@@ -32,7 +32,7 @@ public static class ToolDiscovery {
   /// </summary>
   private static readonly string[] _toolNames = [
     "7z", "7za", "unrar", "binwalk", "file", "trid",
-    "gzip", "bzip2", "xz", "zstd", "lz4", "tar"
+    "gzip", "bzip2", "xz", "zstd", "lz4", "tar", "uharc", "unuharc"
   ];
 
   /// <summary>

@@ -31,7 +31,7 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 63 | |
+| A | 69 | |
 | B | 28 | FFmpeg alone covers 38 codec folders |
 | C | 0 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 14 | |
@@ -77,6 +77,11 @@ None open: every class C claim site has been rewritten and is listed under R.
 
 | Claim site | Upstream | Licence | Where the notice is |
 |---|---|---|---|
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Bga/` | QBga32 0.06 (k.inaba), 2015-07-03 trunk tarball, `src/bga_melter.d` | NYSL 0.9982 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Bga/THIRD-PARTY-NOTICE.qbga32.txt` |
+| `Compression.Core/Entropy/Grzip/` | grzip 0.3.0 / libGRZip (Ilya Grebnov), compatible functions and exact file list pinned in the notice | LGPL-2.1-or-later | `Compression.Core/Entropy/Grzip/THIRD-PARTY-NOTICE.grzip.txt` |
+| `Compression.Core/Dictionary/Xpk/` | ancient (Teemu Suutari), revision `61cd9088a218ce43fd389f3f3c48f35fc70f7834`, XPK container and sub-library decoders | BSD-2-Clause | `Compression.Core/Dictionary/Xpk/THIRD-PARTY-NOTICE.ancient.txt` |
+| `Compression.Core/Dictionary/Terse/` | Open Mainframe Project TerseDecompress, revision `12f5f9f34821defeef696c3232d97b7733dc79a6`, PACK/SPACK decoders; encoder original | Apache-2.0 | `Compression.Core/Dictionary/Terse/THIRD-PARTY-NOTICE.TerseDecompress.txt` |
+| `Compression.Core/Dictionary/ArcDistill/` | XADMaster `XADARCDistillHandle.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c`; encoder original | LGPL-2.1-or-later | `Compression.Core/Dictionary/ArcDistill/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.AppleArchive/AppleArchiveReader.cs` | libNeoAppleArchive, revision `c1bdecd059e4b57347f859fc7b3e7be94a4e405e` | MIT | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.AppleArchive/THIRD-PARTY-NOTICE.libNeoAppleArchive.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.InstallShield/` | unshield (David Eriksson) `lib/libunshield.c`, `lib/helper.c`, `lib/file.c`, `lib/file_group.c`, `lib/component.c`, `lib/directory.c`, `lib/cabfile.h`, naming from `src/unshield.c`, main as of 2026-10-23 | MIT | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.InstallShield/THIRD-PARTY-NOTICE.unshield.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.StuffItX/` | XADMaster StuffIt X parsing, Brimstone, Cyanide, Iron and transforms, revision `7cb9ee0abbb163f261e4cb74501e15067032319c`, file list in the notice | LGPL-2.1-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.StuffItX/THIRD-PARTY-NOTICE.XADMaster.txt` |
@@ -140,6 +145,7 @@ None open: every class C claim site has been rewritten and is listed under R.
 | `Compression.Core/FileSystems/SquashFs/SquashFsLegacyReader.cs` | 7-Zip 23.01 `CPP/7zip/Archive/SquashfsHandler.cpp` (Igor Pavlov) | LGPL-2.1-or-later — taken under LGPL-3.0 | `Compression.Core/FileSystems/SquashFs/THIRD-PARTY-NOTICE.7-Zip.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.B1/B1Reader.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.B1/B1Writer.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.B1/B1Serialization.cs` | b1-pack (b1.org), revision `eb2c91854082c37d1f3fcc4edcc7bdfd5806dfc1` | Apache-2.0 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.B1/THIRD-PARTY-NOTICE.b1-pack.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.EnigmaVirtualBox/EnigmaVirtualBoxReader.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.EnigmaVirtualBox/EnigmaVirtualBoxFormatDescriptor.cs` | evbunpack (mos9527) `evbunpack/__main__.py`, `evbunpack/const.py`, revision `ee7b647acf2a46617b0c448dfa83d63132ea917b` | Apache-2.0 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.EnigmaVirtualBox/THIRD-PARTY-NOTICE.evbunpack.txt` |
+| `Compression.Core/Transforms/BranchConverter.cs`, `Compression.Core/Transforms/Bcj2Filter.cs` | LZMA SDK 9.20 (Igor Pavlov) `C/Bra.c`, `C/Bra86.c`, `C/BraIA64.c`, `C/Bcj2.c`; the BCJ2 encoder from 7-Zip 9.20 `CPP/7zip/Compress/Bcj2Coder.cpp`; ARM64 / RISC-V restated from the liblzma conversions | public domain; LGPL-2.1-or-later (7-Zip CPP) — taken under LGPL-3.0; 0BSD | `Compression.Core/Transforms/THIRD-PARTY-NOTICE.lzma-sdk.txt` |
 
 ## R — not a code port
 

@@ -18,21 +18,30 @@ public static class TarModifier {
   /// in their place, and truncates to the new length.
   /// </summary>
   public static void AddFile(Stream tar, string name, byte[] data) {
-    ArgumentNullException.ThrowIfNull(tar);
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-
-    var terminatorOffset = FindTerminatorOffset(tar);
-    tar.Position = terminatorOffset;
-
-    var entry = new TarEntry {
+    AddEntry(tar, new TarEntry {
       Name = name,
       Size = data.Length,
       TypeFlag = TarConstants.TypeRegular,
       Mode = 0x1A4, // 0644
       ModifiedTime = DateTimeOffset.Now,
-    };
+    }, data);
+  }
 
+  /// <summary>
+  /// Appends <paramref name="entry"/> (a file, or a directory with no data) as it is given:
+  /// name, type, mode and time are the caller's; the size is that of <paramref name="data"/>.
+  /// </summary>
+  public static void AddEntry(Stream tar, TarEntry entry, byte[] data) {
+    ArgumentNullException.ThrowIfNull(tar);
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(data);
+
+    var terminatorOffset = FindTerminatorOffset(tar);
+    tar.Position = terminatorOffset;
+
+    entry.Size = data.Length;
     TarHeader.WriteHeader(tar, entry);
     if (data.Length > 0) {
       tar.Write(data);

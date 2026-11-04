@@ -25,9 +25,9 @@ internal static class ZipLocalFileHeader {
     var fileNameLen = reader.ReadUInt16();
     var extraLen = reader.ReadUInt16();
 
-    var encoding = (flags & ZipConstants.FlagUtf8) != 0 ? Encoding.UTF8 : Encoding.Latin1;
-    var fileName = encoding.GetString(reader.ReadBytes(fileNameLen));
+    var rawName = reader.ReadBytes(fileNameLen);
     var extra = extraLen > 0 ? reader.ReadBytes(extraLen) : null;
+    var fileName = ZipNameEncoding.Decode(rawName, flags, extra);
 
     var entry = new ZipEntry {
       FileName = fileName,

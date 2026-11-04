@@ -26,11 +26,17 @@ listCmd.SetAction((ParseResult ctx) => {
 
   if (!archive.Exists) { Console.Error.WriteLine($"File not found: {archive.FullName}"); return 1; }
 
-  var format = FormatDetector.Detect(archive.FullName);
+  var format = ArchiveVolumes.Detect(archive.FullName);
   Console.WriteLine($"Archive: {archive.Name}  Format: {format}");
   Console.WriteLine();
 
-  var entries = ArchiveOperations.List(archive.FullName, password);
+  List<ArchiveEntry> entries;
+  try {
+    entries = WithPassword(archive.Name, password, pw => ArchiveOperations.List(archive.FullName, pw));
+  } catch (ArchivePasswordException e) {
+    Console.Error.WriteLine(e.Message);
+    return 3;
+  }
   if (entries.Count == 0) { Console.WriteLine("(empty archive)"); return 0; }
 
   // Column headers
@@ -112,7 +118,13 @@ extractCmd.SetAction((ParseResult ctx) => {
 
   Console.Write($"Extracting {archive.Name}...");
   var sw = Stopwatch.StartNew();
-  ArchiveOperations.Extract(archive.FullName, outputDir, password, fileFilter);
+  try {
+    WithPassword(archive.Name, password, pw => { ArchiveOperations.Extract(archive.FullName, outputDir, pw, fileFilter); return 0; });
+  } catch (ArchivePasswordException e) {
+    Console.Error.WriteLine();
+    Console.Error.WriteLine(e.Message);
+    return 3;
+  }
   sw.Stop();
   Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
   Console.WriteLine($"Output: {outputDir}");
@@ -131,10 +143,11 @@ var dictSizeOpt = new Option<string?>("--dict-size", "-d") { Description = "LZMA
 var wordSizeOpt = new Option<int?>("--word-size", "-w") { Description = "LZMA fast bytes: 5-273 (default 32). PPMd model order: 2-32 (default 6)" };
 var levelOpt = new Option<int?>("--level", "-l") { Description = "Level 0-9. Deflate: 0=none,6=default,9=best. LZMA: 1=fast,5=normal,9=best" };
 var encryptHeadersOpt = new Option<bool>("--encrypt-headers", "-eh") { Description = "Encrypt file names and headers (7z, RAR5). Requires --password" };
+var volumeSizeOpt = new Option<string?>("--volume-size", "-v") { Description = "Split the archive into volumes of this size, named like 7-Zip's (backup.7z.001, .002, ...): e.g. 100m, 4480m, 650m" };
+var headerCompressionOpt = new Option<bool>("--header-compression", "-hc") { Description = "7z: store the header LZMA-packed (7-Zip's -mhc=on) when that is smaller" };
 var zipEncryptionOpt = new Option<string?>("--zip-encryption") { Description = "ZIP encryption method: aes256 (default, strong) or zipcrypto (weak, legacy compatible)" };
 var sfxOpt = new Option<bool>("--sfx") { Description = "Create a self-extracting archive (console stub, no runtime needed)" };
 var sfxUiOpt = new Option<bool>("--sfx-ui") { Description = "Create a self-extracting archive (GUI stub with folder picker; Windows and Linux)" };
-var volumeSizeOpt = new Option<string?>("--volume-size", "-v") { Description = "Split into volumes of at most this size (e.g. 100m, 4g, 20000); formats with volume sets only (RAR)" };
 var includeHiddenOpt = new Option<bool>("--include-hidden") { Description = "Also take hidden and system files found in folders or by wildcards (skipped by default; files named explicitly are always taken)" };
 var createOptOpt = new Option<string[]>("--opt") { Description = "Format-specific option KEY=VALUE (repeatable), e.g. --opt TargetCompatibility=Rar4", AllowMultipleArgumentsPerToken = false };
 var sfxTargetOpt = new Option<string?>("--sfx-target") { Description = "SFX target platform, or a comma-separated list for one file that runs on all of them: " + string.Join(", ", SfxBuilder.SupportedTargets) };
@@ -154,6 +167,10 @@ var createCmd = new Command("create", """
     cwb create app.7z src/ --sfx                        Self-extracting 7z (console)
     cwb create app.7z src/ --sfx --sfx-target linux-x64 SFX for Linux x64
     cwb create backup.7z src/ -p secret                 7z with AES-256 encryption
+    cwb create backup.7z src/ -p secret -eh             7z, file names encrypted too
+    cwb create backup.7z src/ -hc                       7z with a packed header (7-Zip -mhc=on)
+    cwb create backup.7z src/ -v 100m                   7z in 100 MB volumes: backup.7z.001, .002, ...
+    cwb extract backup.7z.001 -o out                    any volume of a split archive opens the whole set
     cwb create backup.zip *.txt -m deflate+ -t 4        Zopfli optimal, 4 threads
     cwb create backup.part1.rar src/ -v 100m -p secret  RAR 5 volumes of 100 MB, AES-256
     cwb create old.rar src/ --opt TargetCompatibility=Rar4  RAR 4 (2.9 format) archive
@@ -174,7 +191,7 @@ var createCmd = new Command("create", """
     --solid-size  Max solid block: 0=single block, 64m=64MB blocks, 1g=1GB blocks.
     --level       0-9: 1=fast, 5=normal, 9=best.
     --threads     Parallel compression (7z splits into solid blocks, ZIP per-entry).
-  """) { createArchiveArg, createFilesArg, passwordOpt, methodOpt, forceCompressOpt, threadsOpt, solidSizeOpt, dictSizeOpt, wordSizeOpt, levelOpt, encryptHeadersOpt, zipEncryptionOpt, sfxOpt, sfxUiOpt, sfxTargetOpt, volumeSizeOpt, createOptOpt, includeHiddenOpt };
+  """) { createArchiveArg, createFilesArg, passwordOpt, methodOpt, forceCompressOpt, threadsOpt, solidSizeOpt, dictSizeOpt, wordSizeOpt, levelOpt, encryptHeadersOpt, headerCompressionOpt, zipEncryptionOpt, sfxOpt, sfxUiOpt, sfxTargetOpt, volumeSizeOpt, createOptOpt, includeHiddenOpt };
 createCmd.Aliases.Add("c");
 createCmd.SetAction((ParseResult ctx) => {
   var archive = ctx.GetValue(createArchiveArg)!;
@@ -188,6 +205,13 @@ createCmd.SetAction((ParseResult ctx) => {
   var wordSize = ctx.GetValue(wordSizeOpt);
   var level = ctx.GetValue(levelOpt);
   var encryptHeaders = ctx.GetValue(encryptHeadersOpt);
+  var headerCompression = ctx.GetValue(headerCompressionOpt);
+  var volumeSizeText = ctx.GetValue(volumeSizeOpt);
+  var volumeSize = volumeSizeText == null ? 0 : ParseSizeGeneric(volumeSizeText);
+  if (volumeSizeText != null && volumeSize <= 0) {
+    Console.Error.WriteLine($"--volume-size: '{volumeSizeText}' is not a size (e.g. 100m).");
+    return 1;
+  }
   var zipEncryption = ctx.GetValue(zipEncryptionOpt);
   var makeSfx = ctx.GetValue(sfxOpt);
   var makeSfxUi = ctx.GetValue(sfxUiOpt);
@@ -199,8 +223,11 @@ createCmd.SetAction((ParseResult ctx) => {
     if (eq < 0) formatSpecific[raw] = "true";
     else if (eq > 0) formatSpecific[raw[..eq]] = raw[(eq + 1)..];
   }
-  if (ctx.GetValue(volumeSizeOpt) is { Length: > 0 } volumeSize)
-    formatSpecific[Compression.Registry.FormatOptionKeys.VolumeSize] = volumeSize;
+  var usesNativeVolumes = FormatDetector.DetectByExtensionForCreate(archive.FullName) == FormatDetector.Format.Rar;
+  if (usesNativeVolumes && volumeSizeText is { Length: > 0 })
+    formatSpecific[Compression.Registry.FormatOptionKeys.VolumeSize] = volumeSizeText;
+  if (headerCompression)
+    formatSpecific["HeaderCompression"] = "true";
 
   List<ArchiveInput> resolved;
   try { resolved = ArchiveInput.Resolve(files, ctx.GetValue(includeHiddenOpt)); }
@@ -224,7 +251,12 @@ createCmd.SetAction((ParseResult ctx) => {
     ForceCompress = forceCompress, Password = password, EncryptFilenames = encryptHeaders,
     ZipEncryption = zipEncryption,
     FormatSpecific = formatSpecific.Count > 0 ? formatSpecific : null,
+    VolumeSize = usesNativeVolumes ? 0 : volumeSize,
   };
+  if (volumeSize > 0 && (ctx.GetValue(sfxOpt) || ctx.GetValue(sfxUiOpt))) {
+    Console.Error.WriteLine("--volume-size and --sfx are alternatives: a self-extractor is one file.");
+    return 1;
+  }
   var methodLabel = method.IsDefault ? "" : $" [{method}]";
   var threadLabel = threads > 1 ? $" ({threads} threads)" : "";
   Console.Write($"Creating {archive.Name} with {countLabel}{methodLabel}{threadLabel}...");
@@ -234,6 +266,11 @@ createCmd.SetAction((ParseResult ctx) => {
   Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
   if (autoStored > 0)
     Console.WriteLine($"  {autoStored} file(s) auto-stored as incompressible (use --force-compress to override)");
+  if (opts.VolumeSize > 0) {
+    var volumes = ArchiveVolumes.VolumesOf(ArchiveVolumes.VolumePath(archive.FullName, 1));
+    Console.WriteLine($"Archive size: {FormatSize(volumes.Sum(static v => new FileInfo(v).Length))} in {volumes.Count} volume(s): {Path.GetFileName(volumes[0])} .. {Path.GetFileName(volumes[^1])}");
+    return 0;
+  }
   Console.WriteLine($"Archive size: {FormatSize(new FileInfo(archive.FullName).Length)}");
 
   if (makeSfx && makeSfxUi) {
@@ -343,7 +380,14 @@ testCmd.SetAction((ParseResult ctx) => {
 
   Console.Write($"Testing {archive.Name}...");
   var sw = Stopwatch.StartNew();
-  var result = ArchiveOperations.TestDetailed(archive.FullName, password);
+  ArchiveTestResult result;
+  try {
+    result = WithPassword(archive.Name, password, pw => ArchiveOperations.TestDetailed(archive.FullName, pw));
+  } catch (ArchivePasswordException e) {
+    Console.WriteLine(" NEEDS PASSWORD");
+    Console.Error.WriteLine(e.Message);
+    return 3;
+  }
   sw.Stop();
   // "not testable" is not a failed integrity check -- nothing is known to be wrong with the file,
   // there is just no verifier for it. It gets its own message and its own exit code so a script
@@ -3035,6 +3079,40 @@ static bool IsSystemDrive(string device) {
   // Mount points
   if (d == "/" || d == "/boot") return true;
   return false;
+}
+
+// Runs an archive read, asking on the console for a password when the archive turns out to need
+// one: up to three tries when none was given; a wrong --password is final, as it is for 7-Zip.
+static T WithPassword<T>(string archiveName, string? password, Func<string?, T> operation) {
+  for (var asked = 0; ; ++asked) {
+    try {
+      return operation(password);
+    } catch (ArchivePasswordException e) when ((password == null || asked > 0) && asked < 3) {
+      Console.Error.Write(e.PasswordWasSupplied ? $"Wrong password for {archiveName}. Password: " : $"{archiveName} is encrypted. Password: ");
+      password = ReadPassword();
+      if (password == null)
+        throw;
+    }
+  }
+}
+
+// A password from the console without echoing it, or one line from redirected input; null at the
+// end of the input.
+static string? ReadPassword() {
+  if (Console.IsInputRedirected)
+    return Console.In.ReadLine();
+  var typed = new System.Text.StringBuilder();
+  for (;;) {
+    var key = Console.ReadKey(intercept: true);
+    if (key.Key == ConsoleKey.Enter) {
+      Console.Error.WriteLine();
+      return typed.ToString();
+    }
+    if (key.Key == ConsoleKey.Backspace) {
+      if (typed.Length > 0) typed.Length--;
+    } else if (!char.IsControl(key.KeyChar))
+      typed.Append(key.KeyChar);
+  }
 }
 
 static long ParseSizeGeneric(string sizeStr) {
