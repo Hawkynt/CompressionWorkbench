@@ -136,7 +136,7 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Wraps the supplied input files into a sparse standalone VHDX container.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var fat = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
+    var fat = FileSystem.Fat.FatWriter.BuildFromInputs(inputs);
     var w = new VhdxWriter();
     w.SetDiskData(fat);
     output.Write(w.Build());

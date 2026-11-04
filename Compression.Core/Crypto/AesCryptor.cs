@@ -144,11 +144,11 @@ public static class AesCryptor {
   }
 
   /// <summary>
-  /// Encrypts data using AES-CBC with no padding. Accepts 16-byte (AES-128) or 32-byte (AES-256) keys.
+  /// Encrypts data using AES-CBC with no padding. Accepts 16-, 24- or 32-byte (AES-128/192/256) keys.
   /// </summary>
   public static byte[] EncryptCbcNoPaddingAny(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv) {
-    if (key.Length != 16 && key.Length != 32)
-      throw new ArgumentException("Key must be 16 or 32 bytes.", nameof(key));
+    if (key.Length is not (16 or 24 or 32))
+      throw new ArgumentException("Key must be 16, 24 or 32 bytes.", nameof(key));
     if (iv.Length != 16)
       throw new ArgumentException("IV must be 16 bytes.", nameof(iv));
     if (data.Length % 16 != 0)
@@ -165,11 +165,11 @@ public static class AesCryptor {
   }
 
   /// <summary>
-  /// Decrypts data using AES-CBC with no padding. Accepts 16-byte (AES-128) or 32-byte (AES-256) keys.
+  /// Decrypts data using AES-CBC with no padding. Accepts 16-, 24- or 32-byte (AES-128/192/256) keys.
   /// </summary>
   public static byte[] DecryptCbcNoPaddingAny(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv) {
-    if (key.Length != 16 && key.Length != 32)
-      throw new ArgumentException("Key must be 16 or 32 bytes.", nameof(key));
+    if (key.Length is not (16 or 24 or 32))
+      throw new ArgumentException("Key must be 16, 24 or 32 bytes.", nameof(key));
     if (iv.Length != 16)
       throw new ArgumentException("IV must be 16 bytes.", nameof(iv));
     if (data.Length % 16 != 0)

@@ -34,7 +34,7 @@ public static class ParallelZipCreator {
     var files = inputs.Where(i => !i.IsDirectory).ToList();
 
     var results = new (string Name, byte[] CompressedData, ZipCompressionMethod Method,
-      uint Crc, long OrigSize)[files.Count];
+      uint Crc, long OrigSize, DateTime? Modified)[files.Count];
 
     var options = new ParallelOptions { MaxDegreeOfParallelism = maxThreads };
     Parallel.For(0, files.Count, options, i => {
@@ -58,15 +58,15 @@ public static class ParallelZipCreator {
           entryMethod = ZipCompressionMethod.Store;
         }
       }
-      results[i] = (input.ArchiveName, compressed, entryMethod, crc, data.Length);
+      results[i] = (input.ArchiveName, compressed, entryMethod, crc, data.Length, input.SourceLastModifiedUtc?.ToLocalTime());
     });
 
     var w = new ZipWriter(output, leaveOpen: true,
       compressionLevel: level, password: password, encryptionMethod: encryptionMethod);
     foreach (var d in dirs)
-      w.AddDirectory(d.ArchiveName);
-    foreach (var (name, compressed, m, crc, origSize) in results)
-      w.AddRawEntry(name, compressed, m, crc, origSize);
+      w.AddDirectory(d.ArchiveName, d.SourceLastModifiedUtc?.ToLocalTime());
+    foreach (var (name, compressed, m, crc, origSize, modified) in results)
+      w.AddRawEntry(name, compressed, m, crc, origSize, modified);
     w.Finish();
   }
 
@@ -78,12 +78,12 @@ public static class ParallelZipCreator {
     var w = new ZipWriter(output, leaveOpen: true,
       compressionLevel: level, password: password, encryptionMethod: encryptionMethod);
     foreach (var i in inputs) {
-      if (i.IsDirectory) { w.AddDirectory(i.ArchiveName); continue; }
+      if (i.IsDirectory) { w.AddDirectory(i.ArchiveName, i.SourceLastModifiedUtc?.ToLocalTime()); continue; }
       var data = i.ReadContent();
       var entryMethod = incompressible != null && incompressible.Contains(i.FullPath)
         ? ZipCompressionMethod.Store
         : method;
-      w.AddEntry(i.ArchiveName, data, entryMethod);
+      w.AddEntry(i.ArchiveName, data, entryMethod, i.SourceLastModifiedUtc?.ToLocalTime());
     }
     w.Finish();
   }

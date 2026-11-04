@@ -1,0 +1,38 @@
+sais-lite (Yuta Mori) — SA-IS suffix sorting converted to C#
+
+Source:   sais-lite 2.4.1, sais.c (Yuta Mori), as mirrored in
+          https://github.com/play-co/gcif/blob/142df2d0073622e50bd8ca45d649e25578159b6b/refs/sais-lite-2.4.1/sais.c
+          (SHA-256 of the file: 2085e0792f502b17010900f6e6a069286210077a730479fbaec7da11c4d2e8fa)
+Author:   Copyright (c) 2008-2010 Yuta Mori
+Licence:  MIT (reproduced below)
+
+SuffixArraySais.cs is a conversion of sais.c's getCounts, getBuckets, LMSsort1,
+LMSpostproc1, induceSA and sais_main into this codebase. It always takes the
+LMSsort1 path and allocates its bucket arrays and the reduced problem
+separately rather than inside spare suffix-array space; the suffix array it
+produces is the same.
+
+MIT licence text:
+
+Copyright (c) 2008-2010 Yuta Mori All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.

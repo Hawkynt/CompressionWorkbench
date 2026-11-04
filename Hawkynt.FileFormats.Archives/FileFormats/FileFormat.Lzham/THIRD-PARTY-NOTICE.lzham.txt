@@ -1,0 +1,27 @@
+LZHAM (Rich Geldreich) — decoder and coding layer converted to C#
+
+Source:   https://github.com/richgel999/lzham_codec
+Revision: d379b1f9121e2197881c61cfc4713c78848bdfe7 (2022-01-03)
+Author:   Rich Geldreich
+Licence:  Public domain. The repository's LICENSE (dated September 15, 2020)
+          releases LZHAM into the public domain with a fallback clause allowing
+          any use "WITH NO ATTRIBUTION"; this notice records provenance only.
+
+Converted into this directory:
+
+  lzhamdecomp/lzham_lzdecomp.cpp, lzham_symbol_codec.h (decoding macros)
+                                         -> LzhamDecoder.cs
+  lzhamdecomp/lzham_symbol_codec.cpp, lzham_huffman_codes.cpp,
+  lzham_prefix_coding.cpp, lzham_lzdecompbase.cpp (tables)
+                                         -> LzhamModels.cs
+  lzhamdecomp/lzham_symbol_codec.cpp (encoding side),
+  lzhamcomp/lzham_lzcomp_state.cpp (state::encode, encode_eob),
+  lzhamcomp/lzham_lzcomp_internal.cpp (block framing, raw-block fallback,
+  final block)                           -> LzhamEncoder.cs
+
+The match search and parse in LzhamEncoder.cs (hash chains, one step of
+lazy evaluation) are this repository's own; LZHAM's optimal and extreme
+parsers and its match accelerator were not converted.
+
+LzhamStream.cs follows the file layout written by lzhamtest/lzhamtest.cpp
+(id "LZH0", dictionary size log2, 64-bit little-endian length).

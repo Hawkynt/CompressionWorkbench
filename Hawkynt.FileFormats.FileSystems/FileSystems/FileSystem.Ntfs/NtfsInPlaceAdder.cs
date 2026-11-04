@@ -83,6 +83,19 @@ public static class NtfsInPlaceAdder {
     SyncMftMirror(image, geo); // record 0 (sizes/$BITMAP) changed — keep $MFTMirr identical
   }
 
+  /// <summary>
+  /// Adds a folder, with any missing parents, to the in-memory NTFS image; a folder that is
+  /// already there is left as it is. An empty folder added this way survives.
+  /// </summary>
+  public static void AddDirectory(byte[] image, string name) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(name);
+    var geo = ParseBoot(image);
+    var parentRecord = RootRecord;
+    foreach (var part in name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries))
+      parentRecord = EnsureDirectory(image, geo, parentRecord, part);
+  }
+
   // Returns a free MFT record slot, growing the MFT in place if none is free.
   private static int AllocateMftSlot(byte[] image, Geo geo) {
     var slot = FindFreeMftRecord(image, geo);
@@ -904,12 +917,25 @@ public static class NtfsInPlaceAdder {
       return result;
     }
 
+    // A routing root holds keys of its own: separators between the blocks below it.
+    {
+      var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(dir.AsSpan(rootPos + 20));
+      var nodeHdr = rootPos + valueOffset + 16;
+      var entriesStart = nodeHdr + BinaryPrimitives.ReadInt32LittleEndian(dir.AsSpan(nodeHdr));
+      var usedEnd = nodeHdr + BinaryPrimitives.ReadInt32LittleEndian(dir.AsSpan(nodeHdr + 4));
+      CollectLeafEntriesFrom(dir, entriesStart, usedEnd, result);
+    }
+
     var runsOff = allocPos + BinaryPrimitives.ReadUInt16LittleEndian(dir.AsSpan(allocPos + 32));
     var runs = DecodeDataRuns(dir, runsOff);
     var blockSize = ReadIndexBlockSize(dir, rootPos);
+    var inUse = IndexBlockBitmap(dir);
+    long block = 0;
     foreach (var (lcn, count) in runs) {
       var runBytes = count * geo.ClusterSize;
-      for (long b = 0; b * blockSize < runBytes; b++) {
+      for (long b = 0; b * blockSize < runBytes; b++, block++) {
+        // A block the $BITMAP marks free may hold a stale copy of keys that moved.
+        if (inUse != null && (block / 8 >= inUse.Length || (inUse[block / 8] & (1 << (int)(block % 8))) == 0)) continue;
         var off = (int)(lcn * geo.ClusterSize + b * blockSize);
         if (off < 0 || off + blockSize > image.Length) continue;
         CollectLeafEntriesFromIndxBlock(image, off, blockSize, result);
@@ -1061,6 +1087,44 @@ public static class NtfsInPlaceAdder {
     CollectLeafEntriesFrom(block, entriesStart, contentEnd, result);
   }
 
+  // An index entry routing to the block at child VCN <vcn>: the key, the subnode flag and
+  // the VCN in the entry's last eight bytes.
+  private static byte[] RoutingEntry(IndexEntry key, long vcn) {
+    var raw = key.Raw;
+    var pointer = new byte[raw.Length + 8];
+    raw.CopyTo(pointer, 0);
+    BinaryPrimitives.WriteUInt16LittleEndian(pointer.AsSpan(8), (ushort)pointer.Length);
+    BinaryPrimitives.WriteUInt16LittleEndian(pointer.AsSpan(12), (ushort)(BinaryPrimitives.ReadUInt16LittleEndian(raw.AsSpan(12)) | 0x01));
+    BinaryPrimitives.WriteInt64LittleEndian(pointer.AsSpan(pointer.Length - 8), vcn);
+    return pointer;
+  }
+
+  // The end marker of a node: last entry, subnode flag, child VCN.
+  private static byte[] RoutingEndMarker(long vcn) {
+    var end = new byte[24];
+    BinaryPrimitives.WriteUInt16LittleEndian(end.AsSpan(8), 24);
+    BinaryPrimitives.WriteUInt16LittleEndian(end.AsSpan(12), 0x03);
+    BinaryPrimitives.WriteInt64LittleEndian(end.AsSpan(16), vcn);
+    return end;
+  }
+
+  // The directory's resident $I30 $BITMAP (one bit per INDX block in use), or null when
+  // it has none that can be read here.
+  private static byte[]? IndexBlockBitmap(byte[] dir) {
+    var (pos, _) = FindAttr(dir, 0xB0, unnamedOnly: false);
+    if (pos < 0 || dir[pos + 8] != 0) return null;
+    var length = (int)BinaryPrimitives.ReadUInt32LittleEndian(dir.AsSpan(pos + 16));
+    var offset = BinaryPrimitives.ReadUInt16LittleEndian(dir.AsSpan(pos + 20));
+    return pos + offset + length <= dir.Length ? dir.AsSpan(pos + offset, length).ToArray() : null;
+  }
+
+  // The INDX block size the boot sector announces (offset 0x44: clusters per index
+  // block, or the negative base-2 log of its bytes when smaller than a cluster).
+  private static int BootIndexBlockSize(byte[] image, Geo geo) {
+    var v = (sbyte)image[0x44];
+    return v > 0 ? v * geo.ClusterSize : v < 0 ? 1 << -v : 4096;
+  }
+
   // Bytes-per-INDX-block from the directory's index-root header (value offset 8).
   private static int ReadIndexBlockSize(byte[] dir, int rootPos) {
     var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(dir.AsSpan(rootPos + 20));
@@ -1112,77 +1176,140 @@ public static class NtfsInPlaceAdder {
     return true;
   }
 
-  // Spills (or re-packs an existing spill of) the directory index into a single
-  // INDX leaf block: a pointer-form $INDEX_ROOT (one end-marker pointer at VCN 0),
-  // a non-resident $INDEX_ALLOCATION (type 0xA0, named "$I30") holding the leaf,
-  // and a resident $BITMAP (type 0xB0, named "$I30"). The INDX block size is grown
-  // (power-of-two, ≥ one cluster, ≤ 64 KiB) until all entries fit one leaf.
+  // Spills (or re-packs an existing spill of) the directory index into INDX leaf blocks
+  // of the size the boot sector announces — readers refuse others (Linux's ntfs3 cannot
+  // read a folder whose blocks are bigger). A pointer-form $INDEX_ROOT routes to the
+  // leaves: one separator key per leaf boundary, moved up rather than copied, and an end
+  // marker reaching the last leaf. A non-resident $INDEX_ALLOCATION (type 0xA0, named
+  // "$I30") holds the blocks and a resident $BITMAP (type 0xB0, "$I30") marks them in use.
+  // Routing keys that outgrow the directory record go into node blocks, a level at a time.
   private static void WriteSpilledIndex(byte[] image, Geo geo, uint dirRecord, byte[] dir,
       int rootPos, List<IndexEntry> entries) {
-    // Build the leaf entry stream once to size the block.
-    using var es = new MemoryStream();
-    foreach (var e in entries) es.Write(e.Raw);
-    es.Write(BuildEndMarker());
-    var entryStream = es.ToArray();
     var trailing = TrailingAttributes(dir, rootPos);
+    var blockSize = BootIndexBlockSize(image, geo);
+    var usaBytesPerBlock = (1 + blockSize / geo.BytesPerSector) * 2;
+    var leafCapacity = blockSize - ((40 + usaBytesPerBlock + 7) & ~7) - 16; // keep room for the end marker
 
-    // Choose an INDX block size that fits the whole entry stream in one leaf.
-    var blockSize = 0;
-    for (var size = Math.Max(4096, geo.ClusterSize); size <= 64 * 1024; size *= 2) {
-      var usaBytes = (1 + size / geo.BytesPerSector) * 2;
-      var subHeaderOffset = (24 + usaBytes + 7) & ~7;
-      var capacity = size - (subHeaderOffset + 16);
-      if (entryStream.Length <= capacity) { blockSize = size; break; }
-    }
-    if (blockSize == 0)
-      throw new NotSupportedException(
-        $"NTFS in-place add: directory index too large for a single INDX leaf ({entryStream.Length} bytes).");
-
-    var clustersPerBlock = Math.Max(1, blockSize / geo.ClusterSize);
-
-    // Reuse the existing $INDEX_ALLOCATION clusters if the directory is already
-    // spilled and they're big enough; otherwise allocate fresh ones.
-    long allocLcn;
-    long allocClusters;
-    var (existingAllocPos, _) = FindAttr(dir, 0xA0, unnamedOnly: false);
-    if (existingAllocPos >= 0) {
-      var allocPos = existingAllocPos;
-      var runsOff = allocPos + BinaryPrimitives.ReadUInt16LittleEndian(dir.AsSpan(allocPos + 32));
-      var existingRuns = DecodeDataRuns(dir, runsOff);
-      long existingClusters = 0; foreach (var (_, c) in existingRuns) existingClusters += c;
-      if (existingRuns.Count == 1 && existingClusters >= clustersPerBlock) {
-        allocLcn = existingRuns[0].Lcn;
-        allocClusters = clustersPerBlock;
-      } else {
-        // Free old + allocate a fresh contiguous run (the block size grew).
-        foreach (var (lcn, count) in existingRuns) FreeClusters(image, geo, lcn, count);
-        allocLcn = AllocateContiguousClusters(image, geo, (int)clustersPerBlock);
-        allocClusters = clustersPerBlock;
+    // Fill leaves in collation order.
+    var leaves = new List<List<IndexEntry>>();
+    var current = new List<IndexEntry>();
+    var used = 0;
+    foreach (var e in entries) {
+      if (e.Raw.Length > leafCapacity)
+        throw new NotSupportedException($"NTFS in-place edit: index entry '{e.Name}' does not fit an INDX block.");
+      if (current.Count > 0 && used + e.Raw.Length > leafCapacity) {
+        leaves.Add(current);
+        current = [];
+        used = 0;
       }
-    } else {
-      allocLcn = AllocateContiguousClusters(image, geo, (int)clustersPerBlock);
-      allocClusters = clustersPerBlock;
+      current.Add(e);
+      used += e.Raw.Length;
+    }
+    leaves.Add(current);
+
+    // VCNs count clusters, or 512-byte units when a block is smaller than a cluster.
+    var vcnPerBlock = blockSize >= geo.ClusterSize ? blockSize / geo.ClusterSize : blockSize / geo.BytesPerSector;
+
+    // Render the leaves. The last key of every leaf but the last moves up (it is not
+    // copied: a key in a leaf and above it is two entries for one file) as the separator
+    // that routes to that leaf; the end marker above reaches the last one.
+    var blocks = new List<byte[]>();
+    var level = new List<(long Vcn, IndexEntry? Separator)>();
+    for (var i = 0; i < leaves.Count; ++i) {
+      IndexEntry? separator = null;
+      if (i < leaves.Count - 1) {
+        separator = leaves[i][^1];
+        leaves[i].RemoveAt(leaves[i].Count - 1);
+      }
+      using var es = new MemoryStream();
+      foreach (var e in leaves[i]) es.Write(e.Raw);
+      es.Write(BuildEndMarker());
+      var vcn = (long)blocks.Count * vcnPerBlock;
+      blocks.Add(BuildIndxLeaf(geo, es.ToArray(), blockSize, vcn));
+      level.Add((vcn, separator));
     }
 
-    // Build and write the single INDX leaf at VCN 0.
-    var leaf = BuildIndxLeaf(geo, entryStream, blockSize, vcn: 0);
-    var leafByteOff = (int)(allocLcn * geo.ClusterSize);
-    if (leafByteOff + blockSize > image.Length) throw new IOException("NTFS in-place add: INDX leaf out of range.");
-    image.AsSpan(leafByteOff, blockSize).Clear();
-    leaf.CopyTo(image, leafByteOff);
-
-    // Pointer $INDEX_ROOT: a lone end-marker entry with the subnode flag pointing
-    // at VCN 0 (the only leaf). 24-byte entry: header(16) + child VCN(8).
-    var rootHeader = ReadOrBuildIndexRootHeader(dir, rootPos, indexBlockSize: blockSize);
-    rootHeader[12] = (byte)Math.Max(1, blockSize / geo.ClusterSize); // clusters per INDX block
-    var pointerEntries = new byte[24];
-    BinaryPrimitives.WriteUInt16LittleEndian(pointerEntries.AsSpan(8), 24);   // entry length
-    BinaryPrimitives.WriteUInt16LittleEndian(pointerEntries.AsSpan(12), 0x03); // last + has subnode
-    BinaryPrimitives.WriteInt64LittleEndian(pointerEntries.AsSpan(16), 0);     // child VCN 0
-
-    var valueLen = rootHeader.Length + 16 + pointerEntries.Length;
+    // While the routing entries do not fit in the directory record, they go into INDX
+    // node blocks of their own, one level up, as NTFS builds its B-trees: a node holds the
+    // separators of its children but the last, each pointing at its child, and an end
+    // marker pointing at the last child, whose separator moves up as the node's own.
     var nameLenChars = dir[rootPos + 9];
     var valueOffset = (24 + nameLenChars * 2 + 7) & ~7;
+    int RoutingBytes(List<(long Vcn, IndexEntry? Separator)> nodes) {
+      var bytes = 24; // the end marker with its child VCN
+      foreach (var n in nodes)
+        if (n.Separator is { } sep) bytes += sep.Raw.Length + 8;
+      return bytes;
+    }
+    bool RootFits(int routingBytes, int blockCount) {
+      var rootAttr = (valueOffset + 16 + 16 + routingBytes + 7) & ~7;
+      const int allocAttr = 96; // named non-resident attribute with one run, rounded up
+      var bitmapAttr = (32 + Math.Max(8, (blockCount + 63) / 64 * 8) + 7) & ~7;
+      return rootPos + rootAttr + allocAttr + bitmapAttr + trailing.Length + 8 <= geo.MftRecordSize;
+    }
+    var nodeCapacity = blockSize - ((40 + usaBytesPerBlock + 7) & ~7) - 24; // an end marker with a VCN is 24
+    while (level.Count > 1 && !RootFits(RoutingBytes(level), blocks.Count + level.Count)) {
+      var next = new List<(long Vcn, IndexEntry? Separator)>();
+      var group = new List<(long Vcn, IndexEntry? Separator)>();
+      var groupBytes = 0;
+      void Flush() {
+        using var es = new MemoryStream();
+        for (var k = 0; k < group.Count - 1; ++k)
+          es.Write(RoutingEntry(group[k].Separator!, group[k].Vcn));
+        es.Write(RoutingEndMarker(group[^1].Vcn));
+        var vcn = (long)blocks.Count * vcnPerBlock;
+        blocks.Add(BuildIndxLeaf(geo, es.ToArray(), blockSize, vcn, hasChildren: true));
+        next.Add((vcn, group[^1].Separator));
+        group = [];
+        groupBytes = 0;
+      }
+      foreach (var n in level) {
+        var length = n.Separator is { } sep ? sep.Raw.Length + 8 : 0;
+        if (group.Count > 0 && groupBytes + length > nodeCapacity) Flush();
+        group.Add(n);
+        groupBytes += length;
+      }
+      Flush();
+      level = next;
+    }
+
+    var neededClusters = ((long)blocks.Count * blockSize + geo.ClusterSize - 1) / geo.ClusterSize;
+
+    // Reuse the existing $INDEX_ALLOCATION run when it is one run and big enough
+    // (releasing what is no longer needed); otherwise allocate a fresh contiguous one.
+    long allocLcn;
+    var (existingAllocPos, _) = FindAttr(dir, 0xA0, unnamedOnly: false);
+    var existingRuns = existingAllocPos >= 0
+      ? DecodeDataRuns(dir, existingAllocPos + BinaryPrimitives.ReadUInt16LittleEndian(dir.AsSpan(existingAllocPos + 32)))
+      : [];
+    if (existingRuns.Count == 1 && existingRuns[0].Count >= neededClusters) {
+      allocLcn = existingRuns[0].Lcn;
+      if (existingRuns[0].Count > neededClusters)
+        FreeClusters(image, geo, allocLcn + neededClusters, existingRuns[0].Count - neededClusters);
+    } else {
+      foreach (var (lcn, count) in existingRuns) FreeClusters(image, geo, lcn, count);
+      allocLcn = AllocateContiguousClusters(image, geo, (int)neededClusters);
+    }
+    var allocClusters = neededClusters;
+
+    // Write the INDX blocks in VCN order.
+    var regionOff = allocLcn * geo.ClusterSize;
+    if (regionOff + allocClusters * geo.ClusterSize > image.Length) throw new IOException("NTFS in-place add: INDX block out of range.");
+    image.AsSpan((int)regionOff, (int)(allocClusters * geo.ClusterSize)).Clear();
+    for (var i = 0; i < blocks.Count; ++i)
+      blocks[i].CopyTo(image, (int)(regionOff + (long)i * blockSize));
+
+    // Pointer $INDEX_ROOT: the top level's separators, each pointing at its block, then
+    // the end marker pointing at the last one.
+    var rootHeader = ReadOrBuildIndexRootHeader(dir, rootPos, indexBlockSize: blockSize);
+    rootHeader[12] = (byte)vcnPerBlock; // clusters (or 512-byte units) per INDX block
+    using var routing = new MemoryStream();
+    for (var i = 0; i < level.Count - 1; ++i)
+      routing.Write(RoutingEntry(level[i].Separator!, level[i].Vcn));
+    routing.Write(RoutingEndMarker(level[^1].Vcn));
+    var pointerEntries = routing.ToArray();
+
+    var valueLen = rootHeader.Length + 16 + pointerEntries.Length;
     var rootAttrLen = (valueOffset + valueLen + 7) & ~7;
 
     // $INDEX_ALLOCATION (0xA0, named "$I30"): non-resident, single run.
@@ -1192,11 +1319,11 @@ public static class NtfsInPlaceAdder {
     var allocRuns = EncodeDataRuns([(allocLcn, allocClusters)]);
     var allocAttrLen = (allocRunsOff + allocRuns.Length + 7) & ~7;
 
-    // $BITMAP (0xB0, named "$I30"): resident, one bit per leaf → 8 bytes minimum.
+    // $BITMAP (0xB0, named "$I30"): resident, one bit per leaf, in whole 8-byte words.
     var bmName = Encoding.Unicode.GetBytes("$I30");
     var bmValueOff = (24 + bmName.Length + 7) & ~7;
-    var bitmap = new byte[8];
-    bitmap[0] = 0x01; // leaf 0 allocated
+    var bitmap = new byte[Math.Max(8, (blocks.Count + 63) / 64 * 8)];
+    for (var i = 0; i < blocks.Count; ++i) bitmap[i / 8] |= (byte)(1 << (i % 8));
     var bmAttrLen = (bmValueOff + bitmap.Length + 7) & ~7;
 
     var total = rootPos + rootAttrLen + allocAttrLen + bmAttrLen + trailing.Length + 8;
@@ -1229,8 +1356,8 @@ public static class NtfsInPlaceAdder {
     BinaryPrimitives.WriteInt64LittleEndian(rebuilt.AsSpan(ap + 24), allocClusters - 1); // last VCN
     BinaryPrimitives.WriteUInt16LittleEndian(rebuilt.AsSpan(ap + 32), (ushort)allocRunsOff);
     BinaryPrimitives.WriteInt64LittleEndian(rebuilt.AsSpan(ap + 40), allocClusters * geo.ClusterSize); // allocated
-    BinaryPrimitives.WriteInt64LittleEndian(rebuilt.AsSpan(ap + 48), (long)blockSize); // real size = one leaf
-    BinaryPrimitives.WriteInt64LittleEndian(rebuilt.AsSpan(ap + 56), (long)blockSize); // initialised
+    BinaryPrimitives.WriteInt64LittleEndian(rebuilt.AsSpan(ap + 48), (long)blocks.Count * blockSize); // real size
+    BinaryPrimitives.WriteInt64LittleEndian(rebuilt.AsSpan(ap + 56), (long)blocks.Count * blockSize); // initialised
     allocName.CopyTo(rebuilt, ap + allocNameOff);
     allocRuns.CopyTo(rebuilt, ap + allocRunsOff);
 
@@ -1265,7 +1392,7 @@ public static class NtfsInPlaceAdder {
   //   [40] update-sequence array (usa_ofs = 0x28), then the entry stream.
   // ntfs-3g reads allocated_size at the FIXED offset 32 and requires
   // allocated_size + 0x18 == index_block_size, so the sub-header MUST sit at 24.
-  private static byte[] BuildIndxLeaf(Geo geo, byte[] entryStream, int blockSize, long vcn) {
+  private static byte[] BuildIndxLeaf(Geo geo, byte[] entryStream, int blockSize, long vcn, bool hasChildren = false) {
     var block = new byte[blockSize];
     const int subHeaderOffset = 24;            // INDEX_HEADER immediately after the VCN
     const int usaOffset = 40;                  // 0x28: USA starts after the 16-byte sub-header
@@ -1283,7 +1410,7 @@ public static class NtfsInPlaceAdder {
     BinaryPrimitives.WriteInt32LittleEndian(block.AsSpan(subHeaderOffset), entriesRel);              // entries_offset
     BinaryPrimitives.WriteInt32LittleEndian(block.AsSpan(subHeaderOffset + 4), totalSize);            // index_length
     BinaryPrimitives.WriteInt32LittleEndian(block.AsSpan(subHeaderOffset + 8), blockSize - subHeaderOffset); // allocated_size
-    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(subHeaderOffset + 12), 0);                  // flags: leaf
+    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(subHeaderOffset + 12), hasChildren ? 1u : 0u); // flags: node / leaf
     entryStream.CopyTo(block, entriesStart);
 
     ApplyIndxUsaFixup(block, geo.BytesPerSector, usaOffset);

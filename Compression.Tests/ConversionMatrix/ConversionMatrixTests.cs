@@ -40,6 +40,11 @@ public class ConversionMatrixTests {
       // Mfs1 folds names to 7-char DFS slots (HELLO.TXT -> HELLO.T); it extracts the
       // exact stored bytes, so it round-trips by content, not by verbatim name.
       "Mfs1",
+      // A capture has no names: each file becomes one packet, listed as packet_NNNN.bin with the
+      // exact bytes.
+      "Pcap", "Pcapng",
+      // Tape blocks carry payload bytes without input filenames.
+      "Pzx",
     };
 
   // Case-folding targets (8.3 / uppercase) — compare names case-insensitively
@@ -122,7 +127,6 @@ public class ConversionMatrixTests {
       { "Sparseimage", "[single-payload/whole-image target] Apple sparse disk image; one disk.img blob" },
       { "SplitFile", "[single-payload/whole-image target] byte-splitter; rejoins to a single 'joined' member, not a tree" },
       { "Srec", "[single-payload/whole-image target] Motorola S-record firmware pseudo-archive; writer re-encodes one flat image and re-lists as metadata.ini+firmware.bin, not a file tree" },
-      { "StuffItX", "[single-payload/whole-image target] writer emits an image that re-lists as 0 files" },
       { "Umx", "[single-payload/whole-image target] Unreal package; writer emits a blob that re-lists as 0 files" },
       { "Wbn", "[single-payload/whole-image target] WebBundle writer collapses tree to a single FULL.wbn" },
       { "SeqBox", "[single-payload/whole-image target] a SeqBox container holds exactly one file; a tree of several is refused" },
@@ -147,7 +151,6 @@ public class ConversionMatrixTests {
       { "GameMaker", "[other] GameMaker data.win; exposed as chunks/GEN8.bin not original names" },
       { "Ghost", "[other] Norton Ghost image; exposed as partitionN.bin not original names" },
       { "Lfd", "[other] LucasArts LFD; entries renamed DATA.<stem> / RMAP.resource" },
-      { "LhF", "[other] LhF Amiga disk; exposed as track_NNN.raw not original names" },
       { "Lnk", "[other] Windows .lnk; exposed as header.bin/linkinfo.bin not a file tree" },
       { "Macrium", "[other] Macrium image; exposed as disk-image.raw + block-NN.$* not original names" },
       { "Mbox", "[other] mbox mail; entries renamed message_NN.eml" },
@@ -156,12 +159,12 @@ public class ConversionMatrixTests {
       { "Mo", "[other] GNU gettext .mo; entries renamed NNNN_<stem>.txt" },
       { "Npy", "[other] NumPy .npy; collapses to header.bin/array.bin (single array, names lost)" },
       { "Npz", "[other] NumPy .npz; entries suffixed .npy (HELLO.TXT.npy) so verbatim-name match fails" },
+      { "Par2", "[other] a PAR2 recovery set protects the files rather than containing them; it re-lists as FULL.par2 + metadata.ini + files.ini + packets/*, never the file bodies" },
       { "Paragon", "[other] Paragon backup; exposed as chunk_NNNNNN.bin not original names" },
       { "TfRecord", "[other] TensorFlow TFRecord; entries renamed record_NNNNN.bin" },
       { "UefiFv", "[other] UEFI firmware volume; an FFS file is identified by GUID, so the writer names each one <guid>_RAW.bin and the original filename has nowhere to live" },
       { "Tfc", "[other] UE texture cache; entries renamed bundle_NNNNN.bin" },
       { "Warc", "[other] WARC; entries listed as 'resource: <name>' so basename match fails" },
-      { "Zap", "[other] Zap Amiga disk; exposed as track_NNN.raw not original names" },
     };
 
   // SOURCE→TARGET pair-specific gaps (target works from most sources but fails

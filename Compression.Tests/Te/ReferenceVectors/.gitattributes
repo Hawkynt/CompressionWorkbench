@@ -1,0 +1,3 @@
+# Fixture bytes are the test: never let a checkout rewrite line endings.
+*.te -text
+*.txt -text

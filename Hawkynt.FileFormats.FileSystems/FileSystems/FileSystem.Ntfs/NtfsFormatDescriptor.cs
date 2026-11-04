@@ -471,7 +471,10 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       ? new NtfsWriter(generateShortNames: generateShortNames)
       : new NtfsWriter(label, generateShortNames);
     ApplyWriterOptions(w, specific);
-    foreach (var (name, data) in FlatFiles(inputs))
+    // Folders are kept, empty ones included: the writer builds the tree from the paths.
+    foreach (var input in inputs.Where(static i => i.IsDirectory))
+      w.AddDirectory(input.ArchiveName);
+    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
       w.AddFile(name, data);
 
     var totalSize     = ParseImageSizeBytes(specific?.GetValueOrDefault("ImageSize"));
@@ -532,7 +535,10 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // streaming writer).
     ApplyWriterOptions(w, specific);
     foreach (var input in inputs) {
-      if (input.IsDirectory) continue;
+      if (input.IsDirectory) {
+        w.AddDirectory(input.Name);
+        continue;
+      }
       w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
     }
     var totalSize     = ParseImageSizeBytes(specific?.GetValueOrDefault("ImageSize"));
@@ -586,8 +592,12 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new NtfsReader(stream);
     foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
+      // Folders are created too, so an empty one survives extraction.
+      if (e.IsDirectory) {
+        CreateEntryDirectory(outputDir, e.Name);
+        continue;
+      }
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
   }
@@ -610,6 +620,9 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     var work = LoadForInPlaceEdit(archive);
     try {
+      // Folders added on their own (empty ones too) are created in place as well.
+      foreach (var input in inputs.Where(static i => i.IsDirectory && !string.IsNullOrEmpty(i.ArchiveName)))
+        NtfsInPlaceAdder.AddDirectory(work, input.ArchiveName);
       foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
         NtfsInPlaceAdder.AddFile(work, name, data);
     } catch (Exception ex) when (ex is IOException or InvalidDataException) {
@@ -682,7 +695,10 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       IReadOnlyList<ArchiveInputInfo> inputs) {
     var result = new List<Compression.Registry.Streaming.StreamingArchiveInput>();
     foreach (var i in inputs) {
-      if (i.IsDirectory) continue;
+      if (i.IsDirectory) {
+        result.Add(new Compression.Registry.Streaming.StreamingArchiveInput(i.ArchiveName, 0, true, static () => Stream.Null));
+        continue;
+      }
       var info = i;
       var size = info.InMemoryContent?.LongLength
                  ?? (File.Exists(info.FullPath) ? new FileInfo(info.FullPath).Length : 0L);

@@ -25,9 +25,9 @@ internal static class ZipLocalFileHeader {
     var fileNameLen = reader.ReadUInt16();
     var extraLen = reader.ReadUInt16();
 
-    var encoding = (flags & ZipConstants.FlagUtf8) != 0 ? Encoding.UTF8 : Encoding.Latin1;
-    var fileName = encoding.GetString(reader.ReadBytes(fileNameLen));
+    var rawName = reader.ReadBytes(fileNameLen);
     var extra = extraLen > 0 ? reader.ReadBytes(extraLen) : null;
+    var fileName = ZipNameEncoding.Decode(rawName, flags, extra);
 
     var entry = new ZipEntry {
       FileName = fileName,
@@ -66,7 +66,7 @@ internal static class ZipLocalFileHeader {
 
     var flags = ZipConstants.FlagUtf8;
     if (encrypted)
-      flags |= ZipConstants.FlagEncrypted;
+      flags |= (ushort)(ZipConstants.FlagEncrypted | (entry.GeneralPurposeFlags & ZipStrongEncryption.FlagStrongEncryption));
     // Implode: bits 1 (8K dict) and 2 (literal tree). LZMA: bit 1, the stream ends with an end marker.
     if (entry.CompressionMethod is ZipCompressionMethod.Implode or ZipCompressionMethod.Lzma)
       flags |= (ushort)(entry.GeneralPurposeFlags & 0x0006);

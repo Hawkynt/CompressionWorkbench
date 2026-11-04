@@ -401,10 +401,7 @@ public sealed class NativeSpanArchiveInputTests {
   private static SpanCase BuildPcapCase(int payloadSize) {
     var payload = Pattern(payloadSize, 0x86);
     var image = new byte[24 + 16 + payload.Length];
-    image[0] = 0xA1;
-    image[1] = 0xB2;
-    image[2] = 0xC3;
-    image[3] = 0xD4;
+    BinaryPrimitives.WriteUInt32LittleEndian(image, PcapReader.MagicMicro);
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(4, 2), 2);
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(6, 2), 4);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(16, 4), (uint)Math.Max(payloadSize, 65535));

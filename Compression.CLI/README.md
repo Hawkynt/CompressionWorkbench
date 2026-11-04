@@ -140,6 +140,10 @@ Append `+` to any method for optimal encoding:
 - `--level N` — Compression level 0-9
 - `--threads N` — Parallel compression threads
 - `--solid-size SIZE` — 7z solid block size
+- `--volume-size SIZE` / `-v` — Split the archive into volumes named like 7-Zip's (`backup.7z.001`, `.002`, …);
+  `list`, `extract` and `test` open a split archive from any of its volumes, and name a missing one
+- `--header-compression` / `-hc` — 7z: store the header LZMA-packed (7-Zip's `-mhc=on`)
+- `--encrypt-headers` / `-eh` — 7z, RAR5: encrypt the file names too (needs `--password`)
 - `--force-compress` — Override incompressibility detection
 - `--include-hidden` — `create`/`add` skip hidden and system files (dot-files on Unix) found in a folder
   or by a wildcard; this takes them too. A file named explicitly is always taken.

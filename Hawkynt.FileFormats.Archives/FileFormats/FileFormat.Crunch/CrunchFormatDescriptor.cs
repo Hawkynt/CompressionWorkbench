@@ -1,5 +1,4 @@
 #pragma warning disable CS1591
-using Compression.Core.Dictionary.Lzw;
 using Compression.Core.Streams;
 using Compression.Registry;
 
@@ -25,8 +24,7 @@ public sealed class CrunchFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -47,7 +45,7 @@ public sealed class CrunchFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzw", "LZW (9-12 bit)", SupportsOptimize: true)];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzw", "LZW (9-12 bit)")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -59,7 +57,7 @@ public sealed class CrunchFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "CP/M Crunch, LZW 9-12 bit MSB-first with original filename header";
+  public string Description => "CP/M CRUNCH 1.x/2.x: RLE then LZW with 9-12 bit codes, original name and checksum";
 
   /// <summary>
   /// Decodes the supplied input.
@@ -74,18 +72,6 @@ public sealed class CrunchFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   /// </summary>
   public void Compress(Stream input, Stream output) {
     using var cs = new CrunchStream(output, CompressionStreamMode.Compress, leaveOpen: true);
-    input.CopyTo(cs);
-  }
-
-  /// <summary>
-  /// Encodes the supplied input using the LZW encoder's optimal parse. The core
-  /// encoder compares its dynamic-programming candidate with the normal greedy
-  /// parse and emits whichever is smaller, so optimization can never regress
-  /// compressed size for the same Crunch wire parameters.
-  /// </summary>
-  void IStreamFormatOperations.CompressOptimal(Stream input, Stream output) {
-    using var cs = new CrunchStream(output, CompressionStreamMode.Compress,
-      originalName: null, leaveOpen: true, compressionLevel: LzwCompressionLevel.Optimal);
     input.CopyTo(cs);
   }
 

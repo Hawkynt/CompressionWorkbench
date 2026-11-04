@@ -1,0 +1,48 @@
+== ours.gza
+  Name         Original   Packed  Ratio   Date     Time   Attr Method  CRC
+-------------- -------- -------- ------ -------- -------- ---- ------- --------
+report.txt         6670      155   2.3% 24-05-06 09:08:10 a--w -gzip-  00000000
+raw.bin            3000      316  10.5% 24-05-06 09:08:10 a--w -gzip-  00000000
+empty.txt             0        0   0.0% 24-05-06 09:08:10 a--w -gzip-  00000000
+-------------- -------- -------- ------
+     3 Files       9670      471   4.8%
+
+rc=0x0
+rc=0x0
+7dd7363f4e47acbb74dbcef3322058d36fa99c7071b84b3093622a113b13282f *./docs/report.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 *./empty.txt
+7291514d2492fd7ff49e10ba7df95d19d31d199b89d74bcb62cebdee1bc1a498 *./raw.bin
+== ours.bza
+  Name         Original   Packed  Ratio   Date     Time   Attr Method  CRC
+-------------- -------- -------- ------ -------- -------- ---- ------- --------
+report.txt         6670      172   2.5% 24-05-06 09:08:10 a--w -bzip2- 00000000
+raw.bin            3000      627  20.9% 24-05-06 09:08:10 a--w -bzip2- 00000000
+empty.txt             0        0   0.0% 24-05-06 09:08:10 a--w -bzip2- 00000000
+-------------- -------- -------- ------
+     3 Files       9670      799   8.2%
+
+rc=0x0
+rc=0x0
+7dd7363f4e47acbb74dbcef3322058d36fa99c7071b84b3093622a113b13282f *./docs/report.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 *./empty.txt
+7291514d2492fd7ff49e10ba7df95d19d31d199b89d74bcb62cebdee1bc1a498 *./raw.bin
+== ours-edited.bza
+  Name         Original   Packed  Ratio   Date     Time   Attr Method  CRC
+-------------- -------- -------- ------ -------- -------- ---- ------- --------
+already.zip          22       22 100.0% 24-05-06 06:08:10 a--w -bzip2- 00000000
+notes.txt         16845     1292   7.6% 24-05-06 06:08:10 a--w -bzip2- 00000000
+tiny.txt              4        4 100.0% 24-05-06 06:08:10 a--w -bzip2- 00000000
+                      0        0   0.0% 80-00-00 00:00:00 d--w -bzip2- 00000000
+                      0        0   0.0% 80-00-00 00:00:00 d--w -bzip2- 00000000
+empty.txt             0        0   0.0% 24-05-06 06:08:10 a--w -bzip2- 00000000
+added.txt             7        7 100.0% 26-10-30 10:28:58 a--w -bzip2- 00000000
+-------------- -------- -------- ------
+     7 Files      16878     1325   7.8%
+
+rc=0x0
+rc=0x0
+05ce7ec9928f01dbdc08bcb974464d318f5e113bab9d2788723b44bb0b1a0d9a *./added.txt
+8739c76e681f900923b900c9df0ef75cf421d39cabb54650c4b9ad19b6a76d85 *./already.zip
+b1c7fc110eddefeb0e48a1253da9bcffc276cb092762ca66563cf90f495bef09 *./docs/notes.txt
+8950abfda7b727630760dd35bcf5c3daa7631aff223a90f7728c0d2521dde10c *./docs/sub/tiny.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 *./empty.txt

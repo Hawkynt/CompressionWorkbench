@@ -1,30 +1,46 @@
 namespace FileFormat.StuffItX;
 
-/// <summary>Represents a single entry in a StuffIt X (.sitx) archive.</summary>
+/// <summary>One file, directory or resource fork of a StuffIt X (.sitx) archive.</summary>
 public sealed class StuffItXEntry {
-  /// <summary>Gets the bare file or directory name.</summary>
+  /// <summary>The bare file or directory name.</summary>
   public string Name { get; init; } = "";
 
-  /// <summary>Gets the full path of the entry within the archive (slash-separated).</summary>
+  /// <summary>Full path within the archive, '/'-separated; resource forks end in <c>.rsrc</c>.</summary>
   public string FullPath { get; init; } = "";
 
-  /// <summary>Gets a value indicating whether this entry is a directory.</summary>
+  /// <summary>Whether this entry is a directory.</summary>
   public bool IsDirectory { get; init; }
 
-  /// <summary>Gets the uncompressed size of the entry data in bytes.</summary>
+  /// <summary>Whether this entry is the resource fork of a file.</summary>
+  public bool IsResourceFork { get; init; }
+
+  /// <summary>Uncompressed size in bytes.</summary>
   public long OriginalSize { get; init; }
 
-  /// <summary>Gets the compressed size of the entry data in bytes.</summary>
+  /// <summary>
+  /// Compressed size in bytes. Forks share solid streams, so this is the fork's share of its
+  /// stream, proportional to its length.
+  /// </summary>
   public long CompressedSize { get; init; }
 
-  /// <summary>Gets a display name for the compression method used.</summary>
+  /// <summary>Name of the stream's compression method.</summary>
   public string Method { get; init; } = "";
 
-  // ── Internal positioning data used by StuffItXReader.Extract ─────────────────
+  /// <summary>Last modification time, when the catalog records one.</summary>
+  public DateTime? LastModified { get; init; }
 
-  /// <summary>Byte offset within the archive stream where compressed data begins.</summary>
-  internal long DataOffset { get; init; }
+  /// <summary>Creation time, when the catalog records one.</summary>
+  public DateTime? Created { get; init; }
 
-  /// <summary>Compression method code (0=stored, 5=deflate, etc.).</summary>
-  internal int MethodCode { get; init; }
+  /// <summary>The entry's comment, when the catalog records one.</summary>
+  public string? Comment { get; init; }
+
+  /// <summary>Offset of the stream's first data block in the archive.</summary>
+  public long DataOffset { get; init; }
+
+  /// <summary>The solid stream holding this fork, or -1 for an empty entry.</summary>
+  internal long StreamId { get; init; } = -1;
+
+  /// <summary>Offset of this fork within its decoded stream.</summary>
+  internal long StreamOffset { get; init; }
 }

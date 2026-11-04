@@ -63,15 +63,12 @@ internal static class BscQlfcModel {
     AdaptiveState: new(-176, 14, -141, 21), AdaptiveChar: new(84, 172, 37, 263), AdaptiveGlobal: new(2, 15, -197, 20),
     AdaptiveMixer: new(-27, 142, -146, 27), StaticUsesGenericUpdate: true);
 
-  internal static byte[] Compress(ReadOnlySpan<byte> input, bool adaptive) {
+  /// <summary>libbsc's static or adaptive coder over its sub-block framing; null when libbsc reports the block incompressible.</summary>
+  internal static byte[]? Compress(ReadOnlySpan<byte> input, bool adaptive) {
     if (input.IsEmpty)
       throw new ArgumentException("QLFC cannot encode an empty block", nameof(input));
 
-    var block = EncodeBlock(input, adaptive);
-    var result = new byte[block.Length + 1];
-    result[0] = 1;
-    block.CopyTo(result, 1);
-    return result;
+    return BscCoderFraming.Compress(input, (block, outputSize) => EncodeBlock(block, adaptive, outputSize));
   }
 
   internal static byte[] Decompress(ReadOnlySpan<byte> input, int maximumOutputSize, bool adaptive) {
@@ -118,10 +115,10 @@ internal static class BscQlfcModel {
     return [.. output];
   }
 
-  private static byte[] EncodeBlock(ReadOnlySpan<byte> input, bool adaptive) {
+  private static byte[]? EncodeBlock(ReadOnlySpan<byte> input, bool adaptive, int outputSize) {
     var model = new Model(adaptive);
     var rankArray = Transform(input, out var mtfTable);
-    var coder = new BscRangeEncoder(checked(input.Length + 64 * 1024));
+    var coder = new BscRangeEncoder(outputSize);
     coder.EncodeWord((uint)input.Length);
     var maxRank = EncodeMtfTable(mtfTable, coder);
 
@@ -136,7 +133,7 @@ internal static class BscQlfcModel {
 
     while (rankOffset < rankArray.Length) {
       if (coder.CheckEndOfBuffer)
-        throw new InvalidDataException("BSC: QLFC output exceeded its safety margin");
+        return null;
 
       var currentChar = input[inputOffset];
       var runStart = inputOffset++;

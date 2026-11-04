@@ -45,6 +45,11 @@ public static partial class FormatRegistration {
         => InPlaceConverter.TryConvert(stream, srcId, dstId)
            is InPlaceConversionResult.Succeeded or InPlaceConversionResult.NoOp;
 
+      // ZIP method 97 (WinZip WavPack): the stored stream is a wrapped WavPack image of
+      // the original WAV file; the codec lives in the audio package.
+      FileFormat.Zip.ZipMethodCodecs.Register(97,
+        (compressed, _) => Codec.WavPack.WavPackWrapper.Unpack(compressed));
+
       PartitionEditor.InPlaceFilesystemResizer = (stream, fsId, newSize, isShrink) => {
         if (!FilesystemResizer.IsSupported(fsId)) return false;
         if (isShrink) FilesystemResizer.Shrink(stream, fsId, newSize);

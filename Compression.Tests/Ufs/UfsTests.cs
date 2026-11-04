@@ -43,7 +43,7 @@ public class UfsTests {
     var desc = new FileSystem.Ufs.UfsFormatDescriptor();
     Assert.That(desc.Id, Is.EqualTo("Ufs"));
     Assert.That(desc.DefaultExtension, Is.EqualTo(".ufs"));
-    Assert.That(desc.MagicSignatures, Has.Count.EqualTo(1));
+    Assert.That(desc.MagicSignatures, Has.Count.EqualTo(6), "UFS1 and UFS2, both byte orders, at SBLOCK_UFS1 and SBLOCK_UFS2");
     Assert.That(desc.Category, Is.EqualTo(Compression.Registry.FormatCategory.Archive));
   }
 

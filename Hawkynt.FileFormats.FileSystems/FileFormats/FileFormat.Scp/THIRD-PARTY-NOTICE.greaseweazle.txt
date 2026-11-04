@@ -1,0 +1,10 @@
+ScpImage.cs follows Jim Drew's SCP image specification
+(https://www.cbmstuff.com/downloads/scp/scp_image_specs.txt) and takes its layout choices
+(track table, TRK headers, flux encoding, default header fields) from Greaseweazle:
+
+  Source:   https://github.com/keirf/greaseweazle/blob/master/src/greaseweazle/image/scp.py
+            (revision b209d70d0205e68a0b0622f2b85073b817af0ad2)
+  Licence:  The Unlicense (public domain dedication)
+  Author:   Keir Fraser
+
+  This is free and unencumbered software released into the public domain.

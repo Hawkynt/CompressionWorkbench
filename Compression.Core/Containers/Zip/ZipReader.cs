@@ -110,6 +110,11 @@ public sealed partial class ZipReader : IDisposable {
       effectiveMethod = ZipAesEncryption.ParseExtraField(entry.ExtraField);
       compressedData = ZipAesEncryption.Decrypt(compressedData, this._password);
     }
+    else if (entry.IsEncrypted && (entry.GeneralPurposeFlags & ZipStrongEncryption.FlagStrongEncryption) != 0) {
+      if (this._password == null)
+        throw new InvalidOperationException($"Entry '{entry.FileName}' is strong-encrypted but no password was provided.");
+      compressedData = ZipStrongEncryption.Decrypt(compressedData, this._password, entry.Crc32, entry.UncompressedSize);
+    }
     else if (entry.IsEncrypted && compressedData.Length > 0) {
       if (this._password == null)
         throw new InvalidOperationException($"Entry '{entry.FileName}' is encrypted but no password was provided.");
@@ -161,7 +166,10 @@ public sealed partial class ZipReader : IDisposable {
         data = ZipPpmdHelper.Decompress(compressedData, (int)entry.UncompressedSize);
         break;
       default:
-        throw new NotSupportedException($"Unsupported compression method: {effectiveMethod}");
+        data = ZipMethodCodecs.TryGetDecoder((ushort)effectiveMethod, out var external)
+          ? external(compressedData, entry.UncompressedSize)
+          : throw new NotSupportedException($"Unsupported compression method: {effectiveMethod}");
+        break;
     }
 
     // Verify CRC
@@ -199,6 +207,11 @@ public sealed partial class ZipReader : IDisposable {
         throw new InvalidOperationException($"Entry '{entry.FileName}' is AES-encrypted but no password was provided.");
       effectiveMethod = ZipAesEncryption.ParseExtraField(entry.ExtraField);
       compressedData = ZipAesEncryption.Decrypt(compressedData, this._password);
+    }
+    else if (entry.IsEncrypted && (entry.GeneralPurposeFlags & ZipStrongEncryption.FlagStrongEncryption) != 0) {
+      if (this._password == null)
+        throw new InvalidOperationException($"Entry '{entry.FileName}' is strong-encrypted but no password was provided.");
+      compressedData = ZipStrongEncryption.Decrypt(compressedData, this._password, entry.Crc32, entry.UncompressedSize);
     }
     else if (entry.IsEncrypted && compressedData.Length > 0) {
       if (this._password == null)

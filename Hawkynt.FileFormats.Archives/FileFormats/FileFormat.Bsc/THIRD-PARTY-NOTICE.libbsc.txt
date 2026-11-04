@@ -2,7 +2,11 @@ libbsc (Ilya Grebnov) — LZP, QLFC and range coder converted to C#
 
 Source:   https://github.com/IlyaGrebnov/libbsc
 Revision: baffa62c70b6ebbecc9af14ce550e965ea247680 (the revision
-          BscQlfcTables.cs names; the other files did not record theirs)
+          BscQlfcTables.cs names; the QLFC and range-coder files did not
+          record theirs). The LZP encoder in BscLzp.cs and the block layout in
+          BscBlockCodec.cs follow tag v3.3.12
+          (5e5c2ef0fb1298626936b091f6e4ae539e5b0071), whose output the tests
+          compare byte for byte; v3.4.0 writes the same bytes.
 Author:   Copyright (c) 2009-2025 Ilya Grebnov <ilya.grebnov@gmail.com>
 Licence:  Apache License 2.0 (reproduced in full below). libbsc ships no
           NOTICE file, so there is no NOTICE text to carry forward.
@@ -10,7 +14,14 @@ Licence:  Apache License 2.0 (reproduced in full below). libbsc ships no
 The files in this directory that name this notice are conversions of libbsc
 into this codebase, not verbatim copies:
 
-  libbsc/lzp/lzp.cpp                 -> BscLzp.cs
+  libbsc/lzp/lzp.cpp                 -> BscLzp.cs (bsc_lzp_compress_serial,
+                                        bsc_lzp_encode_large_fast_path,
+                                        bsc_lzp_encode_generic, the decoder)
+  libbsc/libbsc/libbsc.cpp,
+  libbsc/bwt/bwt.cpp                 -> BscBlockCodec.cs (bsc_compress block
+                                        layout, auxiliary BWT indexes)
+  libbsc/coder/coder.cpp             -> BscCoderFraming.cs
+  libbsc/st/st.cpp (inverse only)    -> BscSortTransform.cs
   libbsc/coder/qlfc/qlfc.cpp, qlfc_model.cpp, qlfc_model.h,
   libbsc/coder/common/predictor.h    -> BscQlfcFast.cs, BscQlfcModel.cs
   libbsc/coder/common/rangecoder.h   -> BscRangeCoder.cs

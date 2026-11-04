@@ -32,7 +32,7 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.CanModify |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsPassword;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -73,7 +73,7 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// Lists the entries in the supplied container.
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    if (Qcow2Stream.TryOpen(stream) is { } qStream) {
+    if (Qcow2Stream.TryOpen(stream, password) is { } qStream) {
       using (qStream) {
         qStream.Position = 0;
         if (Compression.Core.DiskImage.PartitionedDiskLister.List(qStream, password) is { } partitioned)
@@ -92,15 +92,15 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     }
 
     stream.Position = 0;
-    using var reader = new Qcow2Reader(stream);
-    return [new ArchiveEntryInfo(0, "disk.img", reader.VirtualSize, stream.Length, "QCOW2", false, false, null)];
+    using var reader = new Qcow2Reader(stream, password);
+    return [new ArchiveEntryInfo(0, "disk.img", reader.VirtualSize, stream.Length, "QCOW2", false, reader.IsEncrypted, null)];
   }
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    if (Qcow2Stream.TryOpen(stream) is { } qStream) {
+    if (Qcow2Stream.TryOpen(stream, password) is { } qStream) {
       using (qStream) {
         qStream.Position = 0;
         if (Compression.Core.DiskImage.PartitionedDiskLister.Extract(qStream, outputDir, password, files))
@@ -120,7 +120,7 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     }
 
     stream.Position = 0;
-    using var reader = new Qcow2Reader(stream);
+    using var reader = new Qcow2Reader(stream, password);
     WriteFile(outputDir, "disk.img", reader.ExtractDisk());
   }
 
@@ -128,9 +128,11 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// Performs the create operation.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var fatImage = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
+    var fatImage = FileSystem.Fat.FatWriter.BuildFromInputs(inputs);
     var writer = new Qcow2Writer();
     writer.SetDiskImage(fatImage);
+    if (!string.IsNullOrEmpty(options.Password))
+      writer.SetPassword(options.Password);
     writer.WriteTo(output);
   }
 

@@ -141,7 +141,7 @@ public static class SevenZipInPlaceRemover {
     var keptPackSizes = new List<long>();
     var keptNumUnpack = new List<int>();
     var keptSubSizes = new List<long>();
-    var keptDigests = new List<uint>();
+    var keptDigests = new List<uint?>();
 
     var subIdx = 0;
     for (var fi = 0; fi < folders.Count; ++fi) {

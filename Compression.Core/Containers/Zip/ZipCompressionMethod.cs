@@ -43,6 +43,9 @@ public enum ZipCompressionMethod : ushort {
   /// <summary>XZ compression (a complete .xz stream, APPNOTE 4.4.5 method 95).</summary>
   Xz = 95,
 
+  /// <summary>WinZip WavPack (a wrapped WavPack image of a WAV file); decoded through <see cref="ZipMethodCodecs"/>.</summary>
+  WavPack = 97,
+
   /// <summary>PPMd version I, Rev 1 compression.</summary>
   Ppmd = 98,
 

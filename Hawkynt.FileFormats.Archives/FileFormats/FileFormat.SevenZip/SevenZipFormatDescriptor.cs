@@ -30,6 +30,8 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       AllowedValues: ["0", "1048576", "16777216", "67108864", "1073741824"],
       Description: "Max solid block size in bytes. 0 = non-solid (each file independent)."),
     new("Password", "Password", FormatOptionKind.String, ""),
+    new("HeaderCompression", "Compress the header", FormatOptionKind.Boolean, "false",
+      Description: "Store the header LZMA-packed, as 7-Zip's -mhc=on does, when that is smaller. A plain header keeps the archive open to in-place edits; an encrypted header is always packed."),
   ];
 
   /// <summary>
@@ -166,7 +168,7 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     ArgumentNullException.ThrowIfNull(output);
     input.Position = 0;
     var reader = new SevenZipReader(input, leaveOpen: true, password: password);
-    if (reader.Entries.Any(static e => e.Method.Contains("AES", StringComparison.OrdinalIgnoreCase)))
+    if (reader.IsHeaderEncrypted || reader.Entries.Any(static e => e.IsEncrypted))
       throw new NotSupportedException("7z: the archive is encrypted; recompressing it would have to re-encrypt it. Refused, nothing was changed.");
     if (reader.UncarriedMetadata is { Count: > 0 } uncarried)
       throw new NotSupportedException($"7z: the archive holds {string.Join(" and ", uncarried)}, which a rewrite cannot carry. Refused, nothing was changed.");
@@ -275,23 +277,86 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
+  /// <remarks>
+  /// Anti-items — the deletion markers of a differential update archive — are not listed: they
+  /// name something that no longer exists and are never extracted.
+  /// </remarks>
+  /// <remarks>
+  /// A Unix symbolic link (Unix mode type <c>S_IFLNK</c>, written by <c>7z a -snl</c> on Unix)
+  /// is listed as a link with its target, which is the entry's data.
+  /// </remarks>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new SevenZipReader(stream, password: password);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Size, e.CompressedSize,
-      string.IsNullOrEmpty(e.Method) ? "7z" : e.Method, e.IsDirectory, false, e.LastWriteTime)).ToList();
+    using var r = new SevenZipReader(stream, leaveOpen: true, password: password);
+    var list = new List<ArchiveEntryInfo>();
+    for (var i = 0; i < r.Entries.Count; ++i) {
+      var e = r.Entries[i];
+      if (e.IsAnti)
+        continue;
+      var target = e.IsSymlink && e.Size <= 1 << 16 ? System.Text.Encoding.UTF8.GetString(r.Extract(i)) : null;
+      list.Add(new ArchiveEntryInfo(i, e.Name, e.Size, e.CompressedSize,
+        string.IsNullOrEmpty(e.Method) ? "7z" : e.Method, e.IsDirectory, e.IsEncrypted || r.IsHeaderEncrypted, e.LastWriteTime,
+        IsSymlink: e.IsSymlink, LinkTarget: target));
+    }
+    return list;
   }
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
+  /// <remarks>
+  /// Each folder is decoded once and its files are streamed to disk as they come out, every one
+  /// CRC-checked; a file whose data fails is deleted again, so nothing wrong is left behind.
+  /// Anti-items are skipped.
+  /// </remarks>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new SevenZipReader(stream, password: password);
+    using var r = new SevenZipReader(stream, leaveOpen: true, password: password);
+    bool Wanted(SevenZipEntry e) => !e.IsAnti && (files == null || MatchesFilter(e.Name, files));
+
     for (var i = 0; i < r.Entries.Count; ++i) {
       var e = r.Entries[i];
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, e.Name)); continue; }
-      WriteFile(outputDir, e.Name, r.Extract(i));
+      if (!Wanted(e)) continue;
+      if (e.IsDirectory) {
+        if (SafeDirectory(outputDir, e.Name) is { } dir)
+          Directory.CreateDirectory(dir);
+        continue;
+      }
+      if (e.Size == 0)
+        CreateEntryFile(outputDir, e.Name).Dispose();
     }
+
+    var open = new Dictionary<int, FileStream>();
+    try {
+      r.ExtractMany(i => {
+        var e = r.Entries[i];
+        if (!Wanted(e) || e.IsDirectory) return null;
+        var file = CreateEntryFile(outputDir, e.Name);
+        open[i] = file;
+        return file;
+      }, (i, s) => {
+        s.Dispose();
+        open.Remove(i);
+      });
+    } catch {
+      foreach (var file in open.Values) {
+        var path = file.Name;
+        file.Dispose();
+        try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+      }
+      throw;
+    }
+  }
+
+  /// <summary>
+  /// The directory an entry names below <paramref name="outputDir"/>, or <see langword="null"/>
+  /// when the name would climb out of it.
+  /// </summary>
+  private static string? SafeDirectory(string outputDir, string name) {
+    var segments = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+    if (segments.Length == 0 || segments.Any(static s => s is "." or ".."))
+      return null;
+    var invalid = Path.GetInvalidFileNameChars();
+    var safe = segments.Select(s => new string([.. s.Select(c => Array.IndexOf(invalid, c) >= 0 ? '_' : c)]));
+    return Path.Combine([outputDir, .. safe]);
   }
 
   /// <summary>
@@ -307,10 +372,10 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
-    var r = new SevenZipReader(archive, leaveOpen: true, password: password);
+    using var r = new SevenZipReader(archive, leaveOpen: true, password: password);
     for (var i = 0; i < r.Entries.Count; ++i) {
       var e = r.Entries[i];
-      if (e.IsDirectory) continue;
+      if (e.IsDirectory || e.IsAnti) continue;
       if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
       var bytes = r.Extract(i);
       return new BoundedEntryStream(new MemoryStream(bytes, writable: false),
@@ -338,44 +403,12 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// recommends BCJ x86 filter for executables.
   /// </summary>
   /// <remarks>
-  /// This descriptor deliberately keeps the buffering
-  /// <see cref="IArchiveCreatable.CreateFromStreams"/> default and does NOT
-  /// override it. 7z uses solid compression: multiple files are concatenated
-  /// into a single compressed coder stream, and the header (written last)
-  /// encodes per-file unpack sizes and the block's total packed size, both of
-  /// which are only known after every member of the block has been read and
-  /// compressed. There is no per-entry append point at which a bounded
-  /// chunk-copy could write a file's bytes independently, so a streaming
-  /// override could not honor the bounded-memory contract without effectively
-  /// buffering each solid block anyway. Faking a per-entry streaming path here
-  /// would be dishonest, so the buffering default stands.
+  /// Inputs arrive as bytes here; <see cref="CreateFromStreams"/> takes them as streams and
+  /// encodes each solid block as a stream through its coders (the header, written last, records
+  /// the sizes and CRCs gathered on the way), so files larger than a buffer go in too.
   /// </remarks>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    // Three-tier fallback: FormatSpecific (schema) → direct property → hardcoded default.
-    var methodName = !string.IsNullOrEmpty(options.MethodName)
-      ? options.MethodName
-      : options.GetOption("Method", "lzma2");
-    var defaultCodec = SevenZipOptionsResolver.ResolveCodec(methodName);
-
-    var directDict = options.DictSize;
-    var schemaDict = options.GetOptionInt("DictSize", -1);
-    var effectiveDict = directDict > 0 ? directDict : (schemaDict > 0 ? schemaDict : 0L);
-
-    var dictSize = defaultCodec == SevenZipCodec.PPMd
-      ? SevenZipOptionsResolver.ResolvePpmdMemorySize(effectiveDict)
-      : defaultCodec == SevenZipCodec.BZip2
-        ? SevenZipOptionsResolver.ResolveBzip2BlockSize(effectiveDict) * 100 * 1024
-        : SevenZipOptionsResolver.ResolveLzmaDictSize(effectiveDict, options.Optimize);
-    var ppmdOrder = SevenZipOptionsResolver.ResolvePpmdOrder(options.WordSize);
-    var ppmdMem = SevenZipOptionsResolver.ResolvePpmdMemorySize(effectiveDict);
-    var directSolid = options.SolidSize;
-    var schemaSolid = (long)options.GetOptionInt("SolidSize", -1);
-    var solid = directSolid > 0 ? directSolid : (schemaSolid >= 0 ? schemaSolid : 0L);
-    var blockSize = solid > 0 ? solid : SolidBlockPlanner.DefaultMaxBlockSize;
-
-    var passwordFromSchema = options.GetOption("Password", "");
-    var password = !string.IsNullOrEmpty(options.Password) ? options.Password
-      : !string.IsNullOrEmpty(passwordFromSchema) ? passwordFromSchema : null;
+    var (defaultCodec, blockSize, newWriter) = ResolveWriter(options);
 
     // Detect incompressible files via entropy unless caller already passed a set
     // or explicitly disabled detection with ForceCompress.
@@ -389,12 +422,10 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       SolidBlockPlanner.RecommendCodec(b, defaultCodec) != defaultCodec ||
       SolidBlockPlanner.RecommendFilter(b) != SevenZipFilter.None);
 
-    var w = new SevenZipWriter(output, defaultCodec, dictionarySize: dictSize,
-      ppmdOrder: ppmdOrder, ppmdMemorySize: ppmdMem, password: password,
-      encryptHeaders: options.EncryptFilenames);
+    var w = newWriter(output);
 
     foreach (var i in inputs)
-      if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
+      if (i.IsDirectory) w.AddDirectory(EntryFor(i));
 
     var fileEntryIndex = 0;
     var blockDescs = new List<SevenZipWriter.BlockDescriptor>();
@@ -402,7 +433,7 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       var indices = new int[block.Files.Count];
       for (var j = 0; j < block.Files.Count; j++) {
         var (input, data) = block.Files[j];
-        w.AddEntry(new SevenZipEntry { Name = input.ArchiveName, Size = data.Length }, data);
+        w.AddEntry(EntryFor(input), data);
         indices[j] = fileEntryIndex++;
       }
       if (needsMultiCodec) {
@@ -421,6 +452,84 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     } else {
       w.Finish(maxThreads: options.Threads, maxBlockSize: options.Threads > 1 ? blockSize : 0);
     }
+  }
+
+  /// <summary>
+  /// The writer settings of <paramref name="options"/>: each knob from the direct property, else
+  /// the schema option, else the default; returns the default codec, the solid block size and a
+  /// factory for the configured writer.
+  /// </summary>
+  private static (SevenZipCodec Codec, long BlockSize, Func<Stream, SevenZipWriter> NewWriter) ResolveWriter(FormatCreateOptions options) {
+    var methodName = !string.IsNullOrEmpty(options.MethodName) ? options.MethodName : options.GetOption("Method", "lzma2");
+    var codec = SevenZipOptionsResolver.ResolveCodec(methodName);
+
+    var directDict = options.DictSize;
+    var schemaDict = options.GetOptionInt("DictSize", -1);
+    var effectiveDict = directDict > 0 ? directDict : (schemaDict > 0 ? schemaDict : 0L);
+    var dictSize = codec == SevenZipCodec.PPMd
+      ? SevenZipOptionsResolver.ResolvePpmdMemorySize(effectiveDict)
+      : codec == SevenZipCodec.BZip2
+        ? SevenZipOptionsResolver.ResolveBzip2BlockSize(effectiveDict) * 100 * 1024
+        : SevenZipOptionsResolver.ResolveLzmaDictSize(effectiveDict, options.Optimize);
+    var ppmdOrder = SevenZipOptionsResolver.ResolvePpmdOrder(options.WordSize);
+    var ppmdMem = SevenZipOptionsResolver.ResolvePpmdMemorySize(effectiveDict);
+
+    var directSolid = options.SolidSize;
+    var schemaSolid = (long)options.GetOptionInt("SolidSize", -1);
+    var solid = directSolid > 0 ? directSolid : (schemaSolid >= 0 ? schemaSolid : 0L);
+    var blockSize = solid > 0 ? solid : SolidBlockPlanner.DefaultMaxBlockSize;
+
+    var passwordFromSchema = options.GetOption("Password", "");
+    var password = !string.IsNullOrEmpty(options.Password) ? options.Password
+      : !string.IsNullOrEmpty(passwordFromSchema) ? passwordFromSchema : null;
+    var compressHeaders = options.GetOption("HeaderCompression", "false").Trim().ToLowerInvariant() is "true" or "on" or "1" or "yes";
+
+    return (codec, blockSize, output => new SevenZipWriter(output, codec, dictionarySize: dictSize,
+      ppmdOrder: ppmdOrder, ppmdMemorySize: ppmdMem, password: password,
+      encryptHeaders: options.EncryptFilenames, compressHeaders: compressHeaders));
+  }
+
+  /// <summary>
+  /// Streams the inputs into the archive: every file is read only when its solid block is
+  /// encoded, through the coders, so a file of any size — beyond the 2 GiB a buffer holds — goes
+  /// in with bounded memory (LZMA2, Deflate, BZip2, Copy; filters but BCJ2).
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var (_, blockSize, newWriter) = ResolveWriter(options);
+    var writer = newWriter(output);
+    foreach (var input in inputs) {
+      var entry = EntryFor(new ArchiveInputInfo("", input.Name, input.IsDirectory, Metadata: input.Metadata));
+      if (input.IsDirectory)
+        writer.AddDirectory(entry);
+      else
+        writer.AddEntry(entry, input.OpenStream, input.Size);
+    }
+    writer.Finish(options.Threads, options.Threads > 1 ? blockSize : 0);
+  }
+
+  /// <summary>
+  /// The 7z entry for an input, with the times and attributes 7-Zip would record: the input's
+  /// own metadata when it carries some, else what the file system says about the file; a Unix
+  /// mode goes into the high attribute bits as Unix 7-Zip writes it.
+  /// </summary>
+  private static SevenZipEntry EntryFor(ArchiveInputInfo input) {
+    var meta = input.Metadata;
+    var onDisk = input.InMemoryContent == null && (input.IsDirectory ? Directory.Exists(input.FullPath) : File.Exists(input.FullPath));
+    var entry = new SevenZipEntry {
+      Name = input.ArchiveName.Replace('\\', '/'),
+      IsDirectory = input.IsDirectory,
+      LastWriteTime = meta?.LastWriteTimeUtc?.UtcDateTime ?? (onDisk ? File.GetLastWriteTimeUtc(input.FullPath) : null),
+      CreationTime = meta?.CreationTimeUtc?.UtcDateTime,
+      LastAccessTime = meta?.LastAccessTimeUtc?.UtcDateTime,
+    };
+    if (meta?.UnixMode is { } mode)
+      entry.Attributes = SevenZipEntry.AttributesForUnixMode((input.IsDirectory ? 0x4000 : 0x8000) | (mode & 0xFFF));
+    else if (onDisk && OperatingSystem.IsWindows())
+      // Read-only, hidden, system, directory, archive: the attributes 7-Zip restores.
+      entry.Attributes = (uint)File.GetAttributes(input.FullPath) & 0x37u;
+    return entry;
   }
 
   // ── IFormatValidator ─────────────────────────────────────────────
@@ -515,14 +624,14 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     var issues = new List<ValidationIssue>();
     try {
       stream.Seek(0, SeekOrigin.Begin);
-      var r = new SevenZipReader(stream);
+      using var r = new SevenZipReader(stream, leaveOpen: true);
       var validEntries = 0;
       var totalEntries = r.Entries.Count;
       for (var i = 0; i < totalEntries; ++i) {
         var e = r.Entries[i];
-        if (e.IsDirectory) { ++validEntries; continue; }
+        if (e.IsDirectory || e.IsAnti) { ++validEntries; continue; }
         try {
-          _ = r.Extract(i);
+          r.Extract(i, Stream.Null);
           ++validEntries;
         } catch (Exception ex) {
           issues.Add(new(ValidationLevel.Integrity, IssueSeverity.Error, "7Z_ENTRY_EXTRACT_FAILED",

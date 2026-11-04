@@ -1,0 +1,35 @@
+QBga32 (k.inaba) — GZA/BZA record layout and checksum converted to C#
+
+Source:   http://www.kmonos.net/repos/qbga32 (Fossil), trunk tarball of 2015-07-03,
+          version 0.06, file src/bga_melter.d
+Author:   k.inaba (kmonos.net)
+Licence:  NYSL Version 0.9982 (the project readme: "他は NYSL 0.9982 に基づいてご自由に";
+          QBga32's bundled zlib/libbzip2 binaries were not used)
+
+BgaArchive.cs is a conversion of bga_melter.d's header structure, header search,
+signed-byte checksum, stored-or-compressed rule and gzip/bzip2 member handling.
+NYSL A-4 asks that a modified version name its publisher: this conversion is part
+of CompressionWorkbench (https://github.com/Hawkynt/CompressionWorkbench).
+
+NYSL Version 0.9982 in English (unofficial translation published by the author):
+
+A. This software is "Everyone'sWare". It means:
+  Anybody who has this software can use it as if he/she is
+  the author.
+
+  A-1. Freeware. No fee is required.
+  A-2. You can freely redistribute this software.
+  A-3. You can freely modify this software. And the source
+      may be used in any software with no limitation.
+  A-4. When you release a modified version to public, you
+      must publish it with your name.
+
+B. The author is not responsible for any kind of damages or loss
+  while using or misusing this software, which is distributed
+  "AS IS". No warranty of any kind is expressed or implied.
+  You use AT YOUR OWN RISK.
+
+C. Copyrighted to (.......)
+
+D. Above three clauses are applied both to source and binary
+  form of this software.

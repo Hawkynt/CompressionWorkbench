@@ -11,6 +11,13 @@ namespace FileFormat.Pcap;
 /// are exposed verbatim; larger captures are tail-truncated and a note is left
 /// in <c>metadata.ini</c>.
 ///
+/// <para>Create writes a little-endian format-2.4 capture, one packet per input file, with the
+/// header taken from an input <c>metadata.ini</c> (the keys this reader emits) or the
+/// <c>linktype</c> / <c>snaplen</c> / <c>nanosecond</c> options; a packet's timestamp is its
+/// input's write time. Edits keep the global header and every untouched record byte for byte:
+/// an input named <c>packet_NNNN.bin</c> replaces that packet's data (timestamp kept), any other
+/// input appends a packet, and removal drops the named packets.</para>
+///
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://www.tcpdump.org</c> — tcpdump/libpcap project — the pcap-savefile(5) man page documents the capture file layout</description></item>
@@ -18,7 +25,8 @@ namespace FileFormat.Pcap;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Pcap</c> — Wikipedia</description></item>
 /// </list>
 /// </summary>
-public sealed class PcapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class PcapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract,
+    IArchiveCreatable, IArchiveModifiable {
   private const int MaxPackets = 100;
 
   /// <summary>
@@ -37,8 +45,8 @@ public sealed class PcapFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -55,13 +63,12 @@ public sealed class PcapFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Gets the magic signatures.
   /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // Raw leading-byte sequences for the four recognised libpcap global-header magic
-    // constants.  The reader distinguishes byte order and timestamp resolution
-    // by which of these patterns appears at offset 0.
-    new([0xA1, 0xB2, 0xC3, 0xD4], Confidence: 0.95), // little-endian, microsecond
-    new([0xD4, 0xC3, 0xB2, 0xA1], Confidence: 0.95), // big-endian,    microsecond
-    new([0xA1, 0xB2, 0x3C, 0x4D], Confidence: 0.95), // little-endian, nanosecond
-    new([0x4D, 0x3C, 0xB2, 0xA1], Confidence: 0.95), // big-endian,    nanosecond
+    // The magic number 0xA1B2C3D4 (0xA1B23C4D for nanosecond timestamps) in the writing
+    // host's byte order: x86 captures start D4 C3 B2 A1.
+    new([0xD4, 0xC3, 0xB2, 0xA1], Confidence: 0.95), // little-endian, microsecond
+    new([0xA1, 0xB2, 0xC3, 0xD4], Confidence: 0.95), // big-endian,    microsecond
+    new([0x4D, 0x3C, 0xB2, 0xA1], Confidence: 0.95), // little-endian, nanosecond
+    new([0xA1, 0xB2, 0x3C, 0x4D], Confidence: 0.95), // big-endian,    nanosecond
   ];
   /// <summary>
   /// Gets the methods.
@@ -78,7 +85,9 @@ public sealed class PcapFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Classic libpcap packet capture: global header + per-packet link-layer frames.";
+  public string Description =>
+    "Classic libpcap packet capture: global header + per-packet link-layer frames. Create options: " +
+    "linktype (default 1, Ethernet), snaplen (default 262144), nanosecond (default false).";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -179,6 +188,96 @@ public sealed class PcapFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       using var target = CreateEntryFile(outputDir, name);
       target.Write(archive.Slice(packet.DataOffset, packet.DataLength));
     }
+  }
+
+  // ── Create / modify ────────────────────────────────────────────────────
+
+  /// <summary>Writes a capture holding one packet per input file.</summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(options);
+    var (metadata, packets) = CaptureEditing.Split(inputs, existingPackets: 0);
+    var settings = SettingsFrom(metadata, options);
+    using var ms = new MemoryStream();
+    PcapWriter.Write(ms, settings, packets.Select(p => (p.Timestamp, p.Data)));
+    ms.Position = 0;
+    ms.CopyTo(output);
+  }
+
+  /// <summary>Replaces packets named <c>packet_NNNN.bin</c> and appends every other input.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    var data = CaptureEditing.ReadAll(archive);
+    var layout = Editable(data);
+    var (metadata, packets) = CaptureEditing.Split(inputs, layout.Packets.Count);
+    if (metadata != null && !metadata.AsSpan().SequenceEqual(BuildMetadata(layout, layout.Packets.Count, layout.Packets.Count > MaxPackets)))
+      throw new NotSupportedException("pcap: the global header cannot be changed in place; create a new capture with the new metadata.ini.");
+    var settings = SettingsOf(layout);
+    var replacements = new Dictionary<int, byte[]>();
+    foreach (var p in packets.Where(p => p.ReplaceIndex >= 0)) replacements[p.ReplaceIndex] = p.Data;
+
+    using var ms = new MemoryStream();
+    ms.Write(data.AsSpan(0, PcapReader.FileHeaderSize));
+    for (var i = 0; i < layout.Packets.Count; ++i) {
+      var record = layout.Packets[i];
+      if (replacements.TryGetValue(i, out var replacement)) {
+        // The packet keeps its own timestamp words exactly as they were.
+        var rebuilt = PcapWriter.Record(settings, DateTimeOffset.UnixEpoch, replacement);
+        data.AsSpan(record.RecordOffset, 8).CopyTo(rebuilt);
+        ms.Write(rebuilt);
+      } else
+        ms.Write(data.AsSpan(record.RecordOffset, record.RecordLength));
+    }
+    foreach (var p in packets.Where(p => p.ReplaceIndex < 0))
+      ms.Write(PcapWriter.Record(settings, p.Timestamp, p.Data));
+    CaptureEditing.Overwrite(archive, ms.ToArray());
+  }
+
+  /// <summary>Drops the named packets; every other record and the header stay byte-identical.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    var drop = CaptureEditing.IndicesToRemove(entryNames, "pcap");
+    Rebuild(archive, i => !drop.Contains(i));
+  }
+
+  /// <summary>Drops every packet, leaving the global header: an empty capture is a valid pcap file.</summary>
+  public void Purge(Stream archive) => Rebuild(archive, _ => false);
+
+  private static void Rebuild(Stream archive, Func<int, bool> keep) {
+    var data = CaptureEditing.ReadAll(archive);
+    var layout = Editable(data);
+    using var ms = new MemoryStream();
+    ms.Write(data.AsSpan(0, PcapReader.FileHeaderSize));
+    for (var i = 0; i < layout.Packets.Count; ++i)
+      if (keep(i))
+        ms.Write(data.AsSpan(layout.Packets[i].RecordOffset, layout.Packets[i].RecordLength));
+    CaptureEditing.Overwrite(archive, ms.ToArray());
+  }
+
+  private static PcapReader.CaptureLayout Editable(byte[] data) {
+    var layout = PcapReader.ReadLayout(data);
+    if (layout.TrailingBytes != 0)
+      throw new NotSupportedException(
+        $"pcap: {layout.TrailingBytes} byte(s) after the last complete packet (a truncated capture); editing would lose them.");
+    return layout;
+  }
+
+  private static PcapSettings SettingsOf(PcapReader.CaptureLayout c)
+    => new(c.LinkType, c.Snaplen, c.Nanosecond, c.LittleEndian);
+
+  internal static PcapSettings SettingsFrom(byte[]? metadata, FormatCreateOptions options) {
+    var ini = metadata != null
+      ? CaptureEditing.ParseIni(metadata, "pcap")
+      : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    var linkType = CaptureEditing.LeadingNumber(options.GetString("linktype"))
+      ?? CaptureEditing.LeadingNumber(ini.GetValueOrDefault("link_type")) ?? 1u;
+    var snaplen = CaptureEditing.LeadingNumber(options.GetString("snaplen"))
+      ?? CaptureEditing.LeadingNumber(ini.GetValueOrDefault("snaplen")) ?? PcapSettings.DefaultSnaplen;
+    var nano = options.HasOption("nanosecond")
+      ? options.GetOptionBool("nanosecond", false)
+      : string.Equals(ini.GetValueOrDefault("timestamp_resolution"), "nanosecond", StringComparison.OrdinalIgnoreCase);
+    var little = !string.Equals(ini.GetValueOrDefault("endian"), "big", StringComparison.OrdinalIgnoreCase);
+    if (snaplen == 0)
+      throw new ArgumentException("pcap: snaplen must be positive.");
+    return new PcapSettings(linkType, snaplen, nano, little);
   }
 
   // ── Builder ─────────────────────────────────────────────────────────────

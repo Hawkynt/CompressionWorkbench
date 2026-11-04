@@ -1,0 +1,36 @@
+Wintermute Engine 1.x (Jan Nedoma and contributors) — DCP package layout converted to C#
+
+Source:   https://github.com/retrodump/Wintermute-Engine (import of
+          https://bitbucket.org/MnemonicWME/wme1)
+Revision: 663d154b93de87f8cd13c86f34345e38a1e727d3
+Files:    src/engine_core/wme_base/dcpackage.h,
+          src/engine_core/wme_base/BFileManager.cpp (RegisterPackage),
+          src/ProjectMan/PackageBuilder.cpp (CreatePackage, WriteString)
+Licence:  MIT (reproduced below)
+
+DcpReader.cs converts the engine's package registration (header, version
+0x100 / 0x200 layouts, directory and entry records, the 'D' name XOR) and
+DcpWriter.cs the ProjectMan package builder's layout into this codebase.
+
+Wintermute Engine is available under MIT license
+http://dead-code.org/redir.php?target=wme
+
+Copyright (c) 2003-2013 Jan Nedoma and contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.

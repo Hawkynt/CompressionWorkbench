@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using Compression.Core.Checksums;
-using Compression.Core.Crypto;
 using Compression.Core.Deflate;
 using Compression.Core.Dictionary.Lzma;
 using Compression.Core.Entropy.Ppmd;
@@ -13,11 +12,23 @@ namespace FileFormat.SevenZip;
 /// Creates a 7z archive using solid compression with a selectable codec.
 /// </summary>
 /// <remarks>
+/// <para>
 /// All file entries are compressed together in a single solid block for
 /// maximum compression ratio. Call <c>Finish()</c> for single-block
 /// or <c>Finish(maxThreads, maxBlockSize)</c> for parallel multi-block.
+/// </para>
+/// <para>
+/// Every folder is written the way 7-Zip 26 lays it out: coders from the packed side to the
+/// output, one output per coder, the unpack sizes in coder order, the packed streams listed
+/// explicitly when a folder has several. With a password every packed stream goes through its
+/// own AES-256 coder (one key per archive, a fresh IV per coder); BCJ2 folders carry the four
+/// BCJ2 streams of 7-Zip's coder.
+/// </para>
 /// </remarks>
-public sealed class SevenZipWriter : IDisposable {
+public sealed partial class SevenZipWriter : IDisposable {
+  /// <summary>The key-derivation cost written into the AES properties: 2^19 SHA-256 rounds, 7-Zip's default.</summary>
+  private const int AesCyclesPower = 19;
+
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
   private readonly int _dictionarySize;
@@ -28,7 +39,12 @@ public sealed class SevenZipWriter : IDisposable {
   private readonly int _ppmdMemorySize;
   private readonly string? _password;
   private readonly bool _encryptHeaders;
-  private readonly List<(SevenZipEntry Entry, byte[] Data)> _entries = [];
+  private readonly bool _compressHeaders;
+  private readonly List<SevenZipSource> _entries = [];
+
+  /// <summary>Solid blocks larger than this are streamed through the coders rather than assembled in memory.</summary>
+  internal const long InMemoryBlockLimit = 64L << 20;
+  private (byte[] Salt, byte[] Key)? _aesKey;
   private bool _finished;
   private bool _disposed;
 
@@ -54,10 +70,15 @@ public sealed class SevenZipWriter : IDisposable {
   /// <param name="deltaDistance">Delta filter distance (1-256). Only used when filter is Delta.</param>
   /// <param name="password">Optional password for AES-256 encryption.</param>
   /// <param name="encryptHeaders">When true and password is set, also encrypt the archive header (file names).</param>
+  /// <param name="compressHeaders">
+  /// When true, store the header LZMA-packed (<c>kEncodedHeader</c>) as 7-Zip's <c>-mhc=on</c> does
+  /// whenever that is smaller. An encrypted header is always packed. A plain header (the default)
+  /// keeps the archive open to in-place appends and removals.
+  /// </param>
   public SevenZipWriter(Stream stream, SevenZipCodec codec, bool leaveOpen = false,
       int dictionarySize = 1 << 23, int ppmdOrder = 6, int ppmdMemorySize = 1 << 24,
       SevenZipFilter filter = SevenZipFilter.None, int deltaDistance = 1,
-      string? password = null, bool encryptHeaders = false) {
+      string? password = null, bool encryptHeaders = false, bool compressHeaders = false) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanSeek)
       throw new ArgumentException("Stream must be seekable.", nameof(stream));
@@ -76,6 +97,7 @@ public sealed class SevenZipWriter : IDisposable {
     this._ppmdMemorySize = ppmdMemorySize;
     this._password = string.IsNullOrEmpty(password) ? null : password;
     this._encryptHeaders = encryptHeaders && this._password != null;
+    this._compressHeaders = compressHeaders;
 
     // Write placeholder signature header (32 zero bytes)
     var placeholder = new byte[SevenZipConstants.SignatureHeaderSize];
@@ -95,7 +117,7 @@ public sealed class SevenZipWriter : IDisposable {
     entry.Size = dataCopy.Length;
     entry.Crc = Crc32.Compute(dataCopy);
     entry.IsDirectory = false;
-    this._entries.Add((entry, dataCopy));
+    this._entries.Add(new(entry, dataCopy, null, dataCopy.Length));
   }
 
   /// <summary>
@@ -113,6 +135,26 @@ public sealed class SevenZipWriter : IDisposable {
   }
 
   /// <summary>
+  /// Adds a file entry whose bytes are read from <paramref name="open"/> only when its solid
+  /// block is encoded, so a file of any size goes into the archive with bounded memory. The
+  /// stream must deliver exactly <paramref name="size"/> bytes.
+  /// </summary>
+  /// <param name="entry">The entry metadata.</param>
+  /// <param name="open">Opens the file's content; called once, the stream is disposed after reading.</param>
+  /// <param name="size">The file's length in bytes.</param>
+  public void AddEntry(SevenZipEntry entry, Func<Stream> open, long size) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(open);
+    ArgumentOutOfRangeException.ThrowIfNegative(size);
+    if (this._finished)
+      throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
+    entry.Size = size;
+    entry.Crc = null; // computed while the block is encoded
+    entry.IsDirectory = false;
+    this._entries.Add(new(entry, null, open, size));
+  }
+
+  /// <summary>
   /// Adds a directory entry.
   /// </summary>
   /// <param name="name">The directory name.</param>
@@ -125,7 +167,7 @@ public sealed class SevenZipWriter : IDisposable {
       IsDirectory = true,
       Size = 0,
     };
-    this._entries.Add((entry, []));
+    this._entries.Add(new(entry, [], null, 0));
   }
 
   /// <summary>
@@ -138,7 +180,7 @@ public sealed class SevenZipWriter : IDisposable {
       throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
     entry.IsDirectory = true;
     entry.Size = 0;
-    this._entries.Add((entry, []));
+    this._entries.Add(new(entry, [], null, 0));
   }
 
   /// <summary>
@@ -162,6 +204,12 @@ public sealed class SevenZipWriter : IDisposable {
     public int? DictionarySize { get; init; }
   }
 
+  /// <summary>One solid block to encode: its files and how.</summary>
+  private sealed record PlannedBlock(List<SevenZipSource> Files, SevenZipCodec Codec, SevenZipFilter Filter, int DictionarySize);
+
+  /// <summary>An encoded block: the packed streams in folder order, and the folder describing them.</summary>
+  private sealed record EncodedBlock(byte[][] PackStreams, SevenZipFolder Folder, PlannedBlock Plan);
+
   /// <summary>
   /// Finalizes the archive with per-block codec overrides.
   /// Each block descriptor specifies which entries go into the block and
@@ -172,162 +220,26 @@ public sealed class SevenZipWriter : IDisposable {
     if (this._finished) return;
     this._finished = true;
 
-    var fileEntries = new List<(SevenZipEntry Entry, byte[] Data)>();
-    var emptyEntries = new List<SevenZipEntry>();
-    foreach (var (entry, data) in this._entries) {
-      if (entry.IsDirectory || data.Length == 0)
-        emptyEntries.Add(entry);
-      else
-        fileEntries.Add((entry, data));
+    var (fileEntries, emptyEntries) = this.SplitEntries();
+    var claimed = new HashSet<int>();
+    var blocks = new List<PlannedBlock>();
+    foreach (var desc in blockDescs) {
+      var block = new List<SevenZipSource>();
+      foreach (var idx in desc.EntryIndices)
+        if (idx >= 0 && idx < fileEntries.Count && claimed.Add(idx))
+          block.Add(fileEntries[idx]);
+      if (block.Count > 0)
+        blocks.Add(new(block, desc.Codec ?? this._codec, desc.Filter ?? this._filter, desc.DictionarySize ?? this._dictionarySize));
     }
 
-    var fileInfos = new List<SevenZipFileInfo>();
-    var compressedDataStart = this._stream.Position;
-    var packInfo = new SevenZipPackInfo { PackPos = 0 };
-    var folders = new List<SevenZipFolder>();
-    var subStreams = new SevenZipSubStreamsInfo();
+    var unclaimed = new List<SevenZipSource>();
+    for (var i = 0; i < fileEntries.Count; i++)
+      if (!claimed.Contains(i))
+        unclaimed.Add(fileEntries[i]);
+    if (unclaimed.Count > 0)
+      blocks.Add(new(unclaimed, this._codec, this._filter, this._dictionarySize));
 
-    if (fileEntries.Count > 0) {
-      // Track which entries are claimed by descriptors
-      var claimed = new HashSet<int>();
-      var orderedBlocks = new List<(List<(SevenZipEntry Entry, byte[] Data)> Block,
-        SevenZipCodec Codec, SevenZipFilter Filter, int DictSize)>();
-
-      foreach (var desc in blockDescs) {
-        var block = new List<(SevenZipEntry Entry, byte[] Data)>();
-        foreach (var idx in desc.EntryIndices) {
-          if (idx >= 0 && idx < fileEntries.Count && claimed.Add(idx))
-            block.Add(fileEntries[idx]);
-        }
-        if (block.Count > 0) {
-          orderedBlocks.Add((block,
-            desc.Codec ?? this._codec,
-            desc.Filter ?? this._filter,
-            desc.DictionarySize ?? this._dictionarySize));
-        }
-      }
-
-      // Unclaimed entries go into a default block
-      var unclaimed = new List<(SevenZipEntry Entry, byte[] Data)>();
-      for (var i = 0; i < fileEntries.Count; i++)
-        if (!claimed.Contains(i))
-          unclaimed.Add(fileEntries[i]);
-      if (unclaimed.Count > 0)
-        orderedBlocks.Add((unclaimed, this._codec, this._filter, this._dictionarySize));
-
-      // Add file infos in block order
-      foreach (var (block, _, _, _) in orderedBlocks)
-        foreach (var (entry, _) in block)
-          fileInfos.Add(MakeFileInfo(entry));
-
-      // Compress each block with its own codec
-      var packSizes = new List<long>();
-      var packCrcs = new List<uint?>();
-      var numUnpack = new List<int>();
-      var unpackSizes = new List<long>();
-      var digests = new List<uint>();
-
-      foreach (var (block, codec, filter, dictSize) in orderedBlocks) {
-        CompressBlockWithCodec(block, codec, filter, dictSize,
-          folders, packSizes, packCrcs, numUnpack, unpackSizes, digests);
-      }
-
-      packInfo.PackSizes = packSizes.ToArray();
-      packInfo.PackCrcs = packCrcs.ToArray();
-      subStreams.NumUnpackStreams = numUnpack.ToArray();
-      subStreams.UnpackSizes = unpackSizes.ToArray();
-      subStreams.Digests = digests.ToArray();
-    }
-    else {
-      packInfo.PackSizes = [];
-      packInfo.PackCrcs = [];
-      subStreams.NumUnpackStreams = [];
-      subStreams.UnpackSizes = [];
-      subStreams.Digests = [];
-    }
-
-    foreach (var entry in emptyEntries)
-      fileInfos.Add(MakeFileInfo(entry));
-
-    FinalizeHeader(packInfo, folders, subStreams, fileInfos);
-  }
-
-  /// <summary>
-  /// Compresses a block with a specific codec/filter (for per-block codec support).
-  /// </summary>
-  private void CompressBlockWithCodec(
-      List<(SevenZipEntry Entry, byte[] Data)> block,
-      SevenZipCodec codec, SevenZipFilter filter, int dictSize,
-      List<SevenZipFolder> folders, List<long> packSizes, List<uint?> packCrcs,
-      List<int> numUnpack, List<long> unpackSizes, List<uint> digests) {
-
-    var (solidData, totalSize) = ConcatenateBlock(block);
-
-    var dataToCompress = solidData;
-    SevenZipCoder? filterCoder = null;
-    if (filter != SevenZipFilter.None && filter != SevenZipFilter.Bcj2)
-      dataToCompress = ApplyFilter(solidData, filter, out filterCoder);
-
-    var compressedData = CompressDataWithCodec(dataToCompress, codec, dictSize, out var compressionCoder);
-
-    SevenZipCoder? aesCoder = null;
-    var compressedSize = compressedData.Length;
-    if (this._password != null)
-      compressedData = EncryptAes(compressedData, out aesCoder);
-
-    this._stream.Write(compressedData, 0, compressedData.Length);
-    packSizes.Add(compressedData.Length);
-    packCrcs.Add(null);
-
-    var folder = BuildFolder(compressionCoder, filterCoder, aesCoder,
-      compressedSize, dataToCompress.Length, totalSize);
-    folder.UnpackCrc = Crc32.Compute(solidData);
-    folders.Add(folder);
-
-    numUnpack.Add(block.Count);
-    foreach (var (entry, data) in block) {
-      unpackSizes.Add(data.Length);
-      digests.Add(entry.Crc ?? Crc32.Compute(data));
-    }
-  }
-
-  /// <summary>
-  /// Compresses data with a specific codec (not necessarily the writer's default).
-  /// </summary>
-  private byte[] CompressDataWithCodec(byte[] data, SevenZipCodec codec, int dictSize, out SevenZipCoder coder) {
-    switch (codec) {
-      case SevenZipCodec.Lzma2: {
-        var encoder = new Lzma2Encoder(dictSize);
-        using var ms = new MemoryStream();
-        encoder.Encode(ms, data);
-        coder = new SevenZipCoder {
-          CodecId = SevenZipConstants.CodecLzma2.ToArray(),
-          NumInStreams = 1, NumOutStreams = 1,
-          Properties = [encoder.DictionarySizeByte],
-        };
-        return ms.ToArray();
-      }
-      case SevenZipCodec.Lzma: {
-        var encoder = new LzmaEncoder(dictSize);
-        using var ms = new MemoryStream();
-        encoder.Encode(ms, data, writeEndMarker: true);
-        coder = new SevenZipCoder {
-          CodecId = SevenZipConstants.CodecLzma.ToArray(),
-          NumInStreams = 1, NumOutStreams = 1,
-          Properties = encoder.Properties,
-        };
-        return ms.ToArray();
-      }
-      case SevenZipCodec.Deflate:
-        return CompressDeflate(data, out coder);
-      case SevenZipCodec.BZip2:
-        return CompressBzip2(data, out coder);
-      case SevenZipCodec.PPMd:
-        return CompressPpmd(data, out coder);
-      default:
-        // Copy (store) — no compression
-        return StoreCopy(data, out coder);
-    }
+    this.WriteArchive(blocks, emptyEntries, maxThreads);
   }
 
   /// <summary>
@@ -343,175 +255,217 @@ public sealed class SevenZipWriter : IDisposable {
       return;
     this._finished = true;
 
-    // Separate file entries (with data) from empty entries (directories/empty files)
-    var fileEntries = new List<(SevenZipEntry Entry, byte[] Data)>();
-    var emptyEntries = new List<SevenZipEntry>();
+    var (fileEntries, emptyEntries) = this.SplitEntries();
+    var blocks = fileEntries.Count == 0
+      ? []
+      : SplitIntoBlocks(fileEntries, maxBlockSize).Select(b => new PlannedBlock(b, this._codec, this._filter, this._dictionarySize)).ToList();
+    this.WriteArchive(blocks, emptyEntries, maxThreads);
+  }
 
-    foreach (var (entry, data) in this._entries) {
-      if (entry.IsDirectory || data.Length == 0)
-        emptyEntries.Add(entry);
+  private (List<SevenZipSource> Files, List<SevenZipEntry> Empty) SplitEntries() {
+    var files = new List<SevenZipSource>();
+    var empty = new List<SevenZipEntry>();
+    foreach (var source in this._entries) {
+      if (source.Entry.IsDirectory || source.Size == 0)
+        empty.Add(source.Entry);
       else
-        fileEntries.Add((entry, data));
+        files.Add(source);
     }
+    return (files, empty);
+  }
 
-    // Build file info list: file entries first (grouped by block), then empty/directory entries
+  /// <summary>Encodes every block (in parallel when allowed), writes the packed streams in order, then the header.</summary>
+  private void WriteArchive(List<PlannedBlock> blocks, List<SevenZipEntry> emptyEntries, int maxThreads) {
+    if (this._password != null && blocks.Count > 0)
+      this.EnsureKey();
+
+    var packSizes = new List<long>();
+    var folders = new List<SevenZipFolder>();
+    var numUnpack = new List<int>();
+    var unpackSizes = new List<long>();
+    var digests = new List<uint?>();
     var fileInfos = new List<SevenZipFileInfo>();
 
-    var compressedDataStart = this._stream.Position;
-    var packInfo = new SevenZipPackInfo { PackPos = 0 };
-    var folders = new List<SevenZipFolder>();
-    var subStreams = new SevenZipSubStreamsInfo();
-
-    if (fileEntries.Count > 0) {
-      // Split into blocks if multi-block is requested
-      var blocks = SplitIntoBlocks(fileEntries, maxBlockSize);
-
-      // Add file infos in block order (files within each block, then across blocks)
-      foreach (var block in blocks)
-        foreach (var (entry, _) in block)
-          fileInfos.Add(MakeFileInfo(entry));
-
-      if (blocks.Count == 1 || maxThreads <= 1) {
-        // Single-threaded path (original behavior or single block)
-        var packSizes = new List<long>();
-        var packCrcs = new List<uint?>();
-        var numUnpack = new List<int>();
-        var unpackSizes = new List<long>();
-        var digests = new List<uint>();
-
-        foreach (var block in blocks) {
-          CompressAndWriteBlock(block, folders, packSizes, packCrcs,
-            numUnpack, unpackSizes, digests);
-        }
-
-        packInfo.PackSizes = packSizes.ToArray();
-        packInfo.PackCrcs = packCrcs.ToArray();
-        subStreams.NumUnpackStreams = numUnpack.ToArray();
-        subStreams.UnpackSizes = unpackSizes.ToArray();
-        subStreams.Digests = digests.ToArray();
-      }
-      else {
-        // Multi-threaded: compress blocks in parallel, then write sequentially
-        var results = new (byte[] Compressed, SevenZipCoder Coder,
-          long TotalUnpackSize, long[] FileSizes, uint[] FileCrcs)[blocks.Count];
-
-        var options = new ParallelOptions { MaxDegreeOfParallelism = maxThreads };
-        Parallel.For(0, blocks.Count, options, i => {
-          results[i] = CompressBlockParallel(blocks[i]);
-        });
-
-        // Write results sequentially
-        var packSizes = new List<long>();
-        var packCrcs = new List<uint?>();
-        var numUnpack = new List<int>();
-        var unpackSizes = new List<long>();
-        var digests = new List<uint>();
-
-        foreach (var (compressed, coder, totalUnpackSize, fileSizes, fileCrcs) in results) {
-          this._stream.Write(compressed);
-          packSizes.Add(compressed.Length);
-          packCrcs.Add(null);
-
-          var folder = new SevenZipFolder();
-          folder.Coders.Add(coder);
-          folder.UnpackSizes = [totalUnpackSize];
-          folders.Add(folder);
-
-          numUnpack.Add(fileSizes.Length);
-          unpackSizes.AddRange(fileSizes.Select(s => (long)s));
-          digests.AddRange(fileCrcs);
-        }
-
-        packInfo.PackSizes = packSizes.ToArray();
-        packInfo.PackCrcs = packCrcs.ToArray();
-        subStreams.NumUnpackStreams = numUnpack.ToArray();
-        subStreams.UnpackSizes = unpackSizes.ToArray();
-        subStreams.Digests = digests.ToArray();
+    void Record(PlannedBlock plan, SevenZipFolder folder) {
+      folders.Add(folder);
+      numUnpack.Add(plan.Files.Count);
+      foreach (var source in plan.Files) {
+        unpackSizes.Add(source.Size);
+        digests.Add(source.Entry.Crc ?? Crc32.Compute(source.Data ?? []));
+        fileInfos.Add(MakeFileInfo(source.Entry));
       }
     }
-    else {
-      packInfo.PackSizes = [];
-      packInfo.PackCrcs = [];
-      subStreams.NumUnpackStreams = [];
-      subStreams.UnpackSizes = [];
-      subStreams.Digests = [];
+
+    if (blocks.Exists(this.MustStream)) {
+      // A streamed block writes straight to the archive, so blocks go out one after another.
+      foreach (var plan in blocks)
+        if (this.MustStream(plan)) {
+          var (packed, folder) = this.StreamBlock(plan);
+          packSizes.Add(packed);
+          Record(plan, folder);
+        } else {
+          var block = this.EncodeBlock(plan);
+          foreach (var stream in block.PackStreams) {
+            this._stream.Write(stream);
+            packSizes.Add(stream.Length);
+          }
+          Record(plan, block.Folder);
+        }
+    } else {
+      var encoded = new EncodedBlock[blocks.Count];
+      if (maxThreads > 1 && blocks.Count > 1)
+        Parallel.For(0, blocks.Count, new ParallelOptions { MaxDegreeOfParallelism = maxThreads }, i => encoded[i] = this.EncodeBlock(blocks[i]));
+      else
+        for (var i = 0; i < blocks.Count; ++i)
+          encoded[i] = this.EncodeBlock(blocks[i]);
+      foreach (var block in encoded) {
+        foreach (var stream in block.PackStreams) {
+          this._stream.Write(stream);
+          packSizes.Add(stream.Length);
+        }
+        Record(block.Plan, block.Folder);
+      }
     }
 
-    // Add empty/directory entries at the end of file info list
     foreach (var entry in emptyEntries)
       fileInfos.Add(MakeFileInfo(entry));
 
-    FinalizeHeader(packInfo, folders, subStreams, fileInfos);
+    // Attributes for all or for none, as 7-Zip writes them: libarchive misreads a partly defined
+    // attribute vector. A file that has none gets FILE_ATTRIBUTE_ARCHIVE, 7-Zip's plain file.
+    if (fileInfos.Exists(static f => f.Attributes.HasValue))
+      foreach (var info in fileInfos)
+        info.Attributes ??= 0x20u;
+
+    var packInfo = new SevenZipPackInfo { PackPos = 0, PackSizes = [.. packSizes], PackCrcs = new uint?[packSizes.Count] };
+    var subStreams = new SevenZipSubStreamsInfo { NumUnpackStreams = [.. numUnpack], UnpackSizes = [.. unpackSizes], Digests = [.. digests] };
+    this.FinalizeHeader(packInfo, folders, subStreams, fileInfos);
+  }
+
+  /// <summary>Filters, compresses and (with a password) encrypts one block. Thread-safe.</summary>
+  /// <remarks>
+  /// Coders are listed from the packed side to the output, each bound to the one before — the
+  /// order 7-Zip 26 writes (<c>[7zAES,] compressor[, filter]</c>, bind pairs sorted by the coder
+  /// that feeds them). Any order is valid 7z; libarchive reads filter chains only in this one.
+  /// </remarks>
+  private EncodedBlock EncodeBlock(PlannedBlock plan) {
+    var solid = ConcatenateBlock(plan.Files);
+    if (plan.Filter == SevenZipFilter.Bcj2)
+      return this.EncodeBcj2Block(solid, plan);
+
+    var folder = new SevenZipFolder();
+    var sizes = new List<long>();
+    var data = solid;
+    SevenZipCoder? filterCoder = null;
+    if (plan.Filter != SevenZipFilter.None)
+      data = this.ApplyFilter(solid, plan.Filter, out filterCoder);
+    var packed = this.Compress(data, plan.Codec, plan.DictionarySize, out var compressor);
+
+    if (this._password != null) {
+      var plain = packed;
+      packed = this.EncryptAes(plain, out var aes);
+      folder.Coders.Add(aes);
+      sizes.Add(plain.Length);
+    }
+    folder.Coders.Add(compressor);
+    sizes.Add(data.Length);
+    if (filterCoder != null) {
+      folder.Coders.Add(filterCoder);
+      sizes.Add(solid.Length);
+    }
+    for (var i = 1; i < folder.Coders.Count; ++i)
+      folder.BindPairs.Add((i, i - 1)); // coder i's input is coder i-1's output
+    folder.UnpackSizes = [.. sizes];
+    folder.PackedStreams = [0];
+    return new EncodedBlock([packed], folder, plan);
+  }
+
+  /// <summary>
+  /// The BCJ2 folder exactly as 7-Zip 26 lays it out: LZMA for the jump and call streams, the
+  /// block's compressor for the main stream, BCJ2 last with inputs main, call, jump, range coder;
+  /// packed streams in the order main, range coder, call, jump. With a password one AES coder per
+  /// packed stream comes first (jump, call, range coder, main), as 7-Zip writes them.
+  /// </summary>
+  private EncodedBlock EncodeBcj2Block(byte[] solid, PlannedBlock plan) {
+    var (main, call, jump, rangeCoded) = Bcj2Filter.Encode(solid);
+    var packedMain = this.Compress(main, plan.Codec, plan.DictionarySize, out var mainCoder);
+    var packedCall = this.Compress(call, SevenZipCodec.Lzma, 1 << 20, out var callCoder);
+    var packedJump = this.Compress(jump, SevenZipCodec.Lzma, 1 << 20, out var jumpCoder);
+    var bcj2 = new SevenZipCoder { CodecId = SevenZipConstants.CodecBcj2.ToArray(), NumInStreams = 4, NumOutStreams = 1 };
+    var folder = new SevenZipFolder();
+
+    if (this._password == null) {
+      // Coders: 0 LZMA (jump), 1 LZMA (call), 2 main compressor, 3 BCJ2 (in-streams 3..6).
+      folder.Coders.AddRange([jumpCoder, callCoder, mainCoder, bcj2]);
+      folder.BindPairs.AddRange([(5, 0), (4, 1), (3, 2)]);
+      folder.PackedStreams = [2, 6, 1, 0];
+      folder.UnpackSizes = [jump.Length, call.Length, main.Length, solid.Length];
+      return new EncodedBlock([packedMain, rangeCoded, packedCall, packedJump], folder, plan);
+    }
+
+    // Coders: 0-3 AES (jump, call, range coder, main), 4 LZMA (jump), 5 LZMA (call),
+    // 6 main compressor, 7 BCJ2 (in-streams 7..10).
+    var encJump = this.EncryptAes(packedJump, out var aesJump);
+    var encCall = this.EncryptAes(packedCall, out var aesCall);
+    var encRange = this.EncryptAes(rangeCoded, out var aesRange);
+    var encMain = this.EncryptAes(packedMain, out var aesMain);
+    folder.Coders.AddRange([aesJump, aesCall, aesRange, aesMain, jumpCoder, callCoder, mainCoder, bcj2]);
+    folder.BindPairs.AddRange([(4, 0), (5, 1), (10, 2), (6, 3), (9, 4), (8, 5), (7, 6)]);
+    folder.PackedStreams = [3, 2, 1, 0];
+    folder.UnpackSizes = [packedJump.Length, packedCall.Length, rangeCoded.Length, packedMain.Length, jump.Length, call.Length, main.Length, solid.Length];
+    return new EncodedBlock([encMain, encRange, encCall, encJump], folder, plan);
   }
 
   private void FinalizeHeader(SevenZipPackInfo packInfo, List<SevenZipFolder> folders,
       SevenZipSubStreamsInfo subStreams, List<SevenZipFileInfo> fileInfos) {
-    // Serialize the real header
     using var headerStream = new MemoryStream();
     SevenZipHeaderCodec.WriteHeader(headerStream, packInfo, folders, subStreams, fileInfos);
     var headerData = headerStream.ToArray();
 
-    if (this._encryptHeaders) {
-      // Compress the header with LZMA2
-      var lzma2Enc = new Lzma2Encoder(1 << 20); // 1MB dict for header
-      using var compStream = new MemoryStream();
-      lzma2Enc.Encode(compStream, headerData);
-      var compressedHeader = compStream.ToArray();
-      var lzma2Coder = new SevenZipCoder {
-        CodecId = SevenZipConstants.CodecLzma2.ToArray(),
-        NumInStreams = 1, NumOutStreams = 1,
-        Properties = [lzma2Enc.DictionarySizeByte],
-      };
-
-      // Encrypt with AES
-      var encrypted = EncryptAes(compressedHeader, out var aesCoder);
-
-      // Write encrypted header data
-      var packedDataPos = this._stream.Position - SevenZipConstants.SignatureHeaderSize;
-      this._stream.Write(encrypted, 0, encrypted.Length);
-
-      // Build folder: LZMA2 → AES
-      var headerFolder = new SevenZipFolder();
-      headerFolder.Coders.Add(lzma2Coder);
-      headerFolder.Coders.Add(aesCoder);
-      headerFolder.BindPairs.Add((0, 1));
-      headerFolder.UnpackSizes = [compressedHeader.Length, headerData.Length];
-
-      // Build the EncodedHeader descriptor
-      var encPackInfo = new SevenZipPackInfo {
-        PackPos = packedDataPos,
-        PackSizes = [encrypted.Length],
-        PackCrcs = [null],
-      };
-
-      // Write EncodedHeader
-      var encodedHeaderOffset = this._stream.Position - SevenZipConstants.SignatureHeaderSize;
+    if (!this._encryptHeaders && this._compressHeaders) {
+      // 7-Zip's -mhc: the header LZMA-packed in a folder of its own, carrying the header's CRC,
+      // kept only when it comes out smaller than the plain header.
+      var compressed = this.Compress(headerData, SevenZipCodec.Lzma, 1 << 20, out var lzmaCoder);
+      var headerFolder = new SevenZipFolder { UnpackCrc = Crc32.Compute(headerData), PackedStreams = [0] };
+      headerFolder.Coders.Add(lzmaCoder);
+      headerFolder.UnpackSizes = [headerData.Length];
+      var encPackInfo = new SevenZipPackInfo { PackPos = this._stream.Position - SevenZipConstants.SignatureHeaderSize, PackSizes = [compressed.Length], PackCrcs = [null] };
       using var ehStream = new MemoryStream();
       SevenZipHeaderCodec.WriteEncodedHeader(ehStream, encPackInfo, [headerFolder]);
-      var ehData = ehStream.ToArray();
-      this._stream.Write(ehData, 0, ehData.Length);
+      if (compressed.Length + ehStream.Length < headerData.Length) {
+        this._stream.Write(compressed);
+        headerData = ehStream.ToArray();
+      }
+    }
 
-      // Update signature header
-      var ehCrc = Crc32.Compute(ehData);
-      this._stream.Position = 0;
-      new SevenZipHeader {
-        NextHeaderOffset = encodedHeaderOffset,
-        NextHeaderSize = ehData.Length,
-        NextHeaderCrc = ehCrc,
-      }.Write(this._stream);
+    if (this._encryptHeaders) {
+      this.EnsureKey();
+      // The header is packed with LZMA and encrypted, the folder 7-Zip's -mhe writes:
+      // coder 0 AES, coder 1 LZMA fed by it (the output), the header's CRC on the folder.
+      var compressed = this.Compress(headerData, SevenZipCodec.Lzma, 1 << 20, out var lzmaCoder);
+      var encrypted = this.EncryptAes(compressed, out var aesCoder);
+      var headerFolder = new SevenZipFolder { UnpackCrc = Crc32.Compute(headerData), PackedStreams = [0] };
+      headerFolder.Coders.Add(aesCoder);
+      headerFolder.Coders.Add(lzmaCoder);
+      headerFolder.BindPairs.Add((1, 0));
+      headerFolder.UnpackSizes = [compressed.Length, headerData.Length];
+
+      var packedDataPos = this._stream.Position - SevenZipConstants.SignatureHeaderSize;
+      this._stream.Write(encrypted);
+      var encPackInfo = new SevenZipPackInfo { PackPos = packedDataPos, PackSizes = [encrypted.Length], PackCrcs = [null] };
+
+      using var ehStream = new MemoryStream();
+      SevenZipHeaderCodec.WriteEncodedHeader(ehStream, encPackInfo, [headerFolder]);
+      headerData = ehStream.ToArray();
     }
-    else {
-      // Plain header
-      var headerOffset = this._stream.Position - SevenZipConstants.SignatureHeaderSize;
-      this._stream.Write(headerData, 0, headerData.Length);
-      var headerCrc = Crc32.Compute(headerData);
-      this._stream.Position = 0;
-      new SevenZipHeader {
-        NextHeaderOffset = headerOffset,
-        NextHeaderSize = headerData.Length,
-        NextHeaderCrc = headerCrc,
-      }.Write(this._stream);
-    }
+
+    var headerOffset = this._stream.Position - SevenZipConstants.SignatureHeaderSize;
+    this._stream.Write(headerData, 0, headerData.Length);
+    this._stream.Position = 0;
+    new SevenZipHeader {
+      NextHeaderOffset = headerOffset,
+      NextHeaderSize = headerData.Length,
+      NextHeaderCrc = Crc32.Compute(headerData),
+    }.Write(this._stream);
     this._stream.Seek(0, SeekOrigin.End);
   }
 
@@ -523,30 +477,32 @@ public sealed class SevenZipWriter : IDisposable {
     LastWriteTime = entry.LastWriteTime,
     CreationTime = entry.CreationTime,
     LastAccessTime = entry.LastAccessTime,
-    Attributes = entry.Attributes,
+    // A directory always carries FILE_ATTRIBUTE_DIRECTORY, as 7-Zip writes it: readers such as
+    // py7zr tell directories from empty files by that bit, not by the empty-stream vectors.
+    Attributes = entry.IsDirectory ? (entry.Attributes ?? 0) | 0x10u : entry.Attributes,
   };
 
   /// <summary>
   /// Splits file entries into solid blocks, each not exceeding maxBlockSize.
   /// If maxBlockSize is 0, all entries go into a single block.
   /// </summary>
-  private static List<List<(SevenZipEntry Entry, byte[] Data)>> SplitIntoBlocks(
-      List<(SevenZipEntry Entry, byte[] Data)> entries, long maxBlockSize) {
+  private static List<List<SevenZipSource>> SplitIntoBlocks(
+      List<SevenZipSource> entries, long maxBlockSize) {
     if (maxBlockSize <= 0)
       return [entries];
 
-    var blocks = new List<List<(SevenZipEntry Entry, byte[] Data)>>();
-    var current = new List<(SevenZipEntry Entry, byte[] Data)>();
+    var blocks = new List<List<SevenZipSource>>();
+    var current = new List<SevenZipSource>();
     long currentSize = 0;
 
     foreach (var entry in entries) {
-      if (current.Count > 0 && currentSize + entry.Data.Length > maxBlockSize) {
+      if (current.Count > 0 && currentSize + entry.Size > maxBlockSize) {
         blocks.Add(current);
         current = [];
         currentSize = 0;
       }
       current.Add(entry);
-      currentSize += entry.Data.Length;
+      currentSize += entry.Size;
     }
     if (current.Count > 0)
       blocks.Add(current);
@@ -554,184 +510,37 @@ public sealed class SevenZipWriter : IDisposable {
     return blocks;
   }
 
-  /// <summary>
-  /// Compresses one block and writes it to the output stream (single-threaded path).
-  /// </summary>
-  private void CompressAndWriteBlock(List<(SevenZipEntry Entry, byte[] Data)> block,
-      List<SevenZipFolder> folders, List<long> packSizes, List<uint?> packCrcs,
-      List<int> numUnpack, List<long> unpackSizes, List<uint> digests) {
-
-    var (solidData, totalSize) = ConcatenateBlock(block);
-    SevenZipFolder folder;
-
-    if (this._filter == SevenZipFilter.Bcj2) {
-      folder = WriteBcj2Folder(solidData, totalSize, packSizes, packCrcs);
-    }
-    else {
-      var dataToCompress = solidData;
-      SevenZipCoder? filterCoder = null;
-      if (this._filter != SevenZipFilter.None)
-        dataToCompress = ApplyFilter(solidData, out filterCoder);
-
-      var compressedData = CompressData(dataToCompress, out var compressionCoder);
-
-      SevenZipCoder? aesCoder = null;
-      var compressedSize = compressedData.Length;
-      if (this._password != null)
-        compressedData = EncryptAes(compressedData, out aesCoder);
-
-      this._stream.Write(compressedData, 0, compressedData.Length);
-      packSizes.Add(compressedData.Length);
-      packCrcs.Add(null);
-
-      folder = BuildFolder(compressionCoder, filterCoder, aesCoder,
-        compressedSize, dataToCompress.Length, totalSize);
-    }
-
-    folder.UnpackCrc = Crc32.Compute(solidData);
-    folders.Add(folder);
-
-    numUnpack.Add(block.Count);
-    foreach (var (entry, data) in block) {
-      unpackSizes.Add(data.Length);
-      digests.Add(entry.Crc ?? Crc32.Compute(data));
-    }
-  }
-
-  /// <summary>
-  /// Compresses one block entirely in memory (thread-safe, for parallel path).
-  /// </summary>
-  private (byte[] Compressed, SevenZipCoder Coder, long TotalUnpackSize,
-      long[] FileSizes, uint[] FileCrcs)
-      CompressBlockParallel(List<(SevenZipEntry Entry, byte[] Data)> block) {
-
-    var (solidData, totalSize) = ConcatenateBlock(block);
-    var compressed = CompressData(solidData, out var coder);
-
-    var fileSizes = new long[block.Count];
-    var fileCrcs = new uint[block.Count];
-    for (var i = 0; i < block.Count; i++) {
-      fileSizes[i] = block[i].Data.Length;
-      fileCrcs[i] = block[i].Entry.Crc ?? Crc32.Compute(block[i].Data);
-    }
-
-    return (compressed, coder, totalSize, fileSizes, fileCrcs);
-  }
-
-  private static (byte[] SolidData, int TotalSize) ConcatenateBlock(
-      List<(SevenZipEntry Entry, byte[] Data)> block) {
-    var totalSize = 0;
-    foreach (var (_, data) in block)
-      totalSize += data.Length;
+  private static byte[] ConcatenateBlock(List<SevenZipSource> block) {
+    var totalSize = 0L;
+    foreach (var source in block)
+      totalSize += source.Size;
+    if (totalSize > Array.MaxLength)
+      throw new NotSupportedException($"7z: a solid block of {totalSize} bytes can only be streamed with LZMA2, Deflate, BZip2 or Copy and without BCJ2; this one needs to be held in memory.");
 
     var solidData = new byte[totalSize];
-    var offset = 0;
-    foreach (var (_, data) in block) {
-      data.AsSpan().CopyTo(solidData.AsSpan(offset));
-      offset += data.Length;
-    }
-    return (solidData, totalSize);
+    using var reader = new SevenZipSourceStream(block);
+    reader.ReadExactly(solidData);
+    return solidData;
   }
 
-  private static SevenZipFolder BuildFolder(SevenZipCoder compressionCoder,
-      SevenZipCoder? filterCoder, SevenZipCoder? aesCoder,
-      int compressedSize, int filteredSize, int totalSize) {
-    var folder = new SevenZipFolder();
-    if (aesCoder != null && filterCoder != null) {
-      folder.Coders.Add(compressionCoder);
-      folder.Coders.Add(filterCoder);
-      folder.Coders.Add(aesCoder);
-      folder.BindPairs.Add((1, 0));
-      folder.BindPairs.Add((0, 2));
-      folder.UnpackSizes = [compressedSize, filteredSize, totalSize];
-    }
-    else if (aesCoder != null) {
-      folder.Coders.Add(compressionCoder);
-      folder.Coders.Add(aesCoder);
-      folder.BindPairs.Add((0, 1));
-      folder.UnpackSizes = [compressedSize, totalSize];
-    }
-    else if (filterCoder != null) {
-      folder.Coders.Add(compressionCoder);
-      folder.Coders.Add(filterCoder);
-      folder.BindPairs.Add((1, 0));
-      folder.UnpackSizes = [filteredSize, totalSize];
-    }
-    else {
-      folder.Coders.Add(compressionCoder);
-      folder.UnpackSizes = [totalSize];
-    }
-    return folder;
-  }
-
-  /// <summary>
-  /// Writes a BCJ2 folder with 4 pack streams: compressed main + raw call/jump/range.
-  /// </summary>
-  private SevenZipFolder WriteBcj2Folder(byte[] solidData, int totalSize,
-      List<long> packSizes, List<uint?> packCrcs) {
-    // Encode BCJ2: split into 4 sub-streams
-    var (main, call, jump, range) = Bcj2Filter.Encode(solidData);
-
-    // Compress the main stream with the selected codec
-    var compressedMain = CompressData(main, out var compressionCoder);
-
-    // Write all 4 pack streams: compressed main, call, jump, range
-    this._stream.Write(compressedMain, 0, compressedMain.Length);
-    this._stream.Write(call, 0, call.Length);
-    this._stream.Write(jump, 0, jump.Length);
-    this._stream.Write(range, 0, range.Length);
-
-    packSizes.Add(compressedMain.Length);
-    packSizes.Add(call.Length);
-    packSizes.Add(jump.Length);
-    packSizes.Add(range.Length);
-    packCrcs.AddRange([null, null, null, null]);
-
-    var bcj2Coder = new SevenZipCoder {
-      CodecId = SevenZipConstants.CodecBcj2.ToArray(),
-      NumInStreams = 4,
-      NumOutStreams = 1,
-    };
-
-    var folder = new SevenZipFolder();
-    folder.Coders.Add(compressionCoder);
-    folder.Coders.Add(bcj2Coder);
-    folder.BindPairs.Add((1, 0));
-    folder.UnpackSizes = [main.Length, totalSize];
-
-    return folder;
-  }
-
-  /// <summary>
-  /// Applies the selected pre-filter to the data and returns the filtered bytes
-  /// along with a coder descriptor for the filter.
-  /// </summary>
-  private byte[] ApplyFilter(byte[] data, out SevenZipCoder coder)
-    => ApplyFilter(data, this._filter, out coder);
-
+  /// <summary>Applies a length-preserving filter and returns its coder.</summary>
   private byte[] ApplyFilter(byte[] data, SevenZipFilter filter, out SevenZipCoder coder) {
     switch (filter) {
       case SevenZipFilter.Copy:
         coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecCopy.ToArray() };
         return data;
       case SevenZipFilter.BcjX86:
-        coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecBcj.ToArray() };
-        return BcjFilter.EncodeX86(data);
+        return Branch(data, BranchArchitecture.X86, SevenZipConstants.CodecBcj, out coder);
       case SevenZipFilter.BcjArm:
-        coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecBcjArm.ToArray() };
-        return BcjFilter.EncodeArm(data);
+        return Branch(data, BranchArchitecture.Arm, SevenZipConstants.CodecBcjArm, out coder);
       case SevenZipFilter.BcjArmThumb:
-        coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecBcjArmThumb.ToArray() };
-        return BcjFilter.EncodeArmThumb(data);
+        return Branch(data, BranchArchitecture.ArmThumb, SevenZipConstants.CodecBcjArmThumb, out coder);
       case SevenZipFilter.BcjPowerPC:
-        coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecBcjPpc.ToArray() };
-        return BcjFilter.EncodePowerPC(data);
+        return Branch(data, BranchArchitecture.PowerPC, SevenZipConstants.CodecBcjPpc, out coder);
       case SevenZipFilter.BcjSparc:
-        coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecBcjSparc.ToArray() };
-        return BcjFilter.EncodeSparc(data);
+        return Branch(data, BranchArchitecture.Sparc, SevenZipConstants.CodecBcjSparc, out coder);
       case SevenZipFilter.BcjIA64:
-        coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecBcjIa64.ToArray() };
-        return BcjFilter.EncodeIA64(data);
+        return Branch(data, BranchArchitecture.IA64, SevenZipConstants.CodecBcjIa64, out coder);
       case SevenZipFilter.Delta:
         coder = new SevenZipCoder {
           CodecId = SevenZipConstants.CodecDelta.ToArray(),
@@ -745,83 +554,53 @@ public sealed class SevenZipWriter : IDisposable {
         coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecSwap4.ToArray() };
         return ByteSwapFilter.Swap4(data);
       default:
-        throw new NotSupportedException($"Unsupported filter: {this._filter}");
+        throw new NotSupportedException($"Unsupported filter: {filter}");
+    }
+
+    static byte[] Branch(byte[] data, BranchArchitecture architecture, ReadOnlySpan<byte> id, out SevenZipCoder coder) {
+      coder = new SevenZipCoder { CodecId = id.ToArray() };
+      var filtered = data.ToArray();
+      BranchConverter.ConvertAll(architecture, filtered, decoding: false);
+      return filtered;
     }
   }
 
-  /// <summary>
-  /// Compresses the solid data block using the selected codec and returns the
-  /// compressed bytes along with the coder descriptor for the folder header.
-  /// </summary>
-  private byte[] CompressData(byte[] solidData, out SevenZipCoder coder) =>
-    this._codec switch {
-      SevenZipCodec.Lzma2 => CompressLzma2(solidData, out coder),
-      SevenZipCodec.Lzma => CompressLzma(solidData, out coder),
-      SevenZipCodec.Deflate => CompressDeflate(solidData, out coder),
-      SevenZipCodec.BZip2 => CompressBzip2(solidData, out coder),
-      SevenZipCodec.PPMd => CompressPpmd(solidData, out coder),
-      SevenZipCodec.Copy => StoreCopy(solidData, out coder),
-      _ => throw new NotSupportedException($"Unsupported codec: {this._codec}"),
-    };
-
-  /// <summary>Stores data uncompressed under the Copy (store) coder.</summary>
-  private static byte[] StoreCopy(byte[] data, out SevenZipCoder coder) {
-    coder = new SevenZipCoder {
-      CodecId = SevenZipConstants.CodecCopy.ToArray(),
-      NumInStreams = 1,
-      NumOutStreams = 1,
-    };
-    return data;
-  }
-
-  private byte[] CompressLzma2(byte[] data, out SevenZipCoder coder) {
-    var encoder = new Lzma2Encoder(this._dictionarySize);
-    using var compressedStream = new MemoryStream();
-    encoder.Encode(compressedStream, data);
-    coder = new SevenZipCoder {
-      CodecId = SevenZipConstants.CodecLzma2.ToArray(),
-      NumInStreams = 1,
-      NumOutStreams = 1,
-      Properties = [encoder.DictionarySizeByte],
-    };
-    return compressedStream.ToArray();
-  }
-
-  private byte[] CompressLzma(byte[] data, out SevenZipCoder coder) {
-    var encoder = new LzmaEncoder(this._dictionarySize);
-    using var compressedStream = new MemoryStream();
-    encoder.Encode(compressedStream, data, writeEndMarker: true);
-    coder = new SevenZipCoder {
-      CodecId = SevenZipConstants.CodecLzma.ToArray(),
-      NumInStreams = 1,
-      NumOutStreams = 1,
-      Properties = encoder.Properties,
-    };
-    return compressedStream.ToArray();
-  }
-
-  private static byte[] CompressDeflate(byte[] data, out SevenZipCoder coder) {
-    var compressed = DeflateCompressor.Compress(data);
-    coder = new SevenZipCoder {
-      CodecId = SevenZipConstants.CodecDeflate.ToArray(),
-      NumInStreams = 1,
-      NumOutStreams = 1,
-    };
-    return compressed;
-  }
-
-  private static byte[] CompressBzip2(byte[] data, out SevenZipCoder coder) {
-    using var compressedStream = new MemoryStream();
-    using (var bz2 = new FileFormat.Bzip2.Bzip2Stream(compressedStream,
-        CompressionStreamMode.Compress, leaveOpen: true)) {
-      bz2.Write(data, 0, data.Length);
+  /// <summary>Compresses with <paramref name="codec"/> and returns its coder. Thread-safe.</summary>
+  private byte[] Compress(byte[] data, SevenZipCodec codec, int dictionarySize, out SevenZipCoder coder) {
+    switch (codec) {
+      case SevenZipCodec.Lzma2: {
+        var encoder = new Lzma2Encoder(dictionarySize);
+        using var ms = new MemoryStream();
+        encoder.Encode(ms, data);
+        coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecLzma2.ToArray(), Properties = [encoder.DictionarySizeByte] };
+        return ms.ToArray();
+      }
+      case SevenZipCodec.Lzma: {
+        // The folder records the size, so the stream needs no end marker; 7-Zip writes none.
+        var encoder = new LzmaEncoder(dictionarySize);
+        using var ms = new MemoryStream();
+        encoder.Encode(ms, data, writeEndMarker: false);
+        coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecLzma.ToArray(), Properties = encoder.Properties };
+        return ms.ToArray();
+      }
+      case SevenZipCodec.Deflate:
+        coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecDeflate.ToArray() };
+        return DeflateCompressor.Compress(data);
+      case SevenZipCodec.BZip2: {
+        using var ms = new MemoryStream();
+        using (var bz2 = new FileFormat.Bzip2.Bzip2Stream(ms, CompressionStreamMode.Compress, leaveOpen: true))
+          bz2.Write(data, 0, data.Length);
+        coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecBzip2.ToArray() };
+        return ms.ToArray();
+      }
+      case SevenZipCodec.PPMd:
+        return this.CompressPpmd(data, out coder);
+      case SevenZipCodec.Copy:
+        coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecCopy.ToArray() };
+        return data;
+      default:
+        throw new NotSupportedException($"Unsupported codec: {codec}");
     }
-    coder = new SevenZipCoder {
-      CodecId = SevenZipConstants.CodecBzip2.ToArray(),
-      NumInStreams = 1,
-      NumOutStreams = 1,
-    };
-    return compressedStream.ToArray();
   }
 
   private byte[] CompressPpmd(byte[] data, out SevenZipCoder coder) {
@@ -840,57 +619,40 @@ public sealed class SevenZipWriter : IDisposable {
     props[3] = (byte)(this._ppmdMemorySize >> 16);
     props[4] = (byte)(this._ppmdMemorySize >> 24);
 
-    coder = new SevenZipCoder {
-      CodecId = SevenZipConstants.CodecPpmd.ToArray(),
-      NumInStreams = 1,
-      NumOutStreams = 1,
-      Properties = props,
-    };
+    coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecPpmd.ToArray(), Properties = props };
     return compressedStream.ToArray();
   }
 
+  /// <summary>Derives the archive's AES key once: 2^19 SHA-256 rounds are the expensive part.</summary>
+  private void EnsureKey() {
+    if (this._aesKey != null)
+      return;
+    var salt = RandomNumberGenerator.GetBytes(16);
+    this._aesKey = (salt, SevenZipKeyCache.DeriveKey(this._password!, salt, AesCyclesPower));
+  }
+
+  /// <summary>
+  /// Encrypts with AES-256-CBC under the archive key and a fresh 16-byte IV, zero-padding to
+  /// whole blocks (the coder's unpack size cuts the padding off again). Thread-safe.
+  /// </summary>
   private byte[] EncryptAes(byte[] data, out SevenZipCoder coder) {
-    const int numCyclesPower = 19; // 2^19 = 524288 iterations
+    var (salt, key) = this._aesKey ?? throw new InvalidOperationException("7z: no key derived.");
+    var iv = RandomNumberGenerator.GetBytes(16);
 
-    // Generate random salt and IV
-    var salt = new byte[8];
-    var iv = new byte[8];
-    using (var rng = RandomNumberGenerator.Create()) {
-      rng.GetBytes(salt);
-      rng.GetBytes(iv);
-    }
+    var padded = new byte[(data.Length + 15) & ~15];
+    data.CopyTo(padded, 0);
+    using var aes = Aes.Create();
+    aes.Key = key;
+    var encrypted = aes.EncryptCbc(padded, iv, PaddingMode.None);
 
-    // Derive key
-    var key = KeyDerivation.SevenZipDeriveKey(this._password!, salt, numCyclesPower);
-
-    // Pad data to 16-byte boundary
-    var paddedLen = (data.Length + 15) & ~15;
-    if (paddedLen > data.Length) {
-      var padded = new byte[paddedLen];
-      data.AsSpan().CopyTo(padded);
-      data = padded;
-    }
-
-    // Encrypt
-    var fullIv = new byte[16];
-    iv.CopyTo(fullIv, 0);
-    var encrypted = AesCryptor.EncryptCbcNoPadding(data, key, fullIv);
-
-    // Build properties: firstByte | sizesByte | salt | iv
-    var firstByte = (byte)(numCyclesPower | 0x40 | 0x80); // hasSalt | hasIV
-    var sizesByte = (byte)(((salt.Length - 1) << 4) | (iv.Length - 1));
+    // Byte 0: NumCyclesPower | 0x80 (salt present) | 0x40 (IV present); byte 1: (salt-1) << 4 | (IV-1).
     var props = new byte[2 + salt.Length + iv.Length];
-    props[0] = firstByte;
-    props[1] = sizesByte;
+    props[0] = (byte)(AesCyclesPower | 0x80 | 0x40);
+    props[1] = (byte)(((salt.Length - 1) << 4) | (iv.Length - 1));
     salt.CopyTo(props, 2);
     iv.CopyTo(props, 2 + salt.Length);
 
-    coder = new SevenZipCoder {
-      CodecId = SevenZipConstants.CodecAes.ToArray(),
-      NumInStreams = 1,
-      NumOutStreams = 1,
-      Properties = props,
-    };
+    coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecAes.ToArray(), Properties = props };
     return encrypted;
   }
 

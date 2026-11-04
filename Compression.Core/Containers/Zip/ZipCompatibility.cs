@@ -50,6 +50,7 @@ public static class ZipCompatibility {
       ZipEncryptionMethod.None => result,
       ZipEncryptionMethod.PkzipTraditional => Max(result, ZipConstants.VersionNeeded20),
       ZipEncryptionMethod.Aes256 => Max(result, ZipConstants.VersionNeeded51),
+      ZipEncryptionMethod.PkwareStrongAes256 => Max(result, ZipConstants.VersionNeeded51),
       _ => throw new ArgumentOutOfRangeException(nameof(encryption), encryption, "Unknown ZIP encryption method."),
     };
 
@@ -88,6 +89,7 @@ public static class ZipCompatibility {
     var method = entry.WrappedCompressionMethod ?? entry.CompressionMethod;
     var encryption = entry.CompressionMethod == ZipCompressionMethod.WinZipAes
       ? ZipEncryptionMethod.Aes256
+      : entry.IsEncrypted && (entry.GeneralPurposeFlags & ZipStrongEncryption.FlagStrongEncryption) != 0 ? ZipEncryptionMethod.PkwareStrongAes256
       : entry.IsEncrypted ? ZipEncryptionMethod.PkzipTraditional : ZipEncryptionMethod.None;
 
     return GetVersionNeeded(method, encryption, entry.IsZip64, entry.IsDirectory);
@@ -101,7 +103,8 @@ public static class ZipCompatibility {
     ZipCompressionMethod.Reduce3 or
     ZipCompressionMethod.Reduce4 or
     ZipCompressionMethod.Implode => ZipConstants.VersionNeeded10,
-    ZipCompressionMethod.Deflate => ZipConstants.VersionNeeded20,
+    // WinZip writes 2.0 as the version needed for its WavPack method (kb.winzip.com/en/130539).
+    ZipCompressionMethod.Deflate or ZipCompressionMethod.WavPack => ZipConstants.VersionNeeded20,
     ZipCompressionMethod.Deflate64 => ZipConstants.VersionNeeded21,
     ZipCompressionMethod.BZip2 => ZipConstants.VersionNeeded46,
     ZipCompressionMethod.Lzma or

@@ -26,7 +26,7 @@ internal sealed class ZipRawRecord {
   public bool IsUtf8 => (this.Flags & ZipConstants.FlagUtf8) != 0;
 
   /// <summary>The name, decoded the way the reader decodes it.</summary>
-  public string Name => (this.IsUtf8 ? Encoding.UTF8 : Encoding.Latin1).GetString(this.NameBytes);
+  public string Name => ZipNameEncoding.Decode(this.NameBytes, this.Flags, this.Extra);
 
   private uint Compressed32 => BinaryPrimitives.ReadUInt32LittleEndian(this.Fixed.AsSpan(20));
   private uint Uncompressed32 => BinaryPrimitives.ReadUInt32LittleEndian(this.Fixed.AsSpan(24));

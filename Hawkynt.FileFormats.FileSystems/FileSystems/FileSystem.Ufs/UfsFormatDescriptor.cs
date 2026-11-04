@@ -6,8 +6,11 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Ufs;
 
 /// <summary>
-/// R/W descriptor for UFS1 (Berkeley Fast File System) images at the
-/// byte-exact <c>newfs -O1</c> layout.
+/// Descriptor for the Berkeley Fast File System: UFS1 and UFS2 in either byte
+/// order are listed and extracted; UFS1 little-endian images are also created
+/// (byte-exact <c>newfs -O1</c> layout) and edited in place. UFS2 and big-endian
+/// volumes are read-only here — every editing entry point refuses them before a
+/// byte is written, rather than rewriting them as UFS1.
 ///
 /// References:
 /// <list type="bullet">
@@ -40,6 +43,21 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     => UfsExtentMap.Enumerate(image);
 
   /// <summary>
+  /// Refuses an edit on any volume the UFS1 writer did not lay out the same way:
+  /// UFS2, big-endian, or a superblock away from <c>SBLOCK_UFS1</c>. The image is
+  /// left byte-identical.
+  /// </summary>
+  internal static void RequireEditable(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var probe = UfsReader.Probe(image) ?? throw new InvalidDataException("UFS: no UFS1 or UFS2 superblock found.");
+    image.Position = 0;
+    if (probe.Version != 1 || probe.BigEndian || probe.Offset != UfsWriter.SuperblockOffset)
+      throw new NotSupportedException(
+        $"UFS: {(probe.Version == 2 ? "UFS2" : "UFS1")} {(probe.BigEndian ? "big-endian" : "little-endian")} volumes " +
+        $"(superblock at {probe.Offset}) are read-only; only little-endian UFS1 is edited.");
+  }
+
+  /// <summary>
   /// Zeros all unused space in a UFS1 image: every block not claimed by the
   /// superblock, the CG inode table, a directory's data blocks, or a file's
   /// direct-block run. Driven by the generic <see cref="UnusedSpaceWiper"/>
@@ -54,7 +72,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// never match a file-size key — they (and all metadata) are preserved.</para>
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
-    ArgumentNullException.ThrowIfNull(image);
+    RequireEditable(image);
     image.Position = 0;
     var imageSize = image.Length;
 
@@ -90,7 +108,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the accepted inputs description.
   /// </summary>
   public string AcceptedInputsDescription =>
-    "UFS1 filesystem image; multiple cylinder groups, nested directories, " +
+    "UFS1 filesystem image (created little-endian); multiple cylinder groups, nested directories, " +
     "direct- plus single-indirect-block files (up to ~16 MB each).";
   /// <summary>
   /// Performs the can accept operation.
@@ -135,7 +153,14 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the magic signatures.
   /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
-    [new([0x54, 0x19, 0x01, 0x00], Offset: 8192 + 1372, Confidence: 0.90)];
+    [
+      new([0x54, 0x19, 0x01, 0x00], Offset: 8192 + 1372, Confidence: 0.90),   // UFS1, little-endian
+      new([0x00, 0x01, 0x19, 0x54], Offset: 8192 + 1372, Confidence: 0.90),   // UFS1, big-endian
+      new([0x19, 0x01, 0x54, 0x19], Offset: 65536 + 1372, Confidence: 0.90),  // UFS2 at SBLOCK_UFS2, little-endian
+      new([0x19, 0x54, 0x01, 0x19], Offset: 65536 + 1372, Confidence: 0.90),  // UFS2 at SBLOCK_UFS2, big-endian
+      new([0x19, 0x01, 0x54, 0x19], Offset: 8192 + 1372, Confidence: 0.90),   // UFS2 at SBLOCK_UFS1 (makefs), little-endian
+      new([0x19, 0x54, 0x01, 0x19], Offset: 8192 + 1372, Confidence: 0.90),   // UFS2 at SBLOCK_UFS1 (makefs), big-endian
+    ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
@@ -151,7 +176,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Unix File System (UFS1) image";
+  public string Description => "Unix File System (UFS1/UFS2) image";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -264,6 +289,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// the root dir block, and the file's data blocks are read or written.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    RequireEditable(archive);
     // The in-place modifier walks the volume in memory, which a volume past two
     // gigabytes does not fit in — and where it can still edit, it has no room
     // to grow a full volume. Above that the edit unpacks and relays it out.
@@ -284,6 +310,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// wiped during removal so no forensic trace remains.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    RequireEditable(archive);
     // See Add: past two gigabytes the volume cannot be walked in memory.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
       ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
@@ -298,6 +325,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <inheritdoc />
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    RequireEditable(image);
     var mover = new UfsBlockMover();
     mover.Init(image);
     mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
@@ -305,6 +333,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <inheritdoc />
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    RequireEditable(image);
     var mover = new UfsBlockMover();
     mover.Init(image);
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
@@ -323,6 +352,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
+    RequireEditable(archive);
 
     if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
       try {

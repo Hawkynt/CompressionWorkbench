@@ -27,7 +27,7 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new("Password", "Password", FormatOptionKind.String, "",
       Description: "Optional ZipCrypto / AES password."),
     new("EncryptionMethod", "Encryption method", FormatOptionKind.Enum, "none",
-      AllowedValues: ["none", "zipcrypto", "aes-128", "aes-192", "aes-256"]),
+      AllowedValues: ["none", "zipcrypto", "aes-128", "aes-192", "aes-256", "pkware-aes-256"]),
   ];
 
   /// <summary>
@@ -213,11 +213,15 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       // Stored entries stream straight to disk; an entry past the array limit
       // cannot be materialised at all. Compressed ones still go through the
       // buffered decoder.
+      string written;
       using (var target = CreateEntryFile(outputDir, e.FileName)) {
-        if (r.TryCopyEntryTo(e, target)) continue;
-        var bytes = r.ExtractEntry(e);
-        target.Write(bytes, 0, bytes.Length);
+        written = target.Name;
+        if (!r.TryCopyEntryTo(e, target)) {
+          var bytes = r.ExtractEntry(e);
+          target.Write(bytes, 0, bytes.Length);
+        }
       }
+      ApplyEntryTime(written, e.LastModified);
     }
   }
 
@@ -306,14 +310,15 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       w.Bzip2BlockSize = ZipOptionsResolver.ResolveBzip2BlockSize(options.DictSize);
 
     foreach (var i in inputs) {
-      if (i.IsDirectory) { w.AddDirectory(i.ArchiveName); continue; }
+      // DOS times are local times; the source's last-write time is kept.
+      if (i.IsDirectory) { w.AddDirectory(i.ArchiveName, i.SourceLastModifiedUtc?.ToLocalTime()); continue; }
       // ReadContent() transparently handles both on-disk inputs and the
       // in-memory variant fed by the small-image ConvertArchive pipeline.
       var data = i.ReadContent();
       var entryMethod = options.IncompressiblePaths != null && options.IncompressiblePaths.Contains(i.FullPath)
         ? ZipCompressionMethod.Store
         : zipMethod;
-      w.AddEntry(i.ArchiveName, data, entryMethod);
+      w.AddEntry(i.ArchiveName, data, entryMethod, i.SourceLastModifiedUtc?.ToLocalTime());
     }
     w.Finish();
   }

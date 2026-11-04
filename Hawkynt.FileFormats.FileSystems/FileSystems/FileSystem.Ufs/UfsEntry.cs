@@ -29,5 +29,5 @@ public sealed class UfsEntry {
   /// Gets or sets the last modified.
   /// </summary>
   public DateTime? LastModified { get; init; }
-  internal int Inode { get; init; }
+  internal long Inode { get; init; }
 }

@@ -26,7 +26,8 @@ namespace FileFormat.Woz;
 ///   <item><description>WOZ 1.0 / 2.x reference documents published by the Applesauce project</description></item>
 /// </list>
 /// </summary>
-public sealed class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed partial class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
+    IArchiveModifiable, IArchiveWriteConstraints, ISyntheticEntryNames {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -44,7 +45,7 @@ public sealed class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -90,7 +91,12 @@ public sealed class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     bool Synchronized,
     string? Meta,
     List<(string Name, byte[] Data)> Tracks,
-    bool Valid);
+    bool Valid) {
+    public byte[]? InfoRaw { get; init; }
+    public byte[]? TmapRaw { get; init; }
+    public Dictionary<int, uint> BitCounts { get; init; } = [];
+    public string? MetaRaw => this.Meta;
+  }
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -106,6 +112,10 @@ public sealed class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var idx = 2;
     if (info.Valid && info.Meta != null)
       entries.Add(new ArchiveEntryInfo(idx++, "meta.ini", info.Meta.Length, info.Meta.Length, "Stored", false, false, null));
+    if (info.Valid && info.InfoRaw != null)
+      entries.Add(new ArchiveEntryInfo(idx++, "info.bin", info.InfoRaw.Length, info.InfoRaw.Length, "Stored", false, false, null));
+    if (info.Valid && info.TmapRaw != null)
+      entries.Add(new ArchiveEntryInfo(idx++, "tmap.bin", info.TmapRaw.Length, info.TmapRaw.Length, "Stored", false, false, null));
     if (info.Valid) {
       foreach (var (name, bytes) in info.Tracks)
         entries.Add(new ArchiveEntryInfo(idx++, name, bytes.Length, bytes.Length, "Stored", false, false, null, "Track"));
@@ -127,6 +137,10 @@ public sealed class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     if (info.Valid && info.Meta != null && Wants(files, "meta.ini"))
       WriteFile(outputDir, "meta.ini", Encoding.UTF8.GetBytes(BuildMetaIni(info.Meta)));
+    if (info.Valid && info.InfoRaw != null && Wants(files, "info.bin"))
+      WriteFile(outputDir, "info.bin", info.InfoRaw);
+    if (info.Valid && info.TmapRaw != null && Wants(files, "tmap.bin"))
+      WriteFile(outputDir, "tmap.bin", info.TmapRaw);
 
     if (info.Valid) {
       foreach (var (name, bytes) in info.Tracks) {
@@ -134,6 +148,157 @@ public sealed class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           WriteFile(outputDir, name, bytes);
       }
     }
+  }
+
+  private static readonly IReadOnlySet<string> Synthetic = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "FULL.woz", "metadata.ini" };
+
+  /// <inheritdoc />
+  public IReadOnlySet<string> SyntheticEntryNames => Synthetic;
+
+  [System.Text.RegularExpressions.GeneratedRegex(@"^(?:.*/)?track(\d{3})\.bin$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+  private static partial System.Text.RegularExpressions.Regex TrackName();
+
+  /// <inheritdoc />
+  public long? MaxTotalArchiveSize => null;
+
+  /// <inheritdoc />
+  public string AcceptedInputsDescription => "accepts: tracks/trackNNN.bin (bitstreams), info.bin, tmap.bin, meta.ini, metadata.ini (track_NNN_bits), or one whole FULL.woz";
+
+  /// <inheritdoc />
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    var name = input.ArchiveName.Replace('\\', '/');
+    var leaf = Path.GetFileName(name);
+    if (TrackName().IsMatch(name) || leaf.ToLowerInvariant() is "info.bin" or "tmap.bin" or "meta.ini" or "metadata.ini" or "full.woz") {
+      reason = null;
+      return true;
+    }
+    reason = $"'{input.ArchiveName}' is not a WOZ member; {this.AcceptedInputsDescription}";
+    return false;
+  }
+
+  /// <summary>
+  /// Writes a WOZ 2 image from the members this reader lists. Missing INFO/TMAP get defaults (a
+  /// 5.25" disk, whole tracks at quarter-tracks 4t−1…4t+1); a track's bit count comes from
+  /// <c>metadata.ini</c> (<c>track_NNN_bits</c>) or is 8 × its length. A lone FULL.woz is taken whole.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    var parts = this.Collect(new Parts(), inputs);
+    if (parts.Full is not null && parts.Tracks.Count == 0) {
+      if (!Parse(parts.Full).Valid) throw new ArgumentException("FULL.woz is not a WOZ image.");
+      output.Write(parts.Full);
+      return;
+    }
+    Emit(output, parts);
+  }
+
+  /// <summary>Replaces or adds tracks, INFO, TMAP, META and bit counts; the image is rebuilt as WOZ 2.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    var parts = this.Collect(Existing(archive), inputs);
+    Compression.Registry.WholeImageRebuildCommitter.Replace(archive, s => Emit(s, parts), Verify);
+  }
+
+  /// <summary>Removes tracks (their TMAP slots are cleared) or the META chunk.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    var parts = Existing(archive);
+    foreach (var raw in entryNames) {
+      var name = raw.Replace('\\', '/');
+      var m = TrackName().Match(name);
+      if (m.Success) {
+        var t = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+        parts.Tracks.Remove(t);
+        parts.BitCounts.Remove(t);
+        if (parts.Tmap is not null)
+          for (var q = 0; q < parts.Tmap.Length; ++q) if (parts.Tmap[q] == t) parts.Tmap[q] = 0xFF;
+      } else if (Path.GetFileName(name).Equals("meta.ini", StringComparison.OrdinalIgnoreCase)) parts.Meta = null;
+      else if (!Synthetic.Contains(Path.GetFileName(name))) throw new NotSupportedException($"WOZ: '{raw}' cannot be removed.");
+    }
+    Compression.Registry.WholeImageRebuildCommitter.Replace(archive, s => Emit(s, parts), Verify);
+  }
+
+  private sealed class Parts {
+    public byte[]? Info;
+    public byte[]? Tmap;
+    public string? Meta;
+    public byte[]? Full;
+    public Dictionary<int, byte[]> Tracks = [];
+    public Dictionary<int, uint> BitCounts = [];
+  }
+
+  private static Parts Existing(Stream archive) {
+    var data = ReadAll(archive);
+    var info = Parse(data);
+    if (!info.Valid) throw new InvalidDataException("WOZ: not a valid image.");
+    var parts = new Parts { Info = UpgradeInfo(info.InfoRaw), Tmap = info.TmapRaw?.ToArray(), Meta = info.Meta };
+    foreach (var (name, bytes) in info.Tracks) {
+      var t = int.Parse(TrackName().Match(name).Groups[1].Value, CultureInfo.InvariantCulture);
+      parts.Tracks[t] = bytes;
+      if (info.BitCounts.TryGetValue(t, out var bits)) parts.BitCounts[t] = bits;
+    }
+    return parts;
+  }
+
+  private static byte[]? UpgradeInfo(byte[]? raw) {
+    if (raw is null) return null;
+    var info = new byte[WozWriter.InfoSize];
+    raw.AsSpan(0, Math.Min(raw.Length, info.Length)).CopyTo(info);
+    if (info[0] < 2) {
+      // WOZ 1 INFO stops after the creator; give the version-2 fields their neutral values.
+      info[37] = 1;
+      info[39] = (byte)(info[1] == 2 ? 16 : 32);
+    }
+    return info;
+  }
+
+  private Parts Collect(Parts parts, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var input in inputs) {
+      if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName)) continue;
+      if (!this.CanAccept(input, out var reason)) throw new ArgumentException(reason);
+      var name = input.ArchiveName.Replace('\\', '/');
+      var m = TrackName().Match(name);
+      if (m.Success) {
+        var t = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+        parts.Tracks[t] = input.ReadContent();
+        parts.BitCounts.Remove(t);
+        continue;
+      }
+      var content = input.ReadContent();
+      switch (Path.GetFileName(name).ToLowerInvariant()) {
+        case "info.bin": parts.Info = UpgradeInfo(content); break;
+        case "tmap.bin": parts.Tmap = content; break;
+        case "meta.ini": parts.Meta = FromMetaIni(Encoding.UTF8.GetString(content)); break;
+        case "full.woz": parts.Full = content; break;
+        case "metadata.ini":
+          foreach (var line in Encoding.UTF8.GetString(content).Split('\n')) {
+            var l = line.Trim();
+            if (!l.StartsWith("track_", StringComparison.Ordinal) || !l.Contains("_bits=", StringComparison.Ordinal)) continue;
+            var t = int.Parse(l.AsSpan(6, 3), CultureInfo.InvariantCulture);
+            parts.BitCounts[t] = uint.Parse(l[(l.IndexOf('=') + 1)..], CultureInfo.InvariantCulture);
+          }
+          break;
+      }
+    }
+    return parts;
+  }
+
+  private static void Emit(Stream output, Parts parts) {
+    var tracks = parts.Tracks.ToDictionary(kv => kv.Key,
+      kv => (kv.Value, parts.BitCounts.TryGetValue(kv.Key, out var b) ? b : (uint)kv.Value.Length * 8));
+    WozWriter.Write(output, parts.Info ?? WozWriter.DefaultInfo(), parts.Tmap ?? WozWriter.DefaultTmap(parts.Tracks.Keys), tracks, parts.Meta);
+  }
+
+  private static void Verify(Stream candidate) {
+    if (!Parse(ReadAll(candidate)).Valid) throw new InvalidDataException("WOZ: rebuilt image does not parse.");
+  }
+
+  /// <summary>meta.ini (<c>key=value</c>) back to the META chunk's tab-separated lines.</summary>
+  private static string? FromMetaIni(string ini) {
+    var lines = ini.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Contains('=') && !l.StartsWith('['))
+      .Select(l => { var i = l.IndexOf('='); return l[..i].Trim() + "\t" + l[(i + 1)..].Trim(); }).ToList();
+    return lines.Count == 0 ? null : string.Join("\n", lines) + "\n";
   }
 
   private static bool Wants(string[]? files, string name)
@@ -155,6 +320,7 @@ public sealed class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       string? meta = null;
       byte[]? trksPayload = null;
       byte[]? tmapPayload = null;
+      byte[]? infoPayload = null;
 
       var pos = 12;
       var guard = 0;
@@ -167,6 +333,7 @@ public sealed class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
         switch (id) {
           case "INFO":
+            infoPayload = payload.ToArray();
             if (payload.Length >= 5) {
               infoVersion = payload[0];
               diskType = payload[1];
@@ -187,11 +354,12 @@ public sealed class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         pos += (int)size;
       }
 
+      var bitCounts = new Dictionary<int, uint>();
       if (trksPayload != null)
-        SplitTracks(version, trksPayload, tmapPayload, data, tracks);
+        SplitTracks(version, trksPayload, tmapPayload, data, tracks, bitCounts);
 
       return new WozInfo(version, infoVersion, diskType, writeProtected, synchronized,
-        meta, tracks, Valid: true);
+        meta, tracks, Valid: true) { InfoRaw = infoPayload, TmapRaw = tmapPayload, BitCounts = bitCounts };
     } catch {
       return Invalid(tracks);
     }
@@ -203,18 +371,20 @@ public sealed class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // counts. WOZ2: the TRKS payload starts with a 160-entry TRK table (startBlock
   // u16, blockCount u16, bitCount u32); startBlock is a *file-absolute* 512-byte
   // block, so bitstreams are resolved against the whole file buffer.
-  private static void SplitTracks(int version, byte[] trks, byte[]? tmap, byte[] file, List<(string, byte[])> tracks) {
+  private static void SplitTracks(int version, byte[] trks, byte[]? tmap, byte[] file, List<(string, byte[])> tracks, Dictionary<int, uint> bitCounts) {
     try {
       if (version == 1) {
         const int slot = 6656;
         var count = trks.Length / slot;
         for (var t = 0; t < count && t < 160; ++t) {
           if (IsEmptyTmapSlot(tmap, t)) continue;
-          var bytesUsed = BinaryPrimitives.ReadUInt16LittleEndian(trks.AsSpan(t * slot + 6648, 2));
+          var bytesUsed = BinaryPrimitives.ReadUInt16LittleEndian(trks.AsSpan(t * slot + 6646, 2));
+          var bitsUsed = BinaryPrimitives.ReadUInt16LittleEndian(trks.AsSpan(t * slot + 6648, 2));
           var len = bytesUsed > 0 && bytesUsed <= slot ? bytesUsed : slot;
           var block = new byte[len];
           Array.Copy(trks, t * slot, block, 0, len);
           tracks.Add((string.Create(CultureInfo.InvariantCulture, $"tracks/track{t:D3}.bin"), block));
+          bitCounts[t] = bitsUsed > 0 ? bitsUsed : (uint)len * 8;
         }
       } else {
         for (var t = 0; t < 160; ++t) {
@@ -230,6 +400,7 @@ public sealed class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           var block = new byte[byteLen];
           Array.Copy(file, fileOffset, block, 0, byteLen);
           tracks.Add((string.Create(CultureInfo.InvariantCulture, $"tracks/track{t:D3}.bin"), block));
+          bitCounts[t] = bitCount;
         }
       }
     } catch {
@@ -258,6 +429,8 @@ public sealed class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     sb.Append(CultureInfo.InvariantCulture, $"synchronized={(info.Synchronized ? 1 : 0)}\n");
     sb.Append(CultureInfo.InvariantCulture, $"track_count={info.Tracks.Count}\n");
     sb.Append(CultureInfo.InvariantCulture, $"has_meta={(info.Meta != null ? 1 : 0)}\n");
+    foreach (var (t, bits) in info.BitCounts.OrderBy(kv => kv.Key))
+      sb.Append(CultureInfo.InvariantCulture, $"track_{t:D3}_bits={bits}\n");
     sb.Append("parse_status=ok\n");
     return sb.ToString();
   }

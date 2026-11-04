@@ -97,6 +97,26 @@ public static class ExtModifier {
   /// then is the old inode released — so a replace that cannot be completed leaves
   /// the old file as it was.
   /// </summary>
+  /// <summary>
+  /// Creates a folder, with any missing parents, in place; a folder that is already there is
+  /// left as it is, and anything else of that name is refused. An empty folder added this
+  /// way survives.
+  /// </summary>
+  public static void AddDirectory(Stream image, string path) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(path);
+    var parts = SplitPath(path);
+    if (parts.Length == 0) return;
+    var geom = ReadGeometry(image);
+    // Everything that could refuse is checked before anything is written; a name on the
+    // way that is not a folder is refused by the resolution itself.
+    var parentInodeNum = ResolveExisting(image, geom, parts, out var missing);
+    if (missing.Length == 0) return;
+    EnsureWritableDirectory(image, geom, parentInodeNum);
+    foreach (var folder in missing)
+      parentInodeNum = MakeDirectory(image, geom, parentInodeNum, folder);
+  }
+
   public static void AddFile(Stream image, string path, byte[] data) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(path);

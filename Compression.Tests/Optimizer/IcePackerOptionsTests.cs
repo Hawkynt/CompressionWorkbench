@@ -13,6 +13,11 @@ namespace Compression.Tests.Optimizer;
 [TestFixture]
 public sealed class IcePackerOptionsTests {
 
+  /// <summary>
+  /// 2000 four-byte records, a shared prefix and one of four keys: every three-byte window
+  /// recurs hundreds of times inside the window, so a deeper hash-chain search finds longer
+  /// repeats of the key sequence.
+  /// </summary>
   private static byte[] LevelSensitiveSample() {
     uint state = 1;
 
@@ -23,14 +28,14 @@ public sealed class IcePackerOptionsTests {
       return state;
     }
 
-    var data = new byte[30_000];
-    var p = 0;
-    while (p < data.Length) {
-      var run = 2 + (int)(Next() & 15);
-      var value = (byte)(Next() & 63);
-      for (var i = 0; i < run && p < data.Length; ++i)
-        data[p++] = value;
+    var data = new byte[8_000];
+    for (var i = 0; i < data.Length; i += 4) {
+      data[i] = (byte)'A';
+      data[i + 1] = (byte)'B';
+      data[i + 2] = (byte)'C';
+      data[i + 3] = (byte)('0' + (Next() & 3));
     }
+
     return data;
   }
 

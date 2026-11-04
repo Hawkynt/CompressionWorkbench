@@ -108,7 +108,7 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Performs the create operation.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var fatImage = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
+    var fatImage = FileSystem.Fat.FatWriter.BuildFromInputs(inputs);
     var w = new VhdWriter();
     w.SetDiskData(fatImage);
     output.Write(w.Build());

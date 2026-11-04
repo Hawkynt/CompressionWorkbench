@@ -318,9 +318,9 @@ public class EndToEndInteropTests {
     // Formats requiring special input data
     ".mp3",    // Wrapster wraps as MP3
     ".zpaq",   // ZPAQ journaling format, complex create/extract semantics
-    // Track-indexed Amiga disk archivers and single-fork Mac compressors.
-    // Test files use generic names (small.txt etc.) that the track-indexed format can't roundtrip.
-    ".lhf", ".dd", ".zap",
+    // Single-fork Mac compressors.
+    // Test files use generic names (small.txt etc.) that a one-payload format cannot round-trip.
+    ".dd",
     // Placeholder writers (magic + a few fields, no actual entry data layout)
     ".sitx",
     // SFX-style installers — extension .exe is shared by InnoSetup, Nsis, and SFX
@@ -1387,9 +1387,9 @@ public class EndToEndInteropTests {
     // Encoding wrappers
     "MacBinary", "BinHex", "UuEncoding", "YEnc",
     // Formats that require structured input
-    "Swf", "Yaz0",
+    "Swf", "Yaz0", "Um3",
     // Extremely slow neural/context-mixing compressors
-    "Paq8", "Cmix", "Mcm",
+    "Paq8",
     // Formats with known limitations on arbitrary data
     "PackBits",
     // Audio codec (requires audio PCM data, not arbitrary bytes)

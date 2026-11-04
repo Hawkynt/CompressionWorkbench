@@ -56,7 +56,7 @@ wrapped, because `(long)x * 8 == x * 8` exactly while `x * 8` still fits.
 | `Dictionary/Brotli/BrotliCompressor.cs` | whole-stream `BitLength()` | 256 MB of output | wrong byte-alignment padding on later uncompressed meta-blocks |
 | `Dictionary/Brotli/BrotliBitReader.cs` | `BitPosition` | 256 MB compressed | wrong reported position |
 | `Entropy/Fse/FseDecoder.cs` | `lastByteIndex * 8 + highBit` | 256 MB | negative start position; garbage or exception |
-| `Dictionary/Lzs`, `Lzwl`, `Lzham`, `Sqx`, `Zip/ImplodeDecoder` | decoder bit positions | 256 MB compressed | `IndexOutOfRangeException` |
+| `Dictionary/Lzs`, `Lzwl`, `Sqx`, `Zip/ImplodeDecoder` | decoder bit positions | 256 MB compressed | `IndexOutOfRangeException` |
 | `Entropy/ExpGolomb`, `Entropy/GolombRice` | decoder bit positions | 256 MB compressed | `IndexOutOfRangeException` |
 | `Simd/SimdBitPack.cs` | `symbolCount * bitsPerSymbol` | 2^28 symbols at 8 bits | undersized or negative buffer size |
 

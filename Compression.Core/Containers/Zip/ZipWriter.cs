@@ -151,6 +151,7 @@ public sealed class ZipWriter : IDisposable {
     }
 
     byte[]? aesExtraField = null;
+    ushort strongFlag = 0;
     var storedMethod = method;
     var encrypted = this._password != null && this._encryptionMethod != ZipEncryptionMethod.None;
 
@@ -160,6 +161,11 @@ public sealed class ZipWriter : IDisposable {
           compressedData = ZipAesEncryption.Encrypt(compressedData, this._password!);
           aesExtraField = ZipAesEncryption.BuildExtraField(method);
           storedMethod = ZipCompressionMethod.WinZipAes;
+          break;
+        case ZipEncryptionMethod.PkwareStrongAes256:
+          compressedData = ZipStrongEncryption.Encrypt(compressedData, this._password!);
+          aesExtraField = ZipStrongEncryption.BuildExtraField(ZipStrongEncryption.AlgAes256);
+          strongFlag = ZipStrongEncryption.FlagStrongEncryption;
           break;
         case ZipEncryptionMethod.PkzipTraditional:
           compressedData = ZipTraditionalEncryption.Encrypt(compressedData, this._password!, crc);
@@ -179,11 +185,11 @@ public sealed class ZipWriter : IDisposable {
       ExtraField = aesExtraField,
       IsEncrypted = encrypted,
       // Implode: 8 KB window + literal tree. LZMA: the stream ends with an end marker (APPNOTE 4.4.4 bit 1).
-      GeneralPurposeFlags = (ushort)(method switch {
+      GeneralPurposeFlags = (ushort)((method switch {
         ZipCompressionMethod.Implode => 0x0006,
         ZipCompressionMethod.Lzma => 0x0002,
         _ => 0,
-      }),
+      }) | strongFlag),
     };
 
     this.EnsureCompatible(entry, method);
@@ -203,6 +209,7 @@ public sealed class ZipWriter : IDisposable {
       throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
 
     byte[]? aesExtraField = null;
+    ushort strongFlag = 0;
     var storedMethod = method;
     var encrypted = this._password != null && this._encryptionMethod != ZipEncryptionMethod.None;
 
@@ -212,6 +219,11 @@ public sealed class ZipWriter : IDisposable {
           compressedData = ZipAesEncryption.Encrypt(compressedData, this._password!);
           aesExtraField = ZipAesEncryption.BuildExtraField(method);
           storedMethod = ZipCompressionMethod.WinZipAes;
+          break;
+        case ZipEncryptionMethod.PkwareStrongAes256:
+          compressedData = ZipStrongEncryption.Encrypt(compressedData, this._password!);
+          aesExtraField = ZipStrongEncryption.BuildExtraField(ZipStrongEncryption.AlgAes256);
+          strongFlag = ZipStrongEncryption.FlagStrongEncryption;
           break;
         case ZipEncryptionMethod.PkzipTraditional:
           compressedData = ZipTraditionalEncryption.Encrypt(compressedData, this._password!, crc32);
@@ -230,6 +242,7 @@ public sealed class ZipWriter : IDisposable {
       LocalHeaderOffset = this._stream.Position,
       ExtraField = aesExtraField,
       IsEncrypted = encrypted,
+      GeneralPurposeFlags = strongFlag,
     };
 
     this.EnsureCompatible(entry, method);

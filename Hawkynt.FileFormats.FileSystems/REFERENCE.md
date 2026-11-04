@@ -992,7 +992,112 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 
 ### Namespace `FileFormat.Ewf`
 
-[`EwfFormatDescriptor`](#ewfformatdescriptor) · [`EwfMediaStream`](#ewfmediastream) · [`EwfReader`](#ewfreader) · [`EwfReader.EwfImage`](#ewfreaderewfimage) · [`EwfReader.Section`](#ewfreadersection) · [`EwfWriter`](#ewfwriter)
+[`Ewf2FormatDescriptor`](#ewf2formatdescriptor) · [`Ewf2Image`](#ewf2image) · [`Ewf2Image.Section`](#ewf2imagesection) · [`Ewf2MediaStream`](#ewf2mediastream) · [`Ewf2Writer`](#ewf2writer) · [`EwfFormatDescriptor`](#ewfformatdescriptor) · [`EwfMediaStream`](#ewfmediastream) · [`EwfReader`](#ewfreader) · [`EwfReader.EwfImage`](#ewfreaderewfimage) · [`EwfReader.Section`](#ewfreadersection) · [`EwfWriter`](#ewfwriter)
+
+#### `Ewf2FormatDescriptor`
+
+EnCase 7 Evidence File Format version 2 (EWF2-Ex01): the forensic image's media as `media.raw` plus its device information and case data as `metadata.ini`. Segment sets (.Ex02 onward) are followed when the image is opened from a file; extraction checks the stored MD5 and SHA-1. Create writes a single-segment Ex01.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ewf2FormatDescriptor` | `Ewf2FormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `Ewf2Image`
+
+An EWF2-Ex01 segment set (EnCase 7 "Evidence File Format version 2"), after libyal's EWF 2 specification: a 32-byte file header, then sections whose 64-byte descriptor follows their data and points back at the previous descriptor, read from the end.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BytesPerSector` | `int BytesPerSector { get; }` | Bytes per sector. |
+| `CaseData` | `IReadOnlyDictionary<string, string> CaseData { get; }` | Case data values by tag (nm, cn, en, ex, nt, sb, ...). |
+| `CompressionMethod` | `ushort CompressionMethod { get; }` | The chunk compression method of the file header. |
+| `DeviceInformation` | `IReadOnlyDictionary<string, string> DeviceInformation { get; }` | Device information values by tag (sn, md, ts, bp, ...). |
+| `LogicalSignature` | `static ReadOnlySpan<byte> LogicalSignature { get; }` | "LEF2\r\n\x81\0" (Lx01, logical evidence). |
+| `Md5` | `byte[] Md5 { get; }` | The stored MD5 of the media, if any. |
+| `MediaSize` | `long MediaSize { get; }` | Media size in bytes. |
+| `Sections` | `IReadOnlyList<Section> Sections { get; }` | Every section of every segment, in file order. |
+| `SectorsPerChunk` | `int SectorsPerChunk { get; }` | Sectors per chunk. |
+| `SegmentCount` | `int SegmentCount { get; }` | Number of segment files in the set. |
+| `SetIdentifier` | `Guid SetIdentifier { get; }` | The segment file set identifier. |
+| `Sha1` | `byte[] Sha1 { get; }` | The stored SHA-1 of the media, if any. |
+| `Signature` | `static ReadOnlySpan<byte> Signature { get; }` | "EVF2\r\n\x81\0". |
+| `Dispose` | `void Dispose()` | Releases the segment files this set opened. |
+| `Open` | `static Ewf2Image Open(Stream first, bool leaveOpen = true)` | Opens the set `first` starts; further segments (.Ex02 ...) are looked up next to it when it was opened from a file. |
+| `SegmentPath` | `static string SegmentPath(string firstPath, int number)` | Path of segment `number` (1-based): .Ex01 ... .Ex99, .ExAA ... .ExZZ, .EyAA ... |
+
+#### `Ewf2Image.Section`
+
+One section: its type and where its data lies in its segment.
+
+Implements `IEquatable<Section>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Section` | `Section(int Segment, uint Type, uint Flags, long DataOffset, long DataSize, uint PaddingSize)` | One section: its type and where its data lies in its segment. |
+| `DataOffset` | `long DataOffset { get; init; }` |  |
+| `DataSize` | `long DataSize { get; init; }` |  |
+| `Flags` | `uint Flags { get; init; }` |  |
+| `PaddingSize` | `uint PaddingSize { get; init; }` |  |
+| `Segment` | `int Segment { get; init; }` |  |
+| `Type` | `uint Type { get; init; }` |  |
+
+#### `Ewf2MediaStream`
+
+Read-only access to the media of an `Ewf2Image`.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ewf2MediaStream` | `Ewf2MediaStream(Ewf2Image image)` | Wraps `image`; disposing the stream disposes the image. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `Ewf2Writer`
+
+Writes a single-segment EWF2-Ex01 image (libyal's EWF 2 specification): device information, case data, the chunks (zlib-compressed where that is smaller, else stored with an Adler-32 trailer), one sector table, the MD5 and SHA-1 of the media, and "done". Every section and chunk is 16-byte aligned. Chunks are never pattern-filled.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ewf2Writer` | `Ewf2Writer()` |  |
+| `AcquisitionTime` | `DateTimeOffset AcquisitionTime { get; init; }` | The acquisition time recorded in the case data. |
+| `Case` | `ValueTuple<string, string, string, string, string> Case { get; init; }` | Case name, case number, evidence number, examiner and notes. |
+| `Compress` | `bool Compress { get; init; }` | Whether chunks are zlib-compressed (when that makes them smaller). |
+| `SetIdentifier` | `Guid SetIdentifier { get; init; }` | The segment file set identifier. |
+| `Write` | `void Write(Stream output, ReadOnlySpan<byte> media)` | Writes `media` as an Ex01 image to `output`; a trailing partial sector is padded with zeros to a whole one, as EWF stores whole sectors. |
 
 #### `EwfFormatDescriptor`
 
@@ -1293,6 +1398,54 @@ Parser for Texas Instruments TI-TXT firmware images. Address records introduce s
 | `TiTxtReader` | `TiTxtReader()` |  |
 | `Read` | `static FirmwareImage Read(string text)` | Parses a TI-TXT document into its sparse firmware image. |
 
+### Namespace `FileFormat.Gdi`
+
+[`GdiFormatDescriptor`](#gdiformatdescriptor) · [`GdiTrack`](#gditrack)
+
+#### `GdiFormatDescriptor`
+
+Dreamcast GD-ROM track list (`.gdi`): a text manifest — a track count, then one line per track (number, start LBA, type 0 audio / 4 data, sector size, file name, offset) — naming the track files that sit beside it. Lists `metadata.ini` and every track file it can find next to the manifest, byte for byte. Read-only: a single-stream archive cannot write the sibling track files a GDI consists of.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GdiFormatDescriptor` | `GdiFormatDescriptor()` |  |
+| `MetadataName` | `const string MetadataName` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Parse` | `static List<GdiTrack> Parse(string text)` | Parses the manifest text; file names may be quoted (and then contain spaces). |
+
+#### `GdiTrack`
+
+One line of a GDI track table.
+
+Implements `IEquatable<GdiTrack>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GdiTrack` | `GdiTrack(int Number, long StartLba, int Type, int SectorSize, string FileName, long Offset)` | One line of a GDI track table. |
+| `FileName` | `string FileName { get; init; }` |  |
+| `IsData` | `bool IsData { get; }` |  |
+| `Number` | `int Number { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `SectorSize` | `int SectorSize { get; init; }` |  |
+| `StartLba` | `long StartLba { get; init; }` |  |
+| `Type` | `int Type { get; init; }` |  |
+
 ### Namespace `FileFormat.Ipsw`
 
 [`IpswFormatDescriptor`](#ipswformatdescriptor) · [`IpswInPlaceModifier`](#ipswinplacemodifier)
@@ -1463,6 +1616,106 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Entries` | `static List<FirmwareEntry> Entries(byte[] data)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+### Namespace `FileFormat.Luks`
+
+[`LuksCipher`](#lukscipher) · [`LuksFormatDescriptor`](#luksformatdescriptor) · [`LuksKeySlot`](#lukskeyslot) · [`LuksVolume`](#luksvolume)
+
+#### `LuksCipher`
+
+The dm-crypt sector ciphers LUKS uses: AES in XTS or CBC mode with the `plain`, `plain64` or `essiv:<hash>` IV generators. Every sector is processed on its own, its IV derived from the sector number (plus the segment's IV tweak).
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LuksCipher` | `LuksCipher(string cipher, string mode, ReadOnlySpan<byte> key)` |  |
+| `Decrypt` | `void Decrypt(Span<byte> data, ulong firstSector, int sectorSize = 512)` | Decrypts whole sectors in place; `firstSector` is the IV sector of the first one. |
+| `Dispose` | `void Dispose()` |  |
+| `Encrypt` | `void Encrypt(Span<byte> data, ulong firstSector, int sectorSize = 512)` | Encrypts whole sectors in place. |
+| `IsSupported` | `static bool IsSupported(string cipher, string mode)` | The `cipher-mode` strings this class implements, as cryptsetup spells them. |
+
+#### `LuksFormatDescriptor`
+
+LUKS1/LUKS2 encrypted volume (dm-crypt). Lists the header as `metadata.ini` and the decrypted data segment as `volume.img`; extracting the volume needs the passphrase, which opens a PBKDF2 key slot and is checked against the volume-key digest. Creates LUKS1 volumes (aes-xts-plain64, PBKDF2-SHA256) that cryptsetup opens. Argon2 key slots and ciphers other than AES-XTS/CBC are refused.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LuksFormatDescriptor` | `LuksFormatDescriptor()` |  |
+| `MetadataName` | `const string MetadataName` |  |
+| `VolumeName` | `const string VolumeName` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Encrypts the single input (whole 512-byte sectors) into a new LUKS1 volume. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `LuksKeySlot`
+
+A key slot: where its split key lives and how to derive the key that unlocks it.
+
+Implements `IEquatable<LuksKeySlot>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LuksKeySlot` | `LuksKeySlot(int Index, bool Active, string Kdf, string KdfHash, int Iterations, byte[] Salt, long MaterialOffset, long MaterialSize, int Stripes, string AfHash, string Cipher, string CipherMode, int KeyBytes)` | A key slot: where its split key lives and how to derive the key that unlocks it. |
+| `Active` | `bool Active { get; init; }` |  |
+| `AfHash` | `string AfHash { get; init; }` |  |
+| `CipherMode` | `string CipherMode { get; init; }` |  |
+| `Cipher` | `string Cipher { get; init; }` |  |
+| `Index` | `int Index { get; init; }` |  |
+| `Iterations` | `int Iterations { get; init; }` |  |
+| `KdfHash` | `string KdfHash { get; init; }` |  |
+| `Kdf` | `string Kdf { get; init; }` |  |
+| `KeyBytes` | `int KeyBytes { get; init; }` |  |
+| `Lanes` | `int Lanes { get; init; }` | Argon2 lanes (LUKS2 `cpus`); 0 for PBKDF2 slots. |
+| `MaterialOffset` | `long MaterialOffset { get; init; }` |  |
+| `MaterialSize` | `long MaterialSize { get; init; }` |  |
+| `MemoryKiB` | `int MemoryKiB { get; init; }` | Argon2 memory cost in KiB (LUKS2 `memory`); 0 for PBKDF2 slots. |
+| `Salt` | `byte[] Salt { get; init; }` |  |
+| `Stripes` | `int Stripes { get; init; }` |  |
+
+#### `LuksVolume`
+
+A LUKS1 or LUKS2 volume header and the operations that need the passphrase: unlocking a key slot to recover the volume key and decrypting the data segment. Implemented from the LUKS1 On-Disk Format Specification 1.2.3 and the LUKS2 On-Disk Format Specification (cryptsetup); see `docs/LUKS-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LuksVolume` | `LuksVolume()` |  |
+| `SectorSize` | `const int SectorSize` |  |
+| `CipherMode` | `string CipherMode { get; }` |  |
+| `Cipher` | `string Cipher { get; }` |  |
+| `Hash` | `string Hash { get; }` |  |
+| `IvTweak` | `ulong IvTweak { get; }` |  |
+| `KeyBytes` | `int KeyBytes { get; }` |  |
+| `KeySlots` | `IReadOnlyList<LuksKeySlot> KeySlots { get; }` |  |
+| `Label` | `string Label { get; }` |  |
+| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` |  |
+| `PayloadOffset` | `long PayloadOffset { get; }` |  |
+| `PayloadSectorSize` | `int PayloadSectorSize { get; }` |  |
+| `PayloadSize` | `long PayloadSize { get; }` | Payload length in bytes, or −1 for "to the end of the device". |
+| `Uuid` | `string Uuid { get; }` |  |
+| `Version` | `int Version { get; }` |  |
+| `DecryptPayload` | `void DecryptPayload(Stream stream, byte[] volumeKey, Stream output)` | Decrypts the data segment into `output`. |
+| `PayloadLength` | `long PayloadLength(long deviceLength)` |  |
+| `Read` | `static LuksVolume Read(Stream stream)` |  |
+| `Unlock` | `byte[] Unlock(Stream stream, string passphrase)` | Tries every active key slot; returns the verified volume key. |
+| `VerifyKey` | `bool VerifyKey(ReadOnlySpan<byte> volumeKey)` |  |
+| `WriteLuks1` | `static void WriteLuks1(Stream output, ReadOnlySpan<byte> payload, string passphrase, int iterations = 100000, string hash = "sha256", string uuid = null)` | Writes a LUKS1 volume: aes-xts-plain64 with a 512-bit volume key, PBKDF2 over `hash`, one active key slot, 4000 stripes, payload at 2 MiB. |
 
 ### Namespace `FileFormat.Mdf`
 
@@ -1847,6 +2100,71 @@ Writes Nero NRG v2 images using the DAO profile (`CUEX` + `DAOX` per session). T
 | `GetSectorSize` | `static int GetSectorSize(NrgTrackMode mode)` | Gets the stored sector size implied by an NRG mode code. |
 | `Write` | `static void Write(Stream output, NrgDiscDefinition disc)` | Writes `disc` as an NRG v2 image. |
 
+### Namespace `FileFormat.Pzx`
+
+[`PzxBlock`](#pzxblock) · [`PzxFormatDescriptor`](#pzxformatdescriptor) · [`PzxTape`](#pzxtape)
+
+#### `PzxBlock`
+
+One PZX block: its four-letter tag and its payload.
+
+Implements `IEquatable<PzxBlock>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PzxBlock` | `PzxBlock(string Tag, byte[] Data)` | One PZX block: its four-letter tag and its payload. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Tag` | `string Tag { get; init; }` |  |
+
+#### `PzxFormatDescriptor`
+
+PZX ("Perfect ZX Tape") ZX Spectrum tape image. Lists every block losslessly as `blocks/NNN_TAG.bin`, the data blocks that use the standard ROM loader encoding as a ready-to-use `tape.tap`, each standard payload as `data/NNN.bin`, and the header as `metadata.ini`. Creates tapes from a ZX TAP file (`*.tap`) or from single raw data blocks, encoded exactly as pzxtools' `tap2pzx` encodes them.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PzxFormatDescriptor` | `PzxFormatDescriptor()` |  |
+| `MetadataName` | `const string MetadataName` |  |
+| `TapName` | `const string TapName` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | `*.tap` inputs contribute their blocks; any other file is one data block (flag byte, payload, checksum — written as given). Blocks are written in input order. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `PzxTape`
+
+PZX ("Perfect ZX Tape") 1.0 reader and writer, from Patrik Rak's format specification. The writer emits the standard ROM-loader encoding exactly as pzxtools' `tap2pzx` does (MIT, see `THIRD-PARTY-NOTICE.pzxtools.txt`).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Bit0` | `const int Bit0` |  |
+| `Bit1` | `const int Bit1` |  |
+| `LeaderCycles` | `const int LeaderCycles` |  |
+| `LongLeader` | `const int LongLeader` |  |
+| `ShortLeader` | `const int ShortLeader` |  |
+| `Sync1` | `const int Sync1` |  |
+| `Sync2` | `const int Sync2` |  |
+| `Tail` | `const int Tail` |  |
+| `Header` | `static ValueTuple<int, int, string, List<ValueTuple<string, string>>> Header(PzxBlock pzxt)` | Title and key/value info strings of a PZXT block. |
+| `JoinTap` | `static byte[] JoinTap(IEnumerable<byte[]> blocks)` | Joins blocks into a TAP file. |
+| `Read` | `static List<PzxBlock> Read(ReadOnlySpan<byte> file)` |  |
+| `SplitTap` | `static List<byte[]> SplitTap(ReadOnlySpan<byte> tap)` | Splits a ZX Spectrum TAP file (u16 length + block) into its blocks. |
+| `StandardData` | `static byte[] StandardData(PzxBlock block)` | The bytes of a DATA block that uses the standard ROM bit encoding (two pulses per bit, 855/855 for 0 and 1710/1710 for 1, within 2%, whole bytes), or null for any other block. |
+| `WriteStandard` | `static void WriteStandard(Stream output, IReadOnlyList<byte[]> blocks, string title = null)` | Writes standard-loader blocks as tap2pzx does: a PZXT 1.0 header (plus the optional title), then per block a PULS (pilot, two sync pulses) and a DATA block (initial level high, 945-cycle tail). |
+
 ### Namespace `FileFormat.Qcow2`
 
 [`Qcow2Entry`](#qcow2entry) · [`Qcow2FormatDescriptor`](#qcow2formatdescriptor) · [`Qcow2LayoutMap`](#qcow2layoutmap) · [`Qcow2Reader`](#qcow2reader) · [`Qcow2Stream`](#qcow2stream) · [`Qcow2Writer`](#qcow2writer)
@@ -1905,21 +2223,23 @@ Walks the active QCOW2 mapping plus the refcount metadata and emits a fail-close
 
 #### `Qcow2Reader`
 
-Reads self-contained QCOW2 v2/v3 disk images with standard L2 entries. Supports unallocated, zero, uncompressed and deflate-compressed guest clusters. Backing files, encryption and incompatible v3 feature profiles are rejected instead of being interpreted as zero-filled data.
+Reads self-contained QCOW2 v2/v3 disk images with standard L2 entries. Supports unallocated, zero, uncompressed and deflate-compressed guest clusters. Other profiles (backing files, zstd, extended L2, AES or LUKS encryption with a password) are read through `Qcow2Stream`; what neither can decode is refused instead of being interpreted as zero-filled data.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Qcow2Reader` | `Qcow2Reader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `Qcow2Reader`. |
+| `Qcow2Reader` | `Qcow2Reader(Stream stream, string password, bool leaveOpen = false)` | Initializes a new instance of `Qcow2Reader` that unlocks an encrypted image with `password`. |
 | `Entries` | `IReadOnlyList<Qcow2Entry> Entries { get; }` | Gets the entries. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Whether the guest data is encrypted (AES or LUKS). |
 | `VirtualSize` | `long VirtualSize { get; }` | Virtual disk size in bytes. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `ExtractDisk` | `byte[] ExtractDisk()` | Extracts the full virtual disk image, resolving all active L1/L2 table entries. |
 
 #### `Qcow2Stream`
 
-Seekable access to the active guest disk of a QCOW2 image. Reads resolve standard, zero, unallocated and compressed clusters (deflate or zstd), extended L2 entries with their 32 subclusters, and backing files (QCOW2 or raw), which supply every cluster or subcluster the image leaves unallocated. Writes are enabled only for flat standard-refcount profiles and honour QCOW2 copy-on-write semantics for shared L2 and data clusters.
+Seekable access to the active guest disk of a QCOW2 image. Reads resolve standard, zero, unallocated and compressed clusters (deflate or zstd), extended L2 entries with their 32 subclusters, and backing files (QCOW2 or raw), which supply every cluster or subcluster the image leaves unallocated. AES- and LUKS-encrypted images are read when opened with their password (`Qcow2Encryption`). Writes are enabled only for flat standard-refcount profiles and honour QCOW2 copy-on-write semantics for shared L2 and data clusters.
 
 Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
@@ -1933,24 +2253,96 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `Dispose` | `protected override void Dispose(bool disposing)` |  |
 | `Flush` | `override void Flush()` |  |
 | `Open` | `static Qcow2Stream Open(Stream backing, bool leaveOpen = true)` | Opens a QCOW2 image as a virtual guest-disk stream, or explains why it cannot. |
+| `Open` | `static Qcow2Stream Open(Stream backing, string password, bool leaveOpen = true)` | Opens a QCOW2 image, unlocking an encrypted one (and encrypted backing images) with `password`. |
 | `Read` | `override int Read(Span<byte> buffer)` |  |
 | `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
 | `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
 | `SetLength` | `override void SetLength(long value)` |  |
 | `TryOpen` | `static Qcow2Stream TryOpen(Stream backing, bool leaveOpen = true)` | Attempts to open a supported QCOW2 image as a virtual guest-disk stream. |
+| `TryOpen` | `static Qcow2Stream TryOpen(Stream backing, string password, bool leaveOpen = true)` | Attempts to open a supported QCOW2 image, unlocking an encrypted one with `password`. |
 | `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
 | `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
 #### `Qcow2Writer`
 
-Writes canonical self-contained QCOW2 v2 images with 64 KiB clusters and 16-bit eager refcounts. Sparse mode leaves all-zero guest clusters unallocated; dense mode physically allocates every guest cluster without changing guest bytes.
+Writes canonical self-contained QCOW2 v2 images with 64 KiB clusters and 16-bit eager refcounts. Sparse mode leaves all-zero guest clusters unallocated; dense mode physically allocates every guest cluster without changing guest bytes. With a password the guest data is LUKS-encrypted (crypt_method 2): a LUKS1 header (aes-256 xts-plain64, sha256, key slot 0) in its own clusters behind the refcount blocks, each data cluster encrypted with the IV of its host sector.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Qcow2Writer` | `Qcow2Writer()` |  |
+| `DefaultKeySlotIterations` | `const int DefaultKeySlotIterations` | PBKDF2 iterations of the passphrase in the LUKS key slot unless `SetPassword` says otherwise. |
 | `SetDiskImage` | `void SetDiskImage(byte[] data)` | Sets the raw guest disk image to wrap. |
+| `SetPassword` | `void SetPassword(string password, int keySlotIterations = 500000)` | Encrypts the guest data with LUKS under `password` (null: no encryption). |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes a canonical sparse QCOW2 image. |
 | `WriteTo` | `void WriteTo(Stream output, bool sparse)` | Writes a canonical QCOW2 image. |
+
+### Namespace `FileFormat.Scp`
+
+[`ScpFormatDescriptor`](#scpformatdescriptor) · [`ScpImage`](#scpimage)
+
+#### `ScpFormatDescriptor`
+
+SuperCard Pro flux image. Every track is listed as `tracks/track_NNN.bin` (its own TRK block: revolution table plus flux, self-contained), the header as `metadata.ini`, the extension area and footer verbatim. Tracks can be added, replaced and removed; the image is rebuilt with a fresh track table and checksum.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveWriteConstraints`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ScpFormatDescriptor` | `ScpFormatDescriptor()` |  |
+| `ExtensionName` | `const string ExtensionName` |  |
+| `FooterName` | `const string FooterName` |  |
+| `MetadataName` | `const string MetadataName` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+
+#### `ScpImage`
+
+SuperCard Pro flux image (`.scp`): a 16-byte header, a 168-entry track table, optional extension blocks, per-track "TRK" headers with one (index time, flux count, offset) triple per revolution, big-endian 16-bit flux intervals (0 = carry 65 536) and an optional footer. Read and rebuilt from Jim Drew's SCP image specification; layout choices follow Greaseweazle's `image/scp.py` (public domain, see `THIRD-PARTY-NOTICE.greaseweazle.txt`).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ScpImage` | `ScpImage()` |  |
+| `FlagFooter` | `const byte FlagFooter` |  |
+| `FlagIndexed` | `const byte FlagIndexed` |  |
+| `FlagTpi96` | `const byte FlagTpi96` |  |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `TableEnd` | `const int TableEnd` |  |
+| `TrackSlots` | `const int TrackSlots` |  |
+| `BitCellWidth` | `byte BitCellWidth { get; init; }` |  |
+| `ChecksumValid` | `bool ChecksumValid { get; init; }` |  |
+| `DiskType` | `byte DiskType { get; init; }` |  |
+| `Extension` | `byte[] Extension { get; init; }` | Bytes between the track table and the first track (the EXTS extension area), kept verbatim. |
+| `Flags` | `byte Flags { get; init; }` |  |
+| `Footer` | `byte[] Footer { get; init; }` | Footer bytes after the last track (when the footer flag is set). |
+| `Heads` | `byte Heads { get; init; }` |  |
+| `Resolution` | `byte Resolution { get; init; }` |  |
+| `Revolutions` | `byte Revolutions { get; init; }` |  |
+| `Tracks` | `SortedDictionary<int, byte[]> Tracks { get; init; }` | Track number → the track's own bytes: "TRK", number, revolution table, flux data (offsets relative to it). |
+| `Version` | `byte Version { get; init; }` |  |
+| `Flux` | `static List<uint> Flux(byte[] track, int revolution)` | Flux intervals (in ticks) of one revolution of a track blob. |
+| `Read` | `static ScpImage Read(ReadOnlySpan<byte> d)` |  |
+| `RenderMetadata` | `byte[] RenderMetadata()` |  |
+| `WithMetadata` | `ScpImage WithMetadata(byte[] ini)` | Applies the editable header fields of a `metadata.ini` (hex or decimal). |
+| `Write` | `void Write(Stream output)` | Writes the image: header, track table, the extension area verbatim, the tracks in order (each renumbered to its slot), and the 32-bit checksum. A stored footer is not carried over — its fields are absolute offsets into the old layout — and the footer flag is cleared. |
 
 ### Namespace `FileFormat.Seama`
 
@@ -3391,7 +3783,8 @@ Represents an apfs entry.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ApfsEntry` | `ApfsEntry()` |  |
-| `FirstBlock` | `ulong FirstBlock { get; init; }` | First physical block of the file's data extent (0 = no extent). |
+| `FirstBlock` | `ulong FirstBlock { get; init; }` | First block of the file's data when it is one uncompressed extent covering the whole file; 0 otherwise (no data, several extents, or transparent compression). |
+| `IsCompressed` | `bool IsCompressed { get; }` | True when the file's bytes come from decmpfs rather than its data stream. |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Gets a value indicating whether is directory. |
 | `IsSymlink` | `bool IsSymlink { get; init; }` | Gets a value indicating whether is symlink. |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Gets or sets the last modified. |
@@ -3469,7 +3862,7 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<ApfsEntry> Entries { get; }` | Gets the entries. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `ExtractTo` | `void ExtractTo(ApfsEntry entry, Stream destination)` | Copies an entry's bytes into `destination` a block at a time. An APFS file may be far larger than the byte[] `Extract` returns could hold. |
-| `Extract` | `byte[] Extract(ApfsEntry entry)` | Extracts the raw data of a file entry by resolving its file-extent record's physical block number. |
+| `Extract` | `byte[] Extract(ApfsEntry entry)` | Extracts a file's bytes: its data stream's extents in logical order (gaps and sparse extents read as zeros), or, for a transparently compressed file, the decoded decmpfs content. |
 
 #### `ApfsStructuralValidator`
 
@@ -6974,7 +7367,8 @@ In-place ext2/3/4 modifier. Performs O(touched bytes) random-access I/O against 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream image, string path, byte[] data)` | Adds a file at `path` (separated by `/` or `\`) to an existing ext2/3/4 image, genuinely in place. Missing folders on the way are created. An existing regular file of the same name is replaced: the new content gets its own inode, the directory entry is repointed at it, and only then is the old inode released — so a replace that cannot be completed leaves the old file as it was. |
+| `AddDirectory` | `static void AddDirectory(Stream image, string path)` | Adds a file at `path` (separated by `/` or `\`) to an existing ext2/3/4 image, genuinely in place. Missing folders on the way are created. An existing regular file of the same name is replaced: the new content gets its own inode, the directory entry is repointed at it, and only then is the old inode released — so a replace that cannot be completed leaves the old file as it was. |
+| `AddFile` | `static void AddFile(Stream image, string path, byte[] data)` |  |
 | `RemoveFile` | `static bool RemoveFile(Stream image, string path, bool wipeData = true)` | Removes the entry at `path` from an existing ext image, in place. Returns false when no such entry exists. A directory must be empty; a file with further hard links only loses this name. |
 
 #### `ExtModifier.InPlaceUnsupportedException`
@@ -7039,6 +7433,7 @@ Builds minimal ext2 filesystem images from scratch. Uses 1024-byte blocks by def
 | `ExtWriter` | `ExtWriter()` |  |
 | `DeduplicateWithLinks` | `bool DeduplicateWithLinks { get; set; }` | Store one copy of files whose bytes are identical and give the rest a second name for it. |
 | `MakeSparse` | `bool MakeSparse { get; set; }` | Store a file's runs of zeros as holes rather than allocating blocks for them. |
+| `AddDirectory` | `void AddDirectory(string name)` | Adds a directory (and its parents); needed only for empty ones. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a streaming file: `size` drives extent + inode + block-group sizing in pass 1; bytes are pulled from `openStream` in pass 2 of `BuildToStreaming`. Never buffered as `byte[]`. |
 | `BuildAutoSized` | `byte[] BuildAutoSized(int requestedBlockSize = 0)` | Builds the image with the block size chosen by `FilesystemLayoutOptimizer` to minimise slack + metadata overhead, and the block count sized to exactly hold the files. |
@@ -7444,7 +7839,8 @@ Genuine in-place add for FAT12/16/32 images — the inverse of `FatRemover`. All
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(byte[] image, string name, byte[] data, DateTime? modTime = null, bool forceLfn = false)` | Adds (or replaces by path) `name` — a path separated by `/` or `\` — in the in-memory FAT image. Missing folders are created, and a folder stored as a cluster chain grows by a cluster when its slots run out. Throws `IOException` when the volume, or FAT12/16's fixed root directory, has no room. |
+| `AddDirectory` | `static void AddDirectory(byte[] image, string name, DateTime? modTime = null)` | Adds (or replaces by path) `name` — a path separated by `/` or `\` — in the in-memory FAT image. Missing folders are created, and a folder stored as a cluster chain grows by a cluster when its slots run out. Throws `IOException` when the volume, or FAT12/16's fixed root directory, has no room. |
+| `AddFile` | `static void AddFile(byte[] image, string name, byte[] data, DateTime? modTime = null, bool forceLfn = false)` |  |
 
 #### `FatReader`
 
@@ -7526,10 +7922,12 @@ Builds FAT12 / FAT16 / FAT32 filesystem images from scratch per the Microsoft FA
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FatWriter` | `FatWriter()` |  |
+| `AddDirectory` | `void AddDirectory(string name)` | Adds a directory (and its parents); needed only for empty ones. |
 | `AddFile` | `void AddFile(string name, byte[] data, DateTime? modTime = null)` | Adds a file to the image. Long names (mixed case, > 8.3, non-ASCII, multiple dots) are written as VFAT/LFN entries with an auto-generated 8.3 short-name alias. Plain 8.3 names are written as a single dirent. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? modTime = null)` | Adds a streaming file: its `size` is known up front (so the writer can plan the cluster geometry), but its bytes are fetched on demand from `openStream` during the second-pass write — never buffered in memory by the writer. |
 | `BuildAutoSized` | `byte[] BuildAutoSized(int bytesPerSector = 512, int requestedClusterSize = 0, string volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false, int requestedRootEntries = 0, bool forceLfn = false, bool minimal = false)` | Builds the FAT image using the smallest sector count that fits all file data and directory entries. Automatically selects FAT32 (≥ 200 000 sectors) when the file count or total data would overflow the fixed root directory of a FAT12/FAT16 image. Prefer this over `Build` when the caller does not know the file count ahead of time (e.g. from a directory walk). |
 | `BuildFromFiles` | `static byte[] BuildFromFiles(IEnumerable<ValueTuple<string, byte[]>> files)` | Convenience: builds a FAT image from a list of files, auto-sizing to fit. Used by virtual-disk writers (QCOW2, VHD, VMDK, VDI) to embed a filesystem inside a disk container so that Create() produces a usable volume. |
+| `BuildFromInputs` | `static byte[] BuildFromInputs(IReadOnlyList<ArchiveInputInfo> inputs)` | Builds a FAT image for a disk-image container from archive inputs: folders (empty ones too), long names and modification times are kept. |
 | `BuildToStreaming` | `void BuildToStreaming(Stream output, int bytesPerSector = 512, int requestedClusterSize = 0, string volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false, int requestedRootEntries = 0, bool forceLfn = false, int requestedTotalSectors = 0)` | Two-pass streaming Build: pass 1 computes layout from `AddStreamingFile` sizes, pass 2 writes boot/FAT/root metadata then streams each entry's bytes from its `Func<Stream>` factory straight into its allocated cluster run via 64 KB chunks. Peak memory cost is bounded by (cluster_size + dirent_blob + 64 KB) — independent of total image size or per-file size. |
 | `BuildTo` | `void BuildTo(Stream output, int totalSectors = 2880, int bytesPerSector = 512, int requestedClusterSize = 0, string volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false, int requestedRootEntries = 0, bool forceLfn = false)` | Streams a FAT image to `output` without ever materialising the whole volume in memory, enabling images of any size (e.g. multi-TB FAT32). Requires a writable, seekable stream: free space is left as sparse zeros via `SetLength`, so only metadata + actual file data is physically written. Produces byte-for-byte identical output to `Build` (verified by parity tests) for any configuration both can express. Peak memory is bounded by O(sector + 64 KB FAT chunk + largest file + largest dirent blob) — independent of total image size. |
 | `Build` | `byte[] Build(int totalSectors = 2880, int bytesPerSector = 512, int requestedClusterSize = 0, string volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false, int requestedRootEntries = 0, bool forceLfn = false, int requestedFatSize = 0)` | Builds the FAT filesystem image. |
@@ -9776,6 +10174,70 @@ An El Torito boot entry (the first one is the default entry).
 | `SectorCount` | `ushort SectorCount` | Virtual 512-byte sectors loaded at boot. |
 | `SystemType` | `byte SystemType` |  |
 
+### Namespace `FileSystem.Jffs1`
+
+[`Jffs1Entry`](#jffs1entry) · [`Jffs1FormatDescriptor`](#jffs1formatdescriptor) · [`Jffs1Reader`](#jffs1reader)
+
+#### `Jffs1Entry`
+
+One inode of a JFFS (version 1) image, after replaying its nodes.
+
+Implements `IEquatable<Jffs1Entry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Jffs1Entry` | `Jffs1Entry(string Path, uint Ino, uint Mode, ushort Uid, ushort Gid, uint MTime, byte[] Data)` | One inode of a JFFS (version 1) image, after replaying its nodes. |
+| `Data` | `byte[] Data { get; init; }` | File contents, symlink target, or (device nodes) the raw device number. |
+| `Gid` | `ushort Gid { get; init; }` | Group. |
+| `Ino` | `uint Ino { get; init; }` | Inode number. |
+| `IsDirectory` | `bool IsDirectory { get; }` |  |
+| `IsFile` | `bool IsFile { get; }` |  |
+| `IsSymlink` | `bool IsSymlink { get; }` |  |
+| `MTime` | `uint MTime { get; init; }` | Modification time (UNIX seconds). |
+| `Mode` | `uint Mode { get; init; }` | Unix mode word. |
+| `Path` | `string Path { get; init; }` | Slash-separated path from the root (inode 1). |
+| `Uid` | `ushort Uid { get; init; }` | Owner. |
+
+#### `Jffs1FormatDescriptor`
+
+JFFS version 1 — Axis Communications' Journalling Flash File System (Linux 2.4, removed in 2.6). Magic "1984" in either byte order at offset 0, followed by the root inode 1.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Jffs1FormatDescriptor` | `Jffs1FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+
+#### `Jffs1Reader`
+
+Reads JFFS version 1 (Axis Communications' Journalling Flash File System, Linux 2.4) images: a log of 60-byte raw inodes, each followed by its name and data, every part padded to four bytes. Either byte order is accepted ("1984" magic read either way). See `docs/JFFS1-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Jffs1Reader` | `Jffs1Reader(Stream stream)` | Parses the whole log; throws `InvalidDataException` for anything it will not replay. |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `Magic` | `const uint Magic` |  |
+| `RootIno` | `const uint RootIno` |  |
+| `BigEndian` | `bool BigEndian { get; }` | True when the image is big-endian. |
+| `Entries` | `IReadOnlyList<Jffs1Entry> Entries { get; }` | Every inode below the root, parents before children. |
+| `SkippedNodes` | `int SkippedNodes { get; }` | Raw nodes skipped because their header checksum failed or they were marked obsolete. |
+
 ### Namespace `FileSystem.Jffs2`
 
 [`Jffs2BlockMover`](#jffs2blockmover) · [`Jffs2FileReader`](#jffs2filereader) · [`Jffs2FileReader.FileEntry`](#jffs2filereaderfileentry) · [`Jffs2FormatDescriptor`](#jffs2formatdescriptor) · [`Jffs2InPlaceModifier`](#jffs2inplacemodifier) · [`Jffs2Writer`](#jffs2writer)
@@ -11794,6 +12256,7 @@ Genuine in-place add for NTFS images — the inverse of `NtfsRemover`. Inserts a
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `AddDirectory` | `static void AddDirectory(byte[] image, string name)` | Adds a folder, with any missing parents, to the in-memory NTFS image; a folder that is already there is left as it is. An empty folder added this way survives. |
 | `AddFile` | `static void AddFile(byte[] image, string name, byte[] data)` | Adds (or replaces by name) `name` into the root directory of the in-memory NTFS image. Throws `NotSupportedException` / `IOException` for the structural cases above so the caller can rebuild instead. |
 | `MftRecordByteOffset` | `static long MftRecordByteOffset(byte[] image, int slot)` | Public façade over the run-list-aware MFT record mapping for callers that scan the MFT (e.g. `NtfsRemover`). Returns the physical byte offset of record `slot`, following $MFT:$DATA's VCN→LCN run list so a grown, non-contiguous MFT (common on real mkfs.ntfs images after several adds) is read correctly. Returns -1 when the slot is past the MFT's mapped clusters. |
 | `MftRecordSlotCount` | `static int MftRecordSlotCount(byte[] image)` | Number of record slots the MFT's $DATA currently spans (allocated bytes / record size). Lets a scanner bound its loop to the MFT's real extent rather than the whole image. |
@@ -11876,12 +12339,13 @@ What a declared `NtfsVersion` obliges the volume's content to be.
 
 #### `NtfsWriter`
 
-Builds spec-compliant NTFS filesystem images. All reserved system MFT records (0-15) are populated with real content: $MFT, $MFTMirr, $LogFile, $Volume, $AttrDef, root $., $Bitmap, $Boot, $BadClus, $UpCase, and — on a volume declaring NTFS 3.0 or later — $Secure at record 9 and the $Extend directory at record 11. A 1.2 volume names record 9 $Quota and leaves 11 reserved. Every record carries the mandatory $STANDARD_INFORMATION and $FILE_NAME attributes, the Update Sequence Array (USA) fixup is applied at sector boundaries, and the on-disk cluster bitmap reflects which clusters are actually allocated. Small files (<700 bytes) use a resident $DATA attribute where the record has room for it beside $STANDARD_INFORMATION and a $FILE_NAME that grows with the name; everything else uses non-resident cluster runs. Images produced by this writer carry all the structure that chkdsk and the Linux ntfs-3g driver check at mount time: volume serial, valid boot signature, every system file has its "FILE" magic, USA fixup at `record[510..512]` and `record[1022..1024]`, $Volume carries a valid $VOLUME_INFORMATION (version 3.1 by default; see `SetNtfsVersion`, which also selects the FILE record header layout, the metadata file set, the $AttrDef table and the $STANDARD_INFORMATION shape that go with it), the $UpCase data stream is 128 KiB long (65 536 UTF-16 upper-case mappings) and $Bitmap only marks clusters that hold actual filesystem metadata/data. Large directories: when a directory's $I30 file-name index no longer fits in the resident $INDEX_ROOT inside its MFT record, it spills into a non-resident $INDEX_ALLOCATION (a stream of "INDX" index records, each with its own USA fixup) tracked by a named $BITMAP. The $INDEX_ROOT then holds routing pointer entries (subnode VCN flag 0x01 + 8-byte child VCN at the entry tail) into those INDX leaves, and the FILE_NAME entries live in the leaves sorted by NTFS file-name collation. A single B+tree level is built: the resident root points directly at leaf blocks. To keep all routing pointers resident, the INDX block size is grown (power-of-two, 4 KiB..64 KiB) as the entry count rises. With the default 1024-byte MFT record this handles tens of thousands of short-named entries per directory; only a directory whose routing pointers would overflow even a 64 KiB block (hundreds of thousands of entries) would need a second tree level, which is not yet implemented. 8.3 short names: by default every $FILE_NAME is recorded in the Win32&DOS namespace (3) so the long name also serves as the 8.3 short name, the way a freshly formatted Windows volume does. Passing `generateShortNames: false` records names in the Win32-only namespace (1) and emits no DOS short name — the equivalent of `fsutil behavior set disable8dot3`.
+Builds spec-compliant NTFS filesystem images. All reserved system MFT records (0-15) are populated with real content: $MFT, $MFTMirr, $LogFile, $Volume, $AttrDef, root $., $Bitmap, $Boot, $BadClus, $UpCase, and — on a volume declaring NTFS 3.0 or later — $Secure at record 9 and the $Extend directory at record 11. A 1.2 volume names record 9 $Quota and leaves 11 reserved. Every record carries the mandatory $STANDARD_INFORMATION and $FILE_NAME attributes, the Update Sequence Array (USA) fixup is applied at sector boundaries, and the on-disk cluster bitmap reflects which clusters are actually allocated. Small files (<700 bytes) use a resident $DATA attribute where the record has room for it beside $STANDARD_INFORMATION and a $FILE_NAME that grows with the name; everything else uses non-resident cluster runs. Images produced by this writer carry all the structure that chkdsk and the Linux ntfs-3g driver check at mount time: volume serial, valid boot signature, every system file has its "FILE" magic, USA fixup at `record[510..512]` and `record[1022..1024]`, $Volume carries a valid $VOLUME_INFORMATION (version 3.1 by default; see `SetNtfsVersion`, which also selects the FILE record header layout, the metadata file set, the $AttrDef table and the $STANDARD_INFORMATION shape that go with it), the $UpCase data stream is 128 KiB long (65 536 UTF-16 upper-case mappings) and $Bitmap only marks clusters that hold actual filesystem metadata/data. Large directories: when a directory's $I30 file-name index no longer fits in the resident $INDEX_ROOT inside its MFT record, it spills into a non-resident $INDEX_ALLOCATION (a stream of "INDX" index records, each with its own USA fixup) tracked by a named $BITMAP. The $INDEX_ROOT then holds routing pointer entries (subnode VCN flag 0x01 + 8-byte child VCN at the entry tail) into those INDX leaves, and the FILE_NAME entries live in the leaves sorted by NTFS file-name collation. All INDX blocks are 4 KiB, the size the boot sector announces. When the routing pointers to the leaves no longer fit in the record either, they go into INDX blocks of their own, one level up, until the root holds them: a B-tree of any depth, as NTFS builds it. 8.3 short names: by default every $FILE_NAME is recorded in the Win32&DOS namespace (3) so the long name also serves as the 8.3 short name, the way a freshly formatted Windows volume does. Passing `generateShortNames: false` records names in the Win32-only namespace (1) and emits no DOS short name — the equivalent of `fsutil behavior set disable8dot3`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `NtfsWriter` | `NtfsWriter(string volumeLabel = "", bool generateShortNames = true)` | Creates a new NTFS writer. The volume label is stored in $Volume's $VOLUME_NAME attribute. |
 | `DeclaredVolumeBytes` | `long DeclaredVolumeBytes { get; }` | Declared volume size in bytes of the most recent build. |
+| `AddDirectory` | `void AddDirectory(string name)` | Adds a directory (and its parents); needed only for empty ones. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the NTFS image. |
 | `AddStreamingFile` | `void AddStreamingFile(string name, long size, Func<Stream> openStream)` | Adds a streaming file: `size` drives MFT-record + cluster sizing in pass 1; bytes are pulled from `openStream` in pass 2 of `BuildToStreaming`. Files larger than the resident threshold (~700 bytes) get a single-run non-resident $DATA whose clusters are filled from the source via 64 KB chunks; smaller files remain resident and are buffered up-front (the size-clamped bounded read still satisfies the isolation contract). |
 | `BuildAutoSized` | `byte[] BuildAutoSized(int requestedClusterSize = 0, int requestedMftRecordSize = 0)` | Builds the image with the cluster size and MFT record size chosen by `FilesystemLayoutOptimizer` to minimise file slack + MFT-zone reservation + per-file MFT-record waste, and the volume sized to exactly hold the files plus structural overhead. |
@@ -16114,7 +16578,7 @@ Walks a UFS1 (FreeBSD/BSD FFS) image and yields the actual on-disk byte layout �
 
 #### `UfsFormatDescriptor`
 
-R/W descriptor for UFS1 (Berkeley Fast File System) images at the byte-exact `newfs -O1` layout. References: McKusick, Joy, Leffler, Fabry — "A Fast File System for UNIX" (ACM TOCS, 1984), the defining FFS paper`https://github.com/freebsd/freebsd-src/tree/main/sys/ufs` — canonical implementation (`ffs/fs.h` on-disk superblock)`https://en.wikipedia.org/wiki/Unix_File_System` — Wikipedia article
+Descriptor for the Berkeley Fast File System: UFS1 and UFS2 in either byte order are listed and extracted; UFS1 little-endian images are also created (byte-exact `newfs -O1` layout) and edited in place. UFS2 and big-endian volumes are read-only here — every editing entry point refuses them before a byte is written, rather than rewriting them as UFS1. References: McKusick, Joy, Leffler, Fabry — "A Fast File System for UNIX" (ACM TOCS, 1984), the defining FFS paper`https://github.com/freebsd/freebsd-src/tree/main/sys/ufs` — canonical implementation (`ffs/fs.h` on-disk superblock)`https://en.wikipedia.org/wiki/Unix_File_System` — Wikipedia article
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
@@ -16155,16 +16619,16 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `UfsModifier`
 
-In-place UFS1 modifier — random-access add/remove against an existing UFS1 image. Performs O(touched bytes) I/O: only the superblock fragment, the cylinder-group header (with its inode-used and free-frag bitmaps), the fs_cs summary block, the affected inode slots, the root-directory data block, and the file's own data blocks are read or written. Layout reminders (matching `UfsWriter`'s default geometry): Block size 8192, fragment 1024, single cylinder group (fs_ncg=1).Superblock at file offset 8192 (magic `0x00011954` at +1372).CG header at frag 16 (offset 16384) — `cg_magic 0x00090255` at +4.Inode table at frag 24, root inode is inode 2.Files use direct block pointers only (max 12 blocks = 96 KiB).
+In-place add and remove on little-endian UFS1 volumes, kept consistent the way FreeBSD's `fsck_ffs` checks them. A path is resolved component by component; missing directories are created as real directories (one `DIRBLKSIZ` chunk holding `.` and `..`, the parent's link count raised), never as a root entry whose name holds a slash.Files take whole blocks plus a tail of fragments in the last direct block (`fragroundup`), and `di_blocks` counts exactly what was allocated. Up to the twelve direct blocks are written; larger files are refused rather than given an indirect tree this editor does not maintain.Allocation searches every cylinder group. After the free-fragment map of a group changes, its derived summaries — `cs_nbfree`, `cs_nffree`, `cg_frsum`, the cluster map and `cg_clustersum` — are recomputed from that map; the per-group `fs_cs` records and both superblock totals are re-summed.All writes are staged and land only after every check has passed, so a refused edit leaves the image byte-identical. References: FreeBSD `sys/ufs/ffs/fs.h` (`struct fs`, `struct cg`), `sys/ufs/ufs/dinode.h`, `sys/ufs/ufs/dir.h`; McKusick et al., "A Fast File System for UNIX" (1984).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream image, string name, byte[] data)` | Adds (or fails if a same-name entry exists) a file to a UFS1 image. Touches only the superblock, CG header, inode slot, root dir block, and the new data blocks. |
-| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes the named entry from an existing UFS1 image. Returns false if no entry with that name exists in the root directory. When `wipeData` is true the freed data blocks are zeroed so no forensic trace remains. |
+| `AddFile` | `static void AddFile(Stream image, string path, byte[] data)` | Adds a file at `path`, creating missing parent directories. |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string path, bool wipeData = true)` | Removes the file at `path`. Returns false when there is no such entry or it is a directory. With `wipeData` the freed fragments are zeroed. |
 
 #### `UfsReader`
 
-Reads UFS1 (FreeBSD/BSD FFS) filesystem images. Decodes the superblock at `SBLOCK_UFS1 = 8192`, locates CG 0's inode table, walks the root directory (inode 2) and extracts file contents via `di_db[]` direct block pointers (indirect blocks are not followed — our writer never uses them). All field offsets mirror FreeBSD's `struct fs` (`sys/ufs/ffs/fs.h`) and `struct ufs1_dinode` (`sys/ufs/ufs/dinode.h`). `fs_magic` sits at the last 4 bytes of the 1376-byte superblock (offset 1372).
+Reads UFS1 and UFS2 (BSD Fast File System) images in either byte order. The superblock is searched where FreeBSD's `ffs_sbget` searches (`SBLOCKSEARCH`: 65536, 8192, 0, 262144). `fs_magic` sits in the last four bytes of the 1376-byte `struct fs` (offset 1372) and names the variant: `0x00011954` UFS1, `0x19540119` UFS2; read in the opposite byte order it marks a big-endian volume (SPARC, PowerPC, NeXT, `makefs -B be`). A UFS2 superblock is only taken where its own `fs_sblockloc` says it lives, so a backup copy is never mistaken for the primary. Field offsets follow FreeBSD's `struct fs` (`sys/ufs/ffs/fs.h`), `struct ufs1_dinode` / `struct ufs2_dinode` (`sys/ufs/ufs/dinode.h`) and `struct direct` (`sys/ufs/ufs/dir.h`). The inode walk follows the twelve direct pointers and the single/double/triple indirect trees; UFS1 pointers are 32-bit, UFS2 pointers 64-bit.
 
 Implements `IDisposable`.
 
@@ -16172,7 +16636,10 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `UfsReader` | `UfsReader(Stream stream, bool leaveOpen = true)` | Initializes a new instance of `UfsReader`. |
 | `Entries` | `IReadOnlyList<UfsEntry> Entries { get; }` | Gets the entries. |
+| `IsBigEndian` | `bool IsBigEndian { get; }` | Whether the volume stores its integers big-endian. |
 | `Length` | `long Length { get; }` | Total size of the backing image in bytes. |
+| `SuperblockOffset` | `long SuperblockOffset { get; }` | Byte offset of the superblock that was used. |
+| `Version` | `int Version { get; }` | 1 for UFS1, 2 for UFS2. |
 | `VolumeName` | `string VolumeName { get; }` | The superblock `fs_volname` volume label (struct fs offset 680, NUL-terminated ASCII), or empty when unset. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `ExtractTo` | `long ExtractTo(UfsEntry entry, Stream destination)` | Writes `entry`'s contents into `destination`, one block at a time through the inode's indirect tree. Returns the byte count. |

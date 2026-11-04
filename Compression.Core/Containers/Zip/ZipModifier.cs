@@ -166,19 +166,27 @@ public static class ZipModifier {
   /// <summary>
   /// Adds or replaces (by name) every file input in <paramref name="inputs"/>, streaming
   /// on-disk files instead of loading them and stamping them with their last-write time.
-  /// Directory inputs are skipped, as are file inputs rejected by <paramref name="include"/>.
+  /// A directory input becomes a folder entry (a name ending in '/'), so an empty folder
+  /// added to an existing archive is kept. Inputs rejected by <paramref name="include"/> are skipped.
   /// </summary>
   public static void AddOrReplace(Stream zip, IReadOnlyList<ArchiveInputInfo> inputs, Func<string, bool>? include = null) {
     ArgumentNullException.ThrowIfNull(zip);
     ArgumentNullException.ThrowIfNull(inputs);
     foreach (var input in inputs) {
-      if (input.IsDirectory || (include != null && !include(input.ArchiveName)))
+      if (string.IsNullOrEmpty(input.ArchiveName) || (include != null && !include(input.ArchiveName)))
         continue;
+
+      if (input.IsDirectory) {
+        var folder = input.ArchiveName.Replace('\\', '/').TrimEnd('/') + "/";
+        RemoveFile(zip, folder, wipeData: true);
+        AddFile(zip, folder, [], input.SourceLastModifiedUtc?.ToLocalTime());
+        continue;
+      }
 
       RemoveFile(zip, input.ArchiveName, wipeData: true);
       if (input.InMemoryContent is { } content) {
         using var source = new MemoryStream(content, writable: false);
-        AddFile(zip, input.ArchiveName, source);
+        AddFile(zip, input.ArchiveName, source, input.SourceLastModifiedUtc?.ToLocalTime());
       } else {
         using var source = new FileStream(input.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferSize, FileOptions.SequentialScan);
         AddFile(zip, input.ArchiveName, source, File.GetLastWriteTime(input.FullPath));

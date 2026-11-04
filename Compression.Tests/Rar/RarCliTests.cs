@@ -19,9 +19,11 @@ public class RarCliTests {
     const string configuration = "Release";
 #endif
     var root = Path.GetFullPath(Path.Combine(TestContext.CurrentContext.TestDirectory, "..", "..", "..", ".."));
-    var path = Path.Combine(root, "Compression.CLI", "bin", configuration, "net10.0", "win-x64", "cwb.exe");
-    if (!File.Exists(path)) Assert.Ignore($"CLI executable was not built at {path}.");
-    return path;
+    var output = Path.Combine(root, "Compression.CLI", "bin", configuration, "net10.0");
+    var path = new[] { Path.Combine(output, "cwb.exe"), Path.Combine(output, "win-x64", "cwb.exe") }
+      .FirstOrDefault(File.Exists);
+    if (path == null) Assert.Ignore($"CLI executable was not built under {output}.");
+    return path!;
   }
 
   private static (int Code, string Output) Cli(string cli, string cwd, params string[] args) {
