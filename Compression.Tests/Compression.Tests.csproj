@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Authored directory fixture and captured native-decoder facts; see NowCompress/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="NowCompress/ReferenceVectors/*.now;NowCompress/ReferenceVectors/*.json">
+      <LogicalName>NowCompressVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- ARC crawl fixtures; see IaArc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="IaArc/ReferenceVectors/*.arc;IaArc/ReferenceVectors/*.arc.gz;IaArc/ReferenceVectors/warcio-listing.txt">
       <LogicalName>IaArcVectors.%(Filename)%(Extension)</LogicalName>
