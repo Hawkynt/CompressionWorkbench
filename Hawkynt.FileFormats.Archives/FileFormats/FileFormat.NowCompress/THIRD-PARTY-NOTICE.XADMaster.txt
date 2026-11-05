@@ -1,0 +1,14 @@
+Now Compress support in this folder (NowCompressArchive) is converted from XADMaster, the archive
+library of The Unarchiver.
+
+Upstream:  https://github.com/MacPaw/XADMaster
+Revision:  7cb9ee0abbb163f261e4cb74501e15067032319c
+Files:     XADNowCompressParser.m, XADNowCompressHandle.m
+Licence:   GNU Lesser General Public License, version 2.1 or (at your option) any later version.
+           This repository is distributed under LGPL-3.0-or-later, which the "any later version"
+           grant permits.
+
+Copyright (c) 2017-present, MacPaw Way Ltd. and the XADMaster contributors.
+
+The length/offset base and extra-bit tables of the "new LZSS" blocks are copied verbatim; all other
+code was rewritten in C# for this codebase.

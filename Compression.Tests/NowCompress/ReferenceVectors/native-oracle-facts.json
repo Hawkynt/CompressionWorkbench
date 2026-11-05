@@ -1,0 +1,107 @@
+{
+  "oracle": "unar 1.10.7",
+  "sourceRevision": "7cb9ee0abbb163f261e4cb74501e15067032319c",
+  "detectorRevision": "4eb832d999628edcd3d134e46bd35357c8c99a85",
+  "comparison": "Sorted data/resource fork-pair fingerprints with duplicate counts; filenames and host extraction sanitization are not part of this fingerprint.",
+  "samples": [
+    {
+      "fileName": "vector-01.now",
+      "sourceName": "%25E3%2581%259D%25E3%2581%25AE%25E4%25BB%2596%25E3%2581%25AE%25E3%2583%25A2%25E3%2583%2587%25E3%2583%25A0%25E8%25A8%25AD%25E5%25AE%259A.sea",
+      "url": "https://sembiance.com/fileFormatSamples/archive/nowCompress/%2525E3%252581%25259D%2525E3%252581%2525AE%2525E4%2525BB%252596%2525E3%252581%2525AE%2525E3%252583%2525A2%2525E3%252583%252587%2525E3%252583%2525A0%2525E8%2525A8%2525AD%2525E5%2525AE%25259A.sea",
+      "archiveSha256": "9de32b08008b9077603bd582866f3ea805f417f42788ebab82c3cec94ec12c31",
+      "archiveSize": 591872,
+      "fileCount": 745,
+      "forkPairsSha256": "6ad21a7adb8b620026a8d5d788c7357794c96b8742d4c3fefb91b471122ba6d1"
+    },
+    {
+      "fileName": "vector-02.now",
+      "sourceName": "Disk_Copy_4.2.sea.bin",
+      "url": "https://sembiance.com/fileFormatSamples/archive/nowCompress/Disk_Copy_4.2.sea.bin",
+      "archiveSha256": "2de8d652c4668d996457e8e9ead8b88ccd0441524cff9771b3bd68e5ae8d8cf3",
+      "archiveSize": 40576,
+      "fileCount": 1,
+      "forkPairsSha256": "146965f0914db7dfa6f26d8256f3e44567d45efc9bb783c7df4301375bde39bf"
+    },
+    {
+      "fileName": "vector-03.now",
+      "sourceName": "FCC%25202.72FJ1.0.sea",
+      "url": "https://sembiance.com/fileFormatSamples/archive/nowCompress/FCC%2525202.72FJ1.0.sea",
+      "archiveSha256": "d4b59979105b75a43ed179a1a6d74d7fb14b2f227c0db2a613b7e5d7b84eb44d",
+      "archiveSize": 877312,
+      "fileCount": 71,
+      "forkPairsSha256": "9631d958012f308908e32929149d9d109db9dd536c4ceda6d7d827bada58d709"
+    },
+    {
+      "fileName": "vector-04.now",
+      "sourceName": "InReMac1.5.sea",
+      "url": "https://sembiance.com/fileFormatSamples/archive/nowCompress/InReMac1.5.sea",
+      "archiveSha256": "978a938f3ae35ba6ecee6920bdb17a5f1c0e4d06e66769a50580d206e22eda85",
+      "archiveSize": 248082,
+      "fileCount": 2,
+      "forkPairsSha256": "00d2346782abd374b4c8f859924bb637dfda066dbcf071d5e2a08dd66a8f320a"
+    },
+    {
+      "fileName": "vector-05.now",
+      "sourceName": "Installer",
+      "url": "https://sembiance.com/fileFormatSamples/archive/nowCompress/Installer",
+      "archiveSha256": "9cc7eb355348837fbcd44127427ec1cc416adb1b8667018db4960171fd94fe70",
+      "archiveSize": 172040,
+      "fileCount": 26,
+      "forkPairsSha256": "02397c7fbf8a96043b8e72c8184706854e2fdb03636998de76df849a38893cb0"
+    },
+    {
+      "fileName": "vector-06.now",
+      "sourceName": "SpawnPat.sea",
+      "url": "https://sembiance.com/fileFormatSamples/archive/nowCompress/SpawnPat.sea",
+      "archiveSha256": "830f540ca5c6acdee1f82cdb94a666032062b69022ea2f98cf6e15461f0f6e3a",
+      "archiveSize": 31654,
+      "fileCount": 2,
+      "forkPairsSha256": "1ded535fa11d1056adcafeb9d16e8f9acfa40fdf750bc91fd275d1733b345495"
+    },
+    {
+      "fileName": "vector-07.now",
+      "sourceName": "StuffIt%2520Expander%25E2%2584%25A2",
+      "url": "https://sembiance.com/fileFormatSamples/archive/nowCompress/StuffIt%252520Expander%2525E2%252584%2525A2",
+      "archiveSha256": "9f7475ba7eb31e1063109d2a9a8ba10bd9b5edf2a6a3766a3f02744f5c9a22a5",
+      "archiveSize": 82122,
+      "fileCount": 1,
+      "forkPairsSha256": "90b95d2dfbd2484086bae905a00ef38af6d9e9ad162cd6a6bb67fc5a13bd8900"
+    },
+    {
+      "fileName": "vector-08.now",
+      "sourceName": "System Enabler 131 1.0.3.sea",
+      "url": "https://sembiance.com/fileFormatSamples/archive/nowCompress/System%20Enabler%20131%201.0.3.sea",
+      "archiveSha256": "34bf319de475b1fd7466eefc5adece069699cd2cb1063a97a828330cd748942d",
+      "archiveSize": 55424,
+      "fileCount": 1,
+      "forkPairsSha256": "596f78db8fcbcbbcf0177b349a395ae3cc7ef3b8ca1e3e56ce5cace8053eba8d"
+    },
+    {
+      "fileName": "vector-09.now",
+      "sourceName": "TV Setup 1.0.2.sea",
+      "url": "https://sembiance.com/fileFormatSamples/archive/nowCompress/TV%20Setup%201.0.2.sea",
+      "archiveSha256": "6bfb561d68b56dad9891c4bce1e83c8c1a5c8a9fbdb66da3a376db58d033b1fc",
+      "archiveSize": 73856,
+      "fileCount": 1,
+      "forkPairsSha256": "7f73c8d60482a6fa1ea939b48b3ea070ca360993425820bd8efa0733d66afef8"
+    },
+    {
+      "fileName": "vector-10.now",
+      "sourceName": "WYSIWYG ﾒﾆｭｰアーカイブ",
+      "url": "https://sembiance.com/fileFormatSamples/archive/nowCompress/WYSIWYG%20%EF%BE%92%EF%BE%86%EF%BD%AD%EF%BD%B0%E3%82%A2%E3%83%BC%E3%82%AB%E3%82%A4%E3%83%96",
+      "archiveSha256": "ee8c6add38f65013d1dbaa9267ed9b5f89e23392166780682edcf0da407b5508",
+      "archiveSize": 58028,
+      "fileCount": 1,
+      "forkPairsSha256": "d551cf69a2325400a829ede9c51c507791677528dbebb674ade62ed51bdb0850"
+    },
+    {
+      "fileName": "vector-11.now",
+      "sourceName": "その他のモデム設定.sea",
+      "url": "https://sembiance.com/fileFormatSamples/archive/nowCompress/%E3%81%9D%E3%81%AE%E4%BB%96%E3%81%AE%E3%83%A2%E3%83%87%E3%83%A0%E8%A8%AD%E5%AE%9A.sea",
+      "archiveSha256": "5798c2b9523ece95484d047b3334c1c7d9d3e3eb534d7655ae1cb12d33c4d3d8",
+      "archiveSize": 591872,
+      "fileCount": 745,
+      "forkPairsSha256": "6ad21a7adb8b620026a8d5d788c7357794c96b8742d4c3fefb91b471122ba6d1"
+    }
+  ]
+}

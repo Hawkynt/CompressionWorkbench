@@ -49,7 +49,7 @@ StuffIt X,sitx,archive,,,R,,R,fmt/399,RW,4,https://en.wikipedia.org/wiki/StuffIt
 DiskDoubler,dd,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/DiskDoubler,DiskDoubler,Y,Y,,PARTIAL,,"single files and DDAR/DDA2 archives (listings match lsar on real archives); methods 0, 1, 6, 8, 9 decoded and checked against unar on real files; 2, 5, 7 and delta 1 checked against unar on files we built; 3, 4, 10 refused (DiskDoublerReader.cs)"
 Compact Pro,cpt,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/Compact_Pro,CompactPro,Y,Y,Y,PARTIAL,,multi-volume and encrypted archives refused; writer emits RLE-only forks (CompactProReader.cs)
 PackIt,pit,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/PackIt,PackIt,Y,Y,Y,PARTIAL,,"real layout (PMag/PMa4, header and fork CRC-16) verified on real archives against unar; encrypted PMa5/PMa6 entries refused (PackItReader.cs)"
-Now Compress,now,archive,,,R,,,,,1,,,,,,MISSING,,
+Now Compress,now,archive,,,R,,,,,1,https://github.com/MacPaw/XADMaster,NowCompress,Y,,,OK,,Read-only; MacRoman filenames. Native unar 1.10.7 confirms data/resource fork pairs in eleven pinned archives; see Compression.Tests/NowCompress/ReferenceVectors.
 LZX (Amiga),lzx,archive,,,R,,R,,Y,3,https://en.wikipedia.org/wiki/LZX,LzxAmiga,Y,Y,Y,OK,,
 NuFX / ShrinkIt,shk;sdk;bxy,archive,,,,,,,Y,1,https://wiki.preterhuman.net/NuFX,NuFx,Y,Y,Y,OK,,
 Spark (Acorn),spk;arc,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/Spark_(archiver),Spark,Y,Y,Y,OK,,
@@ -190,7 +190,7 @@ DiskDoubler methods (ADn/DDn/Method2),,codec,,,R,,,,,1,,DiskDoubler,Y,Y,,PARTIAL
 Compact Pro LZH/RLE,,codec,,,R,,,,,1,,CompactPro,Y,Y,Y,PARTIAL,,decoded inside the CompactPro descriptor (no building block); no LZH encoder
 Squeeze (Huffman),,codec,,,R,,,,,1,,Squeeze,Y,Y,,OK,,
 Crunch CP/M (LZW),,codec,,,R,,,,,1,,Crunch,Y,Y,,OK,,
-Now Compress method,,codec,,,R,,,,,1,,,,,,MISSING,,
+Now Compress method,,codec,,,R,,,,,1,https://github.com/MacPaw/XADMaster,NowCompress,Y,,,OK,,Read-only; MacRoman filenames. Native unar 1.10.7 confirms data/resource fork pairs in eleven pinned archives; see Compression.Tests/NowCompress/ReferenceVectors.
 WinZip JPEG (ZIP method 96),,codec,,,R,,,,,1,https://www.winzip.com/static/wz/docs/wz-jpg-comp.pdf,,,,,MISSING,,"Refused for lack of proof. XADMaster carries an LGPL decoder (WinZipJPEG), and WinZip documents only the properties header. But no method-96 archive could be found, and only the commercial WinZip writes them, so no decoder or encoder could be checked against real data."
 WinZip WavPack (ZIP method 97),,codec,,,R,,,,,1,https://www.wavpack.com/WavPack5LibraryDoc.pdf,Zip,Y,Y,Y,PARTIAL,,"read: method-97 entries decode to the original WAV (wavpack-made streams round-trip, wvunpack unpacks our wrapped streams); not written by the ZIP writer"
 tar sparse files,,codec,,,R,,,,,1,,Tar,Y,Y,Y,OK,,"GNU old (S), PAX 0.0, 0.1 and 1.0 reconstructed; written dense"
