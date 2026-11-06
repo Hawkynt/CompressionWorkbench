@@ -12,9 +12,11 @@ namespace FileSystem.Chfs;
 /// <remarks>
 /// Read-only. Proof: images NetBSD 11.1's <c>makefs -t chfs</c> built — NAND with the default
 /// geometry and NOR with 512-byte pages and 16 KiB eraseblocks — read back byte-identical to
-/// the tree they were built from. NetBSD's GENERIC kernel attaches no flash device for
-/// <c>mount_chfs</c>, so nothing outside this package reads a CHFS image back, and no writer is
-/// offered. Logs that remove names (written only by a mounted file system) are refused.
+/// the tree they were built from. The only flash NetBSD attaches under emulation is
+/// <c>nandemulator(4)</c>, and <c>mount_chfs</c> on it blocks on a kernel lock in NetBSD 11.1
+/// and 10.1, so nothing outside this package reads a CHFS image back and no writer is offered
+/// (routes tried: <c>docs/CHFS-ON-DISK.md</c>). Logs that remove names (written only by a
+/// mounted file system) are refused.
 /// Sourcing: rung 1 — converted from NetBSD's BSD-licensed CHFS headers.
 /// </remarks>
 public sealed class ChfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {

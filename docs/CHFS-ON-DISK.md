@@ -57,7 +57,22 @@ That is the name the image holds, and the name the reader reports.
   It reads either media type and any geometry.
 * **Refused, not replayed:** entries whose vnode number is 0. Only a mounted file system
   writes them, to remove a name.
-* **Read-only.** NetBSD's `nandemulator(4)` attaches a 32 MiB NAND (`flash0`), and a
-  `makefs` image copied onto it with `dd` is accepted. But `mount_chfs` on that device
-  hung the guest, both with the image and on blank flash, and no other reader exists. So
-  no writer can be proven, and none is offered.
+* **Read-only.** Nothing outside this package has been found to read a CHFS image back.
+  So no writer can be proven, and none is offered. The routes tried are listed below.
+
+## Routes tried for a CHFS reader to prove a writer against
+
+The only CHFS implementation is NetBSD's kernel. It reaches media only through `flash(4)`.
+On a machine qemu emulates, the only flash NetBSD attaches is `nandemulator(4)`.
+
+| Route | Result |
+| --- | --- |
+| NetBSD 11.1 amd64 live image (SHA512 checked), `modload nandemulator chfs`, a `makefs -t chfs` image copied onto `/dev/rflash0`, then `mount_chfs /dev/flash0 /mnt` | `mount_chfs` never returns, and the guest stops responding. The same happens on blank flash. |
+| NetBSD 10.1 amd64 live image (SHA512 checked, from archive.netbsd.org), same steps | The `makefs` image is on the flash: reading back `/dev/rflash0` shows its `RDES` header, and the rest of the flash reads 0xFF, erased. `mount_chfs` then sits in state `D` on wait channel `tstile` (blocked on a kernel lock) with 0 CPU time for at least 80 s. Anything that touches `/mnt` blocks behind it, and the guest stops responding soon after. |
+| Other `nandemulator` geometry | Not available. The driver hard-codes 32 MiB, 2 KiB pages, 64 pages per block and 64 spare bytes ("hardcode these now, make it configurable later" in `sys/dev/nand/nandemulator.c`). It takes no properties or sysctls. |
+| An erased device first | `flashctl /dev/flash0 erase 0 33554432` succeeds. The flash already reads 0xFF before that, so this changes nothing. |
+| NetBSD 9.4 | No amd64 live image is published for 9.4, so it was not tried. |
+| evbarm, or other emulated flash | Not tried. It would need an ARM machine that qemu emulates with NAND or NOR flash that NetBSD attaches to `flash(4)`, and no such pairing was found. |
+
+The reader stays proven against `makefs` output in both media types (fixtures and the
+opt-in live test). The writer waits for a kernel that mounts CHFS from emulated flash.

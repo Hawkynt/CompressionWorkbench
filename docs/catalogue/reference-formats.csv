@@ -450,7 +450,7 @@ ZFS,zfs,filesystem,,,,,,,Y,1,,Zfs,Y,,,OK,,
 bcachefs,,filesystem,,,,,,,Y,1,,BcacheFs,Y,Y,Y,OK,,
 NOVA,,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: persistent-memory file system with only an out-of-tree kernel module; no userspace tool and no image
 3FS (Fire-Flyer),deepseek,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-CHFS (NetBSD),netbsd,filesystem,,,,,,,Y,1,https://github.com/NetBSD/src/blob/trunk/sys/ufs/chfs/media.h,Chfs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,makefs -t chfs,mount_chfs on nandemulator hangs NetBSD 11.1 so no reader proves a writer
+CHFS (NetBSD),netbsd,filesystem,,,,,,,Y,1,https://github.com/NetBSD/src/blob/trunk/sys/ufs/chfs/media.h,Chfs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,makefs -t chfs,mount_chfs on nandemulator blocks on a kernel lock in NetBSD 11.1 and 10.1 (nandemulator geometry is fixed) so no reader proves a writer
 exFAT,exfat;fat64;img,filesystem,,,,,,fmt/1609,Y,2,https://learn.microsoft.com/windows/win32/fileio/exfat-specification,ExFat,Y,Y,Y,OK,,
 ExtremeFFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 F2FS,f2fs,filesystem,,,,,,,Y,1,,F2fs,Y,Y,Y,OK,,
