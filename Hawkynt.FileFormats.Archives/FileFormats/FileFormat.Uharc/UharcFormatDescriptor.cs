@@ -8,13 +8,13 @@ namespace FileFormat.Uharc;
 
 /// <summary>
 /// UHARC 0.6 archive (Uwe Herklotz, 1997–2005): read-only. Lists every 0.6/0.6a/0.6b archive and
-/// extracts the store, LZP (<c>-mz</c>) and ALZ (<c>-m1</c>..<c>-m3</c>, including the multimedia
+/// extracts the store, RLE (<c>-mr</c>), LZ78 (<c>-mw</c>), LZP (<c>-mz</c>) and ALZ (<c>-m1</c>..<c>-m3</c>, including the multimedia
 /// predictors) modes, password-protected archives and self-extractors; the PPM mode (<c>-mx</c>)
-/// and the legacy RLE/LZ78 modes are refused.
+/// is refused.
 ///
 /// References:
 /// <list type="bullet">
-///   <item><description><c>docs/UHARC-ON-DISK.md</c> — the layout and codecs as implemented, with how each part was established</description></item>
+///   <item><description><c>docs/UHARC-ON-DISK.md</c> — the layout and codecs as implemented, with the measurements behind them</description></item>
 ///   <item><description><c>http://fileformats.archiveteam.org/wiki/UHARC</c> — format overview and sample archives</description></item>
 ///   <item><description>UHARC 0.6b documentation (<c>UHARC.DOC</c>, 01 Oct 2005) — modes, switches and dictionary sizes</description></item>
 /// </list>
@@ -33,12 +33,12 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [new("UHA"u8.ToArray(), Confidence: 0.85)];
   public IReadOnlyList<FormatMethodInfo> Methods => [
-    new("store", "Store"), new("lzp", "LZP"), new("alz", "ALZ"),
+    new("store", "Store"), new("rle", "RLE"), new("lz78", "LZ78"), new("lzp", "LZP"), new("alz", "ALZ"),
   ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "UHARC 0.6 archive. Lists all archives; extracts the store, LZP and ALZ modes (with multimedia " +
+    "UHARC 0.6 archive. Lists all archives; extracts the store, RLE, LZ78, LZP and ALZ modes (with multimedia " +
     "and executable filters, passwords and SFX stubs). PPM-mode archives list but do not extract.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {

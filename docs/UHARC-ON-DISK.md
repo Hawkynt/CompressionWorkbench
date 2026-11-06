@@ -6,34 +6,25 @@ document is the specification `FileFormat.Uharc` is implemented from. It covers 
 (0.6, 0.6a and 0.6b write the same archives; the documentation says so and the header carries
 version byte 6) as far as it was established; what is not covered is listed at the end.
 
-**Status: read-only, partial.** Container, ciphers, the store, LZP and ALZ modes, ALZ's nine
-multimedia predictors, the executable and multimedia filters, passwords and SFX stubs are
-established and verified. PPM (`-mx`), RLE (`-mr`), LZ78 (`-mw`) and archives of earlier
-versions are not, and are refused.
+**Status: read-only, partial.** Container, ciphers, the store, RLE, LZ78, LZP and ALZ modes,
+ALZ's nine multimedia predictors, the executable and multimedia filters, passwords and SFX stubs
+are established and verified. PPM (`-mx`) and archives of earlier versions are not, and are
+refused.
 
-## How this was established
+## Evidence
 
-Sourcing rung 2 of AGENTS.md. Two third-party decoders exist and neither can be taken:
-
-- **OpenUHA** (Free Pascal, GPL-2.0, `Xelitan/OpenUHA---Pure-Pascal-UHA-unpacker` at
-  `61662b09`) — read as a description of the LZP and ALZ coders and of the container.
-- **unuharc_recon** (C89, no licence, `roytam1/unuharc_recon` at `056cf7e3`) — its `FORMAT.md`
-  was the map of the container; where the two decoders disagreed with each other or with the
-  archives, its code was read to find out which reading was right.
-
-No code was taken from either. Both were also built locally and run as black-box oracles,
-one of them instrumented to print the predictor state per byte so the first diverging byte of
-a failing stream could be located; neither build is distributed.
-
-The authority is **UHARC 0.6b itself** (`uharc06b.zip`, archive.org item `uharc06b`, MD5
-`1ebeb57946cfd7e998e5a7be78f2b0bc`, 01 Oct 2005): `UHARC.EXE` packed inputs we generated in
+Everything below was measured with **UHARC 0.6b** (`uharc06b.zip`, archive.org item `uharc06b`,
+MD5 `1ebeb57946cfd7e998e5a7be78f2b0bc`, 01 Oct 2005): `UHARC.EXE` packed inputs we chose in
 every mode, dictionary size, with and without multimedia detection and passwords, and as a
-self-extractor; `UNUHARC.EXE t` accepted every one. Our decoder reproduces every input byte for
-byte (SHA-256) where we hold the inputs, and every file's stored CRC-32 where we do not, on:
+self-extractor, and `UNUHARC.EXE t` accepted every archive. Single-file archives of crafted
+inputs show the stream byte for byte where the stream is not entropy coded (RLE, LZ78). Our
+decoder reproduces every input byte for byte (SHA-256) where we hold the inputs, and every
+file's stored CRC-32 where we do not, on:
 
-- 16 committed fixtures (`Compression.Tests/Uharc/ReferenceVectors`), every ALZ selector among
+- 20 committed fixtures (`Compression.Tests/Uharc/ReferenceVectors`), every ALZ selector among
   them;
-- a 17 MB, 32 MiB-dictionary pair (`-m2`, `-mz`) of text and a 6.7 MB DLL;
+- the same 17 MB of text and a 6.7 MB DLL packed with `-m2` and `-mz` (32 MiB dictionaries),
+  `-mr`, `-mw` and `-mw -md1`;
 - eight real-world archives from the dexvert sample set
   (`sembiance.com/fileFormatSamples/archive/uharc`): `Active`, `DEXVERT`, `TOOLS`, `Victoria`,
   `mix`, `new_carset.cuh`, `ntfs`, `tecgfx1` — 201 files, all ALZ:2/ALZ:3, dictionaries 1 KiB to
@@ -97,9 +88,8 @@ Within a band of 16 the offset is `log2(dictionary) − 10`: 1 KiB to 32 MiB. UH
 smallest power of two above the input when that is below `-md` (a 22 KB input under the default
 `-md4096` is stored as 32 KiB, method 13 for `-mz`, 29 for `-mx`, 45/61/77 for `-m1/2/3`).
 
-*Refuted:* the unlicensed reconstruction's `FORMAT.md` labels 8..23 "ALZ", 24..39 "LZP + PPM"
-and 40..87 "PPM2". The tool's own `l` output and the mode-to-byte measurement above put LZP,
-PPM and ALZ in that order.
+*Refuted:* labels 8..23 "ALZ", 24..39 "LZP + PPM" and 40..87 "PPM2". The tool's own `l` output
+and the mode-to-byte measurement above put LZP, PPM and ALZ in that order.
 
 ## Tables
 
@@ -125,7 +115,7 @@ unpacks to 11*N* bytes.
   Sizes run backwards: `size[i] = size[i−1] − delta[i]` (mod 2³², `size[−1] = 0`). Files lie
   in the stream in table order, which is not the order `uharc l` prints.
 
-*Refuted:* "times, then dates" (the reconstruction's `FORMAT.md`) — the stored values decode
+*Refuted:* "times, then dates" — the stored values decode
 as invalid dates that way; dates first gives the times `uharc l -d2` prints.
 
 ## Table cipher
@@ -159,6 +149,56 @@ to the following file ends for as long as each following file is smaller than th
 The reset happens before the byte at the reset point is decoded. Tables are single streams and
 never reset. Fixtures `reset-m2` / `reset-mz` (252 KiB over 18 files of 0 to 70 000 bytes) pin
 both rules: any other choice of the span or the merge decodes garbage after the first reset.
+
+## RLE (method 1)
+
+Not entropy coded, so measured directly from the streams of crafted single-file archives. Two
+marker bytes, a triple marker *T* and a run marker *R* = *T* + 1, start as `ED` and `EE`:
+
+| Stream | Output |
+| --- | --- |
+| *T* `x` | `x` three times |
+| *R* `n` `x`, 4 ≤ n ≤ 254 | `x` *n* times |
+| *R* `FF` `lo` `hi` `x` | `x` repeated the 16-bit count (`AAAA…` of 70 000 is `EE FF FF FF 41 EE FF 71 11 41`) |
+| *R* `c`, c ≤ 3 | *T* when c is even, *R* when odd, twice when c ≥ 2; then **both markers move down by 0x40** (`ED/EE` → `AD/AE` → `6D/6E` → `2D/2E` → `ED/EE`) |
+| any other byte | itself |
+
+The marker state runs on across file boundaries. The encoder writes runs of two as literals and
+runs of three with *T*. Measured inputs: `x EE AE AD AAA y` packs as `78 EE 01 AE 01 AD 6D 41
+79` — the escaped `EE` moves the markers to `AD/AE`, the escaped `AE` to `6D/6E`, after which
+`AD` is a plain byte and `6D 41` is the triple.
+
+## LZ78 (methods 2..7)
+
+An LZW dictionary of 2^(method+8) phrases (`-md1` gives method 2, 1024 phrases; the default
+method 7, 32768). Codes 0..255 are the bytes, 256 resets the dictionary, 257 is a run, phrases
+start at 258. Bits are read most significant first.
+
+**Codes.** A code is truncated binary over the codes defined so far: with *w* the current width
+(9 at first) and *n* the next phrase number, read *w* − 1 bits as *v*; when `v + 1 ≥ 2^w − (n +
+1)` one more bit decides whether the code is *v* or `2^w − 1 − v`. That is why plain bytes cost
+eight bits while the dictionary is young: `ABCDEFGH` packs to its own eight bytes, `AAA` to `41
+FD 80`. Once the width is above 9 and a byte code has been seen, each code is preceded by a flag
+bit: 0 = an 8-bit byte follows (and the flag weight grows by 15), 1 = a phrase follows as *w* − 1
+bits plus the same mirror bit, offset by 256 (and the weight halves); the flag disappears again
+when the weight reaches 0.
+
+**Phrases.** A code below *n* emits its phrase; the code *n* itself emits the previous phrase
+plus its own first byte. After each phrase except the first after a reset, phrase *n* becomes the
+previous phrase extended by the current phrase's first byte; *n* advances on every code and the
+width grows when *n* reaches 2^w. Codes above *n* are ignored.
+
+**Runs.** Code 257 is followed by a length: `1` + 8 bits, else `01` + 12 bits + 256, else `001`
++ 16 bits + 4352, else `000` + 32 bits + 4352; plus 256, then the byte (8 bits).
+
+**Full dictionary.** When *n* reaches the capacity, every phrase that is no other phrase's
+prefix is dropped, and the surviving phrases are renumbered downwards into the freed codes:
+walking the codes from 0 upwards, the first child and then the next sibling of each phrase move
+into the lowest free code whenever they lie above it (children listed newest first). The width
+shrinks to fit the new *n*, and the next code starts a new chain without extending a phrase.
+
+The fixtures `basic-mw` and `big-mw1` (a 1024-phrase dictionary refilled several times) pin the
+codes and the pruning; every LZ78 archive packed here, up to the 17 MB pair, decodes exactly.
 
 ## LZP (methods 8..23)
 
@@ -271,7 +311,7 @@ selectors 8 and 9, and one of two finer classes for 5..7. Switching to any selec
 clears all predictor state.
 
 *Refuted*, each by a fixture that fails at the first wrong byte:
-- flat context `base + 4` for selector 8 (OpenUHA): it is `base + 2`; with `+4` it collides with
+- flat context `base + 4` for selector 8: it is `base + 2`; with `+4` it collides with
   selector 9's phase-1 context and the stream breaks two bytes after the switch from 8 to 9;
 - keeping predictor state across a switch between selectors ≥ 5: breaks on the first byte.
 
@@ -279,7 +319,7 @@ clears all predictor state.
 
 Applied to each file after decoding, before its CRC is checked.
 
-**Executable filter** (filters bit 0, ALZ/LZP only). A file of at least 1024 bytes whose first
+**Executable filter** (filters bit 0: ALZ, LZP, LZ78, PPM). A file of at least 1024 bytes whose first
 word is `MZ`, `ZM` or `MQ`, or that starts `7F 'ELF'` with machine 3, or `FBOV`, was
 preprocessed. For MZ with 16..8192 relocations and a relocation table at ≥ 0x1C inside the file,
 the table was stored as four byte planes and delta-coded per 16-bit word against the word four
@@ -291,7 +331,7 @@ the file size; others whose high half is not trivial carry, in their low half, e
 index` into a 128-entry move-to-front list of recent targets (initially 0..127) or a target to
 be entered into that list. The scan advances 5 bytes past a rewritten operand, otherwise 4.
 
-*Refuted:* a zero-initialised list and a 16-byte minimum (OpenUHA) — `UNUHARC.EXE` packed as
+*Refuted:* a zero-initialised list and a 16-byte minimum — `UNUHARC.EXE` packed as
 data fails its CRC under the former, a 364-byte MZ file under the latter.
 
 **Multimedia filter** (filters bit 1, LZP and LZ78). Files of at least 1024 bytes recognised as
@@ -302,10 +342,7 @@ from the byte one stride back, with a per-phase sign that flips on a difference 
 ## What is not derived
 
 - **PPM** (`-mx`, methods 24..39): an order-4-2-1-0 model behind an LZP pass, with its own
-  executable pre-transform. Neither third-party decoder is a usable description of it (OpenUHA's
-  decodes our 22 KB sample and none of the larger ones); archives list, extraction is refused.
-- **RLE** (`-mr`) and **LZ78** (`-mw`): rare, flagged "may be not supported in future versions"
-  by the author; refused.
+  executable pre-transform; archives list, extraction is refused.
 - **Versions before 0.6** (`UHA` + 2, 3 or 4; four dexvert samples are 0.2): their headers,
   ciphers and codecs differ; refused with the version named.
 - **Writing.** Nothing here writes UHARC.
@@ -314,4 +351,3 @@ from the byte one stride back, with a per-phase sign that flips on a difference 
 
 - UHARC 0.6b, `UHARC.DOC` — modes, switches, dictionary rule, SFX.
 - Archive Team, "UHARC", <http://fileformats.archiveteam.org/wiki/UHARC> — overview, samples.
-- OpenUHA and unuharc_recon as described above (read, not taken).
