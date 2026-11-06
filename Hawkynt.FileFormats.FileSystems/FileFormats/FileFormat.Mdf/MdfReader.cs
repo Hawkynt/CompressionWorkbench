@@ -1,4 +1,5 @@
 using System.Text;
+using FileSystem.Iso;
 
 namespace FileFormat.Mdf;
 
@@ -8,6 +9,9 @@ namespace FileFormat.Mdf;
 /// (Mode 1 with user data at offset 16) or plain 2048-byte ISO sectors.
 /// The accompanying MDS file describes track layout; this reader detects the
 /// sector geometry heuristically by probing for the ISO 9660 PVD signature.
+/// The file system is read by the shared ISO 9660 reader, so Rock Ridge and Joliet
+/// names, multi-extent and interleaved files read as they do in a plain ISO; a tree
+/// that reader refuses falls back to a walk of the primary directory records.
 /// </summary>
 public sealed class MdfReader : IDisposable {
   // ISO 9660 constants
@@ -24,6 +28,7 @@ public sealed class MdfReader : IDisposable {
 
   private readonly int _sectorSize;
   private readonly int _dataOffset;
+  private readonly IsoTrackView? _iso;
 
   /// <summary>Gets all file and directory entries found in the ISO 9660 file system.</summary>
   public IReadOnlyList<MdfEntry> Entries { get; }
@@ -38,6 +43,19 @@ public sealed class MdfReader : IDisposable {
     this._leaveOpen = leaveOpen;
 
     (this._sectorSize, this._dataOffset) = DetectSectorGeometry(stream);
+
+    this._iso = IsoTrackView.TryOpen(this.ReadSector, stream.Length / this._sectorSize);
+    if (this._iso != null) {
+      this.Entries = [.. this._iso.Reader.Entries.Select(e => new MdfEntry {
+        Name = IsoTrackView.LeafName(e),
+        FullPath = e.Name,
+        IsDirectory = e.IsDirectory,
+        Size = e.IsDirectory ? 0 : e.Size,
+        StartLba = IsoTrackView.StartSector(e),
+        Iso = e,
+      })];
+      return;
+    }
 
     var entries = new List<MdfEntry>();
     TryParseIso9660(entries);
@@ -55,6 +73,8 @@ public sealed class MdfReader : IDisposable {
       throw new ArgumentException("Cannot extract a directory entry.", nameof(entry));
     if (entry.Size == 0)
       return [];
+    if (entry.Iso != null && this._iso != null)
+      return this._iso.Extract(entry.Iso, "MDF");
 
     return ReadFileData(entry.StartLba, (int)entry.Size);
   }
@@ -219,7 +239,7 @@ public sealed class MdfReader : IDisposable {
     return result;
   }
 
-  private byte[]? ReadSector(int lba) {
+  private byte[]? ReadSector(long lba) {
     var sectorStart = (long)lba * this._sectorSize;
     var dataStart = sectorStart + this._dataOffset;
 
@@ -255,6 +275,7 @@ public sealed class MdfReader : IDisposable {
   public void Dispose() {
     if (!this._disposed) {
       this._disposed = true;
+      this._iso?.Dispose();
       if (!this._leaveOpen)
         this._stream.Dispose();
     }

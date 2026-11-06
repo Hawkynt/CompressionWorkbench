@@ -181,7 +181,8 @@ public class MdfTests {
     ms.Position = 0;
 
     using var reader = new MdfReader(ms);
-    var fileEntry = reader.Entries.FirstOrDefault(e => !e.IsDirectory && e.Name.StartsWith("DATA"));
+    // The track carries Rock Ridge and Joliet, so the reader lists the name as given.
+    var fileEntry = reader.Entries.FirstOrDefault(e => !e.IsDirectory && e.Name == "data.bin");
     Assert.That(fileEntry, Is.Not.Null);
     Assert.That(reader.Extract(fileEntry!)[..payload.Length], Is.EqualTo(payload));
   }

@@ -88,21 +88,25 @@ public sealed class MdfFormatDescriptor :
   }
 
   /// <summary>
-  /// Adds or replaces root-level ISO 9660 files inside the existing MDF track.
-  /// The edit is staged transactionally and committed only if the result parses.
-  /// Physical growth is refused because that would require changing the MDS
-  /// track descriptors, which are outside the single-stream mutation contract.
+  /// Adds or replaces ISO 9660 files and folders at any depth inside the existing MDF
+  /// track, keeping Rock Ridge and Joliet names. The edit is staged transactionally and
+  /// committed only if the result parses. Physical growth is refused because that would
+  /// require changing the MDS track descriptors, which are outside the single-stream
+  /// mutation contract.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
-    foreach (var (name, data) in FilesOnly(inputs))
-      MdfIsoOperations.AddOrReplace(archive, name, data);
+    foreach (var input in inputs.Where(i => !string.IsNullOrEmpty(i.ArchiveName.Trim('/', '\\')))) {
+      var mode = input.SourceUnixMode is { } unixMode ? (int)unixMode : (int?)null;
+      if (input.IsDirectory) MdfIsoOperations.AddDirectory(archive, input.ArchiveName, mode, input.SourceLastModifiedUtc);
+      else MdfIsoOperations.AddOrReplace(archive, input.ArchiveName, input.ReadContent(), mode, input.SourceLastModifiedUtc);
+    }
   }
 
   /// <summary>
-  /// Removes root-level ISO 9660 files and wipes their former data sectors while
-  /// preserving the MDF's physical sector count and raw framing.
+  /// Removes ISO 9660 files and folders at any depth and wipes their former data sectors
+  /// while preserving the MDF's physical sector count and raw framing.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);

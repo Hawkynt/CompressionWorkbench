@@ -35,4 +35,7 @@ public sealed class NrgEntry {
 
   /// <summary>Gets the globally numbered NRG track number when known.</summary>
   public int? TrackNumber { get; init; }
+
+  /// <summary>The entry as the shared ISO 9660 reader sees it, when that reader read the tree.</summary>
+  internal FileSystem.Iso.IsoEntry? Iso { get; init; }
 }
