@@ -116,6 +116,7 @@ format,Cbt,CBT,Archive,,.cbt,Y,Y,Y,Y
 format,Cbz,CBZ,Archive,,.cbz,Y,Y,Y,Y
 format,Cdi,CDI,Archive,,.cdi,Y,Y,Y,Y
 format,CephFs,CephFS / RADOS pool export,Archive,Y,.rados;.ceph,Y,Y,Y,Y
+format,Chfs,CHFS (NetBSD Chip File System),Archive,Y,.chfs,Y,Y,,
 format,Chm,CHM,Archive,,.chm,Y,Y,Y,Y
 format,ChromiumPak,Chromium resource pack,Archive,,.pak,Y,Y,Y,Y
 format,ClickteamInstaller,Clickteam Install Creator,Archive,,,Y,Y,,
@@ -278,6 +279,7 @@ format,IExpress,IExpress self-extractor,Archive,,,Y,Y,,
 format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
 format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
 format,InnoSetup,Inno Setup,Archive,,,Y,Y,,
+format,Install4j,install4j,Archive,,,Y,Y,,
 format,InstallerVise,Installer VISE,Archive,,,Y,Y,,
 format,InstallShieldCab,InstallShield cabinet,Archive,,.hdr,Y,Y,,
 format,IntelHex,Intel HEX,Archive,,.hex;.ihex;.ihx;.h86,Y,Y,Y,Y
