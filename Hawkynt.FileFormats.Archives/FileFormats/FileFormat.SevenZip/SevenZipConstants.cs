@@ -100,7 +100,7 @@ internal static class SevenZipConstants {
   public static ReadOnlySpan<byte> CodecBzip2 => [0x04, 0x02, 0x02];
 
   /// <summary>Codec ID for PPMd compression.</summary>
-  public static ReadOnlySpan<byte> CodecPpmd => [0x03, 0x04, 0x05];
+  public static ReadOnlySpan<byte> CodecPpmd => [0x03, 0x04, 0x01];
 
   /// <summary>Codec ID for BCJ (x86 executable) filter.</summary>
   public static ReadOnlySpan<byte> CodecBcj => [0x03, 0x03, 0x01, 0x03];

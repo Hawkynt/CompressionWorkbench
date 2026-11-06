@@ -45,7 +45,7 @@ public sealed class SevenZipStreamingWriterTests {
   }
 
   public static IEnumerable<TestCaseData> Profiles() {
-    foreach (var codec in new[] { SevenZipCodec.Lzma2, SevenZipCodec.Deflate, SevenZipCodec.BZip2, SevenZipCodec.Copy })
+    foreach (var codec in new[] { SevenZipCodec.Lzma2, SevenZipCodec.Lzma, SevenZipCodec.Deflate, SevenZipCodec.BZip2, SevenZipCodec.Copy })
       foreach (var filter in new[] { SevenZipFilter.None, SevenZipFilter.BcjX86, SevenZipFilter.Delta, SevenZipFilter.Swap4 })
         foreach (var encrypt in new[] { false, true })
           yield return new TestCaseData(codec, filter, encrypt).SetName($"Given_StreamedEntries_{codec}_{filter}_{(encrypt ? "aes" : "plain")}_When_ReadBack_Then_TheyMatch");
@@ -122,7 +122,9 @@ public sealed class SevenZipStreamingWriterTests {
   [Test]
   [Explicit("Writes a 4.5 GiB file, archives it and has 7-Zip test and extract it; run on demand.")]
   [Category("Performance")]
-  public void Given_AFileLargerThan4GiB_When_ArchivedThroughTheLibrary_Then_7ZipTestsAndExtractsItWithBoundedMemory() {
+  [TestCase("lzma2")]
+  [TestCase("lzma")]
+  public void Given_AFileLargerThan4GiB_When_ArchivedThroughTheLibrary_Then_7ZipTestsAndExtractsItWithBoundedMemory(string method) {
     SevenZipOracle.Require();
     var source = Path.Combine(this._root, "big.bin");
     const long size = (9L << 29) + 4321;
@@ -139,8 +141,9 @@ public sealed class SevenZipStreamingWriterTests {
     var before = GC.GetTotalMemory(forceFullCollection: true);
     var peak = 0L;
     using var sampler = new Timer(_ => peak = Math.Max(peak, GC.GetTotalMemory(false)), null, 0, 200);
-    ArchiveOperations.Create(archive, ArchiveInput.Resolve([source]), new CompressionOptions());
+    ArchiveOperations.Create(archive, ArchiveInput.Resolve([source]), new CompressionOptions { Method = MethodSpec.Parse(method) });
     sampler.Dispose();
+    TestContext.Out.WriteLine($"{method}: peak managed memory {(peak - before) >> 20} MiB above the start, archive {new FileInfo(archive).Length} bytes");
     Assert.That(peak - before, Is.LessThan(768L << 20), "the writer must not hold the file in memory");
 
     SevenZipOracle.RunOk(this._root, "t", archive);

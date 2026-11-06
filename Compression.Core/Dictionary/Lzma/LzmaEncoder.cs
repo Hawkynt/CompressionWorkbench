@@ -252,7 +252,7 @@ public sealed class LzmaEncoder {
     encoder.Finish();
   }
 
-  private static void EncodeDistance(RangeEncoder encoder,
+  internal static void EncodeDistance(RangeEncoder encoder,
     BitTreeEncoder[] posSlotEncoder, Span<int> posEncoders,
     BitTreeEncoder alignEncoder, long distance, int length) {
     var lenToPosState = LzmaConstants.GetLenToPosState(length);

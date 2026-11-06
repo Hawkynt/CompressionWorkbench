@@ -1862,7 +1862,7 @@ Decodes LZJB, Jeff Bonwick's compressor from Solaris and ZFS (`compression=lzjb`
 
 ### Namespace `Compression.Core.Dictionary.Lzma`
 
-[`Lzma2Decoder`](#lzma2decoder) · [`Lzma2Encoder`](#lzma2encoder) · [`LzmaBuildingBlock`](#lzmabuildingblock) · [`LzmaCompressionLevel`](#lzmacompressionlevel) · [`LzmaDecoder`](#lzmadecoder) · [`LzmaDictionarySize`](#lzmadictionarysize) · [`LzmaEncoder`](#lzmaencoder)
+[`Lzma2Decoder`](#lzma2decoder) · [`Lzma2Encoder`](#lzma2encoder) · [`LzmaBuildingBlock`](#lzmabuildingblock) · [`LzmaCompressionLevel`](#lzmacompressionlevel) · [`LzmaDecoder`](#lzmadecoder) · [`LzmaDictionarySize`](#lzmadictionarysize) · [`LzmaEncoder`](#lzmaencoder) · [`LzmaStreamEncoder`](#lzmastreamencoder)
 
 #### `Lzma2Decoder`
 
@@ -1943,6 +1943,16 @@ LZMA encoder implementing the full LZMA1 compression algorithm.
 | `LzmaEncoder` | `LzmaEncoder(int dictionarySize = 8388608, int lc = 3, int lp = 0, int pb = 2, LzmaCompressionLevel level = 1)` | Initializes a new LZMA encoder. |
 | `Properties` | `byte[] Properties { get; }` | Gets the 5-byte LZMA properties header (1 byte properties + 4 bytes dictionary size). |
 | `Encode` | `void Encode(Stream output, ReadOnlySpan<byte> data, bool writeEndMarker = true)` | Encodes the given data to the output stream. Writes LZMA-compressed data (without the properties header or uncompressed size). |
+
+#### `LzmaStreamEncoder`
+
+LZMA1 encoding of a stream of any length with bounded memory: the same greedy parse, hash-chain match finder and range coder as `LzmaEncoder`, run over a sliding window that holds one dictionary of history and a little look-ahead. For the same input and properties the output is byte-identical to `Encode`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LzmaStreamEncoder` | `LzmaStreamEncoder(int dictionarySize = 8388608, int lc = 3, int lp = 0, int pb = 2, LzmaCompressionLevel level = 1)` | Initializes a streaming LZMA encoder with the parameters `LzmaEncoder` takes. |
+| `Properties` | `byte[] Properties { get; }` | Gets the 5-byte LZMA properties header (1 byte properties + 4 bytes dictionary size). |
+| `Encode` | `void Encode(Stream output, Stream input, long length, bool writeEndMarker = false)` | Encodes `length` bytes of `input` into `output` (no properties header, no size). |
 
 ### Namespace `Compression.Core.Dictionary.Lzms`
 

@@ -225,17 +225,27 @@ internal sealed class SevenZipFolderDecoder {
     throw new NotSupportedException($"7z: unsupported coder {SevenZipCoderNames.Describe(c.CodecId)}.");
   }
 
-  /// <summary>PPMd (7z variant H) decoding hook; the model decodes exactly the declared size.</summary>
+  /// <summary>
+  /// The 7z PPMd coder (03 04 01): PPMd variant H with 7-Zip's range coder, decoding exactly the
+  /// declared size. The packed stream is held whole; the output is produced as it is read.
+  /// </summary>
   private static Stream OpenPpmd(SevenZipCoder c, Stream input, long size) {
-    if (c.Properties is not { Length: >= 5 } props)
-      throw new InvalidDataException("7z: PPMd coder without its five property bytes.");
-    int order = props[0];
-    var memory = props[1] | (props[2] << 8) | (props[3] << 16) | (props[4] << 24);
-    var rangeDecoder = new PpmdRangeDecoder(input);
-    var model = new PpmdModelH(order, memory);
+    var (order, memory) = SevenZipPpmd.ParseProperties(c.Properties ?? []);
+    var rc = new SevenZipPpmdRangeDecoder(ReadAll(input));
+    if (!rc.IsValidStart)
+      throw new InvalidDataException("7z: the PPMd stream does not start with the range coder's zero byte.");
+    var model = new Ppmd7();
+    model.Allocate(memory);
+    model.Initialize(order);
     return new SevenZipPullStream(span => {
-      for (var i = 0; i < span.Length; ++i)
-        span[i] = model.DecodeSymbol(rangeDecoder);
+      for (var i = 0; i < span.Length; ++i) {
+        var symbol = model.DecodeSymbol(rc);
+        if (symbol < 0)
+          throw new InvalidDataException(symbol == -1 ? "7z: the PPMd stream ends before its declared size." : "7z: the PPMd stream is corrupt.");
+        if (rc.Overrun > 0)
+          throw new InvalidDataException("7z: the PPMd stream is truncated.");
+        span[i] = (byte)symbol;
+      }
       return span.Length;
     }, size);
   }

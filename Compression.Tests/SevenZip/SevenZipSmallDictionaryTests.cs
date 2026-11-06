@@ -28,8 +28,8 @@ public sealed class SevenZipSmallDictionaryTests {
     }
   }
 
-  // PPMd is left out here: main's 7z PPMd coder is not yet the one 7-Zip reads (#623).
   [TestCase("lzma2")]
+  [TestCase("ppmd")]
   [TestCase("copy")]
   [Category("ArchiveExternalInterop")]
   public void GivenA64KiBDictionary_When7ZipTestsTheArchive_ThenItIsOk(string method) {
