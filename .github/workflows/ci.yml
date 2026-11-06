@@ -561,6 +561,21 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Moof.MoofExternalConformanceTests" \
             --logger "trx;LogFileName=moof-oracle-tests.trx"
 
+      # Hard gate: a real Video CD track (AVSEQ09.DAT, hash-pinned) is rebuilt byte for byte from the
+      # parts we list and its track equals cdxa2mpeg's; for a clip vcdimager authors, our CD-XA file
+      # from the same MPEG has exactly the disc's AVSEQ01.DAT sectors.
+      - name: CD-XA oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_VCD: "1"
+        run: |
+          sudo apt-get install -y vcdimager ffmpeg
+          curl -fsSL -o "$RUNNER_TEMP/AVSEQ09.DAT" https://archive.org/download/avseq-07_20220223/AVSEQ09.DAT
+          echo "d4344c4650300fb1e7e00bdc2720d4f3d76db3961ae5decc0d7e97834d7581b7  $RUNNER_TEMP/AVSEQ09.DAT" | sha256sum -c -
+          CWB_VCD_DAT="$RUNNER_TEMP/AVSEQ09.DAT" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.CdXa.CdXaExternalConformanceTests" \
+            --logger "trx;LogFileName=cdxa-oracle-tests.trx"
+
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are
       # cross-examined against each other, and bucket generations against the

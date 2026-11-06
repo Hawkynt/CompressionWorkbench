@@ -277,7 +277,7 @@ PowerISO DAA,daa,disk-image,,,,,R,,Y,2,https://www.poweriso.com,Daa,Y,Y,Y,PARTIA
 MagicISO UIF,uif,disk-image,,,,,R,,Y,2,,,,,,MISSING,,
 Compressed ISO (CSO/ZSO),cso;zso,disk-image,,,,,R,,,1,,Cso,Y,Y,Y,OK,,
 HTC NBH ROM image,nbh,firmware,,,,,R,,,1,,,,,,MISSING,,
-CD-ROM/XA image,dat,disk-image,,,,,,fmt/819,,1,,,,,,MISSING,,
+CD-ROM/XA image,dat,disk-image,,,,,,fmt/819,,1,https://ecma-international.org/publications-and-standards/standards/ecma-130/,CdXa,Y,Y,Y,OK,,"RIFF CDXA Mode 2 sectors (magic-detected); Video CD tracks rebuilt byte for byte (a real AVSEQ09.DAT and vcdimager-authored discs), track.mpg equals cdxa2mpeg output"
 Raw floppy image (IMG/IMA),img;ima;vfd;flp,disk-image,,,,,R,fmt/1087,Y,3,,Fat,Y,Y,Y,OK,,
 Norton Ghost image,gho;ghs,disk-image,,,,,,,Y,1,,Ghost,Y,Y,Y,OK,,
 Acronis True Image,tib;tibx,disk-image,,,,,,,Y,1,,AcronisTib;AcronisTibx,Y,,Y,READ-ONLY-BUT-SOURCES-WRITE,Acronis True Image,
