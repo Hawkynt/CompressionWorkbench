@@ -3367,20 +3367,11 @@ Decompresses data in the Snappy block format.
 
 ### Namespace `Compression.Core.Dictionary.Sqx`
 
-[`SqxAudioCodec`](#sqxaudiocodec) · [`SqxBuildingBlock`](#sqxbuildingblock) · [`SqxConstants`](#sqxconstants) · [`SqxDecoder`](#sqxdecoder) · [`SqxEncoder`](#sqxencoder) · [`SqxMultimediaCodec`](#sqxmultimediacodec)
-
-#### `SqxAudioCodec`
-
-SQX audio compressor/decompressor using polynomial prediction and Golomb-Rice coding.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decompresses 8-bit audio data. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Compresses 8-bit audio data using polynomial prediction + Golomb-Rice. |
+[`SqxBuildingBlock`](#sqxbuildingblock) · [`SqxLzDecoder`](#sqxlzdecoder) · [`SqxLzEncoder`](#sqxlzencoder) · [`SqxTables`](#sqxtables)
 
 #### `SqxBuildingBlock`
 
-Exposes the SQX LZH compression algorithm as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support.
+Exposes the SQX 2.0 LZ77 + Huffman stream (archive method 2) as a benchmarkable building block: the stream exactly as it sits in an SQX archive, behind a 4-byte little-endian original size, which the archive keeps in the file header instead.
 
 Implements `IBuildingBlock`.
 
@@ -3394,83 +3385,33 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-#### `SqxConstants`
+#### `SqxLzDecoder`
 
-Constants for the SQX compression algorithm (V11 and V20).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `BlockSize` | `const int BlockSize` | Block size in symbols. |
-| `CodeFlatTabs` | `const int CodeFlatTabs` | Huffman table encoding: use flat 4-bit lengths. |
-| `CodeFourTrees` | `const int CodeFourTrees` | Four Huffman trees mode (V20 extended). |
-| `CodeThreeTrees` | `const int CodeThreeTrees` | Three Huffman trees mode. |
-| `CodeTreeTabs` | `const int CodeTreeTabs` | Huffman table encoding: use pre-tree for code lengths. |
-| `DefaultDictSize` | `const int DefaultDictSize` | Default dictionary size (32KB). |
-| `DistCodes1M` | `const int DistCodes1M` | Distance codes for 1MB dictionary. |
-| `DistCodes2M` | `const int DistCodes2M` | Distance codes for 2MB dictionary. |
-| `DistCodes4M` | `const int DistCodes4M` | Distance codes for 4MB dictionary. |
-| `DupLastSymbol` | `const int DupLastSymbol` | Duplicate-last-match symbol (reuse last length + distance). |
-| `Len2Codes` | `const int Len2Codes` | Number of length-2 match symbols (261-268). |
-| `Len2ExtraBits` | `static readonly int[] Len2ExtraBits` | Extra bits for length-2 match distances. |
-| `Len2Offsets` | `static readonly int[] Len2Offsets` | Distance base values for length-2 matches. |
-| `Len2Start` | `const int Len2Start` | First length-2 match symbol (261). |
-| `Len3Codes` | `const int Len3Codes` | Number of length-3 match symbols (269-283). |
-| `Len3ExtraBits` | `static readonly int[] Len3ExtraBits` | Extra bits for length-3 match distances. |
-| `Len3Offsets` | `static readonly int[] Len3Offsets` | Distance base values for length-3 matches. |
-| `Len3Start` | `const int Len3Start` | First length-3 match symbol (269). |
-| `LenCodes` | `const int LenCodes` | Number of length-4+ match symbols (284-308). |
-| `LenExtraBits` | `static readonly int[] LenExtraBits` | Extra bits for length-4+ matches. |
-| `LenOffsets` | `static readonly int[] LenOffsets` | Length base values for length-4+ matches. |
-| `LenStart` | `const int LenStart` | First length-4+ match symbol (284). |
-| `LitCodes` | `const int LitCodes` | Number of literal symbols (0-255). |
-| `LzBlockType` | `const int LzBlockType` | Block type bit: 0 = LZ block, 1 = multimedia block. |
-| `MainTreeMaxBits` | `const int MainTreeMaxBits` | Max code length in main/distance trees. |
-| `MaxDictSize` | `const int MaxDictSize` | Maximum dictionary size (4MB). |
-| `MaxDistCodes` | `const int MaxDistCodes` | Number of distance tree symbols (depends on dict size, max 56). |
-| `MaxDistLen2` | `const int MaxDistLen2` | Maximum distance for a length-2 match (255). |
-| `MaxDistLen3` | `const int MaxDistLen3` | Maximum distance for a length-3 match (16383). |
-| `MaxDistLen4` | `const int MaxDistLen4` | Maximum distance for a length-4+ match (262143). |
-| `MinMatch` | `const int MinMatch` | Minimum match length. |
-| `NC` | `const int NC` | Total main Huffman tree symbols (310). |
-| `PreTreeMaxBits` | `const int PreTreeMaxBits` | Max code length in pre-tree. |
-| `PreTreeSymbols` | `const int PreTreeSymbols` | Pre-tree symbol count (codes 0-15 + RLE 16,17,18). |
-| `RepCodes` | `const int RepCodes` | Number of repeated-offset symbols (257-260). |
-| `RepStart` | `const int RepStart` | First repeated-offset symbol (257). |
-| `GetDistSlots` | `static int GetDistSlots(int dictSize)` | Gets the number of distance tree symbols for a given dictionary size. |
-| `GetLen2DistCode` | `static int GetLen2DistCode(int distance)` | Gets the length-2 distance code index. |
-| `GetLen3DistCode` | `static int GetLen3DistCode(int distance)` | Gets the length-3 distance code index. |
-| `GetLenCode` | `static int GetLenCode(int length)` | Gets the length-4+ symbol index for a given raw match length. |
-
-#### `SqxDecoder`
-
-Decodes SQX LZH compressed data using the real 310-symbol alphabet.
+Decoder of SQX methods 1-4 (LZ77 + Huffman, with range-coded multimedia blocks and the optional delta and x86 call filters), converted from Squeez-c's `lz.c`, `huff.c`, `delta.c` and `rc.c` (MIT; see `THIRD-PARTY-NOTICE.Squeez-c.txt`). One instance keeps the window, the repeat distances and the last match between files, which a solid archive continues.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SqxDecoder` | `SqxDecoder(int dictSize = 32768)` | Initializes a new SQX decoder. |
-| `Decode` | `byte[] Decode(byte[] compressed, int originalSize)` | Decompresses SQX LZH data. |
-| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize, int dictSize)` | Static convenience method for non-solid single-file decoding. |
-| `Reset` | `void Reset()` | Resets decoder state (for non-solid mode between files). |
+| `SqxLzDecoder` | `SqxLzDecoder(int dictionarySize)` | Creates a decoder for a dictionary of `dictionarySize` bytes (a power of two). |
+| `Decode` | `byte[] Decode(ReadOnlySpan<byte> stream, long originalSize, bool solid, bool extendedHeader, byte format)` | Decodes one file's stream. `solid` continues the window and match state of the previous file; `extendedHeader` is bit 0 of the file's `cCompFlags`. |
 
-#### `SqxEncoder`
+#### `SqxLzEncoder`
 
-Encodes data using the real SQX LZH compression (310-symbol alphabet).
+Encoder of SQX methods 1-4, converted from Squeez-c's `create.c`, `enc.c` and `henc.c` (MIT; see `THIRD-PARTY-NOTICE.Squeez-c.txt`): a hash-chain parse into literals, repeat-distance matches and length 2, 3 and longer matches, then blocks of up to 16,383 symbols with one set of Huffman tables sent in the meta-coded form. The stream decodes with `SqxLzDecoder` and needs no extended header.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SqxEncoder` | `SqxEncoder(int dictSize = 32768)` | Initializes a new SQX encoder. |
-| `Encode` | `byte[] Encode(ReadOnlySpan<byte> data)` | Compresses data using the SQX LZH algorithm. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int dictSize)` | Static convenience method for non-solid single-file encoding. |
-| `Reset` | `void Reset()` | Resets encoder state (for non-solid mode between files). |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, byte format, int dictionarySize, int effort)` | Encodes `data` as one file's stream. |
 
-#### `SqxMultimediaCodec`
+#### `SqxTables`
 
-SQX multimedia compressor/decompressor using delta coders (E0-E4) and arithmetic coding.
+Constants of the SQX LZ77 + Huffman stream (methods 1-4), as Squeez-c's `huff.h`/`huff.c` and `lz.h` define them: symbol alphabets of formats 1.1 and 2.0, length and distance base tables, and match-length thresholds.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decompresses multimedia data. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Compresses multimedia data using automatic delta order selection + arithmetic coding. |
+| `Format11` | `const byte Format11` | Archive format 1.1 (`cArcerExVer` 11). |
+| `Format20` | `const byte Format20` | Archive format 2.0 (`cArcerExVer` 20). |
+| `DictionaryFlags` | `static ushort DictionaryFlags(int dictionarySize, byte format)` | File header flag bits that announce `dictionarySize`. |
+| `DictionarySize` | `static int DictionarySize(ushort flags, byte format)` | Dictionary size from a file header's flags (bits 8-10, and bit 11 for 2.0's extended sizes). |
 
 ### Namespace `Compression.Core.Dictionary.StackerSd4`
 

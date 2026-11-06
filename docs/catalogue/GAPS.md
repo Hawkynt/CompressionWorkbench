@@ -25,8 +25,8 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | --- | ---: | --- |
 | `MISSING` | 141 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 22 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 47 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 318 | covered with no known gap against what the sources list |
+| `PARTIAL` | 48 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 317 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 456 | in our registry, listed by none of the seven sources |
 
 ### Per source
@@ -42,7 +42,7 @@ read-only rows.
 | binwalk v3 | 79 | 56 | 70.9 | 49 |
 | Universal Extractor 2 | 124 | 102 | 82.3 | 69 |
 | PRONOM | 87 | 82 | 94.3 | 71 |
-| Wikipedia | 268 | 194 | 72.4 | 149 |
+| Wikipedia | 268 | 194 | 72.4 | 148 |
 
 These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-06. The source inventories retain their original 2026-10-19 snapshot. The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
 
@@ -170,6 +170,7 @@ running real-world samples. The file named at the end of each row is where the l
 | SquashFS | `SquashFs` | 3 | SquashFS v4 only; v1-v3 rejected (SquashFsSuperblock.cs) |
 | UDF | `Udf` | 3 | type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs) |
 | Windows PE | `Mz`, `PeResources` | 3 | archive view of resources/overlay, not a full PE section extractor |
+| SQX | `Sqx` | 1 | audio (5), text/PPMd (6) and ultra (7) methods, encryption and split volumes are refused (SqxReader.cs) |
 | ZPAQ | `Zpaq` | 3 | encrypted (`-key`), multi-part and `-index` archives are refused; modify rewrites a single version instead of appending one (ZpaqReader.cs, ZpaqWriter.cs) |
 | Compact Pro | `CompactPro` | 2 | stored and RLE only; LZ+RLE and LZ+Huffman unsupported (CompactProReader.cs) |
 | DiskDoubler | `DiskDoubler` | 2 | single files only (no DDAR/DDA2 archives); methods 0, 1, 6, 9 decoded and checked against unar on real files; 2-5, 7, 8, 10 and delta refused (DiskDoublerReader.cs) |
