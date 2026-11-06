@@ -7259,6 +7259,7 @@ Apple PackBits run-length encoding, as specified in Apple Technical Note TN1023 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> data)` | Decodes PackBits-encoded data back to the original bytes. |
+| `EncodeOptimal` | `static byte[] EncodeOptimal(ReadOnlySpan<byte> data)` | Finds an exact minimum-size packetization. For a suffix beginning at i, a literal packet ending at j costs 1 + (j-i) + cost[j], while a repeat packet costs 2 + cost[j]. Both candidate ranges are at most 128 bytes wide. Monotonic deques maintain the minima of those sliding ranges, reducing the dynamic program from O(n * 128) to O(n) time while storing one decision byte per input byte instead of a full cost table. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Encodes data using Apple PackBits run-length encoding. |
 
 #### `RleBuildingBlock`

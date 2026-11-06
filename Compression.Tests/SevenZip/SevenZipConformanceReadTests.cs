@@ -45,6 +45,9 @@ public sealed class SevenZipConformanceReadTests {
     yield return P("ppmd", "-m0=PPMd");
     yield return P("ppmd-o2", "-m0=PPMd:o=2:mem=1m");
     yield return P("ppmd-o32", "-m0=PPMd:o=32:mem=64m");
+    yield return P("ppmd-o6-mem64k", "-m0=PPMd:o=6:mem=64k");
+    yield return P("ppmd-o16-mem256k-solid-off", "-m0=PPMd:o=16:mem=256k", "-ms=off");
+    yield return P("ppmd-aes", "-m0=PPMd", "-pS3cret!");
     yield return P("bzip2", "-m0=BZip2");
     yield return P("bzip2-mt", "-m0=BZip2", "-mmt=4");
     yield return P("deflate", "-m0=Deflate");
@@ -85,9 +88,6 @@ public sealed class SevenZipConformanceReadTests {
   /// the list cannot go stale.
   /// </summary>
   private static readonly Dictionary<string, string> KnownGaps = new(StringComparer.Ordinal) {
-    ["ppmd"] = "PPMd var.H (method 030401) belongs to the PPMd work (codec-proof audit, stacked on #560).",
-    ["ppmd-o2"] = "PPMd var.H (method 030401) belongs to the PPMd work (codec-proof audit, stacked on #560).",
-    ["ppmd-o32"] = "PPMd var.H (method 030401) belongs to the PPMd work (codec-proof audit, stacked on #560).",
   };
 
   [TestCaseSource(nameof(Profiles))]
