@@ -433,7 +433,12 @@ public sealed class NtfsWriter {
     long overhead = (long)LogFileBytes + UpCaseBytes
       + 16L * clusterSize   // boot + bitmaps + mirror + slack
       + mftBytes;
-    var total = (overhead + dataBytes) * 11 / 10; // 10 % headroom
+    // Headroom, as a formatted volume has it: an eighth of the payload (the share NTFS
+    // keeps as its MFT zone) and never less than 2 MiB. A volume laid out to just fit has
+    // no free MFT record, and the kernel grows $MFT in chunks it then cannot place, so
+    // the first file anyone adds fails with "no space left".
+    var payload = overhead + dataBytes;
+    var total = payload + Math.Max(2L * 1024 * 1024, payload / 8);
     if (total < 4 * 1024 * 1024) total = 4 * 1024 * 1024; // never smaller than the default
 
     return (total, clusterSize, mftRecordSize);
