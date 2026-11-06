@@ -23,8 +23,7 @@ public sealed partial class SevenZipWriter {
   private bool MustStream(PlannedBlock plan) {
     var large = plan.Files.Exists(static f => f.Data == null) || plan.Files.Sum(static f => f.Size) > InMemoryBlockLimit;
     return large
-      && plan.Codec is SevenZipCodec.Lzma2 or SevenZipCodec.Lzma or SevenZipCodec.PPMd or SevenZipCodec.Deflate or SevenZipCodec.BZip2 or SevenZipCodec.Copy
-      && plan.Filter != SevenZipFilter.Bcj2;
+      && plan.Codec is SevenZipCodec.Lzma2 or SevenZipCodec.Lzma or SevenZipCodec.PPMd or SevenZipCodec.Deflate or SevenZipCodec.BZip2 or SevenZipCodec.Copy;
   }
 
   /// <summary>
@@ -33,7 +32,9 @@ public sealed partial class SevenZipWriter {
   /// encrypted as they stream, so memory stays at the coders' windows. The folder has the same
   /// layout <see cref="EncodeBlock"/> writes. Returns the packed size and the folder.
   /// </summary>
-  private (long PackedSize, SevenZipFolder Folder) StreamBlock(PlannedBlock plan) {
+  private (long[] PackSizes, SevenZipFolder Folder) StreamBlock(PlannedBlock plan) {
+    if (plan.Filter == SevenZipFilter.Bcj2)
+      return this.StreamBcj2Block(plan);
     var total = plan.Files.Sum(static f => f.Size);
     var packed = new SevenZipCountingStream(this._stream);
     Stream sink = packed;
@@ -70,8 +71,71 @@ public sealed partial class SevenZipWriter {
     for (var i = 1; i < folder.Coders.Count; ++i)
       folder.BindPairs.Add((i, i - 1));
     folder.UnpackSizes = [.. sizes];
-    return (packed.Count, folder);
+    return ([packed.Count], folder);
   }
+
+  /// <summary>
+  /// A BCJ2 block as a stream: the files are split into the four BCJ2 streams on the way through,
+  /// each spooled to a temporary file (memory stays bounded; the main stream's length is needed
+  /// before it can be compressed), then compressed and — with a password — encrypted into the
+  /// archive in 7-Zip's packed-stream order: main, range coder, call, jump. The folder is the one
+  /// <see cref="EncodeBcj2Block"/> builds.
+  /// </summary>
+  private (long[] PackSizes, SevenZipFolder Folder) StreamBcj2Block(PlannedBlock plan) {
+    var total = plan.Files.Sum(static f => f.Size);
+    using var main = TemporaryStream();
+    using var call = TemporaryStream();
+    using var jump = TemporaryStream();
+    using var rangeCoded = TemporaryStream();
+    using (var source = new SevenZipSourceStream(plan.Files)) {
+      new Bcj2Filter.EncodeStream(source, call, jump, rangeCoded).CopyTo(main, 1 << 16);
+      if (source.Position != total)
+        throw new IOException("7z: a file delivered fewer bytes than its declared size while it was archived.");
+    }
+    foreach (var stream in new[] { main, call, jump, rangeCoded })
+      stream.Position = 0;
+
+    SevenZipCoder? mainCoder = null, callCoder = null, jumpCoder = null;
+    var mainPacked = this.EmitPacked(sink => mainCoder = this.CompressStreaming(main, main.Length, sink, plan.Codec, plan.DictionarySize));
+    var rangePacked = this.EmitPacked(sink => rangeCoded.CopyTo(sink, 1 << 16));
+    var callPacked = this.EmitPacked(sink => callCoder = this.CompressStreaming(call, call.Length, sink, SevenZipCodec.Lzma, 1 << 20));
+    var jumpPacked = this.EmitPacked(sink => jumpCoder = this.CompressStreaming(jump, jump.Length, sink, SevenZipCodec.Lzma, 1 << 20));
+    var bcj2 = new SevenZipCoder { CodecId = SevenZipConstants.CodecBcj2.ToArray(), NumInStreams = 4, NumOutStreams = 1 };
+    long[] packSizes = [mainPacked.Packed, rangePacked.Packed, callPacked.Packed, jumpPacked.Packed];
+
+    var folder = new SevenZipFolder();
+    if (this._password == null) {
+      folder.Coders.AddRange([jumpCoder!, callCoder!, mainCoder!, bcj2]);
+      folder.BindPairs.AddRange([(5, 0), (4, 1), (3, 2)]);
+      folder.PackedStreams = [2, 6, 1, 0];
+      folder.UnpackSizes = [jump.Length, call.Length, main.Length, total];
+      return (packSizes, folder);
+    }
+
+    folder.Coders.AddRange([jumpPacked.Aes!, callPacked.Aes!, rangePacked.Aes!, mainPacked.Aes!, jumpCoder!, callCoder!, mainCoder!, bcj2]);
+    folder.BindPairs.AddRange([(4, 0), (5, 1), (10, 2), (6, 3), (9, 4), (8, 5), (7, 6)]);
+    folder.PackedStreams = [3, 2, 1, 0];
+    folder.UnpackSizes = [jumpPacked.Inner, callPacked.Inner, rangeCoded.Length, mainPacked.Inner, jump.Length, call.Length, main.Length, total];
+    return (packSizes, folder);
+  }
+
+  /// <summary>
+  /// Writes one packed stream into the archive through <paramref name="write"/>, encrypting it
+  /// under its own AES coder when the archive has a password. Returns the packed size, the size
+  /// before encryption and the AES coder.
+  /// </summary>
+  private (long Packed, long Inner, SevenZipCoder? Aes) EmitPacked(Action<Stream> write) {
+    var packed = new SevenZipCountingStream(this._stream);
+    SevenZipAesEncryptStream? aes = this._password != null ? this.CreateEncryptor(packed) : null;
+    var inner = new SevenZipCountingStream(aes ?? (Stream)packed);
+    write(inner);
+    aes?.Complete();
+    return (packed.Count, inner.Count, aes?.Coder);
+  }
+
+  /// <summary>A scratch file deleted when closed, for a stream too large to keep in memory.</summary>
+  private static FileStream TemporaryStream()
+    => new(Path.Combine(Path.GetTempPath(), $"cwb-7z-{Guid.NewGuid():N}.tmp"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 1 << 16, FileOptions.DeleteOnClose);
 
   private SevenZipCoder CompressStreaming(Stream input, long length, Stream output, SevenZipCodec codec, int dictionarySize) {
     switch (codec) {

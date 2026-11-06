@@ -46,7 +46,7 @@ public sealed class SevenZipStreamingWriterTests {
 
   public static IEnumerable<TestCaseData> Profiles() {
     foreach (var codec in new[] { SevenZipCodec.Lzma2, SevenZipCodec.Lzma, SevenZipCodec.PPMd, SevenZipCodec.Deflate, SevenZipCodec.BZip2, SevenZipCodec.Copy })
-      foreach (var filter in new[] { SevenZipFilter.None, SevenZipFilter.BcjX86, SevenZipFilter.Delta, SevenZipFilter.Swap4 })
+      foreach (var filter in new[] { SevenZipFilter.None, SevenZipFilter.BcjX86, SevenZipFilter.Bcj2, SevenZipFilter.Delta, SevenZipFilter.Swap4 })
         foreach (var encrypt in new[] { false, true })
           yield return new TestCaseData(codec, filter, encrypt).SetName($"Given_StreamedEntries_{codec}_{filter}_{(encrypt ? "aes" : "plain")}_When_ReadBack_Then_TheyMatch");
   }
@@ -125,13 +125,20 @@ public sealed class SevenZipStreamingWriterTests {
   [TestCase("lzma2")]
   [TestCase("lzma")]
   [TestCase("ppmd")]
-  public void Given_AFileLargerThan4GiB_When_ArchivedThroughTheLibrary_Then_7ZipTestsAndExtractsItWithBoundedMemory(string method) {
+  [TestCase("lzma2", "bcj2")]
+  public void Given_AFileLargerThan4GiB_When_ArchivedThroughTheLibrary_Then_7ZipTestsAndExtractsItWithBoundedMemory(string method, string? filter = null) {
     SevenZipOracle.Require();
     var source = Path.Combine(this._root, "big.bin");
     const long size = (9L << 29) + 4321;
     var chunk = new byte[1 << 20];
     for (var i = 0; i < chunk.Length; i += 512)
       chunk[i] = (byte)(i >> 9);
+    if (filter == "bcj2")
+      // A near CALL every 61 bytes, so BCJ2's call stream grows to hundreds of megabytes.
+      for (var i = 7; i + 5 < chunk.Length; i += 61) {
+        chunk[i] = 0xE8;
+        BitConverter.TryWriteBytes(chunk.AsSpan(i + 1), i % 40000 - 20000);
+      }
     using (var file = File.Create(source))
       for (long written = 0; written < size; written += chunk.Length) {
         chunk[0] = (byte)(written >> 20); // no two megabytes alike
@@ -142,9 +149,16 @@ public sealed class SevenZipStreamingWriterTests {
     var before = GC.GetTotalMemory(forceFullCollection: true);
     var peak = 0L;
     using var sampler = new Timer(_ => peak = Math.Max(peak, GC.GetTotalMemory(false)), null, 0, 200);
-    ArchiveOperations.Create(archive, ArchiveInput.Resolve([source]), new CompressionOptions { Method = MethodSpec.Parse(method) });
+    if (filter == "bcj2") {
+      // The library picks no BCJ2 for a plain file; the writer is told to, one solid block.
+      using var file = File.Create(archive);
+      using var writer = new SevenZipWriter(file, SevenZipCodec.Lzma2, filter: SevenZipFilter.Bcj2);
+      writer.AddEntry(new SevenZipEntry { Name = "big.bin" }, () => File.OpenRead(source), size);
+      writer.Finish();
+    } else
+      ArchiveOperations.Create(archive, ArchiveInput.Resolve([source]), new CompressionOptions { Method = MethodSpec.Parse(method) });
     sampler.Dispose();
-    TestContext.Out.WriteLine($"{method}: peak managed memory {(peak - before) >> 20} MiB above the start, archive {new FileInfo(archive).Length} bytes");
+    TestContext.Out.WriteLine($"{method}{(filter == null ? "" : "+" + filter)}: peak managed memory {(peak - before) >> 20} MiB above the start, archive {new FileInfo(archive).Length} bytes");
     Assert.That(peak - before, Is.LessThan(768L << 20), "the writer must not hold the file in memory");
 
     SevenZipOracle.RunOk(this._root, "t", archive);
