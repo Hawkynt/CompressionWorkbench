@@ -612,7 +612,7 @@ LZBITMAP,,codec,,,,,,,,0,,bb:BB_Lzbitmap,Y,Y,,OURS-ONLY,,
 LZF,,codec,,,,,,,,0,,bb:BB_Lzf,Y,Y,,OURS-ONLY,,
 LZFX,,codec,,,,,,,,0,,bb:BB_Lzfx,Y,Y,,OURS-ONLY,,
 LZG,,codec,,,,,,,,0,,bb:BB_Lzg,Y,Y,,OURS-ONLY,,
-LZHAM,,codec,,,,,,,,0,https://github.com/richgel999/lzham_codec,bb:BB_LZHAM,Y,Y,,OURS-ONLY,,"LZHAM's lzhamtest decodes our streams and we decode its streams at every level; our parse differs from LZHAM's, so the bytes differ"
+LZHAM,,codec,,,,,,,,0,https://github.com/richgel999/lzham_codec,bb:BB_LZHAM,Y,Y,,OURS-ONLY,,"LZHAM's own single-threaded compressor: with the same dictionary size, level, table update rate and -x our bytes are lzhamtest -t0's; we decode its streams at every level"
 LZJB,,codec,,,,,,,,0,,bb:BB_Lzjb,Y,Y,,OURS-ONLY,,
 LZMW,,codec,,,,,,,,0,,bb:BB_Lzmw,Y,Y,,OURS-ONLY,,
 LZO1X,,codec,,,,,,,,0,,bb:BB_Lzo,Y,Y,,OURS-ONLY,,
@@ -775,7 +775,7 @@ FS-1015 LPC-10,lpc10;lpc,media,,,,,,,,0,,Lpc10,Y,Y,,OURS-ONLY,,
 Commodore Lynx archive,lnx,archive,,,,,,,,0,,Lynx,Y,Y,Y,OURS-ONLY,,
 LZEXE (DOS exe),,archive,,,,,,,,0,,LzExe,Y,,,OURS-ONLY,,
 LZG (Lzg),lzg,compression,,,,,,,,0,,Lzg,Y,Y,,OURS-ONLY,,
-LZHAM (Lzham),lzham,compression,,,,,,,,0,https://github.com/richgel999/lzham_codec,Lzham,Y,Y,,OURS-ONLY,,"lzhamtest's LZH0 file layout; the table update rate is not recorded, so files written with lzhamtest -h<rate> other than 8 need the rate passed to the decoder"
+LZHAM (Lzham),lzham,compression,,,,,,,,0,https://github.com/richgel999/lzham_codec,Lzham,Y,Y,,OURS-ONLY,,"lzhamtest's LZH0 file layout; our files are byte-identical to lzhamtest -t0's at the same dictionary size and level; the table update rate is not recorded, so files written with lzhamtest -h<rate> other than 8 need the rate passed to the decoder"
 HLS Playlist (M3U8),m3u8;m3u,archive,,,,,,,,0,,M3u8,Y,,,OURS-ONLY,,
 Macrium Reflect,mrimgx;mrbakx;mrimg,archive,,,,,,,,0,,Macrium,Y,Y,,OURS-ONLY,,
 Macrium Reflect pre-X (.mrimg/.mrbak),mrimg;mrbak;mrex;mrsql,archive,,,,,,,,0,,MacriumPreX,Y,,,OURS-ONLY,,

@@ -36,6 +36,18 @@ def noise(length, seed):
     return bytes(out)
 
 
+def binary(length, seed):
+    x, value, out = seed, 0, bytearray(length)
+    for i in range(0, length - 3, 4):
+        x = lcg(x); value = (value + ((x >> 16) & 7)) & 0xffffffff
+        out[i:i + 4] = value.to_bytes(4, 'little')
+    return bytes(out)
+
+
+def mixed(seed):
+    return repeats(60000, seed) + noise(8000, seed + 1) + text(60000, seed + 2) + binary(60000, seed + 3)
+
+
 # name, generator, lzhamtest options, table update rate the file needs to decode
 CASES = [
     ('text-20k-m4-d20', lambda: text(20000, 1), ['-m4', '-d20'], 8),
@@ -50,6 +62,14 @@ CASES = [
     ('text-50k-m4-d28', lambda: text(50000, 6), ['-m4', '-d28', '-x'], 8),
     ('one-byte-m4-d20', lambda: b'A', ['-m4', '-d20'], 8),
     ('empty-m4-d20', lambda: b'', ['-m4', '-d20'], 8),
+    ('mixed-188k-m0-d15', lambda: mixed(7), ['-m0', '-d15'], 8),
+    ('mixed-188k-m1-d15', lambda: mixed(7), ['-m1', '-d15'], 8),
+    ('mixed-188k-m2-d16', lambda: mixed(7), ['-m2', '-d16'], 8),
+    ('mixed-188k-m3-d15', lambda: mixed(7), ['-m3', '-d15'], 8),
+    ('mixed-188k-m4-d15', lambda: mixed(7), ['-m4', '-d15'], 8),
+    ('mixed-188k-m4-d16-x', lambda: mixed(7), ['-m4', '-d16', '-x'], 8),
+    ('mixed-188k-m1-d20', lambda: mixed(7), ['-m1', '-d20'], 8),
+    ('mixed-188k-m4-d18-h3', lambda: mixed(7), ['-m4', '-d18', '-h3'], 3),
 ]
 
 

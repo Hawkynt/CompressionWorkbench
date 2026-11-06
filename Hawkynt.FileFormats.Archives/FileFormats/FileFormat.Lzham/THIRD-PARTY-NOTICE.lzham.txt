@@ -1,4 +1,4 @@
-LZHAM (Rich Geldreich) — decoder and coding layer converted to C#
+LZHAM (Rich Geldreich) — decoder and compressor converted to C#
 
 Source:   https://github.com/richgel999/lzham_codec
 Revision: d379b1f9121e2197881c61cfc4713c78848bdfe7 (2022-01-03)
@@ -14,14 +14,22 @@ Converted into this directory:
   lzhamdecomp/lzham_symbol_codec.cpp, lzham_huffman_codes.cpp,
   lzham_prefix_coding.cpp, lzham_lzdecompbase.cpp (tables)
                                          -> LzhamModels.cs
-  lzhamdecomp/lzham_symbol_codec.cpp (encoding side),
-  lzhamcomp/lzham_lzcomp_state.cpp (state::encode, encode_eob),
-  lzhamcomp/lzham_lzcomp_internal.cpp (block framing, raw-block fallback,
-  final block)                           -> LzhamEncoder.cs
+  lzhamdecomp/lzham_symbol_codec.cpp (encoding side, g_prob_cost),
+  lzhamcomp/lzham_lzcomp_state.cpp (state::encode, encode_eob, the cost
+  functions, partial_advance),
+  lzhamcomp/lzham_lzcomp_internal.cpp (compress_block_internal,
+  optimal_parse, extreme_parse, node::add_state, send_final_block),
+  lzhamcomp/lzham_lzcomp_internal.h (level settings, complexities)
+                                         -> LzhamEncoder.cs
+  lzhamcomp/lzham_match_accel.cpp (search_accelerator without helper
+  threads)                               -> LzhamMatchAccelerator.cs
 
-The match search and parse in LzhamEncoder.cs (hash chains, one step of
-lazy evaluation) are this repository's own; LZHAM's optimal and extreme
-parsers and its match accelerator were not converted.
+The compressor is LZHAM's single-threaded path: with the same dictionary
+size, table update rate, level and extreme-parsing flag it writes the bytes
+lzhamtest -t0 writes. LZHAM's helper-thread parse (several parse jobs with
+partial state resets), its greedy parse for seed dictionaries and its
+TRADEOFF_DECOMPRESSION_RATE_FOR_COMP_RATIO table-rate resets were not
+converted.
 
 LzhamStream.cs follows the file layout written by lzhamtest/lzhamtest.cpp
 (id "LZH0", dictionary size log2, 64-bit little-endian length).

@@ -19,13 +19,18 @@ public static class LzhamStream {
   /// <summary>Compresses with the smallest dictionary that covers the input and the default table update rate.</summary>
   public static void Compress(Stream input, Stream output) => Compress(input, output, dictSizeLog2: 0);
 
-  /// <summary>Compresses with the given dictionary size (log2, 15..29; 0 = smallest that covers the input).</summary>
-  public static void Compress(Stream input, Stream output, int dictSizeLog2, int tableUpdateRate = LzhamTables.DefaultTableUpdateRate) {
+  /// <summary>
+  /// Compresses with the given dictionary size (log2, 15..29; 0 = smallest that covers the input),
+  /// table update rate, level and parser. The bytes are those <c>lzhamtest -t0</c> writes with the
+  /// same <c>-d</c>, <c>-h</c>, <c>-m</c> and <c>-x</c>.
+  /// </summary>
+  public static void Compress(Stream input, Stream output, int dictSizeLog2, int tableUpdateRate = LzhamTables.DefaultTableUpdateRate,
+    LzhamCompressionLevel level = LzhamCompressionLevel.Uber, bool extremeParsing = false) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
     using var buffer = new MemoryStream();
     input.CopyTo(buffer);
-    output.Write(CompressFile(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), dictSizeLog2, tableUpdateRate));
+    output.Write(CompressFile(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), dictSizeLog2, tableUpdateRate, level, extremeParsing));
   }
 
   /// <summary>Decompresses, assuming LZHAM's default table update rate.</summary>
@@ -48,10 +53,11 @@ public static class LzhamStream {
     return log2;
   }
 
-  internal static byte[] CompressFile(ReadOnlySpan<byte> data, int dictSizeLog2, int tableUpdateRate) {
+  internal static byte[] CompressFile(ReadOnlySpan<byte> data, int dictSizeLog2, int tableUpdateRate,
+    LzhamCompressionLevel level = LzhamCompressionLevel.Uber, bool extremeParsing = false) {
     if (dictSizeLog2 == 0)
       dictSizeLog2 = FittingDictSizeLog2(data.Length);
-    var stream = LzhamEncoder.Encode(data, dictSizeLog2, tableUpdateRate);
+    var stream = LzhamEncoder.Encode(data, dictSizeLog2, tableUpdateRate, level, extremeParsing);
     var file = new byte[HeaderSize + stream.Length];
     Magic.CopyTo(file, 0);
     file[4] = (byte)dictSizeLog2;
