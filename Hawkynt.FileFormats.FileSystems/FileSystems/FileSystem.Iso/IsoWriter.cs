@@ -597,7 +597,7 @@ public sealed class IsoWriter {
     return size;
   }
 
-  private static int RecordLength(int idLen, int suLen) {
+  internal static int RecordLength(int idLen, int suLen) {
     var recLen = 33 + idLen;
     if ((recLen & 1) != 0) recLen++;
     recLen += suLen;
@@ -616,7 +616,7 @@ public sealed class IsoWriter {
   // ── Rock Ridge system use fields ───────────────────────────────────────
 
   /// <summary>Where a record's System Use continues (SUSP CE): sector, offset in it, length.</summary>
-  private sealed record ContinuationArea(int Lba, int Offset, int Length);
+  internal sealed record ContinuationArea(int Lba, int Offset, int Length);
 
   private const int MaxRecordLength = 255;
   private const int PxLength = 36;   // RRIP 1.10 PX: mode, links, uid, gid (both-endian)
@@ -625,14 +625,14 @@ public sealed class IsoWriter {
   private const int MaxNmPayload = 250;
 
   /// <summary>Whether an NM for <paramref name="name"/> fits the record next to PX and TF.</summary>
-  private static bool NameFitsRecord(string name, int idLen)
+  internal static bool NameFitsRecord(string name, int idLen)
     => RecordLength(idLen, PxLength + TfLength + 5 + Encoding.UTF8.GetByteCount(name)) <= MaxRecordLength;
 
   /// <summary>
   /// The continuation area of a name too long for its record: the name as NM entries of at
   /// most 250 bytes, each but the last flagged CONTINUE; null when the name fits the record.
   /// </summary>
-  private static byte[]? NameContinuation(string name, int idLen) {
+  internal static byte[]? NameContinuation(string name, int idLen) {
     if (NameFitsRecord(name, idLen)) return null;
     var bytes = Encoding.UTF8.GetBytes(name);
     var area = new List<byte>(bytes.Length + 16);
@@ -653,7 +653,7 @@ public sealed class IsoWriter {
   /// long for the 255-byte record is written to a continuation area instead, which a CE entry
   /// in the record points to (<paramref name="continuation"/>; zeros while sizing).
   /// </summary>
-  private static byte[] RockRidgeFields(int? mode, DateTime? modified, bool isDir, string? name, int idLen, ContinuationArea? continuation) {
+  internal static byte[] RockRidgeFields(int? mode, DateTime? modified, bool isDir, string? name, int idLen, ContinuationArea? continuation) {
     var su = new List<byte>(96);
     var m = (uint)(mode ?? (isDir ? 0x1ED : 0x1A4)) & 0xFFF; // 0755 / 0644
     m |= isDir ? 0x4000u : 0x8000u;
@@ -831,7 +831,7 @@ public sealed class IsoWriter {
 
   // ── Directory record / extent writers ─────────────────────────────────────
 
-  private static void WriteDirectoryRecord(byte[] image, int off, int lba, int size, byte flags, byte[] identifier, byte[]? systemUse = null, DateTime? modified = null) {
+  internal static void WriteDirectoryRecord(byte[] image, int off, int lba, int size, byte flags, byte[] identifier, byte[]? systemUse = null, DateTime? modified = null) {
     var idLen = identifier.Length;
     var suStart = 33 + idLen + ((idLen & 1) == 0 ? 1 : 0);
     var recLen = RecordLength(idLen, systemUse?.Length ?? 0);
@@ -956,7 +956,7 @@ public sealed class IsoWriter {
   /// With Rock Ridge the primary names are only a fallback: they are made valid ISO 9660
   /// (level 2) identifiers — A–Z, 0–9, "_", one ".", at most 30 characters.
   /// </summary>
-  private static string DChars(string name, bool keepDot) {
+  internal static string DChars(string name, bool keepDot) {
     var upper = name.ToUpperInvariant();
     var dot = keepDot ? upper.LastIndexOf('.') : -1;
     string Clean(string x) => new(x.Select(c => c is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_' ? c : '_').ToArray());
@@ -1023,7 +1023,7 @@ public sealed class IsoWriter {
 
   // Joliet caps identifiers at 64 UCS-2 characters (128 bytes). Longer names are
   // truncated to the limit while preserving the extension where possible.
-  private static string TruncateJolietName(string name) {
+  internal static string TruncateJolietName(string name) {
     if (name.Length <= JolietMaxNameChars) return name;
     var dot = name.LastIndexOf('.');
     if (dot > 0 && name.Length - dot - 1 < JolietMaxNameChars) {
