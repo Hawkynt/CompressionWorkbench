@@ -64,7 +64,7 @@ public sealed partial class SevenZipWriter : IDisposable {
   /// <param name="codec">The compression codec to use.</param>
   /// <param name="leaveOpen">Whether to leave the stream open on dispose.</param>
   /// <param name="dictionarySize">The LZMA/LZMA2 dictionary size in bytes.</param>
-  /// <param name="ppmdOrder">PPMd model order (2-32). Default 6.</param>
+  /// <param name="ppmdOrder">PPMd model order (2-64). Default 6.</param>
   /// <param name="ppmdMemorySize">PPMd sub-allocator memory in bytes. Default 16 MB.</param>
   /// <param name="filter">An optional pre-filter to apply before compression.</param>
   /// <param name="deltaDistance">Delta filter distance (1-256). Only used when filter is Delta.</param>
@@ -84,8 +84,8 @@ public sealed partial class SevenZipWriter : IDisposable {
       throw new ArgumentException("Stream must be seekable.", nameof(stream));
     ArgumentOutOfRangeException.ThrowIfLessThan(dictionarySize, 4096);
     ArgumentOutOfRangeException.ThrowIfLessThan(ppmdOrder, 2);
-    ArgumentOutOfRangeException.ThrowIfGreaterThan(ppmdOrder, 32);
-    ArgumentOutOfRangeException.ThrowIfLessThan(ppmdMemorySize, 1 << 20);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(ppmdOrder, SevenZipPpmd.MaxOrder);
+    ArgumentOutOfRangeException.ThrowIfLessThan(ppmdMemorySize, (int)SevenZipPpmd.MinMemorySize);
     ArgumentOutOfRangeException.ThrowIfLessThan(deltaDistance, 1);
     ArgumentOutOfRangeException.ThrowIfGreaterThan(deltaDistance, 256);
     this._leaveOpen = leaveOpen;
@@ -603,24 +603,10 @@ public sealed partial class SevenZipWriter : IDisposable {
     }
   }
 
+  /// <summary>The 7z PPMd coder 7-Zip reads (03 04 01): variant H, 7-Zip's range coder, no end marker.</summary>
   private byte[] CompressPpmd(byte[] data, out SevenZipCoder coder) {
-    using var compressedStream = new MemoryStream();
-    var rangeEncoder = new PpmdRangeEncoder(compressedStream);
-    var model = new PpmdModelH(this._ppmdOrder, this._ppmdMemorySize);
-    foreach (var b in data)
-      model.EncodeSymbol(rangeEncoder, b);
-    rangeEncoder.Finish();
-
-    // PPMd properties: 1 byte order + 4 bytes memory size (little-endian)
-    var props = new byte[5];
-    props[0] = (byte)this._ppmdOrder;
-    props[1] = (byte)this._ppmdMemorySize;
-    props[2] = (byte)(this._ppmdMemorySize >> 8);
-    props[3] = (byte)(this._ppmdMemorySize >> 16);
-    props[4] = (byte)(this._ppmdMemorySize >> 24);
-
-    coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecPpmd.ToArray(), Properties = props };
-    return compressedStream.ToArray();
+    coder = new SevenZipCoder { CodecId = SevenZipConstants.CodecPpmd.ToArray(), Properties = SevenZipPpmd.Properties(this._ppmdOrder, (uint)this._ppmdMemorySize) };
+    return SevenZipPpmd.Encode(data, this._ppmdOrder, (uint)this._ppmdMemorySize);
   }
 
   /// <summary>Derives the archive's AES key once: 2^19 SHA-256 rounds are the expensive part.</summary>
