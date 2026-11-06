@@ -12187,7 +12187,7 @@ A folder (MTF_DIRB) or file (MTF_FILE) of a Microsoft NTBackup (.bkf) medium.
 
 #### `BkfFormatDescriptor`
 
-Microsoft NTBackup (`.bkf`) media in Microsoft Tape Format 1.00a: folders (DIRB) and files (FILE) with their STAN data streams, read, written and edited. `Create` writes the TAPE DBLK and one Data Set with soft filemarks, as NTBackup lays out a backup file (`BkfWriter`). `Add` and `Remove` write the Data Set anew in the same stream, keeping every remaining DBLK's bytes and streams (`BkfEditor`); a medium with several Data Sets, a Media Based Catalog or spanning is refused. References: "Microsoft Tape Format Specification" v1.00a (Seagate Software, 1998) — the defining MTF document`https://en.wikipedia.org/wiki/NTBackup` — background on the creating tool
+Microsoft NTBackup (`.bkf`) media in Microsoft Tape Format 1.00a: folders (DIRB) and files (FILE) with their STAN data streams, read, written and edited. `Create` writes the TAPE DBLK and one Data Set with soft filemarks, as NTBackup lays out a backup file (`BkfWriter`). `Add` and `Remove` write the Data Set anew in the same stream, keeping every remaining DBLK's bytes and streams (`BkfEditor`). A Type 1 Media Based Catalog, which every NTBackup backup file carries, is written anew to describe the edited sets; in a medium with several Data Sets a path names its set (`set-NN/`). A Type 2 catalog and spanning are refused. References: "Microsoft Tape Format Specification" v1.00a (Seagate Software, 1998) — the defining MTF document`https://en.wikipedia.org/wiki/NTBackup` — background on the creating tool
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 

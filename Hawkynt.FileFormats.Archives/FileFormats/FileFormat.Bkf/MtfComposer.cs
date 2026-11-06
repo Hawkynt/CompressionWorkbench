@@ -14,14 +14,38 @@ namespace FileFormat.Bkf;
 /// own bytes and streams.
 /// </summary>
 internal static class MtfComposer {
-  public sealed record DataSet(MtfBlock Sset, IReadOnlyList<MtfBlock> Blocks, MtfBlock Eset);
+  /// <param name="Sset">The SSET DBLK.</param>
+  /// <param name="Blocks">VOLB, DIRB, FILE (and CFIL…) DBLKs in medium order.</param>
+  /// <param name="Eset">The ESET DBLK (its streams are not written: a catalog is generated).</param>
+  /// <param name="CatalogEset">The second ESET of a Type 1 catalog, to keep its own fields; null to derive it from <paramref name="Eset"/>.</param>
+  public sealed record DataSet(MtfBlock Sset, IReadOnlyList<MtfBlock> Blocks, MtfBlock Eset, MtfBlock? CatalogEset = null);
 
-  public static void Write(Stream output, MtfBlock tape, IReadOnlyList<DataSet> sets, int flb, Func<MtfStream, byte[]> streamData) {
+  /// <summary>
+  /// Writes the medium. With <paramref name="catalog"/> each Data Set closes with a Type 1
+  /// Media Based Catalog (§7.3): after the filemark, the ESET carries a TFDD stream — one
+  /// File/Directory Detail entry per VOLB, DIRB and FILE, then FEND — and a TSMP Set Map
+  /// covering every Data Set so far, each starting on a physical block; a second ESET then
+  /// records where both are.
+  /// </summary>
+  /// <remarks>
+  /// Physical Block Addresses stored in DBLKs and the catalog (SSET PBA, FDD PBA, the second
+  /// ESET's fields) are counted from one, and the second ESET names the Set Map before the
+  /// File/Directory Detail — both as NTBackup writes them (measured on a Windows 2000 backup:
+  /// SSET in block 2 records PBA 3, the TFDD in block 1036 is recorded as 1037, and the second
+  /// ESET holds 1038 then 1037). §7.3.1 words the order the other way round; NTBackup is the
+  /// reader that has to accept these files. Soft filemarks count their blocks from zero, as
+  /// that backup does.
+  /// </remarks>
+  public static void Write(Stream output, MtfBlock tape, IReadOnlyList<DataSet> sets, int flb, Func<MtfStream, byte[]> streamData,
+      bool catalog = false, uint? setMapFamilyId = null) {
     var softFilemarkSize = flb; // one physical block; TAPE's Soft Filemark Block Size says the same
     var filemarks = new List<long>();
     uint sfmbControlId = 0;
     var start = output.Position;
     long Pba() => (output.Position - start) / flb;
+    long StoredPba() => Pba() + 1;
+    var mediaSequence = tape.Dblk.Length >= 62 ? BinaryPrimitives.ReadUInt16LittleEndian(tape.Dblk.AsSpan(60)) : (ushort)1;
+    var setMap = new List<byte[]>();
 
     void Filemark() {
       var block = new byte[softFilemarkSize];
@@ -42,15 +66,15 @@ internal static class MtfComposer {
       output.Write(block);
     }
 
-    void Emit(MtfBlock block, Action<byte[]> patch) {
+    byte[] Emit(MtfBlock block, Action<byte[]> patch, IEnumerable<MtfStream>? streams = null, int? firstEventAt = null) {
       var dblk = (byte[])block.Dblk.Clone();
-      var firstEvent = Mtf.Align(dblk.Length, 4);
+      var firstEvent = firstEventAt ?? Mtf.Align(dblk.Length, 4);
       BinaryPrimitives.WriteUInt16LittleEndian(dblk.AsSpan(Mtf.OffFirstEvent), (ushort)firstEvent);
       patch(dblk);
       Mtf.SealHeader(dblk);
       output.Write(dblk);
       Pad(firstEvent - dblk.Length);
-      foreach (var s in block.Streams) {
+      foreach (var s in streams ?? block.Streams) {
         var data = streamData(s);
         output.Write(s.Header);
         output.Write(data);
@@ -61,6 +85,7 @@ internal static class MtfComposer {
       var boundary = Mtf.AlignLong(end - start, flb) + start;
       output.Write(Mtf.StreamHeader("SPAD", boundary - end));
       Pad(boundary - end);
+      return dblk;
     }
 
     void Pad(long count) {
@@ -74,26 +99,28 @@ internal static class MtfComposer {
       }
     }
 
-    Emit(tape, d => {
+    var tapeWritten = Emit(tape, d => {
       BinaryPrimitives.WriteUInt64LittleEndian(d.AsSpan(Mtf.OffFormatLogicalAddress), 0);
       BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(Mtf.OffControlBlockId), 0);
     });
+    var familyId = setMapFamilyId ?? BinaryPrimitives.ReadUInt32LittleEndian(tapeWritten.AsSpan(52));
     Filemark();
 
     foreach (var set in sets) {
       var setStart = output.Position;
       uint controlId = 0, directoryId = 0, fileId = 0;
       ulong Fla() => (ulong)((output.Position - setStart) / flb);
-      var ssetPba = (ulong)Pba();
-      Emit(set.Sset, d => {
+      var ssetPba = (ulong)StoredPba();
+      var ssetWritten = Emit(set.Sset, d => {
         BinaryPrimitives.WriteUInt64LittleEndian(d.AsSpan(Mtf.OffFormatLogicalAddress), 0);
         BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(Mtf.OffControlBlockId), controlId++);
         BinaryPrimitives.WriteUInt64LittleEndian(d.AsSpan(80), ssetPba);
       });
+      var written = new List<(byte[] Dblk, MtfBlock Block)>();
       foreach (var block in set.Blocks) {
         var fla = Fla();
         var type = block.Type;
-        Emit(block, d => {
+        written.Add((Emit(block, d => {
           BinaryPrimitives.WriteUInt64LittleEndian(d.AsSpan(Mtf.OffFormatLogicalAddress), fla);
           BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(Mtf.OffControlBlockId), controlId++);
           if (type == "DIRB" && d.Length >= 80) {
@@ -102,13 +129,37 @@ internal static class MtfComposer {
             BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(76), directoryId);
             BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(80), ++fileId);
           }
-        });
+        }), block));
       }
       Filemark();
-      Emit(set.Eset, d => {
+      void PatchEset(byte[] d) {
         BinaryPrimitives.WriteUInt64LittleEndian(d.AsSpan(Mtf.OffFormatLogicalAddress), 0);
         BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(Mtf.OffControlBlockId), controlId);
-      });
+      }
+      if (!catalog) {
+        Emit(set.Eset, PatchEset, []);
+        Filemark();
+        continue;
+      }
+
+      // The ESET's streams start on the next physical block; the TFDD fills its blocks exactly.
+      var fddPba = StoredPba() + 1;
+      var fdd = MtfCatalog.FileDirectoryDetail(written, mediaSequence, flb);
+      var tsmpPba = fddPba + (Mtf.StreamHeaderSize + fdd.Length) / flb;
+      setMap.Add(MtfCatalog.SetMapEntry(ssetWritten, written.Select(w => w.Dblk).ToList(), mediaSequence, fddPba));
+      var map = MtfCatalog.SetMap(familyId, setMap);
+      var esetWritten = Emit(set.Eset, PatchEset, [
+        new MtfStream { Header = Mtf.StreamHeader("TFDD", fdd.Length), Data = fdd },
+        new MtfStream { Header = Mtf.StreamHeader("TSMP", map.Length), Data = map },
+      ], firstEventAt: flb);
+      var second = set.CatalogEset ?? new MtfBlock { Dblk = esetWritten[..Math.Min(esetWritten.Length, 85)] };
+      Emit(second, d => {
+        PatchEset(d);
+        BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(52), BinaryPrimitives.ReadUInt32LittleEndian(esetWritten.AsSpan(52)));
+        BinaryPrimitives.WriteUInt64LittleEndian(d.AsSpan(60), (ulong)tsmpPba);
+        BinaryPrimitives.WriteUInt64LittleEndian(d.AsSpan(68), (ulong)fddPba);
+        BinaryPrimitives.WriteUInt16LittleEndian(d.AsSpan(76), mediaSequence);
+      }, []);
       Filemark();
     }
   }

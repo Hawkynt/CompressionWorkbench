@@ -116,12 +116,20 @@ public sealed class BkfMtftarOracleTests {
   }
 
   [Test]
-  public void GivenTheNtbackupSample_WhenEdited_ThenItIsRefusedBecauseOfItsCatalog() {
+  public void GivenTheNtbackupSampleWeEdited_WhenMtftarConvertsIt_ThenItHoldsTheKeptAndTheAddedFiles() {
+    var mtftar = this.RequireMtftar();
     var sample = RequireSample();
-    using var image = new MemoryStream(File.ReadAllBytes(sample));
-    var before = image.ToArray();
-    Assert.Throws<NotSupportedException>(() => BkfEditor.AddFile(image, "os/new.txt", [1]));
-    Assert.That(image.ToArray(), Is.EqualTo(before));
+    using var image = new MemoryStream();
+    image.Write(File.ReadAllBytes(sample));
+    BkfEditor.AddFile(image, "os/added by edit.txt", "added"u8.ToArray());
+    BkfEditor.Remove(image, "os/winnt50C/hal.dll");
+
+    var tar = mtftar(this.Save("edited-sample.bkf", image.ToArray()));
+    var files = tar.Where(e => e.IsFile).ToDictionary(e => Relative(e.Name), e => e.Data, StringComparer.Ordinal);
+    Assert.That(files.Keys, Is.EquivalentTo(SampleManifest.Where(m => !m.Path.EndsWith("hal.dll", StringComparison.Ordinal)).Select(m => m.Path).Append("os/added by edit.txt")));
+    foreach (var (path, size, sha) in SampleManifest.Where(m => files.ContainsKey(m.Path)))
+      Assert.That((files[path].LongLength, Convert.ToHexStringLower(SHA256.HashData(files[path]))), Is.EqualTo((size, sha)), path);
+    Assert.That(files["os/added by edit.txt"], Is.EqualTo("added"u8.ToArray()));
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────

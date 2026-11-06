@@ -12,8 +12,9 @@ namespace FileFormat.Bkf;
 /// <see cref="Create"/> writes the TAPE DBLK and one Data Set with soft filemarks, as NTBackup
 /// lays out a backup file (<see cref="BkfWriter"/>). <see cref="Add"/> and <see cref="Remove"/>
 /// write the Data Set anew in the same stream, keeping every remaining DBLK's bytes and
-/// streams (<see cref="BkfEditor"/>); a medium with several Data Sets, a Media Based Catalog
-/// or spanning is refused.
+/// streams (<see cref="BkfEditor"/>). A Type 1 Media Based Catalog, which every NTBackup
+/// backup file carries, is written anew to describe the edited sets; in a medium with several
+/// Data Sets a path names its set (<c>set-NN/</c>). A Type 2 catalog and spanning are refused.
 /// </para>
 ///
 /// References:
