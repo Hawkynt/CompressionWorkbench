@@ -5767,6 +5767,7 @@ The 7z PPMd coder (method id `03 04 01`): PPMd variant H as `Ppmd7` models it, d
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> props, byte[] packed, int unpackSize)` | Decompresses a 7z PPMd stream to exactly `unpackSize` bytes. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int order, uint memorySize)` | Compresses `data` the way 7-Zip does: no end marker, five flush bytes. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int order, uint memorySize, bool endMarker)` | Compresses `data`, optionally closing the stream with the end marker. |
+| `Encode` | `static void Encode(Stream input, long length, Stream output, int order, uint memorySize)` | Compresses `length` bytes of `input` into `output` as they are read: memory stays at the model's own, whatever the input's length, and the bytes equal `Encode`'s. |
 | `ParseProperties` | `static ValueTuple<int, uint> ParseProperties(ReadOnlySpan<byte> props)` | Reads order and memory size from the five coder-property bytes. |
 | `Properties` | `static byte[] Properties(int order, uint memorySize)` | Builds the five coder-property bytes for `order` and `memorySize`. |
 
