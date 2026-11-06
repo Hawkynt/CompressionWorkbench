@@ -6362,7 +6362,7 @@ Variant of the CVF (Compressed Volume File) being produced.
 | `DoubleSpace60` | `0` | MS-DOS 6.0 DoubleSpace. OEM name `MSDSP6.0`, CvfSignature `DBLS`. Codec: DS LZ77 (4 KiB window). |
 | `DriveSpace62` | `1` | MS-DOS 6.22 DriveSpace. OEM name `MSDSP6.2`, CvfSignature `DVRS`. Codec: DS LZ77 (8 KiB window). |
 | `DriveSpace30` | `2` | Windows 95 OSR2 DriveSpace 3.0. OEM name `DRVSPACE`, CvfSignature `DVRS`. Codec: DS LZ77 (8 KiB window). |
-| `DriveSpace3` | `3` | Windows 95 Plus! Pack (1995) DriveSpace 3. OEM name `MS_DSP3`, CvfSignature `DVR3`. Codec: MS LZH (LZ77 + canonical Huffman). |
+| `DriveSpace3` | `3` | Windows 95 Plus! Pack (1995) DriveSpace 3. OEM name `MS_DSP3`, CvfSignature `DVR3`. Codec: DriveSpace JM LZ77 (8 KiB window). This layout is CompressionWorkbench's own; real DriveSpace 3 volumes are written by `GenuineDvr3Writer`. |
 
 #### `DoubleSpaceBlockMover`
 
@@ -6452,7 +6452,7 @@ Implements `IDisposable`.
 | `DoubleSpaceReader` | `DoubleSpaceReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `DoubleSpaceReader`. |
 | `CvfSignature` | `string CvfSignature { get; }` | Raw CvfSignature at offset 36 (`DBLS`, `DVRS`, or `DVR3`). |
 | `Entries` | `IReadOnlyList<DoubleSpaceEntry> Entries { get; }` | Gets the entries. |
-| `IsDriveSpace3` | `bool IsDriveSpace3 { get; }` | True for DriveSpace 3 (Win95 Plus! Pack, 1995) images — the variant that uses the MS LZH codec rather than DS LZ77. Detected by the 7-char `MS_DSP3` prefix in the OEM area (the 8th byte is a NUL pad). |
+| `IsDriveSpace3` | `bool IsDriveSpace3 { get; }` | True for CompressionWorkbench's own extended DriveSpace 3 layout, detected by the 7-char `MS_DSP3` prefix in the OEM area (the 8th byte is a NUL pad). Its clusters use the same DS LZ77 runs as DriveSpace 6.22. |
 | `IsDriveSpace` | `bool IsDriveSpace { get; }` | True if DriveSpace (any), false if DoubleSpace 6.0. |
 | `Signature` | `string Signature { get; }` | OEM name in the MDBPB: `MSDSP6.0`, `MSDSP6.2`, `DRVSPACE`, or `MS_DSP3`. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
@@ -6460,7 +6460,7 @@ Implements `IDisposable`.
 
 #### `DoubleSpaceWriter`
 
-Builds a spec-compliant Microsoft DoubleSpace / DriveSpace Compressed Volume File (CVF). Layout produced (in sector units, 512 B / sector): Sector 0 — MDBPB (Master DoubleSpace BIOS Parameter Block). First 36 bytes are a standard FAT BPB so the host can identify the volume. Offsets 36..71 are the CVF-specific fields (CvfSignature, CvfVersion, MdfatStart/Len, BitFatStart/Len, DataStart/Len, HostFatCopyStart).Inner FAT1/FAT2 — the inner FAT12/16 tables used by the compressed volume's filesystem.Inner root directory — fixed-size FAT12/16 root with 8.3 entries plus VFAT LFN chains for names that don't fit 8.3.MDFAT — one uint32 entry per logical cluster of the data area; maps logical cluster → first physical sector of the compressed run, run length in sectors and a flags nibble (0=free, 1=stored, 2=compressed).BitFAT — 1 bit per 8 KB region of the data area marking in-use regions.DATA region — compressed clusters packed as `DsCompression` blocks (2-byte header + payload). This writer emits only stored runs (header bit 15 clear) containing the raw cluster contents — the JM/DSS LZ variant is NOT produced. A real DRVSPACE.BIN driver accepts stored runs transparently.Codec selection: driven by `Variant`: `DoubleSpace60` → DS LZ77 (4 KiB window).`DriveSpace62` / `DriveSpace30` → DS LZ77 (8 KiB window).`DriveSpace3` (Win95 Plus! Pack 1995) → MS LZH (LZ77 + canonical Huffman), routed through `CompressMsLzh`. The 2-byte CVF run header (bit 15 = compressed, low 12 bits = size−1) is shared across all codecs, so the on-disk MDBPB + MDFAT + BitFAT layout is byte-compatible across the family — only the OEM bytes, CvfSignature and inner payload encoding change.
+Builds a spec-compliant Microsoft DoubleSpace / DriveSpace Compressed Volume File (CVF). Layout produced (in sector units, 512 B / sector): Sector 0 — MDBPB (Master DoubleSpace BIOS Parameter Block). First 36 bytes are a standard FAT BPB so the host can identify the volume. Offsets 36..71 are the CVF-specific fields (CvfSignature, CvfVersion, MdfatStart/Len, BitFatStart/Len, DataStart/Len, HostFatCopyStart).Inner FAT1/FAT2 — the inner FAT12/16 tables used by the compressed volume's filesystem.Inner root directory — fixed-size FAT12/16 root with 8.3 entries plus VFAT LFN chains for names that don't fit 8.3.MDFAT — one uint32 entry per logical cluster of the data area; maps logical cluster → first physical sector of the compressed run, run length in sectors and a flags nibble (0=free, 1=stored, 2=compressed).BitFAT — 1 bit per 8 KB region of the data area marking in-use regions.DATA region — compressed clusters packed as `DsCompression` blocks (2-byte header + payload). This writer emits only stored runs (header bit 15 clear) containing the raw cluster contents — the JM/DSS LZ variant is NOT produced. A real DRVSPACE.BIN driver accepts stored runs transparently.Codec selection: driven by `Variant`: `DoubleSpace60` → DS LZ77 (4 KiB window).`DriveSpace62` / `DriveSpace30` → DS LZ77 (8 KiB window).`DriveSpace3` (our own `MS_DSP3` layout) → DS LZ77 (8 KiB window), as DriveSpace 6.22. The 2-byte CVF run header (bit 15 = compressed, low 12 bits = size−1) is shared across all codecs, so the on-disk MDBPB + MDFAT + BitFAT layout is byte-compatible across the family — only the OEM bytes, CvfSignature and inner payload encoding change.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -6516,11 +6516,8 @@ DoubleSpace / DriveSpace sector-level LZ77 compression. Each CVF "compressed run
 | --- | --- | --- |
 | `CompressDriveSpace` | `static byte[] CompressDriveSpace(ReadOnlySpan<byte> input)` | Compresses using the DriveSpace LZ algorithm (8 KiB window) instead of DoubleSpace JM. The CVF header framing is identical so the reader handles both transparently. |
 | `CompressDriveSpace` | `static byte[] CompressDriveSpace(ReadOnlySpan<byte> input, int effort)` | DriveSpace variant with an explicit parse-effort tier — see `Compress`. |
-| `CompressMsLzh` | `static byte[] CompressMsLzh(ReadOnlySpan<byte> input)` | Compresses a single cluster with the MS LZH codec (Win95 Plus! Pack DriveSpace 3) at the default effort 0 (greedy + fixed Huffman tables) and wraps it in the shared CVF 2-byte header. Falls back to a stored run when the compressed payload either exceeds the 12-bit CVF size cap (> 4096 B) or is no smaller than the raw input — the same shrink-or-store invariant the DS LZ77 path honours. |
-| `CompressMsLzh` | `static byte[] CompressMsLzh(ReadOnlySpan<byte> input, int effort)` | Compresses a single cluster with the MS LZH codec at an explicit parse-effort tier (`0` = greedy, `1` = lazy matching, `2+` = iterated multi-pass). The shrink-or-store fallback applies at every effort level — incompressible clusters always end up as stored CVF runs regardless of effort. |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input)` | Compresses a single sector (at most 4096 B) using the DoubleSpace JM algorithm and returns the complete CVF run (2-byte header + payload). Falls back to a stored run if compression does not shrink the data. |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input, int effort)` | Compresses with an explicit parse-effort tier (`0` = greedy, `1` = lazy matching, `2+` = iterated multi-pass) routed through `DsLz77Compressor`. Falls back to a stored run if compression does not shrink the data. |
-| `DecompressMsLzh` | `static byte[] DecompressMsLzh(ReadOnlySpan<byte> block)` | Decompresses a single CVF run produced by `CompressMsLzh` / `CompressMsLzh`. Header bit 15 dispatches between MS LZH (set) and raw stored (clear). |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> block)` | Decompresses a single CVF run (2-byte header + payload). The compressed payload is decoded with the DoubleSpace/DriveSpace building block — both variants share the same token grammar, so a single decoder handles them. |
 
 #### `GenuineCvfReader`
@@ -6669,7 +6666,7 @@ Builds a fresh, read-only DragonFS image (Libdragon / Nintendo 64) from a flat s
 
 ### Namespace `FileSystem.DriveSpace3`
 
-[`DriveSpace3Entry`](#drivespace3entry) · [`DriveSpace3FormatDescriptor`](#drivespace3formatdescriptor) · [`DriveSpace3Reader`](#drivespace3reader) · [`DriveSpace3Writer`](#drivespace3writer) · [`GenuineDvr3Reader`](#genuinedvr3reader) · [`GenuineDvr3Writer`](#genuinedvr3writer) · [`MsLzhBlockCodec`](#mslzhblockcodec)
+[`DriveSpace3Entry`](#drivespace3entry) · [`DriveSpace3FormatDescriptor`](#drivespace3formatdescriptor) · [`DriveSpace3Reader`](#drivespace3reader) · [`DriveSpace3Writer`](#drivespace3writer) · [`GenuineDvr3Reader`](#genuinedvr3reader) · [`GenuineDvr3Writer`](#genuinedvr3writer)
 
 #### `DriveSpace3Entry`
 
@@ -6684,7 +6681,7 @@ One file entry inside a DriveSpace 3 CVF. Names with characters or lengths outsi
 
 #### `DriveSpace3FormatDescriptor`
 
-Descriptor for Microsoft DriveSpace 3 CVF (Windows 95 Plus! Pack, 1995). Distinguished from DoubleSpace/DriveSpace 2 by the `MS_DSP3` MDBPB signature at file offset 3 and the `DVR3` CvfSignature at offset 36. The compression algorithm changed from DS LZ77 (DOS 6.x) to MS LZH (LZ77 + canonical Huffman). Read/write/modify/defrag are delegated to the shared DoubleSpace infrastructure (`DoubleSpaceWriter` routed through `DriveSpace3`, `DoubleSpaceReader` with MS LZH dispatch, `DoubleSpaceExtentMap`, `DoubleSpaceBlockMover`) — the on-disk MDBPB+MDFAT+BitFAT layout is byte-compatible across the whole CVF family; only the OEM bytes and inner-cluster codec differ. This brings DriveSpace 3 to full parity with DoubleSpace/DriveSpace 6.22 for defrag, wipe-empty, modify, extent map and block mover. Shares the `.cvf` extension with DoubleSpace; FormatDetector disambiguates by magic. References: `https://github.com/sandsmark/dmsdos` — dmsdos, the GPL Linux CVF driver whose source + `doc/dmsdos.doc` are the de-facto DriveSpace 3 on-disk specification (5-byte MDFAT, MS LZH codecs)Microsoft Plus! for Windows 95 documentation (DriveSpace 3) — original vendor description`https://en.wikipedia.org/wiki/DriveSpace` — Wikipedia overview of the CVF family
+Descriptor for Microsoft DriveSpace 3 CVF (Windows 95 Plus! Pack, 1995). Distinguished from DoubleSpace/DriveSpace 2 by the `MS_DSP3` MDBPB signature at file offset 3 and the `DVR3` CvfSignature at offset 36. That `MS_DSP3` layout is CompressionWorkbench's own (see the `Compatibility` option); real DriveSpace 3 volumes are the `MSDBL6.0` container written by `GenuineDvr3Writer`, whose JM and SQ clusters dmsdos reads. Read/write/modify/defrag are delegated to the shared DoubleSpace infrastructure (`DoubleSpaceWriter` routed through `DriveSpace3`, `DoubleSpaceReader` with DS LZ77 clusters, `DoubleSpaceExtentMap`, `DoubleSpaceBlockMover`) — the on-disk MDBPB+MDFAT+BitFAT layout is byte-compatible across the whole CVF family; only the OEM bytes and inner-cluster codec differ. This brings DriveSpace 3 to full parity with DoubleSpace/DriveSpace 6.22 for defrag, wipe-empty, modify, extent map and block mover. Shares the `.cvf` extension with DoubleSpace; FormatDetector disambiguates by magic. References: `https://github.com/sandsmark/dmsdos` — dmsdos, the GPL Linux CVF driver whose source + `doc/dmsdos.doc` are the de-facto DriveSpace 3 on-disk specification (5-byte MDFAT, JM and SQ cluster codecs)Microsoft Plus! for Windows 95 documentation (DriveSpace 3) — original vendor description`https://en.wikipedia.org/wiki/DriveSpace` — Wikipedia overview of the CVF family
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
@@ -6695,7 +6692,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
 | `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` | Microsoft DriveSpace 3 CVF (Win95 Plus! Pack 1995). Shares the DoubleSpace MDBPB+MDFAT+BitFAT infrastructure (extent map, block mover, planner-driven defrag, wipe-empty, add/remove via rebuild). Per-cluster payload is MS LZH (LZ77 + canonical Huffman) instead of DS LZ77 and publishes the full four-tier effort set — `ms-lzh` (greedy), `ms-lzh+` (lazy matching), `ms-lzh++` (iterated multi-pass). The shrink-or-store fallback inside the codec emits a stored CVF run when the compressed payload would not shrink the cluster, so incompressible regions are not penalised at any effort level. |
+| `Description` | `string Description { get; }` | Microsoft DriveSpace 3 CVF (Win95 Plus! Pack 1995). Shares the DoubleSpace MDBPB+MDFAT+BitFAT infrastructure (extent map, block mover, planner-driven defrag, wipe-empty, add/remove via rebuild). Per-cluster payload is DriveSpace's DS LZ77 with the four-tier effort set — `ds-lz77` (greedy), `ds-lz77+` (lazy matching), `ds-lz77++` (iterated multi-pass). The shrink-or-store fallback inside the codec emits a stored CVF run when the compressed payload would not shrink the cluster, so incompressible regions are not penalised at any effort level. |
 | `DisplayName` | `string DisplayName { get; }` |  |
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
 | `Family` | `AlgorithmFamily Family { get; }` |  |
@@ -6704,7 +6701,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | True in-place add via the shared MDBPB-aware `DoubleSpaceInPlaceModifier`. BitFAT bits flip, MDFAT cluster-allocation entries are written in place, inner FAT chains extended, and VFAT dirents are inserted into the root directory without rewriting any unrelated bytes. MS LZH codec is auto-selected from the OEM signature (`MS_DSP3`). |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | True in-place add via the shared MDBPB-aware `DoubleSpaceInPlaceModifier`. BitFAT bits flip, MDFAT cluster-allocation entries are written in place, inner FAT chains extended, and VFAT dirents are inserted into the root directory without rewriting any unrelated bytes. Clusters are DS LZ77 runs. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` |  |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Mode-aware CVF defragmentor. Supports planner-driven in-place defrag (using `DefragPlanner` + `DoubleSpaceBlockMover`) with rebuild fallback on error — same shape as `Defragment`. |
@@ -6718,7 +6715,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `DriveSpace3Reader`
 
-Reads DriveSpace 3 (Microsoft Plus! Pack for Windows 95, 1995) CVF images. The on-disk layout is the DOS 6.x DBLSPACE/DRVSPACE MDBPB + MDFAT + BitFAT + DATA chain — only the OEM name (`MS_DSP3`), CvfSignature (`DVR3`), and per-cluster compression algorithm (MS LZH instead of DS LZ77) change. Compressed runs (MDFAT flag = 2) are decoded through `MsLzhBlockCodec`; stored runs (flag = 1) are returned verbatim. The inner FAT16 chain is walked starting from each entry's first cluster, with the MDFAT indirection resolving every cluster to its physical run in the DATA region. Clusters without a valid MDFAT mapping fall back to the inner-data mirror, mirroring the strategy used by `FileSystem.DoubleSpace.DoubleSpaceReader`.
+Reads CompressionWorkbench's own extended DriveSpace 3 layout (OEM name `MS_DSP3`, CvfSignature `DVR3`): the DOS 6.x DBLSPACE/DRVSPACE MDBPB + MDFAT + BitFAT + DATA chain. Real DriveSpace 3 volumes are read by `GenuineDvr3Reader`. Compressed runs (MDFAT flag = 2) are DriveSpace's DS LZ77 runs; stored runs (flag = 1) are returned verbatim. The inner FAT16 chain is walked starting from each entry's first cluster, with the MDFAT indirection resolving every cluster to its physical run in the DATA region. Clusters without a valid MDFAT mapping fall back to the inner-data mirror, mirroring the strategy used by `FileSystem.DoubleSpace.DoubleSpaceReader`.
 
 Implements `IDisposable`.
 
@@ -6733,17 +6730,17 @@ Implements `IDisposable`.
 | `ValidHeader` | `bool ValidHeader { get; }` | True once `Parse` has accepted the header. |
 | `BuildSurfaceMetadata` | `byte[] BuildSurfaceMetadata()` | Surfaces high-level metadata about the parsed CVF for tooling/UI inspection. Returns an INI-style key=value block. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(DriveSpace3Entry entry)` | Extracts the bytes of `entry` by walking the inner FAT chain from its first cluster, resolving each cluster through the MDFAT indirection and decoding the corresponding stored or MS LZH run. |
+| `Extract` | `byte[] Extract(DriveSpace3Entry entry)` | Extracts the bytes of `entry` by walking the inner FAT chain from its first cluster, resolving each cluster through the MDFAT indirection and decoding the corresponding stored or DS LZ77 run. |
 
 #### `DriveSpace3Writer`
 
-Builds a spec-compliant Microsoft DriveSpace 3 CVF (Windows 95 Plus! Pack, 1995). On-disk layout mirrors the DOS 6.x DBLSPACE/DRVSPACE convention: MDBPB → inner FAT16 → inner root dir → MDFAT → BitFAT → DATA region. The only differences from `FileSystem.DoubleSpace.DoubleSpaceWriter` are: OEM name `MS_DSP3` at offset 3 (vs `MSDSP6.0`/`MSDSP6.2`).CvfSignature `DVR3` at offset 36.Per-cluster compression payload uses the MS LZH codec (see `MsLzhBlockCodec`) instead of DS LZ77.A compression-level byte at offset 75 (DriveSpace 3 BPB extension). This writer emits either stored runs (MDFAT flag = 1) or MS LZH-compressed runs (flag = 2), depending on whether the codec shrinks the cluster. The reader follows the inner FAT chain through the MDFAT indirection back to each compressed run, exactly as DoubleSpace does. Stage 2 self round-trip is the gating requirement; bit-stream parity with Microsoft's reference driver (DRVSPACE.BIN) is a future external-tool conformance gate.
+Builds a spec-compliant Microsoft DriveSpace 3 CVF (Windows 95 Plus! Pack, 1995). On-disk layout mirrors the DOS 6.x DBLSPACE/DRVSPACE convention: MDBPB → inner FAT16 → inner root dir → MDFAT → BitFAT → DATA region. The only differences from `FileSystem.DoubleSpace.DoubleSpaceWriter` are: OEM name `MS_DSP3` at offset 3 (vs `MSDSP6.0`/`MSDSP6.2`).CvfSignature `DVR3` at offset 36.Per-cluster compression payload is DriveSpace's DS LZ77 (8 KiB window).A compression-level byte at offset 75 (DriveSpace 3 BPB extension). This writer emits either stored runs (MDFAT flag = 1) or DS LZ77-compressed runs (flag = 2), depending on whether the codec shrinks the cluster. The reader follows the inner FAT chain through the MDFAT indirection back to each compressed run, exactly as DoubleSpace does. Stage 2 self round-trip is the gating requirement; bit-stream parity with Microsoft's reference driver (DRVSPACE.BIN) is a future external-tool conformance gate.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DriveSpace3Writer` | `DriveSpace3Writer()` |  |
 | `CompressionLevel` | `byte CompressionLevel { get; set; }` | DriveSpace 3 compression level byte stored at MDBPB offset 75. Values 0..2 correspond to the "Standard", "HiPack", and "UltraPack" levels in the Microsoft tooling. The actual encoder here ignores the field — it is preserved for round-trip compatibility with third-party readers. |
-| `EnableCompression` | `bool EnableCompression { get; set; }` | When `true` (default), per-cluster MS LZH compression is attempted and the compressed payload is emitted whenever it shrinks the cluster. Clusters that do not compress are stored raw (MDFAT flags = 1). |
+| `EnableCompression` | `bool EnableCompression { get; set; }` | When `true` (default), per-cluster DS LZ77 compression is attempted and the compressed payload is emitted whenever it shrinks the cluster. Clusters that do not compress are stored raw (MDFAT flags = 1). |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file. Long filenames produce a VFAT LFN chain automatically. |
 | `AddFile` | `void AddFile(string name, byte[] data, bool compress)` | Adds a file with an explicit per-file compression opt-in. Use `compress`=`false` to force stored runs for that file even when `EnableCompression` is on. |
 | `Build` | `byte[] Build()` | Builds the complete CVF image. |
@@ -6776,15 +6773,6 @@ Builds a genuine Microsoft DriveSpace 3 Compressed Volume File (CVF) — the on-
 | `VolumeLabel` | `string VolumeLabel { get; init; }` | Optional inner-volume label (≤11 chars). Empty = no label entry. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the root directory of the compressed volume. |
 | `Build` | `byte[] Build()` | Builds the CVF image bytes. |
-
-#### `MsLzhBlockCodec`
-
-CVF block-framing wrapper for the MS LZH codec used by Microsoft DriveSpace 3 (Win95 Plus! Pack, 1995). Each compressed run consists of a 2-byte little-endian header followed by either an MS LZH-encoded payload (header bit 15 set) or a raw stored payload (bit 15 clear). The low 12 bits encode `payload_size - 1`. This matches the DOS 6.x DBLSPACE/DRVSPACE block-framing convention; only the inner codec changed when DriveSpace 3 shipped.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input)` | Compresses a single cluster with the MS LZH codec and wraps it in the CVF 2-byte header. Falls back to a stored run if the compressed payload would not shrink the data or would exceed the 12-bit size cap. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> block)` | Decompresses a single CVF run (2-byte header + payload). The header's bit 15 dispatches between MS LZH (set) and raw stored (clear). |
 
 ### Namespace `FileSystem.Ecryptfs`
 

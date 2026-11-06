@@ -35,8 +35,8 @@ public class DriveSpace3RoundTripTests {
   }
 
   [Test, Category("RoundTrip")]
-  public void MsLzh_RoundTrip() {
-    // Default (ms-lzh) — compressible payload must come back byte-for-byte.
+  public void DsLz77_RoundTrip() {
+    // Default (ds-lz77) — compressible payload must come back byte-for-byte.
     var text = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat(
       "Microsoft DriveSpace 3 was shipped with Windows 95 Plus! Pack in 1995. ", 200)));
 
@@ -51,7 +51,7 @@ public class DriveSpace3RoundTripTests {
   }
 
   [Test, Category("RoundTrip")]
-  public void MsLzh_SmallerThanStored() {
+  public void DsLz77_SmallerThanStored() {
     // Highly redundant input — at least one cluster MUST be emitted compressed
     // (MDFAT flag = 2), otherwise the compression hook is not actually being
     // exercised.
@@ -71,7 +71,7 @@ public class DriveSpace3RoundTripTests {
       if (((entry >> 28) & 0xFu) == 2u) { sawCompressed = true; break; }
     }
     Assert.That(sawCompressed, Is.True,
-      "Highly redundant content must produce at least one MDFAT entry with flags=2 (MS LZH compressed).");
+      "Highly redundant content must produce at least one MDFAT entry with flags=2 (DS LZ77 compressed).");
 
     using var ms = new MemoryStream(cvf);
     using var r = new DriveSpace3Reader(ms);
@@ -141,15 +141,15 @@ public class DriveSpace3RoundTripTests {
 
   /// <summary>
   /// 64 KB of English text routed through DriveSpace3 via the descriptor's
-  /// <c>ms-lzh++</c> method must round-trip byte-identically AND produce
-  /// fewer compressed-run bytes than the <c>ms-lzh+</c> method (which only
+  /// <c>ds-lz77++</c> method must round-trip byte-identically AND produce
+  /// fewer compressed-run bytes than the <c>ds-lz77+</c> method (which only
   /// uses static fixed Huffman tables). The dynamic-Huffman code path is
   /// the only thing different between the two methods, so any per-cluster
   /// shrink it produces shows up directly as a smaller sum of compressed
   /// runs.
   /// </summary>
   [Test, Category("RoundTrip")]
-  public void MsLzhPlusPlus_DynamicHuffman_RoundTrip() {
+  public void DsLz77PlusPlus_RoundTrip() {
     var text = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat(
       "The quick brown fox jumps over the lazy dog. " +
       "Sphinx of black quartz, judge my vow. ", 900)));
@@ -166,32 +166,32 @@ public class DriveSpace3RoundTripTests {
       using var msPlus = new MemoryStream();
       desc.Create(msPlus,
         [new ArchiveInputInfo(inputPath, "PROSE.TXT", false)],
-        new FormatCreateOptions { MethodName = "ms-lzh+" });
+        new FormatCreateOptions { MethodName = "ds-lz77+" });
       var cvfPlus = msPlus.ToArray();
 
       using var msPlusPlus = new MemoryStream();
       desc.Create(msPlusPlus,
         [new ArchiveInputInfo(inputPath, "PROSE.TXT", false)],
-        new FormatCreateOptions { MethodName = "ms-lzh++" });
+        new FormatCreateOptions { MethodName = "ds-lz77++" });
       var cvfPlusPlus = msPlusPlus.ToArray();
 
-      // Round-trip the ms-lzh++ image — must reproduce the original bytes
+      // Round-trip the ds-lz77++ image — must reproduce the original bytes
       // byte-for-byte.
       var outDir = Path.Combine(tmpDir, "out");
       using (var ms = new MemoryStream(cvfPlusPlus))
         desc.Extract(ms, outDir, password: null, files: null);
       var roundTripped = File.ReadAllBytes(Path.Combine(outDir, "PROSE.TXT"));
       Assert.That(roundTripped, Is.EqualTo(text),
-        "ms-lzh++ round-trip must reproduce the original bytes byte-for-byte.");
+        "ds-lz77++ round-trip must reproduce the original bytes byte-for-byte.");
 
-      // Compare compressed-run payload bytes between ms-lzh+ and ms-lzh++ —
+      // Compare compressed-run payload bytes between ds-lz77+ and ds-lz77++ —
       // both share the outer CVF geometry, so any size win shows up at the
       // run-level.
       var plusCompressedBytes = SumCompressedBlockBytes(cvfPlus);
       var plusPlusCompressedBytes = SumCompressedBlockBytes(cvfPlusPlus);
 
       Assert.That(plusPlusCompressedBytes, Is.LessThan(plusCompressedBytes),
-        $"ms-lzh++ ({plusPlusCompressedBytes} compressed bytes) must beat ms-lzh+ ({plusCompressedBytes} compressed bytes) on large English-text input.");
+        $"ds-lz77++ ({plusPlusCompressedBytes} compressed bytes) must beat ds-lz77+ ({plusCompressedBytes} compressed bytes) on large English-text input.");
     } finally {
       Directory.Delete(tmpDir, recursive: true);
     }

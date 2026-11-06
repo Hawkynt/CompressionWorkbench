@@ -10,7 +10,7 @@ namespace Compression.Tests.DriveSpace3;
 /// add / remove path. The Plus! Pack uses the same MDBPB + MDFAT + BitFAT +
 /// DATA layout as the DOS DBLSPACE/DRVSPACE family — only the OEM signature
 /// (<c>MS_DSP3</c>), CvfSignature (<c>DVR3</c>) and per-cluster codec
-/// (MS LZH instead of DS LZ77) differ — so the shared
+/// differ — so the shared
 /// <see cref="DoubleSpaceInPlaceModifier"/> services this variant too. These
 /// tests prove that bytes outside the touched allocation-table slots, MDFAT
 /// entries, BitFAT bits, FAT chain entries, dirent records and freshly

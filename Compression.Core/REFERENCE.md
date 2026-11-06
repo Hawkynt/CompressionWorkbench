@@ -2632,45 +2632,6 @@ Match finder based on a suffix array, providing optimal-quality matches for use 
 | `SuffixArrayMatchFinder` | `SuffixArrayMatchFinder(ReadOnlySpan<byte> data)` | Initializes a new `SuffixArrayMatchFinder` over the given data. |
 | `FindMatch` | `Match FindMatch(ReadOnlySpan<byte> data, int position, int maxDistance, int maxLength, int minLength)` | Finds the longest match for the position `position` in the original data, searching only within `maxDistance` bytes before it. |
 
-### Namespace `Compression.Core.Dictionary.MsLzh`
-
-[`MsLzhBuildingBlock`](#mslzhbuildingblock) · [`MsLzhCompressor`](#mslzhcompressor) · [`MsLzhDecompressor`](#mslzhdecompressor)
-
-#### `MsLzhBuildingBlock`
-
-Building block wrapper for the MS LZH codec used by Microsoft DriveSpace 3 (Windows 95 Plus! Pack, 1995). LZ77 with 4 KiB window plus canonical Huffman coding over a DEFLATE-shaped alphabet. Effort 0 only: static (fixed) Huffman + greedy match selection. Dynamic per-block Huffman trees and lazy/optimal matching are deferred — see `MsLzhCompressor`.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `MsLzhBuildingBlock` | `MsLzhBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
-#### `MsLzhCompressor`
-
-MS LZH compressor — DriveSpace 3 (Win95 Plus! Pack, 1995) family codec. LZ77 with 4 KiB window + canonical Huffman over a 286-symbol literal/length alphabet (DEFLATE-shaped) and a 30-symbol distance alphabet. Effort tiers (mirrors `DsLz77Compressor`): 0 — Greedy (default): bounded hash-chain depth (64), greedy match selection, fixed Huffman tables per RFC 1951 §3.2.6 shape — see `MsLzhFixedTables`. Fast. Matches the historical effort-0 behaviour bit-for-bit (modulo the new leading block-type bit).1 — Lazy (`+`): at each candidate match position, look ahead one byte; emit a literal when `(pos + 1)` would yield a strictly longer match. Hash chain deepened to 1024. Same fixed Huffman tables — encoder output stays self-consistent with the decoder. Roughly 5-10× slower, typically a few percent smaller on compressible inputs.2+ — Iterated + dynamic Huffman (`++`): runs the effort-1 lazy parse, then compares the cost of encoding the resulting token stream with the fixed tables vs. with per-block dynamic Huffman tables (RFC 1951 §3.2.7 layout — see `MsLzhDynamicHuffman`). The smaller of the two wins. Also sweeps the min-match floor (3, 4, 5) like the older effort-2 parse.Bit-stream format. Every block is prefixed by a single block-type bit: `0` = fixed Huffman tables (RFC 1951 §3.2.6 shape), `1` = dynamic per-block Huffman tables. Both paths share the same length / distance extra-bit conventions and the end-of-block marker (symbol 256). Termination invariant for iterated parsing: the candidate set has a fixed cap (4 passes max — baseline lazy plus three min-match sweeps), each pass produces a complete output, and we retain the smallest. This guarantees effort 2+ is monotone: `len(eff 2) ≤ len(eff 1) ≤ len(eff 0)` on compressible inputs, with strict equality possible for inputs where the effort-0 parse is already optimal. Not yet bit-compatible with Microsoft's reference decoder. The dynamic Huffman header layout matches RFC 1951 semantically but the MS LZH per-cluster framing (block-count bytes, dictionary-init values) has not been derived from a real DRVSPACE.000 image. Self round-trip is the gating requirement; cross-tool compatibility remains a stretch goal.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `MsLzhCompressor` | `MsLzhCompressor()` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` with the default effort 0 (greedy + fixed tables). |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data, int effort)` | Compresses `data` at the requested `effort` level. Negative values are clamped to 0 (greedy). Values above 2 are treated as 2 (iterated + dynamic Huffman). |
-
-#### `MsLzhDecompressor`
-
-MS LZH decompressor — reads back the bit stream produced by `MsLzhCompressor`. Reads a 4-byte little-endian original-size header followed by a sequence of blocks. Each block is prefixed by a single block-type bit: `0` selects the RFC 1951 §3.2.6-shape fixed Huffman tables (see `MsLzhFixedTables`); `1` selects per-block dynamic Huffman tables whose header layout follows RFC 1951 §3.2.7 (HLIT / HDIST / HCLEN + code-length-code table + lit/len + distance code-length lists — see `MsLzhDynamicHuffman`). End-of-block (symbol 256) closes a block; the decoder stops once the original-size byte count has been emitted.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `MsLzhDecompressor` | `MsLzhDecompressor()` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses an MS LZH bit stream. |
-
 ### Namespace `Compression.Core.Dictionary.Nintendo`
 
 [`Yay0BuildingBlock`](#yay0buildingblock) · [`Yaz0BuildingBlock`](#yaz0buildingblock)

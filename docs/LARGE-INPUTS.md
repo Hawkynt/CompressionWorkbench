@@ -52,7 +52,6 @@ wrapped, because `(long)x * 8 == x * 8` exactly while `x * 8` still fits.
 | `Analysis/TrialDecompression/TrialDecompressor.cs` | `data.Length * 4` | 512 MB | every trial strategy silently reports failure |
 | `Analysis/ChainReconstruction/ChainReconstructor.cs` | `current.Length * 4` | 512 MB | same |
 | `Dictionary/Zip/ReduceDecoder.cs` | `compressed.Length * 8`, bit position | 256 MB compressed | **returns an all-zero buffer of the right length, silently** |
-| `Dictionary/MsLzh/MsLzhDecompressor.cs` | `originalSize * 8 + 1024` | 256 MB | decode budget negative; spins, then `EndOfStreamException` |
 | `Dictionary/Brotli/BrotliCompressor.cs` | whole-stream `BitLength()` | 256 MB of output | wrong byte-alignment padding on later uncompressed meta-blocks |
 | `Dictionary/Brotli/BrotliBitReader.cs` | `BitPosition` | 256 MB compressed | wrong reported position |
 | `Entropy/Fse/FseDecoder.cs` | `lastByteIndex * 8 + highBit` | 256 MB | negative start position; garbage or exception |

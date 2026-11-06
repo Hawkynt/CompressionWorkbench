@@ -623,7 +623,6 @@ LZRW1,,codec,,,,,,,,0,http://www.ross.net/compression/lzrw1.html,bb:BB_Lzrw1,Y,Y
 LZRW3,,codec,,,,,,,,0,http://www.ross.net/compression/lzrw3.html,bb:BB_Lzrw3,Y,Y,,OURS-ONLY,,byte-identical to Ross Williams' lzrw3.c
 LZVN,,codec,,,,,,,,0,,bb:BB_Lzvn,Y,Y,,OURS-ONLY,,
 LZWL,,codec,,,,,,,,0,,bb:BB_Lzwl,Y,Y,,OURS-ONLY,,
-MS LZH,,codec,,,,,,,,0,,bb:BB_MsLzh,Y,Y,,OURS-ONLY,,
 MTF,,codec,,,,,,,,0,,bb:BB_Mtf,Y,Y,,OURS-ONLY,,
 Neural,,codec,,,,,,,,0,,bb:BB_Neural,Y,Y,,OURS-ONLY,,
 NRV2B,,codec,,,,,,,,0,,bb:BB_Nrv2b,Y,Y,,OURS-ONLY,,
