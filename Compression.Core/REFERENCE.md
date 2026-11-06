@@ -6888,7 +6888,7 @@ Implements `IEquatable<SfArkInfo>`.
 
 ### Namespace `Compression.Core.Transforms`
 
-[`Bcj2Filter`](#bcj2filter) · [`Bcj2Filter.DecodeStream`](#bcj2filterdecodestream) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BcjX86DecodingStream`](#bcjx86decodingstream) · [`BranchArchitecture`](#brancharchitecture) · [`BranchConverter`](#branchconverter) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`ByteSwapFilter`](#byteswapfilter) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`SuffixArraySais`](#suffixarraysais) · [`SuffixBurrowsWheelerTransform`](#suffixburrowswheelertransform) · [`Swap2BuildingBlock`](#swap2buildingblock) · [`Swap4BuildingBlock`](#swap4buildingblock) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
+[`Bcj2Filter`](#bcj2filter) · [`Bcj2Filter.DecodeStream`](#bcj2filterdecodestream) · [`Bcj2Filter.EncodeStream`](#bcj2filterencodestream) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BcjX86DecodingStream`](#bcjx86decodingstream) · [`BranchArchitecture`](#brancharchitecture) · [`BranchConverter`](#branchconverter) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`ByteSwapFilter`](#byteswapfilter) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`SuffixArraySais`](#suffixarraysais) · [`SuffixBurrowsWheelerTransform`](#suffixburrowswheelertransform) · [`Swap2BuildingBlock`](#swap2buildingblock) · [`Swap4BuildingBlock`](#swap4buildingblock) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
 
 #### `Bcj2Filter`
 
@@ -6908,6 +6908,27 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DecodeStream` | `DecodeStream(Stream main, Stream call, Stream jump, Stream rangeCoded, long length)` | Opens the decoder over its four inputs. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(Span<byte> destination)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `Bcj2Filter.EncodeStream`
+
+The BCJ2 encoder as a pull stream: reading it yields the main stream while the call, jump and range-coded streams are written to the streams given, so input of any length is split with bounded memory. For the same input the four streams equal `Encode`'s.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EncodeStream` | `EncodeStream(Stream input, Stream call, Stream jump, Stream rangeCoded)` | Starts splitting `input`; the side streams are written as the main stream is read. |
 | `CanRead` | `override bool CanRead { get; }` |  |
 | `CanSeek` | `override bool CanSeek { get; }` |  |
 | `CanWrite` | `override bool CanWrite { get; }` |  |
