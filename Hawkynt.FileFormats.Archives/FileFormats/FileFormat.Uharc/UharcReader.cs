@@ -4,8 +4,8 @@ using Compression.Core.Checksums;
 namespace FileFormat.Uharc;
 
 /// <summary>
-/// Reads UHARC 0.6 archives (magic <c>UHA\x06</c>) as written by UHARC 0.6/0.6a/0.6b.
-/// Layout and codecs are described in docs/UHARC-ON-DISK.md.
+/// Reads UHARC 0.6 archives (magic <c>UHA\x06</c>) as written by UHARC 0.6/0.6a/0.6b, and
+/// UHARC 0.2 archives (<c>UHA\x02</c>). Layout and codecs are described in docs/UHARC-ON-DISK.md.
 /// </summary>
 /// <remarks>
 /// The directory is always readable; file data decodes for every 0.6 method (store, RLE, LZ78,
@@ -15,7 +15,8 @@ public sealed class UharcReader {
 
   private readonly byte[] _archive;
   private readonly int _base;
-  private readonly UharcHeader _header;
+  private readonly UharcHeader _header = null!;
+  private readonly Uharc02Header? _legacy;
   private readonly byte[]? _password;
   private readonly List<UharcEntry> _entries = [];
   private readonly List<long> _fileEnds = [];
@@ -33,29 +34,34 @@ public sealed class UharcReader {
   /// <summary>Gets the entries of the archive in stored order.</summary>
   public IReadOnlyList<UharcEntry> Entries => this._entries;
 
-  /// <summary>Gets the stream method byte (see <see cref="MethodName"/>).</summary>
-  public int Method => this._header.Method;
+  /// <summary>Gets the format version: 6 for UHARC 0.6, 2 for UHARC 0.2.</summary>
+  public int Version => this._legacy != null ? Uharc02Header.Version : UharcHeader.Version;
 
-  /// <summary>Gets the name of the compression mode, as <c>uharc l</c> prints it.</summary>
-  public string MethodName => UharcMethods.Name(this._header.Method);
+  /// <summary>Gets the stream method byte (see <see cref="MethodName"/>).</summary>
+  public int Method => this._legacy?.Method ?? this._header.Method;
+
+  /// <summary>Gets the name of the compression mode, as <c>uharc l</c> prints it (0.2: the mode switch).</summary>
+  public string MethodName => this._legacy != null ? Uharc02Header.MethodName(this._legacy.Method) : UharcMethods.Name(this._header.Method);
 
   /// <summary>Gets the dictionary size in bytes, 0 for the store method.</summary>
-  public int DictionarySize => UharcMethods.DictionarySize(this._header.Method);
+  public int DictionarySize => this._legacy != null ? Uharc02Header.DictionarySize(this._legacy.Method) : UharcMethods.DictionarySize(this._header.Method);
 
   /// <summary>Gets whether the archive was created with <c>-pw</c>.</summary>
-  public bool IsEncrypted => (this._header.Flags & (UharcHeader.TablesUsePassword | UharcHeader.StreamUsesPassword)) != 0;
+  public bool IsEncrypted => this._legacy == null && (this._header.Flags & (UharcHeader.TablesUsePassword | UharcHeader.StreamUsesPassword)) != 0;
 
   /// <summary>Gets the size of the packed solid stream.</summary>
-  public long PackedSize => this._header.PackedSize;
+  public long PackedSize => this._legacy?.PackedSize ?? this._header.PackedSize;
 
   /// <summary>Gets whether the stream's method can be decoded by this reader.</summary>
-  public bool CanDecodeMethod => this._header.Method is UharcMethods.Store or UharcMethods.Rle
+  public bool CanDecodeMethod => this._legacy != null
+    ? this._legacy.Method is 0 or >= 2 and <= 43
+    : this._header.Method is UharcMethods.Store or UharcMethods.Rle
     or >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last
     or >= UharcMethods.LzpFirst and <= UharcMethods.LzpLast
     or >= UharcMethods.PpmFirst and <= UharcMethods.PpmLast
     or >= UharcMethods.AlzFirst and <= UharcMethods.AlzLast;
 
-  /// <summary>Opens a UHARC 0.6 archive (optionally behind a self-extractor stub).</summary>
+  /// <summary>Opens a UHARC 0.6 archive (optionally behind a self-extractor stub) or a UHARC 0.2 archive.</summary>
   /// <param name="stream">The archive; read completely into memory.</param>
   /// <param name="password">The <c>-pw</c> password, if the archive has one.</param>
   /// <exception cref="InvalidDataException">The data is not a well-formed UHARC 0.6 archive.</exception>
@@ -69,6 +75,12 @@ public sealed class UharcReader {
     stream.CopyTo(copy);
     this._archive = copy.ToArray();
     this._base = FindArchiveStart(this._archive);
+    if (this._archive.Length - this._base > 3 && this._archive[this._base + 3] == Uharc02Header.Version) {
+      this._legacy = Uharc02Header.Parse(this._archive.AsSpan(this._base));
+      this.ReadDirectory02();
+      return;
+    }
+
     this._header = UharcHeader.Parse(this._archive.AsSpan(this._base));
     this._password = string.IsNullOrEmpty(password) ? null : Encoding.Latin1.GetBytes(password);
     if ((this._header.Flags & UharcHeader.TablesUsePassword) != 0 && this._password == null)
@@ -218,7 +230,10 @@ public sealed class UharcReader {
 
     var stream = this.DecodeStream();
     var data = stream.AsSpan((int)entry.StreamOffset, (int)entry.Size).ToArray();
-    if (this._header.Method != UharcMethods.Store) {
+    if (this._legacy != null) {
+      if (this._legacy.Method != 0)
+        UharcExecutableFilter.RestoreLegacy(data);
+    } else if (this._header.Method != UharcMethods.Store) {
       if ((this._header.Filters & UharcHeader.ExecutableFilter) != 0)
         UharcExecutableFilter.Restore(data, swapOperandBytes: this._header.Method is >= UharcMethods.PpmFirst and <= UharcMethods.PpmLast);
       if ((this._header.Filters & UharcHeader.MultimediaFilter) != 0)
@@ -234,6 +249,8 @@ public sealed class UharcReader {
   private byte[] DecodeStream() {
     if (this._stream != null)
       return this._stream;
+    if (this._legacy != null)
+      return this._stream = this.DecodeStream02();
 
     var h = this._header;
     if (!this.CanDecodeMethod)
@@ -270,5 +287,102 @@ public sealed class UharcReader {
     }
 
     return this._stream;
+  }
+
+  // ── UHARC 0.2 ──────────────────────────────────────────────────────────
+
+  private byte[] ReadTable02(ref int offset, int length, int method, int unpackedSize, Crc32 tablesCrc) {
+    if (length < 0 || offset > this._archive.Length - length)
+      throw new InvalidDataException("UHARC: archive directory is truncated.");
+
+    var table = this._archive.AsSpan(offset, length).ToArray();
+    offset += length;
+    Uharc02Cipher.Apply(table);
+    var plain = method == 0 ? table : Uharc02LzwDecoder.Decode(table, 0, table.Length, method, unpackedSize);
+    if (plain.Length != unpackedSize)
+      throw new InvalidDataException("UHARC: archive directory is truncated.");
+    tablesCrc.Update(plain);
+    return plain;
+  }
+
+  private void ReadDirectory02() {
+    var h = this._legacy!;
+    var n = h.FileCount;
+    var offset = this._base + Uharc02Header.Size;
+    if (n < 0 || h.PackedSize > this._archive.Length - offset)
+      throw new InvalidDataException("UHARC: packed stream is truncated.");
+
+    offset += (int)h.PackedSize;
+    var tablesCrc = new Crc32();
+    byte[] crcs, names, times, sizes;
+    try {
+      crcs = this.ReadTable02(ref offset, 4 * n, 0, 4 * n, tablesCrc);
+      names = this.ReadTable02(ref offset, h.NamesPackedSize, 7, h.NamesSize, tablesCrc);
+      times = this.ReadTable02(ref offset, h.TimesPackedSize, 2, 4 * n, tablesCrc);
+      sizes = this.ReadTable02(ref offset, h.SizesPackedSize, 7, 7 * n, tablesCrc);
+    } catch (Exception e) when (e is IndexOutOfRangeException or ArgumentOutOfRangeException) {
+      throw new InvalidDataException("UHARC: archive directory is corrupt.", e);
+    }
+
+    if (tablesCrc.Value != h.TablesCrc)
+      throw new InvalidDataException("UHARC: archive directory check failed.");
+
+    var position = 0;
+    var directories = new string[h.DirectoryCount];
+    for (var i = 0; i < directories.Length; ++i)
+      directories[i] = ReadName(names, ref position);
+
+    var emitted = new HashSet<string>(StringComparer.Ordinal);
+    foreach (var directory in directories)
+      this.AddDirectory(directory, emitted);
+
+    long size = 0, streamOffset = 0;
+    for (var i = 0; i < n; ++i) {
+      var name = ReadName(names, ref position);
+      var date = (ushort)(times[2 * i] | times[2 * i + 1] << 8);
+      var time = (ushort)(times[2 * n + 2 * i] | times[2 * n + 2 * i + 1] << 8);
+      var delta = BitConverter.ToUInt32(sizes, 4 * i);
+      var directory = sizes[4 * n + 2 * i] | sizes[4 * n + 2 * i + 1] << 8;
+      size = (uint)(size - delta);
+      if (directory >= directories.Length)
+        throw new InvalidDataException("UHARC: file refers to a missing directory.");
+
+      var prefix = directories[directory];
+      this._entries.Add(new UharcEntry {
+        FileName = prefix.Length == 0 ? name : prefix + "/" + name,
+        Size = size,
+        Crc32 = BitConverter.ToUInt32(crcs, 4 * i),
+        LastModified = UharcEntry.FromDos(date, time),
+        Attributes = sizes[6 * n + i],
+        StreamOffset = streamOffset,
+      });
+      streamOffset += size;
+      this._fileEnds.Add(streamOffset);
+    }
+
+    if (streamOffset != h.UnpackedSize)
+      throw new InvalidDataException("UHARC: file sizes do not add up to the stream size.");
+  }
+
+  private byte[] DecodeStream02() {
+    var h = this._legacy!;
+    if (!this.CanDecodeMethod)
+      throw new NotSupportedException($"UHARC: 0.2 {Uharc02Header.MethodName(h.Method)} streams (method {h.Method}) are not supported.");
+    if (h.UnpackedSize > Array.MaxLength)
+      throw new NotSupportedException("UHARC: archive is too large to unpack in memory.");
+
+    var offset = this._base + Uharc02Header.Size;
+    var length = (int)h.PackedSize;
+    var size = (int)h.UnpackedSize;
+    try {
+      return h.Method switch {
+        0 when length == size => this._archive.AsSpan(offset, size).ToArray(),
+        0 => throw new InvalidDataException("UHARC: stored stream size does not match."),
+        <= 7 => Uharc02LzwDecoder.Decode(this._archive, offset, length, h.Method, size),
+        _ => Uharc02Decoder.Decode(this._archive, offset, length, h.Method, size),
+      };
+    } catch (Exception e) when (e is IndexOutOfRangeException or ArgumentOutOfRangeException) {
+      throw new InvalidDataException("UHARC: packed stream is corrupt.", e);
+    }
   }
 }

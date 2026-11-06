@@ -33022,7 +33022,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 #### `UharcEntry`
 
-One file or directory of a UHARC 0.6 archive.
+One file or directory of a UHARC archive.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -33036,7 +33036,7 @@ One file or directory of a UHARC 0.6 archive.
 
 #### `UharcFormatDescriptor`
 
-UHARC 0.6 archive (Uwe Herklotz, 1997–2005): read-only. Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors. Archives of earlier versions are refused. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
+UHARC 0.6 archive (Uwe Herklotz, 1997–2005): read-only. Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`), PPM (`-mx`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors, and UHARC 0.2 archives. Archives of 0.3 and 0.4 are refused. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
 
 Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
 
@@ -33061,19 +33061,20 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `UharcReader`
 
-Reads UHARC 0.6 archives (magic `UHA\x06`) as written by UHARC 0.6/0.6a/0.6b. Layout and codecs are described in docs/UHARC-ON-DISK.md.
+Reads UHARC 0.6 archives (magic `UHA\x06`) as written by UHARC 0.6/0.6a/0.6b, and UHARC 0.2 archives (`UHA\x02`). Layout and codecs are described in docs/UHARC-ON-DISK.md.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `UharcReader` | `UharcReader(Stream stream, string password = null)` | Opens a UHARC 0.6 archive (optionally behind a self-extractor stub). |
+| `UharcReader` | `UharcReader(Stream stream, string password = null)` | Opens a UHARC 0.6 archive (optionally behind a self-extractor stub) or a UHARC 0.2 archive. |
 | `WrongPasswordKey` | `const string WrongPasswordKey` | Key in `Data` that marks an `InvalidDataException` as "wrong password". |
 | `CanDecodeMethod` | `bool CanDecodeMethod { get; }` | Gets whether the stream's method can be decoded by this reader. |
 | `DictionarySize` | `int DictionarySize { get; }` | Gets the dictionary size in bytes, 0 for the store method. |
 | `Entries` | `IReadOnlyList<UharcEntry> Entries { get; }` | Gets the entries of the archive in stored order. |
 | `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether the archive was created with `-pw`. |
-| `MethodName` | `string MethodName { get; }` | Gets the name of the compression mode, as `uharc l` prints it. |
+| `MethodName` | `string MethodName { get; }` | Gets the name of the compression mode, as `uharc l` prints it (0.2: the mode switch). |
 | `Method` | `int Method { get; }` | Gets the stream method byte (see `MethodName`). |
 | `PackedSize` | `long PackedSize { get; }` | Gets the size of the packed solid stream. |
+| `Version` | `int Version { get; }` | Gets the format version: 6 for UHARC 0.6, 2 for UHARC 0.2. |
 | `Extract` | `byte[] Extract(UharcEntry entry)` | Extracts and CRC-verifies one file. |
 
 ### Namespace `FileFormat.Ult`

@@ -10,7 +10,7 @@ namespace FileFormat.Uharc;
 /// UHARC 0.6 archive (Uwe Herklotz, 1997–2005): read-only. Lists and extracts every 0.6/0.6a/0.6b
 /// archive: the store, RLE (<c>-mr</c>), LZ78 (<c>-mw</c>), LZP (<c>-mz</c>), PPM (<c>-mx</c>) and ALZ
 /// (<c>-m1</c>..<c>-m3</c>, including the multimedia predictors) modes, password-protected archives
-/// and self-extractors. Archives of earlier versions are refused.
+/// and self-extractors, and UHARC 0.2 archives. Archives of 0.3 and 0.4 are refused.
 ///
 /// References:
 /// <list type="bullet">
@@ -39,7 +39,7 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "UHARC 0.6 archive. Lists and extracts the store, RLE, LZ78, LZP, PPM and ALZ modes (with multimedia " +
-    "and executable filters, passwords and SFX stubs). Archives of versions before 0.6 are refused.";
+    "and executable filters, passwords and SFX stubs), and UHARC 0.2 archives. 0.3 and 0.4 archives are refused.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (TryOpen(stream, password, out var reader, out var image) is { } failure)

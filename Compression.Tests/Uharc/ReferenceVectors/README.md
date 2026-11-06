@@ -31,6 +31,19 @@ Command, run inside the input set's directory:
 | `mm-mz.uha` | mm | `-mz`, files `pic.bmp u8.wav s16.wav` | LZP's BMP/WAV delta filter |
 | `exe-m2.uha` / `exe-mz.uha` | exe | `-m2` / `-mz` | E8/E9 + MZ relocation filter, ELF, and the 1 KiB threshold |
 
+The `v02-*` archives were written by **UHARC 0.2** (`UHARC.EXE`, DOS, 21 Dec 1997, from
+<https://archive.org/details/UHARC>, MD5 `6e2f0e8d0e6b83c0c05c9b406ce056fb`) in DOSBox, from the
+same inputs, with `uharc a -y -r <switches> <archive>`; DOSBox gave the inputs the local time
+2005-10-01 12:00, which is what 0.2 stored:
+
+| Archive | Set | Switches | What it pins |
+| --- | --- | --- | --- |
+| `v02-basic-m2.uha` | basic | `-m2` | 0.2 container, directories, LZW tables, main coder |
+| `v02-exe-m0.uha` / `v02-exe-m2.uha` | exe | `-m0` / `-m2` | stored executables stay unfiltered; the 0.2 E8/E9 filter |
+| `v02-reset-m3.uha` / `v02-reset-md.uha` | reset | `-m3` / `-m3 -md-` | 256 KiB and 1 KiB histories over 18 files |
+| `v02-mm-m3.uha` | mm | `-m3` | the multimedia literal modes |
+| `v02-runs-m2.uha` | runs | `-m2` | byte runs |
+
 Which selectors a stream uses is the encoder's choice, recorded here so a regression in one
 predictor shows up as a failing fixture rather than a silent gap.
 

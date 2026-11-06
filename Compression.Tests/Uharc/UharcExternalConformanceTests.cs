@@ -134,7 +134,7 @@ public class UharcExternalConformanceTests {
     foreach (var path in Directory.EnumerateFiles(directory)) {
       var head = new byte[4];
       using (var probe = File.OpenRead(path))
-        if (probe.Read(head) < 4 || !UharcHeader.HasMagic(head))
+        if (probe.Read(head) < 4 || !(UharcHeader.HasMagic(head) || head is [(byte)'U', (byte)'H', (byte)'A', 2]))
           continue;
 
       using var stream = File.OpenRead(path);
@@ -147,6 +147,6 @@ public class UharcExternalConformanceTests {
       }
     }
 
-    Assert.That(checkedFiles, Is.Positive, "no decodable UHARC 0.6 archive in the sample directory");
+    Assert.That(checkedFiles, Is.Positive, "no decodable UHARC archive in the sample directory");
   }
 }

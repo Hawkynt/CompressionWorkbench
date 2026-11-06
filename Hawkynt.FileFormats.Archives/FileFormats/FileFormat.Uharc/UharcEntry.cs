@@ -1,7 +1,7 @@
 namespace FileFormat.Uharc;
 
 /// <summary>
-/// One file or directory of a UHARC 0.6 archive.
+/// One file or directory of a UHARC archive.
 /// </summary>
 public sealed class UharcEntry {
 

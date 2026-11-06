@@ -1,14 +1,16 @@
-# UHARC 0.6 — on-disk notes
+# UHARC — on-disk notes
 
 UHARC is Uwe Herklotz's closed-source archiver (1997–2005). No specification was ever
 published and no implementation exists under a licence this repository can take, so this
 document is the specification `FileFormat.Uharc` is implemented from. It covers the 0.6 format
 (0.6, 0.6a and 0.6b write the same archives; the documentation says so and the header carries
-version byte 6) as far as it was established; what is not covered is listed at the end.
+version byte 6) and, in its own section, the 0.2 format, as far as they were established; what
+is not covered is listed at the end.
 
 **Status: read-only.** Container, ciphers, every 0.6 mode — store, RLE, LZ78, LZP, PPM and ALZ
 with its nine multimedia predictors —, the executable and multimedia filters, passwords and SFX
-stubs are established and verified. Archives of earlier versions are not, and are refused.
+stubs are established and verified, and so is UHARC 0.2 (see its section). Archives of 0.3 and
+0.4 are not, and are refused.
 
 ## Evidence
 
@@ -465,13 +467,109 @@ data fails its CRC under the former, a 364-byte MZ file under the latter.
 from byte 36 with a stride of 3, channels × bytes per sample, or 1: each byte is the difference
 from the byte one stride back, with a per-phase sign that flips on a difference ≥ 128.
 
+## UHARC 0.2
+
+UHARC 0.2 (21 Dec 1997, a DOS program; `UHARC.EXE` from the archive.org item `UHARC`, MD5
+`6e2f0e8d0e6b83c0c05c9b406ce056fb`) writes a different container and different coders. It was
+run in DOSBox on the fixture inputs in every mode and dictionary size; all its archives and the
+four 0.2 samples of the dexvert set (`BEAT`, `MENUS`, `MUSIC`, `TEAM`: 66 files, 35 MB, all
+`-m3` with 2 MiB) decode byte for byte or pass every CRC.
+
+    header(48)  packed stream  CRC table  name table  date/time table  size table
+
+**Header.** Bytes 4..43 are scrambled like 0.6's, with the key in byte 44; bytes 44..47 hold the
+full CRC-32 of the descrambled bytes 4..43.
+
+| Offset | Size | Field |
+| --- | --- | --- |
+| 0 | 4 | `55 48 41 02` |
+| 4 | 2 | archive DOS time |
+| 6 | 2 | archive DOS date |
+| 9 | 1 | stream method |
+| 10 | 2 | number of directory names |
+| 12 | 4 | number of files *N* |
+| 16 | 4 | unpacked size of the stream |
+| 20 | 4 | packed size of the stream |
+| 24 | 4 | unpacked size of the name table |
+| 28 | 4 | packed size of the name table |
+| 32 | 4 | packed size of the date/time table |
+| 36 | 4 | packed size of the size table |
+| 40 | 4 | CRC-32 over all four tables, unpacked, in order |
+| 44 | 4 | header check |
+
+Methods: 0 store, 1 RLE, 2..7 LZW, 8..19 `-m1`, 20..31 `-m2`, 32..43 `-m3`, the dictionary
+`1 << ((m − 8) mod 12 + 10)` (1 KiB to 2 MiB; `-md-` gives 1 KiB). The tool writes no stream
+with methods 1..7; the tables use LZW.
+
+**Tables.** Each is enciphered on its own: a 256-byte state filled with
+`"UHARC Default Password"` repeated (no length byte), keyed by the same CRC rounds as 0.6's
+cipher, then `a = S[p]; p = p + 1; S[p] += a; byte ^= S[p]`. The CRC table (4*N*) is stored, the
+name table LZW method 7, the date/time table LZW method 2 (*N* dates, then *N* times), the size
+table LZW method 7 (7*N*: *N* size deltas as 32-bit words, *N* directory indices as 16-bit
+words, *N* attribute bytes). Names and sizes work as in 0.6; names are DOS 8.3 in upper case.
+
+**LZW** (methods 2..7). A dictionary of `2^(method+8)` codes of parent and byte, codes 0..255
+the bytes, 256 restart, 257 run, phrases from 258. Codes are truncated binary like 0.6's LZ78
+but read least significant bit first, the width growing from 9 to `method + 8` bits. The first
+code (and the first after a restart) is a plain byte. A run is a 16-bit count (high byte first)
+and the byte, preceded on the first run after a phrase by one more literal byte; the phrase
+after a run then omits its first byte. A code at or above the next free one repeats the previous
+phrase plus its first byte. Each phrase adds the previous phrase plus its own first byte.
+
+**Main coder** (methods 8..43). A range coder that reads the stream bit by bit (most
+significant first): `code` starts with 16 bits, `range = 0x10000`; a value in `[0, t)` is
+`((code + 1)·t − 1) / range`; narrowing to `[l, h)` subtracts `l·range/t` from `code`, sets
+`range = h·range/t − l·range/t` and doubles it, shifting in a bit, while it is at most `0x8000`.
+
+Each step decodes a token from one of eight cumulative rows (seed `0, 1, 2, 0xC00, 0x2000`):
+0 control, 1 run, 2 copy, 3 literal; a copy adds 64 to its width, copies and literals add 64
+to the total, the upper two widths halve at 16384, and the row becomes
+`(token + 2·row − 2) mod 8` — controls and runs leave both alone.
+
+- **Control** (uniform 12): 0..5 select a multimedia mode (0 none) and, once output exists,
+  reset the literal contexts; 6..9 set the literal step to 2, 8, 32 or 128 and halve the
+  contexts by a table of the old and new step; 10 toggles raw literals (uniform 256); 11
+  toggles literals restricted to 0x80..0xFF.
+- **Literal**: 256 order-1 contexts of 256 frequencies (all 1 at first), kept as a cumulative
+  tree whose symbols are ordered from 255 down; the step is added, a context halves (rounding
+  up) at 16384. The next context is the symbol, or in the multimedia modes a class of it combined
+  with the position modulo the mode's period. The output is the symbol's complement — in a
+  multimedia mode a difference from the byte `((mode − 1) mod 4) + 1` positions back, with a sign
+  that flips on every difference ≥ 128.
+- **Copy**: a distance class from a 45-entry cumulative model. Classes 0..39 cover distances
+  from 2 up to 2 MiB in bands that halve towards the short end, and enter the model only once the
+  history reaches their first distance; 40 is distance 1; 43 reuses the newest of the recent
+  distances, 42 the second or third, 41 an older one (the list holds 5, 8 or 16 for `-m1`, `-m2`,
+  `-m3`). A new distance is refined within its band by uniform values (in 4096-wide blocks when
+  wider) and enters the list; a reused one moves to its front. Then a length class (22 classes,
+  separate models for new and reused distances) plus a uniform extra; every copied byte also
+  goes through the literal model.
+- **Run**: a length class of three (`0x100 +` one, two or three bytes), then the byte; the
+  history receives 255 copies, the output the full run (only the first five bytes pass the
+  output transform), and the literal model counts every byte.
+
+**Executable filter.** Files of at least 1 KiB that start `MZ` or `ZM` had every `E8`/`E9`
+operand that is a target within the file made absolute (positive below the size: subtract the
+position; negative within reach: add the size); the scan advances 5 bytes past a rewritten
+operand, otherwise 4. Stored archives (`-m0`) store executables unchanged.
+
+Fixtures `v02-basic-m2`, `v02-exe-m0`, `v02-exe-m2`, `v02-reset-m3`, `v02-reset-md`
+(a 1 KiB history), `v02-mm-m3` and `v02-runs-m2`; the 17 MB pair packed with `-m3` decodes
+exactly as well.
+
+*Refuted:* times before dates in the date/time table (the dates then fall in 2019..2048 for the
+dexvert samples), directory indices as two byte planes (subdirectories then point outside the
+name table), and the executable filter on stored archives (fails `v02-exe-m0`'s CRC).
+
 ## What is not derived
 
-- **Versions before 0.6** (`UHA` + 2, 3 or 4; four dexvert samples are 0.2): their headers,
-  ciphers and codecs differ; refused with the version named.
+- **Versions 0.3 and 0.4** (`UHA` + 3 or 4): their headers, ciphers and coders differ from both
+  0.2 and 0.6; no samples are at hand; refused with the version named.
+- **UHARC 0.2's RLE stream method 1**: no archive the tool writes uses it; refused.
 - **Writing.** Nothing here writes UHARC.
 
 ## Sources
 
 - UHARC 0.6b, `UHARC.DOC` — modes, switches, dictionary rule, SFX.
+- UHARC 0.2, `UHARC.DOC` (21 Dec 1997) — modes and switches of 0.2.
 - Archive Team, "UHARC", <http://fileformats.archiveteam.org/wiki/UHARC> — overview, samples.
