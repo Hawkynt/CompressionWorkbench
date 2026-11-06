@@ -278,6 +278,7 @@ format,IExpress,IExpress self-extractor,Archive,,,Y,Y,,
 format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
 format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
 format,InnoSetup,Inno Setup,Archive,,,Y,Y,,
+format,Install4j,install4j,Archive,,,Y,Y,,
 format,InstallerVise,Installer VISE,Archive,,,Y,Y,,
 format,InstallShieldCab,InstallShield cabinet,Archive,,.hdr,Y,Y,,
 format,IntelHex,Intel HEX,Archive,,.hex;.ihex;.ihx;.h86,Y,Y,Y,Y
@@ -310,6 +311,7 @@ format,Lbr,LBR,Archive,,.lbr,Y,Y,Y,Y
 format,LegacyOfficeCompoundFile,Legacy Microsoft Office compound file,Archive,,.dot;.xlt;.pps;.pot,Y,Y,,
 format,Leveldb,LevelDB SSTable,Archive,,.ldb;.sst,Y,Y,,
 format,Lfd,LucasArts LFD,Archive,,.lfd,Y,Y,Y,
+format,Lfs,4.4BSD LFS (NetBSD),Archive,Y,.lfs,Y,Y,,
 format,Lif,HP LIF (Logical Interchange Format),Archive,Y,.lif,Y,Y,Y,Y
 format,LinuxKernelImage,Linux kernel image (zImage/Image),Archive,,.zimage;.bzimage;.vmlinuz,Y,Y,,
 format,Lit,LIT (Microsoft Reader),Archive,,.lit,Y,Y,,

@@ -238,7 +238,7 @@ SuperDAT updater,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 Symbian installer (SIS/SISX),sis;sisx,installer,,,,,R,,,1,https://www.cryer.co.uk/file-types/s/sis/softwareinstallsis.pdf,SymbianSis,Y,Y,,PARTIAL,Symbian SDK makesis / signsis,"Symbian OS 9 (SISX) only; pre-9 EPOC SIS (UID2 0x10000419) is a different format and is not read. Created packages are unsigned, one English language, S60 3rd Edition target, plain install lines; makesis's own packages are reproduced except for the controller's deflate bitstream. Embedded packages follow the specification, but no real embedded sample was available (SymbianSisReader.cs, SymbianSisWriter.cs)"
 WiX Burn bundle,exe,installer,,,,,R,,,1,https://wixtoolset.org/docs/tools/burn/,WixBurn,Y,,,READ-ONLY-BUT-SOURCES-WRITE,WiX light.exe / wix build,detached and downloaded payloads are not in the bundle and are not listed (WixBurnReader.cs)
 Enigma Virtual Box,exe,installer,,,,,R,,,1,https://enigmaprotector.com/en/aboutvb.html,EnigmaVirtualBox,Y,,,READ-ONLY-BUT-SOURCES-WRITE,Enigma Virtual Box (enigmavbconsole),"the boxed files and folders, stored or aPLib-compressed, in the current and the legacy (EVB 7.80 and earlier) table layouts; virtual registry and external .dat packages are not read (EnigmaVirtualBoxReader.cs)"
-MoleBox,exe,installer,,,,,R,,,1,,,,,,MISSING,,"blocked: no specification available"
+MoleBox,exe,installer,,,,,R,,,1,,,,,,MISSING,,blocked: no specification available
 UPX-packed executable,exe;dll,executable,,,,,R,,,1,https://upx.github.io/,Upx,Y,,,READ-ONLY-BUT-SOURCES-WRITE,upx,"writing refused: upx -t/-d accept only files carrying UPX's own loader stubs and PackHeader, so a provable writer would have to ship UPX's GPL stubs; reading/unpacking stays"
 macOS Installer package (flat pkg),pkg;mpkg,installer,,,,,,,Y,1,,Xar,Y,Y,Y,OK,,
 ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet;mdf;nrg;toast,filesystem,R,RW,R,R,R,fmt/1739;fmt/1741;fmt/1757;fmt/468,RW,7,https://www.ecma-international.org/publications-and-standards/standards/ecma-119/,Iso,Y,Y,Y,PARTIAL,,"Rock Ridge names (NM+CE), symlinks (SL), relocated directories (RE/CL), modes (PX), times (TF) and zisofs (ZF) read; Rock Ridge NM (CE for long names)/PX/TF and El Torito BIOS/UEFI boot entries written; interleaved files read unit by unit while wipe/defrag/remove refuse images holding them (IsoReader.cs)"
@@ -419,7 +419,7 @@ HFS+ / HFSX,hfsx;dmg;img;toast,filesystem,R,,,,,fmt/1742,Y,3,https://developer.a
 HPFS,hpfs,filesystem,,,,,,,Y,1,,Hpfs,Y,Y,Y,OK,,
 HTFS (SCO),,filesystem,,,,,,,Y,1,,Htfs,Y,Y,Y,OK,,
 JFS (JFS1 / JFS2),jfs;jfs1;jfs2,filesystem,,,,,,,Y,1,,Jfs;Jfs1,Y,Y,Y,OK,,
-4.4BSD LFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+4.4BSD LFS,,filesystem,,,,,,,Y,1,https://github.com/NetBSD/src/blob/trunk/sys/ufs/lfs/lfs.h,Lfs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,newfs_lfs,writer not yet proven with fsck_lfs and a guest mount
 MFS (Macintosh File System),mfs;dsk;img,filesystem,,,,,,fmt/2068,Y,2,,Mfs,Y,Y,Y,OK,,
 MFS (TiVo Media File System),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Minix file system (V1/V2/V3),minix,filesystem,,,,,,,Y,1,,MinixFs;MinixV1;MinixV2,Y,Y,Y,OK,,
