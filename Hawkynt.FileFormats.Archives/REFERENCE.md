@@ -25896,46 +25896,6 @@ The parsed contents of a single Pack200 (JSR-200) segment: the archive header fi
 | `Status` | `Pack200DecodeStatus Status { get; init; }` | Whether the segment was fully decoded or only partially. |
 | `Utf8Count` | `int Utf8Count { get; init; }` | Number of constant-pool UTF-8 entries. |
 
-### Namespace `FileFormat.PackBits`
-
-[`PackBitsFormatDescriptor`](#packbitsformatdescriptor) · [`PackBitsStream`](#packbitsstream)
-
-#### `PackBitsFormatDescriptor`
-
-Describes pack bits format.
-
-Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `PackBitsFormatDescriptor` | `PackBitsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Gets the packetization strategy searched by the generic compression optimizer. Greedy preserves the historical fast encoder; Optimal computes a minimum-size legal PackBits packet sequence for the complete input. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input with the exact minimum-size packetizer. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input with the historical greedy packetizer. |
-| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the requested packetizer. |
-| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
-
-#### `PackBitsStream`
-
-Provides PackBits compression and decompression (Apple MacPaint standard) with a framed container header.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` to `output` using PackBits encoding. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses `input` to `output` using PackBits decoding. |
-
 ### Namespace `FileFormat.PackIt`
 
 [`PackItEntry`](#packitentry) · [`PackItFormatDescriptor`](#packitformatdescriptor) · [`PackItModifier`](#packitmodifier) · [`PackItReader`](#packitreader) · [`PackItWriter`](#packitwriter)

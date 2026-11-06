@@ -13,9 +13,9 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Measure | Value |
 | --- | ---: |
-| Catalogue rows | 985 |
+| Catalogue rows | 984 |
 | … formats listed by at least one source | 528 |
-| … registry ids no source lists (OURS-ONLY) | 457 |
+| … registry ids no source lists (OURS-ONLY) | 456 |
 | Source-listed rows mapped to something here | 386 / 528 (73.1 %) |
 | … of rows listed by ≥ 2 sources | 134 / 138 (97.1 %) |
 | … of rows listed by ≥ 3 sources | 67 / 67 (100.0 %) |
@@ -27,7 +27,7 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | `READ-ONLY-BUT-SOURCES-WRITE` | 22 | we only read it; a source or the format's own tool writes it |
 | `PARTIAL` | 46 | covered, but the reader handles only part of the format (see the table below) |
 | `OK` | 318 | covered with no known gap against what the sources list |
-| `OURS-ONLY` | 457 | in our registry, listed by none of the seven sources |
+| `OURS-ONLY` | 456 | in our registry, listed by none of the seven sources |
 
 ### Per source
 
