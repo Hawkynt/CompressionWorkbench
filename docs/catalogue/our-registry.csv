@@ -115,6 +115,7 @@ format,Cbr,CBR,Archive,,.cbr,Y,Y,Y,Y
 format,Cbt,CBT,Archive,,.cbt,Y,Y,Y,Y
 format,Cbz,CBZ,Archive,,.cbz,Y,Y,Y,Y
 format,Cdi,CDI,Archive,,.cdi,Y,Y,Y,Y
+format,CdXa,CD-ROM XA (RIFF CDXA),Archive,,,Y,Y,Y,Y
 format,CephFs,CephFS / RADOS pool export,Archive,Y,.rados;.ceph,Y,Y,Y,Y
 format,Chm,CHM,Archive,,.chm,Y,Y,Y,Y
 format,ChromiumPak,Chromium resource pack,Archive,,.pak,Y,Y,Y,Y
