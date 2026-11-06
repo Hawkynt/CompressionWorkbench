@@ -311,6 +311,8 @@
     </EmbeddedResource>
     <!-- The QEMU harness that lets a Reiser4 kernel judge what the writer produces. -->
     <None Include="Reiser4\KernelOracle\*.sh" CopyToOutputDirectory="PreserveNewest" LinkBase="Reiser4\KernelOracle" />
+    <!-- Drives a NetBSD live image under qemu for the NetBSD-only file systems (CHFS, LFS). -->
+    <None Include="Support\NetBsdGuest\netbsd-guest.py" CopyToOutputDirectory="PreserveNewest" />
     <!-- Volumes the Linux btrfs driver wrote with compress-force; see Btrfs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Btrfs\ReferenceVectors\*.gz;Btrfs\ReferenceVectors\manifest.txt">
       <LogicalName>BtrfsVectors.%(Filename)%(Extension)</LogicalName>
@@ -591,6 +593,10 @@
     <!-- B1 archives b1-pack wrote, and ours it read; see B1/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="B1\ReferenceVectors\*.b1">
       <LogicalName>B1Vectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- LFS volume NetBSD 11.1 created and filled; see Lfs/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Lfs\ReferenceVectors\*.gz;Lfs\ReferenceVectors\*.manifest">
+      <LogicalName>LfsVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
     <!-- DAR slices written by dar itself (2.4.24 to 2.8.6); see Dar/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Dar\ReferenceVectors\*.dar">
