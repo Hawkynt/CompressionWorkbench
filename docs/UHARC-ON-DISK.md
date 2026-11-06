@@ -6,10 +6,9 @@ document is the specification `FileFormat.Uharc` is implemented from. It covers 
 (0.6, 0.6a and 0.6b write the same archives; the documentation says so and the header carries
 version byte 6) as far as it was established; what is not covered is listed at the end.
 
-**Status: read-only, partial.** Container, ciphers, the store, RLE, LZ78, LZP and ALZ modes,
-ALZ's nine multimedia predictors, the executable and multimedia filters, passwords and SFX stubs
-are established and verified. PPM (`-mx`) and archives of earlier versions are not, and are
-refused.
+**Status: read-only.** Container, ciphers, every 0.6 mode — store, RLE, LZ78, LZP, PPM and ALZ
+with its nine multimedia predictors —, the executable and multimedia filters, passwords and SFX
+stubs are established and verified. Archives of earlier versions are not, and are refused.
 
 ## Evidence
 
@@ -21,10 +20,10 @@ inputs show the stream byte for byte where the stream is not entropy coded (RLE,
 decoder reproduces every input byte for byte (SHA-256) where we hold the inputs, and every
 file's stored CRC-32 where we do not, on:
 
-- 20 committed fixtures (`Compression.Tests/Uharc/ReferenceVectors`), every ALZ selector among
+- 24 committed fixtures (`Compression.Tests/Uharc/ReferenceVectors`), every ALZ selector among
   them;
 - the same 17 MB of text and a 6.7 MB DLL packed with `-m2` and `-mz` (32 MiB dictionaries),
-  `-mr`, `-mw` and `-mw -md1`;
+  `-mr`, `-mw`, `-mw -md1` and `-mx`, and further PPM sets listed under PPM;
 - eight real-world archives from the dexvert sample set
   (`sembiance.com/fileFormatSamples/archive/uharc`): `Active`, `DEXVERT`, `TOOLS`, `Victoria`,
   `mix`, `new_carset.cuh`, `ntfs`, `tecgfx1` — 201 files, all ALZ:2/ALZ:3, dictionaries 1 KiB to
@@ -132,7 +131,7 @@ check.
 
 ## Range decoder
 
-Shared by LZP and ALZ: 32-bit `code` primed with the stream's first five bytes (big-endian;
+Shared by LZP, PPM and ALZ: 32-bit `code` primed with the stream's first five bytes (big-endian;
 the first byte is always 0), `range = 2³² − 1`. Decoding against a total `t`:
 `range /= t; slot = code / range`, then `code −= low·range; range *= size`, then while
 `range < 2²⁴`: `code = code << 8 | next byte`, `range <<= 8`. A binary decision with a 12-bit
@@ -242,6 +241,131 @@ unseen bytes. A new symbol adds 32 to the escape weight and 16 to its order-0 fr
 symbol adds 32; a context halves (rounding up, escape weight `/4 + 1`) when frequencies plus
 escape weight reach 16384.
 
+## PPM (methods 24..39)
+
+A context-mixing literal coder behind an LZP-style copy predictor. The window holds model
+symbols — the complement of the output bytes, as in LZP — and the dictionary size of the method
+band. Probabilities of binary decisions are 13-bit (total 8192) and move by 1/64 towards the
+outcome; frequency tables use the range decoder as everywhere else. Constant tables are named
+after `UharcPpmTables` in the decoder; where a row of numbers is the only specification, the
+decoder holds it.
+
+**Stream kind.** The stream starts with a uniform value of 2: 0 = text, 1 = binary. A text stream
+then codes a length *L* as 11-bit groups (uniform 2048, least significant group first), each
+followed by a uniform value of 2 that says whether another group follows. Output bytes before *L*
+go through the word transform; at *L* the stream switches to binary coding (below). A stream of
+nothing but text still codes *L*, usually a few bytes short of the end.
+
+**Resets.** Like LZP's, derived from the file sizes, with a span of 256 KiB (text) or 64 KiB
+(binary) and never beyond *L*. A reset clears the order-1 and order-0 rows and seeds the uniform rows, halves
+the class rows, quarters the order-2 records, resets the copy decisions, the stride detector,
+the cost averages and the linear-predictor scores, and finally codes the multimedia class as a
+uniform value of 10 (0 = none, 1..9 as ALZ's selectors 1..9, with contexts 0xF8 lower). The
+binary predictor's tables clear too.
+
+**Copies.** Before every byte a candidate position is chosen:
+
+1. during a run (the previous copy had length 255): the last copy distance, decision 0x50, or
+   0x51 after more than two runs;
+2. the newer of the two positions a deep hash of the last twelve symbols remembers, when its
+   preceding bytes agree with the current ones over at least 48 symbols (12 once a streak
+   counter — +1 per missed copy, + the length per copy at a new distance, halved per copy at
+   the last one — reaches 16), decision 0x15;
+3. the last copy distance, decision 0x0B, when its four preceding symbols agree with the
+   current ones in the low 16 bits, in all but bits 8..15, or in the high 24 bits, and it is not
+   within 260 bytes of being overwritten;
+4. unless the hash slot of the last four symbols remembers a confident order-4 record (its
+   byte 0x1A at least 0x40) and no copy length: the slot's position when the slot remembers the
+   current context (decision 1), else the last copy distance (decision 0x1F).
+
+Nothing is predicted within 256 bytes of being overwritten. Outside runs the decision index is
+offset by a two-step outcome history (`LzpHistoryNext`) and by +0x27 when the slot remembers no
+length, −1 when it does. If the candidate's byte is the one the previous copy stopped in front
+of, the decision counts as a miss without being coded. A decision is a three-way frequency
+table — escape (width 1), hit, miss — seeded `0, 1, LzpClassSeed, 99`, +32 per event and
+halved at 16384; an *escape* codes a new multimedia class (uniform 10) and the decision is coded
+again. A hit codes a length by binary search from node 14 over `LengthTree` with 12-bit
+probabilities (shift 4) in one of six sets chosen by the run count or the remembered length;
+lengths below a floor taken from `LengthFloor*` by the record hit statistics are not coded.
+255 means a run. The bytes are read as the copy proceeds, so an overlapping copy repeats what it
+just produced; the byte after the copy is excluded from the next literal.
+
+**Literals** go through a cascade; the first stage that codes the byte ends it, an escaped
+stage adds its symbols to the exclusions of the next (at most 23):
+
+1. **Order-4 record** — 0x40000 records of 32 bytes: escape count, twelve counts and symbols
+   (sorted by count), a hit history, the last-hit slot with a confidence nibble, a scale and the
+   four context symbols as a tag; hashed `(c ^ c >> 13) mod 2^15` and chained 0x8000 apart.
+   Used only when three gates agree (ratios of the record's and the order-2 record's counts and
+   confidences, the stride statistics, and whether the record leaves anything after the
+   exclusion). One symbol: a binary decision whose probability cell is chosen by the count, the
+   agreement with the order-2 and order-1 predictions, recency and the word-boundary class. More
+   symbols: up to four counts — the last-hit symbol, the order-1 prediction, the order-2
+   prediction and the first symbol — are lifted by learned odds before a frequency decode in
+   which the remaining total (or, below 128, an estimate from the escape-mass table) is the
+   escape.
+2. **Binary predictor** (binary streams). Eight sparse contexts (pairs of the last five bytes,
+   the bytes at depth of an `FF` run, and the difference of the bytes one and two strides back)
+   each remember a byte with miss and hit counts and a confidence. The most trusted proposes its
+   byte; a binary decision whose masses add the order-4, order-2 and per-byte predictions' weights
+   accepts it or excludes it.
+3. **Order-2 record** — 20 bytes per pair of previous symbols (text streams use a second bank
+   when the symbol before is a word-boundary symbol): escape count, eight counts and symbols, a
+   novelty count, a running total and the last-hit slot. Used while the escapes stay below
+   four fifths of the total and few new symbols arrived lately.
+   Decoded like the order-4 record (lifts of the last-hit, the order-1 prediction and the first
+   symbol), or by a binary decision when it holds one symbol.
+4. **Frequency rows.** 0x30F rows of 256 frequencies: 0..0x1FF order-1 (text doubles them by
+   the word-boundary flag of the byte before; in binary streams with a detected stride the row is
+   `0x100 +` the byte one stride back), 0x200 order-0, 0x201..0x300 the multimedia classes, and
+   0x301..0x30E uniform fallbacks a row escapes into. The byte a row saw last (with a
+   confidence count) is coded first with an SSE probability; the rest by frequency, with an
+   escape weight scaled by a learned factor. Every symbol is charged `65520 − ⌈4680·log2(i)⌉` for its 14-bit share *i*; the sum
+   over the last 256 literals picks the row (below `0x6D4250`), a raw byte (from `0x91ADC0`
+   up to `0xFEFF00`), or in between whichever of the row and order-0 has the lower decayed cost. In
+   binary streams with a multimedia class, a linear predictor competes: when its decayed cost is
+   lower, the byte is coded as a difference from the class's predicted byte in the class's row.
+
+**Updates.** Every byte updates the order-4 and order-2 records, the rows it touched and the
+per-row predicted byte. A new symbol in a full order-4 record takes the twelfth slot only while
+that slot's count is below 6; in a full order-2 record the eighth slot only while its count is
+below 12 — otherwise only the escape count and the total grow. Records halve when their totals
+pass `Order4Threshold`/`Order2Threshold` for their escape count.
+
+**Upkeep.** A stride detector counts the distances at which bytes repeat (a byte or its
+neighbours) and follows the most frequent below 256; two marker counters detect interleaved
+16-bit text, which then uses alternate bytes as context; binary streams remember for each byte
+whether it occurred in the last 64 window positions (text streams do not, and the single-symbol
+order-2 decision never asks).
+
+**Text transform.** In a text stream the output of every symbol below *L* is `~symbol`, except
+that complemented values from 0x80 stand for strings (`TransformString*`), a capital-letter
+prefix that subtracts 0x20 from the next letter, or an escape whose next symbol selects a byte
+from `TransformEscape`. Symbols 4..6 do not enter the context (they become `DF` once).
+
+**Switch to binary.** At *L* the window is rewritten as the bytes the transform produced
+(complemented, from half a window back), the order-4 records are quartered, the order-2
+records and copy hashes cleared, the hashes and the order-4 records are rebuilt over the last
+32 KiB of the rewritten window, the learned probabilities are seeded afresh and coding continues
+as a binary stream.
+
+**Executable filter.** PPM streams store an `E8`/`E9` operand with its bytes 0 and 2 swapped
+when either the stored value or the swapped one is a target within the file; undo the swap,
+then proceed as for the other methods.
+
+Fixtures `basic-mx` (text, switching to binary after 15 bytes), `reset-mx` and `reset-mx1`
+(reset points; a 1 KiB window wrapping hundreds of times), `exe-mx` and `mm-mx` pin the stream;
+all archives packed here — 17 MB of text, 13 MB of DLLs, fonts and media, the source and
+documentation of this repository, mixed text and binary sets, dictionaries from 1 KiB to 16 MiB
+— decode exactly, and so does the real-world sample `D3X.UHA` (45 files).
+
+*Refuted*, each by the first byte it breaks:
+- a new symbol always taking the last slot of a full record (the obvious rule): breaks the
+  17 MB text packed as binary at 38 450 (order-4) and a DLL set at 536 014 (order-2); the
+  thresholds 5 and 7, 11 and 13 break other corpora;
+- the recency flag in the single-symbol order-2 decision of a text stream: breaks a 1 KiB
+  window text archive at 3 931, where the window position returns to 0.
+
 ## ALZ (methods 40..87)
 
 LZ77 with an adaptive token model, a cost-switched literal coder and, for multimedia data,
@@ -330,6 +454,8 @@ the position (0 stands for the position itself); a negative one within reach was
 the file size; others whose high half is not trivial carry, in their low half, either `0x8000 +
 index` into a 128-entry move-to-front list of recent targets (initially 0..127) or a target to
 be entered into that list. The scan advances 5 bytes past a rewritten operand, otherwise 4.
+PPM streams first undo a swap of the operand's bytes 0 and 2 (see PPM); an operand whose swap
+was undone advances 5 bytes even when nothing else rewrites it.
 
 *Refuted:* a zero-initialised list and a 16-byte minimum — `UNUHARC.EXE` packed as
 data fails its CRC under the former, a 364-byte MZ file under the latter.
@@ -341,8 +467,6 @@ from the byte one stride back, with a per-phase sign that flips on a difference 
 
 ## What is not derived
 
-- **PPM** (`-mx`, methods 24..39): an order-4-2-1-0 model behind an LZP pass, with its own
-  executable pre-transform; archives list, extraction is refused.
 - **Versions before 0.6** (`UHA` + 2, 3 or 4; four dexvert samples are 0.2): their headers,
   ciphers and codecs differ; refused with the version named.
 - **Writing.** Nothing here writes UHARC.

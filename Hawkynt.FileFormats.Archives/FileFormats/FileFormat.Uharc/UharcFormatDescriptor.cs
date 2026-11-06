@@ -7,10 +7,10 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Uharc;
 
 /// <summary>
-/// UHARC 0.6 archive (Uwe Herklotz, 1997–2005): read-only. Lists every 0.6/0.6a/0.6b archive and
-/// extracts the store, RLE (<c>-mr</c>), LZ78 (<c>-mw</c>), LZP (<c>-mz</c>) and ALZ (<c>-m1</c>..<c>-m3</c>, including the multimedia
-/// predictors) modes, password-protected archives and self-extractors; the PPM mode (<c>-mx</c>)
-/// is refused.
+/// UHARC 0.6 archive (Uwe Herklotz, 1997–2005): read-only. Lists and extracts every 0.6/0.6a/0.6b
+/// archive: the store, RLE (<c>-mr</c>), LZ78 (<c>-mw</c>), LZP (<c>-mz</c>), PPM (<c>-mx</c>) and ALZ
+/// (<c>-m1</c>..<c>-m3</c>, including the multimedia predictors) modes, password-protected archives
+/// and self-extractors. Archives of earlier versions are refused.
 ///
 /// References:
 /// <list type="bullet">
@@ -33,13 +33,13 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [new("UHA"u8.ToArray(), Confidence: 0.85)];
   public IReadOnlyList<FormatMethodInfo> Methods => [
-    new("store", "Store"), new("rle", "RLE"), new("lz78", "LZ78"), new("lzp", "LZP"), new("alz", "ALZ"),
+    new("store", "Store"), new("rle", "RLE"), new("lz78", "LZ78"), new("lzp", "LZP"), new("ppm", "PPM"), new("alz", "ALZ"),
   ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "UHARC 0.6 archive. Lists all archives; extracts the store, RLE, LZ78, LZP and ALZ modes (with multimedia " +
-    "and executable filters, passwords and SFX stubs). PPM-mode archives list but do not extract.";
+    "UHARC 0.6 archive. Lists and extracts the store, RLE, LZ78, LZP, PPM and ALZ modes (with multimedia " +
+    "and executable filters, passwords and SFX stubs). Archives of versions before 0.6 are refused.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (TryOpen(stream, password, out var reader, out var image) is { } failure)

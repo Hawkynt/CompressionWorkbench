@@ -57,6 +57,11 @@ public class UharcTests {
   [TestCase("runs-mw.uha", "runs", null, true)]
   [TestCase("reset-mw1.uha", "reset", null, true)]
   [TestCase("exe-mw.uha", "exe", null, true)]
+  [TestCase("basic-mx.uha", "basic", null, true)]
+  [TestCase("reset-mx.uha", "reset", null, true)]
+  [TestCase("reset-mx1.uha", "reset", null, true)]
+  [TestCase("exe-mx.uha", "exe", null, true)]
+  [TestCase("mm-mx.uha", "mm", null, true)]
   [Category("HappyPath"), Category("ThemVsUs")]
   public void GivenArchiveUharcWrote_WhenExtracted_ThenEveryFileMatchesItsInput(string archive, string set, string? password, bool wholeSet) {
     var reader = Open(archive, password);
@@ -98,6 +103,7 @@ public class UharcTests {
   [TestCase("basic-mr.uha", "RLE", 0)]
   [TestCase("basic-mw.uha", "LZ78", 0)]
   [TestCase("reset-mw1.uha", "LZ78", 0)]
+  [TestCase("reset-mx1.uha", "PPM", 1024)]
   [TestCase("reset-m2.uha", "ALZ:2", 262144)]
   [Category("HappyPath")]
   public void GivenEachMode_WhenOpened_ThenModeAndDictionaryAreReported(string archive, string mode, int dictionary) {
@@ -118,19 +124,7 @@ public class UharcTests {
     });
   }
 
-  // ── Honest refusals ────────────────────────────────────────────────────
-
-  [TestCase("basic-mx.uha")]
-  [Category("ErrorHandling")]
-  public void GivenUnsupportedMode_WhenExtracted_ThenItIsRefusedButTheDirectoryLists(string archive) {
-    var reader = Open(archive);
-    Assert.Multiple(() => {
-      Assert.That(reader.CanDecodeMethod, Is.False);
-      Assert.That(reader.Entries.Count(e => !e.IsDirectory), Is.EqualTo(6));
-      Assert.That(() => reader.Extract(reader.Entries.Single(e => e.FileName == "text.txt")), Throws.TypeOf<NotSupportedException>());
-      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == "empty.txt")), Is.Empty);
-    });
-  }
+  // ── Passwords ──────────────────────────────────────────────────────────
 
   [Test, Category("ErrorHandling")]
   public void GivenPasswordArchive_WhenOpenedWithoutPassword_ThenAPasswordIsRequested()
@@ -170,6 +164,8 @@ public class UharcTests {
 
   [TestCase("basic-m2.uha")]
   [TestCase("basic-mz.uha")]
+  [TestCase("reset-mx.uha")]
+  [TestCase("exe-mx.uha")]
   [Category("ErrorHandling")]
   public void GivenCorruptedPackedStream_WhenExtracted_ThenNoWrongBytesAreReturned(string archive) {
     var data = Vector(archive);

@@ -102,6 +102,10 @@ public class UharcExternalConformanceTests {
   [TestCase("-mr")]
   [TestCase("-mw")]
   [TestCase("-mw", "-md1")]
+  [TestCase("-mx")]
+  [TestCase("-mx", "-md1")]
+  [TestCase("-mx", "-md64")]
+  [TestCase("-mx", "-mm-")]
   [TestCase("-m2", "-pwsecret")]
   public void GivenInputsUharcPacked_WhenOurReaderExtracts_ThenEveryFileIsByteIdentical(params string[] switches) {
     var uharc = RequireUharc();

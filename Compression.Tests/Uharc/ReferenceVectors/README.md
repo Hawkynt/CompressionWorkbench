@@ -16,7 +16,10 @@ Command, run inside the input set's directory:
 | `basic-m1.uha` / `-m2` / `-m3` | basic | `-m1` / `-m2` / `-m3` | ALZ:1..3 |
 | `basic-mz.uha` | basic | `-mz` | LZP |
 | `basic-m2-pw.uha` | basic | `-m2 -pwsecret` | enciphered directory and stream, password `secret` |
-| `basic-mx.uha` | basic | `-mx` | PPM: lists, refuses to extract |
+| `basic-mx.uha` | basic | `-mx` | PPM, a text stream switching to binary coding after 15 bytes |
+| `reset-mx.uha` / `reset-mx1.uha` | reset | `-mx` / `-mx -md1` | PPM reset points; a 1 KiB window wrapping hundreds of times |
+| `exe-mx.uha` | exe | `-mx` | PPM binary stream and the executable filter's operand byte swap |
+| `mm-mx.uha` | mm | `-mx` | PPM over the multimedia set |
 | `basic-mr.uha` | basic | `-mr` | RLE |
 | `basic-mw.uha` | basic | `-mw` | LZ78 (32768 phrases) |
 | `runs-mr.uha` / `runs-mw.uha` | runs | `-mr` / `-mw` | RLE marker rotation, 16-bit runs; LZ78 run code |

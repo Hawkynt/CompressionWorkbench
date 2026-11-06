@@ -8,10 +8,8 @@ namespace FileFormat.Uharc;
 /// Layout and codecs are described in docs/UHARC-ON-DISK.md.
 /// </summary>
 /// <remarks>
-/// The directory is always readable; file data decodes for the store, RLE, LZ78, LZP and ALZ
-/// methods. PPM streams (<c>-mx</c>) raise
-/// <see cref="NotSupportedException"/> rather than producing unverified bytes; every extracted
-/// file is checked against its stored CRC-32.
+/// The directory is always readable; file data decodes for every 0.6 method (store, RLE, LZ78,
+/// LZP, PPM and ALZ), and every extracted file is checked against its stored CRC-32.
 /// </remarks>
 public sealed class UharcReader {
 
@@ -54,6 +52,7 @@ public sealed class UharcReader {
   public bool CanDecodeMethod => this._header.Method is UharcMethods.Store or UharcMethods.Rle
     or >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last
     or >= UharcMethods.LzpFirst and <= UharcMethods.LzpLast
+    or >= UharcMethods.PpmFirst and <= UharcMethods.PpmLast
     or >= UharcMethods.AlzFirst and <= UharcMethods.AlzLast;
 
   /// <summary>Opens a UHARC 0.6 archive (optionally behind a self-extractor stub).</summary>
@@ -221,7 +220,7 @@ public sealed class UharcReader {
     var data = stream.AsSpan((int)entry.StreamOffset, (int)entry.Size).ToArray();
     if (this._header.Method != UharcMethods.Store) {
       if ((this._header.Filters & UharcHeader.ExecutableFilter) != 0)
-        UharcExecutableFilter.Restore(data);
+        UharcExecutableFilter.Restore(data, swapOperandBytes: this._header.Method is >= UharcMethods.PpmFirst and <= UharcMethods.PpmLast);
       if ((this._header.Filters & UharcHeader.MultimediaFilter) != 0)
         UharcMultimediaFilter.Restore(data);
     }
@@ -262,9 +261,10 @@ public sealed class UharcReader {
         UharcMethods.Rle => UharcRleDecoder.Decode(packed, offset, length, size),
         >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => UharcLz78Decoder.Decode(packed, offset, length, h.Method, size),
         >= UharcMethods.LzpFirst and <= UharcMethods.LzpLast => UharcLzpDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
+        >= UharcMethods.PpmFirst and <= UharcMethods.PpmLast => UharcPpmDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
         _ => UharcAlzDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
       };
-    } catch (IndexOutOfRangeException e) {
+    } catch (Exception e) when (e is IndexOutOfRangeException or ArgumentOutOfRangeException) {
       // Only a damaged stream can steer the models outside their tables.
       throw new InvalidDataException("UHARC: packed stream is corrupt.", e);
     }
