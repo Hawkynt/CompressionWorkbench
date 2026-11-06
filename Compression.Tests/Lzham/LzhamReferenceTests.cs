@@ -10,8 +10,9 @@ namespace Compression.Tests.Lzham;
 /// <summary>
 /// The <c>.lzham</c> format and <c>BB_LZHAM</c> against LZHAM's own lzhamtest. The fixtures are files
 /// lzhamtest wrote at every compression level, several dictionary sizes and table update rates
-/// (see ReferenceVectors/README.md). Where lzhamtest is configured (<c>CWB_LZHAMTEST</c>) it also
-/// decodes what we write. Our parse is not LZHAM's, so our bytes are not lzhamtest's.
+/// (see ReferenceVectors/README.md): we decode them, and with the same parameters we write the same
+/// bytes. Where lzhamtest is configured (<c>CWB_LZHAMTEST</c>) it also decodes what we write, and
+/// writes the bytes we write for a larger input at every level and several dictionary sizes.
 /// </summary>
 [TestFixture]
 public sealed class LzhamReferenceTests {
@@ -56,7 +57,25 @@ public sealed class LzhamReferenceTests {
     return output;
   }
 
+  /// <summary>Little-endian 32-bit counters with small random steps: near-repeats that differ in a few bits.</summary>
+  private static byte[] Binary(int length, int seed) {
+    var output = new byte[length];
+    var x = seed;
+    uint value = 0;
+    for (var i = 0; i + 4 <= length; i += 4) {
+      x = Next(x);
+      value += (uint)((x >> 16) & 7);
+      System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(i), value);
+    }
+    return output;
+  }
+
+  /// <summary>Repeated lines, noise, words and counters back to back: 188 000 bytes.</summary>
+  private static byte[] Mixed(int seed)
+    => [.. Repeats(60000, seed), .. Noise(8000, seed + 1), .. Text(60000, seed + 2), .. Binary(60000, seed + 3)];
+
   private static byte[] Input(string fixture) => fixture switch {
+    _ when fixture.StartsWith("mixed-188k-", StringComparison.Ordinal) => Mixed(7),
     _ when fixture.StartsWith("text-20k-", StringComparison.Ordinal) => Text(20000, 1),
     _ when fixture.StartsWith("repeats-300k-", StringComparison.Ordinal) => Repeats(300000, 3),
     _ when fixture.StartsWith("repeats-60k-", StringComparison.Ordinal) => Repeats(60000, 4),
@@ -94,6 +113,50 @@ public sealed class LzhamReferenceTests {
       Assert.That(decoded, Is.EqualTo(Input(Path.GetFileNameWithoutExtension(file))), "generator and fixture script disagree");
     });
   }
+
+  public static IEnumerable<TestCaseData> FixturesToWrite() {
+    var manifest = System.Text.Encoding.ASCII.GetString(Resource("manifest.tsv"));
+    foreach (var line in manifest.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
+      var fields = line.Split('\t');
+      yield return new TestCaseData(fields[0], fields[3])
+        .SetName($"GivenLzhamtestsParameters_{fields[0]}_WhenWeCompress_ThenTheBytesAreLzhamtests");
+    }
+  }
+
+  /// <summary>Parses lzhamtest's <c>-m# -d# -h# -x</c> into our parameters.</summary>
+  private static (int DictSizeLog2, int TableUpdateRate, LzhamCompressionLevel Level, bool Extreme) Options(string options) {
+    int dict = 28, rate = 8;
+    var level = LzhamCompressionLevel.Uber;
+    var extreme = false;
+    foreach (var option in options.Split(' ', StringSplitOptions.RemoveEmptyEntries)) {
+      var value = option.Length > 2 ? int.Parse(option[2..], CultureInfo.InvariantCulture) : 0;
+      switch (option[1]) {
+        case 'm': level = (LzhamCompressionLevel)value; break;
+        case 'd': dict = value; break;
+        case 'h': rate = value; break;
+        case 'x': extreme = true; break;
+        case 'e': break;
+        default: throw new ArgumentOutOfRangeException(nameof(options), option, "not an lzhamtest compression option");
+      }
+    }
+    return (dict, rate, level, extreme);
+  }
+
+  private static byte[] CompressLikeLzhamtest(byte[] data, string options) {
+    var (dict, rate, level, extreme) = Options(options);
+    return LzhamStream.CompressFile(data, dict, rate, level, extreme);
+  }
+
+  [TestCaseSource(nameof(FixturesToWrite)), Category("HappyPath")]
+  public void WeWriteLzhamtestsBytes(string file, string options) {
+    var ours = CompressLikeLzhamtest(Input(Path.GetFileNameWithoutExtension(file)), options);
+    var theirs = Resource(file);
+    Assert.That(ours, Is.EqualTo(theirs), $"first difference at byte {ours.Zip(theirs).TakeWhile(p => p.First == p.Second).Count()} of {theirs.Length}");
+  }
+
+  [Test, Category("ExceptionalCase")]
+  public void GivenALevelOutsideZeroToFour_WhenCompressing_ThenItIsRefused()
+    => Assert.That(() => LzhamStream.CompressFile("abc"u8, 20, 8, (LzhamCompressionLevel)5), Throws.InstanceOf<ArgumentOutOfRangeException>());
 
   [Test, Category("ExceptionalCase")]
   public void GivenTheWrongTableUpdateRate_WhenDecoded_ThenItIsRefusedNotMisread()
@@ -190,6 +253,28 @@ public sealed class LzhamReferenceTests {
       var theirs = Path.Combine(directory, "theirs.lzham");
       RunLzhamtest([.. options.Split(' '), "-d22", "c", input, theirs]);
       Assert.That(Decompress(File.ReadAllBytes(theirs), 8), Is.EqualTo(data));
+    } finally {
+      Directory.Delete(directory, recursive: true);
+    }
+  }
+
+  [TestCase("-m0 -d15"), TestCase("-m1 -d15"), TestCase("-m2 -d15"), TestCase("-m3 -d15"), TestCase("-m4 -d15"), TestCase("-m4 -x -d15")]
+  [TestCase("-m0 -d20"), TestCase("-m1 -d20"), TestCase("-m2 -d20"), TestCase("-m3 -d20"), TestCase("-m4 -d20"), TestCase("-m4 -x -d20")]
+  [TestCase("-m0 -d26"), TestCase("-m2 -d26"), TestCase("-m4 -d26"), TestCase("-m4 -x -d26")]
+  [TestCase("-m4 -d17 -h1"), TestCase("-m2 -d18 -h20"), TestCase("-m3 -x -d16 -h4")]
+  [Category("ArchiveExternal"), Category("HappyPath")]
+  public void LzhamtestWritesOurBytes(string options) {
+    var directory = Path.Combine(Path.GetTempPath(), "cwb-lzham-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(directory);
+    try {
+      var data = Repeats(400_000, 41).Concat(Noise(20_000, 42)).Concat(Text(300_000, 43)).Concat(Binary(200_000, 44)).Concat(new byte[70_000]).ToArray();
+      var input = Path.Combine(directory, "in");
+      File.WriteAllBytes(input, data);
+      var theirs = Path.Combine(directory, "theirs.lzham");
+      RunLzhamtest(["-t0", .. options.Split(' '), "c", input, theirs]);
+      var expected = File.ReadAllBytes(theirs);
+      var ours = CompressLikeLzhamtest(data, options);
+      Assert.That(ours, Is.EqualTo(expected), $"first difference at byte {ours.Zip(expected).TakeWhile(p => p.First == p.Second).Count()} of {expected.Length}");
     } finally {
       Directory.Delete(directory, recursive: true);
     }

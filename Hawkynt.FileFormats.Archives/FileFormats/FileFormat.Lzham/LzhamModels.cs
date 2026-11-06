@@ -8,6 +8,7 @@ internal static class LzhamTables {
   public const int MinMatchLen = 2;
   public const int MaxMatchLen = 257;
   public const int MaxHugeMatchLen = 65536;
+  public const int MaxLen2MatchDist = 2047;
   public const int MinDictSizeLog2 = 15;
   public const int MaxDictSizeLog2 = 29;
 
