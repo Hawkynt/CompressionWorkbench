@@ -311,7 +311,7 @@ format,Lbr,LBR,Archive,,.lbr,Y,Y,Y,Y
 format,LegacyOfficeCompoundFile,Legacy Microsoft Office compound file,Archive,,.dot;.xlt;.pps;.pot,Y,Y,,
 format,Leveldb,LevelDB SSTable,Archive,,.ldb;.sst,Y,Y,,
 format,Lfd,LucasArts LFD,Archive,,.lfd,Y,Y,Y,
-format,Lfs,4.4BSD LFS (NetBSD),Archive,Y,.lfs,Y,Y,,
+format,Lfs,4.4BSD LFS (NetBSD),Archive,Y,.lfs,Y,Y,Y,Y
 format,Lif,HP LIF (Logical Interchange Format),Archive,Y,.lif,Y,Y,Y,Y
 format,LinuxKernelImage,Linux kernel image (zImage/Image),Archive,,.zimage;.bzimage;.vmlinuz,Y,Y,,
 format,Lit,LIT (Microsoft Reader),Archive,,.lit,Y,Y,,

@@ -43,6 +43,8 @@ public sealed class LfsReader {
   public int FragmentSize { get; }
   /// <summary>Serial number of the checkpoint read.</summary>
   public ulong Serial { get; }
+  /// <summary>The 512-byte superblock of the checkpoint read.</summary>
+  internal byte[] SuperblockBytes { get; }
   /// <summary>Every file and directory below the root, parents first.</summary>
   public IReadOnlyList<LfsEntry> Entries { get; }
 
@@ -50,6 +52,7 @@ public sealed class LfsReader {
     ArgumentNullException.ThrowIfNull(stream);
     this._stream = stream;
     var sb = this.PickSuperblock();
+    this.SuperblockBytes = sb;
     this.BlockSize = (int)U32(sb, 20);
     this.FragmentSize = (int)U32(sb, 24);
     this._fsbtodb = (int)U32(sb, 372);
@@ -84,6 +87,9 @@ public sealed class LfsReader {
       return inode.AsSpan(40, (int)entry.Size).ToArray();
     return this.ReadFile(inode);
   }
+
+  /// <summary>The content of a file through the pointers of <paramref name="inode"/>.</summary>
+  internal byte[] ReadInodeData(byte[] inode) => this.ReadFile(inode);
 
   private byte[] PickSuperblock() {
     byte[]? best = null;

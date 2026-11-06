@@ -419,7 +419,7 @@ HFS+ / HFSX,hfsx;dmg;img;toast,filesystem,R,,,,,fmt/1742,Y,3,https://developer.a
 HPFS,hpfs,filesystem,,,,,,,Y,1,,Hpfs,Y,Y,Y,OK,,
 HTFS (SCO),,filesystem,,,,,,,Y,1,,Htfs,Y,Y,Y,OK,,
 JFS (JFS1 / JFS2),jfs;jfs1;jfs2,filesystem,,,,,,,Y,1,,Jfs;Jfs1,Y,Y,Y,OK,,
-4.4BSD LFS,,filesystem,,,,,,,Y,1,https://github.com/NetBSD/src/blob/trunk/sys/ufs/lfs/lfs.h,Lfs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,newfs_lfs,writer not yet proven with fsck_lfs and a guest mount
+4.4BSD LFS,,filesystem,,,,,,,Y,1,https://github.com/NetBSD/src/blob/trunk/sys/ufs/lfs/lfs.h,Lfs,Y,Y,Y,OK,newfs_lfs,create and append-only edits; fsck_lfs -n clean and kernel mount/write round trips in a NetBSD 11.1 guest
 MFS (Macintosh File System),mfs;dsk;img,filesystem,,,,,,fmt/2068,Y,2,,Mfs,Y,Y,Y,OK,,
 MFS (TiVo Media File System),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Minix file system (V1/V2/V3),minix,filesystem,,,,,,,Y,1,,MinixFs;MinixV1;MinixV2,Y,Y,Y,OK,,
