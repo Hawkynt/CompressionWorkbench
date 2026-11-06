@@ -342,6 +342,28 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.DiskCopy42.DiskCopy42ExternalConformanceTests" \
             --logger "trx;LogFileName=dc42-oracle-tests.trx"
 
+      # Hard gate: uif2iso (GPL, built from its hash-pinned published source) converts two real MagicISO
+      # images from archive.org (hash-pinned) to ISO, and the ISO we extract is byte-identical.
+      - name: UIF oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_UIF: "1"
+        run: |
+          sudo apt-get install -y zlib1g-dev p7zip-full
+          u="$RUNNER_TEMP/uif"; mkdir -p "$u/tool" "$u/img"
+          curl -fsSL -o "$u/uif2iso.zip" https://aluigi.altervista.org/mytoolz/uif2iso.zip
+          curl -fsSL -o "$u/quake.7z" "https://archive.org/download/QuakeShareware.7z/Quake%20Shareware.7z"
+          curl -fsSL -o "$u/doom2.7z" "https://archive.org/download/Img2843/Doom%20II%20German.7z"
+          printf '%s  %s\n' \
+            b78dde3e8bc28559f73e2feb46d41c8f57b511ddbe25d63ada704ef8697528ec "$u/uif2iso.zip" \
+            fb4ca7907be3ff7c26afd5f842c1c7461e10838607e6a2d478c622fa6b0a4e18 "$u/quake.7z" \
+            ef5f1cbec61a7b01afd727e3f4390f54f6e4ee6c8a285a5d9286669219b1e22f "$u/doom2.7z" | sha256sum -c -
+          unzip -q "$u/uif2iso.zip" -d "$u/tool" && make -C "$u/tool/src" >/dev/null
+          7z x -y -o"$u/img" "$u/quake.7z" >/dev/null && 7z x -y -o"$u/img" "$u/doom2.7z" >/dev/null
+          CWB_UIF_DIR="$u/img" CWB_UIF2ISO="$u/tool/src/uif2iso" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Uif.UifExternalConformanceTests" \
+            --logger "trx;LogFileName=uif-oracle-tests.trx"
+
       # Hard gate: isz-tool (GPL-3.0 Python, pinned, used as a black box) verifies both CRCs of
       # what the ISZ writer creates and extracts the same ISO.
       - name: ISZ oracle

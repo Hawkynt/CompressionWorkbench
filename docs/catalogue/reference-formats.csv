@@ -274,7 +274,7 @@ ECM (Error Code Modeler),ecm,disk-image,,,,,R,,,1,,,,,,MISSING,,
 gBurner image,gbi,disk-image,,,,,R,,,1,,,,,,MISSING,,
 ISZ (compressed ISO),isz,disk-image,,,,,R,,Y,2,https://www.ezbsystems.com/isz/iszspec.txt,Isz,Y,Y,Y,PARTIAL,,single-segment unencrypted only; CRCs and extraction verified by isz-tool; spec docs/ISZ-ON-DISK.md
 PowerISO DAA,daa,disk-image,,,,,R,,Y,2,https://www.poweriso.com,Daa,Y,Y,Y,PARTIAL,,"format 0x100 read/write verified both ways against PowerISO for Linux 1.3; 0x110, split, password and GBI refused (no verifiable samples); spec docs/DAA-ON-DISK.md"
-MagicISO UIF,uif,disk-image,,,,,R,,Y,2,,,,,,MISSING,,
+MagicISO UIF,uif,disk-image,,,,,R,,Y,2,https://www.magiciso.com/,Uif,Y,,,PARTIAL,,"version 1/2 ISO images (zlib runs) equal uif2iso on two real MagicISO images; version 3 (LZMA), mixed-mode (type 9) and encrypted images refused for lack of samples; no free writer"
 Compressed ISO (CSO/ZSO),cso;zso,disk-image,,,,,R,,,1,,Cso,Y,Y,Y,OK,,
 HTC NBH ROM image,nbh,firmware,,,,,R,,,1,,,,,,MISSING,,
 CD-ROM/XA image,dat,disk-image,,,,,,fmt/819,,1,,,,,,MISSING,,
