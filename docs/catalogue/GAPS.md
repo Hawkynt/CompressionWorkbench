@@ -13,9 +13,9 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Measure | Value |
 | --- | ---: |
-| Catalogue rows | 985 |
+| Catalogue rows | 984 |
 | … formats listed by at least one source | 528 |
-| … registry ids no source lists (OURS-ONLY) | 457 |
+| … registry ids no source lists (OURS-ONLY) | 456 |
 | Source-listed rows mapped to something here | 386 / 528 (73.1 %) |
 | … of rows listed by ≥ 2 sources | 134 / 138 (97.1 %) |
 | … of rows listed by ≥ 3 sources | 67 / 67 (100.0 %) |
@@ -27,7 +27,7 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | `READ-ONLY-BUT-SOURCES-WRITE` | 22 | we only read it; a source or the format's own tool writes it |
 | `PARTIAL` | 46 | covered, but the reader handles only part of the format (see the table below) |
 | `OK` | 318 | covered with no known gap against what the sources list |
-| `OURS-ONLY` | 457 | in our registry, listed by none of the seven sources |
+| `OURS-ONLY` | 456 | in our registry, listed by none of the seven sources |
 
 ### Per source
 
@@ -210,16 +210,25 @@ claims it.
 | [paq8hp12](http://mattmahoney.net/dc/text.html) (Rhatushnyak, Mahoney, Skibinski) | GPL, so only a clean-room rewrite from a derived specification would do, of some 5,500 lines (the PAQ8 model set tuned for English text plus its WRT word transform) whose mixer arithmetic follows its MMX/SSE2 code; and every stream depends on two data files it ships under the GPL, a 465 KB transform dictionary and a 465 KB model-training text, read at run time, which this LGPL repository cannot carry | `BB_ContextMixingSelectedWeights` |
 | LZTURBO (powturbo) | closed format: the codec is distributed only as binaries and no description of its bitstream has been published, so there is nothing to convert, derive a specification from, or prove against beyond black-box output | removed: it was an LZ4-style byte-aligned LZ77 (4-bit literal and match lengths, 255-continued) with 3-byte offsets in a block header of our own, which `BB_Lz4` already covers with a real format |
 
+## 🗑️ Removed: formats that do not exist
+
+Descriptors this repository once offered for a format no specification, tool or disc describes.
+They are deleted rather than kept under an invented name.
+
+| Name it carried | Why it was removed |
+| --- | --- |
+| MFS-1 ("Acorn Master File System v1", `Mfs1`, `.mfs`/`.mfsd`) | No Acorn documentation, BeebWiki page, emulator or disc-image tool knows a format of that name; the BBC Master's own filing systems are DFS and ADFS. The descriptor was the Acorn DFS catalogue under another name, and oaknut-disc read and validated its images as plain Acorn DFS. It was not the classic Macintosh File System either (MDB signature `0xD2D7`), which is the separate `Mfs` descriptor. DFS images stay covered by `Bbc`. |
+
 ## ➕ Ours only
 
-These 457 registry ids are listed by none of the seven sources:
+These 456 registry ids are listed by none of the seven sources:
 
 | Kind | Count | Typical members |
 | --- | ---: | --- |
 | archive | 185 | game archives (`Big`, `Gob`, `Grp`, `Hog`, `Mpq`, `Vpk`, `Wad`), document containers (`Docx`, `Odt`, `Epub`, `Xps`), scientific/data stores (`Hdf5`, `NetCdf`, `Parquet`, `Fits`), backup images (`Aomei`, `Macrium`, `Veeam`, `Paragon`), exe packers (`AsPack`, `Themida`, `VmProtect`) |
 | media | 128 | audio codecs and containers, tracker modules, image and video demuxers |
 | codec | 98 | building blocks no source names as a method (LZ77 family, entropy coders, context mixers) |
-| filesystem | 28 | retro and niche filesystems (`TrDos`, `Ti99`, `Human68k`, `Pc98`, `Xenix`, `SysV`, `LittleFs`, `DoubleSpace`, `Stacker`, `Vdfs`) |
+| filesystem | 27 | retro and niche filesystems (`TrDos`, `Ti99`, `Human68k`, `Pc98`, `Xenix`, `SysV`, `LittleFs`, `DoubleSpace`, `Stacker`, `Vdfs`) |
 | compression | 18 | stream formats such as `Lzham`, `Lizard`, `Density`, `Yaz0`, `RefPack`, `Rnc`, `BriefLz` |
 
 A few of these are plain ZIP/OLE2 variants that 7-Zip opens as ZIP or Compound, without naming them

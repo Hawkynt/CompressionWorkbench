@@ -427,10 +427,6 @@ public class EndToEndInteropTests {
     // (section_NN_<type>.bin) rather than a file tree, because E01 images a device,
     // not a directory. Arbitrary input filenames cannot survive that.
     ".e01",
-    // Macintosh MFS volume: a name-synthesizing filesystem that folds names into its
-    // short on-disk form ("repeat.txt" -> "REPEAT."). Payload bytes DO round-trip
-    // intact; only the verbatim-name match fails, so this is a naming constraint.
-    ".mfsd",
     // QOI is a raw image codec, not a container: Create requires a "pixels.bin" input
     // holding the raw pixel buffer and rejects arbitrary files outright.
     ".qoi",

@@ -789,7 +789,6 @@ Microsoft Access (Jet Red / ACCDB),mdb;accdb,archive,,,,,,,,0,,Mdb,Y,,,OURS-ONLY
 OctaMED (MMD0 / MMD1),med;mmd0;mmd1,media,,,,,,,,0,,Med,Y,,,OURS-ONLY,,
 MessagePack object graph,msgpack;mpk,archive,,,,,,,,0,,MessagePack,Y,Y,,OURS-ONLY,,
 MEW (Win32 PE),,archive,,,,,,,,0,,Mew,Y,,,OURS-ONLY,,
-MFS-1 (Acorn Master File System v1),mfsd;mfs,filesystem,,,,,,,,0,,Mfs1,Y,Y,Y,OURS-ONLY,,
 Cyan Mohawk,mhk,archive,,,,,,,,0,,Mhk,Y,Y,,OURS-ONLY,,
 MIDI (Standard MIDI File),mid;midi,media,,,,,,,,0,,Midi,Y,Y,,OURS-ONLY,,
 Westwood MIX,mix,archive,,,,,,,,0,,Mix,Y,Y,,OURS-ONLY,,
