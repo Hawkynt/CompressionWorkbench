@@ -7,10 +7,12 @@ namespace FileSystem.Ufs;
 
 /// <summary>
 /// Descriptor for the Berkeley Fast File System: UFS1 and UFS2 in either byte
-/// order are listed and extracted; UFS1 little-endian images are also created
-/// (byte-exact <c>newfs -O1</c> layout) and edited in place. UFS2 and big-endian
-/// volumes are read-only here — every editing entry point refuses them before a
-/// byte is written, rather than rewriting them as UFS1.
+/// order are listed and extracted. Little-endian volumes of both versions are
+/// created (UFS1 at the <c>newfs -O1</c> layout; UFS2 formatted as <c>newfs -O2</c>
+/// lays it out, then filled by the in-place editor) and edited in place: files and
+/// folders are added and removed. Defragmentation, wiping and block moves stay
+/// UFS1-only. Big-endian volumes are read-only — every editing entry point refuses
+/// them before a byte is written.
 ///
 /// References:
 /// <list type="bullet">
@@ -24,10 +26,12 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
                                           IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty,
                                           IFormatOptionsSchema, ILayoutOptimizable {
 
-  /// <summary>UFS creation knob: the volume label written to the superblock
-  /// <c>fs_volname</c> field (the <c>tunefs -L</c> / <c>dumpfs</c> "volume name").
-  /// Block/fragment geometry stays at the byte-exact <c>newfs -O1</c> layout.</summary>
+  /// <summary>UFS creation knobs: the version (UFS1 at the <c>newfs -O1</c> layout, or
+  /// UFS2 at the <c>newfs -O2</c> one) and the volume label written to the superblock's
+  /// <c>fs_volname</c> (the <c>tunefs -L</c> / <c>dumpfs</c> "volume name").</summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor("Version", "Version", FormatOptionKind.Enum, "UFS1", ["UFS1", "UFS2"],
+      "UFS1 (8 KiB blocks, 32-bit pointers) or UFS2 (16 KiB blocks, 64-bit pointers and times)."),
     FilesystemSchemaPresets.VolumeLabel(maxChars: 31),
   ];
 
@@ -47,14 +51,24 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// UFS2, big-endian, or a superblock away from <c>SBLOCK_UFS1</c>. The image is
   /// left byte-identical.
   /// </summary>
-  internal static void RequireEditable(Stream image) {
+  internal static void RequireEditable(Stream image) => RequireEditable(image, allowUfs2: false);
+
+  /// <summary>
+  /// Refuses an edit the in-place paths cannot make: big-endian volumes always; UFS2 and
+  /// superblocks away from <c>SBLOCK_UFS1</c> unless <paramref name="allowUfs2"/> (the
+  /// add/remove editor handles both versions; the block movers are UFS1-only).
+  /// </summary>
+  internal static (int Version, long Offset) RequireEditable(Stream image, bool allowUfs2) {
     ArgumentNullException.ThrowIfNull(image);
     var probe = UfsReader.Probe(image) ?? throw new InvalidDataException("UFS: no UFS1 or UFS2 superblock found.");
     image.Position = 0;
-    if (probe.Version != 1 || probe.BigEndian || probe.Offset != UfsWriter.SuperblockOffset)
-      throw new NotSupportedException(
-        $"UFS: {(probe.Version == 2 ? "UFS2" : "UFS1")} {(probe.BigEndian ? "big-endian" : "little-endian")} volumes " +
-        $"(superblock at {probe.Offset}) are read-only; only little-endian UFS1 is edited.");
+    if (probe.BigEndian)
+      throw new NotSupportedException($"UFS: big-endian UFS{probe.Version} volumes are read-only.");
+    if (probe.Version == 1 && probe.Offset != UfsWriter.SuperblockOffset)
+      throw new NotSupportedException($"UFS: a UFS1 superblock at {probe.Offset} is read-only; only SBLOCK_UFS1 volumes are edited.");
+    if (probe.Version == 2 && !allowUfs2)
+      throw new NotSupportedException("UFS: defragmenting, wiping and moving blocks are UFS1-only; UFS2 volumes take adds and removes only.");
+    return (probe.Version, probe.Offset);
   }
 
   /// <summary>
@@ -238,6 +252,11 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Performs the create operation.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    if (IsUfs2(options)) {
+      CreateUfs2(output, inputs.Where(i => !i.IsDirectory).Select(i => (i.ArchiveName, i.ReadContent())).ToList(),
+        inputs.Where(i => i.IsDirectory).Select(i => i.ArchiveName).ToList(), options);
+      return;
+    }
     var w = new UfsWriter { VolumeLabel = options?.GetOption("VolumeLabel", "") ?? "" };
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
@@ -269,6 +288,10 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(inputs);
 
     var inputList = inputs.ToList();
+    if (IsUfs2(options)) {
+      ((IArchiveCreatable)this).CreateFromStreams(output, inputList, options);
+      return;
+    }
     if (!output.CanSeek) {
       ((IArchiveCreatable)this).CreateFromStreams(output, inputList, options);
       return;
@@ -289,7 +312,15 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// the root dir block, and the file's data blocks are read or written.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    RequireEditable(archive);
+    if (RequireEditable(archive, allowUfs2: true).Version == 2) {
+      // The UFS2 editor pages the volume fragment by fragment, so size does not matter.
+      foreach (var dir in inputs.Where(i => i.IsDirectory)) UfsModifier.AddDirectory(archive, dir.ArchiveName);
+      foreach (var (name, data) in FilesOnly(inputs)) {
+        UfsModifier.RemoveFile(archive, name, wipeData: true);
+        UfsModifier.AddFile(archive, name, data);
+      }
+      return;
+    }
     // The in-place modifier walks the volume in memory, which a volume past two
     // gigabytes does not fit in — and where it can still edit, it has no room
     // to grow a full volume. Above that the edit unpacks and relays it out.
@@ -310,7 +341,10 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// wiped during removal so no forensic trace remains.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    RequireEditable(archive);
+    if (RequireEditable(archive, allowUfs2: true).Version == 2) {
+      foreach (var name in entryNames) UfsModifier.RemoveFile(archive, name, wipeData: true);
+      return;
+    }
     // See Add: past two gigabytes the volume cannot be walked in memory.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
       ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this);
@@ -452,4 +486,26 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return end < 0 ? message : message[..end].TrimEnd('\r');
   }
 
+
+  private static bool IsUfs2(FormatCreateOptions? options)
+    => string.Equals(options?.GetOption("Version", "UFS1") ?? "UFS1", "UFS2", StringComparison.OrdinalIgnoreCase);
+
+  /// <summary>
+  /// Formats a UFS2 volume sized to the inputs and fills it through the in-place
+  /// editor, so a created volume and an edited one follow the same allocation rules.
+  /// </summary>
+  private static void CreateUfs2(Stream output, IReadOnlyList<(string Name, byte[] Data)> files, IReadOnlyList<string> directories, FormatCreateOptions? options) {
+    const int block = Ufs2Formatter.BlockSize;
+    long payload = files.Sum(f => (f.Data.LongLength + block - 1) / block * block + 2L * block);
+    payload += (files.Count + directories.Count + 16) * 2048L;
+    var size = Math.Max(Ufs2Formatter.MinimumBytes, (payload * 5 / 4 + (4L << 20) + (1L << 20) - 1) >> 20 << 20);
+    var target = output.CanSeek && output.CanRead ? output : new MemoryStream();
+    Ufs2Formatter.Format(target, size, options?.GetOption("VolumeLabel", "") ?? "");
+    foreach (var dir in directories) UfsModifier.AddDirectory(target, dir);
+    foreach (var (name, data) in files) UfsModifier.AddFile(target, name, data);
+    if (!ReferenceEquals(target, output)) {
+      target.Position = 0;
+      target.CopyTo(output);
+    }
+  }
 }

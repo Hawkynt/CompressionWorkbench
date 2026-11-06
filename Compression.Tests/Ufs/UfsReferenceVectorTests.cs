@@ -107,10 +107,9 @@ public sealed class UfsReferenceVectorTests {
     Assert.That(fmt.ToString(), Is.EqualTo("Ufs"));
   }
 
-  [TestCase("makefs-ufs2-le.img.gz")]
   [TestCase("makefs-ufs1-be.img.gz")]
-  [TestCase("newfs-ufs2.img.gz")]
-  public void GivenAUfs2OrBigEndianVolume_WhenEdited_ThenEveryEditIsRefusedAndTheImageIsUntouched(string vector) {
+  [TestCase("makefs-ufs2-be.img.gz")]
+  public void GivenABigEndianVolume_WhenEdited_ThenEveryEditIsRefusedAndTheImageIsUntouched(string vector) {
     using var image = Image(vector);
     var before = image.ToArray();
     var d = new UfsFormatDescriptor();
@@ -118,6 +117,18 @@ public sealed class UfsReferenceVectorTests {
 
     Assert.Throws<NotSupportedException>(() => d.Add(image, [input]));
     Assert.Throws<NotSupportedException>(() => d.Remove(image, ["hello.txt"]));
+    Assert.Throws<NotSupportedException>(() => d.Defragment(image));
+    Assert.Throws<NotSupportedException>(() => d.WipeUnusedSpace(image));
+    Assert.Throws<NotSupportedException>(() => d.MoveExtent(image, 0, 4096, 4096));
+    Assert.That(image.ToArray(), Is.EqualTo(before));
+  }
+
+  [TestCase("makefs-ufs2-le.img.gz")]
+  [TestCase("newfs-ufs2.img.gz")]
+  public void GivenALittleEndianUfs2Volume_WhenDefragmentedWipedOrMoved_ThenItIsRefusedAndTheImageIsUntouched(string vector) {
+    using var image = Image(vector);
+    var before = image.ToArray();
+    var d = new UfsFormatDescriptor();
     Assert.Throws<NotSupportedException>(() => d.Defragment(image));
     Assert.Throws<NotSupportedException>(() => d.WipeUnusedSpace(image));
     Assert.Throws<NotSupportedException>(() => d.MoveExtent(image, 0, 4096, 4096));
