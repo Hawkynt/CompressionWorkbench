@@ -1,5 +1,4 @@
 #pragma warning disable CS1591
-using System.Buffers.Binary;
 using System.Text;
 
 namespace FileSystem.Ufs;
@@ -39,8 +38,13 @@ public static class Ufs2Formatter {
   private static long RoundUp(long a, long b) => (a + b - 1) / b * b;
   private static long HowMany(long a, long b) => (a + b - 1) / b;
 
-  /// <summary>Formats <paramref name="output"/> as an empty UFS2 volume of <paramref name="sizeBytes"/> bytes.</summary>
-  public static void Format(Stream output, long sizeBytes, string volumeLabel = "", DateTimeOffset? now = null) {
+  /// <summary>
+  /// Formats <paramref name="output"/> as an empty UFS2 volume of <paramref name="sizeBytes"/> bytes,
+  /// every multi-byte field little-endian or, with <paramref name="bigEndian"/>, big-endian
+  /// (as NetBSD's <c>newfs -B be</c> writes it).
+  /// </summary>
+  public static void Format(Stream output, long sizeBytes, string volumeLabel = "", DateTimeOffset? now = null, bool bigEndian = false) {
+    var e = new UfsByteOrder(bigEndian);
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanSeek || !output.CanWrite) throw new ArgumentException("UFS2: formatting needs a seekable, writable stream.", nameof(output));
     if (sizeBytes < MinimumBytes) throw new ArgumentOutOfRangeException(nameof(sizeBytes), $"UFS2: volumes start at {MinimumBytes} bytes.");
@@ -89,18 +93,18 @@ public static class Ufs2Formatter {
       }
       var hdr = new byte[cgsize];
       var h = hdr.AsSpan();
-      BinaryPrimitives.WriteInt32LittleEndian(h[4..], 0x090255);         // cg_magic
-      BinaryPrimitives.WriteInt32LittleEndian(h[12..], cg);              // cg_cgx
-      BinaryPrimitives.WriteInt32LittleEndian(h[20..], ndblk);           // cg_ndblk
-      BinaryPrimitives.WriteInt32LittleEndian(h[92..], iusedoff);
-      BinaryPrimitives.WriteInt32LittleEndian(h[96..], freeoff);
-      BinaryPrimitives.WriteInt32LittleEndian(h[100..], nextfreeoff);
-      BinaryPrimitives.WriteInt32LittleEndian(h[104..], clustersumoff);
-      BinaryPrimitives.WriteInt32LittleEndian(h[108..], clusteroff);
-      BinaryPrimitives.WriteInt32LittleEndian(h[112..], ndblk / Frag);   // cg_nclusterblks
-      BinaryPrimitives.WriteInt32LittleEndian(h[116..], ipg);            // cg_niblk
-      BinaryPrimitives.WriteInt32LittleEndian(h[120..], initedib);       // cg_initediblk
-      BinaryPrimitives.WriteInt64LittleEndian(h[136..], time);           // cg_time
+      e.I32(h[4..], 0x090255);         // cg_magic
+      e.I32(h[12..], cg);              // cg_cgx
+      e.I32(h[20..], ndblk);           // cg_ndblk
+      e.I32(h[92..], iusedoff);
+      e.I32(h[96..], freeoff);
+      e.I32(h[100..], nextfreeoff);
+      e.I32(h[104..], clustersumoff);
+      e.I32(h[108..], clusteroff);
+      e.I32(h[112..], ndblk / Frag);   // cg_nclusterblks
+      e.I32(h[116..], ipg);            // cg_niblk
+      e.I32(h[120..], initedib);       // cg_initediblk
+      e.I64(h[136..], time);           // cg_time
 
       var usedInodes = cg == 0 ? 4 : 0;                                  // 0, 1 reserved; 2 root; 3 .snap
       for (var i = 0; i < usedInodes; ++i) hdr[iusedoff + i / 8] |= (byte)(1 << (i % 8));
@@ -128,38 +132,38 @@ public static class Ufs2Formatter {
       }
       if (run > 0) sums[Math.Min(run, ContigSumSize)]++;
       for (var f = ndblk - ndblk % Frag; f < ndblk; ++f) if (!used[f]) ++nffree;
-      for (var i = 1; i < Frag; ++i) BinaryPrimitives.WriteInt32LittleEndian(h[(52 + i * 4)..], frsum[i]);
-      for (var i = 1; i <= ContigSumSize; ++i) BinaryPrimitives.WriteInt32LittleEndian(h[(clustersumoff + i * 4)..], sums[i]);
+      for (var i = 1; i < Frag; ++i) e.I32(h[(52 + i * 4)..], frsum[i]);
+      for (var i = 1; i <= ContigSumSize; ++i) e.I32(h[(clustersumoff + i * 4)..], sums[i]);
       cs[cg] = (cg == 0 ? 2 : 0, nbfree, ipg - usedInodes, nffree);
-      BinaryPrimitives.WriteInt32LittleEndian(h[24..], cs[cg].Ndir);
-      BinaryPrimitives.WriteInt32LittleEndian(h[28..], cs[cg].Nbfree);
-      BinaryPrimitives.WriteInt32LittleEndian(h[32..], cs[cg].Nifree);
-      BinaryPrimitives.WriteInt32LittleEndian(h[36..], cs[cg].Nffree);
+      e.I32(h[24..], cs[cg].Ndir);
+      e.I32(h[28..], cs[cg].Nbfree);
+      e.I32(h[32..], cs[cg].Nifree);
+      e.I32(h[36..], cs[cg].Nffree);
       Write(output, (cgbase + CblkNo) * FragSize, hdr);
     }
 
     // ── fs_cs summary ─────────────────────────────────────────────────────
     var csBytes = new byte[cssize];
     for (var cg = 0; cg < ncg; ++cg) {
-      BinaryPrimitives.WriteInt32LittleEndian(csBytes.AsSpan(cg * 16), cs[cg].Ndir);
-      BinaryPrimitives.WriteInt32LittleEndian(csBytes.AsSpan(cg * 16 + 4), cs[cg].Nbfree);
-      BinaryPrimitives.WriteInt32LittleEndian(csBytes.AsSpan(cg * 16 + 8), cs[cg].Nifree);
-      BinaryPrimitives.WriteInt32LittleEndian(csBytes.AsSpan(cg * 16 + 12), cs[cg].Nffree);
+      e.I32(csBytes.AsSpan(cg * 16), cs[cg].Ndir);
+      e.I32(csBytes.AsSpan(cg * 16 + 4), cs[cg].Nbfree);
+      e.I32(csBytes.AsSpan(cg * 16 + 8), cs[cg].Nifree);
+      e.I32(csBytes.AsSpan(cg * 16 + 12), cs[cg].Nffree);
     }
     Write(output, csaddr * FragSize, csBytes);
 
     // ── root and .snap ────────────────────────────────────────────────────
     var inodeTable = (long)IblkNo * FragSize;
-    Write(output, inodeTable + 2 * InodeSize, DirectoryInode(0x41ED, 3, 0, rootFrag, time));   // 040755
-    Write(output, inodeTable + 3 * InodeSize, DirectoryInode(0x41FD, 2, 5, snapFrag, time));   // 040775, gid operator
-    Write(output, rootFrag * FragSize, DirectoryChunk((2, "."), (2, ".."), (3, ".snap")));
-    Write(output, snapFrag * FragSize, DirectoryChunk((3, "."), (2, "..")));
+    Write(output, inodeTable + 2 * InodeSize, DirectoryInode(e, 0x41ED, 3, 0, rootFrag, time));   // 040755
+    Write(output, inodeTable + 3 * InodeSize, DirectoryInode(e, 0x41FD, 2, 5, snapFrag, time));   // 040775, gid operator
+    Write(output, rootFrag * FragSize, DirectoryChunk(e, (2, "."), (2, ".."), (3, ".snap")));
+    Write(output, snapFrag * FragSize, DirectoryChunk(e, (3, "."), (2, "..")));
 
     // ── superblock and its backups ────────────────────────────────────────
     var sb = new byte[1376];
     var s = sb.AsSpan();
-    void I32(int o, int v) => BinaryPrimitives.WriteInt32LittleEndian(sb.AsSpan(o), v);
-    void I64(int o, long v) => BinaryPrimitives.WriteInt64LittleEndian(sb.AsSpan(o), v);
+    void I32(int o, int v) => e.I32(sb.AsSpan(o), v);
+    void I64(int o, long v) => e.I64(sb.AsSpan(o), v);
     I32(8, SblkNo); I32(12, CblkNo); I32(16, IblkNo); I32(20, dblkno);
     I32(44, ncg); I32(48, BlockSize); I32(52, FragSize); I32(56, Frag);
     I32(60, 8);                                    // fs_minfree
@@ -203,26 +207,26 @@ public static class Ufs2Formatter {
     output.Write(data);
   }
 
-  private static byte[] DirectoryInode(ushort mode, short links, uint gid, long frag, long time) {
+  private static byte[] DirectoryInode(UfsByteOrder e, ushort mode, short links, uint gid, long frag, long time) {
     var inode = new byte[InodeSize];
-    BinaryPrimitives.WriteUInt16LittleEndian(inode, mode);
-    BinaryPrimitives.WriteInt16LittleEndian(inode.AsSpan(2), links);
-    BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(8), gid);
-    BinaryPrimitives.WriteInt64LittleEndian(inode.AsSpan(16), 512);              // di_size: one DIRBLKSIZ chunk
-    BinaryPrimitives.WriteInt64LittleEndian(inode.AsSpan(24), FragSize / 512);   // di_blocks
-    for (var o = 32; o <= 56; o += 8) BinaryPrimitives.WriteInt64LittleEndian(inode.AsSpan(o), time); // a/m/c/birth time
-    BinaryPrimitives.WriteInt64LittleEndian(inode.AsSpan(112), frag);            // di_db[0]
+    e.U16(inode, mode);
+    e.I16(inode.AsSpan(2), links);
+    e.U32(inode.AsSpan(8), gid);
+    e.I64(inode.AsSpan(16), 512);              // di_size: one DIRBLKSIZ chunk
+    e.I64(inode.AsSpan(24), FragSize / 512);   // di_blocks
+    for (var o = 32; o <= 56; o += 8) e.I64(inode.AsSpan(o), time); // a/m/c/birth time
+    e.I64(inode.AsSpan(112), frag);            // di_db[0]
     return inode;
   }
 
-  private static byte[] DirectoryChunk(params (int Ino, string Name)[] entries) {
+  private static byte[] DirectoryChunk(UfsByteOrder e, params (int Ino, string Name)[] entries) {
     var chunk = new byte[512];
     var pos = 0;
     for (var i = 0; i < entries.Length; ++i) {
       var (ino, name) = entries[i];
       var reclen = i == entries.Length - 1 ? 512 - pos : (8 + name.Length + 1 + 3) & ~3;
-      BinaryPrimitives.WriteUInt32LittleEndian(chunk.AsSpan(pos), (uint)ino);
-      BinaryPrimitives.WriteUInt16LittleEndian(chunk.AsSpan(pos + 4), (ushort)reclen);
+      e.U32(chunk.AsSpan(pos), (uint)ino);
+      e.U16(chunk.AsSpan(pos + 4), (ushort)reclen);
       chunk[pos + 6] = 4;                                                         // DT_DIR
       chunk[pos + 7] = (byte)name.Length;
       Encoding.ASCII.GetBytes(name, chunk.AsSpan(pos + 8));

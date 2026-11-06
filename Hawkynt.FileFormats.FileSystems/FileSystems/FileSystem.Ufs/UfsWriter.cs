@@ -1,5 +1,4 @@
 #pragma warning disable CS1591
-using System.Buffers.Binary;
 using Compression.Core.DiskImage;
 using System.Text;
 
@@ -58,6 +57,11 @@ public sealed class UfsWriter {
   /// field (struct fs offset 680, <c>MAXVOLLEN</c>=32, NUL-terminated ASCII) — the
   /// same field <c>tunefs -L</c> sets and <c>dumpfs</c> reports as "volume name".</summary>
   public string VolumeLabel { get; set; } = "";
+
+  /// <summary>Writes every multi-byte field big-endian, as NetBSD's <c>newfs -B be</c> does; little-endian by default.</summary>
+  public bool BigEndian { get; set; }
+
+  private UfsByteOrder _e => new(BigEndian);
 
   /// <summary>
   /// Streaming-allocations side-effect: when non-null, every streaming file's
@@ -483,7 +487,7 @@ public sealed class UfsWriter {
   // Builds a directory's on-disk byte image: entries packed into DIRBLKSIZ
   // (512-byte) chunks; no entry crosses a chunk boundary; the last entry in each
   // chunk has its reclen extended to the chunk end. di_size = the image length.
-  private static byte[] BuildDirectoryImage(TreeNode dir, int parentIno) {
+  private byte[] BuildDirectoryImage(TreeNode dir, int parentIno) {
     const int DirBlkSiz = 512;
     var chunks = new List<byte[]>();
     var chunk = new byte[DirBlkSiz];
@@ -492,7 +496,7 @@ public sealed class UfsWriter {
     foreach (var e in EnumerateEntries(dir, parentIno)) {
       var reclen = DirEntryReclen(e.Name);
       if (pos + reclen > DirBlkSiz) {
-        BinaryPrimitives.WriteUInt16LittleEndian(chunk.AsSpan(lastStart + 4), (ushort)(DirBlkSiz - lastStart));
+        _e.U16(chunk.AsSpan(lastStart + 4), (ushort)(DirBlkSiz - lastStart));
         chunks.Add(chunk);
         chunk = new byte[DirBlkSiz];
         pos = 0;
@@ -501,7 +505,7 @@ public sealed class UfsWriter {
       lastStart = pos;
       WriteDirEntry(chunk, ref pos, e.Inode, e.Name, e.Type);
     }
-    BinaryPrimitives.WriteUInt16LittleEndian(chunk.AsSpan(lastStart + 4), (ushort)(DirBlkSiz - lastStart));
+    _e.U16(chunk.AsSpan(lastStart + 4), (ushort)(DirBlkSiz - lastStart));
     chunks.Add(chunk);
 
     var image = new byte[chunks.Count * DirBlkSiz];
@@ -568,7 +572,7 @@ public sealed class UfsWriter {
       var child = depth <= 1
         ? blockFrags[state.Index++]
         : this.BuildPointerBlock(disk, blockFrags, depth - 1, state);
-      BinaryPrimitives.WriteInt32LittleEndian(disk.At(table + slot * 4, 4), child);
+      _e.I32(disk.At(table + slot * 4, 4), child);
     }
     return frag;
   }
@@ -598,54 +602,54 @@ public sealed class UfsWriter {
     var freeFrags = TotalFreeFrags(geom, cg0DataEndFrag);
     var freeInodes = geom.Ipg * geom.Ncg - liveInodes;
 
-    BinaryPrimitives.WriteInt32LittleEndian(sb[8..], SblkNo);              // fs_sblkno
-    BinaryPrimitives.WriteInt32LittleEndian(sb[12..], CblkNo);             // fs_cblkno
-    BinaryPrimitives.WriteInt32LittleEndian(sb[16..], IblkNo);             // fs_iblkno
-    BinaryPrimitives.WriteInt32LittleEndian(sb[20..], geom.Dblkno);        // fs_dblkno
-    BinaryPrimitives.WriteInt32LittleEndian(sb[24..], 0);                  // fs_old_cgoffset
-    BinaryPrimitives.WriteInt32LittleEndian(sb[28..], -1);                 // fs_old_cgmask
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[32..], now);               // fs_old_time
-    BinaryPrimitives.WriteInt32LittleEndian(sb[36..], totalFrags);         // fs_old_size (frags)
-    BinaryPrimitives.WriteInt32LittleEndian(sb[40..], dsize);              // fs_old_dsize (frags)
-    BinaryPrimitives.WriteInt32LittleEndian(sb[44..], geom.Ncg);           // fs_ncg
-    BinaryPrimitives.WriteInt32LittleEndian(sb[48..], BlockSize);          // fs_bsize
-    BinaryPrimitives.WriteInt32LittleEndian(sb[52..], FragSize);           // fs_fsize
-    BinaryPrimitives.WriteInt32LittleEndian(sb[56..], Frag);               // fs_frag
-    BinaryPrimitives.WriteInt32LittleEndian(sb[60..], 8);                  // fs_minfree
-    BinaryPrimitives.WriteInt32LittleEndian(sb[64..], 0);                  // fs_old_rotdelay
-    BinaryPrimitives.WriteInt32LittleEndian(sb[68..], 60);                 // fs_old_rps
-    BinaryPrimitives.WriteInt32LittleEndian(sb[72..], ~(BlockSize - 1));   // fs_bmask
-    BinaryPrimitives.WriteInt32LittleEndian(sb[76..], ~(FragSize - 1));    // fs_fmask
-    BinaryPrimitives.WriteInt32LittleEndian(sb[80..], 13);                 // fs_bshift
-    BinaryPrimitives.WriteInt32LittleEndian(sb[84..], 10);                 // fs_fshift
-    BinaryPrimitives.WriteInt32LittleEndian(sb[88..], MaxContig);          // fs_maxcontig
-    BinaryPrimitives.WriteInt32LittleEndian(sb[92..], maxbpg);             // fs_maxbpg
-    BinaryPrimitives.WriteInt32LittleEndian(sb[96..], 3);                  // fs_fragshift
-    BinaryPrimitives.WriteInt32LittleEndian(sb[100..], 1);                 // fs_fsbtodb
-    BinaryPrimitives.WriteInt32LittleEndian(sb[104..], SbWriteSize);       // fs_sbsize
-    BinaryPrimitives.WriteInt32LittleEndian(sb[116..], BlockSize / 4);     // fs_nindir
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[120..], InodesPerBlock);   // fs_inopb
-    BinaryPrimitives.WriteInt32LittleEndian(sb[124..], 2);                 // fs_old_nspf
-    BinaryPrimitives.WriteInt32LittleEndian(sb[128..], 0);                 // fs_optim (FS_OPTTIME)
-    BinaryPrimitives.WriteInt32LittleEndian(sb[132..], spc);               // fs_old_cpc-area → spc value newfs stores
-    BinaryPrimitives.WriteInt32LittleEndian(sb[136..], 1);                 // (newfs: 1)
+    _e.I32(sb[8..], SblkNo);              // fs_sblkno
+    _e.I32(sb[12..], CblkNo);             // fs_cblkno
+    _e.I32(sb[16..], IblkNo);             // fs_iblkno
+    _e.I32(sb[20..], geom.Dblkno);        // fs_dblkno
+    _e.I32(sb[24..], 0);                  // fs_old_cgoffset
+    _e.I32(sb[28..], -1);                 // fs_old_cgmask
+    _e.U32(sb[32..], now);               // fs_old_time
+    _e.I32(sb[36..], totalFrags);         // fs_old_size (frags)
+    _e.I32(sb[40..], dsize);              // fs_old_dsize (frags)
+    _e.I32(sb[44..], geom.Ncg);           // fs_ncg
+    _e.I32(sb[48..], BlockSize);          // fs_bsize
+    _e.I32(sb[52..], FragSize);           // fs_fsize
+    _e.I32(sb[56..], Frag);               // fs_frag
+    _e.I32(sb[60..], 8);                  // fs_minfree
+    _e.I32(sb[64..], 0);                  // fs_old_rotdelay
+    _e.I32(sb[68..], 60);                 // fs_old_rps
+    _e.I32(sb[72..], ~(BlockSize - 1));   // fs_bmask
+    _e.I32(sb[76..], ~(FragSize - 1));    // fs_fmask
+    _e.I32(sb[80..], 13);                 // fs_bshift
+    _e.I32(sb[84..], 10);                 // fs_fshift
+    _e.I32(sb[88..], MaxContig);          // fs_maxcontig
+    _e.I32(sb[92..], maxbpg);             // fs_maxbpg
+    _e.I32(sb[96..], 3);                  // fs_fragshift
+    _e.I32(sb[100..], 1);                 // fs_fsbtodb
+    _e.I32(sb[104..], SbWriteSize);       // fs_sbsize
+    _e.I32(sb[116..], BlockSize / 4);     // fs_nindir
+    _e.U32(sb[120..], InodesPerBlock);   // fs_inopb
+    _e.I32(sb[124..], 2);                 // fs_old_nspf
+    _e.I32(sb[128..], 0);                 // fs_optim (FS_OPTTIME)
+    _e.I32(sb[132..], spc);               // fs_old_cpc-area → spc value newfs stores
+    _e.I32(sb[136..], 1);                 // (newfs: 1)
     // fs_id[2] at 144 (filesystem id, time-derived). Keep deterministic-ish.
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[144..], now);              // fs_id[0]
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[148..], (uint)_volumeUuid[0] | ((uint)_volumeUuid[1] << 8) | ((uint)_volumeUuid[2] << 16) | ((uint)_volumeUuid[3] << 24)); // fs_id[1]
-    BinaryPrimitives.WriteInt32LittleEndian(sb[152..], geom.CsAddr);       // fs_old_csaddr
-    BinaryPrimitives.WriteInt32LittleEndian(sb[156..], geom.CsSizeBytes);  // fs_cssize
-    BinaryPrimitives.WriteInt32LittleEndian(sb[160..], geom.CgSizeBytes);  // fs_cgsize
-    BinaryPrimitives.WriteInt32LittleEndian(sb[168..], spc);               // fs_old_nsect
-    BinaryPrimitives.WriteInt32LittleEndian(sb[172..], spc);               // fs_old_spc
-    BinaryPrimitives.WriteInt32LittleEndian(sb[176..], geom.Ncg);          // fs_old_ncyl
-    BinaryPrimitives.WriteInt32LittleEndian(sb[180..], 1);                 // fs_old_cpg
-    BinaryPrimitives.WriteInt32LittleEndian(sb[184..], geom.Ipg);          // fs_ipg
-    BinaryPrimitives.WriteInt32LittleEndian(sb[188..], geom.Fpg);          // fs_fpg
+    _e.U32(sb[144..], now);              // fs_id[0]
+    _e.U32(sb[148..], (uint)_volumeUuid[0] | ((uint)_volumeUuid[1] << 8) | ((uint)_volumeUuid[2] << 16) | ((uint)_volumeUuid[3] << 24)); // fs_id[1]
+    _e.I32(sb[152..], geom.CsAddr);       // fs_old_csaddr
+    _e.I32(sb[156..], geom.CsSizeBytes);  // fs_cssize
+    _e.I32(sb[160..], geom.CgSizeBytes);  // fs_cgsize
+    _e.I32(sb[168..], spc);               // fs_old_nsect
+    _e.I32(sb[172..], spc);               // fs_old_spc
+    _e.I32(sb[176..], geom.Ncg);          // fs_old_ncyl
+    _e.I32(sb[180..], 1);                 // fs_old_cpg
+    _e.I32(sb[184..], geom.Ipg);          // fs_ipg
+    _e.I32(sb[188..], geom.Fpg);          // fs_fpg
     // fs_old_cstotal at 192 (csum: ndir, nbfree, nifree, nffree)
-    BinaryPrimitives.WriteInt32LittleEndian(sb[192..], dirCount);
-    BinaryPrimitives.WriteInt32LittleEndian(sb[196..], freeBlocks);
-    BinaryPrimitives.WriteInt32LittleEndian(sb[200..], freeInodes);
-    BinaryPrimitives.WriteInt32LittleEndian(sb[204..], freeFrags);
+    _e.I32(sb[192..], dirCount);
+    _e.I32(sb[196..], freeBlocks);
+    _e.I32(sb[200..], freeInodes);
+    _e.I32(sb[204..], freeFrags);
     sb[208] = 0;                                                           // fs_fmod
     sb[209] = 1;                                                           // fs_clean
     sb[210] = 0;                                                           // fs_ronly
@@ -658,33 +662,33 @@ public sealed class UfsWriter {
       label.AsSpan(0, n).CopyTo(sb[680..]);
       sb[680 + n] = 0;
     }
-    BinaryPrimitives.WriteInt32LittleEndian(sb[860..], BlockSize);         // fs_maxbsize
-    BinaryPrimitives.WriteInt64LittleEndian(sb[872..], (long)totalFrags);  // fs_unrefs-area placeholder
-    BinaryPrimitives.WriteInt32LittleEndian(sb[880..], 160);               // fs_metaspace
+    _e.I32(sb[860..], BlockSize);         // fs_maxbsize
+    _e.I64(sb[872..], (long)totalFrags);  // fs_unrefs-area placeholder
+    _e.I32(sb[880..], 160);               // fs_metaspace
     _volumeUuid.CopyTo(sb[896..]);                                         // UUID in spare area
-    BinaryPrimitives.WriteInt64LittleEndian(sb[992..], SuperblockOffset);  // newfs: 8192
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1000..], SuperblockOffset); // newfs: 8192
+    _e.I64(sb[992..], SuperblockOffset);  // newfs: 8192
+    _e.I64(sb[1000..], SuperblockOffset); // newfs: 8192
     // fs_cstotal (csum_total, 8 int64s) at 1008
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1008..], dirCount);
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1016..], freeBlocks);
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1024..], freeInodes);
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1032..], freeFrags);
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1072..], now);              // fs_time
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1080..], totalFrags);       // fs_size (frags)
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1088..], dsize);            // fs_dsize (frags)
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1096..], geom.CsAddr);      // fs_csaddr
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[1196..], 16384);           // fs_avgfilesize
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[1200..], 64);              // fs_avgfpdir
-    BinaryPrimitives.WriteInt32LittleEndian(sb[1316..], 16);               // fs_save_cgsize (newfs: 16)
-    BinaryPrimitives.WriteInt32LittleEndian(sb[1320..], 60);               // fs_maxsymlinklen
-    BinaryPrimitives.WriteInt32LittleEndian(sb[1324..], 2);                // fs_old_inodefmt (FS_44INODEFMT)
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1328..], 70403120791551L);  // fs_maxfilesize
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1336..], BlockSize - 1);    // fs_qbmask = ~fs_bmask
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1344..], FragSize - 1);     // fs_qfmask = ~fs_fmask
-    BinaryPrimitives.WriteInt32LittleEndian(sb[1356..], 1);                // fs_old_postblformat (FS_DYNAMICPOSTBLFMT)
-    BinaryPrimitives.WriteInt32LittleEndian(sb[1360..], 1);                // fs_old_nrpos
+    _e.I64(sb[1008..], dirCount);
+    _e.I64(sb[1016..], freeBlocks);
+    _e.I64(sb[1024..], freeInodes);
+    _e.I64(sb[1032..], freeFrags);
+    _e.I64(sb[1072..], now);              // fs_time
+    _e.I64(sb[1080..], totalFrags);       // fs_size (frags)
+    _e.I64(sb[1088..], dsize);            // fs_dsize (frags)
+    _e.I64(sb[1096..], geom.CsAddr);      // fs_csaddr
+    _e.U32(sb[1196..], 16384);           // fs_avgfilesize
+    _e.U32(sb[1200..], 64);              // fs_avgfpdir
+    _e.I32(sb[1316..], 16);               // fs_save_cgsize (newfs: 16)
+    _e.I32(sb[1320..], 60);               // fs_maxsymlinklen
+    _e.I32(sb[1324..], 2);                // fs_old_inodefmt (FS_44INODEFMT)
+    _e.I64(sb[1328..], 70403120791551L);  // fs_maxfilesize
+    _e.I64(sb[1336..], BlockSize - 1);    // fs_qbmask = ~fs_bmask
+    _e.I64(sb[1344..], FragSize - 1);     // fs_qfmask = ~fs_fmask
+    _e.I32(sb[1356..], 1);                // fs_old_postblformat (FS_DYNAMICPOSTBLFMT)
+    _e.I32(sb[1360..], 1);                // fs_old_nrpos
     // fs_magic — last int32 of struct fs at +1372.
-    BinaryPrimitives.WriteInt32LittleEndian(sb[FsMagicOffset..], Ufs1Magic);
+    _e.I32(sb[FsMagicOffset..], Ufs1Magic);
 
     disk.Write(SuperblockOffset, sbBuffer);
   }
@@ -868,10 +872,10 @@ public sealed class UfsWriter {
       var c = ComputeCgCounts(geom, cg, dirCount, liveInodes, cg0DataEndFrag);
       // struct csum on-disk order: cs_ndir, cs_nbfree, cs_nifree, cs_nffree.
       var rec = csOffset + cg * 16;
-      BinaryPrimitives.WriteInt32LittleEndian(disk.At(rec + 0, 4), c.Ndir);
-      BinaryPrimitives.WriteInt32LittleEndian(disk.At(rec + 4, 4), c.Nbfree);
-      BinaryPrimitives.WriteInt32LittleEndian(disk.At(rec + 8, 4), c.Nifree);
-      BinaryPrimitives.WriteInt32LittleEndian(disk.At(rec + 12, 4), c.Nffree);
+      _e.I32(disk.At(rec + 0, 4), c.Ndir);
+      _e.I32(disk.At(rec + 4, 4), c.Nbfree);
+      _e.I32(disk.At(rec + 8, 4), c.Nifree);
+      _e.I32(disk.At(rec + 12, 4), c.Nffree);
     }
 
     for (var cg = 0; cg < geom.Ncg; cg++) {
@@ -895,19 +899,19 @@ public sealed class UfsWriter {
     var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     var usedInodes = cg == 0 ? liveInodes : 0;
 
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[4..], CgMagic);            // cg_magic
-    BinaryPrimitives.WriteUInt32LittleEndian(cg0[8..], now);               // cg_old_time
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[12..], cg);               // cg_cgx
-    BinaryPrimitives.WriteInt16LittleEndian(cg0[16..], 1);                 // cg_old_ncyl
-    BinaryPrimitives.WriteInt16LittleEndian(cg0[18..], (short)geom.Ipg);   // cg_old_niblk
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[20..], ndblk);             // cg_ndblk
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[24..], c.Ndir);            // cg_cs.cs_ndir
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[28..], c.Nbfree);          // cg_cs.cs_nbfree
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[32..], c.Nifree);          // cg_cs.cs_nifree
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[36..], c.Nffree);          // cg_cs.cs_nffree
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[40..], 0);                 // cg_rotor
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[44..], 0);                 // cg_frotor
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[48..], 0);                 // cg_irotor
+    _e.I32(cg0[4..], CgMagic);            // cg_magic
+    _e.U32(cg0[8..], now);               // cg_old_time
+    _e.I32(cg0[12..], cg);               // cg_cgx
+    _e.I16(cg0[16..], 1);                 // cg_old_ncyl
+    _e.I16(cg0[18..], (short)geom.Ipg);   // cg_old_niblk
+    _e.I32(cg0[20..], ndblk);             // cg_ndblk
+    _e.I32(cg0[24..], c.Ndir);            // cg_cs.cs_ndir
+    _e.I32(cg0[28..], c.Nbfree);          // cg_cs.cs_nbfree
+    _e.I32(cg0[32..], c.Nifree);          // cg_cs.cs_nifree
+    _e.I32(cg0[36..], c.Nffree);          // cg_cs.cs_nffree
+    _e.I32(cg0[40..], 0);                 // cg_rotor
+    _e.I32(cg0[44..], 0);                 // cg_frotor
+    _e.I32(cg0[48..], 0);                 // cg_irotor
 
     // cg layout offsets (newfs initcg, Oflag=1).
     var btotoff = 168;
@@ -918,17 +922,17 @@ public sealed class UfsWriter {
     var clusteroff = clustersumoff + (ContigSumSize + 1) * 4;
     var nextfreeoff = clusteroff + HowMany(geom.Fpg / Frag, 8);
 
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[84..], btotoff);           // cg_old_btotoff
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[88..], boff);              // cg_old_boff
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[92..], iusedoff);          // cg_iusedoff
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[96..], freeoff);           // cg_freeoff
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[100..], nextfreeoff);      // cg_nextfreeoff
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[104..], clustersumoff);    // cg_clustersumoff
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[108..], clusteroff);       // cg_clusteroff
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[112..], ndblk / Frag);     // cg_nclusterblks
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[116..], 0);                // cg_niblk (UFS2 only → 0)
-    BinaryPrimitives.WriteInt32LittleEndian(cg0[120..], 0);                // cg_initediblk (UFS2 only → 0)
-    BinaryPrimitives.WriteInt64LittleEndian(cg0[136..], now);              // cg_time
+    _e.I32(cg0[84..], btotoff);           // cg_old_btotoff
+    _e.I32(cg0[88..], boff);              // cg_old_boff
+    _e.I32(cg0[92..], iusedoff);          // cg_iusedoff
+    _e.I32(cg0[96..], freeoff);           // cg_freeoff
+    _e.I32(cg0[100..], nextfreeoff);      // cg_nextfreeoff
+    _e.I32(cg0[104..], clustersumoff);    // cg_clustersumoff
+    _e.I32(cg0[108..], clusteroff);       // cg_clusteroff
+    _e.I32(cg0[112..], ndblk / Frag);     // cg_nclusterblks
+    _e.I32(cg0[116..], 0);                // cg_niblk (UFS2 only → 0)
+    _e.I32(cg0[120..], 0);                // cg_initediblk (UFS2 only → 0)
+    _e.I64(cg0[136..], now);              // cg_time
 
     // Build the per-cg used-frag map.
     var used = new bool[ndblk];
@@ -960,7 +964,7 @@ public sealed class UfsWriter {
       }
     }
     for (var i = 1; i < Frag; i++)
-      BinaryPrimitives.WriteInt32LittleEndian(cg0[(52 + i * 4)..], frsum[i]);
+      _e.I32(cg0[(52 + i * 4)..], frsum[i]);
 
     // cluster-free bitmap (whole free blocks) + cluster summary array. Each
     // maximal run of whole free blocks of length L increments clustersum[min(L,
@@ -981,7 +985,7 @@ public sealed class UfsWriter {
     }
     AccumulateRun(clusterSums, run);
     for (var i = 1; i <= ContigSumSize; i++)
-      BinaryPrimitives.WriteInt32LittleEndian(cg0[(clustersumoff + i * 4)..], clusterSums[i]);
+      _e.I32(cg0[(clustersumoff + i * 4)..], clusterSums[i]);
 
     disk.Write(cgOffset, cg0Buffer);
   }
@@ -1012,7 +1016,7 @@ public sealed class UfsWriter {
   }
 
   // ── ufs1_dinode (128 bytes) ───────────────────────────────────────────────
-  private static void WriteUfs1Inode(
+  private void WriteUfs1Inode(
     SparseBlockImage disk, long inodeByteOffset,
     uint mode, ushort nlink, ulong size, uint blocksUsed512,
     ReadOnlySpan<int> directBlocks, int[]? indirectBlocks = null, uint dirDepth = 0
@@ -1020,34 +1024,34 @@ public sealed class UfsWriter {
     var diBuffer = new byte[InodeSize];
     var di = diBuffer.AsSpan();
     di.Clear();
-    BinaryPrimitives.WriteUInt16LittleEndian(di[0..], (ushort)mode);       // di_mode
-    BinaryPrimitives.WriteUInt16LittleEndian(di[2..], nlink);              // di_nlink
-    BinaryPrimitives.WriteUInt32LittleEndian(di[4..], dirDepth);           // di_dirdepth (UFS dir depth from root)
-    BinaryPrimitives.WriteUInt64LittleEndian(di[8..], size);               // di_size
+    _e.U16(di[0..], (ushort)mode);       // di_mode
+    _e.U16(di[2..], nlink);              // di_nlink
+    _e.U32(di[4..], dirDepth);           // di_dirdepth (UFS dir depth from root)
+    _e.U64(di[8..], size);               // di_size
     var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-    BinaryPrimitives.WriteUInt32LittleEndian(di[16..], now);               // di_atime
-    BinaryPrimitives.WriteUInt32LittleEndian(di[24..], now);               // di_mtime
-    BinaryPrimitives.WriteUInt32LittleEndian(di[32..], now);               // di_ctime
+    _e.U32(di[16..], now);               // di_atime
+    _e.U32(di[24..], now);               // di_mtime
+    _e.U32(di[32..], now);               // di_ctime
     for (var i = 0; i < MaxDirectBlocks && i < directBlocks.Length; i++)
-      BinaryPrimitives.WriteInt32LittleEndian(di[(40 + i * 4)..], directBlocks[i]);
+      _e.I32(di[(40 + i * 4)..], directBlocks[i]);
     // di_ib[0..2]: the single-, double- and triple-indirect roots.
     var ib = indirectBlocks ?? [];
     for (var i = 0; i < 3 && i < ib.Length; i++)
-      BinaryPrimitives.WriteInt32LittleEndian(di[(40 + MaxDirectBlocks * 4 + i * 4)..], ib[i]);
-    BinaryPrimitives.WriteUInt32LittleEndian(di[104..], blocksUsed512);    // di_blocks (512-sectors)
-    BinaryPrimitives.WriteUInt32LittleEndian(di[108..], 1);               // di_gen
-    BinaryPrimitives.WriteUInt32LittleEndian(di[112..], 0);               // di_uid
-    BinaryPrimitives.WriteUInt32LittleEndian(di[116..], 0);               // di_gid
+      _e.I32(di[(40 + MaxDirectBlocks * 4 + i * 4)..], ib[i]);
+    _e.U32(di[104..], blocksUsed512);    // di_blocks (512-sectors)
+    _e.U32(di[108..], 1);               // di_gen
+    _e.U32(di[112..], 0);               // di_uid
+    _e.U32(di[116..], 0);               // di_gid
 
     disk.Write(inodeByteOffset, diBuffer);
   }
 
   // ── directory entry ───────────────────────────────────────────────────────
-  private static void WriteDirEntry(byte[] block, ref int pos, int ino, string name, byte dtype) {
+  private void WriteDirEntry(byte[] block, ref int pos, int ino, string name, byte dtype) {
     var nameBytes = Encoding.ASCII.GetBytes(name);
     var reclen = DirEntryReclen(name);
-    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(pos), (uint)ino);
-    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(pos + 4), (ushort)reclen);
+    _e.U32(block.AsSpan(pos), (uint)ino);
+    _e.U16(block.AsSpan(pos + 4), (ushort)reclen);
     block[pos + 6] = dtype;
     block[pos + 7] = (byte)nameBytes.Length;
     nameBytes.CopyTo(block, pos + 8);

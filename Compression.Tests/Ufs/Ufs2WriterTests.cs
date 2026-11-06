@@ -16,9 +16,13 @@ public sealed class Ufs2WriterTests {
 
   internal static FormatCreateOptions Ufs2 => new() { FormatSpecific = new Dictionary<string, string> { ["Version"] = "UFS2" } };
 
-  internal static byte[] Create(IReadOnlyDictionary<string, byte[]> files) {
+  internal static FormatCreateOptions Options(string version, bool bigEndian) => new() {
+    FormatSpecific = new Dictionary<string, string> { ["Version"] = version, ["ByteOrder"] = bigEndian ? "BigEndian" : "LittleEndian" },
+  };
+
+  internal static byte[] Create(IReadOnlyDictionary<string, byte[]> files, FormatCreateOptions? options = null) {
     using var ms = new MemoryStream();
-    new UfsFormatDescriptor().Create(ms, files.Select(f => ArchiveInputInfo.InMemory(f.Key, f.Value)).ToList(), Ufs2);
+    new UfsFormatDescriptor().Create(ms, files.Select(f => ArchiveInputInfo.InMemory(f.Key, f.Value)).ToList(), options ?? Ufs2);
     return ms.ToArray();
   }
 

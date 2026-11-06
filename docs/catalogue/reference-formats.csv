@@ -407,7 +407,7 @@ ext3cow,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 "FAT (FAT12/16/32, VFAT)",fat;img;ima;fat12;fat16;fat32;fat32x,filesystem,R,,R,R,,fmt/1087,Y,5,https://learn.microsoft.com/windows/win32/fileio/exfat-specification,Fat,Y,Y,Y,OK,,
 FAT8 (Disk BASIC),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 FATX (Xbox),fatx;xbox,filesystem,,,,,,,Y,1,,Fatx,Y,Y,Y,OK,,
-"UFS / FFS (BSD), UFS2",ufs;ufs1,filesystem,,,,,,,Y,1,,Ufs,Y,Y,Y,PARTIAL,newfs -O2 / makefs (BSD),UFS1 and UFS2 read in both byte orders; UFS1 and UFS2 little-endian created; edited; defragmented; wiped and block-moved in place (UFS2 checked by fsck_ffs and the Linux ufstype=ufs2 mount after each); big-endian volumes are read-only
+"UFS / FFS (BSD), UFS2",ufs;ufs1,filesystem,,,,,,,Y,1,,Ufs,Y,Y,Y,OK,newfs -O2 / makefs (BSD),UFS1 and UFS2 in both byte orders read; created; edited; defragmented; wiped and block-moved in place (little-endian UFS2 checked by FreeBSD fsck_ffs and the Linux ufstype=ufs2 mount; big-endian UFS1 and UFS2 by NetBSD fsck_ffs and a NetBSD mount)
 Fossil (Plan 9),,filesystem,,,,,,,Y,1,https://github.com/9fans/plan9port/tree/master/src/cmd/fossil,Fossil,Y,,,READ-ONLY-BUT-SOURCES-WRITE,flfmt,writer not yet proven against the fossil server
 Files-11 (ODS-1/2/5),ods2;ods5;ods-1;ods-2;ods-5;openvms,filesystem,,,,,,,Y,1,,OpenVms;Ods1,Y,Y,Y,OK,,
 FLEX file system,,filesystem,,,,,,,Y,1,http://www.flexusergroup.com/flexusergroup/pdfs/flexapg.pdf,Flex,Y,Y,Y,OK,flexfloppy,
