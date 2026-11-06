@@ -18356,6 +18356,97 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
+### Namespace `FileFormat.GenteeInstaller`
+
+[`GeaArchive`](#geaarchive) · [`GeaEntry`](#geaentry) · [`GenteeInstallerEntry`](#genteeinstallerentry) · [`GenteeInstallerFormatDescriptor`](#genteeinstallerformatdescriptor) · [`GenteeInstallerReader`](#genteeinstallerreader) · [`Lzge`](#lzge)
+
+#### `GeaArchive`
+
+GEA, the Gentee archive: a `GEA\0` volume header, the archive header, a file table (LZGE packed or not), the data moved from the end to the head, and the files as blocks, each stored, LZGE or PPMd (var. H) coded.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entries` | `IReadOnlyList<GeaEntry> Entries { get; }` | The archive's files. |
+| `ExtractAll` | `IEnumerable<ValueTuple<GeaEntry, byte[]>> ExtractAll()` | Unpacks every file in order (solid files need the ones before them). |
+| `Extract` | `byte[] Extract(GeaEntry entry)` | Unpacks one file, decoding the solid files before it as needed. |
+| `Open` | `static GeaArchive Open(byte[] data, long offset)` | Opens the GEA archive at `offset` of `data`. |
+| `StartsAt` | `static bool StartsAt(ReadOnlySpan<byte> data, long offset)` | Whether a GEA volume header starts at `offset`. |
+
+#### `GeaEntry`
+
+One file of a GEA archive.
+
+Implements `IEquatable<GeaEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GeaEntry` | `GeaEntry(string Path, long Size, long CompressedSize, uint Crc, DateTime? Modified, bool IsSolid, bool IsProtected)` | One file of a GEA archive. |
+| `CompressedSize` | `long CompressedSize { get; init; }` | Packed size. |
+| `Crc` | `uint Crc { get; init; }` | CRC-32 of the unpacked file, 0 when none is recorded. |
+| `IsProtected` | `bool IsProtected { get; init; }` | Encrypted with an archive password. |
+| `IsSolid` | `bool IsSolid { get; init; }` | Its blocks continue the previous file's LZGE window. |
+| `Modified` | `DateTime? Modified { get; init; }` | File time. |
+| `Path` | `string Path { get; init; }` | Sub-folder and name, '/'-separated. |
+| `Size` | `long Size { get; init; }` | Unpacked size. |
+
+#### `GenteeInstallerEntry`
+
+One file of a Gentee (CreateInstall) installer.
+
+Implements `IEquatable<GenteeInstallerEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GenteeInstallerEntry` | `GenteeInstallerEntry(string Path, long Size, long CompressedSize, DateTime? Modified)` | One file of a Gentee (CreateInstall) installer. |
+| `CompressedSize` | `long CompressedSize { get; init; }` | Packed size. |
+| `Modified` | `DateTime? Modified { get; init; }` | File time, when recorded. |
+| `Path` | `string Path { get; init; }` | Name: `gentee.dll` and `script.ge` from the launcher, `temp/…` for the files the setup unpacks for itself, `setup/…` for the files it installs. |
+| `Size` | `long Size { get; init; }` | Unpacked size. |
+
+#### `GenteeInstallerFormatDescriptor`
+
+Installers made with Gentee's launcher (CreateInstall): the runtime, the script, the files the setup unpacks for itself and the files it installs. Read-only; detected by the launcher header.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GenteeInstallerFormatDescriptor` | `GenteeInstallerFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `GenteeInstallerReader`
+
+Installers made with Gentee's launcher (CreateInstall and other Gentee programs): a PE stub whose "Gentee Launcher" header says how big the runtime and the script are; a `.gentee` section holding both, LZGE packed; an RT_RCDATA resource `SETUP_TEMP` holding the files the setup unpacks for itself; and GEA archives after the PE image holding the files it installs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entries` | `IReadOnlyList<GenteeInstallerEntry> Entries { get; }` | The runtime, the script, the setup's own files and the installed files. |
+| `ExtractAll` | `IEnumerable<ValueTuple<GenteeInstallerEntry, byte[]>> ExtractAll()` | Unpacks every entry, decoding each archive's solid chains once. |
+| `Extract` | `byte[] Extract(GenteeInstallerEntry entry)` | Unpacks one entry. |
+| `IsGentee` | `static bool IsGentee(Stream stream)` | Whether a launcher header sits in the first 32 KiB and points at itself. |
+| `Open` | `static GenteeInstallerReader Open(byte[] data)` | Opens an installer held in memory. |
+
+#### `Lzge`
+
+LZGE, the LZ77 + Huffman coder of the Gentee language's GEA archives and launchers: literals, match lengths and offset slots share one Huffman alphabet that is re-sent every 10000 symbols; code lengths travel through a 20-symbol pre-tree as deltas against the previous block's lengths; the three most recent offsets are kept for reuse.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static int Decode(ReadOnlySpan<byte> input, Span<byte> output, int solidOffset, int end)` | Decodes an LZGE stream into `output` from `solidOffset` up to `end`; the bytes before `solidOffset` are earlier output that matches may reach back into. |
+
 ### Namespace `FileFormat.Gettext`
 
 [`CatalogEntry`](#catalogentry) · [`MoFormatDescriptor`](#moformatdescriptor) · [`MoReader`](#moreader) · [`MoWriter`](#mowriter) · [`PoFormatDescriptor`](#poformatdescriptor) · [`PoReader`](#poreader)

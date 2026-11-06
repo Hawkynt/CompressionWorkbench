@@ -556,6 +556,9 @@ public static partial class FormatDetector {
 
       // Clickteam Install Creator: its block overlay starts right after the PE sections.
       if (isPe && FileFormat.ClickteamInstaller.ClickteamReader.IsClickteam(fs)) return Format.ClickteamInstaller;
+
+      // Gentee launcher (CreateInstall): a "Gentee Launcher" header in the stub that points at itself.
+      if (isPe && FileFormat.GenteeInstaller.GenteeInstallerReader.IsGentee(fs)) return Format.GenteeInstaller;
       // Enigma Virtual Box: the virtual filesystem's "EVB\0" header in the ".enigma1" section.
       if (isPe && FileFormat.EnigmaVirtualBox.EnigmaVirtualBoxReader.IsEnigmaVirtualBox(fs)) return Format.EnigmaVirtualBox;
 
