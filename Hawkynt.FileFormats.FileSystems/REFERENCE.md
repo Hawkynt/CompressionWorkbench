@@ -524,7 +524,7 @@ How DiscJuggler stored each sector of a track in the CDI body.
 
 #### `CdiReader`
 
-Reads DiscJuggler CDI images, including mixed sector geometries and multisession layouts. The trailing descriptor is used when present; legacy CompressionWorkbench footer-only images retain geometry probing as a compatibility fallback.
+Reads DiscJuggler CDI images, including mixed sector geometries and multisession layouts. The trailing descriptor is used when present; legacy CompressionWorkbench footer-only images retain geometry probing as a compatibility fallback. The file system is read by the shared ISO 9660 reader, so Rock Ridge and Joliet names, multi-extent and interleaved files read as they do in a plain ISO; a tree that reader refuses falls back to a walk of the primary directory records.
 
 Implements `IDisposable`.
 
@@ -1755,7 +1755,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces root-level ISO 9660 files inside the existing MDF track. The edit is staged transactionally and committed only if the result parses. Physical growth is refused because that would require changing the MDS track descriptors, which are outside the single-stream mutation contract. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces ISO 9660 files and folders at any depth inside the existing MDF track, keeping Rock Ridge and Joliet names. The edit is staged transactionally and committed only if the result parses. Physical growth is refused because that would require changing the MDS track descriptors, which are outside the single-stream mutation contract. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a standalone MDF data stream as 2 048-byte cooked ISO sectors. The archive API owns one output stream and therefore cannot emit the MDS sidecar. A small physical tail reserve is left outside ISO's declared volume-space count so a freshly-created image can exercise genuine add / replace semantics without resizing; existing paired images are never grown. |
 | `Defragment` | `void Defragment(Stream archive)` |  |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
@@ -1763,7 +1763,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `Purge` | `void Purge(Stream archive)` |  |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes root-level ISO 9660 files and wipes their former data sectors while preserving the MDF's physical sector count and raw framing. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes ISO 9660 files and folders at any depth and wipes their former data sectors while preserving the MDF's physical sector count and raw framing. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
 
 #### `MdfInPlaceModifier`
@@ -1806,7 +1806,7 @@ Projects ISO-9660 logical extents back onto the physical MDF sector stream. Cook
 
 #### `MdfReader`
 
-Reads the ISO 9660 file system embedded in an Alcohol 120% MDF disc image. MDF files contain raw CD/DVD sector data, typically in 2352-byte raw sectors (Mode 1 with user data at offset 16) or plain 2048-byte ISO sectors. The accompanying MDS file describes track layout; this reader detects the sector geometry heuristically by probing for the ISO 9660 PVD signature.
+Reads the ISO 9660 file system embedded in an Alcohol 120% MDF disc image. MDF files contain raw CD/DVD sector data, typically in 2352-byte raw sectors (Mode 1 with user data at offset 16) or plain 2048-byte ISO sectors. The accompanying MDS file describes track layout; this reader detects the sector geometry heuristically by probing for the ISO 9660 PVD signature. The file system is read by the shared ISO 9660 reader, so Rock Ridge and Joliet names, multi-extent and interleaved files read as they do in a plain ISO; a tree that reader refuses falls back to a walk of the primary directory records.
 
 Implements `IDisposable`.
 
@@ -10096,7 +10096,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Tunable knobs for ISO 9660 creation: ECMA-119 volume identifier, system identifier, publisher, application, plus the Joliet extension toggle. All identifier fields follow the ECMA-119 d/a-character rules and are truncated to the field length defined by the spec (32 for vol/sys, 128 for publisher/application). |
 | `SupportedDefragFeatures` | `DefragFeature SupportedDefragFeatures { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files at the root of an existing ISO 9660 image. Uses `IsoModifier` for true random-access I/O — only the PVD (sector 16), the root directory's existing extent, and the new file's data sectors are touched. The 32 KB system area, VDST, path tables, and existing file data sectors are left untouched. Names are sanitized to the ISO 9660 8.3 d-characters identifier set; ';1' versions are added automatically by the modifier. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files and folders anywhere in an existing ISO 9660 image, in place: new data goes after the volume space and existing file data never moves. |
 | `BufferedWriterFor` | `static IsoWriter BufferedWriterFor(IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options = null)` | An ISO writer holding `inputs` in memory with folders, Rock Ridge and Joliet names and the boot options, for the CD image formats that wrap an ISO 9660 track (CDI, MDF, NRG, BIN). |
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming creation: the pre-known per-input sizes drive the ISO 9660 path table + directory + file-extent layout in pass 1 (identical to `Create`, which flattens to leaf filenames); pass 2 streams each file's bytes from its `OpenStream` factory into its data extent via 64 KB chunks — no file is ever buffered as a `byte[]`. Output is byte-identical to `Create` for the same inputs (the ECMA-119 volume/record timestamps are sampled once per `Build`). Falls back to a buffered build when the target stream is not seekable. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
@@ -10108,8 +10108,8 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single ISO 9660 file entry as a bounded read-only `Stream`. ISO 9660 stores file data in contiguous extents — the reader's extract returns those bytes verbatim; they are wrapped in a `BoundedEntryStream` sized to the entry's logical size. |
-| `Purge` | `void Purge(Stream archive)` | Removes the named entries from an existing ISO 9660 image. Uses `IsoModifier` for O(touched bytes) random-access I/O — the directory record is shifted out of its sector and the file's data sectors are zero-wiped. Names match case-insensitively after stripping any ';N' version suffix (ISO 9660 stores uppercase IDs). |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Purge` | `void Purge(Stream archive)` | Removes every file and folder in place, keeping the volume descriptors, the volume ID, the dates and the El Torito boot record. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named files and folders (a folder with everything in it) in place: their directory records leave both the primary and the Joliet tree and their sectors are zeroed. A name that is not there is reported rather than passed over. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in the ISO 9660 image: the unused remainder of the system area, free sectors and the sector-tip slack at the tail of each file's last 2048-byte sector. ECMA-119 stores every file contiguously and pads its final sector with zeros — the bytes between the file's logical length and the sector boundary are the cluster tip. The extent map clamps each Used run to the file's logical length, so the tip presents as a free gap that the generic `UnusedSpaceWiper` zero-fills. The size lookup is keyed by the reader's full path, matching the extent FileName. |
 

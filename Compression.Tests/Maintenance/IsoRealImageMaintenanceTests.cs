@@ -63,7 +63,10 @@ public class IsoRealImageMaintenanceTests {
     yield return new TestCaseData("defrag_fill").SetName("iso: fill holes keeps Rock Ridge");
     yield return new TestCaseData("add_root").SetName("iso: add to the root keeps Rock Ridge");
     yield return new TestCaseData("remove_root").SetName("iso: remove from the root keeps Rock Ridge");
-    yield return new TestCaseData("add_nested").SetName("iso: add into a folder is refused untouched");
+    yield return new TestCaseData("add_nested").SetName("iso: add into a folder keeps Rock Ridge");
+    yield return new TestCaseData("add_new_folder").SetName("iso: add into a new folder keeps Rock Ridge");
+    yield return new TestCaseData("remove_nested").SetName("iso: remove from a folder keeps Rock Ridge");
+    yield return new TestCaseData("remove_folder").SetName("iso: remove a folder keeps Rock Ridge");
   }
 
   [TestCaseSource(nameof(Verbs)), CancelAfter(300_000)]
@@ -84,14 +87,15 @@ public class IsoRealImageMaintenanceTests {
           case "add_root": descriptor.Add(stream, [ArchiveInputInfo.InMemory("added.txt", "added"u8.ToArray())]); break;
           case "remove_root": descriptor.Remove(stream, ["big.bin"]); break;
           case "add_nested": descriptor.Add(stream, [ArchiveInputInfo.InMemory("docs/added.txt", "added"u8.ToArray())]); break;
+          case "add_new_folder": descriptor.Add(stream, [ArchiveInputInfo.InMemory("docs/deep/New Folder/added.txt", "added"u8.ToArray())]); break;
+          case "remove_nested": descriptor.Remove(stream, ["docs/deep/nested.bin"]); break;
+          case "remove_folder": descriptor.Remove(stream, ["docs"]); break;
         }
       } catch (NotSupportedException ex) {
         refusal = ex;
       }
     }
 
-    if (verb == "add_nested")
-      Assert.That(refusal, Is.Not.Null, "a nested add must be refused, not flattened into the root");
     if (refusal != null) {
       Assert.That(File.ReadAllBytes(work), Is.EqualTo(original), $"{verb} refused but changed the image");
       return;
@@ -99,8 +103,22 @@ public class IsoRealImageMaintenanceTests {
     if (!verb.StartsWith("add", StringComparison.Ordinal))
       Assert.That(new FileInfo(work).Length, Is.EqualTo(original.LongLength), $"{verb} changed the image size");
     var after = RealImageLab.Manifest(Iso, work);
-    string[] changes = verb switch { "add_root" => ["added.txt"], "remove_root" => ["big.bin"], _ => [] };
+    string[] changes = verb switch {
+      "add_root" => ["added.txt"],
+      "remove_root" => ["big.bin"],
+      "add_nested" => ["docs/added.txt"],
+      "add_new_folder" => ["docs/deep/New Folder"],
+      "remove_nested" => ["docs/deep/nested.bin"],
+      "remove_folder" => ["docs"],
+      _ => [],
+    };
     var diff = RealImageLab.UnexpectedDifferences(this._before, after, changes);
     Assert.That(diff, Is.Empty, $"{verb} changed:\n{string.Join("\n", diff)}");
+    if (verb.StartsWith("add", StringComparison.Ordinal)) {
+      var added = verb == "add_new_folder" ? "docs/deep/New Folder/added.txt" : changes[0];
+      Assert.That(after, Has.Some.StartsWith($"entry {added}|"), $"the kernel shows {added}");
+    } else if (verb.StartsWith("remove", StringComparison.Ordinal)) {
+      Assert.That(after, Has.None.StartsWith($"entry {changes[0]}"), $"the kernel no longer shows {changes[0]}");
+    }
   }
 }

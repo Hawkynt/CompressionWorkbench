@@ -173,6 +173,8 @@ internal static class CdiEmbeddedIsoRebuilder {
       PublisherIdentifier = ReadPaddedAscii(sourcePvd, 318, 128, ""),
       ApplicationIdentifier = ReadPaddedAscii(sourcePvd, 574, 128, ""),
       EnableJoliet = HasJoliet(sourceReader, active),
+      // Rock Ridge names are what the reader lists, so a source that has them keeps them.
+      EnableRockRidge = HasRockRidge(sourceReader, active, sourcePvd, absoluteExtents),
     };
 
     foreach (var file in Directory.GetFiles(root, "*", SearchOption.AllDirectories)) {
@@ -217,6 +219,23 @@ internal static class CdiEmbeddedIsoRebuilder {
         return true;
     }
     return false;
+  }
+
+  /// <summary>Rock Ridge: SUSP "SP" (check bytes BE EF) in the root's "." record (IEEE P1281 5.3).</summary>
+  private static bool HasRockRidge(CdiReader reader, CdiTrackInfo active, ReadOnlySpan<byte> pvd, bool absoluteExtents) {
+    if (pvd.Length < 170)
+      return false;
+    var rootLba = (long)BinaryPrimitives.ReadUInt32LittleEndian(pvd[158..162]) - (absoluteExtents ? active.StartLba : 0);
+    if (rootLba < 0 || rootLba >= active.DataSectorCount)
+      return false;
+    var sector = CdiCdSectorIntegrity.GetUserData(active, reader.ReadTrackSector(active, (int)rootLba));
+    if (sector.Length < 40)
+      return false;
+    var recordLength = sector[0];
+    var idLength = sector[32];
+    var su = 33 + idLength + ((idLength & 1) == 0 ? 1 : 0);
+    return recordLength >= 40 && su + 7 <= recordLength && sector[su] == 'S' && sector[su + 1] == 'P'
+      && sector[su + 4] == 0xBE && sector[su + 5] == 0xEF;
   }
 
   private static bool HasCd001(ReadOnlySpan<byte> sector)
@@ -321,6 +340,7 @@ internal static class CdiEmbeddedIsoRebuilder {
             pending.Enqueue((childRelativeLba, childLength));
 
           AddBiasToDirectoryRecord(record, bias);
+          AddBiasToContinuationAreas(record, bias);
           withinSector += recordLength;
           consumed += recordLength;
         }
@@ -356,6 +376,28 @@ internal static class CdiEmbeddedIsoRebuilder {
     var absolute = checked(relative + (uint)bias);
     BinaryPrimitives.WriteUInt32LittleEndian(record[2..6], absolute);
     BinaryPrimitives.WriteUInt32BigEndian(record[6..10], absolute);
+  }
+
+  /// <summary>
+  /// A Rock Ridge name too long for its record continues in another sector, named by a
+  /// SUSP "CE" entry (block location both-endian at offset 4); that location is an extent
+  /// like any other and gets the same bias.
+  /// </summary>
+  private static void AddBiasToContinuationAreas(Span<byte> record, int bias) {
+    var idLength = record[32];
+    var at = 33 + idLength + ((idLength & 1) == 0 ? 1 : 0);
+    while (at + 4 <= record.Length) {
+      var length = record[at + 2];
+      if (length < 4 || at + length > record.Length)
+        break;
+      if (record[at] == 'C' && record[at + 1] == 'E' && length >= 28) {
+        var location = BinaryPrimitives.ReadUInt32LittleEndian(record[(at + 4)..]);
+        var absolute = checked(location + (uint)bias);
+        BinaryPrimitives.WriteUInt32LittleEndian(record[(at + 4)..], absolute);
+        BinaryPrimitives.WriteUInt32BigEndian(record[(at + 8)..], absolute);
+      }
+      at += length;
+    }
   }
 
   private static void AddBiasToLbaField(Span<byte> field, bool littleEndian, int bias) {

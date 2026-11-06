@@ -84,7 +84,9 @@ public class NrgAbsoluteMultisessionTests {
   }
 
   private static byte[] BuildIso(string name, byte[] data) {
-    var writer = new FileSystem.Iso.IsoWriter();
+    // One tree only: the rebasing above moves the primary tree's extents, and a Joliet tree
+    // left at track-relative extents would describe sectors of another session.
+    var writer = new FileSystem.Iso.IsoWriter { EnableJoliet = false };
     writer.AddFile(name, data);
     return writer.Build();
   }

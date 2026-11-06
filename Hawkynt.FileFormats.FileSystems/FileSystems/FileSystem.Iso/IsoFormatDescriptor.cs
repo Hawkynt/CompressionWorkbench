@@ -351,29 +351,27 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Adds or replaces files at the root of an existing ISO 9660 image. Uses
-  /// <see cref="IsoModifier"/> for true random-access I/O — only the PVD
-  /// (sector 16), the root directory's existing extent, and the new file's
-  /// data sectors are touched. The 32 KB system area, VDST, path tables, and
-  /// existing file data sectors are left untouched. Names are sanitized to
-  /// the ISO 9660 8.3 d-characters identifier set; ';1' versions are added
-  /// automatically by the modifier.
+  /// Adds or replaces files and folders anywhere in an existing ISO 9660 image, in place:
+  /// new data goes after the volume space and existing file data never moves.
   /// </summary>
   /// <remarks>
-  /// Only the root directory is edited in place. A path into a folder is refused
-  /// (<see cref="NotSupportedException"/>) rather than flattened into a mangled root
-  /// name, and so is an image the in-place editor would damage — one carrying data
-  /// past the volume space, or a Joliet tree with no room for the mirrored entry.
+  /// <see cref="IsoTreeEditor"/> keeps the primary tree (with Rock Ridge names, modes and
+  /// times when the image has Rock Ridge) and the Joliet tree describing the same files, and
+  /// rewrites the path tables. An image the editor would damage — data stored past the
+  /// volume space, Rock Ridge relocated folders, interleaved files — is refused and left as
+  /// it was.
   /// </remarks>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(inputs);
-    var items = inputs.Where(i => !i.IsDirectory && !string.IsNullOrEmpty(i.ArchiveName)).ToList();
-    foreach (var item in items)
-      if (item.ArchiveName.Replace('\\', '/').Trim('/').Contains('/'))
-        throw new NotSupportedException(
-          $"ISO 9660: '{item.ArchiveName}' is inside a folder; only the root directory is edited in place.");
-    foreach (var (name, data) in FilesOnly(inputs))
-      IsoModifier.AddFile(archive, name, data);
+    RefuseInterleaved(archive, "adding files to");
+    foreach (var input in inputs.Where(i => !string.IsNullOrEmpty(i.ArchiveName))) {
+      var name = EntryPath(input.ArchiveName);
+      if (name.Length == 0) continue;
+      var mode = input.SourceUnixMode is { } unixMode ? (int)unixMode : (int?)null;
+      var modified = input.SourceLastModifiedUtc;
+      if (input.IsDirectory) IsoTreeEditor.AddDirectory(archive, name, mode, modified);
+      else IsoTreeEditor.AddFile(archive, name, input.ReadContent(), mode, modified);
+    }
   }
 
   /// <summary>
@@ -469,38 +467,31 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
 
   /// <summary>
-  /// Removes the named entries from an existing ISO 9660 image. Uses
-  /// <see cref="IsoModifier"/> for O(touched bytes) random-access I/O — the
-  /// directory record is shifted out of its sector and the file's data
-  /// sectors are zero-wiped. Names match case-insensitively after stripping
-  /// any ';N' version suffix (ISO 9660 stores uppercase IDs).
-  /// </summary>
-  /// <summary>
-  /// Removes every file in place. Files inside folders cannot be removed in place,
-  /// so an image holding any is refused rather than rebuilt: the rebuild dropped the
-  /// volume ID, dates, Rock Ridge attributes and the El Torito boot record.
+  /// Removes every file and folder in place, keeping the volume descriptors, the volume ID,
+  /// the dates and the El Torito boot record.
   /// </summary>
   public void Purge(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
     archive.Position = 0;
-    var files = this.List(archive, null).Where(e => !e.IsDirectory).Select(e => e.Name.Replace('\\', '/').Trim('/')).ToArray();
-    if (files.Any(n => n.Contains('/')))
-      throw new NotSupportedException("ISO 9660: files inside folders cannot be removed in place; the image was left unchanged.");
-    this.Remove(archive, files);
+    var topLevel = this.List(archive, null)
+      .Select(e => e.Name.Replace('\\', '/').Trim('/').Split('/')[0])
+      .Where(n => n.Length > 0)
+      .Distinct(StringComparer.Ordinal)
+      .ToArray();
+    this.Remove(archive, topLevel);
   }
 
-  /// <remarks>
-  /// Only the root directory is edited in place: a path into a folder is refused and
-  /// a name that is not there is reported, rather than either passing silently.
-  /// </remarks>
+  /// <summary>
+  /// Removes the named files and folders (a folder with everything in it) in place: their
+  /// directory records leave both the primary and the Joliet tree and their sectors are
+  /// zeroed. A name that is not there is reported rather than passed over.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     RefuseInterleaved(archive, "removing files from");
     foreach (var raw in entryNames ?? []) {
       var name = raw.Replace('\\', '/').Trim('/');
-      if (name.Contains('/'))
-        throw new NotSupportedException($"ISO 9660: '{raw}' is inside a folder; only the root directory is edited in place.");
-      if (!IsoModifier.RemoveFile(archive, name, wipeData: true))
-        throw new FileNotFoundException($"ISO 9660: '{raw}' is not in the root directory.", raw);
+      if (!IsoTreeEditor.Remove(archive, name))
+        throw new FileNotFoundException($"ISO 9660: '{raw}' is not in the image.", raw);
     }
   }
 }
