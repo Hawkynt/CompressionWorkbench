@@ -12161,22 +12161,33 @@ Reader for BitRock / InstallBuilder self-extracting installers. Layout (as found
 
 ### Namespace `FileFormat.Bkf`
 
-[`BkfEntry`](#bkfentry) · [`BkfFormatDescriptor`](#bkfformatdescriptor) · [`BkfInPlaceModifier`](#bkfinplacemodifier) · [`BkfReader`](#bkfreader) · [`BkfWriter`](#bkfwriter) · [`BkfWriter.Item`](#bkfwriteritem)
+[`BkfEditor`](#bkfeditor) · [`BkfEntry`](#bkfentry) · [`BkfFormatDescriptor`](#bkfformatdescriptor) · [`BkfReader`](#bkfreader) · [`BkfWriter`](#bkfwriter) · [`BkfWriter.Item`](#bkfwriteritem)
+
+#### `BkfEditor`
+
+Adds and removes files and folders in a Microsoft NTBackup (.bkf) medium written in Microsoft Tape Format 1.00a.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddDirectory` | `static void AddDirectory(Stream archive, string path)` | Adds a folder (and its parents) unless it is there already. |
+| `AddFile` | `static void AddFile(Stream archive, string path, byte[] data, DateTime? modified = null)` | Adds or replaces the file at `path`, creating its folders. |
+| `Remove` | `static bool Remove(Stream archive, string path)` | Removes the file, or the folder with everything in it, at `path`; false when there is nothing there. |
 
 #### `BkfEntry`
 
-A single entry surfaced from a Microsoft NTBackup (.bkf) Microsoft Tape Format (MTF) stream. Currently maps to FILE/DIRB DBLKs that carry a payload (DATA streams of type STAN — Standard). Empty/zero-byte placeholders for directories are reported with `IsDirectory` = `true`.
+A folder (MTF_DIRB) or file (MTF_FILE) of a Microsoft NTBackup (.bkf) medium.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BkfEntry` | `BkfEntry()` |  |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | True when the entry represents a DIRB (directory) rather than a FILE. |
-| `Name` | `string Name { get; init; }` | Display name (relative path, forward slashes). |
-| `Size` | `long Size { get; init; }` | Uncompressed payload length in bytes. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | True for a folder (DIRB). |
+| `LastModified` | `DateTime? LastModified { get; init; }` | The file's or folder's last modification time, when recorded. |
+| `Name` | `string Name { get; init; }` | Path below the backed-up volume, '/'-separated. |
+| `Size` | `long Size { get; init; }` | Length of the file's data in bytes. |
 
 #### `BkfFormatDescriptor`
 
-Microsoft NTBackup (`.bkf`) — Microsoft Tape Format (MTF) v1.0 container. Surfaces FILE/DIRB entries via the `STAN` (Standard) data streams. Compressed streams are surfaced as "compressed" in the listing; the MTF spec does not name a compression algorithm and most ntbackup.exe writes are uncompressed. In-place R/W tier: `Add` appends one FILE DBLK per input at the position of the existing EOTM block (or at EOF when absent) and re-emits a fresh EOTM at the new end, leaving every pre-existing DBLK byte-identical at its original offset. `Remove` tombstones the matching FILE DBLK by overwriting its 4-byte type field with the `XXXX` sentinel and zero-wiping the rest of that FLB block; the reader's parse loop hits an unknown DBLK type and skips it. References: "Microsoft Tape Format Specification" v1.00a (Seagate Software, 1998) — the defining MTF document`https://en.wikipedia.org/wiki/NTBackup` — background on the creating tool
+Microsoft NTBackup (`.bkf`) media in Microsoft Tape Format 1.00a: folders (DIRB) and files (FILE) with their STAN data streams, read, written and edited. `Create` writes the TAPE DBLK and one Data Set with soft filemarks, as NTBackup lays out a backup file (`BkfWriter`). `Add` and `Remove` write the Data Set anew in the same stream, keeping every remaining DBLK's bytes and streams (`BkfEditor`); a medium with several Data Sets, a Media Based Catalog or spanning is refused. References: "Microsoft Tape Format Specification" v1.00a (Seagate Software, 1998) — the defining MTF document`https://en.wikipedia.org/wiki/NTBackup` — background on the creating tool
 
 Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
@@ -12195,66 +12206,58 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends one FILE DBLK per non-directory input at the current EOTM position (or EOF when EOTM is absent), then re-emits a fresh EOTM. All existing DBLKs stay byte-identical at their original offsets. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Produces a fresh MTF backup at `output` from `inputs`. Emits the full TAPE → SSET → VOLB → (DIRB → FILE*)* → ESET → EOTM DBLK chain via `BkfWriter`. Files are bucketed by their parent directory; directory inputs become DIRB blocks. Payloads are stored uncompressed. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds files and folders (a file of the same path is replaced) by writing the Data Set anew with every existing DBLK and stream kept (`BkfEditor`). |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a new medium: TAPE, then SSET, VOLB, a DIRB per folder each followed by its FILEs, and ESET, with soft filemarks between (`BkfWriter`). |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Tombstones each named entry's FILE DBLK in place. The DBLK's 4-byte type field becomes the `XXXX` sentinel and the rest of that FLB block is zero-wiped so the file name and STAN payload leave no forensic trace. Surrounding DBLKs are not touched. |
-
-#### `BkfInPlaceModifier`
-
-In-place modifier for Microsoft NTBackup (.bkf) Microsoft Tape Format (MTF) containers. Implements two byte-preserving mutation primitives against the FLB-aligned DBLK chain: Append: writes a fresh FILE DBLK (CBH + FNAM stream + STAN payload) at the position of the existing EOTM (End-Of-Tape Marker) block — or at EOF when EOTM is absent — then re-emits an EOTM block at the new end. All pre-existing DBLKs (TAPE, SSET, VOLB, prior FILE/DIRB, ESET) stay byte-identical at their original offsets.Tombstone: locates the FILE DBLK whose FNAM matches the requested name, overwrites its 4-byte type field with the `XXXX` sentinel, then zero-wipes the rest of that FLB so the FNAM / STAN streams leave no forensic trace. The reader's parse loop hits an unknown DBLK type and advances to the next FLB boundary, so the tombstoned entry simply disappears from `Entries`. Surrounding DBLKs remain byte-identical at their original offsets. The strategy avoids the legacy 1990s ntbackup "tape link offset" mechanism — MTF stores cumulative tape addresses in CBH fields that any post-hoc insertion would have to renumber across every DBLK that follows. The reader doesn't honour those fields (it walks by FLB boundaries instead), so the simpler append + tombstone scheme is forensically clean and round-trips through `BkfReader`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `AddDirectory` | `static void AddDirectory(Stream archive, string folderName)` | Adds a folder: a DIRB naming it is appended (an empty folder is a DIRB with no FILE after it), unless the backup already has one for that path. |
-| `AddFile` | `static void AddFile(Stream archive, string fileName, byte[] data)` | Appends a new FILE DBLK carrying `data` at the position where the current EOTM block lives (or at EOF when EOTM is absent), then re-emits a fresh EOTM block at the new end. The TAPE / SSET / VOLB and any pre-existing FILE/DIRB blocks remain byte-identical at their original offsets. |
-| `RemoveFile` | `static bool RemoveFile(Stream archive, string fileName)` | Tombstones the entry at exactly `fileName` — a path as the reader lists it, the folder taken from the DIRB before each FILE — or, for a folder, its DIRBs and every FILE beneath it: the 4-byte type field becomes the `XXXX` sentinel and the rest of that FLB-aligned block (CBH tail + every attached stream payload) is zero-wiped. Returns `true` when a tombstone was applied. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files, and folders with everything in them, by full path; a name that is not there is reported. |
 
 #### `BkfReader`
 
-Reads Microsoft NTBackup (`.bkf`) files written in the Microsoft Tape Format (MTF) v1.0 — the public spec used by `ntbackup.exe` on Windows 95 through Windows Server 2003. Read-only: lists and extracts FILE entries with their `STAN` (Standard) data streams.
+Reads Microsoft NTBackup (`.bkf`) media written in Microsoft Tape Format 1.00a, the format NTBackup (Windows NT 4 to Server 2003) writes to tape and to backup files.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `BkfReader` | `BkfReader(Stream stream, bool leaveOpen = false)` | Constructs a reader and parses the entire stream into `Entries`. |
-| `DirbType` | `static readonly uint DirbType` | Provides the dirb type value. |
-| `EotmType` | `static readonly uint EotmType` | Provides the eotm type value. |
-| `EsetType` | `static readonly uint EsetType` | Provides the eset type value. |
-| `EspbType` | `static readonly uint EspbType` | Provides the espb type value. |
-| `FileType` | `static readonly uint FileType` | Provides the file type value. |
-| `SfmbType` | `static readonly uint SfmbType` | Provides the sfmb type value. |
-| `SsetType` | `static readonly uint SsetType` | Provides the sset type value. |
-| `TapeType` | `static readonly uint TapeType` | 4-char DBLK type identifiers as little-endian uint32 for fast comparison. |
-| `VolbType` | `static readonly uint VolbType` | Provides the volb type value. |
-| `Entries` | `IReadOnlyList<BkfEntry> Entries { get; }` | All FILE and DIRB entries surfaced from the .bkf stream. |
-| `LogicalBlockSize` | `int LogicalBlockSize { get; }` | Format Logical Block size detected from the TAPE DBLK. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(BkfEntry entry)` | Returns the raw STAN data for an entry. Empty for directories. |
+| `BkfReader` | `BkfReader(Stream stream, bool leaveOpen = false)` |  |
+| `DirbType` | `static readonly uint DirbType` |  |
+| `EotmType` | `static readonly uint EotmType` |  |
+| `EsetType` | `static readonly uint EsetType` |  |
+| `EspbType` | `static readonly uint EspbType` |  |
+| `FileType` | `static readonly uint FileType` |  |
+| `SfmbType` | `static readonly uint SfmbType` |  |
+| `SsetType` | `static readonly uint SsetType` |  |
+| `TapeType` | `static readonly uint TapeType` | DBLK type identifiers (MTF 1.00a Table 2) as little-endian UINT32. |
+| `VolbType` | `static readonly uint VolbType` |  |
+| `Entries` | `IReadOnlyList<BkfEntry> Entries { get; }` | Folders and files, in medium order. |
+| `LogicalBlockSize` | `int LogicalBlockSize { get; }` | The Format Logical Block size from the TAPE DBLK. |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(BkfEntry entry)` | The file's data; empty for a folder. |
 
 #### `BkfWriter`
 
-Writes a complete Microsoft NTBackup (`.bkf`) container in the Microsoft Tape Format (MTF) v1.0 from a set of files and directories. Emits the full DBLK chain the spec prescribes — and that `BkfReader` parses — in order:
+Writes a Microsoft NTBackup (.bkf) medium in Microsoft Tape Format 1.00a: a TAPE DBLK, then one Data Set — SSET, a VOLB for drive `C:`, a DIRB for every folder (the root first) each followed by the FILE DBLKs of its files — then the ESET, with soft filemarks (SFMB) between, as NTBackup lays a backup file out.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Build` | `static byte[] Build(IEnumerable<Item> items)` | Builds a full MTF backup from `items` and returns the raw bytes. Files are bucketed by their parent directory; a DIRB precedes every non-root group. The default 1024-byte FLB is used. |
-| `Build` | `static byte[] Build(IEnumerable<Item> items, int logicalBlockSize)` | Builds a full MTF backup with an explicit Format Logical Block size (must be a power of two between 512 and 65536). |
+| `DefaultLogicalBlockSize` | `const int DefaultLogicalBlockSize` | The Format Logical Block size NTBackup uses. |
+| `Build` | `static byte[] Build(IEnumerable<Item> items)` | Builds a medium with 1024-byte Format Logical Blocks. |
+| `Build` | `static byte[] Build(IEnumerable<Item> items, int logicalBlockSize)` | Builds a medium with the given Format Logical Block size (512 or 1024, MTF 1.00a §3.4.2). |
 
 #### `BkfWriter.Item`
 
-One file or directory destined for the backup, with archive-relative path.
+A file (`Data`) or folder at `Path` ('/'-separated).
 
 Implements `IEquatable<Item>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Item` | `Item(string Path, byte[] Data, bool IsDirectory)` | One file or directory destined for the backup, with archive-relative path. |
-| `Data` | `byte[] Data { get; init; }` | File payload. Ignored when `IsDirectory` is true. |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | True for an explicit directory entry. |
-| `Path` | `string Path { get; init; }` | Archive-relative path using `/` or `\` separators. |
+| `Item` | `Item(string Path, byte[] Data, bool IsDirectory, DateTime? Modified = null)` | A file (`Data`) or folder at `Path` ('/'-separated). |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `Modified` | `DateTime? Modified { get; init; }` |  |
+| `Path` | `string Path { get; init; }` |  |
 
 ### Namespace `FileFormat.BlakHole`
 
