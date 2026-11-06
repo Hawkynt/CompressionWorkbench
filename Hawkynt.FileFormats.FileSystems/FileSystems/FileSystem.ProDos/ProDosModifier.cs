@@ -6,10 +6,19 @@ namespace FileSystem.ProDos;
 
 /// <summary>
 /// Random-access in-place modifier for Apple ProDOS block-ordered images
-/// (<c>.po</c> and <c>.2mg</c>). Reads and writes only the volume directory
-/// chain, the bitmap, and the new file's index + data blocks — never the
-/// whole image. Lets callers operate on huge underlying streams without
-/// paging the entire disk into memory.
+/// (<c>.po</c> and <c>.2mg</c>). Reads and writes only the directory chains on
+/// the path, the bitmap, and the new file's index + data blocks — never the
+/// whole image.
+/// <para>
+/// A name with '/' separators is placed in real ProDOS subdirectories: each
+/// missing folder becomes a storage-type $D entry in its parent pointing at a
+/// one-block directory whose key block starts with a $E subdirectory header
+/// (parent pointer, parent entry number, entry length $27, $0D entries per
+/// block). A full subdirectory grows by a chained block, and its entry's
+/// blocks_used and EOF follow; the volume directory has a fixed size, as in
+/// ProDOS. Every write is staged and lands only after all checks pass, so a
+/// refused edit leaves the image byte-identical.
+/// </para>
 /// </summary>
 public static class ProDosModifier {
 
@@ -21,132 +30,136 @@ public static class ProDosModifier {
 
   private static readonly byte[] TwoImgMagic = "2IMG"u8.ToArray();
 
+  /// <summary>Staged block view of the image: reads see pending writes; nothing reaches the stream before <see cref="Commit"/>.</summary>
+  private sealed class Disk {
+    private readonly Stream _image;
+    private readonly int _start;
+    private readonly Dictionary<int, byte[]> _pending = [];
+    public bool[] Bitmap { get; }
+    public int TotalBlocks { get; }
+    private readonly int _bitmapPtr, _bitmapBlocks;
+
+    public Disk(Stream image) {
+      _image = image;
+      _start = DetectImageStart(image);
+      var vol = ReadBlock(image, _start, VolumeDirStartBlock);
+      TotalBlocks = BinaryPrimitives.ReadUInt16LittleEndian(vol.AsSpan(4 + ProDosReader.HeaderTotalBlocksOrParentEntry));
+      _bitmapPtr = BinaryPrimitives.ReadUInt16LittleEndian(vol.AsSpan(4 + ProDosReader.HeaderBitmapOrParentPointer));
+      if (_bitmapPtr == 0) _bitmapPtr = BitmapStartBlock;
+      _bitmapBlocks = (TotalBlocks + (BlockSize * 8) - 1) / (BlockSize * 8);
+      Bitmap = ReadBitmap(image, _start, _bitmapPtr, _bitmapBlocks);
+    }
+
+    public byte[] Read(int block) => _pending.TryGetValue(block, out var b) ? (byte[])b.Clone() : ReadBlock(_image, _start, block);
+    public void Write(int block, byte[] data) => _pending[block] = (byte[])data.Clone();
+    public int Allocate() => AllocateBlock(Bitmap, TotalBlocks);
+
+    public void Commit() {
+      foreach (var (block, data) in _pending.OrderBy(p => p.Key)) WriteBlock(_image, _start, block, data);
+      WriteBitmap(_image, _start, _bitmapPtr, _bitmapBlocks, Bitmap);
+    }
+  }
+
+  private static string[] SplitPath(string name) {
+    var parts = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+    return parts.Length == 0 ? [name] : parts;
+  }
+
   /// <summary>
-  /// Adds a file to an existing image. Caller is responsible for ensuring the
-  /// name does not already exist; use <see cref="RemoveFile"/> first for
-  /// replace-by-name semantics.
+  /// Adds a file to an existing image, creating any missing folders on its path as
+  /// real subdirectories. Caller is responsible for ensuring the name does not
+  /// already exist; use <see cref="RemoveFile"/> first for replace-by-name semantics.
   /// </summary>
   public static void AddFile(Stream image, string name, byte[] data, byte fileType = 0x06) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
 
-    var imageStart = DetectImageStart(image);
-    var sanitized = SanitizeName(name);
+    var disk = new Disk(image);
+    var parts = SplitPath(name);
+    var dirKey = VolumeDirStartBlock;
+    for (var i = 0; i < parts.Length - 1; ++i) {
+      var folder = SanitizeName(parts[i]);
+      var found = Locate(disk, dirKey, folder);
+      if (found.Found) {
+        if (found.StorageType != 0xD) throw new InvalidOperationException($"ProDOS: '{folder}' on the path is a file, not a directory.");
+        dirKey = found.KeyPointer;
+      } else {
+        dirKey = CreateSubdirectory(disk, dirKey, folder);
+      }
+    }
+    var sanitized = SanitizeName(parts[^1]);
 
-    var volHeader = ReadBlock(image, imageStart, VolumeDirStartBlock);
-    var totalBlocks = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderTotalBlocksOrParentEntry));
-    var bitmapPtr = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderBitmapOrParentPointer));
-    if (bitmapPtr == 0) bitmapPtr = BitmapStartBlock;
-
-    var bitmapBlocks = (totalBlocks + (BlockSize * 8) - 1) / (BlockSize * 8);
-    var bitmap = ReadBitmap(image, imageStart, bitmapPtr, bitmapBlocks);
-
-    // Plan storage tier + allocate blocks.
-    var (storageType, keyPointer, blocksUsed, allocPlan) =
-      AllocateStorage(bitmap, totalBlocks, data);
-
-    // Persist data blocks.
-    foreach (var (block, offset, count) in allocPlan.DataWrites) {
+    var (storageType, keyPointer, blocksUsed, plan) = AllocateStorage(disk.Bitmap, disk.TotalBlocks, data);
+    foreach (var (block, offset, count) in plan.DataWrites) {
       var buf = new byte[BlockSize];
       Buffer.BlockCopy(data, offset, buf, 0, count);
-      WriteBlock(image, imageStart, block, buf);
+      disk.Write(block, buf);
     }
-
-    // Persist index blocks (sapling + tree).
-    foreach (var (block, lowBytes, highBytes) in allocPlan.IndexWrites) {
+    foreach (var (block, lowBytes, highBytes) in plan.IndexWrites) {
       var buf = new byte[BlockSize];
       Buffer.BlockCopy(lowBytes, 0, buf, 0, lowBytes.Length);
       Buffer.BlockCopy(highBytes, 0, buf, 256, highBytes.Length);
-      WriteBlock(image, imageStart, block, buf);
+      disk.Write(block, buf);
     }
-
-    // Persist master index block (tree only).
-    if (allocPlan.MasterIndexBlock is int master) {
+    if (plan.MasterIndexBlock is int master) {
       var buf = new byte[BlockSize];
-      Buffer.BlockCopy(allocPlan.MasterLowBytes!, 0, buf, 0, allocPlan.MasterLowBytes!.Length);
-      Buffer.BlockCopy(allocPlan.MasterHighBytes!, 0, buf, 256, allocPlan.MasterHighBytes!.Length);
-      WriteBlock(image, imageStart, master, buf);
+      Buffer.BlockCopy(plan.MasterLowBytes!, 0, buf, 0, plan.MasterLowBytes!.Length);
+      Buffer.BlockCopy(plan.MasterHighBytes!, 0, buf, 256, plan.MasterHighBytes!.Length);
+      disk.Write(master, buf);
     }
 
-    // Insert directory entry.
-    var slot = FindFreeDirectorySlot(image, imageStart);
-    if (!slot.Found)
-      throw new InvalidOperationException("ProDOS: volume directory full (no free entry slot).");
-
-    var dirBuf = ReadBlock(image, imageStart, slot.Block);
-    // The directory header fills slot 0 (block bytes $04..$2A); file entries
-    // follow at $2B + n·$27, and the header's own fields end at $2A.
+    var slot = TakeSlot(disk, dirKey);
+    var dirBuf = disk.Read(slot.Block);
     var entryOff = ProDosReader.EntryOffsetInBlock(slot.IsFirstBlockOfChain, slot.IndexInBlock);
-    dirBuf[entryOff + 0] = (byte)((storageType << 4) | (sanitized.Length & 0x0F));
-    for (var i = 0; i < sanitized.Length && i < 15; i++)
-      dirBuf[entryOff + 1 + i] = (byte)sanitized[i];
-    for (var i = sanitized.Length; i < 15; i++)
-      dirBuf[entryOff + 1 + i] = 0;
+    WriteEntryName(dirBuf, entryOff, storageType, sanitized);
     dirBuf[entryOff + 0x10] = fileType;
     BinaryPrimitives.WriteUInt16LittleEndian(dirBuf.AsSpan(entryOff + 0x11), (ushort)keyPointer);
     BinaryPrimitives.WriteUInt16LittleEndian(dirBuf.AsSpan(entryOff + 0x13), (ushort)blocksUsed);
-    dirBuf[entryOff + 0x15] = (byte)(data.Length & 0xFF);
-    dirBuf[entryOff + 0x16] = (byte)((data.Length >> 8) & 0xFF);
-    dirBuf[entryOff + 0x17] = (byte)((data.Length >> 16) & 0xFF);
-    dirBuf[entryOff + 0x1C] = 0x00;
-    dirBuf[entryOff + 0x1D] = 0x00;
+    WriteEof(dirBuf, entryOff, data.Length);
     dirBuf[entryOff + 0x1E] = 0xE3;
-    BinaryPrimitives.WriteUInt16LittleEndian(dirBuf.AsSpan(entryOff + 0x25), VolumeDirStartBlock);
-
-    // Bump file_count. The header lives in block 2; if slot.Block == 2 we must
-    // update the same buffer we're about to write, not a stale snapshot.
-    if (slot.Block == VolumeDirStartBlock) {
-      var fc = BinaryPrimitives.ReadUInt16LittleEndian(dirBuf.AsSpan(4 + ProDosReader.HeaderFileCount));
-      BinaryPrimitives.WriteUInt16LittleEndian(dirBuf.AsSpan(4 + ProDosReader.HeaderFileCount), (ushort)(fc + 1));
-      WriteBlock(image, imageStart, slot.Block, dirBuf);
-    } else {
-      WriteBlock(image, imageStart, slot.Block, dirBuf);
-      var fc = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderFileCount));
-      BinaryPrimitives.WriteUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderFileCount), (ushort)(fc + 1));
-      WriteBlock(image, imageStart, VolumeDirStartBlock, volHeader);
-    }
-
-    WriteBitmap(image, imageStart, bitmapPtr, bitmapBlocks, bitmap);
+    BinaryPrimitives.WriteUInt16LittleEndian(dirBuf.AsSpan(entryOff + 0x25), (ushort)dirKey);
+    disk.Write(slot.Block, dirBuf);
+    AdjustFileCount(disk, dirKey, +1);
+    disk.Commit();
   }
 
   /// <summary>
-  /// Removes a named file from the image. Returns true if found and removed.
-  /// When <paramref name="wipeData"/> is true, data blocks are zeroed.
+  /// Removes a named file (a '/'-separated path reaches into subdirectories) from the
+  /// image. Returns true if found and removed. When <paramref name="wipeData"/> is true,
+  /// data blocks are zeroed.
   /// </summary>
   public static bool RemoveFile(Stream image, string name, bool wipeData = true) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(name);
 
-    var imageStart = DetectImageStart(image);
-    var sanitized = SanitizeName(name);
-
-    var volHeader = ReadBlock(image, imageStart, VolumeDirStartBlock);
-    var totalBlocks = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderTotalBlocksOrParentEntry));
-    var bitmapPtr = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderBitmapOrParentPointer));
-    if (bitmapPtr == 0) bitmapPtr = BitmapStartBlock;
-    var bitmapBlocks = (totalBlocks + (BlockSize * 8) - 1) / (BlockSize * 8);
-    var bitmap = ReadBitmap(image, imageStart, bitmapPtr, bitmapBlocks);
-
-    var locator = LocateDirectoryEntry(image, imageStart, sanitized);
+    var disk = new Disk(image);
+    var parts = SplitPath(name);
+    var dirKey = VolumeDirStartBlock;
+    for (var i = 0; i < parts.Length - 1; ++i) {
+      var found = Locate(disk, dirKey, SanitizeName(parts[i]));
+      if (!found.Found || found.StorageType != 0xD) return false;
+      dirKey = found.KeyPointer;
+    }
+    var locator = Locate(disk, dirKey, SanitizeName(parts[^1]));
     if (!locator.Found) return false;
 
-    var dirBuf = ReadBlock(image, imageStart, locator.Block);
+    var dirBuf = disk.Read(locator.Block);
     var entryOff = ProDosReader.EntryOffsetInBlock(locator.IsFirstBlockOfChain, locator.IndexInBlock);
     var storageType = (dirBuf[entryOff + 0] >> 4) & 0x0F;
     var keyPointer = BinaryPrimitives.ReadUInt16LittleEndian(dirBuf.AsSpan(entryOff + 0x11));
     var eof = dirBuf[entryOff + 0x15] | (dirBuf[entryOff + 0x16] << 8) | (dirBuf[entryOff + 0x17] << 16);
+    var totalBlocks = disk.TotalBlocks;
 
     var dataBlocks = new List<int>();
     var indexBlocks = new List<int>();
-
     switch (storageType) {
       case 1: // Seedling — key is the single data block.
         dataBlocks.Add(keyPointer);
         break;
       case 2: { // Sapling — key is index block; pointers cover up to 256 data blocks.
         indexBlocks.Add(keyPointer);
-        var idx = ReadBlock(image, imageStart, keyPointer);
+        var idx = disk.Read(keyPointer);
         var dataBlockCount = (eof + BlockSize - 1) / BlockSize;
         for (var i = 0; i < dataBlockCount && i < 256; i++) {
           var b = idx[i] | (idx[256 + i] << 8);
@@ -156,15 +169,15 @@ public static class ProDosModifier {
       }
       case 3: { // Tree — key is master index; sub-indices cover 256 data blocks each.
         indexBlocks.Add(keyPointer);
-        var master = ReadBlock(image, imageStart, keyPointer);
+        var masterBlock = disk.Read(keyPointer);
         var dataBlockCount = (eof + BlockSize - 1) / BlockSize;
         var indexCount = (dataBlockCount + 255) / 256;
         var dataIdx = 0;
         for (var si = 0; si < indexCount && si < 256; si++) {
-          var sub = master[si] | (master[256 + si] << 8);
+          var sub = masterBlock[si] | (masterBlock[256 + si] << 8);
           if (sub == 0) { dataIdx += 256; continue; }
           indexBlocks.Add(sub);
-          var subBlk = ReadBlock(image, imageStart, sub);
+          var subBlk = disk.Read(sub);
           var inThisSub = Math.Min(256, dataBlockCount - dataIdx);
           for (var di = 0; di < inThisSub; di++) {
             var b = subBlk[di] | (subBlk[256 + di] << 8);
@@ -182,32 +195,138 @@ public static class ProDosModifier {
     if (wipeData) {
       var zero = new byte[BlockSize];
       foreach (var b in dataBlocks)
-        if (b > 0 && b < totalBlocks) WriteBlock(image, imageStart, b, zero);
+        if (b > 0 && b < totalBlocks) disk.Write(b, zero);
     }
+    foreach (var b in dataBlocks.Concat(indexBlocks))
+      if (b > 0 && b < totalBlocks) disk.Bitmap[b] = true;
 
-    foreach (var b in dataBlocks)
-      if (b > 0 && b < totalBlocks) bitmap[b] = true;
-    foreach (var b in indexBlocks)
-      if (b > 0 && b < totalBlocks) bitmap[b] = true;
-
-    // Mark entry deleted: storage_type nibble = 0, name_length = 0.
-    dirBuf[entryOff + 0] = 0;
-
-    if (locator.Block == VolumeDirStartBlock) {
-      var fc = BinaryPrimitives.ReadUInt16LittleEndian(dirBuf.AsSpan(4 + ProDosReader.HeaderFileCount));
-      if (fc > 0)
-        BinaryPrimitives.WriteUInt16LittleEndian(dirBuf.AsSpan(4 + ProDosReader.HeaderFileCount), (ushort)(fc - 1));
-      WriteBlock(image, imageStart, locator.Block, dirBuf);
-    } else {
-      WriteBlock(image, imageStart, locator.Block, dirBuf);
-      var fc = BinaryPrimitives.ReadUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderFileCount));
-      if (fc > 0)
-        BinaryPrimitives.WriteUInt16LittleEndian(volHeader.AsSpan(4 + ProDosReader.HeaderFileCount), (ushort)(fc - 1));
-      WriteBlock(image, imageStart, VolumeDirStartBlock, volHeader);
-    }
-
-    WriteBitmap(image, imageStart, bitmapPtr, bitmapBlocks, bitmap);
+    dirBuf = disk.Read(locator.Block);
+    dirBuf[entryOff + 0] = 0; // storage_type nibble = 0, name_length = 0: deleted
+    disk.Write(locator.Block, dirBuf);
+    AdjustFileCount(disk, dirKey, -1);
+    disk.Commit();
     return true;
+  }
+
+  private static void WriteEntryName(byte[] buf, int entryOff, int storageType, string name) {
+    buf.AsSpan(entryOff, EntrySize).Clear();
+    buf[entryOff + 0] = (byte)((storageType << 4) | (name.Length & 0x0F));
+    for (var i = 0; i < name.Length && i < 15; i++) buf[entryOff + 1 + i] = (byte)name[i];
+  }
+
+  private static void WriteEof(byte[] buf, int entryOff, int eof) {
+    buf[entryOff + 0x15] = (byte)(eof & 0xFF);
+    buf[entryOff + 0x16] = (byte)((eof >> 8) & 0xFF);
+    buf[entryOff + 0x17] = (byte)((eof >> 16) & 0xFF);
+  }
+
+  private static void AdjustFileCount(Disk disk, int dirKey, int delta) {
+    var key = disk.Read(dirKey);
+    var fc = BinaryPrimitives.ReadUInt16LittleEndian(key.AsSpan(4 + ProDosReader.HeaderFileCount));
+    BinaryPrimitives.WriteUInt16LittleEndian(key.AsSpan(4 + ProDosReader.HeaderFileCount), (ushort)Math.Max(0, fc + delta));
+    disk.Write(dirKey, key);
+  }
+
+  /// <summary>Creates a one-block subdirectory <paramref name="name"/> in the directory keyed at <paramref name="parentKey"/>; returns its key block.</summary>
+  private static int CreateSubdirectory(Disk disk, int parentKey, string name) {
+    var slot = TakeSlot(disk, parentKey);
+    var key = disk.Allocate();
+
+    var header = new byte[BlockSize]; // prev = next = 0
+    const int h = 4;
+    header[h] = (byte)((0xE << 4) | (name.Length & 0x0F));
+    for (var i = 0; i < name.Length && i < 15; i++) header[h + 1 + i] = (byte)name[i];
+    header[h + 0x10] = 0x75; // ProDOS expects $75 here in a subdirectory header
+    header[h + ProDosReader.HeaderAccess] = 0xE3;
+    header[h + ProDosReader.HeaderEntryLength] = EntrySize;
+    header[h + ProDosReader.HeaderEntriesPerBlock] = EntriesPerBlock;
+    BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(h + ProDosReader.HeaderBitmapOrParentPointer), (ushort)slot.Block);
+    header[h + ProDosReader.HeaderTotalBlocksOrParentEntry] = (byte)(slot.IndexInBlock + 1);
+    header[h + ProDosReader.HeaderParentEntryLength] = EntrySize;
+    disk.Write(key, header);
+
+    var parentBuf = disk.Read(slot.Block);
+    var entryOff = ProDosReader.EntryOffsetInBlock(slot.IsFirstBlockOfChain, slot.IndexInBlock);
+    WriteEntryName(parentBuf, entryOff, 0xD, name);
+    parentBuf[entryOff + 0x10] = 0x0F; // DIR
+    BinaryPrimitives.WriteUInt16LittleEndian(parentBuf.AsSpan(entryOff + 0x11), (ushort)key);
+    BinaryPrimitives.WriteUInt16LittleEndian(parentBuf.AsSpan(entryOff + 0x13), 1);
+    WriteEof(parentBuf, entryOff, BlockSize);
+    parentBuf[entryOff + 0x1E] = 0xE3;
+    BinaryPrimitives.WriteUInt16LittleEndian(parentBuf.AsSpan(entryOff + 0x25), (ushort)parentKey);
+    disk.Write(slot.Block, parentBuf);
+    AdjustFileCount(disk, parentKey, +1);
+    return key;
+  }
+
+  // ── Directory navigation ──────────────────────────────────────────────
+
+  private readonly record struct DirSlot(bool Found, int Block, int IndexInBlock, bool IsFirstBlockOfChain);
+
+  private readonly record struct DirLocator(bool Found, int Block, int IndexInBlock, bool IsFirstBlockOfChain, int StorageType, int KeyPointer);
+
+  private static IEnumerable<(int Block, byte[] Buffer, bool First)> Chain(Disk disk, int dirKey) {
+    var visited = new HashSet<int>();
+    var block = dirKey;
+    var first = true;
+    while (block != 0 && block < disk.TotalBlocks && visited.Add(block)) {
+      var buf = disk.Read(block);
+      yield return (block, buf, first);
+      first = false;
+      block = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(2));
+    }
+  }
+
+  private static DirLocator Locate(Disk disk, int dirKey, string name) {
+    foreach (var (block, buf, first) in Chain(disk, dirKey))
+      for (var i = first ? 1 : 0; i < EntriesPerBlock; i++) {
+        var eo = ProDosReader.EntryOffsetInBlock(first, i);
+        var storage = (buf[eo] >> 4) & 0x0F;
+        var len = buf[eo] & 0x0F;
+        if (storage == 0 || len == 0) continue;
+        if (Encoding.ASCII.GetString(buf, eo + 1, len) == name)
+          return new DirLocator(true, block, i, first, storage, BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(eo + 0x11)));
+      }
+    return default;
+  }
+
+  /// <summary>
+  /// A free entry slot in the directory keyed at <paramref name="dirKey"/>. A full
+  /// subdirectory grows by one chained block; the volume directory cannot grow.
+  /// </summary>
+  private static DirSlot TakeSlot(Disk disk, int dirKey) {
+    var last = 0;
+    foreach (var (block, buf, first) in Chain(disk, dirKey)) {
+      last = block;
+      for (var i = first ? 1 : 0; i < EntriesPerBlock; i++) {
+        var eo = ProDosReader.EntryOffsetInBlock(first, i);
+        if (((buf[eo] >> 4) & 0x0F) == 0 || (buf[eo] & 0x0F) == 0) return new DirSlot(true, block, i, first);
+      }
+    }
+    if (dirKey == VolumeDirStartBlock)
+      throw new InvalidOperationException("ProDOS: volume directory full (no free entry slot).");
+
+    var added = disk.Allocate();
+    var fresh = new byte[BlockSize];
+    BinaryPrimitives.WriteUInt16LittleEndian(fresh.AsSpan(0), (ushort)last);
+    disk.Write(added, fresh);
+    var tail = disk.Read(last);
+    BinaryPrimitives.WriteUInt16LittleEndian(tail.AsSpan(2), (ushort)added);
+    disk.Write(last, tail);
+
+    // The subdirectory's own entry in its parent counts the blocks.
+    var key = disk.Read(dirKey);
+    var parentBlock = BinaryPrimitives.ReadUInt16LittleEndian(key.AsSpan(4 + ProDosReader.HeaderBitmapOrParentPointer));
+    var parentEntry = key[4 + ProDosReader.HeaderTotalBlocksOrParentEntry];
+    if (parentBlock != 0 && parentEntry >= 1) {
+      var parent = disk.Read(parentBlock);
+      var eo = 4 + (parentEntry - 1) * EntrySize;
+      var used = BinaryPrimitives.ReadUInt16LittleEndian(parent.AsSpan(eo + 0x13)) + 1;
+      BinaryPrimitives.WriteUInt16LittleEndian(parent.AsSpan(eo + 0x13), (ushort)used);
+      WriteEof(parent, eo, used * BlockSize);
+      disk.Write(parentBlock, parent);
+    }
+    return new DirSlot(true, added, 0, false);
   }
 
   // ── Allocation planning ───────────────────────────────────────────────
@@ -370,55 +489,6 @@ public static class ProDosModifier {
     throw new InvalidOperationException("ProDOS: out of free blocks.");
   }
 
-  // ── Directory navigation ──────────────────────────────────────────────
-
-  private readonly record struct DirSlot(bool Found, int Block, int IndexInBlock, bool IsFirstBlockOfChain);
-
-  private static DirSlot FindFreeDirectorySlot(Stream image, int imageStart) {
-    var block = VolumeDirStartBlock;
-    var visited = new HashSet<int>();
-    var firstBlock = true;
-    while (block != 0 && visited.Add(block)) {
-      var buf = ReadBlock(image, imageStart, block);
-      var nextBlock = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(2));
-      var slotsHere = ProDosReader.SlotsInBlock(firstBlock);
-      for (var i = 0; i < slotsHere; i++) {
-        if (firstBlock && i == 0) continue; // volume header slot
-        var eo = ProDosReader.EntryOffsetInBlock(firstBlock, i);
-        var storage = (buf[eo + 0] >> 4) & 0x0F;
-        var len = buf[eo + 0] & 0x0F;
-        if (storage == 0 || len == 0) return new DirSlot(true, block, i, firstBlock);
-      }
-      firstBlock = false;
-      block = nextBlock;
-    }
-    return new DirSlot(false, 0, 0, false);
-  }
-
-  private readonly record struct DirLocator(bool Found, int Block, int IndexInBlock, bool IsFirstBlockOfChain);
-
-  private static DirLocator LocateDirectoryEntry(Stream image, int imageStart, string name) {
-    var block = VolumeDirStartBlock;
-    var visited = new HashSet<int>();
-    var firstBlock = true;
-    while (block != 0 && visited.Add(block)) {
-      var buf = ReadBlock(image, imageStart, block);
-      var nextBlock = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(2));
-      var slotsHere = ProDosReader.SlotsInBlock(firstBlock);
-      for (var i = 0; i < slotsHere; i++) {
-        if (firstBlock && i == 0) continue;
-        var eo = ProDosReader.EntryOffsetInBlock(firstBlock, i);
-        var storage = (buf[eo + 0] >> 4) & 0x0F;
-        var len = buf[eo + 0] & 0x0F;
-        if (storage == 0 || len == 0) continue;
-        var entryName = Encoding.ASCII.GetString(buf, eo + 1, len);
-        if (entryName == name) return new DirLocator(true, block, i, firstBlock);
-      }
-      firstBlock = false;
-      block = nextBlock;
-    }
-    return new DirLocator(false, 0, 0, false);
-  }
 
   // ── Name sanitisation (mirrors ProDosWriter) ─────────────────────────
 

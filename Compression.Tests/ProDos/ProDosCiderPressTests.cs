@@ -43,6 +43,17 @@ public sealed class ProDosCiderPressTests {
       var added = Pattern(1_234, 4);
       d.Add(ms, [ArchiveInputInfo.InMemory("ADDED", added)]);
       files["ADDED"] = added;
+      // In-place adds into an existing subdirectory, into new nested folders, and enough
+      // into one new folder that it outgrows its key block and chains a second one.
+      var editorFiles = new Dictionary<string, byte[]> {
+        ["DOCS/LATER"] = Pattern(700, 6),
+        ["NEW/SUB/INNER"] = Pattern(3_000, 7),
+      };
+      for (var i = 0; i < 20; ++i) editorFiles[$"GROW/F{i:D2}"] = Pattern(100 + i, 8 + i);
+      foreach (var (name, data) in editorFiles) {
+        d.Add(ms, [ArchiveInputInfo.InMemory(name, data)]);
+        files[name] = data;
+      }
       var img = Path.Combine(dir, "w.po");
       File.WriteAllBytes(img, ms.ToArray());
 
@@ -56,6 +67,7 @@ public sealed class ProDosCiderPressTests {
         Assert.That(SHA256.HashData(File.ReadAllBytes(path)), Is.EqualTo(SHA256.HashData(data)), name);
       }
       Assert.That(r.StdOut, Does.Contain("DOCS:DEEP:LEAF"), "CiderPress sees the nested path as subdirectories");
+      Assert.That(r.StdOut, Does.Contain("NEW:SUB:INNER").And.Contain("GROW:F19"));
       Assert.That(r.StdOut, Does.Not.Contain("damage").IgnoreCase.And.Not.Contain("warning").IgnoreCase, r.StdOut);
     } finally {
       try { Directory.Delete(dir, true); } catch { /* best effort */ }
