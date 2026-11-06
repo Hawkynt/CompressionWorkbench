@@ -253,7 +253,7 @@ the repack kept only names and bytes.
   family, the retro disk formats, PS1 memory cards, and the in-place archive editors (ZIP family,
   TAR, AR, CPIO, XAR, LZH/LHA, ARJ, ZOO, PDF), the sector-image editors and the disk-image
   containers that delegate to an inner filesystem.
-- **Relayout / re-pack, not yet re-verified for losslessness**: ReiserFS, GFS2, MFS-1, Stacker,
+- **Relayout / re-pack, not yet re-verified for losslessness**: ReiserFS, GFS2, Stacker,
   CramFS, EROFS, CAB, RAR, and every descriptor relying on the default `IArchiveModifiable`
   rebuild. `RebuildVerb.EditViaRebuild` round-trips names and bytes through a temporary folder
   and keeps nothing else, so a format whose container carries more than that is a demotion

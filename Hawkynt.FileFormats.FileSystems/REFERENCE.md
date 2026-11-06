@@ -4434,7 +4434,7 @@ Random-access in-place modifier for BBC Micro Acorn DFS `.ssd` images. The DFS c
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddEntry` | `static void AddEntry(Stream image, string catalogName, byte[] data, char directory = '$', uint loadAddr = 6400, uint execAddr = 6400, bool locked = false)` | Adds a file under a catalogue name the caller has already made valid (at most seven printable characters) — for the Acorn DFS family members whose names follow their own rules, such as MFS-1. |
+| `AddEntry` | `static void AddEntry(Stream image, string catalogName, byte[] data, char directory = '$', uint loadAddr = 6400, uint execAddr = 6400, bool locked = false)` | Adds a file under a catalogue name the caller has already made valid (at most seven printable characters), for callers whose names follow their own rules. |
 | `AddFile` | `static void AddFile(Stream image, string name, byte[] data, char directory = '$', uint loadAddr = 6400, uint execAddr = 6400, bool locked = false)` | Adds a file to an existing single-sided DFS image. Caller is responsible for ensuring the name does not already exist (use `RemoveFile` first for replace-by-name semantics). The file is placed in the lowest contiguous gap large enough to hold it. |
 | `RemoveEntry` | `static bool RemoveEntry(Stream image, string catalogName, char directory, bool wipeData = true)` | Removes the file stored under exactly `catalogName` in `directory` (case-insensitively, as DFS compares); true when found. |
 | `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes a named file from the image. Returns true if found and removed. When `wipeData` is true, the data sectors are zeroed. |
@@ -11040,128 +11040,6 @@ Builds a minimal MFS disk image.
 | `VolumeName` | `string VolumeName { get; set; }` | MFS volume name written into the MDB at offset 36 (Pascal string, max 27 chars). Shown by the classic Mac Finder as the disk's name. Default "Untitled". |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the image. |
 | `Build` | `byte[] Build()` | Builds the MFS disk image. |
-
-### Namespace `FileSystem.Mfs1`
-
-[`Mfs1BlockMover`](#mfs1blockmover) · [`Mfs1Entry`](#mfs1entry) · [`Mfs1ExtentMap`](#mfs1extentmap) · [`Mfs1FormatDescriptor`](#mfs1formatdescriptor) · [`Mfs1InPlaceModifier`](#mfs1inplacemodifier) · [`Mfs1Reader`](#mfs1reader) · [`Mfs1Writer`](#mfs1writer)
-
-#### `Mfs1BlockMover`
-
-Moves a file's sectors inside an MFS-1 disk and repoints its catalog slot.
-
-Implements `IFilesystemBlockMover`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Mfs1BlockMover` | `Mfs1BlockMover()` |  |
-| `BlockSize` | `int BlockSize { get; }` | A sector. A catalog slot names a sector, not a byte. |
-| `FirstDataByte` | `long FirstDataByte { get; }` | First byte a file may occupy: past the two catalog sectors. |
-| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call repoints the slot it is given and nothing else, so an owner in several runs — which this format cannot produce — would be several calls. |
-| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full disk be rearranged at all. |
-| `Init` | `void Init(Stream image)` | Reads how many catalog slots this disk carries. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
-
-#### `Mfs1Entry`
-
-A single catalog entry parsed out of an Acorn MFS-1 disk image. MFS-1 inherits Acorn's DFS catalog layout: 7-character filename plus 1-character directory letter (default `$`) packed into 8 bytes in sector 0, with the matching metadata block in sector 1.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Mfs1Entry` | `Mfs1Entry()` |  |
-| `Directory` | `char Directory { get; init; }` | Gets or sets the directory. |
-| `ExecAddress` | `uint ExecAddress { get; init; }` | Gets or sets the exec address. |
-| `FullName` | `string FullName { get; }` | Gets the full name. |
-| `IsLocked` | `bool IsLocked { get; init; }` | Gets a value indicating whether is locked. |
-| `LoadAddress` | `uint LoadAddress { get; init; }` | Gets or sets the load address. |
-| `Name` | `string Name { get; init; }` | Gets or sets the name. |
-| `Size` | `uint Size { get; init; }` | Gets or sets the size. |
-| `StartSector` | `int StartSector { get; init; }` | Gets or sets the start sector. |
-
-#### `Mfs1ExtentMap`
-
-Reports where an MFS-1 disk's bytes are: the two catalog sectors, each file's run of sectors under its name, and the rest as free.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `CatalogSectors` | `const int CatalogSectors` | Sectors the catalog occupies before any file data. |
-| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream image)` | Enumerates the value. |
-
-#### `Mfs1FormatDescriptor`
-
-Read/write descriptor for Acorn MFS-1 (Master File System v1) disk images — the catalog-compatible evolution of Acorn DFS used on early Acorn / BBC Master systems. The on-disk catalog matches DFS (256-byte sectors, two-sector catalog at track 0 sectors 0-1, up to 31 entries with 7-char names + 1-char directory), so MFS-1 is parsed by walking those sectors directly. References: `https://beebwiki.mdfs.net/Acorn_DFS_disc_format` — the DFS catalog layout MFS-1 shares (two-sector catalog at track 0)`https://en.wikipedia.org/wiki/Disc_Filing_System` — Wikipedia article on the DFS familyAcorn "Disc Filing System User Guide" (vendor manual)
-
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Mfs1FormatDescriptor` | `Mfs1FormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The writer-honoured knob is the 12-char disk title, stored across the two-sector DFS catalog (first 8 chars in sector 0, last 4 in sector 1). The image geometry defaults to the 200 KB 80-track SSD and is not exposed. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds — or replaces by name — files in an existing MFS-1 image. The image is re-packed via `AddFiles` from its existing files plus the new ones; the outer sector count is preserved. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a fresh MFS-1 image from the given inputs. The catalog and data area are emitted by `Mfs1Writer`; the resulting image is round-trip-readable by `Mfs1Reader`. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Lays the disk out again. A file here is one run of sectors and its catalog slot records where that run starts, so a move is the copy plus two bytes — cheaper than reading every file out and writing a fresh disk, which is what the inherited default did for the one mode it offered. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single catalog entry as a bounded stream over its sector extent. Reads past `Size` return 0 (EOF). The FULL/metadata placeholders are intentionally NOT openable via this path; use Extract. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing MFS-1 image. The data area of the removed file is zeroed on rebuild — no forensic trace of the removed bytes remains. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zero-fills every sector no catalog slot claims — which is where a removed file's bytes stay until something else takes them. |
-
-#### `Mfs1InPlaceModifier`
-
-In-place modifier for Acorn MFS-1 (DFS-tier) disk images. MFS-1's catalog is the Acorn DFS one — sector 0 (title and names) + sector 1 (title tail, counts, boot option and metadata) — so edits go through `BbcModifier`: only the two catalogue sectors and the file's own sectors are written, and every other file keeps its name, directory letter, lock, load and execution address and sectors.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `AddFiles` | `static void AddFiles(Stream archive, IReadOnlyList<ValueTuple<string, byte[]>> inputs)` | Adds — or replaces by name — files in an existing MFS-1 image. The image is re-packed from its existing files plus the new ones; the outer sector count is preserved. |
-| `RemoveFiles` | `static int RemoveFiles(Stream archive, IReadOnlyList<string> names)` | Removes the named entries from an existing MFS-1 image. Returns the number of entries removed. |
-
-#### `Mfs1Reader`
-
-Reads Acorn MFS-1 (Master File System v1) disk images. MFS-1 is the minor evolution of Acorn DFS used on early Acorn / BBC Master systems — the on-disk catalog layout matches DFS verbatim: 256-byte sectors, 10 sectors per track.Sector 0 — disk title (first 8 chars) + up to 31 eight-byte name entries: 7-char filename + 1-char directory letter (high bit = locked).Sector 1 — last 4 title chars + entry-count*8 byte at offset 5 + 31 eight-byte metadata entries: load(2), exec(2), length(2), packed-high-bits(1), start-sector-low(1).Packed-high-bits byte 6: bits 0-1 = start-sector high, bits 2-3 = load addr high, bits 4-5 = length high, bits 6-7 = exec addr high. The reader is intentionally forgiving — Acorn images frequently arrive with padding, optional boot sectors, or non-standard sizes. We parse the catalog best-effort; if the count byte or sector range looks invalid we surface no entries (the descriptor then falls back to the opaque FULL/metadata surface).
-
-Implements `IDisposable`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Mfs1Reader` | `Mfs1Reader(Stream stream)` | Initializes a new instance of `Mfs1Reader`. |
-| `Mfs1Reader` | `Mfs1Reader(byte[] image)` | Initializes a new instance of `Mfs1Reader`. |
-| `MaxEntries` | `const int MaxEntries` | Defines the max entries constant value. |
-| `SectorSize` | `const int SectorSize` | Defines the sector size constant value. |
-| `SectorsPerTrack` | `const int SectorsPerTrack` | Defines the sectors per track constant value. |
-| `CatalogParsed` | `bool CatalogParsed { get; }` | Gets a value indicating whether catalog parsed. |
-| `DiskTitle` | `string DiskTitle { get; }` | Gets or sets the disk title. |
-| `Entries` | `IReadOnlyList<Mfs1Entry> Entries { get; }` | Gets the entries. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(Mfs1Entry entry)` | Decodes the supplied input. |
-
-#### `Mfs1Writer`
-
-Builds Acorn MFS-1 (Master File System v1) disk images. MFS-1 inherits the DFS on-disk catalog: 256-byte sectors, a 2-sector catalog at track 0, up to 31 entries, files stored contiguously from sector 2 onwards. Catalog layout (from `Mfs1Reader`): sector 0, bytes 0..7 — disk title (first 8 chars) sector 0, bytes 8..255 — up to 31 × 8-byte name entries (7 ASCII chars + 1 directory char, high bit = locked) sector 1, bytes 0..3 — disk title (last 4 chars) sector 1, byte 5 — entry count × 8 (i.e. byte offset of the next free slot) sector 1, bytes 8..255 — up to 31 × 8-byte metadata entries: load_lo(2) + exec_lo(2) + length_lo(2) + packed_high_bits(1) + start_sector_lo(1) packed_high_bits bits: 0-1 start_sector_hi, 2-3 load_hi, 4-5 length_hi, 6-7 exec_hi. Files are stored contiguously from sector 2 onwards in catalog-insertion order; the catalog itself is sorted by descending start-sector per DFS convention (the most-recently-added file appears first). Total image size defaults to 80 tracks × 10 sectors × 256 bytes = 200 KB (a Master 80-track SSD image); pass `totalSectors` to `Build` to choose a different geometry.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Mfs1Writer` | `Mfs1Writer()` |  |
-| `DefaultTotalSectors` | `const int DefaultTotalSectors` | Defines the default total sectors constant value. |
-| `MaxEntries` | `const int MaxEntries` | Defines the max entries constant value. |
-| `SectorSize` | `const int SectorSize` | Defines the sector size constant value. |
-| `AddFile` | `void AddFile(string name, byte[] data, char directory = '$', bool locked = false, uint loadAddress = 0, uint execAddress = 0)` | Adds a file to the volume. |
-| `Build` | `byte[] Build(string diskTitle = "WORM", int totalSectors = 800)` | Builds the MFS-1 image. The catalog is laid out per the DFS convention: entries are sorted by descending start-sector so the most recently added file appears at index 0. |
-| `CatalogName` | `static ValueTuple<string, char> CatalogName(string name)` | MFS-1 file names are 7 ASCII characters from a printable subset (32..126) padded with spaces. The directory letter defaults to `$`; callers may pass a path of the form "X.NAME" to set the directory. |
 
 ### Namespace `FileSystem.MinixFs`
 

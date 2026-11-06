@@ -1,13 +1,11 @@
 using System.Diagnostics;
 using Compression.Registry;
 using FileSystem.Bbc;
-using FileSystem.Mfs1;
 
 namespace Compression.Tests.Bbc;
 
 /// <summary>
-/// Third-party proof for the Acorn DFS catalogue editors (BBC DFS and MFS-1, which shares
-/// the DFS catalogue), in both directions, against oaknut-disc (MIT, the Acorn disc-image
+/// Third-party proof for the Acorn DFS catalogue editor, in both directions, against oaknut-disc (MIT, the Acorn disc-image
 /// tool): what we create and then edit by directory letter is listed, read back byte for
 /// byte and passed by <c>disc validate</c>; and an image oaknut made and then edited by us is
 /// still valid to oaknut, with our edits where we put them.
@@ -31,20 +29,15 @@ public sealed class AcornDfsOaknutOracleTests {
     try { Directory.Delete(this._dir, true); } catch { /* best effort */ }
   }
 
-  public enum Flavour { BbcDfs, Mfs1 }
-
-  private static IArchiveFormatOperations Ops(Flavour flavour)
-    => flavour == Flavour.BbcDfs ? new BbcFormatDescriptor() : new Mfs1FormatDescriptor();
-
-  private static Dictionary<string, byte[]> Files(Stream image, Flavour flavour) {
+  private static Dictionary<string, byte[]> Files(Stream image) {
     image.Position = 0;
-    var ops = Ops(flavour);
+    var ops = new BbcFormatDescriptor();
     var names = ops.List(image, null).Where(e => !e.IsDirectory).Select(e => e.Name).ToList();
     var outDir = Directory.CreateTempSubdirectory("cwb_dfsx_").FullName;
     try {
       image.Position = 0;
       ops.Extract(image, outDir, null, null);
-      // Files of directory '$' are listed as "$.NAME" (BBC) or "NAME" (MFS-1) and extracted as "NAME".
+      // Files of directory '$' are listed as "$.NAME" and extracted as "NAME".
       static string Bare(string n) => n.StartsWith("$.", StringComparison.Ordinal) ? n[2..] : n;
       return names.ToDictionary(n => Bare(n).ToUpperInvariant(), n => File.ReadAllBytes(Path.Combine(outDir, Bare(n))), StringComparer.Ordinal);
     } finally {
@@ -55,13 +48,12 @@ public sealed class AcornDfsOaknutOracleTests {
   /// <summary>DFS names: "D.NAME" for directory D, a bare "NAME" for directory '$'.</summary>
   private static string OaknutPath(string name) => name.Length > 1 && name[1] == '.' ? name : "$." + name;
 
-  [TestCase(Flavour.BbcDfs)]
-  [TestCase(Flavour.Mfs1)]
-  public void GivenAnImageWeCreatedAndEdited_WhenOaknutReadsIt_ThenItListsAndReadsExactlyOurFiles(Flavour flavour) {
+  [Test]
+  public void GivenAnImageWeCreatedAndEdited_WhenOaknutReadsIt_ThenItListsAndReadsExactlyOurFiles() {
     RequireOaknut();
-    var ops = Ops(flavour);
+    var ops = new BbcFormatDescriptor();
     using var image = new MemoryStream();
-    ((IArchiveCreatable)ops).Create(image, [
+    ops.Create(image, [
       ArchiveInputInfo.InMemory("README", "readme in $"u8.ToArray()),
       ArchiveInputInfo.InMemory("A.TXT", "alpha in A"u8.ToArray()),
       ArchiveInputInfo.InMemory("B.TXT", "beta in B"u8.ToArray()),
@@ -70,15 +62,15 @@ public sealed class AcornDfsOaknutOracleTests {
     var editable = new MemoryStream();
     editable.Write(image.ToArray());
 
-    ((IArchiveModifiable)ops).Add(editable, [ArchiveInputInfo.InMemory("C.TXT", "gamma in C"u8.ToArray())]);
-    ((IArchiveModifiable)ops).Remove(editable, ["B.TXT"]);
+    ops.Add(editable, [ArchiveInputInfo.InMemory("C.TXT", "gamma in C"u8.ToArray())]);
+    ops.Remove(editable, ["B.TXT"]);
     var expected = new Dictionary<string, byte[]>(StringComparer.Ordinal) {
       ["README"] = "readme in $"u8.ToArray(),
       ["A.TXT"] = "alpha in A"u8.ToArray(),
       ["B.BIG"] = Pattern(3000, 1),
       ["C.TXT"] = "gamma in C"u8.ToArray(),
     };
-    Assert.That(Files(editable, flavour).Keys, Is.EquivalentTo(expected.Keys), "our reader");
+    Assert.That(Files(editable).Keys, Is.EquivalentTo(expected.Keys), "our reader");
 
     var ssd = Path.Combine(this._dir, "ours.ssd");
     File.WriteAllBytes(ssd, editable.ToArray());
@@ -95,9 +87,8 @@ public sealed class AcornDfsOaknutOracleTests {
       Assert.That(this.OaknutGet(ssd, OaknutPath(name)), Is.EqualTo(data), $"{name} as oaknut reads it");
   }
 
-  [TestCase(Flavour.BbcDfs)]
-  [TestCase(Flavour.Mfs1)]
-  public void GivenAnImageOaknutMade_WhenWeReadAndEditIt_ThenOaknutStillValidatesItAndSeesOurEdits(Flavour flavour) {
+  [Test]
+  public void GivenAnImageOaknutMade_WhenWeReadAndEditIt_ThenOaknutStillValidatesItAndSeesOurEdits() {
     RequireOaknut();
     var ssd = Path.Combine(this._dir, "theirs.ssd");
     Assert.That(Oaknut("create", "--title", "ORACLE", ssd).ExitCode, Is.Zero);
@@ -114,14 +105,14 @@ public sealed class AcornDfsOaknutOracleTests {
     }
 
     using (var image = new MemoryStream(File.ReadAllBytes(ssd))) {
-      var read = Files(image, flavour);
+      var read = Files(image);
       Assert.That(read.Keys, Is.EquivalentTo(files.Keys), "our reader on oaknut's image");
       foreach (var (name, data) in files) Assert.That(read[name], Is.EqualTo(data), name);
     }
 
     using (var image = new MemoryStream()) {
       image.Write(File.ReadAllBytes(ssd));
-      var ops = (IArchiveModifiable)Ops(flavour);
+      var ops = new BbcFormatDescriptor();
       ops.Add(image, [ArchiveInputInfo.InMemory("C.NEW", "added by us"u8.ToArray())]);
       ops.Remove(image, ["A.DATA"]);
       File.WriteAllBytes(ssd, image.ToArray());

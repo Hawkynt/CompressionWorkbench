@@ -353,7 +353,6 @@ format,Med,OctaMED (MMD0 / MMD1),Audio,,.med;.mmd0;.mmd1,Y,Y,,
 format,MessagePack,MessagePack object graph,Archive,,.msgpack;.mpk,Y,Y,Y,
 format,Mew,MEW (Win32 PE),Archive,,,Y,Y,,
 format,Mfs,MFS (Macintosh File System),Archive,Y,.mfs,Y,Y,Y,Y
-format,Mfs1,MFS-1 (Acorn Master File System v1),Archive,Y,.mfsd;.mfs,Y,Y,Y,Y
 format,Mhk,Cyan Mohawk,Archive,,.mhk,Y,Y,Y,
 format,Mht,MHTML (web archive),Archive,,.mht;.mhtml,Y,Y,Y,Y
 format,Midi,MIDI (Standard MIDI File),Audio,,.mid;.midi,Y,Y,Y,

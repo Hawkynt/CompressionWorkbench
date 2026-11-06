@@ -31,8 +31,7 @@ public static class BbcModifier {
 
   /// <summary>
   /// Adds a file under a catalogue name the caller has already made valid (at most seven
-  /// printable characters) — for the Acorn DFS family members whose names follow their own
-  /// rules, such as MFS-1.
+  /// printable characters), for callers whose names follow their own rules.
   /// </summary>
   public static void AddEntry(Stream image, string catalogName, byte[] data,
                               char directory = '$', uint loadAddr = 0x1900,
