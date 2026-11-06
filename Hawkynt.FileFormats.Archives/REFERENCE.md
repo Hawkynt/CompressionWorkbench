@@ -33036,7 +33036,7 @@ One file or directory of a UHARC 0.6 archive.
 
 #### `UharcFormatDescriptor`
 
-UHARC 0.6 archive (Uwe Herklotz, 1997–2005): read-only. Lists every 0.6/0.6a/0.6b archive and extracts the store, LZP (`-mz`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; the PPM mode (`-mx`) and the legacy RLE/LZ78 modes are refused. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with how each part was established`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
+UHARC 0.6 archive (Uwe Herklotz, 1997–2005): read-only. Lists every 0.6/0.6a/0.6b archive and extracts the store, RLE (`-mr`), LZ78 (`-mw`), LZP (`-mz`) and ALZ (`-m1`..`-m3`, including the multimedia predictors) modes, password-protected archives and self-extractors; the PPM mode (`-mx`) is refused. References: `docs/UHARC-ON-DISK.md` — the layout and codecs as implemented, with the measurements behind them`http://fileformats.archiveteam.org/wiki/UHARC` — format overview and sample archivesUHARC 0.6b documentation (`UHARC.DOC`, 01 Oct 2005) — modes, switches and dictionary sizes
 
 Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
 

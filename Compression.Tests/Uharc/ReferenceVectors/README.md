@@ -17,17 +17,19 @@ Command, run inside the input set's directory:
 | `basic-mz.uha` | basic | `-mz` | LZP |
 | `basic-m2-pw.uha` | basic | `-m2 -pwsecret` | enciphered directory and stream, password `secret` |
 | `basic-mx.uha` | basic | `-mx` | PPM: lists, refuses to extract |
-| `basic-mr.uha` | basic | `-mr` | RLE: lists, refuses to extract |
-| `basic-mw.uha` | basic | `-mw` | LZ78: lists, refuses to extract |
+| `basic-mr.uha` | basic | `-mr` | RLE |
+| `basic-mw.uha` | basic | `-mw` | LZ78 (32768 phrases) |
+| `runs-mr.uha` / `runs-mw.uha` | runs | `-mr` / `-mw` | RLE marker rotation, 16-bit runs; LZ78 run code |
+| `reset-mw1.uha` | reset | `-mw -md1` | LZ78 with 1024 phrases, pruned many times |
+| `exe-mw.uha` | exe | `-mw` | the executable filter behind LZ78 |
 | `reset-m2.uha` / `reset-mz.uha` | reset | `-m2` / `-mz` | 252 KiB over 18 files: model resets at file boundaries |
 | `mm-m2.uha` | mm | `-m2` | ALZ multimedia selectors 1, 2, 3, 4, 5, 8, 9 |
 | `mm-pair-m2.uha` | mm | `-m2`, files `u8s.wav s8n.raw` | ALZ multimedia selectors 6 and 7 |
 | `mm-mz.uha` | mm | `-mz`, files `pic.bmp u8.wav s16.wav` | LZP's BMP/WAV delta filter |
 | `exe-m2.uha` / `exe-mz.uha` | exe | `-m2` / `-mz` | E8/E9 + MZ relocation filter, ELF, and the 1 KiB threshold |
 
-Which selectors a stream uses was read off an instrumented build of an independent decoder; it
-is a property of UHARC's encoder, recorded here so a regression in one predictor shows up as a
-failing fixture rather than a silent gap.
+Which selectors a stream uses is the encoder's choice, recorded here so a regression in one
+predictor shows up as a failing fixture rather than a silent gap.
 
 `manifest.tsv` lists every input file: set, path, size and SHA-256 (`-` for an empty
 directory). UNUHARC 0.6b (`UNUHARC.EXE t`) reports "All files OK" for every archive.

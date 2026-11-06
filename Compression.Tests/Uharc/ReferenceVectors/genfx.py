@@ -76,6 +76,11 @@ put("mm/s8n.raw", bytes(int(math.sin(i * 0.02) * 90 + rng.uniform(-6, 6)) & 255 
 put("mm/u8s.wav", wav(8, 2, 1500, 0.013))
 put("mm/ramp.raw", bytes(((i // 3) + int(math.sin(i * 0.05) * 4)) & 0xFF for i in range(5000)))
 
+# runs and marker bytes for RLE / LZ78
+put("runs/markers.bin", b"x\xee\xae\xadAAAy\xed\xee\xed\xee\x6d\x6e\x2d\x2e" * 7 + b"\xee" * 3 + b"\xed" * 2)
+put("runs/long.bin", b"A" * 70000 + b"BC" * 300 + bytes(5000) + b"\xee" * 600)
+put("runs/short.bin", b"".join(bytes([i % 7 + 0xEA]) * (i % 6 + 1) for i in range(400)))
+
 # executables: synthetic x86 images (own bytes) for the E8/E9 and relocation filter
 rng = random.Random(4)
 def code(n, base):

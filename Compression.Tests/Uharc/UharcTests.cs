@@ -51,6 +51,12 @@ public class UharcTests {
   [TestCase("mm-mz.uha", "mm", null, false)]
   [TestCase("exe-m2.uha", "exe", null, true)]
   [TestCase("exe-mz.uha", "exe", null, true)]
+  [TestCase("basic-mr.uha", "basic", null, true)]
+  [TestCase("basic-mw.uha", "basic", null, true)]
+  [TestCase("runs-mr.uha", "runs", null, true)]
+  [TestCase("runs-mw.uha", "runs", null, true)]
+  [TestCase("reset-mw1.uha", "reset", null, true)]
+  [TestCase("exe-mw.uha", "exe", null, true)]
   [Category("HappyPath"), Category("ThemVsUs")]
   public void GivenArchiveUharcWrote_WhenExtracted_ThenEveryFileMatchesItsInput(string archive, string set, string? password, bool wholeSet) {
     var reader = Open(archive, password);
@@ -91,6 +97,7 @@ public class UharcTests {
   [TestCase("basic-mx.uha", "PPM", 16384)]
   [TestCase("basic-mr.uha", "RLE", 0)]
   [TestCase("basic-mw.uha", "LZ78", 0)]
+  [TestCase("reset-mw1.uha", "LZ78", 0)]
   [TestCase("reset-m2.uha", "ALZ:2", 262144)]
   [Category("HappyPath")]
   public void GivenEachMode_WhenOpened_ThenModeAndDictionaryAreReported(string archive, string mode, int dictionary) {
@@ -114,8 +121,6 @@ public class UharcTests {
   // ── Honest refusals ────────────────────────────────────────────────────
 
   [TestCase("basic-mx.uha")]
-  [TestCase("basic-mr.uha")]
-  [TestCase("basic-mw.uha")]
   [Category("ErrorHandling")]
   public void GivenUnsupportedMode_WhenExtracted_ThenItIsRefusedButTheDirectoryLists(string archive) {
     var reader = Open(archive);
