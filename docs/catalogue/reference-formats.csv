@@ -54,7 +54,7 @@ LZX (Amiga),lzx,archive,,,R,,R,,Y,3,https://en.wikipedia.org/wiki/LZX,LzxAmiga,Y
 NuFX / ShrinkIt,shk;sdk;bxy,archive,,,,,,,Y,1,https://wiki.preterhuman.net/NuFX,NuFx,Y,Y,Y,OK,,
 Spark (Acorn),spk;arc,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/Spark_(archiver),Spark,Y,Y,Y,OK,,
 HA,ha,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/HA_(file_format),Ha,Y,Y,Y,OK,,"reads CPY/ASC/HSC (ha.exe 0.999b archives and the original 1995 HA_SRC.HA); writes HSC/CPY that ha.exe extracts, HSC streams byte-identical to ha.exe; Unix special-file records listed, not extracted (docs/HA-ON-DISK.md)"
-SQX,sqx,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/SQX,Sqx,Y,Y,Y,OK,,
+SQX,sqx,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/SQX,Sqx,Y,Y,Y,PARTIAL,,methods 0-4 read and written (Squeez-c's reference archives decode; Squeez-c extracts ours); methods 5-7 encryption and volumes refused (SqxReader.cs)
 UHARC,uha,archive,,,,,R,,Y,2,https://en.wikipedia.org/wiki/UHarc,Uharc,Y,,,PARTIAL,,"UHARC 0.6 only: store, LZP and ALZ (incl. multimedia predictors) verified against uharc.exe and real archives; PPM (-mx), RLE, LZ78 and versions before 0.6 refused (docs/UHARC-ON-DISK.md)"
 FreeArc,arc;cdx,archive,,,,,R,fmt/1096,Y,3,https://en.wikipedia.org/wiki/FreeArc,FreeArc,Y,Y,Y,PARTIAL,,storing/lzma/tornado/ppmd/grzip blocks decode behind rep/delta/exe/lzp/dict and inside 4x4 (every default -m1..-m9/-mx/-m9x chain) and AES/Blowfish/Serpent/Twofish encryption given the password (data and -hp headers); mm and external compressors are refused (FreeArcMethods.cs)
 ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpaq,Y,Y,Y,PARTIAL,,"journaling and streaming archives at every method are read and zpaq 7.15 extracts what we write; encrypted (-key) multi-part (arc???) and indexed (-index) archives are read and written: created encrypted; edits append a version in place (encrypted with the password) or as the next part of a set or from an index alone with the index updated; indexes written as zpaq extract -index writes them byte for byte; an index alone lists but cannot extract (ZpaqReader.cs, ZpaqWriter.cs, ZpaqSetEditor.cs)"
@@ -647,7 +647,7 @@ Sequitur,,codec,,,,,,,,0,,bb:BB_Sequitur,Y,Y,,OURS-ONLY,,
 Shannon-Fano,,codec,,,,,,,,0,,bb:BB_ShannonFano,Y,Y,,OURS-ONLY,,
 Shoco,,codec,,,,,,,,0,https://github.com/Ed-von-Schleck/shoco,bb:BB_Shoco,Y,Y,,OURS-ONLY,,shoco conversion with its default model; byte-identical to shoco c; zero bytes written behind the sentinel
 Snappy,,codec,,,,,,,,0,,bb:BB_Snappy,Y,Y,,OURS-ONLY,,
-SQX (bb:BB_Sqx),,codec,,,,,,,,0,,bb:BB_Sqx,Y,Y,,OURS-ONLY,,
+SQX (bb:BB_Sqx),,codec,,,,,,,,0,https://github.com/seb3773/Squeez-c,bb:BB_Sqx,Y,Y,,OURS-ONLY,,the SQX 2.0 LZ77 + Huffman stream behind a 4-byte length
 Suffix Tree Compression,,codec,,,,,,,,0,,bb:BB_SuffixTree,Y,Y,,OURS-ONLY,,
 tANS,,codec,,,,,,,,0,,bb:BB_tANS,Y,Y,,OURS-ONLY,,
 Tunstall Coding,,codec,,,,,,,,0,,bb:BB_Tunstall,Y,Y,,OURS-ONLY,,

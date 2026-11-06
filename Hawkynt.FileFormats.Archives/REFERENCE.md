@@ -31346,82 +31346,81 @@ Provides static methods for reading and writing the CP/M Squeeze (.sqz / .??q) f
 
 #### `SqxEntry`
 
-Represents a file entry in an SQX archive.
+A file or directory recorded in an SQX archive.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SqxEntry` | `SqxEntry()` |  |
-| `ArchiveVersion` | `byte ArchiveVersion { get; set; }` | Gets or sets the archive version required. |
-| `Attributes` | `uint Attributes { get; set; }` | Gets or sets the file attributes. |
-| `CompFlags` | `byte CompFlags { get; set; }` | Gets or sets the compressor flags byte. |
-| `CompressedSize` | `long CompressedSize { get; set; }` | Gets or sets the compressed size in bytes. |
-| `Crc32` | `uint Crc32 { get; set; }` | Gets or sets the CRC-32 of the original data. |
-| `DictionarySize` | `int DictionarySize { get; }` | Gets the dictionary size for this entry. |
-| `ExtraCompFlags` | `ushort ExtraCompFlags { get; set; }` | Gets or sets the extra compressor flags (BCJ/delta). |
-| `FileName` | `string FileName { get; set; }` | Gets or sets the file name. |
-| `Flags` | `ushort Flags { get; set; }` | Gets or sets the block flags. |
-| `IsEncrypted` | `bool IsEncrypted { get; }` | Gets whether this entry is encrypted. |
-| `IsSolid` | `bool IsSolid { get; }` | Gets whether this entry uses solid compression. |
-| `LastModified` | `DateTime LastModified { get; set; }` | Gets or sets the last modification time. |
-| `Method` | `byte Method { get; set; }` | Gets or sets the compression method. |
-| `OriginalSize` | `long OriginalSize { get; set; }` | Gets or sets the original (uncompressed) size in bytes. |
+| `ArchiveVersion` | `byte ArchiveVersion { get; init; }` | Format of this file's stream: `Format11` or `Format20`. |
+| `Attributes` | `uint Attributes { get; init; }` | DOS file attributes. |
+| `CompFlags` | `byte CompFlags { get; init; }` | `cCompFlags`; bit 0 announces an extended compressor header at the start of the stream. |
+| `CompressedSize` | `long CompressedSize { get; init; }` | Bytes of compressed data that follow the header. |
+| `Crc32` | `uint Crc32 { get; init; }` | The stored checksum: CRC-32 (reflected, initial value `0xFFFFFFFF`) without the final inversion. |
+| `DataOffset` | `long DataOffset { get; init; }` | Offset of the compressed data in the archive. |
+| `DictionarySize` | `int DictionarySize { get; }` | Dictionary size of the stream. |
+| `FileName` | `string FileName { get; init; }` | Path inside the archive, with `/` separators. |
+| `Flags` | `ushort Flags { get; init; }` | File header flags. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this is a directory record. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | Whether the data is encrypted (flag bit 1). |
+| `IsSolid` | `bool IsSolid { get; }` | Whether the stream continues the previous file's dictionary (flag bit 2). |
+| `IsSplit` | `bool IsSplit { get; }` | Whether the file is split across volumes (flag bits 3 and 4). |
+| `LastModified` | `DateTime LastModified { get; init; }` | Modification time from the DOS timestamp, or `MinValue` when it is zero. |
+| `Method` | `byte Method { get; init; }` | Compression method: 0 stored, 1-4 LZ77 + Huffman, 5 audio, 6 text (PPMd), 7 ultra. |
+| `OriginalSize` | `long OriginalSize { get; init; }` | Size of the file. |
 
 #### `SqxFormatDescriptor`
 
-SQX archive (SpeedProject Squeez / SpeedCommander) with multiple compression algorithms. References: SpeedProject (www.speedproject.de) — vendor of Squeez/SpeedCommander; published the "SQX Archive Format" description`https://en.wikipedia.org/wiki/SQX` — Wikipedia overview
+SQX archives (Squeez, formats 1.1 and 2.0). Reads stored and LZ77 + Huffman files (methods 1-4, solid chains, multimedia blocks, delta and x86 filters); writes them; refuses audio, text and ultra methods, encryption and split files. See `SqxReader`.
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SqxFormatDescriptor` | `SqxFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the SQX archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the SQX archive per the requested mode. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `SqxReader`
 
-Reads entries from an SQX archive (supports V11 and V20 formats).
+Reads SQX archives (formats 1.1 and 2.0) as Squeez-c (MIT) reads them: main, file and directory blocks with their header checksums, stored and LZ77 + Huffman (methods 1-4) files, solid chains and self-extracting archives whose stub precedes the main block. Audio (5), text (6) and ultra (7) files, encryption and split files are refused.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SqxReader` | `SqxReader(Stream stream, bool leaveOpen = false, string password = null)` | Initializes a new `SqxReader` from a stream. |
-| `Entries` | `IReadOnlyList<SqxEntry> Entries { get; }` | Gets the entries in the archive. |
-| `HasRecoveryRecord` | `bool HasRecoveryRecord { get; }` | Gets whether the archive has a recovery record. |
-| `IsSolid` | `bool IsSolid { get; }` | Gets whether this is a solid archive. |
+| `SqxReader` | `SqxReader(Stream stream, bool leaveOpen = false)` | Opens an SQX archive. |
+| `Entries` | `IReadOnlyList<SqxEntry> Entries { get; }` | Gets the entries in the archive, in archive order. |
+| `IsSolid` | `bool IsSolid { get; }` | Whether the main block marks the archive solid. |
 | `Dispose` | `void Dispose()` |  |
-| `ExtractAll` | `byte[][] ExtractAll()` | Extracts all entries in order. Required for solid archives. |
-| `ExtractEntry` | `byte[] ExtractEntry(SqxEntry entry)` | Extracts the data for an entry. |
-| `VerifyRecoveryRecord` | `bool VerifyRecoveryRecord()` | Verifies the recovery record against the archive data. |
+| `ExtractAll` | `byte[][] ExtractAll()` | Extracts every file in archive order (directories yield empty arrays). |
+| `ExtractEntry` | `byte[] ExtractEntry(SqxEntry entry)` | Extracts one file, decoding the files before it when it continues a solid chain. |
 
 #### `SqxWriter`
 
-Creates SQX archives matching the real SQX format specification.
+Writes SQX archives the way Squeez-c (MIT) does: a main block, one file block per file with its LZ77 + Huffman stream (methods 1-4, each file on its own, not solid) or the stored bytes when compression does not pay, and the end block.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SqxWriter` | `SqxWriter(string password = null, byte method = 1, bool solid = false, int recoveryPercent = 0, int dictSize = 32768)` | Initializes a new `SqxWriter`. |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the archive. |
-| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, string password = null)` | Creates an SQX archive split into multiple volumes. |
-| `ToArray` | `byte[] ToArray()` | Creates an SQX archive as a byte array. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the archive to a stream. |
+| `SqxWriter` | `SqxWriter(byte method = 2, int dictionarySize = 262144, byte format = 20)` | Creates a writer. |
+| `AddFile` | `void AddFile(string name, byte[] data, DateTime? modified = null)` | Adds a file; `name` may contain `/` separators. |
+| `ToArray` | `byte[] ToArray()` | Builds the archive. |
+| `WriteTo` | `void WriteTo(Stream output)` | Writes the archive. |
 
 ### Namespace `FileFormat.Srec`
 

@@ -68,6 +68,7 @@ merges. They are listed so that the follow-up is not forgotten.
 | 36 | **Installers: Wise, Installer VISE, MoleBox, Clickteam, Setup Factory** | Never real here; the catalogue records why (#586). | VISE: rung 1 (unvise, viseunpack, both MIT). Clickteam: rung 1 (cicdec, BSD-3), but needs samples. Setup Factory: sfextract (MIT), of unclear lineage. Wise and MoleBox: licences to be researched. | M | VISE (#739), Clickteam (#740), Wise (#743), Setup Factory (#744) done; MoleBox open |
 | 37 | **Wolf RPG Editor archives** | Not implemented (#574 notes). | Rung 1: GARbro's DxLib archive reader (MIT). Oracle: GARbro and the game's own `Game.exe`. | L | done (#742) |
 | 38 | **FLEX: byte-exact file lengths** | Inherent to FLEX: it stores whole 252-byte records (#510). | Nothing to reclaim. | — | inherent |
+| 39 | **SQX: audio (5), text/PPMd (6) and ultra (7) methods, AES encryption, volumes, recovery records** | The rewrite onto the real format refuses them; the former writer's encryption, volumes and recovery data were its own layouts. SpeedCommander and Squeez installers use ultra and PPMd. | Rung 1: Squeez-c (MIT) `ultra.c`, `ppm8.c`, `audio.c`; its ultra decoder does not finish the installers' executables, so those need another oracle. | M | open |
 
 ## 🔗 Related
 

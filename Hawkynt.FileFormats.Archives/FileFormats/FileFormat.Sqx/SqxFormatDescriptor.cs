@@ -5,13 +5,9 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Sqx;
 
 /// <summary>
-/// SQX archive (SpeedProject Squeez / SpeedCommander) with multiple compression algorithms.
-///
-/// References:
-/// <list type="bullet">
-///   <item><description>SpeedProject (www.speedproject.de) — vendor of Squeez/SpeedCommander; published the "SQX Archive Format" description</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/SQX</c> — Wikipedia overview</description></item>
-/// </list>
+/// SQX archives (Squeez, formats 1.1 and 2.0). Reads stored and LZ77 + Huffman files (methods
+/// 1-4, solid chains, multimedia blocks, delta and x86 filters); writes them; refuses audio,
+/// text and ultra methods, encryption and split files. See <see cref="SqxReader"/>.
 /// </summary>
 public sealed class SqxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
@@ -23,112 +19,66 @@ public sealed class SqxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Defragment(Stream archive, DefragOptions options) {
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
-        var r = new SqxReader(stream);
-        return r.Entries.Select(e => (e.FileName, r.ExtractEntry(e)));
+        var r = new SqxReader(stream, leaveOpen: true);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FileName, r.ExtractEntry(e))).ToList();
       },
       buildImage: files => {
         var w = new SqxWriter();
         foreach (var (n, d) in files) w.AddFile(n, d);
-        using var ms = new MemoryStream();
-        w.WriteTo(ms);
-        return ms.ToArray();
+        return w.ToArray();
       });
   }
-
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
-    var r = new SqxReader(archive);
-    foreach (var e in r.Entries) {
+    var r = new SqxReader(archive, leaveOpen: true);
+    foreach (var e in r.Entries)
       if (e.CompressedSize > 0)
         yield return new DefragBlockInfo(e.DataOffset, e.CompressedSize, DefragBlockKind.Used, FileName: e.FileName);
-    }
   }
 
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "Sqx";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "SQX";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
-  // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
-  // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
+  // R/W: Add/Replace/Remove go through the verified extract -> edit -> re-create rebuild.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanModify |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".sqx";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
   public IReadOnlyList<string> Extensions => [".sqx"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'S', (byte)'Q', (byte)'X', 0x01], Confidence: 0.95)];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
+  public IReadOnlyList<MagicSignature> MagicSignatures => [new("-sqx-"u8.ToArray(), Offset: 7, Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("sqx", "SQX")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
   public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
-  public string Description => "SQX archive with multiple compression algorithms";
+  public string Description => "SQX (Squeez) archive, formats 1.1 and 2.0, LZ77 + Huffman methods";
 
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new SqxReader(stream, password: password);
+    var r = new SqxReader(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.OriginalSize, e.CompressedSize,
-      $"SQX {e.Method}", false, e.IsEncrypted, e.LastModified)).ToList();
+      $"SQX {e.Method}", e.IsDirectory, e.IsEncrypted, e.LastModified == DateTime.MinValue ? null : e.LastModified)).ToList();
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new SqxReader(stream, password: password);
+    var r = new SqxReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
+      if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
       WriteFile(outputDir, e.FileName, r.ExtractEntry(e));
     }
   }
 
-  /// <summary>
-  /// Performs the create operation.
-  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var solid = options.SolidSize == 0;
-    var dictSize = options.DictSize > 0 ? (int)Math.Min(options.DictSize, 4 * 1024 * 1024) : 256 * 1024;
-    var w = new SqxWriter(password: options.Password, solid: solid,
-      dictSize: dictSize);
+    var dictionary = 256 * 1024;
+    if (options.DictSize > 0) {
+      dictionary = 32 * 1024;
+      while (dictionary < options.DictSize && dictionary < 4 << 20)
+        dictionary <<= 1;
+    }
+
+    var method = (byte)Math.Clamp(options.Level is { } level ? (level + 2) / 3 + 1 : 2, 1, 4);
+    var w = new SqxWriter(method, dictionary);
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
       w.AddFile(name, data);
     w.WriteTo(output);

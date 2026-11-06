@@ -72,6 +72,7 @@ None open: every class C claim site has been rewritten and is listed under R.
 | `Compression.Core/Dictionary/Lzrw3/` | Ross N. Williams `lzrw3.c` (release 1, 30-Jun-1991) | public domain | `Compression.Core/Dictionary/Lzrw3/THIRD-PARTY-NOTICE.LZRW3.txt` |
 | `Compression.Core/Dictionary/Lzrw1/` | Ross N. Williams `lzrw1.c` (31-Mar-1991) | public domain | `Compression.Core/Dictionary/Lzrw1/THIRD-PARTY-NOTICE.LZRW1.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.IcePacker/IcePackerStream.cs` (decoder) | ancient (Teemu Suutari) `IceDecompressor.cpp`, revision `61cd9088a218ce43fd389f3f3c48f35fc70f7834` | BSD-2-Clause | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.IcePacker/THIRD-PARTY-NOTICE.ancient.txt` |
+| `Compression.Core/Dictionary/Sqx/`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Sqx/` | Squeez-c (seb3773), revision `9eb5b385ce775aa50a47fd4d35fdc26dbfe7d8e9` | MIT | `Compression.Core/Dictionary/Sqx/THIRD-PARTY-NOTICE.Squeez-c.txt` |
 
 ## A — compatible, notice already in place
 

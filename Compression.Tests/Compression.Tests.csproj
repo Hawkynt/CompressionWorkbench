@@ -508,6 +508,10 @@
     <EmbeddedResource Include="NuFx\ReferenceVectors\*.shk">
       <LogicalName>NuFxVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Reference SQX archives from Squeez-c's packed_corpus; see Sqx/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="Sqx\ReferenceVectors\*.sqx">
+      <LogicalName>SqxVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- keramics' HFS+ volume written on macOS (decmpfs files); see HfsPlus/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="HfsPlus\ReferenceVectors\*.gz">
       <LogicalName>HfsPlusVectors.%(Filename)%(Extension)</LogicalName>
