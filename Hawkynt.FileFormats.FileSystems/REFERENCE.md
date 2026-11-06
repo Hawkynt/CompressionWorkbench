@@ -574,6 +574,36 @@ Optical track kind stored in a DiscJuggler CDI descriptor.
 | `Mode1` | `1` | Mode 1 data track. |
 | `Mode2` | `2` | Mode 2 / CD-XA data track. |
 
+### Namespace `FileFormat.CloneCd`
+
+[`CloneCdWriter`](#clonecdwriter) · [`CloneCdWriter.ImageSet`](#clonecdwriterimageset)
+
+#### `CloneCdWriter`
+
+Writes a CloneCD image set of a single-session disc with one Mode 1 data track: the `.ccd` control file, the raw `.img` (2352-byte sectors with sync, BCD address, EDC and ECC from ECMA-130) and the `.sub` subchannel (96 bytes per sector: P, Q, then R–W, each 12 bytes). Layout in `docs/CLONECD-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RawSectorSize` | `const int RawSectorSize` |  |
+| `SubchannelSize` | `const int SubchannelSize` |  |
+| `UserDataSize` | `const int UserDataSize` |  |
+| `Crc16` | `static ushort Crc16(ReadOnlySpan<byte> data)` | CRC-16/CCITT (polynomial 0x1021, initial value 0), as the Q channel uses it before inversion. |
+| `FromIso` | `static ImageSet FromIso(ReadOnlySpan<byte> iso)` | Builds the image set of a data disc whose Mode 1 user data is `iso`. |
+| `Subchannel` | `static byte[] Subchannel(int sectors)` | The P and Q channels of track 1, a data track starting at LBA 0 and running for `sectors` sectors; R–W stay zero. |
+
+#### `CloneCdWriter.ImageSet`
+
+The three files of a CloneCD image.
+
+Implements `IEquatable<ImageSet>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ImageSet` | `ImageSet(byte[] Ccd, byte[] Img, byte[] Sub)` | The three files of a CloneCD image. |
+| `Ccd` | `byte[] Ccd { get; init; }` |  |
+| `Img` | `byte[] Img { get; init; }` |  |
+| `Sub` | `byte[] Sub { get; init; }` |  |
+
 ### Namespace `FileFormat.Cso`
 
 [`CsoFormatDescriptor`](#csoformatdescriptor) · [`CsoInPlaceModifier`](#csoinplacemodifier) · [`CsoWriter`](#csowriter)

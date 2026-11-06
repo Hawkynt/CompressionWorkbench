@@ -25,7 +25,7 @@ namespace FileFormat.CloneCd;
 ///   <item><description>CCD control-file layout documented by the disc-preservation community (redump.org guides); Elaborate Bytes never published a spec</description></item>
 /// </list>
 /// </summary>
-public sealed class CloneCdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class CloneCdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -42,7 +42,7 @@ public sealed class CloneCdFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -120,6 +120,42 @@ public sealed class CloneCdFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       if (path != null && File.Exists(path))
         WriteFile(outputDir, name, File.ReadAllBytes(path));
     }
+  }
+
+  /// <summary>Gets the size limit of a created image set.</summary>
+  public long? MaxTotalArchiveSize => null;
+
+  /// <summary>Gets what <see cref="Create"/> accepts.</summary>
+  public string AcceptedInputsDescription => "accepts: one .iso (Mode 1 user data, whole 2048-byte sectors); the .img and .sub are written beside the .ccd";
+
+  /// <summary>Accepts one ISO image as the data track.</summary>
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    if (input.ArchiveName.EndsWith(".iso", StringComparison.OrdinalIgnoreCase)) {
+      reason = null;
+      return true;
+    }
+    reason = $"'{input.ArchiveName}' is not an ISO image; {this.AcceptedInputsDescription}";
+    return false;
+  }
+
+  /// <summary>
+  /// Writes a single-session disc with one Mode 1 data track: the control file to <paramref name="output"/>,
+  /// and the raw sectors and subchannel to <c>.img</c> and <c>.sub</c> files beside it, so the output has to
+  /// be a file.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var files = inputs.Where(i => !i.IsDirectory).ToList();
+    if (files.Count != 1) throw new ArgumentException($"CloneCD: exactly one ISO image is needed, not {files.Count} files.");
+    if (!this.CanAccept(files[0], out var reason)) throw new ArgumentException(reason);
+    if (output is not FileStream file)
+      throw new NotSupportedException("CloneCD: an image set is three files (.ccd, .img, .sub), so it can only be created at a file path.");
+    var set = CloneCdWriter.FromIso(files[0].ReadContent());
+    var stem = Path.Combine(Path.GetDirectoryName(file.Name) ?? ".", Path.GetFileNameWithoutExtension(file.Name));
+    File.WriteAllBytes(stem + ".img", set.Img);
+    File.WriteAllBytes(stem + ".sub", set.Sub);
+    output.Write(set.Ccd);
   }
 
   private static bool Wants(string[]? files, string name)

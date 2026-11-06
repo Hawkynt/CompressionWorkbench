@@ -119,7 +119,6 @@ Every catalogued row where a source records write support (7-Zip, libarchive, an
 | Format | Ours | Native writer | Listed by |
 | --- | --- | --- | --- |
 | Apple Partition Map | `PartitionedDisk` | pdisk / hdiutil | 7-Zip, PRONOM |
-| CloneCD (CCD/IMG/SUB) | `CloneCd` | CloneCD | UniExtract, Wikipedia |
 | GUID Partition Table (GPT) | `PartitionedDisk` | sgdisk / gdisk | 7-Zip, binwalk |
 | MBR partition table | `PartitionedDisk` | fdisk / sfdisk | 7-Zip, binwalk |
 | pcapng | `Pcapng` | dumpcap / Wireshark | binwalk, PRONOM |
