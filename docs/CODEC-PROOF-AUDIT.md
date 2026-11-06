@@ -111,8 +111,12 @@ None left among the building blocks the audit found broken; see the fixes above.
 
 | Block | Why not yet |
 |---|---|
-| `BB_MsLzh` | Described as the DriveSpace 3 codec, but the volumes dmsdos verifies (`DriveSpace3GenuineDmsdosTests`) come from `GenuineDvr3Writer`, which does not use this block; no oracle reads its stream |
-| `BB_Sqx` | No SQX archiver run; only our own round trips (`SqxTests`) |
+None left. Round 3 (2026-11-06) settled the last two:
+
+| Block | Outcome |
+|---|---|
+| `BB_MsLzh` | removed #779: an invented DEFLATE-shaped codec. Real DriveSpace 3 compresses clusters with JM and SQ (`CvfLzCodec`, read back by dmsdos); dmsdos accepts no volume that could carry "MS LZH", so it could not be proven. Our own `MS_DSP3` layout now uses DS LZ77 runs |
+| `BB_Sqx` | fixed #782: was a private codec. Now the SQX 2.0 LZ77 + Huffman stream converted from Squeez-c (MIT); see `Sqx` below |
 
 ### Named after a codec, explicitly not its format
 
@@ -158,11 +162,12 @@ Textbook primitives with no external bitstream to match. Round-trip and ratio te
 | `Zling` | fixed #673 | libzling's stream, byte-identical |
 | `Density` | fixed #678 | density-rs streams, byte-identical, in our own `DENS` container: density defines no file format |
 | `Lzs` | removed #696 | A private header (`1F 9D 8C 53`, which real `compress -b12` files can start with) around `BB_Lzs`; LZS has no file format. `BB_Lzs` stays |
-| `PackBits` | ours | Our own `PKBT` framing: PackBits has no file format. The payload is `BB_PackBits`, which is proven |
+| `PackBits` | removed #757 | Our own `PKBT` framing under a real codec's name: PackBits has no file format. `BB_PackBits` stays, and gains the exact minimum-size packetizer |
 | `Lzop`, `Kwaj`, `Ecm` | both | `LzopInteropTests`; `KwajLibmspackInteropTests`; `Ecm` (#489) |
 | `Flac` | not probed here | Audio; its own test classes |
 | `Lzham`, `Bsc`, `Bcm`, `Mcm`, `Cmix` | named-codec owner | Their own pull requests (#647, #658, #662, #663, #677) |
-| `Paq8` | not probed here | No paq8l run yet |
+| `Paq8` | removed #761 | paq8l's header over an order-0 coder: paq8l 8l decodes our file to wrong bytes and we decoded its file to wrong bytes, both without an error. A real paq8l is a rung-2 rewrite (`RECLAIM-BACKLOG.md`) |
+| `Sqx` | fixed #782 | Private codec and CRC convention. Converted from Squeez-c (MIT): Squeez-c's 13 reference archives (formats 1.1 and 2.0, methods 0-4) decode, Squeez-c extracts ours; methods 5-7, encryption and volumes refused. The official archiver itself was not reached |
 
 ## Containers with embedded codecs
 
