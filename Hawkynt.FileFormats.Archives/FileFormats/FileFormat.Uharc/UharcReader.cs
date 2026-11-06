@@ -8,8 +8,8 @@ namespace FileFormat.Uharc;
 /// Layout and codecs are described in docs/UHARC-ON-DISK.md.
 /// </summary>
 /// <remarks>
-/// The directory is always readable; file data decodes for the store, LZP and ALZ methods.
-/// PPM streams (<c>-mx</c>) and the legacy RLE/LZ78 modes raise
+/// The directory is always readable; file data decodes for the store, RLE, LZ78, LZP and ALZ
+/// methods. PPM streams (<c>-mx</c>) raise
 /// <see cref="NotSupportedException"/> rather than producing unverified bytes; every extracted
 /// file is checked against its stored CRC-32.
 /// </remarks>
@@ -51,7 +51,8 @@ public sealed class UharcReader {
   public long PackedSize => this._header.PackedSize;
 
   /// <summary>Gets whether the stream's method can be decoded by this reader.</summary>
-  public bool CanDecodeMethod => this._header.Method is UharcMethods.Store
+  public bool CanDecodeMethod => this._header.Method is UharcMethods.Store or UharcMethods.Rle
+    or >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last
     or >= UharcMethods.LzpFirst and <= UharcMethods.LzpLast
     or >= UharcMethods.AlzFirst and <= UharcMethods.AlzLast;
 
@@ -258,6 +259,8 @@ public sealed class UharcReader {
       this._stream = h.Method switch {
         UharcMethods.Store when length == size => packed.AsSpan(offset, size).ToArray(),
         UharcMethods.Store => throw new InvalidDataException("UHARC: stored stream size does not match."),
+        UharcMethods.Rle => UharcRleDecoder.Decode(packed, offset, length, size),
+        >= UharcMethods.Lz78First and <= UharcMethods.Lz78Last => UharcLz78Decoder.Decode(packed, offset, length, h.Method, size),
         >= UharcMethods.LzpFirst and <= UharcMethods.LzpLast => UharcLzpDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
         _ => UharcAlzDecoder.Decode(packed, offset, length, h.Method, size, this._fileEnds),
       };
