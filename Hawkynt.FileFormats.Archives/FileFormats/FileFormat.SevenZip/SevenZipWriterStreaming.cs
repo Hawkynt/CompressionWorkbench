@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Compression.Core.Checksums;
 using Compression.Core.Deflate;
 using Compression.Core.Dictionary.Lzma;
+using Compression.Core.Entropy.Ppmd;
 using Compression.Core.Streams;
 using Compression.Core.Transforms;
 
@@ -22,7 +23,7 @@ public sealed partial class SevenZipWriter {
   private bool MustStream(PlannedBlock plan) {
     var large = plan.Files.Exists(static f => f.Data == null) || plan.Files.Sum(static f => f.Size) > InMemoryBlockLimit;
     return large
-      && plan.Codec is SevenZipCodec.Lzma2 or SevenZipCodec.Lzma or SevenZipCodec.Deflate or SevenZipCodec.BZip2 or SevenZipCodec.Copy
+      && plan.Codec is SevenZipCodec.Lzma2 or SevenZipCodec.Lzma or SevenZipCodec.PPMd or SevenZipCodec.Deflate or SevenZipCodec.BZip2 or SevenZipCodec.Copy
       && plan.Filter != SevenZipFilter.Bcj2;
   }
 
@@ -49,7 +50,7 @@ public sealed partial class SevenZipWriter {
     if (plan.Filter != SevenZipFilter.None)
       input = new SevenZipFilterReadStream(source, this.EncodingFilter(plan.Filter, out filterCoder), total);
 
-    var compressor = CompressStreaming(input, total, compressedSink, plan.Codec, plan.DictionarySize);
+    var compressor = this.CompressStreaming(input, total, compressedSink, plan.Codec, plan.DictionarySize);
     if (source.Position != total)
       throw new IOException("7z: a file delivered fewer bytes than its declared size while it was archived.");
     aes?.Complete();
@@ -72,7 +73,7 @@ public sealed partial class SevenZipWriter {
     return (packed.Count, folder);
   }
 
-  private static SevenZipCoder CompressStreaming(Stream input, long length, Stream output, SevenZipCodec codec, int dictionarySize) {
+  private SevenZipCoder CompressStreaming(Stream input, long length, Stream output, SevenZipCodec codec, int dictionarySize) {
     switch (codec) {
       case SevenZipCodec.Lzma2: {
         var encoder = new Lzma2Encoder(dictionarySize);
@@ -85,6 +86,9 @@ public sealed partial class SevenZipWriter {
         encoder.Encode(output, input, length, writeEndMarker: false);
         return new SevenZipCoder { CodecId = SevenZipConstants.CodecLzma.ToArray(), Properties = encoder.Properties };
       }
+      case SevenZipCodec.PPMd:
+        SevenZipPpmd.Encode(input, length, output, this._ppmdOrder, (uint)this._ppmdMemorySize);
+        return new SevenZipCoder { CodecId = SevenZipConstants.CodecPpmd.ToArray(), Properties = SevenZipPpmd.Properties(this._ppmdOrder, (uint)this._ppmdMemorySize) };
       case SevenZipCodec.Deflate:
         using (var deflate = new RawDeflateStream(output, CompressionStreamMode.Compress, leaveOpen: true))
           input.CopyTo(deflate, 1 << 16);

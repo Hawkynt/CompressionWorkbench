@@ -45,7 +45,7 @@ public sealed class SevenZipStreamingWriterTests {
   }
 
   public static IEnumerable<TestCaseData> Profiles() {
-    foreach (var codec in new[] { SevenZipCodec.Lzma2, SevenZipCodec.Lzma, SevenZipCodec.Deflate, SevenZipCodec.BZip2, SevenZipCodec.Copy })
+    foreach (var codec in new[] { SevenZipCodec.Lzma2, SevenZipCodec.Lzma, SevenZipCodec.PPMd, SevenZipCodec.Deflate, SevenZipCodec.BZip2, SevenZipCodec.Copy })
       foreach (var filter in new[] { SevenZipFilter.None, SevenZipFilter.BcjX86, SevenZipFilter.Delta, SevenZipFilter.Swap4 })
         foreach (var encrypt in new[] { false, true })
           yield return new TestCaseData(codec, filter, encrypt).SetName($"Given_StreamedEntries_{codec}_{filter}_{(encrypt ? "aes" : "plain")}_When_ReadBack_Then_TheyMatch");
@@ -124,6 +124,7 @@ public sealed class SevenZipStreamingWriterTests {
   [Category("Performance")]
   [TestCase("lzma2")]
   [TestCase("lzma")]
+  [TestCase("ppmd")]
   public void Given_AFileLargerThan4GiB_When_ArchivedThroughTheLibrary_Then_7ZipTestsAndExtractsItWithBoundedMemory(string method) {
     SevenZipOracle.Require();
     var source = Path.Combine(this._root, "big.bin");
