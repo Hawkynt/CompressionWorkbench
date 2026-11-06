@@ -31563,19 +31563,32 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 ### Namespace `FileFormat.StuffIt`
 
-[`StuffIt5Writer`](#stuffit5writer) · [`StuffItEntry`](#stuffitentry) · [`StuffItFormatDescriptor`](#stuffitformatdescriptor) · [`StuffItReader`](#stuffitreader) · [`StuffItWriter`](#stuffitwriter)
+[`StuffIt5Writer`](#stuffit5writer) · [`StuffItCompression`](#stuffitcompression) · [`StuffItEntry`](#stuffitentry) · [`StuffItFormatDescriptor`](#stuffitformatdescriptor) · [`StuffItReader`](#stuffitreader) · [`StuffItWriter`](#stuffitwriter)
 
 #### `StuffIt5Writer`
 
-Creates StuffIt 5 archives (the container of StuffIt 5 to 8): files at the root level, each fork stored, RLE-packed or LZ+Huffman-compressed (method 13), whichever is smallest.
+Creates StuffIt 5 archives (the container of StuffIt 5 to 8): files at the root level, each fork stored, RLE-packed, LZ+Huffman-compressed (method 13) or Arsenic-compressed (method 15), whichever is smallest.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `StuffIt5Writer` | `StuffIt5Writer(Stream stream, StuffItCompression compression, bool leaveOpen = false)` | Starts a StuffIt 5 archive whose forks are compressed as `compression` asks. |
 | `StuffIt5Writer` | `StuffIt5Writer(Stream stream, bool leaveOpen = false)` | Starts a StuffIt 5 archive on `stream`; it is written on `Dispose`. |
 | `AddFile` | `void AddFile(string fileName, byte[] data, byte[] resourceFork = null, string fileType = "TEXT", string fileCreator = "CWIE", DateTime? lastModified = null)` | Adds a file with a data fork and an optional resource fork. |
 | `Dispose` | `void Dispose()` |  |
+
+#### `StuffItCompression`
+
+How the StuffIt writers compress each fork.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Smallest` | `0` | The smallest of Arsenic, LZ+Huffman, RLE and storing. |
+| `LzHuffman` | `1` | Method 13 (LZ+Huffman), or storing when that is smaller. |
+| `Arsenic` | `2` | Method 15 (Arsenic, StuffIt 5's "maximum"), or storing when that is smaller. |
+| `Rle` | `3` | Method 1 (RLE), or storing when that is smaller. |
+| `Store` | `4` | Method 0: no compression. |
 
 #### `StuffItEntry`
 
@@ -31654,6 +31667,7 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `StuffItWriter` | `StuffItWriter(Stream stream, StuffItCompression compression, bool leaveOpen = false)` | Initializes a new `StuffItWriter` that compresses forks as `compression` asks. |
 | `StuffItWriter` | `StuffItWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `StuffItWriter`. |
 | `AddFileWithResourceFork` | `void AddFileWithResourceFork(string fileName, byte[] dataFork, byte[] resourceFork, string fileType = "TEXT", string fileCreator = "CWIE", DateTime? lastModified = null)` | Adds a file entry to the archive with both data and resource forks. |
 | `AddFile` | `void AddFile(string fileName, byte[] data, string fileType = "TEXT", string fileCreator = "CWIE", DateTime? lastModified = null)` | Adds a file entry to the archive with an empty resource fork. |

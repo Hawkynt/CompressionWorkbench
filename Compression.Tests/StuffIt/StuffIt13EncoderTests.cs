@@ -97,10 +97,10 @@ public class StuffIt13EncoderTests {
   private static byte[] Write(bool stuffIt5, params (string Name, byte[] Data, byte[]? Resource)[] files) {
     using var ms = new MemoryStream();
     if (stuffIt5) {
-      using var w = new StuffIt5Writer(ms, leaveOpen: true);
+      using var w = new StuffIt5Writer(ms, StuffItCompression.LzHuffman, leaveOpen: true);
       foreach (var f in files) w.AddFile(f.Name, f.Data, f.Resource, lastModified: new DateTime(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc));
     } else {
-      using var w = new StuffItWriter(ms, leaveOpen: true);
+      using var w = new StuffItWriter(ms, StuffItCompression.LzHuffman, leaveOpen: true);
       foreach (var f in files) w.AddFileWithResourceFork(f.Name, f.Data, f.Resource ?? [], lastModified: new DateTime(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc));
     }
     return ms.ToArray();
