@@ -25,8 +25,8 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | --- | ---: | --- |
 | `MISSING` | 142 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 22 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 46 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 318 | covered with no known gap against what the sources list |
+| `PARTIAL` | 45 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 319 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 457 | in our registry, listed by none of the seven sources |
 
 ### Per source
@@ -42,7 +42,7 @@ read-only rows.
 | binwalk v3 | 79 | 56 | 70.9 | 49 |
 | Universal Extractor 2 | 124 | 101 | 81.5 | 69 |
 | PRONOM | 87 | 82 | 94.3 | 71 |
-| Wikipedia | 268 | 194 | 72.4 | 149 |
+| Wikipedia | 268 | 194 | 72.4 | 150 |
 
 These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-05. The source inventories retain their original 2026-10-19 snapshot. The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
 
@@ -185,7 +185,6 @@ running real-world samples. The file named at the end of each row is where the l
 | PAQ (paq6/7/8 family) | `Paq8` | 1 | a single PAQ8 variant (.paq8l); the other PAQ versions are mutually incompatible |
 | RAR audio / VM filters | `Rar` | 1 | RAR3 filters matched to the six standard programs only; no general RarVM (Rar3Decoder.cs) |
 | RPG Maker archives | `Rgss` | 1 | RGSSAD v1-3 only; MV/MZ asset encryption (.rpgmv*) has no descriptor |
-| UFS / FFS (BSD), UFS2 | `Ufs` | 1 | big-endian volumes are read only; creating and editing is little-endian UFS1 and UFS2 |
 | Unity assets / bundles | `UnityBundle` | 1 | UnityFS bundles only; .unitypackage (tar.gz) and serialized-file internals are not handled |
 | Windows thumbnail cache | `ThumbsDb` | 1 | Thumbs.db only; thumbcache_*.db has no descriptor |
 | tar + compression (tar.gz/.bz2/.xz/.zst/.lz/.lz4/.br) | `TarGz`, `TarBz2`, `TarXz`, `TarZst`, `TarLzip`, `TarLz4`, `TarBr` | 1 | tar.Z / tar.lzma / tar.lzo have no compound descriptor (open via the stream format) |

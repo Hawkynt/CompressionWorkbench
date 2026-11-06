@@ -17,7 +17,7 @@ public sealed class Ufs2MaintenanceTests {
   /// A volume whose big.bin (19 blocks, so with a single-indirect block) was laid into
   /// the holes two removed files left, around b.bin — so it lies in three pieces.
   /// </summary>
-  internal static (MemoryStream Image, Dictionary<string, byte[]> Files) Fragmented() {
+  internal static (MemoryStream Image, Dictionary<string, byte[]> Files) Fragmented(FormatCreateOptions? options = null) {
     var files = new Dictionary<string, byte[]> {
       ["hello.txt"] = "hello ufs2\n"u8.ToArray(),
       ["a.bin"] = Ufs2WriterTests.Pattern(5 * Block, 1),
@@ -27,7 +27,7 @@ public sealed class Ufs2MaintenanceTests {
       ["keep/tail.bin"] = Ufs2WriterTests.Pattern(Block + 5000, 4),
     };
     var ms = new MemoryStream();
-    ms.Write(Ufs2WriterTests.Create(files));
+    ms.Write(Ufs2WriterTests.Create(files, options));
     var d = new UfsFormatDescriptor();
     d.Remove(ms, ["a.bin", "c.bin"]);
     files.Remove("a.bin");
@@ -47,7 +47,7 @@ public sealed class Ufs2MaintenanceTests {
       Assert.That(r.Extract(regular[name]), Is.EqualTo(data), name);
   }
 
-  private static List<DefragBlockInfo> Pieces(Stream image, string name)
+  internal static List<DefragBlockInfo> Pieces(Stream image, string name)
     => [.. new UfsFormatDescriptor().EnumerateExtents(image).Where(e => e.Kind == DefragBlockKind.Used && e.FileName == name)];
 
   [Test]
@@ -135,14 +135,14 @@ public sealed class Ufs2MaintenanceTests {
   }
 
   /// <summary>Moves b.bin into the hole a.bin left: the reader follows the new pointers.</summary>
-  internal static (MemoryStream Image, Dictionary<string, byte[]> Files, long To) Moved(bool zeroSource) {
+  internal static (MemoryStream Image, Dictionary<string, byte[]> Files, long To) Moved(bool zeroSource, FormatCreateOptions? options = null) {
     var files = new Dictionary<string, byte[]> {
       ["a.bin"] = Ufs2WriterTests.Pattern(5 * Block, 1),
       ["dir/b.bin"] = Ufs2WriterTests.Pattern(14 * Block, 2),
       ["c.txt"] = "c\n"u8.ToArray(),
     };
     var ms = new MemoryStream();
-    ms.Write(Ufs2WriterTests.Create(files));
+    ms.Write(Ufs2WriterTests.Create(files, options));
     var d = new UfsFormatDescriptor();
     var hole = Pieces(ms, "a.bin")[0].Offset;
     d.Remove(ms, ["a.bin"]);

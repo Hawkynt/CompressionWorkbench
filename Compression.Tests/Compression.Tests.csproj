@@ -311,6 +311,8 @@
     </EmbeddedResource>
     <!-- The QEMU harness that lets a Reiser4 kernel judge what the writer produces. -->
     <None Include="Reiser4\KernelOracle\*.sh" CopyToOutputDirectory="PreserveNewest" LinkBase="Reiser4\KernelOracle" />
+    <!-- Drives a NetBSD live image under qemu for the NetBSD-only file systems (CHFS, LFS). -->
+    <None Include="Support\NetBsdGuest\netbsd-guest.py" CopyToOutputDirectory="PreserveNewest" />
     <!-- Volumes the Linux btrfs driver wrote with compress-force; see Btrfs/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="Btrfs\ReferenceVectors\*.gz;Btrfs\ReferenceVectors\manifest.txt">
       <LogicalName>BtrfsVectors.%(Filename)%(Extension)</LogicalName>

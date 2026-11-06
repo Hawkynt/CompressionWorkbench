@@ -109,18 +109,25 @@ public sealed class UfsReferenceVectorTests {
 
   [TestCase("makefs-ufs1-be.img.gz")]
   [TestCase("makefs-ufs2-be.img.gz")]
-  public void GivenABigEndianVolume_WhenEdited_ThenEveryEditIsRefusedAndTheImageIsUntouched(string vector) {
+  public void GivenABigEndianMakefsVolume_WhenEditedAndMaintained_ThenItStaysBigEndianAndEveryFileReadsBack(string vector) {
     using var image = Image(vector);
-    var before = image.ToArray();
+    Dictionary<string, byte[]> files;
+    using (var r = new UfsReader(image, leaveOpen: true))
+      files = r.Entries.Where(e => !e.IsDirectory && !e.IsSymlink).ToDictionary(e => e.Name, r.Extract);
     var d = new UfsFormatDescriptor();
-    var input = ArchiveInputInfo.InMemory("x.txt", "x"u8.ToArray());
+    d.Add(image, [ArchiveInputInfo.InMemory("x.txt", "x"u8.ToArray()), ArchiveInputInfo.InMemory("new/dir/y.bin", new byte[70_000])]);
+    d.Remove(image, ["hello.txt"]);
+    files.Remove("hello.txt");
+    files["x.txt"] = "x"u8.ToArray();
+    files["new/dir/y.bin"] = new byte[70_000];
+    d.Defragment(image);
+    d.WipeUnusedSpace(image);
 
-    Assert.Throws<NotSupportedException>(() => d.Add(image, [input]));
-    Assert.Throws<NotSupportedException>(() => d.Remove(image, ["hello.txt"]));
-    Assert.Throws<NotSupportedException>(() => d.Defragment(image));
-    Assert.Throws<NotSupportedException>(() => d.WipeUnusedSpace(image));
-    Assert.Throws<NotSupportedException>(() => d.MoveExtent(image, 0, 4096, 4096));
-    Assert.That(image.ToArray(), Is.EqualTo(before));
+    image.Position = 0;
+    using var after = new UfsReader(image, leaveOpen: true);
+    Assert.That(after.IsBigEndian, Is.True);
+    foreach (var (name, data) in files)
+      Assert.That(after.Extract(after.Entries.Single(e => e.Name == name)), Is.EqualTo(data), name);
   }
 
   [Test]

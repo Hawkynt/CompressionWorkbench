@@ -1,13 +1,14 @@
 #pragma warning disable CS1591
-using System.Buffers.Binary;
 using System.Text;
 
 namespace FileSystem.Ufs;
 
 /// <summary>
-/// In-place add and remove on little-endian UFS1 and UFS2 volumes, kept consistent the
-/// way FreeBSD's <c>fsck_ffs</c> checks them.
+/// In-place editing and maintenance of UFS1 and UFS2 volumes in either byte order, kept
+/// consistent the way <c>fsck_ffs</c> checks them.
 /// <list type="bullet">
+///   <item>Every multi-byte field is read and written in the volume's own byte order
+///   (the superblock's <c>fs_magic</c> tells which); bitmaps and names have none.</item>
 ///   <item>A path is resolved component by component; missing directories are
 ///   created as real directories (one <c>DIRBLKSIZ</c> chunk holding <c>.</c> and
 ///   <c>..</c>, the parent's link count raised), never as a root entry whose name
@@ -232,6 +233,7 @@ public static class UfsModifier {
     private readonly int _frag, _ncg, _ipg, _fpg, _cblkno, _iblkno, _contigSumSize;
     private readonly long _csaddr, _sbOffset;
     private readonly bool _ufs2;
+    private readonly UfsByteOrder _e;
     private readonly int _inodeSize, _pointerSize;
     private readonly long _now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     private int _wholeCursorCg, _wholeCursorBlock;
@@ -246,22 +248,24 @@ public static class UfsModifier {
     public Volume(Stream image) {
       _image = image;
       var probe = UfsReader.Probe(image) ?? throw new InvalidDataException("UFS: no UFS1 or UFS2 superblock found.");
-      if (probe.BigEndian) throw new NotSupportedException("UFS: big-endian volumes are not edited in place.");
+      _e = new UfsByteOrder(probe.BigEndian);
       _ufs2 = probe.Version == 2;
       _sbOffset = probe.Offset;
       var sb = new byte[SuperblockSize];
       image.Position = _sbOffset;
       image.ReadExactly(sb);
-      int I(int o) => BinaryPrimitives.ReadInt32LittleEndian(sb.AsSpan(o));
+      int I(int o) => _e.I32(sb.AsSpan(o));
       _sblkno = I(8); _cblkno = I(12); _iblkno = I(16); _dblkno = I(20); _ncg = I(44); _cssize = I(156);
       BlockSize = I(48); FragSize = I(52); _frag = I(56);
       _ipg = I(184); _fpg = I(188); _contigSumSize = I(1316);
-      _csaddr = _ufs2 ? BinaryPrimitives.ReadInt64LittleEndian(sb.AsSpan(1096)) : I(152);
+      _csaddr = _ufs2 ? _e.I64(sb.AsSpan(1096)) : I(152);
       _inodeSize = _ufs2 ? 256 : 128;
       _pointerSize = _ufs2 ? 8 : 4;
       if (FragSize < 512 || BlockSize < FragSize || _frag != BlockSize / FragSize || _ipg <= 0 || _fpg <= 0 || _ncg <= 0 || _csaddr <= 0)
         throw new InvalidDataException("UFS: superblock geometry is inconsistent.");
       if (_contigSumSize < 0 || _contigSumSize > 64) _contigSumSize = 0;
+      // 4.2BSD-format directories (FS_42INODEFMT) hold a 16-bit d_namlen and no d_type.
+      if (!_ufs2 && I(1324) < 2) throw new NotSupportedException("UFS: 4.2BSD-format volumes are not edited in place.");
     }
 
     // ── fragment-page cache ─────────────────────────────────────────────
@@ -310,19 +314,19 @@ public static class UfsModifier {
     private long InodeOffset(long ino) => ((ino / _ipg) * _fpg + _iblkno) * (long)FragSize + (ino % _ipg) * _inodeSize;
     private byte[] Inode(long ino) => Read(InodeOffset(ino), _inodeSize);
     private void PutInode(long ino, byte[] inode) => Write(InodeOffset(ino), inode);
-    public ushort Mode(long ino) => BinaryPrimitives.ReadUInt16LittleEndian(Inode(ino));
+    public ushort Mode(long ino) => _e.U16(Inode(ino));
 
     private int SizeOffset => _ufs2 ? 16 : 8;
     private int DirectOffset => _ufs2 ? 112 : 40;
     private int IndirectOffset => _ufs2 ? 208 : 88;
 
-    private long Size(byte[] inode) => BinaryPrimitives.ReadInt64LittleEndian(inode.AsSpan(SizeOffset));
-    private void SetSize(byte[] inode, long size) => BinaryPrimitives.WriteInt64LittleEndian(inode.AsSpan(SizeOffset), size);
+    private long Size(byte[] inode) => _e.I64(inode.AsSpan(SizeOffset));
+    private void SetSize(byte[] inode, long size) => _e.I64(inode.AsSpan(SizeOffset), size);
 
-    private long Pointer(ReadOnlySpan<byte> s) => _ufs2 ? BinaryPrimitives.ReadInt64LittleEndian(s) : BinaryPrimitives.ReadInt32LittleEndian(s);
+    private long Pointer(ReadOnlySpan<byte> s) => _ufs2 ? _e.I64(s) : _e.I32(s);
     private void SetPointer(Span<byte> s, long value) {
-      if (_ufs2) BinaryPrimitives.WriteInt64LittleEndian(s, value);
-      else BinaryPrimitives.WriteInt32LittleEndian(s, checked((int)value));
+      if (_ufs2) _e.I64(s, value);
+      else _e.I32(s, checked((int)value));
     }
 
     private long Db(byte[] inode, int i) => Pointer(inode.AsSpan(DirectOffset + i * _pointerSize));
@@ -330,35 +334,35 @@ public static class UfsModifier {
     private long Ib(byte[] inode, int level) => Pointer(inode.AsSpan(IndirectOffset + level * _pointerSize));
     private void SetIb(byte[] inode, int level, long frag) => SetPointer(inode.AsSpan(IndirectOffset + level * _pointerSize), frag);
 
-    private long Blocks(byte[] inode) => _ufs2 ? BinaryPrimitives.ReadInt64LittleEndian(inode.AsSpan(24)) : BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(104));
+    private long Blocks(byte[] inode) => _ufs2 ? _e.I64(inode.AsSpan(24)) : _e.U32(inode.AsSpan(104));
     private void SetBlocks(byte[] inode, long sectors) {
-      if (_ufs2) BinaryPrimitives.WriteInt64LittleEndian(inode.AsSpan(24), sectors);
-      else BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(104), checked((uint)sectors));
+      if (_ufs2) _e.I64(inode.AsSpan(24), sectors);
+      else _e.U32(inode.AsSpan(104), checked((uint)sectors));
     }
 
     private void Touch(byte[] inode) {
       if (_ufs2) {
-        BinaryPrimitives.WriteInt64LittleEndian(inode.AsSpan(40), _now); // di_mtime
-        BinaryPrimitives.WriteInt64LittleEndian(inode.AsSpan(48), _now); // di_ctime
+        _e.I64(inode.AsSpan(40), _now); // di_mtime
+        _e.I64(inode.AsSpan(48), _now); // di_ctime
       } else {
-        BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(24), (uint)_now);
-        BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(32), (uint)_now);
+        _e.U32(inode.AsSpan(24), (uint)_now);
+        _e.U32(inode.AsSpan(32), (uint)_now);
       }
     }
 
     private byte[] NewInode(ushort mode, short links, long size) {
       var inode = new byte[_inodeSize];
-      BinaryPrimitives.WriteUInt16LittleEndian(inode, mode);
-      BinaryPrimitives.WriteInt16LittleEndian(inode.AsSpan(2), links);
+      _e.U16(inode, mode);
+      _e.I16(inode.AsSpan(2), links);
       SetSize(inode, size);
       if (_ufs2) {
-        BinaryPrimitives.WriteInt64LittleEndian(inode.AsSpan(32), _now); // di_atime
-        BinaryPrimitives.WriteInt64LittleEndian(inode.AsSpan(56), _now); // di_birthtime
+        _e.I64(inode.AsSpan(32), _now); // di_atime
+        _e.I64(inode.AsSpan(56), _now); // di_birthtime
       } else {
-        BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(16), (uint)_now);
+        _e.U32(inode.AsSpan(16), (uint)_now);
       }
       Touch(inode);
-      BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(_ufs2 ? 80 : 108), (uint)Random.Shared.Next(1, int.MaxValue)); // di_gen
+      _e.U32(inode.AsSpan(_ufs2 ? 80 : 108), (uint)Random.Shared.Next(1, int.MaxValue)); // di_gen
       return inode;
     }
 
@@ -367,14 +371,14 @@ public static class UfsModifier {
     private byte[] Group(int cg) {
       if (_groups.TryGetValue(cg, out var block)) return block;
       block = Read(((long)cg * _fpg + _cblkno) * FragSize, BlockSize);
-      if (BinaryPrimitives.ReadInt32LittleEndian(block.AsSpan(4)) != 0x090255)
+      if (_e.I32(block.AsSpan(4)) != 0x090255)
         throw new InvalidDataException($"UFS: cylinder group {cg} has no cg_magic.");
       _groups[cg] = block;
       return block;
     }
 
-    private static int G(byte[] cg, int offset) => BinaryPrimitives.ReadInt32LittleEndian(cg.AsSpan(offset));
-    private static void SetG(byte[] cg, int offset, int value) => BinaryPrimitives.WriteInt32LittleEndian(cg.AsSpan(offset), value);
+    private int G(byte[] cg, int offset) => _e.I32(cg.AsSpan(offset));
+    private void SetG(byte[] cg, int offset, int value) => _e.I32(cg.AsSpan(offset), value);
     private static bool Bit(byte[] cg, int at, int bit) => (cg[at + bit / 8] & (1 << (bit % 8))) != 0;
     private static void SetBit(byte[] cg, int at, int bit, bool on) {
       if (on) cg[at + bit / 8] |= (byte)(1 << (bit % 8));
@@ -565,14 +569,14 @@ public static class UfsModifier {
 
     public void ReleaseInode(long ino, bool wipe) {
       var inode = Inode(ino);
-      var links = BinaryPrimitives.ReadInt16LittleEndian(inode.AsSpan(2));
+      var links = _e.I16(inode.AsSpan(2));
       if (links > 1) {
-        BinaryPrimitives.WriteInt16LittleEndian(inode.AsSpan(2), (short)(links - 1));
+        _e.I16(inode.AsSpan(2), (short)(links - 1));
         Touch(inode);
         PutInode(ino, inode);
         return;
       }
-      var mode = BinaryPrimitives.ReadUInt16LittleEndian(inode);
+      var mode = _e.U16(inode);
       var size = Size(inode);
       // A fast symlink keeps its target in the pointer area: nothing to free.
       if (!((mode & IfMt) == 0xA000 && Blocks(inode) == 0)) {
@@ -654,8 +658,8 @@ public static class UfsModifier {
         var prev = -1;
         for (var off = 0; off + 8 <= DirBlkSiz;) {
           var at = start + off;
-          var ino = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(at));
-          var reclen = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(at + 4));
+          var ino = _e.U32(data.AsSpan(at));
+          var reclen = _e.U16(data.AsSpan(at + 4));
           if (reclen < 8 || off + reclen > DirBlkSiz) break;
           var namlen = data[at + 7];
           if (ino != 0 && namlen == wanted.Length && data.AsSpan(at + 8, namlen).SequenceEqual(wanted))
@@ -674,13 +678,13 @@ public static class UfsModifier {
       for (var chunk = 0; chunk * DirBlkSiz < data.Length; ++chunk) {
         var bytes = data.AsSpan(chunk * DirBlkSiz, DirBlkSiz).ToArray();
         for (var off = 0; off + 8 <= DirBlkSiz;) {
-          var entIno = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(off));
-          var reclen = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(off + 4));
+          var entIno = _e.U32(bytes.AsSpan(off));
+          var reclen = _e.U16(bytes.AsSpan(off + 4));
           if (reclen < 8 || off + reclen > DirBlkSiz) break;
           var used = entIno == 0 ? 0 : MinRecLen(bytes[off + 7]);
           if (reclen - used >= need) {
             var at = off + used;
-            if (used > 0) BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(off + 4), (ushort)used);
+            if (used > 0) _e.U16(bytes.AsSpan(off + 4), (ushort)used);
             Entry(bytes, at, ino, reclen - used, type, nameBytes);
             PutDirectoryChunk(dirInode, chunk, bytes);
             Touch(dirInode);
@@ -696,10 +700,10 @@ public static class UfsModifier {
       GrowDirectory(dir, dirInode, fresh);
     }
 
-    private static void Entry(byte[] chunk, int at, long ino, int reclen, byte type, byte[] name) {
+    private void Entry(byte[] chunk, int at, long ino, int reclen, byte type, byte[] name) {
       chunk.AsSpan(at, reclen).Clear();
-      BinaryPrimitives.WriteUInt32LittleEndian(chunk.AsSpan(at), (uint)ino);
-      BinaryPrimitives.WriteUInt16LittleEndian(chunk.AsSpan(at + 4), (ushort)reclen);
+      _e.U32(chunk.AsSpan(at), (uint)ino);
+      _e.U16(chunk.AsSpan(at + 4), (ushort)reclen);
       chunk[at + 6] = type;
       chunk[at + 7] = (byte)name.Length;
       name.CopyTo(chunk, at + 8);
@@ -763,8 +767,8 @@ public static class UfsModifier {
       PutInode(ino, inode);
 
       var parentInode = Inode(parent);
-      var links = BinaryPrimitives.ReadInt16LittleEndian(parentInode.AsSpan(2));
-      BinaryPrimitives.WriteInt16LittleEndian(parentInode.AsSpan(2), (short)(links + 1));
+      var links = _e.I16(parentInode.AsSpan(2));
+      _e.I16(parentInode.AsSpan(2), (short)(links + 1));
       PutInode(parent, parentInode);
       Link(parent, name, ino, DtDir);
       return ino;
@@ -773,10 +777,10 @@ public static class UfsModifier {
     public void Unlink(long dir, DirEntry entry) {
       var dirInode = Inode(dir);
       var chunkBytes = DirectoryData(dir, out _).AsSpan(entry.Chunk * DirBlkSiz, DirBlkSiz).ToArray();
-      var reclen = BinaryPrimitives.ReadUInt16LittleEndian(chunkBytes.AsSpan(entry.Offset + 4));
+      var reclen = _e.U16(chunkBytes.AsSpan(entry.Offset + 4));
       if (entry.Previous >= 0) {
-        var prevLen = BinaryPrimitives.ReadUInt16LittleEndian(chunkBytes.AsSpan(entry.Previous + 4));
-        BinaryPrimitives.WriteUInt16LittleEndian(chunkBytes.AsSpan(entry.Previous + 4), (ushort)(prevLen + reclen));
+        var prevLen = _e.U16(chunkBytes.AsSpan(entry.Previous + 4));
+        _e.U16(chunkBytes.AsSpan(entry.Previous + 4), (ushort)(prevLen + reclen));
         chunkBytes.AsSpan(entry.Offset, reclen).Clear();
       } else {
         // First entry of a chunk: keep the record, mark it unused.
@@ -801,7 +805,7 @@ public static class UfsModifier {
     private List<Run> Layout(byte[] inode, Func<long, long>? at = null) {
       at ??= static f => f;
       var runs = new List<Run>();
-      var type = BinaryPrimitives.ReadUInt16LittleEndian(inode) & IfMt;
+      var type = _e.U16(inode) & IfMt;
       if (type is not (IfReg or IfDir or IfLnk) || (type == IfLnk && Blocks(inode) == 0)) return runs;
       if (Ib(inode, 2) != 0) throw new NotSupportedException("UFS: files reaching the triple-indirect tree are not relocated.");
       var size = Size(inode);
@@ -879,13 +883,13 @@ public static class UfsModifier {
     }
 
     /// <summary>The records of a directory: offset, inode, record length and name.</summary>
-    private static IEnumerable<(int Offset, long Ino, int RecLen, string Name)> Records(byte[] data) {
+    private IEnumerable<(int Offset, long Ino, int RecLen, string Name)> Records(byte[] data) {
       for (var start = 0; start + DirBlkSiz <= data.Length; start += DirBlkSiz)
         for (var off = 0; off + 8 <= DirBlkSiz;) {
           var at = start + off;
-          var reclen = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(at + 4));
+          var reclen = _e.U16(data.AsSpan(at + 4));
           if (reclen < 8 || off + reclen > DirBlkSiz) break;
-          var ino = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(at));
+          var ino = _e.U32(data.AsSpan(at));
           var namlen = Math.Min((int)data[at + 7], reclen - 8);
           yield return (at, ino, reclen, Encoding.UTF8.GetString(data, at + 8, namlen));
           off += reclen;
@@ -1144,27 +1148,27 @@ public static class UfsModifier {
           var block = Group(cg);
           cs = [G(block, 24), G(block, 28), G(block, 32), G(block, 36)];
           var bytes = new byte[16];
-          for (var i = 0; i < 4; ++i) BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(i * 4), cs[i]);
+          for (var i = 0; i < 4; ++i) _e.I32(bytes.AsSpan(i * 4), cs[i]);
           Write(rec, bytes);
         } else {
           var bytes = Read(rec, 16);
-          cs = [.. Enumerable.Range(0, 4).Select(i => BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(i * 4)))];
+          cs = [.. Enumerable.Range(0, 4).Select(i => _e.I32(bytes.AsSpan(i * 4)))];
         }
         ndir += cs[0]; nbfree += cs[1]; nifree += cs[2]; nffree += cs[3];
       }
       if (!_ufs2) {
         var oldTotal = new byte[16];
-        BinaryPrimitives.WriteInt32LittleEndian(oldTotal, (int)ndir);
-        BinaryPrimitives.WriteInt32LittleEndian(oldTotal.AsSpan(4), (int)nbfree);
-        BinaryPrimitives.WriteInt32LittleEndian(oldTotal.AsSpan(8), (int)nifree);
-        BinaryPrimitives.WriteInt32LittleEndian(oldTotal.AsSpan(12), (int)nffree);
+        _e.I32(oldTotal, (int)ndir);
+        _e.I32(oldTotal.AsSpan(4), (int)nbfree);
+        _e.I32(oldTotal.AsSpan(8), (int)nifree);
+        _e.I32(oldTotal.AsSpan(12), (int)nffree);
         Write(_sbOffset + 192, oldTotal);                            // fs_old_cstotal
       }
       var total = new byte[32];
-      BinaryPrimitives.WriteInt64LittleEndian(total, ndir);
-      BinaryPrimitives.WriteInt64LittleEndian(total.AsSpan(8), nbfree);
-      BinaryPrimitives.WriteInt64LittleEndian(total.AsSpan(16), nifree);
-      BinaryPrimitives.WriteInt64LittleEndian(total.AsSpan(24), nffree);
+      _e.I64(total, ndir);
+      _e.I64(total.AsSpan(8), nbfree);
+      _e.I64(total.AsSpan(16), nifree);
+      _e.I64(total.AsSpan(24), nffree);
       Write(_sbOffset + 1008, total);                                // fs_cstotal
 
       foreach (var index in _dirty.Order()) {
