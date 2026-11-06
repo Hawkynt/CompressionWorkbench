@@ -26,7 +26,7 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new StuffItReader(stream);
-        return r.Entries.Select(e => (e.FileName, r.Extract(e)));
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FileName, r.Extract(e)));
       },
       buildImage: files => {
         using var ms = new MemoryStream();
@@ -198,12 +198,16 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     if (string.Equals(options.GetString(FormatOptionKeys.TargetCompatibility), StuffIt5, StringComparison.OrdinalIgnoreCase)) {
       using var w5 = new StuffIt5Writer(output, leaveOpen: true);
-      foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
-        w5.AddFile(name, data);
+      foreach (var i in inputs) {
+        if (i.IsDirectory) w5.AddDirectory(i.ArchiveName);
+        else w5.AddFile(i.ArchiveName, i.ReadContent());
+      }
       return;
     }
     using var w = new StuffItWriter(output, leaveOpen: true);
-    foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
-      w.AddFile(name, data);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
+      else w.AddFile(i.ArchiveName, i.ReadContent());
+    }
   }
 }

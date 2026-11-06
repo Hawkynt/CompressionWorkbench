@@ -31567,14 +31567,15 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 #### `StuffIt5Writer`
 
-Creates StuffIt 5 archives (the container of StuffIt 5 to 8): files at the root level, each fork stored, RLE-packed or LZ+Huffman-compressed (method 13), whichever is smallest.
+Creates StuffIt 5 archives (the container of StuffIt 5 to 8): files and folders, each fork stored, RLE-packed or LZ+Huffman-compressed (method 13), whichever is smallest.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StuffIt5Writer` | `StuffIt5Writer(Stream stream, bool leaveOpen = false)` | Starts a StuffIt 5 archive on `stream`; it is written on `Dispose`. |
-| `AddFile` | `void AddFile(string fileName, byte[] data, byte[] resourceFork = null, string fileType = "TEXT", string fileCreator = "CWIE", DateTime? lastModified = null)` | Adds a file with a data fork and an optional resource fork. |
+| `AddDirectory` | `void AddDirectory(string path, DateTime? lastModified = null)` | Adds a folder, which may stay empty; folders named in file paths are created on their own. |
+| `AddFile` | `void AddFile(string fileName, byte[] data, byte[] resourceFork = null, string fileType = "TEXT", string fileCreator = "CWIE", DateTime? lastModified = null)` | Adds a file with a data fork and an optional resource fork; '/' in the path creates folders. |
 | `Dispose` | `void Dispose()` |  |
 
 #### `StuffItEntry`
@@ -31655,6 +31656,7 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StuffItWriter` | `StuffItWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `StuffItWriter`. |
+| `AddDirectory` | `void AddDirectory(string path, DateTime? lastModified = null)` | Adds a folder, which may stay empty; folders named in file paths are created on their own. |
 | `AddFileWithResourceFork` | `void AddFileWithResourceFork(string fileName, byte[] dataFork, byte[] resourceFork, string fileType = "TEXT", string fileCreator = "CWIE", DateTime? lastModified = null)` | Adds a file entry to the archive with both data and resource forks. |
 | `AddFile` | `void AddFile(string fileName, byte[] data, string fileType = "TEXT", string fileCreator = "CWIE", DateTime? lastModified = null)` | Adds a file entry to the archive with an empty resource fork. |
 | `Dispose` | `void Dispose()` |  |
