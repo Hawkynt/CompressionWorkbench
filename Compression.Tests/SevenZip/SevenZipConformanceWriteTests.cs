@@ -19,8 +19,6 @@ public sealed class SevenZipConformanceWriteTests {
   /// starts passing fails the test, so the list cannot go stale.
   /// </summary>
   private static readonly Dictionary<string, string> KnownGaps = new(StringComparer.Ordinal) {
-    ["ppmd"] = "PPMd var.H interoperability belongs to the PPMd work (codec-proof audit, stacked on #560): our model and method id are not 7-Zip's yet.",
-    ["ppmd-aes"] = "PPMd var.H interoperability belongs to the PPMd work (codec-proof audit, stacked on #560).",
   };
 
   private string _root = null!;
@@ -191,6 +189,28 @@ public sealed class SevenZipConformanceWriteTests {
     using (var reader = new SevenZipReader(new MemoryStream(bytes), password: encrypt ? Password : null))
       Assert.That(reader.IsHeaderEncrypted, Is.False);
     this.AssertSevenZipAccepts($"hc-{encrypt}", archive, encrypt ? Password : null);
+  }
+
+  /// <summary>
+  /// PPMd across model orders and memory sizes, the small ones forcing the model to restart many
+  /// times over the input: 7-Zip must test and extract every one byte for byte.
+  /// </summary>
+  [Test]
+  public void Given_OurPpmdArchivesAcrossOrdersAndMemory_When_7ZipTestsAndExtracts_Then_EveryOneMatches(
+      [Values(2, 3, 6, 8, 16, 32, 64)] int order,
+      [Values(1 << 11, 1 << 16, 1 << 20, 1 << 24)] int memory) {
+    var name = $"ppmd-o{order}-m{memory}";
+    var archive = Path.Combine(this._root, $"{name}.7z");
+    using (var file = File.Create(archive))
+    using (var writer = new SevenZipWriter(file, SevenZipCodec.PPMd, ppmdOrder: order, ppmdMemorySize: memory)) {
+      foreach (var (path, data) in this._tree)
+        if (data == null)
+          writer.AddDirectory(path);
+        else
+          writer.AddEntry(new SevenZipEntry { Name = path }, data);
+      writer.Finish();
+    }
+    this.AssertSevenZipAccepts(name, archive, null);
   }
 
   private static string WriteTemp(string root, string name, byte[] bytes) {

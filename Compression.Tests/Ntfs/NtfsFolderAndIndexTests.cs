@@ -289,4 +289,29 @@ public sealed class NtfsFolderAndIndexTests {
     });
     Assert.That(ArchiveOperations.ExtractEntry(image, "kernel.txt", null), Is.EqualTo("from the kernel"u8.ToArray()), "what the kernel wrote reads back");
   }
+
+  [TestCase(1)]
+  [TestCase(3000)]
+  [Category("KernelMount")]
+  public void GivenAnAutoSizedImage_WhenNtfs3MountsItReadWrite_ThenItTakesNewFilesAndFolders(int files) {
+    this.RequireNtfs3();
+    var src = Directory.CreateDirectory(Path.Combine(this._dir, "auto")).FullName;
+    for (var i = 0; i < files; i++)
+      File.WriteAllText(Path.Combine(src, $"{i:D5}.txt"), i.ToString());
+    var image = Path.Combine(this._dir, "auto.ntfs");
+    ArchiveOperations.Create(image, ArchiveInput.Resolve([src]), new CompressionOptions(), FormatDetector.Format.Ntfs);
+
+    var commands = new List<string> { "mount-vfs \"\" ntfs3 /dev/sda /", "statvfs /", "mkdir /newdir" };
+    for (var i = 0; i < 40; i++) commands.Add($"write /newdir/k{i:D2}.txt \"kernel {i}\"");
+    commands.Add("fallocate64 /newdir/big.bin 262144");
+    commands.Add("umount /");
+    var (exitCode, output) = this.Guestfish(image, [.. commands]);
+    var fix = FsInteropToolbox.RunWsl($"ntfsfix --no-action {FsInteropToolbox.WinToWsl(image)}");
+
+    Assert.Multiple(() => {
+      Assert.That(exitCode, Is.Zero, output);
+      Assert.That(fix.ExitCode, Is.Zero, fix.StdOut + fix.StdErr);
+    });
+    Assert.That(ArchiveOperations.ExtractEntry(image, "newdir/k39.txt", null), Is.EqualTo("kernel 39"u8.ToArray()));
+  }
 }
