@@ -79,17 +79,6 @@ public sealed class Ufs2WriterTests {
   }
 
   [Test]
-  public void GivenAUfs2Volume_WhenDefragmentedOrWiped_ThenItIsRefusedAndUntouched() {
-    var image = Create(new Dictionary<string, byte[]> { ["x"] = [1] });
-    using var ms = new MemoryStream();
-    ms.Write(image);
-    var d = new UfsFormatDescriptor();
-    Assert.Throws<NotSupportedException>(() => d.Defragment(ms));
-    Assert.Throws<NotSupportedException>(() => d.WipeUnusedSpace(ms));
-    Assert.That(ms.ToArray(), Is.EqualTo(image));
-  }
-
-  [Test]
   public void GivenAFileOnThePathOfAFolder_WhenAdded_ThenItIsRefusedAndTheImageIsUntouched() {
     var image = Create(new Dictionary<string, byte[]> { ["plain"] = [1] });
     using var ms = new MemoryStream();

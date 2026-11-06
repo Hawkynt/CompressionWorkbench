@@ -10,8 +10,8 @@ namespace FileSystem.Ufs;
 /// order are listed and extracted. Little-endian volumes of both versions are
 /// created (UFS1 at the <c>newfs -O1</c> layout; UFS2 formatted as <c>newfs -O2</c>
 /// lays it out, then filled by the in-place editor) and edited in place: files and
-/// folders are added and removed. Defragmentation, wiping and block moves stay
-/// UFS1-only. Big-endian volumes are read-only — every editing entry point refuses
+/// folders are added and removed, the volume is defragmented and wiped, and blocks
+/// are moved. Big-endian volumes are read-only — every editing entry point refuses
 /// them before a byte is written.
 ///
 /// References:
@@ -43,22 +43,19 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <see cref="DefragBlockKind.Used"/>. Indirect blocks are not followed
   /// (single-CG profile our writer emits doesn't use them).
   /// </summary>
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
-    => UfsExtentMap.Enumerate(image);
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var probe = UfsReader.Probe(image);
+    image.Position = 0;
+    return probe is { Version: 2, BigEndian: false } ? UfsModifier.Extents(image) : UfsExtentMap.Enumerate(image);
+  }
 
   /// <summary>
-  /// Refuses an edit on any volume the UFS1 writer did not lay out the same way:
-  /// UFS2, big-endian, or a superblock away from <c>SBLOCK_UFS1</c>. The image is
-  /// left byte-identical.
+  /// Refuses an edit the in-place paths cannot make — big-endian volumes, and UFS1
+  /// superblocks away from <c>SBLOCK_UFS1</c> — with the image left byte-identical, and
+  /// says which version the editing paths face.
   /// </summary>
-  internal static void RequireEditable(Stream image) => RequireEditable(image, allowUfs2: false);
-
-  /// <summary>
-  /// Refuses an edit the in-place paths cannot make: big-endian volumes always; UFS2 and
-  /// superblocks away from <c>SBLOCK_UFS1</c> unless <paramref name="allowUfs2"/> (the
-  /// add/remove editor handles both versions; the block movers are UFS1-only).
-  /// </summary>
-  internal static (int Version, long Offset) RequireEditable(Stream image, bool allowUfs2) {
+  internal static int RequireEditable(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var probe = UfsReader.Probe(image) ?? throw new InvalidDataException("UFS: no UFS1 or UFS2 superblock found.");
     image.Position = 0;
@@ -66,9 +63,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       throw new NotSupportedException($"UFS: big-endian UFS{probe.Version} volumes are read-only.");
     if (probe.Version == 1 && probe.Offset != UfsWriter.SuperblockOffset)
       throw new NotSupportedException($"UFS: a UFS1 superblock at {probe.Offset} is read-only; only SBLOCK_UFS1 volumes are edited.");
-    if (probe.Version == 2 && !allowUfs2)
-      throw new NotSupportedException("UFS: defragmenting, wiping and moving blocks are UFS1-only; UFS2 volumes take adds and removes only.");
-    return (probe.Version, probe.Offset);
+    return probe.Version;
   }
 
   /// <summary>
@@ -86,7 +81,8 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// never match a file-size key — they (and all metadata) are preserved.</para>
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
-    RequireEditable(image);
+    // UFS2: the free maps say what is free; tips and dead directory records go too.
+    if (RequireEditable(image) == 2) return UfsModifier.Wipe(image, wipeClusterTips, wipeDeletedEntries);
     image.Position = 0;
     var imageSize = image.Length;
 
@@ -312,7 +308,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// the root dir block, and the file's data blocks are read or written.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    if (RequireEditable(archive, allowUfs2: true).Version == 2) {
+    if (RequireEditable(archive) == 2) {
       // The UFS2 editor pages the volume fragment by fragment, so size does not matter.
       foreach (var dir in inputs.Where(i => i.IsDirectory)) UfsModifier.AddDirectory(archive, dir.ArchiveName);
       foreach (var (name, data) in FilesOnly(inputs)) {
@@ -341,7 +337,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// wiped during removal so no forensic trace remains.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    if (RequireEditable(archive, allowUfs2: true).Version == 2) {
+    if (RequireEditable(archive) == 2) {
       foreach (var name in entryNames) UfsModifier.RemoveFile(archive, name, wipeData: true);
       return;
     }
@@ -359,7 +355,10 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <inheritdoc />
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
-    RequireEditable(image);
+    if (RequireEditable(image) == 2) {
+      UfsModifier.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+      return;
+    }
     var mover = new UfsBlockMover();
     mover.Init(image);
     mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
@@ -367,7 +366,10 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <inheritdoc />
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
-    RequireEditable(image);
+    if (RequireEditable(image) == 2) {
+      UfsModifier.Repoint(image, fileName, oldOffset, newOffset, length);
+      return;
+    }
     var mover = new UfsBlockMover();
     mover.Init(image);
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
@@ -386,7 +388,10 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
-    RequireEditable(archive);
+    if (RequireEditable(archive) == 2) {
+      DefragmentUfs2(archive, options);
+      return;
+    }
 
     if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
       try {
@@ -473,6 +478,24 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           try { File.Delete(path); } catch { /* scratch file already gone */ }
       }
     }
+  }
+
+  /// <summary>
+  /// UFS2 is defragmented in place, file by file, into single runs of free blocks:
+  /// packing towards the start (which also leaves every file reading forwards) or
+  /// towards the end. Filling holes lazily and carving a hole are refused.
+  /// </summary>
+  private static void DefragmentUfs2(Stream archive, DefragOptions options) {
+    var atEnd = options.Mode switch {
+      DefragMode.ConsolidateAtStart or DefragMode.AscendingOrder => false,
+      DefragMode.ConsolidateAtEnd => true,
+      _ => throw new NotSupportedException($"UFS: {options.Mode} is not offered for UFS2; it packs towards the start or the end."),
+    };
+    var moved = UfsModifier.Defragment(archive, atEnd);
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
+      ImageSize: archive.Length, BlockMap: UfsModifier.Extents(archive),
+      Status: moved == 0 ? "Already defragmented" : $"Defragmentation complete ({moved} files moved)"));
   }
 
   private static IEnumerable<(string Name, byte[] Data)> ReadRebuildEntries(Stream stream) {

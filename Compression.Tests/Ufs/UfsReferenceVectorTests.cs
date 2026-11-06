@@ -123,18 +123,6 @@ public sealed class UfsReferenceVectorTests {
     Assert.That(image.ToArray(), Is.EqualTo(before));
   }
 
-  [TestCase("makefs-ufs2-le.img.gz")]
-  [TestCase("newfs-ufs2.img.gz")]
-  public void GivenALittleEndianUfs2Volume_WhenDefragmentedWipedOrMoved_ThenItIsRefusedAndTheImageIsUntouched(string vector) {
-    using var image = Image(vector);
-    var before = image.ToArray();
-    var d = new UfsFormatDescriptor();
-    Assert.Throws<NotSupportedException>(() => d.Defragment(image));
-    Assert.Throws<NotSupportedException>(() => d.WipeUnusedSpace(image));
-    Assert.Throws<NotSupportedException>(() => d.MoveExtent(image, 0, 4096, 4096));
-    Assert.That(image.ToArray(), Is.EqualTo(before));
-  }
-
   [Test]
   public void GivenAUfs2SuperblockWhoseSblockLocDisagrees_WhenRead_ThenItIsNotTakenForThePrimary() {
     using var image = Image("newfs-ufs2.img.gz");

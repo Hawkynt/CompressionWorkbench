@@ -95,14 +95,57 @@ public sealed class Ufs2ExternalTests {
   }
 
   [Test, Category("KernelMount"), Category("Slow")]
-  public void GivenAUfs2VolumeTheWriterMade_WhenTheKernelMountsIt_ThenEveryFileReadsBackByteExact() {
+  public void GivenAUfs2VolumeTheWriterMade_WhenTheKernelMountsIt_ThenEveryFileReadsBackByteExact()
+    => AssertKernelReads(Save("k.ufs", Ufs2WriterTests.Create(Tree)), Tree);
+
+  /// <summary>A volume after one maintenance operation, and the files it must still hold.</summary>
+  private static (byte[] Image, Dictionary<string, byte[]> Files) Maintained(string operation) {
+    var d = new UfsFormatDescriptor();
+    switch (operation) {
+      case "move-zeroing-source": {
+        var (ms, files, _) = Ufs2MaintenanceTests.Moved(zeroSource: true);
+        return (ms.ToArray(), files);
+      }
+      default: {
+        var (ms, files) = Ufs2MaintenanceTests.Fragmented();
+        switch (operation) {
+          case "defragment": d.Defragment(ms); break;
+          case "defragment-at-end": d.Defragment(ms, new DefragOptions { Mode = DefragMode.ConsolidateAtEnd }); break;
+          case "wipe": d.WipeUnusedSpace(ms); break;
+          default: throw new ArgumentOutOfRangeException(nameof(operation));
+        }
+        Ufs2MaintenanceTests.AssertHolds(ms, files);
+        return (ms.ToArray(), files);
+      }
+    }
+  }
+
+  [TestCase("defragment")]
+  [TestCase("defragment-at-end")]
+  [TestCase("wipe")]
+  [TestCase("move-zeroing-source")]
+  public void GivenAUfs2VolumeAfterMaintenance_WhenChecked_ThenFsckFfsIsClean(string operation) {
+    RequireFsck();
+    AssertClean(Fsck(Save(operation + ".ufs", Maintained(operation).Image)));
+  }
+
+  [TestCase("defragment"), Category("KernelMount"), Category("Slow")]
+  [TestCase("defragment-at-end")]
+  [TestCase("wipe")]
+  [TestCase("move-zeroing-source")]
+  public void GivenAUfs2VolumeAfterMaintenance_WhenTheKernelMountsIt_ThenEveryFileReadsBackByteExact(string operation) {
+    var (image, files) = Maintained(operation);
+    AssertKernelReads(Save(operation + ".ufs", image), files);
+  }
+
+  /// <summary>The Linux ufs driver mounts the volume read-only as UFS2 and hashes every file.</summary>
+  private void AssertKernelReads(string img, IReadOnlyDictionary<string, byte[]> files) {
     if (!FsInteropToolbox.WslAvailable || !FsInteropToolbox.WslHasTool("guestfish"))
       Assert.Ignore("guestfish not available (install libguestfs-tools).");
-    var img = Save("k.ufs", Ufs2WriterTests.Create(Tree));
     var script = Path.Combine(_tmp, "gf.txt");
     File.WriteAllText(script, string.Join('\n', [
       "run", "mount-vfs ro,ufstype=ufs2 ufs /dev/sda /",
-      .. Tree.Keys.Select(k => $"checksum sha256 /{k}"), "umount /",
+      .. files.Keys.Select(k => $"checksum sha256 /{k}"), "umount /",
     ]) + "\n");
     var r = FsInteropToolbox.RunWsl(
       "export LIBGUESTFS_BACKEND=direct; echo 1234 | sudo -S chmod 0666 /dev/kvm 2>/dev/null; echo 1234 | sudo -S chmod 0644 /boot/vmlinuz-* 2>/dev/null; " +
@@ -111,6 +154,6 @@ public sealed class Ufs2ExternalTests {
       Assert.Ignore("the libguestfs appliance cannot start here: " + r.StdOut);
     Assert.That(r.ExitCode, Is.Zero, r.StdOut + r.StdErr);
     var lines = r.StdOut.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-    Assert.That(lines.TakeLast(Tree.Count), Is.EqualTo(Tree.Values.Select(v => Convert.ToHexStringLower(SHA256.HashData(v)))), r.StdOut);
+    Assert.That(lines.TakeLast(files.Count), Is.EqualTo(files.Values.Select(v => Convert.ToHexStringLower(SHA256.HashData(v)))), r.StdOut);
   }
 }

@@ -40,6 +40,7 @@ public static class UfsModifier {
   private const ushort IfMt = 0xF000;
   private const ushort IfDir = 0x4000;
   private const ushort IfReg = 0x8000;
+  private const ushort IfLnk = 0xA000;
   private const byte DtDir = 4;
   private const byte DtReg = 8;
 
@@ -96,6 +97,119 @@ public static class UfsModifier {
     return true;
   }
 
+  /// <summary>
+  /// Makes every file contiguous: each regular file or symlink with blocks moves, pointer
+  /// blocks ahead of the data they address, into the lowest (or with <paramref name="atEnd"/>
+  /// the highest) run of free blocks inside one cylinder group that holds it whole. Files
+  /// are taken in the order of their first block, so the volume packs towards that end.
+  /// A file already contiguous moves only when that brings it closer to the end packed
+  /// towards; sparse files, directories and files no single run holds stay where they are.
+  /// The image keeps its length and every file its bytes. Returns the files moved.
+  /// </summary>
+  public static int Defragment(Stream image, bool atEnd = false) {
+    ArgumentNullException.ThrowIfNull(image);
+    // A file that found no room early in a pass may find it once later files have
+    // moved, so passes repeat until one moves nothing. Every move brings a file closer
+    // to the end packed towards or makes it contiguous, so the passes come to an end.
+    var total = 0;
+    for (var pass = 0; pass < 64; ++pass) {
+      var scan = new Volume(image);
+      var files = scan.Walk()
+        .Where(e => (e.Mode & IfMt) is IfReg or IfLnk)
+        .Select(e => (e.Ino, First: scan.FirstFragment(e.Ino)))
+        .Where(e => e.First > 0)
+        .ToList();
+      files = atEnd ? [.. files.OrderByDescending(e => e.First)] : [.. files.OrderBy(e => e.First)];
+      var moved = 0;
+      foreach (var (ino, _) in files) {
+        var v = new Volume(image);
+        if (!v.Relocate(ino, atEnd)) continue;
+        v.Commit();
+        ++moved;
+      }
+      if (moved == 0) break;
+      total += moved;
+    }
+    return total;
+  }
+
+  /// <summary>
+  /// Zeros what no file holds: every fragment the cylinder groups' free maps mark free,
+  /// with <paramref name="clusterTips"/> the bytes between a file's (or directory's) end
+  /// and the end of its last fragment, and with <paramref name="deletedEntries"/> the
+  /// bytes of every directory record past its live name (the remains of removed
+  /// entries). Allocation, inodes and live directory entries are untouched. Returns the
+  /// bytes zeroed.
+  /// </summary>
+  public static long Wipe(Stream image, bool clusterTips = true, bool deletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    var v = new Volume(image);
+    var wiped = v.ZeroSlack(clusterTips, deletedEntries);
+    var free = v.FreeRuns();
+    v.Commit();
+    foreach (var (frag, count) in free) {
+      Compression.Core.DiskImage.ExtentCopy.Zero(image, frag * v.FragSize, (long)count * v.FragSize);
+      wiped += (long)count * v.FragSize;
+    }
+    image.Flush();
+    return wiped;
+  }
+
+  /// <summary>
+  /// The volume's layout: each cylinder group's metadata (boot area, superblock copy,
+  /// group header, inode table), the <c>fs_cs</c> summary and the root directory as
+  /// reserved; every other directory (named with a trailing <c>/</c>), file and symlink
+  /// as its runs of fragments, pointer blocks included, in the order the file reads.
+  /// </summary>
+  public static List<Compression.Registry.DefragBlockInfo> Extents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    return new Volume(image).Extents();
+  }
+
+  /// <summary>
+  /// Copies <paramref name="length"/> bytes from <paramref name="srcOffset"/> to
+  /// <paramref name="dstOffset"/> after checking that both are fragment-aligned and that
+  /// every destination fragment is free or part of the source; otherwise refuses with
+  /// the image untouched. With <paramref name="zeroSource"/> the source fragments the
+  /// destination does not cover are zeroed.
+  /// </summary>
+  public static void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (length <= 0 || srcOffset == dstOffset) return;
+    var v = new Volume(image);
+    v.RequireMovable(srcOffset, dstOffset, length);
+    Compression.Core.DiskImage.ExtentCopy.Move(image, srcOffset, dstOffset, length);
+    if (zeroSource) {
+      // Only the part of the source the destination did not overwrite.
+      var end = srcOffset + length;
+      var (keepFrom, keepTo) = (dstOffset, dstOffset + length);
+      if (srcOffset < keepFrom) Compression.Core.DiskImage.ExtentCopy.Zero(image, srcOffset, Math.Min(end, keepFrom) - srcOffset);
+      if (end > keepTo) {
+        var from = Math.Max(srcOffset, keepTo);
+        Compression.Core.DiskImage.ExtentCopy.Zero(image, from, end - from);
+      }
+    }
+    image.Flush();
+  }
+
+  /// <summary>
+  /// Repoints the entry <paramref name="path"/> (a directory with a trailing <c>/</c>, as
+  /// <see cref="Extents"/> names it) after its fragments in
+  /// <c>[oldOffset, oldOffset + length)</c> were copied to <paramref name="newOffset"/>:
+  /// direct and indirect pointers (pointer blocks are read where they now lie) and the
+  /// free maps are updated. A whole block must land block-aligned and a fragment run
+  /// inside one block; a run cut by the range, the root directory, or a destination in
+  /// use by something else is refused with the image untouched.
+  /// </summary>
+  public static void Repoint(Stream image, string path, long oldOffset, long newOffset, long length) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(path);
+    if (length <= 0 || oldOffset == newOffset) return;
+    var v = new Volume(image);
+    v.Repoint(path, oldOffset, newOffset, length);
+    v.Commit();
+  }
+
   private static string[] Split(string path) {
     var parts = path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
     if (parts.Length == 0) throw new ArgumentException("UFS: empty path.", nameof(path));
@@ -121,6 +235,8 @@ public static class UfsModifier {
     private readonly int _inodeSize, _pointerSize;
     private readonly long _now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     private int _wholeCursorCg, _wholeCursorBlock;
+    private long _plan = -1;
+    private readonly int _sblkno, _dblkno, _cssize;
 
     public int BlockSize { get; }
     public int FragSize { get; }
@@ -137,7 +253,7 @@ public static class UfsModifier {
       image.Position = _sbOffset;
       image.ReadExactly(sb);
       int I(int o) => BinaryPrimitives.ReadInt32LittleEndian(sb.AsSpan(o));
-      _cblkno = I(12); _iblkno = I(16); _ncg = I(44);
+      _sblkno = I(8); _cblkno = I(12); _iblkno = I(16); _dblkno = I(20); _ncg = I(44); _cssize = I(156);
       BlockSize = I(48); FragSize = I(52); _frag = I(56);
       _ipg = I(184); _fpg = I(188); _contigSumSize = I(1316);
       _csaddr = _ufs2 ? BinaryPrimitives.ReadInt64LittleEndian(sb.AsSpan(1096)) : I(152);
@@ -281,6 +397,13 @@ public static class UfsModifier {
 
     /// <summary>A run of <paramref name="count"/> free fragments inside one block; partly used blocks first.</summary>
     private long AllocateFrags(int count) {
+      if (_plan >= 0) {
+        // Relocation into a run already found free: block after block, the tail last.
+        var planned = _plan;
+        SetFrags(planned, count, free: false);
+        _plan += _frag;
+        return planned;
+      }
       for (var pass = 0; pass < 2; ++pass)
         for (var n = 0; n < (pass == 1 ? _ncg + 1 : _ncg); ++n) { // the extra lap revisits the cursor group's start
           // Whole blocks are searched from where the last one was found, so laying out a
@@ -401,6 +524,8 @@ public static class UfsModifier {
     // Lays `data` out and returns the fragments used, pointer blocks included. Up to
     // twelve blocks: whole blocks plus a fragment tail. Beyond: whole blocks through
     // di_db, then the single- and double-indirect trees.
+    // A pointer block is allocated ahead of the first data block it addresses, as FFS
+    // lays them out, so a file placed into one free run reads front to back.
     private long Place(byte[] inode, ReadOnlySpan<byte> data) {
       long used = 0;
       var blocks = (data.Length + (long)BlockSize - 1) / BlockSize;
@@ -408,6 +533,19 @@ public static class UfsModifier {
       byte[]? single = null, dbl = null, leaf = null;
       long singleAt = 0, dblAt = 0, leafAt = 0;
       for (long b = 0; b < blocks; ++b) {
+        var k = b - MaxDirectBlocks - ptrs;
+        if (b == MaxDirectBlocks) {
+          singleAt = AllocateBlock(); used += _frag; single = new byte[BlockSize]; SetIb(inode, 0, singleAt);
+        } else if (k >= 0) {
+          if (k == 0) { dblAt = AllocateBlock(); used += _frag; dbl = new byte[BlockSize]; SetIb(inode, 1, dblAt); }
+          if (k % ptrs == 0) {
+            if (leaf != null) Write(leafAt * FragSize, leaf);
+            leafAt = AllocateBlock();
+            used += _frag;
+            leaf = new byte[BlockSize];
+            SetPointer(dbl!.AsSpan((int)(k / ptrs) * _pointerSize), leafAt);
+          }
+        }
         var bytes = (int)Math.Min(BlockSize, data.Length - b * BlockSize);
         var count = b == blocks - 1 && blocks <= MaxDirectBlocks ? (bytes + FragSize - 1) / FragSize : _frag;
         var at = count == _frag ? AllocateBlock() : AllocateFrags(count);
@@ -415,23 +553,9 @@ public static class UfsModifier {
         data.Slice((int)(b * BlockSize), bytes).CopyTo(chunk);
         Write(at * FragSize, chunk);
         used += count;
-        if (b < MaxDirectBlocks) {
-          SetDb(inode, (int)b, at);
-        } else if (b < MaxDirectBlocks + ptrs) {
-          if (single == null) { singleAt = AllocateBlock(); used += _frag; single = new byte[BlockSize]; SetIb(inode, 0, singleAt); }
-          SetPointer(single.AsSpan((int)(b - MaxDirectBlocks) * _pointerSize), at);
-        } else {
-          var k = b - MaxDirectBlocks - ptrs;
-          if (dbl == null) { dblAt = AllocateBlock(); used += _frag; dbl = new byte[BlockSize]; SetIb(inode, 1, dblAt); }
-          if (k % ptrs == 0) {
-            if (leaf != null) Write(leafAt * FragSize, leaf);
-            leafAt = AllocateBlock();
-            used += _frag;
-            leaf = new byte[BlockSize];
-            SetPointer(dbl.AsSpan((int)(k / ptrs) * _pointerSize), leafAt);
-          }
-          SetPointer(leaf!.AsSpan((int)(k % ptrs) * _pointerSize), at);
-        }
+        if (b < MaxDirectBlocks) SetDb(inode, (int)b, at);
+        else if (k < 0) SetPointer(single!.AsSpan((int)(b - MaxDirectBlocks) * _pointerSize), at);
+        else SetPointer(leaf!.AsSpan((int)(k % ptrs) * _pointerSize), at);
       }
       if (single != null) Write(singleAt * FragSize, single);
       if (leaf != null) Write(leafAt * FragSize, leaf);
@@ -662,6 +786,346 @@ public static class UfsModifier {
       PutDirectoryChunk(dirInode, entry.Chunk, chunkBytes);
       Touch(dirInode);
       PutInode(dir, dirInode);
+    }
+
+    // ── layout of one inode ─────────────────────────────────────────────
+
+    /// <summary>A run of fragments an inode holds: a data block (its logical number) or a pointer block (-1).</summary>
+    private readonly record struct Run(long Frag, int Count, long Logical);
+
+    /// <summary>
+    /// Every run the inode holds in the order the file reads, pointer blocks ahead of the
+    /// data they address. Pointer blocks are read at <paramref name="at"/>(their address),
+    /// which a repoint uses to follow blocks already copied elsewhere. Holes are skipped.
+    /// </summary>
+    private List<Run> Layout(byte[] inode, Func<long, long>? at = null) {
+      at ??= static f => f;
+      var runs = new List<Run>();
+      var type = BinaryPrimitives.ReadUInt16LittleEndian(inode) & IfMt;
+      if (type is not (IfReg or IfDir or IfLnk) || (type == IfLnk && Blocks(inode) == 0)) return runs;
+      if (Ib(inode, 2) != 0) throw new NotSupportedException("UFS: files reaching the triple-indirect tree are not relocated.");
+      var size = Size(inode);
+      var lblocks = (size + BlockSize - 1) / BlockSize;
+      var ptrs = PointersPerBlock;
+      byte[]? single = null, dbl = null, leaf = null;
+      for (long b = 0; b < lblocks; ++b) {
+        long data;
+        var k = b - MaxDirectBlocks - ptrs;
+        if (b < MaxDirectBlocks) {
+          data = Db(inode, (int)b);
+        } else if (k < 0) {
+          if (b == MaxDirectBlocks && Ib(inode, 0) is var s and not 0) {
+            runs.Add(new(s, _frag, -1));
+            single = Read(at(s) * FragSize, BlockSize);
+          }
+          data = single == null ? 0 : Pointer(single.AsSpan((int)(b - MaxDirectBlocks) * _pointerSize));
+        } else {
+          if (k >= (long)ptrs * ptrs) throw new NotSupportedException("UFS: files reaching the triple-indirect tree are not relocated.");
+          if (k == 0 && Ib(inode, 1) is var d and not 0) {
+            runs.Add(new(d, _frag, -1));
+            dbl = Read(at(d) * FragSize, BlockSize);
+          }
+          if (k % ptrs == 0) {
+            leaf = null;
+            var l = dbl == null ? 0 : Pointer(dbl.AsSpan((int)(k / ptrs) * _pointerSize));
+            if (l != 0) {
+              runs.Add(new(l, _frag, -1));
+              leaf = Read(at(l) * FragSize, BlockSize);
+            }
+          }
+          data = leaf == null ? 0 : Pointer(leaf.AsSpan((int)(k % ptrs) * _pointerSize));
+        }
+        if (data == 0) continue;
+        var count = b == lblocks - 1 && lblocks <= MaxDirectBlocks
+          ? (int)((size - b * BlockSize + FragSize - 1) / FragSize)
+          : _frag;
+        runs.Add(new(data, count, b));
+      }
+      return runs;
+    }
+
+    private byte[] Content(byte[] inode, List<Run> runs) {
+      var size = Size(inode);
+      var data = new byte[size];
+      foreach (var r in runs) {
+        if (r.Logical < 0) continue;
+        var n = (int)Math.Min((long)r.Count * FragSize, size - r.Logical * BlockSize);
+        Read(r.Frag * FragSize, n).CopyTo(data, r.Logical * BlockSize);
+      }
+      return data;
+    }
+
+    private static bool Sparse(byte[] inode, List<Run> runs, long size, int blockSize)
+      => runs.Count(r => r.Logical >= 0) != (size + blockSize - 1) / blockSize;
+
+    // ── the tree ────────────────────────────────────────────────────────
+
+    /// <summary>Every entry below the root once (hard links by their first name), parents before children.</summary>
+    public List<(long Ino, string Path, ushort Mode)> Walk() {
+      var list = new List<(long, string, ushort)>();
+      var seen = new HashSet<long> { RootIno };
+      void Visit(long dir, string prefix) {
+        var data = DirectoryData(dir, out _);
+        foreach (var (_, ino, _, name) in Records(data)) {
+          if (ino == 0 || name is "." or ".." || !seen.Add(ino)) continue;
+          var mode = Mode(ino);
+          var path = prefix + name;
+          list.Add((ino, path, mode));
+          if ((mode & IfMt) == IfDir) Visit(ino, path + "/");
+        }
+      }
+      Visit(RootIno, "");
+      return list;
+    }
+
+    /// <summary>The records of a directory: offset, inode, record length and name.</summary>
+    private static IEnumerable<(int Offset, long Ino, int RecLen, string Name)> Records(byte[] data) {
+      for (var start = 0; start + DirBlkSiz <= data.Length; start += DirBlkSiz)
+        for (var off = 0; off + 8 <= DirBlkSiz;) {
+          var at = start + off;
+          var reclen = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(at + 4));
+          if (reclen < 8 || off + reclen > DirBlkSiz) break;
+          var ino = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(at));
+          var namlen = Math.Min((int)data[at + 7], reclen - 8);
+          yield return (at, ino, reclen, Encoding.UTF8.GetString(data, at + 8, namlen));
+          off += reclen;
+        }
+    }
+
+    private long Resolve(string path) {
+      long ino = RootIno;
+      foreach (var part in Split(path)) {
+        if ((Mode(ino) & IfMt) != IfDir || Lookup(ino, part) is not { } found)
+          throw new FileNotFoundException($"UFS: no entry '{path}'.");
+        ino = found.Ino;
+      }
+      return ino;
+    }
+
+    // ── defragmentation ─────────────────────────────────────────────────
+
+    public long FirstFragment(long ino) {
+      var runs = Layout(Inode(ino));
+      return runs.Count == 0 ? -1 : runs[0].Frag;
+    }
+
+    /// <summary>Moves one file into a single run of free blocks; false when it stays.</summary>
+    public bool Relocate(long ino, bool atEnd) {
+      var inode = Inode(ino);
+      var runs = Layout(inode);
+      if (runs.Count == 0 || Sparse(inode, runs, Size(inode), BlockSize)) return false;
+      var contiguous = true;
+      for (var i = 1; i < runs.Count && contiguous; ++i) contiguous = runs[i].Frag == runs[0].Frag + (long)i * _frag;
+      var own = new HashSet<long>();
+      foreach (var r in runs) for (var f = 0; f < r.Count; ++f) own.Add(r.Frag + f);
+      var target = FindRun(runs.Count, runs[^1].Count, own, atEnd);
+      if (target < 0 || (contiguous && (atEnd ? target <= runs[0].Frag : target >= runs[0].Frag))) return false;
+
+      var data = Content(inode, runs);
+      foreach (var r in runs) SetFrags(r.Frag, r.Count, free: true);
+      for (var i = 0; i < MaxDirectBlocks; ++i) SetDb(inode, i, 0);
+      for (var level = 0; level < 3; ++level) SetIb(inode, level, 0);
+      _plan = target;
+      var used = Place(inode, data);
+      _plan = -1;
+      SetBlocks(inode, used * (FragSize / 512));
+      PutInode(ino, inode);
+      return true;
+    }
+
+    /// <summary>
+    /// The first (or last) block-aligned start of <paramref name="blocks"/> consecutive
+    /// blocks in one cylinder group whose fragments are free or the file's own — all of
+    /// them, except the last block, which needs only its first <paramref name="tail"/>.
+    /// </summary>
+    private long FindRun(int blocks, int tail, HashSet<long> own, bool atEnd) {
+      for (var n = 0; n < _ncg; ++n) {
+        var cg = atEnd ? _ncg - 1 - n : n;
+        var group = Group(cg);
+        var nblk = G(group, 20) / _frag;
+        if (nblk < blocks) continue;
+        var whole = new bool[nblk];
+        var head = new bool[nblk];
+        for (var b = 0; b < nblk; ++b) {
+          var avail = 0;
+          for (var f = 0; f < _frag; ++f) {
+            var abs = (long)cg * _fpg + b * _frag + f;
+            if (!own.Contains(abs) && !FragFree(cg, b * _frag + f)) break;
+            ++avail;
+          }
+          whole[b] = avail == _frag;
+          head[b] = avail >= tail;
+        }
+        bool Fits(int start) {
+          if (!head[start + blocks - 1]) return false;
+          for (var i = 0; i < blocks - 1; ++i) if (!whole[start + i]) return false;
+          return true;
+        }
+        if (atEnd) {
+          for (var s = nblk - blocks; s >= 0; --s) if (Fits(s)) return (long)cg * _fpg + (long)s * _frag;
+        } else {
+          for (var s = 0; s + blocks <= nblk; ++s) if (Fits(s)) return (long)cg * _fpg + (long)s * _frag;
+        }
+      }
+      return -1;
+    }
+
+    // ── wiping ──────────────────────────────────────────────────────────
+
+    /// <summary>Every run of fragments the free maps mark free.</summary>
+    public List<(long Frag, int Count)> FreeRuns() {
+      var runs = new List<(long, int)>();
+      for (var cg = 0; cg < _ncg; ++cg) {
+        var group = Group(cg);
+        var ndblk = G(group, 20);
+        var freeOff = G(group, 96);
+        for (var f = 0; f < ndblk;) {
+          if (!Bit(group, freeOff, f)) { ++f; continue; }
+          var start = f;
+          while (f < ndblk && Bit(group, freeOff, f)) ++f;
+          runs.Add(((long)cg * _fpg + start, f - start));
+        }
+      }
+      return runs;
+    }
+
+    /// <summary>Zeros the slack after each entry's last byte and inside directory records.</summary>
+    public long ZeroSlack(bool tips, bool records) {
+      long wiped = 0;
+      var targets = Walk().Select(e => (e.Ino, e.Mode)).Prepend((RootIno, IfDir)).ToList();
+      foreach (var (ino, mode) in targets) {
+        var inode = Inode(ino);
+        if (tips) {
+          var runs = Layout(inode);
+          var size = Size(inode);
+          var lblocks = (size + BlockSize - 1) / BlockSize;
+          if (runs.Count > 0 && runs[^1].Logical == lblocks - 1) {
+            var last = runs[^1];
+            var within = size - last.Logical * BlockSize;
+            var held = (long)last.Count * FragSize;
+            if (within < held) {
+              Write(last.Frag * FragSize + within, new byte[held - within]);
+              wiped += held - within;
+            }
+          }
+        }
+        if (records && (mode & IfMt) == IfDir) {
+          var data = DirectoryData(ino, out var dirInode);
+          var changed = false;
+          foreach (var (at, entIno, reclen, _) in Records(data)) {
+            var keep = Math.Min(reclen, entIno == 0 ? 6 : MinRecLen(data[at + 7]));
+            var slack = data.AsSpan(at + keep, reclen - keep);
+            if (slack.IndexOfAnyExcept((byte)0) < 0) continue;
+            wiped += slack.Length;
+            slack.Clear();
+            changed = true;
+          }
+          if (changed)
+            for (var chunk = 0; chunk * DirBlkSiz < data.Length; ++chunk)
+              PutDirectoryChunk(dirInode, chunk, data.AsSpan(chunk * DirBlkSiz, DirBlkSiz));
+        }
+      }
+      return wiped;
+    }
+
+    // ── extents and block moves ─────────────────────────────────────────
+
+    public List<Compression.Registry.DefragBlockInfo> Extents() {
+      var list = new List<Compression.Registry.DefragBlockInfo>();
+      var length = _image.Length;
+      void Add(long frag, long count, Compression.Registry.DefragBlockKind kind, string name, Compression.Registry.DefragBlockClass? cls = null) {
+        var offset = frag * FragSize;
+        var bytes = Math.Min(count * FragSize, length - offset);
+        if (bytes > 0) list.Add(new(offset, bytes, kind, name, cls));
+      }
+      for (var cg = 0; cg < _ncg; ++cg) {
+        var from = cg == 0 ? 0 : _sblkno;
+        Add((long)cg * _fpg + from, _dblkno - from, Compression.Registry.DefragBlockKind.MetadataReserved, $"UFS cylinder-group metadata (CG {cg})");
+      }
+      Add(_csaddr, (_cssize + FragSize - 1) / FragSize, Compression.Registry.DefragBlockKind.MetadataReserved, "UFS cylinder-summary area");
+      foreach (var r in Layout(Inode(RootIno)))
+        Add(r.Frag, r.Count, Compression.Registry.DefragBlockKind.MetadataReserved, "UFS root directory");
+      foreach (var (ino, path, mode) in Walk()) {
+        var isDir = (mode & IfMt) == IfDir;
+        var name = isDir ? path + "/" : path;
+        var cls = isDir ? Compression.Registry.DefragBlockClass.Directory : (Compression.Registry.DefragBlockClass?)null;
+        long start = -1, count = 0;
+        foreach (var r in Layout(Inode(ino))) {
+          if (start >= 0 && r.Frag == start + count) { count += r.Count; continue; }
+          if (start >= 0) Add(start, count, Compression.Registry.DefragBlockKind.Used, name, cls);
+          (start, count) = (r.Frag, r.Count);
+        }
+        if (start >= 0) Add(start, count, Compression.Registry.DefragBlockKind.Used, name, cls);
+      }
+      return list;
+    }
+
+    public void RequireMovable(long src, long dst, long length) {
+      if (src % FragSize != 0 || dst % FragSize != 0)
+        throw new NotSupportedException("UFS: block moves are fragment-aligned.");
+      var n = (length + FragSize - 1) / FragSize;
+      var (from, to) = (src / FragSize, dst / FragSize);
+      if (dst + n * FragSize > _image.Length || src + n * FragSize > _image.Length)
+        throw new ArgumentOutOfRangeException(nameof(length), "UFS: the move reaches past the image.");
+      for (long i = 0; i < n; ++i) {
+        var f = to + i;
+        if (f >= from && f < from + n) continue;
+        var cg = (int)(f / _fpg);
+        if (cg >= _ncg || f % _fpg >= G(Group(cg), 20) || !FragFree(cg, (int)(f % _fpg)))
+          throw new NotSupportedException($"UFS: destination fragment {f} is not free.");
+      }
+    }
+
+    public void Repoint(string path, long oldOffset, long newOffset, long length) {
+      if (oldOffset % FragSize != 0 || newOffset % FragSize != 0)
+        throw new NotSupportedException("UFS: block moves are fragment-aligned.");
+      var name = path.TrimEnd('/');
+      if (name.Length == 0) throw new NotSupportedException("UFS: the root directory is not moved.");
+      var ino = Resolve(name);
+      var n = (length + FragSize - 1) / FragSize;
+      var (from, to) = (oldOffset / FragSize, newOffset / FragSize);
+      bool Moved(long f) => f != 0 && f >= from && f < from + n;
+      long Map(long f) => Moved(f) ? to + (f - from) : f;
+
+      var inode = Inode(ino);
+      var runs = Layout(inode, Map);
+      var moved = runs.Where(r => Moved(r.Frag) || Moved(r.Frag + r.Count - 1)).ToList();
+      if (moved.Count == 0) throw new ArgumentException($"UFS: '{path}' holds nothing in that range.", nameof(path));
+      foreach (var r in moved) {
+        if (!Moved(r.Frag) || !Moved(r.Frag + r.Count - 1))
+          throw new NotSupportedException("UFS: a run of fragments is cut by the moved range.");
+        var target = Map(r.Frag);
+        if (r.Count == _frag ? target % _frag != 0 : target % _frag + r.Count > _frag)
+          throw new NotSupportedException("UFS: a whole block must stay block-aligned and a fragment run inside one block.");
+      }
+      var oldFrags = moved.SelectMany(r => Enumerable.Range(0, r.Count).Select(i => r.Frag + i)).ToHashSet();
+      var newFrags = oldFrags.Select(Map).ToHashSet();
+      foreach (var f in newFrags.Except(oldFrags))
+        if (!FragFree((int)(f / _fpg), (int)(f % _fpg))) throw new NotSupportedException($"UFS: destination fragment {f} is in use.");
+
+      for (var i = 0; i < MaxDirectBlocks; ++i) SetDb(inode, i, Map(Db(inode, i)));
+      for (var level = 0; level < 3; ++level) {
+        var root = Ib(inode, level);
+        if (root == 0) continue;
+        RepointTree(root, level + 1, Map);
+        SetIb(inode, level, Map(root));
+      }
+      foreach (var f in oldFrags.Except(newFrags)) SetFrags(f, 1, free: true);
+      foreach (var f in newFrags.Except(oldFrags)) SetFrags(f, 1, free: false);
+      PutInode(ino, inode);
+    }
+
+    private void RepointTree(long block, int level, Func<long, long> map) {
+      var at = map(block) * FragSize;
+      var table = Read(at, BlockSize);
+      for (var i = 0; i < PointersPerBlock; ++i) {
+        var span = table.AsSpan(i * _pointerSize, _pointerSize);
+        var p = Pointer(span);
+        if (p == 0) continue;
+        if (level > 1) RepointTree(p, level - 1, map);
+        SetPointer(span, map(p));
+      }
+      Write(at, table);
     }
 
     // ── commit ──────────────────────────────────────────────────────────
