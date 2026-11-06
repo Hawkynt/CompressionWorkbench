@@ -448,6 +448,7 @@ format,Paragon,Paragon Backup,Archive,,.pbf,Y,Y,Y,Y
 format,ParallelsHdd,Parallels Disk (HDS),Archive,,.hds,Y,Y,,
 format,Parquet,Apache Parquet,Archive,,.parquet,Y,Y,,
 format,Partclone,partclone (Clonezilla),Archive,,.aa;.img,Y,Y,Y,
+format,PartImage,partimage,Archive,,.partimg;.partimg.gz;.partimg.bz2,Y,Y,,
 format,PartitionedDisk,Partitioned disk image,Archive,,,Y,Y,Y,Y
 format,Pasti,Pasti (Atari ST STX),Archive,,.stx,Y,Y,,
 format,Pbp,PSP PBP Archive,Archive,,.pbp,Y,Y,Y,

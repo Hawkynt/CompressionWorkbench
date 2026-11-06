@@ -281,7 +281,7 @@ CD-ROM/XA image,dat,disk-image,,,,,,fmt/819,,1,,,,,,MISSING,,
 Raw floppy image (IMG/IMA),img;ima;vfd;flp,disk-image,,,,,R,fmt/1087,Y,3,,Fat,Y,Y,Y,OK,,
 Norton Ghost image,gho;ghs,disk-image,,,,,,,Y,1,,Ghost,Y,Y,Y,OK,,
 Acronis True Image,tib;tibx,disk-image,,,,,,,Y,1,,AcronisTib;AcronisTibx,Y,,Y,READ-ONLY-BUT-SOURCES-WRITE,Acronis True Image,
-PartImage,partimg,disk-image,,,,,,,Y,1,,,,,,MISSING,,
+PartImage,partimg,disk-image,,,,,,,Y,1,https://gitlab.com/partimage/partimage-sources,PartImage,Y,,,OK,,"plain, gzip and bzip2 single-volume images read with every CRC check; ext2, FAT16 and FAT32 restores equal partimage restore; read-only (no free writer to prove one)"
 SafeGuard encrypted virtual disk,hdr;vol,disk-image,,,,,,fmt/887,,1,,,,,,MISSING,,
 "Amiga Disk File (ADF, OFS/FFS)",adf;ffs2,filesystem,,,R,,R,fmt/1361,Y,4,https://en.wikipedia.org/wiki/Amiga_Fast_File_System,Adf,Y,Y,Y,OK,,
 DMS (Disk Masher),dms,disk-image,,,R,,,,,1,https://github.com/MacPaw/XADMaster/blob/master/libxad/clients/DMS.c,Dms,Y,Y,,OK,,"all modes decoded (libxad conversion); Medium/Heavy2 proven on Aminet samples against xdms, Quick/Deep/Heavy1 guarded by the track checksum; writer emits stored/RLE tracks xdms accepts"
