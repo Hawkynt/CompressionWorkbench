@@ -119,7 +119,7 @@ format,CephFs,CephFS / RADOS pool export,Archive,Y,.rados;.ceph,Y,Y,Y,Y
 format,Chm,CHM,Archive,,.chm,Y,Y,Y,Y
 format,ChromiumPak,Chromium resource pack,Archive,,.pak,Y,Y,Y,Y
 format,ClickteamInstaller,Clickteam Install Creator,Archive,,,Y,Y,,
-format,CloneCd,CloneCD CCD,Archive,,.ccd,Y,Y,,
+format,CloneCd,CloneCD CCD,Archive,,.ccd,Y,Y,Y,
 format,Cmf,Creative Music File (OPL),Audio,,.cmf,Y,Y,,
 format,Coherent,Coherent FS,Archive,Y,.coh;.coherent,Y,Y,Y,Y
 format,Collada,Collada (.dae),Archive,,.dae,Y,Y,,

@@ -267,7 +267,7 @@ AFF (Advanced Forensic Format v1-3),aff;afd;afm,disk-image,,,,,,,Y,1,https://git
 Nero image (NRG),nrg,disk-image,,,,,R,fmt/1743,Y,3,,Nrg,Y,Y,Y,OK,,
 BIN/CUE,bin;cue,disk-image,,,,,R,fmt/1069,Y,3,https://en.wikipedia.org/wiki/Cue_sheet_(computing),BinCue,Y,Y,Y,OK,,
 Alcohol MDF/MDS,mdf;mds,disk-image,,,,,R,,Y,2,,Mdf,Y,Y,Y,OK,,
-CloneCD (CCD/IMG/SUB),ccd;sub;img,disk-image,,,,,R,,Y,2,,CloneCd,Y,,,READ-ONLY-BUT-SOURCES-WRITE,CloneCD,
+CloneCD (CCD/IMG/SUB),ccd;sub;img,disk-image,,,,,R,,Y,2,https://ecma-international.org/publications-and-standards/standards/ecma-130/,CloneCd,Y,Y,,OK,,"creates single-session Mode 1 data discs from an ISO (WORM): .img equals PowerISO's raw sectors, Aaru reads and verifies the set, ccd2iso returns the ISO, .sub matches a real CloneCD dump"
 DiscJuggler CDI,cdi,disk-image,,,,,R,,Y,2,,Cdi,Y,Y,Y,OK,,
 Dreamcast GDI,gdi,disk-image,,,,,R,,,1,https://en.wikipedia.org/wiki/GD-ROM,Gdi,Y,,,OK,,track table parsed (quoted names supported); sibling track files listed and extracted byte for byte; read-only because a single stream cannot write the sibling files
 ECM (Error Code Modeler),ecm,disk-image,,,,,R,,,1,,,,,,MISSING,,
