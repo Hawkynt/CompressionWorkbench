@@ -15,7 +15,7 @@ namespace FileFormat.StuffIt;
 ///   <item><description>Aladdin Systems StuffIt — proprietary; no official spec published</description></item>
 /// </list>
 /// </summary>
-public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFormatOptionsSchema {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the StuffIt archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -106,7 +106,22 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Macintosh StuffIt archive (classic SIT! and StuffIt 5); reads methods None/RLE/Compress/Huffman/LZAH/LZ+Huffman/Arsenic, writes None/RLE";
+  public string Description => "Macintosh StuffIt archive (classic SIT! and StuffIt 5); reads methods None/RLE/Compress/Huffman/LZAH/LZ+Huffman/Arsenic, writes None/RLE/LZ+Huffman in classic and StuffIt 5 containers";
+
+  private const string Classic = "Classic";
+  private const string StuffIt5 = "StuffIt5";
+
+  /// <summary>The container the writer emits.</summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: FormatOptionKeys.TargetCompatibility,
+      DisplayName: "Container",
+      Kind: FormatOptionKind.Enum,
+      Default: Classic,
+      AllowedValues: [Classic, StuffIt5],
+      Description: "Classic writes a \"SIT!\" archive (StuffIt 1-4); StuffIt5 writes the container of StuffIt 5 and later.",
+      IsOptimizationAxis: false),
+  ];
 
   /// <summary>Suffix under which a file's resource fork is listed and extracted.</summary>
   public const string ResourceForkSuffix = ".rsrc";
@@ -175,7 +190,18 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Performs the create operation.
   /// </summary>
+  /// <remarks>
+  /// Writes a classic "SIT!" archive, or a StuffIt 5 archive when
+  /// <see cref="FormatOptionKeys.TargetCompatibility"/> is <c>StuffIt5</c>. Each fork is stored, RLE-packed or LZ+Huffman-compressed
+  /// (method 13), whichever is smallest.
+  /// </remarks>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    if (string.Equals(options.GetString(FormatOptionKeys.TargetCompatibility), StuffIt5, StringComparison.OrdinalIgnoreCase)) {
+      using var w5 = new StuffIt5Writer(output, leaveOpen: true);
+      foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
+        w5.AddFile(name, data);
+      return;
+    }
     using var w = new StuffItWriter(output, leaveOpen: true);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddFile(name, data);

@@ -17,6 +17,7 @@ internal static class StuffItConstants {
   // Compression method codes written by StuffItWriter (the reader names all of them, see StuffItReader.MethodName).
   public const byte MethodStore           = 0;
   public const byte MethodRle             = 1;
+  public const byte MethodLzHuffman       = 13;
 
   // Mac epoch: January 1, 1904 00:00:00 UTC.
   public static readonly DateTime MacEpoch = new(1904, 1, 1, 0, 0, 0, DateTimeKind.Utc);
