@@ -68,4 +68,14 @@
              Condition="'$(SfxTier)' != 'Carved'" />
   </ItemGroup>
 
+  <!--
+    PublishAot pulls in Microsoft.DotNet.ILCompiler at the SDK's bundled runtime version. 10.0.11
+    and older carry GHSA-p3jp-9v83-76w9 (NU1903, an error under warnings-as-errors), so the
+    SDK's known ILCompiler pack is moved to the patched release (the implicit reference follows
+    it); raise it with the next servicing release, and drop it once the SDK bundles a patched one.
+  -->
+  <ItemGroup>
+    <KnownILCompilerPack Update="Microsoft.DotNet.ILCompiler" ILCompilerPackVersion="10.0.14" />
+  </ItemGroup>
+
 </Project>
