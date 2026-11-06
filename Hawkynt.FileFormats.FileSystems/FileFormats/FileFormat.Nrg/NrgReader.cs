@@ -21,6 +21,7 @@ public sealed class NrgReader : IDisposable {
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
   private readonly Dictionary<(int Session, int Track), NrgTrackInfo> _tracksByNumber;
+  private readonly Dictionary<(int Session, int Track), FileSystem.Iso.IsoTrackView> _isoTrees = [];
   private bool _disposed;
 
   private readonly record struct FooterInfo(int Version, long TrailerOffset, long FooterOffset);
@@ -100,6 +101,8 @@ public sealed class NrgReader : IDisposable {
       throw new NotSupportedException("NRG entries larger than 2 GiB require a streaming extraction API.");
 
     var track = ResolveTrack(entry.SessionNumber, entry.TrackNumber);
+    if (entry.Iso != null && this._isoTrees.TryGetValue((track.SessionNumber, track.TrackNumber), out var tree))
+      return tree.Extract(entry.Iso, "NRG");
     return entry.Kind == NrgEntryKind.RawTrack
       ? ReadTrackData(track, checked((int)entry.Size))
       : ReadFileData(track, entry.StartLba, checked((int)entry.Size));
@@ -596,7 +599,47 @@ public sealed class NrgReader : IDisposable {
     if (rootLba > int.MaxValue || rootSize > int.MaxValue)
       return;
 
+    if (this.OpenSharedIsoReader(track) is { } tree) {
+      this._isoTrees[(track.SessionNumber, track.TrackNumber)] = tree;
+      foreach (var e in tree.Reader.Entries)
+        entries.Add(new NrgEntry {
+          Name = FileSystem.Iso.IsoTrackView.LeafName(e),
+          FullPath = prefix.Length > 0 ? $"{prefix}/{e.Name}" : e.Name,
+          IsDirectory = e.IsDirectory,
+          Kind = e.IsDirectory ? NrgEntryKind.IsoDirectory : NrgEntryKind.IsoFile,
+          Size = e.IsDirectory ? 0 : e.Size,
+          StartLba = FileSystem.Iso.IsoTrackView.StartSector(e),
+          SessionNumber = track.SessionNumber,
+          TrackNumber = track.TrackNumber,
+          Iso = e,
+        });
+      return;
+    }
+
     WalkDirectory(track, (int)rootLba, (int)rootSize, prefix, entries, []);
+  }
+
+  /// <summary>
+  /// The track's file system through the shared ISO 9660 reader, so Rock Ridge and Joliet
+  /// names, multi-extent and interleaved files read as in a plain ISO. Logical sectors are
+  /// the ISO's own LBAs; when the track records disc-absolute extents, its volume
+  /// descriptors still sit at sector 16 of the track, so those few sectors are read
+  /// track-relative and every other one through the extent base.
+  /// </summary>
+  private FileSystem.Iso.IsoTrackView? OpenSharedIsoReader(NrgTrackInfo track) {
+    var descriptors = 0;
+    if (track.IsoExtentLbaBase > 0)
+      while (descriptors < 48 && ReadSectorRelative(this._stream, track, PvdLba + descriptors) is { } sector
+             && sector.AsSpan(1, 5).SequenceEqual("CD001"u8)) {
+        ++descriptors;
+        if (sector[0] == 0xFF) break;
+      }
+    byte[]? Read(long lba) {
+      if (lba < 0 || lba > int.MaxValue) return null;
+      if (lba >= PvdLba && lba < PvdLba + descriptors) return ReadSectorRelative(this._stream, track, lba);
+      return this.ReadSector(track, (int)lba);
+    }
+    return FileSystem.Iso.IsoTrackView.TryOpen(Read, track.SectorCount + track.IsoExtentLbaBase);
   }
 
   private void WalkDirectory(
@@ -805,6 +848,8 @@ public sealed class NrgReader : IDisposable {
     if (this._disposed)
       return;
     this._disposed = true;
+    foreach (var tree in this._isoTrees.Values)
+      tree.Dispose();
     if (!this._leaveOpen)
       this._stream.Dispose();
   }

@@ -1,4 +1,5 @@
 using System.Text;
+using FileSystem.Iso;
 
 namespace FileFormat.Cdi;
 
@@ -6,7 +7,10 @@ namespace FileFormat.Cdi;
 /// Reads DiscJuggler CDI images, including mixed sector geometries and
 /// multisession layouts. The trailing descriptor is used when present; legacy
 /// CompressionWorkbench footer-only images retain geometry probing as a
-/// compatibility fallback.
+/// compatibility fallback. The file system is read by the shared ISO 9660 reader,
+/// so Rock Ridge and Joliet names, multi-extent and interleaved files read as they
+/// do in a plain ISO; a tree that reader refuses falls back to a walk of the
+/// primary directory records.
 /// </summary>
 public sealed class CdiReader : IDisposable {
   private const int Iso9660SectorSize = 2048;
@@ -23,6 +27,8 @@ public sealed class CdiReader : IDisposable {
   private readonly int _legacyDataOffset;
   private readonly CdiTrackInfo? _activeDataTrack;
   private bool _isoExtentsAreAbsolute;
+  private int _descriptorSectors;
+  private IsoTrackView? _iso;
   private bool _disposed;
 
   /// <summary>Gets the CDI version identifier read from the footer, or 0 if no valid CDI footer was found.</summary>
@@ -115,6 +121,8 @@ public sealed class CdiReader : IDisposable {
       return [];
     if (entry.Size > int.MaxValue)
       throw new NotSupportedException("CDI buffered extraction cannot materialize a file larger than 2 GiB.");
+    if (entry.Iso != null && this._iso != null)
+      return this._iso.Extract(entry.Iso, "CDI");
 
     return ReadFileData(entry.StartLba, checked((int)entry.Size));
   }
@@ -197,7 +205,60 @@ public sealed class CdiReader : IDisposable {
     if (this._activeDataTrack is { StartLba: > 0 } active)
       this._isoExtentsAreAbsolute = FindTrackForDiscLba(rootLba) != null && rootLba >= active.StartLba;
 
+    if (this.OpenSharedIsoReader() is { } iso) {
+      this._iso = iso;
+      entries.AddRange(iso.Reader.Entries.Select(e => new CdiEntry {
+        Name = IsoTrackView.LeafName(e),
+        FullPath = e.Name,
+        IsDirectory = e.IsDirectory,
+        Size = e.IsDirectory ? 0 : e.Size,
+        StartLba = IsoTrackView.StartSector(e),
+        Iso = e,
+      }));
+      return;
+    }
+
     WalkDirectory(rootLba, rootSize, "", entries, []);
+  }
+
+  /// <summary>
+  /// The selected file system through the shared ISO 9660 reader. Its logical sectors are
+  /// the ISO's own LBAs; when a later session records disc-absolute extents, its volume
+  /// descriptors still sit at sector 16 of its own track, so those few sectors are read
+  /// track-relative and every other one disc-absolute.
+  /// </summary>
+  private IsoTrackView? OpenSharedIsoReader() {
+    long sectorCount;
+    if (this._activeDataTrack is { } active) {
+      if (this._isoExtentsAreAbsolute) {
+        this._descriptorSectors = 0;
+        while (this._descriptorSectors < 48 && HasCd001(ReadTrackUserDataSector(active, PvdLba + this._descriptorSectors), out var type)) {
+          ++this._descriptorSectors;
+          if (type == 0xFF) break;
+        }
+        sectorCount = this.Tracks.Where(static track => track.IsData).Max(static track => track.EndLbaExclusive);
+      } else {
+        sectorCount = active.DataSectorCount;
+      }
+    } else {
+      sectorCount = this._legacySectorSize <= 0 ? 0 : this._dataAreaLength / this._legacySectorSize;
+    }
+    return IsoTrackView.TryOpen(this.ReadIsoSector, sectorCount);
+  }
+
+  private byte[]? ReadIsoSector(long lba) {
+    if (lba < 0 || lba > int.MaxValue)
+      return null;
+    if (this._isoExtentsAreAbsolute && this._activeDataTrack is { } active && lba >= PvdLba && lba < PvdLba + this._descriptorSectors)
+      return ReadTrackUserDataSector(active, (int)lba);
+    return ReadSector((int)lba);
+  }
+
+  private static bool HasCd001(byte[]? sector, out byte type) {
+    type = sector is { Length: > 0 } ? sector[0] : (byte)0;
+    return sector is { Length: >= 6 } &&
+           sector[1] == (byte)'C' && sector[2] == (byte)'D' &&
+           sector[3] == (byte)'0' && sector[4] == (byte)'0' && sector[5] == (byte)'1';
   }
 
   private void WalkDirectory(
@@ -355,6 +416,7 @@ public sealed class CdiReader : IDisposable {
       return;
 
     this._disposed = true;
+    this._iso?.Dispose();
     if (!this._leaveOpen)
       this._stream.Dispose();
   }
