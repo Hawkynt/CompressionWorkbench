@@ -137,32 +137,49 @@ internal static class MdfIsoOperations {
   private const int SectorSize = MdfInPlaceModifier.Iso9660SectorSize;
   private const int PvdLba = 16;
 
-  public static void AddOrReplace(Stream physical, string name, byte[] data) {
+  /// <summary>
+  /// Adds or replaces a file at any depth. The ISO tree editor keeps the Rock Ridge and
+  /// Joliet trees and the path tables consistent, so the name the reader lists is the name
+  /// that was added; anything that does not fit the fixed track is refused untouched.
+  /// </summary>
+  public static void AddOrReplace(Stream physical, string name, byte[] data, int? mode = null, DateTime? modified = null) {
     ArgumentNullException.ThrowIfNull(physical);
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    EnsureRootName(name);
+    var path = EntryPath(name);
 
     MutateTransactionally(physical, cooked => {
       // Removing first is safe because this is the staged copy. It also releases
       // a trailing extent before capacity is checked, so replacing the last file
       // in a physically full MDF can reuse its own sectors instead of spuriously
       // demanding growth that would invalidate the companion MDS.
-      FileSystem.Iso.IsoModifier.RemoveFile(cooked, Path.GetFileName(name), wipeData: true);
-      TrimLogicalVolumeSpace(cooked);
+      if (FileSystem.Iso.IsoTreeEditor.Remove(cooked, path))
+        TrimLogicalVolumeSpace(cooked);
       EnsureCapacityForAppend(cooked, data.Length);
-      FileSystem.Iso.IsoModifier.AddFile(cooked, Path.GetFileName(name), data);
+      FileSystem.Iso.IsoTreeEditor.AddFile(cooked, path, data, mode, modified);
     });
   }
 
+  /// <summary>Adds a folder (and any missing parents) at any depth.</summary>
+  public static void AddDirectory(Stream physical, string name, int? mode = null, DateTime? modified = null) {
+    ArgumentNullException.ThrowIfNull(physical);
+    ArgumentNullException.ThrowIfNull(name);
+    var path = EntryPath(name);
+    MutateTransactionally(physical, cooked => {
+      EnsureCapacityForAppend(cooked, 0);
+      FileSystem.Iso.IsoTreeEditor.AddDirectory(cooked, path, mode, modified);
+    });
+  }
+
+  /// <summary>Removes a file or a folder with everything in it; a name that is not there is reported.</summary>
   public static void Remove(Stream physical, string name) {
     ArgumentNullException.ThrowIfNull(physical);
     ArgumentNullException.ThrowIfNull(name);
-    EnsureRootName(name);
+    var path = EntryPath(name);
 
     MutateTransactionally(physical, cooked => {
-      if (!FileSystem.Iso.IsoModifier.RemoveFile(cooked, Path.GetFileName(name), wipeData: true))
-        return;
+      if (!FileSystem.Iso.IsoTreeEditor.Remove(cooked, path))
+        throw new FileNotFoundException($"MDF: '{name}' is not in the image.", name);
       TrimLogicalVolumeSpace(cooked);
     });
   }
@@ -203,11 +220,9 @@ internal static class MdfIsoOperations {
     });
   }
 
-  private static void EnsureRootName(string name) {
+  private static string EntryPath(string name) {
     var normalized = name.Replace('\\', '/').Trim('/');
-    if (normalized.Length == 0 || normalized.Contains('/'))
-      throw new NotSupportedException(
-        "MDF file-level editing currently supports the ISO 9660 root directory. Nested-path edits require a directory-growing ISO modifier.");
+    return normalized.Length > 0 ? normalized : throw new ArgumentException("MDF: an entry needs a name.", nameof(name));
   }
 
   private static void EnsureCapacityForAppend(MdfCookedStream cooked, int dataLength) {
