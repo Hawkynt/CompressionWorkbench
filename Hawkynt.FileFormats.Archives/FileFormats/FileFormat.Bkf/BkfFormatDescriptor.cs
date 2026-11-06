@@ -5,20 +5,15 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Bkf;
 
 /// <summary>
-/// Microsoft NTBackup (<c>.bkf</c>) — Microsoft Tape Format (MTF) v1.0
-/// container. Surfaces FILE/DIRB entries via the <c>STAN</c> (Standard) data
-/// streams. Compressed streams are surfaced as "compressed" in the listing;
-/// the MTF spec does not name a compression algorithm and most ntbackup.exe
-/// writes are uncompressed.
+/// Microsoft NTBackup (<c>.bkf</c>) media in Microsoft Tape Format 1.00a: folders (DIRB) and
+/// files (FILE) with their STAN data streams, read, written and edited.
 ///
 /// <para>
-/// In-place R/W tier: <see cref="Add"/> appends one FILE DBLK per input at the
-/// position of the existing EOTM block (or at EOF when absent) and re-emits a
-/// fresh EOTM at the new end, leaving every pre-existing DBLK byte-identical
-/// at its original offset. <see cref="Remove"/> tombstones the matching FILE
-/// DBLK by overwriting its 4-byte type field with the <c>XXXX</c> sentinel and
-/// zero-wiping the rest of that FLB block; the reader's parse loop hits an
-/// unknown DBLK type and skips it.
+/// <see cref="Create"/> writes the TAPE DBLK and one Data Set with soft filemarks, as NTBackup
+/// lays out a backup file (<see cref="BkfWriter"/>). <see cref="Add"/> and <see cref="Remove"/>
+/// write the Data Set anew in the same stream, keeping every remaining DBLK's bytes and
+/// streams (<see cref="BkfEditor"/>); a medium with several Data Sets, a Media Based Catalog
+/// or spanning is refused.
 /// </para>
 ///
 /// References:
@@ -85,14 +80,14 @@ public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the description.
   /// </summary>
   public string Description =>
-    "Microsoft NTBackup .bkf — MTF DBLK-chain reader (FILE+DATA) plus in-place " +
-    "R/W via append-before-EOTM (Add) and XXXX tombstone (Remove).";
+    "Microsoft NTBackup .bkf (Microsoft Tape Format 1.00a): folders and files read, written and " +
+    "edited; compressed, encrypted and sparse data streams are listed but not decoded.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new BkfReader(stream);
+    using var r = new BkfReader(stream, leaveOpen: true);
     var result = new List<ArchiveEntryInfo>(r.Entries.Count);
     for (var i = 0; i < r.Entries.Count; ++i) {
       var e = r.Entries[i];
@@ -108,13 +103,12 @@ public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new BkfReader(stream);
+    using var r = new BkfReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      // Skip compressed payloads — MTF does not name the algorithm and we
-      // refuse to fake content. They show up in List() so callers know.
-      if (e.IsCompressed) continue;
+      // Compressed, encrypted and sparse data is listed but not decoded; nothing is faked.
+      if (e.IsCompressed || e.IsSparse) continue;
       var data = r.Extract(e);
       WriteFile(outputDir, e.Name, data);
     }
@@ -123,11 +117,8 @@ public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IArchiveCreatable ──────────────────────────────────────────────
 
   /// <summary>
-  /// Produces a fresh MTF backup at <paramref name="output"/> from
-  /// <paramref name="inputs"/>. Emits the full TAPE → SSET → VOLB →
-  /// (DIRB → FILE*)* → ESET → EOTM DBLK chain via <see cref="BkfWriter"/>.
-  /// Files are bucketed by their parent directory; directory inputs become
-  /// DIRB blocks. Payloads are stored uncompressed.
+  /// Writes a new medium: TAPE, then SSET, VOLB, a DIRB per folder each followed by its FILEs,
+  /// and ESET, with soft filemarks between (<see cref="BkfWriter"/>).
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
@@ -136,8 +127,8 @@ public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var items = new List<BkfWriter.Item>(inputs.Count);
     foreach (var input in inputs)
       items.Add(input.IsDirectory
-        ? new BkfWriter.Item(input.ArchiveName, [], IsDirectory: true)
-        : new BkfWriter.Item(input.ArchiveName, input.ReadContent(), IsDirectory: false));
+        ? new BkfWriter.Item(input.ArchiveName, [], IsDirectory: true, input.SourceLastModifiedUtc?.ToLocalTime())
+        : new BkfWriter.Item(input.ArchiveName, input.ReadContent(), IsDirectory: false, input.SourceLastModifiedUtc?.ToLocalTime()));
 
     var bytes = BkfWriter.Build(items);
     output.Write(bytes, 0, bytes.Length);
@@ -146,37 +137,27 @@ public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IArchiveModifiable ─────────────────────────────────────────────
 
   /// <summary>
-  /// Appends one FILE DBLK per non-directory input at the current EOTM
-  /// position (or EOF when EOTM is absent), then re-emits a fresh EOTM. All
-  /// existing DBLKs stay byte-identical at their original offsets.
+  /// Adds files and folders (a file of the same path is replaced) by writing the Data Set anew
+  /// with every existing DBLK and stream kept (<see cref="BkfEditor"/>).
   /// </summary>
-  /// <remarks>
-  /// A path puts the file into its folder (a DIRB naming it is appended when needed) and a
-  /// folder input becomes a DIRB of its own; a file of the same path is replaced.
-  /// </remarks>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
-    foreach (var input in inputs.Where(static i => i.IsDirectory && !string.IsNullOrEmpty(i.ArchiveName)))
-      BkfInPlaceModifier.AddDirectory(archive, input.ArchiveName);
-    foreach (var (name, data) in FilesOnly(inputs)) {
-      if (string.IsNullOrEmpty(Path.GetFileName(name.Replace('\\', '/')))) continue;
-      BkfInPlaceModifier.RemoveFile(archive, name);
-      BkfInPlaceModifier.AddFile(archive, name, data);
+    foreach (var input in inputs.Where(static i => !string.IsNullOrEmpty(i.ArchiveName))) {
+      if (input.IsDirectory) BkfEditor.AddDirectory(archive, input.ArchiveName);
+      else BkfEditor.AddFile(archive, input.ArchiveName, input.ReadContent(), input.SourceLastModifiedUtc?.ToLocalTime());
     }
   }
 
   /// <summary>
-  /// Tombstones each named entry's FILE DBLK in place. The DBLK's 4-byte type
-  /// field becomes the <c>XXXX</c> sentinel and the rest of that FLB block is
-  /// zero-wiped so the file name and STAN payload leave no forensic trace.
-  /// Surrounding DBLKs are not touched.
+  /// Removes files, and folders with everything in them, by full path; a name that is not there
+  /// is reported.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
-    // A name is the full path; a folder goes with everything in it.
     foreach (var name in entryNames)
-      BkfInPlaceModifier.RemoveFile(archive, name);
+      if (!BkfEditor.Remove(archive, name))
+        throw new FileNotFoundException($"BKF: '{name}' is not in the backup.", name);
   }
 }

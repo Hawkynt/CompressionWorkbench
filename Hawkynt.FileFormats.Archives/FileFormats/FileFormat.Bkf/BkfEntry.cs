@@ -2,31 +2,36 @@
 namespace FileFormat.Bkf;
 
 /// <summary>
-/// A single entry surfaced from a Microsoft NTBackup (.bkf) Microsoft Tape Format
-/// (MTF) stream. Currently maps to FILE/DIRB DBLKs that carry a payload (DATA
-/// streams of type STAN — Standard). Empty/zero-byte placeholders for
-/// directories are reported with <see cref="IsDirectory"/> = <c>true</c>.
+/// A folder (MTF_DIRB) or file (MTF_FILE) of a Microsoft NTBackup (.bkf) medium.
 /// </summary>
 public sealed class BkfEntry {
-  /// <summary>Display name (relative path, forward slashes).</summary>
+  /// <summary>Path below the backed-up volume, '/'-separated.</summary>
   public string Name { get; init; } = "";
 
-  /// <summary>Uncompressed payload length in bytes.</summary>
+  /// <summary>Length of the file's data in bytes.</summary>
   public long Size { get; init; }
 
-  /// <summary>True when the entry represents a DIRB (directory) rather than a FILE.</summary>
+  /// <summary>True for a folder (DIRB).</summary>
   public bool IsDirectory { get; init; }
 
-  /// <summary>Absolute stream offset where the entry's STAN data starts.</summary>
+  /// <summary>The file's or folder's last modification time, when recorded.</summary>
+  public DateTime? LastModified { get; init; }
+
+  /// <summary>Where the STAN stream's data starts in the medium.</summary>
   internal long DataOffset { get; init; }
 
-  /// <summary>STAN data stream length on disk (== <see cref="Size"/> for uncompressed).</summary>
+  /// <summary>Length of the STAN stream's data.</summary>
   internal long DataLength { get; init; }
 
+  /// <summary>The CSUM stream's 32-bit XOR of the data, when the STAN stream is checksummed.</summary>
+  internal uint? Checksum { get; init; }
+
   /// <summary>
-  /// True when the entry's DATA stream was flagged as compressed in the stream
-  /// header. MTF does not specify the compression algorithm in-band — most
-  /// real-world ntbackup.exe writes are uncompressed STAN.
+  /// True when the data stream is compressed or encrypted (Stream Media Format Attributes
+  /// BIT4/BIT3); its algorithm is a registered vendor ID this reader does not decode.
   /// </summary>
   internal bool IsCompressed { get; init; }
+
+  /// <summary>True when the data is held in SPAR (sparse) streams, which this reader does not assemble.</summary>
+  internal bool IsSparse { get; init; }
 }
