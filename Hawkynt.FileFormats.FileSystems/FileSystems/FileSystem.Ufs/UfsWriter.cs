@@ -420,6 +420,21 @@ public sealed class UfsWriter {
     return frags * FragSize;
   }
 
+  /// <summary>
+  /// The blocks an object of <paramref name="length"/> bytes takes: none when it is
+  /// empty (an empty file holds no block, and fsck_ffs rejects a block pointer past
+  /// <c>howmany(di_size, fs_bsize)</c>); whole blocks, except that an object of at most
+  /// twelve blocks ends in just the fragments its last bytes need — past the direct
+  /// blocks FFS allocates whole blocks only.
+  /// </summary>
+  private static (int Blocks, int FullBlocks, int TailFrags) Footprint(int length) {
+    var blocks = HowMany(length, BlockSize);
+    var fullBlocks = length / BlockSize;
+    var tailBytes = length - fullBlocks * BlockSize;
+    if (tailBytes == 0) return (blocks, fullBlocks, 0);
+    return blocks <= MaxDirectBlocks ? (blocks, fullBlocks, HowMany(tailBytes, FragSize)) : (blocks, blocks, 0);
+  }
+
   // Writes an object's payload at the current allocation cursor (block-aligned),
   // recording the frags it touches, and returns its di_db[] direct pointers, the
   // single-indirect fragment (0 if none), and the fragment count for di_blocks.
@@ -427,10 +442,7 @@ public sealed class UfsWriter {
   // as many fragments as it needs (newfs fragment-tail optimisation).
   private (int[] DirectBlocks, int[] IndirectFrags, int FragsUsed) PlaceObject(SparseBlockImage disk, DeferredPayloads payloads, byte[] payload, ref int nextFrag) {
     var length = payload.Length;
-    var blocks = Math.Max(1, HowMany(length, BlockSize));
-    var fullBlocks = length / BlockSize;
-    var tailBytes = length - fullBlocks * BlockSize;
-    var tailFrags = tailBytes > 0 ? HowMany(tailBytes, FragSize) : (length == 0 ? 1 : 0);
+    var (blocks, fullBlocks, tailFrags) = Footprint(length);
 
     // Record the frags each block actually occupies (block-aligned addressing,
     // tail filling only tailFrags). The cursor steps over each cylinder group's
@@ -455,10 +467,7 @@ public sealed class UfsWriter {
   // any payload (the data fragments stay zero — BuildToStreaming post-fills them).
   // Byte-for-byte identical placement to PlaceObject(disk, payloadOfLength, ...).
   private (int[] DirectBlocks, int[] IndirectFrags, int FragsUsed) PlaceObjectGeometry(SparseBlockImage disk, int length, ref int nextFrag) {
-    var blocks = Math.Max(1, HowMany(length, BlockSize));
-    var fullBlocks = length / BlockSize;
-    var tailBytes = length - fullBlocks * BlockSize;
-    var tailFrags = tailBytes > 0 ? HowMany(tailBytes, FragSize) : (length == 0 ? 1 : 0);
+    var (blocks, fullBlocks, tailFrags) = Footprint(length);
 
     // No payload copy — fragments remain zero until BuildToStreaming streams them.
     var blockFrags = this.AllocateBlocks(blocks, fullBlocks, tailFrags, ref nextFrag, out var fragsUsed);
@@ -564,9 +573,10 @@ public sealed class UfsWriter {
     return frag;
   }
 
+  // DIRSIZ: the 8-byte header, the name and its terminating NUL, rounded up to 4.
   private static int DirEntryReclen(string name) {
     var nameLen = Encoding.ASCII.GetByteCount(name);
-    return (8 + nameLen + 3) & ~3;
+    return (8 + nameLen + 1 + 3) & ~3;
   }
 
   // ── struct fs (superblock) ────────────────────────────────────────────────
@@ -1035,7 +1045,7 @@ public sealed class UfsWriter {
   // ── directory entry ───────────────────────────────────────────────────────
   private static void WriteDirEntry(byte[] block, ref int pos, int ino, string name, byte dtype) {
     var nameBytes = Encoding.ASCII.GetBytes(name);
-    var reclen = (8 + nameBytes.Length + 3) & ~3;
+    var reclen = DirEntryReclen(name);
     BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(pos), (uint)ino);
     BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(pos + 4), (ushort)reclen);
     block[pos + 6] = dtype;
