@@ -121,7 +121,17 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       AllowedValues: [Classic, StuffIt5],
       Description: "Classic writes a \"SIT!\" archive (StuffIt 1-4); StuffIt5 writes the container of StuffIt 5 and later.",
       IsOptimizationAxis: false),
+    new FormatOptionDescriptor(
+      Key: "Compression",
+      DisplayName: "Compression",
+      Kind: FormatOptionKind.Enum,
+      Default: nameof(StuffItCompression.Smallest),
+      AllowedValues: Enum.GetNames<StuffItCompression>(),
+      Description: "Smallest tries Arsenic (method 15), LZ+Huffman (13) and RLE (1) for every fork and keeps the smallest; the others force one method (storing a fork it would enlarge)."),
   ];
+
+  private static StuffItCompression CompressionOf(FormatCreateOptions options)
+    => Enum.TryParse<StuffItCompression>(options.GetString("Compression"), ignoreCase: true, out var c) ? c : StuffItCompression.Smallest;
 
   /// <summary>Suffix under which a file's resource fork is listed and extracted.</summary>
   public const string ResourceForkSuffix = ".rsrc";
@@ -197,12 +207,12 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </remarks>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     if (string.Equals(options.GetString(FormatOptionKeys.TargetCompatibility), StuffIt5, StringComparison.OrdinalIgnoreCase)) {
-      using var w5 = new StuffIt5Writer(output, leaveOpen: true);
+      using var w5 = new StuffIt5Writer(output, CompressionOf(options), leaveOpen: true);
       foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
         w5.AddFile(name, data);
       return;
     }
-    using var w = new StuffItWriter(output, leaveOpen: true);
+    using var w = new StuffItWriter(output, CompressionOf(options), leaveOpen: true);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddFile(name, data);
   }

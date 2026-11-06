@@ -5,7 +5,7 @@ namespace FileFormat.StuffIt;
 
 /// <summary>
 /// Creates StuffIt 5 archives (the container of StuffIt 5 to 8): files at the root level, each fork
-/// stored, RLE-packed or LZ+Huffman-compressed (method 13), whichever is smallest.
+/// stored, RLE-packed, LZ+Huffman-compressed (method 13) or Arsenic-compressed (method 15), whichever is smallest.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -41,13 +41,18 @@ public sealed class StuffIt5Writer : IDisposable {
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
   private readonly List<Pending> _entries = [];
+  private readonly StuffItCompression _compression;
   private bool _disposed;
 
   private sealed record Pending(byte[] Name, string Type, string Creator, uint Date, byte[] Data, byte[] Resource,
     byte[] PackedData, byte DataMethod, byte[] PackedResource, byte ResourceMethod);
 
   /// <summary>Starts a StuffIt 5 archive on <paramref name="stream"/>; it is written on <see cref="Dispose"/>.</summary>
-  public StuffIt5Writer(Stream stream, bool leaveOpen = false) {
+  public StuffIt5Writer(Stream stream, bool leaveOpen = false) : this(stream, StuffItCompression.Smallest, leaveOpen) { }
+
+  /// <summary>Starts a StuffIt 5 archive whose forks are compressed as <paramref name="compression"/> asks.</summary>
+  public StuffIt5Writer(Stream stream, StuffItCompression compression, bool leaveOpen = false) {
+    this._compression = compression;
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
   }
@@ -61,8 +66,8 @@ public sealed class StuffIt5Writer : IDisposable {
     if (name.Length is 0 or > 255 || Encoding.Latin1.GetString(name) != fileName)
       throw new NotSupportedException($"A StuffIt 5 name holds 1-255 Latin-1 bytes; '{fileName}' does not fit.");
     resourceFork ??= [];
-    var packedData = StuffItWriter.CompressFork(data, out var dataMethod);
-    var packedResource = StuffItWriter.CompressFork(resourceFork, out var resourceMethod);
+    var packedData = StuffItWriter.CompressFork(data, out var dataMethod, this._compression);
+    var packedResource = StuffItWriter.CompressFork(resourceFork, out var resourceMethod, this._compression);
     this._entries.Add(new Pending(name, fileType, fileCreator, StuffItWriter.ToMacTimestamp(lastModified ?? DateTime.UtcNow),
       data, resourceFork, packedData, dataMethod, packedResource, resourceMethod));
   }

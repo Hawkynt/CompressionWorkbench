@@ -8,13 +8,14 @@ namespace FileFormat.StuffIt;
 /// </summary>
 /// <remarks>
 /// Produces archives compatible with the classic "SIT!" format (version 1).
-/// Each fork is stored, RLE-packed (method 1) or LZ+Huffman-compressed (method 13), whichever is smallest.
+/// Each fork is stored, RLE-packed (method 1), LZ+Huffman-compressed (method 13) or Arsenic-compressed (method 15), whichever is smallest.
 /// Entries are buffered in memory and the archive is written on <see cref="Dispose"/>.
 /// </remarks>
 public sealed class StuffItWriter : IDisposable {
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
   private readonly List<PendingEntry> _entries = [];
+  private readonly StuffItCompression _compression;
   private bool _disposed;
 
   /// <summary>
@@ -23,7 +24,16 @@ public sealed class StuffItWriter : IDisposable {
   /// <param name="stream">The stream to write the SIT archive to.</param>
   /// <param name="leaveOpen">Whether to leave the stream open when this writer is disposed.</param>
   /// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> is null.</exception>
-  public StuffItWriter(Stream stream, bool leaveOpen = false) {
+  public StuffItWriter(Stream stream, bool leaveOpen = false) : this(stream, StuffItCompression.Smallest, leaveOpen) { }
+
+  /// <summary>
+  /// Initializes a new <see cref="StuffItWriter"/> that compresses forks as <paramref name="compression"/> asks.
+  /// </summary>
+  /// <param name="stream">The stream to write the SIT archive to.</param>
+  /// <param name="compression">How each fork is compressed.</param>
+  /// <param name="leaveOpen">Whether to leave the stream open when this writer is disposed.</param>
+  public StuffItWriter(Stream stream, StuffItCompression compression, bool leaveOpen = false) {
+    this._compression = compression;
     this._stream    = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
   }
@@ -81,10 +91,10 @@ public sealed class StuffItWriter : IDisposable {
         $"A classic StuffIt name holds 1-{StuffItConstants.FileNameMaxLength} bytes; '{fileName}' would be truncated.");
 
     byte dataMethod;
-    var compressedData = CompressFork(dataFork, out dataMethod);
+    var compressedData = CompressFork(dataFork, out dataMethod, this._compression);
 
     byte resMethod;
-    var compressedResource = CompressFork(resourceFork, out resMethod);
+    var compressedResource = CompressFork(resourceFork, out resMethod, this._compression);
 
     this._entries.Add(new PendingEntry {
       FileName           = fileName,
@@ -209,22 +219,24 @@ public sealed class StuffItWriter : IDisposable {
 
   // ── Compression ──────────────────────────────────────────────────────────
 
-  /// <summary>Picks the smallest of method 13 (LZ+Huffman), RLE and storing.</summary>
-  internal static byte[] CompressFork(byte[] data, out byte method) {
+  /// <summary>Compresses a fork as <paramref name="compression"/> asks, falling back to storing whenever that is smaller.</summary>
+  internal static byte[] CompressFork(byte[] data, out byte method, StuffItCompression compression = StuffItCompression.Smallest) {
     method = StuffItConstants.MethodStore;
-    if (data.Length == 0) return [];
+    if (data.Length == 0 || compression == StuffItCompression.Store) return data.Length == 0 ? [] : data;
 
     var best = data;
-    var lzHuffman = StuffIt13Encoder.Encode(data);
-    if (lzHuffman.Length < best.Length) {
-      best = lzHuffman;
-      method = StuffItConstants.MethodLzHuffman;
+    var bestMethod = StuffItConstants.MethodStore;
+    void Try(StuffItCompression kind, byte code, Func<byte[]> encode) {
+      if (compression != StuffItCompression.Smallest && compression != kind) return;
+      var packed = encode();
+      if (packed.Length >= best.Length) return;
+      best = packed;
+      bestMethod = code;
     }
-    var rleEncoded = StuffItRle90.Encode(data);
-    if (rleEncoded.Length < best.Length) {
-      best = rleEncoded;
-      method = StuffItConstants.MethodRle;
-    }
+    Try(StuffItCompression.LzHuffman, StuffItConstants.MethodLzHuffman, () => StuffIt13Encoder.Encode(data));
+    Try(StuffItCompression.Rle, StuffItConstants.MethodRle, () => StuffItRle90.Encode(data));
+    Try(StuffItCompression.Arsenic, StuffItConstants.MethodArsenic, () => StuffItArsenicEncoder.Encode(data, StuffItArsenicEncoder.BlockBitsFor(data.Length)));
+    method = bestMethod;
     return best;
   }
 
