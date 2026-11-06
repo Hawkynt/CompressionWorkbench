@@ -102,6 +102,26 @@ public sealed class UfsFsckTests {
   }
 
   [Test]
+  public void GivenFilesNeedingIndirectBlocksAddedAndRemoved_WhenChecked_ThenFsckFfsIsClean() {
+    RequireFsck();
+    using var ms = new MemoryStream();
+    // The writer sizes a volume to its contents: room.bin makes the space the adds use.
+    ms.Write(Create(("seed.txt", "seed"u8.ToArray()), ("room.bin", new byte[24 * 1024 * 1024])));
+    var d = new UfsFormatDescriptor();
+    d.Remove(ms, ["room.bin"]);
+    var single = new byte[300_000];          // 8 KiB blocks: past the twelve direct blocks
+    var dbl = new byte[17 * 1024 * 1024];     // past the single-indirect tree (12 + 2048 blocks)
+    for (var i = 0; i < dbl.Length; ++i) dbl[i] = (byte)(i * 7 + (i >> 13));
+    d.Add(ms, [ArchiveInputInfo.InMemory("big/single.bin", single), ArchiveInputInfo.InMemory("big/double.bin", dbl)]);
+    AssertClean(Fsck(ms.ToArray()));
+    ms.Position = 0;
+    using (var r = new UfsReader(ms, leaveOpen: true))
+      Assert.That(r.Extract(r.Entries.Single(e => e.Name == "big/double.bin")), Is.EqualTo(dbl));
+    d.Remove(ms, ["big/double.bin"]);
+    AssertClean(Fsck(ms.ToArray()));
+  }
+
+  [Test]
   public void GivenANestedFileRemoved_WhenChecked_ThenFsckFfsIsClean() {
     RequireFsck();
     using var ms = new MemoryStream();
