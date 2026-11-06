@@ -59,6 +59,25 @@ public sealed class UfsFsckTests {
     AssertClean(Fsck(Create(("top.txt", "t"u8.ToArray()), ("a/b/c.txt", "c"u8.ToArray()))));
   }
 
+  /// <summary>
+  /// An empty file, names whose length is a multiple of four (their record needs the
+  /// NUL's own word) ahead of other entries, and a file past the direct blocks whose
+  /// size is no multiple of the block size.
+  /// </summary>
+  [Test]
+  public void GivenAnEmptyFileFourByteNamesAndAnUnalignedIndirectFile_WhenCreated_ThenFsckFfsIsClean() {
+    RequireFsck();
+    var big = new byte[1_500_000];
+    for (var i = 0; i < big.Length; ++i) big[i] = (byte)(i * 13 + (i >> 10));
+    var image = Create(
+      ("abcd", "four"u8.ToArray()), ("efghijkl", "eight"u8.ToArray()), ("empty.bin", []),
+      ("sub/indirect.bin", big), ("sub/name.txt", "n"u8.ToArray()), ("z", "z"u8.ToArray()));
+    AssertClean(Fsck(image));
+    using var r = new UfsReader(new MemoryStream(image));
+    Assert.That(r.Extract(r.Entries.Single(e => e.Name == "sub/indirect.bin")), Is.EqualTo(big));
+    Assert.That(r.Extract(r.Entries.Single(e => e.Name == "empty.bin")), Is.Empty);
+  }
+
   [Test]
   public void GivenAFileAddedIntoNewSubdirectories_WhenChecked_ThenFsckFfsIsCleanAndTheTreeIsReal() {
     RequireFsck();
