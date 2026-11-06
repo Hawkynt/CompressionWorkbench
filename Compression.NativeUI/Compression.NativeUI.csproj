@@ -18,7 +18,7 @@
       FileFormat.Heif.HeifReader under the same fully-qualified names as Compression.Lib's own,
       and an unaliased reference would make both ambiguous.
     -->
-    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.145" Aliases="images" />
+    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.772" Aliases="images" />
   </ItemGroup>
 
   <ItemGroup>

@@ -12,6 +12,8 @@
     <EmbeddedResource Include="NowCompress/ReferenceVectors/*.now;NowCompress/ReferenceVectors/*.json">
       <LogicalName>NowCompressVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <ProjectReference Include="..\FileFormats\FileFormat.Ico\FileFormat.Ico.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ani\FileFormat.Ani.csproj" />
     <!-- ARC crawl fixtures; see IaArc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="IaArc/ReferenceVectors/*.arc;IaArc/ReferenceVectors/*.arc.gz;IaArc/ReferenceVectors/warcio-listing.txt">
       <LogicalName>IaArcVectors.%(Filename)%(Extension)</LogicalName>
@@ -27,7 +29,7 @@
          FileFormat.Wad.WadWriter whose names collide with Hawkynt.Compression.Core and
          Hawkynt.FileFormats.Archives; only the files that need the image types opt in
          with `extern alias images`. -->
-    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.145" Aliases="images" />
+    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.772" Aliases="images" />
     <!-- Pulled in transitively by the package above. Its extension polyfills (e.g.
          Reverse on arrays) are ambiguous against .NET 10's own System.Linq, so it
          stays out of the global alias too. -->
