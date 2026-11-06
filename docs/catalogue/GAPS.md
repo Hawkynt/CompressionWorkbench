@@ -16,16 +16,16 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 | Catalogue rows | 985 |
 | … formats listed by at least one source | 528 |
 | … registry ids no source lists (OURS-ONLY) | 457 |
-| Source-listed rows mapped to something here | 386 / 528 (73.1 %) |
+| Source-listed rows mapped to something here | 385 / 528 (72.9 %) |
 | … of rows listed by ≥ 2 sources | 134 / 138 (97.1 %) |
 | … of rows listed by ≥ 3 sources | 67 / 67 (100.0 %) |
 | … of rows listed by ≥ 4 sources | 31 / 31 (100.0 %) |
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 142 | a source lists it; no descriptor or building block covers it |
+| `MISSING` | 143 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 22 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 46 | covered, but the reader handles only part of the format (see the table below) |
+| `PARTIAL` | 45 | covered, but the reader handles only part of the format (see the table below) |
 | `OK` | 318 | covered with no known gap against what the sources list |
 | `OURS-ONLY` | 457 | in our registry, listed by none of the seven sources |
 
@@ -42,7 +42,7 @@ read-only rows.
 | binwalk v3 | 79 | 56 | 70.9 | 49 |
 | Universal Extractor 2 | 124 | 101 | 81.5 | 69 |
 | PRONOM | 87 | 82 | 94.3 | 71 |
-| Wikipedia | 268 | 194 | 72.4 | 149 |
+| Wikipedia | 268 | 193 | 72.0 | 149 |
 
 These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-05. The source inventories retain their original 2026-10-19 snapshot. The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
 
@@ -182,7 +182,6 @@ running real-world samples. The file named at the end of each row is where the l
 | Encoded text (uu/xx/b64/BinHex/yEnc) | `UuEncoding`, `B64Encoding`, `BinHex`, `YEnc` | 1 | no XXEncode descriptor |
 | HA | `Ha` | 1 | stored only; HSC and ASC throw (HaReader.cs) |
 | MS-DOS COMPRESS (KWAJ) | `Kwaj` | 1 | methods 2 (LZSS) and 3 (LZ+Huffman) throw (KwajStream.cs) |
-| PAQ (paq6/7/8 family) | `Paq8` | 1 | a single PAQ8 variant (.paq8l); the other PAQ versions are mutually incompatible |
 | RAR audio / VM filters | `Rar` | 1 | RAR3 filters matched to the six standard programs only; no general RarVM (Rar3Decoder.cs) |
 | RPG Maker archives | `Rgss` | 1 | RGSSAD v1-3 only; MV/MZ asset encryption (.rpgmv*) has no descriptor |
 | UFS / FFS (BSD), UFS2 | `Ufs` | 1 | UFS2 and big-endian volumes are read only; creating and editing is UFS1 little-endian |

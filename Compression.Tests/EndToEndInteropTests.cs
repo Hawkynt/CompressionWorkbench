@@ -1388,10 +1388,6 @@ public class EndToEndInteropTests {
     "MacBinary", "BinHex", "UuEncoding", "YEnc",
     // Formats that require structured input
     "Swf", "Yaz0", "Um3",
-    // Extremely slow neural/context-mixing compressors
-    "Paq8",
-    // Formats with known limitations on arbitrary data
-    "PackBits",
     // Audio codec (requires audio PCM data, not arbitrary bytes)
     "Flac",
   };

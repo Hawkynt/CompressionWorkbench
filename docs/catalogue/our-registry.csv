@@ -442,7 +442,6 @@ format,PackIt,PackIt,Archive,,.pit,Y,Y,Y,Y
 format,Paf,PARIS Audio File (Ensoniq),Audio,,.paf,Y,Y,Y,
 format,Pak,PAK,Archive,,.pak,Y,Y,Y,Y
 format,Papaw,Papaw executable wrapper,Archive,,,Y,Y,,
-format,Paq8,PAQ8,Stream,,.paq8l;.paq8,,Y,Y,
 format,Par2,Parchive v2 (PAR2),Archive,,.par2,Y,Y,Y,
 format,Paragon,Paragon Backup,Archive,,.pbf,Y,Y,Y,Y
 format,ParallelsHdd,Parallels Disk (HDS),Archive,,.hds,Y,Y,,
