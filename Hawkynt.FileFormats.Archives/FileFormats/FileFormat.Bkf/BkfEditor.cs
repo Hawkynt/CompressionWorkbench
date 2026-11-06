@@ -15,23 +15,28 @@ namespace FileFormat.Bkf;
 /// names — and every data stream (security, alternate data, checksums) byte for byte; only the
 /// positional fields and checksums are written from the new layout. A new file goes after
 /// the files of its folder, a new folder's DIRB at the end of the set.</para>
-/// <para>Refused, with the medium left as it was: more than one Data Set, a Media Based
-/// Catalog (its set map and file/directory detail record the old positions), a medium that
-/// spans to another, and a Data Set with more than one volume.</para>
+/// <para>A medium with a Type 1 Media Based Catalog — every NTBackup backup file has one —
+/// gets its catalog written anew for every Data Set (<see cref="MtfCatalog"/>), so its
+/// File/Directory Detail and Set Map describe the edited sets. In a medium with several Data
+/// Sets a path names its set as the reader lists it, <c>set-NN/…</c>; the other sets keep
+/// their blocks.</para>
+/// <para>Refused, with the medium left as it was: a Type 2 catalog, a medium that spans to
+/// another, and a Data Set with more than one volume.</para>
 /// </remarks>
 public static class BkfEditor {
   /// <summary>Adds or replaces the file at <paramref name="path"/>, creating its folders.</summary>
   public static void AddFile(Stream archive, string path, byte[] data, DateTime? modified = null) {
     ArgumentNullException.ThrowIfNull(data);
     var target = BkfTree.Normalize(path);
-    var slash = target.LastIndexOf('/');
-    if (target.Length == 0 || slash == target.Length - 1)
+    if (target.Length == 0 || target.EndsWith('/'))
       throw new ArgumentException("BKF: a file needs a name.", nameof(path));
-    Edit(archive, (set, flb, now) => {
-      RemovePath(set, target, filesOnly: true);
-      var folder = slash < 0 ? "" : target[..slash];
+    Edit(archive, target, (set, inSet, flb, now) => {
+      var slash = inSet.LastIndexOf('/');
+      if (inSet.Length == 0) throw new ArgumentException("BKF: a file needs a name.", nameof(path));
+      RemovePath(set, inSet, filesOnly: true);
+      var folder = slash < 0 ? "" : inSet[..slash];
       var at = EnsureFolder(set, folder, now, flb, gainsFile: true);
-      set.Insert(at, MtfComposer.File(target[(slash + 1)..], data, modified, now, flb));
+      set.Insert(at, MtfComposer.File(inSet[(slash + 1)..], data, modified, now, flb));
       return true;
     });
   }
@@ -40,9 +45,10 @@ public static class BkfEditor {
   public static void AddDirectory(Stream archive, string path) {
     var target = BkfTree.Normalize(path);
     if (target.Length == 0) return;
-    Edit(archive, (set, flb, now) => {
+    Edit(archive, target, (set, inSet, flb, now) => {
+      if (inSet.Length == 0) return false;
       var before = set.Count;
-      EnsureFolder(set, target, now, flb, gainsFile: false);
+      EnsureFolder(set, inSet, now, flb, gainsFile: false);
       return set.Count != before;
     });
   }
@@ -51,40 +57,60 @@ public static class BkfEditor {
   public static bool Remove(Stream archive, string path) {
     var target = BkfTree.Normalize(path);
     var removed = false;
-    Edit(archive, (set, _, _) => removed = RemovePath(set, target, filesOnly: false));
+    Edit(archive, target, (set, inSet, _, _) => removed = inSet.Length > 0 && RemovePath(set, inSet, filesOnly: false));
     return removed;
   }
 
   // ── The edit ──────────────────────────────────────────────────────────────
 
-  private static void Edit(Stream archive, Func<List<MtfBlock>, int, DateTime, bool> change) {
+  /// <summary>
+  /// Reads the medium, lets <paramref name="change"/> edit the block list of the Data Set the
+  /// path names (with the path inside that set), and writes the medium anew when it changed.
+  /// </summary>
+  private static void Edit(Stream archive, string path, Func<List<MtfBlock>, string, int, DateTime, bool> change) {
     ArgumentNullException.ThrowIfNull(archive);
     if (!archive.CanSeek || !archive.CanRead || !archive.CanWrite)
       throw new ArgumentException("BKF editing needs a readable, writable, seekable stream.", nameof(archive));
     var media = MtfMedia.Read(archive, keepData: true);
-    if (media.Sets.Count != 1)
-      throw new NotSupportedException($"BKF: the medium holds {media.Sets.Count} Data Sets; only a single-set backup is edited.");
-    var set = media.Sets[0];
-    if (media.MediaBasedCatalogType != 0 || set.Eset is null || set.Eset.Streams.Count > 0 || set.ExtraEsets > 0)
-      throw new NotSupportedException("BKF: the medium carries a Media Based Catalog, which records the old block positions; it is not edited.");
-    if (media.HasEndOfTapeMarker || set.Blocks.Any(b => (b.Attributes & Mtf.BlockContinuationBit) != 0)
-        || (set.Sset.Attributes & Mtf.BlockContinuationBit) != 0)
-      throw new NotSupportedException("BKF: the Data Set spans media; it is not edited.");
+    if (media.Sets.Count == 0)
+      throw new InvalidDataException("BKF: the medium holds no Data Set.");
+    if (media.MediaBasedCatalogType is not (0 or 1))
+      throw new NotSupportedException($"BKF: the medium carries a Type {media.MediaBasedCatalogType} Media Based Catalog, which is not written here; it is not edited.");
+    if (media.HasEndOfTapeMarker || media.Sets.Any(s => s.Eset is null || s.ExtraEsets > 0
+          || (s.Sset.Attributes & Mtf.BlockContinuationBit) != 0 || s.Blocks.Any(b => (b.Attributes & Mtf.BlockContinuationBit) != 0)))
+      throw new NotSupportedException("BKF: the medium spans to another or a Data Set is incomplete; it is not edited.");
+
+    var index = 0;
+    var inSet = path;
+    if (media.Sets.Count > 1) {
+      var match = System.Text.RegularExpressions.Regex.Match(path, @"^set-(\d+)(?:/|$)");
+      if (!match.Success || !int.TryParse(match.Groups[1].Value, out var number) || number < 1 || number > media.Sets.Count)
+        throw new NotSupportedException($"BKF: the medium holds {media.Sets.Count} Data Sets; name one as the listing does (set-NN/…).");
+      index = number - 1;
+      inSet = path[match.Length..];
+    }
+    var set = media.Sets[index];
     if (set.Blocks.Count(b => b.Type == "VOLB") > 1)
       throw new NotSupportedException("BKF: the Data Set holds more than one volume; it is not edited.");
 
     var blocks = set.Blocks.ToList();
-    if (!change(blocks, media.FormatLogicalBlockSize, DateTime.Now)) return;
+    if (!change(blocks, inSet, media.FormatLogicalBlockSize, DateTime.Now)) return;
 
+    var catalog = media.MediaBasedCatalogType == 1;
+    var sets = media.Sets.Select((s, i) => new MtfComposer.DataSet(s.Sset, i == index ? blocks : s.Blocks, Trim(s.Eset!), s.CatalogEset is { } c ? Trim(c) : null)).ToList();
+    // Keep the Media Family ID the existing Set Map records (NTBackup writes zero there).
+    uint? familyId = media.Sets[0].Eset!.Stream("TSMP") is { Data: { Length: >= 4 } map } ? BinaryPrimitives.ReadUInt32LittleEndian(map) : null;
     using var output = new MemoryStream();
-    MtfComposer.Write(output, media.Tape, [new MtfComposer.DataSet(set.Sset, blocks, set.Eset)],
-      media.FormatLogicalBlockSize, s => s.Data ?? []);
+    MtfComposer.Write(output, media.Tape, sets, media.FormatLogicalBlockSize, s => s.Data ?? [], catalog, familyId);
     archive.Position = 0;
     output.Position = 0;
     output.CopyTo(archive);
     archive.SetLength(output.Length);
     archive.Flush();
   }
+
+  /// <summary>An ESET's own 85 bytes (§5.2.8), without the gap before its catalog streams.</summary>
+  private static MtfBlock Trim(MtfBlock eset) => new() { Dblk = eset.Dblk[..Math.Min(eset.Dblk.Length, 85)], Offset = eset.Offset };
 
   /// <summary>The folder each block belongs to: a DIRB names it, a FILE takes the last DIRB's.</summary>
   private static List<(MtfBlock Block, string Folder, string? File)> Paths(List<MtfBlock> blocks) {

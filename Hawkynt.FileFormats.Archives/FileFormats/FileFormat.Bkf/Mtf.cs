@@ -176,6 +176,9 @@ internal sealed class MtfDataSet {
   public required MtfBlock Sset;
   public List<MtfBlock> Blocks { get; } = [];
   public MtfBlock? Eset { get; set; }
+
+  /// <summary>The second ESET a Type 1 Media Based Catalog writes after its streams (§7.3.1).</summary>
+  public MtfBlock? CatalogEset { get; set; }
   public int ExtraEsets { get; set; }
 }
 
@@ -261,7 +264,8 @@ internal sealed class MtfMedia {
           var owner = media?.Sets.LastOrDefault();
           if (owner == null) break;
           if (owner.Eset == null) owner.Eset = block;
-          else ++owner.ExtraEsets;  // a Media Based Catalog repeats the ESET
+          else if (owner.CatalogEset == null) owner.CatalogEset = block;  // a Type 1 catalog repeats the ESET
+          else ++owner.ExtraEsets;
           set = null;
           break;
         case "EOTM":

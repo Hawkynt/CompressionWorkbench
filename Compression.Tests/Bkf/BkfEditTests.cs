@@ -8,7 +8,7 @@ namespace Compression.Tests.Bkf;
 /// Editing a BKF medium writes its Data Set anew: what stays keeps its DBLK bytes (attributes,
 /// dates, names) and every data stream byte for byte; only the positional fields — Format
 /// Logical Address, Control Block ID, directory and file IDs — and the checksums follow the
-/// new layout. Media the editor cannot rewrite losslessly are refused untouched.
+/// new layout. Catalogued and multi-set media are covered by <see cref="BkfCatalogTests"/>.
 /// </summary>
 [TestFixture]
 public sealed class BkfEditTests {
@@ -123,29 +123,6 @@ public sealed class BkfEditTests {
   public void GivenAPathThroughAFolderName_WhenAddedAsAFile_ThenItIsRefused() {
     using var bkf = NtbackupLike();
     Assert.Throws<IOException>(() => BkfEditor.AddFile(bkf, "docs/old", [1]));
-  }
-
-  [Test, Category("ErrorHandling")]
-  public void GivenTwoDataSets_WhenEdited_ThenItIsRefusedUntouched() {
-    var m = new MtfFixture();
-    m.Set(1, s => s.Volb("C:").Dirb("\0").File("a.txt", [1]));
-    m.Set(2, s => s.Volb("C:").Dirb("\0").File("a.txt", [2]));
-    using var bkf = new MemoryStream();
-    bkf.Write(m.Build());
-    var before = bkf.ToArray();
-    Assert.Throws<NotSupportedException>(() => BkfEditor.AddFile(bkf, "b.txt", [3]));
-    Assert.That(bkf.ToArray(), Is.EqualTo(before));
-  }
-
-  [Test, Category("ErrorHandling")]
-  public void GivenAMediaBasedCatalog_WhenEdited_ThenItIsRefusedUntouched() {
-    var m = new MtfFixture(mediaBasedCatalog: 1);
-    m.Set(1, s => s.Volb("C:").Dirb("\0").File("a.txt", [1]));
-    using var bkf = new MemoryStream();
-    bkf.Write(m.Build());
-    var before = bkf.ToArray();
-    Assert.Throws<NotSupportedException>(() => BkfEditor.Remove(bkf, "a.txt"));
-    Assert.That(bkf.ToArray(), Is.EqualTo(before));
   }
 
   [Test, Category("Boundary")]
