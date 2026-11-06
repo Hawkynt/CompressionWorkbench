@@ -124,6 +124,26 @@ public class UharcExternalConformanceTests {
       Assert.That(reader.Extract(entry), Is.EqualTo(expected[entry.FileName]), entry.FileName);
   }
 
+  [TestCase(null)]
+  [TestCase("store")]
+  public void GivenOurArchive_WhenUharcExtracts_ThenEveryFileIsByteIdentical(string? method) {
+    var uharc = RequireUharc();
+    var archive = Path.Combine(this._tmp, "ours.uha");
+    var inputs = UharcWriterTests.SampleInputs();
+    File.WriteAllBytes(archive, UharcWriterTests.Create(method, inputs));
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    Run(uharc, output, "x", "-y", "-t" + output, archive);
+
+    foreach (var input in inputs) {
+      var path = Path.Combine(output, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
+      if (input.IsDirectory)
+        Assert.That(Directory.Exists(path), Is.True, input.ArchiveName);
+      else
+        Assert.That(File.ReadAllBytes(path), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+    }
+  }
+
   [Test]
   public void GivenRealWorldArchives_WhenExtracted_ThenEveryDecodableFilePassesItsCrc() {
     var directory = Environment.GetEnvironmentVariable("CWB_UHARC_SAMPLES");

@@ -7,10 +7,11 @@ document is the specification `FileFormat.Uharc` is implemented from. It covers 
 version byte 6) and, in its own section, the 0.2 format, as far as they were established; what
 is not covered is listed at the end.
 
-**Status: read-only.** Container, ciphers, every 0.6 mode — store, RLE, LZ78, LZP, PPM and ALZ
+**Status: read, write-once.** Container, ciphers, every 0.6 mode — store, RLE, LZ78, LZP, PPM and ALZ
 with its nine multimedia predictors —, the executable and multimedia filters, passwords and SFX
 stubs are established and verified, and so is UHARC 0.2 (see its section). Archives of 0.3 and
-0.4 are not, and are refused.
+0.4 are not, and are refused. The writer produces stored and LZP-packed 0.6 archives (see
+Writing).
 
 ## Evidence
 
@@ -467,6 +468,28 @@ data fails its CRC under the former, a 364-byte MZ file under the latter.
 from byte 36 with a stride of 3, channels × bytes per sample, or 1: each byte is the difference
 from the byte one stride back, with a per-phase sign that flips on a difference ≥ 128.
 
+## Writing
+
+The writer produces 0.6 archives in the layout above: the stream stored (method 0) or packed
+with LZP at the smallest window that holds it (methods 8..23, 1 KiB to 32 MiB), the three tables
+— the name table lists the root as an empty name and every directory with a trailing `\` —
+packed with LZP method 17 and enciphered with the default password, the header scrambled with
+the low byte of its own check. The filters byte is 0: no executable or multimedia filter runs,
+so none is undone. It writes no password-protected archives and no other method.
+
+The LZP encoder keeps the decoder's model step for step and answers each prediction with the
+input: a hit with the longest copy the candidate reproduces (255 when it runs on, the rest of
+the input at its end), otherwise a miss. Copies of one byte have no length code (the length
+tree covers 2..254), so a single matching byte is a miss followed by that byte as a literal —
+which the decoder expects: the byte after it is then excluded like the byte after a copy. The
+range encoder is the decoder's mirror with a carrying 64-bit low, which makes the first stream
+byte 0.
+
+Every archive written from the fixture inputs, 17 MB of text, 13 MB of DLLs, fonts and media,
+this repository's sources and the mixed text/binary set — stored and packed, up to 400 files and
+a 32 MiB window — is extracted byte for byte by `UHARC.EXE x` and `UNUHARC.EXE x` (0.6b),
+directories and empty files included.
+
 ## UHARC 0.2
 
 UHARC 0.2 (21 Dec 1997, a DOS program; `UHARC.EXE` from the archive.org item `UHARC`, MD5
@@ -566,7 +589,7 @@ name table), and the executable filter on stored archives (fails `v02-exe-m0`'s 
 - **Versions 0.3 and 0.4** (`UHA` + 3 or 4): their headers, ciphers and coders differ from both
   0.2 and 0.6; no samples are at hand; refused with the version named.
 - **UHARC 0.2's RLE stream method 1**: no archive the tool writes uses it; refused.
-- **Writing.** Nothing here writes UHARC.
+- **Writing** any method other than store and LZP, passwords, filters and SFX stubs.
 
 ## Sources
 
