@@ -23,7 +23,7 @@
       assemblies whose namespaces overlap CompressionWorkbench internals; runtime assets still
       flow to applications, and the public bridge APIs expose only CompressionWorkbench contracts.
     -->
-    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.145" PrivateAssets="compile" />
+    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.772" PrivateAssets="compile" />
   </ItemGroup>
 
   <!-- SFX stubs are embedded as resources when present (populated by CI or publish-sfx-stubs.ps1).

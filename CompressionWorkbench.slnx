@@ -16,6 +16,10 @@
     <Project Path="Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj" />
     <Project Path="Hawkynt.FileFormats.FileSystems/Hawkynt.FileFormats.FileSystems.csproj" />
   </Folder>
+  <Folder Name="/FileFormats/">
+    <Project Path="FileFormats/FileFormat.Ico/FileFormat.Ico.csproj" />
+    <Project Path="FileFormats/FileFormat.Ani/FileFormat.Ani.csproj" />
+  </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />
     <Project Path="Compression.Shell/Compression.Shell.csproj" />

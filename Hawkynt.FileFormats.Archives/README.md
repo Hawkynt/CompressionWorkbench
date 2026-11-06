@@ -18,7 +18,7 @@
 dotnet add package Hawkynt.FileFormats.Archives
 ```
 
-The package bundles the archive-domain `FileFormat.*` assemblies and takes `Hawkynt.Compression.Core` as its one NuGet dependency. No native `zlib`, `liblzma`, `libarchive` or `libbz2` is loaded at runtime.
+The package bundles the archive-domain `FileFormat.*` assemblies and takes `Hawkynt.Compression.Core` and `Hawkynt.FileFormats.Images` as NuGet dependencies. No native `zlib`, `liblzma`, `libarchive` or `libbz2` is loaded at runtime.
 
 ## ✨ Features
 
@@ -614,6 +614,7 @@ Every public and protected member of all 2773 types, generated from the built as
 | Dependency | Role |
 | --- | --- |
 | [`Hawkynt.Compression.Core`](https://www.nuget.org/packages/Hawkynt.Compression.Core/) | Shared compression, entropy, transform, bit-I/O and registry primitives |
+| [`Hawkynt.FileFormats.Images`](https://www.nuget.org/packages/Hawkynt.FileFormats.Images/) | ICO/CUR payload conversion and ANI parsing behind the bundled bridge assemblies |
 | Native archive/compression libraries | **None required at runtime.** |
 
 ## ⚠️ Limitations
