@@ -22,7 +22,7 @@ public sealed partial class SevenZipWriter {
   private bool MustStream(PlannedBlock plan) {
     var large = plan.Files.Exists(static f => f.Data == null) || plan.Files.Sum(static f => f.Size) > InMemoryBlockLimit;
     return large
-      && plan.Codec is SevenZipCodec.Lzma2 or SevenZipCodec.Deflate or SevenZipCodec.BZip2 or SevenZipCodec.Copy
+      && plan.Codec is SevenZipCodec.Lzma2 or SevenZipCodec.Lzma or SevenZipCodec.Deflate or SevenZipCodec.BZip2 or SevenZipCodec.Copy
       && plan.Filter != SevenZipFilter.Bcj2;
   }
 
@@ -78,6 +78,12 @@ public sealed partial class SevenZipWriter {
         var encoder = new Lzma2Encoder(dictionarySize);
         encoder.Encode(output, input, length);
         return new SevenZipCoder { CodecId = SevenZipConstants.CodecLzma2.ToArray(), Properties = [encoder.DictionarySizeByte] };
+      }
+      case SevenZipCodec.Lzma: {
+        // The folder records the size, so no end marker, as 7-Zip writes it.
+        var encoder = new LzmaStreamEncoder(dictionarySize);
+        encoder.Encode(output, input, length, writeEndMarker: false);
+        return new SevenZipCoder { CodecId = SevenZipConstants.CodecLzma.ToArray(), Properties = encoder.Properties };
       }
       case SevenZipCodec.Deflate:
         using (var deflate = new RawDeflateStream(output, CompressionStreamMode.Compress, leaveOpen: true))
