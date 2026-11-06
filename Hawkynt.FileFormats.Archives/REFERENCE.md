@@ -20046,6 +20046,60 @@ Implements `IEquatable<InnoVersion>`.
 | `ToString` | `override string ToString()` |  |
 | `V` | `static uint V(int a, int b, int c, int d = 0)` | Packs a version number. |
 
+### Namespace `FileFormat.Install4j`
+
+[`Install4jEntry`](#install4jentry) · [`Install4jFormatDescriptor`](#install4jformatdescriptor) · [`Install4jReader`](#install4jreader)
+
+#### `Install4jEntry`
+
+One data archive of an install4j installer.
+
+Implements `IEquatable<Install4jEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Install4jEntry` | `Install4jEntry(string Name, long Offset, long StoredSize, long Size, bool IsLzma)` | One data archive of an install4j installer. |
+| `IsLzma` | `bool IsLzma { get; init; }` | Stored as an LZMA stream (5 property bytes, the 64-bit unpacked size, the data); otherwise as is. |
+| `Name` | `string Name { get; init; }` | The archive's name (`0.dat`, ...), or `launcher.dat` for the launcher block. |
+| `Offset` | `long Offset { get; init; }` | Offset of its stored bytes in the installer. |
+| `Size` | `long Size { get; init; }` | Size once unpacked. |
+| `StoredSize` | `long StoredSize { get; init; }` | Stored size. |
+
+#### `Install4jFormatDescriptor`
+
+install4j installers (ej-technologies): the launcher block and the data archives (ZIP, stored or LZMA-compressed). Read-only; detected by the marker that starts the PE overlay.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Install4jFormatDescriptor` | `Install4jFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `Install4jReader`
+
+install4j installers (ej-technologies): a native launcher followed by an overlay that starts with `D5 13 E4 E8`, holds the launcher block (its settings and any bundled Java runtime) up to `E8 E4 13 D5`, then a big-endian table of data archives (name, size) and the archives themselves, each a ZIP stored as is or LZMA-compressed.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entries` | `IReadOnlyList<Install4jEntry> Entries { get; }` | The launcher block and the data archives. |
+| `Extract` | `byte[] Extract(Install4jEntry entry)` | Unpacks one entry. |
+| `IsInstall4j` | `static bool IsInstall4j(Stream stream)` | Whether the PE overlay starts with the install4j start marker. |
+| `Open` | `static Install4jReader Open(byte[] data)` | Opens an install4j installer held in memory. |
+
 ### Namespace `FileFormat.InstallShield`
 
 [`InstallShieldCabEntry`](#installshieldcabentry) · [`InstallShieldCabFormatDescriptor`](#installshieldcabformatdescriptor) · [`InstallShieldCabReader`](#installshieldcabreader)
