@@ -2798,6 +2798,70 @@ Implements `IEquatable<FvHeader>`.
 | `HeaderLength` | `ushort HeaderLength { get; init; }` |  |
 | `Revision` | `byte Revision { get; init; }` |  |
 
+### Namespace `FileFormat.Uif`
+
+[`UifFormatDescriptor`](#uifformatdescriptor) · [`UifImage`](#uifimage) · [`UifImage.Block`](#uifimageblock)
+
+#### `UifFormatDescriptor`
+
+MagicISO UIF (Universal Image Format) disc image. The `bbis` signature sits in the trailer, not at the start, so the image is found by its extension. Lists `metadata.ini` and `image.iso`. Read-only: no free tool writes UIF.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UifFormatDescriptor` | `UifFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `UifImage`
+
+A MagicISO UIF image. A 64-byte `bbis` trailer ends the file. It points at a `blhr` block table (zlib-compressed when flagged); each 24-byte entry places a run of sectors in the output and says how it is stored: copied, zero-filled or zlib-compressed. Layout in `docs/UIF-ON-DISK.md`. Only what real files proved is read. Version 1 and 2 images of type 8 (a plain ISO image) without encryption are read; LZMA-compressed version 3 images, mixed-mode images (type 9) and encrypted images are refused.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UifImage` | `UifImage()` |  |
+| `EntrySize` | `const int EntrySize` |  |
+| `TrailerSize` | `const int TrailerSize` |  |
+| `Blocks` | `IReadOnlyList<Block> Blocks { get; }` |  |
+| `Hash` | `byte[] Hash { get; }` |  |
+| `ImageType` | `ushort ImageType { get; }` |  |
+| `LastDiff` | `uint LastDiff { get; }` |  |
+| `Length` | `ulong Length { get; }` | Bytes of the image: all sectors, less the unused tail of the last one when the trailer says so. |
+| `SectorSize` | `uint SectorSize { get; }` |  |
+| `Sectors` | `uint Sectors { get; }` |  |
+| `Version` | `ushort Version { get; }` |  |
+| `CopyTo` | `void CopyTo(Stream file, Stream output)` | Writes the image: every block decoded into place, sectors no block covers left as zeros. |
+| `Read` | `static UifImage Read(Stream file)` |  |
+| `RenderMetadata` | `string RenderMetadata()` |  |
+
+#### `UifImage.Block`
+
+One run of output sectors.
+
+Implements `IEquatable<Block>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block` | `Block(ulong Offset, uint StoredSize, uint Sector, uint Sectors, uint Type)` | One run of output sectors. |
+| `Offset` | `ulong Offset { get; init; }` |  |
+| `Sector` | `uint Sector { get; init; }` |  |
+| `Sectors` | `uint Sectors { get; init; }` |  |
+| `StoredSize` | `uint StoredSize { get; init; }` |  |
+| `Type` | `uint Type { get; init; }` |  |
+
 ### Namespace `FileFormat.Vdi`
 
 [`VdiEntry`](#vdientry) · [`VdiFormatDescriptor`](#vdiformatdescriptor) · [`VdiLayoutMap`](#vdilayoutmap) · [`VdiReader`](#vdireader) · [`VdiStream`](#vdistream) · [`VdiWriter`](#vdiwriter)
