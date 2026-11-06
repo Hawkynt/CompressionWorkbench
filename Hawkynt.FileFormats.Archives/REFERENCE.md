@@ -31563,7 +31563,19 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 ### Namespace `FileFormat.StuffIt`
 
-[`StuffItEntry`](#stuffitentry) · [`StuffItFormatDescriptor`](#stuffitformatdescriptor) · [`StuffItReader`](#stuffitreader) · [`StuffItWriter`](#stuffitwriter)
+[`StuffIt5Writer`](#stuffit5writer) · [`StuffItEntry`](#stuffitentry) · [`StuffItFormatDescriptor`](#stuffitformatdescriptor) · [`StuffItReader`](#stuffitreader) · [`StuffItWriter`](#stuffitwriter)
+
+#### `StuffIt5Writer`
+
+Creates StuffIt 5 archives (the container of StuffIt 5 to 8): files at the root level, each fork stored, RLE-packed or LZ+Huffman-compressed (method 13), whichever is smallest.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `StuffIt5Writer` | `StuffIt5Writer(Stream stream, bool leaveOpen = false)` | Starts a StuffIt 5 archive on `stream`; it is written on `Dispose`. |
+| `AddFile` | `void AddFile(string fileName, byte[] data, byte[] resourceFork = null, string fileType = "TEXT", string fileCreator = "CWIE", DateTime? lastModified = null)` | Adds a file with a data fork and an optional resource fork. |
+| `Dispose` | `void Dispose()` |  |
 
 #### `StuffItEntry`
 
@@ -31590,7 +31602,7 @@ Represents a single file or folder entry in a StuffIt archive (classic "SIT!" or
 
 Macintosh StuffIt (SIT) archive — classic Mac compression with resource/data fork entries. References: `https://github.com/MacPaw/XADMaster` — XADMaster (The Unarchiver) — open StuffIt decoder, the de-facto format reference`https://en.wikipedia.org/wiki/StuffIt` — Wikipedia overviewAladdin Systems StuffIt — proprietary; no official spec published
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -31607,6 +31619,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The container the writer emits. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the StuffIt archive in listing order. |

@@ -8,7 +8,7 @@ namespace FileFormat.StuffIt;
 /// </summary>
 /// <remarks>
 /// Produces archives compatible with the classic "SIT!" format (version 1).
-/// Supports Store (method 0) and RLE (method 1) compression.
+/// Each fork is stored, RLE-packed (method 1) or LZ+Huffman-compressed (method 13), whichever is smallest.
 /// Entries are buffered in memory and the archive is written on <see cref="Dispose"/>.
 /// </remarks>
 public sealed class StuffItWriter : IDisposable {
@@ -209,28 +209,31 @@ public sealed class StuffItWriter : IDisposable {
 
   // ── Compression ──────────────────────────────────────────────────────────
 
-  private static byte[] CompressFork(byte[] data, out byte method) {
-    if (data.Length == 0) {
-      method = StuffItConstants.MethodStore;
-      return [];
-    }
-
-    var rleEncoded = StuffItRle90.Encode(data);
-    if (rleEncoded.Length < data.Length) {
-      method = StuffItConstants.MethodRle;
-      return rleEncoded;
-    }
-
+  /// <summary>Picks the smallest of method 13 (LZ+Huffman), RLE and storing.</summary>
+  internal static byte[] CompressFork(byte[] data, out byte method) {
     method = StuffItConstants.MethodStore;
-    return data;
+    if (data.Length == 0) return [];
+
+    var best = data;
+    var lzHuffman = StuffIt13Encoder.Encode(data);
+    if (lzHuffman.Length < best.Length) {
+      best = lzHuffman;
+      method = StuffItConstants.MethodLzHuffman;
+    }
+    var rleEncoded = StuffItRle90.Encode(data);
+    if (rleEncoded.Length < best.Length) {
+      best = rleEncoded;
+      method = StuffItConstants.MethodRle;
+    }
+    return best;
   }
 
   // StuffIt checks headers and forks with CRC-16/ARC (reflected 0xA001, init 0), as every reader does.
-  private static ushort ComputeCrc16(ReadOnlySpan<byte> data) => Compression.Core.Checksums.Crc16.Compute(data);
+  internal static ushort ComputeCrc16(ReadOnlySpan<byte> data) => Compression.Core.Checksums.Crc16.Compute(data);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
-  private static void WriteAscii4(Span<byte> dest, string value) {
+  internal static void WriteAscii4(Span<byte> dest, string value) {
     var bytes = Encoding.ASCII.GetBytes(value);
     var len = Math.Min(bytes.Length, 4);
     bytes.AsSpan(0, len).CopyTo(dest);
@@ -239,7 +242,7 @@ public sealed class StuffItWriter : IDisposable {
       dest[i] = (byte)' ';
   }
 
-  private static uint ToMacTimestamp(DateTime dt) {
+  internal static uint ToMacTimestamp(DateTime dt) {
     if (dt <= StuffItConstants.MacEpoch)
       return 0;
     var diff = dt.ToUniversalTime() - StuffItConstants.MacEpoch;
