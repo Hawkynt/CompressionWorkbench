@@ -90,4 +90,20 @@ public sealed class SerpentTwofishTests {
     Assert.Throws<ArgumentException>(() => new Serpent(new byte[16]).Decrypt(new byte[17]));
     Assert.Throws<ArgumentException>(() => new Twofish(new byte[16]).Decrypt(new byte[15]));
   }
+
+  [Test]
+  public void GivenTheOsvikCircuits_WhenComparedWithThePaperTables_ThenEveryColumnMaps() {
+    var rng = new Random(5);
+    for (var box = 0; box < 8; ++box)
+      for (var n = 0; n < 64; ++n) {
+        uint a = (uint)rng.Next(), b = (uint)rng.Next(), c = (uint)rng.Next(), d = (uint)rng.Next();
+        var (ta, tb, tc, td) = (a, b, c, d);
+        Serpent.ApplySBox(Serpent.SBoxes[box], ref ta, ref tb, ref tc, ref td);
+        var (ca, cb, cc, cd) = (a, b, c, d);
+        Serpent.SBoxEncrypt(box, ref ca, ref cb, ref cc, ref cd);
+        Assert.That((ca, cb, cc, cd), Is.EqualTo((ta, tb, tc, td)), $"S{box}");
+        Serpent.SBoxDecrypt(box, ref ca, ref cb, ref cc, ref cd);
+        Assert.That((ca, cb, cc, cd), Is.EqualTo((a, b, c, d)), $"S{box} inverse");
+      }
+  }
 }
