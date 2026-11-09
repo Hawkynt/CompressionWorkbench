@@ -3574,6 +3574,74 @@ Implements `IEquatable<DiskCopy42Image>`.
 | `WithPayload` | `DiskCopy42Image WithPayload(byte[] data, byte[] tags)` | Returns a copy with new data/tags and recomputed sizes and checksums; every other header byte is kept. |
 | `Write` | `void Write(Stream output)` |  |
 
+### Namespace `FileFormat.DmCrypt`
+
+[`DmCryptPlainFormatDescriptor`](#dmcryptplainformatdescriptor) · [`DmCryptPlainParameters`](#dmcryptplainparameters) · [`DmCryptPlainVolume`](#dmcryptplainvolume)
+
+#### `DmCryptPlainFormatDescriptor`
+
+dm-crypt plain mode: a headerless encrypted volume. Nothing on disk identifies it, so it is never detected — it is chosen by id, with the cipher, hash, key size, offset and skip that `cryptsetup open --type plain` would be given (cryptsetup's defaults otherwise). Lists the decrypted data as `volume.img`; mounts the filesystem inside read-only or read-write with the passphrase; creates plain volumes cryptsetup opens.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IEncryptedBlockDeviceProvider`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DmCryptPlainFormatDescriptor` | `DmCryptPlainFormatDescriptor()` |  |
+| `VolumeName` | `const string VolumeName` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Encrypts the single input (whole 512-byte sectors) as a plain mapping. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decrypts the whole device with cryptsetup's plain-mode defaults; other parameters need the block-device API. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenBlockDevice` | `IRandomAccessBlockDevice OpenBlockDevice(Stream image, EncryptedVolumeCredentials credentials, bool writable, bool leaveOpen = true)` | The decrypted mapping. A plain volume cannot tell a wrong passphrase from a right one; a wrong one yields noise in which no filesystem is found. |
+
+#### `DmCryptPlainParameters`
+
+The parameters of a dm-crypt plain mapping — everything `cryptsetup open --type plain` is told, because a plain volume stores none of it. Defaults are cryptsetup's plain-mode defaults.
+
+Implements `IEquatable<DmCryptPlainParameters>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DmCryptPlainParameters` | `DmCryptPlainParameters(string Cipher = "aes-xts-plain64", string Hash = "sha256", int KeyBits = 256, long OffsetSectors = 0, long SkipSectors = 0, long? SizeSectors = null)` | The parameters of a dm-crypt plain mapping — everything `cryptsetup open --type plain` is told, because a plain volume stores none of it. Defaults are cryptsetup's plain-mode defaults. |
+| `CipherName` | `const string CipherName` |  |
+| `HashName` | `const string HashName` |  |
+| `KeySizeName` | `const string KeySizeName` |  |
+| `OffsetName` | `const string OffsetName` |  |
+| `SizeName` | `const string SizeName` |  |
+| `SkipName` | `const string SkipName` |  |
+| `Cipher` | `string Cipher { get; init; }` | Cipher spec, `cipher-mode-iv` (`aes-xts-plain64`, `aes-cbc-essiv:sha256`, …). |
+| `Hash` | `string Hash { get; init; }` | Passphrase hash (`sha1`, `sha256`, `sha512`, `ripemd160`, …, or `plain`), optionally `:bytes` to hash only that much of the key. |
+| `KeyBits` | `int KeyBits { get; init; }` | Key size in bits. |
+| `OffsetSectors` | `long OffsetSectors { get; init; }` | Start of the data in the device, in 512-byte sectors. |
+| `SizeSectors` | `long? SizeSectors { get; init; }` | Data length in 512-byte sectors; `null` for the rest of the device. |
+| `SkipSectors` | `long SkipSectors { get; init; }` | IV offset: the IV sector number of the first data sector. |
+| `From` | `static DmCryptPlainParameters From(Func<string, string> get)` | Reads the parameters by name, each falling back to its default. |
+| `SplitCipher` | `ValueTuple<string, string> SplitCipher()` | Splits `Cipher` into the cipher and the `mode-iv` part LUKS also uses. |
+
+#### `DmCryptPlainVolume`
+
+dm-crypt plain mode: a headerless volume whose key is the hashed passphrase. Implemented from the behaviour of `cryptsetup open --type plain`, as written down in `docs/DMCRYPT-PLAIN-ON-DISK.md`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SectorSize` | `const int SectorSize` |  |
+| `DeriveKey` | `static byte[] DeriveKey(string passphrase, string hashSpec, int keyBytes)` | The volume key for `passphrase`: the hash of the passphrase, extended when the key is longer than one digest by hashing again with one more `'A'` prepended per round; with `hash:n` only the first `n` key bytes are hashed and the rest are zero; `plain` takes the passphrase bytes themselves. |
+| `IsSupportedHash` | `static bool IsSupportedHash(string name)` | Whether `name` is a passphrase hash this implementation knows. |
+| `OpenBlockDevice` | `static SectorCipherBlockDevice OpenBlockDevice(Stream stream, string passphrase, DmCryptPlainParameters p, bool writable, bool leaveOpen = true)` | The decrypted mapping as a block device of 512-byte sectors. |
+| `Write` | `static void Write(Stream output, ReadOnlySpan<byte> payload, string passphrase, DmCryptPlainParameters p)` | Writes `payload` encrypted as a plain mapping would store it, after `Offset` sectors of random filler. |
+
 ### Namespace `FileFormat.Dmg`
 
 [`DmgEntry`](#dmgentry) · [`DmgFormatDescriptor`](#dmgformatdescriptor) · [`DmgReader`](#dmgreader) · [`DmgWriter`](#dmgwriter)
@@ -18043,7 +18111,7 @@ Emits a Stacker STACVOL that `StackerReader` round-trips byte-exact. The contain
 
 ### Namespace `FileSystem.Svr4Bfs`
 
-[`Svr4BfsEntry`](#svr4bfsentry) · [`Svr4BfsFormatDescriptor`](#svr4bfsformatdescriptor) · [`Svr4BfsInode`](#svr4bfsinode) · [`Svr4BfsLayout`](#svr4bfslayout) · [`Svr4BfsModifier`](#svr4bfsmodifier) · [`Svr4BfsReader`](#svr4bfsreader) · [`Svr4BfsSuperblock`](#svr4bfssuperblock) · [`Svr4BfsWriter`](#svr4bfswriter)
+[`Svr4BfsEntry`](#svr4bfsentry) · [`Svr4BfsFormatDescriptor`](#svr4bfsformatdescriptor) · [`Svr4BfsInode`](#svr4bfsinode) · [`Svr4BfsLayout`](#svr4bfslayout) · [`Svr4BfsModifier`](#svr4bfsmodifier) · [`Svr4BfsReader`](#svr4bfsreader) · [`Svr4BfsSuperblock`](#svr4bfssuperblock)
 
 #### `Svr4BfsEntry`
 
@@ -18188,25 +18256,6 @@ Implements `IEquatable<Svr4BfsSuperblock>`.
 | `Volume` | `string Volume { get; init; }` | Six-byte volume name, space padded. |
 | `TryParse` | `static Svr4BfsSuperblock TryParse(ReadOnlySpan<byte> block)` | Parses block 0, or returns null when it is not a BFS superblock. |
 | `WriteTo` | `void WriteTo(Span<byte> block)` | Serialises the superblock into a zeroed 512-byte block. |
-
-#### `Svr4BfsWriter`
-
-Builds a fresh SVR4 / UnixWare Boot File System volume in the shape `mkfs.bfs` produces — superblock, inode area, a root directory with `.` and `..` — with the given files laid out contiguously behind the root directory, as the Linux `bfs` driver itself allocates them.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Svr4BfsWriter` | `Svr4BfsWriter()` |  |
-| `MaximumVolumeSize` | `const long MaximumVolumeSize` | Largest volume the 32-bit `s_end` byte offset can describe. |
-| `MinimumInodes` | `const int MinimumInodes` | Fewest inodes a volume gets — the count `mkfs.bfs` gives a small volume. |
-| `SpareInodes` | `const int SpareInodes` | Inode slots and directory slots left free beyond the files written, for later adds. |
-| `FsName` | `string FsName { get; set; }` | Six-character file-system name (`s_fsname`); padded with spaces. |
-| `InodeCount` | `int? InodeCount { get; set; }` | Inode count; null picks enough for the files plus `SpareInodes`. |
-| `Now` | `DateTimeOffset Now { get; set; }` | Timestamp used where an input carries none; defaults to now. |
-| `VolumeLabel` | `string VolumeLabel { get; set; }` | Six-character volume name (`s_volume`); padded with spaces. |
-| `VolumeSize` | `long? VolumeSize { get; set; }` | Volume size in bytes; null picks the used size plus a quarter (at least 64 KiB of free space). |
-| `AddFile` | `void AddFile(string name, byte[] data, ArchiveEntryMetadata metadata = null)` | Queues a root-level file. |
-| `Build` | `static byte[] Build(IEnumerable<ValueTuple<string, byte[]>> files)` | Builds a volume from `files` with default geometry. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the volume to `output` from its current position. |
 
 ### Namespace `FileSystem.SysV`
 
