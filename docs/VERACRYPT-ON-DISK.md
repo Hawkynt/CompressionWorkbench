@@ -139,6 +139,7 @@ read-only or read-write; headers are never written. Mount parameters:
 | `Cipher` | try only chains whose name contains this |
 | `Hidden` | open the hidden volume |
 | `Keyfiles` | keyfile paths separated by `\|` or newlines |
+| `ProtectHidden`, `ProtectHiddenPim`, `ProtectHiddenKeyfiles` | protect the hidden volume while the outer one is mounted (see below) |
 
 ## Creating
 
@@ -156,6 +157,34 @@ slots are filled with random bytes, so nothing reveals whether a hidden volume e
 A data area larger than the payload is filled with random bytes. With `Sparse` it is left
 unwritten instead, and a seekable file gets holes. Like a VeraCrypt dynamic volume, a sparse
 container shows which parts are in use.
+
+## Hidden volumes
+
+A hidden volume lives in the outer volume's free space. Its header uses the spare slot at 64 KiB
+(backup 64 KiB before the end), so without its password it looks like the random bytes that fill
+that slot in every container.
+
+Placement and header fields follow VeraCrypt 1.26, measured from containers its CLI made:
+
+- The hidden data ends 4096 bytes before the backup header area, so it starts at
+  `container − 128 KiB − 4 KiB − size`.
+- Both size fields hold the hidden size, `data offset` is that absolute start, and XTS data units
+  count from it.
+- The outer header records nothing about the hidden volume (hidden size 0).
+
+**Creating.** The hidden data must land only on space the outer volume does not use, so it is
+written only after the outer filesystem proves that space free. With the outer password the outer
+volume is decrypted, its filesystem detected, and its allocation map (`IFilesystemExtentMap`: FAT,
+ext, …) walked; the hidden area must start beyond the last allocated byte. An outer volume
+without such a filesystem is refused when the hidden volume is added later. When outer and hidden
+volumes are created together, the outer image's own length is the fallback bound. The unused part
+of the hidden area is random. A hidden volume cannot be sparse, because holes would reveal it.
+
+**Protection.** When the outer volume is mounted with a `ProtectHidden` password (plus optional
+`ProtectHiddenPim` and `ProtectHiddenKeyfiles`), the hidden header is opened too and every write
+that would reach the hidden data is refused. After the first refusal, the outer volume refuses
+all writes until it is reopened, as VeraCrypt's protection does, so the outer filesystem cannot
+carry on half-written. A protection password that opens no hidden header is rejected.
 
 ## Not covered
 
