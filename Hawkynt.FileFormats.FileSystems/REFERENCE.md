@@ -9,7 +9,7 @@
 
 ### Namespace `Compression.Registry`
 
-[`AlgorithmFamily`](#algorithmfamily) · [`ApeTagReader`](#apetagreader) · [`ApeTagReader.ApeTag`](#apetagreaderapetag) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveEntryMetadata`](#archiveentrymetadata) · [`ArchiveFormatOperationsExtensions`](#archiveformatoperationsextensions) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveMutationOptions`](#archivemutationoptions) · [`ArchivePasswordException`](#archivepasswordexception) · [`ArchiveRename`](#archiverename) · [`ArchiveRenames`](#archiverenames) · [`ArchiveSemanticManifest`](#archivesemanticmanifest) · [`ArchiveSemanticManifest.Entry`](#archivesemanticmanifestentry) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`ContentPreservation`](#contentpreservation) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragFeature`](#defragfeature) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`DefragSupport`](#defragsupport) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemAllocationMapCompleter`](#filesystemallocationmapcompleter) · [`FilesystemBlockMoverAttribute`](#filesystemblockmoverattribute) · [`FilesystemCompressionParameter`](#filesystemcompressionparameter) · [`FilesystemCompressionProfile`](#filesystemcompressionprofile) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemOptimization`](#filesystemoptimization) · [`FilesystemOptimizationAdapters`](#filesystemoptimizationadapters) · [`FilesystemOptimizationAdapters.HardLinkDeduplicator`](#filesystemoptimizationadaptershardlinkdeduplicator) · [`FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`](#filesystemoptimizationadapterssymboliclinkdeduplicator) · [`FilesystemOptimizationExtensions`](#filesystemoptimizationextensions) · [`FilesystemOptimizationFeatures`](#filesystemoptimizationfeatures) · [`FilesystemOptimizationOptions`](#filesystemoptimizationoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FilesystemSourceRole`](#filesystemsourcerole) · [`FilesystemStreamSet`](#filesystemstreamset) · [`FilesystemStreamSource`](#filesystemstreamsource) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatDetectionSignature`](#formatdetectionsignature) · [`FormatHeaderMatch`](#formatheadermatch) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKeys`](#formatoptionkeys) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`HardLinkDeduplicationSemantics`](#hardlinkdeduplicationsemantics) · [`IArchiveCanonicalizable`](#iarchivecanonicalizable) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveRenamable`](#iarchiverenamable) · [`IArchiveRepackable`](#iarchiverepackable) · [`IArchiveSemanticMetadataProvider`](#iarchivesemanticmetadataprovider) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`ICompressionOptimizable`](#icompressionoptimizable) · [`IContainerRemuxable`](#icontainerremuxable) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDirectoryOrderer`](#ifilesystemdirectoryorderer) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtendedAttributeReader`](#ifilesystemextendedattributereader) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatDetectionSource`](#iformatdetectionsource) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IMultiStreamFilesystemDriverProvider`](#imultistreamfilesystemdriverprovider) · [`IMultiStreamFilesystemDriverReadinessProvider`](#imultistreamfilesystemdriverreadinessprovider) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`IStreamFormatOperations`](#istreamformatoperations) · [`ISymbolicLinkDeduplicationLayout`](#isymboliclinkdeduplicationlayout) · [`ISyntheticEntryNames`](#isyntheticentrynames) · [`IWipeEmpty`](#iwipeempty) · [`InPlacePatchJournal`](#inplacepatchjournal) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MaintenanceCapabilities`](#maintenancecapabilities) · [`MaintenanceCapability`](#maintenancecapability) · [`MaintenanceProfile`](#maintenanceprofile) · [`MaintenanceResult`](#maintenanceresult) · [`MaintenanceVerbs`](#maintenanceverbs) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`MutableRebuildFilesystemSession`](#mutablerebuildfilesystemsession) · [`MutableRebuildFilesystemSession.RebuildImage`](#mutablerebuildfilesystemsessionrebuildimage) · [`MutableRebuildFilesystemSession.ValidateImage`](#mutablerebuildfilesystemsessionvalidateimage) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawDiskShrinkRebuilder`](#rawdiskshrinkrebuilder) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildFilesystemEntry`](#rebuildfilesystementry) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SfxTrailer`](#sfxtrailer) · [`SfxTrailer.Location`](#sfxtrailerlocation) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SubStream`](#substream) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult) · [`WholeImageRebuildCommitter`](#wholeimagerebuildcommitter)
+[`AlgorithmFamily`](#algorithmfamily) · [`ApeTagReader`](#apetagreader) · [`ApeTagReader.ApeTag`](#apetagreaderapetag) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveEntryMetadata`](#archiveentrymetadata) · [`ArchiveFormatOperationsExtensions`](#archiveformatoperationsextensions) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveMutationOptions`](#archivemutationoptions) · [`ArchivePasswordException`](#archivepasswordexception) · [`ArchiveRename`](#archiverename) · [`ArchiveRenames`](#archiverenames) · [`ArchiveSemanticManifest`](#archivesemanticmanifest) · [`ArchiveSemanticManifest.Entry`](#archivesemanticmanifestentry) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`ContentPreservation`](#contentpreservation) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragFeature`](#defragfeature) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`DefragSupport`](#defragsupport) · [`EncryptedVolumeCredentials`](#encryptedvolumecredentials) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemAllocationMapCompleter`](#filesystemallocationmapcompleter) · [`FilesystemBlockMoverAttribute`](#filesystemblockmoverattribute) · [`FilesystemCompressionParameter`](#filesystemcompressionparameter) · [`FilesystemCompressionProfile`](#filesystemcompressionprofile) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemOptimization`](#filesystemoptimization) · [`FilesystemOptimizationAdapters`](#filesystemoptimizationadapters) · [`FilesystemOptimizationAdapters.HardLinkDeduplicator`](#filesystemoptimizationadaptershardlinkdeduplicator) · [`FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`](#filesystemoptimizationadapterssymboliclinkdeduplicator) · [`FilesystemOptimizationExtensions`](#filesystemoptimizationextensions) · [`FilesystemOptimizationFeatures`](#filesystemoptimizationfeatures) · [`FilesystemOptimizationOptions`](#filesystemoptimizationoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FilesystemSourceRole`](#filesystemsourcerole) · [`FilesystemStreamSet`](#filesystemstreamset) · [`FilesystemStreamSource`](#filesystemstreamsource) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatDetectionSignature`](#formatdetectionsignature) · [`FormatHeaderMatch`](#formatheadermatch) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKeys`](#formatoptionkeys) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`HardLinkDeduplicationSemantics`](#hardlinkdeduplicationsemantics) · [`IArchiveCanonicalizable`](#iarchivecanonicalizable) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveRenamable`](#iarchiverenamable) · [`IArchiveRepackable`](#iarchiverepackable) · [`IArchiveSemanticMetadataProvider`](#iarchivesemanticmetadataprovider) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`ICompressionOptimizable`](#icompressionoptimizable) · [`IContainerRemuxable`](#icontainerremuxable) · [`IEncryptedBlockDeviceProvider`](#iencryptedblockdeviceprovider) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDirectoryOrderer`](#ifilesystemdirectoryorderer) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtendedAttributeReader`](#ifilesystemextendedattributereader) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatDetectionSource`](#iformatdetectionsource) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IMultiStreamFilesystemDriverProvider`](#imultistreamfilesystemdriverprovider) · [`IMultiStreamFilesystemDriverReadinessProvider`](#imultistreamfilesystemdriverreadinessprovider) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`ISectorCipher`](#isectorcipher) · [`IStreamFormatOperations`](#istreamformatoperations) · [`ISymbolicLinkDeduplicationLayout`](#isymboliclinkdeduplicationlayout) · [`ISyntheticEntryNames`](#isyntheticentrynames) · [`IWipeEmpty`](#iwipeempty) · [`InPlacePatchJournal`](#inplacepatchjournal) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MaintenanceCapabilities`](#maintenancecapabilities) · [`MaintenanceCapability`](#maintenancecapability) · [`MaintenanceProfile`](#maintenanceprofile) · [`MaintenanceResult`](#maintenanceresult) · [`MaintenanceVerbs`](#maintenanceverbs) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`MutableRebuildFilesystemSession`](#mutablerebuildfilesystemsession) · [`MutableRebuildFilesystemSession.RebuildImage`](#mutablerebuildfilesystemsessionrebuildimage) · [`MutableRebuildFilesystemSession.ValidateImage`](#mutablerebuildfilesystemsessionvalidateimage) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawDiskShrinkRebuilder`](#rawdiskshrinkrebuilder) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildFilesystemEntry`](#rebuildfilesystementry) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SectorCipherBlockDevice`](#sectorcipherblockdevice) · [`SfxTrailer`](#sfxtrailer) · [`SfxTrailer.Location`](#sfxtrailerlocation) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SubStream`](#substream) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult) · [`WholeImageRebuildCommitter`](#wholeimagerebuildcommitter)
 
 #### `AlgorithmFamily`
 
@@ -543,6 +543,19 @@ Refuses a defragmentation request that asks for something the format would other
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Require` | `static void Require(DefragOptions options, DefragFeature supported, string format)` | Throws `NotSupportedException` when `options` asks for a mode or option outside `supported`. |
+
+#### `EncryptedVolumeCredentials`
+
+What unlocks an encrypted volume: a passphrase and, for formats that need more than one, named parameters (dm-crypt plain cipher/hash/offset, a VeraCrypt PIM, a hidden-volume password to protect, …). Parameter names are format-specific and case-insensitive.
+
+Implements `IEquatable<EncryptedVolumeCredentials>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EncryptedVolumeCredentials` | `EncryptedVolumeCredentials(string Password, IReadOnlyDictionary<string, string> Parameters = null)` | What unlocks an encrypted volume: a passphrase and, for formats that need more than one, named parameters (dm-crypt plain cipher/hash/offset, a VeraCrypt PIM, a hidden-volume password to protect, …). Parameter names are format-specific and case-insensitive. |
+| `Parameters` | `IReadOnlyDictionary<string, string> Parameters { get; init; }` |  |
+| `Password` | `string Password { get; init; }` |  |
+| `Get` | `string Get(string name)` | Returns the named parameter, or `null` when it was not given. |
 
 #### `EntropyDetector`
 
@@ -1437,6 +1450,14 @@ Opt-in capability for rebuilding an existing container while preserving already 
 | --- | --- | --- |
 | `Remux` | `void Remux(Stream source, Stream output, IReadOnlyList<ArchiveInputInfo> replacements, FormatCreateOptions options)` | Rebuilds `source` into `output`, applying the supplied addressable pseudo-entry replacements without decoding or re-encoding preserved payloads. Inputs omitted from `replacements` remain sourced from the existing container. |
 
+#### `IEncryptedBlockDeviceProvider`
+
+Optional descriptor capability for encrypted containers (LUKS, dm-crypt, VeraCrypt, BitLocker, …): exposes the decrypted volume as a random-access block device, decrypting each block as it is read and encrypting it as it is written, so a filesystem inside can be mounted without ever materialising the plaintext.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpenBlockDevice` | `IRandomAccessBlockDevice OpenBlockDevice(Stream image, EncryptedVolumeCredentials credentials, bool writable, bool leaveOpen = true)` | Opens the decrypted view of `image`. |
+
 #### `IFileInternalChunkMover`
 
 Moves chunks within a single file and patches internal offset pointers so the file remains valid. Examples: moving MP4 moov atom before mdat, relocating JPEG EXIF to the front, compacting ID3v2 padding.
@@ -1727,6 +1748,17 @@ Optional descriptor capability for opening the raw-track layer directly. This ke
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OpenRawTrackDevice` | `IRawTrackDevice OpenRawTrackDevice(Stream image, bool writable, bool leaveOpen = true)` |  |
+
+#### `ISectorCipher`
+
+A sector cipher as disk encryption uses one: every sector is transformed on its own, keyed by its sector number, so any sector can be read or rewritten without touching its neighbours.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decrypt` | `void Decrypt(Span<byte> data, long firstSector)` | Decrypts whole sectors in place; `firstSector` numbers the first one. |
+| `Encrypt` | `void Encrypt(Span<byte> data, long firstSector)` | Encrypts whole sectors in place; `firstSector` numbers the first one. |
 
 #### `IStreamFormatOperations`
 
@@ -2202,6 +2234,23 @@ Implements `IEquatable<ScrambleOptions>`.
 | `OnProgress` | `Action<DefragProgressEvent> OnProgress { get; init; }` | Optional progress callback, emitting the same snapshots and read/write-head updates a defragmentation does, so the maintenance block map animates the scattering as it happens. |
 | `Seed` | `int Seed { get; init; }` | Seeds the shuffle. The same seed over the same volume deals the same layout, every run and every machine — which is what makes a scrambled volume usable as a test fixture and as a screenshot. |
 | `StagingMemoryBudgetBytes` | `long StagingMemoryBudgetBytes { get; init; }` | Bytes the pass may hold in memory while a block whose destination is still occupied waits for it to clear. |
+
+#### `SectorCipherBlockDevice`
+
+The plaintext view of an encrypted data area: `Geometry` blocks of `sectorSize` bytes starting at `dataOffset` in the backing stream, decrypted as they are read and encrypted as they are written. Nothing outside the data area (headers, key material) is ever written.
+
+Implements `IDisposable`, `IRandomAccessBlockDevice`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SectorCipherBlockDevice` | `SectorCipherBlockDevice(Stream stream, long dataOffset, int sectorSize, long sectorCount, ISectorCipher cipher, bool writable, bool leaveOpen = true)` |  |
+| `CanWrite` | `bool CanWrite { get; }` |  |
+| `Geometry` | `BlockDeviceGeometry Geometry { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Flush` | `void Flush()` |  |
+| `ReadBlocks` | `int ReadBlocks(long firstBlock, Span<byte> destination)` |  |
+| `Trim` | `void Trim(long firstBlock, long blockCount)` |  |
+| `WriteBlocks` | `void WriteBlocks(long firstBlock, ReadOnlySpan<byte> source)` |  |
 
 #### `SfxTrailer`
 
@@ -4390,7 +4439,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 ### Namespace `FileFormat.Luks`
 
-[`LuksCipher`](#lukscipher) · [`LuksFormatDescriptor`](#luksformatdescriptor) · [`LuksKeySlot`](#lukskeyslot) · [`LuksVolume`](#luksvolume)
+[`LuksCipher`](#lukscipher) · [`LuksFormatDescriptor`](#luksformatdescriptor) · [`LuksKdf`](#lukskdf) · [`LuksKeySlot`](#lukskeyslot) · [`LuksVolume`](#luksvolume)
 
 #### `LuksCipher`
 
@@ -4408,9 +4457,9 @@ Implements `IDisposable`.
 
 #### `LuksFormatDescriptor`
 
-LUKS1/LUKS2 encrypted volume (dm-crypt). Lists the header as `metadata.ini` and the decrypted data segment as `volume.img`; extracting the volume needs the passphrase, which opens a PBKDF2 key slot and is checked against the volume-key digest. Creates LUKS1 volumes (aes-xts-plain64, PBKDF2-SHA256) that cryptsetup opens. Argon2 key slots and ciphers other than AES-XTS/CBC are refused.
+LUKS1/LUKS2 encrypted volume (dm-crypt). Lists the header as `metadata.ini` and the decrypted data segment as `volume.img`; extracting the volume needs the passphrase, which opens a PBKDF2 or Argon2 key slot and is checked against the volume-key digest. With the passphrase the data segment is also a block device, so the filesystem inside mounts read-only or read-write. Creates LUKS1 and LUKS2 volumes (aes-xts-plain64) that cryptsetup opens. Ciphers other than AES-XTS/CBC are refused.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ISyntheticEntryNames`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IEncryptedBlockDeviceProvider`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ISyntheticEntryNames`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4434,6 +4483,23 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`,
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Encrypts the single input (whole 512-byte sectors) into a new LUKS1 volume. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenBlockDevice` | `IRandomAccessBlockDevice OpenBlockDevice(Stream image, EncryptedVolumeCredentials credentials, bool writable, bool leaveOpen = true)` | The decrypted data segment as a block device; the filesystem inside mounts through it. |
+
+#### `LuksKdf`
+
+The key-derivation function protecting a newly written LUKS2 key slot.
+
+Implements `IEquatable<LuksKdf>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LuksKdf` | `LuksKdf(string Kind, int Cost, int MemoryKiB = 0, int Lanes = 0)` | The key-derivation function protecting a newly written LUKS2 key slot. |
+| `Cost` | `int Cost { get; init; }` | PBKDF2 iterations, or the Argon2 time cost. |
+| `Kind` | `string Kind { get; init; }` | `pbkdf2`, `argon2i` or `argon2id`. |
+| `Lanes` | `int Lanes { get; init; }` | Argon2 parallelism; ignored for PBKDF2. |
+| `MemoryKiB` | `int MemoryKiB { get; init; }` | Argon2 memory cost in KiB; ignored for PBKDF2. |
+| `Argon2id` | `static LuksKdf Argon2id(int time = 4, int memoryKiB = 1048576, int lanes = 4)` | Argon2id, cryptsetup's LUKS2 default. |
+| `Pbkdf2` | `static LuksKdf Pbkdf2(int iterations = 100000)` | PBKDF2-SHA256 at `iterations`. |
 
 #### `LuksKeySlot`
 
@@ -4482,11 +4548,14 @@ A LUKS1 or LUKS2 volume header and the operations that need the passphrase: unlo
 | `Uuid` | `string Uuid { get; }` |  |
 | `Version` | `int Version { get; }` |  |
 | `DecryptPayload` | `void DecryptPayload(Stream stream, byte[] volumeKey, Stream output)` | Decrypts the data segment into `output`. |
+| `OpenBlockDevice` | `SectorCipherBlockDevice OpenBlockDevice(Stream stream, byte[] volumeKey, bool writable, bool leaveOpen = true)` | The decrypted data segment as a block device of `PayloadSectorSize`-byte blocks. Writes re-encrypt the touched sectors under `volumeKey`; the header and key slots are never written. |
 | `PayloadLength` | `long PayloadLength(long deviceLength)` |  |
 | `Read` | `static LuksVolume Read(Stream stream)` |  |
+| `TryUnlock` | `byte[] TryUnlock(Stream stream, string passphrase)` | Tries every active key slot; returns the verified volume key, or `null` when none opens. |
 | `Unlock` | `byte[] Unlock(Stream stream, string passphrase)` | Tries every active key slot; returns the verified volume key. |
 | `VerifyKey` | `bool VerifyKey(ReadOnlySpan<byte> volumeKey)` |  |
 | `WriteLuks1` | `static void WriteLuks1(Stream output, ReadOnlySpan<byte> payload, string passphrase, int iterations = 100000, string hash = "sha256", string uuid = null)` | Writes a LUKS1 volume: aes-xts-plain64 with a 512-bit volume key, PBKDF2 over `hash`, one active key slot, 4000 stripes, payload at 2 MiB. |
+| `WriteLuks2` | `static void WriteLuks2(Stream output, ReadOnlySpan<byte> payload, string passphrase, LuksKdf kdf, string label = null, string uuid = null, int digestIterations = 100000)` | Writes a LUKS2 volume as `cryptsetup luksFormat --type luks2` lays one out: two binary headers with their JSON areas (16 KiB each, SHA-256 checksummed), one aes-xts-plain64 key slot with a 512-bit volume key and 4000 AF stripes at 32 KiB, a PBKDF2-SHA256 volume-key digest, and the data segment at 16 MiB with dynamic size and 512-byte sectors. |
 
 ### Namespace `FileFormat.Mdf`
 
@@ -17974,7 +18043,7 @@ Emits a Stacker STACVOL that `StackerReader` round-trips byte-exact. The contain
 
 ### Namespace `FileSystem.Svr4Bfs`
 
-[`Svr4BfsEntry`](#svr4bfsentry) · [`Svr4BfsFormatDescriptor`](#svr4bfsformatdescriptor) · [`Svr4BfsInode`](#svr4bfsinode) · [`Svr4BfsLayout`](#svr4bfslayout) · [`Svr4BfsModifier`](#svr4bfsmodifier) · [`Svr4BfsReader`](#svr4bfsreader) · [`Svr4BfsSuperblock`](#svr4bfssuperblock) · [`Svr4BfsWriter`](#svr4bfswriter)
+[`Svr4BfsEntry`](#svr4bfsentry) · [`Svr4BfsFormatDescriptor`](#svr4bfsformatdescriptor) · [`Svr4BfsInode`](#svr4bfsinode) · [`Svr4BfsLayout`](#svr4bfslayout) · [`Svr4BfsModifier`](#svr4bfsmodifier) · [`Svr4BfsReader`](#svr4bfsreader) · [`Svr4BfsSuperblock`](#svr4bfssuperblock)
 
 #### `Svr4BfsEntry`
 
@@ -18119,25 +18188,6 @@ Implements `IEquatable<Svr4BfsSuperblock>`.
 | `Volume` | `string Volume { get; init; }` | Six-byte volume name, space padded. |
 | `TryParse` | `static Svr4BfsSuperblock TryParse(ReadOnlySpan<byte> block)` | Parses block 0, or returns null when it is not a BFS superblock. |
 | `WriteTo` | `void WriteTo(Span<byte> block)` | Serialises the superblock into a zeroed 512-byte block. |
-
-#### `Svr4BfsWriter`
-
-Builds a fresh SVR4 / UnixWare Boot File System volume in the shape `mkfs.bfs` produces — superblock, inode area, a root directory with `.` and `..` — with the given files laid out contiguously behind the root directory, as the Linux `bfs` driver itself allocates them.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Svr4BfsWriter` | `Svr4BfsWriter()` |  |
-| `MaximumVolumeSize` | `const long MaximumVolumeSize` | Largest volume the 32-bit `s_end` byte offset can describe. |
-| `MinimumInodes` | `const int MinimumInodes` | Fewest inodes a volume gets — the count `mkfs.bfs` gives a small volume. |
-| `SpareInodes` | `const int SpareInodes` | Inode slots and directory slots left free beyond the files written, for later adds. |
-| `FsName` | `string FsName { get; set; }` | Six-character file-system name (`s_fsname`); padded with spaces. |
-| `InodeCount` | `int? InodeCount { get; set; }` | Inode count; null picks enough for the files plus `SpareInodes`. |
-| `Now` | `DateTimeOffset Now { get; set; }` | Timestamp used where an input carries none; defaults to now. |
-| `VolumeLabel` | `string VolumeLabel { get; set; }` | Six-character volume name (`s_volume`); padded with spaces. |
-| `VolumeSize` | `long? VolumeSize { get; set; }` | Volume size in bytes; null picks the used size plus a quarter (at least 64 KiB of free space). |
-| `AddFile` | `void AddFile(string name, byte[] data, ArchiveEntryMetadata metadata = null)` | Queues a root-level file. |
-| `Build` | `static byte[] Build(IEnumerable<ValueTuple<string, byte[]>> files)` | Builds a volume from `files` with default geometry. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the volume to `output` from its current position. |
 
 ### Namespace `FileSystem.SysV`
 
