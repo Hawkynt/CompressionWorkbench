@@ -146,6 +146,7 @@ public class PartImageExternalConformanceTests {
       _ => "mkfs.fat -F 32",
     };
     // Full batch mode avoids GUI initialization on headless runners; errors are cancelled.
+    // Device probes briefly hold the loop's flock; let udev finish before PartImage takes it.
     // The volumes and loop devices live in a native Linux directory; the results are copied out.
     var script = string.Join("; ",
       "set -e",
@@ -157,10 +158,12 @@ public class PartImageExternalConformanceTests {
       $"{sudo} mount $L $w/m",
       $"{sudo} sh -c \"head -c 300000 /dev/urandom > $w/m/RANDOM.BIN; seq 1 5000 > $w/m/NUMBERS.TXT\"",
       $"{sudo} umount $w/m",
+      $"if command -v udevadm >/dev/null 2>&1; then {sudo} udevadm settle --timeout=30; fi",
       $"{sudo} partimage -B 'Error/*=Cancel' -z{z} -o -d save $L $w/img >$w/save.log 2>&1 || {{ echo PartImage save failed; cat $w/save.log; {sudo} tail -n 120 /var/log/partimage/partimage-debug.log; exit 1; }}",
       $"{sudo} losetup -d $L",
       $"truncate -s {size} $w/back.img",
       $"L=$({sudo} losetup -f --show $w/back.img)",
+      $"if command -v udevadm >/dev/null 2>&1; then {sudo} udevadm settle --timeout=30; fi",
       $"{sudo} partimage -B 'Error/*=Cancel' restore $L $w/img.000 >$w/restore.log 2>&1 || {{ echo PartImage restore failed; cat $w/restore.log; {sudo} tail -n 120 /var/log/partimage/partimage-debug.log; exit 1; }}",
       $"{sudo} losetup -d $L",
       $"{sudo} cp $w/img.000 $w/back.img {FsInteropToolbox.WinToWsl(this._tmp)}/",
