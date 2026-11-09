@@ -504,15 +504,16 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Pzx.PzxExternalConformanceTests" \
             --logger "trx;LogFileName=pzx-oracle-tests.trx"
 
-      # Hard gate, both directions: cryptsetup opens the LUKS1 volumes we write (its device-mapper
-      # view is our plaintext), and we decrypt what cryptsetup formats and writes through its own
-      # mapping — LUKS1 XTS/CBC-ESSIV, LUKS2 with PBKDF2, Argon2i and Argon2id key slots.
+      # Hard gate, both directions: cryptsetup opens the LUKS1/LUKS2 volumes we write (its
+      # device-mapper view is our plaintext), and we decrypt what cryptsetup formats and writes
+      # through its own mapping — LUKS1 XTS/CBC-ESSIV, LUKS2 with PBKDF2, Argon2i and Argon2id key
+      # slots. The kernel's FAT driver checks writes through our encrypted mount.
       - name: LUKS oracle
         if: matrix.os == 'ubuntu-latest'
         env:
           CWB_REQUIRE_CRYPTSETUP: "1"
         run: |
-          sudo apt-get install -y cryptsetup-bin
+          sudo apt-get install -y cryptsetup-bin dosfstools
           sudo modprobe dm-crypt || true
           dotnet test Compression.Tests --configuration Release --no-build \
             --filter "FullyQualifiedName~Compression.Tests.Luks.LuksExternalConformanceTests" \
