@@ -137,7 +137,7 @@ read-only or read-write; headers are never written. Mount parameters:
 | `Pim` | VeraCrypt PIM; restricts the search to VeraCrypt derivations |
 | `Prf` | try only this PRF |
 | `Cipher` | try only chains whose name contains this |
-| `Hidden` | open the hidden volume |
+| `Hidden` | `true`: only the hidden header, `false`: only the standard one; unset tries the standard header, then the hidden one, as VeraCrypt does |
 | `Keyfiles` | keyfile paths separated by `\|` or newlines |
 | `ProtectHidden`, `ProtectHiddenPim`, `ProtectHiddenKeyfiles` | protect the hidden volume while the outer one is mounted (see below) |
 

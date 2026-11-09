@@ -76,7 +76,7 @@ public sealed class VeraCryptFormatDescriptor : IFormatDescriptor, IArchiveForma
       Pim = get(PimName) is { } pim ? int.Parse(pim, NumberStyles.Integer, CultureInfo.InvariantCulture) : 0,
       Prf = get(PrfName),
       Cipher = get(CipherName),
-      Header = IsTrue(get(HiddenName)) ? TcHeaderKind.Hidden : TcHeaderKind.Standard,
+      Header = get(HiddenName) is { } hidden ? IsTrue(hidden) ? TcHeaderKind.Hidden : TcHeaderKind.Standard : null,
       Keyfiles = keyfiles,
     };
   }
@@ -126,7 +126,7 @@ public sealed class VeraCryptFormatDescriptor : IFormatDescriptor, IArchiveForma
       throw new NotSupportedException("A writable VeraCrypt/TrueCrypt volume needs a writable container stream.");
     var options = UnlockOptions(credentials.Get);
     var v = Unlock(image, credentials.Password, options);
-    if (credentials.Get(ProtectHiddenName) is not { } hiddenPassword || options.Header == TcHeaderKind.Hidden)
+    if (credentials.Get(ProtectHiddenName) is not { } hiddenPassword || v.Kind == TcHeaderKind.Hidden)
       return v.OpenBlockDevice(image, writable, leaveOpen);
 
     // Hidden-volume protection: the hidden header tells where the hidden data starts.

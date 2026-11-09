@@ -72,7 +72,14 @@ public sealed class HiddenVolumeTests {
   public void GivenTheOuterPasswordAlone_WhenOpeningTheHiddenHeader_ThenNothingOpens() {
     using var s = new MemoryStream(CreateWithHidden(out _));
     Assert.That(TcVolume.Open(s, Outer, new() { Pim = 1, Header = TcHeaderKind.Hidden }), Is.Null);
-    Assert.That(TcVolume.Open(s, Hidden, new() { Pim = 1 }), Is.Null);
+    Assert.That(TcVolume.Open(s, Hidden, new() { Pim = 1, Header = TcHeaderKind.Standard }), Is.Null);
+  }
+
+  [Test]
+  public void GivenOnlyThePassword_WhenMounting_ThenTheHiddenVolumeIsFoundAsVeraCryptFindsIt() {
+    var container = new MemoryStream(CreateWithHidden(out _));
+    using var inner = MountNamespaceResolver.Open("VeraCrypt", container, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true), Hidden, Fast);
+    Assert.That(ReadFile(inner, "SECRET.TXT"), Is.EqualTo(HiddenContent));
   }
 
   [Test]

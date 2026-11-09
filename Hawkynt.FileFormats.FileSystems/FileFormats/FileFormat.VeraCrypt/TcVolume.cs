@@ -24,8 +24,8 @@ public sealed record TcUnlockOptions {
   public string? Prf { get; init; }
   /// <summary>Only try chains whose cryptsetup name contains this (<c>aes</c>, <c>serpent-twofish-aes</c>, …); null tries all.</summary>
   public string? Cipher { get; init; }
-  /// <summary>Which header to open.</summary>
-  public TcHeaderKind Header { get; init; } = TcHeaderKind.Standard;
+  /// <summary>Which header to open; <see langword="null"/> tries the standard header, then the hidden one, as VeraCrypt does with a single password.</summary>
+  public TcHeaderKind? Header { get; init; }
 }
 
 /// <summary>A decrypted TrueCrypt/VeraCrypt volume header and where its data lives.</summary>
@@ -103,16 +103,19 @@ public sealed class TcVolume {
     var o = options ?? new();
     var pw = Encoding.UTF8.GetBytes(password);
     var length = stream.Length;
-    long[] offsets = o.Header == TcHeaderKind.Standard
-      ? [0, length - BackupHeaderFromEnd]
-      : [HiddenHeaderOffset, length - OldHiddenFromEnd, length - HiddenBackupFromEnd];
+    TcHeaderKind[] kinds = o.Header is { } only ? [only] : [TcHeaderKind.Standard, TcHeaderKind.Hidden];
     var header = new byte[HeaderSize];
     try {
-      foreach (var offset in offsets.Where(x => x >= 0 && x + HeaderSize <= length).Distinct()) {
-        stream.Position = offset;
-        stream.ReadExactly(header);
-        if (Decrypt(header, pw, o) is not { } found) continue;
-        return FromArea(found.Kdf, found.Chain, found.Area, offset, o.Header, length);
+      foreach (var kind in kinds) {
+        long[] offsets = kind == TcHeaderKind.Standard
+          ? [0, length - BackupHeaderFromEnd]
+          : [HiddenHeaderOffset, length - OldHiddenFromEnd, length - HiddenBackupFromEnd];
+        foreach (var offset in offsets.Where(x => x >= 0 && x + HeaderSize <= length).Distinct()) {
+          stream.Position = offset;
+          stream.ReadExactly(header);
+          if (Decrypt(header, pw, o) is not { } found) continue;
+          return FromArea(found.Kdf, found.Chain, found.Area, offset, kind, length);
+        }
       }
       return null;
     } finally {
