@@ -348,6 +348,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         env:
           CWB_REQUIRE_PARTIMAGE: "1"
+          TERM: xterm
         run: |
           sudo apt-get install -y partimage dosfstools
           dotnet test Compression.Tests --configuration Release --no-build \
