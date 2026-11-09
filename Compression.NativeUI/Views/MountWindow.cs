@@ -39,6 +39,7 @@ internal sealed class MountWindow : Form {
   private FilesystemDriverProfile? _driverProfile;
   private IReadOnlyList<string> _mountLayers = [];
   private string? _formatId;
+  private string? _password;
   private bool _sourceCanWrite;
   private IMountSession? _mountSession;
   private bool _busy;
@@ -141,7 +142,10 @@ internal sealed class MountWindow : Form {
       }
 
       using var probeSource = OpenProbeSource(path, out var sourceCanWrite);
-      var probe = MountNamespaceResolver.Probe(formatId, probeSource);
+      if (this.ProbeUnlocking(path, formatId, probeSource) is not { } probe) {
+        this.ShowProbeFailure($"{Path.GetFileName(path)} is encrypted; nothing was probed without its passphrase.");
+        return;
+      }
       this._formatId = formatId;
       this._driverProfile = probe.Profile;
       this._mountLayers = probe.Layers;
@@ -150,6 +154,27 @@ internal sealed class MountWindow : Form {
       this.RefreshPlan();
     } catch (Exception ex) {
       this.ShowProbeFailure($"Probe failed: {ex.GetType().Name}: {ex.Message}");
+    }
+  }
+
+  /// <summary>
+  /// Probes <paramref name="source"/>, asking for the passphrase when it turns out to be an
+  /// encrypted volume (again after a wrong one); <see langword="null"/> when the user cancels.
+  /// The accepted passphrase is kept for the mount itself.
+  /// </summary>
+  private MountNamespaceProbe? ProbeUnlocking(string path, string formatId, Stream source) {
+    this._password = null;
+    for (var attempt = 0; ; ++attempt) {
+      try {
+        return MountNamespaceResolver.Probe(formatId, source, this._password);
+      } catch (ArchivePasswordException ex) when (attempt < 5) {
+        var dialog = new PasswordDialog(Path.GetFileName(path), previousWasWrong: ex.PasswordWasSupplied);
+        if (dialog.ShowDialog() != DialogResult.OK) {
+          this._password = null;
+          return null;
+        }
+        this._password = dialog.Password;
+      }
     }
   }
 
@@ -234,7 +259,7 @@ internal sealed class MountWindow : Form {
 
     try {
       this.SetBusy(true, $"Mounting at {target}...");
-      this._mountSession = await this._mountLauncher.MountAsync(this.ImagePath, formatId, plan, target);
+      this._mountSession = await this._mountLauncher.MountAsync(this.ImagePath, formatId, plan, target, this._password);
       this._statusLabel.Text = $"Mounted at {this._mountSession.Target} via {this._mountSession.BackendId}.";
     } catch (Exception ex) {
       this._statusLabel.Text = $"Mount failed: {ex.GetType().Name}: {ex.Message}";

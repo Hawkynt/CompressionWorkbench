@@ -13,6 +13,7 @@ internal interface IMountLauncher {
     string formatId,
     MountPlan plan,
     string target,
+    string? password = null,
     CancellationToken cancellationToken = default
   );
 }
