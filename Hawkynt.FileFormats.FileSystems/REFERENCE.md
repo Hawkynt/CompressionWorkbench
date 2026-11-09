@@ -3130,6 +3130,304 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(BinCueEntry entry)` | Extracts the raw data for a file entry. |
 
+### Namespace `FileFormat.BitLocker`
+
+[`BitLockerBlockDevice`](#bitlockerblockdevice) · [`BitLockerCipherMode`](#bitlockerciphermode) · [`BitLockerCreateOptions`](#bitlockercreateoptions) · [`BitLockerCreateResult`](#bitlockercreateresult) · [`BitLockerCredentials`](#bitlockercredentials) · [`BitLockerEncryptionType`](#bitlockerencryptiontype) · [`BitLockerFormatDescriptor`](#bitlockerformatdescriptor) · [`BitLockerKeyProtector`](#bitlockerkeyprotector) · [`BitLockerKeys`](#bitlockerkeys) · [`BitLockerLayout`](#bitlockerlayout) · [`BitLockerProtection`](#bitlockerprotection) · [`BitLockerSectorCipher`](#bitlockersectorcipher) · [`BitLockerSegment`](#bitlockersegment) · [`BitLockerVolume`](#bitlockervolume) · [`BitLockerWrappedKey`](#bitlockerwrappedkey) · [`BitLockerWriter`](#bitlockerwriter)
+
+#### `BitLockerBlockDevice`
+
+The plaintext of a BitLocker volume as a block device, assembled from `BitLockerLayout`'s segments: zero segments read as zeros and swallow writes (as dm-zero does), crypt segments decrypt on read and encrypt on write. Blocks are the volume's sector size; nothing outside the crypt segments is ever written.
+
+Implements `IDisposable`, `IRandomAccessBlockDevice`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitLockerBlockDevice` | `BitLockerBlockDevice(Stream stream, BitLockerVolume volume, ReadOnlySpan<byte> fvek, bool writable, bool leaveOpen = true)` |  |
+| `CanWrite` | `bool CanWrite { get; }` |  |
+| `Geometry` | `BlockDeviceGeometry Geometry { get; }` |  |
+| `Segments` | `IReadOnlyList<BitLockerSegment> Segments { get; }` | The segments this view is built from (512-byte units). |
+| `CheckActivatable` | `static void CheckActivatable(BitLockerVolume volume)` | cryptsetup activates only normal volumes in the normal state; encrypt-on-write volumes and volumes mid-conversion are refused with its reasons. |
+| `Dispose` | `void Dispose()` |  |
+| `Flush` | `void Flush()` |  |
+| `ReadBlocks` | `int ReadBlocks(long firstBlock, Span<byte> destination)` |  |
+| `Trim` | `void Trim(long firstBlock, long blockCount)` |  |
+| `WriteBlocks` | `void WriteBlocks(long firstBlock, ReadOnlySpan<byte> source)` |  |
+
+#### `BitLockerCipherMode`
+
+The sector transform a BitLocker volume uses.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `CbcElephant` | `0` | AES-CBC with the Elephant diffuser (Windows Vista/7). |
+| `CbcEboiv` | `1` | AES-CBC, IV = AES(K, byte offset) (Windows 8 and later "without diffuser"). |
+| `XtsPlain64` | `2` | AES-XTS, tweak = sector number (Windows 10 1511 and later). |
+
+#### `BitLockerCreateOptions`
+
+How to create a BitLocker volume.
+
+Implements `IEquatable<BitLockerCreateOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitLockerCreateOptions` | `BitLockerCreateOptions()` |  |
+| `CreationTime` | `DateTime? CreationTime { get; init; }` |  |
+| `Description` | `string Description { get; init; }` |  |
+| `EncryptionMethod` | `ushort EncryptionMethod { get; init; }` | Encryption method code: 0x8004 AES-XTS-128 (default), 0x8005 AES-XTS-256, 0x8002/0x8003 AES-CBC-128/256, 0x8000/0x8001 AES-CBC-128/256 + Elephant. |
+| `Password` | `string Password { get; init; }` | User password protector; `null` for a volume opened by its recovery password only. |
+| `RecoveryPassword` | `string RecoveryPassword { get; init; }` | Recovery password protector (48 digits); `null` to generate one. |
+| `VolumeGuid` | `Guid? VolumeGuid { get; init; }` |  |
+
+#### `BitLockerCreateResult`
+
+What was created: the identifiers and the recovery password to keep.
+
+Implements `IEquatable<BitLockerCreateResult>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitLockerCreateResult` | `BitLockerCreateResult(Guid VolumeGuid, string RecoveryPassword, Guid? PasswordProtectorId, Guid RecoveryProtectorId, long VolumeSize, IReadOnlyList<long> MetadataOffsets, long VolumeHeaderOffset, long VolumeHeaderSize)` | What was created: the identifiers and the recovery password to keep. |
+| `MetadataOffsets` | `IReadOnlyList<long> MetadataOffsets { get; init; }` |  |
+| `PasswordProtectorId` | `Guid? PasswordProtectorId { get; init; }` |  |
+| `RecoveryPassword` | `string RecoveryPassword { get; init; }` |  |
+| `RecoveryProtectorId` | `Guid RecoveryProtectorId { get; init; }` |  |
+| `VolumeGuid` | `Guid VolumeGuid { get; init; }` |  |
+| `VolumeHeaderOffset` | `long VolumeHeaderOffset { get; init; }` |  |
+| `VolumeHeaderSize` | `long VolumeHeaderSize { get; init; }` |  |
+| `VolumeSize` | `long VolumeSize { get; init; }` |  |
+
+#### `BitLockerCredentials`
+
+What may open a BitLocker volume: a user password, a recovery password, a startup key (.BEK contents).
+
+Implements `IEquatable<BitLockerCredentials>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitLockerCredentials` | `BitLockerCredentials(string Password, string RecoveryPassword = null, byte[] StartupKey = null)` | What may open a BitLocker volume: a user password, a recovery password, a startup key (.BEK contents). |
+| `IsEmpty` | `bool IsEmpty { get; }` | Whether nothing at all was supplied. |
+| `Password` | `string Password { get; init; }` |  |
+| `RecoveryPassword` | `string RecoveryPassword { get; init; }` |  |
+| `StartupKey` | `byte[] StartupKey { get; init; }` |  |
+
+#### `BitLockerEncryptionType`
+
+The volume's encryption type, from the GUID in its boot sector.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Normal` | `0` |  |
+| `EncryptOnWrite` | `1` |  |
+| `Unknown` | `2` |  |
+
+#### `BitLockerFormatDescriptor`
+
+BitLocker (BDE) volume, including BitLocker To Go. Lists the FVE metadata as `metadata.ini` and the decrypted volume as `volume.img` — exactly cryptsetup's device-mapper view, metadata areas reading as zeros. A user password, a 48-digit recovery password, a startup key (.BEK) or a clear key (suspended protection) opens it; AES-XTS, AES-CBC and AES-CBC with the Elephant diffuser, 512- and 4096-byte sectors. With the credentials the filesystem inside mounts read-only or read-write. Creates AES-XTS volumes protected by a password and a recovery password that cryptsetup opens.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IEncryptedBlockDeviceProvider`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ISyntheticEntryNames`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitLockerFormatDescriptor` | `BitLockerFormatDescriptor()` |  |
+| `DescriptionName` | `const string DescriptionName` |  |
+| `MetadataName` | `const string MetadataName` |  |
+| `MethodName` | `const string MethodName` |  |
+| `RecoveryPasswordName` | `const string RecoveryPasswordName` | Mount/extract parameter: a 48-digit recovery password (alternative to the password). |
+| `StartupKeyName` | `const string StartupKeyName` | Mount/extract parameter: path of a startup-key (.BEK) file. |
+| `VolumeName` | `const string VolumeName` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | `-FVE-FS-` as OEM name; for To Go, `MSWIN4.1` together with one of the two BitLocker GUIDs at 424 — the OEM name alone is any FAT volume's. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Encrypts the single input volume image (whole 512-byte sectors) into a new BitLocker volume. |
+| `Credentials` | `static BitLockerCredentials Credentials(string password, Func<string, string> get)` | Credentials from a password and the mount parameters (`RecoveryPassword`, `StartupKey`). |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenBlockDevice` | `IRandomAccessBlockDevice OpenBlockDevice(Stream image, EncryptedVolumeCredentials credentials, bool writable, bool leaveOpen = true)` | The decrypted volume as a block device; the filesystem inside mounts through it. |
+| `PlaintextLength` | `static long PlaintextLength(BitLockerVolume v, long deviceLength)` | Length of the decrypted view: the device, in whole sectors. |
+| `Unlock` | `static byte[] Unlock(BitLockerVolume volume, BitLockerCredentials credentials)` | The FVEK, or `ArchivePasswordException` when nothing given (or no clear key) opens a protector. |
+
+#### `BitLockerKeyProtector`
+
+One key protector: a VMK entry with what it is protected by, the salt its key derivation uses, the wrapped VMK and, for a clear-key (suspended) protector, the key that unwraps it.
+
+Implements `IEquatable<BitLockerKeyProtector>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitLockerKeyProtector` | `BitLockerKeyProtector(Guid Id, BitLockerProtection Protection, ushort RawProtection, string Name, byte[] Salt, BitLockerWrappedKey WrappedVmk, byte[] ClearKey)` | One key protector: a VMK entry with what it is protected by, the salt its key derivation uses, the wrapped VMK and, for a clear-key (suspended) protector, the key that unwraps it. |
+| `ClearKey` | `byte[] ClearKey { get; init; }` |  |
+| `Id` | `Guid Id { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Protection` | `BitLockerProtection Protection { get; init; }` |  |
+| `RawProtection` | `ushort RawProtection { get; init; }` |  |
+| `Salt` | `byte[] Salt { get; init; }` |  |
+| `WrappedVmk` | `BitLockerWrappedKey WrappedVmk { get; init; }` |  |
+
+#### `BitLockerKeys`
+
+BitLocker key handling: the SHA-256 key stretch for user and recovery passwords, the 48-digit recovery password, startup-key (.BEK) files and the AES-CCM wrapped key datums that carry the VMK, the FVEK and the metadata validation hash.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BekHeaderLength` | `const int BekHeaderLength` |  |
+| `RecoveryPasswordLength` | `const int RecoveryPasswordLength` |  |
+| `StretchIterations` | `const int StretchIterations` | Iterations of the key stretch (fixed; nothing on disk records it). |
+| `ValidationDatumMethod` | `const uint ValidationDatumMethod` | Key-datum "encryption method" (hash type) of the validation hash. |
+| `VmkDatumMethod` | `const uint VmkDatumMethod` | Key-datum "encryption method" of a VMK (as Windows writes it; nothing checks it). |
+| `FormatRecoveryPassword` | `static string FormatRecoveryPassword(ReadOnlySpan<byte> key)` | Formats a 16-byte recovery key as the 48-digit recovery password. |
+| `NewRecoveryPassword` | `static string NewRecoveryPassword()` | A fresh random recovery password. |
+| `ParseRecoveryPassword` | `static byte[] ParseRecoveryPassword(string text)` | Parses a recovery password — 8 groups of 6 digits joined by '-', each group divisible by 11 with a quotient below 65536 — into its 16-byte key (the quotients, little-endian). A trailing newline is tolerated, as cryptsetup tolerates one from a key file. |
+| `StartupKey` | `static byte[] StartupKey(ReadOnlySpan<byte> bek, Guid protectorId, Guid volumeGuid)` | The external key a startup-key (.BEK) file carries for the protector `protectorId`: `null` when the file belongs to another protector. |
+| `StretchPassword` | `static byte[] StretchPassword(string password, ReadOnlySpan<byte> salt)` | Stretched key of a user password: UTF-16LE → SHA-256 → SHA-256 → stretch. |
+| `StretchRecoveryKey` | `static byte[] StretchRecoveryKey(ReadOnlySpan<byte> recoveryKey, ReadOnlySpan<byte> salt)` | Stretched key of a recovery password's 16-byte key: SHA-256 → stretch. |
+| `UnwrapRaw` | `static byte[] UnwrapRaw(BitLockerWrappedKey wrapped, ReadOnlySpan<byte> key)` | Decrypts and authenticates an AES-CCM datum; `null` when the tag fails. |
+| `Unwrap` | `static byte[] Unwrap(BitLockerWrappedKey wrapped, ReadOnlySpan<byte> key)` | Unwraps an AES-CCM key datum (AES-256 key, 12-byte nonce, 16-byte tag, no associated data) and returns the key bytes after its 12-byte header, or `null` when the tag does not verify or the datum's own size field disagrees with its length. |
+| `Wrap` | `static BitLockerWrappedKey Wrap(ReadOnlySpan<byte> payload, uint method, ReadOnlySpan<byte> key, ReadOnlySpan<byte> nonce)` | Wraps a key datum (12-byte header carrying `method`, then the key) with AES-CCM. |
+
+#### `BitLockerLayout`
+
+The decrypted view exactly as cryptsetup's `BITLK_activate_by_volume_key` builds its device-mapper table: zero segments over the three 64 KiB FVE metadata areas and over the relocated volume header, the volume header itself mapped back to sector 0, and crypt segments filling every gap with IVs equal to their own position.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MaxSegments` | `const int MaxSegments` |  |
+| `Unit` | `const int Unit` |  |
+| `Segments` | `static IReadOnlyList<BitLockerSegment> Segments(BitLockerVolume volume, long deviceLength)` | Segments of `volume` over a device of `deviceLength` bytes, sorted by offset. |
+
+#### `BitLockerProtection`
+
+What protects a volume master key (the FVE VMK entry's protection field).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `ClearKey` | `0` |  |
+| `Tpm` | `1` |  |
+| `StartupKey` | `2` |  |
+| `TpmAndPin` | `3` |  |
+| `RecoveryPassword` | `4` |  |
+| `Password` | `5` |  |
+| `SmartCard` | `6` |  |
+| `Unknown` | `7` |  |
+
+#### `BitLockerSectorCipher`
+
+BitLocker's sector transforms, each sector keyed by its IV sector number `s` (in units of the sector size, as dm-crypt counts with `iv_large_sectors`): AES-XTS: tweak = little-endian `s` (IEEE 1619, plain64).AES-CBC: IV = AES(K, e(s)), e(s) = byte offset `s·sectorSize` little-endian in 16 bytes.AES-CBC + Elephant: the same CBC layer over the diffusers and the sector key of Ferguson's "AES-CBC + Elephant diffuser" (2006), sections 4.2–4.4. Block work runs through cached ECB/CBC transforms over whole buffers, never one call per block.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitLockerSectorCipher` | `BitLockerSectorCipher(BitLockerCipherMode mode, ReadOnlySpan<byte> key, int sectorSize)` |  |
+| `Mode` | `BitLockerCipherMode Mode { get; }` |  |
+| `SectorSize` | `int SectorSize { get; }` |  |
+| `Decrypt` | `void Decrypt(Span<byte> data, long firstSector)` | Decrypts whole sectors in place; `firstSector` is the IV sector number of the first. |
+| `Dispose` | `void Dispose()` |  |
+| `Encrypt` | `void Encrypt(Span<byte> data, long firstSector)` | Encrypts whole sectors in place; `firstSector` is the IV sector number of the first. |
+
+#### `BitLockerSegment`
+
+One piece of the decrypted view, in 512-byte units: either zeros (FVE metadata areas and the relocated volume header's home) or ciphertext read from `IvOffset` on the device, whose IVs count from `IvOffset` too.
+
+Implements `IEquatable<BitLockerSegment>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitLockerSegment` | `BitLockerSegment(long Offset, long Length, long IvOffset, bool IsZero)` | One piece of the decrypted view, in 512-byte units: either zeros (FVE metadata areas and the relocated volume header's home) or ciphertext read from `IvOffset` on the device, whose IVs count from `IvOffset` too. |
+| `End` | `long End { get; }` |  |
+| `IsZero` | `bool IsZero { get; init; }` |  |
+| `IvOffset` | `long IvOffset { get; init; }` |  |
+| `Length` | `long Length { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+
+#### `BitLockerVolume`
+
+A BitLocker (BDE/BITLK) volume as cryptsetup reads it: the boot sector (`-FVE-FS-`, or `MSWIN4.1` for BitLocker To Go), the first FVE metadata copy whose CRC-32 holds, its entries (key protectors, the wrapped FVEK, the relocated volume header, the description) and the validation datum that authenticates the metadata once a VMK is open.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockHeaderLength` | `const int BlockHeaderLength` |  |
+| `EncryptOnWriteGuid` | `static readonly byte[] EncryptOnWriteGuid` | Boot-sector GUID of an encrypt-on-write ("used space only", still converting) volume. |
+| `EntryHeaderLength` | `const int EntryHeaderLength` |  |
+| `HeaderGuidOffset` | `const int HeaderGuidOffset` |  |
+| `KeyDatumHeaderLength` | `const int KeyDatumHeaderLength` |  |
+| `MetadataAreaSize` | `const int MetadataAreaSize` |  |
+| `MetadataHeaderLength` | `const int MetadataHeaderLength` |  |
+| `NonceLength` | `const int NonceLength` |  |
+| `NormalGuid` | `static readonly byte[] NormalGuid` | Boot-sector GUID of a fully encrypted (normal) volume. |
+| `NormalState` | `const ushort NormalState` |  |
+| `SaltLength` | `const int SaltLength` |  |
+| `Signature` | `const string Signature` |  |
+| `TagLength` | `const int TagLength` |  |
+| `ToGoHeaderGuidOffset` | `const int ToGoHeaderGuidOffset` |  |
+| `ToGoSignature` | `const string ToGoSignature` |  |
+| `ValidationDataLength` | `const int ValidationDataLength` |  |
+| `VmkHeaderLength` | `const int VmkHeaderLength` |  |
+| `CipherModeName` | `string CipherModeName { get; }` | cryptsetup's cipher-mode name. |
+| `CipherMode` | `BitLockerCipherMode CipherMode { get; }` |  |
+| `CreationTime` | `DateTime CreationTime { get; }` |  |
+| `CurrentState` | `ushort CurrentState { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `EncryptionMethod` | `ushort EncryptionMethod { get; }` |  |
+| `EncryptionType` | `BitLockerEncryptionType EncryptionType { get; }` |  |
+| `HasClearKey` | `bool HasClearKey { get; }` | Whether a protector opens without credentials (a clear key: BitLocker is suspended). |
+| `IsToGo` | `bool IsToGo { get; }` |  |
+| `KeyBits` | `int KeyBits { get; }` | Key size in bits as cryptsetup reports it (XTS and Elephant count both keys). |
+| `MetadataHash` | `byte[] MetadataHash { get; }` | SHA-256 of the FVE metadata block the validation datum authenticates. |
+| `MetadataOffsets` | `IReadOnlyList<long> MetadataOffsets { get; }` |  |
+| `MetadataVersion` | `int MetadataVersion { get; }` |  |
+| `NextState` | `ushort NextState { get; }` |  |
+| `Protectors` | `IReadOnlyList<BitLockerKeyProtector> Protectors { get; }` |  |
+| `SectorSize` | `int SectorSize { get; }` |  |
+| `StateIsNormal` | `bool StateIsNormal { get; }` | Whether both state fields say "normal" (0x0004); cryptsetup activates nothing else. |
+| `ValidCopy` | `int ValidCopy { get; }` |  |
+| `Validation` | `BitLockerWrappedKey Validation { get; }` |  |
+| `VolumeGuid` | `Guid VolumeGuid { get; }` |  |
+| `VolumeHeaderOffset` | `long VolumeHeaderOffset { get; }` |  |
+| `VolumeHeaderSize` | `long VolumeHeaderSize { get; }` |  |
+| `VolumeSize` | `ulong VolumeSize { get; }` |  |
+| `WrappedFvek` | `BitLockerWrappedKey WrappedFvek { get; }` |  |
+| `IsBitLocker` | `static bool IsBitLocker(ReadOnlySpan<byte> bootSector)` | Whether `bootSector` (at least 440 bytes) starts a BitLocker volume: the `-FVE-FS-` signature, or `MSWIN4.1` with one of the two BitLocker GUIDs at 424. A To Go volume's boot sector is a valid FAT32 one, so only the GUID tells it from FAT. |
+| `Method` | `static ValueTuple<BitLockerCipherMode, int>? Method(ushort code)` | Encryption method code → sector transform and key bits (cryptsetup's table). |
+| `ModeName` | `static string ModeName(BitLockerCipherMode mode)` |  |
+| `ProtectionOf` | `static BitLockerProtection ProtectionOf(ushort raw)` |  |
+| `Read` | `static BitLockerVolume Read(Stream stream)` | Reads the boot sector and the first valid FVE metadata copy. |
+| `TryUnlock` | `byte[] TryUnlock(BitLockerCredentials credentials, out BitLockerKeyProtector usedProtector)` | Opens a VMK with `credentials`, trying the protectors in metadata order, authenticates the metadata with it and unwraps the full-volume encryption key. Returns the FVEK as dm-crypt takes it (for 128-bit Elephant the CBC and diffuser halves are packed together), or `null` when nothing opens. |
+
+#### `BitLockerWrappedKey`
+
+An AES-CCM wrapped key datum: 12-byte nonce, 16-byte tag, ciphertext.
+
+Implements `IEquatable<BitLockerWrappedKey>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitLockerWrappedKey` | `BitLockerWrappedKey(byte[] Nonce, byte[] Tag, byte[] Ciphertext)` | An AES-CCM wrapped key datum: 12-byte nonce, 16-byte tag, ciphertext. |
+| `Ciphertext` | `byte[] Ciphertext { get; init; }` |  |
+| `Nonce` | `byte[] Nonce { get; init; }` |  |
+| `Tag` | `byte[] Tag { get; init; }` |  |
+
+#### `BitLockerWriter`
+
+Writes a BitLocker volume around a plaintext volume image so that cryptsetup's decrypted view is that image followed by zeros. The image's first 8 KiB (its boot region) move, encrypted, to a volume-header backup; the -FVE-FS- boot sector takes their place. Everything BitLocker adds lives past the end of the image — three 64 KiB FVE metadata copies with the header backup after the first, then 64 KiB of encrypted zeros (cryptsetup's layout must end in a crypt segment) — so no sector the inner filesystem can use is a metadata sector that would read as zeros and swallow writes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Sector` | `const int Sector` |  |
+| `VolumeHeaderBytes` | `const int VolumeHeaderBytes` |  |
+| `Write` | `static BitLockerCreateResult Write(Stream output, ReadOnlySpan<byte> payload, BitLockerCreateOptions options)` | Encrypts `payload` (whole 512-byte sectors, more than 8 KiB) into a new volume on `output`. |
+
 ### Namespace `FileFormat.CdXa`
 
 [`CdXaFile`](#cdxafile) · [`CdXaFile.Layout`](#cdxafilelayout) · [`CdXaFile.RecordEnds`](#cdxafilerecordends) · [`CdXaFormatDescriptor`](#cdxaformatdescriptor)

@@ -27,6 +27,8 @@
           Pack="true" PackagePath="notices/Lfs/" />
     <None Update="FileFormats\FileFormat.PartImage\THIRD-PARTY-NOTICE.imagebackup.txt"
           Pack="true" PackagePath="notices/PartImage/" />
+    <None Update="FileFormats\FileFormat.BitLocker\THIRD-PARTY-NOTICE.cryptsetup.txt"
+          Pack="true" PackagePath="notices/BitLocker/" />
   </ItemGroup>
 
   <ItemGroup>

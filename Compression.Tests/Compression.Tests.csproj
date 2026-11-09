@@ -14,6 +14,10 @@
     </EmbeddedResource>
     <ProjectReference Include="..\FileFormats\FileFormat.Ico\FileFormat.Ico.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ani\FileFormat.Ani.csproj" />
+    <!-- Key datums and sectors Windows wrote, from cryptsetup's BITLK test images; see BitLocker/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="BitLocker/ReferenceVectors/windows-bitlocker.txt">
+      <LogicalName>BitLocker.windows-bitlocker.txt</LogicalName>
+    </EmbeddedResource>
     <!-- ARC crawl fixtures; see IaArc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="IaArc/ReferenceVectors/*.arc;IaArc/ReferenceVectors/*.arc.gz;IaArc/ReferenceVectors/warcio-listing.txt">
       <LogicalName>IaArcVectors.%(Filename)%(Extension)</LogicalName>
