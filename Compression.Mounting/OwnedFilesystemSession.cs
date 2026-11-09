@@ -6,6 +6,8 @@ namespace Compression.Mounting;
 /// Keeps lower-layer streams/devices alive for exactly as long as the projected
 /// namespace. Underlying filesystem implementations are always opened with
 /// LeaveOpen=true; this wrapper centralises ownership across nested containers.
+/// Owners are listed innermost first (the stream the filesystem reads, then the device below
+/// it) and released in that order, so a layer's final flush still reaches the layer beneath.
 /// </summary>
 internal sealed class OwnedFilesystemSession(
     IFilesystemSession inner,
@@ -47,9 +49,9 @@ internal sealed class OwnedFilesystemSession(
       first = ex;
     }
 
-    for (var i = this._owners.Length - 1; i >= 0; --i) {
+    foreach (var owner in this._owners) {
       try {
-        this._owners[i].Dispose();
+        owner.Dispose();
       } catch (Exception ex) when (first is not null) {
         // Preserve the first disposal failure while still releasing every layer.
         _ = ex;
