@@ -231,6 +231,36 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.PartImage.PartImageExternalConformanceTests" \
             --logger "trx;LogFileName=partimage-oracle-tests.trx"
 
+      # Hard gate: the CloneCD image sets we write from an ISO have PowerISO's raw sectors byte for byte,
+      # Aaru (pinned release) reads, verifies and extracts them, ccd2iso returns the ISO, and our
+      # subchannel equals the .sub of a real CloneCD dump (archive.org, hash-pinned).
+      - name: CloneCD writer oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_CLONECD: "1"
+          TERM: xterm
+        run: |
+          sudo apt-get install -y genisoimage ccd2iso p7zip-full
+          c="$RUNNER_TEMP/ccd"; mkdir -p "$c/aaru" "$c/dump"
+          curl -fsSL -o "$c/poweriso.tgz" https://www.poweriso.com/poweriso-1.3.tar.gz
+          curl -fsSL -o "$c/aaru.tar.xz" https://github.com/aaru-dps/Aaru/releases/download/v5.4.2/aaru-5.4.2_linux_amd64.tar.xz
+          curl -fsSL -o "$c/ff.7z" "https://archive.org/download/FightingForceMar121997prototype/Fighting%20Force%20%28Mar%2012%2C%201997%20prototype%29.7z"
+          printf '%s  %s\n' \
+            605ae3fceb93952422b42d868f1317d1c6d48d2bdbaee700dcf17e99dbe65fc0 "$c/poweriso.tgz" \
+            f6d676bfe5df4bbf75abe9cc19d768ae005bb8ba3903587b377d7600f0851bda "$c/aaru.tar.xz" \
+            5c4d1a533ad24ebe58198612c5e7591b2bce750f1ccdc86f2118598e1b22db71 "$c/ff.7z" | sha256sum -c -
+          tar xzf "$c/poweriso.tgz" -C "$c"
+          tar xJf "$c/aaru.tar.xz" -C "$c/aaru"
+          7z x -y -o"$c/dump" "$c/ff.7z" >/dev/null
+          # Aaru asks its first-run questions unless settings exist; answer them with "no" up front.
+          mkdir -p ~/.config
+          printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' \
+            '<DicSettings><EnableDecryption>false</EnableDecryption><GdprCompliance>1</GdprCompliance><SaveReportsGlobally>false</SaveReportsGlobally><ShareReports>false</ShareReports></DicSettings>' > ~/.config/Aaru.xml
+          CWB_POWERISO="$c/poweriso" CWB_AARU="$(find "$c/aaru" -name aaru -type f | head -1)" \
+          CWB_CLONECD_SUB="$c/dump/PSX - Fighting Force 3-24.sub" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.CloneCd.CloneCdWriteExternalConformanceTests" \
+            --logger "trx;LogFileName=clonecd-writer-oracle-tests.trx"
+
       # Core tests -- always run (no external tools required).
       #
       # NOTE the two similar category names, which are NOT spellings of each other:
@@ -376,35 +406,6 @@ jobs:
           CWB_UIF_DIR="$u/img" CWB_UIF2ISO="$u/tool/src/uif2iso" dotnet test Compression.Tests --configuration Release --no-build \
             --filter "FullyQualifiedName~Compression.Tests.Uif.UifExternalConformanceTests" \
             --logger "trx;LogFileName=uif-oracle-tests.trx"
-      # Hard gate: the CloneCD image sets we write from an ISO have PowerISO's raw sectors byte for byte,
-      # Aaru (pinned release) reads, verifies and extracts them, ccd2iso returns the ISO, and our
-      # subchannel equals the .sub of a real CloneCD dump (archive.org, hash-pinned).
-      - name: CloneCD writer oracle
-        if: matrix.os == 'ubuntu-latest'
-        env:
-          CWB_REQUIRE_CLONECD: "1"
-        run: |
-          sudo apt-get install -y genisoimage ccd2iso p7zip-full
-          c="$RUNNER_TEMP/ccd"; mkdir -p "$c/aaru" "$c/dump"
-          curl -fsSL -o "$c/poweriso.tgz" https://www.poweriso.com/poweriso-1.3.tar.gz
-          curl -fsSL -o "$c/aaru.tar.xz" https://github.com/aaru-dps/Aaru/releases/download/v5.4.2/aaru-5.4.2_linux_amd64.tar.xz
-          curl -fsSL -o "$c/ff.7z" "https://archive.org/download/FightingForceMar121997prototype/Fighting%20Force%20%28Mar%2012%2C%201997%20prototype%29.7z"
-          printf '%s  %s\n' \
-            605ae3fceb93952422b42d868f1317d1c6d48d2bdbaee700dcf17e99dbe65fc0 "$c/poweriso.tgz" \
-            f6d676bfe5df4bbf75abe9cc19d768ae005bb8ba3903587b377d7600f0851bda "$c/aaru.tar.xz" \
-            5c4d1a533ad24ebe58198612c5e7591b2bce750f1ccdc86f2118598e1b22db71 "$c/ff.7z" | sha256sum -c -
-          tar xzf "$c/poweriso.tgz" -C "$c"
-          tar xJf "$c/aaru.tar.xz" -C "$c/aaru"
-          7z x -y -o"$c/dump" "$c/ff.7z" >/dev/null
-          # Aaru asks its first-run questions unless settings exist; answer them with "no" up front.
-          mkdir -p ~/.config
-          printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' \
-            '<DicSettings><EnableDecryption>false</EnableDecryption><GdprCompliance>1</GdprCompliance><SaveReportsGlobally>false</SaveReportsGlobally><ShareReports>false</ShareReports></DicSettings>' > ~/.config/Aaru.xml
-          CWB_POWERISO="$c/poweriso" CWB_AARU="$(find "$c/aaru" -name aaru -type f | head -1)" \
-          CWB_CLONECD_SUB="$c/dump/PSX - Fighting Force 3-24.sub" dotnet test Compression.Tests --configuration Release --no-build \
-            --filter "FullyQualifiedName~Compression.Tests.CloneCd.CloneCdWriteExternalConformanceTests" \
-            --logger "trx;LogFileName=clonecd-writer-oracle-tests.trx"
-
       # Hard gate: isz-tool (GPL-3.0 Python, pinned, used as a black box) verifies both CRCs of
       # what the ISZ writer creates and extracts the same ISO.
       - name: ISZ oracle
