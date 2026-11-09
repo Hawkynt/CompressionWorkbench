@@ -235,6 +235,19 @@ jobs:
           --filter "TestCategory!=EndToEnd&TestCategory!=OsIntegration&TestCategory!=ExternalInterop&TestCategory!=ExternalFsInterop&TestCategory!=PolyglotInterop&TestCategory!=Performance"
           --logger "trx;LogFileName=core-tests.trx"
 
+      # Hard gate: partimage saves ext2, FAT16 and FAT32 volumes from loop devices (plain, gzip and
+      # bzip2) and restores them onto zeroed devices; the partitions we extract equal its restores.
+      - name: partimage oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_PARTIMAGE: "1"
+          TERM: xterm
+        run: |
+          sudo apt-get install -y partimage dosfstools
+          dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.PartImage.PartImageExternalConformanceTests" \
+            --logger "trx;LogFileName=partimage-oracle-tests.trx"
+
       # Interop tools for E2E tests. gfs2-utils is a mandatory oracle for the
       # ExHash gate below; linux-modules-extra supplies gfs2.ko on Ubuntu runner
       # kernels where it is not built in.
@@ -342,18 +355,6 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.DiskCopy42.DiskCopy42ExternalConformanceTests" \
             --logger "trx;LogFileName=dc42-oracle-tests.trx"
 
-      # Hard gate: partimage saves ext2, FAT16 and FAT32 volumes from loop devices (plain, gzip and
-      # bzip2) and restores them onto zeroed devices; the partitions we extract equal its restores.
-      - name: partimage oracle
-        if: matrix.os == 'ubuntu-latest'
-        env:
-          CWB_REQUIRE_PARTIMAGE: "1"
-          TERM: xterm
-        run: |
-          sudo apt-get install -y partimage dosfstools
-          dotnet test Compression.Tests --configuration Release --no-build \
-            --filter "FullyQualifiedName~Compression.Tests.PartImage.PartImageExternalConformanceTests" \
-            --logger "trx;LogFileName=partimage-oracle-tests.trx"
       # Hard gate: uif2iso (GPL, built from its hash-pinned published source) converts two real MagicISO
       # images from archive.org (hash-pinned) to ISO, and the ISO we extract is byte-identical.
       - name: UIF oracle
