@@ -10,6 +10,8 @@ BSD or Linux tools. `generate.sh` documents how they were made; it is not a buil
 | `makefs-ufs2-le.img.gz` | same, `version=2` | UFS2, little-endian. This makefs puts the UFS2 superblock at 8192 (`fs_sblockloc` = 8192), which FreeBSD's `SBLOCKSEARCH` also finds. |
 | `makefs-ufs2-be.img.gz` | same, `version=2 -B be` | UFS2, big-endian. |
 | `newfs-ufs2.img.gz` | FreeBSD 8.2 `newfs -O2 -L CWBUFS2` (Debian `ufsutils_8.2-3_amd64.deb`, `mkfs.ufs`) on an 8 MiB loop device | An empty UFS2 volume, superblock at `SBLOCK_UFS2` (65536), four cylinder groups, 16 KiB blocks. |
+| `netbsd-newfs-ufs1-be.img.gz` | NetBSD 11.1 (amd64 live image under qemu) `newfs -F -s 16m -B be -O 1`, then filled through NetBSD's own kernel (`vnconfig` + `mount`) | UFS1, big-endian, superblock at 8192, 4 KiB blocks and 512-byte fragments, four cylinder groups. |
+| `netbsd-newfs-ufs2-be.img.gz` | same, `-O 2` | UFS2, big-endian, superblock at `SBLOCK_UFS2` (65536). |
 | `manifest.txt` | `generate.sh` | SHA-256 and path of every file in the source tree; `L` lines are symbolic links and their targets, `D` lines directories. |
 
 The tree covers nested and empty directories, an empty file, a 2.7 MB file that
@@ -17,9 +19,18 @@ needs the double-indirect tree with 4 KiB UFS2 blocks, a hard link, a 255-byte
 name, a UTF-8 name, and symbolic links either side of both fast-symlink limits
 (59/60 bytes for UFS1, 119/120 for UFS2). Every timestamp is 2024-02-29 12:34:56 UTC.
 
+Both NetBSD volumes hold `hello.txt` (`echo hello big-endian`), an empty file
+`empty`, `sub/numbers.txt` (`jot 200000`, 1.3 MB, so it reaches the indirect block),
+`sub/deeper/x.txt` (`jot -b x 3000`) and a symbolic link `link -> sub/numbers.txt`;
+the SHA-256 of each file as NetBSD's `cksum -a sha256` printed it is pinned in
+`UfsBigEndianTests.NetBsdFiles`. NetBSD's `fsck_ffs -n -f` reported both volumes clean
+("Swapped byte order") before they were copied out. Captured 2026-11-06.
+
 The little-endian makefs volumes and the newfs volume passed FreeBSD 8.2
 `fsck_ffs -n` (`fsck.ufs` from the same ufsutils package); that fsck build reads
-only the host byte order, so the big-endian volumes are checked by content alone.
+only the host byte order, so big-endian volumes are judged by NetBSD instead, whose
+`fsck_ffs` and kernel read both byte orders (`UfsNetBsdTests`, opt-in through
+`CWB_NETBSD_LIVE`).
 The newfs volume also mounts under the Linux kernel's ufs driver
 (`ufstype=ufs2`, kernel 6.8 in the libguestfs appliance).
 

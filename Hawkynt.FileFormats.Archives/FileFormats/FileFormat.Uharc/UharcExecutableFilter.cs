@@ -13,7 +13,10 @@ internal static class UharcExecutableFilter {
   private const int Tail = 15;
   private const int MinimumLength = 0x400;
 
-  public static void Restore(Span<byte> data) {
+  /// <summary>Undoes the preprocessing in place.</summary>
+  /// <param name="data">One file as decoded.</param>
+  /// <param name="swapOperandBytes">PPM streams: operands that look like targets once bytes 0 and 2 are swapped were stored swapped.</param>
+  public static void Restore(Span<byte> data, bool swapOperandBytes = false) {
     if (data.Length < MinimumLength || !Classify(data, out var withRelocations, out var start))
       return;
 
@@ -27,7 +30,7 @@ internal static class UharcExecutableFilter {
       start = table + size;
     }
 
-    RestoreBranches(data, start);
+    RestoreBranches(data, start, swapOperandBytes);
   }
 
   private static bool Classify(ReadOnlySpan<byte> data, out bool withRelocations, out int start) {
@@ -69,7 +72,39 @@ internal static class UharcExecutableFilter {
     }
   }
 
-  private static void RestoreBranches(Span<byte> data, int start) {
+  /// <summary>
+  /// Undoes UHARC 0.2's executable preprocessing in place: in MZ/ZM files of at least 1 KiB, every
+  /// <c>E8</c>/<c>E9</c> operand that is a target within the file was made absolute.
+  /// </summary>
+  public static void RestoreLegacy(Span<byte> data) {
+    if (data.Length < MinimumLength || BinaryPrimitives.ReadUInt16LittleEndian(data) is not (0x5A4D or 0x4D5A))
+      return;
+
+    var limit = data.Length;
+    var end = data.Length - Tail;
+    var i = 0;
+    while (i < end) {
+      if (data[i] is not (0xE8 or 0xE9)) {
+        ++i;
+        continue;
+      }
+
+      var operand = data.Slice(i + 1, 4);
+      var value = BinaryPrimitives.ReadInt32LittleEndian(operand);
+      if (value > 0 && value < limit) {
+        BinaryPrimitives.WriteInt32LittleEndian(operand, (value == i ? 0 : value) - i);
+        i += 5;
+      } else if (value < 0 && value >= -i) {
+        BinaryPrimitives.WriteInt32LittleEndian(operand, value + limit);
+        i += 5;
+      } else
+        i += 4;
+    }
+  }
+
+  private static bool IsTarget(int value, int position, int limit) => value >= -position && value < limit;
+
+  private static void RestoreBranches(Span<byte> data, int start, bool swapOperandBytes) {
     var limit = data.Length;
     Span<ushort> recent = stackalloc ushort[128];
     for (var k = 0; k < recent.Length; ++k)
@@ -89,6 +124,16 @@ internal static class UharcExecutableFilter {
         continue;
       }
 
+      var step = 4;
+      if (swapOperandBytes) {
+        var swapped = (value & 0xFF00FF00) | ((value & 0xFF) << 16) | ((value >> 16) & 0xFF);
+        if (IsTarget((int)value, i, limit) || IsTarget((int)swapped, i, limit)) {
+          BinaryPrimitives.WriteUInt32LittleEndian(operand, swapped);
+          value = swapped;
+          step = 5;
+        }
+      }
+
       var signed = (int)value;
       if (signed > 0 && value < (uint)limit) {
         BinaryPrimitives.WriteUInt32LittleEndian(operand, (value == (uint)i ? 0u : value) - (uint)i);
@@ -104,7 +149,7 @@ internal static class UharcExecutableFilter {
 
       var high = BinaryPrimitives.ReadUInt16LittleEndian(operand[2..]);
       if (high == 0 || high == (ushort)((limit - 1) >> 16) || high == (ushort)(-i >> 16)) {
-        i += 4;
+        i += step;
         continue;
       }
 

@@ -44,7 +44,7 @@ LBR (CP/M library),lbr;lqr;lzr,archive,,,R,,R,,Y,3,https://en.wikipedia.org/wiki
 LBR (Commodore library),lbr,archive,,,,,,,Y,1,http://unusedino.de/ec64/technical/formats/lbr.html,CommodoreLbr,Y,Y,Y,OK,,signature-detected (.lbr is the CP/M library's); real Library containers read and their directories rewritten byte-identically
 ALZip,alz,archive,,,R,,R,,RW,3,https://en.wikipedia.org/wiki/ALZip,AlZip,Y,Y,Y,PARTIAL,,"split (multi-volume) archives and obfuscated deflate (method 3) refused; writer emits stored/deflate, not ALZ bzip2 (AlZipReader.cs)"
 EGG (ALZip),egg,archive,,,R,,,,,1,https://en.wikipedia.org/wiki/ALZip,Egg,Y,Y,,PARTIAL,,"reads store/deflate/bzip2/AZO/LZMA, solid, ZIP 2.0/AES/LEA encryption (EggDotNet corpus); writer store/deflate only (EggDotNet reads it back); split (multi-volume) archives unsupported (EggReader.cs)"
-StuffIt (classic + 5),sit;sea,archive,,,R,,R,fmt/1459;fmt/1460;fmt/639,RW,4,https://en.wikipedia.org/wiki/StuffIt,StuffIt,Y,Y,Y,PARTIAL,,"methods 8 (MW), 14 (Installer) and encrypted forks (DES / StuffIt 5 RC4) unsupported; writer emits classic store/RLE only (StuffItReader.cs)"
+StuffIt (classic + 5),sit;sea,archive,,,R,,R,fmt/1459;fmt/1460;fmt/639,RW,4,https://en.wikipedia.org/wiki/StuffIt,StuffIt,Y,Y,Y,PARTIAL,,"methods 8 (MW), 14 (Installer) and encrypted forks (DES / StuffIt 5 RC4) unsupported (StuffItReader.cs); the writer emits classic or StuffIt 5 archives with store, RLE, method 13 or method 15 (Arsenic)"
 StuffIt X,sitx,archive,,,R,,R,fmt/399,RW,4,https://en.wikipedia.org/wiki/StuffIt,StuffItX,Y,,,PARTIAL,,Darkhorse/Deflate/Blend/method 7/preprocessors/encryption throw (StuffItXReader.cs)
 DiskDoubler,dd,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/DiskDoubler,DiskDoubler,Y,Y,,PARTIAL,,"single files and DDAR/DDA2 archives (listings match lsar on real archives); methods 0, 1, 6, 8, 9 decoded and checked against unar on real files; 2, 5, 7 and delta 1 checked against unar on files we built; 3, 4, 10 refused (DiskDoublerReader.cs)"
 Compact Pro,cpt,archive,,,R,,,,Y,2,https://en.wikipedia.org/wiki/Compact_Pro,CompactPro,Y,Y,Y,PARTIAL,,multi-volume and encrypted archives refused; writer emits RLE-only forks (CompactProReader.cs)
@@ -54,8 +54,8 @@ LZX (Amiga),lzx,archive,,,R,,R,,Y,3,https://en.wikipedia.org/wiki/LZX,LzxAmiga,Y
 NuFX / ShrinkIt,shk;sdk;bxy,archive,,,,,,,Y,1,https://wiki.preterhuman.net/NuFX,NuFx,Y,Y,Y,OK,,
 Spark (Acorn),spk;arc,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/Spark_(archiver),Spark,Y,Y,Y,OK,,
 HA,ha,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/HA_(file_format),Ha,Y,Y,Y,OK,,"reads CPY/ASC/HSC (ha.exe 0.999b archives and the original 1995 HA_SRC.HA); writes HSC/CPY that ha.exe extracts, HSC streams byte-identical to ha.exe; Unix special-file records listed, not extracted (docs/HA-ON-DISK.md)"
-SQX,sqx,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/SQX,Sqx,Y,Y,Y,OK,,
-UHARC,uha,archive,,,,,R,,Y,2,https://en.wikipedia.org/wiki/UHarc,Uharc,Y,,,PARTIAL,,"UHARC 0.6 only: store, LZP and ALZ (incl. multimedia predictors) verified against uharc.exe and real archives; PPM (-mx), RLE, LZ78 and versions before 0.6 refused (docs/UHARC-ON-DISK.md)"
+SQX,sqx,archive,,,,,,,Y,1,https://en.wikipedia.org/wiki/SQX,Sqx,Y,Y,Y,PARTIAL,,methods 0-4 read and written (Squeez-c's reference archives decode; Squeez-c extracts ours); methods 5-7 encryption and volumes refused (SqxReader.cs)
+UHARC,uha,archive,,,,,R,,Y,2,https://en.wikipedia.org/wiki/UHarc,Uharc,Y,Y,,PARTIAL,,"UHARC 0.6: store, RLE, LZ78, LZP, PPM and ALZ (incl. multimedia predictors) verified against uharc.exe and real archives; UHARC 0.2 verified against the 0.2 tool and the dexvert samples; 0.3/0.4 refused; writes stored or LZP-packed 0.6 archives (docs/UHARC-ON-DISK.md)"
 FreeArc,arc;cdx,archive,,,,,R,fmt/1096,Y,3,https://en.wikipedia.org/wiki/FreeArc,FreeArc,Y,Y,Y,PARTIAL,,storing/lzma/tornado/ppmd/grzip blocks decode behind rep/delta/exe/lzp/dict and inside 4x4 (every default -m1..-m9/-mx/-m9x chain) and AES/Blowfish/Serpent/Twofish encryption given the password (data and -hp headers); mm and external compressors are refused (FreeArcMethods.cs)
 ZPAQ,zpaq,archive,,,,,R,fmt/1097,RW,3,https://mattmahoney.net/dc/zpaq206.pdf,Zpaq,Y,Y,Y,PARTIAL,,"journaling and streaming archives at every method are read and zpaq 7.15 extracts what we write; encrypted (-key) multi-part (arc???) and indexed (-index) archives are read and written: created encrypted; edits append a version in place (encrypted with the password) or as the next part of a set or from an index alone with the index updated; indexes written as zpaq extract -index writes them byte for byte; an index alone lists but cannot extract (ZpaqReader.cs, ZpaqWriter.cs, ZpaqSetEditor.cs)"
 PAQ (paq6/7/8 family),paq6;paq7;paq8;paq8l,archive,,,,,,,Y,1,https://mattmahoney.net/dc/paq.html,,,,,MISSING,,the former Paq8 descriptor wrote an order-0 coder under paq8l's header and paq8l decoded it to wrong bytes; a real paq8l is a rung-2 rewrite (docs/RECLAIM-BACKLOG.md)
@@ -220,7 +220,7 @@ Setup Factory,exe,installer,,,,,R,,,1,https://github.com/lazyhamster/Observer,Se
 Smart Install Maker,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, no published specification and no sample found"
 Clickteam Install Creator,exe,installer,,,,,R,,,1,https://github.com/Bioruebe/cicdec,ClickteamInstaller,Y,,,PARTIAL,,"converted from cicdec (BSD-3-Clause): file list layouts 2.0-4.0 with stored/zlib/bzip2 members extract as cicdec extracts them; encrypted installers, multi-product installers, external .Dnn data files and older overlays inside the PE image are refused"
 Ghost Installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, no published specification and no sample found"
-Gentee installer,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation or specification of the setup container, and no extractor, found"
+Gentee installer,exe,installer,,,,,R,,,1,https://github.com/lazyhamster/Observer,GenteeInstaller,Y,,,PARTIAL,,"converted from Observer (LGPL-3.0-or-later) and the Gentee group's LZGE decoder (MIT): CreateInstall 6.0 to 8.5 setups, GEA 1.0 and 2.0 with 32- or 64-bit sizes, stored/LZGE/PPMd blocks; every archive file matches the CRC-32 CreateInstall recorded; multi-volume archives, password-protected files and the older Gentee installer layout are not read"
 install4j,exe,installer,,,,,R,,,1,https://github.com/lazyhamster/Observer,Install4j,Y,,,PARTIAL,,"converted from Observer (LGPL-3.0-or-later): the data archives (ZIP, stored or LZMA) and the launcher block of install4j 5.1 to 11 setups; every archive equals what liblzma unpacks and passes zipfile's CRC check; the launcher block (settings, bundled Java runtime) is listed whole, not taken apart"
 InstallAware,exe,installer,,,,,R,,,1,,,,,,MISSING,,"refused: no licence-compatible implementation, specification or extractor of the setup container found"
 Installer VISE,exe,installer,,,,,R,,,1,https://github.com/timdoug/unvise/blob/main/FORMAT.md,InstallerVise,Y,,,OK,,"converted from unvise (MIT): VISE 3.0-8.5 from MacBinary or BinHex or a data fork with its sidecar; every fork CRC-32-checked; actions, base-dependent updates, members on other media and Active Install payloads are not files"
@@ -238,7 +238,7 @@ SuperDAT updater,exe,installer,,,,,R,,,1,,,,,,MISSING,,
 Symbian installer (SIS/SISX),sis;sisx,installer,,,,,R,,,1,https://www.cryer.co.uk/file-types/s/sis/softwareinstallsis.pdf,SymbianSis,Y,Y,,PARTIAL,Symbian SDK makesis / signsis,"Symbian OS 9 (SISX) only; pre-9 EPOC SIS (UID2 0x10000419) is a different format and is not read. Created packages are unsigned, one English language, S60 3rd Edition target, plain install lines; makesis's own packages are reproduced except for the controller's deflate bitstream. Embedded packages follow the specification, but no real embedded sample was available (SymbianSisReader.cs, SymbianSisWriter.cs)"
 WiX Burn bundle,exe,installer,,,,,R,,,1,https://wixtoolset.org/docs/tools/burn/,WixBurn,Y,,,READ-ONLY-BUT-SOURCES-WRITE,WiX light.exe / wix build,detached and downloaded payloads are not in the bundle and are not listed (WixBurnReader.cs)
 Enigma Virtual Box,exe,installer,,,,,R,,,1,https://enigmaprotector.com/en/aboutvb.html,EnigmaVirtualBox,Y,,,READ-ONLY-BUT-SOURCES-WRITE,Enigma Virtual Box (enigmavbconsole),"the boxed files and folders, stored or aPLib-compressed, in the current and the legacy (EVB 7.80 and earlier) table layouts; virtual registry and external .dat packages are not read (EnigmaVirtualBoxReader.cs)"
-MoleBox,exe,installer,,,,,R,,,1,,,,,,MISSING,,"blocked: no specification available"
+MoleBox,exe,installer,,,,,R,,,1,,,,,,MISSING,,blocked: no specification available
 UPX-packed executable,exe;dll,executable,,,,,R,,,1,https://upx.github.io/,Upx,Y,,,READ-ONLY-BUT-SOURCES-WRITE,upx,"writing refused: upx -t/-d accept only files carrying UPX's own loader stubs and PackHeader, so a provable writer would have to ship UPX's GPL stubs; reading/unpacking stays"
 macOS Installer package (flat pkg),pkg;mpkg,installer,,,,,,,Y,1,,Xar,Y,Y,Y,OK,,
 ISO 9660 (Joliet / Rock Ridge / El Torito),iso;cdr;bin;cd-rom;cdi;dmg;img;joliet;mdf;nrg;toast,filesystem,R,RW,R,R,R,fmt/1739;fmt/1741;fmt/1757;fmt/468,RW,7,https://www.ecma-international.org/publications-and-standards/standards/ecma-119/,Iso,Y,Y,Y,PARTIAL,,"Rock Ridge names (NM+CE), symlinks (SL), relocated directories (RE/CL), modes (PX), times (TF) and zisofs (ZF) read; Rock Ridge NM (CE for long names)/PX/TF and El Torito BIOS/UEFI boot entries written; interleaved files read unit by unit while wipe/defrag/remove refuse images holding them (IsoReader.cs)"
@@ -267,21 +267,21 @@ AFF (Advanced Forensic Format v1-3),aff;afd;afm,disk-image,,,,,,,Y,1,https://git
 Nero image (NRG),nrg,disk-image,,,,,R,fmt/1743,Y,3,,Nrg,Y,Y,Y,OK,,
 BIN/CUE,bin;cue,disk-image,,,,,R,fmt/1069,Y,3,https://en.wikipedia.org/wiki/Cue_sheet_(computing),BinCue,Y,Y,Y,OK,,
 Alcohol MDF/MDS,mdf;mds,disk-image,,,,,R,,Y,2,,Mdf,Y,Y,Y,OK,,
-CloneCD (CCD/IMG/SUB),ccd;sub;img,disk-image,,,,,R,,Y,2,,CloneCd,Y,,,READ-ONLY-BUT-SOURCES-WRITE,CloneCD,
+CloneCD (CCD/IMG/SUB),ccd;sub;img,disk-image,,,,,R,,Y,2,https://ecma-international.org/publications-and-standards/standards/ecma-130/,CloneCd,Y,Y,,OK,,"creates single-session Mode 1 data discs from an ISO (WORM): .img equals PowerISO's raw sectors, Aaru reads and verifies the set, ccd2iso returns the ISO, .sub matches a real CloneCD dump"
 DiscJuggler CDI,cdi,disk-image,,,,,R,,Y,2,,Cdi,Y,Y,Y,OK,,
 Dreamcast GDI,gdi,disk-image,,,,,R,,,1,https://en.wikipedia.org/wiki/GD-ROM,Gdi,Y,,,OK,,track table parsed (quoted names supported); sibling track files listed and extracted byte for byte; read-only because a single stream cannot write the sibling files
 ECM (Error Code Modeler),ecm,disk-image,,,,,R,,,1,,,,,,MISSING,,
 gBurner image,gbi,disk-image,,,,,R,,,1,,,,,,MISSING,,
 ISZ (compressed ISO),isz,disk-image,,,,,R,,Y,2,https://www.ezbsystems.com/isz/iszspec.txt,Isz,Y,Y,Y,PARTIAL,,single-segment unencrypted only; CRCs and extraction verified by isz-tool; spec docs/ISZ-ON-DISK.md
 PowerISO DAA,daa,disk-image,,,,,R,,Y,2,https://www.poweriso.com,Daa,Y,Y,Y,PARTIAL,,"format 0x100 read/write verified both ways against PowerISO for Linux 1.3; 0x110, split, password and GBI refused (no verifiable samples); spec docs/DAA-ON-DISK.md"
-MagicISO UIF,uif,disk-image,,,,,R,,Y,2,,,,,,MISSING,,
+MagicISO UIF,uif,disk-image,,,,,R,,Y,2,https://www.magiciso.com/,Uif,Y,,,PARTIAL,,"version 1/2 ISO images (zlib runs) equal uif2iso on two real MagicISO images; version 3 (LZMA), mixed-mode (type 9) and encrypted images refused for lack of samples; no free writer"
 Compressed ISO (CSO/ZSO),cso;zso,disk-image,,,,,R,,,1,,Cso,Y,Y,Y,OK,,
 HTC NBH ROM image,nbh,firmware,,,,,R,,,1,,,,,,MISSING,,
-CD-ROM/XA image,dat,disk-image,,,,,,fmt/819,,1,,,,,,MISSING,,
+CD-ROM/XA image,dat,disk-image,,,,,,fmt/819,,1,https://ecma-international.org/publications-and-standards/standards/ecma-130/,CdXa,Y,Y,Y,OK,,"RIFF CDXA Mode 2 sectors (magic-detected); Video CD tracks rebuilt byte for byte (a real AVSEQ09.DAT and vcdimager-authored discs), track.mpg equals cdxa2mpeg output"
 Raw floppy image (IMG/IMA),img;ima;vfd;flp,disk-image,,,,,R,fmt/1087,Y,3,,Fat,Y,Y,Y,OK,,
 Norton Ghost image,gho;ghs,disk-image,,,,,,,Y,1,,Ghost,Y,Y,Y,OK,,
 Acronis True Image,tib;tibx,disk-image,,,,,,,Y,1,,AcronisTib;AcronisTibx,Y,,Y,READ-ONLY-BUT-SOURCES-WRITE,Acronis True Image,
-PartImage,partimg,disk-image,,,,,,,Y,1,,,,,,MISSING,,
+PartImage,partimg,disk-image,,,,,,,Y,1,https://gitlab.com/partimage/partimage-sources,PartImage,Y,,,OK,,"plain, gzip and bzip2 single-volume images read with every CRC check; ext2, FAT16 and FAT32 restores equal partimage restore; read-only (no free writer to prove one)"
 SafeGuard encrypted virtual disk,hdr;vol,disk-image,,,,,,fmt/887,,1,,,,,,MISSING,,
 "Amiga Disk File (ADF, OFS/FFS)",adf;ffs2,filesystem,,,R,,R,fmt/1361,Y,4,https://en.wikipedia.org/wiki/Amiga_Fast_File_System,Adf,Y,Y,Y,OK,,
 DMS (Disk Masher),dms,disk-image,,,R,,,,,1,https://github.com/MacPaw/XADMaster/blob/master/libxad/clients/DMS.c,Dms,Y,Y,,OK,,"all modes decoded (libxad conversion); Medium/Heavy2 proven on Aminet samples against xdms, Quick/Deep/Heavy1 guarded by the track checksum; writer emits stored/RLE tracks xdms accepts"
@@ -407,7 +407,7 @@ ext3cow,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 "FAT (FAT12/16/32, VFAT)",fat;img;ima;fat12;fat16;fat32;fat32x,filesystem,R,,R,R,,fmt/1087,Y,5,https://learn.microsoft.com/windows/win32/fileio/exfat-specification,Fat,Y,Y,Y,OK,,
 FAT8 (Disk BASIC),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 FATX (Xbox),fatx;xbox,filesystem,,,,,,,Y,1,,Fatx,Y,Y,Y,OK,,
-"UFS / FFS (BSD), UFS2",ufs;ufs1,filesystem,,,,,,,Y,1,,Ufs,Y,Y,Y,PARTIAL,newfs -O2 / makefs (BSD),UFS1 and UFS2 read in both byte orders; UFS2 and big-endian volumes are read-only (create and edit are UFS1 little-endian)
+"UFS / FFS (BSD), UFS2",ufs;ufs1,filesystem,,,,,,,Y,1,,Ufs,Y,Y,Y,OK,newfs -O2 / makefs (BSD),UFS1 and UFS2 in both byte orders read; created; edited; defragmented; wiped and block-moved in place (little-endian UFS2 checked by FreeBSD fsck_ffs and the Linux ufstype=ufs2 mount; big-endian UFS1 and UFS2 by NetBSD fsck_ffs and a NetBSD mount)
 Fossil (Plan 9),,filesystem,,,,,,,Y,1,https://github.com/9fans/plan9port/tree/master/src/cmd/fossil,Fossil,Y,,,READ-ONLY-BUT-SOURCES-WRITE,flfmt,writer not yet proven against the fossil server
 Files-11 (ODS-1/2/5),ods2;ods5;ods-1;ods-2;ods-5;openvms,filesystem,,,,,,,Y,1,,OpenVms;Ods1,Y,Y,Y,OK,,
 FLEX file system,,filesystem,,,,,,,Y,1,http://www.flexusergroup.com/flexusergroup/pdfs/flexapg.pdf,Flex,Y,Y,Y,OK,flexfloppy,
@@ -419,7 +419,7 @@ HFS+ / HFSX,hfsx;dmg;img;toast,filesystem,R,,,,,fmt/1742,Y,3,https://developer.a
 HPFS,hpfs,filesystem,,,,,,,Y,1,,Hpfs,Y,Y,Y,OK,,
 HTFS (SCO),,filesystem,,,,,,,Y,1,,Htfs,Y,Y,Y,OK,,
 JFS (JFS1 / JFS2),jfs;jfs1;jfs2,filesystem,,,,,,,Y,1,,Jfs;Jfs1,Y,Y,Y,OK,,
-4.4BSD LFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+4.4BSD LFS,,filesystem,,,,,,,Y,1,https://github.com/NetBSD/src/blob/trunk/sys/ufs/lfs/lfs.h,Lfs,Y,Y,Y,OK,newfs_lfs,create and append-only edits; fsck_lfs -n clean and kernel mount/write round trips in a NetBSD 11.1 guest
 MFS (Macintosh File System),mfs;dsk;img,filesystem,,,,,,fmt/2068,Y,2,,Mfs,Y,Y,Y,OK,,
 MFS (TiVo Media File System),,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 Minix file system (V1/V2/V3),minix,filesystem,,,,,,,Y,1,,MinixFs;MinixV1;MinixV2,Y,Y,Y,OK,,
@@ -450,7 +450,7 @@ ZFS,zfs,filesystem,,,,,,,Y,1,,Zfs,Y,,,OK,,
 bcachefs,,filesystem,,,,,,,Y,1,,BcacheFs,Y,Y,Y,OK,,
 NOVA,,filesystem,,,,,,,Y,1,,,,,,MISSING,,refused: persistent-memory file system with only an out-of-tree kernel module; no userspace tool and no image
 3FS (Fire-Flyer),deepseek,filesystem,,,,,,,Y,1,,,,,,MISSING,,
-CHFS (NetBSD),netbsd,filesystem,,,,,,,Y,1,,,,,,MISSING,,
+CHFS (NetBSD),netbsd,filesystem,,,,,,,Y,1,https://github.com/NetBSD/src/blob/trunk/sys/ufs/chfs/media.h,Chfs,Y,,,READ-ONLY-BUT-SOURCES-WRITE,makefs -t chfs,mount_chfs on nandemulator blocks on a kernel lock in NetBSD 11.1 and 10.1 (nandemulator geometry is fixed) so no reader proves a writer
 exFAT,exfat;fat64;img,filesystem,,,,,,fmt/1609,Y,2,https://learn.microsoft.com/windows/win32/fileio/exfat-specification,ExFat,Y,Y,Y,OK,,
 ExtremeFFS,,filesystem,,,,,,,Y,1,,,,,,MISSING,,
 F2FS,f2fs,filesystem,,,,,,,Y,1,,F2fs,Y,Y,Y,OK,,
@@ -612,7 +612,7 @@ LZBITMAP,,codec,,,,,,,,0,,bb:BB_Lzbitmap,Y,Y,,OURS-ONLY,,
 LZF,,codec,,,,,,,,0,,bb:BB_Lzf,Y,Y,,OURS-ONLY,,
 LZFX,,codec,,,,,,,,0,,bb:BB_Lzfx,Y,Y,,OURS-ONLY,,
 LZG,,codec,,,,,,,,0,,bb:BB_Lzg,Y,Y,,OURS-ONLY,,
-LZHAM,,codec,,,,,,,,0,https://github.com/richgel999/lzham_codec,bb:BB_LZHAM,Y,Y,,OURS-ONLY,,"LZHAM's lzhamtest decodes our streams and we decode its streams at every level; our parse differs from LZHAM's, so the bytes differ"
+LZHAM,,codec,,,,,,,,0,https://github.com/richgel999/lzham_codec,bb:BB_LZHAM,Y,Y,,OURS-ONLY,,"LZHAM's own single-threaded compressor: with the same dictionary size, level, table update rate and -x our bytes are lzhamtest -t0's; we decode its streams at every level"
 LZJB,,codec,,,,,,,,0,,bb:BB_Lzjb,Y,Y,,OURS-ONLY,,
 LZMW,,codec,,,,,,,,0,,bb:BB_Lzmw,Y,Y,,OURS-ONLY,,
 LZO1X,,codec,,,,,,,,0,,bb:BB_Lzo,Y,Y,,OURS-ONLY,,
@@ -623,7 +623,6 @@ LZRW1,,codec,,,,,,,,0,http://www.ross.net/compression/lzrw1.html,bb:BB_Lzrw1,Y,Y
 LZRW3,,codec,,,,,,,,0,http://www.ross.net/compression/lzrw3.html,bb:BB_Lzrw3,Y,Y,,OURS-ONLY,,byte-identical to Ross Williams' lzrw3.c
 LZVN,,codec,,,,,,,,0,,bb:BB_Lzvn,Y,Y,,OURS-ONLY,,
 LZWL,,codec,,,,,,,,0,,bb:BB_Lzwl,Y,Y,,OURS-ONLY,,
-MS LZH,,codec,,,,,,,,0,,bb:BB_MsLzh,Y,Y,,OURS-ONLY,,
 MTF,,codec,,,,,,,,0,,bb:BB_Mtf,Y,Y,,OURS-ONLY,,
 Neural,,codec,,,,,,,,0,,bb:BB_Neural,Y,Y,,OURS-ONLY,,
 NRV2B,,codec,,,,,,,,0,,bb:BB_Nrv2b,Y,Y,,OURS-ONLY,,
@@ -647,7 +646,7 @@ Sequitur,,codec,,,,,,,,0,,bb:BB_Sequitur,Y,Y,,OURS-ONLY,,
 Shannon-Fano,,codec,,,,,,,,0,,bb:BB_ShannonFano,Y,Y,,OURS-ONLY,,
 Shoco,,codec,,,,,,,,0,https://github.com/Ed-von-Schleck/shoco,bb:BB_Shoco,Y,Y,,OURS-ONLY,,shoco conversion with its default model; byte-identical to shoco c; zero bytes written behind the sentinel
 Snappy,,codec,,,,,,,,0,,bb:BB_Snappy,Y,Y,,OURS-ONLY,,
-SQX (bb:BB_Sqx),,codec,,,,,,,,0,,bb:BB_Sqx,Y,Y,,OURS-ONLY,,
+SQX (bb:BB_Sqx),,codec,,,,,,,,0,https://github.com/seb3773/Squeez-c,bb:BB_Sqx,Y,Y,,OURS-ONLY,,the SQX 2.0 LZ77 + Huffman stream behind a 4-byte length
 Suffix Tree Compression,,codec,,,,,,,,0,,bb:BB_SuffixTree,Y,Y,,OURS-ONLY,,
 tANS,,codec,,,,,,,,0,,bb:BB_tANS,Y,Y,,OURS-ONLY,,
 Tunstall Coding,,codec,,,,,,,,0,,bb:BB_Tunstall,Y,Y,,OURS-ONLY,,
@@ -775,7 +774,7 @@ FS-1015 LPC-10,lpc10;lpc,media,,,,,,,,0,,Lpc10,Y,Y,,OURS-ONLY,,
 Commodore Lynx archive,lnx,archive,,,,,,,,0,,Lynx,Y,Y,Y,OURS-ONLY,,
 LZEXE (DOS exe),,archive,,,,,,,,0,,LzExe,Y,,,OURS-ONLY,,
 LZG (Lzg),lzg,compression,,,,,,,,0,,Lzg,Y,Y,,OURS-ONLY,,
-LZHAM (Lzham),lzham,compression,,,,,,,,0,https://github.com/richgel999/lzham_codec,Lzham,Y,Y,,OURS-ONLY,,"lzhamtest's LZH0 file layout; the table update rate is not recorded, so files written with lzhamtest -h<rate> other than 8 need the rate passed to the decoder"
+LZHAM (Lzham),lzham,compression,,,,,,,,0,https://github.com/richgel999/lzham_codec,Lzham,Y,Y,,OURS-ONLY,,"lzhamtest's LZH0 file layout; our files are byte-identical to lzhamtest -t0's at the same dictionary size and level; the table update rate is not recorded, so files written with lzhamtest -h<rate> other than 8 need the rate passed to the decoder"
 HLS Playlist (M3U8),m3u8;m3u,archive,,,,,,,,0,,M3u8,Y,,,OURS-ONLY,,
 Macrium Reflect,mrimgx;mrbakx;mrimg,archive,,,,,,,,0,,Macrium,Y,Y,,OURS-ONLY,,
 Macrium Reflect pre-X (.mrimg/.mrbak),mrimg;mrbak;mrex;mrsql,archive,,,,,,,,0,,MacriumPreX,Y,,,OURS-ONLY,,
@@ -789,7 +788,6 @@ Microsoft Access (Jet Red / ACCDB),mdb;accdb,archive,,,,,,,,0,,Mdb,Y,,,OURS-ONLY
 OctaMED (MMD0 / MMD1),med;mmd0;mmd1,media,,,,,,,,0,,Med,Y,,,OURS-ONLY,,
 MessagePack object graph,msgpack;mpk,archive,,,,,,,,0,,MessagePack,Y,Y,,OURS-ONLY,,
 MEW (Win32 PE),,archive,,,,,,,,0,,Mew,Y,,,OURS-ONLY,,
-MFS-1 (Acorn Master File System v1),mfsd;mfs,filesystem,,,,,,,,0,,Mfs1,Y,Y,Y,OURS-ONLY,,
 Cyan Mohawk,mhk,archive,,,,,,,,0,,Mhk,Y,Y,,OURS-ONLY,,
 MIDI (Standard MIDI File),mid;midi,media,,,,,,,,0,,Midi,Y,Y,,OURS-ONLY,,
 Westwood MIX,mix,archive,,,,,,,,0,,Mix,Y,Y,,OURS-ONLY,,

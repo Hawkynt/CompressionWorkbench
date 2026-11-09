@@ -4,33 +4,39 @@ using Compression.Registry;
 namespace Compression.Core.Dictionary.Sqx;
 
 /// <summary>
-/// Exposes the SQX LZH compression algorithm as a benchmarkable building block.
-/// Prepends a 4-byte LE uncompressed size header for round-trip support.
+/// Exposes the SQX 2.0 LZ77 + Huffman stream (archive method 2) as a benchmarkable building
+/// block: the stream exactly as it sits in an SQX archive, behind a 4-byte little-endian original
+/// size, which the archive keeps in the file header instead.
 /// </summary>
 public sealed class SqxBuildingBlock : IBuildingBlock {
+  private const int DictionarySize = 256 * 1024;
+  private const int Effort = 2;
+
   /// <inheritdoc/>
   public string Id => "BB_Sqx";
   /// <inheritdoc/>
   public string DisplayName => "SQX";
   /// <inheritdoc/>
-  public string Description => "LZ+Huffman compression from the SQX archive format";
+  public string Description => "SQX 2.0 LZ77 + Huffman stream (archive method 2, 256 KiB dictionary)";
   /// <inheritdoc/>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
-  private const int DictSize = 1 << 15; // 32 KB
-
   /// <inheritdoc/>
   public byte[] Compress(ReadOnlySpan<byte> data) {
-    var compressed = SqxEncoder.Encode(data, DictSize);
-    var result = new byte[4 + compressed.Length];
+    var stream = SqxLzEncoder.Encode(data, SqxTables.Format20, DictionarySize, Effort);
+    var result = new byte[4 + stream.Length];
     BinaryPrimitives.WriteInt32LittleEndian(result, data.Length);
-    compressed.CopyTo(result.AsSpan(4));
+    stream.CopyTo(result.AsSpan(4));
     return result;
   }
 
   /// <inheritdoc/>
   public byte[] Decompress(ReadOnlySpan<byte> data) {
-    var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
-    return SqxDecoder.Decode(data[4..].ToArray(), originalSize, DictSize);
+    if (data.Length < 4)
+      throw new InvalidDataException("SQX block too short.");
+    var size = BinaryPrimitives.ReadInt32LittleEndian(data);
+    if (size < 0)
+      throw new InvalidDataException("SQX block size is negative.");
+    return size == 0 ? [] : new SqxLzDecoder(DictionarySize).Decode(data[4..], size, solid: false, extendedHeader: false, SqxTables.Format20);
   }
 }

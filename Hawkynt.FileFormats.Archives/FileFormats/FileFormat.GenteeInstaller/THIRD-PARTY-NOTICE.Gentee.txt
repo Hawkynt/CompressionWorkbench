@@ -1,0 +1,28 @@
+Gentee LZGE and Huffman decoders - converted to C#
+
+Source:   the Gentee open source project (https://github.com/gentee/c-gentee),
+          files LZGE/delzge.c, LZGE/lzge.c, Huffman/dehuffman.c and
+          Huffman/huffman.c as carried in Observer's src/depends/gea at revision
+          ddbe6b6d13a51c09d14c565e110b3e6b8b06a69a
+Author:   Alexey Krivonogov (gentee)
+Licence:  The Gentee Open Source License (MIT License), license.txt of
+          gentee/c-gentee
+
+Converted into Lzge.cs. The licence follows.
+
+The Gentee Open Source License (MIT License)
+
+Copyright (c) 2006-2014 The Gentee Group. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
+THE USE OR OTHER DEALINGS IN THE SOFTWARE.

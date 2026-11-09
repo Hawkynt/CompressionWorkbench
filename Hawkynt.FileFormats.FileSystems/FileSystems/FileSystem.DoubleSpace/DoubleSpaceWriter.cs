@@ -15,7 +15,7 @@ public enum CvfVariant {
   DriveSpace62,
   /// <summary>Windows 95 OSR2 DriveSpace 3.0. OEM name <c>DRVSPACE</c>, CvfSignature <c>DVRS</c>. Codec: DS LZ77 (8 KiB window).</summary>
   DriveSpace30,
-  /// <summary>Windows 95 Plus! Pack (1995) DriveSpace 3. OEM name <c>MS_DSP3</c>, CvfSignature <c>DVR3</c>. Codec: MS LZH (LZ77 + canonical Huffman).</summary>
+  /// <summary>Windows 95 Plus! Pack (1995) DriveSpace 3. OEM name <c>MS_DSP3</c>, CvfSignature <c>DVR3</c>. Codec: DriveSpace JM LZ77 (8 KiB window). This layout is CompressionWorkbench's own; real DriveSpace 3 volumes are written by <c>GenuineDvr3Writer</c>.</summary>
   DriveSpace3,
 }
 
@@ -54,9 +54,8 @@ public enum CvfVariant {
 ///   <item><see cref="CvfVariant.DoubleSpace60"/> → DS LZ77 (4 KiB window).</item>
 ///   <item><see cref="CvfVariant.DriveSpace62"/> / <see cref="CvfVariant.DriveSpace30"/>
 ///     → DS LZ77 (8 KiB window).</item>
-///   <item><see cref="CvfVariant.DriveSpace3"/> (Win95 Plus! Pack 1995)
-///     → MS LZH (LZ77 + canonical Huffman), routed through
-///     <see cref="DsCompression.CompressMsLzh(ReadOnlySpan{byte}, int)"/>.</item>
+///   <item><see cref="CvfVariant.DriveSpace3"/> (our own <c>MS_DSP3</c> layout)
+///     → DS LZ77 (8 KiB window), as DriveSpace 6.22.</item>
 /// </list>
 /// <para>
 /// The 2-byte CVF run header (bit 15 = compressed, low 12 bits = size−1) is
@@ -487,9 +486,8 @@ public sealed class DoubleSpaceWriter {
     // Codec selection:
     //   DoubleSpace60       → DS LZ77 4 KiB window
     //   DriveSpace62/30     → DS LZ77 8 KiB window (useDriveSpace=true)
-    //   DriveSpace3 (Plus!) → MS LZH (LZ77 + canonical Huffman)
-    var useMsLzh = this._variant == CvfVariant.DriveSpace3;
-    var useDriveSpace = !useMsLzh && this._variant != CvfVariant.DoubleSpace60;
+    //   DriveSpace3 (ours)  → DS LZ77 8 KiB window, as DriveSpace 6.22
+    var useDriveSpace = this._variant != CvfVariant.DoubleSpace60;
 
     foreach (var file in files) {
       // Walk the file's cluster chain. For each cluster, emit either a
@@ -523,16 +521,14 @@ public sealed class DoubleSpaceWriter {
         uint flagsNibble;
         if (!storedOnly && this.EnableCompression && file.Compress && validChunk >= 32) {
           // The shrink-or-store fallback lives INSIDE each codec entry-point
-          // (CompressVariant in DsCompression.cs / MS LZH in DsCompression.cs):
+          // (CompressVariant in DsCompression.cs):
           // if the encoded payload doesn't fit the 12-bit size cap or is no
           // smaller than the raw input, a stored CVF run is returned and the
           // header-bit dispatch below records flags=1 (stored). This invariant
           // is honored at every effort level.
-          block = useMsLzh
-            ? DsCompression.CompressMsLzh(rawSpan, effort)
-            : useDriveSpace
-              ? DsCompression.CompressDriveSpace(rawSpan, effort)
-              : DsCompression.Compress(rawSpan, effort);
+          block = useDriveSpace
+            ? DsCompression.CompressDriveSpace(rawSpan, effort)
+            : DsCompression.Compress(rawSpan, effort);
           var headerWord = (ushort)(block[0] | (block[1] << 8));
           var wasCompressed = (headerWord & 0x8000) != 0;
           flagsNibble = wasCompressed ? 0x2u : 0x1u;

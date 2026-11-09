@@ -101,9 +101,9 @@ public class CvfOptimizerTests {
   // =========================================================================
 
   [Test, Category("Optimize")]
-  public void Optimize_DriveSpace3_PicksMsLzhPlusPlus_ForCompressibleInput() {
-    // DriveSpace 3 now publishes the full four-tier set ("stored", "ms-lzh",
-    // "ms-lzh+", "ms-lzh++") — the optimizer must pick the most-'+' non-
+  public void Optimize_DriveSpace3_PicksDsLz77PlusPlus_ForCompressibleInput() {
+    // DriveSpace 3 now publishes the full four-tier set ("stored", "ds-lz77",
+    // "ds-lz77+", "ds-lz77++") — the optimizer must pick the most-'+' non-
     // stored method, same as for ds-lz77.
     var desc = new DriveSpace3FormatDescriptor();
     var payload = CompressiblePayload();
@@ -112,8 +112,8 @@ public class CvfOptimizerTests {
     try {
       var result = CvfOptimizer.Optimize(src, desc);
       Assert.Multiple(() => {
-        Assert.That(result.MethodUsed, Is.EqualTo("ms-lzh++"),
-          "Optimizer should pick the most-'+' non-stored method (ms-lzh++).");
+        Assert.That(result.MethodUsed, Is.EqualTo("ds-lz77++"),
+          "Optimizer should pick the most-'+' non-stored method (ds-lz77++).");
         Assert.That(result.OriginalSize, Is.GreaterThan(0));
         Assert.That(File.Exists(src), Is.True);
       });

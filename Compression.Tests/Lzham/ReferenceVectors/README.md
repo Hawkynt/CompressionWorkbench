@@ -1,11 +1,13 @@
 # LZHAM reference vectors
 
-Files written by LZHAM's own command-line tool. They are the test data for `LzhamReferenceTests`.
+Files written by LZHAM's own command-line tool. They are the test data for `LzhamReferenceTests`:
+we decode each one, and we compress its input with the same parameters and must write the same
+bytes.
 
 | | |
 |---|---|
 | Written by | `lzhamtest -t0 <options> c <input> <output>` from `richgel999/lzham_codec` at `d379b1f9121e2197881c61cfc4713c78848bdfe7`, built for x86-64 with MinGW-w64 GCC against the static libraries (`LZHAM_USE_LZHAM_DLL 0`; `lzham_platform.cpp`'s own `sprintf_s`/`vsprintf_s` skipped because MinGW supplies them). `-t0` uses no helper threads, so the parse is deterministic. |
-| Inputs | deterministic generators (random words, repeated lines, zeros, noise), mirrored in the test class and in `make-fixtures.py`; only their size and SHA-256 are kept |
+| Inputs | deterministic generators (random words, repeated lines, zeros, noise, 32-bit counters), mirrored in the test class and in `make-fixtures.py`; only their size and SHA-256 are kept |
 | Checked | `lzhamtest -h<rate> d` returned each input before the file was saved |
 
 `manifest.tsv` lists file, decoded size, SHA-256 of the decoded bytes, the lzhamtest options, the
@@ -22,3 +24,5 @@ Regenerate with `python make-fixtures.py <lzhamtest>`.
 | `zeros-200k-m4-d20` | huge match lengths |
 | `noise-3000-m4-d20` | a raw (stored) block |
 | `one-byte-m4-d20`, `empty-m4-d20` | the smallest inputs |
+| `mixed-188k-m0-d15` .. `mixed-188k-m4-d15`, `mixed-188k-m2-d16`, `mixed-188k-m1-d20` | every level on 188 000 bytes of lines, noise, words and counters: many 4 KiB blocks, a dictionary that wraps several times, the match finder's tie-breaks on near-repeats |
+| `mixed-188k-m4-d16-x`, `mixed-188k-m4-d18-h3` | extreme parsing across wrapping blocks; a non-default table update rate |

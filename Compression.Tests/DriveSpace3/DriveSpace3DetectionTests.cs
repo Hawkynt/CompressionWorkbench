@@ -17,7 +17,7 @@ public class DriveSpace3DetectionTests {
     Assert.That(d.MagicSignatures[0].Bytes, Is.EqualTo("MS_DSP3"u8.ToArray()));
     Assert.That(d.MagicSignatures[0].Offset, Is.EqualTo(3));
     Assert.That(d.Methods.Select(m => m.Name),
-      Is.EquivalentTo(new[] { "stored", "ms-lzh", "ms-lzh+", "ms-lzh++" }));
+      Is.EquivalentTo(new[] { "stored", "ds-lz77", "ds-lz77+", "ds-lz77++" }));
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True,
       "DriveSpace 3 is WORM-tier — CanCreate must be advertised once the writer is wired.");
   }

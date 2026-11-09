@@ -15,7 +15,7 @@ namespace FileFormat.StuffIt;
 ///   <item><description>Aladdin Systems StuffIt — proprietary; no official spec published</description></item>
 /// </list>
 /// </summary>
-public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFormatOptionsSchema {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the StuffIt archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -26,7 +26,7 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new StuffItReader(stream);
-        return r.Entries.Select(e => (e.FileName, r.Extract(e)));
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FileName, r.Extract(e)));
       },
       buildImage: files => {
         using var ms = new MemoryStream();
@@ -106,7 +106,32 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Macintosh StuffIt archive (classic SIT! and StuffIt 5); reads methods None/RLE/Compress/Huffman/LZAH/LZ+Huffman/Arsenic, writes None/RLE";
+  public string Description => "Macintosh StuffIt archive (classic SIT! and StuffIt 5); reads methods None/RLE/Compress/Huffman/LZAH/LZ+Huffman/Arsenic, writes None/RLE/LZ+Huffman in classic and StuffIt 5 containers";
+
+  private const string Classic = "Classic";
+  private const string StuffIt5 = "StuffIt5";
+
+  /// <summary>The container the writer emits.</summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: FormatOptionKeys.TargetCompatibility,
+      DisplayName: "Container",
+      Kind: FormatOptionKind.Enum,
+      Default: Classic,
+      AllowedValues: [Classic, StuffIt5],
+      Description: "Classic writes a \"SIT!\" archive (StuffIt 1-4); StuffIt5 writes the container of StuffIt 5 and later.",
+      IsOptimizationAxis: false),
+    new FormatOptionDescriptor(
+      Key: "Compression",
+      DisplayName: "Compression",
+      Kind: FormatOptionKind.Enum,
+      Default: nameof(StuffItCompression.Smallest),
+      AllowedValues: Enum.GetNames<StuffItCompression>(),
+      Description: "Smallest tries Arsenic (method 15), LZ+Huffman (13) and RLE (1) for every fork and keeps the smallest; the others force one method (storing a fork it would enlarge)."),
+  ];
+
+  private static StuffItCompression CompressionOf(FormatCreateOptions options)
+    => Enum.TryParse<StuffItCompression>(options.GetString("Compression"), ignoreCase: true, out var c) ? c : StuffItCompression.Smallest;
 
   /// <summary>Suffix under which a file's resource fork is listed and extracted.</summary>
   public const string ResourceForkSuffix = ".rsrc";
@@ -175,9 +200,24 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>
   /// Performs the create operation.
   /// </summary>
+  /// <remarks>
+  /// Writes a classic "SIT!" archive, or a StuffIt 5 archive when
+  /// <see cref="FormatOptionKeys.TargetCompatibility"/> is <c>StuffIt5</c>. The compression option
+  /// selects store, RLE, LZ+Huffman, Arsenic, or the smallest encoding for each fork.
+  /// </remarks>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    using var w = new StuffItWriter(output, leaveOpen: true);
-    foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
-      w.AddFile(name, data);
+    if (string.Equals(options.GetString(FormatOptionKeys.TargetCompatibility), StuffIt5, StringComparison.OrdinalIgnoreCase)) {
+      using var w5 = new StuffIt5Writer(output, CompressionOf(options), leaveOpen: true);
+      foreach (var i in inputs) {
+        if (i.IsDirectory) w5.AddDirectory(i.ArchiveName);
+        else w5.AddFile(i.ArchiveName, i.ReadContent());
+      }
+      return;
+    }
+    using var w = new StuffItWriter(output, CompressionOf(options), leaveOpen: true);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
+      else w.AddFile(i.ArchiveName, i.ReadContent());
+    }
   }
 }

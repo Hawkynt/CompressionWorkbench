@@ -51,14 +51,32 @@ public class UharcTests {
   [TestCase("mm-mz.uha", "mm", null, false)]
   [TestCase("exe-m2.uha", "exe", null, true)]
   [TestCase("exe-mz.uha", "exe", null, true)]
+  [TestCase("basic-mr.uha", "basic", null, true)]
+  [TestCase("basic-mw.uha", "basic", null, true)]
+  [TestCase("runs-mr.uha", "runs", null, true)]
+  [TestCase("runs-mw.uha", "runs", null, true)]
+  [TestCase("reset-mw1.uha", "reset", null, true)]
+  [TestCase("exe-mw.uha", "exe", null, true)]
+  [TestCase("basic-mx.uha", "basic", null, true)]
+  [TestCase("reset-mx.uha", "reset", null, true)]
+  [TestCase("reset-mx1.uha", "reset", null, true)]
+  [TestCase("exe-mx.uha", "exe", null, true)]
+  [TestCase("mm-mx.uha", "mm", null, true)]
+  [TestCase("v02-basic-m2.uha", "basic", null, true)]
+  [TestCase("v02-exe-m0.uha", "exe", null, true)]
+  [TestCase("v02-exe-m2.uha", "exe", null, true)]
+  [TestCase("v02-reset-m3.uha", "reset", null, true)]
+  [TestCase("v02-reset-md.uha", "reset", null, true)]
+  [TestCase("v02-mm-m3.uha", "mm", null, true)]
+  [TestCase("v02-runs-m2.uha", "runs", null, true)]
   [Category("HappyPath"), Category("ThemVsUs")]
   public void GivenArchiveUharcWrote_WhenExtracted_ThenEveryFileMatchesItsInput(string archive, string set, string? password, bool wholeSet) {
     var reader = Open(archive, password);
-    var expected = Manifest(set).Where(m => m.Sha256 != "-").ToDictionary(m => m.Path);
+    var expected = Manifest(set).Where(m => m.Sha256 != "-").ToDictionary(m => m.Path, StringComparer.OrdinalIgnoreCase);
     var files = reader.Entries.Where(e => !e.IsDirectory).ToList();
     Assert.That(files, Is.Not.Empty);
     if (wholeSet)
-      Assert.That(files.Select(e => e.FileName).Order(), Is.EqualTo(expected.Keys.Order()));
+      Assert.That(files.Select(e => e.FileName.ToLowerInvariant()).Order(), Is.EqualTo(expected.Keys.Select(k => k.ToLowerInvariant()).Order()));
     foreach (var entry in files) {
       Assert.That(expected.TryGetValue(entry.FileName, out var input), Is.True, $"{entry.FileName} is not an input of set '{set}'");
       var data = reader.Extract(entry);
@@ -91,7 +109,13 @@ public class UharcTests {
   [TestCase("basic-mx.uha", "PPM", 16384)]
   [TestCase("basic-mr.uha", "RLE", 0)]
   [TestCase("basic-mw.uha", "LZ78", 0)]
+  [TestCase("reset-mw1.uha", "LZ78", 0)]
+  [TestCase("reset-mx1.uha", "PPM", 1024)]
   [TestCase("reset-m2.uha", "ALZ:2", 262144)]
+  [TestCase("v02-exe-m0.uha", "Store", 0)]
+  [TestCase("v02-basic-m2.uha", "m2", 16384)]
+  [TestCase("v02-reset-m3.uha", "m3", 262144)]
+  [TestCase("v02-reset-md.uha", "m3", 1024)]
   [Category("HappyPath")]
   public void GivenEachMode_WhenOpened_ThenModeAndDictionaryAreReported(string archive, string mode, int dictionary) {
     var reader = Open(archive);
@@ -111,21 +135,7 @@ public class UharcTests {
     });
   }
 
-  // ── Honest refusals ────────────────────────────────────────────────────
-
-  [TestCase("basic-mx.uha")]
-  [TestCase("basic-mr.uha")]
-  [TestCase("basic-mw.uha")]
-  [Category("ErrorHandling")]
-  public void GivenUnsupportedMode_WhenExtracted_ThenItIsRefusedButTheDirectoryLists(string archive) {
-    var reader = Open(archive);
-    Assert.Multiple(() => {
-      Assert.That(reader.CanDecodeMethod, Is.False);
-      Assert.That(reader.Entries.Count(e => !e.IsDirectory), Is.EqualTo(6));
-      Assert.That(() => reader.Extract(reader.Entries.Single(e => e.FileName == "text.txt")), Throws.TypeOf<NotSupportedException>());
-      Assert.That(reader.Extract(reader.Entries.Single(e => e.FileName == "empty.txt")), Is.Empty);
-    });
-  }
+  // ── Passwords ──────────────────────────────────────────────────────────
 
   [Test, Category("ErrorHandling")]
   public void GivenPasswordArchive_WhenOpenedWithoutPassword_ThenAPasswordIsRequested()
@@ -165,6 +175,9 @@ public class UharcTests {
 
   [TestCase("basic-m2.uha")]
   [TestCase("basic-mz.uha")]
+  [TestCase("reset-mx.uha")]
+  [TestCase("exe-mx.uha")]
+  [TestCase("v02-reset-m3.uha")]
   [Category("ErrorHandling")]
   public void GivenCorruptedPackedStream_WhenExtracted_ThenNoWrongBytesAreReturned(string archive) {
     var data = Vector(archive);
@@ -180,8 +193,8 @@ public class UharcTests {
   [Test, Category("ErrorHandling")]
   public void GivenOlderUharcVersion_WhenOpened_ThenTheVersionIsNamed() {
     var data = Vector("basic-m2.uha");
-    data[3] = 2;
-    Assert.That(() => new UharcReader(new MemoryStream(data)), Throws.TypeOf<InvalidDataException>().With.Message.Contains("version 2"));
+    data[3] = 3;
+    Assert.That(() => new UharcReader(new MemoryStream(data)), Throws.TypeOf<InvalidDataException>().With.Message.Contains("version 3"));
   }
 
   // ── Descriptor ─────────────────────────────────────────────────────────
@@ -228,6 +241,33 @@ public class UharcTests {
   public void GivenWrongPassword_WhenListedThroughTheDescriptor_ThenItIsReportedRatherThanHidden()
     => Assert.That(() => new UharcFormatDescriptor().List(new MemoryStream(Vector("basic-m2-pw.uha")), "Secret"),
       Throws.TypeOf<InvalidDataException>().With.Message.Contains("password"));
+
+  // ── UHARC 0.2 ──────────────────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void GivenVersion02Archive_WhenListed_ThenVersionDirectoriesAndDosStampsAreRead() {
+    var reader = Open("v02-basic-m2.uha");
+    Assert.Multiple(() => {
+      Assert.That(reader.Version, Is.EqualTo(2));
+      Assert.That(reader.Entries.Where(e => e.IsDirectory).Select(e => e.FileName).Order(), Is.EqualTo(new[] { "EMPTYDIR", "SUB" }));
+      Assert.That(reader.Entries.Single(e => e.FileName == "SUB/NESTED.TXT").Size, Is.EqualTo(13));
+      Assert.That(reader.Entries.Where(e => !e.IsDirectory).Select(e => e.LastModified), Is.All.EqualTo(new DateTime(2005, 10, 1, 12, 0, 0)));
+    });
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenVersion02HeaderByteFlipped_WhenOpened_ThenTheFullHeaderCheckFails() {
+    var data = Vector("v02-basic-m2.uha");
+    data[20] ^= 0x01;
+    Assert.That(() => new UharcReader(new MemoryStream(data)), Throws.TypeOf<InvalidDataException>().With.Message.Contains("header"));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void GivenVersion02DirectoryByteFlipped_WhenOpened_ThenTheDirectoryCheckFails() {
+    var data = Vector("v02-basic-m2.uha");
+    data[^3] ^= 0x40;
+    Assert.That(() => new UharcReader(new MemoryStream(data)), Throws.InstanceOf<InvalidDataException>());
+  }
 
   // ── Self-extractor ─────────────────────────────────────────────────────
 

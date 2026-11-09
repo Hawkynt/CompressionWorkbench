@@ -7,14 +7,24 @@ namespace FileFormat.StuffIt;
 /// Creates a StuffIt (SIT) classic archive.
 /// </summary>
 /// <remarks>
-/// Produces archives compatible with the classic "SIT!" format (version 1).
-/// Supports Store (method 0) and RLE (method 1) compression.
-/// Entries are buffered in memory and the archive is written on <see cref="Dispose"/>.
+/// <para>
+/// Produces archives in the classic "SIT!" format (version 1). Each fork is stored, RLE-packed
+/// (method 1), LZ+Huffman-compressed (method 13) or Arsenic-compressed (method 15), according to the chosen compression setting. Entries are buffered in memory and the archive is written on <see cref="Dispose"/>.
+/// </para>
+/// <para>
+/// '/'-separated names create folders. A folder is a 112-byte entry header whose two method bytes
+/// are 0x20 (folder start), followed by the folder's entries and a second header with method 0x21
+/// (folder end). The archive header counts only the entries at the root.
+/// </para>
 /// </remarks>
 public sealed class StuffItWriter : IDisposable {
+  private const byte FolderStart = 0x20;
+  private const byte FolderEnd = 0x21;
+
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
-  private readonly List<PendingEntry> _entries = [];
+  private readonly StuffItTree<PendingEntry> _tree = new();
+  private readonly StuffItCompression _compression;
   private bool _disposed;
 
   /// <summary>
@@ -23,7 +33,16 @@ public sealed class StuffItWriter : IDisposable {
   /// <param name="stream">The stream to write the SIT archive to.</param>
   /// <param name="leaveOpen">Whether to leave the stream open when this writer is disposed.</param>
   /// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> is null.</exception>
-  public StuffItWriter(Stream stream, bool leaveOpen = false) {
+  public StuffItWriter(Stream stream, bool leaveOpen = false) : this(stream, StuffItCompression.Smallest, leaveOpen) { }
+
+  /// <summary>
+  /// Initializes a new <see cref="StuffItWriter"/> that compresses forks as <paramref name="compression"/> asks.
+  /// </summary>
+  /// <param name="stream">The stream to write the SIT archive to.</param>
+  /// <param name="compression">How each fork is compressed.</param>
+  /// <param name="leaveOpen">Whether to leave the stream open when this writer is disposed.</param>
+  public StuffItWriter(Stream stream, StuffItCompression compression, bool leaveOpen = false) {
+    this._compression = compression;
     this._stream    = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
   }
@@ -33,7 +52,7 @@ public sealed class StuffItWriter : IDisposable {
   /// <summary>
   /// Adds a file entry to the archive with an empty resource fork.
   /// </summary>
-  /// <param name="fileName">The filename (up to 63 characters, Latin-1 encoded).</param>
+  /// <param name="fileName">The path; '/' separates folders, each name holding 1-31 Latin-1 bytes.</param>
   /// <param name="data">The uncompressed data fork bytes.</param>
   /// <param name="fileType">The four-character Mac file type code.</param>
   /// <param name="fileCreator">The four-character Mac file creator code.</param>
@@ -56,7 +75,7 @@ public sealed class StuffItWriter : IDisposable {
   /// <summary>
   /// Adds a file entry to the archive with both data and resource forks.
   /// </summary>
-  /// <param name="fileName">The filename (up to 63 characters, Latin-1 encoded).</param>
+  /// <param name="fileName">The path; '/' separates folders, each name holding 1-31 Latin-1 bytes.</param>
   /// <param name="dataFork">The uncompressed data fork bytes.</param>
   /// <param name="resourceFork">The uncompressed resource fork bytes.</param>
   /// <param name="fileType">The four-character Mac file type code.</param>
@@ -76,28 +95,37 @@ public sealed class StuffItWriter : IDisposable {
     ArgumentNullException.ThrowIfNull(fileName);
     ArgumentNullException.ThrowIfNull(dataFork);
     ArgumentNullException.ThrowIfNull(resourceFork);
-    if (Encoding.Latin1.GetByteCount(fileName) is 0 or > StuffItConstants.FileNameMaxLength)
-      throw new NotSupportedException(
-        $"A classic StuffIt name holds 1-{StuffItConstants.FileNameMaxLength} bytes; '{fileName}' would be truncated.");
+    CheckPath(fileName);
 
-    byte dataMethod;
-    var compressedData = CompressFork(dataFork, out dataMethod);
-
-    byte resMethod;
-    var compressedResource = CompressFork(resourceFork, out resMethod);
-
-    this._entries.Add(new PendingEntry {
-      FileName           = fileName,
+    var compressedData = CompressFork(dataFork, out var dataMethod, this._compression);
+    var compressedResource = CompressFork(resourceFork, out var resMethod, this._compression);
+    var modified = lastModified ?? DateTime.UtcNow;
+    this._tree.AddFile(fileName, new PendingEntry {
       FileType           = fileType,
       FileCreator        = fileCreator,
-      LastModified       = lastModified ?? DateTime.UtcNow,
       DataFork           = dataFork,
       ResourceFork       = resourceFork,
       CompressedData     = compressedData,
       CompressedResource = compressedResource,
       DataMethod         = dataMethod,
       ResourceMethod     = resMethod,
-    });
+    }, modified);
+  }
+
+  /// <summary>Adds a folder, which may stay empty; folders named in file paths are created on their own.</summary>
+  /// <param name="path">The folder path; '/' separates folders, each name holding 1-31 Latin-1 bytes.</param>
+  /// <param name="lastModified">The last-modification timestamp. Defaults to <see cref="DateTime.UtcNow"/>.</param>
+  public void AddDirectory(string path, DateTime? lastModified = null) {
+    ArgumentNullException.ThrowIfNull(path);
+    CheckPath(path);
+    this._tree.AddFolder(path, lastModified ?? DateTime.UtcNow);
+  }
+
+  private static void CheckPath(string path) {
+    foreach (var part in path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries))
+      if (Encoding.Latin1.GetByteCount(part) is 0 or > StuffItConstants.FileNameMaxLength)
+        throw new NotSupportedException(
+          $"A classic StuffIt name holds 1-{StuffItConstants.FileNameMaxLength} bytes; '{part}' would be truncated.");
   }
 
   // ── IDisposable ──────────────────────────────────────────────────────────
@@ -115,17 +143,15 @@ public sealed class StuffItWriter : IDisposable {
   // ── Serialisation ────────────────────────────────────────────────────────
 
   private void Flush() {
-    // Buffer all entry headers + data into a MemoryStream, then write the
-    // archive header (which needs file count and total length) followed by
-    // the buffered content.
+    // Buffer all entry headers + data, then write the archive header (which needs the root
+    // entry count and total length) followed by the buffered content.
     using var buffer = new MemoryStream();
+    foreach (var node in this._tree.Root.Children)
+      WriteNode(buffer, node);
 
-    foreach (var entry in this._entries)
-      WriteEntry(buffer, entry);
-
-    // Write archive header (22 bytes), matching the reader's layout:
+    // Archive header (22 bytes):
     //   [0..4]   magic "SIT!"
-    //   [4..6]   file count (uint16 BE)
+    //   [4..6]   number of entries at the root (uint16 BE)
     //   [6..10]  total archive length (uint32 BE)
     //   [10..14] "rLau" signature (uint32 BE)
     //   [14]     version (1)
@@ -136,71 +162,81 @@ public sealed class StuffItWriter : IDisposable {
     var totalLength = (uint)(StuffItConstants.ArchiveHeaderSize + buffer.Length);
 
     BinaryPrimitives.WriteUInt32BigEndian(archiveHeader, StuffItConstants.MagicSit);
-    BinaryPrimitives.WriteUInt16BigEndian(archiveHeader[4..], (ushort)this._entries.Count);
+    BinaryPrimitives.WriteUInt16BigEndian(archiveHeader[4..], (ushort)this._tree.Root.Children.Count);
     BinaryPrimitives.WriteUInt32BigEndian(archiveHeader[6..], totalLength);
     BinaryPrimitives.WriteUInt32BigEndian(archiveHeader[10..], StuffItConstants.ArchiveSignatureRLau);
     archiveHeader[14] = 1;
 
     this._stream.Write(archiveHeader);
 
-    // Write buffered entries.
     buffer.Position = 0;
     buffer.CopyTo(this._stream);
     this._stream.Flush();
   }
 
-  private static void WriteEntry(Stream output, PendingEntry entry) {
+  private static void WriteNode(Stream output, StuffItTree<PendingEntry>.Node node) {
+    if (node.File is { } file) {
+      WriteEntry(output, node.Name, node.Modified, file);
+      return;
+    }
+    WriteFolderMarker(output, node.Name, node.Modified, FolderStart);
+    foreach (var child in node.Children) WriteNode(output, child);
+    WriteFolderMarker(output, node.Name, node.Modified, FolderEnd);
+  }
+
+  private static void WriteFolderMarker(Stream output, string name, DateTime modified, byte method) {
+    Span<byte> hdr = stackalloc byte[StuffItConstants.EntryHeaderSize];
+    hdr.Clear();
+    hdr[0] = method;
+    hdr[1] = method;
+    WriteName(hdr, name);
+    var macTimestamp = ToMacTimestamp(modified);
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[76..], macTimestamp);
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[80..], macTimestamp);
+    BinaryPrimitives.WriteUInt16BigEndian(hdr[110..], ComputeCrc16(hdr[..110]));
+    output.Write(hdr);
+  }
+
+  private static void WriteName(Span<byte> hdr, string name) {
+    var nameBytes = Encoding.Latin1.GetBytes(name);
+    hdr[2] = (byte)nameBytes.Length;
+    nameBytes.CopyTo(hdr.Slice(StuffItConstants.FileNameOffset, nameBytes.Length));
+  }
+
+  private static void WriteEntry(Stream output, string name, DateTime modified, PendingEntry entry) {
     Span<byte> hdr = stackalloc byte[StuffItConstants.EntryHeaderSize];
     hdr.Clear();
 
-    // [0] resource fork method
+    // [0] resource fork method, [1] data fork method
     hdr[0] = entry.ResourceMethod;
-    // [1] data fork method
     hdr[1] = entry.DataMethod;
 
-    // [2] name length, [3..66] filename (Latin-1, null-padded)
-    var nameBytes = Encoding.Latin1.GetBytes(entry.FileName);
-    var nameLen = nameBytes.Length;
-    hdr[2] = (byte)nameLen;
-    nameBytes.AsSpan(0, nameLen).CopyTo(hdr.Slice(StuffItConstants.FileNameOffset, nameLen));
+    // [2] name length, [3..34] name (Latin-1, zero-padded)
+    WriteName(hdr, name);
 
-    // [66..70] file type (4 chars ASCII)
+    // [66..70] file type, [70..74] file creator (4 chars ASCII)
     WriteAscii4(hdr[66..], entry.FileType);
-    // [70..74] file creator (4 chars ASCII)
     WriteAscii4(hdr[70..], entry.FileCreator);
 
-    // [74..76] Finder flags — zero
-    // [76..80] creation date — use same as modification date
-    var macTimestamp = ToMacTimestamp(entry.LastModified);
+    // [74..76] Finder flags — zero; [76..80] creation date, [80..84] modification date
+    var macTimestamp = ToMacTimestamp(modified);
     BinaryPrimitives.WriteUInt32BigEndian(hdr[76..], macTimestamp);
-    // [80..84] modification date
     BinaryPrimitives.WriteUInt32BigEndian(hdr[80..], macTimestamp);
 
-    // [84..88] resource fork uncompressed size
+    // [84..100] fork sizes: resource, data, compressed resource, compressed data
     BinaryPrimitives.WriteUInt32BigEndian(hdr[84..], (uint)entry.ResourceFork.Length);
-    // [88..92] data fork uncompressed size
     BinaryPrimitives.WriteUInt32BigEndian(hdr[88..], (uint)entry.DataFork.Length);
-    // [92..96] resource fork compressed size
     BinaryPrimitives.WriteUInt32BigEndian(hdr[92..], (uint)entry.CompressedResource.Length);
-    // [96..100] data fork compressed size
     BinaryPrimitives.WriteUInt32BigEndian(hdr[96..], (uint)entry.CompressedData.Length);
 
-    // [100..102] resource fork CRC-16
-    var resCrc = ComputeCrc16(entry.ResourceFork);
-    BinaryPrimitives.WriteUInt16BigEndian(hdr[100..], resCrc);
-    // [102..104] data fork CRC-16
-    var dataCrc = ComputeCrc16(entry.DataFork);
-    BinaryPrimitives.WriteUInt16BigEndian(hdr[102..], dataCrc);
-
-    // [104..110] reserved — zeros
-
-    // [110..112] header CRC-16 over bytes 0..110
-    var headerCrc = ComputeCrc16(hdr[..110]);
-    BinaryPrimitives.WriteUInt16BigEndian(hdr[110..], headerCrc);
+    // [100..104] fork CRC-16s; [104..110] reserved; [110..112] header CRC-16 over bytes 0..110
+    BinaryPrimitives.WriteUInt16BigEndian(hdr[100..], ComputeCrc16(entry.ResourceFork));
+    BinaryPrimitives.WriteUInt16BigEndian(hdr[102..], ComputeCrc16(entry.DataFork));
+    BinaryPrimitives.WriteUInt16BigEndian(hdr[110..], ComputeCrc16(hdr[..110]));
 
     output.Write(hdr);
 
-    // Write resource fork compressed data, then data fork compressed data.
+    // Resource fork data, then data fork data.
     if (entry.CompressedResource.Length > 0)
       output.Write(entry.CompressedResource);
     if (entry.CompressedData.Length > 0)
@@ -209,28 +245,33 @@ public sealed class StuffItWriter : IDisposable {
 
   // ── Compression ──────────────────────────────────────────────────────────
 
-  private static byte[] CompressFork(byte[] data, out byte method) {
-    if (data.Length == 0) {
-      method = StuffItConstants.MethodStore;
-      return [];
-    }
-
-    var rleEncoded = StuffItRle90.Encode(data);
-    if (rleEncoded.Length < data.Length) {
-      method = StuffItConstants.MethodRle;
-      return rleEncoded;
-    }
-
+  /// <summary>Compresses a fork as <paramref name="compression"/> asks, falling back to storing whenever that is smaller.</summary>
+  internal static byte[] CompressFork(byte[] data, out byte method, StuffItCompression compression = StuffItCompression.Smallest) {
     method = StuffItConstants.MethodStore;
-    return data;
+    if (data.Length == 0 || compression == StuffItCompression.Store) return data.Length == 0 ? [] : data;
+
+    var best = data;
+    var bestMethod = StuffItConstants.MethodStore;
+    void Try(StuffItCompression kind, byte code, Func<byte[]> encode) {
+      if (compression != StuffItCompression.Smallest && compression != kind) return;
+      var packed = encode();
+      if (packed.Length >= best.Length) return;
+      best = packed;
+      bestMethod = code;
+    }
+    Try(StuffItCompression.LzHuffman, StuffItConstants.MethodLzHuffman, () => StuffIt13Encoder.Encode(data));
+    Try(StuffItCompression.Rle, StuffItConstants.MethodRle, () => StuffItRle90.Encode(data));
+    Try(StuffItCompression.Arsenic, StuffItConstants.MethodArsenic, () => StuffItArsenicEncoder.Encode(data, StuffItArsenicEncoder.BlockBitsFor(data.Length)));
+    method = bestMethod;
+    return best;
   }
 
   // StuffIt checks headers and forks with CRC-16/ARC (reflected 0xA001, init 0), as every reader does.
-  private static ushort ComputeCrc16(ReadOnlySpan<byte> data) => Compression.Core.Checksums.Crc16.Compute(data);
+  internal static ushort ComputeCrc16(ReadOnlySpan<byte> data) => Compression.Core.Checksums.Crc16.Compute(data);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
-  private static void WriteAscii4(Span<byte> dest, string value) {
+  internal static void WriteAscii4(Span<byte> dest, string value) {
     var bytes = Encoding.ASCII.GetBytes(value);
     var len = Math.Min(bytes.Length, 4);
     bytes.AsSpan(0, len).CopyTo(dest);
@@ -239,7 +280,7 @@ public sealed class StuffItWriter : IDisposable {
       dest[i] = (byte)' ';
   }
 
-  private static uint ToMacTimestamp(DateTime dt) {
+  internal static uint ToMacTimestamp(DateTime dt) {
     if (dt <= StuffItConstants.MacEpoch)
       return 0;
     var diff = dt.ToUniversalTime() - StuffItConstants.MacEpoch;
@@ -250,10 +291,8 @@ public sealed class StuffItWriter : IDisposable {
   // ── Pending entry ────────────────────────────────────────────────────────
 
   private sealed class PendingEntry {
-    public string FileName { get; init; } = string.Empty;
     public string FileType { get; init; } = "TEXT";
     public string FileCreator { get; init; } = "CWIE";
-    public DateTime LastModified { get; init; }
     public byte[] DataFork { get; init; } = [];
     public byte[] ResourceFork { get; init; } = [];
     public byte[] CompressedData { get; init; } = [];

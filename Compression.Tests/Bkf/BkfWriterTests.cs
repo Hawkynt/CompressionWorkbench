@@ -26,27 +26,44 @@ public class BkfWriterTests {
   // ── Structure / spec conformance ──────────────────────────────────────
 
   [Test, Category("HappyPath")]
-  public void Build_StartsWithTapeMagic_AndDeclaresFlb() {
+  public void Build_WritesTheTapeBlockFieldsWhereMtf100aPutsThem() {
     var bkf = BkfWriter.Build([File("a.txt", "x"u8.ToArray())]);
-    Assert.That(Encoding.ASCII.GetString(bkf, 0, 4), Is.EqualTo("TAPE"));
-    var flb = BinaryPrimitives.ReadUInt32LittleEndian(bkf.AsSpan(52));
-    Assert.That(flb, Is.EqualTo(FlbSize));
-    Assert.That(bkf.Length % FlbSize, Is.EqualTo(0), "Output must be a whole number of FLBs.");
+    Assert.Multiple(() => {
+      Assert.That(Encoding.ASCII.GetString(bkf, 0, 4), Is.EqualTo("TAPE"));
+      Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(bkf.AsSpan(84)), Is.EqualTo(FlbSize), "Format Logical Block Size at 84");
+      Assert.That(bkf[93], Is.EqualTo(1), "MTF major version at 93");
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bkf.AsSpan(56)) & 1, Is.EqualTo(1), "soft filemarks");
+      Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(bkf.AsSpan(80)), Is.GreaterThan(0), "software name");
+      Assert.That(bkf[48], Is.EqualTo(2), "Unicode strings");
+      Assert.That(bkf.Length % FlbSize, Is.EqualTo(0), "whole Format Logical Blocks");
+    });
   }
 
   [Test, Category("HappyPath")]
-  public void Build_EmitsBlockChainInSpecOrder() {
-    var bkf = BkfWriter.Build([File("a.txt", "x"u8.ToArray())]);
-    var types = ScanDblkTypes(bkf);
-    // TAPE, SSET, VOLB, FILE, ESET, EOTM
-    Assert.That(types, Is.EqualTo(new[] { "TAPE", "SSET", "VOLB", "FILE", "ESET", "EOTM" }));
+  public void Build_LaysOutTapeFilemarkDataSetFilemarkEsetFilemark() {
+    var bkf = BkfWriter.Build([File("a.txt", "x"u8.ToArray()), File("d/b.txt", "y"u8.ToArray())]);
+    Assert.That(Blocks(bkf).Select(b => b.Type), Is.EqualTo(new[] {
+      "TAPE", "SFMB", "SSET", "VOLB", "DIRB", "FILE", "DIRB", "FILE", "SFMB", "ESET", "SFMB",
+    }));
   }
 
   [Test, Category("HappyPath")]
-  public void Build_LastBlockIsEotm() {
-    var bkf = BkfWriter.Build([File("a.txt", "x"u8.ToArray())]);
-    var lastPos = bkf.Length - FlbSize;
-    Assert.That(Encoding.ASCII.GetString(bkf, lastPos, 4), Is.EqualTo("EOTM"));
+  public void Build_SealsEveryHeaderAndNumbersTheDataSet() {
+    var bkf = BkfWriter.Build([File("a.txt", new byte[3000]), File("d/b.txt", "y"u8.ToArray())]);
+    var blocks = Blocks(bkf);
+    var sset = blocks.First(b => b.Type == "SSET").Offset;
+    var inSet = blocks.SkipWhile(b => b.Type != "SSET").TakeWhile(b => b.Type != "SFMB").ToList();
+    Assert.Multiple(() => {
+      foreach (var b in blocks)
+        Assert.That(Xor16(bkf.AsSpan(b.Offset, 50)), Is.EqualTo(BinaryPrimitives.ReadUInt16LittleEndian(bkf.AsSpan(b.Offset + 50))), $"{b.Type} at {b.Offset}: header checksum");
+      for (var i = 0; i < inSet.Count; ++i) {
+        Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bkf.AsSpan(inSet[i].Offset + 36)), Is.EqualTo((uint)i), $"{inSet[i].Type}: Control Block ID");
+        Assert.That(BinaryPrimitives.ReadUInt64LittleEndian(bkf.AsSpan(inSet[i].Offset + 20)), Is.EqualTo((ulong)((inSet[i].Offset - sset) / FlbSize)), $"{inSet[i].Type}: Format Logical Address");
+      }
+      var stan = bkf.AsSpan().IndexOf("STAN"u8);
+      Assert.That(Xor16(bkf.AsSpan(stan, 20)), Is.EqualTo(BinaryPrimitives.ReadUInt16LittleEndian(bkf.AsSpan(stan + 20))), "STAN stream header checksum");
+      Assert.That(stan % 4, Is.Zero, "streams on 4-byte boundaries");
+    });
   }
 
   // ── Round-trip: primary gate ──────────────────────────────────────────
@@ -130,8 +147,7 @@ public class BkfWriterTests {
   [Test, Category("EdgeCase")]
   public void EmptyBackup_NoFiles_RoundTrips() {
     var bkf = BkfWriter.Build([]);
-    var types = ScanDblkTypes(bkf);
-    Assert.That(types, Is.EqualTo(new[] { "TAPE", "SSET", "VOLB", "ESET", "EOTM" }));
+    Assert.That(Blocks(bkf).Select(b => b.Type), Is.EqualTo(new[] { "TAPE", "SFMB", "SSET", "VOLB", "DIRB", "SFMB", "ESET", "SFMB" }));
     var r = Read(bkf);
     Assert.That(r.Entries.Where(e => !e.IsDirectory), Is.Empty);
   }
@@ -191,7 +207,7 @@ public class BkfWriterTests {
   }
 
   [Test, Category("ErrorHandling")]
-  public void Build_InvalidFlbSize_Throws([Values(0, 256, 1000, 131072)] int flb) {
+  public void Build_InvalidFlbSize_Throws([Values(0, 256, 1000, 2048, 131072)] int flb) {
     Assert.Throws<ArgumentOutOfRangeException>(() => BkfWriter.Build([], flb));
   }
 
@@ -261,14 +277,18 @@ public class BkfWriterTests {
 
   // ── Helpers ───────────────────────────────────────────────────────────
 
-  /// <summary>Walks the FLB-aligned DBLK chain and returns each block's 4CC type.</summary>
-  private static string[] ScanDblkTypes(byte[] bkf) {
-    var types = new List<string>();
-    for (var pos = 0; pos + 4 <= bkf.Length; pos += FlbSize) {
-      var t = Encoding.ASCII.GetString(bkf, pos, 4);
-      types.Add(t);
-      if (t == "EOTM") break;
-    }
-    return types.ToArray();
+  private static ushort Xor16(ReadOnlySpan<byte> bytes) {
+    ushort x = 0;
+    for (var i = 0; i + 1 < bytes.Length; i += 2) x ^= BinaryPrimitives.ReadUInt16LittleEndian(bytes[i..]);
+    return x;
+  }
+
+  /// <summary>The DBLKs on Format Logical Block boundaries whose header checksum holds.</summary>
+  private static List<(string Type, int Offset)> Blocks(byte[] bkf) {
+    var result = new List<(string, int)>();
+    for (var pos = 0; pos + 52 <= bkf.Length; pos += FlbSize)
+      if (Xor16(bkf.AsSpan(pos, 50)) == BinaryPrimitives.ReadUInt16LittleEndian(bkf.AsSpan(pos + 50)) && bkf[pos] is >= (byte)'A' and <= (byte)'Z')
+        result.Add((Encoding.ASCII.GetString(bkf, pos, 4), pos));
+    return result;
   }
 }

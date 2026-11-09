@@ -21,6 +21,12 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Update="FileSystems\FileSystem.Chfs\THIRD-PARTY-NOTICE.Chfs.txt"
+          Pack="true" PackagePath="notices/Chfs/" />
+    <None Update="FileSystems\FileSystem.Lfs\THIRD-PARTY-NOTICE.Lfs.txt"
+          Pack="true" PackagePath="notices/Lfs/" />
+    <None Update="FileFormats\FileFormat.PartImage\THIRD-PARTY-NOTICE.imagebackup.txt"
+          Pack="true" PackagePath="notices/PartImage/" />
   </ItemGroup>
 
   <ItemGroup>
@@ -29,7 +35,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Compression.Core\Hawkynt.Compression.Core.csproj" />
-    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" PrivateAssets="all" />
   </ItemGroup>
 
   <!-- Reference template blocks captured byte-exact from `mkfs.reiser4 -fffy`. The

@@ -65,6 +65,36 @@ public static class SevenZipPpmd {
     return output.ToArray();
   }
 
+  /// <summary>
+  /// Compresses <paramref name="length"/> bytes of <paramref name="input"/> into
+  /// <paramref name="output"/> as they are read: memory stays at the model's own, whatever the
+  /// input's length, and the bytes equal <see cref="Encode(ReadOnlySpan{byte}, int, uint)"/>'s.
+  /// </summary>
+  /// <exception cref="ArgumentOutOfRangeException">A parameter lies outside what 7-Zip accepts.</exception>
+  /// <exception cref="EndOfStreamException">The input ends before <paramref name="length"/> bytes.</exception>
+  public static void Encode(Stream input, long length, Stream output, int order, uint memorySize) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentOutOfRangeException.ThrowIfNegative(length);
+    Validate(order, memorySize);
+    var model = new Ppmd7();
+    model.Allocate(memorySize);
+    model.Initialize(order);
+    var buffered = new BufferedStream(output, 1 << 16); // not disposed: that would close the caller's stream
+    var rc = new SevenZipPpmdRangeEncoder(buffered);
+    var chunk = new byte[1 << 16];
+    for (var remaining = length; remaining > 0;) {
+      var read = input.Read(chunk, 0, (int)Math.Min(chunk.Length, remaining));
+      if (read <= 0)
+        throw new EndOfStreamException("7z PPMd input ended before its declared length.");
+      for (var i = 0; i < read; ++i)
+        model.EncodeSymbol(rc, chunk[i]);
+      remaining -= read;
+    }
+    rc.Flush();
+    buffered.Flush();
+  }
+
   /// <summary>Decompresses a 7z PPMd stream to exactly <paramref name="unpackSize"/> bytes.</summary>
   /// <exception cref="InvalidDataException">
   /// The properties are invalid, the stream does not start as 7-Zip's encoder starts it, a symbol

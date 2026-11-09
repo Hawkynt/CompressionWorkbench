@@ -128,7 +128,7 @@ For the genuine `HELLO.TXT` (18 bytes) the run was:
        payload: "CWB_CVF_PROOF_OK\r\n"  (18 bytes)
 ```
 
-The reader/codec (`MsLzhBlockCodec`) decode this exactly; round-trip is
+The reader (`DriveSpace3Reader`) decodes this exactly; round-trip is
 byte-identical.
 
 ## Inner FAT12/16 volume — confirmed
@@ -146,9 +146,8 @@ through the MDFAT to its physical run, then decoding the run framing.
 > UltraPack is `SQ-0-0` (a raw DEFLATE body). Both, and `JM-0-0`, are specified in
 > [`docs/CVF-CODECS-ON-DISK.md`](../../../docs/CVF-CODECS-ON-DISK.md) and decoded by
 > `CvfLzCodec`, pinned to 32 KiB clusters the dmsdos compressors wrote
-> (`CvfReferenceVectorTests`). What follows describes the legacy `MS_DSP3`
-> self-format and its `MsLzh` codec only. Fragmented DriveSpace 3 clusters are
-> still not read.
+> (`CvfReferenceVectorTests`). Fragmented DriveSpace 3 clusters are still not
+> read.
 
 DriveSpace 3 replaced the DOS-6.x DS-LZ77 codec with an LZ77 + Huffman
 ("HiPack" / "UltraPack") scheme. **None of the three locally available oracle
@@ -157,12 +156,10 @@ compressed cluster** — every used cluster is a small stored run — so the
 genuine HiPack bit-stream layout (Huffman table framing, window/dictionary init,
 block-count bytes) could **not** be derived from local resources.
 
-`Compression.Core.Dictionary.MsLzh` implements a self-consistent, DEFLATE-shaped
-LZ77 + canonical-Huffman codec (4 KiB window, fixed + dynamic Huffman tiers)
-that our own reader/writer round-trip byte-exact. It is **not** asserted to be
-bit-compatible with Microsoft's reference decompressor; a real DVR3 image
-*containing a compressed cluster* would be required to pin the genuine codec
-framing.
+The legacy `MS_DSP3` self-format once carried an invented "MS LZH" codec
+(DEFLATE-shaped, 4 KiB window) that no real stream was ever matched to. It
+was removed: that layout now stores DriveSpace's DS LZ77 runs, as DriveSpace
+6.22 does, and real DriveSpace 3 compression is the JM and SQ codecs above.
 
 ## Remaining for the Win95 driver-mount proof
 

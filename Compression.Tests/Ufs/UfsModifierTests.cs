@@ -124,8 +124,8 @@ public class UfsModifierTests {
   [Test, Category("ErrorHandling")]
   public void AddFile_Oversize_Throws() {
     using var ms = BuildEmptyImage();
-    // 12 direct blocks × 8 KiB = 96 KiB max. 13 × 8 = 104 KiB exceeds.
-    var huge = new byte[104 * 1024];
+    // Larger than the whole 16 MiB volume: no room, refused.
+    var huge = new byte[20 * 1024 * 1024];
     Assert.Throws<IOException>(() => UfsModifier.AddFile(ms, "huge.bin", huge));
   }
 

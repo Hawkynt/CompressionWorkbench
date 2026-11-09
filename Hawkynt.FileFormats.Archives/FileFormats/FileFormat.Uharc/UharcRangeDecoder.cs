@@ -79,6 +79,28 @@ internal sealed class UharcRangeDecoder {
   }
 
   /// <summary>
+  /// Decodes one binary decision whose first outcome has <paramref name="probability"/> of
+  /// <paramref name="total"/> slots; true when the code falls in it.
+  /// </summary>
+  public bool DecodeScaled(uint probability, uint total) {
+    this._range /= total;
+    if (this._range == 0)
+      throw new InvalidDataException("UHARC: range coder underflow.");
+
+    var count = (this._code / this._range) & 0xFFFF;
+    if (count < probability) {
+      this._range *= probability;
+      this.Normalize();
+      return true;
+    }
+
+    this._code -= probability * this._range;
+    this._range *= total - probability;
+    this.Normalize();
+    return false;
+  }
+
+  /// <summary>
   /// Decodes one bit against a 12-bit probability of zero and adapts it by <paramref name="shift"/>.
   /// </summary>
   public int DecodeBit(ref ushort probability, int shift) {

@@ -6,12 +6,11 @@ using System.Text;
 namespace FileSystem.DriveSpace3;
 
 /// <summary>
-/// Reads DriveSpace 3 (Microsoft Plus! Pack for Windows 95, 1995) CVF images.
-/// The on-disk layout is the DOS 6.x DBLSPACE/DRVSPACE MDBPB + MDFAT + BitFAT
-/// + DATA chain — only the OEM name (<c>MS_DSP3</c>), CvfSignature (<c>DVR3</c>),
-/// and per-cluster compression algorithm (MS LZH instead of DS LZ77) change.
+/// Reads CompressionWorkbench's own extended DriveSpace 3 layout (OEM name <c>MS_DSP3</c>,
+/// CvfSignature <c>DVR3</c>): the DOS 6.x DBLSPACE/DRVSPACE MDBPB + MDFAT + BitFAT + DATA chain.
+/// Real DriveSpace 3 volumes are read by <see cref="GenuineDvr3Reader"/>.
 /// <para>
-/// Compressed runs (MDFAT flag = 2) are decoded through <see cref="MsLzhBlockCodec"/>;
+/// Compressed runs (MDFAT flag = 2) are DriveSpace's DS LZ77 runs;
 /// stored runs (flag = 1) are returned verbatim. The inner FAT16 chain is
 /// walked starting from each entry's first cluster, with the MDFAT indirection
 /// resolving every cluster to its physical run in the DATA region. Clusters
@@ -204,7 +203,7 @@ public sealed class DriveSpace3Reader : IDisposable {
   /// <summary>
   /// Extracts the bytes of <paramref name="entry"/> by walking the inner FAT
   /// chain from its first cluster, resolving each cluster through the MDFAT
-  /// indirection and decoding the corresponding stored or MS LZH run.
+  /// indirection and decoding the corresponding stored or DS LZ77 run.
   /// </summary>
   public byte[] Extract(DriveSpace3Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
@@ -251,7 +250,7 @@ public sealed class DriveSpace3Reader : IDisposable {
         if (physOffset + blockSize <= this._data.Length) {
           var block = this._data.AsSpan(physOffset, blockSize);
           try {
-            return MsLzhBlockCodec.Decompress(block);
+            return FileSystem.DoubleSpace.DsCompression.Decompress(block);
           } catch (InvalidDataException) {
             // Fall through to inner-volume read below.
           }
