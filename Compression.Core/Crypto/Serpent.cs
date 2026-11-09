@@ -11,10 +11,13 @@ namespace Compression.Core.Crypto;
 /// Written from "Serpent: A Proposal for the Advanced Encryption Standard" (the bitslice
 /// description, section 2): 32 rounds of key mixing, one of eight 4-bit S-boxes applied across
 /// the four words, and the linear transformation; a shorter key is padded with a single 1 bit. The
-/// S-box tables are the paper's. Only encryption is provided: the counter and feedback modes that
-/// use Serpent need no other direction.
+/// S-box tables are the paper's; the inverse S-boxes are their inverse permutations, and
+/// decryption runs the rounds backwards with the paper's inverse linear transformation.
 /// </remarks>
 public sealed class Serpent {
+  /// <summary>The block size in bytes.</summary>
+  public const int BlockSize = 16;
+
   private const int Rounds = 32;
   private const uint Phi = 0x9E3779B9;
 
@@ -28,6 +31,8 @@ public sealed class Serpent {
     [7, 2, 12, 5, 8, 4, 6, 11, 14, 9, 1, 15, 13, 3, 10, 0],
     [1, 13, 15, 0, 14, 8, 2, 11, 7, 4, 12, 10, 9, 3, 5, 6],
   ];
+
+  private static readonly byte[][] InverseSBoxes = Invert(SBoxes);
 
   private readonly uint[] _subkeys = new uint[(Rounds + 1) * 4];
 
@@ -60,7 +65,7 @@ public sealed class Serpent {
 
   /// <summary>Encrypts one 16-byte block in place.</summary>
   public void Encrypt(Span<byte> block) {
-    if (block.Length != 16)
+    if (block.Length != BlockSize)
       throw new ArgumentException("Serpent blocks are 16 bytes.", nameof(block));
     var x0 = BinaryPrimitives.ReadUInt32LittleEndian(block);
     var x1 = BinaryPrimitives.ReadUInt32LittleEndian(block[4..]);
@@ -90,6 +95,51 @@ public sealed class Serpent {
     BinaryPrimitives.WriteUInt32LittleEndian(block[4..], x1 ^ k[4 * Rounds + 1]);
     BinaryPrimitives.WriteUInt32LittleEndian(block[8..], x2 ^ k[4 * Rounds + 2]);
     BinaryPrimitives.WriteUInt32LittleEndian(block[12..], x3 ^ k[4 * Rounds + 3]);
+  }
+
+  /// <summary>Decrypts one 16-byte block in place.</summary>
+  /// <exception cref="ArgumentException">The block is not 16 bytes long.</exception>
+  public void Decrypt(Span<byte> block) {
+    if (block.Length != BlockSize)
+      throw new ArgumentException("Serpent blocks are 16 bytes.", nameof(block));
+    var k = this._subkeys;
+    var x0 = BinaryPrimitives.ReadUInt32LittleEndian(block) ^ k[4 * Rounds];
+    var x1 = BinaryPrimitives.ReadUInt32LittleEndian(block[4..]) ^ k[4 * Rounds + 1];
+    var x2 = BinaryPrimitives.ReadUInt32LittleEndian(block[8..]) ^ k[4 * Rounds + 2];
+    var x3 = BinaryPrimitives.ReadUInt32LittleEndian(block[12..]) ^ k[4 * Rounds + 3];
+    for (var r = Rounds - 1; r >= 0; --r) {
+      if (r != Rounds - 1) {
+        x2 = uint.RotateRight(x2, 22);
+        x0 = uint.RotateRight(x0, 5);
+        x2 ^= x3 ^ (x1 << 7);
+        x0 ^= x1 ^ x3;
+        x3 = uint.RotateRight(x3, 7);
+        x1 = uint.RotateRight(x1, 1);
+        x3 ^= x2 ^ (x0 << 3);
+        x1 ^= x0 ^ x2;
+        x2 = uint.RotateRight(x2, 3);
+        x0 = uint.RotateRight(x0, 13);
+      }
+      ApplySBox(InverseSBoxes[r & 7], ref x0, ref x1, ref x2, ref x3);
+      x0 ^= k[4 * r];
+      x1 ^= k[4 * r + 1];
+      x2 ^= k[4 * r + 2];
+      x3 ^= k[4 * r + 3];
+    }
+    BinaryPrimitives.WriteUInt32LittleEndian(block, x0);
+    BinaryPrimitives.WriteUInt32LittleEndian(block[4..], x1);
+    BinaryPrimitives.WriteUInt32LittleEndian(block[8..], x2);
+    BinaryPrimitives.WriteUInt32LittleEndian(block[12..], x3);
+  }
+
+  private static byte[][] Invert(byte[][] boxes) {
+    var inverse = new byte[boxes.Length][];
+    for (var i = 0; i < boxes.Length; ++i) {
+      inverse[i] = new byte[16];
+      for (var x = 0; x < 16; ++x)
+        inverse[i][boxes[i][x]] = (byte)x;
+    }
+    return inverse;
   }
 
   /// <summary>Applies a 4-bit S-box to each of the 32 bit columns of the four words (word 0 holds the low bit).</summary>
