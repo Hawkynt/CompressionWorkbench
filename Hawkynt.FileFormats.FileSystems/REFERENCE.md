@@ -18111,7 +18111,7 @@ Emits a Stacker STACVOL that `StackerReader` round-trips byte-exact. The contain
 
 ### Namespace `FileSystem.Svr4Bfs`
 
-[`Svr4BfsEntry`](#svr4bfsentry) · [`Svr4BfsFormatDescriptor`](#svr4bfsformatdescriptor) · [`Svr4BfsInode`](#svr4bfsinode) · [`Svr4BfsLayout`](#svr4bfslayout) · [`Svr4BfsModifier`](#svr4bfsmodifier) · [`Svr4BfsReader`](#svr4bfsreader) · [`Svr4BfsSuperblock`](#svr4bfssuperblock)
+[`Svr4BfsEntry`](#svr4bfsentry) · [`Svr4BfsFormatDescriptor`](#svr4bfsformatdescriptor) · [`Svr4BfsInode`](#svr4bfsinode) · [`Svr4BfsLayout`](#svr4bfslayout) · [`Svr4BfsModifier`](#svr4bfsmodifier) · [`Svr4BfsReader`](#svr4bfsreader) · [`Svr4BfsSuperblock`](#svr4bfssuperblock) · [`Svr4BfsWriter`](#svr4bfswriter)
 
 #### `Svr4BfsEntry`
 
@@ -18256,6 +18256,29 @@ Implements `IEquatable<Svr4BfsSuperblock>`.
 | `Volume` | `string Volume { get; init; }` | Six-byte volume name, space padded. |
 | `TryParse` | `static Svr4BfsSuperblock TryParse(ReadOnlySpan<byte> block)` | Parses block 0, or returns null when it is not a BFS superblock. |
 | `WriteTo` | `void WriteTo(Span<byte> block)` | Serialises the superblock into a zeroed 512-byte block. |
+
+### Namespace `FileSystem.SysV`
+
+[`SysVBlockMover`](#sysvblockmover) · [`SysVEntry`](#sysventry) · [`SysVExtentMap`](#sysvextentmap) · [`SysVFormatDescriptor`](#sysvformatdescriptor) · [`SysVInPlaceModifier`](#sysvinplacemodifier) · [`SysVModifier`](#sysvmodifier) · [`SysVReader`](#sysvreader) · [`SysVWriter`](#sysvwriter)
+
+#### `Svr4BfsWriter`
+
+Builds a fresh SVR4 / UnixWare Boot File System volume in the shape `mkfs.bfs` produces — superblock, inode area, a root directory with `.` and `..` — with the given files laid out contiguously behind the root directory, as the Linux `bfs` driver itself allocates them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Svr4BfsWriter` | `Svr4BfsWriter()` |  |
+| `MaximumVolumeSize` | `const long MaximumVolumeSize` | Largest volume the 32-bit `s_end` byte offset can describe. |
+| `MinimumInodes` | `const int MinimumInodes` | Fewest inodes a volume gets — the count `mkfs.bfs` gives a small volume. |
+| `SpareInodes` | `const int SpareInodes` | Inode slots and directory slots left free beyond the files written, for later adds. |
+| `FsName` | `string FsName { get; set; }` | Six-character file-system name (`s_fsname`); padded with spaces. |
+| `InodeCount` | `int? InodeCount { get; set; }` | Inode count; null picks enough for the files plus `SpareInodes`. |
+| `Now` | `DateTimeOffset Now { get; set; }` | Timestamp used where an input carries none; defaults to now. |
+| `VolumeLabel` | `string VolumeLabel { get; set; }` | Six-character volume name (`s_volume`); padded with spaces. |
+| `VolumeSize` | `long? VolumeSize { get; set; }` | Volume size in bytes; null picks the used size plus a quarter (at least 64 KiB of free space). |
+| `AddFile` | `void AddFile(string name, byte[] data, ArchiveEntryMetadata metadata = null)` | Queues a root-level file. |
+| `Build` | `static byte[] Build(IEnumerable<ValueTuple<string, byte[]>> files)` | Builds a volume from `files` with default geometry. |
+| `WriteTo` | `void WriteTo(Stream output)` | Writes the volume to `output` from its current position. |
 
 ### Namespace `FileSystem.SysV`
 
