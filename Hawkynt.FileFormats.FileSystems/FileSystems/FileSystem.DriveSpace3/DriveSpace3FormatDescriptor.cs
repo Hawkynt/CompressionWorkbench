@@ -11,13 +11,14 @@ namespace FileSystem.DriveSpace3;
 /// Descriptor for Microsoft DriveSpace 3 CVF (Windows 95 Plus! Pack, 1995).
 /// Distinguished from DoubleSpace/DriveSpace 2 by the <c>MS_DSP3</c> MDBPB
 /// signature at file offset 3 and the <c>DVR3</c> CvfSignature at offset 36.
-/// The compression algorithm changed from DS LZ77 (DOS 6.x) to MS LZH
-/// (LZ77 + canonical Huffman).
+/// That <c>MS_DSP3</c> layout is CompressionWorkbench's own (see the <c>Compatibility</c> option);
+/// real DriveSpace 3 volumes are the <c>MSDBL6.0</c> container written by
+/// <see cref="GenuineDvr3Writer"/>, whose JM and SQ clusters dmsdos reads.
 /// <para>
 /// Read/write/modify/defrag are delegated to the shared DoubleSpace
 /// infrastructure (<see cref="DoubleSpaceWriter"/> routed through
 /// <see cref="CvfVariant.DriveSpace3"/>, <see cref="DoubleSpaceReader"/> with
-/// MS LZH dispatch, <see cref="DoubleSpaceExtentMap"/>,
+/// DS LZ77 clusters, <see cref="DoubleSpaceExtentMap"/>,
 /// <see cref="DoubleSpaceBlockMover"/>) — the on-disk MDBPB+MDFAT+BitFAT
 /// layout is byte-compatible across the whole CVF family; only the OEM bytes
 /// and inner-cluster codec differ. This brings DriveSpace 3 to full parity
@@ -31,7 +32,7 @@ namespace FileSystem.DriveSpace3;
 ///
 /// References:
 /// <list type="bullet">
-///   <item><description><c>https://github.com/sandsmark/dmsdos</c> — dmsdos, the GPL Linux CVF driver whose source + <c>doc/dmsdos.doc</c> are the de-facto DriveSpace 3 on-disk specification (5-byte MDFAT, MS LZH codecs)</description></item>
+///   <item><description><c>https://github.com/sandsmark/dmsdos</c> — dmsdos, the GPL Linux CVF driver whose source + <c>doc/dmsdos.doc</c> are the de-facto DriveSpace 3 on-disk specification (5-byte MDFAT, JM and SQ cluster codecs)</description></item>
 ///   <item><description>Microsoft Plus! for Windows 95 documentation (DriveSpace 3) — original vendor description</description></item>
 ///   <item><description><c>https://en.wikipedia.org/wiki/DriveSpace</c> — Wikipedia overview of the CVF family</description></item>
 /// </list>
@@ -70,7 +71,7 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   ];
   /// <inheritdoc />
   // Four-tier effort set matches the DoubleSpace/DriveSpace ds-lz77 family:
-  // base / + / ++ are routed through MsLzhCompressor.Compress(data, effort),
+  // base / + / ++ are routed through DsCompression.CompressDriveSpace(data, effort),
   // with the per-cluster shrink-or-store fallback inside DsCompression
   // applying at every tier.
   /// <summary>
@@ -78,9 +79,9 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored",   "Stored (no compression)"),
-    new("ms-lzh",   "MS LZH"),
-    new("ms-lzh+",  "MS LZH (lazy matching, slower better ratio)"),
-    new("ms-lzh++", "MS LZH (iterated parsing, best ratio)"),
+    new("ds-lz77",   "DS LZ77"),
+    new("ds-lz77+",  "DS LZ77 (lazy matching, slower better ratio)"),
+    new("ds-lz77++", "DS LZ77 (Zopfli-style iteration, best ratio)"),
   ];
   /// <inheritdoc />
   public string? TarCompressionFormatId => null;
@@ -90,15 +91,14 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   /// Microsoft DriveSpace 3 CVF (Win95 Plus! Pack 1995). Shares the
   /// DoubleSpace MDBPB+MDFAT+BitFAT infrastructure (extent map, block mover,
   /// planner-driven defrag, wipe-empty, add/remove via rebuild). Per-cluster
-  /// payload is MS LZH (LZ77 + canonical Huffman) instead of DS LZ77 and
-  /// publishes the full four-tier effort set — <c>ms-lzh</c> (greedy),
-  /// <c>ms-lzh+</c> (lazy matching), <c>ms-lzh++</c> (iterated multi-pass).
+  /// payload is DriveSpace's DS LZ77 with the four-tier effort set — <c>ds-lz77</c> (greedy),
+  /// <c>ds-lz77+</c> (lazy matching), <c>ds-lz77++</c> (iterated multi-pass).
   /// The shrink-or-store fallback inside the codec emits a stored CVF run
   /// when the compressed payload would not shrink the cluster, so
   /// incompressible regions are not penalised at any effort level.
   /// </summary>
   public string Description =>
-    "Microsoft DriveSpace 3 CVF (Win95 Plus! Pack 1995) — defrag/wipe/modify/extent-map/block-mover parity with DoubleSpace via shared MDBPB infrastructure; per-cluster MS LZH with full effort tiers (greedy / lazy / iterated) and stored-run fallback at every tier.";
+    "Microsoft DriveSpace 3 CVF (Win95 Plus! Pack 1995) — defrag/wipe/modify/extent-map/block-mover parity with DoubleSpace via shared MDBPB infrastructure; per-cluster DS LZ77 with full effort tiers (greedy / lazy / iterated) and stored-run fallback at every tier.";
 
   // ── IFormatOptionsSchema ──────────────────────────────────────────────────
   /// <inheritdoc />
@@ -115,9 +115,9 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
         + "byte-exact by the independent dmsdos driver (and the real Win95 Plus!/OSR2 "
         + "DriveSpace 3 driver). Clusters are STORED (uncompressed); single flat root "
         + "directory; up to ~511 clusters. Choose this for interoperability with real "
-        + "DriveSpace tooling — the MS LZH compression methods do not apply here.\n"
+        + "DriveSpace tooling.\n"
         + "Extended — CompressionWorkbench's feature layout (MS_DSP3/DVR3 header). Adds "
-        + "per-cluster MS LZH compression, long filenames, in-place add/remove, defrag "
+        + "per-cluster DS LZ77 compression, long filenames, in-place add/remove, defrag "
         + "and block-mover support, but is readable ONLY by CompressionWorkbench — NOT "
         + "by the genuine DriveSpace driver or dmsdos."),
     new FormatOptionDescriptor(
@@ -175,7 +175,7 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
     }
     using var r = new DoubleSpaceReader(new MemoryStream(data));
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Size, -1, "ms-lzh", e.IsDirectory, false, null)).ToList();
+      i, e.Name, e.Size, -1, "ds-lz77", e.IsDirectory, false, null)).ToList();
   }
 
   /// <inheritdoc />
@@ -257,8 +257,7 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   /// <see cref="DoubleSpaceInPlaceModifier"/>. BitFAT bits flip, MDFAT
   /// cluster-allocation entries are written in place, inner FAT chains
   /// extended, and VFAT dirents are inserted into the root directory
-  /// without rewriting any unrelated bytes. MS LZH codec is auto-selected
-  /// from the OEM signature (<c>MS_DSP3</c>).
+  /// without rewriting any unrelated bytes. Clusters are DS LZ77 runs.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     var data = ReadAll(archive);

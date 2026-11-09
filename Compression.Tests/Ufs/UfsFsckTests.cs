@@ -59,6 +59,25 @@ public sealed class UfsFsckTests {
     AssertClean(Fsck(Create(("top.txt", "t"u8.ToArray()), ("a/b/c.txt", "c"u8.ToArray()))));
   }
 
+  /// <summary>
+  /// An empty file, names whose length is a multiple of four (their record needs the
+  /// NUL's own word) ahead of other entries, and a file past the direct blocks whose
+  /// size is no multiple of the block size.
+  /// </summary>
+  [Test]
+  public void GivenAnEmptyFileFourByteNamesAndAnUnalignedIndirectFile_WhenCreated_ThenFsckFfsIsClean() {
+    RequireFsck();
+    var big = new byte[1_500_000];
+    for (var i = 0; i < big.Length; ++i) big[i] = (byte)(i * 13 + (i >> 10));
+    var image = Create(
+      ("abcd", "four"u8.ToArray()), ("efghijkl", "eight"u8.ToArray()), ("empty.bin", []),
+      ("sub/indirect.bin", big), ("sub/name.txt", "n"u8.ToArray()), ("z", "z"u8.ToArray()));
+    AssertClean(Fsck(image));
+    using var r = new UfsReader(new MemoryStream(image));
+    Assert.That(r.Extract(r.Entries.Single(e => e.Name == "sub/indirect.bin")), Is.EqualTo(big));
+    Assert.That(r.Extract(r.Entries.Single(e => e.Name == "empty.bin")), Is.Empty);
+  }
+
   [Test]
   public void GivenAFileAddedIntoNewSubdirectories_WhenChecked_ThenFsckFfsIsCleanAndTheTreeIsReal() {
     RequireFsck();
@@ -99,6 +118,26 @@ public sealed class UfsFsckTests {
     Assert.That(files, Has.Count.EqualTo(120));
     foreach (var e in files)
       Assert.That(Encoding.ASCII.GetString(r.Extract(e)), Is.EqualTo("payload " + int.Parse(e.Name[^7..^4])));
+  }
+
+  [Test]
+  public void GivenFilesNeedingIndirectBlocksAddedAndRemoved_WhenChecked_ThenFsckFfsIsClean() {
+    RequireFsck();
+    using var ms = new MemoryStream();
+    // The writer sizes a volume to its contents: room.bin makes the space the adds use.
+    ms.Write(Create(("seed.txt", "seed"u8.ToArray()), ("room.bin", new byte[24 * 1024 * 1024])));
+    var d = new UfsFormatDescriptor();
+    d.Remove(ms, ["room.bin"]);
+    var single = new byte[300_000];          // 8 KiB blocks: past the twelve direct blocks
+    var dbl = new byte[17 * 1024 * 1024];     // past the single-indirect tree (12 + 2048 blocks)
+    for (var i = 0; i < dbl.Length; ++i) dbl[i] = (byte)(i * 7 + (i >> 13));
+    d.Add(ms, [ArchiveInputInfo.InMemory("big/single.bin", single), ArchiveInputInfo.InMemory("big/double.bin", dbl)]);
+    AssertClean(Fsck(ms.ToArray()));
+    ms.Position = 0;
+    using (var r = new UfsReader(ms, leaveOpen: true))
+      Assert.That(r.Extract(r.Entries.Single(e => e.Name == "big/double.bin")), Is.EqualTo(dbl));
+    d.Remove(ms, ["big/double.bin"]);
+    AssertClean(Fsck(ms.ToArray()));
   }
 
   [Test]

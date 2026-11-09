@@ -45,7 +45,7 @@ merges. They are listed so that the follow-up is not forgotten.
 | 13 | **StuffIt X: method 7, Darkhorse, Deflate, Blend, preprocessors, encryption, writer** | #528 makes the reader real and deletes the envelope-only writer. | XADMaster has no method 7 decoder; it needs a spec or a sample-driven derivation with StuffIt as the oracle. | M | owned (#528) |
 | 14 | **StuffIt classic/5: methods 8 and 14, encrypted forks** | Refused in #504. | XADMaster (LGPL) has method 14; method 8 and DES need samples. | M | owned (#504) |
 | 15 | **APFS: encryption, snapshots, fusion containers** | Recorded as unsupported in #540. | Rung 3: Apple File System Reference. Oracle: `apfs-fuse` (GPL, oracle only). | M | owned (#540) |
-| 16 | **UHARC: PPM (`-mx`), RLE (`-mr`), LZ78 (`-mw`), pre-0.6 archives, writer** | #566 removed the invented layout; #614 reads real 0.6 and refuses these. | Rung 2: `UHARC.EXE` 0.6b as oracle. | M | owned (#614) |
+| 16 | **UHARC: 0.3/0.4 archives** | #566 removed the invented layout; #614 reads real 0.6, RLE (`-mr`), LZ78 (`-mw`), PPM (`-mx`), UHARC 0.2 and a store/LZP writer followed; 0.3/0.4 are refused. | Rung 2: `UHARC.EXE` 0.6b as oracle. | M | owned (#614) |
 | 17 | **ZPAQ: encrypted (`-key`), multi-part and `-index` archives, append-version modify** | Refused in #463; modify rewrites a single version instead of appending one. | Rung 1: libzpaq (public domain). Oracle: zpaq 7.15. | M | done (#708, #716, #738) |
 | 18 | **UFS2 and big-endian UFS writing** | #579 reads them and refuses edits. | Oracle: FreeBSD `fsck_ffs` (`fsck.ufs`, ufsutils) and the Linux `ufs` driver. | M | owned (#579, #583) |
 | 19 | **ACE: ACE 2.0 compression modes in the writer, multi-volume extraction** | #488 writes ACE 1.0 only and lists volume members without extracting them. | acefile (BSD-2) and unace as oracles. Volumes can use the `ArchiveVolumes` joiner from #626 once it merges. | M | volumes done (#725); ACE 2.0 writer blocked (#729) |
@@ -69,6 +69,7 @@ merges. They are listed so that the follow-up is not forgotten.
 | 37 | **Wolf RPG Editor archives** | Not implemented (#574 notes). | Rung 1: GARbro's DxLib archive reader (MIT). Oracle: GARbro and the game's own `Game.exe`. | L | done (#742) |
 | 38 | **FLEX: byte-exact file lengths** | Inherent to FLEX: it stores whole 252-byte records (#510). | Nothing to reclaim. | — | inherent |
 | 39 | **PAQ8 (paq8l)** | The `Paq8` descriptor wrote an order-0 bit-tree coder under paq8l's `paq8l -N` header; paq8l decoded our files to wrong bytes and we decoded its files to wrong bytes without an error, so it was removed. | Rung 2: paq8l (GPL) as a description and oracle (`paq8l.exe`, which runs here); some 3,500 lines of models and a mixer whose C fallback fixes the arithmetic, all integer. | L | open |
+| 40 | **SQX: audio (5), text/PPMd (6) and ultra (7) methods, AES encryption, volumes, recovery records** | The rewrite onto the real format refuses them; the former writer's encryption, volumes and recovery data were its own layouts. SpeedCommander and Squeez installers use ultra and PPMd. | Rung 1: Squeez-c (MIT) `ultra.c`, `ppm8.c`, `audio.c`; its ultra decoder does not finish the installers' executables, so those need another oracle. | M | open |
 
 ## 🔗 Related
 

@@ -115,11 +115,13 @@ format,Cbr,CBR,Archive,,.cbr,Y,Y,Y,Y
 format,Cbt,CBT,Archive,,.cbt,Y,Y,Y,Y
 format,Cbz,CBZ,Archive,,.cbz,Y,Y,Y,Y
 format,Cdi,CDI,Archive,,.cdi,Y,Y,Y,Y
+format,CdXa,CD-ROM XA (RIFF CDXA),Archive,,,Y,Y,Y,Y
 format,CephFs,CephFS / RADOS pool export,Archive,Y,.rados;.ceph,Y,Y,Y,Y
+format,Chfs,CHFS (NetBSD Chip File System),Archive,Y,.chfs,Y,Y,,
 format,Chm,CHM,Archive,,.chm,Y,Y,Y,Y
 format,ChromiumPak,Chromium resource pack,Archive,,.pak,Y,Y,Y,Y
 format,ClickteamInstaller,Clickteam Install Creator,Archive,,,Y,Y,,
-format,CloneCd,CloneCD CCD,Archive,,.ccd,Y,Y,,
+format,CloneCd,CloneCD CCD,Archive,,.ccd,Y,Y,Y,
 format,Cmf,Creative Music File (OPL),Audio,,.cmf,Y,Y,,
 format,Coherent,Coherent FS,Archive,Y,.coh;.coherent,Y,Y,Y,Y
 format,Collada,Collada (.dae),Archive,,.dae,Y,Y,,
@@ -278,6 +280,7 @@ format,IExpress,IExpress self-extractor,Archive,,,Y,Y,,
 format,IffCdaf,IFF CDAF,Archive,,.cdaf,Y,Y,Y,Y
 format,Imd,ImageDisk (IMD),Archive,,.imd,Y,Y,,
 format,InnoSetup,Inno Setup,Archive,,,Y,Y,,
+format,Install4j,install4j,Archive,,,Y,Y,,
 format,InstallerVise,Installer VISE,Archive,,,Y,Y,,
 format,InstallShieldCab,InstallShield cabinet,Archive,,.hdr,Y,Y,,
 format,IntelHex,Intel HEX,Archive,,.hex;.ihex;.ihx;.h86,Y,Y,Y,Y
@@ -310,6 +313,7 @@ format,Lbr,LBR,Archive,,.lbr,Y,Y,Y,Y
 format,LegacyOfficeCompoundFile,Legacy Microsoft Office compound file,Archive,,.dot;.xlt;.pps;.pot,Y,Y,,
 format,Leveldb,LevelDB SSTable,Archive,,.ldb;.sst,Y,Y,,
 format,Lfd,LucasArts LFD,Archive,,.lfd,Y,Y,Y,
+format,Lfs,4.4BSD LFS (NetBSD),Archive,Y,.lfs,Y,Y,Y,Y
 format,Lif,HP LIF (Logical Interchange Format),Archive,Y,.lif,Y,Y,Y,Y
 format,LinuxKernelImage,Linux kernel image (zImage/Image),Archive,,.zimage;.bzimage;.vmlinuz,Y,Y,,
 format,Lit,LIT (Microsoft Reader),Archive,,.lit,Y,Y,,
@@ -353,7 +357,6 @@ format,Med,OctaMED (MMD0 / MMD1),Audio,,.med;.mmd0;.mmd1,Y,Y,,
 format,MessagePack,MessagePack object graph,Archive,,.msgpack;.mpk,Y,Y,Y,
 format,Mew,MEW (Win32 PE),Archive,,,Y,Y,,
 format,Mfs,MFS (Macintosh File System),Archive,Y,.mfs,Y,Y,Y,Y
-format,Mfs1,MFS-1 (Acorn Master File System v1),Archive,Y,.mfsd;.mfs,Y,Y,Y,Y
 format,Mhk,Cyan Mohawk,Archive,,.mhk,Y,Y,Y,
 format,Mht,MHTML (web archive),Archive,,.mht;.mhtml,Y,Y,Y,Y
 format,Midi,MIDI (Standard MIDI File),Audio,,.mid;.midi,Y,Y,Y,
@@ -446,6 +449,7 @@ format,Paragon,Paragon Backup,Archive,,.pbf,Y,Y,Y,Y
 format,ParallelsHdd,Parallels Disk (HDS),Archive,,.hds,Y,Y,,
 format,Parquet,Apache Parquet,Archive,,.parquet,Y,Y,,
 format,Partclone,partclone (Clonezilla),Archive,,.aa;.img,Y,Y,Y,
+format,PartImage,partimage,Archive,,.partimg;.partimg.gz;.partimg.bz2,Y,Y,,
 format,PartitionedDisk,Partitioned disk image,Archive,,,Y,Y,Y,Y
 format,Pasti,Pasti (Atari ST STX),Archive,,.stx,Y,Y,,
 format,Pbp,PSP PBP Archive,Archive,,.pbp,Y,Y,Y,
@@ -620,6 +624,7 @@ format,Udf,UDF,Archive,Y,.udf,Y,Y,Y,Y
 format,UefiFv,UEFI Firmware Volume,Archive,,.fv;.fd,Y,Y,Y,Y
 format,Ufs,UFS,Archive,Y,.ufs,Y,Y,Y,Y
 format,Uharc,UHARC,Archive,,.uha,Y,Y,,
+format,Uif,MagicISO UIF,Archive,,.uif,Y,Y,,
 format,UImage,U-Boot uImage,Archive,,,Y,Y,Y,Y
 format,Ult,UltraTracker,Audio,,.ult,Y,Y,,
 format,Um3,Bruns UM3,Stream,,.um3,,Y,Y,
@@ -802,7 +807,6 @@ block,bb:BB_Lzw,LZW,Dictionary,,,,Y,Y,
 block,bb:BB_Lzwl,LZWL,Dictionary,,,,Y,Y,
 block,bb:BB_Lzx,LZX,Dictionary,,,,Y,Y,
 block,bb:BB_Mcm,MCM context mixing,ContextMixing,,,,Y,Y,
-block,bb:BB_MsLzh,MS LZH,Dictionary,,,,Y,Y,
 block,bb:BB_Mtf,MTF,Transform,,,,Y,Y,
 block,bb:BB_Neural,Neural,ContextMixing,,,,Y,Y,
 block,bb:BB_Nrv2b,NRV2B,Dictionary,,,,Y,Y,

@@ -1862,7 +1862,7 @@ Decodes LZJB, Jeff Bonwick's compressor from Solaris and ZFS (`compression=lzjb`
 
 ### Namespace `Compression.Core.Dictionary.Lzma`
 
-[`Lzma2Decoder`](#lzma2decoder) · [`Lzma2Encoder`](#lzma2encoder) · [`LzmaBuildingBlock`](#lzmabuildingblock) · [`LzmaCompressionLevel`](#lzmacompressionlevel) · [`LzmaDecoder`](#lzmadecoder) · [`LzmaDictionarySize`](#lzmadictionarysize) · [`LzmaEncoder`](#lzmaencoder)
+[`Lzma2Decoder`](#lzma2decoder) · [`Lzma2Encoder`](#lzma2encoder) · [`LzmaBuildingBlock`](#lzmabuildingblock) · [`LzmaCompressionLevel`](#lzmacompressionlevel) · [`LzmaDecoder`](#lzmadecoder) · [`LzmaDictionarySize`](#lzmadictionarysize) · [`LzmaEncoder`](#lzmaencoder) · [`LzmaStreamEncoder`](#lzmastreamencoder)
 
 #### `Lzma2Decoder`
 
@@ -1943,6 +1943,16 @@ LZMA encoder implementing the full LZMA1 compression algorithm.
 | `LzmaEncoder` | `LzmaEncoder(int dictionarySize = 8388608, int lc = 3, int lp = 0, int pb = 2, LzmaCompressionLevel level = 1)` | Initializes a new LZMA encoder. |
 | `Properties` | `byte[] Properties { get; }` | Gets the 5-byte LZMA properties header (1 byte properties + 4 bytes dictionary size). |
 | `Encode` | `void Encode(Stream output, ReadOnlySpan<byte> data, bool writeEndMarker = true)` | Encodes the given data to the output stream. Writes LZMA-compressed data (without the properties header or uncompressed size). |
+
+#### `LzmaStreamEncoder`
+
+LZMA1 encoding of a stream of any length with bounded memory: the same greedy parse, hash-chain match finder and range coder as `LzmaEncoder`, run over a sliding window that holds one dictionary of history and a little look-ahead. For the same input and properties the output is byte-identical to `Encode`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LzmaStreamEncoder` | `LzmaStreamEncoder(int dictionarySize = 8388608, int lc = 3, int lp = 0, int pb = 2, LzmaCompressionLevel level = 1)` | Initializes a streaming LZMA encoder with the parameters `LzmaEncoder` takes. |
+| `Properties` | `byte[] Properties { get; }` | Gets the 5-byte LZMA properties header (1 byte properties + 4 bytes dictionary size). |
+| `Encode` | `void Encode(Stream output, Stream input, long length, bool writeEndMarker = false)` | Encodes `length` bytes of `input` into `output` (no properties header, no size). |
 
 ### Namespace `Compression.Core.Dictionary.Lzms`
 
@@ -2631,45 +2641,6 @@ Match finder based on a suffix array, providing optimal-quality matches for use 
 | --- | --- | --- |
 | `SuffixArrayMatchFinder` | `SuffixArrayMatchFinder(ReadOnlySpan<byte> data)` | Initializes a new `SuffixArrayMatchFinder` over the given data. |
 | `FindMatch` | `Match FindMatch(ReadOnlySpan<byte> data, int position, int maxDistance, int maxLength, int minLength)` | Finds the longest match for the position `position` in the original data, searching only within `maxDistance` bytes before it. |
-
-### Namespace `Compression.Core.Dictionary.MsLzh`
-
-[`MsLzhBuildingBlock`](#mslzhbuildingblock) · [`MsLzhCompressor`](#mslzhcompressor) · [`MsLzhDecompressor`](#mslzhdecompressor)
-
-#### `MsLzhBuildingBlock`
-
-Building block wrapper for the MS LZH codec used by Microsoft DriveSpace 3 (Windows 95 Plus! Pack, 1995). LZ77 with 4 KiB window plus canonical Huffman coding over a DEFLATE-shaped alphabet. Effort 0 only: static (fixed) Huffman + greedy match selection. Dynamic per-block Huffman trees and lazy/optimal matching are deferred — see `MsLzhCompressor`.
-
-Implements `IBuildingBlock`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `MsLzhBuildingBlock` | `MsLzhBuildingBlock()` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
-
-#### `MsLzhCompressor`
-
-MS LZH compressor — DriveSpace 3 (Win95 Plus! Pack, 1995) family codec. LZ77 with 4 KiB window + canonical Huffman over a 286-symbol literal/length alphabet (DEFLATE-shaped) and a 30-symbol distance alphabet. Effort tiers (mirrors `DsLz77Compressor`): 0 — Greedy (default): bounded hash-chain depth (64), greedy match selection, fixed Huffman tables per RFC 1951 §3.2.6 shape — see `MsLzhFixedTables`. Fast. Matches the historical effort-0 behaviour bit-for-bit (modulo the new leading block-type bit).1 — Lazy (`+`): at each candidate match position, look ahead one byte; emit a literal when `(pos + 1)` would yield a strictly longer match. Hash chain deepened to 1024. Same fixed Huffman tables — encoder output stays self-consistent with the decoder. Roughly 5-10× slower, typically a few percent smaller on compressible inputs.2+ — Iterated + dynamic Huffman (`++`): runs the effort-1 lazy parse, then compares the cost of encoding the resulting token stream with the fixed tables vs. with per-block dynamic Huffman tables (RFC 1951 §3.2.7 layout — see `MsLzhDynamicHuffman`). The smaller of the two wins. Also sweeps the min-match floor (3, 4, 5) like the older effort-2 parse.Bit-stream format. Every block is prefixed by a single block-type bit: `0` = fixed Huffman tables (RFC 1951 §3.2.6 shape), `1` = dynamic per-block Huffman tables. Both paths share the same length / distance extra-bit conventions and the end-of-block marker (symbol 256). Termination invariant for iterated parsing: the candidate set has a fixed cap (4 passes max — baseline lazy plus three min-match sweeps), each pass produces a complete output, and we retain the smallest. This guarantees effort 2+ is monotone: `len(eff 2) ≤ len(eff 1) ≤ len(eff 0)` on compressible inputs, with strict equality possible for inputs where the effort-0 parse is already optimal. Not yet bit-compatible with Microsoft's reference decoder. The dynamic Huffman header layout matches RFC 1951 semantically but the MS LZH per-cluster framing (block-count bytes, dictionary-init values) has not been derived from a real DRVSPACE.000 image. Self round-trip is the gating requirement; cross-tool compatibility remains a stretch goal.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `MsLzhCompressor` | `MsLzhCompressor()` |  |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` with the default effort 0 (greedy + fixed tables). |
-| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data, int effort)` | Compresses `data` at the requested `effort` level. Negative values are clamped to 0 (greedy). Values above 2 are treated as 2 (iterated + dynamic Huffman). |
-
-#### `MsLzhDecompressor`
-
-MS LZH decompressor — reads back the bit stream produced by `MsLzhCompressor`. Reads a 4-byte little-endian original-size header followed by a sequence of blocks. Each block is prefixed by a single block-type bit: `0` selects the RFC 1951 §3.2.6-shape fixed Huffman tables (see `MsLzhFixedTables`); `1` selects per-block dynamic Huffman tables whose header layout follows RFC 1951 §3.2.7 (HLIT / HDIST / HCLEN + code-length-code table + lit/len + distance code-length lists — see `MsLzhDynamicHuffman`). End-of-block (symbol 256) closes a block; the decoder stops once the original-size byte count has been emitted.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `MsLzhDecompressor` | `MsLzhDecompressor()` |  |
-| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses an MS LZH bit stream. |
 
 ### Namespace `Compression.Core.Dictionary.Nintendo`
 
@@ -3367,20 +3338,11 @@ Decompresses data in the Snappy block format.
 
 ### Namespace `Compression.Core.Dictionary.Sqx`
 
-[`SqxAudioCodec`](#sqxaudiocodec) · [`SqxBuildingBlock`](#sqxbuildingblock) · [`SqxConstants`](#sqxconstants) · [`SqxDecoder`](#sqxdecoder) · [`SqxEncoder`](#sqxencoder) · [`SqxMultimediaCodec`](#sqxmultimediacodec)
-
-#### `SqxAudioCodec`
-
-SQX audio compressor/decompressor using polynomial prediction and Golomb-Rice coding.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decompresses 8-bit audio data. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Compresses 8-bit audio data using polynomial prediction + Golomb-Rice. |
+[`SqxBuildingBlock`](#sqxbuildingblock) · [`SqxLzDecoder`](#sqxlzdecoder) · [`SqxLzEncoder`](#sqxlzencoder) · [`SqxTables`](#sqxtables)
 
 #### `SqxBuildingBlock`
 
-Exposes the SQX LZH compression algorithm as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support.
+Exposes the SQX 2.0 LZ77 + Huffman stream (archive method 2) as a benchmarkable building block: the stream exactly as it sits in an SQX archive, behind a 4-byte little-endian original size, which the archive keeps in the file header instead.
 
 Implements `IBuildingBlock`.
 
@@ -3394,83 +3356,33 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
-#### `SqxConstants`
+#### `SqxLzDecoder`
 
-Constants for the SQX compression algorithm (V11 and V20).
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `BlockSize` | `const int BlockSize` | Block size in symbols. |
-| `CodeFlatTabs` | `const int CodeFlatTabs` | Huffman table encoding: use flat 4-bit lengths. |
-| `CodeFourTrees` | `const int CodeFourTrees` | Four Huffman trees mode (V20 extended). |
-| `CodeThreeTrees` | `const int CodeThreeTrees` | Three Huffman trees mode. |
-| `CodeTreeTabs` | `const int CodeTreeTabs` | Huffman table encoding: use pre-tree for code lengths. |
-| `DefaultDictSize` | `const int DefaultDictSize` | Default dictionary size (32KB). |
-| `DistCodes1M` | `const int DistCodes1M` | Distance codes for 1MB dictionary. |
-| `DistCodes2M` | `const int DistCodes2M` | Distance codes for 2MB dictionary. |
-| `DistCodes4M` | `const int DistCodes4M` | Distance codes for 4MB dictionary. |
-| `DupLastSymbol` | `const int DupLastSymbol` | Duplicate-last-match symbol (reuse last length + distance). |
-| `Len2Codes` | `const int Len2Codes` | Number of length-2 match symbols (261-268). |
-| `Len2ExtraBits` | `static readonly int[] Len2ExtraBits` | Extra bits for length-2 match distances. |
-| `Len2Offsets` | `static readonly int[] Len2Offsets` | Distance base values for length-2 matches. |
-| `Len2Start` | `const int Len2Start` | First length-2 match symbol (261). |
-| `Len3Codes` | `const int Len3Codes` | Number of length-3 match symbols (269-283). |
-| `Len3ExtraBits` | `static readonly int[] Len3ExtraBits` | Extra bits for length-3 match distances. |
-| `Len3Offsets` | `static readonly int[] Len3Offsets` | Distance base values for length-3 matches. |
-| `Len3Start` | `const int Len3Start` | First length-3 match symbol (269). |
-| `LenCodes` | `const int LenCodes` | Number of length-4+ match symbols (284-308). |
-| `LenExtraBits` | `static readonly int[] LenExtraBits` | Extra bits for length-4+ matches. |
-| `LenOffsets` | `static readonly int[] LenOffsets` | Length base values for length-4+ matches. |
-| `LenStart` | `const int LenStart` | First length-4+ match symbol (284). |
-| `LitCodes` | `const int LitCodes` | Number of literal symbols (0-255). |
-| `LzBlockType` | `const int LzBlockType` | Block type bit: 0 = LZ block, 1 = multimedia block. |
-| `MainTreeMaxBits` | `const int MainTreeMaxBits` | Max code length in main/distance trees. |
-| `MaxDictSize` | `const int MaxDictSize` | Maximum dictionary size (4MB). |
-| `MaxDistCodes` | `const int MaxDistCodes` | Number of distance tree symbols (depends on dict size, max 56). |
-| `MaxDistLen2` | `const int MaxDistLen2` | Maximum distance for a length-2 match (255). |
-| `MaxDistLen3` | `const int MaxDistLen3` | Maximum distance for a length-3 match (16383). |
-| `MaxDistLen4` | `const int MaxDistLen4` | Maximum distance for a length-4+ match (262143). |
-| `MinMatch` | `const int MinMatch` | Minimum match length. |
-| `NC` | `const int NC` | Total main Huffman tree symbols (310). |
-| `PreTreeMaxBits` | `const int PreTreeMaxBits` | Max code length in pre-tree. |
-| `PreTreeSymbols` | `const int PreTreeSymbols` | Pre-tree symbol count (codes 0-15 + RLE 16,17,18). |
-| `RepCodes` | `const int RepCodes` | Number of repeated-offset symbols (257-260). |
-| `RepStart` | `const int RepStart` | First repeated-offset symbol (257). |
-| `GetDistSlots` | `static int GetDistSlots(int dictSize)` | Gets the number of distance tree symbols for a given dictionary size. |
-| `GetLen2DistCode` | `static int GetLen2DistCode(int distance)` | Gets the length-2 distance code index. |
-| `GetLen3DistCode` | `static int GetLen3DistCode(int distance)` | Gets the length-3 distance code index. |
-| `GetLenCode` | `static int GetLenCode(int length)` | Gets the length-4+ symbol index for a given raw match length. |
-
-#### `SqxDecoder`
-
-Decodes SQX LZH compressed data using the real 310-symbol alphabet.
+Decoder of SQX methods 1-4 (LZ77 + Huffman, with range-coded multimedia blocks and the optional delta and x86 call filters), converted from Squeez-c's `lz.c`, `huff.c`, `delta.c` and `rc.c` (MIT; see `THIRD-PARTY-NOTICE.Squeez-c.txt`). One instance keeps the window, the repeat distances and the last match between files, which a solid archive continues.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SqxDecoder` | `SqxDecoder(int dictSize = 32768)` | Initializes a new SQX decoder. |
-| `Decode` | `byte[] Decode(byte[] compressed, int originalSize)` | Decompresses SQX LZH data. |
-| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize, int dictSize)` | Static convenience method for non-solid single-file decoding. |
-| `Reset` | `void Reset()` | Resets decoder state (for non-solid mode between files). |
+| `SqxLzDecoder` | `SqxLzDecoder(int dictionarySize)` | Creates a decoder for a dictionary of `dictionarySize` bytes (a power of two). |
+| `Decode` | `byte[] Decode(ReadOnlySpan<byte> stream, long originalSize, bool solid, bool extendedHeader, byte format)` | Decodes one file's stream. `solid` continues the window and match state of the previous file; `extendedHeader` is bit 0 of the file's `cCompFlags`. |
 
-#### `SqxEncoder`
+#### `SqxLzEncoder`
 
-Encodes data using the real SQX LZH compression (310-symbol alphabet).
+Encoder of SQX methods 1-4, converted from Squeez-c's `create.c`, `enc.c` and `henc.c` (MIT; see `THIRD-PARTY-NOTICE.Squeez-c.txt`): a hash-chain parse into literals, repeat-distance matches and length 2, 3 and longer matches, then blocks of up to 16,383 symbols with one set of Huffman tables sent in the meta-coded form. The stream decodes with `SqxLzDecoder` and needs no extended header.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SqxEncoder` | `SqxEncoder(int dictSize = 32768)` | Initializes a new SQX encoder. |
-| `Encode` | `byte[] Encode(ReadOnlySpan<byte> data)` | Compresses data using the SQX LZH algorithm. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int dictSize)` | Static convenience method for non-solid single-file encoding. |
-| `Reset` | `void Reset()` | Resets encoder state (for non-solid mode between files). |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, byte format, int dictionarySize, int effort)` | Encodes `data` as one file's stream. |
 
-#### `SqxMultimediaCodec`
+#### `SqxTables`
 
-SQX multimedia compressor/decompressor using delta coders (E0-E4) and arithmetic coding.
+Constants of the SQX LZ77 + Huffman stream (methods 1-4), as Squeez-c's `huff.h`/`huff.c` and `lz.h` define them: symbol alphabets of formats 1.1 and 2.0, length and distance base tables, and match-length thresholds.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decode` | `static byte[] Decode(byte[] compressed, int originalSize)` | Decompresses multimedia data. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` | Compresses multimedia data using automatic delta order selection + arithmetic coding. |
+| `Format11` | `const byte Format11` | Archive format 1.1 (`cArcerExVer` 11). |
+| `Format20` | `const byte Format20` | Archive format 2.0 (`cArcerExVer` 20). |
+| `DictionaryFlags` | `static ushort DictionaryFlags(int dictionarySize, byte format)` | File header flag bits that announce `dictionarySize`. |
+| `DictionarySize` | `static int DictionarySize(ushort flags, byte format)` | Dictionary size from a file header's flags (bits 8-10, and bit 11 for 2.0's extended sizes). |
 
 ### Namespace `Compression.Core.Dictionary.StackerSd4`
 
@@ -5757,6 +5669,7 @@ The 7z PPMd coder (method id `03 04 01`): PPMd variant H as `Ppmd7` models it, d
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> props, byte[] packed, int unpackSize)` | Decompresses a 7z PPMd stream to exactly `unpackSize` bytes. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int order, uint memorySize)` | Compresses `data` the way 7-Zip does: no end marker, five flush bytes. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, int order, uint memorySize, bool endMarker)` | Compresses `data`, optionally closing the stream with the end marker. |
+| `Encode` | `static void Encode(Stream input, long length, Stream output, int order, uint memorySize)` | Compresses `length` bytes of `input` into `output` as they are read: memory stays at the model's own, whatever the input's length, and the bytes equal `Encode`'s. |
 | `ParseProperties` | `static ValueTuple<int, uint> ParseProperties(ReadOnlySpan<byte> props)` | Reads order and memory size from the five coder-property bytes. |
 | `Properties` | `static byte[] Properties(int order, uint memorySize)` | Builds the five coder-property bytes for `order` and `memorySize`. |
 
@@ -6877,7 +6790,7 @@ Implements `IEquatable<SfArkInfo>`.
 
 ### Namespace `Compression.Core.Transforms`
 
-[`Bcj2Filter`](#bcj2filter) · [`Bcj2Filter.DecodeStream`](#bcj2filterdecodestream) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BcjX86DecodingStream`](#bcjx86decodingstream) · [`BranchArchitecture`](#brancharchitecture) · [`BranchConverter`](#branchconverter) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`ByteSwapFilter`](#byteswapfilter) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`SuffixArraySais`](#suffixarraysais) · [`SuffixBurrowsWheelerTransform`](#suffixburrowswheelertransform) · [`Swap2BuildingBlock`](#swap2buildingblock) · [`Swap4BuildingBlock`](#swap4buildingblock) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
+[`Bcj2Filter`](#bcj2filter) · [`Bcj2Filter.DecodeStream`](#bcj2filterdecodestream) · [`Bcj2Filter.EncodeStream`](#bcj2filterencodestream) · [`BcjArm64BuildingBlock`](#bcjarm64buildingblock) · [`BcjArmBuildingBlock`](#bcjarmbuildingblock) · [`BcjArmThumbBuildingBlock`](#bcjarmthumbbuildingblock) · [`BcjFilter`](#bcjfilter) · [`BcjIa64BuildingBlock`](#bcjia64buildingblock) · [`BcjPowerPcBuildingBlock`](#bcjpowerpcbuildingblock) · [`BcjRiscVBuildingBlock`](#bcjriscvbuildingblock) · [`BcjSparcBuildingBlock`](#bcjsparcbuildingblock) · [`BcjX86BuildingBlock`](#bcjx86buildingblock) · [`BcjX86DecodingStream`](#bcjx86decodingstream) · [`BranchArchitecture`](#brancharchitecture) · [`BranchConverter`](#branchconverter) · [`BurrowsWheelerTransform`](#burrowswheelertransform) · [`BwtBuildingBlock`](#bwtbuildingblock) · [`ByteSwapFilter`](#byteswapfilter) · [`DeltaBuildingBlock`](#deltabuildingblock) · [`DeltaFilter`](#deltafilter) · [`DeltaRleBuildingBlock`](#deltarlebuildingblock) · [`DeltaRleEncoding`](#deltarleencoding) · [`DpcmBuildingBlock`](#dpcmbuildingblock) · [`MoveToFrontTransform`](#movetofronttransform) · [`MtfBuildingBlock`](#mtfbuildingblock) · [`PackBitsBuildingBlock`](#packbitsbuildingblock) · [`PackBitsEncoding`](#packbitsencoding) · [`RleBuildingBlock`](#rlebuildingblock) · [`RunLengthEncoding`](#runlengthencoding) · [`SuffixArraySais`](#suffixarraysais) · [`SuffixBurrowsWheelerTransform`](#suffixburrowswheelertransform) · [`Swap2BuildingBlock`](#swap2buildingblock) · [`Swap4BuildingBlock`](#swap4buildingblock) · [`ZleBuildingBlock`](#zlebuildingblock) · [`ZleEncoding`](#zleencoding)
 
 #### `Bcj2Filter`
 
@@ -6897,6 +6810,27 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DecodeStream` | `DecodeStream(Stream main, Stream call, Stream jump, Stream rangeCoded, long length)` | Opens the decoder over its four inputs. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(Span<byte> destination)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `Bcj2Filter.EncodeStream`
+
+The BCJ2 encoder as a pull stream: reading it yields the main stream while the call, jump and range-coded streams are written to the streams given, so input of any length is split with bounded memory. For the same input the four streams equal `Encode`'s.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EncodeStream` | `EncodeStream(Stream input, Stream call, Stream jump, Stream rangeCoded)` | Starts splitting `input`; the side streams are written as the main stream is read. |
 | `CanRead` | `override bool CanRead { get; }` |  |
 | `CanSeek` | `override bool CanSeek { get; }` |  |
 | `CanWrite` | `override bool CanWrite { get; }` |  |

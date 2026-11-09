@@ -31,8 +31,8 @@ package carries; everything else keeps a `THIRD-PARTY-NOTICE.<name>.txt` beside 
 
 | Class | Upstream rows | Notes |
 |---|---|---|
-| A | 71 | |
-| B | 28 | FFmpeg alone covers 38 codec folders |
+| A | 73 | |
+| B | 32 | FFmpeg alone covers 38 codec folders |
 | C | 0 | specification: `docs/FDS-EXPANSION-SOUND-SPEC.md` |
 | R | 14 | |
 
@@ -72,6 +72,10 @@ None open: every class C claim site has been rewritten and is listed under R.
 | `Compression.Core/Dictionary/Lzrw3/` | Ross N. Williams `lzrw3.c` (release 1, 30-Jun-1991) | public domain | `Compression.Core/Dictionary/Lzrw3/THIRD-PARTY-NOTICE.LZRW3.txt` |
 | `Compression.Core/Dictionary/Lzrw1/` | Ross N. Williams `lzrw1.c` (31-Mar-1991) | public domain | `Compression.Core/Dictionary/Lzrw1/THIRD-PARTY-NOTICE.LZRW1.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.IcePacker/IcePackerStream.cs` (decoder) | ancient (Teemu Suutari) `IceDecompressor.cpp`, revision `61cd9088a218ce43fd389f3f3c48f35fc70f7834` | BSD-2-Clause | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.IcePacker/THIRD-PARTY-NOTICE.ancient.txt` |
+| `Compression.Core/Dictionary/Sqx/`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Sqx/` | Squeez-c (seb3773), revision `9eb5b385ce775aa50a47fd4d35fdc26dbfe7d8e9` | MIT | `Compression.Core/Dictionary/Sqx/THIRD-PARTY-NOTICE.Squeez-c.txt` |
+| `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Chfs/` | NetBSD `sys/ufs/chfs/media.h`, `ebh_media.h` (v1.2), fetched 2026-11-06 | BSD-2-Clause | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Chfs/THIRD-PARTY-NOTICE.Chfs.txt` |
+| `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Lfs/` | NetBSD `lfs.h` v1.222, `lfs_cksum.c`, `make_lfs.c` v1.61, `segwrite.c` v1.50, `pass0.c` and `pass5.c` v1.39, fetched 2026-11-06 | BSD-2-Clause AND BSD-3-Clause | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Lfs/THIRD-PARTY-NOTICE.Lfs.txt` |
+| `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.PartImage/` | imagebackup `src/imagebackup/partimage.py`, revision `6e96ba74e39abd4329e12c4cc7534b8d44ee06f8` | MIT | `Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.PartImage/THIRD-PARTY-NOTICE.imagebackup.txt` |
 
 ## A — compatible, notice already in place
 
@@ -126,6 +130,8 @@ None open: every class C claim site has been rewritten and is listed under R.
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DxArchive/DxArchiveReader.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DxArchive/DxCodecs.cs` | morkt/GARbro, revision `b09ee4570ccb1daf6ac56710ee8934dc0b8baeb0`: DXA version 6 header, index, keys and LZ (`ArcDX.cs`, `DxKey.cs`); version 8 from [`DXA-ON-DISK.md`](DXA-ON-DISK.md) | MIT | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.DxArchive/THIRD-PARTY-NOTICE.GARbro.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.SetupFactory/SetupFactoryReader.cs` | lazyhamster/Observer `src/modules/sfact` (`SfFile.cpp`, `SetupFactory56.cpp`, `SetupFactory7.cpp`, `SetupFactory8.cpp`), revision `ddbe6b6d13a51c09d14c565e110b3e6b8b06a69a` | LGPL-3.0-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.SetupFactory/THIRD-PARTY-NOTICE.Observer.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Install4j/Install4jReader.cs` | lazyhamster/Observer `src/modules/inst4j/Install4jFile.cpp`, revision `ddbe6b6d13a51c09d14c565e110b3e6b8b06a69a` | LGPL-3.0-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Install4j/THIRD-PARTY-NOTICE.Observer.txt` |
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.GenteeInstaller/GeaArchive.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.GenteeInstaller/GenteeInstallerReader.cs` | lazyhamster/Observer `src/modules/gentee` (`GeaFile.cpp`, `InstallerNewFile.cpp`, `gea.h`, `InstallerDefs.h`), revision `ddbe6b6d13a51c09d14c565e110b3e6b8b06a69a` | LGPL-3.0-or-later | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.GenteeInstaller/THIRD-PARTY-NOTICE.Observer.txt` |
+| `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.GenteeInstaller/Lzge.cs` | the Gentee group's `LZGE/delzge.c`, `LZGE/lzge.c`, `Huffman/dehuffman.c`, `Huffman/huffman.c` (Alexey Krivonogov), as Observer carries them at the revision above | MIT (Gentee Open Source License) | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.GenteeInstaller/THIRD-PARTY-NOTICE.Gentee.txt` |
 | `Compression.Core/Dictionary/Lzh/Lh2Decoder.cs`, `Compression.Core/Dictionary/Lzh/Lh3Decoder.cs`, `Compression.Core/Dictionary/Lzh/LhaLegacyBitReader.cs` | XADMaster `XADLZHOldHandles.m`, revision `7cb9ee0abbb163f261e4cb74501e15067032319c` | LGPL-2.1-or-later | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.XADMaster.txt` |
 | `Compression.Core/Dictionary/Lzh/Lh1Tree.cs`, `Compression.Core/Dictionary/Lzh/Lh1Decoder.cs`, `Compression.Core/Dictionary/Lzh/LzsDecoder.cs`, `Compression.Core/Dictionary/Lzh/Lz5Decoder.cs`, `Compression.Core/Dictionary/Lzh/Pm1Decoder.cs`, `Compression.Core/Dictionary/Lzh/Pm2Decoder.cs`, `Compression.Core/Dictionary/Lzh/PmaHistory.cs`, `Compression.Core/Dictionary/Lzh/LhaBitInput.cs`, `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Lzh/LhaHeaderParser.cs`, `Compression.Core/Dictionary/Lzh/LzhDecoder.cs` (LHARK codes), `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Lzh/LhaReader.cs` (self-extractor search) | lhasa (Simon Howard), revision `75ed83559f23e9538e0045c62f53f77ab03d03d6` | ISC | `Compression.Core/Dictionary/Lzh/THIRD-PARTY-NOTICE.lhasa.txt`; `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Lzh/THIRD-PARTY-NOTICE.lhasa.txt` |
 | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.InnoSetup/` | innoextract 1.10-dev (Daniel Scharrer), master as of 2026-10-19; layouts 6.4.2 to 7.0.0.3 from Inno Setup's own `Shared.Struct.pas`, `Setup.MainFunc.pas`, `Compression.Base.pas`, tags `is-6_4_2` through `is-7_1_0` | zlib (innoextract); Inno Setup License | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.InnoSetup/THIRD-PARTY-NOTICE.InnoSetup.txt` |

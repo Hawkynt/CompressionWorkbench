@@ -559,6 +559,8 @@ public static partial class FormatDetector {
 
       // install4j: its overlay starts with the D5 13 E4 E8 marker right after the launcher.
       if (isPe && FileFormat.Install4j.Install4jReader.IsInstall4j(fs)) return Format.Install4j;
+      // Gentee launcher (CreateInstall): a "Gentee Launcher" header in the stub that points at itself.
+      if (isPe && FileFormat.GenteeInstaller.GenteeInstallerReader.IsGentee(fs)) return Format.GenteeInstaller;
       // Enigma Virtual Box: the virtual filesystem's "EVB\0" header in the ".enigma1" section.
       if (isPe && FileFormat.EnigmaVirtualBox.EnigmaVirtualBoxReader.IsEnigmaVirtualBox(fs)) return Format.EnigmaVirtualBox;
 

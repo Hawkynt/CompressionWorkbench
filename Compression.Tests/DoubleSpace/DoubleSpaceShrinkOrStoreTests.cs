@@ -117,19 +117,18 @@ public class DoubleSpaceShrinkOrStoreTests {
   }
 
   // =========================================================================
-  //  Per-cluster shrink-or-store for MS LZH (DriveSpace 3 / Plus! Pack)
+  //  Per-cluster shrink-or-store for the extended DriveSpace 3 layout
   // =========================================================================
 
   /// <summary>
-  /// Same invariant for the MS LZH codec used by DriveSpace 3 (Win95 Plus!
-  /// Pack). The MS LZH compressor's fallback path lives in DsCompression's
-  /// CompressMsLzh: if the encoded payload doesn't fit the 12-bit CVF size
+  /// Same invariant for the extended DriveSpace 3 layout, whose clusters use
+  /// DsCompression.CompressDriveSpace: if the encoded payload doesn't fit the 12-bit CVF size
   /// cap or is no smaller than the raw input, a stored run is returned —
-  /// and this must hold at every effort tier (ms-lzh / ms-lzh+ / ms-lzh++).
+  /// and this must hold at every effort tier (ds-lz77 / ds-lz77+ / ds-lz77++).
   /// </summary>
-  [TestCase("ms-lzh",   Category = "Invariant")]
-  [TestCase("ms-lzh+",  Category = "Invariant")]
-  [TestCase("ms-lzh++", Category = "Invariant")]
+  [TestCase("ds-lz77",   Category = "Invariant")]
+  [TestCase("ds-lz77+",  Category = "Invariant")]
+  [TestCase("ds-lz77++", Category = "Invariant")]
   public void Writer_IncompressibleClusters_StoredVerbatim_DriveSpace3(string method) {
     var data = IncompressiblePayload(clusters: 6, seed: unchecked((int)0xDEADBEEF));
 

@@ -21,7 +21,7 @@ internal sealed class UharcLzpDecoder {
   private const int RunLength = 255;
 
   // Initial split of the 50 match/no-match decisions; every total starts at 99.
-  private static readonly byte[] DecisionSeed = [
+  internal static readonly byte[] DecisionSeed = [
     11, 12, 13, 14, 14, 14, 14, 14, 11, 12, 13, 14, 14, 14, 14, 14,
     11, 12, 13, 14, 14, 14, 14, 14, 6, 7, 8, 9, 9, 9, 9, 9,
     6, 7, 8, 9, 9, 9, 9, 9, 6, 7, 8, 9, 9, 9, 9, 9,
@@ -29,10 +29,10 @@ internal sealed class UharcLzpDecoder {
   ];
 
   // Two-bit history of recent decisions -> bias added to the decision index.
-  private static readonly byte[] DecisionHistoryNext = [6, 0, 6, 0, 6, 1, 6, 2, 6, 3, 6, 3, 7, 4, 7, 5];
+  internal static readonly byte[] DecisionHistoryNext = [6, 0, 6, 0, 6, 1, 6, 2, 6, 3, 6, 3, 7, 4, 7, 5];
 
   // Search tree over copy lengths: [node * 2 + (answer above node ? 1 : 0)] -> next node, 0 ends.
-  private static readonly byte[] LengthLadder = [
+  internal static readonly byte[] LengthLadder = [
     0, 0, 0, 0, 0, 4, 0, 0, 3, 5, 0, 0, 2, 14, 0, 0, 7, 9, 0, 0, 8, 12, 0, 0, 11, 13, 0, 0, 10, 30, 0, 0,
     15, 17, 0, 0, 16, 20, 0, 0, 19, 21, 0, 0, 18, 26, 0, 0, 23, 25, 0, 0, 24, 28, 0, 0, 27, 29, 0, 0, 22, 62, 0, 0,
     31, 33, 0, 0, 32, 36, 0, 0, 35, 37, 0, 0, 34, 42, 0, 0, 39, 41, 0, 0, 40, 44, 0, 0, 43, 45, 0, 0, 38, 54, 0, 0,
@@ -52,7 +52,7 @@ internal sealed class UharcLzpDecoder {
   ];
 
   // Byte classes for the literal context: 0 marks the complement of an ASCII letter.
-  private static readonly bool[] IsNonLetter = BuildLetterClasses();
+  internal static readonly bool[] IsNonLetter = BuildLetterClasses();
 
   private readonly byte[] _window;
   private readonly uint _mask;
@@ -255,7 +255,7 @@ internal sealed class UharcLzpDecoder {
     return count;
   }
 
-  private static int LengthGroup(int seen) => seen switch {
+  internal static int LengthGroup(int seen) => seen switch {
     0 or 1 => 0,
     < 7 => seen - 1,
     < 12 => seen < 8 ? 5 : 6,

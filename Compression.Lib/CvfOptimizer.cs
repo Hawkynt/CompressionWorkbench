@@ -27,7 +27,7 @@ public static class CvfOptimizer {
   /// Result of a single CVF optimization pass.
   /// </summary>
   /// <param name="MethodUsed">The non-stored method id that was applied
-  /// (e.g. <c>ds-lz77++</c>, <c>ms-lzh</c>, or <c>stored</c> if the
+  /// (e.g. <c>ds-lz77++</c>, <c>ds-lz77</c>, or <c>stored</c> if the
   /// descriptor only publishes a stored method).</param>
   /// <param name="OriginalSize">Source CVF size in bytes before re-encoding.</param>
   /// <param name="OptimizedSize">Re-encoded CVF size in bytes after the

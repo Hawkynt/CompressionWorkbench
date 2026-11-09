@@ -13,40 +13,6 @@ internal static class StuffItArsenicDecoder {
   private const int One = 1 << (NumBits - 1);
   private const int Half = 1 << (NumBits - 2);
 
-  private sealed class Model {
-    private readonly int _increment, _limit, _first;
-    private readonly int[] _freq;
-    public int Total;
-
-    public Model(int first, int last, int increment, int limit) {
-      this._first = first;
-      this._increment = increment;
-      this._limit = limit;
-      this._freq = new int[last - first + 1];
-      this.Reset();
-    }
-
-    public void Reset() {
-      this.Total = this._increment * this._freq.Length;
-      Array.Fill(this._freq, this._increment);
-    }
-
-    public int Count => this._freq.Length;
-    public int Freq(int index) => this._freq[index];
-    public int Symbol(int index) => this._first + index;
-
-    public void Increase(int index) {
-      this._freq[index] += this._increment;
-      this.Total += this._increment;
-      if (this.Total <= this._limit) return;
-      this.Total = 0;
-      for (var i = 0; i < this._freq.Length; ++i) {
-        this._freq[i] = (this._freq[i] + 1) >> 1;
-        this.Total += this._freq[i];
-      }
-    }
-  }
-
   private sealed class Decoder {
     private readonly StuffItBitReader _reader;
     private int _range = One;
@@ -57,7 +23,7 @@ internal static class StuffItArsenicDecoder {
       this._code = reader.ReadBits(NumBits);
     }
 
-    public int Next(Model model) {
+    public int Next(StuffItArsenicModel model) {
       var frequency = this._code / (this._range / model.Total);
       int cumulative = 0, n;
       for (n = 0; n < model.Count - 1; ++n) {
@@ -69,7 +35,7 @@ internal static class StuffItArsenicDecoder {
       return model.Symbol(n);
     }
 
-    public int NextBits(Model model, int bits) {
+    public int NextBits(StuffItArsenicModel model, int bits) {
       var result = 0;
       for (var i = 0; i < bits; ++i)
         if (this.Next(model) != 0) result |= 1 << i;
@@ -95,9 +61,9 @@ internal static class StuffItArsenicDecoder {
     var reader = new StuffItBitReader(input);
     var dec = new Decoder(reader);
 
-    var initial = new Model(0, 1, 1, 256);
-    var selector = new Model(0, 10, 8, 1024);
-    Model[] mtfModels = [
+    var initial = new StuffItArsenicModel(0, 1, 1, 256);
+    var selector = new StuffItArsenicModel(0, 10, 8, 1024);
+    StuffItArsenicModel[] mtfModels = [
       new(2, 3, 8, 1024), new(4, 7, 4, 1024), new(8, 15, 4, 1024), new(16, 31, 4, 1024),
       new(32, 63, 2, 1024), new(64, 127, 2, 1024), new(128, 255, 1, 1024),
     ];

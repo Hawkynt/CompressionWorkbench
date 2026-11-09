@@ -205,7 +205,6 @@ public static class DoubleSpaceInPlaceModifier {
       uint flagsNibble;
       if (validChunk >= 32 && chunkLen > 0) {
         block = ctx.Variant switch {
-          CvfVariant.DriveSpace3 => DsCompression.CompressMsLzh(rawSpan),
           CvfVariant.DoubleSpace60 => DsCompression.Compress(rawSpan),
           _ => DsCompression.CompressDriveSpace(rawSpan),
         };

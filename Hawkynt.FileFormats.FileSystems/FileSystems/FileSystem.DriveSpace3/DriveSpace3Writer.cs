@@ -12,12 +12,11 @@ namespace FileSystem.DriveSpace3;
 /// <list type="bullet">
 ///   <item>OEM name <c>MS_DSP3</c> at offset 3 (vs <c>MSDSP6.0</c>/<c>MSDSP6.2</c>).</item>
 ///   <item>CvfSignature <c>DVR3</c> at offset 36.</item>
-///   <item>Per-cluster compression payload uses the MS LZH codec (see
-///         <see cref="MsLzhBlockCodec"/>) instead of DS LZ77.</item>
+///   <item>Per-cluster compression payload is DriveSpace's DS LZ77 (8 KiB window).</item>
 ///   <item>A compression-level byte at offset 75 (DriveSpace 3 BPB extension).</item>
 /// </list>
 /// <para>
-/// This writer emits either stored runs (MDFAT flag = 1) or MS LZH-compressed
+/// This writer emits either stored runs (MDFAT flag = 1) or DS LZ77-compressed
 /// runs (flag = 2), depending on whether the codec shrinks the cluster. The
 /// reader follows the inner FAT chain through the MDFAT indirection back to
 /// each compressed run, exactly as DoubleSpace does. Stage 2 self round-trip
@@ -39,7 +38,7 @@ public sealed class DriveSpace3Writer {
   private readonly List<(string Name, byte[] Data, bool Compress)> _files = [];
 
   /// <summary>
-  /// When <c>true</c> (default), per-cluster MS LZH compression is attempted
+  /// When <c>true</c> (default), per-cluster DS LZ77 compression is attempted
   /// and the compressed payload is emitted whenever it shrinks the cluster.
   /// Clusters that do not compress are stored raw (MDFAT flags = 1).
   /// </summary>
@@ -344,7 +343,7 @@ public sealed class DriveSpace3Writer {
         byte[] block;
         uint flagsNibble;
         if (this.EnableCompression && file.Compress && validChunk >= 32) {
-          block = MsLzhBlockCodec.Compress(rawSpan);
+          block = FileSystem.DoubleSpace.DsCompression.CompressDriveSpace(rawSpan);
           var headerWord = (ushort)(block[0] | (block[1] << 8));
           var wasCompressed = (headerWord & 0x8000) != 0;
           flagsNibble = wasCompressed ? 0x2u : 0x1u;

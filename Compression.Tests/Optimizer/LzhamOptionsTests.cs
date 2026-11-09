@@ -58,6 +58,32 @@ public class LzhamOptionsTests {
     });
   }
 
+  private static byte[] CompressWith(byte[] data, Dictionary<string, string> options) {
+    using var input = new MemoryStream(data, writable: false);
+    using var output = new MemoryStream();
+    new LzhamFormatDescriptor().Compress(input, output, new FormatCreateOptions { FormatSpecific = options });
+    return output.ToArray();
+  }
+
+  [TestCase("0", LzhamCompressionLevel.Fastest), TestCase("2", LzhamCompressionLevel.Default), TestCase("4", LzhamCompressionLevel.Uber)]
+  [TestCase("5", LzhamCompressionLevel.Uber), TestCase("-1", LzhamCompressionLevel.Uber), TestCase("fast", LzhamCompressionLevel.Uber)]
+  [Category("Spec"), Category("BoundaryValue")]
+  public void GivenALevel_WhenCompressed_ThenItIsThatLevelsParseAndOutOfRangeMeansUber(string level, LzhamCompressionLevel expected) {
+    var data = DistantRepeatSample();
+    var viaOption = CompressWith(data, new() { ["DictionarySize"] = "16", ["Level"] = level });
+    Assert.That(viaOption, Is.EqualTo(LzhamStream.CompressFile(data, 16, LzhamTables.DefaultTableUpdateRate, expected)));
+  }
+
+  [Test, Category("Spec"), Category("RoundTrip")]
+  public void GivenExtremeParsing_WhenCompressed_ThenItIsTheExtremeParseAndRoundTrips() {
+    var data = DistantRepeatSample();
+    var extreme = CompressWith(data, new() { ["DictionarySize"] = "16", ["ExtremeParsing"] = "true" });
+    Assert.Multiple(() => {
+      Assert.That(extreme, Is.EqualTo(LzhamStream.CompressFile(data, 16, LzhamTables.DefaultTableUpdateRate, LzhamCompressionLevel.Uber, extremeParsing: true)));
+      Assert.That(Decompress(new LzhamFormatDescriptor(), extreme), Is.EqualTo(data));
+    });
+  }
+
   [Test, Category("Spec")]
   public void GivenAuto_WhenCompressed_ThenTheSmallestCoveringDictionaryIsRecorded()
     => Assert.That(CompressAt(new LzhamFormatDescriptor(), new byte[70000], "auto")[4], Is.EqualTo(17));
@@ -68,11 +94,13 @@ public class LzhamOptionsTests {
     var data = DistantRepeatSample();
 
     var result = CompressionOptimizer.OptimizeStream(data, descriptor, descriptor);
-    var candidates = descriptor.OptionsSchema.Single().AllowedValues!;
+    var candidates = descriptor.OptionsSchema.Single(option => option.Key == "DictionarySize").AllowedValues!;
 
     Assert.Multiple(() => {
       Assert.That(result.Parameters, Does.ContainKey("DictionarySize"));
-      Assert.That(result.Probes, Is.EqualTo(candidates.Count));
+      Assert.That(result.Parameters, Does.ContainKey("ExtremeParsing"));
+      Assert.That(result.Parameters, Does.Not.ContainKey("Level"), "the level is the caller's speed choice, not a size axis");
+      Assert.That(result.Probes, Is.EqualTo(candidates.Count * 2));
       Assert.That(Decompress(descriptor, result.Bytes), Is.EqualTo(data), "optimized output round-trips");
     });
 

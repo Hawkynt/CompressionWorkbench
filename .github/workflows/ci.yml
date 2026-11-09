@@ -219,6 +219,48 @@ jobs:
           sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
           sudo modprobe gfs2 || true
 
+      # Hard gate: partimage saves ext2, FAT16 and FAT32 volumes from loop devices (plain, gzip and
+      # bzip2) and restores them onto zeroed devices; the partitions we extract equal its restores.
+      - name: partimage oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_PARTIMAGE: "1"
+        run: |
+          sudo apt-get install -y partimage dosfstools
+          dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.PartImage.PartImageExternalConformanceTests" \
+            --logger "trx;LogFileName=partimage-oracle-tests.trx"
+
+      # Hard gate: the CloneCD image sets we write from an ISO have PowerISO's raw sectors byte for byte,
+      # Aaru (pinned release) reads, verifies and extracts them, ccd2iso returns the ISO, and our
+      # subchannel equals the .sub of a real CloneCD dump (archive.org, hash-pinned).
+      - name: CloneCD writer oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_CLONECD: "1"
+          TERM: xterm
+        run: |
+          sudo apt-get install -y genisoimage ccd2iso p7zip-full
+          c="$RUNNER_TEMP/ccd"; mkdir -p "$c/aaru" "$c/dump"
+          curl -fsSL -o "$c/poweriso.tgz" https://www.poweriso.com/poweriso-1.3.tar.gz
+          curl -fsSL -o "$c/aaru.tar.xz" https://github.com/aaru-dps/Aaru/releases/download/v5.4.2/aaru-5.4.2_linux_amd64.tar.xz
+          curl -fsSL -o "$c/ff.7z" "https://archive.org/download/FightingForceMar121997prototype/Fighting%20Force%20%28Mar%2012%2C%201997%20prototype%29.7z"
+          printf '%s  %s\n' \
+            605ae3fceb93952422b42d868f1317d1c6d48d2bdbaee700dcf17e99dbe65fc0 "$c/poweriso.tgz" \
+            f6d676bfe5df4bbf75abe9cc19d768ae005bb8ba3903587b377d7600f0851bda "$c/aaru.tar.xz" \
+            5c4d1a533ad24ebe58198612c5e7591b2bce750f1ccdc86f2118598e1b22db71 "$c/ff.7z" | sha256sum -c -
+          tar xzf "$c/poweriso.tgz" -C "$c"
+          tar xJf "$c/aaru.tar.xz" -C "$c/aaru"
+          7z x -y -o"$c/dump" "$c/ff.7z" >/dev/null
+          # Aaru asks its first-run questions unless settings exist; answer them with "no" up front.
+          mkdir -p ~/.config
+          printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' \
+            '<DicSettings><EnableDecryption>false</EnableDecryption><GdprCompliance>1</GdprCompliance><SaveReportsGlobally>false</SaveReportsGlobally><ShareReports>false</ShareReports></DicSettings>' > ~/.config/Aaru.xml
+          CWB_POWERISO="$c/poweriso" CWB_AARU="$(find "$c/aaru" -name aaru -type f | head -1)" \
+          CWB_CLONECD_SUB="$c/dump/PSX - Fighting Force 3-24.sub" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.CloneCd.CloneCdWriteExternalConformanceTests" \
+            --logger "trx;LogFileName=clonecd-writer-oracle-tests.trx"
+
       # Core tests -- always run (no external tools required).
       #
       # NOTE the two similar category names, which are NOT spellings of each other:
@@ -229,6 +271,7 @@ jobs:
       # Renaming one to the other would move 95 gating tests into an advisory tier that installs
       # tools they never use. Leave them distinct.
       - name: Core tests
+        if: ${{ !cancelled() }}
         run: >
           dotnet test Compression.Tests
           --configuration Release --no-build
@@ -342,6 +385,27 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.DiskCopy42.DiskCopy42ExternalConformanceTests" \
             --logger "trx;LogFileName=dc42-oracle-tests.trx"
 
+      # Hard gate: uif2iso (GPL, built from its hash-pinned published source) converts two real MagicISO
+      # images from archive.org (hash-pinned) to ISO, and the ISO we extract is byte-identical.
+      - name: UIF oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_UIF: "1"
+        run: |
+          sudo apt-get install -y zlib1g-dev p7zip-full
+          u="$RUNNER_TEMP/uif"; mkdir -p "$u/tool" "$u/img"
+          curl -fsSL -o "$u/uif2iso.zip" https://aluigi.altervista.org/mytoolz/uif2iso.zip
+          curl -fsSL -o "$u/quake.7z" "https://archive.org/download/QuakeShareware.7z/Quake%20Shareware.7z"
+          curl -fsSL -o "$u/doom2.7z" "https://archive.org/download/Img2843/Doom%20II%20German.7z"
+          printf '%s  %s\n' \
+            b78dde3e8bc28559f73e2feb46d41c8f57b511ddbe25d63ada704ef8697528ec "$u/uif2iso.zip" \
+            fb4ca7907be3ff7c26afd5f842c1c7461e10838607e6a2d478c622fa6b0a4e18 "$u/quake.7z" \
+            ef5f1cbec61a7b01afd727e3f4390f54f6e4ee6c8a285a5d9286669219b1e22f "$u/doom2.7z" | sha256sum -c -
+          unzip -q "$u/uif2iso.zip" -d "$u/tool" && make -C "$u/tool/src" >/dev/null
+          7z x -y -o"$u/img" "$u/quake.7z" >/dev/null && 7z x -y -o"$u/img" "$u/doom2.7z" >/dev/null
+          CWB_UIF_DIR="$u/img" CWB_UIF2ISO="$u/tool/src/uif2iso" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.Uif.UifExternalConformanceTests" \
+            --logger "trx;LogFileName=uif-oracle-tests.trx"
       # Hard gate: isz-tool (GPL-3.0 Python, pinned, used as a black box) verifies both CRCs of
       # what the ISZ writer creates and extracts the same ISO.
       - name: ISZ oracle
@@ -560,6 +624,21 @@ jobs:
           dotnet test Compression.Tests --configuration Release --no-build \
             --filter "FullyQualifiedName~Compression.Tests.Moof.MoofExternalConformanceTests" \
             --logger "trx;LogFileName=moof-oracle-tests.trx"
+
+      # Hard gate: a real Video CD track (AVSEQ09.DAT, hash-pinned) is rebuilt byte for byte from the
+      # parts we list and its track equals cdxa2mpeg's; for a clip vcdimager authors, our CD-XA file
+      # from the same MPEG has exactly the disc's AVSEQ01.DAT sectors.
+      - name: CD-XA oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_VCD: "1"
+        run: |
+          sudo apt-get install -y vcdimager ffmpeg
+          curl -fsSL -o "$RUNNER_TEMP/AVSEQ09.DAT" https://archive.org/download/avseq-07_20220223/AVSEQ09.DAT
+          echo "d4344c4650300fb1e7e00bdc2720d4f3d76db3961ae5decc0d7e97834d7581b7  $RUNNER_TEMP/AVSEQ09.DAT" | sha256sum -c -
+          CWB_VCD_DAT="$RUNNER_TEMP/AVSEQ09.DAT" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.CdXa.CdXaExternalConformanceTests" \
+            --logger "trx;LogFileName=cdxa-oracle-tests.trx"
 
       # bcachefs-tools' own checker judges every volume this package writes or
       # edits: the allocation information, the usage totals and the namespace are

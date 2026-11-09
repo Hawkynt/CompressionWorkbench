@@ -13,21 +13,21 @@ exists. It warns when a capability letter has drifted from the live descriptor.
 
 | Measure | Value |
 | --- | ---: |
-| Catalogue rows | 984 |
+| Catalogue rows | 982 |
 | … formats listed by at least one source | 528 |
-| … registry ids no source lists (OURS-ONLY) | 456 |
-| Source-listed rows mapped to something here | 386 / 528 (73.1 %) |
-| … of rows listed by ≥ 2 sources | 134 / 138 (97.1 %) |
+| … registry ids no source lists (OURS-ONLY) | 454 |
+| Source-listed rows mapped to something here | 392 / 528 (74.2 %) |
+| … of rows listed by ≥ 2 sources | 135 / 138 (97.8 %) |
 | … of rows listed by ≥ 3 sources | 67 / 67 (100.0 %) |
 | … of rows listed by ≥ 4 sources | 31 / 31 (100.0 %) |
 
 | Gap type | Rows | Meaning |
 | --- | ---: | --- |
-| `MISSING` | 142 | a source lists it; no descriptor or building block covers it |
+| `MISSING` | 136 | a source lists it; no descriptor or building block covers it |
 | `READ-ONLY-BUT-SOURCES-WRITE` | 22 | we only read it; a source or the format's own tool writes it |
-| `PARTIAL` | 45 | covered, but the reader handles only part of the format (see the table below) |
-| `OK` | 319 | covered with no known gap against what the sources list |
-| `OURS-ONLY` | 456 | in our registry, listed by none of the seven sources |
+| `PARTIAL` | 47 | covered, but the reader handles only part of the format (see the table below) |
+| `OK` | 323 | covered with no known gap against what the sources list |
+| `OURS-ONLY` | 454 | in our registry, listed by none of the seven sources |
 
 ### Per source
 
@@ -40,11 +40,11 @@ read-only rows.
 | libarchive (formats + filters) | 28 | 28 | 100.0 | 26 |
 | XADMaster / The Unarchiver | 127 | 108 | 85.0 | 93 |
 | binwalk v3 | 79 | 56 | 70.9 | 50 |
-| Universal Extractor 2 | 124 | 102 | 82.3 | 70 |
-| PRONOM | 87 | 82 | 94.3 | 72 |
-| Wikipedia | 268 | 193 | 72.0 | 150 |
+| Universal Extractor 2 | 124 | 104 | 83.9 | 71 |
+| PRONOM | 87 | 83 | 95.4 | 73 |
+| Wikipedia | 268 | 197 | 73.5 | 153 |
 
-These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-06. The source inventories retain their original 2026-10-19 snapshot. The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
+These totals are computed from the checked-in CSV mapping, refreshed on 2026-11-09. The source inventories retain their original 2026-10-19 snapshot. The detailed ranking and shell comparison below preserve that earlier audit; consult the CSV and runtime registries for current coverage.
 
 ## 🕳️ Original missing-format ranking (2026-10-19)
 
@@ -119,7 +119,6 @@ Every catalogued row where a source records write support (7-Zip, libarchive, an
 | Format | Ours | Native writer | Listed by |
 | --- | --- | --- | --- |
 | Apple Partition Map | `PartitionedDisk` | pdisk / hdiutil | 7-Zip, PRONOM |
-| CloneCD (CCD/IMG/SUB) | `CloneCd` | CloneCD | UniExtract, Wikipedia |
 | GUID Partition Table (GPT) | `PartitionedDisk` | sgdisk / gdisk | 7-Zip, binwalk |
 | MBR partition table | `PartitionedDisk` | fdisk / sfdisk | 7-Zip, binwalk |
 | pcapng | `Pcapng` | dumpcap / Wireshark | binwalk, PRONOM |
@@ -161,7 +160,7 @@ running real-world samples. The file named at the end of each row is where the l
 | StuffIt (classic + 5) | `StuffIt` | 4 | store and RLE only; LZW/Huffman/LZAH/Arsenic/DES methods throw (StuffItReader.cs) |
 | StuffIt X | `StuffItX` | 4 | Darkhorse, Deflate, Blend, method 7, the English/x86 preprocessors and encryption throw (StuffItXReader.cs) |
 | zoo | `Zoo` | 4 | LZH method (2) unsupported (ZooReader.cs) |
-| BCM | `Bcm` | 1 | BCM 2.x files (`BCM2`) refused: bcm 2.03 is exe-only and its format unpublished; BCM 1.x reads and writes (BcmStream.cs) |
+| BCM | `Bcm` | 1 | BCM 2.x files (`BCM2`) refused: bcm 2.03 is exe-only; its framing, CRC-32C and libsais BWT are measured but its LZP and context-mixing model are not ([BCM2-ON-DISK.md](../BCM2-ON-DISK.md)); BCM 1.x reads and writes (BcmStream.cs) |
 | ALZip | `AlZip` | 3 | store and deflate only (AlZipReader.cs) |
 | APFS | `Apfs` | 3 | no encryption, snapshots or fusion containers (ApfsReader.cs) |
 | Compiled HTML Help (CHM) | `Chm` | 3 | content sections above 1 unsupported (ChmReader.cs) |
@@ -170,12 +169,13 @@ running real-world samples. The file named at the end of each row is where the l
 | SquashFS | `SquashFs` | 3 | SquashFS v4 only; v1-v3 rejected (SquashFsSuperblock.cs) |
 | UDF | `Udf` | 3 | type-1 partition maps only: no VAT/sparable/metadata partitions (UDF 1.50+ media) (UdfReader.cs) |
 | Windows PE | `Mz`, `PeResources` | 3 | archive view of resources/overlay, not a full PE section extractor |
+| SQX | `Sqx` | 1 | audio (5), text/PPMd (6) and ultra (7) methods, encryption and split volumes are refused (SqxReader.cs) |
 | ZPAQ | `Zpaq` | 3 | encrypted (`-key`), multi-part and `-index` archives are refused; modify rewrites a single version instead of appending one (ZpaqReader.cs, ZpaqWriter.cs) |
 | Compact Pro | `CompactPro` | 2 | stored and RLE only; LZ+RLE and LZ+Huffman unsupported (CompactProReader.cs) |
 | DiskDoubler | `DiskDoubler` | 2 | single files only (no DDAR/DDA2 archives); methods 0, 1, 6, 9 decoded and checked against unar on real files; 2-5, 7, 8, 10 and delta refused (DiskDoublerReader.cs) |
 | EnCase / Expert Witness (E01) | `Ewf` | 2 | single segment only (no .E02+), no L01 logical evidence, no Ex01 (EwfReader.cs) |
 | PackIt | `PackIt` | 2 | encrypted PMa5/PMa6 entries refused; stored and Huffman entries verified on real archives against unar (PackItReader.cs) |
-| UHARC | `Uharc` | 2 | UHARC 0.6 only: store, LZP and ALZ (incl. multimedia predictors) verified against uharc.exe and real archives; PPM (-mx), RLE, LZ78 and versions before 0.6 refused (docs/UHARC-ON-DISK.md) |
+| UHARC | `Uharc` | 2 | UHARC 0.6: store, RLE, LZ78, LZP, PPM and ALZ (incl. multimedia predictors) verified against uharc.exe and real archives; UHARC 0.2 verified against the 0.2 tool and the dexvert samples; 0.3/0.4 refused; writes stored or LZP-packed 0.6 archives (docs/UHARC-ON-DISK.md) |
 | Comic Book Archive | `Cbz`, `Cbr`, `Cb7` | 1 | .cbt (tar) and .cba (ACE) have no descriptor |
 | DMS (Disk Masher) | `Dms` | 1 | NONE/SIMPLE/QUICK only; MEDIUM/DEEP/HEAVY1/HEAVY2 throw (DmsReader.cs) |
 | EGG (ALZip) | `Egg` | 1 | store and deflate only; bzip2/LZMA/AZO, encryption and split archives unsupported (EggReader.cs) |
@@ -184,7 +184,6 @@ running real-world samples. The file named at the end of each row is where the l
 | MS-DOS COMPRESS (KWAJ) | `Kwaj` | 1 | methods 2 (LZSS) and 3 (LZ+Huffman) throw (KwajStream.cs) |
 | RAR audio / VM filters | `Rar` | 1 | RAR3 filters matched to the six standard programs only; no general RarVM (Rar3Decoder.cs) |
 | RPG Maker archives | `Rgss` | 1 | RGSSAD v1-3 only; MV/MZ asset encryption (.rpgmv*) has no descriptor |
-| UFS / FFS (BSD), UFS2 | `Ufs` | 1 | UFS2 and big-endian volumes are read only; creating and editing is UFS1 little-endian |
 | Unity assets / bundles | `UnityBundle` | 1 | UnityFS bundles only; .unitypackage (tar.gz) and serialized-file internals are not handled |
 | Windows thumbnail cache | `ThumbsDb` | 1 | Thumbs.db only; thumbcache_*.db has no descriptor |
 | tar + compression (tar.gz/.bz2/.xz/.zst/.lz/.lz4/.br) | `TarGz`, `TarBz2`, `TarXz`, `TarZst`, `TarLzip`, `TarLz4`, `TarBr` | 1 | tar.Z / tar.lzma / tar.lzo have no compound descriptor (open via the stream format) |
@@ -209,16 +208,25 @@ claims it.
 | [paq8hp12](http://mattmahoney.net/dc/text.html) (Rhatushnyak, Mahoney, Skibinski) | GPL, so only a clean-room rewrite from a derived specification would do, of some 5,500 lines (the PAQ8 model set tuned for English text plus its WRT word transform) whose mixer arithmetic follows its MMX/SSE2 code; and every stream depends on two data files it ships under the GPL, a 465 KB transform dictionary and a 465 KB model-training text, read at run time, which this LGPL repository cannot carry | `BB_ContextMixingSelectedWeights` |
 | LZTURBO (powturbo) | closed format: the codec is distributed only as binaries and no description of its bitstream has been published, so there is nothing to convert, derive a specification from, or prove against beyond black-box output | removed: it was an LZ4-style byte-aligned LZ77 (4-bit literal and match lengths, 255-continued) with 3-byte offsets in a block header of our own, which `BB_Lz4` already covers with a real format |
 
+## 🗑️ Removed: formats that do not exist
+
+Descriptors this repository once offered for a format no specification, tool or disc describes.
+They are deleted rather than kept under an invented name.
+
+| Name it carried | Why it was removed |
+| --- | --- |
+| MFS-1 ("Acorn Master File System v1", `Mfs1`, `.mfs`/`.mfsd`) | No Acorn documentation, BeebWiki page, emulator or disc-image tool knows a format of that name; the BBC Master's own filing systems are DFS and ADFS. The descriptor was the Acorn DFS catalogue under another name, and oaknut-disc read and validated its images as plain Acorn DFS. It was not the classic Macintosh File System either (MDB signature `0xD2D7`), which is the separate `Mfs` descriptor. DFS images stay covered by `Bbc`. |
+
 ## ➕ Ours only
 
-These 457 registry ids are listed by none of the seven sources:
+These 456 registry ids are listed by none of the seven sources:
 
 | Kind | Count | Typical members |
 | --- | ---: | --- |
 | archive | 185 | game archives (`Big`, `Gob`, `Grp`, `Hog`, `Mpq`, `Vpk`, `Wad`), document containers (`Docx`, `Odt`, `Epub`, `Xps`), scientific/data stores (`Hdf5`, `NetCdf`, `Parquet`, `Fits`), backup images (`Aomei`, `Macrium`, `Veeam`, `Paragon`), exe packers (`AsPack`, `Themida`, `VmProtect`) |
 | media | 128 | audio codecs and containers, tracker modules, image and video demuxers |
 | codec | 98 | building blocks no source names as a method (LZ77 family, entropy coders, context mixers) |
-| filesystem | 28 | retro and niche filesystems (`TrDos`, `Ti99`, `Human68k`, `Pc98`, `Xenix`, `SysV`, `LittleFs`, `DoubleSpace`, `Stacker`, `Vdfs`) |
+| filesystem | 27 | retro and niche filesystems (`TrDos`, `Ti99`, `Human68k`, `Pc98`, `Xenix`, `SysV`, `LittleFs`, `DoubleSpace`, `Stacker`, `Vdfs`) |
 | compression | 18 | stream formats such as `Lzham`, `Lizard`, `Density`, `Yaz0`, `RefPack`, `Rnc`, `BriefLz` |
 
 A few of these are plain ZIP/OLE2 variants that 7-Zip opens as ZIP or Compound, without naming them

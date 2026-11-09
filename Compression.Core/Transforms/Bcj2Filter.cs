@@ -208,4 +208,130 @@ public static class Bcj2Filter {
     rc.Finish();
     return (main.ToArray(), call.ToArray(), jump.ToArray(), rangeCoded.ToArray());
   }
+
+  /// <summary>
+  /// The BCJ2 encoder as a pull stream: reading it yields the main stream while the call, jump and
+  /// range-coded streams are written to the streams given, so input of any length is split with
+  /// bounded memory. For the same input the four streams equal <see cref="Encode"/>'s.
+  /// </summary>
+  public sealed class EncodeStream : Stream {
+    private const int ChunkSize = 1 << 16;
+    private readonly Stream _input;
+    private readonly Stream _call;
+    private readonly Stream _jump;
+    private readonly RangeEncoder _rc;
+    private readonly int[] _probs = new int[NumContexts];
+    private readonly byte[] _buffer = new byte[ChunkSize + 8];
+    private readonly MemoryStream _main = new();
+    private int _filled;
+    private long _bufferStart;
+    private bool _inputEnded;
+    private bool _finished;
+    private byte _prevByte;
+    private long _mainRead;
+
+    /// <summary>Starts splitting <paramref name="input"/>; the side streams are written as the main stream is read.</summary>
+    public EncodeStream(Stream input, Stream call, Stream jump, Stream rangeCoded) {
+      this._input = input ?? throw new ArgumentNullException(nameof(input));
+      this._call = call ?? throw new ArgumentNullException(nameof(call));
+      this._jump = jump ?? throw new ArgumentNullException(nameof(jump));
+      this._rc = new RangeEncoder(rangeCoded ?? throw new ArgumentNullException(nameof(rangeCoded)));
+      this._probs.AsSpan().Fill(RangeEncoder.ProbInitValue);
+    }
+
+    /// <inheritdoc />
+    public override bool CanRead => true;
+    /// <inheritdoc />
+    public override bool CanSeek => false;
+    /// <inheritdoc />
+    public override bool CanWrite => false;
+    /// <inheritdoc />
+    public override long Length => throw new NotSupportedException();
+    /// <inheritdoc />
+    public override long Position { get => this._mainRead; set => throw new NotSupportedException(); }
+
+    /// <inheritdoc />
+    public override int Read(byte[] buffer, int offset, int count) => this.Read(buffer.AsSpan(offset, count));
+
+    /// <inheritdoc />
+    public override int Read(Span<byte> destination) {
+      while (this._main.Length - this._main.Position == 0 && !this._finished)
+        this.Pump();
+      var n = this._main.Read(destination);
+      this._mainRead += n;
+      return n;
+    }
+
+    /// <summary>Reads the next chunk of input and splits every position that can be decided.</summary>
+    private void Pump() {
+      this._main.SetLength(0);
+      if (!this._inputEnded) {
+        var read = this._input.Read(this._buffer, this._filled, ChunkSize + 8 - this._filled);
+        if (read <= 0)
+          this._inputEnded = true;
+        else
+          this._filled += read;
+      }
+
+      var data = this._buffer;
+      var i = 0;
+      while (i < this._filled) {
+        var b = data[i];
+        if (i + 5 > this._filled && !this._inputEnded)
+          break; // its operand may still arrive
+
+        this._main.WriteByte(b);
+        if (!IsJ(this._prevByte, b)) {
+          this._prevByte = b;
+          ++i;
+          continue;
+        }
+
+        var context = ContextOf(this._prevByte, b);
+        if (i + 5 > this._filled) {
+          // The last four bytes of the input cannot hold a whole operand.
+          this._rc.EncodeBit(ref this._probs[context], 0);
+          this._prevByte = b;
+          ++i;
+          continue;
+        }
+
+        var next = data[i + 4];
+        if (next is 0x00 or 0xFF) {
+          this._rc.EncodeBit(ref this._probs[context], 1);
+          var src = (uint)data[i + 1] | (uint)data[i + 2] << 8 | (uint)data[i + 3] << 16 | (uint)next << 24;
+          var dest = (uint)(this._bufferStart + i + 5) + src;
+          var target = b == 0xE8 ? this._call : this._jump;
+          target.WriteByte((byte)(dest >> 24));
+          target.WriteByte((byte)(dest >> 16));
+          target.WriteByte((byte)(dest >> 8));
+          target.WriteByte((byte)dest);
+          this._prevByte = next;
+          i += 5;
+        } else {
+          this._rc.EncodeBit(ref this._probs[context], 0);
+          this._prevByte = b;
+          ++i;
+        }
+      }
+
+      Buffer.BlockCopy(data, i, data, 0, this._filled - i);
+      this._filled -= i;
+      this._bufferStart += i;
+      if (this._inputEnded && this._filled == 0 && !this._finished) {
+        this._rc.Finish();
+        this._finished = true;
+      }
+      this._main.Position = 0;
+    }
+
+    /// <inheritdoc />
+    public override void Flush() { }
+    /// <inheritdoc />
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    /// <inheritdoc />
+    public override void SetLength(long value) => throw new NotSupportedException();
+    /// <inheritdoc />
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+  }
 }

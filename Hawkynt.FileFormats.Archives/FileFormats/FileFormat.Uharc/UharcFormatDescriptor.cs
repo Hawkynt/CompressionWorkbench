@@ -7,39 +7,41 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Uharc;
 
 /// <summary>
-/// UHARC 0.6 archive (Uwe Herklotz, 1997–2005): read-only. Lists every 0.6/0.6a/0.6b archive and
-/// extracts the store, LZP (<c>-mz</c>) and ALZ (<c>-m1</c>..<c>-m3</c>, including the multimedia
-/// predictors) modes, password-protected archives and self-extractors; the PPM mode (<c>-mx</c>)
-/// and the legacy RLE/LZ78 modes are refused.
+/// UHARC 0.6 archive (Uwe Herklotz, 1997–2005). Lists and extracts every 0.6/0.6a/0.6b archive: the store, RLE (<c>-mr</c>), LZ78 (<c>-mw</c>), LZP (<c>-mz</c>), PPM (<c>-mx</c>) and ALZ
+/// (<c>-m1</c>..<c>-m3</c>, including the multimedia predictors) modes, password-protected archives
+/// and self-extractors, and UHARC 0.2 archives. Archives of 0.3 and 0.4 are refused. Creates 0.6
+/// archives, stored or LZP-packed, that <c>uharc.exe</c> extracts; it cannot modify them.
 ///
 /// References:
 /// <list type="bullet">
-///   <item><description><c>docs/UHARC-ON-DISK.md</c> — the layout and codecs as implemented, with how each part was established</description></item>
+///   <item><description><c>docs/UHARC-ON-DISK.md</c> — the layout and codecs as implemented, with the measurements behind them</description></item>
 ///   <item><description><c>http://fileformats.archiveteam.org/wiki/UHARC</c> — format overview and sample archives</description></item>
 ///   <item><description>UHARC 0.6b documentation (<c>UHARC.DOC</c>, 01 Oct 2005) — modes, switches and dictionary sizes</description></item>
 /// </list>
 /// </summary>
-public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable {
 
   public string Id => "Uharc";
   public string DisplayName => "UHARC";
   public FormatCategory Category => FormatCategory.Archive;
-  // Read-only: nothing here writes the format, and no writer could be verified against uharc.exe.
+  // Write-once: uharc.exe itself only creates archives, and every archive the writer makes is
+  // extracted byte for byte by uharc.exe and unuharc.exe.
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".uha";
   public IReadOnlyList<string> Extensions => [".uha"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [new("UHA"u8.ToArray(), Confidence: 0.85)];
   public IReadOnlyList<FormatMethodInfo> Methods => [
-    new("store", "Store"), new("lzp", "LZP"), new("alz", "ALZ"),
+    new("store", "Store"), new("rle", "RLE"), new("lz78", "LZ78"), new("lzp", "LZP"), new("ppm", "PPM"), new("alz", "ALZ"),
   ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "UHARC 0.6 archive. Lists all archives; extracts the store, LZP and ALZ modes (with multimedia " +
-    "and executable filters, passwords and SFX stubs). PPM-mode archives list but do not extract.";
+    "UHARC 0.6 archive. Lists and extracts the store, RLE, LZ78, LZP, PPM and ALZ modes (with multimedia " +
+    "and executable filters, passwords and SFX stubs), and UHARC 0.2 archives. 0.3 and 0.4 archives are refused. " +
+    "Creates 0.6 archives, stored or packed with LZP.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (TryOpen(stream, password, out var reader, out var image) is { } failure)
@@ -68,6 +70,28 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       else
         WriteFile(outputDir, e.FileName, reader.Extract(e));
     }
+  }
+
+  /// <summary>Writes a UHARC 0.6 archive: method <c>lzp</c> (the default) or <c>store</c>.</summary>
+  /// <exception cref="NotSupportedException">Another method, a password, a name longer than 255 bytes or more than 4 GiB of data.</exception>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    if (!string.IsNullOrEmpty(options?.Password))
+      throw new NotSupportedException("UHARC: the writer does not encipher archives.");
+
+    var method = options?.MethodName?.Trim().ToLowerInvariant();
+    var compress = method switch {
+      null or "" or "lzp" => true,
+      "store" or "stored" => false,
+      _ => throw new NotSupportedException($"UHARC: the writer packs with 'lzp' or 'store', not '{options!.MethodName}'."),
+    };
+
+    var items = inputs.Select(i => new UharcWriter.Item(
+      i.ArchiveName,
+      i.IsDirectory ? null : i.ReadContent(),
+      i.SourceLastModifiedUtc)).ToList();
+    UharcWriter.Write(output, items, compress, DateTime.Now);
   }
 
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {

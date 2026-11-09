@@ -301,7 +301,7 @@ public sealed partial class SevenZipWriter : IDisposable {
       foreach (var plan in blocks)
         if (this.MustStream(plan)) {
           var (packed, folder) = this.StreamBlock(plan);
-          packSizes.Add(packed);
+          packSizes.AddRange(packed);
           Record(plan, folder);
         } else {
           var block = this.EncodeBlock(plan);

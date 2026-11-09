@@ -195,7 +195,7 @@ public class StuffItCorpusTests {
       var noise = Enumerable.Range(0, 3000).Select(i => (byte)(i * 131 + (i >> 3))).ToArray();          // incompressible -> stored
       var path = Path.Combine(dir, "ours.sit");
       using (var f = File.Create(path))
-      using (var w = new StuffItWriter(f, leaveOpen: true)) {
+      using (var w = new StuffItWriter(f, StuffItCompression.Rle, leaveOpen: true)) {
         w.AddFile("runs.bin", runs);
         w.AddFile("noise.bin", noise);
         w.AddFile("empty.txt", []);

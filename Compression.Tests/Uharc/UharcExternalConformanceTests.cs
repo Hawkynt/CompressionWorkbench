@@ -99,6 +99,13 @@ public class UharcExternalConformanceTests {
   [TestCase("-mz", "-md64")]
   [TestCase("-m2", "-mm-")]
   [TestCase("-mz", "-mm-")]
+  [TestCase("-mr")]
+  [TestCase("-mw")]
+  [TestCase("-mw", "-md1")]
+  [TestCase("-mx")]
+  [TestCase("-mx", "-md1")]
+  [TestCase("-mx", "-md64")]
+  [TestCase("-mx", "-mm-")]
   [TestCase("-m2", "-pwsecret")]
   public void GivenInputsUharcPacked_WhenOurReaderExtracts_ThenEveryFileIsByteIdentical(params string[] switches) {
     var uharc = RequireUharc();
@@ -117,6 +124,26 @@ public class UharcExternalConformanceTests {
       Assert.That(reader.Extract(entry), Is.EqualTo(expected[entry.FileName]), entry.FileName);
   }
 
+  [TestCase(null)]
+  [TestCase("store")]
+  public void GivenOurArchive_WhenUharcExtracts_ThenEveryFileIsByteIdentical(string? method) {
+    var uharc = RequireUharc();
+    var archive = Path.Combine(this._tmp, "ours.uha");
+    var inputs = UharcWriterTests.SampleInputs();
+    File.WriteAllBytes(archive, UharcWriterTests.Create(method, inputs));
+    var output = Path.Combine(this._tmp, "out");
+    Directory.CreateDirectory(output);
+    Run(uharc, output, "x", "-y", "-t" + output, archive);
+
+    foreach (var input in inputs) {
+      var path = Path.Combine(output, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
+      if (input.IsDirectory)
+        Assert.That(Directory.Exists(path), Is.True, input.ArchiveName);
+      else
+        Assert.That(File.ReadAllBytes(path), Is.EqualTo(input.InMemoryContent), input.ArchiveName);
+    }
+  }
+
   [Test]
   public void GivenRealWorldArchives_WhenExtracted_ThenEveryDecodableFilePassesItsCrc() {
     var directory = Environment.GetEnvironmentVariable("CWB_UHARC_SAMPLES");
@@ -127,7 +154,7 @@ public class UharcExternalConformanceTests {
     foreach (var path in Directory.EnumerateFiles(directory)) {
       var head = new byte[4];
       using (var probe = File.OpenRead(path))
-        if (probe.Read(head) < 4 || !UharcHeader.HasMagic(head))
+        if (probe.Read(head) < 4 || !(UharcHeader.HasMagic(head) || head is [(byte)'U', (byte)'H', (byte)'A', 2]))
           continue;
 
       using var stream = File.OpenRead(path);
@@ -140,6 +167,6 @@ public class UharcExternalConformanceTests {
       }
     }
 
-    Assert.That(checkedFiles, Is.Positive, "no decodable UHARC 0.6 archive in the sample directory");
+    Assert.That(checkedFiles, Is.Positive, "no decodable UHARC archive in the sample directory");
   }
 }

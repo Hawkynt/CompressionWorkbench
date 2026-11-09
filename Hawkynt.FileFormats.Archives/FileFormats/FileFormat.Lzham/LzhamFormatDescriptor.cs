@@ -63,7 +63,8 @@ public sealed class LzhamFormatDescriptor : IFormatDescriptor, IStreamFormatOper
   /// <summary>
   /// The dictionary size is the one LZHAM stream parameter the file records; "auto" picks the
   /// smallest that covers the input. The table update rate is not recorded by the file layout, so
-  /// files are always written with LZHAM's default.
+  /// files are always written with LZHAM's default. Level and extreme parsing choose the parse; with
+  /// the same dictionary size the bytes are those of <c>lzhamtest -t0 -m# [-x]</c>.
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
@@ -73,7 +74,24 @@ public sealed class LzhamFormatDescriptor : IFormatDescriptor, IStreamFormatOper
       Default: "auto",
       AllowedValues: ["auto", "15", "16", "18", "20", "22", "24", "26"],
       Description: "log2 of the LZHAM dictionary size, as lzhamtest -d. Larger dictionaries reach farther back but enlarge the match-slot alphabet."),
+    new FormatOptionDescriptor(
+      Key: "Level",
+      DisplayName: "Level",
+      Kind: FormatOptionKind.Enum,
+      Default: "4",
+      AllowedValues: ["0", "1", "2", "3", "4"],
+      Description: "LZHAM compression level, as lzhamtest -m: 0 fastest .. 4 uber (lzhamtest's default).",
+      IsOptimizationAxis: false),
+    new FormatOptionDescriptor(
+      Key: "ExtremeParsing",
+      DisplayName: "Extreme parsing",
+      Kind: FormatOptionKind.Boolean,
+      Default: "false",
+      Description: "Keep four candidate parses per byte at level 4, as lzhamtest -x. Several times slower for a few percent."),
   ];
+
+  internal static LzhamCompressionLevel ParseLevel(FormatCreateOptions options)
+    => options.TryGetInt("Level", out var value) && value is >= 0 and <= 4 ? (LzhamCompressionLevel)value : LzhamCompressionLevel.Uber;
 
   internal static int ParseDictionarySize(FormatCreateOptions options)
     => int.TryParse(options.GetString("DictionarySize"), out var value) && value is >= 15 and <= 29 ? value : 0;
@@ -90,5 +108,6 @@ public sealed class LzhamFormatDescriptor : IFormatDescriptor, IStreamFormatOper
   /// Encodes the supplied input with the selected dictionary size.
   /// </summary>
   public void Compress(Stream input, Stream output, FormatCreateOptions options)
-    => LzhamStream.Compress(input, output, ParseDictionarySize(options));
+    => LzhamStream.Compress(input, output, ParseDictionarySize(options), LzhamTables.DefaultTableUpdateRate,
+      ParseLevel(options), options.GetOptionBool("ExtremeParsing", false));
 }
