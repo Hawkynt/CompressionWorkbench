@@ -219,22 +219,6 @@ jobs:
           sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
           sudo modprobe gfs2 || true
 
-      # Core tests -- always run (no external tools required).
-      #
-      # NOTE the two similar category names, which are NOT spellings of each other:
-      #   End2End    (95 uses) in-process create/extract round trips - Ace, Arj, Arc and friends.
-      #              No external process, so it belongs here and GATES the pull request.
-      #   EndToEnd   (10 uses) oracle comparisons against real 7-Zip / RAR / SFX binaries. Needs
-      #              the tools installed below, hence its own advisory step.
-      # Renaming one to the other would move 95 gating tests into an advisory tier that installs
-      # tools they never use. Leave them distinct.
-      - name: Core tests
-        run: >
-          dotnet test Compression.Tests
-          --configuration Release --no-build
-          --filter "TestCategory!=EndToEnd&TestCategory!=OsIntegration&TestCategory!=ExternalInterop&TestCategory!=ExternalFsInterop&TestCategory!=PolyglotInterop&TestCategory!=Performance"
-          --logger "trx;LogFileName=core-tests.trx"
-
       # Hard gate: partimage saves ext2, FAT16 and FAT32 volumes from loop devices (plain, gzip and
       # bzip2) and restores them onto zeroed devices; the partitions we extract equal its restores.
       - name: partimage oracle
@@ -246,6 +230,23 @@ jobs:
           dotnet test Compression.Tests --configuration Release --no-build \
             --filter "FullyQualifiedName~Compression.Tests.PartImage.PartImageExternalConformanceTests" \
             --logger "trx;LogFileName=partimage-oracle-tests.trx"
+
+      # Core tests -- always run (no external tools required).
+      #
+      # NOTE the two similar category names, which are NOT spellings of each other:
+      #   End2End    (95 uses) in-process create/extract round trips - Ace, Arj, Arc and friends.
+      #              No external process, so it belongs here and GATES the pull request.
+      #   EndToEnd   (10 uses) oracle comparisons against real 7-Zip / RAR / SFX binaries. Needs
+      #              the tools installed below, hence its own advisory step.
+      # Renaming one to the other would move 95 gating tests into an advisory tier that installs
+      # tools they never use. Leave them distinct.
+      - name: Core tests
+        if: ${{ !cancelled() }}
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "TestCategory!=EndToEnd&TestCategory!=OsIntegration&TestCategory!=ExternalInterop&TestCategory!=ExternalFsInterop&TestCategory!=PolyglotInterop&TestCategory!=Performance"
+          --logger "trx;LogFileName=core-tests.trx"
 
       # Interop tools for E2E tests. gfs2-utils is a mandatory oracle for the
       # ExHash gate below; linux-modules-extra supplies gfs2.ko on Ubuntu runner
