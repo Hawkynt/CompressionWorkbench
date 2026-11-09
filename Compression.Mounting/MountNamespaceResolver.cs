@@ -24,7 +24,8 @@ public static class MountNamespaceResolver {
   public static MountNamespaceProbe Probe(
       string formatId,
       Stream source,
-      string? password = null) {
+      string? password = null,
+      IReadOnlyDictionary<string, string>? volumeParameters = null) {
     ArgumentException.ThrowIfNullOrWhiteSpace(formatId);
     ArgumentNullException.ThrowIfNull(source);
     var descriptor = FormatRegistry.GetById(formatId)
@@ -38,7 +39,7 @@ public static class MountNamespaceResolver {
         return new(profile, [$"filesystem:{descriptor.Id}"]);
       }
 
-      if (descriptor is IRandomAccessBlockDeviceProvider blockProvider
+      if (BlockProvider(descriptor, password, volumeParameters) is { } blockProvider
           && TryProbeBlockContainer(descriptor, blockProvider, source, password) is { } nested)
         return nested;
 
@@ -57,7 +58,8 @@ public static class MountNamespaceResolver {
       string formatId,
       Stream source,
       FilesystemOpenOptions options,
-      string? password = null) {
+      string? password = null,
+      IReadOnlyDictionary<string, string>? volumeParameters = null) {
     ArgumentException.ThrowIfNullOrWhiteSpace(formatId);
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(options);
@@ -72,7 +74,7 @@ public static class MountNamespaceResolver {
         source,
         options with { LeaveOpen = true },
         password);
-    } else if (descriptor is IRandomAccessBlockDeviceProvider blockProvider
+    } else if (BlockProvider(descriptor, password, volumeParameters) is { } blockProvider
                && TryOpenBlockContainer(descriptor, blockProvider, source, options, password) is { } nested) {
       session = nested;
     } else {
@@ -85,6 +87,29 @@ public static class MountNamespaceResolver {
     }
 
     return options.LeaveOpen ? session : new OwnedFilesystemSession(session, source);
+  }
+
+  /// <summary>
+  /// The block view below <paramref name="descriptor"/>: plain containers expose theirs directly,
+  /// encrypted ones only through the credentials, which are bound here so the rest of the
+  /// resolution treats both alike. A missing or wrong passphrase surfaces as
+  /// <see cref="ArchivePasswordException"/> rather than as "no filesystem found".
+  /// </summary>
+  private static IRandomAccessBlockDeviceProvider? BlockProvider(
+      IFormatDescriptor descriptor,
+      string? password,
+      IReadOnlyDictionary<string, string>? volumeParameters)
+    => descriptor switch {
+      IEncryptedBlockDeviceProvider encrypted => new UnlockedBlockDeviceProvider(encrypted, new(password, volumeParameters)),
+      IRandomAccessBlockDeviceProvider plain => plain,
+      _ => null,
+    };
+
+  private sealed class UnlockedBlockDeviceProvider(
+      IEncryptedBlockDeviceProvider inner,
+      EncryptedVolumeCredentials credentials) : IRandomAccessBlockDeviceProvider {
+    public IRandomAccessBlockDevice OpenBlockDevice(Stream image, bool writable, bool leaveOpen = true)
+      => inner.OpenBlockDevice(image, credentials, writable, leaveOpen);
   }
 
   private static MountNamespaceProbe? TryProbeBlockContainer(

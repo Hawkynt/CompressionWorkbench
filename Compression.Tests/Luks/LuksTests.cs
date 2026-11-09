@@ -72,7 +72,7 @@ public class LuksTests {
     var image = Create(SamplePayload(2, 5), "pw");
     var dir = Path.Combine(Path.GetTempPath(), "cwb-luks-" + Guid.NewGuid().ToString("N"));
     try {
-      Assert.Throws<InvalidOperationException>(() => new LuksFormatDescriptor().Extract(new MemoryStream(image), dir, null, null));
+      Assert.Throws<ArchivePasswordException>(() => new LuksFormatDescriptor().Extract(new MemoryStream(image), dir, null, null));
       Assert.That(File.ReadAllText(Path.Combine(dir, "metadata.ini")), Does.Contain("version=1").And.Contain("cipher=aes-xts-plain64"));
     } finally {
       try { Directory.Delete(dir, true); } catch { /* best effort */ }
@@ -211,6 +211,73 @@ public class LuksExternalConformanceTests {
     var (_, exit) = ThroughMapping(wslImage, this.PassFile(), $"cat MAPPER > {FsInteropToolbox.WinToWsl(outFile)}");
     Assert.That(exit, Is.EqualTo(0));
     Assert.That(File.ReadAllBytes(outFile), Is.EqualTo(payload));
+  }
+
+  [TestCase("pbkdf2")]
+  [TestCase("argon2id")]
+  public void GivenOurLuks2Volume_WhenCryptsetupOpensIt_ThenItsMappingIsOurPlaintext(string kdf) {
+    RequireCryptsetup();
+    var payload = LuksTests.SamplePayload(256, 12);
+    var image = Path.Combine(this._tmp, "ours2.luks");
+    using (var fs = File.Create(image))
+      LuksVolume.WriteLuks2(fs, payload, Passphrase, kdf == "pbkdf2" ? LuksKdf.Pbkdf2(1000) : LuksKdf.Argon2id(2, 8192, 2), label: "cwb", digestIterations: 1000);
+    var wslImage = FsInteropToolbox.WinToWsl(image);
+
+    var dump = Run($"cryptsetup luksDump {wslImage}");
+    Assert.That(dump.ExitCode, Is.EqualTo(0), "luksDump refused our LUKS2 header");
+    Assert.That(dump.StdOut, Does.Match(@"Version:\s+2").And.Contain(kdf).And.Contain("cwb"));
+    Assert.That(dump.StdErr, Does.Not.Contain("orrupt").And.Not.Contain("checksum"), "cryptsetup distrusts one of our two headers");
+    var test = Run($"cryptsetup open --test-passphrase --key-file {this.PassFile()} {wslImage}");
+    Assert.That(test.ExitCode, Is.EqualTo(0), "cryptsetup does not accept our LUKS2 key slot");
+
+    var outFile = Path.Combine(this._tmp, "plain2.bin");
+    var (_, exit) = ThroughMapping(wslImage, this.PassFile(), $"cat MAPPER > {FsInteropToolbox.WinToWsl(outFile)}");
+    Assert.That(exit, Is.EqualTo(0));
+    Assert.That(File.ReadAllBytes(outFile), Is.EqualTo(payload));
+  }
+
+  /// <summary>
+  /// The kernel as the filesystem oracle through both encryption layers: cryptsetup formats a
+  /// LUKS2 volume, the kernel builds FAT inside it and stores a file; we mount that through the
+  /// passphrase, read the file, write another, and the kernel reads ours back through
+  /// cryptsetup's mapping after <c>fsck.vfat</c> finds nothing to repair.
+  /// </summary>
+  [Test]
+  public void GivenAKernelWrittenFilesystemInLuks2_WhenWeMountItWritable_ThenBothSidesSeeEachOthersFiles() {
+    RequireCryptsetup();
+    var image = Path.Combine(this._tmp, "fs.luks");
+    var wslImage = FsInteropToolbox.WinToWsl(image);
+    var theirs = Path.Combine(this._tmp, "theirs.txt");
+    File.WriteAllText(theirs, "written by the kernel");
+    Assert.That(Run($"truncate -s 24M {wslImage} && cryptsetup luksFormat -q --type luks2 --pbkdf pbkdf2 --pbkdf-force-iterations 1000 " +
+                    $"--key-file {this.PassFile()} {wslImage}").ExitCode, Is.EqualTo(0), "luksFormat failed");
+    var mnt = "/tmp/cwb-mnt-" + Guid.NewGuid().ToString("N")[..8];
+    var (log, exit) = ThroughMapping(wslImage, this.PassFile(),
+      $"mkfs.vfat MAPPER >/dev/null && mkdir -p {mnt} && mount MAPPER {mnt} && cp {FsInteropToolbox.WinToWsl(theirs)} {mnt}/THEIRS.TXT && umount {mnt} && rmdir {mnt}");
+    Assert.That(exit, Is.EqualTo(0), log);
+
+    var ours = "written through our encrypted mount"u8.ToArray();
+    using (var stream = new FileStream(image, FileMode.Open, FileAccess.ReadWrite)) {
+      Compression.Lib.FormatRegistration.EnsureInitialized();
+      using var session = Compression.Mounting.MountNamespaceResolver.Open("Luks", stream, new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true), Passphrase);
+      var their = session.Lookup(session.RootNodeId, "THEIRS.TXT");
+      Assert.That(their, Is.Not.Null, "the kernel's file is missing from our view");
+      using (var handle = session.OpenFile(their!.Value, FileAccess.Read)) {
+        var buffer = new byte[handle.Length];
+        handle.Read(0, buffer);
+        Assert.That(System.Text.Encoding.ASCII.GetString(buffer), Is.EqualTo("written by the kernel"));
+      }
+      var node = session.CreateFile(session.RootNodeId, "OURS.TXT");
+      using (var handle = session.OpenFile(node, FileAccess.ReadWrite))
+        handle.Write(0, ours);
+      session.Flush();
+    }
+
+    var back = Path.Combine(this._tmp, "back.txt");
+    (log, exit) = ThroughMapping(wslImage, this.PassFile(),
+      $"fsck.vfat -n MAPPER && mkdir -p {mnt} && mount -o ro MAPPER {mnt} && cp {mnt}/OURS.TXT {FsInteropToolbox.WinToWsl(back)}; rc=$?; umount {mnt}; rmdir {mnt}; exit $rc");
+    Assert.That(exit, Is.EqualTo(0), log);
+    Assert.That(File.ReadAllBytes(back), Is.EqualTo(ours));
   }
 
   [TestCase("luks1", "aes-xts-plain64", 512)]

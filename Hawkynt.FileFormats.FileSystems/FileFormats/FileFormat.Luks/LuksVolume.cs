@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Compression.Registry;
 
 namespace FileFormat.Luks;
 
@@ -21,7 +22,7 @@ public sealed record LuksKeySlot(
 /// On-Disk Format Specification 1.2.3 and the LUKS2 On-Disk Format Specification (cryptsetup);
 /// see <c>docs/LUKS-ON-DISK.md</c>.
 /// </summary>
-public sealed class LuksVolume {
+public sealed partial class LuksVolume {
   public static ReadOnlySpan<byte> Magic => [(byte)'L', (byte)'U', (byte)'K', (byte)'S', 0xBA, 0xBE];
   public const int SectorSize = 512;
 
@@ -167,7 +168,13 @@ public sealed class LuksVolume {
   /// <summary>Tries every active key slot; returns the verified volume key.</summary>
   /// <exception cref="InvalidDataException">No key slot opens with this passphrase.</exception>
   /// <exception cref="NotSupportedException">The only candidate slots use an unsupported KDF or cipher.</exception>
-  public byte[] Unlock(Stream stream, string passphrase) {
+  public byte[] Unlock(Stream stream, string passphrase)
+    => this.TryUnlock(stream, passphrase) ?? throw new InvalidDataException("LUKS: no key slot opens with this passphrase.");
+
+  /// <summary>Tries every active key slot; returns the verified volume key, or <see langword="null"/> when none opens.</summary>
+  /// <exception cref="InvalidDataException">Key material runs past the end of the device.</exception>
+  /// <exception cref="NotSupportedException">The only candidate slots use an unsupported KDF or cipher.</exception>
+  public byte[]? TryUnlock(Stream stream, string passphrase) {
     var password = Encoding.UTF8.GetBytes(passphrase);
     NotSupportedException? unsupported = null;
     foreach (var slot in this.KeySlots.Where(s => s.Active)) {
@@ -197,7 +204,28 @@ public sealed class LuksVolume {
     }
     if (unsupported is not null && !this.KeySlots.Any(s => s.Active && s.Kdf is "pbkdf2" or "argon2i" or "argon2id"))
       throw unsupported;
-    throw new InvalidDataException("LUKS: no key slot opens with this passphrase.");
+    return null;
+  }
+
+  /// <summary>
+  /// The decrypted data segment as a block device of <see cref="PayloadSectorSize"/>-byte blocks.
+  /// Writes re-encrypt the touched sectors under <paramref name="volumeKey"/>; the header and key
+  /// slots are never written.
+  /// </summary>
+  public SectorCipherBlockDevice OpenBlockDevice(Stream stream, byte[] volumeKey, bool writable, bool leaveOpen = true) {
+    if (!this.VerifyKey(volumeKey))
+      throw new ArgumentException("LUKS: the key does not match the volume-key digest.", nameof(volumeKey));
+    var sectors = this.PayloadLength(stream.Length) / this.PayloadSectorSize;
+    return new SectorCipherBlockDevice(stream, this.PayloadOffset, this.PayloadSectorSize, sectors,
+      new SegmentCipher(new LuksCipher(this.Cipher, this.CipherMode, volumeKey), this.IvTweak, this.PayloadSectorSize), writable, leaveOpen);
+  }
+
+  /// <summary>dm-crypt numbers IVs in 512-byte units from the segment's IV tweak, whatever the sector size.</summary>
+  private sealed class SegmentCipher(LuksCipher cipher, ulong ivTweak, int sectorSize) : ISectorCipher {
+    private readonly ulong _ivPerSector = (ulong)(sectorSize / SectorSize);
+    public void Decrypt(Span<byte> data, long firstSector) => cipher.Decrypt(data, ivTweak + (ulong)firstSector * this._ivPerSector, sectorSize);
+    public void Encrypt(Span<byte> data, long firstSector) => cipher.Encrypt(data, ivTweak + (ulong)firstSector * this._ivPerSector, sectorSize);
+    public void Dispose() => cipher.Dispose();
   }
 
   public bool VerifyKey(ReadOnlySpan<byte> volumeKey) {

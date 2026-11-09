@@ -10,6 +10,7 @@ internal sealed class RegistryMountLauncher(FilesystemMountLauncher launcher) : 
     string formatId,
     MountPlan plan,
     string target,
+    string? password = null,
     CancellationToken cancellationToken = default
-  ) => this._launcher.MountAsync(imagePath, formatId, plan, target, cancellationToken);
+  ) => this._launcher.MountAsync(imagePath, formatId, plan, target, password, volumeParameters: null, cancellationToken);
 }

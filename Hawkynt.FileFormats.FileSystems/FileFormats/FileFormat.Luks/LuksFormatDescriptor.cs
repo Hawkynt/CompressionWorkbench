@@ -9,12 +9,13 @@ namespace FileFormat.Luks;
 /// <summary>
 /// LUKS1/LUKS2 encrypted volume (dm-crypt). Lists the header as <c>metadata.ini</c> and the
 /// decrypted data segment as <c>volume.img</c>; extracting the volume needs the passphrase,
-/// which opens a PBKDF2 key slot and is checked against the volume-key digest. Creates LUKS1
-/// volumes (aes-xts-plain64, PBKDF2-SHA256) that cryptsetup opens. Argon2 key slots and ciphers
-/// other than AES-XTS/CBC are refused.
+/// which opens a PBKDF2 or Argon2 key slot and is checked against the volume-key digest. With
+/// the passphrase the data segment is also a block device, so the filesystem inside mounts
+/// read-only or read-write. Creates LUKS1 and LUKS2 volumes (aes-xts-plain64) that cryptsetup
+/// opens. Ciphers other than AES-XTS/CBC are refused.
 /// </summary>
 /// <remarks>Specification: <c>docs/LUKS-ON-DISK.md</c>.</remarks>
-public sealed class LuksFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, ISyntheticEntryNames, IFormatOptionsSchema {
+public sealed class LuksFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, ISyntheticEntryNames, IFormatOptionsSchema, IEncryptedBlockDeviceProvider {
   public const string VolumeName = "volume.img";
   public const string MetadataName = "metadata.ini";
   private static readonly IReadOnlySet<string> Synthetic = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { MetadataName };
@@ -32,12 +33,22 @@ public sealed class LuksFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatMethodInfo> Methods => [new("aes-xts-plain64", "AES-XTS (plain64)")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "LUKS1/LUKS2 encrypted volume (PBKDF2 key slots, AES-XTS/CBC); creates LUKS1";
+  public string Description => "LUKS1/LUKS2 encrypted volume (PBKDF2/Argon2 key slots, AES-XTS/CBC); mounts with the passphrase; creates LUKS1/LUKS2";
   public IReadOnlySet<string> SyntheticEntryNames => Synthetic;
 
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new("Version", "LUKS version", FormatOptionKind.Enum, "1", ["1", "2"],
+      "LUKS1 (one PBKDF2 key slot) or LUKS2 (PBKDF2 or Argon2 key slot, redundant JSON headers).", IsOptimizationAxis: false),
+    new("Kdf", "Key-slot KDF", FormatOptionKind.Enum, "pbkdf2", ["pbkdf2", "argon2id", "argon2i"],
+      "Key derivation for the LUKS2 key slot; LUKS1 is always PBKDF2.", IsOptimizationAxis: false),
     new("Iterations", "PBKDF2 iterations", FormatOptionKind.Integer, "100000", null,
       "PBKDF2-SHA256 iterations for the key slot and the volume-key digest (cryptsetup requires at least 1000).", IsOptimizationAxis: false),
+    new("Argon2Time", "Argon2 time cost", FormatOptionKind.Integer, "4", null,
+      "Argon2 passes over memory for an Argon2 key slot.", IsOptimizationAxis: false),
+    new("Argon2MemoryKiB", "Argon2 memory (KiB)", FormatOptionKind.Integer, "1048576", null,
+      "Argon2 memory cost in KiB for an Argon2 key slot.", IsOptimizationAxis: false),
+    new("Argon2Lanes", "Argon2 lanes", FormatOptionKind.Integer, "4", null,
+      "Argon2 parallelism for an Argon2 key slot.", IsOptimizationAxis: false),
   ];
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -61,11 +72,31 @@ public sealed class LuksFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       WriteFile(outputDir, MetadataName, Metadata(v));
     if (files is { Length: > 0 } && !MatchesFilter(VolumeName, files))
       return;
-    if (password is null)
-      throw new InvalidOperationException("LUKS: the volume is encrypted; a passphrase is required.");
-    var key = v.Unlock(stream, password);
+    var key = Unlock(v, stream, password);
     using var target = CreateEntryFile(outputDir, VolumeName);
     v.DecryptPayload(stream, key, target);
+  }
+
+  /// <summary>The decrypted data segment as a block device; the filesystem inside mounts through it.</summary>
+  public IRandomAccessBlockDevice OpenBlockDevice(Stream image, EncryptedVolumeCredentials credentials, bool writable, bool leaveOpen = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(credentials);
+    if (writable && !image.CanWrite)
+      throw new NotSupportedException("A writable LUKS block device needs a writable volume stream.");
+    var v = LuksVolume.Read(image);
+    var key = Unlock(v, image, credentials.Password);
+    try {
+      return v.OpenBlockDevice(image, key, writable, leaveOpen);
+    } finally {
+      System.Security.Cryptography.CryptographicOperations.ZeroMemory(key);
+    }
+  }
+
+  private static byte[] Unlock(LuksVolume v, Stream stream, string? password) {
+    if (password is null)
+      throw new ArchivePasswordException("LUKS: the volume is encrypted; a passphrase is required.", passwordWasSupplied: false);
+    return v.TryUnlock(stream, password)
+      ?? throw new ArchivePasswordException("LUKS: no key slot opens with this passphrase.", passwordWasSupplied: true);
   }
 
   /// <summary>Encrypts the single input (whole 512-byte sectors) into a new LUKS1 volume.</summary>
@@ -82,7 +113,25 @@ public sealed class LuksFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
     if (payload is null) throw new ArgumentException("LUKS needs the volume image to encrypt.", nameof(inputs));
     var iterations = options.TryGetInt("Iterations", out var it) ? it : 100_000;
-    LuksVolume.WriteLuks1(output, payload, options.Password, iterations);
+    var version = options.TryGetInt("Version", out var ver) ? ver : 1;
+    switch (version) {
+      case 1:
+        LuksVolume.WriteLuks1(output, payload, options.Password, iterations);
+        break;
+      case 2:
+        var kdf = (options.GetString("Kdf") ?? "pbkdf2").ToLowerInvariant() switch {
+          "pbkdf2" => LuksKdf.Pbkdf2(iterations),
+          var argon and ("argon2id" or "argon2i") => new LuksKdf(argon,
+            options.TryGetInt("Argon2Time", out var t) ? t : 4,
+            options.TryGetInt("Argon2MemoryKiB", out var m) ? m : 1 << 20,
+            options.TryGetInt("Argon2Lanes", out var l) ? l : 4),
+          var other => throw new ArgumentException($"LUKS2 key slots support pbkdf2, argon2id and argon2i, not '{other}'.", nameof(options)),
+        };
+        LuksVolume.WriteLuks2(output, payload, options.Password, kdf, digestIterations: iterations);
+        break;
+      default:
+        throw new ArgumentException($"LUKS version {version} cannot be created (1 and 2 can).", nameof(options));
+    }
   }
 
   private static byte[] Metadata(LuksVolume v) {

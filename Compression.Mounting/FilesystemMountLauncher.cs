@@ -11,11 +11,27 @@ namespace Compression.Mounting;
 public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
   private readonly MountBackendRegistry _backends = backends ?? throw new ArgumentNullException(nameof(backends));
 
+  public ValueTask<IMountSession> MountAsync(
+    string imagePath,
+    string formatId,
+    MountPlan requestedPlan,
+    string target,
+    CancellationToken cancellationToken = default
+  ) => this.MountAsync(imagePath, formatId, requestedPlan, target, password: null, volumeParameters: null, cancellationToken);
+
+  /// <summary>
+  /// Mounts <paramref name="imagePath"/>, unlocking an encrypted container (or archive) on the
+  /// way with <paramref name="password"/> and any format-specific
+  /// <paramref name="volumeParameters"/>.
+  /// </summary>
+  /// <exception cref="ArchivePasswordException">The source is encrypted and the password is missing or wrong.</exception>
   public async ValueTask<IMountSession> MountAsync(
     string imagePath,
     string formatId,
     MountPlan requestedPlan,
     string target,
+    string? password,
+    IReadOnlyDictionary<string, string>? volumeParameters = null,
     CancellationToken cancellationToken = default
   ) {
     ArgumentException.ThrowIfNullOrWhiteSpace(imagePath);
@@ -36,7 +52,7 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
     try {
       source = OpenBackingSource(imagePath, requestedPlan.AccessMode);
 
-      var probe = MountNamespaceResolver.Probe(formatId, source);
+      var probe = MountNamespaceResolver.Probe(formatId, source, password, volumeParameters);
       var resolvedPlan = this._backends.ResolveFilesystem(
         requestedPlan.BackendId,
         probe.Profile,
@@ -51,7 +67,9 @@ public sealed class FilesystemMountLauncher(MountBackendRegistry backends) {
         new FilesystemOpenOptions(
           ReadOnly: requestedPlan.AccessMode == MountAccessMode.ReadOnly,
           LeaveOpen: false
-        )
+        ),
+        password,
+        volumeParameters
       );
 
       // The opened namespace can be more specific than the probe (for example a
