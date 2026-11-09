@@ -145,6 +145,7 @@ public class PartImageExternalConformanceTests {
       "fat16" => "mkfs.fat -F 16",
       _ => "mkfs.fat -F 32",
     };
+    // Full batch mode avoids GUI initialization on headless runners; errors are cancelled.
     // The volumes and loop devices live in a native Linux directory; the results are copied out.
     var script = string.Join("; ",
       "set -e",
@@ -156,11 +157,11 @@ public class PartImageExternalConformanceTests {
       $"{sudo} mount $L $w/m",
       $"{sudo} sh -c \"head -c 300000 /dev/urandom > $w/m/RANDOM.BIN; seq 1 5000 > $w/m/NUMBERS.TXT\"",
       $"{sudo} umount $w/m",
-      $"{sudo} partimage -b -z{z} -o -d save $L $w/img >$w/save.log 2>&1 || {{ cat $w/save.log; exit 1; }}",
+      $"{sudo} partimage -B 'Error/*=Cancel' -z{z} -o -d save $L $w/img >$w/save.log 2>&1 || {{ cat $w/save.log; exit 1; }}",
       $"{sudo} losetup -d $L",
       $"truncate -s {size} $w/back.img",
       $"L=$({sudo} losetup -f --show $w/back.img)",
-      $"{sudo} partimage -b restore $L $w/img.000 >$w/restore.log 2>&1 || {{ cat $w/restore.log; exit 1; }}",
+      $"{sudo} partimage -B 'Error/*=Cancel' restore $L $w/img.000 >$w/restore.log 2>&1 || {{ cat $w/restore.log; exit 1; }}",
       $"{sudo} losetup -d $L",
       $"{sudo} cp $w/img.000 $w/back.img {FsInteropToolbox.WinToWsl(this._tmp)}/",
       $"{sudo} chmod 0644 {FsInteropToolbox.WinToWsl(this._tmp)}/img.000 {FsInteropToolbox.WinToWsl(this._tmp)}/back.img",
