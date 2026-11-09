@@ -16,4 +16,7 @@ public sealed class CdiEntry {
 
   /// <summary>Gets the starting LBA (Logical Block Address) of this entry's data.</summary>
   public int StartLba { get; init; }
+
+  /// <summary>The entry as the shared ISO 9660 reader sees it, when that reader read the tree.</summary>
+  internal FileSystem.Iso.IsoEntry? Iso { get; init; }
 }
