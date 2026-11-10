@@ -557,8 +557,8 @@ jobs:
         run: |
           set -euo pipefail
           vc="$RUNNER_TEMP/veracrypt-console.deb"
-          curl -sSfL -o "$vc" https://github.com/veracrypt/VeraCrypt/releases/download/VeraCrypt_1.26.24/veracrypt-console-1.26.24-Ubuntu-24.04-amd64.deb
-          echo "0da064cde572ece5316368e7dca84c4c8cc8b7327da921c48187998b8725d4a2  $vc" | sha256sum -c -
+          curl -sSfL -o "$vc" https://github.com/veracrypt/VeraCrypt/releases/download/VeraCrypt_1.26.29/veracrypt-console-1.26.29-Ubuntu-24.04-amd64.deb
+          echo "8592bbb754582cfb9ba265771b8bc0e130b81e91a23141f22cddf83496063508  $vc" | sha256sum -c -
           sudo apt-get install -y cryptsetup-bin "$vc"
           sudo modprobe dm-crypt || true
           img="$RUNNER_TEMP/tcrypt-images.tar.xz"
