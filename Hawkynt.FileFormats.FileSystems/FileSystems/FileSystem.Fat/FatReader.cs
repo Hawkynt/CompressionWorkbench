@@ -102,7 +102,12 @@ public sealed class FatReader : IDisposable {
     }
   }
 
+  // Start clusters of the directories already read. A damaged tree can point a subdirectory back
+  // at an ancestor or at itself; descending into it again would recurse until the stack overflows.
+  private readonly HashSet<int> _visitedDirectories = [];
+
   private void ReadDirectory(int cluster, string path) {
+    if (!_visitedDirectories.Add(cluster)) return;
     var clusterData = ReadClusterChain(cluster);
     var entryCount = clusterData.Length / 32;
     ReadDirectoryEntries(clusterData, entryCount, path);
