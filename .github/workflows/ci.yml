@@ -834,6 +834,8 @@ jobs:
 
       # Wall-clock performance tests are advisory — a slow shared runner must not
       # fail the build on a timing assertion.
+      # Throughput measurements run one fixture at a time: the suite is otherwise parallel
+      # (TestParallelism.cs), and concurrent fixtures would skew each other's timings.
       - name: Performance tests
         continue-on-error: true
         run: >
@@ -841,6 +843,7 @@ jobs:
           --configuration Release --no-build
           --filter "Category=Performance"
           --logger "trx;LogFileName=perf-tests.trx"
+          -- NUnit.NumberOfTestWorkers=1
 
       # AFTER every test leg, and it runs even when one of them failed. Ordered before them it
       # masks the suite completely: this step going red stopped the job, no test ran at all, and
