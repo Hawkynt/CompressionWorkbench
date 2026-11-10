@@ -12,10 +12,6 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        ref=$(tr -d '[:space:]' < build/NativeForms.ref)
         dir="$GITHUB_WORKSPACE/../NativeForms"
         rm -rf "$dir"
-        git init -q "$dir"
-        git -C "$dir" fetch -q --depth 1 https://github.com/Hawkynt/NativeForms.git "$ref"
-        git -C "$dir" checkout -q FETCH_HEAD
-        echo "NativeForms $(git -C "$dir" log -1 --format='%h %s')"
+        build/get-nativeforms.sh "$dir"

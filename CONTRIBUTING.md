@@ -21,8 +21,14 @@ deliberately stricter than the archive API, are in
 ## Build
 
 ```bash
+build/get-nativeforms.sh   # once (build/get-nativeforms.ps1 on Windows)
 dotnet build CompressionWorkbench.slnx
 ```
+
+`Compression.NativeUI` needs NativeForms at the commit pinned in `build/NativeForms.ref`: the
+published packages lag behind it. The script fetches that commit to `../NativeForms`, where
+`build/NativeForms.props` finds it (the same checkout CI makes); point `NativeFormsSource` at a
+checkout elsewhere. Without one the build falls back to the packages and says so.
 
 The solution uses the `.slnx` XML solution format. `Directory.Build.props` applies shared settings to all projects: `net10.0` target, C# 14, nullable reference types enabled, and warnings-as-errors.
 
