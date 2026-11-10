@@ -546,7 +546,8 @@ jobs:
       # Hard gate, both directions, for VeraCrypt and TrueCrypt containers: VeraCrypt's console build
       # (pinned release, checksum-verified) creates a container for every cipher, cascade and PRF it
       # offers and we decrypt what it wrote through its mapping; VeraCrypt and cryptsetup's TCRYPT
-      # support mount ours (sparse ones too) to our plaintext. cryptsetup's TCRYPT test images
+      # support mount ours (sparse ones too) to our plaintext, hidden volumes both ways (VeraCrypt also
+      # accepts ours for hidden-volume protection). cryptsetup's TCRYPT test images
       # (pinned commit) cover TrueCrypt 1-7 back to its LRW and CBC modes and RIPEMD-160 volumes.
       - name: VeraCrypt oracle
         if: matrix.os == 'ubuntu-latest'
@@ -566,7 +567,7 @@ jobs:
           echo "cf65f0b336a623c2d5510e6ad63d364a9ade1dd46ac8407e63a0e95b17823272  $img" | sha256sum -c -
           tar -xJf "$img" -C "$RUNNER_TEMP"
           CWB_TCRYPT_IMAGES="$RUNNER_TEMP/tcrypt-images" dotnet test Compression.Tests --configuration Release --no-build \
-            --filter "FullyQualifiedName~Compression.Tests.VeraCrypt.VeraCryptExternalConformanceTests|FullyQualifiedName~Compression.Tests.VeraCrypt.TcryptImageConformanceTests" \
+            --filter "FullyQualifiedName~Compression.Tests.VeraCrypt.VeraCryptExternalConformanceTests|FullyQualifiedName~Compression.Tests.VeraCrypt.TcryptImageConformanceTests|FullyQualifiedName~Compression.Tests.VeraCrypt.HiddenVolumeExternalConformanceTests" \
             --logger "trx;LogFileName=veracrypt-oracle-tests.trx"
 
       # Hard gate: Greaseweazle (public domain, pinned release) writes an SCP from a sector image, we

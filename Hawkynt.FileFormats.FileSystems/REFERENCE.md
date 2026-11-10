@@ -6253,7 +6253,25 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.VeraCrypt`
 
-[`TcBlockCipher`](#tcblockcipher) · [`TcCipher`](#tccipher) · [`TcCipherChain`](#tccipherchain) · [`TcCreateOptions`](#tccreateoptions) · [`TcHeaderKind`](#tcheaderkind) · [`TcKdf`](#tckdf) · [`TcMode`](#tcmode) · [`TcSectorCipher`](#tcsectorcipher) · [`TcUnlockOptions`](#tcunlockoptions) · [`TcVolume`](#tcvolume) · [`TcVolumeWriter`](#tcvolumewriter) · [`VeraCryptFormatDescriptor`](#veracryptformatdescriptor)
+[`HiddenProtectedBlockDevice`](#hiddenprotectedblockdevice) · [`TcBlockCipher`](#tcblockcipher) · [`TcCipher`](#tccipher) · [`TcCipherChain`](#tccipherchain) · [`TcCreateOptions`](#tccreateoptions) · [`TcHeaderKind`](#tcheaderkind) · [`TcHiddenVolume`](#tchiddenvolume) · [`TcKdf`](#tckdf) · [`TcMode`](#tcmode) · [`TcSectorCipher`](#tcsectorcipher) · [`TcUnlockOptions`](#tcunlockoptions) · [`TcVolume`](#tcvolume) · [`TcVolumeWriter`](#tcvolumewriter) · [`VeraCryptFormatDescriptor`](#veracryptformatdescriptor)
+
+#### `HiddenProtectedBlockDevice`
+
+The outer volume with hidden-volume protection: any write that would reach the hidden volume is refused, and from then on every write is refused (as VeraCrypt does), so the outer filesystem cannot go on half-written over it.
+
+Implements `IDisposable`, `IRandomAccessBlockDevice`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HiddenProtectedBlockDevice` | `HiddenProtectedBlockDevice(IRandomAccessBlockDevice outer, long protectedFirstBlock)` | The outer volume with hidden-volume protection: any write that would reach the hidden volume is refused, and from then on every write is refused (as VeraCrypt does), so the outer filesystem cannot go on half-written over it. |
+| `CanWrite` | `bool CanWrite { get; }` |  |
+| `Geometry` | `BlockDeviceGeometry Geometry { get; }` |  |
+| `ProtectionTriggered` | `bool ProtectionTriggered { get; }` | Whether a write was refused; the volume is read-only from then on. |
+| `Dispose` | `void Dispose()` |  |
+| `Flush` | `void Flush()` |  |
+| `ReadBlocks` | `int ReadBlocks(long firstBlock, Span<byte> destination)` |  |
+| `Trim` | `void Trim(long firstBlock, long blockCount)` |  |
+| `WriteBlocks` | `void WriteBlocks(long firstBlock, ReadOnlySpan<byte> source)` |  |
 
 #### `TcBlockCipher`
 
@@ -6334,6 +6352,17 @@ Which header of a container to open.
 | `Standard` | `0` | The outer (standard) volume: header at 0, backup 128 KiB before the end. |
 | `Hidden` | `1` | A hidden volume: header at 64 KiB, backup 64 KiB before the end (TrueCrypt < 6: 1.5 KiB before the end). |
 
+#### `TcHiddenVolume`
+
+Hidden volumes: a second volume inside the free space at the end of an outer volume, whose header sits in the outer container's spare header slot (64 KiB, backup 64 KiB before the end) and is indistinguishable from random bytes without its password. Placement is VeraCrypt's: the hidden data ends 4 KiB before the backup header area.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ReservedEnd` | `const long ReservedEnd` | Bytes VeraCrypt keeps free between the hidden data and the backup header area. |
+| `Add` | `static void Add(Stream container, string outerPassword, TcUnlockOptions outerOptions, ReadOnlySpan<byte> payload, string hiddenPassword, TcCreateOptions hiddenOptions, long size)` | Writes a hidden volume holding `payload` into `container`, an existing TrueCrypt 5+/VeraCrypt container. Refuses unless the outer volume, opened with `outerPassword`, proves the space free: its filesystem must map its allocations, and none may reach into the hidden area. |
+| `DataOffset` | `static long DataOffset(long containerLength, long size)` | Byte offset in the container where a hidden volume of `size` bytes starts. |
+| `ProvenFreeFrom` | `static long? ProvenFreeFrom(TcVolume outer, Stream container)` | The offset in `outer`'s data area from which its filesystem proves every byte free, or `null` when no recognised filesystem maps its allocations. |
+
 #### `TcKdf`
 
 One header-key derivation TrueCrypt or VeraCrypt uses. The table, the iteration counts and the PIM formulas are cryptsetup's (`lib/tcrypt/tcrypt.c`, LGPL-2.1-or-later).
@@ -6393,7 +6422,7 @@ Implements `IEquatable<TcUnlockOptions>`.
 | --- | --- | --- |
 | `TcUnlockOptions` | `TcUnlockOptions()` |  |
 | `Cipher` | `string Cipher { get; init; }` | Only try chains whose cryptsetup name contains this (`aes`, `serpent-twofish-aes`, …); null tries all. |
-| `Header` | `TcHeaderKind Header { get; init; }` | Which header to open. |
+| `Header` | `TcHeaderKind? Header { get; init; }` | Which header to open; `null` tries the standard header, then the hidden one, as VeraCrypt does with a single password. |
 | `Keyfiles` | `IReadOnlyList<byte[]> Keyfiles { get; init; }` | Keyfile contents, mixed into the password pool. |
 | `Pim` | `int Pim { get; init; }` | VeraCrypt PIM; 0 for the default iterations. A PIM restricts the search to VeraCrypt derivations. |
 | `Prf` | `string Prf { get; init; }` | Only try this PRF (`sha512`, `whirlpool`, …); null tries all. |
@@ -6452,11 +6481,20 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IEncryptedBlockDevi
 | `VeraCryptFormatDescriptor` | `VeraCryptFormatDescriptor()` |  |
 | `CipherName` | `const string CipherName` |  |
 | `FormatName` | `const string FormatName` |  |
+| `HiddenCipherName` | `const string HiddenCipherName` |  |
 | `HiddenName` | `const string HiddenName` |  |
+| `HiddenPasswordName` | `const string HiddenPasswordName` |  |
+| `HiddenPimName` | `const string HiddenPimName` |  |
+| `HiddenPrfName` | `const string HiddenPrfName` |  |
+| `HiddenSizeName` | `const string HiddenSizeName` |  |
+| `HiddenVolumeName` | `const string HiddenVolumeName` |  |
 | `KeyfilesName` | `const string KeyfilesName` |  |
 | `MetadataName` | `const string MetadataName` |  |
 | `PimName` | `const string PimName` |  |
 | `PrfName` | `const string PrfName` |  |
+| `ProtectHiddenKeyfilesName` | `const string ProtectHiddenKeyfilesName` |  |
+| `ProtectHiddenName` | `const string ProtectHiddenName` |  |
+| `ProtectHiddenPimName` | `const string ProtectHiddenPimName` |  |
 | `SizeName` | `const string SizeName` |  |
 | `SparseName` | `const string SparseName` |  |
 | `VolumeName` | `const string VolumeName` |  |
@@ -6473,7 +6511,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IEncryptedBlockDevi
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Encrypts `volume.img` into a new container; with a `hidden.img` input and a `HiddenPassword`, also writes a hidden volume at the end of the outer one, after proving from the outer filesystem's allocation map (or, without a recognised filesystem, from the outer image's length) that the space is free. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `OpenBlockDevice` | `IRandomAccessBlockDevice OpenBlockDevice(Stream image, EncryptedVolumeCredentials credentials, bool writable, bool leaveOpen = true)` |  |
