@@ -182,7 +182,7 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Crypto`
 
-[`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`Blowfish`](#blowfish) · [`KeyDerivation`](#keyderivation) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Serpent`](#serpent) · [`Twofish`](#twofish)
+[`AesCryptor`](#aescryptor) · [`AntiForensicSplitter`](#antiforensicsplitter) · [`Argon2`](#argon2) · [`Argon2.Variant`](#argon2variant) · [`Blowfish`](#blowfish) · [`Camellia`](#camellia) · [`Cast5`](#cast5) · [`KeyDerivation`](#keyderivation) · [`Kuznyechik`](#kuznyechik) · [`Luks1Header`](#luks1header) · [`Luks1KeySlot`](#luks1keyslot) · [`Luks1SectorCipher`](#luks1sectorcipher) · [`Rar15Cipher`](#rar15cipher) · [`Rar20Cipher`](#rar20cipher) · [`Rc4`](#rc4) · [`Serpent`](#serpent) · [`Twofish`](#twofish)
 
 #### `AesCryptor`
 
@@ -235,6 +235,30 @@ Blowfish symmetric block cipher. 64-bit block size, 1–56 byte key, 16-round Fe
 | `EncryptCbc` | `byte[] EncryptCbc(ReadOnlySpan<byte> data, ReadOnlySpan<byte> iv)` | Encrypts data using Blowfish-CBC with PKCS7 padding. |
 | `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts an 8-byte block in-place (big-endian). |
 
+#### `Camellia`
+
+The Camellia block cipher (Mitsubishi Electric and NTT), 128-bit blocks and 128-, 192- or 256-bit keys, in the big-endian byte order of RFC 3713.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Camellia` | `Camellia(ReadOnlySpan<byte> key)` | Expands a 16-, 24- or 32-byte `key`. |
+| `BlockSize` | `const int BlockSize` | The block size in bytes. |
+| `Decrypt` | `void Decrypt(Span<byte> block)` | Decrypts one 16-byte block in place. |
+| `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 16-byte block in place. |
+
+#### `Cast5`
+
+The CAST-128 (CAST5) block cipher (Carlisle Adams), 64-bit blocks and keys of 40 to 128 bits in 8-bit steps.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Cast5` | `Cast5(ReadOnlySpan<byte> key)` | Expands a 5- to 16-byte `key`. |
+| `BlockSize` | `const int BlockSize` | The block size in bytes. |
+| `MaxKeySize` | `const int MaxKeySize` | The largest key size in bytes (128 bits). |
+| `MinKeySize` | `const int MinKeySize` | The smallest key size in bytes (40 bits). |
+| `Decrypt` | `void Decrypt(Span<byte> block)` | Decrypts one 8-byte block in place. |
+| `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 8-byte block in place. |
+
 #### `KeyDerivation`
 
 Key derivation functions for password-based encryption.
@@ -247,6 +271,18 @@ Key derivation functions for password-based encryption.
 | `Rar5DeriveKey` | `static byte[] Rar5DeriveKey(string password, ReadOnlySpan<byte> salt, int iterations)` | Derives a key using the RAR5 key derivation (PBKDF2-HMAC-SHA256 with specific parameters). |
 | `Rar5DeriveKeys` | `static ValueTuple<byte[], byte[], byte[]> Rar5DeriveKeys(string password, ReadOnlySpan<byte> salt, int kdfLog)` | The three RAR 5 keys of one password and salt: one PBKDF2-HMAC-SHA256 chain run for 2^`kdfLog` iterations gives the AES-256 key, 16 more the key that tweaks checksums (encryption flag 0x0002), 16 more the password check value, folded to 8 bytes. |
 | `SevenZipDeriveKey` | `static byte[] SevenZipDeriveKey(string password, ReadOnlySpan<byte> salt, int numCyclesPower)` | Derives a key using the 7z AES key derivation (SHA-256 iterated). 7z uses: key = SHA256^(2^numCyclesPower)(salt + password_utf16le) |
+
+#### `Kuznyechik`
+
+The Kuznyechik block cipher (GOST R 34.12-2015), 128-bit blocks and a 256-bit key, in the byte order of RFC 7801's examples.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Kuznyechik` | `Kuznyechik(ReadOnlySpan<byte> key)` | Expands a 32-byte `key` into the ten round keys. |
+| `BlockSize` | `const int BlockSize` | The block size in bytes. |
+| `KeySize` | `const int KeySize` | The key size in bytes. |
+| `Decrypt` | `void Decrypt(Span<byte> block)` | Decrypts one 16-byte block in place. |
+| `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 16-byte block in place. |
 
 #### `Luks1Header`
 
@@ -338,6 +374,8 @@ The Serpent block cipher (Ross Anderson, Eli Biham, Lars Knudsen), 128-bit block
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Serpent` | `Serpent(ReadOnlySpan<byte> key)` | Expands `key` (1 to 32 bytes) into the 33 round keys. |
+| `BlockSize` | `const int BlockSize` | The block size in bytes. |
+| `Decrypt` | `void Decrypt(Span<byte> block)` | Decrypts one 16-byte block in place. |
 | `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 16-byte block in place. |
 
 #### `Twofish`
@@ -347,6 +385,8 @@ The Twofish block cipher (Bruce Schneier, John Kelsey, Doug Whiting, David Wagne
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Twofish` | `Twofish(ReadOnlySpan<byte> key)` | Expands a 16-, 24- or 32-byte `key`. |
+| `BlockSize` | `const int BlockSize` | The block size in bytes. |
+| `Decrypt` | `void Decrypt(Span<byte> block)` | Decrypts one 16-byte block in place. |
 | `Encrypt` | `void Encrypt(Span<byte> block)` | Encrypts one 16-byte block in place. |
 
 ### Namespace `Compression.Core.DataStructures`
