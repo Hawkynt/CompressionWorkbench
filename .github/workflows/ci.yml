@@ -507,7 +507,8 @@ jobs:
       # Hard gate, both directions: cryptsetup opens the LUKS1/LUKS2 volumes we write (its
       # device-mapper view is our plaintext), and we decrypt what cryptsetup formats and writes
       # through its own mapping — LUKS1 XTS/CBC-ESSIV, LUKS2 with PBKDF2, Argon2i and Argon2id key
-      # slots. The kernel's FAT driver checks writes through our encrypted mount.
+      # slots. The kernel's FAT driver checks writes through our encrypted mount. cryptsetup's plain
+      # mode maps our headerless dm-crypt volumes, and we decrypt what it writes, for each parameter set.
       - name: LUKS oracle
         if: matrix.os == 'ubuntu-latest'
         env:
@@ -516,7 +517,7 @@ jobs:
           sudo apt-get install -y cryptsetup-bin dosfstools
           sudo modprobe dm-crypt || true
           dotnet test Compression.Tests --configuration Release --no-build \
-            --filter "FullyQualifiedName~Compression.Tests.Luks.LuksExternalConformanceTests" \
+            --filter "FullyQualifiedName~Compression.Tests.Luks.LuksExternalConformanceTests|FullyQualifiedName~Compression.Tests.DmCrypt.DmCryptPlainExternalConformanceTests" \
             --logger "trx;LogFileName=luks-oracle-tests.trx"
 
       # Hard gate: Greaseweazle (public domain, pinned release) writes an SCP from a sector image, we
