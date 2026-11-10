@@ -2554,7 +2554,7 @@ internal static class FsInteropToolbox {
   public static bool WslHasUfsKernelModule { get; } = DetectWslUfsModule();
   public static bool WslHasAdfsKernelModule { get; } = DetectWslAdfsModule();
 
-  private static readonly Dictionary<string, bool> _wslToolCache = new(StringComparer.Ordinal);
+  private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _wslToolCache = new(StringComparer.Ordinal); // fixtures run in parallel
 
   private static bool DetectWslPasswordlessSudo() {
     if (!WslAvailable) return false;
