@@ -6251,6 +6251,234 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Write` | `void Write(byte[] diskData)` |  |
 
+### Namespace `FileFormat.VeraCrypt`
+
+[`TcBlockCipher`](#tcblockcipher) · [`TcCipher`](#tccipher) · [`TcCipherChain`](#tccipherchain) · [`TcCreateOptions`](#tccreateoptions) · [`TcHeaderKind`](#tcheaderkind) · [`TcKdf`](#tckdf) · [`TcMode`](#tcmode) · [`TcSectorCipher`](#tcsectorcipher) · [`TcUnlockOptions`](#tcunlockoptions) · [`TcVolume`](#tcvolume) · [`TcVolumeWriter`](#tcvolumewriter) · [`VeraCryptFormatDescriptor`](#veracryptformatdescriptor)
+
+#### `TcBlockCipher`
+
+One keyed block cipher as the TrueCrypt/VeraCrypt modes use it: raw single-block (ECB) transforms.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TcBlockCipher` | `protected TcBlockCipher()` |  |
+| `BlockSize` | `abstract int BlockSize { get; }` | Block size in bytes (16, or 8 for the legacy 64-bit ciphers). |
+| `Create` | `static TcBlockCipher Create(string name, ReadOnlySpan<byte> key)` | Key size in bytes the TrueCrypt/VeraCrypt tables give `name` for one cipher key. |
+| `DecryptBlocks` | `virtual void DecryptBlocks(Span<byte> blocks)` | Decrypts whole blocks in place, each on its own (ECB). |
+| `Decrypt` | `abstract void Decrypt(Span<byte> block)` | Decrypts one block in place. |
+| `Dispose` | `virtual void Dispose()` |  |
+| `EncryptBlocks` | `virtual void EncryptBlocks(Span<byte> blocks)` | Encrypts whole blocks in place, each on its own (ECB). |
+| `Encrypt` | `abstract void Encrypt(Span<byte> block)` | Encrypts one block in place. |
+
+#### `TcCipher`
+
+One cipher of a chain and where its key material sits in the 256-byte key area.
+
+Implements `IEquatable<TcCipher>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TcCipher` | `TcCipher(string Name, int KeySize, int BlockSize, int KeyOffset, int IvOffset, int KeyExtraSize)` | One cipher of a chain and where its key material sits in the 256-byte key area. |
+| `BlockSize` | `int BlockSize { get; init; }` | Cipher block size. |
+| `IvOffset` | `int IvOffset { get; init; }` | XTS: offset of the tweak key; CBC: offset of the IV seed. |
+| `KeyExtraSize` | `int KeyExtraSize { get; init; }` | CBC: IV seed plus whitening bytes that follow the key. |
+| `KeyOffset` | `int KeyOffset { get; init; }` | Offset of the cipher key. |
+| `KeySize` | `int KeySize { get; init; }` | Key bytes the mode takes for this cipher (XTS: both halves; LRW: cipher key + 16-byte tweak key). |
+| `Name` | `string Name { get; init; }` | Cipher name (`aes`, `serpent`, …). |
+
+#### `TcCipherChain`
+
+A TrueCrypt/VeraCrypt cipher chain. The table is cryptsetup's (`lib/tcrypt/tcrypt.c`, LGPL-2.1-or-later, see THIRD-PARTY-NOTICE.cryptsetup.txt): `Ciphers`[0] encrypts first and decrypts last, and every layer uses the same sector numbering.
+
+Implements `IEquatable<TcCipherChain>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TcCipherChain` | `TcCipherChain(string Name, TcMode Mode, bool Legacy, int KeySize, IReadOnlyList<TcCipher> Ciphers)` | A TrueCrypt/VeraCrypt cipher chain. The table is cryptsetup's (`lib/tcrypt/tcrypt.c`, LGPL-2.1-or-later, see THIRD-PARTY-NOTICE.cryptsetup.txt): `Ciphers`[0] encrypts first and decrypts last, and every layer uses the same sector numbering. |
+| `All` | `static IReadOnlyList<TcCipherChain> All { get; }` | Every chain, in the order cryptsetup tries them. |
+| `Ciphers` | `IReadOnlyList<TcCipher> Ciphers { get; init; }` | The ciphers, in encryption order. |
+| `DisplayName` | `string DisplayName { get; }` | VeraCrypt's display name: the cipher applied last, outermost (`AES(Twofish(Serpent))` is `serpent-twofish-aes`). |
+| `KeySize` | `int KeySize { get; init; }` | Total key bytes the chain consumes. |
+| `Legacy` | `bool Legacy { get; init; }` | Only TrueCrypt before 5.0 wrote it. |
+| `Mode` | `TcMode Mode { get; init; }` | Sector mode. |
+| `Name` | `string Name { get; init; }` | cryptsetup's long name, ciphers in encryption order (`serpent-twofish-aes`). |
+| `Find` | `static TcCipherChain Find(TcMode mode, string name)` | Looks a chain up by mode and cryptsetup name. |
+
+#### `TcCreateOptions`
+
+What a new TrueCrypt/VeraCrypt container is made of.
+
+Implements `IEquatable<TcCreateOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TcCreateOptions` | `TcCreateOptions()` |  |
+| `Cipher` | `string Cipher { get; init; }` | Cipher chain, by cryptsetup name (`aes`, `serpent-twofish-aes`) or VeraCrypt name (`AES-Twofish-Serpent`); always XTS. |
+| `Keyfiles` | `IReadOnlyList<byte[]> Keyfiles { get; init; }` | Keyfile contents mixed into the password. |
+| `Pim` | `int Pim { get; init; }` | VeraCrypt PIM; 0 for the default iterations. |
+| `Prf` | `string Prf { get; init; }` | Header-key PRF: `sha512`, `sha256`, `whirlpool`, `blake2s-256`, `stribog512`, `ripemd160` or `argon2id`. |
+| `Sparse` | `bool Sparse { get; init; }` | Leave the unused part of the data area unwritten (a sparse file where the stream supports holes) instead of filling it with random bytes. Like a VeraCrypt dynamic volume, it then shows which parts are in use. |
+| `VeraCrypt` | `bool VeraCrypt { get; init; }` | Write a VeraCrypt (`VERA`) volume; false writes the TrueCrypt 7.1 format (`TRUE`). |
+| `VolumeSize` | `long VolumeSize { get; init; }` | Data-area size in bytes; 0 for the payload's size. Must be whole 512-byte sectors. |
+| `ResolveChain` | `TcCipherChain ResolveChain()` | The XTS chain `Cipher` names. |
+| `ResolveKdf` | `TcKdf ResolveKdf()` | The derivation `Prf` names for this format. |
+
+#### `TcHeaderKind`
+
+Which header of a container to open.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Standard` | `0` | The outer (standard) volume: header at 0, backup 128 KiB before the end. |
+| `Hidden` | `1` | A hidden volume: header at 64 KiB, backup 64 KiB before the end (TrueCrypt < 6: 1.5 KiB before the end). |
+
+#### `TcKdf`
+
+One header-key derivation TrueCrypt or VeraCrypt uses. The table, the iteration counts and the PIM formulas are cryptsetup's (`lib/tcrypt/tcrypt.c`, LGPL-2.1-or-later).
+
+Implements `IEquatable<TcKdf>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TcKdf` | `TcKdf(string Prf, int Iterations, bool VeraCrypt, bool Legacy, int PimConst, int PimMult, int MemoryKiB = 0)` | One header-key derivation TrueCrypt or VeraCrypt uses. The table, the iteration counts and the PIM formulas are cryptsetup's (`lib/tcrypt/tcrypt.c`, LGPL-2.1-or-later). |
+| `HeaderKeyLength` | `const int HeaderKeyLength` |  |
+| `All` | `static IReadOnlyList<TcKdf> All { get; }` | Non-system volume derivations, cheapest-to-try first within each family. |
+| `Iterations` | `int Iterations { get; init; }` | Iterations (Argon2: passes) without a PIM. |
+| `Legacy` | `bool Legacy { get; init; }` | Only TrueCrypt before 5.0 used it. |
+| `MemoryKiB` | `int MemoryKiB { get; init; }` | Argon2 memory without a PIM. |
+| `PimConst` | `int PimConst { get; init; }` | VeraCrypt: iterations = PimConst + PimMult × PIM. |
+| `PimMult` | `int PimMult { get; init; }` | See `PimConst`. |
+| `Prf` | `string Prf { get; init; }` | PRF name: `sha512`, `sha256`, `whirlpool`, `ripemd160`, `blake2s-256`, `stribog512`, `sha1`, or `argon2id`. |
+| `VeraCrypt` | `bool VeraCrypt { get; init; }` | A VeraCrypt derivation (magic `VERA`) rather than a TrueCrypt one. |
+| `Derive` | `byte[] Derive(ReadOnlySpan<byte> password, ReadOnlySpan<byte> salt, int pim = 0)` | Derives the 192-byte header key from the (keyfile-mixed) password bytes. |
+| `MixPassword` | `static byte[] MixPassword(ReadOnlySpan<byte> password, IReadOnlyList<byte[]> keyfiles, bool veraCrypt)` | The password buffer the KDF sees: keyfiles are mixed into a 64-byte pool (128 bytes for a VeraCrypt password longer than 64), then the password is added byte by byte. With keyfiles the whole pool is used; without, only the password. |
+
+#### `TcMode`
+
+How a chain encrypts sectors.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Xts` | `0` | XTS, 512-byte data units (TrueCrypt 5+, VeraCrypt). |
+| `Lrw` | `1` | LRW with a shared 16-byte tweak key (TrueCrypt 4.1–4.3). |
+| `CbcOuter` | `2` | CBC with a seeded IV and sector whitening; cascades run as one composite cipher ("outer CBC"). |
+| `CbcInner` | `3` | CBC with a seeded IV and sector whitening; each cascade layer runs its own CBC ("inner CBC"). |
+
+#### `TcSectorCipher`
+
+Sector encryption for one TrueCrypt/VeraCrypt cipher chain, keyed from the volume's 256-byte key area. Sector numbers passed in are relative to the data area; `ivBase` is added to form the number the IV or tweak is derived from. Also decrypts and encrypts the 448-byte encrypted part of a volume header, which every mode treats as starting at IV block zero.
+
+Implements `IDisposable`, `ISectorCipher`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TcSectorCipher` | `TcSectorCipher(TcCipherChain chain, ReadOnlySpan<byte> keys, long ivBase = 0, bool headerKey = false)` |  |
+| `SectorSize` | `const int SectorSize` |  |
+| `Chain` | `TcCipherChain Chain { get; }` | The chain this cipher implements. |
+| `DecryptHeader` | `void DecryptHeader(Span<byte> area)` | Decrypts the 448-byte encrypted part of a header in place. |
+| `Decrypt` | `void Decrypt(Span<byte> data, long firstSector)` |  |
+| `Dispose` | `void Dispose()` |  |
+| `EncryptHeader` | `void EncryptHeader(Span<byte> area)` | Encrypts the 448-byte encrypted part of a header in place. |
+| `Encrypt` | `void Encrypt(Span<byte> data, long firstSector)` |  |
+
+#### `TcUnlockOptions`
+
+What opens a TrueCrypt/VeraCrypt volume, and which derivations and chains to try.
+
+Implements `IEquatable<TcUnlockOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TcUnlockOptions` | `TcUnlockOptions()` |  |
+| `Cipher` | `string Cipher { get; init; }` | Only try chains whose cryptsetup name contains this (`aes`, `serpent-twofish-aes`, …); null tries all. |
+| `Header` | `TcHeaderKind Header { get; init; }` | Which header to open. |
+| `Keyfiles` | `IReadOnlyList<byte[]> Keyfiles { get; init; }` | Keyfile contents, mixed into the password pool. |
+| `Pim` | `int Pim { get; init; }` | VeraCrypt PIM; 0 for the default iterations. A PIM restricts the search to VeraCrypt derivations. |
+| `Prf` | `string Prf { get; init; }` | Only try this PRF (`sha512`, `whirlpool`, …); null tries all. |
+
+#### `TcVolume`
+
+A decrypted TrueCrypt/VeraCrypt volume header and where its data lives.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TcVolume` | `TcVolume()` |  |
+| `BackupHeaderFromEnd` | `const long BackupHeaderFromEnd` |  |
+| `DataAreaOffset` | `const long DataAreaOffset` |  |
+| `EncryptedSize` | `const int EncryptedSize` |  |
+| `FlagSystem` | `const uint FlagSystem` |  |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `HiddenBackupFromEnd` | `const long HiddenBackupFromEnd` |  |
+| `HiddenHeaderOffset` | `const long HiddenHeaderOffset` |  |
+| `OldHiddenFromEnd` | `const long OldHiddenFromEnd` |  |
+| `SaltSize` | `const int SaltSize` |  |
+| `Chain` | `TcCipherChain Chain { get; init; }` |  |
+| `DataLength` | `long DataLength { get; init; }` | Data length in bytes. |
+| `DataOffset` | `long DataOffset { get; init; }` | Byte offset of the first data sector in the container. |
+| `Flags` | `uint Flags { get; init; }` |  |
+| `HeaderOffset` | `long HeaderOffset { get; init; }` |  |
+| `HiddenVolumeSize` | `ulong HiddenVolumeSize { get; init; }` |  |
+| `IvBase` | `long IvBase { get; init; }` | IV sector number of the first data sector. |
+| `Kdf` | `TcKdf Kdf { get; init; }` |  |
+| `Kind` | `TcHeaderKind Kind { get; init; }` |  |
+| `MasterKeyOffset` | `ulong MasterKeyOffset { get; init; }` |  |
+| `MasterKeySize` | `ulong MasterKeySize { get; init; }` |  |
+| `MinimumVersion` | `int MinimumVersion { get; init; }` |  |
+| `SectorSize` | `int SectorSize { get; init; }` |  |
+| `VeraCrypt` | `bool VeraCrypt { get; init; }` |  |
+| `Version` | `int Version { get; init; }` |  |
+| `VolumeSize` | `ulong VolumeSize { get; init; }` |  |
+| `OpenBlockDevice` | `SectorCipherBlockDevice OpenBlockDevice(Stream stream, bool writable, bool leaveOpen = true)` | The decrypted data area as a block device of 512-byte sectors. |
+| `Open` | `static TcVolume Open(Stream stream, string password, TcUnlockOptions options = null)` | Opens the volume's header with `password`; null when it does not open (wrong password, wrong header kind, not a volume). |
+
+#### `TcVolumeWriter`
+
+Writes TrueCrypt/VeraCrypt containers in the layout both tools create: a 128 KiB header area (standard header at 0, hidden-volume header slot at 64 KiB), the data area, and a 128 KiB backup area (backup header, backup hidden-volume header slot at 64 KiB before the end). Unused header slots hold random bytes, so a container never shows whether it holds a hidden volume.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static void Write(Stream output, ReadOnlySpan<byte> payload, string password, TcCreateOptions options)` | Writes a container whose data area starts with `payload`. |
+
+#### `VeraCryptFormatDescriptor`
+
+VeraCrypt and TrueCrypt containers. Nothing in an encrypted header is recognisable, so they are found by extension (`.hc`, `.tc`) or chosen by id. With the password, the derivation and cipher chain are found by trial as the tools do: every VeraCrypt PRF (SHA-512, SHA-256, Whirlpool, BLAKE2s, Streebog, RIPEMD-160, Argon2id) and PIM, the TrueCrypt PRFs back to SHA-1, AES/Serpent/Twofish/Camellia/Kuznyechik and every cascade in XTS, and TrueCrypt 4.x's LRW and CBC modes with Blowfish, CAST5 and Triple DES. Lists and extracts the decrypted volume, mounts the filesystem inside read-only or read-write, and creates VeraCrypt or TrueCrypt containers, optionally sparse.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IEncryptedBlockDeviceProvider`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VeraCryptFormatDescriptor` | `VeraCryptFormatDescriptor()` |  |
+| `CipherName` | `const string CipherName` |  |
+| `FormatName` | `const string FormatName` |  |
+| `HiddenName` | `const string HiddenName` |  |
+| `KeyfilesName` | `const string KeyfilesName` |  |
+| `MetadataName` | `const string MetadataName` |  |
+| `PimName` | `const string PimName` |  |
+| `PrfName` | `const string PrfName` |  |
+| `SizeName` | `const string SizeName` |  |
+| `SparseName` | `const string SparseName` |  |
+| `VolumeName` | `const string VolumeName` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenBlockDevice` | `IRandomAccessBlockDevice OpenBlockDevice(Stream image, EncryptedVolumeCredentials credentials, bool writable, bool leaveOpen = true)` |  |
+| `UnlockOptions` | `static TcUnlockOptions UnlockOptions(Func<string, string> get)` | Unlock options from mount parameters (`Pim`, `Prf`, `Cipher`, `Hidden`, `Keyfiles`). |
+
 ### Namespace `FileFormat.Vhd`
 
 [`VhdCompactor`](#vhdcompactor) · [`VhdCompactor.CompactResult`](#vhdcompactorcompactresult) · [`VhdEntry`](#vhdentry) · [`VhdFormatDescriptor`](#vhdformatdescriptor) · [`VhdLayoutMap`](#vhdlayoutmap) · [`VhdReader`](#vhdreader) · [`VhdStream`](#vhdstream) · [`VhdWriter`](#vhdwriter)

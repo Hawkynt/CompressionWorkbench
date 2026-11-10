@@ -543,6 +543,32 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.BitLocker.BitlkImageConformanceTests|FullyQualifiedName~Compression.Tests.BitLocker.BitLockerExternalConformanceTests" \
             --logger "trx;LogFileName=bitlocker-oracle-tests.trx"
 
+      # Hard gate, both directions, for VeraCrypt and TrueCrypt containers: VeraCrypt's console build
+      # (pinned release, checksum-verified) creates a container for every cipher, cascade and PRF it
+      # offers and we decrypt what it wrote through its mapping; VeraCrypt and cryptsetup's TCRYPT
+      # support mount ours (sparse ones too) to our plaintext. cryptsetup's TCRYPT test images
+      # (pinned commit) cover TrueCrypt 1-7 back to its LRW and CBC modes and RIPEMD-160 volumes.
+      - name: VeraCrypt oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_VERACRYPT: "1"
+          CWB_REQUIRE_CRYPTSETUP: "1"
+          CWB_REQUIRE_TCRYPT_IMAGES: "1"
+        run: |
+          set -euo pipefail
+          vc="$RUNNER_TEMP/veracrypt-console.deb"
+          curl -sSfL -o "$vc" https://github.com/veracrypt/VeraCrypt/releases/download/VeraCrypt_1.26.29/veracrypt-console-1.26.29-Ubuntu-24.04-amd64.deb
+          echo "8592bbb754582cfb9ba265771b8bc0e130b81e91a23141f22cddf83496063508  $vc" | sha256sum -c -
+          sudo apt-get install -y cryptsetup-bin "$vc"
+          sudo modprobe dm-crypt || true
+          img="$RUNNER_TEMP/tcrypt-images.tar.xz"
+          curl -sSfL -o "$img" https://gitlab.com/cryptsetup/cryptsetup/-/raw/086591ce183ef40b8ad6b75a67e7f298bc1767f2/tests/tcrypt-images.tar.xz
+          echo "cf65f0b336a623c2d5510e6ad63d364a9ade1dd46ac8407e63a0e95b17823272  $img" | sha256sum -c -
+          tar -xJf "$img" -C "$RUNNER_TEMP"
+          CWB_TCRYPT_IMAGES="$RUNNER_TEMP/tcrypt-images" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.VeraCrypt.VeraCryptExternalConformanceTests|FullyQualifiedName~Compression.Tests.VeraCrypt.TcryptImageConformanceTests" \
+            --logger "trx;LogFileName=veracrypt-oracle-tests.trx"
+
       # Hard gate: Greaseweazle (public domain, pinned release) writes an SCP from a sector image, we
       # rebuild it from its tracks (and edit one track), and Greaseweazle decodes our result back
       # to exactly the expected sectors.

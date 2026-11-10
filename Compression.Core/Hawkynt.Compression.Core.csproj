@@ -39,6 +39,8 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Update="Crypto\THIRD-PARTY-NOTICE.Botan.txt"
+          Pack="true" PackagePath="notices/Botan/" />
     <None Update="Dictionary\Sqx\THIRD-PARTY-NOTICE.Squeez-c.txt"
           Pack="true" PackagePath="notices/Sqx/" />
   </ItemGroup>

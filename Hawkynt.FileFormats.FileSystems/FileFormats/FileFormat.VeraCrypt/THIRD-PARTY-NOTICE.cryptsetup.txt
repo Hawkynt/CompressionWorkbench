@@ -1,0 +1,31 @@
+cryptsetup (TCRYPT/VeraCrypt header handling) - converted to C#
+
+Source:   https://gitlab.com/cryptsetup/cryptsetup (lib/tcrypt/tcrypt.c, tcrypt.h)
+Revision: 086591ce183ef40b8ad6b75a67e7f298bc1767f2 (main, 2026-11-09)
+Authors:  Milan Broz; Red Hat, Inc.
+Licence:  GNU Lesser General Public License, version 2.1 or (at your option)
+          any later version. This repository is LGPL-3.0-or-later, which the
+          "or any later version" grant permits; the full LGPL text is in the
+          repository's LICENSE file.
+
+Converted parts: the key-derivation table (PRFs, iteration counts, PIM
+constants), the cipher-chain table (key and IV offsets per cipher, XTS, LRW
+and legacy CBC modes), header decryption for those modes, the keyfile pool
+and the header/backup/hidden header offsets. The sector-level legacy modes
+(tcw IV and whitening) are not in this file; they are specified in
+docs/VERACRYPT-ON-DISK.md from the behaviour of the cryptsetup test images.
+
+Upstream notice:
+
+  Copyright (C) 2012-2026 Red Hat, Inc. All rights reserved.
+  Copyright (C) 2012-2026 Milan Broz
+
+  This file is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later version.
+
+  This file is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.

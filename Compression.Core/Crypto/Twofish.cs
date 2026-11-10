@@ -11,10 +11,13 @@ namespace Compression.Core.Crypto;
 /// from the fixed permutations q0 and q1 and the MDS matrix over GF(2^8) mod x^8+x^6+x^5+x^3+1, the
 /// Reed–Solomon key reduction mod x^8+x^6+x^3+x^2+1, the subkey schedule and the 16-round Feistel
 /// network with input and output whitening. q0 and q1 are the paper's tables. The keyed S-boxes
-/// are expanded into four lookup tables once per key. Only encryption is provided: the counter
-/// and feedback modes that use Twofish need no other direction.
+/// are expanded into four lookup tables once per key. Decryption runs the Feistel network
+/// backwards with the subkeys in reverse order and the one-bit rotations undone (section 4.1).
 /// </remarks>
 public sealed class Twofish {
+  /// <summary>The block size in bytes.</summary>
+  public const int BlockSize = 16;
+
   private const int Rounds = 16;
   private const uint Rho = 0x01010101;
 
@@ -110,7 +113,7 @@ public sealed class Twofish {
 
   /// <summary>Encrypts one 16-byte block in place.</summary>
   public void Encrypt(Span<byte> block) {
-    if (block.Length != 16)
+    if (block.Length != BlockSize)
       throw new ArgumentException("Twofish blocks are 16 bytes.", nameof(block));
     var key = this._subkeys;
     var r0 = BinaryPrimitives.ReadUInt32LittleEndian(block) ^ key[0];
@@ -130,6 +133,31 @@ public sealed class Twofish {
     BinaryPrimitives.WriteUInt32LittleEndian(block[4..], r3 ^ key[5]);
     BinaryPrimitives.WriteUInt32LittleEndian(block[8..], r0 ^ key[6]);
     BinaryPrimitives.WriteUInt32LittleEndian(block[12..], r1 ^ key[7]);
+  }
+
+  /// <summary>Decrypts one 16-byte block in place.</summary>
+  /// <exception cref="ArgumentException">The block is not 16 bytes long.</exception>
+  public void Decrypt(Span<byte> block) {
+    if (block.Length != BlockSize)
+      throw new ArgumentException("Twofish blocks are 16 bytes.", nameof(block));
+    var key = this._subkeys;
+    var r2 = BinaryPrimitives.ReadUInt32LittleEndian(block) ^ key[4];
+    var r3 = BinaryPrimitives.ReadUInt32LittleEndian(block[4..]) ^ key[5];
+    var r0 = BinaryPrimitives.ReadUInt32LittleEndian(block[8..]) ^ key[6];
+    var r1 = BinaryPrimitives.ReadUInt32LittleEndian(block[12..]) ^ key[7];
+    for (var round = Rounds - 1; round >= 0; --round) {
+      var t0 = this.G(r2);
+      var t1 = this.G(uint.RotateLeft(r3, 8));
+      var f0 = t0 + t1 + key[2 * round + 8];
+      var f1 = t0 + 2 * t1 + key[2 * round + 9];
+      var p2 = uint.RotateLeft(r0, 1) ^ f0;
+      var p3 = uint.RotateRight(r1 ^ f1, 1);
+      (r0, r1, r2, r3) = (r2, r3, p2, p3);
+    }
+    BinaryPrimitives.WriteUInt32LittleEndian(block, r0 ^ key[0]);
+    BinaryPrimitives.WriteUInt32LittleEndian(block[4..], r1 ^ key[1]);
+    BinaryPrimitives.WriteUInt32LittleEndian(block[8..], r2 ^ key[2]);
+    BinaryPrimitives.WriteUInt32LittleEndian(block[12..], r3 ^ key[3]);
   }
 
   private uint G(uint x)

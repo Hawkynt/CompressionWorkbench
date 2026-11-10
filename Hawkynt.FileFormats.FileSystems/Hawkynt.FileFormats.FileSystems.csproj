@@ -29,6 +29,8 @@
           Pack="true" PackagePath="notices/PartImage/" />
     <None Update="FileFormats\FileFormat.BitLocker\THIRD-PARTY-NOTICE.cryptsetup.txt"
           Pack="true" PackagePath="notices/BitLocker/" />
+    <None Update="FileFormats\FileFormat.VeraCrypt\THIRD-PARTY-NOTICE.cryptsetup.txt"
+          Pack="true" PackagePath="notices/VeraCrypt/" />
   </ItemGroup>
 
   <ItemGroup>

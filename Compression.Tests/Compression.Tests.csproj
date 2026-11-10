@@ -18,6 +18,10 @@
     <EmbeddedResource Include="BitLocker/ReferenceVectors/windows-bitlocker.txt">
       <LogicalName>BitLocker.windows-bitlocker.txt</LogicalName>
     </EmbeddedResource>
+    <!-- TrueCrypt 4.3a legacy-mode sector vectors; see VeraCrypt/ReferenceVectors/README.md. -->
+    <EmbeddedResource Include="VeraCrypt/ReferenceVectors/truecrypt43-legacy-sectors.txt">
+      <LogicalName>VeraCrypt.truecrypt43-legacy-sectors.txt</LogicalName>
+    </EmbeddedResource>
     <!-- ARC crawl fixtures; see IaArc/ReferenceVectors/README.md. -->
     <EmbeddedResource Include="IaArc/ReferenceVectors/*.arc;IaArc/ReferenceVectors/*.arc.gz;IaArc/ReferenceVectors/warcio-listing.txt">
       <LogicalName>IaArcVectors.%(Filename)%(Extension)</LogicalName>
