@@ -79,7 +79,7 @@ public sealed class BitLockerFormatDescriptor : IFormatDescriptor, IArchiveForma
     new(MethodName, "Encryption method", FormatOptionKind.Enum, "aes-xts-128", [.. CreateMethods.Select(static m => m.Name)],
       "Sector encryption of the new volume. Windows 10 and later default to AES-XTS-128; the CBC methods are the Windows 8 and Vista/7 ones.", IsOptimizationAxis: false),
     new(RecoveryPasswordName, "Recovery password", FormatOptionKind.String, "", null,
-      "The 48-digit recovery password protecting the new volume (8 groups of 6 digits, each divisible by 11). Required: a generated one would have nowhere to go.", IsOptimizationAxis: false),
+      "The 48-digit recovery password protecting the new volume (8 groups of 6 digits, each divisible by 11). Optional: without it the volume opens by its password only.", IsOptimizationAxis: false),
     new(DescriptionName, "Description", FormatOptionKind.String, "", null,
       "Volume description stored in the FVE metadata.", IsOptimizationAxis: false),
   ];
@@ -162,9 +162,9 @@ public sealed class BitLockerFormatDescriptor : IFormatDescriptor, IArchiveForma
     ArgumentNullException.ThrowIfNull(options);
     if (string.IsNullOrEmpty(options.Password))
       throw new ArgumentException("BitLocker creation needs a password.", nameof(options));
-    var recovery = options.GetString(RecoveryPasswordName);
-    if (string.IsNullOrWhiteSpace(recovery))
-      throw new ArgumentException($"BitLocker creation needs the {RecoveryPasswordName} option (48 digits in 8 groups, each divisible by 11).", nameof(options));
+    // Without a RecoveryPassword option the volume gets a password protector only: Create has no
+    // way to hand a generated recovery password back, and one nobody holds would be worse than none.
+    var recovery = options.GetString(RecoveryPasswordName) is { } r && !string.IsNullOrWhiteSpace(r) ? r.Trim() : null;
     byte[]? payload = null;
     foreach (var input in inputs) {
       if (input.IsDirectory || Path.GetFileName(input.ArchiveName).Equals(MetadataName, StringComparison.OrdinalIgnoreCase)) continue;
@@ -172,13 +172,20 @@ public sealed class BitLockerFormatDescriptor : IFormatDescriptor, IArchiveForma
       payload = input.ReadContent();
     }
     if (payload is null) throw new ArgumentException("BitLocker needs the volume image to encrypt.", nameof(inputs));
+    // The first 8 KiB of the image are relocated into the volume-header area, so a volume needs
+    // more than that; a smaller image (or a ragged tail) is zero-padded to whole sectors beyond it.
+    var minimum = BitLockerWriter.VolumeHeaderBytes + 512;
+    var padded = Math.Max(minimum, (payload.Length + 511) / 512 * 512);
+    if (padded != payload.Length)
+      Array.Resize(ref payload, padded);
     var methodName = options.GetString(MethodName) ?? "aes-xts-128";
     var method = CreateMethods.FirstOrDefault(m => m.Name.Equals(methodName, StringComparison.OrdinalIgnoreCase));
     if (method.Name is null)
       throw new ArgumentException($"Unknown BitLocker method '{methodName}' ({string.Join(", ", CreateMethods.Select(static m => m.Name))}).", nameof(options));
     BitLockerWriter.Write(output, payload, new BitLockerCreateOptions {
       Password = options.Password,
-      RecoveryPassword = recovery.Trim(),
+      RecoveryPassword = recovery,
+      AddRecoveryProtector = recovery is not null,
       EncryptionMethod = method.Code,
       Description = options.GetString(DescriptionName) is { Length: > 0 } d ? d : null,
     });

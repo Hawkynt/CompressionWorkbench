@@ -14,6 +14,9 @@ public sealed record BitLockerCreateOptions {
   /// <summary>Recovery password protector (48 digits); <see langword="null"/> to generate one.</summary>
   public string? RecoveryPassword { get; init; }
 
+  /// <summary>Whether to add a recovery-password protector at all; without one the volume opens by its password only.</summary>
+  public bool AddRecoveryProtector { get; init; } = true;
+
   /// <summary>Encryption method code: 0x8004 AES-XTS-128 (default), 0x8005 AES-XTS-256, 0x8002/0x8003 AES-CBC-128/256, 0x8000/0x8001 AES-CBC-128/256 + Elephant.</summary>
   public ushort EncryptionMethod { get; init; } = 0x8004;
 
@@ -25,9 +28,9 @@ public sealed record BitLockerCreateOptions {
 /// <summary>What was created: the identifiers and the recovery password to keep.</summary>
 public sealed record BitLockerCreateResult(
   Guid VolumeGuid,
-  string RecoveryPassword,
+  string? RecoveryPassword,
   Guid? PasswordProtectorId,
-  Guid RecoveryProtectorId,
+  Guid? RecoveryProtectorId,
   long VolumeSize,
   IReadOnlyList<long> MetadataOffsets,
   long VolumeHeaderOffset,
@@ -57,9 +60,12 @@ public static class BitLockerWriter {
       throw new ArgumentException("A BitLocker volume image must be whole 512-byte sectors and larger than 8 KiB.", nameof(payload));
     var method = BitLockerVolume.Method(options.EncryptionMethod)
       ?? throw new ArgumentException($"Unknown BitLocker encryption method 0x{options.EncryptionMethod:X4}.", nameof(options));
-    var recovery = options.RecoveryPassword ?? BitLockerKeys.NewRecoveryPassword();
-    var recoveryKey = BitLockerKeys.ParseRecoveryPassword(recovery)
-      ?? throw new ArgumentException("The recovery password must be 8 groups of 6 digits, each divisible by 11.", nameof(options));
+    if (options.Password is null && !options.AddRecoveryProtector)
+      throw new ArgumentException("A BitLocker volume needs a password or a recovery-password protector.", nameof(options));
+    var recovery = options.AddRecoveryProtector ? options.RecoveryPassword ?? BitLockerKeys.NewRecoveryPassword() : null;
+    var recoveryKey = recovery is null ? []
+      : BitLockerKeys.ParseRecoveryPassword(recovery)
+        ?? throw new ArgumentException("The recovery password must be 8 groups of 6 digits, each divisible by 11.", nameof(options));
 
     // Layout past the image, 64 KiB aligned: metadata 0, header backup, metadata 1, metadata 2, crypt tail.
     long imageEnd = payload.Length;
@@ -91,11 +97,12 @@ public static class BitLockerWriter {
         entries.Add(VmkEntry(passwordId.Value, 0x2000, PasswordStretchMethod, salt, Seal(vmk, BitLockerKeys.VmkDatumMethod, key, nonces), created));
         CryptographicOperations.ZeroMemory(key);
       }
-      var recoveryId = Guid.NewGuid();
-      {
+      Guid? recoveryId = null;
+      if (recovery is not null) {
+        recoveryId = Guid.NewGuid();
         var salt = RandomNumberGenerator.GetBytes(BitLockerVolume.SaltLength);
         var key = BitLockerKeys.StretchRecoveryKey(recoveryKey, salt);
-        entries.Add(VmkEntry(recoveryId, 0x0800, RecoveryStretchMethod, salt, Seal(vmk, BitLockerKeys.VmkDatumMethod, key, nonces), created));
+        entries.Add(VmkEntry(recoveryId.Value, 0x0800, RecoveryStretchMethod, salt, Seal(vmk, BitLockerKeys.VmkDatumMethod, key, nonces), created));
         CryptographicOperations.ZeroMemory(key);
       }
       entries.Add(Entry(BitLockerVolume.EntryFvek, BitLockerVolume.ValueEncryptedKey, 1, WrappedBody(Seal(storedFvek, options.EncryptionMethod, vmk, nonces))));

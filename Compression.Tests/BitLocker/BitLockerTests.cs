@@ -259,6 +259,15 @@ public sealed class BitLockerTests {
   }
 
   [Test]
+  public void GivenTheDescriptorWithoutARecoveryPassword_WhenCreating_ThenOnlyThePasswordProtectsIt() {
+    var payload = Payload(40, 9);
+    using var volume = new MemoryStream();
+    new BitLockerFormatDescriptor().Create(volume, [ArchiveInputInfo.InMemory("volume.img", payload)], new FormatCreateOptions { Password = Password });
+    Assert.That(BitLockerVolume.Read(volume).Protectors.Single().Protection, Is.EqualTo(BitLockerProtection.Password));
+    Assert.That(Decrypt(volume, new(Password)).AsSpan(0, payload.Length).ToArray(), Is.EqualTo(payload));
+  }
+
+  [Test]
   public void GivenADamagedFirstMetadataCopy_WhenRead_ThenTheNextCopyIsUsed() {
     var payload = Payload(48, 6);
     var (volume, result) = Create(payload);
@@ -317,10 +326,9 @@ public sealed class BitLockerTests {
   }
 
   [Test]
-  public void GivenTheDescriptor_WhenCreating_ThenItNeedsARecoveryPasswordAndHonoursTheMethod() {
+  public void GivenTheDescriptorWithARecoveryPassword_WhenCreating_ThenItHonoursTheMethodAndBothProtectors() {
     var payload = Payload(64, 10);
     var descriptor = new BitLockerFormatDescriptor();
-    Assert.Throws<ArgumentException>(() => descriptor.Create(new MemoryStream(), [ArchiveInputInfo.InMemory("volume.img", payload)], new FormatCreateOptions { Password = Password }));
     using var ms = new MemoryStream();
     descriptor.Create(ms, [ArchiveInputInfo.InMemory("volume.img", payload)], new FormatCreateOptions {
       Password = Password,
@@ -329,6 +337,17 @@ public sealed class BitLockerTests {
     var v = BitLockerVolume.Read(ms);
     Assert.That((v.CipherModeName, v.KeyBits, v.Description), Is.EqualTo(("xts-plain64", 512, "cwb test")));
     Assert.That(Decrypt(ms, new(null, Recovery)).AsSpan(0, payload.Length).ToArray(), Is.EqualTo(payload));
+    Assert.That(Decrypt(ms, new(Password)).AsSpan(0, payload.Length).ToArray(), Is.EqualTo(payload));
+  }
+
+  [Test]
+  public void GivenAnImageSmallerThanTheRelocatedHeader_WhenCreatedThroughTheDescriptor_ThenItIsZeroPaddedAndReadsBack() {
+    var payload = Payload(1, 12);
+    using var ms = new MemoryStream();
+    new BitLockerFormatDescriptor().Create(ms, [ArchiveInputInfo.InMemory("volume.img", payload)], new FormatCreateOptions { Password = Password });
+    var plain = Decrypt(ms, new(Password));
+    Assert.That(plain.AsSpan(0, payload.Length).ToArray(), Is.EqualTo(payload));
+    Assert.That(plain.AsSpan(payload.Length, BitLockerWriter.VolumeHeaderBytes).IndexOfAnyExcept((byte)0), Is.EqualTo(-1));
   }
 
   [Test]

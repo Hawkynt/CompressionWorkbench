@@ -3172,6 +3172,7 @@ Implements `IEquatable<BitLockerCreateOptions>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BitLockerCreateOptions` | `BitLockerCreateOptions()` |  |
+| `AddRecoveryProtector` | `bool AddRecoveryProtector { get; init; }` | Whether to add a recovery-password protector at all; without one the volume opens by its password only. |
 | `CreationTime` | `DateTime? CreationTime { get; init; }` |  |
 | `Description` | `string Description { get; init; }` |  |
 | `EncryptionMethod` | `ushort EncryptionMethod { get; init; }` | Encryption method code: 0x8004 AES-XTS-128 (default), 0x8005 AES-XTS-256, 0x8002/0x8003 AES-CBC-128/256, 0x8000/0x8001 AES-CBC-128/256 + Elephant. |
@@ -3187,11 +3188,11 @@ Implements `IEquatable<BitLockerCreateResult>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `BitLockerCreateResult` | `BitLockerCreateResult(Guid VolumeGuid, string RecoveryPassword, Guid? PasswordProtectorId, Guid RecoveryProtectorId, long VolumeSize, IReadOnlyList<long> MetadataOffsets, long VolumeHeaderOffset, long VolumeHeaderSize)` | What was created: the identifiers and the recovery password to keep. |
+| `BitLockerCreateResult` | `BitLockerCreateResult(Guid VolumeGuid, string RecoveryPassword, Guid? PasswordProtectorId, Guid? RecoveryProtectorId, long VolumeSize, IReadOnlyList<long> MetadataOffsets, long VolumeHeaderOffset, long VolumeHeaderSize)` | What was created: the identifiers and the recovery password to keep. |
 | `MetadataOffsets` | `IReadOnlyList<long> MetadataOffsets { get; init; }` |  |
 | `PasswordProtectorId` | `Guid? PasswordProtectorId { get; init; }` |  |
 | `RecoveryPassword` | `string RecoveryPassword { get; init; }` |  |
-| `RecoveryProtectorId` | `Guid RecoveryProtectorId { get; init; }` |  |
+| `RecoveryProtectorId` | `Guid? RecoveryProtectorId { get; init; }` |  |
 | `VolumeGuid` | `Guid VolumeGuid { get; init; }` |  |
 | `VolumeHeaderOffset` | `long VolumeHeaderOffset { get; init; }` |  |
 | `VolumeHeaderSize` | `long VolumeHeaderSize { get; init; }` |  |
