@@ -520,6 +520,29 @@ jobs:
             --filter "FullyQualifiedName~Compression.Tests.Luks.LuksExternalConformanceTests|FullyQualifiedName~Compression.Tests.DmCrypt.DmCryptPlainExternalConformanceTests" \
             --logger "trx;LogFileName=luks-oracle-tests.trx"
 
+      # Hard gate, both directions: cryptsetup's BITLK test images (Windows Vista-11; XTS, CBC,
+      # Elephant, 4k sectors, To Go, startup key, clear key; pinned + checksummed) decrypt to the
+      # SHA-256 of cryptsetup's own mapping with every listed credential, and cryptsetup opens
+      # the BitLocker volumes we write with the password and the recovery password, its mapping
+      # being our plaintext; the kernel's FAT driver checks writes through our encrypted mount.
+      - name: BitLocker oracle
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CWB_REQUIRE_CRYPTSETUP: "1"
+          CWB_REQUIRE_DM_ZERO: "1"
+          CWB_REQUIRE_BITLK_IMAGES: "1"
+        run: |
+          sudo apt-get install -y cryptsetup-bin dosfstools
+          sudo modprobe dm-crypt || true
+          sudo modprobe dm-zero || true
+          curl -fsSL -o "$RUNNER_TEMP/bitlk-images.tar.xz" \
+            https://gitlab.com/cryptsetup/cryptsetup/-/raw/086591ce183ef40b8ad6b75a67e7f298bc1767f2/tests/bitlk-images.tar.xz
+          echo "68bf5669f777668112d497234ebe2166b5feaf0e33b206b095b917f82937bd30  $RUNNER_TEMP/bitlk-images.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/bitlk-images.tar.xz" -C "$RUNNER_TEMP"
+          CWB_BITLK_IMAGES="$RUNNER_TEMP/bitlk-images" dotnet test Compression.Tests --configuration Release --no-build \
+            --filter "FullyQualifiedName~Compression.Tests.BitLocker.BitlkImageConformanceTests|FullyQualifiedName~Compression.Tests.BitLocker.BitLockerExternalConformanceTests" \
+            --logger "trx;LogFileName=bitlocker-oracle-tests.trx"
+
       # Hard gate: Greaseweazle (public domain, pinned release) writes an SCP from a sector image, we
       # rebuild it from its tracks (and edit one track), and Greaseweazle decodes our result back
       # to exactly the expected sectors.
