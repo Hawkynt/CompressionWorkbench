@@ -14,6 +14,11 @@
       NativeFormsFromSource  forced true/false to override the detection, e.g.
                              -p:NativeFormsFromSource=false to build against the packages.
 
+    The published packages currently lag behind what Compression.NativeUI uses (the ribbon field
+    controls are only on NativeForms main), so a clean checkout needs the source: run
+    build/get-nativeforms.sh (or .ps1), which fetches the pinned commit to ../NativeForms exactly as
+    CI does. A build that falls back to the packages says so up front.
+
     The checkout stays outside this repository on purpose: a copy inside it would be scanned by the
     source audits and linted by the package-README check as if it were ours.
   -->
@@ -29,9 +34,13 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(NativeFormsFromSource)' != 'true'">
-    <PackageReference Include="Hawkynt.NativeForms" Version="1.0.0.227" />
-    <PackageReference Include="Hawkynt.NativeForms.Backends.Windows" Version="1.0.0.63" />
-    <PackageReference Include="Hawkynt.NativeForms.Backends.Gtk" Version="1.0.0.73" />
+    <PackageReference Include="Hawkynt.NativeForms" Version="1.0.0.245" />
+    <PackageReference Include="Hawkynt.NativeForms.Backends.Windows" Version="1.0.0.70" />
+    <PackageReference Include="Hawkynt.NativeForms.Backends.Gtk" Version="1.0.0.82" />
   </ItemGroup>
+
+  <Target Name="ReportNativeFormsPackageFallback" BeforeTargets="CoreCompile" Condition="'$(NativeFormsFromSource)' != 'true'">
+    <Message Importance="high" Text="NativeForms: no checkout at '$(NativeFormsSource)', building against the published packages, which lag behind what this project uses. If the build fails with missing NativeForms types (RibbonComboBox, RibbonSpinner, ...), run build/get-nativeforms.sh (or build/get-nativeforms.ps1) to fetch the pinned source, or set NativeFormsSource to an existing checkout." />
+  </Target>
 
 </Project>

@@ -573,9 +573,16 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for project-level dependencies and
 ## 🛠️ Building
 
 ```bash
+build/get-nativeforms.sh          # once: NativeForms at the pinned commit, as ../NativeForms
 dotnet build CompressionWorkbench.slnx
 dotnet test
 ```
+
+`Compression.NativeUI` builds against NativeForms from source, because the published NativeForms
+packages do not yet carry all the controls it uses. The script (`build/get-nativeforms.ps1` on
+Windows) fetches the commit pinned in `build/NativeForms.ref` next to this repository, exactly as CI
+does; a checkout elsewhere works with `-p:NativeFormsSource=<path>`. Everything except
+`Compression.NativeUI` builds without it.
 
 One frontend ships. `Compression.NativeUI` is a NativeForms shell over the Win32 and GTK backends,
 so the same code is the Windows workstation and the Linux one, and both are released as native
