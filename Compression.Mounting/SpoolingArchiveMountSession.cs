@@ -210,7 +210,7 @@ internal static class SpoolingArchiveMountSession {
         directory ? entry.Path + "/" : entry.Path,
         directory ? 0 : entry.Length,
         directory,
-        entry.OpenRead ?? static () => Stream.Null,
+        entry.OpenRead ?? (static () => Stream.Null),
         metadata);
       if (descriptor is IArchiveWriteConstraints restrictions) {
         var check = new ArchiveInputInfo(input.Name, input.Name, directory,
