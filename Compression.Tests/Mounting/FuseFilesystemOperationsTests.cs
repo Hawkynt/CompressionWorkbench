@@ -101,6 +101,70 @@ public sealed class FuseFilesystemOperationsTests {
   }
 
   [Test]
+  public void WritableSetAttributesPersistsExplicitAccessAndModificationTimes() {
+    this._filesystem.Profile = this._filesystem.Profile with {
+      Capabilities = this._filesystem.Profile.Capabilities | FilesystemDriverCapabilities.SetMetadata,
+      MutationModel = FilesystemMutationModel.Direct,
+      CanMountWritable = true,
+    };
+    using var writable = new FuseFilesystemOperations(this._filesystem, readOnly: false);
+    Assert.That(writable.Lookup(FuseFilesystemOperations.RootInode, "docs", out var directory), Is.Zero);
+    Assert.That(writable.Lookup(directory.Inode, "readme.txt", out var file), Is.Zero);
+
+    var attributes = new LinuxStat {
+      AccessTime = new() { Seconds = 1_600_000_000, Nanoseconds = 123_456_700 },
+      ModificationTime = new() { Seconds = 1_600_000_123, Nanoseconds = 987_654_300 },
+    };
+    var error = writable.SetAttributes(file.Inode, (1 << 4) | (1 << 5), attributes, null, out var updated);
+
+    Assert.Multiple(() => {
+      Assert.That(error, Is.Zero);
+      Assert.That(updated.Node.Accessed, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(1_600_000_000).AddTicks(1_234_567)));
+      Assert.That(updated.Node.Modified, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(1_600_000_123).AddTicks(9_876_543)));
+      Assert.That(this._filesystem.LastMetadataPatch?.Accessed, Is.EqualTo(updated.Node.Accessed));
+      Assert.That(this._filesystem.LastMetadataPatch?.Modified, Is.EqualTo(updated.Node.Modified));
+    });
+  }
+
+  [Test]
+  public void WritableSetAttributesSupportsTouchNowAndRejectsUnsupportedAndInvalidUpdates() {
+    using var writable = new FuseFilesystemOperations(this._filesystem, readOnly: false);
+    Assert.That(writable.Lookup(FuseFilesystemOperations.RootInode, "docs", out var directory), Is.Zero);
+    Assert.That(writable.Lookup(directory.Inode, "readme.txt", out var file), Is.Zero);
+
+    var attributes = new LinuxStat {
+      AccessTime = new() { Seconds = 1, Nanoseconds = 1_000_000_000 },
+    };
+    Assert.That(writable.SetAttributes(file.Inode, 1 << 4, attributes, null, out _), Is.EqualTo(FuseErrno.NotSupported));
+    Assert.That(this._filesystem.LastMetadataPatch, Is.Null);
+
+    this._filesystem.Profile = this._filesystem.Profile with {
+      Capabilities = this._filesystem.Profile.Capabilities | FilesystemDriverCapabilities.SetMetadata,
+      MutationModel = FilesystemMutationModel.Direct,
+      CanMountWritable = true,
+    };
+    Assert.That(writable.SetAttributes(file.Inode, 1, default(LinuxStat), null, out _), Is.EqualTo(FuseErrno.NotSupported));
+    Assert.That(writable.SetAttributes(file.Inode, 1 << 4, attributes, null, out _), Is.EqualTo(FuseErrno.InvalidArgument));
+    Assert.That(this._filesystem.LastMetadataPatch, Is.Null);
+
+    var before = DateTimeOffset.UtcNow;
+    Assert.That(writable.SetAttributes(file.Inode, (1 << 7) | (1 << 8), default(LinuxStat), null, out var updated), Is.Zero);
+    var after = DateTimeOffset.UtcNow;
+    Assert.Multiple(() => {
+      Assert.That(updated.Node.Accessed, Is.InRange(before, after));
+      Assert.That(updated.Node.Modified, Is.InRange(before, after));
+      Assert.That(updated.Node.Accessed, Is.EqualTo(updated.Node.Modified));
+    });
+  }
+
+  [Test]
+  public void ReadOnlySetAttributesRefusesMetadataChanges() {
+    var inode = LookupReadme();
+    Assert.That(this._sut.SetAttributes(inode, 1 << 8, default(LinuxStat), null, out _),
+      Is.EqualTo(FuseErrno.ReadOnlyFileSystem));
+  }
+
+  [Test]
   public void FileHandlesPerformIndependentPositionalReads() {
     var inode = LookupReadme();
     Assert.That(this._sut.OpenFile(inode, flags: 0, out var handleId), Is.Zero);
@@ -247,7 +311,8 @@ public sealed class FuseFilesystemOperationsTests {
       this.RootNodeId = this.CreateNode(FilesystemNodeKind.Directory, 0);
     }
 
-    public FilesystemDriverProfile Profile => TestProfile;
+    public FilesystemDriverProfile Profile { get; set; } = TestProfile;
+    public FilesystemMetadataPatch? LastMetadataPatch { get; private set; }
     public FilesystemNodeId RootNodeId { get; }
     public int OpenCount { get; private set; }
 
@@ -296,7 +361,16 @@ public sealed class FuseFilesystemOperationsTests {
     public void CreateHardLink(FilesystemNodeId existingNode, FilesystemNodeId newParent, string newName) => throw new NotSupportedException();
     public FilesystemNodeId CreateSymbolicLink(FilesystemNodeId parentDirectory, string name, string target) => throw new NotSupportedException();
     public string ReadSymbolicLink(FilesystemNodeId nodeId) => throw new NotSupportedException();
-    public void SetMetadata(FilesystemNodeId nodeId, FilesystemMetadataPatch patch) => throw new NotSupportedException();
+    public void SetMetadata(FilesystemNodeId nodeId, FilesystemMetadataPatch patch) {
+      if (!this.Profile.Capabilities.HasFlag(FilesystemDriverCapabilities.SetMetadata))
+        throw new NotSupportedException();
+      this.LastMetadataPatch = patch;
+      var node = this.Stat(nodeId);
+      this._nodes[nodeId] = node with {
+        Accessed = patch.Accessed ?? node.Accessed,
+        Modified = patch.Modified ?? node.Modified,
+      };
+    }
     public void Flush() { }
     public IFilesystemTransaction BeginTransaction() => throw new NotSupportedException();
     public void Dispose() { }
