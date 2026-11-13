@@ -68,6 +68,35 @@ public sealed class MountNamespaceResolverTests {
     Assert.Throws<NotSupportedException>(() => session.CreateFile(session.RootNodeId, "nope.txt"));
   }
 
+  [TestCase("SevenZip")]
+  [TestCase("Rar")]
+  public void SupportedCompressedArchive_ExposesContentsButRefusesMountedWrites(string formatId) {
+    var payload = "mountable compressed archive"u8.ToArray();
+    using var archive = Create(formatId, [ArchiveInputInfo.InMemory("document.txt", payload)]);
+
+    var probe = MountNamespaceResolver.Probe(formatId, archive);
+    Assert.Multiple(() => {
+      Assert.That(probe.Profile.CanMount, Is.True);
+      Assert.That(probe.Profile.CanMountWritable, Is.False);
+      Assert.That(probe.Layers, Does.Contain($"archive:{formatId}"));
+    });
+
+    archive.Position = 0;
+    using var namespaceSession = MountNamespaceResolver.Open(
+      formatId,
+      archive,
+      new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+
+    var file = namespaceSession.Lookup(namespaceSession.RootNodeId, "document.txt");
+    Assert.That(file, Is.Not.Null);
+    Assert.That(ReadAll(namespaceSession, file!.Value), Is.EqualTo(payload));
+    Assert.Throws<NotSupportedException>(() =>
+      MountNamespaceResolver.Open(
+        formatId,
+        archive,
+        new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true)));
+  }
+
   [Test]
   public void Vhd_ResolvesGuestFatWithoutHostMounting() {
     var data = Enumerable.Range(0, 4096).Select(static i => (byte)(i * 37)).ToArray();
@@ -91,6 +120,87 @@ public sealed class MountNamespaceResolverTests {
     var file = session.Lookup(session.RootNodeId, "HELLO.TXT");
     Assert.That(file, Is.Not.Null);
     Assert.That(ReadAll(session, file!.Value), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RegisteredSingleFileFormat_ProjectsOriginalBytesWithoutInventingAWriter() {
+    var descriptor = FormatRegistry.All.First(d =>
+      !FormatRegistry.FilesystemFormatIds.Contains(d.Id, StringComparer.OrdinalIgnoreCase) &&
+      d is not IArchiveFormatOperations &&
+      d is not IRandomAccessBlockDeviceProvider &&
+      d is not IEncryptedBlockDeviceProvider);
+    var data = Enumerable.Range(0, 8192).Select(static i => (byte)(i * 73)).ToArray();
+    using var source = new MemoryStream(data, writable: true);
+
+    var probe = MountNamespaceResolver.Probe(descriptor.Id, source);
+    Assert.Multiple(() => {
+      Assert.That(probe.Profile.CanMount, Is.True);
+      Assert.That(probe.Profile.CanMountWritable, Is.False);
+      Assert.That(probe.Layers, Does.Contain("namespace:single-file-read-only"));
+      Assert.That(source.Position, Is.Zero);
+    });
+
+    using var session = MountNamespaceResolver.Open(
+      descriptor.Id,
+      source,
+      new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true),
+      sourceName: "movie.clip");
+    var entry = session.Lookup(session.RootNodeId, "movie.clip");
+    Assert.That(entry, Is.Not.Null);
+
+    using var first = session.OpenFile(entry!.Value, FileAccess.Read);
+    using var second = session.OpenFile(entry.Value, FileAccess.Read);
+    var slice = new byte[257];
+    Assert.That(first.Read(173, slice), Is.EqualTo(slice.Length));
+    Assert.That(slice, Is.EqualTo(data.AsSpan(173, slice.Length).ToArray()));
+    Assert.That(second.Read(data.Length - 5, slice), Is.EqualTo(5));
+    Assert.Throws<NotSupportedException>(() => session.OpenFile(entry.Value, FileAccess.Write));
+    Assert.That(source.ToArray(), Is.EqualTo(data));
+
+    Assert.Throws<NotSupportedException>(() =>
+      MountNamespaceResolver.Open(
+        descriptor.Id,
+        source,
+        new FilesystemOpenOptions(ReadOnly: false, LeaveOpen: true),
+        sourceName: "movie.clip"));
+  }
+
+  [Test]
+  public void RawImg_ResolvesFatWithoutHostDiskMounting() {
+    var payload = "raw disk mounted through FAT"u8.ToArray();
+    using var image = Create("Fat", [ArchiveInputInfo.InMemory("HELLO.TXT", payload)]);
+
+    var probe = MountNamespaceResolver.Probe(MountNamespaceResolver.RawDiskFormatId, image);
+    Assert.Multiple(() => {
+      Assert.That(probe.Profile.CanMount, Is.True);
+      Assert.That(probe.Layers, Does.Contain("container:RawDisk"));
+      Assert.That(probe.Layers, Does.Contain("filesystem:Fat"));
+    });
+
+    using var session = MountNamespaceResolver.Open(
+      MountNamespaceResolver.RawDiskFormatId,
+      image,
+      new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    var file = session.Lookup(session.RootNodeId, "HELLO.TXT");
+    Assert.That(file, Is.Not.Null);
+    Assert.That(ReadAll(session, file!.Value), Is.EqualTo(payload));
+  }
+
+  [Test]
+  public void RawImg_RejectsUnalignedOrUnrecognizedDiskBytes() {
+    using var unaligned = new MemoryStream(new byte[513]);
+    var probe = MountNamespaceResolver.Probe(MountNamespaceResolver.RawDiskFormatId, unaligned);
+    Assert.That(probe.Profile.CanMount, Is.False);
+    Assert.Throws<NotSupportedException>(() =>
+      MountNamespaceResolver.Open(
+        MountNamespaceResolver.RawDiskFormatId,
+        unaligned,
+        new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true)));
+
+    using var unrecognized = new MemoryStream(new byte[512 * 8]);
+    Assert.That(
+      MountNamespaceResolver.Probe(MountNamespaceResolver.RawDiskFormatId, unrecognized).Profile.CanMount,
+      Is.False);
   }
 
   [Test]
