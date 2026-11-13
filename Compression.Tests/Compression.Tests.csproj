@@ -12,6 +12,10 @@
     <EmbeddedResource Include="NowCompress/ReferenceVectors/*.now;NowCompress/ReferenceVectors/*.json">
       <LogicalName>NowCompressVectors.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <!-- Real DOS packer output and UNP 4.11 restorations; see ExePackers/DosVectors/README.md. -->
+    <EmbeddedResource Include="ExePackers/DosVectors/*.EXE;ExePackers/DosVectors/*.COM">
+      <LogicalName>DosPackerVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <ProjectReference Include="..\FileFormats\FileFormat.Ico\FileFormat.Ico.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ani\FileFormat.Ani.csproj" />
     <!-- Key datums and sectors Windows wrote, from cryptsetup's BITLK test images; see BitLocker/ReferenceVectors/README.md. -->
